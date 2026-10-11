@@ -32,7 +32,7 @@ export INTENT_ENGINE_URL=devnet INTENT_ENGINE_KEYPAIR=~/solive-wallet.json
 solana airdrop 1
 ```
 
-If the airdrop hits the rate limit, open a [devnet SOL request](https://github.com/MerlijnW70/solive/issues/new?template=faucet.yml) with the address `solana address` prints. It sends 0.5 devnet SOL, enough for this guide, once a day per GitHub account.
+If the airdrop hits the rate limit, open a [devnet SOL request](https://github.com/MerlijnW70/solive/issues/new?template=faucet.yml) with the address `solana address` prints. It sends 0.5 devnet SOL, enough for this guide, once a day per GitHub account. It refuses GitHub accounts younger than 7 days and addresses that already hold 1 devnet SOL or more, and stops for the day after 50 requests.
 
 ## 4. Wrap SOL
 
@@ -52,7 +52,7 @@ Sell 0.05 wrapped SOL for at least 5 test tokens:
 intent-engine create swap --input-mint So11111111111111111111111111111111111111112 --output-mint ETU8trkkfE8gNVPDGbCaJUoH88wy6yYV6ttJdc9NKB88 --units tokens --amount-in 0.05 --min-out 5 --expires-in 3600
 ```
 
-This prints what the intent does and sends nothing. Add `--yes` to send it:
+This prints what the intent does and sends nothing. Besides the escrow, creating pays rent for the intent's accounts and any create fee and crank bounty the engine charges. Add `--yes` to send it:
 
 ```sh
 intent-engine create swap --input-mint So11111111111111111111111111111111111111112 --output-mint ETU8trkkfE8gNVPDGbCaJUoH88wy6yYV6ttJdc9NKB88 --units tokens --amount-in 0.05 --min-out 5 --expires-in 3600 --yes
@@ -78,7 +78,7 @@ intent-engine list
 intent-engine cancel --nonce 1
 ```
 
-`list` shows this intent as `open` with nonce `1`. `cancel` sends at once and returns its 0.05 wrapped SOL to your wrapped SOL token account.
+`list` shows this intent as `open` with nonce `1`. `cancel` sends at once and returns its 0.05 wrapped SOL to your wrapped SOL token account. The intent's rent stays in it until `intent-engine close` returns it to you.
 
 ## Next
 

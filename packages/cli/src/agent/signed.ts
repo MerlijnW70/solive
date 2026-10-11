@@ -168,7 +168,7 @@ export const prepareSignedIntent = define({
   name: tool("prepare_signed_intent"),
   title: "Prepare a relayer-submitted signed intent",
   description:
-    `Build an intent the owner authorises by signing a message off-chain, so a relayer creates it on chain and pays its rent and fees. Steps: (1) the owner signs and sends the returned setup transaction; it registers them, creates the receiving token account and raises the engine's spending allowance on the input token by this intent's escrow plus any relayer fee, and it is the only part that costs the owner SOL: its network fee, which the summary gives in lamports, plus rent for any account it creates; (2) the owner signs message with their wallet's sign-message; (3) pass submit unchanged plus that base58 signature to ${tool("submit_signed_intent")}. When this server runs a relayer, it relays only the input tokens it lists a fee for, the message includes that fee, and the owner pays it in that token as the intent is created; without a relayer this server can prepare but not submit. Read summary and warnings before the owner signs anything.`,
+    `Build an intent the owner authorises by signing a message off-chain, so a relayer creates it on chain and pays its rent and fees. Steps: (1) the owner signs and sends the returned setup transaction; it registers them, creates the receiving token account and raises the engine's spending allowance on the input token by this intent's escrow plus any relayer fee, and it is the only part that costs the owner SOL: its network fee, which the summary gives in lamports, plus rent for any account it creates; (2) the owner signs message with their wallet's sign-message; (3) pass submit unchanged plus that base58 signature to ${tool("submit_signed_intent")}. When this server runs a relayer, it relays only the input tokens it lists a fee for, the message includes that fee, and the owner pays it in that token as the intent is created; without --relayer this server can prepare but not submit. Read summary and warnings before the owner signs anything.`,
   effect: "prepare",
   input: object({
     ...termsInput,
@@ -286,7 +286,7 @@ export const submitSignedIntent = define({
   name: tool("submit_signed_intent"),
   title: "Submit a signed intent",
   description:
-    `Relay an owner's signed intent: this server's relayer key pays the fee and creates the intent on chain, within the relayer's limits: accepted input tokens and their minimum fee, lamport cost per intent and per hour, expiry, transaction size and intents per owner per hour. Pass the submit object from ${tool("prepare_signed_intent")} unchanged plus the owner's base58 signature of its message. Calling again after success returns the same intent without sending anything.`,
+    `Relay an owner's signed intent: the relayer key this server was started with (--relayer) pays the fee and creates the intent on chain, within the relayer's limits: accepted input tokens and their minimum fee, lamport cost per intent and per hour, expiry, transaction size and intents per owner per hour. Pass the submit object from ${tool("prepare_signed_intent")} unchanged plus the owner's base58 signature of its message. Calling again after success returns the same intent without sending anything.`,
   effect: "submit",
   input: object({ ...signedTerms, signature: text("the owner's base58 Ed25519 signature of the message") }),
   output: object({ intent: account(), signature: nullable(text("the relayed transaction's signature; null if it already existed")) }),

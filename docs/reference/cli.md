@@ -246,7 +246,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--mint`, `--amount`, 
 revoke-approval --keypair <file> --mint <mint> [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--mint`, `--units`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--mint`, `--output`, `--help`
 
 ## signed
 
@@ -257,3 +257,19 @@ signed prepare swap|limit|dutch|attested --keypair <file> --out <file> --input-m
 Options for `prepare`: `--url`, `--keypair`, `--yes`, `--out`, `--nonce`, `--input-mint`, `--output-mint`, `--submit-within`, `--relayer-fee`, `--expires-at`, `--expires-in`, `--amount-in`, `--min-out`, `--make`, `--take`, `--start-out`, `--end-out`, `--start-at`, `--end-at`, `--min-result`, `--max-result`, `--attestor`, `--partner`, `--partner-bps`, `--units`, `--output`, `--help`
 
 Options for `submit`: `--url`, `--keypair`, `--yes`, `--file`, `--output`, `--help`
+
+## version
+
+```text
+version
+```
+
+Prints the CLI version. `--version` does the same.
+
+## help
+
+```text
+help [command]
+```
+
+Prints the usage of every command, or of one command. `--help` after a command does the same.

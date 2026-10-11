@@ -440,7 +440,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
     "units",
   ],
   approve: ["url", "priority-fee", "keypair", "yes", "mint", "amount", "units"],
-  "revoke-approval": ["url", "priority-fee", "keypair", "yes", "mint", "units"],
+  "revoke-approval": ["url", "priority-fee", "keypair", "yes", "mint"],
   signed: [
     "url",
     "keypair",

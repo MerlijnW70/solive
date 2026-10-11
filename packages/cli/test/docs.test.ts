@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { ACCEPTS, CLUSTERS, ENV_KEYPAIR, ENV_URL, GLOBAL_OPTIONS, SUB_ACCEPTS, USAGE, usageOf } from "../src/args.js";
+import { ACCEPTS, CLUSTERS, ENV_KEYPAIR, ENV_URL, GLOBAL_OPTIONS, parse, SUB_ACCEPTS, USAGE, usageOf } from "../src/args.js";
 import { annotationsOf } from "../src/agent/mcp.js";
 import { ENGINE_ERROR_BASE, ENGINE_PROBLEMS, SERVER_PROBLEMS, TOKEN_PROBLEMS } from "../src/agent/problems.js";
 import { ACTIONS } from "../src/agent/registry.js";
@@ -96,6 +96,12 @@ function cliPage(): string {
     const lines = subs.length === 0 ? [`Options: ${listed(options)}`] : subs.flatMap((l) => [l, ""]).slice(0, -1);
     return [`## ${verb}`, "", "```text", usage, "```", "", ...lines, ""];
   });
+  const plain = (
+    [
+      ["version", "version", "Prints the CLI version. `--version` does the same."],
+      ["help", "help [command]", "Prints the usage of every command, or of one command. `--help` after a command does the same."],
+    ] as const
+  ).flatMap(([verb, usage, what]) => [`## ${verb}`, "", "```text", usage, "```", "", what, ""]);
   return page("CLI reference", [
     "```text",
     USAGE,
@@ -106,6 +112,7 @@ function cliPage(): string {
     `\`${ENV_KEYPAIR}\` fills in \`--keypair\` and \`${ENV_URL}\` fills in \`--url\` when they are not given. \`--url\` takes an RPC URL or one of ${Object.keys(CLUSTERS).map((c) => `\`${c}\``).join(", ")}.`,
     "",
     ...body,
+    ...plain,
   ]);
 }
 
@@ -249,6 +256,14 @@ describe("policy pages", () => {
 });
 
 describe("generated reference docs", () => {
+  it("describe version and help as the parser reads them", () => {
+    expect(parse(["version"], {})).toEqual({ name: "version" });
+    expect(parse(["--version"], {})).toEqual({ name: "version" });
+    expect(parse(["help"], {})).toEqual({ name: "help", verb: undefined });
+    expect(parse(["help", "create"], {})).toEqual({ name: "help", verb: "create" });
+    expect(parse(["create", "--help"], {})).toEqual({ name: "help", verb: "create" });
+  });
+
   it("numbers engine errors exactly as the program's IDL does", () => {
     const idl = JSON.parse(readFileSync(IDL, "utf8")) as { errors: { code: number; name: string }[] };
     const pascal = (name: string) => name.charAt(0).toUpperCase() + name.slice(1);

@@ -192,7 +192,7 @@ Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
 
 ## solive_prepare_signed_intent
 
-Build an intent the owner authorises by signing a message off-chain, so a relayer creates it on chain and pays its rent and fees. Steps: (1) the owner signs and sends the returned setup transaction; it registers them, creates the receiving token account and raises the engine's spending allowance on the input token by this intent's escrow plus any relayer fee, and it is the only part that costs the owner SOL: its network fee, which the summary gives in lamports, plus rent for any account it creates; (2) the owner signs message with their wallet's sign-message; (3) pass submit unchanged plus that base58 signature to solive_submit_signed_intent. When this server runs a relayer, it relays only the input tokens it lists a fee for, the message includes that fee, and the owner pays it in that token as the intent is created; without a relayer this server can prepare but not submit. Read summary and warnings before the owner signs anything.
+Build an intent the owner authorises by signing a message off-chain, so a relayer creates it on chain and pays its rent and fees. Steps: (1) the owner signs and sends the returned setup transaction; it registers them, creates the receiving token account and raises the engine's spending allowance on the input token by this intent's escrow plus any relayer fee, and it is the only part that costs the owner SOL: its network fee, which the summary gives in lamports, plus rent for any account it creates; (2) the owner signs message with their wallet's sign-message; (3) pass submit unchanged plus that base58 signature to solive_submit_signed_intent. When this server runs a relayer, it relays only the input tokens it lists a fee for, the message includes that fee, and the owner pays it in that token as the intent is created; without --relayer this server can prepare but not submit. Read summary and warnings before the owner signs anything.
 
 Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
 
@@ -226,7 +226,7 @@ Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
 
 ## solive_submit_signed_intent
 
-Relay an owner's signed intent: this server's relayer key pays the fee and creates the intent on chain, within the relayer's limits: accepted input tokens and their minimum fee, lamport cost per intent and per hour, expiry, transaction size and intents per owner per hour. Pass the submit object from solive_prepare_signed_intent unchanged plus the owner's base58 signature of its message. Calling again after success returns the same intent without sending anything.
+Relay an owner's signed intent: the relayer key this server was started with (--relayer) pays the fee and creates the intent on chain, within the relayer's limits: accepted input tokens and their minimum fee, lamport cost per intent and per hour, expiry, transaction size and intents per owner per hour. Pass the submit object from solive_prepare_signed_intent unchanged plus the owner's base58 signature of its message. Calling again after success returns the same intent without sending anything.
 
 Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 
@@ -341,7 +341,7 @@ Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
 
 ## solive_agent_create
 
-Create an intent for an owner under the mandate the owner granted to this server's agent key, signing and paying with that key. This server refuses owners outside its --agent-owners list and spending beyond its hourly lamport budget; the program refuses anything outside the mandate's limits. Each call creates a new intent.
+Create an intent for an owner under the mandate the owner granted to this server's agent key, signing and paying with that key. Needs a server started with --agent. This server refuses owners outside its --agent-owners list and spending beyond its hourly lamport budget; the program refuses anything outside the mandate's limits. Each call creates a new intent.
 
 Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 

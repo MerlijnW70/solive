@@ -87,6 +87,16 @@ const sent = (calls: string[]) => calls.filter((c) => c.startsWith("solana trans
 const closed = (calls: string[]) => calls.find((c) => c.startsWith("gh issue close"));
 
 describe("the devnet faucet", () => {
+  it("is described in the quickstart with the limits the script enforces", () => {
+    const script = readFileSync(SCRIPT, "utf8");
+    const value = (name: string) => Number(new RegExp(`^${name}=(\\d+)$`, "m").exec(script)?.[1]);
+    const sol = (lamports: number) => String(lamports / 1_000_000_000);
+    const days = /^min_age=\$\(\((\d+) \* 86400\)\)$/m.exec(script)?.[1];
+    expect(readFileSync(join(ROOT, "docs/quickstart.md"), "utf8")).toContain(
+      `It sends ${sol(value("amount"))} devnet SOL, enough for this guide, once a day per GitHub account. It refuses GitHub accounts younger than ${days} days and addresses that already hold ${sol(value("funded"))} devnet SOL or more, and stops for the day after ${value("daily")} requests.`,
+    );
+  });
+
   it("sends 0.5 devnet SOL to the one address in the request, links the transfer and closes the request", () => {
     const { out, calls } = request(form(ADDRESS));
     expect(sent(calls)).toHaveLength(1);

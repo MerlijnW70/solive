@@ -239,7 +239,7 @@ describe("the mandate guide", () => {
       sol.push([h.svm.getBalance(owner.address) ?? 0n, h.svm.getBalance(agent.address) ?? 0n]);
     }
     expect(outputs.map((o) => o["sent"])).toEqual([true, undefined, true, true]);
-    expect(MANDATE).toContain("The agent key pays the rent and network fees of every intent it creates:");
+    expect(MANDATE).toContain("The agent key pays the rent, network fees, create fee and crank bounty of every intent it creates:");
     const [[ownerBefore, agentBefore], [ownerAfter, agentAfter]] = [sol[1] ?? [0n, 0n], sol[2] ?? [0n, 0n]];
     const rents = h.svm.minimumBalanceForRentExemption(BigInt(getIntentSize())) + rent;
     expect(ownerAfter).toBe(ownerBefore);

@@ -565,7 +565,7 @@ export const agentCreate = define({
   name: tool("agent_create"),
   title: "Create an intent under a mandate",
   description:
-    "Create an intent for an owner under the mandate the owner granted to this server's agent key, signing and paying with that key. This server refuses owners outside its --agent-owners list and spending beyond its hourly lamport budget; the program refuses anything outside the mandate's limits. Each call creates a new intent.",
+    "Create an intent for an owner under the mandate the owner granted to this server's agent key, signing and paying with that key. Needs a server started with --agent. This server refuses owners outside its --agent-owners list and spending beyond its hourly lamport budget; the program refuses anything outside the mandate's limits. Each call creates a new intent.",
   effect: "submit",
   repeats: true,
   input: object(agentTerms),

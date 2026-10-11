@@ -4,7 +4,7 @@ Grant an agent key a mandate, let it create an intent on its own, then revoke it
 
 ## 1. Create and fund the agent key
 
-The agent key pays the rent and network fees of every intent it creates:
+The agent key pays the rent, network fees, create fee and crank bounty of every intent it creates:
 
 ```sh
 solana-keygen new --no-bip39-passphrase -o ~/solive-agent.json
@@ -27,7 +27,7 @@ intent-engine mandate grant --agent $(solana-keygen pubkey ~/solive-agent.json) 
 intent-engine mandate show --agent $(solana-keygen pubkey ~/solive-agent.json)
 ```
 
-The program enforces every limit. Proceeds always go to your own token account.
+The program enforces every limit. Proceeds always go to your own token account. Granting raises the engine's spending allowance on your wrapped SOL token account by `--total`, and wraps SOL first if that account holds less.
 
 ## 3. Let the agent create an intent
 
@@ -45,7 +45,7 @@ The 0.02 wrapped SOL moves from your token account into the intent's escrow. An 
 intent-engine mandate revoke --agent $(solana-keygen pubkey ~/solive-agent.json) --yes
 ```
 
-Revoking cancels up to 6 of the agent's open intents in the same transaction, refunds their escrow and lowers the engine's allowance by the unused budget.
+Revoking cancels up to 6 of the agent's open intents in the same transaction, refunds their escrow and lowers the engine's allowance by the unused budget. Any other intent it opened can no longer fill; cancel it to get its escrow back.
 
 Revoking closes the mandate, so `mandate show` then reports `NotFound`.
 
