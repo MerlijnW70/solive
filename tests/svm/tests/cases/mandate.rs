@@ -622,6 +622,23 @@ fn advancing_the_epoch_or_revoking_ends_the_mandate() -> TestResult {
     Ok(())
 }
 
+#[test]
+fn a_revoke_refuses_an_owner_that_cannot_take_back_the_rent() -> TestResult {
+    let mut s = setup()?;
+    let payer = s.env.funded()?;
+    let owner = s.trader.key.insecure_clone();
+    let mut ix = s.env.revoke_mandate_ix(&owner.pubkey(), s.mandate);
+    for meta in ix.accounts.iter_mut().filter(|m| m.pubkey == owner.pubkey()) {
+        meta.is_writable = false;
+    }
+    assert_eq!(
+        s.env.send(&payer, &[ix], &[&owner]),
+        Err(anchor_error(anchor_lang::error::ErrorCode::ConstraintMut))
+    );
+    assert!(s.env.exists(&s.mandate));
+    Ok(())
+}
+
 impl Setup {
     fn fill(&mut self, n: u64) -> Result<litesvm::types::TransactionMetadata, TransactionError> {
         let solver = self.env.solver(&self.market, 1_000).map_err(|_| TransactionError::AccountNotFound)?;
