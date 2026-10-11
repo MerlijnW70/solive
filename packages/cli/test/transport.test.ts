@@ -11,6 +11,8 @@ import {
 import { describe, expect, it } from "vitest";
 import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { Charged,
+  memoized,
+  MULTIPLE_ACCOUNTS_LIMIT,
   changedAccount,
   changesFrom,
   CONFIRM_POLLS,
@@ -20,6 +22,7 @@ import { Charged,
   RATE_LIMIT_ATTEMPTS,
   rateLimited,
   type RpcLike,
+  type Transport,
   rpcTransport,
   socketUrl,
 } from "../src/transport.js";
@@ -36,6 +39,18 @@ function stub(statuses: Status[], heights: bigint[] = [0n]) {
   const calls: string[] = [];
   const sent: string[] = [];
   const rpc = {
+    getMultipleAccounts: (addresses: Address[]) => ({
+      send: async () => {
+        calls.push(`many:${addresses.length}`);
+        return {
+          value: addresses.map((address) =>
+            address === OWNER
+              ? { owner: OWNER, data: [Buffer.from([1, 2, 3]).toString("base64"), "base64"] as const, lamports: 7n, executable: true }
+              : null,
+          ),
+        };
+      },
+    }),
     getAccountInfo: (address: Address) => ({
       send: async () => ({
         value:
@@ -190,6 +205,39 @@ describe("confirm", () => {
     const late = stub([...Array.from({ length: CONFIRM_POLLS - 1 }, () => null), { err: null, confirmationStatus: "confirmed" }]);
     await confirm(late.rpc, SIG, 10n, late.wait);
     expect(late.waits).toHaveLength(CONFIRM_POLLS - 1);
+  });
+
+  it("returns as soon as the signature subscription confirms, and then stops polling", async () => {
+    const s = stub([]);
+    const slow = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms > 0 ? 20 : 0));
+    let aborted = false;
+    await confirm(s.rpc, SIG, 10n, slow, async (signature, signal) => {
+      expect(signature).toBe(SIG);
+      signal.addEventListener("abort", () => {
+        aborted = true;
+      });
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    });
+    const polls = s.calls.filter((c) => c === `status:${SIG}`).length;
+    await new Promise((resolve) => setTimeout(resolve, 80));
+    expect(aborted).toBe(true);
+    expect(polls).toBeLessThanOrEqual(1);
+    expect(s.calls.filter((c) => c === `status:${SIG}`)).toHaveLength(polls);
+  });
+
+  it("surfaces a failure the subscription reports, and falls back to polling when the subscription breaks", async () => {
+    const failed = stub([]);
+    const slow = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms > 0 ? 20 : 0));
+    await expect(
+      confirm(failed.rpc, SIG, 10n, slow, async () => {
+        throw new Charged(`transaction ${SIG} failed: boom`);
+      }),
+    ).rejects.toThrow(`transaction ${SIG} failed: boom`);
+    const broken = stub([null, { err: null, confirmationStatus: "confirmed" }]);
+    await confirm(broken.rpc, SIG, 10n, broken.wait, async () => {
+      throw new Error("websocket refused");
+    });
+    expect(broken.calls.filter((c) => c === `status:${SIG}`)).toHaveLength(2);
   });
 
   it("waits half a second by default", async () => {
@@ -479,5 +527,76 @@ describe("intent changes", () => {
     expect(await changes.wait(0.05)).toEqual([]);
     expect(Date.now() - started).toBeGreaterThanOrEqual(40);
     changes.close();
+  });
+});
+
+describe("account reads", () => {
+  it("fetches many accounts in calls of at most the limit the RPC allows", async () => {
+    const s = stub([]);
+    const addresses = Array.from({ length: MULTIPLE_ACCOUNTS_LIMIT + 1 }, (_, i) => (i === 0 ? OWNER : OTHER));
+    const views = await rpcTransport(s.rpc as unknown as RpcLike).getAccounts(addresses);
+    expect(views).toHaveLength(MULTIPLE_ACCOUNTS_LIMIT + 1);
+    expect(views[0]).toEqual({ owner: OWNER, data: new Uint8Array([1, 2, 3]), lamports: 7n, executable: true });
+    expect(views[1]).toBeNull();
+    expect(s.calls.filter((c) => c.startsWith("many:"))).toEqual([`many:${MULTIPLE_ACCOUNTS_LIMIT}`, "many:1"]);
+  });
+
+  it("reads each account once per call, fetches the missing ones together, and never keeps a failed read", async () => {
+    const singles: Address[] = [];
+    const batches: Address[][] = [];
+    let failing = true;
+    const inner = {
+      getAccount: async (address: Address) => {
+        singles.push(address);
+        if (failing && address === TOKEN_PROGRAM) {
+          throw new Error("rpc down");
+        }
+        return null;
+      },
+      getAccounts: async (addresses: readonly Address[]) => {
+        batches.push([...addresses]);
+        return addresses.map(() => null);
+      },
+    } as unknown as Transport;
+    const reading = memoized(inner);
+    expect(memoized(reading)).toBe(reading);
+    await reading.warm?.([OWNER, OTHER, OWNER]);
+    await reading.warm?.([OWNER, OTHER]);
+    await Promise.all([reading.getAccount(OWNER), reading.getAccount(OTHER), reading.getAccount(OTHER)]);
+    expect(await reading.getAccounts([OWNER, OTHER])).toEqual([null, null]);
+    expect([batches, singles]).toEqual([[[OWNER, OTHER]], []]);
+    await expect(reading.getAccount(TOKEN_PROGRAM)).rejects.toThrow("rpc down");
+    failing = false;
+    expect(await reading.getAccount(TOKEN_PROGRAM)).toBeNull();
+    expect(await reading.getAccount(TOKEN_PROGRAM)).toBeNull();
+    expect(singles).toEqual([TOKEN_PROGRAM, TOKEN_PROGRAM]);
+  });
+
+  it("forgets every read once anything is sent, so a read after a write sees the new state", async () => {
+    let lamports = 0n;
+    const reads: Address[] = [];
+    const inner = {
+      getAccount: async (address: Address) => {
+        reads.push(address);
+        return { owner: OWNER, data: new Uint8Array(), lamports, executable: false };
+      },
+      getAccounts: async () => [],
+      airdrop: async () => {
+        lamports = 5n;
+        return "airdropped";
+      },
+      sendWire: async () => {
+        lamports = 9n;
+        return "sent";
+      },
+    } as unknown as Transport;
+    const reading = memoized(inner);
+    expect((await reading.getAccount(OWNER))?.lamports).toBe(0n);
+    expect((await reading.getAccount(OWNER))?.lamports).toBe(0n);
+    await reading.airdrop(OWNER, 5n);
+    expect((await reading.getAccount(OWNER))?.lamports).toBe(5n);
+    await reading.sendWire("w" as never, { blockhash: "" as Blockhash, lastValidBlockHeight: 0n });
+    expect((await reading.getAccount(OWNER))?.lamports).toBe(9n);
+    expect(reads).toHaveLength(3);
   });
 });

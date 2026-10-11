@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -uo pipefail
-cli=(node "$(dirname "$0")/../packages/cli/dist/src/bin.js")
+if [[ -n "${FILLER_CLI:-}" ]]; then
+  cli=("$FILLER_CLI")
+else
+  cli=(node "$(dirname "$0")/../packages/cli/dist/src/bin.js")
+fi
 keypair="${FILLER_KEYPAIR:?set FILLER_KEYPAIR to the keypair of the test token mint authority}"
 url="${FILLER_URL:-devnet}"
 interval="${FILLER_INTERVAL:-5}"

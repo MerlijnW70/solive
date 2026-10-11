@@ -66,7 +66,7 @@ import { prepareSignedIntent, previewSignedIntent, submitSignedIntent } from "./
 import { approval, ask, finish, FlowRefused, hasTokens, inRaw, NOT_SENT, perform, signMessage } from "./flows.js";
 import { loadMandate } from "./agent/mandate.js";
 import { RELAY_MAX_TTL } from "./args.js";
-import type { IntentChanges, Latest, ProgramAccount, Transport } from "./transport.js";
+import { type IntentChanges, type Latest, memoized, type ProgramAccount, type Transport } from "./transport.js";
 import {
   chainTime,
   clusterDomain,
@@ -592,8 +592,9 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     }
     case "flow": {
       const signer = await runtime.loadSigner(command.keypair);
-      const ctx = context(transport);
-      const raw = await rawFlowInput(transport, command.flow, command.input, signer.address);
+      const reading = memoized(transport);
+      const ctx = context(reading);
+      const raw = await rawFlowInput(reading, command.flow, command.input, signer.address);
       switch (command.flow) {
         case "create":
           return perform(prepareCreate, ctx, { owner: signer.address, ...raw }, signer, command.yes);

@@ -38,6 +38,8 @@ export type Simulation = { err: string | null; logs: string[]; unitsConsumed: bi
 
 export interface Transport {
   getAccount(address: Address): Promise<AccountView | null>;
+  getAccounts(addresses: readonly Address[]): Promise<(AccountView | null)[]>;
+  warm?(addresses: readonly Address[]): Promise<void>;
   send(instructions: readonly Instruction[], payer: TransactionSigner): Promise<string>;
   latestBlockhash(): Promise<Latest>;
   sendWire(wire: Base64EncodedWireTransaction, latest: Latest): Promise<string>;
@@ -53,7 +55,10 @@ export interface Transport {
 
 type Pending<T> = { send(): Promise<T> };
 
+type RawAccount = { owner: Address; data: readonly [string, string]; lamports: bigint; executable: boolean };
+
 export type RpcLike = {
+  getMultipleAccounts(addresses: Address[], config: { encoding: "base64" }): Pending<{ value: (RawAccount | null)[] }>;
   getAccountInfo(
     address: Address,
     config: { encoding: "base64" },
@@ -145,13 +150,58 @@ export class Charged extends Error {
   }
 }
 
+export type SignatureWatch = (signature: Signature, signal: AbortSignal) => Promise<void>;
+
+export function signatureWatch(url: string): SignatureWatch {
+  const subscriptions = createSolanaRpcSubscriptions(socketUrl(url));
+  return async (signature, abortSignal) => {
+    const notes = await subscriptions.signatureNotifications(signature, { commitment: "confirmed" }).subscribe({ abortSignal });
+    const iterator = notes[Symbol.asyncIterator]();
+    const next = await iterator.next();
+    if (next.done === true) {
+      throw new Error(`the signature subscription for ${signature} ended without a notification`);
+    }
+    const err = (next.value as { value?: { err?: unknown } }).value?.err ?? null;
+    if (err !== null) {
+      throw new Charged(`transaction ${signature} failed: ${inspect(err)}`);
+    }
+  };
+}
+
+const never = new Promise<void>(() => undefined);
+
 export async function confirm(
   rpc: RpcLike,
   signature: Signature,
   lastValidBlockHeight: bigint,
   wait: (ms: number) => Promise<void> = sleep,
+  watch?: SignatureWatch,
 ): Promise<void> {
-  for (let poll = 1; ; poll++) {
+  if (watch === undefined) {
+    return polled(rpc, signature, lastValidBlockHeight, wait);
+  }
+  const controller = new AbortController();
+  const heard = watch(signature, controller.signal).catch((error: unknown) => {
+    if (error instanceof Charged) {
+      throw error;
+    }
+    return never;
+  });
+  try {
+    await Promise.race([heard, polled(rpc, signature, lastValidBlockHeight, wait, controller.signal)]);
+  } finally {
+    controller.abort();
+  }
+}
+
+async function polled(
+  rpc: RpcLike,
+  signature: Signature,
+  lastValidBlockHeight: bigint,
+  wait: (ms: number) => Promise<void>,
+  stop?: AbortSignal,
+): Promise<void> {
+  for (let poll = 1; stop?.aborted !== true; poll++) {
     const [status] = (await patiently(() => rpc.getSignatureStatuses([signature]).send(), wait)).value;
     if (status) {
       if (status.err !== null) {
@@ -173,18 +223,75 @@ export async function confirm(
   }
 }
 
-export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>): Transport {
+export const MULTIPLE_ACCOUNTS_LIMIT = 100;
+
+function viewOf(value: RawAccount | null): AccountView | null {
+  return value === null
+    ? null
+    : { owner: value.owner, data: new Uint8Array(Buffer.from(value.data[0], "base64")), lamports: value.lamports, executable: value.executable };
+}
+
+const MEMOIZED = Symbol("memoized");
+
+export function memoized(inner: Transport): Transport {
+  if ((inner as { [MEMOIZED]?: true })[MEMOIZED] === true) {
+    return inner;
+  }
+  const seen = new Map<Address, Promise<AccountView | null>>();
+  const keep = (address: Address, pending: Promise<AccountView | null>) => {
+    seen.set(address, pending);
+    pending.catch(() => {
+      if (seen.get(address) === pending) {
+        seen.delete(address);
+      }
+    });
+    return pending;
+  };
+  const getAccount = (address: Address) => seen.get(address) ?? keep(address, inner.getAccount(address));
+  const writing =
+    <A extends unknown[], R>(write: (...args: A) => Promise<R>) =>
+    async (...args: A): Promise<R> => {
+      try {
+        return await write(...args);
+      } finally {
+        seen.clear();
+      }
+    };
+  return {
+    ...inner,
+    [MEMOIZED]: true,
+    getAccount,
+    send: writing(inner.send),
+    sendWire: writing(inner.sendWire),
+    submitWire: writing(inner.submitWire),
+    airdrop: writing(inner.airdrop),
+    getAccounts: (addresses) => Promise.all(addresses.map(getAccount)),
+    warm: async (addresses) => {
+      const missing = [...new Set(addresses)].filter((address) => !seen.has(address));
+      if (missing.length === 0) {
+        return;
+      }
+      const fetched = inner.getAccounts(missing);
+      missing.forEach((address, i) => keep(address, fetched.then((views) => views[i] ?? null)));
+      await fetched;
+    },
+  } as Transport;
+}
+
+export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>, watch?: SignatureWatch): Transport {
   return {
     async getAccount(address) {
       const { value } = await patiently(() => rpc.getAccountInfo(address, { encoding: "base64" }).send(), wait);
-      return value === null
-        ? null
-        : {
-            owner: value.owner,
-            data: new Uint8Array(Buffer.from(value.data[0], "base64")),
-            lamports: value.lamports,
-            executable: value.executable,
-          };
+      return viewOf(value);
+    },
+    async getAccounts(addresses) {
+      const found: (AccountView | null)[] = [];
+      for (let at = 0; at < addresses.length; at += MULTIPLE_ACCOUNTS_LIMIT) {
+        const chunk = addresses.slice(at, at + MULTIPLE_ACCOUNTS_LIMIT);
+        const { value } = await patiently(() => rpc.getMultipleAccounts([...chunk], { encoding: "base64" }).send(), wait);
+        found.push(...chunk.map((_, i) => viewOf(value[i] ?? null)));
+      }
+      return found;
     },
     async send(instructions, payer) {
       const { value: latest } = await patiently(() => rpc.getLatestBlockhash().send(), wait);
@@ -197,13 +304,13 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>)
       const signed = await signTransactionMessageWithSigners(message);
       const wire = getBase64EncodedWireTransaction(signed);
       const signature = await patiently(() => rpc.sendTransaction(wire, { encoding: "base64" }).send(), wait);
-      await confirm(rpc, signature, latest.lastValidBlockHeight, wait);
+      await confirm(rpc, signature, latest.lastValidBlockHeight, wait, watch);
       return signature;
     },
     async airdrop(address, lamports) {
       const { value: latest } = await patiently(() => rpc.getLatestBlockhash().send(), wait);
       const signature = await rpc.requestAirdrop(address, lamports).send();
-      await confirm(rpc, signature, latest.lastValidBlockHeight, wait);
+      await confirm(rpc, signature, latest.lastValidBlockHeight, wait, watch);
       return signature;
     },
     async latestBlockhash() {
@@ -212,7 +319,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>)
     },
     async sendWire(wire, latest) {
       const signature = await patiently(() => rpc.sendTransaction(wire, { encoding: "base64" }).send(), wait);
-      await confirm(rpc, signature, latest.lastValidBlockHeight, wait);
+      await confirm(rpc, signature, latest.lastValidBlockHeight, wait, watch);
       return signature;
     },
     async submitWire(wire) {

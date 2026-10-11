@@ -175,7 +175,7 @@ export function describeIntent(address: Address, intent: Intent) {
   };
 }
 
-const CLOCK_SYSVAR = "SysvarC1ock11111111111111111111111111111111" as Address;
+export const CLOCK_SYSVAR = "SysvarC1ock11111111111111111111111111111111" as Address;
 const CLOCK_UNIX_TIMESTAMP = 32;
 
 const TOKEN_AMOUNT_OFFSET = 64;

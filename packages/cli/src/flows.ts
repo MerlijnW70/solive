@@ -79,6 +79,7 @@ export async function inRaw<T>(transport: Transport, input: T, inputMint: Addres
       throw new FlowRefused(`${problem.code}: ${problem.hint}`);
     }
   };
+  await transport.warm?.([inputMint, outputMint]);
   const decimals = { input: await decimalsOf(inputMint), output: await decimalsOf(outputMint) };
   return scaled(input, decimals) as T;
 }

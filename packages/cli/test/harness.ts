@@ -105,6 +105,9 @@ export async function send(payer: TransactionSigner, ixs: readonly Instruction[]
 const decodeWire = (wire: string) => getTransactionDecoder().decode(getBase64Encoder().encode(wire));
 
 export const transport: Transport = {
+  async getAccounts(addresses) {
+    return Promise.all(addresses.map((address) => transport.getAccount(address)));
+  },
   async getAccount(address) {
     const account = h.svm.getAccount(address);
     return account.exists

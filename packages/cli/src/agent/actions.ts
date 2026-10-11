@@ -1,5 +1,5 @@
 import type { Address, TransactionSigner } from "@solana/kit";
-import type { Transport } from "../transport.js";
+import { memoized, type Transport } from "../transport.js";
 import { type Problem, problemOf } from "./problems.js";
 import type { Budget } from "./budget.js";
 import type { Relay } from "./relay.js";
@@ -60,7 +60,7 @@ export async function invoke(action: AnyAction, ctx: AgentContext, raw: unknown)
   const call = callOf();
   try {
     const input = action.input.read(raw ?? {}, "");
-    const value = toJson(await action.run(ctx, input as never, call));
+    const value = toJson(await action.run({ ...ctx, transport: memoized(ctx.transport) }, input as never, call));
     try {
       action.output.read(value, "");
     } catch (error) {

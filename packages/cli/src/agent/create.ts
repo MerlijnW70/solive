@@ -4,6 +4,10 @@ import {
   describeTerms,
   encodeParams,
   escrowAmount,
+  findAssociatedTokenAddress,
+  findConfigPda,
+  findIntentPda,
+  findUserStatePda,
   formatTime,
   Kind,
   LONG_LIVED_SECONDS,
@@ -11,7 +15,7 @@ import {
   WARN_ATTESTOR,
   WARN_LONG_LIVED,
 } from "@intent-engine/core";
-import { chainTime, loadConfig, mintOf } from "../accounts.js";
+import { chainTime, CLOCK_SYSVAR, loadConfig, mintOf } from "../accounts.js";
 import { define } from "./actions.js";
 import { tool } from "./names.js";
 import { claim, claimedBy, PREPARED_TTL } from "./claims.js";
@@ -81,6 +85,8 @@ export const prepareCreate = define({
     prepared: preparedSchema,
   }),
   run: async ({ transport, claims }, input, call) => {
+    const [[configAddress], [userAddress]] = await Promise.all([findConfigPda(), findUserStatePda({ owner: input.owner })]);
+    await transport.warm?.([CLOCK_SYSVAR, configAddress, input.input_mint, input.output_mint, userAddress]);
     const now = await chainTime(transport);
     const expiresAt = expiryOf(input, now);
     const params = validate(paramsOf(input.order));
@@ -92,6 +98,12 @@ export const prepareCreate = define({
     }
     const nonce = pickNonce(user, input.nonce, claimedBy(claims, input.owner, now));
     claim(claims, call, input.owner, nonce, now + PREPARED_TTL, now);
+    const [[intentAddress], receiverAddress, sourceAddress] = await Promise.all([
+      findIntentPda({ owner: input.owner, nonce }),
+      findAssociatedTokenAddress({ owner: input.owner, mint: input.output_mint, tokenProgram: outputToken.tokenProgram }),
+      findAssociatedTokenAddress({ owner: input.owner, mint: input.input_mint, tokenProgram: inputToken.tokenProgram }),
+    ]);
+    await transport.warm?.([intentAddress, receiverAddress, sourceAddress]);
     const intent = await unusedIntent(transport, input.owner, nonce);
     const owner = createNoopSigner(input.owner);
     const receiver = await tokenAccountIfMissing(

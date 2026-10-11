@@ -1074,6 +1074,7 @@ describe("process plumbing", () => {
     expect(rt.loadSigner).toBe(loadKeypairFile);
     expect(Object.keys(rt.transport("http://127.0.0.1:1"))).toEqual([
       "getAccount",
+      "getAccounts",
       "send",
       "airdrop",
       "latestBlockhash",

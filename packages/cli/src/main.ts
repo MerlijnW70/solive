@@ -8,7 +8,7 @@ import { ENV_URL, outputOf, parse, UsageError } from "./args.js";
 import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
 import { printableLines, render, renderText } from "./render.js";
-import { changesFrom, intentNotifications, type RpcLike, rpcTransport } from "./transport.js";
+import { changesFrom, intentNotifications, type RpcLike, rpcTransport, signatureWatch } from "./transport.js";
 import { withSettings } from "./wallet.js";
 import { WALLET_NOTICE } from "./agent/wallet.js";
 
@@ -91,7 +91,7 @@ export const FETCH_TIMEOUT_MS = 10_000;
 
 export function nodeRuntime(clock: () => number = Date.now, pipes: Pipes = process, timeoutMs = FETCH_TIMEOUT_MS): Runtime {
   return {
-    transport: (url) => rpcTransport(createSolanaRpc(url) as unknown as RpcLike),
+    transport: (url) => rpcTransport(createSolanaRpc(url) as unknown as RpcLike, undefined, signatureWatch(url)),
     intentChanges: (url) => changesFrom(intentNotifications(url)),
     loadSigner: loadKeypairFile,
     readText: (path) => readFile(path, "utf8"),
