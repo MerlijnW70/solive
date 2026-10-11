@@ -15,7 +15,12 @@ const json = [...PAGE.matchAll(/^```json\n([\s\S]*?)^```$/gm)].map((m) => (m[1] 
 describe("the AI guide", () => {
   it("installs the published server the same way in every app, and the server takes those arguments", () => {
     expect(Object.keys(manifest.bin)).toHaveLength(1);
-    expect(sh).toEqual([`claude mcp add solive -- npx ${ARGS.join(" ")}`]);
+    const [claude, codex, code] = sh;
+    expect(sh).toHaveLength(3);
+    expect(claude).toBe(`claude mcp add solive -- npx ${ARGS.join(" ")}`);
+    expect(codex).toBe(`codex mcp add solive -- npx ${ARGS.join(" ")}`);
+    const added = /^code --add-mcp '(.*)'$/.exec(code ?? "")?.[1] ?? "";
+    expect(JSON.parse(added)).toEqual({ name: "solive", command: "npx", args: ARGS });
     expect(json.map((j) => JSON.parse(j))).toEqual([{ mcpServers: { solive: { command: "npx", args: ARGS } } }]);
     expect(parse(ARGS.slice(2), {})).toMatchObject({ name: "mcp", url: CLUSTERS["devnet"], wallet: true });
     const [, major, minor] = /^>=(\d+)\.(\d+)\.0$/.exec(manifest.engines.node) ?? [];

@@ -10,7 +10,19 @@ Claude Code:
 claude mcp add solive -- npx -y @intent-engine/cli mcp --url devnet --wallet
 ```
 
-Other apps: add this to the app's MCP settings and restart it.
+Codex:
+
+```sh
+codex mcp add solive -- npx -y @intent-engine/cli mcp --url devnet --wallet
+```
+
+VS Code:
+
+```sh
+code --add-mcp '{"name":"solive","command":"npx","args":["-y","@intent-engine/cli","mcp","--url","devnet","--wallet"]}'
+```
+
+Cursor: put this in `~/.cursor/mcp.json`. Other apps: add it to the app's MCP settings. Then restart the app.
 
 ```json
 {
