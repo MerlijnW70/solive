@@ -356,7 +356,23 @@ export function changedAccount(note: unknown): ProgramAccount | null {
   return { address: value.pubkey as Address, data: new Uint8Array(Buffer.from(data[0], "base64")) };
 }
 
-export function changesFrom(notifications: Notifications): IntentChanges {
+export const RECONNECT_MS: readonly number[] = [1_000, 2_000, 5_000, 10_000, 30_000];
+
+function pause(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
+}
+
+export function changesFrom(notifications: Notifications, reconnect: readonly number[] = RECONNECT_MS): IntentChanges {
   const controller = new AbortController();
   const pending = new Map<Address, Uint8Array>();
   let wake: (() => void) | undefined;
@@ -365,9 +381,11 @@ export function changesFrom(notifications: Notifications): IntentChanges {
     pending.clear();
     return changed;
   };
-  const listen = async () => {
+  let failures = 0;
+  const consume = async () => {
     const iterator = (await notifications(controller.signal))[Symbol.asyncIterator]();
     for (let next = await iterator.next(); next.done !== true; next = await iterator.next()) {
+      failures = 0;
       const changed = changedAccount(next.value);
       if (changed !== null) {
         pending.set(changed.address, changed.data);
@@ -375,7 +393,17 @@ export function changesFrom(notifications: Notifications): IntentChanges {
       }
     }
   };
-  listen().catch(() => undefined);
+  const listen = async () => {
+    while (!controller.signal.aborted) {
+      await consume().catch(() => undefined);
+      if (controller.signal.aborted) {
+        return;
+      }
+      await pause(reconnect[Math.min(failures, reconnect.length - 1)] ?? 0, controller.signal);
+      failures++;
+    }
+  };
+  void listen();
   return {
     wait: (seconds) =>
       new Promise((resolve) => {

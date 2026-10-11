@@ -425,6 +425,52 @@ describe("intent changes", () => {
     expect(aborted).toBe(true);
   });
 
+  it("reconnects after the stream fails or ends, waiting longer after each failure and starting over once it hears again", async () => {
+    const opened: number[] = [];
+    const started = Date.now();
+    const streams: (() => AsyncIterable<unknown>)[] = [
+      () => {
+        throw new Error("refused");
+      },
+      () => {
+        throw new Error("refused again");
+      },
+      () => ({
+        [Symbol.asyncIterator]: () => {
+          let sent = false;
+          return {
+            next: async () => {
+              if (sent) {
+                return { value: undefined, done: true };
+              }
+              sent = true;
+              return { value: note(OWNER, 9), done: false };
+            },
+          };
+        },
+      }),
+    ];
+    let quiet: (() => void) | undefined;
+    const changes = changesFrom(async () => {
+      opened.push(Date.now() - started);
+      const stream = streams.shift();
+      if (stream !== undefined) {
+        return stream();
+      }
+      return { [Symbol.asyncIterator]: () => ({ next: () => new Promise<IteratorResult<unknown>>((resolve) => (quiet = () => resolve({ value: undefined, done: true }))) }) };
+    }, [20, 60, 1_000]);
+    expect(await changes.wait(5)).toEqual([{ address: OWNER, data: new Uint8Array([9]) }]);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    expect(opened).toHaveLength(4);
+    expect((opened[1] ?? 0) - (opened[0] ?? 0)).toBeGreaterThanOrEqual(15);
+    expect((opened[2] ?? 0) - (opened[1] ?? 0)).toBeGreaterThanOrEqual(55);
+    expect((opened[3] ?? 0) - (opened[2] ?? 0)).toBeLessThan(55);
+    changes.close();
+    quiet?.();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(opened).toHaveLength(4);
+  });
+
   it("falls back to the interval when the websocket cannot be opened", async () => {
     const changes = changesFrom(async () => {
       throw new Error("no websocket");
