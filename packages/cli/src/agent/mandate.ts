@@ -26,6 +26,7 @@ import {
   mandateLane,
   mandateKinds,
   validate,
+  tokenOf,
 } from "@intent-engine/core";
 import { chainTime, createdAccount, engineAccount, loadConfig, MissingAccount, mintOf, tokenProgramOf } from "../accounts.js";
 import type { Transport } from "../transport.js";
@@ -50,6 +51,7 @@ import { type Call, claim, claimedBy, type Claims, PREPARED_TTL } from "./claims
 import { decimalsFor } from "./read.js";
 import { AgentRefusal, SimulationFailed } from "./problems.js";
 import { orderSchema, paramsOf, partnerSchema, preparedSchema, preparedView } from "./shapes.js";
+import { TOKEN_NAMES, tokenNames } from "../tokens.js";
 import {
   account,
   amount,
@@ -232,6 +234,7 @@ export const prepareMandate = define({
     const described = describeMandate(spec, {
       inputMint: input.input_mint,
       outputMint: input.output_mint,
+      ...tokenNames(input.input_mint, input.output_mint),
       now,
       inputDecimals: inputToken.decimals,
       outputDecimals: outputToken.decimals,
@@ -347,7 +350,7 @@ export const getMandate = define({
       floor: { out: mandate.floorOut, in: mandate.floorIn },
       partner: mandate.partnerBps === 0 ? null : { account: mandate.partner, bps: mandate.partnerBps },
       agent_fee: mandate.agentFee,
-      summary: describeMandate(specOf(mandate), { inputMint: mandate.inputMint, outputMint: mandate.outputMint, now, ...decimals }).lines,
+      summary: describeMandate(specOf(mandate), { inputMint: mandate.inputMint, outputMint: mandate.outputMint, now, ...decimals, ...tokenNames(mandate.inputMint, mandate.outputMint) }).lines,
     };
   },
 });
@@ -428,7 +431,7 @@ export const prepareRevokeMandate = define({
         `Revokes mandate ${address}: ${input.agent} can no longer create intents for you, and nobody can fill the ones it made`,
         ...(chosen.length === 0
           ? ["None of the agent's intents under it are open"]
-          : [`Cancels the agent's ${chosen.length} open intent(s) and returns ${show(refunded)} of ${mandate.inputMint} to you`]),
+          : [`Cancels the agent's ${chosen.length} open intent(s) and returns ${show(refunded)} of ${tokenOf(mandate.inputMint, TOKEN_NAMES[mandate.inputMint])} to you`]),
         ...(left === 0 ? [] : [`Leaves ${left} more of its intents open but unfillable; cancel them with ${tool("prepare_cancel")}`]),
         allowance.after === allowance.before
           ? `Leaves the engine's spending allowance on ${mandate.inputAccount} at ${show(allowance.before)}`
@@ -531,13 +534,13 @@ async function agentIntent(
       summary: [
         ...describeTerms(
           { kind: params.kind, params: encodeParams(params), inputMint: mandate.inputMint, outputMint: mandate.outputMint },
-          { inputDecimals: inputToken.decimals, outputDecimals: outputToken.decimals },
+          { inputDecimals: inputToken.decimals, outputDecimals: outputToken.decimals, ...tokenNames(mandate.inputMint, mandate.outputMint) },
         ),
         `Expires: ${formatTime(expiresAt)}`,
         ...(mandate.agentFee === 0n
           ? []
           : [
-              `Agent fee: ${formatAmount(mandate.agentFee, inputToken.decimals)} of ${mandate.inputMint}, held with the escrow and paid to the agent only if this intent fills; refunded to the owner if it is cancelled or expires`,
+              `Agent fee: ${formatAmount(mandate.agentFee, inputToken.decimals)} of ${tokenOf(mandate.inputMint, TOKEN_NAMES[mandate.inputMint])}, held with the escrow and paid to the agent only if this intent fills; refunded to the owner if it is cancelled or expires`,
             ]),
       ],
     },

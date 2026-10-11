@@ -24,7 +24,11 @@ export type DescribeOptions = {
   outputTokenProgram: Address;
   inputDecimals?: number;
   outputDecimals?: number;
-};
+} & TokenNames;
+
+export type TokenNames = { inputName?: string | undefined; outputName?: string | undefined };
+
+export const tokenOf = (mint: Address, name: string | undefined): string => (name === undefined ? mint : `${name} (${mint})`);
 
 export type SignedIntentDescription = {
   lines: string[];
@@ -80,11 +84,11 @@ export type TermsFields = Pick<SignedIntentFields, "kind" | "params" | "inputMin
 
 export function describeTerms(
   f: TermsFields,
-  o: { inputDecimals?: number | undefined; outputDecimals?: number | undefined },
+  o: { inputDecimals?: number | undefined; outputDecimals?: number | undefined } & TokenNames,
 ): string[] {
   const params = decodeParams(f.kind, f.params);
-  const sell = (amount: bigint) => `Sell: exactly ${formatAmount(amount, o.inputDecimals)} of ${f.inputMint}`;
-  const out = (amount: bigint) => `${formatAmount(amount, o.outputDecimals)} of ${f.outputMint}`;
+  const sell = (amount: bigint) => `Sell: exactly ${formatAmount(amount, o.inputDecimals)} of ${tokenOf(f.inputMint, o.inputName)}`;
+  const out = (amount: bigint) => `${formatAmount(amount, o.outputDecimals)} of ${tokenOf(f.outputMint, o.outputName)}`;
   switch (params.kind) {
     case Kind.SwapExactIn:
       return [sell(params.amountIn), `Receive: at least ${out(params.minOut)}`];
@@ -99,7 +103,7 @@ export function describeTerms(
       return [
         sell(params.amountIn),
         `Settles: when ${params.attestor} attests a result between ${params.minResult} and ${params.maxResult}`,
-        `Output token: ${f.outputMint}, recorded with the intent only; an attested settlement pays you nothing on chain`,
+        `Output token: ${tokenOf(f.outputMint, o.outputName)}, recorded with the intent only; an attested settlement pays you nothing on chain`,
       ];
   }
 }
@@ -148,7 +152,7 @@ export async function describeSignedIntent(
     ...partnerLine(f),
     ...(relayerFee === 0n
       ? []
-      : [`Relayer fee: ${formatAmount(relayerFee, o.inputDecimals)} of ${f.inputMint}, paid from ${f.ownerInput} to whoever submits it`]),
+      : [`Relayer fee: ${formatAmount(relayerFee, o.inputDecimals)} of ${tokenOf(f.inputMint, o.inputName)}, paid from ${f.ownerInput} to whoever submits it`]),
     `Cluster domain: ${hex(f.domain)}`,
     ...(f.program === undefined ? [] : [`Program: ${f.program}`]),
     `Revoke: this signature stays usable until ${formatTime(f.submitBy)}; cancel it sooner by advancing your signing epoch or your nonce base past it, or by revoking the engine's spending allowance`,

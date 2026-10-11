@@ -2,6 +2,7 @@ import type { Address } from "@solana/kit";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
+  tokenOf,
   BPS_DENOMINATOR,
   checkSignable,
   createExt,
@@ -107,6 +108,21 @@ describe("terms an owner reads before signing", () => {
       `Settles: when ${ATTESTOR} attests a result between 1 and 2`,
       `Output token: ${OUT}, recorded with the intent only; an attested settlement pays you nothing on chain`,
     ]);
+  });
+
+  it("put a name the caller knows in front of the mint it stands for, and nothing when it knows none", () => {
+    const named = { inputDecimals: 9, outputDecimals: 6, inputName: "SOL", outputName: "USD" };
+    const terms = (params: Parameters<typeof encodeParams>[0], o: Parameters<typeof describeTerms>[1]) =>
+      describeTerms({ kind: params.kind, params: encodeParams(params), inputMint: IN, outputMint: OUT }, o);
+    expect(terms({ kind: Kind.SwapExactIn, amountIn: 1_500_000_000n, minOut: 2_000_000n }, named)).toEqual([
+      `Sell: exactly 1.5 of SOL (${IN})`,
+      `Receive: at least 2 of USD (${OUT})`,
+    ]);
+    expect(terms({ kind: Kind.AttestedResult, amountIn: 10n, minResult: 1n, maxResult: 2n, attestor: ATTESTOR }, { outputName: "USD" })[2]).toBe(
+      `Output token: USD (${OUT}), recorded with the intent only; an attested settlement pays you nothing on chain`,
+    );
+    expect(terms({ kind: Kind.SwapExactIn, amountIn: 1n, minOut: 1n }, { inputName: "SOL" })).toEqual([`Sell: exactly 1 raw units of SOL (${IN})`, `Receive: at least 1 raw units of ${OUT}`]);
+    expect(tokenOf(OUT, undefined)).toBe(OUT);
   });
 
   it("refuse to sign unknown flags or a malformed extension and pass sound fields through unchanged", () => {

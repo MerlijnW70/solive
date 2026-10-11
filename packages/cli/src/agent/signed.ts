@@ -49,6 +49,7 @@ import { bytesFit } from "@intent-engine/solver";
 import { admitRelay, type Relay } from "./relay.js";
 import { type Call, claim, claimedBy, enter } from "./claims.js";
 import { type Order, orderSchema, paramsOf, partnerSchema, preparedSchema, preparedView } from "./shapes.js";
+import { tokenNames } from "../tokens.js";
 import { account, amount, integer, list, nullable, object, optional, text, time } from "./schema.js";
 
 export const DEFAULT_SUBMIT_WITHIN = 60 * 60;
@@ -230,6 +231,7 @@ export const prepareSignedIntent = define({
       outputTokenProgram: outputToken.tokenProgram,
       inputDecimals: inputToken.decimals,
       outputDecimals: outputToken.decimals,
+      ...tokenNames(fields.inputMint, fields.outputMint),
     });
     const escrow = escrowAmount(params);
     const allowance = await raiseAllowance(transport, input.owner, fields.ownerInput, escrow + terms.relayer_fee);
@@ -430,6 +432,7 @@ export const previewSignedIntent = define({
       outputTokenProgram: outputToken.tokenProgram,
       inputDecimals: inputToken.decimals,
       outputDecimals: outputToken.decimals,
+      ...tokenNames(fields.inputMint, fields.outputMint),
     });
     return {
       intent,

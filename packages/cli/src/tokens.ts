@@ -16,3 +16,10 @@ export function tokenNamed(text: string, url: string): string | Error {
   }
   return text;
 }
+
+export const TOKEN_NAMES: Readonly<Record<string, string>> = { [NATIVE_MINT]: "SOL", [TEST_TOKEN]: "TEST" };
+
+export function tokenNames(inputMint: Address, outputMint: Address): { inputName?: string; outputName?: string } {
+  const [inputName, outputName] = [TOKEN_NAMES[inputMint], TOKEN_NAMES[outputMint]];
+  return { ...(inputName === undefined ? {} : { inputName }), ...(outputName === undefined ? {} : { outputName }) };
+}

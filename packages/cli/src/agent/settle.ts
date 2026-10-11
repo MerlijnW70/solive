@@ -7,6 +7,7 @@ import {
   findVaultPda,
   formatAmount,
   getIntentDecoder,
+  tokenOf,
 } from "@intent-engine/core";
 import { chainTime, loadIntent, tokenProgramOf } from "../accounts.js";
 import { closing, CostlyFunding, crankAction, expiring, type Funding, UnfundedAccount, vaultBalance } from "../crank.js";
@@ -16,6 +17,7 @@ import { prepare } from "./prepare.js";
 import { AgentRefusal } from "./problems.js";
 import { preparedSchema, preparedView } from "./shapes.js";
 import { account, amount, choice, flag, integer, list, object, optional, text } from "./schema.js";
+import { TOKEN_NAMES, tokenNames } from "../tokens.js";
 import { decimalsFor, SOL_DECIMALS } from "./read.js";
 
 export const WORK_LIMIT = 100;
@@ -78,7 +80,7 @@ export const prepareCancel = define({
         ? []
         : describeTerms(
             { kind: intent.kind, params: Uint8Array.from(intent.params), inputMint: intent.inputMint, outputMint: intent.outputMint },
-            decimals,
+            { ...decimals, ...tokenNames(intent.inputMint, intent.outputMint) },
           );
     return {
       intent: address,
@@ -86,7 +88,7 @@ export const prepareCancel = define({
       summary: [
         `Cancels intent ${address} (nonce ${intent.nonce}); nobody can fill it afterwards`,
         ...terms.map((line) => `Cancelled terms: ${line}`),
-        `Returns ${formatAmount(refund, decimals.inputDecimals)} of ${intent.inputMint} to your token account`,
+        `Returns ${formatAmount(refund, decimals.inputDecimals)} of ${tokenOf(intent.inputMint, TOKEN_NAMES[intent.inputMint])} to your token account`,
         andClose
           ? `Closes the intent and its escrow account in the same transaction and returns their ${rent} of rent and bounty to you; the intent can no longer be read afterwards`
           : ownPaid

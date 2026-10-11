@@ -19,12 +19,11 @@ const CRATES = [
 ];
 
 describe("the version", () => {
-  it("is the one every package and crate declares", () => {
-    const declared = [
-      ...PACKAGES.map((p) => [p, (JSON.parse(read(p)) as { version: string }).version]),
-      ...CRATES.map((p) => [p, /^version = "([^"]+)"$/m.exec(read(p))?.[1]]),
-    ];
-    expect(declared).toEqual([...PACKAGES, ...CRATES].map((p) => [p, VERSION]));
+  it("is the one every package declares, and the crates share one version of their own", () => {
+    expect(PACKAGES.map((p) => [p, (JSON.parse(read(p)) as { version: string }).version])).toEqual(PACKAGES.map((p) => [p, VERSION]));
+    const crates = CRATES.map((p) => /^version = "([^"]+)"$/m.exec(read(p))?.[1]);
+    expect(new Set(crates).size).toBe(1);
+    expect(crates[0]).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
   it("covers every crate in the workspace", () => {

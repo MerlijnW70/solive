@@ -13,6 +13,7 @@ import {
 } from "@intent-engine/core";
 import { STATUS } from "../accounts.js";
 import type { Prepared } from "./prepare.js";
+import { tokenNames } from "../tokens.js";
 import {
   account,
   amount,
@@ -183,7 +184,7 @@ export function intentView(address: Address, intent: Intent, decimals: Decimals 
     summary: [
       ...(typeof params === "string"
         ? [`Unreadable terms: ${params}`]
-        : describeTerms({ kind: params.kind, params: raw, inputMint: intent.inputMint, outputMint: intent.outputMint }, decimals)),
+        : describeTerms({ kind: params.kind, params: raw, inputMint: intent.inputMint, outputMint: intent.outputMint }, { ...decimals, ...tokenNames(intent.inputMint, intent.outputMint) })),
       ...(SETTLED.has(intent.status) ? [SETTLED_LINE] : []),
     ],
   };

@@ -94,6 +94,7 @@ describe("the wallet server", () => {
     const preview = await ok(client, "wallet_swap", { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5" });
     expect(preview).toMatchObject({ nonce: "0", sent: false, next: PREVIEW_ONLY });
     expect(preview["summary"]).toContain("Setup: wraps 0.05 of your SOL into your wrapped SOL account");
+    expect(preview["summary"].slice(0, 2)).toEqual([`Sell: exactly 0.05 of SOL (${NATIVE_MINT})`, `Receive: at least 5 of TEST (${TEST_TOKEN})`]);
     const [intent] = await findIntentPda({ owner, nonce: 0n });
     expect(preview["intent"]).toBe(intent);
     expect(h.svm.getAccount(intent).exists).toBe(false);
@@ -107,6 +108,7 @@ describe("the wallet server", () => {
     expect(shown).toMatchObject({ address: owner, tokens: [{ mint: NATIVE_MINT, account: wrapped, balance: "0" }, { mint: TEST_TOKEN, name: "TEST" }] });
     const cancel = await ok(client, "wallet_cancel", { nonce: "0" });
     expect(cancel).toMatchObject({ intent, refund: (LAMPORTS_PER_SOL / 20n).toString(), sent: false, next: PREVIEW_ONLY });
+    expect(cancel["summary"]).toContain(`Returns 0.05 of SOL (${NATIVE_MINT}) to your token account`);
     expect(h.svm.getAccount(intent).exists).toBe(true);
     expect(await ok(client, "wallet_cancel", { nonce: "0", send: true })).toMatchObject({ intent, sent: true });
     expect(h.svm.getAccount(intent).exists).toBe(false);

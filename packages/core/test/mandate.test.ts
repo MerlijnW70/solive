@@ -116,6 +116,9 @@ describe("mandates", () => {
         "Revoke it any time, or revoke every mandate and signature at once by advancing your signing epoch; once revoked, no intent the agent opened can be filled, and you can cancel them to take your tokens back",
       ],
     });
+    const named = describeMandate(spec({ agentFee: 5n }), { inputMint: IN, outputMint: OUT, now: NOW, inputDecimals: 2, inputName: "SOL", outputName: "USD" });
+    expect(named.lines.filter((line) => line.includes(IN)).every((line) => line.includes(`SOL (${IN})`))).toBe(true);
+    expect(named.lines.some((line) => line.includes(`of USD (${OUT}) for every`))).toBe(true);
     const paid = describeMandate(spec({ agentFee: 5n }), { inputMint: IN, outputMint: OUT, now: NOW, inputDecimals: 2 });
     expect(paid.lines.filter((line) => /not refunded|paid as each intent is created/.test(line))).toEqual([]);
     expect(paid.lines.slice(7, 10)).toEqual([

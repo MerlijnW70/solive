@@ -1,5 +1,5 @@
 import type { Address } from "@solana/kit";
-import { formatAmount, formatTime } from "./describe.js";
+import { formatAmount, formatTime, type TokenNames, tokenOf } from "./describe.js";
 import { encodePartner, type Partner } from "./ext.js";
 import { Kind, kindBit } from "./kinds.js";
 
@@ -85,7 +85,7 @@ export type MandateContext = {
   now: bigint;
   inputDecimals?: number | undefined;
   outputDecimals?: number | undefined;
-};
+} & TokenNames;
 
 export function describeMandate(spec: MandateSpec, o: MandateContext): { lines: string[]; warnings: string[] } {
   const kinds = mandateKinds(spec.kinds);
@@ -93,15 +93,15 @@ export function describeMandate(spec: MandateSpec, o: MandateContext): { lines: 
   if (agentFee >= spec.perIntent) {
     throw new RangeError(`an agent fee of ${agentFee} leaves nothing to sell under a per-intent cap of ${spec.perIntent}`);
   }
-  const sell = (amount: bigint) => `${formatAmount(amount, o.inputDecimals)} of ${o.inputMint}`;
+  const sell = (amount: bigint) => `${formatAmount(amount, o.inputDecimals)} of ${tokenOf(o.inputMint, o.inputName)}`;
   const warnings = spec.validUntil - o.now > LONG_MANDATE_SECONDS ? [WARN_LONG_MANDATE] : [];
   return {
     lines: [
       `Agent: ${spec.agent}`,
-      `May sell: ${o.inputMint} for ${o.outputMint} only, as ${kinds.join(", ")} intents`,
+      `May sell: ${tokenOf(o.inputMint, o.inputName)} for ${tokenOf(o.outputMint, o.outputName)} only, as ${kinds.join(", ")} intents`,
       `Per intent: at most ${sell(spec.perIntent)}`,
       `In total: at most ${sell(spec.total)} over at most ${spec.maxIntents} intents`,
-      `Price floor: at least ${formatAmount(spec.floorOut, o.outputDecimals)} of ${o.outputMint} for every ${sell(spec.floorIn)}`,
+      `Price floor: at least ${formatAmount(spec.floorOut, o.outputDecimals)} of ${tokenOf(o.outputMint, o.outputName)} for every ${sell(spec.floorIn)}`,
       `Each intent expires within ${spec.maxTtl} seconds of its creation`,
       `Valid until: ${formatTime(spec.validUntil)}`,
       ...(spec.partner === undefined ? [] : [`Partner fee: ${spec.partner.bps} bps of the sold amount to ${spec.partner.key}`]),

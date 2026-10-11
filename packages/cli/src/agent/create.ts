@@ -19,6 +19,7 @@ import { initUserIfMissing, pickNonce, setupLines, tokenAccountIfMissing, unused
 import { prepare } from "./prepare.js";
 import { InvalidInput } from "./schema.js";
 import { orderSchema, paramsOf, partnerSchema, preparedSchema, preparedView } from "./shapes.js";
+import { tokenNames } from "../tokens.js";
 import { account, amount, integer, list, object, optional, text, time } from "./schema.js";
 
 export const MAX_EXPIRES_IN = 365 * 24 * 60 * 60;
@@ -125,7 +126,7 @@ export const prepareCreate = define({
       summary: [
         ...describeTerms(
           { kind: params.kind, params: encodeParams(params), inputMint: input.input_mint, outputMint: input.output_mint },
-          { inputDecimals: inputToken.decimals, outputDecimals: outputToken.decimals },
+          { inputDecimals: inputToken.decimals, outputDecimals: outputToken.decimals, ...tokenNames(input.input_mint, input.output_mint) },
         ),
         `Expires: ${formatTime(expiresAt)}`,
         ...(input.partner === undefined ? [] : [`Partner fee: ${input.partner.bps} bps of the sold amount to ${input.partner.account}`]),
