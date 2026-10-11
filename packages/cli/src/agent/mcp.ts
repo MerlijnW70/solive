@@ -23,10 +23,11 @@ export const WALLET_INSTRUCTIONS = [
   `Before anything else, show the user this notice once, every line:`,
   ...WALLET_NOTICE.map((line) => `- ${line}`),
   `Start with ${tool("wallet_setup")}; it creates and funds the wallet and is safe to call again.`,
-  `${tool("wallet_swap")}, ${tool("wallet_auction")}, ${tool("wallet_recurring")} and ${tool("wallet_cancel")} only preview until called with send: true. Show the user the summary first and send only after they say yes.`,
+  `${tool("wallet_swap")}, ${tool("wallet_auction")}, ${tool("wallet_recurring")}, ${tool("wallet_escrow")}, ${tool("wallet_attest")} and ${tool("wallet_cancel")} only preview until called with send: true. Show the user the summary first and send only after they say yes.`,
   `Name tokens SOL and TEST, or by mint address. Amounts are whole tokens such as 0.05.`,
   `Solvers pay the least an intent asks. ${tool("wallet_swap")} therefore starts its ask a little above the best recent fill and lets it fall to min_receive, so a solver takes it near the most it can pay: set min_receive to the least the user accepts. ${tool("wallet_estimate")} shows what recent fills paid.`,
   `${tool("wallet_recurring")} repeats a swap on a schedule, such as every hour, by sending every order now with its ask held until its turn.`,
+  `${tool("wallet_escrow")} locks a payment that only a named attestor can release to the wallet it chooses, such as paying another agent once a reviewer approves its work; a server whose wallet is that attestor releases it with ${tool("wallet_attest")}.`,
   `After sending, ${tool("wallet_wait")} waits for the fill and says what the wallet received; ${tool("wallet_intents")} and ${tool("wallet_balance")} show the rest.`,
 ].join("\n");
 

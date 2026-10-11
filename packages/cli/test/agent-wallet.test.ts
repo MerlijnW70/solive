@@ -1,4 +1,4 @@
-import { type Address, lamports, none } from "@solana/kit";
+import { type Address, generateKeyPairSigner, lamports, none } from "@solana/kit";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
@@ -14,6 +14,9 @@ import {
   getFillEndedEventEncoder,
   getIntentFilledEventEncoder,
   IntentStatus,
+  formatAmount,
+  splitFee,
+  WARN_ATTESTOR,
 } from "@intent-engine/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { WALLET_NOT_MAINNET } from "../src/args.js";
@@ -26,6 +29,7 @@ import {
   LANDING_SECONDS,
   MAINNET_GENESIS,
   NO_FILLS,
+  notAttestor,
   NO_WALLET,
   PREVIEW_ONLY,
   stillWaiting,
@@ -41,7 +45,7 @@ import { ACTIONS } from "../src/agent/registry.js";
 import { EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { NATIVE_MINT, TEST_TOKEN } from "../src/tokens.js";
 import { AIRDROP, AIRDROP_REFUSED, defaultWallet, FUNDED, LAMPORTS_PER_SOL } from "../src/wallet.js";
-import { balance, cli, h, HOME, setNow, transport, world } from "./harness.js";
+import { balance, cli, FEE_BPS, h, HOME, setNow, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -262,6 +266,39 @@ describe("the wallet server", () => {
     expect(partly["orders"][0]).toHaveProperty("intent");
     expect(partly["orders"][1]).not.toHaveProperty("intent");
     expect((await ok(client, "wallet_intents"))["intents"]).toHaveLength(1);
+  });
+
+  it("escrows a payment that only the named attestor can release, to the wallet it names", async () => {
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    const worker = (await generateKeyPairSigner()).address;
+    const stranger = (await generateKeyPairSigner()).address;
+    const preview = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner });
+    expect(preview).toMatchObject({ sent: false, next: PREVIEW_ONLY, warnings: expect.arrayContaining([WARN_ATTESTOR]) });
+    expect(h.svm.getAccount(preview["intent"] as Address).exists).toBe(false);
+    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, min_result: "1", max_result: "3", send: true });
+    const intent = escrow["intent"] as Address;
+    const nonce = escrow["nonce"] as string;
+    expect(h.svm.getAccount(intent).exists).toBe(true);
+    const release = { owner, nonce, pay_to: worker };
+    expect((await call(client, "wallet_attest", { ...release, result: "4" })).value).toMatchObject({ code: "InvalidInput" });
+    const shown = await ok(client, "wallet_attest", release);
+    const payee = await findAssociatedTokenAddress({ owner: worker, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const { fee, net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);
+    expect(shown).toMatchObject({ intent, pay_to: worker, payee, result: "1", paid: formatAmount(net, 9), fee: formatAmount(fee, 9), sent: false });
+    expect(shown["summary"][0]).toBe(`Pays: ${formatAmount(net, 9)} of SOL to ${worker} from ${owner}'s escrow`);
+    expect(shown["summary"]).toContain(`Setup: creates ${worker}'s SOL account, paid by this wallet`);
+    expect(shown["summary"]).toContain("Setup: creates the engine treasury's SOL account for the fee, paid by this wallet");
+    expect(JSON.stringify(shown)).not.toMatch(/transaction/);
+    expect(h.svm.getAccount(payee).exists).toBe(false);
+    expect(await ok(client, "wallet_attest", { ...release, result: "2", send: true })).toMatchObject({ sent: true, signature: expect.any(String) });
+    expect(balance(payee)).toBe(net);
+    expect((await call(client, "wallet_attest", release)).value).toMatchObject({ code: "InvalidTransition" });
+    const other = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.01", attestor: stranger, send: true });
+    expect((await call(client, "wallet_attest", { owner, nonce: other["nonce"], pay_to: worker, send: true })).value).toMatchObject({
+      code: "Unauthorized",
+      hint: notAttestor(stranger),
+    });
+    expect((await call(client, "wallet_attest", { owner, nonce: "99", pay_to: worker })).value).toMatchObject({ code: "NotFound" });
   });
 
   it("says how to fund an empty wallet before it tries to swap", async () => {

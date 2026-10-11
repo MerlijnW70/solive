@@ -2,7 +2,7 @@
 
 # MCP tools
 
-16 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 9 wallet tools, listed first.
+16 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 11 wallet tools, listed first.
 
 ## solive_wallet_setup
 
@@ -98,6 +98,40 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 | `start_receive` | string | no | whole tokens each order asks when it opens; default a little above the best recent fill |
 | `falls_over` | integer 60..2592000 | no | seconds each order's ask takes to fall to min_receive; default 120 |
 | `send` | boolean | no | true signs and sends every order; leave out to preview |
+
+## solive_wallet_escrow
+
+Served only with `--wallet`.
+
+Lock an exact amount of one token from this server's wallet in an attested intent: it goes, minus the engine fee, to whichever wallet the named attestor later signs for, once the attestor attests a result between min_result and max_result. Use it to pay another agent for work that a third agent or a person judges. The attestor alone decides who is paid; nothing else is checked on chain, so name an attestor the user trusts. Until then the wallet can cancel it with solive_wallet_cancel, and after it expires anyone can return the escrow. Amounts are whole tokens such as 0.05. Without send it only previews; show the user the summary and call again with send: true once they approve.
+
+Effect: `submit` (read-only: false, destructive: false, idempotent: false)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `sell` | string | yes | SOL, TEST or a mint address: the token to pay with |
+| `amount` | string | yes | whole tokens to escrow, such as 0.05 |
+| `attestor` | address | yes | the wallet whose signature alone releases the escrow |
+| `min_result` | whole number as a decimal string | no | least result the attestor may attest; default 1 |
+| `max_result` | whole number as a decimal string | no | greatest result the attestor may attest; default min_result |
+| `expires_in` | integer 60..31536000 | no | least seconds the escrow stays open once sent; default 86400 |
+| `send` | boolean | no | true signs and sends; leave out to preview |
+
+## solive_wallet_attest
+
+Served only with `--wallet`.
+
+As the attestor an escrow names, sign that it pays pay_to and settle it on chain from this server's wallet: the escrowed tokens, minus the engine fee, go to pay_to's token account, which this creates if needed. Use it when this server's wallet was named attestor of an intent made with solive_wallet_escrow and the work it pays for is done. Without send it only previews and signs nothing; show the user the summary and call again with send: true once they approve.
+
+Effect: `submit` (read-only: false, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `owner` | address | yes | the wallet that made the escrow |
+| `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
+| `pay_to` | address | yes | the wallet to pay |
+| `result` | whole number as a decimal string | no | the result to attest, between the intent's min_result and max_result; default min_result |
+| `send` | boolean | no | true signs the attestation and settles; leave out to preview |
 
 ## solive_wallet_wait
 

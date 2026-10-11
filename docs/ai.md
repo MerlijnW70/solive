@@ -47,7 +47,11 @@ Or repeat a trade on a schedule:
 
 > Buy TEST with 0.05 SOL every hour, five times, for at least 9.5 TEST each.
 
-It swaps, auctions or cancels nothing until you say yes.
+Or pay another agent once someone you trust approves its work:
+
+> Escrow 0.05 SOL for the agent that writes my report; my reviewer's wallet decides who gets it.
+
+It swaps, escrows, releases or cancels nothing until you say yes.
 
 Before a trade it can estimate the price from recent fills. After a send it waits for the fill and tells you what you received.
 

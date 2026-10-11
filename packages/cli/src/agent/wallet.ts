@@ -1,9 +1,24 @@
 import type { Address, KeyPairSigner } from "@solana/kit";
-import { decodeEvent, findIntentPda, formatAmount, getIntentDecoder, IntentStatus, parseAmount } from "@intent-engine/core";
-import { chainTime, CLOCK_SYSVAR, mintOf } from "../accounts.js";
+import {
+  attestedFillMessage,
+  buildFillAttested,
+  decodeEvent,
+  decodeParams,
+  feeBpsFor,
+  findIntentPda,
+  formatAmount,
+  getIntentDecoder,
+  IntentStatus,
+  Kind,
+  parseAmount,
+  signEd25519Instruction,
+  splitFees,
+  WARN_ATTESTOR,
+} from "@intent-engine/core";
+import { chainTime, CLOCK_SYSVAR, loadConfig, mintOf } from "../accounts.js";
 import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "../args.js";
 import { execute, type PreparedView } from "../flows.js";
-import { TOKEN_NAMES, tokenNamed } from "../tokens.js";
+import { NATIVE_MINT, TOKEN_NAMES, tokenNamed } from "../tokens.js";
 import { neverLanded, type Transport, unmemoized } from "../transport.js";
 import { balances, defaultMints, FAUCET, type Files, PUBLIC_FAUCET, setup, withSettings } from "../wallet.js";
 import { type AgentContext, type AnyAction, define } from "./actions.js";
@@ -13,7 +28,9 @@ import { tool } from "./names.js";
 import { AgentRefusal, problemOf } from "./problems.js";
 import { listIntents } from "./read.js";
 import { InvalidInput, account, amount, choice, flag, integer, list, object, optional, type Schema, text, time } from "./schema.js";
-import { orderSchema } from "./shapes.js";
+import { orderSchema, preparedView } from "./shapes.js";
+import { tokenAccountIfMissing } from "./owner.js";
+import { prepare } from "./prepare.js";
 import { prepareCancel } from "./settle.js";
 import { STATUS } from "../accounts.js";
 
@@ -48,7 +65,7 @@ export const WALLET_NOTICE = [
   "Test network only: this wallet works on Solana devnet, testnet or localnet and refuses mainnet. Its tokens have no value.",
   "Your key stays on this machine: setup makes one unless a keypair is already configured, and names its file. Only signed transactions leave it.",
   "This server talks to no one but the RPC endpoint it was started with.",
-  "Nothing moves until you approve: swaps, auctions and cancels only preview until you say yes.",
+  "Nothing moves until you approve: swaps, auctions, escrows, releases and cancels only preview until you say yes.",
   "Do not send real funds to this wallet or use its key anywhere else.",
 ];
 
@@ -384,6 +401,153 @@ const walletSwap = define({
       };
     });
     return opening === undefined ? result : { ...result, start_receive: opening };
+  },
+});
+
+export const ESCROW_EXPIRES_IN = 86_400;
+
+function recordedMint(sell: Address, url: string): Address {
+  return sell === NATIVE_MINT ? mintNamed("TEST", url, "sell") : NATIVE_MINT;
+}
+
+const walletEscrow = define({
+  name: tool("wallet_escrow"),
+  title: "Escrow a payment for an attestor to release",
+  description: `Lock an exact amount of one token from this server's wallet in an attested intent: it goes, minus the engine fee, to whichever wallet the named attestor later signs for, once the attestor attests a result between min_result and max_result. Use it to pay another agent for work that a third agent or a person judges. The attestor alone decides who is paid; nothing else is checked on chain, so name an attestor the user trusts. Until then the wallet can cancel it with ${tool("wallet_cancel")}, and after it expires anyone can return the escrow. Amounts are whole tokens such as 0.05. Without send it only previews; show the user the summary and call again with send: true once they approve.`,
+  effect: "submit",
+  repeats: true,
+  input: object({
+    sell: text("SOL, TEST or a mint address: the token to pay with"),
+    amount: text("whole tokens to escrow, such as 0.05"),
+    attestor: account("the wallet whose signature alone releases the escrow"),
+    min_result: optional(amount("least result the attestor may attest; default 1")),
+    max_result: optional(amount("greatest result the attestor may attest; default min_result")),
+    expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds the escrow stays open once sent; default ${ESCROW_EXPIRES_IN}`)),
+    send: optional(flag("true signs and sends; leave out to preview")),
+  }),
+  output: offerOutput,
+  run: async (ctx: AgentContext, input, call: Call) => {
+    const wallet = access(ctx);
+    const sold = mintNamed(input.sell, wallet.url, "sell");
+    const least = input.min_result ?? 1n;
+    const most = input.max_result ?? least;
+    if (most < least) {
+      throw new InvalidInput([{ path: "max_result", message: "must be at least min_result" }]);
+    }
+    return offered(ctx, call, { sell: sold, buy: recordedMint(sold, wallet.url), send: input.send }, (token, _, now) => ({
+      order: { kind: "attested", amount_in: raw(input.amount, token.decimals, "amount"), min_result: least, max_result: most, attestor: input.attestor },
+      expires_at: now + BigInt((input.expires_in ?? ESCROW_EXPIRES_IN) + LANDING_SECONDS),
+    }));
+  },
+});
+
+export const notAttestor = (attestor: string) =>
+  `this intent names ${attestor} as its attestor, not this server's wallet; only that key can release it`;
+
+const walletAttest = define({
+  name: tool("wallet_attest"),
+  title: "Release an escrow as its attestor",
+  description: `As the attestor an escrow names, sign that it pays pay_to and settle it on chain from this server's wallet: the escrowed tokens, minus the engine fee, go to pay_to's token account, which this creates if needed. Use it when this server's wallet was named attestor of an intent made with ${tool("wallet_escrow")} and the work it pays for is done. Without send it only previews and signs nothing; show the user the summary and call again with send: true once they approve.`,
+  effect: "submit",
+  input: object({
+    owner: account("the wallet that made the escrow"),
+    nonce: amount("the escrow intent's nonce"),
+    pay_to: account("the wallet to pay"),
+    result: optional(amount("the result to attest, between the intent's min_result and max_result; default min_result")),
+    send: optional(flag("true signs the attestation and settles; leave out to preview")),
+  }),
+  output: object({
+    intent: account(),
+    pay_to: account(),
+    payee: account("pay_to's token account that receives the escrow"),
+    paid: text("whole tokens pay_to receives"),
+    fee: text("whole tokens kept as fees"),
+    result: amount(),
+    summary: list(text(), 8),
+    warnings: list(text(), 8),
+    sent: flag(),
+    signature: optional(text()),
+    next: optional(text()),
+  }),
+  run: async (ctx: AgentContext, input, call: Call) => {
+    const signer = await signerOf(ctx);
+    const [intent] = await findIntentPda({ owner: input.owner, nonce: input.nonce });
+    const [view, { config }] = await Promise.all([ctx.transport.getAccount(intent), loadConfig(ctx.transport)]);
+    if (view === null) {
+      throw new AgentRefusal("NotFound", `no intent ${intent}; it was settled, cancelled and closed, or never made`);
+    }
+    const held = getIntentDecoder().decode(view.data);
+    const params = decodeParams(held.kind, Uint8Array.from(held.params));
+    if (params.kind !== Kind.AttestedResult) {
+      throw new AgentRefusal("KindMismatch", "this intent is not an attested escrow");
+    }
+    if (params.attestor !== signer.address) {
+      throw new AgentRefusal("Unauthorized", notAttestor(params.attestor));
+    }
+    if (held.status !== IntentStatus.Open) {
+      throw new AgentRefusal("InvalidTransition", `this escrow is ${STATUS[held.status] ?? "not open"}, so it can no longer be released`);
+    }
+    if (held.expiresAt <= (await chainTime(ctx.transport))) {
+      throw new AgentRefusal("IntentExpired", "this escrow has expired; its owner gets it back instead");
+    }
+    const result = input.result ?? params.minResult;
+    if (result < params.minResult || result > params.maxResult) {
+      throw new InvalidInput([{ path: "result", message: `must be between ${params.minResult} and ${params.maxResult}` }]);
+    }
+    const token = await mintOf(ctx.transport, held.inputMint);
+    const payee = await tokenAccountIfMissing(ctx.transport, signer, input.pay_to, held.inputMint, token.tokenProgram);
+    const amountIn = held.escrowed - held.filled;
+    const maxFeeBps = feeBpsFor(config, held.kind) + held.partnerBps;
+    const shares = splitFees(amountIn, feeBpsFor(config, held.kind), held.partnerBps, config.partnerCutBps);
+    const treasury =
+      shares.protocol > 0n
+        ? await tokenAccountIfMissing(ctx.transport, signer, config.feeRecipient, held.inputMint, token.tokenProgram)
+        : { create: [] };
+    const message = await attestedFillMessage(signer.address, {
+      domain: Uint8Array.from(config.domain),
+      intent,
+      payee: payee.address,
+      amountIn,
+      result,
+      filled: held.filled,
+      revision: held.revision,
+      maxFeeBps,
+    });
+    const settle = await buildFillAttested({
+      solver: signer,
+      owner: input.owner,
+      nonce: input.nonce,
+      inputMint: held.inputMint,
+      inputTokenProgram: token.tokenProgram,
+      payee: payee.address,
+      ...(shares.protocol > 0n ? { feeRecipient: config.feeRecipient } : {}),
+      ...(held.partnerBps === 0 ? {} : { partner: held.partner }),
+      amountIn,
+      result,
+      maxFeeBps,
+    });
+    const name = TOKEN_NAMES[held.inputMint] ?? held.inputMint;
+    const paid = formatAmount(shares.net, token.decimals);
+    const prepared = preparedView(
+      await prepare(ctx.transport, [...payee.create, ...treasury.create, await signEd25519Instruction(signer, message), settle], signer.address),
+    );
+    const view2 = {
+      intent,
+      pay_to: input.pay_to,
+      payee: payee.address,
+      paid,
+      fee: formatAmount(shares.protocol + shares.partner, token.decimals),
+      result,
+      summary: [
+        `Pays: ${paid} of ${name} to ${input.pay_to} from ${input.owner}'s escrow`,
+        `Attests: result ${result}, signed by this server's wallet as the escrow's attestor`,
+        ...(payee.create.length === 0 ? [] : [`Setup: creates ${input.pay_to}'s ${name} account, paid by this wallet`]),
+        ...(treasury.create.length === 0 ? [] : [`Setup: creates the engine treasury's ${name} account for the fee, paid by this wallet`]),
+      ],
+      warnings: [WARN_ATTESTOR],
+      prepared,
+    };
+    return sent(ctx, signer, view2, input.send, call);
   },
 });
 
@@ -731,6 +895,8 @@ export const WALLET_ACTIONS: readonly AnyAction[] = [
   walletSwap,
   walletAuction,
   walletRecurring,
+  walletEscrow,
+  walletAttest,
   walletWait,
   walletIntents,
   walletCancel,
