@@ -153,7 +153,6 @@ export const prepareCrank = define({
       throw new AgentRefusal(
         "NothingToCrank",
         "this intent is still open and not yet expired, was cancelled and pays nothing to this cranker, or is not one this client can read",
-        true,
       );
     }
     const cranker = createNoopSigner(input.cranker);

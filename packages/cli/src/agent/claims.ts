@@ -34,14 +34,12 @@ export function claim(claims: Claims, call: Call, owner: Address, nonce: bigint,
     throw new AgentRefusal(
       "NoncePromised",
       `nonce ${nonce} of ${owner} is already handed to another pending request; leave nonce out to get a free one, or ask again once that request expires`,
-      true,
     );
   }
   if (pending.size >= MAX_PENDING_PER_OWNER) {
     throw new AgentRefusal(
       "TooManyPending",
       `${owner} already has ${MAX_PENDING_PER_OWNER} prepared requests waiting; submit some or let them expire (a signed intent holds its nonce until its submit_by), then ask again`,
-      true,
     );
   }
   const held = claims.held.get(owner) ?? new Map<bigint, bigint>();
@@ -59,7 +57,6 @@ export function enter(claims: Claims, key: string): () => void {
     throw new AgentRefusal(
       "SubmitInFlight",
       "this intent is being relayed by another request right now; ask again in a moment to see whether it landed",
-      true,
     );
   }
   claims.busy.add(key);

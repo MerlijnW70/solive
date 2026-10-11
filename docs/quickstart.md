@@ -60,7 +60,7 @@ intent-engine create swap --input-mint So111111111111111111111111111111111111111
 
 ## 6. Watch it fill
 
-The devnet filler pays 200 test tokens per wrapped SOL, so it fills this intent. Check your balance:
+The devnet filler prices test tokens at 200 per wrapped SOL and pays exactly the minimum asked, so it fills this intent with 5. Check your balance:
 
 ```sh
 spl-token balance ETU8trkkfE8gNVPDGbCaJUoH88wy6yYV6ttJdc9NKB88

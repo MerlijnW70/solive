@@ -39,4 +39,4 @@ Cursor: put this in `~/.cursor/mcp.json`. Other apps: add it to the app's MCP se
 
 > Set me up on solive and make my first swap.
 
-It sends nothing until you say yes.
+It swaps or cancels nothing until you say yes.

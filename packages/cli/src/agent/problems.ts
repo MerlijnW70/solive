@@ -60,7 +60,7 @@ export const ENGINE_PROBLEMS = {
   KindMismatch: never("the instruction does not match the intent's kind"),
   ResultOutOfBounds: never("the attested result is outside the intent's bounds"),
   SigMissing: never("the Ed25519 signature instruction is missing; rebuild the transaction with this server"),
-  InvalidDomain: never("the config domain must not be zero; pass this cluster's genesis hash to init-config"),
+  InvalidDomain: never("the config domain must not be zero; init-config takes it from the RPC's genesis hash, so point --url at the cluster you set up"),
   SignatureExpired: never("the signed intent passed its submit-by time; ask the owner to sign a new one"),
   FlashCpi: never("a flash fill cannot be started from inside another program"),
   FlashEndProgram: never("the flash fill must end with this program's end_fill"),
@@ -97,7 +97,7 @@ export const ENGINE_PROBLEMS = {
   MandateMismatch: never("the intent differs from the mandate's fixed terms: same mints, no flags, the owner's partner only, and proceeds to an account the owner holds"),
   CreateCostAboveCeiling: later("the engine's create fee or crank bounty rose above what this transaction allows; prepare it again and check the new cost before signing"),
   NonceJumpTooLarge: never("one advance may move the nonce base at most 2^32 past its current value and never into the agent nonce lanes; advance in smaller steps"),
-  EpochJumpTooLarge: never("one advance may raise the signing epoch at most 2^48; pick a smaller next epoch"),
+  EpochJumpTooLarge: never("one advance may raise the signing epoch at most 2^48; advance-epoch always picks an allowed one, so rebuild the transaction with it"),
 } as const satisfies Record<string, Entry>;
 
 export type EngineErrorName = keyof typeof ENGINE_PROBLEMS;
@@ -162,7 +162,7 @@ export function simulationProblem(err: string, logs: readonly string[]): Problem
   }
   return {
     code: "TransactionFailed",
-    retryable: false,
+    retryable: SERVER_PROBLEMS.TransactionFailed.retryable,
     hint: `the transaction would fail (${untrusted(err)}); read the logs for the cause`,
     ...(failure === null ? {} : { programError: failure.code, program: failure.program }),
     logs: tail,
@@ -179,13 +179,51 @@ export class SimulationFailed extends Error {
   }
 }
 
+export const SERVER_PROBLEMS = {
+  InvalidInput: never("a parameter is missing or out of range; issues names each field"),
+  NotFound: never("an account the call reads does not exist on this cluster"),
+  NotAMint: never("an address passed as a mint is not a token mint"),
+  RateLimited: later("the RPC node is rate limiting; call again in a few seconds"),
+  Failed: never("an unexpected error; the hint carries its message"),
+  TransactionFailed: never("the transaction would fail for a reason this client does not name; read the logs"),
+  WalletNotConfigured: never("a wallet tool was called on a server started without --wallet"),
+  WalletNotMainnet: never("the RPC serves mainnet; wallet tools work on devnet, testnet and localnet only"),
+  NoWallet: never(`the server has no wallet yet; call ${tool("wallet_setup")} first`),
+  WalletEmpty: never("the wallet holds no SOL; fund it from a faucet, then try again"),
+  AgentNotConfigured: never(`${tool("agent_create")} was called on a server started without --agent`),
+  OwnerNotServed: never("the owner is not in the server's --agent-owners list"),
+  BudgetExhausted: later("the agent or relayer key reached its hourly lamport budget; try again later"),
+  NoFreeNonce: never("no free nonce is left in the owner's window or the mandate's lane"),
+  NoFreeMandateId: never("this owner already granted this agent as many mandates as the client looks through; revoke one first"),
+  NoncePromised: later("the nonce is held for another pending request; leave nonce out or ask again later"),
+  TooManyPending: later("the owner has too many prepared requests waiting; submit some or let them expire"),
+  SubmitInFlight: later("another request is relaying the same intent; ask again in a moment"),
+  RelayerNotConfigured: never(`${tool("submit_signed_intent")} was called on a server started without --relayer`),
+  RelayMintNotAccepted: never("the relayer does not relay intents selling this token"),
+  RelayFeeTooLow: never("the relayer fee is below what this relayer charges for the input token"),
+  RelayTooCostly: never("relaying would cost more lamports than this relayer pays per intent"),
+  RelayTooLong: never("the intent expires later than this relayer accepts"),
+  RelayRateLimited: later("the owner reached this relayer's hourly intent limit"),
+  RelayTooLarge: never("the signed terms do not fit in one transaction with this relayer"),
+  NonceTaken: never("a different intent already uses this nonce; these signed terms can never be submitted"),
+  SignatureInvalid: never("the signature is not the owner's signature of these exact terms"),
+  SignatureMalformed: never("the signature is not a base58 Ed25519 signature"),
+  NotRentPayer: never("only the wallet that paid an intent's rent may close it; cancel without close"),
+  NothingToCrank: later("the intent is not yet expired, or settling it pays this cranker nothing"),
+  FundingExceedsBounty: never("recreating the owner's token account costs more than the intent's bounty"),
+  OwnerAccountMissing: never("the owner has no token account that can take the refund; crank with fund_accounts"),
+} as const satisfies Record<string, Entry>;
+
+export type ServerProblemName = keyof typeof SERVER_PROBLEMS;
+
 export class AgentRefusal extends Error {
   readonly problem: Problem;
 
-  constructor(code: string, hint: string, retryable = false) {
+  constructor(code: ServerProblemName | EngineErrorName, hint: string) {
     super(hint);
     this.name = "AgentRefusal";
-    this.problem = { code, retryable, hint };
+    const known: Entry = code in SERVER_PROBLEMS ? SERVER_PROBLEMS[code as ServerProblemName] : ENGINE_PROBLEMS[code as EngineErrorName];
+    this.problem = { code, retryable: known.retryable, hint };
   }
 }
 
@@ -195,7 +233,7 @@ export const untrusted = (text: string): string => text.replace(/[^ -~]+/g, " ")
 
 export function problemOf(error: unknown): Problem {
   if (error instanceof InvalidInput) {
-    return { code: "InvalidInput", retryable: false, hint: "fix the listed fields and call again", issues: error.issues };
+    return { code: "InvalidInput", retryable: SERVER_PROBLEMS.InvalidInput.retryable, hint: "fix the listed fields and call again", issues: error.issues };
   }
   if (error instanceof SimulationFailed || error instanceof AgentRefusal) {
     return error.problem;
@@ -204,18 +242,18 @@ export function problemOf(error: unknown): Problem {
     return engineProblem(error.code);
   }
   if (error instanceof MissingAccount) {
-    return { code: "NotFound", retryable: false, hint: error.message };
+    return { code: "NotFound", retryable: SERVER_PROBLEMS.NotFound.retryable, hint: error.message };
   }
   if (error instanceof NotAMint) {
     return {
       code: "NotAMint",
-      retryable: false,
+      retryable: SERVER_PROBLEMS.NotAMint.retryable,
       hint: `${error.address} is not a token mint; pass the mint of the token itself, not a wallet or a token account`,
     };
   }
   if (rateLimited(error)) {
-    return { code: "RateLimited", retryable: true, hint: "the RPC node is rate limiting; wait a few seconds and call again" };
+    return { code: "RateLimited", retryable: SERVER_PROBLEMS.RateLimited.retryable, hint: "the RPC node is rate limiting; wait a few seconds and call again" };
   }
   const message = error instanceof Error ? error.message : String(error);
-  return { code: "Failed", retryable: false, hint: untrusted(message) };
+  return { code: "Failed", retryable: SERVER_PROBLEMS.Failed.retryable, hint: untrusted(message) };
 }

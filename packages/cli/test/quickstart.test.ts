@@ -123,7 +123,9 @@ describe("the quickstart", () => {
       "--min-profit",
       `${TEST_TOKEN}=1`,
     ]);
-    expect(PAGE).toContain("The devnet filler pays 200 test tokens per wrapped SOL, so it fills this intent.");
+    expect(PAGE).toContain(
+      "The devnet filler prices test tokens at 200 per wrapped SOL and pays exactly the minimum asked, so it fills this intent with 5.",
+    );
   });
 
   it("creates an intent the filler fills, then cancels one it does not, with exactly the commands it prints", async () => {

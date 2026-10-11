@@ -2,7 +2,71 @@
 
 # MCP tools
 
-16 tools, served by `intent-engine mcp` over stdio.
+16 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 5 wallet tools, listed first.
+
+## solive_wallet_setup
+
+Served only with `--wallet`.
+
+Create this server's devnet wallet if it has none, save it, and fund it from the devnet airdrop when it holds less than 0.5 SOL. Safe to call again: it reuses the saved wallet. Call this first.
+
+Effect: `submit` (read-only: false, destructive: false, idempotent: true)
+
+Parameters: none
+
+## solive_wallet_balance
+
+Served only with `--wallet`.
+
+Show the SOL and token balances of this server's wallet, in whole tokens. Without mints it shows wrapped SOL and, on devnet, the TEST token.
+
+Effect: `read` (read-only: true, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `mints` | list of string, at most 8 | no |  |
+
+## solive_wallet_swap
+
+Served only with `--wallet`.
+
+Offer an exact amount of one token for at least an amount of another, from this server's wallet: the tokens are escrowed in an intent that a solver fills or that the wallet gets back. Amounts are whole tokens such as 0.05. Selling SOL wraps it first. Without send it only previews; show the user the summary and call again with send: true once they approve.
+
+Effect: `submit` (read-only: false, destructive: false, idempotent: false)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `sell` | string | yes | SOL, TEST or a mint address |
+| `buy` | string | yes | SOL, TEST or a mint address |
+| `amount` | string | yes | whole tokens to sell, such as 0.05 |
+| `min_receive` | string | yes | least whole tokens to receive for all of it |
+| `expires_in` | integer 60..31536000 | no | least seconds the offer stays open once sent; default 3600 |
+| `send` | boolean | no | true signs and sends; leave out to preview |
+
+## solive_wallet_intents
+
+Served only with `--wallet`.
+
+List the intents this server's wallet created, newest state first: open ones can still fill or be cancelled.
+
+Effect: `read` (read-only: true, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `status` | `open`, `filled`, `cancelled`, `expired`, `filling` | no | only intents in this status |
+
+## solive_wallet_cancel
+
+Served only with `--wallet`.
+
+Cancel an open intent of this server's wallet by its nonce: the escrow returns to the wallet and the intent account closes, returning its rent. Without send it only previews; call again with send: true once the user approves.
+
+Effect: `submit` (read-only: false, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `nonce` | whole number as a decimal string | yes | the intent's nonce, from wallet_intents |
+| `send` | boolean | no | true signs and sends; leave out to preview |
 
 ## solive_get_config
 

@@ -26,7 +26,7 @@ bash scripts/build.sh
 - Code has no comments: tests state what the code does. `scripts/comments.sh` enforces this; Anchor's `/// CHECK:` lines are the only exception.
 - Rust tests live in `tests/`, never in `src/`. `scripts/bans.sh` enforces this and the program's other bans.
 - Do not edit generated files by hand:
-  - IDL and TypeScript client: run `bash scripts/codegen.sh`.
+  - IDL and TypeScript client: run `bash scripts/build.sh`, then `bash scripts/codegen.sh`.
   - `docs/reference/`: run `DOCS_WRITE=1 pnpm --filter @intent-engine/cli test docs`.
   - `README.md`, `security.rs` and the `LICENSE` files: edit `identity.toml`, then run `bash scripts/identity.sh`.
 

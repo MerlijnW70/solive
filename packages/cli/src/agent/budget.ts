@@ -33,7 +33,6 @@ export function reserve(budget: Budget, lamports: bigint, now: bigint): Spend {
     throw new AgentRefusal(
       "BudgetExhausted",
       `this key may spend ${budget.hourly} lamports per hour and has ${budget.hourly - used} left; this needs ${lamports}`,
-      true,
     );
   }
   const spend = { at: now, lamports };

@@ -24,7 +24,7 @@ export const MAINNET_GENESIS = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
 
 export const WALLET_NOTICE = [
   "Test network only: this wallet works on Solana devnet, testnet or localnet and refuses mainnet. Its tokens have no value.",
-  "Your key stays on this machine: it is made here and kept in the file shown as keypair. Only signed transactions leave it.",
+  "Your key stays on this machine: setup makes one unless a keypair is already configured, and names its file. Only signed transactions leave it.",
   "This server talks to no one but the RPC endpoint it was started with.",
   "Nothing moves until you approve: swaps and cancels only preview until you say yes.",
   "Do not send real funds to this wallet or use its key anywhere else.",

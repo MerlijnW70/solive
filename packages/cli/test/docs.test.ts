@@ -4,8 +4,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ACCEPTS, CLUSTERS, ENV_KEYPAIR, ENV_URL, GLOBAL_OPTIONS, SUB_ACCEPTS, USAGE, usageOf } from "../src/args.js";
 import { annotationsOf } from "../src/agent/mcp.js";
-import { ENGINE_ERROR_BASE, ENGINE_PROBLEMS, TOKEN_PROBLEMS } from "../src/agent/problems.js";
+import { ENGINE_ERROR_BASE, ENGINE_PROBLEMS, SERVER_PROBLEMS, TOKEN_PROBLEMS } from "../src/agent/problems.js";
 import { ACTIONS } from "../src/agent/registry.js";
+import { WALLET_ACTIONS } from "../src/agent/wallet.js";
 import { ADDRESS_PATTERN, AMOUNT_PATTERN, TIME_PATTERN } from "../src/agent/schema.js";
 
 type Json = Record<string, unknown>;
@@ -109,12 +110,13 @@ function cliPage(): string {
 }
 
 function toolsPage(): string {
-  const body = ACTIONS.flatMap((action) => {
+  const body = [...WALLET_ACTIONS, ...ACTIONS].flatMap((action) => {
     const hints = annotationsOf(action);
     const params = rows(action.input.json, "", true);
     return [
       `## ${action.name}`,
       "",
+      ...(WALLET_ACTIONS.includes(action) ? ["Served only with `--wallet`.", ""] : []),
       action.description,
       "",
       `Effect: \`${action.effect}\` (read-only: ${String(hints.readOnlyHint)}, destructive: ${String(hints.destructiveHint)}, idempotent: ${String(hints.idempotentHint)})`,
@@ -124,7 +126,11 @@ function toolsPage(): string {
         : [...table(["Parameter", "Type", "Required", "Description"], params.map((r) => [`\`${r.path}\``, r.type, r.required ? "yes" : "no", r.description])), ""]),
     ];
   });
-  return page("MCP tools", [`${ACTIONS.length} tools, served by \`intent-engine mcp\` over stdio.`, "", ...body]);
+  return page("MCP tools", [
+    `${ACTIONS.length} tools, served by \`intent-engine mcp\` over stdio. With \`--wallet\` it also serves the ${WALLET_ACTIONS.length} wallet tools, listed first.`,
+    "",
+    ...body,
+  ]);
 }
 
 function errorsPage(): string {
@@ -135,7 +141,14 @@ function errorsPage(): string {
     p.hint,
   ]);
   const token = Object.entries(TOKEN_PROBLEMS).map(([code, p]) => [code, `\`${p.code}\``, p.retryable ? "yes" : "no", p.hint]);
+  const server = Object.entries(SERVER_PROBLEMS).map(([name, p]) => [`\`${name}\``, p.retryable ? "yes" : "no", p.hint]);
   return page("Errors", [
+    "## This server",
+    "",
+    "Problems the MCP server reports itself, before it sends anything. The hint a tool returns names the specifics.",
+    "",
+    ...table(["Name", "Retry later", "When"], server),
+    "",
     "## Engine program",
     "",
     ...table(["Code", "Name", "Retry later", "What to do"], engine),

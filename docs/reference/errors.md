@@ -2,6 +2,45 @@
 
 # Errors
 
+## This server
+
+Problems the MCP server reports itself, before it sends anything. The hint a tool returns names the specifics.
+
+| Name | Retry later | When |
+| --- | --- | --- |
+| `InvalidInput` | no | a parameter is missing or out of range; issues names each field |
+| `NotFound` | no | an account the call reads does not exist on this cluster |
+| `NotAMint` | no | an address passed as a mint is not a token mint |
+| `RateLimited` | yes | the RPC node is rate limiting; call again in a few seconds |
+| `Failed` | no | an unexpected error; the hint carries its message |
+| `TransactionFailed` | no | the transaction would fail for a reason this client does not name; read the logs |
+| `WalletNotConfigured` | no | a wallet tool was called on a server started without --wallet |
+| `WalletNotMainnet` | no | the RPC serves mainnet; wallet tools work on devnet, testnet and localnet only |
+| `NoWallet` | no | the server has no wallet yet; call solive_wallet_setup first |
+| `WalletEmpty` | no | the wallet holds no SOL; fund it from a faucet, then try again |
+| `AgentNotConfigured` | no | solive_agent_create was called on a server started without --agent |
+| `OwnerNotServed` | no | the owner is not in the server's --agent-owners list |
+| `BudgetExhausted` | yes | the agent or relayer key reached its hourly lamport budget; try again later |
+| `NoFreeNonce` | no | no free nonce is left in the owner's window or the mandate's lane |
+| `NoFreeMandateId` | no | this owner already granted this agent as many mandates as the client looks through; revoke one first |
+| `NoncePromised` | yes | the nonce is held for another pending request; leave nonce out or ask again later |
+| `TooManyPending` | yes | the owner has too many prepared requests waiting; submit some or let them expire |
+| `SubmitInFlight` | yes | another request is relaying the same intent; ask again in a moment |
+| `RelayerNotConfigured` | no | solive_submit_signed_intent was called on a server started without --relayer |
+| `RelayMintNotAccepted` | no | the relayer does not relay intents selling this token |
+| `RelayFeeTooLow` | no | the relayer fee is below what this relayer charges for the input token |
+| `RelayTooCostly` | no | relaying would cost more lamports than this relayer pays per intent |
+| `RelayTooLong` | no | the intent expires later than this relayer accepts |
+| `RelayRateLimited` | yes | the owner reached this relayer's hourly intent limit |
+| `RelayTooLarge` | no | the signed terms do not fit in one transaction with this relayer |
+| `NonceTaken` | no | a different intent already uses this nonce; these signed terms can never be submitted |
+| `SignatureInvalid` | no | the signature is not the owner's signature of these exact terms |
+| `SignatureMalformed` | no | the signature is not a base58 Ed25519 signature |
+| `NotRentPayer` | no | only the wallet that paid an intent's rent may close it; cancel without close |
+| `NothingToCrank` | yes | the intent is not yet expired, or settling it pays this cranker nothing |
+| `FundingExceedsBounty` | no | recreating the owner's token account costs more than the intent's bounty |
+| `OwnerAccountMissing` | no | the owner has no token account that can take the refund; crank with fund_accounts |
+
 ## Engine program
 
 | Code | Name | Retry later | What to do |
@@ -45,7 +84,7 @@
 | 6036 | `KindMismatch` | no | the instruction does not match the intent's kind |
 | 6037 | `ResultOutOfBounds` | no | the attested result is outside the intent's bounds |
 | 6038 | `SigMissing` | no | the Ed25519 signature instruction is missing; rebuild the transaction with this server |
-| 6039 | `InvalidDomain` | no | the config domain must not be zero; pass this cluster's genesis hash to init-config |
+| 6039 | `InvalidDomain` | no | the config domain must not be zero; init-config takes it from the RPC's genesis hash, so point --url at the cluster you set up |
 | 6040 | `SignatureExpired` | no | the signed intent passed its submit-by time; ask the owner to sign a new one |
 | 6041 | `FlashCpi` | no | a flash fill cannot be started from inside another program |
 | 6042 | `FlashEndProgram` | no | the flash fill must end with this program's end_fill |
@@ -82,7 +121,7 @@
 | 6073 | `MandateMismatch` | no | the intent differs from the mandate's fixed terms: same mints, no flags, the owner's partner only, and proceeds to an account the owner holds |
 | 6074 | `CreateCostAboveCeiling` | yes | the engine's create fee or crank bounty rose above what this transaction allows; prepare it again and check the new cost before signing |
 | 6075 | `NonceJumpTooLarge` | no | one advance may move the nonce base at most 2^32 past its current value and never into the agent nonce lanes; advance in smaller steps |
-| 6076 | `EpochJumpTooLarge` | no | one advance may raise the signing epoch at most 2^48; pick a smaller next epoch |
+| 6076 | `EpochJumpTooLarge` | no | one advance may raise the signing epoch at most 2^48; advance-epoch always picks an allowed one, so rebuild the transaction with it |
 
 ## Token programs
 

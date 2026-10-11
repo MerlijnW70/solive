@@ -28,7 +28,7 @@ describe("the AI guide", () => {
   });
 
   it("promises nothing is sent before the user approves, as the wallet tools answer", () => {
-    expect(PAGE).toContain("It sends nothing until you say yes.");
+    expect(PAGE).toContain("It swaps or cancels nothing until you say yes.");
     expect(PREVIEW_ONLY.startsWith("nothing was sent")).toBe(true);
   });
 });

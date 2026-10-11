@@ -13,6 +13,7 @@ import {
   failureOf,
   LOG_TAIL,
   problemOf,
+  SERVER_PROBLEMS,
   SimulationFailed,
   simulationProblem,
   TOKEN_PROBLEMS,
@@ -121,10 +122,15 @@ describe("agent problems", () => {
     expect(simulated.name).toBe("SimulationFailed");
     expect(simulated.message).toBe(ENGINE_PROBLEMS.NonceUsed.hint);
     expect(problemOf(simulated).code).toBe("NonceUsed");
-    const refusal = new AgentRefusal("Nope", "because", true);
+    const refusal = new AgentRefusal("NothingToCrank", "because");
     expect([refusal.name, refusal.message]).toEqual(["AgentRefusal", "because"]);
-    expect(problemOf(refusal)).toEqual({ code: "Nope", retryable: true, hint: "because" });
-    expect(problemOf(new AgentRefusal("Nope", "because")).retryable).toBe(false);
+    expect(problemOf(refusal)).toEqual({ code: "NothingToCrank", retryable: true, hint: "because" });
+    expect(problemOf(new AgentRefusal("NoWallet", "because")).retryable).toBe(false);
+    expect(problemOf(new AgentRefusal("NonceUsed", "because")).retryable).toBe(ENGINE_PROBLEMS.NonceUsed.retryable);
+    for (const [code, entry] of Object.entries(SERVER_PROBLEMS)) {
+      expect(problemOf(new AgentRefusal(code as keyof typeof SERVER_PROBLEMS, "x")).retryable, code).toBe(entry.retryable);
+      expect(Object.keys(ENGINE_PROBLEMS), code).not.toContain(code);
+    }
     expect(problemOf(new IntentCoreError("AmountMismatch"))).toEqual({
       code: "AmountMismatch",
       programError: 6007,

@@ -54,7 +54,7 @@ export function admitRelay(
   prune(relay, now);
   const times = relay.recent.get(owner) ?? [];
   if (times.length >= relay.perHour) {
-    throw new AgentRefusal("RelayRateLimited", `this relayer relays at most ${relay.perHour} intents per owner per hour`, true);
+    throw new AgentRefusal("RelayRateLimited", `this relayer relays at most ${relay.perHour} intents per owner per hour`);
   }
   const spend = reserve(relay.budget, total, now);
   relay.recent.set(owner, [...times, now]);
