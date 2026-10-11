@@ -39,7 +39,11 @@ Cursor: put this in `~/.cursor/mcp.json`. Other apps: add it to the app's MCP se
 
 > Set me up on solive and make my first swap.
 
-It swaps or cancels nothing until you say yes.
+For a better price, let the asked amount fall until a solver takes it:
+
+> Sell 0.05 SOL in a Dutch auction, asking 12 TEST and falling to 9.5 over a few minutes.
+
+It swaps, auctions or cancels nothing until you say yes.
 
 ## 3. Let your AI explain any trade (optional)
 

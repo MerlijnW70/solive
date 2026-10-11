@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { CLUSTERS, parse } from "../src/args.js";
-import { PREVIEW_ONLY } from "../src/agent/wallet.js";
+import { PREVIEW_ONLY, WALLET_ACTIONS } from "../src/agent/wallet.js";
+import { tool } from "../src/agent/names.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string) => readFileSync(`${ROOT}/${path}`, "utf8");
@@ -34,7 +35,8 @@ describe("the AI guide", () => {
   });
 
   it("promises nothing is sent before the user approves, as the wallet tools answer", () => {
-    expect(PAGE).toContain("It swaps or cancels nothing until you say yes.");
+    expect(PAGE).toContain("It swaps, auctions or cancels nothing until you say yes.");
+    expect(WALLET_ACTIONS.map((a) => a.name)).toContain(tool("wallet_auction"));
     expect(PREVIEW_ONLY.startsWith("nothing was sent")).toBe(true);
   });
 });
