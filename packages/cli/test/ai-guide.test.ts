@@ -1,0 +1,29 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { describe, expect, it } from "vitest";
+import { CLUSTERS, parse } from "../src/args.js";
+import { PREVIEW_ONLY } from "../src/agent/wallet.js";
+
+const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
+const read = (path: string) => readFileSync(`${ROOT}/${path}`, "utf8");
+const PAGE = read("docs/ai.md");
+const manifest = JSON.parse(read("packages/cli/package.json")) as { name: string; bin: Record<string, string>; engines: { node: string } };
+const ARGS = ["-y", manifest.name, "mcp", "--url", "devnet", "--wallet"];
+const sh = [...PAGE.matchAll(/^```sh\n([\s\S]*?)^```$/gm)].map((m) => (m[1] ?? "").trim());
+const json = [...PAGE.matchAll(/^```json\n([\s\S]*?)^```$/gm)].map((m) => (m[1] ?? "").trim());
+
+describe("the AI guide", () => {
+  it("installs the published server the same way in every app, and the server takes those arguments", () => {
+    expect(Object.keys(manifest.bin)).toHaveLength(1);
+    expect(sh).toEqual([`claude mcp add solive -- npx ${ARGS.join(" ")}`]);
+    expect(json.map((j) => JSON.parse(j))).toEqual([{ mcpServers: { solive: { command: "npx", args: ARGS } } }]);
+    expect(parse(ARGS.slice(2), {})).toMatchObject({ name: "mcp", url: CLUSTERS["devnet"], wallet: true });
+    const [, major, minor] = /^>=(\d+)\.(\d+)\.0$/.exec(manifest.engines.node) ?? [];
+    expect(PAGE).toContain(`You need Node.js ${major}.${minor} or later.`);
+  });
+
+  it("promises nothing is sent before the user approves, as the wallet tools answer", () => {
+    expect(PAGE).toContain("It sends nothing until you say yes.");
+    expect(PREVIEW_ONLY.startsWith("nothing was sent")).toBe(true);
+  });
+});

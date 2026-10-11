@@ -1,0 +1,2 @@
+cc a087163dfce15171d3339b8f3af5ef43f43efa84f3ff3afdc024f37f8b5c282f
+cc 5cc4a0ab68d4e69a481adae1b6ca888483757ca26d633b6c2ba7d44d857c16f6 # shrinks to token_2022 = false, ops = [Create { trader: 1, nonce: 3, amount: 2, shape: Swap { min_out: 1 }, ttl: 1, route: Direct, partnered: true, mandate: 0 }, Economics { bounty: 0, fee: 0, kind_mask: 0, kind_bps: [0, 0, 0, 0], cut: 10000 }, Flash { trader: 1, nonce: 3, delta: 0, skew: 0 }]

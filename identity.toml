@@ -1,0 +1,15 @@
+[product]
+name = "Solive"
+slug = "solive"
+
+[dev]
+wsl_distro = "solive"
+
+[security]
+repository = "https://github.com/MerlijnW70/solive"
+
+[license]
+licensor = "Merlijn Sake Witteveen"
+first_year = "2026"
+change_date = "2029-10-08"
+change_license = "GNU General Public License v2.0 or later"

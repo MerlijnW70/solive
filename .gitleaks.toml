@@ -1,0 +1,12 @@
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "public partner key in the golden extension vectors"
+condition = "AND"
+paths = ['''^packages/core/test/golden/vectors\.json$''']
+regexes = ['''US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx''']
+
+[[allowlists]]
+description = "public mint address of the devnet test token"
+regexes = ['''ETU8trkkfE8gNVPDGbCaJUoH88wy6yYV6ttJdc9NKB88''']

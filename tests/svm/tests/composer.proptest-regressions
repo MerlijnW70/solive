@@ -1,0 +1,10 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc b7cbafdbb4a7d3719f18ba427177c055f7115534ee8c52835f07c7e552c48417 # shrinks to token_2022 = false, steps = [Compose { pieces: [Begin { pick: 1 }, Base { base: 1, take: None, mutations: [] }, Base { base: 3, take: None, mutations: [] }], edits: [Drop { at: 3 }], link_any: false }]
+cc d5450786ef86e6aa7215edd756dd55d46ceb1c9c3914e0dd7d44479d341f2694 # shrinks to token_2022 = false, steps = [Compose { pieces: [Base { base: 30, take: None, mutations: [Flip { at: 19, mask: 32 }] }], edits: [], link_any: false }]
+cc b4b3d35e89992dc2006a13efccc0bc681d40529de84c557df75c0d43198d76ae # shrinks to token_2022 = false, flavor = 0, steps = [Compose { pieces: [Base { base: 5, take: None, mutations: [] }, Base { base: 46, take: None, mutations: [] }], edits: [Swap { a: 13, b: 0 }], link_any: false }]
+cc 166498c7165b47fbbd10ec70975a752811448791d3610efbf2478772d30e452c # shrinks to token_2022 = false, flavor = 0, steps = [Compose { pieces: [Base { base: 30, take: None, mutations: [] }], edits: [], link_any: false }]

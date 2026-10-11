@@ -1,0 +1,16 @@
+target
+node_modules/
+.anchor/
+test-ledger/
+.pnpm-store/
+node_modules/
+dist/
+crates/intent-core/fuzz/target/
+crates/intent-core/fuzz/corpus/
+crates/intent-core/fuzz/artifacts/
+crates/intent-core/fuzz/coverage/
+verifiable/
+*keypair*.json
+id.json
+.env
+.env.*

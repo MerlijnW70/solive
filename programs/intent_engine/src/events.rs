@@ -1,0 +1,249 @@
+use anchor_lang::prelude::*;
+
+#[event]
+pub struct ConfigInitialized {
+    pub admin: Pubkey,
+    pub domain: [u8; 32],
+    pub guardian: Pubkey,
+    pub fee_recipient: Pubkey,
+    pub enabled_kinds: u64,
+    pub fee_bps: u16,
+    pub paused: u8,
+}
+
+#[event]
+pub struct ConfigUpdated {
+    pub guardian: Pubkey,
+    pub fee_recipient: Pubkey,
+    pub enabled_kinds: u64,
+    pub fee_bps: u16,
+    pub paused: u8,
+    pub fill_disabled_kinds: u64,
+}
+
+#[event]
+pub struct EconomicsUpdated {
+    pub kind_fee_mask: u8,
+    pub kind_fee_bps: [u16; 4],
+    pub partner_cut_bps: u16,
+    pub crank_bounty: u32,
+    pub create_fee: u32,
+}
+
+#[event]
+pub struct AdminProposed {
+    pub admin: Pubkey,
+    pub pending_admin: Pubkey,
+}
+
+#[event]
+pub struct AdminAccepted {
+    pub previous_admin: Pubkey,
+    pub admin: Pubkey,
+}
+
+#[event]
+pub struct PauseRaised {
+    pub by: Pubkey,
+    pub paused: u8,
+}
+
+#[event]
+pub struct PauseLowered {
+    pub by: Pubkey,
+    pub paused: u8,
+}
+
+#[event]
+pub struct UserInitialized {
+    pub owner: Pubkey,
+}
+
+#[event]
+pub struct NonceAdvanced {
+    pub owner: Pubkey,
+    pub nonce_base: u64,
+}
+
+#[event]
+pub struct EpochAdvanced {
+    pub owner: Pubkey,
+    pub epoch: u64,
+}
+
+#[event]
+pub struct IntentCreated {
+    pub intent: Pubkey,
+    pub owner: Pubkey,
+    pub nonce: u64,
+    pub kind: u8,
+    pub input_mint: Pubkey,
+    pub output_mint: Pubkey,
+    pub receiver: Pubkey,
+    pub escrowed: u64,
+    pub expires_at: i64,
+    pub rent_payer: Pubkey,
+    pub flags: u16,
+    pub bounty: u32,
+    pub create_fee: u32,
+}
+
+#[event]
+pub struct IntentFilled {
+    pub intent: Pubkey,
+    pub owner: Pubkey,
+    pub solver: Pubkey,
+    pub receiver: Pubkey,
+    pub solver_input: Pubkey,
+    pub amount_in: u64,
+    pub delivered: u64,
+    pub required: u64,
+    pub fee: u64,
+    pub net: u64,
+    pub filled: u64,
+    pub remaining: u64,
+    pub partner_fee: u64,
+}
+
+#[event]
+pub struct IntentAttested {
+    pub intent: Pubkey,
+    pub owner: Pubkey,
+    pub solver: Pubkey,
+    pub payee: Pubkey,
+    pub attestor: Pubkey,
+    pub amount_in: u64,
+    pub result: u64,
+    pub fee: u64,
+    pub net: u64,
+    pub filled: u64,
+    pub remaining: u64,
+    pub partner_fee: u64,
+}
+
+#[event]
+pub struct FillBegun {
+    pub intent: Pubkey,
+    pub solver: Pubkey,
+    pub solver_input: Pubkey,
+    pub end_index: u16,
+    pub amount_in: u64,
+    pub fee: u64,
+    pub net: u64,
+    pub filled: u64,
+    pub remaining: u64,
+    pub partner_fee: u64,
+}
+
+#[event]
+pub struct FillEnded {
+    pub intent: Pubkey,
+    pub owner: Pubkey,
+    pub solver: Pubkey,
+    pub receiver: Pubkey,
+    pub delivered: u64,
+    pub required: u64,
+}
+
+#[event]
+pub struct IntentCancelled {
+    pub intent: Pubkey,
+    pub owner: Pubkey,
+    pub refunded: u64,
+}
+
+#[event]
+pub struct IntentExpired {
+    pub intent: Pubkey,
+    pub owner: Pubkey,
+    pub refunded: u64,
+    pub refund_to: Pubkey,
+    pub by: Pubkey,
+    pub bounty: u32,
+}
+
+#[event]
+pub struct IntentClosed {
+    pub intent: Pubkey,
+    pub owner: Pubkey,
+    pub swept: u64,
+    pub refund_to: Pubkey,
+    pub by: Pubkey,
+    pub bounty: u32,
+    pub bounty_to: Pubkey,
+    pub rent_to: Pubkey,
+}
+
+#[event]
+pub struct MandateCreated {
+    pub mandate: Pubkey,
+    pub owner: Pubkey,
+    pub agent: Pubkey,
+    pub id: u64,
+    pub serial: u64,
+    pub input_mint: Pubkey,
+    pub output_mint: Pubkey,
+    pub input_account: Pubkey,
+    pub output_account: Pubkey,
+    pub kinds: u8,
+    pub per_intent: u64,
+    pub total: u64,
+    pub max_intents: u32,
+    pub max_ttl: i64,
+    pub valid_until: i64,
+    pub floor_out: u64,
+    pub floor_in: u64,
+    pub partner: Pubkey,
+    pub partner_bps: u16,
+    pub epoch: u64,
+    pub agent_fee: u64,
+}
+
+#[event]
+pub struct MandateUsed {
+    pub mandate: Pubkey,
+    pub intent: Pubkey,
+    pub agent: Pubkey,
+    pub escrowed: u64,
+    pub agent_fee: u64,
+    pub spent: u64,
+    pub intents: u32,
+}
+
+#[event]
+pub struct AgentPaid {
+    pub intent: Pubkey,
+    pub agent: Pubkey,
+    pub account: Pubkey,
+    pub fee: u64,
+}
+
+pub const WITHHELD_PARTNER: u8 = 1;
+pub const WITHHELD_AGENT: u8 = 2;
+pub const WITHHELD_TREASURY: u8 = 3;
+
+#[event]
+pub struct FeeWithheld {
+    pub intent: Pubkey,
+    pub payee: Pubkey,
+    pub account: Pubkey,
+    pub fee: u64,
+    pub role: u8,
+}
+
+#[event]
+pub struct RelayerPaid {
+    pub intent: Pubkey,
+    pub relayer: Pubkey,
+    pub account: Pubkey,
+    pub fee: u64,
+}
+
+#[event]
+pub struct MandateClosed {
+    pub mandate: Pubkey,
+    pub owner: Pubkey,
+    pub agent: Pubkey,
+    pub spent: u64,
+    pub intents: u32,
+}

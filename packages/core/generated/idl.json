@@ -1,0 +1,3907 @@
+{
+  "address": "GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU",
+  "metadata": {
+    "name": "intent_engine",
+    "version": "0.1.0",
+    "spec": "0.1.0"
+  },
+  "instructions": [
+    {
+      "name": "accept_admin",
+      "discriminator": [
+        112,
+        42,
+        45,
+        90,
+        116,
+        181,
+        13,
+        170
+      ],
+      "accounts": [
+        {
+          "name": "pending_admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "advance_epoch",
+      "discriminator": [
+        93,
+        138,
+        234,
+        218,
+        241,
+        230,
+        132,
+        38
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "user_state"
+          ]
+        },
+        {
+          "name": "user_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "epoch",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "advance_nonce",
+      "discriminator": [
+        20,
+        17,
+        71,
+        131,
+        103,
+        35,
+        92,
+        6
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "user_state"
+          ]
+        },
+        {
+          "name": "user_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "nonce_base",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "begin_fill",
+      "discriminator": [
+        51,
+        226,
+        129,
+        163,
+        148,
+        218,
+        59,
+        38
+      ],
+      "accounts": [
+        {
+          "name": "solver",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "intent",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "input_mint",
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "solver_input",
+          "writable": true
+        },
+        {
+          "name": "fee_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "partner_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "input_token_program"
+        },
+        {
+          "name": "instructions"
+        },
+        {
+          "name": "mandate",
+          "optional": true
+        },
+        {
+          "name": "owner_state",
+          "optional": true
+        },
+        {
+          "name": "agent_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_in",
+          "type": "u64"
+        },
+        {
+          "name": "end_index",
+          "type": "u16"
+        },
+        {
+          "name": "max_fee_bps",
+          "type": "u16"
+        },
+        {
+          "name": "ext",
+          "type": {
+            "defined": {
+              "name": "Ext"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "cancel_intent",
+      "discriminator": [
+        67,
+        73,
+        238,
+        244,
+        208,
+        89,
+        225,
+        59
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "intent",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "input_mint",
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "refund_to",
+          "writable": true
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "ext",
+          "type": {
+            "defined": {
+              "name": "Ext"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "close_intent",
+      "discriminator": [
+        112,
+        245,
+        154,
+        249,
+        57,
+        126,
+        54,
+        122
+      ],
+      "accounts": [
+        {
+          "name": "cranker",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "intent",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "input_mint",
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "refund_to",
+          "writable": true
+        },
+        {
+          "name": "canonical_refund"
+        },
+        {
+          "name": "owner",
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "rent_payer",
+          "writable": true,
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "ext",
+          "type": {
+            "defined": {
+              "name": "Ext"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "create_intent",
+      "discriminator": [
+        216,
+        214,
+        79,
+        121,
+        23,
+        194,
+        96,
+        104
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "user_state"
+          ]
+        },
+        {
+          "name": "config",
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "user_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "intent",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  116,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "arg",
+                "path": "args.nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "input_mint"
+        },
+        {
+          "name": "output_mint"
+        },
+        {
+          "name": "owner_input",
+          "writable": true
+        },
+        {
+          "name": "receiver"
+        },
+        {
+          "name": "receiver_authority"
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "input_token_program"
+        },
+        {
+          "name": "output_token_program"
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "CreateIntentArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "create_intent_by_agent",
+      "discriminator": [
+        16,
+        8,
+        251,
+        122,
+        25,
+        10,
+        9,
+        98
+      ],
+      "accounts": [
+        {
+          "name": "agent",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "mandate"
+          ]
+        },
+        {
+          "name": "owner",
+          "relations": [
+            "mandate",
+            "user_state"
+          ]
+        },
+        {
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "name": "config",
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "user_state",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "intent",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  116,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "arg",
+                "path": "args.nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "input_mint"
+        },
+        {
+          "name": "output_mint"
+        },
+        {
+          "name": "owner_input",
+          "writable": true
+        },
+        {
+          "name": "receiver"
+        },
+        {
+          "name": "receiver_authority"
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "delegate",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "input_token_program"
+        },
+        {
+          "name": "output_token_program"
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "CreateIntentArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "create_intent_signed",
+      "discriminator": [
+        147,
+        110,
+        111,
+        40,
+        147,
+        230,
+        163,
+        9
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "owner",
+          "relations": [
+            "user_state"
+          ]
+        },
+        {
+          "name": "config",
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "user_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "intent",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  105,
+                  110,
+                  116,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "arg",
+                "path": "args.nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "input_mint"
+        },
+        {
+          "name": "output_mint"
+        },
+        {
+          "name": "owner_input",
+          "writable": true
+        },
+        {
+          "name": "receiver"
+        },
+        {
+          "name": "receiver_authority"
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "delegate",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  101,
+                  103,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "input_token_program"
+        },
+        {
+          "name": "output_token_program"
+        },
+        {
+          "name": "treasury",
+          "writable": true
+        },
+        {
+          "name": "relayer_fee_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "instructions"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "CreateIntentArgs"
+            }
+          }
+        },
+        {
+          "name": "submit_by",
+          "type": "i64"
+        },
+        {
+          "name": "relayer_fee",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "create_mandate",
+      "discriminator": [
+        230,
+        170,
+        158,
+        68,
+        33,
+        169,
+        16,
+        158
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "user_state"
+          ]
+        },
+        {
+          "name": "user_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "mandate",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  110,
+                  100,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "arg",
+                "path": "args.agent"
+              },
+              {
+                "kind": "arg",
+                "path": "args.id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "input_mint"
+        },
+        {
+          "name": "output_mint"
+        },
+        {
+          "name": "owner_input"
+        },
+        {
+          "name": "receiver"
+        },
+        {
+          "name": "input_token_program"
+        },
+        {
+          "name": "output_token_program"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "MandateArgs"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "end_fill",
+      "discriminator": [
+        54,
+        224,
+        12,
+        98,
+        243,
+        61,
+        136,
+        91
+      ],
+      "accounts": [
+        {
+          "name": "intent",
+          "writable": true
+        },
+        {
+          "name": "solver",
+          "signer": true
+        },
+        {
+          "name": "output_mint",
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "receiver",
+          "writable": true,
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "solver_output",
+          "writable": true
+        },
+        {
+          "name": "output_token_program"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_out",
+          "type": "u64"
+        },
+        {
+          "name": "ext",
+          "type": {
+            "defined": {
+              "name": "Ext"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "expire_intent",
+      "discriminator": [
+        45,
+        84,
+        232,
+        199,
+        147,
+        164,
+        53,
+        97
+      ],
+      "accounts": [
+        {
+          "name": "cranker",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "intent",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "input_mint",
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "refund_to",
+          "writable": true
+        },
+        {
+          "name": "canonical_refund"
+        },
+        {
+          "name": "token_program"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "ext",
+          "type": {
+            "defined": {
+              "name": "Ext"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "fill_attested",
+      "discriminator": [
+        241,
+        100,
+        218,
+        154,
+        206,
+        21,
+        102,
+        122
+      ],
+      "accounts": [
+        {
+          "name": "solver",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "intent",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "input_mint",
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "payee",
+          "writable": true
+        },
+        {
+          "name": "fee_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "partner_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "input_token_program"
+        },
+        {
+          "name": "instructions"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_in",
+          "type": "u64"
+        },
+        {
+          "name": "result",
+          "type": "u64"
+        },
+        {
+          "name": "max_fee_bps",
+          "type": "u16"
+        },
+        {
+          "name": "ext",
+          "type": {
+            "defined": {
+              "name": "Ext"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "fill_intent",
+      "discriminator": [
+        68,
+        255,
+        62,
+        77,
+        155,
+        136,
+        145,
+        148
+      ],
+      "accounts": [
+        {
+          "name": "solver",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "intent",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "input_mint",
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "output_mint",
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "receiver",
+          "writable": true,
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "solver_output",
+          "writable": true
+        },
+        {
+          "name": "solver_input",
+          "writable": true
+        },
+        {
+          "name": "fee_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "partner_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "input_token_program"
+        },
+        {
+          "name": "output_token_program"
+        },
+        {
+          "name": "mandate",
+          "optional": true
+        },
+        {
+          "name": "owner_state",
+          "optional": true
+        },
+        {
+          "name": "agent_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_in",
+          "type": "u64"
+        },
+        {
+          "name": "amount_out",
+          "type": "u64"
+        },
+        {
+          "name": "max_fee_bps",
+          "type": "u16"
+        },
+        {
+          "name": "ext",
+          "type": {
+            "defined": {
+              "name": "Ext"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "init_config",
+      "discriminator": [
+        23,
+        235,
+        115,
+        232,
+        168,
+        96,
+        1,
+        231
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "engine_program",
+          "address": "GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU"
+        },
+        {
+          "name": "program_data"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "ConfigSettings"
+            }
+          }
+        },
+        {
+          "name": "domain",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "init_user",
+      "discriminator": [
+        14,
+        51,
+        68,
+        159,
+        237,
+        78,
+        158,
+        102
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "user_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  117,
+                  115,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "lower_pause",
+      "discriminator": [
+        162,
+        105,
+        90,
+        233,
+        47,
+        43,
+        98,
+        41
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "flags",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "propose_admin",
+      "discriminator": [
+        121,
+        214,
+        199,
+        212,
+        87,
+        39,
+        117,
+        234
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "pending_admin",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "raise_pause",
+      "discriminator": [
+        151,
+        127,
+        194,
+        242,
+        133,
+        253,
+        89,
+        243
+      ],
+      "accounts": [
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "flags",
+          "type": "u8"
+        }
+      ]
+    },
+    {
+      "name": "revoke_mandate",
+      "discriminator": [
+        252,
+        97,
+        140,
+        119,
+        67,
+        43,
+        177,
+        108
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "mandate"
+          ]
+        },
+        {
+          "name": "mandate",
+          "writable": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "update_config",
+      "discriminator": [
+        29,
+        158,
+        252,
+        191,
+        10,
+        83,
+        219,
+        99
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "ConfigUpdate"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "update_economics",
+      "discriminator": [
+        1,
+        75,
+        229,
+        0,
+        238,
+        66,
+        246,
+        51
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "Economics"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Config",
+      "discriminator": [
+        155,
+        12,
+        170,
+        224,
+        30,
+        250,
+        204,
+        130
+      ]
+    },
+    {
+      "name": "Intent",
+      "discriminator": [
+        247,
+        162,
+        35,
+        165,
+        254,
+        111,
+        129,
+        109
+      ]
+    },
+    {
+      "name": "Mandate",
+      "discriminator": [
+        113,
+        216,
+        98,
+        159,
+        185,
+        63,
+        55,
+        18
+      ]
+    },
+    {
+      "name": "UserState",
+      "discriminator": [
+        72,
+        177,
+        85,
+        249,
+        76,
+        167,
+        186,
+        126
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "AdminAccepted",
+      "discriminator": [
+        174,
+        12,
+        76,
+        139,
+        158,
+        99,
+        110,
+        254
+      ]
+    },
+    {
+      "name": "AdminProposed",
+      "discriminator": [
+        129,
+        249,
+        226,
+        227,
+        199,
+        82,
+        110,
+        243
+      ]
+    },
+    {
+      "name": "AgentPaid",
+      "discriminator": [
+        139,
+        166,
+        125,
+        203,
+        163,
+        24,
+        31,
+        93
+      ]
+    },
+    {
+      "name": "ConfigInitialized",
+      "discriminator": [
+        181,
+        49,
+        200,
+        156,
+        19,
+        167,
+        178,
+        91
+      ]
+    },
+    {
+      "name": "ConfigUpdated",
+      "discriminator": [
+        40,
+        241,
+        230,
+        122,
+        11,
+        19,
+        198,
+        194
+      ]
+    },
+    {
+      "name": "EconomicsUpdated",
+      "discriminator": [
+        66,
+        154,
+        254,
+        127,
+        127,
+        204,
+        59,
+        57
+      ]
+    },
+    {
+      "name": "EpochAdvanced",
+      "discriminator": [
+        41,
+        220,
+        14,
+        123,
+        117,
+        70,
+        117,
+        157
+      ]
+    },
+    {
+      "name": "FeeWithheld",
+      "discriminator": [
+        90,
+        70,
+        180,
+        185,
+        68,
+        252,
+        72,
+        69
+      ]
+    },
+    {
+      "name": "FillBegun",
+      "discriminator": [
+        104,
+        224,
+        101,
+        14,
+        197,
+        155,
+        185,
+        216
+      ]
+    },
+    {
+      "name": "FillEnded",
+      "discriminator": [
+        132,
+        228,
+        156,
+        141,
+        141,
+        95,
+        16,
+        17
+      ]
+    },
+    {
+      "name": "IntentAttested",
+      "discriminator": [
+        23,
+        36,
+        6,
+        155,
+        96,
+        156,
+        16,
+        53
+      ]
+    },
+    {
+      "name": "IntentCancelled",
+      "discriminator": [
+        39,
+        174,
+        74,
+        165,
+        39,
+        101,
+        119,
+        29
+      ]
+    },
+    {
+      "name": "IntentClosed",
+      "discriminator": [
+        127,
+        229,
+        67,
+        202,
+        91,
+        56,
+        164,
+        0
+      ]
+    },
+    {
+      "name": "IntentCreated",
+      "discriminator": [
+        184,
+        46,
+        156,
+        205,
+        169,
+        254,
+        11,
+        108
+      ]
+    },
+    {
+      "name": "IntentExpired",
+      "discriminator": [
+        153,
+        54,
+        169,
+        192,
+        15,
+        188,
+        136,
+        139
+      ]
+    },
+    {
+      "name": "IntentFilled",
+      "discriminator": [
+        243,
+        107,
+        254,
+        230,
+        192,
+        28,
+        244,
+        72
+      ]
+    },
+    {
+      "name": "MandateClosed",
+      "discriminator": [
+        217,
+        212,
+        155,
+        243,
+        4,
+        34,
+        255,
+        65
+      ]
+    },
+    {
+      "name": "MandateCreated",
+      "discriminator": [
+        140,
+        30,
+        209,
+        254,
+        5,
+        128,
+        147,
+        113
+      ]
+    },
+    {
+      "name": "MandateUsed",
+      "discriminator": [
+        146,
+        143,
+        185,
+        244,
+        9,
+        187,
+        211,
+        187
+      ]
+    },
+    {
+      "name": "NonceAdvanced",
+      "discriminator": [
+        167,
+        74,
+        249,
+        119,
+        105,
+        11,
+        136,
+        130
+      ]
+    },
+    {
+      "name": "PauseLowered",
+      "discriminator": [
+        205,
+        232,
+        29,
+        72,
+        28,
+        130,
+        212,
+        151
+      ]
+    },
+    {
+      "name": "PauseRaised",
+      "discriminator": [
+        177,
+        125,
+        72,
+        185,
+        68,
+        247,
+        129,
+        112
+      ]
+    },
+    {
+      "name": "RelayerPaid",
+      "discriminator": [
+        117,
+        169,
+        2,
+        222,
+        150,
+        114,
+        118,
+        250
+      ]
+    },
+    {
+      "name": "UserInitialized",
+      "discriminator": [
+        66,
+        195,
+        5,
+        223,
+        42,
+        84,
+        135,
+        60
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "Overflow"
+    },
+    {
+      "code": 6001,
+      "name": "DivideByZero"
+    },
+    {
+      "code": 6002,
+      "name": "Truncated"
+    },
+    {
+      "code": 6003,
+      "name": "NonCanonical"
+    },
+    {
+      "code": 6004,
+      "name": "UnknownKind"
+    },
+    {
+      "code": 6005,
+      "name": "UnknownStatus"
+    },
+    {
+      "code": 6006,
+      "name": "InvalidParams"
+    },
+    {
+      "code": 6007,
+      "name": "AmountMismatch"
+    },
+    {
+      "code": 6008,
+      "name": "InsufficientOutput"
+    },
+    {
+      "code": 6009,
+      "name": "InvalidTransition"
+    },
+    {
+      "code": 6010,
+      "name": "IntentExpired"
+    },
+    {
+      "code": 6011,
+      "name": "NotExpired"
+    },
+    {
+      "code": 6012,
+      "name": "NonceUsed"
+    },
+    {
+      "code": 6013,
+      "name": "NonceOutOfWindow"
+    },
+    {
+      "code": 6014,
+      "name": "NonceRegression"
+    },
+    {
+      "code": 6015,
+      "name": "Unauthorized"
+    },
+    {
+      "code": 6016,
+      "name": "CreatePaused"
+    },
+    {
+      "code": 6017,
+      "name": "KindDisabled"
+    },
+    {
+      "code": 6018,
+      "name": "UnknownKindBits"
+    },
+    {
+      "code": 6019,
+      "name": "InvalidPauseFlags"
+    },
+    {
+      "code": 6020,
+      "name": "FeeTooHigh"
+    },
+    {
+      "code": 6021,
+      "name": "NotPendingAdmin"
+    },
+    {
+      "code": 6022,
+      "name": "ExpiryNotInFuture"
+    },
+    {
+      "code": 6023,
+      "name": "SameMint"
+    },
+    {
+      "code": 6024,
+      "name": "MintNotAllowed"
+    },
+    {
+      "code": 6025,
+      "name": "RefundNotCanonical"
+    },
+    {
+      "code": 6026,
+      "name": "ReceiverNotAllowed"
+    },
+    {
+      "code": 6027,
+      "name": "AuctionOutlivesExpiry"
+    },
+    {
+      "code": 6028,
+      "name": "FillPaused"
+    },
+    {
+      "code": 6029,
+      "name": "FeeAccountNotCanonical"
+    },
+    {
+      "code": 6030,
+      "name": "FeeAccountMissing"
+    },
+    {
+      "code": 6031,
+      "name": "SolverOutputNotAllowed"
+    },
+    {
+      "code": 6032,
+      "name": "SigProgram"
+    },
+    {
+      "code": 6033,
+      "name": "SigHeader"
+    },
+    {
+      "code": 6034,
+      "name": "SigPubkey"
+    },
+    {
+      "code": 6035,
+      "name": "SigMessage"
+    },
+    {
+      "code": 6036,
+      "name": "KindMismatch"
+    },
+    {
+      "code": 6037,
+      "name": "ResultOutOfBounds"
+    },
+    {
+      "code": 6038,
+      "name": "SigMissing"
+    },
+    {
+      "code": 6039,
+      "name": "InvalidDomain"
+    },
+    {
+      "code": 6040,
+      "name": "SignatureExpired"
+    },
+    {
+      "code": 6041,
+      "name": "FlashCpi"
+    },
+    {
+      "code": 6042,
+      "name": "FlashEndProgram"
+    },
+    {
+      "code": 6043,
+      "name": "FlashEndDiscriminator"
+    },
+    {
+      "code": 6044,
+      "name": "FlashEndIntent"
+    },
+    {
+      "code": 6045,
+      "name": "FlashEndOrder"
+    },
+    {
+      "code": 6046,
+      "name": "ReceiverCannotReceive"
+    },
+    {
+      "code": 6047,
+      "name": "RefundCannotReceive"
+    },
+    {
+      "code": 6048,
+      "name": "FeeAboveBound"
+    },
+    {
+      "code": 6049,
+      "name": "ExtTooLong"
+    },
+    {
+      "code": 6050,
+      "name": "ExtMalformed"
+    },
+    {
+      "code": 6051,
+      "name": "ExtUnknown"
+    },
+    {
+      "code": 6052,
+      "name": "FlagsUnknown"
+    },
+    {
+      "code": 6053,
+      "name": "FillKindDisabled"
+    },
+    {
+      "code": 6054,
+      "name": "UnsupportedVersion"
+    },
+    {
+      "code": 6055,
+      "name": "AmountInMismatch"
+    },
+    {
+      "code": 6056,
+      "name": "EpochRegression"
+    },
+    {
+      "code": 6057,
+      "name": "TreasuryMismatch"
+    },
+    {
+      "code": 6058,
+      "name": "CrankBountyTooHigh"
+    },
+    {
+      "code": 6059,
+      "name": "CreateFeeTooHigh"
+    },
+    {
+      "code": 6060,
+      "name": "PartnerCutTooHigh"
+    },
+    {
+      "code": 6061,
+      "name": "PartnerFeeTooHigh"
+    },
+    {
+      "code": 6062,
+      "name": "PartnerAccountMissing"
+    },
+    {
+      "code": 6063,
+      "name": "PartnerAccountNotCanonical"
+    },
+    {
+      "code": 6064,
+      "name": "MandateInvalid"
+    },
+    {
+      "code": 6065,
+      "name": "MandateExpired"
+    },
+    {
+      "code": 6066,
+      "name": "MandateKind"
+    },
+    {
+      "code": 6067,
+      "name": "MandateTtl"
+    },
+    {
+      "code": 6068,
+      "name": "MandateCap"
+    },
+    {
+      "code": 6069,
+      "name": "MandateBudget"
+    },
+    {
+      "code": 6070,
+      "name": "MandateCount"
+    },
+    {
+      "code": 6071,
+      "name": "MandatePrice"
+    },
+    {
+      "code": 6072,
+      "name": "MandateRevoked"
+    },
+    {
+      "code": 6073,
+      "name": "MandateMismatch"
+    },
+    {
+      "code": 6074,
+      "name": "CreateCostAboveCeiling"
+    },
+    {
+      "code": 6075,
+      "name": "NonceJumpTooLarge"
+    },
+    {
+      "code": 6076,
+      "name": "EpochJumpTooLarge"
+    }
+  ],
+  "types": [
+    {
+      "name": "AdminAccepted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "previous_admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "admin",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AdminProposed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "pending_admin",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AgentPaid",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "agent",
+            "type": "pubkey"
+          },
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Config",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "pending_admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "enabled_kinds",
+            "type": "u64"
+          },
+          {
+            "name": "fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "paused",
+            "type": "u8"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "kind_fee_mask",
+            "type": "u8"
+          },
+          {
+            "name": "partner_cut_bps",
+            "type": "u16"
+          },
+          {
+            "name": "domain",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "fill_disabled_kinds",
+            "type": "u64"
+          },
+          {
+            "name": "kind_fee_bps",
+            "type": {
+              "array": [
+                "u16",
+                4
+              ]
+            }
+          },
+          {
+            "name": "crank_bounty",
+            "type": "u32"
+          },
+          {
+            "name": "create_fee",
+            "type": "u32"
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                8
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfigInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "admin",
+            "type": "pubkey"
+          },
+          {
+            "name": "domain",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "enabled_kinds",
+            "type": "u64"
+          },
+          {
+            "name": "fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "paused",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfigSettings",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "enabled_kinds",
+            "type": "u64"
+          },
+          {
+            "name": "fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "paused",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfigUpdate",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "enabled_kinds",
+            "type": "u64"
+          },
+          {
+            "name": "fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "fill_disabled_kinds",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ConfigUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "guardian",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee_recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "enabled_kinds",
+            "type": "u64"
+          },
+          {
+            "name": "fee_bps",
+            "type": "u16"
+          },
+          {
+            "name": "paused",
+            "type": "u8"
+          },
+          {
+            "name": "fill_disabled_kinds",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CreateIntentArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "nonce",
+            "type": "u64"
+          },
+          {
+            "name": "kind",
+            "type": "u8"
+          },
+          {
+            "name": "flags",
+            "type": "u16"
+          },
+          {
+            "name": "params",
+            "type": {
+              "array": [
+                "u8",
+                128
+              ]
+            }
+          },
+          {
+            "name": "expires_at",
+            "type": "i64"
+          },
+          {
+            "name": "ext",
+            "type": {
+              "defined": {
+                "name": "Ext"
+              }
+            }
+          },
+          {
+            "name": "max_create_fee",
+            "type": "u32"
+          },
+          {
+            "name": "max_bounty",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Economics",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "kind_fee_mask",
+            "type": "u8"
+          },
+          {
+            "name": "kind_fee_bps",
+            "type": {
+              "array": [
+                "u16",
+                4
+              ]
+            }
+          },
+          {
+            "name": "partner_cut_bps",
+            "type": "u16"
+          },
+          {
+            "name": "crank_bounty",
+            "type": "u32"
+          },
+          {
+            "name": "create_fee",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EconomicsUpdated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "kind_fee_mask",
+            "type": "u8"
+          },
+          {
+            "name": "kind_fee_bps",
+            "type": {
+              "array": [
+                "u16",
+                4
+              ]
+            }
+          },
+          {
+            "name": "partner_cut_bps",
+            "type": "u16"
+          },
+          {
+            "name": "crank_bounty",
+            "type": "u32"
+          },
+          {
+            "name": "create_fee",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "EpochAdvanced",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "epoch",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Ext",
+      "type": {
+        "kind": "type",
+        "alias": "bytes"
+      }
+    },
+    {
+      "name": "FeeWithheld",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "payee",
+            "type": "pubkey"
+          },
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
+            "name": "role",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FillBegun",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "solver",
+            "type": "pubkey"
+          },
+          {
+            "name": "solver_input",
+            "type": "pubkey"
+          },
+          {
+            "name": "end_index",
+            "type": "u16"
+          },
+          {
+            "name": "amount_in",
+            "type": "u64"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
+            "name": "net",
+            "type": "u64"
+          },
+          {
+            "name": "filled",
+            "type": "u64"
+          },
+          {
+            "name": "remaining",
+            "type": "u64"
+          },
+          {
+            "name": "partner_fee",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "FillEnded",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "solver",
+            "type": "pubkey"
+          },
+          {
+            "name": "receiver",
+            "type": "pubkey"
+          },
+          {
+            "name": "delivered",
+            "type": "u64"
+          },
+          {
+            "name": "required",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Intent",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "input_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "output_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "receiver",
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce",
+            "type": "u64"
+          },
+          {
+            "name": "escrowed",
+            "type": "u64"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "expires_at",
+            "type": "i64"
+          },
+          {
+            "name": "kind",
+            "type": "u8"
+          },
+          {
+            "name": "status",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "type": "u8"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "padding",
+            "type": {
+              "array": [
+                "u8",
+                1
+              ]
+            }
+          },
+          {
+            "name": "flags",
+            "type": "u16"
+          },
+          {
+            "name": "params",
+            "type": {
+              "array": [
+                "u8",
+                128
+              ]
+            }
+          },
+          {
+            "name": "rent_payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "filled",
+            "type": "u64"
+          },
+          {
+            "name": "revision",
+            "type": "u32"
+          },
+          {
+            "name": "partner_bps",
+            "type": "u16"
+          },
+          {
+            "name": "partner_cut_bps",
+            "type": "u16"
+          },
+          {
+            "name": "in_flight",
+            "type": "u64"
+          },
+          {
+            "name": "partner",
+            "type": "pubkey"
+          },
+          {
+            "name": "bounty",
+            "type": "u32"
+          },
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "gap",
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
+          },
+          {
+            "name": "mandate_serial",
+            "type": "u64"
+          },
+          {
+            "name": "agent_fee",
+            "type": "u64"
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                16
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "IntentAttested",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "solver",
+            "type": "pubkey"
+          },
+          {
+            "name": "payee",
+            "type": "pubkey"
+          },
+          {
+            "name": "attestor",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount_in",
+            "type": "u64"
+          },
+          {
+            "name": "result",
+            "type": "u64"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
+            "name": "net",
+            "type": "u64"
+          },
+          {
+            "name": "filled",
+            "type": "u64"
+          },
+          {
+            "name": "remaining",
+            "type": "u64"
+          },
+          {
+            "name": "partner_fee",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "IntentCancelled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "refunded",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "IntentClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "swept",
+            "type": "u64"
+          },
+          {
+            "name": "refund_to",
+            "type": "pubkey"
+          },
+          {
+            "name": "by",
+            "type": "pubkey"
+          },
+          {
+            "name": "bounty",
+            "type": "u32"
+          },
+          {
+            "name": "bounty_to",
+            "type": "pubkey"
+          },
+          {
+            "name": "rent_to",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "IntentCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce",
+            "type": "u64"
+          },
+          {
+            "name": "kind",
+            "type": "u8"
+          },
+          {
+            "name": "input_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "output_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "receiver",
+            "type": "pubkey"
+          },
+          {
+            "name": "escrowed",
+            "type": "u64"
+          },
+          {
+            "name": "expires_at",
+            "type": "i64"
+          },
+          {
+            "name": "rent_payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "flags",
+            "type": "u16"
+          },
+          {
+            "name": "bounty",
+            "type": "u32"
+          },
+          {
+            "name": "create_fee",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "IntentExpired",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "refunded",
+            "type": "u64"
+          },
+          {
+            "name": "refund_to",
+            "type": "pubkey"
+          },
+          {
+            "name": "by",
+            "type": "pubkey"
+          },
+          {
+            "name": "bounty",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "IntentFilled",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "solver",
+            "type": "pubkey"
+          },
+          {
+            "name": "receiver",
+            "type": "pubkey"
+          },
+          {
+            "name": "solver_input",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount_in",
+            "type": "u64"
+          },
+          {
+            "name": "delivered",
+            "type": "u64"
+          },
+          {
+            "name": "required",
+            "type": "u64"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
+            "name": "net",
+            "type": "u64"
+          },
+          {
+            "name": "filled",
+            "type": "u64"
+          },
+          {
+            "name": "remaining",
+            "type": "u64"
+          },
+          {
+            "name": "partner_fee",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Mandate",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "agent",
+            "type": "pubkey"
+          },
+          {
+            "name": "input_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "output_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "partner",
+            "type": "pubkey"
+          },
+          {
+            "name": "input_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "output_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "valid_until",
+            "type": "i64"
+          },
+          {
+            "name": "max_ttl",
+            "type": "i64"
+          },
+          {
+            "name": "per_intent",
+            "type": "u64"
+          },
+          {
+            "name": "total",
+            "type": "u64"
+          },
+          {
+            "name": "spent",
+            "type": "u64"
+          },
+          {
+            "name": "floor_out",
+            "type": "u64"
+          },
+          {
+            "name": "floor_in",
+            "type": "u64"
+          },
+          {
+            "name": "max_intents",
+            "type": "u32"
+          },
+          {
+            "name": "intents",
+            "type": "u32"
+          },
+          {
+            "name": "partner_bps",
+            "type": "u16"
+          },
+          {
+            "name": "kinds",
+            "type": "u8"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "padding",
+            "type": {
+              "array": [
+                "u8",
+                3
+              ]
+            }
+          },
+          {
+            "name": "serial",
+            "type": "u64"
+          },
+          {
+            "name": "agent_fee",
+            "type": "u64"
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                48
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "MandateArgs",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "agent",
+            "type": "pubkey"
+          },
+          {
+            "name": "kinds",
+            "type": "u8"
+          },
+          {
+            "name": "per_intent",
+            "type": "u64"
+          },
+          {
+            "name": "total",
+            "type": "u64"
+          },
+          {
+            "name": "max_intents",
+            "type": "u32"
+          },
+          {
+            "name": "max_ttl",
+            "type": "i64"
+          },
+          {
+            "name": "valid_until",
+            "type": "i64"
+          },
+          {
+            "name": "floor_out",
+            "type": "u64"
+          },
+          {
+            "name": "floor_in",
+            "type": "u64"
+          },
+          {
+            "name": "partner",
+            "type": "pubkey"
+          },
+          {
+            "name": "partner_bps",
+            "type": "u16"
+          },
+          {
+            "name": "agent_fee",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MandateClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "agent",
+            "type": "pubkey"
+          },
+          {
+            "name": "spent",
+            "type": "u64"
+          },
+          {
+            "name": "intents",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MandateCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "agent",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": "u64"
+          },
+          {
+            "name": "serial",
+            "type": "u64"
+          },
+          {
+            "name": "input_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "output_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "input_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "output_account",
+            "type": "pubkey"
+          },
+          {
+            "name": "kinds",
+            "type": "u8"
+          },
+          {
+            "name": "per_intent",
+            "type": "u64"
+          },
+          {
+            "name": "total",
+            "type": "u64"
+          },
+          {
+            "name": "max_intents",
+            "type": "u32"
+          },
+          {
+            "name": "max_ttl",
+            "type": "i64"
+          },
+          {
+            "name": "valid_until",
+            "type": "i64"
+          },
+          {
+            "name": "floor_out",
+            "type": "u64"
+          },
+          {
+            "name": "floor_in",
+            "type": "u64"
+          },
+          {
+            "name": "partner",
+            "type": "pubkey"
+          },
+          {
+            "name": "partner_bps",
+            "type": "u16"
+          },
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "agent_fee",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MandateUsed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mandate",
+            "type": "pubkey"
+          },
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "agent",
+            "type": "pubkey"
+          },
+          {
+            "name": "escrowed",
+            "type": "u64"
+          },
+          {
+            "name": "agent_fee",
+            "type": "u64"
+          },
+          {
+            "name": "spent",
+            "type": "u64"
+          },
+          {
+            "name": "intents",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "NonceAdvanced",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce_base",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PauseLowered",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "by",
+            "type": "pubkey"
+          },
+          {
+            "name": "paused",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PauseRaised",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "by",
+            "type": "pubkey"
+          },
+          {
+            "name": "paused",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "RelayerPaid",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "relayer",
+            "type": "pubkey"
+          },
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UserInitialized",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UserState",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce_base",
+            "type": "u64"
+          },
+          {
+            "name": "nonce_bitmap",
+            "type": {
+              "array": [
+                "u64",
+                4
+              ]
+            }
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "padding",
+            "type": {
+              "array": [
+                "u8",
+                6
+              ]
+            }
+          },
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "grants",
+            "type": "u64"
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                48
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

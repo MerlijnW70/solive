@@ -1,0 +1,348 @@
+import { fileURLToPath } from "node:url";
+import {
+  type Address,
+  appendTransactionMessageInstructions,
+  type Blockhash,
+  createKeyPairSignerFromBytes,
+  createTransactionMessage,
+  generateKeyPairSigner,
+  getAddressEncoder,
+  getBase58Decoder,
+  getBase64Encoder,
+  getProgramDerivedAddress,
+  getSignatureFromTransaction,
+  getTransactionDecoder,
+  type Instruction,
+  type KeyPairSigner,
+  lamports,
+  pipe,
+  setTransactionMessageFeePayerSigner,
+  signTransactionMessageWithSigners,
+  type TransactionSigner,
+} from "@solana/kit";
+import { getCreateAccountInstruction } from "@solana-program/system";
+import {
+  getCreateAssociatedTokenIdempotentInstructionAsync,
+  getInitializeMint2Instruction,
+  getMintSize,
+  getMintToInstruction,
+  getTokenDecoder,
+  TOKEN_PROGRAM_ADDRESS,
+} from "@solana-program/token";
+import { FailedTransactionMetadata, LiteSVM } from "litesvm";
+import type { McpServer } from "@modelcontextprotocol/server";
+import { expect } from "vitest";
+import {
+  ALL_KINDS_MASK,
+  findAssociatedTokenAddress,
+  findEventAuthorityPda,
+  findIntentPda,
+  findProgramDataAddress,
+  getInitConfigInstructionAsync,
+  INTENT_ENGINE_PROGRAM_ADDRESS,
+  MANDATE_NONCE_BIT,
+} from "@intent-engine/core";
+import type { Fetch } from "@intent-engine/solver";
+import type { Runtime } from "../src/commands.js";
+import { main } from "../src/main.js";
+import type { EngineTransaction, Transport } from "../src/transport.js";
+
+const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111" as Address;
+export const NOW = 1_700_000_000n;
+export const FEE_BPS = 5;
+export const ESCROW = 400n;
+export const DOMAIN = new Uint8Array(32).fill(0x11);
+export const enginePath =
+  process.env["INTENT_ENGINE_SO"] ??
+  fileURLToPath(new URL("../../../target/deploy/intent_engine.so", import.meta.url));
+
+export const h = {
+  svm: new LiteSVM(),
+  genesis: getBase58Decoder().decode(DOMAIN),
+  urls: [] as string[],
+  watched: [] as Address[],
+  wires: [] as string[],
+  jupiterReplies: [] as { status: number; body: unknown }[],
+  fetched: [] as { url: string; body: string | undefined; headers: Record<string, string> | undefined }[],
+  requestedLimits: [] as number[],
+  recentFees: [] as bigint[],
+  feeQueries: [] as Address[][],
+  files: new Map<string, string>(),
+  env: {} as Record<string, string | undefined>,
+  sleeps: [] as number[],
+  rounds: 0,
+  engineLog: [] as EngineTransaction[],
+  served: [] as McpServer[],
+  airdropRefused: false,
+  airdrops: [] as { address: Address; lamports: bigint }[],
+};
+
+export const HOME = "/home/tester";
+
+export async function send(payer: TransactionSigner, ixs: readonly Instruction[]): Promise<string> {
+  h.svm.expireBlockhash();
+  const message = pipe(
+    createTransactionMessage({ version: 0 }),
+    (m) => setTransactionMessageFeePayerSigner(payer, m),
+    (m) => h.svm.setTransactionMessageLifetimeUsingLatestBlockhash(m),
+    (m) => appendTransactionMessageInstructions(ixs, m),
+  );
+  const tx = await signTransactionMessageWithSigners(message);
+  h.svm.withBlockhashCheck(false);
+  const result = h.svm.sendTransaction(tx);
+  h.svm.withBlockhashCheck(true);
+  if (result instanceof FailedTransactionMetadata) {
+    throw new Error(String(result.err()));
+  }
+  return getSignatureFromTransaction(tx);
+}
+
+const decodeWire = (wire: string) => getTransactionDecoder().decode(getBase64Encoder().encode(wire));
+
+export const transport: Transport = {
+  async getAccount(address) {
+    const account = h.svm.getAccount(address);
+    return account.exists
+      ? { owner: account.programAddress, data: new Uint8Array(account.data), lamports: account.lamports, executable: account.executable }
+      : null;
+  },
+  send: (ixs, payer) => send(payer, ixs),
+  latestBlockhash: async () => ({ blockhash: h.svm.latestBlockhash() as Blockhash, lastValidBlockHeight: 0n }),
+  sendWire: async (wire) => {
+    const tx = decodeWire(wire);
+    const result = h.svm.sendTransaction(tx);
+    if (result instanceof FailedTransactionMetadata) {
+      throw new Error(`${String(result.err())}\n${result.meta().logs().join("\n")}`);
+    }
+    h.wires.push(wire);
+    return getSignatureFromTransaction(tx);
+  },
+  simulate: async (wire, watch = []) => {
+    const tx = decodeWire(wire);
+    const unsigned = Object.fromEntries(
+      Object.entries(tx.signatures).map(([signer, signature]) => [signer, signature ?? new Uint8Array(64)]),
+    );
+    h.svm.withSigverify(false).withBlockhashCheck(false);
+    const result = h.svm.simulateTransaction({ ...tx, signatures: unsigned } as typeof tx);
+    h.svm.withSigverify(true).withBlockhashCheck(true);
+    const meta = result.meta();
+    const post = result instanceof FailedTransactionMetadata ? new Map() : new Map(result.postAccounts().map((a) => [a.address, a.data]));
+    return {
+      err: result instanceof FailedTransactionMetadata ? String(result.err()) : null,
+      logs: meta.logs(),
+      unitsConsumed: meta.computeUnitsConsumed(),
+      accounts: watch.map((address) => {
+        const after = post.get(address);
+        if (after !== undefined) {
+          return new Uint8Array(after);
+        }
+        const now = h.svm.getAccount(address);
+        return now.exists ? new Uint8Array(now.data) : null;
+      }),
+    };
+  },
+  genesisHash: async () => h.genesis,
+  intents: async (only) => {
+    const found = [];
+    for (const owner of only === undefined ? h.watched : [only]) {
+      const lanes = [1n, 2n, 3n].flatMap((serial) => Array.from({ length: 10 }, (_, i) => MANDATE_NONCE_BIT | (serial << 32n) | BigInt(i)));
+      for (const nonce of [...Array.from({ length: 10 }, (_, i) => BigInt(i)), ...lanes]) {
+        const [address] = await findIntentPda({ owner, nonce });
+        const account = h.svm.getAccount(address);
+        if (account.exists && account.programAddress === INTENT_ENGINE_PROGRAM_ADDRESS) {
+          found.push({ address, data: new Uint8Array(account.data) });
+        }
+      }
+    }
+    return found;
+  },
+  engineTransactions: async (limit) => {
+    h.requestedLimits.push(limit);
+    return h.engineLog;
+  },
+  recentFees: async (accounts) => {
+    h.feeQueries.push([...accounts]);
+    return [...h.recentFees];
+  },
+  budget: async (instructions) => [...instructions],
+  airdrop: async (address, amount) => {
+    h.airdrops.push({ address, lamports: amount });
+    if (h.airdropRefused) {
+      throw new Error("429 Too Many Requests");
+    }
+    h.svm.airdrop(address, lamports(amount));
+    return "airdrop";
+  },
+};
+
+export const fakeFetch: Fetch = async (url, init) => {
+  h.fetched.push({ url, body: init?.body, headers: init?.headers });
+  const reply = h.jupiterReplies.shift() ?? { status: 503, body: {} };
+  return { ok: reply.status === 200, status: reply.status, json: async () => reply.body };
+};
+
+export function runtime(signers: Record<string, KeyPairSigner>): Runtime {
+  return {
+    transport: (url) => {
+      h.urls.push(url);
+      return transport;
+    },
+    loadSigner: async (path) => {
+      const signer = signers[path];
+      if (signer !== undefined) {
+        return signer;
+      }
+      const saved = h.files.get(path);
+      if (saved === undefined) {
+        throw new Error(`no signer ${path}`);
+      }
+      return createKeyPairSignerFromBytes(Uint8Array.from(JSON.parse(saved) as number[]));
+    },
+    readText: async (path) => {
+      const text = h.files.get(path);
+      if (text === undefined) {
+        throw new Error(`no file ${path}`);
+      }
+      return text;
+    },
+    writeText: async (path, text) => {
+      if (h.files.has(path)) {
+        throw new Error(`${path} already exists`);
+      }
+      h.files.set(path, text);
+    },
+    saveText: async (path, text, secret) => {
+      if (secret && h.files.has(path)) {
+        throw new Error(`${path} already exists`);
+      }
+      h.files.set(path, text);
+    },
+    home: HOME,
+    sleep: async (seconds) => {
+      h.sleeps.push(seconds);
+      return h.sleeps.length < h.rounds;
+    },
+    env: h.env,
+    now: () => NOW + 1_000n,
+    fetch: fakeFetch,
+    entropy: () => 3,
+    serve: async (server) => {
+      h.served.push(server);
+    },
+  };
+}
+
+export async function funded(): Promise<KeyPairSigner> {
+  const kp = await generateKeyPairSigner();
+  h.svm.airdrop(kp.address, lamports(100_000_000_000n));
+  return kp;
+}
+
+export async function boot(): Promise<KeyPairSigner> {
+  h.urls.length = 0;
+  h.airdropRefused = false;
+  h.airdrops.length = 0;
+  h.genesis = getBase58Decoder().decode(DOMAIN);
+  h.svm = new LiteSVM().withPrecompiles();
+  h.svm.addProgramFromFile(INTENT_ENGINE_PROGRAM_ADDRESS, enginePath);
+  setNow(NOW);
+  const upgrader = await funded();
+  const programData = await findProgramDataAddress();
+  expect(programData).toBe(
+    (
+      await getProgramDerivedAddress({
+        programAddress: LOADER,
+        seeds: [getAddressEncoder().encode(INTENT_ENGINE_PROGRAM_ADDRESS)],
+      })
+    )[0],
+  );
+  const account = h.svm.getAccount(programData);
+  if (!account.exists) {
+    throw new Error("program data missing");
+  }
+  const data = new Uint8Array(account.data);
+  data[12] = 1;
+  data.set(getAddressEncoder().encode(upgrader.address), 13);
+  h.svm.setAccount({ ...account, data });
+  return upgrader;
+}
+
+export function setNow(unixTimestamp: bigint): void {
+  const clock = h.svm.getClock();
+  clock.unixTimestamp = unixTimestamp;
+  h.svm.setClock(clock);
+}
+
+export async function mint(payer: KeyPairSigner, decimals = 6): Promise<Address> {
+  const m = await generateKeyPairSigner();
+  const space = BigInt(getMintSize());
+  await send(payer, [
+    getCreateAccountInstruction({
+      payer,
+      newAccount: m,
+      lamports: h.svm.minimumBalanceForRentExemption(space),
+      space,
+      programAddress: TOKEN_PROGRAM_ADDRESS,
+    }),
+    getInitializeMint2Instruction({ mint: m.address, decimals, mintAuthority: payer.address }),
+  ]);
+  return m.address;
+}
+
+export async function ata(payer: KeyPairSigner, owner: Address, m: Address, amount = 0n): Promise<Address> {
+  const address = await findAssociatedTokenAddress({ owner, mint: m, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+  await send(payer, [
+    await getCreateAssociatedTokenIdempotentInstructionAsync({ payer, owner, mint: m }),
+    ...(amount > 0n ? [getMintToInstruction({ mint: m, token: address, mintAuthority: payer, amount })] : []),
+  ]);
+  return address;
+}
+
+export function balance(address: Address): bigint {
+  const account = h.svm.getAccount(address);
+  return account.exists ? getTokenDecoder().decode(account.data).amount : -1n;
+}
+
+export async function cli(argv: string[], signers: Record<string, KeyPairSigner>) {
+  const out: string[] = [];
+  const err: string[] = [];
+  const code = await main(argv, runtime(signers), { out: (t) => out.push(t), err: (t) => err.push(t) });
+  return { code, out: out.join("\n"), err: err.join("\n"), json: () => JSON.parse(out.join("\n")) as Record<string, unknown> };
+}
+
+export type World = {
+  authority: KeyPairSigner;
+  feeRecipient: KeyPairSigner;
+  owner: KeyPairSigner;
+  inputMint: Address;
+  outputMint: Address;
+  ownerInput: Address;
+};
+
+export async function world(): Promise<World> {
+  const authority = await boot();
+  const feeRecipient = await funded();
+  const programData = await findProgramDataAddress();
+  const [eventAuthority] = await findEventAuthorityPda();
+  await send(authority, [
+    await getInitConfigInstructionAsync({
+      authority,
+      engineProgram: INTENT_ENGINE_PROGRAM_ADDRESS,
+      programData,
+      eventAuthority,
+      program: INTENT_ENGINE_PROGRAM_ADDRESS,
+      domain: DOMAIN,
+      guardian: authority.address,
+      feeRecipient: feeRecipient.address,
+      enabledKinds: ALL_KINDS_MASK,
+      feeBps: FEE_BPS,
+      paused: 0,
+    }),
+  ]);
+  const owner = await funded();
+  const inputMint = await mint(authority);
+  const outputMint = await mint(authority);
+  const ownerInput = await ata(authority, owner.address, inputMint, 1_000n);
+  await ata(authority, owner.address, outputMint);
+  return { authority, feeRecipient, owner, inputMint, outputMint, ownerInput };
+}

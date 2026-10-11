@@ -1,0 +1,63 @@
+[package]
+name = "intent-core-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+intent-core = { path = ".." }
+
+[workspace]
+
+[[bin]]
+name = "settle"
+path = "fuzz_targets/settle.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lifecycle"
+path = "fuzz_targets/lifecycle.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sig"
+path = "fuzz_targets/sig.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ext"
+path = "fuzz_targets/ext.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "mandate"
+path = "fuzz_targets/mandate.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "partner"
+path = "fuzz_targets/partner.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "preimage"
+path = "fuzz_targets/preimage.rs"
+test = false
+doc = false
+bench = false

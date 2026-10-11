@@ -1,0 +1,12 @@
+name: Request devnet SOL
+description: Get 0.5 devnet SOL to follow the quickstart.
+title: Devnet SOL
+labels: [faucet]
+body:
+  - type: input
+    id: address
+    attributes:
+      label: Wallet address
+      description: The address `solana address` prints.
+    validations:
+      required: true

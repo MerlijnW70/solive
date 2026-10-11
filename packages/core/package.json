@@ -1,0 +1,45 @@
+{
+  "name": "@intent-engine/core",
+  "version": "0.1.0",
+  "description": "Clients, codecs and builders for the intent engine Solana program",
+  "license": "Apache-2.0",
+  "type": "module",
+  "files": [
+    "dist",
+    "generated/idl.json"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/src/index.d.ts",
+      "import": "./dist/src/index.js"
+    },
+    "./idl.json": "./generated/idl.json"
+  },
+  "scripts": {
+    "codegen": "node scripts/codegen.mjs",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --fsModuleCache"
+  },
+  "dependencies": {
+    "@solana-program/token": "0.16.1",
+    "@solana/kit": "8.4.0"
+  },
+  "devDependencies": {
+    "@codama/nodes-from-anchor": "1.5.6",
+    "@codama/renderers-js": "2.5.0",
+    "@solana-program/system": "0.14.1",
+    "@types/node": "26.6.4",
+    "codama": "1.11.0",
+    "fast-check": "4.10.2",
+    "litesvm": "1.5.0",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
+  }
+}

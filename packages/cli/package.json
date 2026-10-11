@@ -1,0 +1,40 @@
+{
+  "name": "@intent-engine/cli",
+  "version": "0.1.0",
+  "description": "Command line and MCP server for the intent engine on Solana",
+  "license": "Apache-2.0",
+  "type": "module",
+  "files": [
+    "dist/src"
+  ],
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "bin": {
+    "intent-engine": "./dist/src/bin.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --fsModuleCache"
+  },
+  "dependencies": {
+    "@intent-engine/core": "workspace:*",
+    "@intent-engine/solver": "workspace:*",
+    "@modelcontextprotocol/server": "2.3.1",
+    "@solana-program/system": "0.14.1",
+    "@solana-program/token": "0.16.1",
+    "@solana/kit": "8.4.0"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "2.3.1",
+    "@types/node": "26.6.4",
+    "fast-check": "4.10.2",
+    "litesvm": "1.5.0",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
+  }
+}
