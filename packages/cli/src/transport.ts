@@ -86,6 +86,7 @@ export type RpcLike = {
   }>;
   getSignatureStatuses(
     signatures: Signature[],
+    config?: { searchTransactionHistory: boolean },
   ): Pending<{ value: readonly ({ err: unknown; confirmationStatus: string | null } | null)[] }>;
   getBlockHeight(): Pending<bigint>;
   requestAirdrop(address: Address, lamports: bigint): Pending<Signature>;
@@ -159,6 +160,8 @@ export class BlockhashExpired extends Error {
   }
 }
 
+const withoutMark = ({ complete: _, ...found }: EngineTransaction & { complete: boolean }): EngineTransaction => found;
+
 export const neverLanded = (error: unknown): boolean => error instanceof FailedOnChain || error instanceof BlockhashExpired;
 
 export type SignatureWatch = (signature: Signature, signal: AbortSignal) => Promise<void>;
@@ -223,7 +226,17 @@ async function polled(
       }
     }
     if ((await patiently(() => rpc.getBlockHeight().send(), wait)) > lastValidBlockHeight) {
-      throw new BlockhashExpired(`transaction ${signature} expired before confirmation`);
+      const [late] = (await patiently(() => rpc.getSignatureStatuses([signature], { searchTransactionHistory: true }).send(), wait)).value;
+      if (!late) {
+        throw new BlockhashExpired(`transaction ${signature} expired before confirmation`);
+      }
+      if (late.err !== null) {
+        throw new FailedOnChain(`transaction ${signature} failed: ${inspect(late.err)}`);
+      }
+      if (late.confirmationStatus === "confirmed" || late.confirmationStatus === "finalized") {
+        return;
+      }
+      throw new Charged(`transaction ${signature} landed but is not confirmed yet; look the signature up before sending again`);
     }
     if (poll >= CONFIRM_POLLS) {
       throw new Charged(
@@ -302,7 +315,7 @@ export function memoized(inner: Transport): Transport {
 }
 
 export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>, watch?: SignatureWatch): Transport {
-  const fetched = new Map<string, EngineTransaction>();
+  const fetched = new Map<string, Promise<EngineTransaction & { complete: boolean }>>();
   return {
     async getAccount(address) {
       const { value } = await patiently(() => rpc.getAccountInfo(address, { encoding: "base64" }).send(), wait);
@@ -387,11 +400,30 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
         () => rpc.getSignaturesForAddress(of ?? INTENT_ENGINE_PROGRAM_ADDRESS, { limit }).send(),
         wait,
       );
-      const fetchOne = async (entry: (typeof signatures)[number]): Promise<EngineTransaction> => {
+      const fetchOne = (entry: (typeof signatures)[number]): Promise<EngineTransaction> => {
         const known = fetched.get(entry.signature);
         if (known !== undefined) {
-          return known;
+          fetched.delete(entry.signature);
+          fetched.set(entry.signature, known);
+          return known.then(withoutMark);
         }
+        const pending = load(entry);
+        fetched.set(entry.signature, pending);
+        pending.then(
+          (found) => {
+            if (!found.complete && fetched.get(entry.signature) === pending) {
+              fetched.delete(entry.signature);
+            }
+          },
+          () => {
+            if (fetched.get(entry.signature) === pending) {
+              fetched.delete(entry.signature);
+            }
+          },
+        );
+        return pending.then(withoutMark);
+      };
+      const load = async (entry: (typeof signatures)[number]) => {
         const tx = await patiently(
           () =>
             rpc
@@ -412,27 +444,24 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
           .flatMap((group) => group.instructions)
           .filter((ix) => keys[ix.programIdIndex] === INTENT_ENGINE_PROGRAM_ADDRESS)
           .map((ix) => Uint8Array.from(getBase58Encoder().encode(ix.data)));
-        const found = {
+        return {
           signature: entry.signature,
           slot: entry.slot,
           blockTime: entry.blockTime,
           failed: entry.err !== null,
           emitted,
+          complete: tx?.meta !== null && tx?.meta !== undefined && entry.blockTime !== null,
         };
-        if (tx?.meta !== null && tx?.meta !== undefined && entry.blockTime !== null) {
-          fetched.set(entry.signature, found);
-          for (const old of fetched.keys()) {
-            if (fetched.size <= KEPT_TRANSACTIONS) {
-              break;
-            }
-            fetched.delete(old);
-          }
-        }
-        return found;
       };
       const found: EngineTransaction[] = [];
       for (let i = 0; i < signatures.length; i += TRANSACTION_FETCHES) {
         found.push(...(await Promise.all(signatures.slice(i, i + TRANSACTION_FETCHES).map(fetchOne))));
+      }
+      for (const old of fetched.keys()) {
+        if (fetched.size <= KEPT_TRANSACTIONS) {
+          break;
+        }
+        fetched.delete(old);
       }
       return found;
     },

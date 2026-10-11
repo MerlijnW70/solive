@@ -98,9 +98,9 @@ function stub(statuses: Status[], heights: bigint[] = [0n]) {
           : { value: { err: { InstructionError: [1, { Custom: 6010 }] }, logs: null } };
       },
     }),
-    getSignatureStatuses: (signatures: Signature[]) => ({
+    getSignatureStatuses: (signatures: Signature[], config?: { searchTransactionHistory: boolean }) => ({
       send: async () => {
-        calls.push(`status:${signatures.join(",")}`);
+        calls.push(`status:${signatures.join(",")}${config?.searchTransactionHistory === true ? ":history" : ""}`);
         return { value: [statuses.shift() ?? null] };
       },
     }),
@@ -201,6 +201,17 @@ describe("confirm", () => {
     expect(expired).not.toBeInstanceOf(Charged);
     expect(expired).toBeInstanceOf(BlockhashExpired);
     expect(neverLanded(expired)).toBe(true);
+  });
+
+  it("looks a transaction up once more before calling it expired, since it may have landed between the two reads", async () => {
+    const landed = stub([null, { err: null, confirmationStatus: "confirmed" }], [11n]);
+    await confirm(landed.rpc, SIG, 10n, landed.wait);
+    expect(landed.calls).toEqual([`status:${SIG}`, "height", `status:${SIG}:history`]);
+    const failed = await confirm(stub([null, { err: "boom", confirmationStatus: "confirmed" }], [11n]).rpc, SIG, 10n).catch((e: unknown) => e);
+    expect(failed).toBeInstanceOf(FailedOnChain);
+    const pending = await confirm(stub([null, { err: null, confirmationStatus: "processed" }], [11n]).rpc, SIG, 10n).catch((e: unknown) => e);
+    expect(pending).toBeInstanceOf(Charged);
+    expect(neverLanded(pending)).toBe(false);
   });
 
   it("stops waiting on a node whose block height never moves, and says to look the signature up", async () => {
@@ -460,6 +471,17 @@ describe("engine transactions", () => {
     asked.length = 0;
     await transport.engineTransactions(10);
     expect(asked).toEqual([sigs[0]]);
+  });
+
+  it("shares a fetch already under way instead of asking the node twice", async () => {
+    const s = stub([]);
+    const transport = rpcTransport(s.rpc, s.wait);
+    const [first, second] = await Promise.all([transport.engineTransactions(5), transport.engineTransactions(5)]);
+    expect(second).toEqual(first);
+    expect(s.calls.filter((c) => c.startsWith("transaction:"))).toEqual([
+      `transaction:${SIG}:json:0:confirmed`,
+      `transaction:${OTHER_SIG}:json:0:confirmed`,
+    ]);
   });
 
   it("fetches again a transaction the node returned without its metadata or block time", async () => {
