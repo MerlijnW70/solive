@@ -7,11 +7,15 @@ if [[ "$PWD" == /mnt/* ]]; then
   mkdir -p "$mirror"
   rsync -a --delete \
     --exclude=node_modules --exclude=dist \
-    --exclude=/target --exclude=/.git --exclude=/verifiable --exclude=/.pnpm-store \
+    --exclude=/target --exclude=/.git --exclude=/verifiable --exclude=/.pnpm-store --exclude=/.mirror-lock \
     --exclude=/crates/intent-core/fuzz/target --exclude=/crates/intent-core/fuzz/corpus --exclude=/crates/intent-core/fuzz/artifacts \
     ./ "$mirror/"
   cd "$mirror"
-  pnpm install --frozen-lockfile --prefer-offline >/dev/null
+  lock="$(sha256sum pnpm-lock.yaml | cut -c1-64)"
+  if [[ ! -d node_modules || "$(cat .mirror-lock 2>/dev/null)" != "$lock" ]]; then
+    pnpm install --frozen-lockfile --prefer-offline >/dev/null
+    printf "%s" "$lock" > .mirror-lock
+  fi
 fi
 bash scripts/identity.sh --check
 pnpm --filter @intent-engine/core build

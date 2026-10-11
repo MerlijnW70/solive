@@ -78,6 +78,7 @@ export const h = {
   clock: 0n,
   steps: [] as bigint[],
   genesisReads: 0,
+  failScans: 0,
   closed: 0,
   rounds: 0,
   engineLog: [] as EngineTransaction[],
@@ -172,6 +173,10 @@ export const transport: Transport = {
   },
   intents: async (only) => {
     h.scans++;
+    if (h.failScans > 0) {
+      h.failScans--;
+      throw new Error("scan refused");
+    }
     const found = [];
     for (const owner of only === undefined ? h.watched : [only]) {
       const lanes = [1n, 2n, 3n].flatMap((serial) => Array.from({ length: 10 }, (_, i) => MANDATE_NONCE_BIT | (serial << 32n) | BigInt(i)));
@@ -285,6 +290,7 @@ export async function boot(): Promise<KeyPairSigner> {
   h.clock = 0n;
   h.steps = [];
   h.dropSubmits = false;
+  h.failScans = 0;
   h.svm = new LiteSVM().withPrecompiles();
   h.svm.addProgramFromFile(INTENT_ENGINE_PROGRAM_ADDRESS, enginePath);
   setNow(NOW);

@@ -13,8 +13,10 @@ test_token=ETU8trkkfE8gNVPDGbCaJUoH88wy6yYV6ttJdc9NKB88
 "${cli[@]}" treasury --url "$url" --create --mints "$wrapped_sol" --keypair "$keypair" --yes
 stop() {
   trap - EXIT INT TERM
+  kill -STOP "$crank" 2>/dev/null
   pkill -P "$crank" 2>/dev/null
-  kill "${solving:-}" "$crank" 2>/dev/null
+  kill -KILL "$crank" 2>/dev/null
+  kill "${solving:-}" 2>/dev/null
   exit 0
 }
 (

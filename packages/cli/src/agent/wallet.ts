@@ -1,6 +1,6 @@
 import type { Address, KeyPairSigner } from "@solana/kit";
 import { parseAmount } from "@intent-engine/core";
-import { chainTime, mintOf } from "../accounts.js";
+import { chainTime, CLOCK_SYSVAR, mintOf } from "../accounts.js";
 import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET } from "../args.js";
 import { execute, type PreparedView } from "../flows.js";
 import { tokenNamed } from "../tokens.js";
@@ -11,7 +11,8 @@ import { MAX_EXPIRES_IN, MIN_EXPIRES_IN, prepareCreate } from "./create.js";
 import { tool } from "./names.js";
 import { AgentRefusal } from "./problems.js";
 import { listIntents } from "./read.js";
-import { InvalidInput, account, amount, choice, flag, integer, list, object, optional, text } from "./schema.js";
+import { InvalidInput, account, amount, choice, flag, integer, list, object, optional, type Schema, text } from "./schema.js";
+import { orderSchema } from "./shapes.js";
 import { prepareCancel } from "./settle.js";
 import { STATUS } from "../accounts.js";
 
@@ -110,6 +111,9 @@ async function sent(ctx: AgentContext, signer: KeyPairSigner, view: Record<strin
   if (send !== true) {
     return { ...shown, sent: false, next: PREVIEW_ONLY };
   }
+  if ((await ctx.transport.genesisHash()) === MAINNET_GENESIS) {
+    throw new AgentRefusal("WalletNotMainnet", WALLET_NOT_MAINNET);
+  }
   return { ...shown, sent: true, signature: await execute(ctx.transport, prepared, signer) };
 }
 
@@ -169,21 +173,27 @@ const offerOutput = object({
 
 type Token = Awaited<ReturnType<typeof mintOf>>;
 
+type Order = typeof orderSchema extends Schema<infer T> ? T : never;
+
 async function offered(
   ctx: AgentContext,
   call: Call,
   input: { sell: string; buy: string; send?: boolean | undefined },
-  terms: (sold: Token, bought: Token, now: bigint) => { order: object; expires_at: bigint },
+  terms: (sold: Token, bought: Token, now: bigint) => { order: Order; expires_at: bigint },
 ) {
   const wallet = access(ctx);
   const signer = await signerOf(ctx);
+  const inputMint = mintNamed(input.sell, wallet.url, "sell");
+  const outputMint = mintNamed(input.buy, wallet.url, "buy");
+  await ctx.transport.warm?.([signer.address, inputMint, outputMint, CLOCK_SYSVAR]);
   if (((await ctx.transport.getAccount(signer.address))?.lamports ?? 0n) === 0n) {
     throw new AgentRefusal("WalletEmpty", walletEmpty(signer.address));
   }
-  const inputMint = mintNamed(input.sell, wallet.url, "sell");
-  const outputMint = mintNamed(input.buy, wallet.url, "buy");
-  const [inputToken, outputToken] = [await mintOf(ctx.transport, inputMint), await mintOf(ctx.transport, outputMint)];
-  const now = await chainTime(ctx.transport);
+  const [inputToken, outputToken, now] = await Promise.all([
+    mintOf(ctx.transport, inputMint),
+    mintOf(ctx.transport, outputMint),
+    chainTime(ctx.transport),
+  ]);
   const view = (await prepareCreate.run(
     ctx,
     { owner: signer.address, input_mint: inputMint, output_mint: outputMint, ...terms(inputToken, outputToken, now) } as never,

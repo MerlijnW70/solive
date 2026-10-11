@@ -191,6 +191,14 @@ describe("the wallet server", () => {
     expect((await call(client, "wallet_auction", { ...args, start_receive: "9", end_receive: "12" })).error).toBe(true);
   });
 
+  it("checks the cluster again before it sends, even after a preview passed", async () => {
+    await ok(client, "wallet_setup");
+    const args = { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5" };
+    expect(await ok(client, "wallet_swap", args)).toMatchObject({ sent: false });
+    h.genesis = MAINNET_GENESIS;
+    expect((await call(client, "wallet_swap", { ...args, send: true })).value).toMatchObject({ code: "WalletNotMainnet", hint: WALLET_NOT_MAINNET });
+  });
+
   it("refuses tokens it cannot name and amounts it cannot read", async () => {
     await ok(client, "wallet_setup");
     for (const args of [

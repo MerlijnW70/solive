@@ -856,18 +856,39 @@ describe("cli against the deployed engine", () => {
     expect(h.submitted).toHaveLength(2);
   });
 
-  it("reports a notification it cannot decode and keeps watching", async () => {
+  it("skips only a notification it cannot decode and still fills the valid ones that came with it", async () => {
     h.watched.length = 0;
     h.watched.push(owner.address);
     h.waits.length = 0;
     const { solver, issued } = await issuedMarket();
+    await cli(create("12", NOW + 3_600n).map((arg) => (arg === outputMint ? issued : arg)), { "owner.json": owner });
+    const [valid] = await findIntentPda({ owner: owner.address, nonce: 12n });
     const [bogus] = await findIntentPda({ owner: owner.address, nonce: 9n });
-    h.rounds = 3;
-    h.changed = [[{ address: bogus, data: new Uint8Array([1, 2, 3]) }]];
+    const view = h.svm.getAccount(valid);
+    h.rounds = 2;
+    h.changed = [[{ address: bogus, data: new Uint8Array([1, 2, 3]) }, { address: valid, data: new Uint8Array(view.exists ? view.data : []) }]];
     const run = await watching(issued, solver);
     expect(run.code).toBe(EXIT_OK);
-    expect(run.each()).toEqual([{ at: String(NOW + 1_000n), scan: "changed", error: expect.any(String) }]);
-    expect(h.waits).toHaveLength(3);
+    expect(run.each()).toEqual([
+      { at: String(NOW + 1_000n), scan: "changed", unreadable: [bogus] },
+      expect.objectContaining({ scan: "changed", sent: [expect.objectContaining({ intent: valid })], failed: [] }),
+    ]);
+  });
+
+  it("counts a full scan only once it succeeds, so the next round scans everything again", async () => {
+    h.watched.length = 0;
+    h.watched.push(owner.address);
+    h.waits.length = 0;
+    const { solver, issued } = await issuedMarket();
+    const [busy] = await findIntentPda({ owner: owner.address, nonce: 3n });
+    h.failScans = 1;
+    h.rounds = 2;
+    h.changed = [[{ address: busy, data: new Uint8Array([1, 2, 3]) }]];
+    const scans = h.scans;
+    const run = await watching(issued, solver);
+    expect(run.code).toBe(EXIT_OK);
+    expect(run.each()).toEqual([{ at: String(NOW + 1_000n), scan: "full", error: "scan refused" }]);
+    expect(h.scans - scans).toBe(2);
   });
 
   it("sends a tipped bundle to jito only for a fill that simulates, and reports it as sent", async () => {

@@ -28,6 +28,7 @@ import {
   feeBpsFor,
   findVaultPda,
   getIntentDecoder,
+  type Intent,
   IntentStatus,
   getUserStateDecoder,
   kindBit,
@@ -259,7 +260,22 @@ export async function follow(
 
 type SolveCommand = Extract<Command, { name: "solve" }>;
 
-export const IN_FLIGHT_SECONDS = 30n;
+export const IN_FLIGHT_SECONDS = 90n;
+
+export const REFRESH_AFTER_SECONDS = 60n;
+
+export function decodedChanges(changed: readonly ProgramAccount[]): { intents: { address: Address; intent: Intent }[]; unreadable: Address[] } {
+  const intents: { address: Address; intent: Intent }[] = [];
+  const unreadable: Address[] = [];
+  for (const { address, data } of changed) {
+    try {
+      intents.push({ address, intent: getIntentDecoder().decode(data) });
+    } catch {
+      unreadable.push(address);
+    }
+  }
+  return { intents, unreadable };
+}
 
 export async function stillOpen(transport: Transport, intents: readonly Address[]): Promise<Address[]> {
   const views = await transport.getAccounts(intents);
@@ -281,7 +297,7 @@ export async function watchSolve(command: SolveCommand, interval: number, runtim
   };
   const changes = runtime.intentChanges(command.url);
   const inFlight = new Map<Address, bigint>();
-  const failing = new Set<Address>();
+  const failing = new Map<Address, bigint>();
   let scannedAt: bigint | null = null;
   let acted = 0;
   try {
@@ -291,12 +307,14 @@ export async function watchSolve(command: SolveCommand, interval: number, runtim
       let full = false;
       try {
         full = changed.length === 0 || scannedAt === null || now - scannedAt >= BigInt(interval);
+        const decoded = full ? { intents: await chain.intents(), unreadable: [] } : decodedChanges(changed);
         if (full) {
           scannedAt = now;
         }
-        const listed = full
-          ? await chain.intents()
-          : changed.map(({ address, data }) => ({ address, intent: getIntentDecoder().decode(data) }));
+        if (decoded.unreadable.length > 0) {
+          emit({ at: now, scan: "changed", unreadable: decoded.unreadable });
+        }
+        const listed = decoded.intents;
         for (const [intent, until] of inFlight) {
           if (until <= now) {
             inFlight.delete(intent);
@@ -311,10 +329,18 @@ export async function watchSolve(command: SolveCommand, interval: number, runtim
           emit({ at: now, scan: full ? "full" : "changed", ms: Math.round(performance.now() - began), filled, sent, failed });
           acted += filled.length + sent.length;
         }
+        for (const [intent, at] of failing) {
+          if (now - at >= REFRESH_AFTER_SECONDS * 10n) {
+            failing.delete(intent);
+          }
+        }
         const open = await stillOpen(transport, failed.map((f) => f.intent));
-        const fresh = open.filter((intent) => !failing.has(intent));
-        open.forEach((intent) => failing.add(intent));
-        if (fresh.length > 0) {
+        const refresh = open.filter((intent) => {
+          const at = failing.get(intent);
+          return at === undefined || now - at >= REFRESH_AFTER_SECONDS;
+        });
+        if (refresh.length > 0) {
+          refresh.forEach((intent) => failing.set(intent, now));
           chain.forget();
         }
       } catch (error) {
