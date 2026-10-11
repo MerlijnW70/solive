@@ -6,13 +6,13 @@ import { findAssociatedTokenAddress, findIntentPda } from "@intent-engine/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { WALLET_NOT_MAINNET } from "../src/args.js";
 import { START_PROMPT, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
-import { NO_WALLET, PREVIEW_ONLY, WALLET_ACTIONS, WALLET_OFF, walletBalance } from "../src/agent/wallet.js";
+import { NO_WALLET, PREVIEW_ONLY, WALLET_ACTIONS, WALLET_OFF, walletBalance, walletEmpty } from "../src/agent/wallet.js";
 import { invoke } from "../src/agent/actions.js";
 import { claimsOf } from "../src/agent/claims.js";
 import { ACTIONS } from "../src/agent/registry.js";
 import { EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { NATIVE_MINT, TEST_TOKEN } from "../src/tokens.js";
-import { AIRDROP, defaultWallet, FUNDED, LAMPORTS_PER_SOL } from "../src/wallet.js";
+import { AIRDROP, AIRDROP_REFUSED, defaultWallet, FUNDED, LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { balance, cli, h, HOME, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
@@ -114,6 +114,16 @@ describe("the wallet server", () => {
     expect(h.svm.getAccount(intent).exists).toBe(false);
     expect(balance(wrapped)).toBe(LAMPORTS_PER_SOL / 20n);
     expect((await ok(client, "wallet_intents"))["intents"]).toEqual([]);
+  });
+
+  it("says how to fund an empty wallet before it tries to swap", async () => {
+    h.airdropRefused = true;
+    const made = await ok(client, "wallet_setup");
+    expect(made).toMatchObject({ sol: "0", next: AIRDROP_REFUSED });
+    expect((await call(client, "wallet_swap", { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5" })).value).toMatchObject({
+      code: "WalletEmpty",
+      hint: walletEmpty(made["address"] as string),
+    });
   });
 
   it("refuses tokens it cannot name and amounts it cannot read", async () => {

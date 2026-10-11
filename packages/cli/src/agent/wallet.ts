@@ -4,7 +4,7 @@ import { mintOf } from "../accounts.js";
 import { ENV_KEYPAIR, type Env } from "../args.js";
 import { execute, type PreparedView } from "../flows.js";
 import { tokenNamed } from "../tokens.js";
-import { balances, defaultMints, type Files, setup, withSettings } from "../wallet.js";
+import { balances, defaultMints, FAUCET, type Files, PUBLIC_FAUCET, setup, withSettings } from "../wallet.js";
 import { type AgentContext, type AnyAction, define } from "./actions.js";
 import type { Call } from "./claims.js";
 import { MAX_EXPIRES_IN, MIN_EXPIRES_IN, prepareCreate } from "./create.js";
@@ -18,6 +18,9 @@ import { STATUS } from "../accounts.js";
 export type WalletAccess = { url: string; files: Files; env: Env };
 
 export const DEFAULT_EXPIRES_IN = 3_600;
+
+export const walletEmpty = (address: string) =>
+  `the wallet ${address} holds no SOL yet; request devnet SOL for it at ${FAUCET} or ${PUBLIC_FAUCET}, then try again`;
 
 export const NO_WALLET = `this server has no wallet yet; call ${tool("wallet_setup")} first`;
 export const WALLET_OFF = "this server runs without a wallet; start it with mcp --wallet to let it sign";
@@ -148,6 +151,9 @@ export const walletSwap = define({
   run: async (ctx: AgentContext, input, call: Call) => {
     const wallet = access(ctx);
     const signer = await signerOf(ctx);
+    if (((await ctx.transport.getAccount(signer.address))?.lamports ?? 0n) === 0n) {
+      throw new AgentRefusal("WalletEmpty", walletEmpty(signer.address));
+    }
     const inputMint = mintNamed(input.sell, wallet.url, "sell");
     const outputMint = mintNamed(input.buy, wallet.url, "buy");
     const [inputToken, outputToken] = [await mintOf(ctx.transport, inputMint), await mintOf(ctx.transport, outputMint)];
