@@ -37,6 +37,7 @@ import {
 } from "@intent-engine/core";
 import {
   type Chain,
+  type SolverOptions,
   decodeLookupTable,
   type Fetch,
   issuePricer,
@@ -64,7 +65,7 @@ import { prepareSignedIntent, previewSignedIntent, submitSignedIntent } from "./
 import { approval, ask, finish, FlowRefused, hasTokens, inRaw, NOT_SENT, perform, signMessage } from "./flows.js";
 import { loadMandate } from "./agent/mandate.js";
 import { RELAY_MAX_TTL } from "./args.js";
-import type { Latest, Transport } from "./transport.js";
+import type { IntentChanges, Latest, Transport } from "./transport.js";
 import {
   chainTime,
   clusterDomain,
@@ -83,6 +84,7 @@ import { createTreasuryAccounts, intentInputMints, treasuryView } from "./treasu
 
 export type Runtime = {
   transport(url: string): Transport;
+  intentChanges(url: string): IntentChanges;
   loadSigner(path: string): Promise<KeyPairSigner>;
   readText(path: string): Promise<string>;
   sleep(seconds: number): Promise<boolean>;
@@ -251,6 +253,99 @@ export async function follow(
     seen = new Set(fetched.map((tx) => tx.signature));
   } while (await runtime.sleep(interval));
   return shown;
+}
+
+type SolveCommand = Extract<Command, { name: "solve" }>;
+
+export async function watchSolve(command: SolveCommand, interval: number, runtime: Runtime, emit: (value: object) => void): Promise<number> {
+  const transport = withPriority(runtime.transport(command.url), command.priority);
+  const options = await solverOptions(command, runtime, transport);
+  const changes = runtime.intentChanges(command.url);
+  let acted = 0;
+  try {
+    do {
+      try {
+        const { filled, sent, failed } = await tick(options);
+        if (filled.length + sent.length + failed.length > 0) {
+          emit({ filled, sent, failed });
+          acted += filled.length + sent.length;
+        }
+      } catch (error) {
+        emit({ error: error instanceof Error ? error.message : String(error) });
+      }
+    } while (await changes.wait(interval));
+  } finally {
+    changes.close();
+  }
+  return acted;
+}
+
+async function solverOptions(command: SolveCommand, runtime: Runtime, transport: Transport): Promise<SolverOptions> {
+  const solver = await runtime.loadSigner(command.keypair);
+  let latest: Latest | undefined;
+  const chain: Chain = {
+    config: async () => (await loadConfig(transport)).config,
+    intents: async () =>
+      (await transport.intents()).map(({ address, data }) => ({ address, intent: getIntentDecoder().decode(data) })),
+    now: () => chainTime(transport),
+    tokenProgram: (mint) => tokenProgramOf(transport, mint),
+    exists: async (address) => (await createdAccount(transport, address)) !== null,
+    tokenAmount: async (address) => tokenAmountOf((await transport.getAccount(address))?.data ?? null) ?? 0n,
+    lookupTables: async (addresses) => {
+      const tables: Record<Address, Address[]> = {};
+      for (const address of addresses) {
+        const view = await transport.getAccount(address);
+        if (view === null) {
+          throw new Error(`lookup table ${address} does not exist`);
+        }
+        tables[address] = decodeLookupTable(view.data);
+      }
+      return tables;
+    },
+    blockhash: async () => {
+      latest = await transport.latestBlockhash();
+      return latest;
+    },
+  };
+  const bundle = command.jito === undefined ? undefined : jitoBundles({ url: command.jito, fetch: runtime.fetch });
+  return {
+    chain,
+    pricer:
+      command.jupiter === undefined
+        ? issuePricer(
+            await Promise.all(
+              command.issue.map(async (route) => ({ ...route, outputTokenProgram: await tokenProgramOf(transport, route.outputMint) })),
+            ),
+          )
+        : jupiterPricer({
+            baseUrl: command.jupiter,
+            fetch: runtime.fetch,
+            slippageBps: command.slippageBps,
+            maxAccounts: SOLVER_ROUTE_ACCOUNTS,
+            ...(runtime.env[ENV_JUPITER_KEY] === undefined || !jupiterHost(command.jupiter)
+              ? {}
+              : { apiKey: runtime.env[ENV_JUPITER_KEY] }),
+            ...(command.routeProgram === undefined ? {} : { swapPrograms: new Set([command.routeProgram]) }),
+          }),
+    solver,
+    strategy: { minProfit: command.minProfit, maxFeeBps: command.maxFeeBps },
+    tip: command.tipLamports === 0n ? null : { account: tipAccount(runtime.entropy()), lamports: command.tipLamports },
+    lookupTables: command.lookupTables,
+    unitPrice: (instructions) => priceOf(transport, command.priority, instructions),
+    simulate: async (wire, watch) => {
+      const simulated = await transport.simulate(wire, watch);
+      return { err: simulated.err, unitsConsumed: simulated.unitsConsumed, balances: simulated.accounts.map(tokenAmountOf) };
+    },
+    send: async (wire) => {
+      if (bundle !== undefined) {
+        return { signature: await bundle([wire]), confirmed: false };
+      }
+      if (latest === undefined) {
+        throw new Error("no blockhash was fetched for this transaction");
+      }
+      return { signature: await transport.sendWire(wire, latest), confirmed: true };
+    },
+  };
 }
 
 export async function run(command: Command, runtime: Runtime): Promise<object | null> {
@@ -460,74 +555,8 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       const ix = await buildAdvanceNonce({ owner, nonceBase: command.base });
       return { signature: await transport.send([ix], owner) };
     }
-    case "solve": {
-      const solver = await runtime.loadSigner(command.keypair);
-      let latest: Latest | undefined;
-      const chain: Chain = {
-        config: async () => (await loadConfig(transport)).config,
-        intents: async () =>
-          (await transport.intents()).map(({ address, data }) => ({ address, intent: getIntentDecoder().decode(data) })),
-        now: () => chainTime(transport),
-        tokenProgram: (mint) => tokenProgramOf(transport, mint),
-        exists: async (address) => (await createdAccount(transport, address)) !== null,
-        tokenAmount: async (address) => tokenAmountOf((await transport.getAccount(address))?.data ?? null) ?? 0n,
-        lookupTables: async (addresses) => {
-          const tables: Record<Address, Address[]> = {};
-          for (const address of addresses) {
-            const view = await transport.getAccount(address);
-            if (view === null) {
-              throw new Error(`lookup table ${address} does not exist`);
-            }
-            tables[address] = decodeLookupTable(view.data);
-          }
-          return tables;
-        },
-        blockhash: async () => {
-          latest = await transport.latestBlockhash();
-          return latest;
-        },
-      };
-      const bundle = command.jito === undefined ? undefined : jitoBundles({ url: command.jito, fetch: runtime.fetch });
-      const report = await tick({
-        chain,
-        pricer:
-          command.jupiter === undefined
-            ? issuePricer(
-                await Promise.all(
-                  command.issue.map(async (route) => ({ ...route, outputTokenProgram: await tokenProgramOf(transport, route.outputMint) })),
-                ),
-              )
-            : jupiterPricer({
-                baseUrl: command.jupiter,
-                fetch: runtime.fetch,
-                slippageBps: command.slippageBps,
-                maxAccounts: SOLVER_ROUTE_ACCOUNTS,
-                ...(runtime.env[ENV_JUPITER_KEY] === undefined || !jupiterHost(command.jupiter)
-                  ? {}
-                  : { apiKey: runtime.env[ENV_JUPITER_KEY] }),
-                ...(command.routeProgram === undefined ? {} : { swapPrograms: new Set([command.routeProgram]) }),
-              }),
-        solver,
-        strategy: { minProfit: command.minProfit, maxFeeBps: command.maxFeeBps },
-        tip: command.tipLamports === 0n ? null : { account: tipAccount(runtime.entropy()), lamports: command.tipLamports },
-        lookupTables: command.lookupTables,
-        unitPrice: (instructions) => priceOf(transport, command.priority, instructions),
-        simulate: async (wire, watch) => {
-          const simulated = await transport.simulate(wire, watch);
-          return { err: simulated.err, unitsConsumed: simulated.unitsConsumed, balances: simulated.accounts.map(tokenAmountOf) };
-        },
-        send: async (wire) => {
-          if (bundle !== undefined) {
-            return { signature: await bundle([wire]), confirmed: false };
-          }
-          if (latest === undefined) {
-            throw new Error("no blockhash was fetched for this transaction");
-          }
-          return { signature: await transport.sendWire(wire, latest), confirmed: true };
-        },
-      });
-      return report;
-    }
+    case "solve":
+      return tick(await solverOptions(command, runtime, transport));
     case "set-economics": {
       const { config } = await loadConfig(transport);
       const e = command.economics;

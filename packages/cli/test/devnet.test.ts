@@ -304,6 +304,9 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet smoke", () =
         serve: async () => {
           throw new Error("the devnet smoke test runs no agent server");
         },
+        intentChanges: () => {
+          throw new Error("the devnet smoke test watches no intents");
+        },
       };
       const [crankIntent] = await findIntentPda({ owner: owner.address, nonce: 7n });
       const first = (await run({ name: "crank", url: url ?? "", priority: 0n, keypair: "solver", dryRun: false, fundAccounts: false }, runtime)) as {

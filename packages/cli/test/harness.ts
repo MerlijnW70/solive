@@ -70,6 +70,8 @@ export const h = {
   files: new Map<string, string>(),
   env: {} as Record<string, string | undefined>,
   sleeps: [] as number[],
+  waits: [] as number[],
+  closed: 0,
   rounds: 0,
   engineLog: [] as EngineTransaction[],
   served: [] as McpServer[],
@@ -218,6 +220,15 @@ export function runtime(signers: Record<string, KeyPairSigner>): Runtime {
       h.files.set(path, text);
     },
     home: HOME,
+    intentChanges: () => ({
+      wait: async (seconds) => {
+        h.waits.push(seconds);
+        return h.waits.length < h.rounds;
+      },
+      close: () => {
+        h.closed++;
+      },
+    }),
     sleep: async (seconds) => {
       h.sleeps.push(seconds);
       return h.sleeps.length < h.rounds;

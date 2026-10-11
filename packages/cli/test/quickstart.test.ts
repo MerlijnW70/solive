@@ -11,7 +11,7 @@ import {
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 import { beforeEach, describe, expect, it } from "vitest";
-import { CLUSTERS, ENV_KEYPAIR, ENV_URL } from "../src/args.js";
+import { CLUSTERS, ENV_KEYPAIR, ENV_URL, WATCH_INTERVAL } from "../src/args.js";
 import { REVOKE_CANCELS } from "../src/agent/mandate.js";
 import { ata, balance, cli, funded, h, send, type World, world } from "./harness.js";
 
@@ -22,6 +22,7 @@ const NATIVE_MINT = "So11111111111111111111111111111111111111112" as Address;
 const LAMPORTS_PER_SOL = 1_000_000_000n;
 const WALLET = "~/solive-wallet.json";
 const FILLER = read("scripts/filler.sh");
+const FILLER_INTERVAL = /^interval="\$\{FILLER_INTERVAL:-(\d+)\}"$/m.exec(FILLER)?.[1] ?? "";
 const variable = (name: string) => new RegExp(`^${name}=(\\S+)$`, "m").exec(FILLER)?.[1] ?? "missing";
 const TEST_TOKEN = variable("test_token") as Address;
 const FILLER_KEY = "filler.json";
@@ -66,6 +67,7 @@ function fillerSolve(): string[] {
     .replaceAll('"$keypair"', FILLER_KEY)
     .replaceAll("$wrapped_sol", variable("wrapped_sol"))
     .replaceAll("$test_token", TEST_TOKEN)
+    .replaceAll('"$interval"', FILLER_INTERVAL)
     .replaceAll('"', "")
     .split(" ");
 }
@@ -122,6 +124,9 @@ describe("the quickstart", () => {
       `${NATIVE_MINT}:${TEST_TOKEN}=200/1`,
       "--min-profit",
       `${TEST_TOKEN}=1`,
+      "--watch",
+      "--interval",
+      "5",
     ]);
     expect(PAGE).toContain(
       "The devnet filler prices test tokens at 200 per wrapped SOL and pays exactly the minimum asked, so it fills this intent with 5.",
@@ -335,6 +340,8 @@ describe("the solver guide", () => {
     expect(outputs[0]).toMatchObject({ sent: true });
     expect(commands[1]).toContain(`--issue ${NATIVE_MINT}:$TOKEN=200/1 --min-profit $TOKEN=1`);
     expect(SOLVER_PAGE).toContain("`--issue` prices 200 of your token per wrapped SOL and mints them into the fill.");
+    expect(SOLVER_PAGE).toContain(`at least every \`--interval\` seconds (default ${WATCH_INTERVAL})`);
+    expect(FILLER_INTERVAL).toBe(String(WATCH_INTERVAL));
     expect(outputs[1]).toMatchObject({ filled: [{ intent: outputs[0]?.["intent"] }], failed: [] });
     expect(balance(wrapped)).toBe(held - LAMPORTS_PER_SOL / 20n);
     const received = await findAssociatedTokenAddress({ owner: owner.address, mint: token, tokenProgram: TOKEN_PROGRAM_ADDRESS });

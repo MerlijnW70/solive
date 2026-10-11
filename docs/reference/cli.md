@@ -157,10 +157,10 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--outp
 ## solve
 
 ```text
-solve --keypair <file> (--jupiter <url> | --issue <input mint>:<output mint>=<out>/<in>,...) --min-profit <output mint=raw,...> [--priority-fee <micro-lamports|auto>] [--max-fee-bps <n>] [--slippage-bps <n>] [--jito <url> [--tip <lamports>]] [--route-program <program the aggregator swaps through>] [--lookup-table <address,...>]
+solve --keypair <file> (--jupiter <url> | --issue <input mint>:<output mint>=<out>/<in>,...) --min-profit <output mint=raw,...> [--priority-fee <micro-lamports|auto>] [--max-fee-bps <n>] [--slippage-bps <n>] [--jito <url> [--tip <lamports>]] [--route-program <program the aggregator swaps through>] [--lookup-table <address,...>] [--watch [--interval <seconds>]]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--jupiter`, `--issue`, `--jito`, `--tip`, `--min-profit`, `--max-fee-bps`, `--slippage-bps`, `--route-program`, `--lookup-table`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--jupiter`, `--issue`, `--jito`, `--tip`, `--min-profit`, `--max-fee-bps`, `--slippage-bps`, `--route-program`, `--lookup-table`, `--watch`, `--interval`, `--output`, `--help`
 
 ## solver-table
 

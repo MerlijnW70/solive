@@ -144,6 +144,7 @@ export type Command =
       slippageBps: number;
       routeProgram: Address | undefined;
       lookupTables: Address[];
+      watch: number | null;
     })
   | (Keyed & { name: "crank"; dryRun: boolean; fundAccounts: boolean })
   | (Remote & { name: "events"; limit: number })
@@ -195,6 +196,7 @@ const OPTIONS = {
   help: { type: "boolean" },
   version: { type: "boolean" },
   follow: { type: "boolean" },
+  watch: { type: "boolean" },
   output: { type: "string" },
   interval: { type: "string" },
   "expires-in": { type: "string" },
@@ -325,7 +327,7 @@ export function parseFeeBps(text: string): number {
   return Number(text);
 }
 
-type Flag = "dry-run" | "fund-accounts" | "yes" | "help" | "version" | "follow" | "create" | "wallet";
+type Flag = "dry-run" | "fund-accounts" | "yes" | "help" | "version" | "follow" | "create" | "wallet" | "watch";
 type StringKey = Exclude<keyof typeof OPTIONS, Flag>;
 type Values = { [K in StringKey]?: string | undefined } & { [K in Flag]?: boolean | undefined };
 
@@ -392,7 +394,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   ],
   "propose-admin": ["url", "priority-fee", "keypair", "authority", "yes", "new-admin"],
   "accept-admin": ["url", "priority-fee", "keypair", "authority", "yes"],
-  solve: ["url", "priority-fee", "keypair", "jupiter", "issue", "jito", "tip", "min-profit", "max-fee-bps", "slippage-bps", "route-program", "lookup-table"],
+  solve: ["url", "priority-fee", "keypair", "jupiter", "issue", "jito", "tip", "min-profit", "max-fee-bps", "slippage-bps", "route-program", "lookup-table", "watch", "interval"],
   "solver-table": ["url", "solver", "mints"],
   "lower-pause": ["url", "priority-fee", "keypair", "authority", "yes", "flags"],
   events: ["url", "limit", "follow", "interval"],
@@ -991,6 +993,7 @@ export function outputOf(argv: readonly string[]): "json" | "text" {
 }
 
 export const MAX_FOLLOW_INTERVAL = 3_600;
+export const WATCH_INTERVAL = 5;
 
 export const COMMANDS = "setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | version | help [command]";
 
@@ -1022,7 +1025,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   "raise-pause": "(--keypair <file> [--yes] | --authority <address>) --flags create|fill|all",
   "lower-pause": "(--keypair <file> [--yes] | --authority <address>) --flags create|fill|all",
   "set-economics": "(--keypair <file> [--yes] | --authority <address>) --bounty --create-fee [--kind-fees] [--partner-cut]",
-  solve: "--keypair <file> (--jupiter <url> | --issue <input mint>:<output mint>=<out>/<in>,...) --min-profit <output mint=raw,...> [--priority-fee <micro-lamports|auto>] [--max-fee-bps <n>] [--slippage-bps <n>] [--jito <url> [--tip <lamports>]] [--route-program <program the aggregator swaps through>] [--lookup-table <address,...>]",
+  solve: "--keypair <file> (--jupiter <url> | --issue <input mint>:<output mint>=<out>/<in>,...) --min-profit <output mint=raw,...> [--priority-fee <micro-lamports|auto>] [--max-fee-bps <n>] [--slippage-bps <n>] [--jito <url> [--tip <lamports>]] [--route-program <program the aggregator swaps through>] [--lookup-table <address,...>] [--watch [--interval <seconds>]]",
   "solver-table": "--solver <address> --mints <mint,...>",
   crank: "--keypair <file> [--dry-run] [--fund-accounts]",
   treasury: "[--mints <mint,...>] [--create --mints <mint,...> --keypair <payer file> [--yes]]",
@@ -1193,6 +1196,9 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       if (tipLamports > 0n && values.jito === undefined) {
         throw new UsageError("--tip pays a jito tip and needs --jito");
       }
+      if (values.interval !== undefined && values.watch !== true) {
+        throw new UsageError("--interval needs --watch");
+      }
       return {
         name: "solve",
         ...remote,
@@ -1205,6 +1211,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         slippageBps: parseBounded(values["slippage-bps"] ?? "50", "slippage-bps", 10_000),
         routeProgram: values["route-program"] === undefined ? undefined : parseAddress(values["route-program"], "route-program"),
         lookupTables: values["lookup-table"] === undefined ? [] : addressList(values["lookup-table"], "lookup-table"),
+        watch: values.watch === true ? parseBounded(values.interval ?? String(WATCH_INTERVAL), "interval", MAX_FOLLOW_INTERVAL, 1) : null,
       };
     }
     case "update-config":

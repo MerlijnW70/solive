@@ -268,6 +268,7 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet solve smoke"
           slippageBps: Number(SLIPPAGE_BPS),
           routeProgram: SWAP_PROGRAM,
           lookupTables: [],
+          watch: null,
         },
         {
           transport: () => transport,
@@ -289,6 +290,9 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet solve smoke"
           entropy: () => 0,
           serve: async () => {
             throw new Error("the devnet solve smoke runs no agent server");
+          },
+          intentChanges: () => {
+            throw new Error("the devnet solve smoke watches no intents");
           },
         },
       )) as {

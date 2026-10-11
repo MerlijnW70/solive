@@ -5,10 +5,10 @@ import type { Readable, Writable } from "node:stream";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { createKeyPairSignerFromBytes, createSolanaRpc, type KeyPairSigner } from "@solana/kit";
 import { ENV_URL, outputOf, parse, UsageError } from "./args.js";
-import { follow, run, type Runtime } from "./commands.js";
+import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
 import { printableLines, render, renderText } from "./render.js";
-import { type RpcLike, rpcTransport } from "./transport.js";
+import { changesFrom, intentNotifications, type RpcLike, rpcTransport } from "./transport.js";
 import { withSettings } from "./wallet.js";
 import { WALLET_NOTICE } from "./agent/wallet.js";
 
@@ -43,6 +43,10 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
     if (command.name === "follow") {
       const transport = withPriority(runtime.transport(command.url), command.priority);
       await follow(transport, runtime, command.limit, command.interval, show);
+      return EXIT_OK;
+    }
+    if (command.name === "solve" && command.watch !== null) {
+      await watchSolve(command, command.watch, runtime, show);
       return EXIT_OK;
     }
     if (command.name === "mcp" && command.wallet) {
@@ -88,6 +92,7 @@ export const FETCH_TIMEOUT_MS = 10_000;
 export function nodeRuntime(clock: () => number = Date.now, pipes: Pipes = process, timeoutMs = FETCH_TIMEOUT_MS): Runtime {
   return {
     transport: (url) => rpcTransport(createSolanaRpc(url) as unknown as RpcLike),
+    intentChanges: (url) => changesFrom(intentNotifications(url)),
     loadSigner: loadKeypairFile,
     readText: (path) => readFile(path, "utf8"),
     sleep: (seconds) => new Promise((resolve) => setTimeout(() => resolve(true), seconds * 1000)),

@@ -11,6 +11,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { Charged,
+  changesFrom,
   CONFIRM_POLLS,
   confirm,
   patiently,
@@ -19,6 +20,7 @@ import { Charged,
   rateLimited,
   type RpcLike,
   rpcTransport,
+  socketUrl,
 } from "../src/transport.js";
 
 const SIG = "5".repeat(88) as Signature;
@@ -368,5 +370,60 @@ describe("engine transactions", () => {
       `transaction:${SIG}:json:0:confirmed`,
       `transaction:${OTHER_SIG}:json:0:confirmed`,
     ]);
+  });
+});
+
+describe("intent changes", () => {
+  it("opens the websocket the cluster serves next to its RPC", () => {
+    expect(socketUrl("https://api.devnet.solana.com")).toBe("wss://api.devnet.solana.com/");
+    expect(socketUrl("http://127.0.0.1:8899")).toBe("ws://127.0.0.1:8900/");
+    expect(socketUrl("https://rpc.example/key?x=1")).toBe("wss://rpc.example/key?x=1");
+  });
+
+  it("wakes as soon as an intent changes, else after the interval, and stops listening when closed", async () => {
+    let push: (() => void) | undefined;
+    let aborted = false;
+    const notes: unknown[] = [];
+    const changes = changesFrom(async (signal) => {
+      signal.addEventListener("abort", () => {
+        aborted = true;
+      });
+      return {
+        [Symbol.asyncIterator]: () => ({
+          next: () =>
+            new Promise<IteratorResult<unknown>>((resolve) => {
+              push = () => {
+                notes.push(1);
+                resolve({ value: notes.length, done: false });
+              };
+            }),
+        }),
+      };
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const started = Date.now();
+    const woken = changes.wait(60);
+    push?.();
+    expect(await woken).toBe(true);
+    expect(Date.now() - started).toBeLessThan(1_000);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    push?.();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(await changes.wait(60)).toBe(true);
+    const idle = Date.now();
+    expect(await changes.wait(0.05)).toBe(true);
+    expect(Date.now() - idle).toBeGreaterThanOrEqual(40);
+    changes.close();
+    expect(aborted).toBe(true);
+  });
+
+  it("falls back to the interval when the websocket cannot be opened", async () => {
+    const changes = changesFrom(async () => {
+      throw new Error("no websocket");
+    });
+    const started = Date.now();
+    expect(await changes.wait(0.05)).toBe(true);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(40);
+    changes.close();
   });
 });

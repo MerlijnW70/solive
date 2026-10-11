@@ -2,8 +2,10 @@ import { inspect } from "node:util";
 import {
   type Address,
   appendTransactionMessageInstructions,
+  type Base58EncodedBytes,
   type Base64EncodedWireTransaction,
   type Blockhash,
+  createSolanaRpcSubscriptions,
   createTransactionMessage,
   getBase64EncodedWireTransaction,
   type Instruction,
@@ -309,6 +311,72 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>)
         address: pubkey,
         data: new Uint8Array(Buffer.from(account.data[0], "base64")),
       }));
+    },
+  };
+}
+
+export type IntentChanges = { wait(seconds: number): Promise<boolean>; close(): void };
+
+export type Notifications = (signal: AbortSignal) => Promise<AsyncIterable<unknown>>;
+
+export function socketUrl(url: string): string {
+  const parsed = new URL(url);
+  parsed.protocol = parsed.protocol === "http:" ? "ws:" : "wss:";
+  if (parsed.port === "8899") {
+    parsed.port = "8900";
+  }
+  return parsed.toString();
+}
+
+export function intentNotifications(url: string): Notifications {
+  const subscriptions = createSolanaRpcSubscriptions(socketUrl(url));
+  return (abortSignal) =>
+    subscriptions
+      .programNotifications(INTENT_ENGINE_PROGRAM_ADDRESS, {
+        commitment: "confirmed",
+        encoding: "base64",
+        filters: [
+          { dataSize: BigInt(getIntentSize()) },
+          { memcmp: { offset: 0n, bytes: getBase58Decoder().decode(getIntentDiscriminatorBytes()) as Base58EncodedBytes, encoding: "base58" } },
+        ],
+      })
+      .subscribe({ abortSignal });
+}
+
+export function changesFrom(notifications: Notifications): IntentChanges {
+  const controller = new AbortController();
+  let pending = false;
+  let wake: (() => void) | undefined;
+  const listen = async () => {
+    const iterator = (await notifications(controller.signal))[Symbol.asyncIterator]();
+    while (!(await iterator.next()).done) {
+      pending = true;
+      wake?.();
+    }
+  };
+  listen().catch(() => undefined);
+  return {
+    wait: (seconds) =>
+      new Promise((resolve) => {
+        if (pending) {
+          pending = false;
+          resolve(true);
+          return;
+        }
+        const timer = setTimeout(() => {
+          wake = undefined;
+          resolve(true);
+        }, seconds * 1000);
+        wake = () => {
+          clearTimeout(timer);
+          wake = undefined;
+          pending = false;
+          resolve(true);
+        };
+      }),
+    close: () => {
+      wake?.();
+      controller.abort();
     },
   };
 }

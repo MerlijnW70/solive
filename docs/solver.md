@@ -37,7 +37,7 @@ The devnet filler only fills the test token, so this intent stays open until you
 intent-engine solve --keypair ~/solive-solver.json --issue So11111111111111111111111111111111111111112:$TOKEN=200/1 --min-profit $TOKEN=1
 ```
 
-`--issue` prices 200 of your token per wrapped SOL and mints them into the fill. The ratio is in raw units, so it means 200 per SOL because both tokens have 9 decimals, and it prices the escrow left after the protocol fee. `--min-profit` takes raw units, so the solver skips any fill that leaves it less than 1 raw unit. `solve` makes one pass over the open intents and prints the ones it filled, sent, skipped and failed. To keep solving, run it in a loop, as [the devnet filler](../scripts/filler.sh) does.
+`--issue` prices 200 of your token per wrapped SOL and mints them into the fill. The ratio is in raw units, so it means 200 per SOL because both tokens have 9 decimals, and it prices the escrow left after the protocol fee. `--min-profit` takes raw units, so the solver skips any fill that leaves it less than 1 raw unit. `solve` makes one pass over the open intents and prints the ones it filled, sent, skipped and failed. To keep solving, add `--watch`: it stays running, solves again as soon as an intent changes on chain and at least every `--interval` seconds (default 5), and prints only the rounds that fill, send or fail, as [the devnet filler](../scripts/filler.sh) does.
 
 ## 5. Check the balances
 

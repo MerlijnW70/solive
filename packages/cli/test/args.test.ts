@@ -3,6 +3,7 @@ import { I64_MAX, I64_MIN, Kind, U64_MAX } from "@intent-engine/core";
 import { MAX_PRIORITY_PRICE } from "../src/compute.js";
 import {
   DEFAULT_URL,
+  WATCH_INTERVAL,
   AGENT_DEFAULT_HOURLY_LAMPORTS,
   AGENT_NEEDS_OWNERS,
   ISSUE_ALONE,
@@ -82,7 +83,12 @@ describe("numbers", () => {
       slippageBps: 10_000,
       routeProgram: undefined,
       lookupTables: [],
+      watch: null,
     });
+    const watching = ["solve", "--keypair", "k", "--jupiter", "https://q.example", "--min-profit", `${MINT_A}=1`];
+    expect(parse([...watching, "--watch"])).toMatchObject({ watch: WATCH_INTERVAL });
+    expect(parse([...watching, "--watch", "--interval", "2"])).toMatchObject({ watch: 2 });
+    expect(usage([...watching, "--interval", "2"])).toBe("--interval needs --watch");
     expect(parse(["solve", "--keypair", "k", "--jupiter", "https://q.example", "--min-profit", `${MINT_A}=1`, "--lookup-table", `${OWNER}, ${MINT_A}`])).toMatchObject({
       lookupTables: [OWNER, MINT_A],
     });
