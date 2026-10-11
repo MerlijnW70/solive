@@ -383,6 +383,22 @@ fn the_agent_draws_only_from_and_pays_only_into_the_accounts_the_owner_named() -
 }
 
 #[test]
+fn the_agent_cannot_name_another_input_mint_even_with_the_owners_own_account() -> TestResult {
+    let mut s = setup()?;
+    let spec = swap(0, 10, 5)?;
+    let other = s.env.market(PROGRAM, &[], PROGRAM, &[])?;
+    let forged = Market {
+        input_mint: other.input_mint,
+        ..s.market
+    };
+    let ix = s.env.agent_intent_ix(&s.agent.pubkey(), s.mandate, &s.trader, &forged, &spec);
+    assert_eq!(s.agent_sends(&[ix]), Err(engine_error(EngineError::MandateMismatch)));
+    assert!(!s.env.exists(&intent_pda(&s.owner(), spec.nonce)));
+    s.agent_creates(&spec)?;
+    Ok(())
+}
+
+#[test]
 fn the_agent_creates_an_intent_from_the_owners_allowance_and_pays_every_cost_itself() -> TestResult {
     let mut s = setup()?;
     let owner = s.owner();
