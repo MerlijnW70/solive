@@ -226,6 +226,44 @@ describe("the wallet server", () => {
     expect(await ok(client, "wallet_swap", { ...swap, exact: true })).not.toHaveProperty("start_receive");
   });
 
+  it("schedules a repeated swap as orders sent now, each holding its ask until its turn", async () => {
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    h.engineLog = [];
+    const plan = { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5", every: 600, times: 3 };
+    const now = h.svm.getClock().unixTimestamp;
+    const opens = [0n, 600n, 1_200n].map((k) => now + BigInt(LANDING_SECONDS) + k);
+    const preview = await ok(client, "wallet_recurring", plan);
+    expect(preview).toMatchObject({ orders: opens.map((at) => ({ opens_at: String(at) })), start_receive: "6.25", sent: false, next: PREVIEW_ONLY });
+    expect(preview["orders"][0]).not.toHaveProperty("intent");
+    h.watched.push(owner);
+    expect((await ok(client, "wallet_intents"))["intents"]).toEqual([]);
+    const sent = await ok(client, "wallet_recurring", { ...plan, start_receive: "6.25", falls_over: 300, send: true });
+    expect(sent["orders"]).toHaveLength(3);
+    expect(sent).toMatchObject({ sent: true, orders: opens.map((at, i) => ({ opens_at: String(at), nonce: String(i), signature: expect.any(String) })) });
+    const listed = ((await ok(client, "wallet_intents"))["intents"] as Json[]).sort((a, b) => Number(a["nonce"]) - Number(b["nonce"]));
+    expect(listed.map((intent) => intent["order"])).toEqual(
+      opens.map((at) => expect.objectContaining({ kind: "dutch", start_out: String(625n * LAMPORTS_PER_SOL / 100n), end_out: String(5n * LAMPORTS_PER_SOL), start_time: String(at), end_time: String(at + 300n) })),
+    );
+    expect(listed.map((intent) => intent["expires_at"])).toEqual(opens.map((at) => String(at + 600n)));
+    expect((await call(client, "wallet_recurring", { ...plan, min_receive: "7", start_receive: "7" })).value).toMatchObject({ code: "InvalidInput" });
+  });
+
+  it("refuses a schedule past the hourly limit before sending any of it, and reports how far a failed one got", async () => {
+    client = await connect(["mcp", "--url", "devnet", "--wallet", "--wallet-per-hour", "SOL=0.12"]);
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    h.engineLog = [];
+    h.watched.push(owner);
+    const plan = { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5", every: 600, times: 3, send: true };
+    expect((await call(client, "wallet_recurring", plan)).value).toMatchObject({ code: "WalletHourLimit" });
+    expect((await ok(client, "wallet_intents"))["intents"]).toEqual([]);
+    h.sendFails = { error: new BlockhashExpired("expired"), landed: false, after: 1 };
+    const partly = await ok(client, "wallet_recurring", { ...plan, times: 2 });
+    expect(partly).toMatchObject({ sent: true, next: "1 of 2 orders were sent; the next failed with Failed: expired" });
+    expect(partly["orders"][0]).toHaveProperty("intent");
+    expect(partly["orders"][1]).not.toHaveProperty("intent");
+    expect((await ok(client, "wallet_intents"))["intents"]).toHaveLength(1);
+  });
+
   it("says how to fund an empty wallet before it tries to swap", async () => {
     h.airdropRefused = true;
     const made = await ok(client, "wallet_setup");

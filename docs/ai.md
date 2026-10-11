@@ -43,6 +43,10 @@ For a better price, let the asked amount fall until a solver takes it:
 
 > Sell 0.05 SOL in a Dutch auction, asking 12 TEST and falling to 9.5 over a few minutes.
 
+Or repeat a trade on a schedule:
+
+> Buy TEST with 0.05 SOL every hour, five times, for at least 9.5 TEST each.
+
 It swaps, auctions or cancels nothing until you say yes.
 
 Before a trade it can estimate the price from recent fills. After a send it waits for the fill and tells you what you received.

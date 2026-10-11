@@ -2,7 +2,7 @@
 
 # MCP tools
 
-16 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 8 wallet tools, listed first.
+16 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 9 wallet tools, listed first.
 
 ## solive_wallet_setup
 
@@ -78,6 +78,26 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 | `falls_over` | integer 60..31536000 | yes | seconds the asked amount takes to fall from start_receive to end_receive |
 | `expires_in` | integer 60..31536000 | no | least seconds the offer stays open once sent, never less than falls_over; default 3600 |
 | `send` | boolean | no | true signs and sends; leave out to preview |
+
+## solive_wallet_recurring
+
+Served only with `--wallet`.
+
+Sell the same amount of one token for another several times, every so many seconds, from this server's wallet, with no bot left running: all orders are sent now and escrowed now. Each order holds its ask at start_receive, a little above the best recent fill, until its turn, then lets it fall to min_receive over falls_over seconds; it expires when the next one opens, or falls_over seconds after its own opening if that is later, and anyone can then return its escrow. Any order can be cancelled with solive_wallet_cancel. Each order pays the create fee and rent, and the rent returns when it closes. Amounts are whole tokens per order. Without send it only previews; show the user the summary, then call again with send: true and the start_receive the preview returned once they approve.
+
+Effect: `submit` (read-only: false, destructive: false, idempotent: false)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `sell` | string | yes | SOL, TEST or a mint address |
+| `buy` | string | yes | SOL, TEST or a mint address |
+| `amount` | string | yes | whole tokens each order sells, such as 0.05 |
+| `min_receive` | string | yes | least whole tokens each order receives |
+| `every` | integer 60..2592000 | yes | seconds between one order opening and the next |
+| `times` | integer 2..12 | yes | how many orders |
+| `start_receive` | string | no | whole tokens each order asks when it opens; default a little above the best recent fill |
+| `falls_over` | integer 60..2592000 | no | seconds each order's ask takes to fall to min_receive; default 120 |
+| `send` | boolean | no | true signs and sends every order; leave out to preview |
 
 ## solive_wallet_wait
 

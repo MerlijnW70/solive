@@ -10,7 +10,7 @@ import { type AgentContext, type AnyAction, define } from "./actions.js";
 import type { Call } from "./claims.js";
 import { MAX_EXPIRES_IN, MIN_EXPIRES_IN, prepareCreate } from "./create.js";
 import { tool } from "./names.js";
-import { AgentRefusal } from "./problems.js";
+import { AgentRefusal, problemOf } from "./problems.js";
 import { listIntents } from "./read.js";
 import { InvalidInput, account, amount, choice, flag, integer, list, object, optional, type Schema, text, time } from "./schema.js";
 import { orderSchema } from "./shapes.js";
@@ -174,7 +174,12 @@ function checkSale(guard: WalletGuard, mint: Address, decimals: number, amount: 
       `this server sells at most ${trade} ${name} per trade and this sells ${formatAmount(amount, decimals)}; sell less, or the user restarts the server with a higher --wallet-per-trade`,
     );
   }
-  const hour = perHour.get(mint);
+  checkHour(guard, mint, decimals, amount, now);
+}
+
+function checkHour(guard: WalletGuard, mint: Address, decimals: number, amount: bigint, now: bigint): void {
+  const hour = guard.limits.perHour.get(mint);
+  const name = nameOf(mint);
   if (hour === undefined) {
     return;
   }
@@ -379,6 +384,95 @@ const walletSwap = define({
       };
     });
     return opening === undefined ? result : { ...result, start_receive: opening };
+  },
+});
+
+export const MAX_RECURRING = 12;
+export const MAX_EVERY = 30 * 24 * 60 * 60;
+
+const walletRecurring = define({
+  name: tool("wallet_recurring"),
+  title: "Repeat a swap on a schedule",
+  description: `Sell the same amount of one token for another several times, every so many seconds, from this server's wallet, with no bot left running: all orders are sent now and escrowed now. Each order holds its ask at start_receive, a little above the best recent fill, until its turn, then lets it fall to min_receive over falls_over seconds; it expires when the next one opens, or falls_over seconds after its own opening if that is later, and anyone can then return its escrow. Any order can be cancelled with ${tool("wallet_cancel")}. Each order pays the create fee and rent, and the rent returns when it closes. Amounts are whole tokens per order. Without send it only previews; show the user the summary, then call again with send: true and the start_receive the preview returned once they approve.`,
+  effect: "submit",
+  repeats: true,
+  input: object({
+    sell: text("SOL, TEST or a mint address"),
+    buy: text("SOL, TEST or a mint address"),
+    amount: text("whole tokens each order sells, such as 0.05"),
+    min_receive: text("least whole tokens each order receives"),
+    every: integer(MIN_EXPIRES_IN, MAX_EVERY, "seconds between one order opening and the next"),
+    times: integer(2, MAX_RECURRING, "how many orders"),
+    start_receive: optional(text("whole tokens each order asks when it opens; default a little above the best recent fill")),
+    falls_over: optional(integer(MIN_EXPIRES_IN, MAX_EVERY, `seconds each order's ask takes to fall to min_receive; default ${SWAP_FALLS_OVER}`)),
+    send: optional(flag("true signs and sends every order; leave out to preview")),
+  }),
+  output: object({
+    orders: list(
+      object({ opens_at: time("when the order's ask starts to fall"), intent: optional(account()), nonce: optional(amount()), signature: optional(text()) }),
+      MAX_RECURRING,
+    ),
+    summary: list(text(), 24, "the first order"),
+    warnings: list(text(), 16),
+    start_receive: text("whole tokens each order asks when it opens; pass it back when sending"),
+    sent: flag(),
+    next: optional(text()),
+  }),
+  run: async (ctx: AgentContext, input, call: Call) => {
+    const wallet = access(ctx);
+    const inputMint = mintNamed(input.sell, wallet.url, "sell");
+    const outputMint = mintNamed(input.buy, wallet.url, "buy");
+    const [inputToken, outputToken, now] = await Promise.all([
+      mintOf(ctx.transport, inputMint),
+      mintOf(ctx.transport, outputMint),
+      chainTime(ctx.transport),
+    ]);
+    const amountIn = raw(input.amount, inputToken.decimals, "amount");
+    const floor = raw(input.min_receive, outputToken.decimals, "min_receive");
+    const ask =
+      input.start_receive === undefined
+        ? openingAsk(await recentFills(ctx.transport, inputMint, outputMint), amountIn, floor)
+        : raw(input.start_receive, outputToken.decimals, "start_receive");
+    if (ask <= floor) {
+      throw new InvalidInput([{ path: "start_receive", message: "must be more than min_receive, or the order has no ask to fall" }]);
+    }
+    checkSale(wallet.limits, inputMint, inputToken.decimals, amountIn, now);
+    checkHour(wallet.limits, inputMint, inputToken.decimals, amountIn * BigInt(input.times), now);
+    const falls = BigInt(input.falls_over ?? SWAP_FALLS_OVER);
+    const every = BigInt(input.every);
+    const life = falls > every ? falls : every;
+    const opens = Array.from({ length: input.times }, (_, k) => now + BigInt(LANDING_SECONDS) + every * BigInt(k));
+    const terms = (open: bigint) => () => ({
+      order: { kind: "dutch" as const, amount_in: amountIn, start_out: ask, end_out: floor, start_time: open, end_time: open + falls },
+      expires_at: open + life,
+    });
+    const shown = { start_receive: formatAmount(ask, outputToken.decimals) };
+    const first = (await offered(ctx, call, { ...input, send: input.send }, terms(opens[0] as bigint))) as Record<string, unknown>;
+    if (input.send !== true) {
+      const { summary, warnings, next } = first as { summary: string[]; warnings: string[]; next: string };
+      return { orders: opens.map((opens_at) => ({ opens_at })), summary, warnings, ...shown, sent: false, next };
+    }
+    const orders = [{ opens_at: opens[0] as bigint, intent: first["intent"], nonce: first["nonce"], signature: first["signature"] }];
+    for (const open of opens.slice(1)) {
+      try {
+        const made = (await offered(ctx, call, { ...input, send: true }, terms(open))) as Record<string, unknown>;
+        orders.push({ opens_at: open, intent: made["intent"], nonce: made["nonce"], signature: made["signature"] });
+      } catch (error) {
+        for (const undo of call.undo.splice(0)) {
+          undo();
+        }
+        const problem = problemOf(error);
+        return {
+          orders: [...orders, ...opens.slice(orders.length).map((opens_at) => ({ opens_at }))],
+          summary: first["summary"],
+          warnings: first["warnings"],
+          ...shown,
+          sent: true,
+          next: `${orders.length} of ${input.times} orders were sent; the next failed with ${problem.code}: ${problem.hint}`,
+        };
+      }
+    }
+    return { orders, summary: first["summary"], warnings: first["warnings"], ...shown, sent: true };
   },
 });
 
@@ -636,6 +730,7 @@ export const WALLET_ACTIONS: readonly AnyAction[] = [
   walletEstimate,
   walletSwap,
   walletAuction,
+  walletRecurring,
   walletWait,
   walletIntents,
   walletCancel,
