@@ -6,7 +6,7 @@ if [[ "$PWD" == /mnt/* ]]; then
   mirror="${CARGO_TARGET_DIR/solive-target/solive-mirror}"
   mkdir -p "$mirror"
   rsync -a --delete \
-    --exclude=node_modules --exclude=dist --exclude=.noha \
+    --exclude=node_modules --exclude=dist \
     --exclude=/target --exclude=/.git --exclude=/verifiable --exclude=/.pnpm-store \
     --exclude=/crates/intent-core/fuzz/target --exclude=/crates/intent-core/fuzz/corpus --exclude=/crates/intent-core/fuzz/artifacts \
     ./ "$mirror/"
