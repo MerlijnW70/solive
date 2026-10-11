@@ -57,6 +57,7 @@ import {
   ENV_JUPITER_KEY,
   JUPITER_DOMAIN,
   IN_FLIGHT_SECONDS,
+  REFRESH_AFTER_SECONDS,
   jupiterHost,
   run,
   stillOpen,
@@ -873,6 +874,27 @@ describe("cli against the deployed engine", () => {
       { at: String(NOW + 1_000n), scan: "changed", unreadable: [bogus] },
       expect.objectContaining({ scan: "changed", sent: [expect.objectContaining({ intent: valid })], failed: [] }),
     ]);
+  });
+
+  it("refreshes its cache for an intent that keeps failing at most once a minute, not every round and not never", async () => {
+    h.watched.length = 0;
+    h.watched.push(owner.address);
+    h.waits.length = 0;
+    const { solver, issued } = await issuedMarket();
+    const stranger = await funded();
+    await ata(authority, stranger.address, inputMint);
+    await ata(authority, stranger.address, issued);
+    await cli(create("4", NOW + 3_600n).map((arg) => (arg === outputMint ? issued : arg)), { "owner.json": owner });
+    const [config] = await findConfigPda();
+    h.rounds = 5;
+    h.steps = [5n, 5n, REFRESH_AFTER_SECONDS, 5n];
+    h.changed = [];
+    h.reads.clear();
+    const run = await watching(issued, stranger);
+    expect(run.code).toBe(EXIT_OK);
+    expect(run.each().map((r) => (r["failed"] as unknown[]).length)).toEqual([1, 1, 1, 1, 1]);
+    expect(h.reads.get(config)).toBe(3);
+    expect(solver.address).not.toBe(stranger.address);
   });
 
   it("counts a full scan only once it succeeds, so the next round scans everything again", async () => {

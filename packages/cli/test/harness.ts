@@ -79,6 +79,7 @@ export const h = {
   steps: [] as bigint[],
   genesisReads: 0,
   failScans: 0,
+  reads: new Map<Address, number>(),
   closed: 0,
   rounds: 0,
   engineLog: [] as EngineTransaction[],
@@ -114,6 +115,7 @@ export const transport: Transport = {
     return Promise.all(addresses.map((address) => transport.getAccount(address)));
   },
   async getAccount(address) {
+    h.reads.set(address, (h.reads.get(address) ?? 0) + 1);
     const account = h.svm.getAccount(address);
     return account.exists
       ? { owner: account.programAddress, data: new Uint8Array(account.data), lamports: account.lamports, executable: account.executable }
@@ -291,6 +293,7 @@ export async function boot(): Promise<KeyPairSigner> {
   h.steps = [];
   h.dropSubmits = false;
   h.failScans = 0;
+  h.reads.clear();
   h.svm = new LiteSVM().withPrecompiles();
   h.svm.addProgramFromFile(INTENT_ENGINE_PROGRAM_ADDRESS, enginePath);
   setNow(NOW);
