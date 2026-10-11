@@ -4,7 +4,7 @@ import { chainTime, CLOCK_SYSVAR, mintOf } from "../accounts.js";
 import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "../args.js";
 import { execute, type PreparedView } from "../flows.js";
 import { TOKEN_NAMES, tokenNamed } from "../tokens.js";
-import { type Transport, unmemoized } from "../transport.js";
+import { neverLanded, type Transport, unmemoized } from "../transport.js";
 import { balances, defaultMints, FAUCET, type Files, PUBLIC_FAUCET, setup, withSettings } from "../wallet.js";
 import { type AgentContext, type AnyAction, define } from "./actions.js";
 import type { Call } from "./claims.js";
@@ -23,13 +23,20 @@ export type WalletGuard = { limits: WalletLimits; sales: Sale[] };
 
 export const walletGuard = (limits: WalletLimits): WalletGuard => ({ limits, sales: [] });
 
-export type WalletAccess = { url: string; files: Files; env: Env; sleep(seconds: number): Promise<boolean>; limits: WalletGuard };
+export type WalletAccess = {
+  url: string;
+  files: Files;
+  env: Env;
+  sleep(seconds: number): Promise<boolean>;
+  now(): bigint;
+  limits: WalletGuard;
+};
 
 export const SALE_WINDOW = 3_600n;
 export const ESTIMATE_SCAN = 12;
 export const ESTIMATE_FILLS = 5;
 export const WAIT_DEFAULT = 30;
-export const WAIT_MAX = 55;
+export const WAIT_MAX = 40;
 export const WAIT_SCAN = 10;
 
 export const DEFAULT_EXPIRES_IN = 3_600;
@@ -139,7 +146,16 @@ export function limitLines(limits: WalletLimits): string[] {
   ];
 }
 
-const capOf = (text: string, decimals: number): bigint => parseAmount(text, decimals);
+function capOf(text: string, decimals: number, mint: Address): bigint {
+  try {
+    return parseAmount(text, decimals);
+  } catch {
+    throw new AgentRefusal(
+      "WalletTokenNotAllowed",
+      `this server's limit of ${text} ${nameOf(mint)} does not fit a token with ${decimals} decimals, so it sells none; the user restarts it with a valid limit`,
+    );
+  }
+}
 
 function checkSale(guard: WalletGuard, mint: Address, decimals: number, amount: bigint, now: bigint): void {
   if (!limited(guard)) {
@@ -152,7 +168,7 @@ function checkSale(guard: WalletGuard, mint: Address, decimals: number, amount: 
     throw new AgentRefusal("WalletTokenNotAllowed", `this server sells only ${allowed}, not ${name}; its limits were set when it started`);
   }
   const trade = perTrade.get(mint);
-  if (trade !== undefined && amount > capOf(trade, decimals)) {
+  if (trade !== undefined && amount > capOf(trade, decimals, mint)) {
     throw new AgentRefusal(
       "WalletTradeLimit",
       `this server sells at most ${trade} ${name} per trade and this sells ${formatAmount(amount, decimals)}; sell less, or the user restarts the server with a higher --wallet-per-trade`,
@@ -164,7 +180,7 @@ function checkSale(guard: WalletGuard, mint: Address, decimals: number, amount: 
   }
   guard.sales = guard.sales.filter((s) => s.at > now - SALE_WINDOW);
   const used = guard.sales.filter((s) => s.mint === mint).reduce((sum, s) => sum + s.amount, 0n);
-  const cap = capOf(hour, decimals);
+  const cap = capOf(hour, decimals, mint);
   if (used + amount > cap) {
     throw new AgentRefusal(
       "WalletHourLimit",
@@ -283,7 +299,9 @@ async function offered(
   try {
     return await sent(ctx, signer, { intent, nonce, summary, warnings, prepared }, input.send, call);
   } catch (error) {
-    guard.sales = guard.sales.filter((s) => s !== sale);
+    if (neverLanded(error)) {
+      guard.sales = guard.sales.filter((s) => s !== sale);
+    }
     throw error;
   }
 }
@@ -533,6 +551,7 @@ const walletWait = define({
     const [intent] = await findIntentPda({ owner, nonce: input.nonce });
     const within = input.within ?? WAIT_DEFAULT;
     const fresh = unmemoized(ctx.transport);
+    const deadline = wallet.now() + BigInt(within);
     let waited = 0;
     let pair: Pair | null = null;
     let status: WaitStatus = "closed";
@@ -545,7 +564,7 @@ const walletWait = define({
       const decoded = getIntentDecoder().decode(view.data);
       pair = { inputMint: decoded.inputMint, outputMint: decoded.outputMint };
       status = STATUS[decoded.status] ?? "open";
-      if ((status !== "open" && status !== "filling") || waited >= within || !(await wallet.sleep(1))) {
+      if ((status !== "open" && status !== "filling") || waited >= within || wallet.now() >= deadline || !(await wallet.sleep(1))) {
         break;
       }
       waited += 1;

@@ -87,7 +87,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `nonce` | whole number as a decimal string | yes | the intent's nonce, from the send or wallet_intents |
-| `within` | integer 1..55 | no | most seconds to wait; default 30 |
+| `within` | integer 1..40 | no | most seconds to wait; default 30 |
 
 ## solive_wallet_intents
 

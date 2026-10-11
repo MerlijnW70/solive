@@ -84,6 +84,7 @@ export const h = {
   rounds: 0,
   engineLog: [] as EngineTransaction[],
   requestedOf: [] as (Address | undefined)[],
+  sendFails: null as { error: Error; landed: boolean } | null,
   served: [] as McpServer[],
   airdropRefused: false,
   airdrops: [] as { address: Address; lamports: bigint }[],
@@ -139,7 +140,15 @@ export const transport: Transport = {
   },
   sendWire: async (wire) => {
     const tx = decodeWire(wire);
+    const fails = h.sendFails;
+    h.sendFails = null;
+    if (fails !== null && !fails.landed) {
+      throw fails.error;
+    }
     const result = h.svm.sendTransaction(tx);
+    if (fails !== null) {
+      throw fails.error;
+    }
     if (result instanceof FailedTransactionMetadata) {
       throw new Error(`${String(result.err())}\n${result.meta().logs().join("\n")}`);
     }

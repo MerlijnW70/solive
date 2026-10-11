@@ -54,7 +54,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { agentServer } from "./agent/mcp.js";
 import { claimsOf } from "./agent/claims.js";
 import { budgetOf } from "./agent/budget.js";
-import { walletGuard } from "./agent/wallet.js";
+import { ESTIMATE_SCAN, walletGuard } from "./agent/wallet.js";
 import { relayOf } from "./agent/relay.js";
 import { type Authority, type Command, type Env, usageOf } from "./args.js";
 import { VERSION } from "./version.js";
@@ -451,7 +451,10 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       const wallet =
         command.wallet === null
           ? {}
-          : { wallet: { url: command.url, files: runtime, env: runtime.env, sleep: runtime.sleep, limits: walletGuard(command.wallet) } };
+          : { wallet: { url: command.url, files: runtime, env: runtime.env, sleep: runtime.sleep, now: runtime.now, limits: walletGuard(command.wallet) } };
+      if (command.wallet !== null) {
+        transport.engineTransactions(ESTIMATE_SCAN).catch(() => undefined);
+      }
       await runtime.serve(agentServer({ transport, relay, agent, claims: claimsOf(), ...wallet }));
       return null;
     }

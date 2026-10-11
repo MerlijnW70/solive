@@ -27,6 +27,9 @@ import { Charged,
   rpcTransport,
   socketUrl,
   TRANSACTION_FETCHES,
+  FailedOnChain,
+  BlockhashExpired,
+  neverLanded,
   KEPT_TRANSACTIONS,
 } from "../src/transport.js";
 
@@ -182,7 +185,10 @@ describe("confirm", () => {
     const s = stub([{ err: { InstructionError: [0, { Custom: 6008 }] }, confirmationStatus: "confirmed" }]);
     await expect(confirm(s.rpc, SIG, 10n, s.wait)).rejects.toThrow(`transaction ${SIG} failed: { InstructionError: [ 0, { Custom: 6008 } ] }`);
     const again = stub([{ err: { InstructionError: [0, { Custom: 6008 }] }, confirmationStatus: "confirmed" }]);
-    await expect(confirm(again.rpc, SIG, 10n, again.wait)).rejects.toBeInstanceOf(Charged);
+    const failed = await confirm(again.rpc, SIG, 10n, again.wait).catch((e: unknown) => e);
+    expect(failed).toBeInstanceOf(Charged);
+    expect(failed).toBeInstanceOf(FailedOnChain);
+    expect(neverLanded(failed)).toBe(true);
   });
 
   it("gives up only once the blockhash is past its last valid height", async () => {
@@ -193,6 +199,8 @@ describe("confirm", () => {
     const expired = await confirm(late.rpc, SIG, 10n, late.wait).catch((e: unknown) => e);
     expect(expired).toBeInstanceOf(Error);
     expect(expired).not.toBeInstanceOf(Charged);
+    expect(expired).toBeInstanceOf(BlockhashExpired);
+    expect(neverLanded(expired)).toBe(true);
   });
 
   it("stops waiting on a node whose block height never moves, and says to look the signature up", async () => {
@@ -203,7 +211,10 @@ describe("confirm", () => {
     );
     expect(stuck.waits).toHaveLength(CONFIRM_POLLS - 1);
     const still = stub([], Array.from({ length: CONFIRM_POLLS + 5 }, () => 5n));
-    await expect(confirm(still.rpc, SIG, 10n, still.wait)).rejects.toBeInstanceOf(Charged);
+    const unsure = await confirm(still.rpc, SIG, 10n, still.wait).catch((e: unknown) => e);
+    expect(unsure).toBeInstanceOf(Charged);
+    expect(neverLanded(unsure)).toBe(false);
+    expect(neverLanded(new Error("fetch failed"))).toBe(false);
     expect(stuck.calls.filter((c) => c === `status:${SIG}`)).toHaveLength(CONFIRM_POLLS);
     const late = stub([...Array.from({ length: CONFIRM_POLLS - 1 }, () => null), { err: null, confirmationStatus: "confirmed" }]);
     await confirm(late.rpc, SIG, 10n, late.wait);
@@ -435,7 +446,7 @@ describe("engine transactions", () => {
     const rpc = {
       ...s.rpc,
       getSignaturesForAddress: (_: Address, config: { limit: number }) => ({
-        send: async () => sigs.slice(0, config.limit).map((signature, i) => ({ signature, slot: BigInt(i), blockTime: null, err: null })),
+        send: async () => sigs.slice(0, config.limit).map((signature, i) => ({ signature, slot: BigInt(i), blockTime: 1n, err: null })),
       }),
       getTransaction: (signature: Signature) => ({
         send: async () => {
@@ -449,6 +460,31 @@ describe("engine transactions", () => {
     asked.length = 0;
     await transport.engineTransactions(10);
     expect(asked).toEqual([sigs[0]]);
+  });
+
+  it("fetches again a transaction the node returned without its metadata or block time", async () => {
+    const s = stub([]);
+    let calls = 0;
+    const rpc = {
+      ...s.rpc,
+      getSignaturesForAddress: () => ({
+        send: async () => [
+          { signature: SIG, slot: 1n, blockTime: 100n, err: null },
+          { signature: OTHER_SIG, slot: 2n, blockTime: null, err: null },
+        ],
+      }),
+      getTransaction: () => ({
+        send: async () => {
+          calls++;
+          return calls === 1 ? { transaction: { message: { accountKeys: [] } }, meta: null } : { transaction: { message: { accountKeys: [] } }, meta: {} };
+        },
+      }),
+    };
+    const transport = rpcTransport(rpc as unknown as typeof s.rpc, s.wait);
+    await transport.engineTransactions(2);
+    await transport.engineTransactions(2);
+    await transport.engineTransactions(2);
+    expect(calls).toBe(5);
   });
 
   it("reads one address's transactions when asked, fetching a few at a time and keeping their order", async () => {

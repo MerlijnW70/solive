@@ -150,6 +150,17 @@ export class Charged extends Error {
   }
 }
 
+export class FailedOnChain extends Charged {}
+
+export class BlockhashExpired extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "BlockhashExpired";
+  }
+}
+
+export const neverLanded = (error: unknown): boolean => error instanceof FailedOnChain || error instanceof BlockhashExpired;
+
 export type SignatureWatch = (signature: Signature, signal: AbortSignal) => Promise<void>;
 
 export function signatureWatch(url: string): SignatureWatch {
@@ -163,7 +174,7 @@ export function signatureWatch(url: string): SignatureWatch {
     }
     const err = (next.value as { value?: { err?: unknown } }).value?.err ?? null;
     if (err !== null) {
-      throw new Charged(`transaction ${signature} failed: ${inspect(err)}`);
+      throw new FailedOnChain(`transaction ${signature} failed: ${inspect(err)}`);
     }
   };
 }
@@ -205,14 +216,14 @@ async function polled(
     const [status] = (await patiently(() => rpc.getSignatureStatuses([signature]).send(), wait)).value;
     if (status) {
       if (status.err !== null) {
-        throw new Charged(`transaction ${signature} failed: ${inspect(status.err)}`);
+        throw new FailedOnChain(`transaction ${signature} failed: ${inspect(status.err)}`);
       }
       if (status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized") {
         return;
       }
     }
     if ((await patiently(() => rpc.getBlockHeight().send(), wait)) > lastValidBlockHeight) {
-      throw new Error(`transaction ${signature} expired before confirmation`);
+      throw new BlockhashExpired(`transaction ${signature} expired before confirmation`);
     }
     if (poll >= CONFIRM_POLLS) {
       throw new Charged(
@@ -408,7 +419,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
           failed: entry.err !== null,
           emitted,
         };
-        if (tx !== null) {
+        if (tx?.meta !== null && tx?.meta !== undefined && entry.blockTime !== null) {
           fetched.set(entry.signature, found);
           for (const old of fetched.keys()) {
             if (fetched.size <= KEPT_TRANSACTIONS) {

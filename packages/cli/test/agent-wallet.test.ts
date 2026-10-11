@@ -17,6 +17,7 @@ import {
 } from "@intent-engine/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { WALLET_NOT_MAINNET } from "../src/args.js";
+import { BlockhashExpired, FailedOnChain } from "../src/transport.js";
 import { START_PROMPT, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
 import {
   DEFAULT_EXPIRES_IN,
@@ -96,6 +97,15 @@ describe("the wallet server", () => {
     preset(NATIVE_MINT);
     preset(TEST_TOKEN);
     client = await connect(["mcp", "--url", "devnet", "--wallet"]);
+  });
+
+  it("starts reading recent engine transactions as it starts, so the first estimate finds them ready", async () => {
+    h.requestedLimits.length = 0;
+    await connect(["mcp", "--url", "devnet", "--wallet"]);
+    expect(h.requestedLimits).toEqual([ESTIMATE_SCAN]);
+    h.requestedLimits.length = 0;
+    await connect(["mcp", "--url", "devnet"]);
+    expect(h.requestedLimits).toEqual([]);
   });
 
   it("offers its wallet tools first, says how to use them and how to start", async () => {
@@ -261,6 +271,31 @@ describe("the wallet server", () => {
     expect((await call(client, "wallet_swap", { ...swap, amount: "0.001" })).value).toMatchObject({ code: "WalletHourLimit" });
     setNow(h.svm.getClock().unixTimestamp + 3_601n);
     expect(await ok(client, "wallet_swap", { ...swap, amount: "0.1", send: true })).toMatchObject({ sent: true });
+  });
+
+  it("keeps counting a sale whose send failed unless the failure proves nothing landed", async () => {
+    const limited = ["mcp", "--url", "devnet", "--wallet", "--wallet-per-hour", "SOL=0.15"];
+    const swap = { sell: "SOL", buy: "TEST", amount: "0.1", min_receive: "5" };
+    client = await connect(limited);
+    await ok(client, "wallet_setup");
+    h.sendFails = { error: new Error("fetch failed"), landed: true };
+    expect((await call(client, "wallet_swap", { ...swap, send: true })).error).toBe(true);
+    expect((await call(client, "wallet_swap", swap)).value).toMatchObject({ code: "WalletHourLimit" });
+    for (const error of [new BlockhashExpired("expired"), new FailedOnChain("failed")]) {
+      client = await connect(limited);
+      h.sendFails = { error, landed: false };
+      expect((await call(client, "wallet_swap", { ...swap, send: true })).error).toBe(true);
+      expect(await ok(client, "wallet_swap", swap)).toMatchObject({ sent: false });
+    }
+  });
+
+  it("sells none of a token whose limit has more decimals than the token", async () => {
+    client = await connect(["mcp", "--url", "devnet", "--wallet", "--wallet-per-trade", "SOL=0.0000000001"]);
+    await ok(client, "wallet_setup");
+    expect((await call(client, "wallet_swap", { sell: "SOL", buy: "TEST", amount: "0.1", min_receive: "5" })).value).toMatchObject({
+      code: "WalletTokenNotAllowed",
+      hint: "this server's limit of 0.0000000001 SOL does not fit a token with 9 decimals, so it sells none; the user restarts it with a valid limit",
+    });
   });
 
   it("estimates a swap from the rates of recent fills of the same pair, newest first", async () => {
