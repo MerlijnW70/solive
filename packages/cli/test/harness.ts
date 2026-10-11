@@ -71,6 +71,9 @@ export const h = {
   env: {} as Record<string, string | undefined>,
   sleeps: [] as number[],
   waits: [] as number[],
+  changed: [] as { address: Address; data: Uint8Array }[][],
+  scans: 0,
+  submitted: [] as string[],
   closed: 0,
   rounds: 0,
   engineLog: [] as EngineTransaction[],
@@ -110,6 +113,16 @@ export const transport: Transport = {
   },
   send: (ixs, payer) => send(payer, ixs),
   latestBlockhash: async () => ({ blockhash: h.svm.latestBlockhash() as Blockhash, lastValidBlockHeight: 0n }),
+  submitWire: async (wire) => {
+    h.submitted.push(wire);
+    const tx = decodeWire(wire);
+    const result = h.svm.sendTransaction(tx);
+    if (result instanceof FailedTransactionMetadata) {
+      throw new Error(`${String(result.err())}\n${result.meta().logs().join("\n")}`);
+    }
+    h.wires.push(wire);
+    return getSignatureFromTransaction(tx);
+  },
   sendWire: async (wire) => {
     const tx = decodeWire(wire);
     const result = h.svm.sendTransaction(tx);
@@ -145,6 +158,7 @@ export const transport: Transport = {
   },
   genesisHash: async () => h.genesis,
   intents: async (only) => {
+    h.scans++;
     const found = [];
     for (const owner of only === undefined ? h.watched : [only]) {
       const lanes = [1n, 2n, 3n].flatMap((serial) => Array.from({ length: 10 }, (_, i) => MANDATE_NONCE_BIT | (serial << 32n) | BigInt(i)));
@@ -223,7 +237,7 @@ export function runtime(signers: Record<string, KeyPairSigner>): Runtime {
     intentChanges: () => ({
       wait: async (seconds) => {
         h.waits.push(seconds);
-        return h.waits.length < h.rounds;
+        return h.waits.length < h.rounds ? (h.changed.shift() ?? []) : null;
       },
       close: () => {
         h.closed++;
@@ -318,7 +332,13 @@ export async function cli(argv: string[], signers: Record<string, KeyPairSigner>
   const out: string[] = [];
   const err: string[] = [];
   const code = await main(argv, runtime(signers), { out: (t) => out.push(t), err: (t) => err.push(t) });
-  return { code, out: out.join("\n"), err: err.join("\n"), json: () => JSON.parse(out.join("\n")) as Record<string, unknown> };
+  return {
+    code,
+    out: out.join("\n"),
+    err: err.join("\n"),
+    json: () => JSON.parse(out.join("\n")) as Record<string, unknown>,
+    each: () => out.map((o) => JSON.parse(o) as Record<string, unknown>),
+  };
 }
 
 export type World = {

@@ -11,6 +11,7 @@ import {
 import { describe, expect, it } from "vitest";
 import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { Charged,
+  changedAccount,
   changesFrom,
   CONFIRM_POLLS,
   confirm,
@@ -380,38 +381,45 @@ describe("intent changes", () => {
     expect(socketUrl("https://rpc.example/key?x=1")).toBe("wss://rpc.example/key?x=1");
   });
 
-  it("wakes as soon as an intent changes, else after the interval, and stops listening when closed", async () => {
-    let push: (() => void) | undefined;
+  const note = (address: Address, byte: number) => ({
+    context: { slot: 1n },
+    value: { pubkey: address, account: { data: [Buffer.from([byte]).toString("base64"), "base64"] } },
+  });
+
+  it("reads the changed intent out of a notification and ignores anything else", () => {
+    expect(changedAccount(note(OWNER, 7))).toEqual({ address: OWNER, data: new Uint8Array([7]) });
+    for (const junk of [null, {}, { value: { pubkey: OWNER } }, { value: { pubkey: 1, account: { data: ["", "base64"] } } }]) {
+      expect(changedAccount(junk)).toBeNull();
+    }
+  });
+
+  it("wakes with the intents that changed, keeps only the latest data of each, else wakes empty after the interval", async () => {
+    const queue: ((value: IteratorResult<unknown>) => void)[] = [];
     let aborted = false;
-    const notes: unknown[] = [];
     const changes = changesFrom(async (signal) => {
       signal.addEventListener("abort", () => {
         aborted = true;
       });
-      return {
-        [Symbol.asyncIterator]: () => ({
-          next: () =>
-            new Promise<IteratorResult<unknown>>((resolve) => {
-              push = () => {
-                notes.push(1);
-                resolve({ value: notes.length, done: false });
-              };
-            }),
-        }),
-      };
+      return { [Symbol.asyncIterator]: () => ({ next: () => new Promise<IteratorResult<unknown>>((resolve) => queue.push(resolve)) }) };
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const push = async (value: unknown) => {
+      await flush();
+      queue.shift()?.({ value, done: false });
+      await flush();
+    };
+    await flush();
     const started = Date.now();
     const woken = changes.wait(60);
-    push?.();
-    expect(await woken).toBe(true);
+    await push(note(OWNER, 1));
+    expect(await woken).toEqual([{ address: OWNER, data: new Uint8Array([1]) }]);
     expect(Date.now() - started).toBeLessThan(1_000);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    push?.();
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(await changes.wait(60)).toBe(true);
+    await push(note(OTHER, 2));
+    await push(note(OTHER, 3));
+    await push({ unrelated: true });
+    expect(await changes.wait(60)).toEqual([{ address: OTHER, data: new Uint8Array([3]) }]);
     const idle = Date.now();
-    expect(await changes.wait(0.05)).toBe(true);
+    expect(await changes.wait(0.05)).toEqual([]);
     expect(Date.now() - idle).toBeGreaterThanOrEqual(40);
     changes.close();
     expect(aborted).toBe(true);
@@ -422,7 +430,7 @@ describe("intent changes", () => {
       throw new Error("no websocket");
     });
     const started = Date.now();
-    expect(await changes.wait(0.05)).toBe(true);
+    expect(await changes.wait(0.05)).toEqual([]);
     expect(Date.now() - started).toBeGreaterThanOrEqual(40);
     changes.close();
   });

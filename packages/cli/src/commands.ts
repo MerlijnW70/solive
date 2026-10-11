@@ -43,6 +43,7 @@ import {
   issuePricer,
   jitoBundles,
   jupiterPricer,
+  remembering,
   solverTableAccounts,
   tick,
   tipAccount,
@@ -65,7 +66,7 @@ import { prepareSignedIntent, previewSignedIntent, submitSignedIntent } from "./
 import { approval, ask, finish, FlowRefused, hasTokens, inRaw, NOT_SENT, perform, signMessage } from "./flows.js";
 import { loadMandate } from "./agent/mandate.js";
 import { RELAY_MAX_TTL } from "./args.js";
-import type { IntentChanges, Latest, Transport } from "./transport.js";
+import type { IntentChanges, Latest, ProgramAccount, Transport } from "./transport.js";
 import {
   chainTime,
   clusterDomain,
@@ -260,20 +261,33 @@ type SolveCommand = Extract<Command, { name: "solve" }>;
 export async function watchSolve(command: SolveCommand, interval: number, runtime: Runtime, emit: (value: object) => void): Promise<number> {
   const transport = withPriority(runtime.transport(command.url), command.priority);
   const options = await solverOptions(command, runtime, transport);
+  const chain = remembering(options.chain);
+  const live: SolverOptions = {
+    ...options,
+    chain,
+    send:
+      command.jito === undefined ? async (wire) => ({ signature: await transport.submitWire(wire), confirmed: false }) : options.send,
+  };
   const changes = runtime.intentChanges(command.url);
   let acted = 0;
   try {
-    do {
+    for (let changed: ProgramAccount[] | null = []; changed !== null; changed = await changes.wait(interval)) {
+      const only = changed.map(({ address, data }) => ({ address, intent: getIntentDecoder().decode(data) }));
+      const round = only.length === 0 ? live : { ...live, chain: { ...chain, intents: async () => only } };
       try {
-        const { filled, sent, failed } = await tick(options);
+        const { filled, sent, failed } = await tick(round);
         if (filled.length + sent.length + failed.length > 0) {
           emit({ filled, sent, failed });
           acted += filled.length + sent.length;
         }
+        if (failed.length > 0) {
+          chain.forget();
+        }
       } catch (error) {
+        chain.forget();
         emit({ error: error instanceof Error ? error.message : String(error) });
       }
-    } while (await changes.wait(interval));
+    }
   } finally {
     changes.close();
   }

@@ -78,14 +78,14 @@ export async function tick(o: SolverOptions): Promise<Report> {
       continue;
     }
     try {
-      const inputTokenProgram = await o.chain.tokenProgram(intent.inputMint);
+      const [inputTokenProgram, outputTokenProgram] = await Promise.all([
+        o.chain.tokenProgram(intent.inputMint),
+        o.chain.tokenProgram(intent.outputMint),
+      ]);
       const payable = async (draft: Parameters<typeof payoutAccounts>[0]) => {
-        const missing = [];
-        for (const payout of await payoutAccounts(draft, config.feeRecipient, inputTokenProgram)) {
-          if (!(await o.chain.exists(payout.address))) {
-            missing.push(payout.name);
-          }
-        }
+        const payouts = await payoutAccounts(draft, config.feeRecipient, inputTokenProgram);
+        const found = await Promise.all(payouts.map((payout) => o.chain.exists(payout.address)));
+        const missing = payouts.filter((_, i) => !found[i]).map((payout) => payout.name);
         return missing.length === 0 ? null : `no ${missing.join(" or ")} account to pay into`;
       };
       const solverInput = await findAssociatedTokenAddress({
@@ -93,12 +93,16 @@ export async function tick(o: SolverOptions): Promise<Report> {
         mint: intent.inputMint,
         tokenProgram: inputTokenProgram,
       });
-      const outputTokenProgram = await o.chain.tokenProgram(intent.outputMint);
       const solverOutput = await findAssociatedTokenAddress({
         owner: o.solver.address,
         mint: intent.outputMint,
         tokenProgram: outputTokenProgram,
       });
+      const [inputExists, outputExists, latest] = await Promise.all([
+        o.chain.exists(solverInput),
+        o.chain.exists(solverOutput),
+        o.chain.blockhash(),
+      ]);
       const draft: FillContext = {
         solver: o.solver,
         feeRecipient: config.feeRecipient,
@@ -106,15 +110,14 @@ export async function tick(o: SolverOptions): Promise<Report> {
         outputTokenProgram,
         computeUnits: MAX_COMPUTE_UNITS,
         unitPrice: 0n,
-        createSolverInput: !(await o.chain.exists(solverInput)),
-        createSolverOutput: !(await o.chain.exists(solverOutput)),
+        createSolverInput: !inputExists,
+        createSolverOutput: !outputExists,
         tip: o.tip,
       };
       let fitting: { plan: Plan; context: FillContext; tables: Record<Address, Address[]>; probe: Base64EncodedWireTransaction } | null =
         null;
       let skipped: string | null = null;
       let size: { bytes: number | null; accounts: number } = { bytes: null, accounts: 0 };
-      const latest = await o.chain.blockhash();
       for (const routeAccounts of ROUTE_ACCOUNT_BUDGETS) {
         const decision = await decide(address, intent, config, now, o.pricer, o.solver.address, { ...o.strategy, routeAccounts }, payable);
         if (decision.kind === "skip") {
@@ -143,7 +146,7 @@ export async function tick(o: SolverOptions): Promise<Report> {
         continue;
       }
       const { plan, context, tables, probe } = fitting;
-      const before = [await o.chain.tokenAmount(solverInput), await o.chain.tokenAmount(solverOutput)];
+      const before = await Promise.all([o.chain.tokenAmount(solverInput), o.chain.tokenAmount(solverOutput)]);
       const simulated = await o.simulate(probe, [solverInput, solverOutput]);
       if (simulated.err !== null) {
         report.failed.push({ intent: address, error: `${SIMULATION_REFUSED}: ${simulated.err}` });
@@ -179,4 +182,70 @@ export async function tick(o: SolverOptions): Promise<Report> {
     }
   }
   return report;
+}
+
+export const CONFIG_TTL_MS = 30_000;
+
+export const BLOCKHASH_TTL_MS = 20_000;
+
+export type Remembering = Chain & { forget(): void };
+
+function fresh<T>(ttl: number, clock: () => number, load: () => Promise<T>): { get(): Promise<T>; clear(): void } {
+  let held: { at: number; value: Promise<T> } | null = null;
+  return {
+    get: () => {
+      if (held === null || clock() - held.at > ttl) {
+        const value = load();
+        const entry = { at: clock(), value };
+        held = entry;
+        value.catch(() => {
+          if (held === entry) {
+            held = null;
+          }
+        });
+      }
+      return held.value;
+    },
+    clear: () => {
+      held = null;
+    },
+  };
+}
+
+export function remembering(chain: Chain, clock: () => number = Date.now): Remembering {
+  const programs = new Map<Address, Promise<Address>>();
+  const existing = new Set<Address>();
+  const config = fresh(CONFIG_TTL_MS, clock, () => chain.config());
+  const blockhash = fresh(BLOCKHASH_TTL_MS, clock, () => chain.blockhash());
+  return {
+    ...chain,
+    config: () => config.get(),
+    blockhash: () => blockhash.get(),
+    tokenProgram: (mint) => {
+      const known = programs.get(mint);
+      if (known !== undefined) {
+        return known;
+      }
+      const loaded = chain.tokenProgram(mint);
+      programs.set(mint, loaded);
+      loaded.catch(() => programs.delete(mint));
+      return loaded;
+    },
+    exists: async (address) => {
+      if (existing.has(address)) {
+        return true;
+      }
+      const found = await chain.exists(address);
+      if (found) {
+        existing.add(address);
+      }
+      return found;
+    },
+    forget: () => {
+      programs.clear();
+      existing.clear();
+      config.clear();
+      blockhash.clear();
+    },
+  };
 }

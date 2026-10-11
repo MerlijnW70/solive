@@ -175,7 +175,7 @@ describe("the quickstart", () => {
     expect(commands[1]).toBe(`${commands[0]} --yes`);
     expect(outputs[0]).toMatchObject({ sent: false });
     expect(outputs[1]).toMatchObject({ sent: true });
-    expect(filled).toMatchObject({ filled: [{ intent: outputs[1]?.["intent"] }], failed: [] });
+    expect(filled).toMatchObject({ sent: [{ intent: outputs[1]?.["intent"] }], failed: [] });
     expect(PAGE).toContain("Once the intent is filled, this prints `5`.");
     expect(balance(received)).toBe(5n * LAMPORTS_PER_SOL);
     expect(PAGE).toContain("Ask for 50 test tokens, more than the filler pays, then cancel:");

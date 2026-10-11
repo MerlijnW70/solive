@@ -22,7 +22,7 @@ import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRE
 
 export type AccountView = { owner: Address; data: Uint8Array; lamports: bigint; executable?: boolean };
 
-type ProgramAccount = { address: Address; data: Uint8Array };
+export type ProgramAccount = { address: Address; data: Uint8Array };
 
 export type EngineTransaction = {
   signature: string;
@@ -41,6 +41,7 @@ export interface Transport {
   send(instructions: readonly Instruction[], payer: TransactionSigner): Promise<string>;
   latestBlockhash(): Promise<Latest>;
   sendWire(wire: Base64EncodedWireTransaction, latest: Latest): Promise<string>;
+  submitWire(wire: Base64EncodedWireTransaction): Promise<string>;
   simulate(wire: Base64EncodedWireTransaction, watch?: readonly Address[]): Promise<Simulation>;
   genesisHash(): Promise<string>;
   intents(owner?: Address): Promise<ProgramAccount[]>;
@@ -60,7 +61,7 @@ export type RpcLike = {
   getLatestBlockhash(): Pending<{ value: { blockhash: Blockhash; lastValidBlockHeight: bigint } }>;
   sendTransaction(
     wire: Base64EncodedWireTransaction,
-    config: { encoding: "base64" },
+    config: { encoding: "base64"; skipPreflight?: boolean },
   ): Pending<Signature>;
   simulateTransaction(
     wire: Base64EncodedWireTransaction,
@@ -214,6 +215,9 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>)
       await confirm(rpc, signature, latest.lastValidBlockHeight, wait);
       return signature;
     },
+    async submitWire(wire) {
+      return patiently(() => rpc.sendTransaction(wire, { encoding: "base64", skipPreflight: true }).send(), wait);
+    },
     async simulate(wire, watch = []) {
       const { value } = await patiently(
         () =>
@@ -315,7 +319,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>)
   };
 }
 
-export type IntentChanges = { wait(seconds: number): Promise<boolean>; close(): void };
+export type IntentChanges = { wait(seconds: number): Promise<ProgramAccount[] | null>; close(): void };
 
 export type Notifications = (signal: AbortSignal) => Promise<AsyncIterable<unknown>>;
 
@@ -343,35 +347,50 @@ export function intentNotifications(url: string): Notifications {
       .subscribe({ abortSignal });
 }
 
+export function changedAccount(note: unknown): ProgramAccount | null {
+  const value = (note as { value?: { pubkey?: unknown; account?: { data?: unknown } } } | null)?.value;
+  const data = value?.account?.data;
+  if (typeof value?.pubkey !== "string" || !Array.isArray(data) || typeof data[0] !== "string") {
+    return null;
+  }
+  return { address: value.pubkey as Address, data: new Uint8Array(Buffer.from(data[0], "base64")) };
+}
+
 export function changesFrom(notifications: Notifications): IntentChanges {
   const controller = new AbortController();
-  let pending = false;
+  const pending = new Map<Address, Uint8Array>();
   let wake: (() => void) | undefined;
+  const drain = () => {
+    const changed = [...pending].map(([address, data]) => ({ address, data }));
+    pending.clear();
+    return changed;
+  };
   const listen = async () => {
     const iterator = (await notifications(controller.signal))[Symbol.asyncIterator]();
-    while (!(await iterator.next()).done) {
-      pending = true;
-      wake?.();
+    for (let next = await iterator.next(); next.done !== true; next = await iterator.next()) {
+      const changed = changedAccount(next.value);
+      if (changed !== null) {
+        pending.set(changed.address, changed.data);
+        wake?.();
+      }
     }
   };
   listen().catch(() => undefined);
   return {
     wait: (seconds) =>
       new Promise((resolve) => {
-        if (pending) {
-          pending = false;
-          resolve(true);
+        if (pending.size > 0) {
+          resolve(drain());
           return;
         }
         const timer = setTimeout(() => {
           wake = undefined;
-          resolve(true);
+          resolve([]);
         }, seconds * 1000);
         wake = () => {
           clearTimeout(timer);
           wake = undefined;
-          pending = false;
-          resolve(true);
+          resolve(drain());
         };
       }),
     close: () => {

@@ -750,31 +750,43 @@ describe("cli against the deployed engine", () => {
     expect([balance(receiver), balance(solverOutput), balance(solverInput)]).toEqual([300n, net - 300n, net]);
   });
 
-  it("keeps solving with --watch, printing only the rounds that fill, until the watch ends", async () => {
+  it("keeps solving with --watch: scans on the timer, fills a changed intent straight from its notification, and sends without waiting", async () => {
     h.watched.length = 0;
     h.watched.push(owner.address);
     h.waits.length = 0;
     h.closed = 0;
-    h.rounds = 2;
+    h.submitted.length = 0;
+    h.rounds = 3;
     const solver = await funded();
     const issued = await mint(solver, 6);
     const receiver = await ata(authority, owner.address, issued);
-    await cli(
-      create("7", NOW + 3_600n).map((arg) => (arg === outputMint ? issued : arg)),
-      { "owner.json": owner },
-    );
+    for (const nonce of ["7", "12"]) {
+      await cli(
+        create(nonce, NOW + 3_600n).map((arg) => (arg === outputMint ? issued : arg)),
+        { "owner.json": owner },
+      );
+    }
     await ata(authority, feeRecipient.address, inputMint);
     await ata(authority, solver.address, inputMint);
     await ata(authority, solver.address, issued);
     const [i7] = await findIntentPda({ owner: owner.address, nonce: 7n });
+    const [i12] = await findIntentPda({ owner: owner.address, nonce: 12n });
+    const created = h.svm.getAccount(i12);
+    expect(created.exists).toBe(true);
+    h.changed = [[{ address: i12, data: new Uint8Array(created.exists ? created.data : []) }]];
+    const scans = h.scans;
     const run = await cli(
       ["solve", "--keypair", "s.json", "--issue", `${inputMint}:${issued}=1/1`, "--min-profit", `${issued}=1`, "--url", "http://cluster", "--watch", "--interval", "3"],
       { "s.json": solver },
     );
     expect([run.code, run.err]).toEqual([EXIT_OK, ""]);
-    expect(run.json()).toEqual({ filled: [{ intent: i7, profit: String(splitFee(ESCROW, FEE_BPS).net - 300n), signature: expect.any(String) }], sent: [], failed: [] });
-    expect([h.waits, h.closed]).toEqual([[3, 3], 1]);
-    expect(balance(receiver)).toBe(300n);
+    const profit = String(splitFee(ESCROW, FEE_BPS).net - 300n);
+    expect(run.each()).toEqual([
+      { filled: [], sent: [{ intent: i7, profit, signature: expect.any(String) }], failed: [] },
+      { filled: [], sent: [{ intent: i12, profit, signature: expect.any(String) }], failed: [] },
+    ]);
+    expect([h.scans - scans, h.submitted.length, h.waits, h.closed]).toEqual([2, 2, [3, 3, 3], 1]);
+    expect(balance(receiver)).toBe(600n);
   });
 
   it("sends a tipped bundle to jito only for a fill that simulates, and reports it as sent", async () => {
@@ -1066,6 +1078,7 @@ describe("process plumbing", () => {
       "airdrop",
       "latestBlockhash",
       "sendWire",
+      "submitWire",
       "simulate",
       "genesisHash",
       "recentFees",
