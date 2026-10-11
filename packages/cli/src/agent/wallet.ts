@@ -1,7 +1,7 @@
 import type { Address, KeyPairSigner } from "@solana/kit";
 import { parseAmount } from "@intent-engine/core";
 import { chainTime, mintOf } from "../accounts.js";
-import { ENV_KEYPAIR, type Env } from "../args.js";
+import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET } from "../args.js";
 import { execute, type PreparedView } from "../flows.js";
 import { tokenNamed } from "../tokens.js";
 import { balances, defaultMints, FAUCET, type Files, PUBLIC_FAUCET, setup, withSettings } from "../wallet.js";
@@ -20,6 +20,16 @@ export type WalletAccess = { url: string; files: Files; env: Env };
 export const DEFAULT_EXPIRES_IN = 3_600;
 export const LANDING_SECONDS = 10;
 
+export const MAINNET_GENESIS = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
+
+export const WALLET_NOTICE = [
+  "Test network only: this wallet works on Solana devnet, testnet or localnet and refuses mainnet. Its tokens have no value.",
+  "Your key stays on this machine: it is made here and kept in the file shown as keypair. Only signed transactions leave it.",
+  "This server talks to no one but the RPC endpoint it was started with.",
+  "Nothing moves until you approve: swaps and cancels only preview until you say yes.",
+  "Do not send real funds to this wallet or use its key anywhere else.",
+];
+
 export const walletEmpty = (address: string) =>
   `the wallet ${address} holds no SOL yet; request devnet SOL for it at ${FAUCET} or ${PUBLIC_FAUCET}, then try again`;
 
@@ -35,12 +45,20 @@ function access(ctx: AgentContext): WalletAccess {
   return ctx.wallet;
 }
 
+async function testCluster(ctx: AgentContext): Promise<WalletAccess> {
+  const wallet = access(ctx);
+  if ((await ctx.transport.genesisHash()) === MAINNET_GENESIS) {
+    throw new AgentRefusal("WalletNotMainnet", WALLET_NOT_MAINNET);
+  }
+  return wallet;
+}
+
 async function savedKeypair(wallet: WalletAccess): Promise<string | undefined> {
   return (await withSettings(wallet.files, wallet.env))[ENV_KEYPAIR];
 }
 
 async function signerOf(ctx: AgentContext): Promise<KeyPairSigner> {
-  const wallet = access(ctx);
+  const wallet = await testCluster(ctx);
   const path = await savedKeypair(wallet);
   if (path === undefined) {
     throw new AgentRefusal("NoWallet", NO_WALLET);
@@ -103,10 +121,11 @@ export const walletSetup = define({
     url: text(),
     sol: text("SOL the wallet holds"),
     next: text("what to tell the user"),
+    notice: list(text(), 8, "show the user every line before anything else"),
   }),
   run: async (ctx: AgentContext) => {
-    const wallet = access(ctx);
-    return setup(ctx.transport, wallet.files, wallet.url, await savedKeypair(wallet));
+    const wallet = await testCluster(ctx);
+    return { ...(await setup(ctx.transport, wallet.files, wallet.url, await savedKeypair(wallet))), notice: WALLET_NOTICE };
   },
 });
 

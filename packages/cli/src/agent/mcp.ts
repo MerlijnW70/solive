@@ -19,13 +19,13 @@ export const annotationsOf = (action: AnyAction) =>
 
 export const WALLET_INSTRUCTIONS = [
   `This server holds a devnet wallet and trades intents with it. Devnet tokens have no value.`,
-  `Start with ${tool("wallet_setup")}; it creates and funds the wallet and is safe to call again.`,
+  `Start with ${tool("wallet_setup")}; it creates and funds the wallet and is safe to call again. Show the user every line of its notice before anything else.`,
   `${tool("wallet_swap")} and ${tool("wallet_cancel")} only preview until called with send: true. Show the user the summary first and send only after they say yes.`,
   `Name tokens SOL and TEST, or by mint address. Amounts are whole tokens such as 0.05.`,
   `The devnet filler prices TEST at 200 per SOL and pays exactly the minimum asked, so 0.05 SOL for at least 5 TEST gets 5 TEST while it is online; ask a higher minimum, below 10, to receive more. Check with ${tool("wallet_intents")} and ${tool("wallet_balance")}.`,
 ].join("\n");
 
-export const START_PROMPT = `Set me up on devnet and walk me through my first swap: set up the wallet, show my balance, preview selling 0.05 SOL for at least 5 TEST, and send it once I approve. Then show me when it fills.`;
+export const START_PROMPT = `Set me up on devnet and walk me through my first swap: set up the wallet, show me its notice, show my balance, preview selling 0.05 SOL for at least 5 TEST, and send it once I approve. Then show me when it fills.`;
 
 export function agentServer(ctx: AgentContext, served: readonly AnyAction[] = ACTIONS): McpServer {
   const withWallet = ctx.wallet !== undefined;

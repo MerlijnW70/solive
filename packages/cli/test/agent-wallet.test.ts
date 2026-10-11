@@ -6,7 +6,18 @@ import { findAssociatedTokenAddress, findIntentPda } from "@intent-engine/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { WALLET_NOT_MAINNET } from "../src/args.js";
 import { START_PROMPT, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
-import { DEFAULT_EXPIRES_IN, LANDING_SECONDS, NO_WALLET, PREVIEW_ONLY, WALLET_ACTIONS, WALLET_OFF, walletBalance, walletEmpty } from "../src/agent/wallet.js";
+import {
+  DEFAULT_EXPIRES_IN,
+  LANDING_SECONDS,
+  MAINNET_GENESIS,
+  NO_WALLET,
+  PREVIEW_ONLY,
+  WALLET_ACTIONS,
+  WALLET_NOTICE,
+  WALLET_OFF,
+  walletBalance,
+  walletEmpty,
+} from "../src/agent/wallet.js";
 import { invoke } from "../src/agent/actions.js";
 import { claimsOf } from "../src/agent/claims.js";
 import { ACTIONS } from "../src/agent/registry.js";
@@ -87,7 +98,7 @@ describe("the wallet server", () => {
       hint: NO_WALLET,
     });
     const made = await ok(client, "wallet_setup");
-    expect(made).toMatchObject({ keypair: defaultWallet(HOME), created: true, sol: "1", next: FUNDED });
+    expect(made).toMatchObject({ keypair: defaultWallet(HOME), created: true, sol: "1", next: FUNDED, notice: WALLET_NOTICE });
     const owner = made["address"] as Address;
     expect(h.airdrops).toEqual([{ address: owner, lamports: AIRDROP }]);
     expect(await ok(client, "wallet_setup")).toMatchObject({ address: owner, created: false });
@@ -128,6 +139,20 @@ describe("the wallet server", () => {
     });
   });
 
+  it("refuses to make, read or sign with a wallet on an RPC that serves mainnet under another name", async () => {
+    await ok(client, "wallet_setup");
+    h.genesis = MAINNET_GENESIS;
+    for (const [name, args] of [
+      ["wallet_setup", {}],
+      ["wallet_balance", {}],
+      ["wallet_intents", {}],
+      ["wallet_swap", { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5", send: true }],
+      ["wallet_cancel", { nonce: "0", send: true }],
+    ] as const) {
+      expect((await call(client, name, args)).value).toMatchObject({ code: "WalletNotMainnet", hint: WALLET_NOT_MAINNET });
+    }
+  });
+
   it("refuses tokens it cannot name and amounts it cannot read", async () => {
     await ok(client, "wallet_setup");
     for (const args of [
@@ -151,8 +176,7 @@ describe("wallet mode", () => {
     const { tools } = await plain.listTools();
     expect(tools.map((t) => t.name)).toEqual(ACTIONS.map((a) => a.name));
     expect(plain.getInstructions()).toBeUndefined();
-    const refused = await cli(["mcp", "--url", "mainnet-beta", "--wallet"], {});
-    expect([refused.code, refused.err]).toEqual([EXIT_USAGE, WALLET_NOT_MAINNET]);
+    const refused = await cli(["mcp", "--url", "mainnet-beta", "--wallet"], {});    expect([refused.code, refused.err]).toEqual([EXIT_USAGE, WALLET_NOT_MAINNET]);
     const off = await invoke(walletBalance, { transport, relay: undefined, agent: undefined, claims: claimsOf() }, {});
     expect(off).toEqual({ ok: false, problem: expect.objectContaining({ code: "WalletNotConfigured", hint: WALLET_OFF }) });
   });
