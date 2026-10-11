@@ -74,6 +74,10 @@ export const h = {
   changed: [] as { address: Address; data: Uint8Array }[][],
   scans: 0,
   submitted: [] as string[],
+  dropSubmits: false,
+  clock: 0n,
+  steps: [] as bigint[],
+  genesisReads: 0,
   closed: 0,
   rounds: 0,
   engineLog: [] as EngineTransaction[],
@@ -119,6 +123,9 @@ export const transport: Transport = {
   submitWire: async (wire) => {
     h.submitted.push(wire);
     const tx = decodeWire(wire);
+    if (h.dropSubmits) {
+      return getSignatureFromTransaction(tx);
+    }
     const result = h.svm.sendTransaction(tx);
     if (result instanceof FailedTransactionMetadata) {
       throw new Error(`${String(result.err())}\n${result.meta().logs().join("\n")}`);
@@ -159,7 +166,10 @@ export const transport: Transport = {
       }),
     };
   },
-  genesisHash: async () => h.genesis,
+  genesisHash: async () => {
+    h.genesisReads++;
+    return h.genesis;
+  },
   intents: async (only) => {
     h.scans++;
     const found = [];
@@ -240,6 +250,7 @@ export function runtime(signers: Record<string, KeyPairSigner>): Runtime {
     intentChanges: () => ({
       wait: async (seconds) => {
         h.waits.push(seconds);
+        h.clock += h.steps.shift() ?? 0n;
         return h.waits.length < h.rounds ? (h.changed.shift() ?? []) : null;
       },
       close: () => {
@@ -251,7 +262,7 @@ export function runtime(signers: Record<string, KeyPairSigner>): Runtime {
       return h.sleeps.length < h.rounds;
     },
     env: h.env,
-    now: () => NOW + 1_000n,
+    now: () => NOW + 1_000n + h.clock,
     fetch: fakeFetch,
     entropy: () => 3,
     serve: async (server) => {
@@ -271,6 +282,9 @@ export async function boot(): Promise<KeyPairSigner> {
   h.airdropRefused = false;
   h.airdrops.length = 0;
   h.genesis = getBase58Decoder().decode(DOMAIN);
+  h.clock = 0n;
+  h.steps = [];
+  h.dropSubmits = false;
   h.svm = new LiteSVM().withPrecompiles();
   h.svm.addProgramFromFile(INTENT_ENGINE_PROGRAM_ADDRESS, enginePath);
   setNow(NOW);

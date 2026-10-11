@@ -11,14 +11,23 @@ interval="${FILLER_INTERVAL:-5}"
 wrapped_sol=So11111111111111111111111111111111111111112
 test_token=ETU8trkkfE8gNVPDGbCaJUoH88wy6yYV6ttJdc9NKB88
 "${cli[@]}" treasury --url "$url" --create --mints "$wrapped_sol" --keypair "$keypair" --yes
+stop() {
+  trap - EXIT INT TERM
+  pkill -P "$crank" 2>/dev/null
+  kill "${solving:-}" "$crank" 2>/dev/null
+  exit 0
+}
 (
   while true; do
     "${cli[@]}" crank --url "$url" --keypair "$keypair"
     sleep 30
   done
 ) &
-trap 'kill $!' EXIT
+crank=$!
+trap stop EXIT INT TERM
 while true; do
-  "${cli[@]}" solve --url "$url" --keypair "$keypair" --issue "$wrapped_sol:$test_token=200/1" --min-profit "$test_token=1" --watch --interval "$interval"
+  "${cli[@]}" solve --url "$url" --keypair "$keypair" --issue "$wrapped_sol:$test_token=200/1" --min-profit "$test_token=1" --watch --interval "$interval" &
+  solving=$!
+  wait "$solving"
   sleep 1
 done

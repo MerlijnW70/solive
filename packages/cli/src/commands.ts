@@ -259,9 +259,14 @@ export async function follow(
 
 type SolveCommand = Extract<Command, { name: "solve" }>;
 
-export async function lostRaces(transport: Transport, intents: readonly Address[]): Promise<boolean> {
+export const IN_FLIGHT_SECONDS = 30n;
+
+export async function stillOpen(transport: Transport, intents: readonly Address[]): Promise<Address[]> {
   const views = await transport.getAccounts(intents);
-  return views.every((view) => view === null || getIntentDecoder().decode(view.data).status !== IntentStatus.Open);
+  return intents.filter((_, i) => {
+    const view = views[i];
+    return view !== null && view !== undefined && getIntentDecoder().decode(view.data).status === IntentStatus.Open;
+  });
 }
 
 export async function watchSolve(command: SolveCommand, interval: number, runtime: Runtime, emit: (value: object) => void): Promise<number> {
@@ -275,18 +280,39 @@ export async function watchSolve(command: SolveCommand, interval: number, runtim
       command.jito === undefined ? async (wire) => ({ signature: await transport.submitWire(wire), confirmed: false }) : options.send,
   };
   const changes = runtime.intentChanges(command.url);
+  const inFlight = new Map<Address, bigint>();
+  const failing = new Set<Address>();
+  let scannedAt: bigint | null = null;
   let acted = 0;
   try {
     for (let changed: ProgramAccount[] | null = []; changed !== null; changed = await changes.wait(interval)) {
-      const only = changed.map(({ address, data }) => ({ address, intent: getIntentDecoder().decode(data) }));
-      const round = only.length === 0 ? live : { ...live, chain: { ...chain, intents: async () => only } };
+      const now = runtime.now();
       try {
-        const { filled, sent, failed } = await tick(round);
+        const full = changed.length === 0 || scannedAt === null || now - scannedAt >= BigInt(interval);
+        if (full) {
+          scannedAt = now;
+        }
+        const listed = full
+          ? await chain.intents()
+          : changed.map(({ address, data }) => ({ address, intent: getIntentDecoder().decode(data) }));
+        for (const [intent, until] of inFlight) {
+          if (until <= now) {
+            inFlight.delete(intent);
+          }
+        }
+        const due = listed.filter(({ address }) => !inFlight.has(address));
+        const { filled, sent, failed } = await tick({ ...live, chain: { ...chain, intents: async () => due } });
+        for (const { intent } of sent) {
+          inFlight.set(intent, now + IN_FLIGHT_SECONDS);
+        }
         if (filled.length + sent.length + failed.length > 0) {
           emit({ filled, sent, failed });
           acted += filled.length + sent.length;
         }
-        if (!(await lostRaces(transport, failed.map((f) => f.intent)))) {
+        const open = await stillOpen(transport, failed.map((f) => f.intent));
+        const fresh = open.filter((intent) => !failing.has(intent));
+        open.forEach((intent) => failing.add(intent));
+        if (fresh.length > 0) {
           chain.forget();
         }
       } catch (error) {

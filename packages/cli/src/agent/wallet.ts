@@ -45,9 +45,22 @@ function access(ctx: AgentContext): WalletAccess {
   return ctx.wallet;
 }
 
+const genesisOf = new WeakMap<WalletAccess, Promise<string>>();
+
 async function testCluster(ctx: AgentContext): Promise<WalletAccess> {
   const wallet = access(ctx);
-  if ((await ctx.transport.genesisHash()) === MAINNET_GENESIS) {
+  let genesis = genesisOf.get(wallet);
+  if (genesis === undefined) {
+    const read = ctx.transport.genesisHash();
+    genesis = read;
+    genesisOf.set(wallet, read);
+    read.catch(() => {
+      if (genesisOf.get(wallet) === read) {
+        genesisOf.delete(wallet);
+      }
+    });
+  }
+  if ((await genesis) === MAINNET_GENESIS) {
     throw new AgentRefusal("WalletNotMainnet", WALLET_NOT_MAINNET);
   }
   return wallet;

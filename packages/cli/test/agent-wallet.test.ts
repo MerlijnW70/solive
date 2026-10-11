@@ -142,9 +142,14 @@ describe("the wallet server", () => {
     });
   });
 
-  it("refuses to make, read or sign with a wallet on an RPC that serves mainnet under another name", async () => {
+  it("reads the cluster once per server and refuses to make, read or sign with a wallet on an RPC that serves mainnet under another name", async () => {
+    const reads = h.genesisReads;
     await ok(client, "wallet_setup");
+    await ok(client, "wallet_balance");
+    await ok(client, "wallet_intents");
+    expect(h.genesisReads - reads).toBe(1);
     h.genesis = MAINNET_GENESIS;
+    client = await connect(["mcp", "--url", "devnet", "--wallet"]);
     for (const [name, args] of [
       ["wallet_setup", {}],
       ["wallet_balance", {}],

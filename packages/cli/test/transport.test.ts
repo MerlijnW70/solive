@@ -8,6 +8,7 @@ import {
   getTransactionDecoder,
   type Signature,
 } from "@solana/kit";
+import { getEventListeners } from "node:events";
 import { describe, expect, it } from "vitest";
 import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { Charged,
@@ -499,7 +500,9 @@ describe("intent changes", () => {
       }),
     ];
     let quiet: (() => void) | undefined;
-    const changes = changesFrom(async () => {
+    let shared: AbortSignal | undefined;
+    const changes = changesFrom(async (signal) => {
+      shared = signal;
       opened.push(Date.now() - started);
       const stream = streams.shift();
       if (stream !== undefined) {
@@ -513,6 +516,7 @@ describe("intent changes", () => {
     expect((opened[1] ?? 0) - (opened[0] ?? 0)).toBeGreaterThanOrEqual(15);
     expect((opened[2] ?? 0) - (opened[1] ?? 0)).toBeGreaterThanOrEqual(55);
     expect((opened[3] ?? 0) - (opened[2] ?? 0)).toBeLessThan(55);
+    expect(shared === undefined ? -1 : getEventListeners(shared, "abort").length).toBe(0);
     changes.close();
     quiet?.();
     await new Promise((resolve) => setTimeout(resolve, 50));
@@ -529,6 +533,9 @@ describe("intent changes", () => {
     changes.close();
   });
 });
+
+const OWNER_TWO = "11111111111111111111111111111113" as Address;
+const OTHER_TWO = "11111111111111111111111111111114" as Address;
 
 describe("account reads", () => {
   it("fetches many accounts in calls of at most the limit the RPC allows", async () => {
@@ -564,7 +571,8 @@ describe("account reads", () => {
     await reading.warm?.([OWNER, OTHER]);
     await Promise.all([reading.getAccount(OWNER), reading.getAccount(OTHER), reading.getAccount(OTHER)]);
     expect(await reading.getAccounts([OWNER, OTHER])).toEqual([null, null]);
-    expect([batches, singles]).toEqual([[[OWNER, OTHER]], []]);
+    expect(await reading.getAccounts([OWNER, OWNER_TWO, OTHER_TWO])).toEqual([null, null, null]);
+    expect([batches, singles]).toEqual([[[OWNER, OTHER], [OWNER_TWO, OTHER_TWO]], []]);
     await expect(reading.getAccount(TOKEN_PROGRAM)).rejects.toThrow("rpc down");
     failing = false;
     expect(await reading.getAccount(TOKEN_PROGRAM)).toBeNull();

@@ -69,6 +69,7 @@ function fillerSolve(): string[] {
     .replaceAll("$test_token", TEST_TOKEN)
     .replaceAll('"$interval"', FILLER_INTERVAL)
     .replaceAll('"', "")
+    .replace(/ &$/, "")
     .split(" ");
 }
 

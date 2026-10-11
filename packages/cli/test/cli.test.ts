@@ -56,9 +56,10 @@ import {
   configExists,
   ENV_JUPITER_KEY,
   JUPITER_DOMAIN,
+  IN_FLIGHT_SECONDS,
   jupiterHost,
-  lostRaces,
   run,
+  stillOpen,
   SOLVER_TABLE_NEXT,
   STATUS,
   TOKEN_ACCOUNT_BYTES,
@@ -790,16 +791,82 @@ describe("cli against the deployed engine", () => {
     expect(balance(receiver)).toBe(600n);
   });
 
-  it("tells a lost race, where the intent is already settled or gone, from a failure on an intent that is still open", async () => {
+  it("tells which failed intents are still open, so a lost race on a settled or gone intent keeps the cache", async () => {
     await cli(create("4", NOW + 3_600n), { "owner.json": owner });
     await cli(create("5", NOW + 3_600n), { "owner.json": owner });
     await cli(["cancel", "--keypair", "owner.json", "--nonce", "5", "--url", "http://cluster"], { "owner.json": owner });
     const [open] = await findIntentPda({ owner: owner.address, nonce: 4n });
     const [settled] = await findIntentPda({ owner: owner.address, nonce: 5n });
     const [gone] = await findIntentPda({ owner: owner.address, nonce: 6n });
-    expect(await lostRaces(transport, [])).toBe(true);
-    expect(await lostRaces(transport, [settled, gone])).toBe(true);
-    expect(await lostRaces(transport, [settled, open])).toBe(false);
+    expect(await stillOpen(transport, [])).toEqual([]);
+    expect(await stillOpen(transport, [settled, gone])).toEqual([]);
+    expect(await stillOpen(transport, [settled, open, gone])).toEqual([open]);
+  });
+
+  const watching = async (issued: Address, solver: KeyPairSigner) =>
+    cli(
+      ["solve", "--keypair", "s.json", "--issue", `${inputMint}:${issued}=1/1`, "--min-profit", `${issued}=1`, "--url", "http://cluster", "--watch", "--interval", "3"],
+      { "s.json": solver },
+    );
+
+  async function issuedMarket() {
+    const solver = await funded();
+    const issued = await mint(solver, 6);
+    await ata(authority, owner.address, issued);
+    await ata(authority, feeRecipient.address, inputMint);
+    await ata(authority, solver.address, inputMint);
+    await ata(authority, solver.address, issued);
+    return { solver, issued };
+  }
+
+  it("still scans everything once the interval passes, however many notifications keep arriving", async () => {
+    h.watched.length = 0;
+    h.watched.push(owner.address);
+    h.waits.length = 0;
+    const { solver, issued } = await issuedMarket();
+    await cli(create("3", NOW + 3_600n).map((arg) => (arg === outputMint ? issued : arg)), { "owner.json": owner });
+    const [busy] = await findIntentPda({ owner: owner.address, nonce: 3n });
+    const view = h.svm.getAccount(busy);
+    const data = new Uint8Array(view.exists ? view.data : []);
+    h.rounds = 4;
+    h.steps = [2n, 2n, 2n];
+    h.changed = [[{ address: busy, data }], [{ address: busy, data }], [{ address: busy, data }]];
+    const scans = h.scans;
+    expect((await watching(issued, solver)).code).toBe(EXIT_OK);
+    expect(h.scans - scans).toBe(2);
+  });
+
+  it("does not send a second fill for an intent whose first fill is still in flight, and tries again once that wait ends", async () => {
+    h.watched.length = 0;
+    h.watched.push(owner.address);
+    h.waits.length = 0;
+    h.submitted.length = 0;
+    const { solver, issued } = await issuedMarket();
+    await cli(create("2", NOW + 3_600n).map((arg) => (arg === outputMint ? issued : arg)), { "owner.json": owner });
+    const [pending] = await findIntentPda({ owner: owner.address, nonce: 2n });
+    h.dropSubmits = true;
+    h.rounds = 3;
+    h.steps = [0n, IN_FLIGHT_SECONDS];
+    h.changed = [];
+    const run = await watching(issued, solver);
+    h.dropSubmits = false;
+    expect(run.code).toBe(EXIT_OK);
+    expect(run.each().map((r) => (r["sent"] as { intent: Address }[]).map((s) => s.intent))).toEqual([[pending], [pending]]);
+    expect(h.submitted).toHaveLength(2);
+  });
+
+  it("reports a notification it cannot decode and keeps watching", async () => {
+    h.watched.length = 0;
+    h.watched.push(owner.address);
+    h.waits.length = 0;
+    const { solver, issued } = await issuedMarket();
+    const [bogus] = await findIntentPda({ owner: owner.address, nonce: 9n });
+    h.rounds = 3;
+    h.changed = [[{ address: bogus, data: new Uint8Array([1, 2, 3]) }]];
+    const run = await watching(issued, solver);
+    expect(run.code).toBe(EXIT_OK);
+    expect(run.each()).toEqual([{ error: expect.any(String) }]);
+    expect(h.waits).toHaveLength(3);
   });
 
   it("sends a tipped bundle to jito only for a fill that simulates, and reports it as sent", async () => {

@@ -248,6 +248,15 @@ export function memoized(inner: Transport): Transport {
     return pending;
   };
   const getAccount = (address: Address) => seen.get(address) ?? keep(address, inner.getAccount(address));
+  const warm = async (addresses: readonly Address[]) => {
+    const missing = [...new Set(addresses)].filter((address) => !seen.has(address));
+    if (missing.length === 0) {
+      return;
+    }
+    const fetched = inner.getAccounts(missing);
+    missing.forEach((address, i) => keep(address, fetched.then((views) => views[i] ?? null)));
+    await fetched;
+  };
   const writing =
     <A extends unknown[], R>(write: (...args: A) => Promise<R>) =>
     async (...args: A): Promise<R> => {
@@ -265,16 +274,11 @@ export function memoized(inner: Transport): Transport {
     sendWire: writing(inner.sendWire),
     submitWire: writing(inner.submitWire),
     airdrop: writing(inner.airdrop),
-    getAccounts: (addresses) => Promise.all(addresses.map(getAccount)),
-    warm: async (addresses) => {
-      const missing = [...new Set(addresses)].filter((address) => !seen.has(address));
-      if (missing.length === 0) {
-        return;
-      }
-      const fetched = inner.getAccounts(missing);
-      missing.forEach((address, i) => keep(address, fetched.then((views) => views[i] ?? null)));
-      await fetched;
+    getAccounts: async (addresses) => {
+      await warm(addresses);
+      return Promise.all(addresses.map(getAccount));
     },
+    warm,
   } as Transport;
 }
 
@@ -467,15 +471,15 @@ export const RECONNECT_MS: readonly number[] = [1_000, 2_000, 5_000, 10_000, 30_
 
 function pause(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        resolve();
-      },
-      { once: true },
-    );
+    const stop = () => {
+      clearTimeout(timer);
+      resolve();
+    };
+    const timer = setTimeout(() => {
+      signal.removeEventListener("abort", stop);
+      resolve();
+    }, ms);
+    signal.addEventListener("abort", stop, { once: true });
   });
 }
 
