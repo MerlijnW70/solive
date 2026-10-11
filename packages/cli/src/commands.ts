@@ -287,8 +287,10 @@ export async function watchSolve(command: SolveCommand, interval: number, runtim
   try {
     for (let changed: ProgramAccount[] | null = []; changed !== null; changed = await changes.wait(interval)) {
       const now = runtime.now();
+      const began = performance.now();
+      let full = false;
       try {
-        const full = changed.length === 0 || scannedAt === null || now - scannedAt >= BigInt(interval);
+        full = changed.length === 0 || scannedAt === null || now - scannedAt >= BigInt(interval);
         if (full) {
           scannedAt = now;
         }
@@ -306,7 +308,7 @@ export async function watchSolve(command: SolveCommand, interval: number, runtim
           inFlight.set(intent, now + IN_FLIGHT_SECONDS);
         }
         if (filled.length + sent.length + failed.length > 0) {
-          emit({ filled, sent, failed });
+          emit({ at: now, scan: full ? "full" : "changed", ms: Math.round(performance.now() - began), filled, sent, failed });
           acted += filled.length + sent.length;
         }
         const open = await stillOpen(transport, failed.map((f) => f.intent));
@@ -317,7 +319,7 @@ export async function watchSolve(command: SolveCommand, interval: number, runtim
         }
       } catch (error) {
         chain.forget();
-        emit({ error: error instanceof Error ? error.message : String(error) });
+        emit({ at: now, scan: full ? "full" : "changed", error: error instanceof Error ? error.message : String(error) });
       }
     }
   } finally {

@@ -783,9 +783,10 @@ describe("cli against the deployed engine", () => {
     );
     expect([run.code, run.err]).toEqual([EXIT_OK, ""]);
     const profit = String(splitFee(ESCROW, FEE_BPS).net - 300n);
+    const timing = { at: String(NOW + 1_000n), ms: expect.any(Number) };
     expect(run.each()).toEqual([
-      { filled: [], sent: [{ intent: i7, profit, signature: expect.any(String) }], failed: [] },
-      { filled: [], sent: [{ intent: i12, profit, signature: expect.any(String) }], failed: [] },
+      { ...timing, scan: "full", filled: [], sent: [{ intent: i7, profit, signature: expect.any(String) }], failed: [] },
+      { ...timing, scan: "changed", filled: [], sent: [{ intent: i12, profit, signature: expect.any(String) }], failed: [] },
     ]);
     expect([h.scans - scans, h.submitted.length, h.waits, h.closed]).toEqual([2, 2, [3, 3, 3], 1]);
     expect(balance(receiver)).toBe(600n);
@@ -865,7 +866,7 @@ describe("cli against the deployed engine", () => {
     h.changed = [[{ address: bogus, data: new Uint8Array([1, 2, 3]) }]];
     const run = await watching(issued, solver);
     expect(run.code).toBe(EXIT_OK);
-    expect(run.each()).toEqual([{ error: expect.any(String) }]);
+    expect(run.each()).toEqual([{ at: String(NOW + 1_000n), scan: "changed", error: expect.any(String) }]);
     expect(h.waits).toHaveLength(3);
   });
 
