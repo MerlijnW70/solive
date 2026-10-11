@@ -2,7 +2,7 @@
 
 # MCP tools
 
-16 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 6 wallet tools, listed first.
+16 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 8 wallet tools, listed first.
 
 ## solive_wallet_setup
 
@@ -25,6 +25,20 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `mints` | list of string, at most 8 | no |  |
+
+## solive_wallet_estimate
+
+Served only with `--wallet`.
+
+Estimate what selling an amount of one token for another gets now, from the rates of recent fills of the same pair on this cluster. It reads the engine's last 12 transactions and sends nothing. Use it before solive_wallet_swap or solive_wallet_auction to pick min_receive or the auction's start and end.
+
+Effect: `read` (read-only: true, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `sell` | string | yes | SOL, TEST or a mint address |
+| `buy` | string | yes | SOL, TEST or a mint address |
+| `amount` | string | yes | whole tokens to sell, such as 0.05 |
 
 ## solive_wallet_swap
 
@@ -61,6 +75,19 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 | `falls_over` | integer 60..31536000 | yes | seconds the asked amount takes to fall from start_receive to end_receive |
 | `expires_in` | integer 60..31536000 | no | least seconds the offer stays open once sent, never less than falls_over; default 3600 |
 | `send` | boolean | no | true signs and sends; leave out to preview |
+
+## solive_wallet_wait
+
+Served only with `--wallet`.
+
+Wait until an intent of this server's wallet is filled, cancelled or expired, or until within seconds pass, then say which and, for a fill, how much the wallet received. Use it after sending instead of asking the user to check again; call it again while the status is still open.
+
+Effect: `read` (read-only: true, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `nonce` | whole number as a decimal string | yes | the intent's nonce, from the send or wallet_intents |
+| `within` | integer 1..55 | no | most seconds to wait; default 30 |
 
 ## solive_wallet_intents
 

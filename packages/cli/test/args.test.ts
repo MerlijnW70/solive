@@ -33,7 +33,9 @@ import {
   USAGE,
   usageOf,
   MANDATE_USE_KINDS,
+  WALLET_LIMITS_NEED_WALLET,
 } from "../src/args.js";
+import { NATIVE_MINT, TEST_TOKEN } from "../src/tokens.js";
 
 const OWNER = "11111111111111111111111111111112";
 const MINT_A = "So11111111111111111111111111111111111111112";
@@ -292,8 +294,19 @@ describe("commands", () => {
   });
 
   it("parses an agent server with an optional relayer key and its limits", () => {
-    expect(parse(["mcp", "--url", "http://x"])).toEqual({ name: "mcp", url: "http://x", priority: 0n, relay: undefined, agent: undefined, wallet: false });
-    expect(parse(["mcp", "--url", "devnet", "--wallet"])).toMatchObject({ name: "mcp", wallet: true });
+    expect(parse(["mcp", "--url", "http://x"])).toEqual({ name: "mcp", url: "http://x", priority: 0n, relay: undefined, agent: undefined, wallet: null });
+    expect(parse(["mcp", "--url", "devnet", "--wallet"])).toMatchObject({ name: "mcp", wallet: { perTrade: new Map(), perHour: new Map() } });
+    expect(parse(["mcp", "--url", "devnet", "--wallet", "--wallet-per-trade", "SOL=0.1, test=20", "--wallet-per-hour", "sol=0.5"])).toMatchObject({
+      wallet: { perTrade: new Map([[NATIVE_MINT, "0.1"], [TEST_TOKEN, "20"]]), perHour: new Map([[NATIVE_MINT, "0.5"]]) },
+    });
+    expect(usage(["mcp", "--wallet-per-trade", "SOL=1"])).toBe(WALLET_LIMITS_NEED_WALLET);
+    for (const bad of ["SOL", "SOL=lots", "SOL=1=2", "SOL=-1"]) {
+      expect(usage(["mcp", "--url", "devnet", "--wallet", "--wallet-per-trade", bad])).toBe(
+        "--wallet-per-trade takes token=amount pairs separated by commas, such as SOL=0.1,TEST=20",
+      );
+    }
+    expect(usage(["mcp", "--url", "devnet", "--wallet", "--wallet-per-hour", "SOL=1,sol=2"])).toBe("--wallet-per-hour names sol twice");
+    expect(usage(["mcp", "--url", "http://x", "--wallet", "--wallet-per-hour", "TEST=1"])).toMatch(/^--wallet-per-hour: /);
     const free = ["--relay-fee", "11111111111111111111111111111112=0"];
     expect(usage(["mcp", "--relayer", "r.json"])).toBe(RELAY_NEEDS_FEES);
     expect(RELAY_NEEDS_FEES).toBe(
@@ -312,7 +325,7 @@ describe("commands", () => {
         fees: new Map([["11111111111111111111111111111112", 0n]]),
       },
       agent: undefined,
-      wallet: false,
+      wallet: null,
     });
     expect([RELAY_DEFAULT_TTL, RELAY_DEFAULT_HOURLY_LAMPORTS, AGENT_DEFAULT_HOURLY_LAMPORTS]).toEqual([
       86_400,

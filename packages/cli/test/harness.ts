@@ -83,6 +83,7 @@ export const h = {
   closed: 0,
   rounds: 0,
   engineLog: [] as EngineTransaction[],
+  requestedOf: [] as (Address | undefined)[],
   served: [] as McpServer[],
   airdropRefused: false,
   airdrops: [] as { address: Address; lamports: bigint }[],
@@ -192,8 +193,9 @@ export const transport: Transport = {
     }
     return found;
   },
-  engineTransactions: async (limit) => {
+  engineTransactions: async (limit, of) => {
     h.requestedLimits.push(limit);
+    h.requestedOf.push(of);
     return h.engineLog;
   },
   recentFees: async (accounts) => {

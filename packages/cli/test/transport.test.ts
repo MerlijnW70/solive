@@ -26,6 +26,8 @@ import { Charged,
   type Transport,
   rpcTransport,
   socketUrl,
+  TRANSACTION_FETCHES,
+  KEPT_TRANSACTIONS,
 } from "../src/transport.js";
 
 const SIG = "5".repeat(88) as Signature;
@@ -410,7 +412,8 @@ describe("intent scan", () => {
 describe("engine transactions", () => {
   it("keeps only inner instructions the engine emitted, including through lookup tables", async () => {
     const s = stub([]);
-    const found = await rpcTransport(s.rpc, s.wait).engineTransactions(5);
+    const transport = rpcTransport(s.rpc, s.wait);
+    const found = await transport.engineTransactions(5);
     expect(found).toEqual([
       { signature: SIG, slot: 7n, blockTime: 100n, failed: false, emitted: [new Uint8Array([1, 2]), new Uint8Array([4, 5])] },
       { signature: OTHER_SIG, slot: 8n, blockTime: null, failed: true, emitted: [] },
@@ -420,6 +423,61 @@ describe("engine transactions", () => {
       `transaction:${SIG}:json:0:confirmed`,
       `transaction:${OTHER_SIG}:json:0:confirmed`,
     ]);
+    s.calls.length = 0;
+    expect(await transport.engineTransactions(5)).toEqual(found);
+    expect(s.calls).toEqual([`signatures:${INTENT_ENGINE_PROGRAM_ADDRESS}:5`, `transaction:${OTHER_SIG}:json:0:confirmed`]);
+  });
+
+  it("keeps a bounded number of fetched transactions and fetches only the ones it dropped", async () => {
+    const s = stub([]);
+    const sigs = Array.from({ length: KEPT_TRANSACTIONS + 1 }, (_, i) => `${SIG.slice(0, -4)}${String(i).padStart(4, "0")}` as Signature);
+    const asked: string[] = [];
+    const rpc = {
+      ...s.rpc,
+      getSignaturesForAddress: (_: Address, config: { limit: number }) => ({
+        send: async () => sigs.slice(0, config.limit).map((signature, i) => ({ signature, slot: BigInt(i), blockTime: null, err: null })),
+      }),
+      getTransaction: (signature: Signature) => ({
+        send: async () => {
+          asked.push(signature);
+          return { transaction: { message: { accountKeys: [] } }, meta: {} };
+        },
+      }),
+    };
+    const transport = rpcTransport(rpc as unknown as typeof s.rpc, s.wait);
+    await transport.engineTransactions(sigs.length);
+    asked.length = 0;
+    await transport.engineTransactions(10);
+    expect(asked).toEqual([sigs[0]]);
+  });
+
+  it("reads one address's transactions when asked, fetching a few at a time and keeping their order", async () => {
+    const s = stub([]);
+    const sigs = Array.from({ length: TRANSACTION_FETCHES * 2 + 1 }, (_, i) => `${SIG.slice(0, -2)}${String(i).padStart(2, "1")}` as Signature);
+    let open = 0;
+    let most = 0;
+    const rpc = {
+      ...s.rpc,
+      getSignaturesForAddress: (address: Address, config: { limit: number }) => ({
+        send: async () => {
+          s.calls.push(`signatures:${address}:${config.limit}`);
+          return sigs.map((signature, i) => ({ signature, slot: BigInt(i), blockTime: null, err: null }));
+        },
+      }),
+      getTransaction: () => ({
+        send: async () => {
+          open++;
+          most = Math.max(most, open);
+          await new Promise((resolve) => setTimeout(resolve, 1));
+          open--;
+          return null;
+        },
+      }),
+    };
+    const found = await rpcTransport(rpc as unknown as typeof s.rpc, s.wait).engineTransactions(9, OWNER);
+    expect(found.map((tx) => tx.signature)).toEqual(sigs);
+    expect(s.calls).toEqual([`signatures:${OWNER}:9`]);
+    expect(most).toBe(TRANSACTION_FETCHES);
   });
 });
 

@@ -45,6 +45,16 @@ For a better price, let the asked amount fall until a solver takes it:
 
 It swaps, auctions or cancels nothing until you say yes.
 
+Before a trade it can estimate the price from recent fills. After a send it waits for the fill and tells you what you received.
+
+To cap what it may sell, whatever it is asked, add limits to the server's arguments:
+
+```sh
+claude mcp add solive -- npx -y @intent-engine/cli mcp --url devnet --wallet --wallet-per-trade SOL=0.1 --wallet-per-hour SOL=0.5
+```
+
+It then sells only the tokens named, at most that much per trade and per rolling hour. The server enforces them when it signs; only a restart changes them.
+
 ## 3. Let your AI explain any trade (optional)
 
 The Solana Explorer server decodes any address or transaction, solive's instructions included, so your AI can explain what a swap did. It is read-only and holds no keys.

@@ -2,16 +2,32 @@ import { type Address, lamports, none } from "@solana/kit";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
-import { findAssociatedTokenAddress, findIntentPda } from "@intent-engine/core";
+import {
+  EVENT_IX_TAG,
+  findAssociatedTokenAddress,
+  findIntentPda,
+  getIntentCancelledEventEncoder,
+  getIntentCreatedEventEncoder,
+  getIntentDecoder,
+  getIntentEncoder,
+  getFillBegunEventEncoder,
+  getFillEndedEventEncoder,
+  getIntentFilledEventEncoder,
+  IntentStatus,
+} from "@intent-engine/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { WALLET_NOT_MAINNET } from "../src/args.js";
 import { START_PROMPT, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
 import {
   DEFAULT_EXPIRES_IN,
+  ESTIMATE_NEXT,
+  ESTIMATE_SCAN,
   LANDING_SECONDS,
   MAINNET_GENESIS,
+  NO_FILLS,
   NO_WALLET,
   PREVIEW_ONLY,
+  stillWaiting,
   WALLET_ACTIONS,
   WALLET_NOTICE,
   WALLET_OFF,
@@ -24,7 +40,7 @@ import { ACTIONS } from "../src/agent/registry.js";
 import { EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { NATIVE_MINT, TEST_TOKEN } from "../src/tokens.js";
 import { AIRDROP, AIRDROP_REFUSED, defaultWallet, FUNDED, LAMPORTS_PER_SOL } from "../src/wallet.js";
-import { balance, cli, h, HOME, transport, world } from "./harness.js";
+import { balance, cli, h, HOME, setNow, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -208,6 +224,171 @@ describe("the wallet server", () => {
     ]) {
       expect((await call(client, "wallet_swap", args)).value).toMatchObject({ code: "InvalidInput" });
     }
+  });
+
+  it("refuses, even on preview, to sell past the limits the server was started with, and counts only what it sent", async () => {
+    client = await connect(["mcp", "--url", "devnet", "--wallet", "--wallet-per-trade", "SOL=0.1", "--wallet-per-hour", "SOL=0.15"]);
+    expect(client.getInstructions()).toBe(
+      [
+        WALLET_INSTRUCTIONS,
+        "Whoever started this server set sell limits that no tool call can change:",
+        "- SOL: at most 0.1 per trade and 0.15 per hour",
+        "It sells no other token. Plan trades within these limits and tell the user when a request exceeds them.",
+      ].join("\n"),
+    );
+    await ok(client, "wallet_setup");
+    const swap = { sell: "SOL", buy: "TEST", min_receive: "5" };
+    expect((await call(client, "wallet_swap", { ...swap, amount: "0.11" })).value).toMatchObject({
+      code: "WalletTradeLimit",
+      retryable: false,
+      hint: "this server sells at most 0.1 SOL per trade and this sells 0.11; sell less, or the user restarts the server with a higher --wallet-per-trade",
+    });
+    expect((await call(client, "wallet_swap", { sell: "TEST", buy: "SOL", amount: "1", min_receive: "0.001" })).value).toMatchObject({
+      code: "WalletTokenNotAllowed",
+      hint: "this server sells only SOL, not TEST; its limits were set when it started",
+    });
+    for (let i = 0; i < 3; i++) {
+      await ok(client, "wallet_swap", { ...swap, amount: "0.1" });
+    }
+    await ok(client, "wallet_swap", { ...swap, amount: "0.1", send: true });
+    const auction = { sell: "SOL", buy: "TEST", amount: "0.06", start_receive: "12", end_receive: "11", falls_over: 600 };
+    expect((await call(client, "wallet_auction", auction)).value).toMatchObject({
+      code: "WalletHourLimit",
+      retryable: true,
+      hint: "this server sells at most 0.15 SOL per hour and has 0.05 left; this sells 0.06",
+    });
+    await ok(client, "wallet_auction", { ...auction, amount: "0.05", send: true });
+    expect((await call(client, "wallet_swap", { ...swap, amount: "0.001" })).value).toMatchObject({ code: "WalletHourLimit" });
+    setNow(h.svm.getClock().unixTimestamp + 3_601n);
+    expect(await ok(client, "wallet_swap", { ...swap, amount: "0.1", send: true })).toMatchObject({ sent: true });
+  });
+
+  it("estimates a swap from the rates of recent fills of the same pair, newest first", async () => {
+    await ok(client, "wallet_setup");
+    const key = (n: number) => `1111111111111111111111111111111${n}` as Address;
+    const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
+    const created = (intent: Address, inputMint: Address, outputMint: Address) =>
+      tag(
+        getIntentCreatedEventEncoder().encode({
+          intent,
+          owner: intent,
+          nonce: 0n,
+          kind: 0,
+          inputMint,
+          outputMint,
+          receiver: intent,
+          escrowed: 1n,
+          expiresAt: 0n,
+          rentPayer: intent,
+          flags: 0,
+          bounty: 0,
+          createFee: 0,
+        }),
+      );
+    const filled = (intent: Address, amountIn: bigint, delivered: bigint) =>
+      tag(
+        getIntentFilledEventEncoder().encode({
+          intent,
+          owner: intent,
+          solver: intent,
+          receiver: intent,
+          solverInput: intent,
+          amountIn,
+          delivered,
+          required: delivered,
+          fee: amountIn / 2_000n,
+          net: amountIn - amountIn / 2_000n,
+          filled: amountIn,
+          remaining: 0n,
+          partnerFee: 0n,
+        }),
+      );
+    const begun = (intent: Address, amountIn: bigint) =>
+      tag(
+        getFillBegunEventEncoder().encode({
+          intent,
+          solver: intent,
+          solverInput: intent,
+          endIndex: 1,
+          amountIn,
+          fee: amountIn / 2_000n,
+          net: amountIn - amountIn / 2_000n,
+          filled: amountIn,
+          remaining: 0n,
+          partnerFee: 0n,
+        }),
+      );
+    const ended = (intent: Address, delivered: bigint) =>
+      tag(getFillEndedEventEncoder().encode({ intent, owner: intent, solver: intent, receiver: intent, delivered, required: delivered }));
+    const tx = (signature: string, emitted: Uint8Array[], failed = false) => ({ signature, slot: 1n, blockTime: 1_700_000_000n, failed, emitted });
+    const sol = LAMPORTS_PER_SOL;
+    h.engineLog = [
+      tx("newest", [created(key(2), NATIVE_MINT, TEST_TOKEN), filled(key(2), sol / 20n, 5n * sol)]),
+      tx("other-pair", [created(key(3), TEST_TOKEN, NATIVE_MINT), filled(key(3), sol, sol / 200n)]),
+      tx("failed", [created(key(4), NATIVE_MINT, TEST_TOKEN), filled(key(4), sol / 20n, 50n * sol)], true),
+      tx("older", [begun(key(5), sol / 10n), ended(key(5), (1993n * sol) / 100n)]),
+      tx("older-created", [created(key(5), NATIVE_MINT, TEST_TOKEN)]),
+    ];
+    h.requestedLimits.length = 0;
+    expect(await ok(client, "wallet_estimate", { sell: "SOL", buy: "TEST", amount: "0.05" })).toEqual({
+      fills: [
+        { sold: "0.05", received: "5", at: "1700000000", signature: "newest" },
+        { sold: "0.1", received: "19.93", at: "1700000000", signature: "older" },
+      ],
+      receive_at_best: "9.965",
+      receive_at_latest: "5",
+      next: ESTIMATE_NEXT,
+    });
+    expect(h.requestedLimits).toEqual([ESTIMATE_SCAN]);
+    expect(await ok(client, "wallet_estimate", { sell: "SOL", buy: "TEST", amount: "1" })).toMatchObject({ receive_at_best: "199.3" });
+    h.engineLog = [];
+    expect(await ok(client, "wallet_estimate", { sell: "SOL", buy: "TEST", amount: "0.05" })).toEqual({ fills: [], next: NO_FILLS });
+  });
+
+  it("waits for a sent intent and says whether it filled, for how much, or was cancelled", async () => {
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    const sent = await ok(client, "wallet_swap", { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5", send: true });
+    const intent = sent["intent"] as Address;
+    h.engineLog = [];
+    h.sleeps.length = 0;
+    h.rounds = 3;
+    expect(await ok(client, "wallet_wait", { nonce: "0", within: 5 })).toEqual({ intent, status: "open", waited: 2, next: stillWaiting("open") });
+    expect(h.sleeps).toEqual([1, 1, 1]);
+    h.sleeps.length = 0;
+    expect(await ok(client, "wallet_wait", { nonce: "0", within: 1 })).toMatchObject({ status: "open", waited: 1 });
+    const account = h.svm.getAccount(intent);
+    if (!account.exists) {
+      throw new Error("the intent was not created");
+    }
+    const decoded = getIntentDecoder().decode(account.data);
+    h.svm.setAccount({ ...account, data: Uint8Array.from(getIntentEncoder().encode({ ...decoded, status: IntentStatus.Filled })) });
+    const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
+    const fill = getIntentFilledEventEncoder().encode({
+      intent,
+      owner,
+      solver: owner,
+      receiver: owner,
+      solverInput: owner,
+      amountIn: LAMPORTS_PER_SOL / 20n,
+      delivered: 5n * LAMPORTS_PER_SOL,
+      required: 5n * LAMPORTS_PER_SOL,
+      fee: LAMPORTS_PER_SOL / 40_000n,
+      net: LAMPORTS_PER_SOL / 20n - LAMPORTS_PER_SOL / 40_000n,
+      filled: LAMPORTS_PER_SOL / 20n,
+      remaining: 0n,
+      partnerFee: 0n,
+    });
+    h.engineLog = [{ signature: "fill", slot: 1n, blockTime: null, failed: false, emitted: [tag(fill)] }];
+    h.requestedOf.length = 0;
+    expect(await ok(client, "wallet_wait", { nonce: "0" })).toEqual({ intent, status: "filled", waited: 0, received: "5", token: "TEST", signature: "fill" });
+    expect(h.requestedOf).toEqual([intent]);
+    h.svm.setAccount({ ...account, data: Uint8Array.from(getIntentEncoder().encode({ ...decoded, status: IntentStatus.Open })) });
+    await ok(client, "wallet_cancel", { nonce: "0", send: true });
+    const cancelled = getIntentCancelledEventEncoder().encode({ intent, owner, refunded: LAMPORTS_PER_SOL / 20n });
+    h.engineLog = [{ signature: "cancel", slot: 1n, blockTime: null, failed: false, emitted: [tag(cancelled)] }];
+    expect(await ok(client, "wallet_wait", { nonce: "0" })).toEqual({ intent, status: "cancelled", waited: 0 });
+    h.engineLog = [];
+    expect(await ok(client, "wallet_wait", { nonce: "0" })).toEqual({ intent, status: "closed", waited: 0 });
   });
 });
 

@@ -54,6 +54,7 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { agentServer } from "./agent/mcp.js";
 import { claimsOf } from "./agent/claims.js";
 import { budgetOf } from "./agent/budget.js";
+import { walletGuard } from "./agent/wallet.js";
 import { relayOf } from "./agent/relay.js";
 import { type Authority, type Command, type Env, usageOf } from "./args.js";
 import { VERSION } from "./version.js";
@@ -447,7 +448,10 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
               budget: budgetOf(command.agent.hourlyLamports),
               owners: new Set(command.agent.owners),
             };
-      const wallet = command.wallet ? { wallet: { url: command.url, files: runtime, env: runtime.env } } : {};
+      const wallet =
+        command.wallet === null
+          ? {}
+          : { wallet: { url: command.url, files: runtime, env: runtime.env, sleep: runtime.sleep, limits: walletGuard(command.wallet) } };
       await runtime.serve(agentServer({ transport, relay, agent, claims: claimsOf(), ...wallet }));
       return null;
     }

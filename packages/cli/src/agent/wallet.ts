@@ -1,9 +1,10 @@
 import type { Address, KeyPairSigner } from "@solana/kit";
-import { parseAmount } from "@intent-engine/core";
+import { decodeEvent, findIntentPda, formatAmount, getIntentDecoder, IntentStatus, parseAmount } from "@intent-engine/core";
 import { chainTime, CLOCK_SYSVAR, mintOf } from "../accounts.js";
-import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET } from "../args.js";
+import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "../args.js";
 import { execute, type PreparedView } from "../flows.js";
-import { tokenNamed } from "../tokens.js";
+import { TOKEN_NAMES, tokenNamed } from "../tokens.js";
+import { type Transport, unmemoized } from "../transport.js";
 import { balances, defaultMints, FAUCET, type Files, PUBLIC_FAUCET, setup, withSettings } from "../wallet.js";
 import { type AgentContext, type AnyAction, define } from "./actions.js";
 import type { Call } from "./claims.js";
@@ -11,12 +12,25 @@ import { MAX_EXPIRES_IN, MIN_EXPIRES_IN, prepareCreate } from "./create.js";
 import { tool } from "./names.js";
 import { AgentRefusal } from "./problems.js";
 import { listIntents } from "./read.js";
-import { InvalidInput, account, amount, choice, flag, integer, list, object, optional, type Schema, text } from "./schema.js";
+import { InvalidInput, account, amount, choice, flag, integer, list, object, optional, type Schema, text, time } from "./schema.js";
 import { orderSchema } from "./shapes.js";
 import { prepareCancel } from "./settle.js";
 import { STATUS } from "../accounts.js";
 
-export type WalletAccess = { url: string; files: Files; env: Env };
+type Sale = { mint: Address; at: bigint; amount: bigint };
+
+export type WalletGuard = { limits: WalletLimits; sales: Sale[] };
+
+export const walletGuard = (limits: WalletLimits): WalletGuard => ({ limits, sales: [] });
+
+export type WalletAccess = { url: string; files: Files; env: Env; sleep(seconds: number): Promise<boolean>; limits: WalletGuard };
+
+export const SALE_WINDOW = 3_600n;
+export const ESTIMATE_SCAN = 12;
+export const ESTIMATE_FILLS = 5;
+export const WAIT_DEFAULT = 30;
+export const WAIT_MAX = 55;
+export const WAIT_SCAN = 10;
 
 export const DEFAULT_EXPIRES_IN = 3_600;
 export const LANDING_SECONDS = 10;
@@ -100,6 +114,62 @@ function raw(tokens: string, decimals: number, path: string): bigint {
     return parseAmount(tokens, decimals);
   } catch (error) {
     throw new InvalidInput([{ path, message: error instanceof Error ? error.message : String(error) }]);
+  }
+}
+
+const nameOf = (mint: Address): string => TOKEN_NAMES[mint] ?? mint;
+
+const limited = (guard: WalletGuard): boolean => guard.limits.perTrade.size + guard.limits.perHour.size > 0;
+
+export function limitLines(limits: WalletLimits): string[] {
+  const mints = [...new Set([...limits.perTrade.keys(), ...limits.perHour.keys()])];
+  if (mints.length === 0) {
+    return [];
+  }
+  return [
+    "Whoever started this server set sell limits that no tool call can change:",
+    ...mints.map((mint) => {
+      const caps = [
+        ...(limits.perTrade.has(mint) ? [`${limits.perTrade.get(mint)} per trade`] : []),
+        ...(limits.perHour.has(mint) ? [`${limits.perHour.get(mint)} per hour`] : []),
+      ];
+      return `- ${nameOf(mint)}: at most ${caps.join(" and ")}`;
+    }),
+    "It sells no other token. Plan trades within these limits and tell the user when a request exceeds them.",
+  ];
+}
+
+const capOf = (text: string, decimals: number): bigint => parseAmount(text, decimals);
+
+function checkSale(guard: WalletGuard, mint: Address, decimals: number, amount: bigint, now: bigint): void {
+  if (!limited(guard)) {
+    return;
+  }
+  const { perTrade, perHour } = guard.limits;
+  const name = nameOf(mint);
+  if (!perTrade.has(mint) && !perHour.has(mint)) {
+    const allowed = [...new Set([...perTrade.keys(), ...perHour.keys()])].map(nameOf).join(", ");
+    throw new AgentRefusal("WalletTokenNotAllowed", `this server sells only ${allowed}, not ${name}; its limits were set when it started`);
+  }
+  const trade = perTrade.get(mint);
+  if (trade !== undefined && amount > capOf(trade, decimals)) {
+    throw new AgentRefusal(
+      "WalletTradeLimit",
+      `this server sells at most ${trade} ${name} per trade and this sells ${formatAmount(amount, decimals)}; sell less, or the user restarts the server with a higher --wallet-per-trade`,
+    );
+  }
+  const hour = perHour.get(mint);
+  if (hour === undefined) {
+    return;
+  }
+  guard.sales = guard.sales.filter((s) => s.at > now - SALE_WINDOW);
+  const used = guard.sales.filter((s) => s.mint === mint).reduce((sum, s) => sum + s.amount, 0n);
+  const cap = capOf(hour, decimals);
+  if (used + amount > cap) {
+    throw new AgentRefusal(
+      "WalletHourLimit",
+      `this server sells at most ${hour} ${name} per hour and has ${formatAmount(cap > used ? cap - used : 0n, decimals)} left; this sells ${formatAmount(amount, decimals)}`,
+    );
   }
 }
 
@@ -194,13 +264,28 @@ async function offered(
     mintOf(ctx.transport, outputMint),
     chainTime(ctx.transport),
   ]);
+  const made = terms(inputToken, outputToken, now);
+  checkSale(wallet.limits, inputMint, inputToken.decimals, (made.order as { amount_in: bigint }).amount_in, now);
   const view = (await prepareCreate.run(
     ctx,
-    { owner: signer.address, input_mint: inputMint, output_mint: outputMint, ...terms(inputToken, outputToken, now) } as never,
+    { owner: signer.address, input_mint: inputMint, output_mint: outputMint, ...made } as never,
     call,
   )) as Record<string, unknown>;
   const { intent, nonce, summary, warnings, prepared } = view;
-  return sent(ctx, signer, { intent, nonce, summary, warnings, prepared }, input.send, call);
+  const sold = (made.order as { amount_in: bigint }).amount_in;
+  const guard = wallet.limits;
+  checkSale(guard, inputMint, inputToken.decimals, sold, now);
+  if (input.send !== true || !limited(guard)) {
+    return sent(ctx, signer, { intent, nonce, summary, warnings, prepared }, input.send, call);
+  }
+  const sale = { mint: inputMint, at: now, amount: sold };
+  guard.sales.push(sale);
+  try {
+    return await sent(ctx, signer, { intent, nonce, summary, warnings, prepared }, input.send, call);
+  } catch (error) {
+    guard.sales = guard.sales.filter((s) => s !== sale);
+    throw error;
+  }
 }
 
 const walletSwap = define({
@@ -306,4 +391,196 @@ const walletCancel = define({
   },
 });
 
-export const WALLET_ACTIONS: readonly AnyAction[] = [walletSetup, walletBalance, walletSwap, walletAuction, walletIntents, walletCancel];
+type Fill = { intent: Address; amountIn: bigint; delivered: bigint; signature: string; blockTime: bigint | null };
+
+type Pair = { inputMint: Address; outputMint: Address };
+
+async function engineHistory(transport: Transport, limit: number, of?: Address) {
+  const created = new Map<Address, Pair>();
+  const fills: Fill[] = [];
+  const ended = new Map<Address, "cancelled" | "expired">();
+  for (const tx of await transport.engineTransactions(limit, of)) {
+    if (tx.failed) {
+      continue;
+    }
+    const begun = new Map<Address, bigint>();
+    for (const event of tx.emitted.map(decodeEvent)) {
+      if (event === null) {
+        continue;
+      }
+      const fields = event.fields as Record<string, unknown>;
+      const intent = fields["intent"] as Address;
+      if (event.name === "IntentCreated") {
+        created.set(intent, { inputMint: fields["inputMint"] as Address, outputMint: fields["outputMint"] as Address });
+      }
+      if (event.name === "FillBegun") {
+        begun.set(intent, fields["amountIn"] as bigint);
+      }
+      const amountIn = event.name === "IntentFilled" ? (fields["amountIn"] as bigint) : event.name === "FillEnded" ? begun.get(intent) : undefined;
+      if (amountIn !== undefined) {
+        fills.push({ intent, amountIn, delivered: fields["delivered"] as bigint, signature: tx.signature, blockTime: tx.blockTime });
+      }
+      if (event.name === "IntentCancelled" || event.name === "IntentExpired") {
+        ended.set(intent, event.name === "IntentCancelled" ? "cancelled" : "expired");
+      }
+    }
+  }
+  return { created, fills, ended };
+}
+
+function pairOf(data: Uint8Array): Pair | null {
+  try {
+    const { inputMint, outputMint } = getIntentDecoder().decode(data);
+    return { inputMint, outputMint };
+  } catch {
+    return null;
+  }
+}
+
+export const ESTIMATE_NEXT =
+  "solvers pay the least an intent asks, so these fills show what owners asked and got, not the most a solver would pay; ask a minimum near receive_at_best, or auction from a little above it down to the least the user accepts to find the price";
+
+export const NO_FILLS = `no recent fill sold this token for that one; auction from a high ask down to the least the user accepts with ${tool("wallet_auction")} to find the price`;
+
+const walletEstimate = define({
+  name: tool("wallet_estimate"),
+  title: "Estimate a swap from recent fills",
+  description: `Estimate what selling an amount of one token for another gets now, from the rates of recent fills of the same pair on this cluster. It reads the engine's last ${ESTIMATE_SCAN} transactions and sends nothing. Use it before ${tool("wallet_swap")} or ${tool("wallet_auction")} to pick min_receive or the auction's start and end.`,
+  effect: "read",
+  input: object({
+    sell: text("SOL, TEST or a mint address"),
+    buy: text("SOL, TEST or a mint address"),
+    amount: text("whole tokens to sell, such as 0.05"),
+  }),
+  output: object({
+    fills: list(
+      object({
+        sold: text("whole tokens of the sold token"),
+        received: text("whole tokens the owner received"),
+        at: optional(time("when the fill landed")),
+        signature: text(),
+      }),
+      ESTIMATE_FILLS,
+      "newest first",
+    ),
+    receive_at_best: optional(text("whole tokens amount would get at the best recent rate")),
+    receive_at_latest: optional(text("whole tokens amount would get at the newest fill's rate")),
+    next: text(),
+  }),
+  run: async (ctx: AgentContext, input) => {
+    const wallet = await testCluster(ctx);
+    const inputMint = mintNamed(input.sell, wallet.url, "sell");
+    const outputMint = mintNamed(input.buy, wallet.url, "buy");
+    const [inputToken, outputToken] = await Promise.all([mintOf(ctx.transport, inputMint), mintOf(ctx.transport, outputMint)]);
+    const amount = raw(input.amount, inputToken.decimals, "amount");
+    const { created, fills } = await engineHistory(ctx.transport, ESTIMATE_SCAN);
+    const unknown = [...new Set(fills.map((f) => f.intent).filter((intent) => !created.has(intent)))];
+    const views = unknown.length === 0 ? [] : await ctx.transport.getAccounts(unknown);
+    unknown.forEach((intent, i) => {
+      const view = views[i];
+      const pair = view === null || view === undefined ? null : pairOf(view.data);
+      if (pair !== null) {
+        created.set(intent, pair);
+      }
+    });
+    const matching = fills
+      .filter((f) => f.amountIn > 0n && created.get(f.intent)?.inputMint === inputMint && created.get(f.intent)?.outputMint === outputMint)
+      .slice(0, ESTIMATE_FILLS);
+    const shown = matching.map((f) => ({
+      sold: formatAmount(f.amountIn, inputToken.decimals),
+      received: formatAmount(f.delivered, outputToken.decimals),
+      ...(f.blockTime === null ? {} : { at: f.blockTime }),
+      signature: f.signature,
+    }));
+    const [latest] = matching;
+    if (latest === undefined) {
+      return { fills: shown, next: NO_FILLS };
+    }
+    const best = matching.reduce((a, b) => (b.delivered * a.amountIn > a.delivered * b.amountIn ? b : a));
+    const at = (f: Fill) => formatAmount((amount * f.delivered) / f.amountIn, outputToken.decimals);
+    return { fills: shown, receive_at_best: at(best), receive_at_latest: at(latest), next: ESTIMATE_NEXT };
+  },
+});
+
+export const WAIT_STATUS = ["open", "filling", "filled", "cancelled", "expired", "closed"] as const;
+
+type WaitStatus = (typeof WAIT_STATUS)[number];
+
+export const stillWaiting = (status: string) =>
+  `still ${status}; call ${tool("wallet_wait")} again to keep waiting, or ${tool("wallet_cancel")} to take the escrow back`;
+
+const walletWait = define({
+  name: tool("wallet_wait"),
+  title: "Wait for a wallet intent",
+  description: `Wait until an intent of this server's wallet is filled, cancelled or expired, or until within seconds pass, then say which and, for a fill, how much the wallet received. Use it after sending instead of asking the user to check again; call it again while the status is still open.`,
+  effect: "read",
+  input: object({
+    nonce: amount("the intent's nonce, from the send or wallet_intents"),
+    within: optional(integer(1, WAIT_MAX, `most seconds to wait; default ${WAIT_DEFAULT}`)),
+  }),
+  output: object({
+    intent: account(),
+    status: choice(WAIT_STATUS, "closed means the account is gone and its recent transactions name no fill, cancel or expiry"),
+    waited: integer(0, WAIT_MAX, "seconds waited"),
+    received: optional(text("whole tokens the wallet received from fills")),
+    token: optional(text("the token received")),
+    signature: optional(text("the fill's transaction")),
+    next: optional(text()),
+  }),
+  run: async (ctx: AgentContext, input) => {
+    const wallet = access(ctx);
+    const owner = (await signerOf(ctx)).address;
+    const [intent] = await findIntentPda({ owner, nonce: input.nonce });
+    const within = input.within ?? WAIT_DEFAULT;
+    const fresh = unmemoized(ctx.transport);
+    let waited = 0;
+    let pair: Pair | null = null;
+    let status: WaitStatus = "closed";
+    for (;;) {
+      const view = await fresh.getAccount(intent);
+      if (view === null) {
+        status = "closed";
+        break;
+      }
+      const decoded = getIntentDecoder().decode(view.data);
+      pair = { inputMint: decoded.inputMint, outputMint: decoded.outputMint };
+      status = STATUS[decoded.status] ?? "open";
+      if ((status !== "open" && status !== "filling") || waited >= within || !(await wallet.sleep(1))) {
+        break;
+      }
+      waited += 1;
+    }
+    if (status === "open" || status === "filling") {
+      return { intent, status, waited, next: stillWaiting(status) };
+    }
+    if (status === "cancelled" || status === "expired") {
+      return { intent, status, waited };
+    }
+    const history = await engineHistory(ctx.transport, WAIT_SCAN, intent);
+    const fills = history.fills.filter((f) => f.intent === intent);
+    if (fills.length === 0) {
+      return { intent, status: status === "closed" ? (history.ended.get(intent) ?? status) : status, waited };
+    }
+    pair ??= history.created.get(intent) ?? null;
+    const decimals = pair === null ? undefined : (await mintOf(ctx.transport, pair.outputMint)).decimals;
+    return {
+      intent,
+      status: "filled",
+      waited,
+      received: formatAmount(fills.reduce((sum, f) => sum + f.delivered, 0n), decimals),
+      ...(pair === null ? {} : { token: nameOf(pair.outputMint) }),
+      signature: fills[0]?.signature,
+    };
+  },
+});
+
+export const WALLET_ACTIONS: readonly AnyAction[] = [
+  walletSetup,
+  walletBalance,
+  walletEstimate,
+  walletSwap,
+  walletAuction,
+  walletWait,
+  walletIntents,
+  walletCancel,
+];

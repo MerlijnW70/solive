@@ -23,7 +23,7 @@ Restart the client. Its tool list now shows the `solive_` tools.
 
 With this entry the server holds no keys. Its tools read the engine and prepare unsigned transactions. A person's wallet signs and sends every transaction, and nothing moves until then.
 
-Add `--wallet` to let the server keep its own devnet wallet and trade from it after the user approves, as [Use it from your AI](ai.md) shows. Add `--relayer` with `--relay-fee` to let `solive_submit_signed_intent` create intents owners signed off-chain, with the relayer key paying.
+Add `--wallet` to let the server keep its own devnet wallet and trade from it after the user approves, as [Use it from your AI](ai.md) shows; `--wallet-per-trade` and `--wallet-per-hour` cap what it sells. Add `--relayer` with `--relay-fee` to let `solive_submit_signed_intent` create intents owners signed off-chain, with the relayer key paying.
 
 Amounts are raw base units. `solive_get_balances` returns each token's decimals.
 

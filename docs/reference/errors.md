@@ -18,6 +18,9 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `WalletNotMainnet` | no | the RPC serves mainnet; wallet tools work on devnet, testnet and localnet only |
 | `NoWallet` | no | the server has no wallet yet; call solive_wallet_setup first |
 | `WalletEmpty` | no | the wallet holds no SOL; fund it from a faucet, then try again |
+| `WalletTokenNotAllowed` | no | the server was started with sell limits that do not name this token |
+| `WalletTradeLimit` | no | the trade sells more than the server's --wallet-per-trade limit for this token |
+| `WalletHourLimit` | yes | the wallet sold as much of this token in the last hour as the server's --wallet-per-hour limit allows; try later or sell less |
 | `AgentNotConfigured` | no | solive_agent_create was called on a server started without --agent |
 | `OwnerNotServed` | no | the owner is not in the server's --agent-owners list |
 | `BudgetExhausted` | yes | the agent or relayer key reached its hourly lamport budget; try again later |

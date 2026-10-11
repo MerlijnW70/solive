@@ -49,7 +49,7 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
       await watchSolve(command, command.watch, runtime, show);
       return EXIT_OK;
     }
-    if (command.name === "mcp" && command.wallet) {
+    if (command.name === "mcp" && command.wallet !== null) {
       io.err(WALLET_NOTICE.join("\n"));
     }
     const result = await run(command, runtime);

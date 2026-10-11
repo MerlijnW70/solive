@@ -112,7 +112,7 @@ export type Command =
   | (Remote & { name: "domain" })
   | (Remote & { name: "setup"; keypair: string | undefined })
   | (Remote & { name: "balance"; keypair: string | undefined; owner: Address | undefined; mints: Address[] | null })
-  | (Remote & { name: "mcp"; relay: RelaySpec | undefined; agent: AgentSpec | undefined; wallet: boolean })
+  | (Remote & { name: "mcp"; relay: RelaySpec | undefined; agent: AgentSpec | undefined; wallet: WalletLimits | null })
   | (Remote & { name: "show-intent"; owner: Address; nonce: bigint })
   | (Remote & { name: "quote"; owner: Address; nonce: bigint; at: bigint | undefined })
   | (Keyed & { name: "cancel"; nonce: bigint })
@@ -164,6 +164,8 @@ const OPTIONS = {
   relayer: { type: "string" },
   agent: { type: "string" },
   wallet: { type: "boolean" },
+  "wallet-per-trade": { type: "string" },
+  "wallet-per-hour": { type: "string" },
   "relay-max-lamports": { type: "string" },
   "relay-max-ttl": { type: "string" },
   "relay-per-hour": { type: "string" },
@@ -370,6 +372,8 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
     "agent-hourly-lamports",
     "agent-owners",
     "wallet",
+    "wallet-per-trade",
+    "wallet-per-hour",
   ],
   quote: ["url", "owner", "nonce", "at"],
   cancel: ["url", "priority-fee", "keypair", "nonce"],
@@ -804,6 +808,45 @@ function mintAmounts(text: string | undefined, name: "relay-fee" | "min-profit")
   return amounts;
 }
 
+export type WalletLimits = { perTrade: ReadonlyMap<Address, string>; perHour: ReadonlyMap<Address, string> };
+
+export const WALLET_LIMITS_NEED_WALLET = "--wallet-per-trade and --wallet-per-hour need --wallet";
+
+const wholeTokens = (key: string) => `--${key} takes token=amount pairs separated by commas, such as SOL=0.1,TEST=20`;
+
+function tokenAmounts(text: string | undefined, key: "wallet-per-trade" | "wallet-per-hour", url: string): ReadonlyMap<Address, string> {
+  const amounts = new Map<Address, string>();
+  for (const entry of text === undefined ? [] : text.split(",")) {
+    const [name, amount, ...rest] = entry.split("=");
+    if (name === undefined || amount === undefined || rest.length > 0 || !TOKEN_AMOUNT_PATTERN.test(amount.trim())) {
+      throw new UsageError(wholeTokens(key));
+    }
+    const mint = tokenNamed(name.trim(), url);
+    if (mint instanceof Error) {
+      throw new UsageError(`--${key}: ${mint.message}`);
+    }
+    const parsed = parseAddress(mint, key);
+    if (amounts.has(parsed)) {
+      throw new UsageError(`--${key} names ${name.trim()} twice`);
+    }
+    amounts.set(parsed, amount.trim());
+  }
+  return amounts;
+}
+
+function walletLimits(values: Values, url: string): WalletLimits | null {
+  if (values.wallet !== true) {
+    if (values["wallet-per-trade"] !== undefined || values["wallet-per-hour"] !== undefined) {
+      throw new UsageError(WALLET_LIMITS_NEED_WALLET);
+    }
+    return null;
+  }
+  return {
+    perTrade: tokenAmounts(values["wallet-per-trade"], "wallet-per-trade", url),
+    perHour: tokenAmounts(values["wallet-per-hour"], "wallet-per-hour", url),
+  };
+}
+
 function agentSpec(values: Values): AgentSpec | undefined {
   if (values.agent === undefined) {
     if (values["agent-hourly-lamports"] !== undefined || values["agent-owners"] !== undefined) {
@@ -1011,7 +1054,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   pda: "--owner <address> --nonce <n>",
   show: "config | intent --owner <address> --nonce <n>",
   domain: "",
-  mcp: "[--wallet] [--relayer <keypair> --relay-fee <mint=amount,...> [--relay-max-lamports] [--relay-max-ttl] [--relay-per-hour] [--relay-hourly-lamports]] [--agent <keypair> --agent-owners <address,...> [--agent-hourly-lamports]]",
+  mcp: "[--wallet [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>]] [--relayer <keypair> --relay-fee <mint=amount,...> [--relay-max-lamports] [--relay-max-ttl] [--relay-per-hour] [--relay-hourly-lamports]] [--agent <keypair> --agent-owners <address,...> [--agent-hourly-lamports]]",
   quote: "--owner <address> --nonce <n> [--at <unix>]",
   cancel: "--keypair <file> --nonce <n>",
   expire: "--keypair <file> --owner <address> --nonce <n>",
@@ -1124,7 +1167,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       if (values.wallet === true && remote.url === CLUSTERS["mainnet-beta"]) {
         throw new UsageError(WALLET_NOT_MAINNET);
       }
-      return { name: "mcp", ...remote, relay: relaySpec(values), agent: agentSpec(values), wallet: values.wallet === true };
+      return { name: "mcp", ...remote, relay: relaySpec(values), agent: agentSpec(values), wallet: walletLimits(values, remote.url) };
     case "quote":
       noSub(sub);
       return {

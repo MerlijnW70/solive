@@ -47,7 +47,7 @@ export interface Transport {
   simulate(wire: Base64EncodedWireTransaction, watch?: readonly Address[]): Promise<Simulation>;
   genesisHash(): Promise<string>;
   intents(owner?: Address): Promise<ProgramAccount[]>;
-  engineTransactions(limit: number): Promise<EngineTransaction[]>;
+  engineTransactions(limit: number, of?: Address): Promise<EngineTransaction[]>;
   recentFees(accounts: readonly Address[]): Promise<bigint[]>;
   budget(instructions: readonly Instruction[], feePayer: Address): Promise<Instruction[]>;
   airdrop(address: Address, lamports: bigint): Promise<string>;
@@ -231,7 +231,14 @@ function viewOf(value: RawAccount | null): AccountView | null {
     : { owner: value.owner, data: new Uint8Array(Buffer.from(value.data[0], "base64")), lamports: value.lamports, executable: value.executable };
 }
 
+export const TRANSACTION_FETCHES = 4;
+export const KEPT_TRANSACTIONS = 256;
+
 const MEMOIZED = Symbol("memoized");
+const UNDERLYING = Symbol("underlying");
+
+export const unmemoized = (transport: Transport): Transport =>
+  (transport as { [UNDERLYING]?: Transport })[UNDERLYING] ?? transport;
 
 export function memoized(inner: Transport): Transport {
   if ((inner as { [MEMOIZED]?: true })[MEMOIZED] === true) {
@@ -269,6 +276,7 @@ export function memoized(inner: Transport): Transport {
   return {
     ...inner,
     [MEMOIZED]: true,
+    [UNDERLYING]: inner,
     getAccount,
     send: writing(inner.send),
     sendWire: writing(inner.sendWire),
@@ -283,6 +291,7 @@ export function memoized(inner: Transport): Transport {
 }
 
 export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>, watch?: SignatureWatch): Transport {
+  const fetched = new Map<string, EngineTransaction>();
   return {
     async getAccount(address) {
       const { value } = await patiently(() => rpc.getAccountInfo(address, { encoding: "base64" }).send(), wait);
@@ -362,13 +371,16 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     async budget(instructions) {
       return [...instructions];
     },
-    async engineTransactions(limit) {
+    async engineTransactions(limit, of) {
       const signatures = await patiently(
-        () => rpc.getSignaturesForAddress(INTENT_ENGINE_PROGRAM_ADDRESS, { limit }).send(),
+        () => rpc.getSignaturesForAddress(of ?? INTENT_ENGINE_PROGRAM_ADDRESS, { limit }).send(),
         wait,
       );
-      const found: EngineTransaction[] = [];
-      for (const entry of signatures) {
+      const fetchOne = async (entry: (typeof signatures)[number]): Promise<EngineTransaction> => {
+        const known = fetched.get(entry.signature);
+        if (known !== undefined) {
+          return known;
+        }
         const tx = await patiently(
           () =>
             rpc
@@ -389,13 +401,27 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
           .flatMap((group) => group.instructions)
           .filter((ix) => keys[ix.programIdIndex] === INTENT_ENGINE_PROGRAM_ADDRESS)
           .map((ix) => Uint8Array.from(getBase58Encoder().encode(ix.data)));
-        found.push({
+        const found = {
           signature: entry.signature,
           slot: entry.slot,
           blockTime: entry.blockTime,
           failed: entry.err !== null,
           emitted,
-        });
+        };
+        if (tx !== null) {
+          fetched.set(entry.signature, found);
+          for (const old of fetched.keys()) {
+            if (fetched.size <= KEPT_TRANSACTIONS) {
+              break;
+            }
+            fetched.delete(old);
+          }
+        }
+        return found;
+      };
+      const found: EngineTransaction[] = [];
+      for (let i = 0; i < signatures.length; i += TRANSACTION_FETCHES) {
+        found.push(...(await Promise.all(signatures.slice(i, i + TRANSACTION_FETCHES).map(fetchOne))));
       }
       return found;
     },
