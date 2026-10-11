@@ -44,7 +44,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Offer an exact amount of one token for at least an amount of another, from this server's wallet: the tokens are escrowed in an intent that a solver fills or that the wallet gets back. Amounts are whole tokens such as 0.05. Selling SOL wraps it first. Without send it only previews; show the user the summary and call again with send: true once they approve.
+Sell an exact amount of one token for at least min_receive of another, from this server's wallet: the tokens are escrowed in an intent that a solver fills or that the wallet gets back. Solvers pay the least an intent asks, so by default the ask starts at start_receive, a little above the best recent fill, and falls to min_receive over falls_over seconds (default 120): a solver takes it near the most it can pay. exact: true asks min_receive from the start instead. Amounts are whole tokens such as 0.05. Selling SOL wraps it first. Without send it only previews; show the user the summary, then call again with send: true and the start_receive the preview returned once they approve.
 
 Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 
@@ -54,6 +54,9 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 | `buy` | string | yes | SOL, TEST or a mint address |
 | `amount` | string | yes | whole tokens to sell, such as 0.05 |
 | `min_receive` | string | yes | least whole tokens to receive for all of it |
+| `start_receive` | string | no | whole tokens asked when the offer lands; default a little above the best recent fill |
+| `falls_over` | integer 60..31536000 | no | seconds the ask takes to fall to min_receive; default 120 |
+| `exact` | boolean | no | true asks min_receive from the start, with no falling ask |
 | `expires_in` | integer 60..31536000 | no | least seconds the offer stays open once sent; default 3600 |
 | `send` | boolean | no | true signs and sends; leave out to preview |
 

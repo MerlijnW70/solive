@@ -131,14 +131,15 @@ describe("the wallet server", () => {
     const owner = made["address"] as Address;
     expect(h.airdrops).toEqual([{ address: owner, lamports: AIRDROP }]);
     expect(await ok(client, "wallet_setup")).toMatchObject({ address: owner, created: false });
-    const preview = await ok(client, "wallet_swap", { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5" });
+    const preview = await ok(client, "wallet_swap", { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5", exact: true });
     expect(preview).toMatchObject({ nonce: "0", sent: false, next: PREVIEW_ONLY });
+    expect(preview["start_receive"]).toBeUndefined();
     expect(preview["summary"]).toContain("Setup: wraps 0.05 of your SOL into your wrapped SOL account");
     expect(preview["summary"].slice(0, 2)).toEqual([`Sell: exactly 0.05 of SOL (${NATIVE_MINT})`, `Receive: at least 5 of TEST (${TEST_TOKEN})`]);
     const [intent] = await findIntentPda({ owner, nonce: 0n });
     expect(preview["intent"]).toBe(intent);
     expect(h.svm.getAccount(intent).exists).toBe(false);
-    const swapped = await ok(client, "wallet_swap", { sell: "sol", buy: "test", amount: "0.05", min_receive: "5", send: true });
+    const swapped = await ok(client, "wallet_swap", { sell: "sol", buy: "test", amount: "0.05", min_receive: "5", exact: true, send: true });
     expect(swapped).toMatchObject({ intent, sent: true, signature: expect.any(String) });
     h.watched.push(owner);
     const listed = await ok(client, "wallet_intents");
@@ -156,6 +157,73 @@ describe("the wallet server", () => {
     expect(h.svm.getAccount(intent).exists).toBe(false);
     expect(balance(wrapped)).toBe(LAMPORTS_PER_SOL / 20n);
     expect((await ok(client, "wallet_intents"))["intents"]).toEqual([]);
+  });
+
+  it("lets the ask fall from a little above the best recent fill to the minimum unless told to ask the minimum", async () => {
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    const swap = { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5" };
+    h.engineLog = [];
+    expect(await ok(client, "wallet_swap", swap)).toMatchObject({ start_receive: "6.25" });
+    const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
+    const intent = "11111111111111111111111111111112" as Address;
+    h.engineLog = [
+      {
+        signature: "fill",
+        slot: 1n,
+        blockTime: null,
+        failed: false,
+        emitted: [
+          tag(
+            getIntentCreatedEventEncoder().encode({
+              intent,
+              owner: intent,
+              nonce: 0n,
+              kind: 2,
+              inputMint: NATIVE_MINT,
+              outputMint: TEST_TOKEN,
+              receiver: intent,
+              escrowed: LAMPORTS_PER_SOL / 20n,
+              expiresAt: 0n,
+              rentPayer: intent,
+              flags: 0,
+              bounty: 0,
+              createFee: 0,
+            }),
+          ),
+          tag(
+            getIntentFilledEventEncoder().encode({
+              intent,
+              owner: intent,
+              solver: intent,
+              receiver: intent,
+              solverInput: intent,
+              amountIn: LAMPORTS_PER_SOL / 20n,
+              delivered: (9_966_666_667n * LAMPORTS_PER_SOL) / 1_000_000_000n,
+              required: 0n,
+              fee: 0n,
+              net: 0n,
+              filled: LAMPORTS_PER_SOL / 20n,
+              remaining: 0n,
+              partnerFee: 0n,
+            }),
+          ),
+        ],
+      },
+    ];
+    const preview = await ok(client, "wallet_swap", swap);
+    expect(preview).toMatchObject({ start_receive: "10.166" });
+    expect(await ok(client, "wallet_swap", { ...swap, min_receive: "11" })).not.toHaveProperty("start_receive");
+    const now = h.svm.getClock().unixTimestamp;
+    const sent = await ok(client, "wallet_swap", { ...swap, start_receive: preview["start_receive"], falls_over: 90, send: true });
+    expect(sent).toMatchObject({ sent: true, start_receive: "10.166" });
+    h.watched.push(owner);
+    const [listed] = (await ok(client, "wallet_intents"))["intents"] as Json[];
+    const start = now + BigInt(LANDING_SECONDS);
+    expect(listed).toMatchObject({
+      order: { kind: "dutch", start_out: String((10_166n * LAMPORTS_PER_SOL) / 1_000n), end_out: String(5n * LAMPORTS_PER_SOL), start_time: String(start), end_time: String(start + 90n) },
+      expires_at: String(start + BigInt(DEFAULT_EXPIRES_IN)),
+    });
+    expect(await ok(client, "wallet_swap", { ...swap, exact: true })).not.toHaveProperty("start_receive");
   });
 
   it("says how to fund an empty wallet before it tries to swap", async () => {

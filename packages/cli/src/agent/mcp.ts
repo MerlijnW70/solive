@@ -25,7 +25,7 @@ export const WALLET_INSTRUCTIONS = [
   `Start with ${tool("wallet_setup")}; it creates and funds the wallet and is safe to call again.`,
   `${tool("wallet_swap")}, ${tool("wallet_auction")} and ${tool("wallet_cancel")} only preview until called with send: true. Show the user the summary first and send only after they say yes.`,
   `Name tokens SOL and TEST, or by mint address. Amounts are whole tokens such as 0.05.`,
-  `The devnet filler prices TEST at 200 per SOL and pays exactly the minimum asked, so 0.05 SOL for at least 5 TEST gets 5 TEST while it is online; ask a higher minimum, below 10, to receive more. ${tool("wallet_estimate")} shows what recent fills paid.`,
+  `Solvers pay the least an intent asks. ${tool("wallet_swap")} therefore starts its ask a little above the best recent fill and lets it fall to min_receive, so a solver takes it near the most it can pay: set min_receive to the least the user accepts. ${tool("wallet_estimate")} shows what recent fills paid.`,
   `After sending, ${tool("wallet_wait")} waits for the fill and says what the wallet received; ${tool("wallet_intents")} and ${tool("wallet_balance")} show the rest.`,
 ].join("\n");
 

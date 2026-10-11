@@ -247,7 +247,7 @@ export const walletBalance = define({
   },
 });
 
-const offerOutput = object({
+const offerFields = {
   intent: account(),
   nonce: amount(),
   summary: list(text(), 24),
@@ -255,7 +255,9 @@ const offerOutput = object({
   sent: flag(),
   signature: optional(text()),
   next: optional(text()),
-});
+};
+
+const offerOutput = object(offerFields);
 
 type Token = Awaited<ReturnType<typeof mintOf>>;
 
@@ -265,7 +267,7 @@ async function offered(
   ctx: AgentContext,
   call: Call,
   input: { sell: string; buy: string; send?: boolean | undefined },
-  terms: (sold: Token, bought: Token, now: bigint) => { order: Order; expires_at: bigint },
+  terms: (sold: Token, bought: Token, now: bigint, inputMint: Address, outputMint: Address) => Promise<{ order: Order; expires_at: bigint }> | { order: Order; expires_at: bigint },
 ) {
   const wallet = access(ctx);
   const signer = await signerOf(ctx);
@@ -280,7 +282,7 @@ async function offered(
     mintOf(ctx.transport, outputMint),
     chainTime(ctx.transport),
   ]);
-  const made = terms(inputToken, outputToken, now);
+  const made = await terms(inputToken, outputToken, now, inputMint, outputMint);
   checkSale(wallet.limits, inputMint, inputToken.decimals, (made.order as { amount_in: bigint }).amount_in, now);
   const view = (await prepareCreate.run(
     ctx,
@@ -306,11 +308,39 @@ async function offered(
   }
 }
 
+export const SWAP_FALLS_OVER = 120;
+export const SWAP_HEADROOM_BPS = 200n;
+export const SWAP_BLIND_BPS = 2_500n;
+
+async function recentFills(transport: Transport, inputMint: Address, outputMint: Address): Promise<Fill[]> {
+  const { created, fills } = await engineHistory(transport, ESTIMATE_SCAN);
+  const unknown = [...new Set(fills.map((f) => f.intent).filter((intent) => !created.has(intent)))];
+  const views = unknown.length === 0 ? [] : await transport.getAccounts(unknown);
+  unknown.forEach((intent, i) => {
+    const view = views[i];
+    const pair = view === null || view === undefined ? null : pairOf(view.data);
+    if (pair !== null) {
+      created.set(intent, pair);
+    }
+  });
+  return fills
+    .filter((f) => f.amountIn > 0n && created.get(f.intent)?.inputMint === inputMint && created.get(f.intent)?.outputMint === outputMint)
+    .slice(0, ESTIMATE_FILLS);
+}
+
+const bestOf = (fills: Fill[]): Fill | undefined =>
+  fills.reduce<Fill | undefined>((a, b) => (a === undefined || b.delivered * a.amountIn > a.delivered * b.amountIn ? b : a), undefined);
+
+function openingAsk(fills: Fill[], amount: bigint, floor: bigint): bigint {
+  const best = bestOf(fills);
+  const ask = best === undefined ? (floor * (10_000n + SWAP_BLIND_BPS)) / 10_000n : (amount * best.delivered * (10_000n + SWAP_HEADROOM_BPS)) / (best.amountIn * 10_000n);
+  return ask > floor ? ask : floor;
+}
+
 const walletSwap = define({
   name: tool("wallet_swap"),
   title: "Swap from the wallet",
-  description:
-    "Offer an exact amount of one token for at least an amount of another, from this server's wallet: the tokens are escrowed in an intent that a solver fills or that the wallet gets back. Amounts are whole tokens such as 0.05. Selling SOL wraps it first. Without send it only previews; show the user the summary and call again with send: true once they approve.",
+  description: `Sell an exact amount of one token for at least min_receive of another, from this server's wallet: the tokens are escrowed in an intent that a solver fills or that the wallet gets back. Solvers pay the least an intent asks, so by default the ask starts at start_receive, a little above the best recent fill, and falls to min_receive over falls_over seconds (default ${SWAP_FALLS_OVER}): a solver takes it near the most it can pay. exact: true asks min_receive from the start instead. Amounts are whole tokens such as 0.05. Selling SOL wraps it first. Without send it only previews; show the user the summary, then call again with send: true and the start_receive the preview returned once they approve.`,
   effect: "submit",
   repeats: true,
   input: object({
@@ -318,19 +348,38 @@ const walletSwap = define({
     buy: text("SOL, TEST or a mint address"),
     amount: text("whole tokens to sell, such as 0.05"),
     min_receive: text("least whole tokens to receive for all of it"),
+    start_receive: optional(text("whole tokens asked when the offer lands; default a little above the best recent fill")),
+    falls_over: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `seconds the ask takes to fall to min_receive; default ${SWAP_FALLS_OVER}`)),
+    exact: optional(flag("true asks min_receive from the start, with no falling ask")),
     expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds the offer stays open once sent; default ${DEFAULT_EXPIRES_IN}`)),
     send: optional(flag("true signs and sends; leave out to preview")),
   }),
-  output: offerOutput,
-  run: async (ctx: AgentContext, input, call: Call) =>
-    offered(ctx, call, input, (sold, bought, now) => ({
-      order: {
-        kind: "swap",
-        amount_in: raw(input.amount, sold.decimals, "amount"),
-        min_out: raw(input.min_receive, bought.decimals, "min_receive"),
-      },
-      expires_at: now + BigInt((input.expires_in ?? DEFAULT_EXPIRES_IN) + LANDING_SECONDS),
-    })),
+  output: object({ ...offerFields, start_receive: optional(text("whole tokens asked when the offer lands; pass it back when sending")) }),
+  run: async (ctx: AgentContext, input, call: Call) => {
+    let opening: string | undefined;
+    const result = await offered(ctx, call, input, async (sold, bought, now, inputMint, outputMint) => {
+      const amountIn = raw(input.amount, sold.decimals, "amount");
+      const floor = raw(input.min_receive, bought.decimals, "min_receive");
+      const expiresIn = BigInt(input.expires_in ?? DEFAULT_EXPIRES_IN);
+      const ask =
+        input.exact === true
+          ? floor
+          : input.start_receive === undefined
+            ? openingAsk(await recentFills(ctx.transport, inputMint, outputMint), amountIn, floor)
+            : raw(input.start_receive, bought.decimals, "start_receive");
+      if (ask <= floor) {
+        return { order: { kind: "swap", amount_in: amountIn, min_out: floor }, expires_at: now + expiresIn + BigInt(LANDING_SECONDS) };
+      }
+      opening = formatAmount(ask, bought.decimals);
+      const start = now + BigInt(LANDING_SECONDS);
+      const falls = BigInt(input.falls_over ?? SWAP_FALLS_OVER);
+      return {
+        order: { kind: "dutch", amount_in: amountIn, start_out: ask, end_out: floor, start_time: start, end_time: start + falls },
+        expires_at: start + (expiresIn > falls ? expiresIn : falls),
+      };
+    });
+    return opening === undefined ? result : { ...result, start_receive: opening };
+  },
 });
 
 const walletAuction = define({
@@ -491,19 +540,7 @@ const walletEstimate = define({
     const outputMint = mintNamed(input.buy, wallet.url, "buy");
     const [inputToken, outputToken] = await Promise.all([mintOf(ctx.transport, inputMint), mintOf(ctx.transport, outputMint)]);
     const amount = raw(input.amount, inputToken.decimals, "amount");
-    const { created, fills } = await engineHistory(ctx.transport, ESTIMATE_SCAN);
-    const unknown = [...new Set(fills.map((f) => f.intent).filter((intent) => !created.has(intent)))];
-    const views = unknown.length === 0 ? [] : await ctx.transport.getAccounts(unknown);
-    unknown.forEach((intent, i) => {
-      const view = views[i];
-      const pair = view === null || view === undefined ? null : pairOf(view.data);
-      if (pair !== null) {
-        created.set(intent, pair);
-      }
-    });
-    const matching = fills
-      .filter((f) => f.amountIn > 0n && created.get(f.intent)?.inputMint === inputMint && created.get(f.intent)?.outputMint === outputMint)
-      .slice(0, ESTIMATE_FILLS);
+    const matching = await recentFills(ctx.transport, inputMint, outputMint);
     const shown = matching.map((f) => ({
       sold: formatAmount(f.amountIn, inputToken.decimals),
       received: formatAmount(f.delivered, outputToken.decimals),
@@ -514,7 +551,7 @@ const walletEstimate = define({
     if (latest === undefined) {
       return { fills: shown, next: NO_FILLS };
     }
-    const best = matching.reduce((a, b) => (b.delivered * a.amountIn > a.delivered * b.amountIn ? b : a));
+    const best = bestOf(matching) ?? latest;
     const at = (f: Fill) => formatAmount((amount * f.delivered) / f.amountIn, outputToken.decimals);
     return { fills: shown, receive_at_best: at(best), receive_at_latest: at(latest), next: ESTIMATE_NEXT };
   },
