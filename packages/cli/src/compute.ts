@@ -28,10 +28,10 @@ export type Priority = bigint | "auto";
 export const AUTO_PERCENTILE = 75n;
 export const AUTO_PRICE_CAP = 10_000_000n;
 export const MAX_PRIORITY_PRICE = 100_000_000n;
-export const MICRO_LAMPORTS_PER_LAMPORT = 1_000_000n;
-export const DEFAULT_UNITS_PER_INSTRUCTION = 200_000n;
-export const SET_UNIT_LIMIT = 2;
-export const SET_UNIT_PRICE = 3;
+const MICRO_LAMPORTS_PER_LAMPORT = 1_000_000n;
+const DEFAULT_UNITS_PER_INSTRUCTION = 200_000n;
+const SET_UNIT_LIMIT = 2;
+const SET_UNIT_PRICE = 3;
 
 export function priorityLamports(instructions: readonly Instruction[]): bigint {
   let limit: bigint | null = null;

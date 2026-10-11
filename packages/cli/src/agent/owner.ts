@@ -23,7 +23,7 @@ import type { Transport } from "../transport.js";
 import { AgentRefusal, ENGINE_PROBLEMS } from "./problems.js";
 import { SOL_DECIMALS } from "./read.js";
 
-export type UserWindow = { nonceBase: bigint; nonceBitmap: readonly bigint[]; epoch: bigint };
+type UserWindow = { nonceBase: bigint; nonceBitmap: readonly bigint[]; epoch: bigint };
 
 export async function userOf(transport: Transport, owner: Address): Promise<UserWindow | null> {
   const [address] = await findUserStatePda({ owner });
@@ -37,7 +37,7 @@ export async function userOf(transport: Transport, owner: Address): Promise<User
   return getUserStateDecoder().decode(view.data);
 }
 
-export const NONCE_WINDOW = 256n;
+const NONCE_WINDOW = 256n;
 
 export function pickNonce(
   user: UserWindow | null,
@@ -124,7 +124,7 @@ export async function unusedIntent(transport: Transport, owner: Address, nonce: 
   return intent;
 }
 
-export type Allowance = { account: Address; before: bigint; after: bigint; replaces: Address | null };
+type Allowance = { account: Address; before: bigint; after: bigint; replaces: Address | null };
 
 export async function raiseAllowance(
   transport: Transport,

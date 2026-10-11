@@ -18,7 +18,7 @@ export const EXIT_USAGE = 2;
 export const KEYPAIR_UNREADABLE = "--keypair must name a readable JSON file holding a 64-byte keypair";
 export const KEYPAIR_EXPOSED = "--keypair names a file other users can read or change; restrict it with chmod 600";
 
-export type Io = { out(text: string): void; err(text: string): void };
+type Io = { out(text: string): void; err(text: string): void };
 
 export { render } from "./render.js";
 
@@ -81,7 +81,7 @@ export async function loadKeypairFile(path: string, platform: string = process.p
   return createKeyPairSignerFromBytes(new Uint8Array(bytes));
 }
 
-export type Pipes = { stdin: Readable; stdout: Writable };
+type Pipes = { stdin: Readable; stdout: Writable };
 
 export const FETCH_TIMEOUT_MS = 10_000;
 
@@ -110,7 +110,7 @@ export function nodeRuntime(clock: () => number = Date.now, pipes: Pipes = proce
   };
 }
 
-export type ProcessLike = {
+type ProcessLike = {
   argv: readonly string[];
   stdout: { write(text: string): unknown };
   stderr: { write(text: string): unknown };

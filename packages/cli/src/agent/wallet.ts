@@ -107,7 +107,7 @@ const tokenRow = object({
   balance: text("in whole tokens"),
 });
 
-export const walletSetup = define({
+const walletSetup = define({
   name: tool("wallet_setup"),
   title: "Set up the wallet",
   description:
@@ -144,7 +144,7 @@ export const walletBalance = define({
   },
 });
 
-export const walletSwap = define({
+const walletSwap = define({
   name: tool("wallet_swap"),
   title: "Swap from the wallet",
   description:
@@ -197,7 +197,7 @@ export const walletSwap = define({
   },
 });
 
-export const walletIntents = define({
+const walletIntents = define({
   name: tool("wallet_intents"),
   title: "List the wallet's intents",
   description: "List the intents this server's wallet created, newest state first: open ones can still fill or be cancelled.",
@@ -210,7 +210,7 @@ export const walletIntents = define({
   },
 });
 
-export const walletCancel = define({
+const walletCancel = define({
   name: tool("wallet_cancel"),
   title: "Cancel a wallet intent",
   description:

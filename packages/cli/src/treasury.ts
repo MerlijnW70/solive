@@ -11,7 +11,7 @@ import type { Transport } from "./transport.js";
 
 export { SOL_DECIMALS };
 
-export type TreasuryToken = {
+type TreasuryToken = {
   mint: Address;
   token_program: Address;
   decimals: number;
@@ -21,7 +21,7 @@ export type TreasuryToken = {
   balance_tokens: string;
 };
 
-export type TreasuryView = {
+type TreasuryView = {
   fee_recipient: Address;
   lamports: bigint;
   sol: string;

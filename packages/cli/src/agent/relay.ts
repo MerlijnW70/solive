@@ -4,7 +4,7 @@ import { AgentRefusal } from "./problems.js";
 
 export const RATE_WINDOW = 3_600n;
 
-export type RelayPolicy = {
+type RelayPolicy = {
   maxLamports: bigint;
   maxTtl: bigint;
   perHour: number;
@@ -14,7 +14,7 @@ export type RelayPolicy = {
 
 export type Relay = RelayPolicy & { signer: TransactionSigner; recent: Map<Address, bigint[]>; budget: Budget };
 
-export type Ticket = { cancel(): void };
+type Ticket = { cancel(): void };
 
 export function relayOf(signer: TransactionSigner, policy: RelayPolicy): Relay {
   return { ...policy, signer, recent: new Map(), budget: budgetOf(policy.hourlyLamports) };

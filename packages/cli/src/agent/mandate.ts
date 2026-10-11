@@ -67,8 +67,8 @@ import {
 } from "./schema.js";
 
 export const MANDATE_KIND_NAMES = ["swap", "limit", "dutch"] as const;
-export const MAX_MANDATE_SECONDS = 365 * 24 * 60 * 60;
-export const MAX_MANDATE_INTENTS = 1_000_000;
+const MAX_MANDATE_SECONDS = 365 * 24 * 60 * 60;
+const MAX_MANDATE_INTENTS = 1_000_000;
 export const MANDATE_ID_PROBES = 64;
 export const REVOKE_CANCELS = 6;
 
@@ -79,7 +79,7 @@ const kindBits = (names: readonly (typeof MANDATE_KIND_NAMES)[number][]): number
 
 export const NO_MANDATE_HINT = "it was never granted, or the owner revoked it, which closes it";
 
-export const WARN_STILL_OPEN =
+const WARN_STILL_OPEN =
   "some of the agent's intents stay open after this; they can no longer be filled, but their escrow stays locked until you cancel them";
 
 export async function loadMandate(transport: Transport, owner: Address, agent: Address, id: bigint) {
@@ -110,11 +110,11 @@ function specOf(m: Mandate): MandateSpec {
   };
 }
 
-export function limitsOf(m: Mandate): string {
+function limitsOf(m: Mandate): string {
   return `this mandate allows at most ${m.perIntent} raw input units per intent including the agent fee of ${m.agentFee}, ${m.total - m.spent} more raw input units in total, ${m.maxIntents - m.intents} more intents, each expiring within ${m.maxTtl} seconds, and at least ${m.floorOut} raw output units for every ${m.floorIn} raw input units it draws`;
 }
 
-export function explained(m: Mandate): (error: unknown) => never {
+function explained(m: Mandate): (error: unknown) => never {
   return (error) => {
     if (error instanceof SimulationFailed && error.problem.code.startsWith("Mandate")) {
       throw new SimulationFailed({ ...error.problem, hint: `${error.problem.hint}; ${limitsOf(m)}` });
@@ -125,7 +125,7 @@ export function explained(m: Mandate): (error: unknown) => never {
 
 export const AGENT_NONCE_PROBES = 64n;
 
-export type Holding = { claims: Claims; call: Call; now: bigint };
+type Holding = { claims: Claims; call: Call; now: bigint };
 
 export async function agentNonce(
   transport: Transport,

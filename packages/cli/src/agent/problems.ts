@@ -100,7 +100,7 @@ export const ENGINE_PROBLEMS = {
   EpochJumpTooLarge: never("one advance may raise the signing epoch at most 2^48; advance-epoch always picks an allowed one, so rebuild the transaction with it"),
 } as const satisfies Record<string, Entry>;
 
-export type EngineErrorName = keyof typeof ENGINE_PROBLEMS;
+type EngineErrorName = keyof typeof ENGINE_PROBLEMS;
 
 export const ENGINE_ERROR_BASE = 6000;
 
@@ -214,7 +214,7 @@ export const SERVER_PROBLEMS = {
   OwnerAccountMissing: never("the owner has no token account that can take the refund; crank with fund_accounts"),
 } as const satisfies Record<string, Entry>;
 
-export type ServerProblemName = keyof typeof SERVER_PROBLEMS;
+type ServerProblemName = keyof typeof SERVER_PROBLEMS;
 
 export class AgentRefusal extends Error {
   readonly problem: Problem;

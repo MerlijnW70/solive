@@ -17,9 +17,9 @@ export type AgentContext = {
   wallet?: WalletAccess;
 };
 
-export type AgentKey = { signer: TransactionSigner; budget: Budget; owners: ReadonlySet<Address> };
+type AgentKey = { signer: TransactionSigner; budget: Budget; owners: ReadonlySet<Address> };
 
-export type Action<I> = {
+type Action<I> = {
   name: string;
   title: string;
   description: string;

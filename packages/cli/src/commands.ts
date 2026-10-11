@@ -96,7 +96,7 @@ export type Runtime = {
   serve(server: McpServer): Promise<void>;
 };
 
-export const SOLVER_ROUTE_ACCOUNTS = 40;
+const SOLVER_ROUTE_ACCOUNTS = 40;
 
 export const configExists = (config: Address): string =>
   `the engine is already set up on this cluster (config ${config}); change it with update-config, set-economics, raise-pause or lower-pause`;
@@ -113,12 +113,12 @@ export function jupiterHost(url: string): boolean {
 export * from "./accounts.js";
 export * from "./crank.js";
 
-export const SIGNED_FILE_VERSION = 1;
+const SIGNED_FILE_VERSION = 1;
 
 export const SOLVER_TABLE_NEXT =
   "put these in an address lookup table you own (solana address-lookup-table create, then extend with them) and pass it to solve with --lookup-table";
 
-export function relayAnything(signer: TransactionSigner, mint: Address) {
+function relayAnything(signer: TransactionSigner, mint: Address) {
   return relayOf(signer, {
     maxLamports: U64_MAX,
     maxTtl: BigInt(RELAY_MAX_TTL),
@@ -160,7 +160,7 @@ function context(transport: Transport, relay: AgentContext["relay"] = undefined)
 export const AUTHORITY_NEXT =
   "import transaction_base58 into the multisig as a proposal (its blockhash and fee payer are replaced there), or build one from instructions; it carries no compute budget so it can run from a vault";
 
-export function instructionView(ix: Instruction) {
+function instructionView(ix: Instruction) {
   return {
     program: ix.programAddress,
     accounts: (ix.accounts ?? []).map((meta) => ({
@@ -181,7 +181,7 @@ const pauseList = (flags: number) =>
   [...((flags & PAUSE_CREATE) !== 0 ? ["creating"] : []), ...((flags & PAUSE_FILL) !== 0 ? ["filling"] : [])].join(" and ") ||
   "nothing";
 
-export async function administer(
+async function administer(
   transport: Transport,
   runtime: Runtime,
   by: Authority,
@@ -214,9 +214,9 @@ export async function administer(
   };
 }
 
-export type EngineEvents = { signature: string; slot: bigint; blockTime: bigint | null; failed: boolean; events: object[] };
+type EngineEvents = { signature: string; slot: bigint; blockTime: bigint | null; failed: boolean; events: object[] };
 
-export async function engineEvents(transport: Transport, limit: number): Promise<EngineEvents[]> {
+async function engineEvents(transport: Transport, limit: number): Promise<EngineEvents[]> {
   return (await transport.engineTransactions(limit)).map((tx) => ({
     signature: tx.signature,
     slot: tx.slot,

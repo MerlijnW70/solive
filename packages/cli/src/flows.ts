@@ -27,7 +27,7 @@ import { preparedView } from "./agent/shapes.js";
 import { type Side, type Tokens, UsageError } from "./args.js";
 import type { Transport } from "./transport.js";
 
-export const PREPARED_KEYS = ["setup", "prepared"] as const;
+const PREPARED_KEYS = ["setup", "prepared"] as const;
 
 export const NOT_SENT = "nothing was sent; check the summary and pass --yes to sign and send";
 

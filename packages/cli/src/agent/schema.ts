@@ -124,7 +124,7 @@ export function nullable<T>(inner: Schema<T>): Schema<T | null> {
   };
 }
 
-export type Optional<T> = { optional: Schema<T> };
+type Optional<T> = { optional: Schema<T> };
 
 export function optional<T>(inner: Schema<T>): Optional<T> {
   return { optional: inner };
@@ -232,7 +232,7 @@ export function variants<const K extends string, V extends Record<string, Schema
   };
 }
 
-export type StandardIssue = { message: string; path?: PropertyKey[] };
+type StandardIssue = { message: string; path?: PropertyKey[] };
 
 export type Standard<T> = {
   "~standard": {

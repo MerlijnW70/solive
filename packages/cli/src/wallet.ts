@@ -8,10 +8,10 @@ import { DEVNET_URL, NATIVE_MINT, TEST_TOKEN } from "./tokens.js";
 import type { Transport } from "./transport.js";
 
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
-export const FUND_BELOW = LAMPORTS_PER_SOL / 2n;
+const FUND_BELOW = LAMPORTS_PER_SOL / 2n;
 export const AIRDROP = LAMPORTS_PER_SOL;
 
-export type Settings = { url: string; keypair: string };
+type Settings = { url: string; keypair: string };
 
 export type Files = {
   home: string;
@@ -20,7 +20,7 @@ export type Files = {
   loadSigner(path: string): Promise<KeyPairSigner>;
 };
 
-export const settingsDir = (home: string) => `${home}/.config/intent-engine`;
+const settingsDir = (home: string) => `${home}/.config/intent-engine`;
 export const settingsPath = (home: string) => `${settingsDir(home)}/config.json`;
 export const defaultWallet = (home: string) => `${settingsDir(home)}/wallet.json`;
 
@@ -108,7 +108,7 @@ export function defaultMints(url: string): Address[] {
   return url === DEVNET_URL ? [NATIVE_MINT, TEST_TOKEN] : [NATIVE_MINT];
 }
 
-export const TOKEN_LABELS: Readonly<Record<string, string>> = { [NATIVE_MINT]: "wrapped SOL", [TEST_TOKEN]: "TEST" };
+const TOKEN_LABELS: Readonly<Record<string, string>> = { [NATIVE_MINT]: "wrapped SOL", [TEST_TOKEN]: "TEST" };
 
 export async function balances(transport: Transport, owner: Address, mints: readonly Address[]): Promise<object> {
   const tokens = [];

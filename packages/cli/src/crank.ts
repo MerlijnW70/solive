@@ -82,11 +82,11 @@ export class CostlyFunding extends UnfundedAccount {
   }
 }
 
-export const SEED_PART = 16;
+const SEED_PART = 16;
 
 export const refundSeed = (owner: Address, mint: Address): string => owner.slice(0, SEED_PART) + mint.slice(0, SEED_PART);
 
-export async function refundTarget(
+async function refundTarget(
   transport: Transport,
   payer: TransactionSigner,
   owner: Address,
@@ -180,7 +180,7 @@ export async function closing(
   return [...target.prep, ix];
 }
 
-export type CrankAction = {
+type CrankAction = {
   intent: Address;
   action: "expire" | "close";
   signature?: string;

@@ -54,7 +54,7 @@ import { account, amount, integer, list, nullable, object, optional, text, time 
 
 export const DEFAULT_SUBMIT_WITHIN = 60 * 60;
 export const MAX_SUBMIT_WITHIN = 24 * 60 * 60;
-export const SIGNATURE_PATTERN = "^[1-9A-HJ-NP-Za-km-z]{64,88}$";
+const SIGNATURE_PATTERN = "^[1-9A-HJ-NP-Za-km-z]{64,88}$";
 
 const signedTerms = {
   owner: account("the wallet that signs the message and sells"),
@@ -104,7 +104,7 @@ async function fieldsOf(transport: Transport, t: SignedTerms, params: IntentPara
   return { config, inputToken, fields };
 }
 
-export function relayFloor(relay: Relay, mint: Address): bigint {
+function relayFloor(relay: Relay, mint: Address): bigint {
   const floor = relay.fees.get(mint);
   if (floor === undefined) {
     throw new AgentRefusal(
@@ -144,14 +144,14 @@ async function relayCreate(
   });
 }
 
-export async function relayFits(transport: Transport, relay: Relay, instructions: readonly Instruction[]): Promise<boolean> {
+async function relayFits(transport: Transport, relay: Relay, instructions: readonly Instruction[]): Promise<boolean> {
   const budgeted = await transport.budget(instructions, relay.signer.address);
   return bytesFit(await transactionSize(transport, budgeted, relay.signer.address));
 }
 
 const preparedFits = (prepared: Prepared): boolean => bytesFit(getBase64Encoder().encode(prepared.transaction).length);
 
-export function offeredFee(floor: bigint, offered: bigint | undefined): bigint {
+function offeredFee(floor: bigint, offered: bigint | undefined): bigint {
   if (offered === undefined) {
     return floor;
   }
@@ -463,7 +463,7 @@ export function sameTerms(stored: Intent, fields: SignedIntentFields): boolean {
   );
 }
 
-export function signatureBytes(text: string): SignatureBytes {
+function signatureBytes(text: string): SignatureBytes {
   const bytes = new RegExp(SIGNATURE_PATTERN).test(text) ? getBase58Encoder().encode(text) : new Uint8Array();
   if (bytes.length !== 64) {
     throw new AgentRefusal("SignatureMalformed", "the signature must be 64 bytes written in base58");

@@ -20,7 +20,7 @@ export function createCost(economics: { createFee: number; crankBounty: number }
   );
 }
 
-export type Spend = { at: bigint; lamports: bigint };
+type Spend = { at: bigint; lamports: bigint };
 
 export type Budget = { hourly: bigint; spends: Spend[] };
 

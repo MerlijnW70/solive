@@ -84,7 +84,7 @@ export async function tokenProgramOf(transport: Transport, mint: Address): Promi
   return view.owner;
 }
 
-export const MINT_DECIMALS_OFFSET = 44;
+const MINT_DECIMALS_OFFSET = 44;
 export const MINT_BASE_SIZE = 82;
 export const TOKEN_PROGRAMS = [
   "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
@@ -121,7 +121,7 @@ export async function mintOf(
 export const EXTENDED_TYPE_OFFSET = 165;
 export const EXTENDED_MINT_TYPE = 1;
 
-export function isMintData(data: Uint8Array): boolean {
+function isMintData(data: Uint8Array): boolean {
   return data.length === MINT_BASE_SIZE || data[EXTENDED_TYPE_OFFSET] === EXTENDED_MINT_TYPE;
 }
 
@@ -178,7 +178,7 @@ export function describeIntent(address: Address, intent: Intent) {
 const CLOCK_SYSVAR = "SysvarC1ock11111111111111111111111111111111" as Address;
 const CLOCK_UNIX_TIMESTAMP = 32;
 
-export const TOKEN_AMOUNT_OFFSET = 64;
+const TOKEN_AMOUNT_OFFSET = 64;
 
 export function tokenAmountOf(data: Uint8Array | null): bigint | null {
   if (data === null || data.length < TOKEN_AMOUNT_OFFSET + 8) {

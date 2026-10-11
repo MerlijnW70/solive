@@ -20,7 +20,7 @@ import { account, amount, choice, flag, integer, list, object, optional, text } 
 import { TOKEN_NAMES, tokenNames } from "../tokens.js";
 import { decimalsFor, SOL_DECIMALS } from "./read.js";
 
-export const WORK_LIMIT = 100;
+const WORK_LIMIT = 100;
 
 export const OWNER_ACCOUNT_MISSING =
   "the owner has no token account that can take the refund; set fund_accounts to create one for them at the cranker's cost";

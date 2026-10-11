@@ -84,7 +84,7 @@ export function paramsOf(order: Order): IntentParams {
   }
 }
 
-export function orderOf(params: IntentParams): Order {
+function orderOf(params: IntentParams): Order {
   switch (params.kind) {
     case Kind.SwapExactIn:
       return { kind: "swap", amount_in: params.amountIn, min_out: params.minOut };
@@ -122,7 +122,7 @@ export const partnerSchema = object(
   "an integrator fee taken from the sold amount at fill time",
 );
 
-export const STATUSES = [...STATUS, "unknown"] as const;
+const STATUSES = [...STATUS, "unknown"] as const;
 
 export const intentSchema = object({
   address: account(),
@@ -155,7 +155,7 @@ function termsOf(intent: Intent, raw: Uint8Array): IntentParams | string {
 
 export type Decimals = { inputDecimals?: number; outputDecimals?: number };
 
-export const SETTLED: ReadonlySet<number> = new Set([IntentStatus.Filled, IntentStatus.Cancelled, IntentStatus.Expired]);
+const SETTLED: ReadonlySet<number> = new Set([IntentStatus.Filled, IntentStatus.Cancelled, IntentStatus.Expired]);
 
 export const SETTLED_LINE =
   "No longer open: its escrow was refunded or paid out, so nothing is locked in it; escrowed only records what was locked at creation";

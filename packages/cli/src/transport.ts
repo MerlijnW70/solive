@@ -20,7 +20,7 @@ import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRE
 
 export type AccountView = { owner: Address; data: Uint8Array; lamports: bigint; executable?: boolean };
 
-export type ProgramAccount = { address: Address; data: Uint8Array };
+type ProgramAccount = { address: Address; data: Uint8Array };
 
 export type EngineTransaction = {
   signature: string;
@@ -112,7 +112,7 @@ export type RpcLike = {
 export const POLL_MS = 500;
 export const CONFIRM_POLLS = 360;
 
-export const INTENT_OWNER_OFFSET = 8n;
+const INTENT_OWNER_OFFSET = 8n;
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 

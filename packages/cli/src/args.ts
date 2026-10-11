@@ -28,11 +28,11 @@ export const CLUSTERS: Readonly<Record<string, string>> = {
 export const ENV_URL = "INTENT_ENGINE_URL";
 export const ENV_KEYPAIR = "INTENT_ENGINE_KEYPAIR";
 
-export const SETUP_CLUSTER = "devnet";
+const SETUP_CLUSTER = "devnet";
 
 export const WALLET_NOT_MAINNET = "mcp --wallet keeps its key in a file on this machine, so it serves devnet, testnet and localnet only";
 
-export const BALANCE_OF_ONE = "balance takes --keypair or --owner, not both";
+const BALANCE_OF_ONE = "balance takes --keypair or --owner, not both";
 
 export type Env = Readonly<Record<string, string | undefined>>;
 
@@ -42,7 +42,7 @@ export class UsageError extends Error {}
 
 type Remote = { url: string; priority: Priority };
 
-export type RelaySpec = {
+type RelaySpec = {
   keypair: string;
   maxLamports: bigint;
   maxTtl: bigint;
@@ -51,9 +51,9 @@ export type RelaySpec = {
   fees: ReadonlyMap<Address, bigint>;
 };
 
-export type AgentSpec = { keypair: string; hourlyLamports: bigint; owners: Address[] };
+type AgentSpec = { keypair: string; hourlyLamports: bigint; owners: Address[] };
 
-export type IssueSpec = { inputMint: Address; outputMint: Address; out: bigint; in: bigint };
+type IssueSpec = { inputMint: Address; outputMint: Address; out: bigint; in: bigint };
 
 export const RELAY_NEEDS_FEES =
   "--relayer needs --relay-fee naming every input token it relays as mint=amount; amount may be 0, and other tokens are refused";
@@ -64,19 +64,19 @@ export const RELAY_DEFAULT_TTL = 24 * 60 * 60;
 export const RELAY_DEFAULT_HOURLY_LAMPORTS = 100_000_000n;
 export const AGENT_DEFAULT_HOURLY_LAMPORTS = 50_000_000n;
 export const RELAY_MAX_TTL = 365 * 24 * 60 * 60;
-export const RELAY_DEFAULT_PER_HOUR = 10;
-export const RELAY_MIN_TTL = 60;
+const RELAY_DEFAULT_PER_HOUR = 10;
+const RELAY_MIN_TTL = 60;
 type Keyed = Remote & { keypair: string };
 
 export type Authority = { keypair: string; yes: boolean } | { authority: Address };
 
 type Administered = Remote & { by: Authority };
 
-export type FlowName = "create" | "mandate-grant" | "mandate-revoke" | "mandate-use" | "approve" | "revoke-approval";
+type FlowName = "create" | "mandate-grant" | "mandate-revoke" | "mandate-use" | "approve" | "revoke-approval";
 
-export type LookupName = "list" | "mandate-show";
+type LookupName = "list" | "mandate-show";
 
-export type ToolInput = Record<string, unknown>;
+type ToolInput = Record<string, unknown>;
 
 export type Side = "input" | "output";
 
@@ -98,7 +98,7 @@ export const TOKEN_SIDES: Partial<Record<string, Side>> = {
   "floor-out": "output",
 };
 
-export type ConfigChange = {
+type ConfigChange = {
   guardian: Address | undefined;
   feeRecipient: Address | undefined;
   feeBps: number | undefined;
@@ -256,7 +256,7 @@ export function parseKinds(text: string): bigint {
   return parseKindSet(text, "kinds", false);
 }
 
-export function parseKindSet(text: string, key: string, allowNone: boolean): bigint {
+function parseKindSet(text: string, key: string, allowNone: boolean): bigint {
   if (allowNone && text === "none") {
     return 0n;
   }
@@ -281,14 +281,14 @@ export function parsePause(text: string, key: string): number {
   return flags;
 }
 
-export function parseBounded(text: string, key: string, max: number, min = 0): number {
+function parseBounded(text: string, key: string, max: number, min = 0): number {
   if (!/^\d+$/.test(text) || BigInt(text) > BigInt(max) || BigInt(text) < BigInt(min)) {
     throw new UsageError(`--${key} must be an integer from ${min} to ${max}`);
   }
   return Number(text);
 }
 
-export function parseKindFees(text: string): { mask: number; bps: [number, number, number, number] } {
+function parseKindFees(text: string): { mask: number; bps: [number, number, number, number] } {
   const bps: [number, number, number, number] = [0, 0, 0, 0];
   let mask = 0;
   if (text === "") {
@@ -509,7 +509,7 @@ export const SUB_ACCEPTS: Record<string, Record<string, readonly (keyof typeof O
   },
 };
 
-export function noRepeats(argv: readonly string[]): void {
+function noRepeats(argv: readonly string[]): void {
   const seen = new Set<string>();
   for (const arg of argv) {
     if (arg === "--") {

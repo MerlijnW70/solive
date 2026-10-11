@@ -19,8 +19,8 @@ import { tool } from "./names.js";
 import { type Decimals, intentSchema, intentView, KIND_NAMES, KINDS } from "./shapes.js";
 import { account, amount, choice, flag, integer, list, object, optional, text, time } from "./schema.js";
 
-export const LIST_LIMIT = 100;
-export const LIST_DEFAULT = 20;
+const LIST_LIMIT = 100;
+const LIST_DEFAULT = 20;
 
 const intentRef = {
   owner: account("the wallet that created the intent"),
@@ -132,7 +132,7 @@ export const listIntents = define({
   },
 });
 
-export const BALANCE_MINTS = 8;
+const BALANCE_MINTS = 8;
 export const SOL_DECIMALS = 9;
 
 async function decimalsOf(transport: Transport, cache: Map<Address, number | null>, mint: Address): Promise<number | null> {
