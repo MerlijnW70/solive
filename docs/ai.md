@@ -40,3 +40,25 @@ Cursor: put this in `~/.cursor/mcp.json`. Other apps: add it to the app's MCP se
 > Set me up on solive and make my first swap.
 
 It swaps or cancels nothing until you say yes.
+
+## 3. Let your AI explain any trade (optional)
+
+The Solana Explorer server decodes any address or transaction, solive's instructions included, so your AI can explain what a swap did. It is read-only and holds no keys.
+
+Claude Code:
+
+```sh
+claude mcp add --transport http solana-explorer https://explorer.solana.com/mcp
+```
+
+Codex:
+
+```sh
+codex mcp add solana-explorer --url https://explorer.solana.com/mcp
+```
+
+VS Code:
+
+```sh
+code --add-mcp '{"name":"solana-explorer","type":"http","url":"https://explorer.solana.com/mcp"}'
+```
