@@ -1,6 +1,6 @@
 import type { Address, KeyPairSigner } from "@solana/kit";
 import { parseAmount } from "@intent-engine/core";
-import { mintOf } from "../accounts.js";
+import { chainTime, mintOf } from "../accounts.js";
 import { ENV_KEYPAIR, type Env } from "../args.js";
 import { execute, type PreparedView } from "../flows.js";
 import { tokenNamed } from "../tokens.js";
@@ -18,6 +18,7 @@ import { STATUS } from "../accounts.js";
 export type WalletAccess = { url: string; files: Files; env: Env };
 
 export const DEFAULT_EXPIRES_IN = 3_600;
+export const LANDING_SECONDS = 10;
 
 export const walletEmpty = (address: string) =>
   `the wallet ${address} holds no SOL yet; request devnet SOL for it at ${FAUCET} or ${PUBLIC_FAUCET}, then try again`;
@@ -136,7 +137,7 @@ export const walletSwap = define({
     buy: text("SOL, TEST or a mint address"),
     amount: text("whole tokens to sell, such as 0.05"),
     min_receive: text("least whole tokens to receive for all of it"),
-    expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `seconds until the offer expires; default ${DEFAULT_EXPIRES_IN}`)),
+    expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds the offer stays open once sent; default ${DEFAULT_EXPIRES_IN}`)),
     send: optional(flag("true signs and sends; leave out to preview")),
   }),
   output: object({
@@ -168,7 +169,7 @@ export const walletSwap = define({
           amount_in: raw(input.amount, inputToken.decimals, "amount"),
           min_out: raw(input.min_receive, outputToken.decimals, "min_receive"),
         },
-        expires_in: input.expires_in ?? DEFAULT_EXPIRES_IN,
+        expires_at: (await chainTime(ctx.transport)) + BigInt((input.expires_in ?? DEFAULT_EXPIRES_IN) + LANDING_SECONDS),
       } as never,
       call,
     )) as Record<string, unknown>;

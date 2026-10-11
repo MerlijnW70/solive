@@ -6,7 +6,7 @@ import { findAssociatedTokenAddress, findIntentPda } from "@intent-engine/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { WALLET_NOT_MAINNET } from "../src/args.js";
 import { START_PROMPT, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
-import { NO_WALLET, PREVIEW_ONLY, WALLET_ACTIONS, WALLET_OFF, walletBalance, walletEmpty } from "../src/agent/wallet.js";
+import { DEFAULT_EXPIRES_IN, LANDING_SECONDS, NO_WALLET, PREVIEW_ONLY, WALLET_ACTIONS, WALLET_OFF, walletBalance, walletEmpty } from "../src/agent/wallet.js";
 import { invoke } from "../src/agent/actions.js";
 import { claimsOf } from "../src/agent/claims.js";
 import { ACTIONS } from "../src/agent/registry.js";
@@ -103,6 +103,8 @@ describe("the wallet server", () => {
     h.watched.push(owner);
     const listed = await ok(client, "wallet_intents");
     expect(listed["intents"]).toMatchObject([{ address: intent, status: "open", nonce: "0" }]);
+    const opened = listed["intents"][0];
+    expect(BigInt(opened.expires_at) - BigInt(opened.created_at)).toBe(BigInt(DEFAULT_EXPIRES_IN + LANDING_SECONDS));
     const wrapped = await findAssociatedTokenAddress({ owner, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     const shown = await ok(client, "wallet_balance");
     expect(shown).toMatchObject({ address: owner, tokens: [{ mint: NATIVE_MINT, account: wrapped, balance: "0" }, { mint: TEST_TOKEN, name: "TEST" }] });
