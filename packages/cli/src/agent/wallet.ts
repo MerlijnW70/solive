@@ -121,7 +121,7 @@ export const walletSetup = define({
     url: text(),
     sol: text("SOL the wallet holds"),
     next: text("what to tell the user"),
-    notice: list(text(), 8, "show the user every line before anything else"),
+    notice: list(text(), 8, "the notice from the server instructions; show it if the user has not seen it yet"),
   }),
   run: async (ctx: AgentContext) => {
     const wallet = await testCluster(ctx);

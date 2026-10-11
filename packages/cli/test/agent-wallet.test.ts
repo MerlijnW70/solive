@@ -45,7 +45,7 @@ function preset(at: Address, decimals = 9): void {
 async function connect(argv: string[]): Promise<Client> {
   h.served.length = 0;
   const started = await cli(argv, {});
-  expect([started.code, started.err]).toEqual([EXIT_OK, ""]);
+  expect([started.code, started.err]).toEqual([EXIT_OK, argv.includes("--wallet") ? WALLET_NOTICE.join("\n") : ""]);
   const server = h.served[0];
   if (server === undefined) {
     throw new Error("no server was started");
@@ -86,6 +86,9 @@ describe("the wallet server", () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name)).toEqual([...WALLET_ACTIONS, ...ACTIONS].map((a) => a.name));
     expect(client.getInstructions()).toBe(WALLET_INSTRUCTIONS);
+    for (const line of WALLET_NOTICE) {
+      expect(WALLET_INSTRUCTIONS).toContain(`- ${line}`);
+    }
     const { prompts } = await client.listPrompts();
     expect(prompts.map((p) => p.name)).toEqual(["start"]);
     const start = await client.getPrompt({ name: "start" });

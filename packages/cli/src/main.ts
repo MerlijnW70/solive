@@ -10,6 +10,7 @@ import { withPriority } from "./compute.js";
 import { printableLines, render, renderText } from "./render.js";
 import { type RpcLike, rpcTransport } from "./transport.js";
 import { withSettings } from "./wallet.js";
+import { WALLET_NOTICE } from "./agent/wallet.js";
 
 export const EXIT_OK = 0;
 export const EXIT_FAILED = 1;
@@ -43,6 +44,9 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
       const transport = withPriority(runtime.transport(command.url), command.priority);
       await follow(transport, runtime, command.limit, command.interval, show);
       return EXIT_OK;
+    }
+    if (command.name === "mcp" && command.wallet) {
+      io.err(WALLET_NOTICE.join("\n"));
     }
     const result = await run(command, runtime);
     if (result !== null) {

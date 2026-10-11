@@ -3,7 +3,7 @@ import { PRODUCT_SLUG } from "@intent-engine/core";
 import { render } from "../render.js";
 import { type AgentContext, type AnyAction, type Effect, invoke } from "./actions.js";
 import { ACTIONS } from "./registry.js";
-import { WALLET_ACTIONS } from "./wallet.js";
+import { WALLET_ACTIONS, WALLET_NOTICE } from "./wallet.js";
 import { tool } from "./names.js";
 import { passThrough } from "./schema.js";
 import { VERSION } from "../version.js";
@@ -19,7 +19,9 @@ export const annotationsOf = (action: AnyAction) =>
 
 export const WALLET_INSTRUCTIONS = [
   `This server holds a devnet wallet and trades intents with it. Devnet tokens have no value.`,
-  `Start with ${tool("wallet_setup")}; it creates and funds the wallet and is safe to call again. Show the user every line of its notice before anything else.`,
+  `Before anything else, show the user this notice once, every line:`,
+  ...WALLET_NOTICE.map((line) => `- ${line}`),
+  `Start with ${tool("wallet_setup")}; it creates and funds the wallet and is safe to call again.`,
   `${tool("wallet_swap")} and ${tool("wallet_cancel")} only preview until called with send: true. Show the user the summary first and send only after they say yes.`,
   `Name tokens SOL and TEST, or by mint address. Amounts are whole tokens such as 0.05.`,
   `The devnet filler prices TEST at 200 per SOL and pays exactly the minimum asked, so 0.05 SOL for at least 5 TEST gets 5 TEST while it is online; ask a higher minimum, below 10, to receive more. Check with ${tool("wallet_intents")} and ${tool("wallet_balance")}.`,
