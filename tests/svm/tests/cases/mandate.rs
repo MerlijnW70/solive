@@ -399,6 +399,29 @@ fn the_agent_cannot_name_another_input_mint_even_with_the_owners_own_account() -
 }
 
 #[test]
+fn the_agent_cannot_name_an_output_mint_or_token_program_the_mandate_did_not() -> TestResult {
+    let mut s = setup()?;
+    let spec = swap(0, 10, 5)?;
+    let wrong_program = if PROGRAM == anchor_spl::token::ID {
+        anchor_spl::token_2022::ID
+    } else {
+        anchor_spl::token::ID
+    };
+    let other = s.env.market(PROGRAM, &[], PROGRAM, &[])?;
+    let mint_program = anchor_error(anchor_lang::error::ErrorCode::ConstraintMintTokenProgram);
+    for (forged, refused) in [
+        (Market { output_mint: other.output_mint, ..s.market }, engine_error(EngineError::MandateMismatch)),
+        (Market { output_program: wrong_program, ..s.market }, mint_program),
+    ] {
+        let ix = s.env.agent_intent_ix(&s.agent.pubkey(), s.mandate, &s.trader, &forged, &spec);
+        assert_eq!(s.agent_sends(&[ix]), Err(refused));
+    }
+    assert!(!s.env.exists(&intent_pda(&s.owner(), spec.nonce)));
+    s.agent_creates(&spec)?;
+    Ok(())
+}
+
+#[test]
 fn the_agent_creates_an_intent_from_the_owners_allowance_and_pays_every_cost_itself() -> TestResult {
     let mut s = setup()?;
     let owner = s.owner();
