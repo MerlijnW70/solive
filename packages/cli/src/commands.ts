@@ -28,6 +28,7 @@ import {
   feeBpsFor,
   findVaultPda,
   getIntentDecoder,
+  IntentStatus,
   getUserStateDecoder,
   kindBit,
   nextEpoch,
@@ -258,6 +259,11 @@ export async function follow(
 
 type SolveCommand = Extract<Command, { name: "solve" }>;
 
+export async function lostRaces(transport: Transport, intents: readonly Address[]): Promise<boolean> {
+  const views = await transport.getAccounts(intents);
+  return views.every((view) => view === null || getIntentDecoder().decode(view.data).status !== IntentStatus.Open);
+}
+
 export async function watchSolve(command: SolveCommand, interval: number, runtime: Runtime, emit: (value: object) => void): Promise<number> {
   const transport = withPriority(runtime.transport(command.url), command.priority);
   const options = await solverOptions(command, runtime, transport);
@@ -280,7 +286,7 @@ export async function watchSolve(command: SolveCommand, interval: number, runtim
           emit({ filled, sent, failed });
           acted += filled.length + sent.length;
         }
-        if (failed.length > 0) {
+        if (!(await lostRaces(transport, failed.map((f) => f.intent)))) {
           chain.forget();
         }
       } catch (error) {

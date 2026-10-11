@@ -57,6 +57,7 @@ import {
   ENV_JUPITER_KEY,
   JUPITER_DOMAIN,
   jupiterHost,
+  lostRaces,
   run,
   SOLVER_TABLE_NEXT,
   STATUS,
@@ -787,6 +788,18 @@ describe("cli against the deployed engine", () => {
     ]);
     expect([h.scans - scans, h.submitted.length, h.waits, h.closed]).toEqual([2, 2, [3, 3, 3], 1]);
     expect(balance(receiver)).toBe(600n);
+  });
+
+  it("tells a lost race, where the intent is already settled or gone, from a failure on an intent that is still open", async () => {
+    await cli(create("4", NOW + 3_600n), { "owner.json": owner });
+    await cli(create("5", NOW + 3_600n), { "owner.json": owner });
+    await cli(["cancel", "--keypair", "owner.json", "--nonce", "5", "--url", "http://cluster"], { "owner.json": owner });
+    const [open] = await findIntentPda({ owner: owner.address, nonce: 4n });
+    const [settled] = await findIntentPda({ owner: owner.address, nonce: 5n });
+    const [gone] = await findIntentPda({ owner: owner.address, nonce: 6n });
+    expect(await lostRaces(transport, [])).toBe(true);
+    expect(await lostRaces(transport, [settled, gone])).toBe(true);
+    expect(await lostRaces(transport, [settled, open])).toBe(false);
   });
 
   it("sends a tipped bundle to jito only for a fill that simulates, and reports it as sent", async () => {
