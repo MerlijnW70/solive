@@ -2,7 +2,7 @@
 
 # MCP tools
 
-16 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 5 wallet tools, listed first.
+16 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 6 wallet tools, listed first.
 
 ## solive_wallet_setup
 
@@ -41,6 +41,25 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 | `amount` | string | yes | whole tokens to sell, such as 0.05 |
 | `min_receive` | string | yes | least whole tokens to receive for all of it |
 | `expires_in` | integer 60..31536000 | no | least seconds the offer stays open once sent; default 3600 |
+| `send` | boolean | no | true signs and sends; leave out to preview |
+
+## solive_wallet_auction
+
+Served only with `--wallet`.
+
+Offer an exact amount of one token in a Dutch auction from this server's wallet: the least it accepts starts at start_receive once the offer lands, falls in a straight line to end_receive over falls_over seconds, then stays there until it expires, so a solver fills it as soon as the asked amount meets what it can pay. Amounts are whole tokens such as 0.05. Selling SOL wraps it first. Without send it only previews; show the user the summary and call again with send: true once they approve.
+
+Effect: `submit` (read-only: false, destructive: false, idempotent: false)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `sell` | string | yes | SOL, TEST or a mint address |
+| `buy` | string | yes | SOL, TEST or a mint address |
+| `amount` | string | yes | whole tokens to sell, such as 0.05 |
+| `start_receive` | string | yes | whole tokens asked when the auction starts; at least end_receive |
+| `end_receive` | string | yes | least whole tokens accepted once the asked amount stops falling |
+| `falls_over` | integer 60..31536000 | yes | seconds the asked amount takes to fall from start_receive to end_receive |
+| `expires_in` | integer 60..31536000 | no | least seconds the offer stays open once sent, never less than falls_over; default 3600 |
 | `send` | boolean | no | true signs and sends; leave out to preview |
 
 ## solive_wallet_intents

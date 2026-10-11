@@ -26,7 +26,7 @@ export const WALLET_NOTICE = [
   "Test network only: this wallet works on Solana devnet, testnet or localnet and refuses mainnet. Its tokens have no value.",
   "Your key stays on this machine: setup makes one unless a keypair is already configured, and names its file. Only signed transactions leave it.",
   "This server talks to no one but the RPC endpoint it was started with.",
-  "Nothing moves until you approve: swaps and cancels only preview until you say yes.",
+  "Nothing moves until you approve: swaps, auctions and cancels only preview until you say yes.",
   "Do not send real funds to this wallet or use its key anywhere else.",
 ];
 
@@ -157,6 +157,42 @@ export const walletBalance = define({
   },
 });
 
+const offerOutput = object({
+  intent: account(),
+  nonce: amount(),
+  summary: list(text(), 24),
+  warnings: list(text(), 16),
+  sent: flag(),
+  signature: optional(text()),
+  next: optional(text()),
+});
+
+type Token = Awaited<ReturnType<typeof mintOf>>;
+
+async function offered(
+  ctx: AgentContext,
+  call: Call,
+  input: { sell: string; buy: string; send?: boolean | undefined },
+  terms: (sold: Token, bought: Token, now: bigint) => { order: object; expires_at: bigint },
+) {
+  const wallet = access(ctx);
+  const signer = await signerOf(ctx);
+  if (((await ctx.transport.getAccount(signer.address))?.lamports ?? 0n) === 0n) {
+    throw new AgentRefusal("WalletEmpty", walletEmpty(signer.address));
+  }
+  const inputMint = mintNamed(input.sell, wallet.url, "sell");
+  const outputMint = mintNamed(input.buy, wallet.url, "buy");
+  const [inputToken, outputToken] = [await mintOf(ctx.transport, inputMint), await mintOf(ctx.transport, outputMint)];
+  const now = await chainTime(ctx.transport);
+  const view = (await prepareCreate.run(
+    ctx,
+    { owner: signer.address, input_mint: inputMint, output_mint: outputMint, ...terms(inputToken, outputToken, now) } as never,
+    call,
+  )) as Record<string, unknown>;
+  const { intent, nonce, summary, warnings, prepared } = view;
+  return sent(ctx, signer, { intent, nonce, summary, warnings, prepared }, input.send, call);
+}
+
 const walletSwap = define({
   name: tool("wallet_swap"),
   title: "Swap from the wallet",
@@ -172,42 +208,53 @@ const walletSwap = define({
     expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds the offer stays open once sent; default ${DEFAULT_EXPIRES_IN}`)),
     send: optional(flag("true signs and sends; leave out to preview")),
   }),
-  output: object({
-    intent: account(),
-    nonce: amount(),
-    summary: list(text(), 24),
-    warnings: list(text(), 16),
-    sent: flag(),
-    signature: optional(text()),
-    next: optional(text()),
+  output: offerOutput,
+  run: async (ctx: AgentContext, input, call: Call) =>
+    offered(ctx, call, input, (sold, bought, now) => ({
+      order: {
+        kind: "swap",
+        amount_in: raw(input.amount, sold.decimals, "amount"),
+        min_out: raw(input.min_receive, bought.decimals, "min_receive"),
+      },
+      expires_at: now + BigInt((input.expires_in ?? DEFAULT_EXPIRES_IN) + LANDING_SECONDS),
+    })),
+});
+
+const walletAuction = define({
+  name: tool("wallet_auction"),
+  title: "Auction from the wallet",
+  description:
+    "Offer an exact amount of one token in a Dutch auction from this server's wallet: the least it accepts starts at start_receive once the offer lands, falls in a straight line to end_receive over falls_over seconds, then stays there until it expires, so a solver fills it as soon as the asked amount meets what it can pay. Amounts are whole tokens such as 0.05. Selling SOL wraps it first. Without send it only previews; show the user the summary and call again with send: true once they approve.",
+  effect: "submit",
+  repeats: true,
+  input: object({
+    sell: text("SOL, TEST or a mint address"),
+    buy: text("SOL, TEST or a mint address"),
+    amount: text("whole tokens to sell, such as 0.05"),
+    start_receive: text("whole tokens asked when the auction starts; at least end_receive"),
+    end_receive: text("least whole tokens accepted once the asked amount stops falling"),
+    falls_over: integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, "seconds the asked amount takes to fall from start_receive to end_receive"),
+    expires_in: optional(
+      integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds the offer stays open once sent, never less than falls_over; default ${DEFAULT_EXPIRES_IN}`),
+    ),
+    send: optional(flag("true signs and sends; leave out to preview")),
   }),
-  run: async (ctx: AgentContext, input, call: Call) => {
-    const wallet = access(ctx);
-    const signer = await signerOf(ctx);
-    if (((await ctx.transport.getAccount(signer.address))?.lamports ?? 0n) === 0n) {
-      throw new AgentRefusal("WalletEmpty", walletEmpty(signer.address));
-    }
-    const inputMint = mintNamed(input.sell, wallet.url, "sell");
-    const outputMint = mintNamed(input.buy, wallet.url, "buy");
-    const [inputToken, outputToken] = [await mintOf(ctx.transport, inputMint), await mintOf(ctx.transport, outputMint)];
-    const view = (await prepareCreate.run(
-      ctx,
-      {
-        owner: signer.address,
-        input_mint: inputMint,
-        output_mint: outputMint,
+  output: offerOutput,
+  run: async (ctx: AgentContext, input, call: Call) =>
+    offered(ctx, call, input, (sold, bought, now) => {
+      const start = now + BigInt(LANDING_SECONDS);
+      return {
         order: {
-          kind: "swap",
-          amount_in: raw(input.amount, inputToken.decimals, "amount"),
-          min_out: raw(input.min_receive, outputToken.decimals, "min_receive"),
+          kind: "dutch",
+          amount_in: raw(input.amount, sold.decimals, "amount"),
+          start_out: raw(input.start_receive, bought.decimals, "start_receive"),
+          end_out: raw(input.end_receive, bought.decimals, "end_receive"),
+          start_time: start,
+          end_time: start + BigInt(input.falls_over),
         },
-        expires_at: (await chainTime(ctx.transport)) + BigInt((input.expires_in ?? DEFAULT_EXPIRES_IN) + LANDING_SECONDS),
-      } as never,
-      call,
-    )) as Record<string, unknown>;
-    const { intent, nonce, summary, warnings, prepared } = view;
-    return sent(ctx, signer, { intent, nonce, summary, warnings, prepared }, input.send, call);
-  },
+        expires_at: start + BigInt(Math.max(input.expires_in ?? DEFAULT_EXPIRES_IN, input.falls_over)),
+      };
+    }),
 });
 
 const walletIntents = define({
@@ -249,4 +296,4 @@ const walletCancel = define({
   },
 });
 
-export const WALLET_ACTIONS: readonly AnyAction[] = [walletSetup, walletBalance, walletSwap, walletIntents, walletCancel];
+export const WALLET_ACTIONS: readonly AnyAction[] = [walletSetup, walletBalance, walletSwap, walletAuction, walletIntents, walletCancel];

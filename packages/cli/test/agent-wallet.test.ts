@@ -161,6 +161,36 @@ describe("the wallet server", () => {
     }
   });
 
+  it("runs a Dutch auction from the wallet: previews it, sends it only when told to, and asks less over the given seconds from when it lands", async () => {
+    const made = await ok(client, "wallet_setup");
+    const owner = made["address"] as Address;
+    const args = { sell: "SOL", buy: "TEST", amount: "0.05", start_receive: "12", end_receive: "9.5", falls_over: 600 };
+    const preview = await ok(client, "wallet_auction", args);
+    expect(preview).toMatchObject({ nonce: "0", sent: false, next: PREVIEW_ONLY });
+    expect(preview["summary"]).toContain("Setup: wraps 0.05 of your SOL into your wrapped SOL account");
+    expect(h.svm.getAccount(preview["intent"] as Address).exists).toBe(false);
+    const now = h.svm.getClock().unixTimestamp;
+    expect(await ok(client, "wallet_auction", { ...args, send: true })).toMatchObject({ intent: preview["intent"], sent: true });
+    h.watched.push(owner);
+    const [listed] = (await ok(client, "wallet_intents"))["intents"] as Json[];
+    const start = now + BigInt(LANDING_SECONDS);
+    expect(listed).toMatchObject({
+      status: "open",
+      order: {
+        kind: "dutch",
+        amount_in: String(LAMPORTS_PER_SOL / 20n),
+        start_out: String(12n * LAMPORTS_PER_SOL),
+        end_out: String((95n * LAMPORTS_PER_SOL) / 10n),
+        start_time: String(start),
+        end_time: String(start + 600n),
+      },
+      expires_at: String(start + BigInt(DEFAULT_EXPIRES_IN)),
+    });
+    const longer = await ok(client, "wallet_auction", { ...args, falls_over: DEFAULT_EXPIRES_IN * 2 });
+    expect(longer["summary"]).toContain(`Expires: ${new Date(Number(start + BigInt(DEFAULT_EXPIRES_IN * 2)) * 1000).toISOString()}`);
+    expect((await call(client, "wallet_auction", { ...args, start_receive: "9", end_receive: "12" })).error).toBe(true);
+  });
+
   it("refuses tokens it cannot name and amounts it cannot read", async () => {
     await ok(client, "wallet_setup");
     for (const args of [
