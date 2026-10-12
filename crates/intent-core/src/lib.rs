@@ -1,5 +1,6 @@
 #![no_std]
 
+pub mod bounty;
 pub mod codec;
 pub mod error;
 pub mod ext;
