@@ -23,13 +23,13 @@ import { neverLanded, type Transport, unmemoized } from "../transport.js";
 import { balances, defaultMints, FAUCET, type Files, PUBLIC_FAUCET, setup, withSettings } from "../wallet.js";
 import { type AgentContext, type AnyAction, define } from "./actions.js";
 import type { Call } from "./claims.js";
-import { MAX_EXPIRES_IN, MIN_EXPIRES_IN, prepareCreate } from "./create.js";
+import { MAX_EXPIRES_IN, MIN_EXPIRES_IN, prepareCreate, WRAPPED } from "./create.js";
 import { tool } from "./names.js";
 import { AgentRefusal, problemOf } from "./problems.js";
 import { listIntents } from "./read.js";
 import { InvalidInput, account, amount, choice, flag, integer, list, object, optional, type Schema, text, time } from "./schema.js";
 import { orderSchema, preparedView } from "./shapes.js";
-import { tokenAccountIfMissing } from "./owner.js";
+import { tokenAccountIfMissing, walletRecipient } from "./owner.js";
 import { prepare } from "./prepare.js";
 import { prepareCancel } from "./settle.js";
 import { STATUS } from "../accounts.js";
@@ -408,8 +408,20 @@ const walletSwap = define({
 
 export const ESCROW_EXPIRES_IN = 86_400;
 
-function recordedMint(sell: Address, url: string): Address {
-  return sell === NATIVE_MINT ? mintNamed("TEST", url, "sell") : NATIVE_MINT;
+export const RECORD_MINT_NEEDED = "selling SOL on this RPC needs record_mint: any other token's mint, which only labels the escrow";
+
+function recordedMint(sell: Address, url: string, chosen: string | undefined): Address {
+  if (chosen !== undefined) {
+    return mintNamed(chosen, url, "record_mint");
+  }
+  if (sell !== NATIVE_MINT) {
+    return NATIVE_MINT;
+  }
+  const test = tokenNamed("TEST", url);
+  if (test instanceof Error) {
+    throw new InvalidInput([{ path: "record_mint", message: RECORD_MINT_NEEDED }]);
+  }
+  return test as Address;
 }
 
 const walletEscrow = define({
@@ -425,6 +437,7 @@ const walletEscrow = define({
     min_result: optional(amount("least result the attestor may attest; default 1")),
     max_result: optional(amount("greatest result the attestor may attest; default min_result")),
     expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds the escrow stays open once sent; default ${ESCROW_EXPIRES_IN}`)),
+    record_mint: optional(text("a token the escrow records as its output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet")),
     send: optional(flag("true signs and sends; leave out to preview")),
   }),
   output: offerOutput,
@@ -436,7 +449,7 @@ const walletEscrow = define({
     if (most < least) {
       throw new InvalidInput([{ path: "max_result", message: "must be at least min_result" }]);
     }
-    return offered(ctx, call, { sell: sold, buy: recordedMint(sold, wallet.url), send: input.send }, (token, _, now) => ({
+    return offered(ctx, call, { sell: sold, buy: recordedMint(sold, wallet.url, input.record_mint), send: input.send }, (token, _, now) => ({
       order: { kind: "attested", amount_in: raw(input.amount, token.decimals, "amount"), min_result: least, max_result: most, attestor: input.attestor },
       expires_at: now + BigInt((input.expires_in ?? ESCROW_EXPIRES_IN) + LANDING_SECONDS),
     }));
@@ -496,15 +509,18 @@ const walletAttest = define({
     if (result < params.minResult || result > params.maxResult) {
       throw new InvalidInput([{ path: "result", message: `must be between ${params.minResult} and ${params.maxResult}` }]);
     }
+    await walletRecipient(ctx.transport, input.pay_to, "pay_to");
     const token = await mintOf(ctx.transport, held.inputMint);
     const payee = await tokenAccountIfMissing(ctx.transport, signer, input.pay_to, held.inputMint, token.tokenProgram);
     const amountIn = held.escrowed - held.filled;
     const maxFeeBps = feeBpsFor(config, held.kind) + held.partnerBps;
-    const shares = splitFees(amountIn, feeBpsFor(config, held.kind), held.partnerBps, config.partnerCutBps);
+    const shares = splitFees(amountIn, feeBpsFor(config, held.kind), held.partnerBps, held.partnerCutBps);
     const treasury =
       shares.protocol > 0n
         ? await tokenAccountIfMissing(ctx.transport, signer, config.feeRecipient, held.inputMint, token.tokenProgram)
         : { create: [] };
+    const partner =
+      shares.partner > 0n ? await tokenAccountIfMissing(ctx.transport, signer, held.partner, held.inputMint, token.tokenProgram) : { create: [] };
     const message = await attestedFillMessage(signer.address, {
       domain: Uint8Array.from(config.domain),
       intent,
@@ -530,9 +546,11 @@ const walletAttest = define({
     });
     const name = TOKEN_NAMES[held.inputMint] ?? held.inputMint;
     const paid = formatAmount(shares.net, token.decimals);
-    const prepared = preparedView(
-      await prepare(ctx.transport, [...payee.create, ...treasury.create, await signEd25519Instruction(signer, message), settle], signer.address),
-    );
+    const setup = [...payee.create, ...treasury.create, ...partner.create];
+    const prepared =
+      input.send === true
+        ? preparedView(await prepare(ctx.transport, [...setup, await signEd25519Instruction(signer, message), settle], signer.address))
+        : undefined;
     const view2 = {
       intent,
       pay_to: input.pay_to,
@@ -541,10 +559,11 @@ const walletAttest = define({
       fee: formatAmount(shares.protocol + shares.partner, token.decimals),
       result,
       summary: [
-        `Pays: ${paid} of ${name} to ${input.pay_to} from ${input.owner}'s escrow`,
+        `Pays: ${paid} of ${name} to ${input.pay_to} from ${input.owner}'s escrow${held.inputMint === NATIVE_MINT ? WRAPPED : ""}`,
         `Attests: result ${result}, signed by this server's wallet as the escrow's attestor`,
         ...(payee.create.length === 0 ? [] : [`Setup: creates ${input.pay_to}'s ${name} account, paid by this wallet`]),
         ...(treasury.create.length === 0 ? [] : [`Setup: creates the engine treasury's ${name} account for the fee, paid by this wallet`]),
+        ...(partner.create.length === 0 ? [] : [`Setup: creates the partner ${held.partner}'s ${name} account for its fee, paid by this wallet`]),
       ],
       warnings: [WARN_ATTESTOR],
       prepared,
@@ -554,6 +573,9 @@ const walletAttest = define({
 });
 
 export const MAX_RECURRING = 12;
+
+export const mayHaveLanded = (sent: number, times: number, problem: string) =>
+  `${sent} of ${times} orders were sent and the next may have landed too (${problem}); check ${tool("wallet_intents")} before sending any again`;
 export const MAX_EVERY = 30 * 24 * 60 * 60;
 
 const walletRecurring = define({
@@ -635,7 +657,9 @@ const walletRecurring = define({
           warnings: first["warnings"],
           ...shown,
           sent: true,
-          next: `${orders.length} of ${input.times} orders were sent; the next failed with ${problem.code}: ${problem.hint}`,
+          next: neverLanded(error)
+            ? `${orders.length} of ${input.times} orders were sent; the next failed with ${problem.code}: ${problem.hint}`
+            : mayHaveLanded(orders.length, input.times, `${problem.code}: ${problem.hint}`),
         };
       }
     }

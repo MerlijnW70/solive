@@ -1,5 +1,5 @@
 import { type Address, generateKeyPairSigner, lamports, none } from "@solana/kit";
-import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
+import { AccountState, getMintEncoder, getMintSize, getTokenEncoder, getTokenSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import {
@@ -21,6 +21,8 @@ import {
 import { beforeEach, describe, expect, it } from "vitest";
 import { WALLET_NOT_MAINNET } from "../src/args.js";
 import { BlockhashExpired, FailedOnChain } from "../src/transport.js";
+import { WRAPPED } from "../src/agent/create.js";
+import { TOKEN_ACCOUNT_RECIPIENT } from "../src/agent/owner.js";
 import { START_PROMPT, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
 import {
   DEFAULT_EXPIRES_IN,
@@ -29,7 +31,9 @@ import {
   LANDING_SECONDS,
   MAINNET_GENESIS,
   NO_FILLS,
+  mayHaveLanded,
   notAttestor,
+  RECORD_MINT_NEEDED,
   NO_WALLET,
   PREVIEW_ONLY,
   stillWaiting,
@@ -266,6 +270,10 @@ describe("the wallet server", () => {
     expect(partly["orders"][0]).toHaveProperty("intent");
     expect(partly["orders"][1]).not.toHaveProperty("intent");
     expect((await ok(client, "wallet_intents"))["intents"]).toHaveLength(1);
+    h.sendFails = { error: new Error("timed out"), landed: true, after: 1 };
+    const unsure = await ok(client, "wallet_recurring", { ...plan, amount: "0.01", times: 2 });
+    expect(unsure["next"]).toBe(mayHaveLanded(1, 2, "Failed: timed out"));
+    expect((await ok(client, "wallet_intents"))["intents"]).toHaveLength(3);
   });
 
   it("escrows a payment that only the named attestor can release, to the wallet it names", async () => {
@@ -281,11 +289,19 @@ describe("the wallet server", () => {
     expect(h.svm.getAccount(intent).exists).toBe(true);
     const release = { owner, nonce, pay_to: worker };
     expect((await call(client, "wallet_attest", { ...release, result: "4" })).value).toMatchObject({ code: "InvalidInput" });
+    h.simulated.length = 0;
     const shown = await ok(client, "wallet_attest", release);
+    expect(h.simulated).toEqual([]);
+    expect(shown["summary"][0]).toContain(WRAPPED);
+    const wrapped = await findAssociatedTokenAddress({ owner, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    expect((await call(client, "wallet_attest", { ...release, pay_to: wrapped })).value).toMatchObject({
+      code: "InvalidInput",
+      issues: [{ path: "pay_to", message: TOKEN_ACCOUNT_RECIPIENT }],
+    });
     const payee = await findAssociatedTokenAddress({ owner: worker, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     const { fee, net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);
     expect(shown).toMatchObject({ intent, pay_to: worker, payee, result: "1", paid: formatAmount(net, 9), fee: formatAmount(fee, 9), sent: false });
-    expect(shown["summary"][0]).toBe(`Pays: ${formatAmount(net, 9)} of SOL to ${worker} from ${owner}'s escrow`);
+    expect(shown["summary"][0]).toBe(`Pays: ${formatAmount(net, 9)} of SOL to ${worker} from ${owner}'s escrow${WRAPPED}`);
     expect(shown["summary"]).toContain(`Setup: creates ${worker}'s SOL account, paid by this wallet`);
     expect(shown["summary"]).toContain("Setup: creates the engine treasury's SOL account for the fee, paid by this wallet");
     expect(JSON.stringify(shown)).not.toMatch(/transaction/);
@@ -301,6 +317,17 @@ describe("the wallet server", () => {
     expect((await call(client, "wallet_attest", { owner, nonce: "99", pay_to: worker })).value).toMatchObject({ code: "NotFound" });
   });
 
+  it("escrows SOL off devnet only with a record mint it is told, since TEST is a devnet name", async () => {
+    client = await connect(["mcp", "--url", "localnet", "--wallet"]);
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    expect((await call(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner })).value).toMatchObject({
+      code: "InvalidInput",
+      issues: [{ path: "record_mint", message: RECORD_MINT_NEEDED }],
+    });
+    const shown = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, record_mint: TEST_TOKEN });
+    expect(shown).toMatchObject({ sent: false });
+  });
+
   it("pays what a swap buys to the wallet named as pay_to, creating its token account", async () => {
     const owner = (await ok(client, "wallet_setup"))["address"] as Address;
     const friend = (await generateKeyPairSigner()).address;
@@ -309,6 +336,7 @@ describe("the wallet server", () => {
     const order = { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5", exact: true, pay_to: friend };
     const preview = await ok(client, "wallet_swap", order);
     expect(preview["summary"]).toContain(`Pays to: ${friend}, who receives what the solver pays`);
+    expect((await call(client, "wallet_swap", { ...order, pay_to: owner })).value["summary"].join(" ")).not.toMatch(/Pays to/);
     expect(preview["summary"]).toContain(`Setup: creates ${friend}'s token account for ${TEST_TOKEN} (you pay its rent)`);
     expect(preview["summary"]).not.toContain(`Setup: creates your token account for ${TEST_TOKEN} (you pay its rent)`);
     const sent = await ok(client, "wallet_swap", { ...order, send: true });
@@ -324,6 +352,28 @@ describe("the wallet server", () => {
     expect(again["summary"].join(" ")).not.toMatch(/creates .*token account for/);
     const plan = await ok(client, "wallet_recurring", { sell: "SOL", buy: "TEST", amount: "0.01", min_receive: "1", start_receive: "2", every: 60, times: 2, pay_to: friend });
     expect(plan["summary"]).toContain(`Pays to: ${friend}, who receives what the solver pays`);
+    const space = BigInt(getTokenSize());
+    h.svm.setAccount({
+      address: mine,
+      data: Uint8Array.from(
+        getTokenEncoder().encode({
+          mint: TEST_TOKEN,
+          owner,
+          amount: LAMPORTS_PER_SOL,
+          delegate: none(),
+          state: AccountState.Initialized,
+          isNative: none(),
+          delegatedAmount: 0n,
+          closeAuthority: none(),
+        }),
+      ),
+      executable: false,
+      lamports: lamports(h.svm.minimumBalanceForRentExemption(space)),
+      programAddress: TOKEN_PROGRAM_ADDRESS,
+      space,
+    });
+    const back = await ok(client, "wallet_swap", { ...order, sell: "TEST", buy: "SOL", amount: "1", min_receive: "0.001" });
+    expect(back["summary"].join(" ")).toContain(WRAPPED);
   });
 
   it("says how to fund an empty wallet before it tries to swap", async () => {

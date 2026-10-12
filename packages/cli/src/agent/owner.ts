@@ -22,6 +22,16 @@ import { NATIVE_MINT } from "../tokens.js";
 import type { Transport } from "../transport.js";
 import { AgentRefusal, ENGINE_PROBLEMS } from "./problems.js";
 import { SOL_DECIMALS } from "./read.js";
+import { InvalidInput } from "./schema.js";
+
+export const TOKEN_ACCOUNT_RECIPIENT = "this is a token account; give the wallet that owns it";
+
+export async function walletRecipient(transport: Transport, recipient: Address, path: string): Promise<void> {
+  const held = await transport.getAccount(recipient);
+  if (held !== null && TOKEN_PROGRAMS.includes(held.owner)) {
+    throw new InvalidInput([{ path, message: TOKEN_ACCOUNT_RECIPIENT }]);
+  }
+}
 
 type UserWindow = { nonceBase: bigint; nonceBitmap: readonly bigint[]; epoch: bigint };
 

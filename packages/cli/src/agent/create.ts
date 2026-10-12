@@ -19,12 +19,15 @@ import { chainTime, CLOCK_SYSVAR, loadConfig, mintOf } from "../accounts.js";
 import { define } from "./actions.js";
 import { tool } from "./names.js";
 import { claim, claimedBy, PREPARED_TTL } from "./claims.js";
-import { initUserIfMissing, pickNonce, setupLines, tokenAccountIfMissing, unusedIntent, userOf, wrapIfShort } from "./owner.js";
+import { initUserIfMissing, pickNonce, setupLines, tokenAccountIfMissing, unusedIntent, userOf, walletRecipient, wrapIfShort } from "./owner.js";
+import { NATIVE_MINT } from "../tokens.js";
 import { prepare } from "./prepare.js";
 import { InvalidInput } from "./schema.js";
 import { orderSchema, paramsOf, partnerSchema, preparedSchema, preparedView } from "./shapes.js";
 import { tokenNames } from "../tokens.js";
 import { account, amount, integer, list, object, optional, text, time } from "./schema.js";
+
+export const WRAPPED = ", as wrapped SOL they unwrap themselves";
 
 export const MAX_EXPIRES_IN = 365 * 24 * 60 * 60;
 export const MIN_EXPIRES_IN = 60;
@@ -102,6 +105,9 @@ export const prepareCreate = define({
     const nonce = pickNonce(user, input.nonce, claimedBy(claims, input.owner, now));
     claim(claims, call, input.owner, nonce, now + PREPARED_TTL, now);
     const recipient = input.pay_to ?? input.owner;
+    if (recipient !== input.owner) {
+      await walletRecipient(transport, recipient, "pay_to");
+    }
     const [[intentAddress], receiverAddress, sourceAddress] = await Promise.all([
       findIntentPda({ owner: input.owner, nonce }),
       findAssociatedTokenAddress({ owner: recipient, mint: input.output_mint, tokenProgram: outputToken.tokenProgram }),
@@ -141,7 +147,7 @@ export const prepareCreate = define({
           { inputDecimals: inputToken.decimals, outputDecimals: outputToken.decimals, ...tokenNames(input.input_mint, input.output_mint) },
         ),
         `Expires: ${formatTime(expiresAt)}`,
-        ...(elsewhere ? [`Pays to: ${recipient}, who receives what the solver pays`] : []),
+        ...(elsewhere ? [`Pays to: ${recipient}, who receives what the solver pays${input.output_mint === NATIVE_MINT ? WRAPPED : ""}`] : []),
         ...(input.partner === undefined ? [] : [`Partner fee: ${input.partner.bps} bps of the sold amount to ${input.partner.account}`]),
         ...setupLines({
           registers: register.length > 0,

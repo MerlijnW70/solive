@@ -118,6 +118,7 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 | `min_result` | whole number as a decimal string | no | least result the attestor may attest; default 1 |
 | `max_result` | whole number as a decimal string | no | greatest result the attestor may attest; default min_result |
 | `expires_in` | integer 60..31536000 | no | least seconds the escrow stays open once sent; default 86400 |
+| `record_mint` | string | no | a token the escrow records as its output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet |
 | `send` | boolean | no | true signs and sends; leave out to preview |
 
 ## solive_wallet_attest

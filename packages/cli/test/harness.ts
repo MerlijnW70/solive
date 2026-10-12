@@ -84,6 +84,7 @@ export const h = {
   rounds: 0,
   engineLog: [] as EngineTransaction[],
   requestedOf: [] as (Address | undefined)[],
+  simulated: [] as string[],
   sendFails: null as { error: Error; landed: boolean; after?: number } | null,
   served: [] as McpServer[],
   airdropRefused: false,
@@ -160,6 +161,7 @@ export const transport: Transport = {
     return getSignatureFromTransaction(tx);
   },
   simulate: async (wire, watch = []) => {
+    h.simulated.push(wire);
     const tx = decodeWire(wire);
     const unsigned = Object.fromEntries(
       Object.entries(tx.signatures).map(([signer, signature]) => [signer, signature ?? new Uint8Array(64)]),
