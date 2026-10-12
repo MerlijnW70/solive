@@ -522,3 +522,28 @@ fn a_signature_check_pins_the_ed25519_precompile_id() {
         ]
     );
 }
+
+#[test]
+fn a_non_attested_intent_has_no_proof_spec_or_judge_fee() {
+    let non_attested = [
+        intent_core::kinds::Intent::SwapExactIn(intent_core::kinds::swap_exact_in::Params {
+            amount_in: 1,
+            min_out: 1,
+        }),
+        intent_core::kinds::Intent::LimitOrder(intent_core::kinds::limit_order::Params {
+            make_amount: 1,
+            take_amount: 1,
+        }),
+        intent_core::kinds::Intent::DutchAuction(intent_core::kinds::dutch_auction::Params {
+            amount_in: 1,
+            start_out: 2,
+            end_out: 1,
+            start_ts: 0,
+            end_ts: 1,
+        }),
+    ];
+    for intent in non_attested {
+        assert_eq!(intent.spec_hash(), [0u8; 32]);
+        assert_eq!(intent.judge_fee(), 0);
+    }
+}
