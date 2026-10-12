@@ -32,6 +32,7 @@ import { Charged,
   BlockhashExpired,
   neverLanded,
   KEPT_TRANSACTIONS,
+  MEMO_PROGRAM_ADDRESS,
 } from "../src/transport.js";
 
 const SIG = "5".repeat(88) as Signature;
@@ -133,15 +134,23 @@ function stub(statuses: Status[], heights: bigint[] = [0n], seen: bigint[] = [])
         calls.push(`transaction:${signature}:${config.encoding}:${config.maxSupportedTransactionVersion}:${config.commitment}`);
         return signature === SIG
           ? {
-              transaction: { message: { accountKeys: [OWNER, INTENT_ENGINE_PROGRAM_ADDRESS] } },
+              transaction: {
+                message: {
+                  accountKeys: [OWNER, INTENT_ENGINE_PROGRAM_ADDRESS, MEMO_PROGRAM_ADDRESS],
+                  instructions: [
+                    { programIdIndex: 2, data: getBase58Decoder().decode(new TextEncoder().encode("delivery note")) },
+                    { programIdIndex: 1, data: getBase58Decoder().decode(new TextEncoder().encode("not a memo")) },
+                  ],
+                },
+              },
               meta: {
                 loadedAddresses: { writable: [TOKEN_PROGRAM], readonly: [INTENT_ENGINE_PROGRAM_ADDRESS] },
                 innerInstructions: [
                   { instructions: [{ programIdIndex: 1, data: getBase58Decoder().decode(new Uint8Array([1, 2])) }] },
                   {
                     instructions: [
-                      { programIdIndex: 2, data: getBase58Decoder().decode(new Uint8Array([3])) },
-                      { programIdIndex: 3, data: getBase58Decoder().decode(new Uint8Array([4, 5])) },
+                      { programIdIndex: 3, data: getBase58Decoder().decode(new Uint8Array([3])) },
+                      { programIdIndex: 4, data: getBase58Decoder().decode(new Uint8Array([4, 5])) },
                       { programIdIndex: 0, data: getBase58Decoder().decode(new Uint8Array([6])) },
                     ],
                   },
@@ -474,7 +483,7 @@ describe("engine transactions", () => {
     const transport = rpcTransport(s.rpc, s.wait);
     const found = await transport.engineTransactions(5);
     expect(found).toEqual([
-      { signature: SIG, slot: 7n, blockTime: 100n, failed: false, emitted: [new Uint8Array([1, 2]), new Uint8Array([4, 5])] },
+      { signature: SIG, slot: 7n, blockTime: 100n, failed: false, emitted: [new Uint8Array([1, 2]), new Uint8Array([4, 5])], memos: ["delivery note"] },
       { signature: OTHER_SIG, slot: 8n, blockTime: null, failed: true, emitted: [], unread: true },
     ]);
     expect(s.calls).toEqual([

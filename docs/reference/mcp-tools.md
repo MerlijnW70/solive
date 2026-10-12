@@ -2,7 +2,7 @@
 
 # MCP tools
 
-16 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 11 wallet tools, listed first.
+16 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 12 wallet tools, listed first.
 
 ## solive_wallet_setup
 
@@ -106,7 +106,7 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 
 Served only with `--wallet`.
 
-Hold an exact amount of one token from this server's wallet in an attested intent: it goes, minus the engine fee, to whichever wallet the named attestor later signs for, once the attestor attests a result between min_result and max_result. Use it to pay another agent for work that a third agent or a person judges. The attestor alone decides who is paid; nothing else is checked on chain, so name an attestor the user trusts. Until then the wallet can cancel it with solive_wallet_cancel, and after it expires anyone can return the escrow. Amounts are whole tokens such as 0.05. Without send it only previews; show the user the summary and call again with send: true once they approve.
+Hold an exact amount of one token from this server's wallet in an attested intent: it goes, minus the engine fee, to whichever wallet the named attestor later signs for, once the attestor attests a result between min_result and max_result. Use it to pay another agent for work that a third agent or a person judges. The attestor alone decides who is paid; nothing else is checked on chain, so name an attestor the user trusts. Have the worker deliver to the attestor rather than to this wallet, since this wallet can cancel until the release; solive_wallet_receipt later shows what the release recorded. Until then the wallet can cancel it with solive_wallet_cancel, and after it expires anyone can return the escrow. Amounts are whole tokens such as 0.05. Without send it only previews; show the user the summary and call again with send: true once they approve.
 
 Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 
@@ -135,6 +135,7 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 | `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
 | `pay_to` | address | yes | the wallet to pay |
 | `result` | whole number as a decimal string | no | the result to attest, between the intent's min_result and max_result; default min_result |
+| `delivered_sha256` | string | no | the sha256, as 64 hex digits, of the work this release pays for; recorded in a memo this wallet signs with the release, so the payer can check what it receives with solive_wallet_receipt |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs the attestation and settles; leave out to preview |
 
@@ -150,6 +151,20 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 | --- | --- | --- | --- |
 | `nonce` | whole number as a decimal string | yes | the intent's nonce, from the send or wallet_intents |
 | `within` | integer 1..40 | no | most seconds to wait; default 30 |
+
+## solive_wallet_receipt
+
+Served only with `--wallet`.
+
+Look up whether an escrow made with solive_wallet_escrow was released: to whom, for how much, by which attestor, and which delivered work the release recorded. Give sha256, the hash of the work you received, to check it is the work that was paid for. It reads the escrow's own transactions and sends nothing.
+
+Effect: `read` (read-only: true, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `owner` | address | no | the wallet that made the escrow; default this server's wallet |
+| `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
+| `sha256` | string | no | the sha256, as 64 hex digits, of the work you received, to compare with the one the release recorded |
 
 ## solive_wallet_intents
 

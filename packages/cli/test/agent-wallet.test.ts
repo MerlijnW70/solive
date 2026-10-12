@@ -13,6 +13,7 @@ import {
   getFillBegunEventEncoder,
   getFillEndedEventEncoder,
   getIntentFilledEventEncoder,
+  getIntentAttestedEventEncoder,
   IntentStatus,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   formatAmount,
@@ -39,7 +40,9 @@ import {
   NO_FILLS,
   mayHaveLanded,
   notAttestor,
+  DELIVERY_PREFIX,
   NO_FALL,
+  NOT_RELEASED,
   partlySent,
   RELEASE_CHANGED,
   UNREAD,
@@ -355,11 +358,24 @@ describe("the wallet server", () => {
     const second = await ok(client, "wallet_attest", { ...release, result: "2" });
     expect(second["approval"]).toMatch(/^[0-9a-f]{16}$/);
     expect(second["approval"]).not.toBe(shown["approval"]);
+    expect(second).not.toHaveProperty("delivered_sha256");
+    const work = "a".repeat(64);
+    const hashed = await ok(client, "wallet_attest", { ...release, result: "2", delivered_sha256: work.toUpperCase() });
+    expect(hashed).toMatchObject({ delivered_sha256: work });
+    expect(hashed["summary"]).toContain(`Records: the delivered work's sha256 ${work}, in a memo this wallet signs with the release`);
+    expect(hashed["approval"]).not.toBe(second["approval"]);
+    expect((await call(client, "wallet_attest", { ...release, delivered_sha256: "abc" })).value).toMatchObject({
+      code: "InvalidInput",
+      issues: [{ path: "delivered_sha256" }],
+    });
+    expect((await call(client, "wallet_attest", { ...release, result: "2", delivered_sha256: work, approval: second["approval"], send: true })).value).toMatchObject(changed);
     expect(h.svm.getAccount(payee).exists).toBe(false);
-    expect(await ok(client, "wallet_attest", { ...release, result: "2", approval: second["approval"], send: true })).toMatchObject({
+    h.wires.length = 0;
+    expect(await ok(client, "wallet_attest", { ...release, result: "2", delivered_sha256: work, approval: hashed["approval"], send: true })).toMatchObject({
       sent: true,
       signature: expect.any(String),
     });
+    expect(Buffer.from(h.wires[0] as string, "base64").toString("latin1")).toContain(`${DELIVERY_PREFIX}${work}`);
     expect(balance(payee)).toBe(net);
     expect((await call(client, "wallet_attest", release)).value).toMatchObject({ code: "InvalidTransition" });
     const other = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.01", attestor: stranger, send: true });
@@ -373,6 +389,64 @@ describe("the wallet server", () => {
     const brief = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.01", attestor: owner, expires_in: 60, send: true });
     setNow(h.svm.getClock().unixTimestamp + 3_600n);
     expect((await call(client, "wallet_attest", { owner, nonce: brief["nonce"], pay_to: worker })).value).toMatchObject({ code: "IntentExpired" });
+  });
+
+  it("shows an escrow's release and checks received work against the hash the release recorded", async () => {
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    const [intent] = await findIntentPda({ owner, nonce: 7n });
+    const payee = await findAssociatedTokenAddress({ owner: (await generateKeyPairSigner()).address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    h.engineLog = [];
+    expect(await ok(client, "wallet_receipt", { nonce: "7" })).toEqual({ intent, released: false, next: NOT_RELEASED });
+    const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
+    const { fee, net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);
+    const attested = getIntentAttestedEventEncoder().encode({
+      intent,
+      owner,
+      solver: owner,
+      payee,
+      attestor: owner,
+      amountIn: LAMPORTS_PER_SOL / 20n,
+      result: 2n,
+      fee,
+      net,
+      filled: LAMPORTS_PER_SOL / 20n,
+      remaining: 0n,
+      partnerFee: 0n,
+    });
+    const work = "b".repeat(64);
+    const released = { signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [tag(attested)], memos: ["other note", `${DELIVERY_PREFIX}${work}`] };
+    h.engineLog = [{ ...released, signature: "failed", failed: true }, released];
+    expect(await ok(client, "wallet_receipt", { owner, nonce: "7", sha256: work.toUpperCase() })).toEqual({
+      intent,
+      released: true,
+      payee,
+      paid: `${net} raw units`,
+      attestor: owner,
+      result: "2",
+      signature: "release",
+      delivered_sha256: work,
+      matches: true,
+    });
+    const created = getIntentCreatedEventEncoder().encode({
+      intent,
+      owner,
+      nonce: 7n,
+      kind: 4,
+      inputMint: NATIVE_MINT,
+      outputMint: TEST_TOKEN,
+      receiver: owner,
+      escrowed: LAMPORTS_PER_SOL / 20n,
+      expiresAt: 0n,
+      rentPayer: owner,
+      flags: 0,
+      bounty: 0,
+      createFee: 0,
+    });
+    h.engineLog = [{ ...released, memos: [] }, { signature: "create", slot: 1n, blockTime: null, failed: false, emitted: [tag(created)] }];
+    const plain = await ok(client, "wallet_receipt", { nonce: "7", sha256: work });
+    expect(plain).toMatchObject({ paid: formatAmount(net, 9), matches: false });
+    expect(plain).not.toHaveProperty("delivered_sha256");
+    expect((await call(client, "wallet_receipt", { nonce: "7", sha256: "xyz" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "sha256" }] });
   });
 
   it("escrows SOL off devnet only with a record mint it is told, since TEST is a devnet name", async () => {

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { type Address, getAddressDecoder, type KeyPairSigner } from "@solana/kit";
+import { AccountRole, type Address, getAddressDecoder, type KeyPairSigner } from "@solana/kit";
 import {
   attestedFillMessage,
   buildFillAttested,
@@ -23,7 +23,7 @@ import { chainTime, CLOCK_SYSVAR, loadConfig, mintOf } from "../accounts.js";
 import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "../args.js";
 import { execute, type PreparedView } from "../flows.js";
 import { NATIVE_MINT, TOKEN_NAMES, tokenNamed } from "../tokens.js";
-import { neverLanded, type Transport, unmemoized } from "../transport.js";
+import { MEMO_PROGRAM_ADDRESS, neverLanded, type Transport, unmemoized } from "../transport.js";
 import { balances, defaultMints, FAUCET, type Files, PUBLIC_FAUCET, setup, withSettings } from "../wallet.js";
 import { type AgentContext, type AnyAction, define } from "./actions.js";
 import type { Call } from "./claims.js";
@@ -439,7 +439,7 @@ function recordedMint(sell: Address, url: string, chosen: string | undefined): A
 const walletEscrow = define({
   name: tool("wallet_escrow"),
   title: "Escrow a payment for an attestor to release",
-  description: `Hold an exact amount of one token from this server's wallet in an attested intent: it goes, minus the engine fee, to whichever wallet the named attestor later signs for, once the attestor attests a result between min_result and max_result. Use it to pay another agent for work that a third agent or a person judges. The attestor alone decides who is paid; nothing else is checked on chain, so name an attestor the user trusts. Until then the wallet can cancel it with ${tool("wallet_cancel")}, and after it expires anyone can return the escrow. Amounts are whole tokens such as 0.05. Without send it only previews; show the user the summary and call again with send: true once they approve.`,
+  description: `Hold an exact amount of one token from this server's wallet in an attested intent: it goes, minus the engine fee, to whichever wallet the named attestor later signs for, once the attestor attests a result between min_result and max_result. Use it to pay another agent for work that a third agent or a person judges. The attestor alone decides who is paid; nothing else is checked on chain, so name an attestor the user trusts. Have the worker deliver to the attestor rather than to this wallet, since this wallet can cancel until the release; ${tool("wallet_receipt")} later shows what the release recorded. Until then the wallet can cancel it with ${tool("wallet_cancel")}, and after it expires anyone can return the escrow. Amounts are whole tokens such as 0.05. Without send it only previews; show the user the summary and call again with send: true once they approve.`,
   effect: "submit",
   repeats: true,
   input: object({
@@ -472,7 +472,19 @@ export const PAYEE_MOVED = "this wallet's token account for the escrowed token n
 
 export const RELEASE_CHANGED = "this release differs from its preview: the payee, amount, result, fee or the escrow itself changed, or no approval was given; preview it again and show the user";
 
-export const approvalOf = (message: Uint8Array): string => createHash("sha256").update(message).digest("hex").slice(0, 16);
+export const approvalOf = (message: Uint8Array, memo = ""): string => createHash("sha256").update(message).update(memo).digest("hex").slice(0, 16);
+
+export const DELIVERY_PREFIX = "delivery sha256:";
+
+const DELIVERY_MEMO = /^delivery sha256:([0-9a-f]{64})$/;
+
+function sha256Of(text: string, path: string): string {
+  const hex = text.trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(hex)) {
+    throw new InvalidInput([{ path, message: "give a sha256 as 64 hex digits" }]);
+  }
+  return hex;
+}
 
 export const notAttestor = (attestor: string) =>
   `this intent names ${attestor} as its attestor, not this server's wallet; only that key can release it`;
@@ -487,6 +499,7 @@ const walletAttest = define({
     nonce: amount("the escrow intent's nonce"),
     pay_to: account("the wallet to pay"),
     result: optional(amount("the result to attest, between the intent's min_result and max_result; default min_result")),
+    delivered_sha256: optional(text(`the sha256, as 64 hex digits, of the work this release pays for; recorded in a memo this wallet signs with the release, so the payer can check what it receives with ${tool("wallet_receipt")}`)),
     approval: optional(text("the approval the preview returned; needed with send")),
     send: optional(flag("true signs the attestation and settles; leave out to preview")),
   }),
@@ -498,6 +511,7 @@ const walletAttest = define({
     fee: text("whole tokens kept as fees"),
     result: amount(),
     approval: text("pass it back with send: true; a send that would differ from this preview is refused"),
+    delivered_sha256: optional(text("the sha256 the release records")),
     summary: list(text(), 8),
     warnings: list(text(), 8),
     sent: flag(),
@@ -575,13 +589,19 @@ const walletAttest = define({
     const name = TOKEN_NAMES[held.inputMint] ?? held.inputMint;
     const paid = formatAmount(shares.net, token.decimals);
     const setup = [...payee.create, ...treasury.create, ...partner.create];
-    const approval = approvalOf(message);
+    const delivered = input.delivered_sha256 === undefined ? undefined : sha256Of(input.delivered_sha256, "delivered_sha256");
+    const memoText = delivered === undefined ? "" : `${DELIVERY_PREFIX}${delivered}`;
+    const memo =
+      delivered === undefined
+        ? []
+        : [{ programAddress: MEMO_PROGRAM_ADDRESS, accounts: [{ address: signer.address, role: AccountRole.READONLY_SIGNER, signer }], data: new TextEncoder().encode(memoText) }];
+    const approval = approvalOf(message, memoText);
     if (input.send === true && input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", RELEASE_CHANGED);
     }
     const prepared =
       input.send === true
-        ? preparedView(await prepare(ctx.transport, [...setup, await signEd25519Instruction(signer, message), settle], signer.address))
+        ? preparedView(await prepare(ctx.transport, [...setup, await signEd25519Instruction(signer, message), settle, ...memo], signer.address))
         : undefined;
     const view2 = {
       intent,
@@ -591,9 +611,11 @@ const walletAttest = define({
       fee: formatAmount(shares.protocol + shares.partner, token.decimals),
       result,
       approval,
+      ...(delivered === undefined ? {} : { delivered_sha256: delivered }),
       summary: [
         `Pays: ${paid} of ${name} to ${input.pay_to} from ${input.owner}'s escrow${held.inputMint === NATIVE_MINT ? WRAPPED : ""}`,
         `Attests: result ${result}, signed by this server's wallet as the escrow's attestor`,
+        ...(delivered === undefined ? [] : [`Records: the delivered work's sha256 ${delivered}, in a memo this wallet signs with the release`]),
         ...(payee.create.length === 0 ? [] : [`Setup: creates ${input.pay_to}'s ${name} account, paid by this wallet`]),
         ...(treasury.create.length === 0 ? [] : [`Setup: creates the engine treasury's ${name} account for the fee, paid by this wallet`]),
         ...(partner.create.length === 0 ? [] : [`Setup: creates the partner ${held.partner}'s ${name} account for its fee, paid by this wallet`]),
@@ -980,6 +1002,76 @@ const walletWait = define({
   },
 });
 
+export const NOT_RELEASED = `no release of this escrow is among its recent transactions; ${tool("wallet_wait")} or ${tool("wallet_intents")} shows whether it is still open`;
+
+const walletReceipt = define({
+  name: tool("wallet_receipt"),
+  title: "Check an escrow's release",
+  description: `Look up whether an escrow made with ${tool("wallet_escrow")} was released: to whom, for how much, by which attestor, and which delivered work the release recorded. Give sha256, the hash of the work you received, to check it is the work that was paid for. It reads the escrow's own transactions and sends nothing.`,
+  effect: "read",
+  input: object({
+    owner: optional(account("the wallet that made the escrow; default this server's wallet")),
+    nonce: amount("the escrow intent's nonce"),
+    sha256: optional(text("the sha256, as 64 hex digits, of the work you received, to compare with the one the release recorded")),
+  }),
+  output: object({
+    intent: account(),
+    released: flag(),
+    paid_to: optional(account("the wallet the release paid")),
+    payee: optional(account("the token account the release paid")),
+    paid: optional(text("whole tokens the payee received")),
+    attestor: optional(account()),
+    result: optional(amount()),
+    signature: optional(text("the release's transaction")),
+    delivered_sha256: optional(text("the sha256 the release recorded, if any")),
+    matches: optional(flag("whether sha256 equals the recorded one")),
+    next: optional(text()),
+  }),
+  run: async (ctx: AgentContext, input) => {
+    const owner = input.owner ?? (await signerOf(ctx)).address;
+    const wanted = input.sha256 === undefined ? undefined : sha256Of(input.sha256, "sha256");
+    const [intent] = await findIntentPda({ owner, nonce: input.nonce });
+    const transactions = await ctx.transport.engineTransactions(WAIT_SCAN, intent);
+    let mint: Address | undefined;
+    for (const tx of transactions) {
+      for (const event of tx.emitted.map(decodeEvent)) {
+        const fields = (event?.fields ?? {}) as Record<string, unknown>;
+        if (event?.name === "IntentCreated" && fields["intent"] === intent) {
+          mint = fields["inputMint"] as Address;
+        }
+      }
+    }
+    for (const tx of transactions) {
+      if (tx.failed) {
+        continue;
+      }
+      const release = tx.emitted.map(decodeEvent).find((event) => event?.name === "IntentAttested" && (event.fields as Record<string, unknown>)["intent"] === intent);
+      if (release === undefined || release === null) {
+        continue;
+      }
+      const fields = release.fields as Record<string, unknown>;
+      const payee = fields["payee"] as Address;
+      const held = await ctx.transport.getAccount(payee);
+      mint ??= held === null || held.data.length < 64 ? undefined : getAddressDecoder().decode(held.data.subarray(0, 32));
+      const decimals = mint === undefined ? undefined : (await mintOf(ctx.transport, mint)).decimals;
+      const recorded = (tx.memos ?? []).map((memo) => DELIVERY_MEMO.exec(memo)?.[1]).find((hash) => hash !== undefined);
+      return {
+        intent,
+        released: true,
+        ...(held === null || held.data.length < 64 ? {} : { paid_to: getAddressDecoder().decode(held.data.subarray(32, 64)) }),
+        payee,
+        paid: formatAmount(fields["net"] as bigint, decimals),
+        attestor: fields["attestor"] as Address,
+        result: fields["result"] as bigint,
+        signature: tx.signature,
+        ...(recorded === undefined ? {} : { delivered_sha256: recorded }),
+        ...(wanted === undefined ? {} : { matches: wanted === recorded }),
+      };
+    }
+    return { intent, released: false, next: NOT_RELEASED };
+  },
+});
+
 export const WALLET_ACTIONS: readonly AnyAction[] = [
   walletSetup,
   walletBalance,
@@ -990,6 +1082,7 @@ export const WALLET_ACTIONS: readonly AnyAction[] = [
   walletEscrow,
   walletAttest,
   walletWait,
+  walletReceipt,
   walletIntents,
   walletCancel,
 ];

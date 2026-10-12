@@ -30,6 +30,7 @@ export type EngineTransaction = {
   blockTime: bigint | null;
   failed: boolean;
   emitted: Uint8Array[];
+  memos?: string[];
   unread?: true;
 };
 
@@ -111,13 +112,15 @@ export type RpcLike = {
     signature: Signature,
     config: { encoding: "json"; maxSupportedTransactionVersion: 0; commitment: "confirmed" },
   ): Pending<{
-    transaction: { message: { accountKeys: readonly Address[] } };
+    transaction: { message: { accountKeys: readonly Address[]; instructions?: readonly { programIdIndex: number; data: string }[] } };
     meta: {
       loadedAddresses?: { writable: readonly Address[]; readonly: readonly Address[] };
       innerInstructions?: readonly { instructions: readonly { programIdIndex: number; data: string }[] }[] | null;
     } | null;
   } | null>;
 };
+
+export const MEMO_PROGRAM_ADDRESS = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr" as Address;
 
 export const POLL_MS = 500;
 export const CONFIRM_POLLS = 360;
@@ -470,12 +473,16 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
           .flatMap((group) => group.instructions)
           .filter((ix) => keys[ix.programIdIndex] === INTENT_ENGINE_PROGRAM_ADDRESS)
           .map((ix) => Uint8Array.from(getBase58Encoder().encode(ix.data)));
+        const memos = (tx?.transaction.message.instructions ?? [])
+          .filter((ix) => keys[ix.programIdIndex] === MEMO_PROGRAM_ADDRESS)
+          .map((ix) => new TextDecoder().decode(Uint8Array.from(getBase58Encoder().encode(ix.data))));
         return {
           signature: entry.signature,
           slot: entry.slot,
           blockTime: entry.blockTime,
           failed: entry.err !== null,
           emitted,
+          ...(memos.length === 0 ? {} : { memos }),
           ...(tx?.meta === null || tx?.meta === undefined ? { unread: true as const } : {}),
           complete: tx?.meta !== null && tx?.meta !== undefined && entry.blockTime !== null,
         };
