@@ -32,7 +32,7 @@ import { MAX_EXPIRES_IN, MIN_EXPIRES_IN, prepareCreate, WRAPPED } from "./create
 import { tool } from "./names.js";
 import { AgentRefusal, problemOf } from "./problems.js";
 import { listIntents } from "./read.js";
-import { InvalidInput, account, amount, choice, flag, integer, list, object, optional, type Schema, text, time } from "./schema.js";
+import { InvalidInput, account, amount, choice, flag, hex32, integer, list, object, optional, type Schema, text, time } from "./schema.js";
 import { orderSchema, preparedView } from "./shapes.js";
 import { tokenAccountIfMissing, walletRecipient } from "./owner.js";
 import { prepare } from "./prepare.js";
@@ -449,7 +449,7 @@ const walletEscrow = define({
     attestor: account("the wallet whose signature alone releases the escrow"),
     min_result: optional(amount("least result the attestor may attest; default 1")),
     max_result: optional(amount("greatest result the attestor may attest; default min_result")),
-    spec_hash: optional(text("64 hex: the sha256 of the acceptance spec the attestor must verify. Setting it binds the release to a signature over that exact spec, so the attestor cannot sign a generic result")),
+    spec_hash: optional(hex32("64 hex: the sha256 of the acceptance spec the attestor must verify. Setting it binds the release to a signature over that exact spec, so the attestor cannot sign a generic result")),
     judge_fee: optional(text("whole tokens of sell paid to the attestor out of the escrow when it settles, such as 0.001; needs spec_hash and must be below amount")),
     expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds the escrow stays open once sent; default ${ESCROW_EXPIRES_IN}`)),
     record_mint: optional(text("a token the escrow records as its output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet")),
@@ -464,7 +464,7 @@ const walletEscrow = define({
     if (most < least) {
       throw new InvalidInput([{ path: "max_result", message: "must be at least min_result" }]);
     }
-    const specHash = input.spec_hash === undefined ? undefined : sha256Of(input.spec_hash, "spec_hash");
+    const specHash = input.spec_hash;
     if (input.judge_fee !== undefined && specHash === undefined) {
       throw new InvalidInput([{ path: "judge_fee", message: "needs spec_hash" }]);
     }

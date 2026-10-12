@@ -67,6 +67,16 @@ export function amount(description?: string): Schema<bigint> {
   };
 }
 
+export const HEX32_PATTERN = "^[0-9a-fA-F]{64}$";
+
+export function hex32(description?: string): Schema<string> {
+  return {
+    json: described({ type: "string", pattern: HEX32_PATTERN }, description),
+    read: (value, path) =>
+      typeof value === "string" && new RegExp(HEX32_PATTERN).test(value) ? value : fail(path, "must be 64 hex digits (32 bytes)"),
+  };
+}
+
 export const TIME_PATTERN = "^-?(0|[1-9][0-9]{0,18})$";
 
 export function time(description?: string): Schema<bigint> {
