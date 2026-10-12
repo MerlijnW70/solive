@@ -826,6 +826,8 @@ impl World {
                     min_result,
                     max_result,
                     attestor: self.attestor.pubkey().to_bytes(),
+                    spec_hash: [0; 32],
+                    judge_fee: 0,
                 }
                 .encode()
                 .map_err(err)?,

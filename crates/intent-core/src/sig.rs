@@ -7,6 +7,7 @@ pub const ED25519_PROGRAM_ID: [u8; 32] = [
 
 pub const INTENT_TAG: [u8; 16] = *b"intent-engine-v1";
 pub const ATTEST_TAG: [u8; 16] = *b"intent-engine-at";
+pub const ATTEST_PROOF_TAG: [u8; 16] = *b"intent-engine-pf";
 pub const OFFCHAIN_PREFIX: [u8; 16] = *b"\xffsolana offchain";
 
 pub const PUBKEY_OFFSET: u16 = 16;
@@ -15,6 +16,7 @@ pub const MESSAGE_OFFSET: u16 = 112;
 pub const PREIMAGE_LEN: usize = 448;
 pub const ENVELOPE_LEN: usize = 114;
 pub const ATTEST_PREIMAGE_LEN: usize = 206;
+pub const ATTEST_PROOF_PREIMAGE_LEN: usize = 238;
 
 struct Buf<const N: usize> {
     out: [u8; N],
@@ -166,6 +168,40 @@ impl AttestedFill {
             .put(&self.revision.to_le_bytes())
             .put(&self.max_fee_bps.to_le_bytes())
             .put(&self.ext_hash)
+            .out
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AttestedProof {
+    pub program: [u8; 32],
+    pub domain: [u8; 32],
+    pub intent: [u8; 32],
+    pub payee: [u8; 32],
+    pub amount_in: u64,
+    pub result: u64,
+    pub filled: u64,
+    pub revision: u32,
+    pub max_fee_bps: u16,
+    pub ext_hash: [u8; 32],
+    pub spec_hash: [u8; 32],
+}
+
+impl AttestedProof {
+    pub fn preimage(&self) -> [u8; ATTEST_PROOF_PREIMAGE_LEN] {
+        Buf::<ATTEST_PROOF_PREIMAGE_LEN>::new()
+            .put(&ATTEST_PROOF_TAG)
+            .put(&self.program)
+            .put(&self.domain)
+            .put(&self.intent)
+            .put(&self.payee)
+            .put(&self.amount_in.to_le_bytes())
+            .put(&self.result.to_le_bytes())
+            .put(&self.filled.to_le_bytes())
+            .put(&self.revision.to_le_bytes())
+            .put(&self.max_fee_bps.to_le_bytes())
+            .put(&self.ext_hash)
+            .put(&self.spec_hash)
             .out
     }
 }

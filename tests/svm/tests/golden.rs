@@ -10,7 +10,8 @@ use intent_core::kinds::{
 };
 use intent_core::math::{mul_div_ceil, mul_div_floor};
 use intent_core::sig::{
-    check_ed25519_ix, offchain_envelope, AttestedFill, SignedIntent, ED25519_PROGRAM_ID,
+    check_ed25519_ix, offchain_envelope, AttestedFill, AttestedProof, SignedIntent,
+    ED25519_PROGRAM_ID,
 };
 use intent_core::PARAMS_LEN;
 use intent_engine::instruction as ix;
@@ -252,6 +253,8 @@ fn intents() -> TestResult<Vec<(&'static str, Intent)>> {
                 min_result: 10,
                 max_result: 20,
                 attestor: [5; 32],
+                spec_hash: [0; 32],
+                judge_fee: 0,
             }),
         ),
         (
@@ -512,6 +515,8 @@ fn vectors() -> TestResult<Value> {
         min_result: 10,
         max_result: 20,
         attestor: [5; 32],
+        spec_hash: [0; 32],
+        judge_fee: 0,
     });
     let attested_checks: Vec<Value> = [
         (3_333u64, 9u64),
@@ -579,6 +584,23 @@ fn vectors() -> TestResult<Value> {
     .preimage();
     let attest_digest = solana_sha256_hasher::hashv(&[&attest_preimage]).to_bytes();
     let attestation = offchain_envelope(&key(5).to_bytes(), &attest_digest);
+    let attest_spec_hash = [0x6a; 32];
+    let proof_preimage = AttestedProof {
+        program: intent_engine::ID.to_bytes(),
+        domain: svm_tests::DOMAIN,
+        intent: key(7).to_bytes(),
+        payee: key(8).to_bytes(),
+        amount_in: 3_333,
+        result: 15,
+        filled: 0x1112_1314_1516_1718,
+        revision: 0x2122_2324,
+        max_fee_bps: 0x3132,
+        ext_hash: solana_sha256_hasher::hashv(&[&GOLDEN_EXT]).to_bytes(),
+        spec_hash: attest_spec_hash,
+    }
+    .preimage();
+    let proof_digest = solana_sha256_hasher::hashv(&[&proof_preimage]).to_bytes();
+    let proof_attestation = offchain_envelope(&key(5).to_bytes(), &proof_digest);
     let sig = json!({
         "domain": hex(&svm_tests::DOMAIN),
         "receiver": key(6).to_string(),
@@ -607,6 +629,9 @@ fn vectors() -> TestResult<Value> {
         "attestor": key(5).to_string(),
         "attest_preimage": hex(&attest_preimage),
         "attest_message": hex(&attestation),
+        "attest_spec_hash": hex(&attest_spec_hash),
+        "attest_proof_preimage": hex(&proof_preimage),
+        "attest_proof_message": hex(&proof_attestation),
     });
 
     let ext_cases: Vec<(Vec<u8>, Vec<u8>)> = vec![

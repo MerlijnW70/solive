@@ -382,6 +382,8 @@ fn attested_intents_cannot_be_flash_filled() -> TestResult {
             min_result: 1,
             max_result: 2,
             attestor: attestor.pubkey().to_bytes(),
+            spec_hash: [0; 32],
+            judge_fee: 0,
         }
         .encode()
         .map_err(|e| format!("{e:?}"))?,

@@ -73,7 +73,7 @@ function gen(seed: number) {
       }
       case Kind.AttestedResult: {
         const [a, b] = [word(), word()];
-        return { kind, amountIn: word(), minResult: a < b ? a : b, maxResult: a < b ? b : a, attestor: key() };
+        return { kind, amountIn: word(), minResult: a < b ? a : b, maxResult: a < b ? b : a, attestor: key(), specHash: new Uint8Array(32), judgeFee: 0n };
       }
     }
   };
@@ -210,7 +210,7 @@ describe("what an owner reads is what an owner signs", () => {
       const f = g.fields();
       const o = g.options(f);
       const params = Uint8Array.from(f.params);
-      const used = { 1: 16, 2: 16, 3: 40, 4: 56 }[f.kind] ?? 0;
+      const used = { 1: 16, 2: 16, 3: 40, 4: 96 }[f.kind] ?? 0;
       const at = used + g.int(128 - used);
       params[at] = 1 + g.int(255);
       await expect(describeSignedIntent({ ...f, params }, o), `seed ${seed} padding byte ${at}`).rejects.toThrow();

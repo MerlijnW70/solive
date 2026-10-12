@@ -7,6 +7,8 @@ pub struct Params {
     pub min_result: u64,
     pub max_result: u64,
     pub attestor: [u8; 32],
+    pub spec_hash: [u8; 32],
+    pub judge_fee: u64,
 }
 
 impl Params {
@@ -17,6 +19,8 @@ impl Params {
             min_result: r.u64()?,
             max_result: r.u64()?,
             attestor: r.key()?,
+            spec_hash: r.key()?,
+            judge_fee: r.u64()?,
         };
         r.finish()?;
         p.validate()
@@ -28,12 +32,22 @@ impl Params {
             .u64(self.amount_in)?
             .u64(self.min_result)?
             .u64(self.max_result)?
-            .key(&self.attestor)?;
+            .key(&self.attestor)?
+            .key(&self.spec_hash)?
+            .u64(self.judge_fee)?;
         Ok(out)
     }
 
+    pub fn is_proof(&self) -> bool {
+        self.spec_hash != [0; 32]
+    }
+
     pub fn validate(self) -> Result<Self, Error> {
-        if self.amount_in == 0 || self.min_result > self.max_result || self.attestor == [0; 32] {
+        let bad_core =
+            self.amount_in == 0 || self.min_result > self.max_result || self.attestor == [0; 32];
+        let fee_without_spec = !self.is_proof() && self.judge_fee != 0;
+        let fee_too_large = self.is_proof() && self.judge_fee >= self.amount_in;
+        if bad_core || fee_without_spec || fee_too_large {
             Err(Error::InvalidParams)
         } else {
             Ok(self)

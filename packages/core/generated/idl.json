@@ -1263,6 +1263,11 @@
           "optional": true
         },
         {
+          "name": "judge_to",
+          "writable": true,
+          "optional": true
+        },
+        {
           "name": "input_token_program"
         },
         {

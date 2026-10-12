@@ -36,6 +36,8 @@ export type AttestedResultParams = {
   minResult: bigint;
   maxResult: bigint;
   attestor: Address;
+  specHash: Uint8Array;
+  judgeFee: bigint;
 };
 export type IntentParams =
   | SwapExactInParams
@@ -46,7 +48,8 @@ export type IntentParams =
 type Field =
   | { type: "u64"; value: bigint }
   | { type: "i64"; value: bigint }
-  | { type: "key"; value: Address };
+  | { type: "key"; value: Address }
+  | { type: "bytes32"; value: Uint8Array };
 
 const u64 = (value: bigint): Field => ({ type: "u64", value });
 const i64 = (value: bigint): Field => ({ type: "i64", value });
@@ -71,11 +74,13 @@ function fields(intent: IntentParams): readonly Field[] {
         u64(intent.minResult),
         u64(intent.maxResult),
         { type: "key", value: intent.attestor },
+        { type: "bytes32", value: intent.specHash },
+        u64(intent.judgeFee),
       ];
   }
 }
 
-const width = (f: Field) => (f.type === "key" ? 32 : 8);
+const width = (f: Field) => (f.type === "key" || f.type === "bytes32" ? 32 : 8);
 
 export function validate(intent: IntentParams): IntentParams {
   const bad = (() => {
@@ -95,7 +100,10 @@ export function validate(intent: IntentParams): IntentParams {
         return (
           intent.amountIn === 0n ||
           intent.minResult > intent.maxResult ||
-          intent.attestor === ZERO_KEY
+          intent.attestor === ZERO_KEY ||
+          (intent.specHash.every((b) => b === 0)
+            ? intent.judgeFee !== 0n
+            : intent.judgeFee >= intent.amountIn)
         );
     }
   })();
@@ -112,6 +120,11 @@ export function encodeParams(intent: IntentParams): Uint8Array {
   fields(intent).forEach((field, i) => {
     if (field.type === "key") {
       out.set(getAddressEncoder().encode(field.value), at);
+    } else if (field.type === "bytes32") {
+      if (field.value.length !== 32) {
+        throw new RangeError(`params field ${i} must be 32 bytes`);
+      }
+      out.set(field.value, at);
     } else {
       const [lo, hi] = field.type === "i64" ? [I64_MIN, I64_MAX] : [0n, U64_MAX];
       if (field.value < lo || field.value > hi) {
@@ -169,6 +182,8 @@ export function decodeParams(code: number, params: Uint8Array): IntentParams {
           minResult: u(1),
           maxResult: u(2),
           attestor: getAddressDecoder().decode(params.subarray(24, 56)),
+          specHash: params.slice(56, 88),
+          judgeFee: u(11),
         };
     }
   })();

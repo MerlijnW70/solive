@@ -370,7 +370,7 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet smoke", () =
       const attestedFee = feeBpsFor(config, Kind.AttestedResult);
       await create(
         9n,
-        { kind: Kind.AttestedResult, amountIn: ESCROW, minResult: 10n, maxResult: 20n, attestor: attestor.address },
+        { kind: Kind.AttestedResult, amountIn: ESCROW, minResult: 10n, maxResult: 20n, attestor: attestor.address, specHash: new Uint8Array(32), judgeFee: 0n },
         (await chainTime(transport)) + 3_600n,
       );
       const [attested] = await findIntentPda({ owner: owner.address, nonce: 9n });

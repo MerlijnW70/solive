@@ -31,6 +31,8 @@ fn attested() -> Intent {
         min_result: 1,
         max_result: 2,
         attestor: [7; 32],
+        spec_hash: [0; 32],
+        judge_fee: 0,
     })
 }
 

@@ -1,6 +1,6 @@
 use intent_core::sig::{
-    check_ed25519_ix, ed25519_header, offchain_envelope, AttestedFill, SignedIntent, ATTEST_TAG,
-    ED25519_PROGRAM_ID, INTENT_TAG, OFFCHAIN_PREFIX,
+    check_ed25519_ix, ed25519_header, offchain_envelope, AttestedFill, AttestedProof, SignedIntent,
+    ATTEST_PROOF_TAG, ATTEST_TAG, ED25519_PROGRAM_ID, INTENT_TAG, OFFCHAIN_PREFIX,
 };
 use intent_core::Error;
 
@@ -244,4 +244,36 @@ fn tags_are_brand_neutral_and_distinct() {
     assert_eq!(&INTENT_TAG, b"intent-engine-v1");
     assert_eq!(&ATTEST_TAG, b"intent-engine-at");
     assert_ne!(INTENT_TAG, ATTEST_TAG);
+}
+
+#[test]
+fn a_proof_attestation_binds_the_spec_hash_at_the_end_under_a_distinct_tag() {
+    let base = AttestedProof {
+        program: [1; 32],
+        domain: [4; 32],
+        intent: [2; 32],
+        payee: [3; 32],
+        amount_in: 0x0506,
+        result: 0x0a0b_0c0d,
+        filled: 0x1112,
+        revision: 0x2122_2324,
+        max_fee_bps: 0x3132,
+        ext_hash: [7; 32],
+        spec_hash: [8; 32],
+    };
+    let m = base.preimage();
+    assert_eq!(m.len(), 238);
+    assert_ne!(ATTEST_PROOF_TAG, ATTEST_TAG);
+    assert_eq!(m.get(0..16), Some(&ATTEST_PROOF_TAG[..]));
+    assert_eq!(m.get(16..48), Some(&[1; 32][..]));
+    assert_eq!(m.get(112..144), Some(&[3; 32][..]));
+    assert_eq!(m.get(174..206), Some(&[7; 32][..]));
+    assert_eq!(m.get(206..238), Some(&[8; 32][..]));
+
+    let other = AttestedProof {
+        spec_hash: [9; 32],
+        ..base
+    };
+    assert_ne!(base.preimage(), other.preimage());
+    assert_eq!(base.preimage().get(0..206), other.preimage().get(0..206));
 }

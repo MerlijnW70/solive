@@ -80,6 +80,8 @@ export function paramsOf(order: Order): IntentParams {
         minResult: order.min_result,
         maxResult: order.max_result,
         attestor: order.attestor,
+        specHash: new Uint8Array(32),
+        judgeFee: 0n,
       };
   }
 }

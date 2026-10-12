@@ -46,6 +46,8 @@ fn attested_spec(nonce: u64, attestor: &Pubkey) -> TestResult<IntentSpec> {
             min_result: 10,
             max_result: 20,
             attestor: attestor.to_bytes(),
+            spec_hash: [0; 32],
+            judge_fee: 0,
         }
         .encode()
         .map_err(|e| format!("{e:?}"))?,
@@ -831,5 +833,68 @@ fn creates_and_fills_tolerate_extra_trailing_accounts() -> TestResult {
     w.as_solver(&[begin, end])?;
     assert_eq!(w.env.intent(&w.owner(), 9)?.filled, ESCROW);
     assert_eq!(w.env.intent(&w.owner(), SWAP)?.filled, ESCROW);
+    Ok(())
+}
+
+#[test]
+fn a_standalone_end_fill_without_a_begin_is_refused() -> TestResult {
+    let mut w = world()?;
+    assert_eq!(
+        w.as_solver(&[w.end_ix(SWAP)]).err(),
+        Some(engine_error(EngineError::InvalidTransition)),
+        "end_fill may only run on a Filling intent, never standalone"
+    );
+    let intent = w.env.intent(&w.owner(), SWAP)?;
+    assert_eq!(
+        (intent.status, intent.in_flight),
+        (0, 0),
+        "intent untouched"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_second_begin_cannot_double_pay_a_flash_filled_intent() -> TestResult {
+    let mut w = world()?;
+    let solver = w.solver.key.pubkey();
+    let owner = w.owner();
+    let first = w.env.begin_fill_ix(
+        &solver,
+        &owner,
+        &w.market,
+        SWAP,
+        &w.solver.input,
+        Some(&w.fee_to),
+        2,
+    );
+    let second = w.env.begin_fill_ix(
+        &solver,
+        &owner,
+        &w.market,
+        SWAP,
+        &w.solver.input,
+        Some(&w.fee_to),
+        3,
+    );
+    let end_a = w.end_ix(SWAP);
+    let end_b = w.end_ix(SWAP);
+    assert_eq!(
+        w.as_solver(&[first, second, end_a, end_b]).err(),
+        Some(engine_error_at(1, EngineError::InvalidTransition)),
+        "a second begin on a Filling intent is rejected, even with its own end row"
+    );
+
+    let flash = [w.begin_ix(SWAP), w.end_ix(SWAP)];
+    w.as_solver(&flash)?;
+    let settled = w.env.intent(&owner, SWAP)?;
+    assert_eq!(
+        (settled.status, settled.filled, settled.in_flight),
+        (1, ESCROW, 0)
+    );
+    assert_eq!(
+        w.as_solver(&[w.begin_ix(SWAP), w.end_ix(SWAP)]).err(),
+        Some(engine_error(EngineError::InvalidTransition)),
+        "a settled intent cannot be flash-filled again"
+    );
     Ok(())
 }

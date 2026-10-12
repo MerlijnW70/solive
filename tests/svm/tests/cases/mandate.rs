@@ -507,6 +507,8 @@ fn every_limit_in_the_mandate_is_enforced() -> TestResult {
             min_result: 1,
             max_result: 2,
             attestor: s.agent.pubkey().to_bytes(),
+            spec_hash: [0; 32],
+            judge_fee: 0,
         }
         .encode()
         .map_err(|e| format!("{e:?}"))?,
@@ -1147,5 +1149,55 @@ fn an_agent_cannot_bring_its_own_config_to_create_while_creation_is_paused() -> 
         Err(anchor_error(anchor_lang::error::ErrorCode::ConstraintAddress))
     );
     assert_eq!(s.env.balance(&s.trader.input)?, FUNDED);
+    Ok(())
+}
+
+#[test]
+fn cancelling_a_mandated_intent_refunds_the_agent_fee_to_the_owner_but_never_restores_the_mandate_budget() -> TestResult {
+    const FEE: u64 = 10;
+    let mut s = with_terms(intent_engine::MandateArgs {
+        agent_fee: FEE,
+        ..mandate_terms(Pubkey::default(), VALID_UNTIL)
+    })?;
+    let owner = s.owner();
+    s.agent_creates(&swap(0, 390, 200)?)?;
+    assert_eq!(s.env.balance(&s.trader.input)?, FUNDED - 400);
+    let intent = intent_pda(&owner, agent_nonce(0));
+    assert_eq!(s.env.balance(&vault_pda(&intent))?, 400);
+    assert_eq!(s.env.intent(&owner, agent_nonce(0))?.agent_fee, FEE);
+    let before = s.env.mandate(&s.mandate)?;
+    assert_eq!((before.spent, before.intents), (400, 1));
+
+    let ix = s.env.cancel_ix(&owner, &s.market, agent_nonce(0), &s.trader.input);
+    s.owner_sends(&[ix])?;
+
+    assert_eq!(s.env.balance(&s.trader.input)?, FUNDED, "owner recovers escrow and the pre-funded agent fee");
+    assert_eq!(s.env.balance(&vault_pda(&intent))?, 0, "vault drained");
+    assert_eq!(s.env.intent(&owner, agent_nonce(0))?.agent_fee, 0, "agent fee cleared, agent paid nothing");
+
+    let after = s.env.mandate(&s.mandate)?;
+    assert_eq!((after.spent, after.intents), (400, 1), "a cancel must not restore mandate budget: it is consumed at create and never refunded");
+    Ok(())
+}
+
+#[test]
+fn revoking_by_epoch_also_stops_the_fill_and_flash_paths_not_only_create() -> TestResult {
+    let mut s = setup()?;
+    s.agent_creates(&swap(0, 10, 5)?)?;
+    s.agent_creates(&swap(1, 10, 5)?)?;
+    let owner = s.owner();
+    s.owner_sends(&[s.env.advance_epoch_ix(&owner, 5)])?;
+    assert_eq!(
+        s.fill(0),
+        Err(engine_error(EngineError::MandateRevoked)),
+        "fill_intent must honour a mandate the owner revoked by advancing the epoch"
+    );
+    assert_eq!(
+        s.begin(1),
+        Err(engine_error(EngineError::MandateRevoked)),
+        "begin_fill must honour the same revocation on the flash path"
+    );
+    let intent = s.env.intent(&owner, agent_nonce(0))?;
+    assert_eq!((intent.status, intent.filled), (0, 0), "the revoked intent stays open and unfilled");
     Ok(())
 }

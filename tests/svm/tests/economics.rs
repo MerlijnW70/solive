@@ -424,6 +424,8 @@ fn spec_with(nonce: u64, kind: Kind, ext: Vec<u8>, attestor: &Pubkey) -> TestRes
             min_result: 1,
             max_result: 9,
             attestor: attestor.to_bytes(),
+            spec_hash: [0; 32],
+            judge_fee: 0,
         }
         .encode()
         .map_err(err)?,

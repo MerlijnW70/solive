@@ -2,15 +2,17 @@ use anchor_lang::error::ErrorCode;
 use anchor_lang::prelude::Pubkey;
 use intent_core::kinds::{attested_result, swap_exact_in, Kind};
 use intent_engine::errors::EngineError;
+use intent_engine::events::{FeeWithheld, WITHHELD_JUDGE};
 use solana_instruction::Instruction;
 use solana_instruction_error::InstructionError;
 use solana_keypair::Keypair;
 use solana_signer::Signer;
 use solana_transaction_error::TransactionError;
 use svm_tests::{
-    agent_lane, anchor_error, anchor_error_at, attestation_message, canonical_refund, delegate_pda,
-    ed25519_ix, engine_error, engine_error_at, intent_pda, mandate_pda, mandate_terms, swap_spec,
-    vault_pda, Env, IntentSpec, Market, TestResult, Trader, DOMAIN, START_TS,
+    agent_lane, anchor_error, anchor_error_at, attestation_message, attestation_proof_message,
+    canonical_refund, delegate_pda, ed25519_ix, engine_error, engine_error_at, events, intent_pda,
+    mandate_pda, mandate_terms, relayed, swap_spec, vault_pda, Env, IntentSpec, Market, MintExt,
+    TestResult, Trader, DOMAIN, START_TS,
 };
 
 const FUNDED: u64 = 1_000;
@@ -230,6 +232,8 @@ fn an_attested_fill_reads_only_the_real_instructions_sysvar() -> TestResult {
             min_result: 1,
             max_result: 9,
             attestor: attestor.pubkey().to_bytes(),
+            spec_hash: [0; 32],
+            judge_fee: 0,
         }
         .encode()
         .map_err(|e| format!("{e:?}"))?,
@@ -887,5 +891,343 @@ fn an_admin_nomination_is_accepted_once_and_only_by_the_nominee() -> TestResult 
         env.send(&admin, &[stale], &[]),
         Err(engine_error(EngineError::NotPendingAdmin))
     );
+    Ok(())
+}
+
+#[test]
+fn an_attested_fill_under_cpi_still_binds_the_payee_and_cannot_redirect() -> TestResult {
+    let (mut env, market, trader) = setup()?;
+    let owner = trader.key.pubkey();
+    let attestor = Keypair::new();
+    let spec = IntentSpec {
+        kind: Kind::AttestedResult as u8,
+        params: attested_result::Params {
+            amount_in: ESCROW,
+            min_result: 1,
+            max_result: 9,
+            attestor: attestor.pubkey().to_bytes(),
+            spec_hash: [0; 32],
+            judge_fee: 0,
+        }
+        .encode()
+        .map_err(|e| format!("{e:?}"))?,
+        ..swap_spec(0, ESCROW)?
+    };
+    env.create_intent(&trader, &market, &spec)?;
+    let solver = env.solver(&market, 0)?;
+    let fee_to = env.fee_account(&market)?;
+    let thief = env.create_token_account(
+        &market.input_mint,
+        &Pubkey::new_unique(),
+        market.input_program,
+    )?;
+    let message = attestation_message(
+        DOMAIN,
+        &attestor.pubkey(),
+        &intent_pda(&owner, 0),
+        &solver.input,
+        ESCROW,
+        5,
+    );
+    let fill = env.fill_attested_ix(
+        &solver.key.pubkey(),
+        &owner,
+        &market,
+        0,
+        &thief,
+        Some(&fee_to),
+        5,
+    );
+    let under_cpi = relayed(intent_engine::ID, fill);
+    assert_eq!(
+        env.send(
+            &solver.key,
+            &[ed25519_ix(&attestor, &message), under_cpi],
+            &[]
+        )
+        .err(),
+        Some(engine_error_at(1, EngineError::SigMessage)),
+        "running fill_attested under a CPI does not relax the payee binding"
+    );
+    assert_eq!(env.balance(&thief)?, 0);
+    assert_eq!(
+        env.balance(&vault_pda(&intent_pda(&owner, 0)))?,
+        ESCROW,
+        "escrow untouched"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_proof_intent_settles_only_against_an_attestation_binding_the_committed_spec() -> TestResult {
+    let (mut env, market, trader) = setup()?;
+    let owner = trader.key.pubkey();
+    let attestor = Keypair::new();
+    const SPEC: [u8; 32] = [0x5a; 32];
+    let spec = IntentSpec {
+        kind: Kind::AttestedResult as u8,
+        params: attested_result::Params {
+            amount_in: ESCROW,
+            min_result: 1,
+            max_result: 1,
+            attestor: attestor.pubkey().to_bytes(),
+            spec_hash: SPEC,
+            judge_fee: 0,
+        }
+        .encode()
+        .map_err(|e| format!("{e:?}"))?,
+        ..swap_spec(0, ESCROW)?
+    };
+    env.create_intent(&trader, &market, &spec)?;
+    let solver = env.solver(&market, 0)?;
+    let fee_to = env.fee_account(&market)?;
+    let payee = solver.input;
+    let intent = intent_pda(&owner, 0);
+
+    let plain = attestation_message(DOMAIN, &attestor.pubkey(), &intent, &payee, ESCROW, 1);
+    let fill = env.fill_attested_ix(
+        &solver.key.pubkey(),
+        &owner,
+        &market,
+        0,
+        &payee,
+        Some(&fee_to),
+        1,
+    );
+    assert_eq!(
+        env.send(&solver.key, &[ed25519_ix(&attestor, &plain), fill], &[])
+            .err(),
+        Some(engine_error_at(1, EngineError::SigMessage)),
+        "a plain attestation cannot settle a proof intent"
+    );
+
+    let wrong = attestation_proof_message(
+        DOMAIN,
+        &attestor.pubkey(),
+        &intent,
+        &payee,
+        ESCROW,
+        1,
+        [0x11; 32],
+    );
+    let fill = env.fill_attested_ix(
+        &solver.key.pubkey(),
+        &owner,
+        &market,
+        0,
+        &payee,
+        Some(&fee_to),
+        1,
+    );
+    assert_eq!(
+        env.send(&solver.key, &[ed25519_ix(&attestor, &wrong), fill], &[])
+            .err(),
+        Some(engine_error_at(1, EngineError::SigMessage)),
+        "a verdict over the wrong spec cannot settle"
+    );
+
+    let right =
+        attestation_proof_message(DOMAIN, &attestor.pubkey(), &intent, &payee, ESCROW, 1, SPEC);
+    let fill = env.fill_attested_ix(
+        &solver.key.pubkey(),
+        &owner,
+        &market,
+        0,
+        &payee,
+        Some(&fee_to),
+        1,
+    );
+    env.send(&solver.key, &[ed25519_ix(&attestor, &right), fill], &[])?;
+    assert_eq!(
+        env.balance(&payee)?,
+        ESCROW - 1,
+        "the committed-spec verdict settles to the payee"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_proof_intent_pays_the_judge_out_of_the_escrow_and_only_to_its_canonical_account() -> TestResult
+{
+    let (mut env, market, trader) = setup()?;
+    let owner = trader.key.pubkey();
+    let attestor = Keypair::new();
+    const SPEC: [u8; 32] = [0x7a; 32];
+    const JF: u64 = 40;
+    let spec = IntentSpec {
+        kind: Kind::AttestedResult as u8,
+        params: attested_result::Params {
+            amount_in: ESCROW,
+            min_result: 1,
+            max_result: 1,
+            attestor: attestor.pubkey().to_bytes(),
+            spec_hash: SPEC,
+            judge_fee: JF,
+        }
+        .encode()
+        .map_err(|e| format!("{e:?}"))?,
+        ..swap_spec(0, ESCROW)?
+    };
+    env.create_intent(&trader, &market, &spec)?;
+    let intent = intent_pda(&owner, 0);
+    assert_eq!(
+        env.balance(&vault_pda(&intent))?,
+        ESCROW,
+        "the escrow holds amount_in, not amount_in+fee"
+    );
+    let solver = env.solver(&market, 0)?;
+    let fee_to = env.fee_account(&market)?;
+    let payee = solver.input;
+    let judge_ata = env.create_ata(&attestor.pubkey(), &market.input_mint, market.input_program)?;
+    let msg =
+        attestation_proof_message(DOMAIN, &attestor.pubkey(), &intent, &payee, ESCROW, 1, SPEC);
+
+    let fill = env.fill_attested_ix(
+        &solver.key.pubkey(),
+        &owner,
+        &market,
+        0,
+        &payee,
+        Some(&fee_to),
+        1,
+    );
+    assert_eq!(
+        env.send(&solver.key, &[ed25519_ix(&attestor, &msg), fill], &[])
+            .err(),
+        Some(engine_error_at(1, EngineError::FeeAccountMissing)),
+        "a judge fee needs the judge's account"
+    );
+
+    let stranger = env.create_token_account(
+        &market.input_mint,
+        &Pubkey::new_unique(),
+        market.input_program,
+    )?;
+    env.judge_to = Some(stranger);
+    let fill = env.fill_attested_ix(
+        &solver.key.pubkey(),
+        &owner,
+        &market,
+        0,
+        &payee,
+        Some(&fee_to),
+        1,
+    );
+    assert_eq!(
+        env.send(&solver.key, &[ed25519_ix(&attestor, &msg), fill], &[])
+            .err(),
+        Some(engine_error_at(1, EngineError::FeeAccountNotCanonical)),
+        "the judge fee can only go to the attestor's canonical account"
+    );
+
+    let fee_before = env.balance(&fee_to)?;
+    env.judge_to = Some(judge_ata);
+    let fill = env.fill_attested_ix(
+        &solver.key.pubkey(),
+        &owner,
+        &market,
+        0,
+        &payee,
+        Some(&fee_to),
+        1,
+    );
+    env.send(&solver.key, &[ed25519_ix(&attestor, &msg), fill], &[])?;
+    let judge_paid = env.balance(&judge_ata)?;
+    let worker_paid = env.balance(&payee)?;
+    let protocol = env.balance(&fee_to)? - fee_before;
+    assert_eq!(judge_paid, JF, "the judge is paid exactly its fee");
+    assert_eq!(env.balance(&vault_pda(&intent))?, 0, "the vault is drained");
+    assert_eq!(
+        judge_paid + worker_paid + protocol,
+        ESCROW,
+        "nothing is minted or lost"
+    );
+    assert!(worker_paid > 0, "the worker still gets the remainder");
+    Ok(())
+}
+
+#[test]
+fn a_judge_that_cannot_receive_leaves_its_fee_for_the_owner_to_recover() -> TestResult {
+    let mut env = Env::new()?;
+    env.init_config()?;
+    let market = env.market(
+        anchor_spl::token::ID,
+        &[MintExt::Freezable],
+        anchor_spl::token::ID,
+        &[],
+    )?;
+    let trader = env.trader(&market, FUNDED)?;
+    let owner = trader.key.pubkey();
+    let attestor = Keypair::new();
+    const SPEC: [u8; 32] = [0x6c; 32];
+    const JF: u64 = 40;
+    let spec = IntentSpec {
+        kind: Kind::AttestedResult as u8,
+        params: attested_result::Params {
+            amount_in: ESCROW,
+            min_result: 1,
+            max_result: 1,
+            attestor: attestor.pubkey().to_bytes(),
+            spec_hash: SPEC,
+            judge_fee: JF,
+        }
+        .encode()
+        .map_err(|e| format!("{e:?}"))?,
+        ..swap_spec(0, ESCROW)?
+    };
+    env.create_intent(&trader, &market, &spec)?;
+    let intent = intent_pda(&owner, 0);
+    let solver = env.solver(&market, 0)?;
+    let fee_to = env.fee_account(&market)?;
+    let payee = solver.input;
+    let judge_ata = env.create_ata(&attestor.pubkey(), &market.input_mint, market.input_program)?;
+    env.set_frozen(&judge_ata, &market.input_mint, market.input_program, true)?;
+    env.judge_to = Some(judge_ata);
+    let msg =
+        attestation_proof_message(DOMAIN, &attestor.pubkey(), &intent, &payee, ESCROW, 1, SPEC);
+    let fill = env.fill_attested_ix(
+        &solver.key.pubkey(),
+        &owner,
+        &market,
+        0,
+        &payee,
+        Some(&fee_to),
+        1,
+    );
+    let meta = env.send(&solver.key, &[ed25519_ix(&attestor, &msg), fill], &[])?;
+
+    assert_eq!(
+        env.balance(&judge_ata)?,
+        0,
+        "the frozen judge account receives nothing"
+    );
+    let withheld: Vec<_> = events::<FeeWithheld>(&meta)
+        .into_iter()
+        .map(|e| (e.payee, e.account, e.fee, e.role))
+        .collect();
+    assert_eq!(
+        withheld,
+        [(attestor.pubkey(), judge_ata, JF, WITHHELD_JUDGE)]
+    );
+    assert_eq!(
+        env.balance(&vault_pda(&intent))?,
+        JF,
+        "the withheld fee stays in the vault"
+    );
+    assert!(
+        env.balance(&payee)? > 0,
+        "the worker is still paid the remainder"
+    );
+
+    let before = env.balance(&trader.input)?;
+    let cranker = env.funded()?;
+    let close = env.close_ix_by(&cranker.pubkey(), &owner, &market, 0, &trader.input);
+    env.send(&cranker, &[close], &[])?;
+    assert_eq!(
+        env.balance(&trader.input)?,
+        before + JF,
+        "the owner recovers the withheld judge fee on close"
+    );
+    assert!(!env.exists(&intent), "the intent closes");
     Ok(())
 }

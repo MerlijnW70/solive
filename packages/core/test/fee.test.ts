@@ -103,7 +103,7 @@ describe("terms an owner reads before signing", () => {
       `Sell: exactly 0.00000001 of ${IN}`,
       `Receive: at least 0.000009 of ${OUT} at 1970-01-01T00:00:00.000Z, falling to 0.000003 of ${OUT} at 1970-01-01T00:01:00.000Z`,
     ]);
-    expect(terms({ kind: Kind.AttestedResult, amountIn: 10n, minResult: 1n, maxResult: 2n, attestor: ATTESTOR })).toEqual([
+    expect(terms({ kind: Kind.AttestedResult, amountIn: 10n, minResult: 1n, maxResult: 2n, attestor: ATTESTOR, specHash: new Uint8Array(32), judgeFee: 0n })).toEqual([
       `Sell: exactly 0.00000001 of ${IN}`,
       `Settles: when ${ATTESTOR} attests a result between 1 and 2`,
       `Output token: ${OUT}, recorded with the intent only; an attested settlement pays you nothing on chain`,
@@ -118,7 +118,7 @@ describe("terms an owner reads before signing", () => {
       `Sell: exactly 1.5 of SOL (${IN})`,
       `Receive: at least 2 of USD (${OUT})`,
     ]);
-    expect(terms({ kind: Kind.AttestedResult, amountIn: 10n, minResult: 1n, maxResult: 2n, attestor: ATTESTOR }, { outputName: "USD" })[2]).toBe(
+    expect(terms({ kind: Kind.AttestedResult, amountIn: 10n, minResult: 1n, maxResult: 2n, attestor: ATTESTOR, specHash: new Uint8Array(32), judgeFee: 0n }, { outputName: "USD" })[2]).toBe(
       `Output token: USD (${OUT}), recorded with the intent only; an attested settlement pays you nothing on chain`,
     );
     expect(terms({ kind: Kind.SwapExactIn, amountIn: 1n, minOut: 1n }, { inputName: "SOL" })).toEqual([`Sell: exactly 1 raw units of SOL (${IN})`, `Receive: at least 1 raw units of ${OUT}`]);

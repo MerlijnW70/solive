@@ -203,6 +203,8 @@ describe("signed intent description", () => {
       minResult: 10n,
       maxResult: 20n,
       attestor: ATTESTOR,
+      specHash: new Uint8Array(32),
+      judgeFee: 0n,
     });
     expect(attested.lines.slice(2, 4)).toEqual([
       `Sell: exactly 5 of ${base.inputMint}`,

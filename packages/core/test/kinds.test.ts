@@ -89,7 +89,7 @@ describe("attested result params", () => {
 
   it("round-trip the attestor and reject a zero attestor or trailing bytes", async () => {
     const attestor = (await generateKeyPairSigner()).address;
-    const p = { kind: Kind.AttestedResult, amountIn: 5n, minResult: 1n, maxResult: 9n, attestor } as const;
+    const p = { kind: Kind.AttestedResult, amountIn: 5n, minResult: 1n, maxResult: 9n, attestor, specHash: new Uint8Array(32), judgeFee: 0n } as const;
     const bytes = encodeParams(p);
     expect(decodeParams(4, bytes)).toEqual(p);
     expect(() => encodeParams({ ...p, attestor: ZERO })).not.toThrow();
@@ -97,8 +97,11 @@ describe("attested result params", () => {
       new IntentCoreError("InvalidParams"),
     );
     const trailing = bytes.slice();
-    trailing[56] = 1;
+    trailing[96] = 1;
     expect(() => decodeParams(4, trailing)).toThrow(new IntentCoreError("NonCanonical"));
+    const specCommitment = bytes.slice();
+    specCommitment[56] = 1;
+    expect(decodeParams(4, specCommitment).kind).toBe(Kind.AttestedResult);
     const lastKeyByte = bytes.slice();
     lastKeyByte[55] = (lastKeyByte[55] ?? 0) ^ 1;
     expect(() => decodeParams(4, lastKeyByte)).not.toThrow();
@@ -106,7 +109,7 @@ describe("attested result params", () => {
 
   it("validate the result bounds and the amount", async () => {
     const attestor = (await generateKeyPairSigner()).address;
-    const p = { kind: Kind.AttestedResult, amountIn: 5n, minResult: 10n, maxResult: 20n, attestor } as const;
+    const p = { kind: Kind.AttestedResult, amountIn: 5n, minResult: 10n, maxResult: 20n, attestor, specHash: new Uint8Array(32), judgeFee: 0n } as const;
     expect(roundTrip({ ...p, minResult: 20n })).toEqual({ ...p, minResult: 20n });
     expect(() => roundTrip({ ...p, minResult: 21n })).toThrow(new IntentCoreError("InvalidParams"));
     expect(() => roundTrip({ ...p, amountIn: 0n })).toThrow(new IntentCoreError("InvalidParams"));

@@ -4,14 +4,14 @@ use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 use intent_core::ext::FILL_EXT_TAGS;
 use intent_core::kinds::Intent as CoreIntent;
 use intent_core::lifecycle::{transition, Action, Status};
-use intent_core::sig::{offchain_envelope, AttestedFill};
+use intent_core::sig::{offchain_envelope, AttestedFill, AttestedProof};
 
 use crate::errors::{core_err, EngineError};
-use crate::events::{FeeWithheld, IntentAttested, WITHHELD_PARTNER};
+use crate::events::{FeeWithheld, IntentAttested, WITHHELD_JUDGE, WITHHELD_PARTNER};
 use crate::ext::Ext;
 use crate::policy::{
-    check_fill_kind, check_mint, pay_out, take_remaining, verify_preceding_ed25519, FeeSchedule,
-    IntentSigner, Payout,
+    check_fill_kind, check_mint, pay_agent, pay_out, take_remaining, verify_preceding_ed25519,
+    AgentPayout, FeeSchedule, IntentSigner, Payout,
 };
 use crate::state::{
     Config, Intent, CONFIG_ADDRESS, CONFIG_VERSION, INTENT_VERSION, PAUSE_FILL, VAULT_SEED,
@@ -64,6 +64,8 @@ pub struct FillAttested<'info> {
         ) @ EngineError::PartnerAccountNotCanonical
     )]
     pub partner_to: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
+    #[account(mut, token::mint = input_mint, token::token_program = input_token_program)]
+    pub judge_to: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
     pub input_token_program: Interface<'info, TokenInterface>,
     /// CHECK: read only through the checked instructions-sysvar loaders
     pub instructions: UncheckedAccount<'info>,
@@ -88,7 +90,7 @@ pub fn handle_fill_attested(
         )
     };
     check_mint(&ctx.accounts.input_mint.to_account_info())?;
-    let (attestor, tally, prior, signer, terms) = {
+    let (attestor, tally, prior, signer, terms, spec_hash, judge_fee) = {
         let mut intent = ctx.accounts.intent.load_mut()?;
         check_fill_kind(intent.kind, disabled)?;
         require!(intent.agent_fee == 0, EngineError::MandateMismatch);
@@ -100,9 +102,12 @@ pub fn handle_fill_attested(
         intent.status = next as u8;
         let prior = (intent.filled, intent.revision);
         let tally = take_remaining(&mut intent, amount_in)?;
-        let attestor = CoreIntent::decode(intent.kind, &intent.params)
-            .and_then(|decoded| decoded.check_attested(tally.amount_in, result))
+        let decoded = CoreIntent::decode(intent.kind, &intent.params).map_err(core_err)?;
+        let attestor = decoded
+            .check_attested(tally.amount_in, result)
             .map_err(core_err)?;
+        let spec_hash = decoded.spec_hash();
+        let judge_fee = decoded.judge_fee();
         let signer = IntentSigner {
             owner: intent.owner,
             nonce: intent.nonce.to_le_bytes(),
@@ -114,27 +119,88 @@ pub fn handle_fill_attested(
             prior,
             signer,
             terms,
+            spec_hash,
+            judge_fee,
         )
     };
-    let preimage = AttestedFill {
-        program: crate::ID.to_bytes(),
-        domain,
-        intent: ctx.accounts.intent.key().to_bytes(),
-        payee: ctx.accounts.payee.key().to_bytes(),
-        amount_in: tally.amount_in,
-        result,
-        filled: prior.0,
-        revision: prior.1,
-        max_fee_bps,
-        ext_hash: solana_sha256_hasher::hashv(&[&ext.0]).to_bytes(),
-    }
-    .preimage();
-    let digest = solana_sha256_hasher::hashv(&[&preimage]).to_bytes();
+    let ext_hash = solana_sha256_hasher::hashv(&[&ext.0]).to_bytes();
+    let digest = if spec_hash == [0u8; 32] {
+        let preimage = AttestedFill {
+            program: crate::ID.to_bytes(),
+            domain,
+            intent: ctx.accounts.intent.key().to_bytes(),
+            payee: ctx.accounts.payee.key().to_bytes(),
+            amount_in: tally.amount_in,
+            result,
+            filled: prior.0,
+            revision: prior.1,
+            max_fee_bps,
+            ext_hash,
+        }
+        .preimage();
+        solana_sha256_hasher::hashv(&[&preimage]).to_bytes()
+    } else {
+        let preimage = AttestedProof {
+            program: crate::ID.to_bytes(),
+            domain,
+            intent: ctx.accounts.intent.key().to_bytes(),
+            payee: ctx.accounts.payee.key().to_bytes(),
+            amount_in: tally.amount_in,
+            result,
+            filled: prior.0,
+            revision: prior.1,
+            max_fee_bps,
+            ext_hash,
+            spec_hash,
+        }
+        .preimage();
+        solana_sha256_hasher::hashv(&[&preimage]).to_bytes()
+    };
     verify_preceding_ed25519(
         &ctx.accounts.instructions.to_account_info(),
         &attestor,
         &offchain_envelope(&attestor.to_bytes(), &digest),
     )?;
+    let settle_amount = tally
+        .amount_in
+        .checked_sub(judge_fee)
+        .ok_or(EngineError::Overflow)?;
+    if judge_fee > 0 {
+        let judge_to = ctx
+            .accounts
+            .judge_to
+            .as_deref()
+            .ok_or(EngineError::FeeAccountMissing)?;
+        let canonical = get_associated_token_address_with_program_id(
+            &attestor,
+            &ctx.accounts.input_mint.key(),
+            &ctx.accounts.input_token_program.key(),
+        );
+        require!(
+            judge_to.key() == canonical,
+            EngineError::FeeAccountNotCanonical
+        );
+        if let Some(AgentPayout {
+            account,
+            paid: false,
+        }) = pay_agent(
+            &ctx.accounts.input_token_program,
+            &ctx.accounts.vault,
+            &ctx.accounts.input_mint,
+            Some(judge_to),
+            ctx.accounts.intent.to_account_info(),
+            &signer,
+            (attestor, judge_fee),
+        )? {
+            emit_cpi!(FeeWithheld {
+                intent: ctx.accounts.intent.key(),
+                payee: attestor,
+                account,
+                fee: judge_fee,
+                role: WITHHELD_JUDGE,
+            });
+        }
+    }
     let settled = pay_out(
         Payout {
             token_program: &ctx.accounts.input_token_program,
@@ -146,7 +212,7 @@ pub fn handle_fill_attested(
             intent: ctx.accounts.intent.to_account_info(),
             signer: &signer,
         },
-        tally.amount_in,
+        settle_amount,
         terms,
         max_fee_bps,
     )?;

@@ -120,6 +120,20 @@ impl Intent {
         }
     }
 
+    pub fn spec_hash(&self) -> [u8; 32] {
+        match self {
+            Self::AttestedResult(p) => p.spec_hash,
+            Self::SwapExactIn(_) | Self::LimitOrder(_) | Self::DutchAuction(_) => [0; 32],
+        }
+    }
+
+    pub fn judge_fee(&self) -> u64 {
+        match self {
+            Self::AttestedResult(p) => p.judge_fee,
+            Self::SwapExactIn(_) | Self::LimitOrder(_) | Self::DutchAuction(_) => 0,
+        }
+    }
+
     pub fn settle_delta(
         &self,
         amount_in: u64,

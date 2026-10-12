@@ -36,6 +36,8 @@ fn attested_spec(nonce: u64, attestor: &Pubkey) -> TestResult<IntentSpec> {
             min_result: 10,
             max_result: 20,
             attestor: attestor.to_bytes(),
+            spec_hash: [0; 32],
+            judge_fee: 0,
         }
         .encode()
         .map_err(|e| format!("{e:?}"))?,

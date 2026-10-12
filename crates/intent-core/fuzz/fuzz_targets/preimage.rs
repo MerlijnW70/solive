@@ -1,12 +1,15 @@
 #![no_main]
 
-use intent_core::sig::{offchain_envelope, AttestedFill, SignedIntent, ATTEST_TAG, INTENT_TAG, OFFCHAIN_PREFIX};
+use intent_core::sig::{
+    offchain_envelope, AttestedFill, AttestedProof, SignedIntent, ATTEST_PROOF_TAG, ATTEST_TAG,
+    INTENT_TAG, OFFCHAIN_PREFIX,
+};
 use intent_core::PARAMS_LEN;
 use libfuzzer_sys::fuzz_target;
 
 type Keys = [[u8; 32]; 7];
 type Signed = (Keys, u64, i64, i64, u8, u16, [u8; PARAMS_LEN], u64, [u8; 32], u64);
-type Attest = ([[u8; 32]; 5], u64, u64, u64, u32, u16);
+type Attest = ([[u8; 32]; 5], u64, u64, u64, u32, u16, [u8; 32]);
 
 fn take<'a>(at: &mut usize, bytes: &'a [u8], n: usize) -> &'a [u8] {
     let s = &bytes[*at..*at + n];
@@ -57,7 +60,7 @@ fuzz_target!(|input: (Signed, Attest)| {
     assert_eq!(u64_at(&mut at, &pre), relayer_fee);
     assert_eq!(at, pre.len());
 
-    let ([program, domain, intent_key, payee, ext_hash], amount_in, result, filled, revision, max_fee_bps) = a;
+    let ([program, domain, intent_key, payee, ext_hash], amount_in, result, filled, revision, max_fee_bps, spec_hash) = a;
     let fill = AttestedFill {
         program,
         domain,
@@ -84,6 +87,37 @@ fuzz_target!(|input: (Signed, Attest)| {
     assert_eq!(take(&mut at, &pre_a, 32), &ext_hash[..]);
     assert_eq!(at, pre_a.len());
     assert_ne!(pre[..16], pre_a[..16]);
+
+    let proof = AttestedProof {
+        program,
+        domain,
+        intent: intent_key,
+        payee,
+        amount_in,
+        result,
+        filled,
+        revision,
+        max_fee_bps,
+        ext_hash,
+        spec_hash,
+    };
+    let pre_p = proof.preimage();
+    let mut at = 0;
+    assert_eq!(take(&mut at, &pre_p, 16), &ATTEST_PROOF_TAG[..]);
+    for k in [program, domain, intent_key, payee] {
+        assert_eq!(take(&mut at, &pre_p, 32), &k[..]);
+    }
+    assert_eq!(u64_at(&mut at, &pre_p), amount_in);
+    assert_eq!(u64_at(&mut at, &pre_p), result);
+    assert_eq!(u64_at(&mut at, &pre_p), filled);
+    assert_eq!(take(&mut at, &pre_p, 4), &revision.to_le_bytes()[..]);
+    assert_eq!(take(&mut at, &pre_p, 2), &max_fee_bps.to_le_bytes()[..]);
+    assert_eq!(take(&mut at, &pre_p, 32), &ext_hash[..]);
+    assert_eq!(take(&mut at, &pre_p, 32), &spec_hash[..]);
+    assert_eq!(at, pre_p.len());
+    assert_eq!(&pre_p[16..pre_a.len()], &pre_a[16..]);
+    assert_ne!(pre_p[..16], pre_a[..16]);
+    assert_ne!(pre_p[..16], pre[..16]);
 
     let env = offchain_envelope(&owner, &ext_hash);
     assert_eq!(&env[..16], &OFFCHAIN_PREFIX[..]);

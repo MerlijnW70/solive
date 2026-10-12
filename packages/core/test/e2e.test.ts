@@ -750,6 +750,8 @@ describe("end to end against the deployed engine, using only the package's build
           minResult: 10n,
           maxResult: 20n,
           attestor: attestor.address,
+          specHash: new Uint8Array(32),
+          judgeFee: 0n,
         },
         expiresAt: NOW + 3_600n,
         inputMint,

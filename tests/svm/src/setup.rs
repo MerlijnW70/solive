@@ -93,6 +93,7 @@ pub struct Env {
     pub relayer_fee: u64,
     pub relayer_fee_to: Option<Pubkey>,
     pub agent_to: Option<Option<Pubkey>>,
+    pub judge_to: Option<Pubkey>,
 }
 
 impl Env {
@@ -120,6 +121,7 @@ impl Env {
             relayer_fee: 0,
             relayer_fee_to: None,
             agent_to: None,
+            judge_to: None,
         };
         env.set_now(START_TS);
         let key = env.authority.pubkey();

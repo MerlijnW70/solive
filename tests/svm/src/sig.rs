@@ -194,6 +194,7 @@ impl Env {
                 payee: *payee,
                 fee_to: fee_to.copied(),
                 partner_to: self.partner_to,
+                judge_to: self.judge_to,
                 input_token_program: market.input_program,
                 instructions: solana_instructions_sysvar::ID,
                 event_authority: event_authority(),
@@ -264,6 +265,34 @@ pub fn attestation_envelope(
         revision: a.revision,
         max_fee_bps: a.max_fee_bps,
         ext_hash: a.ext_hash,
+    }
+    .preimage();
+    let digest = solana_sha256_hasher::hashv(&[&preimage]).to_bytes();
+    intent_core::sig::offchain_envelope(&attestor.to_bytes(), &digest)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn attestation_proof_message(
+    domain: [u8; 32],
+    attestor: &Pubkey,
+    intent: &Pubkey,
+    payee: &Pubkey,
+    amount_in: u64,
+    result: u64,
+    spec_hash: [u8; 32],
+) -> [u8; intent_core::sig::ENVELOPE_LEN] {
+    let preimage = intent_core::sig::AttestedProof {
+        program: intent_engine::ID.to_bytes(),
+        domain,
+        intent: intent.to_bytes(),
+        payee: payee.to_bytes(),
+        amount_in,
+        result,
+        filled: 0,
+        revision: 0,
+        max_fee_bps: intent_engine::state::MAX_FEE_BPS,
+        ext_hash: empty_ext_hash(),
+        spec_hash,
     }
     .preimage();
     let digest = solana_sha256_hasher::hashv(&[&preimage]).to_bytes();

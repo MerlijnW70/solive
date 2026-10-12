@@ -153,7 +153,7 @@ describe("fill decisions", () => {
       [
         intent({
           kind: Kind.AttestedResult,
-          params: encodeParams({ kind: Kind.AttestedResult, amountIn: AMOUNT, minResult: 1n, maxResult: 2n, attestor: KEY }),
+          params: encodeParams({ kind: Kind.AttestedResult, amountIn: AMOUNT, minResult: 1n, maxResult: 2n, attestor: KEY, specHash: new Uint8Array(32), judgeFee: 0n }),
         }),
         config(),
         NOW,

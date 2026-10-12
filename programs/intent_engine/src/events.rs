@@ -221,6 +221,7 @@ pub struct AgentPaid {
 pub const WITHHELD_PARTNER: u8 = 1;
 pub const WITHHELD_AGENT: u8 = 2;
 pub const WITHHELD_TREASURY: u8 = 3;
+pub const WITHHELD_JUDGE: u8 = 4;
 
 #[event]
 pub struct FeeWithheld {

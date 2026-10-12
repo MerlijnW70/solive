@@ -56,6 +56,8 @@ import {
   requiredOut,
   attestedFillMessage,
   attestedFillPreimage,
+  attestedProofMessage,
+  attestedProofPreimage,
   EVENT_IX_TAG,
   buildEd25519Instruction,
   checkAttested,
@@ -116,6 +118,9 @@ type Vectors = {
     | "attestor"
     | "attest_preimage"
     | "attest_message"
+    | "attest_spec_hash"
+    | "attest_proof_preimage"
+    | "attest_proof_message"
     | "attest_filled"
     | "attest_revision"
     | "attest_max_fee_bps"
@@ -575,6 +580,29 @@ describe("golden vectors emitted by the Rust implementation", () => {
     expect(hexOf(await attestedFillMessage(s.attestor as Address, plain))).toBe(
       hexOf(offchainEnvelope(s.attestor as Address, plainDigest)),
     );
+  });
+
+  it("bind proof attestations to the committed spec hash like Rust", async () => {
+    const s = vectors.sig;
+    const fields = {
+      domain: bytes(s.domain),
+      intent: s.attest_intent as Address,
+      payee: s.attest_payee as Address,
+      amountIn: BigInt(s.attest_amount_in),
+      result: BigInt(s.attest_result),
+      filled: BigInt(s.attest_filled),
+      revision: Number(s.attest_revision),
+      maxFeeBps: Number(s.attest_max_fee_bps),
+      ext: bytes(s.ext),
+      specHash: bytes(s.attest_spec_hash),
+    };
+    const preimage = await attestedProofPreimage(fields);
+    expect(preimage).toHaveLength(238);
+    expect(hexOf(preimage)).toBe(s.attest_proof_preimage);
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", preimage.slice()));
+    expect(hexOf(offchainEnvelope(s.attestor as Address, digest))).toBe(s.attest_proof_message);
+    const otherSpec = { ...fields, specHash: new Uint8Array(32).fill(1) };
+    expect(hexOf(await attestedProofPreimage(otherSpec))).not.toBe(s.attest_proof_preimage);
   });
 
   it("carry the account versions the program accepts", () => {
