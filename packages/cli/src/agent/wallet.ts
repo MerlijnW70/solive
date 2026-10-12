@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { AccountRole, type Address, getAddressDecoder, type KeyPairSigner } from "@solana/kit";
+import { AccountRole, type Address, getAddressDecoder, getBase16Decoder, type KeyPairSigner } from "@solana/kit";
 import {
   attestedFillMessage,
+  attestedProofMessage,
   buildFillAttested,
   decodeEvent,
   decodeParams,
@@ -448,6 +449,8 @@ const walletEscrow = define({
     attestor: account("the wallet whose signature alone releases the escrow"),
     min_result: optional(amount("least result the attestor may attest; default 1")),
     max_result: optional(amount("greatest result the attestor may attest; default min_result")),
+    spec_hash: optional(text("64 hex: the sha256 of the acceptance spec the attestor must verify. Setting it binds the release to a signature over that exact spec, so the attestor cannot sign a generic result")),
+    judge_fee: optional(text("whole tokens of sell paid to the attestor out of the escrow when it settles, such as 0.001; needs spec_hash and must be below amount")),
     expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds the escrow stays open once sent; default ${ESCROW_EXPIRES_IN}`)),
     record_mint: optional(text("a token the escrow records as its output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet")),
     send: optional(flag("true signs and sends; leave out to preview")),
@@ -461,8 +464,20 @@ const walletEscrow = define({
     if (most < least) {
       throw new InvalidInput([{ path: "max_result", message: "must be at least min_result" }]);
     }
+    const specHash = input.spec_hash === undefined ? undefined : sha256Of(input.spec_hash, "spec_hash");
+    if (input.judge_fee !== undefined && specHash === undefined) {
+      throw new InvalidInput([{ path: "judge_fee", message: "needs spec_hash" }]);
+    }
     return offered(ctx, call, { sell: sold, buy: recordedMint(sold, wallet.url, input.record_mint), send: input.send }, (token, _, now) => ({
-      order: { kind: "attested", amount_in: raw(input.amount, token.decimals, "amount"), min_result: least, max_result: most, attestor: input.attestor },
+      order: {
+        kind: "attested",
+        amount_in: raw(input.amount, token.decimals, "amount"),
+        min_result: least,
+        max_result: most,
+        attestor: input.attestor,
+        ...(specHash === undefined ? {} : { spec_hash: specHash }),
+        ...(input.judge_fee === undefined ? {} : { judge_fee: raw(input.judge_fee, token.decimals, "judge_fee") }),
+      },
       expires_at: now + BigInt((input.expires_in ?? ESCROW_EXPIRES_IN) + LANDING_SECONDS),
     }));
   },
@@ -656,8 +671,10 @@ const walletAttest = define({
       }
     }
     const amountIn = held.escrowed - held.filled;
+    const isProof = params.specHash.some((b) => b !== 0);
+    const settleAmount = amountIn - params.judgeFee;
     const maxFeeBps = feeBpsFor(config, held.kind) + held.partnerBps;
-    const shares = splitFees(amountIn, feeBpsFor(config, held.kind), held.partnerBps, held.partnerCutBps);
+    const shares = splitFees(settleAmount, feeBpsFor(config, held.kind), held.partnerBps, held.partnerCutBps);
     const treasury =
       shares.protocol > 0n
         ? await tokenAccountIfMissing(ctx.transport, signer, config.feeRecipient, held.inputMint, token.tokenProgram)
@@ -665,7 +682,11 @@ const walletAttest = define({
     const partnerPaid = shares.partner > 0n;
     const partner =
       partnerPaid ? await tokenAccountIfMissing(ctx.transport, signer, held.partner, held.inputMint, token.tokenProgram) : { create: [] };
-    const message = await attestedFillMessage(signer.address, {
+    const judge =
+      isProof && params.judgeFee > 0n
+        ? await tokenAccountIfMissing(ctx.transport, signer, signer.address, held.inputMint, token.tokenProgram)
+        : { create: [] };
+    const attestFields = {
       domain: Uint8Array.from(config.domain),
       intent,
       payee: payee.address,
@@ -674,7 +695,10 @@ const walletAttest = define({
       filled: held.filled,
       revision: held.revision,
       maxFeeBps,
-    });
+    };
+    const message = isProof
+      ? await attestedProofMessage(signer.address, { ...attestFields, specHash: params.specHash })
+      : await attestedFillMessage(signer.address, attestFields);
     const settle = await buildFillAttested({
       solver: signer,
       owner: input.owner,
@@ -684,13 +708,14 @@ const walletAttest = define({
       payee: payee.address,
       ...(shares.protocol > 0n ? { feeRecipient: config.feeRecipient } : {}),
       ...(partnerPaid ? { partner: held.partner } : {}),
+      ...(isProof && params.judgeFee > 0n ? { judge: signer.address } : {}),
       amountIn,
       result,
       maxFeeBps,
     });
     const name = TOKEN_NAMES[held.inputMint] ?? held.inputMint;
     const paid = formatAmount(shares.net, token.decimals);
-    const setup = [...payee.create, ...treasury.create, ...partner.create];
+    const setup = [...payee.create, ...treasury.create, ...partner.create, ...judge.create];
     const delivered = input.delivered_sha256 === undefined ? undefined : sha256Of(input.delivered_sha256, "delivered_sha256");
     const memoText = delivered === undefined ? "" : `${DELIVERY_PREFIX}${delivered}`;
     const memo =
@@ -716,6 +741,8 @@ const walletAttest = define({
       ...(delivered === undefined ? {} : { delivered_sha256: delivered }),
       summary: [
         `Pays: ${paid} of ${name} to ${input.pay_to} from ${input.owner}'s escrow${held.inputMint === NATIVE_MINT ? WRAPPED : ""}`,
+        ...(isProof && params.judgeFee > 0n ? [`Pays the judge: ${formatAmount(params.judgeFee, token.decimals)} of ${name} to this wallet, carved out of the escrow`] : []),
+        ...(isProof ? [`Binds: the result to the committed spec ${getBase16Decoder().decode(params.specHash)}`] : []),
         `Attests: result ${result}, signed by this server's wallet as the escrow's attestor`,
         ...(delivered === undefined ? [] : [`Records: the delivered work's sha256 ${delivered}, in a memo this wallet signs with the release`]),
         ...(payee.create.length === 0 ? [] : [`Setup: creates ${input.pay_to}'s ${name} account, paid by this wallet`]),

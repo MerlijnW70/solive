@@ -117,6 +117,8 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 | `attestor` | address | yes | the wallet whose signature alone releases the escrow |
 | `min_result` | whole number as a decimal string | no | least result the attestor may attest; default 1 |
 | `max_result` | whole number as a decimal string | no | greatest result the attestor may attest; default min_result |
+| `spec_hash` | string | no | 64 hex: the sha256 of the acceptance spec the attestor must verify. Setting it binds the release to a signature over that exact spec, so the attestor cannot sign a generic result |
+| `judge_fee` | string | no | whole tokens of sell paid to the attestor out of the escrow when it settles, such as 0.001; needs spec_hash and must be below amount |
 | `expires_in` | integer 60..31536000 | no | least seconds the escrow stays open once sent; default 86400 |
 | `record_mint` | string | no | a token the escrow records as its output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet |
 | `send` | boolean | no | true signs and sends; leave out to preview |
@@ -287,6 +289,8 @@ Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
 | `order[kind=attested].min_result` | whole number as a decimal string | yes | least attested result that settles the intent |
 | `order[kind=attested].max_result` | whole number as a decimal string | yes | greatest attested result that settles the intent |
 | `order[kind=attested].attestor` | address | yes | the key whose signature alone decides the result |
+| `order[kind=attested].spec_hash` | string | no | 64 hex: the sha256 of the acceptance spec the attestor must verify; makes the settlement bind that exact spec |
+| `order[kind=attested].judge_fee` | whole number as a decimal string | no | raw units of the input token paid to the attestor out of the escrow when it settles; needs spec_hash and must be below amount_in |
 | `expires_at` | unix seconds as a decimal string | no | unix seconds after which nobody can fill the intent; give exactly one of expires_at and expires_in |
 | `expires_in` | integer 60..31536000 | no | seconds from now until the intent expires; give exactly one of expires_at and expires_in |
 | `nonce` | whole number as a decimal string | no | leave out to use the owner's next free nonce |
@@ -356,6 +360,8 @@ Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
 | `order[kind=attested].min_result` | whole number as a decimal string | yes | least attested result that settles the intent |
 | `order[kind=attested].max_result` | whole number as a decimal string | yes | greatest attested result that settles the intent |
 | `order[kind=attested].attestor` | address | yes | the key whose signature alone decides the result |
+| `order[kind=attested].spec_hash` | string | no | 64 hex: the sha256 of the acceptance spec the attestor must verify; makes the settlement bind that exact spec |
+| `order[kind=attested].judge_fee` | whole number as a decimal string | no | raw units of the input token paid to the attestor out of the escrow when it settles; needs spec_hash and must be below amount_in |
 | `expires_at` | unix seconds as a decimal string | no | unix seconds after which nobody can fill the intent; give exactly one of expires_at and expires_in |
 | `expires_in` | integer 60..31536000 | no | seconds from now until the intent expires; give exactly one of expires_at and expires_in |
 | `nonce` | whole number as a decimal string | no | leave out to use the owner's next free nonce |
@@ -390,6 +396,8 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 | `order[kind=attested].min_result` | whole number as a decimal string | yes | least attested result that settles the intent |
 | `order[kind=attested].max_result` | whole number as a decimal string | yes | greatest attested result that settles the intent |
 | `order[kind=attested].attestor` | address | yes | the key whose signature alone decides the result |
+| `order[kind=attested].spec_hash` | string | no | 64 hex: the sha256 of the acceptance spec the attestor must verify; makes the settlement bind that exact spec |
+| `order[kind=attested].judge_fee` | whole number as a decimal string | no | raw units of the input token paid to the attestor out of the escrow when it settles; needs spec_hash and must be below amount_in |
 | `expires_at` | unix seconds as a decimal string | yes |  |
 | `nonce` | whole number as a decimal string | yes |  |
 | `submit_by` | unix seconds as a decimal string | yes | unix seconds after which the signature can no longer be submitted |
@@ -476,6 +484,8 @@ Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
 | `order[kind=attested].min_result` | whole number as a decimal string | yes | least attested result that settles the intent |
 | `order[kind=attested].max_result` | whole number as a decimal string | yes | greatest attested result that settles the intent |
 | `order[kind=attested].attestor` | address | yes | the key whose signature alone decides the result |
+| `order[kind=attested].spec_hash` | string | no | 64 hex: the sha256 of the acceptance spec the attestor must verify; makes the settlement bind that exact spec |
+| `order[kind=attested].judge_fee` | whole number as a decimal string | no | raw units of the input token paid to the attestor out of the escrow when it settles; needs spec_hash and must be below amount_in |
 | `expires_at` | unix seconds as a decimal string | no | unix seconds after which nobody can fill the intent |
 | `expires_in` | integer 60..31536000 | no | seconds from now until the intent expires |
 | `nonce` | whole number as a decimal string | no | leave out to use the mandate's next free nonce; one you pass must have the top bit set |
@@ -504,6 +514,8 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 | `order[kind=attested].min_result` | whole number as a decimal string | yes | least attested result that settles the intent |
 | `order[kind=attested].max_result` | whole number as a decimal string | yes | greatest attested result that settles the intent |
 | `order[kind=attested].attestor` | address | yes | the key whose signature alone decides the result |
+| `order[kind=attested].spec_hash` | string | no | 64 hex: the sha256 of the acceptance spec the attestor must verify; makes the settlement bind that exact spec |
+| `order[kind=attested].judge_fee` | whole number as a decimal string | no | raw units of the input token paid to the attestor out of the escrow when it settles; needs spec_hash and must be below amount_in |
 | `expires_at` | unix seconds as a decimal string | no | unix seconds after which nobody can fill the intent |
 | `expires_in` | integer 60..31536000 | no | seconds from now until the intent expires |
 | `nonce` | whole number as a decimal string | no | leave out to use the mandate's next free nonce; one you pass must have the top bit set |

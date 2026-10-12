@@ -1,4 +1,4 @@
-import { type Address, generateKeyPairSigner, lamports, none } from "@solana/kit";
+import { type Address, generateKeyPairSigner, getBase16Decoder, lamports, none } from "@solana/kit";
 import { AccountState, getMintEncoder, getMintSize, getTokenEncoder, getTokenSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
@@ -10,6 +10,8 @@ import {
   getIntentCreatedEventEncoder,
   getIntentDecoder,
   getIntentEncoder,
+  decodeParams,
+  Kind,
   getFillBegunEventEncoder,
   getFillEndedEventEncoder,
   getIntentFilledEventEncoder,
@@ -391,6 +393,41 @@ describe("the wallet server", () => {
     const brief = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.01", attestor: owner, expires_in: 60, send: true });
     setNow(h.svm.getClock().unixTimestamp + 3_600n);
     expect((await call(client, "wallet_attest", { owner, nonce: brief["nonce"], pay_to: worker })).value).toMatchObject({ code: "IntentExpired" });
+  });
+
+  it("escrows a proof intent that binds a spec and pays the judge out of the escrow", async () => {
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    const worker = (await generateKeyPairSigner()).address;
+    const specHash = "6a".repeat(32);
+    expect((await call(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, judge_fee: "0.001" })).value).toMatchObject({
+      code: "InvalidInput",
+      issues: [{ path: "judge_fee" }],
+    });
+    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, min_result: "1", max_result: "1", spec_hash: specHash, judge_fee: "0.001", send: true });
+    const intent = escrow["intent"] as Address;
+    const nonce = escrow["nonce"] as string;
+    const account = h.svm.getAccount(intent);
+    if (!account.exists) {
+      throw new Error("the proof intent was not created");
+    }
+    const held = getIntentDecoder().decode(account.data);
+    const params = decodeParams(held.kind, Uint8Array.from(held.params));
+    expect(params.kind).toBe(Kind.AttestedResult);
+    if (params.kind === Kind.AttestedResult) {
+      expect(getBase16Decoder().decode(params.specHash)).toBe(specHash);
+      expect(params.judgeFee).toBe(LAMPORTS_PER_SOL / 1_000n);
+    }
+    const release = { owner, nonce, pay_to: worker };
+    const shown = await ok(client, "wallet_attest", release);
+    expect(shown["summary"]).toEqual(expect.arrayContaining([expect.stringContaining("Pays the judge"), expect.stringContaining(`Binds: the result to the committed spec ${specHash}`)]));
+    const settled = await ok(client, "wallet_attest", { ...release, approval: shown["approval"], send: true });
+    expect(settled["paid"]).toBeTruthy();
+    const judgeFee = LAMPORTS_PER_SOL / 1_000n;
+    const { fee } = splitFee(LAMPORTS_PER_SOL / 20n - judgeFee, FEE_BPS);
+    const workerAta = await findAssociatedTokenAddress({ owner: worker, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const judgeAta = await findAssociatedTokenAddress({ owner, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    expect(balance(workerAta)).toBe(LAMPORTS_PER_SOL / 20n - judgeFee - fee);
+    expect(balance(judgeAta)).toBe(judgeFee);
   });
 
   it("escrows a task's pieces in one plan: one preview with the total, one send, each piece released on its own", async () => {

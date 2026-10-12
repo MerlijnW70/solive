@@ -519,6 +519,7 @@ export type FillAttestedSpec = {
   payee: Address;
   feeRecipient?: Address;
   partner?: Address;
+  judge?: Address;
   amountIn: bigint;
   result: bigint;
   maxFeeBps: number;
@@ -534,6 +535,14 @@ export async function buildFillAttested(input: FillAttestedSpec) {
           mint: input.inputMint,
           tokenProgram: input.inputTokenProgram,
         });
+  const judgeTo =
+    input.judge === undefined
+      ? undefined
+      : await findAssociatedTokenAddress({
+          owner: input.judge,
+          mint: input.inputMint,
+          tokenProgram: input.inputTokenProgram,
+        });
   return getFillAttestedInstructionAsync({
     solver: input.solver,
     intent: await intentOf(input.owner, input.nonce),
@@ -541,6 +550,7 @@ export async function buildFillAttested(input: FillAttestedSpec) {
     payee: input.payee,
     ...(feeTo === undefined ? {} : { feeTo }),
     ...(await partnerAccount(input)),
+    ...(judgeTo === undefined ? {} : { judgeTo }),
     inputTokenProgram: input.inputTokenProgram,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     amountIn: input.amountIn,

@@ -1,4 +1,4 @@
-import type { Address } from "@solana/kit";
+import { type Address, getBase16Decoder, getBase16Encoder } from "@solana/kit";
 import {
   decodeParamsLoose,
   describeTerms,
@@ -23,6 +23,7 @@ import {
   list,
   nullable,
   object,
+  optional,
   text,
   time,
   variants,
@@ -51,6 +52,8 @@ export const orderSchema = variants(
       min_result: amount("least attested result that settles the intent"),
       max_result: amount("greatest attested result that settles the intent"),
       attestor: account("the key whose signature alone decides the result"),
+      spec_hash: optional(text("64 hex: the sha256 of the acceptance spec the attestor must verify; makes the settlement bind that exact spec")),
+      judge_fee: optional(amount("raw units of the input token paid to the attestor out of the escrow when it settles; needs spec_hash and must be below amount_in")),
     }),
   },
   "what to sell and the least to receive",
@@ -80,10 +83,21 @@ export function paramsOf(order: Order): IntentParams {
         minResult: order.min_result,
         maxResult: order.max_result,
         attestor: order.attestor,
-        specHash: new Uint8Array(32),
-        judgeFee: 0n,
+        specHash: specHashBytes(order.spec_hash),
+        judgeFee: order.judge_fee ?? 0n,
       };
   }
+}
+
+function specHashBytes(hex: string | undefined): Uint8Array {
+  if (hex === undefined) {
+    return new Uint8Array(32);
+  }
+  const bytes = Uint8Array.from(getBase16Encoder().encode(hex));
+  if (bytes.length !== 32) {
+    throw new RangeError("spec_hash must be 64 hex digits (32 bytes)");
+  }
+  return bytes;
 }
 
 function orderOf(params: IntentParams): Order {
@@ -108,6 +122,9 @@ function orderOf(params: IntentParams): Order {
         min_result: params.minResult,
         max_result: params.maxResult,
         attestor: params.attestor,
+        ...(params.specHash.some((b) => b !== 0)
+          ? { spec_hash: getBase16Decoder().decode(params.specHash), judge_fee: params.judgeFee }
+          : {}),
       };
   }
 }
