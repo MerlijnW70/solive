@@ -288,7 +288,7 @@ type Order = typeof orderSchema extends Schema<infer T> ? T : never;
 async function offered(
   ctx: AgentContext,
   call: Call,
-  input: { sell: string; buy: string; send?: boolean | undefined },
+  input: { sell: string; buy: string; pay_to?: Address | undefined; send?: boolean | undefined },
   terms: (sold: Token, bought: Token, now: bigint, inputMint: Address, outputMint: Address) => Promise<{ order: Order; expires_at: bigint }> | { order: Order; expires_at: bigint },
 ) {
   const wallet = access(ctx);
@@ -308,7 +308,7 @@ async function offered(
   checkSale(wallet.limits, inputMint, inputToken.decimals, (made.order as { amount_in: bigint }).amount_in, now);
   const view = (await prepareCreate.run(
     ctx,
-    { owner: signer.address, input_mint: inputMint, output_mint: outputMint, ...made } as never,
+    { owner: signer.address, input_mint: inputMint, output_mint: outputMint, ...(input.pay_to === undefined ? {} : { pay_to: input.pay_to }), ...made } as never,
     call,
   )) as Record<string, unknown>;
   const { intent, nonce, summary, warnings, prepared } = view;
@@ -331,6 +331,7 @@ async function offered(
 }
 
 export const SWAP_FALLS_OVER = 120;
+export const PAY_TO = "the wallet that receives what is bought, such as someone this wallet pays; default this wallet. This wallet pays for its token account if it has none";
 export const SWAP_HEADROOM_BPS = 200n;
 export const SWAP_BLIND_BPS = 2_500n;
 
@@ -373,6 +374,7 @@ const walletSwap = define({
     start_receive: optional(text("whole tokens asked when the offer lands; default a little above the best recent fill")),
     falls_over: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `seconds the ask takes to fall to min_receive; default ${SWAP_FALLS_OVER}`)),
     exact: optional(flag("true asks min_receive from the start, with no falling ask")),
+    pay_to: optional(account(PAY_TO)),
     expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds the offer stays open once sent; default ${DEFAULT_EXPIRES_IN}`)),
     send: optional(flag("true signs and sends; leave out to preview")),
   }),
@@ -569,6 +571,7 @@ const walletRecurring = define({
     times: integer(2, MAX_RECURRING, "how many orders"),
     start_receive: optional(text("whole tokens each order asks when it opens; default a little above the best recent fill")),
     falls_over: optional(integer(MIN_EXPIRES_IN, MAX_EVERY, `seconds each order's ask takes to fall to min_receive; default ${SWAP_FALLS_OVER}`)),
+    pay_to: optional(account(PAY_TO)),
     send: optional(flag("true signs and sends every order; leave out to preview")),
   }),
   output: object({
@@ -657,6 +660,7 @@ const walletAuction = define({
     expires_in: optional(
       integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds the offer stays open once sent, never less than falls_over; default ${DEFAULT_EXPIRES_IN}`),
     ),
+    pay_to: optional(account(PAY_TO)),
     send: optional(flag("true signs and sends; leave out to preview")),
   }),
   output: offerOutput,
@@ -835,7 +839,7 @@ const walletWait = define({
     intent: account(),
     status: choice(WAIT_STATUS, "closed means the account is gone and its recent transactions name no fill, cancel or expiry"),
     waited: integer(0, WAIT_MAX, "seconds waited"),
-    received: optional(text("whole tokens the wallet received from fills")),
+    received: optional(text("whole tokens the fills delivered, to this wallet or the pay_to it named")),
     token: optional(text("the token received")),
     signature: optional(text("the fill's transaction")),
     next: optional(text()),

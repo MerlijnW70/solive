@@ -57,6 +57,7 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 | `start_receive` | string | no | whole tokens asked when the offer lands; default a little above the best recent fill |
 | `falls_over` | integer 60..31536000 | no | seconds the ask takes to fall to min_receive; default 120 |
 | `exact` | boolean | no | true asks min_receive from the start, with no falling ask |
+| `pay_to` | address | no | the wallet that receives what is bought, such as someone this wallet pays; default this wallet. This wallet pays for its token account if it has none |
 | `expires_in` | integer 60..31536000 | no | least seconds the offer stays open once sent; default 3600 |
 | `send` | boolean | no | true signs and sends; leave out to preview |
 
@@ -77,6 +78,7 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 | `end_receive` | string | yes | least whole tokens accepted once the asked amount stops falling |
 | `falls_over` | integer 60..31536000 | yes | seconds the asked amount takes to fall from start_receive to end_receive |
 | `expires_in` | integer 60..31536000 | no | least seconds the offer stays open once sent, never less than falls_over; default 3600 |
+| `pay_to` | address | no | the wallet that receives what is bought, such as someone this wallet pays; default this wallet. This wallet pays for its token account if it has none |
 | `send` | boolean | no | true signs and sends; leave out to preview |
 
 ## solive_wallet_recurring
@@ -97,6 +99,7 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 | `times` | integer 2..12 | yes | how many orders |
 | `start_receive` | string | no | whole tokens each order asks when it opens; default a little above the best recent fill |
 | `falls_over` | integer 60..2592000 | no | seconds each order's ask takes to fall to min_receive; default 120 |
+| `pay_to` | address | no | the wallet that receives what is bought, such as someone this wallet pays; default this wallet. This wallet pays for its token account if it has none |
 | `send` | boolean | no | true signs and sends every order; leave out to preview |
 
 ## solive_wallet_escrow
@@ -256,6 +259,7 @@ Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
 | `partner` | object | no | an integrator fee taken from the sold amount at fill time |
 | `partner.account` | address | yes | the integrator paid the partner fee |
 | `partner.bps` | integer 1..100 | yes | partner fee in basis points of the sold amount |
+| `pay_to` | address | no | the wallet that receives what the solver pays; default the owner |
 
 ## solive_prepare_cancel
 

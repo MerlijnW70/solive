@@ -76,7 +76,10 @@ export const prepareCreate = define({
   description:
     "Build the transaction that escrows the owner's tokens in a new intent: sell exactly the given amount and receive at least the given output before the expiry (for attested orders, an amount set by the attested result), or get everything back. Returns an unsigned transaction that already simulated successfully; the owner's wallet must sign and send it. Nothing moves until then.",
   effect: "prepare",
-  input: object(termsInput),
+  input: object({
+    ...termsInput,
+    pay_to: optional(account("the wallet that receives what the solver pays; default the owner")),
+  }),
   output: object({
     ...termsOutput,
     create_fee: amount("lamports the owner pays the treasury"),
@@ -98,21 +101,17 @@ export const prepareCreate = define({
     }
     const nonce = pickNonce(user, input.nonce, claimedBy(claims, input.owner, now));
     claim(claims, call, input.owner, nonce, now + PREPARED_TTL, now);
+    const recipient = input.pay_to ?? input.owner;
     const [[intentAddress], receiverAddress, sourceAddress] = await Promise.all([
       findIntentPda({ owner: input.owner, nonce }),
-      findAssociatedTokenAddress({ owner: input.owner, mint: input.output_mint, tokenProgram: outputToken.tokenProgram }),
+      findAssociatedTokenAddress({ owner: recipient, mint: input.output_mint, tokenProgram: outputToken.tokenProgram }),
       findAssociatedTokenAddress({ owner: input.owner, mint: input.input_mint, tokenProgram: inputToken.tokenProgram }),
     ]);
     await transport.warm?.([intentAddress, receiverAddress, sourceAddress]);
     const intent = await unusedIntent(transport, input.owner, nonce);
     const owner = createNoopSigner(input.owner);
-    const receiver = await tokenAccountIfMissing(
-      transport,
-      owner,
-      input.owner,
-      input.output_mint,
-      outputToken.tokenProgram,
-    );
+    const receiver = await tokenAccountIfMissing(transport, owner, recipient, input.output_mint, outputToken.tokenProgram);
+    const elsewhere = recipient !== input.owner;
     const create = await buildCreateIntent({
       owner,
       treasury: config.feeRecipient,
@@ -126,6 +125,7 @@ export const prepareCreate = define({
       outputMint: input.output_mint,
       inputTokenProgram: inputToken.tokenProgram,
       outputTokenProgram: outputToken.tokenProgram,
+      ...(elsewhere ? { receiver: receiver.address, receiverAuthority: recipient } : {}),
     });
     const register = await initUserIfMissing(user, input.owner);
     const wrap = await wrapIfShort(transport, input.owner, input.input_mint, inputToken.tokenProgram, escrowAmount(params));
@@ -141,13 +141,15 @@ export const prepareCreate = define({
           { inputDecimals: inputToken.decimals, outputDecimals: outputToken.decimals, ...tokenNames(input.input_mint, input.output_mint) },
         ),
         `Expires: ${formatTime(expiresAt)}`,
+        ...(elsewhere ? [`Pays to: ${recipient}, who receives what the solver pays`] : []),
         ...(input.partner === undefined ? [] : [`Partner fee: ${input.partner.bps} bps of the sold amount to ${input.partner.account}`]),
         ...setupLines({
           registers: register.length > 0,
-          creates: receiver.create.length > 0 ? [input.output_mint] : [],
+          creates: receiver.create.length > 0 && !elsewhere ? [input.output_mint] : [],
           allowance: null,
           wraps: wrap.lamports,
         }).lines,
+        ...(receiver.create.length > 0 && elsewhere ? [`Setup: creates ${recipient}'s token account for ${input.output_mint} (you pay its rent)`] : []),
       ],
       warnings: warningsOf(params.kind, expiresAt, now, inputToken.scaled || outputToken.scaled),
       create_fee: BigInt(config.createFee),

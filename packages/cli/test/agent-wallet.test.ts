@@ -301,6 +301,31 @@ describe("the wallet server", () => {
     expect((await call(client, "wallet_attest", { owner, nonce: "99", pay_to: worker })).value).toMatchObject({ code: "NotFound" });
   });
 
+  it("pays what a swap buys to the wallet named as pay_to, creating its token account", async () => {
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    const friend = (await generateKeyPairSigner()).address;
+    const theirs = await findAssociatedTokenAddress({ owner: friend, mint: TEST_TOKEN, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const mine = await findAssociatedTokenAddress({ owner, mint: TEST_TOKEN, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const order = { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5", exact: true, pay_to: friend };
+    const preview = await ok(client, "wallet_swap", order);
+    expect(preview["summary"]).toContain(`Pays to: ${friend}, who receives what the solver pays`);
+    expect(preview["summary"]).toContain(`Setup: creates ${friend}'s token account for ${TEST_TOKEN} (you pay its rent)`);
+    expect(preview["summary"]).not.toContain(`Setup: creates your token account for ${TEST_TOKEN} (you pay its rent)`);
+    const sent = await ok(client, "wallet_swap", { ...order, send: true });
+    const account = h.svm.getAccount(sent["intent"] as Address);
+    if (!account.exists) {
+      throw new Error("the intent was not created");
+    }
+    expect(getIntentDecoder().decode(account.data).receiver).toBe(theirs);
+    expect(h.svm.getAccount(theirs).exists).toBe(true);
+    expect(h.svm.getAccount(mine).exists).toBe(false);
+    const again = await ok(client, "wallet_auction", { sell: "SOL", buy: "TEST", amount: "0.01", start_receive: "3", end_receive: "1", falls_over: 60, pay_to: friend });
+    expect(again["summary"]).toContain(`Pays to: ${friend}, who receives what the solver pays`);
+    expect(again["summary"].join(" ")).not.toMatch(/creates .*token account for/);
+    const plan = await ok(client, "wallet_recurring", { sell: "SOL", buy: "TEST", amount: "0.01", min_receive: "1", start_receive: "2", every: 60, times: 2, pay_to: friend });
+    expect(plan["summary"]).toContain(`Pays to: ${friend}, who receives what the solver pays`);
+  });
+
   it("says how to fund an empty wallet before it tries to swap", async () => {
     h.airdropRefused = true;
     const made = await ok(client, "wallet_setup");

@@ -47,6 +47,10 @@ Or repeat a trade on a schedule:
 
 > Buy TEST with 0.05 SOL every hour, five times, for at least 9.5 TEST each.
 
+Or pay someone in a token you do not hold:
+
+> Pay 9Z11K2yyDSMaVxUADQQryQt2gyvKPqxhbuLgBQaZTcy1 at least 9.5 TEST with 0.05 SOL.
+
 Or pay another agent once someone you trust approves its work:
 
 > Escrow 0.05 SOL for the agent that writes my report; my reviewer's wallet decides who gets it.
