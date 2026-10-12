@@ -468,6 +468,108 @@ const walletEscrow = define({
   },
 });
 
+export const MAX_PIECES = 12;
+
+export const piecesPartlySent = (sent: number, total: number, problem: string) =>
+  `${sent} of ${total} pieces were escrowed; the next failed with ${problem}. To finish, escrow only the ${total - sent} remaining pieces; do not repeat this call`;
+
+export const piecesMayHaveLanded = (sent: number, total: number, problem: string) =>
+  `${sent} of ${total} pieces were escrowed and the next may have landed too (${problem}); check ${tool("wallet_intents")} before escrowing any again, and do not repeat this call`;
+
+type Piece = { name: string; amountIn: bigint; attestor: Address };
+
+const walletEscrowPlan = define({
+  name: tool("wallet_escrow_plan"),
+  title: "Escrow a task's pieces in one plan",
+  description: `Split a task into pieces and escrow each piece's payment from this server's wallet in one call, each as ${tool("wallet_escrow")} would: every piece is its own escrow that its attestor releases on its own, to whichever wallet it signs for, so workers are paid as each piece passes. One preview shows every piece and the total; one send escrows them all. A piece not yet released can be cancelled on its own with ${tool("wallet_cancel")}. Have workers deliver to the attestor rather than to this wallet. Amounts are whole tokens. Without send it only previews; show the user the summary and call again with send: true once they approve.`,
+  effect: "submit",
+  repeats: true,
+  input: object({
+    sell: text("SOL, TEST or a mint address: the token to pay with"),
+    attestor: account("the wallet that releases every piece that names no attestor of its own"),
+    pieces: list(
+      object({
+        name: text("a label for the piece, shown in the plan only"),
+        amount: text("whole tokens this piece pays, such as 0.01"),
+        attestor: optional(account("this piece's attestor, instead of the plan's")),
+      }),
+      MAX_PIECES,
+      "the pieces, in order",
+      2,
+    ),
+    expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds each escrow stays open once sent; default ${ESCROW_EXPIRES_IN}`)),
+    record_mint: optional(text("a token the escrows record as their output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet")),
+    send: optional(flag("true signs and sends every piece; leave out to preview")),
+  }),
+  output: object({
+    pieces: list(
+      object({ name: text(), amount: text(), attestor: account(), intent: optional(account()), nonce: optional(amount()), signature: optional(text()) }),
+      MAX_PIECES,
+    ),
+    total: text("whole tokens escrowed across all pieces"),
+    summary: list(text(), 24, "the plan, then the first piece"),
+    warnings: list(text(), 16),
+    sent: flag(),
+    next: optional(text()),
+  }),
+  run: async (ctx: AgentContext, input, call: Call) => {
+    const wallet = access(ctx);
+    const sold = mintNamed(input.sell, wallet.url, "sell");
+    const buy = recordedMint(sold, wallet.url, input.record_mint);
+    const [token, now] = await Promise.all([mintOf(ctx.transport, sold), chainTime(ctx.transport)]);
+    const planned: Piece[] = input.pieces.map((piece, i) => ({
+      name: piece.name,
+      amountIn: raw(piece.amount, token.decimals, `pieces.${i}.amount`),
+      attestor: piece.attestor ?? input.attestor,
+    }));
+    const total = planned.reduce((sum, piece) => sum + piece.amountIn, 0n);
+    for (const piece of planned) {
+      checkSale(wallet.limits, sold, token.decimals, piece.amountIn, now);
+    }
+    checkHour(wallet.limits, sold, token.decimals, total, now);
+    const terms = (piece: Piece) => (_sold: Token, _bought: Token, at: bigint) => ({
+      order: { kind: "attested" as const, amount_in: piece.amountIn, min_result: 1n, max_result: 1n, attestor: piece.attestor },
+      expires_at: at + BigInt((input.expires_in ?? ESCROW_EXPIRES_IN) + LANDING_SECONDS),
+    });
+    const name = TOKEN_NAMES[sold] ?? sold;
+    const listed = (piece: Piece) => ({ name: piece.name, amount: formatAmount(piece.amountIn, token.decimals), attestor: piece.attestor });
+    const [head, ...rest] = planned as [Piece, ...Piece[]];
+    const first = (await offered(ctx, call, { sell: sold, buy, send: input.send }, terms(head))) as Record<string, unknown>;
+    const shown = {
+      total: formatAmount(total, token.decimals),
+      summary: [
+        `Plan: ${planned.length} pieces, ${formatAmount(total, token.decimals)} of ${name} in all, each escrowed now and released on its own`,
+        ...planned.map((piece, i) => `Piece ${i + 1}: ${piece.name}, ${formatAmount(piece.amountIn, token.decimals)} of ${name}, released by ${piece.attestor}`),
+        ...(first["summary"] as string[]),
+      ],
+      warnings: first["warnings"] as string[],
+    };
+    if (input.send !== true) {
+      return { pieces: planned.map(listed), ...shown, sent: false, next: first["next"] };
+    }
+    const pieces = [{ ...listed(head), intent: first["intent"], nonce: first["nonce"], signature: first["signature"] }];
+    for (const piece of rest) {
+      try {
+        const made = (await offered(ctx, call, { sell: sold, buy, send: true }, terms(piece))) as Record<string, unknown>;
+        pieces.push({ ...listed(piece), intent: made["intent"], nonce: made["nonce"], signature: made["signature"] });
+      } catch (error) {
+        for (const undo of call.undo.splice(0)) {
+          undo();
+        }
+        const problem = problemOf(error);
+        const reason = `${problem.code}: ${problem.hint}`;
+        return {
+          pieces: [...pieces, ...planned.slice(pieces.length).map(listed)],
+          ...shown,
+          sent: true,
+          next: refusedBeforeSending(error) ? piecesPartlySent(pieces.length, planned.length, reason) : piecesMayHaveLanded(pieces.length, planned.length, reason),
+        };
+      }
+    }
+    return { pieces, ...shown, sent: true };
+  },
+});
+
 export const PAYEE_MOVED = "this wallet's token account for the escrowed token now belongs to someone else, so a release would not reach it; ask the payee for another wallet";
 
 export const RELEASE_CHANGED = "this release differs from its preview: the payee, amount, result, fee or the escrow itself changed, or no approval was given; preview it again and show the user";
@@ -1080,6 +1182,7 @@ export const WALLET_ACTIONS: readonly AnyAction[] = [
   walletAuction,
   walletRecurring,
   walletEscrow,
+  walletEscrowPlan,
   walletAttest,
   walletWait,
   walletReceipt,

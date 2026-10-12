@@ -59,6 +59,10 @@ The agent sends its work to your reviewer, not to you, because cancelling stays 
 
 > Check the release of my escrow and whether this report is what was paid for.
 
+For a larger task, pay per piece:
+
+> Split building my landing page into parser, API client and page pieces, and escrow 0.01 SOL for each; my reviewer releases each piece as it passes.
+
 It swaps, escrows, releases or cancels nothing until you say yes.
 
 Before a trade it can estimate the price from recent fills. After a send it waits for the fill and tells you what you received.

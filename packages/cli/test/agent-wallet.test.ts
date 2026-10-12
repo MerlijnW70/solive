@@ -44,6 +44,8 @@ import {
   NO_FALL,
   NOT_RELEASED,
   partlySent,
+  piecesMayHaveLanded,
+  piecesPartlySent,
   RELEASE_CHANGED,
   UNREAD,
   WARN_EARLY,
@@ -389,6 +391,85 @@ describe("the wallet server", () => {
     const brief = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.01", attestor: owner, expires_in: 60, send: true });
     setNow(h.svm.getClock().unixTimestamp + 3_600n);
     expect((await call(client, "wallet_attest", { owner, nonce: brief["nonce"], pay_to: worker })).value).toMatchObject({ code: "IntentExpired" });
+  });
+
+  it("escrows a task's pieces in one plan: one preview with the total, one send, each piece released on its own", async () => {
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    const other = (await generateKeyPairSigner()).address;
+    const worker = (await generateKeyPairSigner()).address;
+    const plan = {
+      sell: "SOL",
+      attestor: owner,
+      pieces: [
+        { name: "parser", amount: "0.01" },
+        { name: "api client", amount: "0.02", attestor: other },
+        { name: "page", amount: "0.01" },
+      ],
+    };
+    h.watched.push(owner);
+    const preview = await ok(client, "wallet_escrow_plan", plan);
+    expect(preview).toMatchObject({
+      total: "0.04",
+      sent: false,
+      next: PREVIEW_ONLY,
+      pieces: [
+        { name: "parser", amount: "0.01", attestor: owner },
+        { name: "api client", amount: "0.02", attestor: other },
+        { name: "page", amount: "0.01", attestor: owner },
+      ],
+      warnings: [WARN_ATTESTOR],
+    });
+    expect(preview["pieces"][0]).not.toHaveProperty("intent");
+    expect(preview["summary"].slice(0, 4)).toEqual([
+      "Plan: 3 pieces, 0.04 of SOL in all, each escrowed now and released on its own",
+      `Piece 1: parser, 0.01 of SOL, released by ${owner}`,
+      `Piece 2: api client, 0.02 of SOL, released by ${other}`,
+      `Piece 3: page, 0.01 of SOL, released by ${owner}`,
+    ]);
+    expect((await ok(client, "wallet_intents"))["intents"]).toEqual([]);
+    const sent = await ok(client, "wallet_escrow_plan", { ...plan, send: true });
+    expect(sent).toMatchObject({ sent: true, total: "0.04", pieces: [0, 1, 2].map((i) => ({ nonce: String(i), signature: expect.any(String) })) });
+    expect(sent).not.toHaveProperty("next");
+    const listed = ((await ok(client, "wallet_intents"))["intents"] as Json[]).sort((a, b) => Number(a["nonce"]) - Number(b["nonce"]));
+    expect(listed.map((intent) => intent["order"])).toEqual([
+      expect.objectContaining({ kind: "attested", amount_in: String(LAMPORTS_PER_SOL / 100n), attestor: owner }),
+      expect.objectContaining({ kind: "attested", amount_in: String(LAMPORTS_PER_SOL / 50n), attestor: other }),
+      expect.objectContaining({ kind: "attested", amount_in: String(LAMPORTS_PER_SOL / 100n), attestor: owner }),
+    ]);
+    const release = { owner, nonce: "0", pay_to: worker };
+    const shown = await ok(client, "wallet_attest", release);
+    expect(await ok(client, "wallet_attest", { ...release, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
+    expect((await call(client, "wallet_attest", { owner, nonce: "1", pay_to: worker })).value).toMatchObject({ code: "Unauthorized" });
+    expect(await ok(client, "wallet_cancel", { nonce: "2", send: true })).toMatchObject({ sent: true });
+    const left = ((await ok(client, "wallet_intents"))["intents"] as Json[]).sort((a, b) => Number(a["nonce"]) - Number(b["nonce"]));
+    expect(left.map((intent) => [intent["nonce"], intent["status"]])).toEqual([
+      ["0", "filled"],
+      ["1", "open"],
+    ]);
+    expect((await call(client, "wallet_escrow_plan", { ...plan, pieces: [plan.pieces[0]] })).value).toMatchObject({ code: "InvalidInput" });
+    expect((await call(client, "wallet_escrow_plan", { ...plan, pieces: [plan.pieces[0], { name: "bad", amount: "0.0000000001" }] })).value).toMatchObject({
+      code: "InvalidInput",
+      issues: [{ path: "pieces.1.amount" }],
+    });
+  });
+
+  it("refuses a plan past the hourly limit before escrowing any of it, and reports how far a failed one got", async () => {
+    client = await connect(["mcp", "--url", "devnet", "--wallet", "--wallet-per-hour", "SOL=0.05"]);
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    h.watched.push(owner);
+    const plan = { sell: "SOL", attestor: owner, pieces: [{ name: "a", amount: "0.02" }, { name: "b", amount: "0.02" }, { name: "c", amount: "0.02" }], send: true };
+    expect((await call(client, "wallet_escrow_plan", plan)).value).toMatchObject({ code: "WalletHourLimit" });
+    expect((await ok(client, "wallet_intents"))["intents"]).toEqual([]);
+    const two = { ...plan, pieces: plan.pieces.slice(0, 2).map((piece) => ({ ...piece, amount: "0.01" })) };
+    h.sendFails = { error: new BlockhashExpired("expired"), landed: false, after: 1 };
+    const partly = await ok(client, "wallet_escrow_plan", two);
+    expect(partly["next"]).toBe(piecesPartlySent(1, 2, "Failed: expired"));
+    expect(partly["pieces"][0]).toHaveProperty("intent");
+    expect(partly["pieces"][1]).not.toHaveProperty("intent");
+    h.sendFails = { error: new Error("timed out"), landed: true, after: 1 };
+    const unsure = await ok(client, "wallet_escrow_plan", two);
+    expect(unsure["next"]).toBe(piecesMayHaveLanded(1, 2, "Failed: timed out"));
+    expect((await ok(client, "wallet_intents"))["intents"]).toHaveLength(3);
   });
 
   it("shows an escrow's release and checks received work against the hash the release recorded", async () => {

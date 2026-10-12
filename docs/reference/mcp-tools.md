@@ -2,7 +2,7 @@
 
 # MCP tools
 
-16 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 12 wallet tools, listed first.
+16 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 13 wallet tools, listed first.
 
 ## solive_wallet_setup
 
@@ -120,6 +120,23 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 | `expires_in` | integer 60..31536000 | no | least seconds the escrow stays open once sent; default 86400 |
 | `record_mint` | string | no | a token the escrow records as its output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet |
 | `send` | boolean | no | true signs and sends; leave out to preview |
+
+## solive_wallet_escrow_plan
+
+Served only with `--wallet`.
+
+Split a task into pieces and escrow each piece's payment from this server's wallet in one call, each as solive_wallet_escrow would: every piece is its own escrow that its attestor releases on its own, to whichever wallet it signs for, so workers are paid as each piece passes. One preview shows every piece and the total; one send escrows them all. A piece not yet released can be cancelled on its own with solive_wallet_cancel. Have workers deliver to the attestor rather than to this wallet. Amounts are whole tokens. Without send it only previews; show the user the summary and call again with send: true once they approve.
+
+Effect: `submit` (read-only: false, destructive: false, idempotent: false)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `sell` | string | yes | SOL, TEST or a mint address: the token to pay with |
+| `attestor` | address | yes | the wallet that releases every piece that names no attestor of its own |
+| `pieces` | list of object, 2 to 12 | yes | the pieces, in order |
+| `expires_in` | integer 60..31536000 | no | least seconds each escrow stays open once sent; default 86400 |
+| `record_mint` | string | no | a token the escrows record as their output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet |
+| `send` | boolean | no | true signs and sends every piece; leave out to preview |
 
 ## solive_wallet_attest
 
