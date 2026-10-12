@@ -1,6 +1,7 @@
 use intent_core::sig::{
-    check_ed25519_ix, ed25519_header, offchain_envelope, AttestedFill, AttestedProof, SignedIntent,
-    ATTEST_PROOF_TAG, ATTEST_TAG, ED25519_PROGRAM_ID, INTENT_TAG, OFFCHAIN_PREFIX,
+    check_ed25519_ix, ed25519_header, offchain_envelope, AttestedFill, AttestedProof,
+    AttestedSplit, SignedIntent, ATTEST_PROOF_TAG, ATTEST_SPLIT_TAG, ATTEST_TAG,
+    ED25519_PROGRAM_ID, INTENT_TAG, OFFCHAIN_PREFIX,
 };
 use intent_core::Error;
 
@@ -546,4 +547,60 @@ fn a_non_attested_intent_has_no_proof_spec_or_judge_fee() {
         assert_eq!(intent.spec_hash(), [0u8; 32]);
         assert_eq!(intent.judge_fee(), 0);
     }
+}
+
+#[test]
+fn a_split_attestation_lays_out_every_field_and_binds_the_split_hash_under_a_distinct_tag() {
+    let base = AttestedSplit {
+        program: [1; 32],
+        domain: [4; 32],
+        intent: [2; 32],
+        amount_in: 0x0506,
+        result: 0x0a0b_0c0d,
+        filled: 0x1112,
+        revision: 0x2122_2324,
+        max_fee_bps: 0x3132,
+        ext_hash: [6; 32],
+        spec_hash: [7; 32],
+        split_hash: [8; 32],
+    };
+    let m = base.preimage();
+    assert_eq!(m.len(), 238);
+    assert_ne!(ATTEST_SPLIT_TAG, ATTEST_PROOF_TAG);
+    assert_ne!(ATTEST_SPLIT_TAG, ATTEST_TAG);
+    assert_eq!(m.get(0..16), Some(&ATTEST_SPLIT_TAG[..]));
+    assert_eq!(m.get(16..48), Some(&[1; 32][..]));
+    assert_eq!(m.get(48..80), Some(&[4; 32][..]));
+    assert_eq!(m.get(80..112), Some(&[2; 32][..]));
+    assert_eq!(m.get(112..120), Some(&0x0506u64.to_le_bytes()[..]));
+    assert_eq!(m.get(120..128), Some(&0x0a0b_0c0du64.to_le_bytes()[..]));
+    assert_eq!(m.get(128..136), Some(&0x1112u64.to_le_bytes()[..]));
+    assert_eq!(m.get(136..140), Some(&0x2122_2324u32.to_le_bytes()[..]));
+    assert_eq!(m.get(140..142), Some(&0x3132u16.to_le_bytes()[..]));
+    assert_eq!(m.get(142..174), Some(&[6; 32][..]));
+    assert_eq!(m.get(174..206), Some(&[7; 32][..]));
+    assert_eq!(m.get(206..238), Some(&[8; 32][..]));
+}
+
+#[test]
+fn a_split_attestation_changes_only_the_tail_when_the_split_hash_changes() {
+    let base = AttestedSplit {
+        program: [1; 32],
+        domain: [4; 32],
+        intent: [2; 32],
+        amount_in: 0x0506,
+        result: 0x0a0b_0c0d,
+        filled: 0x1112,
+        revision: 0x2122_2324,
+        max_fee_bps: 0x3132,
+        ext_hash: [6; 32],
+        spec_hash: [7; 32],
+        split_hash: [8; 32],
+    };
+    let other = AttestedSplit {
+        split_hash: [9; 32],
+        ..base
+    };
+    assert_ne!(base.preimage(), other.preimage());
+    assert_eq!(base.preimage().get(0..206), other.preimage().get(0..206));
 }
