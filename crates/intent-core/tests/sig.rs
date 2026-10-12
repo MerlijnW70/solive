@@ -433,3 +433,29 @@ fn a_proof_attestation_binds_the_domain() {
     assert_eq!(b[..48], o[..48]);
     assert_eq!(b[80..], o[80..]);
 }
+
+#[test]
+fn a_proof_attestation_binds_the_filled() {
+    let base = AttestedProof {
+        program: [1; 32],
+        domain: [4; 32],
+        intent: [2; 32],
+        payee: [3; 32],
+        amount_in: 0x0506,
+        result: 0x0a0b_0c0d,
+        filled: 0x1112,
+        revision: 0x2122_2324,
+        max_fee_bps: 0x3132,
+        ext_hash: [7; 32],
+        spec_hash: [8; 32],
+    };
+    let other = AttestedProof {
+        filled: 0x7777_8888,
+        ..base
+    };
+    let b = base.preimage();
+    let o = other.preimage();
+    assert_ne!(b, o);
+    assert_eq!(b[..160], o[..160]);
+    assert_eq!(b[168..], o[168..]);
+}
