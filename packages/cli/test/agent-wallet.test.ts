@@ -463,12 +463,12 @@ describe("the wallet server", () => {
     const two = { ...plan, pieces: plan.pieces.slice(0, 2).map((piece) => ({ ...piece, amount: "0.01" })) };
     h.sendFails = { error: new BlockhashExpired("expired"), landed: false, after: 1 };
     const partly = await ok(client, "wallet_escrow_plan", two);
-    expect(partly["next"]).toBe(piecesPartlySent(1, 2, "Failed: expired"));
+    expect(partly).toMatchObject({ sent: true, total: "0.02", next: piecesPartlySent(1, 2, "Failed: expired") });
     expect(partly["pieces"][0]).toHaveProperty("intent");
     expect(partly["pieces"][1]).not.toHaveProperty("intent");
     h.sendFails = { error: new Error("timed out"), landed: true, after: 1 };
     const unsure = await ok(client, "wallet_escrow_plan", two);
-    expect(unsure["next"]).toBe(piecesMayHaveLanded(1, 2, "Failed: timed out"));
+    expect(unsure).toMatchObject({ sent: true, next: piecesMayHaveLanded(1, 2, "Failed: timed out") });
     expect((await ok(client, "wallet_intents"))["intents"]).toHaveLength(3);
   });
 
