@@ -1302,3 +1302,63 @@ fn a_proof_intent_with_a_partner_conserves_every_lamport() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn a_one_lamport_judge_fee_is_still_paid_and_conserves() -> TestResult {
+    let (mut env, market, trader) = setup()?;
+    let owner = trader.key.pubkey();
+    let attestor = Keypair::new();
+    const SPEC: [u8; 32] = [0x7a; 32];
+    const JF: u64 = 1;
+    let spec = IntentSpec {
+        kind: Kind::AttestedResult as u8,
+        params: attested_result::Params {
+            amount_in: ESCROW,
+            min_result: 1,
+            max_result: 1,
+            attestor: attestor.pubkey().to_bytes(),
+            spec_hash: SPEC,
+            judge_fee: JF,
+        }
+        .encode()
+        .map_err(|e| format!("{e:?}"))?,
+        ..swap_spec(0, ESCROW)?
+    };
+    env.create_intent(&trader, &market, &spec)?;
+    let intent = intent_pda(&owner, 0);
+    assert_eq!(
+        env.balance(&vault_pda(&intent))?,
+        ESCROW,
+        "the escrow holds amount_in, not amount_in+fee"
+    );
+    let solver = env.solver(&market, 0)?;
+    let fee_to = env.fee_account(&market)?;
+    let payee = solver.input;
+    let judge_ata = env.create_ata(&attestor.pubkey(), &market.input_mint, market.input_program)?;
+    let msg =
+        attestation_proof_message(DOMAIN, &attestor.pubkey(), &intent, &payee, ESCROW, 1, SPEC);
+
+    let fee_before = env.balance(&fee_to)?;
+    env.judge_to = Some(judge_ata);
+    let fill = env.fill_attested_ix(
+        &solver.key.pubkey(),
+        &owner,
+        &market,
+        0,
+        &payee,
+        Some(&fee_to),
+        1,
+    );
+    env.send(&solver.key, &[ed25519_ix(&attestor, &msg), fill], &[])?;
+    let judge_paid = env.balance(&judge_ata)?;
+    let worker_paid = env.balance(&payee)?;
+    let protocol = env.balance(&fee_to)? - fee_before;
+    assert_eq!(judge_paid, 1, "the judge is paid its 1-lamport fee");
+    assert_eq!(env.balance(&vault_pda(&intent))?, 0, "the vault is drained");
+    assert_eq!(
+        judge_paid + worker_paid + protocol,
+        ESCROW,
+        "nothing is minted or lost"
+    );
+    Ok(())
+}
