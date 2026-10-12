@@ -1362,3 +1362,75 @@ fn a_one_lamport_judge_fee_is_still_paid_and_conserves() -> TestResult {
     );
     Ok(())
 }
+
+#[test]
+fn a_one_lamport_partner_fee_is_still_paid_and_conserves() -> TestResult {
+    let (mut env, market, trader) = setup()?;
+    let owner = trader.key.pubkey();
+    let attestor = Keypair::new();
+    let partner = Pubkey::new_unique();
+    const SPEC: [u8; 32] = [0x3c; 32];
+    const JF: u64 = 40;
+    const PARTNER_BPS: u16 = 25;
+    let spec = IntentSpec {
+        kind: Kind::AttestedResult as u8,
+        params: attested_result::Params {
+            amount_in: ESCROW,
+            min_result: 1,
+            max_result: 1,
+            attestor: attestor.pubkey().to_bytes(),
+            spec_hash: SPEC,
+            judge_fee: JF,
+        }
+        .encode()
+        .map_err(|e| format!("{e:?}"))?,
+        ext: partner_ext(&partner, PARTNER_BPS),
+        ..swap_spec(0, ESCROW)?
+    };
+    env.create_intent(&trader, &market, &spec)?;
+    let intent = intent_pda(&owner, 0);
+    assert_eq!(
+        env.balance(&vault_pda(&intent))?,
+        ESCROW,
+        "the escrow holds amount_in, not amount_in+fee"
+    );
+    let solver = env.solver(&market, 0)?;
+    let fee_to = env.fee_account(&market)?;
+    let payee = solver.input;
+    let judge_ata = env.create_ata(&attestor.pubkey(), &market.input_mint, market.input_program)?;
+    let partner_ata = env.create_ata(&partner, &market.input_mint, market.input_program)?;
+    env.judge_to = Some(judge_ata);
+    env.partner_to = Some(partner_ata);
+    let fee_to_before = env.balance(&fee_to)?;
+    let msg =
+        attestation_proof_message(DOMAIN, &attestor.pubkey(), &intent, &payee, ESCROW, 1, SPEC);
+    let fill = env.fill_attested_ix(
+        &solver.key.pubkey(),
+        &owner,
+        &market,
+        0,
+        &payee,
+        Some(&fee_to),
+        1,
+    );
+    env.send(&solver.key, &[ed25519_ix(&attestor, &msg), fill], &[])?;
+    assert_eq!(
+        env.balance(&judge_ata)?,
+        JF,
+        "the judge is paid exactly its fee"
+    );
+    assert_eq!(
+        env.balance(&partner_ata)?,
+        1,
+        "a one-lamport partner share is still paid"
+    );
+    assert_eq!(env.balance(&vault_pda(&intent))?, 0, "the vault is drained");
+    assert_eq!(
+        JF + env.balance(&payee)?
+            + env.balance(&partner_ata)?
+            + (env.balance(&fee_to)? - fee_to_before),
+        ESCROW,
+        "nothing is minted or lost across judge, partner, worker and protocol"
+    );
+    Ok(())
+}
