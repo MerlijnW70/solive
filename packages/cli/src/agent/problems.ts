@@ -192,6 +192,7 @@ export const SERVER_PROBLEMS = {
   WalletEmpty: never("the wallet holds no SOL; fund it from a faucet, then try again"),
   WalletTokenNotAllowed: never("the server was started with sell limits that do not name this token"),
   WalletTradeLimit: never("the trade sells more than the server's --wallet-per-trade limit for this token"),
+  ReleaseChanged: never("the release differs from the one previewed: its payee, amount, result, fee or the escrow itself changed; preview it again and show the user"),
   WalletHourLimit: later("the wallet sold as much of this token in the last hour as the server's --wallet-per-hour limit allows; try later or sell less"),
   AgentNotConfigured: never(`${tool("agent_create")} was called on a server started without --agent`),
   OwnerNotServed: never("the owner is not in the server's --agent-owners list"),

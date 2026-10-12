@@ -18,6 +18,7 @@ import { Charged,
   changesFrom,
   CONFIRM_POLLS,
   confirm,
+  confirmSent,
   patiently,
   POLL_MS,
   RATE_LIMIT_ATTEMPTS,
@@ -41,7 +42,7 @@ const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
 
 type Status = { err: unknown; confirmationStatus: string | null } | null;
 
-function stub(statuses: Status[], heights: bigint[] = [0n]) {
+function stub(statuses: Status[], heights: bigint[] = [0n], seen: bigint[] = []) {
   const calls: string[] = [];
   const sent: string[] = [];
   const rpc = {
@@ -101,13 +102,14 @@ function stub(statuses: Status[], heights: bigint[] = [0n]) {
     getSignatureStatuses: (signatures: Signature[], config?: { searchTransactionHistory: boolean }) => ({
       send: async () => {
         calls.push(`status:${signatures.join(",")}${config?.searchTransactionHistory === true ? ":history" : ""}`);
-        return { value: [statuses.shift() ?? null] };
+        return { context: { slot: seen.shift() ?? 1_000_000n }, value: [statuses.shift() ?? null] };
       },
     }),
-    getBlockHeight: () => ({
+    getEpochInfo: () => ({
       send: async () => {
-        calls.push("height");
-        return heights.shift() ?? 0n;
+        calls.push("epoch");
+        const blockHeight = heights.shift() ?? 0n;
+        return { blockHeight, absoluteSlot: blockHeight + 100n };
       },
     }),
     getGenesisHash: () => ({ send: async () => "GENESIS" }),
@@ -206,12 +208,47 @@ describe("confirm", () => {
   it("looks a transaction up once more before calling it expired, since it may have landed between the two reads", async () => {
     const landed = stub([null, { err: null, confirmationStatus: "confirmed" }], [11n]);
     await confirm(landed.rpc, SIG, 10n, landed.wait);
-    expect(landed.calls).toEqual([`status:${SIG}`, "height", `status:${SIG}:history`]);
+    expect(landed.calls).toEqual([`status:${SIG}`, "epoch", `status:${SIG}:history`]);
     const failed = await confirm(stub([null, { err: "boom", confirmationStatus: "confirmed" }], [11n]).rpc, SIG, 10n).catch((e: unknown) => e);
     expect(failed).toBeInstanceOf(FailedOnChain);
     const pending = await confirm(stub([null, { err: null, confirmationStatus: "processed" }], [11n]).rpc, SIG, 10n).catch((e: unknown) => e);
     expect(pending).toBeInstanceOf(Charged);
     expect(neverLanded(pending)).toBe(false);
+  });
+
+  it("calls a transaction expired only on a status read from a node that has seen the block past its last valid height", async () => {
+    const lagging = stub([null, null, null, { err: null, confirmationStatus: "confirmed" }], [11n, 11n], [1_000_000n, 50n]);
+    await confirm(lagging.rpc, SIG, 10n, lagging.wait);
+    expect(lagging.calls).toEqual([`status:${SIG}`, "epoch", `status:${SIG}:history`, `status:${SIG}`, "epoch", `status:${SIG}:history`]);
+    const caught = stub([null, null], [11n], [1_000_000n, 111n]);
+    await expect(confirm(caught.rpc, SIG, 10n, caught.wait)).rejects.toBeInstanceOf(BlockhashExpired);
+    const behind = stub([null, null], [11n], [1_000_000n, 110n]);
+    const unsure = await confirm(behind.rpc, SIG, 10n, behind.wait).catch((e: unknown) => e);
+    expect(neverLanded(unsure)).toBe(false);
+  });
+
+  it("keeps waiting on a failure seen only as processed, since another fork may still land it", async () => {
+    const s = stub([{ err: "boom", confirmationStatus: "processed" }, { err: null, confirmationStatus: "confirmed" }]);
+    await confirm(s.rpc, SIG, 10n, s.wait);
+    const late = await confirm(stub([null, { err: "boom", confirmationStatus: "processed" }], [11n]).rpc, SIG, 10n).catch((e: unknown) => e);
+    expect(late).toBeInstanceOf(Charged);
+    expect(neverLanded(late)).toBe(false);
+  });
+
+  it("says a sent transaction may have landed when its confirmation cannot be read, rather than that it failed", async () => {
+    const s = stub([]);
+    const throttled = { ...s.rpc, getSignatureStatuses: () => ({ send: async () => Promise.reject(new Error("HTTP error (429): Too Many Requests")) }) };
+    const lost = await confirmSent(throttled, SIG, 10n, s.wait).catch((e: unknown) => e);
+    expect(lost).toBeInstanceOf(Charged);
+    expect(neverLanded(lost)).toBe(false);
+    expect(rateLimited(lost)).toBe(false);
+    expect((lost as Error).message).toBe(
+      `transaction ${SIG} was sent but its confirmation could not be read (HTTP error (429): Too Many Requests); look the signature up before sending again`,
+    );
+    const failed = await confirmSent(stub([{ err: "boom", confirmationStatus: "confirmed" }]).rpc, SIG, 10n).catch((e: unknown) => e);
+    expect(failed).toBeInstanceOf(FailedOnChain);
+    const expired = await confirmSent(stub([null, null], [11n]).rpc, SIG, 10n).catch((e: unknown) => e);
+    expect(expired).toBeInstanceOf(BlockhashExpired);
   });
 
   it("stops waiting on a node whose block height never moves, and says to look the signature up", async () => {
@@ -438,7 +475,7 @@ describe("engine transactions", () => {
     const found = await transport.engineTransactions(5);
     expect(found).toEqual([
       { signature: SIG, slot: 7n, blockTime: 100n, failed: false, emitted: [new Uint8Array([1, 2]), new Uint8Array([4, 5])] },
-      { signature: OTHER_SIG, slot: 8n, blockTime: null, failed: true, emitted: [] },
+      { signature: OTHER_SIG, slot: 8n, blockTime: null, failed: true, emitted: [], unread: true },
     ]);
     expect(s.calls).toEqual([
       `signatures:${INTENT_ENGINE_PROGRAM_ADDRESS}:5`,

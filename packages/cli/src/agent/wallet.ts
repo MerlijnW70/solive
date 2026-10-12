@@ -1,4 +1,5 @@
-import type { Address, KeyPairSigner } from "@solana/kit";
+import { createHash } from "node:crypto";
+import { type Address, getAddressDecoder, type KeyPairSigner } from "@solana/kit";
 import {
   attestedFillMessage,
   buildFillAttested,
@@ -7,13 +8,16 @@ import {
   feeBpsFor,
   findIntentPda,
   formatAmount,
+  formatTime,
   getIntentDecoder,
   IntentStatus,
   Kind,
+  LONG_LIVED_SECONDS,
   parseAmount,
   signEd25519Instruction,
   splitFees,
   WARN_ATTESTOR,
+  WARN_LONG_LIVED,
 } from "@intent-engine/core";
 import { chainTime, CLOCK_SYSVAR, loadConfig, mintOf } from "../accounts.js";
 import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "../args.js";
@@ -334,6 +338,7 @@ export const SWAP_FALLS_OVER = 120;
 export const PAY_TO = "the wallet that receives what is bought, such as someone this wallet pays; default this wallet. This wallet pays for its token account if it has none";
 export const SWAP_HEADROOM_BPS = 200n;
 export const SWAP_BLIND_BPS = 2_500n;
+export const SWAP_CAP_BPS = 20_000n;
 
 async function recentFills(transport: Transport, inputMint: Address, outputMint: Address): Promise<Fill[]> {
   const { created, fills } = await engineHistory(transport, ESTIMATE_SCAN);
@@ -351,19 +356,26 @@ async function recentFills(transport: Transport, inputMint: Address, outputMint:
     .slice(0, ESTIMATE_FILLS);
 }
 
-const bestOf = (fills: Fill[]): Fill | undefined =>
-  fills.reduce<Fill | undefined>((a, b) => (a === undefined || b.delivered * a.amountIn > a.delivered * b.amountIn ? b : a), undefined);
+const byRate = (fills: Fill[]): Fill[] =>
+  [...fills].sort((a, b) => (a.delivered * b.amountIn < b.delivered * a.amountIn ? -1 : a.delivered * b.amountIn > b.delivered * a.amountIn ? 1 : 0));
+
+const bestOf = (fills: Fill[]): Fill | undefined => byRate(fills).at(-1);
+
+const medianOf = (fills: Fill[]): Fill | undefined => byRate(fills)[Math.floor((fills.length - 1) / 2)];
 
 function openingAsk(fills: Fill[], amount: bigint, floor: bigint): bigint {
-  const best = bestOf(fills);
-  const ask = best === undefined ? (floor * (10_000n + SWAP_BLIND_BPS)) / 10_000n : (amount * best.delivered * (10_000n + SWAP_HEADROOM_BPS)) / (best.amountIn * 10_000n);
-  return ask > floor ? ask : floor;
+  const typical = medianOf(fills);
+  const blind = (floor * (10_000n + SWAP_BLIND_BPS)) / 10_000n;
+  const seen = typical === undefined ? 0n : (amount * typical.delivered * (10_000n + SWAP_HEADROOM_BPS)) / (typical.amountIn * 10_000n);
+  const cap = (floor * SWAP_CAP_BPS) / 10_000n;
+  const ask = seen > blind ? seen : blind;
+  return ask < cap ? ask : cap;
 }
 
 const walletSwap = define({
   name: tool("wallet_swap"),
   title: "Swap from the wallet",
-  description: `Sell an exact amount of one token for at least min_receive of another, from this server's wallet: the tokens are escrowed in an intent that a solver fills or that the wallet gets back. Solvers pay the least an intent asks, so by default the ask starts at start_receive, a little above the best recent fill, and falls to min_receive over falls_over seconds (default ${SWAP_FALLS_OVER}): a solver takes it near the most it can pay. exact: true asks min_receive from the start instead. Amounts are whole tokens such as 0.05. Selling SOL wraps it first. Without send it only previews; show the user the summary, then call again with send: true and the start_receive the preview returned once they approve.`,
+  description: `Sell an exact amount of one token for at least min_receive of another, from this server's wallet: the tokens are escrowed in an intent that a solver fills or that the wallet gets back. Solvers pay the least an intent asks, so by default the ask starts at start_receive, a little above the median of recent fills but at least a quarter above min_receive and at most twice it, and falls to min_receive over falls_over seconds (default ${SWAP_FALLS_OVER}): a solver takes it near the most it can pay. exact: true asks min_receive from the start instead. Amounts are whole tokens such as 0.05. Selling SOL wraps it first. Without send it only previews; show the user the summary, then call again with send: true and the start_receive the preview returned once they approve.`,
   effect: "submit",
   repeats: true,
   input: object({
@@ -371,7 +383,7 @@ const walletSwap = define({
     buy: text("SOL, TEST or a mint address"),
     amount: text("whole tokens to sell, such as 0.05"),
     min_receive: text("least whole tokens to receive for all of it"),
-    start_receive: optional(text("whole tokens asked when the offer lands; default a little above the best recent fill")),
+    start_receive: optional(text("whole tokens asked when the offer lands; default a little above the median recent fill, between 1.25 and 2 times min_receive")),
     falls_over: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `seconds the ask takes to fall to min_receive; default ${SWAP_FALLS_OVER}`)),
     exact: optional(flag("true asks min_receive from the start, with no falling ask")),
     pay_to: optional(account(PAY_TO)),
@@ -427,7 +439,7 @@ function recordedMint(sell: Address, url: string, chosen: string | undefined): A
 const walletEscrow = define({
   name: tool("wallet_escrow"),
   title: "Escrow a payment for an attestor to release",
-  description: `Lock an exact amount of one token from this server's wallet in an attested intent: it goes, minus the engine fee, to whichever wallet the named attestor later signs for, once the attestor attests a result between min_result and max_result. Use it to pay another agent for work that a third agent or a person judges. The attestor alone decides who is paid; nothing else is checked on chain, so name an attestor the user trusts. Until then the wallet can cancel it with ${tool("wallet_cancel")}, and after it expires anyone can return the escrow. Amounts are whole tokens such as 0.05. Without send it only previews; show the user the summary and call again with send: true once they approve.`,
+  description: `Hold an exact amount of one token from this server's wallet in an attested intent: it goes, minus the engine fee, to whichever wallet the named attestor later signs for, once the attestor attests a result between min_result and max_result. Use it to pay another agent for work that a third agent or a person judges. The attestor alone decides who is paid; nothing else is checked on chain, so name an attestor the user trusts. Until then the wallet can cancel it with ${tool("wallet_cancel")}, and after it expires anyone can return the escrow. Amounts are whole tokens such as 0.05. Without send it only previews; show the user the summary and call again with send: true once they approve.`,
   effect: "submit",
   repeats: true,
   input: object({
@@ -456,19 +468,26 @@ const walletEscrow = define({
   },
 });
 
+export const PAYEE_MOVED = "this wallet's token account for the escrowed token now belongs to someone else, so a release would not reach it; ask the payee for another wallet";
+
+export const RELEASE_CHANGED = "this release differs from its preview: the payee, amount, result, fee or the escrow itself changed, or no approval was given; preview it again and show the user";
+
+export const approvalOf = (message: Uint8Array): string => createHash("sha256").update(message).digest("hex").slice(0, 16);
+
 export const notAttestor = (attestor: string) =>
   `this intent names ${attestor} as its attestor, not this server's wallet; only that key can release it`;
 
 const walletAttest = define({
   name: tool("wallet_attest"),
   title: "Release an escrow as its attestor",
-  description: `As the attestor an escrow names, sign that it pays pay_to and settle it on chain from this server's wallet: the escrowed tokens, minus the engine fee, go to pay_to's token account, which this creates if needed. Use it when this server's wallet was named attestor of an intent made with ${tool("wallet_escrow")} and the work it pays for is done. Without send it only previews and signs nothing; show the user the summary and call again with send: true once they approve.`,
+  description: `As the attestor an escrow names, sign that it pays pay_to and settle it on chain from this server's wallet: the escrowed tokens, minus the engine fee and any partner fee, go to pay_to's token account, which this creates if needed. Use it when this server's wallet was named attestor of an intent made with ${tool("wallet_escrow")} and the work it pays for is done. A release cannot be undone. Without send it only previews and signs nothing; show the user the summary and, once they approve, call again with send: true and the approval the preview returned, which holds the send to exactly what was previewed.`,
   effect: "submit",
   input: object({
     owner: account("the wallet that made the escrow"),
     nonce: amount("the escrow intent's nonce"),
     pay_to: account("the wallet to pay"),
     result: optional(amount("the result to attest, between the intent's min_result and max_result; default min_result")),
+    approval: optional(text("the approval the preview returned; needed with send")),
     send: optional(flag("true signs the attestation and settles; leave out to preview")),
   }),
   output: object({
@@ -478,6 +497,7 @@ const walletAttest = define({
     paid: text("whole tokens pay_to receives"),
     fee: text("whole tokens kept as fees"),
     result: amount(),
+    approval: text("pass it back with send: true; a send that would differ from this preview is refused"),
     summary: list(text(), 8),
     warnings: list(text(), 8),
     sent: flag(),
@@ -512,6 +532,13 @@ const walletAttest = define({
     await walletRecipient(ctx.transport, input.pay_to, "pay_to");
     const token = await mintOf(ctx.transport, held.inputMint);
     const payee = await tokenAccountIfMissing(ctx.transport, signer, input.pay_to, held.inputMint, token.tokenProgram);
+    if (payee.create.length === 0) {
+      const existing = await ctx.transport.getAccount(payee.address);
+      const holder = existing === null || existing.data.length < 64 ? null : getAddressDecoder().decode(existing.data.subarray(32, 64));
+      if (holder !== input.pay_to) {
+        throw new InvalidInput([{ path: "pay_to", message: PAYEE_MOVED }]);
+      }
+    }
     const amountIn = held.escrowed - held.filled;
     const maxFeeBps = feeBpsFor(config, held.kind) + held.partnerBps;
     const shares = splitFees(amountIn, feeBpsFor(config, held.kind), held.partnerBps, held.partnerCutBps);
@@ -519,8 +546,9 @@ const walletAttest = define({
       shares.protocol > 0n
         ? await tokenAccountIfMissing(ctx.transport, signer, config.feeRecipient, held.inputMint, token.tokenProgram)
         : { create: [] };
+    const partnerPaid = shares.partner > 0n;
     const partner =
-      shares.partner > 0n ? await tokenAccountIfMissing(ctx.transport, signer, held.partner, held.inputMint, token.tokenProgram) : { create: [] };
+      partnerPaid ? await tokenAccountIfMissing(ctx.transport, signer, held.partner, held.inputMint, token.tokenProgram) : { create: [] };
     const message = await attestedFillMessage(signer.address, {
       domain: Uint8Array.from(config.domain),
       intent,
@@ -539,7 +567,7 @@ const walletAttest = define({
       inputTokenProgram: token.tokenProgram,
       payee: payee.address,
       ...(shares.protocol > 0n ? { feeRecipient: config.feeRecipient } : {}),
-      ...(held.partnerBps === 0 ? {} : { partner: held.partner }),
+      ...(partnerPaid ? { partner: held.partner } : {}),
       amountIn,
       result,
       maxFeeBps,
@@ -547,6 +575,10 @@ const walletAttest = define({
     const name = TOKEN_NAMES[held.inputMint] ?? held.inputMint;
     const paid = formatAmount(shares.net, token.decimals);
     const setup = [...payee.create, ...treasury.create, ...partner.create];
+    const approval = approvalOf(message);
+    if (input.send === true && input.approval !== approval) {
+      throw new AgentRefusal("ReleaseChanged", RELEASE_CHANGED);
+    }
     const prepared =
       input.send === true
         ? preparedView(await prepare(ctx.transport, [...setup, await signEd25519Instruction(signer, message), settle], signer.address))
@@ -558,6 +590,7 @@ const walletAttest = define({
       paid,
       fee: formatAmount(shares.protocol + shares.partner, token.decimals),
       result,
+      approval,
       summary: [
         `Pays: ${paid} of ${name} to ${input.pay_to} from ${input.owner}'s escrow${held.inputMint === NATIVE_MINT ? WRAPPED : ""}`,
         `Attests: result ${result}, signed by this server's wallet as the escrow's attestor`,
@@ -575,13 +608,22 @@ const walletAttest = define({
 export const MAX_RECURRING = 12;
 
 export const mayHaveLanded = (sent: number, times: number, problem: string) =>
-  `${sent} of ${times} orders were sent and the next may have landed too (${problem}); check ${tool("wallet_intents")} before sending any again`;
+  `${sent} of ${times} orders were sent and the next may have landed too (${problem}); check ${tool("wallet_intents")} before sending any again, and do not repeat this call`;
+
+export const partlySent = (sent: number, times: number, problem: string) =>
+  `${sent} of ${times} orders were sent; the next failed with ${problem}. To finish, schedule only the ${times - sent} remaining orders; do not repeat this call`;
+
+export const WARN_EARLY = "an order fills before its turn if a solver can already pay its start_receive";
+
+export const NO_FALL = "must be more than 0, or the orders have no ask to fall";
+
+const refusedBeforeSending = (error: unknown): boolean => neverLanded(error) || error instanceof AgentRefusal || error instanceof InvalidInput;
 export const MAX_EVERY = 30 * 24 * 60 * 60;
 
 const walletRecurring = define({
   name: tool("wallet_recurring"),
   title: "Repeat a swap on a schedule",
-  description: `Sell the same amount of one token for another several times, every so many seconds, from this server's wallet, with no bot left running: all orders are sent now and escrowed now. Each order holds its ask at start_receive, a little above the best recent fill, until its turn, then lets it fall to min_receive over falls_over seconds; it expires when the next one opens, or falls_over seconds after its own opening if that is later, and anyone can then return its escrow. Any order can be cancelled with ${tool("wallet_cancel")}. Each order pays the create fee and rent, and the rent returns when it closes. Amounts are whole tokens per order. Without send it only previews; show the user the summary, then call again with send: true and the start_receive the preview returned once they approve.`,
+  description: `Sell the same amount of one token for another several times, every so many seconds, from this server's wallet, with no bot left running: all orders are sent now and escrowed now. Each order holds its ask at start_receive until its turn, then lets it fall to min_receive over falls_over seconds; it expires when the next one opens, or falls_over seconds after its own opening if that is later, and anyone can then return its escrow. An order fills before its turn if a solver can already pay start_receive, so set it above what solvers pay now to hold the orders. Any order can be cancelled with ${tool("wallet_cancel")}. Each order pays the create fee and rent, and the rent returns when it closes. Amounts are whole tokens per order. Without send it only previews; show the user the summary, then call again with send: true and the start_receive the preview returned once they approve.`,
   effect: "submit",
   repeats: true,
   input: object({
@@ -591,7 +633,7 @@ const walletRecurring = define({
     min_receive: text("least whole tokens each order receives"),
     every: integer(MIN_EXPIRES_IN, MAX_EVERY, "seconds between one order opening and the next"),
     times: integer(2, MAX_RECURRING, "how many orders"),
-    start_receive: optional(text("whole tokens each order asks when it opens; default a little above the best recent fill")),
+    start_receive: optional(text("whole tokens each order asks until and when it opens; default a little above the median recent fill, between 1.25 and 2 times min_receive")),
     falls_over: optional(integer(MIN_EXPIRES_IN, MAX_EVERY, `seconds each order's ask takes to fall to min_receive; default ${SWAP_FALLS_OVER}`)),
     pay_to: optional(account(PAY_TO)),
     send: optional(flag("true signs and sends every order; leave out to preview")),
@@ -601,7 +643,7 @@ const walletRecurring = define({
       object({ opens_at: time("when the order's ask starts to fall"), intent: optional(account()), nonce: optional(amount()), signature: optional(text()) }),
       MAX_RECURRING,
     ),
-    summary: list(text(), 24, "the first order"),
+    summary: list(text(), 24, "the whole plan, then the first order"),
     warnings: list(text(), 16),
     start_receive: text("whole tokens each order asks when it opens; pass it back when sending"),
     sent: flag(),
@@ -623,7 +665,9 @@ const walletRecurring = define({
         ? openingAsk(await recentFills(ctx.transport, inputMint, outputMint), amountIn, floor)
         : raw(input.start_receive, outputToken.decimals, "start_receive");
     if (ask <= floor) {
-      throw new InvalidInput([{ path: "start_receive", message: "must be more than min_receive, or the order has no ask to fall" }]);
+      throw new InvalidInput([
+        input.start_receive === undefined ? { path: "min_receive", message: NO_FALL } : { path: "start_receive", message: "must be more than min_receive, or the order has no ask to fall" },
+      ]);
     }
     checkSale(wallet.limits, inputMint, inputToken.decimals, amountIn, now);
     checkHour(wallet.limits, inputMint, inputToken.decimals, amountIn * BigInt(input.times), now);
@@ -636,10 +680,22 @@ const walletRecurring = define({
       expires_at: open + life,
     });
     const shown = { start_receive: formatAmount(ask, outputToken.decimals) };
+    const last = opens[opens.length - 1] as bigint;
     const first = (await offered(ctx, call, { ...input, send: input.send }, terms(opens[0] as bigint))) as Record<string, unknown>;
+    const sold = TOKEN_NAMES[inputMint] ?? inputMint;
+    const plan = [
+      `Plan: ${input.times} orders of ${formatAmount(amountIn, inputToken.decimals)} of ${sold}, ${formatAmount(amountIn * BigInt(input.times), inputToken.decimals)} of ${sold} in all, escrowed now`,
+      `Schedule: the orders open from ${formatTime(opens[0] as bigint)} to ${formatTime(last)}; the last expires ${formatTime(last + life)}`,
+      ...(first["summary"] as string[]),
+    ];
+    const warned = first["warnings"] as string[];
+    const warnings = [
+      ...warned,
+      WARN_EARLY,
+      ...(last + life - now > LONG_LIVED_SECONDS && !warned.includes(WARN_LONG_LIVED) ? [WARN_LONG_LIVED] : []),
+    ];
     if (input.send !== true) {
-      const { summary, warnings, next } = first as { summary: string[]; warnings: string[]; next: string };
-      return { orders: opens.map((opens_at) => ({ opens_at })), summary, warnings, ...shown, sent: false, next };
+      return { orders: opens.map((opens_at) => ({ opens_at })), summary: plan, warnings, ...shown, sent: false, next: first["next"] };
     }
     const orders = [{ opens_at: opens[0] as bigint, intent: first["intent"], nonce: first["nonce"], signature: first["signature"] }];
     for (const open of opens.slice(1)) {
@@ -653,17 +709,17 @@ const walletRecurring = define({
         const problem = problemOf(error);
         return {
           orders: [...orders, ...opens.slice(orders.length).map((opens_at) => ({ opens_at }))],
-          summary: first["summary"],
-          warnings: first["warnings"],
+          summary: plan,
+          warnings,
           ...shown,
           sent: true,
-          next: neverLanded(error)
-            ? `${orders.length} of ${input.times} orders were sent; the next failed with ${problem.code}: ${problem.hint}`
+          next: refusedBeforeSending(error)
+            ? partlySent(orders.length, input.times, `${problem.code}: ${problem.hint}`)
             : mayHaveLanded(orders.length, input.times, `${problem.code}: ${problem.hint}`),
         };
       }
     }
-    return { orders, summary: first["summary"], warnings: first["warnings"], ...shown, sent: true };
+    return { orders, summary: plan, warnings, ...shown, sent: true };
   },
 });
 
@@ -722,7 +778,7 @@ const walletCancel = define({
   name: tool("wallet_cancel"),
   title: "Cancel a wallet intent",
   description:
-    "Cancel an open intent of this server's wallet by its nonce: the escrow returns to the wallet and the intent account closes, returning its rent. Without send it only previews; call again with send: true once the user approves.",
+    "Cancel an open intent of this server's wallet by its nonce: the escrow returns to the wallet's token account (wrapped SOL for SOL) and the intent account closes, returning its rent. Without send it only previews; call again with send: true once the user approves.",
   effect: "submit",
   input: object({ nonce: amount("the intent's nonce, from wallet_intents"), send: optional(flag("true signs and sends; leave out to preview")) }),
   output: object({
@@ -752,7 +808,11 @@ async function engineHistory(transport: Transport, limit: number, of?: Address) 
   const created = new Map<Address, Pair>();
   const fills: Fill[] = [];
   const ended = new Map<Address, "cancelled" | "expired">();
+  let unread = 0;
   for (const tx of await transport.engineTransactions(limit, of)) {
+    if (tx.unread === true) {
+      unread += 1;
+    }
     if (tx.failed) {
       continue;
     }
@@ -778,7 +838,7 @@ async function engineHistory(transport: Transport, limit: number, of?: Address) 
       }
     }
   }
-  return { created, fills, ended };
+  return { created, fills, ended, unread };
 }
 
 function pairOf(data: Uint8Array): Pair | null {
@@ -791,7 +851,7 @@ function pairOf(data: Uint8Array): Pair | null {
 }
 
 export const ESTIMATE_NEXT =
-  "solvers pay the least an intent asks, so these fills show what owners asked and got, not the most a solver would pay; ask a minimum near receive_at_best, or auction from a little above it down to the least the user accepts to find the price";
+  "solvers pay the least an intent asks, so these fills show what owners asked and got, not the most a solver would pay; ask a minimum near receive_at_median, since a single fill can be staged by one party on both sides, or auction from a little above it down to the least the user accepts to find the price";
 
 export const NO_FILLS = `no recent fill sold this token for that one; auction from a high ask down to the least the user accepts with ${tool("wallet_auction")} to find the price`;
 
@@ -816,7 +876,8 @@ const walletEstimate = define({
       ESTIMATE_FILLS,
       "newest first",
     ),
-    receive_at_best: optional(text("whole tokens amount would get at the best recent rate")),
+    receive_at_best: optional(text("whole tokens amount would get at the best recent rate; one fill can be staged by its own two sides")),
+    receive_at_median: optional(text("whole tokens amount would get at the median recent rate")),
     receive_at_latest: optional(text("whole tokens amount would get at the newest fill's rate")),
     next: text(),
   }),
@@ -839,7 +900,7 @@ const walletEstimate = define({
     }
     const best = bestOf(matching) ?? latest;
     const at = (f: Fill) => formatAmount((amount * f.delivered) / f.amountIn, outputToken.decimals);
-    return { fills: shown, receive_at_best: at(best), receive_at_latest: at(latest), next: ESTIMATE_NEXT };
+    return { fills: shown, receive_at_best: at(best), receive_at_median: at(medianOf(matching) ?? latest), receive_at_latest: at(latest), next: ESTIMATE_NEXT };
   },
 });
 
@@ -847,13 +908,15 @@ export const WAIT_STATUS = ["open", "filling", "filled", "cancelled", "expired",
 
 type WaitStatus = (typeof WAIT_STATUS)[number];
 
+export const UNREAD = `the node could not yet return all of this intent's transactions, so whether it filled is unknown; call ${tool("wallet_wait")} again in a few seconds before acting on it`;
+
 export const stillWaiting = (status: string) =>
   `still ${status}; call ${tool("wallet_wait")} again to keep waiting, or ${tool("wallet_cancel")} to take the escrow back`;
 
 const walletWait = define({
   name: tool("wallet_wait"),
   title: "Wait for a wallet intent",
-  description: `Wait until an intent of this server's wallet is filled, cancelled or expired, or until within seconds pass, then say which and, for a fill, how much the wallet received. Use it after sending instead of asking the user to check again; call it again while the status is still open.`,
+  description: `Wait until an intent of this server's wallet is filled, cancelled or expired, or until within seconds pass, then say which and, for a fill, how much it delivered to this wallet or to the pay_to it named. Use it after sending instead of asking the user to check again; call it again while the status is still open.`,
   effect: "read",
   input: object({
     nonce: amount("the intent's nonce, from the send or wallet_intents"),
@@ -901,7 +964,8 @@ const walletWait = define({
     const history = await engineHistory(ctx.transport, WAIT_SCAN, intent);
     const fills = history.fills.filter((f) => f.intent === intent);
     if (fills.length === 0) {
-      return { intent, status: status === "closed" ? (history.ended.get(intent) ?? status) : status, waited };
+      const ended = status === "closed" ? (history.ended.get(intent) ?? status) : status;
+      return { intent, status: ended, waited, ...(ended === "closed" && history.unread > 0 ? { next: UNREAD } : {}) };
     }
     pair ??= history.created.get(intent) ?? null;
     const decimals = pair === null ? undefined : (await mintOf(ctx.transport, pair.outputMint)).decimals;

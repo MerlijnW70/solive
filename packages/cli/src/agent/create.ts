@@ -14,6 +14,7 @@ import {
   validate,
   WARN_ATTESTOR,
   WARN_LONG_LIVED,
+  WARN_RECEIVER,
 } from "@intent-engine/core";
 import { chainTime, CLOCK_SYSVAR, loadConfig, mintOf } from "../accounts.js";
 import { define } from "./actions.js";
@@ -157,7 +158,10 @@ export const prepareCreate = define({
         }).lines,
         ...(receiver.create.length > 0 && elsewhere ? [`Setup: creates ${recipient}'s token account for ${input.output_mint} (you pay its rent)`] : []),
       ],
-      warnings: warningsOf(params.kind, expiresAt, now, inputToken.scaled || outputToken.scaled),
+      warnings: [
+        ...warningsOf(params.kind, expiresAt, now, inputToken.scaled || outputToken.scaled),
+        ...(elsewhere ? [WARN_RECEIVER] : []),
+      ],
       create_fee: BigInt(config.createFee),
       crank_bounty: BigInt(config.crankBounty),
       wraps: wrap.lamports,

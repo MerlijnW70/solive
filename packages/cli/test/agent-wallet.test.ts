@@ -14,15 +14,21 @@ import {
   getFillEndedEventEncoder,
   getIntentFilledEventEncoder,
   IntentStatus,
+  INTENT_ENGINE_PROGRAM_ADDRESS,
   formatAmount,
   splitFee,
   WARN_ATTESTOR,
+  WARN_LONG_LIVED,
+  WARN_RECEIVER,
+  formatTime,
 } from "@intent-engine/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { WALLET_NOT_MAINNET } from "../src/args.js";
 import { BlockhashExpired, FailedOnChain } from "../src/transport.js";
 import { WRAPPED } from "../src/agent/create.js";
-import { TOKEN_ACCOUNT_RECIPIENT } from "../src/agent/owner.js";
+import { AgentRefusal } from "../src/agent/problems.js";
+import { InvalidInput } from "../src/agent/schema.js";
+import { notAWallet, TOKEN_ACCOUNT_RECIPIENT } from "../src/agent/owner.js";
 import { START_PROMPT, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
 import {
   DEFAULT_EXPIRES_IN,
@@ -33,6 +39,11 @@ import {
   NO_FILLS,
   mayHaveLanded,
   notAttestor,
+  NO_FALL,
+  partlySent,
+  RELEASE_CHANGED,
+  UNREAD,
+  WARN_EARLY,
   RECORD_MINT_NEEDED,
   NO_WALLET,
   PREVIEW_ONLY,
@@ -167,60 +178,66 @@ describe("the wallet server", () => {
     expect((await ok(client, "wallet_intents"))["intents"]).toEqual([]);
   });
 
-  it("lets the ask fall from a little above the best recent fill to the minimum unless told to ask the minimum", async () => {
+  it("lets the ask fall from a little above the median recent fill, held between 1.25 and 2 times the minimum, unless told to ask the minimum", async () => {
     const owner = (await ok(client, "wallet_setup"))["address"] as Address;
-    const swap = { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5" };
+    const swap = { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "7" };
     h.engineLog = [];
-    expect(await ok(client, "wallet_swap", swap)).toMatchObject({ start_receive: "6.25" });
+    expect(await ok(client, "wallet_swap", { ...swap, min_receive: "5" })).toMatchObject({ start_receive: "6.25" });
     const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
-    const intent = "11111111111111111111111111111112" as Address;
-    h.engineLog = [
-      {
-        signature: "fill",
-        slot: 1n,
-        blockTime: null,
-        failed: false,
-        emitted: [
-          tag(
-            getIntentCreatedEventEncoder().encode({
-              intent,
-              owner: intent,
-              nonce: 0n,
-              kind: 2,
-              inputMint: NATIVE_MINT,
-              outputMint: TEST_TOKEN,
-              receiver: intent,
-              escrowed: LAMPORTS_PER_SOL / 20n,
-              expiresAt: 0n,
-              rentPayer: intent,
-              flags: 0,
-              bounty: 0,
-              createFee: 0,
-            }),
-          ),
-          tag(
-            getIntentFilledEventEncoder().encode({
-              intent,
-              owner: intent,
-              solver: intent,
-              receiver: intent,
-              solverInput: intent,
-              amountIn: LAMPORTS_PER_SOL / 20n,
-              delivered: (9_966_666_667n * LAMPORTS_PER_SOL) / 1_000_000_000n,
-              required: 0n,
-              fee: 0n,
-              net: 0n,
-              filled: LAMPORTS_PER_SOL / 20n,
-              remaining: 0n,
-              partnerFee: 0n,
-            }),
-          ),
-        ],
-      },
-    ];
+    const filledAt = (intent: Address, amountIn: bigint, delivered: bigint) => ({
+      signature: `fill-${intent}`,
+      slot: 1n,
+      blockTime: null,
+      failed: false,
+      emitted: [
+        tag(
+          getIntentCreatedEventEncoder().encode({
+            intent,
+            owner: intent,
+            nonce: 0n,
+            kind: 2,
+            inputMint: NATIVE_MINT,
+            outputMint: TEST_TOKEN,
+            receiver: intent,
+            escrowed: amountIn,
+            expiresAt: 0n,
+            rentPayer: intent,
+            flags: 0,
+            bounty: 0,
+            createFee: 0,
+          }),
+        ),
+        tag(
+          getIntentFilledEventEncoder().encode({
+            intent,
+            owner: intent,
+            solver: intent,
+            receiver: intent,
+            solverInput: intent,
+            amountIn,
+            delivered,
+            required: 0n,
+            fee: 0n,
+            net: 0n,
+            filled: amountIn,
+            remaining: 0n,
+            partnerFee: 0n,
+          }),
+        ),
+      ],
+    });
+    const honest = filledAt("11111111111111111111111111111112" as Address, LAMPORTS_PER_SOL / 20n, (9_966_666_667n * LAMPORTS_PER_SOL) / 1_000_000_000n);
+    const staged = (k: number) => filledAt(`1111111111111111111111111111111${k}` as Address, 1n, 1_000_000n * LAMPORTS_PER_SOL);
+    h.engineLog = [honest];
     const preview = await ok(client, "wallet_swap", swap);
     expect(preview).toMatchObject({ start_receive: "10.166" });
-    expect(await ok(client, "wallet_swap", { ...swap, min_receive: "11" })).not.toHaveProperty("start_receive");
+    expect(await ok(client, "wallet_swap", { ...swap, min_receive: "5" })).toMatchObject({ start_receive: "10" });
+    expect(await ok(client, "wallet_swap", { ...swap, min_receive: "11" })).toMatchObject({ start_receive: "13.75" });
+    h.engineLog = [staged(3), honest];
+    expect(await ok(client, "wallet_swap", swap)).toMatchObject({ start_receive: "10.166" });
+    h.engineLog = [staged(3), staged(4), honest];
+    expect(await ok(client, "wallet_swap", swap)).toMatchObject({ start_receive: "14" });
+    h.engineLog = [honest];
     const now = h.svm.getClock().unixTimestamp;
     const sent = await ok(client, "wallet_swap", { ...swap, start_receive: preview["start_receive"], falls_over: 90, send: true });
     expect(sent).toMatchObject({ sent: true, start_receive: "10.166" });
@@ -228,7 +245,7 @@ describe("the wallet server", () => {
     const [listed] = (await ok(client, "wallet_intents"))["intents"] as Json[];
     const start = now + BigInt(LANDING_SECONDS);
     expect(listed).toMatchObject({
-      order: { kind: "dutch", start_out: String((10_166n * LAMPORTS_PER_SOL) / 1_000n), end_out: String(5n * LAMPORTS_PER_SOL), start_time: String(start), end_time: String(start + 90n) },
+      order: { kind: "dutch", start_out: String((10_166n * LAMPORTS_PER_SOL) / 1_000n), end_out: String(7n * LAMPORTS_PER_SOL), start_time: String(start), end_time: String(start + 90n) },
       expires_at: String(start + BigInt(DEFAULT_EXPIRES_IN)),
     });
     expect(await ok(client, "wallet_swap", { ...swap, exact: true })).not.toHaveProperty("start_receive");
@@ -243,6 +260,15 @@ describe("the wallet server", () => {
     const preview = await ok(client, "wallet_recurring", plan);
     expect(preview).toMatchObject({ orders: opens.map((at) => ({ opens_at: String(at) })), start_receive: "6.25", sent: false, next: PREVIEW_ONLY });
     expect(preview["orders"][0]).not.toHaveProperty("intent");
+    expect(preview["summary"].slice(0, 2)).toEqual([
+      "Plan: 3 orders of 0.05 of SOL, 0.15 of SOL in all, escrowed now",
+      `Schedule: the orders open from ${formatTime(opens[0] as bigint)} to ${formatTime(opens[2] as bigint)}; the last expires ${formatTime((opens[2] as bigint) + 600n)}`,
+    ]);
+    expect(preview["warnings"]).toEqual([WARN_EARLY]);
+    const yearly = await ok(client, "wallet_recurring", { ...plan, every: 30 * 24 * 60 * 60, times: 2 });
+    expect(yearly["warnings"]).toEqual([WARN_LONG_LIVED, WARN_EARLY]);
+    const later = await ok(client, "wallet_recurring", { ...plan, every: 15 * 24 * 60 * 60, times: 3 });
+    expect(later["warnings"]).toEqual([WARN_EARLY, WARN_LONG_LIVED]);
     h.watched.push(owner);
     expect((await ok(client, "wallet_intents"))["intents"]).toEqual([]);
     const sent = await ok(client, "wallet_recurring", { ...plan, start_receive: "6.25", falls_over: 300, send: true });
@@ -253,7 +279,14 @@ describe("the wallet server", () => {
       opens.map((at) => expect.objectContaining({ kind: "dutch", start_out: String(625n * LAMPORTS_PER_SOL / 100n), end_out: String(5n * LAMPORTS_PER_SOL), start_time: String(at), end_time: String(at + 300n) })),
     );
     expect(listed.map((intent) => intent["expires_at"])).toEqual(opens.map((at) => String(at + 600n)));
-    expect((await call(client, "wallet_recurring", { ...plan, min_receive: "7", start_receive: "7" })).value).toMatchObject({ code: "InvalidInput" });
+    expect((await call(client, "wallet_recurring", { ...plan, min_receive: "7", start_receive: "7" })).value).toMatchObject({
+      code: "InvalidInput",
+      issues: [{ path: "start_receive" }],
+    });
+    expect((await call(client, "wallet_recurring", { ...plan, min_receive: "0" })).value).toMatchObject({
+      code: "InvalidInput",
+      issues: [{ path: "min_receive", message: NO_FALL }],
+    });
   });
 
   it("refuses a schedule past the hourly limit before sending any of it, and reports how far a failed one got", async () => {
@@ -266,7 +299,7 @@ describe("the wallet server", () => {
     expect((await ok(client, "wallet_intents"))["intents"]).toEqual([]);
     h.sendFails = { error: new BlockhashExpired("expired"), landed: false, after: 1 };
     const partly = await ok(client, "wallet_recurring", { ...plan, times: 2 });
-    expect(partly).toMatchObject({ sent: true, next: "1 of 2 orders were sent; the next failed with Failed: expired" });
+    expect(partly).toMatchObject({ sent: true, next: partlySent(1, 2, "Failed: expired") });
     expect(partly["orders"][0]).toHaveProperty("intent");
     expect(partly["orders"][1]).not.toHaveProperty("intent");
     expect((await ok(client, "wallet_intents"))["intents"]).toHaveLength(1);
@@ -274,6 +307,12 @@ describe("the wallet server", () => {
     const unsure = await ok(client, "wallet_recurring", { ...plan, amount: "0.01", times: 2 });
     expect(unsure["next"]).toBe(mayHaveLanded(1, 2, "Failed: timed out"));
     expect((await ok(client, "wallet_intents"))["intents"]).toHaveLength(3);
+    h.sendFails = { error: new AgentRefusal("WalletEmpty", "empty"), landed: false, after: 1 };
+    const refused = await ok(client, "wallet_recurring", { ...plan, amount: "0.01", times: 2 });
+    expect(refused["next"]).toBe(partlySent(1, 2, "WalletEmpty: empty"));
+    h.sendFails = { error: new InvalidInput([{ path: "x", message: "bad" }]), landed: false, after: 1 };
+    const invalid = await ok(client, "wallet_recurring", { ...plan, amount: "0.01", times: 2 });
+    expect(invalid["next"]).toBe(partlySent(1, 2, "InvalidInput: fix the listed fields and call again"));
   });
 
   it("escrows a payment that only the named attestor can release, to the wallet it names", async () => {
@@ -288,7 +327,7 @@ describe("the wallet server", () => {
     const nonce = escrow["nonce"] as string;
     expect(h.svm.getAccount(intent).exists).toBe(true);
     const release = { owner, nonce, pay_to: worker };
-    expect((await call(client, "wallet_attest", { ...release, result: "4" })).value).toMatchObject({ code: "InvalidInput" });
+    expect((await call(client, "wallet_attest", { ...release, result: "4" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "result" }] });
     h.simulated.length = 0;
     const shown = await ok(client, "wallet_attest", release);
     expect(h.simulated).toEqual([]);
@@ -306,7 +345,21 @@ describe("the wallet server", () => {
     expect(shown["summary"]).toContain("Setup: creates the engine treasury's SOL account for the fee, paid by this wallet");
     expect(JSON.stringify(shown)).not.toMatch(/transaction/);
     expect(h.svm.getAccount(payee).exists).toBe(false);
-    expect(await ok(client, "wallet_attest", { ...release, result: "2", send: true })).toMatchObject({ sent: true, signature: expect.any(String) });
+    expect((await call(client, "wallet_attest", { ...release, pay_to: intent })).value).toMatchObject({
+      code: "InvalidInput",
+      issues: [{ path: "pay_to", message: notAWallet(INTENT_ENGINE_PROGRAM_ADDRESS) }],
+    });
+    const changed = { code: "ReleaseChanged", hint: RELEASE_CHANGED };
+    expect((await call(client, "wallet_attest", { ...release, result: "2", send: true })).value).toMatchObject(changed);
+    expect((await call(client, "wallet_attest", { ...release, result: "2", approval: shown["approval"], send: true })).value).toMatchObject(changed);
+    const second = await ok(client, "wallet_attest", { ...release, result: "2" });
+    expect(second["approval"]).toMatch(/^[0-9a-f]{16}$/);
+    expect(second["approval"]).not.toBe(shown["approval"]);
+    expect(h.svm.getAccount(payee).exists).toBe(false);
+    expect(await ok(client, "wallet_attest", { ...release, result: "2", approval: second["approval"], send: true })).toMatchObject({
+      sent: true,
+      signature: expect.any(String),
+    });
     expect(balance(payee)).toBe(net);
     expect((await call(client, "wallet_attest", release)).value).toMatchObject({ code: "InvalidTransition" });
     const other = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.01", attestor: stranger, send: true });
@@ -315,6 +368,11 @@ describe("the wallet server", () => {
       hint: notAttestor(stranger),
     });
     expect((await call(client, "wallet_attest", { owner, nonce: "99", pay_to: worker })).value).toMatchObject({ code: "NotFound" });
+    expect(await ok(client, "wallet_cancel", { nonce: other["nonce"], send: true })).toMatchObject({ sent: true });
+    expect(h.svm.getAccount(other["intent"] as Address).exists).toBe(false);
+    const brief = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.01", attestor: owner, expires_in: 60, send: true });
+    setNow(h.svm.getClock().unixTimestamp + 3_600n);
+    expect((await call(client, "wallet_attest", { owner, nonce: brief["nonce"], pay_to: worker })).value).toMatchObject({ code: "IntentExpired" });
   });
 
   it("escrows SOL off devnet only with a record mint it is told, since TEST is a devnet name", async () => {
@@ -336,6 +394,7 @@ describe("the wallet server", () => {
     const order = { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5", exact: true, pay_to: friend };
     const preview = await ok(client, "wallet_swap", order);
     expect(preview["summary"]).toContain(`Pays to: ${friend}, who receives what the solver pays`);
+    expect(preview["warnings"]).toEqual([WARN_RECEIVER]);
     expect((await call(client, "wallet_swap", { ...order, pay_to: owner })).value["summary"].join(" ")).not.toMatch(/Pays to/);
     expect(preview["summary"]).toContain(`Setup: creates ${friend}'s token account for ${TEST_TOKEN} (you pay its rent)`);
     expect(preview["summary"]).not.toContain(`Setup: creates your token account for ${TEST_TOKEN} (you pay its rent)`);
@@ -589,6 +648,7 @@ describe("the wallet server", () => {
         { sold: "0.1", received: "19.93", at: "1700000000", signature: "older" },
       ],
       receive_at_best: "9.965",
+      receive_at_median: "5",
       receive_at_latest: "5",
       next: ESTIMATE_NEXT,
     });
@@ -642,6 +702,8 @@ describe("the wallet server", () => {
     expect(await ok(client, "wallet_wait", { nonce: "0" })).toEqual({ intent, status: "cancelled", waited: 0 });
     h.engineLog = [];
     expect(await ok(client, "wallet_wait", { nonce: "0" })).toEqual({ intent, status: "closed", waited: 0 });
+    h.engineLog = [{ signature: "lagging", slot: 2n, blockTime: null, failed: false, emitted: [], unread: true }];
+    expect(await ok(client, "wallet_wait", { nonce: "0" })).toEqual({ intent, status: "closed", waited: 0, next: UNREAD });
   });
 });
 

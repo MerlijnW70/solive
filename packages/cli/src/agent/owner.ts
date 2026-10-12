@@ -1,5 +1,5 @@
 import { type Address, createNoopSigner, type Instruction, isSome, type TransactionSigner } from "@solana/kit";
-import { getTransferSolInstruction } from "@solana-program/system";
+import { getTransferSolInstruction, SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import {
   getCreateAssociatedTokenIdempotentInstructionAsync,
   getSyncNativeInstruction,
@@ -26,11 +26,15 @@ import { InvalidInput } from "./schema.js";
 
 export const TOKEN_ACCOUNT_RECIPIENT = "this is a token account; give the wallet that owns it";
 
+export const notAWallet = (program: Address) =>
+  `this account belongs to the program ${program}, not to a wallet, so nothing paid to it could be spent; give a wallet address`;
+
 export async function walletRecipient(transport: Transport, recipient: Address, path: string): Promise<void> {
   const held = await transport.getAccount(recipient);
-  if (held !== null && TOKEN_PROGRAMS.includes(held.owner)) {
-    throw new InvalidInput([{ path, message: TOKEN_ACCOUNT_RECIPIENT }]);
+  if (held === null || held.owner === SYSTEM_PROGRAM_ADDRESS) {
+    return;
   }
+  throw new InvalidInput([{ path, message: TOKEN_PROGRAMS.includes(held.owner) ? TOKEN_ACCOUNT_RECIPIENT : notAWallet(held.owner) }]);
 }
 
 type UserWindow = { nonceBase: bigint; nonceBitmap: readonly bigint[]; epoch: bigint };

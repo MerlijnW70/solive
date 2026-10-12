@@ -30,6 +30,7 @@ export type EngineTransaction = {
   blockTime: bigint | null;
   failed: boolean;
   emitted: Uint8Array[];
+  unread?: true;
 };
 
 export type Latest = { blockhash: Blockhash; lastValidBlockHeight: bigint };
@@ -87,8 +88,8 @@ export type RpcLike = {
   getSignatureStatuses(
     signatures: Signature[],
     config?: { searchTransactionHistory: boolean },
-  ): Pending<{ value: readonly ({ err: unknown; confirmationStatus: string | null } | null)[] }>;
-  getBlockHeight(): Pending<bigint>;
+  ): Pending<{ context: { slot: bigint }; value: readonly ({ err: unknown; confirmationStatus: string | null } | null)[] }>;
+  getEpochInfo(): Pending<{ blockHeight: bigint; absoluteSlot: bigint }>;
   requestAirdrop(address: Address, lamports: bigint): Pending<Signature>;
   getRecentPrioritizationFees(addresses: readonly Address[]): Pending<readonly { prioritizationFee: bigint }[]>;
   getGenesisHash(): Pending<string>;
@@ -128,7 +129,7 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 export const RATE_LIMIT_ATTEMPTS = 6;
 
 export function rateLimited(error: unknown): boolean {
-  return error instanceof Error && /\b429\b/.test(error.message);
+  return error instanceof Error && !(error instanceof Charged) && /\b429\b/.test(error.message);
 }
 
 export async function patiently<T>(call: () => Promise<T>, wait: (ms: number) => Promise<void> = sleep): Promise<T> {
@@ -208,6 +209,35 @@ export async function confirm(
   }
 }
 
+function settled(signature: Signature, status: { err: unknown; confirmationStatus: string | null } | null | undefined): boolean {
+  if (!status || (status.confirmationStatus !== "confirmed" && status.confirmationStatus !== "finalized")) {
+    return false;
+  }
+  if (status.err !== null) {
+    throw new FailedOnChain(`transaction ${signature} failed: ${inspect(status.err)}`);
+  }
+  return true;
+}
+
+export async function confirmSent(
+  rpc: RpcLike,
+  signature: Signature,
+  lastValidBlockHeight: bigint,
+  wait: (ms: number) => Promise<void> = sleep,
+  watch?: SignatureWatch,
+): Promise<void> {
+  try {
+    await confirm(rpc, signature, lastValidBlockHeight, wait, watch);
+  } catch (error) {
+    if (error instanceof Charged || error instanceof BlockhashExpired) {
+      throw error;
+    }
+    throw new Charged(
+      `transaction ${signature} was sent but its confirmation could not be read (${error instanceof Error ? error.message : String(error)}); look the signature up before sending again`,
+    );
+  }
+}
+
 async function polled(
   rpc: RpcLike,
   signature: Signature,
@@ -217,26 +247,22 @@ async function polled(
 ): Promise<void> {
   for (let poll = 1; stop?.aborted !== true; poll++) {
     const [status] = (await patiently(() => rpc.getSignatureStatuses([signature]).send(), wait)).value;
-    if (status) {
-      if (status.err !== null) {
-        throw new FailedOnChain(`transaction ${signature} failed: ${inspect(status.err)}`);
-      }
-      if (status.confirmationStatus === "confirmed" || status.confirmationStatus === "finalized") {
+    if (settled(signature, status)) {
+      return;
+    }
+    const epoch = await patiently(() => rpc.getEpochInfo().send(), wait);
+    if (epoch.blockHeight > lastValidBlockHeight) {
+      const late = await patiently(() => rpc.getSignatureStatuses([signature], { searchTransactionHistory: true }).send(), wait);
+      const [found] = late.value;
+      if (settled(signature, found)) {
         return;
       }
-    }
-    if ((await patiently(() => rpc.getBlockHeight().send(), wait)) > lastValidBlockHeight) {
-      const [late] = (await patiently(() => rpc.getSignatureStatuses([signature], { searchTransactionHistory: true }).send(), wait)).value;
-      if (!late) {
+      if (found) {
+        throw new Charged(`transaction ${signature} landed but is not confirmed yet; look the signature up before sending again`);
+      }
+      if (late.context.slot >= epoch.absoluteSlot) {
         throw new BlockhashExpired(`transaction ${signature} expired before confirmation`);
       }
-      if (late.err !== null) {
-        throw new FailedOnChain(`transaction ${signature} failed: ${inspect(late.err)}`);
-      }
-      if (late.confirmationStatus === "confirmed" || late.confirmationStatus === "finalized") {
-        return;
-      }
-      throw new Charged(`transaction ${signature} landed but is not confirmed yet; look the signature up before sending again`);
     }
     if (poll >= CONFIRM_POLLS) {
       throw new Charged(
@@ -341,13 +367,13 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       const signed = await signTransactionMessageWithSigners(message);
       const wire = getBase64EncodedWireTransaction(signed);
       const signature = await patiently(() => rpc.sendTransaction(wire, { encoding: "base64" }).send(), wait);
-      await confirm(rpc, signature, latest.lastValidBlockHeight, wait, watch);
+      await confirmSent(rpc, signature, latest.lastValidBlockHeight, wait, watch);
       return signature;
     },
     async airdrop(address, lamports) {
       const { value: latest } = await patiently(() => rpc.getLatestBlockhash().send(), wait);
       const signature = await rpc.requestAirdrop(address, lamports).send();
-      await confirm(rpc, signature, latest.lastValidBlockHeight, wait, watch);
+      await confirmSent(rpc, signature, latest.lastValidBlockHeight, wait, watch);
       return signature;
     },
     async latestBlockhash() {
@@ -356,7 +382,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     },
     async sendWire(wire, latest) {
       const signature = await patiently(() => rpc.sendTransaction(wire, { encoding: "base64" }).send(), wait);
-      await confirm(rpc, signature, latest.lastValidBlockHeight, wait, watch);
+      await confirmSent(rpc, signature, latest.lastValidBlockHeight, wait, watch);
       return signature;
     },
     async submitWire(wire) {
@@ -450,6 +476,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
           blockTime: entry.blockTime,
           failed: entry.err !== null,
           emitted,
+          ...(tx?.meta === null || tx?.meta === undefined ? { unread: true as const } : {}),
           complete: tx?.meta !== null && tx?.meta !== undefined && entry.blockTime !== null,
         };
       };

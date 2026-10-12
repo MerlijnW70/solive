@@ -44,7 +44,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Sell an exact amount of one token for at least min_receive of another, from this server's wallet: the tokens are escrowed in an intent that a solver fills or that the wallet gets back. Solvers pay the least an intent asks, so by default the ask starts at start_receive, a little above the best recent fill, and falls to min_receive over falls_over seconds (default 120): a solver takes it near the most it can pay. exact: true asks min_receive from the start instead. Amounts are whole tokens such as 0.05. Selling SOL wraps it first. Without send it only previews; show the user the summary, then call again with send: true and the start_receive the preview returned once they approve.
+Sell an exact amount of one token for at least min_receive of another, from this server's wallet: the tokens are escrowed in an intent that a solver fills or that the wallet gets back. Solvers pay the least an intent asks, so by default the ask starts at start_receive, a little above the median of recent fills but at least a quarter above min_receive and at most twice it, and falls to min_receive over falls_over seconds (default 120): a solver takes it near the most it can pay. exact: true asks min_receive from the start instead. Amounts are whole tokens such as 0.05. Selling SOL wraps it first. Without send it only previews; show the user the summary, then call again with send: true and the start_receive the preview returned once they approve.
 
 Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 
@@ -54,7 +54,7 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 | `buy` | string | yes | SOL, TEST or a mint address |
 | `amount` | string | yes | whole tokens to sell, such as 0.05 |
 | `min_receive` | string | yes | least whole tokens to receive for all of it |
-| `start_receive` | string | no | whole tokens asked when the offer lands; default a little above the best recent fill |
+| `start_receive` | string | no | whole tokens asked when the offer lands; default a little above the median recent fill, between 1.25 and 2 times min_receive |
 | `falls_over` | integer 60..31536000 | no | seconds the ask takes to fall to min_receive; default 120 |
 | `exact` | boolean | no | true asks min_receive from the start, with no falling ask |
 | `pay_to` | address | no | the wallet that receives what is bought, such as someone this wallet pays; default this wallet. This wallet pays for its token account if it has none |
@@ -85,7 +85,7 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 
 Served only with `--wallet`.
 
-Sell the same amount of one token for another several times, every so many seconds, from this server's wallet, with no bot left running: all orders are sent now and escrowed now. Each order holds its ask at start_receive, a little above the best recent fill, until its turn, then lets it fall to min_receive over falls_over seconds; it expires when the next one opens, or falls_over seconds after its own opening if that is later, and anyone can then return its escrow. Any order can be cancelled with solive_wallet_cancel. Each order pays the create fee and rent, and the rent returns when it closes. Amounts are whole tokens per order. Without send it only previews; show the user the summary, then call again with send: true and the start_receive the preview returned once they approve.
+Sell the same amount of one token for another several times, every so many seconds, from this server's wallet, with no bot left running: all orders are sent now and escrowed now. Each order holds its ask at start_receive until its turn, then lets it fall to min_receive over falls_over seconds; it expires when the next one opens, or falls_over seconds after its own opening if that is later, and anyone can then return its escrow. An order fills before its turn if a solver can already pay start_receive, so set it above what solvers pay now to hold the orders. Any order can be cancelled with solive_wallet_cancel. Each order pays the create fee and rent, and the rent returns when it closes. Amounts are whole tokens per order. Without send it only previews; show the user the summary, then call again with send: true and the start_receive the preview returned once they approve.
 
 Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 
@@ -97,7 +97,7 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 | `min_receive` | string | yes | least whole tokens each order receives |
 | `every` | integer 60..2592000 | yes | seconds between one order opening and the next |
 | `times` | integer 2..12 | yes | how many orders |
-| `start_receive` | string | no | whole tokens each order asks when it opens; default a little above the best recent fill |
+| `start_receive` | string | no | whole tokens each order asks until and when it opens; default a little above the median recent fill, between 1.25 and 2 times min_receive |
 | `falls_over` | integer 60..2592000 | no | seconds each order's ask takes to fall to min_receive; default 120 |
 | `pay_to` | address | no | the wallet that receives what is bought, such as someone this wallet pays; default this wallet. This wallet pays for its token account if it has none |
 | `send` | boolean | no | true signs and sends every order; leave out to preview |
@@ -106,7 +106,7 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 
 Served only with `--wallet`.
 
-Lock an exact amount of one token from this server's wallet in an attested intent: it goes, minus the engine fee, to whichever wallet the named attestor later signs for, once the attestor attests a result between min_result and max_result. Use it to pay another agent for work that a third agent or a person judges. The attestor alone decides who is paid; nothing else is checked on chain, so name an attestor the user trusts. Until then the wallet can cancel it with solive_wallet_cancel, and after it expires anyone can return the escrow. Amounts are whole tokens such as 0.05. Without send it only previews; show the user the summary and call again with send: true once they approve.
+Hold an exact amount of one token from this server's wallet in an attested intent: it goes, minus the engine fee, to whichever wallet the named attestor later signs for, once the attestor attests a result between min_result and max_result. Use it to pay another agent for work that a third agent or a person judges. The attestor alone decides who is paid; nothing else is checked on chain, so name an attestor the user trusts. Until then the wallet can cancel it with solive_wallet_cancel, and after it expires anyone can return the escrow. Amounts are whole tokens such as 0.05. Without send it only previews; show the user the summary and call again with send: true once they approve.
 
 Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 
@@ -125,7 +125,7 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 
 Served only with `--wallet`.
 
-As the attestor an escrow names, sign that it pays pay_to and settle it on chain from this server's wallet: the escrowed tokens, minus the engine fee, go to pay_to's token account, which this creates if needed. Use it when this server's wallet was named attestor of an intent made with solive_wallet_escrow and the work it pays for is done. Without send it only previews and signs nothing; show the user the summary and call again with send: true once they approve.
+As the attestor an escrow names, sign that it pays pay_to and settle it on chain from this server's wallet: the escrowed tokens, minus the engine fee and any partner fee, go to pay_to's token account, which this creates if needed. Use it when this server's wallet was named attestor of an intent made with solive_wallet_escrow and the work it pays for is done. A release cannot be undone. Without send it only previews and signs nothing; show the user the summary and, once they approve, call again with send: true and the approval the preview returned, which holds the send to exactly what was previewed.
 
 Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 
@@ -135,13 +135,14 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 | `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
 | `pay_to` | address | yes | the wallet to pay |
 | `result` | whole number as a decimal string | no | the result to attest, between the intent's min_result and max_result; default min_result |
+| `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs the attestation and settles; leave out to preview |
 
 ## solive_wallet_wait
 
 Served only with `--wallet`.
 
-Wait until an intent of this server's wallet is filled, cancelled or expired, or until within seconds pass, then say which and, for a fill, how much the wallet received. Use it after sending instead of asking the user to check again; call it again while the status is still open.
+Wait until an intent of this server's wallet is filled, cancelled or expired, or until within seconds pass, then say which and, for a fill, how much it delivered to this wallet or to the pay_to it named. Use it after sending instead of asking the user to check again; call it again while the status is still open.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
@@ -166,7 +167,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Cancel an open intent of this server's wallet by its nonce: the escrow returns to the wallet and the intent account closes, returning its rent. Without send it only previews; call again with send: true once the user approves.
+Cancel an open intent of this server's wallet by its nonce: the escrow returns to the wallet's token account (wrapped SOL for SOL) and the intent account closes, returning its rent. Without send it only previews; call again with send: true once the user approves.
 
 Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 
