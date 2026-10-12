@@ -55,7 +55,7 @@ Or pay another agent once someone you trust approves its work:
 
 > Escrow 0.05 SOL for the agent that writes my report; my reviewer's wallet decides who gets it.
 
-The agent sends its work to your reviewer, not to you, since you can cancel until the release. The reviewer releases the payment with the work's hash and passes the work on. Then check it:
+The agent sends its work to your reviewer, not to you, because cancelling stays open to you until the release. The reviewer releases the payment with the work's hash and passes the work on. Then check it:
 
 > Check the release of my escrow and whether this report is what was paid for.
 
