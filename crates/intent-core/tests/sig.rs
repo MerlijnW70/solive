@@ -329,3 +329,29 @@ fn a_proof_attestation_binds_the_amount_in() {
     assert_eq!(b[..144], o[..144]);
     assert_eq!(b[152..], o[152..]);
 }
+
+#[test]
+fn a_proof_attestation_binds_the_intent() {
+    let base = AttestedProof {
+        program: [1; 32],
+        domain: [4; 32],
+        intent: [2; 32],
+        payee: [3; 32],
+        amount_in: 0x0506,
+        result: 0x0a0b_0c0d,
+        filled: 0x1112,
+        revision: 0x2122_2324,
+        max_fee_bps: 0x3132,
+        ext_hash: [7; 32],
+        spec_hash: [8; 32],
+    };
+    let other = AttestedProof {
+        intent: [9; 32],
+        ..base
+    };
+    let b = base.preimage();
+    let o = other.preimage();
+    assert_ne!(b, o);
+    assert_eq!(b[..80], o[..80]);
+    assert_eq!(b[112..], o[112..]);
+}
