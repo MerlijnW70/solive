@@ -50,7 +50,7 @@ export interface Transport {
   simulate(wire: Base64EncodedWireTransaction, watch?: readonly Address[]): Promise<Simulation>;
   genesisHash(): Promise<string>;
   intents(owner?: Address): Promise<ProgramAccount[]>;
-  engineTransactions(limit: number, of?: Address): Promise<EngineTransaction[]>;
+  engineTransactions(limit: number, of?: Address, memo?: string): Promise<EngineTransaction[]>;
   recentFees(accounts: readonly Address[]): Promise<bigint[]>;
   budget(instructions: readonly Instruction[], feePayer: Address): Promise<Instruction[]>;
   airdrop(address: Address, lamports: bigint): Promise<string>;
@@ -113,7 +113,7 @@ export type RpcLike = {
   getSignaturesForAddress(
     address: Address,
     config: { limit: number } & AtLeast,
-  ): Pending<readonly { signature: Signature; slot: bigint; blockTime: bigint | null; err: unknown }[]>;
+  ): Pending<readonly { signature: Signature; slot: bigint; blockTime: bigint | null; err: unknown; memo?: string | null }[]>;
   getTransaction(
     signature: Signature,
     config: { encoding: "json"; maxSupportedTransactionVersion: 0; commitment: "confirmed" },
@@ -460,8 +460,8 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     async budget(instructions) {
       return [...instructions];
     },
-    async engineTransactions(limit, of) {
-      const signatures = await patiently(
+    async engineTransactions(limit, of, memo) {
+      const listed = await patiently(
         () => rpc.getSignaturesForAddress(of ?? INTENT_ENGINE_PROGRAM_ADDRESS, { limit, ...atLeast() }).send(),
         wait,
       );
@@ -525,6 +525,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
           complete: tx?.meta !== null && tx?.meta !== undefined && entry.blockTime !== null,
         };
       };
+      const signatures = memo === undefined ? listed : listed.filter((entry) => (entry.memo ?? "").includes(memo));
       const found: EngineTransaction[] = [];
       for (let i = 0; i < signatures.length; i += TRANSACTION_FETCHES) {
         found.push(...(await Promise.all(signatures.slice(i, i + TRANSACTION_FETCHES).map(fetchOne))));

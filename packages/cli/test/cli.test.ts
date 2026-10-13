@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { claimsOf } from "../src/agent/claims.js";
 import { chmod, mkdtemp, writeFile } from "node:fs/promises";
 import { PassThrough } from "node:stream";
@@ -1100,6 +1101,17 @@ describe("cli against the deployed engine", () => {
     const [intent] = await findIntentPda({ owner: owner.address, nonce: 9n });
     const [vault] = await findVaultPda({ intent });
     expect(result.json()).toEqual({ intent, vault });
+    expect(h.urls).toEqual([]);
+  });
+
+  it("prints the hash a judge computes for a file, offline, whatever the file is called", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "hash-"));
+    await writeFile(join(dir, "work.mjs"), "export default 1;\n");
+    await writeFile(join(dir, "other-name"), "export default 1;\n");
+    const first = await cli(["hash", "--artifact", join(dir, "work.mjs")], {});
+    const second = await cli(["hash", "--artifact", join(dir, "other-name")], {});
+    expect(first.json()).toEqual({ artifact: join(dir, "work.mjs"), sha256: createHash("sha256").update("export default 1;\n").digest("hex") });
+    expect((second.json() as { sha256: string }).sha256).toBe((first.json() as { sha256: string }).sha256);
     expect(h.urls).toEqual([]);
   });
 

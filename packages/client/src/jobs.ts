@@ -13,9 +13,11 @@ import {
   type Intent,
   IntentStatus,
   Kind,
+  DELIVERY_MEMO_PREFIX,
   parseDeliveryMemo,
   parseSpecMemo,
   remainingOf,
+  SPEC_MEMO_PREFIX,
 } from "@intent-engine/core";
 import { chainTime, createdAccount } from "./accounts.js";
 import { MEMO_PROGRAM_ADDRESS, TRANSACTION_FETCHES, type Transport } from "./transport.js";
@@ -118,7 +120,7 @@ const createdIn = (emitted: readonly Uint8Array[], intent: Address): boolean =>
   });
 
 export async function specUrlOf(transport: Transport, intent: Address): Promise<string | null> {
-  for (const tx of await transport.engineTransactions(SPEC_SCAN, intent)) {
+  for (const tx of await transport.engineTransactions(SPEC_SCAN, intent, SPEC_MEMO_PREFIX)) {
     if (tx.failed || !createdIn(tx.emitted, intent)) {
       continue;
     }
@@ -222,7 +224,7 @@ export async function deliveriesOf(transport: Transport, judge: Address, intent?
   if (judged.size === 0) {
     return [];
   }
-  return (await transport.engineTransactions(DELIVERY_SCAN, judge)).flatMap(({ signature, slot, blockTime, failed, memos, feePayer }) =>
+  return (await transport.engineTransactions(DELIVERY_SCAN, judge, DELIVERY_MEMO_PREFIX)).flatMap(({ signature, slot, blockTime, failed, memos, feePayer }) =>
     failed || feePayer === undefined
       ? []
       : (memos ?? [])

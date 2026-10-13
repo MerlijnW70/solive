@@ -502,6 +502,29 @@ describe("engine transactions", () => {
     expect(s.calls).toEqual([`signatures:${INTENT_ENGINE_PROGRAM_ADDRESS}:5`, `transaction:${OTHER_SIG}:json:0:confirmed`]);
   });
 
+  it("fetches only the transactions whose listed memo contains the asked text", async () => {
+    const s = stub([]);
+    const asked: string[] = [];
+    const rpc = {
+      ...s.rpc,
+      getSignaturesForAddress: () => ({
+        send: async () => [
+          { signature: SIG, slot: 7n, blockTime: 100n, err: null, memo: "[52] solive-delivery:x" },
+          { signature: OTHER_SIG, slot: 8n, blockTime: 1n, err: null, memo: null },
+        ],
+      }),
+      getTransaction: (signature: Signature) => ({
+        send: async () => {
+          asked.push(signature);
+          return null;
+        },
+      }),
+    };
+    const found = await rpcTransport(rpc, s.wait).engineTransactions(5, OWNER, "solive-delivery:");
+    expect(found.map(({ signature }) => signature)).toEqual([SIG]);
+    expect(asked).toEqual([SIG]);
+  });
+
   it("keeps a bounded number of fetched transactions and fetches only the ones it dropped", async () => {
     const s = stub([]);
     const sigs = Array.from({ length: KEPT_TRANSACTIONS + 1 }, (_, i) => `${SIG.slice(0, -4)}${String(i).padStart(4, "0")}` as Signature);

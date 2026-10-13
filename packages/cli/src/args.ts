@@ -110,6 +110,7 @@ type ConfigChange = {
 
 export type Command =
   | { name: "pda"; owner: Address; nonce: bigint }
+  | { name: "hash"; artifact: string }
   | (Remote & { name: "show-config" })
   | (Remote & { name: "domain" })
   | (Remote & { name: "setup"; keypair: string | undefined })
@@ -383,6 +384,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   setup: ["url", "keypair"],
   balance: ["url", "keypair", "owner", "mints"],
   pda: ["owner", "nonce"],
+  hash: ["artifact"],
   show: ["url", "owner", "nonce"],
   domain: ["url"],
   mcp: [
@@ -1095,7 +1097,7 @@ export function outputOf(argv: readonly string[]): "json" | "text" {
 export const MAX_FOLLOW_INTERVAL = 3_600;
 export const WATCH_INTERVAL = 5;
 
-export const COMMANDS = "setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | judge | version | help [command]";
+export const COMMANDS = "setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | judge | hash | version | help [command]";
 
 export const USAGE = `usage: ${COMMANDS}`;
 
@@ -1109,6 +1111,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   setup: "[--url <cluster>] [--keypair <file>]",
   balance: "[--keypair <file> | --owner <address>] [--mints <mint,...>]",
   pda: "--owner <address> --nonce <n>",
+  hash: "--artifact <file or directory>",
   show: "config | intent --owner <address> --nonce <n>",
   domain: "",
   mcp: "[--wallet [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>]] [--relayer <keypair> --relay-fee <mint=amount,...> [--relay-max-lamports] [--relay-max-ttl] [--relay-per-hour] [--relay-hourly-lamports]] [--agent <keypair> --agent-owners <address,...> [--agent-hourly-lamports]]",
@@ -1197,6 +1200,9 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
     case "pda":
       noSub(sub);
       return { name: "pda", owner: key(values, "owner"), nonce: u64(values, "nonce") };
+    case "hash":
+      noSub(sub);
+      return { name: "hash", artifact: required(values, "artifact") };
     case "show":
       if (sub === "config") {
         return { name: "show-config", ...remote };

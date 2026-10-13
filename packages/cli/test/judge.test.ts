@@ -209,10 +209,12 @@ describe("intent-engine judge", () => {
 });
 
 describe("the artifact hash", () => {
-  it("hashes a file as a one-entry manifest under its own name, and refuses links and missing paths", async () => {
+  it("hashes a file by its bytes alone, whatever its name, a directory as a manifest, and refuses links and missing paths", async () => {
     const dir = await mkdtemp(join(tmpdir(), "artifact-"));
     await writeFile(join(dir, "work.tar"), "bytes");
-    expect(await artifactSha256(join(dir, "work.tar"))).toBe(await manifestSha256([{ path: "work.tar", bytes: new TextEncoder().encode("bytes") }]));
+    await writeFile(join(dir, "renamed"), "bytes");
+    expect(await artifactSha256(join(dir, "work.tar"))).toBe(createHash("sha256").update("bytes").digest("hex"));
+    expect(await artifactSha256(join(dir, "renamed"))).toBe(await artifactSha256(join(dir, "work.tar")));
     await mkdir(join(dir, "tree"));
     await writeFile(join(dir, "tree", "a"), "1");
     expect(await artifactSha256(join(dir, "tree"))).toBe(await manifestSha256([{ path: "a", bytes: new TextEncoder().encode("1") }]));

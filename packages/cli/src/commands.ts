@@ -91,7 +91,7 @@ import { describeIntent, quoteOf, sameBytes } from "./accounts.js";
 import { closing, crank, expiring } from "./crank.js";
 import { priceOf, withPriority } from "./compute.js";
 import { createTreasuryAccounts, intentInputMints, treasuryView } from "./treasury.js";
-import { judge } from "./judge.js";
+import { artifactSha256, judge } from "./judge.js";
 
 export type Runtime = {
   transport(url: string): Transport;
@@ -436,6 +436,9 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
   }
   if (command.name === "version") {
     return { version: VERSION };
+  }
+  if (command.name === "hash") {
+    return { artifact: command.artifact, sha256: await artifactSha256(command.artifact) };
   }
   if (command.name === "pda") {
     const [intent] = await findIntentPda({ owner: command.owner, nonce: command.nonce });

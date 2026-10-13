@@ -68,7 +68,7 @@ Anyone can copy a delivery announcement once it is on chain, so `judge` pays the
 
 ## The work's hash
 
-A file hashes as `manifestSha256` from `@intent-engine/core` over one entry, its file name and bytes. A directory hashes as `manifestSha256` over every file under it, by its path relative to the directory with forward slashes, skipping `.git`, `node_modules` and `target`. `judge` refuses work that holds a symbolic link or any other entry that is neither a file nor a directory. A worker announces this hash.
+A file hashes as the SHA-256 of its bytes, so its name does not matter and `sha256sum` gives the same hash. A directory hashes as `manifestSha256` over every file under it, by its path relative to the directory with forward slashes, skipping `.git`, `node_modules` and `target`. `judge` refuses work that holds a symbolic link or any other entry that is neither a file nor a directory. A worker announces this hash, which `intent-engine hash --artifact <file or directory>` prints. Work that is one file links to that file itself; work that is several files links to an archive, which the judge unpacks into a directory before it judges it.
 
 ## From an AI agent
 

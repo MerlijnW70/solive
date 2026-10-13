@@ -118,8 +118,12 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
       }
       return found;
     },
-    engineTransactions: async (limit, of = INTENT_ENGINE_PROGRAM_ADDRESS) =>
-      history.filter(({ touched }) => touched.has(of)).slice(0, limit).map(({ found }) => found),
+    engineTransactions: async (limit, of = INTENT_ENGINE_PROGRAM_ADDRESS, memo?: string) =>
+      history
+        .filter(({ touched }) => touched.has(of))
+        .slice(0, limit)
+        .map(({ found }) => found)
+        .filter(({ memos }) => memo === undefined || (memos ?? []).some((text) => text.includes(memo))),
     recentFees: async () => [],
     budget: async (instructions) => [...instructions],
     airdrop: async (address, amount) => {

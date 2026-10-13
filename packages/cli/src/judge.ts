@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { basename, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import type { Address, Signature } from "@solana/kit";
 import { decodeParams, IntentStatus, Kind, type ManifestEntry, manifestSha256 } from "@intent-engine/core";
 import { chainTime, createClient, deliveriesOf, firstDelivery, loadIntent, type Transport } from "@intent-engine/client";
@@ -61,7 +61,7 @@ async function filesUnder(root: string, prefix: string): Promise<ManifestEntry[]
 export async function artifactSha256(path: string): Promise<string> {
   const found = await stat(path);
   if (found.isFile()) {
-    return manifestSha256([{ path: basename(path), bytes: await readFile(path) }]);
+    return createHash("sha256").update(await readFile(path)).digest("hex");
   }
   if (found.isDirectory()) {
     return manifestSha256(await filesUnder(path, ""));
