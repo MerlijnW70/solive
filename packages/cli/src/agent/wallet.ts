@@ -15,6 +15,7 @@ import {
   formatAmount,
   formatTime,
   getIntentDecoder,
+  INTENT_ENGINE_PROGRAM_ADDRESS,
   IntentStatus,
   Kind,
   LONG_LIVED_SECONDS,
@@ -27,6 +28,7 @@ import {
   WARN_ATTESTOR,
   WARN_LONG_LIVED,
 } from "@intent-engine/core";
+import { decodeLookupTable } from "@intent-engine/solver";
 import { chainTime, CLOCK_SYSVAR, loadConfig, mintOf } from "../accounts.js";
 import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "../args.js";
 import { execute, type PreparedView } from "../flows.js";
@@ -784,6 +786,7 @@ const walletAttestSplit = define({
     nonce: amount("the escrow intent's nonce"),
     recipients: list(coauthor, MAX_SPLIT_RECIPIENTS, "the co-authors and their weighted shares, up to 8", 1),
     result: optional(amount("the result to attest, between the intent's min_result and max_result; default min_result")),
+    lookup_table: optional(account("an address lookup table holding this split's lookup_accounts, to fit more co-authors under the transaction size limit; create one with the preview's lookup_accounts and pass it with send")),
     approval: optional(text("the approval the preview returned; needed with send")),
     send: optional(flag("true signs the attestation and settles; leave out to preview")),
   }),
@@ -791,6 +794,7 @@ const walletAttestSplit = define({
     intent: account(),
     digest: text("64 hex: the split digest every co-author and this wallet sign over"),
     envelope: text("the one message every co-author and this wallet sign, as hex; collect each co-author's signature over it"),
+    lookup_accounts: list(account(), 24, "put these in an address lookup table (solana address-lookup-table create, then extend) and pass it as lookup_table to fit more co-authors"),
     paid: list(object({ wallet: account(), weight: amount(), amount: text("whole tokens this co-author receives") }), MAX_SPLIT_RECIPIENTS),
     net: text("whole tokens shared among the co-authors"),
     fee: text("whole tokens kept as fees"),
@@ -895,14 +899,25 @@ const walletAttestSplit = define({
       batch = buildEd25519BatchInstruction({ entries: [...entries, { publicKey: signer.address, signature: attestorSignature }], message });
     }
     const setup = [...payees.flatMap((p) => p.create), ...treasury.create, ...partner.create, ...judge.create];
+    const invoked = new Set<Address>([INTENT_ENGINE_PROGRAM_ADDRESS, token.tokenProgram, signer.address]);
+    const lookupAccounts = [...new Set((settle.accounts ?? []).map((a) => a.address))].filter((a) => !invoked.has(a));
+    let tables;
+    if (input.send === true && input.lookup_table !== undefined) {
+      const view = await ctx.transport.getAccount(input.lookup_table);
+      if (view === null) {
+        throw new AgentRefusal("NotFound", `no lookup table ${input.lookup_table} on this cluster`);
+      }
+      tables = { [input.lookup_table]: decodeLookupTable(view.data) };
+    }
     const prepared =
       input.send === true && batch !== undefined
-        ? preparedView(await prepare(ctx.transport, [...setup, batch, settle], signer.address))
+        ? preparedView(await prepare(ctx.transport, [...setup, batch, settle], signer.address, tables))
         : undefined;
     const view2 = {
       intent,
       digest: digestHex,
       envelope: getBase16Decoder().decode(message),
+      lookup_accounts: lookupAccounts,
       paid: input.recipients.map((r, i) => ({
         wallet: r.wallet,
         weight: BigInt(r.weight),

@@ -2,6 +2,7 @@ import {
   type Address,
   appendTransactionMessageInstructions,
   compileTransaction,
+  compressTransactionMessageUsingAddressLookupTables,
   getTransactionEncoder,
   partiallySignTransactionMessageWithSigners,
   createTransactionMessage,
@@ -26,17 +27,33 @@ export type Prepared = {
   logs: string[];
 };
 
+export type LookupTables = Readonly<Record<Address, Address[]>>;
+
+const withTables = <
+  T extends Parameters<typeof compressTransactionMessageUsingAddressLookupTables>[0],
+>(
+  message: T,
+  tables?: LookupTables,
+) =>
+  tables === undefined || Object.keys(tables).length === 0
+    ? message
+    : compressTransactionMessageUsingAddressLookupTables(message, tables);
+
 export async function transactionSize(
   transport: Transport,
   instructions: readonly Instruction[],
   feePayer: Address,
+  tables?: LookupTables,
 ): Promise<number> {
   const latest = await transport.latestBlockhash();
-  const message = pipe(
-    createTransactionMessage({ version: 0 }),
-    (m) => setTransactionMessageFeePayer(feePayer, m),
-    (m) => setTransactionMessageLifetimeUsingBlockhash(latest, m),
-    (m) => appendTransactionMessageInstructions(instructions, m),
+  const message = withTables(
+    pipe(
+      createTransactionMessage({ version: 0 }),
+      (m) => setTransactionMessageFeePayer(feePayer, m),
+      (m) => setTransactionMessageLifetimeUsingBlockhash(latest, m),
+      (m) => appendTransactionMessageInstructions(instructions, m),
+    ),
+    tables,
   );
   return getTransactionEncoder().encode(compileTransaction(message)).length;
 }
@@ -45,14 +62,18 @@ export async function prepare(
   transport: Transport,
   instructions: readonly Instruction[],
   feePayer: Address,
+  tables?: LookupTables,
 ): Promise<Prepared> {
   const budgeted = await transport.budget(instructions, feePayer);
   const latest = await transport.latestBlockhash();
-  const message = pipe(
-    createTransactionMessage({ version: 0 }),
-    (m) => setTransactionMessageFeePayer(feePayer, m),
-    (m) => setTransactionMessageLifetimeUsingBlockhash(latest, m),
-    (m) => appendTransactionMessageInstructions(budgeted, m),
+  const message = withTables(
+    pipe(
+      createTransactionMessage({ version: 0 }),
+      (m) => setTransactionMessageFeePayer(feePayer, m),
+      (m) => setTransactionMessageLifetimeUsingBlockhash(latest, m),
+      (m) => appendTransactionMessageInstructions(budgeted, m),
+    ),
+    tables,
   );
   const compiled = await partiallySignTransactionMessageWithSigners(message);
   const transaction = getBase64EncodedWireTransaction(compiled);

@@ -447,6 +447,10 @@ describe("the wallet server", () => {
     expect(shown).toMatchObject({ intent: escrow["intent"], result: "1", net: formatAmount(net, 9), sent: false });
     expect((shown["paid"] as Json[]).map((p) => p["amount"])).toEqual(payout.map((a) => formatAmount(a, 9)));
     expect(shown["digest"]).toMatch(/^[0-9a-f]{64}$/);
+    const lookupAccounts = shown["lookup_accounts"] as string[];
+    expect(Array.isArray(lookupAccounts) && lookupAccounts.length > 0).toBe(true);
+    expect(lookupAccounts).not.toContain(INTENT_ENGINE_PROGRAM_ADDRESS);
+    expect(lookupAccounts).toContain(escrow["intent"]);
     const envelope = bytesOf(shown["envelope"] as string);
     const signed = await Promise.all(
       recipients.map(async (r, i) => ({
@@ -457,6 +461,9 @@ describe("the wallet server", () => {
     expect((await call(client, "wallet_attest_split", { owner, nonce, recipients: signed, send: true })).value).toMatchObject({ code: "ReleaseChanged", hint: RELEASE_CHANGED });
     const missing = signed.map((s, i) => (i === 2 ? { wallet: s.wallet, weight: s.weight } : s));
     expect((await call(client, "wallet_attest_split", { owner, nonce, recipients: missing, approval: shown["approval"], send: true })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "recipients.2.signature" }] });
+    const reshown = await ok(client, "wallet_attest_split", { owner, nonce, recipients: signed });
+    const absentTable = (await generateKeyPairSigner()).address;
+    expect((await call(client, "wallet_attest_split", { owner, nonce, recipients: signed, lookup_table: absentTable, approval: reshown["approval"], send: true })).value).toMatchObject({ code: "NotFound" });
     const done = await ok(client, "wallet_attest_split", { owner, nonce, recipients: signed, approval: shown["approval"], send: true });
     expect(done).toMatchObject({ sent: true, signature: expect.any(String) });
     for (const [i, c] of coauthors.entries()) {
