@@ -117,6 +117,10 @@ await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: j
 console.log(statusName((await client.intent(signer.address, job.nonce))?.intent.status ?? -1));
 ```
 
+## Test offline
+
+`svmTransport(svm)` from `@intent-engine/client/svm` runs the client against a local LiteSVM instance instead of a cluster: pass it as `createClient({ url, transport })`. It needs the `litesvm` package, which ships for Linux and macOS only; on Windows, run it in WSL.
+
 ## Next
 
 - [Errors](reference/errors.md)
