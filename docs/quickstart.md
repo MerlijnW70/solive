@@ -88,3 +88,4 @@ intent-engine cancel --nonce 1
 - [Connect an AI agent](mcp.md)
 - [Let an agent trade within limits](mandate.md)
 - [Run a solver](solver.md)
+- [Build on it from TypeScript](sdk.md)

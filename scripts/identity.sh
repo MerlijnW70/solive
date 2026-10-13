@@ -57,7 +57,7 @@ Change License:       %s
 }
 render() {
   case "$1" in
-    README.md) printf '\043 %s\n\nStart here: [Use it from your AI](docs/ai.md), or the [command line quickstart](docs/quickstart.md)\n\nLicense: the on-chain program (`programs/intent_engine`) and its core library (`crates/intent-core`) are under the [Business Source License](programs/intent_engine/LICENSE), which turns into the GNU GPL on the change date it names. Everything else, including the npm packages, is under the [Apache License](LICENSE).\n' "$name" ;;
+    README.md) printf '\043 %s\n\nStart here: [Use it from your AI](docs/ai.md), the [command line quickstart](docs/quickstart.md), or [build on it from TypeScript](docs/sdk.md)\n\nLicense: the on-chain program (`programs/intent_engine`) and its core library (`crates/intent-core`) are under the [Business Source License](programs/intent_engine/LICENSE), which turns into the GNU GPL on the change date it names. Everything else, including the npm packages, is under the [Apache License](LICENSE).\n' "$name" ;;
     scripts/wsl.cmd | packages/core/scripts/wsl.cmd | packages/cli/scripts/wsl.cmd | packages/solver/scripts/wsl.cmd) printf '@wsl.exe -d %s --cd "%%~dp0.." -- %%*\r\n' "$distro" ;;
     programs/intent_engine/src/security.rs) printf '\043[cfg(not(feature = "no-entrypoint"))]
 solana_security_txt::security_txt! {
