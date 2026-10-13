@@ -1,3 +1,6 @@
+import type { Address } from "@solana/kit";
+import type { Config } from "../generated/client/index.js";
+import { Kind, kindBit, type KindName } from "./kinds.js";
 import { U64_MAX } from "./math.js";
 
 export const CONFIG_VERSION = 1;
@@ -34,6 +37,55 @@ export function feeBpsFor(config: FeeConfig, kind: number): number {
     throw new RangeError(`no fee is configured for kind ${kind}`);
   }
   return bps;
+}
+
+export type KindSummary = { kind: Kind; name: KindName; create: boolean; fill: boolean; feeBps: number };
+
+export type ConfigSummary = {
+  createPaused: boolean;
+  fillPaused: boolean;
+  kinds: KindSummary[];
+  createFee: bigint;
+  crankBounty: bigint;
+  partnerCutBps: number;
+  admin: Address;
+  guardian: Address;
+};
+
+export type SummarizedConfig = Pick<
+  Config,
+  | "admin"
+  | "guardian"
+  | "paused"
+  | "enabledKinds"
+  | "fillDisabledKinds"
+  | "feeBps"
+  | "kindFeeMask"
+  | "kindFeeBps"
+  | "partnerCutBps"
+  | "createFee"
+  | "crankBounty"
+>;
+
+const KINDS = [Kind.SwapExactIn, Kind.LimitOrder, Kind.DutchAuction, Kind.AttestedResult] as const;
+
+export function configSummary(config: SummarizedConfig): ConfigSummary {
+  return {
+    createPaused: (config.paused & PAUSE_CREATE) !== 0,
+    fillPaused: (config.paused & PAUSE_FILL) !== 0,
+    kinds: KINDS.map((kind) => ({
+      kind,
+      name: Kind[kind] as KindName,
+      create: (config.enabledKinds & kindBit(kind)) !== 0n,
+      fill: (config.fillDisabledKinds & kindBit(kind)) === 0n,
+      feeBps: feeBpsFor(config, kind),
+    })),
+    createFee: BigInt(config.createFee),
+    crankBounty: BigInt(config.crankBounty),
+    partnerCutBps: config.partnerCutBps,
+    admin: config.admin,
+    guardian: config.guardian,
+  };
 }
 
 export const NONCE_WINDOW_WORDS = 4;

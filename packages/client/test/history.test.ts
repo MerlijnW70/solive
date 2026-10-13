@@ -1,0 +1,84 @@
+import type { Address, KeyPairSigner } from "@solana/kit";
+import {
+  getCreateAssociatedTokenIdempotentInstructionAsync,
+  getMintToInstruction,
+} from "@solana-program/token";
+import { describe, expect, it } from "vitest";
+import {
+  buildCloseIntent,
+  buildFillIntent,
+  findAssociatedTokenAddress,
+  Kind,
+  TOKEN_PROGRAM_ADDRESS,
+} from "@intent-engine/core";
+import { createClient, type HistoryEvent } from "../src/index.js";
+import { funded, world, type World } from "./svm.js";
+
+const LOCAL = "http://127.0.0.1:8899";
+const ata = (owner: Address, mint: Address) => findAssociatedTokenAddress({ owner, mint, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+
+async function holding(w: World, owner: Address, mint: Address, amount: bigint): Promise<Address> {
+  const address = await ata(owner, mint);
+  await w.chain.transport.send(
+    [
+      await getCreateAssociatedTokenIdempotentInstructionAsync({ payer: w.authority, owner, mint }),
+      ...(amount > 0n ? [getMintToInstruction({ mint, token: address, mintAuthority: w.authority, amount })] : []),
+    ],
+    w.authority,
+  );
+  return address;
+}
+
+async function fill(w: World, solver: KeyPairSigner, nonce: bigint, amountIn: bigint, amountOut: bigint) {
+  const ref = { owner: w.owner.address, nonce, inputMint: w.inputMint };
+  await w.chain.transport.send(
+    [
+      await buildFillIntent({
+        ...ref,
+        solver,
+        outputMint: w.outputMint,
+        inputTokenProgram: TOKEN_PROGRAM_ADDRESS,
+        outputTokenProgram: TOKEN_PROGRAM_ADDRESS,
+        receiver: await ata(w.owner.address, w.outputMint),
+        solverOutput: await holding(w, solver.address, w.outputMint, amountOut),
+        solverInput: await holding(w, solver.address, w.inputMint, 0n),
+        feeRecipient: w.feeRecipient.address,
+        amountIn,
+        amountOut,
+        maxFeeBps: 100,
+      }),
+      await buildCloseIntent({ ...ref, cranker: solver, tokenProgram: TOKEN_PROGRAM_ADDRESS }),
+    ],
+    solver,
+  );
+}
+
+const names = (events: HistoryEvent[]) => events.map(({ name }) => name);
+
+describe("history", () => {
+  it("reads what a fill delivered after the filler closed the intent, newest first", async () => {
+    const w = await world();
+    await holding(w, w.feeRecipient.address, w.inputMint, 0n);
+    const client = createClient({ url: LOCAL, transport: w.chain.transport });
+    const swap = { kind: Kind.SwapExactIn, amountIn: 400n, minOut: 30n } as const;
+    const created = await client.createIntent({ signer: w.owner, params: swap, inputMint: w.inputMint, outputMint: w.outputMint });
+    const other = await client.createIntent({ signer: w.owner, params: swap, inputMint: w.inputMint, outputMint: w.outputMint });
+    expect(names(await client.history(created.intent))).toEqual(["IntentCreated"]);
+
+    const solver = await funded(w.chain);
+    await fill(w, solver, created.nonce, 400n, 45n);
+    expect(await client.intent(w.owner.address, created.nonce)).toBeNull();
+
+    const events = await client.history(created.intent);
+    expect(names(events)).toEqual(["IntentClosed", "IntentFilled", "IntentCreated"]);
+    const filled = events.find((event) => event.name === "IntentFilled");
+    expect(filled?.fields).toMatchObject({ intent: created.intent, solver: solver.address, amountIn: 400n, delivered: 45n, required: 30n });
+    expect(events[1]?.signature).toBe(events[0]?.signature);
+    expect(events[2]?.signature).toBe(created.signature);
+    expect(events.every(({ slot }) => typeof slot === "bigint")).toBe(true);
+
+    expect(names(await client.history(other.intent))).toEqual(["IntentCreated"]);
+    expect(names(await client.history(created.intent, 1))).toEqual(["IntentClosed", "IntentFilled"]);
+    expect(await client.history(solver.address)).toEqual([]);
+  });
+});

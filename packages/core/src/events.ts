@@ -32,7 +32,7 @@ export const EVENT_IX_TAG = new Uint8Array([0xe4, 0x45, 0xa5, 0x2e, 0x51, 0xcb, 
 
 type EventName = (typeof IntentEngineEvent)[IntentEngineEvent];
 
-const PARSERS: Record<EventName, (data: Uint8Array) => object> = {
+const PARSERS = {
   AdminAccepted: parseAdminAcceptedEvent,
   AgentPaid: parseAgentPaidEvent,
   AdminProposed: parseAdminProposedEvent,
@@ -58,7 +58,11 @@ const PARSERS: Record<EventName, (data: Uint8Array) => object> = {
   PauseRaised: parsePauseRaisedEvent,
   RelayerPaid: parseRelayerPaidEvent,
   UserInitialized: parseUserInitializedEvent,
-};
+} satisfies Record<EventName, (data: Uint8Array) => object>;
+
+export type EngineEvent = {
+  [K in EventName]: { name: K; notable: boolean; fields: ReturnType<(typeof PARSERS)[K]> };
+}[EventName];
 
 export const NOTABLE = new Set([
   "AdminAccepted",

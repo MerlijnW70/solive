@@ -59,11 +59,15 @@ type Pending<T> = { send(): Promise<T> };
 
 type RawAccount = { owner: Address; data: readonly [string, string]; lamports: bigint; executable: boolean };
 
+type AtLeast = { minContextSlot?: bigint };
+
+type Status = { err: unknown; confirmationStatus: string | null; slot?: bigint };
+
 export type RpcLike = {
-  getMultipleAccounts(addresses: Address[], config: { encoding: "base64" }): Pending<{ value: (RawAccount | null)[] }>;
+  getMultipleAccounts(addresses: Address[], config: { encoding: "base64" } & AtLeast): Pending<{ value: (RawAccount | null)[] }>;
   getAccountInfo(
     address: Address,
-    config: { encoding: "base64" },
+    config: { encoding: "base64" } & AtLeast,
   ): Pending<{ value: { owner: Address; data: readonly [string, string]; lamports: bigint; executable: boolean } | null }>;
   getLatestBlockhash(): Pending<{ value: { blockhash: Blockhash; lastValidBlockHeight: bigint } }>;
   sendTransaction(
@@ -89,7 +93,7 @@ export type RpcLike = {
   getSignatureStatuses(
     signatures: Signature[],
     config?: { searchTransactionHistory: boolean },
-  ): Pending<{ context: { slot: bigint }; value: readonly ({ err: unknown; confirmationStatus: string | null } | null)[] }>;
+  ): Pending<{ context: { slot: bigint }; value: readonly (Status | null)[] }>;
   getEpochInfo(): Pending<{ blockHeight: bigint; absoluteSlot: bigint }>;
   requestAirdrop(address: Address, lamports: bigint): Pending<Signature>;
   getRecentPrioritizationFees(addresses: readonly Address[]): Pending<readonly { prioritizationFee: bigint }[]>;
@@ -103,11 +107,11 @@ export type RpcLike = {
         | { dataSize: bigint }
         | { memcmp: { offset: bigint; bytes: string; encoding: "base58" } }
       )[];
-    },
+    } & AtLeast,
   ): Pending<readonly { pubkey: Address; account: { data: readonly [string, string] } }[]>;
   getSignaturesForAddress(
     address: Address,
-    config: { limit: number },
+    config: { limit: number } & AtLeast,
   ): Pending<readonly { signature: Signature; slot: bigint; blockTime: bigint | null; err: unknown }[]>;
   getTransaction(
     signature: Signature,
@@ -136,12 +140,22 @@ export function rateLimited(error: unknown): boolean {
   return error instanceof Error && !(error instanceof Charged) && /\b429\b/.test(error.message);
 }
 
+export const MIN_CONTEXT_SLOT_NOT_REACHED = -32016;
+
+export function behindMinSlot(error: unknown): boolean {
+  if (!(error instanceof Error) || error instanceof Charged) {
+    return false;
+  }
+  const code = (error as { context?: { __code?: unknown } }).context?.__code;
+  return code === MIN_CONTEXT_SLOT_NOT_REACHED || /-32016\b|minimum context slot/i.test(error.message);
+}
+
 export async function patiently<T>(call: () => Promise<T>, wait: (ms: number) => Promise<void> = sleep): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     try {
       return await call();
     } catch (error) {
-      if (!rateLimited(error) || attempt >= RATE_LIMIT_ATTEMPTS) {
+      if (!(rateLimited(error) || behindMinSlot(error)) || attempt >= RATE_LIMIT_ATTEMPTS) {
         throw error;
       }
       await wait(POLL_MS * 2 ** attempt);
@@ -169,7 +183,9 @@ const withoutMark = ({ complete: _, ...found }: EngineTransaction & { complete: 
 
 export const neverLanded = (error: unknown): boolean => error instanceof FailedOnChain || error instanceof BlockhashExpired;
 
-export type SignatureWatch = (signature: Signature, signal: AbortSignal) => Promise<void>;
+export type Confirmed = { slot?: bigint };
+
+export type SignatureWatch = (signature: Signature, signal: AbortSignal) => Promise<Confirmed | void>;
 
 export function signatureWatch(url: string): SignatureWatch {
   const subscriptions = createSolanaRpcSubscriptions(socketUrl(url));
@@ -180,14 +196,20 @@ export function signatureWatch(url: string): SignatureWatch {
     if (next.done === true) {
       throw new Error(`the signature subscription for ${signature} ended without a notification`);
     }
-    const err = (next.value as { value?: { err?: unknown } }).value?.err ?? null;
-    if (err !== null) {
-      throw new FailedOnChain(`transaction ${signature} failed: ${inspect(err)}`);
-    }
+    return heardSlot(signature, next.value);
   };
 }
 
-const never = new Promise<void>(() => undefined);
+export function heardSlot(signature: Signature, note: unknown): Confirmed {
+  const { context, value } = (note ?? {}) as { context?: { slot?: unknown }; value?: { err?: unknown } };
+  const err = value?.err ?? null;
+  if (err !== null) {
+    throw new FailedOnChain(`transaction ${signature} failed: ${inspect(err)}`);
+  }
+  return typeof context?.slot === "bigint" ? { slot: context.slot } : {};
+}
+
+const never = new Promise<Confirmed>(() => undefined);
 
 export async function confirm(
   rpc: RpcLike,
@@ -195,32 +217,35 @@ export async function confirm(
   lastValidBlockHeight: bigint,
   wait: (ms: number) => Promise<void> = sleep,
   watch?: SignatureWatch,
-): Promise<void> {
+): Promise<Confirmed> {
   if (watch === undefined) {
     return polled(rpc, signature, lastValidBlockHeight, wait);
   }
   const controller = new AbortController();
-  const heard = watch(signature, controller.signal).catch((error: unknown) => {
-    if (error instanceof Charged) {
-      throw error;
-    }
-    return never;
-  });
+  const heard = watch(signature, controller.signal).then(
+    (found) => found ?? {},
+    (error: unknown) => {
+      if (error instanceof Charged) {
+        throw error;
+      }
+      return never;
+    },
+  );
   try {
-    await Promise.race([heard, polled(rpc, signature, lastValidBlockHeight, wait, controller.signal)]);
+    return await Promise.race([heard, polled(rpc, signature, lastValidBlockHeight, wait, controller.signal)]);
   } finally {
     controller.abort();
   }
 }
 
-function settled(signature: Signature, status: { err: unknown; confirmationStatus: string | null } | null | undefined): boolean {
+function settled(signature: Signature, status: Status | null | undefined): Confirmed | null {
   if (!status || (status.confirmationStatus !== "confirmed" && status.confirmationStatus !== "finalized")) {
-    return false;
+    return null;
   }
   if (status.err !== null) {
     throw new FailedOnChain(`transaction ${signature} failed: ${inspect(status.err)}`);
   }
-  return true;
+  return status.slot === undefined ? {} : { slot: status.slot };
 }
 
 export async function confirmSent(
@@ -229,9 +254,9 @@ export async function confirmSent(
   lastValidBlockHeight: bigint,
   wait: (ms: number) => Promise<void> = sleep,
   watch?: SignatureWatch,
-): Promise<void> {
+): Promise<Confirmed> {
   try {
-    await confirm(rpc, signature, lastValidBlockHeight, wait, watch);
+    return await confirm(rpc, signature, lastValidBlockHeight, wait, watch);
   } catch (error) {
     if (error instanceof Charged || error instanceof BlockhashExpired) {
       throw error;
@@ -248,18 +273,20 @@ async function polled(
   lastValidBlockHeight: bigint,
   wait: (ms: number) => Promise<void>,
   stop?: AbortSignal,
-): Promise<void> {
+): Promise<Confirmed> {
   for (let poll = 1; stop?.aborted !== true; poll++) {
     const [status] = (await patiently(() => rpc.getSignatureStatuses([signature]).send(), wait)).value;
-    if (settled(signature, status)) {
-      return;
+    const confirmed = settled(signature, status);
+    if (confirmed !== null) {
+      return confirmed;
     }
     const epoch = await patiently(() => rpc.getEpochInfo().send(), wait);
     if (epoch.blockHeight > lastValidBlockHeight) {
       const late = await patiently(() => rpc.getSignatureStatuses([signature], { searchTransactionHistory: true }).send(), wait);
       const [found] = late.value;
-      if (settled(signature, found)) {
-        return;
+      const landed = settled(signature, found);
+      if (landed !== null) {
+        return landed;
       }
       if (found) {
         throw new Charged(`transaction ${signature} landed but is not confirmed yet; look the signature up before sending again`);
@@ -275,6 +302,7 @@ async function polled(
     }
     await wait(POLL_MS);
   }
+  return {};
 }
 
 export const MULTIPLE_ACCOUNTS_LIMIT = 100;
@@ -346,16 +374,25 @@ export function memoized(inner: Transport): Transport {
 
 export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>, watch?: SignatureWatch): Transport {
   const fetched = new Map<string, Promise<EngineTransaction & { complete: boolean }>>();
+  let reached: bigint | undefined;
+  const atLeast = (): AtLeast => (reached === undefined ? {} : { minContextSlot: reached });
+  const confirmed = async (signature: Signature, lastValidBlockHeight: bigint) => {
+    const { slot } = await confirmSent(rpc, signature, lastValidBlockHeight, wait, watch);
+    if (slot !== undefined && (reached === undefined || slot > reached)) {
+      reached = slot;
+    }
+    return signature;
+  };
   return {
     async getAccount(address) {
-      const { value } = await patiently(() => rpc.getAccountInfo(address, { encoding: "base64" }).send(), wait);
+      const { value } = await patiently(() => rpc.getAccountInfo(address, { encoding: "base64", ...atLeast() }).send(), wait);
       return viewOf(value);
     },
     async getAccounts(addresses) {
       const found: (AccountView | null)[] = [];
       for (let at = 0; at < addresses.length; at += MULTIPLE_ACCOUNTS_LIMIT) {
         const chunk = addresses.slice(at, at + MULTIPLE_ACCOUNTS_LIMIT);
-        const { value } = await patiently(() => rpc.getMultipleAccounts([...chunk], { encoding: "base64" }).send(), wait);
+        const { value } = await patiently(() => rpc.getMultipleAccounts([...chunk], { encoding: "base64", ...atLeast() }).send(), wait);
         found.push(...chunk.map((_, i) => viewOf(value[i] ?? null)));
       }
       return found;
@@ -371,14 +408,12 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       const signed = await signTransactionMessageWithSigners(message);
       const wire = getBase64EncodedWireTransaction(signed);
       const signature = await patiently(() => rpc.sendTransaction(wire, { encoding: "base64" }).send(), wait);
-      await confirmSent(rpc, signature, latest.lastValidBlockHeight, wait, watch);
-      return signature;
+      return confirmed(signature, latest.lastValidBlockHeight);
     },
     async airdrop(address, lamports) {
       const { value: latest } = await patiently(() => rpc.getLatestBlockhash().send(), wait);
       const signature = await rpc.requestAirdrop(address, lamports).send();
-      await confirmSent(rpc, signature, latest.lastValidBlockHeight, wait, watch);
-      return signature;
+      return confirmed(signature, latest.lastValidBlockHeight);
     },
     async latestBlockhash() {
       const { value } = await patiently(() => rpc.getLatestBlockhash().send(), wait);
@@ -386,8 +421,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     },
     async sendWire(wire, latest) {
       const signature = await patiently(() => rpc.sendTransaction(wire, { encoding: "base64" }).send(), wait);
-      await confirmSent(rpc, signature, latest.lastValidBlockHeight, wait, watch);
-      return signature;
+      return confirmed(signature, latest.lastValidBlockHeight);
     },
     async submitWire(wire) {
       return patiently(() => rpc.sendTransaction(wire, { encoding: "base64", skipPreflight: true }).send(), wait);
@@ -427,7 +461,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     },
     async engineTransactions(limit, of) {
       const signatures = await patiently(
-        () => rpc.getSignaturesForAddress(of ?? INTENT_ENGINE_PROGRAM_ADDRESS, { limit }).send(),
+        () => rpc.getSignaturesForAddress(of ?? INTENT_ENGINE_PROGRAM_ADDRESS, { limit, ...atLeast() }).send(),
         wait,
       );
       const fetchOne = (entry: (typeof signatures)[number]): Promise<EngineTransaction> => {
@@ -520,6 +554,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
                   ? []
                   : [{ memcmp: { offset: INTENT_OWNER_OFFSET, bytes: owner as string, encoding: "base58" as const } }]),
               ],
+              ...atLeast(),
             })
             .send(),
         wait,

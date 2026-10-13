@@ -125,6 +125,27 @@ describe("one call per action", () => {
     expect(await tokens(signer.address)).toBe(SOL / 4n);
   });
 
+  it("unwraps a wallet's wrapped SOL back to SOL, and does nothing when it holds none", async () => {
+    const { w, client, counted, fresh, tokens } = await setup();
+    const signer = await fresh();
+    expect(await client.unwrap(signer)).toBeNull();
+    expect(counted.sends).toBe(0);
+    const swap = { kind: Kind.SwapExactIn, amountIn: SOL / 4n, minOut: 5n } as const;
+    const { nonce } = await client.createIntent({ signer, params: swap, inputMint: NATIVE_MINT, outputMint: w.outputMint });
+    await client.cancel(signer, nonce);
+    const wrapped = w.chain.svm.getAccount(await ata(signer.address, NATIVE_MINT));
+    expect(wrapped.exists).toBe(true);
+    const before = w.chain.svm.getBalance(signer.address) ?? 0n;
+    const sends = counted.sends;
+
+    expect(typeof (await client.unwrap(signer))).toBe("string");
+    expect(counted.sends).toBe(sends + 1);
+    expect(await tokens(signer.address)).toBeNull();
+    expect((w.chain.svm.getBalance(signer.address) ?? 0n) - before).toBe((wrapped.exists ? wrapped.lamports : 0n) - 5_000n);
+    expect(await client.unwrap(signer)).toBeNull();
+    expect(counted.sends).toBe(sends + 1);
+  });
+
   async function escrowed(judge: KeyPairSigner, pay: bigint, judgeFee: bigint) {
     const context = await setup();
     const owner = await context.fresh();

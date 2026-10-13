@@ -265,3 +265,33 @@ export function checkAttested(intent: IntentParams, amountIn: bigint, result: bi
   }
   return intent.attestor;
 }
+
+export type KindName = keyof typeof Kind;
+
+export function kindName(kind: number): KindName | undefined {
+  const name: unknown = Kind[kind];
+  return typeof name === "string" ? (name as KindName) : undefined;
+}
+
+export type Terms = {
+  kind: Kind;
+  kindName: KindName;
+  params: IntentParams;
+  sells: bigint;
+  receivesAtLeast: bigint | null;
+};
+
+export function termsOf(
+  intent: { kind: number; params: ArrayLike<number> },
+  now: bigint = BigInt(Math.floor(Date.now() / 1000)),
+): Terms {
+  const params = decodeParams(intent.kind, Uint8Array.from(intent.params));
+  const sells = escrowAmount(params);
+  return {
+    kind: params.kind,
+    kindName: Kind[params.kind] as KindName,
+    params,
+    sells,
+    receivesAtLeast: params.kind === Kind.AttestedResult ? null : requiredOut(params, sells, now),
+  };
+}

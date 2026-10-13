@@ -5,13 +5,18 @@ import {
   generateKeyPairSigner,
   getBase58Decoder,
   getBase64Encoder,
+  getSolanaErrorFromJsonRpcError,
   getTransactionDecoder,
+  isSolanaError,
   type Signature,
 } from "@solana/kit";
 import { getEventListeners } from "node:events";
 import { describe, expect, it } from "vitest";
 import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { Charged,
+  behindMinSlot,
+  heardSlot,
+  MIN_CONTEXT_SLOT_NOT_REACHED,
   memoized,
   MULTIPLE_ACCOUNTS_LIMIT,
   changedAccount,
@@ -771,5 +776,139 @@ describe("account reads", () => {
     await reading.sendWire("w" as never, { blockhash: "" as Blockhash, lastValidBlockHeight: 0n });
     expect((await reading.getAccount(OWNER))?.lamports).toBe(9n);
     expect(reads).toHaveLength(3);
+  });
+});
+
+describe("read your writes", () => {
+  const behind = () =>
+    getSolanaErrorFromJsonRpcError({ code: -32016, message: "Minimum context slot has not been reached", data: { contextSlot: 5 } });
+
+  function recording(confirmedAt: bigint[], refusals = 0) {
+    const s = stub([]);
+    const seen: [string, bigint | undefined][] = [];
+    let refuse = refusals;
+    const note = (call: string, config: { minContextSlot?: bigint }) => {
+      seen.push([call, "minContextSlot" in config ? config.minContextSlot : undefined]);
+      if (refuse > 0) {
+        refuse -= 1;
+        throw behind();
+      }
+    };
+    const rpc = {
+      ...s.rpc,
+      getSignatureStatuses: () => ({
+        send: async () => {
+          const slot = confirmedAt.shift();
+          return {
+            context: { slot: 1_000_000n },
+            value: [slot === undefined ? null : { err: null, confirmationStatus: "confirmed", slot }],
+          };
+        },
+      }),
+      getAccountInfo: (_address: Address, config: { encoding: "base64"; minContextSlot?: bigint }) => ({
+        send: async () => {
+          note("account", config);
+          return { value: null };
+        },
+      }),
+      getMultipleAccounts: (addresses: Address[], config: { encoding: "base64"; minContextSlot?: bigint }) => ({
+        send: async () => {
+          note("accounts", config);
+          return { value: addresses.map(() => null) };
+        },
+      }),
+      getProgramAccounts: (_program: Address, config: { minContextSlot?: bigint }) => ({
+        send: async () => {
+          note("program", config);
+          return [];
+        },
+      }),
+      getSignaturesForAddress: (_address: Address, config: { limit: number; minContextSlot?: bigint }) => ({
+        send: async () => {
+          note("signatures", config);
+          return [];
+        },
+      }),
+    } satisfies RpcLike;
+    return { rpc, seen, waits: s.waits, wait: s.wait };
+  }
+
+  const readAll = async (t: Transport) => {
+    await t.getAccount(OWNER);
+    await t.getAccounts([OWNER, OTHER]);
+    await t.intents();
+    await t.engineTransactions(3, OWNER);
+  };
+
+  it("reads with no minimum slot before any send of its own has confirmed", async () => {
+    const r = recording([]);
+    await readAll(rpcTransport(r.rpc, r.wait));
+    expect(r.seen).toEqual([
+      ["account", undefined],
+      ["accounts", undefined],
+      ["program", undefined],
+      ["signatures", undefined],
+    ]);
+  });
+
+  it("takes the slot from the polled signature status and reads at least there, never going back", async () => {
+    const r = recording([4_242n, 4_000n, 5_000n]);
+    const t = rpcTransport(r.rpc, r.wait);
+    const payer = await generateKeyPairSigner();
+    await t.send([], payer);
+    await readAll(t);
+    expect(r.seen).toEqual([
+      ["account", 4_242n],
+      ["accounts", 4_242n],
+      ["program", 4_242n],
+      ["signatures", 4_242n],
+    ]);
+    await t.sendWire("w" as Base64EncodedWireTransaction, { blockhash: "" as Blockhash, lastValidBlockHeight: 10n });
+    await t.getAccount(OWNER);
+    await t.airdrop(OWNER, 1n);
+    await t.getAccount(OWNER);
+    expect(r.seen.slice(4)).toEqual([
+      ["account", 4_242n],
+      ["account", 5_000n],
+    ]);
+  });
+
+  it("takes the slot from the signature notification when the subscription confirms first", async () => {
+    const r = recording([]);
+    const slow = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms > 0 ? 20 : 0));
+    const t = rpcTransport(r.rpc, slow, async (signature) => heardSlot(signature, { context: { slot: 77n }, value: { err: null } }));
+    await t.sendWire("w" as Base64EncodedWireTransaction, { blockhash: "" as Blockhash, lastValidBlockHeight: 10n });
+    await t.getAccount(OWNER);
+    expect(r.seen).toEqual([["account", 77n]]);
+    expect(heardSlot(SIG, { value: { err: null } })).toEqual({});
+    expect(() => heardSlot(SIG, { context: { slot: 1n }, value: { err: "boom" } })).toThrow(FailedOnChain);
+  });
+
+  it("retries a node that has not reached the minimum context slot, with backoff", async () => {
+    expect(behindMinSlot(behind())).toBe(true);
+    expect(behindMinSlot(new Error("JSON-RPC error -32016: Minimum context slot has not been reached"))).toBe(true);
+    expect(behindMinSlot(new Error("HTTP error (500): boom"))).toBe(false);
+    expect(behindMinSlot(new Charged("Minimum context slot has not been reached"))).toBe(false);
+    expect(MIN_CONTEXT_SLOT_NOT_REACHED).toBe(-32016);
+    const r = recording([9n], 2);
+    const t = rpcTransport(r.rpc, r.wait);
+    await t.send([], await generateKeyPairSigner());
+    expect(await t.getAccount(OWNER)).toBeNull();
+    expect(r.seen).toEqual([
+      ["account", 9n],
+      ["account", 9n],
+      ["account", 9n],
+    ]);
+    expect(r.waits).toEqual([2 * POLL_MS, 4 * POLL_MS]);
+  });
+
+  it("gives up with the node's own error once the retries run out", async () => {
+    const r = recording([9n], RATE_LIMIT_ATTEMPTS);
+    const t = rpcTransport(r.rpc, r.wait);
+    await t.send([], await generateKeyPairSigner());
+    const failed = await t.intents().catch((error: unknown) => error);
+    expect(behindMinSlot(failed)).toBe(true);
+    expect(isSolanaError(failed, MIN_CONTEXT_SLOT_NOT_REACHED)).toBe(true);
+    expect(r.seen).toHaveLength(RATE_LIMIT_ATTEMPTS);
   });
 });

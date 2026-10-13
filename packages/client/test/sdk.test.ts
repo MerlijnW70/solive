@@ -16,6 +16,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   DEVNET_TEST_MINT as TEST,
   findAssociatedTokenAddress,
+  formatAmount,
   IntentStatus,
   Kind,
   NATIVE_MINT as WSOL,
@@ -133,7 +134,7 @@ describe("the sdk page", () => {
       "solana airdrop 1",
     ]);
     expect(blocks.length).toBeGreaterThanOrEqual(6);
-    expect(claims).toEqual(["Open", "Cancelled", "ExpiryNotInFuture", "Filled"]);
+    expect(claims).toEqual(["SwapExactIn Open", "Open", "Cancelled", "ExpiryNotInFuture", "Filled", "IntentAttested"]);
   });
 
   it("runs every ts block in order against the engine and prints what it says", { timeout: 120_000 }, async () => {
@@ -166,6 +167,8 @@ describe("the sdk page", () => {
       expect(printed).toContain(claim);
     }
     expect(printed.indexOf("Open")).toBeLessThan(printed.indexOf("Cancelled"));
+    expect(printed[printed.indexOf("SwapExactIn Open") + 1]).toBe("0.05 50");
+    expect(printed[0]).toBe("false false SwapExactIn true true 5,LimitOrder true true 5,DutchAuction true true 5,AttestedResult true true 5");
 
     const client = createClient({ url: DEVNET, transport: w.chain.transport });
     const mine = await client.intents({ owner: signer.address });
@@ -185,7 +188,8 @@ describe("the sdk page", () => {
       tokens(w, await ata(w.feeRecipient.address, WSOL)),
     ];
     expect(paid).toEqual([pay - judgeFee - fee, judgeFee, fee]);
-    expect(tokens(w, wrapped)).toBe(50_000_000n - pay);
+    expect(printed.at(-1)).toBe(formatAmount(pay - judgeFee - fee, 9));
+    expect(tokens(w, wrapped)).toBe(0n);
     expect(tokens(w, await ata(signer.address, TEST))).toBe(0n);
   });
 });

@@ -15,7 +15,7 @@ import {
 } from "@solana/kit";
 import { getIntentDecoder, getIntentDiscriminatorBytes, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { FailedTransactionMetadata, type LiteSVM } from "litesvm";
-import type { ProgramAccount, Transport } from "./transport.js";
+import type { EngineTransaction, ProgramAccount, Transport } from "./transport.js";
 
 export type SvmTransportOptions = { genesisHash?: string };
 
@@ -30,18 +30,37 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
     const account = svm.getAccount(address);
     return account.exists && account.programAddress === INTENT_ENGINE_PROGRAM_ADDRESS ? new Uint8Array(account.data) : null;
   };
+  const history: { touched: ReadonlySet<Address>; found: EngineTransaction }[] = [];
   const landed = (tx: Transaction): string => {
     const result = svm.sendTransaction(tx);
     if (result instanceof FailedTransactionMetadata) {
       throw new Error(`${String(result.err())}\n${result.meta().logs().join("\n")}`);
     }
-    for (const address of getCompiledTransactionMessageDecoder().decode(tx.messageBytes).staticAccounts) {
+    const keys = getCompiledTransactionMessageDecoder().decode(tx.messageBytes).staticAccounts;
+    for (const address of keys) {
       const data = engineData(address);
       if (data !== null && tag.every((b, i) => data[i] === b)) {
         seen.add(address);
       }
     }
-    return getSignatureFromTransaction(tx);
+    const signature = getSignatureFromTransaction(tx);
+    const clock = svm.getClock();
+    history.unshift({
+      touched: new Set(keys),
+      found: {
+        signature,
+        slot: clock.slot,
+        blockTime: clock.unixTimestamp,
+        failed: false,
+        emitted: result
+          .innerInstructions()
+          .flat()
+          .map((inner) => inner.instruction())
+          .filter((ix) => keys[ix.programIdIndex()] === INTENT_ENGINE_PROGRAM_ADDRESS)
+          .map((ix) => new Uint8Array(ix.data())),
+      },
+    });
+    return signature;
   };
   const getAccount = async (address: Address) => {
     const account = svm.getAccount(address);
@@ -92,7 +111,8 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
       }
       return found;
     },
-    engineTransactions: async () => [],
+    engineTransactions: async (limit, of = INTENT_ENGINE_PROGRAM_ADDRESS) =>
+      history.filter(({ touched }) => touched.has(of)).slice(0, limit).map(({ found }) => found),
     recentFees: async () => [],
     budget: async (instructions) => [...instructions],
     airdrop: async (address, amount) => {

@@ -5,20 +5,26 @@ import {
   buildCreateIntent,
   buildFillAttested,
   type Config,
+  decodeEvent,
   decodeParams,
+  type EngineEvent,
   escrowAmount,
   feeBpsFor,
+  findAssociatedTokenAddress,
   findIntentPda,
   getIntentDecoder,
   type Intent,
   type IntentParams,
   IntentStatus,
   Kind,
+  NATIVE_MINT,
   nextFreeNonce,
   signEd25519Instruction,
   splitFees,
+  TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import { chainTime, loadConfig, loadIntent, loadUser, MissingAccount, mintOf, type NonceWindow } from "./accounts.js";
+import { getCloseAccountInstruction } from "@solana-program/token";
+import { chainTime, createdAccount, loadConfig, loadIntent, loadUser, MissingAccount, mintOf, type NonceWindow } from "./accounts.js";
 import { budgeted, type Priority, simulated } from "./budget.js";
 import { type EngineError, explain } from "./errors.js";
 import { initUserIfMissing, tokenAccountIfMissing, wrapIfShort } from "./setup.js";
@@ -74,12 +80,15 @@ export type SettleProofInput = {
   payer?: TransactionSigner;
 };
 
+export type HistoryEvent = EngineEvent & { signature: Signature; slot: bigint };
+
 export type Client = {
   readonly url: string;
   readonly transport: Transport;
   config(): Promise<Config>;
   intent(owner: Address, nonce: bigint): Promise<IntentAccount | null>;
   intents(filter?: IntentFilter): Promise<IntentAccount[]>;
+  history(intent: Address, limit?: number): Promise<HistoryEvent[]>;
   nextNonce(owner: Address): Promise<bigint>;
   simulate(instructions: readonly Instruction[], signer: TransactionSigner): Promise<Simulation>;
   send(instructions: readonly Instruction[], signer: TransactionSigner): Promise<Signature>;
@@ -89,10 +98,12 @@ export type Client = {
   chainTime(): Promise<bigint>;
   createIntent(input: CreateIntentInput): Promise<CreatedIntent>;
   cancel(signer: TransactionSigner, nonce: bigint): Promise<Signature>;
+  unwrap(signer: TransactionSigner): Promise<Signature | null>;
   settleProof(input: SettleProofInput): Promise<Signature>;
 };
 
 export const DEFAULT_EXPIRES_IN = 3_600n;
+export const HISTORY_LIMIT = 100;
 
 export const WATCH_POLL_MS = 2_000;
 export const WATCH_WAIT_SECONDS = 10;
@@ -250,6 +261,25 @@ export function createClient(options: ClientOptions): Client {
     return send([...refund.create, await buildCancelIntent({ owner: signer, nonce, inputMint: intent.inputMint, tokenProgram })], signer);
   };
 
+  const unwrap = async (signer: TransactionSigner) => {
+    const account = await findAssociatedTokenAddress({ owner: signer.address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    if ((await createdAccount(transport, account)) === null) {
+      return null;
+    }
+    return send([getCloseAccountInstruction({ account, destination: signer.address, owner: signer })], signer);
+  };
+
+  const history = async (intent: Address, limit = HISTORY_LIMIT): Promise<HistoryEvent[]> =>
+    (await transport.engineTransactions(limit, intent))
+      .filter(({ failed }) => !failed)
+      .flatMap(({ signature, slot, emitted }) =>
+        emitted
+          .map((data) => decodeEvent(data) as EngineEvent | null)
+          .filter((event): event is EngineEvent => event !== null && "intent" in event.fields && event.fields.intent === intent)
+          .reverse()
+          .map((event) => ({ ...event, signature: signature as Signature, slot })),
+      );
+
   const settleProof = async (input: SettleProofInput) => {
     const { judge, owner, nonce, payTo, result } = input;
     const payer = input.payer ?? judge;
@@ -322,6 +352,7 @@ export function createClient(options: ClientOptions): Client {
       (await transport.intents(filter.owner))
         .map(decoded)
         .filter(({ intent }) => filter.status === undefined || intent.status === filter.status),
+    history,
     nextNonce: async (owner) => nonceAfter(owner, await loadUser(transport, owner)),
     simulate: async (instructions, signer) =>
       simulated(transport, await budgeted(transport, priority, instructions, signer.address), signer.address),
@@ -332,6 +363,7 @@ export function createClient(options: ClientOptions): Client {
     chainTime: () => chainTime(transport),
     createIntent,
     cancel,
+    unwrap,
     settleProof,
   };
 }
