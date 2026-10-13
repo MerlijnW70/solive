@@ -52,9 +52,11 @@ import {
 } from "@intent-engine/solver";
 import type { McpServer } from "@modelcontextprotocol/server";
 import {
+  announcements,
   chainTime,
   clusterDomain,
   createdAccount,
+  deliveriesOf,
   deliveryInstructions,
   type IntentChanges,
   jobsOf,
@@ -89,6 +91,7 @@ import { describeIntent, quoteOf, sameBytes } from "./accounts.js";
 import { closing, crank, expiring } from "./crank.js";
 import { priceOf, withPriority } from "./compute.js";
 import { createTreasuryAccounts, intentInputMints, treasuryView } from "./treasury.js";
+import { judge } from "./judge.js";
 
 export type Runtime = {
   transport(url: string): Transport;
@@ -534,6 +537,20 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       }
       return { ...shown, sent: true, signature: await transport.send(instructions, worker) };
     }
+    case "deliveries":
+      return {
+        intent: command.intent,
+        deliveries: announcements(await deliveriesOf(transport, command.attestor, command.intent)).map(({ sha256, first, copies }) => ({
+          sha256,
+          worker: first.worker,
+          url: first.url,
+          signature: first.signature,
+          slot: first.slot,
+          copies,
+        })),
+      };
+    case "judge":
+      return judge(command, runtime, transport);
     case "treasury": {
       const view = await treasuryView(transport, command.mints ?? (await intentInputMints(transport)));
       if (!command.create || command.keypair === undefined) {

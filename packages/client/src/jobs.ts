@@ -54,6 +54,8 @@ export type Delivery = {
   blockTime: bigint | null;
 };
 
+export type Announcement = { sha256: string; first: Delivery; copies: number };
+
 export type SpecFetch = (url: string, init: { redirect: "error"; signal: AbortSignal }) => Promise<Response>;
 
 export class NotDeliverable extends Error {
@@ -232,4 +234,30 @@ export async function deliveriesOf(transport: Transport, judge: Address, intent?
               : [{ ...memo, worker: feePayer, signature: signature as Signature, slot, blockTime }],
           ),
   );
+}
+
+const earlier = (a: Delivery, b: Delivery): boolean => a.slot < b.slot || (a.slot === b.slot && a.signature < b.signature);
+
+export function firstDelivery(deliveries: readonly Delivery[], sha256: string): Delivery | null {
+  let first: Delivery | null = null;
+  for (const delivery of deliveries) {
+    if (delivery.sha256 === sha256 && (first === null || earlier(delivery, first))) {
+      first = delivery;
+    }
+  }
+  return first;
+}
+
+export function announcements(deliveries: readonly Delivery[]): Announcement[] {
+  const hashes = [...new Set(deliveries.map(({ sha256 }) => sha256))];
+  return hashes
+    .flatMap((sha256) => {
+      const first = firstDelivery(deliveries, sha256);
+      if (first === null) {
+        return [];
+      }
+      const others = new Set(deliveries.filter((d) => d.sha256 === sha256 && d.worker !== first.worker).map(({ worker }) => worker));
+      return [{ sha256, first, copies: others.size }];
+    })
+    .sort((a, b) => (earlier(a.first, b.first) ? -1 : earlier(b.first, a.first) ? 1 : 0));
 }

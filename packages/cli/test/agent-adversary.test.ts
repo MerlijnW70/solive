@@ -206,23 +206,39 @@ describe("the wallet's delivery tool under hostile input", () => {
     known = [(escrow.structuredContent as { intent: Address }).intent, judge.address, wallet, w.owner.address, w.inputMint];
   });
 
-  const deliver = WALLET_ACTIONS.find((a) => a.name === "solive_wallet_deliver");
-
-  it("answers arbitrary JSON and every input its schema allows with a result or a named problem, never an internal failure", async () => {
-    if (deliver === undefined) {
-      throw new Error("no delivery tool");
+  const toolNamed = (name: string) => {
+    const found = WALLET_ACTIONS.find((a) => a.name === name);
+    if (found === undefined) {
+      throw new Error(`no tool ${name}`);
     }
-    const call = (args: unknown) => client.callTool({ name: deliver.name, arguments: args as Record<string, unknown> }) as Promise<Result>;
+    return found;
+  };
+  const hostile = async (name: string) => {
+    const tool = toolNamed(name);
+    const call = (args: unknown) => client.callTool({ name: tool.name, arguments: args as Record<string, unknown> }) as Promise<Result>;
     await fc.assert(
-      fc.asyncProperty(fc.oneof(fc.dictionary(fc.string(), fc.jsonValue(), { maxKeys: 6 }), arbitraryOf(deliver.input.json, known)), async (args) => {
+      fc.asyncProperty(fc.oneof(fc.dictionary(fc.string(), fc.jsonValue(), { maxKeys: 6 }), arbitraryOf(tool.input.json, known)), async (args) => {
         const problem = checkShape(await call(args));
         expect(problem?.code, problem?.hint).not.toBe("Failed");
       }),
       { numRuns: RUNS },
     );
+    return call;
+  };
+
+  it("answers arbitrary JSON and every input its schema allows with a result or a named problem, never an internal failure", async () => {
+    const call = await hostile("solive_wallet_deliver");
     const sent = await call({ intent: known[0], sha256: "AB".repeat(32), url: "https://example.org/work", send: true });
     expect(checkShape(sent)).toBeNull();
     expect(checkShape(await call({ intent: known[1], sha256: "ab".repeat(32), url: "https://example.org/work" }))?.code).toBe("NotDeliverable");
+  }, BUDGET_MS * 2);
+
+  it("checks deliveries for any input without running or fetching anything, and refuses an escrow this wallet does not judge", async () => {
+    const fetched = h.fetched.length;
+    const call = await hostile("solive_wallet_check_delivery");
+    expect(checkShape(await call({ intent: known[0] }))?.code).toBe("Unauthorized");
+    expect(checkShape(await call({ intent: known[1] }))?.code).toBe("NotFound");
+    expect(h.fetched.length).toBe(fetched);
   }, BUDGET_MS * 2);
 });
 

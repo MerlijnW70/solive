@@ -3,7 +3,7 @@
 # CLI reference
 
 ```text
-usage: setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | version | help [command]
+usage: setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | judge | version | help [command]
 ```
 
 Every command accepts `--output` and `--help`.
@@ -201,6 +201,22 @@ deliver --keypair <worker file> --intent <address> --sha256 <64 hex> --work-url 
 ```
 
 Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--sha256`, `--work-url`, `--output`, `--help`
+
+## deliveries
+
+```text
+deliveries --attestor <address> --intent <address>
+```
+
+Options: `--url`, `--attestor`, `--intent`, `--output`, `--help`
+
+## judge
+
+```text
+judge --keypair <judge file> --owner <address> --nonce <n> --spec <file> --artifact <file or directory> --run <command> [--pay-to <wallet>] [--timeout <seconds>] [--verdict <file>] [--yes]
+```
+
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--pay-to`, `--timeout`, `--verdict`, `--output`, `--help`
 
 ## crank
 

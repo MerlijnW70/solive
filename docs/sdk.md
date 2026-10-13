@@ -210,6 +210,8 @@ await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: p
 await client.unwrap(signer);
 ```
 
+Anyone can copy an announcement once it is on chain, so a judge pays the earliest announcer of the hash it checked: `firstDelivery(deliveries, sha256)` returns that announcement, or `null`. `settleProof` takes `deliveredSha256` to record the paid work's hash in the release, in the memo `solive_wallet_receipt` reads. [Judge a proof escrow](judge.md) does all of this from the command line.
+
 ## Who can do what
 
 - Any wallet other than the owner and the receiver can fill an open swap intent before it expires.
@@ -238,6 +240,7 @@ console.log(formatAmount(createFee, sell.decimals), formatAmount(crankBounty, se
 
 ## Next
 
+- [Judge a proof escrow](judge.md)
 - [Engine errors](reference/engine-errors.md)
 - [Errors](reference/errors.md)
 - [Run a solver](solver.md)

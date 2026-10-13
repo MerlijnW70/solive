@@ -8,8 +8,11 @@ import {
   MAX_DELIVERY_MEMO,
   MAX_MEMO_URL,
   parseDeliveryMemo,
+  parseReleaseMemo,
   parseSpecMemo,
   PRODUCT_SLUG,
+  RELEASE_MEMO_PREFIX,
+  releaseMemo,
   SPEC_MEMO_PREFIX,
   specMemo,
 } from "../src/index.js";
@@ -110,5 +113,15 @@ describe("spec and delivery memos", () => {
         expect(parsed === null || text.length <= MAX_DELIVERY_MEMO).toBe(true);
       }),
     );
+  });
+
+  it("record a release's delivered sha256 as the exact text the wallet release writes, and read nothing else", () => {
+    expect(RELEASE_MEMO_PREFIX).toBe("delivery sha256:");
+    expect(releaseMemo(HASH)).toBe(`delivery sha256:${HASH}`);
+    expect(parseReleaseMemo(releaseMemo(HASH))).toBe(HASH);
+    expect(() => releaseMemo(HASH.toUpperCase())).toThrow(RangeError);
+    for (const text of [`delivery sha256:${HASH.toUpperCase()}`, `delivery sha256:${HASH} `, `delivery sha256:${HASH.slice(1)}`, deliveryMemo(delivery), ""]) {
+      expect(parseReleaseMemo(text), text).toBeNull();
+    }
   });
 });

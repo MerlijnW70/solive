@@ -152,6 +152,19 @@ export type Command =
   | (Remote & { name: "events"; limit: number })
   | (Remote & { name: "jobs"; attestor: Address | undefined })
   | (Keyed & { name: "deliver"; yes: boolean; intent: Address; sha256: string; workUrl: string })
+  | (Remote & { name: "deliveries"; attestor: Address; intent: Address })
+  | (Keyed & {
+      name: "judge";
+      yes: boolean;
+      owner: Address;
+      nonce: bigint;
+      spec: string;
+      artifact: string;
+      run: string;
+      payTo: Address | undefined;
+      timeout: number;
+      verdict: string | undefined;
+    })
   | (Keyed & { name: "flow"; flow: FlowName; yes: boolean; input: ToolInput })
   | (Remote & { name: "lookup"; lookup: LookupName; keypair: string | undefined; input: ToolInput })
   | (Keyed & { name: "signed-prepare"; yes: boolean; out: string; input: ToolInput })
@@ -252,6 +265,12 @@ const OPTIONS = {
   intent: { type: "string" },
   sha256: { type: "string" },
   "work-url": { type: "string" },
+  spec: { type: "string" },
+  artifact: { type: "string" },
+  run: { type: "string" },
+  "pay-to": { type: "string" },
+  timeout: { type: "string" },
+  verdict: { type: "string" },
 } as const;
 
 const KIND_NAMES: Record<string, Kind> = {
@@ -411,6 +430,8 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   events: ["url", "limit", "follow", "interval"],
   jobs: ["url", "attestor"],
   deliver: ["url", "priority-fee", "keypair", "yes", "intent", "sha256", "work-url"],
+  deliveries: ["url", "attestor", "intent"],
+  judge: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "spec", "artifact", "run", "pay-to", "timeout", "verdict"],
   crank: ["url", "priority-fee", "keypair", "dry-run", "fund-accounts"],
   treasury: ["url", "priority-fee", "keypair", "yes", "mints", "create"],
   create: [
@@ -1037,6 +1058,17 @@ function workUrlOf(text: string): string {
   return text;
 }
 
+export const JUDGE_TIMEOUT = 600;
+export const MAX_JUDGE_TIMEOUT = 86_400;
+export const RUN_NEEDED = "--run must name the command that checks the artifact";
+
+function runOf(text: string): string {
+  if (text.trim() === "") {
+    throw new UsageError(RUN_NEEDED);
+  }
+  return text;
+}
+
 function noSub(sub: string | undefined): void {
   if (sub !== undefined) {
     throw new UsageError(`unexpected argument ${sub}`);
@@ -1063,7 +1095,7 @@ export function outputOf(argv: readonly string[]): "json" | "text" {
 export const MAX_FOLLOW_INTERVAL = 3_600;
 export const WATCH_INTERVAL = 5;
 
-export const COMMANDS = "setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | version | help [command]";
+export const COMMANDS = "setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | judge | version | help [command]";
 
 export const USAGE = `usage: ${COMMANDS}`;
 
@@ -1100,6 +1132,8 @@ export const SHAPES: Readonly<Record<string, string>> = {
   events: "[--limit <n>] [--follow [--interval <seconds>]]",
   jobs: "[--attestor <address>]",
   deliver: "--keypair <worker file> --intent <address> --sha256 <64 hex> --work-url <https url> [--yes]",
+  deliveries: "--attestor <address> --intent <address>",
+  judge: "--keypair <judge file> --owner <address> --nonce <n> --spec <file> --artifact <file or directory> --run <command> [--pay-to <wallet>] [--timeout <seconds>] [--verdict <file>] [--yes]",
   create: `swap|limit|dutch|attested --keypair <file> --input-mint --output-mint (--expires-at | --expires-in) ${ORDER_SHAPE} [--nonce <n>] ${PARTNER_SHAPE} [--units tokens|raw] [--yes]`,
   list: "--owner <address> or --keypair <file>; --owner wins when both are given",
   mandate: `grant --keypair <file> --agent --input-mint --output-mint --kinds --per-intent --total --max-intents --max-ttl --valid-for --floor-out --floor-in [--agent-fee] ${PARTNER_SHAPE} [--id] [--units tokens|raw] [--yes] | show --agent (--owner <address> | --keypair <file>) [--id] | revoke --keypair <file> --agent [--id] [--yes] | use swap|limit|dutch --keypair <file> --owner (--expires-at | --expires-in) ${MANDATE_ORDER_SHAPE} [--id] [--nonce <n>] [--units tokens|raw] [--yes]`,
@@ -1323,6 +1357,25 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         intent: key(values, "intent"),
         sha256: sha256Of(required(values, "sha256")),
         workUrl: workUrlOf(required(values, "work-url")),
+      };
+    case "deliveries":
+      noSub(sub);
+      return { name: "deliveries", ...remote, attestor: key(values, "attestor"), intent: key(values, "intent") };
+    case "judge":
+      noSub(sub);
+      return {
+        name: "judge",
+        ...remote,
+        keypair: required(values, "keypair"),
+        yes: values.yes === true,
+        owner: key(values, "owner"),
+        nonce: u64(values, "nonce"),
+        spec: required(values, "spec"),
+        artifact: required(values, "artifact"),
+        run: runOf(required(values, "run")),
+        payTo: values["pay-to"] === undefined ? undefined : key(values, "pay-to"),
+        timeout: parseBounded(values.timeout ?? String(JUDGE_TIMEOUT), "timeout", MAX_JUDGE_TIMEOUT, 1),
+        verdict: values.verdict,
       };
     case "solver-table":
       noSub(sub);

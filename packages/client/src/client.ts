@@ -20,9 +20,11 @@ import {
   type IntentParams,
   IntentStatus,
   Kind,
+  isSha256Hex,
   NATIVE_MINT,
   nextFreeNonce,
   remainingOf,
+  releaseMemo,
   requiredOut,
   signEd25519Instruction,
   specMemo,
@@ -109,6 +111,7 @@ export type SettleProofInput = {
   payTo: Address;
   result: bigint;
   payer?: TransactionSigner;
+  deliveredSha256?: string;
 };
 
 export type HistoryEvent = EngineEvent & { signature: Signature; slot: bigint; blockTime: bigint | null };
@@ -463,8 +466,11 @@ export function createClient(options: ClientOptions): Client {
   };
 
   const settleProof = async (input: SettleProofInput) => {
-    const { judge, owner, nonce, payTo, result } = input;
+    const { judge, owner, nonce, payTo, result, deliveredSha256 } = input;
     const payer = input.payer ?? judge;
+    if (deliveredSha256 !== undefined && !isSha256Hex(deliveredSha256)) {
+      throw new RangeError("deliveredSha256 must be 64 lowercase hex digits");
+    }
     const [{ address, intent: held }, settings] = await Promise.all([loadIntent(transport, owner, nonce), config()]);
     const params = decodeParams(held.kind, Uint8Array.from(held.params));
     if (params.kind !== Kind.AttestedResult) {
@@ -513,7 +519,8 @@ export function createClient(options: ClientOptions): Client {
       ...(paidJudge === undefined ? {} : { judge: paidJudge }),
     });
     const setup = [payee, ...others].flatMap(({ create }) => create);
-    return send([...setup, await signEd25519Instruction(judge, message), settle], payer);
+    const recorded = deliveredSha256 === undefined ? [] : [memoInstruction(judge, releaseMemo(deliveredSha256))];
+    return send([...setup, await signEd25519Instruction(judge, message), settle, ...recorded], payer);
   };
 
   return {

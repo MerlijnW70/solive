@@ -56,7 +56,7 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
     if (result !== null) {
       show(result);
     }
-    return EXIT_OK;
+    return command.name === "judge" && result !== null && "verdict" in result && result.verdict !== "pass" ? EXIT_FAILED : EXIT_OK;
   } catch (error) {
     io.err(message(error, url));
     return error instanceof UsageError ? EXIT_USAGE : EXIT_FAILED;

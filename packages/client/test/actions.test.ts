@@ -8,6 +8,8 @@ import {
   IntentStatus,
   Kind,
   NATIVE_MINT,
+  parseReleaseMemo,
+  releaseMemo,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
 import { createClient, loadUser, NotSettleable, type Transport } from "../src/index.js";
@@ -192,6 +194,24 @@ describe("one call per action", () => {
     expect(await tokens(worker)).toBe(2_000_000n - fee);
     expect(await tokens(judge.address)).toBeNull();
     expect(w.chain.svm.getBalance(judge.address) ?? 0n).toBe(0n);
+  });
+
+  it("records the delivered work's sha256 in the settling transaction, with the memo the wallet release writes", async () => {
+    const judge = await generateKeyPairSigner();
+    const { w, client, counted, owner, nonce, tokens } = await escrowed(judge, 1_000_000n, 0n);
+    w.chain.svm.airdrop(judge.address, lamports(SOL));
+    const worker = (await generateKeyPairSigner()).address;
+    const work = "ab".repeat(32);
+    const sends = counted.sends;
+    await expect(client.settleProof({ judge, owner: owner.address, nonce, payTo: worker, result: 1n, deliveredSha256: work.toUpperCase() })).rejects.toThrow(RangeError);
+    expect(counted.sends).toBe(sends);
+
+    const signature = await client.settleProof({ judge, owner: owner.address, nonce, payTo: worker, result: 1n, deliveredSha256: work });
+    const [intent] = await findIntentPda({ owner: owner.address, nonce });
+    const [settled] = await client.transport.engineTransactions(1, intent);
+    expect(settled).toMatchObject({ signature, memos: [releaseMemo(work)] });
+    expect(settled?.memos?.map(parseReleaseMemo)).toEqual([work]);
+    expect(await tokens(worker)).toBeGreaterThan(0n);
   });
 
   it("refuses to settle anything but an open proof intent its judge signs, and sends nothing", async () => {

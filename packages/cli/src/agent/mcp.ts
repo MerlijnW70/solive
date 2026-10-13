@@ -31,7 +31,7 @@ export const WALLET_INSTRUCTIONS = [
   `${tool("wallet_escrow")} holds a payment that only a named attestor can release, to the wallet it chooses, such as paying another agent once a reviewer approves its work; the payer can still cancel it until then. A server whose wallet is that attestor releases it with ${tool("wallet_attest")}, sending with the approval its preview returned.`,
   `Give ${tool("wallet_escrow")} a spec_url to publish where its spec lives. ${tool("find_jobs")} lists open proof escrows with their spec urls; a worker announces finished work to the attestor with ${tool("wallet_deliver")}.`,
   `To pay for a larger task in parts, ${tool("wallet_escrow_plan")} escrows one payment per piece in a single approval; each piece is released on its own as it passes.`,
-  `Since the payer can cancel until the release, the worker delivers its work to the attestor, not the payer. The attestor checks it, releases with delivered_sha256 set to the work's hash, then passes the work on; ${tool("wallet_receipt")} shows the payer the release and whether what it received is what was paid for.`,
+  `Since the payer can cancel until the release, the worker delivers its work to the attestor, not the payer. The attestor lists announced work with ${tool("wallet_check_delivery")}, checks it, releases to the earliest announcer of its hash with delivered_sha256 set to that hash, then passes the work on; ${tool("wallet_receipt")} shows the payer the release and whether what it received is what was paid for.`,
   `After sending, ${tool("wallet_wait")} waits for the fill and says what it delivered; ${tool("wallet_intents")} and ${tool("wallet_balance")} show the rest.`,
 ].join("\n");
 

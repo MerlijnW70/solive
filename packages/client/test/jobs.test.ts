@@ -4,8 +4,11 @@ import { getTransferSolInstruction } from "@solana-program/system";
 import { describe, expect, it } from "vitest";
 import { deliveryMemo, findIntentPda, Kind, MAX_MEMO_URL, specMemo } from "@intent-engine/core";
 import {
+  announcements,
   createClient,
+  type Delivery,
   DELIVERY_SCAN,
+  firstDelivery,
   MAX_SPEC_BYTES,
   memoInstruction,
   NotDeliverable,
@@ -170,6 +173,35 @@ describe("deliveries", () => {
     expect(await client.deliveries({ judge: judge.address, intent: foreign.intent })).toEqual([]);
     expect(await client.deliveries({ judge: w.authority.address })).toEqual([]);
     expect(DELIVERY_SCAN).toBe(100);
+  });
+
+  it("pays the earliest announcer of a hash: a copied announcement comes later and counts as a copy", async () => {
+    const { w, client, judge, order } = await setting();
+    const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
+    const worker = await funded(w.chain);
+    const copier = await funded(w.chain);
+    await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL });
+    w.chain.svm.warpToSlot(w.chain.svm.getClock().slot + 1n);
+    await client.deliver({ worker: copier, intent: job.intent, sha256: WORK, url: "https://example.org/stolen" });
+    await client.deliver({ worker: copier, intent: job.intent, sha256: "cd".repeat(32), url: "https://example.org/own" });
+
+    const found = await client.deliveries({ judge: judge.address, intent: job.intent });
+    expect(found.map(({ worker: by }) => by)).toEqual([copier.address, copier.address, worker.address]);
+    expect(firstDelivery(found, WORK)).toMatchObject({ worker: worker.address, url: WORK_URL });
+    expect(firstDelivery(found, "ef".repeat(32))).toBeNull();
+    expect(announcements(found).map(({ sha256, first, copies }) => [sha256, first.worker, copies])).toEqual([
+      [WORK, worker.address, 1],
+      ["cd".repeat(32), copier.address, 0],
+    ]);
+  });
+
+  it("breaks a tie in slot by the lower signature", () => {
+    const at = (worker: string, signature: string, slot: bigint) =>
+      ({ intent: WORK_URL, worker, sha256: WORK, url: WORK_URL, signature, slot, blockTime: null }) as unknown as Delivery;
+    const found = [at("late", "a", 5n), at("second", "c", 4n), at("first", "b", 4n)];
+    expect(firstDelivery(found, WORK)?.worker).toBe("first");
+    expect(firstDelivery([...found].reverse(), WORK)?.worker).toBe("first");
+    expect(announcements(found)).toEqual([{ sha256: WORK, first: found[2], copies: 2 }]);
   });
 
   it("refuses to deliver to anything but an open proof escrow, and to a bad hash or url", async () => {

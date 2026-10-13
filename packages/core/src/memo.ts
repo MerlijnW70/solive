@@ -3,6 +3,7 @@ import { PRODUCT_SLUG } from "../generated/identity.js";
 
 export const SPEC_MEMO_PREFIX = `${PRODUCT_SLUG}-spec:`;
 export const DELIVERY_MEMO_PREFIX = `${PRODUCT_SLUG}-delivery:`;
+export const RELEASE_MEMO_PREFIX = "delivery sha256:";
 export const MAX_MEMO_URL = 200;
 export const MAX_DELIVERY_MEMO = DELIVERY_MEMO_PREFIX.length + 44 + 1 + 64 + 1 + MAX_MEMO_URL;
 
@@ -83,4 +84,16 @@ export function parseDeliveryMemo(text: string): DeliveryMemo | null {
     return null;
   }
   return { intent, sha256, url };
+}
+
+export function releaseMemo(sha256: string): string {
+  if (!isSha256Hex(sha256)) {
+    throw new RangeError("a release records a sha256 of 64 lowercase hex digits");
+  }
+  return `${RELEASE_MEMO_PREFIX}${sha256}`;
+}
+
+export function parseReleaseMemo(text: string): string | null {
+  const sha256 = text.slice(RELEASE_MEMO_PREFIX.length);
+  return text.startsWith(RELEASE_MEMO_PREFIX) && isSha256Hex(sha256) ? sha256 : null;
 }
