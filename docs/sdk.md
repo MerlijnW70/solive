@@ -114,7 +114,7 @@ Each order below sells 0.01 SOL, and the devnet filler fills both. The code wait
 
 ```ts
 import { setTimeout as sleep } from "node:timers/promises";
-import { tokenName } from "@intent-engine/core";
+import { eventNamed, tokenName } from "@intent-engine/core";
 
 const start = await client.chainTime();
 const limit = { kind: Kind.LimitOrder, makeAmount: parseAmount("0.01", sell.decimals), takeAmount: parseAmount("1.5", buy.decimals) } as const;
@@ -148,7 +148,7 @@ const work = { kind: Kind.AttestedResult, amountIn: pay, minResult: 1n, maxResul
 const job = await client.createIntent({ ...order, params: work });
 await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: job.nonce, payTo: worker.address, result: 1n });
 console.log(statusName((await client.intent(signer.address, job.nonce))?.intent.status ?? -1));
-const paid = (await client.history(job.intent)).find((event) => event.name === "IntentAttested");
+const paid = eventNamed(await client.history(job.intent), "IntentAttested");
 console.log(paid?.name);
 console.log(formatAmount(paid?.fields.net ?? 0n, sell.decimals));
 ```

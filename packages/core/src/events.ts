@@ -95,3 +95,7 @@ export function decodeEvent(data: Uint8Array): DecodedEvent | null {
     return null;
   }
 }
+
+export function eventNamed<E extends EngineEvent, N extends E["name"]>(events: readonly E[], name: N): Extract<E, { name: N }> | undefined {
+  return events.find((event): event is Extract<E, { name: N }> => event.name === name);
+}
