@@ -31,7 +31,17 @@ import {
   termsOf,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import { chainTime, CLOCK_SYSVAR, type ClientOptions, createClient, loadUser, type Transport } from "../src/index.js";
+import {
+  chainTime,
+  CLOCK_SYSVAR,
+  type ClientOptions,
+  createClient,
+  DELIVERY_SCAN,
+  JOBS_LIMIT,
+  loadUser,
+  MAX_SPEC_BYTES,
+  type Transport,
+} from "../src/index.js";
 import { FEE_BPS, world, type World } from "./svm.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
@@ -111,6 +121,7 @@ const tokens = (w: World, account: Address) => {
 };
 
 const FILLER = read("scripts/filler.sh");
+const SPEC_URL = /^https:\/\/raw\.githubusercontent\.com\/MerlijnW70\/solive\/[0-9a-f]{40}\/([A-Z]+\.md)$/;
 const TEST_PER_SOL = /=(\d+)\/1"/.exec(FILLER)?.[1] ?? "";
 const CLOCK_STEP = 5n;
 
@@ -218,7 +229,7 @@ describe("the sdk page", () => {
       "solana airdrop 1",
     ]);
     expect(blocks.length).toBeGreaterThanOrEqual(6);
-    expect(claims).toEqual(["SwapExactIn Open", "Open", "Cancelled", "ExpiryNotInFuture", "Filled", "IntentAttested", "Cancelled NotSettleable", "null"]);
+    expect(claims).toEqual(["SwapExactIn Open", "Open", "Cancelled", "ExpiryNotInFuture", "Filled", "IntentAttested", "Cancelled NotSettleable", "null", "true true"]);
   });
 
   it("states that the devnet filler expires and closes overdue intents in paused passes, and its price", () => {
@@ -226,6 +237,12 @@ describe("the sdk page", () => {
     expect(PAGE).toContain("The devnet filler also expires and closes overdue intents, in passes with a pause between them");
     expect(TEST_PER_SOL).toBe("200");
     expect(PAGE).toContain("The devnet filler prices test tokens at 200 per wrapped SOL");
+  });
+
+  it("states the bounds jobs, spec and deliveries read within", () => {
+    expect(PAGE).toContain(`\`jobs\` lists up to ${JOBS_LIMIT} open, unexpired proof escrows, those with the most time left first`);
+    expect(PAGE).toContain(`following no redirect and reading at most ${MAX_SPEC_BYTES} bytes`);
+    expect(PAGE).toContain(`\`deliveries\` from its last ${DELIVERY_SCAN} transactions`);
   });
 
   it("runs every ts block in order against the engine and prints what it says", { timeout: 120_000 }, async () => {
@@ -255,6 +272,12 @@ describe("the sdk page", () => {
     injected.generated.length = 0;
 
     const printed: string[] = [];
+    const fetched: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      fetched.push(url);
+      const path = SPEC_URL.exec(url)?.[1];
+      return path === undefined ? new Response("missing", { status: 404 }) : new Response(readFileSync(`${ROOT}/${path}`));
+    });
     const log = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
       printed.push(args.map(String).join(" "));
     });
@@ -263,6 +286,7 @@ describe("the sdk page", () => {
       await import(pathToFileURL(pageModule).href);
     } finally {
       log.mockRestore();
+      vi.unstubAllGlobals();
       rmSync(pageModule, { force: true });
     }
 
@@ -282,6 +306,7 @@ describe("the sdk page", () => {
       [2n, Kind.DutchAuction, IntentStatus.Filled],
       [3n, Kind.AttestedResult, IntentStatus.Filled],
       [4n, Kind.AttestedResult, IntentStatus.Cancelled],
+      [6n, Kind.AttestedResult, IntentStatus.Filled],
     ]);
     const rent = w.chain.svm.minimumBalanceForRentExemption(BigInt(getIntentSize()));
     expect(mine.map(({ address }) => w.chain.svm.getBalance(address))).toEqual(mine.map(() => rent + BigInt(BOUNTY)));
@@ -315,9 +340,17 @@ describe("the sdk page", () => {
       tokens(w, await ata(judge?.address ?? signer.address, WSOL)),
       tokens(w, await ata(w.feeRecipient.address, WSOL)),
     ];
-    expect(paid).toEqual([split.net, judgeFee, split.protocol + fillFees]);
+    expect(paid).toEqual([split.net, 2n * judgeFee, 2n * split.protocol + fillFees]);
+    expect(fetched).toHaveLength(2);
+    expect(new Set(fetched).size).toBe(1);
+    expect(printed.filter((line) => line === "true true")).toHaveLength(2);
+    const posted = (await findIntentPda({ owner: signer.address, nonce: 6n }))[0];
+    expect(await client.deliveries({ judge: judge?.address ?? signer.address, intent: posted })).toMatchObject([{ intent: posted, worker: signer.address }]);
+    expect(await client.deliveries({ judge: judge?.address ?? signer.address })).toEqual([]);
+    const delivered = (await client.history(posted)).find(({ name }) => name === "IntentAttested");
+    expect(delivered?.fields).toMatchObject({ payee: wrapped, net: split.net });
     expect(printed.at(-1)).toBe(`${formatAmount(BigInt(CREATE_FEE), 9)} ${formatAmount(BigInt(BOUNTY), 9)}`);
-    expect((w.chain.svm.getBalance(w.feeRecipient.address) ?? 0n) - treasury).toBe(6n * BigInt(CREATE_FEE));
+    expect((w.chain.svm.getBalance(w.feeRecipient.address) ?? 0n) - treasury).toBe(7n * BigInt(CREATE_FEE));
     expect(tokens(w, wrapped)).toBeNull();
     expect(tokens(w, await ata(signer.address, TEST))).toBe((limit?.delivered ?? 0n) + (auction?.delivered ?? 0n));
   });

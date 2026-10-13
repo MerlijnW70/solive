@@ -12,7 +12,9 @@ import {
   getIntentDecoder,
   getIntentEncoder,
   decodeParams,
+  deliveryMemo,
   Kind,
+  specMemo,
   getFillBegunEventEncoder,
   getFillEndedEventEncoder,
   getIntentFilledEventEncoder,
@@ -565,6 +567,78 @@ describe("the wallet server", () => {
     const unsure = await ok(client, "wallet_escrow_plan", two);
     expect(unsure).toMatchObject({ sent: true, next: piecesMayHaveLanded(1, 2, "Failed: timed out") });
     expect((await ok(client, "wallet_intents"))["intents"]).toHaveLength(3);
+  });
+
+  it("publishes a spec url with a proof escrow, lists it as a job and announces delivered work to its judge", async () => {
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    h.watched.push(owner);
+    h.engineLog = [];
+    const judge = (await generateKeyPairSigner()).address;
+    const specHash = "5c".repeat(32);
+    const specUrl = "https://example.org/jobs/spec.md";
+    const terms = { sell: "SOL", amount: "0.05", attestor: judge, min_result: "1", max_result: "1" };
+    expect((await call(client, "wallet_escrow", { ...terms, spec_url: specUrl })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "spec_url" }] });
+    expect((await call(client, "wallet_escrow", { ...terms, spec_hash: specHash, spec_url: "http://example.org/spec" })).value).toMatchObject({
+      code: "InvalidInput",
+      issues: [{ path: "spec_url" }],
+    });
+    h.wires.length = 0;
+    const escrow = await ok(client, "wallet_escrow", { ...terms, spec_hash: specHash, spec_url: specUrl, send: true });
+    expect(escrow["summary"]).toContain(`Publishes: the acceptance spec's url ${specUrl}, in a memo the owner signs`);
+    expect(Buffer.from(h.wires[0] as string, "base64").toString("latin1")).toContain(specMemo(specUrl));
+    const intent = escrow["intent"] as Address;
+    const plain = await ok(client, "wallet_escrow", { ...terms, send: true });
+
+    const job = { intent, owner, nonce: escrow["nonce"], attestor: judge, spec_hash: specHash, spec_url: null, sells: (LAMPORTS_PER_SOL / 20n).toString(), judge_fee: "0", input_mint: NATIVE_MINT };
+    expect(await ok(client, "find_jobs", { attestor: judge })).toEqual({ jobs: [{ ...job, expires_at: expect.any(String) }] });
+    const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
+    const created = getIntentCreatedEventEncoder().encode({
+      intent,
+      owner,
+      nonce: BigInt(escrow["nonce"] as string),
+      kind: 4,
+      inputMint: NATIVE_MINT,
+      outputMint: TEST_TOKEN,
+      receiver: owner,
+      escrowed: LAMPORTS_PER_SOL / 20n,
+      expiresAt: 0n,
+      rentPayer: owner,
+      flags: 0,
+      bounty: 0,
+      createFee: 0,
+    });
+    h.engineLog = [
+      { signature: "noise", slot: 2n, blockTime: null, failed: false, emitted: [], memos: [specMemo("https://evil.example/spec")] },
+      { signature: "create", slot: 1n, blockTime: null, failed: false, emitted: [tag(created)], memos: [specMemo(specUrl)] },
+    ];
+    expect((await ok(client, "find_jobs", { attestor: judge }))["jobs"]).toMatchObject([{ ...job, spec_url: specUrl }]);
+    expect(await ok(client, "find_jobs", { attestor: owner })).toEqual({ jobs: [] });
+
+    const work = "e7".repeat(32);
+    const delivery = { intent, sha256: work.toUpperCase(), url: "https://example.org/work.tar" };
+    const preview = await ok(client, "wallet_deliver", delivery);
+    expect(preview).toEqual({
+      intent,
+      attestor: judge,
+      sha256: work,
+      url: delivery.url,
+      summary: [
+        `Announces: the work with sha256 ${work} at ${delivery.url}, for the proof escrow ${intent}`,
+        `Notifies: its attestor ${judge}, with a transfer of 0 lamports from this wallet`,
+        "Costs: the transaction fee; no tokens move",
+      ],
+      warnings: [],
+      sent: false,
+      next: PREVIEW_ONLY,
+    });
+    h.wires.length = 0;
+    const sent = await ok(client, "wallet_deliver", { ...delivery, send: true });
+    expect(sent).toMatchObject({ sent: true, signature: expect.any(String) });
+    expect(Buffer.from(h.wires[0] as string, "base64").toString("latin1")).toContain(deliveryMemo({ intent, sha256: work, url: delivery.url }));
+    expect((await call(client, "wallet_deliver", { ...delivery, url: "ftp://example.org/x" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "url" }] });
+    expect((await call(client, "wallet_deliver", { ...delivery, sha256: "xyz" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "sha256" }] });
+    expect((await call(client, "wallet_deliver", { ...delivery, intent: plain["intent"] })).value).toMatchObject({ code: "NotDeliverable" });
+    expect((await call(client, "wallet_deliver", { ...delivery, intent: judge })).value).toMatchObject({ code: "NotDeliverable" });
   });
 
   it("shows an escrow's release and checks received work against the hash the release recorded", async () => {

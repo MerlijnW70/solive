@@ -25,6 +25,7 @@ import {
   remainingOf,
   requiredOut,
   signEd25519Instruction,
+  specMemo,
   splitFees,
   TOKEN_PROGRAM_ADDRESS,
   tokenName,
@@ -43,6 +44,18 @@ import {
 } from "./accounts.js";
 import { budgeted, type Priority, simulated } from "./budget.js";
 import { type EngineError, explain } from "./errors.js";
+import {
+  type DeliverInput,
+  deliveriesOf,
+  type Delivery,
+  deliveryInstructions,
+  type Job,
+  jobsOf,
+  memoInstruction,
+  readSpec,
+  type Spec,
+  type SpecFetch,
+} from "./jobs.js";
 import { initUserIfMissing, tokenAccountIfMissing, wrapIfShort } from "./setup.js";
 import {
   changesFrom,
@@ -64,6 +77,7 @@ export type ClientOptions = {
   priority?: Priority;
   pollMs?: number;
   resyncSeconds?: number;
+  fetch?: SpecFetch;
 };
 
 export type IntentAccount = { address: Address; intent: Intent };
@@ -83,6 +97,7 @@ export type CreateIntentInput = {
   expiresAt?: bigint;
   nonce?: bigint;
   receiver?: Address;
+  specUrl?: string;
 };
 
 export type CreatedIntent = { signature: Signature; intent: Address; nonce: bigint };
@@ -146,7 +161,13 @@ export type Client = {
   expire(cranker: TransactionSigner, owner: Address, nonce: bigint): Promise<Signature>;
   close(cranker: TransactionSigner, owner: Address, nonce: bigint): Promise<Signature>;
   balances(owner: Address, mints: readonly Address[]): Promise<Balances>;
+  jobs(filter?: { attestor?: Address }): Promise<Job[]>;
+  spec(intent: Address): Promise<Spec | null>;
+  deliver(input: DeliverInput): Promise<Signature>;
+  deliveries(filter: { judge: Address; intent?: Address }): Promise<Delivery[]>;
 };
+
+export const SPEC_URL_NEEDS_PROOF = "specUrl needs an AttestedResult intent with a non-zero specHash";
 
 export const DEFAULT_EXPIRES_IN = 3_600n;
 export const HISTORY_LIMIT = 100;
@@ -286,6 +307,10 @@ export function createClient(options: ClientOptions): Client {
   const createIntent = async (input: CreateIntentInput): Promise<CreatedIntent> => {
     const { signer, params, inputMint, outputMint } = input;
     const owner = signer.address;
+    if (input.specUrl !== undefined && (params.kind !== Kind.AttestedResult || params.specHash.every((b) => b === 0))) {
+      throw new RangeError(SPEC_URL_NEEDS_PROOF);
+    }
+    const published = input.specUrl === undefined ? [] : [memoInstruction(signer, specMemo(input.specUrl))];
     const [settings, sell, buy, user] = await Promise.all([config(), mint(inputMint), mint(outputMint), loadUser(transport, owner)]);
     const nonce = input.nonce ?? nonceAfter(owner, user);
     const expiresAt = input.expiresAt ?? (await chainTime(transport)) + (input.expiresIn ?? DEFAULT_EXPIRES_IN);
@@ -307,7 +332,7 @@ export function createClient(options: ClientOptions): Client {
       ...(recipient === owner ? {} : { receiver: receiver.address, receiverAuthority: recipient }),
     });
     const register = await initUserIfMissing(user, signer);
-    const signature = await send([...register, ...receiver.create, ...wrap.instructions, create], signer);
+    const signature = await send([...register, ...receiver.create, ...wrap.instructions, create, ...published], signer);
     const [intent] = await findIntentPda({ owner, nonce });
     return { signature, intent, nonce };
   };
@@ -527,5 +552,9 @@ export function createClient(options: ClientOptions): Client {
     expire,
     close,
     balances,
+    jobs: (filter = {}) => jobsOf(transport, filter.attestor),
+    spec: (intent) => readSpec(transport, options.fetch ?? fetch, intent),
+    deliver: async (input) => send((await deliveryInstructions(transport, input)).instructions, input.worker),
+    deliveries: ({ judge, intent }) => deliveriesOf(transport, judge, intent),
   };
 }

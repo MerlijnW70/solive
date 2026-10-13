@@ -55,7 +55,9 @@ import {
   chainTime,
   clusterDomain,
   createdAccount,
+  deliveryInstructions,
   type IntentChanges,
+  jobsOf,
   type Latest,
   loadConfig,
   loadIntent,
@@ -511,6 +513,26 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
         0,
       );
       return { notable, transactions };
+    }
+    case "jobs":
+      return { jobs: await jobsOf(transport, command.attestor) };
+    case "deliver": {
+      const worker = await runtime.loadSigner(command.keypair);
+      const { intent, sha256, workUrl } = command;
+      const { attestor, instructions } = await deliveryInstructions(transport, { worker, intent, sha256, url: workUrl });
+      const shown = {
+        intent,
+        attestor,
+        summary: [
+          `Announces: the work with sha256 ${sha256} at ${workUrl}, for the proof escrow ${intent}`,
+          `Notifies: its judge ${attestor}, with a transfer of 0 lamports from ${worker.address}, which signs and pays the fee`,
+        ],
+      };
+      if (!command.yes) {
+        const simulated = await prepare(transport, instructions, worker.address);
+        return { ...shown, sent: false, units_consumed: simulated.unitsConsumed, next: NOT_SENT };
+      }
+      return { ...shown, sent: true, signature: await transport.send(instructions, worker) };
     }
     case "treasury": {
       const view = await treasuryView(transport, command.mints ?? (await intentInputMints(transport)));

@@ -8,7 +8,7 @@ import {
   TOKEN_2022_PROGRAM_ADDRESS,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import { MissingAccount, NotAMint, rateLimited } from "@intent-engine/client";
+import { MissingAccount, NotAMint, NotDeliverable, rateLimited } from "@intent-engine/client";
 import { InvalidInput, type Issue } from "./schema.js";
 
 export type Problem = {
@@ -224,6 +224,7 @@ export const SERVER_PROBLEMS = {
   NothingToCrank: later("the intent is not yet expired, or settling it pays this cranker nothing"),
   FundingExceedsBounty: never("recreating the owner's token account costs more than the intent's bounty"),
   OwnerAccountMissing: never("the owner has no token account that can take the refund; crank with fund_accounts"),
+  NotDeliverable: never("the intent is not an open proof escrow, so no work can be delivered to it"),
 } as const satisfies Record<string, Entry>;
 
 type ServerProblemName = keyof typeof SERVER_PROBLEMS;
@@ -255,6 +256,9 @@ export function problemOf(error: unknown): Problem {
   }
   if (error instanceof MissingAccount) {
     return { code: "NotFound", retryable: SERVER_PROBLEMS.NotFound.retryable, hint: error.message };
+  }
+  if (error instanceof NotDeliverable) {
+    return { code: "NotDeliverable", retryable: SERVER_PROBLEMS.NotDeliverable.retryable, hint: untrusted(error.message) };
   }
   if (error instanceof NotAMint) {
     return {

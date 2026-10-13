@@ -192,6 +192,24 @@ console.log(await client.intent(signer.address, brief.nonce));
 await client.unwrap(signer);
 ```
 
+## Find work and deliver it
+
+The chain holds only a proof escrow's spec hash. `specUrl` on `createIntent` publishes where the spec lives, in a memo the owner signs in the create transaction. `jobs` lists up to 50 open, unexpired proof escrows, those with the most time left first, optionally only those naming one `attestor`, each with its `specUrl`, which is `null` when none was published. `spec` fetches that url, following no redirect and reading at most 1048576 bytes, and returns its `text`, its `sha256` and whether it `matches` the committed hash; it never runs the text. A worker announces its work with `deliver`: one transaction it signs, with a memo naming the intent, the work's sha256 and the url to fetch it from, and a transfer of 0 lamports to the judge, so the delivery shows in the judge's history. The judge reads them with `deliveries` from its last 100 transactions, newest first, and gets only memos that name one of its own open proof escrows, or the one of its proof escrows it asks for with `intent`. Here the spec is a file of this repository at a fixed commit, your wallet plays the worker, and the judge then releases the escrow to the wallet that delivered. This prints `true true` twice.
+
+```ts
+const specUrl = "https://raw.githubusercontent.com/MerlijnW70/solive/3aad6ee86067e10695d44e47fbc5ed67535a5cfb/SECURITY.md";
+const spec = new Uint8Array(createHash("sha256").update(new Uint8Array(await (await fetch(specUrl)).arrayBuffer())).digest());
+const posted = await client.createIntent({ ...order, params: { ...work, specHash: spec }, specUrl });
+const listed = (await client.jobs({ attestor: judge.address })).find(({ intent }) => intent === posted.intent);
+console.log(listed?.specUrl === specUrl, (await client.spec(posted.intent))?.matches);
+const sha256 = createHash("sha256").update("the delivered work").digest("hex");
+await client.deliver({ worker: signer, intent: posted.intent, sha256, url: "https://example.org/work.tar" });
+const [delivery] = await client.deliveries({ judge: judge.address, intent: posted.intent });
+console.log(delivery?.worker === signer.address, delivery?.sha256 === sha256);
+await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: posted.nonce, payTo: delivery!.worker, result: 1n });
+await client.unwrap(signer);
+```
+
 ## Who can do what
 
 - Any wallet other than the owner and the receiver can fill an open swap intent before it expires.

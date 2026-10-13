@@ -10,6 +10,10 @@ import {
   findUserStatePda,
   formatTime,
   type IntentParams,
+  isMemoUrl,
+  Kind,
+  MEMO_URL_RULE,
+  specMemo,
   LONG_LIVED_SECONDS,
   NATIVE_MINT,
   validate,
@@ -23,6 +27,7 @@ import {
   initUserIfMissing,
   loadConfig,
   loadUser,
+  memoInstruction,
   mintOf,
   tokenAccountIfMissing,
   wrapIfShort,
@@ -92,6 +97,7 @@ export const prepareCreate = define({
   input: object({
     ...termsInput,
     pay_to: optional(account("the wallet that receives what the solver pays; default the owner")),
+    spec_url: optional(text(`where the acceptance spec of an attested order with spec_hash is published, ${MEMO_URL_RULE}; recorded in a memo the owner signs with the create, so workers find it`)),
   }),
   output: object({
     ...termsOutput,
@@ -106,6 +112,13 @@ export const prepareCreate = define({
     const now = await chainTime(transport);
     const expiresAt = expiryOf(input, now);
     const params = validate(paramsOf(input.order));
+    const specUrl = input.spec_url;
+    if (specUrl !== undefined && (params.kind !== Kind.AttestedResult || params.specHash.every((b) => b === 0))) {
+      throw new InvalidInput([{ path: "spec_url", message: "needs an attested order with spec_hash" }]);
+    }
+    if (specUrl !== undefined && !isMemoUrl(specUrl)) {
+      throw new InvalidInput([{ path: "spec_url", message: `must be ${MEMO_URL_RULE}` }]);
+    }
     const { config } = await loadConfig(transport);
     const [inputToken, outputToken] = [await mintOf(transport, input.input_mint), await mintOf(transport, input.output_mint)];
     const user = await loadUser(transport, input.owner);
@@ -145,7 +158,8 @@ export const prepareCreate = define({
     });
     const register = await initUserIfMissing(user, input.owner);
     const wrap = await wrapIfShort(transport, input.owner, input.input_mint, inputToken.tokenProgram, escrowAmount(params));
-    const prepared = await prepare(transport, [...register, ...receiver.create, ...wrap.instructions, create], input.owner);
+    const published = specUrl === undefined ? [] : [memoInstruction(owner, specMemo(specUrl))];
+    const prepared = await prepare(transport, [...register, ...receiver.create, ...wrap.instructions, create, ...published], input.owner);
     return {
       intent,
       nonce,
@@ -157,6 +171,7 @@ export const prepareCreate = define({
           { inputDecimals: inputToken.decimals, outputDecimals: outputToken.decimals, ...tokenNames(input.input_mint, input.output_mint) },
         ),
         `Expires: ${formatTime(expiresAt)}`,
+        ...(specUrl === undefined ? [] : [`Publishes: the acceptance spec's url ${specUrl}, in a memo the owner signs`]),
         ...(elsewhere ? [`Pays to: ${recipient}, who receives what the solver pays${input.output_mint === NATIVE_MINT ? WRAPPED : ""}`] : []),
         ...(input.partner === undefined ? [] : [`Partner fee: ${input.partner.bps} bps of the sold amount to ${input.partner.account}`]),
         ...setupLines({

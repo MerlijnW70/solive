@@ -15,6 +15,8 @@ import {
   formatAmount,
   formatTime,
   getIntentDecoder,
+  isMemoUrl,
+  MEMO_URL_RULE,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   IntentStatus,
   Kind,
@@ -33,6 +35,7 @@ import { decodeLookupTable } from "@intent-engine/solver";
 import {
   chainTime,
   CLOCK_SYSVAR,
+  deliveryInstructions,
   loadConfig,
   MEMO_PROGRAM_ADDRESS,
   mintOf,
@@ -309,11 +312,13 @@ type Token = Awaited<ReturnType<typeof mintOf>>;
 
 type Order = typeof orderSchema extends Schema<infer T> ? T : never;
 
+type Terms = { order: Order; expires_at: bigint; spec_url?: string };
+
 async function offered(
   ctx: AgentContext,
   call: Call,
   input: { sell: string; buy: string; pay_to?: Address | undefined; send?: boolean | undefined },
-  terms: (sold: Token, bought: Token, now: bigint, inputMint: Address, outputMint: Address) => Promise<{ order: Order; expires_at: bigint }> | { order: Order; expires_at: bigint },
+  terms: (sold: Token, bought: Token, now: bigint, inputMint: Address, outputMint: Address) => Promise<Terms> | Terms,
 ) {
   const wallet = access(ctx);
   const signer = await signerOf(ctx);
@@ -459,7 +464,7 @@ function recordedMint(sell: Address, url: string, chosen: string | undefined): A
 const walletEscrow = define({
   name: tool("wallet_escrow"),
   title: "Escrow a payment for an attestor to release",
-  description: `Hold an exact amount of one token from this server's wallet in an attested intent: it goes, minus the engine fee, to whichever wallet the named attestor later signs for, once the attestor attests a result between min_result and max_result. Use it to pay another agent for work that a third agent or a person judges. The attestor alone decides who is paid; nothing else is checked on chain, so name an attestor the user trusts. Have the worker deliver to the attestor rather than to this wallet, since this wallet can cancel until the release; ${tool("wallet_receipt")} later shows what the release recorded. Until then the wallet can cancel it with ${tool("wallet_cancel")}, and after it expires anyone can return the escrow. Amounts are whole tokens such as 0.05. Without send it only previews; show the user the summary and call again with send: true once they approve.`,
+  description: `Hold an exact amount of one token from this server's wallet in an attested intent: it goes, minus the engine fee, to whichever wallet the named attestor later signs for, once the attestor attests a result between min_result and max_result. Use it to pay another agent for work that a third agent or a person judges. The attestor alone decides who is paid, so name an attestor the user trusts; with spec_hash the release must also be signed over that exact spec. spec_url publishes where that spec lives, so workers find the escrow with ${tool("find_jobs")} and announce their work to the attestor with ${tool("wallet_deliver")}. Have the worker deliver to the attestor rather than to this wallet, since this wallet can cancel until the release; ${tool("wallet_receipt")} later shows what the release recorded. Until then the wallet can cancel it with ${tool("wallet_cancel")}, and after it expires anyone can return the escrow. Amounts are whole tokens such as 0.05. Without send it only previews; show the user the summary and call again with send: true once they approve.`,
   effect: "submit",
   repeats: true,
   input: object({
@@ -469,6 +474,7 @@ const walletEscrow = define({
     min_result: optional(amount("least result the attestor may attest; default 1")),
     max_result: optional(amount("greatest result the attestor may attest; default min_result")),
     spec_hash: optional(hex32("64 hex: the sha256 of the acceptance spec the attestor must verify. Setting it binds the release to a signature over that exact spec, so the attestor cannot sign a generic result")),
+    spec_url: optional(text(`where the acceptance spec is published, ${MEMO_URL_RULE}; needs spec_hash. Recorded in a memo this wallet signs with the escrow`)),
     judge_fee: optional(text("whole tokens of sell paid to the attestor out of the escrow when it settles, such as 0.001; needs spec_hash and must be below amount")),
     expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds the escrow stays open once sent; default ${ESCROW_EXPIRES_IN}`)),
     record_mint: optional(text("a token the escrow records as its output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet")),
@@ -487,6 +493,9 @@ const walletEscrow = define({
     if (input.judge_fee !== undefined && specHash === undefined) {
       throw new InvalidInput([{ path: "judge_fee", message: "needs spec_hash" }]);
     }
+    if (input.spec_url !== undefined && specHash === undefined) {
+      throw new InvalidInput([{ path: "spec_url", message: "needs spec_hash" }]);
+    }
     return offered(ctx, call, { sell: sold, buy: recordedMint(sold, wallet.url, input.record_mint), send: input.send }, (token, _, now) => ({
       order: {
         kind: "attested",
@@ -498,6 +507,7 @@ const walletEscrow = define({
         ...(input.judge_fee === undefined ? {} : { judge_fee: raw(input.judge_fee, token.decimals, "judge_fee") }),
       },
       expires_at: now + BigInt((input.expires_in ?? ESCROW_EXPIRES_IN) + LANDING_SECONDS),
+      ...(input.spec_url === undefined ? {} : { spec_url: input.spec_url }),
     }));
   },
 });
@@ -621,6 +631,53 @@ function sha256Of(text: string, path: string): string {
   }
   return hex;
 }
+
+const walletDeliver = define({
+  name: tool("wallet_deliver"),
+  title: "Announce delivered work to a judge",
+  description: `As a worker, tell the attestor of a proof escrow, such as one found with ${tool("find_jobs")}, that the work is done: this server's wallet sends one transaction with a memo naming the escrow, the work's sha256 and the url the attestor fetches it from, and a transfer of 0 lamports to the attestor so the delivery shows in its history. It moves no tokens and costs only the transaction fee. The attestor alone decides whether the work passes and whom it pays, so host the work where the attestor can fetch it and give its exact sha256. Without send it only previews; show the user the summary and call again with send: true once they approve.`,
+  effect: "submit",
+  repeats: true,
+  input: object({
+    intent: account("the proof escrow's intent address"),
+    sha256: text("the sha256 of the delivered work, as 64 hex digits"),
+    url: text(`where the attestor fetches the work, ${MEMO_URL_RULE}`),
+    send: optional(flag("true signs and sends; leave out to preview")),
+  }),
+  output: object({
+    intent: account(),
+    attestor: account("the escrow's judge, who receives the announcement"),
+    sha256: text(),
+    url: text(),
+    summary: list(text(), 8),
+    warnings: list(text(), 8),
+    sent: flag(),
+    signature: optional(text()),
+    next: optional(text()),
+  }),
+  run: async (ctx: AgentContext, input, call: Call) => {
+    const signer = await signerOf(ctx);
+    const sha256 = sha256Of(input.sha256, "sha256");
+    if (!isMemoUrl(input.url)) {
+      throw new InvalidInput([{ path: "url", message: `must be ${MEMO_URL_RULE}` }]);
+    }
+    const { attestor, instructions } = await deliveryInstructions(ctx.transport, { worker: signer, intent: input.intent, sha256, url: input.url });
+    const view = {
+      intent: input.intent,
+      attestor,
+      sha256,
+      url: input.url,
+      summary: [
+        `Announces: the work with sha256 ${sha256} at ${input.url}, for the proof escrow ${input.intent}`,
+        `Notifies: its attestor ${attestor}, with a transfer of 0 lamports from this wallet`,
+        "Costs: the transaction fee; no tokens move",
+      ],
+      warnings: [],
+      prepared: preparedView(await prepare(ctx.transport, instructions, signer.address)),
+    };
+    return sent(ctx, signer, view, input.send, call);
+  },
+});
 
 export const notAttestor = (attestor: string) =>
   `this intent names ${attestor} as its attestor, not this server's wallet; only that key can release it`;
@@ -1417,6 +1474,7 @@ export const WALLET_ACTIONS: readonly AnyAction[] = [
   walletEscrowPlan,
   walletAttest,
   walletAttestSplit,
+  walletDeliver,
   walletWait,
   walletReceipt,
   walletIntents,

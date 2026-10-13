@@ -484,12 +484,12 @@ describe("intent scan", () => {
 });
 
 describe("engine transactions", () => {
-  it("keeps only inner instructions the engine emitted, including through lookup tables", async () => {
+  it("keeps only inner instructions the engine emitted, including through lookup tables, with the memos and the fee payer", async () => {
     const s = stub([]);
     const transport = rpcTransport(s.rpc, s.wait);
     const found = await transport.engineTransactions(5);
     expect(found).toEqual([
-      { signature: SIG, slot: 7n, blockTime: 100n, failed: false, emitted: [new Uint8Array([1, 2]), new Uint8Array([4, 5])], memos: ["delivery note"] },
+      { signature: SIG, slot: 7n, blockTime: 100n, failed: false, emitted: [new Uint8Array([1, 2]), new Uint8Array([4, 5])], memos: ["delivery note"], feePayer: OWNER },
       { signature: OTHER_SIG, slot: 8n, blockTime: null, failed: true, emitted: [], unread: true },
     ]);
     expect(s.calls).toEqual([

@@ -11,6 +11,7 @@ export * from "./fee.js";
 export * from "./kinds.js";
 export * from "./mandate.js";
 export * from "./math.js";
+export * from "./memo.js";
 export * from "./mints.js";
 export * from "./pdas.js";
 export * from "./sig.js";

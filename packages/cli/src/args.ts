@@ -9,9 +9,11 @@ import {
   type EconomicsSpec,
   I64_MAX,
   I64_MIN,
+  isMemoUrl,
   Kind,
   kindBit,
   MAX_PARTNER_BPS,
+  MEMO_URL_RULE,
   TOKEN_AMOUNT_PATTERN,
   U64_MAX,
 } from "@intent-engine/core";
@@ -148,6 +150,8 @@ export type Command =
     })
   | (Keyed & { name: "crank"; dryRun: boolean; fundAccounts: boolean })
   | (Remote & { name: "events"; limit: number })
+  | (Remote & { name: "jobs"; attestor: Address | undefined })
+  | (Keyed & { name: "deliver"; yes: boolean; intent: Address; sha256: string; workUrl: string })
   | (Keyed & { name: "flow"; flow: FlowName; yes: boolean; input: ToolInput })
   | (Remote & { name: "lookup"; lookup: LookupName; keypair: string | undefined; input: ToolInput })
   | (Keyed & { name: "signed-prepare"; yes: boolean; out: string; input: ToolInput })
@@ -245,6 +249,9 @@ const OPTIONS = {
   "partner-bps": { type: "string" },
   mints: { type: "string" },
   create: { type: "boolean" },
+  intent: { type: "string" },
+  sha256: { type: "string" },
+  "work-url": { type: "string" },
 } as const;
 
 const KIND_NAMES: Record<string, Kind> = {
@@ -402,6 +409,8 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   "solver-table": ["url", "solver", "mints"],
   "lower-pause": ["url", "priority-fee", "keypair", "authority", "yes", "flags"],
   events: ["url", "limit", "follow", "interval"],
+  jobs: ["url", "attestor"],
+  deliver: ["url", "priority-fee", "keypair", "yes", "intent", "sha256", "work-url"],
   crank: ["url", "priority-fee", "keypair", "dry-run", "fund-accounts"],
   treasury: ["url", "priority-fee", "keypair", "yes", "mints", "create"],
   create: [
@@ -1012,6 +1021,22 @@ function treasury(remote: Remote, values: Values): Command {
   };
 }
 
+export const SHA256_NEEDED = "--sha256 must be the work's sha256 as 64 hex digits";
+
+function sha256Of(text: string): string {
+  if (!/^[0-9a-fA-F]{64}$/.test(text)) {
+    throw new UsageError(SHA256_NEEDED);
+  }
+  return text.toLowerCase();
+}
+
+function workUrlOf(text: string): string {
+  if (!isMemoUrl(text)) {
+    throw new UsageError(`--work-url must be ${MEMO_URL_RULE}`);
+  }
+  return text;
+}
+
 function noSub(sub: string | undefined): void {
   if (sub !== undefined) {
     throw new UsageError(`unexpected argument ${sub}`);
@@ -1038,7 +1063,7 @@ export function outputOf(argv: readonly string[]): "json" | "text" {
 export const MAX_FOLLOW_INTERVAL = 3_600;
 export const WATCH_INTERVAL = 5;
 
-export const COMMANDS = "setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | version | help [command]";
+export const COMMANDS = "setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | version | help [command]";
 
 export const USAGE = `usage: ${COMMANDS}`;
 
@@ -1073,6 +1098,8 @@ export const SHAPES: Readonly<Record<string, string>> = {
   crank: "--keypair <file> [--dry-run] [--fund-accounts]",
   treasury: "[--mints <mint,...>] [--create --mints <mint,...> --keypair <payer file> [--yes]]",
   events: "[--limit <n>] [--follow [--interval <seconds>]]",
+  jobs: "[--attestor <address>]",
+  deliver: "--keypair <worker file> --intent <address> --sha256 <64 hex> --work-url <https url> [--yes]",
   create: `swap|limit|dutch|attested --keypair <file> --input-mint --output-mint (--expires-at | --expires-in) ${ORDER_SHAPE} [--nonce <n>] ${PARTNER_SHAPE} [--units tokens|raw] [--yes]`,
   list: "--owner <address> or --keypair <file>; --owner wins when both are given",
   mandate: `grant --keypair <file> --agent --input-mint --output-mint --kinds --per-intent --total --max-intents --max-ttl --valid-for --floor-out --floor-in [--agent-fee] ${PARTNER_SHAPE} [--id] [--units tokens|raw] [--yes] | show --agent (--owner <address> | --keypair <file>) [--id] | revoke --keypair <file> --agent [--id] [--yes] | use swap|limit|dutch --keypair <file> --owner (--expires-at | --expires-in) ${MANDATE_ORDER_SHAPE} [--id] [--nonce <n>] [--units tokens|raw] [--yes]`,
@@ -1283,6 +1310,20 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
     case "treasury":
       noSub(sub);
       return treasury(remote, values);
+    case "jobs":
+      noSub(sub);
+      return { name: "jobs", ...remote, attestor: values.attestor === undefined ? undefined : key(values, "attestor") };
+    case "deliver":
+      noSub(sub);
+      return {
+        name: "deliver",
+        ...remote,
+        keypair: required(values, "keypair"),
+        yes: values.yes === true,
+        intent: key(values, "intent"),
+        sha256: sha256Of(required(values, "sha256")),
+        workUrl: workUrlOf(required(values, "work-url")),
+      };
     case "solver-table":
       noSub(sub);
       return { name: "solver-table", ...remote, solver: key(values, "solver"), mints: mintList(required(values, "mints")) };

@@ -3,7 +3,7 @@
 # CLI reference
 
 ```text
-usage: setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | version | help [command]
+usage: setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | version | help [command]
 ```
 
 Every command accepts `--output` and `--help`.
@@ -185,6 +185,22 @@ events [--limit <n>] [--follow [--interval <seconds>]]
 ```
 
 Options: `--url`, `--limit`, `--follow`, `--interval`, `--output`, `--help`
+
+## jobs
+
+```text
+jobs [--attestor <address>]
+```
+
+Options: `--url`, `--attestor`, `--output`, `--help`
+
+## deliver
+
+```text
+deliver --keypair <worker file> --intent <address> --sha256 <64 hex> --work-url <https url> [--yes]
+```
+
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--sha256`, `--work-url`, `--output`, `--help`
 
 ## crank
 

@@ -42,12 +42,14 @@ import {
   findVaultPda,
   type Intent,
   INTENT_ENGINE_PROGRAM_ADDRESS,
+  Kind,
   splitFee,
   splitFees,
 } from "@intent-engine/core";
 import { agentServer } from "../src/agent/mcp.js";
 import { ACTIONS } from "../src/agent/registry.js";
-import { UsageError } from "../src/args.js";
+import { SHA256_NEEDED, UsageError } from "../src/args.js";
+import { createClient } from "@intent-engine/client";
 import {
   crankAction,
   IMMUTABLE_OWNER,
@@ -599,6 +601,57 @@ describe("cli against the deployed engine", () => {
     const [intent] = await findIntentPda({ owner: owner.address, nonce: 0n });
     expect(h.svm.getAccount(intent).exists).toBe(false);
     expect(h.svm.getBalance(cranker.address)).toBe(before + 90_000n - 5_000n);
+  });
+
+  it("lists open proof escrows as jobs and announces a delivery to the judge, previewing unless --yes", async () => {
+    h.watched.push(owner.address);
+    h.engineLog = [];
+    const judge = await generateKeyPairSigner();
+    const worker = await funded();
+    const client = createClient({ url: "http://cluster", transport });
+    const specHash = new Uint8Array(32).fill(7);
+    const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash, judgeFee: 0n } as const;
+    const job = await client.createIntent({ signer: owner, params, inputMint, outputMint, nonce: 3n, expiresAt: NOW + 3_600n });
+    const swap = await client.createIntent({ signer: owner, params: { kind: Kind.SwapExactIn, amountIn: 10n, minOut: 1n }, inputMint, outputMint, nonce: 4n, expiresAt: NOW + 3_600n });
+
+    expect((await cli(["jobs", "--attestor", judge.address], {})).json()).toEqual({
+      jobs: [
+        {
+          intent: job.intent,
+          owner: owner.address,
+          nonce: "3",
+          attestor: judge.address,
+          specHash: "07".repeat(32),
+          specUrl: null,
+          sells: "100",
+          judgeFee: "0",
+          inputMint,
+          expiresAt: (NOW + 3_600n).toString(),
+        },
+      ],
+    });
+    expect((await cli(["jobs"], {})).json()["jobs"]).toHaveLength(1);
+    expect((await cli(["jobs", "--attestor", worker.address], {})).json()).toEqual({ jobs: [] });
+
+    const work = "ab".repeat(32);
+    const args = ["deliver", "--keypair", "w.json", "--intent", job.intent, "--sha256", work.toUpperCase(), "--work-url", "https://example.org/work"];
+    const summary = [
+      `Announces: the work with sha256 ${work} at ` + "https://example.org/work" + `, for the proof escrow ${job.intent}`,
+      `Notifies: its judge ${judge.address}, with a transfer of 0 lamports from ${worker.address}, which signs and pays the fee`,
+    ];
+    const preview = await cli(args, { "w.json": worker });
+    expect(preview.json()).toMatchObject({ intent: job.intent, attestor: judge.address, summary, sent: false });
+    const sent = await cli([...args, "--yes"], { "w.json": worker });
+    expect(sent.json()).toMatchObject({ intent: job.intent, attestor: judge.address, summary, sent: true, signature: expect.any(String) });
+
+    const bad = await cli([...args.slice(0, 6), "xyz", ...args.slice(7)], { "w.json": worker });
+    expect([bad.code, bad.err]).toEqual([EXIT_USAGE, SHA256_NEEDED]);
+    const local = await cli([...args.slice(0, 8), "http://example.org/work"], { "w.json": worker });
+    expect(local.code).toBe(EXIT_USAGE);
+    expect(local.err).toContain("--work-url must be an https url");
+    const refused = await cli(["deliver", "--keypair", "w.json", "--intent", swap.intent, "--sha256", work, "--work-url", "https://example.org/work"], { "w.json": worker });
+    expect(refused.code).toBe(EXIT_FAILED);
+    expect(refused.err).toContain(`intent ${swap.intent} is not a proof escrow`);
   });
 
   it("creates an intent that names a partner and shows it", async () => {

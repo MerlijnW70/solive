@@ -15,7 +15,7 @@ import {
 } from "@solana/kit";
 import { getIntentDecoder, getIntentDiscriminatorBytes, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { FailedTransactionMetadata, type LiteSVM } from "litesvm";
-import type { EngineTransaction, ProgramAccount, Transport } from "./transport.js";
+import { type EngineTransaction, MEMO_PROGRAM_ADDRESS, type ProgramAccount, type Transport } from "./transport.js";
 
 export type SvmTransportOptions = { genesisHash?: string };
 
@@ -36,7 +36,8 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
     if (result instanceof FailedTransactionMetadata) {
       throw new Error(`${String(result.err())}\n${result.meta().logs().join("\n")}`);
     }
-    const keys = getCompiledTransactionMessageDecoder().decode(tx.messageBytes).staticAccounts;
+    const compiled = getCompiledTransactionMessageDecoder().decode(tx.messageBytes);
+    const keys = compiled.staticAccounts;
     for (const address of keys) {
       const data = engineData(address);
       if (data !== null && tag.every((b, i) => data[i] === b)) {
@@ -45,6 +46,10 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
     }
     const signature = getSignatureFromTransaction(tx);
     const clock = svm.getClock();
+    const memos = ("instructions" in compiled ? compiled.instructions : [])
+      .filter((ix) => keys[ix.programAddressIndex] === MEMO_PROGRAM_ADDRESS)
+      .map((ix) => new TextDecoder().decode(Uint8Array.from(ix.data ?? [])));
+    const feePayer = keys[0];
     history.unshift({
       touched: new Set(keys),
       found: {
@@ -58,6 +63,8 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
           .map((inner) => inner.instruction())
           .filter((ix) => keys[ix.programIdIndex()] === INTENT_ENGINE_PROGRAM_ADDRESS)
           .map((ix) => new Uint8Array(ix.data())),
+        ...(memos.length === 0 ? {} : { memos }),
+        ...(feePayer === undefined ? {} : { feePayer }),
       },
     });
     return signature;

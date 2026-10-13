@@ -45,6 +45,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `NothingToCrank` | yes | the intent is not yet expired, or settling it pays this cranker nothing |
 | `FundingExceedsBounty` | no | recreating the owner's token account costs more than the intent's bounty |
 | `OwnerAccountMissing` | no | the owner has no token account that can take the refund; crank with fund_accounts |
+| `NotDeliverable` | no | the intent is not an open proof escrow, so no work can be delivered to it |
 
 ## Engine program
 
