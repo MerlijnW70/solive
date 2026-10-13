@@ -389,3 +389,32 @@ pub fn attestation_split_message(
     let digest = solana_sha256_hasher::hashv(&[&preimage]).to_bytes();
     intent_core::sig::offchain_envelope(&attestor.to_bytes(), &digest)
 }
+
+pub fn split_digest(
+    domain: [u8; 32],
+    intent: &Pubkey,
+    amount_in: u64,
+    result: u64,
+    spec_hash: [u8; 32],
+    split_hash: [u8; 32],
+) -> [u8; 32] {
+    let preimage = intent_core::sig::AttestedSplit {
+        program: intent_engine::ID.to_bytes(),
+        domain,
+        intent: intent.to_bytes(),
+        amount_in,
+        result,
+        filled: 0,
+        revision: 0,
+        max_fee_bps: intent_engine::state::MAX_FEE_BPS,
+        ext_hash: empty_ext_hash(),
+        spec_hash,
+        split_hash,
+    }
+    .preimage();
+    solana_sha256_hasher::hashv(&[&preimage]).to_bytes()
+}
+
+pub fn split_envelope(signer: &Pubkey, digest: &[u8; 32]) -> [u8; intent_core::sig::ENVELOPE_LEN] {
+    intent_core::sig::offchain_envelope(&signer.to_bytes(), digest)
+}

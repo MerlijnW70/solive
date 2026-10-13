@@ -4,14 +4,14 @@ use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 use intent_core::ext::FILL_EXT_TAGS;
 use intent_core::kinds::Intent as CoreIntent;
 use intent_core::lifecycle::{transition, Action, Status};
-use intent_core::sig::{offchain_envelope, AttestedSplit};
+use intent_core::sig::AttestedSplit;
 
 use crate::errors::{core_err, EngineError};
 use crate::events::{FeeWithheld, IntentSplit, WITHHELD_JUDGE, WITHHELD_PARTNER};
 use crate::ext::Ext;
 use crate::policy::{
-    check_fill_kind, check_mint, pay_agent, pay_out_split, take_remaining,
-    verify_preceding_ed25519, AgentPayout, FeeSchedule, IntentSigner, SplitPayout,
+    check_fill_kind, check_mint, pay_agent, pay_out_split, take_remaining, verify_split_signers,
+    AgentPayout, FeeSchedule, IntentSigner, SplitPayout,
 };
 use crate::state::{
     Config, Intent, CONFIG_ADDRESS, CONFIG_VERSION, INTENT_VERSION, PAUSE_FILL, VAULT_SEED,
@@ -219,10 +219,11 @@ pub fn handle_fill_attested_split(
         .preimage();
         solana_sha256_hasher::hashv(&[&preimage]).to_bytes()
     };
-    verify_preceding_ed25519(
+    verify_split_signers(
         &ctx.accounts.instructions.to_account_info(),
+        &claim.recipients,
         &attestor,
-        &offchain_envelope(&attestor.to_bytes(), &digest),
+        &digest,
     )?;
     for (wallet, info) in claim.recipients.iter().zip(recipients_info.iter()) {
         let canonical = get_associated_token_address_with_program_id(

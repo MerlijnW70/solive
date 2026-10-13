@@ -14,7 +14,7 @@ use intent_core::bounty::split_n;
 use intent_core::fee::{split_fees, Fees};
 use intent_core::kinds::{Kind, ALL_KINDS_MASK};
 use intent_core::mint_policy::mint_extensions_allowed;
-use intent_core::sig::check_ed25519_ix;
+use intent_core::sig::{check_ed25519_ix, offchain_envelope};
 use solana_instructions_sysvar::{load_current_index_checked, load_instruction_at_checked};
 
 use crate::errors::{core_err, EngineError};
@@ -437,14 +437,13 @@ pub fn close_vault<'info>(
     ))
 }
 
-pub fn verify_preceding_ed25519(
+pub fn verify_ed25519_at(
     instructions: &AccountInfo,
+    index: usize,
     signer: &Pubkey,
     message: &[u8],
 ) -> Result<()> {
-    let current = load_current_index_checked(instructions)?;
-    let previous = current.checked_sub(1).ok_or(EngineError::SigMissing)?;
-    let ix = load_instruction_at_checked(usize::from(previous), instructions)?;
+    let ix = load_instruction_at_checked(index, instructions)?;
     check_ed25519_ix(
         &ix.program_id.to_bytes(),
         &ix.data,
@@ -452,6 +451,47 @@ pub fn verify_preceding_ed25519(
         message,
     )
     .map_err(core_err)?;
+    Ok(())
+}
+
+pub fn verify_preceding_ed25519(
+    instructions: &AccountInfo,
+    signer: &Pubkey,
+    message: &[u8],
+) -> Result<()> {
+    let current = load_current_index_checked(instructions)?;
+    let previous = current.checked_sub(1).ok_or(EngineError::SigMissing)?;
+    verify_ed25519_at(instructions, usize::from(previous), signer, message)
+}
+
+pub fn verify_split_signers(
+    instructions: &AccountInfo,
+    recipients: &[Pubkey],
+    attestor: &Pubkey,
+    digest: &[u8; 32],
+) -> Result<()> {
+    let current = usize::from(load_current_index_checked(instructions)?);
+    let count = recipients
+        .len()
+        .checked_add(1)
+        .ok_or(EngineError::Overflow)?;
+    let base = current.checked_sub(count).ok_or(EngineError::SigMissing)?;
+    for (k, wallet) in recipients.iter().enumerate() {
+        let env = offchain_envelope(&wallet.to_bytes(), digest);
+        verify_ed25519_at(
+            instructions,
+            base.checked_add(k).ok_or(EngineError::Overflow)?,
+            wallet,
+            &env,
+        )?;
+    }
+    let env = offchain_envelope(&attestor.to_bytes(), digest);
+    verify_ed25519_at(
+        instructions,
+        current.checked_sub(1).ok_or(EngineError::SigMissing)?,
+        attestor,
+        &env,
+    )?;
     Ok(())
 }
 
