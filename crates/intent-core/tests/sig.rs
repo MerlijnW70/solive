@@ -1,6 +1,6 @@
 use intent_core::sig::{
-    check_ed25519_ix, ed25519_header, offchain_envelope, AttestedFill, AttestedProof,
-    AttestedSplit, SignedIntent, ATTEST_PROOF_TAG, ATTEST_SPLIT_TAG, ATTEST_TAG,
+    check_ed25519_batch, check_ed25519_ix, ed25519_header, offchain_envelope, AttestedFill,
+    AttestedProof, AttestedSplit, SignedIntent, ATTEST_PROOF_TAG, ATTEST_SPLIT_TAG, ATTEST_TAG,
     ED25519_PROGRAM_ID, INTENT_TAG, OFFCHAIN_PREFIX,
 };
 use intent_core::Error;
@@ -136,6 +136,149 @@ fn messages_too_long_for_the_precompile_are_rejected() {
     assert_eq!(
         check_ed25519_ix(&ED25519_PROGRAM_ID, &ix_data(&[]), &PK, &huge),
         Err(Error::SigMessage)
+    );
+}
+
+fn batch_data(pubkeys: &[[u8; 32]], message: &[u8]) -> Vec<u8> {
+    let m = pubkeys.len();
+    let len = u16::try_from(message.len()).unwrap_or(u16::MAX);
+    let pubkeys_at = 14usize.saturating_mul(m).saturating_add(2);
+    let sigs_at = pubkeys_at.saturating_add(32usize.saturating_mul(m));
+    let message_at = sigs_at.saturating_add(64usize.saturating_mul(m));
+    let le = |v: usize| u16::try_from(v).unwrap_or(u16::MAX).to_le_bytes();
+    let mut data = vec![u8::try_from(m).unwrap_or(u8::MAX), 0];
+    for k in 0..m {
+        data.extend_from_slice(&le(sigs_at.saturating_add(64usize.saturating_mul(k))));
+        data.extend_from_slice(&u16::MAX.to_le_bytes());
+        data.extend_from_slice(&le(pubkeys_at.saturating_add(32usize.saturating_mul(k))));
+        data.extend_from_slice(&u16::MAX.to_le_bytes());
+        data.extend_from_slice(&le(message_at));
+        data.extend_from_slice(&len.to_le_bytes());
+        data.extend_from_slice(&u16::MAX.to_le_bytes());
+    }
+    for pk in pubkeys {
+        data.extend_from_slice(pk);
+    }
+    for _ in 0..m {
+        data.extend_from_slice(&[0xee; 64]);
+    }
+    data.extend_from_slice(message);
+    data
+}
+
+#[test]
+fn a_batch_of_co_signatures_over_one_shared_message_is_accepted() {
+    let msg = offchain_envelope(&[9; 32], &[0x33; 32]);
+    for count in [1usize, 3, 9] {
+        let keys: Vec<[u8; 32]> = (0..count)
+            .map(|k| [u8::try_from(k).unwrap_or(0); 32])
+            .collect();
+        assert_eq!(
+            check_ed25519_batch(&ED25519_PROGRAM_ID, &batch_data(&keys, &msg), &keys, &msg),
+            Ok(())
+        );
+    }
+}
+
+#[test]
+fn a_batch_binds_every_pubkey_the_count_and_the_shared_message() {
+    let msg = offchain_envelope(&[9; 32], &[0x33; 32]);
+    let keys = [[1u8; 32], [2; 32], [3; 32]];
+    let data = batch_data(&keys, &msg);
+    assert_eq!(
+        check_ed25519_batch(&ED25519_PROGRAM_ID, &data, &keys, &msg),
+        Ok(())
+    );
+    let wrong = check_ed25519_batch(
+        &ED25519_PROGRAM_ID,
+        &data,
+        &[[1u8; 32], [2; 32], [4; 32]],
+        &msg,
+    );
+    assert_eq!(wrong, Err(Error::SigPubkey));
+    let reordered = check_ed25519_batch(
+        &ED25519_PROGRAM_ID,
+        &data,
+        &[[2u8; 32], [1; 32], [3; 32]],
+        &msg,
+    );
+    assert_eq!(reordered, Err(Error::SigPubkey));
+    let dropped = check_ed25519_batch(&ED25519_PROGRAM_ID, &data, &[[1u8; 32], [2; 32]], &msg);
+    assert_eq!(dropped, Err(Error::SigHeader));
+    let other = offchain_envelope(&[9; 32], &[0x44; 32]);
+    assert_eq!(
+        check_ed25519_batch(&ED25519_PROGRAM_ID, &data, &keys, &other),
+        Err(Error::SigMessage)
+    );
+    assert_eq!(
+        check_ed25519_batch(&[0xaa; 32], &data, &keys, &msg),
+        Err(Error::SigProgram)
+    );
+}
+
+#[test]
+fn a_batch_rejects_a_tampered_count_header_or_trailing_bytes() {
+    let msg = offchain_envelope(&[9; 32], &[0x33; 32]);
+    let keys = [[1u8; 32], [2; 32], [3; 32]];
+    assert_eq!(
+        check_ed25519_batch(
+            &ED25519_PROGRAM_ID,
+            &flipped(batch_data(&keys, &msg), 0),
+            &keys,
+            &msg
+        ),
+        Err(Error::SigHeader)
+    );
+    assert_eq!(
+        check_ed25519_batch(
+            &ED25519_PROGRAM_ID,
+            &flipped(batch_data(&keys, &msg), 1),
+            &keys,
+            &msg
+        ),
+        Err(Error::SigHeader)
+    );
+    assert_eq!(
+        check_ed25519_batch(
+            &ED25519_PROGRAM_ID,
+            &flipped(batch_data(&keys, &msg), 2),
+            &keys,
+            &msg
+        ),
+        Err(Error::SigHeader)
+    );
+    let mut longer = batch_data(&keys, &msg);
+    longer.push(0);
+    assert_eq!(
+        check_ed25519_batch(&ED25519_PROGRAM_ID, &longer, &keys, &msg),
+        Err(Error::SigHeader)
+    );
+    assert_eq!(
+        check_ed25519_batch(&ED25519_PROGRAM_ID, &[], &keys, &msg),
+        Err(Error::SigHeader)
+    );
+    assert_eq!(
+        check_ed25519_batch(&ED25519_PROGRAM_ID, &batch_data(&[], &msg), &[], &msg),
+        Err(Error::SigHeader)
+    );
+}
+
+#[test]
+fn a_batch_leaves_the_signature_bytes_to_the_precompile() {
+    let msg = offchain_envelope(&[9; 32], &[0x33; 32]);
+    let keys = [[1u8; 32], [2; 32]];
+    let sigs_at = 14usize
+        .saturating_mul(keys.len())
+        .saturating_add(2)
+        .saturating_add(32usize.saturating_mul(keys.len()));
+    assert_eq!(
+        check_ed25519_batch(
+            &ED25519_PROGRAM_ID,
+            &flipped(batch_data(&keys, &msg), sigs_at),
+            &keys,
+            &msg
+        ),
+        Ok(())
     );
 }
 

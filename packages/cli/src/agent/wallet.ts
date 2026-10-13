@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
-import { AccountRole, type Address, getAddressDecoder, getBase16Decoder, getBase16Encoder, type KeyPairSigner } from "@solana/kit";
+import { AccountRole, type Address, getAddressDecoder, getBase16Decoder, getBase16Encoder, type KeyPairSigner, signBytes } from "@solana/kit";
 import {
   attestedFillMessage,
   attestedProofMessage,
   attestedSplitMessage,
   attestedSplitPreimage,
-  buildEd25519Instruction,
+  buildEd25519BatchInstruction,
   buildFillAttested,
   buildFillAttestedSplit,
   decodeEvent,
@@ -790,7 +790,8 @@ const walletAttestSplit = define({
   output: object({
     intent: account(),
     digest: text("64 hex: the split digest every co-author and this wallet sign over"),
-    paid: list(object({ wallet: account(), weight: amount(), amount: text("whole tokens this co-author receives"), envelope: text("128 hex: the message this wallet must sign") }), MAX_SPLIT_RECIPIENTS),
+    envelope: text("the one message every co-author and this wallet sign, as hex; collect each co-author's signature over it"),
+    paid: list(object({ wallet: account(), weight: amount(), amount: text("whole tokens this co-author receives") }), MAX_SPLIT_RECIPIENTS),
     net: text("whole tokens shared among the co-authors"),
     fee: text("whole tokens kept as fees"),
     result: amount(),
@@ -860,8 +861,7 @@ const walletAttestSplit = define({
       specHash: params.specHash,
       splitHash,
     };
-    const envelopes = await Promise.all(wallets.map((w) => attestedSplitMessage(w, fields)));
-    const attestorMessage = await attestedSplitMessage(signer.address, fields);
+    const message = await attestedSplitMessage(fields);
     const digestHex = getBase16Decoder().decode(Uint8Array.from(createHash("sha256").update(await attestedSplitPreimage(fields)).digest()));
     const settle = await buildFillAttestedSplit({
       solver: signer,
@@ -879,36 +879,34 @@ const walletAttestSplit = define({
       maxFeeBps,
     });
     const name = TOKEN_NAMES[held.inputMint] ?? held.inputMint;
-    const approval = approvalOf(attestorMessage);
+    const approval = approvalOf(message);
     if (input.send === true && input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", RELEASE_CHANGED);
     }
-    let coauthorIxs;
+    let batch;
     if (input.send === true) {
-      coauthorIxs = input.recipients.map((r, i) => {
+      const entries = input.recipients.map((r, i) => {
         if (r.signature === undefined || !new RegExp(SIGNATURE_PATTERN).test(r.signature)) {
           throw new InvalidInput([{ path: `recipients.${i}.signature`, message: SPLIT_SIG_NEEDED }]);
         }
-        const message = envelopes[i];
-        if (message === undefined) {
-          throw new InvalidInput([{ path: `recipients.${i}`, message: SPLIT_SIG_NEEDED }]);
-        }
-        return buildEd25519Instruction({ publicKey: r.wallet, signature: Uint8Array.from(getBase16Encoder().encode(r.signature)), message });
+        return { publicKey: r.wallet, signature: Uint8Array.from(getBase16Encoder().encode(r.signature)) };
       });
+      const attestorSignature = new Uint8Array(await signBytes(signer.keyPair.privateKey, message));
+      batch = buildEd25519BatchInstruction({ entries: [...entries, { publicKey: signer.address, signature: attestorSignature }], message });
     }
     const setup = [...payees.flatMap((p) => p.create), ...treasury.create, ...partner.create, ...judge.create];
     const prepared =
-      input.send === true && coauthorIxs !== undefined
-        ? preparedView(await prepare(ctx.transport, [...setup, ...coauthorIxs, await signEd25519Instruction(signer, attestorMessage), settle], signer.address))
+      input.send === true && batch !== undefined
+        ? preparedView(await prepare(ctx.transport, [...setup, batch, settle], signer.address))
         : undefined;
     const view2 = {
       intent,
       digest: digestHex,
+      envelope: getBase16Decoder().decode(message),
       paid: input.recipients.map((r, i) => ({
         wallet: r.wallet,
         weight: BigInt(r.weight),
         amount: formatAmount(payout[i] ?? 0n, token.decimals),
-        envelope: getBase16Decoder().decode(envelopes[i] ?? new Uint8Array()),
       })),
       net: formatAmount(shares.net, token.decimals),
       fee: formatAmount(shares.protocol + shares.partner + params.judgeFee, token.decimals),

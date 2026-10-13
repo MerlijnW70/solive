@@ -7,8 +7,8 @@ use solana_instruction::Instruction;
 use solana_keypair::Keypair;
 use solana_signer::Signer;
 use svm_tests::{
-    ed25519_ix, intent_pda, split_commit, split_digest, split_envelope, swap_spec, vault_pda, Env,
-    IntentSpec, TestResult, DOMAIN,
+    cosign_batch_ix, intent_pda, split_commit, split_digest, swap_spec, vault_pda, Env, IntentSpec,
+    TestResult, DOMAIN,
 };
 
 const FUNDED: u64 = 10_000;
@@ -87,15 +87,8 @@ fn run_split(escrow: u64, weights: &[u16]) -> TestResult {
         Some(&fee_to),
         1,
     );
-    let mut ixs: Vec<Instruction> = coauthors
-        .iter()
-        .map(|k| ed25519_ix(k, &split_envelope(&k.pubkey(), &digest)))
-        .collect();
-    ixs.push(ed25519_ix(
-        &attestor,
-        &split_envelope(&attestor.pubkey(), &digest),
-    ));
-    ixs.push(fill);
+    let signers: Vec<&Keypair> = coauthors.iter().chain(std::iter::once(&attestor)).collect();
+    let ixs: Vec<Instruction> = vec![cosign_batch_ix(&signers, &digest)?, fill];
     env.send(&solver.key, &ixs, &[])?;
     let protocol = env
         .balance(&fee_to)?

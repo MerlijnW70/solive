@@ -1,4 +1,5 @@
 import { type Address, generateKeyPairSigner, getBase16Decoder, getBase16Encoder, lamports, none, signBytes } from "@solana/kit";
+const bytesOf = (hex: string) => Uint8Array.from(getBase16Encoder().encode(hex));
 import { AccountState, getMintEncoder, getMintSize, getTokenEncoder, getTokenSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
@@ -446,12 +447,11 @@ describe("the wallet server", () => {
     expect(shown).toMatchObject({ intent: escrow["intent"], result: "1", net: formatAmount(net, 9), sent: false });
     expect((shown["paid"] as Json[]).map((p) => p["amount"])).toEqual(payout.map((a) => formatAmount(a, 9)));
     expect(shown["digest"]).toMatch(/^[0-9a-f]{64}$/);
+    const envelope = bytesOf(shown["envelope"] as string);
     const signed = await Promise.all(
       recipients.map(async (r, i) => ({
         ...r,
-        signature: getBase16Decoder().decode(
-          new Uint8Array(await signBytes(coauthors[i]!.keyPair.privateKey, Uint8Array.from(getBase16Encoder().encode((shown["paid"] as Json[])[i]!["envelope"] as string)))),
-        ),
+        signature: getBase16Decoder().decode(new Uint8Array(await signBytes(coauthors[i]!.keyPair.privateKey, envelope))),
       })),
     );
     expect((await call(client, "wallet_attest_split", { owner, nonce, recipients: signed, send: true })).value).toMatchObject({ code: "ReleaseChanged", hint: RELEASE_CHANGED });

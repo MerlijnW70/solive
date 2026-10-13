@@ -58,8 +58,8 @@ import {
   attestedFillPreimage,
   attestedProofMessage,
   attestedProofPreimage,
-  attestedSplitMessage,
   attestedSplitPreimage,
+  splitCosignEnvelope,
   splitCommit,
   splitN,
   EVENT_IX_TAG,
@@ -651,7 +651,7 @@ describe("golden vectors emitted by the Rust implementation", () => {
     expect(preimage).toHaveLength(238);
     expect(hexOf(preimage)).toBe(s.attest_split_preimage);
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", preimage.slice()));
-    expect(hexOf(offchainEnvelope(s.attestor as Address, digest))).toBe(s.attest_split_message);
+    expect(hexOf(splitCosignEnvelope(digest))).toBe(s.attest_split_message);
     const otherSplit = { ...fields, splitHash: new Uint8Array(32).fill(1) };
     expect(hexOf(await attestedSplitPreimage(otherSplit))).not.toBe(s.attest_split_preimage);
   });

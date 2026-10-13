@@ -14,7 +14,9 @@ use intent_core::bounty::split_n;
 use intent_core::fee::{split_fees, Fees};
 use intent_core::kinds::{Kind, ALL_KINDS_MASK};
 use intent_core::mint_policy::mint_extensions_allowed;
-use intent_core::sig::{check_ed25519_ix, offchain_envelope};
+use intent_core::sig::{
+    check_ed25519_batch, check_ed25519_ix, offchain_envelope, SPLIT_COSIGN_TAG,
+};
 use solana_instructions_sysvar::{load_current_index_checked, load_instruction_at_checked};
 
 use crate::errors::{core_err, EngineError};
@@ -471,27 +473,13 @@ pub fn verify_split_signers(
     digest: &[u8; 32],
 ) -> Result<()> {
     let current = usize::from(load_current_index_checked(instructions)?);
-    let count = recipients
-        .len()
-        .checked_add(1)
-        .ok_or(EngineError::Overflow)?;
-    let base = current.checked_sub(count).ok_or(EngineError::SigMissing)?;
-    for (k, wallet) in recipients.iter().enumerate() {
-        let env = offchain_envelope(&wallet.to_bytes(), digest);
-        verify_ed25519_at(
-            instructions,
-            base.checked_add(k).ok_or(EngineError::Overflow)?,
-            wallet,
-            &env,
-        )?;
-    }
-    let env = offchain_envelope(&attestor.to_bytes(), digest);
-    verify_ed25519_at(
-        instructions,
-        current.checked_sub(1).ok_or(EngineError::SigMissing)?,
-        attestor,
-        &env,
-    )?;
+    let index = current.checked_sub(1).ok_or(EngineError::SigMissing)?;
+    let ix = load_instruction_at_checked(index, instructions)?;
+    let message = offchain_envelope(&SPLIT_COSIGN_TAG, digest);
+    let mut pubkeys: Vec<[u8; 32]> = recipients.iter().map(Pubkey::to_bytes).collect();
+    pubkeys.push(attestor.to_bytes());
+    check_ed25519_batch(&ix.program_id.to_bytes(), &ix.data, &pubkeys, &message)
+        .map_err(core_err)?;
     Ok(())
 }
 
@@ -558,7 +546,17 @@ pub struct Settled {
     pub withheld: Option<(Pubkey, u64)>,
 }
 
-pub fn pay_out(p: Payout, amount: u64, terms: FeeTerms, max_fee_bps: u16) -> Result<Settled> {
+struct FeeLegs<'a, 'info> {
+    token_program: &'a Interface<'info, TokenInterface>,
+    vault: &'a InterfaceAccount<'info, TokenAccount>,
+    mint: &'a InterfaceAccount<'info, Mint>,
+    fee_to: Option<&'a InterfaceAccount<'info, TokenAccount>>,
+    partner_to: Option<&'a InterfaceAccount<'info, TokenAccount>>,
+    intent: AccountInfo<'info>,
+    signer: &'a IntentSigner,
+}
+
+fn settle_fees(p: &FeeLegs, amount: u64, terms: FeeTerms, max_fee_bps: u16) -> Result<Settled> {
     require!(
         u32::from(terms.fee_bps).saturating_add(u32::from(terms.partner_bps))
             <= u32::from(max_fee_bps),
@@ -597,6 +595,23 @@ pub fn pay_out(p: Payout, amount: u64, terms: FeeTerms, max_fee_bps: u16) -> Res
     } else {
         (0, None)
     };
+    Ok(Settled {
+        fees: Fees { partner, ..fees },
+        withheld,
+    })
+}
+
+pub fn pay_out(p: Payout, amount: u64, terms: FeeTerms, max_fee_bps: u16) -> Result<Settled> {
+    let legs = FeeLegs {
+        token_program: p.token_program,
+        vault: p.vault,
+        mint: p.mint,
+        fee_to: p.fee_to,
+        partner_to: p.partner_to,
+        intent: p.intent.clone(),
+        signer: p.signer,
+    };
+    let settled = settle_fees(&legs, amount, terms, max_fee_bps)?;
     pay_from_vault(
         p.token_program,
         p.vault,
@@ -604,12 +619,9 @@ pub fn pay_out(p: Payout, amount: u64, terms: FeeTerms, max_fee_bps: u16) -> Res
         p.payee,
         p.intent,
         p.signer,
-        fees.net,
+        settled.fees.net,
     )?;
-    Ok(Settled {
-        fees: Fees { partner, ..fees },
-        withheld,
-    })
+    Ok(settled)
 }
 
 pub struct SplitPayout<'a, 'info> {
@@ -630,45 +642,17 @@ pub fn pay_out_split(
     max_fee_bps: u16,
     weights: &[u16],
 ) -> Result<Settled> {
-    require!(
-        u32::from(terms.fee_bps).saturating_add(u32::from(terms.partner_bps))
-            <= u32::from(max_fee_bps),
-        EngineError::FeeAboveBound
-    );
-    let fees =
-        split_fees(amount, terms.fee_bps, terms.partner_bps, terms.cut_bps).map_err(core_err)?;
-    if fees.protocol > 0 {
-        let fee_to = p.fee_to.ok_or(EngineError::FeeAccountMissing)?;
-        pay_from_vault(
-            p.token_program,
-            p.vault,
-            p.mint,
-            fee_to.to_account_info(),
-            p.intent.clone(),
-            p.signer,
-            fees.protocol,
-        )?;
-    }
-    let (partner, withheld) = if fees.partner > 0 {
-        let partner_to = p.partner_to.ok_or(EngineError::PartnerAccountMissing)?;
-        if receives(partner_to, p.token_program, p.mint, &terms.partner) {
-            pay_from_vault(
-                p.token_program,
-                p.vault,
-                p.mint,
-                partner_to.to_account_info(),
-                p.intent.clone(),
-                p.signer,
-                fees.partner,
-            )?;
-            (fees.partner, None)
-        } else {
-            (0, Some((partner_to.key(), fees.partner)))
-        }
-    } else {
-        (0, None)
+    let legs = FeeLegs {
+        token_program: p.token_program,
+        vault: p.vault,
+        mint: p.mint,
+        fee_to: p.fee_to,
+        partner_to: p.partner_to,
+        intent: p.intent.clone(),
+        signer: p.signer,
     };
-    let plan = split_n(fees.net, weights).map_err(core_err)?;
+    let settled = settle_fees(&legs, amount, terms, max_fee_bps)?;
+    let plan = split_n(settled.fees.net, weights).map_err(core_err)?;
     let shares = plan.as_slice();
     require!(
         shares.len() == p.recipients.len(),
@@ -685,10 +669,7 @@ pub fn pay_out_split(
             *share,
         )?;
     }
-    Ok(Settled {
-        fees: Fees { partner, ..fees },
-        withheld,
-    })
+    Ok(settled)
 }
 
 pub fn receives(

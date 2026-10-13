@@ -621,7 +621,7 @@ fn vectors() -> TestResult<Value> {
     }
     .preimage();
     let split_digest = solana_sha256_hasher::hashv(&[&split_preimage]).to_bytes();
-    let split_attestation = offchain_envelope(&key(5).to_bytes(), &split_digest);
+    let split_attestation = offchain_envelope(&intent_core::sig::SPLIT_COSIGN_TAG, &split_digest);
     let split_commits: Vec<Value> = [
         (vec![key(10)], vec![10_000u16]),
         (vec![key(10), key(11)], vec![6_000, 4_000]),

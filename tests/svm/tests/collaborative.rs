@@ -6,8 +6,8 @@ use solana_instruction::Instruction;
 use solana_keypair::Keypair;
 use solana_signer::Signer;
 use svm_tests::{
-    ed25519_ix, engine_error_at, intent_pda, split_commit, split_digest, split_envelope, swap_spec,
-    vault_pda, Env, IntentSpec, Market, TestResult, Trader, DOMAIN,
+    cosign_batch_ix, engine_error_at, intent_pda, split_commit, split_digest, swap_spec, vault_pda,
+    Env, IntentSpec, Market, TestResult, Trader, DOMAIN,
 };
 
 const FUNDED: u64 = 1_000;
@@ -68,15 +68,8 @@ fn a_collaborative_claim_pays_every_co_author_who_signed_the_split_and_conserves
         Some(&fee_to),
         1,
     );
-    let mut ixs: Vec<Instruction> = coauthors
-        .iter()
-        .map(|k| ed25519_ix(k, &split_envelope(&k.pubkey(), &digest)))
-        .collect();
-    ixs.push(ed25519_ix(
-        &attestor,
-        &split_envelope(&attestor.pubkey(), &digest),
-    ));
-    ixs.push(fill);
+    let signers: Vec<&Keypair> = coauthors.iter().chain(std::iter::once(&attestor)).collect();
+    let ixs: Vec<Instruction> = vec![cosign_batch_ix(&signers, &digest)?, fill];
     env.send(&solver.key, &ixs, &[])?;
     let protocol = env.balance(&fee_to)? - fee_before;
     let mut paid = Vec::new();
@@ -124,16 +117,9 @@ fn a_collaborative_claim_rejects_a_split_a_co_author_did_not_sign() -> TestResul
         Some(&fee_to),
         1,
     );
-    let mut ixs: Vec<Instruction> = coauthors
-        .iter()
-        .map(|k| ed25519_ix(k, &split_envelope(&k.pubkey(), &digest)))
-        .collect();
-    ixs.push(ed25519_ix(
-        &attestor,
-        &split_envelope(&attestor.pubkey(), &digest),
-    ));
-    let fill_index = u8::try_from(ixs.len())?;
-    ixs.push(fill);
+    let signers: Vec<&Keypair> = coauthors.iter().chain(std::iter::once(&attestor)).collect();
+    let ixs: Vec<Instruction> = vec![cosign_batch_ix(&signers, &digest)?, fill];
+    let fill_index = u8::try_from(ixs.len().saturating_sub(1))?;
     assert_eq!(
         env.send(&solver.key, &ixs, &[]).err(),
         Some(engine_error_at(fill_index, EngineError::SigMessage)),
@@ -143,6 +129,76 @@ fn a_collaborative_claim_rejects_a_split_a_co_author_did_not_sign() -> TestResul
         env.balance(&vault_pda(&intent))?,
         ESCROW,
         "the escrow is untouched after the rejected claim"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_split_is_rejected_unless_the_batch_is_exactly_the_co_authors_then_the_attestor() -> TestResult
+{
+    let (mut env, market, trader) = setup()?;
+    let owner = trader.key.pubkey();
+    let attestor = Keypair::new();
+    let stranger = Keypair::new();
+    const SPEC: [u8; 32] = [0x5e; 32];
+    let coauthors = [Keypair::new(), Keypair::new(), Keypair::new()];
+    let recipients: Vec<Pubkey> = coauthors.iter().map(Signer::pubkey).collect();
+    let weights = [4000u16, 3500, 2500];
+    let [a, b, c] = &coauthors;
+    env.create_intent(&trader, &market, &proof_spec(&attestor, SPEC)?)?;
+    let intent = intent_pda(&owner, 0);
+    let solver = env.solver(&market, 0)?;
+    let fee_to = env.fee_account(&market)?;
+    for r in &recipients {
+        env.create_ata(r, &market.input_mint, market.input_program)?;
+    }
+    let split_hash = split_commit(&recipients, &weights);
+    let digest = split_digest(DOMAIN, &intent, ESCROW, 1, SPEC, split_hash);
+    let claim = |env: &Env| {
+        env.fill_attested_split_ix(
+            &solver.key.pubkey(),
+            &owner,
+            &market,
+            0,
+            &recipients,
+            &weights,
+            Some(&fee_to),
+            1,
+        )
+    };
+    let fill = claim(&env);
+    let short: Vec<Instruction> = vec![cosign_batch_ix(&[a, b, &attestor], &digest)?, fill];
+    assert_eq!(
+        env.send(&solver.key, &short, &[]).err(),
+        Some(engine_error_at(1, EngineError::SigHeader)),
+        "a co-author left out of the batch is rejected"
+    );
+    let fill = claim(&env);
+    let impostor: Vec<Instruction> = vec![cosign_batch_ix(&[a, b, c, &stranger], &digest)?, fill];
+    assert_eq!(
+        env.send(&solver.key, &impostor, &[]).err(),
+        Some(engine_error_at(1, EngineError::SigPubkey)),
+        "a stranger signing in the attestor's place is rejected"
+    );
+    let fill = claim(&env);
+    let reordered: Vec<Instruction> = vec![cosign_batch_ix(&[b, a, c, &attestor], &digest)?, fill];
+    assert_eq!(
+        env.send(&solver.key, &reordered, &[]).err(),
+        Some(engine_error_at(1, EngineError::SigPubkey)),
+        "the co-authors signed out of their committed order is rejected"
+    );
+    assert_eq!(
+        env.balance(&vault_pda(&intent))?,
+        ESCROW,
+        "the escrow is untouched after every rejected claim"
+    );
+    let fill = claim(&env);
+    let honest: Vec<Instruction> = vec![cosign_batch_ix(&[a, b, c, &attestor], &digest)?, fill];
+    env.send(&solver.key, &honest, &[])?;
+    assert_eq!(
+        env.balance(&vault_pda(&intent))?,
+        0,
+        "the exact co-author batch settles and drains the escrow"
     );
     Ok(())
 }

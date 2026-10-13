@@ -18,6 +18,7 @@ export const INTENT_TAG = ascii("intent-engine-v1");
 export const ATTEST_TAG = ascii("intent-engine-at");
 export const ATTEST_PROOF_TAG = ascii("intent-engine-pf");
 export const ATTEST_SPLIT_TAG = ascii("intent-engine-sp");
+export const SPLIT_COSIGN_TAG = ascii("intent-engine-split-cosigner\0\0\0\0");
 export const OFFCHAIN_PREFIX = new Uint8Array([0xff, ...ascii("solana offchain")]);
 export const PREIMAGE_LEN = 448;
 export const ENVELOPE_LEN = 114;
@@ -140,6 +141,11 @@ export async function signedIntentPreimage(f: SignedIntentFields): Promise<Uint8
 export function offchainEnvelope(signer: Address, digest: Uint8Array): Uint8Array {
   const hex = Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
   return concat([OFFCHAIN_PREFIX, [1, 1], key(signer), ascii(hex)], ENVELOPE_LEN);
+}
+
+export function splitCosignEnvelope(digest: Uint8Array): Uint8Array {
+  const hex = Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
+  return concat([OFFCHAIN_PREFIX, [1, 1], SPLIT_COSIGN_TAG, ascii(hex)], ENVELOPE_LEN);
 }
 
 async function sha256(bytes: Uint8Array): Promise<Uint8Array> {
@@ -299,12 +305,9 @@ export async function attestedSplitPreimage(f: AttestedSplitFields): Promise<Uin
   );
 }
 
-export async function attestedSplitMessage(
-  signer: Address,
-  f: AttestedSplitFields,
-): Promise<Uint8Array> {
+export async function attestedSplitMessage(f: AttestedSplitFields): Promise<Uint8Array> {
   validateExt(f.ext ?? new Uint8Array(), FILL_EXT_TAGS);
-  return offchainEnvelope(signer, await sha256(await attestedSplitPreimage(f)));
+  return splitCosignEnvelope(await sha256(await attestedSplitPreimage(f)));
 }
 
 export function ed25519Header(messageLength: number): Uint8Array {
@@ -343,4 +346,54 @@ export async function signEd25519Instruction(
 ): Promise<Instruction> {
   const signature = new Uint8Array(await signBytes(signer.keyPair.privateKey, message));
   return buildEd25519Instruction({ publicKey: signer.address, signature, message });
+}
+
+export function buildEd25519BatchInstruction(input: {
+  entries: { publicKey: Address; signature: Uint8Array }[];
+  message: Uint8Array;
+}): Instruction {
+  const m = input.entries.length;
+  if (m === 0) {
+    throw new RangeError("an Ed25519 batch needs at least one signer");
+  }
+  for (const e of input.entries) {
+    if (e.signature.length !== 64) {
+      throw new RangeError("an Ed25519 signature is 64 bytes");
+    }
+  }
+  const len = input.message.length;
+  if (len > 0xffff) {
+    throw new RangeError(`an Ed25519 message of ${len} bytes does not fit the instruction header`);
+  }
+  const pubkeysAt = 2 + 14 * m;
+  const sigsAt = pubkeysAt + 32 * m;
+  const messageAt = sigsAt + 64 * m;
+  const parts: ArrayLike<number>[] = [new Uint8Array([m, 0])];
+  input.entries.forEach((_, k) => {
+    parts.push(
+      concat(
+        [
+          u16le(sigsAt + 64 * k),
+          u16le(0xffff),
+          u16le(pubkeysAt + 32 * k),
+          u16le(0xffff),
+          u16le(messageAt),
+          u16le(len),
+          u16le(0xffff),
+        ],
+        14,
+      ),
+    );
+  });
+  for (const e of input.entries) {
+    parts.push(key(e.publicKey));
+  }
+  for (const e of input.entries) {
+    parts.push(e.signature);
+  }
+  parts.push(input.message);
+  return {
+    programAddress: ED25519_PROGRAM_ADDRESS,
+    data: concat(parts, messageAt + len),
+  };
 }

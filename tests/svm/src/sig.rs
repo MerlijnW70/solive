@@ -415,6 +415,37 @@ pub fn split_digest(
     solana_sha256_hasher::hashv(&[&preimage]).to_bytes()
 }
 
-pub fn split_envelope(signer: &Pubkey, digest: &[u8; 32]) -> [u8; intent_core::sig::ENVELOPE_LEN] {
-    intent_core::sig::offchain_envelope(&signer.to_bytes(), digest)
+pub fn split_cosign_message(digest: &[u8; 32]) -> [u8; intent_core::sig::ENVELOPE_LEN] {
+    intent_core::sig::offchain_envelope(&intent_core::sig::SPLIT_COSIGN_TAG, digest)
+}
+
+pub fn cosign_batch_ix(signers: &[&Keypair], digest: &[u8; 32]) -> TestResult<Instruction> {
+    let message = split_cosign_message(digest);
+    let m = signers.len();
+    let len = u16::try_from(message.len())?;
+    let pubkeys_at = 14usize.saturating_mul(m).saturating_add(2);
+    let sigs_at = pubkeys_at.saturating_add(32usize.saturating_mul(m));
+    let message_at = sigs_at.saturating_add(64usize.saturating_mul(m));
+    let mut data = vec![u8::try_from(m)?, 0];
+    for k in 0..m {
+        let sig = u16::try_from(sigs_at.saturating_add(64usize.saturating_mul(k)))?;
+        let pk = u16::try_from(pubkeys_at.saturating_add(32usize.saturating_mul(k)))?;
+        let msg = u16::try_from(message_at)?;
+        for v in [sig, u16::MAX, pk, u16::MAX, msg, len, u16::MAX] {
+            data.extend_from_slice(&v.to_le_bytes());
+        }
+    }
+    for s in signers {
+        data.extend_from_slice(&s.pubkey().to_bytes());
+    }
+    for s in signers {
+        data.extend_from_slice(&signature_of(s, &message));
+    }
+    data.extend_from_slice(&message);
+    let program_id = ed25519_ix(&Keypair::new(), &[0]).program_id;
+    Ok(Instruction {
+        program_id,
+        accounts: Vec::new(),
+        data,
+    })
 }

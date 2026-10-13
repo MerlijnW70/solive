@@ -9,6 +9,7 @@ pub const INTENT_TAG: [u8; 16] = *b"intent-engine-v1";
 pub const ATTEST_TAG: [u8; 16] = *b"intent-engine-at";
 pub const ATTEST_PROOF_TAG: [u8; 16] = *b"intent-engine-pf";
 pub const ATTEST_SPLIT_TAG: [u8; 16] = *b"intent-engine-sp";
+pub const SPLIT_COSIGN_TAG: [u8; 32] = *b"intent-engine-split-cosigner\0\0\0\0";
 pub const OFFCHAIN_PREFIX: [u8; 16] = *b"\xffsolana offchain";
 
 pub const PUBKEY_OFFSET: u16 = 16;
@@ -69,6 +70,88 @@ pub fn check_ed25519_ix(
         return Err(Error::SigPubkey);
     }
     if data.get(112..) != Some(message) {
+        return Err(Error::SigMessage);
+    }
+    Ok(())
+}
+
+fn batch_layout(m: usize, message_len: usize) -> Result<(usize, usize, usize, usize), Error> {
+    let entries = m.checked_mul(14).ok_or(Error::SigHeader)?;
+    let pubkeys_at = entries.checked_add(2).ok_or(Error::SigHeader)?;
+    let pubkey_bytes = m.checked_mul(32).ok_or(Error::SigHeader)?;
+    let sigs_at = pubkeys_at
+        .checked_add(pubkey_bytes)
+        .ok_or(Error::SigHeader)?;
+    let sig_bytes = m.checked_mul(64).ok_or(Error::SigHeader)?;
+    let message_at = sigs_at.checked_add(sig_bytes).ok_or(Error::SigHeader)?;
+    let total = message_at
+        .checked_add(message_len)
+        .ok_or(Error::SigHeader)?;
+    Ok((pubkeys_at, sigs_at, message_at, total))
+}
+
+fn batch_entry(
+    sig_at: usize,
+    pubkey_at: usize,
+    message_at: usize,
+    message_len: u16,
+) -> Result<[u8; 14], Error> {
+    let sig = u16::try_from(sig_at).map_err(|_| Error::SigHeader)?;
+    let pubkey = u16::try_from(pubkey_at).map_err(|_| Error::SigHeader)?;
+    let message = u16::try_from(message_at).map_err(|_| Error::SigHeader)?;
+    Ok(Buf::<14>::new()
+        .put(&sig.to_le_bytes())
+        .put(&u16::MAX.to_le_bytes())
+        .put(&pubkey.to_le_bytes())
+        .put(&u16::MAX.to_le_bytes())
+        .put(&message.to_le_bytes())
+        .put(&message_len.to_le_bytes())
+        .put(&u16::MAX.to_le_bytes())
+        .out)
+}
+
+pub fn check_ed25519_batch(
+    program: &[u8; 32],
+    data: &[u8],
+    pubkeys: &[[u8; 32]],
+    message: &[u8],
+) -> Result<(), Error> {
+    if program != &ED25519_PROGRAM_ID {
+        return Err(Error::SigProgram);
+    }
+    let m = pubkeys.len();
+    let count = u8::try_from(m).map_err(|_| Error::SigHeader)?;
+    if count == 0 {
+        return Err(Error::SigHeader);
+    }
+    let message_len = u16::try_from(message.len()).map_err(|_| Error::SigMessage)?;
+    if data.first() != Some(&count) || data.get(1) != Some(&0) {
+        return Err(Error::SigHeader);
+    }
+    let (pubkeys_at, sigs_at, message_at, total) = batch_layout(m, message.len())?;
+    if data.len() != total {
+        return Err(Error::SigHeader);
+    }
+    for (k, want) in pubkeys.iter().enumerate() {
+        let offset = k.checked_mul(14).ok_or(Error::SigHeader)?;
+        let entry_at = offset.checked_add(2).ok_or(Error::SigHeader)?;
+        let entry_end = entry_at.checked_add(14).ok_or(Error::SigHeader)?;
+        let pubkey_at = pubkeys_at
+            .checked_add(k.checked_mul(32).ok_or(Error::SigHeader)?)
+            .ok_or(Error::SigHeader)?;
+        let pubkey_end = pubkey_at.checked_add(32).ok_or(Error::SigHeader)?;
+        let sig_at = sigs_at
+            .checked_add(k.checked_mul(64).ok_or(Error::SigHeader)?)
+            .ok_or(Error::SigHeader)?;
+        let expected = batch_entry(sig_at, pubkey_at, message_at, message_len)?;
+        if data.get(entry_at..entry_end) != Some(&expected[..]) {
+            return Err(Error::SigHeader);
+        }
+        if data.get(pubkey_at..pubkey_end) != Some(&want[..]) {
+            return Err(Error::SigPubkey);
+        }
+    }
+    if data.get(message_at..) != Some(message) {
         return Err(Error::SigMessage);
     }
     Ok(())
