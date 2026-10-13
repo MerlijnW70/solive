@@ -1,5 +1,5 @@
 import type { Address } from "@solana/kit";
-import { decodeParams, escrowAmount, Kind } from "./kinds.js";
+import { decodeParams, escrowAmount, type IntentParams, Kind } from "./kinds.js";
 import { partnerOf } from "./ext.js";
 import { U64_MAX } from "./math.js";
 import { findAssociatedTokenAddress } from "./pdas.js";
@@ -14,6 +14,15 @@ export const WARN_LONG_SUBMIT = "a relayer may hold this signature and submit it
 export const WARN_STALE_EPOCH = "this signature is for an earlier epoch and can never be used";
 export const WARN_DOMAIN = "this signature is for a different cluster than the one you expect";
 export const WARN_RELAYER_FEE = "the relayer fee is more than 1% of what you sell";
+export const WARN_PROOF =
+  "the judge alone decides whether the work meets the committed spec; the chain checks only that its verdict names that spec";
+
+export function settlementWarnings(params: IntentParams): string[] {
+  if (params.kind !== Kind.AttestedResult) {
+    return [];
+  }
+  return [params.specHash.some((byte) => byte !== 0) ? WARN_PROOF : WARN_ATTESTOR];
+}
 
 const MAX_DATE_SECONDS = 8_640_000_000_000n;
 
@@ -132,7 +141,7 @@ export async function describeSignedIntent(
     tokenProgram: o.outputTokenProgram,
   });
   const warnings = [
-    ...(f.kind === Kind.AttestedResult ? [WARN_ATTESTOR] : []),
+    ...settlementWarnings(decodeParams(f.kind, f.params)),
     ...(f.expiresAt - o.now > LONG_LIVED_SECONDS ? [WARN_LONG_LIVED] : []),
     ...(f.receiver === canonical ? [] : [WARN_RECEIVER]),
     ...(f.submitBy - o.now > LONG_SUBMIT_SECONDS ? [WARN_LONG_SUBMIT] : []),

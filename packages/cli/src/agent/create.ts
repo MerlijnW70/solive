@@ -9,10 +9,10 @@ import {
   findIntentPda,
   findUserStatePda,
   formatTime,
-  Kind,
+  type IntentParams,
   LONG_LIVED_SECONDS,
   validate,
-  WARN_ATTESTOR,
+  settlementWarnings,
   WARN_LONG_LIVED,
   WARN_RECEIVER,
 } from "@intent-engine/core";
@@ -66,9 +66,9 @@ export const termsOutput = {
 export const WARN_SCALED =
   "a token here scales the amounts wallets display (interest-bearing or scaled UI amount); the amounts shown are base units at its decimals";
 
-export function warningsOf(kind: Kind, expiresAt: bigint, now: bigint, scaled: boolean): string[] {
+export function warningsOf(params: IntentParams, expiresAt: bigint, now: bigint, scaled: boolean): string[] {
   return [
-    ...(kind === Kind.AttestedResult ? [WARN_ATTESTOR] : []),
+    ...settlementWarnings(params),
     ...(expiresAt - now > LONG_LIVED_SECONDS ? [WARN_LONG_LIVED] : []),
     ...(scaled ? [WARN_SCALED] : []),
   ];
@@ -159,7 +159,7 @@ export const prepareCreate = define({
         ...(receiver.create.length > 0 && elsewhere ? [`Setup: creates ${recipient}'s token account for ${input.output_mint} (you pay its rent)`] : []),
       ],
       warnings: [
-        ...warningsOf(params.kind, expiresAt, now, inputToken.scaled || outputToken.scaled),
+        ...warningsOf(params, expiresAt, now, inputToken.scaled || outputToken.scaled),
         ...(elsewhere ? [WARN_RECEIVER] : []),
       ],
       create_fee: BigInt(config.createFee),

@@ -25,7 +25,7 @@ import {
   splitCommit,
   splitFees,
   splitN,
-  WARN_ATTESTOR,
+  settlementWarnings,
   WARN_LONG_LIVED,
 } from "@intent-engine/core";
 import { decodeLookupTable } from "@intent-engine/solver";
@@ -766,7 +766,7 @@ const walletAttest = define({
         ...(treasury.create.length === 0 ? [] : [`Setup: creates the engine treasury's ${name} account for the fee, paid by this wallet`]),
         ...(partner.create.length === 0 ? [] : [`Setup: creates the partner ${held.partner}'s ${name} account for its fee, paid by this wallet`]),
       ],
-      warnings: [WARN_ATTESTOR],
+      warnings: settlementWarnings(params),
       prepared,
     };
     return sent(ctx, signer, view2, input.send, call);
@@ -952,7 +952,7 @@ const walletAttestSplit = define({
         `Attests: result ${result}, signed by this server's wallet as the escrow's attestor`,
         ...(setup.length === 0 ? [] : [`Setup: creates ${setup.length} token account(s), paid by this wallet`]),
       ],
-      warnings: [WARN_ATTESTOR, WARN_COAUTHORS],
+      warnings: [...settlementWarnings(params), WARN_COAUTHORS],
       prepared,
     };
     return sent(ctx, signer, view2, input.send, call);

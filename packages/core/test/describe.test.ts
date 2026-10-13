@@ -17,11 +17,13 @@ import {
   LONG_LIVED_SECONDS,
   LONG_SUBMIT_SECONDS,
   type SignedIntentFields,
+  settlementWarnings,
   signedIntentPreimage,
   WARN_ATTESTOR,
   WARN_DOMAIN,
   WARN_LONG_LIVED,
   WARN_LONG_SUBMIT,
+  WARN_PROOF,
   WARN_RELAYER_FEE,
   WARN_RECEIVER,
   WARN_STALE_EPOCH,
@@ -212,6 +214,14 @@ describe("signed intent description", () => {
     ]);
     expect(attested.warnings).toEqual([WARN_ATTESTOR]);
     expect(attested.lines).toContain(`WARNING: ${WARN_ATTESTOR}`);
+  });
+
+  it("warns that a proof escrow binds the verdict to its spec, and a plain attested escrow does not", () => {
+    const attested = { kind: Kind.AttestedResult, amountIn: 5n, minResult: 1n, maxResult: 1n, attestor: ATTESTOR, judgeFee: 0n } as const;
+    expect(settlementWarnings({ ...attested, specHash: new Uint8Array(32) })).toEqual([WARN_ATTESTOR]);
+    expect(settlementWarnings({ ...attested, specHash: new Uint8Array(32).fill(1) })).toEqual([WARN_PROOF]);
+    expect(settlementWarnings({ ...attested, specHash: Uint8Array.from({ length: 32 }, (_, i) => (i === 31 ? 1 : 0)) })).toEqual([WARN_PROOF]);
+    expect(settlementWarnings({ kind: Kind.SwapExactIn, amountIn: 5n, minOut: 1n })).toEqual([]);
   });
 
   it("warns at the exact long-lived and receiver boundaries", async () => {

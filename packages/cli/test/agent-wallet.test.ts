@@ -24,6 +24,7 @@ import {
   splitN,
   WARN_ATTESTOR,
   WARN_LONG_LIVED,
+  WARN_PROOF,
   WARN_RECEIVER,
   formatTime,
 } from "@intent-engine/core";
@@ -406,6 +407,8 @@ describe("the wallet server", () => {
       issues: [{ path: "judge_fee" }],
     });
     const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, min_result: "1", max_result: "1", spec_hash: specHash, judge_fee: "0.001", send: true });
+    expect(escrow["warnings"]).toContain(WARN_PROOF);
+    expect(escrow["warnings"]).not.toContain(WARN_ATTESTOR);
     const intent = escrow["intent"] as Address;
     const nonce = escrow["nonce"] as string;
     const account = h.svm.getAccount(intent);
@@ -421,6 +424,7 @@ describe("the wallet server", () => {
     }
     const release = { owner, nonce, pay_to: worker };
     const shown = await ok(client, "wallet_attest", release);
+    expect(shown["warnings"]).toEqual([WARN_PROOF]);
     expect(shown["summary"]).toEqual(expect.arrayContaining([expect.stringContaining("Pays the judge"), expect.stringContaining(`Binds: the result to the committed spec ${specHash}`)]));
     const settled = await ok(client, "wallet_attest", { ...release, approval: shown["approval"], send: true });
     expect(settled["paid"]).toBeTruthy();

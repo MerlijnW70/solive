@@ -276,7 +276,7 @@ export const prepareSignedIntent = define({
       ],
       warnings: [
         ...new Set([
-          ...warningsOf(params.kind, expiresAt, now, inputToken.scaled || outputToken.scaled),
+          ...warningsOf(params, expiresAt, now, inputToken.scaled || outputToken.scaled),
           ...description.warnings,
           ...disclosed.warnings,
         ]),
