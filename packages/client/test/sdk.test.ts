@@ -101,14 +101,23 @@ const tokens = (w: World, account: Address) => {
 describe("the sdk page", () => {
   const home = mkdtempSync(join(tmpdir(), "sdk-page-"));
   const pageModule = fileURLToPath(new URL(`./.sdk-page-${process.pid}.ts`, import.meta.url));
-  const before = process.env["HOME"];
+  const homeVars = ["HOME", "USERPROFILE"] as const;
+  const before = homeVars.map((name) => [name, process.env[name]] as const);
 
   beforeAll(() => {
-    process.env["HOME"] = home;
+    for (const name of homeVars) {
+      process.env[name] = home;
+    }
   });
 
   afterAll(() => {
-    process.env["HOME"] = before;
+    for (const [name, value] of before) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
     rmSync(home, { recursive: true, force: true });
     rmSync(pageModule, { force: true });
   });
