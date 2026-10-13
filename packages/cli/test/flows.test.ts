@@ -101,8 +101,8 @@ describe("command line flows", () => {
     );
     const compiled = (message as unknown as { instructions: { programAddressIndex: number; data?: Uint8Array }[] }).instructions;
     const programs = compiled.map((ix) => message.staticAccounts[ix.programAddressIndex]);
-    expect(programs.slice(0, 2)).toEqual([COMPUTE_BUDGET_ADDRESS, COMPUTE_BUDGET_ADDRESS]);
-    expect(Array.from(compiled[1]?.data ?? [])).toEqual([3, 7, 0, 0, 0, 0, 0, 0, 0]);
+    expect(programs.slice(-2)).toEqual([COMPUTE_BUDGET_ADDRESS, COMPUTE_BUDGET_ADDRESS]);
+    expect(Array.from(compiled.at(-1)?.data ?? [])).toEqual([3, 7, 0, 0, 0, 0, 0, 0, 0]);
     expect((await cli(create("swap", "--units", "tokens", "--amount-in", "0.0000001", "--min-out", "1"), keys)).err).toBe(
       "0.0000001 has more than the token's 6 decimal places",
     );

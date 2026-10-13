@@ -104,13 +104,13 @@ describe("compute budget", () => {
     const payer = await generateKeyPairSigner();
     const body = [ix([{ address: A, role: AccountRole.WRITABLE }])];
     const ran = fake({ err: null, logs: [], unitsConsumed: 20_000n, accounts: [] });
-    expect(await budgeted(ran.transport, 0n, body, payer.address)).toEqual([computeUnitLimit(23_000), ...body]);
-    expect(await budgeted(ran.transport, 3n, body, payer.address)).toEqual([computeUnitLimit(23_000), computeUnitPrice(3n), ...body]);
+    expect(await budgeted(ran.transport, 0n, body, payer.address)).toEqual([...body, computeUnitLimit(23_000)]);
+    expect(await budgeted(ran.transport, 3n, body, payer.address)).toEqual([...body, computeUnitLimit(23_000), computeUnitPrice(3n)]);
     expect(ran.seen.simulated).toBe(2);
     const failed = fake({ err: "boom", logs: [], unitsConsumed: 20_000n, accounts: [] });
-    expect(await budgeted(failed.transport, 0n, body, payer.address)).toEqual([computeUnitLimit(MAX_COMPUTE_UNITS), ...body]);
+    expect(await budgeted(failed.transport, 0n, body, payer.address)).toEqual([...body, computeUnitLimit(MAX_COMPUTE_UNITS)]);
     const unknown = fake({ err: null, logs: [], unitsConsumed: null, accounts: [] });
-    expect(await budgeted(unknown.transport, 0n, body, payer.address)).toEqual([computeUnitLimit(MAX_COMPUTE_UNITS), ...body]);
+    expect(await budgeted(unknown.transport, 0n, body, payer.address)).toEqual([...body, computeUnitLimit(MAX_COMPUTE_UNITS)]);
     const own = [{ programAddress: COMPUTE_BUDGET_ADDRESS, data: new Uint8Array([2, 1, 0, 0, 0]) }, ...body];
     const kept = fake({ err: null, logs: [], unitsConsumed: 1n, accounts: [] });
     expect(await budgeted(kept.transport, 9n, own, payer.address)).toEqual(own);
@@ -146,8 +146,8 @@ describe("compute budget", () => {
     const body = [ix([{ address: A, role: AccountRole.WRITABLE }])];
     const ran = fake({ err: null, logs: [], unitsConsumed: 20_000n, accounts: [] });
     const wrapped = withPriority(ran.transport, 4n);
-    expect(await wrapped.budget(body, payer.address)).toEqual([computeUnitLimit(23_000), computeUnitPrice(4n), ...body]);
+    expect(await wrapped.budget(body, payer.address)).toEqual([...body, computeUnitLimit(23_000), computeUnitPrice(4n)]);
     expect(await wrapped.send(body, payer)).toBe("sig");
-    expect(ran.seen.sent).toEqual([[computeUnitLimit(23_000), computeUnitPrice(4n), ...body]]);
+    expect(ran.seen.sent).toEqual([[...body, computeUnitLimit(23_000), computeUnitPrice(4n)]]);
   });
 });

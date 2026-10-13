@@ -109,7 +109,7 @@ describe("filling from the client", () => {
       ),
       route: await minted(solver, delivered),
     });
-    const signature = await w.chain.transport.send(flash, solver);
+    const signature = await client.send(flash, solver);
     const names = (await client.history(created.intent)).map(({ name }) => name);
     expect(names.slice(0, 2)).toEqual(["FillEnded", "FillBegun"]);
     expect(names).not.toContain("IntentFilled");

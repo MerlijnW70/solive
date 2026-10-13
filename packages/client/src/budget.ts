@@ -82,8 +82,8 @@ export async function budgeted(
   }
   const price = await priceOf(transport, priority, instructions);
   const head = price > 0n ? [computeUnitPrice(price)] : [];
-  const consumed = await unitsOf(transport, [computeUnitLimit(MAX_COMPUTE_UNITS), ...head, ...instructions], feePayer);
-  return [computeUnitLimit(consumed === null ? MAX_COMPUTE_UNITS : headroom(consumed)), ...head, ...instructions];
+  const consumed = await unitsOf(transport, [...instructions, computeUnitLimit(MAX_COMPUTE_UNITS), ...head], feePayer);
+  return [...instructions, computeUnitLimit(consumed === null ? MAX_COMPUTE_UNITS : headroom(consumed)), ...head];
 }
 
 export function withPriority(inner: Transport, priority: Priority): Transport {

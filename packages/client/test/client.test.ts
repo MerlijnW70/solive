@@ -99,9 +99,10 @@ describe("a client over the engine", () => {
     expect(consumed).toBeGreaterThan(0n);
 
     await client.send(register, w.owner);
-    const [limit, ...rest] = sent[0] ?? [];
+    const ours = sent[0] ?? [];
+    const limit = ours.at(-1);
     expect(limit?.programAddress).toBe(COMPUTE_BUDGET_ADDRESS);
-    expect(rest).toEqual(register);
+    expect(ours.slice(0, -1)).toEqual(register);
     const units = new DataView((limit?.data ?? new Uint8Array(5)).buffer).getUint32(1, true);
     expect(units).toBeGreaterThanOrEqual(headroom(consumed - 1_000n));
     expect(units).toBeLessThanOrEqual(headroom(consumed));
