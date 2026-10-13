@@ -11,7 +11,7 @@ Every error the engine program raises, from its IDL. When an SDK call fails, `cl
 | 6002 | `Truncated` | no | the instruction data was cut short |
 | 6003 | `NonCanonical` | no | the instruction data was not encoded canonically |
 | 6004 | `UnknownKind` | no | the intent kind is not one the program knows |
-| 6005 | `UnknownStatus` | no | the intent holds a status this client does not know |
+| 6005 | `UnknownStatus` | no | the intent holds a status this version does not know |
 | 6006 | `InvalidParams` | no | the order terms are inconsistent |
 | 6007 | `AmountMismatch` | no | the amounts do not match what the intent escrows |
 | 6008 | `InsufficientOutput` | yes | the fill pays less than the intent requires right now |
@@ -35,8 +35,8 @@ Every error the engine program raises, from its IDL. When an SDK call fails, `cl
 | 6026 | `ReceiverNotAllowed` | no | the receiver account is not owned by the named receiver authority, the authority is an engine account, or (for a mandate) the receiver is not an account the owner controls |
 | 6027 | `AuctionOutlivesExpiry` | no | the dutch auction must end at or before the intent expires |
 | 6028 | `FillPaused` | yes | fills are paused by the guardian or admin |
-| 6029 | `FeeAccountNotCanonical` | no | a fee must go to its payee's canonical token account (the treasury's, or the agent's) |
-| 6030 | `FeeAccountMissing` | no | a fee account was not passed: the treasury's or agent's at fill, or the relayer's at a signed create |
+| 6029 | `FeeAccountNotCanonical` | no | a fee must go to its payee's canonical token account (the treasury's, the agent's or the judge's) |
+| 6030 | `FeeAccountMissing` | no | a fee account was not passed: the treasury's, agent's or judge's at fill, or the relayer's at a signed create |
 | 6031 | `SolverOutputNotAllowed` | no | the solver's output account is not acceptable for this fill |
 | 6032 | `SigProgram` | no | the signature instruction must come from the Ed25519 program |
 | 6033 | `SigHeader` | no | the Ed25519 instruction is malformed |
