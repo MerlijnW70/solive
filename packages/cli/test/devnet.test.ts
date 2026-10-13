@@ -1,18 +1,22 @@
 import { claimsOf } from "../src/agent/claims.js";
 import {
+  AccountRole,
   type Address,
   type Blockhash,
   createSolanaRpc,
   generateKeyPairSigner,
+  getAddressEncoder,
   getBase58Decoder,
   getBase64EncodedWireTransaction,
   getBase64Encoder,
+  getProgramDerivedAddress,
   getTransactionDecoder,
   type Instruction,
   type KeyPairSigner,
   partiallySignTransaction,
   signBytes,
 } from "@solana/kit";
+import { compile } from "@intent-engine/solver";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { getCreateAccountInstruction, getTransferSolInstruction } from "@solana-program/system";
@@ -44,6 +48,8 @@ import {
   buildFlashFill,
   buildInitUser,
   attestedSplitPreimage,
+  ED25519_PROGRAM_ADDRESS,
+  INTENT_ENGINE_PROGRAM_ADDRESS,
   splitCommit,
   splitCosignEnvelope,
   splitN,
@@ -681,6 +687,65 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet collaborativ
       ]);
       return address;
     };
+    const u32le = (n: number) => {
+      const b = new Uint8Array(4);
+      new DataView(b.buffer).setUint32(0, n, true);
+      return b;
+    };
+    const u64le = (n: bigint) => {
+      const b = new Uint8Array(8);
+      new DataView(b.buffer).setBigUint64(0, n, true);
+      return b;
+    };
+    const cat = (...arrs: Uint8Array[]) => {
+      const out = new Uint8Array(arrs.reduce((a, x) => a + x.length, 0));
+      let at = 0;
+      for (const a of arrs) {
+        out.set(a, at);
+        at += a.length;
+      }
+      return out;
+    };
+    const ALT_PROGRAM = "AddressLookupTab1e1111111111111111111111111" as Address;
+    const SYSTEM = "11111111111111111111111111111111" as Address;
+    const legsFor = (table: Address, authority: KeyPairSigner) => [
+      { address: table, role: AccountRole.WRITABLE },
+      { address: authority.address, role: AccountRole.READONLY_SIGNER, signer: authority },
+      { address: authority.address, role: AccountRole.WRITABLE_SIGNER, signer: authority },
+      { address: SYSTEM, role: AccountRole.READONLY },
+    ];
+    const createLookupTable = async (authority: KeyPairSigner, addresses: Address[]): Promise<Address> => {
+      let table: Address | undefined;
+      for (let attempt = 0; attempt < 6; attempt += 1) {
+        const recent = (await rpc.getSlot({ commitment: "finalized" }).send()) - BigInt(attempt);
+        const [candidate, bump] = await getProgramDerivedAddress({
+          programAddress: ALT_PROGRAM,
+          seeds: [getAddressEncoder().encode(authority.address), u64le(recent)],
+        });
+        const createIx = { programAddress: ALT_PROGRAM, accounts: legsFor(candidate, authority), data: cat(u32le(0), u64le(recent), new Uint8Array([bump])) };
+        try {
+          await send(authority, [createIx]);
+          table = candidate;
+          break;
+        } catch {
+          await new Promise((r) => setTimeout(r, 600));
+        }
+      }
+      if (table === undefined) {
+        throw new Error("could not create a lookup table on this cluster");
+      }
+      const addrs = cat(...addresses.map((a) => new Uint8Array(getAddressEncoder().encode(a))));
+      const extendIx = { programAddress: ALT_PROGRAM, accounts: legsFor(table, authority), data: cat(u32le(2), u64le(BigInt(addresses.length)), addrs) };
+      await send(authority, [extendIx]);
+      const created = await rpc.getSlot({ commitment: "confirmed" }).send();
+      for (let i = 0; i < 40; i += 1) {
+        if ((await rpc.getSlot({ commitment: "confirmed" }).send()) > created + 1n) {
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 400));
+      }
+      return table;
+    };
 
     const owner = await fund(60_000_000n);
     const attestor = await fund(30_000_000n);
@@ -689,9 +754,9 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet collaborativ
     await ata(owner.address, inputMint, FUNDED);
     await ata(owner.address, outputMint);
     await ata(config.feeRecipient, inputMint);
-    const coauthors = [await generateKeyPairSigner()];
+    const coauthors = [await generateKeyPairSigner(), await generateKeyPairSigner(), await generateKeyPairSigner()];
     const recipients = coauthors.map((c) => c.address);
-    const weights = [10000];
+    const weights = [5000, 3000, 2000];
     const payees = [] as Address[];
     for (const r of recipients) {
       payees.push(await ata(r, inputMint));
@@ -746,7 +811,18 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet collaborativ
       result: 1n,
       maxFeeBps,
     });
-    await send(owner, [batch, fill]);
+    const invoked = new Set<Address>([
+      INTENT_ENGINE_PROGRAM_ADDRESS,
+      ED25519_PROGRAM_ADDRESS,
+      tokenProgram,
+      "11111111111111111111111111111111" as Address,
+    ]);
+    const tableAddresses = [...new Set((fill.accounts ?? []).map((a) => a.address))].filter((a) => !invoked.has(a));
+    const table = await createLookupTable(owner, tableAddresses);
+    const { value: latest } = await rpc.getLatestBlockhash().send();
+    const wire = await compile([batch, fill], owner, latest, { [table]: tableAddresses });
+    expect(getBase64Encoder().encode(wire).length).toBeLessThanOrEqual(1232);
+    await transport.sendWire(wire, latest);
     const { net } = splitFee(ESCROW, attestedFee);
     const plan = splitN(net, weights);
     for (let i = 0; i < payees.length; i += 1) {
