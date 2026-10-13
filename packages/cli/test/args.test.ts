@@ -35,7 +35,7 @@ import {
   MANDATE_USE_KINDS,
   WALLET_LIMITS_NEED_WALLET,
 } from "../src/args.js";
-import { NATIVE_MINT, TEST_TOKEN } from "../src/tokens.js";
+import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT } from "@intent-engine/core";
 
 const OWNER = "11111111111111111111111111111112";
 const MINT_A = "So11111111111111111111111111111111111111112";

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { CLUSTERS, parse } from "../src/args.js";
 import { PREVIEW_ONLY, WALLET_ACTIONS } from "../src/agent/wallet.js";
 import { tool } from "../src/agent/names.js";
-import { NATIVE_MINT } from "../src/tokens.js";
+import { NATIVE_MINT } from "@intent-engine/core";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string) => readFileSync(`${ROOT}/${path}`, "utf8");

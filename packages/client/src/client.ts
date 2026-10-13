@@ -1,8 +1,27 @@
-import { type Address, createSolanaRpc, type Instruction, type Signature, type TransactionSigner } from "@solana/kit";
-import { type Config, getIntentDecoder, type Intent, nextFreeNonce } from "@intent-engine/core";
-import { loadConfig, loadIntent, loadUser, MissingAccount } from "./accounts.js";
+import { type Address, createSolanaRpc, type Instruction, type KeyPairSigner, type Signature, type TransactionSigner } from "@solana/kit";
+import {
+  attestedProofMessage,
+  buildCancelIntent,
+  buildCreateIntent,
+  buildFillAttested,
+  type Config,
+  decodeParams,
+  escrowAmount,
+  feeBpsFor,
+  findIntentPda,
+  getIntentDecoder,
+  type Intent,
+  type IntentParams,
+  IntentStatus,
+  Kind,
+  nextFreeNonce,
+  signEd25519Instruction,
+  splitFees,
+} from "@intent-engine/core";
+import { chainTime, loadConfig, loadIntent, loadUser, MissingAccount, mintOf, type NonceWindow } from "./accounts.js";
 import { budgeted, type Priority, simulated } from "./budget.js";
 import { type EngineError, explain } from "./errors.js";
+import { initUserIfMissing, tokenAccountIfMissing, wrapIfShort } from "./setup.js";
 import {
   changesFrom,
   intentNotifications,
@@ -28,6 +47,30 @@ export type IntentAccount = { address: Address; intent: Intent };
 
 export type IntentFilter = { owner?: Address; status?: number };
 
+export type Mint = { decimals: number; tokenProgram: Address };
+
+export type CreateIntentInput = {
+  signer: TransactionSigner;
+  params: IntentParams;
+  inputMint: Address;
+  outputMint: Address;
+  expiresIn?: bigint;
+  expiresAt?: bigint;
+  nonce?: bigint;
+  receiver?: Address;
+};
+
+export type CreatedIntent = { signature: Signature; intent: Address; nonce: bigint };
+
+export type SettleProofInput = {
+  judge: KeyPairSigner;
+  owner: Address;
+  nonce: bigint;
+  payTo: Address;
+  result: bigint;
+  payer?: TransactionSigner;
+};
+
 export type Client = {
   readonly url: string;
   readonly transport: Transport;
@@ -39,7 +82,14 @@ export type Client = {
   send(instructions: readonly Instruction[], signer: TransactionSigner): Promise<Signature>;
   watch(onChange: (changed: IntentAccount[]) => void, signal: AbortSignal, filter?: { owner?: Address }): Promise<void>;
   explain(error: unknown): EngineError | null;
+  mint(address: Address): Promise<Mint>;
+  chainTime(): Promise<bigint>;
+  createIntent(input: CreateIntentInput): Promise<CreatedIntent>;
+  cancel(signer: TransactionSigner, nonce: bigint): Promise<Signature>;
+  settleProof(input: SettleProofInput): Promise<Signature>;
 };
+
+export const DEFAULT_EXPIRES_IN = 3_600n;
 
 export const WATCH_POLL_MS = 2_000;
 export const WATCH_WAIT_SECONDS = 30;
@@ -52,6 +102,27 @@ export class NoFreeNonce extends Error {
     this.name = "NoFreeNonce";
     this.owner = owner;
   }
+}
+
+export class NotSettleable extends Error {
+  readonly intent: Address;
+
+  constructor(intent: Address, reason: string) {
+    super(`intent ${intent} ${reason}`);
+    this.name = "NotSettleable";
+    this.intent = intent;
+  }
+}
+
+function nonceAfter(owner: Address, user: NonceWindow | null): bigint {
+  if (user === null) {
+    return 0n;
+  }
+  const next = nextFreeNonce(user);
+  if (next === null) {
+    throw new NoFreeNonce(owner);
+  }
+  return next;
 }
 
 const decoded = ({ address, data }: ProgramAccount): IntentAccount => ({ address, intent: getIntentDecoder().decode(data) });
@@ -104,10 +175,116 @@ export function createClient(options: ClientOptions): Client {
     }
   };
 
+  const config = async () => (await loadConfig(transport)).config;
+  const send = async (instructions: readonly Instruction[], signer: TransactionSigner) =>
+    (await transport.send(await budgeted(transport, priority, instructions, signer.address), signer)) as Signature;
+
+  const mints = new Map<Address, Promise<Mint>>();
+  const mint = (address: Address) => {
+    const known = mints.get(address);
+    if (known !== undefined) {
+      return known;
+    }
+    const loading = mintOf(transport, address).then(({ decimals, tokenProgram }) => ({ decimals, tokenProgram }));
+    mints.set(address, loading);
+    loading.catch(() => mints.delete(address));
+    return loading;
+  };
+
+  const createIntent = async (input: CreateIntentInput): Promise<CreatedIntent> => {
+    const { signer, params, inputMint, outputMint } = input;
+    const owner = signer.address;
+    const [settings, sell, buy, user] = await Promise.all([config(), mint(inputMint), mint(outputMint), loadUser(transport, owner)]);
+    const nonce = input.nonce ?? nonceAfter(owner, user);
+    const expiresAt = input.expiresAt ?? (await chainTime(transport)) + (input.expiresIn ?? DEFAULT_EXPIRES_IN);
+    const recipient = input.receiver ?? owner;
+    const receiver = await tokenAccountIfMissing(transport, signer, recipient, outputMint, buy.tokenProgram);
+    const wrap = await wrapIfShort(transport, signer, inputMint, sell.tokenProgram, escrowAmount(params));
+    const create = await buildCreateIntent({
+      owner: signer,
+      treasury: settings.feeRecipient,
+      maxCreateFee: settings.createFee,
+      maxBounty: settings.crankBounty,
+      nonce,
+      params,
+      expiresAt,
+      inputMint,
+      outputMint,
+      inputTokenProgram: sell.tokenProgram,
+      outputTokenProgram: buy.tokenProgram,
+      ...(recipient === owner ? {} : { receiver: receiver.address, receiverAuthority: recipient }),
+    });
+    const register = await initUserIfMissing(user, signer);
+    const signature = await send([...register, ...receiver.create, ...wrap.instructions, create], signer);
+    const [intent] = await findIntentPda({ owner, nonce });
+    return { signature, intent, nonce };
+  };
+
+  const cancel = async (signer: TransactionSigner, nonce: bigint) => {
+    const { intent } = await loadIntent(transport, signer.address, nonce);
+    const { tokenProgram } = await mint(intent.inputMint);
+    const refund = await tokenAccountIfMissing(transport, signer, signer.address, intent.inputMint, tokenProgram);
+    return send([...refund.create, await buildCancelIntent({ owner: signer, nonce, inputMint: intent.inputMint, tokenProgram })], signer);
+  };
+
+  const settleProof = async (input: SettleProofInput) => {
+    const { judge, owner, nonce, payTo, result } = input;
+    const payer = input.payer ?? judge;
+    const [{ address, intent: held }, settings] = await Promise.all([loadIntent(transport, owner, nonce), config()]);
+    const params = decodeParams(held.kind, Uint8Array.from(held.params));
+    if (params.kind !== Kind.AttestedResult) {
+      throw new NotSettleable(address, "is not an AttestedResult intent");
+    }
+    if (params.specHash.every((b) => b === 0)) {
+      throw new NotSettleable(address, "commits no spec hash, so it is not a proof intent");
+    }
+    if (held.status !== IntentStatus.Open) {
+      throw new NotSettleable(address, "is not open");
+    }
+    if (params.attestor !== judge.address) {
+      throw new NotSettleable(address, `names ${params.attestor} as its judge, not ${judge.address}`);
+    }
+    const { tokenProgram } = await mint(held.inputMint);
+    const account = (wallet: Address) => tokenAccountIfMissing(transport, payer, wallet, held.inputMint, tokenProgram);
+    const amountIn = held.escrowed - held.filled;
+    const kindBps = feeBpsFor(settings, held.kind);
+    const maxFeeBps = kindBps + held.partnerBps;
+    const shares = splitFees(amountIn - params.judgeFee, kindBps, held.partnerBps, held.partnerCutBps);
+    const feeRecipient = shares.protocol > 0n ? settings.feeRecipient : undefined;
+    const partner = shares.partner > 0n ? held.partner : undefined;
+    const paidJudge = params.judgeFee > 0n ? judge.address : undefined;
+    const payee = await account(payTo);
+    const others = await Promise.all([feeRecipient, partner, paidJudge].filter((wallet) => wallet !== undefined).map(account));
+    const fields = { amountIn, result, maxFeeBps };
+    const message = await attestedProofMessage(judge.address, {
+      ...fields,
+      domain: Uint8Array.from(settings.domain),
+      intent: address,
+      payee: payee.address,
+      filled: held.filled,
+      revision: held.revision,
+      specHash: params.specHash,
+    });
+    const settle = await buildFillAttested({
+      ...fields,
+      solver: judge,
+      owner,
+      nonce,
+      inputMint: held.inputMint,
+      inputTokenProgram: tokenProgram,
+      payee: payee.address,
+      ...(feeRecipient === undefined ? {} : { feeRecipient }),
+      ...(partner === undefined ? {} : { partner }),
+      ...(paidJudge === undefined ? {} : { judge: paidJudge }),
+    });
+    const setup = [payee, ...others].flatMap(({ create }) => create);
+    return send([...setup, await signEd25519Instruction(judge, message), settle], payer);
+  };
+
   return {
     url,
     transport,
-    config: async () => (await loadConfig(transport)).config,
+    config,
     intent: async (owner, nonce) => {
       try {
         return await loadIntent(transport, owner, nonce);
@@ -122,22 +299,16 @@ export function createClient(options: ClientOptions): Client {
       (await transport.intents(filter.owner))
         .map(decoded)
         .filter(({ intent }) => filter.status === undefined || intent.status === filter.status),
-    nextNonce: async (owner) => {
-      const user = await loadUser(transport, owner);
-      if (user === null) {
-        return 0n;
-      }
-      const next = nextFreeNonce(user);
-      if (next === null) {
-        throw new NoFreeNonce(owner);
-      }
-      return next;
-    },
+    nextNonce: async (owner) => nonceAfter(owner, await loadUser(transport, owner)),
     simulate: async (instructions, signer) =>
       simulated(transport, await budgeted(transport, priority, instructions, signer.address), signer.address),
-    send: async (instructions, signer) =>
-      (await transport.send(await budgeted(transport, priority, instructions, signer.address), signer)) as Signature,
+    send,
     watch,
     explain,
+    mint,
+    chainTime: () => chainTime(transport),
+    createIntent,
+    cancel,
+    settleProof,
   };
 }

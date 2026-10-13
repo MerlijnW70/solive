@@ -1,27 +1,9 @@
 import { fileURLToPath } from "node:url";
-import {
-  type Address,
-  appendTransactionMessageInstructions,
-  type Blockhash,
-  createTransactionMessage,
-  generateKeyPairSigner,
-  getAddressEncoder,
-  getBase58Decoder,
-  getBase64Encoder,
-  getSignatureFromTransaction,
-  getTransactionDecoder,
-  type KeyPairSigner,
-  lamports,
-  pipe,
-  setTransactionMessageFeePayerSigner,
-  signTransactionMessageWithSigners,
-  type Transaction,
-} from "@solana/kit";
+import { type Address, generateKeyPairSigner, getAddressEncoder, getBase58Decoder, type KeyPairSigner, lamports } from "@solana/kit";
 import { getCreateAccountInstruction } from "@solana-program/system";
 import {
   findAssociatedTokenAddress,
   findEventAuthorityPda,
-  findIntentPda,
   findProgramDataAddress,
   getInitConfigInstructionAsync,
   INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -34,97 +16,21 @@ import {
   getMintToInstruction,
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
-import { FailedTransactionMetadata, LiteSVM } from "litesvm";
-import type { ProgramAccount, Transport } from "../src/index.js";
+import { LiteSVM } from "litesvm";
+import type { Transport } from "../src/index.js";
+import { svmTransport } from "../src/svm.js";
 
 export const NOW = 1_700_000_000n;
 export const FEE_BPS = 5;
-export const SCANNED_NONCES = 16n;
 const DOMAIN = new Uint8Array(32).fill(0x11);
 const enginePath =
   process.env["INTENT_ENGINE_SO"] ?? fileURLToPath(new URL("../../../target/deploy/intent_engine.so", import.meta.url));
 
 export type Chain = {
   svm: LiteSVM;
-  owners: Set<Address>;
   transport: Transport;
   sent: string[];
 };
-
-const decodeWire = (wire: string) => getTransactionDecoder().decode(getBase64Encoder().encode(wire));
-
-function landed(chain: Chain, tx: Transaction): string {
-  const result = chain.svm.sendTransaction(tx);
-  if (result instanceof FailedTransactionMetadata) {
-    throw new Error(`${String(result.err())}\n${result.meta().logs().join("\n")}`);
-  }
-  const signature = getSignatureFromTransaction(tx);
-  chain.sent.push(signature);
-  return signature;
-}
-
-export function svmTransport(chain: Chain): Transport {
-  const getAccount = async (address: Address) => {
-    const account = chain.svm.getAccount(address);
-    return account.exists
-      ? { owner: account.programAddress, data: new Uint8Array(account.data), lamports: account.lamports, executable: account.executable }
-      : null;
-  };
-  return {
-    getAccount,
-    getAccounts: async (addresses) => Promise.all(addresses.map(getAccount)),
-    send: async (instructions, payer) => {
-      chain.svm.expireBlockhash();
-      const message = pipe(
-        createTransactionMessage({ version: 0 }),
-        (m) => setTransactionMessageFeePayerSigner(payer, m),
-        (m) => chain.svm.setTransactionMessageLifetimeUsingLatestBlockhash(m),
-        (m) => appendTransactionMessageInstructions(instructions, m),
-      );
-      return landed(chain, await signTransactionMessageWithSigners(message));
-    },
-    latestBlockhash: async () => ({ blockhash: chain.svm.latestBlockhash() as Blockhash, lastValidBlockHeight: 0n }),
-    sendWire: async (wire) => landed(chain, decodeWire(wire)),
-    submitWire: async (wire) => landed(chain, decodeWire(wire)),
-    simulate: async (wire, watch = []) => {
-      const tx = decodeWire(wire);
-      const unsigned = Object.fromEntries(
-        Object.entries(tx.signatures).map(([signer, signature]) => [signer, signature ?? new Uint8Array(64)]),
-      );
-      chain.svm.withSigverify(false).withBlockhashCheck(false);
-      const result = chain.svm.simulateTransaction({ ...tx, signatures: unsigned } as typeof tx);
-      chain.svm.withSigverify(true).withBlockhashCheck(true);
-      const meta = result.meta();
-      return {
-        err: result instanceof FailedTransactionMetadata ? String(result.err()) : null,
-        logs: meta.logs(),
-        unitsConsumed: meta.computeUnitsConsumed(),
-        accounts: watch.map(() => null),
-      };
-    },
-    genesisHash: async () => getBase58Decoder().decode(DOMAIN),
-    intents: async (only) => {
-      const found: ProgramAccount[] = [];
-      for (const owner of only === undefined ? chain.owners : [only]) {
-        for (let nonce = 0n; nonce < SCANNED_NONCES; nonce++) {
-          const [address] = await findIntentPda({ owner, nonce });
-          const account = chain.svm.getAccount(address);
-          if (account.exists && account.programAddress === INTENT_ENGINE_PROGRAM_ADDRESS) {
-            found.push({ address, data: new Uint8Array(account.data) });
-          }
-        }
-      }
-      return found;
-    },
-    engineTransactions: async () => [],
-    recentFees: async () => [],
-    budget: async (instructions) => [...instructions],
-    airdrop: async (address, amount) => {
-      chain.svm.airdrop(address, lamports(amount));
-      return "airdrop";
-    },
-  };
-}
 
 export type World = {
   chain: Chain;
@@ -135,7 +41,7 @@ export type World = {
   outputMint: Address;
 };
 
-async function funded(chain: Chain): Promise<KeyPairSigner> {
+export async function funded(chain: Chain): Promise<KeyPairSigner> {
   const signer = await generateKeyPairSigner();
   chain.svm.airdrop(signer.address, lamports(100_000_000_000n));
   return signer;
@@ -177,8 +83,23 @@ export async function world(): Promise<World> {
   const clock = svm.getClock();
   clock.unixTimestamp = NOW;
   svm.setClock(clock);
-  const chain: Chain = { svm, owners: new Set(), sent: [], transport: undefined as unknown as Transport };
-  chain.transport = svmTransport(chain);
+  const inner = svmTransport(svm, { genesisHash: getBase58Decoder().decode(DOMAIN) });
+  const sent: string[] = [];
+  const recorded = async (pending: Promise<string>) => {
+    const signature = await pending;
+    sent.push(signature);
+    return signature;
+  };
+  const chain: Chain = {
+    svm,
+    sent,
+    transport: {
+      ...inner,
+      send: (instructions, payer) => recorded(inner.send(instructions, payer)),
+      sendWire: (wire, latest) => recorded(inner.sendWire(wire, latest)),
+      submitWire: (wire) => recorded(inner.submitWire(wire)),
+    },
+  };
   const authority = await funded(chain);
   const programData = await findProgramDataAddress();
   const account = svm.getAccount(programData);
@@ -210,7 +131,6 @@ export async function world(): Promise<World> {
     authority,
   );
   const owner = await funded(chain);
-  chain.owners.add(owner.address);
   const inputMint = await mint(chain, authority);
   const outputMint = await mint(chain, authority);
   await tokenAccount(chain, authority, owner.address, inputMint, 1_000n);

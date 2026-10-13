@@ -31,14 +31,7 @@ import {
 import { define } from "./actions.js";
 import { tool } from "./names.js";
 import { expiryOf, termsInput, termsOutput, warningsOf } from "./create.js";
-import {
-  initUserIfMissing,
-  pickNonce,
-  raiseAllowance,
-  setupLines,
-  tokenAccountIfMissing,
-  unusedIntent,
-} from "./owner.js";
+import { pickNonce, raiseAllowance, setupLines, unusedIntent } from "./owner.js";
 import { prepare, type Prepared, transactionSize } from "./prepare.js";
 import { AgentRefusal } from "./problems.js";
 import { createCost, rentFor, SIGNATURE_FEE, TOKEN_ACCOUNT_RENT_BYTES } from "./budget.js";
@@ -48,9 +41,11 @@ import {
   Charged,
   clusterDomain,
   createdAccount,
+  initUserIfMissing,
   loadConfig,
   loadUser,
   mintOf,
+  tokenAccountIfMissing,
   type Transport,
 } from "@intent-engine/client";
 import { admitRelay, type Relay } from "./relay.js";

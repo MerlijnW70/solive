@@ -10,7 +10,8 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { findAssociatedTokenAddress } from "@intent-engine/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { CLUSTERS, ENV_KEYPAIR, ENV_URL, parse, UsageError } from "../src/args.js";
-import { DEVNET_URL, NATIVE_MINT, TEST_TOKEN, testTokenElsewhere, tokenNamed } from "../src/tokens.js";
+import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT } from "@intent-engine/core";
+import { DEVNET_URL, testTokenElsewhere, tokenNamed } from "../src/tokens.js";
 import {
   AIRDROP,
   AIRDROP_REFUSED,

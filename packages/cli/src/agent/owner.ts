@@ -1,21 +1,8 @@
-import { type Address, createNoopSigner, type Instruction, isSome, type TransactionSigner } from "@solana/kit";
-import { getTransferSolInstruction, SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
-import {
-  getCreateAssociatedTokenIdempotentInstructionAsync,
-  getSyncNativeInstruction,
-  getTokenDecoder,
-  TOKEN_PROGRAM_ADDRESS,
-} from "@solana-program/token";
-import {
-  buildInitUser,
-  findAssociatedTokenAddress,
-  findDelegatePda,
-  formatAmount,
-  U64_MAX,
-  findIntentPda,
-} from "@intent-engine/core";
+import { type Address, isSome } from "@solana/kit";
+import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
+import { getTokenDecoder } from "@solana-program/token";
+import { findDelegatePda, formatAmount, U64_MAX, findIntentPda } from "@intent-engine/core";
 import { createdAccount, TOKEN_PROGRAMS, type NonceWindow, type Transport } from "@intent-engine/client";
-import { NATIVE_MINT } from "../tokens.js";
 import { AgentRefusal, ENGINE_PROBLEMS } from "./problems.js";
 import { SOL_DECIMALS } from "./read.js";
 import { InvalidInput } from "./schema.js";
@@ -55,61 +42,6 @@ export function pickNonce(
     "NoFreeNonce",
     "every nonce in the owner's window is used or promised to a pending signature; the owner must advance the nonce window first",
   );
-}
-
-export async function initUserIfMissing(user: NonceWindow | null, owner: Address): Promise<Instruction[]> {
-  return user === null ? [await buildInitUser({ owner: createNoopSigner(owner) })] : [];
-}
-
-export async function tokenAccountIfMissing(
-  transport: Transport,
-  payer: TransactionSigner,
-  owner: Address,
-  mint: Address,
-  tokenProgram: Address,
-): Promise<{ address: Address; create: Instruction[] }> {
-  const address = await findAssociatedTokenAddress({ owner, mint, tokenProgram });
-  const create =
-    (await createdAccount(transport, address)) === null
-      ? [
-          await getCreateAssociatedTokenIdempotentInstructionAsync({
-            payer,
-            owner,
-            mint,
-            tokenProgram,
-          }),
-        ]
-      : [];
-  return { address, create };
-}
-
-export type Wrap = { instructions: Instruction[]; lamports: bigint };
-
-export async function wrapIfShort(
-  transport: Transport,
-  owner: Address,
-  mint: Address,
-  tokenProgram: Address,
-  needed: bigint,
-): Promise<Wrap> {
-  if (mint !== NATIVE_MINT || tokenProgram !== TOKEN_PROGRAM_ADDRESS) {
-    return { instructions: [], lamports: 0n };
-  }
-  const account = await findAssociatedTokenAddress({ owner, mint, tokenProgram });
-  const view = await createdAccount(transport, account);
-  const held = view === null ? 0n : getTokenDecoder().decode(view.data).amount;
-  if (held >= needed) {
-    return { instructions: [], lamports: 0n };
-  }
-  const payer = createNoopSigner(owner);
-  return {
-    instructions: [
-      ...(view === null ? [await getCreateAssociatedTokenIdempotentInstructionAsync({ payer, owner, mint, tokenProgram })] : []),
-      getTransferSolInstruction({ source: payer, destination: account, amount: needed - held }),
-      getSyncNativeInstruction({ account }),
-    ],
-    lamports: needed - held,
-  };
 }
 
 export async function unusedIntent(transport: Transport, owner: Address, nonce: bigint): Promise<Address> {

@@ -17,6 +17,10 @@
     ".": {
       "types": "./dist/src/index.d.ts",
       "import": "./dist/src/index.js"
+    },
+    "./svm": {
+      "types": "./dist/src/svm.d.ts",
+      "import": "./dist/src/svm.js"
     }
   },
   "scripts": {
@@ -26,11 +30,19 @@
   },
   "dependencies": {
     "@intent-engine/core": "workspace:*",
-    "@solana/kit": "8.4.0"
-  },
-  "devDependencies": {
     "@solana-program/system": "0.14.1",
     "@solana-program/token": "0.16.1",
+    "@solana/kit": "8.4.0"
+  },
+  "peerDependencies": {
+    "litesvm": "^1.5.0"
+  },
+  "peerDependenciesMeta": {
+    "litesvm": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
     "@types/node": "26.6.4",
     "litesvm": "1.5.0",
     "typescript": "7.0.2",

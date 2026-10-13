@@ -17,6 +17,12 @@ export function remainingOf(intent: { escrowed: bigint; filled: bigint }): bigin
 
 export const IntentStatus = { Open: 0, Filled: 1, Cancelled: 2, Expired: 3, Filling: 4 } as const;
 
+export type IntentStatusName = keyof typeof IntentStatus;
+
+export function statusName(status: number): IntentStatusName | undefined {
+  return (Object.keys(IntentStatus) as IntentStatusName[]).find((name) => IntentStatus[name] === status);
+}
+
 export type FeeConfig = { feeBps: number; kindFeeMask: number; kindFeeBps: readonly number[] };
 
 export function feeBpsFor(config: FeeConfig, kind: number): number {

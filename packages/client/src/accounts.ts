@@ -9,6 +9,8 @@ import {
   getIntentDiscriminatorBytes,
   getUserStateDecoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
+  TOKEN_2022_PROGRAM_ADDRESS,
+  TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
 import type { AccountView, Transport } from "./transport.js";
 
@@ -92,10 +94,7 @@ export async function tokenProgramOf(transport: Transport, mint: Address): Promi
 
 const MINT_DECIMALS_OFFSET = 44;
 export const MINT_BASE_SIZE = 82;
-export const TOKEN_PROGRAMS = [
-  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-  "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
-] as Address[];
+export const TOKEN_PROGRAMS: Address[] = [TOKEN_PROGRAM_ADDRESS, TOKEN_2022_PROGRAM_ADDRESS];
 
 export const SCALING_EXTENSIONS = [10, 25];
 export const EXTENSIONS_OFFSET = 166;

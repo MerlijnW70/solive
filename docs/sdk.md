@@ -14,71 +14,51 @@ Paste the TypeScript blocks below, in order, into one file `main.mts` and run it
 
 ## Connect
 
-The code pays from a devnet wallet that holds devnet SOL, wrapped SOL and a test token account. Make one with the Solana CLI:
+The code pays from a devnet wallet that holds devnet SOL. Make one with the Solana CLI:
 
 ```sh
 solana-keygen new --no-bip39-passphrase -o ~/solive-wallet.json
 solana config set --url devnet --keypair ~/solive-wallet.json
 solana airdrop 1
-spl-token wrap 0.2
-spl-token create-account ETU8trkkfE8gNVPDGbCaJUoH88wy6yYV6ttJdc9NKB88
 ```
 
 ```ts
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { address, createKeyPairSignerFromBytes } from "@solana/kit";
+import { createKeyPairSignerFromBytes } from "@solana/kit";
 import { createClient } from "@intent-engine/client";
 
 const client = createClient({ url: "https://api.devnet.solana.com" });
 const signer = await createKeyPairSignerFromBytes(
   new Uint8Array(JSON.parse(await readFile(`${homedir()}/solive-wallet.json`, "utf8"))),
 );
-const WSOL = address("So11111111111111111111111111111111111111112");
-const TEST = address("ETU8trkkfE8gNVPDGbCaJUoH88wy6yYV6ttJdc9NKB88");
 ```
 
 ## Read
 
-`config()` returns the engine's settings, `intents({ owner })` every intent a wallet made and `intent(owner, nonce)` one intent, or `null` if that nonce holds none.
+`config()` returns the engine's settings, `intents({ owner })` every intent a wallet made and `intent(owner, nonce)` one intent, or `null` if that nonce holds none. `statusName` turns a status into its name.
 
 ```ts
-import { IntentStatus } from "@intent-engine/core";
-
-const statusOf = (status: number) =>
-  Object.keys(IntentStatus).find((name) => IntentStatus[name as keyof typeof IntentStatus] === status);
+import { IntentStatus, statusName } from "@intent-engine/core";
 
 const config = await client.config();
 const mine = await client.intents({ owner: signer.address });
 const first = await client.intent(signer.address, 0n);
-console.log(config.feeBps, mine.map(({ intent }) => statusOf(intent.status)), first?.address);
+console.log(config.feeBps, mine.map(({ intent }) => statusName(intent.status)), first?.address);
 ```
 
 ## Create a swap intent
 
-Sell 0.05 wrapped SOL for at least 50 test tokens, more than the devnet filler pays, so the intent stays open until you cancel it. A wallet's first intent also registers the wallet with `buildInitUser`.
+Sell 0.05 SOL for at least 50 test tokens, more than the devnet filler pays, so the intent stays open until you cancel it. `createIntent` does its own setup in the same transaction: it registers the wallet on its first intent, wraps the SOL the escrow needs, and creates the token account that receives the test token. It picks the next free nonce and expires the intent in an hour unless you pass `nonce`, `expiresIn` or `expiresAt`.
 
 ```ts
-import { buildCreateIntent, buildInitUser, Kind, parseAmount } from "@intent-engine/core";
-import { chainTime, loadUser, mintOf } from "@intent-engine/client";
+import { DEVNET_TEST_MINT, Kind, NATIVE_MINT, parseAmount } from "@intent-engine/core";
 
-const sell = await mintOf(client.transport, WSOL);
-const buy = await mintOf(client.transport, TEST);
-const register = (await loadUser(client.transport, signer.address)) === null ? [await buildInitUser({ owner: signer })] : [];
-const order = {
-  owner: signer,
-  treasury: config.feeRecipient,
-  maxCreateFee: config.createFee,
-  maxBounty: config.crankBounty,
-  expiresAt: (await chainTime(client.transport)) + 3_600n,
-  inputMint: WSOL,
-  outputMint: TEST,
-  inputTokenProgram: sell.tokenProgram,
-  outputTokenProgram: buy.tokenProgram,
-};
+const sell = await client.mint(NATIVE_MINT);
+const buy = await client.mint(DEVNET_TEST_MINT);
+const order = { signer, inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT };
 const swap = { kind: Kind.SwapExactIn, amountIn: parseAmount("0.05", sell.decimals), minOut: parseAmount("50", buy.decimals) } as const;
-const nonce = await client.nextNonce(signer.address);
-await client.send([...register, await buildCreateIntent({ ...order, nonce, params: swap })], signer);
+const { nonce } = await client.createIntent({ ...order, params: swap });
 ```
 
 ## Watch
@@ -89,12 +69,10 @@ await client.send([...register, await buildCreateIntent({ ...order, nonce, param
 const controller = new AbortController();
 const watched = client.watch(
   (changed) => {
-    for (const { intent } of changed) {
-      if (intent.nonce === nonce) {
-        console.log(statusOf(intent.status));
-        if (intent.status !== IntentStatus.Open) {
-          controller.abort();
-        }
+    for (const { intent } of changed.filter(({ intent }) => intent.nonce === nonce)) {
+      console.log(statusName(intent.status));
+      if (intent.status !== IntentStatus.Open) {
+        controller.abort();
       }
     }
   },
@@ -105,71 +83,38 @@ const watched = client.watch(
 
 ## Errors
 
-A failed `send` throws. `explain` names the engine error behind it, or returns `null` if the engine raised none. An expiry in the past prints `ExpiryNotInFuture`.
+A failed call throws. `explain` names the engine error behind it, or returns `null` if the engine raised none. An expiry in the past prints `ExpiryNotInFuture`.
 
 ```ts
-const failure = await client
-  .send([await buildCreateIntent({ ...order, nonce: nonce + 1n, expiresAt: 0n, params: swap })], signer)
-  .catch((error: unknown) => error);
+const failure = await client.createIntent({ ...order, params: swap, expiresAt: 0n }).catch((error: unknown) => error);
 console.log(client.explain(failure)?.name);
 ```
 
 ## Cancel
 
-Cancelling returns the escrow to your wrapped SOL token account.
+`cancel` returns the escrow to your wrapped SOL token account.
 
 ```ts
-import { buildCancelIntent } from "@intent-engine/core";
-
-await client.send([await buildCancelIntent({ owner: signer, nonce, inputMint: WSOL, tokenProgram: sell.tokenProgram })], signer);
+await client.cancel(signer, nonce);
 await watched;
 ```
 
 ## Escrow work behind a proof
 
-An `AttestedResult` intent holds payment until its attestor, the judge, signs a result. `specHash` pins the acceptance spec the judge checks, and `judgeFee` pays the judge out of the escrow; see [`solive_wallet_escrow`](reference/mcp-tools.md#solive_wallet_escrow) and [`solive_wallet_attest`](reference/mcp-tools.md#solive_wallet_attest) for what each party may do. To settle, the judge signs `attestedProofMessage` and sends it in an Ed25519 instruction ahead of `buildFillAttested`. Here your wallet is owner, judge and worker at once so the block runs alone; in practice the judge signs with its own key and `payee` is the worker's token account. This prints `Filled`.
+An `AttestedResult` intent holds payment until its attestor, the judge, signs a result. `specHash` pins the acceptance spec the judge checks, and `judgeFee` pays the judge out of the escrow; see [`solive_wallet_escrow`](reference/mcp-tools.md#solive_wallet_escrow) and [`solive_wallet_attest`](reference/mcp-tools.md#solive_wallet_attest) for what each party may do. `settleProof` is the judge's call: it signs the result over the spec and pays the worker's wallet `payTo`, creating any token account the payout needs. The judge pays the transaction unless `payer` names another signer; here your wallet pays, so the new judge key needs no SOL. In practice the judge runs this with its own key. This prints `Filled`.
 
 ```ts
 import { createHash } from "node:crypto";
-import {
-  attestedProofMessage,
-  buildFillAttested,
-  feeBpsFor,
-  findAssociatedTokenAddress,
-  findIntentPda,
-  signEd25519Instruction,
-} from "@intent-engine/core";
+import { generateKeyPairSigner } from "@solana/kit";
 
-const judge = signer;
+const judge = await generateKeyPairSigner();
+const worker = await generateKeyPairSigner();
 const specHash = new Uint8Array(createHash("sha256").update("the acceptance spec the work must pass").digest());
 const pay = parseAmount("0.01", sell.decimals);
-const job = await client.nextNonce(signer.address);
 const work = { kind: Kind.AttestedResult, amountIn: pay, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash, judgeFee: pay / 10n } as const;
-await client.send([await buildCreateIntent({ ...order, nonce: job, params: work })], signer);
-
-const payee = await findAssociatedTokenAddress({ owner: signer.address, mint: WSOL, tokenProgram: sell.tokenProgram });
-const [intent] = await findIntentPda({ owner: signer.address, nonce: job });
-const maxFeeBps = feeBpsFor(config, Kind.AttestedResult);
-const proof = { amountIn: pay, result: 1n, maxFeeBps };
-const message = await attestedProofMessage(judge.address, { ...proof, domain: Uint8Array.from(config.domain), intent, payee, specHash });
-await client.send(
-  [
-    await signEd25519Instruction(judge, message),
-    await buildFillAttested({
-      ...proof,
-      solver: judge,
-      owner: signer.address,
-      nonce: job,
-      inputMint: WSOL,
-      inputTokenProgram: sell.tokenProgram,
-      payee,
-      feeRecipient: config.feeRecipient,
-      judge: judge.address,
-    }),
-  ],
-  judge,
-);
-console.log(statusOf((await client.intent(signer.address, job))?.intent.status ?? -1));
+const job = await client.createIntent({ ...order, params: work });
+await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: job.nonce, payTo: worker.address, result: 1n });
+console.log(statusName((await client.intent(signer.address, job.nonce))?.intent.status ?? -1));
 ```
 
 ## Next

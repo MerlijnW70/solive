@@ -68,7 +68,7 @@ import { invoke } from "../src/agent/actions.js";
 import { claimsOf } from "../src/agent/claims.js";
 import { ACTIONS } from "../src/agent/registry.js";
 import { EXIT_OK, EXIT_USAGE } from "../src/main.js";
-import { NATIVE_MINT, TEST_TOKEN } from "../src/tokens.js";
+import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT } from "@intent-engine/core";
 import { AIRDROP, AIRDROP_REFUSED, defaultWallet, FUNDED, LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { balance, cli, FEE_BPS, h, HOME, setNow, transport, world } from "./harness.js";
 

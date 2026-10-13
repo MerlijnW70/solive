@@ -32,27 +32,22 @@ import {
   chainTime,
   createdAccount,
   engineAccount,
+  initUserIfMissing,
   loadConfig,
   loadUser,
   mintOf,
   MissingAccount,
+  tokenAccountIfMissing,
   tokenProgramOf,
   type Transport,
+  wrapIfShort,
 } from "@intent-engine/client";
 import { vaultBalance } from "../crank.js";
 import { type AgentContext, define } from "./actions.js";
 import { createCost, release, rentFor, reserve, TOKEN_ACCOUNT_RENT_BYTES } from "./budget.js";
 import { expiryOf, MAX_EXPIRES_IN, MIN_EXPIRES_IN, WARN_SCALED } from "./create.js";
 import { tool } from "./names.js";
-import {
-  initUserIfMissing,
-  lowerAllowance,
-  raiseAllowance,
-  setupLines,
-  tokenAccountIfMissing,
-  wrapIfShort,
-  unusedIntent,
-} from "./owner.js";
+import { lowerAllowance, raiseAllowance, setupLines, unusedIntent } from "./owner.js";
 import { prepare } from "./prepare.js";
 import { paying } from "./signed.js";
 import { type Call, claim, claimedBy, type Claims, PREPARED_TTL } from "./claims.js";

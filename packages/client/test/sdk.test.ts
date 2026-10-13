@@ -4,7 +4,6 @@ import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   type Address,
-  address,
   createKeyPairSignerFromPrivateKeyBytes,
   getAddressEncoder,
   type KeyPairSigner,
@@ -12,34 +11,44 @@ import {
   none,
   some,
 } from "@solana/kit";
-import { getTransferSolInstruction } from "@solana-program/system";
-import {
-  getCreateAssociatedTokenIdempotentInstructionAsync,
-  getMintEncoder,
-  getMintSize,
-  getSyncNativeInstruction,
-  TOKEN_PROGRAM_ADDRESS,
-} from "@solana-program/token";
+import { getMintEncoder, getMintSize } from "@solana-program/token";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { findAssociatedTokenAddress, IntentStatus, Kind } from "@intent-engine/core";
+import {
+  DEVNET_TEST_MINT as TEST,
+  findAssociatedTokenAddress,
+  IntentStatus,
+  Kind,
+  NATIVE_MINT as WSOL,
+  TOKEN_PROGRAM_ADDRESS,
+} from "@intent-engine/core";
 import { type ClientOptions, createClient, type Transport } from "../src/index.js";
 import { FEE_BPS, world, type World } from "./svm.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string) => readFileSync(`${ROOT}/${path}`, "utf8");
 const PAGE = read("docs/sdk.md");
-const WSOL = address("So11111111111111111111111111111111111111112");
-const TEST = address("ETU8trkkfE8gNVPDGbCaJUoH88wy6yYV6ttJdc9NKB88");
 const DEVNET = "https://api.devnet.solana.com";
 const WALLET = "solive-wallet.json";
-const WRAPPED = 1_000_000_000n;
+const LAMPORTS = 10_000_000_000n;
 
 const fenced = (lang: string) => [...PAGE.matchAll(new RegExp(`^\`\`\`${lang}\\n([\\s\\S]*?)^\`\`\`$`, "gm"))].map((m) => m[1] ?? "");
 const blocks = fenced("ts");
 const shell = fenced("sh").join("").trimEnd().split("\n");
 const claims = [...PAGE.matchAll(/\bprints ([^.]*)\./g)].flatMap((m) => [...(m[1] ?? "").matchAll(/`([^`]+)`/g)].map((c) => c[1] ?? ""));
 
-const injected = vi.hoisted(() => ({ transport: undefined as Transport | undefined, urls: [] as string[] }));
+const injected = vi.hoisted(() => ({ transport: undefined as Transport | undefined, urls: [] as string[], generated: [] as KeyPairSigner[] }));
+
+vi.mock("@solana/kit", async (importOriginal) => {
+  const real = await importOriginal<typeof import("@solana/kit")>();
+  return {
+    ...real,
+    generateKeyPairSigner: async () => {
+      const signer = await real.generateKeyPairSigner();
+      injected.generated.push(signer);
+      return signer;
+    },
+  };
+});
 
 vi.mock("@intent-engine/client", async () => {
   const real = await import("../src/index.js");
@@ -80,19 +89,7 @@ const ata = (owner: Address, mint: Address) => findAssociatedTokenAddress({ owne
 async function wallet(w: World): Promise<{ signer: KeyPairSigner; secret: number[] }> {
   const seed = crypto.getRandomValues(new Uint8Array(32));
   const signer = await createKeyPairSignerFromPrivateKeyBytes(seed);
-  w.chain.svm.airdrop(signer.address, lamports(10_000_000_000n));
-  w.chain.owners.add(signer.address);
-  const wrapped = await ata(signer.address, WSOL);
-  await w.chain.transport.send(
-    [
-      await getCreateAssociatedTokenIdempotentInstructionAsync({ payer: signer, owner: signer.address, mint: WSOL }),
-      getTransferSolInstruction({ source: signer, destination: wrapped, amount: WRAPPED }),
-      getSyncNativeInstruction({ account: wrapped }),
-      await getCreateAssociatedTokenIdempotentInstructionAsync({ payer: signer, owner: signer.address, mint: TEST }),
-      await getCreateAssociatedTokenIdempotentInstructionAsync({ payer: signer, owner: w.feeRecipient.address, mint: WSOL }),
-    ],
-    signer,
-  );
+  w.chain.svm.airdrop(signer.address, lamports(LAMPORTS));
   return { signer, secret: [...seed, ...getAddressEncoder().encode(signer.address)] };
 }
 
@@ -125,8 +122,6 @@ describe("the sdk page", () => {
       `solana-keygen new --no-bip39-passphrase -o ~/${WALLET}`,
       `solana config set --url devnet --keypair ~/${WALLET}`,
       "solana airdrop 1",
-      "spl-token wrap 0.2",
-      `spl-token create-account ${TEST}`,
     ]);
     expect(blocks.length).toBeGreaterThanOrEqual(6);
     expect(claims).toEqual(["Open", "Cancelled", "ExpiryNotInFuture", "Filled"]);
@@ -140,7 +135,10 @@ describe("the sdk page", () => {
     writeFileSync(join(home, WALLET), JSON.stringify(secret));
     injected.transport = w.chain.transport;
     const wrapped = await ata(signer.address, WSOL);
-    const held = tokens(w, wrapped);
+    expect(tokens(w, wrapped)).toBeNull();
+    expect(tokens(w, await ata(signer.address, TEST))).toBeNull();
+    expect(tokens(w, await ata(w.feeRecipient.address, WSOL))).toBeNull();
+    injected.generated.length = 0;
 
     const printed: string[] = [];
     const log = vi.spyOn(console, "log").mockImplementation((...args: unknown[]) => {
@@ -166,8 +164,19 @@ describe("the sdk page", () => {
       [0n, Kind.SwapExactIn, IntentStatus.Cancelled],
       [1n, Kind.AttestedResult, IntentStatus.Filled],
     ]);
+    const [judge, worker] = injected.generated;
+    expect(injected.generated).toHaveLength(2);
+    expect(judge?.address).not.toBe(signer.address);
     const pay = 10_000_000n;
-    const fee = ((pay - pay / 10n) * BigInt(FEE_BPS)) / 10_000n;
-    expect(tokens(w, wrapped)).toBe((held ?? 0n) - fee);
+    const judgeFee = pay / 10n;
+    const fee = ((pay - judgeFee) * BigInt(FEE_BPS)) / 10_000n;
+    const paid = [
+      tokens(w, await ata(worker?.address ?? signer.address, WSOL)),
+      tokens(w, await ata(judge?.address ?? signer.address, WSOL)),
+      tokens(w, await ata(w.feeRecipient.address, WSOL)),
+    ];
+    expect(paid).toEqual([pay - judgeFee - fee, judgeFee, fee]);
+    expect(tokens(w, wrapped)).toBe(50_000_000n - pay);
+    expect(tokens(w, await ata(signer.address, TEST))).toBe(0n);
   });
 });

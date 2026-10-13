@@ -1,6 +1,13 @@
 import { tool } from "./names.js";
 import type { Address } from "@solana/kit";
-import { BPS_DENOMINATOR, INTENT_ENGINE_PROGRAM_ADDRESS, IntentCoreError, MAX_PARTNER_BPS } from "@intent-engine/core";
+import {
+  BPS_DENOMINATOR,
+  INTENT_ENGINE_PROGRAM_ADDRESS,
+  IntentCoreError,
+  MAX_PARTNER_BPS,
+  TOKEN_2022_PROGRAM_ADDRESS,
+  TOKEN_PROGRAM_ADDRESS,
+} from "@intent-engine/core";
 import { MissingAccount, NotAMint, rateLimited } from "@intent-engine/client";
 import { InvalidInput, type Issue } from "./schema.js";
 
@@ -109,10 +116,7 @@ export const ENGINE_ERROR_BASE = 6000;
 
 export const ENGINE_ERROR_NAMES = Object.keys(ENGINE_PROBLEMS) as EngineErrorName[];
 
-export const TOKEN_PROGRAMS = [
-  "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
-  "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
-] as Address[];
+export const TOKEN_PROGRAMS: Address[] = [TOKEN_PROGRAM_ADDRESS, TOKEN_2022_PROGRAM_ADDRESS];
 
 export const TOKEN_PROBLEMS: Record<number, { code: string } & Entry> = {
   1: { code: "InsufficientFunds", ...never("a token account, or the allowance a signed or agent create draws through, holds less than the amount; lower the amount or fund the account") },

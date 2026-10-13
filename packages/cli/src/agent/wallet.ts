@@ -20,6 +20,7 @@ import {
   Kind,
   LONG_LIVED_SECONDS,
   MAX_SPLIT_RECIPIENTS,
+  NATIVE_MINT,
   parseAmount,
   signEd25519Instruction,
   splitCommit,
@@ -36,12 +37,13 @@ import {
   MEMO_PROGRAM_ADDRESS,
   mintOf,
   neverLanded,
+  tokenAccountIfMissing,
   type Transport,
   unmemoized,
 } from "@intent-engine/client";
 import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "../args.js";
 import { execute, type PreparedView } from "../flows.js";
-import { NATIVE_MINT, TOKEN_NAMES, tokenNamed } from "../tokens.js";
+import { TOKEN_NAMES, tokenNamed } from "../tokens.js";
 import { balances, defaultMints, FAUCET, type Files, PUBLIC_FAUCET, setup, withSettings } from "../wallet.js";
 import { type AgentContext, type AnyAction, define } from "./actions.js";
 import type { Call } from "./claims.js";
@@ -51,7 +53,7 @@ import { AgentRefusal, problemOf } from "./problems.js";
 import { listIntents } from "./read.js";
 import { InvalidInput, account, amount, choice, flag, hex32, integer, list, object, optional, type Schema, text, time } from "./schema.js";
 import { orderSchema, preparedView } from "./shapes.js";
-import { tokenAccountIfMissing, walletRecipient } from "./owner.js";
+import { walletRecipient } from "./owner.js";
 import { prepare, transactionSize } from "./prepare.js";
 import { prepareCancel } from "./settle.js";
 import { STATUS } from "../accounts.js";

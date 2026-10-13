@@ -1,10 +1,10 @@
 import { type Address, createKeyPairSignerFromPrivateKeyBytes, getAddressEncoder, type KeyPairSigner } from "@solana/kit";
 import { getTokenDecoder } from "@solana-program/token";
-import { findAssociatedTokenAddress, formatAmount, PRODUCT_REPOSITORY } from "@intent-engine/core";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress, formatAmount, NATIVE_MINT, PRODUCT_REPOSITORY } from "@intent-engine/core";
 import { createdAccount, mintOf, type Transport } from "@intent-engine/client";
 import { CLUSTERS, ENV_KEYPAIR, ENV_URL, type Env, UsageError } from "./args.js";
 import { SOL_DECIMALS } from "./agent/read.js";
-import { DEVNET_URL, NATIVE_MINT, TEST_TOKEN } from "./tokens.js";
+import { DEVNET_URL } from "./tokens.js";
 
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
 const FUND_BELOW = LAMPORTS_PER_SOL / 2n;
@@ -104,10 +104,10 @@ export async function setup(transport: Transport, files: Files, url: string, key
 }
 
 export function defaultMints(url: string): Address[] {
-  return url === DEVNET_URL ? [NATIVE_MINT, TEST_TOKEN] : [NATIVE_MINT];
+  return url === DEVNET_URL ? [NATIVE_MINT, DEVNET_TEST_MINT] : [NATIVE_MINT];
 }
 
-const TOKEN_LABELS: Readonly<Record<string, string>> = { [NATIVE_MINT]: "wrapped SOL", [TEST_TOKEN]: "TEST" };
+const TOKEN_LABELS: Readonly<Record<string, string>> = { [NATIVE_MINT]: "wrapped SOL", [DEVNET_TEST_MINT]: "TEST" };
 
 export async function balances(transport: Transport, owner: Address, mints: readonly Address[]): Promise<object> {
   const tokens = [];
