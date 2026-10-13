@@ -38,6 +38,8 @@ import {
   buildCreateIntent,
   buildExpireIntent,
   buildFillIntent,
+  buildFillAttestedSplit,
+  getFillAttestedSplitInstructionDataDecoder,
   buildFlashFill,
   getBeginFillInstructionDataDecoder,
   getCreateIntentInstructionDataDecoder,
@@ -181,6 +183,71 @@ describe("offline builders", () => {
     );
     expect(meta(without, feeIndex ?? -1).address).toBe(INTENT_ENGINE_PROGRAM_ADDRESS);
     expect(validateIxAgainstIdl(without, idl)).toEqual([]);
+  });
+
+  it("seat each co-author's canonical account and carry the recipients and weights it signs", async () => {
+    const recipients = [
+      "So1ver1111111111111111111111111111111111111",
+      feeRecipient,
+      owner,
+    ] as Address[];
+    const weights = [6000, 3000, 1000];
+    const ix = await buildFillAttestedSplit({
+      solver,
+      owner,
+      nonce: 7n,
+      inputMint,
+      inputTokenProgram: TOKEN,
+      recipients,
+      weights,
+      feeRecipient,
+      amountIn: 400n,
+      result: 1n,
+      maxFeeBps: 100,
+    });
+    expect(ix.programAddress).toBe(INTENT_ENGINE_PROGRAM_ADDRESS);
+    const slot = (name: string) =>
+      idl.instructions
+        .find((x) => x.name === "fill_attested_split")
+        ?.accounts.findIndex((a) => a.name === name) ?? -1;
+    for (const [i, name] of ["recipient0", "recipient1", "recipient2"].entries()) {
+      const recipient = recipients[i];
+      if (recipient === undefined) {
+        throw new Error("missing recipient");
+      }
+      expect(meta(ix, slot(name)).address).toBe(
+        await findAssociatedTokenAddress({ owner: recipient, mint: inputMint, tokenProgram: TOKEN }),
+      );
+    }
+    expect(meta(ix, slot("recipient3")).address).toBe(INTENT_ENGINE_PROGRAM_ADDRESS);
+    const data = getFillAttestedSplitInstructionDataDecoder().decode(ix.data ?? new Uint8Array());
+    expect(data.recipients).toEqual(recipients);
+    expect(data.weights).toEqual(weights);
+    expect(data.amountIn).toBe(400n);
+  });
+
+  it("reject a split with no recipients or a weight count that does not match", async () => {
+    const base = {
+      solver,
+      owner,
+      nonce: 7n,
+      inputMint,
+      inputTokenProgram: TOKEN,
+      amountIn: 400n,
+      result: 1n,
+      maxFeeBps: 100,
+    };
+    await expect(buildFillAttestedSplit({ ...base, recipients: [], weights: [] })).rejects.toThrow();
+    await expect(
+      buildFillAttestedSplit({ ...base, recipients: [owner], weights: [5000, 5000] }),
+    ).rejects.toThrow();
+    await expect(
+      buildFillAttestedSplit({
+        ...base,
+        recipients: Array.from({ length: 9 }, () => owner),
+        weights: Array.from({ length: 9 }, () => 1000),
+      }),
+    ).rejects.toThrow();
   });
 
   it("refuse invalid params before anything is signed", async () => {

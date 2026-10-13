@@ -10,13 +10,15 @@ use intent_core::kinds::{
 };
 use intent_core::math::{mul_div_ceil, mul_div_floor};
 use intent_core::sig::{
-    check_ed25519_ix, offchain_envelope, AttestedFill, AttestedProof, SignedIntent,
+    check_ed25519_ix, offchain_envelope, AttestedFill, AttestedProof, AttestedSplit, SignedIntent,
     ED25519_PROGRAM_ID,
 };
 use intent_core::PARAMS_LEN;
 use intent_engine::instruction as ix;
 use serde_json::{json, Value};
-use svm_tests::{config_pda, event_authority, intent_pda, user_pda, vault_pda, TestResult};
+use svm_tests::{
+    config_pda, event_authority, intent_pda, split_commit, user_pda, vault_pda, TestResult,
+};
 
 const GOLDEN_EXT: [u8; 5] = [1, 2, 0, 0xaa, 0xbb];
 const RANDOM_SIGNED: usize = 64;
@@ -601,6 +603,42 @@ fn vectors() -> TestResult<Value> {
     .preimage();
     let proof_digest = solana_sha256_hasher::hashv(&[&proof_preimage]).to_bytes();
     let proof_attestation = offchain_envelope(&key(5).to_bytes(), &proof_digest);
+    let split_recipients = [key(10), key(11)];
+    let split_weights: [u16; 2] = [6_000, 4_000];
+    let split_hash = split_commit(&split_recipients, &split_weights);
+    let split_preimage = AttestedSplit {
+        program: intent_engine::ID.to_bytes(),
+        domain: svm_tests::DOMAIN,
+        intent: key(7).to_bytes(),
+        amount_in: 3_333,
+        result: 15,
+        filled: 0x1112_1314_1516_1718,
+        revision: 0x2122_2324,
+        max_fee_bps: 0x3132,
+        ext_hash: solana_sha256_hasher::hashv(&[&GOLDEN_EXT]).to_bytes(),
+        spec_hash: attest_spec_hash,
+        split_hash,
+    }
+    .preimage();
+    let split_digest = solana_sha256_hasher::hashv(&[&split_preimage]).to_bytes();
+    let split_attestation = offchain_envelope(&key(5).to_bytes(), &split_digest);
+    let split_commits: Vec<Value> = [
+        (vec![key(10)], vec![10_000u16]),
+        (vec![key(10), key(11)], vec![6_000, 4_000]),
+        (
+            (0..8).map(key).collect::<Vec<_>>(),
+            vec![2_000, 2_000, 2_000, 1_000, 1_000, 1, 1, 998],
+        ),
+    ]
+    .into_iter()
+    .map(|(recipients, weights)| {
+        json!({
+            "recipients": recipients.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            "weights": weights.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            "hash": hex(&split_commit(&recipients, &weights)),
+        })
+    })
+    .collect();
     let sig = json!({
         "domain": hex(&svm_tests::DOMAIN),
         "receiver": key(6).to_string(),
@@ -632,6 +670,9 @@ fn vectors() -> TestResult<Value> {
         "attest_spec_hash": hex(&attest_spec_hash),
         "attest_proof_preimage": hex(&proof_preimage),
         "attest_proof_message": hex(&proof_attestation),
+        "attest_split_hash": hex(&split_hash),
+        "attest_split_preimage": hex(&split_preimage),
+        "attest_split_message": hex(&split_attestation),
     });
 
     let ext_cases: Vec<(Vec<u8>, Vec<u8>)> = vec![
@@ -852,6 +893,7 @@ fn vectors() -> TestResult<Value> {
         }),
         "flag_checks": flag_checks,
         "sig": sig,
+        "split_commits": split_commits,
         "random_signed": random_signed(),
         "random_dutch": random_dutch(),
         "economics_caps": {

@@ -17,11 +17,13 @@ const ascii = (s: string) => new TextEncoder().encode(s);
 export const INTENT_TAG = ascii("intent-engine-v1");
 export const ATTEST_TAG = ascii("intent-engine-at");
 export const ATTEST_PROOF_TAG = ascii("intent-engine-pf");
+export const ATTEST_SPLIT_TAG = ascii("intent-engine-sp");
 export const OFFCHAIN_PREFIX = new Uint8Array([0xff, ...ascii("solana offchain")]);
 export const PREIMAGE_LEN = 448;
 export const ENVELOPE_LEN = 114;
 export const ATTEST_PREIMAGE_LEN = 206;
 export const ATTEST_PROOF_PREIMAGE_LEN = 238;
+export const ATTEST_SPLIT_PREIMAGE_LEN = 238;
 
 const key = (a: Address) => getAddressEncoder().encode(a);
 
@@ -240,6 +242,69 @@ export async function attestedProofMessage(
 ): Promise<Uint8Array> {
   validateExt(f.ext ?? new Uint8Array(), FILL_EXT_TAGS);
   return offchainEnvelope(attestor, await sha256(await attestedProofPreimage(f)));
+}
+
+export async function splitCommit(
+  recipients: Address[],
+  weights: number[],
+): Promise<Uint8Array> {
+  if (recipients.length !== weights.length) {
+    throw new RangeError("recipients and weights must have equal length");
+  }
+  const parts: ArrayLike<number>[] = [];
+  for (const [i, recipient] of recipients.entries()) {
+    const weight = weights[i];
+    if (weight === undefined) {
+      throw new RangeError("recipients and weights must have equal length");
+    }
+    parts.push(key(recipient));
+    parts.push(u16le(weight));
+  }
+  return sha256(concat(parts, recipients.length * 34));
+}
+
+export type AttestedSplitFields = Omit<AttestedFillFields, "payee"> & {
+  specHash: Uint8Array;
+  splitHash: Uint8Array;
+};
+
+export async function attestedSplitPreimage(f: AttestedSplitFields): Promise<Uint8Array> {
+  if (f.domain.length !== 32) {
+    throw new RangeError("domain must be 32 bytes");
+  }
+  if (f.specHash.length !== 32) {
+    throw new RangeError("specHash must be 32 bytes");
+  }
+  if (f.splitHash.length !== 32) {
+    throw new RangeError("splitHash must be 32 bytes");
+  }
+  const ext = f.ext ?? new Uint8Array();
+  if (ext.length > EXT_MAX_LEN) {
+    throw new RangeError(`ext must be at most ${EXT_MAX_LEN} bytes`);
+  }
+  const head = [
+    ATTEST_SPLIT_TAG,
+    key(f.program ?? INTENT_ENGINE_PROGRAM_ADDRESS),
+    f.domain,
+    key(f.intent),
+    u64le(f.amountIn),
+    u64le(f.result),
+    u64le(f.filled ?? 0n),
+    u32le(f.revision ?? 0),
+    u16le(f.maxFeeBps),
+  ];
+  return concat(
+    [...head, await sha256(ext), f.specHash, f.splitHash],
+    ATTEST_SPLIT_PREIMAGE_LEN,
+  );
+}
+
+export async function attestedSplitMessage(
+  signer: Address,
+  f: AttestedSplitFields,
+): Promise<Uint8Array> {
+  validateExt(f.ext ?? new Uint8Array(), FILL_EXT_TAGS);
+  return offchainEnvelope(signer, await sha256(await attestedSplitPreimage(f)));
 }
 
 export function ed25519Header(messageLength: number): Uint8Array {

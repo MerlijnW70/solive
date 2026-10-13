@@ -21,6 +21,7 @@ import {
   getCreateMandateInstructionAsync,
   getExpireIntentInstructionAsync,
   getFillAttestedInstructionAsync,
+  getFillAttestedSplitInstructionAsync,
   getFillIntentInstructionAsync,
   getInitConfigInstructionAsync,
   getInitUserInstructionAsync,
@@ -556,6 +557,72 @@ export async function buildFillAttested(input: FillAttestedSpec) {
     amountIn: input.amountIn,
     result: input.result,
     maxFeeBps: input.maxFeeBps,
+    ext: fillExt(input.ext),
+    ...(await events()),
+  });
+}
+
+export const MAX_SPLIT_RECIPIENTS = 8;
+
+export type FillAttestedSplitSpec = Omit<FillAttestedSpec, "payee"> & {
+  recipients: Address[];
+  weights: number[];
+};
+
+export async function buildFillAttestedSplit(input: FillAttestedSplitSpec) {
+  if (input.recipients.length < 1 || input.recipients.length > MAX_SPLIT_RECIPIENTS) {
+    throw new Error(`split needs 1..=${MAX_SPLIT_RECIPIENTS} recipients, got ${input.recipients.length}`);
+  }
+  if (input.weights.length !== input.recipients.length) {
+    throw new Error(`split needs one weight per recipient, got ${input.weights.length} for ${input.recipients.length}`);
+  }
+  const feeTo =
+    input.feeRecipient === undefined
+      ? undefined
+      : await findAssociatedTokenAddress({
+          owner: input.feeRecipient,
+          mint: input.inputMint,
+          tokenProgram: input.inputTokenProgram,
+        });
+  const judgeTo =
+    input.judge === undefined
+      ? undefined
+      : await findAssociatedTokenAddress({
+          owner: input.judge,
+          mint: input.inputMint,
+          tokenProgram: input.inputTokenProgram,
+        });
+  const slots = await Promise.all(
+    input.recipients.map((owner) =>
+      findAssociatedTokenAddress({
+        owner,
+        mint: input.inputMint,
+        tokenProgram: input.inputTokenProgram,
+      }),
+    ),
+  );
+  return getFillAttestedSplitInstructionAsync({
+    solver: input.solver,
+    intent: await intentOf(input.owner, input.nonce),
+    inputMint: input.inputMint,
+    ...(feeTo === undefined ? {} : { feeTo }),
+    ...(await partnerAccount(input)),
+    ...(judgeTo === undefined ? {} : { judgeTo }),
+    ...(slots[0] === undefined ? {} : { recipient0: slots[0] }),
+    ...(slots[1] === undefined ? {} : { recipient1: slots[1] }),
+    ...(slots[2] === undefined ? {} : { recipient2: slots[2] }),
+    ...(slots[3] === undefined ? {} : { recipient3: slots[3] }),
+    ...(slots[4] === undefined ? {} : { recipient4: slots[4] }),
+    ...(slots[5] === undefined ? {} : { recipient5: slots[5] }),
+    ...(slots[6] === undefined ? {} : { recipient6: slots[6] }),
+    ...(slots[7] === undefined ? {} : { recipient7: slots[7] }),
+    inputTokenProgram: input.inputTokenProgram,
+    instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
+    amountIn: input.amountIn,
+    result: input.result,
+    maxFeeBps: input.maxFeeBps,
+    recipients: input.recipients,
+    weights: input.weights,
     ext: fillExt(input.ext),
     ...(await events()),
   });

@@ -58,6 +58,9 @@ import {
   attestedFillPreimage,
   attestedProofMessage,
   attestedProofPreimage,
+  attestedSplitMessage,
+  attestedSplitPreimage,
+  splitCommit,
   EVENT_IX_TAG,
   buildEd25519Instruction,
   checkAttested,
@@ -121,6 +124,9 @@ type Vectors = {
     | "attest_spec_hash"
     | "attest_proof_preimage"
     | "attest_proof_message"
+    | "attest_split_hash"
+    | "attest_split_preimage"
+    | "attest_split_message"
     | "attest_filled"
     | "attest_revision"
     | "attest_max_fee_bps"
@@ -129,6 +135,7 @@ type Vectors = {
     | "ext",
     string
   >;
+  split_commits: { recipients: string[]; weights: string[]; hash: string }[];
   fits_expiry: { name: string; expires_at: string; fits: boolean }[];
   instruction_data: { name: string; hex: string }[];
   discriminators: Record<string, string>;
@@ -603,6 +610,39 @@ describe("golden vectors emitted by the Rust implementation", () => {
     expect(hexOf(offchainEnvelope(s.attestor as Address, digest))).toBe(s.attest_proof_message);
     const otherSpec = { ...fields, specHash: new Uint8Array(32).fill(1) };
     expect(hexOf(await attestedProofPreimage(otherSpec))).not.toBe(s.attest_proof_preimage);
+  });
+
+  it("commit a split to its recipients and weights byte for byte like Rust", async () => {
+    for (const c of vectors.split_commits) {
+      const commit = await splitCommit(
+        c.recipients as Address[],
+        c.weights.map(Number),
+      );
+      expect(hexOf(commit)).toBe(c.hash);
+    }
+  });
+
+  it("bind split attestations to the committed spec and split hashes like Rust", async () => {
+    const s = vectors.sig;
+    const fields = {
+      domain: bytes(s.domain),
+      intent: s.attest_intent as Address,
+      amountIn: BigInt(s.attest_amount_in),
+      result: BigInt(s.attest_result),
+      filled: BigInt(s.attest_filled),
+      revision: Number(s.attest_revision),
+      maxFeeBps: Number(s.attest_max_fee_bps),
+      ext: bytes(s.ext),
+      specHash: bytes(s.attest_spec_hash),
+      splitHash: bytes(s.attest_split_hash),
+    };
+    const preimage = await attestedSplitPreimage(fields);
+    expect(preimage).toHaveLength(238);
+    expect(hexOf(preimage)).toBe(s.attest_split_preimage);
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", preimage.slice()));
+    expect(hexOf(offchainEnvelope(s.attestor as Address, digest))).toBe(s.attest_split_message);
+    const otherSplit = { ...fields, splitHash: new Uint8Array(32).fill(1) };
+    expect(hexOf(await attestedSplitPreimage(otherSplit))).not.toBe(s.attest_split_preimage);
   });
 
   it("carry the account versions the program accepts", () => {
