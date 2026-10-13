@@ -2,8 +2,11 @@ import { type Address, createSolanaRpc, type Instruction, type KeyPairSigner, ty
 import {
   attestedProofMessage,
   buildCancelIntent,
+  buildCloseIntent,
   buildCreateIntent,
+  buildExpireIntent,
   buildFillAttested,
+  buildFillIntent,
   type Config,
   decodeEvent,
   decodeParams,
@@ -19,12 +22,25 @@ import {
   Kind,
   NATIVE_MINT,
   nextFreeNonce,
+  remainingOf,
+  requiredOut,
   signEd25519Instruction,
   splitFees,
   TOKEN_PROGRAM_ADDRESS,
+  tokenName,
 } from "@intent-engine/core";
 import { getCloseAccountInstruction } from "@solana-program/token";
-import { chainTime, createdAccount, loadConfig, loadIntent, loadUser, MissingAccount, mintOf, type NonceWindow } from "./accounts.js";
+import {
+  chainTime,
+  createdAccount,
+  loadConfig,
+  loadIntent,
+  loadUser,
+  MissingAccount,
+  mintOf,
+  type NonceWindow,
+  tokenAmountOf,
+} from "./accounts.js";
 import { budgeted, type Priority, simulated } from "./budget.js";
 import { type EngineError, explain } from "./errors.js";
 import { initUserIfMissing, tokenAccountIfMissing, wrapIfShort } from "./setup.js";
@@ -54,7 +70,7 @@ export type IntentAccount = { address: Address; intent: Intent };
 
 export type IntentFilter = { owner?: Address; status?: number };
 
-export type WatchCallback = (changed: IntentAccount[], closed: Address[]) => void;
+export type WatchCallback = (changed: IntentAccount[], closed: IntentAccount[]) => void;
 
 export type Mint = { decimals: number; tokenProgram: Address };
 
@@ -80,7 +96,32 @@ export type SettleProofInput = {
   payer?: TransactionSigner;
 };
 
-export type HistoryEvent = EngineEvent & { signature: Signature; slot: bigint };
+export type HistoryEvent = EngineEvent & { signature: Signature; slot: bigint; blockTime: bigint | null };
+
+export type FillInput = {
+  solver: TransactionSigner;
+  owner: Address;
+  nonce: bigint;
+  amountIn?: bigint;
+  amountOut?: bigint;
+  route?: readonly Instruction[];
+};
+
+export type Fill = {
+  steps: 1 | 2;
+  solver: Address;
+  delivered: bigint;
+  required: bigint;
+  fee: bigint;
+  net: bigint;
+  signature: Signature;
+  slot: bigint;
+  blockTime: bigint | null;
+};
+
+export type TokenBalance = { mint: Address; name: string | undefined; account: Address; amount: bigint; decimals: number };
+
+export type Balances = { sol: bigint; tokens: TokenBalance[] };
 
 export type Client = {
   readonly url: string;
@@ -100,6 +141,11 @@ export type Client = {
   cancel(signer: TransactionSigner, nonce: bigint): Promise<Signature>;
   unwrap(signer: TransactionSigner): Promise<Signature | null>;
   settleProof(input: SettleProofInput): Promise<Signature>;
+  fill(input: FillInput): Promise<Signature>;
+  fillOf(intent: Address): Promise<Fill | null>;
+  expire(cranker: TransactionSigner, owner: Address, nonce: bigint): Promise<Signature>;
+  close(cranker: TransactionSigner, owner: Address, nonce: bigint): Promise<Signature>;
+  balances(owner: Address, mints: readonly Address[]): Promise<Balances>;
 };
 
 export const DEFAULT_EXPIRES_IN = 3_600n;
@@ -128,6 +174,16 @@ export class NotSettleable extends Error {
   }
 }
 
+export class NotFillable extends Error {
+  readonly intent: Address;
+
+  constructor(intent: Address, reason: string) {
+    super(`intent ${intent} ${reason}`);
+    this.name = "NotFillable";
+    this.intent = intent;
+  }
+}
+
 function nonceAfter(owner: Address, user: NonceWindow | null): bigint {
   if (user === null) {
     return 0n;
@@ -151,7 +207,7 @@ export function createClient(options: ClientOptions): Client {
     if (signal.aborted) {
       return;
     }
-    const seen = new Map<Address, string>();
+    const seen = new Map<Address, { key: string; view: IntentAccount }>();
     const fresh = (accounts: readonly ProgramAccount[]) =>
       accounts.flatMap((account) => {
         const view = decoded(account);
@@ -159,14 +215,15 @@ export function createClient(options: ClientOptions): Client {
           return [];
         }
         const key = Buffer.from(account.data).toString("base64");
-        if (seen.get(account.address) === key) {
+        if (seen.get(account.address)?.key === key) {
           return [];
         }
-        seen.set(account.address, key);
+        seen.set(account.address, { key, view });
         return [view];
       });
-    const report = (changed: IntentAccount[], closed: Address[]) => {
-      if ((changed.length > 0 || closed.length > 0) && !signal.aborted) {
+    let read = false;
+    const report = (changed: IntentAccount[], closed: IntentAccount[], first = false) => {
+      if ((changed.length > 0 || closed.length > 0 || first) && !signal.aborted) {
         onChange(changed, closed);
       }
     };
@@ -177,11 +234,12 @@ export function createClient(options: ClientOptions): Client {
       }
       const present = new Set(accounts.map(({ address }) => address));
       const changed = fresh(accounts);
-      const closed = [...seen.keys()].filter((address) => !present.has(address));
-      for (const address of closed) {
+      const closed = [...seen].filter(([address]) => !present.has(address)).map(([, { view }]) => view);
+      for (const { address } of closed) {
         seen.delete(address);
       }
-      report(changed, closed);
+      report(changed, closed, !read);
+      read = true;
     };
     if (notifications === undefined) {
       while (!signal.aborted) {
@@ -272,13 +330,111 @@ export function createClient(options: ClientOptions): Client {
   const history = async (intent: Address, limit = HISTORY_LIMIT): Promise<HistoryEvent[]> =>
     (await transport.engineTransactions(limit, intent))
       .filter(({ failed }) => !failed)
-      .flatMap(({ signature, slot, emitted }) =>
+      .flatMap(({ signature, slot, blockTime, emitted }) =>
         emitted
           .map((data) => decodeEvent(data) as EngineEvent | null)
           .filter((event): event is EngineEvent => event !== null && "intent" in event.fields && event.fields.intent === intent)
           .reverse()
-          .map((event) => ({ ...event, signature: signature as Signature, slot })),
+          .map((event) => ({ ...event, signature: signature as Signature, slot, blockTime })),
       );
+
+  const fillOf = async (intent: Address): Promise<Fill | null> => {
+    const events = await history(intent);
+    for (const event of events) {
+      const { signature, slot, blockTime } = event;
+      if (event.name === "IntentFilled") {
+        const { solver, delivered, required, fee, net } = event.fields;
+        return { steps: 1, solver, delivered, required, fee, net, signature, slot, blockTime };
+      }
+      if (event.name === "FillEnded") {
+        const begun = events.find((other) => other.name === "FillBegun" && other.signature === signature);
+        if (begun?.name === "FillBegun") {
+          const { solver, delivered, required } = event.fields;
+          return { steps: 2, solver, delivered, required, fee: begun.fields.fee, net: begun.fields.net, signature, slot, blockTime };
+        }
+      }
+    }
+    return null;
+  };
+
+  const fill = async (input: FillInput) => {
+    const { solver, owner, nonce } = input;
+    const [{ address, intent: held }, settings] = await Promise.all([loadIntent(transport, owner, nonce), config()]);
+    if (held.status !== IntentStatus.Open) {
+      throw new NotFillable(address, "is not open");
+    }
+    const params = decodeParams(held.kind, Uint8Array.from(held.params));
+    if (params.kind === Kind.AttestedResult) {
+      throw new NotFillable(address, "is an AttestedResult intent, which only its judge settles");
+    }
+    const [sell, buy] = await Promise.all([mint(held.inputMint), mint(held.outputMint)]);
+    const amountIn = input.amountIn ?? remainingOf(held);
+    const amountOut = input.amountOut ?? requiredOut(params, amountIn, await chainTime(transport));
+    const kindBps = feeBpsFor(settings, held.kind);
+    const shares = splitFees(amountIn, kindBps, held.partnerBps, held.partnerCutBps);
+    const feeRecipient = shares.protocol > 0n ? settings.feeRecipient : undefined;
+    const partner = shares.partner > 0n ? held.partner : undefined;
+    const agent = held.agentFee > 0n ? held.rentPayer : undefined;
+    const paid = (wallet: Address) => tokenAccountIfMissing(transport, solver, wallet, held.inputMint, sell.tokenProgram);
+    const [solverInput, solverOutput, ...payouts] = await Promise.all([
+      paid(solver.address),
+      tokenAccountIfMissing(transport, solver, solver.address, held.outputMint, buy.tokenProgram),
+      ...[feeRecipient, partner, agent].filter((wallet) => wallet !== undefined).map(paid),
+    ]);
+    const filled = await buildFillIntent({
+      solver,
+      owner,
+      nonce,
+      inputMint: held.inputMint,
+      outputMint: held.outputMint,
+      inputTokenProgram: sell.tokenProgram,
+      outputTokenProgram: buy.tokenProgram,
+      receiver: held.receiver,
+      solverInput: solverInput.address,
+      solverOutput: solverOutput.address,
+      ...(feeRecipient === undefined ? {} : { feeRecipient }),
+      ...(partner === undefined ? {} : { partner }),
+      ...(agent === undefined ? {} : { agent }),
+      mandate: held.mandate,
+      amountIn,
+      amountOut,
+      maxFeeBps: kindBps + held.partnerBps,
+    });
+    const setup = [solverInput, solverOutput, ...payouts].flatMap(({ create }) => create);
+    return send([...setup, ...(input.route ?? []), filled], solver);
+  };
+
+  const settling = async (cranker: TransactionSigner, owner: Address, nonce: bigint) => {
+    const { intent } = await loadIntent(transport, owner, nonce);
+    const { tokenProgram } = await mint(intent.inputMint);
+    return { ref: { cranker, owner, nonce, inputMint: intent.inputMint, tokenProgram }, rentPayer: intent.rentPayer };
+  };
+
+  const expire = async (cranker: TransactionSigner, owner: Address, nonce: bigint) => {
+    const { ref } = await settling(cranker, owner, nonce);
+    const refund = await tokenAccountIfMissing(transport, cranker, owner, ref.inputMint, ref.tokenProgram);
+    return send([...refund.create, await buildExpireIntent(ref)], cranker);
+  };
+
+  const close = async (cranker: TransactionSigner, owner: Address, nonce: bigint) => {
+    const { ref, rentPayer } = await settling(cranker, owner, nonce);
+    return send([await buildCloseIntent({ ...ref, rentPayer })], cranker);
+  };
+
+  const balances = async (owner: Address, mints: readonly Address[]): Promise<Balances> => {
+    const [wallet, tokens] = await Promise.all([
+      transport.getAccount(owner),
+      Promise.all(
+        mints.map(async (address): Promise<TokenBalance> => {
+          const { decimals, tokenProgram } = await mint(address);
+          const account = await findAssociatedTokenAddress({ owner, mint: address, tokenProgram });
+          const amount = tokenAmountOf((await createdAccount(transport, account))?.data ?? null) ?? 0n;
+          return { mint: address, name: tokenName(address), account, amount, decimals };
+        }),
+      ),
+    ]);
+    return { sol: wallet?.lamports ?? 0n, tokens };
+  };
 
   const settleProof = async (input: SettleProofInput) => {
     const { judge, owner, nonce, payTo, result } = input;
@@ -365,5 +521,10 @@ export function createClient(options: ClientOptions): Client {
     cancel,
     unwrap,
     settleProof,
+    fill,
+    fillOf,
+    expire,
+    close,
+    balances,
   };
 }

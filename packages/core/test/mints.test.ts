@@ -1,6 +1,6 @@
 import { TOKEN_PROGRAM_ADDRESS as TOKEN_PROGRAM } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { DEVNET_TEST_MINT, IntentStatus, NATIVE_MINT, statusName, TOKEN_2022_PROGRAM_ADDRESS, TOKEN_PROGRAM_ADDRESS } from "../src/index.js";
+import { DEVNET_TEST_MINT, IntentStatus, NATIVE_MINT, statusName, TOKEN_2022_PROGRAM_ADDRESS, TOKEN_PROGRAM_ADDRESS, tokenName } from "../src/index.js";
 
 describe("well-known addresses and status names", () => {
   it("names the wrapped SOL mint, the devnet test token and both token programs", () => {
@@ -17,5 +17,12 @@ describe("well-known addresses and status names", () => {
     expect(statusName(IntentStatus.Filled)).toBe("Filled");
     expect(statusName(250)).toBeUndefined();
     expect(statusName(-1)).toBeUndefined();
+  });
+
+  it("names SOL and the devnet test token and no other mint", () => {
+    expect(tokenName(NATIVE_MINT)).toBe("SOL");
+    expect(tokenName(DEVNET_TEST_MINT)).toBe("TEST");
+    expect(tokenName(TOKEN_PROGRAM_ADDRESS)).toBeUndefined();
+    expect(tokenName(TOKEN_2022_PROGRAM_ADDRESS)).toBeUndefined();
   });
 });

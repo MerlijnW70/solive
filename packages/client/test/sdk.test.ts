@@ -11,22 +11,27 @@ import {
   none,
   some,
 } from "@solana/kit";
-import { getMintEncoder, getMintSize } from "@solana-program/token";
+import { getCreateAssociatedTokenIdempotentInstructionAsync, getMintEncoder, getMintSize, getMintToInstruction } from "@solana-program/token";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
+  buildFlashFill,
   buildUpdateEconomics,
   DEVNET_TEST_MINT as TEST,
   feeBpsFor,
   findAssociatedTokenAddress,
+  findIntentPda,
   formatAmount,
+  getIntentDecoder,
   getIntentSize,
   IntentStatus,
   Kind,
   NATIVE_MINT as WSOL,
+  splitFee,
   splitFees,
+  termsOf,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import { type ClientOptions, createClient, loadUser, type Transport } from "../src/index.js";
+import { chainTime, CLOCK_SYSVAR, type ClientOptions, createClient, loadUser, type Transport } from "../src/index.js";
 import { FEE_BPS, world, type World } from "./svm.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
@@ -105,6 +110,79 @@ const tokens = (w: World, account: Address) => {
   return found.exists ? new DataView(found.data.buffer, found.data.byteOffset).getBigUint64(64, true) : null;
 };
 
+const FILLER = read("scripts/filler.sh");
+const TEST_PER_SOL = /=(\d+)\/1"/.exec(FILLER)?.[1] ?? "";
+const CLOCK_STEP = 5n;
+
+function later(w: World, seconds: bigint): void {
+  const clock = w.chain.svm.getClock();
+  clock.unixTimestamp += seconds;
+  w.chain.svm.setClock(clock);
+}
+
+async function devnetFiller(w: World): Promise<void> {
+  const inner = w.chain.transport;
+  const settings = await createClient({ url: DEVNET, transport: inner }).config();
+  const filler = w.authority;
+  for (const { data } of await inner.intents()) {
+    const intent = getIntentDecoder().decode(data);
+    if (intent.status !== IntentStatus.Open || intent.outputMint !== TEST || intent.kind === Kind.AttestedResult) {
+      continue;
+    }
+    const required = termsOf(intent, await chainTime(inner)).receivesAtLeast ?? 0n;
+    const feeBps = feeBpsFor(settings, intent.kind);
+    const { net } = splitFees(intent.escrowed, feeBps, intent.partnerBps, intent.partnerCutBps);
+    if (net * BigInt(TEST_PER_SOL) - required < 1n) {
+      continue;
+    }
+    later(w, CLOCK_STEP);
+    const accounts = [
+      [filler.address, WSOL],
+      [filler.address, TEST],
+      [w.feeRecipient.address, WSOL],
+    ] as const;
+    const solverOutput = await ata(filler.address, TEST);
+    const flash = await buildFlashFill({
+      solver: filler,
+      owner: intent.owner,
+      nonce: intent.nonce,
+      inputMint: WSOL,
+      outputMint: TEST,
+      inputTokenProgram: TOKEN_PROGRAM_ADDRESS,
+      outputTokenProgram: TOKEN_PROGRAM_ADDRESS,
+      receiver: intent.receiver,
+      solverInput: await ata(filler.address, WSOL),
+      solverOutput,
+      feeRecipient: w.feeRecipient.address,
+      mandate: intent.mandate,
+      amountIn: intent.escrowed,
+      amountOut: required,
+      maxFeeBps: feeBps,
+      prefix: await Promise.all(accounts.map(([owner, mint]) => getCreateAssociatedTokenIdempotentInstructionAsync({ payer: filler, owner, mint }))),
+      route: [getMintToInstruction({ mint: TEST, token: solverOutput, mintAuthority: filler, amount: required })],
+    });
+    await inner.send(flash, filler);
+  }
+}
+
+function devnetLike(w: World): Transport {
+  const inner = w.chain.transport;
+  return {
+    ...inner,
+    getAccount: async (address) => {
+      if (address === CLOCK_SYSVAR) {
+        later(w, CLOCK_STEP);
+      }
+      return inner.getAccount(address);
+    },
+    send: async (instructions, payer) => {
+      const signature = await inner.send(instructions, payer);
+      await devnetFiller(w);
+      return signature;
+    },
+  };
+}
+
 describe("the sdk page", () => {
   const home = mkdtempSync(join(tmpdir(), "sdk-page-"));
   const pageModule = fileURLToPath(new URL(`./.sdk-page-${process.pid}.ts`, import.meta.url));
@@ -140,7 +218,14 @@ describe("the sdk page", () => {
       "solana airdrop 1",
     ]);
     expect(blocks.length).toBeGreaterThanOrEqual(6);
-    expect(claims).toEqual(["SwapExactIn Open", "Open", "Cancelled", "ExpiryNotInFuture", "Filled", "IntentAttested", "Cancelled NotSettleable"]);
+    expect(claims).toEqual(["SwapExactIn Open", "Open", "Cancelled", "ExpiryNotInFuture", "Filled", "IntentAttested", "Cancelled NotSettleable", "null"]);
+  });
+
+  it("states that the devnet filler expires and closes overdue intents in paused passes, and its price", () => {
+    expect(FILLER).toContain('    "${cli[@]}" crank --url "$url" --keypair "$keypair"\n    sleep 30\n');
+    expect(PAGE).toContain("The devnet filler also expires and closes overdue intents, in passes with a pause between them");
+    expect(TEST_PER_SOL).toBe("200");
+    expect(PAGE).toContain("The devnet filler prices test tokens at 200 per wrapped SOL");
   });
 
   it("runs every ts block in order against the engine and prints what it says", { timeout: 120_000 }, async () => {
@@ -149,7 +234,7 @@ describe("the sdk page", () => {
     preset(w, TEST, w.authority.address);
     const { signer, secret } = await wallet(w);
     writeFileSync(join(home, WALLET), JSON.stringify(secret));
-    injected.transport = w.chain.transport;
+    injected.transport = devnetLike(w);
     const admin = createClient({ url: DEVNET, transport: w.chain.transport });
     const settings = await admin.config();
     const [a = 0, b = 0, c = 0, d = 0] = settings.kindFeeBps;
@@ -193,11 +278,26 @@ describe("the sdk page", () => {
     const mine = await client.intents({ owner: signer.address });
     expect(mine.map(({ intent }) => [intent.nonce, intent.kind, intent.status])).toEqual([
       [0n, Kind.SwapExactIn, IntentStatus.Cancelled],
-      [1n, Kind.AttestedResult, IntentStatus.Filled],
-      [2n, Kind.AttestedResult, IntentStatus.Cancelled],
+      [1n, Kind.LimitOrder, IntentStatus.Filled],
+      [2n, Kind.DutchAuction, IntentStatus.Filled],
+      [3n, Kind.AttestedResult, IntentStatus.Filled],
+      [4n, Kind.AttestedResult, IntentStatus.Cancelled],
     ]);
     const rent = w.chain.svm.minimumBalanceForRentExemption(BigInt(getIntentSize()));
-    expect(mine.map(({ address }) => w.chain.svm.getBalance(address))).toEqual([rent + BigInt(BOUNTY), rent + BigInt(BOUNTY), rent + BigInt(BOUNTY)]);
+    expect(mine.map(({ address }) => w.chain.svm.getBalance(address))).toEqual(mine.map(() => rent + BigInt(BOUNTY)));
+    const [limit, auction] = await Promise.all([1n, 2n].map(async (n) => client.fillOf((await client.intent(signer.address, n))?.address ?? signer.address)));
+    expect(limit).toMatchObject({ steps: 2, solver: w.authority.address, delivered: 1_500_000_000n, required: 1_500_000_000n });
+    const at = printed.indexOf("LimitOrder 1.5 TEST");
+    expect(printed[at + 1]).toBe("2 1.5 1.5");
+    expect(printed[at + 2]).toMatch(/^DutchAuction 1\.8\d+ TEST$/);
+    expect(auction?.steps).toBe(2);
+    expect(auction?.delivered).toBeGreaterThan(auction?.required ?? 0n);
+    expect(auction?.required).toBeGreaterThan(1_000_000_000n);
+    expect(printed[at + 3]).toBe(`2 ${formatAmount(auction?.delivered ?? 0n, 9)} ${formatAmount(auction?.required ?? 0n, 9)}`);
+    expect(printed[printed.indexOf("Cancelled NotSettleable") + 1]).toBe("null");
+    expect(await client.intent(signer.address, 5n)).toBeNull();
+    expect((await client.history((await findIntentPda({ owner: signer.address, nonce: 5n }))[0])).map(({ name }) => name).slice(0, 2)).toEqual(["IntentClosed", "IntentExpired"]);
+    const fillFees = 2n * splitFee(10_000_000n, FEE_BPS).fee;
     expect(await loadUser(client.transport, signer.address)).not.toBeNull();
     const [judge, worker] = injected.generated;
     expect(injected.generated).toHaveLength(2);
@@ -215,10 +315,10 @@ describe("the sdk page", () => {
       tokens(w, await ata(judge?.address ?? signer.address, WSOL)),
       tokens(w, await ata(w.feeRecipient.address, WSOL)),
     ];
-    expect(paid).toEqual([split.net, judgeFee, split.protocol]);
+    expect(paid).toEqual([split.net, judgeFee, split.protocol + fillFees]);
     expect(printed.at(-1)).toBe(`${formatAmount(BigInt(CREATE_FEE), 9)} ${formatAmount(BigInt(BOUNTY), 9)}`);
-    expect((w.chain.svm.getBalance(w.feeRecipient.address) ?? 0n) - treasury).toBe(3n * BigInt(CREATE_FEE));
+    expect((w.chain.svm.getBalance(w.feeRecipient.address) ?? 0n) - treasury).toBe(6n * BigInt(CREATE_FEE));
     expect(tokens(w, wrapped)).toBeNull();
-    expect(tokens(w, await ata(signer.address, TEST))).toBe(0n);
+    expect(tokens(w, await ata(signer.address, TEST))).toBe((limit?.delivered ?? 0n) + (auction?.delivered ?? 0n));
   });
 });

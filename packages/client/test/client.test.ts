@@ -3,7 +3,6 @@ import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import {
   buildCancelIntent,
-  buildCloseIntent,
   buildCreateIntent,
   buildInitUser,
   COMPUTE_BUDGET_ADDRESS,
@@ -227,19 +226,19 @@ describe("a client over the engine", () => {
     await watching;
   });
 
-  it("reports an intent whose account closes, once", async () => {
+  it("reports an intent whose account closes once, with its last known state", async () => {
     const w = await world();
     const client = createClient({ url: LOCAL, transport: w.chain.transport, pollMs: 5 });
     await client.send([await buildInitUser({ owner: w.owner })], w.owner);
     await client.send([await create(w, client, 0n)], w.owner);
     const [address] = await findIntentPda({ owner: w.owner.address, nonce: 0n });
 
-    const closed: string[][] = [];
+    const closed: IntentAccount[][] = [];
+    const statuses: number[] = [];
     const controller = new AbortController();
-    let seenOpen = false;
     const watching = client.watch(
       (changed, gone) => {
-        seenOpen ||= changed.some((c) => c.address === address);
+        statuses.push(...changed.filter((c) => c.address === address).map((c) => c.intent.status));
         if (gone.length > 0) {
           closed.push(gone);
         }
@@ -247,16 +246,51 @@ describe("a client over the engine", () => {
       controller.signal,
       { owner: w.owner.address },
     );
-    await until(() => seenOpen);
+    await until(() => statuses.includes(IntentStatus.Open));
     await client.send([await cancel(w, 0n)], w.owner);
-    await client.send(
-      [await buildCloseIntent({ cranker: w.owner, owner: w.owner.address, nonce: 0n, inputMint: w.inputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS })],
-      w.owner,
-    );
+    await until(() => statuses.includes(IntentStatus.Cancelled));
+    await client.close(w.owner, w.owner.address, 0n);
     await until(() => closed.length === 1);
     await new Promise((resolve) => setTimeout(resolve, 30));
-    expect(closed).toEqual([[address]]);
+    expect(closed.map((gone) => gone.map((c) => [c.address, c.intent.nonce, c.intent.status]))).toEqual([[[address, 0n, IntentStatus.Cancelled]]]);
+    expect(await client.intent(w.owner.address, 0n)).toBeNull();
 
+    controller.abort();
+    await watching;
+  });
+
+  it("calls back once after its first read even when the wallet has no intents", async () => {
+    const w = await world();
+    const client = createClient({ url: LOCAL, transport: w.chain.transport, pollMs: 5 });
+    const calls: [IntentAccount[], IntentAccount[]][] = [];
+    const controller = new AbortController();
+    const watching = client.watch((changed, gone) => calls.push([changed, gone]), controller.signal, { owner: w.owner.address });
+    await until(() => calls.length === 1);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(calls).toEqual([[[], []]]);
+
+    await client.send([await buildInitUser({ owner: w.owner })], w.owner);
+    await client.send([await create(w, client, 0n)], w.owner);
+    await until(() => calls.length === 2);
+    expect(calls[1]?.[0].map((c) => [c.intent.nonce, c.intent.status])).toEqual([[0n, IntentStatus.Open]]);
+    controller.abort();
+    await watching;
+  });
+
+  it("calls back once after its first read through notifications too", async () => {
+    const w = await world();
+    const silent: Notifications = async (signal) => ({
+      async *[Symbol.asyncIterator]() {
+        await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+      },
+    });
+    const client = createClient({ url: LOCAL, transport: w.chain.transport, notifications: silent, resyncSeconds: 0.01 });
+    const calls: number[] = [];
+    const controller = new AbortController();
+    const watching = client.watch((changed, gone) => calls.push(changed.length + gone.length), controller.signal);
+    await until(() => calls.length === 1);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(calls).toEqual([0]);
     controller.abort();
     await watching;
   });

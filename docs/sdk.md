@@ -67,7 +67,7 @@ for (const { intent } of mine.filter(({ intent }) => intent.nonce === nonce)) {
 
 ## Watch
 
-`watch` calls back with every intent that changed, first with the current ones, and with the addresses of intents whose accounts closed, until its signal aborts. It rereads the chain every `resyncSeconds` (a client option, default `WATCH_WAIT_SECONDS`), so a dropped notification only delays a change, and it keeps going through failed reads. A filled intent's account is closed soon after the fill, so `intent` then returns `null`. This prints `Open` now and `Cancelled` once the cancel below lands.
+`watch` calls back once after its first read with the current intents, even when it finds none, then with every intent that changed and with the last known state of each intent whose account closed, until its signal aborts. It rereads the chain every `resyncSeconds` (a client option, default `WATCH_WAIT_SECONDS`), so a dropped notification only delays a change, and it keeps going through failed reads. A filled intent's account is closed soon after the fill, so `intent` then returns `null`. This prints `Open` now and `Cancelled` once the cancel below lands.
 
 ```ts
 const controller = new AbortController();
@@ -104,9 +104,37 @@ await watched;
 await client.unwrap(signer);
 ```
 
+## Limit orders and Dutch auctions
+
+A `LimitOrder` sells `makeAmount` for at least `takeAmount`. A `DutchAuction` sells `amountIn` for at least `startOut` until `startTs`, after which its minimum falls in a straight line to `endOut` at `endTs`. A fill takes the whole escrow. `termsOf` prices an intent at the time you pass it; pass the chain's time from `chainTime`, since the chain's clock and yours can differ. `tokenName` returns `SOL` for `NATIVE_MINT`, `TEST` for `DEVNET_TEST_MINT` and `undefined` for any other mint.
+
+`fillOf` reads what filled an intent from its history, also after its account closed, and returns `null` until a fill lands. A solver fills in one step, which the engine reports as `IntentFilled`, or in two, reported as `FillBegun` and `FillEnded`, as the devnet filler does. `fillOf` returns either as the `steps`, the `solver`, what it `delivered` to the owner, the minimum `required` at the fill, the protocol `fee` and the solver's `net` out of the escrow, with the `signature`, `slot` and `blockTime`, which is `null` when the cluster reports none. The devnet filler delivers the minimum it reads; an auction's minimum keeps falling, so by the time the fill lands the minimum can be below what the filler delivers.
+
+Each order below sells 0.01 SOL, and the devnet filler fills both. The code waits for each fill, so run it while the filler is online. This prints each order's kind, the least it receives now and its token, then the steps of its fill, what it delivered and the minimum at the fill; for the limit order these are 2, 1.5 and 1.5.
+
+```ts
+import { setTimeout as sleep } from "node:timers/promises";
+import { tokenName } from "@intent-engine/core";
+
+const start = await client.chainTime();
+const limit = { kind: Kind.LimitOrder, makeAmount: parseAmount("0.01", sell.decimals), takeAmount: parseAmount("1.5", buy.decimals) } as const;
+const auction = { kind: Kind.DutchAuction, amountIn: limit.makeAmount, startOut: parseAmount("1.9", buy.decimals), endOut: parseAmount("1", buy.decimals), startTs: start, endTs: start + 600n } as const;
+for (const params of [limit, auction]) {
+  const placed = await client.createIntent({ ...order, params });
+  const { intent } = (await client.intent(signer.address, placed.nonce))!;
+  console.log(kindName(intent.kind), formatAmount(termsOf(intent, await client.chainTime()).receivesAtLeast ?? 0n, buy.decimals), tokenName(intent.outputMint));
+  let fill = await client.fillOf(placed.intent);
+  while (fill === null) {
+    await sleep(2_000);
+    fill = await client.fillOf(placed.intent);
+  }
+  console.log(fill.steps, formatAmount(fill.delivered, buy.decimals), formatAmount(fill.required, buy.decimals));
+}
+```
+
 ## Escrow work behind a proof
 
-An `AttestedResult` intent holds payment until its attestor, the judge, signs a result. `specHash` pins the acceptance spec the judge checks, and `judgeFee` pays the judge out of the escrow; [Who can do what](#who-can-do-what) lists what each party may do. `settleProof` is the judge's call: it signs the result over the spec and pays the worker's wallet `payTo`, creating any token account the payout needs. The judge pays the transaction unless `payer` names another signer; here your wallet pays, so the new judge key needs no SOL. In practice the judge runs this with its own key. `history` returns the engine events for one intent, newest first, each with its signature and slot, and keeps working after a filler closes the account. A fill reports `IntentFilled`, or `FillBegun` and `FillEnded` when the solver fills in two steps, as the devnet filler does; the `delivered` field of `IntentFilled` or `FillEnded` is what the owner received. An `IntentAttested` event's `net` is what the payee received. This prints `Filled`, then `IntentAttested` and the worker's pay in SOL.
+An `AttestedResult` intent holds payment until its attestor, the judge, signs a result. `specHash` pins the acceptance spec the judge checks, and `judgeFee` pays the judge out of the escrow; [Who can do what](#who-can-do-what) lists what each party may do. `settleProof` is the judge's call: it signs the result over the spec and pays the worker's wallet `payTo`, creating any token account the payout needs. The judge pays the transaction unless `payer` names another signer; here your wallet pays, so the new judge key needs no SOL. In practice the judge runs this with its own key. `history` returns the engine events for one intent, newest first, each with its signature and slot, and keeps working after the account closes. An `IntentAttested` event's `net` is what the payee received. This prints `Filled`, then `IntentAttested` and the worker's pay in SOL.
 
 ```ts
 import { createHash } from "node:crypto";
@@ -146,6 +174,24 @@ console.log(statusName((await client.intent(signer.address, refused.nonce))?.int
 await client.unwrap(signer);
 ```
 
+## Expire and close
+
+`expire` refunds an open intent at or after its expiry, and `close` returns the rent of a filled, cancelled or expired intent; [Who can do what](#who-can-do-what) says who receives what. Both take the wallet that signs, then the intent's owner and nonce. The devnet filler also expires and closes overdue intents, in passes with a pause between them, so on devnet an overdue intent closes soon after its expiry, often before you do. This creates a swap with a short expiry, waits until the chain's clock reaches it, expires and closes it unless the filler already did, and prints `null`.
+
+```ts
+const due = (await client.chainTime()) + 10n;
+const brief = await client.createIntent({ ...order, params: swap, expiresAt: due });
+while ((await client.chainTime()) < due) {
+  await sleep(1_000);
+}
+if ((await client.intent(signer.address, brief.nonce))?.intent.status === IntentStatus.Open) {
+  await client.expire(signer, signer.address, brief.nonce);
+  await client.close(signer, signer.address, brief.nonce);
+}
+console.log(await client.intent(signer.address, brief.nonce));
+await client.unwrap(signer);
+```
+
 ## Who can do what
 
 - Any wallet other than the owner and the receiver can fill an open swap intent before it expires.
@@ -161,7 +207,7 @@ await client.unwrap(signer);
 
 ## Costs
 
-`createIntent` pays from the signer's wallet: on its first intent, the rent of its user state account, which stays open; the rent of the intent account and its escrow token account; the rent of the wrapped SOL token account when it sells SOL, and of the receiver's token account, if they do not exist yet; the escrow; the create fee, which goes to the engine's fee recipient and does not come back; and the crank bounty, which the intent account holds. `cancel` returns the escrow to the owner's token account for the sold token, and `unwrap` returns the wrapped SOL account's balance and rent to the wallet. A fill or settle pays the escrow out as [Fees](#fees) describes. The intent account keeps its rent until someone closes it, and the bounty until someone expires or closes it; [Who can do what](#who-can-do-what) says who receives them. `settleProof`'s payer pays the rent of each token account it creates for the worker, the judge or the fee recipient. The SDK has no expire or close call: build them with `buildExpireIntent` and `buildCloseIntent` from `@intent-engine/core` and send them with `client.send`. `configSummary` gives the create fee and the crank bounty in lamports; this prints them in SOL.
+`createIntent` pays from the signer's wallet: on its first intent, the rent of its user state account, which stays open; the rent of the intent account and its escrow token account; the rent of the wrapped SOL token account when it sells SOL, and of the receiver's token account, if they do not exist yet; the escrow; the create fee, which goes to the engine's fee recipient and does not come back; and the crank bounty, which the intent account holds. `cancel` returns the escrow to the owner's token account for the sold token, and `unwrap` returns the wrapped SOL account's balance and rent to the wallet. A fill or settle pays the escrow out as [Fees](#fees) describes. The intent account keeps its rent until someone closes it, and the bounty until someone expires or closes it; [Who can do what](#who-can-do-what) says who receives them. `settleProof`'s payer pays the rent of each token account it creates for the worker, the judge or the fee recipient. `expire` pays the rent of the owner's token account for the sold token when it has to create one. `configSummary` gives the create fee and the crank bounty in lamports; this prints them in SOL.
 
 ```ts
 const { createFee, crankBounty } = configSummary(await client.config());

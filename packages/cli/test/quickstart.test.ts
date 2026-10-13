@@ -358,6 +358,7 @@ describe("the solver guide", () => {
       "spl-token balance $TOKEN",
       `spl-token balance $TOKEN --owner ${SOLVER_ADDRESS}`,
       `spl-token balance ${NATIVE_MINT} --owner ${SOLVER_ADDRESS}`,
+      "npm install @intent-engine/core @intent-engine/client @solana/kit @solana-program/token",
     ]);
     expect(SOLVER_PAGE).toContain("Do steps 1 to 4 of the [quickstart](quickstart.md) first, in the same terminal.");
     const owner = await funded();
