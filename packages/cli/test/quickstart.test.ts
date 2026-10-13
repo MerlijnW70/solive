@@ -195,6 +195,56 @@ describe("the quickstart", () => {
   });
 });
 
+const SDK = read("docs/sdk.md");
+
+describe("the sdk page", () => {
+  let w: World;
+
+  beforeEach(async () => {
+    w = await world();
+  });
+
+  it("states the price the devnet filler runs with, which fills a 5 ask with exactly 5 and leaves the page's 50 ask open", async () => {
+    expect(SDK).toContain(
+      "The devnet filler prices test tokens at 200 per wrapped SOL and pays exactly the minimum asked; 50 is more than 0.05 SOL buys at that price, so the intent stays open until you cancel it.",
+    );
+    expect(SDK).toContain('amountIn: parseAmount("0.05", sell.decimals), minOut: parseAmount("50", buy.decimals)');
+    expect(fillerSolve()).toContain(`${NATIVE_MINT}:${TEST_TOKEN}=200/1`);
+    const asks = [commands[1] ?? "", commands[2] ?? ""];
+    expect(asks.map((c) => /--amount-in (\S+) --min-out (\S+) /.exec(c)?.slice(1))).toEqual([
+      ["0.05", "5"],
+      ["0.05", "50"],
+    ]);
+    const owner = await funded();
+    nativeMint();
+    const wrapped = await findAssociatedTokenAddress({ owner: owner.address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const rent = h.svm.minimumBalanceForRentExemption(165n);
+    await send(owner, [
+      await getCreateAssociatedTokenIdempotentInstructionAsync({ payer: owner, owner: owner.address, mint: NATIVE_MINT }),
+      getTransferSolInstruction({ source: owner, destination: wrapped, amount: LAMPORTS_PER_SOL / 5n - rent }),
+      getSyncNativeInstruction({ account: wrapped }),
+    ]);
+    const key = await filler();
+    await ata(w.authority, w.feeRecipient.address, NATIVE_MINT);
+    h.env[ENV_URL] = "devnet";
+    h.env[ENV_KEYPAIR] = WALLET;
+    h.watched.push(owner.address);
+    const keys = { [WALLET]: owner, [FILLER_KEY]: key };
+    const created: unknown[] = [];
+    for (const line of asks) {
+      const run = await cli(line.split(" ").slice(1), keys);
+      expect(run.err, line).toBe("");
+      created.push(run.json()["intent"]);
+    }
+    const filled = (await cli(fillerSolve(), keys)).json() as { sent: { intent: string }[] };
+    expect(filled.sent.map((s) => s.intent)).toEqual([created[0]]);
+    const received = await findAssociatedTokenAddress({ owner: owner.address, mint: TEST_TOKEN, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    expect(balance(received)).toBe(5n * LAMPORTS_PER_SOL);
+    const listed = (await cli(["list"], keys)).json() as { intents: { status: string }[] };
+    expect(listed.intents.map((i) => i.status)).toEqual(["filled", "open"]);
+  });
+});
+
 const MANDATE = read("docs/mandate.md");
 const AGENT = "~/solive-agent.json";
 const mandateLines = [...MANDATE.matchAll(/^```sh\n([\s\S]*?)^```$/gm)].flatMap((m) => (m[1] ?? "").trimEnd().split("\n"));

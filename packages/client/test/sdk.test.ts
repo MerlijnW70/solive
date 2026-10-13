@@ -14,15 +14,19 @@ import {
 import { getMintEncoder, getMintSize } from "@solana-program/token";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
+  buildUpdateEconomics,
   DEVNET_TEST_MINT as TEST,
+  feeBpsFor,
   findAssociatedTokenAddress,
   formatAmount,
+  getIntentSize,
   IntentStatus,
   Kind,
   NATIVE_MINT as WSOL,
+  splitFees,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import { type ClientOptions, createClient, type Transport } from "../src/index.js";
+import { type ClientOptions, createClient, loadUser, type Transport } from "../src/index.js";
 import { FEE_BPS, world, type World } from "./svm.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
@@ -31,6 +35,8 @@ const PAGE = read("docs/sdk.md");
 const DEVNET = "https://api.devnet.solana.com";
 const WALLET = "solive-wallet.json";
 const LAMPORTS = 10_000_000_000n;
+const CREATE_FEE = 30_000;
+const BOUNTY = 20_000;
 
 const fenced = (lang: string) => [...PAGE.matchAll(new RegExp(`^\`\`\`${lang}\\n([\\s\\S]*?)^\`\`\`$`, "gm"))].map((m) => m[1] ?? "");
 const blocks = fenced("ts");
@@ -134,7 +140,7 @@ describe("the sdk page", () => {
       "solana airdrop 1",
     ]);
     expect(blocks.length).toBeGreaterThanOrEqual(6);
-    expect(claims).toEqual(["SwapExactIn Open", "Open", "Cancelled", "ExpiryNotInFuture", "Filled", "IntentAttested"]);
+    expect(claims).toEqual(["SwapExactIn Open", "Open", "Cancelled", "ExpiryNotInFuture", "Filled", "IntentAttested", "Cancelled NotSettleable"]);
   });
 
   it("runs every ts block in order against the engine and prints what it says", { timeout: 120_000 }, async () => {
@@ -144,6 +150,19 @@ describe("the sdk page", () => {
     const { signer, secret } = await wallet(w);
     writeFileSync(join(home, WALLET), JSON.stringify(secret));
     injected.transport = w.chain.transport;
+    const admin = createClient({ url: DEVNET, transport: w.chain.transport });
+    const settings = await admin.config();
+    const [a = 0, b = 0, c = 0, d = 0] = settings.kindFeeBps;
+    await admin.send(
+      [
+        await buildUpdateEconomics({
+          admin: w.authority,
+          economics: { kindFeeMask: settings.kindFeeMask, kindFeeBps: [a, b, c, d], partnerCutBps: settings.partnerCutBps, crankBounty: BOUNTY, createFee: CREATE_FEE },
+        }),
+      ],
+      w.authority,
+    );
+    const treasury = w.chain.svm.getBalance(w.feeRecipient.address) ?? 0n;
     const wrapped = await ata(signer.address, WSOL);
     expect(tokens(w, wrapped)).toBeNull();
     expect(tokens(w, await ata(signer.address, TEST))).toBeNull();
@@ -175,21 +194,31 @@ describe("the sdk page", () => {
     expect(mine.map(({ intent }) => [intent.nonce, intent.kind, intent.status])).toEqual([
       [0n, Kind.SwapExactIn, IntentStatus.Cancelled],
       [1n, Kind.AttestedResult, IntentStatus.Filled],
+      [2n, Kind.AttestedResult, IntentStatus.Cancelled],
     ]);
+    const rent = w.chain.svm.minimumBalanceForRentExemption(BigInt(getIntentSize()));
+    expect(mine.map(({ address }) => w.chain.svm.getBalance(address))).toEqual([rent + BigInt(BOUNTY), rent + BigInt(BOUNTY), rent + BigInt(BOUNTY)]);
+    expect(await loadUser(client.transport, signer.address)).not.toBeNull();
     const [judge, worker] = injected.generated;
     expect(injected.generated).toHaveLength(2);
     expect(judge?.address).not.toBe(signer.address);
     const pay = 10_000_000n;
     const judgeFee = pay / 10n;
     const fee = ((pay - judgeFee) * BigInt(FEE_BPS)) / 10_000n;
+    const split = splitFees(pay - judgeFee, feeBpsFor(await client.config(), Kind.AttestedResult), 0, 0);
+    expect([split.net, split.protocol, split.partner]).toEqual([pay - judgeFee - fee, fee, 0n]);
+    expect(split.net + judgeFee + split.protocol).toBe(pay);
+    expect(printed[printed.indexOf("IntentAttested") + 1]).toBe(formatAmount(split.net, 9));
+    expect(printed[printed.indexOf("IntentAttested") + 2]).toBe([split.net, judgeFee, split.protocol].map((amount) => formatAmount(amount, 9)).join(" "));
     const paid = [
       tokens(w, await ata(worker?.address ?? signer.address, WSOL)),
       tokens(w, await ata(judge?.address ?? signer.address, WSOL)),
       tokens(w, await ata(w.feeRecipient.address, WSOL)),
     ];
-    expect(paid).toEqual([pay - judgeFee - fee, judgeFee, fee]);
-    expect(printed.at(-1)).toBe(formatAmount(pay - judgeFee - fee, 9));
-    expect(tokens(w, wrapped)).toBe(0n);
+    expect(paid).toEqual([split.net, judgeFee, split.protocol]);
+    expect(printed.at(-1)).toBe(`${formatAmount(BigInt(CREATE_FEE), 9)} ${formatAmount(BigInt(BOUNTY), 9)}`);
+    expect((w.chain.svm.getBalance(w.feeRecipient.address) ?? 0n) - treasury).toBe(3n * BigInt(CREATE_FEE));
+    expect(tokens(w, wrapped)).toBeNull();
     expect(tokens(w, await ata(signer.address, TEST))).toBe(0n);
   });
 });
