@@ -37,10 +37,16 @@ import {
   buildCreateIntentSigned,
   buildCreateMandate,
   buildExpireIntent,
+  buildEd25519BatchInstruction,
   buildFillAttested,
+  buildFillAttestedSplit,
   buildFillIntent,
   buildFlashFill,
   buildInitUser,
+  attestedSplitPreimage,
+  splitCommit,
+  splitCosignEnvelope,
+  splitN,
   encodeParams,
   feeBpsFor,
   findAssociatedTokenAddress,
@@ -633,4 +639,120 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet agent smoke"
       await client.close();
     }, 900_000);
   }
+});
+
+describe.skipIf(url === undefined || keypair === undefined)("devnet collaborative split", () => {
+  it("settles fill_attested_split: every co-author signs one batched message and gets its weighted share", async () => {
+    const rpc = createSolanaRpc(url ?? "");
+    const transport = rpcTransport(rpc as unknown as RpcLike);
+    const payer = (await loadKeypairFile(keypair ?? "")) as KeyPairSigner;
+    const tokenProgram = TOKEN_PROGRAM_ADDRESS;
+    const send = (signer: KeyPairSigner, ixs: Instruction[]) => transport.send(ixs, signer);
+    const balance = async (account: Address) => {
+      const view = await transport.getAccount(account);
+      return view === null ? -1n : getTokenDecoder().decode(view.data).amount;
+    };
+    const [configAddress] = await findConfigPda();
+    const configView = await transport.getAccount(configAddress);
+    if (configView === null) {
+      throw new Error("config is not initialised on this cluster");
+    }
+    const config = getConfigDecoder().decode(configView.data);
+    const fund = async (lamports: bigint) => {
+      const kp = await generateKeyPairSigner();
+      await send(payer, [getTransferSolInstruction({ source: payer, destination: kp.address, amount: lamports })]);
+      return kp;
+    };
+    const mint = async () => {
+      const m = await generateKeyPairSigner();
+      const space = BigInt(getMintSize());
+      const rent = await rpc.getMinimumBalanceForRentExemption(space).send();
+      await send(payer, [
+        getCreateAccountInstruction({ payer, newAccount: m, lamports: rent, space, programAddress: tokenProgram }),
+        getInitializeMint2Instruction({ mint: m.address, decimals: 6, mintAuthority: payer.address }, { programAddress: tokenProgram }),
+      ]);
+      return m.address;
+    };
+    const ata = async (owner: Address, m: Address, amount = 0n) => {
+      const address = await findAssociatedTokenAddress({ owner, mint: m, tokenProgram });
+      await send(payer, [
+        await getCreateAssociatedTokenIdempotentInstructionAsync({ payer, owner, mint: m, tokenProgram }),
+        ...(amount > 0n ? [getMintToInstruction({ mint: m, token: address, mintAuthority: payer, amount }, { programAddress: tokenProgram })] : []),
+      ]);
+      return address;
+    };
+
+    const owner = await fund(60_000_000n);
+    const attestor = await fund(30_000_000n);
+    const inputMint = await mint();
+    const outputMint = await mint();
+    await ata(owner.address, inputMint, FUNDED);
+    await ata(owner.address, outputMint);
+    await ata(config.feeRecipient, inputMint);
+    const coauthors = [await generateKeyPairSigner()];
+    const recipients = coauthors.map((c) => c.address);
+    const weights = [10000];
+    const payees = [] as Address[];
+    for (const r of recipients) {
+      payees.push(await ata(r, inputMint));
+    }
+    const common = { inputMint, outputMint, inputTokenProgram: tokenProgram, outputTokenProgram: tokenProgram };
+    const spec = new Uint8Array(32).fill(0x5e);
+    await send(owner, [await buildInitUser({ owner })]);
+    await send(owner, [
+      await buildCreateIntent({
+        ...common,
+        owner,
+        treasury: config.feeRecipient,
+        maxCreateFee: config.createFee,
+        maxBounty: config.crankBounty,
+        nonce: 0n,
+        params: { kind: Kind.AttestedResult, amountIn: ESCROW, minResult: 1n, maxResult: 1n, attestor: attestor.address, specHash: spec, judgeFee: 0n },
+        expiresAt: (await chainTime(transport)) + 3_600n,
+      }),
+    ]);
+    const [intent] = await findIntentPda({ owner: owner.address, nonce: 0n });
+    const attestedFee = feeBpsFor(config, Kind.AttestedResult);
+    const maxFeeBps = attestedFee + 0;
+    const splitHash = await splitCommit(recipients, weights);
+    const preimage = await attestedSplitPreimage({
+      domain: Uint8Array.from(config.domain),
+      intent,
+      amountIn: ESCROW,
+      result: 1n,
+      maxFeeBps,
+      specHash: spec,
+      splitHash,
+    });
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", preimage.slice()));
+    const message = splitCosignEnvelope(digest);
+    const entries = await Promise.all(
+      [...coauthors, attestor].map(async (signer) => ({
+        publicKey: signer.address,
+        signature: new Uint8Array(await signBytes(signer.keyPair.privateKey, message)),
+      })),
+    );
+    const batch = buildEd25519BatchInstruction({ entries, message });
+    const fill = await buildFillAttestedSplit({
+      solver: owner,
+      owner: owner.address,
+      nonce: 0n,
+      inputMint,
+      inputTokenProgram: tokenProgram,
+      recipients,
+      weights,
+      feeRecipient: config.feeRecipient,
+      amountIn: ESCROW,
+      result: 1n,
+      maxFeeBps,
+    });
+    await send(owner, [batch, fill]);
+    const { net } = splitFee(ESCROW, attestedFee);
+    const plan = splitN(net, weights);
+    for (let i = 0; i < payees.length; i += 1) {
+      expect(await balance(payees[i]!)).toBe(plan[i]!);
+    }
+    const paid = (await Promise.all(payees.map(balance))).reduce((a, b) => a + b, 0n);
+    expect(paid).toBe(net);
+  }, 900_000);
 });
