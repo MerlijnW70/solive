@@ -80,6 +80,10 @@ pub enum EngineError {
     CreateCostAboveCeiling,
     NonceJumpTooLarge,
     EpochJumpTooLarge,
+    NotAProof,
+    SplitCountMismatch,
+    RecipientNotCanonical,
+    SplitNotConserved,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {

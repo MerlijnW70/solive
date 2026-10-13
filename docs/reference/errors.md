@@ -126,6 +126,10 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6074 | `CreateCostAboveCeiling` | yes | the engine's create fee or crank bounty rose above what this transaction allows; prepare it again and check the new cost before signing |
 | 6075 | `NonceJumpTooLarge` | no | one advance may move the nonce base at most 2^32 past its current value and never into the agent nonce lanes; advance in smaller steps |
 | 6076 | `EpochJumpTooLarge` | no | one advance may raise the signing epoch at most 2^48; advance-epoch always picks an allowed one, so rebuild the transaction with it |
+| 6077 | `NotAProof` | no | the collaborative split settles only a proof intent that commits a spec hash; use the plain attested fill for a non-proof intent |
+| 6078 | `SplitCountMismatch` | no | the recipient wallets, their weights, and the passed token accounts must be equal in number and within the engine's recipient cap |
+| 6079 | `RecipientNotCanonical` | no | each split recipient account must be the recipient wallet's canonical associated token account for the input mint |
+| 6080 | `SplitNotConserved` | no | the split left lamports in the escrow; the recipient weights must sum to the whole and cover the entire net after fees |
 
 ## Token programs
 

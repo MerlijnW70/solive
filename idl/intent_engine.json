@@ -1304,6 +1304,158 @@
       ]
     },
     {
+      "name": "fill_attested_split",
+      "discriminator": [
+        34,
+        107,
+        23,
+        102,
+        114,
+        73,
+        49,
+        40
+      ],
+      "accounts": [
+        {
+          "name": "solver",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "intent",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "input_mint",
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "fee_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "partner_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "judge_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "recipient0",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "recipient1",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "recipient2",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "recipient3",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "recipient4",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "recipient5",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "recipient6",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "recipient7",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "input_token_program"
+        },
+        {
+          "name": "instructions"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_in",
+          "type": "u64"
+        },
+        {
+          "name": "result",
+          "type": "u64"
+        },
+        {
+          "name": "max_fee_bps",
+          "type": "u16"
+        },
+        {
+          "name": "claim",
+          "type": {
+            "defined": {
+              "name": "SplitClaim"
+            }
+          }
+        },
+        {
+          "name": "ext",
+          "type": {
+            "defined": {
+              "name": "Ext"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "fill_intent",
       "discriminator": [
         68,
@@ -2062,6 +2214,19 @@
       ]
     },
     {
+      "name": "IntentSplit",
+      "discriminator": [
+        11,
+        81,
+        56,
+        177,
+        231,
+        227,
+        244,
+        174
+      ]
+    },
+    {
       "name": "MandateClosed",
       "discriminator": [
         217,
@@ -2474,6 +2639,22 @@
     {
       "code": 6076,
       "name": "EpochJumpTooLarge"
+    },
+    {
+      "code": 6077,
+      "name": "NotAProof"
+    },
+    {
+      "code": 6078,
+      "name": "SplitCountMismatch"
+    },
+    {
+      "code": 6079,
+      "name": "RecipientNotCanonical"
+    },
+    {
+      "code": 6080,
+      "name": "SplitNotConserved"
     }
   ],
   "types": [
@@ -3420,6 +3601,63 @@
       }
     },
     {
+      "name": "IntentSplit",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "solver",
+            "type": "pubkey"
+          },
+          {
+            "name": "attestor",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount_in",
+            "type": "u64"
+          },
+          {
+            "name": "result",
+            "type": "u64"
+          },
+          {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
+            "name": "net",
+            "type": "u64"
+          },
+          {
+            "name": "partner_fee",
+            "type": "u64"
+          },
+          {
+            "name": "recipients",
+            "type": "u8"
+          },
+          {
+            "name": "split_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "Mandate",
       "serialization": "bytemuck",
       "repr": {
@@ -3829,6 +4067,26 @@
           {
             "name": "fee",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SplitClaim",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "recipients",
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "weights",
+            "type": {
+              "vec": "u16"
+            }
           }
         ]
       }

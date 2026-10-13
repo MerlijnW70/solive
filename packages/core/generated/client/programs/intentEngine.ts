@@ -62,6 +62,7 @@ import {
   getEndFillInstruction,
   getExpireIntentInstructionAsync,
   getFillAttestedInstructionAsync,
+  getFillAttestedSplitInstructionAsync,
   getFillIntentInstructionAsync,
   getInitConfigInstructionAsync,
   getInitUserInstructionAsync,
@@ -84,6 +85,7 @@ import {
   parseEndFillInstruction,
   parseExpireIntentInstruction,
   parseFillAttestedInstruction,
+  parseFillAttestedSplitInstruction,
   parseFillIntentInstruction,
   parseInitConfigInstruction,
   parseInitUserInstruction,
@@ -106,6 +108,7 @@ import {
   type EndFillInput,
   type ExpireIntentAsyncInput,
   type FillAttestedAsyncInput,
+  type FillAttestedSplitAsyncInput,
   type FillIntentAsyncInput,
   type InitConfigAsyncInput,
   type InitUserAsyncInput,
@@ -123,6 +126,7 @@ import {
   type ParsedEndFillInstruction,
   type ParsedExpireIntentInstruction,
   type ParsedFillAttestedInstruction,
+  type ParsedFillAttestedSplitInstruction,
   type ParsedFillIntentInstruction,
   type ParsedInitConfigInstruction,
   type ParsedInitUserInstruction,
@@ -235,14 +239,15 @@ export const IntentEngineEvent = {
   13: "IntentCreated",
   14: "IntentExpired",
   15: "IntentFilled",
-  16: "MandateClosed",
-  17: "MandateCreated",
-  18: "MandateUsed",
-  19: "NonceAdvanced",
-  20: "PauseLowered",
-  21: "PauseRaised",
-  22: "RelayerPaid",
-  23: "UserInitialized",
+  16: "IntentSplit",
+  17: "MandateClosed",
+  18: "MandateCreated",
+  19: "MandateUsed",
+  20: "NonceAdvanced",
+  21: "PauseLowered",
+  22: "PauseRaised",
+  23: "RelayerPaid",
+  24: "UserInitialized",
   AdminAccepted: 0,
   AdminProposed: 1,
   AgentPaid: 2,
@@ -259,14 +264,15 @@ export const IntentEngineEvent = {
   IntentCreated: 13,
   IntentExpired: 14,
   IntentFilled: 15,
-  MandateClosed: 16,
-  MandateCreated: 17,
-  MandateUsed: 18,
-  NonceAdvanced: 19,
-  PauseLowered: 20,
-  PauseRaised: 21,
-  RelayerPaid: 22,
-  UserInitialized: 23,
+  IntentSplit: 16,
+  MandateClosed: 17,
+  MandateCreated: 18,
+  MandateUsed: 19,
+  NonceAdvanced: 20,
+  PauseLowered: 21,
+  PauseRaised: 22,
+  RelayerPaid: 23,
+  UserInitialized: 24,
 } as const;
 
 export type IntentEngineEvent = (typeof IntentEngineEvent)[Exclude<
@@ -458,6 +464,17 @@ export function identifyIntentEngineEvent(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([11, 81, 56, 177, 231, 227, 244, 174]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineEvent.IntentSplit;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([217, 212, 155, 243, 4, 34, 255, 65]),
       ),
       0,
@@ -561,15 +578,16 @@ export const IntentEngineInstruction = {
   10: "EndFill",
   11: "ExpireIntent",
   12: "FillAttested",
-  13: "FillIntent",
-  14: "InitConfig",
-  15: "InitUser",
-  16: "LowerPause",
-  17: "ProposeAdmin",
-  18: "RaisePause",
-  19: "RevokeMandate",
-  20: "UpdateConfig",
-  21: "UpdateEconomics",
+  13: "FillAttestedSplit",
+  14: "FillIntent",
+  15: "InitConfig",
+  16: "InitUser",
+  17: "LowerPause",
+  18: "ProposeAdmin",
+  19: "RaisePause",
+  20: "RevokeMandate",
+  21: "UpdateConfig",
+  22: "UpdateEconomics",
   AcceptAdmin: 0,
   AdvanceEpoch: 1,
   AdvanceNonce: 2,
@@ -583,15 +601,16 @@ export const IntentEngineInstruction = {
   EndFill: 10,
   ExpireIntent: 11,
   FillAttested: 12,
-  FillIntent: 13,
-  InitConfig: 14,
-  InitUser: 15,
-  LowerPause: 16,
-  ProposeAdmin: 17,
-  RaisePause: 18,
-  RevokeMandate: 19,
-  UpdateConfig: 20,
-  UpdateEconomics: 21,
+  FillAttestedSplit: 13,
+  FillIntent: 14,
+  InitConfig: 15,
+  InitUser: 16,
+  LowerPause: 17,
+  ProposeAdmin: 18,
+  RaisePause: 19,
+  RevokeMandate: 20,
+  UpdateConfig: 21,
+  UpdateEconomics: 22,
 } as const;
 
 export type IntentEngineInstruction = (typeof IntentEngineInstruction)[Exclude<
@@ -750,6 +769,17 @@ export function identifyIntentEngineInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([34, 107, 23, 102, 114, 73, 49, 40]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineInstruction.FillAttestedSplit;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([68, 255, 62, 77, 155, 136, 145, 148]),
       ),
       0,
@@ -894,6 +924,9 @@ export type ParsedIntentEngineInstruction<
       instructionType: typeof IntentEngineInstruction.FillAttested;
     } & ParsedFillAttestedInstruction<TProgram>)
   | ({
+      instructionType: typeof IntentEngineInstruction.FillAttestedSplit;
+    } & ParsedFillAttestedSplitInstruction<TProgram>)
+  | ({
       instructionType: typeof IntentEngineInstruction.FillIntent;
     } & ParsedFillIntentInstruction<TProgram>)
   | ({
@@ -1015,6 +1048,13 @@ export function parseIntentEngineInstruction<TProgram extends string>(
       return {
         instructionType: IntentEngineInstruction.FillAttested,
         ...parseFillAttestedInstruction(instruction),
+      };
+    }
+    case IntentEngineInstruction.FillAttestedSplit: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: IntentEngineInstruction.FillAttestedSplit,
+        ...parseFillAttestedSplitInstruction(instruction),
       };
     }
     case IntentEngineInstruction.FillIntent: {
@@ -1162,6 +1202,10 @@ export type IntentEnginePluginInstructions = {
     input: FillAttestedAsyncInput,
   ) => ReturnType<typeof getFillAttestedInstructionAsync> &
     SelfPlanAndSendFunctions;
+  fillAttestedSplit: (
+    input: FillAttestedSplitAsyncInput,
+  ) => ReturnType<typeof getFillAttestedSplitInstructionAsync> &
+    SelfPlanAndSendFunctions;
   fillIntent: (
     input: FillIntentAsyncInput,
   ) => ReturnType<typeof getFillIntentInstructionAsync> &
@@ -1287,6 +1331,11 @@ export function intentEngineProgram() {
             addSelfPlanAndSendFunctions(
               client,
               getFillAttestedInstructionAsync(input),
+            ),
+          fillAttestedSplit: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getFillAttestedSplitInstructionAsync(input),
             ),
           fillIntent: (input) =>
             addSelfPlanAndSendFunctions(

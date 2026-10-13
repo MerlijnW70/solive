@@ -208,6 +208,60 @@ impl Env {
             },
         )
     }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn fill_attested_split_ix(
+        &self,
+        solver: &Pubkey,
+        owner: &Pubkey,
+        market: &Market,
+        nonce: u64,
+        recipients: &[Pubkey],
+        weights: &[u16],
+        fee_to: Option<&Pubkey>,
+        result: u64,
+    ) -> Instruction {
+        let intent = intent_pda(owner, nonce);
+        let atas: Vec<Pubkey> = recipients
+            .iter()
+            .map(|w| canonical_refund(w, market))
+            .collect();
+        let slot = |i: usize| atas.get(i).copied();
+        engine_ix(
+            intent_engine::accounts::FillAttestedSplit {
+                solver: *solver,
+                config: config_pda(),
+                intent,
+                vault: vault_pda(&intent),
+                input_mint: market.input_mint,
+                fee_to: fee_to.copied(),
+                partner_to: self.partner_to,
+                judge_to: self.judge_to,
+                recipient0: slot(0),
+                recipient1: slot(1),
+                recipient2: slot(2),
+                recipient3: slot(3),
+                recipient4: slot(4),
+                recipient5: slot(5),
+                recipient6: slot(6),
+                recipient7: slot(7),
+                input_token_program: market.input_program,
+                instructions: solana_instructions_sysvar::ID,
+                event_authority: event_authority(),
+                program: intent_engine::ID,
+            },
+            intent_engine::instruction::FillAttestedSplit {
+                amount_in: self.fill_amount(owner, nonce),
+                result,
+                max_fee_bps: self.max_fee_bps,
+                claim: intent_engine::SplitClaim {
+                    recipients: recipients.to_vec(),
+                    weights: weights.to_vec(),
+                },
+                ext: intent_engine::Ext(self.ext.clone()),
+            },
+        )
+    }
 }
 
 pub struct Attestation {
@@ -293,6 +347,43 @@ pub fn attestation_proof_message(
         max_fee_bps: intent_engine::state::MAX_FEE_BPS,
         ext_hash: empty_ext_hash(),
         spec_hash,
+    }
+    .preimage();
+    let digest = solana_sha256_hasher::hashv(&[&preimage]).to_bytes();
+    intent_core::sig::offchain_envelope(&attestor.to_bytes(), &digest)
+}
+
+pub fn split_commit(recipients: &[Pubkey], weights: &[u16]) -> [u8; 32] {
+    let mut buf = Vec::new();
+    for (wallet, bps) in recipients.iter().zip(weights.iter()) {
+        buf.extend_from_slice(wallet.as_ref());
+        buf.extend_from_slice(&bps.to_le_bytes());
+    }
+    solana_sha256_hasher::hashv(&[&buf]).to_bytes()
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn attestation_split_message(
+    domain: [u8; 32],
+    attestor: &Pubkey,
+    intent: &Pubkey,
+    amount_in: u64,
+    result: u64,
+    spec_hash: [u8; 32],
+    split_hash: [u8; 32],
+) -> [u8; intent_core::sig::ENVELOPE_LEN] {
+    let preimage = intent_core::sig::AttestedSplit {
+        program: intent_engine::ID.to_bytes(),
+        domain,
+        intent: intent.to_bytes(),
+        amount_in,
+        result,
+        filled: 0,
+        revision: 0,
+        max_fee_bps: intent_engine::state::MAX_FEE_BPS,
+        ext_hash: empty_ext_hash(),
+        spec_hash,
+        split_hash,
     }
     .preimage();
     let digest = solana_sha256_hasher::hashv(&[&preimage]).to_bytes();

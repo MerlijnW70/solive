@@ -98,6 +98,10 @@ export const ENGINE_PROBLEMS = {
   CreateCostAboveCeiling: later("the engine's create fee or crank bounty rose above what this transaction allows; prepare it again and check the new cost before signing"),
   NonceJumpTooLarge: never("one advance may move the nonce base at most 2^32 past its current value and never into the agent nonce lanes; advance in smaller steps"),
   EpochJumpTooLarge: never("one advance may raise the signing epoch at most 2^48; advance-epoch always picks an allowed one, so rebuild the transaction with it"),
+  NotAProof: never("the collaborative split settles only a proof intent that commits a spec hash; use the plain attested fill for a non-proof intent"),
+  SplitCountMismatch: never("the recipient wallets, their weights, and the passed token accounts must be equal in number and within the engine's recipient cap"),
+  RecipientNotCanonical: never("each split recipient account must be the recipient wallet's canonical associated token account for the input mint"),
+  SplitNotConserved: never("the split left lamports in the escrow; the recipient weights must sum to the whole and cover the entire net after fees"),
 } as const satisfies Record<string, Entry>;
 
 type EngineErrorName = keyof typeof ENGINE_PROBLEMS;

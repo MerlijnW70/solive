@@ -19,6 +19,7 @@ export * from "./createMandate.js";
 export * from "./endFill.js";
 export * from "./expireIntent.js";
 export * from "./fillAttested.js";
+export * from "./fillAttestedSplit.js";
 export * from "./fillIntent.js";
 export * from "./initConfig.js";
 export * from "./initUser.js";

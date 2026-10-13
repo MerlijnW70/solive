@@ -248,3 +248,18 @@ pub struct MandateClosed {
     pub spent: u64,
     pub intents: u32,
 }
+
+#[event]
+pub struct IntentSplit {
+    pub intent: Pubkey,
+    pub owner: Pubkey,
+    pub solver: Pubkey,
+    pub attestor: Pubkey,
+    pub amount_in: u64,
+    pub result: u64,
+    pub fee: u64,
+    pub net: u64,
+    pub partner_fee: u64,
+    pub recipients: u8,
+    pub split_hash: [u8; 32],
+}

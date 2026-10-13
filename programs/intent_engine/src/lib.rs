@@ -101,6 +101,17 @@ pub mod intent_engine {
         handle_fill_attested(ctx, amount_in, result, max_fee_bps, ext)
     }
 
+    pub fn fill_attested_split(
+        ctx: Context<FillAttestedSplit>,
+        amount_in: u64,
+        result: u64,
+        max_fee_bps: u16,
+        claim: SplitClaim,
+        ext: Ext,
+    ) -> Result<()> {
+        handle_fill_attested_split(ctx, amount_in, result, max_fee_bps, claim, ext)
+    }
+
     pub fn begin_fill(
         ctx: Context<BeginFill>,
         amount_in: u64,

@@ -22,6 +22,7 @@ export * from "./intentClosed.js";
 export * from "./intentCreated.js";
 export * from "./intentExpired.js";
 export * from "./intentFilled.js";
+export * from "./intentSplit.js";
 export * from "./mandateClosed.js";
 export * from "./mandateCreated.js";
 export * from "./mandateUsed.js";

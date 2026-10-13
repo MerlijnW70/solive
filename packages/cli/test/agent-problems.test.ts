@@ -70,7 +70,9 @@ describe("agent problems", () => {
     expect(simulationProblem("err", [failed(ENGINE, 6074)])).toMatchObject({ code: "CreateCostAboveCeiling", retryable: true });
     expect(simulationProblem("err", [failed(ENGINE, 6075)])).toMatchObject({ code: "NonceJumpTooLarge", retryable: false });
     expect(simulationProblem("err", [failed(ENGINE, 6076)])).toMatchObject({ code: "EpochJumpTooLarge", retryable: false });
-    for (const code of [5999, 6077]) {
+    expect(simulationProblem("err", [failed(ENGINE, 6077)])).toMatchObject({ code: "NotAProof", retryable: false });
+    expect(simulationProblem("err", [failed(ENGINE, 6080)])).toMatchObject({ code: "SplitNotConserved", retryable: false });
+    for (const code of [5999, 6081]) {
       expect(simulationProblem("e", [failed(ENGINE, code)])).toMatchObject({ code: "TransactionFailed", programError: code });
     }
     const funds = simulationProblem("err", [failed(TOKEN_PROGRAMS[1] ?? "", 1)]);

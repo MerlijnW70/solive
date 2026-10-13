@@ -792,6 +792,7 @@ fn vectors() -> TestResult<Value> {
         "IntentCreated": hex(ev::IntentCreated::DISCRIMINATOR),
         "IntentExpired": hex(ev::IntentExpired::DISCRIMINATOR),
         "IntentFilled": hex(ev::IntentFilled::DISCRIMINATOR),
+        "IntentSplit": hex(ev::IntentSplit::DISCRIMINATOR),
         "MandateClosed": hex(ev::MandateClosed::DISCRIMINATOR),
         "MandateCreated": hex(ev::MandateCreated::DISCRIMINATOR),
         "MandateUsed": hex(ev::MandateUsed::DISCRIMINATOR),
