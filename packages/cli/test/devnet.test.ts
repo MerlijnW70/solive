@@ -16,7 +16,7 @@ import {
   partiallySignTransaction,
   signBytes,
 } from "@solana/kit";
-import { compile } from "@intent-engine/solver";
+import { prepare } from "../src/agent/prepare.js";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { getCreateAccountInstruction, getTransferSolInstruction } from "@solana-program/system";
@@ -819,10 +819,11 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet collaborativ
     ]);
     const tableAddresses = [...new Set((fill.accounts ?? []).map((a) => a.address))].filter((a) => !invoked.has(a));
     const table = await createLookupTable(owner, tableAddresses);
-    const { value: latest } = await rpc.getLatestBlockhash().send();
-    const wire = await compile([batch, fill], owner, latest, { [table]: tableAddresses });
-    expect(getBase64Encoder().encode(wire).length).toBeLessThanOrEqual(1232);
-    await transport.sendWire(wire, latest);
+    const prepared = await prepare(transport, [batch, fill], owner.address, { [table]: tableAddresses });
+    expect(getBase64Encoder().encode(prepared.transaction).length).toBeLessThanOrEqual(1232);
+    const tx = getTransactionDecoder().decode(getBase64Encoder().encode(prepared.transaction));
+    const signed = await partiallySignTransaction([owner.keyPair], tx);
+    await transport.sendWire(getBase64EncodedWireTransaction(signed), { blockhash: "" as Blockhash, lastValidBlockHeight: prepared.lastValidBlockHeight });
     const { net } = splitFee(ESCROW, attestedFee);
     const plan = splitN(net, weights);
     for (let i = 0; i < payees.length; i += 1) {
