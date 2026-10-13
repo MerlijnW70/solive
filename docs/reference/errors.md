@@ -21,6 +21,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `WalletTokenNotAllowed` | no | the server was started with sell limits that do not name this token |
 | `WalletTradeLimit` | no | the trade sells more than the server's --wallet-per-trade limit for this token |
 | `ReleaseChanged` | no | the release differs from the one previewed: its payee, amount, result, fee or the escrow itself changed; preview it again and show the user |
+| `ReleaseTooLarge` | no | this split has too many co-authors to fit in one transaction; pass a lookup_table or reduce recipients as the hint says |
 | `WalletHourLimit` | yes | the wallet sold as much of this token in the last hour as the server's --wallet-per-hour limit allows; try later or sell less |
 | `AgentNotConfigured` | no | solive_agent_create was called on a server started without --agent |
 | `OwnerNotServed` | no | the owner is not in the server's --agent-owners list |

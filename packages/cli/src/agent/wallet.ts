@@ -44,7 +44,7 @@ import { listIntents } from "./read.js";
 import { InvalidInput, account, amount, choice, flag, hex32, integer, list, object, optional, type Schema, text, time } from "./schema.js";
 import { orderSchema, preparedView } from "./shapes.js";
 import { tokenAccountIfMissing, walletRecipient } from "./owner.js";
-import { prepare } from "./prepare.js";
+import { prepare, transactionSize } from "./prepare.js";
 import { prepareCancel } from "./settle.js";
 import { STATUS } from "../accounts.js";
 
@@ -765,6 +765,9 @@ const walletAttest = define({
   },
 });
 
+export const PACKET_DATA_SIZE = 1_232;
+export const splitTooLarge = (size: number, recipients: number, withTable: boolean): string =>
+  `this ${recipients}-co-author split builds a ${size}-byte transaction, over the ${PACKET_DATA_SIZE}-byte limit${withTable ? " even with the lookup table" : ""}; roughly ${withTable ? 4 : 2} co-authors fit${withTable ? " with a lookup table, so reduce recipients or pay the rest in a second release" : ", so pass lookup_table with the preview's lookup_accounts to fit more, or reduce recipients"}`;
 export const SPLIT_WEIGHTS_WRONG = "the weights must be whole basis points that add up to 10000";
 export const SPLIT_SIG_NEEDED = "every co-author must sign the split before send: true; preview returns the envelope each one signs";
 export const SIGNATURE_PATTERN = "^[0-9a-fA-F]{128}$";
@@ -909,10 +912,16 @@ const walletAttestSplit = define({
       }
       tables = { [input.lookup_table]: decodeLookupTable(view.data) };
     }
-    const prepared =
-      input.send === true && batch !== undefined
-        ? preparedView(await prepare(ctx.transport, [...setup, batch, settle], signer.address, tables))
-        : undefined;
+    let prepared;
+    if (input.send === true && batch !== undefined) {
+      const ixs = [...setup, batch, settle];
+      const budgeted = await ctx.transport.budget(ixs, signer.address);
+      const size = await transactionSize(ctx.transport, budgeted, signer.address, tables);
+      if (size > PACKET_DATA_SIZE) {
+        throw new AgentRefusal("ReleaseTooLarge", splitTooLarge(size, input.recipients.length, input.lookup_table !== undefined));
+      }
+      prepared = preparedView(await prepare(ctx.transport, ixs, signer.address, tables));
+    }
     const view2 = {
       intent,
       digest: digestHex,

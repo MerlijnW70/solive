@@ -434,8 +434,8 @@ describe("the wallet server", () => {
 
   it("releases a proof escrow split among co-authors only when every one of them signs the exact split", async () => {
     const owner = (await ok(client, "wallet_setup"))["address"] as Address;
-    const coauthors = [await generateKeyPairSigner(), await generateKeyPairSigner(), await generateKeyPairSigner()];
-    const weights = [6000, 3000, 1000];
+    const coauthors = [await generateKeyPairSigner()];
+    const weights = [10000];
     const specHash = "a".repeat(64);
     const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, min_result: "1", max_result: "1", spec_hash: specHash, send: true });
     const nonce = escrow["nonce"] as string;
@@ -459,8 +459,8 @@ describe("the wallet server", () => {
       })),
     );
     expect((await call(client, "wallet_attest_split", { owner, nonce, recipients: signed, send: true })).value).toMatchObject({ code: "ReleaseChanged", hint: RELEASE_CHANGED });
-    const missing = signed.map((s, i) => (i === 2 ? { wallet: s.wallet, weight: s.weight } : s));
-    expect((await call(client, "wallet_attest_split", { owner, nonce, recipients: missing, approval: shown["approval"], send: true })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "recipients.2.signature" }] });
+    const missing = signed.map((s) => ({ wallet: s.wallet, weight: s.weight }));
+    expect((await call(client, "wallet_attest_split", { owner, nonce, recipients: missing, approval: shown["approval"], send: true })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "recipients.0.signature" }] });
     const reshown = await ok(client, "wallet_attest_split", { owner, nonce, recipients: signed });
     const absentTable = (await generateKeyPairSigner()).address;
     expect((await call(client, "wallet_attest_split", { owner, nonce, recipients: signed, lookup_table: absentTable, approval: reshown["approval"], send: true })).value).toMatchObject({ code: "NotFound" });
@@ -473,6 +473,15 @@ describe("the wallet server", () => {
     expect((await call(client, "wallet_attest_split", { owner, nonce, recipients: signed, approval: shown["approval"], send: true })).value).toMatchObject({ code: "InvalidTransition" });
     const plain = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.02", attestor: owner, min_result: "1", max_result: "1", send: true });
     expect((await call(client, "wallet_attest_split", { owner, nonce: plain["nonce"], recipients })).value).toMatchObject({ code: "NotAProof" });
+    const crowd = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, min_result: "1", max_result: "1", spec_hash: specHash, send: true });
+    const many = [await generateKeyPairSigner(), await generateKeyPairSigner(), await generateKeyPairSigner()];
+    const manyRecipients = many.map((c, i) => ({ wallet: c.address, weight: [4000, 4000, 2000][i] }));
+    const crowdShown = await ok(client, "wallet_attest_split", { owner, nonce: crowd["nonce"], recipients: manyRecipients });
+    const crowdEnvelope = bytesOf(crowdShown["envelope"] as string);
+    const crowdSigned = await Promise.all(
+      manyRecipients.map(async (r, i) => ({ ...r, signature: getBase16Decoder().decode(new Uint8Array(await signBytes(many[i]!.keyPair.privateKey, crowdEnvelope))) })),
+    );
+    expect((await call(client, "wallet_attest_split", { owner, nonce: crowd["nonce"], recipients: crowdSigned, approval: crowdShown["approval"], send: true })).value).toMatchObject({ code: "ReleaseTooLarge" });
   });
 
   it("escrows a task's pieces in one plan: one preview with the total, one send, each piece released on its own", async () => {
