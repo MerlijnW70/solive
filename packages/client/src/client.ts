@@ -41,11 +41,14 @@ export type ClientOptions = {
   notifications?: Notifications;
   priority?: Priority;
   pollMs?: number;
+  resyncSeconds?: number;
 };
 
 export type IntentAccount = { address: Address; intent: Intent };
 
 export type IntentFilter = { owner?: Address; status?: number };
+
+export type WatchCallback = (changed: IntentAccount[], closed: Address[]) => void;
 
 export type Mint = { decimals: number; tokenProgram: Address };
 
@@ -80,7 +83,7 @@ export type Client = {
   nextNonce(owner: Address): Promise<bigint>;
   simulate(instructions: readonly Instruction[], signer: TransactionSigner): Promise<Simulation>;
   send(instructions: readonly Instruction[], signer: TransactionSigner): Promise<Signature>;
-  watch(onChange: (changed: IntentAccount[]) => void, signal: AbortSignal, filter?: { owner?: Address }): Promise<void>;
+  watch(onChange: WatchCallback, signal: AbortSignal, filter?: { owner?: Address }): Promise<void>;
   explain(error: unknown): EngineError | null;
   mint(address: Address): Promise<Mint>;
   chainTime(): Promise<bigint>;
@@ -92,7 +95,7 @@ export type Client = {
 export const DEFAULT_EXPIRES_IN = 3_600n;
 
 export const WATCH_POLL_MS = 2_000;
-export const WATCH_WAIT_SECONDS = 30;
+export const WATCH_WAIT_SECONDS = 10;
 
 export class NoFreeNonce extends Error {
   readonly owner: Address;
@@ -128,35 +131,50 @@ function nonceAfter(owner: Address, user: NonceWindow | null): bigint {
 const decoded = ({ address, data }: ProgramAccount): IntentAccount => ({ address, intent: getIntentDecoder().decode(data) });
 
 export function createClient(options: ClientOptions): Client {
-  const { url, priority = 0n, pollMs = WATCH_POLL_MS } = options;
+  const { url, priority = 0n, pollMs = WATCH_POLL_MS, resyncSeconds = WATCH_WAIT_SECONDS } = options;
   const transport =
     options.transport ?? rpcTransport(createSolanaRpc(url) as unknown as RpcLike, undefined, signatureWatch(url));
   const notifications = options.notifications ?? (options.transport === undefined ? intentNotifications(url) : undefined);
 
-  const watch = async (onChange: (changed: IntentAccount[]) => void, signal: AbortSignal, filter: { owner?: Address } = {}) => {
+  const watch = async (onChange: WatchCallback, signal: AbortSignal, filter: { owner?: Address } = {}) => {
     if (signal.aborted) {
       return;
     }
     const seen = new Map<Address, string>();
-    const emit = (accounts: readonly ProgramAccount[]) => {
-      const changed = accounts
-        .filter(({ address, data }) => {
-          const key = Buffer.from(data).toString("base64");
-          if (seen.get(address) === key) {
-            return false;
-          }
-          seen.set(address, key);
-          return true;
-        })
-        .map(decoded)
-        .filter(({ intent }) => filter.owner === undefined || intent.owner === filter.owner);
-      if (changed.length > 0 && !signal.aborted) {
-        onChange(changed);
+    const fresh = (accounts: readonly ProgramAccount[]) =>
+      accounts.flatMap((account) => {
+        const view = decoded(account);
+        if (filter.owner !== undefined && view.intent.owner !== filter.owner) {
+          return [];
+        }
+        const key = Buffer.from(account.data).toString("base64");
+        if (seen.get(account.address) === key) {
+          return [];
+        }
+        seen.set(account.address, key);
+        return [view];
+      });
+    const report = (changed: IntentAccount[], closed: Address[]) => {
+      if ((changed.length > 0 || closed.length > 0) && !signal.aborted) {
+        onChange(changed, closed);
       }
+    };
+    const sync = async () => {
+      const accounts = await transport.intents(filter.owner).catch(() => null);
+      if (accounts === null) {
+        return;
+      }
+      const present = new Set(accounts.map(({ address }) => address));
+      const changed = fresh(accounts);
+      const closed = [...seen.keys()].filter((address) => !present.has(address));
+      for (const address of closed) {
+        seen.delete(address);
+      }
+      report(changed, closed);
     };
     if (notifications === undefined) {
       while (!signal.aborted) {
-        emit(await transport.intents(filter.owner));
+        await sync();
         await pause(pollMs, signal);
       }
       return;
@@ -165,9 +183,14 @@ export function createClient(options: ClientOptions): Client {
     const stop = () => changes.close();
     signal.addEventListener("abort", stop, { once: true });
     try {
-      emit(await transport.intents(filter.owner));
+      await sync();
+      let synced = Date.now();
       while (!signal.aborted) {
-        emit((await changes.wait(WATCH_WAIT_SECONDS)) ?? []);
+        report(fresh((await changes.wait(resyncSeconds)) ?? []), []);
+        if (!signal.aborted && Date.now() - synced >= resyncSeconds * 1000) {
+          await sync();
+          synced = Date.now();
+        }
       }
     } finally {
       signal.removeEventListener("abort", stop);

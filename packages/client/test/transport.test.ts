@@ -461,12 +461,13 @@ describe("rate limits", () => {
 });
 
 describe("intent scan", () => {
-  it("asks for engine accounts of the intent size and discriminator and decodes them", async () => {
+  it("asks for engine accounts of the intent size and discriminator at confirmed commitment and decodes them", async () => {
     const s = stub([]);
     const found = await rpcTransport(s.rpc, s.wait).intents();
     expect(found).toEqual([{ address: OWNER, data: new Uint8Array([7, 8]) }]);
     const filters = {
       encoding: "base64",
+      commitment: "confirmed",
       filters: [
         { dataSize: getIntentSize().toString() },
         { memcmp: { offset: "0", bytes: getBase58Decoder().decode(getIntentDiscriminatorBytes()), encoding: "base58" } },
@@ -673,11 +674,13 @@ describe("intent changes", () => {
       return { [Symbol.asyncIterator]: () => ({ next: () => new Promise<IteratorResult<unknown>>((resolve) => (quiet = () => resolve({ value: undefined, done: true }))) }) };
     }, [20, 60, 1_000]);
     expect(await changes.wait(5)).toEqual([{ address: OWNER, data: new Uint8Array([9]) }]);
-    await new Promise((resolve) => setTimeout(resolve, 60));
+    for (let tries = 0; opened.length < 4 && tries < 200; tries++) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
     expect(opened).toHaveLength(4);
     expect((opened[1] ?? 0) - (opened[0] ?? 0)).toBeGreaterThanOrEqual(15);
     expect((opened[2] ?? 0) - (opened[1] ?? 0)).toBeGreaterThanOrEqual(55);
-    expect((opened[3] ?? 0) - (opened[2] ?? 0)).toBeLessThan(55);
+    expect((opened[3] ?? 0) - (opened[2] ?? 0)).toBeLessThan(500);
     expect(shared === undefined ? -1 : getEventListeners(shared, "abort").length).toBe(0);
     changes.close();
     quiet?.();

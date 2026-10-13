@@ -98,6 +98,7 @@ export type RpcLike = {
     program: Address,
     config: {
       encoding: "base64";
+      commitment: "confirmed";
       filters: readonly (
         | { dataSize: bigint }
         | { memcmp: { offset: bigint; bytes: string; encoding: "base58" } }
@@ -505,6 +506,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
           rpc
             .getProgramAccounts(INTENT_ENGINE_PROGRAM_ADDRESS, {
               encoding: "base64",
+              commitment: "confirmed",
               filters: [
                 { dataSize: BigInt(getIntentSize()) },
                 {

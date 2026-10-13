@@ -3,6 +3,7 @@ import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import {
   buildCancelIntent,
+  buildCloseIntent,
   buildCreateIntent,
   buildInitUser,
   COMPUTE_BUDGET_ADDRESS,
@@ -196,6 +197,96 @@ describe("a client over the engine", () => {
 
     controller.abort();
     await watching;
+  });
+
+  it("recovers every change its notifications never deliver by resyncing from the chain", async () => {
+    const w = await world();
+    await w.chain.transport.send([await buildInitUser({ owner: w.owner })], w.owner);
+    const silent: Notifications = async (signal) => ({
+      async *[Symbol.asyncIterator]() {
+        await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+      },
+    });
+    const client = createClient({ url: LOCAL, transport: w.chain.transport, notifications: silent, resyncSeconds: 0.02 });
+    const statuses: [bigint, number][] = [];
+    const controller = new AbortController();
+    const watching = client.watch((changed) => statuses.push(...changed.map((c): [bigint, number] => [c.intent.nonce, c.intent.status])), controller.signal, {
+      owner: w.owner.address,
+    });
+
+    await client.send([await create(w, client, 0n)], w.owner);
+    await until(() => statuses.length === 1);
+    await client.send([await cancel(w, 0n)], w.owner);
+    await until(() => statuses.length === 2);
+    expect(statuses).toEqual([
+      [0n, IntentStatus.Open],
+      [0n, IntentStatus.Cancelled],
+    ]);
+
+    controller.abort();
+    await watching;
+  });
+
+  it("reports an intent whose account closes, once", async () => {
+    const w = await world();
+    const client = createClient({ url: LOCAL, transport: w.chain.transport, pollMs: 5 });
+    await client.send([await buildInitUser({ owner: w.owner })], w.owner);
+    await client.send([await create(w, client, 0n)], w.owner);
+    const [address] = await findIntentPda({ owner: w.owner.address, nonce: 0n });
+
+    const closed: string[][] = [];
+    const controller = new AbortController();
+    let seenOpen = false;
+    const watching = client.watch(
+      (changed, gone) => {
+        seenOpen ||= changed.some((c) => c.address === address);
+        if (gone.length > 0) {
+          closed.push(gone);
+        }
+      },
+      controller.signal,
+      { owner: w.owner.address },
+    );
+    await until(() => seenOpen);
+    await client.send([await cancel(w, 0n)], w.owner);
+    await client.send(
+      [await buildCloseIntent({ cranker: w.owner, owner: w.owner.address, nonce: 0n, inputMint: w.inputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS })],
+      w.owner,
+    );
+    await until(() => closed.length === 1);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(closed).toEqual([[address]]);
+
+    controller.abort();
+    await watching;
+  });
+
+  it("keeps watching through failed reads instead of rejecting", async () => {
+    const w = await world();
+    let failures = 3;
+    const flaky = {
+      ...w.chain.transport,
+      intents: async (owner?: Parameters<typeof w.chain.transport.intents>[0]) => {
+        if (failures > 0) {
+          failures--;
+          throw new Error("429 Too Many Requests");
+        }
+        return w.chain.transport.intents(owner);
+      },
+    };
+    const client = createClient({ url: LOCAL, transport: flaky, pollMs: 5 });
+    await client.send([await buildInitUser({ owner: w.owner })], w.owner);
+    await client.send([await create(w, client, 0n)], w.owner);
+
+    const seen: IntentAccount[][] = [];
+    const controller = new AbortController();
+    const watching = client.watch((changed) => seen.push(changed), controller.signal, { owner: w.owner.address });
+    await until(() => seen.length === 1);
+    expect(failures).toBe(0);
+    expect(seen[0]?.map((c) => c.intent.status)).toEqual([IntentStatus.Open]);
+
+    controller.abort();
+    await expect(watching).resolves.toBeUndefined();
   });
 
   it("returns at once when watching with a signal already aborted", async () => {

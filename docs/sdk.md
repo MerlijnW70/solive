@@ -63,7 +63,7 @@ const { nonce } = await client.createIntent({ ...order, params: swap });
 
 ## Watch
 
-`watch` calls back with every intent that changed, first with the current ones, until its signal aborts. This prints `Open` now and `Cancelled` once the cancel below lands.
+`watch` calls back with every intent that changed, first with the current ones, and with the addresses of intents whose accounts closed, until its signal aborts. It rereads the chain every `resyncSeconds` (a client option, default `WATCH_WAIT_SECONDS`), so a dropped notification only delays a change, and it keeps going through failed reads. A filled intent's account is closed soon after the fill, so `intent` then returns `null`. This prints `Open` now and `Cancelled` once the cancel below lands.
 
 ```ts
 const controller = new AbortController();
