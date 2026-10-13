@@ -18,14 +18,13 @@ import {
   formatAmount,
   parseAmount,
 } from "@intent-engine/core";
-import { createdAccount, mintOf } from "./accounts.js";
+import { createdAccount, mintOf, type Transport } from "@intent-engine/client";
 import { type AgentContext, type AnyAction, invoke } from "./agent/actions.js";
 import { WARN_REPLACES_DELEGATE } from "./agent/owner.js";
 import { prepare } from "./agent/prepare.js";
 import { problemOf } from "./agent/problems.js";
 import { preparedView } from "./agent/shapes.js";
 import { type Side, type Tokens, UsageError } from "./args.js";
-import type { Transport } from "./transport.js";
 
 const PREPARED_KEYS = ["setup", "prepared"] as const;
 

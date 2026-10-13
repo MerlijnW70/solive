@@ -1,8 +1,8 @@
 import type { Address } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import { INTENT_ENGINE_PROGRAM_ADDRESS, IntentCoreError } from "@intent-engine/core";
+import { MissingAccount, NotAMint } from "@intent-engine/client";
 import idl from "@intent-engine/core/idl.json" with { type: "json" };
-import { MissingAccount, NotAMint } from "../src/accounts.js";
 import {
   AgentRefusal,
   ENGINE_ERROR_BASE,

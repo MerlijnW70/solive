@@ -24,8 +24,8 @@ import {
   MANDATE_NONCE_BIT,
 } from "@intent-engine/core";
 import { COMPUTE_BUDGET_ADDRESS } from "@intent-engine/solver";
+import type { Transport } from "@intent-engine/client";
 import { AUTHORITY_NEXT, follow, followGap, type Runtime } from "../src/commands.js";
-import type { Transport } from "../src/transport.js";
 import { execute, FlowRefused, NOT_SENT } from "../src/flows.js";
 import { NOTHING_TO_CREATE, TREASURY_IS_PROGRAM, treasuryTooEmpty } from "../src/treasury.js";
 import { TREASURY_CREATE_NEEDS_MINTS } from "../src/args.js";

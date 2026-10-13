@@ -23,14 +23,13 @@ import {
 const FIRST_LANE = MANDATE_NONCE_BIT | (1n << 32n);
 import { getTokenDecoder, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { MAX_COMPUTE_UNITS } from "@intent-engine/solver";
+import { type Transport, Charged } from "@intent-engine/client";
 import { createCost, rentFor, TOKEN_ACCOUNT_RENT_BYTES } from "../src/agent/budget.js";
 import { AGENT_NONCE_PROBES, agentNonce, freeMandateId, MANDATE_ID_PROBES, NO_MANDATE_HINT, REVOKE_CANCELS } from "../src/agent/mandate.js";
 import { callOf, claim, claimsOf } from "../src/agent/claims.js";
 import { ENGINE_PROBLEMS, type Problem } from "../src/agent/problems.js";
-import type { Transport } from "../src/transport.js";
 import { EXIT_OK } from "../src/main.js";
 import { ata, balance, cli, funded, h, NOW, send, setNow, transport, type World, world } from "./harness.js";
-import { Charged } from "../src/transport.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 

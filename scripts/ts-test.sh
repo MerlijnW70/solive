@@ -19,6 +19,7 @@ if [[ "$PWD" == /mnt/* ]]; then
 fi
 bash scripts/identity.sh --check
 pnpm --filter @intent-engine/core build
+pnpm --filter @intent-engine/client build
 pnpm --filter @intent-engine/solver build
 pnpm --filter @intent-engine/cli build
 pnpm -r typecheck

@@ -50,12 +50,11 @@ import {
   Kind,
   splitFee,
 } from "@intent-engine/core";
+import { chainTime, type RpcLike, rpcTransport, type Transport } from "@intent-engine/client";
 import { agentServer } from "../src/agent/mcp.js";
 import { budgetOf } from "../src/agent/budget.js";
 import { relayOf } from "../src/agent/relay.js";
-import { chainTime } from "../src/accounts.js";
 import { loadKeypairFile } from "../src/main.js";
-import { type RpcLike, rpcTransport, type Transport } from "../src/transport.js";
 
 const url = process.env["DEVNET_RPC"];
 const keypair = process.env["DEVNET_KEYPAIR"];

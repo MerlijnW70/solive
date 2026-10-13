@@ -1,6 +1,7 @@
 import { AccountRole, type Address, type Blockhash, generateKeyPairSigner, type Instruction } from "@solana/kit";
 import { COMPUTE_BUDGET_ADDRESS, computeUnitLimit, computeUnitPrice, MAX_COMPUTE_UNITS } from "@intent-engine/solver";
 import { describe, expect, it } from "vitest";
+import type { Simulation, Transport } from "@intent-engine/client";
 import {
   AUTO_PERCENTILE,
   AUTO_PRICE_CAP,
@@ -14,7 +15,6 @@ import {
   withPriority,
   writableAccounts,
 } from "../src/compute.js";
-import type { Simulation, Transport } from "../src/transport.js";
 
 const A = "11111111111111111111111111111112" as Address;
 const B = "SysvarC1ock11111111111111111111111111111111" as Address;

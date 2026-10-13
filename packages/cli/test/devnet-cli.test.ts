@@ -16,10 +16,10 @@ import {
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
+import { chainTime, type RpcLike, rpcTransport } from "@intent-engine/client";
 import { ACTIONS } from "../src/agent/registry.js";
-import { chainTime, configExists } from "../src/commands.js";
+import { configExists } from "../src/commands.js";
 import { EXIT_FAILED, EXIT_OK, loadKeypairFile } from "../src/main.js";
-import { type RpcLike, rpcTransport } from "../src/transport.js";
 import { VERSION } from "../src/version.js";
 
 const url = process.env["DEVNET_RPC"];

@@ -4,11 +4,11 @@ import { dirname } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { createKeyPairSignerFromBytes, createSolanaRpc, type KeyPairSigner } from "@solana/kit";
+import { changesFrom, intentNotifications, type RpcLike, rpcTransport, signatureWatch } from "@intent-engine/client";
 import { ENV_URL, outputOf, parse, UsageError } from "./args.js";
 import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
 import { printableLines, render, renderText } from "./render.js";
-import { changesFrom, intentNotifications, type RpcLike, rpcTransport, signatureWatch } from "./transport.js";
 import { withSettings } from "./wallet.js";
 import { WALLET_NOTICE } from "./agent/wallet.js";
 

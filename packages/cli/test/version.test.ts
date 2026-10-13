@@ -9,7 +9,7 @@ import { runtime } from "./harness.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string) => readFileSync(join(ROOT, path), "utf8");
-const PACKAGES = ["packages/cli/package.json", "packages/core/package.json", "packages/solver/package.json"];
+const PACKAGES = ["packages/cli/package.json", "packages/client/package.json", "packages/core/package.json", "packages/solver/package.json"];
 const CRATES = [
   "programs/intent_engine/Cargo.toml",
   "crates/intent-core/Cargo.toml",

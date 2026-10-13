@@ -1,11 +1,10 @@
 import { type Address, createKeyPairSignerFromPrivateKeyBytes, getAddressEncoder, type KeyPairSigner } from "@solana/kit";
 import { getTokenDecoder } from "@solana-program/token";
 import { findAssociatedTokenAddress, formatAmount, PRODUCT_REPOSITORY } from "@intent-engine/core";
-import { createdAccount, mintOf } from "./accounts.js";
+import { createdAccount, mintOf, type Transport } from "@intent-engine/client";
 import { CLUSTERS, ENV_KEYPAIR, ENV_URL, type Env, UsageError } from "./args.js";
 import { SOL_DECIMALS } from "./agent/read.js";
 import { DEVNET_URL, NATIVE_MINT, TEST_TOKEN } from "./tokens.js";
-import type { Transport } from "./transport.js";
 
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
 const FUND_BELOW = LAMPORTS_PER_SOL / 2n;

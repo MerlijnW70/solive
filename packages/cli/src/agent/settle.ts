@@ -9,7 +9,7 @@ import {
   getIntentDecoder,
   tokenOf,
 } from "@intent-engine/core";
-import { chainTime, loadIntent, tokenProgramOf } from "../accounts.js";
+import { chainTime, loadIntent, tokenProgramOf } from "@intent-engine/client";
 import { closing, CostlyFunding, crankAction, expiring, type Funding, UnfundedAccount, vaultBalance } from "../crank.js";
 import { define } from "./actions.js";
 import { tool } from "./names.js";

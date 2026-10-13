@@ -11,15 +11,11 @@ import {
   findAssociatedTokenAddress,
   findDelegatePda,
   formatAmount,
-  INTENT_ENGINE_PROGRAM_ADDRESS,
   U64_MAX,
   findIntentPda,
-  findUserStatePda,
-  getUserStateDecoder,
 } from "@intent-engine/core";
-import { createdAccount, TOKEN_PROGRAMS } from "../accounts.js";
+import { createdAccount, TOKEN_PROGRAMS, type NonceWindow, type Transport } from "@intent-engine/client";
 import { NATIVE_MINT } from "../tokens.js";
-import type { Transport } from "../transport.js";
 import { AgentRefusal, ENGINE_PROBLEMS } from "./problems.js";
 import { SOL_DECIMALS } from "./read.js";
 import { InvalidInput } from "./schema.js";
@@ -37,24 +33,10 @@ export async function walletRecipient(transport: Transport, recipient: Address, 
   throw new InvalidInput([{ path, message: TOKEN_PROGRAMS.includes(held.owner) ? TOKEN_ACCOUNT_RECIPIENT : notAWallet(held.owner) }]);
 }
 
-type UserWindow = { nonceBase: bigint; nonceBitmap: readonly bigint[]; epoch: bigint };
-
-export async function userOf(transport: Transport, owner: Address): Promise<UserWindow | null> {
-  const [address] = await findUserStatePda({ owner });
-  const view = await createdAccount(transport, address);
-  if (view === null) {
-    return null;
-  }
-  if (view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS) {
-    throw new Error(`${address} is not an engine user account`);
-  }
-  return getUserStateDecoder().decode(view.data);
-}
-
 const NONCE_WINDOW = 256n;
 
 export function pickNonce(
-  user: UserWindow | null,
+  user: NonceWindow | null,
   requested: bigint | undefined,
   reserved: ReadonlySet<bigint> = new Set(),
 ): bigint {
@@ -75,7 +57,7 @@ export function pickNonce(
   );
 }
 
-export async function initUserIfMissing(user: UserWindow | null, owner: Address): Promise<Instruction[]> {
+export async function initUserIfMissing(user: NonceWindow | null, owner: Address): Promise<Instruction[]> {
   return user === null ? [await buildInitUser({ owner: createNoopSigner(owner) })] : [];
 }
 

@@ -35,9 +35,9 @@ import {
   Kind,
 } from "@intent-engine/core";
 import { SIMULATION_REFUSED } from "@intent-engine/solver";
-import { chainTime, run } from "../src/commands.js";
+import { chainTime, type RpcLike, rpcTransport } from "@intent-engine/client";
+import { run } from "../src/commands.js";
 import { loadKeypairFile } from "../src/main.js";
-import { type RpcLike, rpcTransport } from "../src/transport.js";
 
 const url = process.env["DEVNET_RPC"];
 const keypair = process.env["DEVNET_KEYPAIR"];

@@ -16,11 +16,11 @@ import {
   WARN_LONG_LIVED,
   WARN_RECEIVER,
 } from "@intent-engine/core";
-import { chainTime, CLOCK_SYSVAR, loadConfig, mintOf } from "../accounts.js";
+import { chainTime, CLOCK_SYSVAR, loadConfig, mintOf, loadUser } from "@intent-engine/client";
 import { define } from "./actions.js";
 import { tool } from "./names.js";
 import { claim, claimedBy, PREPARED_TTL } from "./claims.js";
-import { initUserIfMissing, pickNonce, setupLines, tokenAccountIfMissing, unusedIntent, userOf, walletRecipient, wrapIfShort } from "./owner.js";
+import { initUserIfMissing, pickNonce, setupLines, tokenAccountIfMissing, unusedIntent, walletRecipient, wrapIfShort } from "./owner.js";
 import { NATIVE_MINT } from "../tokens.js";
 import { prepare } from "./prepare.js";
 import { InvalidInput } from "./schema.js";
@@ -99,7 +99,7 @@ export const prepareCreate = define({
     const params = validate(paramsOf(input.order));
     const { config } = await loadConfig(transport);
     const [inputToken, outputToken] = [await mintOf(transport, input.input_mint), await mintOf(transport, input.output_mint)];
-    const user = await userOf(transport, input.owner);
+    const user = await loadUser(transport, input.owner);
     if (input.nonce !== undefined) {
       await unusedIntent(transport, input.owner, input.nonce);
     }

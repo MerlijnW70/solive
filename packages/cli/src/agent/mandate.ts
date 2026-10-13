@@ -28,8 +28,17 @@ import {
   validate,
   tokenOf,
 } from "@intent-engine/core";
-import { chainTime, createdAccount, engineAccount, loadConfig, MissingAccount, mintOf, tokenProgramOf } from "../accounts.js";
-import type { Transport } from "../transport.js";
+import {
+  chainTime,
+  createdAccount,
+  engineAccount,
+  loadConfig,
+  loadUser,
+  mintOf,
+  MissingAccount,
+  tokenProgramOf,
+  type Transport,
+} from "@intent-engine/client";
 import { vaultBalance } from "../crank.js";
 import { type AgentContext, define } from "./actions.js";
 import { createCost, release, rentFor, reserve, TOKEN_ACCOUNT_RENT_BYTES } from "./budget.js";
@@ -43,7 +52,6 @@ import {
   tokenAccountIfMissing,
   wrapIfShort,
   unusedIntent,
-  userOf,
 } from "./owner.js";
 import { prepare } from "./prepare.js";
 import { paying } from "./signed.js";
@@ -246,7 +254,7 @@ export const prepareMandate = define({
       tokenProgram: inputToken.tokenProgram,
     });
     const allowance = await raiseAllowance(transport, input.owner, source, spec.total);
-    const register = await initUserIfMissing(await userOf(transport, input.owner), input.owner);
+    const register = await initUserIfMissing(await loadUser(transport, input.owner), input.owner);
     const receiver = await tokenAccountIfMissing(transport, owner, input.owner, input.output_mint, outputToken.tokenProgram);
     const wrap = await wrapIfShort(transport, input.owner, input.input_mint, inputToken.tokenProgram, spec.total);
     const instructions = [
@@ -328,7 +336,7 @@ export const getMandate = define({
     const { address, mandate } = await loadMandate(transport, input.owner, input.agent, input.id ?? 0n);
     const now = await chainTime(transport);
     const decimals = await decimalsFor(transport, new Map(), mandate.inputMint, mandate.outputMint);
-    const user = await userOf(transport, input.owner);
+    const user = await loadUser(transport, input.owner);
     const status = user?.epoch !== mandate.epoch ? "revoked" : now >= mandate.validUntil ? "expired" : "active";
     return {
       mandate: address,

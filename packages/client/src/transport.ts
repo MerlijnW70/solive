@@ -569,7 +569,7 @@ export function changedAccount(note: unknown): ProgramAccount | null {
 
 export const RECONNECT_MS: readonly number[] = [1_000, 2_000, 5_000, 10_000, 30_000];
 
-function pause(ms: number, signal: AbortSignal): Promise<void> {
+export function pause(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     const stop = () => {
       clearTimeout(timer);

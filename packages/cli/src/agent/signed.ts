@@ -28,8 +28,6 @@ import {
   signedIntentMessage,
   validate,
 } from "@intent-engine/core";
-import { chainTime, clusterDomain, createdAccount, loadConfig, mintOf } from "../accounts.js";
-import { Charged, type Transport } from "../transport.js";
 import { define } from "./actions.js";
 import { tool } from "./names.js";
 import { expiryOf, termsInput, termsOutput, warningsOf } from "./create.js";
@@ -40,12 +38,21 @@ import {
   setupLines,
   tokenAccountIfMissing,
   unusedIntent,
-  userOf,
 } from "./owner.js";
 import { prepare, type Prepared, transactionSize } from "./prepare.js";
 import { AgentRefusal } from "./problems.js";
 import { createCost, rentFor, SIGNATURE_FEE, TOKEN_ACCOUNT_RENT_BYTES } from "./budget.js";
 import { bytesFit } from "@intent-engine/solver";
+import {
+  chainTime,
+  Charged,
+  clusterDomain,
+  createdAccount,
+  loadConfig,
+  loadUser,
+  mintOf,
+  type Transport,
+} from "@intent-engine/client";
 import { admitRelay, type Relay } from "./relay.js";
 import { type Call, claim, claimedBy, enter } from "./claims.js";
 import { type Order, orderSchema, paramsOf, partnerSchema, preparedSchema, preparedView } from "./shapes.js";
@@ -191,7 +198,7 @@ export const prepareSignedIntent = define({
     const now = await chainTime(transport);
     const expiresAt = expiryOf(input, now);
     const params = validate(paramsOf(input.order));
-    const user = await userOf(transport, input.owner);
+    const user = await loadUser(transport, input.owner);
     const outputToken = await mintOf(transport, input.output_mint);
     if (input.nonce !== undefined) {
       await unusedIntent(transport, input.owner, input.nonce);
@@ -424,7 +431,7 @@ export const previewSignedIntent = define({
     }
     const [intent] = await findIntentPda({ owner: input.owner, nonce: input.nonce });
     const exists = (await createdAccount(transport, intent)) !== null;
-    const user = await userOf(transport, input.owner);
+    const user = await loadUser(transport, input.owner);
     const description = await describeSignedIntent(fields, {
       now: await chainTime(transport),
       currentEpoch: user?.epoch ?? 0n,

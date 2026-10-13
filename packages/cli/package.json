@@ -22,6 +22,7 @@
     "test": "vitest run --fsModuleCache"
   },
   "dependencies": {
+    "@intent-engine/client": "workspace:*",
     "@intent-engine/core": "workspace:*",
     "@intent-engine/solver": "workspace:*",
     "@modelcontextprotocol/server": "2.3.1",

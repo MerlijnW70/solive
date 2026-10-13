@@ -10,6 +10,9 @@ importers:
 
   packages/cli:
     dependencies:
+      '@intent-engine/client':
+        specifier: workspace:*
+        version: link:../client
       '@intent-engine/core':
         specifier: workspace:*
         version: link:../core
@@ -38,6 +41,34 @@ importers:
       fast-check:
         specifier: 4.10.2
         version: 4.10.2
+      litesvm:
+        specifier: 1.5.0
+        version: 1.5.0(typescript@7.0.2)
+      typescript:
+        specifier: 7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: 5.0.3
+        version: 5.0.3(@types/node@26.6.4)(vite@8.3.2(@types/node@26.6.4))
+
+  packages/client:
+    dependencies:
+      '@intent-engine/core':
+        specifier: workspace:*
+        version: link:../core
+      '@solana/kit':
+        specifier: 8.4.0
+        version: 8.4.0(typescript@7.0.2)
+    devDependencies:
+      '@solana-program/system':
+        specifier: 0.14.1
+        version: 0.14.1(@solana/kit@8.4.0(typescript@7.0.2))
+      '@solana-program/token':
+        specifier: 0.16.1
+        version: 0.16.1(@solana/kit@8.4.0(typescript@7.0.2))
+      '@types/node':
+        specifier: 26.6.4
+        version: 26.6.4
       litesvm:
         specifier: 1.5.0
         version: 1.5.0(typescript@7.0.2)

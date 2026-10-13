@@ -12,8 +12,8 @@ import {
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
 } from "@solana/kit";
+import type { Transport } from "@intent-engine/client";
 import { priorityLamports } from "../compute.js";
-import type { Transport } from "../transport.js";
 import { LOG_LINE_LIMIT, LOG_TAIL, SimulationFailed, simulationProblem, untrusted } from "./problems.js";
 
 export type Prepared = {

@@ -1,5 +1,5 @@
 import type { Address, TransactionSigner } from "@solana/kit";
-import { memoized, type Transport } from "../transport.js";
+import { memoized, type Transport } from "@intent-engine/client";
 import { type Problem, problemOf } from "./problems.js";
 import type { Budget } from "./budget.js";
 import type { Relay } from "./relay.js";

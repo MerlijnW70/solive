@@ -8,5 +8,6 @@ bash scripts/comments.sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 pnpm --filter @intent-engine/core build
+pnpm --filter @intent-engine/client build
 pnpm --filter @intent-engine/solver build
 pnpm -r typecheck

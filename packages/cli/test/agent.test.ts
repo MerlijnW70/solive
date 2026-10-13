@@ -47,6 +47,16 @@ import {
   WARN_ATTESTOR,
   WARN_LONG_LIVED,
 } from "@intent-engine/core";
+import {
+  Charged,
+  EXTENDED_MINT_TYPE,
+  EXTENDED_TYPE_OFFSET,
+  EXTENSIONS_OFFSET,
+  MINT_BASE_SIZE,
+  mintOf,
+  scalesDisplay,
+  SCALING_EXTENSIONS,
+} from "@intent-engine/client";
 import { define, invoke, OutputMismatch, toJson } from "../src/agent/actions.js";
 import { ANNOTATIONS, annotationsOf } from "../src/agent/mcp.js";
 import { VERSION } from "../src/version.js";
@@ -58,19 +68,9 @@ import { OWNER_ACCOUNT_MISSING } from "../src/agent/settle.js";
 import { costlyFunding, FUNDING_RENT } from "../src/crank.js";
 import { SETTLED_LINE } from "../src/agent/shapes.js";
 import { DEFAULT_SUBMIT_WITHIN, RELAY_TOO_LARGE } from "../src/agent/signed.js";
-import {
-  EXTENDED_MINT_TYPE,
-  EXTENDED_TYPE_OFFSET,
-  EXTENSIONS_OFFSET,
-  MINT_BASE_SIZE,
-  mintOf,
-  SCALING_EXTENSIONS,
-  scalesDisplay,
-} from "../src/accounts.js";
 import { WARN_REPLACES_DELEGATE } from "../src/agent/owner.js";
 import { EXIT_OK } from "../src/main.js";
 import { ata, balance, cli, ESCROW, FEE_BPS, funded, h, NOW, send, setNow, transport, type World, world } from "./harness.js";
-import { Charged } from "../src/transport.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 

@@ -1,8 +1,7 @@
 import { tool } from "./names.js";
 import type { Address } from "@solana/kit";
 import { BPS_DENOMINATOR, INTENT_ENGINE_PROGRAM_ADDRESS, IntentCoreError, MAX_PARTNER_BPS } from "@intent-engine/core";
-import { MissingAccount, NotAMint } from "../accounts.js";
-import { rateLimited } from "../transport.js";
+import { MissingAccount, NotAMint, rateLimited } from "@intent-engine/client";
 import { InvalidInput, type Issue } from "./schema.js";
 
 export type Problem = {

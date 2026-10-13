@@ -43,9 +43,9 @@ import {
   MANDATE_NONCE_BIT,
 } from "@intent-engine/core";
 import type { Fetch } from "@intent-engine/solver";
+import type { EngineTransaction, Transport } from "@intent-engine/client";
 import type { Runtime } from "../src/commands.js";
 import { main } from "../src/main.js";
-import type { EngineTransaction, Transport } from "../src/transport.js";
 
 const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111" as Address;
 export const NOW = 1_700_000_000n;

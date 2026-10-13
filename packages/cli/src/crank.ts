@@ -16,8 +16,15 @@ import {
   INTENT_VERSION,
   type Intent,
 } from "@intent-engine/core";
-import type { AccountView, Transport } from "./transport.js";
-import { chainTime, createdAccount, EXTENSIONS_OFFSET, STATUS, tokenProgramOf } from "./accounts.js";
+import {
+  type AccountView,
+  chainTime,
+  createdAccount,
+  EXTENSIONS_OFFSET,
+  tokenProgramOf,
+  type Transport,
+} from "@intent-engine/client";
+import { STATUS } from "./accounts.js";
 import { rentFor } from "./agent/budget.js";
 
 export async function vaultBalance(transport: Transport, intent: Address): Promise<bigint> {

@@ -7,7 +7,7 @@ if [[ "$target" == /mnt/* ]]; then
   exit 1
 fi
 packed="$(mktemp -d)"
-for package in core solver cli; do
+for package in core client solver cli; do
   pnpm --filter "@intent-engine/$package" build >/dev/null
   (cd "packages/$package" && pnpm pack --pack-destination "$packed" >/dev/null)
 done

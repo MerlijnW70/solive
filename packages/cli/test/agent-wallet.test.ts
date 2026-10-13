@@ -28,8 +28,8 @@ import {
   formatTime,
 } from "@intent-engine/core";
 import { beforeEach, describe, expect, it } from "vitest";
+import { BlockhashExpired, FailedOnChain } from "@intent-engine/client";
 import { WALLET_NOT_MAINNET } from "../src/args.js";
-import { BlockhashExpired, FailedOnChain } from "../src/transport.js";
 import { WRAPPED } from "../src/agent/create.js";
 import { AgentRefusal } from "../src/agent/problems.js";
 import { InvalidInput } from "../src/agent/schema.js";

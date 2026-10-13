@@ -1,6 +1,7 @@
 import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import { getIntentSize } from "@intent-engine/core";
+import { Charged } from "@intent-engine/client";
 import {
   ACCOUNT_OVERHEAD_BYTES,
   BUDGET_WINDOW,
@@ -16,7 +17,6 @@ import {
 import { AgentRefusal } from "../src/agent/problems.js";
 import { admitRelay, RATE_WINDOW, relayOf } from "../src/agent/relay.js";
 import { paying, refuseRepricing, repriced } from "../src/agent/signed.js";
-import { Charged } from "../src/transport.js";
 
 const A = "11111111111111111111111111111112" as Address;
 const B = "SysvarC1ock11111111111111111111111111111111" as Address;

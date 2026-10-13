@@ -51,6 +51,20 @@ import {
   tipAccount,
 } from "@intent-engine/solver";
 import type { McpServer } from "@modelcontextprotocol/server";
+import {
+  chainTime,
+  clusterDomain,
+  createdAccount,
+  type IntentChanges,
+  type Latest,
+  loadConfig,
+  loadIntent,
+  memoized,
+  type ProgramAccount,
+  tokenAmountOf,
+  tokenProgramOf,
+  type Transport,
+} from "@intent-engine/client";
 import { agentServer } from "./agent/mcp.js";
 import { claimsOf } from "./agent/claims.js";
 import { budgetOf } from "./agent/budget.js";
@@ -69,19 +83,7 @@ import { prepareSignedIntent, previewSignedIntent, submitSignedIntent } from "./
 import { approval, ask, finish, FlowRefused, hasTokens, inRaw, NOT_SENT, perform, signMessage } from "./flows.js";
 import { loadMandate } from "./agent/mandate.js";
 import { RELAY_MAX_TTL } from "./args.js";
-import { type IntentChanges, type Latest, memoized, type ProgramAccount, type Transport } from "./transport.js";
-import {
-  chainTime,
-  clusterDomain,
-  createdAccount,
-  describeIntent,
-  loadConfig,
-  loadIntent,
-  quoteOf,
-  sameBytes,
-  tokenAmountOf,
-  tokenProgramOf,
-} from "./accounts.js";
+import { describeIntent, quoteOf, sameBytes } from "./accounts.js";
 import { closing, crank, expiring } from "./crank.js";
 import { priceOf, withPriority } from "./compute.js";
 import { createTreasuryAccounts, intentInputMints, treasuryView } from "./treasury.js";
