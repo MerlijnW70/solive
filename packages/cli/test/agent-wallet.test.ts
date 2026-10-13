@@ -1,4 +1,4 @@
-import { type Address, generateKeyPairSigner, getBase16Decoder, lamports, none } from "@solana/kit";
+import { type Address, generateKeyPairSigner, getBase16Decoder, getBase16Encoder, lamports, none, signBytes } from "@solana/kit";
 import { AccountState, getMintEncoder, getMintSize, getTokenEncoder, getTokenSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
@@ -20,6 +20,7 @@ import {
   INTENT_ENGINE_PROGRAM_ADDRESS,
   formatAmount,
   splitFee,
+  splitN,
   WARN_ATTESTOR,
   WARN_LONG_LIVED,
   WARN_RECEIVER,
@@ -428,6 +429,43 @@ describe("the wallet server", () => {
     const judgeAta = await findAssociatedTokenAddress({ owner, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     expect(balance(workerAta)).toBe(LAMPORTS_PER_SOL / 20n - judgeFee - fee);
     expect(balance(judgeAta)).toBe(judgeFee);
+  });
+
+  it("releases a proof escrow split among co-authors only when every one of them signs the exact split", async () => {
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    const coauthors = [await generateKeyPairSigner(), await generateKeyPairSigner(), await generateKeyPairSigner()];
+    const weights = [6000, 3000, 1000];
+    const specHash = "a".repeat(64);
+    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, min_result: "1", max_result: "1", spec_hash: specHash, send: true });
+    const nonce = escrow["nonce"] as string;
+    const recipients = coauthors.map((c, i) => ({ wallet: c.address, weight: weights[i] }));
+    const { net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);
+    const payout = splitN(net, weights);
+    expect((await call(client, "wallet_attest_split", { owner, nonce, recipients: recipients.map((r, i) => ({ ...r, weight: i === 0 ? 5000 : r.weight })) })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "recipients" }] });
+    const shown = await ok(client, "wallet_attest_split", { owner, nonce, recipients });
+    expect(shown).toMatchObject({ intent: escrow["intent"], result: "1", net: formatAmount(net, 9), sent: false });
+    expect((shown["paid"] as Json[]).map((p) => p["amount"])).toEqual(payout.map((a) => formatAmount(a, 9)));
+    expect(shown["digest"]).toMatch(/^[0-9a-f]{64}$/);
+    const signed = await Promise.all(
+      recipients.map(async (r, i) => ({
+        ...r,
+        signature: getBase16Decoder().decode(
+          new Uint8Array(await signBytes(coauthors[i]!.keyPair.privateKey, Uint8Array.from(getBase16Encoder().encode((shown["paid"] as Json[])[i]!["envelope"] as string)))),
+        ),
+      })),
+    );
+    expect((await call(client, "wallet_attest_split", { owner, nonce, recipients: signed, send: true })).value).toMatchObject({ code: "ReleaseChanged", hint: RELEASE_CHANGED });
+    const missing = signed.map((s, i) => (i === 2 ? { wallet: s.wallet, weight: s.weight } : s));
+    expect((await call(client, "wallet_attest_split", { owner, nonce, recipients: missing, approval: shown["approval"], send: true })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "recipients.2.signature" }] });
+    const done = await ok(client, "wallet_attest_split", { owner, nonce, recipients: signed, approval: shown["approval"], send: true });
+    expect(done).toMatchObject({ sent: true, signature: expect.any(String) });
+    for (const [i, c] of coauthors.entries()) {
+      const ata = await findAssociatedTokenAddress({ owner: c.address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+      expect(balance(ata)).toBe(payout[i]!);
+    }
+    expect((await call(client, "wallet_attest_split", { owner, nonce, recipients: signed, approval: shown["approval"], send: true })).value).toMatchObject({ code: "InvalidTransition" });
+    const plain = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.02", attestor: owner, min_result: "1", max_result: "1", send: true });
+    expect((await call(client, "wallet_attest_split", { owner, nonce: plain["nonce"], recipients })).value).toMatchObject({ code: "NotAProof" });
   });
 
   it("escrows a task's pieces in one plan: one preview with the total, one send, each piece released on its own", async () => {

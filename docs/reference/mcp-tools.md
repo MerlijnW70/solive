@@ -2,7 +2,7 @@
 
 # MCP tools
 
-16 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 13 wallet tools, listed first.
+16 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 14 wallet tools, listed first.
 
 ## solive_wallet_setup
 
@@ -155,6 +155,23 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 | `pay_to` | address | yes | the wallet to pay |
 | `result` | whole number as a decimal string | no | the result to attest, between the intent's min_result and max_result; default min_result |
 | `delivered_sha256` | string | no | the sha256, as 64 hex digits, of the work this release pays for; recorded in a memo this wallet signs with the release, so the payer can check what it receives with solive_wallet_receipt |
+| `approval` | string | no | the approval the preview returned; needed with send |
+| `send` | boolean | no | true signs the attestation and settles; leave out to preview |
+
+## solive_wallet_attest_split
+
+Served only with `--wallet`.
+
+As the attestor a proof escrow names, release it on chain divided among several co-authors by weight, from this server's wallet: the escrowed tokens, minus the engine fee, any partner fee and the judge fee, are split by the weights and paid to each co-author's token account, which this creates if needed. Every co-author must authorize the exact split: preview without send to get the digest and the envelope each wallet must sign, collect those signatures, then call again with send: true and each co-author's signature. Changing any recipient, weight or the result changes what everyone signs. The escrow must have been made with a spec_hash. A release cannot be undone. Without send it only previews and signs nothing; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.
+
+Effect: `submit` (read-only: false, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `owner` | address | yes | the wallet that made the escrow |
+| `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
+| `recipients` | list of object, 1 to 8 | yes | the co-authors and their weighted shares, up to 8 |
+| `result` | whole number as a decimal string | no | the result to attest, between the intent's min_result and max_result; default min_result |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs the attestation and settles; leave out to preview |
 

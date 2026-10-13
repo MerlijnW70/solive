@@ -1,9 +1,13 @@
 import { createHash } from "node:crypto";
-import { AccountRole, type Address, getAddressDecoder, getBase16Decoder, type KeyPairSigner } from "@solana/kit";
+import { AccountRole, type Address, getAddressDecoder, getBase16Decoder, getBase16Encoder, type KeyPairSigner } from "@solana/kit";
 import {
   attestedFillMessage,
   attestedProofMessage,
+  attestedSplitMessage,
+  attestedSplitPreimage,
+  buildEd25519Instruction,
   buildFillAttested,
+  buildFillAttestedSplit,
   decodeEvent,
   decodeParams,
   feeBpsFor,
@@ -14,9 +18,12 @@ import {
   IntentStatus,
   Kind,
   LONG_LIVED_SECONDS,
+  MAX_SPLIT_RECIPIENTS,
   parseAmount,
   signEd25519Instruction,
+  splitCommit,
   splitFees,
+  splitN,
   WARN_ATTESTOR,
   WARN_LONG_LIVED,
 } from "@intent-engine/core";
@@ -756,6 +763,172 @@ const walletAttest = define({
   },
 });
 
+export const SPLIT_WEIGHTS_WRONG = "the weights must be whole basis points that add up to 10000";
+export const SPLIT_SIG_NEEDED = "every co-author must sign the split before send: true; preview returns the envelope each one signs";
+export const SIGNATURE_PATTERN = "^[0-9a-fA-F]{128}$";
+export const WARN_COAUTHORS = "every co-author must sign the exact split; a release pays only the recipients and weights they all signed";
+
+const coauthor = object({
+  wallet: account("the co-author's wallet"),
+  weight: integer(1, 10_000, "this co-author's share in basis points; all weights must add up to 10000"),
+  signature: optional(text("128 hex: this co-author's signature over the envelope the preview returned for this wallet; needed with send")),
+});
+
+const walletAttestSplit = define({
+  name: tool("wallet_attest_split"),
+  title: "Release a proof escrow split among co-authors",
+  description: `As the attestor a proof escrow names, release it on chain divided among several co-authors by weight, from this server's wallet: the escrowed tokens, minus the engine fee, any partner fee and the judge fee, are split by the weights and paid to each co-author's token account, which this creates if needed. Every co-author must authorize the exact split: preview without send to get the digest and the envelope each wallet must sign, collect those signatures, then call again with send: true and each co-author's signature. Changing any recipient, weight or the result changes what everyone signs. The escrow must have been made with a spec_hash. A release cannot be undone. Without send it only previews and signs nothing; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.`,
+  effect: "submit",
+  input: object({
+    owner: account("the wallet that made the escrow"),
+    nonce: amount("the escrow intent's nonce"),
+    recipients: list(coauthor, MAX_SPLIT_RECIPIENTS, "the co-authors and their weighted shares, up to 8", 1),
+    result: optional(amount("the result to attest, between the intent's min_result and max_result; default min_result")),
+    approval: optional(text("the approval the preview returned; needed with send")),
+    send: optional(flag("true signs the attestation and settles; leave out to preview")),
+  }),
+  output: object({
+    intent: account(),
+    digest: text("64 hex: the split digest every co-author and this wallet sign over"),
+    paid: list(object({ wallet: account(), weight: amount(), amount: text("whole tokens this co-author receives"), envelope: text("128 hex: the message this wallet must sign") }), MAX_SPLIT_RECIPIENTS),
+    net: text("whole tokens shared among the co-authors"),
+    fee: text("whole tokens kept as fees"),
+    result: amount(),
+    approval: text("pass it back with send: true; a send that would differ from this preview is refused"),
+    summary: list(text(), 12),
+    warnings: list(text(), 8),
+    sent: flag(),
+    signature: optional(text()),
+    next: optional(text()),
+  }),
+  run: async (ctx: AgentContext, input, call: Call) => {
+    const signer = await signerOf(ctx);
+    const [intent] = await findIntentPda({ owner: input.owner, nonce: input.nonce });
+    const [view, { config }] = await Promise.all([ctx.transport.getAccount(intent), loadConfig(ctx.transport)]);
+    if (view === null) {
+      throw new AgentRefusal("NotFound", `no intent ${intent}; it was settled, cancelled and closed, or never made`);
+    }
+    const held = getIntentDecoder().decode(view.data);
+    const params = decodeParams(held.kind, Uint8Array.from(held.params));
+    if (params.kind !== Kind.AttestedResult) {
+      throw new AgentRefusal("KindMismatch", "this intent is not an attested escrow");
+    }
+    if (!params.specHash.some((b) => b !== 0)) {
+      throw new AgentRefusal("NotAProof", "a split release needs an escrow made with a spec_hash");
+    }
+    if (params.attestor !== signer.address) {
+      throw new AgentRefusal("Unauthorized", notAttestor(params.attestor));
+    }
+    if (held.status !== IntentStatus.Open) {
+      throw new AgentRefusal("InvalidTransition", `this escrow is ${STATUS[held.status] ?? "not open"}, so it can no longer be released`);
+    }
+    if (held.expiresAt <= (await chainTime(ctx.transport))) {
+      throw new AgentRefusal("IntentExpired", "this escrow has expired; its owner gets it back instead");
+    }
+    const result = input.result ?? params.minResult;
+    if (result < params.minResult || result > params.maxResult) {
+      throw new InvalidInput([{ path: "result", message: `must be between ${params.minResult} and ${params.maxResult}` }]);
+    }
+    const weights = input.recipients.map((r) => r.weight);
+    if (weights.reduce((a, b) => a + b, 0) !== 10_000) {
+      throw new InvalidInput([{ path: "recipients", message: SPLIT_WEIGHTS_WRONG }]);
+    }
+    const wallets = input.recipients.map((r) => r.wallet);
+    for (const [i, r] of input.recipients.entries()) {
+      await walletRecipient(ctx.transport, r.wallet, `recipients.${i}.wallet`);
+    }
+    const token = await mintOf(ctx.transport, held.inputMint);
+    const payees = await Promise.all(wallets.map((w) => tokenAccountIfMissing(ctx.transport, signer, w, held.inputMint, token.tokenProgram)));
+    const amountIn = held.escrowed - held.filled;
+    const settleAmount = amountIn - params.judgeFee;
+    const maxFeeBps = feeBpsFor(config, held.kind) + held.partnerBps;
+    const shares = splitFees(settleAmount, feeBpsFor(config, held.kind), held.partnerBps, held.partnerCutBps);
+    const payout = splitN(shares.net, weights);
+    const treasury = shares.protocol > 0n ? await tokenAccountIfMissing(ctx.transport, signer, config.feeRecipient, held.inputMint, token.tokenProgram) : { create: [] };
+    const partnerPaid = shares.partner > 0n;
+    const partner = partnerPaid ? await tokenAccountIfMissing(ctx.transport, signer, held.partner, held.inputMint, token.tokenProgram) : { create: [] };
+    const judge = params.judgeFee > 0n ? await tokenAccountIfMissing(ctx.transport, signer, signer.address, held.inputMint, token.tokenProgram) : { create: [] };
+    const splitHash = await splitCommit(wallets, weights);
+    const fields = {
+      domain: Uint8Array.from(config.domain),
+      intent,
+      amountIn,
+      result,
+      filled: held.filled,
+      revision: held.revision,
+      maxFeeBps,
+      specHash: params.specHash,
+      splitHash,
+    };
+    const envelopes = await Promise.all(wallets.map((w) => attestedSplitMessage(w, fields)));
+    const attestorMessage = await attestedSplitMessage(signer.address, fields);
+    const digestHex = getBase16Decoder().decode(Uint8Array.from(createHash("sha256").update(await attestedSplitPreimage(fields)).digest()));
+    const settle = await buildFillAttestedSplit({
+      solver: signer,
+      owner: input.owner,
+      nonce: input.nonce,
+      inputMint: held.inputMint,
+      inputTokenProgram: token.tokenProgram,
+      recipients: wallets,
+      weights,
+      ...(shares.protocol > 0n ? { feeRecipient: config.feeRecipient } : {}),
+      ...(partnerPaid ? { partner: held.partner } : {}),
+      ...(params.judgeFee > 0n ? { judge: signer.address } : {}),
+      amountIn,
+      result,
+      maxFeeBps,
+    });
+    const name = TOKEN_NAMES[held.inputMint] ?? held.inputMint;
+    const approval = approvalOf(attestorMessage);
+    if (input.send === true && input.approval !== approval) {
+      throw new AgentRefusal("ReleaseChanged", RELEASE_CHANGED);
+    }
+    let coauthorIxs;
+    if (input.send === true) {
+      coauthorIxs = input.recipients.map((r, i) => {
+        if (r.signature === undefined || !new RegExp(SIGNATURE_PATTERN).test(r.signature)) {
+          throw new InvalidInput([{ path: `recipients.${i}.signature`, message: SPLIT_SIG_NEEDED }]);
+        }
+        const message = envelopes[i];
+        if (message === undefined) {
+          throw new InvalidInput([{ path: `recipients.${i}`, message: SPLIT_SIG_NEEDED }]);
+        }
+        return buildEd25519Instruction({ publicKey: r.wallet, signature: Uint8Array.from(getBase16Encoder().encode(r.signature)), message });
+      });
+    }
+    const setup = [...payees.flatMap((p) => p.create), ...treasury.create, ...partner.create, ...judge.create];
+    const prepared =
+      input.send === true && coauthorIxs !== undefined
+        ? preparedView(await prepare(ctx.transport, [...setup, ...coauthorIxs, await signEd25519Instruction(signer, attestorMessage), settle], signer.address))
+        : undefined;
+    const view2 = {
+      intent,
+      digest: digestHex,
+      paid: input.recipients.map((r, i) => ({
+        wallet: r.wallet,
+        weight: BigInt(r.weight),
+        amount: formatAmount(payout[i] ?? 0n, token.decimals),
+        envelope: getBase16Decoder().decode(envelopes[i] ?? new Uint8Array()),
+      })),
+      net: formatAmount(shares.net, token.decimals),
+      fee: formatAmount(shares.protocol + shares.partner + params.judgeFee, token.decimals),
+      result,
+      approval,
+      summary: [
+        `Splits: ${formatAmount(shares.net, token.decimals)} of ${name} among ${input.recipients.length} co-authors from ${input.owner}'s escrow${held.inputMint === NATIVE_MINT ? WRAPPED : ""}`,
+        ...input.recipients.map((r, i) => `  ${r.wallet}: ${r.weight} bps -> ${formatAmount(payout[i] ?? 0n, token.decimals)} of ${name}`),
+        ...(params.judgeFee > 0n ? [`Pays the judge: ${formatAmount(params.judgeFee, token.decimals)} of ${name} to this wallet, carved out of the escrow`] : []),
+        `Binds: the result to the committed spec ${getBase16Decoder().decode(params.specHash)}`,
+        `Attests: result ${result}, signed by this server's wallet as the escrow's attestor`,
+        ...(setup.length === 0 ? [] : [`Setup: creates ${setup.length} token account(s), paid by this wallet`]),
+      ],
+      warnings: [WARN_ATTESTOR, WARN_COAUTHORS],
+      prepared,
+    };
+    return sent(ctx, signer, view2, input.send, call);
+  },
+});
+
 export const MAX_RECURRING = 12;
 
 export const mayHaveLanded = (sent: number, times: number, problem: string) =>
@@ -1211,6 +1384,7 @@ export const WALLET_ACTIONS: readonly AnyAction[] = [
   walletEscrow,
   walletEscrowPlan,
   walletAttest,
+  walletAttestSplit,
   walletWait,
   walletReceipt,
   walletIntents,
