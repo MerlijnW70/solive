@@ -61,6 +61,7 @@ import {
   attestedSplitMessage,
   attestedSplitPreimage,
   splitCommit,
+  splitN,
   EVENT_IX_TAG,
   buildEd25519Instruction,
   checkAttested,
@@ -136,6 +137,7 @@ type Vectors = {
     string
   >;
   split_commits: { recipients: string[]; weights: string[]; hash: string }[];
+  split_plans: { amount: string; weights: string[]; shares: string[] }[];
   fits_expiry: { name: string; expires_at: string; fits: boolean }[];
   instruction_data: { name: string; hex: string }[];
   discriminators: Record<string, string>;
@@ -610,6 +612,15 @@ describe("golden vectors emitted by the Rust implementation", () => {
     expect(hexOf(offchainEnvelope(s.attestor as Address, digest))).toBe(s.attest_proof_message);
     const otherSpec = { ...fields, specHash: new Uint8Array(32).fill(1) };
     expect(hexOf(await attestedProofPreimage(otherSpec))).not.toBe(s.attest_proof_preimage);
+  });
+
+  it("split an amount across weights exactly like the program's kernel", () => {
+    for (const c of vectors.split_plans) {
+      const shares = splitN(BigInt(c.amount), c.weights.map(Number));
+      expect(shares.map(String)).toEqual(c.shares);
+      const total = shares.reduce((a, b) => a + b, 0n);
+      expect(total).toBe(BigInt(c.amount));
+    }
   });
 
   it("commit a split to its recipients and weights byte for byte like Rust", async () => {

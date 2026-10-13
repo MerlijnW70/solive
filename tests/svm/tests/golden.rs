@@ -639,6 +639,27 @@ fn vectors() -> TestResult<Value> {
         })
     })
     .collect();
+    let split_plans: Vec<Value> = [
+        (0u64, vec![10_000u16]),
+        (1, vec![5_000, 5_000]),
+        (1, vec![1, 9_999]),
+        (1_000_000, vec![3_333, 3_333, 3_334]),
+        (7, vec![2_000, 2_000, 2_000, 1_000, 1_000, 1, 1, 1_998]),
+        (
+            u64::MAX,
+            vec![625; 15].into_iter().chain([625]).collect::<Vec<_>>(),
+        ),
+    ]
+    .into_iter()
+    .map(|(amount, weights)| {
+        let plan = intent_core::bounty::split_n(amount, &weights).map_err(|e| format!("{e:?}"))?;
+        Ok(json!({
+            "amount": amount.to_string(),
+            "weights": weights.iter().map(ToString::to_string).collect::<Vec<_>>(),
+            "shares": plan.as_slice().iter().map(ToString::to_string).collect::<Vec<_>>(),
+        }))
+    })
+    .collect::<TestResult<Vec<Value>>>()?;
     let sig = json!({
         "domain": hex(&svm_tests::DOMAIN),
         "receiver": key(6).to_string(),
@@ -894,6 +915,7 @@ fn vectors() -> TestResult<Value> {
         "flag_checks": flag_checks,
         "sig": sig,
         "split_commits": split_commits,
+        "split_plans": split_plans,
         "random_signed": random_signed(),
         "random_dutch": random_dutch(),
         "economics_caps": {
