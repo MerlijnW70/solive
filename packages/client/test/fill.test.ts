@@ -49,6 +49,17 @@ function nativeMint(w: World) {
 }
 
 describe("filling from the client", () => {
+  it("wraps the solver's SOL when the intent buys SOL and no route supplies it", async () => {
+    const { w, client, solver, tokens, swap } = await setup();
+    nativeMint(w);
+    const created = await client.createIntent({ signer: w.owner, inputMint: w.inputMint, outputMint: NATIVE_MINT, params: swap });
+    expect(await tokens(solver.address, NATIVE_MINT)).toBeNull();
+
+    await client.fill({ solver, owner: w.owner.address, nonce: created.nonce });
+    expect(await tokens(w.owner.address, NATIVE_MINT)).toBe(MIN_OUT);
+    expect(await client.fillOf(created.intent)).toMatchObject({ steps: 1, delivered: MIN_OUT, required: MIN_OUT });
+  });
+
   it("fills an open swap from a wallet with no token accounts, paying the protocol fee to the treasury wallet's account", async () => {
     const { w, client, solver, tokens, order, swap, minted } = await setup();
     const created = await client.createIntent({ ...order, params: swap });

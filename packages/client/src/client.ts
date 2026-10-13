@@ -401,7 +401,8 @@ export function createClient(options: ClientOptions): Client {
       maxFeeBps: kindBps + held.partnerBps,
     });
     const setup = [solverInput, solverOutput, ...payouts].flatMap(({ create }) => create);
-    return send([...setup, ...(input.route ?? []), filled], solver);
+    const wrap = input.route === undefined ? (await wrapIfShort(transport, solver, held.outputMint, buy.tokenProgram, amountOut)).instructions : [];
+    return send([...setup, ...wrap, ...(input.route ?? []), filled], solver);
   };
 
   const settling = async (cranker: TransactionSigner, owner: Address, nonce: bigint) => {
