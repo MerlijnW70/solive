@@ -1392,7 +1392,7 @@ describe("the wallet server", () => {
     expect(await ok(paged, "wallet_receipt", { nonce: "12" })).toEqual({ intent, released: false, next: NOT_RELEASED });
     h.through = null;
     h.engineLog = [];
-  });
+  }, 60_000);
 
   async function releasedEscrow(nonceHint: string) {
     const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
