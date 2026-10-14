@@ -26,6 +26,8 @@ In scope: the code in this repository, and the program deployed from it at `GHFB
 
 The program has not had an external audit.
 
+The [threat model](docs/threat-model.md) lists each known attack per actor and asset, the test or proof that stops it, and what is still open.
+
 Out of scope: third-party services the tools call (RPC nodes, Jupiter, Jito, faucets), and attacks that need the victim's private key.
 
 ## Known and accepted behaviour
