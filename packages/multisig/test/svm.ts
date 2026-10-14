@@ -3,11 +3,10 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Address, getBase58Decoder, getTransactionDecoder, lamports } from "@solana/kit";
+import { type Address, generateKeyPairSigner, getSignatureFromTransaction, type KeyPairSigner, lamports, type Transaction } from "@solana/kit";
 import { FailedTransactionMetadata, LiteSVM } from "litesvm";
-import { type AccountInfo, Keypair, PublicKey, type VersionedTransaction } from "@solana/web3.js";
-import * as squads from "@sqds/multisig";
 import type { Chain } from "../src/chain.js";
+import { encodeAccount, programConfigCodec, programConfigPda } from "../src/layout.js";
 import { main, type Deps } from "../src/main.js";
 import { SQUADS_PROGRAM } from "../src/squads.js";
 
@@ -37,36 +36,37 @@ export const squadsProgram = (): Uint8Array => {
 
 export const engineProgram = (): Uint8Array => fixture(enginePath, "build the program or set INTENT_ENGINE_SO");
 
-const at = (key: PublicKey) => key.toBase58() as Address;
+export const randomAddress = async (): Promise<Address> => (await generateKeyPairSigner()).address;
 
 export class Svm {
   readonly svm = new LiteSVM();
-  readonly keys = new Map<string, Keypair>();
+  readonly keys = new Map<string, KeyPairSigner>();
   readonly runs: string[][] = [];
   printed = "";
 
-  constructor() {
-    this.svm.addProgram(at(SQUADS_PROGRAM), squadsProgram());
-    const treasury = Keypair.generate().publicKey;
-    this.fund(treasury);
-    const [config] = squads.getProgramConfigPda({ programId: SQUADS_PROGRAM });
-    const [data] = squads.accounts.ProgramConfig.fromArgs({
-      authority: Keypair.generate().publicKey,
-      multisigCreationFee: 0,
-      treasury,
-      reserved: new Array<number>(64).fill(0),
-    }).serialize();
-    this.set(config, SQUADS_PROGRAM, data);
+  static async open(treasury?: Address): Promise<Svm> {
+    const s = new Svm();
+    s.svm.addProgram(SQUADS_PROGRAM, squadsProgram());
+    const paidTo = treasury ?? (await randomAddress());
+    s.fund(paidTo);
+    const data = encodeAccount("ProgramConfig", programConfigCodec, {
+      authority: await randomAddress(),
+      multisigCreationFee: 0n,
+      treasury: paidTo,
+      reserved: new Uint8Array(64),
+    });
+    s.set(await programConfigPda(), SQUADS_PROGRAM, data);
+    return s;
   }
 
-  fund(key: PublicKey, amount = 10n * SOL): void {
-    this.svm.airdrop(at(key), lamports(amount));
+  fund(key: Address, amount = 10n * SOL): void {
+    this.svm.airdrop(key, lamports(amount));
   }
 
-  set(key: PublicKey, owner: PublicKey, data: Uint8Array, executable = false): void {
+  set(key: Address, owner: Address, data: Uint8Array, executable = false): void {
     this.svm.setAccount({
-      address: at(key),
-      programAddress: at(owner),
+      address: key,
+      programAddress: owner,
       data,
       executable,
       lamports: lamports(this.svm.minimumBalanceForRentExemption(BigInt(data.length))),
@@ -74,42 +74,36 @@ export class Svm {
     });
   }
 
-  account(key: PublicKey) {
-    return this.svm.getAccount(at(key));
+  account(key: Address) {
+    return this.svm.getAccount(key);
   }
 
-  member(name: string): Keypair {
-    const keypair = Keypair.generate();
-    this.fund(keypair.publicKey);
+  async member(name: string): Promise<KeyPairSigner> {
+    const keypair = await generateKeyPairSigner();
+    this.fund(keypair.address);
     this.keys.set(name, keypair);
     return keypair;
   }
 
-  private decode(tx: VersionedTransaction) {
-    return getTransactionDecoder().decode(tx.serialize());
-  }
-
   readonly chain: Chain = {
-    account: async (key): Promise<AccountInfo<Buffer> | null> => {
+    account: async (key) => {
       const found = this.account(key);
-      return found.exists
-        ? { data: Buffer.from(found.data), owner: new PublicKey(found.programAddress), lamports: Number(found.lamports), executable: found.executable }
-        : null;
+      return found.exists ? { data: new Uint8Array(found.data), owner: found.programAddress } : null;
     },
-    blockhash: async () => this.svm.latestBlockhash(),
-    simulate: async (tx) => {
-      const result = this.svm.simulateTransaction(this.decode(tx));
+    blockhash: async () => ({ blockhash: this.svm.latestBlockhash(), lastValidBlockHeight: 0n }),
+    simulate: async (tx: Transaction) => {
+      const result = this.svm.simulateTransaction(tx);
       return result instanceof FailedTransactionMetadata
         ? { err: String(result.err()), logs: result.meta().logs() }
         : { err: null, logs: result.meta().logs() };
     },
-    send: async (tx) => {
-      const result = this.svm.sendTransaction(this.decode(tx));
+    send: async (tx: Transaction) => {
+      const result = this.svm.sendTransaction(tx);
       this.svm.expireBlockhash();
       if (result instanceof FailedTransactionMetadata) {
         throw new Error(`${String(result.err())}\n${result.meta().logs().join("\n")}`);
       }
-      return getBase58Decoder().decode(tx.signatures[0] ?? new Uint8Array(64));
+      return getSignatureFromTransaction(tx);
     },
   };
 

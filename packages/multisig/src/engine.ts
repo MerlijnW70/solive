@@ -1,29 +1,23 @@
-import type { TransactionInstruction } from "@solana/web3.js";
+import { type Instruction, isSignerRole } from "@solana/kit";
 import { IntentEngineInstruction, parseIntentEngineInstruction } from "@intent-engine/core";
 
 type Parsable = Parameters<typeof parseIntentEngineInstruction>[0];
 
-const READONLY_SIGNER = 2;
-const WRITABLE = 1;
-
 export const jsonText = (value: unknown, indent = 0): string =>
   JSON.stringify(value, (_, v: unknown) => (typeof v === "bigint" ? v.toString() : v instanceof Uint8Array ? Array.from(v) : v), indent);
 
-export function engineSummary(ix: TransactionInstruction): string {
-  const signers = ix.keys.filter((k) => k.isSigner).map((k) => k.pubkey.toBase58());
+export function engineSummary(ix: Instruction): string {
+  const accounts = ix.accounts ?? [];
+  const data = ix.data ?? new Uint8Array();
+  const signers = accounts.filter((k) => isSignerRole(k.role)).map((k) => k.address);
   const by = `signed by ${signers.join(", ") || "nobody"}`;
-  const raw = {
-    programAddress: ix.programId.toBase58(),
-    accounts: ix.keys.map((k) => ({ address: k.pubkey.toBase58(), role: (k.isSigner ? READONLY_SIGNER : 0) | (k.isWritable ? WRITABLE : 0) })),
-    data: new Uint8Array(ix.data),
-  };
   try {
-    const parsed = parseIntentEngineInstruction(raw as unknown as Parsable);
+    const parsed = parseIntentEngineInstruction({ programAddress: ix.programAddress, accounts, data: new Uint8Array(data) } as unknown as Parsable);
     const name = (IntentEngineInstruction as Record<number, string>)[parsed.instructionType] ?? String(parsed.instructionType);
-    const data = "data" in parsed ? (parsed.data as Record<string, unknown>) : {};
-    const args = Object.fromEntries(Object.entries(data).filter(([key]) => key !== "discriminator"));
+    const fields = "data" in parsed ? (parsed.data as Record<string, unknown>) : {};
+    const args = Object.fromEntries(Object.entries(fields).filter(([key]) => key !== "discriminator"));
     return `Intent engine ${name} ${jsonText(args)}, ${by}`;
   } catch {
-    return `Intent engine instruction that this version cannot decode (${ix.data.length} bytes of data), ${by}`;
+    return `Intent engine instruction that this version cannot decode (${data.length} bytes of data), ${by}`;
   }
 }

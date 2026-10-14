@@ -2,7 +2,7 @@
 import { execFile } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { promisify } from "node:util";
-import { Keypair } from "@solana/web3.js";
+import { createKeyPairSignerFromBytes } from "@solana/kit";
 import { connectionChain } from "./chain.js";
 import { main } from "./main.js";
 import { Refusal } from "./squads.js";
@@ -13,7 +13,7 @@ const result = await main(process.argv.slice(2), {
   chain: connectionChain,
   keypair: async (path) => {
     try {
-      return Keypair.fromSecretKey(Uint8Array.from(JSON.parse(await readFile(path, "utf8")) as number[]));
+      return await createKeyPairSignerFromBytes(Uint8Array.from(JSON.parse(await readFile(path, "utf8")) as number[]));
     } catch (error) {
       throw new Refusal(`cannot read the keypair file ${path}: ${error instanceof Error ? error.message : String(error)}`);
     }

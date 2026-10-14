@@ -1,5 +1,17 @@
 import { parseArgs } from "node:util";
-import { type Keypair, PublicKey, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
+import {
+  type Address,
+  appendTransactionMessageInstructions,
+  compileTransaction,
+  createTransactionMessage,
+  isAddress,
+  type KeyPairSigner,
+  pipe,
+  setTransactionMessageFeePayer,
+  setTransactionMessageLifetimeUsingBlockhash,
+  signTransaction,
+  type Transaction,
+} from "@solana/kit";
 import type { Chain } from "./chain.js";
 import { jsonText } from "./engine.js";
 import { show } from "./show.js";
@@ -7,7 +19,7 @@ import { approve, createMultisig, ENGINE_PROGRAM, execute, type Plan, proposeAut
 
 export type Deps = {
   chain(url: string): Chain;
-  keypair(path: string): Promise<Keypair>;
+  keypair(path: string): Promise<KeyPairSigner>;
   run(argv: string[]): Promise<string>;
 };
 
@@ -59,12 +71,12 @@ const required = (values: Values, name: Exclude<keyof Values, "yes">): string =>
   return value;
 };
 
-function address(text: string, name: string): PublicKey {
-  try {
-    return new PublicKey(text.trim());
-  } catch {
+function address(text: string, name: string): Address {
+  const trimmed = text.trim();
+  if (!isAddress(trimmed)) {
     throw new UsageError(`--${name} takes a base58 address, not ${text}`);
   }
+  return trimmed;
 }
 
 const key = (values: Values, name: Exclude<keyof Values, "yes">) => address(required(values, name), name);
@@ -106,19 +118,22 @@ function cluster(given: string): string {
   return `${parsed.origin}${parsed.pathname === "/" ? "" : parsed.pathname}`;
 }
 
-async function transaction(chain: Chain, payer: Keypair, plan: Plan): Promise<VersionedTransaction> {
-  const message = new TransactionMessage({
-    payerKey: payer.publicKey,
-    recentBlockhash: await chain.blockhash(),
-    instructions: plan.instructions,
-  }).compileToV0Message();
-  const tx = new VersionedTransaction(message);
-  const signers = [payer, ...plan.signers.filter((s) => !s.publicKey.equals(payer.publicKey))];
-  tx.sign(signers);
-  return tx;
+async function transaction(chain: Chain, payer: KeyPairSigner, plan: Plan): Promise<Transaction> {
+  const latest = await chain.blockhash();
+  const message = pipe(
+    createTransactionMessage({ version: 0 }),
+    (m) => setTransactionMessageFeePayer(payer.address, m),
+    (m) => setTransactionMessageLifetimeUsingBlockhash(latest, m),
+    (m) => appendTransactionMessageInstructions(plan.instructions, m),
+  );
+  const signers = [payer, ...plan.signers.filter((s) => s.address !== payer.address)];
+  return signTransaction(
+    signers.map((s) => s.keyPair),
+    compileTransaction(message),
+  );
 }
 
-async function deliver(chain: Chain, url: string, payer: Keypair, plan: Plan, yes: boolean): Promise<object> {
+async function deliver(chain: Chain, url: string, payer: KeyPairSigner, plan: Plan, yes: boolean): Promise<object> {
   const tx = await transaction(chain, payer, plan);
   const shown = { cluster: url, ...plan.details, summary: plan.summary };
   if (!yes) {
@@ -146,7 +161,7 @@ async function command(name: string | undefined, values: Values, passed: string[
         .map((m) => address(m, "members"));
       const createKey = values["create-key"] === undefined ? creator : await deps.keypair(values["create-key"]);
       const plan = await createMultisig(deps.chain(url), {
-        creator: creator.publicKey,
+        creator: creator.address,
         createKey,
         members,
         threshold: whole(required(values, "threshold"), "threshold", 1, members.length),
@@ -159,7 +174,7 @@ async function command(name: string | undefined, values: Values, passed: string[
       const chain = deps.chain(url);
       const plan = await proposeUpgrade(chain, {
         multisig: key(values, "multisig"),
-        member: member.publicKey,
+        member: member.address,
         program: values.program === undefined ? ENGINE_PROGRAM : key(values, "program"),
         buffer: key(values, "buffer"),
         spill: key(values, "spill"),
@@ -171,7 +186,7 @@ async function command(name: string | undefined, values: Values, passed: string[
       const chain = deps.chain(url);
       const plan = await proposeAuthority(chain, {
         multisig: key(values, "multisig"),
-        member: member.publicKey,
+        member: member.address,
         program: values.program === undefined ? ENGINE_PROGRAM : key(values, "program"),
         next: key(values, "new-authority"),
       });
@@ -185,14 +200,14 @@ async function command(name: string | undefined, values: Values, passed: string[
       const member = await signer();
       const stdout = await deps.run(passed);
       const chain = deps.chain(url);
-      const plan = await proposeInstructions(chain, { multisig, member: member.publicKey, stdout });
+      const plan = await proposeInstructions(chain, { multisig, member: member.address, stdout });
       return deliver(chain, url, member, { ...plan, details: { command: passed, ...plan.details } }, yes);
     }
     case "approve":
     case "execute": {
       const member = await signer();
       const chain = deps.chain(url);
-      const input = { multisig: key(values, "multisig"), member: member.publicKey, index: indexOf(values) };
+      const input = { multisig: key(values, "multisig"), member: member.address, index: indexOf(values) };
       const plan = name === "approve" ? await approve(chain, input) : await execute(chain, input);
       return deliver(chain, url, member, plan, yes);
     }

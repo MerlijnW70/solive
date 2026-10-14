@@ -1,0 +1,7 @@
+{
+  "file": "squads_multisig_program.json",
+  "url": "https://registry.npmjs.org/@sqds/multisig/-/multisig-2.1.4.tgz",
+  "entry": "package/idl/squads_multisig_program.json",
+  "sha256": "cb9a0a29040ec3853a5105c547ffc608bb0e3175d78dacf30d463aff939f9b9b",
+  "program": "SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf"
+}
