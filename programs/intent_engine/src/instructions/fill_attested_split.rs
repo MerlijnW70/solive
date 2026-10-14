@@ -237,6 +237,8 @@ pub fn handle_fill_attested_split(
         .amount_in
         .checked_sub(judge_fee)
         .ok_or(EngineError::Overflow)?;
+    let before = ctx.accounts.vault.amount;
+    let mut judge_paid = 0u64;
     if judge_fee > 0 {
         let judge_to = ctx
             .accounts
@@ -252,10 +254,7 @@ pub fn handle_fill_attested_split(
             judge_to.key() == canonical,
             EngineError::FeeAccountNotCanonical
         );
-        if let Some(AgentPayout {
-            account,
-            paid: false,
-        }) = pay_agent(
+        match pay_agent(
             &ctx.accounts.input_token_program,
             &ctx.accounts.vault,
             &ctx.accounts.input_mint,
@@ -264,13 +263,20 @@ pub fn handle_fill_attested_split(
             &signer,
             (attestor, judge_fee),
         )? {
-            emit_cpi!(FeeWithheld {
-                intent: ctx.accounts.intent.key(),
-                payee: attestor,
+            Some(AgentPayout {
                 account,
-                fee: judge_fee,
-                role: WITHHELD_JUDGE,
-            });
+                paid: false,
+            }) => {
+                emit_cpi!(FeeWithheld {
+                    intent: ctx.accounts.intent.key(),
+                    payee: attestor,
+                    account,
+                    fee: judge_fee,
+                    role: WITHHELD_JUDGE,
+                });
+            }
+            Some(AgentPayout { paid: true, .. }) => judge_paid = judge_fee,
+            None => {}
         }
     }
     let settled = pay_out_split(
@@ -299,9 +305,16 @@ pub fn handle_fill_attested_split(
             role: WITHHELD_PARTNER,
         });
     }
+    let left = [fees.protocol, fees.partner, fees.net]
+        .iter()
+        .try_fold(judge_paid, |sum, leg| sum.checked_add(*leg))
+        .ok_or(EngineError::Overflow)?;
+    let expected = before
+        .checked_sub(left)
+        .ok_or(EngineError::SplitNotConserved)?;
     ctx.accounts.vault.reload()?;
     require!(
-        ctx.accounts.vault.amount == 0,
+        ctx.accounts.vault.amount == expected,
         EngineError::SplitNotConserved
     );
     let recipients = u8::try_from(len).map_err(|_| EngineError::SplitCountMismatch)?;
