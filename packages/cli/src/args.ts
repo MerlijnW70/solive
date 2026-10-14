@@ -51,6 +51,7 @@ import {
 } from "./command-builders.js";
 import { createTerms, mandate, terms } from "./order-builders.js";
 import { USAGE } from "./arg-usage.js";
+import { sandboxOf } from "./sandbox.js";
 import type { Command, Env } from "./command-types.js";
 import { DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST } from "@intent-engine/solver";
 
@@ -387,6 +388,8 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         timeout: parseBounded(values.timeout ?? String(JUDGE_TIMEOUT), "timeout", MAX_JUDGE_TIMEOUT, 1),
         verdict: values.verdict,
         maxPages: maxPagesOf(values),
+        check: values.check,
+        sandbox: sandboxOf(values),
       };
     case "solver-table":
       noSub(sub);

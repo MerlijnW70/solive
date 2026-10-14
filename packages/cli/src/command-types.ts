@@ -1,4 +1,5 @@
 import type { Priority } from "./compute.js";
+import type { Sandbox } from "./sandbox.js";
 import type { Address } from "@solana/kit";
 import type { EconomicsSpec } from "@intent-engine/core";
 
@@ -102,6 +103,8 @@ export type Command =
       timeout: number;
       verdict: string | undefined;
       maxPages: number;
+      check: string | undefined;
+      sandbox: Sandbox;
     })
   | (Keyed & { name: "flow"; flow: FlowName; yes: boolean; input: ToolInput })
   | (Remote & { name: "lookup"; lookup: LookupName; keypair: string | undefined; input: ToolInput })

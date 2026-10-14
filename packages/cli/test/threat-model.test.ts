@@ -9,7 +9,6 @@ const STATUSES = ["mitigated", "partial", "open"];
 const PACKAGES = ["core", "client", "cli", "solver", "multisig"];
 const RUST_ROOTS = ["tests/svm/tests/", "crates/intent-core/tests/"];
 const OPEN_WEAKNESSES = [
-  "check commands without a sandbox",
   "published by hand with a token, without provenance",
   "no on-chain per-order or total cap",
   "no monitoring of config changes, upgrades or unusual fills",

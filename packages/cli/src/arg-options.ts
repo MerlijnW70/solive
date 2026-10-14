@@ -126,6 +126,11 @@ export const OPTIONS = {
   result: { type: "string" },
   close: { type: "boolean" },
   release: { type: "string" },
+  check: { type: "string" },
+  sandbox: { type: "string" },
+  "sandbox-image": { type: "string" },
+  "sandbox-memory": { type: "string" },
+  "sandbox-cpus": { type: "string" },
 } as const;
 
 export type Flag = "dry-run" | "fund-accounts" | "yes" | "help" | "version" | "follow" | "create" | "wallet" | "watch" | "close";
@@ -205,7 +210,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   deliveries: ["url", "attestor", "intent", "max-pages"],
   receipt: ["url", "owner", "nonce", "sha256", "release"],
   "record-delivery": ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "sha256", "release"],
-  judge: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "spec", "artifact", "run", "pay-to", "result", "timeout", "verdict", "max-pages"],
+  judge: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "spec", "artifact", "run", "pay-to", "result", "timeout", "verdict", "max-pages", "check", "sandbox", "sandbox-image", "sandbox-memory", "sandbox-cpus"],
   crank: ["url", "priority-fee", "keypair", "dry-run", "fund-accounts"],
   treasury: ["url", "priority-fee", "keypair", "yes", "mints", "create"],
   create: [

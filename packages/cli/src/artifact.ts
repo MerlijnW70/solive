@@ -62,7 +62,11 @@ export async function artifactSha256(path: string): Promise<string> {
   return (await readArtifact(path)).sha256;
 }
 
-type Copy = { root: string; path: string; spec: string };
+type Copy = { root: string; path: string; spec: string; check: string | undefined };
+
+export type CheckFiles = { name: string; read: Artifact };
+
+export const CHECK_COPY = "check";
 
 export async function removeCopy(root: string): Promise<string | undefined> {
   try {
@@ -73,26 +77,40 @@ export async function removeCopy(root: string): Promise<string | undefined> {
   }
 }
 
-export async function copyOf(artifact: Artifact, specBytes: Uint8Array): Promise<Copy> {
+async function writeEntries(under: string, entries: readonly CopiedEntry[]): Promise<void> {
+  for (const entry of entries) {
+    const target = join(under, ...entry.path.split("/"));
+    await mkdir(dirname(target), { recursive: true });
+    await writeFile(target, entry.bytes);
+    if (entry.executable !== 0) {
+      await chmod(target, ((await stat(target)).mode & 0o777) | entry.executable);
+    }
+  }
+}
+
+export async function copyOf(artifact: Artifact, specBytes: Uint8Array, check?: CheckFiles): Promise<Copy> {
   const root = await mkdtemp(join(tmpdir(), "judge-artifact-"));
   const work = join(root, "work");
   const spec = join(root, "spec", SPEC_COPY);
+  const checks = join(root, CHECK_COPY);
   try {
     await mkdir(work);
     await mkdir(dirname(spec));
     await writeFile(spec, specBytes);
-    for (const entry of artifact.entries) {
-      const target = join(work, ...entry.path.split("/"));
-      await mkdir(dirname(target), { recursive: true });
-      await writeFile(target, entry.bytes);
-      if (entry.executable !== 0) {
-        await chmod(target, ((await stat(target)).mode & 0o777) | entry.executable);
-      }
+    await writeEntries(work, artifact.entries);
+    if (check !== undefined) {
+      await mkdir(checks);
+      await writeEntries(check.read.single ? checks : join(checks, check.name), check.read.entries);
     }
   } catch (error) {
     await removeCopy(root);
     throw error;
   }
   const [only] = artifact.entries;
-  return { root, spec, path: artifact.single && only !== undefined ? join(work, only.path) : work };
+  return {
+    root,
+    spec,
+    path: artifact.single && only !== undefined ? join(work, only.path) : work,
+    check: check === undefined ? undefined : join(checks, check.name),
+  };
 }

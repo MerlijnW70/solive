@@ -83,7 +83,7 @@ Every `mitigated` or `partial` row names the tests, proofs, fuzz targets or CI j
 | T-39 | anyone | delivery | Floods the judge with announcements to hide the earliest one | Honest worker unpaid | mitigated | `ts:client:names the honest announcer after 150 later judge transactions`, `ts:client:a flooded judge record completes with more pages`, `ts:cli:a receipt by release signature ignores any flood` |
 | T-40 | anyone | spec | Changes the spec at its URL, or posts another URL after create | Worker builds against an altered spec | mitigated | `ts:cli:refuses before running anything when the spec differs from the committed hash, nobody announced the artifact, --pay-to is not its earliest announcer, or the keypair is not the judge`, `ts:client:fetches the published spec without redirects and says whether it matches the committed hash`, `ts:client:takes the spec url only from the create transaction, not from memos anyone sends to the intent later`, `ts:client:a plain http spec url is refused at create on a public cluster` |
 | T-41 | worker | delivery | Swaps the artefact after announcing its hash | Judge runs bytes nobody announced | mitigated | `ts:cli:hashes a file by its bytes alone, whatever its name, a directory as a manifest, and refuses links and missing paths`, `ts:cli:refuses before running anything when the spec differs from the committed hash, nobody announced the artifact, --pay-to is not its earliest announcer, or the keypair is not the judge` |
-| T-42 | worker | keys | A delivery escapes the judge's check and reads the judge's key or files, because the judge runs check commands without a sandbox | Judge key stolen; escrows naming that judge released | open | Planned: run every check in a sandbox with no network, no home directory and a read-only copy of the delivery. |
+| T-42 | worker | keys | A delivery escapes the judge's check and reads the judge's key or files, or sends them away over the network | Judge key stolen; escrows naming that judge released | partial | `ts:cli:a sandboxed check has no network`, `ts:cli:a sandboxed check cannot read the judge keypair or home`, `ts:cli:a sandboxed check sees only the read only artifact and spec`, `ts:cli:a sandboxed check is stopped and removed on timeout`, `ts:cli:an image without a digest is refused`, `ts:cli:without docker the judge refuses unless sandbox none`, `ts:cli:the word count example passes inside the sandbox`. Gap: a container shares the host kernel, so a kernel or container runtime exploit escapes it, and the judge option sandbox none gives the check the judge's own rights. |
 | T-43 | worker | delivery | A delivery reads the judge's environment, outlives the timeout or prints a fake pass | False verdict | partial | `ts:cli:the check environment holds only allowlisted variables`, `ts:cli:fails a check that outlives --timeout and kills its whole process tree`, `ts:cli:an interrupted check never passes`, `ts:cli:an escaped process is reported, not ignored`, `ts:cli:the word count check refuses a delivery that prints the success line`. Gap: see T-42. |
 | T-44 | RPC node | keys | Serves mainnet under a devnet name | Wallet signs mainnet transactions | mitigated | `ts:cli:reads the cluster once per server and refuses to make, read or sign with a wallet on an RPC that serves mainnet under another name`, `ts:cli:checks the cluster again before it sends, even after a preview passed`, `ts:client:connect refuses mainnet unless allowed` |
 | T-45 | RPC node | delivery | Prunes or hides history so the judge misses the earliest announcer | Judge pays a copier | partial | `ts:client:an empty page is not complete when the node history starts after the intent`, `ts:client:stops a scan at the escrow's creation and reads a transport without paging as incomplete past its window`. Gap: one node is read; no second node cross-checks it. |
@@ -109,9 +109,8 @@ Every `mitigated` or `partial` row names the tests, proofs, fuzz targets or CI j
 
 ## Open, in order
 
-1. T-42: sandbox the judge's check.
-2. T-55, T-62: one host or hardware signer per role key.
-3. T-53: per-order and total escrow caps.
-4. T-54: monitor config changes, upgrades and fills.
-5. T-51: publish npm packages from CI with provenance.
-6. T-56: hardware-wallet guidance for owners.
+1. T-55, T-62: one host or hardware signer per role key.
+2. T-53: per-order and total escrow caps.
+3. T-54: monitor config changes, upgrades and fills.
+4. T-51: publish npm packages from CI with provenance.
+5. T-56: hardware-wallet guidance for owners.

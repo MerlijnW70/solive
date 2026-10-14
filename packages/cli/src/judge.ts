@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { basename, resolve } from "node:path";
 import { type Address, getBase58Decoder, type KeyPairSigner, type Signature } from "@solana/kit";
 import { decodeParams, IntentStatus, Kind } from "@intent-engine/core";
 import { chainTime, createClient, deliveryRecord, firstDelivery, loadIntent, SIGNATURE_PAGE, type Transport } from "@intent-engine/client";
@@ -8,11 +8,12 @@ import type { Command } from "./args.js";
 import { NOT_SENT } from "./flows.js";
 import type { Runtime } from "./commands.js";
 import { type InterruptSignal, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
-import { type Artifact, copyOf, readArtifact, removeCopy } from "./artifact.js";
-import { type Check, checkEnv, type HeldSignals, holdSignals, runCheck } from "./check-process.js";
+import { type Artifact, type CheckFiles, copyOf, readArtifact, removeCopy } from "./artifact.js";
+import { type Check, checkEnv, type HeldSignals, holdSignals, runCheck, runContainer } from "./check-process.js";
+import { containerArgs, containerName, dockerEnv, NO_SANDBOX, sandboxReady, shareable } from "./sandbox.js";
 
 export { type InterruptSignal, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
-export { artifactSha256, CLEANUP_RETRIES, removeCopy, SKIPPED, SPEC_COPY } from "./artifact.js";
+export { artifactSha256, CHECK_COPY, CLEANUP_RETRIES, removeCopy, SKIPPED, SPEC_COPY } from "./artifact.js";
 export {
   type Check,
   CHECK_ENV,
@@ -38,6 +39,8 @@ export type Verdict = {
   specHash: string;
   artifactSha256: string;
   command: string;
+  sandbox: "docker" | "none";
+  image?: string;
   exitCode: number | null;
   verdict: "pass" | "fail";
   payTo: Address;
@@ -75,6 +78,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   if (command.verdict !== undefined) {
     await rm(command.verdict, { force: true });
   }
+  await sandboxReady(command.sandbox, dockerEnv(process.env));
   const signer = await runtime.loadSigner(command.keypair);
   const { address, specHash, minResult, maxResult } = await escrowFor(transport, signer.address, command.owner, command.nonce);
   const result = command.result ?? minResult;
@@ -89,6 +93,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   const artifact = resolve(command.artifact);
   const read = await readArtifact(artifact);
   const sha256 = read.sha256;
+  const check = command.check === undefined ? undefined : { name: basename(resolve(command.check)), read: await readArtifact(resolve(command.check)) };
   const record = await deliveryRecord(transport, signer.address, address, command.maxPages);
   if (!record.complete) {
     throw new JudgeRefused(
@@ -105,7 +110,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   }
   const signals = holdSignals();
   try {
-    return await checkAndSettle(command, transport, signer, signals, { address, specHash, sha256, payTo, result, read, specBytes });
+    return await checkAndSettle(command, transport, signer, signals, { address, specHash, sha256, payTo, result, read, specBytes, check });
   } finally {
     signals.release();
   }
@@ -162,21 +167,37 @@ function sendRelease(command: JudgeCommand, transport: Transport, signer: KeyPai
   });
 }
 
-type Judged = { address: Address; specHash: string; sha256: string; payTo: Address; result: bigint; read: Artifact; specBytes: Uint8Array };
+type Judged = {
+  address: Address;
+  specHash: string;
+  sha256: string;
+  payTo: Address;
+  result: bigint;
+  read: Artifact;
+  specBytes: Uint8Array;
+  check: CheckFiles | undefined;
+};
 
 async function checkAndSettle(
   command: JudgeCommand,
   transport: Transport,
   signer: KeyPairSigner,
   signals: HeldSignals,
-  { address, specHash, sha256, payTo, result, read, specBytes }: Judged,
+  { address, specHash, sha256, payTo, result, read, specBytes, check: checkFiles }: Judged,
 ): Promise<Verdict> {
-  const copy = await copyOf(read, specBytes);
+  const copy = await copyOf(read, specBytes, checkFiles);
+  const { sandbox } = command;
   let check: Check = { exitCode: null, timedOut: false };
   let cleanup: string | undefined;
   try {
     if (signals.caught() === undefined) {
-      check = await runCheck(command.run, checkEnv(process.env, copy.spec, copy.path, sha256), command.timeout, { cwd: copy.root });
+      if (sandbox.kind === "docker") {
+        await shareable(copy.root);
+        check = await runContainer(containerArgs(sandbox, copy, sha256, command.run), containerName(), dockerEnv(process.env), command.timeout);
+      } else {
+        check = await runCheck(command.run, checkEnv(process.env, copy.spec, copy.path, sha256), command.timeout, { cwd: copy.root });
+        process.stderr.write(`${NO_SANDBOX}\n`);
+      }
     }
   } finally {
     cleanup = await removeCopy(copy.root);
@@ -209,6 +230,8 @@ async function checkAndSettle(
     specHash,
     artifactSha256: sha256,
     command: command.run,
+    sandbox: sandbox.kind,
+    ...(sandbox.kind === "docker" ? { image: sandbox.image } : {}),
     exitCode: check.exitCode,
     verdict: passed ? "pass" : "fail",
     payTo,

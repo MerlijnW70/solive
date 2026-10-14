@@ -2,9 +2,23 @@
 
 A proof escrow commits the sha256 of an acceptance spec and pays out only when its judge, the attestor it names, signs a release. `intent-engine judge` does the judge's work: it checks the spec against the committed hash, hashes the delivered work, runs your check on it and settles only on a pass, recording the work's hash in the release. Do steps 1 to 4 of the [quickstart](quickstart.md) first, in the same terminal. Your wallet is the judge, so the escrows you judge name `solana address` as their attestor. The `sh` blocks are for bash and zsh and the `powershell` blocks for Windows PowerShell; a command without a `powershell` block runs unchanged in both. The guide keeps values in variables: in bash and zsh as shell variables such as `$OWNER`, in PowerShell as environment variables such as `$env:OWNER`.
 
-## No sandbox
+## The sandbox
 
-`judge` runs the command you pass with `--run` through your shell, as your user, with your files and your network. It does not sandbox it. The check runs in a fresh temporary directory, its working directory, that holds a copy of only the files `judge` hashed and a copy of the spec bytes it hashed, never the work or spec you passed. Each copied file keeps the executable bits of the original and no other mode. `judge` removes the directory afterwards, also when you stop it with Ctrl-C; if removing it fails, the verdict still prints and names the failure in `cleanup`. Its environment holds only `PATH`, `HOME`, `USERPROFILE`, `SYSTEMROOT`, `COMSPEC`, `PATHEXT`, `TEMP`, `TMP`, `TMPDIR`, `LANG` and `TERM` from yours, so your RPC URL, keypair path and other secrets do not reach it. Delivered work is untrusted: if your check builds or runs it, run the check in a container or VM. `judge` runs no other command: never the spec, a delivery's memo or its link. The MCP server runs no command at all.
+Delivered work is untrusted, and a check that imports, builds or runs it runs the worker's code. So `judge` runs the command you pass with `--run` in a Docker container, `--sandbox docker`, the default. `judge` first makes a fresh temporary directory that holds a copy of only the files `judge` hashed, in `work`, a copy of the spec bytes it hashed, in `spec`, and a copy of the file or directory you pass with `--check`, in `check`; never the work or spec you passed. Each copied file keeps the executable bits of the original and no other mode; for the container every copy is also made readable to all. The container:
+
+- has no network (`--network none`), a read-only root filesystem, no Linux capabilities and no way to gain privileges, and runs as user 65534, not as you;
+- has a capped number of processes, memory (`--sandbox-memory` such as `512m` or `2g`) and CPUs (`--sandbox-cpus` such as `1.5`), with the defaults in `packages/cli/src/sandbox.ts`; it writes only to a small `/tmp` that vanishes with it, and `HOME` is `/tmp`;
+- sees the three copies read-only at `/judge/work`, `/judge/spec` and `/judge/check`, and nothing else from your machine: not your home directory, not your keypair, not the Docker socket;
+- runs `--run` through `/bin/sh` in `/judge`, so `--check check.mjs --run "node check/check.mjs"` runs your check; a path on your machine does not exist in it;
+- starts from an image pinned by its digest, by default `node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392`, which holds Node.js 22. `--sandbox-image <name>@sha256:<digest>` picks another image, and `judge` refuses a reference without a digest.
+
+`judge` pulls the image when Docker does not hold it yet. It refuses before it runs anything when Docker is not installed or not running, and says how to install it. On timeout or Ctrl-C it stops the container with `docker kill` and removes it with `docker rm -f`, and it removes the container after every run. The verdict records `sandbox: "docker"` and the `image`.
+
+A container is not a virtual machine. The check shares your kernel, so a kernel or Docker exploit escapes the container; such exploits are out of scope here. Run `judge` on a machine that holds no other keys if that risk matters to you.
+
+`--sandbox none` runs the check without a container, through your shell, as your user, with your files, your keys and your network: work the check runs can read your keypair and send it away. Pass it only for a check that never runs the delivered work, or on a machine that holds nothing of value. `judge` then warns on stderr that the check ran with your own rights, and the verdict records `sandbox: "none"`. The check then runs in the temporary directory, its working directory, with an environment that holds only `PATH`, `HOME`, `USERPROFILE`, `SYSTEMROOT`, `COMSPEC`, `PATHEXT`, `TEMP`, `TMP`, `TMPDIR`, `LANG` and `TERM` from yours, so your RPC URL, keypair path and other secrets do not reach it.
+
+`judge` removes the temporary directory afterwards, also when you stop it with Ctrl-C; if removing it fails, the verdict still prints and names the failure in `cleanup`. `judge` runs no other command: never the spec, a delivery's memo or its link. The MCP server runs no command at all.
 
 ## 1. Create a proof escrow
 
@@ -64,7 +78,7 @@ It prints the escrow's `intent`, `complete` and `deliveries`. Each entry of `del
 
 ## 4. Write your check
 
-The check is any command that exits 0 when the work passes the spec. `judge` gives it three environment variables: `SPEC_PATH`, the spec file; `ARTIFACT_PATH`, the work; `ARTIFACT_SHA256`, the work's hash. `SPEC_PATH` is `SPEC.md`, a copy of the spec bytes whose hash `judge` checked, outside `ARTIFACT_PATH`. `ARTIFACT_PATH` is the copy of the work: a directory for work that is a directory, a file of the same name for work that is one file. A relative path in `--run` resolves in the temporary directory, so pass your check by its full path. `judge` hands `--run` to your shell as one string, so quote the whole command and, inside it, the path, which keeps a path with spaces whole. This check passes when `answer.txt` holds `42`. It is a Node.js script, so `node` runs it on Linux, macOS and Windows alike:
+The check is any command that exits 0 when the work passes the spec. `judge` gives it three environment variables: `SPEC_PATH`, the spec file; `ARTIFACT_PATH`, the work; `ARTIFACT_SHA256`, the work's hash. `SPEC_PATH` is `SPEC.md`, a copy of the spec bytes whose hash `judge` checked, outside `ARTIFACT_PATH`. `ARTIFACT_PATH` is the copy of the work: a directory for work that is a directory, a file of the same name for work that is one file. Pass the check itself with `--check`, a file or a directory: `judge` copies it to `check` beside the copies of the work and the spec, and runs `--run` in their directory, so `--run "node check/check.mjs"` runs a `--check check.mjs` in the container and with `--sandbox none` alike. `judge` hands `--run` to a shell as one string, so quote the whole command. This check passes when `answer.txt` holds `42`. It is a Node.js script, so `node` runs it on Linux, macOS and Windows alike:
 
 ```js
 import { readFileSync } from "node:fs";
@@ -74,7 +88,7 @@ const answer = readFileSync(join(process.env.ARTIFACT_PATH, "answer.txt"), "utf8
 process.exit(answer.trim() === "42" ? 0 : 1);
 ```
 
-Save it as `check.mjs`. On Linux and macOS a bash script can do the same:
+Save it as `check.mjs`. A bash script can do the same:
 
 ```bash
 #!/usr/bin/env bash
@@ -82,40 +96,32 @@ set -euo pipefail
 test "$(cat "$ARTIFACT_PATH/answer.txt")" = 42
 ```
 
-Save it as `check.sh`, make it executable and pass `--run "'$PWD/check.sh'"` in place of the `node` command in step 5:
-
-```sh
-chmod +x check.sh
-```
-
-On Windows `judge` runs `--run` through `cmd.exe`, which runs neither a bash script nor `chmod`, so use the Node.js check there.
+Save it as `check.sh` and pass `--check check.sh --run "bash check/check.sh"` in place of the `--check` and `--run` of step 5. The container runs it on every platform. With `--sandbox none` on Windows `judge` runs `--run` through `cmd.exe`, which runs no bash script, so use the Node.js check there.
 
 ## 5. Judge and settle
 
 ```sh
-intent-engine judge --owner $OWNER --nonce $NONCE --spec spec.md --artifact work --run "node '$PWD/check.mjs'" --verdict verdict.json
-```
-
-The single quotes inside `--run` are for POSIX shells. On Windows `judge` runs `--run` through `cmd.exe`, which does not take single quotes as quotes, so in PowerShell leave them out when the path holds no spaces:
-
-```powershell
-intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec spec.md --artifact work --run "node $PWD\check.mjs" --verdict verdict.json
-```
-
-For a path with spaces, Windows PowerShell 5.1 passes it quoted when you write ``\`"$PWD\...\`"``.
-
-In order, `judge` refuses unless the escrow is open and names your wallet as its judge, refuses unless the spec file's sha256 is the committed one, hashes the work, picks whom to pay, then runs `--run` with at most `--timeout` seconds (default 600, at most 86400). It starts the command in a session of its own. While the command runs, `judge` records every process in that session, in its process groups or descending from it, each by its PID and start time. On timeout it kills every recorded process and every process descending from one, also those that moved to another process group or session, or on Windows the command's process tree, and waits for that to finish; after a normal exit it kills what is left of them, and on Windows nothing. It never kills by a session or group ID once the process that led it is gone, so a process that later reuses a PID is spared; a process the check started after it began in a session one of its processes created is still killed. A process it cannot tie to the check that still runs in its directory or with its `SPEC_PATH` is named in a warning on stderr and left running. Exit code 0 is a pass; any other exit code or a timeout is a fail, which sends nothing and makes `judge` exit 1. It prints, and with `--verdict` writes, the `intent`, `specHash`, `artifactSha256`, `command`, `exitCode`, `verdict`, `payTo` and `signature`, and `cleanup` when the copy could not be removed. Before any check or refusal it deletes an existing `--verdict` file, and writes it only once a verdict is reached. A SIGINT or SIGTERM during the check kills it and is never a pass: `judge` sends nothing, writes no verdict, removes its copy and exits 130 or 143. A signal while it removes the copy lets the removal finish first. Ctrl-C still stops the payment after a pass until the release is signed and handed to the RPC node: a SIGINT or SIGTERM before that sends nothing, writes no verdict and exits 130 or 143. A signal once the release is handed over waits for the send, then names its signature, or says the release may have landed when the send failed, and exits 130 or 143. A second signal then exits at once, says the release may have landed, names its signature and writes no verdict. Once the release is confirmed, a signal no longer stops anything: `judge` writes the verdict, names the signature and then exits 130 or 143.
-
-On a pass this sends nothing yet. Add `--yes` to run the check again and settle:
-
-```sh
-intent-engine judge --owner $OWNER --nonce $NONCE --spec spec.md --artifact work --run "node '$PWD/check.mjs'" --verdict verdict.json --yes
+intent-engine judge --owner $OWNER --nonce $NONCE --spec spec.md --artifact work --check check.mjs --run "node check/check.mjs" --verdict verdict.json
 ```
 
 In PowerShell:
 
 ```powershell
-intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec spec.md --artifact work --run "node $PWD\check.mjs" --verdict verdict.json --yes
+intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec spec.md --artifact work --check check.mjs --run "node check/check.mjs" --verdict verdict.json
+```
+
+In order, `judge` refuses unless Docker is ready or `--sandbox none` was given, refuses unless the escrow is open and names your wallet as its judge, refuses unless the spec file's sha256 is the committed one, hashes the work, picks whom to pay, then runs `--run` with at most `--timeout` seconds (default 600, at most 86400). In the container a timeout or a signal stops and removes the container. With `--sandbox none` it starts the command in a session of its own. While the command runs, `judge` records every process in that session, in its process groups or descending from it, each by its PID and start time. On timeout it kills every recorded process and every process descending from one, also those that moved to another process group or session, or on Windows the command's process tree, and waits for that to finish; after a normal exit it kills what is left of them, and on Windows nothing. It never kills by a session or group ID once the process that led it is gone, so a process that later reuses a PID is spared; a process the check started after it began in a session one of its processes created is still killed. A process it cannot tie to the check that still runs in its directory or with its `SPEC_PATH` is named in a warning on stderr and left running. Exit code 0 is a pass; any other exit code or a timeout is a fail, which sends nothing and makes `judge` exit 1. It prints, and with `--verdict` writes, the `intent`, `specHash`, `artifactSha256`, `command`, `sandbox`, `image` in the container, `exitCode`, `verdict`, `payTo` and `signature`, and `cleanup` when the copy could not be removed. Before any check or refusal it deletes an existing `--verdict` file, and writes it only once a verdict is reached. A SIGINT or SIGTERM during the check kills it and is never a pass: `judge` sends nothing, writes no verdict, removes its copy and exits 130 or 143. A signal while it removes the copy lets the removal finish first. Ctrl-C still stops the payment after a pass until the release is signed and handed to the RPC node: a SIGINT or SIGTERM before that sends nothing, writes no verdict and exits 130 or 143. A signal once the release is handed over waits for the send, then names its signature, or says the release may have landed when the send failed, and exits 130 or 143. A second signal then exits at once, says the release may have landed, names its signature and writes no verdict. Once the release is confirmed, a signal no longer stops anything: `judge` writes the verdict, names the signature and then exits 130 or 143.
+
+On a pass this sends nothing yet. Add `--yes` to run the check again and settle:
+
+```sh
+intent-engine judge --owner $OWNER --nonce $NONCE --spec spec.md --artifact work --check check.mjs --run "node check/check.mjs" --verdict verdict.json --yes
+```
+
+In PowerShell:
+
+```powershell
+intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec spec.md --artifact work --check check.mjs --run "node check/check.mjs" --verdict verdict.json --yes
 ```
 
 The release pays `payTo` with the result `--result` names, by default the escrow's least result, and records the memo `delivery sha256:<artifactSha256>` in the same transaction. `judge` refuses before running the check when `--result` lies outside the results the escrow accepts. The payer reads the release with `intent-engine receipt --owner <owner> --nonce <nonce> --sha256 <hash of the work received>`, or with `solive_wallet_receipt`. Add `--release <signature>`, or `release`, with the `signature` the judge printed: the receipt then reads that one transaction and no history, so zero-lamport transfers sent to the escrow cannot push the release out of reach. Without it the receipt searches the escrow's history and says `complete: false` when it could not read all of it.
@@ -149,18 +155,18 @@ $env:SPEC_URL = "https://raw.githubusercontent.com/MerlijnW70/solive/main/exampl
 $env:SPEC_HASH = (intent-engine hash --artifact examples/jobs/word-count/SPEC.md | Out-String | ConvertFrom-Json).sha256
 ```
 
-Its worker announces the plain sha256 of the file, the hash that `intent-engine hash --artifact examples/jobs/word-count/delivery/wordcount.mjs` prints. With `OWNER` and `NONCE` from step 2, judge and then settle it:
+Its worker announces the plain sha256 of the file, the hash that `intent-engine hash --artifact examples/jobs/word-count/delivery/wordcount.mjs` prints. With `OWNER` and `NONCE` from step 2, judge and then settle it. `judge` runs the check in its container, so the delivery the check imports has no network and sees none of your files:
 
 ```sh
-intent-engine judge --owner $OWNER --nonce $NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --run "node '$PWD/examples/jobs/word-count/check.mjs'" --verdict verdict.json
-intent-engine judge --owner $OWNER --nonce $NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --run "node '$PWD/examples/jobs/word-count/check.mjs'" --verdict verdict.json --yes
+intent-engine judge --owner $OWNER --nonce $NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --check examples/jobs/word-count/check.mjs --run "node check/check.mjs" --verdict verdict.json
+intent-engine judge --owner $OWNER --nonce $NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --check examples/jobs/word-count/check.mjs --run "node check/check.mjs" --verdict verdict.json --yes
 ```
 
 In PowerShell:
 
 ```powershell
-intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --run "node $PWD\examples\jobs\word-count\check.mjs" --verdict verdict.json
-intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --run "node $PWD\examples\jobs\word-count\check.mjs" --verdict verdict.json --yes
+intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --check examples/jobs/word-count/check.mjs --run "node check/check.mjs" --verdict verdict.json
+intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --check examples/jobs/word-count/check.mjs --run "node check/check.mjs" --verdict verdict.json --yes
 ```
 
 ## Who is paid
