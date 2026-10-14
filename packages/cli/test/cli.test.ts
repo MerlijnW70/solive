@@ -95,7 +95,7 @@ import {
   render,
   runProcess,
 } from "../src/main.js";
-import { COMPUTE_BUDGET_ADDRESS, JITO_TIP_ACCOUNTS, MAX_COMPUTE_UNITS, SIMULATION_REFUSED } from "@intent-engine/solver";
+import { COMPUTE_BUDGET_ADDRESS, FAILED_ON_CHAIN, JITO_TIP_ACCOUNTS, MAX_COMPUTE_UNITS, SIMULATION_REFUSED } from "@intent-engine/solver";
 import { costlyFunding, FUNDING_RENT } from "../src/crank.js";
 import {
   ata,
@@ -953,6 +953,35 @@ describe("cli against the deployed engine", () => {
     expect(run.code).toBe(EXIT_OK);
     expect(run.each().map((r) => (r["sent"] as { intent: Address }[]).map((s) => s.intent))).toEqual([[pending], [pending]]);
     expect(h.submitted).toHaveLength(2);
+  });
+
+  it("backs off an intent whose sent fill failed on chain instead of resending it every in-flight window", async () => {
+    h.watched.length = 0;
+    h.watched.push(owner.address);
+    h.waits.length = 0;
+    const { solver, issued } = await issuedMarket();
+    await cli(create("5", NOW + 3_600n).map((arg) => (arg === outputMint ? issued : arg)), { "owner.json": owner });
+    const [doomed] = await findIntentPda({ owner: owner.address, nonce: 5n });
+    const lost: string[] = [];
+    h.through = {
+      ...transport,
+      submitWire: async () => {
+        lost.push(`lost-${lost.length}`);
+        return lost.at(-1) ?? "";
+      },
+      transactionOf: async (signature) =>
+        lost.includes(signature) ? { signature, slot: 0n, blockTime: null, failed: true, emitted: [] } : null,
+    };
+    h.rounds = 4;
+    h.steps = [IN_FLIGHT_SECONDS, 1n, 3n];
+    h.changed = [];
+    const run = await watching(issued, solver);
+    expect(run.code).toBe(EXIT_OK);
+    const intents = (key: string) => run.each().map((r) => ((r[key] ?? []) as { intent: Address }[]).map((s) => s.intent));
+    expect(intents("sent")).toEqual([[doomed], [], [doomed]]);
+    expect(intents("failed")).toEqual([[], [doomed], []]);
+    expect(run.each()[1]?.["failed"]).toEqual([{ intent: doomed, error: `${FAILED_ON_CHAIN}: lost-0` }]);
+    expect(lost).toEqual(["lost-0", "lost-1"]);
   });
 
   it("skips only a notification it cannot decode and still fills the valid ones that came with it", async () => {

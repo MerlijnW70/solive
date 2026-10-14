@@ -114,7 +114,13 @@ export async function buildExpireIntent(
 }
 
 export async function buildCloseIntent(
-  input: IntentRef & { cranker: TransactionSigner; rentPayer?: Address; refundTo?: Address; ext?: Uint8Array },
+  input: IntentRef & {
+    cranker: TransactionSigner;
+    rentPayer?: Address;
+    intent?: { rentPayer: Address };
+    refundTo?: Address;
+    ext?: Uint8Array;
+  },
 ) {
   const ext = settleExt(input.ext);
   return getCloseIntentInstructionAsync({
@@ -124,7 +130,7 @@ export async function buildCloseIntent(
     refundTo: input.refundTo ?? (await canonicalRefund(input)),
     canonicalRefund: await canonicalRefund(input),
     owner: input.owner,
-    rentPayer: input.rentPayer ?? input.owner,
+    rentPayer: input.rentPayer ?? input.intent?.rentPayer ?? input.owner,
     tokenProgram: input.tokenProgram,
     ext,
     ...(await events()),

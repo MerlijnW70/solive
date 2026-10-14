@@ -2,8 +2,10 @@ import type { Address } from "@solana/kit";
 import { getIntentDecoder, type Intent, IntentStatus } from "@intent-engine/core";
 import {
   type Chain,
+  type Flight,
   type SolverOptions,
   decodeLookupTable,
+  landings,
   issuePricer,
   backoff,
   jitoBundles,
@@ -79,8 +81,10 @@ export async function watchSolve(command: SolveCommand, interval: number, runtim
     send:
       command.jito === undefined ? async (wire) => ({ signature: await transport.submitWire(wire), confirmed: false }) : options.send,
   };
+  const failedOnChain = async (signature: string): Promise<boolean> =>
+    command.jito === undefined && (await transport.transactionOf?.(signature))?.failed === true;
   const changes = runtime.intentChanges(command.url);
-  const inFlight = new Map<Address, bigint>();
+  const inFlight = new Map<Address, Flight>();
   const failing = new Map<Address, bigint>();
   let scannedAt: bigint | null = null;
   let acted = 0;
@@ -100,18 +104,21 @@ export async function watchSolve(command: SolveCommand, interval: number, runtim
           emit({ at: now, scan: "changed", unreadable: decoded.unreadable });
         }
         const listed = decoded.intents;
-        for (const [intent, until] of inFlight) {
-          if (until <= now) {
-            inFlight.delete(intent);
+        const lost = await landings(inFlight, now, listed, failedOnChain, held);
+        if (full) {
+          for (const [intent, flight] of inFlight) {
+            if (flight.until <= now) {
+              inFlight.delete(intent);
+            }
           }
         }
         const due = listed.filter(({ address }) => !inFlight.has(address));
         const { filled, sent, failed } = await tick({ ...live, chain: { ...chain, intents: async () => due } });
-        for (const { intent } of sent) {
-          inFlight.set(intent, now + IN_FLIGHT_SECONDS);
+        for (const { intent, signature } of sent) {
+          inFlight.set(intent, { until: now + IN_FLIGHT_SECONDS, signature });
         }
-        if (filled.length + sent.length + failed.length > 0) {
-          emit({ at: now, scan: full ? "full" : "changed", ms: Math.round(performance.now() - began), filled, sent, failed });
+        if (filled.length + sent.length + failed.length + lost.length > 0) {
+          emit({ at: now, scan: full ? "full" : "changed", ms: Math.round(performance.now() - began), filled, sent, failed: [...lost, ...failed] });
           acted += filled.length + sent.length;
         }
         for (const [intent, at] of failing) {

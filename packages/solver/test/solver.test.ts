@@ -69,6 +69,9 @@ import {
   BALANCES_REFUSED,
   type Chain,
   createdRent,
+  FAILED_ON_CHAIN,
+  type Flight,
+  landings,
   DEFAULT_MAX_RENT,
   DEFAULT_MAX_SOL_COST,
   LAMPORTS_PER_SIGNATURE,
@@ -521,6 +524,109 @@ describe("solver against the deployed engine", () => {
     expect(SIMULATION_REFUSED).toBe("the fill failed in simulation, so it was not sent");
     expect(report).toEqual({ filled: [], sent: [], skipped: [], failed: [{ intent, error: `${SIMULATION_REFUSED}: InstructionError` }] });
     expect(sent).toEqual([]);
+    expect(balance(receiver)).toBe(0n);
+  });
+
+  it("the sent transaction is simulated with its own compute limit", async () => {
+    const pricer = () => stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n);
+    const tight = await open(61n);
+    const refusedSims: Base64EncodedWireTransaction[] = [];
+    const refusedSends: Base64EncodedWireTransaction[] = [];
+    const refused = await solve(pricer(), {
+      simulate: async (wire, watch) => {
+        refusedSims.push(wire);
+        return budgetOf(wire, 2) === MAX_COMPUTE_UNITS ? simulated(wire, watch) : { err: "ComputationalBudgetExceeded", unitsConsumed: null, balances: [] };
+      },
+      send: async (wire) => {
+        refusedSends.push(wire);
+        return landed(wire);
+      },
+    });
+    expect(refused).toEqual({
+      filled: [],
+      sent: [],
+      skipped: [],
+      failed: [{ intent: tight, error: `${SIMULATION_REFUSED}: ComputationalBudgetExceeded` }],
+    });
+    expect(refusedSims).toHaveLength(2);
+    expect(refusedSends).toEqual([]);
+    expect(balance(receiver)).toBe(0n);
+    const sims: { wire: Base64EncodedWireTransaction; used: bigint | null }[] = [];
+    const sent: Base64EncodedWireTransaction[] = [];
+    const filled = await solve(pricer(), {
+      simulate: async (wire, watch) => {
+        const result = await simulated(wire, watch);
+        sims.push({ wire, used: result.unitsConsumed });
+        return result;
+      },
+      send: async (wire) => {
+        sent.push(wire);
+        return landed(wire);
+      },
+    });
+    expect(filled.filled.map((f) => f.intent)).toEqual([tight]);
+    const used = sims[0]?.used ?? 0n;
+    expect(used).toBeGreaterThan(0n);
+    expect(sims.map((s) => budgetOf(s.wire, 2))).toEqual([MAX_COMPUTE_UNITS, headroom(used)]);
+    expect(sent).toEqual([sims[1]?.wire]);
+    expect(balance(receiver)).toBe(MIN_OUT);
+  });
+
+  it("a fill that failed on chain is backed off", async () => {
+    const intent = await open(62n);
+    const interval = 5;
+    let clock = 0;
+    const held = backoff(interval, () => clock);
+    const pricer = () => stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n);
+    const flights = new Map<Address, Flight>();
+    const signatures: string[] = [];
+    let tried = 0;
+    const run = async (at: bigint) => {
+      const result = await solve(pricer(), {
+        backoff: held,
+        simulate: async (wire, watch) => {
+          tried += 1;
+          return simulated(wire, watch);
+        },
+        send: async () => {
+          const signature = `lost-${signatures.length}`;
+          signatures.push(signature);
+          return { signature, confirmed: false };
+        },
+      });
+      for (const { intent: address, signature } of result.sent) {
+        flights.set(address, { until: at + 10n, signature });
+      }
+      return result;
+    };
+    const asked: string[] = [];
+    const failedOnChain = async (signature: string) => {
+      asked.push(signature);
+      return signature.startsWith("lost-");
+    };
+    expect((await run(0n)).sent.map((s) => s.intent)).toEqual([intent]);
+    expect(held.size()).toBe(0);
+    expect(await landings(flights, 9n, await chain().intents(), failedOnChain, held)).toEqual([]);
+    expect(asked).toEqual([]);
+    expect(await landings(flights, 10n, await chain().intents(), failedOnChain, held)).toEqual([
+      { intent, error: `${FAILED_ON_CHAIN}: lost-0` },
+    ]);
+    expect(flights.size).toBe(0);
+    const triedBefore = tried;
+    expect((await run(10n)).skipped).toEqual([{ intent, reason: backingOff(1, interval) }]);
+    expect(tried).toBe(triedBefore);
+    clock = interval * 1_000;
+    expect((await run(20n)).sent.map((s) => s.intent)).toEqual([intent]);
+    expect(await landings(flights, 30n, await chain().intents(), failedOnChain, held)).toEqual([
+      { intent, error: `${FAILED_ON_CHAIN}: lost-1` },
+    ]);
+    expect((await run(30n)).skipped).toEqual([{ intent, reason: backingOff(2, 2 * interval) }]);
+    expect(asked).toEqual(["lost-0", "lost-1"]);
+    clock += 2 * interval * 1_000;
+    expect((await run(40n)).sent.map((s) => s.intent)).toEqual([intent]);
+    const listed = await chain().intents();
+    expect(await landings(flights, 50n, listed, async () => false, held)).toEqual([]);
+    expect(listed.map((entry) => held.waiting(entry.address, entry.intent))).toEqual([null]);
     expect(balance(receiver)).toBe(0n);
   });
 

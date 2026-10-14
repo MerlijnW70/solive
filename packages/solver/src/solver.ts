@@ -378,6 +378,13 @@ export async function tick(o: SolverOptions): Promise<Report> {
         report.skipped.push({ intent: address, reason: tooMuchRent(rent, rentCap), ...kept });
         continue;
       }
+      if (wire !== probe) {
+        const checked = await o.simulate(wire, [solverInput, solverOutput]);
+        if (checked.err !== null) {
+          report.failed.push({ intent: address, error: `${SIMULATION_REFUSED}: ${checked.err}` });
+          continue;
+        }
+      }
       const sent = await o.send(wire);
       (sent.confirmed ? report.filled : report.sent).push({ intent: address, profit: plan.profit, signature: sent.signature, ...kept });
     } catch (error) {
@@ -397,11 +404,41 @@ export async function tick(o: SolverOptions): Promise<Report> {
         o.backoff.failed(intent, state);
       }
     }
-    for (const { intent } of [...report.filled, ...report.sent]) {
+    for (const { intent } of report.filled) {
       o.backoff.succeeded(intent);
     }
   }
   return report;
+}
+
+export type Flight = { until: bigint; signature: string };
+
+export const FAILED_ON_CHAIN = "the fill was sent but failed on chain";
+
+export async function landings(
+  flights: Map<Address, Flight>,
+  now: bigint,
+  listed: readonly { address: Address; intent: Intent }[],
+  failedOnChain: (signature: string) => Promise<boolean>,
+  held: Backoff,
+): Promise<{ intent: Address; error: string }[]> {
+  const failed: { intent: Address; error: string }[] = [];
+  for (const { address, intent } of listed) {
+    const flight = flights.get(address);
+    if (flight === undefined || flight.until > now) {
+      continue;
+    }
+    flights.delete(address);
+    if (intent.status !== IntentStatus.Open) {
+      continue;
+    }
+    const lost = await failedOnChain(flight.signature).catch(() => false);
+    if (lost) {
+      held.failed(address, intent);
+      failed.push({ intent: address, error: `${FAILED_ON_CHAIN}: ${flight.signature}` });
+    }
+  }
+  return failed;
 }
 
 export const CONFIG_TTL_MS = 30_000;

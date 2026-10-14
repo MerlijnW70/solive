@@ -25,6 +25,8 @@ export function settlementWarnings(params: IntentParams): string[] {
   return [params.specHash.some((byte) => byte !== 0) ? WARN_PROOF : WARN_ATTESTOR];
 }
 
+export const ATTESTED_PROTOCOL_FEE = "Protocol fee: taken out of what the payee receives, not added on top of the sold amount";
+
 const MAX_DATE_SECONDS = 8_640_000_000_000n;
 
 export type DescribeOptions = {
@@ -114,12 +116,14 @@ export function describeTerms(
       return [
         sell(params.amountIn),
         `Settles: when ${params.attestor} attests a result between ${params.minResult} and ${params.maxResult}`,
+        `Payee: chosen by ${params.attestor} when it attests; one signature from it pays the sold amount, less fees, to any wallet it signs for`,
         ...(proof ? [`Spec hash: ${hex(params.specHash)}, the spec the judge checks the work against`] : []),
         ...(proof || params.judgeFee !== 0n
           ? [
               `Judge fee: ${formatAmount(params.judgeFee, o.inputDecimals)} of ${tokenOf(f.inputMint, o.inputName)}, paid to ${params.attestor} out of the sold amount when the intent settles`,
             ]
           : []),
+        ATTESTED_PROTOCOL_FEE,
         `Output token: ${tokenOf(f.outputMint, o.outputName)}, recorded with the intent only; an attested settlement pays you nothing on chain`,
       ];
     }

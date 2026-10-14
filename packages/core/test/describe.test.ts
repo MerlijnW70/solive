@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { type Address, getBase16Encoder } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import {
+  ATTESTED_PROTOCOL_FEE,
   describeSignedIntent,
   encodePartner,
   encodeParams,
@@ -163,6 +164,29 @@ describe("signed intent description", () => {
     expect(swapped.lines.filter((l) => !l.startsWith("Digest"))).not.toEqual(plain.lines.filter((l) => !l.startsWith("Digest")));
     expect(raised.lines.filter((l) => !l.startsWith("Digest"))).not.toEqual(plain.lines.filter((l) => !l.startsWith("Digest")));
     expect(WARN_ATTESTOR).not.toContain("nothing is checked");
+  });
+
+  it("describe says the attestor chooses the payee", async () => {
+    const base = await own(golden);
+    const attested: AttestedResultParams = {
+      kind: Kind.AttestedResult,
+      amountIn: 5_000_000n,
+      minResult: 1n,
+      maxResult: 1n,
+      attestor: ATTESTOR,
+      specHash: new Uint8Array(32),
+      judgeFee: 0n,
+    };
+    const payee = `Payee: chosen by ${ATTESTOR} when it attests; one signature from it pays the sold amount, less fees, to any wallet it signs for`;
+    for (const params of [attested, { ...attested, specHash: new Uint8Array(32).fill(3), judgeFee: 1_000n }]) {
+      const d = await describeSignedIntent(withParams(base, params), options);
+      expect(d.lines).toContain(payee);
+      expect(d.lines).toContain(ATTESTED_PROTOCOL_FEE);
+      expect(d.lines.indexOf(payee)).toBe(d.lines.findIndex((l) => l.startsWith("Settles:")) + 1);
+    }
+    expect(ATTESTED_PROTOCOL_FEE).toContain("taken out of what the payee receives");
+    const swap = await describeSignedIntent(withParams(base, { kind: Kind.SwapExactIn, amountIn: 5n, minOut: 1n }), options);
+    expect(swap.lines.some((l) => l.startsWith("Payee:") || l === ATTESTED_PROTOCOL_FEE)).toBe(false);
   });
 
   it("names the relayer fee and warns when it passes 1% of what is sold", async () => {

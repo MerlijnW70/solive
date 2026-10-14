@@ -469,6 +469,17 @@ describe("refund overrides and exact approvals", () => {
     expect(refundOf(closeOverride, closeIdx)).toBe(other);
   });
 
+  it("close intent uses the intent rent payer", async () => {
+    const payerIdx = idl.instructions.find((i) => i.name === "close_intent")?.accounts.findIndex((a) => a.name === "rent_payer") ?? -1;
+    expect(payerIdx).toBeGreaterThanOrEqual(0);
+    const payerOf = (ix: Instruction) => meta(ix, payerIdx).address;
+    const relayed = { rentPayer: other };
+    expect(payerOf(await buildCloseIntent({ ...ref, cranker: solver, intent: relayed }))).toBe(other);
+    expect(payerOf(await buildCloseIntent({ ...ref, cranker: solver, intent: relayed, rentPayer: feeRecipient }))).toBe(feeRecipient);
+    expect(payerOf(await buildCloseIntent({ ...ref, cranker: solver, intent: { rentPayer: owner } }))).toBe(owner);
+    expect(payerOf(await buildCloseIntent({ ...ref, cranker: solver }))).toBe(owner);
+  });
+
   it("approves exactly the escrow of the intent", async () => {
     const swap = { kind: Kind.SwapExactIn, amountIn: 1234n, minOut: 1n } as const;
     const ix = await buildApproveForIntent({
