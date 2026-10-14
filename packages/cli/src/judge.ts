@@ -251,6 +251,9 @@ export function checkEnv(base: NodeJS.ProcessEnv, spec: string, artifact: string
 export const pagesRead = (pages: number): string =>
   `It read ${pages} ${pages === 1 ? "page" : "pages"} of ${SIGNATURE_PAGE} signatures; a higher --max-pages reads further, but does not help when the RPC node's ledger does not reach back to the escrow's creation or the node cannot page signatures or report its first available slot`;
 
+export const resultOutside = (result: bigint, intent: Address, min: bigint, max: bigint): string =>
+  `--result ${result} lies outside the results intent ${intent} accepts, ${min} to ${max}; nothing was run or paid`;
+
 async function escrowFor(transport: Transport, judge: Address, owner: Address, nonce: bigint) {
   const { address, intent } = await loadIntent(transport, owner, nonce);
   const params = decodeParams(intent.kind, Uint8Array.from(intent.params));
@@ -263,12 +266,16 @@ async function escrowFor(transport: Transport, judge: Address, owner: Address, n
   if (params.attestor !== judge) {
     throw new JudgeRefused(`intent ${address} names ${params.attestor} as its judge, not ${judge}`);
   }
-  return { address, specHash: hex(params.specHash) };
+  return { address, specHash: hex(params.specHash), minResult: params.minResult, maxResult: params.maxResult };
 }
 
 export async function judge(command: JudgeCommand, runtime: Runtime, transport: Transport): Promise<Verdict> {
   const signer = await runtime.loadSigner(command.keypair);
-  const { address, specHash } = await escrowFor(transport, signer.address, command.owner, command.nonce);
+  const { address, specHash, minResult, maxResult } = await escrowFor(transport, signer.address, command.owner, command.nonce);
+  const result = command.result ?? minResult;
+  if (result < minResult || result > maxResult) {
+    throw new JudgeRefused(resultOutside(result, address, minResult, maxResult));
+  }
   const specBytes = await readFile(resolve(command.spec));
   const specSha256 = createHash("sha256").update(specBytes).digest("hex");
   if (specSha256 !== specHash) {
@@ -296,20 +303,20 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   }
   const signals = holdSignals();
   try {
-    return await checkAndSettle(command, transport, signer, signals, { address, specHash, sha256, payTo, read, specBytes });
+    return await checkAndSettle(command, transport, signer, signals, { address, specHash, sha256, payTo, result, read, specBytes });
   } finally {
     signals.release();
   }
 }
 
-type Judged = { address: Address; specHash: string; sha256: string; payTo: Address; read: Artifact; specBytes: Uint8Array };
+type Judged = { address: Address; specHash: string; sha256: string; payTo: Address; result: bigint; read: Artifact; specBytes: Uint8Array };
 
 async function checkAndSettle(
   command: JudgeCommand,
   transport: Transport,
   signer: KeyPairSigner,
   signals: HeldSignals,
-  { address, specHash, sha256, payTo, read, specBytes }: Judged,
+  { address, specHash, sha256, payTo, result, read, specBytes }: Judged,
 ): Promise<Verdict> {
   const copy = await copyOf(read, specBytes);
   let check: Check = { exitCode: null, timedOut: false };
@@ -334,7 +341,7 @@ async function checkAndSettle(
         owner: command.owner,
         nonce: command.nonce,
         payTo,
-        result: 1n,
+        result,
         deliveredSha256: sha256,
       });
     } catch (error) {

@@ -1288,7 +1288,7 @@ describe("the wallet server", () => {
       partnerFee: 0n,
     });
     const work = "c".repeat(64);
-    h.engineLog = [{ signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [tag(attested)], memos: [`${RELEASE_MEMO_PREFIX}${work}`] }];
+    h.engineLog = [{ signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [tag(attested)], memos: [`${RELEASE_MEMO_PREFIX}${work}`], memoSigners: [[owner]] }];
     const receipt = { intent, released: true, payee, paid: `${net} raw units`, attestor: owner, result: "1", signature: "release", delivered_sha256: work, matches: true };
     expect(await ok(plain, "get_receipt", { owner, nonce: "7", sha256: work })).toEqual(receipt);
     await ok(client, "wallet_setup");

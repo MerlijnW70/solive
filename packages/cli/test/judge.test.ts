@@ -9,12 +9,11 @@ import { type Address, generateKeyPairSigner, type KeyPairSigner, type Signature
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { TransactionMetadata } from "litesvm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { deliveryMemo, findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, manifestSha256, RELEASE_MEMO_PREFIX, releaseMemo } from "@intent-engine/core";
+import { decodeEvent, deliveryMemo, findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, manifestSha256, RELEASE_MEMO_PREFIX, releaseMemo } from "@intent-engine/core";
 import { createClient, DELIVERY_PAGES, DELIVERY_SCAN, type EngineTransaction, type ListedSignature, SIGNATURE_PAGE, type Transport } from "@intent-engine/client";
 import { ENV_KEYPAIR, JUDGE_TIMEOUT, MAX_JUDGE_TIMEOUT, RUN_NEEDED } from "../src/args.js";
-import { resultOutside } from "../src/commands.js";
 import { NOT_SENT } from "../src/flows.js";
-import { artifactSha256, CHECK_ENV, checkEnv, CLEANUP_RETRIES, ENV_ARTIFACT_PATH, ENV_ARTIFACT_SHA256, ENV_SPEC_PATH, runCheck, SKIPPED, SPEC_COPY } from "../src/judge.js";
+import { artifactSha256, CHECK_ENV, checkEnv, CLEANUP_RETRIES, ENV_ARTIFACT_PATH, ENV_ARTIFACT_SHA256, ENV_SPEC_PATH, resultOutside, runCheck, SKIPPED, SPEC_COPY } from "../src/judge.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { balance, cli, creation, funded, h, NOW, transport, type World, world } from "./harness.js";
 
@@ -210,6 +209,34 @@ describe("intent-engine judge", () => {
     }
     expect(landed.logs().some((line) => line.includes(releaseMemo(j.sha256)))).toBe(true);
     expect(await paidTo(j, j.worker.address)).toBeGreaterThan(0n);
+  });
+
+  it("judge settles with the given result", async () => {
+    const specHash = new Uint8Array(createHash("sha256").update(SPEC).digest());
+    const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 2n, maxResult: 5n, attestor: j.judge.address, specHash, judgeFee: 0n } as const;
+    const client = createClient({ url: "http://cluster", transport });
+    const { intent } = await client.createIntent({ signer: j.w.owner, params, inputMint: j.w.inputMint, outputMint: j.w.outputMint, nonce: 2n, expiresAt: NOW + 3_600n });
+    h.engineLog = [announced(intent, j.worker.address, j.sha256, "first-of-two", 5n), creation(intent)];
+    const verdict = join(j.dir, "result.json");
+    const args = judging(j, "true", "--result", "4", "--verdict", verdict, "--yes");
+    args[args.indexOf("--nonce") + 1] = "2";
+    const paid = await cli(args, keys);
+    expect([paid.code, paid.err]).toEqual([EXIT_OK, ""]);
+    expect(paid.json()).toMatchObject({ intent, verdict: "pass", payTo: j.worker.address, signature: expect.any(String) });
+    expect(paid.json()).not.toHaveProperty("next");
+    expect(JSON.parse(await readFile(verdict, "utf8"))).toEqual(paid.json());
+    expect(status(intent)).toBe(IntentStatus.Filled);
+    const landed = h.svm.getTransaction(paid.json()["signature"] as Signature);
+    if (!(landed instanceof TransactionMetadata)) {
+      throw new Error("the settle did not land");
+    }
+    const events = landed
+      .innerInstructions()
+      .flat()
+      .map((inner) => decodeEvent(new Uint8Array(inner.instruction().data())))
+      .filter((event) => event !== null);
+    const attested = events.find((event) => event.name === "IntentAttested");
+    expect(attested?.fields).toMatchObject({ intent, result: 4n });
   });
 
   it("an interrupted check never passes", async () => {

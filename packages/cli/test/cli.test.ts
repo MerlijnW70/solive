@@ -1720,7 +1720,7 @@ describe("the cli reaches what the other surfaces do", () => {
       createFee: 0,
     });
     const work = "c".repeat(64);
-    const release = { signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [tag(released)], memos: [releaseMemo(work)] };
+    const release = { signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [tag(released)], memos: [releaseMemo(work)], memoSigners: [[judge.address]] };
     h.engineLog = [{ ...release, signature: "failed", failed: true }, release, { signature: "create", slot: 1n, blockTime: null, failed: false, emitted: [tag(created)] }];
     const recorded = {
       intent,
