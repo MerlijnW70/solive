@@ -40,6 +40,8 @@ VS Code in Windows PowerShell 5.1, which drops unescaped double quotes inside an
 code --add-mcp '{\"name\":\"solive\",\"command\":\"npx\",\"args\":[\"-y\",\"@intent-engine/cli\",\"mcp\",\"--url\",\"devnet\",\"--wallet\"]}'
 ```
 
+OpenClaw: follow [Use it from OpenClaw](openclaw.md), which pins the version and makes every call ask first.
+
 Cursor: put this in `~/.cursor/mcp.json`. Other apps: add it to the app's MCP settings. Then restart the app.
 
 ```json

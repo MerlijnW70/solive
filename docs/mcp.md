@@ -19,6 +19,8 @@ Add this entry to your client's `mcpServers` configuration. Replace `/path/to/so
 
 Restart the client. Its tool list now shows the `solive_` tools.
 
+OpenClaw keeps its servers under `mcp.servers` instead; [Use it from OpenClaw](openclaw.md) gives its entry and how to make every call ask first.
+
 ## 2. What the agent can do
 
 With this entry the server holds no keys. Its tools read the engine and prepare unsigned transactions. A person's wallet signs and sends every transaction, and nothing moves until then.
