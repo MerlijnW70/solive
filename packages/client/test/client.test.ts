@@ -70,6 +70,23 @@ const until = async (check: () => boolean) => {
   }
 };
 
+function countingReads(inner: Transport) {
+  let reads = 0;
+  const transport: Transport = {
+    ...inner,
+    intents: async (...args) => {
+      reads++;
+      return inner.intents(...args);
+    },
+  };
+  return { transport, reads: () => reads };
+}
+
+const twoMoreReads = async (counted: { reads: () => number }) => {
+  const at = counted.reads();
+  await until(() => counted.reads() >= at + 2);
+};
+
 describe("a client over the engine", () => {
   it("reads the config, sends a create with a compute budget and reads the intent back", async () => {
     const w = await world();
@@ -158,7 +175,8 @@ describe("a client over the engine", () => {
 
   it("watches intents by polling the transport until the signal aborts", async () => {
     const w = await world();
-    const client = createClient({ url: LOCAL, transport: w.chain.transport, pollMs: 5 });
+    const counted = countingReads(w.chain.transport);
+    const client = createClient({ url: LOCAL, transport: counted.transport, pollMs: 5 });
     await client.send([await buildInitUser({ owner: w.owner })], w.owner);
     await client.send([await create(w, client, 0n)], w.owner);
 
@@ -178,9 +196,10 @@ describe("a client over the engine", () => {
 
     controller.abort();
     await watching;
+    const reads = counted.reads();
     await client.send([await cancel(w, 1n)], w.owner);
-    await new Promise((resolve) => setTimeout(resolve, 30));
     expect(seen).toHaveLength(3);
+    expect(counted.reads()).toBe(reads);
   });
 
   it("watches intents through program notifications when it has them", async () => {
@@ -251,7 +270,8 @@ describe("a client over the engine", () => {
 
   it("reports an intent whose account closes once, with its last known state", async () => {
     const w = await world();
-    const client = createClient({ url: LOCAL, transport: w.chain.transport, pollMs: 5 });
+    const counted = countingReads(w.chain.transport);
+    const client = createClient({ url: LOCAL, transport: counted.transport, pollMs: 5 });
     await client.send([await buildInitUser({ owner: w.owner })], w.owner);
     await client.send([await create(w, client, 0n)], w.owner);
     const [address] = await findIntentPda({ owner: w.owner.address, nonce: 0n });
@@ -274,7 +294,7 @@ describe("a client over the engine", () => {
     await until(() => statuses.includes(IntentStatus.Cancelled));
     await client.close(w.owner, w.owner.address, 0n);
     await until(() => closed.length === 1);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await twoMoreReads(counted);
     expect(closed.map((gone) => gone.map((c) => [c.address, c.intent.nonce, c.intent.status]))).toEqual([[[address, 0n, IntentStatus.Cancelled]]]);
     expect(await client.intent(w.owner.address, 0n)).toBeNull();
 
@@ -284,12 +304,13 @@ describe("a client over the engine", () => {
 
   it("calls back once after its first read even when the wallet has no intents", async () => {
     const w = await world();
-    const client = createClient({ url: LOCAL, transport: w.chain.transport, pollMs: 5 });
+    const counted = countingReads(w.chain.transport);
+    const client = createClient({ url: LOCAL, transport: counted.transport, pollMs: 5 });
     const calls: [IntentAccount[], IntentAccount[]][] = [];
     const controller = new AbortController();
     const watching = client.watch((changed, gone) => calls.push([changed, gone]), controller.signal, { owner: w.owner.address });
     await until(() => calls.length === 1);
-    await new Promise((resolve) => setTimeout(resolve, 30));
+    await twoMoreReads(counted);
     expect(calls).toEqual([[[], []]]);
 
     await client.send([await buildInitUser({ owner: w.owner })], w.owner);
@@ -307,12 +328,13 @@ describe("a client over the engine", () => {
         await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
       },
     });
-    const client = createClient({ url: LOCAL, transport: w.chain.transport, notifications: silent, resyncSeconds: 0.01 });
+    const counted = countingReads(w.chain.transport);
+    const client = createClient({ url: LOCAL, transport: counted.transport, notifications: silent, resyncSeconds: 0.01 });
     const calls: number[] = [];
     const controller = new AbortController();
     const watching = client.watch((changed, gone) => calls.push(changed.length + gone.length), controller.signal);
     await until(() => calls.length === 1);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await twoMoreReads(counted);
     expect(calls).toEqual([0]);
     controller.abort();
     await watching;

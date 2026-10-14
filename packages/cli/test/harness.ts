@@ -347,21 +347,49 @@ export async function funded(): Promise<KeyPairSigner> {
   return kp;
 }
 
-export async function boot(): Promise<KeyPairSigner> {
+export function resetHarness(): void {
   rmSync(h.saleRoot, { recursive: true, force: true });
   h.saleRoot = mkdtempSync(join(tmpdir(), "solive-sales-"));
-  h.urls.length = 0;
-  h.airdropRefused = false;
-  h.airdrops.length = 0;
   h.genesis = getBase58Decoder().decode(DOMAIN);
-  h.clock = 0n;
+  h.urls = [];
+  h.watched = [];
+  h.wires = [];
+  h.jupiterReplies = [];
+  h.fetched = [];
+  h.requestedLimits = [];
+  h.recentFees = [];
+  h.feeQueries = [];
+  h.sleeps = [];
+  h.waits = [];
+  h.changed = [];
+  h.submitted = [];
   h.steps = [];
-  h.dropSubmits = false;
-  h.failScans = 0;
+  h.engineLog = [];
+  h.requestedOf = [];
+  h.simulated = [];
+  h.served = [];
+  h.airdrops = [];
+  h.files.clear();
   h.reads.clear();
+  for (const key of Object.keys(h.env)) {
+    delete h.env[key];
+  }
+  h.scans = 0;
+  h.dropSubmits = false;
+  h.clock = 0n;
+  h.genesisReads = 0;
+  h.failScans = 0;
+  h.closed = 0;
+  h.rounds = 0;
   h.firstSlot = 0n;
   h.through = null;
+  h.sendFails = null;
   h.packetLimit = false;
+  h.airdropRefused = false;
+}
+
+export async function boot(): Promise<KeyPairSigner> {
+  resetHarness();
   h.svm = new LiteSVM().withPrecompiles();
   h.svm.addProgramFromFile(INTENT_ENGINE_PROGRAM_ADDRESS, enginePath);
   setNow(NOW);

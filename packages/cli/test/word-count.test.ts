@@ -3,16 +3,34 @@ import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const JOB = join(ROOT, "examples/jobs/word-count");
 const CORRECT = readFileSync(join(JOB, "delivery/wordcount.mjs"), "utf8");
 
-function check(artifact: string) {
-  const env: NodeJS.ProcessEnv = { PATH: process.env["PATH"] ?? "", ARTIFACT_PATH: artifact, SPEC_PATH: join(JOB, "SPEC.md") };
+const SHORT_TIMEOUT_MS = 1_000;
+const HELD_TIMEOUT_MS = 3_000;
+
+function check(artifact: string, timeoutMs?: number) {
+  const env: NodeJS.ProcessEnv = {
+    PATH: process.env["PATH"] ?? "",
+    ARTIFACT_PATH: artifact,
+    SPEC_PATH: join(JOB, "SPEC.md"),
+    ...(timeoutMs === undefined ? {} : { WORD_COUNT_TIMEOUT_MS: String(timeoutMs) }),
+  };
   return spawnSync(process.execPath, [join(JOB, "check.mjs")], { encoding: "utf8", env });
 }
+
+const running = (pid: number) => {
+  let stat: string;
+  try {
+    stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+  } catch {
+    return false;
+  }
+  return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[0] !== "Z";
+};
 
 function delivery(source: string) {
   const dir = mkdtempSync(join(tmpdir(), "word-count-"));
@@ -20,8 +38,8 @@ function delivery(source: string) {
   return dir;
 }
 
-function refused(source: string) {
-  const result = check(delivery(source));
+function refused(source: string, timeoutMs?: number) {
+  const result = check(delivery(source), timeoutMs);
   expect(result.status).toBe(1);
   expect(result.stdout).not.toMatch(/^(\d+) of \1 inputs hold$/m);
   return result;
@@ -92,18 +110,18 @@ describe("the word count example job", () => {
     expect(result.stdout.trim()).toBe("8 of 32 inputs hold");
   });
 
-  it("the word count check ends when a grandchild holds its pipes", () => {
+  it("the word count check ends when a grandchild holds its pipes", async () => {
     const pids = mkdtempSync(join(tmpdir(), "word-count-pids-"));
     const holding = (detached: boolean, name: string) =>
       `import { spawn } from "node:child_process";\nimport { writeFileSync } from "node:fs";\nconst held = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: ["ignore", 1, 2, 3], detached: ${detached} });\nwriteFileSync(${JSON.stringify(join(pids, name))}, String(held.pid));\nheld.unref();\n${CORRECT}`;
     try {
-      const grouped = Date.now();
       const inGroup = check(delivery(holding(false, "grouped")));
-      expect(Date.now() - grouped).toBeLessThan(8_000);
       expect([inGroup.status, inGroup.stdout, inGroup.stderr]).toEqual([0, "32 of 32 inputs hold\n", ""]);
-      const escaped = Date.now();
-      const outside = check(delivery(holding(true, "escaped")));
-      expect(Date.now() - escaped).toBeLessThan(16_000);
+      if (process.platform === "linux") {
+        const grandchild = Number(readFileSync(join(pids, "grouped"), "utf8"));
+        await vi.waitFor(() => expect(running(grandchild)).toBe(false), { timeout: 10_000, interval: 20 });
+      }
+      const outside = check(delivery(holding(true, "escaped")), HELD_TIMEOUT_MS);
       expect([outside.status, outside.stdout, outside.stderr]).toEqual([0, "32 of 32 inputs hold\n", ""]);
     } finally {
       for (const name of ["grouped", "escaped"]) {
@@ -114,10 +132,10 @@ describe("the word count example job", () => {
         }
       }
     }
-  }, 40_000);
+  }, 30_000);
 
   it("the word count check stops a delivery that never finishes", () => {
-    const result = refused("while (true) {}\n");
-    expect(result.stderr).toContain("did not finish within 10 s");
-  }, 20_000);
+    const result = refused("while (true) {}\n", SHORT_TIMEOUT_MS);
+    expect(result.stderr).toContain(`did not finish within ${SHORT_TIMEOUT_MS / 1000} s`);
+  });
 });

@@ -5,7 +5,9 @@ import { join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const RANDOM_INPUTS = 24;
-const TIMEOUT_MS = 10_000;
+const DEFAULT_TIMEOUT_MS = 10_000;
+const TIMEOUT_OVERRIDE = Number(process.env["WORD_COUNT_TIMEOUT_MS"]);
+const TIMEOUT_MS = Number.isSafeInteger(TIMEOUT_OVERRIDE) && TIMEOUT_OVERRIDE > 0 ? TIMEOUT_OVERRIDE : DEFAULT_TIMEOUT_MS;
 const PRINTED_BYTES = 64 * 1024;
 const RESULT_BYTES = 1 << 20;
 const SPACES = [" ", " ", " ", "\t", "\n", "\r", "\v", "\f", " ", " ", " ", " ", " ", " ", " ", " ", "　", "﻿"];

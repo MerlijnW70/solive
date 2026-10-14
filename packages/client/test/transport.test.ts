@@ -16,7 +16,7 @@ import {
   SolanaError,
 } from "@solana/kit";
 import { getEventListeners } from "node:events";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { computeUnitLimit, getIntentDiscriminatorBytes, getIntentSize, headroom, INTENT_ENGINE_PROGRAM_ADDRESS, MAX_COMPUTE_UNITS } from "@intent-engine/core";
 import { Charged,
   behindMinSlot,
@@ -54,6 +54,10 @@ const OTHER_SIG = "4".repeat(88) as Signature;
 const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
 
 type Status = { err: unknown; confirmationStatus: string | null } | null;
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 function stub(statuses: Status[], heights: bigint[] = [0n], seen: bigint[] = []) {
   const calls: string[] = [];
@@ -292,21 +296,28 @@ describe("confirm", () => {
   });
 
   it("returns as soon as the signature subscription confirms, and then stops polling", async () => {
+    vi.useFakeTimers();
     const s = stub([]);
     const slow = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms > 0 ? 20 : 0));
     let aborted = false;
-    await confirm(s.rpc, SIG, 10n, slow, async (signature, signal) => {
+    let confirmed = false;
+    const confirming = confirm(s.rpc, SIG, 10n, slow, async (signature, signal) => {
       expect(signature).toBe(SIG);
       signal.addEventListener("abort", () => {
         aborted = true;
       });
       await new Promise((resolve) => setTimeout(resolve, 5));
+    }).then(() => {
+      confirmed = true;
     });
-    const polls = s.calls.filter((c) => c === `status:${SIG}`).length;
-    await new Promise((resolve) => setTimeout(resolve, 80));
+    await vi.advanceTimersByTimeAsync(4);
+    expect(confirmed).toBe(false);
+    await vi.advanceTimersByTimeAsync(1);
+    await confirming;
     expect(aborted).toBe(true);
-    expect(polls).toBeLessThanOrEqual(1);
-    expect(s.calls.filter((c) => c === `status:${SIG}`)).toHaveLength(polls);
+    expect(s.calls.filter((c) => c === `status:${SIG}`)).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(POLL_MS * 10);
+    expect(s.calls.filter((c) => c === `status:${SIG}`)).toHaveLength(1);
   });
 
   it("surfaces a failure the subscription reports, and falls back to polling when the subscription breaks", async () => {
@@ -325,10 +336,19 @@ describe("confirm", () => {
   });
 
   it("waits half a second by default", async () => {
+    vi.useFakeTimers();
     const s = stub([null, { err: null, confirmationStatus: "confirmed" }]);
-    const started = performance.now();
-    await confirm(s.rpc, SIG, 10n);
-    expect(performance.now() - started).toBeGreaterThanOrEqual(POLL_MS - 50);
+    let confirmed = false;
+    const confirming = confirm(s.rpc, SIG, 10n).then(() => {
+      confirmed = true;
+    });
+    await vi.advanceTimersByTimeAsync(POLL_MS - 1);
+    expect(confirmed).toBe(false);
+    expect(s.calls.filter((c) => c === `status:${SIG}`)).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    await confirming;
+    expect(confirmed).toBe(true);
+    expect(s.calls.filter((c) => c === `status:${SIG}`)).toHaveLength(2);
   });
 });
 
@@ -680,6 +700,7 @@ describe("intent changes", () => {
   });
 
   it("wakes with the intents that changed, keeps only the latest data of each, else wakes empty after the interval", async () => {
+    vi.useFakeTimers();
     const queue: ((value: IteratorResult<unknown>) => void)[] = [];
     let aborted = false;
     const changes = changesFrom(async (signal) => {
@@ -688,7 +709,7 @@ describe("intent changes", () => {
       });
       return { [Symbol.asyncIterator]: () => ({ next: () => new Promise<IteratorResult<unknown>>((resolve) => queue.push(resolve)) }) };
     });
-    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+    const flush = () => vi.advanceTimersByTimeAsync(0);
     const push = async (value: unknown) => {
       await flush();
       queue.shift()?.({ value, done: false });
@@ -699,19 +720,25 @@ describe("intent changes", () => {
     const woken = changes.wait(60);
     await push(note(OWNER, 1));
     expect(await woken).toEqual([{ address: OWNER, data: new Uint8Array([1]) }]);
-    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(Date.now()).toBe(started);
     await push(note(OTHER, 2));
     await push(note(OTHER, 3));
     await push({ unrelated: true });
     expect(await changes.wait(60)).toEqual([{ address: OTHER, data: new Uint8Array([3]) }]);
-    const idle = Date.now();
-    expect(await changes.wait(0.05)).toEqual([]);
-    expect(Date.now() - idle).toBeGreaterThanOrEqual(40);
+    let idle: unknown;
+    void changes.wait(0.05).then((woke) => {
+      idle = woke;
+    });
+    await vi.advanceTimersByTimeAsync(49);
+    expect(idle).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(idle).toEqual([]);
     changes.close();
     expect(aborted).toBe(true);
   });
 
   it("reconnects after the stream fails or ends, waiting longer after each failure and starting over once it hears again", async () => {
+    vi.useFakeTimers();
     const opened: number[] = [];
     const started = Date.now();
     const streams: (() => AsyncIterable<unknown>)[] = [
@@ -747,28 +774,35 @@ describe("intent changes", () => {
       }
       return { [Symbol.asyncIterator]: () => ({ next: () => new Promise<IteratorResult<unknown>>((resolve) => (quiet = () => resolve({ value: undefined, done: true }))) }) };
     }, [20, 60, 1_000]);
-    expect(await changes.wait(5)).toEqual([{ address: OWNER, data: new Uint8Array([9]) }]);
-    for (let tries = 0; opened.length < 4 && tries < 200; tries++) {
-      await new Promise((resolve) => setTimeout(resolve, 5));
-    }
-    expect(opened).toHaveLength(4);
-    expect((opened[1] ?? 0) - (opened[0] ?? 0)).toBeGreaterThanOrEqual(15);
-    expect((opened[2] ?? 0) - (opened[1] ?? 0)).toBeGreaterThanOrEqual(55);
-    expect((opened[3] ?? 0) - (opened[2] ?? 0)).toBeLessThan(500);
+    const heard = changes.wait(5);
+    await vi.advanceTimersByTimeAsync(79);
+    expect(opened).toEqual([0, 20]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await heard).toEqual([{ address: OWNER, data: new Uint8Array([9]) }]);
+    await vi.advanceTimersByTimeAsync(19);
+    expect(opened).toEqual([0, 20, 80]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(opened).toEqual([0, 20, 80, 100]);
     expect(shared === undefined ? -1 : getEventListeners(shared, "abort").length).toBe(0);
     changes.close();
     quiet?.();
-    await new Promise((resolve) => setTimeout(resolve, 50));
-    expect(opened).toHaveLength(4);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(opened).toEqual([0, 20, 80, 100]);
   });
 
   it("falls back to the interval when the websocket cannot be opened", async () => {
+    vi.useFakeTimers();
     const changes = changesFrom(async () => {
       throw new Error("no websocket");
     });
-    const started = Date.now();
-    expect(await changes.wait(0.05)).toEqual([]);
-    expect(Date.now() - started).toBeGreaterThanOrEqual(40);
+    let woke: unknown;
+    void changes.wait(0.05).then((changed) => {
+      woke = changed;
+    });
+    await vi.advanceTimersByTimeAsync(49);
+    expect(woke).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(woke).toEqual([]);
     changes.close();
   });
 });

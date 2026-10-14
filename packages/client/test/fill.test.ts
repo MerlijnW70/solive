@@ -11,7 +11,7 @@ import {
   splitFee,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import { createClient, NotFillable } from "../src/index.js";
+import { createClient, HISTORY_LIMIT, NotFillable } from "../src/index.js";
 import { FEE_BPS, funded, NOW, world, type World } from "./svm.js";
 
 const LOCAL = "http://127.0.0.1:8899";
@@ -192,12 +192,13 @@ describe("filling from the client", () => {
     expect(await client.balances((await generateKeyPairSigner()).address, [])).toEqual({ sol: 0n, tokens: [] });
   });
 
-  it("finds the fill after 150 later transactions name the intent", async () => {
+  it("finds the fill after 101 later transactions name the intent", async () => {
+    expect(HISTORY_LIMIT + 1).toBe(101);
     const { w, client, solver, order, swap, minted } = await setup();
     const created = await client.createIntent({ ...order, params: swap });
     const signature = await client.fill({ solver, owner: w.owner.address, nonce: created.nonce, route: await minted(solver, MIN_OUT) });
     const stranger = await funded(w.chain);
-    for (let i = 0; i < 150; i++) {
+    for (let i = 0; i <= HISTORY_LIMIT; i++) {
       await w.chain.transport.send([getTransferSolInstruction({ source: stranger, destination: created.intent, amount: 0n })], stranger);
     }
     expect((await client.history(created.intent)).some(({ name }) => name === "IntentFilled")).toBe(false);

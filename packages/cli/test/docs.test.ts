@@ -258,7 +258,12 @@ describe("policy pages", () => {
     expect(scripts.length).toBeGreaterThan(4);
     expect(scripts.filter((path) => !existsSync(`${ROOT}/${path}`))).toEqual([]);
     const jobs = [...ci.slice(ci.indexOf("\njobs:")).matchAll(/^ {2}([\w-]+):$/gm)].map((m) => m[1]);
-    expect(jobs).toEqual(["check", "node-floor", "audit", "verifiable", "attest", "fuzz", "proofs", "sign-off"]);
+    expect(jobs).toEqual(["check", "node-floor", "audit", "verifiable", "randomized", "attest", "fuzz", "proofs", "sign-off"]);
+    const randomized = ci.slice(ci.indexOf("  randomized:"), ci.indexOf("  attest:"));
+    expect(randomized).toContain("if: github.event_name == 'schedule'");
+    expect(randomized).toContain("FC_SEED: random");
+    expect(randomized).not.toContain("PROPTEST_RNG_SEED");
+    expect(ci.slice(ci.indexOf("  check:"), ci.indexOf("  node-floor:"))).toContain('PROPTEST_RNG_SEED: "42"');
     expect(pick(/run: bash scripts\/(\w+)\.sh/, ci.slice(ci.indexOf("  check:")))).toBe("ci");
     expect(ci.slice(ci.indexOf("  check:"), ci.indexOf("  node-floor:"))).toContain("run: bash scripts/pack-test.sh");
     expect(ci.slice(ci.indexOf("  node-floor:"), ci.indexOf("  audit:"))).toContain(`node-version: ${root.engines.node.replace(">=", "")}`);

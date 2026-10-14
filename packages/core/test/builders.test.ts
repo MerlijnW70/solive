@@ -678,7 +678,10 @@ describe("foundation fields", () => {
     await expect(buildCreateIntent({ ...create, ext: encodePartner(partner), partner })).rejects.toThrow(
       "pass either raw extension bytes or a partner, not both",
     );
-    await expect(buildCreateIntent({ ...create, ext: encodePartner({ ...partner, bps: 100 }) })).resolves.toBeDefined();
+    const widest = encodePartner({ ...partner, bps: 100 });
+    const accepted = await buildCreateIntent({ ...create, ext: widest });
+    expect(accepted.programAddress).toBe(INTENT_ENGINE_PROGRAM_ADDRESS);
+    expect(Array.from(getCreateIntentInstructionDataDecoder().decode(accepted.data ?? new Uint8Array()).args.ext)).toEqual(Array.from(widest));
     await expect(buildCreateIntent({ ...create, ext: new Uint8Array(513) })).rejects.toThrow(
       new IntentCoreError("ExtTooLong"),
     );

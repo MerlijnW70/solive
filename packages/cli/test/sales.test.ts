@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Address } from "@solana/kit";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { BUSY_ATTEMPTS, fileSales, LEFTOVER_MS, LOCK_STALE_MS, type Sale, salesPath } from "../src/agent/sales.js";
+import { BUSY_ATTEMPTS, fileSales, LEFTOVER_MS, LOCK_STALE_MS, LOCK_WAIT_MS, type Sale, salesPath, WALLET_BUSY } from "../src/agent/sales.js";
 
 const MINT = "So11111111111111111111111111111111111111112" as Address;
 
@@ -16,6 +16,8 @@ const aged = (path: string, ms: number) => {
   const then = new Date(Date.now() - ms);
   utimesSync(path, then, then);
 };
+
+const PATIENT_MS = 10 * 60 * 1000;
 
 const failing = (code: string) => Object.assign(new Error(`${code}: operation not permitted, rename`), { code });
 
@@ -32,8 +34,22 @@ describe("the shared sales book", () => {
     rmSync(root, { recursive: true, force: true });
   });
 
+  it("sales tests use an injected lock wait", async () => {
+    expect(LOCK_WAIT_MS).toBe(5_000);
+    writeFileSync(`${book}.lock`, "someone-else");
+    const hasty = fileSales(undefined, undefined, 0);
+    await expect(hasty.update(book, appended(sale(1)))).rejects.toMatchObject({ problem: { code: "WalletBusy", hint: WALLET_BUSY } });
+    expect(readFileSync(`${book}.lock`, "utf8")).toBe("someone-else");
+    expect(readdirSync(root).sort()).toEqual(["wallet.json.sales.json.lock"]);
+    const patient = fileSales(undefined, undefined, PATIENT_MS);
+    const waiting = patient.update(book, appended(sale(2)));
+    rmSync(`${book}.lock`);
+    await waiting;
+    expect(await patient.read(book)).toEqual([sale(2)]);
+  });
+
   it("a stale lock taken over by two writers loses no sale", async () => {
-    const sales = fileSales();
+    const sales = fileSales(undefined, undefined, PATIENT_MS);
     for (let round = 0; round < 5; round++) {
       writeFileSync(`${book}.lock`, `crashed-${round}`);
       aged(`${book}.lock`, LOCK_STALE_MS * 2);
@@ -47,7 +63,7 @@ describe("the shared sales book", () => {
   });
 
   it("a lock held by another writer is left in place", async () => {
-    const sales = fileSales();
+    const sales = fileSales(undefined, undefined, PATIENT_MS);
     writeFileSync(`${book}.lock`, "someone-else");
     const waiting = sales.update(book, appended(sale(1)));
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -138,8 +154,8 @@ describe("the shared sales book", () => {
         throw failing("EPERM");
       },
     };
-    const first = fileSales(undefined, files);
-    const second = fileSales(undefined, files);
+    const first = fileSales(undefined, files, PATIENT_MS);
+    const second = fileSales(undefined, files, PATIENT_MS);
     const writers = Array.from({ length: 12 }, (_, i) => (i % 2 === 0 ? first : second).update(book, appended(sale(i))));
     await Promise.all(writers);
     expect(overlapped).toBe(false);

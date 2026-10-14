@@ -244,11 +244,11 @@ async function takeOver(lock: string, token: string, linker: Linker): Promise<bo
   }
 }
 
-async function locked<T>(file: string, linker: Linker, work: () => Promise<T>): Promise<T> {
+async function locked<T>(file: string, linker: Linker, waitMs: number, work: () => Promise<T>): Promise<T> {
   const lock = `${file}.lock`;
   const token = randomUUID();
   await mkdir(dirname(file), { recursive: true, mode: 0o700 });
-  const deadline = Date.now() + LOCK_WAIT_MS;
+  const deadline = Date.now() + waitMs;
   for (;;) {
     if (await claim(lock, token, linker)) {
       break;
@@ -268,13 +268,13 @@ async function locked<T>(file: string, linker: Linker, work: () => Promise<T>): 
   }
 }
 
-export function fileSales(locate: (path: string) => string = (path) => path, files: SaleFiles = { rename }): SaleBook {
+export function fileSales(locate: (path: string) => string = (path) => path, files: SaleFiles = { rename }, waitMs = LOCK_WAIT_MS): SaleBook {
   const linker: Linker = files.link === undefined ? link : files.link.bind(files);
   return {
     read: (path) => readSales(locate(path), path),
     update: (path, change) => {
       const file = locate(path);
-      return locked(file, linker, async () => {
+      return locked(file, linker, waitMs, async () => {
         const { sales, value } = change(await readSales(file, path));
         await writeSales(file, sales, files);
         return value;

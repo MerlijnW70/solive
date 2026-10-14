@@ -844,7 +844,7 @@ describe("agent server against the deployed engine", () => {
         partner: partner ?? null,
       });
     }
-  }, 120_000);
+  });
 
   it("charges the relayer's fee in the input token, signed by the owner and paid as the intent is created", async () => {
     const relayer = await funded();

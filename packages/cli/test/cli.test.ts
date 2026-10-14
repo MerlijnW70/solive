@@ -1349,7 +1349,7 @@ describe("process plumbing", () => {
     const started = Date.now();
     const target = new URL("http://127.0.0.1:1/quote");
     target.port = String(port);
-    await expect(nodeRuntime(Date.now, process, 200).fetch(target.href)).rejects.toThrow();
+    await expect(nodeRuntime(Date.now, process, 200).fetch(target.href)).rejects.toMatchObject({ name: "TimeoutError" });
     expect(Date.now() - started).toBeLessThan(5_000);
     for (const socket of sockets) {
       socket.destroy();
@@ -1390,7 +1390,7 @@ describe("process plumbing", () => {
     const path = join(dir, "signed.json");
     await rt.writeText(path, "first");
     expect(await rt.readText(path)).toBe("first");
-    await expect(rt.writeText(path, "second")).rejects.toThrow();
+    await expect(rt.writeText(path, "second")).rejects.toMatchObject({ code: "EEXIST" });
     expect(await rt.readText(path)).toBe("first");
   });
 
@@ -1412,7 +1412,12 @@ describe("process plumbing", () => {
   });
 
   it("does not need the network to build commands", async () => {
-    await expect(run({ name: "pda", owner: "11111111111111111111111111111112" as Address, nonce: 0n }, runtime({}))).resolves.toBeDefined();
+    const owner = "11111111111111111111111111111112" as Address;
+    const [intent] = await findIntentPda({ owner, nonce: 0n });
+    const [vault] = await findVaultPda({ intent });
+    h.urls.length = 0;
+    await expect(run({ name: "pda", owner, nonce: 0n }, runtime({}))).resolves.toEqual({ intent, vault });
+    expect(h.urls).toEqual([]);
   });
 });
 

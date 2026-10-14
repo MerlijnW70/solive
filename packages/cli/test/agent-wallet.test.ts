@@ -546,9 +546,9 @@ describe("the wallet server", () => {
     expect(shown["warnings"]).toEqual([WARN_PROOF]);
     expect(shown["summary"]).toEqual(expect.arrayContaining([expect.stringContaining("Pays the judge"), expect.stringContaining(`Binds: the result to the committed spec ${specHash}`)]));
     const settled = await ok(client, "wallet_attest", { ...release, approval: shown["approval"], send: true });
-    expect(settled["paid"]).toBeTruthy();
     const judgeFee = LAMPORTS_PER_SOL / 1_000n;
     const { fee } = splitFee(LAMPORTS_PER_SOL / 20n - judgeFee, FEE_BPS);
+    expect(settled["paid"]).toBe(formatAmount(LAMPORTS_PER_SOL / 20n - judgeFee - fee, 9));
     const workerAta = await findAssociatedTokenAddress({ owner: worker, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     const judgeAta = await findAssociatedTokenAddress({ owner, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     expect(balance(workerAta)).toBe(LAMPORTS_PER_SOL / 20n - judgeFee - fee);
@@ -1306,6 +1306,17 @@ describe("the wallet server", () => {
     h.engineLog = [];
   });
 
+  type LogIndex = { all: EngineTransaction[]; positions: Map<string, number>; known: Map<string, EngineTransaction> };
+
+  let indexBuilds = 0;
+
+  const PAGED_ADDRESS = "11111111111111111111111111111111" as Address;
+
+  const logIndex = (all: EngineTransaction[]): LogIndex => {
+    indexBuilds++;
+    return { all, positions: new Map(all.map((tx, i) => [tx.signature, i])), known: new Map(all.map((tx) => [tx.signature, tx])) };
+  };
+
   function pagedThrough(log: () => EngineTransaction[], fetched: string[]) {
     const listed = (tx: EngineTransaction): ListedSignature => ({
       signature: tx.signature,
@@ -1314,26 +1325,64 @@ describe("the wallet server", () => {
       failed: tx.failed,
       memo: tx.memos === undefined ? null : tx.memos.map((text) => `[${text.length}] ${text}`).join("; "),
     });
-    const bySignature = () => new Map(log().map((tx) => [tx.signature, tx]));
+    const indexed = new WeakMap<EngineTransaction[], LogIndex>();
+    const indexOf = () => {
+      const all = log();
+      const seen = indexed.get(all);
+      if (seen !== undefined) {
+        return seen;
+      }
+      const made = logIndex(all);
+      indexed.set(all, made);
+      return made;
+    };
     return {
       ...transport,
       engineTransactions: async (limit: number) => log().slice(0, limit),
       signaturesOf: async (_: Address, limit: number, before?: string) => {
-        const all = log();
-        const start = before === undefined ? 0 : all.findIndex((tx) => tx.signature === before) + 1;
+        const { all, positions } = indexOf();
+        const start = before === undefined ? 0 : (positions.get(before) ?? -1) + 1;
         return all.slice(start, start + limit).map(listed);
       },
       transactionsOf: async (wanted: readonly ListedSignature[]) => {
-        const known = bySignature();
+        const { known } = indexOf();
         fetched.push(...wanted.map((entry) => entry.signature));
         return wanted.flatMap((entry) => known.get(entry.signature) ?? []);
       },
       transactionOf: async (signature: string) => {
         fetched.push(signature);
-        return bySignature().get(signature) ?? null;
+        return indexOf().known.get(signature) ?? null;
       },
     } satisfies Transport;
   }
+
+  it("the fake rpc pages ten thousand entries quickly", async () => {
+    let log = zeroTransfers(10_000);
+    const fetched: string[] = [];
+    const paged = pagedThrough(() => log, fetched);
+    const builds = indexBuilds;
+    const listed: string[] = [];
+    let before: string | undefined;
+    for (let page = 0; page < 10; page++) {
+      const entries = await paged.signaturesOf(PAGED_ADDRESS, SIGNATURE_PAGE, before);
+      expect(entries).toHaveLength(SIGNATURE_PAGE);
+      listed.push(...entries.map((entry) => entry.signature));
+      expect((await paged.transactionsOf(entries)).map((tx) => tx.signature)).toEqual(entries.map((entry) => entry.signature));
+      before = entries.at(-1)?.signature;
+    }
+    expect(listed).toEqual(log.map((tx) => tx.signature));
+    expect(fetched).toEqual(listed);
+    expect(await paged.signaturesOf(PAGED_ADDRESS, SIGNATURE_PAGE, before)).toEqual([]);
+    expect(await paged.transactionOf("transfer9999")).toBe(log[9_999]);
+    expect(await paged.transactionOf("missing")).toBeNull();
+    expect(indexBuilds - builds).toBe(1);
+    log = zeroTransfers(12_000);
+    expect((await paged.signaturesOf(PAGED_ADDRESS, SIGNATURE_PAGE, "transfer10999")).map((entry) => entry.signature)).toEqual(
+      Array.from({ length: SIGNATURE_PAGE }, (_, i) => `transfer${11_000 + i}`),
+    );
+    expect(await paged.transactionOf("transfer11999")).toBe(log[11_999]);
+    expect(indexBuilds - builds).toBe(2);
+  });
 
   const zeroTransfers = (count: number, from = 0) =>
     Array.from({ length: count }, (_, i) => ({ signature: `transfer${from + i}`, slot: 9n, blockTime: null, failed: false, emitted: [] }) as EngineTransaction);
@@ -1414,7 +1463,7 @@ describe("the wallet server", () => {
     expect(await ok(paged, "wallet_receipt", { nonce: "12" })).toEqual({ intent, released: false, next: NOT_RELEASED });
     h.through = null;
     h.engineLog = [];
-  }, 60_000);
+  });
 
   function markFilled(intent: Address, status: number = IntentStatus.Filled) {
     const held = h.svm.getAccount(intent);
@@ -1958,7 +2007,7 @@ describe("the wallet server", () => {
     expect((await call(paged, "wallet_record_delivery", recording)).value).toMatchObject({ code: "AlreadyRecorded", hint: alreadyRecorded(work) });
     h.through = null;
     h.engineLog = [];
-  }, 120_000);
+  });
 
   it("an unread follow up is not taken as nothing recorded", async () => {
     const owner = (await ok(client, "wallet_setup"))["address"] as Address;
@@ -2074,7 +2123,7 @@ describe("the wallet server", () => {
     expect(fetched.length).toBeLessThanOrEqual(LIFECYCLE_FETCHES + 1);
     h.through = null;
     h.engineLog = [];
-  }, 60_000);
+  });
 
   it("record delivery stays cheap with a flood before the release", async () => {
     const { wallet, owner, intent, nonce, attestedTo, announce } = await releasedEscrow("57");
@@ -2118,7 +2167,7 @@ describe("the wallet server", () => {
     expect(fetched.length).toBeLessThanOrEqual(LIFECYCLE_FETCHES + 2);
     h.through = null;
     h.engineLog = [];
-  }, 60_000);
+  });
 
   it("attest takes max pages and passes a flooded judge", async () => {
     const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
@@ -2150,7 +2199,7 @@ describe("the wallet server", () => {
     expect(ATTEST_PAGES).toBeGreaterThanOrEqual(1_000);
     h.through = null;
     h.engineLog = [];
-  }, 120_000);
+  });
 
   it("an unread transaction near the release asks to call again", async () => {
     const { wallet, owner, intent, nonce, attestedTo, announce } = await releasedEscrow("58");

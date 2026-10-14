@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
@@ -26,6 +26,7 @@ import {
   ENV_ARTIFACT_SHA256,
   ENV_SPEC_PATH,
   leftRunning,
+  notSent,
   type Recorded,
   resultOutside,
   runCheck,
@@ -68,6 +69,7 @@ vi.mock("node:fs/promises", async (original) => {
 const SPEC = "answer.txt holds 42\n";
 const WORK_URL = "https://example.org/work.tar";
 const TIMEOUT_SECONDS = 1;
+const STARTUP_SECONDS = 3;
 
 type Job = { w: World; judge: KeyPairSigner; worker: KeyPairSigner; copier: KeyPairSigner; intent: Address; dir: string; spec: string; artifact: string; sha256: string };
 
@@ -155,6 +157,38 @@ function flooding(judge: Address, count: number): Transport {
     transactionsOf: async (wanted) => wanted.flatMap(({ signature }) => h.engineLog.filter((entry) => entry.signature === signature)),
   };
 }
+
+const PROCESS_WAIT = { timeout: 20_000, interval: 20 } as const;
+
+const PROCESS_TEST = { timeout: 30_000 } as const;
+
+const signalled = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+const alive = (pid: number) => {
+  let stat: string;
+  try {
+    stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+  } catch {
+    return process.platform !== "linux" && signalled(pid);
+  }
+  return stat.slice(stat.lastIndexOf(")") + 2).split(" ")[0] !== "Z";
+};
+
+const gone = async (pid: number) => {
+  try {
+    await vi.waitFor(() => expect(alive(pid)).toBe(false), PROCESS_WAIT);
+  } catch {
+    return false;
+  }
+  return true;
+};
 
 const status = (intent: Address) => {
   const account = h.svm.getAccount(intent);
@@ -270,21 +304,18 @@ describe("intent-engine judge", () => {
     expect(attested?.fields).toMatchObject({ intent, result: 4n });
   });
 
-  it("an interrupted check never passes", async () => {
+  it("an interrupted check never passes", PROCESS_TEST, async () => {
     const started = join(j.dir, "started");
     const root = join(j.dir, "root");
     const verdict = join(j.dir, "interrupted.json");
-    const run = `pwd > "${root}"; touch "${started}"; trap 'exit 0' INT TERM; sleep 2; exit 0`;
+    const run = `pwd > "${root}"; touch "${started}"; trap 'exit 0' INT TERM; sleep 600; exit 0`;
     for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]] as const) {
       await rm(started, { force: true });
       const others = process.listeners(signal);
       process.removeAllListeners(signal);
       try {
         const running = cli(judging(j, run, "--verdict", verdict, "--yes"), keys);
-        for (let waited = 0; !existsSync(started) && waited < 200; waited++) {
-          await new Promise((wake) => setTimeout(wake, 25));
-        }
-        expect(existsSync(started)).toBe(true);
+        await vi.waitFor(() => expect(existsSync(started)).toBe(true), PROCESS_WAIT);
         process.emit(signal, signal);
         const ended = await running;
         expect([ended.code, ended.out]).toEqual([code, ""]);
@@ -301,7 +332,7 @@ describe("intent-engine judge", () => {
     }
   });
 
-  it("a second interrupt during settlement still reports the signature", async () => {
+  it("a second interrupt during settlement still reports the signature", PROCESS_TEST, async () => {
     const verdict = join(j.dir, "verdict.json");
     const others = process.listeners("SIGINT");
     process.removeAllListeners("SIGINT");
@@ -343,7 +374,7 @@ describe("intent-engine judge", () => {
       expect(stopped.err).toContain(`the release was sent in ${landed[0]}; a second SIGINT stopped the judge before the send was confirmed, so the release may have landed`);
       expect(existsSync(verdict)).toBe(false);
       expect(status(twice.intent)).toBe(IntentStatus.Filled);
-      await vi.waitFor(() => expect(exits).toHaveBeenCalledWith(130));
+      await vi.waitFor(() => expect(exits).toHaveBeenCalledWith(130), PROCESS_WAIT);
 
       const again = await job();
       h.through = {
@@ -406,7 +437,7 @@ describe("intent-engine judge", () => {
     }
   });
 
-  it("an interrupt before sending pays nothing", async () => {
+  it("an interrupt before sending pays nothing", PROCESS_TEST, async () => {
     const verdict = join(j.dir, "verdict.json");
     for (const [signal, code, at] of [["SIGINT", 130, "send"], ["SIGTERM", 143, "read"]] as const) {
       const run = at === "send" ? j : await job();
@@ -444,7 +475,7 @@ describe("intent-engine judge", () => {
         expect([ended.code, ended.out]).toEqual([code, ""]);
         expect(ended.err).toContain(`the check passed, but ${signal} arrived before the release was sent; nothing was paid and no verdict was written`);
         expect(process.listenerCount(signal)).toBe(0);
-        await new Promise((wake) => setTimeout(wake, 100));
+        await vi.waitFor(() => expect(attempts).toHaveLength(1), PROCESS_WAIT);
       } finally {
         h.through = null;
         for (const listener of others) {
@@ -454,7 +485,7 @@ describe("intent-engine judge", () => {
       expect(existsSync(verdict)).toBe(false);
       expect(status(run.intent)).toBe(IntentStatus.Open);
       expect(await paidTo(run, run.worker.address)).toBe(-1n);
-      expect(attempts.length).toBeLessThanOrEqual(1);
+      expect(attempts).toEqual([expect.stringContaining(notSent(signal))]);
     }
   });
 
@@ -484,24 +515,10 @@ describe("intent-engine judge", () => {
     expect(status(j.intent)).toBe(IntentStatus.Open);
   });
 
-  it("a judge timeout also kills a delivery in its own process group", { timeout: 60_000 }, async () => {
-    const alive = (pid: number) => {
-      try {
-        process.kill(pid, 0);
-        return true;
-      } catch {
-        return false;
-      }
-    };
-    const gone = async (pid: number) => {
-      for (let tries = 0; tries < 100 && alive(pid); tries++) {
-        await new Promise((wake) => setTimeout(wake, 20));
-      }
-      return !alive(pid);
-    };
+  it("a judge timeout also kills a delivery in its own process group", PROCESS_TEST, async () => {
     const grouped = join(j.dir, "grouped");
     const own = `perl -e 'setpgrp(0, 0); open(my $f, ">", $ARGV[0]) or die; print $f "$$ " . getpgrp(); close $f; exec "sleep", "600"' "${grouped}" & wait`;
-    const slow = await cli(judging(j, own, "--timeout", String(TIMEOUT_SECONDS), "--yes"), keys);
+    const slow = await cli(judging(j, own, "--timeout", String(STARTUP_SECONDS), "--yes"), keys);
     expect(slow.json()).toMatchObject({ exitCode: null, verdict: "fail", signature: null });
     const [pid = 0, group] = (await readFile(grouped, "utf8")).split(" ").map(Number);
     expect(group).toBe(pid);
@@ -516,7 +533,7 @@ describe("intent-engine judge", () => {
       `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(pidFile)}, String(process.pid));\nexport default function count() {\n  for (;;) {}\n}\n`,
     );
     const loop = await job(await readFile(join(example, "SPEC.md"), "utf8"), await artifactSha256(looping));
-    const ended = await cli(judging({ ...loop, artifact: looping }, `node '${join(example, "check.mjs")}'`, "--timeout", "3", "--yes"), { "judge.json": loop.judge });
+    const ended = await cli(judging({ ...loop, artifact: looping }, `node '${join(example, "check.mjs")}'`, "--timeout", String(STARTUP_SECONDS * 2), "--yes"), { "judge.json": loop.judge });
     expect(ended.json()).toMatchObject({ exitCode: null, verdict: "fail", signature: null });
     const delivery = Number(await readFile(pidFile, "utf8"));
     expect(delivery).toBeGreaterThan(0);
@@ -528,7 +545,7 @@ describe("intent-engine judge", () => {
     expect(status(loop.intent)).toBe(IntentStatus.Open);
   });
 
-  it("a stale verdict file is removed before the check", async () => {
+  it("a stale verdict file is removed before the check", PROCESS_TEST, async () => {
     const verdict = join(j.dir, "verdict.json");
     const seen = join(j.dir, "seen");
     const stale = `${JSON.stringify({ intent: j.intent, verdict: "pass", signature: null })}\n`;
@@ -543,10 +560,8 @@ describe("intent-engine judge", () => {
     const others = process.listeners("SIGTERM");
     process.removeAllListeners("SIGTERM");
     try {
-      const running = cli(judging(j, `touch "${started}"; sleep 2; exit 0`, "--verdict", verdict, "--yes"), keys);
-      for (let waited = 0; !existsSync(started) && waited < 200; waited++) {
-        await new Promise((wake) => setTimeout(wake, 25));
-      }
+      const running = cli(judging(j, `touch "${started}"; sleep 600; exit 0`, "--verdict", verdict, "--yes"), keys);
+      await vi.waitFor(() => expect(existsSync(started)).toBe(true), PROCESS_WAIT);
       expect(existsSync(verdict)).toBe(false);
       process.emit("SIGTERM", "SIGTERM");
       expect((await running).code).toBe(143);
@@ -567,27 +582,14 @@ describe("intent-engine judge", () => {
     expect(status(j.intent)).toBe(IntentStatus.Open);
   });
 
-  it("fails a check that outlives --timeout and kills its whole process tree", async () => {
+  it("fails a check that outlives --timeout and kills its whole process tree", PROCESS_TEST, async () => {
     const pid = join(j.dir, "pid");
-    const started = Date.now();
-    const slow = await cli(judging(j, `sleep 600 & echo $! > "${pid}"; wait`, "--timeout", String(TIMEOUT_SECONDS), "--yes"), keys);
-    expect(Date.now() - started).toBeLessThan(TIMEOUT_SECONDS * 1000 * 10);
+    const slow = await cli(judging(j, `sleep 600 & echo $! > "${pid}"; wait`, "--timeout", String(STARTUP_SECONDS), "--yes"), keys);
     expect(slow.code).toBe(EXIT_FAILED);
     expect(slow.json()).toMatchObject({ exitCode: null, verdict: "fail", signature: null });
     expect(status(j.intent)).toBe(IntentStatus.Open);
     const child = Number(await readFile(pid, "utf8"));
-    const alive = () => {
-      try {
-        process.kill(child, 0);
-        return true;
-      } catch {
-        return false;
-      }
-    };
-    for (let tries = 0; tries < 50 && alive(); tries++) {
-      await new Promise((resolve) => setTimeout(resolve, 20));
-    }
-    expect(alive()).toBe(false);
+    expect(await gone(child)).toBe(true);
   });
 
   it("refuses before running anything when the spec differs from the committed hash, nobody announced the artifact, --pay-to is not its earliest announcer, or the keypair is not the judge", async () => {
@@ -881,8 +883,8 @@ describe("the artifact hash", () => {
 
   it("an escaped process is reported, not ignored", { skip: process.platform !== "linux", timeout: 30_000 }, async () => {
     const dir = await mkdtemp(join(tmpdir(), "judge-escape-"));
-    const pidFile = join(dir, "escaped");
     const caught = join(dir, "caught");
+    const go = join(dir, "go");
     const warned: string[] = [];
     const writes = vi.spyOn(process.stderr, "write").mockImplementation((text) => {
       warned.push(String(text));
@@ -891,25 +893,22 @@ describe("the artifact hash", () => {
     let escaped = 0;
     let stayed = 0;
     try {
-      const run = [
-        `sh -c 'echo $$ > "${caught}"; exec sleep 600' &`,
-        "sleep 0.1",
-        `setsid -f sh -c 'echo $$ > "${pidFile}"; exec sleep 600'`,
-        `while ! test -s "${pidFile}"; do sleep 0.01; done`,
-      ].join("\n");
-      const check = await runCheck(run, checkEnv(process.env, join(dir, SPEC_COPY), dir, "ab"), TIMEOUT_SECONDS * 10, { cwd: dir });
-      escaped = Number(await readFile(pidFile, "utf8"));
+      const run = [`sh -c 'echo $$ > "${caught}.tmp"; mv "${caught}.tmp" "${caught}"; exec sleep 600' &`, `while ! test -e "${go}"; do sleep 0.01; done`].join("\n");
+      const env = checkEnv(process.env, join(dir, SPEC_COPY), dir, "ab");
+      const checking = runCheck(run, env, STARTUP_SECONDS * 20, { cwd: dir });
+      await vi.waitFor(() => expect(existsSync(caught)).toBe(true), PROCESS_WAIT);
+      const outside = spawn("sleep", ["600"], { env, cwd: dir, detached: true, stdio: "ignore" });
+      outside.unref();
+      escaped = outside.pid ?? 0;
+      expect(escaped).toBeGreaterThan(0);
+      await vi.waitFor(() => expect(readFileSync(`/proc/${escaped}/environ`, "utf8").split("\0")).toContain(`${ENV_SPEC_PATH}=${env[ENV_SPEC_PATH]}`), PROCESS_WAIT);
+      await writeFile(go, "");
+      const check = await checking;
       stayed = Number(await readFile(caught, "utf8"));
       expect(check).toEqual({ exitCode: 0, timedOut: false, escaped: [escaped] });
       expect(warned.join("")).toContain(leftRunning([escaped]));
-      const ended = () => {
-        try {
-          return readFileSync(`/proc/${stayed}/stat`, "utf8").split(") ")[1]?.startsWith("Z") === true;
-        } catch {
-          return true;
-        }
-      };
-      await vi.waitFor(() => expect(ended()).toBe(true), { timeout: 5_000 });
+      await vi.waitFor(() => expect(alive(stayed)).toBe(false), PROCESS_WAIT);
+      expect(alive(escaped)).toBe(true);
     } finally {
       writes.mockRestore();
       for (const pid of [escaped, stayed]) {
@@ -1023,7 +1022,7 @@ describe("the judge guide", () => {
     expect(GUIDE).not.toContain("sha256sum");
   });
 
-  it("the judge guide creates the escrow it judges", { timeout: 60_000 }, async () => {
+  it("the judge guide creates the escrow it judges", async () => {
     const w = await world();
     const reader = await funded();
     const worker = await generateKeyPairSigner();
@@ -1091,7 +1090,7 @@ describe("the judge guide", () => {
     expect(status(intent)).toBe(IntentStatus.Filled);
   });
 
-  it("the judge guide judges the word count example", { timeout: 60_000 }, async () => {
+  it("the judge guide judges the word count example", async () => {
     const example = join(ROOT, WORD_COUNT);
     expect(GUIDE.indexOf(EXAMPLE_HEADING)).toBeGreaterThan(0);
     expect(EXAMPLE).toContain(`[\`${WORD_COUNT}\`](../${WORD_COUNT})`);
