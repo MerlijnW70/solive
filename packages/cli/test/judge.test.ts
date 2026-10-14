@@ -12,7 +12,7 @@ import { deliveryMemo, findAssociatedTokenAddress, getIntentDecoder, IntentStatu
 import { createClient, type EngineTransaction } from "@intent-engine/client";
 import { ENV_KEYPAIR, JUDGE_TIMEOUT, MAX_JUDGE_TIMEOUT, RUN_NEEDED } from "../src/args.js";
 import { NOT_SENT } from "../src/flows.js";
-import { artifactSha256, ENV_ARTIFACT_PATH, ENV_ARTIFACT_SHA256, ENV_SPEC_PATH, runCheck, SKIPPED } from "../src/judge.js";
+import { artifactSha256, CHECK_ENV, checkEnv, ENV_ARTIFACT_PATH, ENV_ARTIFACT_SHA256, ENV_SPEC_PATH, runCheck, SKIPPED } from "../src/judge.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { balance, cli, funded, h, NOW, transport, type World, world } from "./harness.js";
 
@@ -189,6 +189,60 @@ describe("intent-engine judge", () => {
     const closed = await cli(judging(j, run), keys);
     expect(closed.err).toContain(`intent ${j.intent} is no longer open`);
     expect(existsSync(marker)).toBe(false);
+  });
+
+  it("the check sees no target or node_modules directory", async () => {
+    const check = [
+      `test "$ARTIFACT_PATH" != "${j.artifact}"`,
+      ...[...SKIPPED].map((skipped) => `test ! -e "$ARTIFACT_PATH/${skipped}"`),
+      'test "$(cat "$ARTIFACT_PATH/answer.txt")" = 42',
+      'test "$(cat "$ARTIFACT_PATH/src/notes.txt")" = how',
+      `test "$(find "$ARTIFACT_PATH" -type f | wc -l)" -eq 2`,
+    ].join(" && ");
+    const run = await cli(judging(j, check), keys);
+    expect([run.code, run.err]).toEqual([EXIT_OK, ""]);
+    expect(run.json()).toMatchObject({ verdict: "pass", artifactSha256: j.sha256 });
+    expect(existsSync(join(j.artifact, "target", "ignored"))).toBe(true);
+  });
+
+  it("the check environment holds only allowlisted variables", async () => {
+    const base = { PATH: "/bin", HOME: "/h", TERM: "xterm", INTENT_ENGINE_URL: "https://x/?api-key=s", [ENV_KEYPAIR]: "/k", NPM_TOKEN: "t" };
+    expect(checkEnv(base, "/s", "/a", "ab")).toEqual({ PATH: "/bin", HOME: "/h", TERM: "xterm", [ENV_SPEC_PATH]: "/s", [ENV_ARTIFACT_PATH]: "/a", [ENV_ARTIFACT_SHA256]: "ab" });
+    expect(CHECK_ENV).toEqual(["PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "COMSPEC", "PATHEXT", "TEMP", "TMP", "TMPDIR", "LANG", "TERM"]);
+    const secrets = { INTENT_ENGINE_URL: "https://x/?api-key=s", [ENV_KEYPAIR]: "judge.json", JUDGE_TEST_SECRET: "s" };
+    Object.assign(process.env, secrets);
+    const run = await cli(judging(j, Object.keys(secrets).map((key) => `test -z "$${key}"`).join(" && ")), keys);
+    for (const key of Object.keys(secrets)) {
+      delete process.env[key];
+    }
+    expect([run.code, run.err]).toEqual([EXIT_OK, ""]);
+    expect(run.json()).toMatchObject({ verdict: "pass" });
+  });
+
+  it("the artifact copy is removed after the check", async () => {
+    const seen = join(j.dir, "seen");
+    for (const [ending, code] of [["true", EXIT_OK], ["exit 5", EXIT_FAILED]] as const) {
+      const run = await cli(judging(j, `echo "$ARTIFACT_PATH" > "${seen}" && test -f "$ARTIFACT_PATH/answer.txt" && ${ending}`), keys);
+      expect(run.code).toBe(code);
+      const copy = (await readFile(seen, "utf8")).trim();
+      expect(copy).not.toBe(j.artifact);
+      expect(existsSync(copy)).toBe(false);
+      expect(existsSync(join(j.artifact, "answer.txt"))).toBe(true);
+    }
+  });
+
+  it("a single file artifact keeps its plain sha256", async () => {
+    const file = join(j.dir, "answer.txt");
+    await writeFile(file, "42\n");
+    const sha256 = createHash("sha256").update("42\n").digest("hex");
+    expect(await artifactSha256(file)).toBe(sha256);
+    h.engineLog = [announced(j.intent, j.worker.address, sha256, "single", 3n)];
+    const seen = join(j.dir, "seen");
+    const check = `echo "$ARTIFACT_PATH" > "${seen}" && test "$ARTIFACT_SHA256" = ${sha256} && test "$ARTIFACT_PATH" != "${file}" && test "$(cat "$ARTIFACT_PATH")" = 42`;
+    const run = await cli(judging({ ...j, artifact: file }, check), keys);
+    expect([run.code, run.err]).toEqual([EXIT_OK, ""]);
+    expect(run.json()).toMatchObject({ verdict: "pass", artifactSha256: sha256, payTo: j.worker.address });
+    expect(existsSync((await readFile(seen, "utf8")).trim())).toBe(false);
   });
 
   it("takes a timeout within bounds and a non-empty command", async () => {

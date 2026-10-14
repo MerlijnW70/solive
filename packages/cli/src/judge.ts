@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readdir, readFile, stat, writeFile } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
 import type { Address, Signature } from "@solana/kit";
 import { decodeParams, IntentStatus, Kind, type ManifestEntry, manifestSha256 } from "@intent-engine/core";
 import { chainTime, createClient, deliveriesOf, firstDelivery, loadIntent, type Transport } from "@intent-engine/client";
-import { type Command, ENV_KEYPAIR } from "./args.js";
+import type { Command } from "./args.js";
 import { NOT_SENT } from "./flows.js";
 import type { Runtime } from "./commands.js";
 
@@ -13,6 +14,7 @@ export const SKIPPED = new Set([".git", "node_modules", "target"]);
 export const ENV_SPEC_PATH = "SPEC_PATH";
 export const ENV_ARTIFACT_PATH = "ARTIFACT_PATH";
 export const ENV_ARTIFACT_SHA256 = "ARTIFACT_SHA256";
+export const CHECK_ENV = ["PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "COMSPEC", "PATHEXT", "TEMP", "TMP", "TMPDIR", "LANG", "TERM"] as const;
 
 export class JudgeRefused extends Error {
   constructor(reason: string) {
@@ -58,15 +60,39 @@ async function filesUnder(root: string, prefix: string): Promise<ManifestEntry[]
   return entries;
 }
 
-export async function artifactSha256(path: string): Promise<string> {
+type Artifact = { sha256: string; entries: ManifestEntry[]; single: boolean };
+
+async function readArtifact(path: string): Promise<Artifact> {
   const found = await stat(path);
   if (found.isFile()) {
-    return createHash("sha256").update(await readFile(path)).digest("hex");
+    const bytes = await readFile(path);
+    return { sha256: createHash("sha256").update(bytes).digest("hex"), entries: [{ path: basename(path), bytes }], single: true };
   }
   if (found.isDirectory()) {
-    return manifestSha256(await filesUnder(path, ""));
+    const entries = await filesUnder(path, "");
+    return { sha256: await manifestSha256(entries), entries, single: false };
   }
   throw new JudgeRefused(`--artifact ${path} is neither a regular file nor a directory`);
+}
+
+export async function artifactSha256(path: string): Promise<string> {
+  return (await readArtifact(path)).sha256;
+}
+
+async function copyOf(artifact: Artifact): Promise<{ root: string; path: string }> {
+  const root = await mkdtemp(join(tmpdir(), "judge-artifact-"));
+  try {
+    for (const entry of artifact.entries) {
+      const target = join(root, ...entry.path.split("/"));
+      await mkdir(dirname(target), { recursive: true });
+      await writeFile(target, entry.bytes);
+    }
+  } catch (error) {
+    await rm(root, { recursive: true, force: true });
+    throw error;
+  }
+  const [only] = artifact.entries;
+  return { root, path: artifact.single && only !== undefined ? join(root, only.path) : root };
 }
 
 function killTree(pid: number | undefined): void {
@@ -98,16 +124,23 @@ export function runCheck(command: string, env: NodeJS.ProcessEnv, timeoutSeconds
     });
     child.once("exit", (code) => {
       clearTimeout(timer);
-      killTree(child.pid);
+      if (process.platform !== "win32") {
+        killTree(child.pid);
+      }
       done({ exitCode: timedOut ? null : code, timedOut });
     });
   });
 }
 
 export function checkEnv(base: NodeJS.ProcessEnv, spec: string, artifact: string, sha256: string): NodeJS.ProcessEnv {
-  const env: NodeJS.ProcessEnv = { ...base, [ENV_SPEC_PATH]: spec, [ENV_ARTIFACT_PATH]: artifact, [ENV_ARTIFACT_SHA256]: sha256 };
-  delete env[ENV_KEYPAIR];
-  return env;
+  const env: NodeJS.ProcessEnv = {};
+  for (const key of CHECK_ENV) {
+    const value = base[key];
+    if (value !== undefined) {
+      env[key] = value;
+    }
+  }
+  return { ...env, [ENV_SPEC_PATH]: spec, [ENV_ARTIFACT_PATH]: artifact, [ENV_ARTIFACT_SHA256]: sha256 };
 }
 
 async function escrowFor(transport: Transport, judge: Address, owner: Address, nonce: bigint) {
@@ -134,7 +167,8 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
     throw new JudgeRefused(`--spec ${command.spec} has sha256 ${specSha256}, but intent ${address} commits ${specHash}`);
   }
   const artifact = resolve(command.artifact);
-  const sha256 = await artifactSha256(artifact);
+  const read = await readArtifact(artifact);
+  const sha256 = read.sha256;
   const first = firstDelivery(await deliveriesOf(transport, signer.address, address), sha256);
   const payTo = command.payTo ?? first?.worker;
   if (payTo === undefined) {
@@ -143,7 +177,13 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   if (first !== null && first.worker !== payTo) {
     throw new JudgeRefused(`${first.worker} announced the artifact with sha256 ${sha256} first, in ${first.signature}; it is paid, not --pay-to ${payTo}`);
   }
-  const check = await runCheck(command.run, checkEnv(process.env, spec, artifact, sha256), command.timeout);
+  const copy = await copyOf(read);
+  let check: Check;
+  try {
+    check = await runCheck(command.run, checkEnv(process.env, spec, copy.path, sha256), command.timeout);
+  } finally {
+    await rm(copy.root, { recursive: true, force: true });
+  }
   const passed = check.exitCode === 0;
   const signature =
     passed && command.yes

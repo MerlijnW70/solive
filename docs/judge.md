@@ -4,7 +4,7 @@ A proof escrow commits the sha256 of an acceptance spec and pays out only when i
 
 ## No sandbox
 
-`judge` runs the command you pass with `--run` through your shell, as your user, with your files and your network. It does not sandbox it. Delivered work is untrusted: if your check builds or runs it, run the check in a container or VM. `judge` runs no other command: never the spec, a delivery's memo or its link. The MCP server runs no command at all.
+`judge` runs the command you pass with `--run` through your shell, as your user, with your files and your network. It does not sandbox it. The check runs on a fresh temporary copy that holds only the files `judge` hashed, never on the work you passed, and `judge` removes the copy afterwards. Its environment holds only `PATH`, `HOME`, `USERPROFILE`, `SYSTEMROOT`, `COMSPEC`, `PATHEXT`, `TEMP`, `TMP`, `TMPDIR`, `LANG` and `TERM` from yours, so your RPC URL, keypair path and other secrets do not reach it. Delivered work is untrusted: if your check builds or runs it, run the check in a container or VM. `judge` runs no other command: never the spec, a delivery's memo or its link. The MCP server runs no command at all.
 
 ## 1. Find the job and its spec
 
@@ -32,7 +32,7 @@ Each entry is one announced `sha256` with its earliest announcer `worker`, the `
 
 ## 3. Write your check
 
-The check is any command that exits 0 when the work passes the spec. `judge` gives it three environment variables: `SPEC_PATH`, the spec file; `ARTIFACT_PATH`, the work; `ARTIFACT_SHA256`, the work's hash. This check passes when `answer.txt` holds `42`:
+The check is any command that exits 0 when the work passes the spec. `judge` gives it three environment variables: `SPEC_PATH`, the spec file; `ARTIFACT_PATH`, the work; `ARTIFACT_SHA256`, the work's hash. `ARTIFACT_PATH` is the copy: a directory for work that is a directory, a file of the same name for work that is one file. This check passes when `answer.txt` holds `42`:
 
 ```bash
 #!/usr/bin/env bash
@@ -52,7 +52,7 @@ chmod +x check.sh
 intent-engine judge --owner $OWNER --nonce $NONCE --spec spec.md --artifact work --run ./check.sh --verdict verdict.json
 ```
 
-In order, `judge` refuses unless the escrow is open and names your wallet as its judge, refuses unless the spec file's sha256 is the committed one, hashes the work, picks whom to pay, then runs `--run` with at most `--timeout` seconds (default 600, at most 86400). On timeout it kills the command's process group, or on Windows its process tree. Exit code 0 is a pass; any other exit code or a timeout is a fail, which sends nothing and makes `judge` exit 1. It prints, and with `--verdict` writes, the `intent`, `specHash`, `artifactSha256`, `command`, `exitCode`, `verdict`, `payTo` and `signature`.
+In order, `judge` refuses unless the escrow is open and names your wallet as its judge, refuses unless the spec file's sha256 is the committed one, hashes the work, picks whom to pay, then runs `--run` with at most `--timeout` seconds (default 600, at most 86400). On timeout it kills the command's process group, or on Windows its process tree; after a normal exit it kills only the process group, and on Windows nothing. Exit code 0 is a pass; any other exit code or a timeout is a fail, which sends nothing and makes `judge` exit 1. It prints, and with `--verdict` writes, the `intent`, `specHash`, `artifactSha256`, `command`, `exitCode`, `verdict`, `payTo` and `signature`.
 
 On a pass this sends nothing yet. Add `--yes` to run the check again and settle:
 
