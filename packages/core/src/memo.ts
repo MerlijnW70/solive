@@ -18,7 +18,16 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const LOCAL_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 export function isMemoUrl(url: string): boolean {
-  if (url.length > MAX_MEMO_URL || !PRINTABLE.test(url) || url.includes("\\")) {
+  if (url.includes("\\") || !isLegacyMemoUrl(url)) {
+    return false;
+  }
+  const parsed = new URL(url);
+  const bareOrigin = parsed.href === `${url}/` && parsed.pathname === "/" && parsed.search === "" && parsed.hash === "";
+  return parsed.href === url || bareOrigin;
+}
+
+export function isLegacyMemoUrl(url: string): boolean {
+  if (url.length > MAX_MEMO_URL || !PRINTABLE.test(url)) {
     return false;
   }
   let parsed: URL;
@@ -28,10 +37,6 @@ export function isMemoUrl(url: string): boolean {
     return false;
   }
   if (parsed.username !== "" || parsed.password !== "" || parsed.hostname === "") {
-    return false;
-  }
-  const bareOrigin = parsed.href === `${url}/` && parsed.pathname === "/" && parsed.search === "" && parsed.hash === "";
-  if (parsed.href !== url && !bareOrigin) {
     return false;
   }
   if (url.startsWith("https://")) {
@@ -56,7 +61,7 @@ export function parseSpecMemo(text: string): SpecMemo | null {
     return null;
   }
   const url = text.slice(SPEC_MEMO_PREFIX.length);
-  return isMemoUrl(url) ? { url } : null;
+  return isLegacyMemoUrl(url) ? { url } : null;
 }
 
 export function deliveryMemo({ intent, sha256, url }: DeliveryMemo): string {
@@ -84,7 +89,7 @@ export function parseDeliveryMemo(text: string): DeliveryMemo | null {
   const intent = rest.slice(0, split);
   const sha256 = rest.slice(split + 1, split + 65);
   const url = rest.slice(split + 66);
-  if (rest[split + 65] !== ":" || !isAddress(intent) || !isSha256Hex(sha256) || !isMemoUrl(url)) {
+  if (rest[split + 65] !== ":" || !isAddress(intent) || !isSha256Hex(sha256) || !isLegacyMemoUrl(url)) {
     return null;
   }
   return { intent, sha256, url };

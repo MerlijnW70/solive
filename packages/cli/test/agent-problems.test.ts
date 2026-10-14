@@ -1,4 +1,4 @@
-import type { Address } from "@solana/kit";
+import { type Address, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SolanaError } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import { INTENT_ENGINE_PROGRAM_ADDRESS, IntentCoreError } from "@intent-engine/core";
 import { MissingAccount, NotAMint } from "@intent-engine/client";
@@ -158,5 +158,26 @@ describe("agent problems", () => {
     });
     expect(problemOf(new Error("socket hang up"))).toEqual({ code: "Failed", retryable: false, hint: "socket hang up" });
     expect(problemOf("plain")).toEqual({ code: "Failed", retryable: false, hint: "plain" });
+  });
+
+  it("returns RateLimited for a 429 with production error messages", () => {
+    const before = process.env["NODE_ENV"];
+    process.env["NODE_ENV"] = "production";
+    let throttled: SolanaError;
+    try {
+      throttled = new SolanaError(SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, { headers: new Headers(), message: "Too Many Requests", statusCode: 429 });
+    } finally {
+      if (before === undefined) {
+        delete process.env["NODE_ENV"];
+      } else {
+        process.env["NODE_ENV"] = before;
+      }
+    }
+    expect(throttled.message).not.toMatch(/\b429\b/);
+    expect(problemOf(throttled)).toEqual({
+      code: "RateLimited",
+      retryable: true,
+      hint: "the RPC node is rate limiting; wait a few seconds and call again",
+    });
   });
 });

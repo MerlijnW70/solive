@@ -12,6 +12,8 @@ import {
   getTransactionDecoder,
   isSolanaError,
   type Signature,
+  SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR,
+  SolanaError,
 } from "@solana/kit";
 import { getEventListeners } from "node:events";
 import { describe, expect, it } from "vitest";
@@ -43,6 +45,7 @@ import { Charged,
   MEMO_PROGRAM_ADDRESS,
 } from "../src/transport.js";
 import { budgeted, PACKET_DATA_SIZE, transactionBytes, withPriority } from "../src/budget.js";
+import { ENGINE_ERRORS, explain } from "../src/errors.js";
 
 const SIG = "5".repeat(88) as Signature;
 const OWNER = "11111111111111111111111111111112" as Address;
@@ -1140,5 +1143,100 @@ describe("airdrops", () => {
     expect(refusals).toBe(0);
     expect(s.waits).toEqual([2 * POLL_MS, 4 * POLL_MS]);
     expect(s.calls.filter((c) => c.startsWith("airdrop:"))).toEqual([`airdrop:${OWNER}:5`]);
+  });
+});
+
+describe("rpc errors read by code", () => {
+  function production<T>(make: () => T): T {
+    const before = process.env["NODE_ENV"];
+    process.env["NODE_ENV"] = "production";
+    try {
+      return make();
+    } finally {
+      if (before === undefined) {
+        delete process.env["NODE_ENV"];
+      } else {
+        process.env["NODE_ENV"] = before;
+      }
+    }
+  }
+
+  const httpError = (statusCode: number) =>
+    production(() => new SolanaError(SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, { headers: new Headers(), message: "Too Many Requests", statusCode }));
+
+  const behindError = () =>
+    production(() => getSolanaErrorFromJsonRpcError({ code: -32016, message: "Minimum context slot has not been reached", data: { contextSlot: 5 } }));
+
+  it("a rate limit is recognised with production error messages", async () => {
+    const throttled = httpError(429);
+    expect(throttled.message).toMatch(/^Solana error #8100002/);
+    expect(throttled.message).not.toMatch(/\b429\b|Too Many Requests/);
+    expect(rateLimited(throttled)).toBe(true);
+    expect(rateLimited(new Error("the read failed", { cause: throttled }))).toBe(true);
+    expect(rateLimited(httpError(500))).toBe(false);
+    expect(rateLimited(new Error("HTTP error (429): Too Many Requests", { cause: httpError(503) }))).toBe(false);
+    const waits: number[] = [];
+    let calls = 0;
+    const value = await patiently(
+      async () => {
+        calls += 1;
+        if (calls < 3) {
+          throw httpError(429);
+        }
+        return "ok";
+      },
+      async (ms) => {
+        waits.push(ms);
+      },
+    );
+    expect(value).toBe("ok");
+    expect(waits).toEqual([2 * POLL_MS, 4 * POLL_MS]);
+  });
+
+  it("a minimum context slot error is recognised with production error messages", async () => {
+    const behind = behindError();
+    expect(behind.message).toMatch(/^Solana error #-32016/);
+    expect(behind.message).not.toMatch(/minimum context slot/i);
+    expect(behindMinSlot(behind)).toBe(true);
+    expect(behindMinSlot(new Error("the read failed", { cause: behind }))).toBe(true);
+    const skipped = production(() => getSolanaErrorFromJsonRpcError({ code: -32007, message: "Slot 5 was skipped", data: {} }));
+    expect(behindMinSlot(skipped)).toBe(false);
+    expect(rateLimited(skipped)).toBe(false);
+    const waits: number[] = [];
+    let calls = 0;
+    await patiently(
+      async () => {
+        calls += 1;
+        if (calls < 2) {
+          throw behindError();
+        }
+      },
+      async (ms) => {
+        waits.push(ms);
+      },
+    );
+    expect(waits).toEqual([2 * POLL_MS]);
+  });
+
+  it("every rpc error that decides behaviour is read by its code before its text", () => {
+    const [code] = [...ENGINE_ERRORS.keys()];
+    const failed = production(() =>
+      getSolanaErrorFromJsonRpcError({
+        code: -32002,
+        message: "Transaction simulation failed",
+        data: { accounts: null, logs: [], unitsConsumed: 0, returnData: null, err: { InstructionError: [0, { Custom: code }] } },
+      }),
+    );
+    expect(failed.message).not.toMatch(/custom program error/i);
+    const decided: [string, boolean][] = [
+      ["rateLimited", rateLimited(httpError(429))],
+      ["behindMinSlot", behindMinSlot(behindError())],
+      ["explain", code !== undefined && explain(failed)?.code === code],
+    ];
+    expect(decided).toEqual([
+      ["rateLimited", true],
+      ["behindMinSlot", true],
+      ["explain", true],
+    ]);
   });
 });

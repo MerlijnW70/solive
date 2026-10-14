@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import { describe, expect, it } from "vitest";
-import { deliveryMemo, findIntentPda, Kind, MAX_MEMO_URL, specMemo } from "@intent-engine/core";
+import { DELIVERY_MEMO_PREFIX, deliveryMemo, findIntentPda, Kind, MAX_MEMO_URL, SPEC_MEMO_PREFIX, specMemo } from "@intent-engine/core";
 import {
   announcements,
   createClient,
@@ -17,6 +17,7 @@ import {
   type ListedSignature,
   MAX_EXPIRES_IN,
   MAX_SPEC_BYTES,
+  MEMO_PROGRAM_ADDRESS,
   memoInstruction,
   MIN_EXPIRES_IN,
   NotDeliverable,
@@ -255,6 +256,56 @@ describe("deliveries", () => {
       [WORK, worker.address, 1],
       ["cd".repeat(32), copier.address, 0],
     ]);
+  });
+
+  it("a delivery announced with a 0.1.23 url still counts as earliest", async () => {
+    const { w, client, judge, order } = await setting();
+    const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
+    const worker = await funded(w.chain);
+    const copier = await funded(w.chain);
+    const legacy = ["https://Example.com/w.tar", "https://host:443/w.tar", "https://a.example/a/../b"];
+    for (const url of legacy) {
+      expect(() => deliveryMemo({ intent: job.intent, sha256: WORK, url })).toThrow(RangeError);
+    }
+    await announce(w, worker, judge.address, [`${DELIVERY_MEMO_PREFIX}${job.intent}:${WORK}:${legacy[0]}`]);
+    w.chain.svm.warpToSlot(w.chain.svm.getClock().slot + 1n);
+    await client.deliver({ worker: copier, intent: job.intent, sha256: WORK, url: "https://example.com/w.tar" });
+    w.chain.svm.warpToSlot(w.chain.svm.getClock().slot + 1n);
+    await announce(w, worker, judge.address, [`${DELIVERY_MEMO_PREFIX}${job.intent}:${"cd".repeat(32)}:${legacy[1]}`, `${DELIVERY_MEMO_PREFIX}${job.intent}:${"ef".repeat(32)}:${legacy[2]}`]);
+
+    const found = await client.deliveries({ judge: judge.address, intent: job.intent });
+    expect(firstDelivery(found, WORK)).toMatchObject({ worker: worker.address, url: legacy[0] });
+    expect(firstDelivery(found, "cd".repeat(32))).toMatchObject({ worker: worker.address, url: legacy[1] });
+    expect(firstDelivery(found, "ef".repeat(32))).toMatchObject({ worker: worker.address, url: legacy[2] });
+    expect(announcements(found).find(({ sha256 }) => sha256 === WORK)).toMatchObject({ first: { worker: worker.address, url: legacy[0] }, copies: 1 });
+  });
+
+  it("a spec memo with a 0.1.23 url is still read", async () => {
+    const w = await world();
+    const legacy = "https://Example.org:443/jobs/./spec.md";
+    const inner = w.chain.transport;
+    const written: Transport = {
+      ...inner,
+      send: (instructions, payer) =>
+        inner.send(
+          instructions.map((ix) =>
+            ix.programAddress === MEMO_PROGRAM_ADDRESS && new TextDecoder().decode(Uint8Array.from(ix.data ?? [])) === specMemo(SPEC_URL)
+              ? { ...ix, data: new TextEncoder().encode(`${SPEC_MEMO_PREFIX}${legacy}`) }
+              : ix,
+          ),
+          payer,
+        ),
+    };
+    const fetched: Fetched[] = [];
+    const client = createClient({ url: LOCAL, transport: written, fetch: serving({ [legacy]: SPEC }, fetched) });
+    const judge = await funded(w.chain);
+    const order = { signer: w.owner, inputMint: w.inputMint, outputMint: w.outputMint };
+    expect(() => specMemo(legacy)).toThrow(RangeError);
+    const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
+    expect((await client.jobs())[0]).toMatchObject({ intent: job.intent, specUrl: legacy });
+    expect(await client.jobs({ attestor: judge.address })).toMatchObject([{ intent: job.intent, specUrl: legacy }]);
+    expect(await client.spec(job.intent)).toEqual({ url: legacy, text: SPEC, sha256: Buffer.from(sha(SPEC)).toString("hex"), matches: true });
+    expect(fetched.map(({ url }) => url)).toEqual([legacy]);
   });
 
   it("breaks a tie in slot by the lower signature", () => {

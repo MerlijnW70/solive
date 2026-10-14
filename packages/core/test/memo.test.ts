@@ -4,6 +4,7 @@ import {
   DELIVERY_MEMO_PREFIX,
   deliveryMemo,
   INTENT_ENGINE_PROGRAM_ADDRESS,
+  isLegacyMemoUrl,
   isMemoUrl,
   MAX_DELIVERY_MEMO,
   MAX_MEMO_URL,
@@ -95,7 +96,27 @@ describe("spec and delivery memos", () => {
     ]) {
       expect(isMemoUrl(url), url).toBe(false);
       expect(() => specMemo(url)).toThrow(RangeError);
+      expect(parseSpecMemo(`${SPEC_MEMO_PREFIX}${url}`)).toEqual(isLegacyMemoUrl(url) ? { url } : null);
+    }
+  });
+
+  it("writing still refuses a non canonical memo url", () => {
+    for (const url of ["https://Example.com/w.tar", "https://host:443/w.tar", "https://a.example/a/../b", "https://a.example/./b", "https://a.example?x", "http://LOCALHOST/x"]) {
+      expect(isMemoUrl(url), url).toBe(false);
+      expect(isLegacyMemoUrl(url), url).toBe(true);
+      expect(() => specMemo(url)).toThrow(`a spec url must be ${MEMO_URL_RULE}`);
+      expect(() => deliveryMemo({ ...delivery, url })).toThrow(`a delivery url must be ${MEMO_URL_RULE}`);
+      expect(parseSpecMemo(`${SPEC_MEMO_PREFIX}${url}`)).toEqual({ url });
+      expect(parseDeliveryMemo(`${DELIVERY_MEMO_PREFIX}${INTENT}:${HASH}:${url}`)).toEqual({ ...delivery, url });
+    }
+    for (const url of ["http://example.org/x", "HTTPS://a.example/x", "https:/a.example/x", "https://user:pass@example.org/x", "https://example.org/has space", "https://a.io/" + "x".repeat(MAX_MEMO_URL - 12)]) {
+      expect(isLegacyMemoUrl(url), url).toBe(false);
       expect(parseSpecMemo(`${SPEC_MEMO_PREFIX}${url}`)).toBeNull();
+      expect(parseDeliveryMemo(`${DELIVERY_MEMO_PREFIX}${INTENT}:${HASH}:${url}`)).toBeNull();
+    }
+    for (const url of [URL_OK, "http://127.0.0.1:8080/a:b?c=d#e", "https://a.example"]) {
+      expect(isMemoUrl(url), url).toBe(true);
+      expect(isLegacyMemoUrl(url), url).toBe(true);
     }
   });
 
@@ -160,13 +181,15 @@ describe("spec and delivery memos", () => {
     fc.assert(
       fc.property(fc.oneof(tail, tail.map((s) => `${SPEC_MEMO_PREFIX}${s}`)), (text) => {
         const parsed = parseSpecMemo(text);
-        expect(parsed === null || specMemo(parsed.url) === text).toBe(true);
+        expect(parsed === null || `${SPEC_MEMO_PREFIX}${parsed.url}` === text).toBe(true);
+        expect(parsed === null || !isMemoUrl(parsed.url) || specMemo(parsed.url) === text).toBe(true);
       }),
     );
     fc.assert(
       fc.property(fc.oneof(tail, tail.map((s) => `${DELIVERY_MEMO_PREFIX}${INTENT}:${HASH}:${s}`), tail.map((s) => `${DELIVERY_MEMO_PREFIX}${s}`)), (text) => {
         const parsed = parseDeliveryMemo(text);
-        expect(parsed === null || deliveryMemo(parsed) === text).toBe(true);
+        expect(parsed === null || `${DELIVERY_MEMO_PREFIX}${parsed.intent}:${parsed.sha256}:${parsed.url}` === text).toBe(true);
+        expect(parsed === null || !isMemoUrl(parsed.url) || deliveryMemo(parsed) === text).toBe(true);
         expect(parsed === null || text.length <= MAX_DELIVERY_MEMO).toBe(true);
       }),
     );

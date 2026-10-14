@@ -17,6 +17,8 @@ import {
   type TransactionSigner,
   getBase58Decoder,
   getBase58Encoder,
+  isSolanaError,
+  SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR,
 } from "@solana/kit";
 import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 
@@ -161,8 +163,29 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 
 export const RATE_LIMIT_ATTEMPTS = 6;
 
+const CAUSE_DEPTH = 8;
+
+function causes(error: unknown): Error[] {
+  const chain: Error[] = [];
+  for (let link = error; link instanceof Error && chain.length < CAUSE_DEPTH; link = link.cause) {
+    chain.push(link);
+  }
+  return chain;
+}
+
+const said = (chain: readonly Error[], text: RegExp): boolean => chain.some((link) => !isSolanaError(link) && text.test(link.message));
+
 export function rateLimited(error: unknown): boolean {
-  return error instanceof Error && !(error instanceof Charged) && /\b429\b/.test(error.message);
+  if (!(error instanceof Error) || error instanceof Charged) {
+    return false;
+  }
+  const chain = causes(error);
+  for (const link of chain) {
+    if (isSolanaError(link, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR)) {
+      return link.context.statusCode === 429;
+    }
+  }
+  return said(chain, /\b429\b/);
 }
 
 export const MIN_CONTEXT_SLOT_NOT_REACHED = -32016;
@@ -171,8 +194,8 @@ export function behindMinSlot(error: unknown): boolean {
   if (!(error instanceof Error) || error instanceof Charged) {
     return false;
   }
-  const code = (error as { context?: { __code?: unknown } }).context?.__code;
-  return code === MIN_CONTEXT_SLOT_NOT_REACHED || /-32016\b|minimum context slot/i.test(error.message);
+  const chain = causes(error);
+  return chain.some((link) => isSolanaError(link, MIN_CONTEXT_SLOT_NOT_REACHED)) || said(chain, /-32016\b|minimum context slot/i);
 }
 
 export async function patiently<T>(call: () => Promise<T>, wait: (ms: number) => Promise<void> = sleep): Promise<T> {
