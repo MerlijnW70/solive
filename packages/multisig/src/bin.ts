@@ -2,7 +2,7 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { connectionChain } from "./chain.js";
-import { readKeypair } from "./keys.js";
+import { readSigner } from "./keys.js";
 import { main } from "./main.js";
 import { Refusal } from "./squads.js";
 
@@ -10,7 +10,8 @@ const run = promisify(execFile);
 
 const result = await main(process.argv.slice(2), {
   chain: connectionChain,
-  keypair: readKeypair,
+  keypair: (path) => readSigner(path),
+  notify: (text) => process.stderr.write(text),
   run: async ([file = "", ...args]) => {
     try {
       return (await run(file, args, { maxBuffer: 16 * 1024 * 1024 })).stdout;

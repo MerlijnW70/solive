@@ -5,4 +5,5 @@ onlyBuiltDependencies: []
 ignoredBuiltDependencies:
   - bufferutil
   - fsevents
+  - node-hid
   - utf-8-validate

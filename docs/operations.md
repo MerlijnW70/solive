@@ -189,11 +189,42 @@ journalctl -u intent-engine-monitor -f
 
 Alerts go to the journal and to the webhook, which should page a person, for example a chat or paging service. After each intended change, write the new baseline and run `sudo systemctl restart intent-engine-monitor`. The monitor cannot report its own death: alert on the unit failing, and watch the webhook for silence.
 
+## Signing with a Ledger
+
+`--keypair` and `--create-key` also take a Ledger, in the Solana CLI's form: `usb://ledger` derives `m/44'/501'`, `usb://ledger?key=<account>` derives `m/44'/501'/<account>'` and `usb://ledger?key=<account>/<change>` derives `m/44'/501'/<account>'/<change>'`. Any other `usb://` path is a usage error. A Ledger gets every check a keypair file gets: the full decode, the buffer hash and authority, the signer check and membership. A Ledger whose address is not a member is refused before it is asked to sign.
+
+1. On the Ledger, install the Solana app with Ledger Live, open it and turn on blind signing in its settings. The app cannot decode Squads instructions, so it signs them by message hash and refuses them while blind signing is off.
+2. Build the USB driver once per checkout; pnpm skips its install script:
+
+   ```sh
+   (cd node_modules/.pnpm/node-hid@2.1.2/node_modules/node-hid && node ../prebuild-install/bin.js --runtime napi)
+   ```
+
+   On Linux, install Ledger's udev rules from https://github.com/LedgerHQ/udev-rules as well.
+3. `solana-keygen pubkey "usb://ledger?key=0"` prints the member address of account 0. Use that address in `--members`.
+4. Sign as with a file:
+
+   ```sh
+   node packages/multisig/dist/bin.js approve --multisig <multisig> --index <n> --keypair "usb://ledger?key=0" --url devnet
+   node packages/multisig/dist/bin.js approve --multisig <multisig> --index <n> --keypair "usb://ledger?key=0" --url devnet --yes
+   ```
+
+   The preview reads the Ledger's address and never asks it to sign. With `--yes`, before the Ledger asks, stderr shows the summary and `message hash: <hash>`, the base58 sha256 of the transaction message, and the JSON output carries it as `message_hash`. The Ledger shows the same hash: compare the two and press approve only if they match. A locked or missing Ledger, a closed Solana app, blind signing turned off and a rejection on the device each refuse with their own message, and nothing is sent.
+5. One Ledger per member, kept by that member and never shared; the seed phrase backup sits on paper or steel, apart from the device.
+
+A member who loses their Ledger and its seed phrase is replaced inside the same multisig. Another member creates a Squads config transaction in the Squads app at https://app.squads.so that removes the lost address and adds the new one. Each member reads it with `show`, which prints each change and the members after it, and signs it with `--allow-config`:
+
+```sh
+node packages/multisig/dist/bin.js show --multisig <multisig> --index <n> --url devnet
+node packages/multisig/dist/bin.js approve --multisig <multisig> --index <n> --allow-config --keypair "usb://ledger?key=0" --url devnet --yes
+node packages/multisig/dist/bin.js execute --multisig <multisig> --index <n> --allow-config --keypair "usb://ledger?key=0" --url devnet --yes
+```
+
 ## Real keys
 
 The devnet members are files on one machine. Before mainnet:
 
-- Each member key lives on a hardware wallet, held by a different person on a different device. The multisig tool reads keypair files only, so members with a hardware wallet read, approve and execute proposals in the Squads app at https://app.squads.so, which shows the same multisig.
+- Each member key lives on a hardware wallet, held by a different person on a different device. Members with a Ledger sign through this tool as [Signing with a Ledger](#signing-with-a-ledger) shows, so they keep its checks; the Squads app at https://app.squads.so shows the same multisig but not those checks.
 - No member key ever touches the machine that builds or deploys.
 - Each person keeps an offline backup of their seed phrase, on paper or steel, in a separate place from the device.
 - The guardian key sits on a host that runs nothing else and is watched, so a pause is fast.

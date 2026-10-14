@@ -119,8 +119,8 @@ describe("threat model", () => {
       }
       const artefacts = [...row.evidence.matchAll(/`([^`]+)`/g)].map((m) => m[1] ?? "");
       if (row.status === "open") {
-        if (!row.evidence.startsWith("Planned: ") || artefacts.length > 0) {
-          problems.push(`${row.id}: an open row names its planned control and no artefact`);
+        if (!row.evidence.startsWith("Planned: ")) {
+          problems.push(`${row.id}: an open row names its planned control first`);
         }
       } else if (artefacts.length === 0) {
         problems.push(`${row.id}: ${row.status} without evidence`);

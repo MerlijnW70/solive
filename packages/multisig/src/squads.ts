@@ -1,4 +1,4 @@
-import { AccountRole, type Address, address, getBase64Encoder, type Instruction, isAddress, type KeyPairSigner } from "@solana/kit";
+import { AccountRole, type Address, address, getBase64Encoder, type Instruction, isAddress, type TransactionPartialSigner } from "@solana/kit";
 import type { Account, Chain } from "./chain.js";
 import {
   configTransactionExecute,
@@ -86,7 +86,7 @@ export class Refusal extends Error {
 export type Plan = {
   summary: string[];
   instructions: Instruction[];
-  signers: KeyPairSigner[];
+  signers: TransactionPartialSigner[];
   details: Record<string, unknown>;
   recheck?: () => Promise<void>;
 };
@@ -130,7 +130,7 @@ export const statusOf = (proposal: Proposal | null): string => (proposal === nul
 
 export async function createMultisig(
   chain: Chain,
-  input: { creator: Address; createKey: KeyPairSigner; members: Address[]; threshold: number; timeLock: number },
+  input: { creator: Address; createKey: TransactionPartialSigner; members: Address[]; threshold: number; timeLock: number },
 ): Promise<Plan> {
   const keys = input.members;
   if (new Set(keys).size !== keys.length) {

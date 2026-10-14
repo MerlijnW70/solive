@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
-import { createKeyPairSignerFromBytes, type KeyPairSigner } from "@solana/kit";
+import { createKeyPairSignerFromBytes, type KeyPairSigner, type TransactionPartialSigner } from "@solana/kit";
+import { isLedgerPath, ledgerSigner, type OpenTransport } from "./ledger.js";
 import { Refusal } from "./squads.js";
 
 const KEYPAIR_BYTES = 64;
@@ -33,3 +34,6 @@ export async function readKeypair(path: string): Promise<KeyPairSigner> {
     throw notKeypair;
   }
 }
+
+export const readSigner = async (path: string, open?: OpenTransport): Promise<TransactionPartialSigner> =>
+  isLedgerPath(path) ? ledgerSigner(path, open) : readKeypair(path);

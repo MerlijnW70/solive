@@ -5,23 +5,26 @@ import {
   compileTransaction,
   createTransactionMessage,
   isAddress,
-  type KeyPairSigner,
+  isTransactionWithinSizeLimit,
   pipe,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
-  signTransaction,
-  type Transaction,
+  type TransactionPartialSigner,
 } from "@solana/kit";
 import type { Chain } from "./chain.js";
 import { jsonText } from "./engine.js";
+import { isDevice, isLedgerPath, LEDGER_FORMS, LedgerPathError, messageHash, parseLedgerPath } from "./ledger.js";
 import { show } from "./show.js";
 import { approve, createMultisig, ENGINE_PROGRAM, execute, type Plan, proposeAuthority, proposeInstructions, proposeUpgrade, Refusal, reject } from "./squads.js";
 
 export type Deps = {
   chain(url: string): Chain;
-  keypair(path: string): Promise<KeyPairSigner>;
+  keypair(path: string): Promise<TransactionPartialSigner>;
   run(argv: string[]): Promise<string>;
+  notify?(text: string): void;
 };
+
+type Notify = (text: string) => void;
 
 export type Result = { code: number; out: string; err: string };
 
@@ -42,6 +45,7 @@ export const USAGE = [
   "intent-engine-multisig show --multisig <m> [--index <n>]",
   "intent-engine-multisig propose-authority --multisig <m> --new-authority <address> [--program <address>] --keypair <member> [--yes]",
   "every command takes --url devnet|testnet|mainnet-beta|localhost|<rpc url>, default devnet",
+  `--keypair and --create-key take a keypair file or a Ledger: ${LEDGER_FORMS.join(", ")}`,
 ];
 
 class UsageError extends Error {}
@@ -139,7 +143,9 @@ function hashes(values: Values): string[] {
   return list;
 }
 
-async function transaction(chain: Chain, payer: KeyPairSigner, plan: Plan): Promise<Transaction> {
+type Signable = Parameters<TransactionPartialSigner["signTransactions"]>[0][number];
+
+async function transaction(chain: Chain, payer: TransactionPartialSigner, plan: Plan): Promise<Signable> {
   const latest = await chain.blockhash();
   const message = pipe(
     createTransactionMessage({ version: 0 }),
@@ -147,17 +153,38 @@ async function transaction(chain: Chain, payer: KeyPairSigner, plan: Plan): Prom
     (m) => setTransactionMessageLifetimeUsingBlockhash(latest, m),
     (m) => appendTransactionMessageInstructions(plan.instructions, m),
   );
-  const signers = [payer, ...plan.signers.filter((s) => s.address !== payer.address)];
-  return signTransaction(
-    signers.map((s) => s.keyPair),
-    compileTransaction(message),
-  );
+  const compiled = compileTransaction(message);
+  if (!isTransactionWithinSizeLimit(compiled)) {
+    throw new Refusal("the transaction is larger than a Solana transaction may be; nothing was signed or sent");
+  }
+  return compiled;
 }
 
-async function deliver(chain: Chain, url: Cluster, payer: KeyPairSigner, plan: Plan, yes: boolean): Promise<object> {
-  const tx = await transaction(chain, payer, plan);
-  const shown = { cluster: url.shown, ...plan.details, summary: plan.summary };
+async function signWith(signers: TransactionPartialSigner[], unsigned: Signable): Promise<Signable> {
+  let tx = unsigned;
+  for (const signer of signers) {
+    const [signatures] = await signer.signTransactions([tx]);
+    tx = Object.freeze({ ...tx, signatures: Object.freeze({ ...tx.signatures, ...signatures }) });
+  }
+  return tx;
+}
+
+const deviceNotice = (summary: string[], hash: string, devices: string[]): string =>
+  [
+    ...summary,
+    `message hash: ${hash}`,
+    `${devices.join(" and ")} will ask to sign a message hash: compare it with ${hash} on the device screen and press approve only if it matches`,
+    "",
+  ].join("\n");
+
+async function deliver(chain: Chain, url: Cluster, payer: TransactionPartialSigner, plan: Plan, yes: boolean, notify: Notify): Promise<object> {
+  const unsigned = await transaction(chain, payer, plan);
+  const signers = [payer, ...plan.signers.filter((s) => s.address !== payer.address)];
+  const devices = signers.filter(isDevice);
+  const hash = messageHash(new Uint8Array(unsigned.messageBytes));
+  const shown = { cluster: url.shown, ...plan.details, summary: plan.summary, message_hash: hash };
   if (!yes) {
+    const tx = await signWith(signers.filter((s) => !isDevice(s)), unsigned);
     const simulated = await chain.simulate(tx);
     return {
       ...shown,
@@ -167,22 +194,37 @@ async function deliver(chain: Chain, url: Cluster, payer: KeyPairSigner, plan: P
       next: NOT_SENT,
     };
   }
+  if (devices.length > 0) {
+    notify(deviceNotice(plan.summary, hash, devices.map((d) => d.device)));
+  }
+  const tx = await signWith(signers, unsigned);
   await plan.recheck?.();
   return { ...shown, sent: true, signature: await chain.send(tx) };
 }
 
-async function command(name: string | undefined, values: Values, passed: string[], deps: Deps): Promise<object> {
+function keyPath(path: string, name: "keypair" | "create-key"): string {
+  if (isLedgerPath(path)) {
+    try {
+      parseLedgerPath(path);
+    } catch (error) {
+      throw new UsageError(`--${name} ${error instanceof LedgerPathError ? error.message : String(error)}`);
+    }
+  }
+  return path;
+}
+
+async function command(name: string | undefined, values: Values, passed: string[], deps: Deps, notify: Notify): Promise<object> {
   const target = cluster(values.url ?? DEVNET);
   const { url } = target;
   const yes = values.yes === true;
-  const signer = async () => deps.keypair(required(values, "keypair"));
+  const signer = async () => deps.keypair(keyPath(required(values, "keypair"), "keypair"));
   switch (name) {
     case "create": {
       const creator = await signer();
       const members = required(values, "members")
         .split(",")
         .map((m) => address(m, "members"));
-      const createKey = values["create-key"] === undefined ? creator : await deps.keypair(values["create-key"]);
+      const createKey = values["create-key"] === undefined ? creator : await deps.keypair(keyPath(values["create-key"], "create-key"));
       const plan = await createMultisig(deps.chain(url), {
         creator: creator.address,
         createKey,
@@ -190,7 +232,7 @@ async function command(name: string | undefined, values: Values, passed: string[
         threshold: whole(required(values, "threshold"), "threshold", 1, members.length),
         timeLock: values["time-lock"] === undefined ? 0 : whole(values["time-lock"], "time-lock", 0, MAX_TIME_LOCK),
       });
-      return deliver(deps.chain(url), target, creator, plan, yes);
+      return deliver(deps.chain(url), target, creator, plan, yes, notify);
     }
     case "propose-upgrade": {
       const member = await signer();
@@ -202,7 +244,7 @@ async function command(name: string | undefined, values: Values, passed: string[
         buffer: key(values, "buffer"),
         spill: key(values, "spill"),
       });
-      return deliver(chain, target, member, plan, yes);
+      return deliver(chain, target, member, plan, yes, notify);
     }
     case "propose-authority": {
       const member = await signer();
@@ -213,7 +255,7 @@ async function command(name: string | undefined, values: Values, passed: string[
         program: values.program === undefined ? ENGINE_PROGRAM : key(values, "program"),
         next: key(values, "new-authority"),
       });
-      return deliver(chain, target, member, plan, yes);
+      return deliver(chain, target, member, plan, yes, notify);
     }
     case "propose-admin": {
       if (passed.length === 0) {
@@ -224,7 +266,7 @@ async function command(name: string | undefined, values: Values, passed: string[
       const stdout = await deps.run(passed);
       const chain = deps.chain(url);
       const plan = await proposeInstructions(chain, { multisig, member: member.address, stdout });
-      return deliver(chain, target, member, { ...plan, details: { command: passed, ...plan.details } }, yes);
+      return deliver(chain, target, member, { ...plan, details: { command: passed, ...plan.details } }, yes, notify);
     }
     case "approve":
     case "execute":
@@ -246,7 +288,7 @@ async function command(name: string | undefined, values: Values, passed: string[
           : name === "execute"
             ? await execute(chain, { ...input, allowConfig, expectBufferHashes })
             : await reject(chain, input);
-      return deliver(chain, target, member, plan, yes);
+      return deliver(chain, target, member, plan, yes, notify);
     }
     case "show": {
       if (values.yes !== undefined || values.keypair !== undefined || values["allow-config"] !== undefined || values["expect-buffer-hash"] !== undefined) {
@@ -263,6 +305,8 @@ export async function main(argv: string[], deps: Deps): Promise<Result> {
   const split = argv.indexOf("--");
   const own = split === -1 ? argv : argv.slice(0, split);
   const passed = split === -1 ? [] : argv.slice(split + 1);
+  const notes: string[] = [];
+  const notify: Notify = deps.notify === undefined ? (text) => notes.push(text) : (text) => deps.notify?.(text);
   try {
     let parsed;
     try {
@@ -277,14 +321,14 @@ export async function main(argv: string[], deps: Deps): Promise<Result> {
     if (split !== -1 && name !== "propose-admin") {
       throw new UsageError("only propose-admin takes a command after --");
     }
-    const out = await command(name, parsed.values as Values, passed, deps);
-    return { code: EXIT_OK, out: `${jsonText(out, 2)}\n`, err: "" };
+    const out = await command(name, parsed.values as Values, passed, deps, notify);
+    return { code: EXIT_OK, out: `${jsonText(out, 2)}\n`, err: notes.join("") };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (error instanceof UsageError) {
-      return { code: EXIT_USAGE, out: "", err: `${jsonText({ error: message, usage: USAGE })}\n` };
+      return { code: EXIT_USAGE, out: "", err: `${notes.join("")}${jsonText({ error: message, usage: USAGE })}\n` };
     }
     const shown = error instanceof Refusal && error.shown !== undefined ? error.shown : {};
-    return { code: EXIT_REFUSED, out: "", err: `${jsonText({ error: message, refused: error instanceof Refusal, ...shown })}\n` };
+    return { code: EXIT_REFUSED, out: "", err: `${notes.join("")}${jsonText({ error: message, refused: error instanceof Refusal, ...shown })}\n` };
   }
 }

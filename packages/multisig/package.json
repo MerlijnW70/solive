@@ -18,9 +18,13 @@
   },
   "dependencies": {
     "@intent-engine/core": "workspace:*",
-    "@solana/kit": "^8.4.0"
+    "@ledgerhq/hw-app-solana": "7.12.0",
+    "@ledgerhq/hw-transport-node-hid-noevents": "6.36.0",
+    "@solana/kit": "8.4.0"
   },
   "devDependencies": {
+    "@ledgerhq/hw-transport": "6.36.0",
+    "@ledgerhq/hw-transport-mocker": "6.35.0",
     "@types/node": "26.6.4",
     "litesvm": "1.5.0",
     "typescript": "7.0.2",
