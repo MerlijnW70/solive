@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
+import { resolve } from "node:path";
 import {
   AccountRole,
   type Address,
@@ -7,7 +8,9 @@ import {
   getBase16Decoder,
   getBase16Encoder,
   type Instruction,
+  isSolanaError,
   type KeyPairSigner,
+  SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR,
   signBytes,
   type TransactionSigner,
 } from "@solana/kit";
@@ -49,6 +52,7 @@ import { decodeLookupTable } from "@intent-engine/solver";
 import {
   announcements,
   chainTime,
+  Charged,
   CLOCK_SYSVAR,
   createdAtOf,
   type EngineTransaction,
@@ -76,7 +80,7 @@ import {
 import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "../args.js";
 import { execute, type PreparedView } from "../flows.js";
 import { TOKEN_NAMES, tokenNamed } from "../tokens.js";
-import { balances, defaultMints, FAUCET, type Files, PUBLIC_FAUCET, setup, withSettings } from "../wallet.js";
+import { balances, defaultMints, expandHome, FAUCET, type Files, PUBLIC_FAUCET, setup, withSettings } from "../wallet.js";
 import { type AgentContext, type AnyAction, define } from "./actions.js";
 import type { Call } from "./claims.js";
 import { MAX_EXPIRES_IN, MIN_EXPIRES_IN, prepareCreate, WRAPPED } from "./create.js";
@@ -231,7 +235,7 @@ function capOf(text: string, decimals: number, mint: Address): bigint {
 
 async function bookOf(wallet: WalletAccess): Promise<string | undefined> {
   const path = await savedKeypair(wallet);
-  return path === undefined ? undefined : salesPath(path);
+  return path === undefined ? undefined : salesPath(resolve(expandHome(path, wallet.files.home)));
 }
 
 const live = (sales: readonly Sale[], now: bigint): Sale[] => sales.filter((s) => s.at > now - SALE_WINDOW);
@@ -415,8 +419,8 @@ async function offered(
       return await sent(ctx, signer, await created({ ...ctx, transport: unmemoized(ctx.transport) }), true, call);
     }
   } catch (error) {
-    if (path !== undefined && neverLanded(error)) {
-      await guard.book.update(path, (sales) => ({ sales: sales.filter((s) => s.id !== sale.id), value: undefined }));
+    if (path !== undefined && refusedBeforeSending(error)) {
+      await guard.book.update(path, (sales) => ({ sales: sales.filter((s) => s.id !== sale.id), value: undefined })).catch(() => undefined);
     }
     throw error;
   }
@@ -1402,7 +1406,33 @@ export const WARN_EARLY = "an order fills before its turn if a solver can alread
 
 export const NO_FALL = "must be more than 0, or the orders have no ask to fall";
 
-const refusedBeforeSending = (error: unknown): boolean => neverLanded(error) || error instanceof AgentRefusal || error instanceof InvalidInput;
+const UNREACHED: ReadonlySet<unknown> = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
+
+const RPC_CAUSE_DEPTH = 8;
+const JSON_RPC_FIRST = -32_000;
+const JSON_RPC_LAST = -32_768;
+
+export function rpcRefused(error: unknown): boolean {
+  if (error instanceof Charged) {
+    return false;
+  }
+  let link: unknown = error;
+  for (let depth = 0; depth < RPC_CAUSE_DEPTH && link instanceof Error; depth++, link = link.cause) {
+    if (isSolanaError(link, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR)) {
+      return link.context.statusCode >= 400 && link.context.statusCode < 500;
+    }
+    if (isSolanaError(link) && link.context.__code <= JSON_RPC_FIRST && link.context.__code >= JSON_RPC_LAST) {
+      return true;
+    }
+    if (UNREACHED.has((link as { code?: unknown }).code)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+const refusedBeforeSending = (error: unknown): boolean =>
+  neverLanded(error) || error instanceof AgentRefusal || error instanceof InvalidInput || rpcRefused(error);
 export const MAX_EVERY = 30 * 24 * 60 * 60;
 
 const walletRecurring = define({

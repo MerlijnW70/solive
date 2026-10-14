@@ -73,7 +73,7 @@ To cap what it may sell, whatever it is asked, add limits to the server's argume
 claude mcp add solive -- npx -y @intent-engine/cli mcp --url devnet --wallet --wallet-per-trade SOL=0.1 --wallet-per-hour SOL=0.5
 ```
 
-It then sells only the tokens named, at most that much per trade and per rolling hour. The server checks them when it signs and records each sale in `<wallet file>.sales.json`, next to the wallet file, so every server and app that uses the same wallet draws on one hourly allowance, and a restart keeps the count. Only a restart changes the limits. They count the tokens sold, not fees or rent.
+It then sells only the tokens named, at most that much per trade and per rolling hour. The server checks them when it signs and records each sale in `<wallet file>.sales.json`, next to the wallet file it loaded the key from, whatever directory the server runs in and however the path is written (`~/wallet.json` and its full path share one file). Every server and app that uses the same wallet draws on one hourly allowance, and a restart keeps the count. A send the RPC node refused before accepting it does not count. Only a restart changes the limits. They count the tokens sold, not fees or rent.
 
 ## 3. Let your AI explain any trade (optional)
 

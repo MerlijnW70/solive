@@ -13,9 +13,12 @@ import {
   none,
   partiallySignTransaction,
   signBytes,
+  SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE,
+  SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR,
+  SolanaError,
 } from "@solana/kit";
 import { FailedTransactionMetadata } from "litesvm";
-import { readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 const bytesOf = (hex: string) => Uint8Array.from(getBase16Encoder().encode(hex));
 import { AccountState, getMintEncoder, getMintSize, getTokenEncoder, getTokenSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
@@ -61,6 +64,7 @@ import {
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   BlockhashExpired,
+  Charged,
   DELIVERY_SCAN,
   type EngineTransaction,
   FailedOnChain,
@@ -1665,6 +1669,49 @@ describe("the wallet server", () => {
     setNow(h.svm.getClock().unixTimestamp + 3_601n);
     expect(await ok(second, "wallet_swap", { ...swap, send: true })).toMatchObject({ sent: true });
     expect((await call(third, "wallet_swap", { ...swap, amount: "0.06" })).value).toMatchObject({ code: "WalletHourLimit" });
+  });
+
+  it("a tilde keypair path and its absolute form share one sales book", async () => {
+    const limited = ["mcp", "--url", "devnet", "--wallet", "--wallet-per-hour", "SOL=0.15"];
+    const first = await connect(limited);
+    await ok(first, "wallet_setup");
+    const swap = { sell: "SOL", buy: "TEST", amount: "0.1", min_receive: "5", exact: true };
+    expect(await ok(first, "wallet_swap", { ...swap, send: true })).toMatchObject({ sent: true });
+    const tilde = "~/.config/intent-engine/wallet.json";
+    h.files.set(tilde, h.files.get(defaultWallet(HOME)) ?? "");
+    h.env["INTENT_ENGINE_KEYPAIR"] = tilde;
+    const second = await connect(limited);
+    expect((await call(second, "wallet_swap", { ...swap, send: true })).value).toMatchObject({ code: "WalletHourLimit" });
+    expect(await ok(second, "wallet_swap", { ...swap, amount: "0.05", send: true })).toMatchObject({ sent: true });
+    expect(JSON.parse(readFileSync(join(h.saleRoot, salesPath(defaultWallet(HOME))), "utf8"))).toHaveLength(2);
+    expect(existsSync(join(h.saleRoot, "~"))).toBe(false);
+    expect(existsSync(join(h.saleRoot, salesPath(tilde)))).toBe(false);
+  });
+
+  it("a send refused at preflight does not count against the limit", async () => {
+    const limited = ["mcp", "--url", "devnet", "--wallet", "--wallet-per-hour", "SOL=0.15"];
+    client = await connect(limited);
+    await ok(client, "wallet_setup");
+    const swap = { sell: "SOL", buy: "TEST", amount: "0.1", min_receive: "5" };
+    const refusals = [
+      new SolanaError(SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE, {
+        accounts: null,
+        logs: ["Transfer: insufficient lamports"],
+        returnData: null,
+        unitsConsumed: 0n,
+      } as never),
+      new SolanaError(SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, { headers: new Headers(), message: "Too Many Requests", statusCode: 429 }),
+      new TypeError("fetch failed", { cause: Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:8899"), { code: "ECONNREFUSED" }) }),
+    ];
+    for (const error of refusals) {
+      h.sendFails = { error, landed: false };
+      expect((await call(client, "wallet_swap", { ...swap, send: true })).error).toBe(true);
+      expect(await ok(client, "wallet_swap", swap)).toMatchObject({ sent: false });
+    }
+    expect(JSON.parse(readFileSync(join(h.saleRoot, salesPath(defaultWallet(HOME))), "utf8"))).toEqual([]);
+    h.sendFails = { error: new Charged("transaction was sent but its confirmation could not be read"), landed: true };
+    expect((await call(client, "wallet_swap", { ...swap, send: true })).error).toBe(true);
+    expect((await call(client, "wallet_swap", swap)).value).toMatchObject({ code: "WalletHourLimit" });
   });
 
   it("a nonce collision on create is retried with the next free nonce", async () => {

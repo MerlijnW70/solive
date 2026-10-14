@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, open, readFile, rename, rm, stat } from "node:fs/promises";
-import { dirname } from "node:path";
+import { link, mkdir, open, readdir, readFile, rename, rm, stat } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import type { Address } from "@solana/kit";
 import { AgentRefusal } from "./problems.js";
 
@@ -11,9 +11,15 @@ export type SaleBook = {
   update<T>(path: string, change: (sales: Sale[]) => { sales: Sale[]; value: T }): Promise<T>;
 };
 
+export type SaleFiles = { rename(from: string, to: string): Promise<void> };
+
 export const LOCK_WAIT_MS = 5_000;
 export const LOCK_STALE_MS = 30_000;
 export const LOCK_POLL_MS = 20;
+export const BUSY_ATTEMPTS = 10;
+export const BUSY_BACKOFF_MS = 10;
+export const BUSY_BACKOFF_CAP_MS = 200;
+export const LEFTOVER_MS = 60_000;
 
 export const salesPath = (keypair: string): string => `${keypair}.sales.json`;
 
@@ -46,15 +52,34 @@ function parsed(text: string, path: string): Sale[] {
   });
 }
 
-const missing = (error: unknown): boolean => (error as { code?: unknown } | null)?.code === "ENOENT";
+const codeOf = (error: unknown): unknown => (error as { code?: unknown } | null)?.code;
 
-const taken = (error: unknown): boolean => (error as { code?: unknown } | null)?.code === "EEXIST";
+const missing = (error: unknown): boolean => codeOf(error) === "ENOENT";
+
+const taken = (error: unknown): boolean => codeOf(error) === "EEXIST";
+
+const BUSY_CODES: ReadonlySet<unknown> = new Set(["EPERM", "EACCES", "EBUSY"]);
+
+const busy = (error: unknown): boolean => BUSY_CODES.has(codeOf(error));
 
 const pause = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
+async function retried<T>(work: () => Promise<T>): Promise<T> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await work();
+    } catch (error) {
+      if (!busy(error) || attempt >= BUSY_ATTEMPTS) {
+        throw error;
+      }
+      await pause(Math.min(BUSY_BACKOFF_MS * 2 ** (attempt - 1), BUSY_BACKOFF_CAP_MS));
+    }
+  }
+}
+
 async function readSales(file: string, path: string): Promise<Sale[]> {
   try {
-    return parsed(await readFile(file, "utf8"), path);
+    return parsed(await retried(() => readFile(file, "utf8")), path);
   } catch (error) {
     if (missing(error)) {
       return [];
@@ -63,42 +88,119 @@ async function readSales(file: string, path: string): Promise<Sale[]> {
   }
 }
 
-async function writeSales(file: string, sales: Sale[]): Promise<void> {
-  const rows: Stored[] = sales.map((s) => ({ id: s.id, mint: s.mint, at: s.at.toString(), amount: s.amount.toString() }));
-  const temporary = `${file}.${randomUUID()}.tmp`;
-  const handle = await open(temporary, "wx", 0o600);
+async function written(file: string, text: string): Promise<void> {
+  const handle = await open(file, "wx", 0o600);
   try {
-    await handle.writeFile(JSON.stringify(rows));
+    await handle.writeFile(text);
     await handle.sync();
   } finally {
     await handle.close();
   }
+}
+
+async function sweep(file: string): Promise<void> {
+  const folder = dirname(file);
+  const prefix = `${basename(file)}.`;
+  const names = await readdir(folder).catch(() => [] as string[]);
+  const cutoff = Date.now() - LEFTOVER_MS;
+  await Promise.all(
+    names
+      .filter((name) => name.startsWith(prefix) && name.endsWith(".tmp"))
+      .map(async (name) => {
+        const leftover = join(folder, name);
+        const seen = await stat(leftover).catch(() => null);
+        if (seen !== null && seen.mtimeMs < cutoff) {
+          await rm(leftover, { force: true }).catch(() => undefined);
+        }
+      }),
+  );
+}
+
+async function writeSales(file: string, sales: Sale[], files: SaleFiles): Promise<void> {
+  await sweep(file);
+  const rows: Stored[] = sales.map((s) => ({ id: s.id, mint: s.mint, at: s.at.toString(), amount: s.amount.toString() }));
+  const temporary = `${file}.${randomUUID()}.tmp`;
+  await written(temporary, JSON.stringify(rows));
   try {
-    await rename(temporary, file);
+    await retried(() => files.rename(temporary, file));
   } catch (error) {
-    await rm(temporary, { force: true });
+    await rm(temporary, { force: true }).catch(() => undefined);
     throw error;
+  }
+}
+
+async function ownerOf(lock: string): Promise<string | null> {
+  try {
+    return await retried(() => readFile(lock, "utf8"));
+  } catch (error) {
+    if (missing(error)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+async function claim(lock: string, token: string): Promise<boolean> {
+  const temporary = `${lock}.${randomUUID()}.tmp`;
+  await written(temporary, token);
+  try {
+    await link(temporary, lock);
+  } catch (error) {
+    if (taken(error) || busy(error)) {
+      return false;
+    }
+    throw error;
+  } finally {
+    await rm(temporary, { force: true }).catch(() => undefined);
+  }
+  return (await ownerOf(lock)) === token;
+}
+
+async function release(lock: string, token: string): Promise<void> {
+  if ((await ownerOf(lock)) === token) {
+    await retried(() => rm(lock, { force: true }));
+  }
+}
+
+const stale = async (path: string): Promise<boolean> => {
+  const seen = await stat(path).catch(() => null);
+  return seen !== null && Date.now() - seen.mtimeMs > LOCK_STALE_MS;
+};
+
+async function takeOver(lock: string, token: string): Promise<boolean> {
+  const old = await ownerOf(lock);
+  if (old === null) {
+    return false;
+  }
+  const breaker = `${lock}.break`;
+  if (!(await claim(breaker, token))) {
+    if (await stale(breaker)) {
+      await rm(breaker, { force: true });
+    }
+    return false;
+  }
+  try {
+    if ((await ownerOf(lock)) !== old || !(await stale(lock))) {
+      return false;
+    }
+    await retried(() => rm(lock, { force: true }));
+    return await claim(lock, token);
+  } finally {
+    await release(breaker, token).catch(() => undefined);
   }
 }
 
 async function locked<T>(file: string, work: () => Promise<T>): Promise<T> {
   const lock = `${file}.lock`;
+  const token = randomUUID();
   await mkdir(dirname(file), { recursive: true, mode: 0o700 });
   const deadline = Date.now() + LOCK_WAIT_MS;
   for (;;) {
-    try {
-      const handle = await open(lock, "wx", 0o600);
-      await handle.close();
+    if (await claim(lock, token)) {
       break;
-    } catch (error) {
-      if (!taken(error)) {
-        throw error;
-      }
     }
-    const held = await stat(lock).catch(() => null);
-    if (held !== null && Date.now() - held.mtimeMs > LOCK_STALE_MS) {
-      await rm(lock, { force: true });
-      continue;
+    if ((await stale(lock)) && (await takeOver(lock, token))) {
+      break;
     }
     if (Date.now() >= deadline) {
       throw new AgentRefusal("WalletBusy", WALLET_BUSY);
@@ -108,18 +210,18 @@ async function locked<T>(file: string, work: () => Promise<T>): Promise<T> {
   try {
     return await work();
   } finally {
-    await rm(lock, { force: true });
+    await release(lock, token).catch(() => undefined);
   }
 }
 
-export function fileSales(locate: (path: string) => string = (path) => path): SaleBook {
+export function fileSales(locate: (path: string) => string = (path) => path, files: SaleFiles = { rename }): SaleBook {
   return {
     read: (path) => readSales(locate(path), path),
     update: (path, change) => {
       const file = locate(path);
       return locked(file, async () => {
         const { sales, value } = change(await readSales(file, path));
-        await writeSales(file, sales);
+        await writeSales(file, sales, files);
         return value;
       });
     },
