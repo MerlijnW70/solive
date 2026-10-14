@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -35,6 +36,7 @@ import {
   chainTime,
   CLOCK_SYSVAR,
   type ClientOptions,
+  type ConnectOptions,
   createClient,
   DELIVERY_PAGES,
   JOBS_LIMIT,
@@ -83,6 +85,13 @@ vi.mock("@intent-engine/client", async () => {
         throw new Error("no transport injected");
       }
       return real.createClient({ ...options, transport: injected.transport, pollMs: 5 });
+    },
+    connect: (options: ConnectOptions) => {
+      injected.urls.push(real.clusterUrl(options));
+      if (injected.transport === undefined) {
+        throw new Error("no transport injected");
+      }
+      return real.connect({ ...options, transport: injected.transport });
     },
   };
 });
@@ -291,27 +300,38 @@ describe("the sdk page", () => {
       rmSync(pageModule, { force: true });
     }
 
-    expect(injected.urls).toEqual([DEVNET]);
+    expect(injected.urls).toEqual([DEVNET, DEVNET]);
     for (const claim of claims) {
       expect(printed).toContain(claim);
     }
     expect(printed.indexOf("Open")).toBeLessThan(printed.indexOf("Cancelled"));
     expect(printed[printed.indexOf("SwapExactIn Open") + 1]).toBe("0.05 50");
-    expect(printed[0]).toBe("false false SwapExactIn true true 5,LimitOrder true true 5,DutchAuction true true 5,AttestedResult true true 5");
+    const [reviewer, judge, worker] = injected.generated;
+    expect(injected.generated).toHaveLength(3);
+    const escrowed = (await findIntentPda({ owner: signer.address, nonce: 1n }))[0];
+    const specSha256 = createHash("sha256").update("the acceptance spec the work must pass").digest("hex");
+    expect(printed.slice(0, 3)).toEqual([
+      "Swap 0.05 SOL for at least 5 TEST, open for 3600 seconds",
+      `Pay 0.01 SOL for work judged by ${reviewer?.address} against spec ${specSha256}, judge fee 0 SOL, open for 86400 seconds`,
+      `Cancel ${escrowed} and return 0.01 SOL to ${signer.address}`,
+    ]);
+    expect(printed[3]).toBe("false false SwapExactIn true true 5,LimitOrder true true 5,DutchAuction true true 5,AttestedResult true true 5");
 
     const client = createClient({ url: DEVNET, transport: w.chain.transport });
     const mine = await client.intents({ owner: signer.address });
     expect(mine.map(({ intent }) => [intent.nonce, intent.kind, intent.status])).toEqual([
-      [0n, Kind.SwapExactIn, IntentStatus.Cancelled],
-      [1n, Kind.LimitOrder, IntentStatus.Filled],
-      [2n, Kind.DutchAuction, IntentStatus.Filled],
-      [3n, Kind.AttestedResult, IntentStatus.Filled],
-      [4n, Kind.AttestedResult, IntentStatus.Cancelled],
-      [6n, Kind.AttestedResult, IntentStatus.Filled],
+      [0n, Kind.SwapExactIn, IntentStatus.Filled],
+      [1n, Kind.AttestedResult, IntentStatus.Cancelled],
+      [2n, Kind.SwapExactIn, IntentStatus.Cancelled],
+      [3n, Kind.LimitOrder, IntentStatus.Filled],
+      [4n, Kind.DutchAuction, IntentStatus.Filled],
+      [5n, Kind.AttestedResult, IntentStatus.Filled],
+      [6n, Kind.AttestedResult, IntentStatus.Cancelled],
+      [8n, Kind.AttestedResult, IntentStatus.Filled],
     ]);
     const rent = w.chain.svm.minimumBalanceForRentExemption(BigInt(getIntentSize()));
     expect(mine.map(({ address }) => w.chain.svm.getBalance(address))).toEqual(mine.map(() => rent + BigInt(BOUNTY)));
-    const [limit, auction] = await Promise.all([1n, 2n].map(async (n) => client.fillOf((await client.intent(signer.address, n))?.address ?? signer.address)));
+    const [limit, auction] = await Promise.all([3n, 4n].map(async (n) => client.fillOf((await client.intent(signer.address, n))?.address ?? signer.address)));
     expect(limit).toMatchObject({ steps: 2, solver: w.authority.address, delivered: 1_500_000_000n, required: 1_500_000_000n });
     const at = printed.indexOf("LimitOrder 1.5 TEST");
     expect(printed[at + 1]).toBe("2 1.5 1.5");
@@ -321,12 +341,10 @@ describe("the sdk page", () => {
     expect(auction?.required).toBeGreaterThan(1_000_000_000n);
     expect(printed[at + 3]).toBe(`2 ${formatAmount(auction?.delivered ?? 0n, 9)} ${formatAmount(auction?.required ?? 0n, 9)}`);
     expect(printed[printed.indexOf("Cancelled NotSettleable") + 1]).toBe("null");
-    expect(await client.intent(signer.address, 5n)).toBeNull();
-    expect((await client.history((await findIntentPda({ owner: signer.address, nonce: 5n }))[0])).map(({ name }) => name).slice(0, 2)).toEqual(["IntentClosed", "IntentExpired"]);
-    const fillFees = 2n * splitFee(10_000_000n, FEE_BPS).fee;
+    expect(await client.intent(signer.address, 7n)).toBeNull();
+    expect((await client.history((await findIntentPda({ owner: signer.address, nonce: 7n }))[0])).map(({ name }) => name).slice(0, 2)).toEqual(["IntentClosed", "IntentExpired"]);
+    const fillFees = 2n * splitFee(10_000_000n, FEE_BPS).fee + splitFee(50_000_000n, FEE_BPS).fee;
     expect(await loadUser(client.transport, signer.address)).not.toBeNull();
-    const [judge, worker] = injected.generated;
-    expect(injected.generated).toHaveLength(2);
     expect(judge?.address).not.toBe(signer.address);
     const pay = 10_000_000n;
     const judgeFee = pay / 10n;
@@ -345,14 +363,14 @@ describe("the sdk page", () => {
     expect(fetched).toHaveLength(2);
     expect(new Set(fetched).size).toBe(1);
     expect(printed.filter((line) => line === "true true")).toHaveLength(2);
-    const posted = (await findIntentPda({ owner: signer.address, nonce: 6n }))[0];
+    const posted = (await findIntentPda({ owner: signer.address, nonce: 8n }))[0];
     expect(await client.deliveries({ judge: judge?.address ?? signer.address, intent: posted })).toMatchObject([{ intent: posted, worker: signer.address }]);
     expect(await client.deliveries({ judge: judge?.address ?? signer.address })).toEqual([]);
     const delivered = (await client.history(posted)).find(({ name }) => name === "IntentAttested");
     expect(delivered?.fields).toMatchObject({ payee: wrapped, net: split.net });
     expect(printed.at(-1)).toBe(`${formatAmount(BigInt(CREATE_FEE), 9)} ${formatAmount(BigInt(BOUNTY), 9)}`);
-    expect((w.chain.svm.getBalance(w.feeRecipient.address) ?? 0n) - treasury).toBe(7n * BigInt(CREATE_FEE));
+    expect((w.chain.svm.getBalance(w.feeRecipient.address) ?? 0n) - treasury).toBe(9n * BigInt(CREATE_FEE));
     expect(tokens(w, wrapped)).toBeNull();
-    expect(tokens(w, await ata(signer.address, TEST))).toBe((limit?.delivered ?? 0n) + (auction?.delivered ?? 0n));
+    expect(tokens(w, await ata(signer.address, TEST))).toBe(5_000_000_000n + (limit?.delivered ?? 0n) + (auction?.delivered ?? 0n));
   });
 });

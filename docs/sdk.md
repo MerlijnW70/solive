@@ -2,21 +2,12 @@
 
 Create, watch, cancel and settle intents from your own code with the npm packages. This page runs on devnet: devnet SOL and the test token have no value, and the program has not had an external audit. CI runs every TypeScript block on this page, in order, as one program.
 
-## Install
+## Quick start
 
-Node.js 22.12 or later.
+Node.js 22.12 or later. Install the packages, then make a devnet wallet that holds devnet SOL with the Solana CLI:
 
 ```sh
 npm install @intent-engine/core @intent-engine/client @solana/kit
-```
-
-Paste the TypeScript blocks below, in order, into one file `main.mts` and run it with `node --experimental-strip-types main.mts`. Later blocks use names earlier blocks define.
-
-## Connect
-
-The code pays from a devnet wallet that holds devnet SOL. Make one with the Solana CLI:
-
-```sh
 solana-keygen new --no-bip39-passphrase -o ~/solive-wallet.json
 solana config set --url devnet --keypair ~/solive-wallet.json
 solana airdrop 1
@@ -30,16 +21,40 @@ solana config set --url devnet --keypair $HOME/solive-wallet.json
 solana airdrop 1
 ```
 
+Paste the TypeScript blocks on this page, in order, into one file `main.mts` and run it with `node --experimental-strip-types main.mts`. Later blocks use names earlier blocks define.
+
+`connect` takes a `cluster` (`devnet`, `testnet`, `localnet` or `mainnet`) or a `url`, and the wallet that signs. It reads the cluster's genesis hash and refuses mainnet unless you pass `allowMainnet: true`. Tokens are `SOL`, `TEST` (the devnet test token) or a mint address, and amounts are whole tokens such as `"0.05"`, with no more decimals than the token has. Each call sets up what it needs, such as wrapping SOL and creating the wallet's token accounts, sends one transaction and returns its `signature`, the `intent` and `nonce` it created, and a one-line `summary`. With `preview: true` it returns the `summary` and the `instructions` and sends nothing.
+
+`swap` below sells 0.05 SOL for at least 5 test tokens, which the devnet filler fills while it is online. `payForWork` escrows 0.01 SOL that only the named judge releases, with `release`, to the wallet whose work passed the spec; this code cancels the escrow again, which returns the SOL to the wallet's wrapped SOL token account. `limit` places a limit order at a `price` in bought tokens per sold token, `findWork` lists open escrows, `deliver` announces work to a judge, `balance` reads the wallet and `watch` follows its intents.
+
 ```ts
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { createKeyPairSignerFromBytes } from "@solana/kit";
-import { createClient } from "@intent-engine/client";
+import { createKeyPairSignerFromBytes, generateKeyPairSigner } from "@solana/kit";
+import { connect } from "@intent-engine/client";
 
-const client = createClient({ url: "https://api.devnet.solana.com" });
 const signer = await createKeyPairSignerFromBytes(
   new Uint8Array(JSON.parse(await readFile(`${homedir()}/solive-wallet.json`, "utf8"))),
 );
+const solive = await connect({ cluster: "devnet", signer });
+const swapped = await solive.swap({ sell: "SOL", amount: "0.05", buy: "TEST", minReceive: "5" });
+console.log(swapped.summary);
+const reviewer = await generateKeyPairSigner();
+const specSha256 = createHash("sha256").update("the acceptance spec the work must pass").digest("hex");
+const escrow = await solive.payForWork({ amount: "0.01", judge: reviewer.address, specHash: specSha256 });
+console.log(escrow.summary);
+console.log((await solive.cancel({ escrow: escrow.intent! })).summary);
+```
+
+## Connect
+
+The rest of this page uses the full client underneath, `solive.client`: it takes kind parameters in base units and gives every option of each call. `createClient` makes one on its own.
+
+```ts
+import { createClient } from "@intent-engine/client";
+
+const client = createClient({ url: "https://api.devnet.solana.com" });
 ```
 
 ## Create a swap intent
@@ -145,9 +160,6 @@ for (const params of [limit, auction]) {
 An `AttestedResult` intent holds payment until its attestor, the judge, signs a result. `specHash` pins the acceptance spec the judge checks, and `judgeFee` pays the judge out of the escrow; [Who can do what](#who-can-do-what) lists what each party may do. `settleProof` is the judge's call: it signs the result over the spec and pays the worker's wallet `payTo`, creating any token account the payout needs. It refuses, before sending, an expired escrow with `EscrowExpired`, a `payTo` owned by a program with `PayToNotWallet`, and a `payTo` whose token account for the mint it no longer holds with `PayeeMoved`. The judge pays the transaction unless `payer` names another signer; here your wallet pays, so the new judge key needs no SOL. In practice the judge runs this with its own key. `history` returns the engine events for one intent, newest first, each with its signature and slot, and keeps working after the account closes. A release event carries `deliveredSha256` when the release recorded the paid work's hash, in its own memo or in a follow-up transaction its judge signed. An `IntentAttested` event's `net` is what the payee received. This prints `Filled`, then `IntentAttested` and the worker's pay in SOL.
 
 ```ts
-import { createHash } from "node:crypto";
-import { generateKeyPairSigner } from "@solana/kit";
-
 const judge = await generateKeyPairSigner();
 const worker = await generateKeyPairSigner();
 const specHash = new Uint8Array(createHash("sha256").update("the acceptance spec the work must pass").digest());
