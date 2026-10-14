@@ -35,6 +35,7 @@ export type EngineTransaction = {
   memos?: string[];
   memoSigners?: Address[][];
   feePayer?: Address;
+  called?: Uint8Array[];
   unread?: true;
 };
 
@@ -475,6 +476,9 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     const memos = memoInstructions.map((ix) => new TextDecoder().decode(Uint8Array.from(getBase58Encoder().encode(ix.data))));
     const memoSigners = memoInstructions.map((ix) => signersAmong(keys, ix.accounts ?? [], signing));
     const feePayer = tx?.transaction.message.accountKeys[0];
+    const called = (tx?.transaction.message.instructions ?? [])
+      .filter((ix) => keys[ix.programIdIndex] === INTENT_ENGINE_PROGRAM_ADDRESS)
+      .map((ix) => Uint8Array.from(getBase58Encoder().encode(ix.data)));
     return {
       signature: entry.signature,
       slot: entry.slot,
@@ -483,6 +487,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       emitted,
       ...(memos.length === 0 ? {} : { memos, memoSigners }),
       ...(feePayer === undefined ? {} : { feePayer }),
+      ...(called.length === 0 ? {} : { called }),
       ...(tx?.meta === null || tx?.meta === undefined ? { unread: true as const } : {}),
       complete: tx?.meta !== null && tx?.meta !== undefined && entry.blockTime !== null,
     };

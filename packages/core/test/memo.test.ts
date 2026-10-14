@@ -120,6 +120,15 @@ describe("spec and delivery memos", () => {
     }
   });
 
+  it("reading refuses a backslash url", () => {
+    for (const url of ["https://trusted.org\\@evil.com/x", "https://evil.example\\@good.example/", "https://a.example\\b", "https://a.example/x\\y", "http://localhost\\@evil.com/"]) {
+      expect(isLegacyMemoUrl(url), url).toBe(false);
+      expect(isMemoUrl(url), url).toBe(false);
+      expect(parseSpecMemo(`${SPEC_MEMO_PREFIX}${url}`)).toBeNull();
+      expect(parseDeliveryMemo(`${DELIVERY_MEMO_PREFIX}${INTENT}:${HASH}:${url}`)).toBeNull();
+    }
+  });
+
   it("the memo url rule names what canonical means", () => {
     const cases: [string, string][] = [
       ["lowercase scheme and host", "HTTPS://A.example/x"],

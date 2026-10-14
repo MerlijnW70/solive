@@ -18,7 +18,7 @@ const SHA256 = /^[0-9a-f]{64}$/;
 const LOCAL_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 export function isMemoUrl(url: string): boolean {
-  if (url.includes("\\") || !isLegacyMemoUrl(url)) {
+  if (!isLegacyMemoUrl(url)) {
     return false;
   }
   const parsed = new URL(url);
@@ -27,7 +27,7 @@ export function isMemoUrl(url: string): boolean {
 }
 
 export function isLegacyMemoUrl(url: string): boolean {
-  if (url.length > MAX_MEMO_URL || !PRINTABLE.test(url)) {
+  if (url.length > MAX_MEMO_URL || !PRINTABLE.test(url) || url.includes("\\")) {
     return false;
   }
   let parsed: URL;

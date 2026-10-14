@@ -229,6 +229,7 @@ export const SERVER_PROBLEMS = {
   OwnerAccountMissing: never("the owner has no token account that can take the refund; crank with fund_accounts"),
   NotDeliverable: never("the intent is not an open proof escrow, so no work can be delivered to it"),
   NotEarliestAnnouncer: never("another wallet announced the delivered work first; a release recording that work pays its earliest announcer"),
+  NotAnnounced: never("no work with this sha256 was announced for the escrow, so it is not recorded as what the release paid for"),
   NotReleased: never("the escrow has no release in its history, so no delivery can be recorded for it"),
   AlreadyRecorded: never("the release already records a delivered sha256, in its own memo or a follow-up, and a receipt reads the first"),
   HistoryTooLong: never("the record a release depends on is incomplete, so it is refused rather than decided from part of it: the history is longer than the pages read, which more pages fix, or the RPC node's ledger does not reach back to the escrow's creation, or the transport cannot page signatures or report its first available slot, which more pages do not fix"),

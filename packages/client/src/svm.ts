@@ -55,6 +55,9 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
     const memos = memoInstructions.map((ix) => new TextDecoder().decode(Uint8Array.from(ix.data ?? [])));
     const memoSigners = memoInstructions.map((ix) => signersAmong(keys, ix.accountIndices ?? [], compiled.header.numSignerAccounts));
     const feePayer = keys[0];
+    const called = ("instructions" in compiled ? compiled.instructions : [])
+      .filter((ix) => keys[ix.programAddressIndex] === INTENT_ENGINE_PROGRAM_ADDRESS)
+      .map((ix) => Uint8Array.from(ix.data ?? []));
     const found: EngineTransaction = {
       signature,
       slot: clock.slot,
@@ -68,6 +71,7 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
         .map((ix) => new Uint8Array(ix.data())),
       ...(memos.length === 0 ? {} : { memos, memoSigners }),
       ...(feePayer === undefined ? {} : { feePayer }),
+      ...(called.length === 0 ? {} : { called }),
     };
     history.unshift({ touched: new Set(keys), found });
     byId.set(signature, found);

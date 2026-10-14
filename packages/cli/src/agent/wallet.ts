@@ -25,9 +25,12 @@ import {
   decodeEvent,
   decodeParams,
   feeBpsFor,
+  FILL_ATTESTED_SPLIT_DISCRIMINATOR,
+  findAssociatedTokenAddress,
   findIntentPda,
   formatAmount,
   formatTime,
+  getFillAttestedSplitInstructionDataDecoder,
   getIntentDecoder,
   getIntentDiscriminatorBytes,
   getIntentSize,
@@ -40,6 +43,7 @@ import {
   MAX_SPLIT_RECIPIENTS,
   NATIVE_MINT,
   parseAmount,
+  parseReleaseMemo,
   releaseMemo,
   signEd25519Instruction,
   splitCommit,
@@ -57,6 +61,7 @@ import {
   createdAtOf,
   type EngineTransaction,
   explain,
+  type ListedSignature,
   DELIVERY_PAGES,
   deliveryRecord,
   deliveryInstructions,
@@ -70,10 +75,12 @@ import {
   mintOf,
   neverLanded,
   PACKET_DATA_SIZE,
+  parseFollowUpMemo,
   recordedDelivery,
   scan,
   SIGNATURE_PAGE,
   tokenAccountIfMissing,
+  TRANSACTION_FETCHES,
   type Transport,
   unmemoized,
 } from "@intent-engine/client";
@@ -1314,50 +1321,93 @@ export const alreadyRecorded = (sha256: string) =>
 export const releasedBy = (attestor: string, signer: string) =>
   `this escrow was released by its attestor ${attestor}, not by ${signer}; only the attestor that released it records what it paid for`;
 
+export const escrowGone = (intent: string) =>
+  `the escrow ${intent} is closed, so the work announced for it cannot be read and no sha256 can be checked against it; nothing is recorded`;
+
+export const neverAnnounced = (sha256: string, intent: string) =>
+  `no work with sha256 ${sha256} was announced for the escrow ${intent}, so it is not what the release paid for; record the sha256 the payee announced`;
+
+export const paidOther = (worker: string, sha256: string, payee: string) =>
+  `${worker} announced the work with sha256 ${sha256} first, but the release paid the token account ${payee}, which is not ${worker}'s; a release records only work its payee announced first`;
+
+export const splitPaidOthers = (worker: string, sha256: string) =>
+  `${worker} announced the work with sha256 ${sha256} first, but is not among the recipients the split paid; a split records only work one of its recipients announced first`;
+
+export const recipientsUnread = (release: string) =>
+  `the recipients of the split ${release} cannot be read from its transaction, so whether it paid the earliest announcer is unknown; nothing is recorded`;
+
 export type Recording = { intent: Address; release: string; attestor: Address; sha256: string; memo: string; instructions: Instruction[]; summary: string[] };
 
 export async function recordingOf(transport: Transport, judge: TransactionSigner, owner: Address, nonce: bigint, sha256: string): Promise<Recording> {
   const [intent] = await findIntentPda({ owner, nonce });
-  const transactions = await escrowHistory(transport, intent);
-  for (const tx of transactions) {
-    if (tx.failed) {
-      continue;
-    }
-    const release = tx.emitted
-      .map(decodeEvent)
-      .find((event) => (event?.name === "IntentAttested" || event?.name === "IntentSplit") && (event.fields as Record<string, unknown>)["intent"] === intent);
-    if (release === undefined || release === null) {
-      continue;
-    }
-    const attestor = (release.fields as Record<string, unknown>)["attestor"] as Address;
-    if (attestor !== judge.address) {
-      throw new AgentRefusal("Unauthorized", releasedBy(attestor, judge.address));
-    }
-    const recorded = recordedDelivery(transactions, tx, attestor);
-    if (recorded !== null) {
-      throw new AgentRefusal("AlreadyRecorded", alreadyRecorded(recorded));
-    }
-    return {
-      intent,
-      release: tx.signature,
-      attestor,
-      sha256,
-      memo: followUpMemo(sha256, tx.signature),
-      instructions: followUpInstructions(judge, intent, sha256, tx.signature),
-      summary: [
-        `Records: the delivered work's sha256 ${sha256} for the release ${tx.signature} of the escrow ${intent}, in a memo ${attestor} signs`,
-        `Notifies: the escrow ${intent}, with a transfer of 0 lamports, so the memo shows in its history`,
-        "Costs: the transaction fee; no tokens move",
-      ],
-    };
+  const { release, transactions, complete } = await releaseLookup(transport, intent);
+  if (release === null) {
+    throw complete ? new AgentRefusal("NotReleased", notReleasedYet(intent)) : new AgentRefusal("HistoryTooLong", RELEASE_UNKNOWN);
   }
-  throw new AgentRefusal("NotReleased", notReleasedYet(intent));
+  const { tx, event } = release;
+  const fields = event.fields as Record<string, unknown>;
+  const attestor = fields["attestor"] as Address;
+  if (attestor !== judge.address) {
+    throw new AgentRefusal("Unauthorized", releasedBy(attestor, judge.address));
+  }
+  const recorded = recordedDelivery(transactions, tx, attestor);
+  if (recorded !== null) {
+    throw new AgentRefusal("AlreadyRecorded", alreadyRecorded(recorded));
+  }
+  const record = await deliveryRecord(transport, judge.address, intent);
+  if (record.pages === 0) {
+    throw new AgentRefusal("HistoryTooLong", escrowGone(intent));
+  }
+  if (!record.complete) {
+    throw new AgentRefusal("HistoryTooLong", HISTORY_TOO_LONG);
+  }
+  const first = firstDelivery(record.deliveries, sha256);
+  if (first === null) {
+    throw new AgentRefusal("NotAnnounced", neverAnnounced(sha256, intent));
+  }
+  if (event.name === "IntentSplit") {
+    const recipients = splitRecipients(tx);
+    if (recipients === null) {
+      throw new AgentRefusal("HistoryTooLong", recipientsUnread(tx.signature));
+    }
+    if (!recipients.includes(first.worker)) {
+      throw new AgentRefusal("NotEarliestAnnouncer", splitPaidOthers(first.worker, sha256));
+    }
+  } else if (!(await paidWallet(transport, fields["payee"] as Address, first.worker, intent))) {
+    throw new AgentRefusal("NotEarliestAnnouncer", paidOther(first.worker, sha256, fields["payee"] as Address));
+  }
+  return {
+    intent,
+    release: tx.signature,
+    attestor,
+    sha256,
+    memo: followUpMemo(sha256, tx.signature),
+    instructions: followUpInstructions(judge, intent, sha256, tx.signature),
+    summary: [
+      `Records: the delivered work's sha256 ${sha256} for the release ${tx.signature} of the escrow ${intent}, in a memo ${attestor} signs`,
+      `Notifies: the escrow ${intent}, with a transfer of 0 lamports, so the memo shows in its history`,
+      "Costs: the transaction fee; no tokens move",
+    ],
+  };
+}
+
+async function paidWallet(transport: Transport, payee: Address, wallet: Address, intent: Address): Promise<boolean> {
+  const held = await transport.getAccount(payee);
+  if (held !== null && held.data.length >= 64) {
+    return getAddressDecoder().decode(held.data.subarray(32, 64)) === wallet;
+  }
+  const mint = await heldMint(transport, intent);
+  if (mint === undefined) {
+    return false;
+  }
+  const { tokenProgram } = await mintOf(transport, mint);
+  return (await findAssociatedTokenAddress({ owner: wallet, mint, tokenProgram })) === payee;
 }
 
 const walletRecordDelivery = define({
   name: tool("wallet_record_delivery"),
   title: "Record which work a release paid for",
-  description: `As the attestor that released a proof escrow, record the sha256 of the delivered work the release paid for when the release itself recorded none, such as when ${tool("wallet_attest_split")} returned recorded: false: this server's wallet sends one transaction with the follow-up memo naming the release and the sha256, and a transfer of 0 lamports to the escrow so ${tool("wallet_receipt")} reads it. It refuses unless the escrow has a release, made by this wallet, that records no sha256 yet. It moves no tokens and costs only the transaction fee. Without send it only previews; show the user the summary and call again with send: true once they approve.`,
+  description: `As the attestor that released a proof escrow, record the sha256 of the delivered work the release paid for when the release itself recorded none, such as when ${tool("wallet_attest_split")} returned recorded: false: this server's wallet sends one transaction with the follow-up memo naming the release and the sha256, and a transfer of 0 lamports to the escrow so ${tool("wallet_receipt")} reads it. It refuses unless the escrow has a release, made by this wallet, that records no sha256 yet, and the sha256 is work announced for the escrow whose earliest announcer the release paid, or for a split one of its recipients; it also refuses while the record of announced work is incomplete. It moves no tokens and costs only the transaction fee. Without send it only previews; show the user the summary and call again with send: true once they approve.`,
   effect: "submit",
   destructive: false,
   input: object({
@@ -1634,6 +1684,118 @@ export async function escrowHistory(transport: Transport, intent: Address): Prom
   return (await scan(transport, intent, { floor, pages: HISTORY_PAGES, until: (tx) => createdIn(tx, intent) })).transactions;
 }
 
+export const RELEASE_PAGES = 50;
+
+export const RELEASE_UNKNOWN = `the escrow's history is longer than the ${HISTORY_PAGES} pages read and no release was found in them, so whether it was released is unknown; a release that carries a memo is found past this cap, one without a memo is not`;
+
+type ReleaseEvent = NonNullable<ReturnType<typeof decodeEvent>>;
+
+export type ReleaseLookup = { release: { tx: EngineTransaction; event: ReleaseEvent } | null; transactions: EngineTransaction[]; complete: boolean };
+
+function releaseEventIn(tx: EngineTransaction, intent: Address): ReleaseEvent | null {
+  if (tx.failed) {
+    return null;
+  }
+  for (const event of tx.emitted.map(decodeEvent)) {
+    if (event !== null && (event.name === "IntentAttested" || event.name === "IntentSplit") && (event.fields as Record<string, unknown>)["intent"] === intent) {
+      return event;
+    }
+  }
+  return null;
+}
+
+const LISTED_MEMO_LENGTH = /^\[\d+\] /;
+
+const listedMemos = (memo: string | null): string[] => (memo === null ? [] : memo.split("; ").map((part) => part.replace(LISTED_MEMO_LENGTH, "")));
+
+async function markedRelease(transport: Transport, intent: Address, floor: bigint | null): Promise<ReleaseLookup | null> {
+  const { signaturesOf, transactionsOf } = transport;
+  if (signaturesOf === undefined || transactionsOf === undefined) {
+    return null;
+  }
+  const followUps = new Map<string, ListedSignature[]>();
+  let before: string | undefined;
+  for (let page = 1; page <= RELEASE_PAGES; page++) {
+    const listed = await signaturesOf.call(transport, intent, SIGNATURE_PAGE, before);
+    const within = listed.filter((entry) => floor === null || entry.blockTime === null || entry.blockTime >= floor);
+    const candidates: ListedSignature[] = [];
+    for (const entry of within) {
+      if (entry.failed) {
+        continue;
+      }
+      const memos = listedMemos(entry.memo);
+      for (const named of memos.map(parseFollowUpMemo)) {
+        if (named !== null) {
+          followUps.set(named.release, [...(followUps.get(named.release) ?? []), entry]);
+        }
+      }
+      if (followUps.has(entry.signature) || memos.some((text) => parseReleaseMemo(text) !== null)) {
+        candidates.push(entry);
+      }
+    }
+    for (let at = 0; at < candidates.length; at += TRANSACTION_FETCHES) {
+      for (const tx of await transactionsOf.call(transport, candidates.slice(at, at + TRANSACTION_FETCHES))) {
+        const event = releaseEventIn(tx, intent);
+        if (event !== null) {
+          const recorded = followUps.get(tx.signature) ?? [];
+          return { release: { tx, event }, transactions: [...(recorded.length === 0 ? [] : await transactionsOf.call(transport, recorded)), tx], complete: true };
+        }
+      }
+    }
+    before = listed[listed.length - 1]?.signature;
+    if (within.length < listed.length || before === undefined) {
+      return null;
+    }
+  }
+  return null;
+}
+
+export async function releaseLookup(transport: Transport, intent: Address): Promise<ReleaseLookup> {
+  const floor = await createdAtOf(transport, intent);
+  const marked = await markedRelease(transport, intent, floor);
+  if (marked !== null) {
+    return marked;
+  }
+  const scanned = await scan(transport, intent, { floor, pages: HISTORY_PAGES, until: (tx) => createdIn(tx, intent), covered: async () => true });
+  for (const tx of scanned.transactions) {
+    const event = releaseEventIn(tx, intent);
+    if (event !== null) {
+      return { release: { tx, event }, transactions: scanned.transactions, complete: true };
+    }
+  }
+  return { release: null, transactions: scanned.transactions, complete: scanned.complete };
+}
+
+function createdMint(transactions: readonly EngineTransaction[], intent: Address): Address | undefined {
+  for (const tx of transactions) {
+    for (const event of tx.emitted.map(decodeEvent)) {
+      const fields = (event?.fields ?? {}) as Record<string, unknown>;
+      if (event?.name === "IntentCreated" && fields["intent"] === intent) {
+        return fields["inputMint"] as Address;
+      }
+    }
+  }
+  return undefined;
+}
+
+async function heldMint(transport: Transport, intent: Address): Promise<Address | undefined> {
+  const view = await transport.getAccount(intent);
+  return view === null || view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS || view.data.length !== getIntentSize() ? undefined : pairOf(view.data)?.inputMint;
+}
+
+export function splitRecipients(tx: EngineTransaction): Address[] | null {
+  for (const data of tx.called ?? []) {
+    if (data.length >= FILL_ATTESTED_SPLIT_DISCRIMINATOR.length && FILL_ATTESTED_SPLIT_DISCRIMINATOR.every((b, i) => data[i] === b)) {
+      try {
+        return getFillAttestedSplitInstructionDataDecoder().decode(data).recipients;
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
+
 async function engineHistory(transport: Transport, limit: number) {
   return historyIn(await transport.engineTransactions(limit));
 }
@@ -1819,6 +1981,7 @@ export const NOT_RELEASED = `no release of this escrow is in its history; ${tool
 const receiptOutput = object({
   intent: account(),
   released: flag(),
+  complete: optional(flag("false when the escrow's history is longer than the pages read and no release was found in them, so released: false is unknown rather than known")),
   paid_to: optional(account("the wallet the release paid")),
   payee: optional(account("the token account the release paid")),
   paid: optional(text("whole tokens the payee received")),
@@ -1862,53 +2025,38 @@ export const getReceipt = define({
 async function receiptOf(ctx: AgentContext, owner: Address, nonce: bigint, sha256: string | undefined) {
   const wanted = sha256 === undefined ? undefined : sha256Of(sha256, "sha256");
   const [intent] = await findIntentPda({ owner, nonce });
-  const transactions = await escrowHistory(ctx.transport, intent);
-  let mint: Address | undefined;
-  for (const tx of transactions) {
-    for (const event of tx.emitted.map(decodeEvent)) {
-      const fields = (event?.fields ?? {}) as Record<string, unknown>;
-      if (event?.name === "IntentCreated" && fields["intent"] === intent) {
-        mint = fields["inputMint"] as Address;
-      }
-    }
+  const { release, transactions, complete } = await releaseLookup(ctx.transport, intent);
+  if (release === null) {
+    return complete ? { intent, released: false, next: NOT_RELEASED } : { intent, released: false, complete: false, next: RELEASE_UNKNOWN };
   }
-  for (const tx of transactions) {
-    if (tx.failed) {
-      continue;
-    }
-    const release = tx.emitted
-      .map(decodeEvent)
-      .find((event) => (event?.name === "IntentAttested" || event?.name === "IntentSplit") && (event.fields as Record<string, unknown>)["intent"] === intent);
-    if (release === undefined || release === null) {
-      continue;
-    }
-    const fields = release.fields as Record<string, unknown>;
-    const recorded = recordedDelivery(transactions, tx, fields["attestor"] as Address) ?? undefined;
-    const common = {
-      intent,
-      released: true,
-      attestor: fields["attestor"] as Address,
-      result: fields["result"] as bigint,
-      signature: tx.signature,
-      ...(recorded === undefined ? {} : { delivered_sha256: recorded }),
-      ...(wanted === undefined ? {} : { matches: wanted === recorded }),
-    };
-    if (release.name === "IntentSplit") {
-      const decimals = mint === undefined ? undefined : (await mintOf(ctx.transport, mint)).decimals;
-      return { ...common, paid: formatAmount(fields["net"] as bigint, decimals), recipients: BigInt(fields["recipients"] as number) };
-    }
-    const payee = fields["payee"] as Address;
-    const held = await ctx.transport.getAccount(payee);
-    mint ??= held === null || held.data.length < 64 ? undefined : getAddressDecoder().decode(held.data.subarray(0, 32));
+  const { tx } = release;
+  let mint = createdMint(transactions, intent);
+  const fields = release.event.fields as Record<string, unknown>;
+  const recorded = recordedDelivery(transactions, tx, fields["attestor"] as Address) ?? undefined;
+  const common = {
+    intent,
+    released: true,
+    attestor: fields["attestor"] as Address,
+    result: fields["result"] as bigint,
+    signature: tx.signature,
+    ...(recorded === undefined ? {} : { delivered_sha256: recorded }),
+    ...(wanted === undefined ? {} : { matches: wanted === recorded }),
+  };
+  if (release.event.name === "IntentSplit") {
+    mint ??= await heldMint(ctx.transport, intent);
     const decimals = mint === undefined ? undefined : (await mintOf(ctx.transport, mint)).decimals;
-    return {
-      ...common,
-      ...(held === null || held.data.length < 64 ? {} : { paid_to: getAddressDecoder().decode(held.data.subarray(32, 64)) }),
-      payee,
-      paid: formatAmount(fields["net"] as bigint, decimals),
-    };
+    return { ...common, paid: formatAmount(fields["net"] as bigint, decimals), recipients: BigInt(fields["recipients"] as number) };
   }
-  return { intent, released: false, next: NOT_RELEASED };
+  const payee = fields["payee"] as Address;
+  const held = await ctx.transport.getAccount(payee);
+  mint ??= held === null || held.data.length < 64 ? await heldMint(ctx.transport, intent) : getAddressDecoder().decode(held.data.subarray(0, 32));
+  const decimals = mint === undefined ? undefined : (await mintOf(ctx.transport, mint)).decimals;
+  return {
+    ...common,
+    ...(held === null || held.data.length < 64 ? {} : { paid_to: getAddressDecoder().decode(held.data.subarray(32, 64)) }),
+    payee,
+    paid: formatAmount(fields["net"] as bigint, decimals),
+  };
 }
 
 export const WALLET_ACTIONS: readonly AnyAction[] = [
