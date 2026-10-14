@@ -1,20 +1,37 @@
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Address, generateKeyPairSigner, type KeyPairSigner, type Signature } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { TransactionMetadata } from "litesvm";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deliveryMemo, findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, manifestSha256, RELEASE_MEMO_PREFIX, releaseMemo } from "@intent-engine/core";
 import { createClient, DELIVERY_SCAN, type EngineTransaction } from "@intent-engine/client";
 import { ENV_KEYPAIR, JUDGE_TIMEOUT, MAX_JUDGE_TIMEOUT, RUN_NEEDED } from "../src/args.js";
 import { NOT_SENT } from "../src/flows.js";
-import { artifactSha256, CHECK_ENV, checkEnv, ENV_ARTIFACT_PATH, ENV_ARTIFACT_SHA256, ENV_SPEC_PATH, runCheck, SKIPPED } from "../src/judge.js";
+import { artifactSha256, CHECK_ENV, checkEnv, CLEANUP_RETRIES, ENV_ARTIFACT_PATH, ENV_ARTIFACT_SHA256, ENV_SPEC_PATH, runCheck, SKIPPED, SPEC_COPY } from "../src/judge.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { balance, cli, funded, h, NOW, transport, type World, world } from "./harness.js";
+
+const removal = vi.hoisted(() => ({ refused: false, retries: [] as (number | undefined)[] }));
+
+vi.mock("node:fs/promises", async (original) => {
+  const actual = await original<typeof import("node:fs/promises")>();
+  return {
+    ...actual,
+    rm: async (...args: Parameters<typeof actual.rm>) => {
+      const [path, options] = args;
+      if (removal.refused && String(path).includes("judge-artifact-")) {
+        removal.retries.push(options?.maxRetries);
+        throw Object.assign(new Error(`EBUSY: resource busy or locked, rmdir '${String(path)}'`), { code: "EBUSY" });
+      }
+      return actual.rm(...args);
+    },
+  };
+});
 
 const SPEC = "answer.txt holds 42\n";
 const WORK_URL = "https://example.org/work.tar";
@@ -245,6 +262,81 @@ describe("intent-engine judge", () => {
     expect(existsSync((await readFile(seen, "utf8")).trim())).toBe(false);
   });
 
+  it("the copy keeps executable bits", async () => {
+    await writeFile(join(j.artifact, "test.sh"), '#!/bin/sh\ntest "$(cat "$(dirname "$0")/answer.txt")" = 42\n');
+    await chmod(join(j.artifact, "test.sh"), 0o750);
+    await chmod(join(j.artifact, "answer.txt"), 0o644);
+    const check = [
+      '"$ARTIFACT_PATH/test.sh"',
+      'test -x "$ARTIFACT_PATH/test.sh"',
+      'test ! -x "$ARTIFACT_PATH/answer.txt"',
+      'test ! -x "$ARTIFACT_PATH/src/notes.txt"',
+      'test "$(stat -c %a "$ARTIFACT_PATH/test.sh")" = "$(printf %o $(( 0$(stat -c %a "$ARTIFACT_PATH/answer.txt") | 0110 )))"',
+    ].join(" && ");
+    const run = await cli(judging(j, check, "--pay-to", j.worker.address), keys);
+    expect([run.code, run.err]).toEqual([EXIT_OK, ""]);
+    expect(run.json()).toMatchObject({ verdict: "pass", artifactSha256: await artifactSha256(j.artifact) });
+    expect((await stat(join(j.artifact, "test.sh"))).mode & 0o777).toBe(0o750);
+  });
+
+  it("spec path points at a copy of the hashed spec", async () => {
+    const seen = join(j.dir, "seen");
+    const check = [
+      `echo "$SPEC_PATH" > "${seen}"`,
+      `test "$SPEC_PATH" != "${j.spec}"`,
+      `test "$(basename "$SPEC_PATH")" = ${SPEC_COPY}`,
+      'case "$SPEC_PATH" in "$ARTIFACT_PATH"/?*) false ;; esac',
+      `echo tampered > "${j.spec}"`,
+      `test "$(cat "$SPEC_PATH")" = "${SPEC.trim()}"`,
+      `test "$(find "$ARTIFACT_PATH" -type f | wc -l)" -eq 2`,
+    ].join(" && ");
+    const run = await cli(judging(j, check), keys);
+    expect([run.code, run.err]).toEqual([EXIT_OK, ""]);
+    expect(run.json()).toMatchObject({ verdict: "pass", specHash: createHash("sha256").update(SPEC).digest("hex") });
+    expect(await readFile(j.spec, "utf8")).toBe("tampered\n");
+    expect(existsSync((await readFile(seen, "utf8")).trim())).toBe(false);
+  });
+
+  it("the check runs in the copy", async () => {
+    const seen = join(j.dir, "seen");
+    const check = [
+      `pwd -P > "${seen}"`,
+      `test "$(pwd -P)" != "$(cd "${process.cwd()}" && pwd -P)"`,
+      'test "$(cd "$ARTIFACT_PATH/.." && pwd -P)" = "$(pwd -P)"',
+      'test "$(cd "$(dirname "$SPEC_PATH")/.." && pwd -P)" = "$(pwd -P)"',
+    ].join(" && ");
+    const run = await cli(judging(j, check), keys);
+    expect([run.code, run.err]).toEqual([EXIT_OK, ""]);
+    expect(run.json()).toMatchObject({ verdict: "pass" });
+    expect(run.json()).not.toHaveProperty("cleanup");
+    expect(existsSync((await readFile(seen, "utf8")).trim())).toBe(false);
+  });
+
+  it("a cleanup failure does not hide the verdict", async () => {
+    const seen = join(j.dir, "seen");
+    removal.retries = [];
+    removal.refused = true;
+    const run = await cli(judging(j, `pwd -P > "${seen}"`, "--verdict", join(j.dir, "verdict.json")), keys).finally(() => {
+      removal.refused = false;
+    });
+    const copy = (await readFile(seen, "utf8")).trim();
+    expect(existsSync(copy)).toBe(true);
+    await rm(copy, { recursive: true, force: true });
+    expect([run.code, run.err]).toEqual([EXIT_OK, ""]);
+    expect(run.json()).toMatchObject({ verdict: "pass", exitCode: 0, payTo: j.worker.address, cleanup: expect.stringContaining("could not be removed") });
+    expect(JSON.parse(await readFile(join(j.dir, "verdict.json"), "utf8"))).toEqual(run.json());
+    expect(removal.retries.length).toBeGreaterThan(0);
+    for (const retries of removal.retries) {
+      expect(retries).toBeGreaterThanOrEqual(5);
+    }
+    expect(CLEANUP_RETRIES).toBeGreaterThanOrEqual(5);
+
+    const failed = await cli(judging(j, "exit 4"), keys);
+    expect(failed.code).toBe(EXIT_FAILED);
+    expect(failed.json()).toMatchObject({ verdict: "fail", exitCode: 4 });
+    expect(failed.json()).not.toHaveProperty("cleanup");
+  });
+
   it("takes a timeout within bounds and a non-empty command", async () => {
     expect(JUDGE_TIMEOUT).toBeLessThanOrEqual(MAX_JUDGE_TIMEOUT);
     for (const timeout of ["0", String(MAX_JUDGE_TIMEOUT + 1), "1.5"]) {
@@ -321,7 +413,7 @@ describe("the judge guide", () => {
     await chmod(check, 0o755);
     h.watched.push(j.w.owner.address);
     h.env[ENV_KEYPAIR] = "judge.json";
-    const files: Record<string, string> = { "spec.md": j.spec, work: j.artifact, "./check.sh": check, "verdict.json": join(j.dir, "verdict.json") };
+    const files: Record<string, string> = { "spec.md": j.spec, work: j.artifact, "$PWD/check.sh": check, "verdict.json": join(j.dir, "verdict.json") };
     const outputs: Record<string, unknown>[] = [];
     for (const line of commands) {
       const argv = line

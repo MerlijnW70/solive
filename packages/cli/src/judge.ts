@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, open, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type { Address, Signature } from "@solana/kit";
@@ -14,6 +14,8 @@ export const SKIPPED = new Set([".git", "node_modules", "target"]);
 export const ENV_SPEC_PATH = "SPEC_PATH";
 export const ENV_ARTIFACT_PATH = "ARTIFACT_PATH";
 export const ENV_ARTIFACT_SHA256 = "ARTIFACT_SHA256";
+export const SPEC_COPY = "SPEC.md";
+export const CLEANUP_RETRIES = 5;
 export const CHECK_ENV = ["PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "COMSPEC", "PATHEXT", "TEMP", "TMP", "TMPDIR", "LANG", "TERM"] as const;
 
 export class JudgeRefused extends Error {
@@ -35,14 +37,31 @@ export type Verdict = {
   payTo: Address;
   signature: Signature | null;
   next?: string;
+  cleanup?: string;
 };
 
 export type Check = { exitCode: number | null; timedOut: boolean };
 
+export type CheckOptions = { cwd?: string; interrupted?: () => Promise<unknown> };
+
+const EXECUTABLE = 0o111;
+
+type CopiedEntry = ManifestEntry & { executable: number };
+
 const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
 
-async function filesUnder(root: string, prefix: string): Promise<ManifestEntry[]> {
-  const entries: ManifestEntry[] = [];
+async function readEntry(path: string, full: string): Promise<CopiedEntry> {
+  const handle = await open(full, "r");
+  try {
+    const { mode } = await handle.stat();
+    return { path, bytes: await handle.readFile(), executable: mode & EXECUTABLE };
+  } finally {
+    await handle.close();
+  }
+}
+
+async function filesUnder(root: string, prefix: string): Promise<CopiedEntry[]> {
+  const entries: CopiedEntry[] = [];
   for (const entry of await readdir(root, { withFileTypes: true })) {
     if (SKIPPED.has(entry.name)) {
       continue;
@@ -52,7 +71,7 @@ async function filesUnder(root: string, prefix: string): Promise<ManifestEntry[]
     if (entry.isDirectory()) {
       entries.push(...(await filesUnder(full, path)));
     } else if (entry.isFile()) {
-      entries.push({ path, bytes: await readFile(full) });
+      entries.push(await readEntry(path, full));
     } else {
       throw new JudgeRefused(`the artifact holds ${path}, which is neither a regular file nor a directory; the judge hashes only those`);
     }
@@ -60,13 +79,13 @@ async function filesUnder(root: string, prefix: string): Promise<ManifestEntry[]
   return entries;
 }
 
-type Artifact = { sha256: string; entries: ManifestEntry[]; single: boolean };
+type Artifact = { sha256: string; entries: CopiedEntry[]; single: boolean };
 
 async function readArtifact(path: string): Promise<Artifact> {
   const found = await stat(path);
   if (found.isFile()) {
-    const bytes = await readFile(path);
-    return { sha256: createHash("sha256").update(bytes).digest("hex"), entries: [{ path: basename(path), bytes }], single: true };
+    const entry = await readEntry(basename(path), path);
+    return { sha256: createHash("sha256").update(entry.bytes).digest("hex"), entries: [entry], single: true };
   }
   if (found.isDirectory()) {
     const entries = await filesUnder(path, "");
@@ -79,55 +98,101 @@ export async function artifactSha256(path: string): Promise<string> {
   return (await readArtifact(path)).sha256;
 }
 
-async function copyOf(artifact: Artifact): Promise<{ root: string; path: string }> {
-  const root = await mkdtemp(join(tmpdir(), "judge-artifact-"));
+type Copy = { root: string; path: string; spec: string };
+
+export async function removeCopy(root: string): Promise<string | undefined> {
   try {
+    await rm(root, { recursive: true, force: true, maxRetries: CLEANUP_RETRIES });
+    return undefined;
+  } catch (error) {
+    return `the artifact copy at ${root} could not be removed: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+async function copyOf(artifact: Artifact, specBytes: Uint8Array): Promise<Copy> {
+  const root = await mkdtemp(join(tmpdir(), "judge-artifact-"));
+  const work = join(root, "work");
+  const spec = join(root, "spec", SPEC_COPY);
+  try {
+    await mkdir(work);
+    await mkdir(dirname(spec));
+    await writeFile(spec, specBytes);
     for (const entry of artifact.entries) {
-      const target = join(root, ...entry.path.split("/"));
+      const target = join(work, ...entry.path.split("/"));
       await mkdir(dirname(target), { recursive: true });
       await writeFile(target, entry.bytes);
+      if (entry.executable !== 0) {
+        await chmod(target, ((await stat(target)).mode & 0o777) | entry.executable);
+      }
     }
   } catch (error) {
-    await rm(root, { recursive: true, force: true });
+    await removeCopy(root);
     throw error;
   }
   const [only] = artifact.entries;
-  return { root, path: artifact.single && only !== undefined ? join(root, only.path) : root };
+  return { root, spec, path: artifact.single && only !== undefined ? join(work, only.path) : work };
 }
 
-function killTree(pid: number | undefined): void {
+function killTree(pid: number | undefined): Promise<void> {
   if (pid === undefined) {
-    return;
+    return Promise.resolve();
   }
   if (process.platform === "win32") {
-    spawn("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true }).on("error", () => undefined);
-    return;
+    return new Promise((done) => {
+      const killer = spawn("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+      killer.once("error", () => done());
+      killer.once("exit", () => done());
+    });
   }
   try {
     process.kill(-pid, "SIGKILL");
   } catch {
-    return;
+    return Promise.resolve();
   }
+  return Promise.resolve();
 }
 
-export function runCheck(command: string, env: NodeJS.ProcessEnv, timeoutSeconds: number): Promise<Check> {
+const SIGNAL_EXIT = { SIGINT: 130, SIGTERM: 143 } as const;
+
+export function runCheck(command: string, env: NodeJS.ProcessEnv, timeoutSeconds: number, options: CheckOptions = {}): Promise<Check> {
   return new Promise((done, failed) => {
-    const child = spawn(command, { shell: true, env, stdio: ["ignore", 2, 2], detached: process.platform !== "win32", windowsHide: true });
+    const child = spawn(command, {
+      shell: true,
+      env,
+      cwd: options.cwd,
+      stdio: ["ignore", 2, 2],
+      detached: process.platform !== "win32",
+      windowsHide: true,
+    });
     let timedOut = false;
+    let killing: Promise<void> = Promise.resolve();
+    const handlers = (Object.keys(SIGNAL_EXIT) as (keyof typeof SIGNAL_EXIT)[]).map((signal) => {
+      const handler = () => {
+        void killTree(child.pid)
+          .then(() => options.interrupted?.())
+          .finally(() => process.exit(SIGNAL_EXIT[signal]));
+      };
+      process.once(signal, handler);
+      return [signal, handler] as const;
+    });
     const timer = setTimeout(() => {
       timedOut = true;
-      killTree(child.pid);
+      killing = killTree(child.pid);
     }, timeoutSeconds * 1000);
-    child.once("error", (error) => {
+    const settle = () => {
       clearTimeout(timer);
-      failed(error);
+      for (const [signal, handler] of handlers) {
+        process.removeListener(signal, handler);
+      }
+    };
+    child.once("error", (error) => {
+      settle();
+      void killing.finally(() => failed(error));
     });
     child.once("exit", (code) => {
-      clearTimeout(timer);
-      if (process.platform !== "win32") {
-        killTree(child.pid);
-      }
-      done({ exitCode: timedOut ? null : code, timedOut });
+      settle();
+      const after = process.platform !== "win32" ? killTree(child.pid) : Promise.resolve();
+      void Promise.all([killing, after]).finally(() => done({ exitCode: timedOut ? null : code, timedOut }));
     });
   });
 }
@@ -161,8 +226,8 @@ async function escrowFor(transport: Transport, judge: Address, owner: Address, n
 export async function judge(command: JudgeCommand, runtime: Runtime, transport: Transport): Promise<Verdict> {
   const signer = await runtime.loadSigner(command.keypair);
   const { address, specHash } = await escrowFor(transport, signer.address, command.owner, command.nonce);
-  const spec = resolve(command.spec);
-  const specSha256 = createHash("sha256").update(await readFile(spec)).digest("hex");
+  const specBytes = await readFile(resolve(command.spec));
+  const specSha256 = createHash("sha256").update(specBytes).digest("hex");
   if (specSha256 !== specHash) {
     throw new JudgeRefused(`--spec ${command.spec} has sha256 ${specSha256}, but intent ${address} commits ${specHash}`);
   }
@@ -183,12 +248,16 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   if (first !== null && first.worker !== payTo) {
     throw new JudgeRefused(`${first.worker} announced the artifact with sha256 ${sha256} first, in ${first.signature}; it is paid, not --pay-to ${payTo}`);
   }
-  const copy = await copyOf(read);
+  const copy = await copyOf(read, specBytes);
   let check: Check;
+  let cleanup: string | undefined;
   try {
-    check = await runCheck(command.run, checkEnv(process.env, spec, copy.path, sha256), command.timeout);
+    check = await runCheck(command.run, checkEnv(process.env, copy.spec, copy.path, sha256), command.timeout, {
+      cwd: copy.root,
+      interrupted: () => removeCopy(copy.root),
+    });
   } finally {
-    await rm(copy.root, { recursive: true, force: true });
+    cleanup = await removeCopy(copy.root);
   }
   const passed = check.exitCode === 0;
   const signature =
@@ -212,6 +281,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
     payTo,
     signature,
     ...(passed && !command.yes ? { next: NOT_SENT } : {}),
+    ...(cleanup !== undefined ? { cleanup } : {}),
   };
   if (command.verdict !== undefined) {
     await writeFile(command.verdict, `${JSON.stringify(verdict, null, 2)}\n`);
