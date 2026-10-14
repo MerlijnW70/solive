@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type { Address, Signature } from "@solana/kit";
 import { decodeParams, IntentStatus, Kind, type ManifestEntry, manifestSha256 } from "@intent-engine/core";
-import { chainTime, createClient, deliveryRecord, firstDelivery, loadIntent, type Transport } from "@intent-engine/client";
+import { chainTime, createClient, deliveryRecord, firstDelivery, loadIntent, SIGNATURE_PAGE, type Transport } from "@intent-engine/client";
 import type { Command } from "./args.js";
 import { NOT_SENT } from "./flows.js";
 import type { Runtime } from "./commands.js";
@@ -208,6 +208,9 @@ export function checkEnv(base: NodeJS.ProcessEnv, spec: string, artifact: string
   return { ...env, [ENV_SPEC_PATH]: spec, [ENV_ARTIFACT_PATH]: artifact, [ENV_ARTIFACT_SHA256]: sha256 };
 }
 
+export const pagesRead = (pages: number): string =>
+  `It read ${pages} ${pages === 1 ? "page" : "pages"} of ${SIGNATURE_PAGE} signatures; a higher --max-pages reads further, unless the RPC node's history does not reach back to the escrow's creation`;
+
 async function escrowFor(transport: Transport, judge: Address, owner: Address, nonce: bigint) {
   const { address, intent } = await loadIntent(transport, owner, nonce);
   const params = decodeParams(intent.kind, Uint8Array.from(intent.params));
@@ -234,10 +237,10 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   const artifact = resolve(command.artifact);
   const read = await readArtifact(artifact);
   const sha256 = read.sha256;
-  const record = await deliveryRecord(transport, signer.address, address);
+  const record = await deliveryRecord(transport, signer.address, address, command.maxPages);
   if (!record.complete) {
     throw new JudgeRefused(
-      `the judge's history is too long to read in full, so the earliest announcer of the artifact with sha256 ${sha256} for intent ${address} cannot be known; nothing was run or paid`,
+      `the judge's history is too long to read in full, so the earliest announcer of the artifact with sha256 ${sha256} for intent ${address} cannot be known; nothing was run or paid. ${pagesRead(record.pages)}`,
     );
   }
   const first = firstDelivery(record.deliveries, sha256);

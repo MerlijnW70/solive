@@ -34,11 +34,13 @@ import type { McpServer } from "@modelcontextprotocol/server";
 import { expect } from "vitest";
 import {
   ALL_KINDS_MASK,
+  EVENT_IX_TAG,
   findAssociatedTokenAddress,
   findEventAuthorityPda,
   findIntentPda,
   findProgramDataAddress,
   getInitConfigInstructionAsync,
+  getIntentCreatedEventEncoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   MANDATE_NONCE_BIT,
 } from "@intent-engine/core";
@@ -83,6 +85,8 @@ export const h = {
   closed: 0,
   rounds: 0,
   engineLog: [] as EngineTransaction[],
+  firstSlot: 0n,
+  through: null as Transport | null,
   requestedOf: [] as (Address | undefined)[],
   simulated: [] as string[],
   sendFails: null as { error: Error; landed: boolean; after?: number } | null,
@@ -213,6 +217,7 @@ export const transport: Transport = {
     h.requestedOf.push(of);
     return h.engineLog;
   },
+  firstAvailableSlot: async () => h.firstSlot,
   recentFees: async (accounts) => {
     h.feeQueries.push([...accounts]);
     return [...h.recentFees];
@@ -228,6 +233,33 @@ export const transport: Transport = {
   },
 };
 
+export const creation = (intent: Address, slot = 1n): EngineTransaction => ({
+  signature: `create-${intent}`,
+  slot,
+  blockTime: null,
+  failed: false,
+  emitted: [
+    new Uint8Array([
+      ...EVENT_IX_TAG,
+      ...getIntentCreatedEventEncoder().encode({
+        intent,
+        owner: intent,
+        nonce: 0n,
+        kind: 4,
+        inputMint: intent,
+        outputMint: intent,
+        receiver: intent,
+        escrowed: 0n,
+        expiresAt: 0n,
+        rentPayer: intent,
+        flags: 0,
+        bounty: 0,
+        createFee: 0,
+      }),
+    ]),
+  ],
+});
+
 export const fakeFetch: Fetch = async (url, init) => {
   h.fetched.push({ url, body: init?.body, headers: init?.headers });
   const reply = h.jupiterReplies.shift() ?? { status: 503, body: {} };
@@ -238,7 +270,7 @@ export function runtime(signers: Record<string, KeyPairSigner>): Runtime {
   return {
     transport: (url) => {
       h.urls.push(url);
-      return transport;
+      return h.through ?? transport;
     },
     loadSigner: async (path) => {
       const signer = signers[path];
@@ -311,6 +343,8 @@ export async function boot(): Promise<KeyPairSigner> {
   h.dropSubmits = false;
   h.failScans = 0;
   h.reads.clear();
+  h.firstSlot = 0n;
+  h.through = null;
   h.svm = new LiteSVM().withPrecompiles();
   h.svm.addProgramFromFile(INTENT_ENGINE_PROGRAM_ADDRESS, enginePath);
   setNow(NOW);

@@ -149,6 +149,7 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
       );
     },
     transactionsOf: async (listed) => listed.flatMap(({ signature }) => byId.get(signature) ?? []),
+    firstAvailableSlot: async () => 0n,
     recentFees: async () => [],
     budget: async (instructions) => [...instructions],
     airdrop: async (address, amount) => {

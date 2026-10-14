@@ -175,7 +175,7 @@ export type Client = {
   spec(intent: Address): Promise<Spec | null>;
   deliver(input: DeliverInput): Promise<Signature>;
   deliveries(filter: { judge: Address; intent?: Address }): Promise<Delivery[]>;
-  deliveryRecord(filter: { judge: Address; intent?: Address }): Promise<DeliveryRecord>;
+  deliveryRecord(filter: { judge: Address; intent?: Address; pages?: number }): Promise<DeliveryRecord>;
 };
 
 export const SPEC_URL_NEEDS_PROOF = "specUrl needs an AttestedResult intent with a non-zero specHash";
@@ -608,6 +608,6 @@ export function createClient(options: ClientOptions): Client {
     spec: (intent) => readSpec(transport, options.fetch ?? fetch, intent),
     deliver: async (input) => send((await deliveryInstructions(transport, input)).instructions, input.worker),
     deliveries: ({ judge, intent }) => deliveriesOf(transport, judge, intent),
-    deliveryRecord: ({ judge, intent }) => deliveryRecord(transport, judge, intent),
+    deliveryRecord: ({ judge, intent, pages }) => deliveryRecord(transport, judge, intent, pages),
   };
 }

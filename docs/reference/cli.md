@@ -213,18 +213,18 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--sha256`
 ## deliveries
 
 ```text
-deliveries --attestor <address> --intent <address>
+deliveries --attestor <address> --intent <address> [--max-pages <n>]
 ```
 
-Options: `--url`, `--attestor`, `--intent`, `--output`, `--help`
+Options: `--url`, `--attestor`, `--intent`, `--max-pages`, `--output`, `--help`
 
 ## judge
 
 ```text
-judge --keypair <judge file> --owner <address> --nonce <n> --spec <file> --artifact <file or directory> --run <command> [--pay-to <wallet>] [--timeout <seconds>] [--verdict <file>] [--yes]
+judge --keypair <judge file> --owner <address> --nonce <n> --spec <file> --artifact <file or directory> --run <command> [--pay-to <wallet>] [--timeout <seconds>] [--verdict <file>] [--max-pages <n>] [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--pay-to`, `--timeout`, `--verdict`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--pay-to`, `--timeout`, `--verdict`, `--max-pages`, `--output`, `--help`
 
 ## crank
 

@@ -194,7 +194,7 @@ await client.unwrap(signer);
 
 ## Find work and deliver it
 
-The chain holds only a proof escrow's spec hash. `specUrl` on `createIntent` publishes where the spec lives, in a memo the owner signs in the create transaction. `jobs` lists up to 50 open, unexpired proof escrows, those with the most time left first, optionally only those naming one `attestor`, each with its `specUrl`, which is `null` when none was published. `spec` fetches that url, following no redirect and reading at most 1048576 bytes, and refuses a plain http url on mainnet, devnet or testnet, and returns its `text`, its `sha256` and whether it `matches` the committed hash; it never runs the text. A worker announces its work with `deliver`: one transaction it signs, with a memo naming the intent, the work's sha256 and the url to fetch it from, and a transfer of 0 lamports to the judge, so the delivery shows in the judge's history. The judge reads them with `deliveries`, newest first, from its history back to the creation of the escrows it judges, at most 10 pages of 1000 transactions, and gets only memos that name one of its own open proof escrows, or the one of its proof escrows it asks for with `intent`. `deliveryRecord` returns the same `deliveries` with `complete`, which is `false` when that history was longer than it reads; decide whom to pay only from a complete record. Here the spec is a file of this repository at a fixed commit, your wallet plays the worker, and the judge then releases the escrow to the earliest wallet that announced the hash it checked, recording that hash in the release. This prints `true true` twice.
+The chain holds only a proof escrow's spec hash. `specUrl` on `createIntent` publishes where the spec lives, in a memo the owner signs in the create transaction. `jobs` lists up to 50 open, unexpired proof escrows, those with the most time left first, optionally only those naming one `attestor`, each with its `specUrl`, which is `null` when none was published. `spec` fetches that url, following no redirect and reading at most 1048576 bytes, and refuses a plain http url on mainnet, devnet or testnet, and returns its `text`, its `sha256` and whether it `matches` the committed hash; it never runs the text. A worker announces its work with `deliver`: one transaction it signs, with a memo naming the intent, the work's sha256 and the url to fetch it from, and a transfer of 0 lamports to the judge, so the delivery shows in the judge's history. The judge reads them with `deliveries`, newest first, from its history back to the creation of the escrows it judges, at most 100 pages of 1000 transactions, and gets only memos that name one of its own open proof escrows, or the one of its proof escrows it asks for with `intent`. `deliveryRecord` returns the same `deliveries` with `complete` and the number of `pages` it read; pass `pages` to read further. `complete` is `true` only when the read reached a transaction older than the escrow, or reached the end of the history on a node whose ledger goes back to the escrow's creation; it is `false` when the history is longer than the pages it reads or the node has pruned the slots it would need. `deliveries` is for listing; decide whom to pay only from a complete record. Here the spec is a file of this repository at a fixed commit, your wallet plays the worker, and the judge then releases the escrow to the earliest wallet that announced the hash it checked, recording that hash in the release. This prints `true true` twice.
 
 ```ts
 import { firstDelivery } from "@intent-engine/client";
@@ -206,13 +206,17 @@ const listed = (await client.jobs({ attestor: judge.address })).find(({ intent }
 console.log(listed?.specUrl === specUrl, (await client.spec(posted.intent))?.matches);
 const sha256 = createHash("sha256").update("the delivered work").digest("hex");
 await client.deliver({ worker: signer, intent: posted.intent, sha256, url: "https://example.org/work.tar" });
-const delivery = firstDelivery(await client.deliveries({ judge: judge.address, intent: posted.intent }), sha256);
+const record = await client.deliveryRecord({ judge: judge.address, intent: posted.intent });
+if (!record.complete) {
+  throw new Error(`read ${record.pages} pages without reaching the escrow's creation; pass a higher pages`);
+}
+const delivery = firstDelivery(record.deliveries, sha256);
 console.log(delivery?.worker === signer.address, delivery?.sha256 === sha256);
 await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: posted.nonce, payTo: delivery!.worker, result: 1n, deliveredSha256: sha256 });
 await client.unwrap(signer);
 ```
 
-Anyone can copy an announcement once it is on chain, so a judge pays the earliest announcer of the hash it checked: `firstDelivery(deliveries, sha256)` returns that announcement, or `null`. `settleProof` takes `deliveredSha256` to record the paid work's hash in the release, in the memo `solive_wallet_receipt` reads. [Judge a proof escrow](judge.md) does all of this from the command line.
+Anyone can copy an announcement once it is on chain, so a judge pays the earliest announcer of the hash it checked: `firstDelivery(record.deliveries, sha256)` returns that announcement, or `null`. `settleProof` takes `deliveredSha256` to record the paid work's hash in the release, in the memo `solive_wallet_receipt` reads. [Judge a proof escrow](judge.md) does all of this from the command line.
 
 ## Who can do what
 

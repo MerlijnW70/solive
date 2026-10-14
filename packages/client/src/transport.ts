@@ -57,6 +57,7 @@ export interface Transport {
   engineTransactions(limit: number, of?: Address, memo?: string): Promise<EngineTransaction[]>;
   signaturesOf?(of: Address, limit: number, before?: string): Promise<ListedSignature[]>;
   transactionsOf?(listed: readonly ListedSignature[]): Promise<EngineTransaction[]>;
+  firstAvailableSlot?(): Promise<bigint>;
   recentFees(accounts: readonly Address[]): Promise<bigint[]>;
   budget(instructions: readonly Instruction[], feePayer: Address): Promise<Instruction[]>;
   airdrop(address: Address, lamports: bigint): Promise<string>;
@@ -104,6 +105,7 @@ export type RpcLike = {
     config?: { searchTransactionHistory: boolean },
   ): Pending<{ context: { slot: bigint }; value: readonly (Status | null)[] }>;
   getEpochInfo(): Pending<{ blockHeight: bigint; absoluteSlot: bigint }>;
+  getFirstAvailableBlock?(): Pending<bigint>;
   requestAirdrop(address: Address, lamports: bigint): Pending<Signature>;
   getRecentPrioritizationFees(addresses: readonly Address[]): Pending<readonly { prioritizationFee: bigint }[]>;
   getGenesisHash(): Pending<string>;
@@ -484,6 +486,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     }
     return found;
   };
+  const firstBlock = rpc.getFirstAvailableBlock?.bind(rpc);
   const listSignatures = async (of: Address, limit: number, before?: string): Promise<ListedSignature[]> => {
     const listed = await patiently(
       () => rpc.getSignaturesForAddress(of, { limit, ...(before === undefined ? {} : { before: before as Signature }), ...atLeast() }).send(),
@@ -579,6 +582,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     },
     signaturesOf: (of, limit, before) => listSignatures(of, limit, before),
     transactionsOf: (listed) => fetchAll(listed),
+    ...(firstBlock === undefined ? {} : { firstAvailableSlot: () => patiently(() => firstBlock().send(), wait) }),
     async intents(owner, read) {
       const least = atLeast(read?.minContextSlot);
       const found = await patiently(async () => {

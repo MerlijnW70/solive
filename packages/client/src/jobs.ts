@@ -25,7 +25,7 @@ import { type EngineTransaction, type ListedSignature, MEMO_PROGRAM_ADDRESS, TRA
 export const JOBS_LIMIT = 50;
 export const SPEC_SCAN = 10;
 export const DELIVERY_SCAN = 100;
-export const DELIVERY_PAGES = 10;
+export const DELIVERY_PAGES = 100;
 export const SIGNATURE_PAGE = 1000;
 export const MAINNET_GENESIS_HASH = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
 export const DEVNET_GENESIS_HASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
@@ -62,15 +62,16 @@ export type Delivery = {
   blockTime: bigint | null;
 };
 
-export type DeliveryRecord = { deliveries: Delivery[]; complete: boolean };
+export type DeliveryRecord = { deliveries: Delivery[]; complete: boolean; pages: number };
 
-export type Scan = { transactions: EngineTransaction[]; complete: boolean };
+export type Scan = { transactions: EngineTransaction[]; complete: boolean; pages: number };
 
 export type ScanOptions = {
   floor?: bigint | null;
   memo?: string;
   pages?: number;
   until?: (transaction: EngineTransaction) => boolean;
+  covered?: () => Promise<boolean>;
 };
 
 export type Announcement = { sha256: string; first: Delivery; copies: number };
@@ -128,13 +129,8 @@ const memoMatches = (memo: string | undefined, texts: readonly string[]): boolea
 
 const reaches = (floor: bigint | null) => ({ blockTime }: { blockTime: bigint | null }): boolean => floor === null || blockTime === null || blockTime >= floor;
 
-async function fallbackScan(
-  transport: Transport,
-  of: Address,
-  floor: bigint | null,
-  memo: string | undefined,
-  until?: (transaction: EngineTransaction) => boolean,
-): Promise<Scan> {
+async function fallbackScan(transport: Transport, of: Address, options: ScanOptions): Promise<Scan> {
+  const { floor = null, memo, until, covered } = options;
   const found = await transport.engineTransactions(DELIVERY_SCAN, of);
   const within = found.filter(reaches(floor));
   const transactions: EngineTransaction[] = [];
@@ -144,41 +140,44 @@ async function fallbackScan(
     }
     transactions.push(transaction);
     if (until?.(transaction) === true) {
-      return { transactions, complete: true };
+      return { transactions, complete: true, pages: 1 };
     }
   }
-  return { transactions, complete: found.length < DELIVERY_SCAN || within.length < found.length };
+  if (within.length < found.length) {
+    return { transactions, complete: true, pages: 1 };
+  }
+  return { transactions, complete: found.length < DELIVERY_SCAN && (await covered?.()) === true, pages: 1 };
 }
 
 export async function scan(transport: Transport, of: Address, options: ScanOptions = {}): Promise<Scan> {
-  const { floor = null, memo, pages = DELIVERY_PAGES, until } = options;
+  const { floor = null, memo, pages = DELIVERY_PAGES, until, covered } = options;
   const { signaturesOf, transactionsOf } = transport;
   if (signaturesOf === undefined || transactionsOf === undefined) {
-    return fallbackScan(transport, of, floor, memo, until);
+    return fallbackScan(transport, of, options);
   }
   const transactions: EngineTransaction[] = [];
   let before: string | undefined;
-  for (let page = 0; page < pages; page++) {
+  for (let page = 1; page <= pages; page++) {
     const listed = await signaturesOf.call(transport, of, SIGNATURE_PAGE, before);
-    if (listed.length === 0) {
-      return { transactions, complete: true };
-    }
     const within = listed.filter(reaches(floor));
     const wanted = within.filter((entry: ListedSignature) => !entry.failed && memoMatches(memo, entry.memo === null ? [] : [entry.memo]));
     for (let at = 0; at < wanted.length; at += TRANSACTION_FETCHES) {
       for (const transaction of await transactionsOf.call(transport, wanted.slice(at, at + TRANSACTION_FETCHES))) {
         transactions.push(transaction);
         if (until?.(transaction) === true) {
-          return { transactions, complete: true };
+          return { transactions, complete: true, pages: page };
         }
       }
     }
     if (within.length < listed.length) {
-      return { transactions, complete: true };
+      return { transactions, complete: true, pages: page };
+    }
+    if (listed.length < SIGNATURE_PAGE) {
+      return { transactions, complete: (await covered?.()) === true, pages: page };
     }
     before = listed[listed.length - 1]?.signature;
   }
-  return { transactions, complete: false };
+  return { transactions, complete: false, pages };
 }
 
 export async function openProofEscrows(transport: Transport, attestor?: Address, limit: number = JOBS_LIMIT): Promise<Proof[]> {
@@ -306,7 +305,23 @@ export async function deliveryInstructions(transport: Transport, input: DeliverI
   };
 }
 
-export async function deliveryRecord(transport: Transport, judge: Address, intent?: Address): Promise<DeliveryRecord> {
+export async function creationSlotOf(transport: Transport, intent: Address, createdAt?: bigint): Promise<bigint | null> {
+  const floor = createdAt ?? (await createdAtOf(transport, intent));
+  const created = (transaction: EngineTransaction) => !transaction.failed && createdIn(transaction.emitted, intent);
+  const { transactions } = await scan(transport, intent, { floor, until: created });
+  return transactions.find(created)?.slot ?? null;
+}
+
+export async function historyCovers(transport: Transport, intent: Address, createdAt?: bigint): Promise<boolean> {
+  const { firstAvailableSlot } = transport;
+  if (firstAvailableSlot === undefined) {
+    return false;
+  }
+  const slot = await creationSlotOf(transport, intent, createdAt);
+  return slot !== null && (await firstAvailableSlot.call(transport)) <= slot;
+}
+
+export async function deliveryRecord(transport: Transport, judge: Address, intent?: Address, pages: number = DELIVERY_PAGES): Promise<DeliveryRecord> {
   let proofs: Proof[];
   if (intent === undefined) {
     proofs = await openProofEscrows(transport, judge, Number.POSITIVE_INFINITY);
@@ -314,13 +329,16 @@ export async function deliveryRecord(transport: Transport, judge: Address, inten
     const proof = await proofAt(transport, intent);
     proofs = proof !== null && proof.params.attestor === judge ? [proof] : [];
   }
-  const [oldest] = proofs;
-  if (oldest === undefined) {
-    return { deliveries: [], complete: true };
+  const [first] = proofs;
+  if (first === undefined) {
+    return { deliveries: [], complete: true, pages: 0 };
   }
   const judged: ReadonlySet<Address> = new Set(proofs.map(({ address }) => address));
-  const floor = proofs.reduce((low, { intent: held }) => (held.createdAt < low ? held.createdAt : low), oldest.intent.createdAt);
-  const { transactions, complete } = await scan(transport, judge, { floor, memo: DELIVERY_MEMO_PREFIX });
+  const oldest = proofs.reduce((low, proof) => (proof.intent.createdAt < low.intent.createdAt ? proof : low), first);
+  const floor = oldest.intent.createdAt;
+  const covered = () => historyCovers(transport, oldest.address, floor);
+  const scanned = await scan(transport, judge, { floor, memo: DELIVERY_MEMO_PREFIX, pages, covered });
+  const { transactions, complete } = scanned;
   const deliveries = transactions.flatMap(({ signature, slot, blockTime, failed, memos, feePayer }) =>
     failed || feePayer === undefined
       ? []
@@ -333,7 +351,7 @@ export async function deliveryRecord(transport: Transport, judge: Address, inten
               : [{ ...memo, worker: feePayer, signature: signature as Signature, slot, blockTime }],
           ),
   );
-  return { deliveries, complete: complete && !transactions.some(({ unread }) => unread === true) };
+  return { deliveries, complete: complete && !transactions.some(({ unread }) => unread === true), pages: scanned.pages };
 }
 
 export async function deliveriesOf(transport: Transport, judge: Address, intent?: Address): Promise<Delivery[]> {

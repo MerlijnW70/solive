@@ -690,6 +690,9 @@ const walletDeliver = define({
 export const notEarliest = (worker: string, sha256: string) =>
   `${worker} announced the work with sha256 ${sha256} first, so a release recording it pays ${worker}; anyone can copy an announcement once it is on chain, so the earliest announcer is paid`;
 
+export const notInSplit = (worker: string, sha256: string) =>
+  `${worker} announced the work with sha256 ${sha256} first, so a split recording it must pay ${worker} among its recipients; anyone can copy an announcement once it is on chain, so the earliest announcer is paid`;
+
 export const DELIVERY_LIST = DELIVERY_PAGES * SIGNATURE_PAGE * MEMOS_PER_TRANSACTION;
 
 export const DELIVERED_NEEDED = "a proof escrow pays the earliest announcer of the work it releases for, so give that work's sha256";
@@ -945,6 +948,7 @@ const walletAttestSplit = define({
     recipients: list(coauthor, MAX_SPLIT_RECIPIENTS, "the co-authors and their weighted shares, up to 8", 1),
     result: optional(amount("the result to attest, between the intent's min_result and max_result; default min_result")),
     lookup_table: optional(account("an address lookup table holding this split's lookup_accounts, to fit more co-authors under the transaction size limit; create one with the preview's lookup_accounts and pass it with send")),
+    delivered_sha256: optional(text(`the sha256, as 64 hex digits, of the work this release pays for; required, since a release recording it must include that work's earliest announcer among the recipients; recorded in a memo this wallet signs with the release, so the payer can check what it receives with ${tool("wallet_receipt")}`)),
     approval: optional(text("the approval the preview returned; needed with send")),
     send: optional(flag("true signs the attestation and settles; leave out to preview")),
   }),
@@ -958,6 +962,7 @@ const walletAttestSplit = define({
     fee: text("whole tokens kept as fees"),
     result: amount(),
     approval: text("pass it back with send: true; a send that would differ from this preview is refused"),
+    delivered_sha256: optional(text("the sha256 the release records")),
     summary: list(text(), 12),
     warnings: list(text(), 8),
     sent: flag(),
@@ -1000,6 +1005,20 @@ const walletAttestSplit = define({
     for (const [i, r] of input.recipients.entries()) {
       await walletRecipient(ctx.transport, r.wallet, `recipients.${i}.wallet`);
     }
+    if (input.delivered_sha256 === undefined) {
+      throw new InvalidInput([{ path: "delivered_sha256", message: DELIVERED_NEEDED }]);
+    }
+    const delivered = sha256Of(input.delivered_sha256, "delivered_sha256");
+    const record = await deliveryRecord(ctx.transport, signer.address, intent);
+    if (!record.complete) {
+      throw new AgentRefusal("HistoryTooLong", HISTORY_TOO_LONG);
+    }
+    const first = firstDelivery(record.deliveries, delivered);
+    if (first !== null && !wallets.includes(first.worker)) {
+      throw new AgentRefusal("NotEarliestAnnouncer", notInSplit(first.worker, delivered));
+    }
+    const memoText = releaseMemo(delivered);
+    const memo = { programAddress: MEMO_PROGRAM_ADDRESS, accounts: [{ address: signer.address, role: AccountRole.READONLY_SIGNER, signer }], data: new TextEncoder().encode(memoText) };
     const token = await mintOf(ctx.transport, held.inputMint);
     const payees = await Promise.all(wallets.map((w) => tokenAccountIfMissing(ctx.transport, signer, w, held.inputMint, token.tokenProgram)));
     const amountIn = held.escrowed - held.filled;
@@ -1041,7 +1060,7 @@ const walletAttestSplit = define({
       maxFeeBps,
     });
     const name = TOKEN_NAMES[held.inputMint] ?? held.inputMint;
-    const approval = approvalOf(message);
+    const approval = approvalOf(message, memoText);
     if (input.send === true && input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", RELEASE_CHANGED);
     }
@@ -1069,7 +1088,7 @@ const walletAttestSplit = define({
     }
     let prepared;
     if (input.send === true && batch !== undefined) {
-      const ixs = [...setup, batch, settle];
+      const ixs = [...setup, batch, settle, memo];
       const budgeted = await ctx.transport.budget(ixs, signer.address);
       const size = await transactionSize(ctx.transport, budgeted, signer.address, tables);
       if (size > PACKET_DATA_SIZE) {
@@ -1091,12 +1110,14 @@ const walletAttestSplit = define({
       fee: formatAmount(shares.protocol + shares.partner + params.judgeFee, token.decimals),
       result,
       approval,
+      delivered_sha256: delivered,
       summary: [
         `Splits: ${formatAmount(shares.net, token.decimals)} of ${name} among ${input.recipients.length} co-authors from ${input.owner}'s escrow${held.inputMint === NATIVE_MINT ? WRAPPED : ""}`,
         ...input.recipients.map((r, i) => `  ${r.wallet}: ${r.weight} bps -> ${formatAmount(payout[i] ?? 0n, token.decimals)} of ${name}`),
         ...(params.judgeFee > 0n ? [`Pays the judge: ${formatAmount(params.judgeFee, token.decimals)} of ${name} to this wallet, carved out of the escrow`] : []),
         `Binds: the result to the committed spec ${getBase16Decoder().decode(params.specHash)}`,
         `Attests: result ${result}, signed by this server's wallet as the escrow's attestor`,
+        `Records: the delivered work's sha256 ${delivered}, in a memo this wallet signs with the release`,
         ...(setup.length === 0 ? [] : [`Setup: creates ${setup.length} token account(s), paid by this wallet`]),
       ],
       warnings: [...settlementWarnings(params), WARN_COAUTHORS],

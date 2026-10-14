@@ -552,7 +552,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       return { ...shown, sent: true, signature: await transport.send(instructions, worker) };
     }
     case "deliveries": {
-      const record = await deliveryRecord(transport, command.attestor, command.intent);
+      const record = await deliveryRecord(transport, command.attestor, command.intent, command.maxPages);
       return {
         intent: command.intent,
         complete: record.complete,

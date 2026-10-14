@@ -13,9 +13,11 @@ import {
   DEVNET_GENESIS_HASH,
   firstDelivery,
   JOBS_LIMIT,
+  type ListedSignature,
   MAX_SPEC_BYTES,
   memoInstruction,
   NotDeliverable,
+  SIGNATURE_PAGE,
   SPEC_URL_NEEDS_PROOF,
   SpecUnreadable,
   type SpecFetch,
@@ -71,6 +73,42 @@ function paged(inner: Transport, size: number): Transport {
     throw new Error("the transport lists no signature pages");
   }
   return { ...inner, signaturesOf: (of, limit, before) => signaturesOf(of, Math.min(limit, size), before) };
+}
+
+const FLOOD = "flood-";
+
+function flooded(w: World, inner: Transport, of: Address, count: number): Transport {
+  const { signaturesOf } = inner;
+  if (signaturesOf === undefined) {
+    throw new Error("the transport lists no signature pages");
+  }
+  const { slot, unixTimestamp } = w.chain.svm.getClock();
+  return {
+    ...inner,
+    signaturesOf: async (address, limit, before) => {
+      const at = before === undefined ? 0 : before.startsWith(FLOOD) ? Number(before.slice(FLOOD.length)) + 1 : null;
+      if (address !== of || at === null) {
+        return signaturesOf(address, limit, before);
+      }
+      const n = Math.max(0, Math.min(limit, count - at));
+      const fake = Array.from({ length: n }, (_, i): ListedSignature => ({ signature: `${FLOOD}${at + i}`, slot, blockTime: unixTimestamp, failed: false, memo: null }));
+      return n < limit ? [...fake, ...(await signaturesOf(address, limit - n))] : fake;
+    },
+  };
+}
+
+function counted(inner: Transport, calls: Address[]): Transport {
+  const { signaturesOf } = inner;
+  if (signaturesOf === undefined) {
+    throw new Error("the transport lists no signature pages");
+  }
+  return {
+    ...inner,
+    signaturesOf: (of, limit, before) => {
+      calls.push(of);
+      return signaturesOf(of, limit, before);
+    },
+  };
 }
 
 describe("jobs", () => {
@@ -260,28 +298,71 @@ describe("history past a window of recent transactions", () => {
     expect(firstDelivery(await client.deliveries({ judge: judge.address }), WORK)?.worker).toBe(worker.address);
   });
 
-  it("reports an incomplete delivery record when the page cap is reached", async () => {
+  it("a flooded judge record completes with more pages", async () => {
     const { w, client, judge, order } = await setting();
     const job = await client.createIntent({ ...order, params: proof(judge.address) });
     const worker = await funded(w.chain);
     await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL });
-    const size = 5;
-    await flood(w, judge.address, DELIVERY_PAGES * size + 1);
-    const capped = paged(w.chain.transport, size);
+    const flood = flooded(w, w.chain.transport, judge.address, DELIVERY_PAGES * SIGNATURE_PAGE);
 
-    expect(DELIVERY_PAGES).toBeGreaterThanOrEqual(10);
-    const record = await deliveryRecord(capped, judge.address, job.intent);
-    expect(record).toEqual({ deliveries: [], complete: false });
-    expect(await createClient({ url: LOCAL, transport: capped }).deliveryRecord({ judge: judge.address })).toEqual({ deliveries: [], complete: false });
-    const full = await deliveryRecord(w.chain.transport, judge.address, job.intent);
-    expect(full.complete).toBe(true);
-    expect(full.deliveries.map(({ worker: by }) => by)).toEqual([worker.address]);
-    expect((await deliveryRecord(paged(w.chain.transport, 100), judge.address, job.intent)).complete).toBe(true);
+    expect(DELIVERY_PAGES).toBeGreaterThanOrEqual(100);
+    expect(await deliveryRecord(flood, judge.address, job.intent)).toEqual({ deliveries: [], complete: false, pages: DELIVERY_PAGES });
+    expect(await createClient({ url: LOCAL, transport: flood }).deliveryRecord({ judge: judge.address })).toEqual({ deliveries: [], complete: false, pages: DELIVERY_PAGES });
+    const further = await deliveryRecord(flood, judge.address, job.intent, DELIVERY_PAGES + 1);
+    expect(further).toMatchObject({ complete: true, pages: DELIVERY_PAGES + 1 });
+    expect(further.deliveries.map(({ worker: by }) => by)).toEqual([worker.address]);
+    expect(await createClient({ url: LOCAL, transport: flood }).deliveryRecord({ judge: judge.address, intent: job.intent, pages: DELIVERY_PAGES + 1 })).toEqual(further);
+  });
+
+  it("an empty page is not complete when the node history starts after the intent", async () => {
+    const { w, client, judge, order } = await setting();
+    w.chain.svm.warpToSlot(w.chain.svm.getClock().slot + 5n);
+    const created = w.chain.svm.getClock().slot;
+    const job = await client.createIntent({ ...order, params: proof(judge.address) });
+    w.chain.svm.warpToSlot(created + 5n);
+    const pruned: Transport = { ...w.chain.transport, firstAvailableSlot: async () => created + 1n };
+    const { firstAvailableSlot: _, ...unknown } = w.chain.transport;
+
+    expect(await w.chain.transport.signaturesOf?.(judge.address, SIGNATURE_PAGE)).toEqual([]);
+    expect(await deliveryRecord(pruned, judge.address, job.intent)).toEqual({ deliveries: [], complete: false, pages: 1 });
+    expect(await deliveryRecord(unknown, judge.address, job.intent)).toEqual({ deliveries: [], complete: false, pages: 1 });
+    expect((await deliveryRecord(pruned, judge.address)).complete).toBe(false);
+  });
+
+  it("an empty page is complete when the node history covers the intent", async () => {
+    const { w, client, judge, order } = await setting();
+    w.chain.svm.warpToSlot(w.chain.svm.getClock().slot + 5n);
+    const created = w.chain.svm.getClock().slot;
+    const job = await client.createIntent({ ...order, params: proof(judge.address) });
+    w.chain.svm.warpToSlot(created + 5n);
+    const kept: Transport = { ...w.chain.transport, firstAvailableSlot: async () => created };
+
+    expect(await w.chain.transport.signaturesOf?.(judge.address, SIGNATURE_PAGE)).toEqual([]);
+    expect(await deliveryRecord(kept, judge.address, job.intent)).toEqual({ deliveries: [], complete: true, pages: 1 });
+    expect(await deliveryRecord(w.chain.transport, judge.address, job.intent)).toEqual({ deliveries: [], complete: true, pages: 1 });
+    expect((await deliveryRecord(kept, judge.address)).complete).toBe(true);
+  });
+
+  it("a short page ends the scan", async () => {
+    const { w, client, judge, order } = await setting();
+    const job = await client.createIntent({ ...order, params: proof(judge.address) });
+    const worker = await funded(w.chain);
+    await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL });
+    await flood(w, judge.address, 3);
+    const calls: Address[] = [];
+
+    const record = await deliveryRecord(counted(w.chain.transport, calls), judge.address, job.intent, 1);
+    expect(record).toMatchObject({ complete: true, pages: 1, deliveries: [{ worker: worker.address }] });
+    expect(calls.filter((of) => of === judge.address)).toEqual([judge.address]);
+    calls.length = 0;
+    const full = flooded(w, w.chain.transport, judge.address, SIGNATURE_PAGE);
+    expect(await deliveryRecord(counted(full, calls), judge.address, job.intent, 1)).toEqual({ deliveries: [], complete: false, pages: 1 });
+    expect(await deliveryRecord(counted(full, calls), judge.address, job.intent, 2)).toMatchObject({ complete: true, pages: 2 });
   });
 
   it("stops a scan at the escrow's creation and reads a transport without paging as incomplete past its window", async () => {
     const { w, client, judge, order } = await setting();
-    await flood(w, judge.address, DELIVERY_PAGES * 5 + 1);
+    await flood(w, judge.address, 51);
     const job = await client.createIntent({ ...order, params: proof(judge.address) });
     const worker = await funded(w.chain);
     await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL });
@@ -296,7 +377,7 @@ describe("history past a window of recent transactions", () => {
     const { signaturesOf: _, transactionsOf: __, ...unpaged } = w.chain.transport;
     expect(await deliveryRecord(unpaged, judge.address, job.intent)).toMatchObject({ deliveries: [{ worker: worker.address }], complete: true });
     await flood(w, judge.address, DELIVERY_SCAN);
-    expect(await deliveryRecord(unpaged, judge.address, job.intent)).toEqual({ deliveries: [], complete: false });
+    expect(await deliveryRecord(unpaged, judge.address, job.intent)).toEqual({ deliveries: [], complete: false, pages: 1 });
     expect((await deliveryRecord(unpaged, judge.address, late.intent)).complete).toBe(false);
   });
 

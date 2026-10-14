@@ -9,12 +9,12 @@ import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { TransactionMetadata } from "litesvm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deliveryMemo, findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, manifestSha256, RELEASE_MEMO_PREFIX, releaseMemo } from "@intent-engine/core";
-import { createClient, DELIVERY_SCAN, type EngineTransaction } from "@intent-engine/client";
+import { createClient, DELIVERY_PAGES, DELIVERY_SCAN, type EngineTransaction, type ListedSignature, SIGNATURE_PAGE, type Transport } from "@intent-engine/client";
 import { ENV_KEYPAIR, JUDGE_TIMEOUT, MAX_JUDGE_TIMEOUT, RUN_NEEDED } from "../src/args.js";
 import { NOT_SENT } from "../src/flows.js";
 import { artifactSha256, CHECK_ENV, checkEnv, CLEANUP_RETRIES, ENV_ARTIFACT_PATH, ENV_ARTIFACT_SHA256, ENV_SPEC_PATH, runCheck, SKIPPED, SPEC_COPY } from "../src/judge.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
-import { balance, cli, funded, h, NOW, transport, type World, world } from "./harness.js";
+import { balance, cli, creation, funded, h, NOW, transport, type World, world } from "./harness.js";
 
 const removal = vi.hoisted(() => ({ refused: false, retries: [] as (number | undefined)[] }));
 
@@ -73,7 +73,7 @@ async function job(): Promise<Job> {
   const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash, judgeFee: 0n } as const;
   const client = createClient({ url: "http://cluster", transport });
   const { intent } = await client.createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
-  h.engineLog = [announced(intent, copier.address, sha256, "copy", 9n, "https://example.org/stolen"), announced(intent, worker.address, sha256, "first", 5n)];
+  h.engineLog = [announced(intent, copier.address, sha256, "copy", 9n, "https://example.org/stolen"), announced(intent, worker.address, sha256, "first", 5n), creation(intent)];
   return { w, judge, worker, copier, intent, dir, spec, artifact, sha256 };
 }
 
@@ -96,6 +96,31 @@ const judging = (j: Job, run: string, ...more: string[]) => [
 
 const paidTo = async (j: Job, wallet: Address) =>
   balance(await findAssociatedTokenAddress({ owner: wallet, mint: j.w.inputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS }));
+
+const FLOOD = "flood-";
+
+function flooding(judge: Address, count: number): Transport {
+  const listed = (): ListedSignature[] =>
+    h.engineLog.map(({ signature, slot, blockTime, failed, memos }) => ({ signature, slot, blockTime, failed, memo: memos === undefined ? null : memos.join("; ") }));
+  const real = (limit: number, before?: string) => {
+    const all = listed();
+    const start = before === undefined ? 0 : all.findIndex(({ signature }) => signature === before) + 1;
+    return all.slice(start, start + limit);
+  };
+  return {
+    ...transport,
+    signaturesOf: async (of, limit, before) => {
+      const at = before === undefined ? 0 : before.startsWith(FLOOD) ? Number(before.slice(FLOOD.length)) + 1 : null;
+      if (of !== judge || at === null) {
+        return real(limit, before);
+      }
+      const n = Math.max(0, Math.min(limit, count - at));
+      const fake = Array.from({ length: n }, (_, i): ListedSignature => ({ signature: `${FLOOD}${at + i}`, slot: 30n, blockTime: null, failed: false, memo: null }));
+      return n < limit ? [...fake, ...real(limit - n)] : fake;
+    },
+    transactionsOf: async (wanted) => wanted.flatMap(({ signature }) => h.engineLog.filter((entry) => entry.signature === signature)),
+  };
+}
 
 const status = (intent: Address) => {
   const account = h.svm.getAccount(intent);
@@ -193,7 +218,7 @@ describe("intent-engine judge", () => {
     const foreign = await cli(judging(j, run), { "judge.json": stranger });
     expect(foreign.err).toContain(`names ${j.judge.address} as its judge, not ${stranger.address}`);
 
-    h.engineLog = [announced(j.intent, j.worker.address, "cd".repeat(32), "other", 2n)];
+    h.engineLog = [announced(j.intent, j.worker.address, "cd".repeat(32), "other", 2n), creation(j.intent)];
     const nobody = await cli(judging(j, run, "--yes"), keys);
     expect(nobody.code).toBe(EXIT_FAILED);
     expect(nobody.err).toContain(`nobody announced the artifact with sha256 ${j.sha256} for intent ${j.intent}`);
@@ -253,7 +278,7 @@ describe("intent-engine judge", () => {
     await writeFile(file, "42\n");
     const sha256 = createHash("sha256").update("42\n").digest("hex");
     expect(await artifactSha256(file)).toBe(sha256);
-    h.engineLog = [announced(j.intent, j.worker.address, sha256, "single", 3n)];
+    h.engineLog = [announced(j.intent, j.worker.address, sha256, "single", 3n), creation(j.intent)];
     const seen = join(j.dir, "seen");
     const check = `echo "$ARTIFACT_PATH" > "${seen}" && test "$ARTIFACT_SHA256" = ${sha256} && test "$ARTIFACT_PATH" != "${file}" && test "$(cat "$ARTIFACT_PATH")" = 42`;
     const run = await cli(judging({ ...j, artifact: file }, check), keys);
@@ -367,6 +392,28 @@ describe("intent-engine judge", () => {
     expect(existsSync(marker)).toBe(false);
     expect(status(j.intent)).toBe(IntentStatus.Open);
     expect((await cli(["deliveries", "--attestor", j.judge.address, "--intent", j.intent], {})).json()).toMatchObject({ intent: j.intent, complete: false });
+  });
+
+  it("judge reads further with max pages", async () => {
+    h.through = flooding(j.judge.address, DELIVERY_PAGES * SIGNATURE_PAGE);
+    const marker = join(j.dir, "ran");
+    const refused = await cli(judging(j, `touch "${marker}"`), keys);
+    expect(refused.code).toBe(EXIT_FAILED);
+    expect(refused.err).toContain(`It read ${DELIVERY_PAGES} pages of ${SIGNATURE_PAGE} signatures; a higher --max-pages reads further`);
+    expect(existsSync(marker)).toBe(false);
+    expect((await cli(["deliveries", "--attestor", j.judge.address, "--intent", j.intent], {})).json()).toMatchObject({ complete: false });
+    const further = String(DELIVERY_PAGES + 1);
+    expect((await cli(["deliveries", "--attestor", j.judge.address, "--intent", j.intent, "--max-pages", further], {})).json()).toMatchObject({
+      complete: true,
+      deliveries: [{ worker: j.worker.address, signature: "first", copies: 1 }],
+    });
+    const paid = await cli(judging(j, "true", "--max-pages", further, "--yes"), keys);
+    expect([paid.code, paid.err]).toEqual([EXIT_OK, ""]);
+    expect(paid.json()).toMatchObject({ verdict: "pass", payTo: j.worker.address, signature: expect.any(String) });
+    expect(await paidTo(j, j.worker.address)).toBeGreaterThan(0n);
+    for (const pages of ["0", "100001", "1.5"]) {
+      expect((await cli(judging(j, "true", "--max-pages", pages), keys)).code).toBe(EXIT_USAGE);
+    }
   });
 });
 

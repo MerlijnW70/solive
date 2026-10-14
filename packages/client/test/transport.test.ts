@@ -558,6 +558,13 @@ describe("engine transactions", () => {
     expect(asked).toEqual([OTHER_SIG]);
   });
 
+  it("reads the node's first available slot only from a node that answers it", async () => {
+    const s = stub([]);
+    const transport = rpcTransport({ ...s.rpc, getFirstAvailableBlock: () => ({ send: async () => 42n }) } as unknown as typeof s.rpc, s.wait);
+    expect(await transport.firstAvailableSlot?.()).toBe(42n);
+    expect(rpcTransport(s.rpc, s.wait).firstAvailableSlot).toBeUndefined();
+  });
+
   it("keeps a bounded number of fetched transactions and fetches only the ones it dropped", async () => {
     const s = stub([]);
     const sigs = Array.from({ length: KEPT_TRANSACTIONS + 1 }, (_, i) => `${SIG.slice(0, -4)}${String(i).padStart(4, "0")}` as Signature);

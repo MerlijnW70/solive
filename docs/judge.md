@@ -28,7 +28,7 @@ Workers announce their work to you with `intent-engine deliver`. List what they 
 intent-engine deliveries --attestor $(solana address) --intent $INTENT
 ```
 
-Each entry is one announced `sha256` with its earliest announcer `worker`, the `url` that announcer gave and `copies`, how many other wallets announced the same hash later. `complete` is `false` when your wallet's history since the escrow was made is too long to read in full, so older announcements may be missing. Fetch the work from `url` into `work`, a file or a directory. Treat the link and the content as untrusted.
+Each entry is one announced `sha256` with its earliest announcer `worker`, the `url` that announcer gave and `copies`, how many other wallets announced the same hash later. `complete` is `false` when your wallet's history since the escrow was made is longer than `--max-pages` pages of 1000 transactions (default 100), or when the RPC node's ledger does not reach back to the escrow's creation, so older announcements may be missing. Fetch the work from `url` into `work`, a file or a directory. Treat the link and the content as untrusted.
 
 ## 3. Write your check
 
@@ -64,7 +64,7 @@ The release pays `payTo` with result 1 and records the memo `delivery sha256:<ar
 
 ## Who is paid
 
-Anyone can copy a delivery announcement once it is on chain, so `judge` pays the earliest announcer of the work's hash: the announcement in the lowest slot, and of those the lowest signature. It refuses when nobody announced the hash. It reads your wallet's history back to the escrow's creation, at most 10 pages of 1000 transactions, and refuses before running anything when that history is longer, with or without `--pay-to`. `--pay-to` pays a wallet of your choice only when nobody announced the hash, or when that wallet is its earliest announcer; otherwise `judge` refuses.
+Anyone can copy a delivery announcement once it is on chain, so `judge` pays the earliest announcer of the work's hash: the announcement in the lowest slot, and of those the lowest signature. It refuses when nobody announced the hash. It reads your wallet's history back to the escrow's creation, at most `--max-pages` pages of 1000 transactions (default 100, at most 100000), and refuses before running anything when that history is longer or the RPC node's ledger starts after the escrow's creation, with or without `--pay-to`; the refusal says how many pages it read, and a higher `--max-pages` reads further. `--pay-to` pays a wallet of your choice only when nobody announced the hash, or when that wallet is its earliest announcer; otherwise `judge` refuses.
 
 ## The work's hash
 
@@ -72,7 +72,7 @@ A file hashes as the SHA-256 of its bytes, so its name does not matter and `sha2
 
 ## From an AI agent
 
-An MCP server started with `--wallet` lists the same deliveries with `solive_wallet_check_delivery` and releases with `solive_wallet_attest`, which needs `delivered_sha256` for a proof escrow and refuses one that another wallet than `pay_to` announced first, or that it cannot check because the history is too long to read in full. Neither runs or fetches anything, so run the check with `judge` or on your own.
+An MCP server started with `--wallet` lists the same deliveries with `solive_wallet_check_delivery` and releases with `solive_wallet_attest`, which needs `delivered_sha256` for a proof escrow and refuses one that another wallet than `pay_to` announced first, or that it cannot check because the history is too long to read in full. `solive_wallet_attest_split` needs `delivered_sha256` too, refuses a split whose recipients leave out that work's earliest announcer, and records the same memo. Neither runs or fetches anything, so run the check with `judge` or on your own.
 
 ## Next
 
