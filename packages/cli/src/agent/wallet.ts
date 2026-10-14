@@ -40,8 +40,8 @@ import {
   announcements,
   chainTime,
   CLOCK_SYSVAR,
-  deliveriesOf,
-  DELIVERY_SCAN,
+  DELIVERY_PAGES,
+  deliveryRecord,
   deliveryInstructions,
   firstDelivery,
   MEMOS_PER_TRANSACTION,
@@ -49,6 +49,7 @@ import {
   MEMO_PROGRAM_ADDRESS,
   mintOf,
   neverLanded,
+  SIGNATURE_PAGE,
   tokenAccountIfMissing,
   type Transport,
   unmemoized,
@@ -687,7 +688,12 @@ const walletDeliver = define({
 export const notEarliest = (worker: string, sha256: string) =>
   `${worker} announced the work with sha256 ${sha256} first, so a release recording it pays ${worker}; anyone can copy an announcement once it is on chain, so the earliest announcer is paid`;
 
-export const DELIVERY_LIST = DELIVERY_SCAN * MEMOS_PER_TRANSACTION;
+export const DELIVERY_LIST = DELIVERY_PAGES * SIGNATURE_PAGE * MEMOS_PER_TRANSACTION;
+
+export const DELIVERED_NEEDED = "a proof escrow pays the earliest announcer of the work it releases for, so give that work's sha256";
+
+export const HISTORY_TOO_LONG =
+  "this wallet's history is too long to read in full, so the earliest announcer of the delivered work cannot be known; nothing is released from an incomplete record";
 
 const walletCheckDelivery = define({
   name: tool("wallet_check_delivery"),
@@ -701,6 +707,7 @@ const walletCheckDelivery = define({
     nonce: amount(),
     spec_hash: text("64 hex: the sha256 of the acceptance spec the escrow commits"),
     open: flag("whether the escrow can still be released"),
+    complete: flag(`whether the whole history was read; when false, older announcements may be missing and ${tool("wallet_attest")} refuses to release`),
     deliveries: list(
       object({
         sha256: text("64 hex: the announced work's hash"),
@@ -731,13 +738,15 @@ const walletCheckDelivery = define({
       throw new AgentRefusal("Unauthorized", notAttestor(params.attestor));
     }
     const open = held.status === IntentStatus.Open && held.expiresAt > (await chainTime(ctx.transport));
-    const announced = announcements(await deliveriesOf(ctx.transport, signer.address, input.intent));
+    const record = await deliveryRecord(ctx.transport, signer.address, input.intent);
+    const announced = announcements(record.deliveries);
     return {
       intent: input.intent,
       owner: held.owner,
       nonce: held.nonce,
       spec_hash: getBase16Decoder().decode(params.specHash),
       open,
+      complete: record.complete,
       deliveries: announced.map(({ sha256, first, copies }) => ({ sha256, worker: first.worker, url: first.url, signature: first.signature, copies })),
     };
   },
@@ -756,7 +765,7 @@ const walletAttest = define({
     nonce: amount("the escrow intent's nonce"),
     pay_to: account("the wallet to pay"),
     result: optional(amount("the result to attest, between the intent's min_result and max_result; default min_result")),
-    delivered_sha256: optional(text(`the sha256, as 64 hex digits, of the work this release pays for; recorded in a memo this wallet signs with the release, so the payer can check what it receives with ${tool("wallet_receipt")}`)),
+    delivered_sha256: optional(text(`the sha256, as 64 hex digits, of the work this release pays for; required for a proof escrow, whose release pays that work's earliest announcer; recorded in a memo this wallet signs with the release, so the payer can check what it receives with ${tool("wallet_receipt")}`)),
     approval: optional(text("the approval the preview returned; needed with send")),
     send: optional(flag("true signs the attestation and settles; leave out to preview")),
   }),
@@ -857,8 +866,15 @@ const walletAttest = define({
     const paid = formatAmount(shares.net, token.decimals);
     const setup = [...payee.create, ...treasury.create, ...partner.create, ...judge.create];
     const delivered = input.delivered_sha256 === undefined ? undefined : sha256Of(input.delivered_sha256, "delivered_sha256");
+    if (isProof && delivered === undefined) {
+      throw new InvalidInput([{ path: "delivered_sha256", message: DELIVERED_NEEDED }]);
+    }
     if (delivered !== undefined && isProof) {
-      const first = firstDelivery(await deliveriesOf(ctx.transport, signer.address, intent), delivered);
+      const record = await deliveryRecord(ctx.transport, signer.address, intent);
+      if (!record.complete) {
+        throw new AgentRefusal("HistoryTooLong", HISTORY_TOO_LONG);
+      }
+      const first = firstDelivery(record.deliveries, delivered);
       if (first !== null && first.worker !== input.pay_to) {
         throw new AgentRefusal("NotEarliestAnnouncer", notEarliest(first.worker, delivered));
       }

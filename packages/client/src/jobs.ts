@@ -20,11 +20,17 @@ import {
   SPEC_MEMO_PREFIX,
 } from "@intent-engine/core";
 import { chainTime, createdAccount } from "./accounts.js";
-import { MEMO_PROGRAM_ADDRESS, TRANSACTION_FETCHES, type Transport } from "./transport.js";
+import { type EngineTransaction, type ListedSignature, MEMO_PROGRAM_ADDRESS, TRANSACTION_FETCHES, type Transport } from "./transport.js";
 
 export const JOBS_LIMIT = 50;
 export const SPEC_SCAN = 10;
 export const DELIVERY_SCAN = 100;
+export const DELIVERY_PAGES = 10;
+export const SIGNATURE_PAGE = 1000;
+export const MAINNET_GENESIS_HASH = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
+export const DEVNET_GENESIS_HASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
+export const TESTNET_GENESIS_HASH = "4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsfY";
+export const PUBLIC_GENESIS_HASHES: ReadonlySet<string> = new Set([MAINNET_GENESIS_HASH, DEVNET_GENESIS_HASH, TESTNET_GENESIS_HASH]);
 export const MEMOS_PER_TRANSACTION = 8;
 export const MAX_SPEC_BYTES = 1_048_576;
 export const SPEC_TIMEOUT_MS = 10_000;
@@ -54,6 +60,17 @@ export type Delivery = {
   signature: Signature;
   slot: bigint;
   blockTime: bigint | null;
+};
+
+export type DeliveryRecord = { deliveries: Delivery[]; complete: boolean };
+
+export type Scan = { transactions: EngineTransaction[]; complete: boolean };
+
+export type ScanOptions = {
+  floor?: bigint | null;
+  memo?: string;
+  pages?: number;
+  until?: (transaction: EngineTransaction) => boolean;
 };
 
 export type Announcement = { sha256: string; first: Delivery; copies: number };
@@ -89,16 +106,82 @@ function proofOf(address: Address, intent: Intent): Proof | null {
   return params.kind === Kind.AttestedResult && params.specHash.some((b) => b !== 0) ? { address, intent, params } : null;
 }
 
-async function proofAt(transport: Transport, address: Address): Promise<Proof | null> {
+async function intentAt(transport: Transport, address: Address): Promise<Intent | null> {
   const view = await createdAccount(transport, address);
   const tag = getIntentDiscriminatorBytes();
   if (view === null || view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS || view.data.length !== getIntentSize() || !tag.every((b, i) => view.data[i] === b)) {
     return null;
   }
-  return proofOf(address, getIntentDecoder().decode(view.data));
+  return getIntentDecoder().decode(view.data);
 }
 
-export async function openProofEscrows(transport: Transport, attestor?: Address): Promise<Proof[]> {
+async function proofAt(transport: Transport, address: Address): Promise<Proof | null> {
+  const intent = await intentAt(transport, address);
+  return intent === null ? null : proofOf(address, intent);
+}
+
+export async function createdAtOf(transport: Transport, address: Address): Promise<bigint | null> {
+  return (await intentAt(transport, address))?.createdAt ?? null;
+}
+
+const memoMatches = (memo: string | undefined, texts: readonly string[]): boolean => memo === undefined || texts.some((text) => text.includes(memo));
+
+const reaches = (floor: bigint | null) => ({ blockTime }: { blockTime: bigint | null }): boolean => floor === null || blockTime === null || blockTime >= floor;
+
+async function fallbackScan(
+  transport: Transport,
+  of: Address,
+  floor: bigint | null,
+  memo: string | undefined,
+  until?: (transaction: EngineTransaction) => boolean,
+): Promise<Scan> {
+  const found = await transport.engineTransactions(DELIVERY_SCAN, of);
+  const within = found.filter(reaches(floor));
+  const transactions: EngineTransaction[] = [];
+  for (const transaction of within) {
+    if (transaction.failed || !memoMatches(memo, transaction.memos ?? [])) {
+      continue;
+    }
+    transactions.push(transaction);
+    if (until?.(transaction) === true) {
+      return { transactions, complete: true };
+    }
+  }
+  return { transactions, complete: found.length < DELIVERY_SCAN || within.length < found.length };
+}
+
+export async function scan(transport: Transport, of: Address, options: ScanOptions = {}): Promise<Scan> {
+  const { floor = null, memo, pages = DELIVERY_PAGES, until } = options;
+  const { signaturesOf, transactionsOf } = transport;
+  if (signaturesOf === undefined || transactionsOf === undefined) {
+    return fallbackScan(transport, of, floor, memo, until);
+  }
+  const transactions: EngineTransaction[] = [];
+  let before: string | undefined;
+  for (let page = 0; page < pages; page++) {
+    const listed = await signaturesOf.call(transport, of, SIGNATURE_PAGE, before);
+    if (listed.length === 0) {
+      return { transactions, complete: true };
+    }
+    const within = listed.filter(reaches(floor));
+    const wanted = within.filter((entry: ListedSignature) => !entry.failed && memoMatches(memo, entry.memo === null ? [] : [entry.memo]));
+    for (let at = 0; at < wanted.length; at += TRANSACTION_FETCHES) {
+      for (const transaction of await transactionsOf.call(transport, wanted.slice(at, at + TRANSACTION_FETCHES))) {
+        transactions.push(transaction);
+        if (until?.(transaction) === true) {
+          return { transactions, complete: true };
+        }
+      }
+    }
+    if (within.length < listed.length) {
+      return { transactions, complete: true };
+    }
+    before = listed[listed.length - 1]?.signature;
+  }
+  return { transactions, complete: false };
+}
+
+export async function openProofEscrows(transport: Transport, attestor?: Address, limit: number = JOBS_LIMIT): Promise<Proof[]> {
   const [accounts, now] = await Promise.all([transport.intents(), chainTime(transport)]);
   return accounts
     .map(({ address, data }) => proofOf(address, getIntentDecoder().decode(data)))
@@ -110,7 +193,7 @@ export async function openProofEscrows(transport: Transport, attestor?: Address)
         (attestor === undefined || proof.params.attestor === attestor),
     )
     .sort((a, b) => (a.intent.expiresAt === b.intent.expiresAt ? 0 : a.intent.expiresAt > b.intent.expiresAt ? -1 : 1))
-    .slice(0, JOBS_LIMIT);
+    .slice(0, limit);
 }
 
 const createdIn = (emitted: readonly Uint8Array[], intent: Address): boolean =>
@@ -119,27 +202,28 @@ const createdIn = (emitted: readonly Uint8Array[], intent: Address): boolean =>
     return event?.name === "IntentCreated" && "intent" in event.fields && event.fields.intent === intent;
   });
 
-export async function specUrlOf(transport: Transport, intent: Address): Promise<string | null> {
-  for (const tx of await transport.engineTransactions(SPEC_SCAN, intent, SPEC_MEMO_PREFIX)) {
-    if (tx.failed || !createdIn(tx.emitted, intent)) {
-      continue;
-    }
-    const urls = new Set(
-      (tx.memos ?? [])
-        .slice(0, MEMOS_PER_TRANSACTION)
-        .map(parseSpecMemo)
-        .flatMap((memo) => (memo === null ? [] : [memo.url])),
-    );
-    return urls.size === 1 ? ([...urls][0] ?? null) : null;
+export async function specUrlOf(transport: Transport, intent: Address, createdAt?: bigint): Promise<string | null> {
+  const floor = createdAt ?? (await proofAt(transport, intent))?.intent.createdAt ?? null;
+  const created = (transaction: EngineTransaction) => !transaction.failed && createdIn(transaction.emitted, intent);
+  const { transactions } = await scan(transport, intent, { floor, memo: SPEC_MEMO_PREFIX, until: created });
+  const tx = transactions.find(created);
+  if (tx === undefined) {
+    return null;
   }
-  return null;
+  const urls = new Set(
+    (tx.memos ?? [])
+      .slice(0, MEMOS_PER_TRANSACTION)
+      .map(parseSpecMemo)
+      .flatMap((memo) => (memo === null ? [] : [memo.url])),
+  );
+  return urls.size === 1 ? ([...urls][0] ?? null) : null;
 }
 
 export async function jobsOf(transport: Transport, attestor?: Address): Promise<Job[]> {
   const proofs = await openProofEscrows(transport, attestor);
   const urls: (string | null)[] = [];
   for (let at = 0; at < proofs.length; at += TRANSACTION_FETCHES) {
-    urls.push(...(await Promise.all(proofs.slice(at, at + TRANSACTION_FETCHES).map(({ address }) => specUrlOf(transport, address)))));
+    urls.push(...(await Promise.all(proofs.slice(at, at + TRANSACTION_FETCHES).map(({ address, intent }) => specUrlOf(transport, address, intent.createdAt)))));
   }
   return proofs.map(({ address, intent, params }, i) => ({
     intent: address,
@@ -155,12 +239,18 @@ export async function jobsOf(transport: Transport, attestor?: Address): Promise<
   }));
 }
 
+async function discarded(response: Response): Promise<void> {
+  await response.body?.cancel().catch(() => undefined);
+}
+
 async function bounded(response: Response, url: string): Promise<Uint8Array> {
   if (!response.ok) {
+    await discarded(response);
     throw new SpecUnreadable(url, `answered ${response.status}`);
   }
   const declared = Number(response.headers.get("content-length") ?? "0");
   if (declared > MAX_SPEC_BYTES) {
+    await discarded(response);
     throw new SpecUnreadable(url, `is larger than ${MAX_SPEC_BYTES} bytes`);
   }
   const reader = response.body?.getReader();
@@ -182,9 +272,12 @@ export async function readSpec(transport: Transport, get: SpecFetch, intent: Add
   if (proof === null) {
     return null;
   }
-  const url = await specUrlOf(transport, intent);
+  const url = await specUrlOf(transport, intent, proof.intent.createdAt);
   if (url === null) {
     return null;
+  }
+  if (new URL(url).protocol === "http:" && PUBLIC_GENESIS_HASHES.has(await transport.genesisHash())) {
+    throw new SpecUnreadable(url, "is a plain http url, which a spec on a public cluster may not use");
   }
   const bytes = await bounded(await get(url, { redirect: "error", signal: AbortSignal.timeout(SPEC_TIMEOUT_MS) }), url);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
@@ -213,18 +306,22 @@ export async function deliveryInstructions(transport: Transport, input: DeliverI
   };
 }
 
-export async function deliveriesOf(transport: Transport, judge: Address, intent?: Address): Promise<Delivery[]> {
-  let judged: ReadonlySet<Address>;
+export async function deliveryRecord(transport: Transport, judge: Address, intent?: Address): Promise<DeliveryRecord> {
+  let proofs: Proof[];
   if (intent === undefined) {
-    judged = new Set((await openProofEscrows(transport, judge)).map(({ address }) => address));
+    proofs = await openProofEscrows(transport, judge, Number.POSITIVE_INFINITY);
   } else {
     const proof = await proofAt(transport, intent);
-    judged = new Set(proof !== null && proof.params.attestor === judge ? [intent] : []);
+    proofs = proof !== null && proof.params.attestor === judge ? [proof] : [];
   }
-  if (judged.size === 0) {
-    return [];
+  const [oldest] = proofs;
+  if (oldest === undefined) {
+    return { deliveries: [], complete: true };
   }
-  return (await transport.engineTransactions(DELIVERY_SCAN, judge, DELIVERY_MEMO_PREFIX)).flatMap(({ signature, slot, blockTime, failed, memos, feePayer }) =>
+  const judged: ReadonlySet<Address> = new Set(proofs.map(({ address }) => address));
+  const floor = proofs.reduce((low, { intent: held }) => (held.createdAt < low ? held.createdAt : low), oldest.intent.createdAt);
+  const { transactions, complete } = await scan(transport, judge, { floor, memo: DELIVERY_MEMO_PREFIX });
+  const deliveries = transactions.flatMap(({ signature, slot, blockTime, failed, memos, feePayer }) =>
     failed || feePayer === undefined
       ? []
       : (memos ?? [])
@@ -236,6 +333,11 @@ export async function deliveriesOf(transport: Transport, judge: Address, intent?
               : [{ ...memo, worker: feePayer, signature: signature as Signature, slot, blockTime }],
           ),
   );
+  return { deliveries, complete: complete && !transactions.some(({ unread }) => unread === true) };
+}
+
+export async function deliveriesOf(transport: Transport, judge: Address, intent?: Address): Promise<Delivery[]> {
+  return (await deliveryRecord(transport, judge, intent)).deliveries;
 }
 
 const earlier = (a: Delivery, b: Delivery): boolean => a.slot < b.slot || (a.slot === b.slot && a.signature < b.signature);

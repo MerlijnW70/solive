@@ -32,7 +32,7 @@ import {
   formatTime,
 } from "@intent-engine/core";
 import { beforeEach, describe, expect, it } from "vitest";
-import { BlockhashExpired, FailedOnChain } from "@intent-engine/client";
+import { BlockhashExpired, DELIVERY_SCAN, FailedOnChain } from "@intent-engine/client";
 import { WALLET_NOT_MAINNET } from "../src/args.js";
 import { WRAPPED } from "../src/agent/create.js";
 import { AgentRefusal } from "../src/agent/problems.js";
@@ -41,8 +41,10 @@ import { notAWallet, TOKEN_ACCOUNT_RECIPIENT } from "../src/agent/owner.js";
 import { START_PROMPT, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
 import {
   DEFAULT_EXPIRES_IN,
+  DELIVERED_NEEDED,
   ESTIMATE_NEXT,
   ESTIMATE_SCAN,
+  HISTORY_TOO_LONG,
   LANDING_SECONDS,
   MAINNET_GENESIS,
   NO_FILLS,
@@ -425,7 +427,7 @@ describe("the wallet server", () => {
       expect(getBase16Decoder().decode(params.specHash)).toBe(specHash);
       expect(params.judgeFee).toBe(LAMPORTS_PER_SOL / 1_000n);
     }
-    const release = { owner, nonce, pay_to: worker };
+    const release = { owner, nonce, pay_to: worker, delivered_sha256: "ab".repeat(32) };
     const shown = await ok(client, "wallet_attest", release);
     expect(shown["warnings"]).toEqual([WARN_PROOF]);
     expect(shown["summary"]).toEqual(expect.arrayContaining([expect.stringContaining("Pays the judge"), expect.stringContaining(`Binds: the result to the committed spec ${specHash}`)]));
@@ -667,6 +669,7 @@ describe("the wallet server", () => {
       nonce,
       spec_hash: specHash,
       open: true,
+      complete: true,
       deliveries: [
         { sha256: work, worker, url: "https://example.org/work", signature: "first", copies: 1 },
         { sha256: own, worker: copier, url: "https://example.org/own", signature: "own", copies: 0 },
@@ -681,6 +684,26 @@ describe("the wallet server", () => {
     const plain = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.01", attestor: wallet, send: true });
     expect((await call(client, "wallet_check_delivery", { intent: plain["intent"] })).value).toMatchObject({ code: "NotAProof" });
     expect((await call(client, "wallet_check_delivery", { intent: worker })).value).toMatchObject({ code: "NotFound" });
+  });
+
+  it("attest refuses a proof escrow without delivered_sha256", async () => {
+    const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
+    h.watched.push(wallet);
+    h.engineLog = [];
+    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: "5d".repeat(32), send: true });
+    const intent = escrow["intent"] as Address;
+    const worker = (await generateKeyPairSigner()).address;
+    const work = "e8".repeat(32);
+    const release = { owner: wallet, nonce: escrow["nonce"] as string, pay_to: worker };
+    expect((await call(client, "wallet_attest", release)).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "delivered_sha256", message: DELIVERED_NEEDED }] });
+    expect(await ok(client, "wallet_attest", { ...release, delivered_sha256: work })).toMatchObject({ delivered_sha256: work, sent: false });
+
+    const junk = Array.from({ length: DELIVERY_SCAN }, (_, i) => ({ signature: `junk${i}`, slot: 20n, blockTime: null, failed: false, emitted: [] }));
+    h.engineLog = [...junk, { signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [deliveryMemo({ intent, sha256: work, url: "https://example.org/work" })], feePayer: worker }];
+    expect((await call(client, "wallet_attest", { ...release, delivered_sha256: work })).value).toMatchObject({ code: "HistoryTooLong", hint: HISTORY_TOO_LONG });
+    expect(await ok(client, "wallet_check_delivery", { intent })).toMatchObject({ complete: false });
+    const plain = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.01", attestor: wallet, send: true });
+    expect(await ok(client, "wallet_attest", { owner: wallet, nonce: plain["nonce"] as string, pay_to: worker })).toMatchObject({ sent: false });
   });
 
   it("shows an escrow's release and checks received work against the hash the release recorded", async () => {

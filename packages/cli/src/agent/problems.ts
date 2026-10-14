@@ -226,6 +226,7 @@ export const SERVER_PROBLEMS = {
   OwnerAccountMissing: never("the owner has no token account that can take the refund; crank with fund_accounts"),
   NotDeliverable: never("the intent is not an open proof escrow, so no work can be delivered to it"),
   NotEarliestAnnouncer: never("another wallet announced the delivered work first; a release recording that work pays its earliest announcer"),
+  HistoryTooLong: never("the history a release depends on is too long to read in full, so it is refused rather than decided from part of it"),
 } as const satisfies Record<string, Entry>;
 
 type ServerProblemName = keyof typeof SERVER_PROBLEMS;

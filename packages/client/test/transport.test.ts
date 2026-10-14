@@ -527,6 +527,37 @@ describe("engine transactions", () => {
     expect(asked).toEqual([SIG]);
   });
 
+  it("lists a page of signatures before a given one with their memos, and fetches only the listed transactions it is handed", async () => {
+    const s = stub([]);
+    const configs: unknown[] = [];
+    const asked: string[] = [];
+    const rpc = {
+      ...s.rpc,
+      getSignaturesForAddress: (_: Address, config: unknown) => {
+        configs.push(config);
+        return { send: async () => [{ signature: SIG, slot: 7n, blockTime: 100n, err: { InstructionError: [0, "Custom"] }, memo: "[3] abc" }, { signature: OTHER_SIG, slot: 6n, blockTime: null, err: null }] };
+      },
+      getTransaction: (signature: Signature) => ({
+        send: async () => {
+          asked.push(signature);
+          return { transaction: { message: { accountKeys: [] } }, meta: {} };
+        },
+      }),
+    };
+    const transport = rpcTransport(rpc as unknown as typeof s.rpc, s.wait);
+    const listed = (await transport.signaturesOf?.(OWNER, 1000, OTHER_SIG)) ?? [];
+    expect(configs).toEqual([{ limit: 1000, before: OTHER_SIG }]);
+    expect(listed).toEqual([
+      { signature: SIG, slot: 7n, blockTime: 100n, failed: true, memo: "[3] abc" },
+      { signature: OTHER_SIG, slot: 6n, blockTime: null, failed: false, memo: null },
+    ]);
+    expect((await transport.signaturesOf?.(OWNER, 5)) ?? []).toHaveLength(2);
+    expect(configs[1]).toEqual({ limit: 5 });
+    const found = (await transport.transactionsOf?.(listed.slice(1))) ?? [];
+    expect(found).toEqual([{ signature: OTHER_SIG, slot: 6n, blockTime: null, failed: false, emitted: [] }]);
+    expect(asked).toEqual([OTHER_SIG]);
+  });
+
   it("keeps a bounded number of fetched transactions and fetches only the ones it dropped", async () => {
     const s = stub([]);
     const sigs = Array.from({ length: KEPT_TRANSACTIONS + 1 }, (_, i) => `${SIG.slice(0, -4)}${String(i).padStart(4, "0")}` as Signature);

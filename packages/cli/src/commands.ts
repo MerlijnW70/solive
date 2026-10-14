@@ -57,8 +57,8 @@ import {
   chainTime,
   clusterDomain,
   createdAccount,
-  deliveriesOf,
   deliveryInstructions,
+  deliveryRecord,
   type IntentChanges,
   jobsOf,
   type Latest,
@@ -543,10 +543,12 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       }
       return { ...shown, sent: true, signature: await transport.send(instructions, worker) };
     }
-    case "deliveries":
+    case "deliveries": {
+      const record = await deliveryRecord(transport, command.attestor, command.intent);
       return {
         intent: command.intent,
-        deliveries: announcements(await deliveriesOf(transport, command.attestor, command.intent)).map(({ sha256, first, copies }) => ({
+        complete: record.complete,
+        deliveries: announcements(record.deliveries).map(({ sha256, first, copies }) => ({
           sha256,
           worker: first.worker,
           url: first.url,
@@ -555,6 +557,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
           copies,
         })),
       };
+    }
     case "judge":
       return judge(command, runtime, transport);
     case "treasury": {

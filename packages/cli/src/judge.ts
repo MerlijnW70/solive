@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type { Address, Signature } from "@solana/kit";
 import { decodeParams, IntentStatus, Kind, type ManifestEntry, manifestSha256 } from "@intent-engine/core";
-import { chainTime, createClient, deliveriesOf, firstDelivery, loadIntent, type Transport } from "@intent-engine/client";
+import { chainTime, createClient, deliveryRecord, firstDelivery, loadIntent, type Transport } from "@intent-engine/client";
 import type { Command } from "./args.js";
 import { NOT_SENT } from "./flows.js";
 import type { Runtime } from "./commands.js";
@@ -169,7 +169,13 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   const artifact = resolve(command.artifact);
   const read = await readArtifact(artifact);
   const sha256 = read.sha256;
-  const first = firstDelivery(await deliveriesOf(transport, signer.address, address), sha256);
+  const record = await deliveryRecord(transport, signer.address, address);
+  if (!record.complete) {
+    throw new JudgeRefused(
+      `the judge's history is too long to read in full, so the earliest announcer of the artifact with sha256 ${sha256} for intent ${address} cannot be known; nothing was run or paid`,
+    );
+  }
+  const first = firstDelivery(record.deliveries, sha256);
   const payTo = command.payTo ?? first?.worker;
   if (payTo === undefined) {
     throw new JudgeRefused(`nobody announced the artifact with sha256 ${sha256} for intent ${address}; pass --pay-to to pay a worker who did not announce it`);

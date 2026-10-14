@@ -35,6 +35,8 @@ export type EngineTransaction = {
   unread?: true;
 };
 
+export type ListedSignature = { signature: string; slot: bigint; blockTime: bigint | null; failed: boolean; memo: string | null };
+
 export type Latest = { blockhash: Blockhash; lastValidBlockHeight: bigint };
 
 export type IntentRead = { minContextSlot?: bigint; onSlot?: (slot: bigint) => void };
@@ -53,6 +55,8 @@ export interface Transport {
   genesisHash(): Promise<string>;
   intents(owner?: Address, read?: IntentRead): Promise<ProgramAccount[]>;
   engineTransactions(limit: number, of?: Address, memo?: string): Promise<EngineTransaction[]>;
+  signaturesOf?(of: Address, limit: number, before?: string): Promise<ListedSignature[]>;
+  transactionsOf?(listed: readonly ListedSignature[]): Promise<EngineTransaction[]>;
   recentFees(accounts: readonly Address[]): Promise<bigint[]>;
   budget(instructions: readonly Instruction[], feePayer: Address): Promise<Instruction[]>;
   airdrop(address: Address, lamports: bigint): Promise<string>;
@@ -117,7 +121,7 @@ export type RpcLike = {
   ): Pending<readonly ProgramEntry[] | { context: { slot: bigint }; value: readonly ProgramEntry[] }>;
   getSignaturesForAddress(
     address: Address,
-    config: { limit: number } & AtLeast,
+    config: { limit: number; before?: Signature } & AtLeast,
   ): Pending<readonly { signature: Signature; slot: bigint; blockTime: bigint | null; err: unknown; memo?: string | null }[]>;
   getTransaction(
     signature: Signature,
@@ -407,6 +411,92 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     }
     return signature;
   };
+  const load = async (entry: ListedSignature): Promise<EngineTransaction & { complete: boolean }> => {
+    const tx = await patiently(
+      () =>
+        rpc
+          .getTransaction(entry.signature as Signature, {
+            encoding: "json",
+            maxSupportedTransactionVersion: 0,
+            commitment: "confirmed",
+          })
+          .send(),
+      wait,
+    );
+    const keys = [
+      ...(tx?.transaction.message.accountKeys ?? []),
+      ...(tx?.meta?.loadedAddresses?.writable ?? []),
+      ...(tx?.meta?.loadedAddresses?.readonly ?? []),
+    ];
+    const emitted = (tx?.meta?.innerInstructions ?? [])
+      .flatMap((group) => group.instructions)
+      .filter((ix) => keys[ix.programIdIndex] === INTENT_ENGINE_PROGRAM_ADDRESS)
+      .map((ix) => Uint8Array.from(getBase58Encoder().encode(ix.data)));
+    const memos = (tx?.transaction.message.instructions ?? [])
+      .filter((ix) => keys[ix.programIdIndex] === MEMO_PROGRAM_ADDRESS)
+      .map((ix) => new TextDecoder().decode(Uint8Array.from(getBase58Encoder().encode(ix.data))));
+    const feePayer = tx?.transaction.message.accountKeys[0];
+    return {
+      signature: entry.signature,
+      slot: entry.slot,
+      blockTime: entry.blockTime,
+      failed: entry.failed,
+      emitted,
+      ...(memos.length === 0 ? {} : { memos }),
+      ...(feePayer === undefined ? {} : { feePayer }),
+      ...(tx?.meta === null || tx?.meta === undefined ? { unread: true as const } : {}),
+      complete: tx?.meta !== null && tx?.meta !== undefined && entry.blockTime !== null,
+    };
+  };
+  const fetchOne = (entry: ListedSignature): Promise<EngineTransaction> => {
+    const known = fetched.get(entry.signature);
+    if (known !== undefined) {
+      fetched.delete(entry.signature);
+      fetched.set(entry.signature, known);
+      return known.then(withoutMark);
+    }
+    const pending = load(entry);
+    fetched.set(entry.signature, pending);
+    pending.then(
+      (found) => {
+        if (!found.complete && fetched.get(entry.signature) === pending) {
+          fetched.delete(entry.signature);
+        }
+      },
+      () => {
+        if (fetched.get(entry.signature) === pending) {
+          fetched.delete(entry.signature);
+        }
+      },
+    );
+    return pending.then(withoutMark);
+  };
+  const fetchAll = async (listed: readonly ListedSignature[]): Promise<EngineTransaction[]> => {
+    const found: EngineTransaction[] = [];
+    for (let i = 0; i < listed.length; i += TRANSACTION_FETCHES) {
+      found.push(...(await Promise.all(listed.slice(i, i + TRANSACTION_FETCHES).map(fetchOne))));
+    }
+    for (const old of fetched.keys()) {
+      if (fetched.size <= KEPT_TRANSACTIONS) {
+        break;
+      }
+      fetched.delete(old);
+    }
+    return found;
+  };
+  const listSignatures = async (of: Address, limit: number, before?: string): Promise<ListedSignature[]> => {
+    const listed = await patiently(
+      () => rpc.getSignaturesForAddress(of, { limit, ...(before === undefined ? {} : { before: before as Signature }), ...atLeast() }).send(),
+      wait,
+    );
+    return listed.map((entry) => ({
+      signature: entry.signature,
+      slot: entry.slot,
+      blockTime: entry.blockTime,
+      failed: entry.err !== null,
+      memo: entry.memo ?? null,
+    }));
+  };
   return {
     async getAccount(address) {
       const { value } = await patiently(() => rpc.getAccountInfo(address, { encoding: "base64", ...atLeast() }).send(), wait);
@@ -484,83 +574,11 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       return [...instructions];
     },
     async engineTransactions(limit, of, memo) {
-      const listed = await patiently(
-        () => rpc.getSignaturesForAddress(of ?? INTENT_ENGINE_PROGRAM_ADDRESS, { limit, ...atLeast() }).send(),
-        wait,
-      );
-      const fetchOne = (entry: (typeof signatures)[number]): Promise<EngineTransaction> => {
-        const known = fetched.get(entry.signature);
-        if (known !== undefined) {
-          fetched.delete(entry.signature);
-          fetched.set(entry.signature, known);
-          return known.then(withoutMark);
-        }
-        const pending = load(entry);
-        fetched.set(entry.signature, pending);
-        pending.then(
-          (found) => {
-            if (!found.complete && fetched.get(entry.signature) === pending) {
-              fetched.delete(entry.signature);
-            }
-          },
-          () => {
-            if (fetched.get(entry.signature) === pending) {
-              fetched.delete(entry.signature);
-            }
-          },
-        );
-        return pending.then(withoutMark);
-      };
-      const load = async (entry: (typeof signatures)[number]) => {
-        const tx = await patiently(
-          () =>
-            rpc
-              .getTransaction(entry.signature, {
-                encoding: "json",
-                maxSupportedTransactionVersion: 0,
-                commitment: "confirmed",
-              })
-              .send(),
-          wait,
-        );
-        const keys = [
-          ...(tx?.transaction.message.accountKeys ?? []),
-          ...(tx?.meta?.loadedAddresses?.writable ?? []),
-          ...(tx?.meta?.loadedAddresses?.readonly ?? []),
-        ];
-        const emitted = (tx?.meta?.innerInstructions ?? [])
-          .flatMap((group) => group.instructions)
-          .filter((ix) => keys[ix.programIdIndex] === INTENT_ENGINE_PROGRAM_ADDRESS)
-          .map((ix) => Uint8Array.from(getBase58Encoder().encode(ix.data)));
-        const memos = (tx?.transaction.message.instructions ?? [])
-          .filter((ix) => keys[ix.programIdIndex] === MEMO_PROGRAM_ADDRESS)
-          .map((ix) => new TextDecoder().decode(Uint8Array.from(getBase58Encoder().encode(ix.data))));
-        const feePayer = tx?.transaction.message.accountKeys[0];
-        return {
-          signature: entry.signature,
-          slot: entry.slot,
-          blockTime: entry.blockTime,
-          failed: entry.err !== null,
-          emitted,
-          ...(memos.length === 0 ? {} : { memos }),
-          ...(feePayer === undefined ? {} : { feePayer }),
-          ...(tx?.meta === null || tx?.meta === undefined ? { unread: true as const } : {}),
-          complete: tx?.meta !== null && tx?.meta !== undefined && entry.blockTime !== null,
-        };
-      };
-      const signatures = memo === undefined ? listed : listed.filter((entry) => (entry.memo ?? "").includes(memo));
-      const found: EngineTransaction[] = [];
-      for (let i = 0; i < signatures.length; i += TRANSACTION_FETCHES) {
-        found.push(...(await Promise.all(signatures.slice(i, i + TRANSACTION_FETCHES).map(fetchOne))));
-      }
-      for (const old of fetched.keys()) {
-        if (fetched.size <= KEPT_TRANSACTIONS) {
-          break;
-        }
-        fetched.delete(old);
-      }
-      return found;
+      const listed = await listSignatures(of ?? INTENT_ENGINE_PROGRAM_ADDRESS, limit);
+      return fetchAll(memo === undefined ? listed : listed.filter((entry) => (entry.memo ?? "").includes(memo)));
     },
+    signaturesOf: (of, limit, before) => listSignatures(of, limit, before),
+    transactionsOf: (listed) => fetchAll(listed),
     async intents(owner, read) {
       const least = atLeast(read?.minContextSlot);
       const found = await patiently(async () => {

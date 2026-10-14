@@ -1,4 +1,5 @@
 import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, none } from "@solana/kit";
+import { getTransferSolInstruction } from "@solana-program/system";
 import { getCreateAssociatedTokenIdempotentInstructionAsync, getMintEncoder, getMintSize, getMintToInstruction } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import {
@@ -189,5 +190,17 @@ describe("filling from the client", () => {
       { mint: w.inputMint, name: undefined, account: await ata(solver.address, w.inputMint), amount: splitFee(ESCROW, FEE_BPS).net, decimals: 6 },
     ]);
     expect(await client.balances((await generateKeyPairSigner()).address, [])).toEqual({ sol: 0n, tokens: [] });
+  });
+
+  it("finds the fill after 150 later transactions name the intent", async () => {
+    const { w, client, solver, order, swap, minted } = await setup();
+    const created = await client.createIntent({ ...order, params: swap });
+    const signature = await client.fill({ solver, owner: w.owner.address, nonce: created.nonce, route: await minted(solver, MIN_OUT) });
+    const stranger = await funded(w.chain);
+    for (let i = 0; i < 150; i++) {
+      await w.chain.transport.send([getTransferSolInstruction({ source: stranger, destination: created.intent, amount: 0n })], stranger);
+    }
+    expect((await client.history(created.intent)).some(({ name }) => name === "IntentFilled")).toBe(false);
+    expect(await client.fillOf(created.intent)).toMatchObject({ steps: 1, solver: solver.address, delivered: MIN_OUT, signature });
   });
 });

@@ -7,14 +7,19 @@ import {
   announcements,
   createClient,
   type Delivery,
+  DELIVERY_PAGES,
   DELIVERY_SCAN,
+  deliveryRecord,
+  DEVNET_GENESIS_HASH,
   firstDelivery,
+  JOBS_LIMIT,
   MAX_SPEC_BYTES,
   memoInstruction,
   NotDeliverable,
   SPEC_URL_NEEDS_PROOF,
   SpecUnreadable,
   type SpecFetch,
+  type Transport,
 } from "../src/index.js";
 import { funded, world, type World } from "./svm.js";
 
@@ -51,6 +56,21 @@ async function announce(w: World, worker: KeyPairSigner, to: Address, memos: rea
     [...memos.map((memo) => memoInstruction(worker, memo)), getTransferSolInstruction({ source: worker, destination: to, amount: 0n })],
     worker,
   );
+}
+
+async function flood(w: World, to: Address, times: number, memos: (i: number) => readonly string[] = () => []) {
+  const sender = await funded(w.chain);
+  for (let i = 0; i < times; i++) {
+    await announce(w, sender, to, memos(i));
+  }
+}
+
+function paged(inner: Transport, size: number): Transport {
+  const { signaturesOf } = inner;
+  if (signaturesOf === undefined) {
+    throw new Error("the transport lists no signature pages");
+  }
+  return { ...inner, signaturesOf: (of, limit, before) => signaturesOf(of, Math.min(limit, size), before) };
 }
 
 describe("jobs", () => {
@@ -219,5 +239,125 @@ describe("deliveries", () => {
     await expect(client.deliver({ worker, intent: open.intent, sha256: WORK.toUpperCase(), url: WORK_URL })).rejects.toThrow(RangeError);
     await expect(client.deliver({ worker, intent: open.intent, sha256: WORK, url: "ftp://example.org/x" })).rejects.toThrow(RangeError);
     expect(await client.deliveries({ judge: judge.address })).toEqual([]);
+  });
+});
+
+describe("history past a window of recent transactions", () => {
+  it("names the honest announcer after 150 later judge transactions", async () => {
+    const { w, client, judge, order } = await setting();
+    const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
+    const worker = await funded(w.chain);
+    const copier = await funded(w.chain);
+    await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL });
+    w.chain.svm.warpToSlot(w.chain.svm.getClock().slot + 1n);
+    await flood(w, judge.address, 150);
+    await client.deliver({ worker: copier, intent: job.intent, sha256: WORK, url: "https://example.org/stolen" });
+
+    const record = await client.deliveryRecord({ judge: judge.address, intent: job.intent });
+    expect(record.complete).toBe(true);
+    expect(firstDelivery(record.deliveries, WORK)).toMatchObject({ worker: worker.address, url: WORK_URL });
+    expect(await client.deliveries({ judge: judge.address, intent: job.intent })).toEqual(record.deliveries);
+    expect(firstDelivery(await client.deliveries({ judge: judge.address }), WORK)?.worker).toBe(worker.address);
+  });
+
+  it("reports an incomplete delivery record when the page cap is reached", async () => {
+    const { w, client, judge, order } = await setting();
+    const job = await client.createIntent({ ...order, params: proof(judge.address) });
+    const worker = await funded(w.chain);
+    await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL });
+    const size = 5;
+    await flood(w, judge.address, DELIVERY_PAGES * size + 1);
+    const capped = paged(w.chain.transport, size);
+
+    expect(DELIVERY_PAGES).toBeGreaterThanOrEqual(10);
+    const record = await deliveryRecord(capped, judge.address, job.intent);
+    expect(record).toEqual({ deliveries: [], complete: false });
+    expect(await createClient({ url: LOCAL, transport: capped }).deliveryRecord({ judge: judge.address })).toEqual({ deliveries: [], complete: false });
+    const full = await deliveryRecord(w.chain.transport, judge.address, job.intent);
+    expect(full.complete).toBe(true);
+    expect(full.deliveries.map(({ worker: by }) => by)).toEqual([worker.address]);
+    expect((await deliveryRecord(paged(w.chain.transport, 100), judge.address, job.intent)).complete).toBe(true);
+  });
+
+  it("stops a scan at the escrow's creation and reads a transport without paging as incomplete past its window", async () => {
+    const { w, client, judge, order } = await setting();
+    await flood(w, judge.address, DELIVERY_PAGES * 5 + 1);
+    const job = await client.createIntent({ ...order, params: proof(judge.address) });
+    const worker = await funded(w.chain);
+    await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL });
+    w.chain.svm.warpToSlot(w.chain.svm.getClock().slot + 1n);
+    const clock = w.chain.svm.getClock();
+    clock.unixTimestamp += 10n;
+    w.chain.svm.setClock(clock);
+    const late = await client.createIntent({ ...order, params: proof(judge.address) });
+    await client.deliver({ worker, intent: late.intent, sha256: WORK, url: WORK_URL });
+    expect((await deliveryRecord(paged(w.chain.transport, 5), judge.address, late.intent)).complete).toBe(true);
+
+    const { signaturesOf: _, transactionsOf: __, ...unpaged } = w.chain.transport;
+    expect(await deliveryRecord(unpaged, judge.address, job.intent)).toMatchObject({ deliveries: [{ worker: worker.address }], complete: true });
+    await flood(w, judge.address, DELIVERY_SCAN);
+    expect(await deliveryRecord(unpaged, judge.address, job.intent)).toEqual({ deliveries: [], complete: false });
+    expect((await deliveryRecord(unpaged, judge.address, late.intent)).complete).toBe(false);
+  });
+
+  it("finds the spec url after 30 later transactions name the intent", async () => {
+    const { w, client, judge, order } = await setting(serving({ [SPEC_URL]: SPEC }));
+    const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
+    await flood(w, job.intent, 30, (i) => (i % 2 === 0 ? [specMemo("https://evil.example/spec.md")] : []));
+
+    expect((await client.jobs({ attestor: judge.address }))[0]).toMatchObject({ intent: job.intent, specUrl: SPEC_URL });
+    expect(await client.spec(job.intent)).toMatchObject({ url: SPEC_URL, matches: true });
+  });
+
+  it("covers more than 50 open escrows of one judge", async () => {
+    const { w, client, judge, order } = await setting();
+    const made = [];
+    for (let i = 0; i <= JOBS_LIMIT; i++) {
+      made.push(await client.createIntent({ ...order, params: { ...proof(judge.address), amountIn: 1n }, expiresIn: 3_600n + BigInt(i) }));
+    }
+    const [soonest] = made;
+    if (soonest === undefined) {
+      throw new Error("no escrow was made");
+    }
+    expect((await client.jobs({ attestor: judge.address })).map(({ intent }) => intent)).not.toContain(soonest.intent);
+    const worker = await funded(w.chain);
+    await client.deliver({ worker, intent: soonest.intent, sha256: WORK, url: WORK_URL });
+
+    expect(await client.deliveries({ judge: judge.address })).toMatchObject([{ intent: soonest.intent, worker: worker.address, sha256: WORK }]);
+  });
+
+  it("refuses an http spec url on devnet", async () => {
+    const local = "http://127.0.0.1:8080/spec.md";
+    const fetched: Fetched[] = [];
+    const { w, client, judge, order } = await setting(serving({ [local]: SPEC }, fetched));
+    const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: local });
+    expect(await client.spec(job.intent)).toMatchObject({ url: local, matches: true });
+
+    const devnet = createClient({ url: LOCAL, transport: { ...w.chain.transport, genesisHash: async () => DEVNET_GENESIS_HASH }, fetch: serving({ [local]: SPEC }, fetched) });
+    fetched.length = 0;
+    await expect(devnet.spec(job.intent)).rejects.toThrow(SpecUnreadable);
+    expect(fetched).toEqual([]);
+    expect((await devnet.jobs())[0]).toMatchObject({ specUrl: local });
+  });
+
+  it("cancels the body of a response it rejects before reading it", async () => {
+    const cancelled: string[] = [];
+    const body = (name: string) =>
+      new ReadableStream<Uint8Array>({
+        pull: (controller) => controller.enqueue(new Uint8Array(16)),
+        cancel: () => {
+          cancelled.push(name);
+        },
+      });
+    const replies: Record<string, () => Response> = {
+      "https://example.org/gone": () => new Response(body("gone"), { status: 404 }),
+      "https://example.org/huge": () => new Response(body("huge"), { headers: { "content-length": String(MAX_SPEC_BYTES + 1) } }),
+    };
+    const { client, judge, order } = await setting(async (url) => (replies[url] ?? (() => new Response("missing", { status: 404 })))());
+    for (const url of Object.keys(replies)) {
+      const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: url });
+      await expect(client.spec(job.intent)).rejects.toThrow(SpecUnreadable);
+    }
+    expect(cancelled).toEqual(["gone", "huge"]);
   });
 });

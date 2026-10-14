@@ -47,20 +47,25 @@ import {
 import { budgeted, type Priority, simulated } from "./budget.js";
 import { type EngineError, explain } from "./errors.js";
 import {
+  createdAtOf,
   type DeliverInput,
   deliveriesOf,
   type Delivery,
   deliveryInstructions,
+  type DeliveryRecord,
+  deliveryRecord,
   type Job,
   jobsOf,
   memoInstruction,
   readSpec,
+  scan,
   type Spec,
   type SpecFetch,
 } from "./jobs.js";
 import { initUserIfMissing, tokenAccountIfMissing, wrapIfShort } from "./setup.js";
 import {
   changesFrom,
+  type EngineTransaction,
   intentNotifications,
   type Notifications,
   pause,
@@ -170,6 +175,7 @@ export type Client = {
   spec(intent: Address): Promise<Spec | null>;
   deliver(input: DeliverInput): Promise<Signature>;
   deliveries(filter: { judge: Address; intent?: Address }): Promise<Delivery[]>;
+  deliveryRecord(filter: { judge: Address; intent?: Address }): Promise<DeliveryRecord>;
 };
 
 export const SPEC_URL_NEEDS_PROOF = "specUrl needs an AttestedResult intent with a non-zero specHash";
@@ -222,6 +228,23 @@ function nonceAfter(owner: Address, user: NonceWindow | null): bigint {
 }
 
 const decoded = ({ address, data }: ProgramAccount): IntentAccount => ({ address, intent: getIntentDecoder().decode(data) });
+
+const FILL_EVENTS: ReadonlySet<string> = new Set(["IntentFilled", "FillEnded"]);
+
+function eventsIn(transactions: readonly EngineTransaction[], intent: Address): HistoryEvent[] {
+  return transactions
+    .filter(({ failed }) => !failed)
+    .flatMap(({ signature, slot, blockTime, emitted }) =>
+      emitted
+        .map((data) => decodeEvent(data) as EngineEvent | null)
+        .filter((event): event is EngineEvent => event !== null && "intent" in event.fields && event.fields.intent === intent)
+        .reverse()
+        .map((event) => ({ ...event, signature: signature as Signature, slot, blockTime })),
+    );
+}
+
+const fillIn = (intent: Address) => (transaction: EngineTransaction): boolean =>
+  eventsIn([transaction], intent).some(({ name }) => FILL_EVENTS.has(name));
 
 export function createClient(options: ClientOptions): Client {
   const { url, priority = 0n, pollMs = WATCH_POLL_MS, resyncSeconds = WATCH_WAIT_SECONDS } = options;
@@ -385,18 +408,11 @@ export function createClient(options: ClientOptions): Client {
   };
 
   const history = async (intent: Address, limit = HISTORY_LIMIT): Promise<HistoryEvent[]> =>
-    (await transport.engineTransactions(limit, intent))
-      .filter(({ failed }) => !failed)
-      .flatMap(({ signature, slot, blockTime, emitted }) =>
-        emitted
-          .map((data) => decodeEvent(data) as EngineEvent | null)
-          .filter((event): event is EngineEvent => event !== null && "intent" in event.fields && event.fields.intent === intent)
-          .reverse()
-          .map((event) => ({ ...event, signature: signature as Signature, slot, blockTime })),
-      );
+    eventsIn(await transport.engineTransactions(limit, intent), intent);
 
   const fillOf = async (intent: Address): Promise<Fill | null> => {
-    const events = await history(intent);
+    const floor = await createdAtOf(transport, intent);
+    const events = eventsIn((await scan(transport, intent, { floor, until: fillIn(intent) })).transactions, intent);
     for (const event of events) {
       const { signature, slot, blockTime } = event;
       if (event.name === "IntentFilled") {
@@ -592,5 +608,6 @@ export function createClient(options: ClientOptions): Client {
     spec: (intent) => readSpec(transport, options.fetch ?? fetch, intent),
     deliver: async (input) => send((await deliveryInstructions(transport, input)).instructions, input.worker),
     deliveries: ({ judge, intent }) => deliveriesOf(transport, judge, intent),
+    deliveryRecord: ({ judge, intent }) => deliveryRecord(transport, judge, intent),
   };
 }

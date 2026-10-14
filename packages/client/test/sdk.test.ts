@@ -36,10 +36,11 @@ import {
   CLOCK_SYSVAR,
   type ClientOptions,
   createClient,
-  DELIVERY_SCAN,
+  DELIVERY_PAGES,
   JOBS_LIMIT,
   loadUser,
   MAX_SPEC_BYTES,
+  SIGNATURE_PAGE,
   type Transport,
 } from "../src/index.js";
 import { FEE_BPS, world, type World } from "./svm.js";
@@ -242,7 +243,7 @@ describe("the sdk page", () => {
   it("states the bounds jobs, spec and deliveries read within", () => {
     expect(PAGE).toContain(`\`jobs\` lists up to ${JOBS_LIMIT} open, unexpired proof escrows, those with the most time left first`);
     expect(PAGE).toContain(`following no redirect and reading at most ${MAX_SPEC_BYTES} bytes`);
-    expect(PAGE).toContain(`\`deliveries\` from its last ${DELIVERY_SCAN} transactions`);
+    expect(PAGE).toContain(`at most ${DELIVERY_PAGES} pages of ${SIGNATURE_PAGE} transactions`);
   });
 
   it("runs every ts block in order against the engine and prints what it says", { timeout: 120_000 }, async () => {

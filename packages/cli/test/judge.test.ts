@@ -9,7 +9,7 @@ import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { TransactionMetadata } from "litesvm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { deliveryMemo, findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, manifestSha256, RELEASE_MEMO_PREFIX, releaseMemo } from "@intent-engine/core";
-import { createClient, type EngineTransaction } from "@intent-engine/client";
+import { createClient, DELIVERY_SCAN, type EngineTransaction } from "@intent-engine/client";
 import { ENV_KEYPAIR, JUDGE_TIMEOUT, MAX_JUDGE_TIMEOUT, RUN_NEEDED } from "../src/args.js";
 import { NOT_SENT } from "../src/flows.js";
 import { artifactSha256, CHECK_ENV, checkEnv, ENV_ARTIFACT_PATH, ENV_ARTIFACT_SHA256, ENV_SPEC_PATH, runCheck, SKIPPED } from "../src/judge.js";
@@ -256,9 +256,25 @@ describe("intent-engine judge", () => {
   it("lists the announced hashes of an escrow with their earliest announcer and how many copied them", async () => {
     expect((await cli(["deliveries", "--attestor", j.judge.address, "--intent", j.intent], {})).json()).toEqual({
       intent: j.intent,
+      complete: true,
       deliveries: [{ sha256: j.sha256, worker: j.worker.address, url: WORK_URL, signature: "first", slot: "5", copies: 1 }],
     });
-    expect((await cli(["deliveries", "--attestor", j.worker.address, "--intent", j.intent], {})).json()).toEqual({ intent: j.intent, deliveries: [] });
+    expect((await cli(["deliveries", "--attestor", j.worker.address, "--intent", j.intent], {})).json()).toEqual({ intent: j.intent, complete: true, deliveries: [] });
+  });
+
+  it("judge refuses an incomplete delivery record", async () => {
+    const marker = join(j.dir, "ran");
+    const run = `touch "${marker}"`;
+    const junk = Array.from({ length: DELIVERY_SCAN }, (_, i): EngineTransaction => ({ signature: `junk${i}`, slot: 20n, blockTime: null, failed: false, emitted: [] }));
+    h.engineLog = [...junk, ...h.engineLog];
+    for (const more of [[], ["--pay-to", j.worker.address]]) {
+      const refused = await cli(judging(j, run, ...more, "--yes"), keys);
+      expect(refused.code).toBe(EXIT_FAILED);
+      expect(refused.err).toContain("history is too long to read in full");
+    }
+    expect(existsSync(marker)).toBe(false);
+    expect(status(j.intent)).toBe(IntentStatus.Open);
+    expect((await cli(["deliveries", "--attestor", j.judge.address, "--intent", j.intent], {})).json()).toMatchObject({ intent: j.intent, complete: false });
   });
 });
 
