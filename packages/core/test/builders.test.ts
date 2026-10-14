@@ -16,6 +16,9 @@ import {
   nextEpoch,
   remainingOf,
   feeBpsFor,
+  maxFeeBpsFor,
+  MAX_FEE_BPS,
+  MAX_ATTESTED_FEE_BPS,
   IntentStatus,
   U64_MAX,
   buildAdvanceNonce,
@@ -807,6 +810,11 @@ describe("fee resolution", () => {
     expect(feeBpsFor({ ...config, kindFeeMask: 0 }, Kind.SwapExactIn)).toBe(5);
     expect(feeBpsFor({ ...config, kindFeeMask: 0b0_1100 }, Kind.DutchAuction)).toBe(9);
     expect(feeBpsFor({ ...config, kindFeeMask: 0b0_1100 }, Kind.LimitOrder)).toBe(8);
+  });
+
+  it("caps the attested fee at 300 bps and every other kind at 100, as the program does", () => {
+    expect([MAX_FEE_BPS, MAX_ATTESTED_FEE_BPS]).toEqual([100, 300]);
+    expect([Kind.SwapExactIn, Kind.LimitOrder, Kind.DutchAuction, Kind.AttestedResult].map(maxFeeBpsFor)).toEqual([100, 100, 100, 300]);
   });
 
   it("refuses a table that does not cover the kind", () => {

@@ -239,7 +239,7 @@ describe("numbers", () => {
         "--create-fee",
         "0",
         "--kind-fees",
-        "limit=65535,dutch=0",
+        "limit=100,dutch=0,attested=300",
         "--partner-cut",
         "65535",
       ]),
@@ -249,8 +249,8 @@ describe("numbers", () => {
       priority: 0n,
       by: { keypair: "k", yes: false },
       economics: {
-        kindFeeMask: 0b1100,
-        kindFeeBps: [0, 65_535, 0, 0],
+        kindFeeMask: 0b1_1100,
+        kindFeeBps: [0, 100, 0, 300],
         partnerCutBps: 65_535,
         crankBounty: 4_294_967_295,
         createFee: 0,
@@ -267,7 +267,9 @@ describe("numbers", () => {
     expect(usage([...base, "--kind-fees", "swap"])).toBe(
       "--kind-fees takes name=bps pairs for swap, limit, dutch, attested; got swap",
     );
-    expect(usage([...base, "--kind-fees", "swap=65536"])).toBe("--kind-fees must be an integer from 0 to 65535");
+    expect(usage([...base, "--kind-fees", "swap=101"])).toBe("--kind-fees swap must be an integer from 0 to 100 bps");
+    expect(usage([...base, "--kind-fees", "attested=301"])).toBe("--kind-fees attested must be an integer from 0 to 300 bps");
+    expect(usage([...base, "--kind-fees", "dutch=1.5"])).toBe("--kind-fees dutch must be an integer from 0 to 100 bps");
     expect(usage([...base, "--partner-cut", "1.5"])).toBe("--partner-cut must be an integer from 0 to 65535");
     expect(usage(["set-economics", "--keypair", "k", "--bounty", "4294967296", "--create-fee", "1"])).toBe(
       "--bounty must be an integer from 0 to 4294967295",
@@ -747,11 +749,11 @@ describe("admin commands", () => {
     expect(() => parsePause("everything", "flags")).toThrow("--flags must be none, create, fill or all");
   });
 
-  it("bounds the fee to sixteen bits and leaves the cap to the program", () => {
+  it("bounds the base fee to the program's cap of 100 bps", () => {
     expect(parseFeeBps("0")).toBe(0);
-    expect(parseFeeBps("65535")).toBe(65_535);
-    for (const bad of ["65536", "-1", "1.5", "x", ""]) {
-      expect(() => parseFeeBps(bad)).toThrow("--fee-bps must be an integer from 0 to 65535");
+    expect(parseFeeBps("100")).toBe(100);
+    for (const bad of ["101", "65536", "-1", "1.5", "x", ""]) {
+      expect(() => parseFeeBps(bad)).toThrow("--fee-bps must be an integer from 0 to 100");
     }
   });
 

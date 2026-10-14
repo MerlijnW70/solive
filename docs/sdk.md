@@ -175,7 +175,7 @@ console.log(formatAmount(paid?.fields.net ?? 0n, sell.decimals));
 
 ## Fees
 
-Each kind has a protocol fee in basis points, `feeBps` in `configSummary`, taken from what a fill pays out of the escrow. A proof escrow pays the judge its `judgeFee` first; the protocol fee, and the fee of a partner the intent names, come out of the rest, and the worker receives what remains. A partner's fee is not all the partner's: the protocol keeps `partnerCutBps` of every partner fee, read from `configSummary`, and the partner receives the rest. `splitFees` and `feeBpsFor` from `@intent-engine/core` compute the same split. This prints what the worker, the judge and the protocol received for the proof escrow above, in SOL; the three add up to the escrow.
+Each kind has a protocol fee in basis points, `feeBps` in `configSummary`, taken from what a fill pays out of the escrow. The engine caps it at `MAX_FEE_BPS` (100) for swap, limit and dutch orders and at `MAX_ATTESTED_FEE_BPS` (300) for attested ones; `maxFeeBpsFor` gives the cap of a kind. A proof escrow pays the judge its `judgeFee` first; the protocol fee, and the fee of a partner the intent names, come out of the rest, and the worker receives what remains. A partner's fee is not all the partner's: the protocol keeps `partnerCutBps` of every partner fee, read from `configSummary`, and the partner receives the rest. `splitFees` and `feeBpsFor` from `@intent-engine/core` compute the same split. This prints what the worker, the judge and the protocol received for the proof escrow above, in SOL; the three add up to the escrow.
 
 ```ts
 const received = [paid?.fields.net ?? 0n, work.judgeFee, paid?.fields.fee ?? 0n];

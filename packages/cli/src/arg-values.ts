@@ -17,6 +17,8 @@ import {
   isMemoUrl,
   Kind,
   kindBit,
+  MAX_FEE_BPS,
+  maxFeeBpsFor,
   MEMO_URL_RULE,
   parseAmount,
   TOKEN_AMOUNT_PATTERN,
@@ -86,7 +88,11 @@ export function parseKindFees(text: string): { mask: number; bps: [number, numbe
       throw new UsageError(`--kind-fees names ${name} twice`);
     }
     mask |= 1 << kind;
-    bps[kind - 1] = parseBounded(value, "kind-fees", 0xffff);
+    const max = maxFeeBpsFor(kind);
+    if (!/^\d+$/.test(value) || BigInt(value) > BigInt(max)) {
+      throw new UsageError(`--kind-fees ${name} must be an integer from 0 to ${max} bps`);
+    }
+    bps[kind - 1] = Number(value);
   }
   return { mask, bps };
 }
@@ -101,8 +107,8 @@ export function parseLimit(text: string): number {
 }
 
 export function parseFeeBps(text: string): number {
-  if (!/^\d+$/.test(text) || BigInt(text) > 65_535n) {
-    throw new UsageError("--fee-bps must be an integer from 0 to 65535");
+  if (!/^\d+$/.test(text) || BigInt(text) > BigInt(MAX_FEE_BPS)) {
+    throw new UsageError(`--fee-bps must be an integer from 0 to ${MAX_FEE_BPS}`);
   }
   return Number(text);
 }

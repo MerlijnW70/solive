@@ -5,7 +5,9 @@ use intent_engine::events::{
     EconomicsUpdated, FeeWithheld, FillBegun, IntentAttested, IntentClosed, IntentCreated,
     IntentExpired, IntentFilled, WITHHELD_PARTNER,
 };
-use intent_engine::state::{Intent, BPS, MAX_CRANK_BOUNTY, MAX_CREATE_FEE, MAX_FEE_BPS};
+use intent_engine::state::{
+    Intent, BPS, MAX_ATTESTED_FEE_BPS, MAX_CRANK_BOUNTY, MAX_CREATE_FEE, MAX_FEE_BPS,
+};
 use intent_engine::Economics;
 use litesvm::types::TransactionMetadata;
 use solana_instruction::Instruction;
@@ -13,9 +15,9 @@ use solana_keypair::Keypair;
 use solana_signer::Signer;
 use solana_transaction_error::TransactionError;
 use svm_tests::{
-    attestation_message, canonical_refund, ed25519_ix, engine_error, engine_error_at, events,
-    intent_pda, partner_ext, swap_spec, vault_pda, Env, IntentSpec, Market, MintExt, Solver,
-    TestResult, Trader, DOMAIN, START_TS,
+    attestation_message, canonical_refund, ed25519_ix, empty_ext_hash, engine_error,
+    engine_error_at, events, intent_pda, partner_ext, swap_spec, vault_pda, Env, IntentSpec,
+    Market, MintExt, Solver, TestResult, Trader, DOMAIN, START_TS,
 };
 
 const PROGRAM: Pubkey = anchor_spl::token::ID;
@@ -180,7 +182,7 @@ fn only_the_admin_sets_economics_and_every_bound_holds_at_its_edge() -> TestResu
         ),
         (
             Economics {
-                kind_fee_bps: [0, 0, 0, MAX_FEE_BPS + 1],
+                kind_fee_bps: [0, 0, 0, MAX_ATTESTED_FEE_BPS + 1],
                 ..at_limit
             },
             EngineError::FeeTooHigh,
@@ -854,5 +856,159 @@ fn a_dust_intent_whose_fees_round_past_its_amount_cannot_fill_but_still_cancels(
     let key = w.trader.key.insecure_clone();
     w.env.send(&key, &[cancel], &[])?;
     assert_eq!(Some(w.env.balance(&w.trader.input)?), before.checked_add(1));
+    Ok(())
+}
+
+fn attested_fee(bps: u16) -> Economics {
+    Economics {
+        kind_fee_mask: 0b1_0000,
+        kind_fee_bps: [0, 0, 0, bps],
+        ..economics(0, 0)
+    }
+}
+
+#[test]
+fn economics_accepts_a_three_percent_attested_fee() -> TestResult {
+    let mut w = world()?;
+    assert_eq!(MAX_ATTESTED_FEE_BPS, 300);
+    w.set(Economics {
+        kind_fee_bps: [MAX_FEE_BPS, MAX_FEE_BPS, MAX_FEE_BPS, MAX_ATTESTED_FEE_BPS],
+        ..attested_fee(0)
+    })?;
+    assert_eq!(
+        w.env.config()?.kind_fee_bps,
+        [MAX_FEE_BPS, MAX_FEE_BPS, MAX_FEE_BPS, MAX_ATTESTED_FEE_BPS]
+    );
+    Ok(())
+}
+
+#[test]
+fn economics_refuses_an_attested_fee_above_three_percent() -> TestResult {
+    let mut w = world()?;
+    assert_eq!(
+        w.set(attested_fee(MAX_ATTESTED_FEE_BPS + 1)).err(),
+        Some(engine_error(EngineError::FeeTooHigh))
+    );
+    assert_eq!(w.env.config()?.kind_fee_bps, [0; 4]);
+    Ok(())
+}
+
+#[test]
+fn economics_still_refuses_a_swap_fee_above_one_percent() -> TestResult {
+    let mut w = world()?;
+    assert_eq!(MAX_FEE_BPS, 100);
+    for kind_fee_bps in [
+        [MAX_FEE_BPS + 1, 0, 0, 0],
+        [0, MAX_FEE_BPS + 1, 0, 0],
+        [0, 0, MAX_FEE_BPS + 1, 0],
+        [MAX_ATTESTED_FEE_BPS, 0, 0, 0],
+    ] {
+        assert_eq!(
+            w.set(Economics {
+                kind_fee_mask: 0b1_1110,
+                kind_fee_bps,
+                ..economics(0, 0)
+            })
+            .err(),
+            Some(engine_error(EngineError::FeeTooHigh)),
+            "{kind_fee_bps:?}"
+        );
+    }
+    let admin = w.env.authority.insecure_clone();
+    let mut settings = w.env.settings();
+    settings.fee_bps = MAX_FEE_BPS + 1;
+    let ix = w.env.update_config_ix(&admin.pubkey(), settings);
+    assert_eq!(
+        w.env.send(&admin, &[ix], &[]).err(),
+        Some(engine_error(EngineError::FeeTooHigh))
+    );
+    Ok(())
+}
+
+fn proof_message(
+    w: &World,
+    attestor: &Keypair,
+    payee: &Pubkey,
+    result: u64,
+    spec_hash: [u8; 32],
+    max_fee_bps: u16,
+) -> [u8; intent_core::sig::ENVELOPE_LEN] {
+    let preimage = intent_core::sig::AttestedProof {
+        program: intent_engine::ID.to_bytes(),
+        domain: DOMAIN,
+        intent: intent_pda(&w.owner(), 0).to_bytes(),
+        payee: payee.to_bytes(),
+        amount_in: LARGE,
+        result,
+        filled: 0,
+        revision: 0,
+        max_fee_bps,
+        ext_hash: empty_ext_hash(),
+        spec_hash,
+    }
+    .preimage();
+    let digest = solana_sha256_hasher::hashv(&[&preimage]).to_bytes();
+    intent_core::sig::offchain_envelope(&attestor.pubkey().to_bytes(), &digest)
+}
+
+#[test]
+fn a_proof_escrow_settles_at_a_three_percent_fee() -> TestResult {
+    const SPEC: [u8; 32] = [0x3c; 32];
+    const JUDGE_FEE: u64 = 1_000;
+    let mut w = world()?;
+    w.set(attested_fee(MAX_ATTESTED_FEE_BPS))?;
+    let attestor = Keypair::new();
+    let spec = IntentSpec {
+        params: attested_result::Params {
+            amount_in: LARGE,
+            min_result: 1,
+            max_result: 9,
+            attestor: attestor.pubkey().to_bytes(),
+            spec_hash: SPEC,
+            judge_fee: JUDGE_FEE,
+        }
+        .encode()
+        .map_err(|e| format!("{e:?}"))?,
+        ..spec_with(0, Kind::AttestedResult, Vec::new(), &attestor.pubkey())?
+    };
+    w.create_spec(&spec)?;
+    let judge_to = w.env.create_ata(
+        &attestor.pubkey(),
+        &w.market.input_mint,
+        w.market.input_program,
+    )?;
+    w.env.judge_to = Some(judge_to);
+    let payee = w.solver.input;
+    let solver = w.solver.key.pubkey();
+    let fill = |w: &mut World, bound: u16| {
+        w.env.max_fee_bps = bound;
+        let message = proof_message(w, &attestor, &payee, 5, SPEC, bound);
+        let ix = w.env.fill_attested_ix(
+            &solver,
+            &w.owner(),
+            &w.market,
+            0,
+            &payee,
+            Some(&w.fee_to),
+            5,
+        );
+        w.as_solver(&[ed25519_ix(&attestor, &message), ix])
+    };
+    assert_eq!(
+        fill(&mut w, MAX_ATTESTED_FEE_BPS - 1).err(),
+        Some(engine_error_at(1, EngineError::FeeAboveBound))
+    );
+    let fee_before = w.env.balance(&w.fee_to)?;
+    let payee_before = w.env.balance(&payee)?;
+    let meta = fill(&mut w, MAX_ATTESTED_FEE_BPS)?;
+    let fees = intent_core::fee::split_fees(LARGE - JUDGE_FEE, MAX_ATTESTED_FEE_BPS, 0, 0)
+        .map_err(|e| format!("{e:?}"))?;
+    assert_eq!((fees.protocol, fees.net), (2_970, 96_030));
+    let e = events::<IntentAttested>(&meta).pop().ok_or("missing")?;
+    assert_eq!((e.fee, e.partner_fee, e.net), (2_970, 0, 96_030));
+    assert_eq!(w.env.balance(&w.fee_to)?, fee_before + 2_970);
+    assert_eq!(w.env.balance(&payee)?, payee_before + 96_030);
+    assert_eq!(w.env.balance(&judge_to)?, JUDGE_FEE);
+    assert_eq!(w.env.balance(&vault_pda(&intent_pda(&w.owner(), 0)))?, 0);
     Ok(())
 }

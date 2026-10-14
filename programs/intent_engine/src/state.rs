@@ -30,6 +30,7 @@ pub fn intent_recoverable(version: u8) -> bool {
     (OLDEST_INTENT_VERSION..=INTENT_VERSION).contains(&version)
 }
 pub const MAX_FEE_BPS: u16 = 100;
+pub const MAX_ATTESTED_FEE_BPS: u16 = 300;
 pub const BPS: u16 = 10_000;
 pub const MAX_CRANK_BOUNTY: u32 = 10_000_000;
 pub const MAX_CREATE_FEE: u32 = 10_000_000;

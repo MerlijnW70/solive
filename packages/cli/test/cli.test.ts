@@ -619,6 +619,41 @@ describe("cli against the deployed engine", () => {
     expect(h.svm.getBalance(cranker.address)).toBe(before + 90_000n - 5_000n);
   });
 
+  const kindFees = (fees: string) => ["set-economics", "--keypair", "admin.json", "--yes", "--bounty", "0", "--create-fee", "0", "--kind-fees", fees];
+
+  const kindFeeBps = async () => {
+    const [configAddress] = await findConfigPda();
+    const view = await transport.getAccount(configAddress);
+    return Array.from(getConfigDecoder().decode(view?.data ?? new Uint8Array()).kindFeeBps);
+  };
+
+  it("set economics accepts attested up to 300 bps", async () => {
+    const sent = h.wires.length;
+    const over = await cli(kindFees("attested=301"), { "admin.json": authority });
+    expect(over).toMatchObject({ code: EXIT_USAGE, err: "--kind-fees attested must be an integer from 0 to 300 bps" });
+    expect(h.wires).toHaveLength(sent);
+    expect((await cli(kindFees("swap=100,limit=100,dutch=100,attested=300"), { "admin.json": authority })).code).toBe(EXIT_OK);
+    expect(await kindFeeBps()).toEqual([100, 100, 100, 300]);
+  });
+
+  it("set economics refuses swap above 100 bps", async () => {
+    const sent = h.wires.length;
+    for (const [fees, name] of [
+      ["swap=101", "swap"],
+      ["swap=300,attested=300", "swap"],
+      ["limit=101", "limit"],
+      ["dutch=101", "dutch"],
+    ] as const) {
+      const refused = await cli(kindFees(fees), { "admin.json": authority });
+      expect(refused).toMatchObject({ code: EXIT_USAGE, err: `--kind-fees ${name} must be an integer from 0 to 100 bps` });
+    }
+    expect(h.wires).toHaveLength(sent);
+    expect(await kindFeeBps()).toEqual([0, 0, 0, 0]);
+    expect((await cli(["update-config", "--keypair", "admin.json", "--yes", "--fee-bps", "101"], { "admin.json": authority })).code).toBe(
+      EXIT_USAGE,
+    );
+  });
+
   it("lists open proof escrows as jobs and announces a delivery to the judge, previewing unless --yes", async () => {
     h.watched.push(owner.address);
     h.engineLog = [];

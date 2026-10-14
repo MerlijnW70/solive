@@ -22,7 +22,8 @@ use solana_instructions_sysvar::{load_current_index_checked, load_instruction_at
 use crate::errors::{core_err, EngineError};
 use crate::state::{
     delegate_address, Config, Intent, Mandate, UserState, BPS, DELEGATE_SEED, INTENT_SEED,
-    MANDATE_VERSION, MAX_CRANK_BOUNTY, MAX_CREATE_FEE, MAX_FEE_BPS, PAUSE_ALL, USER_VERSION,
+    MANDATE_VERSION, MAX_ATTESTED_FEE_BPS, MAX_CRANK_BOUNTY, MAX_CREATE_FEE, MAX_FEE_BPS,
+    PAUSE_ALL, USER_VERSION,
 };
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -54,8 +55,10 @@ pub struct Economics {
 
 pub fn validate_economics(e: &Economics) -> Result<()> {
     check_kind_bits(u64::from(e.kind_fee_mask))?;
+    let [swap, limit, dutch, attested] = e.kind_fee_bps;
     require!(
-        e.kind_fee_bps.iter().all(|bps| *bps <= MAX_FEE_BPS),
+        [swap, limit, dutch].iter().all(|bps| *bps <= MAX_FEE_BPS)
+            && attested <= MAX_ATTESTED_FEE_BPS,
         EngineError::FeeTooHigh
     );
     require!(e.partner_cut_bps <= BPS, EngineError::PartnerCutTooHigh);
