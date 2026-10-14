@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   type Address,
@@ -48,6 +51,7 @@ import type { Fetch } from "@intent-engine/solver";
 import type { EngineTransaction, Transport } from "@intent-engine/client";
 import type { Runtime } from "../src/commands.js";
 import { main } from "../src/main.js";
+import { fileSales } from "../src/agent/sales.js";
 
 const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111" as Address;
 export const NOW = 1_700_000_000n;
@@ -94,7 +98,10 @@ export const h = {
   served: [] as McpServer[],
   airdropRefused: false,
   airdrops: [] as { address: Address; lamports: bigint }[],
+  saleRoot: mkdtempSync(join(tmpdir(), "solive-sales-")),
 };
+
+export const saleBook = fileSales((path) => join(h.saleRoot, path));
 
 export const HOME = "/home/tester";
 export const PACKET_LIMIT = 1_232;
@@ -330,6 +337,7 @@ export function runtime(signers: Record<string, KeyPairSigner>): Runtime {
     serve: async (server) => {
       h.served.push(server);
     },
+    saleBook,
   };
 }
 
@@ -340,6 +348,8 @@ export async function funded(): Promise<KeyPairSigner> {
 }
 
 export async function boot(): Promise<KeyPairSigner> {
+  rmSync(h.saleRoot, { recursive: true, force: true });
+  h.saleRoot = mkdtempSync(join(tmpdir(), "solive-sales-"));
   h.urls.length = 0;
   h.airdropRefused = false;
   h.airdrops.length = 0;

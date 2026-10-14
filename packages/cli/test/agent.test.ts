@@ -51,6 +51,7 @@ import {
 } from "@intent-engine/core";
 import {
   Charged,
+  DEVNET_GENESIS_HASH,
   EXTENDED_MINT_TYPE,
   EXTENDED_TYPE_OFFSET,
   EXTENSIONS_OFFSET,
@@ -73,6 +74,7 @@ import { costlyFunding, FUNDING_RENT } from "../src/crank.js";
 import { SETTLED_LINE } from "../src/agent/shapes.js";
 import { DEFAULT_SUBMIT_WITHIN, publishesLine, RELAY_TOO_LARGE, SPEC_URL_TOO_LONG, SPEC_URL_UNSIGNED } from "../src/agent/signed.js";
 import { WARN_REPLACES_DELEGATE } from "../src/agent/owner.js";
+import { SPEC_URL_PLAIN } from "../src/agent/create.js";
 import { EXIT_OK } from "../src/main.js";
 import { ata, balance, cli, ESCROW, FEE_BPS, funded, h, NOW, send, setNow, transport, type World, world } from "./harness.js";
 
@@ -979,6 +981,35 @@ describe("agent server against the deployed engine", () => {
     expect(exists(prepared["intent"])).toBe(true);
     const { spec_url: _, ...unpublished } = signed;
     expect(await ok(relaying, "preview_signed_intent", unpublished)).toMatchObject({ exists: 1 });
+  });
+
+  it("mcp create refuses a plain http spec url on a public cluster", async () => {
+    const relaying = await connect(await funded(), free());
+    const owner = await funded();
+    await ata(w.authority, owner.address, w.inputMint, 1_000n);
+    const judge = (await generateKeyPairSigner()).address;
+    const plainUrl = "http://localhost/spec.md";
+    const order = { kind: "attested", amount_in: ESCROW.toString(), min_result: "1", max_result: "1", attestor: judge, spec_hash: "5c".repeat(32) };
+    const terms = { ...swap({ owner: owner.address, order }), spec_url: plainUrl };
+    expect(await ok(relaying, "prepare_create", terms)).toMatchObject({ summary: expect.arrayContaining([`Publishes: the acceptance spec's url ${plainUrl}, in a memo the owner signs`]) });
+    const prepared = await ok(relaying, "prepare_signed_intent", terms);
+    expect(prepared["submit"]).toMatchObject({ spec_url: plainUrl });
+    await execute(prepared["setup"], owner);
+    const signature = getBase58Decoder().decode(await signBytes(owner.keyPair.privateKey, getBase64Encoder().encode(prepared["message"])));
+    const signed = { ...prepared["submit"], signature };
+    const refused = { code: "InvalidInput", issues: [{ path: "spec_url", message: SPEC_URL_PLAIN }] };
+    const local = h.genesis;
+    h.genesis = DEVNET_GENESIS_HASH;
+    try {
+      expect(await fail(relaying, "prepare_create", terms)).toMatchObject(refused);
+      expect(await fail(relaying, "prepare_signed_intent", terms)).toMatchObject(refused);
+      expect(await fail(relaying, "preview_signed_intent", signed)).toMatchObject(refused);
+      expect(await fail(relaying, "submit_signed_intent", signed)).toMatchObject(refused);
+      expect(await ok(relaying, "prepare_create", { ...terms, spec_url: "https://a.io/spec.md" })).toMatchObject({ escrow: ESCROW.toString() });
+    } finally {
+      h.genesis = local;
+    }
+    expect(exists(prepared["intent"])).toBe(false);
   });
 
   it("signs with a default submit window, carries a partner and refuses an allowance that would overflow", async () => {

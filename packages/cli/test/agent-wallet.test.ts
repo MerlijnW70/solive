@@ -15,6 +15,8 @@ import {
   signBytes,
 } from "@solana/kit";
 import { FailedTransactionMetadata } from "litesvm";
+import { readFileSync, statSync } from "node:fs";
+import { join } from "node:path";
 const bytesOf = (hex: string) => Uint8Array.from(getBase16Encoder().encode(hex));
 import { AccountState, getMintEncoder, getMintSize, getTokenEncoder, getTokenSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
@@ -62,6 +64,8 @@ import {
   DELIVERY_SCAN,
   type EngineTransaction,
   FailedOnChain,
+  type ListedSignature,
+  SIGNATURE_PAGE,
   followUpMemo,
   loadConfig,
   MEMO_PROGRAM_ADDRESS,
@@ -100,7 +104,11 @@ import {
   piecesPartlySent,
   RELEASE_CHANGED,
   UNREAD,
+  WAIT_SCAN,
   WARN_EARLY,
+  alreadyRecorded,
+  notReleasedYet,
+  releasedBy,
   RECORD_MINT_NEEDED,
   NO_WALLET,
   PREVIEW_ONLY,
@@ -118,6 +126,7 @@ import { EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT } from "@intent-engine/core";
 import { AIRDROP, AIRDROP_REFUSED, defaultWallet, FUNDED, keptDefault, LAMPORTS_PER_SOL, savedDefault, settingsPath } from "../src/wallet.js";
 import { ata, balance, cli, creation, FEE_BPS, funded, h, HOME, setNow, transport, world } from "./harness.js";
+import { salesPath } from "../src/agent/sales.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -781,7 +790,7 @@ describe("the wallet server", () => {
     expect(failed).not.toHaveProperty("follow_up_signature");
     expect(failed["record_memo"]).toBe(followUpMemo(work, failed["signature"] as string));
     expect(failed["next"]).toMatch(/^the release landed, but the follow-up transaction that records the delivered work's sha256 failed, so the hash is not recorded on chain: /);
-    expect(failed["next"]).toContain("to record it, send from this wallet a transaction with the memo in record_memo");
+    expect(failed["next"]).toContain("to record it, call solive_wallet_record_delivery with the same owner, nonce and delivered_sha256");
     expect(h.wires).toHaveLength(1);
 
     const tried: string[] = [];
@@ -1221,6 +1230,117 @@ describe("the wallet server", () => {
     expect(await ok(client, "wallet_receipt", { owner, nonce: "8" })).not.toHaveProperty("delivered_sha256");
   });
 
+  it("a receipt is found after many later transactions", async () => {
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    const [intent] = await findIntentPda({ owner, nonce: 9n });
+    const payee = await findAssociatedTokenAddress({ owner: (await generateKeyPairSigner()).address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
+    const { fee, net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);
+    const attested = getIntentAttestedEventEncoder().encode({
+      intent,
+      owner,
+      solver: owner,
+      payee,
+      attestor: owner,
+      amountIn: LAMPORTS_PER_SOL / 20n,
+      result: 1n,
+      fee,
+      net,
+      filled: LAMPORTS_PER_SOL / 20n,
+      remaining: 0n,
+      partnerFee: 0n,
+    });
+    const work = "d7".repeat(32);
+    const release = { signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [tag(attested)], memos: [`${RELEASE_MEMO_PREFIX}${work}`], memoSigners: [[owner]] };
+    const dust = (count: number) => Array.from({ length: count }, (_, i) => ({ signature: `dust${i}`, slot: 9n, blockTime: null, failed: false, emitted: [] }));
+    const receipt = { intent, released: true, signature: "release", delivered_sha256: work, matches: true };
+    h.engineLog = [...dust(WAIT_SCAN * 2), release];
+    h.through = { ...transport, engineTransactions: async (limit) => h.engineLog.slice(0, limit) };
+    const windowed = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    expect(await ok(windowed, "wallet_receipt", { nonce: "9", sha256: work })).toMatchObject(receipt);
+    h.engineLog = [...dust(SIGNATURE_PAGE + 10), release];
+    const listed = (tx: EngineTransaction): ListedSignature => ({ signature: tx.signature, slot: tx.slot, blockTime: tx.blockTime, failed: tx.failed, memo: null });
+    h.through = {
+      ...transport,
+      engineTransactions: async (limit) => h.engineLog.slice(0, limit),
+      signaturesOf: async (_, limit, before) => {
+        const start = before === undefined ? 0 : h.engineLog.findIndex((tx) => tx.signature === before) + 1;
+        return h.engineLog.slice(start, start + limit).map(listed);
+      },
+      transactionsOf: async (wanted) => wanted.flatMap((entry) => h.engineLog.filter((tx) => tx.signature === entry.signature)),
+    };
+    const paged = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    expect(await ok(paged, "wallet_receipt", { nonce: "9", sha256: work })).toMatchObject(receipt);
+    const plain = await connect(["mcp", "--url", "devnet"]);
+    expect(await ok(plain, "get_receipt", { owner, nonce: "9", sha256: work })).toMatchObject(receipt);
+    h.through = null;
+    h.engineLog = [];
+  });
+
+  it("record delivery sends the follow up memo for an existing release", async () => {
+    const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
+    const owner = (await generateKeyPairSigner()).address;
+    const [intent] = await findIntentPda({ owner, nonce: 4n });
+    const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
+    const { fee, net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);
+    const splitBy = (attestor: Address) =>
+      tag(
+        getIntentSplitEventEncoder().encode({
+          intent,
+          owner,
+          solver: attestor,
+          attestor,
+          amountIn: LAMPORTS_PER_SOL / 20n,
+          result: 1n,
+          fee,
+          net,
+          partnerFee: 0n,
+          recipients: 2,
+          splitHash: new Uint8Array(32),
+        }),
+      );
+    const work = "a9".repeat(32);
+    const releaseSignature = "4".repeat(88);
+    const release = { signature: releaseSignature, slot: 3n, blockTime: null, failed: false, emitted: [splitBy(wallet)], feePayer: wallet };
+    const args = { owner, nonce: "4", sha256: work.toUpperCase() };
+    h.engineLog = [];
+    expect((await call(client, "wallet_record_delivery", args)).value).toMatchObject({ code: "NotReleased", hint: notReleasedYet(intent) });
+    const stranger = (await generateKeyPairSigner()).address;
+    h.engineLog = [{ ...release, emitted: [splitBy(stranger)] }];
+    expect((await call(client, "wallet_record_delivery", args)).value).toMatchObject({ code: "Unauthorized", hint: releasedBy(stranger, wallet) });
+    h.engineLog = [{ ...release, memos: [`${RELEASE_MEMO_PREFIX}${work}`], memoSigners: [[wallet]] }];
+    expect((await call(client, "wallet_record_delivery", args)).value).toMatchObject({ code: "AlreadyRecorded", hint: alreadyRecorded(work) });
+    h.engineLog = [release];
+    const memo = followUpMemo(work, releaseSignature);
+    const preview = await ok(client, "wallet_record_delivery", args);
+    expect(preview).toMatchObject({ intent, release: releaseSignature, sha256: work, memo, sent: false, next: PREVIEW_ONLY });
+    expect(preview).not.toHaveProperty("signature");
+    h.wires.length = 0;
+    const recorded = await ok(client, "wallet_record_delivery", { ...args, send: true });
+    expect(recorded).toMatchObject({ intent, memo, sent: true, signature: expect.any(String) });
+    expect(h.wires).toHaveLength(1);
+    const landed = landedAs(h.wires[0] as string);
+    expect(landed).toMatchObject({ signature: recorded["signature"], memos: [memo], feePayer: wallet });
+    h.engineLog = [landed, release];
+    expect(await ok(client, "wallet_receipt", { owner, nonce: "4", sha256: work })).toMatchObject({ released: true, signature: releaseSignature, delivered_sha256: work, matches: true });
+    expect((await call(client, "wallet_record_delivery", args)).value).toMatchObject({ code: "AlreadyRecorded" });
+
+    const keypair = defaultWallet(HOME);
+    const line = ["record-delivery", "--url", "devnet", "--keypair", keypair, "--owner", owner, "--nonce", "4", "--sha256", work];
+    h.engineLog = [release];
+    const shown = await cli(line, {});
+    expect(shown.code).toBe(EXIT_OK);
+    expect(shown.json()).toMatchObject({ intent, release: releaseSignature, sha256: work, memo, sent: false });
+    h.wires.length = 0;
+    const sentByCli = await cli([...line, "--yes"], {});
+    expect(sentByCli.code).toBe(EXIT_OK);
+    expect(sentByCli.json()).toMatchObject({ intent, memo, sent: true, signature: expect.any(String) });
+    h.engineLog = [landed, release];
+    const again = await cli(line, {});
+    expect([again.code, again.err]).toEqual([1, alreadyRecorded(work)]);
+    h.engineLog = [];
+  });
+
   it("plain mode checks a delivery", async () => {
     const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
     h.watched.push(wallet);
@@ -1516,12 +1636,61 @@ describe("the wallet server", () => {
     h.sendFails = { error: new Error("fetch failed"), landed: true };
     expect((await call(client, "wallet_swap", { ...swap, send: true })).error).toBe(true);
     expect((await call(client, "wallet_swap", swap)).value).toMatchObject({ code: "WalletHourLimit" });
+    setNow(h.svm.getClock().unixTimestamp + 3_601n);
     for (const error of [new BlockhashExpired("expired"), new FailedOnChain("failed")]) {
       client = await connect(limited);
       h.sendFails = { error, landed: false };
       expect((await call(client, "wallet_swap", { ...swap, send: true })).error).toBe(true);
       expect(await ok(client, "wallet_swap", swap)).toMatchObject({ sent: false });
     }
+  });
+
+  it("two wallet servers share one hourly allowance", async () => {
+    const limited = ["mcp", "--url", "devnet", "--wallet", "--wallet-per-hour", "SOL=0.15"];
+    const first = await connect(limited);
+    await ok(first, "wallet_setup");
+    const second = await connect(limited);
+    const swap = { sell: "SOL", buy: "TEST", amount: "0.1", min_receive: "5", exact: true };
+    expect(await ok(first, "wallet_swap", { ...swap, send: true })).toMatchObject({ sent: true });
+    const left = { code: "WalletHourLimit", retryable: true, hint: "this server sells at most 0.15 SOL per hour and has 0.05 left; this sells 0.1" };
+    expect((await call(second, "wallet_swap", swap)).value).toMatchObject(left);
+    expect((await call(second, "wallet_swap", { ...swap, send: true })).value).toMatchObject(left);
+    const book = join(h.saleRoot, salesPath(defaultWallet(HOME)));
+    expect(statSync(book).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(readFileSync(book, "utf8"))).toMatchObject([{ mint: NATIVE_MINT, amount: String(LAMPORTS_PER_SOL / 10n) }]);
+    const third = await connect(limited);
+    const raced = await Promise.all([second, third].map((server) => call(server, "wallet_swap", { ...swap, amount: "0.05", send: true })));
+    expect(raced.map((r) => (r.error ? r.value["code"] : "sent")).sort()).toEqual(["WalletHourLimit", "sent"]);
+    expect(JSON.parse(readFileSync(book, "utf8"))).toHaveLength(2);
+    setNow(h.svm.getClock().unixTimestamp + 3_601n);
+    expect(await ok(second, "wallet_swap", { ...swap, send: true })).toMatchObject({ sent: true });
+    expect((await call(third, "wallet_swap", { ...swap, amount: "0.06" })).value).toMatchObject({ code: "WalletHourLimit" });
+  });
+
+  it("a nonce collision on create is retried with the next free nonce", async () => {
+    const first = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const owner = (await ok(first, "wallet_setup"))["address"] as Address;
+    const swap = { sell: "SOL", buy: "TEST", amount: "0.01", min_receive: "1", exact: true };
+    expect(await ok(first, "wallet_swap", { ...swap, send: true })).toMatchObject({ nonce: "0" });
+    let raced = false;
+    h.through = {
+      ...transport,
+      sendWire: async (wire, latest) => {
+        if (!raced) {
+          raced = true;
+          expect(await ok(first, "wallet_swap", { ...swap, amount: "0.02", send: true })).toMatchObject({ nonce: "1" });
+        }
+        return transport.sendWire(wire, latest);
+      },
+    };
+    const second = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    h.through = null;
+    const [taken] = await findIntentPda({ owner, nonce: 1n });
+    const [next] = await findIntentPda({ owner, nonce: 2n });
+    expect(await ok(second, "wallet_swap", { ...swap, send: true })).toMatchObject({ intent: next, nonce: "2", sent: true });
+    expect(raced).toBe(true);
+    expect(h.svm.getAccount(taken).exists).toBe(true);
+    expect(h.svm.getAccount(next).exists).toBe(true);
   });
 
   it("sells none of a token whose limit has more decimals than the token", async () => {

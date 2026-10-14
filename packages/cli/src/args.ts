@@ -161,6 +161,7 @@ export type Command =
   | (Keyed & { name: "deliver"; yes: boolean; intent: Address; sha256: string; workUrl: string })
   | (Remote & { name: "deliveries"; attestor: Address; intent: Address; maxPages: number })
   | (Remote & { name: "receipt"; owner: Address; nonce: bigint; sha256: string | undefined })
+  | (Keyed & { name: "record-delivery"; yes: boolean; owner: Address; nonce: bigint; sha256: string })
   | (Keyed & {
       name: "judge";
       yes: boolean;
@@ -451,6 +452,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   deliver: ["url", "priority-fee", "keypair", "yes", "intent", "sha256", "work-url"],
   deliveries: ["url", "attestor", "intent", "max-pages"],
   receipt: ["url", "owner", "nonce", "sha256"],
+  "record-delivery": ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "sha256"],
   judge: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "spec", "artifact", "run", "pay-to", "result", "timeout", "verdict", "max-pages"],
   crank: ["url", "priority-fee", "keypair", "dry-run", "fund-accounts"],
   treasury: ["url", "priority-fee", "keypair", "yes", "mints", "create"],
@@ -1201,7 +1203,7 @@ export function outputOf(argv: readonly string[]): "json" | "text" {
 export const MAX_FOLLOW_INTERVAL = 3_600;
 export const WATCH_INTERVAL = 5;
 
-export const COMMANDS = "setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | judge | hash | version | help [command]";
+export const COMMANDS = "setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | hash | version | help [command]";
 
 export const USAGE = `usage: ${COMMANDS}`;
 
@@ -1241,6 +1243,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   deliver: "--keypair <worker file> --intent <address> --sha256 <64 hex> --work-url <https url> [--yes]",
   deliveries: "--attestor <address> --intent <address> [--max-pages <n>]",
   receipt: "--owner <address> --nonce <n> [--sha256 <64 hex>]",
+  "record-delivery": "--keypair <judge file> --owner <address> --nonce <n> --sha256 <64 hex> [--yes]",
   judge: "--keypair <judge file> --owner <address> --nonce <n> --spec <file> --artifact <file or directory> --run <command> [--pay-to <wallet>] [--result <n>] [--timeout <seconds>] [--verdict <file>] [--max-pages <n>] [--yes]",
   create: `swap|limit|dutch|attested --keypair <file> --input-mint --output-mint (--expires-at | --expires-in) ${ORDER_SHAPE} [--nonce <n>] [--pay-to <wallet>] ${PARTNER_SHAPE} [--units tokens|raw] [--yes]; attested takes [--spec-hash <64 hex> [--judge-fee <amount>] [--spec-url <https url>]] to make a proof escrow`,
   list: "--owner <address> or --keypair <file>; --owner wins when both are given",
@@ -1493,6 +1496,17 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         owner: key(values, "owner"),
         nonce: u64(values, "nonce"),
         sha256: values.sha256 === undefined ? undefined : sha256Of(values.sha256),
+      };
+    case "record-delivery":
+      noSub(sub);
+      return {
+        name: "record-delivery",
+        ...remote,
+        keypair: required(values, "keypair"),
+        yes: values.yes === true,
+        owner: key(values, "owner"),
+        nonce: u64(values, "nonce"),
+        sha256: sha256Of(required(values, "sha256")),
       };
     case "judge":
       noSub(sub);

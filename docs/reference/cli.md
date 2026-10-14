@@ -3,7 +3,7 @@
 # CLI reference
 
 ```text
-usage: setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | judge | hash | version | help [command]
+usage: setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | hash | version | help [command]
 ```
 
 Every command accepts `--output` and `--help`.
@@ -225,6 +225,14 @@ receipt --owner <address> --nonce <n> [--sha256 <64 hex>]
 ```
 
 Options: `--url`, `--owner`, `--nonce`, `--sha256`, `--output`, `--help`
+
+## record-delivery
+
+```text
+record-delivery --keypair <judge file> --owner <address> --nonce <n> --sha256 <64 hex> [--yes]
+```
+
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--sha256`, `--output`, `--help`
 
 ## judge
 

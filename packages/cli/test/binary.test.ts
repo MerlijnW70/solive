@@ -11,6 +11,7 @@ import { PRODUCT_SLUG } from "@intent-engine/core";
 import { describe, expect, it } from "vitest";
 import { ACTIONS } from "../src/agent/registry.js";
 import { EXIT_USAGE } from "../src/main.js";
+import { unreachableHint } from "../src/agent/problems.js";
 
 const bin = fileURLToPath(new URL("../dist/src/bin.js", import.meta.url));
 const UNREACHABLE = "http://127.0.0.1:9";
@@ -25,7 +26,7 @@ describe("the built binary", () => {
     expect(tools.map((t) => t.name)).toEqual(ACTIONS.map((a) => a.name));
     const result = await client.callTool({ name: "solive_get_config", arguments: {} });
     expect(result.isError).toBe(true);
-    expect(result.structuredContent).toMatchObject({ code: "Failed", retryable: false });
+    expect(result.structuredContent).toMatchObject({ code: "Unreachable", retryable: true, hint: unreachableHint(UNREACHABLE) });
     await client.close();
   }, 30_000);
 

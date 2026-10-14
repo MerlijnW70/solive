@@ -15,6 +15,7 @@ export type AgentContext = {
   agent: AgentKey | undefined;
   claims: Claims;
   wallet?: WalletAccess;
+  url?: string;
 };
 
 type AgentKey = { signer: TransactionSigner; budget: Budget; owners: ReadonlySet<Address> };
@@ -72,6 +73,6 @@ export async function invoke(action: AnyAction, ctx: AgentContext, raw: unknown)
     for (const undo of call.undo.reverse()) {
       undo();
     }
-    return { ok: false, problem: problemOf(error) };
+    return { ok: false, problem: problemOf(error, ctx.url ?? ctx.wallet?.url) };
   }
 }

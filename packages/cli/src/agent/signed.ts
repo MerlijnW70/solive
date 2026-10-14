@@ -35,7 +35,7 @@ import {
 } from "@intent-engine/core";
 import { define } from "./actions.js";
 import { tool } from "./names.js";
-import { expiryOf, termsInput, termsOutput, warningsOf } from "./create.js";
+import { expiryOf, SPEC_URL_PLAIN, termsInput, termsOutput, warningsOf } from "./create.js";
 import { pickNonce, raiseAllowance, setupLines, unusedIntent } from "./owner.js";
 import { prepare, type Prepared, transactionSize } from "./prepare.js";
 import { AgentRefusal } from "./problems.js";
@@ -51,6 +51,7 @@ import {
   loadUser,
   memoInstruction,
   mintOf,
+  plainHttpOnPublic,
   tokenAccountIfMissing,
   type Transport,
 } from "@intent-engine/client";
@@ -98,7 +99,7 @@ export const SPEC_URL_UNSIGNED = `the spec url is not part of what the owner sig
 
 export const publishesLine = (url: string) => `Publishes: the acceptance spec's url ${url}, in a memo the relayer signs`;
 
-function publishedUrl(params: IntentParams, url: string | undefined): string | undefined {
+async function publishedUrl(transport: Transport, params: IntentParams, url: string | undefined): Promise<string | undefined> {
   if (url === undefined) {
     return undefined;
   }
@@ -107,6 +108,9 @@ function publishedUrl(params: IntentParams, url: string | undefined): string | u
   }
   if (!isMemoUrl(url)) {
     throw new InvalidInput([{ path: "spec_url", message: `must be ${MEMO_URL_RULE}` }]);
+  }
+  if (await plainHttpOnPublic(transport, url)) {
+    throw new InvalidInput([{ path: "spec_url", message: SPEC_URL_PLAIN }]);
   }
   return url;
 }
@@ -229,7 +233,7 @@ export const prepareSignedIntent = define({
     const now = await chainTime(transport);
     const expiresAt = expiryOf(input, now);
     const params = validate(paramsOf(input.order));
-    const specUrl = publishedUrl(params, input.spec_url);
+    const specUrl = await publishedUrl(transport, params, input.spec_url);
     if (relay !== undefined) {
       refuseLongRelay(relay, expiresAt, now);
       const { config } = await loadConfig(transport);
@@ -353,7 +357,7 @@ export const submitSignedIntent = define({
 
 async function relaySigned(transport: Transport, relay: Relay, input: SignedTerms & { signature: string }, call: Call) {
   const params = validate(paramsOf(input.order));
-  const specUrl = publishedUrl(params, input.spec_url);
+  const specUrl = await publishedUrl(transport, params, input.spec_url);
   const outputToken = await mintOf(transport, input.output_mint);
   const { config, inputToken, fields } = await fieldsOf(transport, input, params, outputToken.tokenProgram);
   const [intent] = await findIntentPda({ owner: input.owner, nonce: input.nonce });
@@ -466,7 +470,7 @@ export const previewSignedIntent = define({
   }),
   run: async ({ transport }, input) => {
     const params = validate(paramsOf(input.order));
-    const specUrl = publishedUrl(params, input.spec_url);
+    const specUrl = await publishedUrl(transport, params, input.spec_url);
     const outputToken = await mintOf(transport, input.output_mint);
     const { config, inputToken, fields } = await fieldsOf(transport, input, params, outputToken.tokenProgram);
     const message = await signedIntentMessage(fields);

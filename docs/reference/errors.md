@@ -12,6 +12,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `NotFound` | no | an account the call reads does not exist on this cluster |
 | `NotAMint` | no | an address passed as a mint is not a token mint |
 | `RateLimited` | yes | the RPC node is rate limiting; call again in a few seconds |
+| `Unreachable` | yes | the RPC node could not be reached: the connection was refused, the name did not resolve or the request failed; call again once it is back, and check whether a send landed before sending it again |
 | `Failed` | no | an unexpected error; the hint carries its message |
 | `TransactionFailed` | no | the transaction would fail for a reason this client does not name; read the logs |
 | `WalletNotConfigured` | no | a wallet tool was called on a server started without --wallet |
@@ -22,6 +23,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `WalletTradeLimit` | no | the trade sells more than the server's --wallet-per-trade limit for this token |
 | `ReleaseChanged` | no | the release differs from the one previewed: its payee, amount, result, fee or the escrow itself changed; preview it again and show the user |
 | `ReleaseTooLarge` | no | this split has too many co-authors to fit in one transaction; pass a lookup_table or reduce recipients as the hint says |
+| `WalletBusy` | yes | another server using the same wallet holds its sale record for a moment; call again |
 | `WalletHourLimit` | yes | the wallet sold as much of this token in the last hour as the server's --wallet-per-hour limit allows; try later or sell less |
 | `AgentNotConfigured` | no | solive_agent_create was called on a server started without --agent |
 | `OwnerNotServed` | no | the owner is not in the server's --agent-owners list |
@@ -47,6 +49,8 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `OwnerAccountMissing` | no | the owner has no token account that can take the refund; crank with fund_accounts |
 | `NotDeliverable` | no | the intent is not an open proof escrow, so no work can be delivered to it |
 | `NotEarliestAnnouncer` | no | another wallet announced the delivered work first; a release recording that work pays its earliest announcer |
+| `NotReleased` | no | the escrow has no release in its history, so no delivery can be recorded for it |
+| `AlreadyRecorded` | no | the release already records a delivered sha256, in its own memo or a follow-up, and a receipt reads the first |
 | `HistoryTooLong` | no | the record a release depends on is incomplete, so it is refused rather than decided from part of it: the history is longer than the pages read, which more pages fix, or the RPC node's ledger does not reach back to the escrow's creation, or the transport cannot page signatures or report its first available slot, which more pages do not fix |
 
 ## Engine program

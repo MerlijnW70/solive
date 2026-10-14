@@ -1,7 +1,7 @@
 import { type Address, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SolanaError } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import { INTENT_ENGINE_PROGRAM_ADDRESS, IntentCoreError } from "@intent-engine/core";
-import { MissingAccount, NotAMint } from "@intent-engine/client";
+import { MissingAccount, NotAMint, type Transport } from "@intent-engine/client";
 import idl from "@intent-engine/core/idl.json" with { type: "json" };
 import {
   AgentRefusal,
@@ -18,9 +18,14 @@ import {
   simulationProblem,
   TOKEN_PROBLEMS,
   TOKEN_PROGRAMS,
+  unreachableHint,
   untrusted,
 } from "../src/agent/problems.js";
 import { InvalidInput } from "../src/agent/schema.js";
+import { invoke } from "../src/agent/actions.js";
+import { claimsOf } from "../src/agent/claims.js";
+import { ACTIONS } from "../src/agent/registry.js";
+import { tool } from "../src/agent/names.js";
 
 const ENGINE = INTENT_ENGINE_PROGRAM_ADDRESS;
 const OTHER = "11111111111111111111111111111112" as Address;
@@ -179,5 +184,29 @@ describe("agent problems", () => {
       retryable: true,
       hint: "the RPC node is rate limiting; wait a few seconds and call again",
     });
+  });
+
+  it("an unreachable rpc is a retryable problem", async () => {
+    const url = "https://user:pass@rpc.example.org:8443/v1?api-key=hidden";
+    const refused = new TypeError("fetch failed", { cause: Object.assign(new Error("connect ECONNREFUSED 10.0.0.1:443"), { code: "ECONNREFUSED" }) });
+    const problem = problemOf(refused, url);
+    expect(problem).toEqual({ code: "Unreachable", retryable: true, hint: unreachableHint(url) });
+    expect(problem.hint).toContain("https://rpc.example.org:8443");
+    expect(problem.hint).not.toMatch(/user|pass|hidden|v1/);
+    expect(SERVER_PROBLEMS.Unreachable.retryable).toBe(true);
+    expect(problemOf(Object.assign(new Error("getaddrinfo ENOTFOUND rpc.example.org"), { code: "ENOTFOUND" }))).toMatchObject({ code: "Unreachable", retryable: true });
+    expect(problemOf({ message: "request failed", cause: { cause: { code: "EAI_AGAIN" } } })).toMatchObject({ code: "Unreachable", retryable: true });
+    expect(problemOf(new Error("connect ECONNREFUSED 127.0.0.1:8899"))).toMatchObject({ code: "Unreachable", hint: unreachableHint(undefined) });
+    expect(problemOf(new Error("HTTP error (500): Internal Server Error")).code).toBe("Failed");
+    const down = async () => {
+      throw refused;
+    };
+    const offline = { getAccount: down, getAccounts: down, genesisHash: down, engineTransactions: down, intents: down } as unknown as Transport;
+    const action = ACTIONS.find((a) => a.name === tool("get_config"));
+    if (action === undefined) {
+      throw new Error("no get_config tool");
+    }
+    const outcome = await invoke(action, { transport: offline, relay: undefined, agent: undefined, claims: claimsOf(), url }, {});
+    expect(outcome).toEqual({ ok: false, problem: { code: "Unreachable", retryable: true, hint: unreachableHint(url) } });
   });
 });

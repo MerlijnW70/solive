@@ -31,6 +31,8 @@ import {
   loadUser,
   memoInstruction,
   mintOf,
+  PLAIN_HTTP_ON_PUBLIC,
+  plainHttpOnPublic,
   tokenAccountIfMissing,
   wrapIfShort,
 } from "@intent-engine/client";
@@ -43,6 +45,8 @@ import { InvalidInput } from "./schema.js";
 import { orderSchema, paramsOf, partnerSchema, preparedSchema, preparedView } from "./shapes.js";
 import { tokenNames } from "../tokens.js";
 import { account, amount, integer, list, object, optional, text, time } from "./schema.js";
+
+export const SPEC_URL_PLAIN = `${PLAIN_HTTP_ON_PUBLIC}; give an https url`;
 
 export const WRAPPED = ", as wrapped SOL they unwrap themselves";
 
@@ -120,6 +124,9 @@ export const prepareCreate = define({
     }
     if (specUrl !== undefined && !isMemoUrl(specUrl)) {
       throw new InvalidInput([{ path: "spec_url", message: `must be ${MEMO_URL_RULE}` }]);
+    }
+    if (specUrl !== undefined && (await plainHttpOnPublic(transport, specUrl))) {
+      throw new InvalidInput([{ path: "spec_url", message: SPEC_URL_PLAIN }]);
     }
     const { config } = await loadConfig(transport);
     const [inputToken, outputToken] = [await mintOf(transport, input.input_mint), await mintOf(transport, input.output_mint)];

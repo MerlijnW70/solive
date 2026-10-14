@@ -1,5 +1,16 @@
-import { createHash } from "node:crypto";
-import { AccountRole, type Address, createNoopSigner, getAddressDecoder, getBase16Decoder, getBase16Encoder, type KeyPairSigner, signBytes } from "@solana/kit";
+import { createHash, randomUUID } from "node:crypto";
+import {
+  AccountRole,
+  type Address,
+  createNoopSigner,
+  getAddressDecoder,
+  getBase16Decoder,
+  getBase16Encoder,
+  type Instruction,
+  type KeyPairSigner,
+  signBytes,
+  type TransactionSigner,
+} from "@solana/kit";
 import {
   attestedFillMessage,
   attestedProofMessage,
@@ -39,6 +50,9 @@ import {
   announcements,
   chainTime,
   CLOCK_SYSVAR,
+  createdAtOf,
+  type EngineTransaction,
+  explain,
   DELIVERY_PAGES,
   deliveryRecord,
   deliveryInstructions,
@@ -53,6 +67,7 @@ import {
   neverLanded,
   PACKET_DATA_SIZE,
   recordedDelivery,
+  scan,
   SIGNATURE_PAGE,
   tokenAccountIfMissing,
   type Transport,
@@ -74,12 +89,11 @@ import { walletRecipient } from "./owner.js";
 import { prepare, transactionSize } from "./prepare.js";
 import { prepareCancel } from "./settle.js";
 import { STATUS } from "../accounts.js";
+import { fileSales, type Sale, type SaleBook, salesPath } from "./sales.js";
 
-type Sale = { mint: Address; at: bigint; amount: bigint };
+export type WalletGuard = { limits: WalletLimits; book: SaleBook };
 
-export type WalletGuard = { limits: WalletLimits; sales: Sale[] };
-
-export const walletGuard = (limits: WalletLimits): WalletGuard => ({ limits, sales: [] });
+export const walletGuard = (limits: WalletLimits, book: SaleBook = fileSales()): WalletGuard => ({ limits, book });
 
 export type WalletAccess = {
   url: string;
@@ -215,7 +229,22 @@ function capOf(text: string, decimals: number, mint: Address): bigint {
   }
 }
 
-function checkSale(guard: WalletGuard, mint: Address, decimals: number, amount: bigint, now: bigint): void {
+async function bookOf(wallet: WalletAccess): Promise<string | undefined> {
+  const path = await savedKeypair(wallet);
+  return path === undefined ? undefined : salesPath(path);
+}
+
+const live = (sales: readonly Sale[], now: bigint): Sale[] => sales.filter((s) => s.at > now - SALE_WINDOW);
+
+async function salesOf(wallet: WalletAccess, now: bigint): Promise<Sale[]> {
+  if (!limited(wallet.limits)) {
+    return [];
+  }
+  const path = await bookOf(wallet);
+  return path === undefined ? [] : live(await wallet.limits.book.read(path), now);
+}
+
+function checkSale(guard: WalletGuard, mint: Address, decimals: number, amount: bigint, now: bigint, sales: readonly Sale[]): void {
   if (!limited(guard)) {
     return;
   }
@@ -232,17 +261,18 @@ function checkSale(guard: WalletGuard, mint: Address, decimals: number, amount: 
       `this server sells at most ${trade} ${name} per trade and this sells ${formatAmount(amount, decimals)}; sell less, or the user restarts the server with a higher --wallet-per-trade`,
     );
   }
-  checkHour(guard, mint, decimals, amount, now);
+  checkHour(guard, mint, decimals, amount, now, sales);
 }
 
-function checkHour(guard: WalletGuard, mint: Address, decimals: number, amount: bigint, now: bigint): void {
+function checkHour(guard: WalletGuard, mint: Address, decimals: number, amount: bigint, now: bigint, sales: readonly Sale[]): void {
   const hour = guard.limits.perHour.get(mint);
   const name = nameOf(mint);
   if (hour === undefined) {
     return;
   }
-  guard.sales = guard.sales.filter((s) => s.at > now - SALE_WINDOW);
-  const used = guard.sales.filter((s) => s.mint === mint).reduce((sum, s) => sum + s.amount, 0n);
+  const used = live(sales, now)
+    .filter((s) => s.mint === mint)
+    .reduce((sum, s) => sum + s.amount, 0n);
   const cap = capOf(hour, decimals, mint);
   if (used + amount > cap) {
     throw new AgentRefusal(
@@ -350,29 +380,56 @@ async function offered(
     chainTime(ctx.transport),
   ]);
   const made = await terms(inputToken, outputToken, now, inputMint, outputMint);
-  checkSale(wallet.limits, inputMint, inputToken.decimals, (made.order as { amount_in: bigint }).amount_in, now);
-  const view = (await prepareCreate.run(
-    ctx,
-    { owner: signer.address, input_mint: inputMint, output_mint: outputMint, ...(input.pay_to === undefined ? {} : { pay_to: input.pay_to }), ...made } as never,
-    call,
-  )) as Record<string, unknown>;
-  const { intent, nonce, summary, warnings, prepared } = view;
   const sold = (made.order as { amount_in: bigint }).amount_in;
   const guard = wallet.limits;
-  checkSale(guard, inputMint, inputToken.decimals, sold, now);
-  if (input.send !== true || !limited(guard)) {
-    return sent(ctx, signer, { intent, nonce, summary, warnings, prepared }, input.send, call);
+  checkSale(guard, inputMint, inputToken.decimals, sold, now, await salesOf(wallet, now));
+  const created = async (context: AgentContext) => {
+    const view = (await prepareCreate.run(
+      context,
+      { owner: signer.address, input_mint: inputMint, output_mint: outputMint, ...(input.pay_to === undefined ? {} : { pay_to: input.pay_to }), ...made } as never,
+      call,
+    )) as Record<string, unknown>;
+    const { intent, nonce, summary, warnings, prepared } = view;
+    return { intent, nonce, summary, warnings, prepared };
+  };
+  const first = await created(ctx);
+  if (input.send !== true) {
+    return sent(ctx, signer, first, input.send, call);
   }
-  const sale = { mint: inputMint, at: now, amount: sold };
-  guard.sales.push(sale);
+  const path = limited(guard) ? await bookOf(wallet) : undefined;
+  const sale: Sale = { id: randomUUID(), mint: inputMint, at: now, amount: sold };
+  if (path !== undefined) {
+    await guard.book.update(path, (sales) => {
+      const kept = live(sales, now);
+      checkSale(guard, inputMint, inputToken.decimals, sold, now, kept);
+      return { sales: [...kept, sale], value: undefined };
+    });
+  }
   try {
-    return await sent(ctx, signer, { intent, nonce, summary, warnings, prepared }, input.send, call);
+    try {
+      return await sent(ctx, signer, first, true, call);
+    } catch (error) {
+      if (!nonceTaken(error)) {
+        throw error;
+      }
+      return await sent(ctx, signer, await created({ ...ctx, transport: unmemoized(ctx.transport) }), true, call);
+    }
   } catch (error) {
-    if (neverLanded(error)) {
-      guard.sales = guard.sales.filter((s) => s !== sale);
+    if (path !== undefined && neverLanded(error)) {
+      await guard.book.update(path, (sales) => ({ sales: sales.filter((s) => s.id !== sale.id), value: undefined }));
     }
     throw error;
   }
+}
+
+const NONCE_COLLISIONS: ReadonlySet<string> = new Set(["NonceUsed", "NonceTaken"]);
+
+export function nonceTaken(error: unknown): boolean {
+  if (NONCE_COLLISIONS.has(problemOf(error).code) || explain(error)?.name === "NonceUsed") {
+    return true;
+  }
+  const text = error instanceof Error ? error.message : String(error);
+  return /already in use/i.test(text);
 }
 
 export const SWAP_FALLS_OVER = 120;
@@ -583,10 +640,11 @@ const walletEscrowPlan = define({
       attestor: piece.attestor ?? input.attestor,
     }));
     const total = planned.reduce((sum, piece) => sum + piece.amountIn, 0n);
+    const sales = await salesOf(wallet, now);
     for (const piece of planned) {
-      checkSale(wallet.limits, sold, token.decimals, piece.amountIn, now);
+      checkSale(wallet.limits, sold, token.decimals, piece.amountIn, now, sales);
     }
-    checkHour(wallet.limits, sold, token.decimals, total, now);
+    checkHour(wallet.limits, sold, token.decimals, total, now, sales);
     const terms = (piece: Piece) => (_sold: Token, _bought: Token, at: bigint) => ({
       order: { kind: "attested" as const, amount_in: piece.amountIn, min_result: 1n, max_result: 1n, attestor: piece.attestor },
       expires_at: at + BigInt((input.expires_in ?? ESCROW_EXPIRES_IN) + LANDING_SECONDS),
@@ -992,7 +1050,7 @@ export const splitTooLarge = (size: number, recipients: number, withTable: boole
 export const RECORDS_SPLIT = (delivered: string): string =>
   `Records: the delivered work's sha256 ${delivered}, in a memo this wallet signs with the release, or in a follow-up transaction this wallet signs right after it when the release has no room for the memo`;
 export const followUpFailed = (reason: string): string =>
-  `the release landed, but the follow-up transaction that records the delivered work's sha256 failed, so the hash is not recorded on chain: ${reason}; to record it, send from this wallet a transaction with the memo in record_memo, which ${tool("wallet_receipt")} then reads`;
+  `the release landed, but the follow-up transaction that records the delivered work's sha256 failed, so the hash is not recorded on chain: ${reason}; to record it, call ${tool("wallet_record_delivery")} with the same owner, nonce and delivered_sha256, which sends the memo in record_memo for ${tool("wallet_receipt")} to read`;
 export const SPLIT_WEIGHTS_WRONG = "the weights must be whole basis points that add up to 10000";
 export const SPLIT_SIG_NEEDED = "every co-author must sign the split before send: true; preview returns the envelope each one signs";
 export const SIGNATURE_PATTERN = "^[0-9a-fA-F]{128}$";
@@ -1043,7 +1101,7 @@ const walletAttestSplit = define({
     delivered_sha256: optional(text("the sha256 the release records")),
     recorded: optional(recordedWhere),
     follow_up_signature: optional(text("the follow-up transaction that records the sha256, when recorded is follow-up")),
-    record_memo: optional(text("when recorded is false, the memo that records the sha256 for this release; send it from this wallet with a zero transfer to the escrow")),
+    record_memo: optional(text(`when recorded is false, the memo that records the sha256 for this release; ${tool("wallet_record_delivery")} sends it from this wallet with a zero transfer to the escrow`)),
     summary: list(text(), 12),
     warnings: list(text(), 8),
     sent: flag(),
@@ -1243,6 +1301,95 @@ const walletAttestSplit = define({
   },
 });
 
+export const notReleasedYet = (intent: string) =>
+  `no release of the escrow ${intent} is in its history, so no delivery can be recorded for it`;
+
+export const alreadyRecorded = (sha256: string) =>
+  `this release already records the delivered work's sha256 ${sha256}, which a receipt reads; nothing more is recorded`;
+
+export const releasedBy = (attestor: string, signer: string) =>
+  `this escrow was released by its attestor ${attestor}, not by ${signer}; only the attestor that released it records what it paid for`;
+
+export type Recording = { intent: Address; release: string; attestor: Address; sha256: string; memo: string; instructions: Instruction[]; summary: string[] };
+
+export async function recordingOf(transport: Transport, judge: TransactionSigner, owner: Address, nonce: bigint, sha256: string): Promise<Recording> {
+  const [intent] = await findIntentPda({ owner, nonce });
+  const transactions = await escrowHistory(transport, intent);
+  for (const tx of transactions) {
+    if (tx.failed) {
+      continue;
+    }
+    const release = tx.emitted
+      .map(decodeEvent)
+      .find((event) => (event?.name === "IntentAttested" || event?.name === "IntentSplit") && (event.fields as Record<string, unknown>)["intent"] === intent);
+    if (release === undefined || release === null) {
+      continue;
+    }
+    const attestor = (release.fields as Record<string, unknown>)["attestor"] as Address;
+    if (attestor !== judge.address) {
+      throw new AgentRefusal("Unauthorized", releasedBy(attestor, judge.address));
+    }
+    const recorded = recordedDelivery(transactions, tx, attestor);
+    if (recorded !== null) {
+      throw new AgentRefusal("AlreadyRecorded", alreadyRecorded(recorded));
+    }
+    return {
+      intent,
+      release: tx.signature,
+      attestor,
+      sha256,
+      memo: followUpMemo(sha256, tx.signature),
+      instructions: followUpInstructions(judge, intent, sha256, tx.signature),
+      summary: [
+        `Records: the delivered work's sha256 ${sha256} for the release ${tx.signature} of the escrow ${intent}, in a memo ${attestor} signs`,
+        `Notifies: the escrow ${intent}, with a transfer of 0 lamports, so the memo shows in its history`,
+        "Costs: the transaction fee; no tokens move",
+      ],
+    };
+  }
+  throw new AgentRefusal("NotReleased", notReleasedYet(intent));
+}
+
+const walletRecordDelivery = define({
+  name: tool("wallet_record_delivery"),
+  title: "Record which work a release paid for",
+  description: `As the attestor that released a proof escrow, record the sha256 of the delivered work the release paid for when the release itself recorded none, such as when ${tool("wallet_attest_split")} returned recorded: false: this server's wallet sends one transaction with the follow-up memo naming the release and the sha256, and a transfer of 0 lamports to the escrow so ${tool("wallet_receipt")} reads it. It refuses unless the escrow has a release, made by this wallet, that records no sha256 yet. It moves no tokens and costs only the transaction fee. Without send it only previews; show the user the summary and call again with send: true once they approve.`,
+  effect: "submit",
+  destructive: false,
+  input: object({
+    owner: account("the wallet that made the escrow"),
+    nonce: amount("the escrow intent's nonce"),
+    sha256: text("the sha256, as 64 hex digits, of the work the release paid for: the delivered_sha256 it was sent with"),
+    send: optional(flag("true signs and sends; leave out to preview")),
+  }),
+  output: object({
+    intent: account(),
+    release: text("the release's transaction"),
+    sha256: text(),
+    memo: text("the memo the transaction records"),
+    summary: list(text(), 8),
+    warnings: list(text(), 8),
+    sent: flag(),
+    signature: optional(text()),
+    next: optional(text()),
+  }),
+  run: async (ctx: AgentContext, input, call: Call) => {
+    const signer = await signerOf(ctx);
+    const sha256 = sha256Of(input.sha256, "sha256");
+    const recording = await recordingOf(ctx.transport, signer, input.owner, input.nonce, sha256);
+    const view = {
+      intent: recording.intent,
+      release: recording.release,
+      sha256,
+      memo: recording.memo,
+      summary: recording.summary,
+      warnings: [],
+      prepared: preparedView(await prepare(ctx.transport, recording.instructions, signer.address)),
+    };
+    return sent(ctx, signer, view, input.send, call);
+  },
+});
+
 export const MAX_RECURRING = 12;
 
 export const mayHaveLanded = (sent: number, times: number, problem: string) =>
@@ -1307,8 +1454,9 @@ const walletRecurring = define({
         input.start_receive === undefined ? { path: "min_receive", message: NO_FALL } : { path: "start_receive", message: "must be more than min_receive, or the order has no ask to fall" },
       ]);
     }
-    checkSale(wallet.limits, inputMint, inputToken.decimals, amountIn, now);
-    checkHour(wallet.limits, inputMint, inputToken.decimals, amountIn * BigInt(input.times), now);
+    const sales = await salesOf(wallet, now);
+    checkSale(wallet.limits, inputMint, inputToken.decimals, amountIn, now, sales);
+    checkHour(wallet.limits, inputMint, inputToken.decimals, amountIn * BigInt(input.times), now, sales);
     const falls = BigInt(input.falls_over ?? SWAP_FALLS_OVER);
     const every = BigInt(input.every);
     const life = falls > every ? falls : every;
@@ -1442,12 +1590,30 @@ type Fill = { intent: Address; amountIn: bigint; delivered: bigint; signature: s
 
 type Pair = { inputMint: Address; outputMint: Address };
 
-async function engineHistory(transport: Transport, limit: number, of?: Address) {
+export const HISTORY_PAGES = 10;
+
+const createdIn = (tx: EngineTransaction, intent: Address): boolean =>
+  !tx.failed &&
+  tx.emitted.some((data) => {
+    const event = decodeEvent(data);
+    return event?.name === "IntentCreated" && (event.fields as Record<string, unknown>)["intent"] === intent;
+  });
+
+export async function escrowHistory(transport: Transport, intent: Address): Promise<EngineTransaction[]> {
+  const floor = await createdAtOf(transport, intent);
+  return (await scan(transport, intent, { floor, pages: HISTORY_PAGES, until: (tx) => createdIn(tx, intent) })).transactions;
+}
+
+async function engineHistory(transport: Transport, limit: number) {
+  return historyIn(await transport.engineTransactions(limit));
+}
+
+function historyIn(transactions: readonly EngineTransaction[]) {
   const created = new Map<Address, Pair>();
   const fills: Fill[] = [];
   const ended = new Map<Address, "cancelled" | "expired">();
   let unread = 0;
-  for (const tx of await transport.engineTransactions(limit, of)) {
+  for (const tx of transactions) {
     if (tx.unread === true) {
       unread += 1;
     }
@@ -1599,7 +1765,7 @@ const walletWait = define({
     if (status === "cancelled" || status === "expired") {
       return { intent, status, waited };
     }
-    const history = await engineHistory(ctx.transport, WAIT_SCAN, intent);
+    const history = historyIn(await escrowHistory(ctx.transport, intent));
     const fills = history.fills.filter((f) => f.intent === intent);
     if (fills.length === 0) {
       const ended = status === "closed" ? (history.ended.get(intent) ?? status) : status;
@@ -1618,7 +1784,7 @@ const walletWait = define({
   },
 });
 
-export const NOT_RELEASED = `no release of this escrow is among its recent transactions; ${tool("wallet_wait")} or ${tool("wallet_intents")} shows whether it is still open`;
+export const NOT_RELEASED = `no release of this escrow is in its history; ${tool("wallet_wait")} or ${tool("wallet_intents")} shows whether it is still open`;
 
 const receiptOutput = object({
   intent: account(),
@@ -1666,7 +1832,7 @@ export const getReceipt = define({
 async function receiptOf(ctx: AgentContext, owner: Address, nonce: bigint, sha256: string | undefined) {
   const wanted = sha256 === undefined ? undefined : sha256Of(sha256, "sha256");
   const [intent] = await findIntentPda({ owner, nonce });
-  const transactions = await ctx.transport.engineTransactions(WAIT_SCAN, intent);
+  const transactions = await escrowHistory(ctx.transport, intent);
   let mint: Address | undefined;
   for (const tx of transactions) {
     for (const event of tx.emitted.map(decodeEvent)) {
@@ -1726,6 +1892,7 @@ export const WALLET_ACTIONS: readonly AnyAction[] = [
   walletEscrowPlan,
   walletAttest,
   walletAttestSplit,
+  walletRecordDelivery,
   walletDeliver,
   walletCheckDelivery,
   walletWait,

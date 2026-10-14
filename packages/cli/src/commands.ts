@@ -82,8 +82,9 @@ import {
 import { agentServer } from "./agent/mcp.js";
 import { claimsOf } from "./agent/claims.js";
 import { budgetOf } from "./agent/budget.js";
-import { ESTIMATE_SCAN, walletGuard } from "./agent/wallet.js";
+import { ESTIMATE_SCAN, recordingOf, walletGuard } from "./agent/wallet.js";
 import { relayOf } from "./agent/relay.js";
+import type { SaleBook } from "./agent/sales.js";
 import { type Authority, type Command, type Env, usageOf } from "./args.js";
 import { VERSION } from "./version.js";
 import { balances, defaultMints, setup } from "./wallet.js";
@@ -118,6 +119,7 @@ export type Runtime = {
   fetch: Fetch;
   entropy(): number;
   serve(server: McpServer): Promise<void>;
+  saleBook?: SaleBook;
 };
 
 const SOLVER_ROUTE_ACCOUNTS = 40;
@@ -548,11 +550,11 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       const wallet =
         command.wallet === null
           ? {}
-          : { wallet: { url: command.url, files: runtime, env: runtime.env, sleep: runtime.sleep, now: runtime.now, limits: walletGuard(command.wallet) } };
+          : { wallet: { url: command.url, files: runtime, env: runtime.env, sleep: runtime.sleep, now: runtime.now, limits: walletGuard(command.wallet, runtime.saleBook) } };
       if (command.wallet !== null) {
         transport.engineTransactions(ESTIMATE_SCAN).catch(() => undefined);
       }
-      await runtime.serve(agentServer({ transport, relay, agent, claims: claimsOf(), ...wallet }));
+      await runtime.serve(agentServer({ transport, relay, agent, claims: claimsOf(), url: command.url, ...wallet }));
       return null;
     }
     case "setup":
@@ -643,6 +645,12 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "receipt": {
       const [intent] = await findIntentPda({ owner: command.owner, nonce: command.nonce });
       return receiptOf(transport, command.url, intent, command.sha256);
+    }
+    case "record-delivery": {
+      const judge = await runtime.loadSigner(command.keypair);
+      const recording = await recordingOf(transport, judge, command.owner, command.nonce, command.sha256);
+      const { intent, release, sha256, memo, summary, instructions } = recording;
+      return previewed(transport, instructions, judge, { intent, release, sha256, memo, summary }, command.yes);
     }
     case "deliveries": {
       const record = await deliveryRecord(transport, command.attestor, command.intent, command.maxPages);

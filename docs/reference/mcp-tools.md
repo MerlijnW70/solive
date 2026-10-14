@@ -2,7 +2,7 @@
 
 # MCP tools
 
-21 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 16 wallet tools, listed first.
+21 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 17 wallet tools, listed first.
 
 ## solive_wallet_setup
 
@@ -177,6 +177,21 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | `delivered_sha256` | string | no | the sha256, as 64 hex digits, of the work this release pays for; required, since a release recording it must include that work's earliest announcer among the recipients; recorded in a memo this wallet signs with the release, or right after it when the release has no room for the memo, so the payer can check what it receives with solive_wallet_receipt |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs the attestation and settles; leave out to preview |
+
+## solive_wallet_record_delivery
+
+Served only with `--wallet`.
+
+As the attestor that released a proof escrow, record the sha256 of the delivered work the release paid for when the release itself recorded none, such as when solive_wallet_attest_split returned recorded: false: this server's wallet sends one transaction with the follow-up memo naming the release and the sha256, and a transfer of 0 lamports to the escrow so solive_wallet_receipt reads it. It refuses unless the escrow has a release, made by this wallet, that records no sha256 yet. It moves no tokens and costs only the transaction fee. Without send it only previews; show the user the summary and call again with send: true once they approve.
+
+Effect: `submit` (read-only: false, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `owner` | address | yes | the wallet that made the escrow |
+| `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
+| `sha256` | string | yes | the sha256, as 64 hex digits, of the work the release paid for: the delivered_sha256 it was sent with |
+| `send` | boolean | no | true signs and sends; leave out to preview |
 
 ## solive_wallet_deliver
 
