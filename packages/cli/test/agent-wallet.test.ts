@@ -20,6 +20,15 @@ import {
   getFillEndedEventEncoder,
   getIntentFilledEventEncoder,
   getIntentAttestedEventEncoder,
+  getIntentSplitEventEncoder,
+  attestedSplitMessage,
+  buildEd25519BatchInstruction,
+  buildFillAttestedSplit,
+  computeUnitLimit,
+  computeUnitPrice,
+  MAX_COMPUTE_UNITS,
+  releaseMemo,
+  splitCommit,
   IntentStatus,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   formatAmount,
@@ -32,7 +41,8 @@ import {
   formatTime,
 } from "@intent-engine/core";
 import { beforeEach, describe, expect, it } from "vitest";
-import { BlockhashExpired, DELIVERY_SCAN, FailedOnChain } from "@intent-engine/client";
+import { BlockhashExpired, DELIVERY_SCAN, FailedOnChain, followUpMemo, loadConfig, memoInstruction } from "@intent-engine/client";
+import { transactionSize } from "../src/agent/prepare.js";
 import { WALLET_NOT_MAINNET } from "../src/args.js";
 import { WRAPPED } from "../src/agent/create.js";
 import { AgentRefusal } from "../src/agent/problems.js";
@@ -54,6 +64,10 @@ import {
   notInSplit,
   NO_FALL,
   NOT_RELEASED,
+  PACKET_DATA_SIZE,
+  RECORDS_SPLIT,
+  SPLIT_FITS,
+  SPLIT_FITS_WITH_TABLE,
   partlySent,
   piecesMayHaveLanded,
   piecesPartlySent,
@@ -76,7 +90,7 @@ import { ACTIONS } from "../src/agent/registry.js";
 import { EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT } from "@intent-engine/core";
 import { AIRDROP, AIRDROP_REFUSED, defaultWallet, FUNDED, keptDefault, LAMPORTS_PER_SOL, savedDefault, settingsPath } from "../src/wallet.js";
-import { balance, cli, creation, FEE_BPS, h, HOME, setNow, transport, world } from "./harness.js";
+import { ata, balance, cli, creation, FEE_BPS, funded, h, HOME, setNow, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -513,7 +527,141 @@ describe("the wallet server", () => {
     const crowdSigned = await Promise.all(
       manyRecipients.map(async (r, i) => ({ ...r, signature: getBase16Decoder().decode(new Uint8Array(await signBytes(many[i]!.keyPair.privateKey, crowdEnvelope))) })),
     );
-    expect((await call(client, "wallet_attest_split", { owner, nonce: crowd["nonce"], delivered_sha256, recipients: crowdSigned, approval: crowdShown["approval"], send: true })).value).toMatchObject({ code: "ReleaseTooLarge" });
+    const tooLarge = (await call(client, "wallet_attest_split", { owner, nonce: crowd["nonce"], delivered_sha256, recipients: crowdSigned, approval: crowdShown["approval"], send: true })).value;
+    expect(tooLarge).toMatchObject({ code: "ReleaseTooLarge" });
+    expect(tooLarge["hint"]).toContain(`a release fits ${SPLIT_FITS} co-authors without a lookup table and ${SPLIT_FITS_WITH_TABLE} with one`);
+  });
+
+  async function releaseSize(recipients: number, withMemo: boolean, withTable: boolean): Promise<number> {
+    const judge = await generateKeyPairSigner();
+    const signers = await Promise.all(Array.from({ length: recipients }, () => generateKeyPairSigner()));
+    const wallets = signers.map((s) => s.address);
+    const weights = wallets.map((_, i) => (i === 0 ? 10_000 - Math.floor(10_000 / recipients) * (recipients - 1) : Math.floor(10_000 / recipients)));
+    const owner = (await generateKeyPairSigner()).address;
+    const feeRecipient = (await generateKeyPairSigner()).address;
+    const [intent] = await findIntentPda({ owner, nonce: 1n });
+    const settle = await buildFillAttestedSplit({
+      solver: judge,
+      owner,
+      nonce: 1n,
+      inputMint: NATIVE_MINT,
+      inputTokenProgram: TOKEN_PROGRAM_ADDRESS,
+      recipients: wallets,
+      weights,
+      feeRecipient,
+      judge: judge.address,
+      amountIn: LAMPORTS_PER_SOL,
+      result: 1n,
+      maxFeeBps: FEE_BPS,
+    });
+    const message = await attestedSplitMessage({
+      domain: new Uint8Array(32),
+      intent,
+      amountIn: LAMPORTS_PER_SOL,
+      result: 1n,
+      filled: 0n,
+      revision: 0,
+      maxFeeBps: FEE_BPS,
+      specHash: new Uint8Array(32).fill(1),
+      splitHash: await splitCommit(wallets, weights),
+    });
+    const batch = buildEd25519BatchInstruction({ entries: [...wallets, judge.address].map((publicKey) => ({ publicKey, signature: new Uint8Array(64) })), message });
+    const memo = memoInstruction(judge, releaseMemo("ab".repeat(32)));
+    const instructions = [batch, settle, ...(withMemo ? [memo] : []), computeUnitLimit(MAX_COMPUTE_UNITS), computeUnitPrice(1n)];
+    const invoked = new Set<Address>([INTENT_ENGINE_PROGRAM_ADDRESS, TOKEN_PROGRAM_ADDRESS, judge.address]);
+    const table = withTable ? { [(await generateKeyPairSigner()).address]: [...new Set((settle.accounts ?? []).map((a) => a.address))].filter((a) => !invoked.has(a)) } : undefined;
+    return transactionSize(transport, instructions, judge.address, table);
+  }
+
+  it("a two co-author split release fits without a lookup table", async () => {
+    expect(SPLIT_FITS).toBe(2);
+    expect(await releaseSize(SPLIT_FITS, false, false)).toBeLessThanOrEqual(PACKET_DATA_SIZE);
+    expect(await releaseSize(SPLIT_FITS + 1, false, false)).toBeGreaterThan(PACKET_DATA_SIZE);
+    expect(await releaseSize(SPLIT_FITS, true, false)).toBeGreaterThan(PACKET_DATA_SIZE);
+    expect(await releaseSize(SPLIT_FITS_WITH_TABLE, false, true)).toBeLessThanOrEqual(PACKET_DATA_SIZE);
+    expect(await releaseSize(SPLIT_FITS_WITH_TABLE + 1, false, true)).toBeGreaterThan(PACKET_DATA_SIZE);
+
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    h.watched.push(owner);
+    const payer = await funded();
+    const { config } = await loadConfig(transport);
+    await ata(payer, config.feeRecipient, NATIVE_MINT);
+    const coauthors = [await generateKeyPairSigner(), await generateKeyPairSigner()];
+    for (const c of coauthors) {
+      await ata(payer, c.address, NATIVE_MINT);
+    }
+    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, min_result: "1", max_result: "1", spec_hash: "5d".repeat(32), send: true });
+    const nonce = escrow["nonce"] as string;
+    const intent = escrow["intent"] as Address;
+    const work = "d1".repeat(32);
+    h.engineLog = [creation(intent)];
+    const recipients = coauthors.map((c) => ({ wallet: c.address, weight: 5000 }));
+    const shown = await ok(client, "wallet_attest_split", { owner, nonce, recipients, delivered_sha256: work });
+    expect(shown["summary"]).toContain(RECORDS_SPLIT(work));
+    expect(shown).not.toHaveProperty("recorded");
+    const envelope = bytesOf(shown["envelope"] as string);
+    const signed = await Promise.all(
+      recipients.map(async (r, i) => ({ ...r, signature: getBase16Decoder().decode(new Uint8Array(await signBytes(coauthors[i]!.keyPair.privateKey, envelope))) })),
+    );
+    h.wires.length = 0;
+    const done = await ok(client, "wallet_attest_split", { owner, nonce, recipients: signed, delivered_sha256: work, approval: shown["approval"], send: true });
+    expect(done).toMatchObject({ sent: true, recorded: "follow-up", delivered_sha256: work, signature: expect.any(String), follow_up_signature: expect.any(String) });
+    expect(h.wires).toHaveLength(2);
+    const [release, followUp] = h.wires.map((wire) => Buffer.from(wire, "base64").toString("latin1"));
+    expect(release).not.toContain(RELEASE_MEMO_PREFIX);
+    expect(followUp).toContain(followUpMemo(work, done["signature"] as string));
+    for (const c of coauthors) {
+      expect(balance(await findAssociatedTokenAddress({ owner: c.address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS }))).toBeGreaterThan(0n);
+    }
+  });
+
+  it("a split too large for the memo records the hash in a follow-up", async () => {
+    const work = "d2".repeat(32);
+    const { owner, intent, nonce, coauthors, recipients, announce } = await splitEscrow(work);
+    const [first] = coauthors;
+    if (first === undefined) {
+      throw new Error("no co-authors");
+    }
+    const payer = await funded();
+    const { config } = await loadConfig(transport);
+    for (const wallet of [config.feeRecipient, ...coauthors.map((c) => c.address)]) {
+      await ata(payer, wallet, NATIVE_MINT);
+    }
+    h.engineLog = [announce("early", 5n, first.address), creation(intent)];
+    const shown = await ok(client, "wallet_attest_split", { owner, nonce, recipients, delivered_sha256: work });
+    const other = await ok(client, "wallet_attest_split", { owner, nonce, recipients, delivered_sha256: "d3".repeat(32) });
+    expect(other["approval"]).not.toBe(shown["approval"]);
+    const envelope = bytesOf(shown["envelope"] as string);
+    const signed = await Promise.all(
+      recipients.map(async (r, i) => ({ ...r, signature: getBase16Decoder().decode(new Uint8Array(await signBytes(coauthors[i]!.keyPair.privateKey, envelope))) })),
+    );
+    expect((await call(client, "wallet_attest_split", { owner, nonce, recipients: signed, delivered_sha256: "d3".repeat(32), approval: shown["approval"], send: true })).value).toMatchObject({ code: "ReleaseChanged" });
+    h.wires.length = 0;
+    const done = await ok(client, "wallet_attest_split", { owner, nonce, recipients: signed, delivered_sha256: work, approval: shown["approval"], send: true });
+    expect(done).toMatchObject({ sent: true, recorded: "follow-up", follow_up_signature: expect.any(String) });
+    const [release, followUp] = h.wires.map((wire) => Buffer.from(wire, "base64").toString("latin1"));
+    expect(release).not.toContain(RELEASE_MEMO_PREFIX);
+    expect(followUp).toContain(followUpMemo(work, done["signature"] as string));
+    const held = h.svm.getAccount(intent);
+    expect(held.exists && getIntentDecoder().decode(held.data).status).toBe(IntentStatus.Filled);
+
+    const again = await splitEscrow(work);
+    for (const c of again.coauthors) {
+      await ata(payer, c.address, NATIVE_MINT);
+    }
+    h.engineLog = [creation(again.intent)];
+    const preview = await ok(client, "wallet_attest_split", { owner: again.owner, nonce: again.nonce, recipients: again.recipients, delivered_sha256: work });
+    const sealed = bytesOf(preview["envelope"] as string);
+    const cosigned = await Promise.all(
+      again.recipients.map(async (r, i) => ({ ...r, signature: getBase16Decoder().decode(new Uint8Array(await signBytes(again.coauthors[i]!.keyPair.privateKey, sealed))) })),
+    );
+    h.wires.length = 0;
+    h.sendFails = { error: new Error("blockhash not found"), landed: false, after: 1 };
+    const lost = await ok(client, "wallet_attest_split", { owner: again.owner, nonce: again.nonce, recipients: cosigned, delivered_sha256: work, approval: preview["approval"], send: true });
+    expect(lost).toMatchObject({ sent: true, signature: expect.any(String) });
+    expect(lost).not.toHaveProperty("recorded");
+    expect(lost["next"]).toMatch(/^the release landed, but the follow-up transaction that records the delivered work's sha256 failed/);
+    expect(h.wires).toHaveLength(1);
   });
 
   async function splitEscrow(work: string) {
@@ -585,7 +733,7 @@ describe("the wallet server", () => {
     h.engineLog = [announce("early", 5n, first.address), creation(intent)];
     const shown = await ok(client, "wallet_attest_split", { owner, nonce, recipients, delivered_sha256: work });
     expect(shown).toMatchObject({ delivered_sha256: work, sent: false });
-    expect(shown["summary"]).toContain(`Records: the delivered work's sha256 ${work}, in a memo this wallet signs with the release`);
+    expect(shown["summary"]).toContain(RECORDS_SPLIT(work));
     const other = await ok(client, "wallet_attest_split", { owner, nonce, recipients, delivered_sha256: "c5".repeat(32) });
     expect(other["approval"]).not.toBe(shown["approval"]);
     expect(other["digest"]).toBe(shown["digest"]);
@@ -597,6 +745,7 @@ describe("the wallet server", () => {
     h.wires.length = 0;
     expect(await ok(client, "wallet_attest_split", { owner, nonce, recipients: signed, delivered_sha256: work, approval: shown["approval"], send: true })).toMatchObject({
       delivered_sha256: work,
+      recorded: "release",
       sent: true,
       signature: expect.any(String),
     });
@@ -877,6 +1026,59 @@ describe("the wallet server", () => {
     expect(plain).toMatchObject({ paid: formatAmount(net, 9), matches: false });
     expect(plain).not.toHaveProperty("delivered_sha256");
     expect((await call(client, "wallet_receipt", { nonce: "7", sha256: "xyz" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "sha256" }] });
+  });
+
+  it("receipt reads a follow-up delivery memo", async () => {
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    const [intent] = await findIntentPda({ owner, nonce: 8n });
+    const attestor = (await generateKeyPairSigner()).address;
+    const impostor = (await generateKeyPairSigner()).address;
+    const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
+    const { fee, net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);
+    const split = getIntentSplitEventEncoder().encode({
+      intent,
+      owner,
+      solver: attestor,
+      attestor,
+      amountIn: LAMPORTS_PER_SOL / 20n,
+      result: 1n,
+      fee,
+      net,
+      partnerFee: 0n,
+      recipients: 3,
+      splitHash: new Uint8Array(32),
+    });
+    const work = "e1".repeat(32);
+    const releaseSignature = "5".repeat(88);
+    const otherRelease = "6".repeat(88);
+    const release = { signature: releaseSignature, slot: 3n, blockTime: null, failed: false, emitted: [tag(split)], feePayer: attestor };
+    const recording = (by: Address, sha256: string, of: string, signature: string) => ({
+      signature,
+      slot: 4n,
+      blockTime: null,
+      failed: false,
+      emitted: [],
+      memos: [followUpMemo(sha256, of)],
+      feePayer: by,
+    });
+    h.engineLog = [recording(impostor, "e2".repeat(32), releaseSignature, "forged"), recording(attestor, "e3".repeat(32), otherRelease, "elsewhere"), release];
+    const unrecorded = await ok(client, "wallet_receipt", { owner, nonce: "8", sha256: work });
+    expect(unrecorded).toMatchObject({ released: true, signature: releaseSignature, recipients: "3", matches: false });
+    expect(unrecorded).not.toHaveProperty("delivered_sha256");
+    h.engineLog = [recording(attestor, work, releaseSignature, "follow-up"), ...h.engineLog];
+    expect(await ok(client, "wallet_receipt", { owner, nonce: "8", sha256: work })).toEqual({
+      intent,
+      released: true,
+      paid: `${net} raw units`,
+      attestor,
+      result: "1",
+      recipients: "3",
+      signature: releaseSignature,
+      delivered_sha256: work,
+      matches: true,
+    });
+    h.engineLog = [{ ...release, memos: [`${RELEASE_MEMO_PREFIX}${work}`] }];
+    expect(await ok(client, "wallet_receipt", { owner, nonce: "8" })).toMatchObject({ signature: releaseSignature, delivered_sha256: work });
   });
 
   it("escrows SOL off devnet only with a record mint it is told, since TEST is a devnet name", async () => {

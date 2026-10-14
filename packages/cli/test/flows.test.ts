@@ -19,6 +19,8 @@ import {
   findIntentPda,
   findMandatePda,
   getConfigDecoder,
+  getIntentDecoder,
+  IntentStatus,
   getPauseRaisedEventEncoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   MANDATE_NONCE_BIT,
@@ -26,7 +28,7 @@ import {
 import { COMPUTE_BUDGET_ADDRESS } from "@intent-engine/solver";
 import type { Transport } from "@intent-engine/client";
 import { AUTHORITY_NEXT, follow, followGap, type Runtime } from "../src/commands.js";
-import { execute, FlowRefused, NOT_SENT } from "../src/flows.js";
+import { CANCELS_FAILED, execute, FlowRefused, NOT_SENT } from "../src/flows.js";
 import { NOTHING_TO_CREATE, TREASURY_IS_PROGRAM, treasuryTooEmpty } from "../src/treasury.js";
 import { TREASURY_CREATE_NEEDS_MINTS } from "../src/args.js";
 import { renderText } from "../src/render.js";
@@ -281,6 +283,68 @@ describe("command line flows", () => {
     expect(revoked).toMatchObject({ cancelled: [used["intent"]], still_open: 0, sent: true });
     const [address] = await findMandatePda({ owner: w.owner.address, agent: agent.address, id: 0n });
     expect(exists(address)).toBe(false);
+  });
+
+  it("revoke reports the cancels that landed when one fails", async () => {
+    const agent = await funded();
+    keys["agent.json"] = agent;
+    const grant = [
+      "mandate",
+      "grant",
+      "--keypair",
+      "owner.json",
+      "--agent",
+      agent.address,
+      "--input-mint",
+      w.inputMint,
+      "--output-mint",
+      w.outputMint,
+      "--kinds",
+      "swap",
+      "--per-intent",
+      "200",
+      "--total",
+      "600",
+      "--max-intents",
+      "3",
+      "--max-ttl",
+      "3600",
+      "--valid-for",
+      "86400",
+      "--floor-out",
+      "1",
+      "--floor-in",
+      "2",
+      "--agent-fee",
+      "10",
+      "--units",
+      "raw",
+      "--yes",
+    ];
+    expect((await cli(grant, keys)).json()).toMatchObject({ sent: true });
+    const use = ["mandate", "use", "swap", "--keypair", "agent.json", "--owner", w.owner.address, "--expires-in", "600", "--units", "raw", "--amount-in", "190", "--min-out", "100", "--yes"];
+    const opened: Address[] = [];
+    for (let i = 0; i < 2; i++) {
+      const used = (await cli(use, keys)).json() as Json;
+      expect(used).toMatchObject({ sent: true });
+      opened.push(used["intent"] as Address);
+    }
+    const preview = (await cli(["mandate", "revoke", "--keypair", "owner.json", "--agent", agent.address], keys)).json() as Json;
+    const [first, second] = preview["cancelled"] as Address[];
+    expect(new Set([first, second])).toEqual(new Set(opened));
+    h.sendFails = { error: new Error("the cancel was dropped"), landed: false, after: 1 };
+    const revoked = await cli(["mandate", "revoke", "--keypair", "owner.json", "--agent", agent.address, "--yes"], keys);
+    expect([revoked.code, revoked.err]).toEqual([EXIT_OK, ""]);
+    const shown = revoked.json() as Json;
+    expect(shown).toMatchObject({ sent: true, failed: [{ intent: first, reason: "the cancel was dropped" }], next: CANCELS_FAILED });
+    expect(shown["signatures"]).toHaveLength(2);
+    const [address] = await findMandatePda({ owner: w.owner.address, agent: agent.address, id: 0n });
+    expect(exists(address)).toBe(false);
+    const statusOf = (intent: Address | undefined) => {
+      const view = intent === undefined ? null : h.svm.getAccount(intent);
+      return view !== null && view.exists ? getIntentDecoder().decode(view.data).status : undefined;
+    };
+    expect([statusOf(first), statusOf(second)]).toEqual([IntentStatus.Open, IntentStatus.Cancelled]);
   });
 
   it("signs an intent offline into a file and relays it from that file", async () => {

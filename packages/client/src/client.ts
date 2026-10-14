@@ -58,6 +58,7 @@ import {
   jobsOf,
   memoInstruction,
   readSpec,
+  recordedDelivery,
   scan,
   type Spec,
   type SpecFetch,
@@ -121,7 +122,7 @@ export type SettleProofInput = {
   deliveredSha256?: string;
 };
 
-export type HistoryEvent = EngineEvent & { signature: Signature; slot: bigint; blockTime: bigint | null };
+export type HistoryEvent = EngineEvent & { signature: Signature; slot: bigint; blockTime: bigint | null; deliveredSha256?: string };
 
 export type FillInput = {
   solver: TransactionSigner;
@@ -407,8 +408,17 @@ export function createClient(options: ClientOptions): Client {
     return send([getCloseAccountInstruction({ account, destination: signer.address, owner: signer })], signer);
   };
 
-  const history = async (intent: Address, limit = HISTORY_LIMIT): Promise<HistoryEvent[]> =>
-    eventsIn(await transport.engineTransactions(limit, intent), intent);
+  const history = async (intent: Address, limit = HISTORY_LIMIT): Promise<HistoryEvent[]> => {
+    const transactions = await transport.engineTransactions(limit, intent);
+    return eventsIn(transactions, intent).map((event) => {
+      if (event.name !== "IntentAttested" && event.name !== "IntentSplit") {
+        return event;
+      }
+      const release = transactions.find(({ signature }) => signature === event.signature);
+      const recorded = release === undefined ? null : recordedDelivery(transactions, release, event.fields.attestor);
+      return recorded === null ? event : { ...event, deliveredSha256: recorded };
+    });
+  };
 
   const fillOf = async (intent: Address): Promise<Fill | null> => {
     const floor = await createdAtOf(transport, intent);

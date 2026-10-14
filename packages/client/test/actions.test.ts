@@ -12,7 +12,7 @@ import {
   releaseMemo,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import { createClient, loadUser, NotSettleable, type Transport } from "../src/index.js";
+import { createClient, followUpInstructions, followUpMemo, loadUser, NotSettleable, parseFollowUpMemo, type Transport } from "../src/index.js";
 import { svmTransport } from "../src/svm.js";
 import { FEE_BPS, NOW, world, type World } from "./svm.js";
 
@@ -212,6 +212,26 @@ describe("one call per action", () => {
     expect(settled).toMatchObject({ signature, memos: [releaseMemo(work)] });
     expect(settled?.memos?.map(parseReleaseMemo)).toEqual([work]);
     expect(await tokens(worker)).toBeGreaterThan(0n);
+  });
+
+  it("history reads the delivered sha256 from a follow-up the judge signs after the release, and from no one else", async () => {
+    const judge = await generateKeyPairSigner();
+    const { w, client, owner, nonce } = await escrowed(judge, 1_000_000n, 0n);
+    w.chain.svm.airdrop(judge.address, lamports(SOL));
+    const impostor = await generateKeyPairSigner();
+    w.chain.svm.airdrop(impostor.address, lamports(SOL));
+    const worker = (await generateKeyPairSigner()).address;
+    const work = "cd".repeat(32);
+    const signature = await client.settleProof({ judge, owner: owner.address, nonce, payTo: worker, result: 1n });
+    const [intent] = await findIntentPda({ owner: owner.address, nonce });
+    const released = async () => (await client.history(intent)).find(({ name }) => name === "IntentAttested");
+    expect(await released()).not.toHaveProperty("deliveredSha256");
+    expect(parseFollowUpMemo(followUpMemo(work, signature))).toEqual({ sha256: work, release: signature });
+    expect(parseReleaseMemo(followUpMemo(work, signature))).toBeNull();
+    await client.send(followUpInstructions(impostor, intent, "ef".repeat(32), signature), impostor);
+    expect(await released()).not.toHaveProperty("deliveredSha256");
+    await client.send(followUpInstructions(judge, intent, work, signature), judge);
+    expect(await released()).toMatchObject({ signature, deliveredSha256: work });
   });
 
   it("refuses to settle anything but an open proof intent its judge signs, and sends nothing", async () => {

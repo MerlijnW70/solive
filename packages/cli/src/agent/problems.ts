@@ -226,7 +226,7 @@ export const SERVER_PROBLEMS = {
   OwnerAccountMissing: never("the owner has no token account that can take the refund; crank with fund_accounts"),
   NotDeliverable: never("the intent is not an open proof escrow, so no work can be delivered to it"),
   NotEarliestAnnouncer: never("another wallet announced the delivered work first; a release recording that work pays its earliest announcer"),
-  HistoryTooLong: never("the history a release depends on is too long to read in full, so it is refused rather than decided from part of it"),
+  HistoryTooLong: never("the record a release depends on is incomplete, so it is refused rather than decided from part of it: the history is longer than the pages read, which more pages fix, or the RPC node's ledger does not reach back to the escrow's creation, or the transport cannot page signatures or report its first available slot, which more pages do not fix"),
 } as const satisfies Record<string, Entry>;
 
 type ServerProblemName = keyof typeof SERVER_PROBLEMS;

@@ -353,11 +353,42 @@ describe("history past a window of recent transactions", () => {
 
     const record = await deliveryRecord(counted(w.chain.transport, calls), judge.address, job.intent, 1);
     expect(record).toMatchObject({ complete: true, pages: 1, deliveries: [{ worker: worker.address }] });
-    expect(calls.filter((of) => of === judge.address)).toEqual([judge.address]);
+    expect(calls.filter((of) => of === judge.address)).toEqual([judge.address, judge.address]);
     calls.length = 0;
     const full = flooded(w, w.chain.transport, judge.address, SIGNATURE_PAGE);
     expect(await deliveryRecord(counted(full, calls), judge.address, job.intent, 1)).toEqual({ deliveries: [], complete: false, pages: 1 });
     expect(await deliveryRecord(counted(full, calls), judge.address, job.intent, 2)).toMatchObject({ complete: true, pages: 2 });
+  });
+
+  it("a short page is confirmed by an empty page before the scan ends", async () => {
+    const { w, client, judge, order } = await setting();
+    const job = await client.createIntent({ ...order, params: proof(judge.address) });
+    const worker = await funded(w.chain);
+    await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL });
+    await flood(w, judge.address, 3);
+    const { signaturesOf } = w.chain.transport;
+    if (signaturesOf === undefined) {
+      throw new Error("the transport lists no signature pages");
+    }
+    const asked: (string | undefined)[] = [];
+    const pruned: Transport = {
+      ...w.chain.transport,
+      signaturesOf: async (of, limit, before) => {
+        const listed = await signaturesOf(of, limit, before);
+        if (of !== judge.address) {
+          return listed;
+        }
+        asked.push(before);
+        return before === undefined ? listed.slice(0, 2) : listed;
+      },
+    };
+
+    const record = await deliveryRecord(pruned, judge.address, job.intent);
+    expect(record).toMatchObject({ complete: true, pages: 2, deliveries: [{ worker: worker.address, sha256: WORK }] });
+    expect(asked).toHaveLength(3);
+    expect(asked[0]).toBeUndefined();
+    expect(await signaturesOf(judge.address, SIGNATURE_PAGE, asked[2])).toEqual([]);
+    expect(await deliveryRecord(pruned, judge.address, job.intent, 1)).toMatchObject({ complete: false, pages: 1, deliveries: [] });
   });
 
   it("stops a scan at the escrow's creation and reads a transport without paging as incomplete past its window", async () => {

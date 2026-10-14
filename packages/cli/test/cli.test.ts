@@ -875,6 +875,35 @@ describe("cli against the deployed engine", () => {
     return { solver, issued };
   }
 
+  it("solve backoff retain uses chain time", async () => {
+    h.watched.length = 0;
+    h.watched.push(owner.address);
+    h.waits.length = 0;
+    h.submitted.length = 0;
+    const { solver, issued } = await issuedMarket();
+    const chainNow = h.svm.getClock().unixTimestamp;
+    const expiresAt = chainNow + 500n;
+    expect(NOW + 1_000n).toBeGreaterThan(expiresAt);
+    await cli(create("8", expiresAt).map((arg) => (arg === outputMint ? issued : arg)), { "owner.json": owner });
+    const [late] = await findIntentPda({ owner: owner.address, nonce: 8n });
+    expect(h.svm.getAccount(late).exists).toBe(true);
+    const refused: string[] = [];
+    h.through = {
+      ...transport,
+      submitWire: async (wire) => {
+        refused.push(wire);
+        throw new Error("the node refused the fill");
+      },
+    };
+    h.rounds = 3;
+    h.changed = [];
+    const run = await watching(issued, solver);
+    expect([run.code, run.err]).toEqual([EXIT_OK, ""]);
+    expect(run.each()).toEqual([expect.objectContaining({ scan: "full", failed: [expect.objectContaining({ intent: late })] })]);
+    expect(h.waits).toHaveLength(3);
+    expect(refused).toHaveLength(1);
+  });
+
   it("still scans everything once the interval passes, however many notifications keep arriving", async () => {
     h.watched.length = 0;
     h.watched.push(owner.address);

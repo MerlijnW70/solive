@@ -26,7 +26,6 @@ import {
   MAX_SPLIT_RECIPIENTS,
   NATIVE_MINT,
   parseAmount,
-  parseReleaseMemo,
   releaseMemo,
   signEd25519Instruction,
   splitCommit,
@@ -44,11 +43,13 @@ import {
   deliveryRecord,
   deliveryInstructions,
   firstDelivery,
+  followUpInstructions,
   MEMOS_PER_TRANSACTION,
   loadConfig,
   MEMO_PROGRAM_ADDRESS,
   mintOf,
   neverLanded,
+  recordedDelivery,
   SIGNATURE_PAGE,
   tokenAccountIfMissing,
   type Transport,
@@ -698,7 +699,7 @@ export const DELIVERY_LIST = DELIVERY_PAGES * SIGNATURE_PAGE * MEMOS_PER_TRANSAC
 export const DELIVERED_NEEDED = "a proof escrow pays the earliest announcer of the work it releases for, so give that work's sha256";
 
 export const HISTORY_TOO_LONG =
-  "this wallet's history is too long to read in full, so the earliest announcer of the delivered work cannot be known; nothing is released from an incomplete record";
+  "the record of announced work is incomplete, so the earliest announcer of the delivered work cannot be known and nothing is released from it; either this wallet's history since the escrow was made is longer than the pages read, which more pages fix, or the RPC node's ledger does not reach back to the escrow's creation, or the transport cannot page signatures or report its first available slot, which more pages do not fix: use an RPC node that keeps the full ledger";
 
 const walletCheckDelivery = define({
   name: tool("wallet_check_delivery"),
@@ -924,8 +925,14 @@ const walletAttest = define({
 });
 
 export const PACKET_DATA_SIZE = 1_232;
+export const SPLIT_FITS = 2;
+export const SPLIT_FITS_WITH_TABLE = 4;
 export const splitTooLarge = (size: number, recipients: number, withTable: boolean): string =>
-  `this ${recipients}-co-author split builds a ${size}-byte transaction, over the ${PACKET_DATA_SIZE}-byte limit${withTable ? " even with the lookup table" : ""}; roughly ${withTable ? 4 : 2} co-authors fit${withTable ? " with a lookup table, so reduce recipients or pay the rest in a second release" : ", so pass lookup_table with the preview's lookup_accounts to fit more, or reduce recipients"}`;
+  `this ${recipients}-co-author split builds a ${size}-byte transaction without the delivery memo, over the ${PACKET_DATA_SIZE}-byte limit${withTable ? " even with the lookup table" : ""}; a release fits ${SPLIT_FITS} co-authors without a lookup table and ${SPLIT_FITS_WITH_TABLE} with one when their token accounts exist, and fewer when this wallet creates them in the same transaction${withTable ? ", so reduce recipients or pay the rest in a second release" : ", so pass lookup_table with the preview's lookup_accounts to fit more, or reduce recipients"}`;
+export const RECORDS_SPLIT = (delivered: string): string =>
+  `Records: the delivered work's sha256 ${delivered}, in a memo this wallet signs with the release, or in a follow-up transaction this wallet signs right after it when the release has no room for the memo`;
+export const followUpFailed = (reason: string): string =>
+  `the release landed, but the follow-up transaction that records the delivered work's sha256 failed, so the hash is not recorded on chain: ${reason}`;
 export const SPLIT_WEIGHTS_WRONG = "the weights must be whole basis points that add up to 10000";
 export const SPLIT_SIG_NEEDED = "every co-author must sign the split before send: true; preview returns the envelope each one signs";
 export const SIGNATURE_PATTERN = "^[0-9a-fA-F]{128}$";
@@ -948,7 +955,7 @@ const walletAttestSplit = define({
     recipients: list(coauthor, MAX_SPLIT_RECIPIENTS, "the co-authors and their weighted shares, up to 8", 1),
     result: optional(amount("the result to attest, between the intent's min_result and max_result; default min_result")),
     lookup_table: optional(account("an address lookup table holding this split's lookup_accounts, to fit more co-authors under the transaction size limit; create one with the preview's lookup_accounts and pass it with send")),
-    delivered_sha256: optional(text(`the sha256, as 64 hex digits, of the work this release pays for; required, since a release recording it must include that work's earliest announcer among the recipients; recorded in a memo this wallet signs with the release, so the payer can check what it receives with ${tool("wallet_receipt")}`)),
+    delivered_sha256: optional(text(`the sha256, as 64 hex digits, of the work this release pays for; required, since a release recording it must include that work's earliest announcer among the recipients; recorded in a memo this wallet signs with the release, or right after it when the release has no room for the memo, so the payer can check what it receives with ${tool("wallet_receipt")}`)),
     approval: optional(text("the approval the preview returned; needed with send")),
     send: optional(flag("true signs the attestation and settles; leave out to preview")),
   }),
@@ -963,6 +970,8 @@ const walletAttestSplit = define({
     result: amount(),
     approval: text("pass it back with send: true; a send that would differ from this preview is refused"),
     delivered_sha256: optional(text("the sha256 the release records")),
+    recorded: optional(choice(["release", "follow-up"], "where the sha256 was recorded: in a memo in the release, or in a follow-up transaction this wallet signed right after it because the release had no room for the memo")),
+    follow_up_signature: optional(text("the follow-up transaction that records the sha256, when recorded is follow-up")),
     summary: list(text(), 12),
     warnings: list(text(), 8),
     sent: flag(),
@@ -1078,7 +1087,7 @@ const walletAttestSplit = define({
     const setup = [...payees.flatMap((p) => p.create), ...treasury.create, ...partner.create, ...judge.create];
     const invoked = new Set<Address>([INTENT_ENGINE_PROGRAM_ADDRESS, token.tokenProgram, signer.address]);
     const lookupAccounts = [...new Set((settle.accounts ?? []).map((a) => a.address))].filter((a) => !invoked.has(a));
-    let tables;
+    let tables: Record<Address, Address[]> | undefined;
     if (input.send === true && input.lookup_table !== undefined) {
       const view = await ctx.transport.getAccount(input.lookup_table);
       if (view === null) {
@@ -1087,14 +1096,19 @@ const walletAttestSplit = define({
       tables = { [input.lookup_table]: decodeLookupTable(view.data) };
     }
     let prepared;
+    let followUp = false;
     if (input.send === true && batch !== undefined) {
-      const ixs = [...setup, batch, settle, memo];
-      const budgeted = await ctx.transport.budget(ixs, signer.address);
-      const size = await transactionSize(ctx.transport, budgeted, signer.address, tables);
-      if (size > PACKET_DATA_SIZE) {
-        throw new AgentRefusal("ReleaseTooLarge", splitTooLarge(size, input.recipients.length, input.lookup_table !== undefined));
+      const sizeOf = async (ixs: Parameters<typeof prepare>[1]) =>
+        transactionSize(ctx.transport, await ctx.transport.budget(ixs, signer.address), signer.address, tables);
+      const bare = [...setup, batch, settle];
+      followUp = (await sizeOf([...bare, memo])) > PACKET_DATA_SIZE;
+      if (followUp) {
+        const size = await sizeOf(bare);
+        if (size > PACKET_DATA_SIZE) {
+          throw new AgentRefusal("ReleaseTooLarge", splitTooLarge(size, input.recipients.length, input.lookup_table !== undefined));
+        }
       }
-      prepared = preparedView(await prepare(ctx.transport, ixs, signer.address, tables));
+      prepared = preparedView(await prepare(ctx.transport, followUp ? bare : [...bare, memo], signer.address, tables));
     }
     const view2 = {
       intent,
@@ -1117,13 +1131,25 @@ const walletAttestSplit = define({
         ...(params.judgeFee > 0n ? [`Pays the judge: ${formatAmount(params.judgeFee, token.decimals)} of ${name} to this wallet, carved out of the escrow`] : []),
         `Binds: the result to the committed spec ${getBase16Decoder().decode(params.specHash)}`,
         `Attests: result ${result}, signed by this server's wallet as the escrow's attestor`,
-        `Records: the delivered work's sha256 ${delivered}, in a memo this wallet signs with the release`,
+        RECORDS_SPLIT(delivered),
         ...(setup.length === 0 ? [] : [`Setup: creates ${setup.length} token account(s), paid by this wallet`]),
       ],
       warnings: [...settlementWarnings(params), WARN_COAUTHORS],
       prepared,
     };
-    return sent(ctx, signer, view2, input.send, call);
+    const done = await sent(ctx, signer, view2, input.send, call);
+    if (!("signature" in done)) {
+      return done;
+    }
+    if (!followUp) {
+      return { ...done, recorded: "release" as const };
+    }
+    try {
+      const recording = preparedView(await prepare(ctx.transport, followUpInstructions(signer, intent, delivered, done.signature), signer.address));
+      return { ...done, recorded: "follow-up" as const, follow_up_signature: await execute(ctx.transport, recording, signer) };
+    } catch (error) {
+      return { ...done, next: followUpFailed(problemOf(error).hint) };
+    }
   },
 });
 
@@ -1522,8 +1548,9 @@ const walletReceipt = define({
     paid: optional(text("whole tokens the payee received")),
     attestor: optional(account()),
     result: optional(amount()),
+    recipients: optional(amount("how many co-authors a split release paid")),
     signature: optional(text("the release's transaction")),
-    delivered_sha256: optional(text("the sha256 the release recorded, if any")),
+    delivered_sha256: optional(text("the sha256 the release recorded, if any, in its own memo or in a follow-up transaction its attestor signed")),
     matches: optional(flag("whether sha256 equals the recorded one")),
     next: optional(text()),
   }),
@@ -1545,27 +1572,36 @@ const walletReceipt = define({
       if (tx.failed) {
         continue;
       }
-      const release = tx.emitted.map(decodeEvent).find((event) => event?.name === "IntentAttested" && (event.fields as Record<string, unknown>)["intent"] === intent);
+      const release = tx.emitted
+        .map(decodeEvent)
+        .find((event) => (event?.name === "IntentAttested" || event?.name === "IntentSplit") && (event.fields as Record<string, unknown>)["intent"] === intent);
       if (release === undefined || release === null) {
         continue;
       }
       const fields = release.fields as Record<string, unknown>;
-      const payee = fields["payee"] as Address;
-      const held = await ctx.transport.getAccount(payee);
-      mint ??= held === null || held.data.length < 64 ? undefined : getAddressDecoder().decode(held.data.subarray(0, 32));
-      const decimals = mint === undefined ? undefined : (await mintOf(ctx.transport, mint)).decimals;
-      const recorded = (tx.memos ?? []).map(parseReleaseMemo).find((hash) => hash !== null) ?? undefined;
-      return {
+      const recorded = recordedDelivery(transactions, tx, fields["attestor"] as Address) ?? undefined;
+      const common = {
         intent,
         released: true,
-        ...(held === null || held.data.length < 64 ? {} : { paid_to: getAddressDecoder().decode(held.data.subarray(32, 64)) }),
-        payee,
-        paid: formatAmount(fields["net"] as bigint, decimals),
         attestor: fields["attestor"] as Address,
         result: fields["result"] as bigint,
         signature: tx.signature,
         ...(recorded === undefined ? {} : { delivered_sha256: recorded }),
         ...(wanted === undefined ? {} : { matches: wanted === recorded }),
+      };
+      if (release.name === "IntentSplit") {
+        const decimals = mint === undefined ? undefined : (await mintOf(ctx.transport, mint)).decimals;
+        return { ...common, paid: formatAmount(fields["net"] as bigint, decimals), recipients: BigInt(fields["recipients"] as number) };
+      }
+      const payee = fields["payee"] as Address;
+      const held = await ctx.transport.getAccount(payee);
+      mint ??= held === null || held.data.length < 64 ? undefined : getAddressDecoder().decode(held.data.subarray(0, 32));
+      const decimals = mint === undefined ? undefined : (await mintOf(ctx.transport, mint)).decimals;
+      return {
+        ...common,
+        ...(held === null || held.data.length < 64 ? {} : { paid_to: getAddressDecoder().decode(held.data.subarray(32, 64)) }),
+        payee,
+        paid: formatAmount(fields["net"] as bigint, decimals),
       };
     }
     return { intent, released: false, next: NOT_RELEASED };

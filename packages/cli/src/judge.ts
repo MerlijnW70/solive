@@ -25,6 +25,16 @@ export class JudgeRefused extends Error {
   }
 }
 
+export class JudgeInterrupted extends Error {
+  readonly exitCode: number;
+
+  constructor(signal: InterruptSignal) {
+    super(`the check was interrupted by ${signal}; nothing was paid and no verdict was written`);
+    this.name = "JudgeInterrupted";
+    this.exitCode = SIGNAL_EXIT[signal];
+  }
+}
+
 export type JudgeCommand = Extract<Command, { name: "judge" }>;
 
 export type Verdict = {
@@ -40,9 +50,13 @@ export type Verdict = {
   cleanup?: string;
 };
 
-export type Check = { exitCode: number | null; timedOut: boolean };
+export const SIGNAL_EXIT = { SIGINT: 130, SIGTERM: 143 } as const;
 
-export type CheckOptions = { cwd?: string; interrupted?: () => Promise<unknown> };
+export type InterruptSignal = keyof typeof SIGNAL_EXIT;
+
+export type Check = { exitCode: number | null; timedOut: boolean; interrupted?: InterruptSignal };
+
+export type CheckOptions = { cwd?: string };
 
 const EXECUTABLE = 0o111;
 
@@ -152,8 +166,6 @@ function killTree(pid: number | undefined): Promise<void> {
   return Promise.resolve();
 }
 
-const SIGNAL_EXIT = { SIGINT: 130, SIGTERM: 143 } as const;
-
 export function runCheck(command: string, env: NodeJS.ProcessEnv, timeoutSeconds: number, options: CheckOptions = {}): Promise<Check> {
   return new Promise((done, failed) => {
     const child = spawn(command, {
@@ -165,14 +177,14 @@ export function runCheck(command: string, env: NodeJS.ProcessEnv, timeoutSeconds
       windowsHide: true,
     });
     let timedOut = false;
+    let interrupted: InterruptSignal | undefined;
     let killing: Promise<void> = Promise.resolve();
-    const handlers = (Object.keys(SIGNAL_EXIT) as (keyof typeof SIGNAL_EXIT)[]).map((signal) => {
+    const handlers = (Object.keys(SIGNAL_EXIT) as InterruptSignal[]).map((signal) => {
       const handler = () => {
-        void killTree(child.pid)
-          .then(() => options.interrupted?.())
-          .finally(() => process.exit(SIGNAL_EXIT[signal]));
+        interrupted ??= signal;
+        killing = killTree(child.pid);
       };
-      process.once(signal, handler);
+      process.on(signal, handler);
       return [signal, handler] as const;
     });
     const timer = setTimeout(() => {
@@ -180,19 +192,24 @@ export function runCheck(command: string, env: NodeJS.ProcessEnv, timeoutSeconds
       killing = killTree(child.pid);
     }, timeoutSeconds * 1000);
     const settle = () => {
-      clearTimeout(timer);
       for (const [signal, handler] of handlers) {
         process.removeListener(signal, handler);
       }
     };
     child.once("error", (error) => {
-      settle();
-      void killing.finally(() => failed(error));
+      clearTimeout(timer);
+      void killing.finally(() => {
+        settle();
+        failed(error);
+      });
     });
     child.once("exit", (code) => {
-      settle();
+      clearTimeout(timer);
       const after = process.platform !== "win32" ? killTree(child.pid) : Promise.resolve();
-      void Promise.all([killing, after]).finally(() => done({ exitCode: timedOut ? null : code, timedOut }));
+      void Promise.all([killing, after]).finally(() => {
+        settle();
+        done({ exitCode: timedOut || interrupted !== undefined ? null : code, timedOut, ...(interrupted === undefined ? {} : { interrupted }) });
+      });
     });
   });
 }
@@ -209,7 +226,7 @@ export function checkEnv(base: NodeJS.ProcessEnv, spec: string, artifact: string
 }
 
 export const pagesRead = (pages: number): string =>
-  `It read ${pages} ${pages === 1 ? "page" : "pages"} of ${SIGNATURE_PAGE} signatures; a higher --max-pages reads further, unless the RPC node's history does not reach back to the escrow's creation`;
+  `It read ${pages} ${pages === 1 ? "page" : "pages"} of ${SIGNATURE_PAGE} signatures; a higher --max-pages reads further, but does not help when the RPC node's ledger does not reach back to the escrow's creation or the node cannot page signatures or report its first available slot`;
 
 async function escrowFor(transport: Transport, judge: Address, owner: Address, nonce: bigint) {
   const { address, intent } = await loadIntent(transport, owner, nonce);
@@ -240,7 +257,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   const record = await deliveryRecord(transport, signer.address, address, command.maxPages);
   if (!record.complete) {
     throw new JudgeRefused(
-      `the judge's history is too long to read in full, so the earliest announcer of the artifact with sha256 ${sha256} for intent ${address} cannot be known; nothing was run or paid. ${pagesRead(record.pages)}`,
+      `the delivery record is incomplete because the judge's history is too long to read in full or the RPC node cannot serve all of it, so the earliest announcer of the artifact with sha256 ${sha256} for intent ${address} cannot be known; nothing was run or paid. ${pagesRead(record.pages)}`,
     );
   }
   const first = firstDelivery(record.deliveries, sha256);
@@ -255,12 +272,12 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   let check: Check;
   let cleanup: string | undefined;
   try {
-    check = await runCheck(command.run, checkEnv(process.env, copy.spec, copy.path, sha256), command.timeout, {
-      cwd: copy.root,
-      interrupted: () => removeCopy(copy.root),
-    });
+    check = await runCheck(command.run, checkEnv(process.env, copy.spec, copy.path, sha256), command.timeout, { cwd: copy.root });
   } finally {
     cleanup = await removeCopy(copy.root);
+  }
+  if (check.interrupted !== undefined) {
+    throw new JudgeInterrupted(check.interrupted);
   }
   const passed = check.exitCode === 0;
   const signature =

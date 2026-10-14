@@ -174,6 +174,37 @@ describe("intent-engine judge", () => {
     expect(landed.logs().some((line) => line.includes(releaseMemo(j.sha256)))).toBe(true);
   });
 
+  it("an interrupted check never passes", async () => {
+    const started = join(j.dir, "started");
+    const root = join(j.dir, "root");
+    const verdict = join(j.dir, "interrupted.json");
+    const run = `pwd > "${root}"; touch "${started}"; trap 'exit 0' INT TERM; sleep 2; exit 0`;
+    for (const [signal, code] of [["SIGINT", 130], ["SIGTERM", 143]] as const) {
+      await rm(started, { force: true });
+      const others = process.listeners(signal);
+      process.removeAllListeners(signal);
+      try {
+        const running = cli(judging(j, run, "--verdict", verdict, "--yes"), keys);
+        for (let waited = 0; !existsSync(started) && waited < 200; waited++) {
+          await new Promise((wake) => setTimeout(wake, 25));
+        }
+        expect(existsSync(started)).toBe(true);
+        process.emit(signal, signal);
+        const ended = await running;
+        expect([ended.code, ended.out]).toEqual([code, ""]);
+        expect(ended.err).toContain(`the check was interrupted by ${signal}; nothing was paid and no verdict was written`);
+      } finally {
+        for (const listener of others) {
+          process.on(signal, listener as NodeJS.SignalsListener);
+        }
+      }
+      expect(existsSync(verdict)).toBe(false);
+      expect(existsSync((await readFile(root, "utf8")).trim())).toBe(false);
+      expect(status(j.intent)).toBe(IntentStatus.Open);
+      expect(await paidTo(j, j.worker.address)).toBe(-1n);
+    }
+  });
+
   it("fails, sends nothing and exits non-zero when the check exits non-zero", async () => {
     const failed = await cli(judging(j, "exit 3", "--yes"), keys);
     expect(failed.code).toBe(EXIT_FAILED);

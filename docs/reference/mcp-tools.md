@@ -174,7 +174,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | `recipients` | list of object, 1 to 8 | yes | the co-authors and their weighted shares, up to 8 |
 | `result` | whole number as a decimal string | no | the result to attest, between the intent's min_result and max_result; default min_result |
 | `lookup_table` | address | no | an address lookup table holding this split's lookup_accounts, to fit more co-authors under the transaction size limit; create one with the preview's lookup_accounts and pass it with send |
-| `delivered_sha256` | string | no | the sha256, as 64 hex digits, of the work this release pays for; required, since a release recording it must include that work's earliest announcer among the recipients; recorded in a memo this wallet signs with the release, so the payer can check what it receives with solive_wallet_receipt |
+| `delivered_sha256` | string | no | the sha256, as 64 hex digits, of the work this release pays for; required, since a release recording it must include that work's earliest announcer among the recipients; recorded in a memo this wallet signs with the release, or right after it when the release has no room for the memo, so the payer can check what it receives with solive_wallet_receipt |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs the attestation and settles; leave out to preview |
 

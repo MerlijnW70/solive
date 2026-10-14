@@ -8,6 +8,7 @@ import { changesFrom, intentNotifications, type RpcLike, rpcTransport, signature
 import { ENV_URL, outputOf, parse, UsageError } from "./args.js";
 import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
+import { JudgeInterrupted } from "./judge.js";
 import { printableLines, redactUrl, render, renderText } from "./render.js";
 import { withSettings } from "./wallet.js";
 import { WALLET_NOTICE } from "./agent/wallet.js";
@@ -59,6 +60,9 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
     return command.name === "judge" && result !== null && "verdict" in result && result.verdict !== "pass" ? EXIT_FAILED : EXIT_OK;
   } catch (error) {
     io.err(message(error, url));
+    if (error instanceof JudgeInterrupted) {
+      return error.exitCode;
+    }
     return error instanceof UsageError ? EXIT_USAGE : EXIT_FAILED;
   }
 }

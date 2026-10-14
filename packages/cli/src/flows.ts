@@ -25,9 +25,14 @@ import { prepare } from "./agent/prepare.js";
 import { problemOf } from "./agent/problems.js";
 import { preparedView } from "./agent/shapes.js";
 import { type Side, type Tokens, UsageError } from "./args.js";
+import { printableLines } from "./render.js";
 
 const PREPARED_KEYS = ["setup", "prepared"] as const;
 const FOLLOWING_KEY = "cancels";
+const FOLLOWING_NAMES = "cancelled";
+
+export const CANCELS_FAILED =
+  "the revoke landed and signatures lists every transaction that did; the intents in failed are still open, so cancel each with intent-engine cancel";
 
 export const NOT_SENT = "nothing was sent; check the summary and pass --yes to sign and send";
 
@@ -110,10 +115,10 @@ export async function finish(
   signer: KeyPairSigner,
   yes: boolean,
 ): Promise<object> {
-  const views = [
-    ...PREPARED_KEYS.map((key) => value[key] as PreparedView | undefined).filter((v) => v !== undefined),
-    ...((value[FOLLOWING_KEY] as PreparedView[] | undefined) ?? []),
-  ];
+  const leading = PREPARED_KEYS.map((key) => value[key] as PreparedView | undefined).filter((v) => v !== undefined);
+  const following = (value[FOLLOWING_KEY] as PreparedView[] | undefined) ?? [];
+  const named = (value[FOLLOWING_NAMES] as string[] | undefined) ?? [];
+  const views = [...leading, ...following];
   const priority = views.reduce((sum, v) => sum + BigInt(v.priority_fee_lamports ?? 0n), 0n);
   const shown = {
     ...Object.fromEntries(Object.entries(value).filter(([k]) => !([...PREPARED_KEYS, FOLLOWING_KEY] as readonly string[]).includes(k))),
@@ -123,10 +128,18 @@ export async function finish(
     return { ...shown, sent: false, next: NOT_SENT };
   }
   const signatures = [];
-  for (const view of views) {
+  for (const view of leading) {
     signatures.push(await execute(transport, view, signer));
   }
-  return { ...shown, sent: true, signatures };
+  const failed = [];
+  for (const [i, view] of following.entries()) {
+    try {
+      signatures.push(await execute(transport, view, signer));
+    } catch (error) {
+      failed.push({ intent: named[i] ?? null, reason: printableLines(error instanceof Error ? error.message : String(error)) });
+    }
+  }
+  return { ...shown, sent: true, signatures, ...(failed.length === 0 ? {} : { failed, next: CANCELS_FAILED }) };
 }
 
 export async function perform(

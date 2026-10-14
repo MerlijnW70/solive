@@ -15,7 +15,9 @@ import {
   Kind,
   DELIVERY_MEMO_PREFIX,
   parseDeliveryMemo,
+  parseReleaseMemo,
   parseSpecMemo,
+  releaseMemo,
   remainingOf,
   SPEC_MEMO_PREFIX,
 } from "@intent-engine/core";
@@ -157,8 +159,10 @@ export async function scan(transport: Transport, of: Address, options: ScanOptio
   }
   const transactions: EngineTransaction[] = [];
   let before: string | undefined;
+  let next: ListedSignature[] | undefined;
   for (let page = 1; page <= pages; page++) {
-    const listed = await signaturesOf.call(transport, of, SIGNATURE_PAGE, before);
+    const listed = next ?? (await signaturesOf.call(transport, of, SIGNATURE_PAGE, before));
+    next = undefined;
     const within = listed.filter(reaches(floor));
     const wanted = within.filter((entry: ListedSignature) => !entry.failed && memoMatches(memo, entry.memo === null ? [] : [entry.memo]));
     for (let at = 0; at < wanted.length; at += TRANSACTION_FETCHES) {
@@ -172,10 +176,14 @@ export async function scan(transport: Transport, of: Address, options: ScanOptio
     if (within.length < listed.length) {
       return { transactions, complete: true, pages: page };
     }
-    if (listed.length < SIGNATURE_PAGE) {
-      return { transactions, complete: (await covered?.()) === true, pages: page };
-    }
     before = listed[listed.length - 1]?.signature;
+    if (listed.length < SIGNATURE_PAGE) {
+      const more = before === undefined ? [] : await signaturesOf.call(transport, of, SIGNATURE_PAGE, before);
+      if (more.length === 0) {
+        return { transactions, complete: (await covered?.()) === true, pages: page };
+      }
+      next = more;
+    }
   }
   return { transactions, complete: false, pages };
 }
@@ -281,6 +289,50 @@ export async function readSpec(transport: Transport, get: SpecFetch, intent: Add
   const bytes = await bounded(await get(url, { redirect: "error", signal: AbortSignal.timeout(SPEC_TIMEOUT_MS) }), url);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   return { url, text: new TextDecoder().decode(bytes), sha256, matches: sha256 === hex(proof.params.specHash) };
+}
+
+export const RELEASE_MARK = " release:";
+
+const BASE58_SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{32,88}$/;
+
+export type FollowUp = { sha256: string; release: string };
+
+export function followUpMemo(sha256: string, release: string): string {
+  if (!BASE58_SIGNATURE.test(release)) {
+    throw new RangeError("a follow-up names its release by a base58 signature");
+  }
+  return `${releaseMemo(sha256)}${RELEASE_MARK}${release}`;
+}
+
+export function parseFollowUpMemo(text: string): FollowUp | null {
+  const at = text.indexOf(RELEASE_MARK);
+  if (at < 0) {
+    return null;
+  }
+  const sha256 = parseReleaseMemo(text.slice(0, at));
+  const release = text.slice(at + RELEASE_MARK.length);
+  return sha256 === null || !BASE58_SIGNATURE.test(release) ? null : { sha256, release };
+}
+
+export function recordedDelivery(transactions: readonly EngineTransaction[], release: EngineTransaction, attestor: Address): string | null {
+  const inline = (release.memos ?? []).map(parseReleaseMemo).find((hash) => hash !== null);
+  if (inline !== undefined) {
+    return inline;
+  }
+  for (const transaction of transactions) {
+    if (transaction.failed || transaction.feePayer !== attestor) {
+      continue;
+    }
+    const found = (transaction.memos ?? []).map(parseFollowUpMemo).find((memo) => memo !== null && memo.release === release.signature);
+    if (found !== undefined && found !== null) {
+      return found.sha256;
+    }
+  }
+  return null;
+}
+
+export function followUpInstructions(judge: TransactionSigner, intent: Address, sha256: string, release: string): Instruction[] {
+  return [memoInstruction(judge, followUpMemo(sha256, release)), getTransferSolInstruction({ source: judge, destination: intent, amount: 0n })];
 }
 
 export function memoInstruction(signer: TransactionSigner, text: string): Instruction {

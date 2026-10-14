@@ -325,7 +325,7 @@ export async function watchSolve(command: SolveCommand, interval: number, runtim
         const decoded = full ? { intents: await chain.intents(), unreadable: [] } : decodedChanges(changed);
         if (full) {
           scannedAt = now;
-          held.retain(decoded.intents, now);
+          held.retain(decoded.intents, await chain.now());
         }
         if (decoded.unreadable.length > 0) {
           emit({ at: now, scan: "changed", unreadable: decoded.unreadable });
