@@ -88,7 +88,7 @@ if [[ -n "$multisig" ]]; then
   echo "buffer   $buffer"
   echo "expected $expected"
   echo "staged   $staged"
-  echo "next: members approve and one executes the proposal above with packages/multisig/dist/bin.js approve and execute, then run solana-verify get-program-hash --url $url $program"
+  echo "next: members approve the proposal above with packages/multisig/dist/bin.js approve, check it prints buffer_hash $expected, one runs execute --expect-buffer-hash $expected, then run solana-verify get-program-hash --url $url $program"
   exit 0
 fi
 solana program deploy verifiable/intent_engine.so --program-id "$program_keypair" --upgrade-authority "$authority" --keypair "$authority" --url "$url" --with-compute-unit-price "$price"
