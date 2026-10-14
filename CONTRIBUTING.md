@@ -20,6 +20,8 @@ pnpm install
 bash scripts/build.sh
 ```
 
+On Windows, install the toolchain and run every command on this page inside WSL: the build and check scripts are bash, and litesvm, which the TypeScript tests run the program in, ships no Windows binary.
+
 ## Rules for changes
 
 - Every behaviour change comes with a test that fails without the change.

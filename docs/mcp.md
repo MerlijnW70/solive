@@ -25,7 +25,7 @@ With this entry the server holds no keys. Its tools read the engine and prepare 
 
 Add `--wallet` to let the server keep its own devnet wallet and trade from it after the user approves, as [Use it from your AI](ai.md) shows; `--wallet-per-trade` and `--wallet-per-hour` cap what it sells. Add `--relayer` with `--relay-fee` to let `solive_submit_signed_intent` create intents owners signed off-chain, with the relayer key paying.
 
-Amounts are raw base units. `solive_get_balances` returns each token's decimals.
+The read and prepare tools served without `--wallet` take and return amounts in raw base units; `solive_get_balances` returns each token's decimals. The wallet tools `--wallet` adds take whole tokens, such as `0.05` for 0.05 SOL.
 
 ## 3. Let the agent act on its own
 
