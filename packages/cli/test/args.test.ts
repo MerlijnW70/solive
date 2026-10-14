@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { I64_MAX, I64_MIN, Kind, U64_MAX } from "@intent-engine/core";
 import { AUTO_PRICE_CAP, MAX_PRIORITY_PRICE } from "../src/compute.js";
-import { DEFAULT_MAX_SOL_COST } from "@intent-engine/solver";
+import { DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST } from "@intent-engine/solver";
 import {
   DEFAULT_URL,
   WATCH_INTERVAL,
@@ -13,6 +13,7 @@ import {
   RELAY_NEEDS_FEES,
   RELAY_DEFAULT_HOURLY_LAMPORTS,
   RELAY_DEFAULT_TTL,
+  MAX_RENT_FORMAT,
   MAX_SOL_COST_FORMAT,
   solveFeeAboveCap,
   zeroProfit,
@@ -87,6 +88,7 @@ describe("numbers", () => {
       minProfit: new Map([[MINT_A, 5n]]),
       maxFeeBps: 200,
       maxSolCost: DEFAULT_MAX_SOL_COST,
+      maxRent: DEFAULT_MAX_RENT,
       slippageBps: 10_000,
       routeProgram: undefined,
       lookupTables: [],
@@ -180,6 +182,20 @@ describe("numbers", () => {
       expect(usage([...solve, `--max-sol-cost=${bad}`])).toBe(MAX_SOL_COST_FORMAT);
     }
     expect(usageOf("solve").options).toContain("--max-sol-cost");
+  });
+
+  it("solve parses max rent", () => {
+    const solve = ["solve", "--keypair", "k", "--jupiter", "https://q.example", "--min-profit", `${MINT_A}=1`];
+    expect(DEFAULT_MAX_RENT).toBe(10_000_000n);
+    expect(parse(solve)).toMatchObject({ maxRent: DEFAULT_MAX_RENT, maxSolCost: DEFAULT_MAX_SOL_COST });
+    expect(parse([...solve, "--max-rent", "0.005"])).toMatchObject({ maxRent: 5_000_000n, maxSolCost: DEFAULT_MAX_SOL_COST });
+    expect(parse([...solve, "--max-rent", "2"])).toMatchObject({ maxRent: 2_000_000_000n });
+    expect(parse([...solve, "--max-rent", "0.000000001", "--max-sol-cost", "0.002"])).toMatchObject({ maxRent: 1n, maxSolCost: 2_000_000n });
+    for (const bad of ["0", "0.0", "0.0000000001", "-1", "1e-3", "abc", ""]) {
+      expect(usage([...solve, `--max-rent=${bad}`])).toBe(MAX_RENT_FORMAT);
+    }
+    expect(usageOf("solve").options).toContain("--max-rent");
+    expect(usageOf("solve").usage).toContain("[--max-rent <SOL>]");
   });
 
   it("reads an optional partner for create and needs both halves of it", () => {

@@ -273,21 +273,23 @@ const walletSetup = define({
   name: tool("wallet_setup"),
   title: "Set up the wallet",
   description:
-    "Create this server's devnet wallet if it has none, save it, and fund it from the devnet airdrop when it holds less than 0.5 SOL. Safe to call again: it reuses the saved wallet. Call this first.",
+    "Create this server's devnet wallet if it has none, save it, and fund it from the devnet airdrop when it holds less than 0.5 SOL. Safe to call again: it reuses the saved wallet, and saves this server's RPC as the CLI's default only when none is saved. Call this first.",
   effect: "submit",
+  destructive: false,
   input: object({}),
   output: object({
     address: account(),
     keypair: text("the file holding the wallet's key on this machine"),
     created: flag("true when this call made the wallet"),
-    url: text(),
+    url: text("the RPC node this server uses, as scheme, host and port only"),
+    settings: text("whether this call saved the RPC as the CLI's default; it does so only when none is saved yet"),
     sol: text("SOL the wallet holds"),
     next: text("what to tell the user"),
     notice: list(text(), 8, "the notice from the server instructions; show it if the user has not seen it yet"),
   }),
   run: async (ctx: AgentContext) => {
     const wallet = await testCluster(ctx);
-    return { ...(await setup(ctx.transport, wallet.files, wallet.url, await savedKeypair(wallet))), notice: WALLET_NOTICE };
+    return { ...(await setup(ctx.transport, wallet.files, wallet.url, await savedKeypair(wallet), true)), notice: WALLET_NOTICE };
   },
 });
 

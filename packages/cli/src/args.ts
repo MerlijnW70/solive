@@ -18,7 +18,7 @@ import {
   TOKEN_AMOUNT_PATTERN,
   U64_MAX,
 } from "@intent-engine/core";
-import { DEFAULT_MAX_SOL_COST } from "@intent-engine/solver";
+import { DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST } from "@intent-engine/solver";
 
 export const DEFAULT_URL = "http://127.0.0.1:8899";
 
@@ -147,6 +147,7 @@ export type Command =
       minProfit: ReadonlyMap<Address, bigint>;
       maxFeeBps: number;
       maxSolCost: bigint;
+      maxRent: bigint;
       slippageBps: number;
       routeProgram: Address | undefined;
       lookupTables: Address[];
@@ -260,6 +261,7 @@ const OPTIONS = {
   issue: { type: "string" },
   "max-fee-bps": { type: "string" },
   "max-sol-cost": { type: "string" },
+  "max-rent": { type: "string" },
   "slippage-bps": { type: "string" },
   "route-program": { type: "string" },
   "lookup-table": { type: "string" },
@@ -430,7 +432,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   ],
   "propose-admin": ["url", "priority-fee", "keypair", "authority", "yes", "new-admin"],
   "accept-admin": ["url", "priority-fee", "keypair", "authority", "yes"],
-  solve: ["url", "priority-fee", "keypair", "jupiter", "issue", "jito", "tip", "min-profit", "max-fee-bps", "max-sol-cost", "slippage-bps", "route-program", "lookup-table", "watch", "interval"],
+  solve: ["url", "priority-fee", "keypair", "jupiter", "issue", "jito", "tip", "min-profit", "max-fee-bps", "max-sol-cost", "max-rent", "slippage-bps", "route-program", "lookup-table", "watch", "interval"],
   "solver-table": ["url", "solver", "mints"],
   "lower-pause": ["url", "priority-fee", "keypair", "authority", "yes", "flags"],
   events: ["url", "limit", "follow", "interval"],
@@ -908,17 +910,27 @@ const LAMPORT_DECIMALS = 9;
 
 export const MAX_SOL_COST_FORMAT = `--max-sol-cost is SOL above 0 with at most ${LAMPORT_DECIMALS} decimals, such as 0.01`;
 
-export function parseSolCost(text: string): bigint {
+export const MAX_RENT_FORMAT = `--max-rent is SOL above 0 with at most ${LAMPORT_DECIMALS} decimals, such as 0.01`;
+
+function parseSol(text: string, format: string): bigint {
   let lamports: bigint;
   try {
     lamports = parseAmount(text, LAMPORT_DECIMALS);
   } catch {
-    throw new UsageError(MAX_SOL_COST_FORMAT);
+    throw new UsageError(format);
   }
   if (lamports === 0n) {
-    throw new UsageError(MAX_SOL_COST_FORMAT);
+    throw new UsageError(format);
   }
   return lamports;
+}
+
+export function parseSolCost(text: string): bigint {
+  return parseSol(text, MAX_SOL_COST_FORMAT);
+}
+
+export function parseMaxRent(text: string): bigint {
+  return parseSol(text, MAX_RENT_FORMAT);
 }
 
 export const solveFeeAboveCap = `solve takes a --priority-fee of at most ${AUTO_PRICE_CAP} micro-lamports per compute unit, the cap of auto`;
@@ -1163,7 +1175,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   "raise-pause": "(--keypair <file> [--yes] | --authority <address>) --flags create|fill|all",
   "lower-pause": "(--keypair <file> [--yes] | --authority <address>) --flags create|fill|all",
   "set-economics": "(--keypair <file> [--yes] | --authority <address>) --bounty --create-fee [--kind-fees] [--partner-cut]",
-  solve: "--keypair <file> (--jupiter <url> | --issue <input mint>:<output mint>=<out>/<in>,...) --min-profit <output mint=raw,...> [--priority-fee <micro-lamports|auto>] [--max-fee-bps <n>] [--max-sol-cost <SOL>] [--slippage-bps <n>] [--jito <url> [--tip <lamports>]] [--route-program <program the aggregator swaps through>] [--lookup-table <address,...>] [--watch [--interval <seconds>]]",
+  solve: "--keypair <file> (--jupiter <url> | --issue <input mint>:<output mint>=<out>/<in>,...) --min-profit <output mint=raw,...> [--priority-fee <micro-lamports|auto>] [--max-fee-bps <n>] [--max-sol-cost <SOL>] [--max-rent <SOL>] [--slippage-bps <n>] [--jito <url> [--tip <lamports>]] [--route-program <program the aggregator swaps through>] [--lookup-table <address,...>] [--watch [--interval <seconds>]]",
   "solver-table": "--solver <address> --mints <mint,...>",
   crank: "--keypair <file> [--dry-run] [--fund-accounts]",
   treasury: "[--mints <mint,...>] [--create --mints <mint,...> --keypair <payer file> [--yes]]",
@@ -1357,6 +1369,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         minProfit: profitFloors(required(values, "min-profit")),
         maxFeeBps: parseBounded(values["max-fee-bps"] ?? "100", "max-fee-bps", 200),
         maxSolCost: values["max-sol-cost"] === undefined ? DEFAULT_MAX_SOL_COST : parseSolCost(values["max-sol-cost"]),
+        maxRent: values["max-rent"] === undefined ? DEFAULT_MAX_RENT : parseMaxRent(values["max-rent"]),
         slippageBps: parseBounded(values["slippage-bps"] ?? "50", "slippage-bps", 10_000),
         routeProgram: values["route-program"] === undefined ? undefined : parseAddress(values["route-program"], "route-program"),
         lookupTables: values["lookup-table"] === undefined ? [] : addressList(values["lookup-table"], "lookup-table"),

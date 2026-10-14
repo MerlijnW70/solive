@@ -6,6 +6,7 @@ import {
   findDelegatePda,
   formatAmount,
   getIntentDecoder,
+  type Intent,
   IntentStatus,
   kindBit,
   PAUSE_CREATE,
@@ -31,6 +32,23 @@ import { account, amount, choice, flag, integer, list, nullable, object, optiona
 
 const LIST_LIMIT = 100;
 const LIST_DEFAULT = 20;
+
+export function readIntents(entries: readonly { address: Address; data: Uint8Array }[]): {
+  intents: { address: Address; intent: Intent; remaining: bigint }[];
+  unreadable: number;
+} {
+  const intents = [];
+  let unreadable = 0;
+  for (const { address, data } of entries) {
+    try {
+      const intent = getIntentDecoder().decode(data);
+      intents.push({ address, intent, remaining: remainingOf(intent) });
+    } catch {
+      unreadable += 1;
+    }
+  }
+  return { intents, unreadable };
+}
 
 const intentRef = {
   owner: account("the wallet that created the intent"),
@@ -190,12 +208,12 @@ export const getBalances = define({
       }),
       BALANCE_MINTS,
     ),
+    unreadable: integer(0, Number.MAX_SAFE_INTEGER, "intents left out of escrowed because their account could not be read"),
   }),
   run: async ({ transport }, input) => {
     const [engine] = await findDelegatePda({ owner: input.owner });
-    const open = (await transport.intents(input.owner))
-      .map(({ data }) => getIntentDecoder().decode(data))
-      .filter((intent) => intent.owner === input.owner && intent.status === IntentStatus.Open);
+    const { intents, unreadable } = readIntents(await transport.intents(input.owner));
+    const open = intents.filter(({ intent }) => intent.owner === input.owner && intent.status === IntentStatus.Open);
     const tokens = [];
     for (const mint of input.mints) {
       const token = await mintOf(transport, mint);
@@ -212,11 +230,11 @@ export const getBalances = define({
         balance,
         balance_tokens: formatAmount(balance, token.decimals),
         engine_allowance: delegate === engine ? (state?.delegatedAmount ?? 0n) : 0n,
-        escrowed: open.filter((intent) => intent.inputMint === mint).reduce((sum, intent) => sum + remainingOf(intent), 0n),
+        escrowed: open.filter(({ intent }) => intent.inputMint === mint).reduce((sum, { remaining }) => sum + remaining, 0n),
       });
     }
     const lamports = (await transport.getAccount(input.owner))?.lamports ?? 0n;
-    return { owner: input.owner, lamports, sol: formatAmount(lamports, SOL_DECIMALS), tokens };
+    return { owner: input.owner, lamports, sol: formatAmount(lamports, SOL_DECIMALS), tokens, unreadable };
   },
 });
 

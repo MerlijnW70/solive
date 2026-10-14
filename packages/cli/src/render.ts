@@ -1,3 +1,12 @@
+export function redactUrl(url: string): string {
+  try {
+    const parsed = new URL(url);
+    return [parsed.protocol, "", parsed.host].join("/");
+  } catch {
+    return "an unparseable url";
+  }
+}
+
 export function render(value: unknown): string {
   return JSON.stringify(
     value,

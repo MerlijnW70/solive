@@ -74,7 +74,7 @@ import { claimsOf } from "../src/agent/claims.js";
 import { ACTIONS } from "../src/agent/registry.js";
 import { EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT } from "@intent-engine/core";
-import { AIRDROP, AIRDROP_REFUSED, defaultWallet, FUNDED, LAMPORTS_PER_SOL } from "../src/wallet.js";
+import { AIRDROP, AIRDROP_REFUSED, defaultWallet, FUNDED, keptDefault, LAMPORTS_PER_SOL, savedDefault, settingsPath } from "../src/wallet.js";
 import { balance, cli, FEE_BPS, h, HOME, setNow, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
@@ -191,6 +191,22 @@ describe("the wallet server", () => {
     expect(h.svm.getAccount(intent).exists).toBe(false);
     expect(balance(wrapped)).toBe(LAMPORTS_PER_SOL / 20n);
     expect((await ok(client, "wallet_intents"))["intents"]).toEqual([]);
+  });
+
+  it("wallet setup returns a redacted url", async () => {
+    const secret = "https://user:pass@rpc.example.org:8443/v1/path?api-key=hidden";
+    const keyed = await connect(["mcp", "--url", secret, "--wallet"]);
+    const made = await ok(keyed, "wallet_setup");
+    expect(made).toMatchObject({ url: "https://rpc.example.org:8443", settings: savedDefault(secret) });
+    expect(savedDefault(secret)).toBe("saved https://rpc.example.org:8443 as the default RPC for later CLI commands");
+    expect(JSON.stringify(made)).not.toMatch(/hidden|user:pass|v1\/path/);
+    expect(JSON.parse(h.files.get(settingsPath(HOME)) ?? "{}")).toMatchObject({ url: secret });
+    const other = await connect(["mcp", "--url", "https://other.example.org/?api-key=also", "--wallet"]);
+    const again = await ok(other, "wallet_setup");
+    expect(again).toMatchObject({ url: "https://other.example.org", settings: keptDefault(secret), created: false });
+    expect(keptDefault(secret)).toBe("left the saved default RPC https://rpc.example.org:8443 unchanged");
+    expect(JSON.stringify(again)).not.toMatch(/hidden|also/);
+    expect(JSON.parse(h.files.get(settingsPath(HOME)) ?? "{}")).toMatchObject({ url: secret });
   });
 
   it("lets the ask fall from a little above the median recent fill, held between 1.25 and 2 times the minimum, unless told to ask the minimum", async () => {

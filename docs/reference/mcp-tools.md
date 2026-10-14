@@ -8,7 +8,7 @@
 
 Served only with `--wallet`.
 
-Create this server's devnet wallet if it has none, save it, and fund it from the devnet airdrop when it holds less than 0.5 SOL. Safe to call again: it reuses the saved wallet. Call this first.
+Create this server's devnet wallet if it has none, save it, and fund it from the devnet airdrop when it holds less than 0.5 SOL. Safe to call again: it reuses the saved wallet, and saves this server's RPC as the CLI's default only when none is saved. Call this first.
 
 Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 
@@ -46,7 +46,7 @@ Served only with `--wallet`.
 
 Sell an exact amount of one token for at least min_receive of another, from this server's wallet: the tokens are escrowed in an intent that a solver fills or that the wallet gets back. Solvers pay the least an intent asks, so by default the ask starts at start_receive, a little above the median of recent fills but at least a quarter above min_receive and at most twice it, and falls to min_receive over falls_over seconds (default 120): a solver takes it near the most it can pay. exact: true asks min_receive from the start instead. Amounts are whole tokens such as 0.05. Selling SOL wraps it first. Without send it only previews; show the user the summary, then call again with send: true and the start_receive the preview returned once they approve.
 
-Effect: `submit` (read-only: false, destructive: false, idempotent: false)
+Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -67,7 +67,7 @@ Served only with `--wallet`.
 
 Offer an exact amount of one token in a Dutch auction from this server's wallet: the least it accepts starts at start_receive once the offer lands, falls in a straight line to end_receive over falls_over seconds, then stays there until it expires, so a solver fills it as soon as the asked amount meets what it can pay. Amounts are whole tokens such as 0.05. Selling SOL wraps it first. Without send it only previews; show the user the summary and call again with send: true once they approve.
 
-Effect: `submit` (read-only: false, destructive: false, idempotent: false)
+Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -87,7 +87,7 @@ Served only with `--wallet`.
 
 Sell the same amount of one token for another several times, every so many seconds, from this server's wallet, with no bot left running: all orders are sent now and escrowed now. Each order holds its ask at start_receive until its turn, then lets it fall to min_receive over falls_over seconds; it expires when the next one opens, or falls_over seconds after its own opening if that is later, and anyone can then return its escrow. An order fills before its turn if a solver can already pay start_receive, so set it above what solvers pay now to hold the orders. Any order can be cancelled with solive_wallet_cancel. Each order pays the create fee and rent, and the rent returns when it closes. Amounts are whole tokens per order. Without send it only previews; show the user the summary, then call again with send: true and the start_receive the preview returned once they approve.
 
-Effect: `submit` (read-only: false, destructive: false, idempotent: false)
+Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -108,7 +108,7 @@ Served only with `--wallet`.
 
 Hold an exact amount of one token from this server's wallet in an attested intent: it goes, minus the engine fee, to whichever wallet the named attestor later signs for, once the attestor attests a result between min_result and max_result. Use it to pay another agent for work that a third agent or a person judges. The attestor alone decides who is paid, so name an attestor the user trusts; with spec_hash the release must also be signed over that exact spec. spec_url publishes where that spec lives, so workers find the escrow with solive_find_jobs and announce their work to the attestor with solive_wallet_deliver. Have the worker deliver to the attestor rather than to this wallet, since this wallet can cancel until the release; solive_wallet_receipt later shows what the release recorded. Until then the wallet can cancel it with solive_wallet_cancel, and after it expires anyone can return the escrow. Amounts are whole tokens such as 0.05. Without send it only previews; show the user the summary and call again with send: true once they approve.
 
-Effect: `submit` (read-only: false, destructive: false, idempotent: false)
+Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -130,7 +130,7 @@ Served only with `--wallet`.
 
 Split a task into pieces and escrow each piece's payment from this server's wallet in one call, each as solive_wallet_escrow would: every piece is its own escrow that its attestor releases on its own, to whichever wallet it signs for, so workers are paid as each piece passes. One preview shows every piece and the total; one send escrows them all. A piece not yet released can be cancelled on its own with solive_wallet_cancel. Have workers deliver to the attestor rather than to this wallet. Amounts are whole tokens. Without send it only previews; show the user the summary and call again with send: true once they approve.
 
-Effect: `submit` (read-only: false, destructive: false, idempotent: false)
+Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -147,7 +147,7 @@ Served only with `--wallet`.
 
 As the attestor an escrow names, sign that it pays pay_to and settle it on chain from this server's wallet: the escrowed tokens, minus the engine fee and any partner fee, go to pay_to's token account, which this creates if needed. Use it when this server's wallet was named attestor of an intent made with solive_wallet_escrow and the work it pays for is done. A release cannot be undone. Without send it only previews and signs nothing; show the user the summary and, once they approve, call again with send: true and the approval the preview returned, which holds the send to exactly what was previewed.
 
-Effect: `submit` (read-only: false, destructive: false, idempotent: true)
+Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -165,7 +165,7 @@ Served only with `--wallet`.
 
 As the attestor a proof escrow names, release it on chain divided among several co-authors by weight, from this server's wallet: the escrowed tokens, minus the engine fee, any partner fee and the judge fee, are split by the weights and paid to each co-author's token account, which this creates if needed. Every co-author must authorize the exact split: preview without send to get the digest and the envelope each wallet must sign, collect those signatures, then call again with send: true and each co-author's signature. Changing any recipient, weight or the result changes what everyone signs. The escrow must have been made with a spec_hash. A release cannot be undone. Without send it only previews and signs nothing; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.
 
-Effect: `submit` (read-only: false, destructive: false, idempotent: true)
+Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -183,7 +183,7 @@ Served only with `--wallet`.
 
 As a worker, tell the attestor of a proof escrow, such as one found with solive_find_jobs, that the work is done: this server's wallet sends one transaction with a memo naming the escrow, the work's sha256 and the url the attestor fetches it from, and a transfer of 0 lamports to the attestor so the delivery shows in its history. It moves no tokens and costs only the transaction fee. The attestor alone decides whether the work passes and whom it pays, so host the work where the attestor can fetch it and give its exact sha256. Without send it only previews; show the user the summary and call again with send: true once they approve.
 
-Effect: `submit` (read-only: false, destructive: false, idempotent: false)
+Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -249,7 +249,7 @@ Served only with `--wallet`.
 
 Cancel an open intent of this server's wallet by its nonce: the escrow returns to the wallet's token account (wrapped SOL for SOL) and the intent account closes, returning its rent. Without send it only previews; call again with send: true once the user approves.
 
-Effect: `submit` (read-only: false, destructive: false, idempotent: true)
+Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -314,7 +314,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Build the transaction that escrows the owner's tokens in a new intent: sell exactly the given amount and receive at least the given output before the expiry (for attested orders, an amount set by the attested result), or get everything back. Returns an unsigned transaction that already simulated successfully; the owner's wallet must sign and send it. Nothing moves until then.
 
-Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
+Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -350,7 +350,7 @@ Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
 
 Build the transaction that cancels an open intent and returns what is left in escrow to the owner's token account. The intent account stays readable as cancelled and keeps its rent and bounty until whoever paid them closes it; if the owner paid them, set close to close it in the same transaction and get them back now. Only the owner can sign it.
 
-Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
+Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -383,7 +383,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Build the transaction that expires an overdue intent (refunding its owner) and closes it, or closes an already settled one, paying the intent's bounty to the cranker. The cranker signs and pays the fee. If the owner's token account is gone or cannot take the refund, set fund_accounts to create one for the owner at the cranker's cost; that is refused when its rent exceeds the bounty.
 
-Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
+Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -394,9 +394,9 @@ Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
 
 ## solive_prepare_signed_intent
 
-Build an intent the owner authorises by signing a message off-chain, so a relayer creates it on chain and pays its rent and fees. Steps: (1) the owner signs and sends the returned setup transaction; it registers them, creates the receiving token account and raises the engine's spending allowance on the input token by this intent's escrow plus any relayer fee, and it is the only part that costs the owner SOL: its network fee, which the summary gives in lamports, plus rent for any account it creates; (2) the owner signs message with their wallet's sign-message; (3) pass submit unchanged plus that base58 signature to solive_submit_signed_intent. When this server runs a relayer, it relays only the input tokens it lists a fee for, the message includes that fee, and the owner pays it in that token as the intent is created; without --relayer this server can prepare but not submit. Read summary and warnings before the owner signs anything.
+Build an intent the owner authorises by signing a message off-chain, so a relayer creates it on chain and pays its rent and fees. Steps: (1) the owner signs and sends the returned setup transaction; it registers them, creates the receiving token account and raises the engine's spending allowance on the input token by this intent's escrow plus any relayer fee, and it is the only part that costs the owner SOL: its network fee, which the summary gives in lamports, plus rent for any account it creates; (2) the owner signs message with their wallet's sign-message; (3) pass submit unchanged plus that base58 signature to solive_submit_signed_intent. When this server runs a relayer, it relays only the input tokens it lists a fee for, the message includes that fee, and the owner pays it in that token as the intent is created; it refuses, before the owner signs or pays anything, an expiry beyond that relayer's longest or a create fee and crank bounty above what it pays; without --relayer this server can prepare but not submit. Read summary and warnings before the owner signs anything.
 
-Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
+Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -432,7 +432,7 @@ Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
 
 Relay an owner's signed intent: the relayer key this server was started with (--relayer) pays the fee and creates the intent on chain, within the relayer's limits: accepted input tokens and their minimum fee, lamport cost per intent and per hour, expiry, transaction size and intents per owner per hour. Pass the submit object from solive_prepare_signed_intent unchanged plus the owner's base58 signature of its message. Calling again after success returns the same intent without sending anything.
 
-Effect: `submit` (read-only: false, destructive: false, idempotent: true)
+Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -469,7 +469,7 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 
 Build the one transaction an owner signs to let an agent key create intents on their behalf, within limits the program enforces: one token pair, the allowed kinds, a cap per intent, a total budget, a maximum number of intents, a maximum lifetime per intent, a price floor and an end date. Proceeds always go to the owner. The owner pays this transaction's fee and rent; the agent pays the network fee and rent of every intent it creates. The owner may grant the agent a fee per intent in the input token, which counts against every limit. The transaction also registers the owner and creates their output token account if needed, and raises the engine's spending allowance on the input token by the total budget. Revoke with solive_prepare_revoke_mandate.
 
-Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
+Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -506,9 +506,9 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 ## solive_prepare_revoke_mandate
 
-Build the transaction that revokes one mandate and returns its rent to the owner. From then on no solver can fill any intent opened under it. The same transaction cancels up to 6 of those intents that are still open, refunding their escrow, and lowers the engine's spending allowance by the unused budget; still_open counts the ones left, which list_intents finds and prepare_cancel cancels. Intents the owner made outside this mandate stay open and are counted in other_open. To revoke every mandate and pending signature together, the owner advances their signing epoch instead.
+Build the transaction that revokes one mandate, returns its rent to the owner and lowers the engine's spending allowance by the unused budget. From then on no solver can fill any intent opened under it. Separate transactions in cancels each cancel one of up to 6 of those intents that are still open, refunding their escrow; send them after prepared, in any order. An intent whose refund would fail, because the owner's token account for it is missing or frozen, is listed in skipped instead, so the revocation never depends on a cancel. still_open counts the ones left, skipped included, which list_intents finds and prepare_cancel cancels. Intents the owner made outside this mandate stay open and are counted in other_open. To revoke every mandate and pending signature together, the owner advances their signing epoch instead.
 
-Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
+Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -520,7 +520,7 @@ Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
 
 Build the transaction an agent key signs to create an intent for an owner under the mandate the owner granted it. The agent pays the fee, rent and any create fee; the owner's tokens move from the allowance they gave the engine. The program refuses anything outside the mandate. Use solive_agent_create instead when this server holds the agent key.
 
-Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
+Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
@@ -551,7 +551,7 @@ Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
 
 Create an intent for an owner under the mandate the owner granted to this server's agent key, signing and paying with that key. Needs a server started with --agent. This server refuses owners outside its --agent-owners list and spending beyond its hourly lamport budget; the program refuses anything outside the mandate's limits. Each call creates a new intent.
 
-Effect: `submit` (read-only: false, destructive: false, idempotent: false)
+Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |

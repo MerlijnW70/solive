@@ -11,12 +11,15 @@ import type { WalletLimits } from "../args.js";
 
 export const ANNOTATIONS: Record<Effect, { readOnlyHint: boolean; destructiveHint: boolean; idempotentHint: boolean; openWorldHint: boolean }> = {
   read: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-  prepare: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-  submit: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  prepare: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  submit: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
 };
 
-export const annotationsOf = (action: AnyAction) =>
-  action.repeats === true ? { ...ANNOTATIONS[action.effect], idempotentHint: false } : ANNOTATIONS[action.effect];
+export const annotationsOf = (action: AnyAction) => ({
+  ...ANNOTATIONS[action.effect],
+  ...(action.repeats === true ? { idempotentHint: false } : {}),
+  ...(action.destructive === false ? { destructiveHint: false } : {}),
+});
 
 export const WALLET_INSTRUCTIONS = [
   `This server holds a devnet wallet and trades intents with it. Devnet tokens have no value.`,

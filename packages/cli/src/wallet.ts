@@ -4,6 +4,7 @@ import { DEVNET_TEST_MINT, findAssociatedTokenAddress, formatAmount, NATIVE_MINT
 import { createdAccount, mintOf, type Transport } from "@intent-engine/client";
 import { CLUSTERS, ENV_KEYPAIR, ENV_URL, type Env, UsageError } from "./args.js";
 import { SOL_DECIMALS } from "./agent/read.js";
+import { redactUrl } from "./render.js";
 import { DEVNET_URL } from "./tokens.js";
 
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
@@ -75,10 +76,21 @@ async function walletAt(files: Files, path: string): Promise<{ signer: KeyPairSi
 
 const lamportsOf = async (transport: Transport, owner: Address) => (await transport.getAccount(owner))?.lamports ?? 0n;
 
-export async function setup(transport: Transport, files: Files, url: string, keypair: string | undefined): Promise<object> {
+export const savedDefault = (url: string) => `saved ${redactUrl(url)} as the default RPC for later CLI commands`;
+
+export const keptDefault = (saved: string) => `left the saved default RPC ${redactUrl(saved)} unchanged`;
+
+export async function setup(
+  transport: Transport,
+  files: Files,
+  url: string,
+  keypair: string | undefined,
+  keepSavedUrl = false,
+): Promise<object> {
   const path = keypair ?? defaultWallet(files.home);
   const { signer, created } = await walletAt(files, path);
-  await files.saveText(settingsPath(files.home), `${JSON.stringify({ url, keypair: path }, null, 2)}\n`, false);
+  const saved = keepSavedUrl ? (await withSettings(files, {}))[ENV_URL] : undefined;
+  await files.saveText(settingsPath(files.home), `${JSON.stringify({ url: saved ?? url, keypair: path }, null, 2)}\n`, false);
   let held = await lamportsOf(transport, signer.address);
   let next = FUNDED;
   if (held < FUND_BELOW) {
@@ -97,7 +109,8 @@ export async function setup(transport: Transport, files: Files, url: string, key
     address: signer.address,
     keypair: path,
     created,
-    url,
+    url: redactUrl(url),
+    settings: saved === undefined ? savedDefault(url) : keptDefault(saved),
     sol: formatAmount(held, SOL_DECIMALS),
     next,
   };

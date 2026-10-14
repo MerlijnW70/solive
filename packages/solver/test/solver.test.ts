@@ -1,6 +1,7 @@
 import { fileURLToPath } from "node:url";
 import fc from "fast-check";
 import {
+  AccountRole,
   type Address,
   appendTransactionMessageInstructions,
   type Base64EncodedWireTransaction,
@@ -62,16 +63,23 @@ import {
   MAX_CREATE_FEE,
 } from "@intent-engine/core";
 import {
-  BACKOFF_MAX_PASSES,
+  BACKOFF_MAX_INTERVALS,
   backingOff,
   backoff,
   BALANCES_REFUSED,
   type Chain,
+  createdRent,
+  DEFAULT_MAX_RENT,
   DEFAULT_MAX_SOL_COST,
   LAMPORTS_PER_SIGNATURE,
+  remembering,
   rentExempt,
+  TOKEN_2022_ACCOUNT_SPACE,
+  TOKEN_2022_PROGRAM,
   TOKEN_ACCOUNT_SPACE,
+  tokenAccountSpace,
   tooCostly,
+  tooMuchRent,
   compile,
   COMPUTE_BUDGET_ADDRESS,
   decide,
@@ -595,7 +603,7 @@ describe("solver against the deployed engine", () => {
     expect(sent.map((wire) => budgetOf(wire, 2))).toEqual([MAX_COMPUTE_UNITS]);
   });
 
-  it("counts the tip and created token accounts in the sol cost", async () => {
+  it("kept rent does not count against the sol cost", async () => {
     const intent = await open(31n);
     solver = await funded();
     const freshInput = await findAssociatedTokenAddress({ owner: solver.address, mint: inputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS });
@@ -606,74 +614,119 @@ describe("solver against the deployed engine", () => {
     const rent = svm.minimumBalanceForRentExemption(BigInt(TOKEN_ACCOUNT_SPACE));
     expect(rentExempt(TOKEN_ACCOUNT_SPACE)).toBe(rent);
     const signers = 2n;
-    const cost = signers * LAMPORTS_PER_SIGNATURE + 12_345n + 2n * rent;
+    const cost = signers * LAMPORTS_PER_SIGNATURE + 12_345n;
+    const kept = 2n * rent;
+    expect(kept).toBeLessThan(DEFAULT_MAX_RENT);
     const tipped = { tip: { account: tipAccount, lamports: 12_345n } };
     const pricer = () => stashMarket(stash, stashAccount, outputMint, freshOutput, () => MIN_OUT + 4_000n);
     const capped = await solve(pricer(), { ...tipped, maxSolCost: cost - 1n });
-    expect(capped.skipped).toEqual([{ intent, reason: tooCostly(cost, cost - 1n) }]);
+    expect(capped.skipped).toEqual([{ intent, reason: tooCostly(cost, cost - 1n), rent: kept }]);
+    const stingy = await solve(pricer(), { ...tipped, maxSolCost: cost, maxRent: kept - 1n });
+    expect(stingy.skipped).toEqual([{ intent, reason: tooMuchRent(kept, kept - 1n), rent: kept }]);
     expect([svm.getAccount(freshInput).exists, svm.getAccount(freshOutput).exists]).toEqual([false, false]);
     const before = svm.getBalance(solver.address) ?? 0n;
     const report = await solve(pricer(), { ...tipped, maxSolCost: cost });
-    expect(report.filled).toEqual([{ intent, profit: 4_000n, signature: expect.any(String) }]);
-    expect(before - (svm.getBalance(solver.address) ?? 0n)).toBe(cost);
+    expect(report.filled).toEqual([{ intent, profit: 4_000n, signature: expect.any(String), rent: kept }]);
+    expect(before - (svm.getBalance(solver.address) ?? 0n)).toBe(cost + kept);
+    expect([svm.getBalance(freshInput), svm.getBalance(freshOutput)]).toEqual([rent, rent]);
   });
 
-  it("backs off an intent that keeps failing", async () => {
+  it("backoff waits in seconds not ticks", async () => {
     const intent = await open(32n);
-    const held = backoff();
+    const interval = 5;
+    let clock = 0;
+    const held = backoff(interval, () => clock);
     const pricer = () => stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n);
     let failing = true;
-    let pass = 0;
-    const tried: number[] = [];
+    let tried = 0;
     const moved: Chain = {
       ...chain(),
       intents: async () => (await chain().intents()).map((e) => ({ ...e, intent: { ...e.intent, expiresAt: e.intent.expiresAt + 1n } })),
     };
-    const run = (extra: Partial<Parameters<typeof tick>[0]> = {}) => {
-      pass += 1;
-      return solve(pricer(), {
+    const run = (extra: Partial<Parameters<typeof tick>[0]> = {}) =>
+      solve(pricer(), {
         backoff: held,
         simulate: async (wire, watch) => {
-          tried.push(pass);
+          tried += 1;
           return failing ? { err: "InstructionError", unitsConsumed: null, balances: [] } : simulated(wire, watch);
         },
         ...extra,
       });
-    };
-    const reports = [];
-    for (let i = 0; i < 12; i += 1) {
-      reports.push(await run());
+    const failedOnce = async (extra: Partial<Parameters<typeof tick>[0]> = {}) =>
+      expect((await run(extra)).failed.map((f) => f.intent)).toEqual([intent]);
+    await failedOnce();
+    for (let i = 0; i < 40; i += 1) {
+      expect((await run()).skipped).toEqual([{ intent, reason: backingOff(1, interval) }]);
     }
-    expect(tried).toEqual([1, 3, 6, 11]);
-    expect(reports[1]?.skipped).toEqual([{ intent, reason: backingOff(1, 1) }]);
-    expect(reports[3]?.skipped).toEqual([{ intent, reason: backingOff(2, 2) }]);
-    expect(reports[6]?.skipped).toEqual([{ intent, reason: backingOff(3, 4) }]);
-    expect(reports[11]?.skipped).toEqual([{ intent, reason: backingOff(4, 8) }]);
-    expect(reports[10]?.failed.map((f) => f.intent)).toEqual([intent]);
-    const changed = await run({ chain: moved });
-    expect(tried.at(-1)).toBe(13);
-    expect(changed.failed.map((f) => f.intent)).toEqual([intent]);
-    expect((await run({ chain: moved })).skipped).toEqual([{ intent, reason: backingOff(1, 1) }]);
+    expect(tried).toBe(1);
+    clock = interval * 1_000 - 1;
+    expect((await run()).skipped).toEqual([{ intent, reason: backingOff(1, 1) }]);
+    clock = interval * 1_000;
+    await failedOnce();
+    expect((await run()).skipped).toEqual([{ intent, reason: backingOff(2, 2 * interval) }]);
+    clock += 2 * interval * 1_000;
+    await failedOnce();
+    expect((await run()).skipped).toEqual([{ intent, reason: backingOff(3, 4 * interval) }]);
+    expect(tried).toBe(3);
+    await failedOnce({ chain: moved });
+    expect(tried).toBe(4);
+    expect((await run({ chain: moved })).skipped).toEqual([{ intent, reason: backingOff(1, interval) }]);
+    clock += interval * 1_000;
     failing = false;
-    const filled = await run({ chain: moved });
-    expect(filled.filled.map((f) => f.intent)).toEqual([intent]);
+    expect((await run({ chain: moved })).filled.map((f) => f.intent)).toEqual([intent]);
+    expect(held.size()).toBe(0);
     expect(balance(receiver)).toBe(MIN_OUT);
     const state = (await chain().intents())[0]?.intent;
     if (state === undefined) {
       throw new Error("intent missing");
     }
-    const alone = backoff();
+    const alone = backoff(interval, () => clock);
     for (let i = 0; i < 10; i += 1) {
-      alone.pass();
       alone.failed(intent, state);
     }
-    alone.pass();
-    expect(alone.waiting(intent, state)).toEqual({ failures: 10, passes: BACKOFF_MAX_PASSES });
+    expect(alone.waiting(intent, state)).toEqual({ failures: 10, seconds: interval * BACKOFF_MAX_INTERVALS });
     alone.succeeded(intent);
     expect(alone.waiting(intent, state)).toBeNull();
     alone.failed(intent, state);
-    alone.pass();
-    expect(alone.waiting(intent, state)).toEqual({ failures: 1, passes: 1 });
+    expect(alone.waiting(intent, state)).toEqual({ failures: 1, seconds: interval });
+  });
+
+  it("backoff forgets intents that are no longer open", async () => {
+    const opened = [await open(40n), await open(41n), await open(42n), await open(43n)];
+    const listed = await chain().intents();
+    const stateOf = (address: Address): Intent => {
+      const found = listed.find((entry) => entry.address === address)?.intent;
+      if (found === undefined) {
+        throw new Error("intent missing");
+      }
+      return found;
+    };
+    const [kept, filled, expired, gone] = opened.map((address) => ({ address, intent: stateOf(address) }));
+    if (kept === undefined || filled === undefined || expired === undefined || gone === undefined) {
+      throw new Error("intents missing");
+    }
+    const held = backoff(5, () => 0);
+    for (const { address, intent } of listed) {
+      held.failed(address, intent);
+    }
+    expect(held.size()).toBe(4);
+    held.retain(listed, NOW);
+    expect(held.size()).toBe(4);
+    held.retain(
+      [
+        kept,
+        { ...filled, intent: { ...filled.intent, status: IntentStatus.Filled } },
+        { ...expired, intent: { ...expired.intent, expiresAt: NOW } },
+      ],
+      NOW,
+    );
+    expect(held.size()).toBe(1);
+    expect(held.waiting(kept.address, kept.intent)).toEqual({ failures: 1, seconds: 5 });
+    for (const { address, intent } of [filled, expired, gone]) {
+      expect(held.waiting(address, intent)).toBeNull();
+    }
+    held.retain([{ ...kept, intent: { ...kept.intent, status: IntentStatus.Cancelled } }], NOW);
+    expect(held.size()).toBe(0);
   });
 
   it("asks the chain nothing about an intent it can tell from its own state that it will not fill", async () => {
@@ -735,7 +788,7 @@ describe("solver against the deployed engine", () => {
     swapping.current = { mint: inputMint, from: solverInput, to: swapping.current?.to ?? solverInput, authority: solver };
     const report = await solve(stashMarket(stash, stashAccount, outputMint, fresh, () => MIN_OUT + 4_000n));
     expect(report.failed).toEqual([]);
-    expect(report.filled).toEqual([{ intent, profit: 4_000n, signature: expect.any(String) }]);
+    expect(report.filled).toEqual([{ intent, profit: 4_000n, signature: expect.any(String), rent: rentExempt(TOKEN_ACCOUNT_SPACE) }]);
     expect(balance(fresh)).toBe(4_000n);
     expect(balance(receiver)).toBe(MIN_OUT);
   });
@@ -1102,4 +1155,92 @@ describe("solver against the deployed engine", () => {
     expect(reached.some((r) => r.startsWith("fees of N bps exceed")), "never reached the fee bound").toBe(true);
     expect(seen.get("fill") ?? 0).toBeGreaterThan(DIFFERENTIAL_RUNS / 12);
   }, 600_000);
+});
+
+describe("token 2022 accounts the solver opens", () => {
+  const TRANSFER_FEE = Uint8Array.from([26, 0, 0, 0, 50, 0, 0, 0, 0, 0, 0, 0, 0, 1]);
+  const NON_TRANSFERABLE = Uint8Array.from([32]);
+  const MINT_SPACE = { transferFee: 112, nonTransferable: 4, transferHook: 68 };
+
+  async function mint2022(payer: KeyPairSigner, extensions: { data: Uint8Array; space: number }[]): Promise<Address> {
+    const m = await generateKeyPairSigner();
+    const space = BigInt(extensions.length === 0 ? getMintSize() : TOKEN_ACCOUNT_SPACE + 1 + extensions.reduce((sum, e) => sum + e.space, 0));
+    const mintData = new Uint8Array(35);
+    mintData.set([20, 6]);
+    mintData.set(getAddressEncoder().encode(payer.address), 2);
+    const only = (data: Uint8Array): Instruction => ({
+      programAddress: TOKEN_2022_PROGRAM,
+      accounts: [{ address: m.address, role: AccountRole.WRITABLE }],
+      data,
+    });
+    await send(payer, [
+      getCreateAccountInstruction({
+        payer,
+        newAccount: m,
+        lamports: svm.minimumBalanceForRentExemption(space),
+        space,
+        programAddress: TOKEN_2022_PROGRAM,
+      }),
+      ...extensions.map((e) => only(e.data)),
+      only(mintData),
+    ]);
+    return m.address;
+  }
+
+  it("token 2022 rent follows the mint extensions", async () => {
+    svm = new LiteSVM();
+    const payer = await funded();
+    const hookData = new Uint8Array(66);
+    hookData.set([36, 0]);
+    hookData.set(getAddressEncoder().encode(payer.address), 2);
+    hookData.set(getAddressEncoder().encode((await generateKeyPairSigner()).address), 34);
+    const fee = { data: TRANSFER_FEE, space: MINT_SPACE.transferFee };
+    const cases = [
+      { mint: await mint2022(payer, []), space: TOKEN_2022_ACCOUNT_SPACE },
+      { mint: await mint2022(payer, [fee]), space: TOKEN_2022_ACCOUNT_SPACE + 12 },
+      {
+        mint: await mint2022(payer, [
+          fee,
+          { data: hookData, space: MINT_SPACE.transferHook },
+          { data: NON_TRANSFERABLE, space: MINT_SPACE.nonTransferable },
+        ]),
+        space: TOKEN_2022_ACCOUNT_SPACE + 12 + 5 + 4,
+      },
+    ];
+    const reads: Address[] = [];
+    const unused = () => Promise.reject(new Error("unused"));
+    const chain = remembering({
+      config: unused,
+      intents: unused,
+      now: unused,
+      tokenProgram: unused,
+      exists: unused,
+      lookupTables: unused,
+      blockhash: unused,
+      tokenAmount: unused,
+      mintData: async (m) => {
+        reads.push(m);
+        const account = svm.getAccount(m);
+        return account.exists ? new Uint8Array(account.data) : null;
+      },
+    });
+    for (const { mint: m, space } of cases) {
+      const owner = (await generateKeyPairSigner()).address;
+      const create = await getCreateAssociatedTokenIdempotentInstructionAsync({ payer, owner, mint: m, tokenProgram: TOKEN_2022_PROGRAM });
+      const rent = await createdRent([create, create], async () => false, (address) => chain.mintData?.(address) ?? Promise.resolve(null));
+      expect(await createdRent([create], async () => false, (address) => chain.mintData?.(address) ?? Promise.resolve(null))).toBe(rent);
+      await send(payer, [create]);
+      const opened = svm.getAccount(await findAssociatedTokenAddress({ owner, mint: m, tokenProgram: TOKEN_2022_PROGRAM }));
+      if (!opened.exists) {
+        throw new Error("token account missing");
+      }
+      expect(opened.data.length).toBe(space);
+      expect(rent).toBe(opened.lamports);
+      expect(rent).toBe(rentExempt(space));
+      expect(tokenAccountSpace(TOKEN_2022_PROGRAM, (await chain.mintData?.(m)) ?? null)).toBe(space);
+    }
+    expect(reads).toEqual(cases.map((c) => c.mint));
+    expect(tokenAccountSpace(TOKEN_PROGRAM_ADDRESS, null)).toBe(TOKEN_ACCOUNT_SPACE);
+    expect(tokenAccountSpace(TOKEN_2022_PROGRAM, null)).toBe(TOKEN_2022_ACCOUNT_SPACE);
+  });
 });

@@ -63,6 +63,7 @@ import { VERSION } from "../src/version.js";
 import { ENGINE_PROBLEMS, type Problem } from "../src/agent/problems.js";
 import { createCost, rentFor, SIGNATURE_FEE, TOKEN_ACCOUNT_RENT_BYTES } from "../src/agent/budget.js";
 import { ACTIONS } from "../src/agent/registry.js";
+import { WALLET_ACTIONS } from "../src/agent/wallet.js";
 import { amount, InvalidInput, object } from "../src/agent/schema.js";
 import { OWNER_ACCOUNT_MISSING } from "../src/agent/settle.js";
 import { costlyFunding, FUNDING_RENT } from "../src/crank.js";
@@ -183,7 +184,7 @@ describe("agent server against the deployed engine", () => {
       expect(tool.description).toBe(action?.description);
       expect(tool.annotations).toEqual(action === undefined ? undefined : annotationsOf(action));
     }
-    expect(tools.filter((t) => t.annotations?.idempotentHint === false && t.annotations.readOnlyHint === false).map((t) => t.name)).toEqual([
+    expect(tools.filter((t) => t.annotations?.idempotentHint === false && t.annotations.destructiveHint === true).map((t) => t.name)).toEqual([
       "solive_agent_create",
     ]);
     expect(ACTIONS.map((a) => a.effect)).toEqual([
@@ -207,8 +208,8 @@ describe("agent server against the deployed engine", () => {
     ]);
     expect(ANNOTATIONS).toEqual({
       read: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
-      prepare: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
-      submit: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+      prepare: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+      submit: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     });
     expect(tools.find((t) => t.name === "solive_prepare_signed_intent")?.description).toContain(
       "solive_submit_signed_intent",
@@ -891,6 +892,7 @@ describe("agent server against the deployed engine", () => {
           escrowed: "0",
         },
       ],
+      unreadable: 0,
     });
     const nonce = (prepared["submit"] as Json)["nonce"] as string;
     await execute((await ok(relaying, "prepare_cancel", { owner: owner.address, nonce }))["prepared"], owner);
@@ -1054,6 +1056,19 @@ describe("agent server against the deployed engine", () => {
     expect(await ok(client, "list_intents", { owner: w.owner.address })).toMatchObject({ unreadable: 1, intents: [{ nonce: "1" }] });
   });
 
+  it("balances skip an unreadable intent", async () => {
+    const broken = await createIntent();
+    const account = h.svm.getAccount(broken["intent"]);
+    if (!account.exists) {
+      throw new Error("intent missing");
+    }
+    h.svm.setAccount({ ...account, data: new Uint8Array(account.data).slice(0, 40), space: 40n });
+    await createIntent({ nonce: "1" });
+    const read = await ok(client, "get_balances", { owner: w.owner.address, mints: [w.inputMint] });
+    expect(read["unreadable"]).toBe(1);
+    expect((read["tokens"] as Json[])[0]).toMatchObject({ mint: w.inputMint, escrowed: ESCROW.toString() });
+  });
+
   it("refuses before the owner signs any terms its relayer could not fit in one transaction", async () => {
     const relayer = await funded();
     const owner = await funded();
@@ -1209,7 +1224,8 @@ describe("agent server against the deployed engine", () => {
       return { ...p["submit"], signature };
     };
     const strict = await connect(relayer, [...free(), "--relay-max-ttl", "3600", "--relay-per-hour", "1"]);
-    expect(await fail(strict, "submit_signed_intent", await signedBy(strict, "0", { expires_in: 3_601 }))).toMatchObject({
+    const lax = await connect(relayer, [...free(), "--relay-max-lamports", "10000"]);
+    expect(await fail(strict, "submit_signed_intent", await signedBy(lax, "0", { expires_in: 3_601 }))).toMatchObject({
       code: "RelayTooLong",
     });
     await ok(strict, "submit_signed_intent", await signedBy(strict, "1"));
@@ -1218,16 +1234,43 @@ describe("agent server against the deployed engine", () => {
     setNow(NOW + 3_600n);
     await ok(strict, "submit_signed_intent", await signedBy(strict, "4"));
     await cli(["set-economics", "--keypair", "a.json", "--yes", "--bounty", "6000", "--create-fee", "4000"], { "a.json": w.authority });
-    const costly = await signedBy(strict, "3");
+    const costly = await signedBy(lax, "3");
     expect(await fail(strict, "submit_signed_intent", costly)).toEqual({
       code: "RelayTooCostly",
       retryable: false,
       hint: "relaying this intent costs 10000 lamports in create fee, crank bounty and priority fee; this relayer pays at most 0",
     });
-    const generous = await connect(relayer, [...free(), "--relay-max-lamports", "10000"]);
     const before = h.svm.getBalance(relayer.address) ?? 0n;
-    await ok(generous, "submit_signed_intent", costly);
+    await ok(lax, "submit_signed_intent", costly);
     expect(before - (h.svm.getBalance(relayer.address) ?? 0n)).toBeGreaterThan(10_000n);
+  });
+
+  it("prepare signed intent refuses an expiry beyond the relayer ttl", async () => {
+    const relayer = await funded();
+    const owner = await funded();
+    await ata(w.authority, owner.address, w.inputMint, 1_000n);
+    const strict = await connect(relayer, [...free(), "--relay-max-ttl", "3600"]);
+    expect(await fail(strict, "prepare_signed_intent", swap({ owner: owner.address, expires_in: 3_601 }))).toEqual({
+      code: "RelayTooLong",
+      retryable: false,
+      hint: "this relayer only relays intents that expire within 3600 seconds; sign one with an earlier expiry",
+    });
+    expect(await ok(strict, "prepare_signed_intent", swap({ owner: owner.address, expires_in: 3_600 }))).toMatchObject({ nonce: "0" });
+  });
+
+  it("prepare signed intent refuses terms beyond the relayer lamports", async () => {
+    const relayer = await funded();
+    const owner = await funded();
+    await ata(w.authority, owner.address, w.inputMint, 1_000n);
+    await cli(["set-economics", "--keypair", "a.json", "--yes", "--bounty", "6000", "--create-fee", "4000"], { "a.json": w.authority });
+    const cheap = await connect(relayer, [...free(), "--relay-max-lamports", "9999"]);
+    expect(await fail(cheap, "prepare_signed_intent", swap({ owner: owner.address }))).toEqual({
+      code: "RelayTooCostly",
+      retryable: false,
+      hint: "relaying this intent costs at least 10000 lamports in create fee and crank bounty before any priority fee; this relayer pays at most 9999",
+    });
+    const enough = await connect(relayer, [...free(), "--relay-max-lamports", "10000"]);
+    expect(await ok(enough, "prepare_signed_intent", swap({ owner: owner.address }))).toMatchObject({ nonce: "0" });
   });
 
   it("checks every result against its declared schema and turns bugs into problems", async () => {
@@ -1260,5 +1303,29 @@ describe("agent server against the deployed engine", () => {
     });
     expect(await invoke(throwingSchema, ctx, {})).toEqual({ ok: false, problem: { code: "Failed", retryable: false, hint: "schema bug" } });
     expect(toJson({ a: [1n, { b: 2n }], c: null, d: "x", e: true })).toEqual({ a: ["1", { b: "2" }], c: null, d: "x", e: true });
+  });
+});
+
+describe("tool annotations", () => {
+  it("submit tools that move value are destructive", () => {
+    const hinted = [...WALLET_ACTIONS, ...ACTIONS].map((action) => ({ name: action.name, effect: action.effect, ...annotationsOf(action) }));
+    expect(hinted.filter((a) => a.destructiveHint).map((a) => a.name).sort()).toEqual(
+      [
+        "solive_agent_create",
+        "solive_submit_signed_intent",
+        "solive_wallet_attest",
+        "solive_wallet_attest_split",
+        "solive_wallet_auction",
+        "solive_wallet_cancel",
+        "solive_wallet_deliver",
+        "solive_wallet_escrow",
+        "solive_wallet_escrow_plan",
+        "solive_wallet_recurring",
+        "solive_wallet_swap",
+      ].sort(),
+    );
+    expect(hinted.filter((a) => a.effect === "prepare").every((a) => !a.readOnlyHint && !a.destructiveHint)).toBe(true);
+    expect(hinted.filter((a) => a.effect === "read").every((a) => a.readOnlyHint && !a.destructiveHint)).toBe(true);
+    expect(hinted.find((a) => a.name === "solive_wallet_setup")).toMatchObject({ readOnlyHint: false, destructiveHint: false });
   });
 });

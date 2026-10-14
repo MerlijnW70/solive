@@ -25,6 +25,7 @@ type Action<I> = {
   description: string;
   effect: Effect;
   repeats?: true;
+  destructive?: false;
   input: Schema<I>;
   output: Schema<unknown>;
   run(ctx: AgentContext, input: I, call: Call): Promise<object>;

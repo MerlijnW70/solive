@@ -1,9 +1,10 @@
 import type { Address } from "@solana/kit";
 import { DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
+import { redactUrl } from "./render.js";
 
 export const DEVNET_URL = "https://api.devnet.solana.com";
 
-export const testTokenElsewhere = (url: string) => `TEST names the devnet test token; on ${url} pass the token's mint address`;
+export const testTokenElsewhere = (url: string) => `TEST names the devnet test token; on ${redactUrl(url)} pass the token's mint address`;
 
 export function tokenNamed(text: string, url: string): string | Error {
   const name = text.toUpperCase();

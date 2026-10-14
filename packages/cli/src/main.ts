@@ -8,7 +8,7 @@ import { changesFrom, intentNotifications, type RpcLike, rpcTransport, signature
 import { ENV_URL, outputOf, parse, UsageError } from "./args.js";
 import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
-import { printableLines, render, renderText } from "./render.js";
+import { printableLines, redactUrl, render, renderText } from "./render.js";
 import { withSettings } from "./wallet.js";
 import { WALLET_NOTICE } from "./agent/wallet.js";
 
@@ -29,7 +29,7 @@ const offline = (error: unknown) => error instanceof TypeError && error.message 
 
 function message(error: unknown, url: string | undefined): string {
   if (url !== undefined && offline(error)) {
-    return unreachable(url);
+    return unreachable(redactUrl(url));
   }
   return printableLines(error instanceof Error ? error.message : String(error));
 }

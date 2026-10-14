@@ -78,6 +78,7 @@ import { relayOf } from "./agent/relay.js";
 import { type Authority, type Command, type Env, usageOf } from "./args.js";
 import { VERSION } from "./version.js";
 import { balances, defaultMints, setup } from "./wallet.js";
+import { redactUrl } from "./render.js";
 import { prepare } from "./agent/prepare.js";
 import { KIND_NAMES, KINDS, preparedView } from "./agent/shapes.js";
 import type { AgentContext } from "./agent/actions.js";
@@ -197,16 +198,18 @@ const pauseList = (flags: number) =>
 
 async function administer(
   transport: Transport,
+  url: string,
   runtime: Runtime,
   by: Authority,
   build: (signer: TransactionSigner) => Promise<Instruction[]>,
   summary: (signer: Address) => string[],
   extra: object = {},
 ): Promise<object> {
+  const cluster = { url: redactUrl(url), genesisHash: await transport.genesisHash() };
   if ("keypair" in by) {
     const signer = await runtime.loadSigner(by.keypair);
     const instructions = await build(signer);
-    const described = { ...extra, summary: summary(signer.address) };
+    const described = { ...extra, cluster, summary: summary(signer.address) };
     if (!by.yes) {
       const simulated = await prepare(transport, instructions, signer.address);
       return { ...described, sent: false, units_consumed: simulated.unitsConsumed, next: NOT_SENT };
@@ -218,6 +221,7 @@ async function administer(
   const view = preparedView(await prepare(unbudgeted, instructions, by.authority));
   return {
     ...extra,
+    cluster,
     summary: summary(by.authority),
     unsigned: {
       ...view,
@@ -298,10 +302,11 @@ export async function watchSolve(command: SolveCommand, interval: number, runtim
   const transport = withPriority(runtime.transport(command.url), command.priority);
   const options = await solverOptions(command, runtime, transport);
   const chain = remembering(options.chain);
+  const held = backoff(interval, () => Number(runtime.now()) * 1_000);
   const live: SolverOptions = {
     ...options,
     chain,
-    backoff: backoff(),
+    backoff: held,
     send:
       command.jito === undefined ? async (wire) => ({ signature: await transport.submitWire(wire), confirmed: false }) : options.send,
   };
@@ -320,6 +325,7 @@ export async function watchSolve(command: SolveCommand, interval: number, runtim
         const decoded = full ? { intents: await chain.intents(), unreadable: [] } : decodedChanges(changed);
         if (full) {
           scannedAt = now;
+          held.retain(decoded.intents, now);
         }
         if (decoded.unreadable.length > 0) {
           emit({ at: now, scan: "changed", unreadable: decoded.unreadable });
@@ -373,6 +379,7 @@ async function solverOptions(command: SolveCommand, runtime: Runtime, transport:
       (await transport.intents()).map(({ address, data }) => ({ address, intent: getIntentDecoder().decode(data) })),
     now: () => chainTime(transport),
     tokenProgram: (mint) => tokenProgramOf(transport, mint),
+    mintData: async (mint) => (await transport.getAccount(mint))?.data ?? null,
     exists: async (address) => (await createdAccount(transport, address)) !== null,
     tokenAmount: async (address) => tokenAmountOf((await transport.getAccount(address))?.data ?? null) ?? 0n,
     lookupTables: async (addresses) => {
@@ -414,6 +421,7 @@ async function solverOptions(command: SolveCommand, runtime: Runtime, transport:
     solver,
     strategy: { minProfit: command.minProfit, maxFeeBps: command.maxFeeBps },
     maxSolCost: command.maxSolCost,
+    maxRent: command.maxRent,
     tip: command.tipLamports === 0n ? null : { account: tipAccount(runtime.entropy()), lamports: command.tipLamports },
     lookupTables: command.lookupTables,
     unitPrice: (instructions) => priceOf(transport, command.priority, instructions),
@@ -588,6 +596,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       const domain = await clusterDomain(transport);
       return administer(
         transport,
+        command.url,
         runtime,
         command.by,
         async (authority) => [
@@ -615,6 +624,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "raise-pause":
       return administer(
         transport,
+        command.url,
         runtime,
         command.by,
         async (authority) => [await buildRaisePause({ authority, flags: command.flags })],
@@ -623,6 +633,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "lower-pause":
       return administer(
         transport,
+        command.url,
         runtime,
         command.by,
         async (admin) => [await buildLowerPause({ admin, flags: command.flags })],
@@ -651,6 +662,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       ];
       return administer(
         transport,
+        command.url,
         runtime,
         command.by,
         async (admin) => [await buildUpdateConfig({ admin, update })],
@@ -662,6 +674,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       const { config } = await loadConfig(transport);
       return administer(
         transport,
+        command.url,
         runtime,
         command.by,
         async (admin) => [await buildProposeAdmin({ admin, pendingAdmin: command.pendingAdmin })],
@@ -675,6 +688,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       const { config } = await loadConfig(transport);
       return administer(
         transport,
+        command.url,
         runtime,
         command.by,
         async (pendingAdmin) => [await buildAcceptAdmin({ pendingAdmin })],
@@ -696,6 +710,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
         .join(", ");
       return administer(
         transport,
+        command.url,
         runtime,
         command.by,
         async (admin) => [await buildUpdateEconomics({ admin, economics: e })],

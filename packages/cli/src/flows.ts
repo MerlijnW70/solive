@@ -27,6 +27,7 @@ import { preparedView } from "./agent/shapes.js";
 import { type Side, type Tokens, UsageError } from "./args.js";
 
 const PREPARED_KEYS = ["setup", "prepared"] as const;
+const FOLLOWING_KEY = "cancels";
 
 export const NOT_SENT = "nothing was sent; check the summary and pass --yes to sign and send";
 
@@ -109,10 +110,13 @@ export async function finish(
   signer: KeyPairSigner,
   yes: boolean,
 ): Promise<object> {
-  const views = PREPARED_KEYS.map((key) => value[key] as PreparedView | undefined).filter((v) => v !== undefined);
+  const views = [
+    ...PREPARED_KEYS.map((key) => value[key] as PreparedView | undefined).filter((v) => v !== undefined),
+    ...((value[FOLLOWING_KEY] as PreparedView[] | undefined) ?? []),
+  ];
   const priority = views.reduce((sum, v) => sum + BigInt(v.priority_fee_lamports ?? 0n), 0n);
   const shown = {
-    ...Object.fromEntries(Object.entries(value).filter(([k]) => !(PREPARED_KEYS as readonly string[]).includes(k))),
+    ...Object.fromEntries(Object.entries(value).filter(([k]) => !([...PREPARED_KEYS, FOLLOWING_KEY] as readonly string[]).includes(k))),
     ...(priority > 0n ? { priority_fee_lamports: priority } : {}),
   };
   if (!yes) {

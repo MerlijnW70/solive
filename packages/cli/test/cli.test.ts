@@ -948,7 +948,8 @@ describe("cli against the deployed engine", () => {
     expect(run.code).toBe(EXIT_OK);
     expect(run.each().map((r) => [r["at"], (r["failed"] as unknown[]).length])).toEqual([
       [String(NOW + 1_000n), 1],
-      [String(NOW + 1_010n), 1],
+      [String(NOW + 1_005n), 1],
+      [String(NOW + 1_015n), 1],
       [String(NOW + 1_020n + REFRESH_AFTER_SECONDS), 1],
     ]);
     expect(h.reads.get(config)).toBe(3);

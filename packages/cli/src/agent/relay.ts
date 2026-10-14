@@ -31,6 +31,24 @@ function prune(relay: Relay, now: bigint): void {
   }
 }
 
+export function refuseLongRelay(relay: Relay, expiresAt: bigint, now: bigint): void {
+  if (expiresAt - now > relay.maxTtl) {
+    throw new AgentRefusal(
+      "RelayTooLong",
+      `this relayer only relays intents that expire within ${relay.maxTtl} seconds; sign one with an earlier expiry`,
+    );
+  }
+}
+
+export function refuseCostlyTerms(relay: Relay, charges: bigint): void {
+  if (charges > relay.maxLamports) {
+    throw new AgentRefusal(
+      "RelayTooCostly",
+      `relaying this intent costs at least ${charges} lamports in create fee and crank bounty before any priority fee; this relayer pays at most ${relay.maxLamports}`,
+    );
+  }
+}
+
 export function admitRelay(
   relay: Relay,
   owner: Address,
@@ -45,12 +63,7 @@ export function admitRelay(
       `relaying this intent costs ${charges} lamports in create fee, crank bounty and priority fee; this relayer pays at most ${relay.maxLamports}`,
     );
   }
-  if (expiresAt - now > relay.maxTtl) {
-    throw new AgentRefusal(
-      "RelayTooLong",
-      `this relayer only relays intents that expire within ${relay.maxTtl} seconds; sign one with an earlier expiry`,
-    );
-  }
+  refuseLongRelay(relay, expiresAt, now);
   prune(relay, now);
   const times = relay.recent.get(owner) ?? [];
   if (times.length >= relay.perHour) {

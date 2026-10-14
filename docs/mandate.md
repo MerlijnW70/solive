@@ -45,7 +45,7 @@ The 0.02 wrapped SOL moves from your token account into the intent's escrow. An 
 intent-engine mandate revoke --agent $(solana-keygen pubkey ~/solive-agent.json) --yes
 ```
 
-Revoking cancels up to 6 of the agent's open intents in the same transaction, refunds their escrow and lowers the engine's allowance by the unused budget. Any other intent it opened can no longer fill; cancel it to get its escrow back.
+Revoking lowers the engine's allowance by the unused budget in one transaction, then cancels up to 6 of the agent's open intents in one transaction each and refunds their escrow. A cancel whose refund would fail, because your token account is missing or frozen, is listed under `skipped` and not sent. Any other intent it opened can no longer fill; cancel it to get its escrow back.
 
 Revoking closes the mandate, so `mandate show` then reports `NotFound`.
 

@@ -21,7 +21,7 @@ import {
 } from "@intent-engine/core";
 
 const FIRST_LANE = MANDATE_NONCE_BIT | (1n << 32n);
-import { getTokenDecoder, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
+import { getCloseAccountInstruction, getTokenDecoder, getTransferInstruction, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { MAX_COMPUTE_UNITS } from "@intent-engine/solver";
 import { type Transport, Charged } from "@intent-engine/client";
 import { createCost, rentFor, TOKEN_ACCOUNT_RENT_BYTES } from "../src/agent/budget.js";
@@ -213,12 +213,17 @@ describe("mandates through the agent server", () => {
     expect(revoke["warnings"]).toEqual([]);
     expect(revoke["summary"]).toEqual([
       `Revokes mandate ${first}: ${agent.address} can no longer create intents for you, and nobody can fill the ones it made`,
-      `Cancels the agent's 2 open intent(s) and returns 0.0005 of ${w.inputMint} to you`,
+      `Cancels the agent's 2 open intent(s) and returns 0.0005 of ${w.inputMint} to you, one transaction each after the revocation`,
       `Lowers the engine's spending allowance on ${freshInput} from 0.0006 to 0.0005, taking back the mandate's unused 0.0001`,
       `Leaves your 1 other open intent(s) untouched: ${kept["intent"]}`,
       "Returns the mandate's rent to you",
     ]);
+    expect([revoke["skipped"], revoke["cancels"].length]).toEqual([[], 2]);
     await execute(revoke["prepared"], fresh);
+    expect(balance(freshInput)).toBe(400n);
+    for (const cancel of revoke["cancels"]) {
+      await execute(cancel, fresh);
+    }
     expect(balance(freshInput)).toBe(900n);
     expect(allowance(freshInput)).toBe(500n);
     expect((await ok(client, "get_intent", { owner: fresh.address, nonce: kept["nonce"] }))["status"]).toBe("open");
@@ -231,6 +236,7 @@ describe("mandates through the agent server", () => {
       `Lowers the engine's spending allowance on ${freshInput} from 0.0005 to 0, taking back the mandate's unused 0.0005`,
     );
     await execute(second["prepared"], fresh);
+    await execute(second["cancels"][0], fresh);
     expect(allowance(freshInput)).toBe(0n);
     expect(balance(freshInput)).toBe(1_000n);
     const idle = await ok(client, "prepare_mandate", grant({ owner: fresh.address }));
@@ -239,6 +245,32 @@ describe("mandates through the agent server", () => {
     expect(third["summary"]).toContain("None of the agent's intents under it are open");
     expect(third["allowance"]).toBe("0");
     expect(REVOKE_CANCELS).toBe(6);
+  });
+
+  it("revoke succeeds when a cancel cannot refund", async () => {
+    await execute((await ok(client, "prepare_mandate", grant()))["prepared"], w.owner);
+    const opened = [];
+    for (const amount of ["300", "200"]) {
+      opened.push((await ok(client, "agent_create", { owner: w.owner.address, order: order(amount, "150"), expires_in: 600 }))["intent"]);
+    }
+    const elsewhere = await ata(w.authority, w.feeRecipient.address, w.inputMint);
+    await send(w.owner, [
+      getTransferInstruction({ source: w.ownerInput, destination: elsewhere, authority: w.owner, amount: balance(w.ownerInput) }),
+      getCloseAccountInstruction({ account: w.ownerInput, destination: w.owner.address, owner: w.owner }),
+    ]);
+    expect(h.svm.getAccount(w.ownerInput).exists).toBe(false);
+    const revoke = await ok(client, "prepare_revoke_mandate", { owner: w.owner.address, agent: agent.address });
+    expect([revoke["cancelled"], revoke["cancels"], revoke["still_open"]]).toEqual([[], [], 2]);
+    const reason = `the refund to your token account ${w.ownerInput} would fail: it does not exist; fix it, then cancel with solive_prepare_cancel`;
+    expect(revoke["skipped"]).toEqual(opened.map((intent) => ({ intent, reason })));
+    expect(revoke["summary"]).toContain(`Does not cancel ${opened[0]}: ${reason}`);
+    expect(revoke["warnings"]).toHaveLength(1);
+    await execute(revoke["prepared"], w.owner);
+    const [address] = await findMandatePda({ owner: w.owner.address, agent: agent.address, id: 0n });
+    expect(h.svm.getAccount(address).exists).toBe(false);
+    for (const intent of opened) {
+      expect(balance((await findVaultPda({ intent }))[0])).toBeGreaterThan(0n);
+    }
   });
 
   it("lets the owner grant the agent a fee that the agent collects and the mandate counts", async () => {

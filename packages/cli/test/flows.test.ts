@@ -429,6 +429,29 @@ describe("command line flows", () => {
     expect(refused.code).toBe(EXIT_FAILED);
   });
 
+  it("admin previews name the cluster", async () => {
+    const url = ["--url", "https://user:secret@rpc.example.org:8443/v1?api-key=hidden"];
+    const cluster = { url: "https://rpc.example.org:8443", genesisHash: h.genesis };
+    const next = await funded();
+    const previews = [
+      ["raise-pause", "--flags", "fill"],
+      ["lower-pause", "--flags", "fill"],
+      ["update-config", "--fee-bps", "9"],
+      ["set-economics", "--bounty", "1", "--create-fee", "0"],
+      ["propose-admin", "--new-admin", next.address],
+    ];
+    for (const args of previews) {
+      const held = await cli([...args, ...url, "--keypair", "admin.json"], keys);
+      expect([args[0], held.code, held.json()["cluster"], held.out.includes("hidden") || held.out.includes("secret")]).toEqual([args[0], EXIT_OK, cluster, false]);
+      const unsigned = await cli([...args, ...url, "--authority", w.authority.address], {});
+      expect([args[0], unsigned.json()["cluster"]]).toEqual([args[0], cluster]);
+    }
+    expect((await cli(["propose-admin", ...url, "--keypair", "admin.json", "--yes", "--new-admin", next.address], keys)).json()).toMatchObject({ sent: true, cluster });
+    expect((await cli(["accept-admin", ...url, "--authority", next.address], {})).json()["cluster"]).toEqual(cluster);
+    const sent = (await cli(["raise-pause", ...url, "--keypair", "admin.json", "--yes", "--flags", "fill"], keys)).json();
+    expect(sent).toMatchObject({ sent: true, cluster });
+  });
+
   it("warns when the treasury cannot take create fees, while creates still go through", async () => {
     const fee = w.feeRecipient.address;
     const warnings = async () => ((await cli(["treasury", "--mints", w.inputMint], {})).json() as Json)["warnings"];

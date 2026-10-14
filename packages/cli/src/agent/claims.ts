@@ -12,20 +12,22 @@ export const claimsOf = (): Claims => ({ held: new Map(), busy: new Set() });
 
 export const callOf = (): Call => ({ undo: [] });
 
-export function claimedBy(claims: Claims, owner: Address, now: bigint): Set<bigint> {
-  const held = claims.held.get(owner);
-  if (held === undefined) {
-    return new Set();
-  }
-  for (const [nonce, until] of held) {
-    if (until < now) {
-      held.delete(nonce);
+function prune(claims: Claims, now: bigint): void {
+  for (const [owner, held] of claims.held) {
+    for (const [nonce, until] of held) {
+      if (until < now) {
+        held.delete(nonce);
+      }
+    }
+    if (held.size === 0) {
+      claims.held.delete(owner);
     }
   }
-  if (held.size === 0) {
-    claims.held.delete(owner);
-  }
-  return new Set(held.keys());
+}
+
+export function claimedBy(claims: Claims, owner: Address, now: bigint): Set<bigint> {
+  prune(claims, now);
+  return new Set(claims.held.get(owner)?.keys());
 }
 
 export function claim(claims: Claims, call: Call, owner: Address, nonce: bigint, until: bigint, now: bigint): void {

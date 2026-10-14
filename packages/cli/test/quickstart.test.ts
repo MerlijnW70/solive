@@ -325,7 +325,9 @@ describe("the mandate guide", () => {
     });
     expect(MANDATE).toContain("The 0.02 wrapped SOL moves from your token account into the intent's escrow.");
     expect(balances[2]).toBe(held - LAMPORTS_PER_SOL / 50n);
-    expect(MANDATE).toContain(`Revoking cancels up to ${REVOKE_CANCELS} of the agent's open intents in the same transaction, refunds their escrow`);
+    expect(MANDATE).toContain(
+      `Revoking lowers the engine's allowance by the unused budget in one transaction, then cancels up to ${REVOKE_CANCELS} of the agent's open intents in one transaction each and refunds their escrow.`,
+    );
     expect(balances[3]).toBe(held);
     const listed = (await cli(["list"], keys)).json() as { intents: { status: string }[] };
     expect(listed.intents.map((i) => i.status)).toEqual(["cancelled"]);

@@ -48,7 +48,7 @@ import {
   tokenAccountIfMissing,
   type Transport,
 } from "@intent-engine/client";
-import { admitRelay, type Relay } from "./relay.js";
+import { admitRelay, type Relay, refuseCostlyTerms, refuseLongRelay } from "./relay.js";
 import { type Call, claim, claimedBy, enter } from "./claims.js";
 import { type Order, orderSchema, paramsOf, partnerSchema, preparedSchema, preparedView } from "./shapes.js";
 import { tokenNames } from "../tokens.js";
@@ -170,7 +170,7 @@ export const prepareSignedIntent = define({
   name: tool("prepare_signed_intent"),
   title: "Prepare a relayer-submitted signed intent",
   description:
-    `Build an intent the owner authorises by signing a message off-chain, so a relayer creates it on chain and pays its rent and fees. Steps: (1) the owner signs and sends the returned setup transaction; it registers them, creates the receiving token account and raises the engine's spending allowance on the input token by this intent's escrow plus any relayer fee, and it is the only part that costs the owner SOL: its network fee, which the summary gives in lamports, plus rent for any account it creates; (2) the owner signs message with their wallet's sign-message; (3) pass submit unchanged plus that base58 signature to ${tool("submit_signed_intent")}. When this server runs a relayer, it relays only the input tokens it lists a fee for, the message includes that fee, and the owner pays it in that token as the intent is created; without --relayer this server can prepare but not submit. Read summary and warnings before the owner signs anything.`,
+    `Build an intent the owner authorises by signing a message off-chain, so a relayer creates it on chain and pays its rent and fees. Steps: (1) the owner signs and sends the returned setup transaction; it registers them, creates the receiving token account and raises the engine's spending allowance on the input token by this intent's escrow plus any relayer fee, and it is the only part that costs the owner SOL: its network fee, which the summary gives in lamports, plus rent for any account it creates; (2) the owner signs message with their wallet's sign-message; (3) pass submit unchanged plus that base58 signature to ${tool("submit_signed_intent")}. When this server runs a relayer, it relays only the input tokens it lists a fee for, the message includes that fee, and the owner pays it in that token as the intent is created; it refuses, before the owner signs or pays anything, an expiry beyond that relayer's longest or a create fee and crank bounty above what it pays; without --relayer this server can prepare but not submit. Read summary and warnings before the owner signs anything.`,
   effect: "prepare",
   input: object({
     ...termsInput,
@@ -193,6 +193,11 @@ export const prepareSignedIntent = define({
     const now = await chainTime(transport);
     const expiresAt = expiryOf(input, now);
     const params = validate(paramsOf(input.order));
+    if (relay !== undefined) {
+      refuseLongRelay(relay, expiresAt, now);
+      const { config } = await loadConfig(transport);
+      refuseCostlyTerms(relay, BigInt(config.createFee) + BigInt(config.crankBounty));
+    }
     const user = await loadUser(transport, input.owner);
     const outputToken = await mintOf(transport, input.output_mint);
     if (input.nonce !== undefined) {

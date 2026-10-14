@@ -53,4 +53,19 @@ describe("nonce claims", () => {
     expect(codeOf(() => claim(claims, call, OWNER, 99n, NOW + 60n, NOW + 11n))).toBe("ok");
     expect(claimedBy(claims, OWNER, NOW + 11n).has(0n)).toBe(false);
   });
+
+  it("stale claims are pruned for every owner", () => {
+    const claims = claimsOf();
+    const call = callOf();
+    claim(claims, call, OWNER, 1n, NOW + 10n, NOW);
+    claim(claims, call, OWNER, 2n, NOW + 600n, NOW);
+    claim(claims, call, OTHER, 1n, NOW + 10n, NOW);
+    expect([...claims.held.keys()]).toEqual([OWNER, OTHER]);
+    claimedBy(claims, OWNER, NOW + 11n);
+    expect([...claims.held.keys()]).toEqual([OWNER]);
+    expect([...(claims.held.get(OWNER)?.keys() ?? [])]).toEqual([2n]);
+    claim(claims, call, OTHER, 3n, NOW + 700n, NOW + 601n);
+    expect([...claims.held.keys()]).toEqual([OTHER]);
+    expect([...(claims.held.get(OTHER)?.keys() ?? [])]).toEqual([3n]);
+  });
 });
