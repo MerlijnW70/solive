@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -98,5 +98,52 @@ describe("the shared sales book", () => {
     aged(old, LEFTOVER_MS * 2);
     await sales.update(book, appended(sale(1)));
     expect(readdirSync(root).sort()).toEqual(["wallet.json.sales.json", "wallet.json.sales.json.writing.tmp"]);
+  });
+
+  it("the sales lock works where hard links fail", async () => {
+    let links = 0;
+    let lockSeen = "";
+    const sales = fileSales(undefined, {
+      rename,
+      link: async () => {
+        links++;
+        throw failing("EPERM");
+      },
+    });
+    await sales.update(book, (current) => {
+      lockSeen = existsSync(`${book}.lock`) ? readFileSync(`${book}.lock`, "utf8") : "";
+      return { sales: [...current, sale(1)], value: undefined };
+    });
+    expect(links).toBeGreaterThan(0);
+    expect(lockSeen).not.toBe("");
+    const before = links;
+    await sales.update(book, appended(sale(2)));
+    expect(links).toBe(before);
+    expect(await sales.read(book)).toEqual([sale(1), sale(2)]);
+    expect(readdirSync(root).sort()).toEqual(["wallet.json.sales.json"]);
+  });
+
+  it("two writers stay serialized without hard links", async () => {
+    let active = 0;
+    let overlapped = false;
+    const files = {
+      rename: async (from: string, to: string) => {
+        active++;
+        overlapped ||= active > 1;
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        await rename(from, to);
+        active--;
+      },
+      link: async () => {
+        throw failing("EPERM");
+      },
+    };
+    const first = fileSales(undefined, files);
+    const second = fileSales(undefined, files);
+    const writers = Array.from({ length: 12 }, (_, i) => (i % 2 === 0 ? first : second).update(book, appended(sale(i))));
+    await Promise.all(writers);
+    expect(overlapped).toBe(false);
+    expect((await first.read(book)).map((s) => s.id).sort()).toEqual(Array.from({ length: 12 }, (_, i) => `sale-${i}`).sort());
+    expect(readdirSync(root).sort()).toEqual(["wallet.json.sales.json"]);
   });
 });
