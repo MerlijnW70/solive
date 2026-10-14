@@ -55,7 +55,7 @@ function server(replies: { status: number; body: unknown }[]): { fetch: Fetch; c
   };
 }
 
-const quote = { inAmount: "1000", outAmount: "990", otherAmountThreshold: "985", routePlan: [] };
+const quote = { inputMint: IN, outputMint: OUT, swapMode: "ExactIn", inAmount: "1000", outAmount: "990", otherAmountThreshold: "985", routePlan: [] };
 const built = {
   setupInstructions: [opens("AQ==", true, true)],
   swapInstruction: ix("Ag==", true, false),
@@ -223,6 +223,43 @@ describe("jupiter pricer", () => {
       ).resolves.toBeNull();
       expect(s.calls).toHaveLength(1);
     }
+  });
+
+  it("refuses an exact out jupiter quote", async () => {
+    const s = server([
+      { status: 200, body: { ...quote, swapMode: "ExactOut", otherAmountThreshold: "1010" } },
+      { status: 200, body: built },
+    ]);
+    await expect(pricer(s.fetch).quote({ inputMint: IN, outputMint: OUT, amountIn: 1000n, taker: TAKER })).rejects.toThrow(
+      "jupiter quoted swap mode ExactOut, not ExactIn",
+    );
+    expect(s.calls).toHaveLength(1);
+    const { swapMode: _, ...modeless } = quote;
+    await expect(pricer(server([{ status: 200, body: modeless }]).fetch).quote({ inputMint: IN, outputMint: OUT, amountIn: 1000n, taker: TAKER })).rejects.toThrow(
+      "jupiter response is missing swapMode",
+    );
+  });
+
+  it("refuses a jupiter quote for other mints", async () => {
+    const stranger = "9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin" as Address;
+    for (const body of [
+      { ...quote, inputMint: stranger },
+      { ...quote, outputMint: stranger },
+      { ...quote, inputMint: OUT, outputMint: IN },
+    ]) {
+      const s = server([
+        { status: 200, body },
+        { status: 200, body: built },
+      ]);
+      await expect(pricer(s.fetch).quote({ inputMint: IN, outputMint: OUT, amountIn: 1000n, taker: TAKER })).rejects.toThrow(
+        "jupiter quoted other mints than requested",
+      );
+      expect(s.calls).toHaveLength(1);
+    }
+    const { outputMint: _, ...unnamed } = quote;
+    await expect(pricer(server([{ status: 200, body: unnamed }]).fetch).quote({ inputMint: IN, outputMint: OUT, amountIn: 1000n, taker: TAKER })).rejects.toThrow(
+      "jupiter response is missing outputMint",
+    );
   });
 
   it("refuses failures, a different input amount and malformed replies", async () => {

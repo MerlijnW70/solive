@@ -62,8 +62,16 @@ import {
   MAX_CREATE_FEE,
 } from "@intent-engine/core";
 import {
+  BACKOFF_MAX_PASSES,
+  backingOff,
+  backoff,
   BALANCES_REFUSED,
   type Chain,
+  DEFAULT_MAX_SOL_COST,
+  LAMPORTS_PER_SIGNATURE,
+  rentExempt,
+  TOKEN_ACCOUNT_SPACE,
+  tooCostly,
   compile,
   COMPUTE_BUDGET_ADDRESS,
   decide,
@@ -558,6 +566,114 @@ describe("solver against the deployed engine", () => {
     const last = instructions.at(-1);
     expect(message.staticAccounts[last?.programAddressIndex ?? -1]).toBe(SYSTEM_PROGRAM_ADDRESS);
     expect(last?.accountIndices?.map((i) => message.staticAccounts[i])).toEqual([solver.address, tipAccount]);
+  });
+
+  it("skips a fill whose sol cost exceeds the cap", async () => {
+    const intent = await open(30n);
+    const sent: Base64EncodedWireTransaction[] = [];
+    const pricer = () => stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n);
+    const priced = (price: bigint): Partial<Parameters<typeof tick>[0]> => ({
+      unitPrice: async () => price,
+      simulate: async (wire, watch) => ({ ...(await simulated(wire, watch)), unitsConsumed: null }),
+      send: async (wire) => {
+        sent.push(wire);
+        return landed(wire);
+      },
+    });
+    const signers = 2n;
+    const cost = signers * LAMPORTS_PER_SIGNATURE + (5_000_000n * BigInt(MAX_COMPUTE_UNITS)) / 1_000_000n;
+    expect(cost).toBeLessThan(DEFAULT_MAX_SOL_COST);
+    const capped = await solve(pricer(), { ...priced(5_000_000n), maxSolCost: cost - 1n });
+    expect(capped).toEqual({ filled: [], sent: [], skipped: [{ intent, reason: tooCostly(cost, cost - 1n) }], failed: [] });
+    const dear = signers * LAMPORTS_PER_SIGNATURE + (10_000_000n * BigInt(MAX_COMPUTE_UNITS)) / 1_000_000n;
+    const unbounded = await solve(pricer(), priced(10_000_000n));
+    expect(unbounded.skipped).toEqual([{ intent, reason: tooCostly(dear, DEFAULT_MAX_SOL_COST) }]);
+    expect(sent).toEqual([]);
+    expect(balance(receiver)).toBe(0n);
+    const allowed = await solve(pricer(), { ...priced(5_000_000n), maxSolCost: cost });
+    expect(allowed.filled).toEqual([{ intent, profit: 4_000n, signature: expect.any(String) }]);
+    expect(sent.map((wire) => budgetOf(wire, 2))).toEqual([MAX_COMPUTE_UNITS]);
+  });
+
+  it("counts the tip and created token accounts in the sol cost", async () => {
+    const intent = await open(31n);
+    solver = await funded();
+    const freshInput = await findAssociatedTokenAddress({ owner: solver.address, mint: inputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const freshOutput = await findAssociatedTokenAddress({ owner: solver.address, mint: outputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    swapping.current = { mint: inputMint, from: freshInput, to: swapping.current?.to ?? freshInput, authority: solver };
+    const tipAccount = (await generateKeyPairSigner()).address;
+    svm.airdrop(tipAccount, lamports(1_000_000_000n));
+    const rent = svm.minimumBalanceForRentExemption(BigInt(TOKEN_ACCOUNT_SPACE));
+    expect(rentExempt(TOKEN_ACCOUNT_SPACE)).toBe(rent);
+    const signers = 2n;
+    const cost = signers * LAMPORTS_PER_SIGNATURE + 12_345n + 2n * rent;
+    const tipped = { tip: { account: tipAccount, lamports: 12_345n } };
+    const pricer = () => stashMarket(stash, stashAccount, outputMint, freshOutput, () => MIN_OUT + 4_000n);
+    const capped = await solve(pricer(), { ...tipped, maxSolCost: cost - 1n });
+    expect(capped.skipped).toEqual([{ intent, reason: tooCostly(cost, cost - 1n) }]);
+    expect([svm.getAccount(freshInput).exists, svm.getAccount(freshOutput).exists]).toEqual([false, false]);
+    const before = svm.getBalance(solver.address) ?? 0n;
+    const report = await solve(pricer(), { ...tipped, maxSolCost: cost });
+    expect(report.filled).toEqual([{ intent, profit: 4_000n, signature: expect.any(String) }]);
+    expect(before - (svm.getBalance(solver.address) ?? 0n)).toBe(cost);
+  });
+
+  it("backs off an intent that keeps failing", async () => {
+    const intent = await open(32n);
+    const held = backoff();
+    const pricer = () => stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n);
+    let failing = true;
+    let pass = 0;
+    const tried: number[] = [];
+    const moved: Chain = {
+      ...chain(),
+      intents: async () => (await chain().intents()).map((e) => ({ ...e, intent: { ...e.intent, expiresAt: e.intent.expiresAt + 1n } })),
+    };
+    const run = (extra: Partial<Parameters<typeof tick>[0]> = {}) => {
+      pass += 1;
+      return solve(pricer(), {
+        backoff: held,
+        simulate: async (wire, watch) => {
+          tried.push(pass);
+          return failing ? { err: "InstructionError", unitsConsumed: null, balances: [] } : simulated(wire, watch);
+        },
+        ...extra,
+      });
+    };
+    const reports = [];
+    for (let i = 0; i < 12; i += 1) {
+      reports.push(await run());
+    }
+    expect(tried).toEqual([1, 3, 6, 11]);
+    expect(reports[1]?.skipped).toEqual([{ intent, reason: backingOff(1, 1) }]);
+    expect(reports[3]?.skipped).toEqual([{ intent, reason: backingOff(2, 2) }]);
+    expect(reports[6]?.skipped).toEqual([{ intent, reason: backingOff(3, 4) }]);
+    expect(reports[11]?.skipped).toEqual([{ intent, reason: backingOff(4, 8) }]);
+    expect(reports[10]?.failed.map((f) => f.intent)).toEqual([intent]);
+    const changed = await run({ chain: moved });
+    expect(tried.at(-1)).toBe(13);
+    expect(changed.failed.map((f) => f.intent)).toEqual([intent]);
+    expect((await run({ chain: moved })).skipped).toEqual([{ intent, reason: backingOff(1, 1) }]);
+    failing = false;
+    const filled = await run({ chain: moved });
+    expect(filled.filled.map((f) => f.intent)).toEqual([intent]);
+    expect(balance(receiver)).toBe(MIN_OUT);
+    const state = (await chain().intents())[0]?.intent;
+    if (state === undefined) {
+      throw new Error("intent missing");
+    }
+    const alone = backoff();
+    for (let i = 0; i < 10; i += 1) {
+      alone.pass();
+      alone.failed(intent, state);
+    }
+    alone.pass();
+    expect(alone.waiting(intent, state)).toEqual({ failures: 10, passes: BACKOFF_MAX_PASSES });
+    alone.succeeded(intent);
+    expect(alone.waiting(intent, state)).toBeNull();
+    alone.failed(intent, state);
+    alone.pass();
+    expect(alone.waiting(intent, state)).toEqual({ failures: 1, passes: 1 });
   });
 
   it("asks the chain nothing about an intent it can tell from its own state that it will not fill", async () => {

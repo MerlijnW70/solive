@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { MAX_PRIORITY_PRICE, type Priority } from "./compute.js";
+import { AUTO_PRICE_CAP, MAX_PRIORITY_PRICE, type Priority } from "./compute.js";
 import { MAX_EXPIRES_IN } from "./agent/create.js";
 import { MANDATE_KIND_NAMES } from "./agent/mandate.js";
 import { MAX_SUBMIT_WITHIN } from "./agent/signed.js";
@@ -14,9 +14,11 @@ import {
   kindBit,
   MAX_PARTNER_BPS,
   MEMO_URL_RULE,
+  parseAmount,
   TOKEN_AMOUNT_PATTERN,
   U64_MAX,
 } from "@intent-engine/core";
+import { DEFAULT_MAX_SOL_COST } from "@intent-engine/solver";
 
 export const DEFAULT_URL = "http://127.0.0.1:8899";
 
@@ -144,6 +146,7 @@ export type Command =
       tipLamports: bigint;
       minProfit: ReadonlyMap<Address, bigint>;
       maxFeeBps: number;
+      maxSolCost: bigint;
       slippageBps: number;
       routeProgram: Address | undefined;
       lookupTables: Address[];
@@ -256,6 +259,7 @@ const OPTIONS = {
   "min-profit": { type: "string" },
   issue: { type: "string" },
   "max-fee-bps": { type: "string" },
+  "max-sol-cost": { type: "string" },
   "slippage-bps": { type: "string" },
   "route-program": { type: "string" },
   "lookup-table": { type: "string" },
@@ -426,7 +430,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   ],
   "propose-admin": ["url", "priority-fee", "keypair", "authority", "yes", "new-admin"],
   "accept-admin": ["url", "priority-fee", "keypair", "authority", "yes"],
-  solve: ["url", "priority-fee", "keypair", "jupiter", "issue", "jito", "tip", "min-profit", "max-fee-bps", "slippage-bps", "route-program", "lookup-table", "watch", "interval"],
+  solve: ["url", "priority-fee", "keypair", "jupiter", "issue", "jito", "tip", "min-profit", "max-fee-bps", "max-sol-cost", "slippage-bps", "route-program", "lookup-table", "watch", "interval"],
   "solver-table": ["url", "solver", "mints"],
   "lower-pause": ["url", "priority-fee", "keypair", "authority", "yes", "flags"],
   events: ["url", "limit", "follow", "interval"],
@@ -900,6 +904,37 @@ function agentSpec(values: Values): AgentSpec | undefined {
   };
 }
 
+const LAMPORT_DECIMALS = 9;
+
+export const MAX_SOL_COST_FORMAT = `--max-sol-cost is SOL above 0 with at most ${LAMPORT_DECIMALS} decimals, such as 0.01`;
+
+export function parseSolCost(text: string): bigint {
+  let lamports: bigint;
+  try {
+    lamports = parseAmount(text, LAMPORT_DECIMALS);
+  } catch {
+    throw new UsageError(MAX_SOL_COST_FORMAT);
+  }
+  if (lamports === 0n) {
+    throw new UsageError(MAX_SOL_COST_FORMAT);
+  }
+  return lamports;
+}
+
+export const solveFeeAboveCap = `solve takes a --priority-fee of at most ${AUTO_PRICE_CAP} micro-lamports per compute unit, the cap of auto`;
+
+export const zeroProfit = (mint: string): string => `--min-profit for ${mint} must be above 0, or every fill of it can lose SOL`;
+
+function profitFloors(text: string): ReadonlyMap<Address, bigint> {
+  const floors = mintAmounts(text, "min-profit");
+  for (const [mint, floor] of floors) {
+    if (floor === 0n) {
+      throw new UsageError(zeroProfit(mint));
+    }
+  }
+  return floors;
+}
+
 export function parsePriority(text: string | undefined): Priority {
   if (text === undefined) {
     return 0n;
@@ -1128,7 +1163,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   "raise-pause": "(--keypair <file> [--yes] | --authority <address>) --flags create|fill|all",
   "lower-pause": "(--keypair <file> [--yes] | --authority <address>) --flags create|fill|all",
   "set-economics": "(--keypair <file> [--yes] | --authority <address>) --bounty --create-fee [--kind-fees] [--partner-cut]",
-  solve: "--keypair <file> (--jupiter <url> | --issue <input mint>:<output mint>=<out>/<in>,...) --min-profit <output mint=raw,...> [--priority-fee <micro-lamports|auto>] [--max-fee-bps <n>] [--slippage-bps <n>] [--jito <url> [--tip <lamports>]] [--route-program <program the aggregator swaps through>] [--lookup-table <address,...>] [--watch [--interval <seconds>]]",
+  solve: "--keypair <file> (--jupiter <url> | --issue <input mint>:<output mint>=<out>/<in>,...) --min-profit <output mint=raw,...> [--priority-fee <micro-lamports|auto>] [--max-fee-bps <n>] [--max-sol-cost <SOL>] [--slippage-bps <n>] [--jito <url> [--tip <lamports>]] [--route-program <program the aggregator swaps through>] [--lookup-table <address,...>] [--watch [--interval <seconds>]]",
   "solver-table": "--solver <address> --mints <mint,...>",
   crank: "--keypair <file> [--dry-run] [--fund-accounts]",
   treasury: "[--mints <mint,...>] [--create --mints <mint,...> --keypair <payer file> [--yes]]",
@@ -1309,6 +1344,9 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       if (values.interval !== undefined && values.watch !== true) {
         throw new UsageError("--interval needs --watch");
       }
+      if (remote.priority !== "auto" && remote.priority > AUTO_PRICE_CAP) {
+        throw new UsageError(solveFeeAboveCap);
+      }
       return {
         name: "solve",
         ...remote,
@@ -1316,8 +1354,9 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         ...market(values),
         jito: values.jito === undefined ? undefined : https(values.jito, "jito"),
         tipLamports,
-        minProfit: mintAmounts(required(values, "min-profit"), "min-profit"),
+        minProfit: profitFloors(required(values, "min-profit")),
         maxFeeBps: parseBounded(values["max-fee-bps"] ?? "100", "max-fee-bps", 200),
+        maxSolCost: values["max-sol-cost"] === undefined ? DEFAULT_MAX_SOL_COST : parseSolCost(values["max-sol-cost"]),
         slippageBps: parseBounded(values["slippage-bps"] ?? "50", "slippage-bps", 10_000),
         routeProgram: values["route-program"] === undefined ? undefined : parseAddress(values["route-program"], "route-program"),
         lookupTables: values["lookup-table"] === undefined ? [] : addressList(values["lookup-table"], "lookup-table"),

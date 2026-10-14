@@ -705,7 +705,7 @@ describe("cli against the deployed engine", () => {
       data: Buffer.from(route.data ?? new Uint8Array()).toString("base64"),
     };
     const net = splitFee(ESCROW, FEE_BPS).net;
-    const quote = { inAmount: net.toString(), outAmount: "360", otherAmountThreshold: "350" };
+    const quote = { inputMint, outputMint, swapMode: "ExactIn", inAmount: net.toString(), outAmount: "360", otherAmountThreshold: "350" };
     h.jupiterReplies = [
       { status: 200, body: quote },
       { status: 200, body: { setupInstructions: [], swapInstruction: asJupiter, addressLookupTableAddresses: [] } },
@@ -940,13 +940,17 @@ describe("cli against the deployed engine", () => {
     await ata(authority, stranger.address, issued);
     await cli(create("4", NOW + 3_600n).map((arg) => (arg === outputMint ? issued : arg)), { "owner.json": owner });
     const [config] = await findConfigPda();
-    h.rounds = 5;
-    h.steps = [5n, 5n, REFRESH_AFTER_SECONDS, 5n];
+    h.rounds = 7;
+    h.steps = [5n, 5n, 5n, 5n, REFRESH_AFTER_SECONDS, 5n];
     h.changed = [];
     h.reads.clear();
     const run = await watching(issued, stranger);
     expect(run.code).toBe(EXIT_OK);
-    expect(run.each().map((r) => (r["failed"] as unknown[]).length)).toEqual([1, 1, 1, 1, 1]);
+    expect(run.each().map((r) => [r["at"], (r["failed"] as unknown[]).length])).toEqual([
+      [String(NOW + 1_000n), 1],
+      [String(NOW + 1_010n), 1],
+      [String(NOW + 1_020n + REFRESH_AFTER_SECONDS), 1],
+    ]);
     expect(h.reads.get(config)).toBe(3);
     expect(solver.address).not.toBe(stranger.address);
   });
@@ -980,7 +984,7 @@ describe("cli against the deployed engine", () => {
     const solverOutput = await ata(authority, solver.address, outputMint);
     const net = splitFee(ESCROW, FEE_BPS).net;
     const jito = (swapInstruction: unknown) => [
-      { status: 200, body: { inAmount: net.toString(), otherAmountThreshold: "999999" } },
+      { status: 200, body: { inputMint, outputMint, swapMode: "ExactIn", inAmount: net.toString(), otherAmountThreshold: "999999" } },
       { status: 200, body: { swapInstruction, addressLookupTableAddresses: [] } },
       { status: 200, body: { jsonrpc: "2.0", id: 1, result: "bundle-7" } },
     ];

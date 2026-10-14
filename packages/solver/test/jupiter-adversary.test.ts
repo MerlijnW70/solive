@@ -23,7 +23,14 @@ const instruction = fc.record(
 const digits = fc.bigInt({ min: 0n, max: 2n ** 70n }).map(String);
 const amountText = fc.oneof(digits, fc.constantFrom(AMOUNT.toString(), "-1", "1e9", " 5", "0x10", "1.5", ""), fc.jsonValue());
 const quote = fc.record(
-  { inAmount: fc.oneof(fc.constant(AMOUNT.toString()), amountText), otherAmountThreshold: amountText, outAmount: amountText },
+  {
+    inputMint: fc.oneof(fc.constant(IN), key, fc.jsonValue()),
+    outputMint: fc.oneof(fc.constant(OUT), key, fc.jsonValue()),
+    swapMode: fc.oneof(fc.constant("ExactIn"), fc.constantFrom("ExactOut", "exactin", ""), fc.jsonValue()),
+    inAmount: fc.oneof(fc.constant(AMOUNT.toString()), amountText),
+    otherAmountThreshold: amountText,
+    outAmount: amountText,
+  },
   { requiredKeys: [] },
 );
 const built = fc.record(
@@ -72,6 +79,8 @@ describe("jupiter pricer against a hostile or broken aggregator", () => {
         expect(s1 >= 200 && s1 < 300 && s2 >= 200 && s2 < 300).toBe(true);
         expect(result.amountIn).toBe(AMOUNT);
         expect((q as { inAmount?: unknown }).inAmount).toBe(AMOUNT.toString());
+        expect([(q as { inputMint?: unknown }).inputMint, (q as { outputMint?: unknown }).outputMint]).toEqual([IN, OUT]);
+        expect((q as { swapMode?: unknown }).swapMode).toBe("ExactIn");
         expect(result.amountOut.toString()).toBe((q as { otherAmountThreshold?: unknown }).otherAmountThreshold);
         const swaps = result.instructions.filter((ix) => ix.programAddress === JUPITER_PROGRAM);
         expect(swaps).toHaveLength(1);
@@ -109,7 +118,7 @@ describe("jupiter pricer against a hostile or broken aggregator", () => {
         const pricer = jupiterPricer({
           baseUrl: "https://quote.example",
           fetch: serve([
-            { status: 200, body: { inAmount: AMOUNT.toString(), otherAmountThreshold: "985", outAmount: "990" } },
+            { status: 200, body: { inputMint: IN, outputMint: OUT, swapMode: "ExactIn", inAmount: AMOUNT.toString(), otherAmountThreshold: "985", outAmount: "990" } },
             {
               status: 200,
               body: {

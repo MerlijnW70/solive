@@ -12,6 +12,8 @@ export type JupiterOptions = {
 
 export const RATE_LIMITED = 429;
 
+export const EXACT_IN = "ExactIn";
+
 export class RateLimited extends Error {
   constructor() {
     super("the aggregator is rate limiting this solver; try again on the next run");
@@ -148,6 +150,13 @@ export function jupiterPricer(options: JupiterOptions): Pricer {
       const quote = await body(quoted, "quote");
       if (amount(quote, "inAmount") !== request.amountIn) {
         throw new Error("jupiter quoted a different input amount than requested");
+      }
+      if (text(quote, "inputMint") !== request.inputMint || text(quote, "outputMint") !== request.outputMint) {
+        throw new Error("jupiter quoted other mints than requested");
+      }
+      const mode = text(quote, "swapMode");
+      if (mode !== EXACT_IN) {
+        throw new Error(`jupiter quoted swap mode ${mode}, not ${EXACT_IN}`);
       }
       const built = await body(
         await options.fetch(`${options.baseUrl}/swap-instructions`, {

@@ -39,6 +39,8 @@ intent-engine solve --keypair ~/solive-solver.json --issue So1111111111111111111
 
 `--issue` prices 200 of your token per wrapped SOL and mints them into the fill. The ratio is in raw units, so it means 200 per SOL because both tokens have 9 decimals, and it prices the escrow left after the protocol fee. `--min-profit` takes raw units, so the solver skips any fill that leaves it less than 1 raw unit. `solve` makes one pass over the open intents and prints the ones it filled, sent, skipped and failed. To keep solving, add `--watch`: it stays running, solves again as soon as an intent changes on chain and at least every `--interval` seconds (default 5), and prints only the rounds that send or fail, as [the devnet filler](../scripts/filler.sh) does. It sends each fill without waiting for it to confirm, so its fills show as sent; check them with `intent-engine list`.
 
+Profit counts only the output token, so `solve` also counts what each fill costs in SOL before it sends it: 5000 lamports per signature, the priority fee (unit price times compute limit), the `--tip` and the rent of every token account the fill opens for the solver. It skips a fill that costs more than `--max-sol-cost`, in SOL with at most 9 decimals, default 0.01. `--min-profit` refuses 0 for any mint, and a fixed `--priority-fee` is at most 10000000 micro-lamports per compute unit, the cap of `auto`. With `--watch`, an intent whose fill failed is skipped for 1 pass, then 2, 4 and so on up to 32 passes while it keeps failing; the count resets after a fill or when the intent changes on chain.
+
 ## 5. Check the balances
 
 ```sh

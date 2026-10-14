@@ -43,6 +43,7 @@ import {
   decodeLookupTable,
   type Fetch,
   issuePricer,
+  backoff,
   jitoBundles,
   jupiterPricer,
   remembering,
@@ -300,6 +301,7 @@ export async function watchSolve(command: SolveCommand, interval: number, runtim
   const live: SolverOptions = {
     ...options,
     chain,
+    backoff: backoff(),
     send:
       command.jito === undefined ? async (wire) => ({ signature: await transport.submitWire(wire), confirmed: false }) : options.send,
   };
@@ -411,6 +413,7 @@ async function solverOptions(command: SolveCommand, runtime: Runtime, transport:
           }),
     solver,
     strategy: { minProfit: command.minProfit, maxFeeBps: command.maxFeeBps },
+    maxSolCost: command.maxSolCost,
     tip: command.tipLamports === 0n ? null : { account: tipAccount(runtime.entropy()), lamports: command.tipLamports },
     lookupTables: command.lookupTables,
     unitPrice: (instructions) => priceOf(transport, command.priority, instructions),

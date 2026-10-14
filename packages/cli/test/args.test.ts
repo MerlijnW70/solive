@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { I64_MAX, I64_MIN, Kind, U64_MAX } from "@intent-engine/core";
-import { MAX_PRIORITY_PRICE } from "../src/compute.js";
+import { AUTO_PRICE_CAP, MAX_PRIORITY_PRICE } from "../src/compute.js";
+import { DEFAULT_MAX_SOL_COST } from "@intent-engine/solver";
 import {
   DEFAULT_URL,
   WATCH_INTERVAL,
@@ -12,6 +13,9 @@ import {
   RELAY_NEEDS_FEES,
   RELAY_DEFAULT_HOURLY_LAMPORTS,
   RELAY_DEFAULT_TTL,
+  MAX_SOL_COST_FORMAT,
+  solveFeeAboveCap,
+  zeroProfit,
   parse,
   parseFeeBps,
   parseI64,
@@ -82,6 +86,7 @@ describe("numbers", () => {
       tipLamports: 10_000n,
       minProfit: new Map([[MINT_A, 5n]]),
       maxFeeBps: 200,
+      maxSolCost: DEFAULT_MAX_SOL_COST,
       slippageBps: 10_000,
       routeProgram: undefined,
       lookupTables: [],
@@ -144,6 +149,37 @@ describe("numbers", () => {
     expect(usage(["solve", "--keypair", "k", "--jupiter", "https://q.example"])).toBe("missing --min-profit");
     expect(usage([...base, "--max-fee-bps", "201"])).toBe("--max-fee-bps must be an integer from 0 to 200");
     expect(usage([...base, "--slippage-bps", "10001"])).toBe("--slippage-bps must be an integer from 0 to 10000");
+  });
+
+  it("solve refuses a zero min profit", () => {
+    const solve = ["solve", "--keypair", "k", "--jupiter", "https://q.example", "--min-profit"];
+    expect(usage([...solve, `${MINT_A}=0`])).toBe(zeroProfit(MINT_A));
+    expect(usage([...solve, `${MINT_A}=1,${OWNER}=0`])).toBe(zeroProfit(OWNER));
+    expect(zeroProfit(OWNER)).toContain(OWNER);
+    expect(parse([...solve, `${MINT_A}=1,${OWNER}=2`])).toMatchObject({ minProfit: new Map([[MINT_A, 1n], [OWNER, 2n]]) });
+  });
+
+  it("solve refuses a priority fee above the auto cap", () => {
+    const solve = ["solve", "--keypair", "k", "--jupiter", "https://q.example", "--min-profit", `${MINT_A}=1`, "--priority-fee"];
+    expect(usage([...solve, (AUTO_PRICE_CAP + 1n).toString()])).toBe(solveFeeAboveCap);
+    expect(parse([...solve, AUTO_PRICE_CAP.toString()])).toMatchObject({ priority: AUTO_PRICE_CAP });
+    expect(parse([...solve, "auto"])).toMatchObject({ priority: "auto" });
+    expect(parse(["cancel", "--keypair", "k", "--nonce", "1", "--priority-fee", (AUTO_PRICE_CAP + 1n).toString()])).toMatchObject({
+      priority: AUTO_PRICE_CAP + 1n,
+    });
+  });
+
+  it("solve parses max sol cost", () => {
+    const solve = ["solve", "--keypair", "k", "--jupiter", "https://q.example", "--min-profit", `${MINT_A}=1`];
+    expect(DEFAULT_MAX_SOL_COST).toBe(10_000_000n);
+    expect(parse(solve)).toMatchObject({ maxSolCost: DEFAULT_MAX_SOL_COST });
+    expect(parse([...solve, "--max-sol-cost", "0.002"])).toMatchObject({ maxSolCost: 2_000_000n });
+    expect(parse([...solve, "--max-sol-cost", "1"])).toMatchObject({ maxSolCost: 1_000_000_000n });
+    expect(parse([...solve, "--max-sol-cost", "0.000000001"])).toMatchObject({ maxSolCost: 1n });
+    for (const bad of ["0", "0.0", "0.0000000001", "-1", "1e-3", "abc", ""]) {
+      expect(usage([...solve, `--max-sol-cost=${bad}`])).toBe(MAX_SOL_COST_FORMAT);
+    }
+    expect(usageOf("solve").options).toContain("--max-sol-cost");
   });
 
   it("reads an optional partner for create and needs both halves of it", () => {

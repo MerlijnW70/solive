@@ -34,7 +34,7 @@ import {
   IntentStatus,
   Kind,
 } from "@intent-engine/core";
-import { SIMULATION_REFUSED } from "@intent-engine/solver";
+import { DEFAULT_MAX_SOL_COST, SIMULATION_REFUSED } from "@intent-engine/solver";
 import { chainTime, type RpcLike, rpcTransport } from "@intent-engine/client";
 import { run } from "../src/commands.js";
 import { loadKeypairFile } from "../src/main.js";
@@ -222,7 +222,7 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet solve smoke"
         }
         const out = poolOut(amountIn, await amountOf(poolInput), await amountOf(poolOutput));
         const floor = (out * (10_000n - SLIPPAGE_BPS)) / 10_000n + overstate;
-        return reply(200, { inAmount: amountIn.toString(), otherAmountThreshold: floor.toString() });
+        return reply(200, { inputMint, outputMint, swapMode: "ExactIn", inAmount: amountIn.toString(), otherAmountThreshold: floor.toString() });
       }
       const { quoteResponse, userPublicKey } = JSON.parse(String(init?.body)) as {
         quoteResponse: { inAmount: string; otherAmountThreshold: string };
@@ -265,6 +265,7 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet solve smoke"
           tipLamports: 0n,
           minProfit: new Map([[outputMint, 1n]]),
           maxFeeBps: config.feeBps,
+          maxSolCost: DEFAULT_MAX_SOL_COST,
           slippageBps: Number(SLIPPAGE_BPS),
           routeProgram: SWAP_PROGRAM,
           lookupTables: [],
