@@ -7,4 +7,6 @@ mod lifecycle;
 #[cfg(kani)]
 mod math;
 #[cfg(kani)]
+mod split;
+#[cfg(kani)]
 mod window;

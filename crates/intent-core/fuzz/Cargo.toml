@@ -62,3 +62,10 @@ path = "fuzz_targets/preimage.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "split"
+path = "fuzz_targets/split.rs"
+test = false
+doc = false
+bench = false

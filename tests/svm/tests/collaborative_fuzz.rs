@@ -1,32 +1,48 @@
 use anchor_lang::prelude::Pubkey;
 use intent_core::bounty::split_n;
+use intent_core::fee::split_fees;
 use intent_core::kinds::{attested_result, Kind};
+use intent_engine::state::MAX_FEE_BPS;
+use intent_engine::Economics;
 use proptest::prelude::*;
 use proptest::test_runner::TestCaseError;
 use solana_instruction::Instruction;
 use solana_keypair::Keypair;
 use solana_signer::Signer;
 use svm_tests::{
-    cosign_batch_ix, intent_pda, split_commit, split_digest, swap_spec, vault_pda, Env, IntentSpec,
-    TestResult, DOMAIN,
+    anchor_error_at, cosign_batch_ix, intent_pda, partner_ext, split_commit, split_digest,
+    swap_spec, vault_pda, Env, IntentSpec, TestResult, DOMAIN,
 };
 
-const FUNDED: u64 = 10_000;
+const SMALL: u64 = 10_000;
+const LARGEST: u64 = u64::MAX / 2;
+const FEE_BPS: u16 = 5;
+const SPEC: [u8; 32] = [0x5e; 32];
 
-fn proof_spec(attestor: &Keypair, spec_hash: [u8; 32], escrow: u64) -> TestResult<IntentSpec> {
+#[derive(Debug, Clone)]
+struct Case {
+    escrow: u64,
+    weights: Vec<u16>,
+    slots: Vec<usize>,
+    judge_fee: u64,
+    partner: Option<(u16, u16)>,
+}
+
+fn proof_spec(attestor: &Keypair, case: &Case, ext: Vec<u8>) -> TestResult<IntentSpec> {
     Ok(IntentSpec {
         kind: Kind::AttestedResult as u8,
         params: attested_result::Params {
-            amount_in: escrow,
+            amount_in: case.escrow,
             min_result: 1,
             max_result: 1,
             attestor: attestor.pubkey().to_bytes(),
-            spec_hash,
-            judge_fee: 0,
+            spec_hash: SPEC,
+            judge_fee: case.judge_fee,
         }
         .encode()
         .map_err(|e| format!("{e:?}"))?,
-        ..swap_spec(0, escrow)?
+        ext,
+        ..swap_spec(0, case.escrow)?
     })
 }
 
@@ -45,69 +61,170 @@ fn weights_from_cuts(cuts: &[u16]) -> Vec<u16> {
     weights
 }
 
-fn split_case() -> impl Strategy<Value = (u64, Vec<u16>)> {
+fn escrow() -> impl Strategy<Value = u64> {
+    prop_oneof![1u64..SMALL, SMALL..=LARGEST, Just(LARGEST)]
+}
+
+fn slots(n: usize) -> BoxedStrategy<Vec<usize>> {
+    let distinct: Vec<usize> = (0..n).collect();
+    prop_oneof![
+        3 => Just(distinct),
+        1 => prop::collection::vec(0..n, n),
+    ]
+    .boxed()
+}
+
+fn split_case() -> impl Strategy<Value = Case> {
     (1usize..=8)
         .prop_flat_map(|n| {
             (
-                1u64..FUNDED,
+                escrow(),
                 prop::collection::vec(0u16..=10_000, n.saturating_sub(1)),
+                slots(n),
+                prop::option::of(any::<u64>()),
+                prop::option::of((1u16..=MAX_FEE_BPS - FEE_BPS, 0u16..=10_000)),
             )
         })
-        .prop_map(|(escrow, cuts)| (escrow, weights_from_cuts(&cuts)))
+        .prop_map(|(escrow, cuts, slots, judge, partner)| Case {
+            escrow,
+            weights: weights_from_cuts(&cuts),
+            slots,
+            judge_fee: judge.map_or(0, |j| j.checked_rem(escrow).unwrap_or(0)),
+            partner,
+        })
 }
 
-fn run_split(escrow: u64, weights: &[u16]) -> TestResult {
+fn has_duplicates(slots: &[usize]) -> bool {
+    slots
+        .iter()
+        .enumerate()
+        .any(|(i, s)| slots.iter().skip(i.saturating_add(1)).any(|t| t == s))
+}
+
+fn run_split(case: &Case) -> TestResult {
     let mut env = Env::new()?;
     env.init_config()?;
     let market = env.market(anchor_spl::token::ID, &[], anchor_spl::token::ID, &[])?;
-    let trader = env.trader(&market, FUNDED)?;
+    let program = market.input_program;
+    let (partner_bps, cut_bps) = case.partner.unwrap_or((0, 0));
+    let admin = env.authority.insecure_clone();
+    let economics = env.economics_ix(
+        &admin.pubkey(),
+        Economics {
+            kind_fee_mask: 0,
+            kind_fee_bps: [0; 4],
+            partner_cut_bps: cut_bps,
+            crank_bounty: 0,
+            create_fee: 0,
+        },
+    );
+    env.send(&admin, &[economics], &[])?;
+    let trader = env.trader(&market, case.escrow)?;
     let owner = trader.key.pubkey();
     let attestor = Keypair::new();
-    const SPEC: [u8; 32] = [0x5e; 32];
-    let coauthors: Vec<Keypair> = (0..weights.len()).map(|_| Keypair::new()).collect();
-    let recipients: Vec<Pubkey> = coauthors.iter().map(Signer::pubkey).collect();
-    env.create_intent(&trader, &market, &proof_spec(&attestor, SPEC, escrow)?)?;
+    let partner = Pubkey::new_unique();
+    let partner_to = env.create_ata(&partner, &market.input_mint, program)?;
+    let ext = if case.partner.is_some() {
+        env.partner_to = Some(partner_to);
+        partner_ext(&partner, partner_bps)
+    } else {
+        Vec::new()
+    };
+    env.create_intent(&trader, &market, &proof_spec(&attestor, case, ext)?)?;
     let intent = intent_pda(&owner, 0);
+    let vault = vault_pda(&intent);
+    let judge_to = env.create_ata(&attestor.pubkey(), &market.input_mint, program)?;
+    env.judge_to = Some(judge_to);
     let solver = env.solver(&market, 0)?;
     let fee_to = env.fee_account(&market)?;
+    let wallets: Vec<Keypair> = (0..case.weights.len()).map(|_| Keypair::new()).collect();
     let mut atas = Vec::new();
-    for r in &recipients {
-        atas.push(env.create_ata(r, &market.input_mint, market.input_program)?);
+    for w in &wallets {
+        atas.push(env.create_ata(&w.pubkey(), &market.input_mint, program)?);
     }
+    let mut chosen: Vec<&Keypair> = Vec::new();
+    for &slot in &case.slots {
+        chosen.push(wallets.get(slot).ok_or("slot out of range")?);
+    }
+    let recipients: Vec<Pubkey> = chosen.iter().map(|k| k.pubkey()).collect();
     let fee_before = env.balance(&fee_to)?;
-    let split_hash = split_commit(&recipients, weights);
-    let digest = split_digest(DOMAIN, &intent, escrow, 1, SPEC, split_hash);
+    let split_hash = split_commit(&recipients, &case.weights);
+    let digest = split_digest(DOMAIN, &intent, case.escrow, 1, SPEC, split_hash);
     let fill = env.fill_attested_split_ix(
         &solver.key.pubkey(),
         &owner,
         &market,
         0,
         &recipients,
-        weights,
+        &case.weights,
         Some(&fee_to),
         1,
     );
-    let signers: Vec<&Keypair> = coauthors.iter().chain(std::iter::once(&attestor)).collect();
+    let signers: Vec<&Keypair> = chosen
+        .iter()
+        .copied()
+        .chain(std::iter::once(&attestor))
+        .collect();
     let ixs: Vec<Instruction> = vec![cosign_batch_ix(&signers, &digest)?, fill];
-    env.send(&solver.key, &ixs, &[])?;
+    let sent = env.send(&solver.key, &ixs, &[]);
     let protocol = env
         .balance(&fee_to)?
         .checked_sub(fee_before)
         .ok_or("protocol fee balance went backwards")?;
+    let partner_paid = env.balance(&partner_to)?;
+    let judge_paid = env.balance(&judge_to)?;
     let mut paid = Vec::new();
     for a in &atas {
         paid.push(env.balance(a)?);
     }
-    let net: u64 = paid.iter().sum();
-    let plan = split_n(net, weights).map_err(|e| format!("{e:?}"))?;
-    if paid.as_slice() != plan.as_slice() {
-        return Err(format!("payout {paid:?} != weighted plan {:?}", plan.as_slice()).into());
+    let left = env.balance(&vault)?;
+    let total = paid
+        .iter()
+        .chain([protocol, partner_paid, judge_paid, left].iter())
+        .try_fold(0u64, |sum, v| sum.checked_add(*v))
+        .ok_or("accounting overflowed")?;
+    if total != case.escrow {
+        return Err(format!(
+            "conservation {paid:?} + {protocol} + {partner_paid} + {judge_paid} + {left} != {}",
+            case.escrow
+        )
+        .into());
     }
-    if env.balance(&vault_pda(&intent))? != 0 {
-        return Err("vault not drained after split".into());
+    if has_duplicates(&case.slots) {
+        let refused = anchor_error_at(
+            1,
+            anchor_lang::error::ErrorCode::ConstraintDuplicateMutableAccount,
+        );
+        if sent.err() != Some(refused) {
+            return Err("a split naming a recipient twice was not refused".into());
+        }
+        if left != case.escrow {
+            return Err("a refused split moved escrow".into());
+        }
+        return Ok(());
     }
-    if net.checked_add(protocol) != Some(escrow) {
-        return Err(format!("conservation {net} + {protocol} != {escrow}").into());
+    sent?;
+    let settle = case
+        .escrow
+        .checked_sub(case.judge_fee)
+        .ok_or("judge fee above escrow")?;
+    let fees = split_fees(settle, FEE_BPS, partner_bps, cut_bps).map_err(|e| format!("{e:?}"))?;
+    let plan = split_n(fees.net, &case.weights).map_err(|e| format!("{e:?}"))?;
+    let mut by_slot = Vec::new();
+    for &slot in &case.slots {
+        by_slot.push(*paid.get(slot).ok_or("slot out of range")?);
+    }
+    if by_slot.as_slice() != plan.as_slice() {
+        return Err(format!("payout {by_slot:?} != weighted plan {:?}", plan.as_slice()).into());
+    }
+    if (protocol, partner_paid, judge_paid, left)
+        != (fees.protocol, fees.partner, case.judge_fee, 0)
+    {
+        return Err(format!(
+            "fees {protocol} {partner_paid} {judge_paid} {left} != {fees:?} judge {}",
+            case.judge_fee
+        )
+        .into());
     }
     Ok(())
 }
@@ -119,8 +236,8 @@ proptest! {
 
     #[test]
     fn a_split_pays_each_co_author_its_weighted_share_and_conserves_for_any_split(
-        (escrow, weights) in split_case(),
+        case in split_case(),
     ) {
-        run_split(escrow, &weights).map_err(|e| TestCaseError::fail(e.to_string()))?;
+        run_split(&case).map_err(|e| TestCaseError::fail(e.to_string()))?;
     }
 }
