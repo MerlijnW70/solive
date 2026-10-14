@@ -3,6 +3,7 @@ import {
   type Base64EncodedWireTransaction,
   type Blockhash,
   generateKeyPairSigner,
+  type Instruction,
   getBase58Decoder,
   getBase64Encoder,
   getSolanaErrorFromJsonRpcError,
@@ -39,6 +40,7 @@ import { Charged,
   KEPT_TRANSACTIONS,
   MEMO_PROGRAM_ADDRESS,
 } from "../src/transport.js";
+import { withPriority } from "../src/budget.js";
 
 const SIG = "5".repeat(88) as Signature;
 const OWNER = "11111111111111111111111111111112" as Address;
@@ -933,5 +935,129 @@ describe("read your writes", () => {
     expect(behindMinSlot(failed)).toBe(true);
     expect(isSolanaError(failed, MIN_CONTEXT_SLOT_NOT_REACHED)).toBe(true);
     expect(r.seen).toHaveLength(RATE_LIMIT_ATTEMPTS);
+  });
+});
+
+class Ledger implements Transport {
+  #reads = 0;
+  #sent: number[] = [];
+
+  get reads(): number {
+    return this.#reads;
+  }
+
+  get sent(): number[] {
+    return [...this.#sent];
+  }
+
+  async getAccount() {
+    this.#reads += 1;
+    return null;
+  }
+
+  async getAccounts(addresses: readonly Address[]) {
+    this.#reads += 1;
+    return addresses.map(() => null);
+  }
+
+  async send(instructions: readonly unknown[]) {
+    this.#sent.push(instructions.length);
+    return "sent";
+  }
+
+  async latestBlockhash() {
+    return { blockhash: "11111111111111111111111111111111" as Blockhash, lastValidBlockHeight: 0n };
+  }
+
+  async sendWire() {
+    this.#sent.push(0);
+    return "wire";
+  }
+
+  async submitWire() {
+    return "submitted";
+  }
+
+  async simulate() {
+    return { err: null, logs: [], unitsConsumed: 1_000n, accounts: [] };
+  }
+
+  async genesisHash() {
+    this.#reads += 1;
+    return "GENESIS";
+  }
+
+  async intents() {
+    return [];
+  }
+
+  async engineTransactions() {
+    return [];
+  }
+
+  async recentFees() {
+    return [];
+  }
+
+  async budget(instructions: readonly Instruction[]) {
+    return [...instructions];
+  }
+
+  async airdrop() {
+    return "airdropped";
+  }
+}
+
+describe("wrapped transports", () => {
+  const ix: Instruction = { programAddress: OWNER, accounts: [], data: new Uint8Array([1]) };
+
+  it("withPriority keeps the methods of a class transport", async () => {
+    const ledger = new Ledger();
+    const wrapped = withPriority(ledger, 0n);
+    const { genesisHash, getAccount } = wrapped;
+    expect(await genesisHash()).toBe("GENESIS");
+    expect(await getAccount(OWNER)).toBeNull();
+    expect(await wrapped.airdrop(OWNER, 1n)).toBe("airdropped");
+    expect(await wrapped.send([ix], await generateKeyPairSigner())).toBe("sent");
+    expect(ledger.sent).toEqual([2]);
+    expect(ledger.reads).toBe(2);
+  });
+
+  it("memoized keeps the methods of a class transport", async () => {
+    const ledger = new Ledger();
+    const reading = memoized(ledger);
+    const { genesisHash, getAccount, send } = reading;
+    expect(await genesisHash()).toBe("GENESIS");
+    expect(await getAccount(OWNER)).toBeNull();
+    expect(await reading.getAccount(OWNER)).toBeNull();
+    expect(ledger.reads).toBe(2);
+    expect(await send([ix], await generateKeyPairSigner())).toBe("sent");
+    expect(await reading.getAccount(OWNER)).toBeNull();
+    expect(ledger.reads).toBe(3);
+    expect(await reading.intents()).toEqual([]);
+    expect(await withPriority(reading, 0n).latestBlockhash()).toEqual(await ledger.latestBlockhash());
+  });
+});
+
+describe("airdrops", () => {
+  it("airdrop retries when rate limited", async () => {
+    const s = stub([{ err: null, confirmationStatus: "confirmed" }]);
+    let refusals = 2;
+    const rpc = {
+      ...s.rpc,
+      requestAirdrop: (address: Address, lamports: bigint) => ({
+        send: async () => {
+          if (refusals > 0) {
+            refusals -= 1;
+            throw new Error("HTTP error (429): Too Many Requests");
+          }
+          return s.rpc.requestAirdrop(address, lamports).send();
+        },
+      }),
+    } satisfies RpcLike;
+    expect(await rpcTransport(rpc, s.wait).airdrop(OWNER, 5n)).toBe(SIG);
+    expect(refusals).toBe(0);
+    expect(s.waits).toEqual([2 * POLL_MS, 4 * POLL_MS]);
+    expect(s.calls.filter((c) => c.startsWith("airdrop:"))).toEqual([`airdrop:${OWNER}:5`]);
   });
 });

@@ -37,6 +37,8 @@ export type EngineTransaction = {
 
 export type Latest = { blockhash: Blockhash; lastValidBlockHeight: bigint };
 
+export type IntentRead = { minContextSlot?: bigint; onSlot?: (slot: bigint) => void };
+
 export type Simulation = { err: string | null; logs: string[]; unitsConsumed: bigint | null; accounts: (Uint8Array | null)[] };
 
 export interface Transport {
@@ -49,7 +51,7 @@ export interface Transport {
   submitWire(wire: Base64EncodedWireTransaction): Promise<string>;
   simulate(wire: Base64EncodedWireTransaction, watch?: readonly Address[]): Promise<Simulation>;
   genesisHash(): Promise<string>;
-  intents(owner?: Address): Promise<ProgramAccount[]>;
+  intents(owner?: Address, read?: IntentRead): Promise<ProgramAccount[]>;
   engineTransactions(limit: number, of?: Address, memo?: string): Promise<EngineTransaction[]>;
   recentFees(accounts: readonly Address[]): Promise<bigint[]>;
   budget(instructions: readonly Instruction[], feePayer: Address): Promise<Instruction[]>;
@@ -61,6 +63,8 @@ type Pending<T> = { send(): Promise<T> };
 type RawAccount = { owner: Address; data: readonly [string, string]; lamports: bigint; executable: boolean };
 
 type AtLeast = { minContextSlot?: bigint };
+
+type ProgramEntry = { pubkey: Address; account: { data: readonly [string, string] } };
 
 type Status = { err: unknown; confirmationStatus: string | null; slot?: bigint };
 
@@ -108,8 +112,9 @@ export type RpcLike = {
         | { dataSize: bigint }
         | { memcmp: { offset: bigint; bytes: string; encoding: "base58" } }
       )[];
+      withContext?: true;
     } & AtLeast,
-  ): Pending<readonly { pubkey: Address; account: { data: readonly [string, string] } }[]>;
+  ): Pending<readonly ProgramEntry[] | { context: { slot: bigint }; value: readonly ProgramEntry[] }>;
   getSignaturesForAddress(
     address: Address,
     config: { limit: number } & AtLeast,
@@ -317,6 +322,20 @@ function viewOf(value: RawAccount | null): AccountView | null {
 export const TRANSACTION_FETCHES = 4;
 export const KEPT_TRANSACTIONS = 256;
 
+export function boundMembers<T extends object>(inner: T): T {
+  const members: Record<PropertyKey, unknown> = {};
+  for (let at: object | null = inner; at !== null && at !== Object.prototype; at = Object.getPrototypeOf(at) as object | null) {
+    for (const key of Reflect.ownKeys(at)) {
+      if (key === "constructor" || Object.prototype.hasOwnProperty.call(members, key)) {
+        continue;
+      }
+      const value: unknown = Reflect.get(inner, key);
+      members[key] = typeof value === "function" ? value.bind(inner) : value;
+    }
+  }
+  return members as T;
+}
+
 const MEMOIZED = Symbol("memoized");
 const UNDERLYING = Symbol("underlying");
 
@@ -327,6 +346,7 @@ export function memoized(inner: Transport): Transport {
   if ((inner as { [MEMOIZED]?: true })[MEMOIZED] === true) {
     return inner;
   }
+  const members = boundMembers(inner);
   const seen = new Map<Address, Promise<AccountView | null>>();
   const keep = (address: Address, pending: Promise<AccountView | null>) => {
     seen.set(address, pending);
@@ -337,13 +357,13 @@ export function memoized(inner: Transport): Transport {
     });
     return pending;
   };
-  const getAccount = (address: Address) => seen.get(address) ?? keep(address, inner.getAccount(address));
+  const getAccount = (address: Address) => seen.get(address) ?? keep(address, members.getAccount(address));
   const warm = async (addresses: readonly Address[]) => {
     const missing = [...new Set(addresses)].filter((address) => !seen.has(address));
     if (missing.length === 0) {
       return;
     }
-    const fetched = inner.getAccounts(missing);
+    const fetched = members.getAccounts(missing);
     missing.forEach((address, i) => keep(address, fetched.then((views) => views[i] ?? null)));
     await fetched;
   };
@@ -357,14 +377,14 @@ export function memoized(inner: Transport): Transport {
       }
     };
   return {
-    ...inner,
+    ...members,
     [MEMOIZED]: true,
     [UNDERLYING]: inner,
     getAccount,
-    send: writing(inner.send),
-    sendWire: writing(inner.sendWire),
-    submitWire: writing(inner.submitWire),
-    airdrop: writing(inner.airdrop),
+    send: writing(members.send),
+    sendWire: writing(members.sendWire),
+    submitWire: writing(members.submitWire),
+    airdrop: writing(members.airdrop),
     getAccounts: async (addresses) => {
       await warm(addresses);
       return Promise.all(addresses.map(getAccount));
@@ -376,7 +396,10 @@ export function memoized(inner: Transport): Transport {
 export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>, watch?: SignatureWatch): Transport {
   const fetched = new Map<string, Promise<EngineTransaction & { complete: boolean }>>();
   let reached: bigint | undefined;
-  const atLeast = (): AtLeast => (reached === undefined ? {} : { minContextSlot: reached });
+  const atLeast = (floor?: bigint): AtLeast => {
+    const slot = floor === undefined || (reached !== undefined && reached > floor) ? reached : floor;
+    return slot === undefined ? {} : { minContextSlot: slot };
+  };
   const confirmed = async (signature: Signature, lastValidBlockHeight: bigint) => {
     const { slot } = await confirmSent(rpc, signature, lastValidBlockHeight, wait, watch);
     if (slot !== undefined && (reached === undefined || slot > reached)) {
@@ -413,7 +436,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     },
     async airdrop(address, lamports) {
       const { value: latest } = await patiently(() => rpc.getLatestBlockhash().send(), wait);
-      const signature = await rpc.requestAirdrop(address, lamports).send();
+      const signature = await patiently(() => rpc.requestAirdrop(address, lamports).send(), wait);
       return confirmed(signature, latest.lastValidBlockHeight);
     },
     async latestBlockhash() {
@@ -538,31 +561,41 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       }
       return found;
     },
-    async intents(owner) {
-      const found = await patiently(
-        () =>
-          rpc
-            .getProgramAccounts(INTENT_ENGINE_PROGRAM_ADDRESS, {
-              encoding: "base64",
-              commitment: "confirmed",
-              filters: [
-                { dataSize: BigInt(getIntentSize()) },
-                {
-                  memcmp: {
-                    offset: 0n,
-                    bytes: getBase58Decoder().decode(getIntentDiscriminatorBytes()),
-                    encoding: "base58",
-                  },
+    async intents(owner, read) {
+      const least = atLeast(read?.minContextSlot);
+      const found = await patiently(async () => {
+        const response = await rpc
+          .getProgramAccounts(INTENT_ENGINE_PROGRAM_ADDRESS, {
+            encoding: "base64",
+            commitment: "confirmed",
+            filters: [
+              { dataSize: BigInt(getIntentSize()) },
+              {
+                memcmp: {
+                  offset: 0n,
+                  bytes: getBase58Decoder().decode(getIntentDiscriminatorBytes()),
+                  encoding: "base58",
                 },
-                ...(owner === undefined
-                  ? []
-                  : [{ memcmp: { offset: INTENT_OWNER_OFFSET, bytes: owner as string, encoding: "base58" as const } }]),
-              ],
-              ...atLeast(),
-            })
-            .send(),
-        wait,
-      );
+              },
+              ...(owner === undefined
+                ? []
+                : [{ memcmp: { offset: INTENT_OWNER_OFFSET, bytes: owner as string, encoding: "base58" as const } }]),
+            ],
+            ...least,
+            ...(read === undefined ? {} : { withContext: true as const }),
+          })
+          .send();
+        if (!("context" in response)) {
+          return response;
+        }
+        if (least.minContextSlot !== undefined && response.context.slot < least.minContextSlot) {
+          throw new Error(
+            `Minimum context slot has not been reached: the node read at slot ${response.context.slot}, below ${least.minContextSlot}`,
+          );
+        }
+        read?.onSlot?.(response.context.slot);
+        return response.value;
+      }, wait);
       return found.map(({ pubkey, account }) => ({
         address: pubkey,
         data: new Uint8Array(Buffer.from(account.data[0], "base64")),
@@ -571,7 +604,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
   };
 }
 
-export type IntentChanges = { wait(seconds: number): Promise<ProgramAccount[] | null>; close(): void };
+export type IntentChanges = { wait(seconds: number): Promise<ProgramAccount[] | null>; close(): void; slot?(): bigint | undefined };
 
 export type Notifications = (signal: AbortSignal) => Promise<AsyncIterable<unknown>>;
 
@@ -628,6 +661,7 @@ export function changesFrom(notifications: Notifications, reconnect: readonly nu
   const controller = new AbortController();
   const pending = new Map<Address, Uint8Array>();
   let wake: (() => void) | undefined;
+  let highest: bigint | undefined;
   const drain = () => {
     const changed = [...pending].map(([address, data]) => ({ address, data }));
     pending.clear();
@@ -640,6 +674,10 @@ export function changesFrom(notifications: Notifications, reconnect: readonly nu
       failures = 0;
       const changed = changedAccount(next.value);
       if (changed !== null) {
+        const slot = (next.value as { context?: { slot?: unknown } }).context?.slot;
+        if (typeof slot === "bigint" && (highest === undefined || slot > highest)) {
+          highest = slot;
+        }
         pending.set(changed.address, changed.data);
         wake?.();
       }
@@ -677,5 +715,6 @@ export function changesFrom(notifications: Notifications, reconnect: readonly nu
       wake?.();
       controller.abort();
     },
+    slot: () => highest,
   };
 }

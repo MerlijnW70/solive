@@ -5,6 +5,7 @@ import {
   createTransactionMessage,
   getBase64Encoder,
   getCompiledTransactionMessageDecoder,
+  getCompiledTransactionMessageEncoder,
   getSignatureFromTransaction,
   getTransactionDecoder,
   lamports,
@@ -20,6 +21,9 @@ import { type EngineTransaction, MEMO_PROGRAM_ADDRESS, type ProgramAccount, type
 export type SvmTransportOptions = { genesisHash?: string };
 
 export const SVM_GENESIS_HASH = "11111111111111111111111111111111";
+
+const sigverifyOf = (svm: LiteSVM): boolean =>
+  (svm as unknown as { inner?: { getSigverify?: () => boolean } }).inner?.getSigverify?.() ?? true;
 
 const decodeWire = (wire: string) => getTransactionDecoder().decode(getBase64Encoder().encode(wire));
 
@@ -93,12 +97,19 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
     submitWire: async (wire) => landed(decodeWire(wire)),
     simulate: async (wire, watch = []) => {
       const tx = decodeWire(wire);
+      const compiled = getCompiledTransactionMessageDecoder().decode(tx.messageBytes);
+      const messageBytes = getCompiledTransactionMessageEncoder().encode({ ...compiled, lifetimeToken: svm.latestBlockhash() });
       const unsigned = Object.fromEntries(
         Object.entries(tx.signatures).map(([signer, signature]) => [signer, signature ?? new Uint8Array(64)]),
       );
-      svm.withSigverify(false).withBlockhashCheck(false);
-      const result = svm.simulateTransaction({ ...tx, signatures: unsigned } as typeof tx);
-      svm.withSigverify(true).withBlockhashCheck(true);
+      const verifying = sigverifyOf(svm);
+      svm.withSigverify(false);
+      let result: ReturnType<LiteSVM["simulateTransaction"]>;
+      try {
+        result = svm.simulateTransaction({ messageBytes, signatures: unsigned } as unknown as typeof tx);
+      } finally {
+        svm.withSigverify(verifying);
+      }
       const meta = result.meta();
       return {
         err: result instanceof FailedTransactionMetadata ? String(result.err()) : null,

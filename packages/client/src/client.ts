@@ -88,6 +88,8 @@ export type IntentFilter = { owner?: Address; status?: number };
 
 export type WatchCallback = (changed: IntentAccount[], closed: IntentAccount[]) => void;
 
+export type WatchOptions = { owner?: Address; onError?: (error: unknown) => void };
+
 export type Mint = { decimals: number; tokenProgram: Address };
 
 export type CreateIntentInput = {
@@ -151,7 +153,7 @@ export type Client = {
   nextNonce(owner: Address): Promise<bigint>;
   simulate(instructions: readonly Instruction[], signer: TransactionSigner): Promise<Simulation>;
   send(instructions: readonly Instruction[], signer: TransactionSigner): Promise<Signature>;
-  watch(onChange: WatchCallback, signal: AbortSignal, filter?: { owner?: Address }): Promise<void>;
+  watch(onChange: WatchCallback, signal: AbortSignal, filter?: WatchOptions): Promise<void>;
   explain(error: unknown): EngineError | null;
   mint(address: Address): Promise<Mint>;
   chainTime(): Promise<bigint>;
@@ -227,7 +229,7 @@ export function createClient(options: ClientOptions): Client {
     options.transport ?? rpcTransport(createSolanaRpc(url) as unknown as RpcLike, undefined, signatureWatch(url));
   const notifications = options.notifications ?? (options.transport === undefined ? intentNotifications(url) : undefined);
 
-  const watch = async (onChange: WatchCallback, signal: AbortSignal, filter: { owner?: Address } = {}) => {
+  const watch = async (onChange: WatchCallback, signal: AbortSignal, filter: WatchOptions = {}) => {
     if (signal.aborted) {
       return;
     }
@@ -251,11 +253,38 @@ export function createClient(options: ClientOptions): Client {
         onChange(changed, closed);
       }
     };
-    const sync = async () => {
-      const accounts = await transport.intents(filter.owner).catch(() => null);
+    let highest: bigint | undefined;
+    const raise = (slot: bigint | undefined) => {
+      if (slot !== undefined && (highest === undefined || slot > highest)) {
+        highest = slot;
+      }
+    };
+    const failed = (error: unknown) => {
+      if (!signal.aborted) {
+        filter.onError?.(error);
+      }
+    };
+    const sync = async (heard?: bigint) => {
+      raise(heard);
+      const floor = highest;
+      const reading: { minContextSlot?: bigint; onSlot: (slot: bigint) => void; at?: bigint } = {
+        ...(floor === undefined ? {} : { minContextSlot: floor }),
+        onSlot: (slot) => {
+          reading.at = slot;
+        },
+      };
+      const accounts = await transport.intents(filter.owner, reading).catch((error: unknown) => {
+        failed(error);
+        return null;
+      });
       if (accounts === null) {
         return;
       }
+      if (reading.at !== undefined && floor !== undefined && reading.at < floor) {
+        failed(new Error(`the intents read at slot ${reading.at} is older than slot ${floor}, which the watch has already seen`));
+        return;
+      }
+      raise(reading.at);
       const present = new Set(accounts.map(({ address }) => address));
       const changed = fresh(accounts);
       const closed = [...seen].filter(([address]) => !present.has(address)).map(([, { view }]) => view);
@@ -281,7 +310,7 @@ export function createClient(options: ClientOptions): Client {
       while (!signal.aborted) {
         report(fresh((await changes.wait(resyncSeconds)) ?? []), []);
         if (!signal.aborted && Date.now() - synced >= resyncSeconds * 1000) {
-          await sync();
+          await sync(changes.slot?.());
           synced = Date.now();
         }
       }

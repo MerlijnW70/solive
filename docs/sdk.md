@@ -67,7 +67,7 @@ for (const { intent } of mine.filter(({ intent }) => intent.nonce === nonce)) {
 
 ## Watch
 
-`watch` calls back once after its first read with the current intents, even when it finds none, then with every intent that changed and with the last known state of each intent whose account closed, until its signal aborts. It rereads the chain every `resyncSeconds` (a client option, default `WATCH_WAIT_SECONDS`), so a dropped notification only delays a change, and it keeps going through failed reads. A filled intent's account is closed soon after the fill, so `intent` then returns `null`. This prints `Open` now and `Cancelled` once the cancel below lands.
+`watch` calls back once after its first read with the current intents, even when it finds none, then with every intent that changed and with the last known state of each intent whose account closed, until its signal aborts. It rereads the chain every `resyncSeconds` (a client option, default `WATCH_WAIT_SECONDS`), so a dropped notification only delays a change, and it keeps going through failed reads; pass `onError` next to `owner` to hear about each one. A reread never goes back past the newest slot the watch has seen, so a lagging RPC node cannot report a live intent as closed. A filled intent's account is closed soon after the fill, so `intent` then returns `null`. This prints `Open` now and `Cancelled` once the cancel below lands.
 
 ```ts
 const controller = new AbortController();

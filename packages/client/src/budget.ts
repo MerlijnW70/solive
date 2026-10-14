@@ -1,17 +1,18 @@
 import {
   type Address,
   appendTransactionMessageInstructions,
+  compileTransaction,
   createTransactionMessage,
   getBase64EncodedWireTransaction,
   type Instruction,
   isWritableRole,
-  partiallySignTransactionMessageWithSigners,
   pipe,
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
+  type SignatureBytes,
 } from "@solana/kit";
 import { COMPUTE_BUDGET_ADDRESS, computeUnitLimit, computeUnitPrice, headroom, MAX_COMPUTE_UNITS } from "@intent-engine/core";
-import type { Simulation, Transport } from "./transport.js";
+import { boundMembers, type Simulation, type Transport } from "./transport.js";
 
 export type Priority = bigint | "auto";
 
@@ -59,7 +60,11 @@ export async function simulated(
     (m) => setTransactionMessageLifetimeUsingBlockhash(latest, m),
     (m) => appendTransactionMessageInstructions(instructions, m),
   );
-  return transport.simulate(getBase64EncodedWireTransaction(await partiallySignTransactionMessageWithSigners(message)));
+  const compiled = compileTransaction(message);
+  const signatures = Object.fromEntries(
+    Object.keys(compiled.signatures).map((signer) => [signer, new Uint8Array(64) as SignatureBytes]),
+  ) as typeof compiled.signatures;
+  return transport.simulate(getBase64EncodedWireTransaction({ ...compiled, signatures }));
 }
 
 export async function unitsOf(
@@ -90,7 +95,7 @@ export function withPriority(inner: Transport, priority: Priority): Transport {
   const budget = (instructions: readonly Instruction[], feePayer: Address) =>
     budgeted(inner, priority, instructions, feePayer);
   return {
-    ...inner,
+    ...boundMembers(inner),
     budget,
     send: async (instructions, payer) => inner.send(await budget(instructions, payer.address), payer),
   };
