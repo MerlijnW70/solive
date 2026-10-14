@@ -8,7 +8,7 @@ Do not open a public issue, pull request or discussion about a vulnerability.
 
 Include:
 
-- the affected part: the program (`programs/intent_engine`), `crates/intent-core`, `packages/core`, `packages/client`, `packages/cli` or `packages/solver`
+- the affected part: the program (`programs/intent_engine`), `crates/intent-core`, `packages/core`, `packages/client`, `packages/cli`, `packages/solver` or `packages/multisig`
 - the cluster and program address, if it concerns a deployed program
 - steps or a test that reproduce it
 - what an attacker gains
@@ -26,7 +26,7 @@ In scope: the code in this repository, and the program deployed from it at `GHFB
 
 The program has not had an external audit.
 
-The [threat model](docs/threat-model.md) lists each known attack per actor and asset, the test or proof that stops it, and what is still open.
+The [threat model](docs/threat-model.md) lists each known attack per actor and asset, the test or proof that stops it, and what is still open. The [operations runbook](docs/operations.md) names who holds the upgrade authority, the config admin and the guardian, and how they move to a multisig.
 
 Out of scope: third-party services the tools call (RPC nodes, Jupiter, Jito, faucets), and attacks that need the victim's private key.
 

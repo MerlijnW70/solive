@@ -6,10 +6,9 @@ import { describe, expect, it } from "vitest";
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const MODEL = readFileSync(join(ROOT, "docs/threat-model.md"), "utf8");
 const STATUSES = ["mitigated", "partial", "open"];
-const PACKAGES = ["core", "client", "cli", "solver"];
+const PACKAGES = ["core", "client", "cli", "solver", "multisig"];
 const RUST_ROOTS = ["tests/svm/tests/", "crates/intent-core/tests/"];
 const OPEN_WEAKNESSES = [
-  "one key as admin, guardian and upgrade authority",
   "check commands without a sandbox",
   "published by hand with a token, without provenance",
   "no on-chain per-order or total cap",
@@ -137,6 +136,7 @@ describe("threat model", () => {
     }
     expect(problems).toEqual([]);
     expect(MODEL).toContain("](../SECURITY.md)");
+    expect(MODEL).toContain("](operations.md)");
     expect(readFileSync(join(ROOT, "SECURITY.md"), "utf8")).toContain("](docs/threat-model.md)");
   });
 

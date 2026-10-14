@@ -93,7 +93,7 @@ Every `mitigated` or `partial` row names the tests, proofs, fuzz targets or CI j
 | T-49 | supply chain | upgrade authority | Ships a program binary that differs from the source | Users run code nobody reviewed | partial | `ci:verifiable`, `ci:attest`. Gap: no CI job checks the deployed devnet program against the verifiable build. |
 | T-50 | supply chain | npm packages | Pulls a dependency with a known advisory, or commits a secret | Compromised build or leaked key | partial | `ci:audit`. Gap: advisories catch only published issues. |
 | T-51 | supply chain | npm packages | npm releases are published by hand with a token, without provenance | A stolen token publishes a tampered package | open | Planned: publish from CI with npm provenance and a short-lived token scoped to the four packages. |
-| T-52 | admin | upgrade authority | The devnet config uses one key as admin, guardian and upgrade authority; whoever holds it replaces the program | Every escrow at risk | open | Planned: separate the three roles and move the upgrade authority to a multisig. |
+| T-52 | admin | upgrade authority | One key as admin, guardian and upgrade authority lets whoever holds it replace the program and change every fee | Every escrow at risk | partial | `ts:multisig:the upgrade proposal runs the loader upgrade with the vault as authority`, `ts:multisig:an admin proposal wraps exactly the instructions the cli printed`, `ts:multisig:show decodes a proposal into a readable summary`, `ts:multisig:execute refuses before the threshold is reached`. Upgrades and admin changes go through a 2-of-3 Squads multisig vault and the guardian is a separate key, as [operations.md](operations.md) describes. Gap: devnet uses demo keys on one machine until the runbook runs with real keys. |
 | T-53 | anyone | escrow | No on-chain per-order or total cap limits what one intent or the program holds | One bug reaches every escrow | open | Planned: per-order and total escrow caps in the config, enforced at create. |
 | T-54 | anyone | admin | No monitoring of config changes, upgrades or unusual fills | An attack goes unnoticed | open | Planned: a watcher on config events, the upgrade authority and fills that alerts the operator. |
 | T-55 | anyone | keys | Role keys (filler, judge, wallet) are files on one machine | One host compromise yields every role key | open | Planned: one host or hardware signer per role. |
@@ -108,10 +108,9 @@ Every `mitigated` or `partial` row names the tests, proofs, fuzz targets or CI j
 
 ## Open, in order
 
-1. T-52: separate admin, guardian and upgrade authority; upgrade authority to a multisig.
-2. T-42: sandbox the judge's check.
-3. T-55, T-62: one host or hardware signer per role key.
-4. T-53: per-order and total escrow caps.
-5. T-54: monitor config changes, upgrades and fills.
-6. T-51: publish npm packages from CI with provenance.
-7. T-56: hardware-wallet guidance for owners.
+1. T-42: sandbox the judge's check.
+2. T-55, T-62: one host or hardware signer per role key.
+3. T-53: per-order and total escrow caps.
+4. T-54: monitor config changes, upgrades and fills.
+5. T-51: publish npm packages from CI with provenance.
+6. T-56: hardware-wallet guidance for owners.

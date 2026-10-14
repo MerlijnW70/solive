@@ -18,9 +18,11 @@ if [[ "$PWD" == /mnt/* ]]; then
   fi
 fi
 bash scripts/identity.sh --check
+bash scripts/fetch-squads.sh > /dev/null
 pnpm --filter @intent-engine/core build
 pnpm --filter @intent-engine/client build
 pnpm --filter @intent-engine/solver build
 pnpm --filter @intent-engine/cli build
+pnpm --filter @intent-engine/multisig build
 pnpm -r typecheck
 pnpm -r test

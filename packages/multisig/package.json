@@ -1,0 +1,31 @@
+{
+  "name": "@intent-engine/multisig",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Squads v4 proposals for the engine's upgrade authority and config admin",
+  "license": "Apache-2.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "bin": {
+    "intent-engine-multisig": "./dist/bin.js"
+  },
+  "scripts": {
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --fsModuleCache"
+  },
+  "dependencies": {
+    "@intent-engine/core": "workspace:*",
+    "@sqds/multisig": "2.1.4",
+    "@solana/web3.js": "1.98.4"
+  },
+  "devDependencies": {
+    "@solana/kit": "^8.4.0",
+    "@types/node": "26.6.4",
+    "litesvm": "1.5.0",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3"
+  }
+}
