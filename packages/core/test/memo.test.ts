@@ -62,6 +62,42 @@ describe("spec and delivery memos", () => {
     }
   });
 
+  it("memo urls refuse backslashes and non canonical forms", () => {
+    for (const url of [
+      "https://a.example/spec.md",
+      "https://a.example",
+      "https://a.example/",
+      "https://a.example/a?b=c#d",
+      "http://localhost:8080/s",
+      "http://localhost",
+      "http://127.0.0.1/x",
+      "http://[::1]:9/x",
+    ]) {
+      expect(isMemoUrl(url), url).toBe(true);
+    }
+    for (const url of [
+      "https://evil.example\\@good.example/",
+      "https://a.example\\b",
+      "http://127.1/",
+      "http://0x7f.0.0.1/",
+      "http://2130706433/",
+      "http://LOCALHOST/x",
+      "http://localhost./x",
+      "http://[0:0:0:0:0:0:0:1]/x",
+      "https://A.example/x",
+      "https://a.example/./b",
+      "https://a.example/a/../b",
+      "https://a.example:443/x",
+      "HTTPS://a.example/x",
+      "https://a.example?x",
+      "https:/a.example/x",
+    ]) {
+      expect(isMemoUrl(url), url).toBe(false);
+      expect(() => specMemo(url)).toThrow(RangeError);
+      expect(parseSpecMemo(`${SPEC_MEMO_PREFIX}${url}`)).toBeNull();
+    }
+  });
+
   it("refuse to build a delivery with a bad intent or sha256", () => {
     for (const sha256 of ["", "AB".repeat(32), "ab".repeat(31), "ab".repeat(33), `${"ab".repeat(31)}zz`]) {
       expect(() => deliveryMemo({ ...delivery, sha256 })).toThrow(RangeError);

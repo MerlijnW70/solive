@@ -6,7 +6,8 @@ import { findAssociatedTokenAddress } from "./pdas.js";
 import { checkSignable, type SignedIntentFields, signedIntentPreimage } from "./sig.js";
 
 export const LONG_LIVED_SECONDS = 30n * 24n * 60n * 60n;
-export const WARN_ATTESTOR = "an attestor alone decides the settlement result; nothing is checked on-chain";
+export const WARN_ATTESTOR =
+  "an attestor alone decides the settlement result; the chain checks only the attestor's signature and that the result lies between the minimum and maximum";
 export const WARN_LONG_LIVED = "this intent stays fillable for more than 30 days";
 export const WARN_RECEIVER = "the output goes to an account other than your own canonical token account";
 export const LONG_SUBMIT_SECONDS = 24n * 60n * 60n;
@@ -108,18 +109,40 @@ export function describeTerms(
         sell(params.amountIn),
         `Receive: at least ${out(params.startOut)} at ${formatTime(params.startTs)}, falling to ${out(params.endOut)} at ${formatTime(params.endTs)}`,
       ];
-    case Kind.AttestedResult:
+    case Kind.AttestedResult: {
+      const proof = params.specHash.some((byte) => byte !== 0);
       return [
         sell(params.amountIn),
         `Settles: when ${params.attestor} attests a result between ${params.minResult} and ${params.maxResult}`,
+        ...(proof ? [`Spec hash: ${hex(params.specHash)}, the spec the judge checks the work against`] : []),
+        ...(proof || params.judgeFee !== 0n
+          ? [
+              `Judge fee: ${formatAmount(params.judgeFee, o.inputDecimals)} of ${tokenOf(f.inputMint, o.inputName)}, paid to ${params.attestor} out of the sold amount when the intent settles`,
+            ]
+          : []),
         `Output token: ${tokenOf(f.outputMint, o.outputName)}, recorded with the intent only; an attested settlement pays you nothing on chain`,
       ];
+    }
   }
+}
+
+export const PARTNER_BASE_SOLD = "the sold amount";
+export const PARTNER_BASE_AFTER_JUDGE = "the sold amount less the judge fee";
+
+export function partnerBaseOf(params: IntentParams): string {
+  return params.kind === Kind.AttestedResult && params.judgeFee !== 0n ? PARTNER_BASE_AFTER_JUDGE : PARTNER_BASE_SOLD;
+}
+
+export function partnerFeeLine(bps: number, key: string, base: string = PARTNER_BASE_SOLD): string {
+  return `Partner fee: ${bps} bps of ${base}, rounded up, to ${key}, less the protocol's partner cut fixed when the intent is created`;
 }
 
 function partnerLine(f: SignedIntentFields): string[] {
   const partner = partnerOf(f.ext ?? new Uint8Array());
-  return partner === undefined ? [] : [`Partner fee: ${partner.bps} bps of the sold amount to ${partner.key}`];
+  if (partner === undefined) {
+    return [];
+  }
+  return [partnerFeeLine(partner.bps, partner.key, partnerBaseOf(decodeParams(f.kind, f.params)))];
 }
 
 export async function describeSignedIntent(

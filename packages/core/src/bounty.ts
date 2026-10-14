@@ -3,10 +3,15 @@ import { BPS_DENOMINATOR } from "./fee.js";
 import { mulDivFloor, U64_MAX } from "./math.js";
 
 export const MAX_RECIPIENTS = 16;
+export const MAX_SPLIT_RECIPIENTS = 8;
 
-export function splitN(amount: bigint, weightsBps: readonly number[]): bigint[] {
+export function splitPayout(amount: bigint, weightsBps: readonly number[]): bigint[] {
+  return splitN(amount, weightsBps, MAX_SPLIT_RECIPIENTS);
+}
+
+export function splitN(amount: bigint, weightsBps: readonly number[], maxRecipients: number = MAX_RECIPIENTS): bigint[] {
   const len = weightsBps.length;
-  if (len === 0 || len > MAX_RECIPIENTS) {
+  if (len === 0 || len > Math.min(maxRecipients, MAX_RECIPIENTS)) {
     throw new IntentCoreError("InvalidParams");
   }
   let sum = 0n;

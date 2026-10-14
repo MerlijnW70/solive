@@ -5,6 +5,7 @@ type Bytes = ReadonlyUint8Array | Uint8Array;
 type IdlType =
   | string
   | { array: [IdlType, number] }
+  | { vec: IdlType }
   | { defined: { name: string } }
   | { option: IdlType };
 
@@ -62,6 +63,21 @@ function walk(type: IdlType, data: Bytes, at: number, idl: IdlLike, depth = 0): 
     let end: number | undefined = at;
     for (let i = 0; i < type.array[1] && end !== undefined; i++) {
       end = walk(type.array[0], data, end, idl, depth + 1);
+    }
+    return end;
+  }
+  if ("vec" in type) {
+    if (at + 4 > data.length) {
+      return at + 4;
+    }
+    const count = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(at, true);
+    let end = at + 4;
+    for (let i = 0; i < count && end <= data.length; i++) {
+      const next = walk(type.vec, data, end, idl, depth + 1);
+      if (next === undefined || next === end) {
+        return next;
+      }
+      end = next;
     }
     return end;
   }

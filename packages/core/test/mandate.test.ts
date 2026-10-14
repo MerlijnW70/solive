@@ -110,7 +110,7 @@ describe("mandates", () => {
         `Price floor: at least 0.003 of ${OUT} for every 0.02 of ${IN}`,
         "Each intent expires within 3600 seconds of its creation",
         `Valid until: ${new Date(Number(NOW + 86_400n) * 1000).toISOString()}`,
-        `Partner fee: 25 bps of the sold amount to ${PARTNER}`,
+        `Partner fee: 25 bps of the sold amount, rounded up, to ${PARTNER}, less the protocol's partner cut fixed when the intent is created`,
         "Proceeds always go to your own token account; the agent pays all network fees and rent and takes no fee",
         "The agent's intents use their own nonces and never touch your signing window",
         "Revoke it any time, or revoke every mandate and signature at once by advancing your signing epoch; once revoked, no intent the agent opened can be filled, and you can cancel them to take your tokens back",

@@ -348,6 +348,8 @@ export async function signEd25519Instruction(
   return buildEd25519Instruction({ publicKey: signer.address, signature, message });
 }
 
+export const MAX_ED25519_BATCH = 255;
+
 export function buildEd25519BatchInstruction(input: {
   entries: { publicKey: Address; signature: Uint8Array }[];
   message: Uint8Array;
@@ -355,6 +357,9 @@ export function buildEd25519BatchInstruction(input: {
   const m = input.entries.length;
   if (m === 0) {
     throw new RangeError("an Ed25519 batch needs at least one signer");
+  }
+  if (m > MAX_ED25519_BATCH) {
+    throw new RangeError(`an Ed25519 batch holds at most ${MAX_ED25519_BATCH} signers, got ${m}`);
   }
   for (const e of input.entries) {
     if (e.signature.length !== 64) {

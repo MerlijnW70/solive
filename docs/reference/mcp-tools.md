@@ -118,7 +118,7 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 | `min_result` | whole number as a decimal string | no | least result the attestor may attest; default 1 |
 | `max_result` | whole number as a decimal string | no | greatest result the attestor may attest; default min_result |
 | `spec_hash` | string | no | 64 hex: the sha256 of the acceptance spec the attestor must verify. Setting it binds the release to a signature over that exact spec, so the attestor cannot sign a generic result |
-| `spec_url` | string | no | where the acceptance spec is published, an https url of at most 200 printable characters without spaces, or http on localhost; needs spec_hash. Recorded in a memo this wallet signs with the escrow |
+| `spec_url` | string | no | where the acceptance spec is published, an https url in canonical form of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1]; needs spec_hash. Recorded in a memo this wallet signs with the escrow |
 | `judge_fee` | string | no | whole tokens of sell paid to the attestor out of the escrow when it settles, such as 0.001; needs spec_hash and must be below amount |
 | `expires_in` | integer 60..31536000 | no | least seconds the escrow stays open once sent; default 86400 |
 | `record_mint` | string | no | a token the escrow records as its output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet |
@@ -189,7 +189,7 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: false)
 | --- | --- | --- | --- |
 | `intent` | address | yes | the proof escrow's intent address |
 | `sha256` | string | yes | the sha256 of the delivered work, as 64 hex digits |
-| `url` | string | yes | where the attestor fetches the work, an https url of at most 200 printable characters without spaces, or http on localhost |
+| `url` | string | yes | where the attestor fetches the work, an https url in canonical form of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1] |
 | `send` | boolean | no | true signs and sends; leave out to preview |
 
 ## solive_wallet_check_delivery
@@ -344,7 +344,7 @@ Effect: `prepare` (read-only: true, destructive: false, idempotent: false)
 | `partner.account` | address | yes | the integrator paid the partner fee |
 | `partner.bps` | integer 1..100 | yes | partner fee in basis points of the sold amount |
 | `pay_to` | address | no | the wallet that receives what the solver pays; default the owner |
-| `spec_url` | string | no | where the acceptance spec of an attested order with spec_hash is published, an https url of at most 200 printable characters without spaces, or http on localhost; recorded in a memo the owner signs with the create, so workers find it |
+| `spec_url` | string | no | where the acceptance spec of an attested order with spec_hash is published, an https url in canonical form of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1]; recorded in a memo the owner signs with the create, so workers find it |
 
 ## solive_prepare_cancel
 

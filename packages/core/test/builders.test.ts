@@ -56,6 +56,10 @@ import {
   validateIxAgainstIdl,
   MAX_CRANK_BOUNTY,
   MAX_CREATE_FEE,
+  MAX_RECIPIENTS,
+  MAX_SPLIT_RECIPIENTS,
+  splitN,
+  splitPayout,
 } from "../src/index.js";
 
 const read = (rel: string) =>
@@ -485,7 +489,77 @@ describe("refund overrides and exact approvals", () => {
       }),
     ).rejects.toThrow();
   });
+
+  it("approve for intent covers the relayer fee", async () => {
+    const swap = { kind: Kind.SwapExactIn, amountIn: 1234n, minOut: 1n } as const;
+    const approved = async (extra: { relayerFee?: bigint }) =>
+      getApproveCheckedInstructionDataDecoder().decode(
+        (await buildApproveForIntent({ owner: createNoopSigner(owner), mint: inputMint, tokenProgram: TOKEN, decimals: 6, params: swap, ...extra })).data,
+      ).amount;
+    expect(await approved({ relayerFee: 66n })).toBe(1300n);
+    expect(await approved({ relayerFee: 0n })).toBe(1234n);
+    const signed = { relayerFee: 5n, submitBy: 9n, nonce: 1n };
+    expect(await approved(signed)).toBe(1239n);
+    await expect(approved({ relayerFee: -1n })).rejects.toThrow(RangeError);
+    await expect(approved({ relayerFee: U64_MAX })).rejects.toThrow(RangeError);
+  });
+
+  it("approve for intent adds to an existing allowance", async () => {
+    const swap = { kind: Kind.SwapExactIn, amountIn: 1234n, minOut: 1n } as const;
+    const approved = async (extra: { relayerFee?: bigint; alreadyApproved?: bigint }) =>
+      getApproveCheckedInstructionDataDecoder().decode(
+        (await buildApproveForIntent({ owner: createNoopSigner(owner), mint: inputMint, tokenProgram: TOKEN, decimals: 6, params: swap, ...extra })).data,
+      ).amount;
+    expect(await approved({ alreadyApproved: 1_000n })).toBe(2234n);
+    expect(await approved({ alreadyApproved: 1_000n, relayerFee: 6n })).toBe(2240n);
+    expect(await approved({ alreadyApproved: 0n })).toBe(1234n);
+    expect(await approved({ alreadyApproved: U64_MAX - 1234n })).toBe(U64_MAX);
+    await expect(approved({ alreadyApproved: U64_MAX - 1233n })).rejects.toThrow(RangeError);
+    await expect(approved({ alreadyApproved: -5n })).rejects.toThrow(RangeError);
+  });
 });
+
+describe("split payouts", () => {
+  it("validate sizes vec arguments of fill_attested_split", async () => {
+    const solverSigner = createNoopSigner(owner);
+    for (const count of [1, 3, MAX_SPLIT_RECIPIENTS]) {
+      const recipients = Array.from({ length: count }, (_, i) => (i % 2 === 0 ? owner : feeRecipient));
+      const weights = splitWeights(count);
+      const ix = await buildFillAttestedSplit({
+        solver: solverSigner,
+        owner,
+        nonce: 7n,
+        inputMint,
+        inputTokenProgram: TOKEN,
+        recipients,
+        weights,
+        amountIn: 400n,
+        result: 1n,
+        maxFeeBps: 100,
+      });
+      expect(validateIxAgainstIdl(ix, idl), String(count)).toEqual([]);
+      const data = ix.data ?? new Uint8Array();
+      const longer = { ...ix, data: new Uint8Array([...data, 0]) };
+      expect(validateIxAgainstIdl(longer, idl)).toEqual([`fill_attested_split: data is ${data.length + 1} bytes, expected ${data.length}`]);
+      const shorter = { ...ix, data: data.slice(0, -1) };
+      expect(validateIxAgainstIdl(shorter, idl)[0]).toMatch(/^fill_attested_split: data is \d+ bytes, expected \d+$/);
+    }
+  });
+
+  it("caps a split payout at the recipients fill_attested_split takes", () => {
+    expect(MAX_SPLIT_RECIPIENTS).toBe(8);
+    expect(MAX_RECIPIENTS).toBe(16);
+    expect(splitPayout(100n, splitWeights(8))).toHaveLength(8);
+    expect(() => splitPayout(100n, splitWeights(9))).toThrow(new IntentCoreError("InvalidParams"));
+    expect(splitN(100n, splitWeights(9))).toHaveLength(9);
+    expect(() => splitN(100n, splitWeights(9), MAX_SPLIT_RECIPIENTS)).toThrow(new IntentCoreError("InvalidParams"));
+  });
+});
+
+function splitWeights(count: number): number[] {
+  const each = Math.floor(10_000 / count);
+  return Array.from({ length: count }, (_, i) => (i === 0 ? 10_000 - each * (count - 1) : each));
+}
 
 describe("admin builders", () => {
   it("derives program data from the upgradeable loader and passes every setting through", async () => {

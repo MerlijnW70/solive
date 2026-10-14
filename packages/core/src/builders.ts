@@ -44,7 +44,8 @@ import {
   validateExt,
 } from "./ext.js";
 import { encodeParams, escrowAmount, type IntentParams, validate } from "./kinds.js";
-import { U64_MAX } from "./math.js";
+import { MAX_SPLIT_RECIPIENTS } from "./bounty.js";
+import { checkU64, U64_MAX } from "./math.js";
 import { MANDATE_NONCE_BIT, type MandateSpec, mandateArgs, NO_MANDATE } from "./mandate.js";
 import { findAssociatedTokenAddress, findEventAuthorityPda, findIntentPda, findMandatePda } from "./pdas.js";
 
@@ -506,9 +507,18 @@ export async function buildApproveForIntent(input: {
   tokenProgram: Address;
   decimals: number;
   params: IntentParams;
+  relayerFee?: bigint;
+  alreadyApproved?: bigint;
   source?: Address;
 }) {
-  return buildApproveDelegate({ ...input, amount: escrowAmount(validate(input.params)) });
+  const escrow = escrowAmount(validate(input.params));
+  const relayerFee = checkU64(input.relayerFee ?? 0n, "relayer fee");
+  const alreadyApproved = checkU64(input.alreadyApproved ?? 0n, "existing allowance");
+  const amount = escrow + relayerFee + alreadyApproved;
+  if (amount > U64_MAX) {
+    throw new RangeError(`an allowance of ${amount} does not fit a token account`);
+  }
+  return buildApproveDelegate({ ...input, amount });
 }
 
 export type FillAttestedSpec = {
@@ -561,8 +571,6 @@ export async function buildFillAttested(input: FillAttestedSpec) {
     ...(await events()),
   });
 }
-
-export const MAX_SPLIT_RECIPIENTS = 8;
 
 export type FillAttestedSplitSpec = Omit<FillAttestedSpec, "payee"> & {
   recipients: Address[];

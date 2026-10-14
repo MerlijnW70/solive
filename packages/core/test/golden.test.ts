@@ -321,6 +321,11 @@ describe("golden vectors emitted by the Rust implementation", () => {
 
   it("split fees identically, including the over-full rate", () => {
     for (const f of vectors.split_fee) {
+      if (Number(f.bps) > 10_000) {
+        expect(f.result.err, `${f.amount} @ ${f.bps}`).toBe("InvalidParams");
+        expect(() => splitFee(BigInt(f.amount), Number(f.bps))).toThrow(RangeError);
+        continue;
+      }
       const got = settle(() => {
         const s = splitFee(BigInt(f.amount), Number(f.bps));
         return { fee: s.fee.toString(), net: s.net.toString() };
@@ -689,7 +694,10 @@ describe("golden vectors emitted by the Rust implementation", () => {
     expect(v.split_fees.length).toBeGreaterThan(8);
     for (const c of v.split_fees) {
       const run = () => splitFees(BigInt(c.amount), Number(c.fee_bps), Number(c.partner_bps), Number(c.cut_bps));
-      if (c.result.err === undefined) {
+      if ([c.fee_bps, c.partner_bps, c.cut_bps].some((b) => Number(b) > 10_000)) {
+        expect(c.result.err, c.amount).toBe("InvalidParams");
+        expect(run, c.amount).toThrow(RangeError);
+      } else if (c.result.err === undefined) {
         expect(run(), c.amount).toEqual({
           protocol: BigInt(c.result.protocol ?? ""),
           partner: BigInt(c.result.partner ?? ""),
@@ -794,6 +802,20 @@ describe("golden vectors emitted by the Rust implementation", () => {
     expect(Object.keys(ours).sort()).toEqual(Object.keys(vectors.discriminators).sort());
     for (const [name, disc] of Object.entries(ours)) {
       expect(hexOf(disc), name).toBe(vectors.discriminators[name]);
+    }
+  });
+});
+
+describe("error codes", () => {
+  it("error codes cover every mandate error", () => {
+    const source = readFileSync(fileURLToPath(new URL("../../../crates/intent-core/src/error.rs", import.meta.url)), "utf8");
+    const body = /pub enum Error \{([^}]*)\}/.exec(source)?.[1] ?? "";
+    const rust = Array.from(body.matchAll(/^\s*([A-Z]\w*),?\s*$/gm), (m) => m[1]);
+    const mandate = rust.filter((name) => name?.startsWith("Mandate"));
+    expect(mandate).toEqual(["MandateInvalid", "MandateExpired", "MandateKind", "MandateTtl", "MandateCap", "MandateBudget", "MandateCount", "MandatePrice"]);
+    expect([...core.CORE_ERROR_CODES]).toEqual(rust);
+    for (const code of core.CORE_ERROR_CODES) {
+      expect(new core.IntentCoreError(code).code).toBe(code);
     }
   });
 });

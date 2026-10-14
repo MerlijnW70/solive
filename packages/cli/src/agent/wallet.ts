@@ -31,7 +31,7 @@ import {
   signEd25519Instruction,
   splitCommit,
   splitFees,
-  splitN,
+  splitPayout,
   settlementWarnings,
   WARN_LONG_LIVED,
 } from "@intent-engine/core";
@@ -988,7 +988,7 @@ const walletAttestSplit = define({
     const settleAmount = amountIn - params.judgeFee;
     const maxFeeBps = feeBpsFor(config, held.kind) + held.partnerBps;
     const shares = splitFees(settleAmount, feeBpsFor(config, held.kind), held.partnerBps, held.partnerCutBps);
-    const payout = splitN(shares.net, weights);
+    const payout = splitPayout(shares.net, weights);
     const treasury = shares.protocol > 0n ? await tokenAccountIfMissing(ctx.transport, signer, config.feeRecipient, held.inputMint, token.tokenProgram) : { create: [] };
     const partnerPaid = shares.partner > 0n;
     const partner = partnerPaid ? await tokenAccountIfMissing(ctx.transport, signer, held.partner, held.inputMint, token.tokenProgram) : { create: [] };

@@ -136,7 +136,7 @@ describe("mandates through the agent server", () => {
       partner: { account: w.feeRecipient.address, bps: 20 },
     });
     const readBack = (await ok(client, "get_mandate", { owner: w.owner.address, agent: agent.address }))["summary"] as string[];
-    expect(readBack).toContain(`Partner fee: 20 bps of the sold amount to ${w.feeRecipient.address}`);
+    expect(readBack).toContain(`Partner fee: 20 bps of the sold amount, rounded up, to ${w.feeRecipient.address}, less the protocol's partner cut fixed when the intent is created`);
     expect(readBack.join(" | ")).not.toContain("raw units");
     expect(readBack.join(" | ")).toContain(`0.0006 of ${w.inputMint}`);
     const ownerLamports = h.svm.getBalance(w.owner.address);

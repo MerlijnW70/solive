@@ -12,6 +12,7 @@ import {
   U64_MAX,
   formatTime,
   IntentCoreError,
+  type AttestedResultParams,
   type IntentParams,
   Kind,
   LONG_LIVED_SECONDS,
@@ -123,9 +124,45 @@ describe("signed intent description", () => {
   it("names the partner and its share when the intent carries one", async () => {
     const base = await own(golden);
     const shared = await describeSignedIntent({ ...base, ext: encodePartner({ key: ATTESTOR, bps: 25 }) }, options);
-    expect(shared.lines).toContain(`Partner fee: 25 bps of the sold amount to ${ATTESTOR}`);
+    expect(shared.lines).toContain(
+      `Partner fee: 25 bps of the sold amount, rounded up, to ${ATTESTOR}, less the protocol's partner cut fixed when the intent is created`,
+    );
     const plain = await describeSignedIntent(base, options);
     expect(plain.lines.some((l) => l.startsWith("Partner fee"))).toBe(false);
+  });
+
+  it("describe shows the spec hash and judge fee of a proof intent", async () => {
+    const base = await own(golden);
+    const specHash = Uint8Array.from({ length: 32 }, (_, i) => i * 7 + 1);
+    const proof: AttestedResultParams = {
+      kind: Kind.AttestedResult,
+      amountIn: 5_000_000n,
+      minResult: 1n,
+      maxResult: 1n,
+      attestor: ATTESTOR,
+      specHash,
+      judgeFee: 250_000n,
+    };
+    const d = await describeSignedIntent(
+      { ...withParams(base, proof), ext: encodePartner({ key: ATTESTOR, bps: 30 }) },
+      { ...options, inputDecimals: 6, inputName: "USDC" },
+    );
+    const specLine = d.lines.find((l) => l.includes(hexOf(specHash)));
+    expect(hexOf(specHash)).toMatch(/^[0-9a-f]{64}$/);
+    expect(specLine).toBe(`Spec hash: ${hexOf(specHash)}, the spec the judge checks the work against`);
+    expect(d.lines).toContain(
+      `Judge fee: 0.25 of USDC (${base.inputMint}), paid to ${ATTESTOR} out of the sold amount when the intent settles`,
+    );
+    expect(d.lines).toContain(
+      `Partner fee: 30 bps of the sold amount less the judge fee, rounded up, to ${ATTESTOR}, less the protocol's partner cut fixed when the intent is created`,
+    );
+    expect(d.warnings).toEqual([WARN_PROOF]);
+    const swapped = await describeSignedIntent(withParams(base, { ...proof, specHash: new Uint8Array(32).fill(9) }), options);
+    const raised = await describeSignedIntent(withParams(base, { ...proof, judgeFee: 4_000_000n }), options);
+    const plain = await describeSignedIntent(withParams(base, proof), options);
+    expect(swapped.lines.filter((l) => !l.startsWith("Digest"))).not.toEqual(plain.lines.filter((l) => !l.startsWith("Digest")));
+    expect(raised.lines.filter((l) => !l.startsWith("Digest"))).not.toEqual(plain.lines.filter((l) => !l.startsWith("Digest")));
+    expect(WARN_ATTESTOR).not.toContain("nothing is checked");
   });
 
   it("names the relayer fee and warns when it passes 1% of what is sold", async () => {

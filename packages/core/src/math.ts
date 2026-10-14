@@ -2,7 +2,17 @@ import { IntentCoreError } from "./errors.js";
 
 export const U64_MAX = (1n << 64n) - 1n;
 
+export function checkU64(value: bigint, name = "amount"): bigint {
+  if (value < 0n || value > U64_MAX) {
+    throw new RangeError(`${name} ${String(value)} is not between 0 and ${U64_MAX}`);
+  }
+  return value;
+}
+
 function quotient(a: bigint, b: bigint, d: bigint): bigint {
+  checkU64(a, "operand");
+  checkU64(b, "operand");
+  checkU64(d, "divisor");
   if (d === 0n) {
     throw new IntentCoreError("DivideByZero");
   }

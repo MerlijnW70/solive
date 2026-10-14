@@ -11,14 +11,14 @@ export type SpecMemo = { url: string };
 
 export type DeliveryMemo = { intent: Address; sha256: string; url: string };
 
-export const MEMO_URL_RULE = `an https url of at most ${MAX_MEMO_URL} printable characters without spaces, or http on localhost`;
+export const MEMO_URL_RULE = `an https url in canonical form of at most ${MAX_MEMO_URL} printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1]`;
 
 const PRINTABLE = /^[!-~]+$/;
 const SHA256 = /^[0-9a-f]{64}$/;
 const LOCAL_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 export function isMemoUrl(url: string): boolean {
-  if (url.length > MAX_MEMO_URL || !PRINTABLE.test(url)) {
+  if (url.length > MAX_MEMO_URL || !PRINTABLE.test(url) || url.includes("\\")) {
     return false;
   }
   let parsed: URL;
@@ -28,6 +28,10 @@ export function isMemoUrl(url: string): boolean {
     return false;
   }
   if (parsed.username !== "" || parsed.password !== "" || parsed.hostname === "") {
+    return false;
+  }
+  const bareOrigin = parsed.href === `${url}/` && parsed.pathname === "/" && parsed.search === "" && parsed.hash === "";
+  if (parsed.href !== url && !bareOrigin) {
     return false;
   }
   if (url.startsWith("https://")) {

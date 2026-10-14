@@ -16,6 +16,8 @@ import {
   specMemo,
   LONG_LIVED_SECONDS,
   NATIVE_MINT,
+  partnerBaseOf,
+  partnerFeeLine,
   validate,
   settlementWarnings,
   WARN_LONG_LIVED,
@@ -173,7 +175,7 @@ export const prepareCreate = define({
         `Expires: ${formatTime(expiresAt)}`,
         ...(specUrl === undefined ? [] : [`Publishes: the acceptance spec's url ${specUrl}, in a memo the owner signs`]),
         ...(elsewhere ? [`Pays to: ${recipient}, who receives what the solver pays${input.output_mint === NATIVE_MINT ? WRAPPED : ""}`] : []),
-        ...(input.partner === undefined ? [] : [`Partner fee: ${input.partner.bps} bps of the sold amount to ${input.partner.account}`]),
+        ...(input.partner === undefined ? [] : [partnerFeeLine(input.partner.bps, input.partner.account, partnerBaseOf(params))]),
         ...setupLines({
           registers: register.length > 0,
           creates: receiver.create.length > 0 && !elsewhere ? [input.output_mint] : [],

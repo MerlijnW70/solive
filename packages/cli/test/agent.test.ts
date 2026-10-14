@@ -362,7 +362,7 @@ describe("agent server against the deployed engine", () => {
       }),
     );
     expect(attested["warnings"]).toEqual([WARN_ATTESTOR, WARN_LONG_LIVED]);
-    expect(attested["summary"]).toContain(`Partner fee: 40 bps of the sold amount to ${w.feeRecipient.address}`);
+    expect(attested["summary"]).toContain(`Partner fee: 40 bps of the sold amount, rounded up, to ${w.feeRecipient.address}, less the protocol's partner cut fixed when the intent is created`);
     const thirty = await ok(client, "prepare_create", swap({ expires_in: 30 * 24 * 60 * 60 }));
     expect(thirty["warnings"]).toEqual([]);
     const limit = await ok(client, "prepare_create", swap({ order: { kind: "limit", make_amount: "10", take_amount: "20" } }));
@@ -920,7 +920,7 @@ describe("agent server against the deployed engine", () => {
     const prepared = await ok(client, "prepare_signed_intent", swap({ owner: owner.address, partner }));
     expect(prepared["submit"]).toMatchObject({ submit_by: (NOW + 3_600n).toString(), partner });
     expect(DEFAULT_SUBMIT_WITHIN).toBe(3_600);
-    expect(prepared["summary"]).toContain(`Partner fee: 25 bps of the sold amount to ${partner.account}`);
+    expect(prepared["summary"]).toContain(`Partner fee: 25 bps of the sold amount, rounded up, to ${partner.account}, less the protocol's partner cut fixed when the intent is created`);
     const [delegate] = await findDelegatePda({ owner: owner.address });
     const view = h.svm.getAccount(ownerInput);
     if (!view.exists) {

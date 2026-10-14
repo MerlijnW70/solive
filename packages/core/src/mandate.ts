@@ -1,5 +1,5 @@
 import type { Address } from "@solana/kit";
-import { formatAmount, formatTime, type TokenNames, tokenOf } from "./describe.js";
+import { formatAmount, formatTime, partnerFeeLine, type TokenNames, tokenOf } from "./describe.js";
 import { encodePartner, type Partner } from "./ext.js";
 import { Kind, kindBit } from "./kinds.js";
 
@@ -104,7 +104,7 @@ export function describeMandate(spec: MandateSpec, o: MandateContext): { lines: 
       `Price floor: at least ${formatAmount(spec.floorOut, o.outputDecimals)} of ${tokenOf(o.outputMint, o.outputName)} for every ${sell(spec.floorIn)}`,
       `Each intent expires within ${spec.maxTtl} seconds of its creation`,
       `Valid until: ${formatTime(spec.validUntil)}`,
-      ...(spec.partner === undefined ? [] : [`Partner fee: ${spec.partner.bps} bps of the sold amount to ${spec.partner.key}`]),
+      ...(spec.partner === undefined ? [] : [partnerFeeLine(spec.partner.bps, spec.partner.key)]),
       ...(agentFee === 0n
         ? []
         : [

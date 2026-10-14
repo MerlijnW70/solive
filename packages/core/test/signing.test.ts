@@ -1,7 +1,9 @@
 import { type Address, getAddressDecoder, getAddressEncoder } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import {
+  buildEd25519BatchInstruction,
   createExt,
+  MAX_ED25519_BATCH,
   describeSignedIntent,
   type DescribeOptions,
   encodeParams,
@@ -232,4 +234,21 @@ describe("what an owner reads is what an owner signs", () => {
       expect(formatTime(t + 1n), `seed ${seed}`).not.toBe(formatTime(t));
     }
   }, TIMEOUT);
+});
+
+describe("ed25519 batch", () => {
+  it("the ed25519 batch refuses more than 255 signers", () => {
+    const entry = { publicKey: TOKEN_PROGRAM_ADDRESS, signature: new Uint8Array(64).fill(3) };
+    const message = new Uint8Array([1, 2, 3]);
+    expect(MAX_ED25519_BATCH).toBe(255);
+    const full = buildEd25519BatchInstruction({ entries: Array.from({ length: 255 }, () => entry), message });
+    expect(full.data?.[0]).toBe(255);
+    expect(full.data?.length).toBe(2 + 255 * (14 + 32 + 64) + message.length);
+    for (const count of [256, 257, 511]) {
+      expect(() => buildEd25519BatchInstruction({ entries: Array.from({ length: count }, () => entry), message }), String(count)).toThrow(
+        RangeError,
+      );
+    }
+    expect(() => buildEd25519BatchInstruction({ entries: [], message })).toThrow(RangeError);
+  });
 });

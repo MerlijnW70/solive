@@ -10,6 +10,8 @@ import {
   encodeParams,
   IntentCoreError,
   Kind,
+  mulDivCeil,
+  mulDivFloor,
   type SignedIntentFields,
   splitFee,
   splitFees,
@@ -37,8 +39,27 @@ describe("fee splits", () => {
     expect(splitFee(10_000n, 30)).toEqual({ fee: 30n, net: 9_970n });
     expect(splitFee(10_001n, 30)).toEqual({ fee: 31n, net: 9_970n });
     expect(splitFee(U64_MAX, 10_000)).toEqual({ fee: U64_MAX, net: 0n });
-    expect(codeOf(() => splitFee(1n, 10_001))).toBe("InvalidParams");
-    expect(splitFee(0n, 10_001)).toEqual({ fee: 0n, net: 0n });
+  });
+
+  it("fee helpers refuse out of range inputs", () => {
+    for (const bad of [-1, 10_001, 65_535, 1.5, Number.NaN]) {
+      expect(() => splitFee(100n, bad), String(bad)).toThrow(RangeError);
+      expect(() => splitFee(0n, bad), String(bad)).toThrow(RangeError);
+      expect(() => splitFees(100n, bad, 0, 0), String(bad)).toThrow(RangeError);
+      expect(() => splitFees(100n, 0, bad, 0), String(bad)).toThrow(RangeError);
+      expect(() => splitFees(100n, 0, 1, bad), String(bad)).toThrow(RangeError);
+    }
+    expect(() => splitFee(100n, -50)).toThrow(RangeError);
+    for (const bad of [-1n, U64_MAX + 1n]) {
+      expect(() => splitFee(bad, 30)).toThrow(RangeError);
+      expect(() => splitFees(bad, 30, 0, 0)).toThrow(RangeError);
+      expect(() => mulDivFloor(bad, 1n, 1n)).toThrow(RangeError);
+      expect(() => mulDivCeil(1n, bad, 1n)).toThrow(RangeError);
+      expect(() => mulDivFloor(1n, 1n, bad)).toThrow(RangeError);
+    }
+    expect(splitFee(U64_MAX, 10_000)).toEqual({ fee: U64_MAX, net: 0n });
+    expect(splitFees(0n, 10_000, 0, 10_000)).toEqual({ protocol: 0n, partner: 0n, net: 0n });
+    expect(codeOf(() => mulDivFloor(1n, 1n, 0n))).toBe("DivideByZero");
   });
 
   it("split protocol, partner and net exactly, with the protocol cut taken from the partner", () => {
@@ -46,8 +67,6 @@ describe("fee splits", () => {
     expect(splitFees(100_000n, 0, 0, 0)).toEqual({ protocol: 0n, partner: 0n, net: 100_000n });
     expect(splitFees(100_000n, 0, 50, 10_000)).toEqual({ protocol: 500n, partner: 0n, net: 99_500n });
     expect(codeOf(() => splitFees(1n, 1, 1, 0))).toBe("InvalidParams");
-    expect(codeOf(() => splitFees(1_000_000n, 0, 100, 10_001))).toBe("InvalidParams");
-    expect(splitFees(100n, 0, 1, 10_001)).toEqual({ protocol: 1n, partner: 0n, net: 99n });
     expect(splitFees(U64_MAX, 10_000, 0, 0)).toEqual({ protocol: U64_MAX, partner: 0n, net: 0n });
   });
 
