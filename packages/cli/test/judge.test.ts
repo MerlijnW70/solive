@@ -35,11 +35,18 @@ import { balance, cli, creation, funded, h, NOW, transport, type World, world } 
 
 const removal = vi.hoisted(() => ({ refused: false, retries: [] as (number | undefined)[] }));
 const writing = vi.hoisted(() => ({ before: null as ((path: string) => Promise<void>) | null }));
+const proc = vi.hoisted(() => ({ hidden: false }));
 
 vi.mock("node:fs/promises", async (original) => {
   const actual = await original<typeof import("node:fs/promises")>();
   return {
     ...actual,
+    readdir: (async (...args: Parameters<typeof actual.readdir>) => {
+      if (proc.hidden && String(args[0]) === "/proc") {
+        throw Object.assign(new Error("ENOENT: no such file or directory, scandir '/proc'"), { code: "ENOENT" });
+      }
+      return actual.readdir(...args);
+    }) as typeof actual.readdir,
     writeFile: async (...args: Parameters<typeof actual.writeFile>) => {
       await writing.before?.(String(args[0]));
       return actual.writeFile(...args);
@@ -818,7 +825,7 @@ describe("the artifact hash", () => {
   it("the kill walk never kills a process that reused the check pid", () => {
     const check = 4000;
     const entry = (pid: number, parent: number, group: number, session: number, started: number): Running => ({ pid, parent, group, session, started, zombie: false });
-    const recorded: Recorded = { started: new Map([[check, 100], [4001, 101], [4002, 102]]), retired: new Set() };
+    const recorded: Recorded = { started: new Map([[check, 100], [4001, 101], [4002, 102]]), leaders: new Map([[check, 100], [4001, 101], [4002, 102]]) };
     const reuser = [entry(check, 1, check, check, 900), entry(4100, check, check, check, 901), entry(4101, 4100, 4101, check, 902)];
     const ours = [entry(4001, 1, 4001, 4001, 101), entry(4003, 4001, 4001, 4001, 150), entry(4004, 1, 4004, 4001, 160), entry(4005, 1, 4005, 4002, 170)];
     const older = entry(4006, 1, 4006, 4002, 90);
@@ -827,6 +834,46 @@ describe("the artifact hash", () => {
     expect(recorded.started.has(check)).toBe(false);
     const orphans = [entry(4100, 1, check, check, 901), entry(4101, 1, 4101, check, 902)];
     expect(pids([...orphans, ...ours])).toEqual([4001, 4003, 4004, 4005]);
+  });
+
+  it("a reused pid that was never a session leader of the check is not killed", () => {
+    const check = 5000;
+    const entry = (pid: number, parent: number, group: number, session: number, started: number): Running => ({ pid, parent, group, session, started, zombie: false });
+    const recorded: Recorded = { started: new Map([[check, 100]]), leaders: new Map([[check, 100]]) };
+    const pids = (table: Running[]) => claim(table, recorded).map((running) => running.pid);
+    expect(pids([entry(check, 1, check, check, 100), entry(5001, check, check, check, 110)])).toEqual([check, 5001]);
+    expect([...recorded.leaders.keys()]).toEqual([check]);
+    const daemon = entry(5100, 1, 5100, 5001, 400);
+    const grandchild = entry(5101, 5100, 5100, 5001, 410);
+    expect(pids([entry(check, 1, check, check, 100), daemon, grandchild])).toEqual([check]);
+    const leftover = entry(5200, 1, 5200, check, 300);
+    expect(pids([leftover, daemon, grandchild])).toEqual([5200]);
+  });
+
+  it("without proc leftovers after exit are reported", { skip: process.platform === "win32", timeout: 30_000 }, async () => {
+    const dir = await mkdtemp(join(tmpdir(), "judge-noproc-"));
+    const pidFile = join(dir, "left");
+    const warned: string[] = [];
+    const writes = vi.spyOn(process.stderr, "write").mockImplementation((text) => {
+      warned.push(String(text));
+      return true;
+    });
+    let left = 0;
+    proc.hidden = true;
+    try {
+      const check = await runCheck(`sleep 600 > /dev/null 2>&1 &\necho $! > "${pidFile}"\nexit 0`, process.env, TIMEOUT_SECONDS * 10, { cwd: dir });
+      left = Number(await readFile(pidFile, "utf8"));
+      expect(check).toEqual({ exitCode: 0, timedOut: false, escaped: [left] });
+      expect(warned.join("")).toContain(leftRunning([left]));
+      expect(() => process.kill(left, 0)).not.toThrow();
+    } finally {
+      proc.hidden = false;
+      writes.mockRestore();
+      if (left > 0) {
+        spawnSync("kill", ["-KILL", String(left)]);
+      }
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("an escaped process is reported, not ignored", { skip: process.platform !== "linux", timeout: 30_000 }, async () => {

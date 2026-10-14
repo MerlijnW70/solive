@@ -163,7 +163,7 @@ const quietly = (pid: number) => {
 
 export type Running = { pid: number; parent: number; group: number; session: number; started: number; zombie: boolean };
 
-export type Recorded = { started: Map<number, number>; retired: Set<number> };
+export type Recorded = { started: Map<number, number>; leaders: Map<number, number> };
 
 function parseStat(pid: number, line: string): Running {
   const fields = line.slice(line.lastIndexOf(")") + 2).split(" ");
@@ -202,25 +202,25 @@ async function processTable(): Promise<Running[] | null> {
 
 export function claim(table: readonly Running[], recorded: Recorded): Running[] {
   const byPid = new Map(table.map((running) => [running.pid, running]));
-  for (const [pid, started] of recorded.started) {
-    if ((byPid.get(pid)?.started ?? started) !== started) {
-      recorded.started.delete(pid);
-      recorded.retired.add(pid);
+  for (const records of [recorded.started, recorded.leaders]) {
+    for (const [pid, started] of records) {
+      if ((byPid.get(pid)?.started ?? started) !== started) {
+        records.delete(pid);
+      }
     }
   }
   const leads = (leader: number) => {
     const started = recorded.started.get(leader);
     return started !== undefined && byPid.get(leader)?.started === started;
   };
-  const inSession = (running: Running) => {
-    const started = recorded.started.get(running.session);
-    if (started === undefined) {
-      return false;
-    }
-    const leader = byPid.get(running.session);
-    return leader === undefined ? running.started >= started : leader.started === started;
-  };
   const owned = new Set<number>();
+  const inSession = (running: Running) => {
+    if (owned.has(running.session)) {
+      return true;
+    }
+    const started = recorded.leaders.get(running.session);
+    return started !== undefined && !byPid.has(running.session) && running.started >= started;
+  };
   let grew = true;
   while (grew) {
     grew = false;
@@ -234,7 +234,9 @@ export function claim(table: readonly Running[], recorded: Recorded): Running[] 
   const claimed = table.filter((running) => owned.has(running.pid));
   for (const running of claimed) {
     recorded.started.set(running.pid, running.started);
-    recorded.retired.delete(running.pid);
+    if (running.pid === running.session) {
+      recorded.leaders.set(running.pid, running.started);
+    }
   }
   return claimed;
 }
@@ -245,6 +247,26 @@ function pkillSession(session: number): Promise<void> {
     killer.once("error", () => done());
     killer.once("exit", () => done());
   });
+}
+
+function listed(command: string, args: readonly string[]): Promise<number[] | null> {
+  return new Promise((done) => {
+    const lister = spawn(command, args, { stdio: ["ignore", "pipe", "ignore"] });
+    let out = "";
+    lister.stdout.setEncoding("utf8");
+    lister.stdout.on("data", (chunk: string) => {
+      out += chunk;
+    });
+    lister.once("error", () => done(null));
+    lister.once("close", (code) => {
+      done(code === 0 || code === 1 ? out.split(/\s+/).filter((field) => /^\d+$/.test(field)).map(Number) : null);
+    });
+  });
+}
+
+async function sessionMembers(session: number): Promise<number[]> {
+  const found = (await listed("pgrep", ["-s", String(session)])) ?? (await listed("ps", ["-o", "pid=", "-g", String(session)])) ?? [];
+  return [...new Set(found)].filter((pid) => pid !== process.pid && pid !== session);
 }
 
 type Watch = { pid: number; started: number | null; recorded: Recorded; alive: boolean; marker: string | undefined; cwd: string | undefined };
@@ -300,8 +322,16 @@ async function sweep(watch: Watch, report: boolean): Promise<number[]> {
       if (watch.alive) {
         quietly(-watch.pid);
         await pkillSession(watch.pid);
+        return [];
       }
-      return [];
+      if (!report) {
+        return [];
+      }
+      const left = await sessionMembers(watch.pid);
+      if (left.length > 0) {
+        warn(leftRunning(left));
+      }
+      return left;
     }
     const owned = claim(table, watch.recorded);
     const live = owned.filter(living);
@@ -347,7 +377,10 @@ export function runCheck(command: string, env: NodeJS.ProcessEnv, timeoutSeconds
     const watch: Watch = {
       pid: child.pid ?? 0,
       started: seed?.started ?? null,
-      recorded: { started: new Map(seed === null ? [] : [[seed.pid, seed.started]]), retired: new Set() },
+      recorded: {
+        started: new Map(seed === null ? [] : [[seed.pid, seed.started]]),
+        leaders: new Map(seed === null || seed.pid !== seed.session ? [] : [[seed.pid, seed.started]]),
+      },
       alive: true,
       marker: env[ENV_SPEC_PATH] === undefined ? undefined : `${ENV_SPEC_PATH}=${env[ENV_SPEC_PATH]}`,
       cwd: options.cwd === undefined ? undefined : resolve(options.cwd),
