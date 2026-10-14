@@ -780,8 +780,13 @@ export const DELIVERY_LIST = DELIVERY_PAGES * SIGNATURE_PAGE * MEMOS_PER_TRANSAC
 
 export const DELIVERED_NEEDED = "a proof escrow pays the earliest announcer of the work it releases for, so give that work's sha256";
 
-export const HISTORY_TOO_LONG =
-  "the record of announced work is incomplete, so the earliest announcer of the delivered work cannot be known and nothing is released from it; either this wallet's history since the escrow was made is longer than the pages read, which more pages fix, or the RPC node's ledger does not reach back to the escrow's creation, or the transport cannot page signatures or report its first available slot, which more pages do not fix: use an RPC node that keeps the full ledger";
+export const ATTEST_PAGES = 1_000;
+
+export const MAX_ATTEST_PAGES = 100_000;
+
+const MAX_PAGES_INPUT = `pages of ${SIGNATURE_PAGE} signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default ${ATTEST_PAGES}; raise it when the release is refused because the record of announced work is incomplete`;
+
+export const HISTORY_TOO_LONG = `the record of announced work is incomplete, so the earliest announcer of the delivered work cannot be known and nothing is released from it; either this wallet's history since the escrow was made is longer than the pages read, which more pages fix: pass a higher max_pages, up to ${MAX_ATTEST_PAGES}, to ${tool("wallet_attest")} or ${tool("wallet_attest_split")}; or the RPC node's ledger does not reach back to the escrow's creation, or the transport cannot page signatures or report its first available slot, which more pages do not fix: use an RPC node that keeps the full ledger`;
 
 const walletCheckDelivery = define({
   name: tool("wallet_check_delivery"),
@@ -911,6 +916,7 @@ const walletAttest = define({
     pay_to: account("the wallet to pay"),
     result: optional(amount("the result to attest, between the intent's min_result and max_result; default min_result")),
     delivered_sha256: optional(text(`the sha256, as 64 hex digits, of the work this release pays for; required for a proof escrow, whose release pays that work's earliest announcer; recorded in a memo this wallet signs with the release, so the payer can check what it receives with ${tool("wallet_receipt")}`)),
+    max_pages: optional(integer(1, MAX_ATTEST_PAGES, MAX_PAGES_INPUT)),
     approval: optional(text("the approval the preview returned; needed with send")),
     send: optional(flag("true signs the attestation and settles; leave out to preview")),
   }),
@@ -1015,7 +1021,7 @@ const walletAttest = define({
       throw new InvalidInput([{ path: "delivered_sha256", message: DELIVERED_NEEDED }]);
     }
     if (delivered !== undefined && isProof) {
-      const record = await deliveryRecord(ctx.transport, signer.address, intent);
+      const record = await deliveryRecord(ctx.transport, signer.address, intent, input.max_pages ?? ATTEST_PAGES);
       if (!record.complete) {
         throw new AgentRefusal("HistoryTooLong", HISTORY_TOO_LONG);
       }
@@ -1106,6 +1112,7 @@ const walletAttestSplit = define({
     result: optional(amount("the result to attest, between the intent's min_result and max_result; default min_result")),
     lookup_table: optional(account("an address lookup table holding this split's lookup_accounts, to fit more co-authors under the transaction size limit; create one with the preview's lookup_accounts and pass it with send")),
     delivered_sha256: optional(text(`the sha256, as 64 hex digits, of the work this release pays for; required, since a release recording it must include that work's earliest announcer among the recipients; recorded in a memo this wallet signs with the release, or right after it when the release has no room for the memo, so the payer can check what it receives with ${tool("wallet_receipt")}`)),
+    max_pages: optional(integer(1, MAX_ATTEST_PAGES, MAX_PAGES_INPUT)),
     approval: optional(text("the approval the preview returned; needed with send")),
     send: optional(flag("true signs the attestation and settles; leave out to preview")),
   }),
@@ -1169,7 +1176,7 @@ const walletAttestSplit = define({
       throw new InvalidInput([{ path: "delivered_sha256", message: DELIVERED_NEEDED }]);
     }
     const delivered = sha256Of(input.delivered_sha256, "delivered_sha256");
-    const record = await deliveryRecord(ctx.transport, signer.address, intent);
+    const record = await deliveryRecord(ctx.transport, signer.address, intent, input.max_pages ?? ATTEST_PAGES);
     if (!record.complete) {
       throw new AgentRefusal("HistoryTooLong", HISTORY_TOO_LONG);
     }
@@ -1374,6 +1381,9 @@ export const recipientsUnread = (release: string) =>
 export const followUpsUnknown = (release: string) =>
   `the history after the release ${release} could not be read in full: it is longer than the pages read, the RPC node could not return some of its transactions yet, or it is too long to show that the escrow address was not made again since, so whether a follow-up already records a delivered sha256 for it is unknown and nothing more is recorded; when the node lagged, call again in a few seconds`;
 
+export const historyLagging = (release: string, intent: string) =>
+  `the node has not returned every transaction yet; call again in a few seconds: the history of the escrow ${intent} before the release ${release} holds a transaction the RPC node could not return, so where the escrow was made is not known yet and nothing is recorded`;
+
 export const otherLifecycle = (release: string, intent: string) =>
   `the release ${release} belongs to an earlier lifecycle of the escrow address ${intent}, which was closed and made again at the same nonce since, so it is not a release of the escrow there now; leave release out to read the current one`;
 
@@ -1439,10 +1449,17 @@ export async function recordingOf(
   if (recorded !== null) {
     throw new AgentRefusal("AlreadyRecorded", alreadyRecorded(recorded));
   }
+  if (lookup.lagged === true) {
+    throw new AgentRefusal("HistoryLagging", historyLagging(tx.signature, intent));
+  }
   if (!complete || !lookup.bound) {
     throw new AgentRefusal("HistoryTooLong", coverageOf(transport, followUpsUnknown(tx.signature)));
   }
-  const creation = lookup.creation !== undefined ? lookup.creation : (await aroundRelease(transport, intent, tx)).creation;
+  const around = lookup.creation !== undefined ? null : await aroundRelease(transport, intent, tx);
+  if (around?.lagged === true) {
+    throw new AgentRefusal("HistoryLagging", historyLagging(tx.signature, intent));
+  }
+  const creation = around === null ? (lookup.creation ?? null) : around.creation;
   const held = await intentAt(transport, intent);
   const record = await announcedFor(transport, judge.address, intent, held !== null && !outlives(held, tx, creation) ? held : null, creation, tx);
   if (!record.complete) {
@@ -1790,6 +1807,7 @@ export type ReleaseLookup = {
   bound: boolean;
   creation?: EngineTransaction | null;
   later?: boolean;
+  lagged?: boolean;
 };
 
 export const LIFECYCLE_FETCHES = SIGNATURE_PAGE;
@@ -1902,7 +1920,10 @@ export async function releaseLookup(transport: Transport, intent: Address): Prom
   return { release: null, transactions: scanned.transactions, complete: scanned.complete && !unreadIn(scanned.transactions), bound: true };
 }
 
-export type AroundRelease = { followUps: EngineTransaction[]; creation: EngineTransaction | null; later: boolean; complete: boolean };
+export type AroundRelease = { followUps: EngineTransaction[]; creation: EngineTransaction | null; later: boolean; complete: boolean; lagged?: boolean };
+
+const atOrBefore = (entry: ListedSignature, release: EngineTransaction): boolean =>
+  entry.slot <= release.slot || (entry.blockTime !== null && release.blockTime !== null && entry.blockTime <= release.blockTime);
 
 export async function aroundRelease(transport: Transport, intent: Address, release: EngineTransaction): Promise<AroundRelease> {
   const { signaturesOf, transactionsOf } = transport;
@@ -1918,12 +1939,19 @@ export async function aroundRelease(transport: Transport, intent: Address, relea
       complete: at >= 0 && !unreadIn(followUps),
     };
   }
+  const held = await intentAt(transport, intent);
+  const current = held !== null && release.blockTime !== null && !outlives(held, release, null);
+  const candidate = (entry: ListedSignature): boolean =>
+    !entry.failed && (current ? entry.blockTime !== null && entry.blockTime === held?.createdAt : atOrBefore(entry, release));
   const named: ListedSignature[] = [];
   let reached = false;
   let creation: EngineTransaction | null = null;
   let settled = false;
+  let capped = false;
+  let lagged = false;
+  let spent = 0;
   let before: string | undefined;
-  for (let page = 1; page <= RELEASE_PAGES && !settled; page++) {
+  for (let page = 1; page <= RELEASE_PAGES && !(reached && settled); page++) {
     const listed = await signaturesOf.call(transport, intent, SIGNATURE_PAGE, before);
     let older = listed;
     if (!reached) {
@@ -1932,11 +1960,22 @@ export async function aroundRelease(transport: Transport, intent: Address, relea
       reached = end >= 0;
       older = end < 0 ? [] : listed.slice(listed[end]?.signature === release.signature ? end + 1 : end);
     }
-    for (const tx of await fetched(transport, older.filter((entry) => !entry.failed))) {
-      if (tx.unread === true || createdIn(tx, intent)) {
-        creation = tx.unread === true ? null : tx;
+    const wanted = settled ? [] : older.filter(candidate);
+    for (let at = 0; at < wanted.length && !settled; at += TRANSACTION_FETCHES) {
+      if (spent >= LIFECYCLE_FETCHES) {
+        capped = !current;
         settled = true;
         break;
+      }
+      const batch = wanted.slice(at, at + Math.min(TRANSACTION_FETCHES, LIFECYCLE_FETCHES - spent));
+      spent += batch.length;
+      for (const tx of await transactionsOf.call(transport, batch)) {
+        if (tx.unread === true || createdIn(tx, intent)) {
+          creation = tx.unread === true ? null : tx;
+          lagged = tx.unread === true && !current;
+          settled = true;
+          break;
+        }
       }
     }
     before = listed[listed.length - 1]?.signature;
@@ -1945,7 +1984,7 @@ export async function aroundRelease(transport: Transport, intent: Address, relea
     }
   }
   const followUps = await fetched(transport, named);
-  return { followUps, creation, later: false, complete: reached && !unreadIn(followUps) };
+  return { followUps, creation, later: false, complete: reached && !capped && !lagged && !unreadIn(followUps), ...(lagged ? { lagged } : {}) };
 }
 
 export async function namedRelease(transport: Transport, intent: Address, signature: string): Promise<ReleaseLookup> {
@@ -1967,6 +2006,7 @@ export async function namedRelease(transport: Transport, intent: Address, signat
     bound: true,
     creation: around.creation,
     later: around.later,
+    ...(around.lagged === true ? { lagged: true } : {}),
   };
 }
 

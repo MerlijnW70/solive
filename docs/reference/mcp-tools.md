@@ -156,6 +156,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | `pay_to` | address | yes | the wallet to pay |
 | `result` | whole number as a decimal string | no | the result to attest, between the intent's min_result and max_result; default min_result |
 | `delivered_sha256` | string | no | the sha256, as 64 hex digits, of the work this release pays for; required for a proof escrow, whose release pays that work's earliest announcer; recorded in a memo this wallet signs with the release, so the payer can check what it receives with solive_wallet_receipt |
+| `max_pages` | integer 1..100000 | no | pages of 1000 signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default 1000; raise it when the release is refused because the record of announced work is incomplete |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs the attestation and settles; leave out to preview |
 
@@ -175,6 +176,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | `result` | whole number as a decimal string | no | the result to attest, between the intent's min_result and max_result; default min_result |
 | `lookup_table` | address | no | an address lookup table holding this split's lookup_accounts, to fit more co-authors under the transaction size limit; create one with the preview's lookup_accounts and pass it with send |
 | `delivered_sha256` | string | no | the sha256, as 64 hex digits, of the work this release pays for; required, since a release recording it must include that work's earliest announcer among the recipients; recorded in a memo this wallet signs with the release, or right after it when the release has no room for the memo, so the payer can check what it receives with solive_wallet_receipt |
+| `max_pages` | integer 1..100000 | no | pages of 1000 signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default 1000; raise it when the release is refused because the record of announced work is incomplete |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs the attestation and settles; leave out to preview |
 

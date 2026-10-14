@@ -53,6 +53,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `NotReleased` | no | the escrow has no release in its history, so no delivery can be recorded for it |
 | `NotARelease` | no | the transaction named as the release is not a release of this escrow |
 | `ReleaseUnread` | yes | the RPC node could not return the named release transaction; call again in a few seconds |
+| `HistoryLagging` | yes | the RPC node has not returned every transaction the call reads yet; call again in a few seconds |
 | `OtherLifecycle` | no | the named release belongs to an earlier lifecycle of this escrow address, which was closed and made again at the same nonce, so it is not a release of the escrow there now |
 | `AlreadyRecorded` | no | the release already records a delivered sha256, in its own memo or a follow-up, and a receipt reads the first |
 | `HistoryTooLong` | no | the record a release depends on is incomplete, so it is refused rather than decided from part of it: the history is longer than the pages read, which more pages fix, or the RPC node's ledger does not reach back to the escrow's creation, or the transport cannot page signatures or report its first available slot, which more pages do not fix |

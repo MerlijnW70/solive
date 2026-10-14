@@ -67,6 +67,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   BlockhashExpired,
   Charged,
+  DELIVERY_PAGES,
   DELIVERY_SCAN,
   type EngineTransaction,
   FailedOnChain,
@@ -92,8 +93,12 @@ import {
   DELIVERED_NEEDED,
   ESTIMATE_NEXT,
   ESTIMATE_SCAN,
+  ATTEST_PAGES,
   creationUnread,
   escrowGone,
+  historyLagging,
+  LIFECYCLE_FETCHES,
+  MAX_ATTEST_PAGES,
   FILL_UNKNOWN,
   followUpsUnknown,
   otherLifecycle,
@@ -1983,6 +1988,205 @@ describe("the wallet server", () => {
     expect((await call(client, "wallet_record_delivery", recording)).value).toMatchObject({ code: "HistoryTooLong", hint: followUpsUnknown(release.signature) });
     h.engineLog = [answered, release];
     expect(await ok(client, "wallet_receipt", { nonce: "17" })).toMatchObject({ released: true, delivered_sha256: work });
+    h.engineLog = [];
+  });
+
+  function routedThrough(logs: ReadonlyMap<Address, EngineTransaction[]>, other: EngineTransaction[], fetched: string[]) {
+    const listed = (tx: EngineTransaction): ListedSignature => ({
+      signature: tx.signature,
+      slot: tx.slot,
+      blockTime: tx.blockTime,
+      failed: tx.failed,
+      memo: tx.memos === undefined ? null : tx.memos.map((text) => `[${text.length}] ${text}`).join("; "),
+    });
+    const known = new Map<string, EngineTransaction>();
+    const positions = new Map<EngineTransaction[], Map<string, number>>();
+    for (const log of [...logs.values(), other]) {
+      positions.set(log, new Map(log.map((tx, i) => [tx.signature, i])));
+      for (const tx of log) {
+        known.set(tx.signature, tx);
+      }
+    }
+    const logOf = (of?: Address) => (of === undefined ? other : (logs.get(of) ?? other));
+    return {
+      ...transport,
+      engineTransactions: async (limit: number, of?: Address) => logOf(of).slice(0, limit),
+      signaturesOf: async (of: Address, limit: number, before?: string) => {
+        const log = logOf(of);
+        const start = before === undefined ? 0 : (positions.get(log)?.get(before) ?? -1) + 1;
+        return log.slice(start, start + limit).map(listed);
+      },
+      transactionsOf: async (wanted: readonly ListedSignature[]) => {
+        fetched.push(...wanted.map((entry) => entry.signature));
+        return wanted.flatMap((entry) => known.get(entry.signature) ?? []);
+      },
+      transactionOf: async (signature: string) => {
+        fetched.push(signature);
+        return known.get(signature) ?? null;
+      },
+    } satisfies Transport;
+  }
+
+  async function connectThrough(routed: Transport) {
+    h.through = routed;
+    return connect(["mcp", "--url", "devnet", "--wallet"]);
+  }
+
+  const earlierTransfers = (count: number, from = 0) => zeroTransfers(count, from).map((tx) => ({ ...tx, slot: 2n }));
+
+  const floodFetches = (fetched: readonly string[]) => fetched.filter((signature) => signature.startsWith("transfer")).length;
+
+  it("a flood before the release does not make a named receipt fetch it", async () => {
+    const { wallet, owner, intent, nonce, attestedTo } = await releasedEscrow("56");
+    const payee = await findAssociatedTokenAddress({ owner: (await generateKeyPairSigner()).address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const work = "f6".repeat(32);
+    const createdAt = createdAtOfEscrow(intent);
+    const made = { ...createdFrom(intent), blockTime: createdAt };
+    const release = {
+      signature: "5".repeat(87) + "d",
+      slot: 3n,
+      blockTime: createdAt + 5n,
+      failed: false,
+      emitted: [attestedTo(payee)],
+      memos: [releaseMemo(work)],
+      memoSigners: [[wallet]],
+      feePayer: wallet,
+    } satisfies EngineTransaction;
+    const flood = 4 * LIFECYCLE_FETCHES;
+    const args = { owner, nonce, sha256: work, release: release.signature };
+    const receipt = { intent, released: true, signature: release.signature, delivered_sha256: work, matches: true };
+    const fetched: string[] = [];
+    const before = [release, ...earlierTransfers(flood), made];
+    const around = [...zeroTransfers(flood, flood), ...before];
+    for (const log of [before, around]) {
+      fetched.length = 0;
+      const routed = await connectThrough(routedThrough(new Map(), log, fetched));
+      const read = await ok(routed, "wallet_receipt", args);
+      expect(read).toMatchObject(receipt);
+      expect(read).not.toHaveProperty("complete");
+      expect(floodFetches(fetched)).toBe(0);
+      expect(fetched.length).toBeLessThanOrEqual(2);
+    }
+    closeAccount(intent);
+    fetched.length = 0;
+    const closed = await connectThrough(routedThrough(new Map(), around, fetched));
+    expect(await ok(closed, "wallet_receipt", args)).toMatchObject(receipt);
+    expect(fetched.length).toBeLessThanOrEqual(LIFECYCLE_FETCHES + 1);
+    h.through = null;
+    h.engineLog = [];
+  }, 60_000);
+
+  it("record delivery stays cheap with a flood before the release", async () => {
+    const { wallet, owner, intent, nonce, attestedTo, announce } = await releasedEscrow("57");
+    const worker = (await generateKeyPairSigner()).address;
+    const payee = await findAssociatedTokenAddress({ owner: worker, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const vault = (await generateKeyPairSigner()).address;
+    const work = "f7".repeat(32);
+    const createdAt = createdAtOfEscrow(intent);
+    const made = { ...createdFrom(intent), blockTime: createdAt };
+    const release = {
+      signature: "5".repeat(87) + "c",
+      slot: 3n,
+      blockTime: createdAt + 5n,
+      failed: false,
+      emitted: [attestedTo(payee)],
+      feePayer: wallet,
+      tokens: [{ account: vault, mint: NATIVE_MINT, owner: intent }],
+    } satisfies EngineTransaction;
+    const judged = [announce("announced", 2n, worker, work)];
+    const args = { owner, nonce, sha256: work, release: release.signature };
+    const recorded = { intent, release: release.signature, sha256: work, memo: followUpMemo(work, release.signature), sent: false };
+    const flood = 4 * LIFECYCLE_FETCHES;
+    const fetched: string[] = [];
+    const routed = async (log: EngineTransaction[]) => {
+      fetched.length = 0;
+      return connectThrough(routedThrough(new Map([[wallet, judged]]), log, fetched));
+    };
+    const before = [release, ...earlierTransfers(flood), made];
+    const around = [...zeroTransfers(flood, flood), ...before];
+    for (const log of [before, around]) {
+      expect(await ok(await routed(log), "wallet_record_delivery", args)).toMatchObject(recorded);
+      expect(floodFetches(fetched)).toBe(0);
+      expect(fetched.length).toBeLessThanOrEqual(3);
+    }
+    closeAccount(intent);
+    const capped = await routed(around);
+    expect((await call(capped, "wallet_record_delivery", args)).value).toMatchObject({ code: "HistoryTooLong", hint: followUpsUnknown(release.signature) });
+    expect(fetched.length).toBeLessThanOrEqual(LIFECYCLE_FETCHES + 1);
+    const short = [...zeroTransfers(flood, flood), release, ...earlierTransfers(LIFECYCLE_FETCHES - 10), made];
+    expect(await ok(await routed(short), "wallet_record_delivery", args)).toMatchObject(recorded);
+    expect(fetched.length).toBeLessThanOrEqual(LIFECYCLE_FETCHES + 2);
+    h.through = null;
+    h.engineLog = [];
+  }, 60_000);
+
+  it("attest takes max pages and passes a flooded judge", async () => {
+    const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
+    h.watched.push(wallet);
+    h.engineLog = [];
+    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: "5b".repeat(32), send: true });
+    const intent = escrow["intent"] as Address;
+    const nonce = escrow["nonce"] as string;
+    const worker = (await generateKeyPairSigner()).address;
+    const other = (await generateKeyPairSigner()).address;
+    const work = "f8".repeat(32);
+    const announced = { signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [deliveryMemo({ intent, sha256: work, url: "https://example.org/work" })], feePayer: worker };
+    const judged = [...zeroTransfers(DELIVERY_PAGES * SIGNATURE_PAGE + 10), announced];
+    const fetched: string[] = [];
+    const flooded = await connectThrough(routedThrough(new Map([[wallet, judged]]), [creation(intent)], fetched));
+    const release = { owner: wallet, nonce, pay_to: worker, delivered_sha256: work };
+    expect(await ok(flooded, "wallet_attest", release)).toMatchObject({ delivered_sha256: work, sent: false });
+    expect(floodFetches(fetched)).toBe(0);
+    expect(HISTORY_TOO_LONG).toContain("max_pages");
+    const refused = { code: "HistoryTooLong", hint: HISTORY_TOO_LONG };
+    expect((await call(flooded, "wallet_attest", { ...release, max_pages: 1 })).value).toMatchObject(refused);
+    expect(await ok(flooded, "wallet_attest", { ...release, max_pages: DELIVERY_PAGES + 1 })).toMatchObject({ delivered_sha256: work, sent: false });
+    expect((await call(flooded, "wallet_attest", { ...release, max_pages: 0 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "max_pages" }] });
+    expect((await call(flooded, "wallet_attest", { ...release, max_pages: MAX_ATTEST_PAGES + 1 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "max_pages" }] });
+    const split = { owner: wallet, nonce, recipients: [{ wallet: worker, weight: 5000 }, { wallet: other, weight: 5000 }], delivered_sha256: work };
+    expect(await ok(flooded, "wallet_attest_split", split)).toMatchObject({ delivered_sha256: work, sent: false });
+    expect((await call(flooded, "wallet_attest_split", { ...split, max_pages: 1 })).value).toMatchObject(refused);
+    expect(await ok(flooded, "wallet_attest_split", { ...split, max_pages: DELIVERY_PAGES + 1 })).toMatchObject({ delivered_sha256: work, sent: false });
+    expect(ATTEST_PAGES).toBeGreaterThanOrEqual(1_000);
+    h.through = null;
+    h.engineLog = [];
+  }, 120_000);
+
+  it("an unread transaction near the release asks to call again", async () => {
+    const { wallet, owner, intent, nonce, attestedTo, announce } = await releasedEscrow("58");
+    const worker = (await generateKeyPairSigner()).address;
+    const payee = await findAssociatedTokenAddress({ owner: worker, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const vault = (await generateKeyPairSigner()).address;
+    const work = "f9".repeat(32);
+    const made = createdFrom(intent);
+    closeAccount(intent);
+    const release = {
+      signature: "5".repeat(87) + "b",
+      slot: 3n,
+      blockTime: null,
+      failed: false,
+      emitted: [attestedTo(payee)],
+      feePayer: wallet,
+      tokens: [{ account: vault, mint: NATIVE_MINT, owner: intent }],
+    } satisfies EngineTransaction;
+    const lagging = { signature: "lagging-near-release", slot: 2n, blockTime: null, failed: false, emitted: [], unread: true as const } satisfies EngineTransaction;
+    const answered = { signature: lagging.signature, slot: 2n, blockTime: null, failed: false, emitted: [] } satisfies EngineTransaction;
+    const announced = announce("announced", 2n, worker, work);
+    const args = { owner, nonce, sha256: work, release: release.signature };
+    h.through = pagedThrough(() => [release, lagging, announced, made], []);
+    const lagged = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const refused = (await call(lagged, "wallet_record_delivery", args)).value;
+    expect(refused).toMatchObject({ code: "HistoryLagging", retryable: true, hint: historyLagging(release.signature, intent) });
+    expect(historyLagging(release.signature, intent)).toContain("the node has not returned every transaction yet; call again");
+    expect(refused).not.toMatchObject({ hint: escrowGone(intent) });
+    expect(await ok(lagged, "wallet_receipt", { owner, nonce, release: release.signature })).toMatchObject({ released: true, complete: false });
+    h.through = pagedThrough(() => [release, answered, announced, made], []);
+    const read = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    expect(await ok(read, "wallet_record_delivery", args)).toMatchObject({ intent, release: release.signature, sha256: work, sent: false });
+    h.through = pagedThrough(() => [release, answered, announced], []);
+    const gone = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    expect((await call(gone, "wallet_record_delivery", args)).value).toMatchObject({ code: "HistoryTooLong", hint: escrowGone(intent) });
+    h.through = null;
     h.engineLog = [];
   });
 
