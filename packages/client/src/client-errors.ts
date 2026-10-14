@@ -1,0 +1,67 @@
+import type { Address } from "@solana/kit";
+
+export class NoFreeNonce extends Error {
+  readonly owner: Address;
+
+  constructor(owner: Address) {
+    super(`every nonce in the window of ${owner} is used; advance the nonce window first`);
+    this.name = "NoFreeNonce";
+    this.owner = owner;
+  }
+}
+
+export class NotSettleable extends Error {
+  readonly intent: Address;
+
+  constructor(intent: Address, reason: string) {
+    super(`intent ${intent} ${reason}`);
+    this.name = "NotSettleable";
+    this.intent = intent;
+  }
+}
+
+export class NotFillable extends Error {
+  readonly intent: Address;
+
+  constructor(intent: Address, reason: string) {
+    super(`intent ${intent} ${reason}`);
+    this.name = "NotFillable";
+    this.intent = intent;
+  }
+}
+
+export class PayToNotWallet extends Error {
+  readonly payTo: Address;
+  readonly program: Address;
+
+  constructor(payTo: Address, program: Address) {
+    super(`payTo ${payTo} belongs to the program ${program}, not to a wallet, so nothing paid to it could be spent; give a wallet address`);
+    this.name = "PayToNotWallet";
+    this.payTo = payTo;
+    this.program = program;
+  }
+}
+
+export class PayeeMoved extends Error {
+  readonly payTo: Address;
+  readonly account: Address;
+
+  constructor(payTo: Address, account: Address) {
+    super(`the token account ${account} of payTo ${payTo} is no longer held by ${payTo} for this mint, so a release to it would not reach ${payTo}`);
+    this.name = "PayeeMoved";
+    this.payTo = payTo;
+    this.account = account;
+  }
+}
+
+export class EscrowExpired extends Error {
+  readonly intent: Address;
+  readonly expiresAt: bigint;
+
+  constructor(intent: Address, expiresAt: bigint) {
+    super(`intent ${intent} expired at ${expiresAt}; its owner gets it back instead`);
+    this.name = "EscrowExpired";
+    this.intent = intent;
+    this.expiresAt = expiresAt;
+  }
+}
