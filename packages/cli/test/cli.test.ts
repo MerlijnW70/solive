@@ -1347,6 +1347,7 @@ describe("process plumbing", () => {
       "engineTransactions",
       "signaturesOf",
       "transactionsOf",
+      "transactionOf",
       "firstAvailableSlot",
       "intents",
     ]);

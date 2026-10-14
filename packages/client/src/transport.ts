@@ -26,16 +26,21 @@ export type AccountView = { owner: Address; data: Uint8Array; lamports: bigint; 
 
 export type ProgramAccount = { address: Address; data: Uint8Array };
 
+export type TokenHolding = { account: Address; mint: Address; owner?: Address };
+
 export type EngineTransaction = {
   signature: string;
   slot: bigint;
   blockTime: bigint | null;
   failed: boolean;
   emitted: Uint8Array[];
+  emittedAccounts?: Address[][];
   memos?: string[];
   memoSigners?: Address[][];
   feePayer?: Address;
   called?: Uint8Array[];
+  calledAccounts?: Address[][];
+  tokens?: TokenHolding[];
   unread?: true;
 };
 
@@ -63,6 +68,7 @@ export interface Transport {
   engineTransactions(limit: number, of?: Address, memo?: string): Promise<EngineTransaction[]>;
   signaturesOf?(of: Address, limit: number, before?: string): Promise<ListedSignature[]>;
   transactionsOf?(listed: readonly ListedSignature[]): Promise<EngineTransaction[]>;
+  transactionOf?(signature: string): Promise<EngineTransaction | null>;
   firstAvailableSlot?(): Promise<bigint>;
   recentFees(accounts: readonly Address[]): Promise<bigint[]>;
   budget(instructions: readonly Instruction[], feePayer: Address, tables?: LookupTables): Promise<Instruction[]>;
@@ -135,6 +141,8 @@ export type RpcLike = {
     signature: Signature,
     config: { encoding: "json"; maxSupportedTransactionVersion: 0; commitment: "confirmed" },
   ): Pending<{
+    slot?: bigint;
+    blockTime?: bigint | null;
     transaction: {
       message: {
         accountKeys: readonly Address[];
@@ -143,11 +151,32 @@ export type RpcLike = {
       };
     };
     meta: {
+      err?: unknown;
       loadedAddresses?: { writable: readonly Address[]; readonly: readonly Address[] };
-      innerInstructions?: readonly { instructions: readonly { programIdIndex: number; data: string }[] }[] | null;
+      innerInstructions?: readonly { instructions: readonly { programIdIndex: number; accounts?: readonly number[]; data: string }[] }[] | null;
+      preTokenBalances?: readonly TokenBalance[] | null;
+      postTokenBalances?: readonly TokenBalance[] | null;
     } | null;
   } | null>;
 };
+
+type TokenBalance = { accountIndex: number; mint: string; owner?: string };
+
+export function keysAt(keys: readonly Address[], indices: ArrayLike<number>): Address[] {
+  const found = Array.from(indices, (index) => keys[index]);
+  return found.every((key): key is Address => key !== undefined) ? found : [];
+}
+
+export function holdingsOf(keys: readonly Address[], balances: readonly TokenBalance[]): TokenHolding[] {
+  const held = new Map<Address, TokenHolding>();
+  for (const { accountIndex, mint, owner } of balances) {
+    const account = keys[accountIndex];
+    if (account !== undefined && !held.has(account)) {
+      held.set(account, { account, mint: mint as Address, ...(owner === undefined ? {} : { owner: owner as Address }) });
+    }
+  }
+  return [...held.values()];
+}
 
 export const MEMO_PROGRAM_ADDRESS = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr" as Address;
 
@@ -450,11 +479,11 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     }
     return signature;
   };
-  const load = async (entry: ListedSignature): Promise<EngineTransaction & { complete: boolean }> => {
-    const tx = await patiently(
+  const read = (signature: string) =>
+    patiently(
       () =>
         rpc
-          .getTransaction(entry.signature as Signature, {
+          .getTransaction(signature as Signature, {
             encoding: "json",
             maxSupportedTransactionVersion: 0,
             commitment: "confirmed",
@@ -462,36 +491,38 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
           .send(),
       wait,
     );
+  const parsed = (entry: ListedSignature, tx: Awaited<ReturnType<typeof read>>): EngineTransaction & { complete: boolean } => {
     const keys = [
       ...(tx?.transaction.message.accountKeys ?? []),
       ...(tx?.meta?.loadedAddresses?.writable ?? []),
       ...(tx?.meta?.loadedAddresses?.readonly ?? []),
     ];
-    const emitted = (tx?.meta?.innerInstructions ?? [])
-      .flatMap((group) => group.instructions)
-      .filter((ix) => keys[ix.programIdIndex] === INTENT_ENGINE_PROGRAM_ADDRESS)
-      .map((ix) => Uint8Array.from(getBase58Encoder().encode(ix.data)));
+    const inner = (tx?.meta?.innerInstructions ?? []).flatMap((group) => group.instructions).filter((ix) => keys[ix.programIdIndex] === INTENT_ENGINE_PROGRAM_ADDRESS);
+    const emitted = inner.map((ix) => Uint8Array.from(getBase58Encoder().encode(ix.data)));
     const signing = tx?.transaction.message.header?.numRequiredSignatures ?? 0;
     const memoInstructions = (tx?.transaction.message.instructions ?? []).filter((ix) => keys[ix.programIdIndex] === MEMO_PROGRAM_ADDRESS);
     const memos = memoInstructions.map((ix) => new TextDecoder().decode(Uint8Array.from(getBase58Encoder().encode(ix.data))));
     const memoSigners = memoInstructions.map((ix) => signersAmong(keys, ix.accounts ?? [], signing));
     const feePayer = tx?.transaction.message.accountKeys[0];
-    const called = (tx?.transaction.message.instructions ?? [])
-      .filter((ix) => keys[ix.programIdIndex] === INTENT_ENGINE_PROGRAM_ADDRESS)
-      .map((ix) => Uint8Array.from(getBase58Encoder().encode(ix.data)));
+    const engineCalls = (tx?.transaction.message.instructions ?? []).filter((ix) => keys[ix.programIdIndex] === INTENT_ENGINE_PROGRAM_ADDRESS);
+    const called = engineCalls.map((ix) => Uint8Array.from(getBase58Encoder().encode(ix.data)));
+    const tokens = holdingsOf(keys, [...(tx?.meta?.preTokenBalances ?? []), ...(tx?.meta?.postTokenBalances ?? [])]);
     return {
       signature: entry.signature,
       slot: entry.slot,
       blockTime: entry.blockTime,
       failed: entry.failed,
       emitted,
+      ...(inner.length === 0 ? {} : { emittedAccounts: inner.map((ix) => keysAt(keys, ix.accounts ?? [])) }),
       ...(memos.length === 0 ? {} : { memos, memoSigners }),
       ...(feePayer === undefined ? {} : { feePayer }),
-      ...(called.length === 0 ? {} : { called }),
+      ...(called.length === 0 ? {} : { called, calledAccounts: engineCalls.map((ix) => keysAt(keys, ix.accounts ?? [])) }),
+      ...(tokens.length === 0 ? {} : { tokens }),
       ...(tx?.meta === null || tx?.meta === undefined ? { unread: true as const } : {}),
       complete: tx?.meta !== null && tx?.meta !== undefined && entry.blockTime !== null,
     };
   };
+  const load = async (entry: ListedSignature): Promise<EngineTransaction & { complete: boolean }> => parsed(entry, await read(entry.signature));
   const fetchOne = (entry: ListedSignature): Promise<EngineTransaction> => {
     const known = fetched.get(entry.signature);
     if (known !== undefined) {
@@ -624,6 +655,14 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     },
     signaturesOf: (of, limit, before) => listSignatures(of, limit, before),
     transactionsOf: (listed) => fetchAll(listed),
+    async transactionOf(signature) {
+      const tx = await read(signature);
+      if (tx === null) {
+        return null;
+      }
+      const failed = tx.meta !== null && tx.meta.err !== undefined && tx.meta.err !== null;
+      return withoutMark(parsed({ signature, slot: tx.slot ?? 0n, blockTime: tx.blockTime ?? null, failed, memo: null }, tx));
+    },
     ...(firstBlock === undefined ? {} : { firstAvailableSlot: () => patiently(() => firstBlock().send(), wait) }),
     async intents(owner, read) {
       const least = atLeast(read?.minContextSlot);

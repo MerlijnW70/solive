@@ -6,6 +6,7 @@ import {
   getBase64Encoder,
   getCompiledTransactionMessageDecoder,
   getCompiledTransactionMessageEncoder,
+  getAddressDecoder,
   getSignatureFromTransaction,
   getTransactionDecoder,
   lamports,
@@ -16,7 +17,19 @@ import {
 } from "@solana/kit";
 import { getIntentDecoder, getIntentDiscriminatorBytes, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { FailedTransactionMetadata, type LiteSVM } from "litesvm";
-import { type EngineTransaction, type ListedSignature, MEMO_PROGRAM_ADDRESS, type ProgramAccount, signersAmong, type Transport } from "./transport.js";
+import { TOKEN_PROGRAMS } from "./accounts.js";
+import {
+  type EngineTransaction,
+  keysAt,
+  type ListedSignature,
+  MEMO_PROGRAM_ADDRESS,
+  type ProgramAccount,
+  signersAmong,
+  type TokenHolding,
+  type Transport,
+} from "./transport.js";
+
+const TOKEN_HEAD = 64;
 
 export type SvmTransportOptions = { genesisHash?: string };
 
@@ -36,13 +49,25 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
   };
   const history: { touched: ReadonlySet<Address>; found: EngineTransaction }[] = [];
   const byId = new Map<string, EngineTransaction>();
+  const holdings = (keys: readonly Address[]): TokenHolding[] =>
+    keys.flatMap((account) => {
+      const held = svm.getAccount(account);
+      if (!held.exists || !TOKEN_PROGRAMS.includes(held.programAddress) || held.data.length < TOKEN_HEAD) {
+        return [];
+      }
+      const decoder = getAddressDecoder();
+      return [{ account, mint: decoder.decode(held.data.subarray(0, 32)), owner: decoder.decode(held.data.subarray(32, TOKEN_HEAD)) }];
+    });
   const landed = (tx: Transaction): string => {
+    const compiled = getCompiledTransactionMessageDecoder().decode(tx.messageBytes);
+    const keys = compiled.staticAccounts;
+    const before = holdings(keys);
     const result = svm.sendTransaction(tx);
     if (result instanceof FailedTransactionMetadata) {
       throw new Error(`${String(result.err())}\n${result.meta().logs().join("\n")}`);
     }
-    const compiled = getCompiledTransactionMessageDecoder().decode(tx.messageBytes);
-    const keys = compiled.staticAccounts;
+    const after = holdings(keys).filter((held) => !before.some(({ account }) => account === held.account));
+    const tokens = [...before, ...after];
     for (const address of keys) {
       const data = engineData(address);
       if (data !== null && tag.every((b, i) => data[i] === b)) {
@@ -55,23 +80,24 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
     const memos = memoInstructions.map((ix) => new TextDecoder().decode(Uint8Array.from(ix.data ?? [])));
     const memoSigners = memoInstructions.map((ix) => signersAmong(keys, ix.accountIndices ?? [], compiled.header.numSignerAccounts));
     const feePayer = keys[0];
-    const called = ("instructions" in compiled ? compiled.instructions : [])
-      .filter((ix) => keys[ix.programAddressIndex] === INTENT_ENGINE_PROGRAM_ADDRESS)
-      .map((ix) => Uint8Array.from(ix.data ?? []));
+    const engineCalls = ("instructions" in compiled ? compiled.instructions : []).filter((ix) => keys[ix.programAddressIndex] === INTENT_ENGINE_PROGRAM_ADDRESS);
+    const called = engineCalls.map((ix) => Uint8Array.from(ix.data ?? []));
+    const inner = result
+      .innerInstructions()
+      .flat()
+      .map((ix) => ix.instruction())
+      .filter((ix) => keys[ix.programIdIndex()] === INTENT_ENGINE_PROGRAM_ADDRESS);
     const found: EngineTransaction = {
       signature,
       slot: clock.slot,
       blockTime: clock.unixTimestamp,
       failed: false,
-      emitted: result
-        .innerInstructions()
-        .flat()
-        .map((inner) => inner.instruction())
-        .filter((ix) => keys[ix.programIdIndex()] === INTENT_ENGINE_PROGRAM_ADDRESS)
-        .map((ix) => new Uint8Array(ix.data())),
+      emitted: inner.map((ix) => new Uint8Array(ix.data())),
+      ...(inner.length === 0 ? {} : { emittedAccounts: inner.map((ix) => keysAt(keys, ix.accounts())) }),
       ...(memos.length === 0 ? {} : { memos, memoSigners }),
       ...(feePayer === undefined ? {} : { feePayer }),
-      ...(called.length === 0 ? {} : { called }),
+      ...(called.length === 0 ? {} : { called, calledAccounts: engineCalls.map((ix) => keysAt(keys, ix.accountIndices ?? [])) }),
+      ...(tokens.length === 0 ? {} : { tokens }),
     };
     history.unshift({ touched: new Set(keys), found });
     byId.set(signature, found);
@@ -153,6 +179,7 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
       );
     },
     transactionsOf: async (listed) => listed.flatMap(({ signature }) => byId.get(signature) ?? []),
+    transactionOf: async (signature) => byId.get(signature) ?? null,
     firstAvailableSlot: async () => 0n,
     recentFees: async () => [],
     budget: async (instructions) => [...instructions],

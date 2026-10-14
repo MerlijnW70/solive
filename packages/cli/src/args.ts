@@ -160,8 +160,8 @@ export type Command =
   | (Remote & { name: "jobs"; attestor: Address | undefined })
   | (Keyed & { name: "deliver"; yes: boolean; intent: Address; sha256: string; workUrl: string })
   | (Remote & { name: "deliveries"; attestor: Address; intent: Address; maxPages: number })
-  | (Remote & { name: "receipt"; owner: Address; nonce: bigint; sha256: string | undefined })
-  | (Keyed & { name: "record-delivery"; yes: boolean; owner: Address; nonce: bigint; sha256: string })
+  | (Remote & { name: "receipt"; owner: Address; nonce: bigint; sha256: string | undefined; release?: string })
+  | (Keyed & { name: "record-delivery"; yes: boolean; owner: Address; nonce: bigint; sha256: string; release?: string })
   | (Keyed & {
       name: "judge";
       yes: boolean;
@@ -290,6 +290,7 @@ const OPTIONS = {
   "spec-url": { type: "string" },
   result: { type: "string" },
   close: { type: "boolean" },
+  release: { type: "string" },
 } as const;
 
 const KIND_NAMES: Record<string, Kind> = {
@@ -451,8 +452,8 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   jobs: ["url", "attestor"],
   deliver: ["url", "priority-fee", "keypair", "yes", "intent", "sha256", "work-url"],
   deliveries: ["url", "attestor", "intent", "max-pages"],
-  receipt: ["url", "owner", "nonce", "sha256"],
-  "record-delivery": ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "sha256"],
+  receipt: ["url", "owner", "nonce", "sha256", "release"],
+  "record-delivery": ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "sha256", "release"],
   judge: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "spec", "artifact", "run", "pay-to", "result", "timeout", "verdict", "max-pages"],
   crank: ["url", "priority-fee", "keypair", "dry-run", "fund-accounts"],
   treasury: ["url", "priority-fee", "keypair", "yes", "mints", "create"],
@@ -1114,6 +1115,20 @@ export const SHA256_NEEDED = "--sha256 must be the work's sha256 as 64 hex digit
 export const SPEC_HASH_FORMAT = "--spec-hash must be the spec's sha256 as 64 hex digits";
 export const needsSpecHash = (option: string) => `--${option} needs --spec-hash, which makes the attested escrow a proof escrow`;
 
+export const RELEASE_NEEDED = "--release needs the release's base58 transaction signature";
+
+const RELEASE_SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{32,88}$/;
+
+function releaseOption(values: Values): { release?: string } {
+  if (values.release === undefined) {
+    return {};
+  }
+  if (!RELEASE_SIGNATURE.test(values.release)) {
+    throw new UsageError(RELEASE_NEEDED);
+  }
+  return { release: values.release };
+}
+
 function sha256Of(text: string, refusal = SHA256_NEEDED): string {
   if (!/^[0-9a-fA-F]{64}$/.test(text)) {
     throw new UsageError(refusal);
@@ -1242,8 +1257,8 @@ export const SHAPES: Readonly<Record<string, string>> = {
   jobs: "[--attestor <address>]",
   deliver: "--keypair <worker file> --intent <address> --sha256 <64 hex> --work-url <https url> [--yes]",
   deliveries: "--attestor <address> --intent <address> [--max-pages <n>]",
-  receipt: "--owner <address> --nonce <n> [--sha256 <64 hex>]",
-  "record-delivery": "--keypair <judge file> --owner <address> --nonce <n> --sha256 <64 hex> [--yes]",
+  receipt: "--owner <address> --nonce <n> [--sha256 <64 hex>] [--release <signature>]",
+  "record-delivery": "--keypair <judge file> --owner <address> --nonce <n> --sha256 <64 hex> [--release <signature>] [--yes]",
   judge: "--keypair <judge file> --owner <address> --nonce <n> --spec <file> --artifact <file or directory> --run <command> [--pay-to <wallet>] [--result <n>] [--timeout <seconds>] [--verdict <file>] [--max-pages <n>] [--yes]",
   create: `swap|limit|dutch|attested --keypair <file> --input-mint --output-mint (--expires-at | --expires-in) ${ORDER_SHAPE} [--nonce <n>] [--pay-to <wallet>] ${PARTNER_SHAPE} [--units tokens|raw] [--yes]; attested takes [--spec-hash <64 hex> [--judge-fee <amount>] [--spec-url <https url>]] to make a proof escrow`,
   list: "--owner <address> or --keypair <file>; --owner wins when both are given",
@@ -1496,6 +1511,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         owner: key(values, "owner"),
         nonce: u64(values, "nonce"),
         sha256: values.sha256 === undefined ? undefined : sha256Of(values.sha256),
+        ...releaseOption(values),
       };
     case "record-delivery":
       noSub(sub);
@@ -1507,6 +1523,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         owner: key(values, "owner"),
         nonce: u64(values, "nonce"),
         sha256: sha256Of(required(values, "sha256")),
+        ...releaseOption(values),
       };
     case "judge":
       noSub(sub);

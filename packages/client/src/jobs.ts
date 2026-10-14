@@ -1,11 +1,15 @@
 import { createHash } from "node:crypto";
-import { AccountRole, type AccountSignerMeta, type Address, type Instruction, type Signature, type TransactionSigner } from "@solana/kit";
+import { AccountRole, type AccountSignerMeta, type Address, type Instruction, type ReadonlyUint8Array, type Signature, type TransactionSigner } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import {
   type AttestedResultParams,
   decodeEvent,
   decodeParams,
   deliveryMemo,
+  getCreateIntentArgsDecoder,
+  getCreateIntentByAgentDiscriminatorBytes,
+  getCreateIntentDiscriminatorBytes,
+  getCreateIntentSignedDiscriminatorBytes,
   getIntentDecoder,
   getIntentDiscriminatorBytes,
   getIntentSize,
@@ -410,7 +414,83 @@ export async function deliveryRecord(transport: Transport, judge: Address, inten
   const judged: ReadonlySet<Address> = new Set(proofs.map(({ address }) => address));
   const oldest = proofs.reduce((low, proof) => (proof.intent.createdAt < low.intent.createdAt ? proof : low), first);
   const floor = oldest.intent.createdAt;
-  const covered = () => historyCovers(transport, oldest.address, floor);
+  return judgedDeliveries(transport, judge, judged, floor, () => historyCovers(transport, oldest.address, floor), pages);
+}
+
+export type EscrowProof = { attestor: Address; specHash: string };
+
+export type EscrowOrigin = { intent: Address; signature: string; slot: bigint; createdAt: bigint | null; proof: EscrowProof | null };
+
+const CREATE_DISCRIMINATORS: readonly ReadonlyUint8Array[] = [
+  getCreateIntentDiscriminatorBytes(),
+  getCreateIntentByAgentDiscriminatorBytes(),
+  getCreateIntentSignedDiscriminatorBytes(),
+];
+
+const DISCRIMINATOR_BYTES = 8;
+
+export type EngineCall = { data: Uint8Array; accounts: Address[] | undefined; inner: boolean };
+
+export function engineCalls(transaction: EngineTransaction): EngineCall[] {
+  return [
+    ...(transaction.called ?? []).map((data, i) => ({ data, accounts: transaction.calledAccounts?.[i], inner: false })),
+    ...transaction.emitted.map((data, i) => ({ data, accounts: transaction.emittedAccounts?.[i], inner: true })),
+  ];
+}
+
+const startsWith = (data: Uint8Array, head: ReadonlyUint8Array): boolean => data.length >= head.length && head.every((b, i) => data[i] === b);
+
+function createdProof(transaction: EngineTransaction, intent: Address): EscrowProof | null {
+  const nonce = transaction.emitted.map(decodeEvent).find((event) => event?.name === "IntentCreated" && "intent" in event.fields && event.fields.intent === intent);
+  const wanted = (nonce?.fields as { nonce?: bigint } | undefined)?.nonce;
+  for (const { data, accounts } of engineCalls(transaction)) {
+    if (!CREATE_DISCRIMINATORS.some((head) => startsWith(data, head)) || (accounts !== undefined && !accounts.includes(intent))) {
+      continue;
+    }
+    try {
+      const args = getCreateIntentArgsDecoder().decode(data, DISCRIMINATOR_BYTES);
+      if (wanted !== undefined && args.nonce !== wanted) {
+        continue;
+      }
+      const params = decodeParams(args.kind, Uint8Array.from(args.params));
+      return params.kind === Kind.AttestedResult ? { attestor: params.attestor, specHash: hex(params.specHash) } : null;
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+export async function escrowOrigin(transport: Transport, intent: Address, pages: number = DELIVERY_PAGES): Promise<EscrowOrigin | null> {
+  const floor = await createdAtOf(transport, intent);
+  const created = (transaction: EngineTransaction) => !transaction.failed && createdIn(transaction.emitted, intent);
+  const { transactions } = await scan(transport, intent, { floor, pages, until: created });
+  const tx = transactions.find(created);
+  return tx === undefined ? null : { intent, signature: tx.signature, slot: tx.slot, createdAt: floor ?? tx.blockTime, proof: createdProof(tx, intent) };
+}
+
+export async function originDeliveries(transport: Transport, judge: Address, origin: EscrowOrigin, pages: number = DELIVERY_PAGES): Promise<DeliveryRecord> {
+  const { firstAvailableSlot } = transport;
+  const covered = async () => firstAvailableSlot !== undefined && (await firstAvailableSlot.call(transport)) <= origin.slot;
+  return judgedDeliveries(transport, judge, new Set([origin.intent]), origin.createdAt, covered, pages);
+}
+
+export async function transactionAt(transport: Transport, signature: string, of?: Address): Promise<EngineTransaction | null> {
+  const { transactionOf } = transport;
+  if (transactionOf !== undefined) {
+    return transactionOf.call(transport, signature);
+  }
+  return (await transport.engineTransactions(DELIVERY_SCAN, of)).find((transaction) => transaction.signature === signature) ?? null;
+}
+
+async function judgedDeliveries(
+  transport: Transport,
+  judge: Address,
+  judged: ReadonlySet<Address>,
+  floor: bigint | null,
+  covered: () => Promise<boolean>,
+  pages: number,
+): Promise<DeliveryRecord> {
   const scanned = await scan(transport, judge, { floor, memo: DELIVERY_MEMO_PREFIX, pages, covered });
   const { transactions, complete } = scanned;
   const deliveries = transactions.flatMap(({ signature, slot, blockTime, failed, memos, feePayer }) =>

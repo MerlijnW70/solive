@@ -82,7 +82,7 @@ import {
 import { agentServer } from "./agent/mcp.js";
 import { claimsOf } from "./agent/claims.js";
 import { budgetOf } from "./agent/budget.js";
-import { ESTIMATE_SCAN, recordingOf, walletGuard } from "./agent/wallet.js";
+import { escrowReceipt, ESTIMATE_SCAN, recordingOf, walletGuard } from "./agent/wallet.js";
 import { relayOf } from "./agent/relay.js";
 import type { SaleBook } from "./agent/sales.js";
 import { type Authority, type Command, type Env, usageOf } from "./args.js";
@@ -257,7 +257,7 @@ async function previewed(
   return { ...shown, sent: true, signature: await transport.send(instructions, signer) };
 }
 
-export const NOT_RELEASED = "no release of this escrow is among its recent transactions; show intent says whether it is still open";
+export const NOT_RELEASED = "no release of this escrow is among its recent transactions; show intent says whether it is still open, and --release with the release's signature reads a release directly";
 
 const TOKEN_ACCOUNT_HEAD = 64;
 
@@ -643,12 +643,15 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       return previewed(transport, instructions, worker, shown, command.yes);
     }
     case "receipt": {
+      if (command.release !== undefined) {
+        return escrowReceipt(transport, command.owner, command.nonce, command.sha256, command.release);
+      }
       const [intent] = await findIntentPda({ owner: command.owner, nonce: command.nonce });
       return receiptOf(transport, command.url, intent, command.sha256);
     }
     case "record-delivery": {
       const judge = await runtime.loadSigner(command.keypair);
-      const recording = await recordingOf(transport, judge, command.owner, command.nonce, command.sha256);
+      const recording = await recordingOf(transport, judge, command.owner, command.nonce, command.sha256, command.release);
       const { intent, release, sha256, memo, summary, instructions } = recording;
       return previewed(transport, instructions, judge, { intent, release, sha256, memo, summary }, command.yes);
     }

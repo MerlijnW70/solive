@@ -221,18 +221,18 @@ Options: `--url`, `--attestor`, `--intent`, `--max-pages`, `--output`, `--help`
 ## receipt
 
 ```text
-receipt --owner <address> --nonce <n> [--sha256 <64 hex>]
+receipt --owner <address> --nonce <n> [--sha256 <64 hex>] [--release <signature>]
 ```
 
-Options: `--url`, `--owner`, `--nonce`, `--sha256`, `--output`, `--help`
+Options: `--url`, `--owner`, `--nonce`, `--sha256`, `--release`, `--output`, `--help`
 
 ## record-delivery
 
 ```text
-record-delivery --keypair <judge file> --owner <address> --nonce <n> --sha256 <64 hex> [--yes]
+record-delivery --keypair <judge file> --owner <address> --nonce <n> --sha256 <64 hex> [--release <signature>] [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--sha256`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--sha256`, `--release`, `--output`, `--help`
 
 ## judge
 
