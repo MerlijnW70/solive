@@ -3,18 +3,20 @@ name: faucet
 on:
   issues:
     types: [opened]
+  schedule:
+    - cron: "*/15 * * * *"
 
 permissions:
   contents: read
   issues: write
 
 concurrency:
-  group: faucet-${{ github.event.issue.number }}
+  group: faucet
   cancel-in-progress: false
 
 jobs:
   send:
-    if: contains(github.event.issue.labels.*.name, 'faucet')
+    if: github.event_name == 'schedule' || contains(github.event.issue.labels.*.name, 'faucet')
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -35,9 +37,6 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
-          FAUCET_ISSUE: ${{ github.event.issue.number }}
-          FAUCET_AUTHOR: ${{ github.event.issue.user.login }}
-          FAUCET_BODY: ${{ github.event.issue.body }}
           FAUCET_SECRET: ${{ secrets.FAUCET_KEYPAIR }}
         run: |
           umask 077

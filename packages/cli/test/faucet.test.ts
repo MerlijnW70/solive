@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,8 +22,12 @@ const GH = `#!/usr/bin/env bash
 echo "gh $*" >> "$STUB_LOG"
 case "$1 $2" in
   "api users/"*) echo "$STUB_CREATED" ;;
+  "issue view")
+    if [[ "$*" == *"--json body"* ]]; then cat "$STUB_ISSUES/$3/body"; else cat "$STUB_ISSUES/$3/author"; fi ;;
   "issue list")
-    if [[ "$*" == *faucet-sent* ]]; then echo "$STUB_SENT"; else echo "$STUB_EARLIER"; fi ;;
+    if [[ "$*" == *"--state open"* ]]; then cat "$STUB_ISSUES/open"
+    elif [[ "$*" == *faucet-sent* ]]; then echo $((STUB_SENT + $(grep -c -- "--add-label faucet-sent" "$STUB_LOG")))
+    else echo "$STUB_EARLIER"; fi ;;
 esac
 `;
 
@@ -49,8 +53,22 @@ const healthy: Stub = {
   invalid: "",
 };
 
+type Issue = { number: number; body: string; author?: string };
+
 function request(body: string, stub: Partial<Stub> = {}, author = "a-user") {
+  return requests([{ number: 7, body, author }], stub);
+}
+
+function requests(issues: Issue[], stub: Partial<Stub> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "faucet-"));
+  const store = join(dir, "issues");
+  mkdirSync(store);
+  writeFileSync(join(store, "open"), issues.map((i) => `${i.number}\n`).join(""));
+  for (const issue of issues) {
+    mkdirSync(join(store, String(issue.number)));
+    writeFileSync(join(store, String(issue.number), "body"), `${issue.body}\n`);
+    writeFileSync(join(store, String(issue.number), "author"), `${issue.author ?? "a-user"}\n`);
+  }
   for (const [name, text] of [["gh", GH], ["solana", SOLANA]] as const) {
     writeFileSync(join(dir, name), text);
     chmodSync(join(dir, name), 0o755);
@@ -63,12 +81,10 @@ function request(body: string, stub: Partial<Stub> = {}, author = "a-user") {
     encoding: "utf8",
     env: {
       PATH: `${dir}:${process.env["PATH"] ?? ""}`,
-      FAUCET_ISSUE: "7",
-      FAUCET_AUTHOR: author,
-      FAUCET_BODY: body,
       FAUCET_KEYPAIR: join(dir, "faucet.json"),
       FAUCET_NOW: String(NOW),
       STUB_LOG: log,
+      STUB_ISSUES: store,
       STUB_CREATED: s.created,
       STUB_EARLIER: String(s.earlier),
       STUB_SENT: String(s.sent),
@@ -109,7 +125,7 @@ describe("the devnet faucet", () => {
     expect(calls).toContain("gh issue edit 7 --add-label faucet-sent");
     expect(closed(calls)).toBe("gh issue close 7 --reason completed");
     expect(calls).toContain(
-      `gh issue list --author a-user --label faucet --state all --limit 100 --json number,createdAt --jq [.[] | select(.number != 7 and .createdAt >= "${dayAgo}")] | length`,
+      `gh issue list --author a-user --label faucet --state all --limit 100 --json number,createdAt --jq [.[] | select(.number < 7 and .createdAt >= "${dayAgo}")] | length`,
     );
     expect(calls).toContain(
       `gh issue list --label faucet-sent --state closed --limit 200 --json closedAt --jq [.[] | select(.closedAt >= "${dayAgo}")] | length`,
@@ -157,8 +173,45 @@ describe("the devnet faucet", () => {
     expect(readFileSync(SCRIPT, "utf8")).toMatch(/gh issue list --author "\$author" --label faucet /);
   });
 
-  it("runs one workflow per request, so a burst cancels none of them", () => {
-    expect(WORKFLOW).toContain("concurrency:\n  group: faucet-${{ github.event.issue.number }}\n  cancel-in-progress: false\n");
+  it("runs one workflow at a time on every request and every 15 minutes, so a cancelled run leaves nothing unanswered", () => {
+    expect(WORKFLOW).toContain("concurrency:\n  group: faucet\n  cancel-in-progress: false\n");
+    expect(WORKFLOW).toContain('  schedule:\n    - cron: "*/15 * * * *"\n');
+    expect(WORKFLOW).toContain("if: github.event_name == 'schedule' || contains(github.event.issue.labels.*.name, 'faucet')");
+  });
+
+  it("the faucet answers every open request in order", () => {
+    const { out, calls } = requests(
+      [
+        { number: 9, body: form(OTHER), author: "third" },
+        { number: 7, body: form(ADDRESS), author: "first" },
+        { number: 8, body: form(OTHER), author: "second" },
+      ],
+      { sent: 48 },
+    );
+    expect(calls.filter((c) => c.startsWith("gh issue list --label faucet --state open"))).toEqual([
+      `gh issue list --label faucet --state open --limit 100 --json number,labels --jq .[] | select(all(.labels[]; .name != "faucet-sent")) | .number`,
+    ]);
+    expect(calls.filter((c) => c.startsWith("gh issue comment")).map((c) => c.split(" ")[3])).toEqual(["7", "8", "9"]);
+    expect(sent(calls)).toHaveLength(2);
+    expect(sent(calls)[0]).toContain(ADDRESS);
+    expect(sent(calls)[1]).toContain(OTHER);
+    expect(calls.filter((c) => c.startsWith("gh issue close"))).toEqual([
+      "gh issue close 7 --reason completed",
+      "gh issue close 8 --reason completed",
+      "gh issue close 9 --reason not planned",
+    ]);
+    expect(out.split("\n")[2]).toBe("Refused: the faucet sent its daily limit. Try again tomorrow, or request devnet SOL at https://faucet.solana.com.");
+    for (const [n, author] of [[7, "first"], [8, "second"], [9, "third"]] as const) {
+      expect(calls).toContain(
+        `gh issue list --author ${author} --label faucet --state all --limit 100 --json number,createdAt --jq [.[] | select(.number < ${n} and .createdAt >= "${dayAgo}")] | length`,
+      );
+    }
+  });
+
+  it("answers nothing when no request is open", () => {
+    const { out, calls } = requests([]);
+    expect(out).toBe("");
+    expect(calls).toHaveLength(1);
   });
 
   it("runs nothing a request smuggles in", () => {
@@ -171,8 +224,9 @@ describe("the devnet faucet", () => {
     const runs = [...WORKFLOW.matchAll(/run: \|\n((?: {10}.*\n)+)/g)].map((m) => m[1] ?? "");
     expect(runs.length).toBeGreaterThan(1);
     expect(runs.some((r) => r.includes("${{"))).toBe(false);
-    expect(WORKFLOW).toContain("FAUCET_BODY: ${{ github.event.issue.body }}");
-    expect(WORKFLOW).toContain("if: contains(github.event.issue.labels.*.name, 'faucet')");
+    expect(WORKFLOW).not.toContain("github.event.issue.body");
+    expect(WORKFLOW).not.toContain("github.event.issue.user");
+    expect(WORKFLOW).toContain("if: github.event_name == 'schedule' || contains(github.event.issue.labels.*.name, 'faucet')");
     expect(WORKFLOW).toMatch(/permissions:\n {2}contents: read\n {2}issues: write\n/);
     expect(FORM).toContain("labels: [faucet]");
     expect(FORM).toContain("description: Get 0.5 devnet SOL to follow the quickstart.");

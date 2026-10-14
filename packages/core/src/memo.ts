@@ -11,7 +11,7 @@ export type SpecMemo = { url: string };
 
 export type DeliveryMemo = { intent: Address; sha256: string; url: string };
 
-export const MEMO_URL_RULE = `an https url in canonical form of at most ${MAX_MEMO_URL} printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1]`;
+export const MEMO_URL_RULE = `an https url of at most ${MAX_MEMO_URL} printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would`;
 
 const PRINTABLE = /^[!-~]+$/;
 const SHA256 = /^[0-9a-f]{64}$/;

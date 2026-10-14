@@ -7,6 +7,7 @@ import {
   isMemoUrl,
   MAX_DELIVERY_MEMO,
   MAX_MEMO_URL,
+  MEMO_URL_RULE,
   parseDeliveryMemo,
   parseReleaseMemo,
   parseSpecMemo,
@@ -96,6 +97,26 @@ describe("spec and delivery memos", () => {
       expect(() => specMemo(url)).toThrow(RangeError);
       expect(parseSpecMemo(`${SPEC_MEMO_PREFIX}${url}`)).toBeNull();
     }
+  });
+
+  it("the memo url rule names what canonical means", () => {
+    const cases: [string, string][] = [
+      ["lowercase scheme and host", "HTTPS://A.example/x"],
+      ["no default port", "https://a.example:443/x"],
+      ["no . or .. path segments", "https://a.example/a/./b/../c"],
+      ["a / path before any ? or #", "https://a.example?x"],
+      ["characters percent-encoded as new URL() would", "https://a.example/a\"b<c>{d}"],
+    ];
+    for (const [phrase, url] of cases) {
+      expect(MEMO_URL_RULE).toContain(phrase);
+      expect(isMemoUrl(url), url).toBe(false);
+      const canonical = new URL(url).href;
+      expect(canonical).not.toBe(url);
+      expect(isMemoUrl(canonical), canonical).toBe(true);
+      expect(() => specMemo(url)).toThrow(`a spec url must be ${MEMO_URL_RULE}`);
+    }
+    expect(MEMO_URL_RULE).toContain(`at most ${MAX_MEMO_URL} printable characters without spaces or backslashes`);
+    expect(MEMO_URL_RULE).toContain("http on localhost, 127.0.0.1 or [::1]");
   });
 
   it("refuse to build a delivery with a bad intent or sha256", () => {
