@@ -1,0 +1,59 @@
+import { ACCEPTS, GLOBAL_OPTIONS } from "./arg-options.js";
+
+export const COMMANDS = "setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | hash | version | help [command]";
+
+export const USAGE = `usage: ${COMMANDS}`;
+
+const MANDATE_ORDER_SHAPE = "(--amount-in --min-out | --make --take | --amount-in --start-out --end-out --start-at --end-at)";
+
+const ORDER_SHAPE = "(--amount-in --min-out | --make --take | --amount-in --start-out --end-out --start-at --end-at | --amount-in --min-result --max-result --attestor)";
+
+const PARTNER_SHAPE = "[--partner <address> --partner-bps <n>]";
+
+export const SHAPES: Readonly<Record<string, string>> = {
+  setup: "[--url <cluster>] [--keypair <file>]",
+  balance: "[--keypair <file> | --owner <address>] [--mints <mint,...>]",
+  pda: "--owner <address> --nonce <n>",
+  hash: "--artifact <file or directory>",
+  show: "config | intent --owner <address> --nonce <n>",
+  domain: "",
+  mcp: "[--wallet [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>]] [--relayer <keypair> --relay-fee <mint=amount,...> [--relay-max-lamports] [--relay-max-ttl] [--relay-per-hour] [--relay-hourly-lamports]] [--agent <keypair> --agent-owners <address,...> [--agent-hourly-lamports]]",
+  quote: "--owner <address> --nonce <n> [--at <unix>]",
+  cancel: "--keypair <file> --nonce <n> [--close] [--yes]",
+  expire: "--keypair <file> --owner <address> --nonce <n> [--yes]",
+  close: "--keypair <file> --owner <address> --nonce <n> [--yes]",
+  "advance-nonce": "--keypair <file> --base <n>",
+  "advance-epoch": "--keypair <file>",
+  "init-config": "(--keypair <file> [--yes] | --authority <address>) --guardian --fee-recipient --fee-bps --kinds [--flags create|fill|all]",
+  "update-config": "(--keypair <file> [--yes] | --authority <address>) and any of --guardian --fee-recipient --fee-bps --kinds --fill-disabled",
+  "propose-admin": "(--keypair <file> [--yes] | --authority <address>) --new-admin <address>",
+  "accept-admin": "(--keypair <file> [--yes] | --authority <address>)",
+  "raise-pause": "(--keypair <file> [--yes] | --authority <address>) --flags create|fill|all",
+  "lower-pause": "(--keypair <file> [--yes] | --authority <address>) --flags create|fill|all",
+  "set-economics": "(--keypair <file> [--yes] | --authority <address>) --bounty --create-fee [--kind-fees] [--partner-cut]",
+  solve: "--keypair <file> (--jupiter <url> | --issue <input mint>:<output mint>=<out>/<in>,...) --min-profit <output mint=raw,...> [--priority-fee <micro-lamports|auto>] [--max-fee-bps <n>] [--max-sol-cost <SOL>] [--max-rent <SOL>] [--slippage-bps <n>] [--jito <url> [--tip <lamports>]] [--route-program <program the aggregator swaps through>] [--lookup-table <address,...>] [--watch [--interval <seconds>]]",
+  "solver-table": "--solver <address> --mints <mint,...>",
+  crank: "--keypair <file> [--dry-run] [--fund-accounts]",
+  treasury: "[--mints <mint,...>] [--create --mints <mint,...> --keypair <payer file> [--yes]]",
+  events: "[--limit <n>] [--follow [--interval <seconds>]]",
+  jobs: "[--attestor <address>]",
+  deliver: "--keypair <worker file> --intent <address> --sha256 <64 hex> --work-url <https url> [--yes]",
+  deliveries: "--attestor <address> --intent <address> [--max-pages <n>]",
+  receipt: "--owner <address> --nonce <n> [--sha256 <64 hex>] [--release <signature>]",
+  "record-delivery": "--keypair <judge file> --owner <address> --nonce <n> --sha256 <64 hex> [--release <signature>] [--yes]",
+  judge: "--keypair <judge file> --owner <address> --nonce <n> --spec <file> --artifact <file or directory> --run <command> [--pay-to <wallet>] [--result <n>] [--timeout <seconds>] [--verdict <file>] [--max-pages <n>] [--yes]",
+  create: `swap|limit|dutch|attested --keypair <file> --input-mint --output-mint (--expires-at | --expires-in) ${ORDER_SHAPE} [--nonce <n>] [--pay-to <wallet>] ${PARTNER_SHAPE} [--units tokens|raw] [--yes]; attested takes [--spec-hash <64 hex> [--judge-fee <amount>] [--spec-url <https url>]] to make a proof escrow`,
+  list: "--owner <address> or --keypair <file>; --owner wins when both are given",
+  mandate: `grant --keypair <file> --agent --input-mint --output-mint --kinds --per-intent --total --max-intents --max-ttl --valid-for --floor-out --floor-in [--agent-fee] ${PARTNER_SHAPE} [--id] [--units tokens|raw] [--yes] | show --agent (--owner <address> | --keypair <file>) [--id] | revoke --keypair <file> --agent [--id] [--yes] | use swap|limit|dutch --keypair <file> --owner (--expires-at | --expires-in) ${MANDATE_ORDER_SHAPE} [--id] [--nonce <n>] [--units tokens|raw] [--yes]`,
+  approve: "--keypair <file> --mint <mint> --amount <amount> [--units tokens|raw] [--yes]",
+  "revoke-approval": "--keypair <file> --mint <mint> [--yes]",
+  signed: `prepare swap|limit|dutch|attested --keypair <file> --out <file> --input-mint --output-mint (--expires-at | --expires-in) ${ORDER_SHAPE} [--nonce <n>] [--submit-within <seconds>] [--relayer-fee] ${PARTNER_SHAPE} [--units tokens|raw] [--yes] | submit --keypair <relayer file> --file <file> [--yes]`,
+};
+
+export function usageOf(verb: string | undefined): { usage: string; options: string[] } {
+  const known = verb !== undefined && ACCEPTS[verb] !== undefined;
+  return {
+    usage: known ? `${verb} ${SHAPES[verb] ?? ""}`.trim() : COMMANDS,
+    options: known ? [...(ACCEPTS[verb] ?? []), ...GLOBAL_OPTIONS].map((o) => `--${o}`) : [],
+  };
+}
