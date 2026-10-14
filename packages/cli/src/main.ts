@@ -10,7 +10,7 @@ import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
 import { JudgeInterrupted } from "./judge.js";
 import { printableLines, redactUrl, render, renderText } from "./render.js";
-import { withSettings } from "./wallet.js";
+import { expandHome, withSettings } from "./wallet.js";
 import { WALLET_NOTICE } from "./agent/wallet.js";
 
 export const EXIT_OK = 0;
@@ -25,7 +25,11 @@ type Io = { out(text: string): void; err(text: string): void };
 export { render } from "./render.js";
 
 export const unreachable = (url: string) =>
-  `cannot reach the RPC node at ${url}; pass --url devnet, --url mainnet-beta or an https URL, or set ${ENV_URL}`;
+  `cannot reach the RPC node at ${url}; check your network connection and that this endpoint is up, or pass another --url or set ${ENV_URL}`;
+
+export const PREVIEW_ONLY = "nothing was sent; pass --yes to sign and send it";
+
+const PREVIEWED = new Set(["cancel", "expire", "close"]);
 
 const offline = (error: unknown) => error instanceof TypeError && error.message === "fetch failed";
 
@@ -58,6 +62,9 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
     if (result !== null) {
       show(result);
     }
+    if (PREVIEWED.has(command.name) && result !== null && "sent" in result && result.sent === false) {
+      io.err(PREVIEW_ONLY);
+    }
     if (command.name === "flow" && command.flow === "mandate-revoke" && result !== null && ("failed" in result || "unknown" in result)) {
       return EXIT_PARTIAL;
     }
@@ -71,14 +78,20 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
   }
 }
 
-export async function loadKeypairFile(path: string, platform: string = process.platform): Promise<KeyPairSigner> {
+const keyLike = (path: string) => /^[1-9A-HJ-NP-Za-km-z]{32,}$/.test(path) || path.trimStart().startsWith("[");
+
+export const keypairUnreadable = (path: string) =>
+  keyLike(path) ? `${KEYPAIR_UNREADABLE}; the value given looks like a key, not a file path, so it is not repeated here` : `${KEYPAIR_UNREADABLE}; tried ${path}`;
+
+export async function loadKeypairFile(path: string, platform: string = process.platform, home: string = homedir()): Promise<KeyPairSigner> {
+  const file = expandHome(path, home);
   let bytes: unknown;
   let mode: number;
   try {
-    mode = (await stat(path)).mode;
-    bytes = JSON.parse(await readFile(path, "utf8"));
+    mode = (await stat(file)).mode;
+    bytes = JSON.parse(await readFile(file, "utf8"));
   } catch {
-    throw new UsageError(KEYPAIR_UNREADABLE);
+    throw new UsageError(keypairUnreadable(file));
   }
   if (platform !== "win32" && (mode & 0o077) !== 0) {
     throw new UsageError(KEYPAIR_EXPOSED);
@@ -88,7 +101,7 @@ export async function loadKeypairFile(path: string, platform: string = process.p
     bytes.length !== 64 ||
     !bytes.every((b) => Number.isInteger(b) && b >= 0 && b <= 255)
   ) {
-    throw new UsageError(KEYPAIR_UNREADABLE);
+    throw new UsageError(keypairUnreadable(file));
   }
   return createKeyPairSignerFromBytes(new Uint8Array(bytes));
 }

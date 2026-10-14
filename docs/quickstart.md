@@ -1,6 +1,6 @@
 # Quickstart
 
-Create a swap intent on devnet, watch it fill, then cancel one nobody fills. Devnet SOL and the test token have no value, the devnet engine may be upgraded at any time, and the program has not had an external audit. Run every step in the same terminal: the `alias` and `export` lines last only for that shell.
+Create a swap intent on devnet, watch it fill, then cancel one nobody fills. Devnet SOL and the test token have no value, the devnet engine may be upgraded at any time, and the program has not had an external audit. Run every step in the same terminal: the `alias` and `export` lines last only for that shell. The `sh` blocks are for bash and zsh; steps 1 and 2 also show the Windows PowerShell form, and every later command runs unchanged in both.
 
 ## Prerequisites
 
@@ -18,6 +18,13 @@ pnpm -r build
 alias intent-engine="node $PWD/packages/cli/dist/src/bin.js"
 ```
 
+In PowerShell, replace the `alias` line with:
+
+```powershell
+$cli = "$PWD/packages/cli/dist/src/bin.js"
+function intent-engine { node $cli @args }
+```
+
 ## 2. Create a devnet wallet
 
 ```sh
@@ -25,6 +32,17 @@ solana-keygen new --no-bip39-passphrase -o ~/solive-wallet.json
 solana config set --url devnet --keypair ~/solive-wallet.json
 export INTENT_ENGINE_URL=devnet INTENT_ENGINE_KEYPAIR=~/solive-wallet.json
 ```
+
+In PowerShell:
+
+```powershell
+solana-keygen new --no-bip39-passphrase -o $HOME/solive-wallet.json
+solana config set --url devnet --keypair $HOME/solive-wallet.json
+$env:INTENT_ENGINE_URL = "devnet"
+$env:INTENT_ENGINE_KEYPAIR = "$HOME/solive-wallet.json"
+```
+
+`intent-engine` expands a leading `~` in a keypair path to your home directory, so `--keypair ~/solive-wallet.json` works in both shells.
 
 ## 3. Fund it
 

@@ -10,7 +10,10 @@ url="${FILLER_URL:-devnet}"
 interval="${FILLER_INTERVAL:-5}"
 wrapped_sol=So11111111111111111111111111111111111111112
 test_token=ETU8trkkfE8gNVPDGbCaJUoH88wy6yYV6ttJdc9NKB88
-"${cli[@]}" treasury --url "$url" --create --mints "$wrapped_sol" --keypair "$keypair" --yes
+if ! "${cli[@]}" treasury --url "$url" --create --mints "$wrapped_sol" --keypair "$keypair" --yes; then
+  echo "treasury --create failed; not starting the filler" >&2
+  exit 1
+fi
 stop() {
   trap - EXIT INT TERM
   kill -STOP "$crank" 2>/dev/null
@@ -27,9 +30,17 @@ stop() {
 ) &
 crank=$!
 trap stop EXIT INT TERM
+delay=1
 while true; do
+  started=$SECONDS
   "${cli[@]}" solve --url "$url" --keypair "$keypair" --issue "$wrapped_sol:$test_token=200/1" --min-profit "$test_token=1" --watch --interval "$interval" &
   solving=$!
   wait "$solving"
-  sleep 1
+  if (( SECONDS - started > 300 )); then
+    delay=1
+  fi
+  echo "solve --watch stopped; restarting in ${delay}s" >&2
+  sleep "$delay" &
+  wait $!
+  delay=$(( delay * 2 > 60 ? 60 : delay * 2 ))
 done

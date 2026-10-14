@@ -33,6 +33,13 @@ export const AIRDROP_REFUSED =
   `the airdrop was refused; request devnet SOL for this address at ${FAUCET} or ${PUBLIC_FAUCET}, then set up again`;
 export const SEND_SOL = "send SOL to this address, then run setup again";
 
+export function expandHome(path: string, home: string): string {
+  if (path === "~") {
+    return home;
+  }
+  return /^~[\\/]/.test(path) ? `${home}${path.slice(1)}` : path;
+}
+
 const set = (value: string | undefined) => (value === "" ? undefined : value);
 
 export async function withSettings(files: Files, given: Env): Promise<Env> {
@@ -62,13 +69,23 @@ export async function withSettings(files: Files, given: Env): Promise<Env> {
   return { ...env, [ENV_URL]: env[ENV_URL] ?? url, [ENV_KEYPAIR]: env[ENV_KEYPAIR] ?? keypair };
 }
 
+const alreadyExists = (error: unknown) =>
+  error !== null && typeof error === "object" && "code" in error && error.code === "EEXIST";
+
 async function walletAt(files: Files, path: string): Promise<{ signer: KeyPairSigner; created: boolean }> {
   try {
     await files.readText(path);
   } catch {
     const seed = crypto.getRandomValues(new Uint8Array(32));
     const signer = await createKeyPairSignerFromPrivateKeyBytes(seed);
-    await files.saveText(path, JSON.stringify([...seed, ...getAddressEncoder().encode(signer.address)]), true);
+    try {
+      await files.saveText(path, JSON.stringify([...seed, ...getAddressEncoder().encode(signer.address)]), true);
+    } catch (error) {
+      if (!alreadyExists(error)) {
+        throw error;
+      }
+      return { signer: await files.loadSigner(path), created: false };
+    }
     return { signer: await files.loadSigner(path), created: true };
   }
   return { signer: await files.loadSigner(path), created: false };
@@ -87,7 +104,7 @@ export async function setup(
   keypair: string | undefined,
   keepSavedUrl = false,
 ): Promise<object> {
-  const path = keypair ?? defaultWallet(files.home);
+  const path = expandHome(keypair ?? defaultWallet(files.home), files.home);
   const { signer, created } = await walletAt(files, path);
   const saved = keepSavedUrl ? (await withSettings(files, {}))[ENV_URL] : undefined;
   await files.saveText(settingsPath(files.home), `${JSON.stringify({ url: saved ?? url, keypair: path }, null, 2)}\n`, false);

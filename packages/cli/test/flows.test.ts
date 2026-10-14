@@ -341,6 +341,29 @@ describe("command line flows", () => {
     return view.exists ? getIntentDecoder().decode(view.data).status : undefined;
   };
 
+  it("cancel close uses the intent rent payer", async () => {
+    const { agent, first } = await twoAgentIntents();
+    const view = h.svm.getAccount(first);
+    if (!view.exists) {
+      throw new Error("the agent intent is missing");
+    }
+    const { nonce, rentPayer } = getIntentDecoder().decode(view.data);
+    expect(rentPayer).toBe(agent.address);
+    const cancel = ["cancel", "--keypair", "owner.json", "--nonce", nonce.toString(), "--close"];
+    const preview = await cli(cancel, keys);
+    expect(preview.code).toBe(EXIT_OK);
+    expect((preview.json() as Json)["summary"]).toContain(
+      `Closes the intent in the same transaction and returns its rent and bounty to ${agent.address}, who paid them; it can no longer be read afterwards`,
+    );
+    const held = h.svm.getBalance(agent.address) ?? 0n;
+    const locked = h.svm.getBalance(first) ?? 0n;
+    const sent = await cli([...cancel, "--yes"], keys);
+    expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);
+    expect(sent.json()).toMatchObject({ intent: first, sent: true });
+    expect(exists(first)).toBe(false);
+    expect((h.svm.getBalance(agent.address) ?? 0n) - held).toBeGreaterThanOrEqual(locked);
+  });
+
   it("revoke exits non zero when a cancel failed", async () => {
     const { agent, first, second } = await twoAgentIntents();
     h.engineLog = [];
@@ -625,7 +648,9 @@ describe("command line flows", () => {
     };
     const code = await main(["show", "config"], down, { out: () => undefined, err: (t) => err.push(t) });
     expect([code, err]).toEqual([EXIT_FAILED, [unreachable("http://127.0.0.1:8899")]]);
-    expect(unreachable("x")).toBe("cannot reach the RPC node at x; pass --url devnet, --url mainnet-beta or an https URL, or set INTENT_ENGINE_URL");
+    expect(unreachable("x")).toBe(
+      "cannot reach the RPC node at x; check your network connection and that this endpoint is up, or pass another --url or set INTENT_ENGINE_URL",
+    );
     const other: string[] = [];
     const broken = { ...down, transport: () => ({ ...transport, getAccount: async () => { throw new TypeError("other"); } }) };
     await main(["show", "config"], broken, { out: () => undefined, err: (t) => other.push(t) });
@@ -637,6 +662,32 @@ describe("command line flows", () => {
     const noUrl: string[] = [];
     await main(["pda", "--owner", w.owner.address, "--nonce", "x"], down, { out: () => undefined, err: (t) => noUrl.push(t) });
     expect(noUrl[0]).not.toContain("cannot reach");
+  });
+
+  it("the unreachable message names the url it tried", async () => {
+    const down = {
+      ...runtime({}),
+      transport: () => ({
+        ...transport,
+        getAccount: async () => {
+          throw new TypeError("fetch failed");
+        },
+      }),
+    };
+    const tried = async (...url: string[]) => {
+      const err: string[] = [];
+      const code = await main(["show", "config", ...url], down, { out: () => undefined, err: (t) => err.push(t) });
+      expect(code).toBe(EXIT_FAILED);
+      return err;
+    };
+    const devnet = await tried("--url", "devnet");
+    expect(devnet).toEqual([unreachable("https://api.devnet.solana.com")]);
+    expect(devnet[0]).toContain("at https://api.devnet.solana.com;");
+    expect(devnet[0]).not.toContain("mainnet-beta");
+    expect(devnet[0]).not.toContain("--url devnet");
+    const secret = await tried("--url", "https://user:token@rpc.example.org:8443/key/abc?api-key=xyz");
+    expect(secret).toEqual([unreachable("https://rpc.example.org:8443")]);
+    expect(secret[0]).not.toMatch(/token|abc|xyz/);
   });
 
   it("answers help, prints text on request and honours the environment and cluster names", async () => {
@@ -678,6 +729,38 @@ describe("command line flows", () => {
       status: "cancelled",
     });
     expect(h.urls.at(-1)).toBe(CLUSTERS["localnet"]);
+  });
+
+  it("events follow survives a failed poll", async () => {
+    const tx = (signature: string) => ({ signature, slot: 1n, blockTime: null, failed: false, emitted: [] });
+    const polls: (Error | ReturnType<typeof tx>[])[] = [
+      [tx("a")],
+      new TypeError("fetch failed"),
+      new Error("HTTP error (503): Service Unavailable"),
+      [tx("b"), tx("a")],
+      new Error("HTTP error (502): Bad Gateway"),
+      [tx("c"), tx("b")],
+    ];
+    h.through = {
+      ...transport,
+      engineTransactions: async () => {
+        const next = polls.shift() ?? [];
+        if (next instanceof Error) {
+          throw next;
+        }
+        return next;
+      },
+    };
+    h.sleeps.length = 0;
+    h.rounds = 6;
+    const followed = await cli(["events", "--follow", "--interval", "4"], {});
+    h.through = null;
+    h.rounds = 0;
+    expect([followed.code, followed.err]).toEqual([EXIT_OK, ""]);
+    const shown = followed.each().map((v) => v["signature"] ?? v["error"]);
+    expect(shown).toEqual(["a", "fetch failed", "HTTP error (503): Service Unavailable", "b", "HTTP error (502): Bad Gateway", "c"]);
+    expect(followed.each().filter((v) => "error" in v).map((v) => v["retry_in"])).toEqual([1, 2, 1]);
+    expect(h.sleeps).toEqual([4, 1, 2, 4, 1, 4]);
   });
 
   it("follows new engine events without repeating them until told to stop", async () => {

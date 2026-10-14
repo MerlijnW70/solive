@@ -253,7 +253,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--mints`, `--create`,
 ## create
 
 ```text
-create swap|limit|dutch|attested --keypair <file> --input-mint --output-mint (--expires-at | --expires-in) (--amount-in --min-out | --make --take | --amount-in --start-out --end-out --start-at --end-at | --amount-in --min-result --max-result --attestor) [--nonce <n>] [--pay-to <wallet>] [--partner <address> --partner-bps <n>] [--units tokens|raw] [--yes]; attested also needs --spec-hash <64 hex> and takes [--judge-fee <amount>] [--spec-url <https url>]
+create swap|limit|dutch|attested --keypair <file> --input-mint --output-mint (--expires-at | --expires-in) (--amount-in --min-out | --make --take | --amount-in --start-out --end-out --start-at --end-at | --amount-in --min-result --max-result --attestor) [--nonce <n>] [--pay-to <wallet>] [--partner <address> --partner-bps <n>] [--units tokens|raw] [--yes]; attested takes [--spec-hash <64 hex> [--judge-fee <amount>] [--spec-url <https url>]] to make a proof escrow
 ```
 
 Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--nonce`, `--input-mint`, `--output-mint`, `--expires-at`, `--expires-in`, `--amount-in`, `--min-out`, `--make`, `--take`, `--start-out`, `--end-out`, `--start-at`, `--end-at`, `--min-result`, `--max-result`, `--attestor`, `--spec-hash`, `--judge-fee`, `--spec-url`, `--pay-to`, `--partner`, `--partner-bps`, `--units`, `--output`, `--help`

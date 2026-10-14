@@ -1110,8 +1110,7 @@ function treasury(remote: Remote, values: Values): Command {
 export const SHA256_NEEDED = "--sha256 must be the work's sha256 as 64 hex digits";
 
 export const SPEC_HASH_FORMAT = "--spec-hash must be the spec's sha256 as 64 hex digits";
-export const SPEC_HASH_NEEDED =
-  "create attested makes a proof escrow, which needs --spec-hash: the sha256 of the acceptance spec its judge checks; without it the escrow can only be cancelled or left to expire";
+export const needsSpecHash = (option: string) => `--${option} needs --spec-hash, which makes the attested escrow a proof escrow`;
 
 function sha256Of(text: string, refusal = SHA256_NEEDED): string {
   if (!/^[0-9a-fA-F]{64}$/.test(text)) {
@@ -1141,7 +1140,11 @@ function createTerms(kind: string | undefined, values: Values): ToolInput {
   }
   const specHash = values["spec-hash"];
   if (specHash === undefined) {
-    throw new UsageError(SPEC_HASH_NEEDED);
+    const given = PROOF_OPTIONS.find((name) => values[name] !== undefined);
+    if (given !== undefined) {
+      throw new UsageError(needsSpecHash(given));
+    }
+    return { ...base, ...payTo };
   }
   return {
     ...base,
@@ -1239,7 +1242,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   deliveries: "--attestor <address> --intent <address> [--max-pages <n>]",
   receipt: "--owner <address> --nonce <n> [--sha256 <64 hex>]",
   judge: "--keypair <judge file> --owner <address> --nonce <n> --spec <file> --artifact <file or directory> --run <command> [--pay-to <wallet>] [--result <n>] [--timeout <seconds>] [--verdict <file>] [--max-pages <n>] [--yes]",
-  create: `swap|limit|dutch|attested --keypair <file> --input-mint --output-mint (--expires-at | --expires-in) ${ORDER_SHAPE} [--nonce <n>] [--pay-to <wallet>] ${PARTNER_SHAPE} [--units tokens|raw] [--yes]; attested also needs --spec-hash <64 hex> and takes [--judge-fee <amount>] [--spec-url <https url>]`,
+  create: `swap|limit|dutch|attested --keypair <file> --input-mint --output-mint (--expires-at | --expires-in) ${ORDER_SHAPE} [--nonce <n>] [--pay-to <wallet>] ${PARTNER_SHAPE} [--units tokens|raw] [--yes]; attested takes [--spec-hash <64 hex> [--judge-fee <amount>] [--spec-url <https url>]] to make a proof escrow`,
   list: "--owner <address> or --keypair <file>; --owner wins when both are given",
   mandate: `grant --keypair <file> --agent --input-mint --output-mint --kinds --per-intent --total --max-intents --max-ttl --valid-for --floor-out --floor-in [--agent-fee] ${PARTNER_SHAPE} [--id] [--units tokens|raw] [--yes] | show --agent (--owner <address> | --keypair <file>) [--id] | revoke --keypair <file> --agent [--id] [--yes] | use swap|limit|dutch --keypair <file> --owner (--expires-at | --expires-in) ${MANDATE_ORDER_SHAPE} [--id] [--nonce <n>] [--units tokens|raw] [--yes]`,
   approve: "--keypair <file> --mint <mint> --amount <amount> [--units tokens|raw] [--yes]",

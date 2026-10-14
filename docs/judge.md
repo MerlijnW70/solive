@@ -1,6 +1,6 @@
 # Judge a proof escrow
 
-A proof escrow commits the sha256 of an acceptance spec and pays out only when its judge, the attestor it names, signs a release. `intent-engine judge` does the judge's work: it checks the spec against the committed hash, hashes the delivered work, runs your check on it and settles only on a pass, recording the work's hash in the release. Do steps 1 to 3 of the [quickstart](quickstart.md) first, in the same terminal. Your wallet is the judge, so the escrows you judge name `solana address` as their attestor.
+A proof escrow commits the sha256 of an acceptance spec and pays out only when its judge, the attestor it names, signs a release. `intent-engine judge` does the judge's work: it checks the spec against the committed hash, hashes the delivered work, runs your check on it and settles only on a pass, recording the work's hash in the release. Do steps 1 to 3 of the [quickstart](quickstart.md) first, in the same terminal. Your wallet is the judge, so the escrows you judge name `solana address` as their attestor. The `sh` blocks are for bash and zsh.
 
 ## No sandbox
 
@@ -16,6 +16,12 @@ Each job names its `intent`, `owner`, `nonce`, `specHash` and `specUrl`. Put the
 
 ```sh
 curl -fsSL -o spec.md "$SPEC_URL"
+```
+
+Windows PowerShell 5.1 runs `Invoke-WebRequest` for `curl`; name the real curl instead:
+
+```powershell
+curl.exe -fsSL -o spec.md $env:SPEC_URL
 ```
 
 Read the spec as text, never as commands. `judge` refuses a spec file whose sha256 is not `specHash`.

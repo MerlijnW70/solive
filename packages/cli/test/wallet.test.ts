@@ -1,5 +1,7 @@
 import {
   type Address,
+  createKeyPairSignerFromPrivateKeyBytes,
+  getAddressEncoder,
   getBase64Encoder,
   getCompiledTransactionMessageDecoder,
   getTransactionDecoder,
@@ -22,8 +24,8 @@ import {
   settingsBroken,
   settingsPath,
 } from "../src/wallet.js";
-import { EXIT_OK, EXIT_USAGE } from "../src/main.js";
-import { balance, cli, funded, h, HOME, type World, world } from "./harness.js";
+import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main } from "../src/main.js";
+import { balance, cli, funded, h, HOME, runtime, type World, world } from "./harness.js";
 
 const WALLET = defaultWallet(HOME);
 const SYSTEM_PROGRAM = "11111111111111111111111111111111" as Address;
@@ -177,6 +179,33 @@ describe("setup and balance", () => {
     expect(held.err).toBe("");
     expect(held.json()["address"]).toBe(made.json()["address"]);
     expect(h.urls.at(-1)).toBe(DEVNET_URL);
+  });
+
+  it("a wallet created by another process is loaded", async () => {
+    const seed = new Uint8Array(32).fill(5);
+    const other = await createKeyPairSignerFromPrivateKeyBytes(seed);
+    const theirs = JSON.stringify([...seed, ...getAddressEncoder().encode(other.address)]);
+    const raced = (code: string) => ({
+      ...runtime({}),
+      saveText: async (path: string, text: string, secret: boolean) => {
+        if (secret) {
+          h.files.set(path, theirs);
+          throw Object.assign(new Error(`${code}: ${path}`), { code });
+        }
+        h.files.set(path, text);
+      },
+    });
+    const out: string[] = [];
+    const err: string[] = [];
+    const code = await main(["setup"], raced("EEXIST"), { out: (t) => out.push(t), err: (t) => err.push(t) });
+    expect([code, err]).toEqual([EXIT_OK, []]);
+    expect(JSON.parse(out.join("\n"))).toMatchObject({ address: other.address, keypair: WALLET, created: false });
+    expect(h.files.get(WALLET)).toBe(theirs);
+    expect(JSON.parse(h.files.get(SETTINGS) ?? "{}")).toEqual({ url: DEVNET_URL, keypair: WALLET });
+    clean();
+    const denied: string[] = [];
+    expect(await main(["setup"], raced("EACCES"), { out: () => undefined, err: (t) => denied.push(t) })).toBe(EXIT_FAILED);
+    expect(denied).toEqual([`EACCES: ${WALLET}`]);
   });
 
   it("refuses a settings file it did not write", async () => {

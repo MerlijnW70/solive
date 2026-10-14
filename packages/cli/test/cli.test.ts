@@ -58,7 +58,8 @@ import {
 } from "@intent-engine/core";
 import { agentServer } from "../src/agent/mcp.js";
 import { ACTIONS } from "../src/agent/registry.js";
-import { SHA256_NEEDED, SPEC_HASH_FORMAT, SPEC_HASH_NEEDED, UsageError, usageOf } from "../src/args.js";
+import { needsSpecHash, SHA256_NEEDED, SPEC_HASH_FORMAT, UsageError, usageOf } from "../src/args.js";
+import { expandHome } from "../src/wallet.js";
 import { createClient, DEVNET_GENESIS_HASH, PLAIN_HTTP_ON_PUBLIC } from "@intent-engine/client";
 import {
   crankAction,
@@ -87,8 +88,10 @@ import {
   FETCH_TIMEOUT_MS,
   KEYPAIR_EXPOSED,
   KEYPAIR_UNREADABLE,
+  keypairUnreadable,
   loadKeypairFile,
   nodeRuntime,
+  PREVIEW_ONLY,
   render,
   runProcess,
 } from "../src/main.js";
@@ -1251,14 +1254,36 @@ describe("process plumbing", () => {
     const secret58 = "4hZ".repeat(29);
     const phantom = join(dir, "phantom.txt");
     await writeFile(phantom, secret58, { mode: 0o600 });
-    for (const target of [phantom, secret58, join(dir, "absent.json")]) {
+    for (const target of [phantom, secret58, join(dir, "absent.json"), JSON.stringify([...secret])]) {
       const failure = await loadKeypairFile(target).then(
         () => "loaded",
         (error: unknown) => (error instanceof Error ? error.message : String(error)),
       );
-      expect(failure).toBe(KEYPAIR_UNREADABLE);
+      expect(failure).toBe(keypairUnreadable(target));
+      expect(failure.startsWith(KEYPAIR_UNREADABLE)).toBe(true);
       expect(failure).not.toContain("4hZ");
+      expect(failure).not.toContain("[");
     }
+    expect(keypairUnreadable(phantom)).toBe(`${KEYPAIR_UNREADABLE}; tried ${phantom}`);
+    expect(keypairUnreadable(secret58)).not.toContain(secret58);
+  });
+
+  it("a keypair path starting with a tilde is expanded", async () => {
+    const home = await mkdtemp(join(tmpdir(), "home-"));
+    const seed = new Uint8Array(32).fill(9);
+    const signer = await createKeyPairSignerFromPrivateKeyBytes(seed);
+    await writeFile(join(home, "wallet.json"), JSON.stringify([...seed, ...getAddressEncoder().encode(signer.address)]), { mode: 0o600 });
+    expect((await loadKeypairFile("~/wallet.json", process.platform, home)).address).toBe(signer.address);
+    expect((await loadKeypairFile(join(home, "wallet.json"), process.platform, home)).address).toBe(signer.address);
+    const missing = await loadKeypairFile("~/absent.json", process.platform, home).then(
+      () => "loaded",
+      (error: unknown) => (error instanceof Error ? error.message : String(error)),
+    );
+    expect(missing).toBe(`${KEYPAIR_UNREADABLE}; tried ${home}/absent.json`);
+    expect(expandHome("~", home)).toBe(home);
+    expect(expandHome("~\\wallet.json", home)).toBe(`${home}\\wallet.json`);
+    expect(expandHome("~other/wallet.json", home)).toBe("~other/wallet.json");
+    expect(expandHome("a/~/wallet.json", home)).toBe("a/~/wallet.json");
   });
 
   it("serves the agent tools over stdio until the client hangs up", async () => {
@@ -1609,13 +1634,24 @@ describe("the cli reaches what the other surfaces do", () => {
     expect(refused).toMatchObject({ code: EXIT_FAILED, err: `--spec-url ${plain} ${PLAIN_HTTP_ON_PUBLIC}` });
   });
 
-  it("create attested without a spec hash is refused", async () => {
+  it("create attested without a spec hash creates a plain attested escrow", async () => {
     const judge = await generateKeyPairSigner();
-    const refused = await cli(attested(judge.address, "--nonce", "3", "--judge-fee", "0.00001", "--yes"), keys);
-    expect([refused.code, refused.err, refused.out]).toEqual([EXIT_USAGE, SPEC_HASH_NEEDED, ""]);
     const [intent] = await findIntentPda({ owner: w.owner.address, nonce: 3n });
+    for (const option of ["--judge-fee", "--spec-url"] as const) {
+      const value = option === "--judge-fee" ? "0.00001" : "https://example.org/spec.md";
+      const refused = await cli(attested(judge.address, "--nonce", "3", option, value, "--yes"), keys);
+      expect([refused.code, refused.err, refused.out]).toEqual([EXIT_USAGE, needsSpecHash(option.slice(2)), ""]);
+    }
     expect(h.svm.getAccount(intent).exists).toBe(false);
-    expect(balance(w.ownerInput)).toBe(1_000n);
+    const preview = await cli(attested(judge.address, "--nonce", "3"), keys);
+    expect([preview.code, preview.err]).toEqual([EXIT_OK, ""]);
+    expect(preview.json()).toMatchObject({ sent: false, next: NOT_SENT });
+    const made = await cli(attested(judge.address, "--nonce", "3", "--yes"), keys);
+    expect([made.code, made.err]).toEqual([EXIT_OK, ""]);
+    const params = (await shownIntent("3"))["params"] as Json;
+    expect(params).toMatchObject({ kind: "AttestedResult", amountIn: "100", minResult: "1", maxResult: "1", attestor: judge.address });
+    expect(params["specHash"] ?? "0".repeat(64)).toBe("0".repeat(64));
+    expect(balance(w.ownerInput)).toBe(900n);
   });
 
   it("cancel adds a missing refund account", async () => {
@@ -1627,7 +1663,7 @@ describe("the cli reaches what the other surfaces do", () => {
     ]);
     expect(h.svm.getAccount(w.ownerInput).exists).toBe(false);
     const preview = await cli(["cancel", "--keypair", "owner.json", "--nonce", "1", "--close"], keys);
-    expect([preview.code, preview.err]).toEqual([EXIT_OK, ""]);
+    expect([preview.code, preview.err]).toEqual([EXIT_OK, PREVIEW_ONLY]);
     expect(preview.json()).toMatchObject({ sent: false, next: NOT_SENT });
     expect(preview.json()["summary"]).toContain(`Creates ${w.ownerInput} first, since it is missing; the owner pays its rent`);
     const [intent] = await findIntentPda({ owner: w.owner.address, nonce: 1n });
@@ -1636,6 +1672,24 @@ describe("the cli reaches what the other surfaces do", () => {
     expect(sent.json()).toMatchObject({ intent, sent: true, signature: expect.any(String) });
     expect(balance(w.ownerInput)).toBe(ESCROW);
     expect(h.svm.getAccount(intent).exists).toBe(false);
+  });
+
+  it("a cancel preview says nothing was sent", async () => {
+    expect((await cli(swap("1", "--yes"), keys)).code).toBe(EXIT_OK);
+    const cancel = ["cancel", "--keypair", "owner.json", "--nonce", "1"];
+    const preview = await cli(cancel, keys);
+    expect([preview.code, preview.err]).toEqual([EXIT_OK, PREVIEW_ONLY]);
+    expect(preview.json()).toMatchObject({ sent: false, next: NOT_SENT });
+    expect(PREVIEW_ONLY).toBe("nothing was sent; pass --yes to sign and send it");
+    const text = await cli([...cancel, "--output", "text"], keys);
+    expect([text.code, text.err]).toEqual([EXIT_OK, PREVIEW_ONLY]);
+    expect(text.out.split("\n")).toContain("sent: false");
+    expect((await shownIntent("1"))["status"]).toBe("open");
+    const sent = await cli([...cancel, "--yes"], keys);
+    expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);
+    expect((await shownIntent("1"))["status"]).toBe("cancelled");
+    const created = await cli(swap("2"), keys);
+    expect([created.code, created.err]).toEqual([EXIT_OK, ""]);
   });
 
   it("cancel expire and close preview without yes", async () => {
@@ -1656,7 +1710,7 @@ describe("the cli reaches what the other surfaces do", () => {
     for (const [args, after] of steps) {
       const before = balance(w.ownerInput);
       const preview = await cli(args, signers);
-      expect([preview.code, preview.err], args.join(" ")).toEqual([EXIT_OK, ""]);
+      expect([preview.code, preview.err], args.join(" ")).toEqual([EXIT_OK, PREVIEW_ONLY]);
       expect(preview.json()).toMatchObject({ sent: false, next: NOT_SENT, summary: expect.any(Array) });
       expect(BigInt(preview.json()["units_consumed"] as string)).toBeGreaterThan(0n);
       expect(balance(w.ownerInput)).toBe(before);

@@ -73,6 +73,7 @@ import {
   PLAIN_HTTP_ON_PUBLIC,
   plainHttpOnPublic,
   type ProgramAccount,
+  RECONNECT_MS,
   tokenAccountIfMissing,
   tokenAmountOf,
   tokenProgramOf,
@@ -254,9 +255,6 @@ async function previewed(
   return { ...shown, sent: true, signature: await transport.send(instructions, signer) };
 }
 
-export const notRentPayer = (payer: Address): string =>
-  `${payer} paid this intent's rent and bounty, so only it can close the intent; cancel without --close`;
-
 export const NOT_RELEASED = "no release of this escrow is among its recent transactions; show intent says whether it is still open";
 
 const TOKEN_ACCOUNT_HEAD = 64;
@@ -319,8 +317,21 @@ export async function follow(
 ): Promise<number> {
   let seen = new Set<string>();
   let shown = 0;
-  do {
-    const fetched = await engineEvents(transport, limit);
+  let failures = 0;
+  for (;;) {
+    let fetched: EngineEvents[];
+    try {
+      fetched = await engineEvents(transport, limit);
+    } catch (error) {
+      const retry = (RECONNECT_MS[Math.min(failures, RECONNECT_MS.length - 1)] ?? 0) / 1000;
+      failures++;
+      emit({ error: error instanceof Error ? error.message : String(error), retry_in: retry });
+      if (!(await runtime.sleep(retry))) {
+        return shown;
+      }
+      continue;
+    }
+    failures = 0;
     const fresh = fetched.filter((tx) => !seen.has(tx.signature)).reverse();
     if (seen.size > 0 && fetched.length >= limit && fresh.length === fetched.length) {
       emit({ gap: true, warning: followGap(limit) });
@@ -330,8 +341,10 @@ export async function follow(
       shown++;
     }
     seen = new Set(fetched.map((tx) => tx.signature));
-  } while (await runtime.sleep(interval));
-  return shown;
+    if (!(await runtime.sleep(interval))) {
+      return shown;
+    }
+  }
 }
 
 type SolveCommand = Extract<Command, { name: "solve" }>;
@@ -566,21 +579,18 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "cancel": {
       const owner = await runtime.loadSigner(command.keypair);
       const { address, intent } = await loadIntent(transport, owner.address, command.nonce);
-      if (command.close && intent.rentPayer !== owner.address) {
-        throw new FlowRefused(notRentPayer(intent.rentPayer));
-      }
       const ref = { nonce: command.nonce, inputMint: intent.inputMint, tokenProgram: await tokenProgramOf(transport, intent.inputMint) };
       const refund = await tokenAccountIfMissing(transport, owner, owner.address, intent.inputMint, ref.tokenProgram);
       const instructions = [
         ...refund.create,
         await buildCancelIntent({ ...ref, owner }),
-        ...(command.close ? [await buildCloseIntent({ ...ref, owner: owner.address, cranker: owner, rentPayer: owner.address })] : []),
+        ...(command.close ? [await buildCloseIntent({ ...ref, owner: owner.address, cranker: owner, rentPayer: intent.rentPayer })] : []),
       ];
       const summary = [
         `Cancels intent ${address} (nonce ${command.nonce}); nobody can fill it afterwards`,
         `Returns what is left in escrow to ${refund.address}, the owner's token account for ${intent.inputMint}`,
         ...(refund.create.length > 0 ? [`Creates ${refund.address} first, since it is missing; the owner pays its rent`] : []),
-        ...(command.close ? [`Closes the intent in the same transaction and returns its rent and bounty to ${owner.address}; it can no longer be read afterwards`] : []),
+        ...(command.close ? [`Closes the intent in the same transaction and returns its rent and bounty to ${intent.rentPayer}, who paid them; it can no longer be read afterwards`] : []),
       ];
       return previewed(transport, instructions, owner, { intent: address, summary }, command.yes);
     }
