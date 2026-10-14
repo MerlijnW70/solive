@@ -13,16 +13,37 @@ import { decodeEvent, deliveryMemo, findAssociatedTokenAddress, getIntentDecoder
 import { createClient, DELIVERY_PAGES, DELIVERY_SCAN, type EngineTransaction, type ListedSignature, SIGNATURE_PAGE, type Transport } from "@intent-engine/client";
 import { ENV_KEYPAIR, JUDGE_TIMEOUT, MAX_JUDGE_TIMEOUT, RUN_NEEDED } from "../src/args.js";
 import { NOT_SENT } from "../src/flows.js";
-import { artifactSha256, CHECK_ENV, checkEnv, CLEANUP_RETRIES, ENV_ARTIFACT_PATH, ENV_ARTIFACT_SHA256, ENV_SPEC_PATH, resultOutside, runCheck, SKIPPED, SPEC_COPY } from "../src/judge.js";
+import {
+  artifactSha256,
+  CHECK_ENV,
+  checkEnv,
+  claim,
+  CLEANUP_RETRIES,
+  ENV_ARTIFACT_PATH,
+  ENV_ARTIFACT_SHA256,
+  ENV_SPEC_PATH,
+  leftRunning,
+  type Recorded,
+  resultOutside,
+  runCheck,
+  type Running,
+  SKIPPED,
+  SPEC_COPY,
+} from "../src/judge.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { balance, cli, creation, funded, h, NOW, transport, type World, world } from "./harness.js";
 
 const removal = vi.hoisted(() => ({ refused: false, retries: [] as (number | undefined)[] }));
+const writing = vi.hoisted(() => ({ before: null as ((path: string) => Promise<void>) | null }));
 
 vi.mock("node:fs/promises", async (original) => {
   const actual = await original<typeof import("node:fs/promises")>();
   return {
     ...actual,
+    writeFile: async (...args: Parameters<typeof actual.writeFile>) => {
+      await writing.before?.(String(args[0]));
+      return actual.writeFile(...args);
+    },
     rm: async (...args: Parameters<typeof actual.rm>) => {
       const [path, options] = args;
       if (removal.refused && String(path).includes("judge-artifact-")) {
@@ -331,6 +352,43 @@ describe("intent-engine judge", () => {
       expect(process.listenerCount("SIGINT")).toBe(0);
     } finally {
       h.through = null;
+      exits.mockRestore();
+      for (const listener of others) {
+        process.on("SIGINT", listener as NodeJS.SignalsListener);
+      }
+    }
+  });
+
+  it("interrupts after the release confirms still write the verdict", async () => {
+    const verdict = join(j.dir, "verdict.json");
+    const others = process.listeners("SIGINT");
+    process.removeAllListeners("SIGINT");
+    const exits = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+    try {
+      let emitted = false;
+      writing.before = async (path) => {
+        if (path !== verdict) {
+          return;
+        }
+        writing.before = null;
+        emitted = true;
+        process.emit("SIGINT", "SIGINT");
+        process.emit("SIGINT", "SIGINT");
+        await new Promise((wake) => setTimeout(wake, 500));
+      };
+      const ended = await cli(judging(j, "true", "--verdict", verdict, "--yes"), keys);
+      expect(emitted).toBe(true);
+      expect([ended.code, ended.out]).toEqual([130, ""]);
+      const written = JSON.parse(await readFile(verdict, "utf8"));
+      expect(written).toMatchObject({ verdict: "pass", payTo: j.worker.address, signature: expect.any(String) });
+      expect(ended.err).toContain(`it was sent in ${written.signature} and the verdict was written to ${verdict}`);
+      expect(ended.err).not.toContain("may have landed");
+      await new Promise((wake) => setTimeout(wake, 300));
+      expect(exits).not.toHaveBeenCalled();
+      expect(status(j.intent)).toBe(IntentStatus.Filled);
+      expect(process.listenerCount("SIGINT")).toBe(0);
+    } finally {
+      writing.before = null;
       exits.mockRestore();
       for (const listener of others) {
         process.on("SIGINT", listener as NodeJS.SignalsListener);
@@ -755,6 +813,64 @@ describe("the artifact hash", () => {
   it("runs the command with the environment it is given and reports its exit code", async () => {
     expect(await runCheck('test "$ARTIFACT_SHA256" = given && exit 4', { ...process.env, ARTIFACT_SHA256: "given" }, TIMEOUT_SECONDS * 10)).toEqual({ exitCode: 4, timedOut: false });
     expect(await runCheck("sleep 600", process.env, TIMEOUT_SECONDS)).toEqual({ exitCode: null, timedOut: true });
+  });
+
+  it("the kill walk never kills a process that reused the check pid", () => {
+    const check = 4000;
+    const entry = (pid: number, parent: number, group: number, session: number, started: number): Running => ({ pid, parent, group, session, started, zombie: false });
+    const recorded: Recorded = { started: new Map([[check, 100], [4001, 101], [4002, 102]]), retired: new Set() };
+    const reuser = [entry(check, 1, check, check, 900), entry(4100, check, check, check, 901), entry(4101, 4100, 4101, check, 902)];
+    const ours = [entry(4001, 1, 4001, 4001, 101), entry(4003, 4001, 4001, 4001, 150), entry(4004, 1, 4004, 4001, 160), entry(4005, 1, 4005, 4002, 170)];
+    const older = entry(4006, 1, 4006, 4002, 90);
+    const pids = (table: Running[]) => claim(table, recorded).map((running) => running.pid);
+    expect(pids([...reuser, ...ours, older])).toEqual([4001, 4003, 4004, 4005]);
+    expect(recorded.started.has(check)).toBe(false);
+    const orphans = [entry(4100, 1, check, check, 901), entry(4101, 1, 4101, check, 902)];
+    expect(pids([...orphans, ...ours])).toEqual([4001, 4003, 4004, 4005]);
+  });
+
+  it("an escaped process is reported, not ignored", { skip: process.platform !== "linux", timeout: 30_000 }, async () => {
+    const dir = await mkdtemp(join(tmpdir(), "judge-escape-"));
+    const pidFile = join(dir, "escaped");
+    const caught = join(dir, "caught");
+    const warned: string[] = [];
+    const writes = vi.spyOn(process.stderr, "write").mockImplementation((text) => {
+      warned.push(String(text));
+      return true;
+    });
+    let escaped = 0;
+    let stayed = 0;
+    try {
+      const run = [
+        `sh -c 'echo $$ > "${caught}"; exec sleep 600' &`,
+        "sleep 0.1",
+        `setsid -f sh -c 'echo $$ > "${pidFile}"; exec sleep 600'`,
+        `while ! test -s "${pidFile}"; do sleep 0.01; done`,
+      ].join("\n");
+      const check = await runCheck(run, checkEnv(process.env, join(dir, SPEC_COPY), dir, "ab"), TIMEOUT_SECONDS * 10, { cwd: dir });
+      escaped = Number(await readFile(pidFile, "utf8"));
+      stayed = Number(await readFile(caught, "utf8"));
+      expect(check).toEqual({ exitCode: 0, timedOut: false, escaped: [escaped] });
+      expect(warned.join("")).toContain(leftRunning([escaped]));
+      const ended = () => {
+        try {
+          return readFileSync(`/proc/${stayed}/stat`, "utf8").split(") ")[1]?.startsWith("Z") === true;
+        } catch {
+          return true;
+        }
+      };
+      await vi.waitFor(() => expect(ended()).toBe(true), { timeout: 5_000 });
+    } finally {
+      writes.mockRestore();
+      for (const pid of [escaped, stayed]) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch {
+          continue;
+        }
+      }
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 
