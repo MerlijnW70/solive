@@ -1,11 +1,29 @@
 import { createHash } from "node:crypto";
-import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
+import {
+  type Address,
+  appendTransactionMessageInstructions,
+  compressTransactionMessageUsingAddressLookupTables,
+  createTransactionMessage,
+  generateKeyPairSigner,
+  getAddressEncoder,
+  getBase64EncodedWireTransaction,
+  getCompiledTransactionMessageDecoder,
+  type Instruction,
+  type KeyPairSigner,
+  lamports,
+  pipe,
+  setTransactionMessageFeePayerSigner,
+  setTransactionMessageLifetimeUsingBlockhash,
+  signTransactionMessageWithSigners,
+} from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import { describe, expect, it } from "vitest";
-import { DELIVERY_MEMO_PREFIX, deliveryMemo, findIntentPda, Kind, MAX_MEMO_URL, SPEC_MEMO_PREFIX, specMemo } from "@intent-engine/core";
+import { DELIVERY_MEMO_PREFIX, deliveryMemo, findEventAuthorityPda, findIntentPda, Kind, MAX_MEMO_URL, SPEC_MEMO_PREFIX, specMemo } from "@intent-engine/core";
 import {
   announcements,
   createClient,
+  creationProof,
+  engineCalls,
   type Delivery,
   DELIVERY_PAGES,
   DELIVERY_SCAN,
@@ -31,6 +49,8 @@ import {
 import { funded, world, type World } from "./svm.js";
 
 const LOCAL = "http://127.0.0.1:8899";
+const LOOKUP_TABLE_HEAD = 56;
+const ADDRESS_LOOKUP_TABLE_PROGRAM = "AddressLookupTab1e1111111111111111111111111" as Address;
 const SPEC = "the acceptance spec the work must pass\n";
 const SPEC_URL = "https://example.org/jobs/spec.md";
 const WORK = createHash("sha256").update("the work").digest("hex");
@@ -563,5 +583,56 @@ describe("history past a window of recent transactions", () => {
       await expect(client.spec(job.intent)).rejects.toThrow(SpecUnreadable);
     }
     expect(cancelled).toEqual(["gone", "huge"]);
+  });
+});
+
+describe("svm transport", () => {
+  it("the svm transport reads instruction accounts from lookup tables", async () => {
+    const { w, judge, order } = await setting();
+    const captured: Instruction[] = [];
+    const capturing: Transport = {
+      ...w.chain.transport,
+      send: async (instructions) => {
+        captured.push(...instructions);
+        return "1".repeat(88);
+      },
+    };
+    const made = await createClient({ url: LOCAL, transport: capturing }).createIntent({ ...order, params: proof(judge.address) });
+    const [eventAuthority] = await findEventAuthorityPda();
+    const table = (await generateKeyPairSigner()).address;
+    const listed = [made.intent, eventAuthority];
+    const header = new Uint8Array(LOOKUP_TABLE_HEAD);
+    const view = new DataView(header.buffer);
+    view.setUint32(0, 1, true);
+    view.setBigUint64(4, 0xffff_ffff_ffff_ffffn, true);
+    header[20] = listed.length;
+    const data = Uint8Array.from([...header, ...listed.flatMap((address) => [...getAddressEncoder().encode(address)])]);
+    w.chain.svm.setAccount({
+      address: table,
+      data,
+      executable: false,
+      lamports: lamports(w.chain.svm.minimumBalanceForRentExemption(BigInt(data.length))),
+      programAddress: ADDRESS_LOOKUP_TABLE_PROGRAM,
+      space: BigInt(data.length),
+    });
+    const latest = await w.chain.transport.latestBlockhash();
+    const message = pipe(
+      createTransactionMessage({ version: 0 }),
+      (m) => setTransactionMessageFeePayerSigner(w.owner, m),
+      (m) => setTransactionMessageLifetimeUsingBlockhash(latest, m),
+      (m) => appendTransactionMessageInstructions(captured, m),
+      (m) => compressTransactionMessageUsingAddressLookupTables(m, { [table]: listed }),
+    );
+    const signed = await signTransactionMessageWithSigners(message);
+    const compiled = getCompiledTransactionMessageDecoder().decode(signed.messageBytes);
+    expect("addressTableLookups" in compiled ? compiled.addressTableLookups?.map((lookup) => lookup.lookupTableAddress) : []).toEqual([table]);
+    expect(compiled.staticAccounts).not.toContain(made.intent);
+    const signature = await w.chain.transport.sendWire(getBase64EncodedWireTransaction(signed), latest);
+    const landed = await w.chain.transport.transactionOf?.(signature);
+    const calls = landed === null || landed === undefined ? [] : engineCalls(landed);
+    expect(calls.some(({ inner, accounts }) => !inner && accounts?.includes(made.intent) === true)).toBe(true);
+    expect(calls.some(({ inner, accounts }) => inner && accounts?.includes(eventAuthority) === true)).toBe(true);
+    expect(landed === null || landed === undefined ? null : creationProof(landed, made.intent)).toEqual({ attestor: judge.address, specHash: Buffer.from(sha(SPEC)).toString("hex") });
+    expect((await w.chain.transport.signaturesOf?.(made.intent, SIGNATURE_PAGE))?.map((entry) => entry.signature)).toEqual([signature]);
   });
 });

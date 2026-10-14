@@ -225,7 +225,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Wait until an intent of this server's wallet is filled, cancelled or expired, or until within seconds pass, then say which and, for a fill, how much it delivered to this wallet or to the pay_to it named. Use it after sending instead of asking the user to check again; call it again while the status is still open.
+Wait until an intent of this server's wallet is filled, cancelled or expired, or until within seconds pass, then say which and, for a fill, how much it delivered to this wallet or to the pay_to it named, or for a released escrow, how much it paid out. Use it after sending instead of asking the user to check again; call it again while the status is still open.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 

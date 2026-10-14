@@ -95,6 +95,10 @@ import {
   creationUnread,
   escrowGone,
   FILL_UNKNOWN,
+  followUpsUnknown,
+  otherLifecycle,
+  RECEIPT_PARTIAL,
+  RELEASE_PAGES,
   HISTORY_PAGES,
   HISTORY_TOO_LONG,
   LANDING_SECONDS,
@@ -1407,11 +1411,20 @@ describe("the wallet server", () => {
     h.engineLog = [];
   }, 60_000);
 
+  function markFilled(intent: Address, status: number = IntentStatus.Filled) {
+    const held = h.svm.getAccount(intent);
+    if (!held.exists) {
+      throw new Error("the escrow was not created");
+    }
+    h.svm.setAccount({ ...held, data: Uint8Array.from(getIntentEncoder().encode({ ...getIntentDecoder().decode(held.data), status })) });
+  }
+
   async function releasedEscrow(nonceHint: string) {
     const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
     h.engineLog = [];
     const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, min_result: "1", max_result: "1", spec_hash: nonceHint.repeat(32), send: true });
     const intent = escrow["intent"] as Address;
+    markFilled(intent);
     const owner = wallet;
     const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
     const { fee, net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);
@@ -1827,12 +1840,205 @@ describe("the wallet server", () => {
     h.engineLog = [];
   });
 
+  function createdAtOfEscrow(intent: Address): bigint {
+    const held = h.svm.getAccount(intent);
+    if (!held.exists) {
+      throw new Error("the escrow was not created");
+    }
+    return getIntentDecoder().decode(held.data).createdAt;
+  }
+
+  it("a release from an earlier lifecycle of the same address is refused", async () => {
+    const { wallet, owner, intent, nonce, attestedTo } = await releasedEscrow("53");
+    const payee = await findAssociatedTokenAddress({ owner: (await generateKeyPairSigner()).address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const first = createdFrom(intent);
+    const earlier = { signature: "3".repeat(87) + "e", slot: 3n, blockTime: null, failed: false, emitted: [attestedTo(payee)], feePayer: wallet } satisfies EngineTransaction;
+    const remade = { ...first, signature: "remade", slot: 5n };
+    const args = { owner, nonce, release: earlier.signature };
+    const refused = { code: "OtherLifecycle", hint: otherLifecycle(earlier.signature, intent) };
+    h.engineLog = [earlier, first];
+    expect(await ok(client, "wallet_receipt", args)).toMatchObject({ intent, released: true, payee, signature: earlier.signature });
+    h.engineLog = [remade, earlier, first];
+    expect((await call(client, "wallet_receipt", args)).value).toMatchObject(refused);
+    expect(await ok(client, "wallet_receipt", { owner, nonce })).toEqual({ intent, released: false, next: NOT_RELEASED });
+    const dated = { ...earlier, blockTime: createdAtOfEscrow(intent) - 1n };
+    h.through = pagedThrough(() => [remade, dated, first], []);
+    const paged = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    expect((await call(paged, "wallet_receipt", args)).value).toMatchObject(refused);
+    markFilled(intent, IntentStatus.Open);
+    h.through = pagedThrough(() => [remade, earlier, first], []);
+    const reopened = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    expect((await call(reopened, "wallet_receipt", args)).value).toMatchObject(refused);
+    h.through = null;
+    closeAccount(intent);
+    expect((await call(client, "wallet_receipt", args)).value).toMatchObject(refused);
+    expect(await ok(client, "wallet_receipt", { owner, nonce })).toEqual({ intent, released: false, next: NOT_RELEASED });
+    h.engineLog = [earlier, first];
+    expect(await ok(client, "wallet_receipt", args)).toMatchObject({ intent, released: true, signature: earlier.signature });
+    h.engineLog = [];
+  });
+
+  it("record delivery reads deliveries of the release lifecycle only", async () => {
+    const { wallet, owner, intent, nonce, attestedTo, announce } = await releasedEscrow("54");
+    markFilled(intent, IntentStatus.Open);
+    const worker = (await generateKeyPairSigner()).address;
+    const successor = (await generateKeyPairSigner()).address;
+    const payee = await findAssociatedTokenAddress({ owner: worker, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const vault = (await generateKeyPairSigner()).address;
+    const first = createdFrom(intent);
+    const release = {
+      signature: "4".repeat(87) + "e",
+      slot: 3n,
+      blockTime: null,
+      failed: false,
+      emitted: [attestedTo(payee)],
+      feePayer: wallet,
+      tokens: [{ account: vault, mint: NATIVE_MINT, owner: intent }],
+    } satisfies EngineTransaction;
+    const remade = { ...first, signature: "remade", slot: 5n };
+    const own = "c7".repeat(32);
+    const late = "c8".repeat(32);
+    const current = "c9".repeat(32);
+    h.engineLog = [announce("current", 6n, successor, current), remade, announce("late", 4n, worker, late), release, announce("own", 2n, worker, own), first];
+    const args = { owner, nonce, release: release.signature };
+    expect(await ok(client, "wallet_record_delivery", { ...args, sha256: own })).toMatchObject({ intent, release: release.signature, sha256: own, sent: false });
+    expect((await call(client, "wallet_record_delivery", { ...args, sha256: late })).value).toMatchObject({ code: "NotAnnounced", hint: neverAnnounced(late, intent) });
+    expect((await call(client, "wallet_record_delivery", { ...args, sha256: current })).value).toMatchObject({ code: "NotAnnounced", hint: neverAnnounced(current, intent) });
+    expect((await call(client, "wallet_record_delivery", { owner, nonce, sha256: own })).value).toMatchObject({ code: "NotReleased", hint: notReleasedYet(intent) });
+    closeAccount(intent);
+    expect(await ok(client, "wallet_record_delivery", { ...args, sha256: own })).toMatchObject({ intent, release: release.signature, sha256: own, sent: false });
+    expect((await call(client, "wallet_record_delivery", { ...args, sha256: current })).value).toMatchObject({ code: "NotAnnounced", hint: neverAnnounced(current, intent) });
+    h.engineLog = [];
+  });
+
+  function attestedRelease(intent: Address, owner: Address, signature: string) {
+    const { fee, net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);
+    const attested = getIntentAttestedEventEncoder().encode({
+      intent,
+      owner,
+      solver: owner,
+      payee: owner,
+      attestor: owner,
+      amountIn: LAMPORTS_PER_SOL / 20n,
+      result: 1n,
+      fee,
+      net,
+      filled: LAMPORTS_PER_SOL / 20n,
+      remaining: 0n,
+      partnerFee: 0n,
+    });
+    return { signature, slot: 3n, blockTime: null, failed: false, emitted: [new Uint8Array([...EVENT_IX_TAG, ...attested])], feePayer: owner } satisfies EngineTransaction;
+  }
+
+  it("a follow up hidden past the page cap makes the receipt incomplete", async () => {
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    const [intent] = await findIntentPda({ owner, nonce: 16n });
+    const work = "e4".repeat(32);
+    const other = "e5".repeat(32);
+    const release = attestedRelease(intent, owner, "2".repeat(87) + "e");
+    const followUp = { signature: "follow-up", slot: 4n, blockTime: null, failed: false, emitted: [], memos: [followUpMemo(work, release.signature)], feePayer: owner } satisfies EngineTransaction;
+    let log: EngineTransaction[] = [...zeroTransfers(RELEASE_PAGES * SIGNATURE_PAGE), followUp, release];
+    h.through = pagedThrough(() => log, []);
+    const paged = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const args = { nonce: "16", release: release.signature };
+    const partial = await ok(paged, "wallet_receipt", { ...args, sha256: work });
+    expect(partial).toMatchObject({ intent, released: true, complete: false, next: RECEIPT_PARTIAL, signature: release.signature, matches: false });
+    expect(partial).not.toHaveProperty("delivered_sha256");
+    const recording = { owner, nonce: "16", sha256: other, release: release.signature };
+    expect((await call(paged, "wallet_record_delivery", recording)).value).toMatchObject({ code: "HistoryTooLong", hint: followUpsUnknown(release.signature) });
+    log = [...zeroTransfers(RELEASE_PAGES * SIGNATURE_PAGE - 10), followUp, release];
+    const whole = await ok(paged, "wallet_receipt", { ...args, sha256: work });
+    expect(whole).toMatchObject({ intent, released: true, delivered_sha256: work, matches: true });
+    expect(whole).not.toHaveProperty("complete");
+    expect((await call(paged, "wallet_record_delivery", recording)).value).toMatchObject({ code: "AlreadyRecorded", hint: alreadyRecorded(work) });
+    h.through = null;
+    h.engineLog = [];
+  }, 120_000);
+
+  it("an unread follow up is not taken as nothing recorded", async () => {
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    const [intent] = await findIntentPda({ owner, nonce: 17n });
+    const work = "e6".repeat(32);
+    const release = attestedRelease(intent, owner, "1".repeat(87) + "e");
+    const memos = [followUpMemo(work, release.signature)];
+    const lagging = { signature: "lagging-follow-up", slot: 4n, blockTime: null, failed: false, emitted: [], memos, unread: true as const } satisfies EngineTransaction;
+    const answered = { signature: lagging.signature, slot: 4n, blockTime: null, failed: false, emitted: [], memos, feePayer: owner } satisfies EngineTransaction;
+    const partial = { intent, released: true, complete: false, next: RECEIPT_PARTIAL, signature: release.signature };
+    h.through = pagedThrough(() => [lagging, release], []);
+    const paged = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const named = await ok(paged, "wallet_receipt", { nonce: "17", release: release.signature });
+    expect(named).toMatchObject(partial);
+    expect(named).not.toHaveProperty("delivered_sha256");
+    expect(await ok(paged, "wallet_receipt", { nonce: "17" })).toMatchObject(partial);
+    const recording = { owner, nonce: "17", sha256: "e7".repeat(32), release: release.signature };
+    expect((await call(paged, "wallet_record_delivery", recording)).value).toMatchObject({ code: "HistoryTooLong", hint: followUpsUnknown(release.signature) });
+    h.through = pagedThrough(() => [answered, release], []);
+    const read = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const whole = await ok(read, "wallet_receipt", { nonce: "17", release: release.signature });
+    expect(whole).toMatchObject({ intent, released: true, delivered_sha256: work });
+    expect(whole).not.toHaveProperty("complete");
+    h.through = null;
+    h.engineLog = [lagging, release];
+    expect(await ok(client, "wallet_receipt", { nonce: "17" })).toMatchObject(partial);
+    expect((await call(client, "wallet_record_delivery", recording)).value).toMatchObject({ code: "HistoryTooLong", hint: followUpsUnknown(release.signature) });
+    h.engineLog = [answered, release];
+    expect(await ok(client, "wallet_receipt", { nonce: "17" })).toMatchObject({ released: true, delivered_sha256: work });
+    h.engineLog = [];
+  });
+
+  function tokenAccountAt(address: Address, holder: Address) {
+    const space = BigInt(getTokenSize());
+    h.svm.setAccount({
+      address,
+      data: Uint8Array.from(
+        getTokenEncoder().encode({
+          mint: NATIVE_MINT,
+          owner: holder,
+          amount: 0n,
+          delegate: none(),
+          state: AccountState.Initialized,
+          isNative: none(),
+          delegatedAmount: 0n,
+          closeAuthority: none(),
+        }),
+      ),
+      executable: false,
+      lamports: lamports(h.svm.minimumBalanceForRentExemption(space)),
+      programAddress: TOKEN_PROGRAM_ADDRESS,
+      space,
+    });
+  }
+
+  it("the earliest announcer check uses the owner at release time", async () => {
+    const { wallet, owner, intent, nonce, attestedTo, announce } = await releasedEscrow("55");
+    const worker = (await generateKeyPairSigner()).address;
+    const buyer = (await generateKeyPairSigner()).address;
+    const payee = (await generateKeyPairSigner()).address;
+    const work = "d4".repeat(32);
+    tokenAccountAt(payee, buyer);
+    const release = (tokens: NonNullable<EngineTransaction["tokens"]>) =>
+      ({ signature: "6".repeat(87) + "e", slot: 3n, blockTime: null, failed: false, emitted: [attestedTo(payee)], feePayer: wallet, tokens }) satisfies EngineTransaction;
+    const announced = [announce("announced", 2n, worker, work), createdFrom(intent)];
+    const args = { owner, nonce, sha256: work };
+    h.engineLog = [release([{ account: payee, mint: NATIVE_MINT, owner: worker }]), ...announced];
+    expect(await ok(client, "wallet_record_delivery", args)).toMatchObject({ intent, sha256: work, sent: false });
+    expect(await ok(client, "wallet_receipt", { owner, nonce })).toMatchObject({ payee, paid_to: worker });
+    const refused = { code: "NotEarliestAnnouncer", hint: paidOther(worker, work, payee) };
+    h.engineLog = [release([{ account: payee, mint: NATIVE_MINT, owner: buyer }]), ...announced];
+    expect((await call(client, "wallet_record_delivery", args)).value).toMatchObject(refused);
+    h.engineLog = [release([]), ...announced];
+    expect((await call(client, "wallet_record_delivery", args)).value).toMatchObject(refused);
+    tokenAccountAt(payee, worker);
+    expect(await ok(client, "wallet_record_delivery", args)).toMatchObject({ intent, sha256: work, sent: false });
+    h.engineLog = [];
+  });
+
   it("wait finds the fill after a flood", async () => {
     const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
     h.engineLog = [];
     const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, min_result: "1", max_result: "1", spec_hash: "5d".repeat(32), send: true });
     const intent = escrow["intent"] as Address;
-    closeAccount(intent);
+    markFilled(intent);
     const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
     const { fee, net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);
     const payee = await findAssociatedTokenAddress({ owner: (await generateKeyPairSigner()).address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
@@ -1872,13 +2078,73 @@ describe("the wallet server", () => {
       intent,
       status: "filled",
       waited: 0,
-      received: formatAmount(net, 9),
+      paid_out: formatAmount(net, 9),
       token: "SOL",
       signature: release.signature,
     });
     expect(fetched).toEqual([release.signature]);
+    closeAccount(intent);
+    fetched.length = 0;
+    expect(await ok(paged, "wallet_wait", { nonce: escrow["nonce"] })).toEqual({ intent, status: "closed", waited: 0, next: FILL_UNKNOWN });
+    expect(fetched).toEqual([release.signature]);
     log = [...zeroTransfers(flood), { ...release, memos: [], memoSigners: [] }, creation(intent)];
     expect(await ok(paged, "wallet_wait", { nonce: escrow["nonce"] })).toEqual({ intent, status: "closed", waited: 0, next: FILL_UNKNOWN });
+    h.through = null;
+    h.engineLog = [];
+  });
+
+  it("wait reports the payout of an owned escrow as paid out", async () => {
+    const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
+    h.engineLog = [];
+    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, min_result: "1", max_result: "1", spec_hash: "5e".repeat(32), send: true });
+    const intent = escrow["intent"] as Address;
+    const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
+    const { fee, net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);
+    const worker = (await generateKeyPairSigner()).address;
+    const payee = await findAssociatedTokenAddress({ owner: worker, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const attested = getIntentAttestedEventEncoder().encode({
+      intent,
+      owner: wallet,
+      solver: wallet,
+      payee,
+      attestor: wallet,
+      amountIn: LAMPORTS_PER_SOL / 20n,
+      result: 1n,
+      fee,
+      net,
+      filled: LAMPORTS_PER_SOL / 20n,
+      remaining: 0n,
+      partnerFee: 0n,
+    });
+    const vault = (await generateKeyPairSigner()).address;
+    const release = {
+      signature: "5".repeat(87) + "e",
+      slot: 3n,
+      blockTime: null,
+      failed: false,
+      emitted: [tag(attested)],
+      feePayer: wallet,
+      tokens: [{ account: vault, mint: NATIVE_MINT, owner: intent }],
+    } satisfies EngineTransaction;
+    const made = createdFrom(intent);
+    markFilled(intent);
+    h.engineLog = [release, made];
+    const paid = { intent, status: "filled", waited: 0, paid_out: formatAmount(net, 9), token: "SOL", signature: release.signature };
+    const shown = await ok(client, "wallet_wait", { nonce: escrow["nonce"] });
+    expect(shown).toEqual(paid);
+    expect(shown).not.toHaveProperty("received");
+    closeAccount(intent);
+    expect(await ok(client, "wallet_wait", { nonce: escrow["nonce"] })).toEqual({ ...paid, status: "filled" });
+    const later = { ...made, signature: "remade", slot: 5n };
+    h.engineLog = [later, release, made];
+    expect(await ok(client, "wallet_wait", { nonce: escrow["nonce"] })).toEqual({ intent, status: "closed", waited: 0 });
+    const marked = { ...release, memos: [releaseMemo("5f".repeat(32))], memoSigners: [[wallet]] };
+    let log: EngineTransaction[] = [marked, made];
+    h.through = pagedThrough(() => log, []);
+    const paged = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    expect(await ok(paged, "wallet_wait", { nonce: escrow["nonce"] })).toEqual({ ...paid, signature: marked.signature });
+    log = [later, marked, made];
+    expect(await ok(paged, "wallet_wait", { nonce: escrow["nonce"] })).toEqual({ intent, status: "closed", waited: 0 });
     h.through = null;
     h.engineLog = [];
   });

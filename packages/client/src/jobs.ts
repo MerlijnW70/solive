@@ -124,7 +124,7 @@ function proofOf(address: Address, intent: Intent): Proof | null {
   return params.kind === Kind.AttestedResult && params.specHash.some((b) => b !== 0) ? { address, intent, params } : null;
 }
 
-async function intentAt(transport: Transport, address: Address): Promise<Intent | null> {
+export async function intentAt(transport: Transport, address: Address): Promise<Intent | null> {
   const view = await createdAccount(transport, address);
   const tag = getIntentDiscriminatorBytes();
   if (view === null || view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS || view.data.length !== getIntentSize() || !tag.every((b, i) => view.data[i] === b)) {
@@ -440,18 +440,13 @@ export function engineCalls(transaction: EngineTransaction): EngineCall[] {
 
 const startsWith = (data: Uint8Array, head: ReadonlyUint8Array): boolean => data.length >= head.length && head.every((b, i) => data[i] === b);
 
-function createdProof(transaction: EngineTransaction, intent: Address): EscrowProof | null {
-  const nonce = transaction.emitted.map(decodeEvent).find((event) => event?.name === "IntentCreated" && "intent" in event.fields && event.fields.intent === intent);
-  const wanted = (nonce?.fields as { nonce?: bigint } | undefined)?.nonce;
+export function creationProof(transaction: EngineTransaction, intent: Address): EscrowProof | null {
   for (const { data, accounts } of engineCalls(transaction)) {
-    if (!CREATE_DISCRIMINATORS.some((head) => startsWith(data, head)) || (accounts !== undefined && !accounts.includes(intent))) {
+    if (!CREATE_DISCRIMINATORS.some((head) => startsWith(data, head)) || accounts === undefined || !accounts.includes(intent)) {
       continue;
     }
     try {
       const args = getCreateIntentArgsDecoder().decode(data, DISCRIMINATOR_BYTES);
-      if (wanted !== undefined && args.nonce !== wanted) {
-        continue;
-      }
       const params = decodeParams(args.kind, Uint8Array.from(args.params));
       return params.kind === Kind.AttestedResult ? { attestor: params.attestor, specHash: hex(params.specHash) } : null;
     } catch {
@@ -466,13 +461,23 @@ export async function escrowOrigin(transport: Transport, intent: Address, pages:
   const created = (transaction: EngineTransaction) => !transaction.failed && createdIn(transaction.emitted, intent);
   const { transactions } = await scan(transport, intent, { floor, pages, until: created });
   const tx = transactions.find(created);
-  return tx === undefined ? null : { intent, signature: tx.signature, slot: tx.slot, createdAt: floor ?? tx.blockTime, proof: createdProof(tx, intent) };
+  return tx === undefined ? null : { intent, signature: tx.signature, slot: tx.slot, createdAt: floor ?? tx.blockTime, proof: creationProof(tx, intent) };
 }
 
 export async function originDeliveries(transport: Transport, judge: Address, origin: EscrowOrigin, pages: number = DELIVERY_PAGES): Promise<DeliveryRecord> {
   const { firstAvailableSlot } = transport;
   const covered = async () => firstAvailableSlot !== undefined && (await firstAvailableSlot.call(transport)) <= origin.slot;
   return judgedDeliveries(transport, judge, new Set([origin.intent]), origin.createdAt, covered, pages);
+}
+
+export type Lifecycle = { intent: Address; createdAt: bigint | null; from: bigint | null; to: bigint };
+
+export async function lifecycleDeliveries(transport: Transport, judge: Address, lifecycle: Lifecycle, pages: number = DELIVERY_PAGES): Promise<DeliveryRecord> {
+  const { firstAvailableSlot } = transport;
+  const { from, to } = lifecycle;
+  const covered = async () => from !== null && firstAvailableSlot !== undefined && (await firstAvailableSlot.call(transport)) <= from;
+  const record = await judgedDeliveries(transport, judge, new Set([lifecycle.intent]), lifecycle.createdAt, covered, pages);
+  return { ...record, deliveries: record.deliveries.filter(({ slot }) => (from === null || slot >= from) && slot <= to) };
 }
 
 export async function transactionAt(transport: Transport, signature: string, of?: Address): Promise<EngineTransaction | null> {

@@ -34,6 +34,7 @@ import {
   getIntentDecoder,
   getIntentDiscriminatorBytes,
   getIntentSize,
+  type Intent,
   isMemoUrl,
   MEMO_URL_RULE,
   INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -59,11 +60,12 @@ import {
   Charged,
   CLOCK_SYSVAR,
   createdAtOf,
+  creationProof,
   type DeliveryRecord,
   DELIVERY_SCAN,
   engineCalls,
-  escrowOrigin,
   type EngineTransaction,
+  type EscrowProof,
   explain,
   type ListedSignature,
   DELIVERY_PAGES,
@@ -74,12 +76,13 @@ import {
   followUpMemo,
   followUpOf,
   historyCovers,
+  intentAt,
+  lifecycleDeliveries,
   MEMOS_PER_TRANSACTION,
   loadConfig,
   MEMO_PROGRAM_ADDRESS,
   mintOf,
   neverLanded,
-  originDeliveries,
   PACKET_DATA_SIZE,
   parseFollowUpMemo,
   recordedDelivery,
@@ -1368,33 +1371,49 @@ export const splitPaidOthers = (worker: string, sha256: string) =>
 export const recipientsUnread = (release: string) =>
   `the recipients of the split ${release} cannot be read from its transaction: it holds no split instruction for this escrow, neither at the top level nor inside another program's call, so whether it paid the earliest announcer is unknown and nothing is recorded; ask its attestor which wallets the split paid`;
 
+export const followUpsUnknown = (release: string) =>
+  `the history after the release ${release} could not be read in full: it is longer than the pages read, the RPC node could not return some of its transactions yet, or it is too long to show that the escrow address was not made again since, so whether a follow-up already records a delivered sha256 for it is unknown and nothing more is recorded; when the node lagged, call again in a few seconds`;
+
+export const otherLifecycle = (release: string, intent: string) =>
+  `the release ${release} belongs to an earlier lifecycle of the escrow address ${intent}, which was closed and made again at the same nonce since, so it is not a release of the escrow there now; leave release out to read the current one`;
+
+export const COVERAGE_UNPROVABLE =
+  "this transport cannot report the first slot its RPC node keeps, so it cannot prove that the history read reaches back to the escrow's creation and an escrow without a release found reads as unknown rather than not released";
+
 export type Recording = { intent: Address; release: string; attestor: Address; sha256: string; memo: string; instructions: Instruction[]; summary: string[] };
 
 const ZERO_HASH = /^0+$/;
 
-async function announcedFor(transport: Transport, judge: Address, intent: Address): Promise<DeliveryRecord> {
-  const record = await deliveryRecord(transport, judge, intent);
-  if (record.pages > 0) {
-    return record;
-  }
-  if ((await createdAtOf(transport, intent)) !== null) {
-    throw new AgentRefusal("NotDeliverable", notAProofEscrow(intent));
-  }
-  const origin = await escrowOrigin(transport, intent);
-  if (origin === null) {
-    throw new AgentRefusal("HistoryTooLong", escrowGone(intent));
-  }
-  if (origin.proof === null) {
-    throw new AgentRefusal("HistoryTooLong", creationUnread(intent, origin.signature));
-  }
-  if (ZERO_HASH.test(origin.proof.specHash)) {
-    throw new AgentRefusal("NotDeliverable", notAProofEscrow(intent));
-  }
-  if (origin.proof.attestor !== judge) {
-    throw new AgentRefusal("Unauthorized", releasedBy(origin.proof.attestor, judge));
-  }
-  return originDeliveries(transport, judge, origin);
+function heldProof(held: Intent): EscrowProof | null {
+  const params = decodeParams(held.kind, Uint8Array.from(held.params));
+  return params.kind === Kind.AttestedResult ? { attestor: params.attestor, specHash: Buffer.from(params.specHash).toString("hex") } : null;
 }
+
+async function announcedFor(
+  transport: Transport,
+  judge: Address,
+  intent: Address,
+  held: Intent | null,
+  creation: EngineTransaction | null,
+  release: EngineTransaction,
+): Promise<DeliveryRecord> {
+  const proof = (creation === null ? null : creationProof(creation, intent)) ?? (held === null ? null : heldProof(held));
+  if (proof === null) {
+    if (held !== null) {
+      throw new AgentRefusal("NotDeliverable", notAProofEscrow(intent));
+    }
+    throw new AgentRefusal("HistoryTooLong", creation === null ? escrowGone(intent) : creationUnread(intent, creation.signature));
+  }
+  if (ZERO_HASH.test(proof.specHash)) {
+    throw new AgentRefusal("NotDeliverable", notAProofEscrow(intent));
+  }
+  if (proof.attestor !== judge) {
+    throw new AgentRefusal("Unauthorized", releasedBy(proof.attestor, judge));
+  }
+  return lifecycleDeliveries(transport, judge, { intent, createdAt: creation?.blockTime ?? held?.createdAt ?? null, from: creation?.slot ?? null, to: release.slot });
+}
+
+export const coverageOf = (transport: Transport, text: string): string => (transport.firstAvailableSlot === undefined ? `${text}; ${COVERAGE_UNPROVABLE}` : text);
 
 export async function recordingOf(
   transport: Transport,
@@ -1405,9 +1424,10 @@ export async function recordingOf(
   releaseSignature?: string,
 ): Promise<Recording> {
   const [intent] = await findIntentPda({ owner, nonce });
-  const { release, transactions, complete } = releaseSignature === undefined ? await releaseLookup(transport, intent) : await namedRelease(transport, intent, releaseSignature);
+  const lookup = releaseSignature === undefined ? await releaseLookup(transport, intent) : await namedRelease(transport, intent, releaseSignature);
+  const { release, transactions, complete } = lookup;
   if (release === null) {
-    throw complete ? new AgentRefusal("NotReleased", notReleasedYet(intent)) : new AgentRefusal("HistoryTooLong", RELEASE_UNKNOWN);
+    throw complete ? new AgentRefusal("NotReleased", notReleasedYet(intent)) : new AgentRefusal("HistoryTooLong", coverageOf(transport, RELEASE_UNKNOWN));
   }
   const { tx, event } = release;
   const fields = event.fields as Record<string, unknown>;
@@ -1419,7 +1439,12 @@ export async function recordingOf(
   if (recorded !== null) {
     throw new AgentRefusal("AlreadyRecorded", alreadyRecorded(recorded));
   }
-  const record = await announcedFor(transport, judge.address, intent);
+  if (!complete || !lookup.bound) {
+    throw new AgentRefusal("HistoryTooLong", coverageOf(transport, followUpsUnknown(tx.signature)));
+  }
+  const creation = lookup.creation !== undefined ? lookup.creation : (await aroundRelease(transport, intent, tx)).creation;
+  const held = await intentAt(transport, intent);
+  const record = await announcedFor(transport, judge.address, intent, held !== null && !outlives(held, tx, creation) ? held : null, creation, tx);
   if (!record.complete) {
     throw new AgentRefusal("HistoryTooLong", HISTORY_TOO_LONG);
   }
@@ -1435,7 +1460,7 @@ export async function recordingOf(
     if (!recipients.includes(first.worker)) {
       throw new AgentRefusal("NotEarliestAnnouncer", splitPaidOthers(first.worker, sha256));
     }
-  } else if (!(await paidWallet(transport, fields["payee"] as Address, first.worker, intent, releasedMint(tx, intent, fields["payee"] as Address)))) {
+  } else if (!(await paidWallet(transport, tx, fields["payee"] as Address, first.worker, intent))) {
     throw new AgentRefusal("NotEarliestAnnouncer", paidOther(first.worker, sha256, fields["payee"] as Address));
   }
   return {
@@ -1453,7 +1478,12 @@ export async function recordingOf(
   };
 }
 
-async function paidWallet(transport: Transport, payee: Address, wallet: Address, intent: Address, released?: Address): Promise<boolean> {
+async function paidWallet(transport: Transport, release: EngineTransaction, payee: Address, wallet: Address, intent: Address): Promise<boolean> {
+  const recorded = release.tokens?.find(({ account }) => account === payee)?.owner;
+  if (recorded !== undefined) {
+    return recorded === wallet;
+  }
+  const released = releasedMint(release, intent, payee);
   const held = await transport.getAccount(payee);
   if (held !== null && held.data.length >= 64) {
     return getAddressDecoder().decode(held.data.subarray(32, 64)) === wallet;
@@ -1753,7 +1783,16 @@ export const RELEASE_UNKNOWN = `the escrow's history could not be read in full a
 
 type ReleaseEvent = NonNullable<ReturnType<typeof decodeEvent>>;
 
-export type ReleaseLookup = { release: { tx: EngineTransaction; event: ReleaseEvent } | null; transactions: EngineTransaction[]; complete: boolean };
+export type ReleaseLookup = {
+  release: { tx: EngineTransaction; event: ReleaseEvent } | null;
+  transactions: EngineTransaction[];
+  complete: boolean;
+  bound: boolean;
+  creation?: EngineTransaction | null;
+  later?: boolean;
+};
+
+export const LIFECYCLE_FETCHES = SIGNATURE_PAGE;
 
 function releaseEventIn(tx: EngineTransaction, intent: Address): ReleaseEvent | null {
   if (tx.failed) {
@@ -1767,9 +1806,27 @@ function releaseEventIn(tx: EngineTransaction, intent: Address): ReleaseEvent | 
   return null;
 }
 
+export const outlives = (held: Intent, release: EngineTransaction, creation: EngineTransaction | null | undefined): boolean =>
+  held.status !== IntentStatus.Filled ||
+  (release.blockTime !== null && release.blockTime < held.createdAt) ||
+  (creation !== null && creation !== undefined && creation.blockTime !== null && creation.blockTime < held.createdAt);
+
 const LISTED_MEMO_LENGTH = /^\[\d+\] /;
 
 const listedMemos = (memo: string | null): string[] => (memo === null ? [] : memo.split("; ").map((part) => part.replace(LISTED_MEMO_LENGTH, "")));
+
+const namesRelease = (texts: readonly string[], release: string): boolean => texts.some((text) => parseFollowUpMemo(text)?.release === release);
+
+const unreadIn = (transactions: readonly EngineTransaction[]): boolean => transactions.some((tx) => tx.unread === true);
+
+async function fetched(transport: Transport, listed: readonly ListedSignature[]): Promise<EngineTransaction[]> {
+  const { transactionsOf } = transport;
+  const found: EngineTransaction[] = [];
+  for (let at = 0; transactionsOf !== undefined && at < listed.length; at += TRANSACTION_FETCHES) {
+    found.push(...(await transactionsOf.call(transport, listed.slice(at, at + TRANSACTION_FETCHES))));
+  }
+  return found;
+}
 
 async function markedRelease(transport: Transport, intent: Address, floor: bigint | null): Promise<ReleaseLookup | null> {
   const { signaturesOf, transactionsOf } = transport;
@@ -1777,6 +1834,7 @@ async function markedRelease(transport: Transport, intent: Address, floor: bigin
     return null;
   }
   const followUps = new Map<string, ListedSignature[]>();
+  const newer: ListedSignature[] = [];
   let before: string | undefined;
   for (let page = 1; page <= RELEASE_PAGES; page++) {
     const listed = await signaturesOf.call(transport, intent, SIGNATURE_PAGE, before);
@@ -1799,12 +1857,24 @@ async function markedRelease(transport: Transport, intent: Address, floor: bigin
     for (let at = 0; at < candidates.length; at += TRANSACTION_FETCHES) {
       for (const tx of await transactionsOf.call(transport, candidates.slice(at, at + TRANSACTION_FETCHES))) {
         const event = releaseEventIn(tx, intent);
-        if (event !== null) {
-          const recorded = followUps.get(tx.signature) ?? [];
-          return { release: { tx, event }, transactions: [...(recorded.length === 0 ? [] : await transactionsOf.call(transport, recorded)), tx], complete: true };
+        if (event === null) {
+          continue;
         }
+        const since = [...newer, ...within.slice(0, within.findIndex((entry) => entry.signature === tx.signature))].filter((entry) => !entry.failed);
+        if (floor !== null || since.length > LIFECYCLE_FETCHES) {
+          const recorded = await fetched(transport, followUps.get(tx.signature) ?? []);
+          const bound = floor !== null;
+          return { release: { tx, event }, transactions: [...recorded, tx], complete: bound && !unreadIn(recorded), bound };
+        }
+        const read = await fetched(transport, since);
+        if (read.some((later) => createdIn(later, intent))) {
+          return null;
+        }
+        const bound = read.length === since.length && !unreadIn(read);
+        return { release: { tx, event }, transactions: [...read, tx], complete: bound, bound };
       }
     }
+    newer.push(...within);
     before = listed[listed.length - 1]?.signature;
     if (within.length < listed.length || before === undefined) {
       return null;
@@ -1814,45 +1884,68 @@ async function markedRelease(transport: Transport, intent: Address, floor: bigin
 }
 
 export async function releaseLookup(transport: Transport, intent: Address): Promise<ReleaseLookup> {
-  const floor = await createdAtOf(transport, intent);
+  const held = await intentAt(transport, intent);
+  const floor = held?.createdAt ?? null;
+  const ours = (tx: EngineTransaction) => held === null || !outlives(held, tx, null);
   const marked = await markedRelease(transport, intent, floor);
-  if (marked !== null) {
+  if (marked !== null && marked.release !== null && ours(marked.release.tx)) {
     return marked;
   }
   const covered = () => historyCovers(transport, intent, floor ?? undefined);
   const scanned = await scan(transport, intent, { floor, pages: HISTORY_PAGES, until: (tx) => createdIn(tx, intent), covered });
-  for (const tx of scanned.transactions) {
-    const event = releaseEventIn(tx, intent);
-    if (event !== null) {
-      return { release: { tx, event }, transactions: scanned.transactions, complete: true };
-    }
+  const at = scanned.transactions.findIndex((tx) => releaseEventIn(tx, intent) !== null);
+  const tx = scanned.transactions[at];
+  const event = tx === undefined ? null : releaseEventIn(tx, intent);
+  if (tx !== undefined && event !== null && ours(tx)) {
+    return { release: { tx, event }, transactions: scanned.transactions, complete: !unreadIn(scanned.transactions.slice(0, at)), bound: true };
   }
-  const unread = scanned.transactions.some((tx) => tx.unread === true);
-  return { release: null, transactions: scanned.transactions, complete: scanned.complete && !unread };
+  return { release: null, transactions: scanned.transactions, complete: scanned.complete && !unreadIn(scanned.transactions), bound: true };
 }
 
-async function followUpsAfter(transport: Transport, intent: Address, release: EngineTransaction): Promise<EngineTransaction[]> {
+export type AroundRelease = { followUps: EngineTransaction[]; creation: EngineTransaction | null; later: boolean; complete: boolean };
+
+export async function aroundRelease(transport: Transport, intent: Address, release: EngineTransaction): Promise<AroundRelease> {
   const { signaturesOf, transactionsOf } = transport;
   if (signaturesOf === undefined || transactionsOf === undefined) {
-    return (await transport.engineTransactions(DELIVERY_SCAN, intent)).filter((tx) => tx.signature !== release.signature);
+    const found = await transport.engineTransactions(DELIVERY_SCAN, intent);
+    const at = found.findIndex((tx) => tx.signature === release.signature);
+    const newer = at < 0 ? found : found.slice(0, at);
+    const followUps = newer.filter((tx) => tx.unread === true || namesRelease(tx.memos ?? [], release.signature));
+    return {
+      followUps,
+      creation: at < 0 ? null : (found.slice(at + 1).find((tx) => createdIn(tx, intent)) ?? null),
+      later: newer.some((tx) => createdIn(tx, intent)),
+      complete: at >= 0 && !unreadIn(followUps),
+    };
   }
   const named: ListedSignature[] = [];
+  let reached = false;
+  let creation: EngineTransaction | null = null;
+  let settled = false;
   let before: string | undefined;
-  for (let page = 1; page <= RELEASE_PAGES; page++) {
+  for (let page = 1; page <= RELEASE_PAGES && !settled; page++) {
     const listed = await signaturesOf.call(transport, intent, SIGNATURE_PAGE, before);
-    const end = listed.findIndex((entry) => entry.signature === release.signature || entry.slot < release.slot);
-    const later = end < 0 ? listed : listed.slice(0, end);
-    named.push(...later.filter((entry) => !entry.failed && listedMemos(entry.memo).some((text) => parseFollowUpMemo(text)?.release === release.signature)));
+    let older = listed;
+    if (!reached) {
+      const end = listed.findIndex((entry) => entry.signature === release.signature || entry.slot < release.slot);
+      named.push(...(end < 0 ? listed : listed.slice(0, end)).filter((entry) => !entry.failed && namesRelease(listedMemos(entry.memo), release.signature)));
+      reached = end >= 0;
+      older = end < 0 ? [] : listed.slice(listed[end]?.signature === release.signature ? end + 1 : end);
+    }
+    for (const tx of await fetched(transport, older.filter((entry) => !entry.failed))) {
+      if (tx.unread === true || createdIn(tx, intent)) {
+        creation = tx.unread === true ? null : tx;
+        settled = true;
+        break;
+      }
+    }
     before = listed[listed.length - 1]?.signature;
-    if (end >= 0 || before === undefined || listed.length < SIGNATURE_PAGE) {
+    if (before === undefined || listed.length < SIGNATURE_PAGE) {
       break;
     }
   }
-  const found: EngineTransaction[] = [];
-  for (let at = 0; at < named.length; at += TRANSACTION_FETCHES) {
-    found.push(...(await transactionsOf.call(transport, named.slice(at, at + TRANSACTION_FETCHES))));
-  }
-  return found;
+  const followUps = await fetched(transport, named);
+  return { followUps, creation, later: false, complete: reached && !unreadIn(followUps) };
 }
 
 export async function namedRelease(transport: Transport, intent: Address, signature: string): Promise<ReleaseLookup> {
@@ -1865,8 +1958,16 @@ export async function namedRelease(transport: Transport, intent: Address, signat
     throw new AgentRefusal("NotARelease", releaseNotOf(signature, intent));
   }
   const attestor = (event.fields as Record<string, unknown>)["attestor"] as Address;
-  const recorded = recordedDelivery([], tx, attestor) === null ? await followUpsAfter(transport, intent, tx) : [];
-  return { release: { tx, event }, transactions: [...recorded, tx], complete: true };
+  const around = await aroundRelease(transport, intent, tx);
+  const inline = recordedDelivery([], tx, attestor) !== null;
+  return {
+    release: { tx, event },
+    transactions: [...(inline ? [] : around.followUps), tx],
+    complete: inline || around.complete,
+    bound: true,
+    creation: around.creation,
+    later: around.later,
+  };
 }
 
 export function releasedMint(tx: EngineTransaction, intent: Address, payee?: Address): Address | undefined {
@@ -2027,7 +2128,7 @@ export const stillWaiting = (status: string) =>
 const walletWait = define({
   name: tool("wallet_wait"),
   title: "Wait for a wallet intent",
-  description: `Wait until an intent of this server's wallet is filled, cancelled or expired, or until within seconds pass, then say which and, for a fill, how much it delivered to this wallet or to the pay_to it named. Use it after sending instead of asking the user to check again; call it again while the status is still open.`,
+  description: `Wait until an intent of this server's wallet is filled, cancelled or expired, or until within seconds pass, then say which and, for a fill, how much it delivered to this wallet or to the pay_to it named, or for a released escrow, how much it paid out. Use it after sending instead of asking the user to check again; call it again while the status is still open.`,
   effect: "read",
   input: object({
     nonce: amount("the intent's nonce, from the send or wallet_intents"),
@@ -2037,9 +2138,10 @@ const walletWait = define({
     intent: account(),
     status: choice(WAIT_STATUS, "closed means the account is gone and its recent transactions name no fill, cancel or expiry"),
     waited: integer(0, WAIT_MAX, "seconds waited"),
-    received: optional(text("whole tokens the fills delivered, to this wallet or the pay_to it named")),
-    token: optional(text("the token received")),
-    signature: optional(text("the fill's transaction")),
+    received: optional(text("whole tokens the fills of a swap delivered, to this wallet or the pay_to it named")),
+    paid_out: optional(text("whole tokens the release of this wallet's escrow paid to its payee or split recipients, out of what the escrow held")),
+    token: optional(text("the token received or paid out")),
+    signature: optional(text("the fill's or release's transaction")),
     next: optional(text()),
   }),
   run: async (ctx: AgentContext, input) => {
@@ -2072,8 +2174,11 @@ const walletWait = define({
     if (status === "cancelled" || status === "expired") {
       return { intent, status, waited };
     }
-    const { release, transactions, complete } = await releaseLookup(ctx.transport, intent);
+    const { release, transactions, complete, bound } = await releaseLookup(ctx.transport, intent);
     const history = historyIn(transactions);
+    if (release !== null && !bound) {
+      return { intent, status, waited, next: FILL_UNKNOWN };
+    }
     if (release !== null) {
       const fields = release.event.fields as Record<string, unknown>;
       const mint = pair?.inputMint ?? createdMint(transactions, intent) ?? releasedMint(release.tx, intent, fields["payee"] as Address | undefined);
@@ -2082,7 +2187,7 @@ const walletWait = define({
         intent,
         status: "filled",
         waited,
-        received: formatAmount(fields["net"] as bigint, decimals),
+        paid_out: formatAmount(fields["net"] as bigint, decimals),
         ...(mint === undefined ? {} : { token: nameOf(mint) }),
         signature: release.tx.signature,
       };
@@ -2108,10 +2213,17 @@ const walletWait = define({
 
 export const NOT_RELEASED = `no release of this escrow is in its history; ${tool("wallet_wait")} or ${tool("wallet_intents")} shows whether it is still open`;
 
+export const RECEIPT_PARTIAL =
+  "the escrow's history after this release could not be read in full: it is longer than the pages read or the RPC node could not return some of its transactions yet, so a follow-up recording the delivered work may be missing, and without release given, the escrow address may have been made again since; pass release, the signature the release returned, or call again in a few seconds";
+
 const receiptOutput = object({
   intent: account(),
   released: flag(),
-  complete: optional(flag("false when the escrow's history is longer than the pages read and no release was found in them, so released: false is unknown rather than known")),
+  complete: optional(
+    flag(
+      "false when the history read was not enough: with released false, no release was found in it, so released is unknown rather than known; with released true, a follow-up recording the delivered work, or a later lifecycle of the escrow address, may be missing from it",
+    ),
+  ),
   paid_to: optional(account("the wallet the release paid")),
   payee: optional(account("the token account the release paid")),
   paid: optional(text("whole tokens the payee received")),
@@ -2158,17 +2270,25 @@ export async function escrowReceipt(transport: Transport, owner: Address, nonce:
   const wanted = sha256 === undefined ? undefined : sha256Of(sha256, "sha256");
   const named = releaseOf(releaseSignature);
   const [intent] = await findIntentPda({ owner, nonce });
-  const { release, transactions, complete } = named === undefined ? await releaseLookup(transport, intent) : await namedRelease(transport, intent, named);
+  const lookup = named === undefined ? await releaseLookup(transport, intent) : await namedRelease(transport, intent, named);
+  const { release, transactions, complete, bound, creation } = lookup;
   if (release === null) {
-    return complete ? { intent, released: false, next: NOT_RELEASED } : { intent, released: false, complete: false, next: RELEASE_UNKNOWN };
+    return complete ? { intent, released: false, next: NOT_RELEASED } : { intent, released: false, complete: false, next: coverageOf(transport, RELEASE_UNKNOWN) };
   }
   const { tx } = release;
+  if (named !== undefined) {
+    const now = await intentAt(transport, intent);
+    if (lookup.later === true || (now !== null && outlives(now, tx, creation))) {
+      throw new AgentRefusal("OtherLifecycle", otherLifecycle(named, intent));
+    }
+  }
   const fields = release.event.fields as Record<string, unknown>;
-  let mint = createdMint(transactions, intent) ?? releasedMint(tx, intent, fields["payee"] as Address | undefined);
+  let mint = createdMint([...transactions, ...(creation === null || creation === undefined ? [] : [creation])], intent) ?? releasedMint(tx, intent, fields["payee"] as Address | undefined);
   const recorded = recordedDelivery(transactions, tx, fields["attestor"] as Address) ?? undefined;
   const common = {
     intent,
     released: true,
+    ...(complete && bound ? {} : { complete: false, next: RECEIPT_PARTIAL }),
     attestor: fields["attestor"] as Address,
     result: fields["result"] as bigint,
     signature: tx.signature,
@@ -2184,9 +2304,10 @@ export async function escrowReceipt(transport: Transport, owner: Address, nonce:
   const held = await transport.getAccount(payee);
   mint ??= held === null || held.data.length < 64 ? await heldMint(transport, intent) : getAddressDecoder().decode(held.data.subarray(0, 32));
   const decimals = mint === undefined ? undefined : (await mintOf(transport, mint)).decimals;
+  const paidTo = tx.tokens?.find(({ account }) => account === payee)?.owner ?? (held === null || held.data.length < 64 ? undefined : getAddressDecoder().decode(held.data.subarray(32, 64)));
   return {
     ...common,
-    ...(held === null || held.data.length < 64 ? {} : { paid_to: getAddressDecoder().decode(held.data.subarray(32, 64)) }),
+    ...(paidTo === undefined ? {} : { paid_to: paidTo }),
     payee,
     paid: formatAmount(fields["net"] as bigint, decimals),
   };

@@ -30,6 +30,7 @@ import {
 } from "./transport.js";
 
 const TOKEN_HEAD = 64;
+const LOOKUP_TABLE_HEAD = 56;
 
 export type SvmTransportOptions = { genesisHash?: string };
 
@@ -58,9 +59,26 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
       const decoder = getAddressDecoder();
       return [{ account, mint: decoder.decode(held.data.subarray(0, 32)), owner: decoder.decode(held.data.subarray(32, TOKEN_HEAD)) }];
     });
+  const tableAddresses = (table: Address): Address[] => {
+    const held = svm.getAccount(table);
+    if (!held.exists || held.data.length < LOOKUP_TABLE_HEAD) {
+      return [];
+    }
+    const decoder = getAddressDecoder();
+    return Array.from({ length: Math.floor((held.data.length - LOOKUP_TABLE_HEAD) / 32) }, (_, i) =>
+      decoder.decode(held.data.subarray(LOOKUP_TABLE_HEAD + i * 32, LOOKUP_TABLE_HEAD + (i + 1) * 32)),
+    );
+  };
+  const loaded = (compiled: ReturnType<ReturnType<typeof getCompiledTransactionMessageDecoder>["decode"]>): Address[] => {
+    const lookups = "addressTableLookups" in compiled ? (compiled.addressTableLookups ?? []) : [];
+    const tables = lookups.map(({ lookupTableAddress }) => tableAddresses(lookupTableAddress));
+    const pick = (indexes: (lookup: (typeof lookups)[number]) => readonly number[]) =>
+      lookups.flatMap((lookup, i) => indexes(lookup).flatMap((index) => tables[i]?.[index] ?? []));
+    return [...compiled.staticAccounts, ...pick(({ writableIndexes }) => writableIndexes), ...pick(({ readonlyIndexes }) => readonlyIndexes)];
+  };
   const landed = (tx: Transaction): string => {
     const compiled = getCompiledTransactionMessageDecoder().decode(tx.messageBytes);
-    const keys = compiled.staticAccounts;
+    const keys = loaded(compiled);
     const before = holdings(keys);
     const result = svm.sendTransaction(tx);
     if (result instanceof FailedTransactionMetadata) {
