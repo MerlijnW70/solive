@@ -274,15 +274,15 @@ describe("intent-engine judge", () => {
     const verdict = join(j.dir, "verdict.json");
     const others = process.listeners("SIGINT");
     process.removeAllListeners("SIGINT");
+    const exits = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
     try {
       const sent: string[] = [];
       h.through = {
         ...transport,
         send: async (ixs, payer) => {
-          process.emit("SIGINT", "SIGINT");
-          process.emit("SIGINT", "SIGINT");
           const signature = await transport.send(ixs, payer);
           sent.push(signature);
+          process.emit("SIGINT", "SIGINT");
           return signature;
         },
       };
@@ -294,11 +294,31 @@ describe("intent-engine judge", () => {
       expect(status(j.intent)).toBe(IntentStatus.Filled);
       expect(await paidTo(j, j.worker.address)).toBeGreaterThan(0n);
 
+      const twice = await job();
+      const landed: string[] = [];
+      h.through = {
+        ...transport,
+        send: async (ixs, payer) => {
+          landed.push(await transport.send(ixs, payer));
+          process.emit("SIGINT", "SIGINT");
+          process.emit("SIGINT", "SIGINT");
+          return new Promise<string>(() => undefined);
+        },
+      };
+      await writeFile(verdict, "stale");
+      const stopped = await cli(judging(twice, "true", "--verdict", verdict, "--yes"), { "judge.json": twice.judge });
+      expect(landed).toHaveLength(1);
+      expect([stopped.code, stopped.out]).toEqual([130, ""]);
+      expect(stopped.err).toContain(`the release was sent in ${landed[0]}; a second SIGINT stopped the judge before the send was confirmed, so the release may have landed`);
+      expect(existsSync(verdict)).toBe(false);
+      expect(status(twice.intent)).toBe(IntentStatus.Filled);
+      await vi.waitFor(() => expect(exits).toHaveBeenCalledWith(130));
+
       const again = await job();
       h.through = {
         ...transport,
-        send: async () => {
-          process.emit("SIGINT", "SIGINT");
+        send: async (_ixs, payer) => {
+          await (payer as KeyPairSigner).signTransactions([]);
           process.emit("SIGINT", "SIGINT");
           throw new Error("the node went away");
         },
@@ -311,10 +331,133 @@ describe("intent-engine judge", () => {
       expect(process.listenerCount("SIGINT")).toBe(0);
     } finally {
       h.through = null;
+      exits.mockRestore();
       for (const listener of others) {
         process.on("SIGINT", listener as NodeJS.SignalsListener);
       }
     }
+  });
+
+  it("an interrupt before sending pays nothing", async () => {
+    const verdict = join(j.dir, "verdict.json");
+    for (const [signal, code, at] of [["SIGINT", 130, "send"], ["SIGTERM", 143, "read"]] as const) {
+      const run = at === "send" ? j : await job();
+      const marker = join(run.dir, "checked");
+      const others = process.listeners(signal);
+      process.removeAllListeners(signal);
+      const attempts: string[] = [];
+      let emitted = false;
+      try {
+        h.through = {
+          ...transport,
+          getAccount: async (address) => {
+            if (at === "read" && !emitted && address === run.worker.address && existsSync(marker)) {
+              emitted = true;
+              process.emit(signal, signal);
+            }
+            return transport.getAccount(address);
+          },
+          send: async (ixs, payer) => {
+            if (at === "send" && !emitted) {
+              emitted = true;
+              process.emit(signal, signal);
+            }
+            try {
+              return await transport.send(ixs, payer);
+            } catch (error) {
+              attempts.push(String(error));
+              throw error;
+            }
+          },
+        };
+        await writeFile(verdict, "stale");
+        const ended = await cli(judging(run, `touch "${marker}"`, "--verdict", verdict, "--yes"), { "judge.json": run.judge });
+        expect(emitted).toBe(true);
+        expect([ended.code, ended.out]).toEqual([code, ""]);
+        expect(ended.err).toContain(`the check passed, but ${signal} arrived before the release was sent; nothing was paid and no verdict was written`);
+        expect(process.listenerCount(signal)).toBe(0);
+        await new Promise((wake) => setTimeout(wake, 100));
+      } finally {
+        h.through = null;
+        for (const listener of others) {
+          process.on(signal, listener as NodeJS.SignalsListener);
+        }
+      }
+      expect(existsSync(verdict)).toBe(false);
+      expect(status(run.intent)).toBe(IntentStatus.Open);
+      expect(await paidTo(run, run.worker.address)).toBe(-1n);
+      expect(attempts.length).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it("a refused run removes a stale verdict file", async () => {
+    const verdict = join(j.dir, "verdict.json");
+    const stale = `${JSON.stringify({ intent: j.intent, verdict: "pass", signature: null })}\n`;
+    const marker = join(j.dir, "ran");
+    const run = `touch "${marker}"`;
+    await writeFile(join(j.dir, "other.md"), "a different spec\n");
+    const refusals = [
+      [...judging(j, run, "--verdict", verdict).slice(0, 7), "--spec", join(j.dir, "other.md"), ...judging(j, run, "--verdict", verdict).slice(9)],
+      judging(j, run, "--verdict", verdict, "--pay-to", j.copier.address),
+      judging(j, run, "--verdict", verdict, "--result", "7"),
+    ];
+    for (const argv of refusals) {
+      await writeFile(verdict, stale);
+      const refused = await cli(argv, keys);
+      expect(refused.code).toBe(EXIT_FAILED);
+      expect(existsSync(verdict)).toBe(false);
+    }
+    await writeFile(verdict, stale);
+    const stranger = await funded();
+    const foreign = await cli(judging(j, run, "--verdict", verdict), { "judge.json": stranger });
+    expect(foreign.err).toContain(`not ${stranger.address}`);
+    expect(existsSync(verdict)).toBe(false);
+    expect(existsSync(marker)).toBe(false);
+    expect(status(j.intent)).toBe(IntentStatus.Open);
+  });
+
+  it("a judge timeout also kills a delivery in its own process group", { timeout: 60_000 }, async () => {
+    const alive = (pid: number) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const gone = async (pid: number) => {
+      for (let tries = 0; tries < 100 && alive(pid); tries++) {
+        await new Promise((wake) => setTimeout(wake, 20));
+      }
+      return !alive(pid);
+    };
+    const grouped = join(j.dir, "grouped");
+    const own = `perl -e 'setpgrp(0, 0); open(my $f, ">", $ARGV[0]) or die; print $f "$$ " . getpgrp(); close $f; exec "sleep", "600"' "${grouped}" & wait`;
+    const slow = await cli(judging(j, own, "--timeout", String(TIMEOUT_SECONDS), "--yes"), keys);
+    expect(slow.json()).toMatchObject({ exitCode: null, verdict: "fail", signature: null });
+    const [pid = 0, group] = (await readFile(grouped, "utf8")).split(" ").map(Number);
+    expect(group).toBe(pid);
+    expect(await gone(pid)).toBe(true);
+
+    const example = join(ROOT, "examples/jobs/word-count");
+    const pids = await mkdtemp(join(tmpdir(), "judge-loop-pid-"));
+    const pidFile = join(pids, "delivery");
+    const looping = await mkdtemp(join(tmpdir(), "judge-loop-"));
+    await writeFile(
+      join(looping, "wordcount.mjs"),
+      `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(pidFile)}, String(process.pid));\nexport default function count() {\n  for (;;) {}\n}\n`,
+    );
+    const loop = await job(await readFile(join(example, "SPEC.md"), "utf8"), await artifactSha256(looping));
+    const ended = await cli(judging({ ...loop, artifact: looping }, `node '${join(example, "check.mjs")}'`, "--timeout", "3", "--yes"), { "judge.json": loop.judge });
+    expect(ended.json()).toMatchObject({ exitCode: null, verdict: "fail", signature: null });
+    const delivery = Number(await readFile(pidFile, "utf8"));
+    expect(delivery).toBeGreaterThan(0);
+    const killed = await gone(delivery);
+    if (!killed) {
+      process.kill(delivery, "SIGKILL");
+    }
+    expect(killed).toBe(true);
+    expect(status(loop.intent)).toBe(IntentStatus.Open);
   });
 
   it("a stale verdict file is removed before the check", async () => {

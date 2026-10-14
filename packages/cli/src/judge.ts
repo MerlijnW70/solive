@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, open, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import type { Address, KeyPairSigner, Signature } from "@solana/kit";
+import { type Address, getBase58Decoder, type KeyPairSigner, type Signature } from "@solana/kit";
 import { decodeParams, IntentStatus, Kind, type ManifestEntry, manifestSha256 } from "@intent-engine/core";
 import { chainTime, createClient, deliveryRecord, firstDelivery, loadIntent, SIGNATURE_PAGE, type Transport } from "@intent-engine/client";
 import type { Command } from "./args.js";
@@ -16,6 +16,8 @@ export const ENV_ARTIFACT_PATH = "ARTIFACT_PATH";
 export const ENV_ARTIFACT_SHA256 = "ARTIFACT_SHA256";
 export const SPEC_COPY = "SPEC.md";
 export const CLEANUP_RETRIES = 5;
+const SESSION_ROUNDS = 10;
+const FORCED_EXIT_MS = 200;
 export const CHECK_ENV = ["PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "COMSPEC", "PATHEXT", "TEMP", "TMP", "TMPDIR", "LANG", "TERM"] as const;
 
 export class JudgeRefused extends Error {
@@ -147,6 +149,77 @@ async function copyOf(artifact: Artifact, specBytes: Uint8Array): Promise<Copy> 
   return { root, spec, path: artifact.single && only !== undefined ? join(work, only.path) : work };
 }
 
+const quietly = (pid: number) => {
+  try {
+    process.kill(pid, "SIGKILL");
+  } catch {
+    return;
+  }
+};
+
+type Running = { pid: number; parent: number; group: number; session: number };
+
+async function processTable(): Promise<Running[] | null> {
+  let entries: string[];
+  try {
+    entries = await readdir("/proc");
+  } catch {
+    return null;
+  }
+  const found = await Promise.all(
+    entries
+      .filter((entry) => /^\d+$/.test(entry))
+      .map(async (entry): Promise<Running | null> => {
+        let line: string;
+        try {
+          line = await readFile(`/proc/${entry}/stat`, "utf8");
+        } catch {
+          return null;
+        }
+        const [state, parent, group, session] = line.slice(line.lastIndexOf(")") + 2).split(" ");
+        return state === "Z" ? null : { pid: Number(entry), parent: Number(parent), group: Number(group), session: Number(session) };
+      }),
+  );
+  return found.filter((running) => running !== null);
+}
+
+function pkillSession(session: number): Promise<void> {
+  return new Promise((done) => {
+    const killer = spawn("pkill", ["-KILL", "-s", String(session)], { stdio: "ignore" });
+    killer.once("error", () => done());
+    killer.once("exit", () => done());
+  });
+}
+
+async function killSession(session: number): Promise<void> {
+  const sessions = new Set([session]);
+  const groups = new Set([session]);
+  for (let round = 0; round < SESSION_ROUNDS; round++) {
+    const table = await processTable();
+    if (table === null) {
+      quietly(-session);
+      return pkillSession(session);
+    }
+    const reached = new Set<number>();
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const running of table) {
+        if (running.pid !== process.pid && !reached.has(running.pid) && (sessions.has(running.session) || groups.has(running.group) || reached.has(running.parent))) {
+          reached.add(running.pid);
+          sessions.add(running.session);
+          groups.add(running.group);
+          grew = true;
+        }
+      }
+    }
+    if (reached.size === 0) {
+      return;
+    }
+    reached.forEach(quietly);
+  }
+}
+
 function killTree(pid: number | undefined): Promise<void> {
   if (pid === undefined) {
     return Promise.resolve();
@@ -158,12 +231,7 @@ function killTree(pid: number | undefined): Promise<void> {
       killer.once("exit", () => done());
     });
   }
-  try {
-    process.kill(-pid, "SIGKILL");
-  } catch {
-    return Promise.resolve();
-  }
-  return Promise.resolve();
+  return killSession(pid);
 }
 
 export function runCheck(command: string, env: NodeJS.ProcessEnv, timeoutSeconds: number, options: CheckOptions = {}): Promise<Check> {
@@ -214,19 +282,26 @@ export function runCheck(command: string, env: NodeJS.ProcessEnv, timeoutSeconds
   });
 }
 
-type HeldSignals = { caught(): InterruptSignal | undefined; release(): void };
+type SignalListener = (signal: InterruptSignal) => void;
+
+type HeldSignals = { caught(): InterruptSignal | undefined; listen(listener: SignalListener): void; release(): void };
 
 function holdSignals(): HeldSignals {
   let caught: InterruptSignal | undefined;
+  let listener: SignalListener | undefined;
   const handlers = (Object.keys(SIGNAL_EXIT) as InterruptSignal[]).map((signal) => {
     const handler = () => {
       caught ??= signal;
+      listener?.(signal);
     };
     process.on(signal, handler);
     return [signal, handler] as const;
   });
   return {
     caught: () => caught,
+    listen: (next) => {
+      listener = next;
+    },
     release: () => {
       for (const [signal, handler] of handlers) {
         process.removeListener(signal, handler);
@@ -270,6 +345,9 @@ async function escrowFor(transport: Transport, judge: Address, owner: Address, n
 }
 
 export async function judge(command: JudgeCommand, runtime: Runtime, transport: Transport): Promise<Verdict> {
+  if (command.verdict !== undefined) {
+    await rm(command.verdict, { force: true });
+  }
   const signer = await runtime.loadSigner(command.keypair);
   const { address, specHash, minResult, maxResult } = await escrowFor(transport, signer.address, command.owner, command.nonce);
   const result = command.result ?? minResult;
@@ -298,15 +376,60 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   if (first !== null && first.worker !== payTo) {
     throw new JudgeRefused(`${first.worker} announced the artifact with sha256 ${sha256} first, in ${first.signature}; it is paid, not --pay-to ${payTo}`);
   }
-  if (command.verdict !== undefined) {
-    await rm(command.verdict, { force: true });
-  }
   const signals = holdSignals();
   try {
     return await checkAndSettle(command, transport, signer, signals, { address, specHash, sha256, payTo, result, read, specBytes });
   } finally {
     signals.release();
   }
+}
+
+export const notSent = (signal: InterruptSignal): string =>
+  `the check passed, but ${signal} arrived before the release was sent; nothing was paid and no verdict was written`;
+
+export const mayHaveLanded = (signal: InterruptSignal, address: Address, signature: Signature | undefined): string =>
+  `the check passed and the release was sent${signature === undefined ? "" : ` in ${signature}`}; a second ${signal} stopped the judge before the send was confirmed, so the release may have landed. Read intent ${address} before judging it again; no verdict was written`;
+
+type Release = { address: Address; payTo: Address; result: bigint; sha256: string };
+
+function sendRelease(command: JudgeCommand, transport: Transport, signer: KeyPairSigner, signals: HeldSignals, release: Release): Promise<Signature> {
+  return new Promise((done, failed) => {
+    let sent = false;
+    let signature: Signature | undefined;
+    let after = 0;
+    const signTransactions: KeyPairSigner["signTransactions"] = async (transactions, config) => {
+      const caught = signals.caught();
+      if (caught !== undefined) {
+        throw new JudgeInterrupted(caught, notSent(caught));
+      }
+      sent = true;
+      const signed = await signer.signTransactions(transactions, config);
+      const own = signed[0]?.[signer.address];
+      signature = own === undefined ? signature : (getBase58Decoder().decode(own) as Signature);
+      return signed;
+    };
+    signals.listen((signal) => {
+      if (!sent) {
+        failed(new JudgeInterrupted(signal, notSent(signal)));
+        return;
+      }
+      after += 1;
+      if (after > 1) {
+        failed(new JudgeInterrupted(signal, mayHaveLanded(signal, release.address, signature)));
+        setTimeout(() => process.exit(SIGNAL_EXIT[signal]), FORCED_EXIT_MS).unref();
+      }
+    });
+    createClient({ url: command.url, transport })
+      .settleProof({
+        judge: Object.freeze({ ...signer, signTransactions }),
+        owner: command.owner,
+        nonce: command.nonce,
+        payTo: release.payTo,
+        result: release.result,
+        deliveredSha256: release.sha256,
+      })
+      .then(done, failed);
+  });
 }
 
 type Judged = { address: Address; specHash: string; sha256: string; payTo: Address; result: bigint; read: Artifact; specBytes: Uint8Array };
@@ -336,15 +459,11 @@ async function checkAndSettle(
   let signature: Signature | null = null;
   if (passed && command.yes) {
     try {
-      signature = await createClient({ url: command.url, transport }).settleProof({
-        judge: signer,
-        owner: command.owner,
-        nonce: command.nonce,
-        payTo,
-        result,
-        deliveredSha256: sha256,
-      });
+      signature = await sendRelease(command, transport, signer, signals, { address, payTo, result, sha256 });
     } catch (error) {
+      if (error instanceof JudgeInterrupted) {
+        throw error;
+      }
       const during = signals.caught();
       if (during !== undefined) {
         throw new JudgeInterrupted(
