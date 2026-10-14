@@ -60,7 +60,7 @@ On a pass this sends nothing yet. Add `--yes` to run the check again and settle:
 intent-engine judge --owner $OWNER --nonce $NONCE --spec spec.md --artifact work --run "'$PWD/check.sh'" --verdict verdict.json --yes
 ```
 
-The release pays `payTo` with result 1 and records the memo `delivery sha256:<artifactSha256>` in the same transaction, which `solive_wallet_receipt` shows the payer.
+The release pays `payTo` with the result `--result` names, by default the escrow's least result, and records the memo `delivery sha256:<artifactSha256>` in the same transaction. `judge` refuses before running the check when `--result` lies outside the results the escrow accepts. The payer reads the release with `intent-engine receipt --owner <owner> --nonce <nonce> --sha256 <hash of the work received>`, or with `solive_wallet_receipt`.
 
 ## Judge the word count example
 

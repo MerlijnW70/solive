@@ -217,7 +217,7 @@ describe("one call per action", () => {
     const worker = (await generateKeyPairSigner()).address;
     const work = "ab".repeat(32);
     const sends = counted.sends;
-    await expect(client.settleProof({ judge, owner: owner.address, nonce, payTo: worker, result: 1n, deliveredSha256: work.toUpperCase() })).rejects.toThrow(RangeError);
+    await expect(client.settleProof({ judge, owner: owner.address, nonce, payTo: worker, result: 1n, deliveredSha256: "zz".repeat(32) })).rejects.toThrow(RangeError);
     expect(counted.sends).toBe(sends);
 
     const signature = await client.settleProof({ judge, owner: owner.address, nonce, payTo: worker, result: 1n, deliveredSha256: work });

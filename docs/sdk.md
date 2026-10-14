@@ -226,7 +226,7 @@ await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: p
 await client.unwrap(signer);
 ```
 
-Anyone can copy an announcement once it is on chain, so a judge pays the earliest announcer of the hash it checked: `firstDelivery(record.deliveries, sha256)` returns that announcement, or `null`. `settleProof` takes `deliveredSha256` to record the paid work's hash in the release, in the memo `solive_wallet_receipt` reads. [Judge a proof escrow](judge.md) does all of this from the command line.
+Anyone can copy an announcement once it is on chain, so a judge pays the earliest announcer of the hash it checked: `firstDelivery(record.deliveries, sha256)` returns that announcement, or `null`. `settleProof` takes `deliveredSha256` to record the paid work's hash in the release, in the memo `intent-engine receipt` and `solive_wallet_receipt` read. [Judge a proof escrow](judge.md) does all of this from the command line.
 
 ## Who can do what
 

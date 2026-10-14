@@ -75,10 +75,10 @@ Ask for 50 test tokens, more than the filler pays, then cancel:
 ```sh
 intent-engine create swap --input-mint So11111111111111111111111111111111111111112 --output-mint ETU8trkkfE8gNVPDGbCaJUoH88wy6yYV6ttJdc9NKB88 --units tokens --amount-in 0.05 --min-out 50 --expires-in 3600 --yes
 intent-engine list
-intent-engine cancel --nonce 1
+intent-engine cancel --nonce 1 --yes
 ```
 
-`list` shows this intent as `open` with nonce `1`. `cancel` sends at once and returns its 0.05 wrapped SOL to your wrapped SOL token account. The intent's rent stays in it until `intent-engine close` returns it to you.
+`list` shows this intent as `open` with nonce `1`. `cancel --yes` sends the cancel and returns its 0.05 wrapped SOL to your wrapped SOL token account; without `--yes` it only shows what it would do. The intent's rent stays in it until `intent-engine close` returns it to you, or pass `--close` with the cancel to get it back at once.
 
 ## Next
 

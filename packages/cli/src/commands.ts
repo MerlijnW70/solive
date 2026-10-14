@@ -1,6 +1,8 @@
+import { writeFile } from "node:fs/promises";
 import {
   type Address,
   createNoopSigner,
+  getAddressDecoder,
   getBase58Decoder,
   getBase64Decoder,
   getBase64Encoder,
@@ -17,20 +19,24 @@ import {
   buildUpdateConfig,
   buildAdvanceNonce,
   buildCancelIntent,
+  buildCloseIntent,
   buildInitConfig,
   buildLowerPause,
   buildRaisePause,
   buildUpdateEconomics,
   decodeEvent,
+  decodeParams,
   findConfigPda,
   findIntentPda,
   findUserStatePda,
   feeBpsFor,
   findVaultPda,
+  formatAmount,
   getIntentDecoder,
   type Intent,
   IntentStatus,
   getUserStateDecoder,
+  Kind,
   kindBit,
   nextEpoch,
   PAUSE_CREATE,
@@ -56,6 +62,7 @@ import {
   announcements,
   chainTime,
   clusterDomain,
+  createClient,
   createdAccount,
   deliveryInstructions,
   deliveryRecord,
@@ -65,7 +72,11 @@ import {
   loadConfig,
   loadIntent,
   memoized,
+  mintOf,
+  PLAIN_HTTP_ON_PUBLIC,
+  plainHttpOnPublic,
   type ProgramAccount,
+  tokenAccountIfMissing,
   tokenAmountOf,
   tokenProgramOf,
   type Transport,
@@ -93,7 +104,7 @@ import { describeIntent, quoteOf, sameBytes } from "./accounts.js";
 import { closing, crank, expiring } from "./crank.js";
 import { priceOf, withPriority } from "./compute.js";
 import { createTreasuryAccounts, intentInputMints, treasuryView } from "./treasury.js";
-import { artifactSha256, judge } from "./judge.js";
+import { artifactSha256, judge, type JudgeCommand, JudgeRefused, type Verdict } from "./judge.js";
 
 export type Runtime = {
   transport(url: string): Transport;
@@ -229,6 +240,78 @@ async function administer(
       instructions: instructions.map(instructionView),
       next: AUTHORITY_NEXT,
     },
+  };
+}
+
+async function previewed(
+  transport: Transport,
+  instructions: Instruction[],
+  signer: KeyPairSigner,
+  shown: object,
+  yes: boolean,
+): Promise<object> {
+  if (!yes) {
+    const simulated = await prepare(transport, instructions, signer.address);
+    return { ...shown, sent: false, units_consumed: simulated.unitsConsumed, next: NOT_SENT };
+  }
+  return { ...shown, sent: true, signature: await transport.send(instructions, signer) };
+}
+
+export const notRentPayer = (payer: Address): string =>
+  `${payer} paid this intent's rent and bounty, so only it can close the intent; cancel without --close`;
+
+export const resultOutside = (result: bigint, intent: Address, min: bigint, max: bigint): string =>
+  `--result ${result} lies outside the results intent ${intent} accepts, ${min} to ${max}; nothing was run or paid`;
+
+async function judgedResult(transport: Transport, runtime: Runtime, command: JudgeCommand): Promise<bigint> {
+  await runtime.loadSigner(command.keypair);
+  const { address, intent } = await loadIntent(transport, command.owner, command.nonce);
+  const params = decodeParams(intent.kind, Uint8Array.from(intent.params));
+  if (params.kind !== Kind.AttestedResult) {
+    return command.result ?? 0n;
+  }
+  const result = command.result ?? params.minResult;
+  if (result < params.minResult || result > params.maxResult) {
+    throw new JudgeRefused(resultOutside(result, address, params.minResult, params.maxResult));
+  }
+  return result;
+}
+
+export const NOT_RELEASED = "no release of this escrow is among its recent transactions; show intent says whether it is still open";
+
+const TOKEN_ACCOUNT_HEAD = 64;
+
+async function receiptOf(transport: Transport, url: string, intent: Address, wanted: string | undefined): Promise<object> {
+  const events = await createClient({ url, transport }).history(intent);
+  const created = events.find((event) => event.name === "IntentCreated");
+  let mint = created?.name === "IntentCreated" ? created.fields.inputMint : undefined;
+  const release = events.find((event) => event.name === "IntentAttested" || event.name === "IntentSplit");
+  if (release === undefined || (release.name !== "IntentAttested" && release.name !== "IntentSplit")) {
+    return { intent, released: false, next: NOT_RELEASED };
+  }
+  const recorded = release.deliveredSha256;
+  const common = {
+    intent,
+    released: true,
+    attestor: release.fields.attestor,
+    result: release.fields.result,
+    signature: release.signature,
+    ...(recorded === undefined ? {} : { delivered_sha256: recorded }),
+    ...(wanted === undefined ? {} : { matches: wanted === recorded }),
+  };
+  const paid = async (net: bigint) => formatAmount(net, mint === undefined ? undefined : (await mintOf(transport, mint)).decimals);
+  if (release.name === "IntentSplit") {
+    return { ...common, paid: await paid(release.fields.net), recipients: BigInt(release.fields.recipients) };
+  }
+  const payee = release.fields.payee;
+  const held = await transport.getAccount(payee);
+  const head = held === null || held.data.length < TOKEN_ACCOUNT_HEAD ? null : held.data;
+  mint ??= head === null ? undefined : getAddressDecoder().decode(head.subarray(0, 32));
+  return {
+    ...common,
+    ...(head === null ? {} : { paid_to: getAddressDecoder().decode(head.subarray(32, TOKEN_ACCOUNT_HEAD)) }),
+    payee,
+    paid: await paid(release.fields.net),
   };
 }
 
@@ -502,24 +585,44 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     }
     case "cancel": {
       const owner = await runtime.loadSigner(command.keypair);
-      const { intent } = await loadIntent(transport, owner.address, command.nonce);
-      const ix = await buildCancelIntent({
-        owner,
-        nonce: command.nonce,
-        inputMint: intent.inputMint,
-        tokenProgram: await tokenProgramOf(transport, intent.inputMint),
-      });
-      return { signature: await transport.send([ix], owner) };
+      const { address, intent } = await loadIntent(transport, owner.address, command.nonce);
+      if (command.close && intent.rentPayer !== owner.address) {
+        throw new FlowRefused(notRentPayer(intent.rentPayer));
+      }
+      const ref = { nonce: command.nonce, inputMint: intent.inputMint, tokenProgram: await tokenProgramOf(transport, intent.inputMint) };
+      const refund = await tokenAccountIfMissing(transport, owner, owner.address, intent.inputMint, ref.tokenProgram);
+      const instructions = [
+        ...refund.create,
+        await buildCancelIntent({ ...ref, owner }),
+        ...(command.close ? [await buildCloseIntent({ ...ref, owner: owner.address, cranker: owner, rentPayer: owner.address })] : []),
+      ];
+      const summary = [
+        `Cancels intent ${address} (nonce ${command.nonce}); nobody can fill it afterwards`,
+        `Returns what is left in escrow to ${refund.address}, the owner's token account for ${intent.inputMint}`,
+        ...(refund.create.length > 0 ? [`Creates ${refund.address} first, since it is missing; the owner pays its rent`] : []),
+        ...(command.close ? [`Closes the intent in the same transaction and returns its rent and bounty to ${owner.address}; it can no longer be read afterwards`] : []),
+      ];
+      return previewed(transport, instructions, owner, { intent: address, summary }, command.yes);
     }
     case "expire": {
       const cranker = await runtime.loadSigner(command.keypair);
       const { address, intent } = await loadIntent(transport, command.owner, command.nonce);
-      return { signature: await transport.send(await expiring(transport, cranker, address, intent, "always", false), cranker) };
+      const instructions = await expiring(transport, cranker, address, intent, "always", false);
+      const summary = [
+        `Expires intent ${address} (nonce ${command.nonce}) and returns what is left in escrow to its owner ${command.owner}`,
+        ...(instructions.length > 1 ? [`Creates a token account for the owner to take the refund; ${cranker.address} pays its rent`] : []),
+      ];
+      return previewed(transport, instructions, cranker, { intent: address, summary }, command.yes);
     }
     case "close": {
       const payer = await runtime.loadSigner(command.keypair);
       const { address, intent } = await loadIntent(transport, command.owner, command.nonce);
-      return { signature: await transport.send(await closing(transport, payer, address, intent, "always"), payer) };
+      const instructions = await closing(transport, payer, address, intent, "always");
+      const summary = [
+        `Closes intent ${address} (nonce ${command.nonce}) and returns its rent; it can no longer be read afterwards`,
+        ...(instructions.length > 1 ? [`Creates a token account for the owner to take what is left in escrow; ${payer.address} pays its rent`] : []),
+      ];
+      return previewed(transport, instructions, payer, { intent: address, summary }, command.yes);
     }
     case "follow":
       throw new FlowRefused("events --follow streams to the terminal and runs only from the command line");
@@ -545,11 +648,11 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
           `Notifies: its judge ${attestor}, with a transfer of 0 lamports from ${worker.address}, which signs and pays the fee`,
         ],
       };
-      if (!command.yes) {
-        const simulated = await prepare(transport, instructions, worker.address);
-        return { ...shown, sent: false, units_consumed: simulated.unitsConsumed, next: NOT_SENT };
-      }
-      return { ...shown, sent: true, signature: await transport.send(instructions, worker) };
+      return previewed(transport, instructions, worker, shown, command.yes);
+    }
+    case "receipt": {
+      const [intent] = await findIntentPda({ owner: command.owner, nonce: command.nonce });
+      return receiptOf(transport, command.url, intent, command.sha256);
     }
     case "deliveries": {
       const record = await deliveryRecord(transport, command.attestor, command.intent, command.maxPages);
@@ -566,8 +669,29 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
         })),
       };
     }
-    case "judge":
-      return judge(command, runtime, transport);
+    case "judge": {
+      const result = await judgedResult(transport, runtime, command);
+      const checked = await judge({ ...command, yes: false, verdict: undefined }, runtime, transport);
+      const signature =
+        checked.verdict === "pass" && command.yes
+          ? await createClient({ url: command.url, transport }).settleProof({
+              judge: await runtime.loadSigner(command.keypair),
+              owner: command.owner,
+              nonce: command.nonce,
+              payTo: checked.payTo,
+              result,
+              deliveredSha256: checked.artifactSha256,
+            })
+          : null;
+      const verdict: Verdict = { ...checked, signature };
+      if (signature !== null) {
+        delete verdict.next;
+      }
+      if (command.verdict !== undefined) {
+        await writeFile(command.verdict, `${JSON.stringify(verdict, null, 2)}\n`);
+      }
+      return verdict;
+    }
     case "treasury": {
       const view = await treasuryView(transport, command.mints ?? (await intentInputMints(transport)));
       if (!command.create || command.keypair === undefined) {
@@ -728,8 +852,13 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       const ctx = context(reading);
       const raw = await rawFlowInput(reading, command.flow, command.input, signer.address);
       switch (command.flow) {
-        case "create":
+        case "create": {
+          const specUrl = raw["spec_url"];
+          if (typeof specUrl === "string" && (await plainHttpOnPublic(reading, specUrl))) {
+            throw new FlowRefused(`--spec-url ${specUrl} ${PLAIN_HTTP_ON_PUBLIC}`);
+          }
           return perform(prepareCreate, ctx, { owner: signer.address, ...raw }, signer, command.yes);
+        }
         case "mandate-grant":
           return perform(prepareMandate, ctx, { owner: signer.address, ...raw }, signer, command.yes);
         case "mandate-revoke":

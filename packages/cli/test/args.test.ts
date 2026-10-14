@@ -470,17 +470,23 @@ describe("commands", () => {
       url: DEFAULT_URL,
       priority: 0n,
       keypair: "k.json",
+      yes: false,
       nonce: 2n,
+      close: false,
     });
+    expect(parse(["cancel", "--keypair", "k.json", "--nonce", "2", "--close", "--yes"])).toMatchObject({ yes: true, close: true });
     for (const verb of ["expire", "close"] as const) {
       expect(parse([verb, "--keypair", "k.json", "--owner", OWNER, "--nonce", "4"])).toEqual({
         name: verb,
         url: DEFAULT_URL,
         priority: 0n,
         keypair: "k.json",
+        yes: false,
         owner: OWNER,
         nonce: 4n,
       });
+      expect(parse([verb, "--keypair", "k.json", "--owner", OWNER, "--nonce", "4", "--yes"])).toMatchObject({ yes: true });
+      expect(usage([verb, "--keypair", "k.json", "--owner", OWNER, "--nonce", "4", "--close"])).toBe(`${verb} does not take --close`);
     }
     expect(parse(["advance-epoch", "--keypair", "k.json"])).toEqual({
       name: "advance-epoch",
@@ -538,9 +544,9 @@ describe("commands", () => {
       input: { order: { kind: "dutch", amount_in: "10", start_out: "9", end_out: "5", start_time: "-1", end_time: "50" } },
     });
     expect(
-      parse(["create", "attested", ...later, "--amount-in", "10", "--min-result", "1", "--max-result", "2", "--attestor", OWNER]),
+      parse(["create", "attested", ...later, "--amount-in", "10", "--min-result", "1", "--max-result", "2", "--attestor", OWNER, "--spec-hash", "AB".repeat(32)]),
     ).toMatchObject({
-      input: { order: { kind: "attested", amount_in: "10", min_result: "1", max_result: "2", attestor: OWNER } },
+      input: { order: { kind: "attested", amount_in: "10", min_result: "1", max_result: "2", attestor: OWNER, spec_hash: "ab".repeat(32) } },
     });
     expect((parse(["create", "swap", ...later, "--amount-in", "1", "--min-out", "1"]) as { input: object }).input).not.toHaveProperty(
       "nonce",
@@ -559,12 +565,12 @@ describe("commands", () => {
       "give exactly one of --expires-at or --expires-in",
     );
     expect(usage(["create", "swap", ...common, "--expires-in", "31536001", "--amount-in", "1", "--min-out", "1"])).toBe(
-      "--expires-in must be an integer from 0 to 31536000",
+      "--expires-in must be an integer from 60 to 31536000",
     );
   });
 
   it("reads token amounts only when asked to, and keeps attested results and nonces raw", () => {
-    const base = ["create", "attested", "--keypair", "k", "--input-mint", MINT_A, "--output-mint", MINT_B, "--expires-in", "60"];
+    const base = ["create", "attested", "--keypair", "k", "--input-mint", MINT_A, "--output-mint", MINT_B, "--expires-in", "60", "--spec-hash", "ab".repeat(32)];
     const tokens = [...base, "--units", "tokens", "--amount-in", "1.5", "--min-result", "7", "--max-result", "9", "--attestor", OWNER];
     expect(parse(tokens)).toMatchObject({
       input: { order: { amount_in: { tokens: "1.5", side: "input" }, min_result: "7", max_result: "9" } },
@@ -589,6 +595,7 @@ describe("commands", () => {
       "agent-fee": "input",
       "floor-in": "input",
       "relayer-fee": "input",
+      "judge-fee": "input",
       amount: "input",
       "min-out": "output",
       take: "output",
@@ -891,8 +898,8 @@ describe("global options", () => {
     expect(parse(["help", "create"])).toEqual({ name: "help", verb: "create" });
     expect(parse(["cancel", "--help"])).toEqual({ name: "help", verb: "cancel" });
     expect(usageOf("cancel")).toEqual({
-      usage: "cancel --keypair <file> --nonce <n>",
-      options: ["--url", "--priority-fee", "--keypair", "--nonce", "--output", "--help"],
+      usage: "cancel --keypair <file> --nonce <n> [--close] [--yes]",
+      options: ["--url", "--priority-fee", "--keypair", "--yes", "--nonce", "--close", "--output", "--help"],
     });
     expect(usageOf("domain").usage).toBe("domain");
     expect(usageOf(undefined)).toEqual({ usage: COMMANDS, options: [] });

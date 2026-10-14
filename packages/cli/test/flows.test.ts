@@ -176,7 +176,7 @@ describe("command line flows", () => {
     expect((await cli(create("dutch", ...dutch), keys)).code).toBe(EXIT_OK);
     const attestor = (await generateKeyPairSigner()).address;
     const attested = await cli(
-      create("attested", "--amount-in", "100", "--min-result", "1", "--max-result", "9", "--attestor", attestor, "--yes"),
+      create("attested", "--amount-in", "100", "--min-result", "1", "--max-result", "9", "--attestor", attestor, "--spec-hash", "ab".repeat(32), "--yes"),
       keys,
     );
     expect(attested.json()["warnings"]).toHaveLength(1);
@@ -641,7 +641,9 @@ describe("command line flows", () => {
 
   it("answers help, prints text on request and honours the environment and cluster names", async () => {
     const help = await cli(["help", "cancel"], {});
-    expect(help.out).toBe("usage: cancel --keypair <file> --nonce <n>\noptions: --url, --priority-fee, --keypair, --nonce, --output, --help");
+    expect(help.out).toBe(
+      "usage: cancel --keypair <file> --nonce <n> [--close] [--yes]\noptions: --url, --priority-fee, --keypair, --yes, --nonce, --close, --output, --help",
+    );
     expect((await cli(["approve", "--help"], {})).out.startsWith("usage: approve --keypair <file>")).toBe(true);
     const text = await cli(["show", "config", "--output", "text"], {});
     expect(text.out.split("\n")).toContain(`feeRecipient: ${w.feeRecipient.address}`);
@@ -668,7 +670,7 @@ describe("command line flows", () => {
     h.env[ENV_KEYPAIR] = "owner.json";
     h.env[ENV_URL] = "devnet";
     h.urls.length = 0;
-    expect((await cli(["cancel", "--nonce", "0"], keys)).code).toBe(EXIT_OK);
+    expect((await cli(["cancel", "--nonce", "0", "--yes"], keys)).code).toBe(EXIT_OK);
     expect(h.urls).toEqual([CLUSTERS["devnet"]]);
     const [intent] = await findIntentPda({ owner: w.owner.address, nonce: 0n });
     expect((await cli(["show", "intent", "--owner", w.owner.address, "--nonce", "0", "--url", "localnet"], {})).json()).toMatchObject({

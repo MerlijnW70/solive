@@ -58,6 +58,8 @@ import {
   type Job,
   jobsOf,
   memoInstruction,
+  PLAIN_HTTP_ON_PUBLIC,
+  plainHttpOnPublic,
   readSpec,
   recordedDelivery,
   scan,
@@ -183,6 +185,9 @@ export type Client = {
 export const SPEC_URL_NEEDS_PROOF = "specUrl needs an AttestedResult intent with a non-zero specHash";
 
 export const DEFAULT_EXPIRES_IN = 3_600n;
+export const MIN_EXPIRES_IN = 60n;
+export const MAX_EXPIRES_IN = 31_536_000n;
+export const EXPIRES_IN_RANGE = `expiresIn must be from ${MIN_EXPIRES_IN} to ${MAX_EXPIRES_IN} seconds`;
 export const HISTORY_LIMIT = 100;
 
 export const WATCH_POLL_MS = 2_000;
@@ -403,7 +408,13 @@ export function createClient(options: ClientOptions): Client {
     if (input.specUrl !== undefined && (params.kind !== Kind.AttestedResult || params.specHash.every((b) => b === 0))) {
       throw new RangeError(SPEC_URL_NEEDS_PROOF);
     }
+    if (input.expiresIn !== undefined && (input.expiresIn < MIN_EXPIRES_IN || input.expiresIn > MAX_EXPIRES_IN)) {
+      throw new RangeError(EXPIRES_IN_RANGE);
+    }
     const published = input.specUrl === undefined ? [] : [memoInstruction(signer, specMemo(input.specUrl))];
+    if (input.specUrl !== undefined && (await plainHttpOnPublic(transport, input.specUrl))) {
+      throw new RangeError(`the spec url ${input.specUrl} ${PLAIN_HTTP_ON_PUBLIC}`);
+    }
     const [settings, sell, buy, user] = await Promise.all([config(), mint(inputMint), mint(outputMint), loadUser(transport, owner)]);
     const nonce = input.nonce ?? nonceAfter(owner, user);
     const expiresAt = input.expiresAt ?? (await chainTime(transport)) + (input.expiresIn ?? DEFAULT_EXPIRES_IN);
@@ -558,10 +569,11 @@ export function createClient(options: ClientOptions): Client {
   };
 
   const settleProof = async (input: SettleProofInput) => {
-    const { judge, owner, nonce, payTo, result, deliveredSha256 } = input;
+    const { judge, owner, nonce, payTo, result } = input;
+    const deliveredSha256 = input.deliveredSha256?.toLowerCase();
     const payer = input.payer ?? judge;
     if (deliveredSha256 !== undefined && !isSha256Hex(deliveredSha256)) {
-      throw new RangeError("deliveredSha256 must be 64 lowercase hex digits");
+      throw new RangeError("deliveredSha256 must be 64 hex digits");
     }
     const [{ address, intent: held }, settings] = await Promise.all([loadIntent(transport, owner, nonce), config()]);
     const params = decodeParams(held.kind, Uint8Array.from(held.params));

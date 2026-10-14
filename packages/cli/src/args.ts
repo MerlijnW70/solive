@@ -1,6 +1,6 @@
 import { parseArgs } from "node:util";
 import { AUTO_PRICE_CAP, MAX_PRIORITY_PRICE, type Priority } from "./compute.js";
-import { MAX_EXPIRES_IN } from "./agent/create.js";
+import { MAX_EXPIRES_IN, MIN_EXPIRES_IN } from "./agent/create.js";
 import { MANDATE_KIND_NAMES } from "./agent/mandate.js";
 import { MAX_SUBMIT_WITHIN } from "./agent/signed.js";
 import { DEVNET_URL, tokenNamed } from "./tokens.js";
@@ -95,6 +95,7 @@ export const TOKEN_SIDES: Partial<Record<string, Side>> = {
   "agent-fee": "input",
   "floor-in": "input",
   "relayer-fee": "input",
+  "judge-fee": "input",
   amount: "input",
   "min-out": "output",
   take: "output",
@@ -121,9 +122,9 @@ export type Command =
   | (Remote & { name: "mcp"; relay: RelaySpec | undefined; agent: AgentSpec | undefined; wallet: WalletLimits | null })
   | (Remote & { name: "show-intent"; owner: Address; nonce: bigint })
   | (Remote & { name: "quote"; owner: Address; nonce: bigint; at: bigint | undefined })
-  | (Keyed & { name: "cancel"; nonce: bigint })
-  | (Keyed & { name: "expire"; owner: Address; nonce: bigint })
-  | (Keyed & { name: "close"; owner: Address; nonce: bigint })
+  | (Keyed & { name: "cancel"; yes: boolean; nonce: bigint; close: boolean })
+  | (Keyed & { name: "expire"; yes: boolean; owner: Address; nonce: bigint })
+  | (Keyed & { name: "close"; yes: boolean; owner: Address; nonce: bigint })
   | (Keyed & { name: "advance-nonce"; base: bigint })
   | (Keyed & { name: "advance-epoch" })
   | (Administered & {
@@ -159,6 +160,7 @@ export type Command =
   | (Remote & { name: "jobs"; attestor: Address | undefined })
   | (Keyed & { name: "deliver"; yes: boolean; intent: Address; sha256: string; workUrl: string })
   | (Remote & { name: "deliveries"; attestor: Address; intent: Address; maxPages: number })
+  | (Remote & { name: "receipt"; owner: Address; nonce: bigint; sha256: string | undefined })
   | (Keyed & {
       name: "judge";
       yes: boolean;
@@ -168,6 +170,7 @@ export type Command =
       artifact: string;
       run: string;
       payTo: Address | undefined;
+      result: bigint | undefined;
       timeout: number;
       verdict: string | undefined;
       maxPages: number;
@@ -281,6 +284,11 @@ const OPTIONS = {
   timeout: { type: "string" },
   verdict: { type: "string" },
   "max-pages": { type: "string" },
+  "spec-hash": { type: "string" },
+  "judge-fee": { type: "string" },
+  "spec-url": { type: "string" },
+  result: { type: "string" },
+  close: { type: "boolean" },
 } as const;
 
 const KIND_NAMES: Record<string, Kind> = {
@@ -365,7 +373,7 @@ export function parseFeeBps(text: string): number {
   return Number(text);
 }
 
-type Flag = "dry-run" | "fund-accounts" | "yes" | "help" | "version" | "follow" | "create" | "wallet" | "watch";
+type Flag = "dry-run" | "fund-accounts" | "yes" | "help" | "version" | "follow" | "create" | "wallet" | "watch" | "close";
 type StringKey = Exclude<keyof typeof OPTIONS, Flag>;
 type Values = { [K in StringKey]?: string | undefined } & { [K in Flag]?: boolean | undefined };
 
@@ -413,9 +421,9 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
     "wallet-per-hour",
   ],
   quote: ["url", "owner", "nonce", "at"],
-  cancel: ["url", "priority-fee", "keypair", "nonce"],
-  expire: ["url", "priority-fee", "keypair", "owner", "nonce"],
-  close: ["url", "priority-fee", "keypair", "owner", "nonce"],
+  cancel: ["url", "priority-fee", "keypair", "yes", "nonce", "close"],
+  expire: ["url", "priority-fee", "keypair", "yes", "owner", "nonce"],
+  close: ["url", "priority-fee", "keypair", "yes", "owner", "nonce"],
   "advance-nonce": ["url", "priority-fee", "keypair", "base"],
   "advance-epoch": ["url", "priority-fee", "keypair"],
   "init-config": ["url", "priority-fee", "keypair", "authority", "yes", "guardian", "fee-recipient", "fee-bps", "kinds", "flags"],
@@ -442,7 +450,8 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   jobs: ["url", "attestor"],
   deliver: ["url", "priority-fee", "keypair", "yes", "intent", "sha256", "work-url"],
   deliveries: ["url", "attestor", "intent", "max-pages"],
-  judge: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "spec", "artifact", "run", "pay-to", "timeout", "verdict", "max-pages"],
+  receipt: ["url", "owner", "nonce", "sha256"],
+  judge: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "spec", "artifact", "run", "pay-to", "result", "timeout", "verdict", "max-pages"],
   crank: ["url", "priority-fee", "keypair", "dry-run", "fund-accounts"],
   treasury: ["url", "priority-fee", "keypair", "yes", "mints", "create"],
   create: [
@@ -455,6 +464,10 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
     "output-mint",
     ...EXPIRY,
     ...ORDER,
+    "spec-hash",
+    "judge-fee",
+    "spec-url",
+    "pay-to",
     "partner",
     "partner-bps",
     "units",
@@ -689,7 +702,7 @@ export function expiry(values: Values): ToolInput {
     throw new UsageError("give exactly one of --expires-at or --expires-in");
   }
   return values["expires-at"] === undefined
-    ? { expires_in: parseBounded(required(values, "expires-in"), "expires-in", MAX_EXPIRES_IN) }
+    ? { expires_in: parseBounded(required(values, "expires-in"), "expires-in", MAX_EXPIRES_IN, MIN_EXPIRES_IN) }
     : { expires_at: timeOf(values, "expires-at") };
 }
 
@@ -734,8 +747,8 @@ function grant(values: Values): ToolInput {
     per_intent: amountOf(values, "per-intent"),
     total: amountOf(values, "total"),
     max_intents: parseBounded(required(values, "max-intents"), "max-intents", 0xffff_ffff),
-    max_ttl: parseBounded(required(values, "max-ttl"), "max-ttl", MAX_EXPIRES_IN),
-    valid_for: parseBounded(required(values, "valid-for"), "valid-for", MAX_EXPIRES_IN),
+    max_ttl: parseBounded(required(values, "max-ttl"), "max-ttl", MAX_EXPIRES_IN, MIN_EXPIRES_IN),
+    valid_for: parseBounded(required(values, "valid-for"), "valid-for", MAX_EXPIRES_IN, MIN_EXPIRES_IN),
     floor: { out: amountOf(values, "floor-out"), in: amountOf(values, "floor-in") },
     ...optionalField(values, "id", "id", amountOf),
     ...partner(values),
@@ -1096,18 +1109,50 @@ function treasury(remote: Remote, values: Values): Command {
 
 export const SHA256_NEEDED = "--sha256 must be the work's sha256 as 64 hex digits";
 
-function sha256Of(text: string): string {
+export const SPEC_HASH_FORMAT = "--spec-hash must be the spec's sha256 as 64 hex digits";
+export const SPEC_HASH_NEEDED =
+  "create attested makes a proof escrow, which needs --spec-hash: the sha256 of the acceptance spec its judge checks; without it the escrow can only be cancelled or left to expire";
+
+function sha256Of(text: string, refusal = SHA256_NEEDED): string {
   if (!/^[0-9a-fA-F]{64}$/.test(text)) {
-    throw new UsageError(SHA256_NEEDED);
+    throw new UsageError(refusal);
   }
   return text.toLowerCase();
 }
 
-function workUrlOf(text: string): string {
+function memoUrlOf(text: string, key: "work-url" | "spec-url"): string {
   if (!isMemoUrl(text)) {
-    throw new UsageError(`--work-url must be ${MEMO_URL_RULE}`);
+    throw new UsageError(`--${key} must be ${MEMO_URL_RULE}`);
   }
   return text;
+}
+
+const PROOF_OPTIONS = ["spec-hash", "judge-fee", "spec-url"] as const;
+
+function createTerms(kind: string | undefined, values: Values): ToolInput {
+  const base = terms(kind, values);
+  const payTo = optionalField(values, "pay-to", "pay_to", key);
+  if (kind !== "attested") {
+    const given = PROOF_OPTIONS.find((name) => values[name] !== undefined);
+    if (given !== undefined) {
+      throw new UsageError(`a ${kind} order does not take --${given}`);
+    }
+    return { ...base, ...payTo };
+  }
+  const specHash = values["spec-hash"];
+  if (specHash === undefined) {
+    throw new UsageError(SPEC_HASH_NEEDED);
+  }
+  return {
+    ...base,
+    order: {
+      ...(base["order"] as ToolInput),
+      spec_hash: sha256Of(specHash, SPEC_HASH_FORMAT),
+      ...optionalField(values, "judge-fee", "judge_fee", amountOf),
+    },
+    ...optionalField(values, "spec-url", "spec_url", (v, n) => memoUrlOf(required(v, n), "spec-url")),
+    ...payTo,
+  };
 }
 
 export const MAX_DELIVERY_PAGES = 100_000;
@@ -1153,7 +1198,7 @@ export function outputOf(argv: readonly string[]): "json" | "text" {
 export const MAX_FOLLOW_INTERVAL = 3_600;
 export const WATCH_INTERVAL = 5;
 
-export const COMMANDS = "setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | judge | hash | version | help [command]";
+export const COMMANDS = "setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | judge | hash | version | help [command]";
 
 export const USAGE = `usage: ${COMMANDS}`;
 
@@ -1172,9 +1217,9 @@ export const SHAPES: Readonly<Record<string, string>> = {
   domain: "",
   mcp: "[--wallet [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>]] [--relayer <keypair> --relay-fee <mint=amount,...> [--relay-max-lamports] [--relay-max-ttl] [--relay-per-hour] [--relay-hourly-lamports]] [--agent <keypair> --agent-owners <address,...> [--agent-hourly-lamports]]",
   quote: "--owner <address> --nonce <n> [--at <unix>]",
-  cancel: "--keypair <file> --nonce <n>",
-  expire: "--keypair <file> --owner <address> --nonce <n>",
-  close: "--keypair <file> --owner <address> --nonce <n>",
+  cancel: "--keypair <file> --nonce <n> [--close] [--yes]",
+  expire: "--keypair <file> --owner <address> --nonce <n> [--yes]",
+  close: "--keypair <file> --owner <address> --nonce <n> [--yes]",
   "advance-nonce": "--keypair <file> --base <n>",
   "advance-epoch": "--keypair <file>",
   "init-config": "(--keypair <file> [--yes] | --authority <address>) --guardian --fee-recipient --fee-bps --kinds [--flags create|fill|all]",
@@ -1192,8 +1237,9 @@ export const SHAPES: Readonly<Record<string, string>> = {
   jobs: "[--attestor <address>]",
   deliver: "--keypair <worker file> --intent <address> --sha256 <64 hex> --work-url <https url> [--yes]",
   deliveries: "--attestor <address> --intent <address> [--max-pages <n>]",
-  judge: "--keypair <judge file> --owner <address> --nonce <n> --spec <file> --artifact <file or directory> --run <command> [--pay-to <wallet>] [--timeout <seconds>] [--verdict <file>] [--max-pages <n>] [--yes]",
-  create: `swap|limit|dutch|attested --keypair <file> --input-mint --output-mint (--expires-at | --expires-in) ${ORDER_SHAPE} [--nonce <n>] ${PARTNER_SHAPE} [--units tokens|raw] [--yes]`,
+  receipt: "--owner <address> --nonce <n> [--sha256 <64 hex>]",
+  judge: "--keypair <judge file> --owner <address> --nonce <n> --spec <file> --artifact <file or directory> --run <command> [--pay-to <wallet>] [--result <n>] [--timeout <seconds>] [--verdict <file>] [--max-pages <n>] [--yes]",
+  create: `swap|limit|dutch|attested --keypair <file> --input-mint --output-mint (--expires-at | --expires-in) ${ORDER_SHAPE} [--nonce <n>] [--pay-to <wallet>] ${PARTNER_SHAPE} [--units tokens|raw] [--yes]; attested also needs --spec-hash <64 hex> and takes [--judge-fee <amount>] [--spec-url <https url>]`,
   list: "--owner <address> or --keypair <file>; --owner wins when both are given",
   mandate: `grant --keypair <file> --agent --input-mint --output-mint --kinds --per-intent --total --max-intents --max-ttl --valid-for --floor-out --floor-in [--agent-fee] ${PARTNER_SHAPE} [--id] [--units tokens|raw] [--yes] | show --agent (--owner <address> | --keypair <file>) [--id] | revoke --keypair <file> --agent [--id] [--yes] | use swap|limit|dutch --keypair <file> --owner (--expires-at | --expires-in) ${MANDATE_ORDER_SHAPE} [--id] [--nonce <n>] [--units tokens|raw] [--yes]`,
   approve: "--keypair <file> --mint <mint> --amount <amount> [--units tokens|raw] [--yes]",
@@ -1302,7 +1348,14 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       };
     case "cancel":
       noSub(sub);
-      return { name: "cancel", ...remote, keypair: required(values, "keypair"), nonce: u64(values, "nonce") };
+      return {
+        name: "cancel",
+        ...remote,
+        keypair: required(values, "keypair"),
+        yes: values.yes === true,
+        nonce: u64(values, "nonce"),
+        close: values.close === true,
+      };
     case "expire":
     case "close":
       noSub(sub);
@@ -1310,6 +1363,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         name: verb,
         ...remote,
         keypair: required(values, "keypair"),
+        yes: values.yes === true,
         owner: key(values, "owner"),
         nonce: u64(values, "nonce"),
       };
@@ -1423,11 +1477,20 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         yes: values.yes === true,
         intent: key(values, "intent"),
         sha256: sha256Of(required(values, "sha256")),
-        workUrl: workUrlOf(required(values, "work-url")),
+        workUrl: memoUrlOf(required(values, "work-url"), "work-url"),
       };
     case "deliveries":
       noSub(sub);
       return { name: "deliveries", ...remote, attestor: key(values, "attestor"), intent: key(values, "intent"), maxPages: maxPagesOf(values) };
+    case "receipt":
+      noSub(sub);
+      return {
+        name: "receipt",
+        ...remote,
+        owner: key(values, "owner"),
+        nonce: u64(values, "nonce"),
+        sha256: values.sha256 === undefined ? undefined : sha256Of(values.sha256),
+      };
     case "judge":
       noSub(sub);
       return {
@@ -1441,6 +1504,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         artifact: required(values, "artifact"),
         run: runOf(required(values, "run")),
         payTo: values["pay-to"] === undefined ? undefined : key(values, "pay-to"),
+        result: values.result === undefined ? undefined : u64(values, "result"),
         timeout: parseBounded(values.timeout ?? String(JUDGE_TIMEOUT), "timeout", MAX_JUDGE_TIMEOUT, 1),
         verdict: values.verdict,
         maxPages: maxPagesOf(values),
@@ -1464,7 +1528,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         flow: "create",
         keypair: required(values, "keypair"),
         yes: values.yes === true,
-        input: terms(sub, values),
+        input: createTerms(sub, values),
       };
     case "list":
       noSub(sub);

@@ -18,6 +18,7 @@ import {
   getAddressEncoder,
   type KeyPairSigner,
   lamports,
+  type Signature,
 } from "@solana/kit";
 import {
   AccountState,
@@ -30,10 +31,18 @@ import {
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { TransactionMetadata } from "litesvm";
+import { MAX_EXPIRES_IN, MIN_EXPIRES_IN } from "../src/agent/create.js";
+import { NOT_SENT } from "../src/flows.js";
 import {
   findAssociatedTokenAddress,
   findConfigPda,
+  formatAmount,
   getConfigDecoder,
+  getIntentAttestedEventEncoder,
+  getIntentCreatedEventEncoder,
+  releaseMemo,
+  specMemo,
   EVENT_IX_TAG,
   findIntentPda,
   findUserStatePda,
@@ -49,8 +58,8 @@ import {
 } from "@intent-engine/core";
 import { agentServer } from "../src/agent/mcp.js";
 import { ACTIONS } from "../src/agent/registry.js";
-import { SHA256_NEEDED, UsageError } from "../src/args.js";
-import { createClient } from "@intent-engine/client";
+import { SHA256_NEEDED, SPEC_HASH_FORMAT, SPEC_HASH_NEEDED, UsageError, usageOf } from "../src/args.js";
+import { createClient, DEVNET_GENESIS_HASH, PLAIN_HTTP_ON_PUBLIC } from "@intent-engine/client";
 import {
   crankAction,
   IMMUTABLE_OWNER,
@@ -62,6 +71,7 @@ import {
   IN_FLIGHT_SECONDS,
   REFRESH_AFTER_SECONDS,
   jupiterHost,
+  NOT_RELEASED,
   run,
   stillOpen,
   SOLVER_TABLE_NEXT,
@@ -98,8 +108,10 @@ import {
   NOW,
   runtime,
   send,
+  setNow,
   transport,
   world,
+  type World,
 } from "./harness.js";
 
 type Json = Record<string, unknown>;
@@ -207,12 +219,12 @@ describe("cli against the deployed engine", () => {
 
   it("cancels and closes an intent, returning escrow and rent", async () => {
     await cli(create("1", NOW + 3_600n), { "owner.json": owner });
-    const cancelled = await cli(["cancel", "--keypair", "owner.json", "--nonce", "1"], { "owner.json": owner });
+    const cancelled = await cli(["cancel", "--keypair", "owner.json", "--nonce", "1", "--yes"], { "owner.json": owner });
     expect(cancelled.code).toBe(EXIT_OK);
     expect(balance(ownerInput)).toBe(1_000n);
     expect((await cli(["show", "intent", "--owner", owner.address, "--nonce", "1"], {})).json()["status"]).toBe("cancelled");
     const cranker = await funded();
-    const closed = await cli(["close", "--keypair", "c.json", "--owner", owner.address, "--nonce", "1"], {
+    const closed = await cli(["close", "--keypair", "c.json", "--owner", owner.address, "--nonce", "1", "--yes"], {
       "c.json": cranker,
     });
     expect(closed.code).toBe(EXIT_OK);
@@ -223,7 +235,7 @@ describe("cli against the deployed engine", () => {
   it("expires an intent once its deadline passes", async () => {
     await cli(create("2", NOW + 10n), { "owner.json": owner });
     const cranker = await funded();
-    const args = ["expire", "--keypair", "c.json", "--owner", owner.address, "--nonce", "2"];
+    const args = ["expire", "--keypair", "c.json", "--owner", owner.address, "--nonce", "2", "--yes"];
     const early = await cli(args, { "c.json": cranker });
     expect(early.code).toBe(EXIT_FAILED);
     const clock = h.svm.getClock();
@@ -249,25 +261,25 @@ describe("cli against the deployed engine", () => {
     const cranker = await funded();
     await cli(create("6", NOW + 10n), { "owner.json": owner });
     await cli(create("8", NOW + 3_600n), { "owner.json": owner });
-    expect((await cli(["cancel", "--keypair", "owner.json", "--nonce", "8"], { "owner.json": owner })).code).toBe(
+    expect((await cli(["cancel", "--keypair", "owner.json", "--nonce", "8", "--yes"], { "owner.json": owner })).code).toBe(
       EXIT_OK,
     );
     await drainAndClose();
     const clock = h.svm.getClock();
     clock.unixTimestamp = NOW + 10n;
     h.svm.setClock(clock);
-    const expireArgs = ["expire", "--keypair", "c.json", "--owner", owner.address, "--nonce", "6"];
+    const expireArgs = ["expire", "--keypair", "c.json", "--owner", owner.address, "--nonce", "6", "--yes"];
     expect((await cli(expireArgs, { "c.json": cranker })).code).toBe(EXIT_OK);
     expect(balance(ownerInput)).toBe(ESCROW);
     await drainAndClose();
     const [intent6] = await findIntentPda({ owner: owner.address, nonce: 6n });
     const [vault6] = await findVaultPda({ intent: intent6 });
     await send(authority, [getMintToInstruction({ mint: inputMint, token: vault6, mintAuthority: authority, amount: 5n })]);
-    const close6 = ["close", "--keypair", "c.json", "--owner", owner.address, "--nonce", "6"];
+    const close6 = ["close", "--keypair", "c.json", "--owner", owner.address, "--nonce", "6", "--yes"];
     expect((await cli(close6, { "c.json": cranker })).code).toBe(EXIT_OK);
     expect(balance(ownerInput)).toBe(5n);
     await drainAndClose();
-    const close8 = ["close", "--keypair", "c.json", "--owner", owner.address, "--nonce", "8"];
+    const close8 = ["close", "--keypair", "c.json", "--owner", owner.address, "--nonce", "8", "--yes"];
     expect((await cli(close8, { "c.json": cranker })).code).toBe(EXIT_OK);
     expect(h.svm.getAccount(ownerInput).exists).toBe(false);
   });
@@ -371,7 +383,7 @@ describe("cli against the deployed engine", () => {
     ] as const) {
       expect((await cli(create(nonce, expiry), { "owner.json": owner })).code).toBe(EXIT_OK);
     }
-    await cli(["cancel", "--keypair", "owner.json", "--nonce", "2"], { "owner.json": owner });
+    await cli(["cancel", "--keypair", "owner.json", "--nonce", "2", "--yes"], { "owner.json": owner });
     expect((await cli(create("1", NOW + 3_600n), { "owner.json": owner })).code).toBe(EXIT_OK);
     const clock = h.svm.getClock();
     clock.unixTimestamp = NOW + 10n;
@@ -431,7 +443,7 @@ describe("cli against the deployed engine", () => {
     );
     expect(FUNDING_RENT).toBe(rentFor(TOKEN_ACCOUNT_BYTES));
     expect(h.svm.getBalance(cranker.address)).toBe(lamports);
-    const paid = await cli(["expire", "--keypair", "c.json", "--owner", owner.address, "--nonce", "0"], { "c.json": cranker });
+    const paid = await cli(["expire", "--keypair", "c.json", "--owner", owner.address, "--nonce", "0", "--yes"], { "c.json": cranker });
     expect(paid.code).toBe(EXIT_OK);
     expect(balance(ownerInput)).toBe(ESCROW);
   });
@@ -850,7 +862,7 @@ describe("cli against the deployed engine", () => {
   it("tells which failed intents are still open, so a lost race on a settled or gone intent keeps the cache", async () => {
     await cli(create("4", NOW + 3_600n), { "owner.json": owner });
     await cli(create("5", NOW + 3_600n), { "owner.json": owner });
-    await cli(["cancel", "--keypair", "owner.json", "--nonce", "5", "--url", "http://cluster"], { "owner.json": owner });
+    await cli(["cancel", "--keypair", "owner.json", "--nonce", "5", "--url", "http://cluster", "--yes"], { "owner.json": owner });
     const [open] = await findIntentPda({ owner: owner.address, nonce: 4n });
     const [settled] = await findIntentPda({ owner: owner.address, nonce: 5n });
     const [gone] = await findIntentPda({ owner: owner.address, nonce: 6n });
@@ -1474,5 +1486,271 @@ describe("crank decisions", () => {
       expect(crankAction(at(0, 100n, version), 1_000n)).toBeUndefined();
       expect(crankAction(at(1, 100n, version), 1_000n)).toBeUndefined();
     }
+  });
+});
+
+describe("the cli reaches what the other surfaces do", () => {
+  let w: World;
+  let keys: Record<string, KeyPairSigner>;
+
+  beforeEach(async () => {
+    w = await world();
+    keys = { "owner.json": w.owner };
+    h.engineLog = [];
+  });
+
+  const swap = (nonce: string, ...more: string[]) => [
+    "create",
+    "swap",
+    "--keypair",
+    "owner.json",
+    "--nonce",
+    nonce,
+    "--input-mint",
+    w.inputMint,
+    "--output-mint",
+    w.outputMint,
+    "--expires-at",
+    (NOW + 3_600n).toString(),
+    "--amount-in",
+    ESCROW.toString(),
+    "--min-out",
+    "300",
+    "--units",
+    "raw",
+    ...more,
+  ];
+
+  const attested = (attestor: Address, ...more: string[]) => [
+    "create",
+    "attested",
+    "--keypair",
+    "owner.json",
+    "--input-mint",
+    w.inputMint,
+    "--output-mint",
+    w.outputMint,
+    "--expires-in",
+    "3600",
+    "--amount-in",
+    "0.0001",
+    "--min-result",
+    "1",
+    "--max-result",
+    "1",
+    "--attestor",
+    attestor,
+    ...more,
+  ];
+
+  const grant = (maxTtl: string, validFor: string) => [
+    "mandate",
+    "grant",
+    "--keypair",
+    "owner.json",
+    "--agent",
+    w.authority.address,
+    "--input-mint",
+    w.inputMint,
+    "--output-mint",
+    w.outputMint,
+    "--kinds",
+    "swap",
+    "--per-intent",
+    "10",
+    "--total",
+    "100",
+    "--max-intents",
+    "5",
+    "--max-ttl",
+    maxTtl,
+    "--valid-for",
+    validFor,
+    "--floor-out",
+    "1",
+    "--floor-in",
+    "1",
+    "--units",
+    "raw",
+  ];
+
+  const shownIntent = async (nonce: string) => (await cli(["show", "intent", "--owner", w.owner.address, "--nonce", nonce], {})).json();
+
+  it("create attested takes a spec hash judge fee and spec url", async () => {
+    const judge = await generateKeyPairSigner();
+    const specUrl = "https://example.org/spec.md";
+    const args = attested(judge.address, "--nonce", "3", "--spec-hash", "AB".repeat(32), "--judge-fee", "0.00001", "--spec-url", specUrl);
+    const preview = await cli(args, keys);
+    expect([preview.code, preview.err]).toEqual([EXIT_OK, ""]);
+    expect(preview.json()).toMatchObject({ sent: false, next: NOT_SENT });
+    expect(preview.json()["summary"]).toContain(`Publishes: the acceptance spec's url ${specUrl}, in a memo the owner signs`);
+    const made = await cli([...args, "--yes"], keys);
+    expect([made.code, made.err]).toEqual([EXIT_OK, ""]);
+    expect((await shownIntent("3"))["params"]).toEqual({
+      kind: "AttestedResult",
+      amountIn: "100",
+      minResult: "1",
+      maxResult: "1",
+      attestor: judge.address,
+      specHash: "ab".repeat(32),
+      judgeFee: "10",
+    });
+    const [signature] = made.json()["signatures"] as Signature[];
+    const landed = signature === undefined ? null : h.svm.getTransaction(signature);
+    if (!(landed instanceof TransactionMetadata)) {
+      throw new Error("the create did not land");
+    }
+    expect(landed.logs().some((line) => line.includes(specMemo(specUrl)))).toBe(true);
+    expect(await cli(swap("4", "--spec-hash", "ab".repeat(32)), keys)).toMatchObject({ code: EXIT_USAGE, err: "a swap order does not take --spec-hash" });
+    expect(await cli(attested(judge.address, "--spec-hash", "ab"), keys)).toMatchObject({ code: EXIT_USAGE, err: SPEC_HASH_FORMAT });
+    h.genesis = DEVNET_GENESIS_HASH;
+    const plain = "http://127.0.0.1:8080/spec.md";
+    const refused = await cli(attested(judge.address, "--nonce", "5", "--spec-hash", "ab".repeat(32), "--spec-url", plain), keys);
+    expect(refused).toMatchObject({ code: EXIT_FAILED, err: `--spec-url ${plain} ${PLAIN_HTTP_ON_PUBLIC}` });
+  });
+
+  it("create attested without a spec hash is refused", async () => {
+    const judge = await generateKeyPairSigner();
+    const refused = await cli(attested(judge.address, "--nonce", "3", "--judge-fee", "0.00001", "--yes"), keys);
+    expect([refused.code, refused.err, refused.out]).toEqual([EXIT_USAGE, SPEC_HASH_NEEDED, ""]);
+    const [intent] = await findIntentPda({ owner: w.owner.address, nonce: 3n });
+    expect(h.svm.getAccount(intent).exists).toBe(false);
+    expect(balance(w.ownerInput)).toBe(1_000n);
+  });
+
+  it("cancel adds a missing refund account", async () => {
+    expect((await cli(swap("1", "--yes"), keys)).code).toBe(EXIT_OK);
+    const sink = await ata(w.authority, (await generateKeyPairSigner()).address, w.inputMint);
+    await send(w.owner, [
+      getTransferInstruction({ source: w.ownerInput, destination: sink, authority: w.owner, amount: balance(w.ownerInput) }),
+      getCloseAccountInstruction({ account: w.ownerInput, destination: w.owner.address, owner: w.owner }),
+    ]);
+    expect(h.svm.getAccount(w.ownerInput).exists).toBe(false);
+    const preview = await cli(["cancel", "--keypair", "owner.json", "--nonce", "1", "--close"], keys);
+    expect([preview.code, preview.err]).toEqual([EXIT_OK, ""]);
+    expect(preview.json()).toMatchObject({ sent: false, next: NOT_SENT });
+    expect(preview.json()["summary"]).toContain(`Creates ${w.ownerInput} first, since it is missing; the owner pays its rent`);
+    const [intent] = await findIntentPda({ owner: w.owner.address, nonce: 1n });
+    const sent = await cli(["cancel", "--keypair", "owner.json", "--nonce", "1", "--close", "--yes"], keys);
+    expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);
+    expect(sent.json()).toMatchObject({ intent, sent: true, signature: expect.any(String) });
+    expect(balance(w.ownerInput)).toBe(ESCROW);
+    expect(h.svm.getAccount(intent).exists).toBe(false);
+  });
+
+  it("cancel expire and close preview without yes", async () => {
+    expect((await cli(swap("1", "--yes"), keys)).code).toBe(EXIT_OK);
+    const shortLived = swap("2", "--yes");
+    shortLived[shortLived.indexOf("--expires-at") + 1] = (NOW + 10n).toString();
+    expect((await cli(shortLived, keys)).code).toBe(EXIT_OK);
+    const cranker = await funded();
+    const signers = { "c.json": cranker, "owner.json": w.owner };
+    const [first] = await findIntentPda({ owner: w.owner.address, nonce: 1n });
+    const [second] = await findIntentPda({ owner: w.owner.address, nonce: 2n });
+    const steps: [string[], () => Promise<void>][] = [
+      [["cancel", "--keypair", "owner.json", "--nonce", "1"], async () => expect((await shownIntent("1"))["status"]).toBe("cancelled")],
+      [["close", "--keypair", "owner.json", "--owner", w.owner.address, "--nonce", "1"], async () => expect(h.svm.getAccount(first).exists).toBe(false)],
+      [["expire", "--keypair", "c.json", "--owner", w.owner.address, "--nonce", "2"], async () => expect((await shownIntent("2"))["status"]).toBe("expired")],
+    ];
+    setNow(NOW + 10n);
+    for (const [args, after] of steps) {
+      const before = balance(w.ownerInput);
+      const preview = await cli(args, signers);
+      expect([preview.code, preview.err], args.join(" ")).toEqual([EXIT_OK, ""]);
+      expect(preview.json()).toMatchObject({ sent: false, next: NOT_SENT, summary: expect.any(Array) });
+      expect(BigInt(preview.json()["units_consumed"] as string)).toBeGreaterThan(0n);
+      expect(balance(w.ownerInput)).toBe(before);
+      const sent = await cli([...args, "--yes"], signers);
+      expect([sent.code, sent.err], args.join(" ")).toEqual([EXIT_OK, ""]);
+      expect(sent.json()).toMatchObject({ sent: true, signature: expect.any(String) });
+      await after();
+    }
+    expect(h.svm.getAccount(second).exists).toBe(true);
+    expect(balance(w.ownerInput)).toBe(1_000n);
+    expect(usageOf("cancel").usage).toBe("cancel --keypair <file> --nonce <n> [--close] [--yes]");
+  });
+
+  it("create takes pay to", async () => {
+    const payee = await funded();
+    const preview = await cli(swap("1", "--pay-to", payee.address), keys);
+    expect([preview.code, preview.err]).toEqual([EXIT_OK, ""]);
+    expect(preview.json()["summary"]).toContain(`Pays to: ${payee.address}, who receives what the solver pays`);
+    expect((await cli(swap("1", "--pay-to", payee.address, "--yes"), keys)).code).toBe(EXIT_OK);
+    const receiver = await findAssociatedTokenAddress({ owner: payee.address, mint: w.outputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    expect((await shownIntent("1"))["receiver"]).toBe(receiver);
+    expect(h.svm.getAccount(receiver).exists).toBe(true);
+    expect(await cli(swap("2", "--pay-to", "nope"), keys)).toMatchObject({ code: EXIT_USAGE, err: "--pay-to is not a base58 address" });
+  });
+
+  it("receipt prints the recorded delivery", async () => {
+    const [intent] = await findIntentPda({ owner: w.owner.address, nonce: 7n });
+    const receipt = ["receipt", "--owner", w.owner.address, "--nonce", "7"];
+    expect((await cli(receipt, {})).json()).toEqual({ intent, released: false, next: NOT_RELEASED });
+    const worker = await generateKeyPairSigner();
+    const judge = await generateKeyPairSigner();
+    const payee = await ata(w.authority, worker.address, w.inputMint);
+    const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
+    const released = getIntentAttestedEventEncoder().encode({
+      intent,
+      owner: w.owner.address,
+      solver: judge.address,
+      payee,
+      attestor: judge.address,
+      amountIn: 2_500_000n,
+      result: 2n,
+      fee: 0n,
+      net: 2_500_000n,
+      filled: 2_500_000n,
+      remaining: 0n,
+      partnerFee: 0n,
+    });
+    const created = getIntentCreatedEventEncoder().encode({
+      intent,
+      owner: w.owner.address,
+      nonce: 7n,
+      kind: 4,
+      inputMint: w.inputMint,
+      outputMint: w.outputMint,
+      receiver: w.owner.address,
+      escrowed: 2_500_000n,
+      expiresAt: 0n,
+      rentPayer: w.owner.address,
+      flags: 0,
+      bounty: 0,
+      createFee: 0,
+    });
+    const work = "c".repeat(64);
+    const release = { signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [tag(released)], memos: [releaseMemo(work)] };
+    h.engineLog = [{ ...release, signature: "failed", failed: true }, release, { signature: "create", slot: 1n, blockTime: null, failed: false, emitted: [tag(created)] }];
+    const recorded = {
+      intent,
+      released: true,
+      attestor: judge.address,
+      result: "2",
+      signature: "release",
+      delivered_sha256: work,
+      paid_to: worker.address,
+      payee,
+      paid: formatAmount(2_500_000n, 6),
+    };
+    expect((await cli([...receipt, "--sha256", work.toUpperCase()], {})).json()).toEqual({ ...recorded, matches: true });
+    expect((await cli([...receipt, "--sha256", "d".repeat(64)], {})).json()).toEqual({ ...recorded, matches: false });
+    expect((await cli(receipt, {})).json()).toEqual(recorded);
+    expect(await cli([...receipt, "--sha256", "xyz"], {})).toMatchObject({ code: EXIT_USAGE, err: SHA256_NEEDED });
+    expect((await cli([...receipt, "--output", "text"], {})).out).toContain(`delivered_sha256: ${work}`);
+  });
+
+  it("durations below a minute name the cli flag", async () => {
+    const timeless = swap("1", "--yes").filter((a) => a !== "--expires-at" && a !== (NOW + 3_600n).toString());
+    const refusals = [
+      [[...timeless, "--expires-in", "59"], `--expires-in must be an integer from ${MIN_EXPIRES_IN} to ${MAX_EXPIRES_IN}`],
+      [grant("59", "3600"), `--max-ttl must be an integer from ${MIN_EXPIRES_IN} to ${MAX_EXPIRES_IN}`],
+      [grant("3600", "59"), `--valid-for must be an integer from ${MIN_EXPIRES_IN} to ${MAX_EXPIRES_IN}`],
+    ] as const;
+    for (const [args, refusal] of refusals) {
+      const run = await cli([...args], keys);
+      expect([run.code, run.err, run.out]).toEqual([EXIT_USAGE, refusal, ""]);
+    }
+    expect((await cli([...timeless, "--expires-in", String(MIN_EXPIRES_IN)], keys)).code).toBe(EXIT_OK);
   });
 });

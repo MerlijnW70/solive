@@ -11,12 +11,16 @@ import {
   DELIVERY_SCAN,
   deliveryRecord,
   DEVNET_GENESIS_HASH,
+  EXPIRES_IN_RANGE,
   firstDelivery,
   JOBS_LIMIT,
   type ListedSignature,
+  MAX_EXPIRES_IN,
   MAX_SPEC_BYTES,
   memoInstruction,
+  MIN_EXPIRES_IN,
   NotDeliverable,
+  PLAIN_HTTP_ON_PUBLIC,
   SIGNATURE_PAGE,
   SPEC_URL_NEEDS_PROOF,
   SpecUnreadable,
@@ -274,9 +278,46 @@ describe("deliveries", () => {
       await expect(client.deliver({ worker, intent, sha256: WORK, url: WORK_URL })).rejects.toThrow(NotDeliverable);
     }
     const open = await client.createIntent({ ...order, params: proof(judge.address) });
-    await expect(client.deliver({ worker, intent: open.intent, sha256: WORK.toUpperCase(), url: WORK_URL })).rejects.toThrow(RangeError);
+    await expect(client.deliver({ worker, intent: open.intent, sha256: "zz".repeat(32), url: WORK_URL })).rejects.toThrow(RangeError);
     await expect(client.deliver({ worker, intent: open.intent, sha256: WORK, url: "ftp://example.org/x" })).rejects.toThrow(RangeError);
     expect(await client.deliveries({ judge: judge.address })).toEqual([]);
+  });
+
+  it("uppercase sha256 is accepted", async () => {
+    const { w, client, judge, order } = await setting();
+    const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
+    const worker = await funded(w.chain);
+    await client.deliver({ worker, intent: job.intent, sha256: WORK.toUpperCase(), url: WORK_URL });
+    expect(await client.deliveries({ judge: judge.address })).toMatchObject([{ intent: job.intent, worker: worker.address, sha256: WORK }]);
+    const signature = await client.settleProof({ judge, owner: w.owner.address, nonce: job.nonce, payTo: worker.address, result: 1n, deliveredSha256: WORK.toUpperCase() });
+    const released = (await client.history(job.intent)).find(({ name }) => name === "IntentAttested");
+    expect(released).toMatchObject({ signature, deliveredSha256: WORK });
+  });
+
+  it("a plain http spec url is refused at create on a public cluster", async () => {
+    const { w, judge, order } = await setting();
+    const devnet = createClient({ url: LOCAL, transport: { ...w.chain.transport, genesisHash: async () => DEVNET_GENESIS_HASH } });
+    const plain = "http://127.0.0.1:8080/spec.md";
+    await expect(devnet.createIntent({ ...order, params: proof(judge.address), specUrl: plain })).rejects.toThrow(`the spec url ${plain} ${PLAIN_HTTP_ON_PUBLIC}`);
+    expect(await devnet.jobs()).toEqual([]);
+    const job = await devnet.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
+    const worker = await funded(w.chain);
+    const work = "http://127.0.0.1:8080/work.tar";
+    await expect(devnet.deliver({ worker, intent: job.intent, sha256: WORK, url: work })).rejects.toThrow(`the work url ${work} ${PLAIN_HTTP_ON_PUBLIC}`);
+    expect(await devnet.deliveries({ judge: judge.address })).toEqual([]);
+    const local = createClient({ url: LOCAL, transport: w.chain.transport });
+    await local.deliver({ worker, intent: job.intent, sha256: WORK, url: work });
+    expect(await local.deliveries({ judge: judge.address })).toMatchObject([{ url: work }]);
+  });
+
+  it("refuses an expiresIn below a minute or above a year", async () => {
+    const { client, judge, order } = await setting();
+    for (const expiresIn of [MIN_EXPIRES_IN - 1n, MAX_EXPIRES_IN + 1n]) {
+      await expect(client.createIntent({ ...order, params: proof(judge.address), expiresIn })).rejects.toThrow(EXPIRES_IN_RANGE);
+    }
+    expect(await client.jobs()).toEqual([]);
+    const made = await client.createIntent({ ...order, params: proof(judge.address), expiresIn: MIN_EXPIRES_IN });
+    expect((await client.jobs())[0]).toMatchObject({ intent: made.intent });
   });
 });
 

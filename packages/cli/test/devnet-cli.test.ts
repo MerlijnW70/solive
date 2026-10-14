@@ -135,8 +135,8 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet cli sweep", 
       ok(`show intent --owner ${owner.address} --nonce 0`);
       ok(`quote --owner ${owner.address} --nonce 0`);
       ok("list");
-      ok("cancel --nonce 0");
-      ok(`close --owner ${owner.address} --nonce 0`);
+      ok("cancel --nonce 0 --yes");
+      ok(`close --owner ${owner.address} --nonce 0 --yes`);
 
       ok(`create limit --input-mint ${WRAPPED} --output-mint ${TEST_TOKEN} --units tokens --make 0.01 --take 50 --expires-in 600 --yes`);
       const start = now() + drift - 30n;
@@ -144,10 +144,10 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet cli sweep", 
         `create dutch --input-mint ${WRAPPED} --output-mint ${TEST_TOKEN} --units tokens --amount-in 0.01 --start-out 60 --end-out 50 --start-at ${start} --end-at ${start + 600n} --expires-in 600 --yes`,
       );
       ok(
-        `create attested --input-mint ${WRAPPED} --output-mint ${TEST_TOKEN} --units tokens --amount-in 0.01 --min-result 1 --max-result 2 --attestor ${attestor} --expires-in 600 --yes`,
+        `create attested --input-mint ${WRAPPED} --output-mint ${TEST_TOKEN} --units tokens --amount-in 0.01 --min-result 1 --max-result 2 --attestor ${attestor} --spec-hash ${"ab".repeat(32)} --expires-in 600 --yes`,
       );
       for (const nonce of [1, 2, 3]) {
-        ok(`cancel --nonce ${nonce}`);
+        ok(`cancel --nonce ${nonce} --yes`);
       }
       ok("crank --dry-run");
       ok("crank");
@@ -157,8 +157,8 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet cli sweep", 
       while (now() + drift <= deadline + 5n) {
         await new Promise((resolve) => setTimeout(resolve, 2_000));
       }
-      ok(`expire --owner ${owner.address} --nonce 4`);
-      ok(`close --owner ${owner.address} --nonce 4`);
+      ok(`expire --owner ${owner.address} --nonce 4 --yes`);
+      ok(`close --owner ${owner.address} --nonce 4 --yes`);
 
       ok("advance-nonce --base 100");
       ok("advance-epoch");
@@ -170,7 +170,7 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet cli sweep", 
       );
       expect(existsSync(join(dir, "signed.json"))).toBe(true);
       ok(`signed submit --keypair ${payerFile} --file signed.json --yes`);
-      ok(`cancel --nonce ${String(prepared["nonce"] ?? "100")}`);
+      ok(`cancel --nonce ${String(prepared["nonce"] ?? "100")} --yes`);
 
       ok(
         `mandate grant --agent ${agent.address} --input-mint ${WRAPPED} --output-mint ${TEST_TOKEN} --kinds swap --per-intent 0.02 --total 0.02 --max-intents 1 --max-ttl 600 --valid-for 600 --floor-out 100 --floor-in 1 --units tokens --yes`,

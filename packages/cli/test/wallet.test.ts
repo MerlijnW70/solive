@@ -236,7 +236,7 @@ describe("selling SOL", () => {
     const keys = { "owner.json": w.owner };
     await cli(swap("--yes"), keys);
     const wrapped = await wrappedOf(w.owner.address);
-    const refunded = await cli(["cancel", "--keypair", "owner.json", "--nonce", "0"], keys);
+    const refunded = await cli(["cancel", "--keypair", "owner.json", "--nonce", "0", "--yes"], keys);
     expect(refunded.err).toBe("");
     expect(balance(wrapped)).toBe(LAMPORTS_PER_SOL / 20n);
     expect((await cli(swap(), keys)).json()).toMatchObject({ wraps: "0" });

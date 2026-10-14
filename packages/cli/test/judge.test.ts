@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { deliveryMemo, findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, manifestSha256, RELEASE_MEMO_PREFIX, releaseMemo } from "@intent-engine/core";
 import { createClient, DELIVERY_PAGES, DELIVERY_SCAN, type EngineTransaction, type ListedSignature, SIGNATURE_PAGE, type Transport } from "@intent-engine/client";
 import { ENV_KEYPAIR, JUDGE_TIMEOUT, MAX_JUDGE_TIMEOUT, RUN_NEEDED } from "../src/args.js";
+import { resultOutside } from "../src/commands.js";
 import { NOT_SENT } from "../src/flows.js";
 import { artifactSha256, CHECK_ENV, checkEnv, CLEANUP_RETRIES, ENV_ARTIFACT_PATH, ENV_ARTIFACT_SHA256, ENV_SPEC_PATH, runCheck, SKIPPED, SPEC_COPY } from "../src/judge.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
@@ -172,6 +173,43 @@ describe("intent-engine judge", () => {
       throw new Error("the settle did not land");
     }
     expect(landed.logs().some((line) => line.includes(releaseMemo(j.sha256)))).toBe(true);
+  });
+
+  it("judge refuses a result outside the escrow bounds before running the check", async () => {
+    const specHash = new Uint8Array(createHash("sha256").update(SPEC).digest());
+    const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 2n, maxResult: 5n, attestor: j.judge.address, specHash, judgeFee: 0n } as const;
+    const client = createClient({ url: "http://cluster", transport });
+    const { intent } = await client.createIntent({ signer: j.w.owner, params, inputMint: j.w.inputMint, outputMint: j.w.outputMint, nonce: 1n, expiresAt: NOW + 3_600n });
+    h.engineLog = [announced(intent, j.worker.address, j.sha256, "first-of-one", 5n), creation(intent)];
+    const ran = join(j.dir, "ran");
+    const run = `touch "${ran}"`;
+    const onNonce = (...more: string[]) => {
+      const args = judging(j, run, ...more);
+      args[args.indexOf("--nonce") + 1] = "1";
+      return args;
+    };
+    for (const result of [1n, 6n]) {
+      const refused = await cli(onNonce("--result", String(result), "--yes"), keys);
+      expect([refused.code, refused.out]).toEqual([EXIT_FAILED, ""]);
+      expect(refused.err).toBe(resultOutside(result, intent, 2n, 5n));
+      expect(existsSync(ran)).toBe(false);
+    }
+    expect(status(intent)).toBe(IntentStatus.Open);
+    const chosen = await cli(onNonce("--result", "3"), keys);
+    expect([chosen.code, chosen.err]).toEqual([EXIT_OK, ""]);
+    expect(chosen.json()).toMatchObject({ intent, verdict: "pass", signature: null, next: NOT_SENT });
+    expect(existsSync(ran)).toBe(true);
+    const paid = await cli(onNonce("--yes"), keys);
+    expect([paid.code, paid.err]).toEqual([EXIT_OK, ""]);
+    expect(paid.json()).toMatchObject({ intent, verdict: "pass", payTo: j.worker.address, signature: expect.any(String) });
+    expect(paid.json()).not.toHaveProperty("next");
+    expect(status(intent)).toBe(IntentStatus.Filled);
+    const landed = h.svm.getTransaction(paid.json()["signature"] as Signature);
+    if (!(landed instanceof TransactionMetadata)) {
+      throw new Error("the settle did not land");
+    }
+    expect(landed.logs().some((line) => line.includes(releaseMemo(j.sha256)))).toBe(true);
+    expect(await paidTo(j, j.worker.address)).toBeGreaterThan(0n);
   });
 
   it("an interrupted check never passes", async () => {

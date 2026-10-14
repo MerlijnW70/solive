@@ -190,7 +190,7 @@ describe("the quickstart", () => {
     ]);
     expect(PAGE).toContain("`list` shows this intent as `open` with nonce `1`.");
     expect(outputs[3]).toMatchObject({ intents: [{ status: "filled", nonce: "0" }, { status: "open", nonce: "1" }] });
-    expect(PAGE).toContain("`cancel` sends at once and returns its 0.05 wrapped SOL to your wrapped SOL token account.");
+    expect(PAGE).toContain("`cancel --yes` sends the cancel and returns its 0.05 wrapped SOL to your wrapped SOL token account;");
     expect(balance(received)).toBe(5n * LAMPORTS_PER_SOL);
   });
 });

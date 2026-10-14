@@ -3,7 +3,7 @@
 # CLI reference
 
 ```text
-usage: setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | judge | hash | version | help [command]
+usage: setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | judge | hash | version | help [command]
 ```
 
 Every command accepts `--output` and `--help`.
@@ -77,26 +77,26 @@ Options: `--url`, `--owner`, `--nonce`, `--at`, `--output`, `--help`
 ## cancel
 
 ```text
-cancel --keypair <file> --nonce <n>
+cancel --keypair <file> --nonce <n> [--close] [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--nonce`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--nonce`, `--close`, `--output`, `--help`
 
 ## expire
 
 ```text
-expire --keypair <file> --owner <address> --nonce <n>
+expire --keypair <file> --owner <address> --nonce <n> [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--owner`, `--nonce`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--output`, `--help`
 
 ## close
 
 ```text
-close --keypair <file> --owner <address> --nonce <n>
+close --keypair <file> --owner <address> --nonce <n> [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--owner`, `--nonce`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--output`, `--help`
 
 ## advance-nonce
 
@@ -218,13 +218,21 @@ deliveries --attestor <address> --intent <address> [--max-pages <n>]
 
 Options: `--url`, `--attestor`, `--intent`, `--max-pages`, `--output`, `--help`
 
+## receipt
+
+```text
+receipt --owner <address> --nonce <n> [--sha256 <64 hex>]
+```
+
+Options: `--url`, `--owner`, `--nonce`, `--sha256`, `--output`, `--help`
+
 ## judge
 
 ```text
-judge --keypair <judge file> --owner <address> --nonce <n> --spec <file> --artifact <file or directory> --run <command> [--pay-to <wallet>] [--timeout <seconds>] [--verdict <file>] [--max-pages <n>] [--yes]
+judge --keypair <judge file> --owner <address> --nonce <n> --spec <file> --artifact <file or directory> --run <command> [--pay-to <wallet>] [--result <n>] [--timeout <seconds>] [--verdict <file>] [--max-pages <n>] [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--pay-to`, `--timeout`, `--verdict`, `--max-pages`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--pay-to`, `--result`, `--timeout`, `--verdict`, `--max-pages`, `--output`, `--help`
 
 ## crank
 
@@ -245,10 +253,10 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--mints`, `--create`,
 ## create
 
 ```text
-create swap|limit|dutch|attested --keypair <file> --input-mint --output-mint (--expires-at | --expires-in) (--amount-in --min-out | --make --take | --amount-in --start-out --end-out --start-at --end-at | --amount-in --min-result --max-result --attestor) [--nonce <n>] [--partner <address> --partner-bps <n>] [--units tokens|raw] [--yes]
+create swap|limit|dutch|attested --keypair <file> --input-mint --output-mint (--expires-at | --expires-in) (--amount-in --min-out | --make --take | --amount-in --start-out --end-out --start-at --end-at | --amount-in --min-result --max-result --attestor) [--nonce <n>] [--pay-to <wallet>] [--partner <address> --partner-bps <n>] [--units tokens|raw] [--yes]; attested also needs --spec-hash <64 hex> and takes [--judge-fee <amount>] [--spec-url <https url>]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--nonce`, `--input-mint`, `--output-mint`, `--expires-at`, `--expires-in`, `--amount-in`, `--min-out`, `--make`, `--take`, `--start-out`, `--end-out`, `--start-at`, `--end-at`, `--min-result`, `--max-result`, `--attestor`, `--partner`, `--partner-bps`, `--units`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--nonce`, `--input-mint`, `--output-mint`, `--expires-at`, `--expires-in`, `--amount-in`, `--min-out`, `--make`, `--take`, `--start-out`, `--end-out`, `--start-at`, `--end-at`, `--min-result`, `--max-result`, `--attestor`, `--spec-hash`, `--judge-fee`, `--spec-url`, `--pay-to`, `--partner`, `--partner-bps`, `--units`, `--output`, `--help`
 
 ## list
 

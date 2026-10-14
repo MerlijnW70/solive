@@ -36,6 +36,17 @@ export const PUBLIC_GENESIS_HASHES: ReadonlySet<string> = new Set([MAINNET_GENES
 export const MEMOS_PER_TRANSACTION = 8;
 export const MAX_SPEC_BYTES = 1_048_576;
 export const SPEC_TIMEOUT_MS = 10_000;
+export const PLAIN_HTTP_ON_PUBLIC = "is a plain http url, which a public cluster may not use";
+
+export async function plainHttpOnPublic(transport: Transport, url: string): Promise<boolean> {
+  let protocol: string;
+  try {
+    protocol = new URL(url).protocol;
+  } catch {
+    return false;
+  }
+  return protocol === "http:" && PUBLIC_GENESIS_HASHES.has(await transport.genesisHash());
+}
 
 export type Job = {
   intent: Address;
@@ -283,8 +294,8 @@ export async function readSpec(transport: Transport, get: SpecFetch, intent: Add
   if (url === null) {
     return null;
   }
-  if (new URL(url).protocol === "http:" && PUBLIC_GENESIS_HASHES.has(await transport.genesisHash())) {
-    throw new SpecUnreadable(url, "is a plain http url, which a spec on a public cluster may not use");
+  if (await plainHttpOnPublic(transport, url)) {
+    throw new SpecUnreadable(url, PLAIN_HTTP_ON_PUBLIC);
   }
   const bytes = await bounded(await get(url, { redirect: "error", signal: AbortSignal.timeout(SPEC_TIMEOUT_MS) }), url);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
@@ -350,7 +361,10 @@ export function memoInstruction(signer: TransactionSigner, text: string): Instru
 
 export async function deliveryInstructions(transport: Transport, input: DeliverInput): Promise<{ attestor: Address; instructions: Instruction[] }> {
   const { worker, intent } = input;
-  const memo = deliveryMemo({ intent, sha256: input.sha256, url: input.url });
+  const memo = deliveryMemo({ intent, sha256: input.sha256.toLowerCase(), url: input.url });
+  if (await plainHttpOnPublic(transport, input.url)) {
+    throw new RangeError(`the work url ${input.url} ${PLAIN_HTTP_ON_PUBLIC}`);
+  }
   const [proof, now] = await Promise.all([proofAt(transport, intent), chainTime(transport)]);
   if (proof === null) {
     throw new NotDeliverable(intent, "is not a proof escrow: an AttestedResult intent that commits a spec hash");
