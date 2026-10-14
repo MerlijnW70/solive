@@ -92,6 +92,30 @@ describe("the word count example job", () => {
     expect(result.stdout.trim()).toBe("8 of 32 inputs hold");
   });
 
+  it("the word count check ends when a grandchild holds its pipes", () => {
+    const pids = mkdtempSync(join(tmpdir(), "word-count-pids-"));
+    const holding = (detached: boolean, name: string) =>
+      `import { spawn } from "node:child_process";\nimport { writeFileSync } from "node:fs";\nconst held = spawn(process.execPath, ["-e", "setTimeout(() => {}, 60000)"], { stdio: ["ignore", 1, 2, 3], detached: ${detached} });\nwriteFileSync(${JSON.stringify(join(pids, name))}, String(held.pid));\nheld.unref();\n${CORRECT}`;
+    try {
+      const grouped = Date.now();
+      const inGroup = check(delivery(holding(false, "grouped")));
+      expect(Date.now() - grouped).toBeLessThan(8_000);
+      expect([inGroup.status, inGroup.stdout, inGroup.stderr]).toEqual([0, "32 of 32 inputs hold\n", ""]);
+      const escaped = Date.now();
+      const outside = check(delivery(holding(true, "escaped")));
+      expect(Date.now() - escaped).toBeLessThan(16_000);
+      expect([outside.status, outside.stdout, outside.stderr]).toEqual([0, "32 of 32 inputs hold\n", ""]);
+    } finally {
+      for (const name of ["grouped", "escaped"]) {
+        try {
+          process.kill(Number(readFileSync(join(pids, name), "utf8")), "SIGKILL");
+        } catch {
+          continue;
+        }
+      }
+    }
+  }, 40_000);
+
   it("the word count check stops a delivery that never finishes", () => {
     const result = refused("while (true) {}\n");
     expect(result.stderr).toContain("did not finish within 10 s");

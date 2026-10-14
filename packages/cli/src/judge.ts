@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, open, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
-import type { Address, Signature } from "@solana/kit";
+import type { Address, KeyPairSigner, Signature } from "@solana/kit";
 import { decodeParams, IntentStatus, Kind, type ManifestEntry, manifestSha256 } from "@intent-engine/core";
 import { chainTime, createClient, deliveryRecord, firstDelivery, loadIntent, SIGNATURE_PAGE, type Transport } from "@intent-engine/client";
 import type { Command } from "./args.js";
@@ -28,8 +28,8 @@ export class JudgeRefused extends Error {
 export class JudgeInterrupted extends Error {
   readonly exitCode: number;
 
-  constructor(signal: InterruptSignal) {
-    super(`the check was interrupted by ${signal}; nothing was paid and no verdict was written`);
+  constructor(signal: InterruptSignal, reason?: string) {
+    super(reason ?? `the check was interrupted by ${signal}; nothing was paid and no verdict was written`);
     this.name = "JudgeInterrupted";
     this.exitCode = SIGNAL_EXIT[signal];
   }
@@ -214,6 +214,29 @@ export function runCheck(command: string, env: NodeJS.ProcessEnv, timeoutSeconds
   });
 }
 
+type HeldSignals = { caught(): InterruptSignal | undefined; release(): void };
+
+function holdSignals(): HeldSignals {
+  let caught: InterruptSignal | undefined;
+  const handlers = (Object.keys(SIGNAL_EXIT) as InterruptSignal[]).map((signal) => {
+    const handler = () => {
+      caught ??= signal;
+    };
+    process.on(signal, handler);
+    return [signal, handler] as const;
+  });
+  return {
+    caught: () => caught,
+    release: () => {
+      for (const [signal, handler] of handlers) {
+        process.removeListener(signal, handler);
+      }
+    },
+  };
+}
+
+const reasonOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
 export function checkEnv(base: NodeJS.ProcessEnv, spec: string, artifact: string, sha256: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const key of CHECK_ENV) {
@@ -268,29 +291,63 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   if (first !== null && first.worker !== payTo) {
     throw new JudgeRefused(`${first.worker} announced the artifact with sha256 ${sha256} first, in ${first.signature}; it is paid, not --pay-to ${payTo}`);
   }
+  if (command.verdict !== undefined) {
+    await rm(command.verdict, { force: true });
+  }
+  const signals = holdSignals();
+  try {
+    return await checkAndSettle(command, transport, signer, signals, { address, specHash, sha256, payTo, read, specBytes });
+  } finally {
+    signals.release();
+  }
+}
+
+type Judged = { address: Address; specHash: string; sha256: string; payTo: Address; read: Artifact; specBytes: Uint8Array };
+
+async function checkAndSettle(
+  command: JudgeCommand,
+  transport: Transport,
+  signer: KeyPairSigner,
+  signals: HeldSignals,
+  { address, specHash, sha256, payTo, read, specBytes }: Judged,
+): Promise<Verdict> {
   const copy = await copyOf(read, specBytes);
-  let check: Check;
+  let check: Check = { exitCode: null, timedOut: false };
   let cleanup: string | undefined;
   try {
-    check = await runCheck(command.run, checkEnv(process.env, copy.spec, copy.path, sha256), command.timeout, { cwd: copy.root });
+    if (signals.caught() === undefined) {
+      check = await runCheck(command.run, checkEnv(process.env, copy.spec, copy.path, sha256), command.timeout, { cwd: copy.root });
+    }
   } finally {
     cleanup = await removeCopy(copy.root);
   }
-  if (check.interrupted !== undefined) {
-    throw new JudgeInterrupted(check.interrupted);
+  const interrupted = check.interrupted ?? signals.caught();
+  if (interrupted !== undefined) {
+    throw new JudgeInterrupted(interrupted);
   }
   const passed = check.exitCode === 0;
-  const signature =
-    passed && command.yes
-      ? await createClient({ url: command.url, transport }).settleProof({
-          judge: signer,
-          owner: command.owner,
-          nonce: command.nonce,
-          payTo,
-          result: 1n,
-          deliveredSha256: sha256,
-        })
-      : null;
+  let signature: Signature | null = null;
+  if (passed && command.yes) {
+    try {
+      signature = await createClient({ url: command.url, transport }).settleProof({
+        judge: signer,
+        owner: command.owner,
+        nonce: command.nonce,
+        payTo,
+        result: 1n,
+        deliveredSha256: sha256,
+      });
+    } catch (error) {
+      const during = signals.caught();
+      if (during !== undefined) {
+        throw new JudgeInterrupted(
+          during,
+          `the check passed and ${during} arrived while the release was being sent; the send failed, but the release may have landed: ${reasonOf(error)}. Read intent ${address} before judging it again; no verdict was written`,
+        );
+      }
+      throw error;
+    }
+  }
   const verdict: Verdict = {
     intent: address,
     specHash,
@@ -305,6 +362,13 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   };
   if (command.verdict !== undefined) {
     await writeFile(command.verdict, `${JSON.stringify(verdict, null, 2)}\n`);
+  }
+  const during = signals.caught();
+  if (signature !== null && during !== undefined) {
+    throw new JudgeInterrupted(
+      during,
+      `the check passed and ${during} arrived while the release was being sent; it was sent in ${signature}${command.verdict !== undefined ? ` and the verdict was written to ${command.verdict}` : ""}`,
+    );
   }
   return verdict;
 }

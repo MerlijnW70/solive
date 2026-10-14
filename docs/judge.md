@@ -52,7 +52,7 @@ chmod +x check.sh
 intent-engine judge --owner $OWNER --nonce $NONCE --spec spec.md --artifact work --run "'$PWD/check.sh'" --verdict verdict.json
 ```
 
-In order, `judge` refuses unless the escrow is open and names your wallet as its judge, refuses unless the spec file's sha256 is the committed one, hashes the work, picks whom to pay, then runs `--run` with at most `--timeout` seconds (default 600, at most 86400). On timeout it kills the command's process group, or on Windows its process tree and waits for that to finish; after a normal exit it kills only the process group, and on Windows nothing. Exit code 0 is a pass; any other exit code or a timeout is a fail, which sends nothing and makes `judge` exit 1. It prints, and with `--verdict` writes, the `intent`, `specHash`, `artifactSha256`, `command`, `exitCode`, `verdict`, `payTo` and `signature`, and `cleanup` when the copy could not be removed. A SIGINT or SIGTERM during the check kills it and is never a pass: `judge` sends nothing, writes no verdict, removes its copy and exits 130 or 143.
+In order, `judge` refuses unless the escrow is open and names your wallet as its judge, refuses unless the spec file's sha256 is the committed one, hashes the work, picks whom to pay, then runs `--run` with at most `--timeout` seconds (default 600, at most 86400). On timeout it kills the command's process group, or on Windows its process tree and waits for that to finish; after a normal exit it kills only the process group, and on Windows nothing. Exit code 0 is a pass; any other exit code or a timeout is a fail, which sends nothing and makes `judge` exit 1. It prints, and with `--verdict` writes, the `intent`, `specHash`, `artifactSha256`, `command`, `exitCode`, `verdict`, `payTo` and `signature`, and `cleanup` when the copy could not be removed. Before the check it deletes an existing `--verdict` file, and writes it only once a verdict is reached. A SIGINT or SIGTERM during the check kills it and is never a pass: `judge` sends nothing, writes no verdict, removes its copy and exits 130 or 143. A signal while it removes the copy lets the removal finish first. A signal while it sends the release waits for the send, then names its signature, or says the release may have landed when the send failed, and exits 130 or 143.
 
 On a pass this sends nothing yet. Add `--yes` to run the check again and settle:
 
@@ -76,6 +76,14 @@ An escrow for this job commits `sha256sum examples/jobs/word-count/SPEC.md` as i
 intent-engine judge --owner $OWNER --nonce $NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery --run "node '$PWD/examples/jobs/word-count/check.mjs'" --verdict verdict.json
 intent-engine judge --owner $OWNER --nonce $NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery --run "node '$PWD/examples/jobs/word-count/check.mjs'" --verdict verdict.json --yes
 ```
+
+The single quotes inside `--run` are for POSIX shells. On Windows `judge` runs `--run` through `cmd.exe`, which does not take single quotes as quotes, so in PowerShell leave them out when the path holds no spaces:
+
+```powershell
+intent-engine judge --owner $OWNER --nonce $NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery --run "node $PWD\examples\jobs\word-count\check.mjs" --verdict verdict.json
+```
+
+For a path with spaces, Windows PowerShell 5.1 passes it quoted when you write ``\`"$PWD\...\`"``.
 
 ## Who is paid
 

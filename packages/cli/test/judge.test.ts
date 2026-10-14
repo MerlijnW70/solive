@@ -205,6 +205,84 @@ describe("intent-engine judge", () => {
     }
   });
 
+  it("a second interrupt during settlement still reports the signature", async () => {
+    const verdict = join(j.dir, "verdict.json");
+    const others = process.listeners("SIGINT");
+    process.removeAllListeners("SIGINT");
+    try {
+      const sent: string[] = [];
+      h.through = {
+        ...transport,
+        send: async (ixs, payer) => {
+          process.emit("SIGINT", "SIGINT");
+          process.emit("SIGINT", "SIGINT");
+          const signature = await transport.send(ixs, payer);
+          sent.push(signature);
+          return signature;
+        },
+      };
+      const ended = await cli(judging(j, "true", "--verdict", verdict, "--yes"), keys);
+      expect(sent).toHaveLength(1);
+      expect([ended.code, ended.out]).toEqual([130, ""]);
+      expect(ended.err).toContain(`SIGINT arrived while the release was being sent; it was sent in ${sent[0]}`);
+      expect(JSON.parse(await readFile(verdict, "utf8"))).toMatchObject({ verdict: "pass", payTo: j.worker.address, signature: sent[0] });
+      expect(status(j.intent)).toBe(IntentStatus.Filled);
+      expect(await paidTo(j, j.worker.address)).toBeGreaterThan(0n);
+
+      const again = await job();
+      h.through = {
+        ...transport,
+        send: async () => {
+          process.emit("SIGINT", "SIGINT");
+          process.emit("SIGINT", "SIGINT");
+          throw new Error("the node went away");
+        },
+      };
+      await writeFile(verdict, "stale");
+      const lost = await cli(judging(again, "true", "--verdict", verdict, "--yes"), { "judge.json": again.judge });
+      expect([lost.code, lost.out]).toEqual([130, ""]);
+      expect(lost.err).toContain("the release may have landed: the node went away");
+      expect(existsSync(verdict)).toBe(false);
+      expect(process.listenerCount("SIGINT")).toBe(0);
+    } finally {
+      h.through = null;
+      for (const listener of others) {
+        process.on("SIGINT", listener as NodeJS.SignalsListener);
+      }
+    }
+  });
+
+  it("a stale verdict file is removed before the check", async () => {
+    const verdict = join(j.dir, "verdict.json");
+    const seen = join(j.dir, "seen");
+    const stale = `${JSON.stringify({ intent: j.intent, verdict: "pass", signature: null })}\n`;
+    await writeFile(verdict, stale);
+    const failed = await cli(judging(j, `if test -e "${verdict}"; then echo present > "${seen}"; else echo absent > "${seen}"; fi; exit 3`, "--verdict", verdict, "--yes"), keys);
+    expect(failed.code).toBe(EXIT_FAILED);
+    expect((await readFile(seen, "utf8")).trim()).toBe("absent");
+    expect(JSON.parse(await readFile(verdict, "utf8"))).toMatchObject({ verdict: "fail", exitCode: 3 });
+
+    await writeFile(verdict, stale);
+    const started = join(j.dir, "started");
+    const others = process.listeners("SIGTERM");
+    process.removeAllListeners("SIGTERM");
+    try {
+      const running = cli(judging(j, `touch "${started}"; sleep 2; exit 0`, "--verdict", verdict, "--yes"), keys);
+      for (let waited = 0; !existsSync(started) && waited < 200; waited++) {
+        await new Promise((wake) => setTimeout(wake, 25));
+      }
+      expect(existsSync(verdict)).toBe(false);
+      process.emit("SIGTERM", "SIGTERM");
+      expect((await running).code).toBe(143);
+    } finally {
+      for (const listener of others) {
+        process.on("SIGTERM", listener as NodeJS.SignalsListener);
+      }
+    }
+    expect(existsSync(verdict)).toBe(false);
+    expect(status(j.intent)).toBe(IntentStatus.Open);
+  });
+
   it("fails, sends nothing and exits non-zero when the check exits non-zero", async () => {
     const failed = await cli(judging(j, "exit 3", "--yes"), keys);
     expect(failed.code).toBe(EXIT_FAILED);

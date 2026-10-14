@@ -86,25 +86,77 @@ function collect(stream, cap) {
   return () => ({ text: Buffer.concat(chunks).toString("utf8"), over: size > cap });
 }
 
+function killTree(pid) {
+  if (pid === undefined) {
+    return Promise.resolve();
+  }
+  if (process.platform === "win32") {
+    return new Promise((done) => {
+      const killer = spawn("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore", windowsHide: true });
+      killer.once("error", () => done());
+      killer.once("exit", () => done());
+    });
+  }
+  try {
+    process.kill(-pid, "SIGKILL");
+  } catch {
+    return Promise.resolve();
+  }
+  return Promise.resolve();
+}
+
+function closed(stream) {
+  return new Promise((done) => {
+    if (stream.closed || stream.destroyed) {
+      done();
+      return;
+    }
+    stream.once("close", () => done());
+  });
+}
+
 const delivery = spawn(process.execPath, ["--input-type=module", "--eval", child], {
   env: { PATH: process.env["PATH"] ?? "" },
   stdio: ["pipe", "pipe", "pipe", "pipe"],
+  detached: process.platform !== "win32",
+  windowsHide: true,
 });
+const outputs = [delivery.stdout, delivery.stdio[2], delivery.stdio[3]];
 delivery.stdout.resume();
 const stderr = collect(delivery.stdio[2], PRINTED_BYTES);
 const channel = collect(delivery.stdio[3], RESULT_BYTES);
-let timedOut = false;
-const timer = setTimeout(() => {
-  timedOut = true;
-  delivery.kill("SIGKILL");
-}, TIMEOUT_MS);
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.once(signal, () => {
+    void killTree(delivery.pid).finally(() => {
+      console.error(`the check was stopped by ${signal}`);
+      process.exit(1);
+    });
+  });
+}
+let deadline;
+const expired = new Promise((done) => {
+  deadline = setTimeout(() => done(null), TIMEOUT_MS);
+});
 delivery.stdin.on("error", () => {});
 delivery.stdin.end(JSON.stringify(inputs.map(([text]) => text)));
-const result = await new Promise((done) => {
-  delivery.on("error", (error) => done({ error, status: null, signal: null }));
-  delivery.on("close", (status, signal) => done({ error: undefined, status, signal }));
+const exited = new Promise((done) => {
+  delivery.once("error", (error) => done({ error, status: null, signal: null }));
+  delivery.once("exit", (status, signal) => done({ error: undefined, status, signal }));
 });
-clearTimeout(timer);
+const result = await Promise.race([exited, expired]);
+const timedOut = result === null;
+if (timedOut) {
+  await killTree(delivery.pid);
+} else {
+  if (process.platform !== "win32") {
+    await killTree(delivery.pid);
+  }
+  await Promise.race([Promise.all(outputs.map(closed)), expired]);
+}
+clearTimeout(deadline);
+for (const stream of outputs) {
+  stream.destroy();
+}
 
 function refuse(reason) {
   console.error(reason);
