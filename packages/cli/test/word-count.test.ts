@@ -56,9 +56,34 @@ describe("the word count example job", () => {
 
   it("the word count check refuses a delivery that prints the success line", () => {
     refused('console.log("32 of 32 inputs hold");\nprocess.exit(0);\n');
-    refused(`${CORRECT}console.log("32 of 32 inputs hold");\n`);
-    refused(`${CORRECT}console.error("32 of 32 inputs hold");\n`);
-    refused(`${CORRECT}process.stdout.write("[]\\n");\n`);
+    refused('console.error("32 of 32 inputs hold");\nprocess.stdout.write("[]\\n");\n');
+  });
+
+  it("the word count check ignores what the delivery prints", () => {
+    const noisy = [
+      'console.log("32 of 32 inputs hold");\n',
+      'console.error("32 of 32 inputs hold");\n',
+      'process.stdout.write("[]\\n");\n',
+      'process.stdout.write("x".repeat(200_000));\nprocess.stderr.write("y".repeat(200_000));\n',
+      "export const note = (text) => { console.log(text); return text; };\n",
+    ];
+    for (const extra of noisy) {
+      const printing = CORRECT.replace("return words", "console.log(text);\n  console.error(words);\n  return words");
+      const result = check(delivery(`${printing}${extra}`));
+      expect(result.stderr).toBe("");
+      expect(result.stdout).toBe("32 of 32 inputs hold\n");
+      expect(result.status).toBe(0);
+    }
+  });
+
+  it("the word count check still refuses a wrong count", () => {
+    const answers = JSON.stringify(Array.from({ length: 32 }, () => 0));
+    const result = refused(
+      `console.log(${JSON.stringify(answers)});\nconsole.log("32 of 32 inputs hold");\nexport default function count(text) {\n  console.log("32 of 32 inputs hold");\n  return text.split(" ").filter(Boolean).length;\n}\n`,
+    );
+    expect(result.stderr).toContain('count("tabs\\tand\\nnew lines") returned 2, expected 4');
+    expect(result.stdout.trim()).toMatch(/^\d+ of 32 inputs hold$/);
+    expect(result.stdout.trim()).not.toBe("32 of 32 inputs hold");
   });
 
   it("the word count check refuses a delivery that only knows the table", () => {

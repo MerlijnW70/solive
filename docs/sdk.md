@@ -176,7 +176,7 @@ await client.unwrap(signer);
 
 ## Expire and close
 
-`expire` refunds an open intent at or after its expiry, and `close` returns the rent of a filled, cancelled or expired intent; [Who can do what](#who-can-do-what) says who receives what. Both take the wallet that signs, then the intent's owner and nonce. The devnet filler also expires and closes overdue intents, in passes with a pause between them, so on devnet an overdue intent closes soon after its expiry, often before you do. This creates a swap with a short expiry, waits until the chain's clock reaches it, expires and closes it unless the filler already did, and prints `null`.
+`expire` refunds an open intent at or after its expiry, and `close` returns the rent of a filled, cancelled or expired intent; [Who can do what](#who-can-do-what) says who receives what. Both take the wallet that signs, then the intent's owner and nonce. The devnet filler also expires and closes overdue intents, in passes with a pause between them, so on devnet an overdue intent closes soon after its expiry, often before you do. This creates a swap with a short expiry, waits until the chain's clock reaches it, expires and closes it, rethrowing a failed expire only while the intent is still open and a failed close only while it still exists, since the filler may have done either first, and prints `null`.
 
 ```ts
 const due = (await client.chainTime()) + 10n;
@@ -184,9 +184,19 @@ const brief = await client.createIntent({ ...order, params: swap, expiresAt: due
 while ((await client.chainTime()) < due) {
   await sleep(1_000);
 }
-if ((await client.intent(signer.address, brief.nonce))?.intent.status === IntentStatus.Open) {
+try {
   await client.expire(signer, signer.address, brief.nonce);
+} catch (error) {
+  if ((await client.intent(signer.address, brief.nonce))?.intent.status === IntentStatus.Open) {
+    throw error;
+  }
+}
+try {
   await client.close(signer, signer.address, brief.nonce);
+} catch (error) {
+  if ((await client.intent(signer.address, brief.nonce)) !== null) {
+    throw error;
+  }
 }
 console.log(await client.intent(signer.address, brief.nonce));
 await client.unwrap(signer);

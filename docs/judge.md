@@ -28,11 +28,11 @@ Workers announce their work to you with `intent-engine deliver`. List what they 
 intent-engine deliveries --attestor $(solana address) --intent $INTENT
 ```
 
-Each entry is one announced `sha256` with its earliest announcer `worker`, the `url` that announcer gave and `copies`, how many other wallets announced the same hash later. `complete` is `false` when your wallet's history since the escrow was made is longer than `--max-pages` pages of 1000 transactions (default 100), or when the RPC node's ledger does not reach back to the escrow's creation, so older announcements may be missing. Fetch the work from `url` into `work`, a file or a directory. Treat the link and the content as untrusted.
+It prints the escrow's `intent`, `complete` and `deliveries`. Each entry of `deliveries` is one announced `sha256` with its earliest announcer `worker`, the `url` that announcer gave, the `signature` and `slot` of that announcement, and `copies`, how many other wallets announced the same hash later. `complete` is `false` when your wallet's history since the escrow was made is longer than `--max-pages` pages of 1000 transactions (default 100), or when the RPC node's ledger does not reach back to the escrow's creation, so older announcements may be missing. Fetch the work from `url` into `work`, a file or a directory. Treat the link and the content as untrusted.
 
 ## 3. Write your check
 
-The check is any command that exits 0 when the work passes the spec. `judge` gives it three environment variables: `SPEC_PATH`, the spec file; `ARTIFACT_PATH`, the work; `ARTIFACT_SHA256`, the work's hash. `SPEC_PATH` is `SPEC.md`, a copy of the spec bytes whose hash `judge` checked, outside `ARTIFACT_PATH`. `ARTIFACT_PATH` is the copy of the work: a directory for work that is a directory, a file of the same name for work that is one file. A relative path in `--run` resolves in the temporary directory, so pass your check by its full path. This check passes when `answer.txt` holds `42`:
+The check is any command that exits 0 when the work passes the spec. `judge` gives it three environment variables: `SPEC_PATH`, the spec file; `ARTIFACT_PATH`, the work; `ARTIFACT_SHA256`, the work's hash. `SPEC_PATH` is `SPEC.md`, a copy of the spec bytes whose hash `judge` checked, outside `ARTIFACT_PATH`. `ARTIFACT_PATH` is the copy of the work: a directory for work that is a directory, a file of the same name for work that is one file. A relative path in `--run` resolves in the temporary directory, so pass your check by its full path. `judge` hands `--run` to your shell as one string, so quote the whole command and, inside it, the path, which keeps a path with spaces whole. This check passes when `answer.txt` holds `42`:
 
 ```bash
 #!/usr/bin/env bash
@@ -49,7 +49,7 @@ chmod +x check.sh
 ## 4. Judge and settle
 
 ```sh
-intent-engine judge --owner $OWNER --nonce $NONCE --spec spec.md --artifact work --run $PWD/check.sh --verdict verdict.json
+intent-engine judge --owner $OWNER --nonce $NONCE --spec spec.md --artifact work --run "'$PWD/check.sh'" --verdict verdict.json
 ```
 
 In order, `judge` refuses unless the escrow is open and names your wallet as its judge, refuses unless the spec file's sha256 is the committed one, hashes the work, picks whom to pay, then runs `--run` with at most `--timeout` seconds (default 600, at most 86400). On timeout it kills the command's process group, or on Windows its process tree and waits for that to finish; after a normal exit it kills only the process group, and on Windows nothing. Exit code 0 is a pass; any other exit code or a timeout is a fail, which sends nothing and makes `judge` exit 1. It prints, and with `--verdict` writes, the `intent`, `specHash`, `artifactSha256`, `command`, `exitCode`, `verdict`, `payTo` and `signature`, and `cleanup` when the copy could not be removed.
@@ -57,10 +57,25 @@ In order, `judge` refuses unless the escrow is open and names your wallet as its
 On a pass this sends nothing yet. Add `--yes` to run the check again and settle:
 
 ```sh
-intent-engine judge --owner $OWNER --nonce $NONCE --spec spec.md --artifact work --run $PWD/check.sh --verdict verdict.json --yes
+intent-engine judge --owner $OWNER --nonce $NONCE --spec spec.md --artifact work --run "'$PWD/check.sh'" --verdict verdict.json --yes
 ```
 
 The release pays `payTo` with result 1 and records the memo `delivery sha256:<artifactSha256>` in the same transaction, which `solive_wallet_receipt` shows the payer.
+
+## Judge the word count example
+
+[`examples/jobs/word-count`](../examples/jobs/word-count) is a whole job: the spec `SPEC.md`, a passing `delivery` and its check `check.mjs`. The check imports the delivery's `count` in a separate Node.js process, runs it on the spec's table and 24 random strings, and passes when all 32 counts are right before its timeout; whatever the delivery prints is ignored. Run these from the root of a clone of this repository. Try the check on the delivery, which prints `32 of 32 inputs hold`:
+
+```sh
+ARTIFACT_PATH=examples/jobs/word-count/delivery node examples/jobs/word-count/check.mjs
+```
+
+An escrow for this job commits `sha256sum examples/jobs/word-count/SPEC.md` as its `specHash`, and its worker announces the hash that `intent-engine hash --artifact examples/jobs/word-count/delivery` prints. With `OWNER` and `NONCE` from step 1, judge and then settle it:
+
+```sh
+intent-engine judge --owner $OWNER --nonce $NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery --run "node '$PWD/examples/jobs/word-count/check.mjs'" --verdict verdict.json
+intent-engine judge --owner $OWNER --nonce $NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery --run "node '$PWD/examples/jobs/word-count/check.mjs'" --verdict verdict.json --yes
+```
 
 ## Who is paid
 

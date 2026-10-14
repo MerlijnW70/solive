@@ -1,8 +1,9 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Address, generateKeyPairSigner, type KeyPairSigner, type Signature } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
@@ -49,14 +50,14 @@ const announced = (intent: Address, by: Address, sha256: string, signature: stri
   feePayer: by,
 });
 
-async function job(): Promise<Job> {
+async function job(specText = SPEC, workSha256?: string): Promise<Job> {
   const w = await world();
   const judge = await funded();
   const worker = await generateKeyPairSigner();
   const copier = await generateKeyPairSigner();
   const dir = await mkdtemp(join(tmpdir(), "judge-"));
   const spec = join(dir, "spec.md");
-  await writeFile(spec, SPEC);
+  await writeFile(spec, specText);
   const artifact = join(dir, "work");
   for (const skipped of [".git", "node_modules", "target"]) {
     await mkdir(join(artifact, skipped), { recursive: true });
@@ -65,11 +66,13 @@ async function job(): Promise<Job> {
   await mkdir(join(artifact, "src"), { recursive: true });
   await writeFile(join(artifact, "answer.txt"), "42\n");
   await writeFile(join(artifact, "src", "notes.txt"), "how\n");
-  const sha256 = await manifestSha256([
-    { path: "answer.txt", bytes: new TextEncoder().encode("42\n") },
-    { path: "src/notes.txt", bytes: new TextEncoder().encode("how\n") },
-  ]);
-  const specHash = new Uint8Array(createHash("sha256").update(SPEC).digest());
+  const sha256 =
+    workSha256 ??
+    (await manifestSha256([
+      { path: "answer.txt", bytes: new TextEncoder().encode("42\n") },
+      { path: "src/notes.txt", bytes: new TextEncoder().encode("how\n") },
+    ]));
+  const specHash = new Uint8Array(createHash("sha256").update(specText).digest());
   const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash, judgeFee: 0n } as const;
   const client = createClient({ url: "http://cluster", transport });
   const { intent } = await client.createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
@@ -441,11 +444,17 @@ describe("the artifact hash", () => {
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const GUIDE = readFileSync(`${ROOT}/docs/judge.md`, "utf8");
 const FENCE = "```";
-const blocks = (language: string) =>
-  GUIDE.split(`${FENCE}${language}\n`)
+const EXAMPLE_HEADING = "\n## Judge the word count example\n";
+const STEPS = GUIDE.slice(0, GUIDE.indexOf(EXAMPLE_HEADING));
+const EXAMPLE = GUIDE.slice(GUIDE.indexOf(EXAMPLE_HEADING), GUIDE.indexOf("\n## ", GUIDE.indexOf(EXAMPLE_HEADING) + 1));
+const blocks = (language: string, text = STEPS) =>
+  text
+    .split(`${FENCE}${language}\n`)
     .slice(1)
     .map((rest) => rest.slice(0, rest.indexOf(`${FENCE}\n`)));
 const guideLines = blocks("sh").flatMap((block) => block.trimEnd().split("\n"));
+const words = (line: string, vars: Record<string, string>) =>
+  [...line.matchAll(/"([^"]*)"|(\S+)/g)].map((m) => (m[1] ?? m[2] ?? "").replace(/\$([A-Z]+)/g, (whole, name: string) => vars[name] ?? whole));
 
 describe("the judge guide", () => {
   it("finds, checks and settles a proof escrow with exactly the commands it prints", async () => {
@@ -460,7 +469,7 @@ describe("the judge guide", () => {
     await chmod(check, 0o755);
     h.watched.push(j.w.owner.address);
     h.env[ENV_KEYPAIR] = "judge.json";
-    const files: Record<string, string> = { "spec.md": j.spec, work: j.artifact, "$PWD/check.sh": check, "verdict.json": join(j.dir, "verdict.json") };
+    const files: Record<string, string> = { "spec.md": j.spec, work: j.artifact, [`"'$PWD/check.sh'"`]: `'${check}'`, "verdict.json": join(j.dir, "verdict.json") };
     const outputs: Record<string, unknown>[] = [];
     for (const line of commands) {
       const argv = line
@@ -490,5 +499,49 @@ describe("the judge guide", () => {
     expect(GUIDE).toContain(`records the memo \`${RELEASE_MEMO_PREFIX}<artifactSha256>\``);
     expect(GUIDE).toContain("Do steps 1 to 3 of the [quickstart](quickstart.md) first");
     expect(GUIDE).toContain("It does not sandbox it.");
+  });
+
+  it("the judge guide judges the word count example", { timeout: 60_000 }, async () => {
+    const example = join(ROOT, "examples/jobs/word-count");
+    expect(GUIDE.indexOf(EXAMPLE_HEADING)).toBeGreaterThan(0);
+    expect(EXAMPLE).toContain("[`examples/jobs/word-count`](../examples/jobs/word-count)");
+    expect(EXAMPLE).toContain("commits `sha256sum examples/jobs/word-count/SPEC.md` as its `specHash`");
+    expect(EXAMPLE).toContain("`intent-engine hash --artifact examples/jobs/word-count/delivery`");
+    const [tried = "", settled = ""] = blocks("sh", EXAMPLE);
+    const local = spawnSync(tried.trim(), { cwd: ROOT, shell: true, encoding: "utf8" });
+    expect([local.status, local.stdout.trim()]).toEqual([0, "32 of 32 inputs hold"]);
+    expect(EXAMPLE).toContain("prints `32 of 32 inputs hold`");
+    const hashed = await cli(["hash", "--artifact", join(example, "delivery")], {});
+    const sha256 = String(hashed.json()["sha256"]);
+    const j = await job(await readFile(join(example, "SPEC.md"), "utf8"), sha256);
+    const commands = settled.trimEnd().split("\n");
+    expect(commands).toHaveLength(2);
+    expect(commands[1]).toBe(`${commands[0]} --yes`);
+    h.watched.push(j.w.owner.address);
+    h.env[ENV_KEYPAIR] = "judge.json";
+    const vars = { PWD: resolve(ROOT), OWNER: j.w.owner.address, NONCE: "0" };
+    const outputs: Record<string, unknown>[] = [];
+    for (const line of commands) {
+      const [program, ...argv] = words(line, vars).map((arg) => (arg.startsWith("examples/") ? join(ROOT, arg) : arg === "verdict.json" ? join(j.dir, arg) : arg));
+      expect(program).toBe("intent-engine");
+      expect(argv[argv.indexOf("--run") + 1]).toBe(`node '${join(example, "check.mjs")}'`);
+      const run = await cli(argv, { "judge.json": j.judge });
+      expect([run.code, run.err], line).toEqual([EXIT_OK, ""]);
+      outputs.push(run.json());
+    }
+    delete h.env[ENV_KEYPAIR];
+    expect(outputs[0]).toMatchObject({ artifactSha256: sha256, exitCode: 0, verdict: "pass", payTo: j.worker.address, signature: null });
+    expect(outputs[1]).toMatchObject({ artifactSha256: sha256, verdict: "pass", payTo: j.worker.address, signature: expect.any(String) });
+    expect(await paidTo(j, j.worker.address)).toBeGreaterThan(0n);
+  });
+
+  it("the judge guide lists every field deliveries prints", async () => {
+    const j = await job();
+    const printed = (await cli(["deliveries", "--attestor", j.judge.address, "--intent", j.intent], {})).json();
+    const fields = [...Object.keys(printed), ...Object.keys((printed["deliveries"] as Record<string, unknown>[])[0] ?? {})];
+    expect(fields.length).toBeGreaterThan(6);
+    for (const field of fields) {
+      expect(GUIDE).toContain(`\`${field}\``);
+    }
   });
 });
