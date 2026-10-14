@@ -198,3 +198,20 @@ The devnet members are files on one machine. Before mainnet:
 - Each person keeps an offline backup of their seed phrase, on paper or steel, in a separate place from the device.
 - The guardian key sits on a host that runs nothing else and is watched, so a pause is fast.
 - Run the steps above on devnet with the real keys first, including one recovery drill, and set a time lock so the members can [reject or cancel](#reject-or-cancel) a proposal they did not expect before it executes.
+
+## Dependencies
+
+`bash scripts/supply-chain.sh` runs in the CI audit job and fails when:
+
+- a dependency of a published package is a range instead of an exact version or `workspace:*`;
+- the production tree of a published package, every transitive `name@version` in `pnpm-lock.yaml`, differs from its file in `supply-chain/`, such as `supply-chain/cli.txt`; it prints the added and removed lines;
+- an installed package declares a `preinstall`, `install` or `postinstall` script, or a `binding.gyp`, and `pnpm-workspace.yaml` lists it in neither `onlyBuiltDependencies` (its script runs) nor `ignoredBuiltDependencies` (it does not). `strictDepBuilds: true` makes `pnpm install` fail on the same packages on every platform.
+
+To add or change a dependency:
+
+1. Set an exact version in `package.json` and run `pnpm install`.
+2. Run `bash scripts/supply-chain.sh` and read every added and removed line: who publishes the package, its install scripts, its last release date.
+3. A new install script goes under `ignoredBuiltDependencies` unless the package fails without it; then review the script and list it under `onlyBuiltDependencies`.
+4. Run `bash scripts/supply-chain.sh --write` and commit the tree files with the change, so the review shows the tree diff. `--write` never edits `pnpm-workspace.yaml` or `package.json`.
+
+A checkout installed before `strictDepBuilds` still records the scripts it skipped in `node_modules`, and `pnpm install` then stops with `ERR_PNPM_IGNORED_BUILDS` even for packages listed under `ignoredBuiltDependencies`. Delete `node_modules` once and install again.

@@ -1,2 +1,8 @@
 packages:
   - packages/*
+strictDepBuilds: true
+onlyBuiltDependencies: []
+ignoredBuiltDependencies:
+  - bufferutil
+  - fsevents
+  - utf-8-validate

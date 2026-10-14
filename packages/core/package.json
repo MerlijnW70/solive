@@ -42,7 +42,7 @@
   },
   "dependencies": {
     "@solana-program/token": "0.16.1",
-    "@solana/kit": "^8.4.0"
+    "@solana/kit": "8.4.0"
   },
   "devDependencies": {
     "@codama/nodes-from-anchor": "1.5.6",

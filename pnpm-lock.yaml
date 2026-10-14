@@ -29,7 +29,7 @@ importers:
         specifier: 0.16.1
         version: 0.16.1(@solana/kit@8.4.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6))
       '@solana/kit':
-        specifier: ^8.4.0
+        specifier: 8.4.0
         version: 8.4.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)
     devDependencies:
       '@modelcontextprotocol/client':
@@ -63,7 +63,7 @@ importers:
         specifier: 0.16.1
         version: 0.16.1(@solana/kit@8.4.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6))
       '@solana/kit':
-        specifier: ^8.4.0
+        specifier: 8.4.0
         version: 8.4.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)
     devDependencies:
       '@types/node':
@@ -85,7 +85,7 @@ importers:
         specifier: 0.16.1
         version: 0.16.1(@solana/kit@8.4.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6))
       '@solana/kit':
-        specifier: ^8.4.0
+        specifier: 8.4.0
         version: 8.4.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)
     devDependencies:
       '@codama/nodes-from-anchor':
@@ -150,7 +150,7 @@ importers:
         specifier: 0.16.1
         version: 0.16.1(@solana/kit@8.4.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6))
       '@solana/kit':
-        specifier: ^8.4.0
+        specifier: 8.4.0
         version: 8.4.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)
     devDependencies:
       '@types/node':
