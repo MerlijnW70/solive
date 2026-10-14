@@ -31,6 +31,7 @@ export type EngineTransaction = {
   failed: boolean;
   emitted: Uint8Array[];
   memos?: string[];
+  memoSigners?: Address[][];
   feePayer?: Address;
   unread?: true;
 };
@@ -40,6 +41,8 @@ export type ListedSignature = { signature: string; slot: bigint; blockTime: bigi
 export type Latest = { blockhash: Blockhash; lastValidBlockHeight: bigint };
 
 export type IntentRead = { minContextSlot?: bigint; onSlot?: (slot: bigint) => void };
+
+export type LookupTables = Readonly<Record<Address, Address[]>>;
 
 export type Simulation = { err: string | null; logs: string[]; unitsConsumed: bigint | null; accounts: (Uint8Array | null)[] };
 
@@ -59,7 +62,7 @@ export interface Transport {
   transactionsOf?(listed: readonly ListedSignature[]): Promise<EngineTransaction[]>;
   firstAvailableSlot?(): Promise<bigint>;
   recentFees(accounts: readonly Address[]): Promise<bigint[]>;
-  budget(instructions: readonly Instruction[], feePayer: Address): Promise<Instruction[]>;
+  budget(instructions: readonly Instruction[], feePayer: Address, tables?: LookupTables): Promise<Instruction[]>;
   airdrop(address: Address, lamports: bigint): Promise<string>;
 }
 
@@ -129,7 +132,13 @@ export type RpcLike = {
     signature: Signature,
     config: { encoding: "json"; maxSupportedTransactionVersion: 0; commitment: "confirmed" },
   ): Pending<{
-    transaction: { message: { accountKeys: readonly Address[]; instructions?: readonly { programIdIndex: number; data: string }[] } };
+    transaction: {
+      message: {
+        accountKeys: readonly Address[];
+        header?: { numRequiredSignatures: number };
+        instructions?: readonly { programIdIndex: number; accounts?: readonly number[]; data: string }[];
+      };
+    };
     meta: {
       loadedAddresses?: { writable: readonly Address[]; readonly: readonly Address[] };
       innerInstructions?: readonly { instructions: readonly { programIdIndex: number; data: string }[] }[] | null;
@@ -138,6 +147,10 @@ export type RpcLike = {
 };
 
 export const MEMO_PROGRAM_ADDRESS = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr" as Address;
+
+export function signersAmong(keys: readonly Address[], indices: readonly number[], signing: number): Address[] {
+  return [...new Set(indices.filter((index) => index < signing).flatMap((index) => keys[index] ?? []))];
+}
 
 export const POLL_MS = 500;
 export const CONFIRM_POLLS = 360;
@@ -434,9 +447,10 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       .flatMap((group) => group.instructions)
       .filter((ix) => keys[ix.programIdIndex] === INTENT_ENGINE_PROGRAM_ADDRESS)
       .map((ix) => Uint8Array.from(getBase58Encoder().encode(ix.data)));
-    const memos = (tx?.transaction.message.instructions ?? [])
-      .filter((ix) => keys[ix.programIdIndex] === MEMO_PROGRAM_ADDRESS)
-      .map((ix) => new TextDecoder().decode(Uint8Array.from(getBase58Encoder().encode(ix.data))));
+    const signing = tx?.transaction.message.header?.numRequiredSignatures ?? 0;
+    const memoInstructions = (tx?.transaction.message.instructions ?? []).filter((ix) => keys[ix.programIdIndex] === MEMO_PROGRAM_ADDRESS);
+    const memos = memoInstructions.map((ix) => new TextDecoder().decode(Uint8Array.from(getBase58Encoder().encode(ix.data))));
+    const memoSigners = memoInstructions.map((ix) => signersAmong(keys, ix.accounts ?? [], signing));
     const feePayer = tx?.transaction.message.accountKeys[0];
     return {
       signature: entry.signature,
@@ -444,7 +458,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       blockTime: entry.blockTime,
       failed: entry.failed,
       emitted,
-      ...(memos.length === 0 ? {} : { memos }),
+      ...(memos.length === 0 ? {} : { memos, memoSigners }),
       ...(feePayer === undefined ? {} : { feePayer }),
       ...(tx?.meta === null || tx?.meta === undefined ? { unread: true as const } : {}),
       complete: tx?.meta !== null && tx?.meta !== undefined && entry.blockTime !== null,

@@ -44,11 +44,14 @@ import {
   deliveryInstructions,
   firstDelivery,
   followUpInstructions,
+  followUpMemo,
+  followUpOf,
   MEMOS_PER_TRANSACTION,
   loadConfig,
   MEMO_PROGRAM_ADDRESS,
   mintOf,
   neverLanded,
+  PACKET_DATA_SIZE,
   recordedDelivery,
   SIGNATURE_PAGE,
   tokenAccountIfMissing,
@@ -981,7 +984,7 @@ const walletAttest = define({
   },
 });
 
-export const PACKET_DATA_SIZE = 1_232;
+export { PACKET_DATA_SIZE };
 export const SPLIT_FITS = 2;
 export const SPLIT_FITS_WITH_TABLE = 4;
 export const splitTooLarge = (size: number, recipients: number, withTable: boolean): string =>
@@ -989,7 +992,7 @@ export const splitTooLarge = (size: number, recipients: number, withTable: boole
 export const RECORDS_SPLIT = (delivered: string): string =>
   `Records: the delivered work's sha256 ${delivered}, in a memo this wallet signs with the release, or in a follow-up transaction this wallet signs right after it when the release has no room for the memo`;
 export const followUpFailed = (reason: string): string =>
-  `the release landed, but the follow-up transaction that records the delivered work's sha256 failed, so the hash is not recorded on chain: ${reason}`;
+  `the release landed, but the follow-up transaction that records the delivered work's sha256 failed, so the hash is not recorded on chain: ${reason}; to record it, send from this wallet a transaction with the memo in record_memo, which ${tool("wallet_receipt")} then reads`;
 export const SPLIT_WEIGHTS_WRONG = "the weights must be whole basis points that add up to 10000";
 export const SPLIT_SIG_NEEDED = "every co-author must sign the split before send: true; preview returns the envelope each one signs";
 export const SIGNATURE_PATTERN = "^[0-9a-fA-F]{128}$";
@@ -1000,6 +1003,17 @@ const coauthor = object({
   weight: integer(1, 10_000, "this co-author's share in basis points; all weights must add up to 10000"),
   signature: optional(text("128 hex: this co-author's signature over the envelope the preview returned for this wallet; needed with send")),
 });
+
+const RECORDED_WHERE = ["release", "follow-up"] as const;
+
+const recordedWhere: Schema<(typeof RECORDED_WHERE)[number] | false> = {
+  json: {
+    anyOf: [{ type: "string", enum: [...RECORDED_WHERE] }, { type: "boolean", const: false }],
+    description:
+      "where the sha256 was recorded: in a memo in the release, or in a follow-up transaction this wallet signed right after it because the release had no room for the memo; false when the follow-up failed, so the hash is not on chain",
+  },
+  read: (value, path) => (value === false ? false : choice(RECORDED_WHERE).read(value, path)),
+};
 
 const walletAttestSplit = define({
   name: tool("wallet_attest_split"),
@@ -1027,8 +1041,9 @@ const walletAttestSplit = define({
     result: amount(),
     approval: text("pass it back with send: true; a send that would differ from this preview is refused"),
     delivered_sha256: optional(text("the sha256 the release records")),
-    recorded: optional(choice(["release", "follow-up"], "where the sha256 was recorded: in a memo in the release, or in a follow-up transaction this wallet signed right after it because the release had no room for the memo")),
+    recorded: optional(recordedWhere),
     follow_up_signature: optional(text("the follow-up transaction that records the sha256, when recorded is follow-up")),
+    record_memo: optional(text("when recorded is false, the memo that records the sha256 for this release; send it from this wallet with a zero transfer to the escrow")),
     summary: list(text(), 12),
     warnings: list(text(), 8),
     sent: flag(),
@@ -1156,7 +1171,7 @@ const walletAttestSplit = define({
     let followUp = false;
     if (input.send === true && batch !== undefined) {
       const sizeOf = async (ixs: Parameters<typeof prepare>[1]) =>
-        transactionSize(ctx.transport, await ctx.transport.budget(ixs, signer.address), signer.address, tables);
+        transactionSize(ctx.transport, await ctx.transport.budget(ixs, signer.address, tables), signer.address, tables);
       const bare = [...setup, batch, settle];
       followUp = (await sizeOf([...bare, memo])) > PACKET_DATA_SIZE;
       if (followUp) {
@@ -1201,11 +1216,29 @@ const walletAttestSplit = define({
     if (!followUp) {
       return { ...done, recorded: "release" as const };
     }
+    const unrecorded = (error: unknown) => ({
+      ...done,
+      recorded: false as const,
+      record_memo: followUpMemo(delivered, done.signature),
+      next: followUpFailed(problemOf(error).hint),
+    });
+    let recording;
     try {
-      const recording = preparedView(await prepare(ctx.transport, followUpInstructions(signer, intent, delivered, done.signature), signer.address));
+      recording = preparedView(await prepare(ctx.transport, followUpInstructions(signer, intent, delivered, done.signature), signer.address));
+    } catch (error) {
+      return unrecorded(error);
+    }
+    try {
       return { ...done, recorded: "follow-up" as const, follow_up_signature: await execute(ctx.transport, recording, signer) };
     } catch (error) {
-      return { ...done, next: followUpFailed(problemOf(error).hint) };
+      if (neverLanded(error)) {
+        return unrecorded(error);
+      }
+      const landed = await ctx.transport
+        .engineTransactions(WAIT_SCAN, intent)
+        .then((transactions) => followUpOf(transactions, done.signature, signer.address))
+        .catch(() => null);
+      return landed === null || landed.sha256 !== delivered ? unrecorded(error) : { ...done, recorded: "follow-up" as const, follow_up_signature: landed.signature };
     }
   },
 });

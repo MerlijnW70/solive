@@ -64,7 +64,7 @@ export async function prepare(
   feePayer: Address,
   tables?: LookupTables,
 ): Promise<Prepared> {
-  const budgeted = await transport.budget(instructions, feePayer);
+  const budgeted = await transport.budget(instructions, feePayer, tables);
   const latest = await transport.latestBlockhash();
   const message = withTables(
     pipe(

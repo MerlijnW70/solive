@@ -1,10 +1,14 @@
 import {
   type Address,
   generateKeyPairSigner,
+  getAddressEncoder,
   getBase16Decoder,
   getBase16Encoder,
   getBase64Encoder,
+  getCompiledTransactionMessageDecoder,
+  getSignatureFromTransaction,
   getTransactionDecoder,
+  type KeyPairSigner,
   lamports,
   none,
   partiallySignTransaction,
@@ -53,7 +57,18 @@ import {
   formatTime,
 } from "@intent-engine/core";
 import { beforeEach, describe, expect, it } from "vitest";
-import { BlockhashExpired, DELIVERY_SCAN, FailedOnChain, followUpMemo, loadConfig, memoInstruction } from "@intent-engine/client";
+import {
+  BlockhashExpired,
+  DELIVERY_SCAN,
+  type EngineTransaction,
+  FailedOnChain,
+  followUpMemo,
+  loadConfig,
+  MEMO_PROGRAM_ADDRESS,
+  memoInstruction,
+  signersAmong,
+} from "@intent-engine/client";
+import { LOOKUP_TABLE_HEADER } from "@intent-engine/solver";
 import { transactionSize } from "../src/agent/prepare.js";
 import { WALLET_NOT_MAINNET } from "../src/args.js";
 import { WRAPPED } from "../src/agent/create.js";
@@ -105,6 +120,25 @@ import { AIRDROP, AIRDROP_REFUSED, defaultWallet, FUNDED, keptDefault, LAMPORTS_
 import { ata, balance, cli, creation, FEE_BPS, funded, h, HOME, setNow, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
+
+const ADDRESS_LOOKUP_TABLE_PROGRAM = "AddressLookupTab1e1111111111111111111111111" as Address;
+
+function landedAs(wire: string): EngineTransaction {
+  const tx = getTransactionDecoder().decode(getBase64Encoder().encode(wire));
+  const message = getCompiledTransactionMessageDecoder().decode(tx.messageBytes);
+  const keys = message.staticAccounts;
+  const memos = ("instructions" in message ? message.instructions : []).filter((ix) => keys[ix.programAddressIndex] === MEMO_PROGRAM_ADDRESS);
+  return {
+    signature: getSignatureFromTransaction(tx),
+    slot: 9n,
+    blockTime: null,
+    failed: false,
+    emitted: [],
+    memos: memos.map((ix) => new TextDecoder().decode(Uint8Array.from(ix.data ?? []))),
+    memoSigners: memos.map((ix) => signersAmong(keys, ix.accountIndices ?? [], message.header.numSignerAccounts)),
+    ...(keys[0] === undefined ? {} : { feePayer: keys[0] }),
+  };
+}
 
 function preset(at: Address, decimals = 9): void {
   const space = BigInt(getMintSize());
@@ -656,33 +690,125 @@ describe("the wallet server", () => {
     expect(followUp).toContain(followUpMemo(work, done["signature"] as string));
     const held = h.svm.getAccount(intent);
     expect(held.exists && getIntentDecoder().decode(held.data).status).toBe(IntentStatus.Filled);
-
-    const again = await splitEscrow(work);
-    for (const c of again.coauthors) {
-      await ata(payer, c.address, NATIVE_MINT);
-    }
-    h.engineLog = [creation(again.intent)];
-    const preview = await ok(client, "wallet_attest_split", { owner: again.owner, nonce: again.nonce, recipients: again.recipients, delivered_sha256: work });
-    const sealed = bytesOf(preview["envelope"] as string);
-    const cosigned = await Promise.all(
-      again.recipients.map(async (r, i) => ({ ...r, signature: getBase16Decoder().decode(new Uint8Array(await signBytes(again.coauthors[i]!.keyPair.privateKey, sealed))) })),
-    );
-    h.wires.length = 0;
-    h.sendFails = { error: new Error("blockhash not found"), landed: false, after: 1 };
-    const lost = await ok(client, "wallet_attest_split", { owner: again.owner, nonce: again.nonce, recipients: cosigned, delivered_sha256: work, approval: preview["approval"], send: true });
-    expect(lost).toMatchObject({ sent: true, signature: expect.any(String) });
-    expect(lost).not.toHaveProperty("recorded");
-    expect(lost["next"]).toMatch(/^the release landed, but the follow-up transaction that records the delivered work's sha256 failed/);
-    expect(h.wires).toHaveLength(1);
   });
 
-  async function splitEscrow(work: string) {
+  async function cosignedSplit(work: string, payer: KeyPairSigner, weights?: readonly number[]) {
+    const made = await splitEscrow(work, weights);
+    for (const c of made.coauthors) {
+      await ata(payer, c.address, NATIVE_MINT);
+    }
+    h.engineLog = [creation(made.intent)];
+    const preview = await ok(client, "wallet_attest_split", { owner: made.owner, nonce: made.nonce, recipients: made.recipients, delivered_sha256: work });
+    const sealed = bytesOf(preview["envelope"] as string);
+    const cosigned = await Promise.all(
+      made.recipients.map(async (r, i) => ({ ...r, signature: getBase16Decoder().decode(new Uint8Array(await signBytes(made.coauthors[i]!.keyPair.privateKey, sealed))) })),
+    );
+    return {
+      ...made,
+      lookupAccounts: preview["lookup_accounts"] as Address[],
+      release: { owner: made.owner, nonce: made.nonce, recipients: cosigned, delivered_sha256: work, approval: preview["approval"], send: true },
+    };
+  }
+
+  const lookupsOf = (wire: string): Address[] => {
+    const message = getCompiledTransactionMessageDecoder().decode(getTransactionDecoder().decode(getBase64Encoder().encode(wire)).messageBytes);
+    return "addressTableLookups" in message ? (message.addressTableLookups ?? []).map((lookup) => lookup.lookupTableAddress) : [];
+  };
+
+  it("a split over the packet limit reaches the follow-up against an rpc that rejects oversized simulations", async () => {
+    const work = "d5".repeat(32);
+    const payer = await funded();
+    const { config } = await loadConfig(transport);
+    await ata(payer, config.feeRecipient, NATIVE_MINT);
+    const split = await cosignedSplit(work, payer);
+    h.packetLimit = true;
+    h.simulated.length = 0;
+    h.wires.length = 0;
+    const done = await ok(client, "wallet_attest_split", split.release);
+    expect(done).toMatchObject({ sent: true, recorded: "follow-up", delivered_sha256: work, follow_up_signature: expect.any(String) });
+    expect(h.simulated.length).toBeGreaterThan(0);
+    expect(h.simulated.every((wire) => getBase64Encoder().encode(wire).length <= PACKET_DATA_SIZE)).toBe(true);
+    expect(h.wires).toHaveLength(2);
+    const held = h.svm.getAccount(split.intent);
+    expect(held.exists && getIntentDecoder().decode(held.data).status).toBe(IntentStatus.Filled);
+  });
+
+  it("a split sent with a lookup table is simulated with the table", async () => {
+    const work = "d6".repeat(32);
+    const payer = await funded();
+    const { config } = await loadConfig(transport);
+    await ata(payer, config.feeRecipient, NATIVE_MINT);
+    const split = await cosignedSplit(work, payer, [4000, 3000, 3000]);
+    const table = (await generateKeyPairSigner()).address;
+    const header = new Uint8Array(LOOKUP_TABLE_HEADER);
+    const view = new DataView(header.buffer);
+    view.setUint32(0, 1, true);
+    view.setBigUint64(4, 0xffff_ffff_ffff_ffffn, true);
+    header[20] = split.lookupAccounts.length;
+    const data = Uint8Array.from([...header, ...split.lookupAccounts.flatMap((address) => [...getAddressEncoder().encode(address)])]);
+    h.svm.setAccount({
+      address: table,
+      data,
+      executable: false,
+      lamports: lamports(h.svm.minimumBalanceForRentExemption(BigInt(data.length))),
+      programAddress: ADDRESS_LOOKUP_TABLE_PROGRAM,
+      space: BigInt(data.length),
+    });
+    expect((await call(client, "wallet_attest_split", split.release)).value).toMatchObject({ code: "ReleaseTooLarge" });
+    h.packetLimit = true;
+    h.simulated.length = 0;
+    const done = await ok(client, "wallet_attest_split", { ...split.release, lookup_table: table });
+    expect(done).toMatchObject({ sent: true, delivered_sha256: work, recorded: expect.any(String) });
+    const releases = h.simulated.filter((wire) => lookupsOf(wire).length > 0);
+    expect(releases.length).toBeGreaterThanOrEqual(2);
+    expect(releases.every((wire) => lookupsOf(wire).every((address) => address === table))).toBe(true);
+    expect(h.simulated.every((wire) => getBase64Encoder().encode(wire).length <= PACKET_DATA_SIZE)).toBe(true);
+    for (const c of split.coauthors) {
+      expect(balance(await findAssociatedTokenAddress({ owner: c.address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS }))).toBeGreaterThan(0n);
+    }
+  });
+
+  it("a failed follow-up says the hash is not recorded", async () => {
+    const work = "d4".repeat(32);
+    const payer = await funded();
+    const { config } = await loadConfig(transport);
+    await ata(payer, config.feeRecipient, NATIVE_MINT);
+    const lost = await cosignedSplit(work, payer);
+    h.wires.length = 0;
+    h.sendFails = { error: new Error("blockhash not found"), landed: false, after: 1 };
+    const failed = await ok(client, "wallet_attest_split", lost.release);
+    expect(failed).toMatchObject({ sent: true, signature: expect.any(String), delivered_sha256: work, recorded: false });
+    expect(failed).not.toHaveProperty("follow_up_signature");
+    expect(failed["record_memo"]).toBe(followUpMemo(work, failed["signature"] as string));
+    expect(failed["next"]).toMatch(/^the release landed, but the follow-up transaction that records the delivered work's sha256 failed, so the hash is not recorded on chain: /);
+    expect(failed["next"]).toContain("to record it, send from this wallet a transaction with the memo in record_memo");
+    expect(h.wires).toHaveLength(1);
+
+    const tried: string[] = [];
+    h.through = {
+      ...transport,
+      sendWire: async (wire, latest) => {
+        tried.push(wire);
+        return transport.sendWire(wire, latest);
+      },
+      engineTransactions: async () => [...tried.map(landedAs), ...h.engineLog],
+    };
+    client = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const timedOut = await cosignedSplit(work, payer);
+    h.sendFails = { error: new Error("timed out"), landed: true, after: 1 };
+    const late = await ok(client, "wallet_attest_split", timedOut.release);
+    const followUp = tried.map(landedAs).find((tx) => (tx.memos ?? []).includes(followUpMemo(work, late["signature"] as string)));
+    expect(late).toMatchObject({ sent: true, recorded: "follow-up", follow_up_signature: followUp?.signature });
+    expect(late).not.toHaveProperty("next");
+  });
+
+  async function splitEscrow(work: string, weights: readonly number[] = [5000, 5000]) {
     const owner = (await ok(client, "wallet_setup"))["address"] as Address;
     h.watched.push(owner);
     const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, min_result: "1", max_result: "1", spec_hash: "4b".repeat(32), send: true });
     const intent = escrow["intent"] as Address;
-    const coauthors = [await generateKeyPairSigner(), await generateKeyPairSigner()];
-    const recipients = coauthors.map((c) => ({ wallet: c.address, weight: 5000 }));
+    const coauthors = await Promise.all(weights.map(() => generateKeyPairSigner()));
+    const recipients = coauthors.map((c, i) => ({ wallet: c.address, weight: weights[i] }));
     const outsider = (await generateKeyPairSigner()).address;
     const announce = (signature: string, slot: bigint, by: Address) => ({
       signature,
@@ -1005,7 +1131,7 @@ describe("the wallet server", () => {
       partnerFee: 0n,
     });
     const work = "b".repeat(64);
-    const released = { signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [tag(attested)], memos: ["other note", `${RELEASE_MEMO_PREFIX}${work}`] };
+    const released = { signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [tag(attested)], memos: ["other note", `${RELEASE_MEMO_PREFIX}${work}`], memoSigners: [[], [owner]] };
     h.engineLog = [{ ...released, signature: "failed", failed: true }, released];
     expect(await ok(client, "wallet_receipt", { owner, nonce: "7", sha256: work.toUpperCase() })).toEqual({
       intent,
@@ -1089,8 +1215,10 @@ describe("the wallet server", () => {
       delivered_sha256: work,
       matches: true,
     });
-    h.engineLog = [{ ...release, memos: [`${RELEASE_MEMO_PREFIX}${work}`] }];
+    h.engineLog = [{ ...release, memos: [`${RELEASE_MEMO_PREFIX}${work}`], memoSigners: [[attestor]] }];
     expect(await ok(client, "wallet_receipt", { owner, nonce: "8" })).toMatchObject({ signature: releaseSignature, delivered_sha256: work });
+    h.engineLog = [{ ...release, memos: [`${RELEASE_MEMO_PREFIX}${work}`], memoSigners: [[impostor]] }];
+    expect(await ok(client, "wallet_receipt", { owner, nonce: "8" })).not.toHaveProperty("delivered_sha256");
   });
 
   it("plain mode checks a delivery", async () => {

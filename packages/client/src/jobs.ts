@@ -314,21 +314,29 @@ export function parseFollowUpMemo(text: string): FollowUp | null {
   return sha256 === null || !BASE58_SIGNATURE.test(release) ? null : { sha256, release };
 }
 
-export function recordedDelivery(transactions: readonly EngineTransaction[], release: EngineTransaction, attestor: Address): string | null {
-  const inline = (release.memos ?? []).map(parseReleaseMemo).find((hash) => hash !== null);
-  if (inline !== undefined) {
-    return inline;
-  }
+export function memosSignedBy(transaction: EngineTransaction, signer: Address): string[] {
+  return (transaction.memos ?? []).filter((_, i) => transaction.memoSigners?.[i]?.includes(signer) === true);
+}
+
+export function followUpOf(transactions: readonly EngineTransaction[], release: string, attestor: Address): (FollowUp & { signature: string }) | null {
   for (const transaction of transactions) {
     if (transaction.failed || transaction.feePayer !== attestor) {
       continue;
     }
-    const found = (transaction.memos ?? []).map(parseFollowUpMemo).find((memo) => memo !== null && memo.release === release.signature);
+    const found = (transaction.memos ?? []).map(parseFollowUpMemo).find((memo) => memo !== null && memo.release === release);
     if (found !== undefined && found !== null) {
-      return found.sha256;
+      return { ...found, signature: transaction.signature };
     }
   }
   return null;
+}
+
+export function recordedDelivery(transactions: readonly EngineTransaction[], release: EngineTransaction, attestor: Address): string | null {
+  const inline = memosSignedBy(release, attestor).map(parseReleaseMemo).find((hash) => hash !== null);
+  if (inline !== undefined) {
+    return inline;
+  }
+  return followUpOf(transactions, release.signature, attestor)?.sha256 ?? null;
 }
 
 export function followUpInstructions(judge: TransactionSigner, intent: Address, sha256: string, release: string): Instruction[] {

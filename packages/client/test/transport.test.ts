@@ -5,7 +5,9 @@ import {
   generateKeyPairSigner,
   type Instruction,
   getBase58Decoder,
+  AccountRole,
   getBase64Encoder,
+  getCompiledTransactionMessageDecoder,
   getSolanaErrorFromJsonRpcError,
   getTransactionDecoder,
   isSolanaError,
@@ -13,7 +15,7 @@ import {
 } from "@solana/kit";
 import { getEventListeners } from "node:events";
 import { describe, expect, it } from "vitest";
-import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { computeUnitLimit, getIntentDiscriminatorBytes, getIntentSize, headroom, INTENT_ENGINE_PROGRAM_ADDRESS, MAX_COMPUTE_UNITS } from "@intent-engine/core";
 import { Charged,
   behindMinSlot,
   heardSlot,
@@ -40,7 +42,7 @@ import { Charged,
   KEPT_TRANSACTIONS,
   MEMO_PROGRAM_ADDRESS,
 } from "../src/transport.js";
-import { withPriority } from "../src/budget.js";
+import { budgeted, PACKET_DATA_SIZE, transactionBytes, withPriority } from "../src/budget.js";
 
 const SIG = "5".repeat(88) as Signature;
 const OWNER = "11111111111111111111111111111112" as Address;
@@ -144,8 +146,9 @@ function stub(statuses: Status[], heights: bigint[] = [0n], seen: bigint[] = [])
               transaction: {
                 message: {
                   accountKeys: [OWNER, INTENT_ENGINE_PROGRAM_ADDRESS, MEMO_PROGRAM_ADDRESS],
+                  header: { numRequiredSignatures: 1 },
                   instructions: [
-                    { programIdIndex: 2, data: getBase58Decoder().decode(new TextEncoder().encode("delivery note")) },
+                    { programIdIndex: 2, accounts: [0, 1], data: getBase58Decoder().decode(new TextEncoder().encode("delivery note")) },
                     { programIdIndex: 1, data: getBase58Decoder().decode(new TextEncoder().encode("not a memo")) },
                   ],
                 },
@@ -491,7 +494,7 @@ describe("engine transactions", () => {
     const transport = rpcTransport(s.rpc, s.wait);
     const found = await transport.engineTransactions(5);
     expect(found).toEqual([
-      { signature: SIG, slot: 7n, blockTime: 100n, failed: false, emitted: [new Uint8Array([1, 2]), new Uint8Array([4, 5])], memos: ["delivery note"], feePayer: OWNER },
+      { signature: SIG, slot: 7n, blockTime: 100n, failed: false, emitted: [new Uint8Array([1, 2]), new Uint8Array([4, 5])], memos: ["delivery note"], memoSigners: [[OWNER]], feePayer: OWNER },
       { signature: OTHER_SIG, slot: 8n, blockTime: null, failed: true, emitted: [], unread: true },
     ]);
     expect(s.calls).toEqual([
@@ -1045,6 +1048,46 @@ class Ledger implements Transport {
     return "airdropped";
   }
 }
+
+class Simulating extends Ledger {
+  readonly wires: string[] = [];
+
+  override async simulate(wire?: Base64EncodedWireTransaction) {
+    if (wire !== undefined) {
+      this.wires.push(wire);
+    }
+    return super.simulate();
+  }
+}
+
+describe("budgeting", () => {
+  it("budgeting skips simulation for a transaction over the packet limit", async () => {
+    const ledger = new Simulating();
+    const payer = await generateKeyPairSigner();
+    const small: Instruction = { programAddress: OWNER, accounts: [], data: new Uint8Array(8) };
+    expect(await budgeted(ledger, 0n, [small], payer.address)).toEqual([small, computeUnitLimit(headroom(1_000n))]);
+    expect(ledger.wires).toHaveLength(1);
+
+    const large: Instruction = { programAddress: OWNER, accounts: [], data: new Uint8Array(PACKET_DATA_SIZE) };
+    const unsimulated = await budgeted(ledger, 0n, [large], payer.address);
+    expect(unsimulated).toEqual([large, computeUnitLimit(MAX_COMPUTE_UNITS)]);
+    expect(await transactionBytes(ledger, unsimulated, payer.address)).toBeGreaterThan(PACKET_DATA_SIZE);
+    expect(await withPriority(ledger, 0n).send([large], payer)).toBe("sent");
+    expect(ledger.wires).toHaveLength(1);
+
+    const keys = await Promise.all(Array.from({ length: 40 }, async () => (await generateKeyPairSigner()).address));
+    const wide: Instruction = { programAddress: OWNER, accounts: keys.map((address) => ({ address, role: AccountRole.READONLY })), data: new Uint8Array(8) };
+    const table = (await generateKeyPairSigner()).address;
+    expect(await transactionBytes(ledger, [wide, computeUnitLimit(MAX_COMPUTE_UNITS)], payer.address)).toBeGreaterThan(PACKET_DATA_SIZE);
+    expect(await withPriority(ledger, 0n).budget([wide], payer.address)).toEqual([wide, computeUnitLimit(MAX_COMPUTE_UNITS)]);
+    expect(ledger.wires).toHaveLength(1);
+    expect(await withPriority(ledger, 0n).budget([wide], payer.address, { [table]: keys })).toEqual([wide, computeUnitLimit(headroom(1_000n))]);
+    expect(ledger.wires).toHaveLength(2);
+    const wire = ledger.wires[1] ?? "";
+    const message = getCompiledTransactionMessageDecoder().decode(getTransactionDecoder().decode(getBase64Encoder().encode(wire)).messageBytes);
+    expect("addressTableLookups" in message ? message.addressTableLookups?.map((lookup) => lookup.lookupTableAddress) : []).toEqual([table]);
+  });
+});
 
 describe("wrapped transports", () => {
   const ix: Instruction = { programAddress: OWNER, accounts: [], data: new Uint8Array([1]) };

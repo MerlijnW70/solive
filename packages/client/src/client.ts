@@ -1,4 +1,4 @@
-import { type Address, createSolanaRpc, type Instruction, type KeyPairSigner, type Signature, type TransactionSigner } from "@solana/kit";
+import { type Address, createSolanaRpc, getAddressDecoder, type Instruction, type KeyPairSigner, type Signature, type TransactionSigner } from "@solana/kit";
 import {
   attestedProofMessage,
   buildCancelIntent,
@@ -42,6 +42,7 @@ import {
   MissingAccount,
   mintOf,
   type NonceWindow,
+  SYSTEM_PROGRAM_ADDRESS,
   tokenAmountOf,
 } from "./accounts.js";
 import { budgeted, type Priority, simulated } from "./budget.js";
@@ -214,6 +215,42 @@ export class NotFillable extends Error {
     super(`intent ${intent} ${reason}`);
     this.name = "NotFillable";
     this.intent = intent;
+  }
+}
+
+export class PayToNotWallet extends Error {
+  readonly payTo: Address;
+  readonly program: Address;
+
+  constructor(payTo: Address, program: Address) {
+    super(`payTo ${payTo} belongs to the program ${program}, not to a wallet, so nothing paid to it could be spent; give a wallet address`);
+    this.name = "PayToNotWallet";
+    this.payTo = payTo;
+    this.program = program;
+  }
+}
+
+export class PayeeMoved extends Error {
+  readonly payTo: Address;
+  readonly account: Address;
+
+  constructor(payTo: Address, account: Address) {
+    super(`the token account ${account} of payTo ${payTo} is no longer held by ${payTo} for this mint, so a release to it would not reach ${payTo}`);
+    this.name = "PayeeMoved";
+    this.payTo = payTo;
+    this.account = account;
+  }
+}
+
+export class EscrowExpired extends Error {
+  readonly intent: Address;
+  readonly expiresAt: bigint;
+
+  constructor(intent: Address, expiresAt: bigint) {
+    super(`intent ${intent} expired at ${expiresAt}; its owner gets it back instead`);
+    this.name = "EscrowExpired";
+    this.intent = intent;
+    this.expiresAt = expiresAt;
   }
 }
 
@@ -540,6 +577,13 @@ export function createClient(options: ClientOptions): Client {
     if (params.attestor !== judge.address) {
       throw new NotSettleable(address, `names ${params.attestor} as its judge, not ${judge.address}`);
     }
+    if (held.expiresAt <= (await chainTime(transport))) {
+      throw new EscrowExpired(address, held.expiresAt);
+    }
+    const holder = await transport.getAccount(payTo);
+    if (holder !== null && holder.owner !== SYSTEM_PROGRAM_ADDRESS) {
+      throw new PayToNotWallet(payTo, holder.owner);
+    }
     const { tokenProgram } = await mint(held.inputMint);
     const account = (wallet: Address) => tokenAccountIfMissing(transport, payer, wallet, held.inputMint, tokenProgram);
     const amountIn = held.escrowed - held.filled;
@@ -550,6 +594,17 @@ export function createClient(options: ClientOptions): Client {
     const partner = shares.partner > 0n ? held.partner : undefined;
     const paidJudge = params.judgeFee > 0n ? judge.address : undefined;
     const payee = await account(payTo);
+    if (payee.create.length === 0) {
+      const existing = await createdAccount(transport, payee.address);
+      const data = existing === null || existing.owner !== tokenProgram || existing.data.length < 64 ? null : existing.data;
+      if (
+        data === null ||
+        getAddressDecoder().decode(data.subarray(0, 32)) !== held.inputMint ||
+        getAddressDecoder().decode(data.subarray(32, 64)) !== payTo
+      ) {
+        throw new PayeeMoved(payTo, payee.address);
+      }
+    }
     const others = await Promise.all([feeRecipient, partner, paidJudge].filter((wallet) => wallet !== undefined).map(account));
     const fields = { amountIn, result, maxFeeBps };
     const message = await attestedProofMessage(judge.address, {

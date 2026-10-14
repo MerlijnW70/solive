@@ -16,7 +16,7 @@ import {
 } from "@solana/kit";
 import { getIntentDecoder, getIntentDiscriminatorBytes, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { FailedTransactionMetadata, type LiteSVM } from "litesvm";
-import { type EngineTransaction, type ListedSignature, MEMO_PROGRAM_ADDRESS, type ProgramAccount, type Transport } from "./transport.js";
+import { type EngineTransaction, type ListedSignature, MEMO_PROGRAM_ADDRESS, type ProgramAccount, signersAmong, type Transport } from "./transport.js";
 
 export type SvmTransportOptions = { genesisHash?: string };
 
@@ -51,9 +51,9 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
     }
     const signature = getSignatureFromTransaction(tx);
     const clock = svm.getClock();
-    const memos = ("instructions" in compiled ? compiled.instructions : [])
-      .filter((ix) => keys[ix.programAddressIndex] === MEMO_PROGRAM_ADDRESS)
-      .map((ix) => new TextDecoder().decode(Uint8Array.from(ix.data ?? [])));
+    const memoInstructions = ("instructions" in compiled ? compiled.instructions : []).filter((ix) => keys[ix.programAddressIndex] === MEMO_PROGRAM_ADDRESS);
+    const memos = memoInstructions.map((ix) => new TextDecoder().decode(Uint8Array.from(ix.data ?? [])));
+    const memoSigners = memoInstructions.map((ix) => signersAmong(keys, ix.accountIndices ?? [], compiled.header.numSignerAccounts));
     const feePayer = keys[0];
     const found: EngineTransaction = {
       signature,
@@ -66,7 +66,7 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
         .map((inner) => inner.instruction())
         .filter((ix) => keys[ix.programIdIndex()] === INTENT_ENGINE_PROGRAM_ADDRESS)
         .map((ix) => new Uint8Array(ix.data())),
-      ...(memos.length === 0 ? {} : { memos }),
+      ...(memos.length === 0 ? {} : { memos, memoSigners }),
       ...(feePayer === undefined ? {} : { feePayer }),
     };
     history.unshift({ touched: new Set(keys), found });

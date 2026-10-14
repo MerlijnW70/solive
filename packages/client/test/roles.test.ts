@@ -31,7 +31,7 @@ import {
   signEd25519Instruction,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import { createClient, NotSettleable, type Transport } from "../src/index.js";
+import { createClient, EscrowExpired, NotSettleable, type Transport } from "../src/index.js";
 import { FEE_BPS, NOW, world } from "./svm.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
@@ -51,7 +51,7 @@ const SPEC = new Uint8Array(createHash("sha256").update("the spec").digest());
 const CLAIMS = {
   fill: "Any wallet other than the owner and the receiver can fill an open swap intent before it expires.",
   settle: "Only a verdict signed by the judge the intent names settles a proof escrow; any wallet can send that signed verdict and pay for it.",
-  late: "A fill or settle at or after the expiry fails with `IntentExpired`.",
+  late: "A fill or settle at or after the expiry fails with `IntentExpired`; `settleProof` throws `EscrowExpired` before it sends.",
   stranger: "Only the owner can cancel; another wallet's cancel fails with `Unauthorized`.",
   cancel: "The owner can cancel an open proof escrow until the judge settles it, also after it expires as long as nobody has expired it.",
   settled: "After a settle, the owner's cancel fails with `InvalidTransition`.",
@@ -271,17 +271,27 @@ describe("who can do what", () => {
   });
 
   it(CLAIMS.late, async () => {
-    const { client, fresh, swap, escrow, outputFor, fill, failure, status, at } = await setup();
+    const { w, client, fresh, swap, escrow, outputFor, fill, failure, status, at } = await setup();
     const owner = await fresh();
     const judge = await generateKeyPairSigner();
     const solver = await fresh();
     const output = await outputFor(solver);
     const trade = await swap(owner);
     const job = await escrow(owner, judge.address);
+    let held: readonly Instruction[] = [];
+    const holding: Transport = {
+      ...w.chain.transport,
+      send: async (instructions) => {
+        held = instructions;
+        throw new Error("held back");
+      },
+    };
+    const input = { judge, payer: owner, owner: owner.address, nonce: job.nonce, payTo: solver.address, result: 1n };
+    await expect(createClient({ url: LOCAL, transport: holding }).settleProof(input)).rejects.toThrow("held back");
     at(NOW + TTL);
     expect(await failure(fill(solver, owner.address, trade.nonce, output))).toBe("IntentExpired");
-    const settle = client.settleProof({ judge, payer: owner, owner: owner.address, nonce: job.nonce, payTo: solver.address, result: 1n });
-    expect(await failure(settle)).toBe("IntentExpired");
+    await expect(client.settleProof(input)).rejects.toThrow(EscrowExpired);
+    expect(await failure(w.chain.transport.send(held, owner))).toBe("IntentExpired");
     at(NOW + TTL + 1n);
     expect(await failure(fill(solver, owner.address, trade.nonce, output))).toBe("IntentExpired");
     expect(await status(owner.address, trade.nonce)).toBe(IntentStatus.Open);

@@ -90,12 +90,14 @@ export const h = {
   requestedOf: [] as (Address | undefined)[],
   simulated: [] as string[],
   sendFails: null as { error: Error; landed: boolean; after?: number } | null,
+  packetLimit: false,
   served: [] as McpServer[],
   airdropRefused: false,
   airdrops: [] as { address: Address; lamports: bigint }[],
 };
 
 export const HOME = "/home/tester";
+export const PACKET_LIMIT = 1_232;
 
 export async function send(payer: TransactionSigner, ixs: readonly Instruction[]): Promise<string> {
   h.svm.expireBlockhash();
@@ -165,6 +167,10 @@ export const transport: Transport = {
     return getSignatureFromTransaction(tx);
   },
   simulate: async (wire, watch = []) => {
+    const bytes = getBase64Encoder().encode(wire).length;
+    if (h.packetLimit && bytes > PACKET_LIMIT) {
+      throw new Error(`base64 encoded solana_transaction::versioned::VersionedTransaction too large: ${bytes} bytes (max: encoded/raw ${PACKET_LIMIT})`);
+    }
     h.simulated.push(wire);
     const tx = decodeWire(wire);
     const unsigned = Object.fromEntries(
@@ -345,6 +351,7 @@ export async function boot(): Promise<KeyPairSigner> {
   h.reads.clear();
   h.firstSlot = 0n;
   h.through = null;
+  h.packetLimit = false;
   h.svm = new LiteSVM().withPrecompiles();
   h.svm.addProgramFromFile(INTENT_ENGINE_PROGRAM_ADDRESS, enginePath);
   setNow(NOW);

@@ -134,7 +134,7 @@ for (const params of [limit, auction]) {
 
 ## Escrow work behind a proof
 
-An `AttestedResult` intent holds payment until its attestor, the judge, signs a result. `specHash` pins the acceptance spec the judge checks, and `judgeFee` pays the judge out of the escrow; [Who can do what](#who-can-do-what) lists what each party may do. `settleProof` is the judge's call: it signs the result over the spec and pays the worker's wallet `payTo`, creating any token account the payout needs. The judge pays the transaction unless `payer` names another signer; here your wallet pays, so the new judge key needs no SOL. In practice the judge runs this with its own key. `history` returns the engine events for one intent, newest first, each with its signature and slot, and keeps working after the account closes. A release event carries `deliveredSha256` when the release recorded the paid work's hash, in its own memo or in a follow-up transaction its judge signed. An `IntentAttested` event's `net` is what the payee received. This prints `Filled`, then `IntentAttested` and the worker's pay in SOL.
+An `AttestedResult` intent holds payment until its attestor, the judge, signs a result. `specHash` pins the acceptance spec the judge checks, and `judgeFee` pays the judge out of the escrow; [Who can do what](#who-can-do-what) lists what each party may do. `settleProof` is the judge's call: it signs the result over the spec and pays the worker's wallet `payTo`, creating any token account the payout needs. It refuses, before sending, an expired escrow with `EscrowExpired`, a `payTo` owned by a program with `PayToNotWallet`, and a `payTo` whose token account for the mint it no longer holds with `PayeeMoved`. The judge pays the transaction unless `payer` names another signer; here your wallet pays, so the new judge key needs no SOL. In practice the judge runs this with its own key. `history` returns the engine events for one intent, newest first, each with its signature and slot, and keeps working after the account closes. A release event carries `deliveredSha256` when the release recorded the paid work's hash, in its own memo or in a follow-up transaction its judge signed. An `IntentAttested` event's `net` is what the payee received. This prints `Filled`, then `IntentAttested` and the worker's pay in SOL.
 
 ```ts
 import { createHash } from "node:crypto";
@@ -232,7 +232,7 @@ Anyone can copy an announcement once it is on chain, so a judge pays the earlies
 
 - Any wallet other than the owner and the receiver can fill an open swap intent before it expires.
 - Only a verdict signed by the judge the intent names settles a proof escrow; any wallet can send that signed verdict and pay for it.
-- A fill or settle at or after the expiry fails with `IntentExpired`.
+- A fill or settle at or after the expiry fails with `IntentExpired`; `settleProof` throws `EscrowExpired` before it sends.
 - Only the owner can cancel; another wallet's cancel fails with `Unauthorized`.
 - The owner can cancel an open proof escrow until the judge settles it, also after it expires as long as nobody has expired it.
 - After a settle, the owner's cancel fails with `InvalidTransition`.
