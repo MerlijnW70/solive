@@ -36,7 +36,7 @@ bash scripts/build.sh
 bash scripts/ci.sh
 ```
 
-This builds the program, fails on any drift in generated files, lints, and runs the Rust and TypeScript test suites. CI also runs the dependency audit, a secret scan, the verifiable build, fuzzing and Kani proofs. Maintainers run additional checks before merging.
+This builds the program, fails on any drift in generated files, lints, and runs the Rust and TypeScript test suites. CI also installs the packed npm packages (`scripts/pack-test.sh`), runs the TypeScript tests on the oldest supported Node.js, and runs the dependency audit, a secret scan, the verifiable build, fuzzing and Kani proofs. Maintainers run additional checks before merging.
 
 ## Sign your commits
 

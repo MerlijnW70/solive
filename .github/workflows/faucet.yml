@@ -9,7 +9,7 @@ permissions:
   issues: write
 
 concurrency:
-  group: faucet
+  group: faucet-${{ github.event.issue.number }}
   cancel-in-progress: false
 
 jobs:

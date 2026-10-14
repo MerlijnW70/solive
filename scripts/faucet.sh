@@ -21,6 +21,25 @@ answer() {
   exit 0
 }
 
+later() {
+  gh issue comment "$issue" --body "$1" > /dev/null
+  gh issue edit "$issue" --remove-label faucet > /dev/null
+  echo "$1"
+  exit 0
+}
+
+key_bytes() {
+  node -e '
+const alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+let value = 0n;
+for (const c of process.argv[1]) value = value * 58n + BigInt(alphabet.indexOf(c));
+let bytes = 0;
+for (; value > 0n; value >>= 8n) bytes += 1;
+for (const c of process.argv[1]) { if (c !== "1") break; bytes += 1; }
+console.log(bytes);
+' "$1"
+}
+
 if ! [[ "$author" =~ ^[A-Za-z0-9-]{1,39}$ ]]; then
   answer "Refused: this GitHub account name is not one the faucet can check." "not planned"
 fi
@@ -29,6 +48,9 @@ if [ "${#addresses[@]}" -ne 1 ]; then
   answer "Refused: put exactly one wallet address in the request, as \`solana address\` prints it." "not planned"
 fi
 address="${addresses[0]}"
+if [ "$(key_bytes "$address")" != 32 ]; then
+  answer "Refused: \`$address\` is not a valid wallet address." "not planned"
+fi
 created=$(gh api "users/$author" --jq .created_at)
 if [ $((now - $(date -u -d "$created" +%s))) -lt "$min_age" ]; then
   answer "Refused: the faucet serves GitHub accounts at least 7 days old. Request devnet SOL at https://faucet.solana.com instead." "not planned"
@@ -42,7 +64,7 @@ if [ "$sent" -ge "$daily" ]; then
   answer "Refused: the faucet sent its daily limit. Try again tomorrow, or request devnet SOL at https://faucet.solana.com." "not planned"
 fi
 if ! held=$(solana balance "$address" --url "$url" --lamports 2> /dev/null); then
-  answer "Refused: \`$address\` is not a valid wallet address." "not planned"
+  later "The faucet could not reach devnet to check \`$address\`. Nothing was sent, and this request does not count toward your one request a day. Open a new request later."
 fi
 if [ "${held%% *}" -ge "$funded" ]; then
   answer "Refused: \`$address\` already holds 1 devnet SOL or more." "not planned"

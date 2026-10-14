@@ -29,7 +29,7 @@ importers:
         specifier: 0.16.1
         version: 0.16.1(@solana/kit@8.4.0(typescript@7.0.2))
       '@solana/kit':
-        specifier: 8.4.0
+        specifier: ^8.4.0
         version: 8.4.0(typescript@7.0.2)
     devDependencies:
       '@modelcontextprotocol/client':

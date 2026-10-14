@@ -8,7 +8,7 @@ Do not open a public issue, pull request or discussion about a vulnerability.
 
 Include:
 
-- the affected part: the program (`programs/intent_engine`), `crates/intent-core`, `packages/core`, `packages/cli` or `packages/solver`
+- the affected part: the program (`programs/intent_engine`), `crates/intent-core`, `packages/core`, `packages/client`, `packages/cli` or `packages/solver`
 - the cluster and program address, if it concerns a deployed program
 - steps or a test that reproduce it
 - what an attacker gains

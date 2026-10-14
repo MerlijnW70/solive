@@ -26,6 +26,18 @@ describe("the version", () => {
     expect(crates[0]).toMatch(/^\d+\.\d+\.\d+$/);
   });
 
+  it("is published from the repository identity.toml names, with one range for @solana/kit", () => {
+    const repository = /^repository = "([^"]+)"$/m.exec(read("identity.toml"))?.[1];
+    type Manifest = { repository: { url: string; directory: string }; homepage: string; bugs: { url: string }; dependencies: Record<string, string> };
+    for (const p of PACKAGES) {
+      const j = JSON.parse(read(p)) as Manifest;
+      expect(j.repository, p).toEqual({ type: "git", url: `git+${repository}.git`, directory: p.replace("/package.json", "") });
+      expect(j.homepage, p).toBe(`${repository}#readme`);
+      expect(j.bugs, p).toEqual({ url: `${repository}/issues` });
+      expect(j.dependencies["@solana/kit"], p).toBe("^8.4.0");
+    }
+  });
+
   it("covers every crate in the workspace", () => {
     const members = /members\s*=\s*\[([^\]]*)\]/.exec(read("Cargo.toml"))?.[1] ?? "";
     const globs = [...members.matchAll(/"([^"]+)\/\*"/g)].map((m) => m[1] ?? "");

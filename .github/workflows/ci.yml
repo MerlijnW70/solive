@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    - cron: "17 5 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -14,6 +17,7 @@ concurrency:
 
 jobs:
   check:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -48,6 +52,43 @@ jobs:
           cache: pnpm
       - name: check
         run: bash scripts/ci.sh
+      - name: packages
+        run: bash scripts/pack-test.sh
+
+  node-floor:
+    if: github.event_name != 'schedule'
+    needs: verifiable
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: agave
+        env:
+          AGAVE_VERSION: v4.1.2
+          AGAVE_SHA256: 5991d027a686eb419a709a479178b33eb83501e8a2bfbf599a81a286bfcbf770
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/agave.tar.bz2" "https://github.com/anza-xyz/agave/releases/download/$AGAVE_VERSION/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
+          echo "$AGAVE_SHA256  $RUNNER_TEMP/agave.tar.bz2" | sha256sum --check --strict
+          mkdir -p "$HOME/agave"
+          tar -xjf "$RUNNER_TEMP/agave.tar.bz2" -C "$HOME/agave"
+          echo "$HOME/agave/solana-release/bin" >> "$GITHUB_PATH"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: intent-engine-verifiable
+          path: verifiable
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22.12.0
+          cache: pnpm
+      - name: install
+        run: pnpm install --frozen-lockfile
+      - name: test
+        run: |
+          export INTENT_ENGINE_SO="$GITHUB_WORKSPACE/verifiable/intent_engine.so"
+          bash scripts/ts-test.sh
 
   audit:
     runs-on: ubuntu-24.04
@@ -81,12 +122,9 @@ jobs:
         run: bash scripts/audit.sh
 
   verifiable:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
-    permissions:
-      contents: read
-      id-token: write
-      attestations: write
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
@@ -97,10 +135,6 @@ jobs:
         run: cargo install --locked solana-verify --version 0.5.2
       - name: build
         run: bash scripts/verify.sh
-      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
-        if: github.event_name == 'push' && !github.event.repository.private
-        with:
-          subject-path: verifiable/intent_engine.so
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
           name: intent-engine-verifiable
@@ -108,7 +142,26 @@ jobs:
             verifiable/intent_engine.so
             verifiable/intent_engine.hash
 
+  attest:
+    if: github.event_name == 'push' && !github.event.repository.private
+    needs: verifiable
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: intent-engine-verifiable
+          path: verifiable
+      - uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8
+        with:
+          subject-path: verifiable/intent_engine.so
+
   fuzz:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     env:
@@ -125,6 +178,7 @@ jobs:
         run: bash scripts/fuzz.sh 120
 
   proofs:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:

@@ -122,7 +122,8 @@ describe("the devnet faucet", () => {
     ["an account younger than 7 days", form(ADDRESS), { created: new Date((NOW - 6 * DAY) * 1000).toISOString() }],
     ["a second request within a day", form(ADDRESS), { earlier: 1 }],
     ["a day that reached its limit", form(ADDRESS), { sent: 50 }],
-    ["an address the cluster rejects", form(ADDRESS), { invalid: ADDRESS }],
+    ["an address that is not 32 bytes", form("z".repeat(32)), {}],
+    ["an address one byte too long", form("1".repeat(33)), {}],
     ["a wallet that already holds 1 SOL", form(ADDRESS), { held: SOL }],
     ["a faucet that would drop below its reserve", form(ADDRESS), { left: SOL + SOL / 2 - 1 }],
     ["an account name it cannot check", form(ADDRESS), {}, "a;b"],
@@ -140,6 +141,24 @@ describe("the devnet faucet", () => {
 
   it("serves a wallet just under 1 SOL and a faucet exactly at its reserve", () => {
     expect(sent(request(form(ADDRESS), { held: SOL - 1, left: SOL + SOL / 2 }).calls)).toHaveLength(1);
+  });
+
+  it("serves the 32-byte address of all ones", () => {
+    expect(sent(request(form("1".repeat(32))).calls)).toHaveLength(1);
+  });
+
+  it("leaves a request open, unanswered and out of the daily count when devnet cannot be reached", () => {
+    const { out, calls } = request(form(ADDRESS), { invalid: ADDRESS });
+    expect(out.startsWith("The faucet could not reach devnet")).toBe(true);
+    expect(sent(calls)).toEqual([]);
+    expect(closed(calls)).toBeUndefined();
+    expect(calls).toContain("gh issue edit 7 --remove-label faucet");
+    expect(calls.filter((c) => c.startsWith("gh issue comment 7 --body The faucet could not reach devnet"))).toHaveLength(1);
+    expect(readFileSync(SCRIPT, "utf8")).toMatch(/gh issue list --author "\$author" --label faucet /);
+  });
+
+  it("runs one workflow per request, so a burst cancels none of them", () => {
+    expect(WORKFLOW).toContain("concurrency:\n  group: faucet-${{ github.event.issue.number }}\n  cancel-in-progress: false\n");
   });
 
   it("runs nothing a request smuggles in", () => {

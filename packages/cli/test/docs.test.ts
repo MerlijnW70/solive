@@ -258,8 +258,13 @@ describe("policy pages", () => {
     expect(scripts.length).toBeGreaterThan(4);
     expect(scripts.filter((path) => !existsSync(`${ROOT}/${path}`))).toEqual([]);
     const jobs = [...ci.slice(ci.indexOf("\njobs:")).matchAll(/^ {2}([\w-]+):$/gm)].map((m) => m[1]);
-    expect(jobs).toEqual(["check", "audit", "verifiable", "fuzz", "proofs", "sign-off"]);
+    expect(jobs).toEqual(["check", "node-floor", "audit", "verifiable", "attest", "fuzz", "proofs", "sign-off"]);
     expect(pick(/run: bash scripts\/(\w+)\.sh/, ci.slice(ci.indexOf("  check:")))).toBe("ci");
+    expect(ci.slice(ci.indexOf("  check:"), ci.indexOf("  node-floor:"))).toContain("run: bash scripts/pack-test.sh");
+    expect(ci.slice(ci.indexOf("  node-floor:"), ci.indexOf("  audit:"))).toContain(`node-version: ${root.engines.node.replace(">=", "")}`);
+    expect(ci.slice(ci.indexOf("  audit:"), ci.indexOf("  verifiable:"))).not.toContain("if:");
+    expect(ci.match(/id-token: write/g)).toHaveLength(1);
+    expect(ci.slice(ci.indexOf("  attest:"), ci.indexOf("  fuzz:"))).toContain("id-token: write");
     expect(ci.slice(ci.indexOf("  sign-off:"))).toContain("if: github.event_name == 'pull_request'");
     expect(contributing).toContain(
       "This builds the program, fails on any drift in generated files, lints, and runs the Rust and TypeScript test suites.",

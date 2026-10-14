@@ -2,13 +2,18 @@
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
 usage="usage: idl.sh devnet|mainnet-beta|<https rpc url>"
+mainnet_genesis="5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
 case "${1:-}" in
   devnet) url="https://api.devnet.solana.com"; genesis="EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG" ;;
-  mainnet-beta) url="https://api.mainnet-beta.solana.com"; genesis="5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d" ;;
+  mainnet-beta) url="https://api.mainnet-beta.solana.com"; genesis="$mainnet_genesis" ;;
   https://*) url="$1"; genesis="" ;;
   *) echo "$usage" >&2; exit 2 ;;
 esac
-if [[ -n "$genesis" && "$(solana genesis-hash --url "$url")" != "$genesis" ]]; then
+if ! served="$(solana genesis-hash --url "$url")" || [[ -z "$served" ]]; then
+  echo "refusing: could not read the genesis hash of $url" >&2
+  exit 1
+fi
+if [[ -n "$genesis" && "$served" != "$genesis" ]]; then
   echo "refusing: $url does not serve the $1 cluster" >&2
   exit 1
 fi
@@ -25,7 +30,7 @@ idl="idl/intent_engine.json"
 program="$(node -p "require('./$idl').address")"
 authority="${UPGRADE_AUTHORITY:-$HOME/.config/solana/id.json}"
 pmp=(npx -y @solana-program/program-metadata@0.10.0 --keypair "$authority" --rpc "$url")
-if [[ "${1}" == "mainnet-beta" ]]; then
+if [[ "$served" == "$mainnet_genesis" ]]; then
   read -r -p "type the program id $program to publish its IDL on mainnet-beta: " typed
   if [[ "$typed" != "$program" ]]; then
     echo "refusing: the confirmation did not match" >&2

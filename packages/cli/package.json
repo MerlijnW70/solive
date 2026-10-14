@@ -3,6 +3,15 @@
   "version": "0.1.23",
   "description": "Command line and MCP server for the intent engine on Solana",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MerlijnW70/solive.git",
+    "directory": "packages/cli"
+  },
+  "homepage": "https://github.com/MerlijnW70/solive#readme",
+  "bugs": {
+    "url": "https://github.com/MerlijnW70/solive/issues"
+  },
   "type": "module",
   "files": [
     "dist/src"
@@ -17,7 +26,7 @@
     "intent-engine": "./dist/src/bin.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --fsModuleCache"
   },
@@ -28,7 +37,7 @@
     "@modelcontextprotocol/server": "2.3.1",
     "@solana-program/system": "0.14.1",
     "@solana-program/token": "0.16.1",
-    "@solana/kit": "8.4.0"
+    "@solana/kit": "^8.4.0"
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.3.1",
