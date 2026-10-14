@@ -154,6 +154,41 @@ With 2 of 3, losing one key stops nothing: the other two still approve and execu
 
 A lost guardian key is replaced with `update-config --guardian` through the multisig, as in step 5. If two keys are lost, the multisig can no longer act: the program stays as it is and owners still cancel and reclaim their escrow, but nobody can upgrade it or change its config again.
 
+## Monitoring
+
+`monitor` reads the program and its config every `--interval` seconds, 30 by default, and compares them with a baseline file: every config field, the upgrade authority and the program hash, the value `solana-verify get-program-hash` prints. It signs nothing and needs no keypair. Write the baseline after each intended change, once `show config` and the program hash are what the proposal promised:
+
+```sh
+node packages/cli/dist/src/bin.js monitor --write-baseline /etc/intent-engine/baseline.json --url devnet
+```
+
+`--write-baseline` never overwrites a file; move the old baseline away first. Without `--expect` the monitor refuses to start.
+
+Every alert is one JSON line on stdout with `kind` (`config`, `upgrade-authority`, `program-hash`, `fill-amount`, `fill-rate` or `rpc`), `field`, `expected`, `observed` and `slot`. A change alerts once, not on every poll, until the baseline is rewritten and the monitor restarted. `--max-fill <mint>=<raw amount>`, repeatable, alerts on a fill above that amount of that input token; `--max-fills <count>` alerts when more fills land in one interval. A failed read, or a slot that does not advance for three intervals, is an `rpc` alert, never a quiet poll. `--webhook <https url>` also POSTs each alert as JSON; the monitor prints only the webhook's scheme and host, and a failed POST goes to stderr. `--once` checks once and exits 0 when nothing alerted and 4 when anything did.
+
+Run it as a service on a host other than the members' machines, with a minimal systemd unit at `/etc/systemd/system/intent-engine-monitor.service`:
+
+```ini
+[Unit]
+Description=intent engine monitor
+After=network-online.target
+
+[Service]
+ExecStart=/usr/bin/node /opt/solive/packages/cli/dist/src/bin.js monitor --expect /etc/intent-engine/baseline.json --url devnet --max-fills 50 --webhook https://hooks.example.com/<your hook>
+Restart=always
+User=monitor
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```sh
+sudo systemctl enable --now intent-engine-monitor
+journalctl -u intent-engine-monitor -f
+```
+
+Alerts go to the journal and to the webhook, which should page a person, for example a chat or paging service. After each intended change, write the new baseline and run `sudo systemctl restart intent-engine-monitor`. The monitor cannot report its own death: alert on the unit failing, and watch the webhook for silence.
+
 ## Real keys
 
 The devnet members are files on one machine. Before mainnet:

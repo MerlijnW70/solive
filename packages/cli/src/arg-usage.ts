@@ -1,6 +1,7 @@
 import { ACCEPTS, GLOBAL_OPTIONS } from "./arg-options.js";
+import { EXIT_ALERTED } from "./monitor-args.js";
 
-export const COMMANDS = "setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | hash | version | help [command]";
+export const COMMANDS = "setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | monitor | hash | version | help [command]";
 
 export const USAGE = `usage: ${COMMANDS}`;
 
@@ -47,6 +48,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   mandate: `grant --keypair <file> --agent --input-mint --output-mint --kinds --per-intent --total --max-intents --max-ttl --valid-for --floor-out --floor-in [--agent-fee] ${PARTNER_SHAPE} [--id] [--units tokens|raw] [--yes] | show --agent (--owner <address> | --keypair <file>) [--id] | revoke --keypair <file> --agent [--id] [--yes] | use swap|limit|dutch --keypair <file> --owner (--expires-at | --expires-in) ${MANDATE_ORDER_SHAPE} [--id] [--nonce <n>] [--units tokens|raw] [--yes]`,
   approve: "--keypair <file> --mint <mint> --amount <amount> [--units tokens|raw] [--yes]",
   "revoke-approval": "--keypair <file> --mint <mint> [--yes]",
+  monitor: `--expect <baseline file> [--interval <seconds>] [--max-fill <mint>=<raw amount>]... [--max-fills <count>] [--webhook <https url>] [--once] | --write-baseline <file>; prints each alert as one JSON line; with --once it exits 0 when nothing alerted and ${EXIT_ALERTED} when anything did`,
   signed: `prepare swap|limit|dutch|attested --keypair <file> --out <file> --input-mint --output-mint (--expires-at | --expires-in) ${ORDER_SHAPE} [--nonce <n>] [--submit-within <seconds>] [--relayer-fee] ${PARTNER_SHAPE} [--units tokens|raw] [--yes] | submit --keypair <relayer file> --file <file> [--yes]`,
 };
 

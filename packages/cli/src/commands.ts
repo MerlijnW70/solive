@@ -157,6 +157,8 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     }
     case "follow":
       throw new FlowRefused("events --follow streams to the terminal and runs only from the command line");
+    case "monitor":
+      throw new FlowRefused("monitor watches the program from the command line only");
     case "events": {
       const transactions = await engineEvents(transport, command.limit);
       const notable = transactions.reduce(

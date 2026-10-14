@@ -131,11 +131,20 @@ export const OPTIONS = {
   "sandbox-image": { type: "string" },
   "sandbox-memory": { type: "string" },
   "sandbox-cpus": { type: "string" },
+  expect: { type: "string" },
+  "write-baseline": { type: "string" },
+  "max-fill": { type: "string", multiple: true },
+  "max-fills": { type: "string" },
+  webhook: { type: "string" },
+  once: { type: "boolean" },
 } as const;
 
-export type Flag = "dry-run" | "fund-accounts" | "yes" | "help" | "version" | "follow" | "create" | "wallet" | "watch" | "close";
-export type StringKey = Exclude<keyof typeof OPTIONS, Flag>;
-export type Values = { [K in StringKey]?: string | undefined } & { [K in Flag]?: boolean | undefined };
+export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill"]);
+
+export type Flag = "dry-run" | "fund-accounts" | "yes" | "help" | "version" | "follow" | "create" | "wallet" | "watch" | "close" | "once";
+export type Many = "max-fill";
+export type StringKey = Exclude<keyof typeof OPTIONS, Flag | Many>;
+export type Values = { [K in StringKey]?: string | undefined } & { [K in Flag]?: boolean | undefined } & { [K in Many]?: string[] | undefined };
 
 export const EXPIRY = ["expires-at", "expires-in"] as const;
 
@@ -277,6 +286,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
     "partner-bps",
     "units",
   ],
+  monitor: ["url", "expect", "write-baseline", "interval", "max-fill", "max-fills", "webhook", "once"],
 };
 
 export const SUB_ACCEPTS: Record<string, Record<string, readonly (keyof typeof OPTIONS)[]>> = {

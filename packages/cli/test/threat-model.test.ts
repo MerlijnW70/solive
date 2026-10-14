@@ -11,7 +11,6 @@ const RUST_ROOTS = ["tests/svm/tests/", "crates/intent-core/tests/"];
 const OPEN_WEAKNESSES = [
   "published by hand with a token, without provenance",
   "no on-chain per-order or total cap",
-  "no monitoring of config changes, upgrades or unusual fills",
   "role keys (filler, judge, wallet) are files on one machine",
 ];
 

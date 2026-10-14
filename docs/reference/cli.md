@@ -3,7 +3,7 @@
 # CLI reference
 
 ```text
-usage: setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | hash | version | help [command]
+usage: setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | monitor | hash | version | help [command]
 ```
 
 Every command accepts `--output` and `--help`.
@@ -313,6 +313,14 @@ signed prepare swap|limit|dutch|attested --keypair <file> --out <file> --input-m
 Options for `prepare`: `--url`, `--keypair`, `--yes`, `--out`, `--nonce`, `--input-mint`, `--output-mint`, `--submit-within`, `--relayer-fee`, `--expires-at`, `--expires-in`, `--amount-in`, `--min-out`, `--make`, `--take`, `--start-out`, `--end-out`, `--start-at`, `--end-at`, `--min-result`, `--max-result`, `--attestor`, `--partner`, `--partner-bps`, `--units`, `--output`, `--help`
 
 Options for `submit`: `--url`, `--keypair`, `--yes`, `--file`, `--output`, `--help`
+
+## monitor
+
+```text
+monitor --expect <baseline file> [--interval <seconds>] [--max-fill <mint>=<raw amount>]... [--max-fills <count>] [--webhook <https url>] [--once] | --write-baseline <file>; prints each alert as one JSON line; with --once it exits 0 when nothing alerted and 4 when anything did
+```
+
+Options: `--url`, `--expect`, `--write-baseline`, `--interval`, `--max-fill`, `--max-fills`, `--webhook`, `--once`, `--output`, `--help`
 
 ## version
 

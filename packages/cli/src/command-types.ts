@@ -114,6 +114,15 @@ export type Command =
   | { name: "version" }
   | (Remote & { name: "follow"; limit: number; interval: number })
   | (Remote & { name: "treasury"; mints: Address[] | null; create: boolean; keypair: string | undefined; yes: boolean })
-  | (Remote & { name: "solver-table"; solver: Address; mints: Address[] });
+  | (Remote & { name: "solver-table"; solver: Address; mints: Address[] })
+  | (Remote & { name: "monitor"; baseline: string; watch: MonitorSpec | null });
+
+export type MonitorSpec = {
+  interval: number;
+  maxFill: ReadonlyMap<Address, bigint>;
+  maxFills: number | null;
+  webhook: string | null;
+  once: boolean;
+};
 
 export type WalletLimits = { perTrade: ReadonlyMap<Address, string>; perHour: ReadonlyMap<Address, string> };

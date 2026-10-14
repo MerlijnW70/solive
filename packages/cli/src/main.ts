@@ -12,11 +12,14 @@ import { JudgeInterrupted } from "./judge.js";
 import { printableLines, redactUrl, render, renderText } from "./render.js";
 import { expandHome, withSettings } from "./wallet.js";
 import { WALLET_NOTICE } from "./agent/wallet.js";
+import { EXIT_ALERTED } from "./monitor-args.js";
+import { monitor, writeBaseline } from "./monitor.js";
 
 export const EXIT_OK = 0;
 export const EXIT_FAILED = 1;
 export const EXIT_USAGE = 2;
 export const EXIT_PARTIAL = 3;
+export { EXIT_ALERTED } from "./monitor-args.js";
 export const KEYPAIR_UNREADABLE = "--keypair must name a readable JSON file holding a 64-byte keypair";
 export const KEYPAIR_EXPOSED = "--keypair names a file other users can read or change; restrict it with chmod 600";
 
@@ -50,6 +53,14 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
       const transport = withPriority(runtime.transport(command.url), command.priority);
       await follow(transport, runtime, command.limit, command.interval, show);
       return EXIT_OK;
+    }
+    if (command.name === "monitor") {
+      const transport = runtime.transport(command.url);
+      if (command.watch === null) {
+        show(await writeBaseline(command.baseline, runtime, transport));
+        return EXIT_OK;
+      }
+      return (await monitor(command.url, command.baseline, command.watch, runtime, transport, io)) > 0 ? EXIT_ALERTED : EXIT_OK;
     }
     if (command.name === "solve" && command.watch !== null) {
       await watchSolve(command, command.watch, runtime, show);

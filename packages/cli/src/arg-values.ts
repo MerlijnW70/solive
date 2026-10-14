@@ -4,6 +4,7 @@ import {
   ACCEPTS,
   GLOBAL_OPTIONS,
   type OPTIONS,
+  REPEATABLE,
   type StringKey,
   SUB_ACCEPTS,
   TOKEN_SIDES,
@@ -123,7 +124,7 @@ export function noRepeats(argv: readonly string[]): void {
       continue;
     }
     const name = arg.slice(2).split("=")[0] ?? "";
-    if (seen.has(name)) {
+    if (seen.has(name) && !REPEATABLE.has(name)) {
       throw new UsageError(`--${name} is given more than once`);
     }
     seen.add(name);

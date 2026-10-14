@@ -52,6 +52,7 @@ import {
 import { createTerms, mandate, terms } from "./order-builders.js";
 import { USAGE } from "./arg-usage.js";
 import { sandboxOf } from "./sandbox.js";
+import { monitorOf } from "./monitor-args.js";
 import type { Command, Env } from "./command-types.js";
 import { DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST } from "@intent-engine/solver";
 
@@ -394,6 +395,9 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
     case "solver-table":
       noSub(sub);
       return { name: "solver-table", ...remote, solver: key(values, "solver"), mints: mintList(required(values, "mints")) };
+    case "monitor":
+      noSub(sub);
+      return monitorOf(remote, values);
     case "crank":
       noSub(sub);
       return {
