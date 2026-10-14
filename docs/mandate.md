@@ -47,6 +47,8 @@ intent-engine mandate revoke --agent $(solana-keygen pubkey ~/solive-agent.json)
 
 Revoking lowers the engine's allowance by the unused budget in one transaction, then cancels up to 6 of the agent's open intents in one transaction each and refunds their escrow. A cancel whose refund would fail, because your token account is missing or frozen, is listed under `skipped` and not sent. Any other intent it opened can no longer fill; cancel it to get its escrow back.
 
+A cancel that failed is listed under `failed`. A cancel that was sent but not confirmed is listed under `unknown` with its signature, since it may still land. If either list is present, the command exits with code 3; cancel those intents with `intent-engine cancel` once `intent-engine show` reports them still open.
+
 Revoking closes the mandate, so `mandate show` then reports `NotFound`.
 
 ## Next

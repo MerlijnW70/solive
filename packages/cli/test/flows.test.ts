@@ -4,6 +4,7 @@ import {
   getBase58Encoder,
   getBase64Encoder,
   getCompiledTransactionMessageDecoder,
+  getSignatureFromTransaction,
   getTransactionDecoder,
   type KeyPairSigner,
   lamports,
@@ -26,14 +27,14 @@ import {
   MANDATE_NONCE_BIT,
 } from "@intent-engine/core";
 import { COMPUTE_BUDGET_ADDRESS } from "@intent-engine/solver";
-import type { Transport } from "@intent-engine/client";
+import { BlockhashExpired, FailedOnChain, type Transport } from "@intent-engine/client";
 import { AUTHORITY_NEXT, follow, followGap, type Runtime } from "../src/commands.js";
-import { CANCELS_FAILED, execute, FlowRefused, NOT_SENT } from "../src/flows.js";
+import { CANCELS_FAILED, CANCELS_UNKNOWN, execute, FlowRefused, NOT_SENT } from "../src/flows.js";
 import { NOTHING_TO_CREATE, TREASURY_IS_PROGRAM, treasuryTooEmpty } from "../src/treasury.js";
 import { TREASURY_CREATE_NEEDS_MINTS } from "../src/args.js";
 import { renderText } from "../src/render.js";
 import { CLUSTERS, ENV_KEYPAIR, ENV_URL } from "../src/args.js";
-import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main, unreachable } from "../src/main.js";
+import { EXIT_FAILED, EXIT_OK, EXIT_PARTIAL, EXIT_USAGE, main, unreachable } from "../src/main.js";
 import { ata, balance, cli, enginePath, funded, h, NOW, runtime, send, transport, type World, world } from "./harness.js";
 
 type Json = Record<string, any>;
@@ -285,7 +286,7 @@ describe("command line flows", () => {
     expect(exists(address)).toBe(false);
   });
 
-  it("revoke reports the cancels that landed when one fails", async () => {
+  const twoAgentIntents = async () => {
     const agent = await funded();
     keys["agent.json"] = agent;
     const grant = [
@@ -332,19 +333,83 @@ describe("command line flows", () => {
     const preview = (await cli(["mandate", "revoke", "--keypair", "owner.json", "--agent", agent.address], keys)).json() as Json;
     const [first, second] = preview["cancelled"] as Address[];
     expect(new Set([first, second])).toEqual(new Set(opened));
-    h.sendFails = { error: new Error("the cancel was dropped"), landed: false, after: 1 };
+    return { agent, first: first as Address, second: second as Address };
+  };
+
+  const statusOf = (intent: Address) => {
+    const view = h.svm.getAccount(intent);
+    return view.exists ? getIntentDecoder().decode(view.data).status : undefined;
+  };
+
+  it("revoke exits non zero when a cancel failed", async () => {
+    const { agent, first, second } = await twoAgentIntents();
+    h.engineLog = [];
+    h.sendFails = { error: new FailedOnChain("the cancel failed on chain"), landed: false, after: 1 };
     const revoked = await cli(["mandate", "revoke", "--keypair", "owner.json", "--agent", agent.address, "--yes"], keys);
-    expect([revoked.code, revoked.err]).toEqual([EXIT_OK, ""]);
+    expect([revoked.code, revoked.err]).toEqual([EXIT_PARTIAL, ""]);
+    expect(EXIT_PARTIAL).not.toBe(EXIT_FAILED);
     const shown = revoked.json() as Json;
-    expect(shown).toMatchObject({ sent: true, failed: [{ intent: first, reason: "the cancel was dropped" }], next: CANCELS_FAILED });
+    expect(shown).toMatchObject({ sent: true, cancelled: [second], failed: [{ intent: first, reason: "the cancel failed on chain" }], next: CANCELS_FAILED });
+    expect(shown).not.toHaveProperty("unknown");
     expect(shown["signatures"]).toHaveLength(2);
     const [address] = await findMandatePda({ owner: w.owner.address, agent: agent.address, id: 0n });
     expect(exists(address)).toBe(false);
-    const statusOf = (intent: Address | undefined) => {
-      const view = intent === undefined ? null : h.svm.getAccount(intent);
-      return view !== null && view.exists ? getIntentDecoder().decode(view.data).status : undefined;
-    };
     expect([statusOf(first), statusOf(second)]).toEqual([IntentStatus.Open, IntentStatus.Cancelled]);
+  });
+
+  it("a cancel that may have landed is reported as unknown", async () => {
+    const { agent, first, second } = await twoAgentIntents();
+    h.engineLog = [];
+    h.sendFails = { error: new Error("timed out"), landed: false, after: 1 };
+    const revoked = await cli(["mandate", "revoke", "--keypair", "owner.json", "--agent", agent.address, "--yes"], keys);
+    expect(revoked.code).toBe(EXIT_PARTIAL);
+    const shown = revoked.json() as Json;
+    expect(shown).toMatchObject({ sent: true, cancelled: [second], unknown: [{ intent: first, signature: expect.any(String), reason: "timed out" }], next: CANCELS_UNKNOWN });
+    expect(shown).not.toHaveProperty("failed");
+    expect(shown["signatures"]).toHaveLength(2);
+    expect(statusOf(first)).toBe(IntentStatus.Open);
+  });
+
+  it("a cancel that landed despite an error is reported as cancelled", async () => {
+    const { agent, first, second } = await twoAgentIntents();
+    h.engineLog = [];
+    h.sendFails = { error: new BlockhashExpired("expired"), landed: true, after: 1 };
+    const revoked = await cli(["mandate", "revoke", "--keypair", "owner.json", "--agent", agent.address, "--yes"], keys);
+    expect(revoked.code).toBe(EXIT_OK);
+    const shown = revoked.json() as Json;
+    expect(new Set(shown["cancelled"])).toEqual(new Set([first, second]));
+    expect(shown).not.toHaveProperty("failed");
+    expect(shown).not.toHaveProperty("unknown");
+    expect(shown["signatures"]).toHaveLength(3);
+    expect([statusOf(first), statusOf(second)]).toEqual([IntentStatus.Cancelled, IntentStatus.Cancelled]);
+  });
+
+  it("a cancel found failed in the intent's history is reported as failed", async () => {
+    const { agent, first } = await twoAgentIntents();
+    const unsigned = getTransactionDecoder();
+    h.engineLog = [];
+    const realSend = transport.sendWire;
+    let dropped = "";
+    h.sendFails = null;
+    let sends = 0;
+    transport.sendWire = async (wire, latest) => {
+      sends += 1;
+      if (sends === 2) {
+        dropped = getSignatureFromTransaction(unsigned.decode(getBase64Encoder().encode(wire)));
+        h.engineLog = [{ signature: dropped, slot: 9n, blockTime: null, failed: true, emitted: [] }];
+        throw new Error("timed out");
+      }
+      return realSend(wire, latest);
+    };
+    try {
+      const revoked = await cli(["mandate", "revoke", "--keypair", "owner.json", "--agent", agent.address, "--yes"], keys);
+      expect(revoked.code).toBe(EXIT_PARTIAL);
+      expect(revoked.json()).toMatchObject({ failed: [{ intent: first, reason: "timed out" }], next: CANCELS_FAILED });
+      expect(dropped).not.toBe("");
+    } finally {
+      transport.sendWire = realSend;
+      h.engineLog = [];
+    }
   });
 
   it("signs an intent offline into a file and relays it from that file", async () => {

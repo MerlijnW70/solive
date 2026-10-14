@@ -7,6 +7,7 @@ import {
   type Instruction,
   getPublicKeyFromAddress,
   type SignatureBytes,
+  type TransactionSigner,
   verifySignature,
 } from "@solana/kit";
 import {
@@ -23,9 +24,13 @@ import {
   getIntentDecoder,
   type Intent,
   type IntentParams,
+  isMemoUrl,
+  Kind,
+  MEMO_URL_RULE,
   partnerOf,
   type SignedIntentFields,
   signedIntentMessage,
+  specMemo,
   validate,
 } from "@intent-engine/core";
 import { define } from "./actions.js";
@@ -44,6 +49,7 @@ import {
   initUserIfMissing,
   loadConfig,
   loadUser,
+  memoInstruction,
   mintOf,
   tokenAccountIfMissing,
   type Transport,
@@ -52,7 +58,7 @@ import { admitRelay, type Relay, refuseCostlyTerms, refuseLongRelay } from "./re
 import { type Call, claim, claimedBy, enter } from "./claims.js";
 import { type Order, orderSchema, paramsOf, partnerSchema, preparedSchema, preparedView } from "./shapes.js";
 import { tokenNames } from "../tokens.js";
-import { account, amount, integer, list, nullable, object, optional, text, time } from "./schema.js";
+import { account, amount, integer, InvalidInput, list, nullable, object, optional, text, time } from "./schema.js";
 
 export const DEFAULT_SUBMIT_WITHIN = 60 * 60;
 export const MAX_SUBMIT_WITHIN = 24 * 60 * 60;
@@ -69,6 +75,9 @@ const signedTerms = {
   epoch: amount("the owner's signing epoch the signature is bound to"),
   relayer_fee: amount("raw input units the owner pays, from the same allowance, to whoever submits the signature"),
   partner: optional(partnerSchema),
+  spec_url: optional(
+    text(`where the acceptance spec is published, ${MEMO_URL_RULE}; the relayer records it in a memo it signs with the create. It is not part of the owner's signature`),
+  ),
 };
 
 type SignedTerms = {
@@ -82,7 +91,28 @@ type SignedTerms = {
   epoch: bigint;
   relayer_fee: bigint;
   partner?: { account: Address; bps: number };
+  spec_url?: string;
 };
+
+export const SPEC_URL_UNSIGNED = `the spec url is not part of what the owner signs: the relayer publishes it in a memo it signs with the create, and a relayer could leave it out or change it; ${tool("find_jobs")} shows the url that was published`;
+
+export const publishesLine = (url: string) => `Publishes: the acceptance spec's url ${url}, in a memo the relayer signs`;
+
+function publishedUrl(params: IntentParams, url: string | undefined): string | undefined {
+  if (url === undefined) {
+    return undefined;
+  }
+  if (params.kind !== Kind.AttestedResult || params.specHash.every((b) => b === 0)) {
+    throw new InvalidInput([{ path: "spec_url", message: "needs an attested order with spec_hash" }]);
+  }
+  if (!isMemoUrl(url)) {
+    throw new InvalidInput([{ path: "spec_url", message: `must be ${MEMO_URL_RULE}` }]);
+  }
+  return url;
+}
+
+const published = (signer: TransactionSigner, url: string | undefined): Instruction[] =>
+  url === undefined ? [] : [memoInstruction(signer, specMemo(url))];
 
 async function fieldsOf(transport: Transport, t: SignedTerms, params: IntentParams, outputTokenProgram: Address) {
   const { config } = await loadConfig(transport);
@@ -151,7 +181,10 @@ async function relayFits(transport: Transport, relay: Relay, instructions: reado
   return bytesFit(await transactionSize(transport, budgeted, relay.signer.address));
 }
 
-const preparedFits = (prepared: Prepared): boolean => bytesFit(getBase64Encoder().encode(prepared.transaction).length);
+export const SPEC_URL_TOO_LONG =
+  "this server's relayer cannot fit the spec url's memo with these signed terms in one Solana transaction; give a shorter spec_url or leave it out";
+
+const preparedFits =(prepared: Prepared): boolean => bytesFit(getBase64Encoder().encode(prepared.transaction).length);
 
 function offeredFee(floor: bigint, offered: bigint | undefined): bigint {
   if (offered === undefined) {
@@ -181,6 +214,9 @@ export const prepareSignedIntent = define({
     relayer_fee: optional(
       amount("raw input units offered to whoever submits; default and minimum is this server's relayer fee for the input token"),
     ),
+    spec_url: optional(
+      text(`where the acceptance spec of an attested order with spec_hash is published, ${MEMO_URL_RULE}; passed on in submit for the relayer to record in a memo it signs with the create, so workers find it. It is not part of what the owner signs`),
+    ),
   }),
   output: object({
     ...termsOutput,
@@ -193,6 +229,7 @@ export const prepareSignedIntent = define({
     const now = await chainTime(transport);
     const expiresAt = expiryOf(input, now);
     const params = validate(paramsOf(input.order));
+    const specUrl = publishedUrl(params, input.spec_url);
     if (relay !== undefined) {
       refuseLongRelay(relay, expiresAt, now);
       const { config } = await loadConfig(transport);
@@ -214,6 +251,7 @@ export const prepareSignedIntent = define({
       epoch: user?.epoch ?? 0n,
       relayer_fee: offeredFee(relay === undefined ? 0n : relayFloor(relay, input.input_mint), input.relayer_fee),
       ...(input.partner === undefined ? {} : { partner: input.partner }),
+      ...(specUrl === undefined ? {} : { spec_url: specUrl }),
     };
     claim(claims, call, input.owner, terms.nonce, terms.submit_by, now);
     const { config, inputToken, fields } = await fieldsOf(transport, terms, params, outputToken.tokenProgram);
@@ -227,8 +265,9 @@ export const prepareSignedIntent = define({
         input: inputToken.tokenProgram,
         output: outputToken.tokenProgram,
       });
-      if (!(await relayFits(transport, relay, [placeholder, create]))) {
-        throw new AgentRefusal("RelayTooLarge", RELAY_TOO_LARGE);
+      if (!(await relayFits(transport, relay, [placeholder, create, ...published(relay.signer, specUrl)]))) {
+        const memoOnly = specUrl !== undefined && (await relayFits(transport, relay, [placeholder, create]));
+        throw new AgentRefusal("RelayTooLarge", memoOnly ? SPEC_URL_TOO_LONG : RELAY_TOO_LARGE);
       }
     }
     const description = await describeSignedIntent(fields, {
@@ -272,6 +311,7 @@ export const prepareSignedIntent = define({
         terms.relayer_fee === 0n
           ? `Cost to you: no relayer fee; only ${setupFee} lamports of SOL for the setup transaction's network fee, once`
           : `Cost to you: ${formatAmount(terms.relayer_fee, inputToken.decimals)} of ${input.input_mint} to the relayer, plus ${setupFee} lamports of SOL for the setup transaction's network fee, once`,
+        ...(specUrl === undefined ? [] : [publishesLine(specUrl)]),
         ...disclosed.lines,
       ],
       warnings: [
@@ -279,6 +319,7 @@ export const prepareSignedIntent = define({
           ...warningsOf(params, expiresAt, now, inputToken.scaled || outputToken.scaled),
           ...description.warnings,
           ...disclosed.warnings,
+          ...(specUrl === undefined ? [] : [SPEC_URL_UNSIGNED]),
         ]),
       ],
       message: getBase64Decoder().decode(await signedIntentMessage(fields)),
@@ -293,7 +334,7 @@ export const submitSignedIntent = define({
   name: tool("submit_signed_intent"),
   title: "Submit a signed intent",
   description:
-    `Relay an owner's signed intent: the relayer key this server was started with (--relayer) pays the fee and creates the intent on chain, within the relayer's limits: accepted input tokens and their minimum fee, lamport cost per intent and per hour, expiry, transaction size and intents per owner per hour. Pass the submit object from ${tool("prepare_signed_intent")} unchanged plus the owner's base58 signature of its message. Calling again after success returns the same intent without sending anything.`,
+    `Relay an owner's signed intent: the relayer key this server was started with (--relayer) pays the fee and creates the intent on chain, within the relayer's limits: accepted input tokens and their minimum fee, lamport cost per intent and per hour, expiry, transaction size and intents per owner per hour. Pass the submit object from ${tool("prepare_signed_intent")} unchanged plus the owner's base58 signature of its message; ${tool("preview_signed_intent")} checks the same input first without sending. When submit carries a spec_url, the relayer also records it in a memo it signs with the create, so ${tool("find_jobs")} lists it; that url is not part of the owner's signature. Calling again after success returns the same intent without sending anything.`,
   effect: "submit",
   input: object({ ...signedTerms, signature: text("the owner's base58 Ed25519 signature of the message") }),
   output: object({ intent: account(), signature: nullable(text("the relayed transaction's signature; null if it already existed")) }),
@@ -312,6 +353,7 @@ export const submitSignedIntent = define({
 
 async function relaySigned(transport: Transport, relay: Relay, input: SignedTerms & { signature: string }, call: Call) {
   const params = validate(paramsOf(input.order));
+  const specUrl = publishedUrl(params, input.spec_url);
   const outputToken = await mintOf(transport, input.output_mint);
   const { config, inputToken, fields } = await fieldsOf(transport, input, params, outputToken.tokenProgram);
   const [intent] = await findIntentPda({ owner: input.owner, nonce: input.nonce });
@@ -353,6 +395,7 @@ async function relaySigned(transport: Transport, relay: Relay, input: SignedTerm
   const relayed = [
     buildEd25519Instruction({ publicKey: input.owner, signature, message }),
     await relayCreate(input, relay, config, params, { input: inputToken.tokenProgram, output: outputToken.tokenProgram }),
+    ...published(relay.signer, specUrl),
   ];
   const now = await chainTime(transport);
   let prepared = await prepare(transport, [...feeAccount.create, ...relayed], relay.signer.address);
@@ -381,7 +424,7 @@ async function relaySigned(transport: Transport, relay: Relay, input: SignedTerm
     refuseRepricing(admitted, prepared.priorityLamports);
   }
   if (!preparedFits(prepared)) {
-    throw new AgentRefusal("RelayTooLarge", RELAY_TOO_LARGE);
+    throw new AgentRefusal("RelayTooLarge", specUrl === undefined ? RELAY_TOO_LARGE : SPEC_URL_TOO_LONG);
   }
   return { intent, signature: await paying(paid, transport.send(prepared.instructions, relay.signer)) };
 }
@@ -423,6 +466,7 @@ export const previewSignedIntent = define({
   }),
   run: async ({ transport }, input) => {
     const params = validate(paramsOf(input.order));
+    const specUrl = publishedUrl(params, input.spec_url);
     const outputToken = await mintOf(transport, input.output_mint);
     const { config, inputToken, fields } = await fieldsOf(transport, input, params, outputToken.tokenProgram);
     const message = await signedIntentMessage(fields);
@@ -448,8 +492,9 @@ export const previewSignedIntent = define({
       summary: [
         ...description.lines,
         `Relaying costs you ${createCost(config)} lamports in create fee, crank bounty, rent and signature fee, plus any priority fee; you receive ${formatAmount(input.relayer_fee, inputToken.decimals)} of ${input.input_mint}`,
+        ...(specUrl === undefined ? [] : [publishesLine(specUrl)]),
       ],
-      warnings: description.warnings,
+      warnings: [...description.warnings, ...(specUrl === undefined ? [] : [SPEC_URL_UNSIGNED])],
     };
   },
 });

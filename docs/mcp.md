@@ -40,6 +40,17 @@ To let the agent create intents without a wallet signature each time:
 
 The server then signs and pays with the agent key through `solive_agent_create`, only for the listed owners.
 
+## 4. Deliver work to a proof escrow
+
+Without `--wallet`, a worker's own wallet signs the delivery:
+
+1. `solive_find_jobs` lists open proof escrows with their spec hash and spec url.
+2. `solive_prepare_deliver` takes the worker's address, the escrow, the work's sha256 and its url, and returns an unsigned transaction that announces the work to the escrow's attestor. The worker's wallet signs and sends it.
+3. The attestor lists the announced work with `solive_check_delivery` and releases the escrow to the earliest announcer of the hash that passed, as [the judge guide](judge.md) shows.
+4. `solive_get_receipt` shows the owner and the worker whom the release paid and which sha256 it recorded.
+
+An owner who signs a proof escrow off-chain passes `spec_url` to `solive_prepare_signed_intent`. A relayer checks the signed terms with `solive_preview_signed_intent`, and `solive_submit_signed_intent` publishes the url in a memo the relayer signs. The url is not part of the owner's signature.
+
 ## Reference
 
 - [MCP tools](reference/mcp-tools.md): every tool, its parameters and what it does

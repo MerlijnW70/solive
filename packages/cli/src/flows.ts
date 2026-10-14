@@ -5,6 +5,7 @@ import {
   getBase58Decoder,
   getBase64Encoder,
   getBase64EncodedWireTransaction,
+  getSignatureFromTransaction,
   getTransactionDecoder,
   type KeyPairSigner,
   partiallySignTransaction,
@@ -16,9 +17,11 @@ import {
   findAssociatedTokenAddress,
   findDelegatePda,
   formatAmount,
+  getIntentDecoder,
+  IntentStatus,
   parseAmount,
 } from "@intent-engine/core";
-import { createdAccount, mintOf, type Transport } from "@intent-engine/client";
+import { createdAccount, FailedOnChain, mintOf, type Transport, unmemoized } from "@intent-engine/client";
 import { type AgentContext, type AnyAction, invoke } from "./agent/actions.js";
 import { WARN_REPLACES_DELEGATE } from "./agent/owner.js";
 import { prepare } from "./agent/prepare.js";
@@ -33,6 +36,9 @@ const FOLLOWING_NAMES = "cancelled";
 
 export const CANCELS_FAILED =
   "the revoke landed and signatures lists every transaction that did; the intents in failed are still open, so cancel each with intent-engine cancel";
+
+export const CANCELS_UNKNOWN =
+  "the cancels in unknown were sent but not confirmed and may still land; look each signature up, or read the intent with intent-engine show, before cancelling it again";
 
 export const NOT_SENT = "nothing was sent; check the summary and pass --yes to sign and send";
 
@@ -89,15 +95,44 @@ export async function inRaw<T>(transport: Transport, input: T, inputMint: Addres
   return scaled(input, decimals) as T;
 }
 
-export async function execute(transport: Transport, view: PreparedView, signer: KeyPairSigner): Promise<string> {
+async function signedView(view: PreparedView, signer: KeyPairSigner) {
   const others = view.signers.filter((s) => s !== signer.address);
   if (others.length > 0) {
     throw new FlowRefused(`this transaction also needs signatures from ${others.join(", ")}`);
   }
   const tx = getTransactionDecoder().decode(getBase64Encoder().encode(view.transaction));
   const signed = await partiallySignTransaction([signer.keyPair], tx);
-  const latest = { blockhash: "" as Blockhash, lastValidBlockHeight: BigInt(view.last_valid_block_height) };
-  return transport.sendWire(getBase64EncodedWireTransaction(signed), latest);
+  return {
+    wire: getBase64EncodedWireTransaction(signed),
+    signature: getSignatureFromTransaction(signed) as string,
+    latest: { blockhash: "" as Blockhash, lastValidBlockHeight: BigInt(view.last_valid_block_height) },
+  };
+}
+
+export async function execute(transport: Transport, view: PreparedView, signer: KeyPairSigner): Promise<string> {
+  const { wire, latest } = await signedView(view, signer);
+  return transport.sendWire(wire, latest);
+}
+
+export const STATUS_SCAN = 10;
+
+type Landing = "landed" | "failed" | "unknown";
+
+export async function landingOf(transport: Transport, signature: string, intent: string | null): Promise<Landing> {
+  if (intent === null) {
+    return "unknown";
+  }
+  try {
+    const fresh = unmemoized(transport);
+    const seen = (await fresh.engineTransactions(STATUS_SCAN, intent as Address)).find((tx) => tx.signature === signature);
+    if (seen !== undefined) {
+      return seen.failed ? "failed" : "landed";
+    }
+    const view = await fresh.getAccount(intent as Address);
+    return view !== null && getIntentDecoder().decode(view.data).status === IntentStatus.Cancelled ? "landed" : "unknown";
+  } catch {
+    return "unknown";
+  }
 }
 
 export async function ask(action: AnyAction, ctx: AgentContext, input: object): Promise<Record<string, unknown>> {
@@ -132,14 +167,43 @@ export async function finish(
     signatures.push(await execute(transport, view, signer));
   }
   const failed = [];
+  const unknown = [];
+  const landed = [];
+  const reasonOf = (error: unknown) => printableLines(error instanceof Error ? error.message : String(error));
   for (const [i, view] of following.entries()) {
+    const intent = named[i] ?? null;
+    let sending;
     try {
-      signatures.push(await execute(transport, view, signer));
+      sending = await signedView(view, signer);
     } catch (error) {
-      failed.push({ intent: named[i] ?? null, reason: printableLines(error instanceof Error ? error.message : String(error)) });
+      failed.push({ intent, reason: reasonOf(error) });
+      continue;
+    }
+    try {
+      signatures.push(await transport.sendWire(sending.wire, sending.latest));
+      landed.push(intent);
+    } catch (error) {
+      const landing = error instanceof FailedOnChain ? "failed" : await landingOf(transport, sending.signature, intent);
+      if (landing === "landed") {
+        signatures.push(sending.signature);
+        landed.push(intent);
+      } else if (landing === "failed") {
+        failed.push({ intent, reason: reasonOf(error) });
+      } else {
+        unknown.push({ intent, signature: sending.signature, reason: reasonOf(error) });
+      }
     }
   }
-  return { ...shown, sent: true, signatures, ...(failed.length === 0 ? {} : { failed, next: CANCELS_FAILED }) };
+  const next = [...(failed.length === 0 ? [] : [CANCELS_FAILED]), ...(unknown.length === 0 ? [] : [CANCELS_UNKNOWN])];
+  return {
+    ...shown,
+    ...(following.length === 0 ? {} : { [FOLLOWING_NAMES]: landed.filter((intent) => intent !== null) }),
+    sent: true,
+    signatures,
+    ...(failed.length === 0 ? {} : { failed }),
+    ...(unknown.length === 0 ? {} : { unknown }),
+    ...(next.length === 0 ? {} : { next: next.join("; ") }),
+  };
 }
 
 export async function perform(

@@ -6,6 +6,7 @@ import {
   getBase64Decoder,
   getBase64Encoder,
   getTransactionDecoder,
+  type Instruction,
   type KeyPairSigner,
   lamports,
   partiallySignTransaction,
@@ -42,6 +43,7 @@ import {
   kindBit,
   Kind,
   formatAmount,
+  specMemo,
   splitFees,
   U64_MAX,
   WARN_ATTESTOR,
@@ -52,6 +54,7 @@ import {
   EXTENDED_MINT_TYPE,
   EXTENDED_TYPE_OFFSET,
   EXTENSIONS_OFFSET,
+  MEMO_PROGRAM_ADDRESS,
   MINT_BASE_SIZE,
   mintOf,
   scalesDisplay,
@@ -68,7 +71,7 @@ import { amount, InvalidInput, object } from "../src/agent/schema.js";
 import { OWNER_ACCOUNT_MISSING } from "../src/agent/settle.js";
 import { costlyFunding, FUNDING_RENT } from "../src/crank.js";
 import { SETTLED_LINE } from "../src/agent/shapes.js";
-import { DEFAULT_SUBMIT_WITHIN, RELAY_TOO_LARGE } from "../src/agent/signed.js";
+import { DEFAULT_SUBMIT_WITHIN, publishesLine, RELAY_TOO_LARGE, SPEC_URL_TOO_LONG, SPEC_URL_UNSIGNED } from "../src/agent/signed.js";
 import { WARN_REPLACES_DELEGATE } from "../src/agent/owner.js";
 import { EXIT_OK } from "../src/main.js";
 import { ata, balance, cli, ESCROW, FEE_BPS, funded, h, NOW, send, setNow, transport, type World, world } from "./harness.js";
@@ -167,8 +170,12 @@ describe("agent server against the deployed engine", () => {
       "solive_prepare_cancel",
       "solive_find_crank_work",
       "solive_find_jobs",
+      "solive_prepare_deliver",
+      "solive_check_delivery",
+      "solive_get_receipt",
       "solive_prepare_crank",
       "solive_prepare_signed_intent",
+      "solive_preview_signed_intent",
       "solive_submit_signed_intent",
       "solive_prepare_mandate",
       "solive_get_mandate",
@@ -198,7 +205,11 @@ describe("agent server against the deployed engine", () => {
       "read",
       "read",
       "prepare",
+      "read",
+      "read",
       "prepare",
+      "prepare",
+      "read",
       "submit",
       "prepare",
       "read",
@@ -913,6 +924,61 @@ describe("agent server against the deployed engine", () => {
     await send(owner, [getApproveInstruction({ source: ownerInput, delegate: other.address, owner, amount: 9n })]);
     expect(((await holdings([w.inputMint]))["tokens"] as Json[])[0]).toMatchObject({ engine_allowance: "0" });
     expect(await fail(relaying, "get_balances", { owner: owner.address, mints: [] })).toMatchObject({ code: "InvalidInput" });
+  });
+
+  it("preview signed intent is a tool", async () => {
+    const owner = await funded();
+    await ata(w.authority, owner.address, w.inputMint, 1_000n);
+    const { tools } = await client.listTools();
+    const listed = tools.find((t) => t.name === "solive_preview_signed_intent");
+    expect(listed?.annotations).toMatchObject({ readOnlyHint: true, destructiveHint: false });
+    const prepared = await ok(client, "prepare_signed_intent", swap({ owner: owner.address }));
+    await execute(prepared["setup"], owner);
+    const signature = getBase58Decoder().decode(await signBytes(owner.keyPair.privateKey, getBase64Encoder().encode(prepared["message"])));
+    const preview = await ok(client, "preview_signed_intent", { ...prepared["submit"], signature });
+    expect(preview).toMatchObject({ intent: prepared["intent"], exists: 0, relayer_fee: "0", warnings: [] });
+    expect(preview["summary"]).toContain(`Digest (must match your wallet): ${prepared["digest"]}`);
+    expect(exists(prepared["intent"])).toBe(false);
+    const other = await funded();
+    const forged = getBase58Decoder().decode(await signBytes(other.keyPair.privateKey, getBase64Encoder().encode(prepared["message"])));
+    expect(await fail(client, "preview_signed_intent", { ...prepared["submit"], signature: forged })).toMatchObject({ code: "SignatureInvalid" });
+  });
+
+  it("a relayed proof escrow publishes its spec url", async () => {
+    const relayer = await funded();
+    const sent: Instruction[][] = [];
+    h.through = { ...transport, send: async (instructions, payer) => {
+      sent.push([...instructions]);
+      return transport.send(instructions, payer);
+    } };
+    const relaying = await connect(relayer, free());
+    h.through = null;
+    const owner = await funded();
+    await ata(w.authority, owner.address, w.inputMint, 1_000n);
+    const judge = (await generateKeyPairSigner()).address;
+    const specUrl = "https://a.io/spec.md";
+    const order = { kind: "attested", amount_in: ESCROW.toString(), min_result: "1", max_result: "1", attestor: judge, spec_hash: "5c".repeat(32) };
+    const terms = { ...swap({ owner: owner.address, order }), spec_url: specUrl };
+    expect(await fail(relaying, "prepare_signed_intent", { ...terms, order: swap()["order"] })).toMatchObject({ code: "InvalidInput" });
+    expect(await fail(relaying, "prepare_signed_intent", { ...terms, spec_url: "ftp://example.org/spec" })).toMatchObject({ code: "InvalidInput" });
+    expect(await fail(relaying, "prepare_signed_intent", { ...terms, spec_url: "https://example.org/jobs/spec.md" })).toEqual({ code: "RelayTooLarge", retryable: false, hint: SPEC_URL_TOO_LONG });
+    const prepared = await ok(relaying, "prepare_signed_intent", terms);
+    expect(prepared["submit"]).toMatchObject({ spec_url: specUrl });
+    expect(prepared["summary"]).toContain(publishesLine(specUrl));
+    expect(prepared["warnings"]).toContain(SPEC_URL_UNSIGNED);
+    await execute(prepared["setup"], owner);
+    const signature = getBase58Decoder().decode(await signBytes(owner.keyPair.privateKey, getBase64Encoder().encode(prepared["message"])));
+    const signed = { ...prepared["submit"], signature };
+    const preview = await ok(relaying, "preview_signed_intent", signed);
+    expect(preview["summary"]).toContain(publishesLine(specUrl));
+    expect(preview["warnings"]).toContain(SPEC_URL_UNSIGNED);
+    expect(await ok(relaying, "submit_signed_intent", signed)).toMatchObject({ intent: prepared["intent"], signature: expect.any(String) });
+    const memos = sent.flat().filter((ix) => ix.programAddress === MEMO_PROGRAM_ADDRESS);
+    expect(memos.map((ix) => new TextDecoder().decode(Uint8Array.from(ix.data ?? [])))).toEqual([specMemo(specUrl)]);
+    expect(memos[0]?.accounts?.map((a) => a.address)).toEqual([relayer.address]);
+    expect(exists(prepared["intent"])).toBe(true);
+    const { spec_url: _, ...unpublished } = signed;
+    expect(await ok(relaying, "preview_signed_intent", unpublished)).toMatchObject({ exists: 1 });
   });
 
   it("signs with a default submit window, carries a partner and refuses an allowance that would overflow", async () => {

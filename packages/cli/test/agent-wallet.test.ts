@@ -1,4 +1,16 @@
-import { type Address, generateKeyPairSigner, getBase16Decoder, getBase16Encoder, lamports, none, signBytes } from "@solana/kit";
+import {
+  type Address,
+  generateKeyPairSigner,
+  getBase16Decoder,
+  getBase16Encoder,
+  getBase64Encoder,
+  getTransactionDecoder,
+  lamports,
+  none,
+  partiallySignTransaction,
+  signBytes,
+} from "@solana/kit";
+import { FailedTransactionMetadata } from "litesvm";
 const bytesOf = (hex: string) => Uint8Array.from(getBase16Encoder().encode(hex));
 import { AccountState, getMintEncoder, getMintSize, getTokenEncoder, getTokenSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
@@ -1079,6 +1091,118 @@ describe("the wallet server", () => {
     });
     h.engineLog = [{ ...release, memos: [`${RELEASE_MEMO_PREFIX}${work}`] }];
     expect(await ok(client, "wallet_receipt", { owner, nonce: "8" })).toMatchObject({ signature: releaseSignature, delivered_sha256: work });
+  });
+
+  it("plain mode checks a delivery", async () => {
+    const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
+    h.watched.push(wallet);
+    h.engineLog = [];
+    const judge = (await generateKeyPairSigner()).address;
+    const specHash = "5c".repeat(32);
+    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: judge, spec_hash: specHash, send: true });
+    const unproven = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.01", attestor: judge, send: true });
+    const intent = escrow["intent"] as Address;
+    const plain = await connect(["mcp", "--url", "devnet"]);
+    const { tools } = await plain.listTools();
+    expect(tools.map((t) => t.name)).toEqual(expect.arrayContaining(["solive_check_delivery", "solive_get_receipt", "solive_prepare_deliver"]));
+    expect(tools.map((t) => t.name)).not.toContain("solive_wallet_check_delivery");
+    const worker = (await generateKeyPairSigner()).address;
+    const copier = (await generateKeyPairSigner()).address;
+    const work = "e7".repeat(32);
+    const at = (signature: string, slot: bigint, url: string, feePayer: Address) => ({
+      signature,
+      slot,
+      blockTime: null,
+      failed: false,
+      emitted: [],
+      memos: [deliveryMemo({ intent, sha256: work, url })],
+      feePayer,
+    });
+    h.engineLog = [at("copy", 9n, "https://example.org/stolen", copier), at("first", 5n, "https://example.org/work", worker), creation(intent)];
+    const listed = {
+      intent,
+      owner: wallet,
+      nonce: escrow["nonce"],
+      spec_hash: specHash,
+      open: true,
+      complete: true,
+      deliveries: [{ sha256: work, worker, url: "https://example.org/work", signature: "first", copies: 1 }],
+    };
+    expect(await ok(plain, "check_delivery", { intent })).toEqual(listed);
+    expect((await call(plain, "check_delivery", { intent: unproven["intent"] })).value).toMatchObject({ code: "NotAProof" });
+    expect((await call(plain, "check_delivery", { intent: worker })).value).toMatchObject({ code: "NotFound" });
+    expect((await call(client, "wallet_check_delivery", { intent })).value).toMatchObject({ code: "Unauthorized", hint: notAttestor(judge) });
+    h.engineLog = [];
+  });
+
+  it("plain mode reads a receipt", async () => {
+    const plain = await connect(["mcp", "--url", "devnet"]);
+    const owner = (await generateKeyPairSigner()).address;
+    const [intent] = await findIntentPda({ owner, nonce: 7n });
+    const payee = await findAssociatedTokenAddress({ owner: (await generateKeyPairSigner()).address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    h.engineLog = [];
+    expect(await ok(plain, "get_receipt", { owner, nonce: "7" })).toEqual({ intent, released: false, next: NOT_RELEASED });
+    expect((await call(plain, "get_receipt", { nonce: "7" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "owner" }] });
+    const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
+    const { fee, net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);
+    const attested = getIntentAttestedEventEncoder().encode({
+      intent,
+      owner,
+      solver: owner,
+      payee,
+      attestor: owner,
+      amountIn: LAMPORTS_PER_SOL / 20n,
+      result: 1n,
+      fee,
+      net,
+      filled: LAMPORTS_PER_SOL / 20n,
+      remaining: 0n,
+      partnerFee: 0n,
+    });
+    const work = "c".repeat(64);
+    h.engineLog = [{ signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [tag(attested)], memos: [`${RELEASE_MEMO_PREFIX}${work}`] }];
+    const receipt = { intent, released: true, payee, paid: `${net} raw units`, attestor: owner, result: "1", signature: "release", delivered_sha256: work, matches: true };
+    expect(await ok(plain, "get_receipt", { owner, nonce: "7", sha256: work })).toEqual(receipt);
+    await ok(client, "wallet_setup");
+    expect(await ok(client, "wallet_receipt", { owner, nonce: "7", sha256: work })).toEqual(receipt);
+    h.engineLog = [];
+  });
+
+  it("prepare deliver returns an unsigned delivery", async () => {
+    const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
+    h.watched.push(wallet);
+    h.engineLog = [];
+    const judge = (await generateKeyPairSigner()).address;
+    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: judge, spec_hash: "5c".repeat(32), send: true });
+    const unproven = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.01", attestor: judge, send: true });
+    const intent = escrow["intent"] as Address;
+    const plain = await connect(["mcp", "--url", "devnet"]);
+    const worker = await funded();
+    const work = "e7".repeat(32);
+    const delivery = { worker: worker.address, intent, sha256: work.toUpperCase(), url: "https://example.org/work.tar" };
+    const prepared = await ok(plain, "prepare_deliver", delivery);
+    expect(prepared).toMatchObject({
+      intent,
+      attestor: judge,
+      sha256: work,
+      url: delivery.url,
+      summary: [
+        `Announces: the work with sha256 ${work} at ${delivery.url}, for the proof escrow ${intent}`,
+        `Notifies: its attestor ${judge}, with a transfer of 0 lamports from ${worker.address}`,
+        "Costs: the transaction fee; no tokens move",
+      ],
+      warnings: [],
+    });
+    const view = prepared["prepared"] as { transaction: string; signers: string[] };
+    expect(view.signers).toEqual([worker.address]);
+    const wire = getTransactionDecoder().decode(getBase64Encoder().encode(view.transaction));
+    expect(Object.values(wire.signatures).every((signature) => signature === null)).toBe(true);
+    expect(Buffer.from(view.transaction, "base64").toString("latin1")).toContain(deliveryMemo({ intent, sha256: work, url: delivery.url }));
+    expect(h.svm.sendTransaction(await partiallySignTransaction([worker.keyPair], wire))).not.toBeInstanceOf(FailedTransactionMetadata);
+    expect((await call(plain, "prepare_deliver", { ...delivery, url: "ftp://example.org/x" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "url" }] });
+    expect((await call(plain, "prepare_deliver", { ...delivery, sha256: "xyz" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "sha256" }] });
+    expect((await call(plain, "prepare_deliver", { ...delivery, intent: unproven["intent"] })).value).toMatchObject({ code: "NotDeliverable" });
+    expect((await call(plain, "prepare_deliver", { intent, sha256: work, url: delivery.url })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "worker" }] });
   });
 
   it("escrows SOL off devnet only with a record mint it is told, since TEST is a devnet name", async () => {

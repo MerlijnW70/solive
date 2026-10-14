@@ -16,6 +16,7 @@ import { WALLET_NOTICE } from "./agent/wallet.js";
 export const EXIT_OK = 0;
 export const EXIT_FAILED = 1;
 export const EXIT_USAGE = 2;
+export const EXIT_PARTIAL = 3;
 export const KEYPAIR_UNREADABLE = "--keypair must name a readable JSON file holding a 64-byte keypair";
 export const KEYPAIR_EXPOSED = "--keypair names a file other users can read or change; restrict it with chmod 600";
 
@@ -56,6 +57,9 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
     const result = await run(command, runtime);
     if (result !== null) {
       show(result);
+    }
+    if (command.name === "flow" && command.flow === "mandate-revoke" && result !== null && ("failed" in result || "unknown" in result)) {
+      return EXIT_PARTIAL;
     }
     return command.name === "judge" && result !== null && "verdict" in result && result.verdict !== "pass" ? EXIT_FAILED : EXIT_OK;
   } catch (error) {
