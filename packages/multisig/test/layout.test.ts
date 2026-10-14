@@ -7,6 +7,7 @@ import {
   compileTransaction,
   createKeyPairSignerFromPrivateKeyBytes,
   createTransactionMessage,
+  getAddressDecoder,
   getAddressEncoder,
   getU64Encoder,
   type Instruction,
@@ -314,5 +315,17 @@ describe("squads layout", () => {
     expect(done.exists ? proposalCodec.decode(done.data, 8).status.__kind : null).toBe("Executed");
 
     expect(seen).toEqual(VECTORS);
+  });
+
+  it("a vault message holds at most the 255 accounts its u8 prefix counts", async () => {
+    const vault = (await signer(7)).address;
+    const keys = Array.from({ length: 255 }, (_, i) => getAddressDecoder().decode(new Uint8Array(32).fill(i + 1)));
+    const touching = (count: number): Instruction => ({
+      programAddress: SYSTEM_PROGRAM,
+      accounts: keys.slice(0, count).map((at) => ({ address: at, role: AccountRole.READONLY })),
+      data: new Uint8Array(),
+    });
+    expect(compileVaultMessage(vault, [touching(253)])[3]).toBe(255);
+    expect(() => compileVaultMessage(vault, [touching(254)])).toThrow("the proposal names 256 accounts, more than the 255 a vault transaction holds");
   });
 });

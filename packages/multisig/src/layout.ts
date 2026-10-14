@@ -36,10 +36,14 @@ export const DISCRIMINATORS = {
   proposalCreate: [220, 60, 73, 224, 30, 108, 79, 159],
   proposalApprove: [144, 37, 164, 136, 188, 216, 42, 248],
   vaultTransactionExecute: [194, 8, 161, 87, 153, 164, 25, 171],
+  proposalReject: [243, 62, 134, 156, 230, 106, 246, 135],
+  proposalCancelV2: [205, 41, 194, 61, 220, 139, 16, 247],
+  configTransactionExecute: [114, 146, 244, 189, 252, 140, 36, 40],
   Multisig: [224, 116, 121, 186, 68, 161, 79, 236],
   Proposal: [26, 94, 189, 187, 116, 136, 53, 33],
   VaultTransaction: [168, 250, 162, 100, 81, 14, 162, 207],
   ProgramConfig: [196, 210, 90, 231, 144, 149, 140, 63],
+  ConfigTransaction: [94, 8, 4, 35, 113, 139, 139, 112],
 } as const;
 
 export const PERMISSION = { initiate: 1, vote: 2, execute: 4 } as const;
@@ -87,6 +91,34 @@ export type VaultMessage = {
   accountKeys: Address[];
   instructions: { programIdIndex: number; accountIndexes: ReadonlyUint8Array; data: ReadonlyUint8Array }[];
   addressTableLookups: { accountKey: Address; writableIndexes: ReadonlyUint8Array; readonlyIndexes: ReadonlyUint8Array }[];
+};
+
+export type Period = { __kind: "OneTime" | "Day" | "Week" | "Month" };
+
+export type ConfigAction =
+  | { __kind: "AddMember"; newMember: Member }
+  | { __kind: "RemoveMember"; oldMember: Address }
+  | { __kind: "ChangeThreshold"; newThreshold: number }
+  | { __kind: "SetTimeLock"; newTimeLock: number }
+  | {
+      __kind: "AddSpendingLimit";
+      createKey: Address;
+      vaultIndex: number;
+      mint: Address;
+      amount: bigint;
+      period: Period;
+      members: Address[];
+      destinations: Address[];
+    }
+  | { __kind: "RemoveSpendingLimit"; spendingLimit: Address }
+  | { __kind: "SetRentCollector"; newRentCollector: Address | null };
+
+export type ConfigTransaction = {
+  multisig: Address;
+  creator: Address;
+  index: bigint;
+  bump: number;
+  actions: ConfigAction[];
 };
 
 export type VaultTransaction = {
@@ -143,6 +175,42 @@ export const proposalCodec: Codec<Proposal> = getStructCodec([
   ["approved", getArrayCodec(key)],
   ["rejected", getArrayCodec(key)],
   ["cancelled", getArrayCodec(key)],
+]);
+
+const periodCodec: Codec<Period> = getDiscriminatedUnionCodec([
+  ["OneTime", getStructCodec([])],
+  ["Day", getStructCodec([])],
+  ["Week", getStructCodec([])],
+  ["Month", getStructCodec([])],
+]);
+
+export const configActionCodec: Codec<ConfigAction> = getDiscriminatedUnionCodec([
+  ["AddMember", getStructCodec([["newMember", memberCodec]])],
+  ["RemoveMember", getStructCodec([["oldMember", key]])],
+  ["ChangeThreshold", getStructCodec([["newThreshold", getU16Codec()]])],
+  ["SetTimeLock", getStructCodec([["newTimeLock", getU32Codec()]])],
+  [
+    "AddSpendingLimit",
+    getStructCodec([
+      ["createKey", key],
+      ["vaultIndex", getU8Codec()],
+      ["mint", key],
+      ["amount", getU64Codec()],
+      ["period", periodCodec],
+      ["members", getArrayCodec(key)],
+      ["destinations", getArrayCodec(key)],
+    ]),
+  ],
+  ["RemoveSpendingLimit", getStructCodec([["spendingLimit", key]])],
+  ["SetRentCollector", getStructCodec([["newRentCollector", getNullableCodec(key)]])],
+]);
+
+export const configTransactionCodec: Codec<ConfigTransaction> = getStructCodec([
+  ["multisig", key],
+  ["creator", key],
+  ["index", getU64Codec()],
+  ["bump", getU8Codec()],
+  ["actions", getArrayCodec(configActionCodec)],
 ]);
 
 export const vaultMessageCodec: Codec<VaultMessage> = getStructCodec([
@@ -237,7 +305,7 @@ const proposalCreateArgs = getStructCodec([
 
 const proposalVoteArgs = getStructCodec([["memo", memo]]);
 
-type AccountName = "Multisig" | "Proposal" | "VaultTransaction" | "ProgramConfig";
+type AccountName = "Multisig" | "Proposal" | "VaultTransaction" | "ProgramConfig" | "ConfigTransaction";
 
 const discriminated = (discriminator: readonly number[], body: ReadonlyUint8Array): Uint8Array => {
   const out = new Uint8Array(discriminator.length + body.length);
@@ -312,6 +380,8 @@ export function multisigCreateV2(input: {
   );
 }
 
+export const MAX_ACCOUNT_KEYS = 255;
+
 export function compileVaultMessage(vault: Address, instructions: readonly Instruction[]): ReadonlyUint8Array {
   const metas = new Map<Address, { signer: boolean; writable: boolean }>();
   const entry = (at: Address) => {
@@ -332,8 +402,8 @@ export function compileVaultMessage(vault: Address, instructions: readonly Instr
   const pick = (signer: boolean, writable: boolean) => all.filter(([, m]) => m.signer === signer && m.writable === writable).map(([at]) => at);
   const groups = [pick(true, true), pick(true, false), pick(false, true), pick(false, false)] as const;
   const accountKeys = groups.flat();
-  if (accountKeys.length > 256) {
-    throw new Error(`the proposal names ${accountKeys.length} accounts, more than the 256 a vault transaction holds`);
+  if (accountKeys.length > MAX_ACCOUNT_KEYS) {
+    throw new Error(`the proposal names ${accountKeys.length} accounts, more than the ${MAX_ACCOUNT_KEYS} a vault transaction holds`);
   }
   const indexOf = (at: Address) => accountKeys.indexOf(at);
   return compactMessageCodec.encode({
@@ -392,6 +462,38 @@ export function proposalApprove(input: { multisig: Address; proposal: Address; m
   );
 }
 
+export function proposalReject(input: { multisig: Address; proposal: Address; member: Address }): Instruction {
+  return build(
+    "proposalReject",
+    [meta(input.multisig, AccountRole.READONLY), meta(input.member, AccountRole.WRITABLE_SIGNER), meta(input.proposal, AccountRole.WRITABLE)],
+    proposalVoteArgs.encode({ memo: null }),
+  );
+}
+
+export function proposalCancelV2(input: { multisig: Address; proposal: Address; member: Address }): Instruction {
+  return build(
+    "proposalCancelV2",
+    [
+      meta(input.multisig, AccountRole.READONLY),
+      meta(input.member, AccountRole.WRITABLE_SIGNER),
+      meta(input.proposal, AccountRole.WRITABLE),
+      meta(SYSTEM_PROGRAM, AccountRole.READONLY),
+    ],
+    proposalVoteArgs.encode({ memo: null }),
+  );
+}
+
+export function configTransactionExecute(input: { multisig: Address; proposal: Address; transaction: Address; member: Address }): Instruction {
+  return build("configTransactionExecute", [
+    meta(input.multisig, AccountRole.WRITABLE),
+    meta(input.member, AccountRole.READONLY_SIGNER),
+    meta(input.proposal, AccountRole.WRITABLE),
+    meta(input.transaction, AccountRole.READONLY),
+    meta(input.member, AccountRole.WRITABLE_SIGNER),
+    meta(SYSTEM_PROGRAM, AccountRole.READONLY),
+  ]);
+}
+
 export const isSignerIndex = (message: VaultMessage, index: number): boolean => index < message.numSigners;
 
 export function isStaticWritableIndex(message: VaultMessage, index: number): boolean {
@@ -420,9 +522,11 @@ export async function vaultTransactionExecute(input: {
   }
   const vault = await vaultPda(input.multisig, input.stored.vaultIndex);
   const ephemeral = await Promise.all(Array.from(input.stored.ephemeralSignerBumps, (_, at) => ephemeralSignerPda(input.transaction, at)));
-  const remaining = message.accountKeys.map((at, index) =>
-    meta(at, roleOf(isSignerIndex(message, index) && at !== vault && !ephemeral.includes(at), isStaticWritableIndex(message, index))),
-  );
+  const foreign = message.accountKeys.filter((at, index) => isSignerIndex(message, index) && at !== vault && !ephemeral.includes(at));
+  if (foreign.length > 0) {
+    throw new Error(`the vault transaction asks ${foreign.join(", ")} to sign, but only the vault and its ephemeral signers may`);
+  }
+  const remaining = message.accountKeys.map((at, index) => meta(at, roleOf(false, isStaticWritableIndex(message, index))));
   return build("vaultTransactionExecute", [
     meta(input.multisig, AccountRole.READONLY),
     meta(input.proposal, AccountRole.WRITABLE),

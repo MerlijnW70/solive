@@ -1,26 +1,8 @@
-import {
-  AccountRole,
-  type Address,
-  address,
-  getAddressDecoder,
-  getAddressEncoder,
-  getBase64Decoder,
-  getBase64Encoder,
-  getProgramDerivedAddress,
-  type Instruction,
-  isAddress,
-  isSignerRole,
-  isWritableRole,
-  type KeyPairSigner,
-  type ReadonlyUint8Array,
-} from "@solana/kit";
-import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { AccountRole, type Address, address, getBase64Encoder, type Instruction, isAddress, type KeyPairSigner } from "@solana/kit";
 import type { Account, Chain } from "./chain.js";
-import { engineSummary } from "./engine.js";
 import {
+  configTransactionExecute,
   decodeAccount,
-  isSignerIndex,
-  isStaticWritableIndex,
   multisigCodec,
   multisigCreateV2,
   multisigPda,
@@ -28,13 +10,14 @@ import {
   programConfigCodec,
   programConfigPda,
   proposalApprove,
+  proposalCancelV2,
   proposalCodec,
   proposalCreate,
   proposalPda,
+  proposalReject,
   SQUADS_PROGRAM,
   transactionPda,
   compileVaultMessage,
-  type VaultMessage,
   type VaultTransaction,
   vaultPda,
   vaultTransactionCodec,
@@ -43,41 +26,74 @@ import {
   type Multisig,
   type Proposal,
 } from "./layout.js";
+import {
+  type BufferCheck,
+  describeInstructions,
+  instructionView,
+  LOADER,
+  loaderState,
+  named,
+  programDataOf,
+  type Review,
+  review,
+  reviewView,
+  roleOf,
+  SET_AUTHORITY_TAG,
+  SQUADS_APP,
+  SYSVAR_CLOCK,
+  SYSVAR_RENT,
+  UPGRADE_TAG,
+} from "./review.js";
 
 export { SQUADS_PROGRAM, type Multisig, type Proposal, type VaultTransaction };
-export const LOADER = address("BPFLoaderUpgradeab1e11111111111111111111111");
-export const ENGINE_PROGRAM: Address = INTENT_ENGINE_PROGRAM_ADDRESS;
+export {
+  type BufferCheck,
+  bufferHash,
+  decodeMessage,
+  type Decoded,
+  DEFAULT_ADDRESS,
+  ENGINE_PROGRAM,
+  type InstructionView,
+  instructionView,
+  LOADER,
+  messageInstructions,
+  programDataOf,
+  type Review,
+  review,
+  SET_AUTHORITY_TAG,
+  SYSVAR_CLOCK,
+  SYSVAR_RENT,
+  UPGRADE_TAG,
+} from "./review.js";
 export const COMPUTE_BUDGET = address("ComputeBudget111111111111111111111111111111");
-export const SYSVAR_RENT = address("SysvarRent111111111111111111111111111111111");
-export const SYSVAR_CLOCK = address("SysvarC1ock11111111111111111111111111111111");
-export const DEFAULT_ADDRESS = address("11111111111111111111111111111111");
 export const VAULT_INDEX = 0;
 export const EXECUTE_UNITS = 1_400_000;
-export const UPGRADE_TAG = 3;
-export const SET_AUTHORITY_TAG = 4;
 const SET_COMPUTE_UNIT_LIMIT = 2;
 
 type PermissionName = keyof typeof PERMISSION;
 
 const PERMISSIONS = Object.entries(PERMISSION) as [PermissionName, number][];
 
-export class Refusal extends Error {}
+export class Refusal extends Error {
+  constructor(
+    message: string,
+    readonly shown?: object,
+  ) {
+    super(message);
+  }
+}
 
 export type Plan = {
   summary: string[];
   instructions: Instruction[];
   signers: KeyPairSigner[];
   details: Record<string, unknown>;
+  recheck?: () => Promise<void>;
 };
 
 export const vaultOf = (multisig: Address): Promise<Address> => vaultPda(multisig, VAULT_INDEX);
 
-export const programDataOf = async (program: Address): Promise<Address> =>
-  (await getProgramDerivedAddress({ programAddress: LOADER, seeds: [getAddressEncoder().encode(program)] }))[0];
-
 const owned = (info: Account | null, owner: Address): info is Account => info !== null && info.owner === owner;
-
-const u32At = (data: ReadonlyUint8Array, at: number) => new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(at, true);
 
 export async function readMultisig(chain: Chain, at: Address): Promise<Multisig> {
   const info = await chain.account(at);
@@ -165,15 +181,16 @@ export async function createMultisig(
   };
 }
 
-async function propose(chain: Chain, at: Address, member: Address, instructions: Instruction[], summary: string[]): Promise<Plan> {
+async function propose(chain: Chain, at: Address, member: Address, instructions: Instruction[]): Promise<Plan> {
   const multisig = await readMultisig(chain, at);
   requireMember(multisig, at, member, "initiate", "propose");
   const index = multisig.transactionIndex + 1n;
   const vault = await vaultOf(at);
   const transaction = await transactionPda(at, index);
   const proposal = await proposalPda(at, index);
+  const { decoded } = await describeInstructions(chain, instructions);
   return {
-    summary: [`Proposes vault transaction ${index} on multisig ${at}; it runs once ${multisig.threshold} members approve`, ...summary],
+    summary: [`Proposes vault transaction ${index} on multisig ${at}; it runs once ${multisig.threshold} members approve`, ...decoded.map((d) => d.summary)],
     instructions: [
       vaultTransactionCreate({ multisig: at, transaction, creator: member, vaultIndex: VAULT_INDEX, message: compileVaultMessage(vault, instructions) }),
       proposalCreate({ multisig: at, proposal, creator: member, index }),
@@ -208,18 +225,13 @@ export async function upgradeInstruction(input: { program: Address; buffer: Addr
   };
 }
 
-const optionalKey = (data: ReadonlyUint8Array, at: number): Address | null =>
-  data[at] === 1 ? getAddressDecoder().decode(data.subarray(at + 1, at + 33)) : null;
-
-const named = (key: Address | null) => (key === null ? "nobody, so it is immutable" : key);
-
 export async function proposeUpgrade(chain: Chain, input: { multisig: Address; member: Address; program: Address; buffer: Address; spill: Address }): Promise<Plan> {
   const vault = await vaultOf(input.multisig);
-  const buffer = await chain.account(input.buffer);
-  if (!owned(buffer, LOADER) || buffer.data.length < 37 || u32At(buffer.data, 0) !== 1) {
+  const buffer = loaderState(await chain.account(input.buffer));
+  if (buffer.kind !== "buffer") {
     throw new Refusal(`${input.buffer} is not a program buffer`);
   }
-  const bufferAuthority = optionalKey(buffer.data, 4);
+  const bufferAuthority = buffer.authority;
   if (bufferAuthority !== vault) {
     throw new Refusal(
       `buffer ${input.buffer} is controlled by ${named(bufferAuthority)}, not the vault ${vault}; run solana program set-buffer-authority ${input.buffer} --new-buffer-authority ${vault}`,
@@ -227,15 +239,15 @@ export async function proposeUpgrade(chain: Chain, input: { multisig: Address; m
   }
   await requireUpgradedBy(chain, input.program, vault);
   const instruction = await upgradeInstruction({ program: input.program, buffer: input.buffer, spill: input.spill, authority: vault });
-  return propose(chain, input.multisig, input.member, [instruction], [upgradeSummary(input.program, input.buffer, input.spill, vault)]);
+  return propose(chain, input.multisig, input.member, [instruction]);
 }
 
 async function requireUpgradedBy(chain: Chain, program: Address, vault: Address): Promise<void> {
-  const programData = await chain.account(await programDataOf(program));
-  if (!owned(programData, LOADER) || programData.data.length < 45 || u32At(programData.data, 0) !== 3) {
+  const programData = loaderState(await chain.account(await programDataOf(program)));
+  if (programData.kind !== "program data") {
     throw new Refusal(`${program} is not an upgradeable program`);
   }
-  const upgradeAuthority = optionalKey(programData.data, 12);
+  const upgradeAuthority = programData.authority;
   if (upgradeAuthority !== vault) {
     throw new Refusal(`program ${program} is upgraded by ${named(upgradeAuthority)}, not the vault ${vault}; move its upgrade authority to the vault first`);
   }
@@ -260,13 +272,8 @@ export async function proposeAuthority(chain: Chain, input: { multisig: Address;
   }
   await requireUpgradedBy(chain, input.program, vault);
   const instruction = await setAuthorityInstruction({ program: input.program, authority: vault, next: input.next });
-  return propose(chain, input.multisig, input.member, [instruction], [authoritySummary(`program ${input.program}`, vault, input.next)]);
+  return propose(chain, input.multisig, input.member, [instruction]);
 }
-
-const authoritySummary = (program: string, authority: Address, next: Address) => `Hands the upgrade authority of ${program} from ${authority} to ${next}`;
-
-const upgradeSummary = (program: Address, buffer: Address, spill: Address, authority: Address) =>
-  `Upgrades program ${program} to the code in buffer ${buffer}, signed by ${authority}; the buffer's rent goes to ${spill}`;
 
 type PrintedInstruction = { program: string; accounts: { address: string; signer: boolean; writable: boolean }[]; data: string };
 
@@ -319,7 +326,7 @@ export function wrapPrinted(stdout: string, vault: Address): Instruction[] {
 
 export async function proposeInstructions(chain: Chain, input: { multisig: Address; member: Address; stdout: string }): Promise<Plan> {
   const instructions = wrapPrinted(input.stdout, await vaultOf(input.multisig));
-  return propose(chain, input.multisig, input.member, instructions, printedSummary(input.stdout));
+  return propose(chain, input.multisig, input.member, instructions);
 }
 
 async function activeProposal(chain: Chain, at: Address, index: bigint): Promise<Proposal> {
@@ -330,7 +337,33 @@ async function activeProposal(chain: Chain, at: Address, index: bigint): Promise
   return proposal;
 }
 
-export async function approve(chain: Chain, input: { multisig: Address; member: Address; index: bigint }): Promise<Plan> {
+const INSPECT = `inspect it in the Squads app at ${SQUADS_APP} and do not approve it blindly`;
+
+function requireReviewed(seen: Review, index: bigint, allowConfig: boolean): void {
+  const shown = { proposal: reviewView(seen) };
+  if (seen.kind === "config") {
+    if (!allowConfig) {
+      throw new Refusal(
+        `proposal ${index} is a config transaction that changes the multisig itself; read the changes in the summary, ${INSPECT}, and pass --allow-config only if every change is expected`,
+        shown,
+      );
+    }
+    return;
+  }
+  if (seen.kind !== "vault" || seen.problems.length > 0) {
+    throw new Refusal(`refusing to sign proposal ${index}: ${seen.problems.join("; ")}; ${INSPECT}`, shown);
+  }
+}
+
+const reviewed = async (chain: Chain, at: Address, index: bigint, multisig: Multisig, allowConfig: boolean): Promise<Review> => {
+  const seen = await review(chain, at, index, multisig);
+  requireReviewed(seen, index, allowConfig);
+  return seen;
+};
+
+const singleHash = (buffers: BufferCheck[]) => (buffers.length === 1 && buffers[0] !== undefined ? { buffer_hash: buffers[0].hash } : {});
+
+export async function approve(chain: Chain, input: { multisig: Address; member: Address; index: bigint; allowConfig?: boolean }): Promise<Plan> {
   const multisig = await readMultisig(chain, input.multisig);
   requireMember(multisig, input.multisig, input.member, "vote", "approve");
   const proposal = await activeProposal(chain, input.multisig, input.index);
@@ -340,16 +373,71 @@ export async function approve(chain: Chain, input: { multisig: Address; member: 
   if (proposal.approved.includes(input.member)) {
     throw new Refusal(`${input.member} already approved proposal ${input.index}`);
   }
+  const seen = await reviewed(chain, input.multisig, input.index, multisig, input.allowConfig === true);
   const after = proposal.approved.length + 1;
   return {
     summary: [
       `Approves proposal ${input.index} on multisig ${input.multisig} as ${input.member}`,
       after >= multisig.threshold ? `This is approval ${after} of ${multisig.threshold}; the proposal can then execute` : `This is approval ${after} of ${multisig.threshold}`,
+      ...seen.summary,
     ],
     instructions: [proposalApprove({ multisig: input.multisig, proposal: await proposalPda(input.multisig, input.index), member: input.member })],
     signers: [],
-    details: { multisig: input.multisig, index: input.index.toString(), approvals: after, threshold: multisig.threshold },
+    details: {
+      multisig: input.multisig,
+      index: input.index.toString(),
+      approvals: after,
+      threshold: multisig.threshold,
+      ...singleHash(seen.buffers),
+      proposal: reviewView(seen),
+    },
   };
+}
+
+export async function reject(chain: Chain, input: { multisig: Address; member: Address; index: bigint }): Promise<Plan> {
+  const multisig = await readMultisig(chain, input.multisig);
+  requireMember(multisig, input.multisig, input.member, "vote", "reject");
+  const proposal = await activeProposal(chain, input.multisig, input.index);
+  const seen = await review(chain, input.multisig, input.index, multisig);
+  const target = { multisig: input.multisig, proposal: await proposalPda(input.multisig, input.index), member: input.member };
+  const details = { multisig: input.multisig, index: input.index.toString(), proposal: reviewView(seen) };
+  const voters = multisig.members.filter((m) => permissionNames(m.permissions.mask).includes("vote")).length;
+  if (proposal.status.__kind === "Active") {
+    if (proposal.rejected.includes(input.member)) {
+      throw new Refusal(`${input.member} already rejected proposal ${input.index}`);
+    }
+    const after = proposal.rejected.length + 1;
+    const cutoff = voters - multisig.threshold + 1;
+    return {
+      summary: [
+        `Rejects proposal ${input.index} on multisig ${input.multisig} as ${input.member}`,
+        after >= cutoff ? `This is rejection ${after} of ${cutoff}; the proposal is then rejected and can never execute` : `This is rejection ${after} of ${cutoff}`,
+        ...seen.summary,
+      ],
+      instructions: [proposalReject(target)],
+      signers: [],
+      details: { ...details, rejections: after, cutoff },
+    };
+  }
+  if (proposal.status.__kind === "Approved") {
+    if (proposal.cancelled.includes(input.member)) {
+      throw new Refusal(`${input.member} already cancelled proposal ${input.index}`);
+    }
+    const after = proposal.cancelled.length + 1;
+    return {
+      summary: [
+        `Cancels approved proposal ${input.index} on multisig ${input.multisig} as ${input.member}, before it executes`,
+        after >= multisig.threshold
+          ? `This is cancellation ${after} of ${multisig.threshold}; the proposal is then cancelled and can never execute`
+          : `This is cancellation ${after} of ${multisig.threshold}`,
+        ...seen.summary,
+      ],
+      instructions: [proposalCancelV2(target)],
+      signers: [],
+      details: { ...details, cancellations: after, threshold: multisig.threshold },
+    };
+  }
+  throw new Refusal(`proposal ${input.index} is ${statusOf(proposal)}, so there is nothing to reject`);
 }
 
 async function clockSeconds(chain: Chain): Promise<bigint> {
@@ -382,7 +470,37 @@ export async function executeInstruction(chain: Chain, input: { multisig: Addres
   });
 }
 
-export async function execute(chain: Chain, input: { multisig: Address; member: Address; index: bigint }): Promise<Plan> {
+function requireBuffers(seen: Review, index: bigint, vault: Address, expected: readonly string[]): void {
+  const shown = { proposal: reviewView(seen) };
+  if (seen.buffers.length === 0) {
+    if (expected.length > 0) {
+      throw new Refusal(`proposal ${index} upgrades nothing, so --expect-buffer-hash does not apply`, shown);
+    }
+    return;
+  }
+  if (expected.length === 0) {
+    throw new Refusal(
+      `proposal ${index} upgrades a program; pass --expect-buffer-hash with the buffer hash approve printed, so the code that runs is the code that was approved`,
+      shown,
+    );
+  }
+  for (const check of seen.buffers) {
+    if (check.authority !== vault) {
+      throw new Refusal(`buffer ${check.buffer} is controlled by ${named(check.authority)}, not the vault ${vault}`, shown);
+    }
+    if (check.hash === null || !expected.includes(check.hash)) {
+      throw new Refusal(
+        `buffer ${check.buffer} hashes to ${check.hash ?? "nothing"}, not the approved ${expected.join(", ")}; its code changed since approval, so do not execute it`,
+        shown,
+      );
+    }
+  }
+}
+
+export async function execute(
+  chain: Chain,
+  input: { multisig: Address; member: Address; index: bigint; allowConfig?: boolean; expectBufferHashes?: readonly string[] },
+): Promise<Plan> {
   const multisig = await readMultisig(chain, input.multisig);
   requireMember(multisig, input.multisig, input.member, "execute", "execute");
   const proposal = await activeProposal(chain, input.multisig, input.index);
@@ -399,73 +517,32 @@ export async function execute(chain: Chain, input: { multisig: Address; member: 
   if (now < ready) {
     throw new Refusal(`proposal ${input.index} is time locked for ${ready - now} more seconds, until ${new Date(Number(ready) * 1000).toISOString()}`);
   }
-  const transaction = await readVaultTransaction(chain, input.multisig, input.index);
-  if (transaction === null) {
-    throw new Refusal(`proposal ${input.index} has no vault transaction to execute`);
+  const seen = await reviewed(chain, input.multisig, input.index, multisig, input.allowConfig === true);
+  const proposalAt = await proposalPda(input.multisig, input.index);
+  const details = { multisig: input.multisig, index: input.index.toString(), proposal: reviewView(seen) };
+  const summary = [`Executes proposal ${input.index} on multisig ${input.multisig}`, ...seen.summary];
+  if (seen.kind === "config") {
+    if (seen.actions.some((a) => a.__kind === "AddSpendingLimit" || a.__kind === "RemoveSpendingLimit")) {
+      throw new Refusal(`proposal ${input.index} changes spending limits, which this tool does not execute; ${INSPECT}`, { proposal: reviewView(seen) });
+    }
+    const transaction = await transactionPda(input.multisig, input.index);
+    return {
+      summary,
+      instructions: [configTransactionExecute({ multisig: input.multisig, proposal: proposalAt, transaction, member: input.member })],
+      signers: [],
+      details,
+    };
   }
-  if (transaction.message.addressTableLookups.length > 0) {
-    throw new Refusal(`vault transaction ${input.index} uses address lookup tables, which this tool does not load`);
-  }
+  const vault = await vaultOf(input.multisig);
+  const expected = (input.expectBufferHashes ?? []).map((h) => h.toLowerCase());
+  requireBuffers(seen, input.index, vault, expected);
   const instruction = await executeInstruction(chain, input);
   return {
-    summary: [`Executes proposal ${input.index} on multisig ${input.multisig}`, ...(await decodeMessage(transaction.message)).map((d) => d.summary)],
+    summary,
     instructions: [computeUnitLimit(EXECUTE_UNITS), instruction],
     signers: [],
-    details: { multisig: input.multisig, index: input.index.toString() },
+    details: { ...details, ...singleHash(seen.buffers) },
+    recheck: async () => requireBuffers(await review(chain, input.multisig, input.index, multisig), input.index, vault, expected),
   };
 }
 
-export type InstructionView = { program: string; accounts: { address: string; signer: boolean; writable: boolean }[]; data: string };
-
-export function instructionView(ix: Instruction): InstructionView {
-  return {
-    program: ix.programAddress,
-    accounts: (ix.accounts ?? []).map((k) => ({ address: k.address, signer: isSignerRole(k.role), writable: isWritableRole(k.role) })),
-    data: getBase64Decoder().decode(ix.data ?? new Uint8Array()),
-  };
-}
-
-const roleOf = (signer: boolean, writable: boolean): AccountRole =>
-  signer ? (writable ? AccountRole.WRITABLE_SIGNER : AccountRole.READONLY_SIGNER) : writable ? AccountRole.WRITABLE : AccountRole.READONLY;
-
-export function messageInstructions(message: VaultMessage): Instruction[] {
-  const keyAt = (at: number) => {
-    const found = message.accountKeys[at];
-    if (found === undefined) {
-      throw new Error(`instruction names account ${at}, beyond the message's ${message.accountKeys.length} keys`);
-    }
-    return found;
-  };
-  return message.instructions.map((ix) => ({
-    programAddress: keyAt(ix.programIdIndex),
-    accounts: Array.from(ix.accountIndexes, (at) => meta(keyAt(at), roleOf(isSignerIndex(message, at), isStaticWritableIndex(message, at)))),
-    data: new Uint8Array(ix.data),
-  }));
-}
-
-export type Decoded = InstructionView & { summary: string };
-
-export async function decodeMessage(message: VaultMessage): Promise<Decoded[]> {
-  const engineData = await programDataOf(ENGINE_PROGRAM);
-  return messageInstructions(message).map((ix) => ({ ...instructionView(ix), summary: summarize(ix, engineData) }));
-}
-
-const signersOf = (ix: Instruction) => (ix.accounts ?? []).filter((k) => isSignerRole(k.role)).map((k) => k.address);
-
-function summarize(ix: Instruction, engineData: Address): string {
-  const accounts = ix.accounts ?? [];
-  const data = ix.data ?? new Uint8Array();
-  const at = (i: number) => accounts[i]?.address ?? DEFAULT_ADDRESS;
-  const tag = data.length === 4 ? u32At(data, 0) : -1;
-  if (ix.programAddress === LOADER && tag === UPGRADE_TAG) {
-    return upgradeSummary(at(1), at(2), at(3), at(6));
-  }
-  if (ix.programAddress === LOADER && tag === SET_AUTHORITY_TAG && accounts.length === 3) {
-    const program = engineData === at(0) ? `program ${ENGINE_PROGRAM}` : `the program whose data is ${at(0)}`;
-    return authoritySummary(program, at(1), at(2));
-  }
-  if (ix.programAddress === ENGINE_PROGRAM) {
-    return engineSummary(ix);
-  }
-  return `Runs program ${ix.programAddress} with ${accounts.length} accounts and ${data.length} bytes of data, signed by ${signersOf(ix).join(", ") || "nobody"}`;
-}

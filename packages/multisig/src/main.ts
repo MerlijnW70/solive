@@ -15,7 +15,7 @@ import {
 import type { Chain } from "./chain.js";
 import { jsonText } from "./engine.js";
 import { show } from "./show.js";
-import { approve, createMultisig, ENGINE_PROGRAM, execute, type Plan, proposeAuthority, proposeInstructions, proposeUpgrade, Refusal } from "./squads.js";
+import { approve, createMultisig, ENGINE_PROGRAM, execute, type Plan, proposeAuthority, proposeInstructions, proposeUpgrade, Refusal, reject } from "./squads.js";
 
 export type Deps = {
   chain(url: string): Chain;
@@ -36,8 +36,9 @@ export const USAGE = [
   "intent-engine-multisig create --members <a,b,c> --threshold <n> [--time-lock <seconds>] [--create-key <keypair>] --keypair <creator> [--yes]",
   "intent-engine-multisig propose-upgrade --multisig <m> --buffer <address> --spill <address> [--program <address>] --keypair <member> [--yes]",
   "intent-engine-multisig propose-admin --multisig <m> --keypair <member> [--yes] -- <intent engine admin command with --authority <vault>>",
-  "intent-engine-multisig approve --multisig <m> --index <n> --keypair <member> [--yes]",
-  "intent-engine-multisig execute --multisig <m> --index <n> --keypair <member> [--yes]",
+  "intent-engine-multisig approve --multisig <m> --index <n> [--allow-config] --keypair <member> [--yes]",
+  "intent-engine-multisig execute --multisig <m> --index <n> [--expect-buffer-hash <hex>] [--allow-config] --keypair <member> [--yes]",
+  "intent-engine-multisig reject --multisig <m> --index <n> --keypair <member> [--yes]",
   "intent-engine-multisig show --multisig <m> [--index <n>]",
   "intent-engine-multisig propose-authority --multisig <m> --new-authority <address> [--program <address>] --keypair <member> [--yes]",
   "every command takes --url devnet|testnet|mainnet-beta|localhost|<rpc url>, default devnet",
@@ -59,11 +60,15 @@ const OPTIONS = {
   spill: { type: "string" },
   program: { type: "string" },
   "new-authority": { type: "string" },
+  "allow-config": { type: "boolean" },
+  "expect-buffer-hash": { type: "string" },
 } as const;
 
 type Values = { [K in keyof typeof OPTIONS]?: (typeof OPTIONS)[K]["type"] extends "boolean" ? boolean : string };
 
-const required = (values: Values, name: Exclude<keyof Values, "yes">): string => {
+type Flag = "yes" | "allow-config";
+
+const required = (values: Values, name: Exclude<keyof Values, Flag>): string => {
   const value = values[name];
   if (value === undefined || value === "") {
     throw new UsageError(`this command needs --${name}`);
@@ -79,7 +84,7 @@ function address(text: string, name: string): Address {
   return trimmed;
 }
 
-const key = (values: Values, name: Exclude<keyof Values, "yes">) => address(required(values, name), name);
+const key = (values: Values, name: Exclude<keyof Values, Flag>) => address(required(values, name), name);
 
 function whole(text: string, name: string, min: number, max: number): number {
   const value = Number(text);
@@ -104,18 +109,34 @@ const MONIKERS: Record<string, string> = {
   localhost: "http://127.0.0.1:8899",
 };
 
-function cluster(given: string): string {
+type Cluster = { url: string; shown: string };
+
+const NOT_A_URL = `--url takes ${Object.keys(MONIKERS).join(", ")} or an http or https RPC url`;
+
+function cluster(given: string): Cluster {
   const url = MONIKERS[given] ?? given;
   let parsed: URL;
   try {
     parsed = new URL(url);
   } catch {
-    throw new UsageError(`--url takes an http or https RPC url, not ${url}`);
+    throw new UsageError(NOT_A_URL);
   }
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new UsageError(`--url takes an http or https RPC url, not ${url}`);
+    throw new UsageError(NOT_A_URL);
   }
-  return `${parsed.origin}${parsed.pathname === "/" ? "" : parsed.pathname}`;
+  return { url, shown: [parsed.protocol, "", parsed.host].join("/") };
+}
+
+function hashes(values: Values): string[] {
+  const given = values["expect-buffer-hash"];
+  if (given === undefined) {
+    return [];
+  }
+  const list = given.split(",").map((h) => h.trim().toLowerCase());
+  if (list.some((h) => !/^[0-9a-f]{64}$/.test(h))) {
+    throw new UsageError(`--expect-buffer-hash takes the 64 hex digit sha256 that approve printed as buffer_hash, not ${given}`);
+  }
+  return list;
 }
 
 async function transaction(chain: Chain, payer: KeyPairSigner, plan: Plan): Promise<Transaction> {
@@ -133,9 +154,9 @@ async function transaction(chain: Chain, payer: KeyPairSigner, plan: Plan): Prom
   );
 }
 
-async function deliver(chain: Chain, url: string, payer: KeyPairSigner, plan: Plan, yes: boolean): Promise<object> {
+async function deliver(chain: Chain, url: Cluster, payer: KeyPairSigner, plan: Plan, yes: boolean): Promise<object> {
   const tx = await transaction(chain, payer, plan);
-  const shown = { cluster: url, ...plan.details, summary: plan.summary };
+  const shown = { cluster: url.shown, ...plan.details, summary: plan.summary };
   if (!yes) {
     const simulated = await chain.simulate(tx);
     return {
@@ -146,11 +167,13 @@ async function deliver(chain: Chain, url: string, payer: KeyPairSigner, plan: Pl
       next: NOT_SENT,
     };
   }
+  await plan.recheck?.();
   return { ...shown, sent: true, signature: await chain.send(tx) };
 }
 
 async function command(name: string | undefined, values: Values, passed: string[], deps: Deps): Promise<object> {
-  const url = cluster(values.url ?? DEVNET);
+  const target = cluster(values.url ?? DEVNET);
+  const { url } = target;
   const yes = values.yes === true;
   const signer = async () => deps.keypair(required(values, "keypair"));
   switch (name) {
@@ -167,7 +190,7 @@ async function command(name: string | undefined, values: Values, passed: string[
         threshold: whole(required(values, "threshold"), "threshold", 1, members.length),
         timeLock: values["time-lock"] === undefined ? 0 : whole(values["time-lock"], "time-lock", 0, MAX_TIME_LOCK),
       });
-      return deliver(deps.chain(url), url, creator, plan, yes);
+      return deliver(deps.chain(url), target, creator, plan, yes);
     }
     case "propose-upgrade": {
       const member = await signer();
@@ -179,7 +202,7 @@ async function command(name: string | undefined, values: Values, passed: string[
         buffer: key(values, "buffer"),
         spill: key(values, "spill"),
       });
-      return deliver(chain, url, member, plan, yes);
+      return deliver(chain, target, member, plan, yes);
     }
     case "propose-authority": {
       const member = await signer();
@@ -190,7 +213,7 @@ async function command(name: string | undefined, values: Values, passed: string[
         program: values.program === undefined ? ENGINE_PROGRAM : key(values, "program"),
         next: key(values, "new-authority"),
       });
-      return deliver(chain, url, member, plan, yes);
+      return deliver(chain, target, member, plan, yes);
     }
     case "propose-admin": {
       if (passed.length === 0) {
@@ -201,19 +224,33 @@ async function command(name: string | undefined, values: Values, passed: string[
       const stdout = await deps.run(passed);
       const chain = deps.chain(url);
       const plan = await proposeInstructions(chain, { multisig, member: member.address, stdout });
-      return deliver(chain, url, member, { ...plan, details: { command: passed, ...plan.details } }, yes);
+      return deliver(chain, target, member, { ...plan, details: { command: passed, ...plan.details } }, yes);
     }
     case "approve":
-    case "execute": {
+    case "execute":
+    case "reject": {
+      const expectBufferHashes = hashes(values);
+      if (name !== "execute" && expectBufferHashes.length > 0) {
+        throw new UsageError("only execute takes --expect-buffer-hash");
+      }
+      if (name === "reject" && values["allow-config"] !== undefined) {
+        throw new UsageError("reject takes no --allow-config");
+      }
       const member = await signer();
       const chain = deps.chain(url);
       const input = { multisig: key(values, "multisig"), member: member.address, index: indexOf(values) };
-      const plan = name === "approve" ? await approve(chain, input) : await execute(chain, input);
-      return deliver(chain, url, member, plan, yes);
+      const allowConfig = values["allow-config"] === true;
+      const plan =
+        name === "approve"
+          ? await approve(chain, { ...input, allowConfig })
+          : name === "execute"
+            ? await execute(chain, { ...input, allowConfig, expectBufferHashes })
+            : await reject(chain, input);
+      return deliver(chain, target, member, plan, yes);
     }
     case "show": {
-      if (values.yes !== undefined || values.keypair !== undefined) {
-        throw new UsageError("show only reads; it takes no --keypair or --yes");
+      if (values.yes !== undefined || values.keypair !== undefined || values["allow-config"] !== undefined || values["expect-buffer-hash"] !== undefined) {
+        throw new UsageError("show only reads; it takes no --keypair, --yes, --allow-config or --expect-buffer-hash");
       }
       return show(deps.chain(url), key(values, "multisig"), values.index === undefined ? undefined : indexOf(values));
     }
@@ -247,6 +284,7 @@ export async function main(argv: string[], deps: Deps): Promise<Result> {
     if (error instanceof UsageError) {
       return { code: EXIT_USAGE, out: "", err: `${jsonText({ error: message, usage: USAGE })}\n` };
     }
-    return { code: EXIT_REFUSED, out: "", err: `${jsonText({ error: message, refused: error instanceof Refusal })}\n` };
+    const shown = error instanceof Refusal && error.shown !== undefined ? error.shown : {};
+    return { code: EXIT_REFUSED, out: "", err: `${jsonText({ error: message, refused: error instanceof Refusal, ...shown })}\n` };
   }
 }
