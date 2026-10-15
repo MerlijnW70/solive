@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 import { AUTO_PRICE_CAP } from "./compute.js";
 import { MAX_SUBMIT_WITHIN } from "./agent/signed.js";
-import { DEVNET_URL } from "./tokens.js";
+import { CLUSTERS, clusterUrl, DEFAULT_URL, ENV_KEYPAIR, ENV_URL, WALLET_NOT_MAINNET } from "./clusters.js";
 import { ACCEPTS, OPTIONS, type Values } from "./arg-options.js";
 import {
   addressList,
@@ -100,27 +100,11 @@ export {
   zeroProfit,
 } from "./command-builders.js";
 
-export const DEFAULT_URL = "http://127.0.0.1:8899";
-
-export const CLUSTERS: Readonly<Record<string, string>> = {
-  localnet: DEFAULT_URL,
-  devnet: DEVNET_URL,
-  testnet: "https://api.testnet.solana.com",
-  "mainnet-beta": "https://api.mainnet-beta.solana.com",
-};
-
-export const ENV_URL = "INTENT_ENGINE_URL";
-export const ENV_KEYPAIR = "INTENT_ENGINE_KEYPAIR";
+export { CLUSTERS, clusterUrl, DEFAULT_URL, ENV_KEYPAIR, ENV_URL, WALLET_NOT_MAINNET } from "./clusters.js";
 
 const SETUP_CLUSTER = "devnet";
 
-export const WALLET_NOT_MAINNET = "mcp --wallet keeps its key in a file on this machine, so it serves devnet, testnet and localnet only";
-
 const BALANCE_OF_ONE = "balance takes --keypair or --owner, not both";
-
-export function clusterUrl(text: string): string {
-  return CLUSTERS[text] ?? text;
-}
 
 export const MAX_FOLLOW_INTERVAL = 3_600;
 export const WATCH_INTERVAL = 5;

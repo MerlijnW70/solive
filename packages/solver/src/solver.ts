@@ -1,13 +1,7 @@
-import {
-  type Address,
-  type Base64EncodedWireTransaction,
-  type Blockhash,
-  getBase64Encoder,
-  getTransactionDecoder,
-  type Instruction,
-  type TransactionSigner,
-} from "@solana/kit";
+import { type Address, type Base64EncodedWireTransaction, type Blockhash, type Instruction, type TransactionSigner } from "@solana/kit";
 import { type Config, findAssociatedTokenAddress, type Intent, IntentStatus } from "@intent-engine/core";
+import { type Backoff, backingOff } from "./backoff.js";
+import { createdRent, DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST, signaturesOf, solCost, tooCostly, tooMuchRent } from "./costs.js";
 import {
   accountsOf,
   bytesFit,
@@ -24,9 +18,29 @@ import {
   type Tip,
   wireSize,
 } from "./build.js";
-import { ASSOCIATED_TOKEN_PROGRAM, RateLimited } from "./jupiter.js";
+import { RateLimited } from "./jupiter.js";
 import type { Pricer } from "./market.js";
 import { decide, type Plan, standing, type Strategy } from "./plan.js";
+
+export { BACKOFF_MAX_INTERVALS, type Backoff, backingOff, backoff } from "./backoff.js";
+export {
+  createdRent,
+  DEFAULT_MAX_RENT,
+  DEFAULT_MAX_SOL_COST,
+  LAMPORTS_PER_SIGNATURE,
+  MICRO_LAMPORTS_PER_LAMPORT,
+  mintExtensions,
+  rentExempt,
+  type SolCost,
+  signaturesOf,
+  solCost,
+  TOKEN_2022_ACCOUNT_SPACE,
+  TOKEN_2022_PROGRAM,
+  TOKEN_ACCOUNT_SPACE,
+  tokenAccountSpace,
+  tooCostly,
+  tooMuchRent,
+} from "./costs.js";
 
 export type Chain = {
   config(): Promise<Config>;
@@ -74,175 +88,6 @@ export const ROUTE_ACCOUNT_BUDGETS = [40, 30, 20] as const;
 
 export const tooLarge = (bytes: number | null, accounts: number): string =>
   `even the smallest route makes the fill ${bytes === null ? "lock" : `${bytes} bytes with`} ${accounts} accounts; a transaction holds ${PACKET_DATA_SIZE} bytes and ${MAX_TX_ACCOUNTS} accounts`;
-
-export const LAMPORTS_PER_SIGNATURE = 5_000n;
-
-export const MICRO_LAMPORTS_PER_LAMPORT = 1_000_000n;
-
-export const DEFAULT_MAX_SOL_COST = 10_000_000n;
-
-export const DEFAULT_MAX_RENT = 10_000_000n;
-
-export const TOKEN_ACCOUNT_SPACE = 165;
-
-export const TOKEN_2022_ACCOUNT_SPACE = 170;
-
-export const TOKEN_2022_PROGRAM = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb" as Address;
-
-const ACCOUNT_STORAGE_OVERHEAD = 128n;
-const LAMPORTS_PER_BYTE_YEAR = 3_480n;
-const EXEMPTION_YEARS = 2n;
-const ATA_ADDRESS = 1;
-const ATA_MINT = 3;
-const ATA_TOKEN_PROGRAM = 5;
-
-export const rentExempt = (space: number): bigint =>
-  (ACCOUNT_STORAGE_OVERHEAD + BigInt(space)) * LAMPORTS_PER_BYTE_YEAR * EXEMPTION_YEARS;
-
-const ACCOUNT_TYPE_SPACE = 1;
-const EXTENSION_HEADER_SPACE = 4;
-const MULTISIG_SPACE = 355;
-const EXTENSION_TYPE_SPACE = 2;
-const IMMUTABLE_OWNER_SPACE = 0;
-
-const ACCOUNT_EXTENSION_SPACE: ReadonlyMap<number, number> = new Map([
-  [1, 8],
-  [9, 0],
-  [14, 1],
-  [16, 64],
-  [26, 0],
-]);
-
-export function mintExtensions(data: Uint8Array | null): number[] {
-  const found: number[] = [];
-  if (data === null || data.length <= TOKEN_ACCOUNT_SPACE + ACCOUNT_TYPE_SPACE) {
-    return found;
-  }
-  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-  for (let at = TOKEN_ACCOUNT_SPACE + ACCOUNT_TYPE_SPACE; at + EXTENSION_HEADER_SPACE <= data.length; ) {
-    const type = view.getUint16(at, true);
-    if (type === 0) {
-      break;
-    }
-    found.push(type);
-    at += EXTENSION_HEADER_SPACE + view.getUint16(at + 2, true);
-  }
-  return found;
-}
-
-export function tokenAccountSpace(tokenProgram: Address, mint: Uint8Array | null): number {
-  if (tokenProgram !== TOKEN_2022_PROGRAM) {
-    return TOKEN_ACCOUNT_SPACE;
-  }
-  const extensions = [
-    IMMUTABLE_OWNER_SPACE,
-    ...mintExtensions(mint).flatMap((type) => {
-      const space = ACCOUNT_EXTENSION_SPACE.get(type);
-      return space === undefined ? [] : [space];
-    }),
-  ];
-  const space = extensions.reduce(
-    (total, extension) => total + EXTENSION_HEADER_SPACE + extension,
-    TOKEN_ACCOUNT_SPACE + ACCOUNT_TYPE_SPACE,
-  );
-  return space === MULTISIG_SPACE ? space + EXTENSION_TYPE_SPACE : space;
-}
-
-export type SolCost = { signatures: number; unitPrice: bigint; computeUnits: number; tip: bigint };
-
-export function solCost(cost: SolCost): bigint {
-  const priority = (cost.unitPrice * BigInt(cost.computeUnits) + MICRO_LAMPORTS_PER_LAMPORT - 1n) / MICRO_LAMPORTS_PER_LAMPORT;
-  return LAMPORTS_PER_SIGNATURE * BigInt(cost.signatures) + priority + cost.tip;
-}
-
-export const tooCostly = (cost: bigint, cap: bigint): string =>
-  `the fill costs ${cost} lamports in fees and tip, more than the cap of ${cap}`;
-
-export const tooMuchRent = (rent: bigint, cap: bigint): string =>
-  `the fill opens token accounts that keep ${rent} lamports of rent, more than the cap of ${cap}`;
-
-export function signaturesOf(wire: Base64EncodedWireTransaction): number {
-  return Object.keys(getTransactionDecoder().decode(getBase64Encoder().encode(wire)).signatures).length;
-}
-
-export async function createdRent(
-  instructions: readonly Instruction[],
-  exists: (address: Address) => Promise<boolean>,
-  mintData: (mint: Address) => Promise<Uint8Array | null> = async () => null,
-): Promise<bigint> {
-  const opened = new Map<Address, { program: Address; mint: Address | undefined }>();
-  for (const ix of instructions) {
-    const account = ix.accounts?.[ATA_ADDRESS]?.address;
-    if (ix.programAddress === ASSOCIATED_TOKEN_PROGRAM && account !== undefined && !opened.has(account)) {
-      opened.set(account, { program: ix.accounts?.[ATA_TOKEN_PROGRAM]?.address ?? account, mint: ix.accounts?.[ATA_MINT]?.address });
-    }
-  }
-  let rent = 0n;
-  for (const [account, { program, mint }] of opened) {
-    if (!(await exists(account))) {
-      const data = program === TOKEN_2022_PROGRAM && mint !== undefined ? await mintData(mint) : null;
-      rent += rentExempt(tokenAccountSpace(program, data));
-    }
-  }
-  return rent;
-}
-
-export const BACKOFF_MAX_INTERVALS = 32;
-
-export type Backoff = {
-  waiting(address: Address, intent: Intent): { failures: number; seconds: number } | null;
-  failed(address: Address, intent: Intent): void;
-  succeeded(address: Address): void;
-  retain(intents: readonly { address: Address; intent: Intent }[], now: bigint): void;
-  size(): number;
-};
-
-const fingerprint = (intent: Intent): string =>
-  JSON.stringify(intent, (_, value: unknown) => (typeof value === "bigint" ? value.toString() : value));
-
-const MS_PER_SECOND = 1_000;
-
-export function backoff(interval: number, clock: () => number = Date.now): Backoff {
-  const held = new Map<Address, { print: string; failures: number; until: number }>();
-  return {
-    waiting: (address, intent) => {
-      const entry = held.get(address);
-      if (entry === undefined) {
-        return null;
-      }
-      if (entry.print !== fingerprint(intent)) {
-        held.delete(address);
-        return null;
-      }
-      const left = entry.until - clock();
-      return left > 0 ? { failures: entry.failures, seconds: Math.ceil(left / MS_PER_SECOND) } : null;
-    },
-    failed: (address, intent) => {
-      const print = fingerprint(intent);
-      const entry = held.get(address);
-      const failures = (entry?.print === print ? entry.failures : 0) + 1;
-      const wait = interval * Math.min(2 ** (failures - 1), BACKOFF_MAX_INTERVALS);
-      held.set(address, { print, failures, until: clock() + wait * MS_PER_SECOND });
-    },
-    succeeded: (address) => {
-      held.delete(address);
-    },
-    retain: (intents, now) => {
-      const open = new Set(
-        intents.filter(({ intent }) => intent.status === IntentStatus.Open && now < intent.expiresAt).map(({ address }) => address),
-      );
-      for (const address of [...held.keys()]) {
-        if (!open.has(address)) {
-          held.delete(address);
-        }
-      }
-    },
-    size: () => held.size,
-  };
-}
-
-export const backingOff = (failures: number, seconds: number): string =>
-  `${failures} fill${failures === 1 ? "" : "s"} of this intent failed in a row; it is tried again in ${seconds} second${seconds === 1 ? "" : "s"}`;
 
 export async function tick(o: SolverOptions): Promise<Report> {
   const report: Report = { filled: [], sent: [], skipped: [], failed: [] };
