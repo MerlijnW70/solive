@@ -52,6 +52,7 @@ import {
 import { createTerms, mandate, terms } from "./order-builders.js";
 import { USAGE } from "./arg-usage.js";
 import { sandboxOf } from "./sandbox.js";
+import { committeeOf, feedbackOf, reputationOf } from "./trust-args.js";
 import { monitorOf } from "./monitor-args.js";
 import type { Command, Env } from "./command-types.js";
 import { DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST } from "@intent-engine/solver";
@@ -461,6 +462,12 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       };
     case "mandate":
       return mandate(sub, third, remote, values);
+    case "committee":
+      return committeeOf(sub, remote, values);
+    case "reputation":
+      return reputationOf(sub, remote, values);
+    case "feedback":
+      return feedbackOf(sub, remote, values);
     case "approve":
     case "revoke-approval":
       noSub(sub);

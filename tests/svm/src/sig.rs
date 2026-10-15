@@ -421,7 +421,10 @@ pub fn split_cosign_message(digest: &[u8; 32]) -> [u8; intent_core::sig::ENVELOP
 }
 
 pub fn cosign_batch_ix(signers: &[&Keypair], digest: &[u8; 32]) -> TestResult<Instruction> {
-    let message = split_cosign_message(digest);
+    batch_ix(signers, &split_cosign_message(digest))
+}
+
+pub fn batch_ix(signers: &[&Keypair], message: &[u8]) -> TestResult<Instruction> {
     let m = signers.len();
     let len = u16::try_from(message.len())?;
     let pubkeys_at = 14usize.saturating_mul(m).saturating_add(2);
@@ -440,9 +443,9 @@ pub fn cosign_batch_ix(signers: &[&Keypair], digest: &[u8; 32]) -> TestResult<In
         data.extend_from_slice(&s.pubkey().to_bytes());
     }
     for s in signers {
-        data.extend_from_slice(&signature_of(s, &message));
+        data.extend_from_slice(&signature_of(s, message));
     }
-    data.extend_from_slice(&message);
+    data.extend_from_slice(message);
     let program_id = ed25519_ix(&Keypair::new(), &[0]).program_id;
     Ok(Instruction {
         program_id,

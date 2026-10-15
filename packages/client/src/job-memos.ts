@@ -1,6 +1,6 @@
 import { AccountRole, type AccountSignerMeta, type Address, type Instruction, type TransactionSigner } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
-import { parseReleaseMemo, releaseMemo } from "@intent-engine/core";
+import { decodeEvent, type EngineEvent, parseReleaseMemo, releaseMemo } from "@intent-engine/core";
 import { type EngineTransaction, MEMO_PROGRAM_ADDRESS } from "./transport.js";
 
 export const RELEASE_MARK = " release:";
@@ -30,9 +30,24 @@ export function memosSignedBy(transaction: EngineTransaction, signer: Address): 
   return (transaction.memos ?? []).filter((_, i) => transaction.memoSigners?.[i]?.includes(signer) === true);
 }
 
-export function followUpOf(transactions: readonly EngineTransaction[], release: string, attestor: Address): (FollowUp & { signature: string }) | null {
+export function releaseSigners(release: EngineTransaction, attestor: Address): Address[] {
+  for (const data of release.emitted) {
+    const event = decodeEvent(data) as EngineEvent | null;
+    if (event?.name === "CommitteeAttested" && event.fields.committee === attestor) {
+      return [...event.fields.signers];
+    }
+  }
+  return [attestor];
+}
+
+export function followUpOf(
+  transactions: readonly EngineTransaction[],
+  release: string,
+  attestor: Address,
+  signers: readonly Address[] = [attestor],
+): (FollowUp & { signature: string }) | null {
   for (const transaction of transactions) {
-    if (transaction.failed || transaction.feePayer !== attestor) {
+    if (transaction.failed || transaction.feePayer === undefined || !signers.includes(transaction.feePayer)) {
       continue;
     }
     const found = (transaction.memos ?? []).map(parseFollowUpMemo).find((memo) => memo !== null && memo.release === release);
@@ -44,11 +59,15 @@ export function followUpOf(transactions: readonly EngineTransaction[], release: 
 }
 
 export function recordedDelivery(transactions: readonly EngineTransaction[], release: EngineTransaction, attestor: Address): string | null {
-  const inline = memosSignedBy(release, attestor).map(parseReleaseMemo).find((hash) => hash !== null);
+  const signers = releaseSigners(release, attestor);
+  const inline = signers
+    .flatMap((signer) => memosSignedBy(release, signer))
+    .map(parseReleaseMemo)
+    .find((hash) => hash !== null);
   if (inline !== undefined) {
     return inline;
   }
-  return followUpOf(transactions, release.signature, attestor)?.sha256 ?? null;
+  return followUpOf(transactions, release.signature, attestor, signers)?.sha256 ?? null;
 }
 
 export function followUpInstructions(judge: TransactionSigner, intent: Address, sha256: string, release: string): Instruction[] {

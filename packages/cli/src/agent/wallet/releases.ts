@@ -1,7 +1,9 @@
 import type { Address } from "@solana/kit";
 import {
   decodeEvent,
+  FILL_ATTESTED_SPLIT_COMMITTEE_DISCRIMINATOR,
   FILL_ATTESTED_SPLIT_DISCRIMINATOR,
+  getFillAttestedSplitCommitteeInstructionDataDecoder,
   getFillAttestedSplitInstructionDataDecoder,
   getIntentSize,
   type Intent,
@@ -289,8 +291,20 @@ export async function heldMint(transport: Transport, intent: Address): Promise<A
 
 export const SPLIT_INTENT_ACCOUNT = 2;
 
-const isSplit = (data: Uint8Array): boolean =>
-  data.length >= FILL_ATTESTED_SPLIT_DISCRIMINATOR.length && FILL_ATTESTED_SPLIT_DISCRIMINATOR.every((b, i) => data[i] === b);
+const startsWith = (data: Uint8Array, discriminator: ArrayLike<number>): boolean =>
+  data.length >= discriminator.length && Array.from(discriminator).every((b, i) => data[i] === b);
+
+const splitDecoders = [
+  { discriminator: FILL_ATTESTED_SPLIT_DISCRIMINATOR, decode: (data: Uint8Array) => getFillAttestedSplitInstructionDataDecoder().decode(data).claim },
+  {
+    discriminator: FILL_ATTESTED_SPLIT_COMMITTEE_DISCRIMINATOR,
+    decode: (data: Uint8Array) => getFillAttestedSplitCommitteeInstructionDataDecoder().decode(data).claim,
+  },
+];
+
+const splitDecoderOf = (data: Uint8Array) => splitDecoders.find(({ discriminator }) => startsWith(data, discriminator));
+
+const isSplit = (data: Uint8Array): boolean => splitDecoderOf(data) !== undefined;
 
 export function splitRecipients(tx: EngineTransaction, intent?: Address): Address[] | null {
   const calls = engineCalls(tx).filter(({ data, accounts }) => isSplit(data) && (intent === undefined || accounts?.[SPLIT_INTENT_ACCOUNT] === intent));
@@ -299,7 +313,7 @@ export function splitRecipients(tx: EngineTransaction, intent?: Address): Addres
     return null;
   }
   try {
-    return getFillAttestedSplitInstructionDataDecoder().decode(call.data).recipients;
+    return splitDecoderOf(call.data)?.decode(call.data).recipients ?? null;
   } catch {
     return null;
   }

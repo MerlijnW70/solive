@@ -3,9 +3,20 @@ import { readFile, rm, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { type Address, getBase58Decoder, type KeyPairSigner, type Signature } from "@solana/kit";
 import { decodeParams, IntentStatus, Kind } from "@intent-engine/core";
-import { chainTime, createClient, deliveryRecord, firstDelivery, loadIntent, SIGNATURE_PAGE, type Transport } from "@intent-engine/client";
+import {
+  chainTime,
+  type CommitteeView,
+  createClient,
+  deliveryRecord,
+  firstDelivery,
+  loadCommittee,
+  loadIntent,
+  SIGNATURE_PAGE,
+  type Transport,
+} from "@intent-engine/client";
 import type { Command } from "./args.js";
 import { NOT_SENT } from "./flows.js";
+import { memberVote, type VoteFile } from "./committee-commands.js";
 import type { Runtime } from "./commands.js";
 import { type InterruptSignal, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
 import { type Artifact, type CheckFiles, copyOf, readArtifact, removeCopy } from "./artifact.js";
@@ -35,6 +46,9 @@ const FORCED_EXIT_MS = 200;
 
 export type JudgeCommand = Extract<Command, { name: "judge" }>;
 
+export const VOTE_NEXT =
+  "the check passed and this member's vote is in the verdict; nothing was sent. Pass this verdict file, with the other members' votes, to committee release --vote";
+
 export type Verdict = {
   intent: Address;
   specHash: string;
@@ -48,6 +62,8 @@ export type Verdict = {
   verdict: "pass" | "fail";
   payTo: Address;
   signature: Signature | null;
+  committee?: Address;
+  vote?: VoteFile;
   next?: string;
   cleanup?: string;
 };
@@ -71,10 +87,21 @@ async function escrowFor(transport: Transport, judge: Address, owner: Address, n
   if (intent.status !== IntentStatus.Open || intent.expiresAt <= (await chainTime(transport))) {
     throw new JudgeRefused(`intent ${address} is no longer open`);
   }
-  if (params.attestor !== judge) {
+  const committee = params.attestor === judge ? null : await loadCommittee(transport, params.attestor);
+  if (params.attestor !== judge && committee === null) {
     throw new JudgeRefused(`intent ${address} names ${params.attestor} as its judge, not ${judge}`);
   }
-  return { address, specHash: hex(params.specHash), minResult: params.minResult, maxResult: params.maxResult };
+  if (committee !== null && !committee.members.includes(judge)) {
+    throw new JudgeRefused(`intent ${address} names committee ${params.attestor} as its judge, and ${judge} is not one of its members`);
+  }
+  return {
+    address,
+    attestor: params.attestor,
+    committee,
+    specHash: hex(params.specHash),
+    minResult: params.minResult,
+    maxResult: params.maxResult,
+  };
 }
 
 export async function judge(command: JudgeCommand, runtime: Runtime, transport: Transport): Promise<Verdict> {
@@ -83,7 +110,12 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   }
   await sandboxReady(command.sandbox, dockerEnv(process.env));
   const signer = await runtime.loadSigner(command.keypair);
-  const { address, specHash, minResult, maxResult } = await escrowFor(transport, signer.address, command.owner, command.nonce);
+  const { address, attestor, committee, specHash, minResult, maxResult } = await escrowFor(
+    transport,
+    signer.address,
+    command.owner,
+    command.nonce,
+  );
   const result = command.result ?? minResult;
   if (result < minResult || result > maxResult) {
     throw new JudgeRefused(resultOutside(result, address, minResult, maxResult));
@@ -101,7 +133,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   }
   const sha256 = read.sha256;
   const check = command.check === undefined ? undefined : { name: basename(resolve(command.check)), read: await readArtifact(resolve(command.check)) };
-  const record = await deliveryRecord(transport, signer.address, address, command.maxPages);
+  const record = await deliveryRecord(transport, attestor, address, command.maxPages);
   if (!record.complete) {
     throw new JudgeRefused(
       `the delivery record is incomplete because the judge's history is too long to read in full or the RPC node cannot serve all of it, so the earliest announcer of the artifact with sha256 ${sha256} for intent ${address} cannot be known; nothing was run or paid. ${pagesRead(record.pages)}`,
@@ -117,7 +149,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   }
   const signals = holdSignals();
   try {
-    return await checkAndSettle(command, transport, signer, signals, { address, specHash, sha256, payTo, result, read, specBytes, check, viper });
+    return await checkAndSettle(command, transport, signer, signals, { address, committee, specHash, sha256, payTo, result, read, specBytes, check, viper });
   } finally {
     signals.release();
   }
@@ -176,6 +208,7 @@ function sendRelease(command: JudgeCommand, transport: Transport, signer: KeyPai
 
 type Judged = {
   address: Address;
+  committee: CommitteeView | null;
   specHash: string;
   sha256: string;
   payTo: Address;
@@ -191,7 +224,7 @@ async function checkAndSettle(
   transport: Transport,
   signer: KeyPairSigner,
   signals: HeldSignals,
-  { address, specHash, sha256, payTo, result, read, specBytes, check: checkFiles, viper }: Judged,
+  { address, committee, specHash, sha256, payTo, result, read, specBytes, check: checkFiles, viper }: Judged,
 ): Promise<Verdict> {
   const { sandbox } = command;
   let check: Check = { exitCode: null, timedOut: false };
@@ -224,7 +257,11 @@ async function checkAndSettle(
   }
   const passed = cases === undefined ? check.exitCode === 0 : cases.total > 0 && cases.passed === cases.total;
   let signature: Signature | null = null;
-  if (passed && command.yes) {
+  let vote: VoteFile | undefined;
+  if (passed && committee !== null) {
+    const target = { owner: command.owner, nonce: command.nonce, payTo, result };
+    vote = await memberVote(signer, await createClient({ url: command.url, transport }).committeeBallot(target), target);
+  } else if (passed && command.yes) {
     try {
       signature = await sendRelease(command, transport, signer, signals, { address, payTo, result, sha256 });
     } catch (error) {
@@ -253,7 +290,9 @@ async function checkAndSettle(
     verdict: passed ? "pass" : "fail",
     payTo,
     signature,
-    ...(passed && !command.yes ? { next: NOT_SENT } : {}),
+    ...(committee === null ? {} : { committee: committee.address }),
+    ...(vote === undefined ? {} : { vote, next: VOTE_NEXT }),
+    ...(passed && committee === null && !command.yes ? { next: NOT_SENT } : {}),
     ...(cleanup !== undefined ? { cleanup } : {}),
   };
   if (command.verdict !== undefined) {

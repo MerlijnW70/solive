@@ -3,7 +3,10 @@ import { chainTime, loadConfig, loadIntent, loadUser, MissingAccount, mintOf } f
 import { budgeted, simulated } from "./budget.js";
 import { intentSends, nonceAfter } from "./client-intents.js";
 import { clientReads } from "./client-reads.js";
-import { proofSettlement } from "./client-settle.js";
+import { committeeSends } from "./client-committee.js";
+import { feedbackInstructions, reputationOf } from "./reputation.js";
+export { loadCommittee } from "./client-committee.js";
+import { committeeSettlement, proofSettlement } from "./client-settle.js";
 import { type Client, type ClientOptions, type Mint, WATCH_POLL_MS, WATCH_WAIT_SECONDS } from "./client-types.js";
 import { decoded, watchIntents } from "./client-watch.js";
 import { explain } from "./errors.js";
@@ -12,8 +15,14 @@ import { intentNotifications, type RpcLike, rpcTransport, signatureWatch } from 
 
 export type {
   Balances,
+  BallotInput,
   Client,
   ClientOptions,
+  CommitteeBallot,
+  CommitteeRelease,
+  CommitteeView,
+  CreateCommitteeInput,
+  CreatedCommittee,
   CreatedIntent,
   CreateIntentInput,
   Fill,
@@ -22,6 +31,7 @@ export type {
   IntentAccount,
   IntentFilter,
   Mint,
+  SettleCommitteeInput,
   SettleProofInput,
   TokenBalance,
   WatchCallback,
@@ -37,7 +47,15 @@ export {
   WATCH_POLL_MS,
   WATCH_WAIT_SECONDS,
 } from "./client-types.js";
-export { EscrowExpired, NoFreeNonce, NotFillable, NotSettleable, PayeeMoved, PayToNotWallet } from "./client-errors.js";
+export {
+  EscrowExpired,
+  NoFreeNonce,
+  NotFillable,
+  NotSettleable,
+  PayeeMoved,
+  PayToNotWallet,
+  VoteRejected,
+} from "./client-errors.js";
 
 export function createClient(options: ClientOptions): Client {
   const { url, priority = 0n, pollMs = WATCH_POLL_MS, resyncSeconds = WATCH_WAIT_SECONDS } = options;
@@ -67,6 +85,8 @@ export function createClient(options: ClientOptions): Client {
   const { createIntent, cancel, unwrap, fill, expire, close } = intentSends(context);
   const { history, fillOf, balances } = clientReads(context);
   const settleProof = proofSettlement(context);
+  const { committeeBallot, prepareCommitteeRelease, settleCommittee } = committeeSettlement(context);
+  const { committee, createCommittee } = committeeSends(context);
 
   return {
     url,
@@ -99,6 +119,13 @@ export function createClient(options: ClientOptions): Client {
     cancel,
     unwrap,
     settleProof,
+    committee,
+    createCommittee,
+    committeeBallot,
+    prepareCommitteeRelease,
+    settleCommittee,
+    reputation: (wallet, options) => reputationOf(transport, wallet, options),
+    feedback: async (input) => send(await feedbackInstructions(transport, input), input.owner),
     fill,
     fillOf,
     expire,

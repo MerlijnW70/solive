@@ -435,6 +435,87 @@
       ]
     },
     {
+      "name": "create_committee",
+      "discriminator": [
+        216,
+        137,
+        130,
+        24,
+        113,
+        11,
+        204,
+        15
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "committee",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  109,
+                  109,
+                  105,
+                  116,
+                  116,
+                  101,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "id"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "members",
+          "type": {
+            "vec": "pubkey"
+          }
+        },
+        {
+          "name": "threshold",
+          "type": "u8"
+        },
+        {
+          "name": "fee_wallet",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "create_intent",
       "discriminator": [
         216,
@@ -1382,6 +1463,121 @@
       ]
     },
     {
+      "name": "fill_attested_committee",
+      "discriminator": [
+        226,
+        186,
+        211,
+        191,
+        65,
+        241,
+        205,
+        76
+      ],
+      "accounts": [
+        {
+          "name": "solver",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "intent",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "input_mint",
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "payee",
+          "writable": true
+        },
+        {
+          "name": "fee_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "partner_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "judge_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "committee"
+        },
+        {
+          "name": "input_token_program"
+        },
+        {
+          "name": "instructions"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_in",
+          "type": "u64"
+        },
+        {
+          "name": "result",
+          "type": "u64"
+        },
+        {
+          "name": "max_fee_bps",
+          "type": "u16"
+        },
+        {
+          "name": "signers",
+          "type": "u8"
+        },
+        {
+          "name": "ext",
+          "type": {
+            "defined": {
+              "name": "Ext"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "fill_attested_split",
       "discriminator": [
         34,
@@ -1514,6 +1710,165 @@
         {
           "name": "max_fee_bps",
           "type": "u16"
+        },
+        {
+          "name": "claim",
+          "type": {
+            "defined": {
+              "name": "SplitClaim"
+            }
+          }
+        },
+        {
+          "name": "ext",
+          "type": {
+            "defined": {
+              "name": "Ext"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "fill_attested_split_committee",
+      "discriminator": [
+        228,
+        68,
+        231,
+        222,
+        93,
+        49,
+        145,
+        29
+      ],
+      "accounts": [
+        {
+          "name": "solver",
+          "signer": true
+        },
+        {
+          "name": "config",
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "intent",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "input_mint",
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "fee_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "partner_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "judge_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "recipient0",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "recipient1",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "recipient2",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "recipient3",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "recipient4",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "recipient5",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "recipient6",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "recipient7",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "committee"
+        },
+        {
+          "name": "input_token_program"
+        },
+        {
+          "name": "instructions"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount_in",
+          "type": "u64"
+        },
+        {
+          "name": "result",
+          "type": "u64"
+        },
+        {
+          "name": "max_fee_bps",
+          "type": "u16"
+        },
+        {
+          "name": "signers",
+          "type": "u8"
         },
         {
           "name": "claim",
@@ -2152,6 +2507,19 @@
   ],
   "accounts": [
     {
+      "name": "Committee",
+      "discriminator": [
+        96,
+        136,
+        210,
+        244,
+        137,
+        110,
+        178,
+        104
+      ]
+    },
+    {
       "name": "Config",
       "discriminator": [
         155,
@@ -2268,6 +2636,32 @@
         243,
         236,
         158
+      ]
+    },
+    {
+      "name": "CommitteeAttested",
+      "discriminator": [
+        23,
+        7,
+        101,
+        168,
+        248,
+        95,
+        104,
+        5
+      ]
+    },
+    {
+      "name": "CommitteeCreated",
+      "discriminator": [
+        150,
+        119,
+        144,
+        25,
+        171,
+        170,
+        67,
+        43
       ]
     },
     {
@@ -2914,6 +3308,18 @@
     {
       "code": 6085,
       "name": "MintCapInvalid"
+    },
+    {
+      "code": 6086,
+      "name": "CommitteeInvalid"
+    },
+    {
+      "code": 6087,
+      "name": "CommitteeSigners"
+    },
+    {
+      "code": 6088,
+      "name": "CommitteeMismatch"
     }
   ],
   "types": [
@@ -2981,6 +3387,126 @@
           {
             "name": "required",
             "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Committee",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "members",
+            "type": {
+              "array": [
+                "pubkey",
+                8
+              ]
+            }
+          },
+          {
+            "name": "fee_wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
+            "name": "threshold",
+            "type": "u8"
+          },
+          {
+            "name": "count",
+            "type": "u8"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "padding",
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "CommitteeAttested",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "committee",
+            "type": "pubkey"
+          },
+          {
+            "name": "signers",
+            "type": {
+              "vec": "pubkey"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "CommitteeCreated",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "committee",
+            "type": "pubkey"
+          },
+          {
+            "name": "members",
+            "type": {
+              "vec": "pubkey"
+            }
+          },
+          {
+            "name": "threshold",
+            "type": "u8"
+          },
+          {
+            "name": "fee_wallet",
+            "type": "pubkey"
           }
         ]
       }

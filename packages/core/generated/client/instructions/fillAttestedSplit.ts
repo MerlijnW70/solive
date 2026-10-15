@@ -12,10 +12,6 @@ import {
   combineCodec,
   fixDecoderSize,
   fixEncoderSize,
-  getAddressDecoder,
-  getAddressEncoder,
-  getArrayDecoder,
-  getArrayEncoder,
   getBytesDecoder,
   getBytesEncoder,
   getStructDecoder,
@@ -54,6 +50,12 @@ import {
 } from "@solana/kit/program-client-core";
 import { findVaultPda } from "../pdas/index.js";
 import { INTENT_ENGINE_PROGRAM_ADDRESS } from "../programs/index.js";
+import {
+  getSplitClaimDecoder,
+  getSplitClaimEncoder,
+  type SplitClaim,
+  type SplitClaimArgs,
+} from "../types/index.js";
 
 export const FILL_ATTESTED_SPLIT_DISCRIMINATOR: ReadonlyUint8Array =
   new Uint8Array([34, 107, 23, 102, 114, 73, 49, 40]);
@@ -162,8 +164,7 @@ export type FillAttestedSplitInstructionData = {
   amountIn: bigint;
   result: bigint;
   maxFeeBps: number;
-  recipients: Array<Address>;
-  weights: Array<number>;
+  claim: SplitClaim;
   ext: ReadonlyUint8Array;
 };
 
@@ -171,8 +172,7 @@ export type FillAttestedSplitInstructionDataArgs = {
   amountIn: number | bigint;
   result: number | bigint;
   maxFeeBps: number;
-  recipients: Array<Address>;
-  weights: Array<number>;
+  claim: SplitClaimArgs;
   ext: ReadonlyUint8Array;
 };
 
@@ -183,8 +183,7 @@ export function getFillAttestedSplitInstructionDataEncoder(): Encoder<FillAttest
       ["amountIn", getU64Encoder()],
       ["result", getU64Encoder()],
       ["maxFeeBps", getU16Encoder()],
-      ["recipients", getArrayEncoder(getAddressEncoder())],
-      ["weights", getArrayEncoder(getU16Encoder())],
+      ["claim", getSplitClaimEncoder()],
       ["ext", addEncoderSizePrefix(getBytesEncoder(), getU32Encoder())],
     ]),
     (value) => ({ ...value, discriminator: FILL_ATTESTED_SPLIT_DISCRIMINATOR }),
@@ -197,8 +196,7 @@ export function getFillAttestedSplitInstructionDataDecoder(): Decoder<FillAttest
     ["amountIn", getU64Decoder()],
     ["result", getU64Decoder()],
     ["maxFeeBps", getU16Decoder()],
-    ["recipients", getArrayDecoder(getAddressDecoder())],
-    ["weights", getArrayDecoder(getU16Decoder())],
+    ["claim", getSplitClaimDecoder()],
     ["ext", addDecoderSizePrefix(getBytesDecoder(), getU32Decoder())],
   ]);
 }
@@ -261,8 +259,7 @@ export type FillAttestedSplitAsyncInput<
   amountIn: FillAttestedSplitInstructionDataArgs["amountIn"];
   result: FillAttestedSplitInstructionDataArgs["result"];
   maxFeeBps: FillAttestedSplitInstructionDataArgs["maxFeeBps"];
-  recipients: FillAttestedSplitInstructionDataArgs["recipients"];
-  weights: FillAttestedSplitInstructionDataArgs["weights"];
+  claim: FillAttestedSplitInstructionDataArgs["claim"];
   ext: FillAttestedSplitInstructionDataArgs["ext"];
 };
 
@@ -672,8 +669,7 @@ export type FillAttestedSplitInput<
   amountIn: FillAttestedSplitInstructionDataArgs["amountIn"];
   result: FillAttestedSplitInstructionDataArgs["result"];
   maxFeeBps: FillAttestedSplitInstructionDataArgs["maxFeeBps"];
-  recipients: FillAttestedSplitInstructionDataArgs["recipients"];
-  weights: FillAttestedSplitInstructionDataArgs["weights"];
+  claim: FillAttestedSplitInstructionDataArgs["claim"];
   ext: FillAttestedSplitInstructionDataArgs["ext"];
 };
 

@@ -2,7 +2,9 @@ import type { Address, Instruction, TransactionSigner } from "@solana/kit";
 import {
   getBeginFillInstructionAsync,
   getEndFillInstruction,
+  getFillAttestedCommitteeInstructionAsync,
   getFillAttestedInstructionAsync,
+  getFillAttestedSplitCommitteeInstructionAsync,
   getFillAttestedSplitInstructionAsync,
   getFillIntentInstructionAsync,
 } from "../generated/client/index.js";
@@ -86,28 +88,21 @@ export type FillAttestedSpec = {
   ext?: Uint8Array;
 };
 
-export async function buildFillAttested(input: FillAttestedSpec) {
-  const feeTo =
-    input.feeRecipient === undefined
-      ? undefined
-      : await findAssociatedTokenAddress({
-          owner: input.feeRecipient,
-          mint: input.inputMint,
-          tokenProgram: input.inputTokenProgram,
-        });
-  const judgeTo =
-    input.judge === undefined
-      ? undefined
-      : await findAssociatedTokenAddress({
-          owner: input.judge,
-          mint: input.inputMint,
-          tokenProgram: input.inputTokenProgram,
-        });
-  return getFillAttestedInstructionAsync({
+type AttestedAccounts = Omit<FillAttestedSpec, "payee">;
+
+async function ataOf(owner: Address | undefined, input: AttestedAccounts) {
+  return owner === undefined
+    ? undefined
+    : findAssociatedTokenAddress({ owner, mint: input.inputMint, tokenProgram: input.inputTokenProgram });
+}
+
+async function attestedAccounts(input: AttestedAccounts) {
+  const feeTo = await ataOf(input.feeRecipient, input);
+  const judgeTo = await ataOf(input.judge, input);
+  return {
     solver: input.solver,
     intent: await intentOf(input.owner, input.nonce),
     inputMint: input.inputMint,
-    payee: input.payee,
     ...(feeTo === undefined ? {} : { feeTo }),
     ...(await partnerAccount(input)),
     ...(judgeTo === undefined ? {} : { judgeTo }),
@@ -118,53 +113,44 @@ export async function buildFillAttested(input: FillAttestedSpec) {
     maxFeeBps: input.maxFeeBps,
     ext: fillExt(input.ext),
     ...(await events()),
+  };
+}
+
+export async function buildFillAttested(input: FillAttestedSpec) {
+  return getFillAttestedInstructionAsync({ ...(await attestedAccounts(input)), payee: input.payee });
+}
+
+export type CommitteeRelease = {
+  committee: Address;
+  signers: number;
+};
+
+export type FillAttestedCommitteeSpec = FillAttestedSpec & CommitteeRelease;
+
+export async function buildFillAttestedCommittee(input: FillAttestedCommitteeSpec) {
+  return getFillAttestedCommitteeInstructionAsync({
+    ...(await attestedAccounts(input)),
+    payee: input.payee,
+    committee: input.committee,
+    signers: input.signers,
   });
 }
 
-export type FillAttestedSplitSpec = Omit<FillAttestedSpec, "payee"> & {
+export type FillAttestedSplitSpec = AttestedAccounts & {
   recipients: Address[];
   weights: number[];
 };
 
-export async function buildFillAttestedSplit(input: FillAttestedSplitSpec) {
+async function splitAccounts(input: FillAttestedSplitSpec) {
   if (input.recipients.length < 1 || input.recipients.length > MAX_SPLIT_RECIPIENTS) {
     throw new Error(`split needs 1..=${MAX_SPLIT_RECIPIENTS} recipients, got ${input.recipients.length}`);
   }
   if (input.weights.length !== input.recipients.length) {
     throw new Error(`split needs one weight per recipient, got ${input.weights.length} for ${input.recipients.length}`);
   }
-  const feeTo =
-    input.feeRecipient === undefined
-      ? undefined
-      : await findAssociatedTokenAddress({
-          owner: input.feeRecipient,
-          mint: input.inputMint,
-          tokenProgram: input.inputTokenProgram,
-        });
-  const judgeTo =
-    input.judge === undefined
-      ? undefined
-      : await findAssociatedTokenAddress({
-          owner: input.judge,
-          mint: input.inputMint,
-          tokenProgram: input.inputTokenProgram,
-        });
-  const slots = await Promise.all(
-    input.recipients.map((owner) =>
-      findAssociatedTokenAddress({
-        owner,
-        mint: input.inputMint,
-        tokenProgram: input.inputTokenProgram,
-      }),
-    ),
-  );
-  return getFillAttestedSplitInstructionAsync({
-    solver: input.solver,
-    intent: await intentOf(input.owner, input.nonce),
-    inputMint: input.inputMint,
-    ...(feeTo === undefined ? {} : { feeTo }),
-    ...(await partnerAccount(input)),
-    ...(judgeTo === undefined ? {} : { judgeTo }),
+  const slots = await Promise.all(input.recipients.map((owner) => ataOf(owner, input)));
+  return {
+    ...(await attestedAccounts(input)),
     ...(slots[0] === undefined ? {} : { recipient0: slots[0] }),
     ...(slots[1] === undefined ? {} : { recipient1: slots[1] }),
     ...(slots[2] === undefined ? {} : { recipient2: slots[2] }),
@@ -173,15 +159,21 @@ export async function buildFillAttestedSplit(input: FillAttestedSplitSpec) {
     ...(slots[5] === undefined ? {} : { recipient5: slots[5] }),
     ...(slots[6] === undefined ? {} : { recipient6: slots[6] }),
     ...(slots[7] === undefined ? {} : { recipient7: slots[7] }),
-    inputTokenProgram: input.inputTokenProgram,
-    instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
-    amountIn: input.amountIn,
-    result: input.result,
-    maxFeeBps: input.maxFeeBps,
-    recipients: input.recipients,
-    weights: input.weights,
-    ext: fillExt(input.ext),
-    ...(await events()),
+    claim: { recipients: input.recipients, weights: input.weights },
+  };
+}
+
+export async function buildFillAttestedSplit(input: FillAttestedSplitSpec) {
+  return getFillAttestedSplitInstructionAsync(await splitAccounts(input));
+}
+
+export type FillAttestedSplitCommitteeSpec = FillAttestedSplitSpec & CommitteeRelease;
+
+export async function buildFillAttestedSplitCommittee(input: FillAttestedSplitCommitteeSpec) {
+  return getFillAttestedSplitCommitteeInstructionAsync({
+    ...(await splitAccounts(input)),
+    committee: input.committee,
+    signers: input.signers,
   });
 }
 

@@ -10,6 +10,8 @@ export * from "./adminAccepted.js";
 export * from "./adminProposed.js";
 export * from "./agentPaid.js";
 export * from "./capsRequiredSet.js";
+export * from "./committeeAttested.js";
+export * from "./committeeCreated.js";
 export * from "./configInitialized.js";
 export * from "./configUpdated.js";
 export * from "./economicsUpdated.js";

@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use anchor_lang::prelude::Pubkey;
 use anchor_lang::{Discriminator, InstructionData};
 use anchor_spl::associated_token::get_associated_token_address_with_program_id;
+use intent_core::committee::{Committee as CoreCommittee, COMMITTEE_COSIGN_TAG};
 use intent_core::fee::split_fee;
 use intent_core::kinds::{
     attested_result, dutch_auction, limit_order, swap_exact_in, Intent, Kind, ALL_KINDS_MASK,
@@ -17,7 +18,8 @@ use intent_core::PARAMS_LEN;
 use intent_engine::instruction as ix;
 use serde_json::{json, Value};
 use svm_tests::{
-    config_pda, event_authority, intent_pda, split_commit, user_pda, vault_pda, TestResult,
+    committee_pda, config_pda, event_authority, intent_pda, split_commit, user_pda, vault_pda,
+    TestResult,
 };
 
 const GOLDEN_EXT: [u8; 5] = [1, 2, 0, 0xaa, 0xbb];
@@ -622,6 +624,60 @@ fn vectors() -> TestResult<Value> {
     .preimage();
     let split_digest = solana_sha256_hasher::hashv(&[&split_preimage]).to_bytes();
     let split_attestation = offchain_envelope(&intent_core::sig::SPLIT_COSIGN_TAG, &split_digest);
+    let committee_message = offchain_envelope(&COMMITTEE_COSIGN_TAG, &proof_digest);
+    let committees: Vec<Value> = [
+        (vec![key(20)], 1u8, key(30)),
+        (vec![key(20), key(21), key(22)], 2, key(31)),
+        ((40..48).map(key).collect::<Vec<_>>(), 5, key(32)),
+        (vec![key(21), key(20)], 1, key(30)),
+        (vec![key(20), key(20)], 1, key(30)),
+        (vec![Pubkey::default(), key(20)], 1, key(30)),
+        (vec![key(20), key(21)], 0, key(30)),
+        (vec![key(20), key(21)], 3, key(30)),
+        (vec![key(20)], 1, Pubkey::default()),
+        (Vec::new(), 1, key(30)),
+        ((40..49).map(key).collect::<Vec<_>>(), 1, key(30)),
+    ]
+    .into_iter()
+    .map(|(members, threshold, fee_wallet)| {
+        let raw: Vec<[u8; 32]> = members.iter().map(Pubkey::to_bytes).collect();
+        let built = CoreCommittee::new(&raw, threshold, fee_wallet.to_bytes());
+        let mut case = serde_json::Map::new();
+        case.insert(
+            "members".into(),
+            json!(members.iter().map(ToString::to_string).collect::<Vec<_>>()),
+        );
+        case.insert("threshold".into(), json!(threshold));
+        case.insert("fee_wallet".into(), json!(fee_wallet.to_string()));
+        match built {
+            Ok(committee) => {
+                let preimage = committee.preimage();
+                let id = solana_sha256_hasher::hashv(&[&preimage]).to_bytes();
+                case.insert("preimage".into(), json!(hex(&preimage)));
+                case.insert("id".into(), json!(hex(&id)));
+                case.insert("address".into(), json!(committee_pda(&id).to_string()));
+                case.insert("masks".into(), (0u16..=0xff)
+                    .step_by(17)
+                    .chain([1, 3, 5, 7, 0x1f, 0xff])
+                    .filter_map(|m| u8::try_from(m).ok())
+                    .map(|mask| {
+                        json!({
+                            "mask": mask,
+                            "outcome": match committee.signers(mask) {
+                                Ok(s) => json!({ "ok": s.keys().iter().map(|k| Pubkey::new_from_array(*k).to_string()).collect::<Vec<_>>() }),
+                                Err(e) => json!({ "err": format!("{e:?}") }),
+                            },
+                        })
+                    })
+                    .collect::<Value>());
+            }
+            Err(e) => {
+                case.insert("err".into(), json!(format!("{e:?}")));
+            }
+        }
+        Value::Object(case)
+    })
+    .collect();
     let split_commits: Vec<Value> = [
         (vec![key(10)], vec![10_000u16]),
         (vec![key(10), key(11)], vec![6_000, 4_000]),
@@ -694,6 +750,7 @@ fn vectors() -> TestResult<Value> {
         "attest_split_hash": hex(&split_hash),
         "attest_split_preimage": hex(&split_preimage),
         "attest_split_message": hex(&split_attestation),
+        "committee_message": hex(&committee_message),
     });
 
     let ext_cases: Vec<(Vec<u8>, Vec<u8>)> = vec![
@@ -844,6 +901,8 @@ fn vectors() -> TestResult<Value> {
         "AdminProposed": hex(ev::AdminProposed::DISCRIMINATOR),
         "AgentPaid": hex(ev::AgentPaid::DISCRIMINATOR),
         "CapsRequiredSet": hex(ev::CapsRequiredSet::DISCRIMINATOR),
+        "CommitteeAttested": hex(ev::CommitteeAttested::DISCRIMINATOR),
+        "CommitteeCreated": hex(ev::CommitteeCreated::DISCRIMINATOR),
         "ConfigInitialized": hex(ev::ConfigInitialized::DISCRIMINATOR),
         "ConfigUpdated": hex(ev::ConfigUpdated::DISCRIMINATOR),
         "EconomicsUpdated": hex(ev::EconomicsUpdated::DISCRIMINATOR),
@@ -920,6 +979,7 @@ fn vectors() -> TestResult<Value> {
         "sig": sig,
         "split_commits": split_commits,
         "split_plans": split_plans,
+        "committees": committees,
         "random_signed": random_signed(),
         "random_dutch": random_dutch(),
         "economics_caps": {

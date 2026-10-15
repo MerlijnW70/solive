@@ -92,3 +92,6 @@ Every error the engine program raises, from its IDL. When an SDK call fails, `cl
 | 6083 | `MintCapPerOrder` | no | the amount escrowed exceeds the per-order cap the engine set for the input mint |
 | 6084 | `MintCapWindow` | yes | intents selling this mint have used the engine's escrow cap for the current window |
 | 6085 | `MintCapInvalid` | no | a mint cap needs a per-order cap above zero, a window cap at least the per-order cap, and a window of at least 60 seconds |
+| 6086 | `CommitteeInvalid` | no | a committee needs 1 to 8 distinct members in ascending order, a threshold from 1 to its member count, a fee wallet, and an address that is the hash of exactly those terms |
+| 6087 | `CommitteeSigners` | no | the votes name fewer members than the committee's threshold, or a member it does not have |
+| 6088 | `CommitteeMismatch` | no | the committee passed is not the judge the escrow names |

@@ -1,6 +1,7 @@
 import type { Address, Instruction, KeyPairSigner, Signature, TransactionSigner } from "@solana/kit";
-import type { Config, EngineEvent, Intent, IntentParams } from "@intent-engine/core";
+import type { CommitteeTerms, CommitteeVote, Config, EngineEvent, Intent, IntentParams } from "@intent-engine/core";
 import type { Priority } from "./budget.js";
+import type { FeedbackInput, Reputation, ReputationOptions } from "./reputation.js";
 import type { EngineError } from "./errors.js";
 import type { DeliverInput, Delivery, DeliveryRecord, Job, Spec, SpecFetch } from "./jobs.js";
 import type { Notifications, Simulation, Transport } from "./transport.js";
@@ -49,6 +50,42 @@ export type SettleProofInput = {
   deliveredSha256?: string;
 };
 
+export type CommitteeView = CommitteeTerms & { address: Address; id: Uint8Array; createdAt: bigint };
+
+export type CreateCommitteeInput = CommitteeTerms & { payer: TransactionSigner };
+
+export type CreatedCommittee = { committee: Address; signature: Signature | null };
+
+export type BallotInput = {
+  owner: Address;
+  nonce: bigint;
+  payTo: Address;
+  result: bigint;
+};
+
+export type CommitteeBallot = {
+  intent: Address;
+  committee: CommitteeView;
+  payee: Address;
+  digest: Uint8Array;
+};
+
+export type SettleCommitteeInput = BallotInput & {
+  solver: TransactionSigner;
+  votes: readonly CommitteeVote[];
+  payer?: TransactionSigner;
+  deliveredSha256?: string;
+};
+
+export type CommitteeRelease = {
+  intent: Address;
+  committee: CommitteeView;
+  payee: Address;
+  signers: Address[];
+  payer: TransactionSigner;
+  instructions: Instruction[];
+};
+
 export type HistoryEvent = EngineEvent & { signature: Signature; slot: bigint; blockTime: bigint | null; deliveredSha256?: string };
 
 export type FillInput = {
@@ -94,6 +131,13 @@ export type Client = {
   cancel(signer: TransactionSigner, nonce: bigint): Promise<Signature>;
   unwrap(signer: TransactionSigner): Promise<Signature | null>;
   settleProof(input: SettleProofInput): Promise<Signature>;
+  committee(address: Address): Promise<CommitteeView | null>;
+  createCommittee(input: CreateCommitteeInput): Promise<CreatedCommittee>;
+  committeeBallot(input: BallotInput): Promise<CommitteeBallot>;
+  prepareCommitteeRelease(input: SettleCommitteeInput): Promise<CommitteeRelease>;
+  settleCommittee(input: SettleCommitteeInput): Promise<Signature>;
+  reputation(wallet: Address, options?: ReputationOptions): Promise<Reputation>;
+  feedback(input: FeedbackInput): Promise<Signature>;
   fill(input: FillInput): Promise<Signature>;
   fillOf(intent: Address): Promise<Fill | null>;
   expire(cranker: TransactionSigner, owner: Address, nonce: bigint): Promise<Signature>;

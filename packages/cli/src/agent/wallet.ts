@@ -5,6 +5,8 @@ import { walletEscrow, walletEscrowPlan } from "./wallet/escrow.js";
 import { walletAttest } from "./wallet/attest.js";
 import { walletDeliver, walletCheckDelivery } from "./wallet/delivery.js";
 import { walletAttestSplit } from "./wallet/split.js";
+import { walletCommitteeRelease, walletCommitteeVote } from "./wallet/committee.js";
+import { walletFeedback } from "./reputation.js";
 import { walletRecordDelivery } from "./wallet/record.js";
 import { walletWait } from "./wallet/wait.js";
 import { walletReceipt } from "./wallet/receipt.js";
@@ -46,6 +48,7 @@ export {
 } from "./wallet/trade.js";
 export { ESCROW_EXPIRES_IN, RECORD_MINT_NEEDED, MAX_PIECES, piecesPartlySent, piecesMayHaveLanded } from "./wallet/escrow.js";
 export { PAYEE_MOVED, RELEASE_CHANGED, approvalOf } from "./wallet/attest.js";
+export { NOT_A_MEMBER, VOTE_CHANGED } from "./wallet/committee.js";
 export {
   notEarliest,
   notInSplit,
@@ -123,6 +126,9 @@ export const WALLET_ACTIONS: readonly AnyAction[] = [
   walletEscrowPlan,
   walletAttest,
   walletAttestSplit,
+  walletCommitteeVote,
+  walletCommitteeRelease,
+  walletFeedback,
   walletRecordDelivery,
   walletDeliver,
   walletCheckDelivery,

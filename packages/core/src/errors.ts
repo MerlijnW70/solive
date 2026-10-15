@@ -36,6 +36,8 @@ export const CORE_ERROR_CODES = [
   "MandateBudget",
   "MandateCount",
   "MandatePrice",
+  "CommitteeInvalid",
+  "CommitteeSigners",
 ] as const;
 
 export type CoreErrorCode = (typeof CORE_ERROR_CODES)[number];

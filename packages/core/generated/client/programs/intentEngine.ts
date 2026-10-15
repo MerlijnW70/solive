@@ -35,11 +35,14 @@ import {
   type SelfPlanAndSendFunctions,
 } from "@solana/kit/program-client-core";
 import {
+  getCommitteeCodec,
   getConfigCodec,
   getIntentCodec,
   getMandateCodec,
   getMintCapCodec,
   getUserStateCodec,
+  type Committee,
+  type CommitteeArgs,
   type Config,
   type ConfigArgs,
   type Intent,
@@ -58,13 +61,16 @@ import {
   getBeginFillInstructionAsync,
   getCancelIntentInstructionAsync,
   getCloseIntentInstructionAsync,
+  getCreateCommitteeInstructionAsync,
   getCreateIntentByAgentInstructionAsync,
   getCreateIntentInstructionAsync,
   getCreateIntentSignedInstructionAsync,
   getCreateMandateInstructionAsync,
   getEndFillInstruction,
   getExpireIntentInstructionAsync,
+  getFillAttestedCommitteeInstructionAsync,
   getFillAttestedInstructionAsync,
+  getFillAttestedSplitCommitteeInstructionAsync,
   getFillAttestedSplitInstructionAsync,
   getFillIntentInstructionAsync,
   getInitConfigInstructionAsync,
@@ -83,13 +89,16 @@ import {
   parseBeginFillInstruction,
   parseCancelIntentInstruction,
   parseCloseIntentInstruction,
+  parseCreateCommitteeInstruction,
   parseCreateIntentByAgentInstruction,
   parseCreateIntentInstruction,
   parseCreateIntentSignedInstruction,
   parseCreateMandateInstruction,
   parseEndFillInstruction,
   parseExpireIntentInstruction,
+  parseFillAttestedCommitteeInstruction,
   parseFillAttestedInstruction,
+  parseFillAttestedSplitCommitteeInstruction,
   parseFillAttestedSplitInstruction,
   parseFillIntentInstruction,
   parseInitConfigInstruction,
@@ -108,6 +117,7 @@ import {
   type BeginFillAsyncInput,
   type CancelIntentAsyncInput,
   type CloseIntentAsyncInput,
+  type CreateCommitteeAsyncInput,
   type CreateIntentAsyncInput,
   type CreateIntentByAgentAsyncInput,
   type CreateIntentSignedAsyncInput,
@@ -115,7 +125,9 @@ import {
   type EndFillInput,
   type ExpireIntentAsyncInput,
   type FillAttestedAsyncInput,
+  type FillAttestedCommitteeAsyncInput,
   type FillAttestedSplitAsyncInput,
+  type FillAttestedSplitCommitteeAsyncInput,
   type FillIntentAsyncInput,
   type InitConfigAsyncInput,
   type InitUserAsyncInput,
@@ -126,13 +138,16 @@ import {
   type ParsedBeginFillInstruction,
   type ParsedCancelIntentInstruction,
   type ParsedCloseIntentInstruction,
+  type ParsedCreateCommitteeInstruction,
   type ParsedCreateIntentByAgentInstruction,
   type ParsedCreateIntentInstruction,
   type ParsedCreateIntentSignedInstruction,
   type ParsedCreateMandateInstruction,
   type ParsedEndFillInstruction,
   type ParsedExpireIntentInstruction,
+  type ParsedFillAttestedCommitteeInstruction,
   type ParsedFillAttestedInstruction,
+  type ParsedFillAttestedSplitCommitteeInstruction,
   type ParsedFillAttestedSplitInstruction,
   type ParsedFillIntentInstruction,
   type ParsedInitConfigInstruction,
@@ -154,6 +169,7 @@ import {
   type UpdateEconomicsInput,
 } from "../instructions/index.js";
 import {
+  findCommitteePda,
   findConfigPda,
   findDelegatePda,
   findMintCapPda,
@@ -166,16 +182,18 @@ export const INTENT_ENGINE_PROGRAM_ADDRESS =
   "GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU" as Address<"GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU">;
 
 export const IntentEngineAccount = {
-  0: "Config",
-  1: "Intent",
-  2: "Mandate",
-  3: "MintCap",
-  4: "UserState",
-  Config: 0,
-  Intent: 1,
-  Mandate: 2,
-  MintCap: 3,
-  UserState: 4,
+  0: "Committee",
+  1: "Config",
+  2: "Intent",
+  3: "Mandate",
+  4: "MintCap",
+  5: "UserState",
+  Committee: 0,
+  Config: 1,
+  Intent: 2,
+  Mandate: 3,
+  MintCap: 4,
+  UserState: 5,
 } as const;
 
 export type IntentEngineAccount = (typeof IntentEngineAccount)[Exclude<
@@ -187,6 +205,17 @@ export function identifyIntentEngineAccount(
   account: { data: ReadonlyUint8Array } | ReadonlyUint8Array,
 ): IntentEngineAccount {
   const data = "data" in account ? account.data : account;
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([96, 136, 210, 244, 137, 110, 178, 104]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineAccount.Committee;
+  }
   if (
     containsBytes(
       data,
@@ -253,56 +282,60 @@ export const IntentEngineEvent = {
   1: "AdminProposed",
   2: "AgentPaid",
   3: "CapsRequiredSet",
-  4: "ConfigInitialized",
-  5: "ConfigUpdated",
-  6: "EconomicsUpdated",
-  7: "EpochAdvanced",
-  8: "FeeWithheld",
-  9: "FillBegun",
-  10: "FillEnded",
-  11: "IntentAttested",
-  12: "IntentCancelled",
-  13: "IntentClosed",
-  14: "IntentCreated",
-  15: "IntentExpired",
-  16: "IntentFilled",
-  17: "IntentSplit",
-  18: "MandateClosed",
-  19: "MandateCreated",
-  20: "MandateUsed",
-  21: "MintCapSet",
-  22: "NonceAdvanced",
-  23: "PauseLowered",
-  24: "PauseRaised",
-  25: "RelayerPaid",
-  26: "UserInitialized",
+  4: "CommitteeAttested",
+  5: "CommitteeCreated",
+  6: "ConfigInitialized",
+  7: "ConfigUpdated",
+  8: "EconomicsUpdated",
+  9: "EpochAdvanced",
+  10: "FeeWithheld",
+  11: "FillBegun",
+  12: "FillEnded",
+  13: "IntentAttested",
+  14: "IntentCancelled",
+  15: "IntentClosed",
+  16: "IntentCreated",
+  17: "IntentExpired",
+  18: "IntentFilled",
+  19: "IntentSplit",
+  20: "MandateClosed",
+  21: "MandateCreated",
+  22: "MandateUsed",
+  23: "MintCapSet",
+  24: "NonceAdvanced",
+  25: "PauseLowered",
+  26: "PauseRaised",
+  27: "RelayerPaid",
+  28: "UserInitialized",
   AdminAccepted: 0,
   AdminProposed: 1,
   AgentPaid: 2,
   CapsRequiredSet: 3,
-  ConfigInitialized: 4,
-  ConfigUpdated: 5,
-  EconomicsUpdated: 6,
-  EpochAdvanced: 7,
-  FeeWithheld: 8,
-  FillBegun: 9,
-  FillEnded: 10,
-  IntentAttested: 11,
-  IntentCancelled: 12,
-  IntentClosed: 13,
-  IntentCreated: 14,
-  IntentExpired: 15,
-  IntentFilled: 16,
-  IntentSplit: 17,
-  MandateClosed: 18,
-  MandateCreated: 19,
-  MandateUsed: 20,
-  MintCapSet: 21,
-  NonceAdvanced: 22,
-  PauseLowered: 23,
-  PauseRaised: 24,
-  RelayerPaid: 25,
-  UserInitialized: 26,
+  CommitteeAttested: 4,
+  CommitteeCreated: 5,
+  ConfigInitialized: 6,
+  ConfigUpdated: 7,
+  EconomicsUpdated: 8,
+  EpochAdvanced: 9,
+  FeeWithheld: 10,
+  FillBegun: 11,
+  FillEnded: 12,
+  IntentAttested: 13,
+  IntentCancelled: 14,
+  IntentClosed: 15,
+  IntentCreated: 16,
+  IntentExpired: 17,
+  IntentFilled: 18,
+  IntentSplit: 19,
+  MandateClosed: 20,
+  MandateCreated: 21,
+  MandateUsed: 22,
+  MintCapSet: 23,
+  NonceAdvanced: 24,
+  PauseLowered: 25,
+  PauseRaised: 26,
+  RelayerPaid: 27,
+  UserInitialized: 28,
 } as const;
 
 export type IntentEngineEvent = (typeof IntentEngineEvent)[Exclude<
@@ -357,6 +390,28 @@ export function identifyIntentEngineEvent(
     )
   ) {
     return IntentEngineEvent.CapsRequiredSet;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([23, 7, 101, 168, 248, 95, 104, 5]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineEvent.CommitteeAttested;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([150, 119, 144, 25, 171, 170, 67, 43]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineEvent.CommitteeCreated;
   }
   if (
     containsBytes(
@@ -623,50 +678,56 @@ export const IntentEngineInstruction = {
   3: "BeginFill",
   4: "CancelIntent",
   5: "CloseIntent",
-  6: "CreateIntent",
-  7: "CreateIntentByAgent",
-  8: "CreateIntentSigned",
-  9: "CreateMandate",
-  10: "EndFill",
-  11: "ExpireIntent",
-  12: "FillAttested",
-  13: "FillAttestedSplit",
-  14: "FillIntent",
-  15: "InitConfig",
-  16: "InitUser",
-  17: "LowerPause",
-  18: "ProposeAdmin",
-  19: "RaisePause",
-  20: "RevokeMandate",
-  21: "SetCapsRequired",
-  22: "SetMintCap",
-  23: "UpdateConfig",
-  24: "UpdateEconomics",
+  6: "CreateCommittee",
+  7: "CreateIntent",
+  8: "CreateIntentByAgent",
+  9: "CreateIntentSigned",
+  10: "CreateMandate",
+  11: "EndFill",
+  12: "ExpireIntent",
+  13: "FillAttested",
+  14: "FillAttestedCommittee",
+  15: "FillAttestedSplit",
+  16: "FillAttestedSplitCommittee",
+  17: "FillIntent",
+  18: "InitConfig",
+  19: "InitUser",
+  20: "LowerPause",
+  21: "ProposeAdmin",
+  22: "RaisePause",
+  23: "RevokeMandate",
+  24: "SetCapsRequired",
+  25: "SetMintCap",
+  26: "UpdateConfig",
+  27: "UpdateEconomics",
   AcceptAdmin: 0,
   AdvanceEpoch: 1,
   AdvanceNonce: 2,
   BeginFill: 3,
   CancelIntent: 4,
   CloseIntent: 5,
-  CreateIntent: 6,
-  CreateIntentByAgent: 7,
-  CreateIntentSigned: 8,
-  CreateMandate: 9,
-  EndFill: 10,
-  ExpireIntent: 11,
-  FillAttested: 12,
-  FillAttestedSplit: 13,
-  FillIntent: 14,
-  InitConfig: 15,
-  InitUser: 16,
-  LowerPause: 17,
-  ProposeAdmin: 18,
-  RaisePause: 19,
-  RevokeMandate: 20,
-  SetCapsRequired: 21,
-  SetMintCap: 22,
-  UpdateConfig: 23,
-  UpdateEconomics: 24,
+  CreateCommittee: 6,
+  CreateIntent: 7,
+  CreateIntentByAgent: 8,
+  CreateIntentSigned: 9,
+  CreateMandate: 10,
+  EndFill: 11,
+  ExpireIntent: 12,
+  FillAttested: 13,
+  FillAttestedCommittee: 14,
+  FillAttestedSplit: 15,
+  FillAttestedSplitCommittee: 16,
+  FillIntent: 17,
+  InitConfig: 18,
+  InitUser: 19,
+  LowerPause: 20,
+  ProposeAdmin: 21,
+  RaisePause: 22,
+  RevokeMandate: 23,
+  SetCapsRequired: 24,
+  SetMintCap: 25,
+  UpdateConfig: 26,
+  UpdateEconomics: 27,
 } as const;
 
 export type IntentEngineInstruction = (typeof IntentEngineInstruction)[Exclude<
@@ -743,6 +804,17 @@ export function identifyIntentEngineInstruction(
     )
   ) {
     return IntentEngineInstruction.CloseIntent;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([216, 137, 130, 24, 113, 11, 204, 15]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineInstruction.CreateCommittee;
   }
   if (
     containsBytes(
@@ -825,12 +897,34 @@ export function identifyIntentEngineInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([226, 186, 211, 191, 65, 241, 205, 76]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineInstruction.FillAttestedCommittee;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([34, 107, 23, 102, 114, 73, 49, 40]),
       ),
       0,
     )
   ) {
     return IntentEngineInstruction.FillAttestedSplit;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([228, 68, 231, 222, 93, 49, 145, 29]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineInstruction.FillAttestedSplitCommittee;
   }
   if (
     containsBytes(
@@ -981,6 +1075,9 @@ export type ParsedIntentEngineInstruction<
       instructionType: typeof IntentEngineInstruction.CloseIntent;
     } & ParsedCloseIntentInstruction<TProgram>)
   | ({
+      instructionType: typeof IntentEngineInstruction.CreateCommittee;
+    } & ParsedCreateCommitteeInstruction<TProgram>)
+  | ({
       instructionType: typeof IntentEngineInstruction.CreateIntent;
     } & ParsedCreateIntentInstruction<TProgram>)
   | ({
@@ -1002,8 +1099,14 @@ export type ParsedIntentEngineInstruction<
       instructionType: typeof IntentEngineInstruction.FillAttested;
     } & ParsedFillAttestedInstruction<TProgram>)
   | ({
+      instructionType: typeof IntentEngineInstruction.FillAttestedCommittee;
+    } & ParsedFillAttestedCommitteeInstruction<TProgram>)
+  | ({
       instructionType: typeof IntentEngineInstruction.FillAttestedSplit;
     } & ParsedFillAttestedSplitInstruction<TProgram>)
+  | ({
+      instructionType: typeof IntentEngineInstruction.FillAttestedSplitCommittee;
+    } & ParsedFillAttestedSplitCommitteeInstruction<TProgram>)
   | ({
       instructionType: typeof IntentEngineInstruction.FillIntent;
     } & ParsedFillIntentInstruction<TProgram>)
@@ -1085,6 +1188,13 @@ export function parseIntentEngineInstruction<TProgram extends string>(
         ...parseCloseIntentInstruction(instruction),
       };
     }
+    case IntentEngineInstruction.CreateCommittee: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: IntentEngineInstruction.CreateCommittee,
+        ...parseCreateCommitteeInstruction(instruction),
+      };
+    }
     case IntentEngineInstruction.CreateIntent: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -1134,11 +1244,25 @@ export function parseIntentEngineInstruction<TProgram extends string>(
         ...parseFillAttestedInstruction(instruction),
       };
     }
+    case IntentEngineInstruction.FillAttestedCommittee: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: IntentEngineInstruction.FillAttestedCommittee,
+        ...parseFillAttestedCommitteeInstruction(instruction),
+      };
+    }
     case IntentEngineInstruction.FillAttestedSplit: {
       assertIsInstructionWithAccounts(instruction);
       return {
         instructionType: IntentEngineInstruction.FillAttestedSplit,
         ...parseFillAttestedSplitInstruction(instruction),
+      };
+    }
+    case IntentEngineInstruction.FillAttestedSplitCommittee: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: IntentEngineInstruction.FillAttestedSplitCommittee,
+        ...parseFillAttestedSplitCommitteeInstruction(instruction),
       };
     }
     case IntentEngineInstruction.FillIntent: {
@@ -1239,6 +1363,8 @@ export type IntentEnginePlugin = {
 };
 
 export type IntentEnginePluginAccounts = {
+  committee: ReturnType<typeof getCommitteeCodec> &
+    SelfFetchFunctions<CommitteeArgs, Committee>;
   config: ReturnType<typeof getConfigCodec> &
     SelfFetchFunctions<ConfigArgs, Config>;
   intent: ReturnType<typeof getIntentCodec> &
@@ -1275,6 +1401,10 @@ export type IntentEnginePluginInstructions = {
     input: CloseIntentAsyncInput,
   ) => ReturnType<typeof getCloseIntentInstructionAsync> &
     SelfPlanAndSendFunctions;
+  createCommittee: (
+    input: MakeOptional<CreateCommitteeAsyncInput, "payer">,
+  ) => ReturnType<typeof getCreateCommitteeInstructionAsync> &
+    SelfPlanAndSendFunctions;
   createIntent: (
     input: CreateIntentAsyncInput,
   ) => ReturnType<typeof getCreateIntentInstructionAsync> &
@@ -1302,9 +1432,17 @@ export type IntentEnginePluginInstructions = {
     input: FillAttestedAsyncInput,
   ) => ReturnType<typeof getFillAttestedInstructionAsync> &
     SelfPlanAndSendFunctions;
+  fillAttestedCommittee: (
+    input: FillAttestedCommitteeAsyncInput,
+  ) => ReturnType<typeof getFillAttestedCommitteeInstructionAsync> &
+    SelfPlanAndSendFunctions;
   fillAttestedSplit: (
     input: FillAttestedSplitAsyncInput,
   ) => ReturnType<typeof getFillAttestedSplitInstructionAsync> &
+    SelfPlanAndSendFunctions;
+  fillAttestedSplitCommittee: (
+    input: FillAttestedSplitCommitteeAsyncInput,
+  ) => ReturnType<typeof getFillAttestedSplitCommitteeInstructionAsync> &
     SelfPlanAndSendFunctions;
   fillIntent: (
     input: FillIntentAsyncInput,
@@ -1351,6 +1489,7 @@ export type IntentEnginePluginInstructions = {
 export type IntentEnginePluginPdas = {
   userState: typeof findUserStatePda;
   vault: typeof findVaultPda;
+  committee: typeof findCommitteePda;
   mintCap: typeof findMintCapPda;
   delegate: typeof findDelegatePda;
   config: typeof findConfigPda;
@@ -1371,6 +1510,7 @@ export function intentEngineProgram() {
     return extendClient(client, {
       intentEngine: {
         accounts: {
+          committee: addSelfFetchFunctions(client, getCommitteeCodec()),
           config: addSelfFetchFunctions(client, getConfigCodec()),
           intent: addSelfFetchFunctions(client, getIntentCodec()),
           mandate: addSelfFetchFunctions(client, getMandateCodec()),
@@ -1408,6 +1548,14 @@ export function intentEngineProgram() {
               client,
               getCloseIntentInstructionAsync(input),
             ),
+          createCommittee: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getCreateCommitteeInstructionAsync({
+                ...input,
+                payer: input.payer ?? client.payer,
+              }),
+            ),
           createIntent: (input) =>
             addSelfPlanAndSendFunctions(
               client,
@@ -1443,10 +1591,20 @@ export function intentEngineProgram() {
               client,
               getFillAttestedInstructionAsync(input),
             ),
+          fillAttestedCommittee: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getFillAttestedCommitteeInstructionAsync(input),
+            ),
           fillAttestedSplit: (input) =>
             addSelfPlanAndSendFunctions(
               client,
               getFillAttestedSplitInstructionAsync(input),
+            ),
+          fillAttestedSplitCommittee: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getFillAttestedSplitCommitteeInstructionAsync(input),
             ),
           fillIntent: (input) =>
             addSelfPlanAndSendFunctions(
@@ -1510,6 +1668,7 @@ export function intentEngineProgram() {
         pdas: {
           userState: findUserStatePda,
           vault: findVaultPda,
+          committee: findCommitteePda,
           mintCap: findMintCapPda,
           delegate: findDelegatePda,
           config: findConfigPda,

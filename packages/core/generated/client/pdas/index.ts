@@ -6,6 +6,7 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from "./committee.js";
 export * from "./config.js";
 export * from "./delegate.js";
 export * from "./mintCap.js";

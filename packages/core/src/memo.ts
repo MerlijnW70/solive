@@ -4,12 +4,16 @@ import { PRODUCT_SLUG } from "../generated/identity.js";
 export const SPEC_MEMO_PREFIX = `${PRODUCT_SLUG}-spec:`;
 export const DELIVERY_MEMO_PREFIX = `${PRODUCT_SLUG}-delivery:`;
 export const RELEASE_MEMO_PREFIX = "delivery sha256:";
+export const FEEDBACK_MEMO_PREFIX = `${PRODUCT_SLUG}-feedback:`;
+export const MAX_FEEDBACK_SCORE = 100;
 export const MAX_MEMO_URL = 200;
 export const MAX_DELIVERY_MEMO = DELIVERY_MEMO_PREFIX.length + 44 + 1 + 64 + 1 + MAX_MEMO_URL;
 
 export type SpecMemo = { url: string };
 
 export type DeliveryMemo = { intent: Address; sha256: string; url: string };
+
+export type FeedbackMemo = { intent: Address; score: number; note?: string };
 
 export const MEMO_URL_RULE = `an https url of at most ${MAX_MEMO_URL} printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would`;
 
@@ -105,4 +109,33 @@ export function releaseMemo(sha256: string): string {
 export function parseReleaseMemo(text: string): string | null {
   const sha256 = text.slice(RELEASE_MEMO_PREFIX.length);
   return text.startsWith(RELEASE_MEMO_PREFIX) && isSha256Hex(sha256) ? sha256 : null;
+}
+
+const SCORE = /^(0|[1-9][0-9]{0,2})$/;
+
+export function feedbackMemo({ intent, score, note }: FeedbackMemo): string {
+  if (!isAddress(intent)) {
+    throw new RangeError("feedback names its intent by a base58 address");
+  }
+  if (!Number.isInteger(score) || score < 0 || score > MAX_FEEDBACK_SCORE) {
+    throw new RangeError(`a feedback score is a whole number from 0 to ${MAX_FEEDBACK_SCORE}`);
+  }
+  if (note !== undefined && !isSha256Hex(note)) {
+    throw new RangeError("a feedback note is the sha256 of the note as 64 lowercase hex digits");
+  }
+  return `${FEEDBACK_MEMO_PREFIX}${intent}:${score}${note === undefined ? "" : `:${note}`}`;
+}
+
+export function parseFeedbackMemo(text: string): FeedbackMemo | null {
+  if (!text.startsWith(FEEDBACK_MEMO_PREFIX)) {
+    return null;
+  }
+  const [intent = "", score = "", note, ...rest] = text.slice(FEEDBACK_MEMO_PREFIX.length).split(":");
+  if (rest.length > 0 || !isAddress(intent) || !SCORE.test(score) || Number(score) > MAX_FEEDBACK_SCORE) {
+    return null;
+  }
+  if (note !== undefined && !isSha256Hex(note)) {
+    return null;
+  }
+  return { intent, score: Number(score), ...(note === undefined ? {} : { note }) };
 }

@@ -36,6 +36,7 @@ export {
   memosSignedBy,
   parseFollowUpMemo,
   recordedDelivery,
+  releaseSigners,
   RELEASE_MARK,
 } from "./job-memos.js";
 export {

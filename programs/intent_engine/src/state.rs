@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use intent_core::committee::MAX_MEMBERS;
 use intent_core::mandate::{Limits, Usage};
 use intent_core::PARAMS_LEN;
 
@@ -9,6 +10,7 @@ pub const VAULT_SEED: &[u8] = b"vault";
 pub const DELEGATE_SEED: &[u8] = b"delegate";
 pub const MANDATE_SEED: &[u8] = b"mandate";
 pub const MINT_CAP_SEED: &[u8] = b"mint_cap";
+pub const COMMITTEE_SEED: &[u8] = b"committee";
 
 pub const CONFIG_ADDRESS: Pubkey = pubkey!("6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz");
 
@@ -21,6 +23,7 @@ pub const USER_VERSION: u8 = 1;
 pub const INTENT_VERSION: u8 = 1;
 pub const MANDATE_VERSION: u8 = 1;
 pub const MINT_CAP_VERSION: u8 = 1;
+pub const COMMITTEE_VERSION: u8 = 1;
 pub const MIN_CAP_WINDOW_SECS: u32 = 60;
 pub const OLDEST_CONFIG_VERSION: u8 = 1;
 pub const OLDEST_INTENT_VERSION: u8 = 1;
@@ -193,4 +196,22 @@ pub struct MintCap {
 
 impl MintCap {
     pub const SPACE: usize = 8 + core::mem::size_of::<MintCap>();
+}
+
+#[account(zero_copy)]
+pub struct Committee {
+    pub members: [Pubkey; MAX_MEMBERS],
+    pub fee_wallet: Pubkey,
+    pub id: [u8; 32],
+    pub created_at: i64,
+    pub threshold: u8,
+    pub count: u8,
+    pub version: u8,
+    pub bump: u8,
+    pub padding: [u8; 4],
+    pub reserved: [u8; 64],
+}
+
+impl Committee {
+    pub const SPACE: usize = 8 + core::mem::size_of::<Committee>();
 }

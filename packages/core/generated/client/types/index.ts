@@ -7,3 +7,4 @@
  */
 
 export * from "./createIntentArgs.js";
+export * from "./splitClaim.js";

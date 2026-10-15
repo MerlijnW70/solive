@@ -140,12 +140,20 @@ export const OPTIONS = {
   "max-per-order": { type: "string" },
   "window-cap": { type: "string" },
   "window-secs": { type: "string" },
+  members: { type: "string" },
+  threshold: { type: "string" },
+  "fee-wallet": { type: "string" },
+  committee: { type: "string" },
+  vote: { type: "string", multiple: true },
+  worker: { type: "string" },
+  score: { type: "string" },
+  note: { type: "string" },
 } as const;
 
-export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill"]);
+export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill", "vote"]);
 
 export type Flag = "dry-run" | "fund-accounts" | "yes" | "help" | "version" | "follow" | "create" | "wallet" | "watch" | "close" | "once";
-export type Many = "max-fill";
+export type Many = "max-fill" | "vote";
 export type StringKey = Exclude<keyof typeof OPTIONS, Flag | Many>;
 export type Values = { [K in StringKey]?: string | undefined } & { [K in Flag]?: boolean | undefined } & { [K in Many]?: string[] | undefined };
 
@@ -292,6 +300,25 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
     "units",
   ],
   monitor: ["url", "expect", "write-baseline", "interval", "max-fill", "max-fills", "webhook", "once"],
+  reputation: ["url", "worker", "max-pages"],
+  feedback: ["url", "priority-fee", "keypair", "yes", "intent", "score", "note"],
+  committee: [
+    "url",
+    "priority-fee",
+    "keypair",
+    "yes",
+    "members",
+    "threshold",
+    "fee-wallet",
+    "committee",
+    "owner",
+    "nonce",
+    "pay-to",
+    "result",
+    "out",
+    "vote",
+    "sha256",
+  ],
 };
 
 export const SUB_ACCEPTS: Record<string, Record<string, readonly (keyof typeof OPTIONS)[]>> = {
@@ -340,5 +367,11 @@ export const SUB_ACCEPTS: Record<string, Record<string, readonly (keyof typeof O
       "units",
     ],
     submit: ["url", "keypair", "yes", "file"],
+  },
+  committee: {
+    create: ["url", "priority-fee", "keypair", "yes", "members", "threshold", "fee-wallet"],
+    show: ["url", "committee"],
+    vote: ["url", "keypair", "yes", "owner", "nonce", "pay-to", "result", "out"],
+    release: ["url", "priority-fee", "keypair", "yes", "vote", "sha256"],
   },
 };

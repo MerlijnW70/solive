@@ -89,6 +89,9 @@ pub enum EngineError {
     MintCapPerOrder,
     MintCapWindow,
     MintCapInvalid,
+    CommitteeInvalid,
+    CommitteeSigners,
+    CommitteeMismatch,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {
@@ -130,5 +133,7 @@ pub fn core_err(e: CoreError) -> EngineError {
         CoreError::MandateBudget => EngineError::MandateBudget,
         CoreError::MandateCount => EngineError::MandateCount,
         CoreError::MandatePrice => EngineError::MandatePrice,
+        CoreError::CommitteeInvalid => EngineError::CommitteeInvalid,
+        CoreError::CommitteeSigners => EngineError::CommitteeSigners,
     }
 }

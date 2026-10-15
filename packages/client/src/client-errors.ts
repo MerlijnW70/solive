@@ -65,3 +65,15 @@ export class EscrowExpired extends Error {
     this.expiresAt = expiresAt;
   }
 }
+
+export class VoteRejected extends Error {
+  readonly member: Address;
+  readonly intent: Address;
+
+  constructor(member: Address, intent: Address) {
+    super(`the vote of ${member} is not a valid committee signature over the release of ${intent}`);
+    this.name = "VoteRejected";
+    this.member = member;
+    this.intent = intent;
+  }
+}

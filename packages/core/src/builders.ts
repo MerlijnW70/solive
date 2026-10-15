@@ -39,10 +39,15 @@ export {
 } from "./intent-builders.js";
 export {
   buildFillAttested,
+  buildFillAttestedCommittee,
   buildFillAttestedSplit,
+  buildFillAttestedSplitCommittee,
   buildFillIntent,
   buildFlashFill,
+  type CommitteeRelease,
+  type FillAttestedCommitteeSpec,
   type FillAttestedSpec,
+  type FillAttestedSplitCommitteeSpec,
   type FillAttestedSplitSpec,
   type FillIntentSpec,
   type FlashFillSpec,

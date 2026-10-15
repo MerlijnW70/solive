@@ -50,6 +50,588 @@
       "result": "15"
     }
   ],
+  "committees": [
+    {
+      "address": "GetUigBjxLsPC1qzt2Rn4uricAzgVTai2tWWVNFZYaEq",
+      "fee_wallet": "32ZsJ2yJjwuoBiWE5xnZjG9tKmK3CubbmEzgkQLyQzgD",
+      "id": "f244d99ad0f7780ba760383843537da4ce5e2b956564db02a385278346491233",
+      "masks": [
+        {
+          "mask": 0,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 17,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 34,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 51,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 68,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 85,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 102,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 119,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 136,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 153,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 170,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 187,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 204,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 221,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 238,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 255,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 1,
+          "outcome": {
+            "ok": [
+              "2MNus2KCpxwXnp19iyXNpWSFtBD2UGjQBAL8AbtywfT9"
+            ]
+          }
+        },
+        {
+          "mask": 3,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 5,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 7,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 31,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 255,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        }
+      ],
+      "members": [
+        "2MNus2KCpxwXnp19iyXNpWSFtBD2UGjQBAL8AbtywfT9"
+      ],
+      "preimage": "696e74656e742d656e67696e652d636d0101141414141414141414141414141414141414141414141414141414141414141400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e",
+      "threshold": 1
+    },
+    {
+      "address": "2yYtaH33As2r5QZHqAvVkijJe51mDpg1X9XDwHfBG8a8",
+      "fee_wallet": "36VASLSKLFD2KokjXG7V28veZvXEsyHRKefLonPaAKzv",
+      "id": "93d70844498d5f4f6717643807af4cefa8cfed7863800a432671c2f6ed621ff7",
+      "masks": [
+        {
+          "mask": 0,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 17,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 34,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 51,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 68,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 85,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 102,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 119,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 136,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 153,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 170,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 187,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 204,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 221,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 238,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 255,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 1,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 3,
+          "outcome": {
+            "ok": [
+              "2MNus2KCpxwXnp19iyXNpWSFtBD2UGjQBAL8AbtywfT9",
+              "2RJD1KnDRGEkvuFfAGrJ7PD28LRE9LRDjZznDywagzmr"
+            ]
+          }
+        },
+        {
+          "mask": 5,
+          "outcome": {
+            "ok": [
+              "2MNus2KCpxwXnp19iyXNpWSFtBD2UGjQBAL8AbtywfT9",
+              "2VDW9dFE1ZXz4zWAbaBDQFynNVdRpQ73HyfSHMzBSL6Z"
+            ]
+          }
+        },
+        {
+          "mask": 7,
+          "outcome": {
+            "ok": [
+              "2MNus2KCpxwXnp19iyXNpWSFtBD2UGjQBAL8AbtywfT9",
+              "2RJD1KnDRGEkvuFfAGrJ7PD28LRE9LRDjZznDywagzmr",
+              "2VDW9dFE1ZXz4zWAbaBDQFynNVdRpQ73HyfSHMzBSL6Z"
+            ]
+          }
+        },
+        {
+          "mask": 31,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 255,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        }
+      ],
+      "members": [
+        "2MNus2KCpxwXnp19iyXNpWSFtBD2UGjQBAL8AbtywfT9",
+        "2RJD1KnDRGEkvuFfAGrJ7PD28LRE9LRDjZznDywagzmr",
+        "2VDW9dFE1ZXz4zWAbaBDQFynNVdRpQ73HyfSHMzBSL6Z"
+      ],
+      "preimage": "696e74656e742d656e67696e652d636d0203141414141414141414141414141414141414141414141414141414141414141415151515151515151515151515151515151515151515151515151515151515151616161616161616161616161616161616161616161616161616161616161616000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
+      "threshold": 2
+    },
+    {
+      "address": "8mUctKWPzbJWbRcagYGseLmN1Y9tNcPZiaTeEpWrJojN",
+      "fee_wallet": "3AQTaduKvYWFTu1ExZSQK1hQp5jSZ2yEt4KzsASAufKd",
+      "id": "829d8b4b90b8fd2f7a96a7a2e722482fba9a592d20f946d52a7d80a2c28c1fba",
+      "masks": [
+        {
+          "mask": 0,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 17,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 34,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 51,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 68,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 85,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 102,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 119,
+          "outcome": {
+            "ok": [
+              "3hkpj3dQevt4ad1JSx3ke1sWmMR3wYToMKfFLCnxtKuH",
+              "3mg7sM6RFEBHiiFotFNfvteH1WdFcc9cujKuPaqZdfDz",
+              "3qbR1eZRqXUWroWKKYhbDmR3FfqTHfqSU8zZSxtANzYh",
+              "3yS1JFVT284y8z1LC9MRoWxZjzFrdoD5axKsZiyMsfC7",
+              "43MJSYxTcRNCH5FqdSgM6PjKz9U4Jrtu9MzXd71xczWp",
+              "47GbarRUCifRRAWM4k1GPGW6EJgFyvaihmfBgV4ZNKqX"
+            ]
+          }
+        },
+        {
+          "mask": 136,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 153,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 170,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 187,
+          "outcome": {
+            "ok": [
+              "3hkpj3dQevt4ad1JSx3ke1sWmMR3wYToMKfFLCnxtKuH",
+              "3mg7sM6RFEBHiiFotFNfvteH1WdFcc9cujKuPaqZdfDz",
+              "3uWi9x2SRpmjztkpkr2WWeBoVq3exjXG2YfDWLvm8KsQ",
+              "3yS1JFVT284y8z1LC9MRoWxZjzFrdoD5axKsZiyMsfC7",
+              "43MJSYxTcRNCH5FqdSgM6PjKz9U4Jrtu9MzXd71xczWp",
+              "4BBtj9tUo1xeZFkrW3LBg9GrUTtTezGYGBKqjs7A7fAE"
+            ]
+          }
+        },
+        {
+          "mask": 204,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 221,
+          "outcome": {
+            "ok": [
+              "3hkpj3dQevt4ad1JSx3ke1sWmMR3wYToMKfFLCnxtKuH",
+              "3qbR1eZRqXUWroWKKYhbDmR3FfqTHfqSU8zZSxtANzYh",
+              "3uWi9x2SRpmjztkpkr2WWeBoVq3exjXG2YfDWLvm8KsQ",
+              "3yS1JFVT284y8z1LC9MRoWxZjzFrdoD5axKsZiyMsfC7",
+              "47GbarRUCifRRAWM4k1GPGW6EJgFyvaihmfBgV4ZNKqX",
+              "4BBtj9tUo1xeZFkrW3LBg9GrUTtTezGYGBKqjs7A7fAE"
+            ]
+          }
+        },
+        {
+          "mask": 238,
+          "outcome": {
+            "ok": [
+              "3mg7sM6RFEBHiiFotFNfvteH1WdFcc9cujKuPaqZdfDz",
+              "3qbR1eZRqXUWroWKKYhbDmR3FfqTHfqSU8zZSxtANzYh",
+              "3uWi9x2SRpmjztkpkr2WWeBoVq3exjXG2YfDWLvm8KsQ",
+              "43MJSYxTcRNCH5FqdSgM6PjKz9U4Jrtu9MzXd71xczWp",
+              "47GbarRUCifRRAWM4k1GPGW6EJgFyvaihmfBgV4ZNKqX",
+              "4BBtj9tUo1xeZFkrW3LBg9GrUTtTezGYGBKqjs7A7fAE"
+            ]
+          }
+        },
+        {
+          "mask": 255,
+          "outcome": {
+            "ok": [
+              "3hkpj3dQevt4ad1JSx3ke1sWmMR3wYToMKfFLCnxtKuH",
+              "3mg7sM6RFEBHiiFotFNfvteH1WdFcc9cujKuPaqZdfDz",
+              "3qbR1eZRqXUWroWKKYhbDmR3FfqTHfqSU8zZSxtANzYh",
+              "3uWi9x2SRpmjztkpkr2WWeBoVq3exjXG2YfDWLvm8KsQ",
+              "3yS1JFVT284y8z1LC9MRoWxZjzFrdoD5axKsZiyMsfC7",
+              "43MJSYxTcRNCH5FqdSgM6PjKz9U4Jrtu9MzXd71xczWp",
+              "47GbarRUCifRRAWM4k1GPGW6EJgFyvaihmfBgV4ZNKqX",
+              "4BBtj9tUo1xeZFkrW3LBg9GrUTtTezGYGBKqjs7A7fAE"
+            ]
+          }
+        },
+        {
+          "mask": 1,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 3,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 5,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 7,
+          "outcome": {
+            "err": "CommitteeSigners"
+          }
+        },
+        {
+          "mask": 31,
+          "outcome": {
+            "ok": [
+              "3hkpj3dQevt4ad1JSx3ke1sWmMR3wYToMKfFLCnxtKuH",
+              "3mg7sM6RFEBHiiFotFNfvteH1WdFcc9cujKuPaqZdfDz",
+              "3qbR1eZRqXUWroWKKYhbDmR3FfqTHfqSU8zZSxtANzYh",
+              "3uWi9x2SRpmjztkpkr2WWeBoVq3exjXG2YfDWLvm8KsQ",
+              "3yS1JFVT284y8z1LC9MRoWxZjzFrdoD5axKsZiyMsfC7"
+            ]
+          }
+        },
+        {
+          "mask": 255,
+          "outcome": {
+            "ok": [
+              "3hkpj3dQevt4ad1JSx3ke1sWmMR3wYToMKfFLCnxtKuH",
+              "3mg7sM6RFEBHiiFotFNfvteH1WdFcc9cujKuPaqZdfDz",
+              "3qbR1eZRqXUWroWKKYhbDmR3FfqTHfqSU8zZSxtANzYh",
+              "3uWi9x2SRpmjztkpkr2WWeBoVq3exjXG2YfDWLvm8KsQ",
+              "3yS1JFVT284y8z1LC9MRoWxZjzFrdoD5axKsZiyMsfC7",
+              "43MJSYxTcRNCH5FqdSgM6PjKz9U4Jrtu9MzXd71xczWp",
+              "47GbarRUCifRRAWM4k1GPGW6EJgFyvaihmfBgV4ZNKqX",
+              "4BBtj9tUo1xeZFkrW3LBg9GrUTtTezGYGBKqjs7A7fAE"
+            ]
+          }
+        }
+      ],
+      "members": [
+        "3hkpj3dQevt4ad1JSx3ke1sWmMR3wYToMKfFLCnxtKuH",
+        "3mg7sM6RFEBHiiFotFNfvteH1WdFcc9cujKuPaqZdfDz",
+        "3qbR1eZRqXUWroWKKYhbDmR3FfqTHfqSU8zZSxtANzYh",
+        "3uWi9x2SRpmjztkpkr2WWeBoVq3exjXG2YfDWLvm8KsQ",
+        "3yS1JFVT284y8z1LC9MRoWxZjzFrdoD5axKsZiyMsfC7",
+        "43MJSYxTcRNCH5FqdSgM6PjKz9U4Jrtu9MzXd71xczWp",
+        "47GbarRUCifRRAWM4k1GPGW6EJgFyvaihmfBgV4ZNKqX",
+        "4BBtj9tUo1xeZFkrW3LBg9GrUTtTezGYGBKqjs7A7fAE"
+      ],
+      "preimage": "696e74656e742d656e67696e652d636d0508282828282828282828282828282828282828282828282828282828282828282829292929292929292929292929292929292929292929292929292929292929292a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2020202020202020202020202020202020202020202020202020202020202020",
+      "threshold": 5
+    },
+    {
+      "err": "CommitteeInvalid",
+      "fee_wallet": "32ZsJ2yJjwuoBiWE5xnZjG9tKmK3CubbmEzgkQLyQzgD",
+      "members": [
+        "2RJD1KnDRGEkvuFfAGrJ7PD28LRE9LRDjZznDywagzmr",
+        "2MNus2KCpxwXnp19iyXNpWSFtBD2UGjQBAL8AbtywfT9"
+      ],
+      "threshold": 1
+    },
+    {
+      "err": "CommitteeInvalid",
+      "fee_wallet": "32ZsJ2yJjwuoBiWE5xnZjG9tKmK3CubbmEzgkQLyQzgD",
+      "members": [
+        "2MNus2KCpxwXnp19iyXNpWSFtBD2UGjQBAL8AbtywfT9",
+        "2MNus2KCpxwXnp19iyXNpWSFtBD2UGjQBAL8AbtywfT9"
+      ],
+      "threshold": 1
+    },
+    {
+      "err": "CommitteeInvalid",
+      "fee_wallet": "32ZsJ2yJjwuoBiWE5xnZjG9tKmK3CubbmEzgkQLyQzgD",
+      "members": [
+        "11111111111111111111111111111111",
+        "2MNus2KCpxwXnp19iyXNpWSFtBD2UGjQBAL8AbtywfT9"
+      ],
+      "threshold": 1
+    },
+    {
+      "err": "CommitteeInvalid",
+      "fee_wallet": "32ZsJ2yJjwuoBiWE5xnZjG9tKmK3CubbmEzgkQLyQzgD",
+      "members": [
+        "2MNus2KCpxwXnp19iyXNpWSFtBD2UGjQBAL8AbtywfT9",
+        "2RJD1KnDRGEkvuFfAGrJ7PD28LRE9LRDjZznDywagzmr"
+      ],
+      "threshold": 0
+    },
+    {
+      "err": "CommitteeInvalid",
+      "fee_wallet": "32ZsJ2yJjwuoBiWE5xnZjG9tKmK3CubbmEzgkQLyQzgD",
+      "members": [
+        "2MNus2KCpxwXnp19iyXNpWSFtBD2UGjQBAL8AbtywfT9",
+        "2RJD1KnDRGEkvuFfAGrJ7PD28LRE9LRDjZznDywagzmr"
+      ],
+      "threshold": 3
+    },
+    {
+      "err": "CommitteeInvalid",
+      "fee_wallet": "11111111111111111111111111111111",
+      "members": [
+        "2MNus2KCpxwXnp19iyXNpWSFtBD2UGjQBAL8AbtywfT9"
+      ],
+      "threshold": 1
+    },
+    {
+      "err": "CommitteeInvalid",
+      "fee_wallet": "32ZsJ2yJjwuoBiWE5xnZjG9tKmK3CubbmEzgkQLyQzgD",
+      "members": [],
+      "threshold": 1
+    },
+    {
+      "err": "CommitteeInvalid",
+      "fee_wallet": "32ZsJ2yJjwuoBiWE5xnZjG9tKmK3CubbmEzgkQLyQzgD",
+      "members": [
+        "3hkpj3dQevt4ad1JSx3ke1sWmMR3wYToMKfFLCnxtKuH",
+        "3mg7sM6RFEBHiiFotFNfvteH1WdFcc9cujKuPaqZdfDz",
+        "3qbR1eZRqXUWroWKKYhbDmR3FfqTHfqSU8zZSxtANzYh",
+        "3uWi9x2SRpmjztkpkr2WWeBoVq3exjXG2YfDWLvm8KsQ",
+        "3yS1JFVT284y8z1LC9MRoWxZjzFrdoD5axKsZiyMsfC7",
+        "43MJSYxTcRNCH5FqdSgM6PjKz9U4Jrtu9MzXd71xczWp",
+        "47GbarRUCifRRAWM4k1GPGW6EJgFyvaihmfBgV4ZNKqX",
+        "4BBtj9tUo1xeZFkrW3LBg9GrUTtTezGYGBKqjs7A7fAE",
+        "4F7BsTMVPKFshM1MwLf6y23cid6fL3xMpazVoF9krzUw"
+      ],
+      "threshold": 1
+    }
+  ],
   "decode": [
     {
       "hex": "0500000000000000060000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
@@ -200,6 +782,8 @@
     "AdminProposed": "81f9e2e3c7526ef3",
     "AgentPaid": "8ba67dcba3181f5d",
     "CapsRequiredSet": "b89fadf016f3ec9e",
+    "CommitteeAttested": "170765a8f85f6805",
+    "CommitteeCreated": "96779019abaa432b",
     "ConfigInitialized": "b531c89c13a7b25b",
     "ConfigUpdated": "28f1e67a0b13c6c2",
     "EconomicsUpdated": "429afe7f7fcc3b39",
@@ -7092,6 +7676,7 @@
     "attest_split_message": "ff736f6c616e61206f6666636861696e0101696e74656e742d656e67696e652d73706c69742d636f7369676e65720000000035306266313337616231636263326337623834623639313932393730343037376432323136616166616431323836383439646561616230636239373137313136",
     "attest_split_preimage": "696e74656e742d656e67696e652d7370e3089fe644289c329d325b0a951893cfcc1ccd5ca627162a095dd58edd32dff111111111111111111111111111111111111111111111111111111111111111110707070707070707070707070707070707070707070707070707070707070707050d0000000000000f00000000000000181716151413121124232221323130fe4ccee8ed6ec7ff844584fc4a003b29b6534d2adb65913a984e66f8bc79b16a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6a6af3327b87ea3419892912d46c48fb5a3527e1bbf32b79238b65cd76935f8ed8f9",
     "attestor": "LbUiWL3xVV8hTFYBVdbTNrpDo41NKS6o3LHHuDzjfcY",
+    "committee_message": "ff736f6c616e61206f6666636861696e0101696e74656e742d656e67696e652d636f6d6d69747465652d6d656d626572000031333837613637313730613030373666366437653635366533396438396431396565306465663363343738623162666634393030643839643634636431316538",
     "digest": "5c69682b4ac5577958ca0c9e1de98f5747e2ca877d5523893c643cba58a09d6a",
     "domain": "1111111111111111111111111111111111111111111111111111111111111111",
     "ed25519_ix_data_with_ab_signature": "01003000ffff1000ffff70007200ffff0101010101010101010101010101010101010101010101010101010101010101ababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababababff736f6c616e61206f6666636861696e0101010101010101010101010101010101010101010101010101010101010101010135633639363832623461633535373739353863613063396531646539386635373437653263613837376435353233383933633634336362613538613039643661",

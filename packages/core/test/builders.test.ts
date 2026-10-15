@@ -228,8 +228,8 @@ describe("offline builders", () => {
     }
     expect(meta(ix, slot("recipient3")).address).toBe(INTENT_ENGINE_PROGRAM_ADDRESS);
     const data = getFillAttestedSplitInstructionDataDecoder().decode(ix.data ?? new Uint8Array());
-    expect(data.recipients).toEqual(recipients);
-    expect(data.weights).toEqual(weights);
+    expect(data.claim.recipients).toEqual(recipients);
+    expect(data.claim.weights).toEqual(weights);
     expect(data.amountIn).toBe(400n);
   });
 

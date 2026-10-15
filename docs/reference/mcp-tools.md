@@ -2,7 +2,7 @@
 
 # MCP tools
 
-21 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 17 wallet tools, listed first.
+22 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 20 wallet tools, listed first.
 
 ## solive_wallet_setup
 
@@ -179,6 +179,61 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | `max_pages` | integer 1..100000 | no | pages of 1000 signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default 1000; raise it when the release is refused because the record of announced work is incomplete |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs the attestation and settles; leave out to preview |
+
+## solive_wallet_committee_vote
+
+Served only with `--wallet`.
+
+As one member of the committee an escrow names, sign this server's vote that the escrow pays pay_to for the work with delivered_sha256. Nothing is sent: the release needs votes from the committee's threshold of members, which anyone then submits with solive_wallet_committee_release. Vote only after judging the work against the escrow's spec yourself. Without send it only previews and signs nothing; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.
+
+Effect: `submit` (read-only: false, destructive: true, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `owner` | address | yes | the wallet that made the escrow |
+| `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
+| `pay_to` | address | yes | the wallet the release pays |
+| `result` | whole number as a decimal string | yes | the result the release attests, between the intent's min_result and max_result |
+| `delivered_sha256` | string | yes | the sha256, as 64 hex digits, of the work the release pays for; its earliest announcer must be pay_to |
+| `max_pages` | integer 1..100000 | no | pages of 1000 signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default 1000; raise it when the release is refused because the record of announced work is incomplete |
+| `approval` | string | no | the approval the preview returned; needed with send |
+| `send` | boolean | no | true signs the vote; leave out to preview |
+
+## solive_wallet_committee_release
+
+Served only with `--wallet`.
+
+Submit the votes of a committee's members, gathered with solive_wallet_committee_vote, to release the escrow that names the committee; this server's wallet pays the fee and records the delivered work's sha256. Every vote is checked before anything is sent, and the release needs at least the committee's threshold of them. Without send it only previews; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.
+
+Effect: `submit` (read-only: false, destructive: true, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `owner` | address | yes | the wallet that made the escrow |
+| `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
+| `pay_to` | address | yes | the wallet the release pays |
+| `result` | whole number as a decimal string | yes | the result the release attests, between the intent's min_result and max_result |
+| `delivered_sha256` | string | yes | the sha256, as 64 hex digits, of the work the release pays for; its earliest announcer must be pay_to |
+| `max_pages` | integer 1..100000 | no | pages of 1000 signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default 1000; raise it when the release is refused because the record of announced work is incomplete |
+| `votes` | list of object, 1 to 8 | yes | one vote per member, in any order |
+| `approval` | string | no | the approval the preview returned; needed with send |
+| `send` | boolean | no | true submits the release; leave out to preview |
+
+## solive_wallet_feedback
+
+Served only with `--wallet`.
+
+As the owner of a released proof escrow, rate the work it paid for from 0 to 100, optionally linking the sha256 of a written note. The rating is a memo this server's wallet signs, and solive_get_reputation counts it only from the escrow's owner, once per escrow. Without send it only previews; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.
+
+Effect: `submit` (read-only: false, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `intent` | address | yes | the released escrow |
+| `score` | integer 0..100 | yes | 0 is useless work, 100 is excellent |
+| `note` | string | no | the sha256 of a note explaining the score |
+| `approval` | string | no | the approval the preview returned; needed with send |
+| `send` | boolean | no | true sends the feedback; leave out to preview |
 
 ## solive_wallet_record_delivery
 
@@ -434,6 +489,17 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 | `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
 | `sha256` | string | no | the sha256, as 64 hex digits, of the work you received, to compare with the one the release recorded |
 | `release` | string | no | the release's transaction signature, as solive_wallet_attest, solive_wallet_attest_split or judge returned it; with it the release is read from that one transaction, with no search of the escrow's history |
+
+## solive_get_reputation
+
+Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Use it before hiring a worker or trusting its delivery. Payers rate released work with solive_wallet_feedback.
+
+Effect: `read` (read-only: true, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `worker` | address | yes | the worker wallet to read |
+| `max_pages` | integer 1..100000 | no | pages of 1000 signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default 1000; raise it when the release is refused because the record of announced work is incomplete |
 
 ## solive_prepare_crank
 

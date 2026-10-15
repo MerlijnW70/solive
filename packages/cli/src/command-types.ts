@@ -118,7 +118,21 @@ export type Command =
   | (Remote & { name: "follow"; limit: number; interval: number })
   | (Remote & { name: "treasury"; mints: Address[] | null; create: boolean; keypair: string | undefined; yes: boolean })
   | (Remote & { name: "solver-table"; solver: Address; mints: Address[] })
-  | (Remote & { name: "monitor"; baseline: string; watch: MonitorSpec | null });
+  | (Remote & { name: "monitor"; baseline: string; watch: MonitorSpec | null })
+  | (Keyed & { name: "committee-create"; yes: boolean; members: Address[]; threshold: number; feeWallet: Address })
+  | (Remote & { name: "committee-show"; committee: Address })
+  | (Keyed & {
+      name: "committee-vote";
+      yes: boolean;
+      owner: Address;
+      nonce: bigint;
+      payTo: Address;
+      result: bigint;
+      out: string | undefined;
+    })
+  | (Keyed & { name: "committee-release"; yes: boolean; votes: string[]; sha256: string | undefined })
+  | (Remote & { name: "reputation"; worker: Address; maxPages: number })
+  | (Keyed & { name: "feedback"; yes: boolean; intent: Address; score: number; note: string | undefined });
 
 export type MonitorSpec = {
   interval: number;

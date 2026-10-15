@@ -35,6 +35,8 @@ import { artifactSha256, judge } from "./judge.js";
 import type { Runtime } from "./runtime.js";
 import { adminCommand, previewed, showMintCap } from "./admin-commands.js";
 import { jobCommand } from "./job-commands.js";
+import { committeeCommand } from "./committee-commands.js";
+import { reputationCommand } from "./reputation-commands.js";
 import { engineEvents } from "./event-feed.js";
 import { SOLVER_TABLE_NEXT, solverOptions } from "./solve-commands.js";
 import { flowCommand } from "./flow-commands.js";
@@ -176,6 +178,14 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "judge": {
       return judge(command, runtime, transport);
     }
+    case "committee-create":
+    case "committee-show":
+    case "committee-vote":
+    case "committee-release":
+      return committeeCommand(command, runtime, transport);
+    case "reputation":
+    case "feedback":
+      return reputationCommand(command, runtime, transport);
     case "treasury": {
       const view = await treasuryView(transport, command.mints ?? (await intentInputMints(transport)));
       if (!command.create || command.keypair === undefined) {

@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 
 pub mod admission;
+pub mod attested;
 pub mod caps;
 pub mod errors;
 pub mod events;
@@ -10,6 +11,7 @@ pub mod policy;
 mod security;
 pub mod state;
 
+pub use attested::{SplitClaim, MAX_SPLIT_RECIPIENTS};
 pub use ext::Ext;
 pub use instructions::*;
 pub use policy::{ConfigSettings, ConfigUpdate, Economics};
@@ -111,6 +113,47 @@ pub mod intent_engine {
         ext: Ext,
     ) -> Result<()> {
         handle_fill_attested_split(ctx, amount_in, result, max_fee_bps, claim, ext)
+    }
+
+    pub fn create_committee(
+        ctx: Context<CreateCommittee>,
+        id: [u8; 32],
+        members: Vec<Pubkey>,
+        threshold: u8,
+        fee_wallet: Pubkey,
+    ) -> Result<()> {
+        handle_create_committee(ctx, id, members, threshold, fee_wallet)
+    }
+
+    pub fn fill_attested_committee(
+        ctx: Context<FillAttestedCommittee>,
+        amount_in: u64,
+        result: u64,
+        max_fee_bps: u16,
+        signers: u8,
+        ext: Ext,
+    ) -> Result<()> {
+        handle_fill_attested_committee(ctx, amount_in, result, max_fee_bps, signers, ext)
+    }
+
+    pub fn fill_attested_split_committee(
+        ctx: Context<FillAttestedSplitCommittee>,
+        amount_in: u64,
+        result: u64,
+        max_fee_bps: u16,
+        signers: u8,
+        claim: SplitClaim,
+        ext: Ext,
+    ) -> Result<()> {
+        handle_fill_attested_split_committee(
+            ctx,
+            amount_in,
+            result,
+            max_fee_bps,
+            signers,
+            claim,
+            ext,
+        )
     }
 
     pub fn begin_fill(

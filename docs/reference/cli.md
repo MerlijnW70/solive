@@ -3,7 +3,7 @@
 # CLI reference
 
 ```text
-usage: setup | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | monitor | hash | version | help [command]
+usage: setup | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | committee create|show|vote|release | reputation | feedback | monitor | hash | version | help [command]
 ```
 
 Every command accepts `--output` and `--help`.
@@ -337,6 +337,36 @@ monitor --expect <baseline file> [--interval <seconds>] [--max-fill <mint>=<raw 
 ```
 
 Options: `--url`, `--expect`, `--write-baseline`, `--interval`, `--max-fill`, `--max-fills`, `--webhook`, `--once`, `--output`, `--help`
+
+## reputation
+
+```text
+reputation --worker <address> [--max-pages <n>]
+```
+
+Options: `--url`, `--worker`, `--max-pages`, `--output`, `--help`
+
+## feedback
+
+```text
+feedback --keypair <owner file> --intent <address> --score <0 to 100> [--note <sha256 of a note>] [--yes]
+```
+
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--score`, `--note`, `--output`, `--help`
+
+## committee
+
+```text
+committee create --keypair <payer file> --members <address,...> --threshold <n> --fee-wallet <address> [--yes] | show --committee <address> | vote --keypair <member file> --owner <address> --nonce <n> --pay-to <wallet> --result <n> [--out <file>] [--yes] | release --keypair <solver file> --vote <file> [--vote <file> ...] [--sha256 <64 hex>] [--yes]
+```
+
+Options for `create`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--members`, `--threshold`, `--fee-wallet`, `--output`, `--help`
+
+Options for `show`: `--url`, `--committee`, `--output`, `--help`
+
+Options for `vote`: `--url`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--pay-to`, `--result`, `--out`, `--output`, `--help`
+
+Options for `release`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--vote`, `--sha256`, `--output`, `--help`
 
 ## version
 

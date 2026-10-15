@@ -16,12 +16,12 @@ const screaming = (name: string) => name.replace(/([a-z])([A-Z])/g, "$1_$2").toU
 
 describe("event decoding", () => {
   it("recognises every engine event by its own discriminator", () => {
-    expect(names).toHaveLength(27);
+    expect(names).toHaveLength(29);
     const lookup = core as unknown as Record<string, unknown>;
     for (const name of names) {
       const discriminator = lookup[`${screaming(name)}_EVENT_DISCRIMINATOR`] as Uint8Array;
-      const decoder = (lookup[`get${name}EventDecoder`] as () => { fixedSize: number })();
-      const body = new Uint8Array(decoder.fixedSize);
+      const decoder = (lookup[`get${name}EventDecoder`] as () => { fixedSize?: number })();
+      const body = new Uint8Array(decoder.fixedSize ?? 256);
       body.set(discriminator);
       const decoded = decodeEvent(tagged(body));
       expect(decoded?.name, name).toBe(name);
@@ -34,6 +34,7 @@ describe("event decoding", () => {
       "AdminAccepted",
       "AdminProposed",
       "CapsRequiredSet",
+      "CommitteeCreated",
       "ConfigInitialized",
       "ConfigUpdated",
       "EconomicsUpdated",

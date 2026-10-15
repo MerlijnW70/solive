@@ -201,8 +201,33 @@ A file hashes as the SHA-256 of its bytes, so its name does not matter and any s
 
 An MCP server started with `--wallet` lists the same deliveries with `solive_wallet_check_delivery` and releases with `solive_wallet_attest`, which needs `delivered_sha256` for a proof escrow and refuses one that another wallet than `pay_to` announced first, or that it cannot check because the record is incomplete for one of the reasons above. `solive_wallet_attest_split` needs `delivered_sha256` too and refuses a split whose recipients leave out that work's earliest announcer. It records the same memo in the release when it fits; otherwise it sends the release without it and then, in a second transaction it signs, the memo `delivery sha256:<artifactSha256> release:<release signature>`. Its `recorded` says which, `release` or `follow-up`, with the `follow_up_signature`, and `solive_wallet_receipt` reads both, counting a memo in the release only when the attestor signed it. When the follow-up fails, `recorded` is `false` and `record_memo` holds the memo; `solive_wallet_record_delivery`, or `record-delivery` with the judge's keypair, sends it from the same wallet with a zero transfer to the escrow, once it has checked that the release is that wallet's and records no hash yet. Pass the release's signature as `release`, or `--release`: both then read the release from that transaction, and they work after the escrow is closed, reading its attestor, spec hash and creation time from the transaction that made it. They refuse when the record of announced work is incomplete and name the cause. A split's recipients are read from its split instruction for this escrow, also when another program made the call; when no such instruction is found, the refusal asks for the recipients. Neither runs or fetches anything, so run the check with `judge` or on your own.
 
+## Judge as a committee
+
+One judge is one point of failure: a bribe, a mistake, or a delivery that passes the published cases without doing the work. An escrow can name a committee instead, so any `threshold` of its members must agree before it pays. A committee lives at an address derived from its members, threshold and fee wallet, so it cannot change after an escrow names it.
+
+```powershell
+intent-engine committee create --keypair payer.json --members $env:A,$env:B,$env:C --threshold 2 --fee-wallet $env:FEES --yes
+```
+
+Pass the printed `committee` address as `--attestor` when you create the proof escrow. Workers announce to that address as they would to one judge. Each member judges on their own; when a member's `judge` run passes, the verdict file carries that member's signed vote instead of a release:
+
+```powershell
+intent-engine judge --keypair a.json --owner $env:OWNER --nonce $env:NONCE --spec SPEC.md --artifact work.mjs --sandbox viper --verdict a.json.verdict
+```
+
+A member who judges another way, by reading the work or with a check of their own, signs with `committee vote --keypair <member> --owner --nonce --pay-to --result --out <file> --yes`. Any member who voted then submits the threshold of votes, recording the work's hash in a memo it signs:
+
+```powershell
+intent-engine committee release --keypair a.json --vote a.json.verdict --vote b.json.verdict --sha256 $env:WORK --yes
+```
+
+Anyone can submit the votes without `--sha256`, but a receipt counts the recorded hash only from a member who voted for that release.
+
+`committee release` checks every vote against the escrow before it sends, and the program checks them again: every vote must sign the same escrow, payee and result, and the release needs at least `threshold` members. The judge fee goes to the committee's fee wallet. `committee show --committee <address>` prints its terms. Members who run different checks cover each other's blind spots; members who all run the same check do not.
+
 ## Next
 
+- [Reputation](reputation.md)
 - [CLI reference](reference/cli.md)
 - [MCP tools](reference/mcp-tools.md)
 - [Build on it from TypeScript](sdk.md)

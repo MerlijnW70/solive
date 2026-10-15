@@ -14,9 +14,7 @@ use intent_core::bounty::split_n;
 use intent_core::fee::{split_fees, Fees};
 use intent_core::kinds::{Kind, ALL_KINDS_MASK};
 use intent_core::mint_policy::mint_extensions_allowed;
-use intent_core::sig::{
-    check_ed25519_batch, check_ed25519_ix, offchain_envelope, SPLIT_COSIGN_TAG,
-};
+use intent_core::sig::{check_ed25519_batch, check_ed25519_ix};
 use solana_instructions_sysvar::{load_current_index_checked, load_instruction_at_checked};
 
 use crate::errors::{core_err, EngineError};
@@ -469,19 +467,16 @@ pub fn verify_preceding_ed25519(
     verify_ed25519_at(instructions, usize::from(previous), signer, message)
 }
 
-pub fn verify_split_signers(
+pub fn verify_preceding_batch(
     instructions: &AccountInfo,
-    recipients: &[Pubkey],
-    attestor: &Pubkey,
-    digest: &[u8; 32],
+    signers: &[Pubkey],
+    message: &[u8],
 ) -> Result<()> {
     let current = usize::from(load_current_index_checked(instructions)?);
     let index = current.checked_sub(1).ok_or(EngineError::SigMissing)?;
     let ix = load_instruction_at_checked(index, instructions)?;
-    let message = offchain_envelope(&SPLIT_COSIGN_TAG, digest);
-    let mut pubkeys: Vec<[u8; 32]> = recipients.iter().map(Pubkey::to_bytes).collect();
-    pubkeys.push(attestor.to_bytes());
-    check_ed25519_batch(&ix.program_id.to_bytes(), &ix.data, &pubkeys, &message)
+    let pubkeys: Vec<[u8; 32]> = signers.iter().map(Pubkey::to_bytes).collect();
+    check_ed25519_batch(&ix.program_id.to_bytes(), &ix.data, &pubkeys, message)
         .map_err(core_err)?;
     Ok(())
 }

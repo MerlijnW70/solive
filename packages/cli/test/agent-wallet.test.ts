@@ -1521,8 +1521,7 @@ describe("the wallet server", () => {
           amountIn: LAMPORTS_PER_SOL / 20n,
           result: 1n,
           maxFeeBps: FEE_BPS,
-          recipients,
-          weights: recipients.map(() => 10_000 / recipients.length),
+          claim: { recipients, weights: recipients.map(() => 10_000 / recipients.length) },
           ext: new Uint8Array(),
         }),
       );

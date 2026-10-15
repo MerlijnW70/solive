@@ -279,3 +279,18 @@ pub struct MintCapSet {
 pub struct CapsRequiredSet {
     pub required: bool,
 }
+
+#[event]
+pub struct CommitteeCreated {
+    pub committee: Pubkey,
+    pub members: Vec<Pubkey>,
+    pub threshold: u8,
+    pub fee_wallet: Pubkey,
+}
+
+#[event]
+pub struct CommitteeAttested {
+    pub intent: Pubkey,
+    pub committee: Pubkey,
+    pub signers: Vec<Pubkey>,
+}

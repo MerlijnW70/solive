@@ -148,6 +148,9 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6083 | `MintCapPerOrder` | no | the amount escrowed exceeds the per-order cap the engine set for the input mint; lower the amount |
 | 6084 | `MintCapWindow` | yes | intents selling this mint have used the engine's escrow cap for the current window; try again once the window rolls, or lower the amount |
 | 6085 | `MintCapInvalid` | no | a mint cap needs a per-order cap above zero, a window cap at least the per-order cap, and a window of at least 60 seconds |
+| 6086 | `CommitteeInvalid` | no | a committee needs 1 to 8 distinct members in ascending order, a threshold from 1 to its member count, a fee wallet, and an address that is the hash of exactly those terms |
+| 6087 | `CommitteeSigners` | no | the votes name fewer members than the committee's threshold, or a member it does not have; gather votes from at least the threshold of its members |
+| 6088 | `CommitteeMismatch` | no | the committee passed is not the judge the escrow names; release it with the committee its attestor field holds |
 
 ## Token programs
 

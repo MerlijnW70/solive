@@ -37,4 +37,6 @@ pub enum Error {
     MandateBudget,
     MandateCount,
     MandatePrice,
+    CommitteeInvalid,
+    CommitteeSigners,
 }
