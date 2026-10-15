@@ -1,0 +1,96 @@
+use anchor_lang::prelude::*;
+use anchor_lang::system_program::{transfer, Transfer};
+use intent_core::claim::{Slot, StakeTo, Terms};
+use intent_core::lifecycle::Status;
+
+use crate::claims::{move_lamports, slot_of, stake_receiver};
+use crate::errors::{core_err, EngineError};
+use crate::events::{JobClaimed, StakeMoved};
+use crate::state::{ClaimBoard, Intent, CLAIMS_OPEN, CLAIMS_SEED, CLAIMS_VERSION, INTENT_VERSION};
+
+#[event_cpi]
+#[derive(Accounts)]
+pub struct ClaimJob<'info> {
+    #[account(mut)]
+    pub worker: Signer<'info>,
+    #[account(constraint = intent.load()?.version == INTENT_VERSION @ EngineError::UnsupportedVersion)]
+    pub intent: AccountLoader<'info, Intent>,
+    #[account(
+        mut,
+        seeds = [CLAIMS_SEED, intent.key().as_ref()],
+        bump = board.load()?.bump,
+        constraint = board.load()?.version == CLAIMS_VERSION @ EngineError::UnsupportedVersion
+    )]
+    pub board: AccountLoader<'info, ClaimBoard>,
+    /// CHECK: the board's recorded owner, paid a lapsed claim's stake
+    #[account(mut, address = board.load()?.owner @ EngineError::StakeAccountMismatch)]
+    pub owner: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+pub fn handle_claim_job(ctx: Context<ClaimJob>, secs: u32) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    let expires_at = {
+        let intent = ctx.accounts.intent.load()?;
+        let status = Status::try_from(intent.status).map_err(core_err)?;
+        require!(
+            status == Status::Open && now < intent.expires_at,
+            EngineError::InvalidTransition
+        );
+        require!(intent.claims == CLAIMS_OPEN, EngineError::ClaimsMissing);
+        intent.expires_at
+    };
+    let (slot, terms, held, lapsed) = {
+        let board = ctx.accounts.board.load()?;
+        let slot = slot_of(&board, now);
+        let terms = Terms::new(board.max_secs, board.stake).map_err(core_err)?;
+        let lapsed = match slot {
+            Slot::Lapsed { .. } => Some(stake_receiver(&board, StakeTo::Owner)),
+            Slot::Free | Slot::Held { .. } => None,
+        };
+        (slot, terms, board.held, lapsed)
+    };
+    slot.claimable().map_err(core_err)?;
+    let until = terms.until(now, secs, expires_at).map_err(core_err)?;
+    let intent = ctx.accounts.intent.key();
+    if terms.stake() > 0 {
+        transfer(
+            CpiContext::new(
+                ctx.accounts.system_program.key(),
+                Transfer {
+                    from: ctx.accounts.worker.to_account_info(),
+                    to: ctx.accounts.board.to_account_info(),
+                },
+            ),
+            terms.stake(),
+        )?;
+    }
+    if let (Slot::Lapsed { worker }, Some((owner, role))) = (slot, lapsed) {
+        move_lamports(
+            &ctx.accounts.board.to_account_info(),
+            &ctx.accounts.owner.to_account_info(),
+            held,
+        )?;
+        emit_cpi!(StakeMoved {
+            intent,
+            worker: Pubkey::new_from_array(worker),
+            to: owner,
+            amount: held,
+            role,
+        });
+    }
+    let worker = ctx.accounts.worker.key();
+    {
+        let mut board = ctx.accounts.board.load_mut()?;
+        board.worker = worker;
+        board.until = until;
+        board.held = terms.stake();
+    }
+    emit_cpi!(JobClaimed {
+        intent,
+        worker,
+        until,
+        stake: terms.stake(),
+    });
+    Ok(())
+}

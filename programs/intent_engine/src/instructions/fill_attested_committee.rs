@@ -7,7 +7,8 @@ use crate::errors::EngineError;
 use crate::events::{CommitteeAttested, FeeWithheld, IntentAttested};
 use crate::ext::Ext;
 use crate::state::{
-    Committee, Config, Intent, CONFIG_ADDRESS, CONFIG_VERSION, INTENT_VERSION, VAULT_SEED,
+    ClaimBoard, Committee, Config, Intent, CLAIMS_SEED, CONFIG_ADDRESS, CONFIG_VERSION,
+    INTENT_VERSION, VAULT_SEED,
 };
 
 #[event_cpi]
@@ -63,6 +64,15 @@ pub struct FillAttestedCommittee<'info> {
     pub input_token_program: Interface<'info, TokenInterface>,
     /// CHECK: read only through the checked instructions-sysvar loaders
     pub instructions: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        seeds = [CLAIMS_SEED, intent.key().as_ref()],
+        bump = claims.load()?.bump
+    )]
+    pub claims: Option<AccountLoader<'info, ClaimBoard>>,
+    /// CHECK: receives the claim's stake; matched against the board's worker or owner
+    #[account(mut)]
+    pub stake_to: Option<UncheckedAccount<'info>>,
 }
 
 pub fn handle_fill_attested_committee(
@@ -86,6 +96,8 @@ pub fn handle_fill_attested_committee(
             judge_to: accounts.judge_to.as_deref(),
             input_token_program: &accounts.input_token_program,
             instructions: accounts.instructions.to_account_info(),
+            claims: accounts.claims.as_ref(),
+            stake_to: accounts.stake_to.as_ref().map(|a| a.to_account_info()),
         },
         accounts.payee.to_account_info(),
         &judge,
@@ -106,7 +118,11 @@ pub fn handle_fill_attested_committee(
         tally,
         fees,
         withheld,
+        stake,
     } = released;
+    if let Some(moved) = stake {
+        emit_cpi!(moved);
+    }
     for fee in withheld {
         emit_cpi!(FeeWithheld {
             intent,

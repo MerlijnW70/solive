@@ -3,6 +3,12 @@ import {
   attestedProofMessage,
   buildCommitteeBatch,
   buildFillAttested,
+  claimBoardAddress,
+  CLAIMS_OPEN,
+  getClaimBoardDecoder,
+  getClaimBoardDiscriminatorBytes,
+  IntentCoreError,
+  stakeReceiverOnRelease,
   buildFillAttestedCommittee,
   committeeProofDigest,
   committeeSigners,
@@ -16,7 +22,7 @@ import {
   splitFees,
   verifyCommitteeVote,
 } from "@intent-engine/core";
-import { chainTime, createdAccount, loadIntent, SYSTEM_PROGRAM_ADDRESS } from "./accounts.js";
+import { chainTime, createdAccount, engineAccount, loadIntent, SYSTEM_PROGRAM_ADDRESS } from "./accounts.js";
 import { loadCommittee } from "./client-committee.js";
 import { EscrowExpired, NotSettleable, PayeeMoved, PayToNotWallet, VoteRejected } from "./client-errors.js";
 import type {
@@ -28,6 +34,7 @@ import type {
   SettleProofInput,
 } from "./client-types.js";
 import { memoInstruction } from "./jobs.js";
+import type { Transport } from "./transport.js";
 import { tokenAccountIfMissing } from "./setup.js";
 
 type ReleaseTarget = {
@@ -38,6 +45,21 @@ type ReleaseTarget = {
   payer: TransactionSigner;
   deliveredSha256?: string | undefined;
 };
+
+async function claimStakeTo(transport: Transport, intent: Address, claims: number, payTo: Address): Promise<Address | null> {
+  if (claims !== CLAIMS_OPEN) return null;
+  const board = await claimBoardAddress(intent);
+  const data = await engineAccount(transport, board, getClaimBoardDiscriminatorBytes(), "claim board");
+  const view = getClaimBoardDecoder().decode(data);
+  try {
+    return stakeReceiverOnRelease(view, await chainTime(transport), [payTo]);
+  } catch (error) {
+    if (error instanceof IntentCoreError) {
+      throw new NotSettleable(intent, `is claimed by ${view.worker} until ${view.until}, so only that worker can be paid until then`);
+    }
+    throw error;
+  }
+}
 
 function checkedSha256(deliveredSha256: string | undefined) {
   const lowered = deliveredSha256?.toLowerCase();
@@ -74,6 +96,7 @@ async function planRelease<J>(
   if (holder !== null && holder.owner !== SYSTEM_PROGRAM_ADDRESS) {
     throw new PayToNotWallet(payTo, holder.owner);
   }
+  const stakeTo = await claimStakeTo(transport, address, held.claims, payTo);
   const { tokenProgram } = await mint(held.inputMint);
   const account = (wallet: Address) => tokenAccountIfMissing(transport, payer, wallet, held.inputMint, tokenProgram);
   const amountIn = held.escrowed - held.filled;
@@ -121,6 +144,10 @@ async function planRelease<J>(
       ...(paidJudge === undefined ? {} : { judge: paidJudge }),
     },
     setup: [payee, ...others].flatMap(({ create }): Instruction[] => create),
+    claims:
+      held.claims === CLAIMS_OPEN
+        ? { claims: await claimBoardAddress(address), ...(stakeTo === null ? {} : { stakeTo }) }
+        : {},
   };
 }
 
@@ -140,7 +167,7 @@ export function proofSettlement(context: ClientContext) {
       return { feeOwner: judge.address, judge: judge.address };
     });
     const message = await attestedProofMessage(judge.address, plan.proof);
-    const settle = await buildFillAttested({ ...plan.fill, solver: judge });
+    const settle = await buildFillAttested({ ...plan.fill, ...plan.claims, solver: judge });
     return context.send(
       [...plan.setup, await signEd25519Instruction(judge, message), settle, ...recorded(judge, deliveredSha256)],
       payer,
@@ -178,9 +205,13 @@ export function committeeSettlement(context: ClientContext) {
     if (deliveredSha256 !== undefined && !input.votes.some((vote) => vote.member === input.solver.address)) {
       throw new NotSettleable(plan.intent, `records the delivered work only when a member who voted submits the release, and ${input.solver.address} did not vote`);
     }
-    const { instruction, mask } = buildCommitteeBatch(committee, digest, input.votes);
+    const needed = [...input.votes]
+      .sort((a, b) => committee.members.indexOf(a.member) - committee.members.indexOf(b.member))
+      .slice(0, committee.threshold);
+    const { instruction, mask } = buildCommitteeBatch(committee, digest, needed);
     const settle = await buildFillAttestedCommittee({
       ...plan.fill,
+      ...plan.claims,
       solver: input.solver,
       committee: committee.address,
       signers: mask,
@@ -191,12 +222,16 @@ export function committeeSettlement(context: ClientContext) {
       payee: plan.proof.payee,
       signers: committeeSigners(committee, mask),
       payer,
-      instructions: [...plan.setup, instruction, settle, ...recorded(input.solver, deliveredSha256)],
+      setup: plan.setup,
+      instructions: [instruction, settle, ...recorded(input.solver, deliveredSha256)],
     };
   };
 
   const settleCommittee = async (input: SettleCommitteeInput) => {
-    const { instructions, payer } = await prepareCommitteeRelease(input);
+    const { setup, instructions, payer } = await prepareCommitteeRelease(input);
+    if (setup.length > 0) {
+      await context.send(setup, payer);
+    }
     return context.send(instructions, payer);
   };
 

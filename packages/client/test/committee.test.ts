@@ -12,7 +12,7 @@ import {
   sortMembers,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import { createClient, NotSettleable, VoteRejected } from "../src/index.js";
+import { budgeted, createClient, NotSettleable, PACKET_DATA_SIZE, transactionBytes, VoteRejected } from "../src/index.js";
 import { svmTransport } from "../src/svm.js";
 import { FEE_BPS, world } from "./svm.js";
 
@@ -133,6 +133,24 @@ describe("a committee judges a proof escrow", () => {
     const sha256 = "cd".repeat(32);
     await client.deliver({ worker, intent, sha256, url: "https://example.org/work" });
     expect(await client.deliveries({ judge: created.committee, intent })).toMatchObject([{ intent, worker: worker.address, sha256 }]);
+  });
+
+  it("sends only the threshold's votes, and every transaction fits a packet", async () => {
+    const { w, client, members, owner, nonce, fresh } = await setup(100_000n);
+    const worker = (await generateKeyPairSigner()).address;
+    const target = { owner: owner.address, nonce, payTo: worker, result: 1n };
+    const { digest } = await client.committeeBallot(target);
+    const votes = await Promise.all(members.map((m) => signCommitteeVote(m, digest)));
+    const solver = members[2] as KeyPairSigner;
+    w.chain.svm.airdrop(solver.address, lamports(SOL));
+    const release = await client.prepareCommitteeRelease({ ...target, solver, votes, deliveredSha256: "ab".repeat(32) });
+    expect(release.signers).toHaveLength(2);
+    expect(release.setup.length).toBeGreaterThan(0);
+    for (const part of [release.setup, release.instructions]) {
+      const size = await transactionBytes(client.transport, await budgeted(client.transport, 0n, part, solver.address), solver.address);
+      expect(size).toBeLessThanOrEqual(PACKET_DATA_SIZE);
+    }
+    await fresh();
   });
 
   it("refuses to ballot an escrow judged by a single key", async () => {

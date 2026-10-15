@@ -144,6 +144,9 @@ export const walletCommitteeRelease = define({
     if (input.send === true && input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", RELEASE_CHANGED);
     }
+    if (input.send === true && release.setup.length > 0) {
+      await ctx.transport.send(release.setup, signer);
+    }
     const prepared = input.send === true ? preparedView(await prepare(ctx.transport, release.instructions, signer.address)) : undefined;
     const view = {
       intent: release.intent,

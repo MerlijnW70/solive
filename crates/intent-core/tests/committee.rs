@@ -1,4 +1,6 @@
-use intent_core::committee::{Committee, COMMITTEE_PREIMAGE_LEN, COMMITTEE_TAG, MAX_MEMBERS};
+use intent_core::committee::{
+    Committee, COMMITTEE_PREIMAGE_LEN, COMMITTEE_TAG, MAX_MEMBERS, MAX_THRESHOLD,
+};
 use intent_core::Error;
 use proptest::prelude::*;
 
@@ -23,7 +25,7 @@ fn a_committee_is_sorted_named_members_and_a_reachable_threshold() -> Result<(),
     assert_eq!(committee.members(), &members[..]);
     assert_eq!(committee.threshold(), 2);
     assert_eq!(committee.fee_wallet(), FEE);
-    assert!(Committee::new(&keys(1..=8), 8, FEE).is_ok());
+    assert!(Committee::new(&keys(1..=8), MAX_THRESHOLD, FEE).is_ok());
     assert!(Committee::new(&keys(1..=1), 1, FEE).is_ok());
     Ok(())
 }
@@ -35,6 +37,7 @@ fn anything_else_is_refused() {
         (keys(1..=9), 1, FEE),
         (keys(1..=2), 0, FEE),
         (keys(1..=2), 3, FEE),
+        (keys(1..=8), MAX_THRESHOLD + 1, FEE),
         (vec![key(2), key(1)], 1, FEE),
         (vec![key(1), key(1)], 1, FEE),
         (vec![[0; 32], key(1)], 1, FEE),
@@ -103,9 +106,13 @@ fn signers_are_the_masked_members_in_order_and_at_least_the_threshold() -> Resul
             "{refused:#b}"
         );
     }
-    let eight = Committee::new(&keys(1..=8), 8, FEE)?;
+    let eight = Committee::new(&keys(1..=8), MAX_THRESHOLD, FEE)?;
     assert_eq!(eight.signers(0xff)?.keys(), &keys(1..=8)[..]);
-    assert_eq!(eight.signers(0x7f), Err(Error::CommitteeSigners));
+    assert_eq!(
+        eight.signers(0b1000_0101)?.keys(),
+        &[key(1), key(3), key(8)]
+    );
+    assert_eq!(eight.signers(0b11), Err(Error::CommitteeSigners));
     Ok(())
 }
 
@@ -113,7 +120,7 @@ fn committee_strategy() -> impl Strategy<Value = (Vec<[u8; 32]>, u8)> {
     proptest::collection::btree_set(1u8..=255, 1..=MAX_MEMBERS).prop_flat_map(|set| {
         let members: Vec<[u8; 32]> = set.into_iter().map(key).collect();
         let count = u8::try_from(members.len()).unwrap_or(1);
-        (Just(members), 1..=count)
+        (Just(members), 1..=count.min(MAX_THRESHOLD))
     })
 }
 

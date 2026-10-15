@@ -39,4 +39,7 @@ pub enum Error {
     MandatePrice,
     CommitteeInvalid,
     CommitteeSigners,
+    ClaimTerms,
+    ClaimHeld,
+    ProfileInvalid,
 }

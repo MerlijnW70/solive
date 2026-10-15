@@ -344,6 +344,72 @@
       ]
     },
     {
+      "name": "claim_job",
+      "discriminator": [
+        9,
+        160,
+        5,
+        231,
+        116,
+        123,
+        198,
+        14
+      ],
+      "accounts": [
+        {
+          "name": "worker",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "intent"
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "secs",
+          "type": "u32"
+        }
+      ]
+    },
+    {
       "name": "close_intent",
       "discriminator": [
         112,
@@ -433,6 +499,57 @@
           }
         }
       ]
+    },
+    {
+      "name": "close_profile",
+      "discriminator": [
+        167,
+        36,
+        181,
+        8,
+        136,
+        158,
+        46,
+        207
+      ],
+      "accounts": [
+        {
+          "name": "wallet",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "profile",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  102,
+                  105,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wallet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
     },
     {
       "name": "create_committee",
@@ -1214,6 +1331,123 @@
       ]
     },
     {
+      "name": "create_profile",
+      "discriminator": [
+        225,
+        205,
+        234,
+        143,
+        17,
+        186,
+        50,
+        220
+      ],
+      "accounts": [
+        {
+          "name": "wallet",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "profile",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  102,
+                  105,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wallet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "ProfileFields"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "drop_claim",
+      "discriminator": [
+        173,
+        223,
+        128,
+        244,
+        25,
+        87,
+        148,
+        63
+      ],
+      "accounts": [
+        {
+          "name": "worker",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "intent"
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "end_fill",
       "discriminator": [
         54,
@@ -1433,6 +1667,35 @@
           "name": "instructions"
         },
         {
+          "name": "claims",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "stake_to",
+          "writable": true,
+          "optional": true
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -1542,6 +1805,35 @@
         },
         {
           "name": "instructions"
+        },
+        {
+          "name": "claims",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "stake_to",
+          "writable": true,
+          "optional": true
         },
         {
           "name": "event_authority"
@@ -1690,6 +1982,35 @@
         },
         {
           "name": "instructions"
+        },
+        {
+          "name": "claims",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "stake_to",
+          "writable": true,
+          "optional": true
         },
         {
           "name": "event_authority"
@@ -1845,6 +2166,35 @@
         },
         {
           "name": "instructions"
+        },
+        {
+          "name": "claims",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "stake_to",
+          "writable": true,
+          "optional": true
         },
         {
           "name": "event_authority"
@@ -2188,6 +2538,76 @@
       ]
     },
     {
+      "name": "open_claims",
+      "discriminator": [
+        111,
+        108,
+        90,
+        115,
+        178,
+        90,
+        24,
+        228
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "intent",
+          "writable": true
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "max_secs",
+          "type": "u32"
+        },
+        {
+          "name": "stake",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "propose_admin",
       "discriminator": [
         121,
@@ -2419,6 +2839,63 @@
       ]
     },
     {
+      "name": "settle_claims",
+      "discriminator": [
+        58,
+        91,
+        9,
+        15,
+        201,
+        59,
+        179,
+        94
+      ],
+      "accounts": [
+        {
+          "name": "intent"
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true
+        },
+        {
+          "name": "worker",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "update_config",
       "discriminator": [
         29,
@@ -2503,9 +2980,81 @@
           }
         }
       ]
+    },
+    {
+      "name": "update_profile",
+      "discriminator": [
+        98,
+        67,
+        99,
+        206,
+        86,
+        115,
+        175,
+        1
+      ],
+      "accounts": [
+        {
+          "name": "wallet",
+          "signer": true
+        },
+        {
+          "name": "profile",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  102,
+                  105,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wallet"
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "args",
+          "type": {
+            "defined": {
+              "name": "ProfileFields"
+            }
+          }
+        }
+      ]
     }
   ],
   "accounts": [
+    {
+      "name": "ClaimBoard",
+      "discriminator": [
+        23,
+        21,
+        23,
+        22,
+        82,
+        109,
+        232,
+        161
+      ]
+    },
     {
       "name": "Committee",
       "discriminator": [
@@ -2569,6 +3118,19 @@
         101,
         30,
         148
+      ]
+    },
+    {
+      "name": "Profile",
+      "discriminator": [
+        184,
+        101,
+        165,
+        188,
+        95,
+        63,
+        127,
+        188
       ]
     },
     {
@@ -2636,6 +3198,45 @@
         243,
         236,
         158
+      ]
+    },
+    {
+      "name": "ClaimDropped",
+      "discriminator": [
+        171,
+        220,
+        49,
+        208,
+        172,
+        242,
+        71,
+        154
+      ]
+    },
+    {
+      "name": "ClaimsClosed",
+      "discriminator": [
+        218,
+        185,
+        246,
+        42,
+        164,
+        178,
+        89,
+        108
+      ]
+    },
+    {
+      "name": "ClaimsOpened",
+      "discriminator": [
+        126,
+        92,
+        24,
+        148,
+        242,
+        66,
+        8,
+        28
       ]
     },
     {
@@ -2847,6 +3448,19 @@
       ]
     },
     {
+      "name": "JobClaimed",
+      "discriminator": [
+        176,
+        110,
+        104,
+        38,
+        27,
+        220,
+        61,
+        191
+      ]
+    },
+    {
       "name": "MandateClosed",
       "discriminator": [
         217,
@@ -2938,6 +3552,32 @@
       ]
     },
     {
+      "name": "ProfileClosed",
+      "discriminator": [
+        240,
+        230,
+        21,
+        163,
+        106,
+        38,
+        166,
+        89
+      ]
+    },
+    {
+      "name": "ProfileSet",
+      "discriminator": [
+        68,
+        214,
+        252,
+        160,
+        38,
+        244,
+        12,
+        214
+      ]
+    },
+    {
       "name": "RelayerPaid",
       "discriminator": [
         117,
@@ -2948,6 +3588,19 @@
         114,
         118,
         250
+      ]
+    },
+    {
+      "name": "StakeMoved",
+      "discriminator": [
+        229,
+        213,
+        90,
+        235,
+        88,
+        242,
+        57,
+        27
       ]
     },
     {
@@ -3320,6 +3973,34 @@
     {
       "code": 6088,
       "name": "CommitteeMismatch"
+    },
+    {
+      "code": 6089,
+      "name": "ClaimTerms"
+    },
+    {
+      "code": 6090,
+      "name": "ClaimHeld"
+    },
+    {
+      "code": 6091,
+      "name": "ClaimsMissing"
+    },
+    {
+      "code": 6092,
+      "name": "ClaimsOpen"
+    },
+    {
+      "code": 6093,
+      "name": "NotClaimant"
+    },
+    {
+      "code": 6094,
+      "name": "StakeAccountMismatch"
+    },
+    {
+      "code": 6095,
+      "name": "ProfileInvalid"
     }
   ],
   "types": [
@@ -3387,6 +4068,132 @@
           {
             "name": "required",
             "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ClaimBoard",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "until",
+            "type": "i64"
+          },
+          {
+            "name": "stake",
+            "type": "u64"
+          },
+          {
+            "name": "held",
+            "type": "u64"
+          },
+          {
+            "name": "max_secs",
+            "type": "u32"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "padding",
+            "type": {
+              "array": [
+                "u8",
+                2
+              ]
+            }
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ClaimDropped",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "refunded",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ClaimsClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ClaimsOpened",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "max_secs",
+            "type": "u32"
+          },
+          {
+            "name": "stake",
+            "type": "u64"
           }
         ]
       }
@@ -4122,11 +4929,15 @@
             "type": "u64"
           },
           {
+            "name": "claims",
+            "type": "u8"
+          },
+          {
             "name": "reserved",
             "type": {
               "array": [
                 "u8",
-                16
+                15
               ]
             }
           }
@@ -4454,6 +5265,30 @@
                 32
               ]
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "JobClaimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "until",
+            "type": "i64"
+          },
+          {
+            "name": "stake",
+            "type": "u64"
           }
         ]
       }
@@ -4947,6 +5782,171 @@
       }
     },
     {
+      "name": "Profile",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "doc_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "updated_at",
+            "type": "i64"
+          },
+          {
+            "name": "skills",
+            "type": {
+              "array": [
+                {
+                  "array": [
+                    "u8",
+                    16
+                  ]
+                },
+                8
+              ]
+            }
+          },
+          {
+            "name": "endpoint",
+            "type": {
+              "array": [
+                "u8",
+                128
+              ]
+            }
+          },
+          {
+            "name": "doc_url",
+            "type": {
+              "array": [
+                "u8",
+                128
+              ]
+            }
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "padding",
+            "type": {
+              "array": [
+                "u8",
+                6
+              ]
+            }
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProfileClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProfileFields",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "skills",
+            "type": {
+              "vec": "string"
+            }
+          },
+          {
+            "name": "endpoint",
+            "type": "string"
+          },
+          {
+            "name": "doc_url",
+            "type": "string"
+          },
+          {
+            "name": "doc_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ProfileSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "skills",
+            "type": {
+              "vec": "string"
+            }
+          },
+          {
+            "name": "endpoint",
+            "type": "string"
+          },
+          {
+            "name": "doc_url",
+            "type": "string"
+          },
+          {
+            "name": "doc_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "RelayerPaid",
       "type": {
         "kind": "struct",
@@ -4986,6 +5986,34 @@
             "type": {
               "vec": "u16"
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "StakeMoved",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "to",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "role",
+            "type": "u8"
           }
         ]
       }

@@ -10,14 +10,18 @@ use intent_core::sig::{
     offchain_envelope, AttestedFill, AttestedProof, AttestedSplit, SPLIT_COSIGN_TAG,
 };
 
+use crate::claims::honor_on_release;
 use crate::errors::{core_err, EngineError};
+use crate::events::StakeMoved;
 use crate::ext::Ext;
 use crate::policy::{
     check_fill_kind, check_mint, pay_agent, pay_out, pay_out_split, take_remaining,
     verify_preceding_batch, verify_preceding_ed25519, AgentPayout, FeeSchedule, FeeTerms,
     IntentSigner, Payout, SplitPayout, Tally,
 };
-use crate::state::{Committee, Config, Intent, COMMITTEE_VERSION, PAUSE_FILL};
+use crate::state::{
+    ClaimBoard, Committee, Config, Intent, CLAIMS_OPEN, COMMITTEE_VERSION, PAUSE_FILL,
+};
 
 pub const MAX_SPLIT_RECIPIENTS: usize = 8;
 
@@ -95,6 +99,8 @@ pub struct Release<'a, 'info> {
     pub judge_to: Option<&'a InterfaceAccount<'info, TokenAccount>>,
     pub input_token_program: &'a Interface<'info, TokenInterface>,
     pub instructions: AccountInfo<'info>,
+    pub claims: Option<&'a AccountLoader<'info, ClaimBoard>>,
+    pub stake_to: Option<AccountInfo<'info>>,
 }
 
 #[derive(Clone, Copy)]
@@ -118,6 +124,7 @@ pub struct Released {
     pub tally: Tally,
     pub fees: Fees,
     pub withheld: Vec<Withheld>,
+    pub stake: Option<StakeMoved>,
 }
 
 struct Opened {
@@ -129,6 +136,8 @@ struct Opened {
     spec_hash: [u8; 32],
     judge_fee: u64,
     domain: [u8; 32],
+    claims: u8,
+    now: i64,
 }
 
 fn open(release: &Release, amount_in: u64, result: u64) -> Result<Opened> {
@@ -171,7 +180,26 @@ fn open(release: &Release, amount_in: u64, result: u64) -> Result<Opened> {
         spec_hash: decoded.spec_hash(),
         judge_fee: decoded.judge_fee(),
         domain,
+        claims: intent.claims,
+        now,
     })
+}
+
+fn payee_wallet(payee: &AccountInfo, release: &Release, claims: u8) -> Result<Vec<Pubkey>> {
+    if claims != CLAIMS_OPEN {
+        return Ok(Vec::new());
+    }
+    require_keys_eq!(
+        *payee.owner,
+        release.input_token_program.key(),
+        EngineError::ClaimHeld
+    );
+    let data = payee.try_borrow_data()?;
+    let owner: [u8; 32] = data
+        .get(32..64)
+        .and_then(|bytes| bytes.try_into().ok())
+        .ok_or(EngineError::ClaimHeld)?;
+    Ok(vec![Pubkey::new_from_array(owner)])
 }
 
 fn pay_judge(
@@ -279,6 +307,13 @@ pub fn release_single<'info>(
             &offchain_envelope(&COMMITTEE_COSIGN_TAG, &digest),
         )?,
     }
+    let stake = honor_on_release(
+        opened.claims,
+        release.claims,
+        release.stake_to.as_ref(),
+        &payee_wallet(&payee, &release, opened.claims)?,
+        opened.now,
+    )?;
     let mut withheld = Vec::new();
     pay_judge(
         &release,
@@ -321,6 +356,7 @@ pub fn release_single<'info>(
         tally: opened.tally,
         fees: settled.fees,
         withheld,
+        stake,
     })
 }
 
@@ -401,6 +437,13 @@ pub fn release_split<'info>(
         );
         require!(info.key() == canonical, EngineError::RecipientNotCanonical);
     }
+    let stake = honor_on_release(
+        opened.claims,
+        release.claims,
+        release.stake_to.as_ref(),
+        &claim.recipients,
+        opened.now,
+    )?;
     let settle_amount = opened
         .tally
         .amount_in
@@ -459,6 +502,7 @@ pub fn release_split<'info>(
             tally: opened.tally,
             fees,
             withheld,
+            stake,
         },
         recipients: u8::try_from(len).map_err(|_| EngineError::SplitCountMismatch)?,
         split_hash,

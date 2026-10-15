@@ -78,7 +78,8 @@ function plan(feeBps: number, partnerBps: number, mandate: Address = NONE, agent
     gap: new Uint8Array(4),
     mandateSerial: mandate === NONE ? 0n : 1n,
     agentFee,
-    reserved: new Uint8Array(16),
+    claims: 0,
+    reserved: new Uint8Array(15),
   };
   const fees = splitFees(AMOUNT, feeBps, partnerBps, 0);
   return {

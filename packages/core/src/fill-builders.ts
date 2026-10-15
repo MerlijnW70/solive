@@ -82,6 +82,8 @@ export type FillAttestedSpec = {
   feeRecipient?: Address;
   partner?: Address;
   judge?: Address;
+  claims?: Address;
+  stakeTo?: Address;
   amountIn: bigint;
   result: bigint;
   maxFeeBps: number;
@@ -108,6 +110,8 @@ async function attestedAccounts(input: AttestedAccounts) {
     ...(judgeTo === undefined ? {} : { judgeTo }),
     inputTokenProgram: input.inputTokenProgram,
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
+    ...(input.claims === undefined ? {} : { claims: input.claims }),
+    ...(input.stakeTo === undefined ? {} : { stakeTo: input.stakeTo }),
     amountIn: input.amountIn,
     result: input.result,
     maxFeeBps: input.maxFeeBps,

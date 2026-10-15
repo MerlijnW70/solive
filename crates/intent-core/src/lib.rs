@@ -1,6 +1,7 @@
 #![no_std]
 
 pub mod bounty;
+pub mod claim;
 pub mod codec;
 pub mod committee;
 pub mod error;
@@ -13,6 +14,7 @@ pub mod mandate;
 pub mod math;
 pub mod mint_policy;
 pub mod nonce;
+pub mod profile;
 pub mod sig;
 
 pub use error::Error;

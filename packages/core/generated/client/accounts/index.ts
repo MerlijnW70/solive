@@ -6,9 +6,11 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from "./claimBoard.js";
 export * from "./committee.js";
 export * from "./config.js";
 export * from "./intent.js";
 export * from "./mandate.js";
 export * from "./mintCap.js";
+export * from "./profile.js";
 export * from "./userState.js";

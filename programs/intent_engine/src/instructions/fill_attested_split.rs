@@ -6,7 +6,10 @@ use crate::attested::{release_split, Fill, Judge, Release, Released, SplitClaim,
 use crate::errors::EngineError;
 use crate::events::{FeeWithheld, IntentSplit};
 use crate::ext::Ext;
-use crate::state::{Config, Intent, CONFIG_ADDRESS, CONFIG_VERSION, INTENT_VERSION, VAULT_SEED};
+use crate::state::{
+    ClaimBoard, Config, Intent, CLAIMS_SEED, CONFIG_ADDRESS, CONFIG_VERSION, INTENT_VERSION,
+    VAULT_SEED,
+};
 
 #[event_cpi]
 #[derive(Accounts)]
@@ -73,6 +76,15 @@ pub struct FillAttestedSplit<'info> {
     pub input_token_program: Interface<'info, TokenInterface>,
     /// CHECK: read only through the checked instructions-sysvar loaders
     pub instructions: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        seeds = [CLAIMS_SEED, intent.key().as_ref()],
+        bump = claims.load()?.bump
+    )]
+    pub claims: Option<AccountLoader<'info, ClaimBoard>>,
+    /// CHECK: receives the claim's stake; matched against the board's worker or owner
+    #[account(mut)]
+    pub stake_to: Option<UncheckedAccount<'info>>,
 }
 
 pub fn handle_fill_attested_split(
@@ -105,6 +117,8 @@ pub fn handle_fill_attested_split(
             judge_to: accounts.judge_to.as_deref(),
             input_token_program: &accounts.input_token_program,
             instructions: accounts.instructions.to_account_info(),
+            claims: accounts.claims.as_ref(),
+            stake_to: accounts.stake_to.as_ref().map(|a| a.to_account_info()),
         },
         &recipients,
         &Judge::Key,
@@ -126,11 +140,15 @@ pub fn handle_fill_attested_split(
                 tally,
                 fees,
                 withheld,
+                stake,
                 ..
             },
         recipients,
         split_hash,
     } = split;
+    if let Some(moved) = stake {
+        emit_cpi!(moved);
+    }
     for fee in withheld {
         emit_cpi!(FeeWithheld {
             intent,

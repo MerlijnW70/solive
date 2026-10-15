@@ -45,7 +45,7 @@ import {
   type ResolvedInstructionAccount,
   type ResolvedInstructionAccountMeta,
 } from "@solana/kit/program-client-core";
-import { findSetMintCapMintCapPda } from "../pdas/index.js";
+import { findMintCapPda } from "../pdas/index.js";
 import { INTENT_ENGINE_PROGRAM_ADDRESS } from "../programs/index.js";
 
 export const SET_MINT_CAP_DISCRIMINATOR: ReadonlyUint8Array = new Uint8Array([
@@ -281,7 +281,7 @@ export async function getSetMintCapInstructionAsync<
       "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz" as Address<"6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz">;
   }
   if (!accounts.mintCap.value) {
-    accounts.mintCap.value = await findSetMintCapMintCapPda(
+    accounts.mintCap.value = await findMintCapPda(
       {
         mint: getAddressFromResolvedInstructionAccount(
           "mint",

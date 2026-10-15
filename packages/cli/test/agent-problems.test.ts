@@ -81,7 +81,8 @@ describe("agent problems", () => {
     expect(simulationProblem("err", [failed(ENGINE, 6084)])).toMatchObject({ code: "MintCapWindow", retryable: true });
     expect(simulationProblem("err", [failed(ENGINE, 6085)])).toMatchObject({ code: "MintCapInvalid", retryable: false });
     expect(simulationProblem("err", [failed(ENGINE, 6088)])).toMatchObject({ code: "CommitteeMismatch", retryable: false });
-    for (const code of [5999, 6089]) {
+    expect(simulationProblem("err", [failed(ENGINE, 6095)])).toMatchObject({ code: "ProfileInvalid", retryable: false });
+    for (const code of [5999, 6096]) {
       expect(simulationProblem("e", [failed(ENGINE, code)])).toMatchObject({ code: "TransactionFailed", programError: code });
     }
     const funds = simulationProblem("err", [failed(TOKEN_PROGRAMS[1] ?? "", 1)]);

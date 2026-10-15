@@ -179,13 +179,17 @@ export async function committeeCommand(command: CommitteeCommand, runtime: Runti
         `Signed by: ${release.signers.join(", ")}, ${release.signers.length} of committee ${release.committee.address}, which needs ${release.committee.threshold}`,
         `Pays the fee: ${solver.address}`,
       ];
-      return previewed(
-        transport,
-        release.instructions,
-        solver,
-        { intent: release.intent, committee: release.committee.address, signers: release.signers, summary },
-        command.yes,
-      );
+      const shown = { intent: release.intent, committee: release.committee.address, signers: release.signers };
+      if (release.setup.length === 0) {
+        return previewed(transport, release.instructions, solver, { ...shown, summary }, command.yes);
+      }
+      const setupSummary = "Sets up first, in its own transaction: the token accounts the release pays into";
+      if (!command.yes) {
+        return previewed(transport, release.setup, solver, { ...shown, summary: [...summary, setupSummary] }, false);
+      }
+      const prepared = await previewed(transport, release.setup, solver, {}, true);
+      const sent = await previewed(transport, release.instructions, solver, { ...shown, summary: [...summary, setupSummary] }, true);
+      return { ...sent, setup_signature: (prepared as { signature?: string }).signature };
     }
   }
 }

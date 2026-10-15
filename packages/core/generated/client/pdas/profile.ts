@@ -14,12 +14,12 @@ import {
   type ProgramDerivedAddress,
 } from "@solana/kit";
 
-export type SetMintCapMintCapSeeds = {
-  mint: Address;
+export type ProfileSeeds = {
+  wallet: Address;
 };
 
-export async function findSetMintCapMintCapPda(
-  seeds: SetMintCapMintCapSeeds,
+export async function findProfilePda(
+  seeds: ProfileSeeds,
   config: { programAddress?: Address | undefined } = {},
 ): Promise<ProgramDerivedAddress> {
   const {
@@ -29,9 +29,9 @@ export async function findSetMintCapMintCapPda(
     programAddress,
     seeds: [
       getBytesEncoder().encode(
-        new Uint8Array([109, 105, 110, 116, 95, 99, 97, 112]),
+        new Uint8Array([112, 114, 111, 102, 105, 108, 101]),
       ),
-      getAddressEncoder().encode(seeds.mint),
+      getAddressEncoder().encode(seeds.wallet),
     ],
   });
 }

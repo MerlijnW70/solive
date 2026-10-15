@@ -75,6 +75,8 @@ export type FillAttestedInstruction<
   TAccountJudgeTo extends string | AccountMeta<string> = string,
   TAccountInputTokenProgram extends string | AccountMeta<string> = string,
   TAccountInstructions extends string | AccountMeta<string> = string,
+  TAccountClaims extends string | AccountMeta<string> = string,
+  TAccountStakeTo extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -116,6 +118,12 @@ export type FillAttestedInstruction<
       TAccountInstructions extends string
         ? ReadonlyAccount<TAccountInstructions>
         : TAccountInstructions,
+      TAccountClaims extends string
+        ? WritableAccount<TAccountClaims>
+        : TAccountClaims,
+      TAccountStakeTo extends string
+        ? WritableAccount<TAccountStakeTo>
+        : TAccountStakeTo,
       TAccountEventAuthority extends string
         ? ReadonlyAccount<TAccountEventAuthority>
         : TAccountEventAuthority,
@@ -188,6 +196,8 @@ export type FillAttestedAsyncInput<
     InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountClaims extends InstructionAccountInput = InstructionAccountInput,
+  TAccountStakeTo extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -203,6 +213,8 @@ export type FillAttestedAsyncInput<
   judgeTo?: TAccountJudgeTo;
   inputTokenProgram: TAccountInputTokenProgram;
   instructions: TAccountInstructions;
+  claims?: TAccountClaims;
+  stakeTo?: TAccountStakeTo;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   amountIn: FillAttestedInstructionDataArgs["amountIn"];
@@ -223,6 +235,8 @@ export async function getFillAttestedInstructionAsync<
   TAccountJudgeTo extends InstructionAccountInput,
   TAccountInputTokenProgram extends InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput,
+  TAccountClaims extends InstructionAccountInput,
+  TAccountStakeTo extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -239,6 +253,8 @@ export async function getFillAttestedInstructionAsync<
     TAccountJudgeTo,
     TAccountInputTokenProgram,
     TAccountInstructions,
+    TAccountClaims,
+    TAccountStakeTo,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -291,6 +307,14 @@ export async function getFillAttestedInstructionAsync<
       InstructionAccountInputAddress<TAccountInstructions>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountClaims,
+      InstructionAccountInputAddress<TAccountClaims>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountStakeTo,
+      InstructionAccountInputAddress<TAccountStakeTo>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -339,6 +363,12 @@ export async function getFillAttestedInstructionAsync<
       value: input.instructions ?? null,
       isSigner: false,
       isWritable: false,
+    },
+    claims: { value: input.claims ?? null, isSigner: false, isWritable: true },
+    stakeTo: {
+      value: input.stakeTo ?? null,
+      isSigner: false,
+      isWritable: true,
     },
     eventAuthority: {
       value: input.eventAuthority ?? null,
@@ -389,6 +419,8 @@ export async function getFillAttestedInstructionAsync<
       getAccountMeta("judgeTo", accounts.judgeTo),
       getAccountMeta("inputTokenProgram", accounts.inputTokenProgram),
       getAccountMeta("instructions", accounts.instructions),
+      getAccountMeta("claims", accounts.claims),
+      getAccountMeta("stakeTo", accounts.stakeTo),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -443,6 +475,14 @@ export async function getFillAttestedInstructionAsync<
       InstructionAccountInputAddress<TAccountInstructions>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountClaims,
+      InstructionAccountInputAddress<TAccountClaims>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountStakeTo,
+      InstructionAccountInputAddress<TAccountStakeTo>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -467,6 +507,8 @@ export type FillAttestedInput<
     InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountClaims extends InstructionAccountInput = InstructionAccountInput,
+  TAccountStakeTo extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -482,6 +524,8 @@ export type FillAttestedInput<
   judgeTo?: TAccountJudgeTo;
   inputTokenProgram: TAccountInputTokenProgram;
   instructions: TAccountInstructions;
+  claims?: TAccountClaims;
+  stakeTo?: TAccountStakeTo;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   amountIn: FillAttestedInstructionDataArgs["amountIn"];
@@ -502,6 +546,8 @@ export function getFillAttestedInstruction<
   TAccountJudgeTo extends InstructionAccountInput,
   TAccountInputTokenProgram extends InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput,
+  TAccountClaims extends InstructionAccountInput,
+  TAccountStakeTo extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -518,6 +564,8 @@ export function getFillAttestedInstruction<
     TAccountJudgeTo,
     TAccountInputTokenProgram,
     TAccountInstructions,
+    TAccountClaims,
+    TAccountStakeTo,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -569,6 +617,14 @@ export function getFillAttestedInstruction<
     InstructionAccountInputAddress<TAccountInstructions>
   >,
   ResolvedInstructionAccountMeta<
+    TAccountClaims,
+    InstructionAccountInputAddress<TAccountClaims>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountStakeTo,
+    InstructionAccountInputAddress<TAccountStakeTo>
+  >,
+  ResolvedInstructionAccountMeta<
     TAccountEventAuthority,
     InstructionAccountInputAddress<TAccountEventAuthority>
   >,
@@ -617,6 +673,12 @@ export function getFillAttestedInstruction<
       isSigner: false,
       isWritable: false,
     },
+    claims: { value: input.claims ?? null, isSigner: false, isWritable: true },
+    stakeTo: {
+      value: input.stakeTo ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -655,6 +717,8 @@ export function getFillAttestedInstruction<
       getAccountMeta("judgeTo", accounts.judgeTo),
       getAccountMeta("inputTokenProgram", accounts.inputTokenProgram),
       getAccountMeta("instructions", accounts.instructions),
+      getAccountMeta("claims", accounts.claims),
+      getAccountMeta("stakeTo", accounts.stakeTo),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -709,6 +773,14 @@ export function getFillAttestedInstruction<
       InstructionAccountInputAddress<TAccountInstructions>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountClaims,
+      InstructionAccountInputAddress<TAccountClaims>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountStakeTo,
+      InstructionAccountInputAddress<TAccountStakeTo>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -736,8 +808,10 @@ export type ParsedFillAttestedInstruction<
     judgeTo?: TAccountMetas[8] | undefined;
     inputTokenProgram: TAccountMetas[9];
     instructions: TAccountMetas[10];
-    eventAuthority: TAccountMetas[11];
-    program: TAccountMetas[12];
+    claims?: TAccountMetas[11] | undefined;
+    stakeTo?: TAccountMetas[12] | undefined;
+    eventAuthority: TAccountMetas[13];
+    program: TAccountMetas[14];
   };
   data: FillAttestedInstructionData;
 };
@@ -750,12 +824,12 @@ export function parseFillAttestedInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedFillAttestedInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 13) {
+  if (instruction.accounts.length < 15) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 13,
+        expectedAccountMetas: 15,
       },
     );
   }
@@ -785,6 +859,8 @@ export function parseFillAttestedInstruction<
       judgeTo: getNextOptionalAccount(),
       inputTokenProgram: getNextAccount(),
       instructions: getNextAccount(),
+      claims: getNextOptionalAccount(),
+      stakeTo: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
     },

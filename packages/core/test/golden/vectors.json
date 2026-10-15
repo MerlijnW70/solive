@@ -354,9 +354,9 @@
       "threshold": 2
     },
     {
-      "address": "8mUctKWPzbJWbRcagYGseLmN1Y9tNcPZiaTeEpWrJojN",
+      "address": "8QEVmvQT3YJzqS35nnSyS78VBnib6t4QBoNwS352vTsG",
       "fee_wallet": "3AQTaduKvYWFTu1ExZSQK1hQp5jSZ2yEt4KzsASAufKd",
-      "id": "829d8b4b90b8fd2f7a96a7a2e722482fba9a592d20f946d52a7d80a2c28c1fba",
+      "id": "0bb4d379093c500eb1581e2a745e032e87fe8118ee64e50b2cd72cbd1df354d8",
       "masks": [
         {
           "mask": 0,
@@ -379,7 +379,12 @@
         {
           "mask": 51,
           "outcome": {
-            "err": "CommitteeSigners"
+            "ok": [
+              "3hkpj3dQevt4ad1JSx3ke1sWmMR3wYToMKfFLCnxtKuH",
+              "3mg7sM6RFEBHiiFotFNfvteH1WdFcc9cujKuPaqZdfDz",
+              "3yS1JFVT284y8z1LC9MRoWxZjzFrdoD5axKsZiyMsfC7",
+              "43MJSYxTcRNCH5FqdSgM6PjKz9U4Jrtu9MzXd71xczWp"
+            ]
           }
         },
         {
@@ -391,13 +396,23 @@
         {
           "mask": 85,
           "outcome": {
-            "err": "CommitteeSigners"
+            "ok": [
+              "3hkpj3dQevt4ad1JSx3ke1sWmMR3wYToMKfFLCnxtKuH",
+              "3qbR1eZRqXUWroWKKYhbDmR3FfqTHfqSU8zZSxtANzYh",
+              "3yS1JFVT284y8z1LC9MRoWxZjzFrdoD5axKsZiyMsfC7",
+              "47GbarRUCifRRAWM4k1GPGW6EJgFyvaihmfBgV4ZNKqX"
+            ]
           }
         },
         {
           "mask": 102,
           "outcome": {
-            "err": "CommitteeSigners"
+            "ok": [
+              "3mg7sM6RFEBHiiFotFNfvteH1WdFcc9cujKuPaqZdfDz",
+              "3qbR1eZRqXUWroWKKYhbDmR3FfqTHfqSU8zZSxtANzYh",
+              "43MJSYxTcRNCH5FqdSgM6PjKz9U4Jrtu9MzXd71xczWp",
+              "47GbarRUCifRRAWM4k1GPGW6EJgFyvaihmfBgV4ZNKqX"
+            ]
           }
         },
         {
@@ -422,13 +437,23 @@
         {
           "mask": 153,
           "outcome": {
-            "err": "CommitteeSigners"
+            "ok": [
+              "3hkpj3dQevt4ad1JSx3ke1sWmMR3wYToMKfFLCnxtKuH",
+              "3uWi9x2SRpmjztkpkr2WWeBoVq3exjXG2YfDWLvm8KsQ",
+              "3yS1JFVT284y8z1LC9MRoWxZjzFrdoD5axKsZiyMsfC7",
+              "4BBtj9tUo1xeZFkrW3LBg9GrUTtTezGYGBKqjs7A7fAE"
+            ]
           }
         },
         {
           "mask": 170,
           "outcome": {
-            "err": "CommitteeSigners"
+            "ok": [
+              "3mg7sM6RFEBHiiFotFNfvteH1WdFcc9cujKuPaqZdfDz",
+              "3uWi9x2SRpmjztkpkr2WWeBoVq3exjXG2YfDWLvm8KsQ",
+              "43MJSYxTcRNCH5FqdSgM6PjKz9U4Jrtu9MzXd71xczWp",
+              "4BBtj9tUo1xeZFkrW3LBg9GrUTtTezGYGBKqjs7A7fAE"
+            ]
           }
         },
         {
@@ -447,7 +472,12 @@
         {
           "mask": 204,
           "outcome": {
-            "err": "CommitteeSigners"
+            "ok": [
+              "3qbR1eZRqXUWroWKKYhbDmR3FfqTHfqSU8zZSxtANzYh",
+              "3uWi9x2SRpmjztkpkr2WWeBoVq3exjXG2YfDWLvm8KsQ",
+              "47GbarRUCifRRAWM4k1GPGW6EJgFyvaihmfBgV4ZNKqX",
+              "4BBtj9tUo1xeZFkrW3LBg9GrUTtTezGYGBKqjs7A7fAE"
+            ]
           }
         },
         {
@@ -512,7 +542,11 @@
         {
           "mask": 7,
           "outcome": {
-            "err": "CommitteeSigners"
+            "ok": [
+              "3hkpj3dQevt4ad1JSx3ke1sWmMR3wYToMKfFLCnxtKuH",
+              "3mg7sM6RFEBHiiFotFNfvteH1WdFcc9cujKuPaqZdfDz",
+              "3qbR1eZRqXUWroWKKYhbDmR3FfqTHfqSU8zZSxtANzYh"
+            ]
           }
         },
         {
@@ -553,8 +587,23 @@
         "47GbarRUCifRRAWM4k1GPGW6EJgFyvaihmfBgV4ZNKqX",
         "4BBtj9tUo1xeZFkrW3LBg9GrUTtTezGYGBKqjs7A7fAE"
       ],
-      "preimage": "696e74656e742d656e67696e652d636d0508282828282828282828282828282828282828282828282828282828282828282829292929292929292929292929292929292929292929292929292929292929292a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2020202020202020202020202020202020202020202020202020202020202020",
-      "threshold": 5
+      "preimage": "696e74656e742d656e67696e652d636d0308282828282828282828282828282828282828282828282828282828282828282829292929292929292929292929292929292929292929292929292929292929292a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2a2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2c2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2d2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2020202020202020202020202020202020202020202020202020202020202020",
+      "threshold": 3
+    },
+    {
+      "err": "CommitteeInvalid",
+      "fee_wallet": "3AQTaduKvYWFTu1ExZSQK1hQp5jSZ2yEt4KzsASAufKd",
+      "members": [
+        "3hkpj3dQevt4ad1JSx3ke1sWmMR3wYToMKfFLCnxtKuH",
+        "3mg7sM6RFEBHiiFotFNfvteH1WdFcc9cujKuPaqZdfDz",
+        "3qbR1eZRqXUWroWKKYhbDmR3FfqTHfqSU8zZSxtANzYh",
+        "3uWi9x2SRpmjztkpkr2WWeBoVq3exjXG2YfDWLvm8KsQ",
+        "3yS1JFVT284y8z1LC9MRoWxZjzFrdoD5axKsZiyMsfC7",
+        "43MJSYxTcRNCH5FqdSgM6PjKz9U4Jrtu9MzXd71xczWp",
+        "47GbarRUCifRRAWM4k1GPGW6EJgFyvaihmfBgV4ZNKqX",
+        "4BBtj9tUo1xeZFkrW3LBg9GrUTtTezGYGBKqjs7A7fAE"
+      ],
+      "threshold": 4
     },
     {
       "err": "CommitteeInvalid",
@@ -782,6 +831,9 @@
     "AdminProposed": "81f9e2e3c7526ef3",
     "AgentPaid": "8ba67dcba3181f5d",
     "CapsRequiredSet": "b89fadf016f3ec9e",
+    "ClaimDropped": "abdc31d0acf2479a",
+    "ClaimsClosed": "dab9f62aa4b2596c",
+    "ClaimsOpened": "7e5c1894f242081c",
     "CommitteeAttested": "170765a8f85f6805",
     "CommitteeCreated": "96779019abaa432b",
     "ConfigInitialized": "b531c89c13a7b25b",
@@ -798,6 +850,7 @@
     "IntentExpired": "9936a9c00fbc888b",
     "IntentFilled": "f36bfee6c01cf448",
     "IntentSplit": "0b5138b1e7e3f4ae",
+    "JobClaimed": "b06e68261bdc3dbf",
     "MandateClosed": "d9d49bf30422ff41",
     "MandateCreated": "8c1ed1fe05809371",
     "MandateUsed": "928fb9f409bbd3bb",
@@ -805,7 +858,10 @@
     "NonceAdvanced": "a74af977690b8882",
     "PauseLowered": "cde81d481c82d497",
     "PauseRaised": "b17d48b944f78170",
+    "ProfileClosed": "f0e615a36a26a659",
+    "ProfileSet": "44d6fca026f40cd6",
     "RelayerPaid": "75a902de967276fa",
+    "StakeMoved": "e5d55aeb58f2391b",
     "UserInitialized": "42c305df2a54873c"
   },
   "event_ix_tag": "e445a52e51cb9a1d",

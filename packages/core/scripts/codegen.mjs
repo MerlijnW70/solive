@@ -25,7 +25,19 @@ const resolve = (node, seen = new Set()) => {
   }
   return node;
 };
-const flat = resolve({ ...idl, types: (idl.types ?? []).filter((t) => !aliases.has(t.name)) });
+const unclaimed = (instruction) => ({
+  ...instruction,
+  accounts: instruction.accounts.map((account) => {
+    if (account.optional !== true || account.pda === undefined) return account;
+    const { pda: _derived, ...rest } = account;
+    return rest;
+  }),
+});
+const flat = resolve({
+  ...idl,
+  instructions: idl.instructions.map(unclaimed),
+  types: (idl.types ?? []).filter((t) => !aliases.has(t.name)),
+});
 await createFromRoot(rootNodeFromAnchor(flat)).accept(
   renderVisitor(packageRoot, {
     generatedFolder: "generated/client",

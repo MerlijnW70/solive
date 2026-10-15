@@ -83,6 +83,7 @@ export type CommitteeRelease = {
   payee: Address;
   signers: Address[];
   payer: TransactionSigner;
+  setup: Instruction[];
   instructions: Instruction[];
 };
 

@@ -50,7 +50,8 @@ function intent(over: Partial<Intent> = {}): Intent {
     gap: new Uint8Array(4),
     mandateSerial: 0n,
     agentFee: 0n,
-    reserved: new Uint8Array(16),
+    claims: 0,
+    reserved: new Uint8Array(15),
     ...over,
   };
 }

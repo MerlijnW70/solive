@@ -294,3 +294,58 @@ pub struct CommitteeAttested {
     pub committee: Pubkey,
     pub signers: Vec<Pubkey>,
 }
+
+pub const STAKE_TO_WORKER: u8 = 0;
+pub const STAKE_TO_OWNER: u8 = 1;
+
+#[event]
+pub struct ClaimsOpened {
+    pub intent: Pubkey,
+    pub owner: Pubkey,
+    pub max_secs: u32,
+    pub stake: u64,
+}
+
+#[event]
+pub struct JobClaimed {
+    pub intent: Pubkey,
+    pub worker: Pubkey,
+    pub until: i64,
+    pub stake: u64,
+}
+
+#[event]
+pub struct ClaimDropped {
+    pub intent: Pubkey,
+    pub worker: Pubkey,
+    pub refunded: u64,
+}
+
+#[event]
+pub struct StakeMoved {
+    pub intent: Pubkey,
+    pub worker: Pubkey,
+    pub to: Pubkey,
+    pub amount: u64,
+    pub role: u8,
+}
+
+#[event]
+pub struct ClaimsClosed {
+    pub intent: Pubkey,
+    pub owner: Pubkey,
+}
+
+#[event]
+pub struct ProfileSet {
+    pub wallet: Pubkey,
+    pub skills: Vec<String>,
+    pub endpoint: String,
+    pub doc_url: String,
+    pub doc_hash: [u8; 32],
+}
+
+#[event]
+pub struct ProfileClosed {
+    pub wallet: Pubkey,
+}

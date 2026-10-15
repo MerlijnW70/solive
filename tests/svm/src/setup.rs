@@ -94,6 +94,8 @@ pub struct Env {
     pub relayer_fee_to: Option<Pubkey>,
     pub agent_to: Option<Option<Pubkey>>,
     pub judge_to: Option<Pubkey>,
+    pub claims: Option<Pubkey>,
+    pub stake_to: Option<Pubkey>,
     pub mint_cap: Option<Pubkey>,
 }
 
@@ -123,6 +125,8 @@ impl Env {
             relayer_fee_to: None,
             agent_to: None,
             judge_to: None,
+            claims: None,
+            stake_to: None,
             mint_cap: None,
         };
         env.set_now(START_TS);

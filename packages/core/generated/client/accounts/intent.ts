@@ -83,6 +83,7 @@ export type Intent = {
   gap: ReadonlyUint8Array;
   mandateSerial: bigint;
   agentFee: bigint;
+  claims: number;
   reserved: ReadonlyUint8Array;
 };
 
@@ -115,6 +116,7 @@ export type IntentArgs = {
   gap: ReadonlyUint8Array;
   mandateSerial: number | bigint;
   agentFee: number | bigint;
+  claims: number;
   reserved: ReadonlyUint8Array;
 };
 
@@ -151,7 +153,8 @@ export function getIntentEncoder(): FixedSizeEncoder<IntentArgs> {
       ["gap", fixEncoderSize(getBytesEncoder(), 4)],
       ["mandateSerial", getU64Encoder()],
       ["agentFee", getU64Encoder()],
-      ["reserved", fixEncoderSize(getBytesEncoder(), 16)],
+      ["claims", getU8Encoder()],
+      ["reserved", fixEncoderSize(getBytesEncoder(), 15)],
     ]),
     (value) => ({ ...value, discriminator: INTENT_DISCRIMINATOR }),
   );
@@ -189,7 +192,8 @@ export function getIntentDecoder(): FixedSizeDecoder<Intent> {
     ["gap", fixDecoderSize(getBytesDecoder(), 4)],
     ["mandateSerial", getU64Decoder()],
     ["agentFee", getU64Decoder()],
-    ["reserved", fixDecoderSize(getBytesDecoder(), 16)],
+    ["claims", getU8Decoder()],
+    ["reserved", fixDecoderSize(getBytesDecoder(), 15)],
   ]);
 }
 

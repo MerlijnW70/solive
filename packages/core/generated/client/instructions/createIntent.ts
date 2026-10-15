@@ -40,11 +40,7 @@ import {
   type ResolvedInstructionAccount,
   type ResolvedInstructionAccountMeta,
 } from "@solana/kit/program-client-core";
-import {
-  findMintCapPda,
-  findUserStatePda,
-  findVaultPda,
-} from "../pdas/index.js";
+import { findUserStatePda, findVaultPda } from "../pdas/index.js";
 import { INTENT_ENGINE_PROGRAM_ADDRESS } from "../programs/index.js";
 import {
   getCreateIntentArgsDecoder,
@@ -453,17 +449,6 @@ export async function getCreateIntentInstructionAsync<
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value =
       "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
-  }
-  if (!accounts.mintCap.value) {
-    accounts.mintCap.value = await findMintCapPda(
-      {
-        inputMint: getAddressFromResolvedInstructionAccount(
-          "inputMint",
-          accounts.inputMint.value,
-        ),
-      },
-      { programAddress },
-    );
   }
 
   return Object.freeze({

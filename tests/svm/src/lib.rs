@@ -14,7 +14,8 @@ use anchor_spl::token_2022::spl_token_2022::state::{
     Account as TokenState, AccountState, Mint as MintState,
 };
 use intent_engine::state::{
-    COMMITTEE_SEED, CONFIG_SEED, DELEGATE_SEED, INTENT_SEED, MANDATE_SEED, USER_SEED, VAULT_SEED,
+    CLAIMS_SEED, COMMITTEE_SEED, CONFIG_SEED, DELEGATE_SEED, INTENT_SEED, MANDATE_SEED, USER_SEED,
+    VAULT_SEED,
 };
 use intent_engine::{ConfigSettings, ConfigUpdate};
 use litesvm::types::TransactionMetadata;
@@ -30,6 +31,7 @@ use solana_transaction_error::TransactionError;
 pub type TestResult<T = ()> = Result<T, Box<dyn Error>>;
 
 mod addresses;
+mod claims;
 mod committee;
 mod cu;
 mod errors;
@@ -40,6 +42,7 @@ mod setup;
 mod sig;
 
 pub use addresses::*;
+pub use claims::*;
 pub use committee::*;
 pub use cu::*;
 pub use errors::*;

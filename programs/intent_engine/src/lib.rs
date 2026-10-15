@@ -3,6 +3,7 @@ use anchor_lang::prelude::*;
 pub mod admission;
 pub mod attested;
 pub mod caps;
+pub mod claims;
 pub mod errors;
 pub mod events;
 pub mod ext;
@@ -154,6 +155,34 @@ pub mod intent_engine {
             claim,
             ext,
         )
+    }
+
+    pub fn open_claims(ctx: Context<OpenClaims>, max_secs: u32, stake: u64) -> Result<()> {
+        handle_open_claims(ctx, max_secs, stake)
+    }
+
+    pub fn claim_job(ctx: Context<ClaimJob>, secs: u32) -> Result<()> {
+        handle_claim_job(ctx, secs)
+    }
+
+    pub fn drop_claim(ctx: Context<DropClaim>) -> Result<()> {
+        handle_drop_claim(ctx)
+    }
+
+    pub fn settle_claims(ctx: Context<SettleClaims>) -> Result<()> {
+        handle_settle_claims(ctx)
+    }
+
+    pub fn create_profile(ctx: Context<CreateProfile>, args: ProfileFields) -> Result<()> {
+        handle_create_profile(ctx, args)
+    }
+
+    pub fn update_profile(ctx: Context<UpdateProfile>, args: ProfileFields) -> Result<()> {
+        handle_update_profile(ctx, args)
+    }
+
+    pub fn close_profile(ctx: Context<CloseProfile>) -> Result<()> {
+        handle_close_profile(ctx)
     }
 
     pub fn begin_fill(

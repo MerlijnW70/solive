@@ -24,6 +24,7 @@ import {
 const ascii = (s: string) => new TextEncoder().encode(s);
 
 export const MAX_COMMITTEE_MEMBERS = 8;
+export const MAX_COMMITTEE_THRESHOLD = 3;
 export const COMMITTEE_TAG = ascii("intent-engine-cm");
 export const COMMITTEE_COSIGN_TAG = ascii("intent-engine-committee-member\0\0");
 export const COMMITTEE_PREIMAGE_LEN = 16 + 1 + 1 + 32 * MAX_COMMITTEE_MEMBERS + 32;
@@ -69,6 +70,7 @@ export function checkCommittee(terms: CommitteeTerms): CommitteeTerms {
     !Number.isInteger(terms.threshold) ||
     terms.threshold < 1 ||
     terms.threshold > count ||
+    terms.threshold > MAX_COMMITTEE_THRESHOLD ||
     isZero(bytesOf(terms.feeWallet))
   ) {
     throw new IntentCoreError("CommitteeInvalid");

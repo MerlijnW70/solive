@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 use intent_core::committee::MAX_MEMBERS;
 use intent_core::mandate::{Limits, Usage};
+use intent_core::profile::{MAX_SKILLS, MAX_URL_LEN, SKILL_LEN};
 use intent_core::PARAMS_LEN;
 
 pub const CONFIG_SEED: &[u8] = b"config";
@@ -24,6 +25,11 @@ pub const INTENT_VERSION: u8 = 1;
 pub const MANDATE_VERSION: u8 = 1;
 pub const MINT_CAP_VERSION: u8 = 1;
 pub const COMMITTEE_VERSION: u8 = 1;
+pub const CLAIMS_SEED: &[u8] = b"claims";
+pub const CLAIMS_VERSION: u8 = 1;
+pub const CLAIMS_OPEN: u8 = 1;
+pub const PROFILE_SEED: &[u8] = b"profile";
+pub const PROFILE_VERSION: u8 = 1;
 pub const MIN_CAP_WINDOW_SECS: u32 = 60;
 pub const OLDEST_CONFIG_VERSION: u8 = 1;
 pub const OLDEST_INTENT_VERSION: u8 = 1;
@@ -118,7 +124,8 @@ pub struct Intent {
     pub gap: [u8; 4],
     pub mandate_serial: u64,
     pub agent_fee: u64,
-    pub reserved: [u8; 16],
+    pub claims: u8,
+    pub reserved: [u8; 15],
 }
 
 impl Intent {
@@ -214,4 +221,41 @@ pub struct Committee {
 
 impl Committee {
     pub const SPACE: usize = 8 + core::mem::size_of::<Committee>();
+}
+
+#[account(zero_copy)]
+pub struct ClaimBoard {
+    pub intent: Pubkey,
+    pub owner: Pubkey,
+    pub worker: Pubkey,
+    pub until: i64,
+    pub stake: u64,
+    pub held: u64,
+    pub max_secs: u32,
+    pub version: u8,
+    pub bump: u8,
+    pub padding: [u8; 2],
+    pub reserved: [u8; 32],
+}
+
+impl ClaimBoard {
+    pub const SPACE: usize = 8 + core::mem::size_of::<ClaimBoard>();
+}
+
+#[account(zero_copy)]
+pub struct Profile {
+    pub wallet: Pubkey,
+    pub doc_hash: [u8; 32],
+    pub updated_at: i64,
+    pub skills: [[u8; SKILL_LEN]; MAX_SKILLS],
+    pub endpoint: [u8; MAX_URL_LEN],
+    pub doc_url: [u8; MAX_URL_LEN],
+    pub version: u8,
+    pub bump: u8,
+    pub padding: [u8; 6],
+    pub reserved: [u8; 32],
+}
+
+impl Profile {
+    pub const SPACE: usize = 8 + core::mem::size_of::<Profile>();
 }

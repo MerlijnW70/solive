@@ -95,3 +95,10 @@ Every error the engine program raises, from its IDL. When an SDK call fails, `cl
 | 6086 | `CommitteeInvalid` | no | a committee needs 1 to 8 distinct members in ascending order, a threshold from 1 to its member count, a fee wallet, and an address that is the hash of exactly those terms |
 | 6087 | `CommitteeSigners` | no | the votes name fewer members than the committee's threshold, or a member it does not have |
 | 6088 | `CommitteeMismatch` | no | the committee passed is not the judge the escrow names |
+| 6089 | `ClaimTerms` | no | a claim's terms are out of bounds: at most 7 days and 100 SOL of stake, and a claim cannot run past the escrow's expiry |
+| 6090 | `ClaimHeld` | yes | another worker holds this job's claim |
+| 6091 | `ClaimsMissing` | no | this escrow takes claims, so a release must pass its claims board |
+| 6092 | `ClaimsOpen` | no | this escrow already takes claims |
+| 6093 | `NotClaimant` | no | only the worker holding the claim can drop it |
+| 6094 | `StakeAccountMismatch` | no | the stake goes to the claimant when it is paid, otherwise to the escrow's owner |
+| 6095 | `ProfileInvalid` | no | a profile needs 1 to 8 distinct lowercase skill tags of at most 16 letters, digits or dashes, an https endpoint of at most 128 printable characters, and a document url only together with its sha256 |

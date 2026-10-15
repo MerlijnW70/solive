@@ -92,6 +92,13 @@ pub enum EngineError {
     CommitteeInvalid,
     CommitteeSigners,
     CommitteeMismatch,
+    ClaimTerms,
+    ClaimHeld,
+    ClaimsMissing,
+    ClaimsOpen,
+    NotClaimant,
+    StakeAccountMismatch,
+    ProfileInvalid,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {
@@ -135,5 +142,8 @@ pub fn core_err(e: CoreError) -> EngineError {
         CoreError::MandatePrice => EngineError::MandatePrice,
         CoreError::CommitteeInvalid => EngineError::CommitteeInvalid,
         CoreError::CommitteeSigners => EngineError::CommitteeSigners,
+        CoreError::ClaimTerms => EngineError::ClaimTerms,
+        CoreError::ClaimHeld => EngineError::ClaimHeld,
+        CoreError::ProfileInvalid => EngineError::ProfileInvalid,
     }
 }

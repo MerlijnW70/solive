@@ -15,7 +15,7 @@ import {
 } from "@solana/kit";
 
 export type MintCapSeeds = {
-  inputMint: Address;
+  mint: Address;
 };
 
 export async function findMintCapPda(
@@ -31,7 +31,7 @@ export async function findMintCapPda(
       getBytesEncoder().encode(
         new Uint8Array([109, 105, 110, 116, 95, 99, 97, 112]),
       ),
-      getAddressEncoder().encode(seeds.inputMint),
+      getAddressEncoder().encode(seeds.mint),
     ],
   });
 }

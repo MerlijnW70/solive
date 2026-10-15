@@ -46,7 +46,6 @@ import {
 } from "@solana/kit/program-client-core";
 import {
   findDelegatePda,
-  findMintCapPda,
   findUserStatePda,
   findVaultPda,
 } from "../pdas/index.js";
@@ -549,17 +548,6 @@ export async function getCreateIntentSignedInstructionAsync<
   if (!accounts.systemProgram.value) {
     accounts.systemProgram.value =
       "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
-  }
-  if (!accounts.mintCap.value) {
-    accounts.mintCap.value = await findMintCapPda(
-      {
-        inputMint: getAddressFromResolvedInstructionAccount(
-          "inputMint",
-          accounts.inputMint.value,
-        ),
-      },
-      { programAddress },
-    );
   }
 
   return Object.freeze({

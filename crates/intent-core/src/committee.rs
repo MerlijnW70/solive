@@ -1,6 +1,7 @@
 use crate::Error;
 
 pub const MAX_MEMBERS: usize = 8;
+pub const MAX_THRESHOLD: u8 = 3;
 pub const COMMITTEE_TAG: [u8; 16] = *b"intent-engine-cm";
 pub const COMMITTEE_COSIGN_TAG: [u8; 32] = *b"intent-engine-committee-member\0\0";
 pub const COMMITTEE_PREIMAGE_LEN: usize = 16 + 1 + 1 + 32 * MAX_MEMBERS + 32;
@@ -17,7 +18,7 @@ impl Committee {
     pub fn new(members: &[[u8; 32]], threshold: u8, fee_wallet: [u8; 32]) -> Result<Self, Error> {
         let count = u8::try_from(members.len()).map_err(|_| Error::CommitteeInvalid)?;
         let sized = !members.is_empty() && members.len() <= MAX_MEMBERS;
-        let reachable = threshold != 0 && threshold <= count;
+        let reachable = threshold != 0 && threshold <= count && threshold <= MAX_THRESHOLD;
         let ascending = members.windows(2).all(|pair| pair.first() < pair.last());
         let named = members.iter().all(|member| *member != [0; 32]) && fee_wallet != [0; 32];
         if !(sized && reachable && ascending && named) {
