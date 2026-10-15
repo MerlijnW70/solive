@@ -9,7 +9,7 @@ import {
   findAssociatedTokenAddress,
   tokenOf,
 } from "@intent-engine/core";
-import { createdAccount, mintOf, TOKEN_PROGRAMS, tokenProgramOf, type Transport } from "@intent-engine/client";
+import { cancelClaims, createdAccount, mintOf, TOKEN_PROGRAMS, tokenProgramOf, type Transport } from "@intent-engine/client";
 import { vaultBalance } from "../crank.js";
 import { define } from "./actions.js";
 import { tool } from "./names.js";
@@ -116,7 +116,8 @@ export const prepareRevokeMandate = define({
         skipped.push({ intent, reason: skipReason(refund.account, refund.problem) });
         continue;
       }
-      const cancel = await buildCancelIntent({ owner, nonce: state.nonce, inputMint: state.inputMint, tokenProgram });
+      const claims = await cancelClaims(transport, intent, state.claims);
+      const cancel = await buildCancelIntent({ owner, nonce: state.nonce, inputMint: state.inputMint, tokenProgram, ...(claims === undefined ? {} : { claims }) });
       try {
         cancels.push(preparedView(await prepare(transport, [cancel], input.owner)));
       } catch (error) {

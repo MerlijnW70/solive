@@ -244,14 +244,14 @@ intent-engine claims show --owner $env:OWNER --nonce $env:NONCE
 intent-engine claims take --keypair worker.json --owner $env:OWNER --nonce $env:NONCE --secs 3600 --yes
 ```
 
-A worker that cannot finish gives the job up with `claims drop` and gets its stake back. Once the escrow is released, cancelled or expired, anyone settles the board with `claims settle --keypair <payer file> --owner --nonce`, which closes it and returns its rent to the owner; while the escrow is open, it only ends a lapsed claim.
+A worker that cannot finish gives the job up with `claims drop` and gets its stake back. Every other worker may take the job at once; the worker that dropped it may take it again only once the claim it dropped would have ended, so dropping and claiming again never extends a hold. Once the escrow is released, cancelled or expired, anyone settles the board with `claims settle --keypair <payer file> --owner --nonce`, which closes it and returns its rent to the owner; while the escrow is open, it only ends a lapsed claim.
 
 Who gets the stake:
 
 - A release that pays the claimant returns its stake to it.
 - A worker that drops its claim gets its stake back.
-- A claim that lapses forfeits its stake to the owner, when the next worker takes the job, when the release pays someone else, or when anyone settles the board.
-- A claim that still holds when the escrow is cancelled or expires is refunded to its worker by `claims settle`.
+- A claim that lapses forfeits its stake to the owner, when the next worker takes the job, when the release pays someone else, when the owner cancels, or when anyone settles the board.
+- A claim that still holds when the owner cancels the escrow is refunded to its worker by the cancel itself, so waiting for the claim to lapse after a cancel gains the owner nothing. A claim never outlives the escrow, so at expiry it has lapsed.
 
 An MCP agent reads the board with `solive_get_claims` and takes or drops a claim with `solive_wallet_claim`, which previews until called with `send: true` and the approval its preview returned.
 

@@ -123,6 +123,23 @@ impl World {
             .send(&to.key, &[ed25519_ix(&self.attestor, &message), fill], &[])
     }
 
+    fn cancel(
+        &mut self,
+        claims: bool,
+        stake_to: Option<&Pubkey>,
+    ) -> Result<TransactionMetadata, TransactionError> {
+        let owner = self.owner();
+        self.env.claims = claims.then(|| claims_pda(&self.intent()));
+        self.env.stake_to = stake_to.copied();
+        let cancel = self
+            .env
+            .cancel_ix(&owner, &self.market, 0, &self.trader.input);
+        self.env.claims = None;
+        self.env.stake_to = None;
+        let trader = self.trader.key.insecure_clone();
+        self.env.send(&trader, &[cancel], &[])
+    }
+
     fn board(&self) -> TestResult<ClaimBoard> {
         load(&self.env.svm, &claims_pda(&self.intent()))
     }
@@ -334,7 +351,8 @@ fn a_claimant_who_gives_up_gets_the_stake_back_and_no_one_else_can_drop_it() -> 
 }
 
 #[test]
-fn settling_refunds_a_claimant_whose_escrow_was_cancelled_and_closes_the_board() -> TestResult {
+fn cancelling_under_a_held_claim_refunds_the_stake_at_once_and_settling_closes_the_board(
+) -> TestResult {
     let mut w = world()?;
     w.open(HOUR, STAKE)?;
     let worker = w.worker.key.insecure_clone();
@@ -353,21 +371,161 @@ fn settling_refunds_a_claimant_whose_escrow_was_cancelled_and_closes_the_board()
         Some(engine_error_at(0, EngineError::ClaimHeld)),
         "an active claim on an open escrow is not settled early"
     );
-    let cancel = w.env.cancel_ix(&owner, &w.market, 0, &w.trader.input);
-    let trader = w.trader.key.insecure_clone();
-    w.env.send(&trader, &[cancel], &[])?;
     let before = w.env.lamports(&worker.pubkey());
-    let meta = w.env.send(
-        &cranker,
-        &[settle_claims_ix(&intent, &owner, Some(&worker.pubkey()))],
-        &[],
-    )?;
+    let meta = w.cancel(true, Some(&worker.pubkey()))?;
     assert_eq!(w.env.lamports(&worker.pubkey()), before + STAKE);
+    let moved: Vec<_> = events::<StakeMoved>(&meta)
+        .into_iter()
+        .map(|e| (e.worker, e.to, e.amount, e.role))
+        .collect();
+    assert_eq!(
+        moved,
+        [(worker.pubkey(), worker.pubkey(), STAKE, STAKE_TO_WORKER)]
+    );
+    assert_eq!(w.board()?.worker, Pubkey::default());
+    let meta = w
+        .env
+        .send(&cranker, &[settle_claims_ix(&intent, &owner, None)], &[])?;
+    assert!(events::<StakeMoved>(&meta).is_empty());
     assert_eq!(events::<ClaimsClosed>(&meta).len(), 1);
     assert!(
         !w.env.exists(&claims_pda(&intent)),
         "the board closes once the escrow is done"
     );
+    Ok(())
+}
+
+#[test]
+fn an_owner_who_cancels_just_before_the_claim_lapses_cannot_keep_the_stake() -> TestResult {
+    let mut w = world()?;
+    w.open(HOUR, STAKE)?;
+    let worker = w.worker.key.insecure_clone();
+    w.claim(&worker, 600)?;
+    w.lapse(599);
+    let owner = w.owner();
+    let owner_before = w.env.lamports(&owner);
+    let worker_before = w.env.lamports(&worker.pubkey());
+    w.cancel(true, Some(&worker.pubkey()))?;
+    w.lapse(1);
+    let cranker = w.env.funded()?;
+    let intent = w.intent();
+    w.env
+        .send(&cranker, &[settle_claims_ix(&intent, &owner, None)], &[])?;
+    assert_eq!(w.env.lamports(&worker.pubkey()), worker_before + STAKE);
+    let board_rent = w.env.lamports(&owner) - owner_before;
+    assert!(
+        board_rent < STAKE,
+        "the owner gets the board's rent back, never the stake"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_cancel_that_hides_the_board_or_redirects_the_stake_is_refused() -> TestResult {
+    let mut w = world()?;
+    w.open(HOUR, STAKE)?;
+    let worker = w.worker.key.insecure_clone();
+    w.claim(&worker, HOUR)?;
+    let owner = w.owner();
+    assert_eq!(
+        w.cancel(false, None).err(),
+        Some(engine_error_at(0, EngineError::ClaimsMissing))
+    );
+    assert_eq!(
+        w.cancel(true, Some(&owner)).err(),
+        Some(engine_error_at(0, EngineError::StakeAccountMismatch))
+    );
+    assert_eq!(
+        w.cancel(true, None).err(),
+        Some(engine_error_at(0, EngineError::StakeAccountMismatch))
+    );
+    w.cancel(true, Some(&worker.pubkey()))?;
+    Ok(())
+}
+
+#[test]
+fn a_cancel_after_the_claim_lapsed_forfeits_the_stake_to_the_owner() -> TestResult {
+    let mut w = world()?;
+    w.open(HOUR, STAKE)?;
+    let worker = w.worker.key.insecure_clone();
+    w.claim(&worker, 60)?;
+    w.lapse(60);
+    let owner = w.owner();
+    let before = w.env.lamports(&owner);
+    let meta = w.cancel(true, Some(&owner))?;
+    let moved: Vec<_> = events::<StakeMoved>(&meta)
+        .into_iter()
+        .map(|e| (e.worker, e.to, e.amount, e.role))
+        .collect();
+    assert_eq!(moved, [(worker.pubkey(), owner, STAKE, STAKE_TO_OWNER)]);
+    assert!(w.env.lamports(&owner) + 10_000 > before + STAKE);
+    Ok(())
+}
+
+#[test]
+fn a_cancel_with_no_claim_held_moves_no_stake() -> TestResult {
+    let mut w = world()?;
+    w.open(HOUR, STAKE)?;
+    let meta = w.cancel(true, None)?;
+    assert!(events::<StakeMoved>(&meta).is_empty());
+    assert_eq!(w.board()?.held, 0);
+    Ok(())
+}
+
+#[test]
+fn a_worker_that_drops_cannot_claim_again_before_its_term_ends() -> TestResult {
+    let mut w = world()?;
+    w.open(HOUR, STAKE)?;
+    let worker = w.worker.key.insecure_clone();
+    w.claim(&worker, 600)?;
+    let until = w.board()?.until;
+    w.lapse(599);
+    let intent = w.intent();
+    let owner = w.owner();
+    let renew = [
+        drop_claim_ix(&worker.pubkey(), &intent),
+        claim_job_ix(&worker.pubkey(), &intent, &owner, HOUR),
+    ];
+    assert_eq!(
+        w.env.send(&worker, &renew, &[]).err(),
+        Some(engine_error_at(1, EngineError::ClaimCooldown)),
+        "dropping and claiming again in one transaction is refused"
+    );
+    w.env
+        .send(&worker, &[drop_claim_ix(&worker.pubkey(), &intent)], &[])?;
+    let board = w.board()?;
+    assert_eq!(
+        (board.worker, board.until, board.held, board.dropped_by),
+        (Pubkey::default(), until, 0, worker.pubkey())
+    );
+    assert_eq!(
+        w.claim(&worker, 60).err(),
+        Some(engine_error_at(0, EngineError::ClaimCooldown))
+    );
+    w.lapse(1);
+    w.claim(&worker, 60)?;
+    assert_eq!(w.board()?.dropped_by, Pubkey::default());
+    Ok(())
+}
+
+#[test]
+fn a_dropped_job_is_free_for_everyone_else_at_once() -> TestResult {
+    let mut w = world()?;
+    w.open(HOUR, STAKE)?;
+    let worker = w.worker.key.insecure_clone();
+    let rival = w.rival.key.insecure_clone();
+    w.claim(&worker, HOUR)?;
+    let intent = w.intent();
+    w.env
+        .send(&worker, &[drop_claim_ix(&worker.pubkey(), &intent)], &[])?;
+    w.claim(&rival, 60)?;
+    let board = w.board()?;
+    assert_eq!(
+        (board.worker, board.dropped_by),
+        (rival.pubkey(), Pubkey::default())
+    );
+    w.lapse(60);
+    w.claim(&worker, 60)?;
     Ok(())
 }
 

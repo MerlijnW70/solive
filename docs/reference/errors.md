@@ -153,11 +153,12 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6088 | `CommitteeMismatch` | no | the committee passed is not the judge the escrow names; release it with the committee its attestor field holds |
 | 6089 | `ClaimTerms` | no | a claim's terms are out of bounds: at most 7 days and 100 SOL of stake, and a claim cannot run past the escrow's expiry |
 | 6090 | `ClaimHeld` | yes | another worker holds this job's claim; only that worker can be paid until the claim lapses, then anyone can claim or be paid |
-| 6091 | `ClaimsMissing` | no | this escrow takes claims, so a release must pass its claims board; let this server build the release |
+| 6091 | `ClaimsMissing` | no | this escrow takes claims, so a release or cancel must pass its claims board; let this server build it |
 | 6092 | `ClaimsOpen` | no | this escrow already takes claims |
 | 6093 | `NotClaimant` | no | only the worker holding the claim can drop it |
 | 6094 | `StakeAccountMismatch` | no | the stake goes to the claimant when it is paid, otherwise to the escrow's owner; pass that account |
 | 6095 | `ProfileInvalid` | no | a profile needs 1 to 8 distinct lowercase skill tags of at most 16 letters, digits or dashes, an https endpoint of at most 128 printable characters, and a document url only together with its sha256 |
+| 6096 | `ClaimCooldown` | yes | this worker dropped its claim on the job and may claim it again once that claim would have ended; any other worker may claim it now |
 
 ## Token programs
 

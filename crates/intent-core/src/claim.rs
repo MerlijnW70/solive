@@ -71,6 +71,26 @@ impl Slot {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Cooldown {
+    pub worker: [u8; 32],
+    pub until: i64,
+}
+
+impl Cooldown {
+    pub fn check(&self, slot: Slot, claimant: [u8; 32], now: i64) -> Result<(), Error> {
+        slot.claimable()?;
+        let barred = slot == Slot::Free
+            && self.worker != [0; 32]
+            && self.worker == claimant
+            && now < self.until;
+        if barred {
+            return Err(Error::ClaimCooldown);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StakeTo {
     Worker,
     Owner,
@@ -82,6 +102,14 @@ pub fn stake_on_release(slot: Slot, payees: &[[u8; 32]]) -> Option<StakeTo> {
         Slot::Held { worker, .. } if payees.contains(&worker) => Some(StakeTo::Worker),
         Slot::Held { .. } => None,
         Slot::Lapsed { worker } if payees.contains(&worker) => Some(StakeTo::Worker),
+        Slot::Lapsed { .. } => Some(StakeTo::Owner),
+    }
+}
+
+pub fn stake_on_cancel(slot: Slot) -> Option<StakeTo> {
+    match slot {
+        Slot::Free => None,
+        Slot::Held { .. } => Some(StakeTo::Worker),
         Slot::Lapsed { .. } => Some(StakeTo::Owner),
     }
 }

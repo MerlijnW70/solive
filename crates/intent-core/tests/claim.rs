@@ -1,5 +1,6 @@
 use intent_core::claim::{
-    stake_on_release, stake_on_settle, Slot, StakeTo, Terms, MAX_CLAIM_SECS, MAX_CLAIM_STAKE,
+    stake_on_cancel, stake_on_release, stake_on_settle, Cooldown, Slot, StakeTo, Terms,
+    MAX_CLAIM_SECS, MAX_CLAIM_STAKE,
 };
 use intent_core::Error;
 use proptest::prelude::*;
@@ -72,6 +73,56 @@ fn a_held_claim_lets_only_its_worker_be_paid_and_returns_the_stake() {
     assert_eq!(stake_on_release(lapsed, &[WORKER]), Some(StakeTo::Worker));
     assert_eq!(Slot::Free.may_pay(&[OTHER]), Ok(()));
     assert_eq!(stake_on_release(Slot::Free, &[OTHER]), None);
+}
+
+#[test]
+fn a_cancel_refunds_a_held_claim_and_forfeits_a_lapsed_one() {
+    assert_eq!(stake_on_cancel(Slot::Free), None);
+    assert_eq!(
+        stake_on_cancel(Slot::Held {
+            worker: WORKER,
+            until: NOW + 1
+        }),
+        Some(StakeTo::Worker)
+    );
+    assert_eq!(
+        stake_on_cancel(Slot::Lapsed { worker: WORKER }),
+        Some(StakeTo::Owner)
+    );
+}
+
+#[test]
+fn a_worker_that_dropped_waits_for_its_term_while_everyone_else_may_claim() {
+    let cooldown = Cooldown {
+        worker: WORKER,
+        until: NOW + 10,
+    };
+    assert_eq!(
+        cooldown.check(Slot::Free, WORKER, NOW + 9),
+        Err(Error::ClaimCooldown)
+    );
+    assert_eq!(cooldown.check(Slot::Free, WORKER, NOW + 10), Ok(()));
+    assert_eq!(cooldown.check(Slot::Free, OTHER, NOW), Ok(()));
+    assert_eq!(
+        cooldown.check(Slot::Lapsed { worker: OTHER }, WORKER, NOW),
+        Ok(())
+    );
+    assert_eq!(
+        cooldown.check(
+            Slot::Held {
+                worker: OTHER,
+                until: NOW + 5
+            },
+            OTHER,
+            NOW
+        ),
+        Err(Error::ClaimHeld)
+    );
+    let none = Cooldown {
+        worker: [0; 32],
+        until: NOW + 10,
+    };
+    assert_eq!(none.check(Slot::Free, [0; 32], NOW), Ok(()));
 }
 
 #[test]

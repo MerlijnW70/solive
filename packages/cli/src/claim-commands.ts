@@ -36,6 +36,9 @@ export const noClaims = (intent: Address) => `escrow ${intent} takes no claims; 
 export const heldBy = (intent: Address, worker: Address, secondsLeft: bigint) =>
   `${worker} holds the claim on escrow ${intent} for ${secondsLeft} more seconds; nothing was sent`;
 
+export const coolingDown = (intent: Address, worker: Address, until: bigint) =>
+  `${worker} dropped its claim on escrow ${intent} and may claim it again from ${until}, when that claim would have ended; nothing was sent`;
+
 export const NO_PROFILE = "has published no profile";
 
 const claimsShown = (intent: Address, view: ClaimsView) => ({
@@ -48,6 +51,7 @@ const claimsShown = (intent: Address, view: ClaimsView) => ({
   stake: view.stake,
   max_secs: view.maxSecs,
   owner: view.owner,
+  cooldown: view.cooldown,
 });
 
 async function claimsOf(client: Client, owner: Address, nonce: bigint) {
@@ -111,6 +115,9 @@ async function takeClaim(
 ) {
   if (view.state === "held" && view.worker !== null) {
     throw new FlowRefused(heldBy(intent, view.worker, view.secondsLeft));
+  }
+  if (view.cooldown !== null && view.cooldown.worker === worker.address) {
+    throw new FlowRefused(coolingDown(intent, worker.address, view.cooldown.until));
   }
   if (command.secs > view.maxSecs) {
     throw new FlowRefused(`escrow ${intent} lets a worker hold its claim for at most ${view.maxSecs} seconds; pass a lower --secs`);

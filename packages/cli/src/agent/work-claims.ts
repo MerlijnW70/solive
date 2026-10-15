@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
 import { buildClaimJob, buildDropClaim, claimUntil, findIntentPda, formatAmount, IntentCoreError, IntentStatus, MAX_CLAIM_SECS } from "@intent-engine/core";
 import { createClient } from "@intent-engine/client";
-import { heldBy, noClaims } from "../claim-commands.js";
+import { coolingDown, heldBy, noClaims } from "../claim-commands.js";
 import { type AgentContext, define } from "./actions.js";
 import type { Call } from "./claims.js";
 import { tool } from "./names.js";
@@ -43,6 +43,8 @@ export const getClaims = define({
     stake: optional(amount("lamports a worker stakes to claim")),
     max_secs: optional(integer(1, MAX_CLAIM_SECS, "the longest a claim may run")),
     owner: optional(account()),
+    dropped_by: optional(nullable(account("a worker that dropped its claim and may not claim again until cooldown_until"))),
+    cooldown_until: optional(time("when the worker that dropped may claim again")),
   }),
   run: async (ctx, input) => {
     const { intent, view } = await claimsFor(ctx, input.owner, input.nonce);
@@ -60,6 +62,8 @@ export const getClaims = define({
       stake: view.stake,
       max_secs: view.maxSecs,
       owner: view.owner,
+      dropped_by: view.cooldown?.worker ?? null,
+      ...(view.cooldown === null ? {} : { cooldown_until: view.cooldown.until }),
     };
   },
 });
@@ -100,6 +104,9 @@ export const walletClaim = define({
       }
       if (view.state === "held" && view.worker !== null) {
         throw new AgentRefusal("ClaimHeld", heldBy(intent, view.worker, view.secondsLeft));
+      }
+      if (view.cooldown !== null && view.cooldown.worker === signer.address) {
+        throw new AgentRefusal("ClaimCooldown", coolingDown(intent, signer.address, view.cooldown.until));
       }
       if (input.secs > view.maxSecs) {
         throw new InvalidInput([{ path: "secs", message: `this escrow allows at most ${view.maxSecs} seconds` }]);

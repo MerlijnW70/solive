@@ -20,11 +20,18 @@ export type ClaimSlot =
   | { state: "held"; worker: Address; until: bigint }
   | { state: "lapsed"; worker: Address };
 
-export type BoardView = { owner: Address; worker: Address; until: bigint; held: bigint };
+export type BoardView = { owner: Address; worker: Address; until: bigint; held: bigint; droppedBy?: Address };
 
 export function claimSlot(board: Pick<BoardView, "worker" | "until">, now: bigint): ClaimSlot {
   if (board.worker === NONE) return { state: "free" };
   return now < board.until ? { state: "held", worker: board.worker, until: board.until } : { state: "lapsed", worker: board.worker };
+}
+
+export function checkClaimant(board: Pick<BoardView, "worker" | "until" | "droppedBy">, claimant: Address, now: bigint): void {
+  const slot = claimSlot(board, now);
+  if (slot.state === "held") throw new IntentCoreError("ClaimHeld");
+  const dropped = board.droppedBy ?? NONE;
+  if (slot.state === "free" && dropped !== NONE && dropped === claimant && now < board.until) throw new IntentCoreError("ClaimCooldown");
 }
 
 export function checkClaimTerms(maxSecs: number, stake: bigint): void {
@@ -48,6 +55,12 @@ export function stakeReceiverOnRelease(board: BoardView, now: bigint, payees: re
     return slot.worker;
   }
   return payees.includes(slot.worker) ? slot.worker : board.owner;
+}
+
+export function stakeReceiverOnCancel(board: BoardView, now: bigint): Address | null {
+  const slot = claimSlot(board, now);
+  if (slot.state === "free") return null;
+  return slot.state === "held" ? slot.worker : board.owner;
 }
 
 export function stakeReceiverOnSettle(board: BoardView, now: bigint, escrowOpen: boolean): Address | null {

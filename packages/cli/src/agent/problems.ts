@@ -119,11 +119,12 @@ export const ENGINE_PROBLEMS = {
   CommitteeMismatch: never("the committee passed is not the judge the escrow names; release it with the committee its attestor field holds"),
   ClaimTerms: never("a claim's terms are out of bounds: at most 7 days and 100 SOL of stake, and a claim cannot run past the escrow's expiry"),
   ClaimHeld: later("another worker holds this job's claim; only that worker can be paid until the claim lapses, then anyone can claim or be paid"),
-  ClaimsMissing: never("this escrow takes claims, so a release must pass its claims board; let this server build the release"),
+  ClaimsMissing: never("this escrow takes claims, so a release or cancel must pass its claims board; let this server build it"),
   ClaimsOpen: never("this escrow already takes claims"),
   NotClaimant: never("only the worker holding the claim can drop it"),
   StakeAccountMismatch: never("the stake goes to the claimant when it is paid, otherwise to the escrow's owner; pass that account"),
   ProfileInvalid: never("a profile needs 1 to 8 distinct lowercase skill tags of at most 16 letters, digits or dashes, an https endpoint of at most 128 printable characters, and a document url only together with its sha256"),
+  ClaimCooldown: later("this worker dropped its claim on the job and may claim it again once that claim would have ended; any other worker may claim it now"),
 } as const satisfies Record<string, Entry>;
 
 type EngineErrorName = keyof typeof ENGINE_PROBLEMS;

@@ -41,8 +41,8 @@ pub fn handle_drop_claim(ctx: Context<DropClaim>) -> Result<()> {
     {
         let mut board = ctx.accounts.board.load_mut()?;
         board.worker = Pubkey::default();
-        board.until = 0;
         board.held = 0;
+        board.dropped_by = worker;
     }
     emit_cpi!(ClaimDropped {
         intent,

@@ -86,7 +86,7 @@ async function canonicalRefund(ref: IntentRef): Promise<Address> {
 }
 
 export async function buildCancelIntent(
-  input: Omit<IntentRef, "owner"> & { owner: TransactionSigner; refundTo?: Address; ext?: Uint8Array },
+  input: Omit<IntentRef, "owner"> & { owner: TransactionSigner; refundTo?: Address; ext?: Uint8Array; claims?: { board: Address; stakeTo: Address | null } },
 ) {
   const ref = { ...input, owner: input.owner.address };
   const ext = settleExt(input.ext);
@@ -96,6 +96,7 @@ export async function buildCancelIntent(
     inputMint: input.inputMint,
     refundTo: input.refundTo ?? (await canonicalRefund(ref)),
     tokenProgram: input.tokenProgram,
+    ...(input.claims === undefined ? {} : { claims: input.claims.board, ...(input.claims.stakeTo === null ? {} : { stakeTo: input.claims.stakeTo }) }),
     ext,
     ...(await events()),
   });

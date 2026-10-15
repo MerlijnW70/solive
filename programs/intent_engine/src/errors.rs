@@ -99,6 +99,7 @@ pub enum EngineError {
     NotClaimant,
     StakeAccountMismatch,
     ProfileInvalid,
+    ClaimCooldown,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {
@@ -145,5 +146,6 @@ pub fn core_err(e: CoreError) -> EngineError {
         CoreError::ClaimTerms => EngineError::ClaimTerms,
         CoreError::ClaimHeld => EngineError::ClaimHeld,
         CoreError::ProfileInvalid => EngineError::ProfileInvalid,
+        CoreError::ClaimCooldown => EngineError::ClaimCooldown,
     }
 }

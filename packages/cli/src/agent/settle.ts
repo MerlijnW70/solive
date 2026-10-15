@@ -9,7 +9,7 @@ import {
   getIntentDecoder,
   tokenOf,
 } from "@intent-engine/core";
-import { chainTime, loadIntent, tokenProgramOf } from "@intent-engine/client";
+import { cancelClaims, chainTime, loadIntent, tokenProgramOf } from "@intent-engine/client";
 import { closing, CostlyFunding, crankAction, expiring, type Funding, UnfundedAccount, vaultBalance } from "../crank.js";
 import { define } from "./actions.js";
 import { tool } from "./names.js";
@@ -56,7 +56,8 @@ export const prepareCancel = define({
       inputMint: intent.inputMint,
       tokenProgram: await tokenProgramOf(transport, intent.inputMint),
     };
-    const ix = await buildCancelIntent({ ...ref, owner });
+    const claims = await cancelClaims(transport, address, intent.claims);
+    const ix = await buildCancelIntent({ ...ref, owner, ...(claims === undefined ? {} : { claims }) });
     const ownPaid = intent.rentPayer === input.owner;
     const andClose = input.close ?? false;
     if (andClose && !ownPaid) {

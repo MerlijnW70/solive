@@ -34,6 +34,7 @@ import {
   MIN_EXPIRES_IN,
   SPEC_URL_NEEDS_PROOF,
 } from "./client-types.js";
+import { cancelClaims } from "./client-claims.js";
 import { memoInstruction, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic } from "./jobs.js";
 import { initUserIfMissing, tokenAccountIfMissing, wrapIfShort } from "./setup.js";
 
@@ -99,7 +100,10 @@ export function intentSends({ transport, send, mint, config }: ClientContext) {
     const { intent } = await loadIntent(transport, signer.address, nonce);
     const { tokenProgram } = await mint(intent.inputMint);
     const refund = await tokenAccountIfMissing(transport, signer, signer.address, intent.inputMint, tokenProgram);
-    return send([...refund.create, await buildCancelIntent({ owner: signer, nonce, inputMint: intent.inputMint, tokenProgram })], signer);
+    const [address] = await findIntentPda({ owner: signer.address, nonce });
+    const claims = await cancelClaims(transport, address, intent.claims);
+    const cancel = await buildCancelIntent({ owner: signer, nonce, inputMint: intent.inputMint, tokenProgram, ...(claims === undefined ? {} : { claims }) });
+    return send([...refund.create, cancel], signer);
   };
 
   const unwrap = async (signer: TransactionSigner) => {

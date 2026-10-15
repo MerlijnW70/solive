@@ -326,6 +326,35 @@
           "name": "token_program"
         },
         {
+          "name": "claims",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "stake_to",
+          "writable": true,
+          "optional": true
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -4001,6 +4030,10 @@
     {
       "code": 6095,
       "name": "ProfileInvalid"
+    },
+    {
+      "code": 6096,
+      "name": "ClaimCooldown"
     }
   ],
   "types": [
@@ -4127,13 +4160,8 @@
             }
           },
           {
-            "name": "reserved",
-            "type": {
-              "array": [
-                "u8",
-                32
-              ]
-            }
+            "name": "dropped_by",
+            "type": "pubkey"
           }
         ]
       }

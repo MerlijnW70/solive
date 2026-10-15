@@ -235,7 +235,7 @@ pub struct ClaimBoard {
     pub version: u8,
     pub bump: u8,
     pub padding: [u8; 2],
-    pub reserved: [u8; 32],
+    pub dropped_by: Pubkey,
 }
 
 impl ClaimBoard {

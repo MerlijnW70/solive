@@ -148,6 +148,8 @@ impl Env {
                 input_mint: market.input_mint,
                 refund_to: *refund_to,
                 token_program: market.input_program,
+                claims: self.claims,
+                stake_to: self.stake_to,
                 event_authority: event_authority(),
                 program: intent_engine::ID,
             },

@@ -3,7 +3,7 @@ use anchor_lang::system_program::{transfer, Transfer};
 use intent_core::claim::{Slot, StakeTo, Terms};
 use intent_core::lifecycle::Status;
 
-use crate::claims::{move_lamports, slot_of, stake_receiver};
+use crate::claims::{cooldown_of, move_lamports, slot_of, stake_receiver};
 use crate::errors::{core_err, EngineError};
 use crate::events::{JobClaimed, StakeMoved};
 use crate::state::{ClaimBoard, Intent, CLAIMS_OPEN, CLAIMS_SEED, CLAIMS_VERSION, INTENT_VERSION};
@@ -40,17 +40,20 @@ pub fn handle_claim_job(ctx: Context<ClaimJob>, secs: u32) -> Result<()> {
         require!(intent.claims == CLAIMS_OPEN, EngineError::ClaimsMissing);
         intent.expires_at
     };
-    let (slot, terms, held, lapsed) = {
+    let (slot, cooldown, terms, held, lapsed) = {
         let board = ctx.accounts.board.load()?;
         let slot = slot_of(&board, now);
+        let cooldown = cooldown_of(&board);
         let terms = Terms::new(board.max_secs, board.stake).map_err(core_err)?;
         let lapsed = match slot {
             Slot::Lapsed { .. } => Some(stake_receiver(&board, StakeTo::Owner)),
             Slot::Free | Slot::Held { .. } => None,
         };
-        (slot, terms, board.held, lapsed)
+        (slot, cooldown, terms, board.held, lapsed)
     };
-    slot.claimable().map_err(core_err)?;
+    cooldown
+        .check(slot, ctx.accounts.worker.key().to_bytes(), now)
+        .map_err(core_err)?;
     let until = terms.until(now, secs, expires_at).map_err(core_err)?;
     let intent = ctx.accounts.intent.key();
     if terms.stake() > 0 {
@@ -85,6 +88,7 @@ pub fn handle_claim_job(ctx: Context<ClaimJob>, secs: u32) -> Result<()> {
         board.worker = worker;
         board.until = until;
         board.held = terms.stake();
+        board.dropped_by = Pubkey::default();
     }
     emit_cpi!(JobClaimed {
         intent,

@@ -11,6 +11,7 @@ import {
 } from "@intent-engine/core";
 import { solverTableAccounts, tick } from "@intent-engine/solver";
 import {
+  cancelClaims,
   clusterDomain,
   createdAccount,
   loadConfig,
@@ -125,15 +126,17 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       const { address, intent } = await loadIntent(transport, owner.address, command.nonce);
       const ref = { nonce: command.nonce, inputMint: intent.inputMint, tokenProgram: await tokenProgramOf(transport, intent.inputMint) };
       const refund = await tokenAccountIfMissing(transport, owner, owner.address, intent.inputMint, ref.tokenProgram);
+      const claims = await cancelClaims(transport, address, intent.claims);
       const instructions = [
         ...refund.create,
-        await buildCancelIntent({ ...ref, owner }),
+        await buildCancelIntent({ ...ref, owner, ...(claims === undefined ? {} : { claims }) }),
         ...(command.close ? [await buildCloseIntent({ ...ref, owner: owner.address, cranker: owner, rentPayer: intent.rentPayer })] : []),
       ];
       const summary = [
         `Cancels intent ${address} (nonce ${command.nonce}); nobody can fill it afterwards`,
         `Returns what is left in escrow to ${refund.address}, the owner's token account for ${intent.inputMint}`,
         ...(refund.create.length > 0 ? [`Creates ${refund.address} first, since it is missing; the owner pays its rent`] : []),
+        ...(claims?.stakeTo === undefined || claims.stakeTo === null ? [] : [claims.stakeTo === owner.address ? `Takes the stake of the lapsed claim on this job, which the worker forfeited` : `Returns the claim stake to ${claims.stakeTo}, the worker who held this job`]),
         ...(command.close ? [`Closes the intent in the same transaction and returns its rent and bounty to ${intent.rentPayer}, who paid them; it can no longer be read afterwards`] : []),
       ];
       return previewed(transport, instructions, owner, { intent: address, summary }, command.yes);

@@ -42,4 +42,5 @@ pub enum Error {
     ClaimTerms,
     ClaimHeld,
     ProfileInvalid,
+    ClaimCooldown,
 }

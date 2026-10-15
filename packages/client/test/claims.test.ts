@@ -6,10 +6,13 @@ import {
   claimBoardAddress,
   findIntentPda,
   buildClaimJob,
+  buildDropClaim,
   buildOpenClaims,
+  checkClaimant,
   IntentStatus,
   Kind,
   NATIVE_MINT,
+  stakeReceiverOnCancel,
   stakeReceiverOnRelease,
   stakeReceiverOnSettle,
   TOKEN_PROGRAM_ADDRESS,
@@ -22,6 +25,7 @@ const LOCAL = "http://127.0.0.1:8899";
 const SOL = 1_000_000_000n;
 const SPEC = new Uint8Array(createHash("sha256").update("the claims spec").digest());
 const STAKE = 50_000_000n;
+const NONE = "11111111111111111111111111111111" as Address;
 
 async function setup() {
   const w = await world();
@@ -85,7 +89,7 @@ describe("claimed escrows", () => {
   it("client.claims reports free, held and lapsed from the chain's clock", async () => {
     const s = await setup();
     const board = await claimBoardAddress(s.intent);
-    const terms = { board, stake: STAKE, maxSecs: 3_600, owner: s.owner.address };
+    const terms = { board, stake: STAKE, maxSecs: 3_600, owner: s.owner.address, cooldown: null };
     expect(await s.client.claims(s.owner.address, s.nonce)).toEqual({ ...terms, state: "free", worker: null, until: 0n, secondsLeft: 0n });
     await s.claim(s.worker);
     const now = s.w.chain.svm.getClock().unixTimestamp;
@@ -119,5 +123,37 @@ describe("claimed escrows", () => {
     expect(() => stakeReceiverOnSettle(board, 99n, true)).toThrow("ClaimHeld");
     expect(stakeReceiverOnSettle(board, 99n, false)).toBe(worker);
     expect(stakeReceiverOnSettle(board, 100n, true)).toBe(owner);
+    expect(stakeReceiverOnCancel(board, 99n)).toBe(worker);
+    expect(stakeReceiverOnCancel(board, 100n)).toBe(owner);
+    expect(stakeReceiverOnCancel({ ...board, worker: NONE }, 0n)).toBeNull();
+    const dropped = { worker: NONE, until: 100n, droppedBy: worker };
+    expect(() => checkClaimant(dropped, worker, 99n)).toThrow("ClaimCooldown");
+    expect(() => checkClaimant(dropped, worker, 100n)).not.toThrow();
+    expect(() => checkClaimant(dropped, other, 0n)).not.toThrow();
+    expect(() => checkClaimant(board, other, 99n)).toThrow("ClaimHeld");
+    expect(() => checkClaimant(board, other, 100n)).not.toThrow();
+  });
+
+  it("a cancel under a held claim hands the worker its stake at once, so the owner cannot wait for the claim to lapse", async () => {
+    const s = await setup();
+    await s.claim(s.worker);
+    const clock = s.w.chain.svm.getClock();
+    clock.unixTimestamp += 599n;
+    s.w.chain.svm.setClock(clock);
+    const before = s.balance(s.worker.address);
+    await s.client.cancel(s.owner, s.nonce);
+    expect(s.balance(s.worker.address) - before).toBe(STAKE);
+    expect(await s.client.claims(s.owner.address, s.nonce)).toMatchObject({ state: "free", worker: null, cooldown: null });
+  });
+
+  it("a worker that drops a claim cannot take it again before that claim would have ended, while a rival can at once", async () => {
+    const s = await setup();
+    await s.claim(s.worker);
+    const until = (await s.client.claims(s.owner.address, s.nonce))?.until ?? 0n;
+    await s.client.send([await buildDropClaim({ worker: s.worker, intent: s.intent })], s.worker);
+    expect(await s.client.claims(s.owner.address, s.nonce)).toMatchObject({ state: "free", worker: null, until: 0n, cooldown: { worker: s.worker.address, until } });
+    await expect(s.claim(s.worker)).rejects.toThrow("ClaimCooldown");
+    await s.claim(s.rival);
+    expect(await s.client.claims(s.owner.address, s.nonce)).toMatchObject({ state: "held", worker: s.rival.address, cooldown: null });
   });
 });

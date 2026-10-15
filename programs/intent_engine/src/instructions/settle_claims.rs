@@ -3,7 +3,7 @@ use anchor_lang::Discriminator;
 use intent_core::claim::{stake_on_settle, StakeTo};
 use intent_core::lifecycle::Status;
 
-use crate::claims::{move_lamports, slot_of, stake_receiver};
+use crate::claims::{clear, move_lamports, slot_of, stake_receiver};
 use crate::errors::{core_err, EngineError};
 use crate::events::{ClaimsClosed, StakeMoved};
 use crate::state::{ClaimBoard, Intent, CLAIMS_SEED, CLAIMS_VERSION};
@@ -71,10 +71,7 @@ pub fn handle_settle_claims(ctx: Context<SettleClaims>) -> Result<()> {
             StakeTo::Owner => ctx.accounts.owner.to_account_info(),
         };
         move_lamports(&ctx.accounts.board.to_account_info(), &target, held)?;
-        let mut board = ctx.accounts.board.load_mut()?;
-        board.worker = Pubkey::default();
-        board.until = 0;
-        board.held = 0;
+        clear(&mut *ctx.accounts.board.load_mut()?);
         emit_cpi!(StakeMoved {
             intent,
             worker,

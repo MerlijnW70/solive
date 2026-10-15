@@ -6,7 +6,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
 import { claimBoardAddress, DEVNET_TEST_MINT, Kind, NATIVE_MINT, profileAddress } from "@intent-engine/core";
 import { createClient } from "@intent-engine/client";
-import { heldBy, NO_PROFILE, noClaims } from "../src/claim-commands.js";
+import { coolingDown, heldBy, NO_PROFILE, noClaims } from "../src/claim-commands.js";
 import { CLAIM_CHANGED } from "../src/agent/work-claims.js";
 import { PROFILE_CHANGED } from "../src/agent/profile.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
@@ -81,15 +81,18 @@ describe("job claims from the command line", () => {
 
     const settle = ["claims", "settle", "--keypair", "payer.json", ...j.ref];
     expect((await j.run(settle)).code).toBe(EXIT_FAILED);
-    expect((await j.run([...take, "--yes"])).code).toBe(EXIT_OK);
+    const again = await j.run([...take, "--yes"]);
+    expect([again.code, again.err]).toEqual([EXIT_FAILED, coolingDown(j.intent, j.worker.address, NOW + 600n)]);
+    expect(await j.show()).toMatchObject({ state: "free", cooldown: { worker: j.worker.address, until: (NOW + 600n).toString() } });
+    expect((await j.run(["claims", "take", "--keypair", "rival.json", ...j.ref, "--secs", "600", "--yes"])).code).toBe(EXIT_OK);
     expect((await j.run(settle)).err).toContain("settle once it lapses or the escrow closes");
+    const before = j.sol(j.rival.address);
     await j.client.cancel(j.w.owner, 0n);
+    expect(j.sol(j.rival.address) - before).toBe(STAKE);
     const shown = (await j.run(settle)).json();
     expect(shown).toMatchObject({ sent: false, next: NOT_SENT });
-    expect(shown["summary"]).toContain(`Moves: the stake of 0.05 SOL to ${j.worker.address}`);
-    const before = j.sol(j.worker.address);
+    expect(shown["summary"]).toContain("Moves: no stake; nobody holds the claim");
     expect((await j.run([...settle, "--yes"])).json()).toMatchObject({ sent: true });
-    expect(j.sol(j.worker.address) - before).toBe(STAKE);
     expect(h.svm.getAccount(board).exists).toBe(false);
   });
 
