@@ -21,7 +21,7 @@ import {
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
 import { getCloseAccountInstruction } from "@solana-program/token";
-import { chainTime, createdAccount, loadIntent, loadUser, type NonceWindow } from "./accounts.js";
+import { chainTime, createdAccount, loadIntent, loadUser, mintCapOf, type NonceWindow } from "./accounts.js";
 import { NoFreeNonce, NotFillable } from "./client-errors.js";
 import {
   type ClientContext,
@@ -62,7 +62,13 @@ export function intentSends({ transport, send, mint, config }: ClientContext) {
     if (input.specUrl !== undefined && (await plainHttpOnPublic(transport, input.specUrl))) {
       throw new RangeError(`the spec url ${input.specUrl} ${PLAIN_HTTP_ON_PUBLIC}`);
     }
-    const [settings, sell, buy, user] = await Promise.all([config(), mint(inputMint), mint(outputMint), loadUser(transport, owner)]);
+    const [settings, sell, buy, user, mintCap] = await Promise.all([
+      config(),
+      mint(inputMint),
+      mint(outputMint),
+      loadUser(transport, owner),
+      mintCapOf(transport, inputMint),
+    ]);
     const nonce = input.nonce ?? nonceAfter(owner, user);
     const expiresAt = input.expiresAt ?? (await chainTime(transport)) + (input.expiresIn ?? DEFAULT_EXPIRES_IN);
     const recipient = input.receiver ?? owner;
@@ -81,6 +87,7 @@ export function intentSends({ transport, send, mint, config }: ClientContext) {
       inputTokenProgram: sell.tokenProgram,
       outputTokenProgram: buy.tokenProgram,
       ...(recipient === owner ? {} : { receiver: receiver.address, receiverAuthority: recipient }),
+      ...(mintCap === undefined ? {} : { mintCap }),
     });
     const register = await initUserIfMissing(user, signer);
     const signature = await send([...register, ...receiver.create, ...wrap.instructions, create, ...published], signer);

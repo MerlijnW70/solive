@@ -7,8 +7,8 @@ use intent_core::mint_policy::{
 use intent_core::Error as CoreError;
 use intent_engine::errors::{core_err, EngineError};
 use intent_engine::state::{
-    Config, Intent, Mandate, UserState, CONFIG_SEED, DELEGATE_SEED, INTENT_SEED, MANDATE_SEED,
-    USER_SEED, VAULT_SEED,
+    Config, Intent, Mandate, MintCap, UserState, CONFIG_SEED, DELEGATE_SEED, INTENT_SEED,
+    MANDATE_SEED, MINT_CAP_SEED, USER_SEED, VAULT_SEED,
 };
 
 #[test]
@@ -37,7 +37,23 @@ fn config_field_offsets_are_frozen() {
     assert_eq!(offset_of!(Config, kind_fee_bps), 184);
     assert_eq!(offset_of!(Config, crank_bounty), 192);
     assert_eq!(offset_of!(Config, create_fee), 196);
-    assert_eq!(offset_of!(Config, reserved), 200);
+    assert_eq!(offset_of!(Config, caps_required), 200);
+    assert_eq!(offset_of!(Config, reserved), 201);
+}
+
+#[test]
+fn mint_cap_field_offsets_are_frozen() {
+    assert_eq!(MintCap::SPACE, 136);
+    assert_eq!(offset_of!(MintCap, mint), 0);
+    assert_eq!(offset_of!(MintCap, max_per_order), 32);
+    assert_eq!(offset_of!(MintCap, window_cap), 40);
+    assert_eq!(offset_of!(MintCap, window_start), 48);
+    assert_eq!(offset_of!(MintCap, window_used), 56);
+    assert_eq!(offset_of!(MintCap, window_secs), 64);
+    assert_eq!(offset_of!(MintCap, version), 68);
+    assert_eq!(offset_of!(MintCap, bump), 69);
+    assert_eq!(offset_of!(MintCap, padding), 70);
+    assert_eq!(offset_of!(MintCap, reserved), 72);
 }
 
 #[test]
@@ -126,18 +142,23 @@ fn the_pinned_config_address_is_the_config_pda() {
 
 #[test]
 fn pda_seed_preimages_cannot_collide() {
-    let shapes: [(&[u8], usize); 6] = [
+    let shapes: [(&[u8], usize); 7] = [
         (CONFIG_SEED, 0),
         (USER_SEED, 32),
         (INTENT_SEED, 40),
         (VAULT_SEED, 32),
         (DELEGATE_SEED, 32),
         (MANDATE_SEED, 72),
+        (MINT_CAP_SEED, 32),
     ];
     for (i, (a, a_tail)) in shapes.iter().enumerate() {
         for (b, b_tail) in shapes.iter().skip(i + 1) {
             assert!(!a.starts_with(b) && !b.starts_with(a), "{a:?} {b:?}");
-            assert_ne!(a.len() + a_tail, b.len() + b_tail, "{a:?} {b:?}");
+            let same_shape = a.len() == b.len() && a_tail == b_tail;
+            assert!(
+                same_shape || a.len() + a_tail != b.len() + b_tail,
+                "{a:?} {b:?}"
+            );
         }
     }
 }
@@ -235,6 +256,12 @@ fn engine_errors_start_at_anchor_offset() {
     assert_eq!(u32::from(EngineError::CreateCostAboveCeiling), 6074);
     assert_eq!(u32::from(EngineError::NonceJumpTooLarge), 6075);
     assert_eq!(u32::from(EngineError::EpochJumpTooLarge), 6076);
+    assert_eq!(u32::from(EngineError::SplitNotConserved), 6080);
+    assert_eq!(u32::from(EngineError::MintCapMissing), 6081);
+    assert_eq!(u32::from(EngineError::MintCapMismatch), 6082);
+    assert_eq!(u32::from(EngineError::MintCapPerOrder), 6083);
+    assert_eq!(u32::from(EngineError::MintCapWindow), 6084);
+    assert_eq!(u32::from(EngineError::MintCapInvalid), 6085);
 }
 
 #[test]

@@ -74,7 +74,8 @@ function config(over: Partial<Config> = {}): Config {
     kindFeeBps: [0, 0, 0, 0],
     crankBounty: 0,
     createFee: 0,
-    reserved: new Uint8Array(8),
+    capsRequired: 0,
+    reserved: new Uint8Array(7),
     ...over,
   };
 }

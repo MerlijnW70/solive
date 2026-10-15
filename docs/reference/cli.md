@@ -3,7 +3,7 @@
 # CLI reference
 
 ```text
-usage: setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | monitor | hash | version | help [command]
+usage: setup | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | monitor | hash | version | help [command]
 ```
 
 Every command accepts `--output` and `--help`.
@@ -45,10 +45,10 @@ Options: `--artifact`, `--output`, `--help`
 ## show
 
 ```text
-show config | intent --owner <address> --nonce <n>
+show config | intent --owner <address> --nonce <n> | mint-cap --mint <mint>
 ```
 
-Options: `--url`, `--owner`, `--nonce`, `--output`, `--help`
+Options: `--url`, `--owner`, `--nonce`, `--mint`, `--output`, `--help`
 
 ## domain
 
@@ -158,6 +158,22 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--new-
 
 ```text
 accept-admin (--keypair <file> [--yes] | --authority <address>)
+```
+
+Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--output`, `--help`
+
+## set-mint-cap
+
+```text
+set-mint-cap (--keypair <file> [--yes] | --authority <address>) --mint <mint> --max-per-order <raw> --window-cap <raw> --window-secs <n>
+```
+
+Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--mint`, `--max-per-order`, `--window-cap`, `--window-secs`, `--output`, `--help`
+
+## set-caps-required
+
+```text
+set-caps-required on|off (--keypair <file> [--yes] | --authority <address>)
 ```
 
 Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--output`, `--help`

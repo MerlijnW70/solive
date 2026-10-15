@@ -30,6 +30,7 @@ import {
   loadConfig,
   loadUser,
   memoInstruction,
+  mintCapOf,
   mintOf,
   PLAIN_HTTP_ON_PUBLIC,
   plainHttpOnPublic,
@@ -150,6 +151,7 @@ export const prepareCreate = define({
     const owner = createNoopSigner(input.owner);
     const receiver = await tokenAccountIfMissing(transport, owner, recipient, input.output_mint, outputToken.tokenProgram);
     const elsewhere = recipient !== input.owner;
+    const mintCap = await mintCapOf(transport, input.input_mint);
     const create = await buildCreateIntent({
       owner,
       treasury: config.feeRecipient,
@@ -164,6 +166,7 @@ export const prepareCreate = define({
       inputTokenProgram: inputToken.tokenProgram,
       outputTokenProgram: outputToken.tokenProgram,
       ...(elsewhere ? { receiver: receiver.address, receiverAuthority: recipient } : {}),
+      ...(mintCap === undefined ? {} : { mintCap }),
     });
     const register = await initUserIfMissing(user, input.owner);
     const wrap = await wrapIfShort(transport, input.owner, input.input_mint, inputToken.tokenProgram, escrowAmount(params));

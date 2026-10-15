@@ -187,6 +187,8 @@
     "propose_admin": "79d6c7d4572775ea",
     "raise_pause": "977fc2f285fd59f3",
     "revoke_mandate": "fc618c77432bb16c",
+    "set_caps_required": "1c43793be5311eef",
+    "set_mint_cap": "c077692ad40cca4f",
     "update_config": "1d9efcbf0a53db63"
   },
   "economics_caps": {
@@ -197,6 +199,7 @@
     "AdminAccepted": "ae0c4c8b9e636efe",
     "AdminProposed": "81f9e2e3c7526ef3",
     "AgentPaid": "8ba67dcba3181f5d",
+    "CapsRequiredSet": "b89fadf016f3ec9e",
     "ConfigInitialized": "b531c89c13a7b25b",
     "ConfigUpdated": "28f1e67a0b13c6c2",
     "EconomicsUpdated": "429afe7f7fcc3b39",
@@ -214,6 +217,7 @@
     "MandateClosed": "d9d49bf30422ff41",
     "MandateCreated": "8c1ed1fe05809371",
     "MandateUsed": "928fb9f409bbd3bb",
+    "MintCapSet": "2621f60e7c3a5bbc",
     "NonceAdvanced": "a74af977690b8882",
     "PauseLowered": "cde81d481c82d497",
     "PauseRaised": "b17d48b944f78170",

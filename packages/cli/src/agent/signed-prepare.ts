@@ -15,6 +15,7 @@ import {
   initUserIfMissing,
   loadConfig,
   loadUser,
+  mintCapOf,
   mintOf,
   tokenAccountIfMissing,
 } from "@intent-engine/client";
@@ -105,10 +106,14 @@ export const prepareSignedIntent = define({
         signature: new Uint8Array(64) as SignatureBytes,
         message: await signedIntentMessage(fields),
       });
-      const create = await relayCreate(terms, relay, config, params, {
-        input: inputToken.tokenProgram,
-        output: outputToken.tokenProgram,
-      });
+      const create = await relayCreate(
+        terms,
+        relay,
+        config,
+        params,
+        { input: inputToken.tokenProgram, output: outputToken.tokenProgram },
+        await mintCapOf(transport, terms.input_mint),
+      );
       if (!(await relayFits(transport, relay, [placeholder, create, ...published(relay.signer, specUrl)]))) {
         const memoOnly = specUrl !== undefined && (await relayFits(transport, relay, [placeholder, create]));
         throw new AgentRefusal("RelayTooLarge", memoOnly ? SPEC_URL_TOO_LONG : RELAY_TOO_LARGE);

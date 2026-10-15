@@ -9,6 +9,7 @@
 export * from "./adminAccepted.js";
 export * from "./adminProposed.js";
 export * from "./agentPaid.js";
+export * from "./capsRequiredSet.js";
 export * from "./configInitialized.js";
 export * from "./configUpdated.js";
 export * from "./economicsUpdated.js";
@@ -26,6 +27,7 @@ export * from "./intentSplit.js";
 export * from "./mandateClosed.js";
 export * from "./mandateCreated.js";
 export * from "./mandateUsed.js";
+export * from "./mintCapSet.js";
 export * from "./nonceAdvanced.js";
 export * from "./pauseLowered.js";
 export * from "./pauseRaised.js";

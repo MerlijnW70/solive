@@ -8,5 +8,7 @@
 
 export * from "./config.js";
 export * from "./delegate.js";
+export * from "./mintCap.js";
+export * from "./setMintCapMintCap.js";
 export * from "./userState.js";
 export * from "./vault.js";

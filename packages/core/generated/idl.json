@@ -560,6 +560,32 @@
           "address": "11111111111111111111111111111111"
         },
         {
+          "name": "mint_cap",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  99,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "input_mint"
+              }
+            ]
+          }
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -735,6 +761,32 @@
         {
           "name": "system_program",
           "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "mint_cap",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  99,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "input_mint"
+              }
+            ]
+          }
         },
         {
           "name": "event_authority"
@@ -913,6 +965,32 @@
         },
         {
           "name": "instructions"
+        },
+        {
+          "name": "mint_cap",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  99,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "input_mint"
+              }
+            ]
+          }
         },
         {
           "name": "event_authority"
@@ -1864,6 +1942,128 @@
       "args": []
     },
     {
+      "name": "set_caps_required",
+      "discriminator": [
+        28,
+        67,
+        121,
+        59,
+        229,
+        49,
+        30,
+        239
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "required",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "set_mint_cap",
+      "discriminator": [
+        192,
+        119,
+        105,
+        42,
+        212,
+        12,
+        202,
+        79
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "mint_cap",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  99,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "max_per_order",
+          "type": "u64"
+        },
+        {
+          "name": "window_cap",
+          "type": "u64"
+        },
+        {
+          "name": "window_secs",
+          "type": "u32"
+        }
+      ]
+    },
+    {
       "name": "update_config",
       "discriminator": [
         29,
@@ -1991,6 +2191,19 @@
       ]
     },
     {
+      "name": "MintCap",
+      "discriminator": [
+        128,
+        26,
+        215,
+        34,
+        114,
+        101,
+        30,
+        148
+      ]
+    },
+    {
       "name": "UserState",
       "discriminator": [
         72,
@@ -2042,6 +2255,19 @@
         24,
         31,
         93
+      ]
+    },
+    {
+      "name": "CapsRequiredSet",
+      "discriminator": [
+        184,
+        159,
+        173,
+        240,
+        22,
+        243,
+        236,
+        158
       ]
     },
     {
@@ -2263,6 +2489,19 @@
         187,
         211,
         187
+      ]
+    },
+    {
+      "name": "MintCapSet",
+      "discriminator": [
+        38,
+        33,
+        246,
+        14,
+        124,
+        58,
+        91,
+        188
       ]
     },
     {
@@ -2655,6 +2894,26 @@
     {
       "code": 6080,
       "name": "SplitNotConserved"
+    },
+    {
+      "code": 6081,
+      "name": "MintCapMissing"
+    },
+    {
+      "code": 6082,
+      "name": "MintCapMismatch"
+    },
+    {
+      "code": 6083,
+      "name": "MintCapPerOrder"
+    },
+    {
+      "code": 6084,
+      "name": "MintCapWindow"
+    },
+    {
+      "code": 6085,
+      "name": "MintCapInvalid"
     }
   ],
   "types": [
@@ -2710,6 +2969,18 @@
           {
             "name": "fee",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "CapsRequiredSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "required",
+            "type": "bool"
           }
         ]
       }
@@ -2798,11 +3069,15 @@
             "type": "u32"
           },
           {
+            "name": "caps_required",
+            "type": "u8"
+          },
+          {
             "name": "reserved",
             "type": {
               "array": [
                 "u8",
-                8
+                7
               ]
             }
           }
@@ -3995,6 +4270,104 @@
           {
             "name": "intents",
             "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MintCap",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "max_per_order",
+            "type": "u64"
+          },
+          {
+            "name": "window_cap",
+            "type": "u64"
+          },
+          {
+            "name": "window_start",
+            "type": "i64"
+          },
+          {
+            "name": "window_used",
+            "type": "u64"
+          },
+          {
+            "name": "window_secs",
+            "type": "u32"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "padding",
+            "type": {
+              "array": [
+                "u8",
+                2
+              ]
+            }
+          },
+          {
+            "name": "reserved",
+            "type": {
+              "array": [
+                "u8",
+                56
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "MintCapSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "mint_cap",
+            "type": "pubkey"
+          },
+          {
+            "name": "max_per_order",
+            "type": "u64"
+          },
+          {
+            "name": "window_cap",
+            "type": "u64"
+          },
+          {
+            "name": "window_secs",
+            "type": "u32"
+          },
+          {
+            "name": "window_start",
+            "type": "i64"
+          },
+          {
+            "name": "window_used",
+            "type": "u64"
           }
         ]
       }

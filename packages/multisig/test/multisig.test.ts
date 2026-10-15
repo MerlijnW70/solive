@@ -24,7 +24,7 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   signTransaction,
 } from "@solana/kit";
-import { buildProposeAdmin, buildRaisePause, PAUSE_FILL } from "@intent-engine/core";
+import { buildProposeAdmin, buildRaisePause, buildSetCapsRequired, buildSetMintCap, findMintCapAddress, PAUSE_FILL } from "@intent-engine/core";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Chain } from "../src/chain.js";
 import { readKeypair } from "../src/keys.js";
@@ -383,6 +383,27 @@ describe("multisig", () => {
     expect([beyond.code, beyond.json()["error"]]).toEqual([EXIT_REFUSED, `multisig ${m.address} has proposals 1 to 1, not 2`]);
     const notMultisig = await s.cli("show", "--multisig", m.vault);
     expect(notMultisig.json()["error"]).toBe(`${m.vault} is not a Squads v4 multisig`);
+  });
+
+  it("the summary names set mint cap and set caps required", async () => {
+    const m = await multisig("caps", 2);
+    const admin = createNoopSigner(m.vault);
+    const mint = await randomAddress();
+    const cap = await buildSetMintCap({ admin, mint, maxPerOrder: 1_000n, windowCap: 5_000n, windowSecs: 3_600 });
+    const required = await buildSetCapsRequired({ admin, required: true });
+    s.printed = printed(m.vault, [cap, required], ["Sets a mint cap and requires caps"]);
+    const command = ["intent-engine", "set-mint-cap", "--authority", m.vault];
+    const proposed = await s.cli("propose-admin", "--multisig", m.address, "--keypair", m.file("a"), "--yes", "--", ...command);
+    expect([proposed.code, proposed.err]).toEqual([EXIT_OK, ""]);
+    const lines = [
+      `Intent engine SetMintCap {"maxPerOrder":"1000","windowCap":"5000","windowSecs":3600}, signed by ${m.vault}`,
+      `Intent engine SetCapsRequired {"required":true}, signed by ${m.vault}`,
+    ];
+    expect(proposed.json()["summary"]).toEqual([`Proposes vault transaction 1 on multisig ${m.address}; it runs once 2 members approve`, ...lines]);
+    const index = BigInt(proposed.json()["index"] as string);
+    expect((await proposalOf(m, index))["summary"]).toEqual(lines);
+    const capAccount = await findMintCapAddress(mint);
+    expect(cap.accounts.map((meta) => meta.address)).toContain(capAccount);
   });
 
   it("execute refuses before the threshold is reached", async () => {

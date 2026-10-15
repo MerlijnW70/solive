@@ -9,4 +9,5 @@
 export * from "./config.js";
 export * from "./intent.js";
 export * from "./mandate.js";
+export * from "./mintCap.js";
 export * from "./userState.js";

@@ -102,7 +102,32 @@ node packages/cli/dist/src/bin.js show config --url devnet
 node packages/multisig/dist/bin.js propose-admin --multisig <multisig> --keypair member-a.json --url devnet --yes -- node packages/cli/dist/src/bin.js update-config --authority <vault> --guardian <guardian> --url devnet
 ```
 
-Approve it with two members and execute it as in step 4. `show config` then names `<guardian>` as guardian. `admin.json` now holds no role. Every later admin change, such as `set-economics`, `update-config`, `raise-pause` or `lower-pause`, goes through `propose-admin` with `--authority <vault>` in the same way.
+Approve it with two members and execute it as in step 4. `show config` then names `<guardian>` as guardian. `admin.json` now holds no role. Every later admin change, such as `set-economics`, `update-config`, `raise-pause`, `lower-pause`, `set-mint-cap` or `set-caps-required`, goes through `propose-admin` with `--authority <vault>` in the same way.
+
+## Staged caps
+
+Escrow caps bound what one program bug can reach. Each input mint gets a cap account with two limits: the most one intent escrows, and the most all new intents together escrow in a window of seconds. Start the limits small and raise them as the program earns trust.
+
+1. Give every mint the engine trades a cap. Amounts are raw units of the mint; the program refuses a window shorter than `MIN_CAP_WINDOW_SECS` in `programs/intent_engine/src/state.rs`:
+
+   ```sh
+   node packages/multisig/dist/bin.js propose-admin --multisig <multisig> --keypair member-a.json --url devnet --yes -- node packages/cli/dist/src/bin.js set-mint-cap --authority <vault> --mint <mint> --max-per-order <raw> --window-cap <raw> --window-secs 3600 --url devnet
+   ```
+
+   The first proposal for a mint creates its cap and the vault pays the rent; later proposals change the limits and keep the current window. Approve and execute as in step 4. `show` decodes it as `Intent engine SetMintCap {"maxPerOrder":"<raw>","windowCap":"<raw>","windowSecs":3600}, signed by <vault>`.
+2. Check each cap and its current window:
+
+   ```sh
+   node packages/cli/dist/src/bin.js show mint-cap --mint <mint> --url devnet
+   ```
+
+3. Require caps. From then on every create passes its input mint's cap, and the engine refuses intents selling a mint without one:
+
+   ```sh
+   node packages/multisig/dist/bin.js propose-admin --multisig <multisig> --keypair member-a.json --url devnet --yes -- node packages/cli/dist/src/bin.js set-caps-required on --authority <vault> --url devnet
+   ```
+
+Every create names an optional mint cap account; a create without a cap passes the program id in its place. While caps are off, creates ignore the cap even when one is passed. The SDK, the CLI and the MCP tools pass the input mint's cap whenever it exists, so caps can be set before they are required. Clients built from 0.1.26 or earlier stop working on create once this program is deployed, because the create account lists changed. `set-caps-required off` lifts the requirement. A cap limits how fast escrow grows per mint, not the total held: intents created in earlier windows stay open until they fill, expire or are cancelled.
 
 ## Upgrade
 

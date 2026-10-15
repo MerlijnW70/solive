@@ -1,7 +1,7 @@
 import { ACCEPTS, GLOBAL_OPTIONS } from "./arg-options.js";
 import { EXIT_ALERTED } from "./monitor-args.js";
 
-export const COMMANDS = "setup | balance | pda | domain | mcp | show config | show intent | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | monitor | hash | version | help [command]";
+export const COMMANDS = "setup | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | monitor | hash | version | help [command]";
 
 export const USAGE = `usage: ${COMMANDS}`;
 
@@ -16,7 +16,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   balance: "[--keypair <file> | --owner <address>] [--mints <mint,...>]",
   pda: "--owner <address> --nonce <n>",
   hash: "--artifact <file or directory>",
-  show: "config | intent --owner <address> --nonce <n>",
+  show: "config | intent --owner <address> --nonce <n> | mint-cap --mint <mint>",
   domain: "",
   mcp: "[--wallet [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>]] [--relayer <keypair> --relay-fee <mint=amount,...> [--relay-max-lamports] [--relay-max-ttl] [--relay-per-hour] [--relay-hourly-lamports]] [--agent <keypair> --agent-owners <address,...> [--agent-hourly-lamports]]",
   quote: "--owner <address> --nonce <n> [--at <unix>]",
@@ -29,6 +29,8 @@ export const SHAPES: Readonly<Record<string, string>> = {
   "update-config": "(--keypair <file> [--yes] | --authority <address>) and any of --guardian --fee-recipient --fee-bps --kinds --fill-disabled",
   "propose-admin": "(--keypair <file> [--yes] | --authority <address>) --new-admin <address>",
   "accept-admin": "(--keypair <file> [--yes] | --authority <address>)",
+  "set-mint-cap": "(--keypair <file> [--yes] | --authority <address>) --mint <mint> --max-per-order <raw> --window-cap <raw> --window-secs <n>",
+  "set-caps-required": "on|off (--keypair <file> [--yes] | --authority <address>)",
   "raise-pause": "(--keypair <file> [--yes] | --authority <address>) --flags create|fill|all",
   "lower-pause": "(--keypair <file> [--yes] | --authority <address>) --flags create|fill|all",
   "set-economics": "(--keypair <file> [--yes] | --authority <address>) --bounty --create-fee [--kind-fees] [--partner-cut]",

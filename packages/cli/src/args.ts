@@ -55,6 +55,7 @@ import { sandboxOf } from "./sandbox.js";
 import { monitorOf } from "./monitor-args.js";
 import type { Command, Env } from "./command-types.js";
 import { DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST } from "@intent-engine/solver";
+import { MIN_CAP_WINDOW_SECS } from "@intent-engine/core";
 
 export type { Authority, Command, Env, WalletLimits } from "./command-types.js";
 export { ACCEPTS, GLOBAL_OPTIONS, type Side, SUB_ACCEPTS, TOKEN_SIDES, type Tokens } from "./arg-options.js";
@@ -180,7 +181,10 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       if (sub === "intent") {
         return { name: "show-intent", ...remote, owner: key(values, "owner"), nonce: u64(values, "nonce") };
       }
-      throw new UsageError("show needs config or intent");
+      if (sub === "mint-cap") {
+        return { name: "show-mint-cap", ...remote, mint: key(values, "mint") };
+      }
+      throw new UsageError("show needs config, intent or mint-cap");
     case "setup":
       noSub(sub);
       return { name: "setup", ...remote, keypair: values.keypair };
@@ -316,6 +320,31 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
     case "accept-admin":
       noSub(sub);
       return { name: "accept-admin", ...remote, by: authorityOf(values) };
+    case "set-mint-cap": {
+      noSub(sub);
+      const maxPerOrder = u64(values, "max-per-order");
+      const windowCap = u64(values, "window-cap");
+      if (maxPerOrder === 0n) {
+        throw new UsageError("--max-per-order must be above zero");
+      }
+      if (windowCap < maxPerOrder) {
+        throw new UsageError("--window-cap must be at least --max-per-order");
+      }
+      return {
+        name: "set-mint-cap",
+        ...remote,
+        by: authorityOf(values),
+        mint: key(values, "mint"),
+        maxPerOrder,
+        windowCap,
+        windowSecs: parseBounded(required(values, "window-secs"), "window-secs", 0xffff_ffff, MIN_CAP_WINDOW_SECS),
+      };
+    }
+    case "set-caps-required":
+      if (sub !== "on" && sub !== "off") {
+        throw new UsageError("set-caps-required needs on or off");
+      }
+      return { name: "set-caps-required", ...remote, by: authorityOf(values), required: sub === "on" };
     case "events":
       noSub(sub);
       if (values.follow === true) {

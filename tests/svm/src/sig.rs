@@ -152,6 +152,7 @@ impl Env {
                 relayer_fee_to: self.relayer_fee_to,
                 system_program: anchor_lang::system_program::ID,
                 instructions: solana_instructions_sysvar::ID,
+                mint_cap: self.mint_cap,
                 event_authority: event_authority(),
                 program: intent_engine::ID,
             },

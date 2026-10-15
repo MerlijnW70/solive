@@ -84,6 +84,11 @@ pub enum EngineError {
     SplitCountMismatch,
     RecipientNotCanonical,
     SplitNotConserved,
+    MintCapMissing,
+    MintCapMismatch,
+    MintCapPerOrder,
+    MintCapWindow,
+    MintCapInvalid,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {

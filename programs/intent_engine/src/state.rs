@@ -8,6 +8,7 @@ pub const INTENT_SEED: &[u8] = b"intent";
 pub const VAULT_SEED: &[u8] = b"vault";
 pub const DELEGATE_SEED: &[u8] = b"delegate";
 pub const MANDATE_SEED: &[u8] = b"mandate";
+pub const MINT_CAP_SEED: &[u8] = b"mint_cap";
 
 pub const CONFIG_ADDRESS: Pubkey = pubkey!("6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz");
 
@@ -19,6 +20,8 @@ pub const CONFIG_VERSION: u8 = 1;
 pub const USER_VERSION: u8 = 1;
 pub const INTENT_VERSION: u8 = 1;
 pub const MANDATE_VERSION: u8 = 1;
+pub const MINT_CAP_VERSION: u8 = 1;
+pub const MIN_CAP_WINDOW_SECS: u32 = 60;
 pub const OLDEST_CONFIG_VERSION: u8 = 1;
 pub const OLDEST_INTENT_VERSION: u8 = 1;
 
@@ -57,7 +60,8 @@ pub struct Config {
     pub kind_fee_bps: [u16; 4],
     pub crank_bounty: u32,
     pub create_fee: u32,
-    pub reserved: [u8; 8],
+    pub caps_required: u8,
+    pub reserved: [u8; 7],
 }
 
 impl Config {
@@ -171,4 +175,22 @@ impl Mandate {
             intents: self.intents,
         }
     }
+}
+
+#[account(zero_copy)]
+pub struct MintCap {
+    pub mint: Pubkey,
+    pub max_per_order: u64,
+    pub window_cap: u64,
+    pub window_start: i64,
+    pub window_used: u64,
+    pub window_secs: u32,
+    pub version: u8,
+    pub bump: u8,
+    pub padding: [u8; 2],
+    pub reserved: [u8; 56],
+}
+
+impl MintCap {
+    pub const SPACE: usize = 8 + core::mem::size_of::<MintCap>();
 }

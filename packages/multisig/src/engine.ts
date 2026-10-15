@@ -9,7 +9,7 @@ export const jsonText = (value: unknown, indent = 0): string =>
 export function engineSummary(ix: Instruction): string {
   const accounts = ix.accounts ?? [];
   const data = ix.data ?? new Uint8Array();
-  const signers = accounts.filter((k) => isSignerRole(k.role)).map((k) => k.address);
+  const signers = [...new Set(accounts.filter((k) => isSignerRole(k.role)).map((k) => k.address))];
   const by = `signed by ${signers.join(", ") || "nobody"}`;
   try {
     const parsed = parseIntentEngineInstruction({ programAddress: ix.programAddress, accounts, data: new Uint8Array(data) } as unknown as Parsable);

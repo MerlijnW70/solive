@@ -5,13 +5,14 @@ use anchor_spl::token_interface::{
 use intent_core::PARAMS_LEN;
 
 use crate::admission::{open_intent, Opening};
+use crate::caps::charge_mint_cap;
 use crate::errors::EngineError;
 use crate::events::{FeeWithheld, IntentCreated, WITHHELD_TREASURY};
 use crate::ext::Ext;
 use crate::policy::{charge_lamports, charge_treasury};
 use crate::state::{
-    Config, Intent, UserState, CONFIG_ADDRESS, CONFIG_VERSION, INTENT_SEED, USER_SEED,
-    USER_VERSION, VAULT_SEED,
+    Config, Intent, MintCap, UserState, CONFIG_ADDRESS, CONFIG_VERSION, INTENT_SEED, MINT_CAP_SEED,
+    MINT_CAP_VERSION, USER_SEED, USER_VERSION, VAULT_SEED,
 };
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, PartialEq, Eq, Debug)]
@@ -91,6 +92,13 @@ pub struct CreateIntent<'info> {
     )]
     pub treasury: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
+    #[account(
+        mut,
+        seeds = [MINT_CAP_SEED, input_mint.key().as_ref()],
+        bump = mint_cap.load()?.bump,
+        constraint = mint_cap.load()?.version == MINT_CAP_VERSION @ EngineError::UnsupportedVersion
+    )]
+    pub mint_cap: Option<AccountLoader<'info, MintCap>>,
 }
 
 pub fn handle_create_intent(ctx: Context<CreateIntent>, args: CreateIntentArgs) -> Result<()> {
@@ -115,6 +123,13 @@ pub fn handle_create_intent(ctx: Context<CreateIntent>, args: CreateIntentArgs) 
         now,
     )?;
     let escrowed = admitted.decoded.escrow_amount();
+    charge_mint_cap(
+        &ctx.accounts.config,
+        ctx.accounts.mint_cap.as_ref(),
+        &ctx.accounts.input_mint.key(),
+        escrowed,
+        now,
+    )?;
     transfer_checked(
         CpiContext::new(
             ctx.accounts.input_token_program.key(),

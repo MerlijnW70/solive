@@ -498,10 +498,13 @@ fn only_the_real_instructions_sysvar_is_read() -> TestResult {
     let mut s = setup(ESCROW)?;
     let mut create = s.create(&s.spec);
     let fake = Pubkey::new_unique();
-    let index = create.accounts.len().saturating_sub(3);
-    if let Some(meta) = create.accounts.get_mut(index) {
-        meta.pubkey = fake;
-    }
+    let sysvar = solana_instructions_sysvar::ID;
+    let meta = create
+        .accounts
+        .iter_mut()
+        .find(|meta| meta.pubkey == sysvar)
+        .ok_or("no instructions sysvar")?;
+    meta.pubkey = fake;
     let ixs = [s.owner_signed(), create];
     assert_eq!(
         s.submit(&ixs).err(),

@@ -19,6 +19,8 @@ pub mod lower_pause;
 pub mod propose_admin;
 pub mod raise_pause;
 pub mod revoke_mandate;
+pub mod set_caps_required;
+pub mod set_mint_cap;
 pub mod update_config;
 pub mod update_economics;
 
@@ -43,5 +45,7 @@ pub use lower_pause::*;
 pub use propose_admin::*;
 pub use raise_pause::*;
 pub use revoke_mandate::*;
+pub use set_caps_required::*;
+pub use set_mint_cap::*;
 pub use update_config::*;
 pub use update_economics::*;

@@ -38,6 +38,7 @@ import {
   getConfigCodec,
   getIntentCodec,
   getMandateCodec,
+  getMintCapCodec,
   getUserStateCodec,
   type Config,
   type ConfigArgs,
@@ -45,6 +46,8 @@ import {
   type IntentArgs,
   type Mandate,
   type MandateArgs,
+  type MintCap,
+  type MintCapArgs,
   type UserState,
   type UserStateArgs,
 } from "../accounts/index.js";
@@ -70,6 +73,8 @@ import {
   getProposeAdminInstruction,
   getRaisePauseInstruction,
   getRevokeMandateInstruction,
+  getSetCapsRequiredInstruction,
+  getSetMintCapInstructionAsync,
   getUpdateConfigInstruction,
   getUpdateEconomicsInstruction,
   parseAcceptAdminInstruction,
@@ -93,6 +98,8 @@ import {
   parseProposeAdminInstruction,
   parseRaisePauseInstruction,
   parseRevokeMandateInstruction,
+  parseSetCapsRequiredInstruction,
+  parseSetMintCapInstruction,
   parseUpdateConfigInstruction,
   parseUpdateEconomicsInstruction,
   type AcceptAdminInput,
@@ -134,17 +141,23 @@ import {
   type ParsedProposeAdminInstruction,
   type ParsedRaisePauseInstruction,
   type ParsedRevokeMandateInstruction,
+  type ParsedSetCapsRequiredInstruction,
+  type ParsedSetMintCapInstruction,
   type ParsedUpdateConfigInstruction,
   type ParsedUpdateEconomicsInstruction,
   type ProposeAdminInput,
   type RaisePauseInput,
   type RevokeMandateInput,
+  type SetCapsRequiredInput,
+  type SetMintCapAsyncInput,
   type UpdateConfigInput,
   type UpdateEconomicsInput,
 } from "../instructions/index.js";
 import {
   findConfigPda,
   findDelegatePda,
+  findMintCapPda,
+  findSetMintCapMintCapPda,
   findUserStatePda,
   findVaultPda,
 } from "../pdas/index.js";
@@ -156,11 +169,13 @@ export const IntentEngineAccount = {
   0: "Config",
   1: "Intent",
   2: "Mandate",
-  3: "UserState",
+  3: "MintCap",
+  4: "UserState",
   Config: 0,
   Intent: 1,
   Mandate: 2,
-  UserState: 3,
+  MintCap: 3,
+  UserState: 4,
 } as const;
 
 export type IntentEngineAccount = (typeof IntentEngineAccount)[Exclude<
@@ -209,6 +224,17 @@ export function identifyIntentEngineAccount(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([128, 26, 215, 34, 114, 101, 30, 148]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineAccount.MintCap;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([72, 177, 85, 249, 76, 167, 186, 126]),
       ),
       0,
@@ -226,53 +252,57 @@ export const IntentEngineEvent = {
   0: "AdminAccepted",
   1: "AdminProposed",
   2: "AgentPaid",
-  3: "ConfigInitialized",
-  4: "ConfigUpdated",
-  5: "EconomicsUpdated",
-  6: "EpochAdvanced",
-  7: "FeeWithheld",
-  8: "FillBegun",
-  9: "FillEnded",
-  10: "IntentAttested",
-  11: "IntentCancelled",
-  12: "IntentClosed",
-  13: "IntentCreated",
-  14: "IntentExpired",
-  15: "IntentFilled",
-  16: "IntentSplit",
-  17: "MandateClosed",
-  18: "MandateCreated",
-  19: "MandateUsed",
-  20: "NonceAdvanced",
-  21: "PauseLowered",
-  22: "PauseRaised",
-  23: "RelayerPaid",
-  24: "UserInitialized",
+  3: "CapsRequiredSet",
+  4: "ConfigInitialized",
+  5: "ConfigUpdated",
+  6: "EconomicsUpdated",
+  7: "EpochAdvanced",
+  8: "FeeWithheld",
+  9: "FillBegun",
+  10: "FillEnded",
+  11: "IntentAttested",
+  12: "IntentCancelled",
+  13: "IntentClosed",
+  14: "IntentCreated",
+  15: "IntentExpired",
+  16: "IntentFilled",
+  17: "IntentSplit",
+  18: "MandateClosed",
+  19: "MandateCreated",
+  20: "MandateUsed",
+  21: "MintCapSet",
+  22: "NonceAdvanced",
+  23: "PauseLowered",
+  24: "PauseRaised",
+  25: "RelayerPaid",
+  26: "UserInitialized",
   AdminAccepted: 0,
   AdminProposed: 1,
   AgentPaid: 2,
-  ConfigInitialized: 3,
-  ConfigUpdated: 4,
-  EconomicsUpdated: 5,
-  EpochAdvanced: 6,
-  FeeWithheld: 7,
-  FillBegun: 8,
-  FillEnded: 9,
-  IntentAttested: 10,
-  IntentCancelled: 11,
-  IntentClosed: 12,
-  IntentCreated: 13,
-  IntentExpired: 14,
-  IntentFilled: 15,
-  IntentSplit: 16,
-  MandateClosed: 17,
-  MandateCreated: 18,
-  MandateUsed: 19,
-  NonceAdvanced: 20,
-  PauseLowered: 21,
-  PauseRaised: 22,
-  RelayerPaid: 23,
-  UserInitialized: 24,
+  CapsRequiredSet: 3,
+  ConfigInitialized: 4,
+  ConfigUpdated: 5,
+  EconomicsUpdated: 6,
+  EpochAdvanced: 7,
+  FeeWithheld: 8,
+  FillBegun: 9,
+  FillEnded: 10,
+  IntentAttested: 11,
+  IntentCancelled: 12,
+  IntentClosed: 13,
+  IntentCreated: 14,
+  IntentExpired: 15,
+  IntentFilled: 16,
+  IntentSplit: 17,
+  MandateClosed: 18,
+  MandateCreated: 19,
+  MandateUsed: 20,
+  MintCapSet: 21,
+  NonceAdvanced: 22,
+  PauseLowered: 23,
+  PauseRaised: 24,
+  RelayerPaid: 25,
+  UserInitialized: 26,
 } as const;
 
 export type IntentEngineEvent = (typeof IntentEngineEvent)[Exclude<
@@ -316,6 +346,17 @@ export function identifyIntentEngineEvent(
     )
   ) {
     return IntentEngineEvent.AgentPaid;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([184, 159, 173, 240, 22, 243, 236, 158]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineEvent.CapsRequiredSet;
   }
   if (
     containsBytes(
@@ -508,6 +549,17 @@ export function identifyIntentEngineEvent(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([38, 33, 246, 14, 124, 58, 91, 188]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineEvent.MintCapSet;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([167, 74, 249, 119, 105, 11, 136, 130]),
       ),
       0,
@@ -586,8 +638,10 @@ export const IntentEngineInstruction = {
   18: "ProposeAdmin",
   19: "RaisePause",
   20: "RevokeMandate",
-  21: "UpdateConfig",
-  22: "UpdateEconomics",
+  21: "SetCapsRequired",
+  22: "SetMintCap",
+  23: "UpdateConfig",
+  24: "UpdateEconomics",
   AcceptAdmin: 0,
   AdvanceEpoch: 1,
   AdvanceNonce: 2,
@@ -609,8 +663,10 @@ export const IntentEngineInstruction = {
   ProposeAdmin: 18,
   RaisePause: 19,
   RevokeMandate: 20,
-  UpdateConfig: 21,
-  UpdateEconomics: 22,
+  SetCapsRequired: 21,
+  SetMintCap: 22,
+  UpdateConfig: 23,
+  UpdateEconomics: 24,
 } as const;
 
 export type IntentEngineInstruction = (typeof IntentEngineInstruction)[Exclude<
@@ -857,6 +913,28 @@ export function identifyIntentEngineInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([28, 67, 121, 59, 229, 49, 30, 239]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineInstruction.SetCapsRequired;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([192, 119, 105, 42, 212, 12, 202, 79]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineInstruction.SetMintCap;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([29, 158, 252, 191, 10, 83, 219, 99]),
       ),
       0,
@@ -947,6 +1025,12 @@ export type ParsedIntentEngineInstruction<
   | ({
       instructionType: typeof IntentEngineInstruction.RevokeMandate;
     } & ParsedRevokeMandateInstruction<TProgram>)
+  | ({
+      instructionType: typeof IntentEngineInstruction.SetCapsRequired;
+    } & ParsedSetCapsRequiredInstruction<TProgram>)
+  | ({
+      instructionType: typeof IntentEngineInstruction.SetMintCap;
+    } & ParsedSetMintCapInstruction<TProgram>)
   | ({
       instructionType: typeof IntentEngineInstruction.UpdateConfig;
     } & ParsedUpdateConfigInstruction<TProgram>)
@@ -1106,6 +1190,20 @@ export function parseIntentEngineInstruction<TProgram extends string>(
         ...parseRevokeMandateInstruction(instruction),
       };
     }
+    case IntentEngineInstruction.SetCapsRequired: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: IntentEngineInstruction.SetCapsRequired,
+        ...parseSetCapsRequiredInstruction(instruction),
+      };
+    }
+    case IntentEngineInstruction.SetMintCap: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: IntentEngineInstruction.SetMintCap,
+        ...parseSetMintCapInstruction(instruction),
+      };
+    }
     case IntentEngineInstruction.UpdateConfig: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -1147,6 +1245,8 @@ export type IntentEnginePluginAccounts = {
     SelfFetchFunctions<IntentArgs, Intent>;
   mandate: ReturnType<typeof getMandateCodec> &
     SelfFetchFunctions<MandateArgs, Mandate>;
+  mintCap: ReturnType<typeof getMintCapCodec> &
+    SelfFetchFunctions<MintCapArgs, MintCap>;
   userState: ReturnType<typeof getUserStateCodec> &
     SelfFetchFunctions<UserStateArgs, UserState>;
 };
@@ -1231,6 +1331,14 @@ export type IntentEnginePluginInstructions = {
     input: RevokeMandateInput,
   ) => ReturnType<typeof getRevokeMandateInstruction> &
     SelfPlanAndSendFunctions;
+  setCapsRequired: (
+    input: SetCapsRequiredInput,
+  ) => ReturnType<typeof getSetCapsRequiredInstruction> &
+    SelfPlanAndSendFunctions;
+  setMintCap: (
+    input: MakeOptional<SetMintCapAsyncInput, "payer">,
+  ) => ReturnType<typeof getSetMintCapInstructionAsync> &
+    SelfPlanAndSendFunctions;
   updateConfig: (
     input: UpdateConfigInput,
   ) => ReturnType<typeof getUpdateConfigInstruction> & SelfPlanAndSendFunctions;
@@ -1243,8 +1351,10 @@ export type IntentEnginePluginInstructions = {
 export type IntentEnginePluginPdas = {
   userState: typeof findUserStatePda;
   vault: typeof findVaultPda;
+  mintCap: typeof findMintCapPda;
   delegate: typeof findDelegatePda;
   config: typeof findConfigPda;
+  setMintCapMintCap: typeof findSetMintCapMintCapPda;
 };
 
 export type IntentEnginePluginRequirements = ClientWithRpc<
@@ -1264,6 +1374,7 @@ export function intentEngineProgram() {
           config: addSelfFetchFunctions(client, getConfigCodec()),
           intent: addSelfFetchFunctions(client, getIntentCodec()),
           mandate: addSelfFetchFunctions(client, getMandateCodec()),
+          mintCap: addSelfFetchFunctions(client, getMintCapCodec()),
           userState: addSelfFetchFunctions(client, getUserStateCodec()),
         },
         instructions: {
@@ -1372,6 +1483,19 @@ export function intentEngineProgram() {
               client,
               getRevokeMandateInstruction(input),
             ),
+          setCapsRequired: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getSetCapsRequiredInstruction(input),
+            ),
+          setMintCap: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getSetMintCapInstructionAsync({
+                ...input,
+                payer: input.payer ?? client.payer,
+              }),
+            ),
           updateConfig: (input) =>
             addSelfPlanAndSendFunctions(
               client,
@@ -1386,8 +1510,10 @@ export function intentEngineProgram() {
         pdas: {
           userState: findUserStatePda,
           vault: findVaultPda,
+          mintCap: findMintCapPda,
           delegate: findDelegatePda,
           config: findConfigPda,
+          setMintCapMintCap: findSetMintCapMintCapPda,
         },
         identifyAccount: identifyIntentEngineAccount,
         identifyInstruction: identifyIntentEngineInstruction,

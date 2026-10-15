@@ -719,8 +719,9 @@ describe("commands", () => {
     expect(usage(["pda", "--nonce", "1"])).toBe("missing --owner");
     expect(usage(["pda", "--owner", "nope", "--nonce", "1"])).toBe("--owner is not a base58 address");
     expect(usage(["pda", "x", "--owner", OWNER, "--nonce", "1"])).toBe("unexpected argument x");
-    expect(usage(["show"])).toBe("show needs config or intent");
-    expect(usage(["show", "user"])).toBe("show needs config or intent");
+    expect(usage(["show"])).toBe("show needs config, intent or mint-cap");
+    expect(usage(["show", "user"])).toBe("show needs config, intent or mint-cap");
+    expect(usage(["show", "mint-cap"])).toBe("missing --mint");
     expect(usage(["show", "config", "extra"])).toBe("unexpected argument extra");
     expect(usage(["show", "config", "--bogus"])).toMatch(/bogus/);
     expect(usage(["quote", "x", "--owner", OWNER, "--nonce", "1"])).toBe("unexpected argument x");

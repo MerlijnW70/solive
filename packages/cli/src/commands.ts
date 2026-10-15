@@ -33,7 +33,7 @@ import { withPriority } from "./compute.js";
 import { createTreasuryAccounts, intentInputMints, treasuryView } from "./treasury.js";
 import { artifactSha256, judge } from "./judge.js";
 import type { Runtime } from "./runtime.js";
-import { adminCommand, previewed } from "./admin-commands.js";
+import { adminCommand, previewed, showMintCap } from "./admin-commands.js";
 import { jobCommand } from "./job-commands.js";
 import { engineEvents } from "./event-feed.js";
 import { SOLVER_TABLE_NEXT, solverOptions } from "./solve-commands.js";
@@ -203,7 +203,11 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "propose-admin":
     case "accept-admin":
     case "set-economics":
+    case "set-mint-cap":
+    case "set-caps-required":
       return adminCommand(command, runtime, transport);
+    case "show-mint-cap":
+      return showMintCap(transport, command.mint);
     case "advance-nonce": {
       const owner = await runtime.loadSigner(command.keypair);
       const ix = await buildAdvanceNonce({ owner, nonceBase: command.base });

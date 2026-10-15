@@ -18,13 +18,17 @@ import {
   buildLowerPause,
   buildRaisePause,
   buildUpdateEconomics,
+  buildSetCapsRequired,
+  buildSetMintCap,
+  capWindow,
   findConfigPda,
+  findMintCapAddress,
   feeBpsFor,
   kindBit,
   PAUSE_CREATE,
   PAUSE_FILL,
 } from "@intent-engine/core";
-import { clusterDomain, loadConfig, type Transport } from "@intent-engine/client";
+import { chainTime, clusterDomain, loadConfig, loadMintCap, MissingAccount, type Transport } from "@intent-engine/client";
 import type { Authority, Command } from "./command-types.js";
 import type { Runtime } from "./runtime.js";
 import { redactUrl } from "./render.js";
@@ -109,7 +113,49 @@ export async function previewed(
   return { ...shown, sent: true, signature: await transport.send(instructions, signer) };
 }
 
-type AdminCommand = Extract<Command, { name: "init-config" | "raise-pause" | "lower-pause" | "update-config" | "propose-admin" | "accept-admin" | "set-economics" }>;
+type AdminCommand = Extract<
+  Command,
+  {
+    name:
+      | "init-config"
+      | "raise-pause"
+      | "lower-pause"
+      | "update-config"
+      | "propose-admin"
+      | "accept-admin"
+      | "set-economics"
+      | "set-mint-cap"
+      | "set-caps-required";
+  }
+>;
+
+const capLine = (cap: { maxPerOrder: bigint; windowCap: bigint; windowSecs: number }) =>
+  `at most ${cap.maxPerOrder} raw units per intent and ${cap.windowCap} per ${cap.windowSecs} second window`;
+
+export async function showMintCap(transport: Transport, mint: Address): Promise<object> {
+  const found = await loadMintCap(transport, mint);
+  if (found === null) {
+    throw new MissingAccount(`${mint} has no cap: mint cap`, await findMintCapAddress(mint));
+  }
+  const { config } = await loadConfig(transport);
+  const now = await chainTime(transport);
+  const { cap } = found;
+  const window = capWindow(cap, now);
+  return {
+    address: found.address,
+    mint: cap.mint,
+    maxPerOrder: cap.maxPerOrder,
+    windowCap: cap.windowCap,
+    windowSecs: cap.windowSecs,
+    window: { start: window.start, ends: window.ends, used: window.used, left: window.left },
+    capsRequired: config.capsRequired !== 0,
+    summary: [
+      `Intents selling ${mint} escrow ${capLine(cap)}`,
+      `This window: ${window.used} used, ${window.left} left, until ${window.ends}`,
+      config.capsRequired !== 0 ? "Caps are required: every create must pass this cap" : "Caps are off: creates ignore this cap until set-caps-required on",
+    ],
+  };
+}
 
 export async function adminCommand(command: AdminCommand, runtime: Runtime, transport: Transport): Promise<object> {
   switch (command.name) {
@@ -237,6 +283,41 @@ export async function adminCommand(command: AdminCommand, runtime: Runtime, tran
           `Create fee: ${config.createFee} -> ${e.createFee} lamports per intent`,
           `Partner cut: ${config.partnerCutBps} -> ${e.partnerCutBps} bps of each partner fee`,
           `Kind fees: ${kindFees === "" ? "none; every kind pays the base fee" : kindFees}`,
+        ],
+      );
+    }
+    case "set-mint-cap": {
+      const limits = { maxPerOrder: command.maxPerOrder, windowCap: command.windowCap, windowSecs: command.windowSecs };
+      const [found, mintCap] = await Promise.all([loadMintCap(transport, command.mint), findMintCapAddress(command.mint)]);
+      return administer(
+        transport,
+        command.url,
+        runtime,
+        command.by,
+        async (admin) => [await buildSetMintCap({ admin, mint: command.mint, ...limits })],
+        (signer) => [
+          found === null
+            ? `Creates the mint cap ${mintCap} for ${command.mint}, paid by ${signer}: ${capLine(limits)}`
+            : `Mint cap of ${command.mint}: ${capLine(found.cap)} -> ${capLine(limits)}`,
+          ...(found === null ? [] : [`Keeps the current window: ${found.cap.windowUsed} used since ${found.cap.windowStart}`]),
+        ],
+        { mintCap },
+      );
+    }
+    case "set-caps-required": {
+      const { config } = await loadConfig(transport);
+      const now = config.capsRequired !== 0;
+      return administer(
+        transport,
+        command.url,
+        runtime,
+        command.by,
+        async (admin) => [await buildSetCapsRequired({ admin, required: command.required })],
+        () => [
+          `Caps required: ${now ? "on" : "off"} -> ${command.required ? "on" : "off"}`,
+          command.required
+            ? "Every create must then pass the input mint's cap, and a mint without a cap takes no new intents"
+            : "Creates then ignore mint caps",
         ],
       );
     }

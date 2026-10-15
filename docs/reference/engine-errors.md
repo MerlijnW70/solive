@@ -87,3 +87,8 @@ Every error the engine program raises, from its IDL. When an SDK call fails, `cl
 | 6078 | `SplitCountMismatch` | no | the recipient wallets, their weights, and the passed token accounts must be equal in number and within the engine's recipient cap |
 | 6079 | `RecipientNotCanonical` | no | each split recipient account must be the recipient wallet's canonical associated token account for the input mint |
 | 6080 | `SplitNotConserved` | no | the split left lamports in the escrow |
+| 6081 | `MintCapMissing` | no | the engine requires escrow caps and this create did not pass the input mint's cap account |
+| 6082 | `MintCapMismatch` | no | the account passed as the mint cap is not the engine's writable cap account for the input mint |
+| 6083 | `MintCapPerOrder` | no | the amount escrowed exceeds the per-order cap the engine set for the input mint |
+| 6084 | `MintCapWindow` | yes | intents selling this mint have used the engine's escrow cap for the current window |
+| 6085 | `MintCapInvalid` | no | a mint cap needs a per-order cap above zero, a window cap at least the per-order cap, and a window of at least 60 seconds |

@@ -8,7 +8,16 @@ import {
   signedIntentMessage,
   validate,
 } from "@intent-engine/core";
-import { chainTime, clusterDomain, createdAccount, loadUser, mintOf, tokenAccountIfMissing, type Transport } from "@intent-engine/client";
+import {
+  chainTime,
+  clusterDomain,
+  createdAccount,
+  loadUser,
+  mintCapOf,
+  mintOf,
+  tokenAccountIfMissing,
+  type Transport,
+} from "@intent-engine/client";
 import { define } from "./actions.js";
 import { tool } from "./names.js";
 import { prepare } from "./prepare.js";
@@ -104,7 +113,14 @@ async function relaySigned(transport: Transport, relay: Relay, input: SignedTerm
         );
   const relayed = [
     buildEd25519Instruction({ publicKey: input.owner, signature, message }),
-    await relayCreate(input, relay, config, params, { input: inputToken.tokenProgram, output: outputToken.tokenProgram }),
+    await relayCreate(
+      input,
+      relay,
+      config,
+      params,
+      { input: inputToken.tokenProgram, output: outputToken.tokenProgram },
+      await mintCapOf(transport, input.input_mint),
+    ),
     ...published(relay.signer, specUrl),
   ];
   const now = await chainTime(transport);

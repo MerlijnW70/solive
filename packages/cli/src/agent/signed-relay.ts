@@ -27,6 +27,7 @@ export async function relayCreate(
   config: { feeRecipient: Address; createFee: number; crankBounty: number },
   params: IntentParams,
   tokenPrograms: { input: Address; output: Address },
+  mintCap?: Address,
 ): Promise<Instruction> {
   return buildCreateIntentSigned({
     payer: relay.signer,
@@ -44,6 +45,7 @@ export async function relayCreate(
     outputTokenProgram: tokenPrograms.output,
     submitBy: input.submit_by,
     relayerFee: input.relayer_fee,
+    ...(mintCap === undefined ? {} : { mintCap }),
   });
 }
 

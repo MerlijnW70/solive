@@ -4,13 +4,15 @@ use intent_core::ext::partner;
 use intent_core::kinds::Intent as CoreIntent;
 
 use crate::admission::{open_intent, Opening};
+use crate::caps::charge_mint_cap;
 use crate::errors::{core_err, EngineError};
 use crate::events::{FeeWithheld, IntentCreated, MandateUsed, WITHHELD_TREASURY};
 use crate::instructions::CreateIntentArgs;
 use crate::policy::{charge_lamports, charge_treasury, Draw};
 use crate::state::{
-    Config, Intent, Mandate, UserState, CONFIG_ADDRESS, CONFIG_VERSION, DELEGATE_SEED, INTENT_SEED,
-    MANDATE_VERSION, USER_SEED, USER_VERSION, VAULT_SEED,
+    Config, Intent, Mandate, MintCap, UserState, CONFIG_ADDRESS, CONFIG_VERSION, DELEGATE_SEED,
+    INTENT_SEED, MANDATE_VERSION, MINT_CAP_SEED, MINT_CAP_VERSION, USER_SEED, USER_VERSION,
+    VAULT_SEED,
 };
 
 #[event_cpi]
@@ -98,6 +100,13 @@ pub struct CreateIntentByAgent<'info> {
     )]
     pub treasury: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
+    #[account(
+        mut,
+        seeds = [MINT_CAP_SEED, input_mint.key().as_ref()],
+        bump = mint_cap.load()?.bump,
+        constraint = mint_cap.load()?.version == MINT_CAP_VERSION @ EngineError::UnsupportedVersion
+    )]
+    pub mint_cap: Option<AccountLoader<'info, MintCap>>,
 }
 
 pub fn handle_create_intent_by_agent(
@@ -153,6 +162,16 @@ pub fn handle_create_intent_by_agent(
         now,
     )?;
     let escrowed = admitted.decoded.escrow_amount();
+    let drawn = escrowed
+        .checked_add(agent_fee)
+        .ok_or(EngineError::Overflow)?;
+    charge_mint_cap(
+        &ctx.accounts.config,
+        ctx.accounts.mint_cap.as_ref(),
+        &ctx.accounts.input_mint.key(),
+        drawn,
+        now,
+    )?;
     let draw = Draw {
         token_program: &ctx.accounts.input_token_program,
         from: ctx.accounts.owner_input.to_account_info(),
@@ -161,12 +180,7 @@ pub fn handle_create_intent_by_agent(
         owner,
         bump: ctx.bumps.delegate,
     };
-    draw.to(
-        ctx.accounts.vault.to_account_info(),
-        escrowed
-            .checked_add(agent_fee)
-            .ok_or(EngineError::Overflow)?,
-    )?;
+    draw.to(ctx.accounts.vault.to_account_info(), drawn)?;
     let create_fee = charge_treasury(
         &ctx.accounts.system_program,
         ctx.accounts.agent.to_account_info(),

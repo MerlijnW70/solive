@@ -11,6 +11,7 @@ import {
 import { createArgs, events, INSTRUCTIONS_SYSVAR_ADDRESS, intentOf, settleExt } from "./builder-accounts.js";
 import type { Partner } from "./ext.js";
 import type { IntentParams } from "./kinds.js";
+import { mintCapSlot, withMintCap } from "./mint-caps.js";
 import { findAssociatedTokenAddress, findMandatePda } from "./pdas.js";
 
 export type CreateIntentSpec = {
@@ -31,6 +32,7 @@ export type CreateIntentSpec = {
   ownerInput?: Address;
   receiver?: Address;
   receiverAuthority?: Address;
+  mintCap?: Address;
 };
 
 export async function buildCreateIntent(input: CreateIntentSpec) {
@@ -50,7 +52,7 @@ export async function buildCreateIntent(input: CreateIntentSpec) {
       mint: input.outputMint,
       tokenProgram: input.outputTokenProgram,
     }));
-  return getCreateIntentInstructionAsync({
+  const create = await getCreateIntentInstructionAsync({
     owner: input.owner,
     intent: await intentOf(owner, input.nonce),
     inputMint: input.inputMint,
@@ -62,8 +64,10 @@ export async function buildCreateIntent(input: CreateIntentSpec) {
     inputTokenProgram: input.inputTokenProgram,
     outputTokenProgram: input.outputTokenProgram,
     args,
+    mintCap: mintCapSlot(input.mintCap),
     ...(await events()),
   });
+  return withMintCap(create, input.mintCap);
 }
 
 type IntentRef = {
@@ -178,7 +182,7 @@ export async function buildCreateIntentSigned(input: CreateIntentSignedSpec) {
       mint: input.outputMint,
       tokenProgram: input.outputTokenProgram,
     }));
-  return getCreateIntentSignedInstructionAsync({
+  const create = await getCreateIntentSignedInstructionAsync({
     payer: input.payer,
     owner,
     intent: await intentOf(owner, input.nonce),
@@ -196,8 +200,10 @@ export async function buildCreateIntentSigned(input: CreateIntentSignedSpec) {
     args,
     submitBy: input.submitBy,
     relayerFee,
+    mintCap: mintCapSlot(input.mintCap),
     ...(await events()),
   });
+  return withMintCap(create, input.mintCap);
 }
 
 export type CreateIntentByAgentSpec = Omit<CreateIntentSpec, "owner" | "treasury" | "receiverAuthority"> & {
@@ -217,7 +223,7 @@ export async function buildCreateIntentByAgent(input: CreateIntentByAgentSpec) {
     input.receiver ??
     (await findAssociatedTokenAddress({ owner, mint: input.outputMint, tokenProgram: input.outputTokenProgram }));
   const [mandate] = await findMandatePda({ owner, agent: input.agent.address, id: input.mandateId });
-  return getCreateIntentByAgentInstructionAsync({
+  const create = await getCreateIntentByAgentInstructionAsync({
     agent: input.agent,
     owner,
     mandate,
@@ -232,6 +238,8 @@ export async function buildCreateIntentByAgent(input: CreateIntentByAgentSpec) {
     inputTokenProgram: input.inputTokenProgram,
     outputTokenProgram: input.outputTokenProgram,
     args,
+    mintCap: mintCapSlot(input.mintCap),
     ...(await events()),
   });
+  return withMintCap(create, input.mintCap);
 }

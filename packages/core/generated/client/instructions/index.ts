@@ -27,5 +27,7 @@ export * from "./lowerPause.js";
 export * from "./proposeAdmin.js";
 export * from "./raisePause.js";
 export * from "./revokeMandate.js";
+export * from "./setCapsRequired.js";
+export * from "./setMintCap.js";
 export * from "./updateConfig.js";
 export * from "./updateEconomics.js";

@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 
 pub mod admission;
+pub mod caps;
 pub mod errors;
 pub mod events;
 pub mod ext;
@@ -146,5 +147,18 @@ pub mod intent_engine {
 
     pub fn close_intent(ctx: Context<CloseIntent>, ext: Ext) -> Result<()> {
         handle_close_intent(ctx, ext)
+    }
+
+    pub fn set_mint_cap(
+        ctx: Context<SetMintCap>,
+        max_per_order: u64,
+        window_cap: u64,
+        window_secs: u32,
+    ) -> Result<()> {
+        handle_set_mint_cap(ctx, max_per_order, window_cap, window_secs)
+    }
+
+    pub fn set_caps_required(ctx: Context<SetCapsRequired>, required: bool) -> Result<()> {
+        handle_set_caps_required(ctx, required)
     }
 }

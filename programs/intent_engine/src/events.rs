@@ -263,3 +263,19 @@ pub struct IntentSplit {
     pub recipients: u8,
     pub split_hash: [u8; 32],
 }
+
+#[event]
+pub struct MintCapSet {
+    pub mint: Pubkey,
+    pub mint_cap: Pubkey,
+    pub max_per_order: u64,
+    pub window_cap: u64,
+    pub window_secs: u32,
+    pub window_start: i64,
+    pub window_used: u64,
+}
+
+#[event]
+pub struct CapsRequiredSet {
+    pub required: bool,
+}

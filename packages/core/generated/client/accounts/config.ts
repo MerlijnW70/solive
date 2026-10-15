@@ -71,6 +71,7 @@ export type Config = {
   kindFeeBps: Array<number>;
   crankBounty: number;
   createFee: number;
+  capsRequired: number;
   reserved: ReadonlyUint8Array;
 };
 
@@ -91,6 +92,7 @@ export type ConfigArgs = {
   kindFeeBps: Array<number>;
   crankBounty: number;
   createFee: number;
+  capsRequired: number;
   reserved: ReadonlyUint8Array;
 };
 
@@ -115,7 +117,8 @@ export function getConfigEncoder(): FixedSizeEncoder<ConfigArgs> {
       ["kindFeeBps", getArrayEncoder(getU16Encoder(), { size: 4 })],
       ["crankBounty", getU32Encoder()],
       ["createFee", getU32Encoder()],
-      ["reserved", fixEncoderSize(getBytesEncoder(), 8)],
+      ["capsRequired", getU8Encoder()],
+      ["reserved", fixEncoderSize(getBytesEncoder(), 7)],
     ]),
     (value) => ({ ...value, discriminator: CONFIG_DISCRIMINATOR }),
   );
@@ -141,7 +144,8 @@ export function getConfigDecoder(): FixedSizeDecoder<Config> {
     ["kindFeeBps", getArrayDecoder(getU16Decoder(), { size: 4 })],
     ["crankBounty", getU32Decoder()],
     ["createFee", getU32Decoder()],
-    ["reserved", fixDecoderSize(getBytesDecoder(), 8)],
+    ["capsRequired", getU8Decoder()],
+    ["reserved", fixDecoderSize(getBytesDecoder(), 7)],
   ]);
 }
 

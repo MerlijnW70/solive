@@ -28,6 +28,8 @@ import {
   getCreateIntentByAgentDiscriminatorBytes,
   getCreateMandateDiscriminatorBytes,
   getRevokeMandateDiscriminatorBytes,
+  getSetCapsRequiredDiscriminatorBytes,
+  getSetMintCapDiscriminatorBytes,
   getCreateIntentDiscriminatorBytes,
   getCreateIntentInstructionDataEncoder,
   getExpireIntentDiscriminatorBytes,
@@ -798,6 +800,8 @@ describe("golden vectors emitted by the Rust implementation", () => {
       create_mandate: getCreateMandateDiscriminatorBytes(),
       revoke_mandate: getRevokeMandateDiscriminatorBytes(),
       create_intent_by_agent: getCreateIntentByAgentDiscriminatorBytes(),
+      set_mint_cap: getSetMintCapDiscriminatorBytes(),
+      set_caps_required: getSetCapsRequiredDiscriminatorBytes(),
     };
     expect(Object.keys(ours).sort()).toEqual(Object.keys(vectors.discriminators).sort());
     for (const [name, disc] of Object.entries(ours)) {

@@ -1,7 +1,9 @@
 import { type Address, getBase58Encoder } from "@solana/kit";
 import {
+  decodeMintCapData,
   findConfigPda,
   findIntentPda,
+  findMintCapAddress,
   findUserStatePda,
   getConfigDecoder,
   getConfigDiscriminatorBytes,
@@ -9,6 +11,8 @@ import {
   getIntentDiscriminatorBytes,
   getUserStateDecoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
+  isMintCapData,
+  type MintCap,
   TOKEN_2022_PROGRAM_ADDRESS,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
@@ -70,7 +74,23 @@ export async function loadConfig(transport: Transport) {
   return { address, config: getConfigDecoder().decode(data) };
 }
 
-export type NonceWindow = { nonceBase: bigint; nonceBitmap: readonly bigint[]; epoch: bigint };
+export async function loadMintCap(transport: Transport, mint: Address): Promise<{ address: Address; cap: MintCap } | null> {
+  const address = await findMintCapAddress(mint);
+  const view = await createdAccount(transport, address);
+  if (view === null) {
+    return null;
+  }
+  if (view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS || !isMintCapData(view.data)) {
+    throw new Error(`${address} is not an engine mint cap`);
+  }
+  return { address, cap: decodeMintCapData(view.data) };
+}
+
+export async function mintCapOf(transport: Transport, mint: Address): Promise<Address | undefined> {
+  return (await loadMintCap(transport, mint))?.address;
+}
+
+export type NonceWindow ={ nonceBase: bigint; nonceBitmap: readonly bigint[]; epoch: bigint };
 
 export async function loadUser(transport: Transport, owner: Address): Promise<NonceWindow | null> {
   const [address] = await findUserStatePda({ owner });

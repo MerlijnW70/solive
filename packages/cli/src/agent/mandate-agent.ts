@@ -9,7 +9,7 @@ import {
   validate,
   tokenOf,
 } from "@intent-engine/core";
-import { chainTime, loadConfig, mintOf, tokenAccountIfMissing, type Transport } from "@intent-engine/client";
+import { chainTime, loadConfig, mintCapOf, mintOf, tokenAccountIfMissing, type Transport } from "@intent-engine/client";
 import { type AgentContext, define } from "./actions.js";
 import { createCost, release, rentFor, reserve, TOKEN_ACCOUNT_RENT_BYTES } from "./budget.js";
 import { expiryOf, MAX_EXPIRES_IN, MIN_EXPIRES_IN } from "./create.js";
@@ -77,6 +77,7 @@ async function agentIntent(
     mandate.agentFee === 0n
       ? { create: [] }
       : await tokenAccountIfMissing(transport, agent, agent.address, mandate.inputMint, inputToken.tokenProgram);
+  const mintCap = await mintCapOf(transport, mandate.inputMint);
   const create = await buildCreateIntentByAgent({
     agent,
     owner: input.owner,
@@ -94,6 +95,7 @@ async function agentIntent(
     outputTokenProgram: outputToken.tokenProgram,
     ownerInput: mandate.inputAccount,
     receiver: mandate.outputAccount,
+    ...(mintCap === undefined ? {} : { mintCap }),
   });
   const escrow = escrowAmount(params);
   return {

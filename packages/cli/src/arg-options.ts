@@ -137,6 +137,9 @@ export const OPTIONS = {
   "max-fills": { type: "string" },
   webhook: { type: "string" },
   once: { type: "boolean" },
+  "max-per-order": { type: "string" },
+  "window-cap": { type: "string" },
+  "window-secs": { type: "string" },
 } as const;
 
 export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill"]);
@@ -169,7 +172,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   balance: ["url", "keypair", "owner", "mints"],
   pda: ["owner", "nonce"],
   hash: ["artifact"],
-  show: ["url", "owner", "nonce"],
+  show: ["url", "owner", "nonce", "mint"],
   domain: ["url"],
   mcp: [
     "url",
@@ -210,6 +213,8 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   ],
   "propose-admin": ["url", "priority-fee", "keypair", "authority", "yes", "new-admin"],
   "accept-admin": ["url", "priority-fee", "keypair", "authority", "yes"],
+  "set-mint-cap": ["url", "priority-fee", "keypair", "authority", "yes", "mint", "max-per-order", "window-cap", "window-secs"],
+  "set-caps-required": ["url", "priority-fee", "keypair", "authority", "yes"],
   solve: ["url", "priority-fee", "keypair", "jupiter", "issue", "jito", "tip", "min-profit", "max-fee-bps", "max-sol-cost", "max-rent", "slippage-bps", "route-program", "lookup-table", "watch", "interval"],
   "solver-table": ["url", "solver", "mints"],
   "lower-pause": ["url", "priority-fee", "keypair", "authority", "yes", "flags"],

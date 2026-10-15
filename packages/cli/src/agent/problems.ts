@@ -109,6 +109,11 @@ export const ENGINE_PROBLEMS = {
   SplitCountMismatch: never("the recipient wallets, their weights, and the passed token accounts must be equal in number and within the engine's recipient cap"),
   RecipientNotCanonical: never("each split recipient account must be the recipient wallet's canonical associated token account for the input mint"),
   SplitNotConserved: never("the split left lamports in the escrow; the recipient weights must sum to the whole and cover the entire net after fees"),
+  MintCapMissing: never("the engine requires escrow caps and this create did not pass the input mint's cap account; the mint may have no cap yet, in which case the engine accepts no intents selling it"),
+  MintCapMismatch: never("the account passed as the mint cap is not the engine's writable cap account for the input mint"),
+  MintCapPerOrder: never("the amount escrowed exceeds the per-order cap the engine set for the input mint; lower the amount"),
+  MintCapWindow: later("intents selling this mint have used the engine's escrow cap for the current window; try again once the window rolls, or lower the amount"),
+  MintCapInvalid: never("a mint cap needs a per-order cap above zero, a window cap at least the per-order cap, and a window of at least 60 seconds"),
 } as const satisfies Record<string, Entry>;
 
 type EngineErrorName = keyof typeof ENGINE_PROBLEMS;

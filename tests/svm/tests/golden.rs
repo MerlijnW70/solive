@@ -835,12 +835,15 @@ fn vectors() -> TestResult<Value> {
         "create_mandate": hex(ix::CreateMandate::DISCRIMINATOR),
         "revoke_mandate": hex(ix::RevokeMandate::DISCRIMINATOR),
         "create_intent_by_agent": hex(ix::CreateIntentByAgent::DISCRIMINATOR),
+        "set_mint_cap": hex(ix::SetMintCap::DISCRIMINATOR),
+        "set_caps_required": hex(ix::SetCapsRequired::DISCRIMINATOR),
     });
 
     let event_discriminators = json!({
         "AdminAccepted": hex(ev::AdminAccepted::DISCRIMINATOR),
         "AdminProposed": hex(ev::AdminProposed::DISCRIMINATOR),
         "AgentPaid": hex(ev::AgentPaid::DISCRIMINATOR),
+        "CapsRequiredSet": hex(ev::CapsRequiredSet::DISCRIMINATOR),
         "ConfigInitialized": hex(ev::ConfigInitialized::DISCRIMINATOR),
         "ConfigUpdated": hex(ev::ConfigUpdated::DISCRIMINATOR),
         "EconomicsUpdated": hex(ev::EconomicsUpdated::DISCRIMINATOR),
@@ -858,6 +861,7 @@ fn vectors() -> TestResult<Value> {
         "MandateClosed": hex(ev::MandateClosed::DISCRIMINATOR),
         "MandateCreated": hex(ev::MandateCreated::DISCRIMINATOR),
         "MandateUsed": hex(ev::MandateUsed::DISCRIMINATOR),
+        "MintCapSet": hex(ev::MintCapSet::DISCRIMINATOR),
         "NonceAdvanced": hex(ev::NonceAdvanced::DISCRIMINATOR),
         "PauseLowered": hex(ev::PauseLowered::DISCRIMINATOR),
         "PauseRaised": hex(ev::PauseRaised::DISCRIMINATOR),
