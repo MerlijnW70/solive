@@ -1,6 +1,7 @@
 import type { Address, Instruction, KeyPairSigner, Signature, TransactionSigner } from "@solana/kit";
-import type { CommitteeTerms, CommitteeVote, Config, EngineEvent, Intent, IntentParams } from "@intent-engine/core";
+import type { CommitteeTerms, CommitteeVote, Config, EngineEvent, Intent, IntentParams, ProfileView } from "@intent-engine/core";
 import type { Priority } from "./budget.js";
+import type { ClaimsView } from "./client-claims.js";
 import type { FeedbackInput, Reputation, ReputationOptions } from "./reputation.js";
 import type { EngineError } from "./errors.js";
 import type { DeliverInput, Delivery, DeliveryRecord, Job, Spec, SpecFetch } from "./jobs.js";
@@ -137,6 +138,8 @@ export type Client = {
   committeeBallot(input: BallotInput): Promise<CommitteeBallot>;
   prepareCommitteeRelease(input: SettleCommitteeInput): Promise<CommitteeRelease>;
   settleCommittee(input: SettleCommitteeInput): Promise<Signature>;
+  claims(owner: Address, nonce: bigint): Promise<ClaimsView | null>;
+  profile(wallet: Address): Promise<ProfileView | null>;
   reputation(wallet: Address, options?: ReputationOptions): Promise<Reputation>;
   feedback(input: FeedbackInput): Promise<Signature>;
   fill(input: FillInput): Promise<Signature>;

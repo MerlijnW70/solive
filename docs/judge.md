@@ -227,6 +227,34 @@ Anyone can submit the votes without `--sha256`, but a receipt counts the recorde
 
 `committee release` checks every vote against the escrow before it sends, and the program checks them again: every vote must sign the same escrow, payee and result, and the release needs at least `threshold` members. The judge fee goes to the committee's fee wallet. `committee show --committee <address>` prints its terms. Members who run different checks cover each other's blind spots; members who all run the same check do not.
 
+## Job claims
+
+Without claims, every worker races on the same job and only the first announcer is paid. The owner can open claims on a proof escrow instead: a worker then holds the job for a while against a stake, and while the claim holds, only that worker can be paid. Every command previews until you add `--yes`.
+
+The owner opens claims, naming the longest a claim may run, in seconds, and the stake in SOL:
+
+```powershell
+intent-engine claims open --keypair owner.json --nonce $env:NONCE --max-secs 7200 --stake 0.05 --yes
+```
+
+A worker reads the board and takes the job for as long as it needs, up to that maximum and never past the escrow's expiry. `claims take` refuses before it sends anything while another worker holds the claim, and names the holder and the seconds left:
+
+```powershell
+intent-engine claims show --owner $env:OWNER --nonce $env:NONCE
+intent-engine claims take --keypair worker.json --owner $env:OWNER --nonce $env:NONCE --secs 3600 --yes
+```
+
+A worker that cannot finish gives the job up with `claims drop` and gets its stake back. Once the escrow is released, cancelled or expired, anyone settles the board with `claims settle --keypair <payer file> --owner --nonce`, which closes it and returns its rent to the owner; while the escrow is open, it only ends a lapsed claim.
+
+Who gets the stake:
+
+- A release that pays the claimant returns its stake to it.
+- A worker that drops its claim gets its stake back.
+- A claim that lapses forfeits its stake to the owner, when the next worker takes the job, when the release pays someone else, or when anyone settles the board.
+- A claim that still holds when the escrow is cancelled or expires is refunded to its worker by `claims settle`.
+
+An MCP agent reads the board with `solive_get_claims` and takes or drops a claim with `solive_wallet_claim`, which previews until called with `send: true` and the approval its preview returned.
+
 ## Next
 
 - [Reputation](reputation.md)

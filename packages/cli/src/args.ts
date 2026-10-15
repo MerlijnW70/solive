@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { AUTO_PRICE_CAP } from "./compute.js";
 import { MAX_SUBMIT_WITHIN } from "./agent/signed.js";
 import { CLUSTERS, clusterUrl, DEFAULT_URL, ENV_KEYPAIR, ENV_URL, WALLET_NOT_MAINNET } from "./clusters.js";
-import { ACCEPTS, OPTIONS, type Values } from "./arg-options.js";
+import { ACCEPTS, type Values } from "./arg-options.js";
 import {
   addressList,
   amountOf,
@@ -45,7 +45,7 @@ import {
 } from "./command-builders.js";
 import { createTerms, mandate, terms } from "./order-builders.js";
 import { USAGE } from "./arg-usage.js";
-import { committeeOf, feedbackOf, reputationOf } from "./trust-args.js";
+import { optionsFor, trustOf } from "./trust-args.js";
 import { monitorOf } from "./monitor-args.js";
 import { jobArgsOf } from "./job-args.js";
 import type { Command, Env } from "./command-types.js";
@@ -107,7 +107,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
   noRepeats(argv);
   let parsed;
   try {
-    parsed = parseArgs({ args: [...argv], options: OPTIONS, allowPositionals: true, strict: true });
+    parsed = parseArgs({ args: [...argv], options: optionsFor(argv), allowPositionals: true, strict: true });
   } catch (error) {
     throw new UsageError(error instanceof Error ? error.message : String(error));
   }
@@ -391,11 +391,11 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
     case "mandate":
       return mandate(sub, third, remote, values);
     case "committee":
-      return committeeOf(sub, remote, values);
     case "reputation":
-      return reputationOf(sub, remote, values);
     case "feedback":
-      return feedbackOf(sub, remote, values);
+    case "claims":
+    case "profile":
+      return trustOf(verb, sub, remote, values);
     case "approve":
     case "revoke-approval":
       noSub(sub);

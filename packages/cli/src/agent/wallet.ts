@@ -7,6 +7,8 @@ import { walletDeliver, walletCheckDelivery } from "./wallet/delivery.js";
 import { walletAttestSplit } from "./wallet/split.js";
 import { walletCommitteeRelease, walletCommitteeVote } from "./wallet/committee.js";
 import { walletFeedback } from "./reputation.js";
+import { walletClaim } from "./work-claims.js";
+import { walletProfile } from "./profile.js";
 import { walletRecordDelivery } from "./wallet/record.js";
 import { walletWait } from "./wallet/wait.js";
 import { walletReceipt } from "./wallet/receipt.js";
@@ -129,6 +131,8 @@ export const WALLET_ACTIONS: readonly AnyAction[] = [
   walletCommitteeVote,
   walletCommitteeRelease,
   walletFeedback,
+  walletClaim,
+  walletProfile,
   walletRecordDelivery,
   walletDeliver,
   walletCheckDelivery,

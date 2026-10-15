@@ -3,7 +3,7 @@
 # CLI reference
 
 ```text
-usage: setup | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | committee create|show|vote|release | reputation | feedback | monitor | hash | version | help [command]
+usage: setup | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | profile show | profile set | profile close | reputation | feedback | monitor | hash | version | help [command]
 ```
 
 Every command accepts `--output` and `--help`.
@@ -367,6 +367,34 @@ Options for `show`: `--url`, `--committee`, `--output`, `--help`
 Options for `vote`: `--url`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--pay-to`, `--result`, `--out`, `--output`, `--help`
 
 Options for `release`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--vote`, `--sha256`, `--output`, `--help`
+
+## claims
+
+```text
+claims show --owner <address> --nonce <n> | open --keypair <owner file> --nonce <n> --max-secs <seconds> --stake <SOL> [--yes] | take --keypair <worker file> --owner <address> --nonce <n> --secs <seconds> [--yes] | drop --keypair <worker file> --owner <address> --nonce <n> [--yes] | settle --keypair <payer file> --owner <address> --nonce <n> [--yes]
+```
+
+Options for `show`: `--url`, `--owner`, `--nonce`, `--output`, `--help`
+
+Options for `open`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--nonce`, `--max-secs`, `--stake`, `--output`, `--help`
+
+Options for `take`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--secs`, `--output`, `--help`
+
+Options for `drop`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--output`, `--help`
+
+Options for `settle`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--output`, `--help`
+
+## profile
+
+```text
+profile show --wallet <address> | set --keypair <file> --skills <tag,...> --endpoint <https url> [--doc-url <https url> --doc-sha256 <64 hex>] [--yes] | close --keypair <file> [--yes]
+```
+
+Options for `show`: `--url`, `--wallet`, `--output`, `--help`
+
+Options for `set`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--skills`, `--endpoint`, `--doc-url`, `--doc-sha256`, `--output`, `--help`
+
+Options for `close`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--output`, `--help`
 
 ## version
 

@@ -2,7 +2,7 @@
 
 # MCP tools
 
-22 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 20 wallet tools, listed first.
+24 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 22 wallet tools, listed first.
 
 ## solive_wallet_setup
 
@@ -234,6 +234,41 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 | `note` | string | no | the sha256 of a note explaining the score |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true sends the feedback; leave out to preview |
+
+## solive_wallet_claim
+
+Served only with `--wallet`.
+
+As a worker, claim a proof escrow's job for secs seconds by staking what its owner asks, so that only this server's wallet can be paid until the claim lapses; or drop a claim it holds to take the stake back. The stake returns when a release pays this wallet, and goes to the owner if the claim lapses first. Read the board with solive_get_claims. Without send it only previews; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.
+
+Effect: `submit` (read-only: false, destructive: true, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `owner` | address | yes | the wallet that made the escrow |
+| `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
+| `action` | `take`, `drop` | yes | take claims the job, drop gives up a claim this wallet holds |
+| `secs` | integer 1..604800 | no | how long to hold the claim; needed with take |
+| `approval` | string | no | the approval the preview returned; needed with send |
+| `send` | boolean | no | true sends the claim; leave out to preview |
+
+## solive_wallet_profile
+
+Served only with `--wallet`.
+
+Publish, update or close the on-chain profile of this server's wallet, so payers can find what work it takes and where: 1 to 8 skill tags, an https endpoint, and optionally a document url with its sha256. Publishing creates the profile and pays its rent, or updates the one there; close: true deletes it and returns the rent. Others read it with solive_get_profile. Without send it only previews; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.
+
+Effect: `submit` (read-only: false, destructive: true, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `skills` | list of string, 1 to 8 | no | distinct skill tags |
+| `endpoint` | string | no | an https url of at most 128 printable characters where this wallet takes work |
+| `doc_url` | string | no | an https url of a document describing this wallet's work; needs doc_sha256 |
+| `doc_sha256` | string | no | the document's sha256; needs doc_url |
+| `close` | boolean | no | true closes the profile instead |
+| `approval` | string | no | the approval the preview returned; needed with send |
+| `send` | boolean | no | true sends the change; leave out to preview |
 
 ## solive_wallet_record_delivery
 
@@ -500,6 +535,27 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 | --- | --- | --- | --- |
 | `worker` | address | yes | the worker wallet to read |
 | `max_pages` | integer 1..100000 | no | pages of 1000 signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default 1000; raise it when the release is refused because the record of announced work is incomplete |
+
+## solive_get_claims
+
+Read the claims board of a proof escrow: whether its owner opened claims, and whether the job is free, held by a worker until a time, or held by a claim that lapsed. While a claim holds, only its worker can be paid. A worker claims or drops it with solive_wallet_claim.
+
+Effect: `read` (read-only: true, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `owner` | address | yes | the wallet that made the escrow |
+| `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
+
+## solive_get_profile
+
+Read the profile a wallet published on chain: the skills it offers, the https endpoint where it takes work, and an optional document with its sha256. The wallet wrote it itself, so check its track record with solive_get_reputation before trusting it. A server with a wallet publishes its own with solive_wallet_profile.
+
+Effect: `read` (read-only: true, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `wallet` | address | yes | the wallet whose profile to read |
 
 ## solive_prepare_crank
 

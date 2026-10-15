@@ -148,14 +148,25 @@ export const OPTIONS = {
   worker: { type: "string" },
   score: { type: "string" },
   note: { type: "string" },
+  "max-secs": { type: "string" },
+  stake: { type: "string" },
+  secs: { type: "string" },
+  skills: { type: "string" },
+  endpoint: { type: "string" },
+  "doc-url": { type: "string" },
+  "doc-sha256": { type: "string" },
 } as const;
+
+export const PROFILE_OPTIONS = { ...OPTIONS, wallet: { type: "string" } } as const;
 
 export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill", "vote"]);
 
 export type Flag = "dry-run" | "fund-accounts" | "yes" | "help" | "version" | "follow" | "create" | "wallet" | "watch" | "close" | "once";
 export type Many = "max-fill" | "vote";
 export type StringKey = Exclude<keyof typeof OPTIONS, Flag | Many>;
-export type Values = { [K in StringKey]?: string | undefined } & { [K in Flag]?: boolean | undefined } & { [K in Many]?: string[] | undefined };
+export type Values = { [K in StringKey]?: string | undefined } & { [K in Exclude<Flag, "wallet">]?: boolean | undefined } & {
+  [K in Many]?: string[] | undefined;
+} & { wallet?: boolean | string | undefined };
 
 export const EXPIRY = ["expires-at", "expires-in"] as const;
 
@@ -319,6 +330,8 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
     "vote",
     "sha256",
   ],
+  claims: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "max-secs", "stake", "secs"],
+  profile: ["url", "priority-fee", "keypair", "yes", "wallet", "skills", "endpoint", "doc-url", "doc-sha256"],
 };
 
 export const SUB_ACCEPTS: Record<string, Record<string, readonly (keyof typeof OPTIONS)[]>> = {
@@ -373,5 +386,17 @@ export const SUB_ACCEPTS: Record<string, Record<string, readonly (keyof typeof O
     show: ["url", "committee"],
     vote: ["url", "keypair", "yes", "owner", "nonce", "pay-to", "result", "out"],
     release: ["url", "priority-fee", "keypair", "yes", "vote", "sha256"],
+  },
+  claims: {
+    show: ["url", "owner", "nonce"],
+    open: ["url", "priority-fee", "keypair", "yes", "nonce", "max-secs", "stake"],
+    take: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "secs"],
+    drop: ["url", "priority-fee", "keypair", "yes", "owner", "nonce"],
+    settle: ["url", "priority-fee", "keypair", "yes", "owner", "nonce"],
+  },
+  profile: {
+    show: ["url", "wallet"],
+    set: ["url", "priority-fee", "keypair", "yes", "skills", "endpoint", "doc-url", "doc-sha256"],
+    close: ["url", "priority-fee", "keypair", "yes"],
   },
 };

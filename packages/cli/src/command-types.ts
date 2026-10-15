@@ -1,7 +1,7 @@
 import type { Priority } from "./compute.js";
 import type { Sandbox } from "./sandbox.js";
 import type { Address } from "@solana/kit";
-import type { EconomicsSpec } from "@intent-engine/core";
+import type { EconomicsSpec, ProfileInput } from "@intent-engine/core";
 
 export type Env = Readonly<Record<string, string | undefined>>;
 
@@ -131,6 +131,14 @@ export type Command =
       out: string | undefined;
     })
   | (Keyed & { name: "committee-release"; yes: boolean; votes: string[]; sha256: string | undefined })
+  | (Remote & { name: "claims-show"; owner: Address; nonce: bigint })
+  | (Keyed & { name: "claims-open"; yes: boolean; nonce: bigint; maxSecs: number; stake: bigint })
+  | (Keyed & { name: "claims-take"; yes: boolean; owner: Address; nonce: bigint; secs: number })
+  | (Keyed & { name: "claims-drop"; yes: boolean; owner: Address; nonce: bigint })
+  | (Keyed & { name: "claims-settle"; yes: boolean; owner: Address; nonce: bigint })
+  | (Remote & { name: "profile-show"; wallet: Address })
+  | (Keyed & { name: "profile-set"; yes: boolean; profile: ProfileInput })
+  | (Keyed & { name: "profile-close"; yes: boolean })
   | (Remote & { name: "reputation"; worker: Address; maxPages: number })
   | (Keyed & { name: "feedback"; yes: boolean; intent: Address; score: number; note: string | undefined });
 

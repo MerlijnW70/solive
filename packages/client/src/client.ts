@@ -4,8 +4,10 @@ import { budgeted, simulated } from "./budget.js";
 import { intentSends, nonceAfter } from "./client-intents.js";
 import { clientReads } from "./client-reads.js";
 import { committeeSends } from "./client-committee.js";
+import { loadClaims, loadProfile } from "./client-claims.js";
 import { feedbackInstructions, reputationOf } from "./reputation.js";
 export { loadCommittee } from "./client-committee.js";
+export { type ClaimsView, loadClaims, loadProfile } from "./client-claims.js";
 import { committeeSettlement, proofSettlement } from "./client-settle.js";
 import { type Client, type ClientOptions, type Mint, WATCH_POLL_MS, WATCH_WAIT_SECONDS } from "./client-types.js";
 import { decoded, watchIntents } from "./client-watch.js";
@@ -124,6 +126,8 @@ export function createClient(options: ClientOptions): Client {
     committeeBallot,
     prepareCommitteeRelease,
     settleCommittee,
+    claims: (owner, nonce) => loadClaims(transport, owner, nonce),
+    profile: (wallet) => loadProfile(transport, wallet),
     reputation: (wallet, options) => reputationOf(transport, wallet, options),
     feedback: async (input) => send(await feedbackInstructions(transport, input), input.owner),
     fill,

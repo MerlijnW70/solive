@@ -18,6 +18,7 @@ export * from "./memo.js";
 export * from "./mint-caps.js";
 export * from "./mints.js";
 export * from "./pdas.js";
+export * from "./profile.js";
 export * from "./sig.js";
 export * from "./state.js";
 export * from "./validate.js";

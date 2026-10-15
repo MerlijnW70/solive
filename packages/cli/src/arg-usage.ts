@@ -1,7 +1,7 @@
 import { ACCEPTS, GLOBAL_OPTIONS } from "./arg-options.js";
 import { EXIT_ALERTED } from "./monitor-args.js";
 
-export const COMMANDS = "setup | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | committee create|show|vote|release | reputation | feedback | monitor | hash | version | help [command]";
+export const COMMANDS = "setup | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | profile show | profile set | profile close | reputation | feedback | monitor | hash | version | help [command]";
 
 export const USAGE = `usage: ${COMMANDS}`;
 
@@ -48,6 +48,10 @@ export const SHAPES: Readonly<Record<string, string>> = {
   feedback: "--keypair <owner file> --intent <address> --score <0 to 100> [--note <sha256 of a note>] [--yes]",
   committee:
     "create --keypair <payer file> --members <address,...> --threshold <n> --fee-wallet <address> [--yes] | show --committee <address> | vote --keypair <member file> --owner <address> --nonce <n> --pay-to <wallet> --result <n> [--out <file>] [--yes] | release --keypair <solver file> --vote <file> [--vote <file> ...] [--sha256 <64 hex>] [--yes]",
+  claims:
+    "show --owner <address> --nonce <n> | open --keypair <owner file> --nonce <n> --max-secs <seconds> --stake <SOL> [--yes] | take --keypair <worker file> --owner <address> --nonce <n> --secs <seconds> [--yes] | drop --keypair <worker file> --owner <address> --nonce <n> [--yes] | settle --keypair <payer file> --owner <address> --nonce <n> [--yes]",
+  profile:
+    "show --wallet <address> | set --keypair <file> --skills <tag,...> --endpoint <https url> [--doc-url <https url> --doc-sha256 <64 hex>] [--yes] | close --keypair <file> [--yes]",
   judge: "--keypair <judge file> --owner <address> --nonce <n> --spec <file> --artifact <file or directory> (--run <command> | --sandbox viper) [--pay-to <wallet>] [--result <n>] [--timeout <seconds>] [--verdict <file>] [--max-pages <n>] [--check <file or directory>] [--sandbox docker|viper|none] [--sandbox-image <name>@sha256:<64 hex>] [--sandbox-memory <n>m|<n>g] [--sandbox-cpus <n>] [--yes]",
   create: `swap|limit|dutch|attested --keypair <file> --input-mint --output-mint (--expires-at | --expires-in) ${ORDER_SHAPE} [--nonce <n>] [--pay-to <wallet>] ${PARTNER_SHAPE} [--units tokens|raw] [--yes]; attested takes [--spec-hash <64 hex> [--judge-fee <amount>] [--spec-url <https url>]] to make a proof escrow`,
   list: "--owner <address> or --keypair <file>; --owner wins when both are given",

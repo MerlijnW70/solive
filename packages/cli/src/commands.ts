@@ -37,6 +37,7 @@ import { adminCommand, previewed, showMintCap } from "./admin-commands.js";
 import { jobCommand } from "./job-commands.js";
 import { committeeCommand } from "./committee-commands.js";
 import { reputationCommand } from "./reputation-commands.js";
+import { claimsCommand } from "./claim-commands.js";
 import { engineEvents } from "./event-feed.js";
 import { SOLVER_TABLE_NEXT, solverOptions } from "./solve-commands.js";
 import { flowCommand } from "./flow-commands.js";
@@ -186,6 +187,15 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "reputation":
     case "feedback":
       return reputationCommand(command, runtime, transport);
+    case "claims-show":
+    case "claims-open":
+    case "claims-take":
+    case "claims-drop":
+    case "claims-settle":
+    case "profile-show":
+    case "profile-set":
+    case "profile-close":
+      return claimsCommand(command, runtime, transport);
     case "treasury": {
       const view = await treasuryView(transport, command.mints ?? (await intentInputMints(transport)));
       if (!command.create || command.keypair === undefined) {

@@ -82,6 +82,30 @@ describe("claimed escrows", () => {
     expect(s.w.chain.svm.getAccount(await claimBoardAddress(s.intent)).exists).toBe(true);
   });
 
+  it("client.claims reports free, held and lapsed from the chain's clock", async () => {
+    const s = await setup();
+    const board = await claimBoardAddress(s.intent);
+    const terms = { board, stake: STAKE, maxSecs: 3_600, owner: s.owner.address };
+    expect(await s.client.claims(s.owner.address, s.nonce)).toEqual({ ...terms, state: "free", worker: null, until: 0n, secondsLeft: 0n });
+    await s.claim(s.worker);
+    const now = s.w.chain.svm.getClock().unixTimestamp;
+    expect(await s.client.claims(s.owner.address, s.nonce)).toEqual({ ...terms, state: "held", worker: s.worker.address, until: now + 600n, secondsLeft: 600n });
+    const clock = s.w.chain.svm.getClock();
+    clock.unixTimestamp += 250n;
+    s.w.chain.svm.setClock(clock);
+    expect(await s.client.claims(s.owner.address, s.nonce)).toMatchObject({ state: "held", secondsLeft: 350n });
+    clock.unixTimestamp += 350n;
+    s.w.chain.svm.setClock(clock);
+    expect(await s.client.claims(s.owner.address, s.nonce)).toEqual({ ...terms, state: "lapsed", worker: s.worker.address, until: now + 600n, secondsLeft: 0n });
+    const { nonce } = await s.client.createIntent({
+      signer: s.owner,
+      params: { kind: Kind.AttestedResult, amountIn: 1_000_000n, minResult: 1n, maxResult: 1n, attestor: s.judge.address, specHash: SPEC, judgeFee: 0n },
+      inputMint: NATIVE_MINT,
+      outputMint: s.w.outputMint,
+    });
+    expect(await s.client.claims(s.owner.address, nonce)).toBeNull();
+  });
+
   it("decide the stake's receiver exactly as the program does", () => {
     const worker = "So11111111111111111111111111111111111111112" as Address;
     const owner = "Sysvar1111111111111111111111111111111111111" as Address;

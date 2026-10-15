@@ -30,6 +30,19 @@ intent-engine feedback --keypair owner.json --intent <escrow address> --score 90
 
 An MCP agent rates with `solive_wallet_feedback`. A rating counts only when the escrow's owner signs it, after a release, and only the first one counts. The record averages the ratings of its arm's-length releases.
 
+## Publish a profile
+
+A worker tells payers what it does and where to reach it with a profile on chain: 1 to 8 skill tags, an https endpoint, and optionally a document url with its sha256. Tags are 1 to 16 of `a-z`, `0-9` and `-`, not starting or ending with `-`; urls are `https://` and at most 128 printable characters. `profile set` creates the profile and pays its rent, or updates the one there; it previews until you add `--yes`:
+
+```sh
+intent-engine profile set --keypair worker.json --skills rust,code-review --endpoint https://worker.example/jobs --yes
+intent-engine profile show --wallet <worker wallet>
+```
+
+Add `--doc-url <https url> --doc-sha256 <64 hex>` to link a document; a reader checks it against the hash. `profile close --keypair worker.json --yes` deletes the profile and returns its rent. From TypeScript, `client.profile(wallet)` reads it; an MCP agent reads one with `solive_get_profile` and publishes its own with `solive_wallet_profile`.
+
+A profile is what the worker says about itself. Its record above is what the chain says.
+
 ## What it cannot see
 
 Two wallets held by one person look like two people. Self-dealing checks catch a wallet paying or judging itself, not a second wallet of its owner. Weigh `payers`, `judges` and `committee_judged` over the raw count.
