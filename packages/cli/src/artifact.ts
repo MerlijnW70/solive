@@ -3,6 +3,7 @@ import { chmod, mkdir, mkdtemp, open, readdir, rm, stat, writeFile } from "node:
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { type ManifestEntry, manifestSha256 } from "@intent-engine/core";
+import { UsageError } from "./arg-values.js";
 import { JudgeRefused } from "./judge-errors.js";
 
 export const SKIPPED = new Set([".git", "node_modules", "target"]);
@@ -24,21 +25,53 @@ async function readEntry(path: string, full: string): Promise<CopiedEntry> {
   }
 }
 
-async function filesUnder(root: string, prefix: string): Promise<CopiedEntry[]> {
-  const entries: CopiedEntry[] = [];
-  for (const entry of await readdir(root, { withFileTypes: true })) {
+export const MAX_ARTIFACT_BYTES = 67108864;
+export const MAX_ARTIFACT_FILES = 10_000;
+
+export const artifactTooLarge = (path: string, over: string): string =>
+  `${path} ${over}, over the artifact limit of ${MAX_ARTIFACT_BYTES} bytes and ${MAX_ARTIFACT_FILES} files; nothing was run or paid`;
+
+export class ArtifactTooLarge extends UsageError {
+  constructor(path: string, over: string) {
+    super(artifactTooLarge(path, over));
+    this.name = "ArtifactTooLarge";
+  }
+}
+
+type Found = { path: string; full: string };
+
+type Walk = { root: string; files: Found[]; bytes: number };
+
+async function walk(at: string, prefix: string, into: Walk): Promise<void> {
+  for (const entry of await readdir(at, { withFileTypes: true })) {
     if (SKIPPED.has(entry.name)) {
       continue;
     }
     const path = prefix === "" ? entry.name : `${prefix}/${entry.name}`;
-    const full = join(root, entry.name);
+    const full = join(at, entry.name);
     if (entry.isDirectory()) {
-      entries.push(...(await filesUnder(full, path)));
+      await walk(full, path, into);
     } else if (entry.isFile()) {
-      entries.push(await readEntry(path, full));
+      into.files.push({ path, full });
+      if (into.files.length > MAX_ARTIFACT_FILES) {
+        throw new ArtifactTooLarge(into.root, `holds more than ${MAX_ARTIFACT_FILES} files`);
+      }
+      into.bytes += (await stat(full)).size;
+      if (into.bytes > MAX_ARTIFACT_BYTES) {
+        throw new ArtifactTooLarge(into.root, `holds more than ${MAX_ARTIFACT_BYTES} bytes`);
+      }
     } else {
       throw new JudgeRefused(`the artifact holds ${path}, which is neither a regular file nor a directory; the judge hashes only those`);
     }
+  }
+}
+
+async function filesUnder(root: string): Promise<CopiedEntry[]> {
+  const found: Walk = { root, files: [], bytes: 0 };
+  await walk(root, "", found);
+  const entries: CopiedEntry[] = [];
+  for (const { path, full } of found.files) {
+    entries.push(await readEntry(path, full));
   }
   return entries;
 }
@@ -48,11 +81,14 @@ export type Artifact = { sha256: string; entries: CopiedEntry[]; single: boolean
 export async function readArtifact(path: string): Promise<Artifact> {
   const found = await stat(path);
   if (found.isFile()) {
+    if (found.size > MAX_ARTIFACT_BYTES) {
+      throw new ArtifactTooLarge(path, `is larger than ${MAX_ARTIFACT_BYTES} bytes`);
+    }
     const entry = await readEntry(basename(path), path);
     return { sha256: createHash("sha256").update(entry.bytes).digest("hex"), entries: [entry], single: true };
   }
   if (found.isDirectory()) {
-    const entries = await filesUnder(path, "");
+    const entries = await filesUnder(path);
     return { sha256: await manifestSha256(entries), entries, single: false };
   }
   throw new JudgeRefused(`--artifact ${path} is neither a regular file nor a directory`);

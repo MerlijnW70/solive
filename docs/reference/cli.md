@@ -221,10 +221,10 @@ Options: `--url`, `--attestor`, `--output`, `--help`
 ## deliver
 
 ```text
-deliver --keypair <worker file> --intent <address> --sha256 <64 hex> --work-url <https url> [--yes]
+deliver --keypair <worker file> --intent <address> (--artifact <file or directory> | --sha256 <64 hex>) --work-url <https url> [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--sha256`, `--work-url`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--artifact`, `--sha256`, `--work-url`, `--output`, `--help`
 
 ## deliveries
 

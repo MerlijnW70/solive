@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { claimsOf } from "../src/agent/claims.js";
-import { chmod, mkdtemp, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { PassThrough } from "node:stream";
 import { type AddressInfo, createServer, type Socket } from "node:net";
 import { tmpdir } from "node:os";
@@ -52,6 +52,7 @@ import {
   findVaultPda,
   type Intent,
   INTENT_ENGINE_PROGRAM_ADDRESS,
+  deliveryMemo,
   Kind,
   splitFee,
   splitFees,
@@ -60,6 +61,7 @@ import { agentServer } from "../src/agent/mcp.js";
 import { ACTIONS } from "../src/agent/registry.js";
 import { needsSpecHash, SHA256_NEEDED, SPEC_HASH_FORMAT, UsageError, usageOf } from "../src/args.js";
 import { expandHome } from "../src/wallet.js";
+import { DELIVER_ONE_OF } from "../src/job-args.js";
 import { createClient, DEVNET_GENESIS_HASH, PLAIN_HTTP_ON_PUBLIC } from "@intent-engine/client";
 import {
   crankAction,
@@ -703,6 +705,49 @@ describe("cli against the deployed engine", () => {
     const refused = await cli(["deliver", "--keypair", "w.json", "--intent", swap.intent, "--sha256", work, "--work-url", "https://example.org/work"], { "w.json": worker });
     expect(refused.code).toBe(EXIT_FAILED);
     expect(refused.err).toContain(`intent ${swap.intent} is not a proof escrow`);
+  });
+
+  it("deliver --artifact announces the same hash that hash --artifact prints", async () => {
+    const judge = await generateKeyPairSigner();
+    const worker = await funded();
+    const client = createClient({ url: "http://cluster", transport });
+    const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash: new Uint8Array(32).fill(7), judgeFee: 0n } as const;
+    const job = await client.createIntent({ signer: owner, params, inputMint, outputMint, nonce: 3n, expiresAt: NOW + 3_600n });
+    const dir = await mkdtemp(join(tmpdir(), "deliver-"));
+    await mkdir(join(dir, "work", "src"), { recursive: true });
+    await writeFile(join(dir, "work", "answer.txt"), "42\n");
+    await writeFile(join(dir, "work", "src", "notes.txt"), "how\n");
+    await writeFile(join(dir, "work.mjs"), "export default 1;\n");
+    for (const artifact of [join(dir, "work"), join(dir, "work.mjs")]) {
+      const hashed = await cli(["hash", "--artifact", artifact], {});
+      const sha256 = (hashed.json() as { sha256: string }).sha256;
+      const args = ["deliver", "--keypair", "w.json", "--intent", job.intent, "--artifact", artifact, "--work-url", "https://example.org/work"];
+      const preview = await cli(args, { "w.json": worker });
+      expect([preview.code, preview.err]).toEqual([EXIT_OK, ""]);
+      expect((preview.json()["summary"] as string[])[0]).toBe(`Announces: the work with sha256 ${sha256} at ` + "https://example.org/work" + `, for the proof escrow ${job.intent}`);
+      const sent = await cli([...args, "--yes"], { "w.json": worker });
+      expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);
+      const landed = h.svm.getTransaction(sent.json()["signature"] as Signature);
+      if (!(landed instanceof TransactionMetadata)) {
+        throw new Error("the delivery did not land");
+      }
+      expect(landed.logs().some((line) => line.includes(deliveryMemo({ intent: job.intent, sha256, url: "https://example.org/work" })))).toBe(true);
+    }
+  });
+
+  it("deliver refuses both --artifact and --sha256, and neither", async () => {
+    const worker = await funded();
+    const dir = await mkdtemp(join(tmpdir(), "deliver-"));
+    await writeFile(join(dir, "work.mjs"), "export default 1;\n");
+    const [intent] = await findIntentPda({ owner: owner.address, nonce: 3n });
+    const base = ["deliver", "--keypair", "w.json", "--intent", intent, "--work-url", "https://example.org/work"];
+    const sent = h.wires.length;
+    for (const extra of [["--artifact", join(dir, "work.mjs"), "--sha256", "ab".repeat(32)], []]) {
+      const refused = await cli([...base, ...extra], { "w.json": worker });
+      expect(refused).toMatchObject({ code: EXIT_USAGE, err: DELIVER_ONE_OF, out: "" });
+    }
+    expect(h.wires).toHaveLength(sent);
+    expect(usageOf("deliver")).toMatchObject({ usage: expect.stringContaining("(--artifact <file or directory> | --sha256 <64 hex>)") });
   });
 
   it("creates an intent that names a partner and shows it", async () => {

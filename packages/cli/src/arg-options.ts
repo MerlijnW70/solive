@@ -228,7 +228,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   "lower-pause": ["url", "priority-fee", "keypair", "authority", "yes", "flags"],
   events: ["url", "limit", "follow", "interval"],
   jobs: ["url", "attestor"],
-  deliver: ["url", "priority-fee", "keypair", "yes", "intent", "sha256", "work-url"],
+  deliver: ["url", "priority-fee", "keypair", "yes", "intent", "artifact", "sha256", "work-url"],
   deliveries: ["url", "attestor", "intent", "max-pages"],
   receipt: ["url", "owner", "nonce", "sha256", "release"],
   "record-delivery": ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "sha256", "release"],

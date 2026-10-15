@@ -1,7 +1,7 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, symlink, truncate, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -36,7 +36,7 @@ import {
   SPEC_COPY,
 } from "../src/judge.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
-import { copyOf, readArtifact } from "../src/artifact.js";
+import { artifactTooLarge, copyOf, MAX_ARTIFACT_BYTES, MAX_ARTIFACT_FILES, readArtifact } from "../src/artifact.js";
 import { runContainer } from "../src/check-process.js";
 import {
   containerArgs,
@@ -55,6 +55,7 @@ import { ata, balance, cli, creation, funded, h, NOW, send, transport, type Worl
 const removal = vi.hoisted(() => ({ refused: false, retries: [] as (number | undefined)[] }));
 const writing = vi.hoisted(() => ({ before: null as ((path: string) => Promise<void>) | null }));
 const proc = vi.hoisted(() => ({ hidden: false }));
+const opening = vi.hoisted(() => ({ paths: [] as string[] }));
 
 vi.mock("node:fs/promises", async (original) => {
   const actual = await original<typeof import("node:fs/promises")>();
@@ -66,6 +67,10 @@ vi.mock("node:fs/promises", async (original) => {
       }
       return actual.readdir(...args);
     }) as typeof actual.readdir,
+    open: (async (...args: Parameters<typeof actual.open>) => {
+      opening.paths.push(String(args[0]));
+      return actual.open(...args);
+    }) as typeof actual.open,
     writeFile: async (...args: Parameters<typeof actual.writeFile>) => {
       await writing.before?.(String(args[0]));
       return actual.writeFile(...args);
@@ -239,7 +244,7 @@ describe("intent-engine judge", () => {
       payTo: j.worker.address,
       signature: null,
     };
-    expect(preview.json()).toEqual({ ...shown, next: NOT_SENT });
+    expect(preview.json()).toEqual({ ...shown, simulated: { ok: true, units_consumed: expect.any(Number) }, next: NOT_SENT });
     expect(JSON.parse(await readFile(verdict, "utf8"))).toEqual(preview.json());
     expect(await paidTo(j, j.worker.address)).toBe(-1n);
 
@@ -590,6 +595,65 @@ describe("intent-engine judge", () => {
     }
     expect(existsSync(verdict)).toBe(false);
     expect(status(j.intent)).toBe(IntentStatus.Open);
+  });
+
+  it("judge without --yes simulates the release and reports units or the engine error", async () => {
+    const passed = await cli(judging(j, "true"), keys);
+    expect([passed.code, passed.err]).toEqual([EXIT_OK, ""]);
+    expect(passed.json()).toMatchObject({ verdict: "pass", signature: null, next: NOT_SENT, simulated: { ok: true } });
+    const units = (passed.json()["simulated"] as { units_consumed: number }).units_consumed;
+    expect(units).toBeGreaterThan(0);
+    const failing = await cli(judging(j, "exit 3"), keys);
+    expect(failing.json()).toMatchObject({ verdict: "fail", signature: null });
+    expect(failing.json()).not.toHaveProperty("simulated");
+    const paused = await cli(["raise-pause", "--keypair", "a.json", "--yes", "--flags", "fill"], { "a.json": j.w.authority });
+    expect(paused.code).toBe(EXIT_OK);
+    const verdict = join(j.dir, "simulated.json");
+    const refused = await cli(judging(j, "true", "--verdict", verdict), keys);
+    expect([refused.code, refused.err]).toEqual([EXIT_OK, ""]);
+    expect(refused.json()).toMatchObject({ verdict: "pass", signature: null, simulated: { ok: false, error: "FillPaused" } });
+    expect(JSON.parse(await readFile(verdict, "utf8"))).toEqual(refused.json());
+    expect(status(j.intent)).toBe(IntentStatus.Open);
+    expect(await paidTo(j, j.worker.address)).toBe(-1n);
+  });
+
+  it("an artifact over the size or file limit is refused before its contents are read", { timeout: 60_000 }, async () => {
+    expect([MAX_ARTIFACT_BYTES, MAX_ARTIFACT_FILES]).toEqual([67108864, 10000]);
+    const dir = await mkdtemp(join(tmpdir(), "limits-"));
+    const big = join(dir, "big.bin");
+    await writeFile(big, "");
+    await truncate(big, MAX_ARTIFACT_BYTES + 1);
+    const heavy = join(dir, "heavy");
+    await mkdir(heavy);
+    for (const name of ["a.bin", "b.bin"]) {
+      await writeFile(join(heavy, name), "");
+      await truncate(join(heavy, name), MAX_ARTIFACT_BYTES / 2 + 1);
+    }
+    const many = join(dir, "many");
+    await mkdir(many);
+    for (let at = 0; at <= MAX_ARTIFACT_FILES; at += 500) {
+      await Promise.all(Array.from({ length: Math.min(500, MAX_ARTIFACT_FILES + 1 - at) }, (_, i) => writeFile(join(many, `f${at + i}`), "x")));
+    }
+    opening.paths = [];
+    const cases = [
+      [big, `is larger than ${MAX_ARTIFACT_BYTES} bytes`],
+      [heavy, `holds more than ${MAX_ARTIFACT_BYTES} bytes`],
+      [many, `holds more than ${MAX_ARTIFACT_FILES} files`],
+    ] as const;
+    for (const [artifact, over] of cases) {
+      const hashed = await cli(["hash", "--artifact", artifact], {});
+      expect(hashed).toMatchObject({ code: EXIT_USAGE, out: "", err: artifactTooLarge(artifact, over) });
+      expect(hashed.err).toContain("nothing was run or paid");
+      const marker = join(j.dir, "ran");
+      const args = judging(j, `touch "${marker}"`, "--yes");
+      args[args.indexOf("--artifact") + 1] = artifact;
+      const judged = await cli(args, keys);
+      expect(judged).toMatchObject({ code: EXIT_USAGE, out: "", err: artifactTooLarge(resolve(artifact), over) });
+      expect(existsSync(marker)).toBe(false);
+    }
+    expect(opening.paths.filter((path) => path.startsWith(dir))).toEqual([]);
+    expect(status(j.intent)).toBe(IntentStatus.Open);
+    await rm(dir, { recursive: true, force: true });
   });
 
   it("fails, sends nothing and exits non-zero when the check exits non-zero", async () => {

@@ -40,7 +40,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   treasury: "[--mints <mint,...>] [--create --mints <mint,...> --keypair <payer file> [--yes]]",
   events: "[--limit <n>] [--follow [--interval <seconds>]]",
   jobs: "[--attestor <address>]",
-  deliver: "--keypair <worker file> --intent <address> --sha256 <64 hex> --work-url <https url> [--yes]",
+  deliver: "--keypair <worker file> --intent <address> (--artifact <file or directory> | --sha256 <64 hex>) --work-url <https url> [--yes]",
   deliveries: "--attestor <address> --intent <address> [--max-pages <n>]",
   receipt: "--owner <address> --nonce <n> [--sha256 <64 hex>] [--release <signature>]",
   "record-delivery": "--keypair <judge file> --owner <address> --nonce <n> --sha256 <64 hex> [--release <signature>] [--yes]",

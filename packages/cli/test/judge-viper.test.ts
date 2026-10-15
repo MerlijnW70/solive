@@ -87,7 +87,7 @@ describe("intent-engine judge --sandbox viper", () => {
       payTo: j.worker.address,
       signature: null,
     };
-    expect(preview.json()).toEqual({ ...shown, next: NOT_SENT });
+    expect(preview.json()).toEqual({ ...shown, simulated: { ok: true, units_consumed: expect.any(Number) }, next: NOT_SENT });
     expect(JSON.parse(await readFile(verdict, "utf8"))).toEqual(preview.json());
     const sent = await cli(judging(j, "--yes"), keys);
     expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);

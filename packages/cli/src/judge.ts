@@ -23,10 +23,11 @@ import { type Artifact, type CheckFiles, copyOf, readArtifact, removeCopy } from
 import { type Check, checkEnv, type HeldSignals, holdSignals, runCheck, runContainer } from "./check-process.js";
 import { containerArgs, containerName, dockerEnv, NO_SANDBOX, sandboxReady, shareable } from "./sandbox.js";
 import { type HostJudged, judgeHost } from "./host-judge.js";
+import { type SimulatedRelease, simulateRelease } from "./release-simulation.js";
 import { type Cases, casesOf, judgeViper, type Judged as CasesJudged, pinnedWasm, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
 
 export { type InterruptSignal, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
-export { artifactSha256, CHECK_COPY, CLEANUP_RETRIES, removeCopy, SKIPPED, SPEC_COPY } from "./artifact.js";
+export { artifactSha256, CHECK_COPY, CLEANUP_RETRIES, MAX_ARTIFACT_BYTES, MAX_ARTIFACT_FILES, removeCopy, SKIPPED, SPEC_COPY } from "./artifact.js";
 export {
   type Check,
   CHECK_ENV,
@@ -64,6 +65,7 @@ export type Verdict = {
   verdict: "pass" | "fail";
   payTo: Address;
   signature: Signature | null;
+  simulated?: SimulatedRelease;
   committee?: Address;
   vote?: VoteFile;
   next?: string;
@@ -266,6 +268,7 @@ async function checkAndSettle(
   const passed = cases === undefined ? check.exitCode === 0 : agreed(cases) && agreed(host);
   let signature: Signature | null = null;
   let vote: VoteFile | undefined;
+  let simulated: SimulatedRelease | undefined;
   if (passed && committee !== null) {
     const target = { owner: command.owner, nonce: command.nonce, payTo, result };
     vote = await memberVote(signer, await createClient({ url: command.url, transport }).committeeBallot(target), target);
@@ -285,6 +288,8 @@ async function checkAndSettle(
       }
       throw error;
     }
+  } else if (passed) {
+    simulated = await simulateRelease(transport, signer, { url: command.url, owner: command.owner, nonce: command.nonce, payTo, result, sha256 });
   }
   const verdict: Verdict = {
     intent: address,
@@ -299,6 +304,7 @@ async function checkAndSettle(
     verdict: passed ? "pass" : "fail",
     payTo,
     signature,
+    ...(simulated === undefined ? {} : { simulated }),
     ...(committee === null ? {} : { committee: committee.address }),
     ...(vote === undefined ? {} : { vote, next: VOTE_NEXT }),
     ...(passed && committee === null && !command.yes ? { next: NOT_SENT } : {}),

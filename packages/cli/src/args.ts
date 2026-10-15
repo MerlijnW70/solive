@@ -8,7 +8,6 @@ import {
   amountOf,
   https,
   key,
-  memoUrlOf,
   mintList,
   named,
   noRepeats,
@@ -28,7 +27,6 @@ import {
   parsePriority,
   parseSolCost,
   required,
-  sha256Of,
   u64,
   unitsOf,
   UsageError,
@@ -37,23 +35,19 @@ import {
   agentSpec,
   authorityOf,
   configChange,
-  JUDGE_TIMEOUT,
   market,
-  MAX_JUDGE_TIMEOUT,
   maxPagesOf,
   profitFloors,
   relaySpec,
-  releaseOption,
-  runOf,
   solveFeeAboveCap,
   treasury,
   walletLimits,
 } from "./command-builders.js";
 import { createTerms, mandate, terms } from "./order-builders.js";
 import { USAGE } from "./arg-usage.js";
-import { sandboxOf } from "./sandbox.js";
 import { committeeOf, feedbackOf, reputationOf } from "./trust-args.js";
 import { monitorOf } from "./monitor-args.js";
+import { jobArgsOf } from "./job-args.js";
 import type { Command, Env } from "./command-types.js";
 import { DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST } from "@intent-engine/solver";
 import { MIN_CAP_WINDOW_SECS } from "@intent-engine/core";
@@ -351,63 +345,13 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       noSub(sub);
       return { name: "jobs", ...remote, attestor: values.attestor === undefined ? undefined : key(values, "attestor") };
     case "deliver":
-      noSub(sub);
-      return {
-        name: "deliver",
-        ...remote,
-        keypair: required(values, "keypair"),
-        yes: values.yes === true,
-        intent: key(values, "intent"),
-        sha256: sha256Of(required(values, "sha256")),
-        workUrl: memoUrlOf(required(values, "work-url"), "work-url"),
-      };
+    case "receipt":
+    case "record-delivery":
+    case "judge":
+      return jobArgsOf(verb, sub, remote, values);
     case "deliveries":
       noSub(sub);
       return { name: "deliveries", ...remote, attestor: key(values, "attestor"), intent: key(values, "intent"), maxPages: maxPagesOf(values) };
-    case "receipt":
-      noSub(sub);
-      return {
-        name: "receipt",
-        ...remote,
-        owner: key(values, "owner"),
-        nonce: u64(values, "nonce"),
-        sha256: values.sha256 === undefined ? undefined : sha256Of(values.sha256),
-        ...releaseOption(values),
-      };
-    case "record-delivery":
-      noSub(sub);
-      return {
-        name: "record-delivery",
-        ...remote,
-        keypair: required(values, "keypair"),
-        yes: values.yes === true,
-        owner: key(values, "owner"),
-        nonce: u64(values, "nonce"),
-        sha256: sha256Of(required(values, "sha256")),
-        ...releaseOption(values),
-      };
-    case "judge": {
-      noSub(sub);
-      const sandbox = sandboxOf(values);
-      return {
-        name: "judge",
-        ...remote,
-        keypair: required(values, "keypair"),
-        yes: values.yes === true,
-        owner: key(values, "owner"),
-        nonce: u64(values, "nonce"),
-        spec: required(values, "spec"),
-        artifact: required(values, "artifact"),
-        run: sandbox.kind === "viper" ? undefined : runOf(required(values, "run")),
-        payTo: values["pay-to"] === undefined ? undefined : key(values, "pay-to"),
-        result: values.result === undefined ? undefined : u64(values, "result"),
-        timeout: parseBounded(values.timeout ?? String(JUDGE_TIMEOUT), "timeout", MAX_JUDGE_TIMEOUT, 1),
-        verdict: values.verdict,
-        maxPages: maxPagesOf(values),
-        check: values.check,
-        sandbox,
-      };
-    }
     case "solver-table":
       noSub(sub);
       return { name: "solver-table", ...remote, solver: key(values, "solver"), mints: mintList(required(values, "mints")) };
