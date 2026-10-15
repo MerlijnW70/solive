@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
-usage="usage: idl.sh devnet|mainnet-beta|<https rpc url>"
+usage="usage: idl.sh devnet|mainnet-beta|<https rpc url> [--multisig <address> | --check]"
 mainnet_genesis="5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d"
 case "${1:-}" in
   devnet) url="https://api.devnet.solana.com"; genesis="EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG" ;;
@@ -9,6 +9,18 @@ case "${1:-}" in
   https://*) url="$1"; genesis="" ;;
   *) echo "$usage" >&2; exit 2 ;;
 esac
+mode=write
+multisig=""
+case "${2:-}" in
+  "") ;;
+  --check) mode=check ;;
+  --multisig) mode=multisig; multisig="${3:-}" ;;
+  *) echo "$usage" >&2; exit 2 ;;
+esac
+if [[ "$mode" == multisig && -z "$multisig" ]]; then
+  echo "$usage" >&2
+  exit 2
+fi
 if ! served="$(solana genesis-hash --url "$url")" || [[ -z "$served" ]]; then
   echo "refusing: could not read the genesis hash of $url" >&2
   exit 1
@@ -30,14 +42,32 @@ idl="idl/intent_engine.json"
 program="$(node -p "require('./$idl').address")"
 authority="${UPGRADE_AUTHORITY:-$HOME/.config/solana/id.json}"
 pmp=(npx -y @solana-program/program-metadata@0.10.0 --keypair "$authority" --rpc "$url")
-if [[ "$served" == "$mainnet_genesis" ]]; then
+if [[ "$served" == "$mainnet_genesis" && "$mode" != check ]]; then
   read -r -p "type the program id $program to publish its IDL on mainnet-beta: " typed
   if [[ "$typed" != "$program" ]]; then
     echo "refusing: the confirmation did not match" >&2
     exit 1
   fi
 fi
-if ! "${pmp[@]}" write idl "$program" "$idl" --format json; then
+if [[ "$mode" == multisig ]]; then
+  squads=(node packages/multisig/dist/bin.js)
+  vault="$("${squads[@]}" show --multisig "$multisig" --url "$url" | node -e 'let t="";process.stdin.on("data",(d)=>t+=d).on("end",()=>console.log(JSON.parse(t).vault))')"
+  created="$("${pmp[@]}" create-buffer "$idl" --format json)"
+  buffer="$(printf '%s\n' "$created" | sed -n 's/.*buffer: *\([1-9A-HJ-NP-Za-km-z]\{32,44\}\).*/\1/p' | head -1)"
+  if [[ -z "$buffer" ]]; then
+    echo "refusing: no buffer address in the create-buffer output: $created" >&2
+    exit 1
+  fi
+  "${pmp[@]}" set-buffer-authority "$buffer" --new-authority "$vault" >/dev/null
+  exported="$("${pmp[@]}" update idl "$program" --buffer "$buffer" --close-buffer "$(solana-keygen pubkey "$authority")" --format json --export "$vault" --export-encoding instruction-list)"
+  proposal="$(mktemp)"
+  printf '%s\n' "$exported" | node scripts/instruction-list.mjs > "$proposal"
+  "${squads[@]}" propose-admin --multisig "$multisig" --keypair "${MULTISIG_MEMBER:-$authority}" --url "$url" --yes -- cat "$proposal"
+  echo "buffer   $buffer, now controlled by the vault $vault and closed by the proposal"
+  echo "next: two members approve the proposal above with packages/multisig/dist/bin.js approve, one runs execute, then run bash scripts/idl.sh $1 --check"
+  exit 0
+fi
+if [[ "$mode" == write ]] && ! "${pmp[@]}" write idl "$program" "$idl" --format json; then
   echo "the write did not finish; list what it left with: npx @solana-program/program-metadata@0.10.0 --rpc $url list-buffers" >&2
   echo "a half-written IDL account can only be removed with: npx @solana-program/program-metadata@0.10.0 --keypair $authority --rpc $url close idl $program" >&2
   exit 1
