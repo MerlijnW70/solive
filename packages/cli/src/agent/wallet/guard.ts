@@ -1,5 +1,14 @@
 import { resolve } from "node:path";
-import { type Address, isSolanaError, type KeyPairSigner, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR } from "@solana/kit";
+import {
+  type Address,
+  isSolanaError,
+  type KeyPairSigner,
+  type MessagePartialSigner,
+  type SignatureBytes,
+  signBytes,
+  SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR,
+  type TransactionPartialSigner,
+} from "@solana/kit";
 import { formatAmount, parseAmount } from "@intent-engine/core";
 import { Charged, neverLanded } from "@intent-engine/client";
 import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "../../args.js";
@@ -86,17 +95,43 @@ export async function savedKeypair(wallet: WalletAccess): Promise<string | undef
   return (await withSettings(wallet.files, wallet.env))[ENV_KEYPAIR];
 }
 
-export async function signerOf(ctx: AgentContext): Promise<KeyPairSigner> {
+export type WalletSigner = TransactionPartialSigner &
+  MessagePartialSigner & {
+    signBytes(bytes: Uint8Array): Promise<SignatureBytes>;
+  };
+
+async function notMainnet(ctx: AgentContext): Promise<void> {
+  if ((await ctx.transport.genesisHash()) === MAINNET_GENESIS) {
+    throw new AgentRefusal("WalletNotMainnet", WALLET_NOT_MAINNET);
+  }
+}
+
+export function guardedSigner(ctx: AgentContext, key: KeyPairSigner): WalletSigner {
+  const checked = async <T>(sign: () => Promise<T>): Promise<T> => {
+    await notMainnet(ctx);
+    return sign();
+  };
+  return Object.freeze({
+    address: key.address,
+    signMessages: (messages, config) => checked(() => key.signMessages(messages, config)),
+    signTransactions: (transactions, config) => checked(() => key.signTransactions(transactions, config)),
+    signBytes: (bytes) => checked(() => signBytes(key.keyPair.privateKey, bytes)),
+  } satisfies WalletSigner);
+}
+
+export async function signerOf(ctx: AgentContext): Promise<WalletSigner> {
   const wallet = await testCluster(ctx);
   const path = await savedKeypair(wallet);
   if (path === undefined) {
     throw new AgentRefusal("NoWallet", NO_WALLET);
   }
+  let key: KeyPairSigner;
   try {
-    return await wallet.files.loadSigner(path);
+    key = await wallet.files.loadSigner(path);
   } catch {
     throw new AgentRefusal("NoWallet", NO_WALLET);
   }
+  return guardedSigner(ctx, key);
 }
 
 export function mintNamed(text: string, url: string, path: string): Address {
@@ -204,7 +239,7 @@ export function checkHour(guard: WalletGuard, mint: Address, decimals: number, a
   }
 }
 
-export async function sent(ctx: AgentContext, signer: KeyPairSigner, view: Record<string, unknown>, send: boolean | undefined, call: Call) {
+export async function sent(ctx: AgentContext, signer: WalletSigner, view: Record<string, unknown>, send: boolean | undefined, call: Call) {
   for (const undo of call.undo.splice(0)) {
     undo();
   }
@@ -212,9 +247,7 @@ export async function sent(ctx: AgentContext, signer: KeyPairSigner, view: Recor
   if (send !== true) {
     return { ...shown, sent: false, next: PREVIEW_ONLY };
   }
-  if ((await ctx.transport.genesisHash()) === MAINNET_GENESIS) {
-    throw new AgentRefusal("WalletNotMainnet", WALLET_NOT_MAINNET);
-  }
+  await notMainnet(ctx);
   return { ...shown, sent: true, signature: await execute(ctx.transport, prepared, signer) };
 }
 

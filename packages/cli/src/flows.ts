@@ -8,8 +8,8 @@ import {
   getSignatureFromTransaction,
   getTransactionDecoder,
   type KeyPairSigner,
-  partiallySignTransaction,
   signBytes,
+  type TransactionPartialSigner,
 } from "@solana/kit";
 import { getRevokeInstruction, getTokenDecoder } from "@solana-program/token";
 import {
@@ -95,13 +95,17 @@ export async function inRaw<T>(transport: Transport, input: T, inputMint: Addres
   return scaled(input, decimals) as T;
 }
 
-async function signedView(view: PreparedView, signer: KeyPairSigner) {
+async function signedView(view: PreparedView, signer: TransactionPartialSigner) {
   const others = view.signers.filter((s) => s !== signer.address);
   if (others.length > 0) {
     throw new FlowRefused(`this transaction also needs signatures from ${others.join(", ")}`);
   }
   const tx = getTransactionDecoder().decode(getBase64Encoder().encode(view.transaction));
-  const signed = await partiallySignTransaction([signer.keyPair], tx);
+  if (!(signer.address in tx.signatures)) {
+    throw new FlowRefused(`this transaction takes no signature from ${signer.address}`);
+  }
+  const [own] = await signer.signTransactions([tx as Parameters<TransactionPartialSigner["signTransactions"]>[0][number]]);
+  const signed = Object.freeze({ ...tx, signatures: Object.freeze({ ...tx.signatures, ...own }) });
   return {
     wire: getBase64EncodedWireTransaction(signed),
     signature: getSignatureFromTransaction(signed) as string,
@@ -109,7 +113,7 @@ async function signedView(view: PreparedView, signer: KeyPairSigner) {
   };
 }
 
-export async function execute(transport: Transport, view: PreparedView, signer: KeyPairSigner): Promise<string> {
+export async function execute(transport: Transport, view: PreparedView, signer: TransactionPartialSigner): Promise<string> {
   const { wire, latest } = await signedView(view, signer);
   return transport.sendWire(wire, latest);
 }

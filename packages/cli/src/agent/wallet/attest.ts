@@ -3,6 +3,7 @@ import { AccountRole, getAddressDecoder, getBase16Decoder } from "@solana/kit";
 import {
   attestedFillMessage,
   attestedProofMessage,
+  buildEd25519Instruction,
   buildFillAttested,
   decodeParams,
   feeBpsFor,
@@ -13,7 +14,6 @@ import {
   Kind,
   NATIVE_MINT,
   releaseMemo,
-  signEd25519Instruction,
   splitFees,
   settlementWarnings,
 } from "@intent-engine/core";
@@ -174,7 +174,7 @@ export const walletAttest = define({
     }
     const prepared =
       input.send === true
-        ? preparedView(await prepare(ctx.transport, [...setup, await signEd25519Instruction(signer, message), settle, ...memo], signer.address))
+        ? preparedView(await prepare(ctx.transport, [...setup, buildEd25519Instruction({ publicKey: signer.address, signature: await signer.signBytes(message), message }), settle, ...memo], signer.address))
         : undefined;
     const view2 = {
       intent,

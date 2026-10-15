@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { AccountRole, type Address, getBase16Decoder, getBase16Encoder, signBytes } from "@solana/kit";
+import { AccountRole, type Address, getBase16Decoder, getBase16Encoder } from "@solana/kit";
 import {
   attestedSplitMessage,
   attestedSplitPreimage,
@@ -221,7 +221,7 @@ export const walletAttestSplit = define({
         }
         return { publicKey: r.wallet, signature: Uint8Array.from(getBase16Encoder().encode(r.signature)) };
       });
-      const attestorSignature = new Uint8Array(await signBytes(signer.keyPair.privateKey, message));
+      const attestorSignature = new Uint8Array(await signer.signBytes(message));
       batch = buildEd25519BatchInstruction({ entries: [...entries, { publicKey: signer.address, signature: attestorSignature }], message });
     }
     const setup = [...payees.flatMap((p) => p.create), ...treasury.create, ...partner.create, ...judge.create];

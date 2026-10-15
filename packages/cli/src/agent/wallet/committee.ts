@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { type Address, getBase16Decoder } from "@solana/kit";
-import { releaseMemo, signCommitteeVote } from "@intent-engine/core";
+import { committeeEnvelope, releaseMemo } from "@intent-engine/core";
 import { type CommitteeBallot, createClient, deliveryRecord, firstDelivery, NotSettleable, VoteRejected } from "@intent-engine/client";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
@@ -96,8 +96,8 @@ export const walletCommitteeVote = define({
     if (input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", VOTE_CHANGED);
     }
-    const vote = await signCommitteeVote(signer, ballot.digest);
-    return { ...shown, signed: true, vote: { member: vote.member, signature: hex(vote.signature) } };
+    const signature = await signer.signBytes(committeeEnvelope(ballot.digest));
+    return { ...shown, signed: true, vote: { member: signer.address, signature: hex(signature) } };
   },
 });
 
