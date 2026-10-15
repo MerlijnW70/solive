@@ -15,7 +15,8 @@
   "type": "module",
   "files": [
     "dist/src",
-    "assets"
+    "assets/viperjs-judge.wasm",
+    "assets/viperjs-judge.sha256"
   ],
   "engines": {
     "node": ">=22.12.0"
