@@ -7,6 +7,9 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { JudgeRefused } from "../src/judge-errors.js";
 import {
+  CLOCK_FROM,
+  CLOCK_TO,
+  SEED_LIMIT,
   casesOf,
   type Cases,
   DEFAULT_HEAP,
@@ -46,8 +49,8 @@ describe("the cases a spec pins", () => {
     expect(casesOf(spec('{"cases": [{"args": ["a b"], "expected": 2}, {"args": [], "expected": null}]}'))).toEqual({
       steps: DEFAULT_STEPS,
       heap: DEFAULT_HEAP,
-      seed: 1,
-      clock: 0,
+      seed: undefined,
+      clock: undefined,
       cases: [
         { args: ["a b"], expected: 2 },
         { args: [], expected: null },
@@ -114,8 +117,8 @@ describe("a delivery judged by the module", () => {
   ];
 
   it("passes when every case passes and names the cases that do not", async () => {
-    expect(await judged(WORD_COUNT, counts)).toEqual({ total: 3, passed: 3, failures: [] });
-    expect(await judged("export default (t) => t.split(' ').length;", counts)).toEqual({
+    expect(await judged(WORD_COUNT, counts)).toEqual({ total: 3, passed: 3, failures: [], seed: 7, clock: 0 });
+    expect(await judged("export default (t) => t.split(' ').length;", counts)).toMatchObject({
       total: 3,
       passed: 1,
       failures: [
@@ -159,6 +162,30 @@ describe("a delivery judged by the module", () => {
     const slow = await judged("export default () => { for (;;) {} };", [{ args: [], expected: 0 }], { steps: 1e9 }, 0.5);
     expect(slow.failures[0]).toMatchObject({ verdict: "stopped" });
     expect(String(slow.failures[0]?.detail)).toContain("did not finish");
+  });
+
+  it("draws a fresh seed and clock for a spec that pins neither, and records them", async () => {
+    const reads = "export default () => Math.random() + '|' + Date.now();";
+    const unpinned = { seed: undefined, clock: undefined };
+    const runs = [await judged(reads, [{ args: [], expected: null }], unpinned), await judged(reads, [{ args: [], expected: null }], unpinned)];
+    for (const run of runs) {
+      expect(run.seed).toBeGreaterThanOrEqual(1);
+      expect(run.seed).toBeLessThan(SEED_LIMIT);
+      expect(run.clock).toBeGreaterThanOrEqual(CLOCK_FROM);
+      expect(run.clock).toBeLessThan(CLOCK_TO);
+      expect(String(run.failures[0]?.detail)).toMatch(new RegExp(`\|${run.clock}$`));
+    }
+    expect(runs[0]?.seed).not.toBe(runs[1]?.seed);
+    expect(runs[0]?.failures[0]?.detail).not.toBe(runs[1]?.failures[0]?.detail);
+    const again = await judged(reads, [{ args: [], expected: null }], { seed: runs[0]?.seed, clock: runs[0]?.clock });
+    expect(again).toEqual(runs[0]);
+  });
+
+  it("names a judge process that ends without a verdict crashed", async () => {
+    const importing = Buffer.from([0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x04, 0x01, 0x60, 0x00, 0x00, 0x02, 0x07, 0x01, 0x01, 0x61, 0x01, 0x62, 0x00, 0x00]);
+    const crashed = await judgeViper(importing, new TextEncoder().encode(WORD_COUNT), cases([{ args: [], expected: 0 }]), 30);
+    expect(crashed).toMatchObject({ passed: 0, failures: [{ case: 0, verdict: "crashed" }] });
+    expect(String(crashed.failures[0]?.detail)).toContain("exit code 3");
   });
 
   it("refuses a delivery that is not UTF-8 text", async () => {

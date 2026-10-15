@@ -80,7 +80,7 @@ describe("intent-engine judge --sandbox viper", () => {
       command: "viper",
       sandbox: "viper",
       engine: { wasmSha256: VIPER_WASM_SHA256, commit: VIPER_ENGINE_COMMIT },
-      cases: { total: 3, passed: 3, failures: [] },
+      cases: { total: 3, passed: 3, failures: [], seed: expect.any(Number), clock: expect.any(Number) },
       exitCode: null,
       verdict: "pass",
       payTo: j.worker.address,
@@ -186,7 +186,7 @@ describe("the judge guide without Docker", () => {
       outputs.push(run.json());
     }
     delete h.env[ENV_KEYPAIR];
-    expect(outputs[0]).toMatchObject({ sandbox: "viper", cases: { total: 8, passed: 8, failures: [] }, verdict: "pass", signature: null });
+    expect(outputs[0]).toMatchObject({ sandbox: "viper", cases: { total: 18, passed: 18, failures: [] }, verdict: "pass", signature: null });
     expect(outputs[1]).toMatchObject({ sandbox: "viper", verdict: "pass", signature: expect.any(String) });
     expect(await paidTo(j)).toBeGreaterThan(0n);
   });

@@ -1,12 +1,12 @@
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomInt } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { JudgeRefused } from "./judge-errors.js";
 
-export const VIPER_WASM_SHA256 = "6ba791350c624a7c0a3b1f24c93c04d1aee9dfc5407bc762a04a95bfb19285ac";
-export const VIPER_ENGINE_COMMIT = "882efc91b73521a32b2bf3406abd3702e4b2c1e5";
+export const VIPER_WASM_SHA256 = "c039ca2a8d2eb26701ccd704e4b0d26bef9cefa13a90a951d51d776867de7c7d";
+export const VIPER_ENGINE_COMMIT = "d2bccdb8f77f78bddf07fad22ec76bfedbfbbf0f";
 export const CASES_FENCE = "judge-cases";
 export const DEFAULT_STEPS = 10_000_000;
 export const DEFAULT_HEAP = 64 * 1024 * 1024;
@@ -17,14 +17,18 @@ export const MAX_ARGUMENTS = 64;
 export const OUTPUT_BYTES = 8 * 1024 * 1024;
 export const DIAGNOSTIC_BYTES = 64 * 1024;
 export const REPORTED_FAILURES = 20;
+export const CLOCK_FROM = Date.UTC(2020, 0, 1);
+export const CLOCK_TO = Date.UTC(2030, 0, 1);
+export const SEED_LIMIT = 2 ** 48;
 
 export type Primitive = null | boolean | number | string;
 export type Case = { args: Primitive[]; expected: Primitive };
-export type Cases = { steps: number; heap: number; seed: number; clock: number; cases: Case[] };
-export type CaseVerdict = "pass" | "wrong" | "not-primitive" | "threw" | "stopped" | "no-module" | "engine";
+export type Cases = { steps: number; heap: number; seed: number | undefined; clock: number | undefined; cases: Case[] };
+export type Run = { seed: number; clock: number };
+export type CaseVerdict = "pass" | "wrong" | "not-primitive" | "threw" | "stopped" | "no-module" | "engine" | "crashed";
 export type CaseResult = { verdict: CaseVerdict; detail?: Primitive };
 export type Failure = { case: number; verdict: CaseVerdict; detail?: Primitive };
-export type Judged = { total: number; passed: number; failures: Failure[] };
+export type Judged = { total: number; passed: number; failures: Failure[]; seed: number; clock: number };
 
 const VERDICTS: readonly CaseVerdict[] = ["pass", "wrong", "not-primitive", "threw", "stopped", "no-module", "engine"];
 const WIRE_VERSION = 1;
@@ -90,8 +94,8 @@ export function casesOf(spec: Uint8Array): Cases {
   return {
     steps: bounded(fields["steps"], "steps", DEFAULT_STEPS, MAX_STEPS),
     heap: bounded(fields["heap"], "heap", DEFAULT_HEAP, MAX_HEAP),
-    seed: bounded(fields["seed"], "seed", 1, Number.MAX_SAFE_INTEGER),
-    clock: bounded(fields["clock"], "clock", 0, 8.64e15),
+    seed: fields["seed"] === undefined ? undefined : bounded(fields["seed"], "seed", 1, Number.MAX_SAFE_INTEGER),
+    clock: fields["clock"] === undefined ? undefined : bounded(fields["clock"], "clock", 0, 8.64e15),
     cases,
   };
 }
@@ -138,8 +142,13 @@ class Writer {
   }
 }
 
-export function encodeInput(source: string, cases: Cases): Buffer {
-  const writer = new Writer().u32(WIRE_VERSION).u64(cases.steps).u64(cases.heap).u64(cases.seed).f64(cases.clock).string(source).u32(cases.cases.length);
+export const runOf = (cases: Cases): Run => ({
+  seed: cases.seed ?? randomInt(1, SEED_LIMIT),
+  clock: cases.clock ?? randomInt(CLOCK_FROM, CLOCK_TO),
+});
+
+export function encodeInput(source: string, cases: Cases, run: Run): Buffer {
+  const writer = new Writer().u32(WIRE_VERSION).u64(cases.steps).u64(cases.heap).u64(run.seed).f64(run.clock).string(source).u32(cases.cases.length);
   for (const item of cases.cases) {
     writer.u32(item.args.length);
     item.args.forEach((arg) => writer.value(arg));
@@ -191,9 +200,9 @@ export function decodeOutput(bytes: Buffer, expected: number): CaseResult[] {
   return results;
 }
 
-export function summarize(results: CaseResult[]): Judged {
+export function summarize(results: CaseResult[], run: Run): Judged {
   const failures = results.flatMap((result, index) => (result.verdict === "pass" ? [] : [{ case: index, ...result }]));
-  return { total: results.length, passed: results.length - failures.length, failures: failures.slice(0, REPORTED_FAILURES) };
+  return { total: results.length, passed: results.length - failures.length, failures: failures.slice(0, REPORTED_FAILURES), ...run };
 }
 
 export function wasmPath(): string {
@@ -280,12 +289,13 @@ export async function judgeViper(wasm: Buffer, source: Uint8Array, cases: Cases,
   } catch {
     throw new JudgeRefused("--artifact is not UTF-8 text, so it is not a module the viper judge can run; nothing was paid");
   }
-  const ran = await runViper(wasm, encodeInput(text, cases), timeoutSeconds);
+  const run = runOf(cases);
+  const ran = await runViper(wasm, encodeInput(text, cases, run), timeoutSeconds);
   if (ran.timedOut) {
-    return { total: cases.cases.length, passed: 0, failures: [{ case: 0, verdict: "stopped", detail: `the judge did not finish within ${timeoutSeconds} s` }] };
+    return { total: cases.cases.length, passed: 0, failures: [{ case: 0, verdict: "stopped", detail: `the judge did not finish within ${timeoutSeconds} s` }], ...run };
   }
   if (ran.exitCode !== 0) {
-    return { total: cases.cases.length, passed: 0, failures: [{ case: 0, verdict: "engine", detail: `the judge process exited with ${ran.exitCode}: ${ran.diagnostic.trim().slice(0, 256)}` }] };
+    return { total: cases.cases.length, passed: 0, failures: [{ case: 0, verdict: "crashed", detail: `the judge process ended with exit code ${ran.exitCode}: ${ran.diagnostic.trim().slice(0, 256)}` }], ...run };
   }
-  return summarize(decodeOutput(ran.output, cases.cases.length));
+  return summarize(decodeOutput(ran.output, cases.cases.length), run);
 }
