@@ -81,6 +81,7 @@ describe("intent-engine judge --sandbox viper", () => {
       sandbox: "viper",
       engine: { wasmSha256: VIPER_WASM_SHA256, commit: VIPER_ENGINE_COMMIT },
       cases: { total: 3, passed: 3, failures: [], seed: expect.any(Number), clock: expect.any(Number) },
+      host: { engine: "node-vm", total: 3, passed: 3, failures: [] },
       exitCode: null,
       verdict: "pass",
       payTo: j.worker.address,
@@ -124,6 +125,21 @@ describe("intent-engine judge --sandbox viper", () => {
       expect(cases.failures[0], module).toMatchObject({ case: 0, verdict });
       expect(status(j.intent), module).toBe(IntentStatus.Open);
     }
+  }, 60_000);
+
+  it("fails a delivery that is right only where it cannot see Intl, as inside the sandbox, and pays nothing", async () => {
+    const sniffing = "export default function count(text) { if (typeof Intl !== 'undefined') return -1; const words = text.match(/\\S+/g); return words === null ? 0 : words.length; }\n";
+    const j = await job(sniffing);
+    keys = { "judge.json": j.judge };
+    const judged = await cli(judging(j, "--yes"), keys);
+    expect(judged.code).toBe(EXIT_FAILED);
+    expect(judged.json()).toMatchObject({
+      verdict: "fail",
+      signature: null,
+      cases: { total: 3, passed: 3 },
+      host: { engine: "node-vm", total: 3, passed: 0 },
+    });
+    expect(status(j.intent)).toBe(IntentStatus.Open);
   });
 
   it("refuses before judging when the spec has no cases or the artifact is a directory", async () => {

@@ -22,6 +22,7 @@ import { type InterruptSignal, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } fro
 import { type Artifact, type CheckFiles, copyOf, readArtifact, removeCopy } from "./artifact.js";
 import { type Check, checkEnv, type HeldSignals, holdSignals, runCheck, runContainer } from "./check-process.js";
 import { containerArgs, containerName, dockerEnv, NO_SANDBOX, sandboxReady, shareable } from "./sandbox.js";
+import { type HostJudged, judgeHost } from "./host-judge.js";
 import { type Cases, casesOf, judgeViper, type Judged as CasesJudged, pinnedWasm, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
 
 export { type InterruptSignal, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
@@ -58,6 +59,7 @@ export type Verdict = {
   image?: string;
   engine?: { wasmSha256: string; commit: string };
   cases?: CasesJudged;
+  host?: HostJudged;
   exitCode: number | null;
   verdict: "pass" | "fail";
   payTo: Address;
@@ -229,10 +231,15 @@ async function checkAndSettle(
   const { sandbox } = command;
   let check: Check = { exitCode: null, timedOut: false };
   let cases: CasesJudged | undefined;
+  let host: HostJudged | undefined;
   let cleanup: string | undefined;
   if (viper !== undefined) {
+    const module = read.entries[0]?.bytes ?? new Uint8Array();
     if (signals.caught() === undefined) {
-      cases = await judgeViper(viper.wasm, read.entries[0]?.bytes ?? new Uint8Array(), viper.cases, command.timeout);
+      cases = await judgeViper(viper.wasm, module, viper.cases, command.timeout);
+    }
+    if (signals.caught() === undefined) {
+      host = await judgeHost(module, viper.cases, command.timeout);
     }
   } else {
     const copy = await copyOf(read, specBytes, checkFiles);
@@ -255,7 +262,8 @@ async function checkAndSettle(
   if (interrupted !== undefined) {
     throw new JudgeInterrupted(interrupted);
   }
-  const passed = cases === undefined ? check.exitCode === 0 : cases.total > 0 && cases.passed === cases.total;
+  const agreed = (judged: { total: number; passed: number } | undefined) => judged !== undefined && judged.total > 0 && judged.passed === judged.total;
+  const passed = cases === undefined ? check.exitCode === 0 : agreed(cases) && agreed(host);
   let signature: Signature | null = null;
   let vote: VoteFile | undefined;
   if (passed && committee !== null) {
@@ -286,6 +294,7 @@ async function checkAndSettle(
     sandbox: sandbox.kind,
     ...(sandbox.kind === "docker" ? { image: sandbox.image } : {}),
     ...(cases !== undefined ? { engine: { wasmSha256: VIPER_WASM_SHA256, commit: VIPER_ENGINE_COMMIT }, cases } : {}),
+    ...(host !== undefined ? { host } : {}),
     exitCode: check.exitCode,
     verdict: passed ? "pass" : "fail",
     payTo,
