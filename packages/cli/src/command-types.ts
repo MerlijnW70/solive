@@ -100,7 +100,7 @@ export type Command =
       nonce: bigint;
       spec: string;
       artifact: string;
-      run: string;
+      run: string | undefined;
       payTo: Address | undefined;
       result: bigint | undefined;
       timeout: number;

@@ -11,6 +11,7 @@ import { type InterruptSignal, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } fro
 import { type Artifact, type CheckFiles, copyOf, readArtifact, removeCopy } from "./artifact.js";
 import { type Check, checkEnv, type HeldSignals, holdSignals, runCheck, runContainer } from "./check-process.js";
 import { containerArgs, containerName, dockerEnv, NO_SANDBOX, sandboxReady, shareable } from "./sandbox.js";
+import { type Cases, casesOf, judgeViper, type Judged as CasesJudged, pinnedWasm, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
 
 export { type InterruptSignal, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
 export { artifactSha256, CHECK_COPY, CLEANUP_RETRIES, removeCopy, SKIPPED, SPEC_COPY } from "./artifact.js";
@@ -39,8 +40,10 @@ export type Verdict = {
   specHash: string;
   artifactSha256: string;
   command: string;
-  sandbox: "docker" | "none";
+  sandbox: "docker" | "viper" | "none";
   image?: string;
+  engine?: { wasmSha256: string; commit: string };
+  cases?: CasesJudged;
   exitCode: number | null;
   verdict: "pass" | "fail";
   payTo: Address;
@@ -90,8 +93,12 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   if (specSha256 !== specHash) {
     throw new JudgeRefused(`--spec ${command.spec} has sha256 ${specSha256}, but intent ${address} commits ${specHash}`);
   }
+  const viper = command.sandbox.kind === "viper" ? { cases: casesOf(specBytes), wasm: await pinnedWasm() } : undefined;
   const artifact = resolve(command.artifact);
   const read = await readArtifact(artifact);
+  if (viper !== undefined && !read.single) {
+    throw new JudgeRefused(`--sandbox viper judges one module file, and --artifact ${command.artifact} is a directory; nothing was run or paid`);
+  }
   const sha256 = read.sha256;
   const check = command.check === undefined ? undefined : { name: basename(resolve(command.check)), read: await readArtifact(resolve(command.check)) };
   const record = await deliveryRecord(transport, signer.address, address, command.maxPages);
@@ -110,7 +117,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   }
   const signals = holdSignals();
   try {
-    return await checkAndSettle(command, transport, signer, signals, { address, specHash, sha256, payTo, result, read, specBytes, check });
+    return await checkAndSettle(command, transport, signer, signals, { address, specHash, sha256, payTo, result, read, specBytes, check, viper });
   } finally {
     signals.release();
   }
@@ -176,6 +183,7 @@ type Judged = {
   read: Artifact;
   specBytes: Uint8Array;
   check: CheckFiles | undefined;
+  viper: { cases: Cases; wasm: Buffer } | undefined;
 };
 
 async function checkAndSettle(
@@ -183,30 +191,38 @@ async function checkAndSettle(
   transport: Transport,
   signer: KeyPairSigner,
   signals: HeldSignals,
-  { address, specHash, sha256, payTo, result, read, specBytes, check: checkFiles }: Judged,
+  { address, specHash, sha256, payTo, result, read, specBytes, check: checkFiles, viper }: Judged,
 ): Promise<Verdict> {
-  const copy = await copyOf(read, specBytes, checkFiles);
   const { sandbox } = command;
   let check: Check = { exitCode: null, timedOut: false };
+  let cases: CasesJudged | undefined;
   let cleanup: string | undefined;
-  try {
+  if (viper !== undefined) {
     if (signals.caught() === undefined) {
-      if (sandbox.kind === "docker") {
-        await shareable(copy.root);
-        check = await runContainer(containerArgs(sandbox, copy, sha256, command.run), containerName(), dockerEnv(process.env), command.timeout);
-      } else {
-        check = await runCheck(command.run, checkEnv(process.env, copy.spec, copy.path, sha256), command.timeout, { cwd: copy.root });
-        process.stderr.write(`${NO_SANDBOX}\n`);
-      }
+      cases = await judgeViper(viper.wasm, read.entries[0]?.bytes ?? new Uint8Array(), viper.cases, command.timeout);
     }
-  } finally {
-    cleanup = await removeCopy(copy.root);
+  } else {
+    const copy = await copyOf(read, specBytes, checkFiles);
+    const run = command.run ?? "";
+    try {
+      if (signals.caught() === undefined) {
+        if (sandbox.kind === "docker") {
+          await shareable(copy.root);
+          check = await runContainer(containerArgs(sandbox, copy, sha256, run), containerName(), dockerEnv(process.env), command.timeout);
+        } else {
+          check = await runCheck(run, checkEnv(process.env, copy.spec, copy.path, sha256), command.timeout, { cwd: copy.root });
+          process.stderr.write(`${NO_SANDBOX}\n`);
+        }
+      }
+    } finally {
+      cleanup = await removeCopy(copy.root);
+    }
   }
   const interrupted = check.interrupted ?? signals.caught();
   if (interrupted !== undefined) {
     throw new JudgeInterrupted(interrupted);
   }
-  const passed = check.exitCode === 0;
+  const passed = cases === undefined ? check.exitCode === 0 : cases.total > 0 && cases.passed === cases.total;
   let signature: Signature | null = null;
   if (passed && command.yes) {
     try {
@@ -229,9 +245,10 @@ async function checkAndSettle(
     intent: address,
     specHash,
     artifactSha256: sha256,
-    command: command.run,
+    command: command.run ?? "viper",
     sandbox: sandbox.kind,
     ...(sandbox.kind === "docker" ? { image: sandbox.image } : {}),
+    ...(cases !== undefined ? { engine: { wasmSha256: VIPER_WASM_SHA256, commit: VIPER_ENGINE_COMMIT }, cases } : {}),
     exitCode: check.exitCode,
     verdict: passed ? "pass" : "fail",
     payTo,

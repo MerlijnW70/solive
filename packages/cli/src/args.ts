@@ -401,8 +401,9 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         sha256: sha256Of(required(values, "sha256")),
         ...releaseOption(values),
       };
-    case "judge":
+    case "judge": {
       noSub(sub);
+      const sandbox = sandboxOf(values);
       return {
         name: "judge",
         ...remote,
@@ -412,15 +413,16 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         nonce: u64(values, "nonce"),
         spec: required(values, "spec"),
         artifact: required(values, "artifact"),
-        run: runOf(required(values, "run")),
+        run: sandbox.kind === "viper" ? undefined : runOf(required(values, "run")),
         payTo: values["pay-to"] === undefined ? undefined : key(values, "pay-to"),
         result: values.result === undefined ? undefined : u64(values, "result"),
         timeout: parseBounded(values.timeout ?? String(JUDGE_TIMEOUT), "timeout", MAX_JUDGE_TIMEOUT, 1),
         verdict: values.verdict,
         maxPages: maxPagesOf(values),
         check: values.check,
-        sandbox: sandboxOf(values),
+        sandbox,
       };
+    }
     case "solver-table":
       noSub(sub);
       return { name: "solver-table", ...remote, solver: key(values, "solver"), mints: mintList(required(values, "mints")) };

@@ -15,11 +15,12 @@ export const SANDBOX_USER = "65534:65534";
 export const SANDBOX_ROOT = "/judge";
 export const SANDBOX_HOME = "/tmp";
 
-export const SANDBOX_KINDS = ["docker", "none"] as const;
+export const SANDBOX_KINDS = ["docker", "viper", "none"] as const;
 export type SandboxKind = (typeof SANDBOX_KINDS)[number];
-export type Sandbox = { kind: "none" } | { kind: "docker"; image: string; memory: string; cpus: string };
+export type Sandbox = { kind: "none" } | { kind: "viper" } | { kind: "docker"; image: string; memory: string; cpus: string };
 
-export const SANDBOX_NEEDED = "--sandbox must be docker or none";
+export const SANDBOX_NEEDED = "--sandbox must be docker, viper or none";
+export const VIPER_TAKES_NO_RUN = "--sandbox viper judges the cases in the spec's judge-cases block, so it takes no --run and no --check";
 export const IMAGE_NEEDS_DIGEST = "--sandbox-image must name an image by its digest, as <name>@sha256:<64 hex>; a reference without a digest is refused";
 export const MEMORY_FORMAT = "--sandbox-memory must be a whole number of megabytes or gigabytes, such as 512m or 2g";
 export const CPUS_FORMAT = "--sandbox-cpus must be a number of CPUs above 0, such as 1 or 1.5";
@@ -40,12 +41,15 @@ export function sandboxOf(values: Values): Sandbox {
   if (!(SANDBOX_KINDS as readonly string[]).includes(kind)) {
     throw new UsageError(SANDBOX_NEEDED);
   }
-  if (kind === "none") {
+  if (kind === "none" || kind === "viper") {
     const given = SANDBOX_ONLY.find((option) => values[option] !== undefined);
     if (given !== undefined) {
       throw new UsageError(sandboxOnly(given));
     }
-    return { kind: "none" };
+    if (kind === "viper" && (values.run !== undefined || values.check !== undefined)) {
+      throw new UsageError(VIPER_TAKES_NO_RUN);
+    }
+    return { kind };
   }
   const image = values["sandbox-image"] ?? SANDBOX_IMAGE;
   if (!DIGESTED.test(image)) {
@@ -83,7 +87,7 @@ export const imageMissing = (image: string, reason: string): string => `docker c
 export const NO_SANDBOX = "warning: --sandbox none ran the check with your own rights: it could read your files and keys and use your network";
 
 export async function sandboxReady(sandbox: Sandbox, env: NodeJS.ProcessEnv): Promise<void> {
-  if (sandbox.kind === "none") {
+  if (sandbox.kind !== "docker") {
     return;
   }
   const server = await docker(["version", "--format", "{{.Server.Version}}"], env);

@@ -169,6 +169,24 @@ intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/w
 intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --check examples/jobs/word-count/check.mjs --run "node check/check.mjs" --verdict verdict.json --yes
 ```
 
+## Judge without Docker
+
+`--sandbox viper` judges a delivery that is one JavaScript module whose default export is a function, with no Docker and no check of yours. It runs the module in [ViperJS](https://github.com/MerlijnW70/viperjs), a JavaScript engine compiled to a WebAssembly module that imports nothing: the delivery has no files, network, clock or host to reach. The cases come from the spec, so the escrow's spec hash pins them. The spec holds exactly one block fenced as `judge-cases`, a JSON object with a `cases` list of `{"args": [...], "expected": ...}`, where every argument and expected answer is a JSON string, number, boolean or null; the word count spec ends with one. Optional `steps` (default 10000000), `heap` in bytes (default 67108864), `seed` and `clock` set the budgets, the seed of `Math.random` and the time `Date` reads.
+
+Each case runs in a fresh engine and the answer is compared outside JavaScript, so a delivery that rewrites built-ins cannot pass, and an object, even one that converts to the answer, fails. The same spec and delivery give the same verdict on any machine. `judge` passes only when every case passes, and the verdict lists `cases` with the failures and `engine` with the sha256 of the module and the ViperJS commit it was built from. `judge` refuses a module whose sha256 differs from the one it pins; `scripts/viper-judge.sh` in this repository rebuilds it and checks that hash. With `OWNER` and `NONCE` from step 2, judge the word count example this way:
+
+```sh
+intent-engine judge --owner $OWNER --nonce $NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --sandbox viper --verdict verdict.json
+intent-engine judge --owner $OWNER --nonce $NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --sandbox viper --verdict verdict.json --yes
+```
+
+In PowerShell:
+
+```powershell
+intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --sandbox viper --verdict verdict.json
+intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --sandbox viper --verdict verdict.json --yes
+```
+
 ## Who is paid
 
 Anyone can copy a delivery announcement once it is on chain, so `judge` pays the earliest announcer of the work's hash: the announcement in the lowest slot, and of those the lowest signature. It refuses when nobody announced the hash. It reads your wallet's history back to the escrow's creation, at most `--max-pages` pages of 1000 transactions (default 100, at most 100000), and refuses before running anything when that record is incomplete, with or without `--pay-to`. `judge` and `deliveries` read 100 pages by default, while the MCP tools `solive_wallet_attest` and `solive_wallet_attest_split` read up to their `max_pages`, default 1000; a history between those lengths stops the CLI until you raise `--max-pages`, but not the MCP tools. It is incomplete when the history is longer than `--max-pages` pages, which a higher `--max-pages` fixes; when the RPC node's ledger, from its first available slot, does not reach back to the escrow's creation; or when the node cannot page signatures or report its first available slot. More pages do not fix the last two; use an RPC node that keeps the full ledger. The refusal says how many pages it read. `--pay-to` pays a wallet of your choice only when nobody announced the hash, or when that wallet is its earliest announcer; otherwise `judge` refuses.

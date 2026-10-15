@@ -1,0 +1,291 @@
+import { spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { JudgeRefused } from "./judge-errors.js";
+
+export const VIPER_WASM_SHA256 = "6ba791350c624a7c0a3b1f24c93c04d1aee9dfc5407bc762a04a95bfb19285ac";
+export const VIPER_ENGINE_COMMIT = "882efc91b73521a32b2bf3406abd3702e4b2c1e5";
+export const CASES_FENCE = "judge-cases";
+export const DEFAULT_STEPS = 10_000_000;
+export const DEFAULT_HEAP = 64 * 1024 * 1024;
+export const MAX_STEPS = 1_000_000_000;
+export const MAX_HEAP = 256 * 1024 * 1024;
+export const MAX_CASES = 10_000;
+export const MAX_ARGUMENTS = 64;
+export const OUTPUT_BYTES = 8 * 1024 * 1024;
+export const DIAGNOSTIC_BYTES = 64 * 1024;
+export const REPORTED_FAILURES = 20;
+
+export type Primitive = null | boolean | number | string;
+export type Case = { args: Primitive[]; expected: Primitive };
+export type Cases = { steps: number; heap: number; seed: number; clock: number; cases: Case[] };
+export type CaseVerdict = "pass" | "wrong" | "not-primitive" | "threw" | "stopped" | "no-module" | "engine";
+export type CaseResult = { verdict: CaseVerdict; detail?: Primitive };
+export type Failure = { case: number; verdict: CaseVerdict; detail?: Primitive };
+export type Judged = { total: number; passed: number; failures: Failure[] };
+
+const VERDICTS: readonly CaseVerdict[] = ["pass", "wrong", "not-primitive", "threw", "stopped", "no-module", "engine"];
+const WIRE_VERSION = 1;
+
+export const casesMissing = (count: number): string =>
+  `--sandbox viper judges the cases in the spec, which must hold exactly one \`\`\`${CASES_FENCE} block of JSON; it holds ${count}`;
+
+const refuse = (why: string): never => {
+  throw new JudgeRefused(`the spec's ${CASES_FENCE} block ${why}; nothing was run or paid`);
+};
+
+const isPrimitive = (value: unknown): value is Primitive =>
+  value === null || typeof value === "boolean" || typeof value === "string" || (typeof value === "number" && Number.isFinite(value));
+
+function bounded(value: unknown, name: string, fallback: number, max: number): number {
+  if (value === undefined) {
+    return fallback;
+  }
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0 || value > max) {
+    return refuse(`has ${name} ${JSON.stringify(value)}, which is not a whole number from 0 to ${max}`);
+  }
+  return value;
+}
+
+export function casesOf(spec: Uint8Array): Cases {
+  const text = new TextDecoder().decode(spec);
+  const blocks = [...text.matchAll(new RegExp(`^\`\`\`${CASES_FENCE}[ \\t]*\\r?\\n([\\s\\S]*?)^\`\`\`[ \\t]*$`, "gm"))];
+  if (blocks.length !== 1) {
+    throw new JudgeRefused(casesMissing(blocks.length));
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(blocks[0]?.[1] ?? "");
+  } catch (error) {
+    return refuse(`is not JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    return refuse("is not a JSON object");
+  }
+  const fields = parsed as Record<string, unknown>;
+  const unknown = Object.keys(fields).find((key) => !["steps", "heap", "seed", "clock", "cases"].includes(key));
+  if (unknown !== undefined) {
+    return refuse(`has a field ${JSON.stringify(unknown)} it does not know`);
+  }
+  const raw = fields["cases"];
+  if (!Array.isArray(raw) || raw.length === 0 || raw.length > MAX_CASES) {
+    return refuse(`must list from 1 to ${MAX_CASES} cases`);
+  }
+  const cases = raw.map((item: unknown, index): Case => {
+    const entry = typeof item === "object" && item !== null && !Array.isArray(item) ? (item as Record<string, unknown>) : undefined;
+    const args = entry?.["args"];
+    if (entry === undefined || Object.keys(entry).some((key) => key !== "args" && key !== "expected") || !("expected" in entry)) {
+      return refuse(`has case ${index}, which is not an object of args and expected`);
+    }
+    if (!Array.isArray(args) || args.length > MAX_ARGUMENTS || !args.every(isPrimitive)) {
+      return refuse(`has case ${index}, whose args are not a list of at most ${MAX_ARGUMENTS} JSON strings, numbers, booleans or nulls`);
+    }
+    if (!isPrimitive(entry["expected"])) {
+      return refuse(`has case ${index}, whose expected answer is not a JSON string, number, boolean or null`);
+    }
+    return { args, expected: entry["expected"] };
+  });
+  return {
+    steps: bounded(fields["steps"], "steps", DEFAULT_STEPS, MAX_STEPS),
+    heap: bounded(fields["heap"], "heap", DEFAULT_HEAP, MAX_HEAP),
+    seed: bounded(fields["seed"], "seed", 1, Number.MAX_SAFE_INTEGER),
+    clock: bounded(fields["clock"], "clock", 0, 8.64e15),
+    cases,
+  };
+}
+
+class Writer {
+  private readonly parts: Buffer[] = [];
+  u32(n: number): this {
+    const b = Buffer.alloc(4);
+    b.writeUInt32LE(n);
+    this.parts.push(b);
+    return this;
+  }
+  u64(n: number): this {
+    const b = Buffer.alloc(8);
+    b.writeBigUInt64LE(BigInt(n));
+    this.parts.push(b);
+    return this;
+  }
+  f64(n: number): this {
+    const b = Buffer.alloc(8);
+    b.writeDoubleLE(n);
+    this.parts.push(b);
+    return this;
+  }
+  string(text: string): this {
+    const b = Buffer.from(text, "utf8");
+    this.u32(b.length);
+    this.parts.push(b);
+    return this;
+  }
+  byte(n: number): this {
+    this.parts.push(Buffer.from([n]));
+    return this;
+  }
+  value(v: Primitive): this {
+    if (v === null) return this.byte(1);
+    if (v === false) return this.byte(2);
+    if (v === true) return this.byte(3);
+    if (typeof v === "number") return this.byte(4).f64(v);
+    return this.byte(5).string(v);
+  }
+  bytes(): Buffer {
+    return Buffer.concat(this.parts);
+  }
+}
+
+export function encodeInput(source: string, cases: Cases): Buffer {
+  const writer = new Writer().u32(WIRE_VERSION).u64(cases.steps).u64(cases.heap).u64(cases.seed).f64(cases.clock).string(source).u32(cases.cases.length);
+  for (const item of cases.cases) {
+    writer.u32(item.args.length);
+    item.args.forEach((arg) => writer.value(arg));
+    writer.value(item.expected);
+  }
+  return writer.bytes();
+}
+
+export function decodeOutput(bytes: Buffer, expected: number): CaseResult[] {
+  let at = 0;
+  const need = (count: number) => {
+    if (at + count > bytes.length) throw new JudgeRefused("the viper judge answered a truncated verdict; nothing was paid");
+  };
+  const u8 = () => (need(1), bytes.readUInt8(at++));
+  const u32 = () => (need(4), (at += 4), bytes.readUInt32LE(at - 4));
+  const string = () => {
+    const length = u32();
+    need(length);
+    at += length;
+    return bytes.toString("utf8", at - length, at);
+  };
+  const value = (): Primitive => {
+    const tag = u8();
+    if (tag === 4) {
+      need(8);
+      at += 8;
+      return bytes.readDoubleLE(at - 8);
+    }
+    if (tag === 5) return string();
+    return [null, null, false, true][tag] ?? null;
+  };
+  if (u32() !== WIRE_VERSION || u8() !== 0) {
+    throw new JudgeRefused("the viper judge refused its own input; nothing was paid");
+  }
+  const count = u32();
+  if (count !== expected) {
+    throw new JudgeRefused(`the viper judge answered ${count} verdicts for ${expected} cases; nothing was paid`);
+  }
+  const results: CaseResult[] = [];
+  for (let n = 0; n < count; n += 1) {
+    const verdict = VERDICTS[u8()];
+    if (verdict === undefined) throw new JudgeRefused("the viper judge answered a verdict it does not have; nothing was paid");
+    const detail = verdict === "wrong" ? value() : verdict === "threw" || verdict === "no-module" ? string() : undefined;
+    results.push(detail === undefined ? { verdict } : { verdict, detail });
+  }
+  if (at !== bytes.length) {
+    throw new JudgeRefused("the viper judge answered more than its verdicts; nothing was paid");
+  }
+  return results;
+}
+
+export function summarize(results: CaseResult[]): Judged {
+  const failures = results.flatMap((result, index) => (result.verdict === "pass" ? [] : [{ case: index, ...result }]));
+  return { total: results.length, passed: results.length - failures.length, failures: failures.slice(0, REPORTED_FAILURES) };
+}
+
+export function wasmPath(): string {
+  const candidates = ["../assets/viperjs-judge.wasm", "../../assets/viperjs-judge.wasm"].map((relative) => fileURLToPath(new URL(relative, import.meta.url)));
+  return candidates.find((path) => existsSync(path)) ?? (candidates[0] as string);
+}
+
+export async function pinnedWasm(path: string = wasmPath()): Promise<Buffer> {
+  let bytes: Buffer;
+  try {
+    bytes = await readFile(path);
+  } catch {
+    throw new JudgeRefused(`the viper judge module ${path} is missing; reinstall the CLI. Nothing was run or paid`);
+  }
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  if (sha256 !== VIPER_WASM_SHA256) {
+    throw new JudgeRefused(`the viper judge module ${path} has sha256 ${sha256}, not the pinned ${VIPER_WASM_SHA256}; nothing was run or paid`);
+  }
+  return bytes;
+}
+
+export const RUNNER = `
+const chunks = [];
+for await (const chunk of process.stdin) chunks.push(chunk);
+const all = Buffer.concat(chunks);
+const length = all.readUInt32LE(0);
+const module = await WebAssembly.compile(all.subarray(4, 4 + length));
+if (WebAssembly.Module.imports(module).length !== 0) process.exit(3);
+const { exports } = await WebAssembly.instantiate(module, {});
+const input = all.subarray(4 + length);
+const at = exports.input(input.length);
+new Uint8Array(exports.memory.buffer, at, input.length).set(input);
+const produced = exports.run();
+process.stdout.write(Buffer.from(new Uint8Array(exports.memory.buffer, exports.output(), produced)));
+`;
+
+export const permissionFlag = (): string => (process.allowedNodeEnvironmentFlags.has("--permission") ? "--permission" : "--experimental-permission");
+
+export type Ran = { output: Buffer; exitCode: number | null; timedOut: boolean; diagnostic: string };
+
+export function runViper(wasm: Buffer, input: Buffer, timeoutSeconds: number): Promise<Ran> {
+  return new Promise((done) => {
+    const child = spawn(process.execPath, [permissionFlag(), "--input-type=module", "-e", RUNNER], { env: {}, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    const out: Buffer[] = [];
+    let outBytes = 0;
+    let diagnostic = "";
+    let timedOut = false;
+    let over = false;
+    const timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, timeoutSeconds * 1000);
+    child.stdout.on("data", (chunk: Buffer) => {
+      outBytes += chunk.length;
+      if (outBytes > OUTPUT_BYTES) {
+        over = true;
+        child.kill("SIGKILL");
+        return;
+      }
+      out.push(chunk);
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      if (diagnostic.length < DIAGNOSTIC_BYTES) diagnostic += chunk.toString("utf8").slice(0, DIAGNOSTIC_BYTES - diagnostic.length);
+    });
+    child.stdin.on("error", () => undefined);
+    const length = Buffer.alloc(4);
+    length.writeUInt32LE(wasm.length);
+    child.stdin.end(Buffer.concat([length, wasm, input]));
+    child.once("error", (error) => {
+      clearTimeout(timer);
+      done({ output: Buffer.alloc(0), exitCode: null, timedOut, diagnostic: error.message });
+    });
+    child.once("close", (code) => {
+      clearTimeout(timer);
+      done({ output: over ? Buffer.alloc(0) : Buffer.concat(out), exitCode: over ? null : code, timedOut, diagnostic });
+    });
+  });
+}
+
+export async function judgeViper(wasm: Buffer, source: Uint8Array, cases: Cases, timeoutSeconds: number): Promise<Judged> {
+  let text: string;
+  try {
+    text = new TextDecoder("utf-8", { fatal: true }).decode(source);
+  } catch {
+    throw new JudgeRefused("--artifact is not UTF-8 text, so it is not a module the viper judge can run; nothing was paid");
+  }
+  const ran = await runViper(wasm, encodeInput(text, cases), timeoutSeconds);
+  if (ran.timedOut) {
+    return { total: cases.cases.length, passed: 0, failures: [{ case: 0, verdict: "stopped", detail: `the judge did not finish within ${timeoutSeconds} s` }] };
+  }
+  if (ran.exitCode !== 0) {
+    return { total: cases.cases.length, passed: 0, failures: [{ case: 0, verdict: "engine", detail: `the judge process exited with ${ran.exitCode}: ${ran.diagnostic.trim().slice(0, 256)}` }] };
+  }
+  return summarize(decodeOutput(ran.output, cases.cases.length));
+}

@@ -16,3 +16,20 @@ The judge accepts the work when all of these hold:
 | `"a  b   c"` | 3 |
 
 The module must not read files, open network connections or start processes.
+
+The same cases, for `intent-engine judge --sandbox viper`:
+
+```judge-cases
+{
+  "cases": [
+    {"args": [""], "expected": 0},
+    {"args": ["   "], "expected": 0},
+    {"args": ["one"], "expected": 1},
+    {"args": ["two words"], "expected": 2},
+    {"args": ["  leading and trailing  "], "expected": 3},
+    {"args": ["tabs\tand\nnew lines"], "expected": 4},
+    {"args": ["a\u00a0b"], "expected": 2},
+    {"args": ["a  b   c"], "expected": 3}
+  ]
+}
+```
