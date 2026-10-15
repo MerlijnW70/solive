@@ -3,7 +3,7 @@
     "servers": {
       "intent": {
         "command": "npx",
-        "args": ["-y", "@intent-engine/cli@0.1.28", "mcp", "--url", "devnet", "--wallet", "--wallet-per-trade", "SOL=0.1", "--wallet-per-hour", "SOL=0.5"],
+        "args": ["-y", "@intent-engine/cli@0.1.29", "mcp", "--url", "devnet", "--wallet", "--wallet-per-trade", "SOL=0.1", "--wallet-per-hour", "SOL=0.5"],
         "requestTimeoutMs": 60000
       }
     }
