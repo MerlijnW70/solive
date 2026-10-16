@@ -41,7 +41,7 @@ const ACCOUNT_EXTENSION_SPACE: ReadonlyMap<number, number> = new Map([
 
 export function mintExtensions(data: Uint8Array | null): number[] {
   const found: number[] = [];
-  if (data === null || data.length <= TOKEN_ACCOUNT_SPACE + ACCOUNT_TYPE_SPACE) {
+  if (data === null) {
     return found;
   }
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
