@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import * as core from "../src/index.js";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   type Address,
@@ -810,9 +811,11 @@ describe("golden vectors emitted by the Rust implementation", () => {
   });
 });
 
+const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
+
 describe("error codes", () => {
   it("error codes cover every mandate error", () => {
-    const source = readFileSync(fileURLToPath(new URL("../../../crates/intent-core/src/error.rs", import.meta.url)), "utf8");
+    const source = readFileSync(join(ROOT, "crates/intent-core/src/error.rs"), "utf8");
     const body = /pub enum Error \{([^}]*)\}/.exec(source)?.[1] ?? "";
     const rust = Array.from(body.matchAll(/^\s*([A-Z]\w*),?\s*$/gm), (m) => m[1]);
     const mandate = rust.filter((name) => name?.startsWith("Mandate"));

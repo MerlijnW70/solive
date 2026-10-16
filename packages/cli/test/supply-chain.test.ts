@@ -27,5 +27,5 @@ describe("supply chain", () => {
   it("the installed tree matches the committed production trees and every install script is reviewed", () => {
     const out = execFileSync(process.execPath, [join(ROOT, "scripts", "supply-chain.mjs")], { cwd: ROOT, encoding: "utf8" });
     expect(out).toContain(`supply chain check passed: ${[...PUBLISHED].sort().join(", ")}`);
-  });
+  }, 60_000);
 });

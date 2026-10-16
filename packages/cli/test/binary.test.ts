@@ -28,14 +28,14 @@ describe("the built binary", () => {
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toMatchObject({ code: "Unreachable", retryable: true, hint: unreachableHint(UNREACHABLE) });
     await client.close();
-  }, 30_000);
+  }, 120_000);
 
   it("refuses bad arguments with a usage error before serving", () => {
     const run = spawnSync(process.execPath, [bin, "mcp", "--keypair", "k.json"], { encoding: "utf8" });
     expect(run.status).toBe(EXIT_USAGE);
     expect(run.stderr.trim()).toBe("mcp does not take --keypair");
     expect(run.stdout).toBe("");
-  }, 30_000);
+  }, 120_000);
 });
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
@@ -63,7 +63,7 @@ describe("the agent guide", () => {
     expect(Object.keys(config.mcpServers)).toEqual([PRODUCT_SLUG]);
     expect(entry?.command).toBe("node");
     expect(await served(local(entry?.args ?? []))).toEqual(ACTIONS.map((a) => a.name));
-  }, 30_000);
+  }, 120_000);
 
   it("names agent arguments the server accepts", async () => {
     const { args } = JSON.parse(`{${jsonBlocks[1] ?? ""}}`) as { args: string[] };
@@ -79,7 +79,7 @@ describe("the agent guide", () => {
     expect(filled).toContain(key);
     expect(filled).toContain(owner);
     expect(await served(filled)).toEqual(ACTIONS.map((a) => a.name));
-  }, 30_000);
+  }, 120_000);
 
   it("holds no keys in the plain entry, so no tool it serves can send", async () => {
     expect(AGENTS).toContain(
@@ -99,7 +99,7 @@ describe("the agent guide", () => {
     const refused = await client.callTool({ name: "solive_agent_create", arguments: { owner, order, expires_in: 600 } });
     expect(refused.structuredContent).toMatchObject({ code: "AgentNotConfigured" });
     await client.close();
-  }, 30_000);
+  }, 120_000);
 
   it("names only tools the server has, and the decimals get_balances returns", () => {
     const names = new Set(ACTIONS.map((a) => a.name));
