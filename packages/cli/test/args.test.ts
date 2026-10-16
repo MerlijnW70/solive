@@ -889,6 +889,15 @@ describe("global options", () => {
     expect([ENV_URL, ENV_KEYPAIR]).toEqual(["INTENT_ENGINE_URL", "INTENT_ENGINE_KEYPAIR"]);
   });
 
+  it("applies the default keypair only to commands that take one, so read-only sub-commands still run with a configured wallet", () => {
+    const env = { [ENV_KEYPAIR]: "env.json" };
+    expect(parse(["claims", "show", "--owner", OWNER, "--nonce", "1"], env)).not.toHaveProperty("keypair");
+    expect(parse(["profile", "show", "--wallet", OWNER], env)).not.toHaveProperty("keypair");
+    expect(parse(["committee", "show", "--committee", OWNER], env)).not.toHaveProperty("keypair");
+    expect(parse(["claims", "take", "--owner", OWNER, "--nonce", "1", "--secs", "60"], env)).toMatchObject({ keypair: "env.json" });
+    expect(usage(["claims", "show", "--owner", OWNER, "--nonce", "1", "--keypair", "k"], env)).toBe("claims show does not take --keypair");
+  });
+
   it("chooses json or text output and answers help for any command", () => {
     expect(outputOf(["show", "config"])).toBe("json");
     expect(outputOf(["show", "config", "--output", "text"])).toBe("text");

@@ -2,7 +2,7 @@ import { parseArgs } from "node:util";
 import { AUTO_PRICE_CAP } from "./compute.js";
 import { MAX_SUBMIT_WITHIN } from "./agent/signed.js";
 import { CLUSTERS, clusterUrl, DEFAULT_URL, ENV_KEYPAIR, ENV_URL, WALLET_NOT_MAINNET } from "./clusters.js";
-import { ACCEPTS, type Values } from "./arg-options.js";
+import type { Values } from "./arg-options.js";
 import {
   addressList,
   amountOf,
@@ -12,6 +12,7 @@ import {
   named,
   noRepeats,
   noSub,
+  acceptedBy,
   onlyAccepted,
   optionalField,
   outputOf,
@@ -130,8 +131,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
     values.keypair === undefined &&
     values.authority === undefined &&
     keypairDefault !== undefined &&
-    verb !== undefined &&
-    ACCEPTS[verb]?.includes("keypair") === true
+    acceptedBy(verb, sub)?.includes("keypair") === true
   ) {
     values.keypair = keypairDefault;
   }

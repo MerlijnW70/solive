@@ -131,8 +131,11 @@ export function noRepeats(argv: readonly string[]): void {
   }
 }
 
+export const acceptedBy = (verb: string | undefined, sub: string | undefined): readonly (keyof typeof OPTIONS)[] | undefined =>
+  verb === undefined ? undefined : (SUB_ACCEPTS[verb]?.[sub ?? ""] ?? ACCEPTS[verb]);
+
 export function onlyAccepted(verb: string | undefined, sub: string | undefined, values: Values): void {
-  const accepted = verb === undefined ? undefined : (SUB_ACCEPTS[verb]?.[sub ?? ""] ?? ACCEPTS[verb]);
+  const accepted = acceptedBy(verb, sub);
   const named = verb !== undefined && SUB_ACCEPTS[verb]?.[sub ?? ""] !== undefined ? `${verb} ${sub}` : verb;
   if (accepted === undefined) {
     return;
