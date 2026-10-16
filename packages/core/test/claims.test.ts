@@ -1,11 +1,16 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Address } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import {
   type BoardView,
+  buildSettleClaims,
   checkClaimant,
   checkClaimTerms,
   claimSlot,
   claimUntil,
+  INTENT_ENGINE_PROGRAM_ADDRESS,
   IntentCoreError,
   MAX_CLAIM_SECS,
   MAX_CLAIM_STAKE,
@@ -14,6 +19,7 @@ import {
   stakeReceiverOnSettle,
 } from "../src/index.js";
 
+const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const NONE = "11111111111111111111111111111111" as Address;
 const OWNER = "SysvarRent111111111111111111111111111111111" as Address;
 const WORKER = "SysvarC1ock11111111111111111111111111111111" as Address;
@@ -122,5 +128,26 @@ describe("stake receiver", () => {
     expect(stakeReceiverOnSettle(held, at, false)).toBe(WORKER);
     expect(stakeReceiverOnSettle(held, lapsedAt, true)).toBe(OWNER);
     expect(stakeReceiverOnSettle(held, lapsedAt, false)).toBe(OWNER);
+  });
+});
+
+describe("claim limits", () => {
+  it("are the program's: a week of seconds and a hundred SOL of stake", () => {
+    const rust = readFileSync(join(ROOT, "crates/intent-core/src/claim.rs"), "utf8");
+    expect(rust).toContain("pub const MAX_CLAIM_SECS: u32 = 7 * 24 * 60 * 60;");
+    expect(rust).toContain("pub const MAX_CLAIM_STAKE: u64 = 100_000_000_000;");
+    expect(MAX_CLAIM_SECS).toBe(604_800);
+    expect(MAX_CLAIM_STAKE).toBe(100_000_000_000n);
+  });
+});
+
+describe("settle claims", () => {
+  it("seats the worker only when given", async () => {
+    const intent = "SysvarRecentB1ockHashes11111111111111111111" as Address;
+    const given = await buildSettleClaims({ intent, owner: OWNER, worker: WORKER });
+    const without = await buildSettleClaims({ intent, owner: OWNER });
+    expect(given.accounts[3]?.address).toBe(WORKER);
+    expect(without.accounts[3]?.address).toBe(INTENT_ENGINE_PROGRAM_ADDRESS);
+    expect(given.accounts.length).toBe(without.accounts.length);
   });
 });
