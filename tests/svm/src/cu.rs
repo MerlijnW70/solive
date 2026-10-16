@@ -15,14 +15,21 @@ pub fn cu_within(baseline: u64, measured: u64) -> bool {
     measured.abs_diff(baseline).saturating_mul(100) <= baseline.saturating_mul(CU_TOLERANCE_PCT)
 }
 
-pub fn cu_measured_path(name: &str) -> PathBuf {
-    std::env::temp_dir().join("solive-cu").join(name)
+pub fn cu_records_dir() -> PathBuf {
+    let exe = std::env::current_exe().unwrap_or_default();
+    let profile = exe.parent().and_then(std::path::Path::parent);
+    profile
+        .map_or_else(std::env::temp_dir, PathBuf::from)
+        .join("solive-cu")
 }
 
-fn cu_record(name: &str, measured: u64) -> TestResult {
-    let record = cu_measured_path(name);
-    std::fs::create_dir_all(record.parent().ok_or("measurement path has no parent")?)?;
-    std::fs::write(&record, measured.to_string())?;
+pub fn cu_measured_path(name: &str) -> PathBuf {
+    cu_records_dir().join(name)
+}
+
+fn cu_record(dir: &std::path::Path, name: &str, measured: u64) -> TestResult {
+    std::fs::create_dir_all(dir)?;
+    std::fs::write(dir.join(name), measured.to_string())?;
     Ok(())
 }
 
@@ -41,13 +48,21 @@ fn cu_check(name: &str, measured: u64) -> TestResult {
 }
 
 pub fn cu_gate(name: &str, measured: u64) -> TestResult {
-    cu_record(name, measured)?;
+    cu_gate_into(&cu_records_dir(), name, measured)
+}
+
+pub fn cu_gate_into(dir: &std::path::Path, name: &str, measured: u64) -> TestResult {
+    cu_record(dir, name, measured)?;
     cu_check(name, measured)
 }
 
 pub fn cu_gates(measurements: &[(String, u64)]) -> TestResult {
+    cu_gates_into(&cu_records_dir(), measurements)
+}
+
+pub fn cu_gates_into(dir: &std::path::Path, measurements: &[(String, u64)]) -> TestResult {
     for (name, measured) in measurements {
-        cu_record(name, *measured)?;
+        cu_record(dir, name, *measured)?;
     }
     let failures: Vec<String> = measurements
         .iter()

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
-records="${TMPDIR:-/tmp}/solive-cu"
+records="${CARGO_TARGET_DIR:-target}/debug/solive-cu"
 rm -rf "$records"
 bash scripts/sbf.sh
 for t in attested fill flash forged intent_lifecycle mandate signed; do

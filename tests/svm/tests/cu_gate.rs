@@ -1,7 +1,13 @@
+use std::path::PathBuf;
+
 use svm_tests::{
-    bump_search_cost, cu_baseline_path, cu_gate, cu_gates, cu_measured_path, cu_within, TestResult,
-    BUMP_STEP, CU_TOLERANCE_PCT,
+    bump_search_cost, cu_baseline_path, cu_gate_into, cu_gates_into, cu_records_dir, cu_within,
+    TestResult, BUMP_STEP, CU_TOLERANCE_PCT,
 };
+
+fn private_records(test: &str) -> PathBuf {
+    std::env::temp_dir().join(format!("solive-cu-{test}-{}", std::process::id()))
+}
 
 #[test]
 fn tolerance_is_five_percent_either_way() {
@@ -44,23 +50,26 @@ fn the_gate_rejects_drift_and_unknown_names() -> TestResult {
         .get("flash_fill")
         .and_then(serde_json::Value::as_u64)
         .ok_or("flash_fill missing")?;
-    assert!(cu_gate("flash_fill", flash).is_ok());
-    assert!(cu_gate("flash_fill", flash.saturating_mul(2)).is_err());
-    assert!(cu_gate("flash_fill", flash / 2).is_err());
-    assert!(cu_gate("no_such_entry", flash).is_err());
+    let dir = private_records("drift");
+    assert!(cu_gate_into(&dir, "flash_fill", flash).is_ok());
+    assert!(cu_gate_into(&dir, "flash_fill", flash.saturating_mul(2)).is_err());
+    assert!(cu_gate_into(&dir, "flash_fill", flash / 2).is_err());
+    assert!(cu_gate_into(&dir, "no_such_entry", flash).is_err());
+    std::fs::remove_dir_all(&dir)?;
     Ok(())
 }
 
 #[test]
 fn every_gated_measurement_is_recorded_for_rebaselining() -> TestResult {
     let name = "cu_gate_self_test_entry";
-    let path = cu_measured_path(name);
+    let dir = private_records("record");
+    let path = dir.join(name);
     if path.exists() {
         std::fs::remove_file(&path)?;
     }
-    assert!(cu_gate(name, 4_321).is_err());
+    assert!(cu_gate_into(&dir, name, 4_321).is_err());
     assert_eq!(std::fs::read_to_string(&path)?, "4321");
-    std::fs::remove_file(&path)?;
+    std::fs::remove_dir_all(&dir)?;
     Ok(())
 }
 
@@ -73,16 +82,23 @@ fn a_batch_records_every_measurement_and_reports_only_the_drifting_ones() -> Tes
         base("cancel_spl").ok_or("cancel_spl missing")?,
         base("close_spl").ok_or("close_spl missing")?,
     );
-    assert!(cu_gates(&[
-        ("cancel_spl".to_owned(), cancel),
-        ("close_spl".to_owned(), close)
-    ])
+    let dir = private_records("batch");
+    assert!(cu_gates_into(
+        &dir,
+        &[
+            ("cancel_spl".to_owned(), cancel),
+            ("close_spl".to_owned(), close)
+        ]
+    )
     .is_ok());
     let drifted = close.saturating_mul(2);
-    let err = cu_gates(&[
-        ("cancel_spl".to_owned(), cancel),
-        ("close_spl".to_owned(), drifted),
-    ])
+    let err = cu_gates_into(
+        &dir,
+        &[
+            ("cancel_spl".to_owned(), cancel),
+            ("close_spl".to_owned(), drifted),
+        ],
+    )
     .err()
     .ok_or("a drifting batch passed")?
     .to_string();
@@ -91,12 +107,29 @@ fn a_batch_records_every_measurement_and_reports_only_the_drifting_ones() -> Tes
         format!("close_spl measured {drifted} against baseline {close}")
     );
     assert_eq!(
-        std::fs::read_to_string(cu_measured_path("cancel_spl"))?,
+        std::fs::read_to_string(dir.join("cancel_spl"))?,
         cancel.to_string()
     );
     assert_eq!(
-        std::fs::read_to_string(cu_measured_path("close_spl"))?,
+        std::fs::read_to_string(dir.join("close_spl"))?,
         drifted.to_string()
+    );
+    std::fs::remove_dir_all(&dir)?;
+    Ok(())
+}
+
+#[test]
+fn real_measurements_are_recorded_inside_the_running_build_not_a_machine_wide_folder() -> TestResult
+{
+    let exe = std::env::current_exe()?;
+    let profile = exe
+        .parent()
+        .and_then(std::path::Path::parent)
+        .ok_or("the test binary has no profile folder")?;
+    assert_eq!(cu_records_dir(), profile.join("solive-cu"));
+    assert!(
+        !cu_records_dir().starts_with(std::env::temp_dir())
+            || profile.starts_with(std::env::temp_dir())
     );
     Ok(())
 }
