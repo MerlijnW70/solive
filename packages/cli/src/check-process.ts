@@ -350,7 +350,7 @@ export function docker(args: readonly string[], env: NodeJS.ProcessEnv, shown = 
 
 export const containerLeft = (name: string): string => `warning: the check's container ${name} could not be removed; remove it with docker rm -f ${name}`;
 
-async function removeContainer(name: string, env: NodeJS.ProcessEnv): Promise<void> {
+export async function removeContainer(name: string, env: NodeJS.ProcessEnv): Promise<void> {
   await docker(["rm", "-f", name], env);
   if ((await docker(["container", "inspect", name], env)).status === 0) {
     warn(containerLeft(name));

@@ -17,7 +17,8 @@ export const SANDBOX_HOME = "/tmp";
 
 export const SANDBOX_KINDS = ["docker", "viper", "none"] as const;
 export type SandboxKind = (typeof SANDBOX_KINDS)[number];
-export type Sandbox = { kind: "none" } | { kind: "viper" } | { kind: "docker"; image: string; memory: string; cpus: string };
+export type Box = { image: string; memory: string; cpus: string };
+export type Sandbox = { kind: "none" } | { kind: "viper"; node?: Box } | ({ kind: "docker" } & Box);
 
 export const SANDBOX_NEEDED = "--sandbox must be docker, viper or none";
 export const VIPER_TAKES_NO_RUN = "--sandbox viper judges the cases in the spec's judge-cases block, so it takes no --run and no --check";
@@ -34,23 +35,11 @@ const SANDBOX_ONLY = ["sandbox-image", "sandbox-memory", "sandbox-cpus"] as cons
 const READABLE = 0o444;
 const SEARCHABLE = 0o755;
 
-export const sandboxOnly = (option: string): string => `--${option} applies only with --sandbox docker`;
+export const sandboxOnly = (option: string): string => `--${option} applies only with --sandbox docker, or with --sandbox viper and --plain-node`;
 
-export function sandboxOf(values: Values): Sandbox {
-  const kind = values.sandbox ?? "docker";
-  if (!(SANDBOX_KINDS as readonly string[]).includes(kind)) {
-    throw new UsageError(SANDBOX_NEEDED);
-  }
-  if (kind === "none" || kind === "viper") {
-    const given = SANDBOX_ONLY.find((option) => values[option] !== undefined);
-    if (given !== undefined) {
-      throw new UsageError(sandboxOnly(given));
-    }
-    if (kind === "viper" && (values.run !== undefined || values.check !== undefined)) {
-      throw new UsageError(VIPER_TAKES_NO_RUN);
-    }
-    return { kind };
-  }
+export const PLAIN_NODE_ONLY = "--plain-node applies only with --sandbox viper";
+
+function boxOf(values: Values): Box {
   const image = values["sandbox-image"] ?? SANDBOX_IMAGE;
   if (!DIGESTED.test(image)) {
     throw new UsageError(IMAGE_NEEDS_DIGEST);
@@ -63,7 +52,34 @@ export function sandboxOf(values: Values): Sandbox {
   if (!CPUS.test(cpus) || Number(cpus) <= 0) {
     throw new UsageError(CPUS_FORMAT);
   }
-  return { kind: "docker", image, memory, cpus };
+  return { image, memory, cpus };
+}
+
+export function sandboxOf(values: Values): Sandbox {
+  const kind = values.sandbox ?? "docker";
+  if (!(SANDBOX_KINDS as readonly string[]).includes(kind)) {
+    throw new UsageError(SANDBOX_NEEDED);
+  }
+  if (values["plain-node"] === true && kind !== "viper") {
+    throw new UsageError(PLAIN_NODE_ONLY);
+  }
+  if (kind === "viper" && values["plain-node"] === true) {
+    if (values.run !== undefined || values.check !== undefined) {
+      throw new UsageError(VIPER_TAKES_NO_RUN);
+    }
+    return { kind, node: boxOf(values) };
+  }
+  if (kind === "none" || kind === "viper") {
+    const given = SANDBOX_ONLY.find((option) => values[option] !== undefined);
+    if (given !== undefined) {
+      throw new UsageError(sandboxOnly(given));
+    }
+    if (kind === "viper" && (values.run !== undefined || values.check !== undefined)) {
+      throw new UsageError(VIPER_TAKES_NO_RUN);
+    }
+    return { kind };
+  }
+  return { kind: "docker", ...boxOf(values) };
 }
 
 export function dockerEnv(base: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -86,20 +102,23 @@ export const imageMissing = (image: string, reason: string): string => `docker c
 
 export const NO_SANDBOX = "warning: --sandbox none ran the check with your own rights: it could read your files and keys and use your network";
 
+export const boxIn = (sandbox: Sandbox): Box | undefined => (sandbox.kind === "docker" ? sandbox : sandbox.kind === "viper" ? sandbox.node : undefined);
+
 export async function sandboxReady(sandbox: Sandbox, env: NodeJS.ProcessEnv): Promise<void> {
-  if (sandbox.kind !== "docker") {
+  const box = boxIn(sandbox);
+  if (box === undefined) {
     return;
   }
   const server = await docker(["version", "--format", "{{.Server.Version}}"], env);
   if (server.status !== 0) {
     throw new JudgeRefused(dockerMissing(server.out));
   }
-  if ((await docker(["image", "inspect", "--format", "{{.Id}}", sandbox.image], env)).status === 0) {
+  if ((await docker(["image", "inspect", "--format", "{{.Id}}", box.image], env)).status === 0) {
     return;
   }
-  const pulled = await docker(["pull", sandbox.image], env, true);
+  const pulled = await docker(["pull", box.image], env, true);
   if (pulled.status !== 0) {
-    throw new JudgeRefused(imageMissing(sandbox.image, pulled.out));
+    throw new JudgeRefused(imageMissing(box.image, pulled.out));
   }
 }
 

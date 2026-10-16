@@ -50,6 +50,7 @@ import {
   sandboxOnly,
   shareable,
 } from "../src/sandbox.js";
+import { DOCKER_TEST } from "./docker-switch.js";
 import { ata, balance, cli, creation, funded, h, NOW, send, transport, type World, world } from "./harness.js";
 
 const removal = vi.hoisted(() => ({ refused: false, retries: [] as (number | undefined)[] }));
@@ -888,10 +889,6 @@ describe("intent-engine judge", () => {
     }
   });
 });
-
-const DOCKER = spawnSync("docker", ["version"], { stdio: "ignore" }).status === 0 || process.env["CI"] !== undefined;
-
-const DOCKER_TEST = { skip: !DOCKER, timeout: 120_000 } as const;
 
 const containerGone = (name: string) => spawnSync("docker", ["container", "inspect", name], { stdio: "ignore" }).status !== 0;
 

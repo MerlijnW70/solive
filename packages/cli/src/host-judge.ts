@@ -3,15 +3,21 @@ import { JudgeRefused } from "./judge-errors.js";
 import {
   type CaseResult,
   type Cases,
+  deadlineMissed,
   DIAGNOSTIC_BYTES,
   type Failure,
   OUTPUT_BYTES,
   permissionFlag,
   REPORTED_FAILURES,
+  runOf,
+  stoppedAll,
 } from "./viper.js";
 
 export const HOST_ENGINE = "node-vm";
 export const HOST_CALL_MS = 2_000;
+export const V8_SEEDS = 2_147_483_647;
+
+export const nodeSeed = (seed: number): number => 1 + (seed % V8_SEEDS);
 
 export type HostJudged = { engine: typeof HOST_ENGINE; total: number; passed: number; failures: Failure[] };
 
@@ -60,9 +66,9 @@ out(results);
 
 type HostRan = { output: string; exitCode: number | null; timedOut: boolean; diagnostic: string };
 
-function runHost(input: string, timeoutSeconds: number): Promise<HostRan> {
+function runHost(input: string, timeoutSeconds: number, seed: number): Promise<HostRan> {
   return new Promise((done) => {
-    const child = spawn(process.execPath, [permissionFlag(), "--experimental-vm-modules", "--no-warnings", "--input-type=module", "-e", HOST_RUNNER], {
+    const child = spawn(process.execPath, [permissionFlag(), `--random-seed=${nodeSeed(seed)}`, "--experimental-vm-modules", "--no-warnings", "--input-type=module", "-e", HOST_RUNNER], {
       env: {},
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
@@ -108,15 +114,16 @@ function failedAll(cases: Cases, verdict: Failure["verdict"], detail: string): H
   return { engine: HOST_ENGINE, total: cases.cases.length, passed: 0, failures: [{ case: 0, verdict, detail }] };
 }
 
-export async function judgeHost(source: Uint8Array, cases: Cases, timeoutSeconds: number): Promise<HostJudged> {
+export async function judgeHost(source: Uint8Array, cases: Cases, timeoutSeconds: number, seed: number = runOf(cases).seed): Promise<HostJudged> {
   let text: string;
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(source);
   } catch {
     throw new JudgeRefused("--artifact is not UTF-8 text, so it is not a module the judge can run; nothing was paid");
   }
-  const ran = await runHost(JSON.stringify({ source: text, cases: cases.cases, callMs: HOST_CALL_MS }), timeoutSeconds);
-  if (ran.timedOut) return failedAll(cases, "stopped", `the host engine did not finish within ${timeoutSeconds} s`);
+  if (timeoutSeconds <= 0) return { engine: HOST_ENGINE, ...stoppedAll(cases.cases.length, deadlineMissed("the host engine", timeoutSeconds)) };
+  const ran = await runHost(JSON.stringify({ source: text, cases: cases.cases, callMs: HOST_CALL_MS }), timeoutSeconds, seed);
+  if (ran.timedOut) return { engine: HOST_ENGINE, ...stoppedAll(cases.cases.length, deadlineMissed("the host engine", timeoutSeconds)) };
   if (ran.exitCode !== 0) {
     return failedAll(cases, "crashed", `the host engine ended with exit code ${ran.exitCode}: ${ran.diagnostic.trim().slice(0, 256)}`);
   }

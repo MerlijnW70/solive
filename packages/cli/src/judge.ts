@@ -23,8 +23,9 @@ import { type Artifact, type CheckFiles, copyOf, readArtifact, removeCopy } from
 import { type Check, checkEnv, type HeldSignals, holdSignals, runCheck, runContainer } from "./check-process.js";
 import { containerArgs, containerName, dockerEnv, NO_SANDBOX, sandboxReady, shareable } from "./sandbox.js";
 import { type HostJudged, judgeHost } from "./host-judge.js";
+import { judgeNode, type NodeJudged } from "./node-judge.js";
 import { type SimulatedRelease, simulateRelease } from "./release-simulation.js";
-import { type Cases, casesOf, judgeViper, type Judged as CasesJudged, pinnedWasm, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
+import { type Cases, casesOf, judgeViper, type Judged as CasesJudged, pinnedWasm, runOf, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
 
 export { type InterruptSignal, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
 export { artifactSha256, CHECK_COPY, CLEANUP_RETRIES, MAX_ARTIFACT_BYTES, MAX_ARTIFACT_FILES, removeCopy, SKIPPED, SPEC_COPY } from "./artifact.js";
@@ -61,6 +62,7 @@ export type Verdict = {
   engine?: { wasmSha256: string; commit: string };
   cases?: CasesJudged;
   host?: HostJudged;
+  node?: NodeJudged;
   exitCode: number | null;
   verdict: "pass" | "fail";
   payTo: Address;
@@ -234,14 +236,25 @@ async function checkAndSettle(
   let check: Check = { exitCode: null, timedOut: false };
   let cases: CasesJudged | undefined;
   let host: HostJudged | undefined;
+  let node: NodeJudged | undefined;
   let cleanup: string | undefined;
+  const plainNode = sandbox.kind === "viper" ? sandbox.node : undefined;
   if (viper !== undefined) {
-    const module = read.entries[0]?.bytes ?? new Uint8Array();
+    const [entry] = read.entries;
+    const module = entry?.bytes ?? new Uint8Array();
+    const run = runOf(viper.cases);
+    const deadline = Date.now() + command.timeout * 1000;
+    const left = () => Math.max(0, deadline - Date.now()) / 1000;
     if (signals.caught() === undefined) {
-      cases = await judgeViper(viper.wasm, module, viper.cases, command.timeout);
+      cases = await judgeViper(viper.wasm, module, viper.cases, left(), run);
     }
     if (signals.caught() === undefined) {
-      host = await judgeHost(module, viper.cases, command.timeout);
+      host = await judgeHost(module, viper.cases, left(), run.seed);
+    }
+    if (signals.caught() === undefined && plainNode !== undefined) {
+      const ran = await judgeNode(plainNode, module, entry?.path ?? "", viper.cases, run.seed, left());
+      node = ran.judged;
+      cleanup = ran.cleanup;
     }
   } else {
     const copy = await copyOf(read, specBytes, checkFiles);
@@ -265,7 +278,7 @@ async function checkAndSettle(
     throw new JudgeInterrupted(interrupted);
   }
   const agreed = (judged: { total: number; passed: number } | undefined) => judged !== undefined && judged.total > 0 && judged.passed === judged.total;
-  const passed = cases === undefined ? check.exitCode === 0 : agreed(cases) && agreed(host);
+  const passed = cases === undefined ? check.exitCode === 0 : agreed(cases) && agreed(host) && (plainNode === undefined || agreed(node));
   let signature: Signature | null = null;
   let vote: VoteFile | undefined;
   let simulated: SimulatedRelease | undefined;
@@ -300,6 +313,7 @@ async function checkAndSettle(
     ...(sandbox.kind === "docker" ? { image: sandbox.image } : {}),
     ...(cases !== undefined ? { engine: { wasmSha256: VIPER_WASM_SHA256, commit: VIPER_ENGINE_COMMIT }, cases } : {}),
     ...(host !== undefined ? { host } : {}),
+    ...(node !== undefined ? { node } : {}),
     exitCode: check.exitCode,
     verdict: passed ? "pass" : "fail",
     payTo,

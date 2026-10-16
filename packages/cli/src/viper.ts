@@ -200,6 +200,14 @@ export function decodeOutput(bytes: Buffer, expected: number): CaseResult[] {
   return results;
 }
 
+export function stoppedAll(total: number, detail: string): { total: number; passed: number; failures: Failure[] } {
+  const failures = Array.from({ length: Math.min(total, REPORTED_FAILURES) }, (_, index): Failure => (index === 0 ? { case: index, verdict: "stopped", detail } : { case: index, verdict: "stopped" }));
+  return { total, passed: 0, failures };
+}
+
+export const deadlineMissed = (engine: string, timeoutSeconds: number): string =>
+  `${engine} did not finish within the ${Math.round(timeoutSeconds * 1000)} ms left of the judgement's --timeout`;
+
 export function summarize(results: CaseResult[], run: Run): Judged {
   const failures = results.flatMap((result, index) => (result.verdict === "pass" ? [] : [{ case: index, ...result }]));
   return { total: results.length, passed: results.length - failures.length, failures: failures.slice(0, REPORTED_FAILURES), ...run };
@@ -282,17 +290,19 @@ export function runViper(wasm: Buffer, input: Buffer, timeoutSeconds: number): P
   });
 }
 
-export async function judgeViper(wasm: Buffer, source: Uint8Array, cases: Cases, timeoutSeconds: number): Promise<Judged> {
+export async function judgeViper(wasm: Buffer, source: Uint8Array, cases: Cases, timeoutSeconds: number, run: Run = runOf(cases)): Promise<Judged> {
   let text: string;
   try {
     text = new TextDecoder("utf-8", { fatal: true }).decode(source);
   } catch {
     throw new JudgeRefused("--artifact is not UTF-8 text, so it is not a module the viper judge can run; nothing was paid");
   }
-  const run = runOf(cases);
+  if (timeoutSeconds <= 0) {
+    return { ...stoppedAll(cases.cases.length, deadlineMissed("the viper judge", timeoutSeconds)), ...run };
+  }
   const ran = await runViper(wasm, encodeInput(text, cases, run), timeoutSeconds);
   if (ran.timedOut) {
-    return { total: cases.cases.length, passed: 0, failures: [{ case: 0, verdict: "stopped", detail: `the judge did not finish within ${timeoutSeconds} s` }], ...run };
+    return { ...stoppedAll(cases.cases.length, deadlineMissed("the viper judge", timeoutSeconds)), ...run };
   }
   if (ran.exitCode !== 0) {
     return { total: cases.cases.length, passed: 0, failures: [{ case: 0, verdict: "crashed", detail: `the judge process ended with exit code ${ran.exitCode}: ${ran.diagnostic.trim().slice(0, 256)}` }], ...run };
