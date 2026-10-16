@@ -14,7 +14,7 @@ import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { HOST_ENGINE, judgeHost, nodeSeed } from "../src/host-judge.js";
 import { judgeNode, NODE_ENGINE } from "../src/node-judge.js";
 import { CPUS_FORMAT, IMAGE_NEEDS_DIGEST, MEMORY_FORMAT, PLAIN_NODE_ONLY, SANDBOX_CPUS, SANDBOX_IMAGE, SANDBOX_MEMORY, sandboxOnly, VIPER_TAKES_NO_RUN } from "../src/sandbox.js";
-import type { Cases } from "../src/viper.js";
+import { type Cases, casesOf as publishedCases, judgeViper, pinnedWasm } from "../src/viper.js";
 import { DOCKER_TEST } from "./docker-switch.js";
 import { balance, cli, creation, funded, h, NOW, transport, type World, world } from "./harness.js";
 
@@ -231,6 +231,29 @@ describe("judge --sandbox viper --plain-node", () => {
     expect(nodeSeed(0)).toBe(1);
     expect(nodeSeed(2 ** 48)).toBeGreaterThan(0);
     expect(nodeSeed(2 ** 48)).toBeLessThan(2 ** 31);
+  });
+
+  it("every engine hands a delivery each published argument exactly as the spec writes it, -0 included", DOCKER_TEST, async () => {
+    const telling = "export default (...args) => args.map((arg) => (Object.is(arg, -0) ? 'minus zero' : typeof arg + ':' + String(arg))).join('|');\n";
+    const listed: [Cases["cases"][number]["args"], string][] = [
+      [[-0], "minus zero"],
+      [[0, -0, 0], "number:0|minus zero|number:0"],
+      [[-1.5, 2, 1e21, -0, 5e-324], "number:-1.5|number:2|number:1e+21|minus zero|number:5e-324"],
+      [["-0", "", "a\"b\\c", "\u2028"], "string:-0|string:|string:a\"b\\c|string:\u2028"],
+      [[true, false, null, -0], "boolean:true|boolean:false|object:null|minus zero"],
+      [[], ""],
+    ];
+    const text = `{"cases": [${listed.map(([args, expected]) => `{"args": [${args.map((arg) => (Object.is(arg, -0) ? "-0" : JSON.stringify(arg))).join(", ")}], "expected": ${JSON.stringify(expected)}}`).join(", ")}]}`;
+    const published = publishedCases(bytes(specOf(text)));
+    expect(published.cases.map((c) => c.args)).toEqual(listed.map(([args]) => args));
+    expect(published.cases.flatMap((c) => c.args).filter((arg) => Object.is(arg, -0))).toHaveLength(4);
+    const total = listed.length;
+    const viper = await judgeViper(await pinnedWasm(), bytes(telling), published, 60);
+    expect(viper).toMatchObject({ total, passed: total, failures: [] });
+    const host = await judgeHost(bytes(telling), published, 20);
+    expect(host).toEqual({ engine: HOST_ENGINE, total, passed: total, failures: [] });
+    const { judged } = await judgeNode(BOX, bytes(telling), "telling.mjs", published, 7, 60);
+    expect(judged).toMatchObject({ engine: NODE_ENGINE, total, passed: total, failures: [] });
   });
 
   it("one --timeout bounds the whole judgement across every engine", DOCKER_TEST, async () => {

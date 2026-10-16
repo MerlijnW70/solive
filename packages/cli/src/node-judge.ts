@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join, posix } from "node:path";
 import { removeCopy } from "./artifact.js";
 import { removeContainer } from "./check-process.js";
-import { nodeSeed } from "./host-judge.js";
+import { nodeSeed, wireArgs } from "./host-judge.js";
 import { type InterruptSignal, SIGNAL_EXIT } from "./judge-errors.js";
 import { NODE_CASE, NODE_LAUNCHER } from "./node-runner.js";
 import { type Box, containerName, dockerEnv, SANDBOX_PIDS, SANDBOX_USER, shareable } from "./sandbox.js";
@@ -157,7 +157,7 @@ function converse(args: readonly string[], name: string, staged: Staged, cases: 
         return;
       }
       token = randomBytes(32).toString("hex");
-      send({ token, args: cases.cases[results.length]?.args ?? [] });
+      send({ token, ...wireArgs(cases.cases[results.length]?.args ?? []) });
     };
     const answered = (line: string) => {
       let answer: Answer | undefined;

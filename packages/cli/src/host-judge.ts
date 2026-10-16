@@ -8,6 +8,7 @@ import {
   type Failure,
   OUTPUT_BYTES,
   permissionFlag,
+  type Primitive,
   REPORTED_FAILURES,
   runOf,
   stoppedAll,
@@ -20,6 +21,9 @@ export const V8_SEEDS = 2_147_483_647;
 export const nodeSeed = (seed: number): number => 1 + (seed % V8_SEEDS);
 
 export type HostJudged = { engine: typeof HOST_ENGINE; total: number; passed: number; failures: Failure[] };
+export type WireArgs = { json: string; zeros: number[] };
+
+export const wireArgs = (args: readonly Primitive[]): WireArgs => ({ json: JSON.stringify(args), zeros: args.flatMap((arg, at) => (Object.is(arg, -0) ? [at] : [])) });
 
 export const HOST_RUNNER = `
 import vm from "node:vm";
@@ -30,6 +34,10 @@ const { source, cases, callMs } = JSON.parse(Buffer.concat(chunks).toString("utf
 const out = (results) => process.stdout.write(JSON.stringify(results));
 const all = (verdict, detail) => out(cases.map(() => (detail === undefined ? { verdict } : { verdict, detail })));
 const context = vm.createContext(vm.constants.DONT_CONTEXTIFY, { codeGeneration: { strings: false, wasm: false } });
+const deliver = vm.runInContext(
+  "(() => { const parse = JSON.parse; const apply = Reflect.apply; let delivered; globalThis.__call = (json, zeros) => { const args = parse(json); for (let at = 0; at < zeros.length; at += 1) args[zeros[at]] = -0; return apply(delivered, undefined, args); }; return (fn) => { delivered = fn; }; })()",
+  context,
+);
 let fn;
 try {
   const module = new vm.SourceTextModule(source, { context, identifier: "delivery.mjs" });
@@ -46,14 +54,14 @@ if (typeof fn !== "function") {
   all("no-module", "the delivery has no default export function");
   process.exit(0);
 }
-context.__call = fn;
+deliver(fn);
 const primitive = (v) => v === null || typeof v === "boolean" || typeof v === "number" || typeof v === "string";
 const same = (a, b) => a === b || (typeof a === "number" && typeof b === "number" && Number.isNaN(a) && Number.isNaN(b));
 const results = cases.map((c) => {
-  context.__json = JSON.stringify(c.args);
+  context.__json = c.json;
   let got;
   try {
-    got = vm.runInContext("__call(...JSON.parse(__json))", context, { timeout: callMs });
+    got = vm.runInContext("__call(__json, " + JSON.stringify(c.zeros) + ")", context, { timeout: callMs });
   } catch (error) {
     const stopped = error && error.code === "ERR_SCRIPT_EXECUTION_TIMEOUT";
     return stopped ? { verdict: "stopped" } : { verdict: "threw", detail: String(error && error.message ? error.message : error).slice(0, 256) };
@@ -122,7 +130,7 @@ export async function judgeHost(source: Uint8Array, cases: Cases, timeoutSeconds
     throw new JudgeRefused("--artifact is not UTF-8 text, so it is not a module the judge can run; nothing was paid");
   }
   if (timeoutSeconds <= 0) return { engine: HOST_ENGINE, ...stoppedAll(cases.cases.length, deadlineMissed("the host engine", timeoutSeconds)) };
-  const ran = await runHost(JSON.stringify({ source: text, cases: cases.cases, callMs: HOST_CALL_MS }), timeoutSeconds, seed);
+  const ran = await runHost(JSON.stringify({ source: text, cases: cases.cases.map((c) => ({ ...wireArgs(c.args), expected: c.expected })), callMs: HOST_CALL_MS }), timeoutSeconds, seed);
   if (ran.timedOut) return { engine: HOST_ENGINE, ...stoppedAll(cases.cases.length, deadlineMissed("the host engine", timeoutSeconds)) };
   if (ran.exitCode !== 0) {
     return failedAll(cases, "crashed", `the host engine ended with exit code ${ran.exitCode}: ${ran.diagnostic.trim().slice(0, 256)}`);

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HOST_ENGINE, judgeHost } from "../src/host-judge.js";
-import type { Cases } from "../src/viper.js";
+import { type Cases, casesOf } from "../src/viper.js";
 
 const cases = (list: Cases["cases"]): Cases => ({ steps: 1_000_000, heap: 1 << 24, seed: 1, clock: 0, cases: list });
 const module = (source: string) => new TextEncoder().encode(source);
@@ -46,4 +46,14 @@ describe("the host engine", () => {
     const none = await judgeHost(module("export const x = 1;"), cases([{ args: [], expected: 1 }]), 20);
     expect(none.failures[0]?.verdict).toBe("no-module");
   }, 30_000);
+
+  it("the host engine hands a delivery a published -0 argument as -0", async () => {
+    const sign = "export default (x) => (Object.is(x, -0) ? 'negative zero' : x < 0 ? 'negative' : x > 0 ? 'positive' : 'zero');";
+    const published = casesOf(new TextEncoder().encode('# Sign\n\n```judge-cases\n{"cases": [{"args": [-0], "expected": "negative zero"}, {"args": [0], "expected": "zero"}, {"args": [-1.5], "expected": "negative"}]}\n```\n'));
+    expect(Object.is(published.cases[0]?.args[0], -0)).toBe(true);
+    const judged = await judgeHost(module(sign), published, 20);
+    expect(judged).toEqual({ engine: HOST_ENGINE, total: 3, passed: 3, failures: [] });
+    const patched = "JSON.parse = () => [1]; Reflect.apply = () => 'patched'; " + sign;
+    expect(await judgeHost(module(patched), published, 20)).toEqual({ engine: HOST_ENGINE, total: 3, passed: 3, failures: [] });
+  });
 });

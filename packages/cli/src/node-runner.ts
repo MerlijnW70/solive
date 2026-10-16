@@ -9,7 +9,7 @@ const sweep = () => {
     process.kill(-1, "SIGKILL");
   } catch {}
 };
-const runCase = (token, args) =>
+const runCase = (token, json, zeros) =>
   new Promise((done) => {
     const child = spawn(process.execPath, ["--random-seed=" + config.seed, caseFile], { stdio: ["pipe", "pipe", "ignore"] });
     const out = [];
@@ -31,7 +31,7 @@ const runCase = (token, args) =>
       if (!over) out.push(chunk);
     });
     child.stdin.on("error", () => undefined);
-    child.stdin.end(JSON.stringify({ token, args, path: config.path }));
+    child.stdin.end(JSON.stringify({ token, json, zeros, path: config.path }));
     child.once("exit", (exitCode) => {
       clearTimeout(timer);
       code = exitCode;
@@ -52,7 +52,7 @@ for await (const line of lines) {
     config = message;
     continue;
   }
-  const result = await runCase(message.token, message.args);
+  const result = await runCase(message.token, message.json, message.zeros);
   sweep();
   process.stdout.write(JSON.stringify(result) + "\\n");
 }
@@ -68,7 +68,9 @@ const apply = Reflect.apply;
 const exit = process.exit.bind(process);
 const input = JSON.parse(readFileSync(0, "utf8"));
 const token = "" + input.token;
-const args = input.args;
+const args = JSON.parse("" + input.json);
+const zeros = input.zeros;
+for (let at = 0; at < zeros.length; at += 1) args[zeros[at]] = -0;
 const url = pathToFileURL("" + input.path).href;
 const put = (text) => {
   const bytes = from(text, "utf8");
