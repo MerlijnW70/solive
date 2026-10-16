@@ -18,10 +18,12 @@ import {
   buildUpdateProfile,
   findEventAuthorityPda,
   getCreateProfileInstructionAsync,
+  getProfileSize,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   IntentCoreError,
   type ProfileInput,
   profileAddress,
+  PROFILE_DISCRIMINATOR,
   profileView,
 } from "../src/index.js";
 
@@ -150,5 +152,20 @@ describe("profiles", () => {
     expect(await attempt(wallet, [await buildUpdateProfile({ wallet, skills: ["rust"], endpoint: "https://other.example" })])).toBeNull();
     expect(read()).toEqual({ wallet: wallet.address, skills: ["rust"], endpoint: "https://other.example", docUrl: null, docSha256: null, updatedAt: NOW + 60n });
     expect(() => profileView(new Uint8Array(16))).toThrow(RangeError);
+  });
+
+  it("profileView reads an account of at least the profile size that starts with its discriminator, and nothing else", () => {
+    const account = (length: number) => {
+      const data = new Uint8Array(length);
+      data.set(PROFILE_DISCRIMINATOR);
+      return data;
+    };
+    const empty = { skills: [], endpoint: "", docUrl: null, docSha256: null, updatedAt: 0n };
+    expect(profileView(account(getProfileSize()))).toMatchObject(empty);
+    expect(profileView(account(getProfileSize() + 8))).toMatchObject(empty);
+    expect(() => profileView(account(getProfileSize() - 1))).toThrow("the data is not a profile account");
+    const wrong = account(getProfileSize());
+    wrong.set([(PROFILE_DISCRIMINATOR[7] ?? 0) ^ 1], 7);
+    expect(() => profileView(wrong)).toThrow("the data is not a profile account");
   });
 });

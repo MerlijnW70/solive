@@ -41,6 +41,7 @@ import {
   buildCreateIntent,
   buildExpireIntent,
   buildFillIntent,
+  buildFillAttested,
   buildFillAttestedSplit,
   getFillAttestedSplitInstructionDataDecoder,
   buildFlashFill,
@@ -231,6 +232,22 @@ describe("offline builders", () => {
     expect(data.claim.recipients).toEqual(recipients);
     expect(data.claim.weights).toEqual(weights);
     expect(data.amountIn).toBe(400n);
+  });
+
+  it("seat the claims board and the stake receiver only when given", async () => {
+    const claims = "SysvarRent111111111111111111111111111111111" as Address;
+    const stakeTo = "SysvarC1ock11111111111111111111111111111111" as Address;
+    const base = { solver, owner, nonce: 7n, inputMint, inputTokenProgram: TOKEN, payee: owner, amountIn: 400n, result: 1n, maxFeeBps: 100 };
+    const slot = (name: string) =>
+      idl.instructions.find((x) => x.name === "fill_attested")?.accounts.findIndex((a) => a.name === name) ?? -1;
+    const given = await buildFillAttested({ ...base, claims, stakeTo });
+    const without = await buildFillAttested(base);
+    expect(meta(given, slot("claims")).address).toBe(claims);
+    expect(meta(given, slot("stake_to")).address).toBe(stakeTo);
+    expect(meta(without, slot("claims")).address).toBe(INTENT_ENGINE_PROGRAM_ADDRESS);
+    expect(meta(without, slot("stake_to")).address).toBe(INTENT_ENGINE_PROGRAM_ADDRESS);
+    expect(validateIxAgainstIdl(given, idl)).toEqual([]);
+    expect(validateIxAgainstIdl(without, idl)).toEqual([]);
   });
 
   it("reject a split with no recipients or a weight count that does not match", async () => {
