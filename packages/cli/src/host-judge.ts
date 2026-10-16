@@ -34,10 +34,12 @@ const { source, cases, callMs } = JSON.parse(Buffer.concat(chunks).toString("utf
 const out = (results) => process.stdout.write(JSON.stringify(results));
 const all = (verdict, detail) => out(cases.map(() => (detail === undefined ? { verdict } : { verdict, detail })));
 const context = vm.createContext(vm.constants.DONT_CONTEXTIFY, { codeGeneration: { strings: false, wasm: false } });
-const deliver = vm.runInContext(
-  "(() => { const parse = JSON.parse; const apply = Reflect.apply; let delivered; globalThis.__call = (json, zeros) => { const args = parse(json); for (let at = 0; at < zeros.length; at += 1) args[zeros[at]] = -0; return apply(delivered, undefined, args); }; return (fn) => { delivered = fn; }; })()",
+const host = vm.runInContext(
+  "(() => { const parse = JSON.parse; const apply = Reflect.apply; const drop = Reflect.deleteProperty; const own = globalThis; let delivered; return { give: (fn) => { delivered = fn; }, call: (json, zeros) => { drop(own, '__call'); drop(own, '__json'); const args = parse(json); for (let at = 0; at < zeros.length; at += 1) args[zeros[at]] = -0; return apply(delivered, undefined, args); } }; })()",
   context,
 );
+const give = host.give;
+const call = host.call;
 let fn;
 try {
   const module = new vm.SourceTextModule(source, { context, identifier: "delivery.mjs" });
@@ -54,10 +56,11 @@ if (typeof fn !== "function") {
   all("no-module", "the delivery has no default export function");
   process.exit(0);
 }
-deliver(fn);
+give(fn);
 const primitive = (v) => v === null || typeof v === "boolean" || typeof v === "number" || typeof v === "string";
 const same = (a, b) => a === b || (typeof a === "number" && typeof b === "number" && Number.isNaN(a) && Number.isNaN(b));
 const results = cases.map((c) => {
+  context.__call = call;
   context.__json = c.json;
   let got;
   try {

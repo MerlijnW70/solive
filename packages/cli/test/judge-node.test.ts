@@ -291,7 +291,7 @@ describe("judge --sandbox viper --plain-node", () => {
 
 const GUIDE = readFileSync(join(ROOT, "docs/judge.md"), "utf8");
 const MISSING_MARK = "Next to plain Node, the host engine lacks exactly these globals:";
-const EXTRA_MARK = "The host engine also adds exactly these globals, through which it calls the delivery:";
+const NO_EXTRA = "The host engine adds no globals of its own";
 
 describe("the host engine next to plain Node", () => {
   it("the host engine lacks exactly the globals docs/judge.md lists", async () => {
@@ -308,7 +308,10 @@ describe("the host engine next to plain Node", () => {
       return [...GUIDE.slice(at + mark.length, GUIDE.indexOf(".", at + mark.length)).matchAll(/`([^`]+)`/g)].map((match) => match[1] as string).sort();
     };
     expect(listedAfter(MISSING_MARK)).toEqual(plain.filter((name) => !inHost.includes(name)).sort());
-    expect(listedAfter(EXTRA_MARK)).toEqual(inHost.filter((name) => !plain.includes(name)).sort());
+    expect(GUIDE).toContain(NO_EXTRA);
+    expect(inHost.filter((name) => !plain.includes(name))).toEqual([]);
+    const loading = await judgeHost(bytes("const seen = Object.getOwnPropertyNames(globalThis).filter((name) => name.startsWith(\"__\")).join(\",\");\nexport default () => seen;"), casesOf([{ args: [], expected: "" }]), 20);
+    expect(loading.failures).toEqual([]);
     const meta = await judgeHost(bytes("export default () => String(import.meta.url);"), casesOf([{ args: [], expected: "undefined" }]), 20);
     expect(meta.passed).toBe(1);
   });
