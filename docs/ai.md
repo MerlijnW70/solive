@@ -32,6 +32,13 @@ Codex on native Windows:
 codex mcp add solive -- cmd /c npx -y @intent-engine/cli mcp --url devnet --wallet
 ```
 
+Codex stops a server that starts slowly, and `npx` is slow the first time while it downloads. Add a longer limit to the `solive` entry in `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.solive]
+startup_timeout_sec = 90
+```
+
 VS Code:
 
 ```sh
