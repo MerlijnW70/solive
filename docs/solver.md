@@ -69,7 +69,9 @@ intent-engine solve --keypair $HOME/solive-solver.json --issue "So11111111111111
 `--issue` prices 200 of your token per wrapped SOL and mints them into the fill. `--min-profit` skips fills that leave the solver less than 1 raw unit. Add `--watch` to keep solving: it solves again when an intent changes and at least every `--interval` seconds (default 5).
 
 While watching, it reuses a price quote for `--quote-ttl` seconds (default 10, `0` turns this off). It never fills from a reused quote: it asks for a fresh one first.
+
 `--inventory` takes the same rates as `--issue` and pays from tokens the solver already holds, with no swap. With `--issue` or `--jupiter`, it is tried first. It quotes nothing when the solver holds too little.
+
 `--concurrency` sets how many orders it plans at once (default 4, from 1 to 32). Fills are still simulated and sent one at a time, most profitable first.
 
 ## 5. Check the balances
