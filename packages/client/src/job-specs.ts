@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
-import { parseSpecMemo, remainingOf, SPEC_MEMO_PREFIX } from "@intent-engine/core";
+import { isSealed, NotInvited, parseSpecMemo, remainingOf, SPEC_MEMO_PREFIX, sealedTo, unseal } from "@intent-engine/core";
 import { createdIn, hex, openProofEscrows, proofAt } from "./job-proofs.js";
 import { MEMOS_PER_TRANSACTION, scan } from "./job-scan.js";
 import { type EngineTransaction, TRANSACTION_FETCHES, type Transport } from "./transport.js";
@@ -37,9 +37,25 @@ export type Job = {
   expiresAt: bigint;
 };
 
-export type Spec = { url: string; text: string; sha256: string; matches: boolean };
+export type Spec = { url: string; text: string; sha256: string; matches: boolean; sealedTo?: Address[] };
 
 export type SpecFetch = (url: string, init: { redirect: "error"; signal: AbortSignal }) => Promise<Response>;
+
+export class SpecSealed extends Error {
+  readonly url: string;
+  readonly to: Address[];
+  readonly keyed: boolean;
+
+  constructor(url: string, to: Address[], keyed: boolean) {
+    super(
+      `the spec at ${url} is sealed to ${to.length} invited wallet${to.length === 1 ? "" : "s"}; ${keyed ? "this wallet is not one of them" : "read it with the key of an invited wallet"}`,
+    );
+    this.name = "SpecSealed";
+    this.url = url;
+    this.to = to;
+    this.keyed = keyed;
+  }
+}
 
 export class SpecUnreadable extends Error {
   readonly url: string;
@@ -116,7 +132,7 @@ async function bounded(response: Response, url: string): Promise<Uint8Array> {
   return Buffer.concat(chunks);
 }
 
-export async function readSpec(transport: Transport, get: SpecFetch, intent: Address): Promise<Spec | null> {
+export async function readSpec(transport: Transport, get: SpecFetch, intent: Address, keypair?: Uint8Array): Promise<Spec | null> {
   const proof = await proofAt(transport, intent);
   if (proof === null) {
     return null;
@@ -128,7 +144,20 @@ export async function readSpec(transport: Transport, get: SpecFetch, intent: Add
   if (await plainHttpOnPublic(transport, url)) {
     throw new SpecUnreadable(url, PLAIN_HTTP_ON_PUBLIC);
   }
-  const bytes = await bounded(await get(url, { redirect: "error", signal: AbortSignal.timeout(SPEC_TIMEOUT_MS) }), url);
+  const fetched = await bounded(await get(url, { redirect: "error", signal: AbortSignal.timeout(SPEC_TIMEOUT_MS) }), url);
+  let bytes: Uint8Array = fetched;
+  let to: Address[] | null = null;
+  if (isSealed(fetched)) {
+    to = sealedTo(fetched);
+    if (keypair === undefined) {
+      throw new SpecSealed(url, to, false);
+    }
+    try {
+      bytes = await unseal(fetched, keypair);
+    } catch (error) {
+      throw error instanceof NotInvited ? new SpecSealed(url, to, true) : new SpecUnreadable(url, "is sealed but could not be opened");
+    }
+  }
   const sha256 = createHash("sha256").update(bytes).digest("hex");
-  return { url, text: new TextDecoder().decode(bytes), sha256, matches: sha256 === hex(proof.params.specHash) };
+  return { url, text: new TextDecoder().decode(bytes), sha256, matches: sha256 === hex(proof.params.specHash), ...(to === null ? {} : { sealedTo: to }) };
 }

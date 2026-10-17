@@ -136,7 +136,7 @@ export function createClient(options: ClientOptions): Client {
     close,
     balances,
     jobs: (filter = {}) => jobsOf(transport, filter.attestor),
-    spec: (intent) => readSpec(transport, options.fetch ?? fetch, intent),
+    spec: (intent, keypair) => readSpec(transport, options.fetch ?? fetch, intent, keypair),
     deliver: async (input) => send((await deliveryInstructions(transport, input)).instructions, input.worker),
     deliveries: ({ judge, intent }) => deliveriesOf(transport, judge, intent),
     deliveryRecord: ({ judge, intent, pages }) => deliveryRecord(transport, judge, intent, pages),

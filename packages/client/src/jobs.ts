@@ -23,6 +23,7 @@ export {
   type SpecFetch,
   SPEC_SCAN,
   SPEC_TIMEOUT_MS,
+  SpecSealed,
   SpecUnreadable,
   specUrlOf,
   TESTNET_GENESIS_HASH,

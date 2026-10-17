@@ -1,10 +1,11 @@
-import { createHash } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import {
   type Address,
   appendTransactionMessageInstructions,
   compressTransactionMessageUsingAddressLookupTables,
   createTransactionMessage,
   generateKeyPairSigner,
+  getAddressDecoder,
   getAddressEncoder,
   getBase64EncodedWireTransaction,
   getCompiledTransactionMessageDecoder,
@@ -18,7 +19,7 @@ import {
 } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import { describe, expect, it } from "vitest";
-import { DELIVERY_MEMO_PREFIX, deliveryMemo, findEventAuthorityPda, findIntentPda, Kind, MAX_MEMO_URL, SPEC_MEMO_PREFIX, specMemo } from "@intent-engine/core";
+import { DELIVERY_MEMO_PREFIX, deliveryMemo, findEventAuthorityPda, findIntentPda, Kind, MAX_MEMO_URL, seal, SPEC_MEMO_PREFIX, specMemo } from "@intent-engine/core";
 import {
   announcements,
   createClient,
@@ -42,6 +43,7 @@ import {
   PLAIN_HTTP_ON_PUBLIC,
   SIGNATURE_PAGE,
   SPEC_URL_NEEDS_PROOF,
+  SpecSealed,
   SpecUnreadable,
   type SpecFetch,
   type Transport,
@@ -634,5 +636,55 @@ describe("svm transport", () => {
     expect(calls.some(({ inner, accounts }) => inner && accounts?.includes(eventAuthority) === true)).toBe(true);
     expect(landed === null || landed === undefined ? null : creationProof(landed, made.intent)).toEqual({ attestor: judge.address, specHash: Buffer.from(sha(SPEC)).toString("hex") });
     expect((await w.chain.transport.signaturesOf?.(made.intent, SIGNATURE_PAGE))?.map((entry) => entry.signature)).toEqual([signature]);
+  });
+});
+
+describe("a sealed spec", () => {
+  const keyed = () => {
+    const jwk = generateKeyPairSync("ed25519").privateKey.export({ format: "jwk" });
+    const keypair = Uint8Array.from([...Buffer.from(jwk.d ?? "", "base64url"), ...Buffer.from(jwk.x ?? "", "base64url")]);
+    return { keypair, address: getAddressDecoder().decode(keypair.slice(32)) };
+  };
+
+  it("opens for an invited wallet, checks the plain spec against the committed hash, and names who may read it", async () => {
+    const [worker, other, stranger] = [keyed(), keyed(), keyed()];
+    const sealed = await seal(new TextEncoder().encode(SPEC), [worker.address, other.address]);
+    const { client, judge, order } = await setting(serving({ [SPEC_URL]: sealed }));
+    const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
+    expect(await client.spec(job.intent, worker.keypair)).toEqual({
+      url: SPEC_URL,
+      text: SPEC,
+      sha256: Buffer.from(sha(SPEC)).toString("hex"),
+      matches: true,
+      sealedTo: [worker.address, other.address],
+    });
+    const unkeyed = await client.spec(job.intent).catch((e: unknown) => e);
+    expect(unkeyed).toBeInstanceOf(SpecSealed);
+    expect(unkeyed).toMatchObject({ url: SPEC_URL, to: [worker.address, other.address], keyed: false });
+    expect((unkeyed as Error).message).toBe(`the spec at ${SPEC_URL} is sealed to 2 invited wallets; read it with the key of an invited wallet`);
+    const outsider = await client.spec(job.intent, stranger.keypair).catch((e: unknown) => e);
+    expect(outsider).toMatchObject({ name: "SpecSealed", keyed: true });
+    expect((outsider as Error).message).toBe(`the spec at ${SPEC_URL} is sealed to 2 invited wallets; this wallet is not one of them`);
+  });
+
+  it("says when a sealed spec opens but is not the committed one, and refuses one that was changed", async () => {
+    const worker = keyed();
+    const other = await seal(new TextEncoder().encode("another spec"), [worker.address]);
+    const broken = new TextEncoder().encode(new TextDecoder().decode(await seal(new TextEncoder().encode(SPEC), [worker.address])).replace(/"data":"./, '"data":"A'));
+    const { client, judge, order } = await setting(serving({ [SPEC_URL]: other, "https://example.org/broken": broken }));
+    const wrong = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
+    const changed = await client.createIntent({ ...order, params: proof(judge.address), specUrl: "https://example.org/broken" });
+    expect(await client.spec(wrong.intent, worker.keypair)).toMatchObject({ text: "another spec", matches: false, sealedTo: [worker.address] });
+    await expect(client.spec(changed.intent, worker.keypair)).rejects.toThrow(new SpecUnreadable("https://example.org/broken", "is sealed but could not be opened"));
+    expect(await client.spec(wrong.intent, keyed().keypair).catch((e: unknown) => e)).toBeInstanceOf(SpecSealed);
+  });
+
+  it("leaves a plain spec as it was, keyed or not", async () => {
+    const worker = keyed();
+    const { client, judge, order } = await setting(serving({ [SPEC_URL]: SPEC }));
+    const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
+    const plain = { url: SPEC_URL, text: SPEC, sha256: Buffer.from(sha(SPEC)).toString("hex"), matches: true };
+    expect(await client.spec(job.intent, worker.keypair)).toEqual(plain);
+    expect(await client.spec(job.intent)).toEqual(plain);
   });
 });
