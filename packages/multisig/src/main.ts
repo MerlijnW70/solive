@@ -13,7 +13,7 @@ import {
 } from "@solana/kit";
 import type { Chain } from "./chain.js";
 import { jsonText } from "./engine.js";
-import { isDevice, isLedgerPath, LEDGER_FORMS, LedgerPathError, messageHash, parseLedgerPath } from "./ledger.js";
+import { isDevice, isLedgerPath, LEDGER_FORMS, LedgerError, LedgerPathError, messageHash, parseLedgerPath } from "./ledger.js";
 import { show } from "./show.js";
 import { approve, createMultisig, ENGINE_PROGRAM, execute, type Plan, proposeAuthority, proposeInstructions, proposeUpgrade, Refusal, reject } from "./squads.js";
 
@@ -329,6 +329,6 @@ export async function main(argv: string[], deps: Deps): Promise<Result> {
       return { code: EXIT_USAGE, out: "", err: `${notes.join("")}${jsonText({ error: message, usage: USAGE })}\n` };
     }
     const shown = error instanceof Refusal && error.shown !== undefined ? error.shown : {};
-    return { code: EXIT_REFUSED, out: "", err: `${notes.join("")}${jsonText({ error: message, refused: error instanceof Refusal, ...shown })}\n` };
+    return { code: EXIT_REFUSED, out: "", err: `${notes.join("")}${jsonText({ error: message, refused: error instanceof Refusal || error instanceof LedgerError, ...shown })}\n` };
   }
 }

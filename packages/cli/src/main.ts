@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { createKeyPairSignerFromBytes, createSolanaRpc, type KeyPairSigner } from "@solana/kit";
-import { changesFrom, intentNotifications, type RpcLike, rpcTransport, signatureWatch } from "@intent-engine/client";
+import { changesFrom, intentNotifications, openUsb, type RpcLike, rpcTransport, signatureWatch } from "@intent-engine/client";
 import { ENV_URL, outputOf, parse, UsageError } from "./args.js";
 import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
@@ -17,6 +17,7 @@ import { WALLET_NOTICE } from "./agent/wallet.js";
 import { EXIT_ALERTED } from "./monitor-args.js";
 import { monitor, writeBaseline } from "./monitor.js";
 import { launch } from "./launch.js";
+import { checkLedgerPaths } from "./ledger-keys.js";
 
 export const EXIT_OK = 0;
 export const EXIT_FAILED = 1;
@@ -58,6 +59,7 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
   try {
     const command = parse(argv, await withSettings(runtime, runtime.env));
     url = "url" in command ? command.url : undefined;
+    checkLedgerPaths(command);
     const show = (value: object) => io.out(command.name === "help" || outputOf(argv) === "text" ? renderText(value) : render(value));
     if (command.name === "follow") {
       const transport = withPriority(runtime.transport(command.url), command.priority);
@@ -179,6 +181,7 @@ export function nodeRuntime(clock: () => number = Date.now, pipes: Pipes = proce
     },
     platform: process.platform,
     launch: (program, args) => launch(program, args),
+    ledger: openUsb,
   };
 }
 

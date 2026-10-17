@@ -61,6 +61,10 @@ intent-engine cancel --nonce 1 --close --yes
 
 Your 0.05 comes back as wrapped SOL, SOL held as a token, which your next order can sell.
 
+## Sign with a Ledger
+
+Open the Solana app on the Ledger and pass `--keypair usb://ledger`, `usb://ledger?key=<account>` or `usb://ledger?key=<account>/<change>` instead of a key file. This works for `create`, `cancel`, `expire`, `close`, `approve`, `revoke-approval`, `deliver`, `advance-nonce`, `advance-epoch`, `claims take`, `claims drop`, `mandate grant` and `mandate revoke`. Any other command refuses a Ledger before it reads the chain and asks for a key file.
+
 ## Next
 
 - [Use it from your AI](ai.md)

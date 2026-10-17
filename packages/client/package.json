@@ -45,6 +45,10 @@
     "@solana-program/token": "0.16.1",
     "@solana/kit": "8.4.0"
   },
+  "optionalDependencies": {
+    "@ledgerhq/hw-app-solana": "7.12.0",
+    "@ledgerhq/hw-transport-node-hid-noevents": "6.36.0"
+  },
   "peerDependencies": {
     "litesvm": "^1.5.0"
   },

@@ -9,6 +9,8 @@ import { ACTIONS } from "../src/agent/registry.js";
 import { WALLET_ACTIONS } from "../src/agent/wallet.js";
 import { EVERYDAY_TOOLS } from "../src/agent/everyday.js";
 import { ADDRESS_PATTERN, AMOUNT_PATTERN, TIME_PATTERN } from "../src/agent/schema.js";
+import { LEDGER_FORMS } from "@intent-engine/client";
+import { LEDGER_COMMANDS } from "../src/ledger-keys.js";
 
 type Json = Record<string, unknown>;
 
@@ -112,6 +114,8 @@ function cliPage(): string {
     `Every command accepts ${GLOBAL_OPTIONS.map((o) => `\`--${o}\``).join(" and ")}.`,
     "",
     `\`${ENV_KEYPAIR}\` fills in \`--keypair\` and \`${ENV_URL}\` fills in \`--url\` when they are not given. \`--url\` takes an RPC URL or one of ${Object.keys(CLUSTERS).map((c) => `\`${c}\``).join(", ")}.`,
+    "",
+    `\`--keypair\` also takes a Ledger, as ${LEDGER_FORMS.map((f) => `\`${f}\``).join(", ")}, for ${LEDGER_COMMANDS.map((c) => `\`${c}\``).join(", ")}; every other command refuses one and needs a key file.`,
     "",
     ...body,
     ...plain,

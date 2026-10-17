@@ -4,6 +4,7 @@ import { memoized, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, type Transport } fro
 import { claimsOf } from "./agent/claims.js";
 import { relayOf } from "./agent/relay.js";
 import type { Command } from "./command-types.js";
+import { transactionSigner } from "./ledger-keys.js";
 import type { Runtime } from "./runtime.js";
 import type { AgentContext } from "./agent/actions.js";
 import { prepareCreate } from "./agent/create.js";
@@ -59,7 +60,7 @@ type FlowCommand = Extract<Command, { name: "flow" | "lookup" | "signed-prepare"
 export async function flowCommand(command: FlowCommand, runtime: Runtime, transport: Transport): Promise<object> {
   switch (command.name) {
     case "flow": {
-      const signer = await runtime.loadSigner(command.keypair);
+      const signer = await transactionSigner(runtime, command.keypair);
       const reading = memoized(transport);
       const ctx = context(reading);
       const raw = await rawFlowInput(reading, command.flow, command.input, signer.address);

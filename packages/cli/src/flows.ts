@@ -151,7 +151,7 @@ export async function ask(action: AnyAction, ctx: AgentContext, input: object): 
 export async function finish(
   transport: Transport,
   value: Record<string, unknown>,
-  signer: KeyPairSigner,
+  signer: TransactionPartialSigner,
   yes: boolean,
 ): Promise<object> {
   const leading = PREPARED_KEYS.map((key) => value[key] as PreparedView | undefined).filter((v) => v !== undefined);
@@ -214,7 +214,7 @@ export async function perform(
   action: AnyAction,
   ctx: AgentContext,
   input: object,
-  signer: KeyPairSigner,
+  signer: TransactionPartialSigner,
   yes: boolean,
 ): Promise<object> {
   return finish(ctx.transport, await ask(action, ctx, input), signer, yes);
@@ -226,7 +226,7 @@ export async function signMessage(signer: KeyPairSigner, base64: string): Promis
 
 export async function approval(
   transport: Transport,
-  signer: KeyPairSigner,
+  signer: TransactionPartialSigner,
   mint: Address,
   amount: bigint | undefined,
   yes: boolean,

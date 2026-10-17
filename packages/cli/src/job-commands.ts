@@ -14,6 +14,7 @@ import type { Command } from "./command-types.js";
 import type { Runtime } from "./runtime.js";
 import { previewed } from "./admin-commands.js";
 import { artifactSha256 } from "./artifact.js";
+import { transactionSigner } from "./ledger-keys.js";
 
 export const NOT_RELEASED = "no release of this escrow is among its recent transactions; show intent says whether it is still open, and --release with the release's signature reads a release directly";
 
@@ -60,7 +61,7 @@ export async function jobCommand(command: JobCommand, runtime: Runtime, transpor
     case "jobs":
       return { jobs: await jobsOf(transport, command.attestor) };
     case "deliver": {
-      const worker = await runtime.loadSigner(command.keypair);
+      const worker = await transactionSigner(runtime, command.keypair);
       const { intent, workUrl } = command;
       const sha256 = "sha256" in command ? command.sha256 : await artifactSha256(command.artifact);
       const { attestor, instructions } = await deliveryInstructions(transport, { worker, intent, sha256, url: workUrl });

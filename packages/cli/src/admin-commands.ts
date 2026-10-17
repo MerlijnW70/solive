@@ -7,7 +7,7 @@ import {
   type Instruction,
   isSignerRole,
   isWritableRole,
-  type KeyPairSigner,
+  type TransactionPartialSigner,
   type TransactionSigner,
 } from "@solana/kit";
 import {
@@ -102,7 +102,7 @@ async function administer(
 export async function previewed(
   transport: Transport,
   instructions: Instruction[],
-  signer: KeyPairSigner,
+  signer: TransactionPartialSigner,
   shown: object,
   yes: boolean,
 ): Promise<object> {

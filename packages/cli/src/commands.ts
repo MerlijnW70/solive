@@ -44,6 +44,7 @@ import { engineEvents } from "./event-feed.js";
 import { SOLVER_TABLE_NEXT, solverOptions } from "./solve-commands.js";
 import { flowCommand } from "./flow-commands.js";
 import { addTo } from "./add-to.js";
+import { transactionSigner } from "./ledger-keys.js";
 
 export type { Runtime } from "./runtime.js";
 export { AUTHORITY_NEXT, configExists } from "./admin-commands.js";
@@ -138,7 +139,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       return { address, ...quoteOf(intent, config, command.at ?? runtime.now()) };
     }
     case "cancel": {
-      const owner = await runtime.loadSigner(command.keypair);
+      const owner = await transactionSigner(runtime, command.keypair);
       const { address, intent } = await loadIntent(transport, owner.address, command.nonce);
       const ref = { nonce: command.nonce, inputMint: intent.inputMint, tokenProgram: await tokenProgramOf(transport, intent.inputMint) };
       const refund = await tokenAccountIfMissing(transport, owner, owner.address, intent.inputMint, ref.tokenProgram);
@@ -158,7 +159,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       return previewed(transport, instructions, owner, { intent: address, summary }, command.yes);
     }
     case "expire": {
-      const cranker = await runtime.loadSigner(command.keypair);
+      const cranker = await transactionSigner(runtime, command.keypair);
       const { address, intent } = await loadIntent(transport, command.owner, command.nonce);
       const instructions = await expiring(transport, cranker, address, intent, "always", false);
       const summary = [
@@ -168,7 +169,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       return previewed(transport, instructions, cranker, { intent: address, summary }, command.yes);
     }
     case "close": {
-      const payer = await runtime.loadSigner(command.keypair);
+      const payer = await transactionSigner(runtime, command.keypair);
       const { address, intent } = await loadIntent(transport, command.owner, command.nonce);
       const instructions = await closing(transport, payer, address, intent, "always");
       const summary = [
@@ -250,7 +251,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "show-mint-cap":
       return showMintCap(transport, command.mint);
     case "advance-nonce": {
-      const owner = await runtime.loadSigner(command.keypair);
+      const owner = await transactionSigner(runtime, command.keypair);
       const ix = await buildAdvanceNonce({ owner, nonceBase: command.base });
       return { signature: await transport.send([ix], owner) };
     }
@@ -262,7 +263,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "signed-submit":
       return flowCommand(command, runtime, transport);
     case "advance-epoch": {
-      const owner = await runtime.loadSigner(command.keypair);
+      const owner = await transactionSigner(runtime, command.keypair);
       const [userState] = await findUserStatePda({ owner: owner.address });
       const view = await createdAccount(transport, userState);
       if (view === null) {

@@ -1,4 +1,4 @@
-import type { Address, KeyPairSigner } from "@solana/kit";
+import type { Address, TransactionPartialSigner } from "@solana/kit";
 import {
   buildClaimJob,
   buildCloseProfile,
@@ -20,6 +20,7 @@ import { type ClaimsView, type Client, createClient, type Transport } from "@int
 import { previewed } from "./admin-commands.js";
 import type { Command } from "./command-types.js";
 import { FlowRefused } from "./flows.js";
+import { transactionSigner } from "./ledger-keys.js";
 import type { Runtime } from "./runtime.js";
 
 type ClaimCommand = Extract<
@@ -73,7 +74,7 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
     const { intent, view } = await claimsOf(client, command.owner, command.nonce);
     return claimsShown(intent, view);
   }
-  const signer = await runtime.loadSigner(command.keypair);
+  const signer = await transactionSigner(runtime, command.keypair);
   if (command.name === "claims-open") {
     const [intent] = await findIntentPda({ owner: signer.address, nonce: command.nonce });
     const board = await claimBoardAddress(intent);
@@ -106,7 +107,7 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
 
 async function takeClaim(
   command: Extract<ClaimCommand, { name: "claims-take" }>,
-  worker: KeyPairSigner,
+  worker: TransactionPartialSigner,
   transport: Transport,
   client: Client,
   intent: Address,
@@ -144,7 +145,7 @@ async function takeClaim(
 
 async function settleClaims(
   command: Extract<ClaimCommand, { name: "claims-settle" }>,
-  payer: KeyPairSigner,
+  payer: TransactionPartialSigner,
   transport: Transport,
   client: Client,
   intent: Address,

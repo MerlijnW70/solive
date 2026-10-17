@@ -17,9 +17,8 @@
     "test": "vitest run --fsModuleCache"
   },
   "dependencies": {
+    "@intent-engine/client": "workspace:*",
     "@intent-engine/core": "workspace:*",
-    "@ledgerhq/hw-app-solana": "7.12.0",
-    "@ledgerhq/hw-transport-node-hid-noevents": "6.36.0",
     "@solana/kit": "8.4.0"
   },
   "devDependencies": {

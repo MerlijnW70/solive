@@ -3,6 +3,7 @@ export * from "./budget.js";
 export * from "./client.js";
 export * from "./errors.js";
 export * from "./jobs.js";
+export * from "./ledger.js";
 export * from "./reputation.js";
 export * from "./setup.js";
 export * from "./simple.js";
