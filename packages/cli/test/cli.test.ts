@@ -1629,6 +1629,7 @@ describe("process plumbing", () => {
       "signaturesOf",
       "transactionsOf",
       "transactionOf",
+      "signatureStatuses",
       "firstAvailableSlot",
       "intents",
     ]);

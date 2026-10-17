@@ -3,6 +3,7 @@ import { findAssociatedTokenAddress, getIntentDecoder, type Intent, IntentStatus
 import {
   type Chain,
   cachedPricer,
+  answered,
   type Flight,
   type Pricer,
   type SolverOptions,
@@ -89,7 +90,7 @@ export async function watchSolve(command: SolveCommand, interval: number, runtim
   return watchSolveWith(command, interval, runtime, transport, options, emit, inFlight);
 }
 
-export type WatchTransport = Pick<Transport, "submitWire" | "transactionOf" | "getAccounts">;
+export type WatchTransport = Pick<Transport, "submitWire" | "transactionOf" | "getAccounts" | "signatureStatuses">;
 
 export async function watchSolveWith(
   command: SolveCommand,
@@ -114,6 +115,7 @@ export async function watchSolveWith(
   };
   const failedOnChain = async (signature: string): Promise<boolean> =>
     command.jito === undefined && (await transport.transactionOf?.(signature))?.failed === true;
+  const statuses = command.jito === undefined ? transport.signatureStatuses?.bind(transport) : undefined;
   const changes = runtime.intentChanges(command.url);
   const failing = new Map<Address, bigint>();
   let scannedAt: bigint | null = null;
@@ -134,7 +136,8 @@ export async function watchSolveWith(
           emit({ at: now, scan: "changed", unreadable: decoded.unreadable });
         }
         const listed = decoded.intents;
-        const lost = await landings(inFlight, now, listed, failedOnChain, held);
+        const early = statuses === undefined ? [] : await answered(inFlight, listed, statuses, held);
+        const lost = [...early, ...(await landings(inFlight, now, listed, failedOnChain, held))];
         releaseHolds(inFlight, listed, full);
         if (full) {
           for (const [intent, flight] of inFlight) {
@@ -147,8 +150,15 @@ export async function watchSolveWith(
         const mark = counts.mark();
         const report = await tick({ ...live, chain: { ...chain, intents: async () => due } });
         const { filled, sent, failed } = report;
+        const sentFor = new Map(due.map(({ address, intent }) => [address, intent]));
         for (const { intent, signature, holds } of sent) {
-          inFlight.set(intent, { until: now + IN_FLIGHT_SECONDS, signature, ...(holds === undefined ? {} : { holds }) });
+          const order = sentFor.get(intent);
+          inFlight.set(intent, {
+            until: now + IN_FLIGHT_SECONDS,
+            signature,
+            ...(holds === undefined ? {} : { holds }),
+            ...(order === undefined ? {} : { intent: order }),
+          });
         }
         if (filled.length + sent.length + failed.length + lost.length > 0) {
           emit({ at: now, scan: full ? "full" : "changed", ms: Math.round(performance.now() - began), filled, sent, failed: [...lost, ...failed] });

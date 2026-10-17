@@ -15,7 +15,7 @@ import {
 import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { confirmSent, type SignatureWatch } from "./confirmation.js";
 import { patiently } from "./rpc-retry.js";
-import type { AccountView, AtLeast, EngineTransaction, ListedSignature, RawAccount, RpcLike, Transport } from "./rpc-shapes.js";
+import type { AccountView, AtLeast, EngineTransaction, ListedSignature, RawAccount, RpcLike, SignatureLanding, Status, Transport } from "./rpc-shapes.js";
 import { holdingsOf, keysAt, MEMO_PROGRAM_ADDRESS, signersAmong } from "./transaction-keys.js";
 
 const INTENT_OWNER_OFFSET = 8n;
@@ -32,6 +32,15 @@ function viewOf(value: RawAccount | null): AccountView | null {
 
 export const TRANSACTION_FETCHES = 4;
 export const KEPT_TRANSACTIONS = 256;
+
+export const SIGNATURE_STATUSES_LIMIT = 256;
+
+export function landingOf(status: Status | null | undefined): SignatureLanding | null {
+  if (!status || (status.confirmationStatus !== "confirmed" && status.confirmationStatus !== "finalized")) {
+    return null;
+  }
+  return status.err === null ? "landed" : "failed";
+}
 
 export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>, watch?: SignatureWatch): Transport {
   const fetched = new Map<string, Promise<EngineTransaction & { complete: boolean }>>();
@@ -230,6 +239,15 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       }
       const failed = tx.meta !== null && tx.meta.err !== undefined && tx.meta.err !== null;
       return withoutMark(parsed({ signature, slot: tx.slot ?? 0n, blockTime: tx.blockTime ?? null, failed, memo: null }, tx));
+    },
+    async signatureStatuses(signatures) {
+      const found: (SignatureLanding | null)[] = [];
+      for (let at = 0; at < signatures.length; at += SIGNATURE_STATUSES_LIMIT) {
+        const chunk = signatures.slice(at, at + SIGNATURE_STATUSES_LIMIT) as Signature[];
+        const { value } = await patiently(() => rpc.getSignatureStatuses([...chunk]).send(), wait);
+        found.push(...chunk.map((_, i) => landingOf(value[i])));
+      }
+      return found;
     },
     ...(firstBlock === undefined ? {} : { firstAvailableSlot: () => patiently(() => firstBlock().send(), wait) }),
     async intents(owner, read) {

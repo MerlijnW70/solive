@@ -104,6 +104,7 @@ Your wallet prints `5`. The solver keeps the rest of what it minted as its profi
 - A fill paid in wrapped SOL is skipped when its profit less that SOL cost is below `--min-profit`. `--sol-value <mint>=<raw>/<lamports>,...` does the same for other tokens, counting `raw` units as worth `lamports` lamports. Each filled or sent fill reports its `cost` in lamports.
 - `--max-rent` (default 0.01 SOL) caps the rent of token accounts a fill opens for the solver. The solver keeps those accounts.
 - With `--watch`, a fill that failed waits 1 interval, then 2, 4 and so on up to 32, before the solver tries it again.
+- With `--watch` and no `--jito`, every scan asks the node whether each sent fill landed. A fill that failed on chain counts as failed at once and frees the tokens it held. A fill the node does not know yet stays in flight as before.
 
 ## Solve from TypeScript
 

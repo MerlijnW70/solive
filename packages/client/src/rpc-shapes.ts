@@ -37,6 +37,8 @@ export type IntentRead = { minContextSlot?: bigint; onSlot?: (slot: bigint) => v
 
 export type LookupTables = Readonly<Record<Address, Address[]>>;
 
+export type SignatureLanding = "landed" | "failed";
+
 export type Simulation = { err: string | null; logs: string[]; unitsConsumed: bigint | null; accounts: (Uint8Array | null)[] };
 
 export interface Transport {
@@ -54,6 +56,7 @@ export interface Transport {
   signaturesOf?(of: Address, limit: number, before?: string): Promise<ListedSignature[]>;
   transactionsOf?(listed: readonly ListedSignature[]): Promise<EngineTransaction[]>;
   transactionOf?(signature: string): Promise<EngineTransaction | null>;
+  signatureStatuses?(signatures: readonly string[]): Promise<(SignatureLanding | null)[]>;
   firstAvailableSlot?(): Promise<bigint>;
   recentFees(accounts: readonly Address[]): Promise<bigint[]>;
   budget(instructions: readonly Instruction[], feePayer: Address, tables?: LookupTables): Promise<Instruction[]>;

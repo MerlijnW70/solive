@@ -34,6 +34,7 @@ export function releaseHolds(
     if (seen === IntentStatus.Open || (seen === undefined && !full)) {
       continue;
     }
-    flights.set(address, { until: flight.until, signature: flight.signature });
+    const { holds: _, ...kept } = flight;
+    flights.set(address, kept);
   }
 }

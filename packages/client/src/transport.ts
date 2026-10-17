@@ -7,6 +7,7 @@ export type {
   LookupTables,
   ProgramAccount,
   RpcLike,
+  SignatureLanding,
   Simulation,
   TokenHolding,
   Transport,
@@ -34,7 +35,7 @@ export {
   signatureWatch,
 } from "./confirmation.js";
 export { boundMembers, memoized, unmemoized } from "./memoized-transport.js";
-export { KEPT_TRANSACTIONS, MULTIPLE_ACCOUNTS_LIMIT, rpcTransport, TRANSACTION_FETCHES } from "./rpc-transport.js";
+export { KEPT_TRANSACTIONS, landingOf, MULTIPLE_ACCOUNTS_LIMIT, rpcTransport, SIGNATURE_STATUSES_LIMIT, TRANSACTION_FETCHES } from "./rpc-transport.js";
 export {
   changedAccount,
   changesFrom,
