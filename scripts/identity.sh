@@ -57,7 +57,7 @@ Change License:       %s
 }
 render() {
   case "$1" in
-    README.md) printf '\043 %s\n\nStart here: [Use it from your AI](docs/ai.md), the [command line quickstart](docs/quickstart.md), [build on it from TypeScript](docs/sdk.md), or [judge a proof escrow](docs/judge.md)\n\nLicense: the on-chain program (`programs/intent_engine`) and its core library (`crates/intent-core`) are under the [Business Source License](programs/intent_engine/LICENSE), which turns into the GNU GPL on the change date it names. Everything else, including the npm packages, is under the [Apache License](LICENSE).\n' "$name" ;;
+    README.md) printf '\043 %s\n\nPost an order on Solana and let competing solvers fill it: swaps, auctions, and escrows that pay out only when the work checks out. Use it from your AI, the command line or TypeScript. It runs on devnet, where tokens have no value.\n\n```sh\nnpm install -g @intent-engine/cli\nintent-engine setup\n```\n\n- [Quickstart](docs/quickstart.md)\n- [Use it from your AI](docs/ai.md)\n- [Build in TypeScript](docs/sdk.md)\n- [Run a solver](docs/solver.md)\n- [Judge work](docs/judge.md)\n- [All commands](docs/reference/cli.md)\n\nLicense: the on-chain program and its core library are under the [Business Source License](programs/intent_engine/LICENSE), which turns into the GNU GPL on the date it names. Everything else is under the [Apache License](LICENSE).\n' "$name" ;;
     scripts/wsl.cmd | packages/core/scripts/wsl.cmd | packages/cli/scripts/wsl.cmd | packages/solver/scripts/wsl.cmd) printf '@wsl.exe -d %s --cd "%%~dp0.." -- %%*\r\n' "$distro" ;;
     programs/intent_engine/src/security.rs) printf '\043[cfg(not(feature = "no-entrypoint"))]
 solana_security_txt::security_txt! {

@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, none, some } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
-import { findAssociatedTokenAddress, getIntentDecoder, getIntentSize } from "@intent-engine/core";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress, getIntentDecoder, getIntentSize } from "@intent-engine/core";
 import {
   getCreateAssociatedTokenIdempotentInstructionAsync,
   getMintEncoder,
@@ -11,7 +11,8 @@ import {
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 import { beforeEach, describe, expect, it } from "vitest";
-import { CLUSTERS, ENV_KEYPAIR, ENV_URL, WATCH_INTERVAL } from "../src/args.js";
+import { ENV_KEYPAIR, ENV_URL, WATCH_INTERVAL } from "../src/args.js";
+import { AIRDROP, FUNDED } from "../src/wallet.js";
 import { REVOKE_CANCELS } from "../src/agent/mandate.js";
 import { ata, balance, cli, funded, h, send, type World, world } from "./harness.js";
 
@@ -87,34 +88,20 @@ describe("the quickstart", () => {
     w = await world();
   });
 
-  it("asks for the tool versions and repository the workspace declares", () => {
-    const root = JSON.parse(read("package.json")) as { engines: { node: string }; packageManager: string };
+  it("asks for the Node version the workspace declares and installs the published cli", () => {
+    const root = JSON.parse(read("package.json")) as { engines: { node: string } };
     const [, major, minor] = /^>=(\d+)\.(\d+)\.0$/.exec(root.engines.node) ?? [];
-    expect(PAGE).toContain(`- Node.js ${major}.${minor} or later\n`);
-    expect(PAGE).toContain(`- pnpm ${root.packageManager.replace("pnpm@", "")}\n`);
-    const repository = /^repository = "([^"]+)"$/m.exec(read("identity.toml"))?.[1];
-    const bin = (JSON.parse(read("packages/cli/package.json")) as { bin: Record<string, string> }).bin["intent-engine"] ?? "";
-    expect(bin).toBe("./dist/src/bin.js");
-    expect(CLUSTERS["devnet"]).toBe("https://api.devnet.solana.com");
-    expect(setup).toEqual([
-      `git clone ${repository}.git`,
-      "cd solive",
-      "pnpm install",
-      "pnpm -r build",
-      `alias intent-engine="node $PWD/packages/cli/${bin.replace("./", "")}"`,
-      `solana-keygen new --no-bip39-passphrase -o ${WALLET}`,
-      `solana config set --url devnet --keypair ${WALLET}`,
-      `export ${ENV_URL}=devnet ${ENV_KEYPAIR}=${WALLET}`,
-      "solana airdrop 1",
-      "spl-token wrap 0.2",
-      `spl-token balance ${TEST_TOKEN}`,
-    ]);
+    expect(PAGE).toContain("You need [Node.js](https://nodejs.org) " + `${major}.${minor} or later.`);
+    const cli = JSON.parse(read("packages/cli/package.json")) as { name: string; bin: Record<string, string> };
+    expect(Object.keys(cli.bin)).toEqual(["intent-engine"]);
+    expect(setup).toEqual([`npm install -g ${cli.name}`]);
+    expect(PAGE).toContain(`asks devnet for ${AIRDROP / LAMPORTS_PER_SOL} SOL`);
   });
 
   it("names the token and rate the devnet filler runs with", () => {
     expect(variable("wrapped_sol")).toBe(NATIVE_MINT);
-    expect(PAGE).toContain(`The intent sells wrapped SOL for the solive test token \`${TEST_TOKEN}\`.`);
-    expect(commands.filter((c) => c.includes(" create ")).every((c) => c.includes(`--input-mint ${NATIVE_MINT} --output-mint ${TEST_TOKEN} `))).toBe(true);
+    expect(TEST_TOKEN).toBe(DEVNET_TEST_MINT);
+    expect(commands.filter((c) => c.includes(" create ")).every((c) => c.includes("--input-mint SOL --output-mint TEST "))).toBe(true);
     expect(fillerSolve()).toEqual([
       "solve",
       "--url",
@@ -129,68 +116,51 @@ describe("the quickstart", () => {
       "--interval",
       "5",
     ]);
-    expect(PAGE).toContain(
-      "The devnet filler prices test tokens at 200 per wrapped SOL and pays exactly the minimum asked, so it fills this intent with 5.",
-    );
   });
 
-  it("creates an intent the filler fills, then cancels one it does not, with exactly the commands it prints", async () => {
-    const owner = await funded();
+  it("sets up a wallet, swaps, and cancels an order nobody fills, with exactly the commands it prints", async () => {
     nativeMint();
-    const wrapped = await findAssociatedTokenAddress({ owner: owner.address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
-    const rent = h.svm.minimumBalanceForRentExemption(165n);
-    await send(owner, [
-      await getCreateAssociatedTokenIdempotentInstructionAsync({ payer: owner, owner: owner.address, mint: NATIVE_MINT }),
-      getTransferSolInstruction({ source: owner, destination: wrapped, amount: LAMPORTS_PER_SOL / 5n - rent }),
-      getSyncNativeInstruction({ account: wrapped }),
-    ]);
     const key = await filler();
     await ata(w.authority, w.feeRecipient.address, NATIVE_MINT);
-    h.env[ENV_URL] = "devnet";
-    h.env[ENV_KEYPAIR] = WALLET;
-    h.watched.push(owner.address);
-    const keys = { [WALLET]: owner, [FILLER_KEY]: key };
-    const received = await findAssociatedTokenAddress({ owner: owner.address, mint: TEST_TOKEN, tokenProgram: TOKEN_PROGRAM_ADDRESS });
-    const held = balance(wrapped);
+    const keys = { [FILLER_KEY]: key };
     const outputs: Record<string, unknown>[] = [];
-    const balances: bigint[] = [];
-    let filled: Record<string, unknown> = {};
     for (const [index, line] of commands.entries()) {
       const run = await cli(line.split(" ").slice(1), keys);
       expect(run.err, line).toBe("");
       outputs.push(run.json());
-      balances.push(balance(wrapped));
-      if (index === 1) {
-        filled = (await cli(fillerSolve(), keys)).json();
+      if (index === 0) {
+        h.watched.push(outputs[0]?.["address"] as Address);
+      }
+      if (index === 2) {
+        expect((await cli(fillerSolve(), keys)).json()).toMatchObject({ sent: [{ intent: outputs[2]?.["intent"] }], failed: [] });
       }
     }
     expect(commands.map((c) => c.split(" ").slice(1, 3).join(" "))).toEqual([
+      "setup",
       "create swap",
       "create swap",
+      "balance",
       "create swap",
       "list",
       "cancel --nonce",
     ]);
-    expect(PAGE).toContain("Sell 0.05 wrapped SOL for at least 5 test tokens:");
-    expect(commands[0]).toContain("--units tokens --amount-in 0.05 --min-out 5 --expires-in 3600");
-    expect(commands[1]).toBe(`${commands[0]} --yes`);
-    expect(outputs[0]).toMatchObject({ sent: false });
-    expect(outputs[1]).toMatchObject({ sent: true });
-    expect(filled).toMatchObject({ sent: [{ intent: outputs[1]?.["intent"] }], failed: [] });
-    expect(PAGE).toContain("Once the intent is filled, this prints `5`.");
-    expect(balance(received)).toBe(5n * LAMPORTS_PER_SOL);
-    expect(PAGE).toContain("Ask for 50 test tokens, more than the filler pays, then cancel:");
-    expect(commands[2]).toContain("--units tokens --amount-in 0.05 --min-out 50 --expires-in 3600 --yes");
-    expect(balances).toEqual([
-      held,
-      held - LAMPORTS_PER_SOL / 20n,
-      held - LAMPORTS_PER_SOL / 10n,
-      held - LAMPORTS_PER_SOL / 10n,
-      held - LAMPORTS_PER_SOL / 20n,
-    ]);
-    expect(PAGE).toContain("`list` shows this intent as `open` with nonce `1`.");
-    expect(outputs[3]).toMatchObject({ intents: [{ status: "filled", nonce: "0" }, { status: "open", nonce: "1" }] });
-    expect(PAGE).toContain("`cancel --yes` sends the cancel and returns its 0.05 wrapped SOL to your wrapped SOL token account;");
+    const owner = outputs[0]?.["address"] as Address;
+    expect(outputs[0]).toMatchObject({ created: true, sol: String(AIRDROP / LAMPORTS_PER_SOL), next: FUNDED });
+    expect(PAGE).toContain("Offer 0.05 SOL for at least 5 TEST:");
+    expect(commands[1]).toContain("--units tokens --amount-in 0.05 --min-out 5 --expires-in 3600");
+    expect(commands[2]).toBe(`${commands[1]} --yes`);
+    expect(outputs[1]).toMatchObject({ sent: false });
+    expect(outputs[2]).toMatchObject({ sent: true });
+    expect(PAGE).toContain("TEST shows `5` once it is filled.");
+    expect(outputs[3]).toMatchObject({ address: owner, tokens: [{ name: "wrapped SOL", balance: "0" }, { name: "TEST", balance: "5" }] });
+    expect(PAGE).toContain("Ask for 50 TEST, more than the solver pays, then cancel it:");
+    expect(commands[4]).toContain("--units tokens --amount-in 0.05 --min-out 50 --expires-in 3600 --yes");
+    expect(outputs[5]).toMatchObject({ intents: [{ status: "filled", nonce: "0" }, { status: "open", nonce: "1" }] });
+    expect(outputs[6]).toMatchObject({ sent: true });
+    expect(PAGE).toContain("Your 0.05 comes back as wrapped SOL.");
+    const wrapped = await findAssociatedTokenAddress({ owner, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    expect(balance(wrapped)).toBe(LAMPORTS_PER_SOL / 20n);
+    const received = await findAssociatedTokenAddress({ owner, mint: TEST_TOKEN, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     expect(balance(received)).toBe(5n * LAMPORTS_PER_SOL);
   });
 });
@@ -210,7 +180,7 @@ describe("the sdk page", () => {
     );
     expect(SDK).toContain('amountIn: parseAmount("0.05", sell.decimals), minOut: parseAmount("50", buy.decimals)');
     expect(fillerSolve()).toContain(`${NATIVE_MINT}:${TEST_TOKEN}=200/1`);
-    const asks = [commands[1] ?? "", commands[2] ?? ""];
+    const asks = commands.filter((c) => c.includes(" create ") && c.endsWith(" --yes")).map((c) => c.replace("--input-mint SOL --output-mint TEST", `--input-mint ${NATIVE_MINT} --output-mint ${TEST_TOKEN}`));
     expect(asks.map((c) => /--amount-in (\S+) --min-out (\S+) /.exec(c)?.slice(1))).toEqual([
       ["0.05", "5"],
       ["0.05", "50"],
