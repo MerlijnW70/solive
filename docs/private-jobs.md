@@ -1,6 +1,6 @@
 # Company-only jobs
 
-Post a job whose spec only the workers you choose can read. Do steps 1 and 2 of the [quickstart](quickstart.md) first.
+Post a job whose spec only the workers you choose can read: unlisted, or invite-only with sealed files. Do steps 1 and 2 of the [quickstart](quickstart.md) first.
 
 ## What stays private
 
@@ -66,6 +66,52 @@ intent-engine deliver --intent $env:INTENT --artifact work --work-url $env:WORK_
 ## 5. Judge and pay
 
 Judge as in [Judge work](judge.md). Pay only the workers you sent the spec to.
+
+## Invite-only: seal the spec and the work
+
+Only the wallets you invite can open a sealed spec, even at a public link. Seal it to your workers and the judge:
+
+```sh
+intent-engine seal --file spec.md --to $WORKER,$JUDGE --out spec.sealed
+intent-engine create attested --input-mint SOL --output-mint TEST --units tokens --amount-in 0.01 --min-result 1 --max-result 1 --attestor $JUDGE --spec-hash $SPEC_HASH --spec-url $SPEC_URL --expires-in 86400 --yes
+```
+
+In PowerShell:
+
+```powershell
+intent-engine seal --file spec.md --to "$env:WORKER,$env:JUDGE" --out spec.sealed
+intent-engine create attested --input-mint SOL --output-mint TEST --units tokens --amount-in 0.01 --min-result 1 --max-result 1 --attestor $env:JUDGE --spec-hash $env:SPEC_HASH --spec-url $env:SPEC_URL --expires-in 86400 --yes
+```
+
+`$SPEC_URL` is where you put `spec.sealed`. An invited worker reads it, then seals the work to the judge:
+
+```sh
+intent-engine spec --intent $INTENT --out spec.md
+intent-engine seal --file work.tar --to $JUDGE --out work.sealed
+intent-engine deliver --intent $INTENT --artifact work.tar --work-url $WORK_URL --yes
+```
+
+In PowerShell:
+
+```powershell
+intent-engine spec --intent $env:INTENT --out spec.md
+intent-engine seal --file work.tar --to $env:JUDGE --out work.sealed
+intent-engine deliver --intent $env:INTENT --artifact work.tar --work-url $env:WORK_URL --yes
+```
+
+`$WORK_URL` is where the worker put `work.sealed`. The judge opens it:
+
+```sh
+intent-engine unseal --file work.sealed --keypair ~/.config/intent-engine/wallet.json --out work.tar
+```
+
+In PowerShell:
+
+```powershell
+intent-engine unseal --file work.sealed --keypair $HOME/.config/intent-engine/wallet.json --out work.tar
+```
+
+Anyone else sees only sealed data. `judge` refuses to pay a wallet the spec was not sealed to.
 
 ## Next
 

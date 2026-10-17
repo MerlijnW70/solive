@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import type { Address } from "@solana/kit";
 import { NotInvited, seal, sealedTo, SealedError, unseal } from "@intent-engine/core";
-import { createClient, SpecSealed, type Transport } from "@intent-engine/client";
+import { createClient, SpecSealed, SpecUnreadable, type Transport } from "@intent-engine/client";
 import type { Command } from "./command-types.js";
 import { FlowRefused } from "./flows.js";
 import type { Runtime } from "./runtime.js";
@@ -41,13 +41,17 @@ export async function sealing(command: Sealing, runtime: Runtime): Promise<objec
 }
 
 export async function readJobSpec(command: Reading, runtime: Runtime, transport: Transport): Promise<object> {
-  const client = createClient({ url: command.url, transport });
+  const fetch = (url: string, init: { redirect: "error"; signal: AbortSignal }) =>
+    runtime.specFetch(url, init).catch(() => {
+      throw new SpecUnreadable(url, "could not be fetched");
+    });
+  const client = createClient({ url: command.url, transport, fetch });
   const keypair = command.keypair === undefined ? undefined : await runtime.loadKeypair(command.keypair);
   let spec;
   try {
     spec = await client.spec(command.intent, keypair);
   } catch (error) {
-    throw error instanceof SpecSealed ? new FlowRefused(error.message) : error;
+    throw error instanceof SpecSealed || error instanceof SpecUnreadable ? new FlowRefused(error.message) : error;
   }
   if (spec === null) {
     throw new FlowRefused(`the escrow ${command.intent} publishes no spec url, or is not a proof escrow; ask its owner for the spec`);

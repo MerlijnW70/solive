@@ -5,11 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Address, getAddressDecoder, lamports, none } from "@solana/kit";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEVNET_TEST_MINT, NATIVE_MINT, seal, specMemo } from "@intent-engine/core";
+import { describe, expect, it } from "vitest";
+import { DEVNET_TEST_MINT, Kind, NATIVE_MINT, seal, specMemo } from "@intent-engine/core";
+import { createClient } from "@intent-engine/client";
 import { ENV_KEYPAIR, ENV_URL } from "../src/args.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
-import { ata, cli, creation, funded, h, world } from "./harness.js";
+import { ata, cli, creation, funded, h, NOW, transport, world } from "./harness.js";
 
 function keyed(path: string): Address {
   const jwk = generateKeyPairSync("ed25519").privateKey.export({ format: "jwk" });
@@ -32,10 +33,6 @@ function preset(at: Address): void {
     space,
   });
 }
-
-afterEach(() => {
-  vi.unstubAllGlobals();
-});
 
 describe("seal and unseal", () => {
   it("seal a file to wallets so each can unseal it and nobody else can", async () => {
@@ -97,7 +94,7 @@ describe("spec", () => {
     const text = "Write answer.txt holding 42.\n";
     const url = "https://example.org/jobs/spec.sealed";
     const sealed = await seal(new TextEncoder().encode(text), [worker, owner.address]);
-    vi.stubGlobal("fetch", async (asked: string) => (asked === url ? new Response(sealed) : new Response("missing", { status: 404 })));
+    h.specPages.set(url, sealed);
     h.env[ENV_URL] = "devnet";
     h.env[ENV_KEYPAIR] = "owner.json";
     const keys = { "owner.json": owner };
@@ -127,4 +124,15 @@ describe("spec", () => {
     const none = await cli(["spec", "--intent", owner.address], keys);
     expect([none.code, none.err]).toEqual([EXIT_FAILED, `the escrow ${owner.address} publishes no spec url, or is not a proof escrow; ask its owner for the spec`]);
   }, 60_000);
+
+  it("says when a job's spec cannot be fetched", async () => {
+    const w = await world();
+    const owner = await funded();
+    const url = "https://down.example/spec.md";
+    const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: owner.address, specHash: new Uint8Array(32).fill(7), judgeFee: 0n } as const;
+    const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
+    h.engineLog.push({ ...creation(intent), memos: [specMemo(url)] });
+    const read = await cli(["spec", "--intent", intent], {});
+    expect([read.code, read.err]).toEqual([EXIT_FAILED, `the spec at ${url} could not be fetched`]);
+  });
 });
