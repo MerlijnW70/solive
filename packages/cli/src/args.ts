@@ -1,4 +1,5 @@
 import { parseArgs } from "node:util";
+import { ADD_TO_APPS } from "./add-to.js";
 import { AUTO_PRICE_CAP } from "./compute.js";
 import { MAX_SUBMIT_WITHIN } from "./agent/signed.js";
 import { CLUSTERS, clusterUrl, DEFAULT_URL, ENV_KEYPAIR, ENV_URL, WALLET_NOT_MAINNET } from "./clusters.js";
@@ -101,7 +102,7 @@ export { CLUSTERS, clusterUrl, DEFAULT_URL, ENV_KEYPAIR, ENV_URL, WALLET_NOT_MAI
 
 const SETUP_CLUSTER = "devnet";
 
-export const ADD_TO_NEEDS_APP = "add-to needs the app to add the server to: add-to claude";
+export const ADD_TO_NEEDS_APP = "add-to needs the app to add the server to: add-to claude or add-to codex";
 
 const WALLET_LIMIT_KEYS = ["wallet-per-trade", "wallet-per-hour"] as const;
 
@@ -148,7 +149,8 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
   onlyAccepted(verb, sub, values);
   unitsOf(values);
   if (verb === "add-to") {
-    if (sub !== "claude") {
+    const app = ADD_TO_APPS.find((a) => a === sub);
+    if (app === undefined) {
       throw new UsageError(ADD_TO_NEEDS_APP);
     }
     walletLimits({ ...values, wallet: true }, clusterUrl("devnet"));
@@ -156,7 +158,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       const text = values[k];
       return text === undefined ? [] : [`--${k}`, text.replace(/\s+/g, "")];
     });
-    return { name: "add-to", app: "claude", limits };
+    return { name: "add-to", app, limits };
   }
   const remote = {
     url: clusterUrl(values.url ?? env[ENV_URL] ?? (verb === "setup" ? SETUP_CLUSTER : DEFAULT_URL)),

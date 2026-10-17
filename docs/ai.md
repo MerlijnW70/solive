@@ -16,19 +16,13 @@ npx -y @intent-engine/cli add-to claude
 
 It runs `claude mcp add` with the server command your system needs.
 
-Codex stops a server that starts slowly, so install it first:
+Codex, on any system:
 
 ```sh
-npm install -g @intent-engine/cli
-codex mcp add solive -- intent-engine mcp --url devnet --wallet
+npx -y @intent-engine/cli add-to codex
 ```
 
-Codex on native Windows:
-
-```powershell
-npm install -g @intent-engine/cli
-codex mcp add solive -- cmd /c intent-engine mcp --url devnet --wallet
-```
+It runs `codex mcp add` the same way, then gives the server time in `~/.codex/config.toml` to start on its first run.
 
 VS Code:
 

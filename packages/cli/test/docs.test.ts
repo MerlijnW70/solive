@@ -325,11 +325,12 @@ describe("shell forms", () => {
 
     const ai = readFileSync(`${DOCS}ai.md`, "utf8");
     const name = (JSON.parse(readFileSync(`${ROOT}/packages/cli/package.json`, "utf8")) as { name: string }).name;
-    const args = ["-y", name, "mcp", "--url", "devnet", "--wallet"].join(" ");
     const windows = fencedIn(ai, "powershell").flat();
-    expect(windows).toEqual(expect.arrayContaining([`codex mcp add solive -- cmd /c intent-engine ${args.replace(`-y ${name} `, "")}`]));
-    expect(windows.filter((line) => line.startsWith("claude "))).toEqual([]);
+    expect(windows.filter((line) => line.startsWith("claude ") || line.startsWith("codex "))).toEqual([]);
     expect(ai).toContain("Claude Code, on any system:");
+    expect(ai).toContain("Codex, on any system:");
+    expect(fencedIn(ai, "sh").flat()).toEqual(expect.arrayContaining([`npx -y ${name} add-to codex`]));
+    expect(ai).not.toContain("startup_timeout_sec");
     const posix = fencedIn(ai, "sh").flat().filter((line) => line.startsWith("code --add-mcp "));
     const escaped = windows.filter((line) => line.startsWith("code --add-mcp "));
     expect(escaped).toHaveLength(posix.length);

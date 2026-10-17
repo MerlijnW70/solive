@@ -74,7 +74,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     return { version: VERSION };
   }
   if (command.name === "add-to") {
-    return addTo(command.limits, runtime);
+    return addTo(command.app, command.limits, runtime);
   }
   if (command.name === "seal" || command.name === "unseal") {
     return sealing(command, runtime);

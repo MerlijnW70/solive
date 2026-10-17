@@ -3,7 +3,7 @@
 # CLI reference
 
 ```text
-usage: setup | add-to claude | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | profile show | profile set | profile close | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
+usage: setup | add-to claude|codex | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | profile show | profile set | profile close | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
 ```
 
 Every command accepts `--output` and `--help`.
@@ -21,7 +21,7 @@ Options: `--url`, `--keypair`, `--output`, `--help`
 ## add-to
 
 ```text
-add-to claude [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>]
+add-to claude|codex [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>]
 ```
 
 Options: `--wallet-per-trade`, `--wallet-per-hour`, `--output`, `--help`

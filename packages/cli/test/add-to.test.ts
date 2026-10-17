@@ -89,8 +89,8 @@ describe("add-to claude", () => {
     expect(bad.launched).toEqual([]);
   });
 
-  it("needs claude and takes nothing else", async () => {
-    for (const argv of [["add-to"], ["add-to", "codex"]]) {
+  it("needs claude or codex and takes nothing else", async () => {
+    for (const argv of [["add-to"], ["add-to", "cursor"]]) {
       const run = await addTo(argv, "linux", { code: 0, output: "" });
       expect(run.code).toBe(EXIT_USAGE);
       expect(run.err).toBe(ADD_TO_NEEDS_APP);
@@ -109,7 +109,7 @@ describe("add-to claude", () => {
 
   it("describes itself in help", () => {
     expect(usageOf("add-to")).toEqual({
-      usage: "add-to claude [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>]",
+      usage: "add-to claude|codex [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>]",
       options: ["--wallet-per-trade", "--wallet-per-hour", "--output", "--help"],
     });
   });

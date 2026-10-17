@@ -634,7 +634,7 @@ describe("command line flows", () => {
 
   it("prints help once and names the node and the fix when it cannot be reached", async () => {
     const help = (await cli(["help"], {})).out;
-    expect(help.startsWith("usage: setup | add-to claude | balance | pda | domain | mcp")).toBe(true);
+    expect(help.startsWith("usage: setup | add-to claude|codex | balance | pda | domain | mcp")).toBe(true);
     expect(help).not.toContain("usage: usage:");
     const err: string[] = [];
     const down = {

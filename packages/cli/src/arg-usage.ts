@@ -1,7 +1,7 @@
 import { ACCEPTS, GLOBAL_OPTIONS } from "./arg-options.js";
 import { EXIT_ALERTED } from "./monitor-args.js";
 
-export const COMMANDS = "setup | add-to claude | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | profile show | profile set | profile close | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]";
+export const COMMANDS = "setup | add-to claude|codex | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | profile show | profile set | profile close | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]";
 
 export const USAGE = `usage: ${COMMANDS}`;
 
@@ -13,7 +13,7 @@ const PARTNER_SHAPE = "[--partner <address> --partner-bps <n>]";
 
 export const SHAPES: Readonly<Record<string, string>> = {
   setup: "[--url <cluster>] [--keypair <file>]",
-  "add-to": "claude [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>]",
+  "add-to": "claude|codex [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>]",
   balance: "[--keypair <file> | --owner <address>] [--mints <mint,...>]",
   pda: "--owner <address> --nonce <n>",
   hash: "--artifact <file or directory>",

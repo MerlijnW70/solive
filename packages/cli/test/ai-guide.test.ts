@@ -22,7 +22,9 @@ describe("the AI guide", () => {
     expect(claude).toBe(`npx -y ${manifest.name} add-to claude`);
     expect(parse(["add-to", "claude"], {})).toEqual({ name: "add-to", app: "claude", limits: [] });
     expect(PAGE).not.toContain("claude mcp add solive --");
-    expect(codex).toBe(`npm install -g ${manifest.name}\ncodex mcp add solive -- ${Object.keys(manifest.bin)[0]} ${ARGS.slice(2).join(" ")}`);
+    expect(codex).toBe(`npx -y ${manifest.name} add-to codex`);
+    expect(parse(["add-to", "codex"], {})).toEqual({ name: "add-to", app: "codex", limits: [] });
+    expect(PAGE).not.toContain("codex mcp add solive --");
     const added = /^code --add-mcp '(.*)'$/.exec(code ?? "")?.[1] ?? "";
     expect(JSON.parse(added)).toEqual({ name: "solive", command: "npx", args: ARGS });
     expect(json.map((j) => JSON.parse(j))).toEqual([{ mcpServers: { solive: { command: "npx", args: ARGS } } }]);
