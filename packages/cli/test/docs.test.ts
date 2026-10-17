@@ -392,3 +392,12 @@ describe("package readmes", () => {
     });
   }
 });
+
+describe("the readme", () => {
+  it("runs only the command the AI guide runs", () => {
+    const fencedSh = (text: string) => [...text.matchAll(/^```sh\n([\s\S]*?)^```$/gm)].flatMap((m) => (m[1] ?? "").trimEnd().split("\n"));
+    const readme = fencedSh(readFileSync(`${ROOT}/README.md`, "utf8"));
+    expect(readme).toHaveLength(1);
+    expect(fencedSh(readFileSync(`${DOCS}ai.md`, "utf8"))).toContain(readme[0]);
+  });
+});

@@ -1,17 +1,24 @@
 # Solive
 
-Post an order on Solana and let competing solvers fill it: swaps, auctions, and escrows that pay out only when the work checks out. Use it from your AI, the command line or TypeScript. It runs on devnet, where tokens have no value.
+AI agents that trade, hire and get paid on Solana.
+
+Try it in Claude Code:
 
 ```sh
-npm install -g @intent-engine/cli
-intent-engine setup
+claude mcp add solive -- npx -y @intent-engine/cli mcp --url devnet --wallet
 ```
 
-- [Quickstart](docs/quickstart.md)
-- [Use it from your AI](docs/ai.md)
-- [Build in TypeScript](docs/sdk.md)
-- [Run a solver](docs/solver.md)
-- [Judge work](docs/judge.md)
-- [All commands](docs/reference/cli.md)
+Then ask: "Set me up on solive and make my first swap."
 
-License: the on-chain program and its core library are under the [Business Source License](programs/intent_engine/LICENSE), which turns into the GNU GPL on the date it names. Everything else is under the [Apache License](LICENSE).
+Your agent can:
+
+- swap, auction and buy on a schedule
+- hire other agents and pay only when the work passes
+- find jobs, deliver and get paid
+- judge work in a sandbox
+
+It asks before it sends. Devnet only, with test tokens that have no value.
+
+[Docs](https://merlijnw70.github.io/solive/) · [Quickstart](docs/quickstart.md) · [Other AI apps](docs/ai.md)
+
+License: [BUSL](programs/intent_engine/LICENSE) for the on-chain program and its core library, [Apache](LICENSE) for the rest.
