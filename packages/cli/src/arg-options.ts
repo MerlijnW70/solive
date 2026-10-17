@@ -63,6 +63,7 @@ export const OPTIONS = {
   version: { type: "boolean" },
   follow: { type: "boolean" },
   watch: { type: "boolean" },
+  stats: { type: "boolean" },
   output: { type: "string" },
   interval: { type: "string" },
   "expires-in": { type: "string" },
@@ -167,7 +168,7 @@ export const PROFILE_OPTIONS = { ...OPTIONS, wallet: { type: "string" } } as con
 
 export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill", "vote"]);
 
-export type Flag = "dry-run" | "fund-accounts" | "yes" | "help" | "version" | "follow" | "create" | "wallet" | "watch" | "close" | "once" | "plain-node" | "all-tools";
+export type Flag = "dry-run" | "fund-accounts" | "yes" | "help" | "version" | "follow" | "create" | "wallet" | "watch" | "stats" | "close" | "once" | "plain-node" | "all-tools";
 export type Many = "max-fill" | "vote";
 export type StringKey = Exclude<keyof typeof OPTIONS, Flag | Many>;
 export type Values = { [K in StringKey]?: string | undefined } & { [K in Exclude<Flag, "wallet">]?: boolean | undefined } & {
@@ -245,7 +246,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   "accept-admin": ["url", "priority-fee", "keypair", "authority", "yes"],
   "set-mint-cap": ["url", "priority-fee", "keypair", "authority", "yes", "mint", "max-per-order", "window-cap", "window-secs"],
   "set-caps-required": ["url", "priority-fee", "keypair", "authority", "yes"],
-  solve: ["url", "priority-fee", "keypair", "jupiter", "issue", "inventory", "jito", "tip", "min-profit", "max-fee-bps", "max-sol-cost", "max-rent", "slippage-bps", "route-program", "lookup-table", "concurrency", "watch", "interval", "quote-ttl"],
+  solve: ["url", "priority-fee", "keypair", "jupiter", "issue", "inventory", "jito", "tip", "min-profit", "max-fee-bps", "max-sol-cost", "max-rent", "slippage-bps", "route-program", "lookup-table", "concurrency", "watch", "interval", "quote-ttl", "stats"],
   "solver-table": ["url", "solver", "mints"],
   "lower-pause": ["url", "priority-fee", "keypair", "authority", "yes", "flags"],
   events: ["url", "limit", "follow", "interval"],

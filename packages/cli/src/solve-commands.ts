@@ -32,6 +32,7 @@ import type { Command, IssueSpec } from "./command-types.js";
 import type { Runtime } from "./runtime.js";
 import { priceOf, withPriority } from "./compute.js";
 import { QUOTE_TTL } from "./args.js";
+import { tally } from "./solve-stats.js";
 
 const SOLVER_ROUTE_ACCOUNTS = 40;
 
@@ -66,7 +67,7 @@ export function decodedChanges(changed: readonly ProgramAccount[]): { intents: {
   return { intents, unreadable };
 }
 
-export async function stillOpen(transport: Transport, intents: readonly Address[]): Promise<Address[]> {
+export async function stillOpen(transport: Pick<Transport, "getAccounts">, intents: readonly Address[]): Promise<Address[]> {
   const views = await transport.getAccounts(intents);
   return intents.filter((_, i) => {
     const view = views[i];
@@ -79,13 +80,27 @@ export const watchPricer = (pricer: Pricer, ttlSeconds: number, clock: () => num
 
 export async function watchSolve(command: SolveCommand, interval: number, runtime: Runtime, emit: (value: object) => void): Promise<number> {
   const transport = withPriority(runtime.transport(command.url), command.priority);
-  const options = await solverOptions(command, runtime, transport);
+  return watchSolveWith(command, interval, runtime, transport, await solverOptions(command, runtime, transport), emit);
+}
+
+export type WatchTransport = Pick<Transport, "submitWire" | "transactionOf" | "getAccounts">;
+
+export async function watchSolveWith(
+  command: SolveCommand,
+  interval: number,
+  runtime: Pick<Runtime, "now" | "intentChanges">,
+  transport: WatchTransport,
+  options: SolverOptions,
+  emit: (value: object) => void,
+): Promise<number> {
   const chain = remembering(options.chain);
   const held = backoff(interval, () => Number(runtime.now()) * 1_000);
+  const counts = tally(options.pricer, command.quoteTtl ?? QUOTE_TTL, () => Number(runtime.now()) * 1_000);
   const live: SolverOptions = {
     ...options,
     chain,
-    pricer: watchPricer(options.pricer, command.quoteTtl ?? QUOTE_TTL, () => Number(runtime.now()) * 1_000),
+    pricer: counts.pricer,
+    planned: counts.planned,
     backoff: held,
     send:
       command.jito === undefined ? async (wire) => ({ signature: await transport.submitWire(wire), confirmed: false }) : options.send,
@@ -122,13 +137,18 @@ export async function watchSolve(command: SolveCommand, interval: number, runtim
           }
         }
         const due = listed.filter(({ address }) => !inFlight.has(address));
-        const { filled, sent, failed } = await tick({ ...live, chain: { ...chain, intents: async () => due } });
+        const mark = counts.mark();
+        const report = await tick({ ...live, chain: { ...chain, intents: async () => due } });
+        const { filled, sent, failed } = report;
         for (const { intent, signature } of sent) {
           inFlight.set(intent, { until: now + IN_FLIGHT_SECONDS, signature });
         }
         if (filled.length + sent.length + failed.length + lost.length > 0) {
           emit({ at: now, scan: full ? "full" : "changed", ms: Math.round(performance.now() - began), filled, sent, failed: [...lost, ...failed] });
           acted += filled.length + sent.length;
+        }
+        if (full && command.stats === true) {
+          emit({ at: now, scan: "full", stats: mark({ orders: listed.length, report, lost: lost.length, ms: Math.round(performance.now() - began) }) });
         }
         for (const [intent, at] of failing) {
           if (now - at >= REFRESH_AFTER_SECONDS * 10n) {

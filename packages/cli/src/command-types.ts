@@ -92,6 +92,7 @@ export type Command =
       concurrency: number;
       watch: number | null;
       quoteTtl?: number;
+      stats?: boolean;
     })
   | (Keyed & { name: "crank"; dryRun: boolean; fundAccounts: boolean })
   | (Remote & { name: "events"; limit: number })

@@ -213,10 +213,10 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--outp
 ## solve
 
 ```text
-solve --keypair <file> [--inventory <input mint>:<output mint>=<out>/<in>,...] [--jupiter <url> | --issue <input mint>:<output mint>=<out>/<in>,...] --min-profit <output mint=raw,...> [--priority-fee <micro-lamports|auto>] [--max-fee-bps <n>] [--max-sol-cost <SOL>] [--max-rent <SOL>] [--slippage-bps <n>] [--jito <url> [--tip <lamports>]] [--route-program <program the aggregator swaps through>] [--lookup-table <address,...>] [--concurrency <n>] [--watch [--interval <seconds>] [--quote-ttl <seconds>]]
+solve --keypair <file> [--inventory <input mint>:<output mint>=<out>/<in>,...] [--jupiter <url> | --issue <input mint>:<output mint>=<out>/<in>,...] --min-profit <output mint=raw,...> [--priority-fee <micro-lamports|auto>] [--max-fee-bps <n>] [--max-sol-cost <SOL>] [--max-rent <SOL>] [--slippage-bps <n>] [--jito <url> [--tip <lamports>]] [--route-program <program the aggregator swaps through>] [--lookup-table <address,...>] [--concurrency <n>] [--watch [--interval <seconds>] [--quote-ttl <seconds>] [--stats]]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--jupiter`, `--issue`, `--inventory`, `--jito`, `--tip`, `--min-profit`, `--max-fee-bps`, `--max-sol-cost`, `--max-rent`, `--slippage-bps`, `--route-program`, `--lookup-table`, `--concurrency`, `--watch`, `--interval`, `--quote-ttl`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--jupiter`, `--issue`, `--inventory`, `--jito`, `--tip`, `--min-profit`, `--max-fee-bps`, `--max-sol-cost`, `--max-rent`, `--slippage-bps`, `--route-program`, `--lookup-table`, `--concurrency`, `--watch`, `--interval`, `--quote-ttl`, `--stats`, `--output`, `--help`
 
 ## solver-table
 

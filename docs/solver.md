@@ -70,6 +70,8 @@ intent-engine solve --keypair $HOME/solive-solver.json --issue "So11111111111111
 
 While watching, it reuses a price quote for `--quote-ttl` seconds (default 10, `0` turns this off). It never fills from a reused quote: it asks for a fresh one first.
 
+Add `--stats` to print one JSON line after every full scan, counting the orders, quotes, cache hits, fills and skip reasons. It needs `--watch`.
+
 `--inventory` takes the same rates as `--issue` and pays from tokens the solver already holds, with no swap. With `--issue` or `--jupiter`, it is tried first. It quotes nothing when the solver holds too little.
 
 `--concurrency` sets how many orders it plans at once (default 4, from 1 to 32). Fills are still simulated and sent one at a time, most profitable first.

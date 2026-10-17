@@ -314,6 +314,9 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       if (values["quote-ttl"] !== undefined && values.watch !== true) {
         throw new UsageError("--quote-ttl needs --watch");
       }
+      if (values.stats === true && values.watch !== true) {
+        throw new UsageError("--stats needs --watch");
+      }
       if (remote.priority !== "auto" && remote.priority > AUTO_PRICE_CAP) {
         throw new UsageError(solveFeeAboveCap);
       }
@@ -334,6 +337,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         concurrency: parseBounded(values.concurrency ?? String(DEFAULT_CONCURRENCY), "concurrency", MAX_CONCURRENCY, 1),
         watch: values.watch === true ? parseBounded(values.interval ?? String(WATCH_INTERVAL), "interval", MAX_FOLLOW_INTERVAL, 1) : null,
         ...(values.watch === true ? { quoteTtl: parseBounded(values["quote-ttl"] ?? String(QUOTE_TTL), "quote-ttl", MAX_FOLLOW_INTERVAL) } : {}),
+        ...(values.watch === true && values.stats === true ? { stats: true } : {}),
       };
     }
     case "update-config":

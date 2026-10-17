@@ -71,6 +71,7 @@ export type SolverOptions = {
   maxRent?: bigint;
   backoff?: Backoff;
   concurrency?: number;
+  planned?(intent: Address): void;
   unitPrice(instructions: readonly Instruction[]): Promise<bigint>;
   simulate(wire: Base64EncodedWireTransaction, watch: readonly Address[]): Promise<Simulated>;
   send(wire: Base64EncodedWireTransaction): Promise<Sent>;
@@ -183,6 +184,7 @@ async function planOrder(o: SolverOptions, config: Config, now: bigint, address:
     createSolverOutput: !outputExists,
     tip: o.tip,
   };
+  o.planned?.(address);
   let size: { bytes: number | null; accounts: number } = { bytes: null, accounts: 0 };
   for (const routeAccounts of ROUTE_ACCOUNT_BUDGETS) {
     const budget = { ...o.strategy, routeAccounts };

@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { cachedPricer, fromCache, type Pricer, type Quote, type QuoteRequest } from "../src/index.js";
+import { cachedPricer, countingPricer, fromCache, type Pricer, type Quote, type QuoteRequest } from "../src/index.js";
 
 const IN = "11111111111111111111111111111112" as Address;
 const OUT = "SysvarC1ock11111111111111111111111111111111" as Address;
@@ -107,5 +107,43 @@ describe("quote cache", () => {
     await cached.quote(request());
     await cached.quote(request());
     expect(seen).toHaveLength(2);
+  });
+
+  it("counts hits and misses since it was made", async () => {
+    const { time, cached } = setup((asked) => (asked === 2 ? new Error("market down") : quoteOf(BigInt(asked))));
+    expect(cached.stats()).toEqual({ hits: 0, misses: 0 });
+    await cached.quote(request());
+    await cached.quote(request());
+    await expect(cached.quote(request({ amountIn: 2n }))).rejects.toThrow("market down");
+    await cached.quote(request({ fresh: true }));
+    await cached.quote(request());
+    time.now += 10_000;
+    await cached.quote(request());
+    const snapshot = cached.stats();
+    snapshot.hits = 99;
+    expect(cached.stats()).toEqual({ hits: 2, misses: 4 });
+  });
+});
+
+describe("counting pricer", () => {
+  it("counts the requests the wrapped pricer answered, with or without a route", async () => {
+    const answers: (Quote | null | Error)[] = [quoteOf(1n), null, new Error("market down"), quoteOf(2n)];
+    const pricer: Pricer = {
+      async quote() {
+        const out = answers.shift() ?? null;
+        if (out instanceof Error) {
+          throw out;
+        }
+        return out;
+      },
+    };
+    const counting = countingPricer(pricer);
+    expect(counting.count()).toBe(0);
+    expect((await counting.quote(request()))?.amountOut).toBe(1n);
+    expect(await counting.quote(request())).toBeNull();
+    await expect(counting.quote(request())).rejects.toThrow("market down");
+    expect(counting.count()).toBe(2);
+    expect((await counting.quote(request()))?.amountOut).toBe(2n);
+    expect(counting.count()).toBe(3);
   });
 });
