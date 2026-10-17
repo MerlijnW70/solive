@@ -72,6 +72,12 @@ importers:
         specifier: 8.4.0
         version: 8.4.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)
     devDependencies:
+      '@ledgerhq/hw-app-solana':
+        specifier: 7.12.0
+        version: 7.12.0
+      '@ledgerhq/hw-transport-node-hid-noevents':
+        specifier: 6.36.0
+        version: 6.36.0
       '@types/node':
         specifier: 26.6.4
         version: 26.6.4
@@ -84,13 +90,6 @@ importers:
       vitest:
         specifier: 5.0.3
         version: 5.0.3(@types/node@26.6.4)(vite@8.3.2(@types/node@26.6.4))
-    optionalDependencies:
-      '@ledgerhq/hw-app-solana':
-        specifier: 7.12.0
-        version: 7.12.0
-      '@ledgerhq/hw-transport-node-hid-noevents':
-        specifier: 6.36.0
-        version: 6.36.0
 
   packages/core:
     dependencies:
@@ -137,6 +136,12 @@ importers:
       '@intent-engine/core':
         specifier: workspace:*
         version: link:../core
+      '@ledgerhq/hw-app-solana':
+        specifier: 7.12.0
+        version: 7.12.0
+      '@ledgerhq/hw-transport-node-hid-noevents':
+        specifier: 6.36.0
+        version: 6.36.0
       '@solana/kit':
         specifier: 8.4.0
         version: 8.4.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)
@@ -1639,20 +1644,17 @@ snapshots:
   '@ledgerhq/devices@8.16.0':
     dependencies:
       semver: 7.7.3
-    optional: true
 
   '@ledgerhq/devices@8.18.0':
     dependencies:
       semver: 7.7.3
 
-  '@ledgerhq/errors@6.37.0':
-    optional: true
+  '@ledgerhq/errors@6.37.0': {}
 
   '@ledgerhq/hw-app-solana@7.12.0':
     dependencies:
       '@ledgerhq/hw-transport': 6.36.0
       bip32-path: 0.4.2
-    optional: true
 
   '@ledgerhq/hw-transport-mocker@6.35.0':
     dependencies:
@@ -1668,7 +1670,6 @@ snapshots:
       '@ledgerhq/hw-transport': 6.35.5
       '@ledgerhq/logs': 6.19.0
       node-hid: 2.1.2
-    optional: true
 
   '@ledgerhq/hw-transport@6.35.5':
     dependencies:
@@ -1676,7 +1677,6 @@ snapshots:
       '@ledgerhq/errors': 6.37.0
       '@ledgerhq/logs': 6.19.0
       events: 3.3.0
-    optional: true
 
   '@ledgerhq/hw-transport@6.36.0':
     dependencies:
@@ -2344,29 +2344,24 @@ snapshots:
 
   assertion-error@2.0.1: {}
 
-  base64-js@1.5.1:
-    optional: true
+  base64-js@1.5.1: {}
 
   bindings@1.5.0:
     dependencies:
       file-uri-to-path: 1.0.0
-    optional: true
 
-  bip32-path@0.4.2:
-    optional: true
+  bip32-path@0.4.2: {}
 
   bl@4.1.0:
     dependencies:
       buffer: 5.7.1
       inherits: 2.0.4
       readable-stream: 3.6.2
-    optional: true
 
   buffer@5.7.1:
     dependencies:
       base64-js: 1.5.1
       ieee754: 1.2.1
-    optional: true
 
   bufferutil@4.1.0:
     dependencies:
@@ -2394,8 +2389,7 @@ snapshots:
 
   chalk@5.6.2: {}
 
-  chownr@1.1.4:
-    optional: true
+  chownr@1.1.4: {}
 
   codama@1.11.0:
     dependencies:
@@ -2416,10 +2410,8 @@ snapshots:
   decompress-response@6.0.0:
     dependencies:
       mimic-response: 3.1.0
-    optional: true
 
-  deep-extend@0.6.0:
-    optional: true
+  deep-extend@0.6.0: {}
 
   define-data-property@1.1.4:
     dependencies:
@@ -2438,7 +2430,6 @@ snapshots:
   end-of-stream@1.4.5:
     dependencies:
       once: 1.4.0
-    optional: true
 
   es-define-property@1.0.1: {}
 
@@ -2462,8 +2453,7 @@ snapshots:
     dependencies:
       eventsource-parser: 3.1.1
 
-  expand-template@2.0.3:
-    optional: true
+  expand-template@2.0.3: {}
 
   expect-type@1.4.0: {}
 
@@ -2478,11 +2468,9 @@ snapshots:
     optionalDependencies:
       picomatch: 4.0.7
 
-  file-uri-to-path@1.0.0:
-    optional: true
+  file-uri-to-path@1.0.0: {}
 
-  fs-constants@1.0.0:
-    optional: true
+  fs-constants@1.0.0: {}
 
   fsevents@2.3.3:
     optional: true
@@ -2507,8 +2495,7 @@ snapshots:
       dunder-proto: 1.0.1
       es-object-atoms: 1.1.2
 
-  github-from-package@0.0.0:
-    optional: true
+  github-from-package@0.0.0: {}
 
   gopd@1.2.0: {}
 
@@ -2522,14 +2509,11 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
-  ieee754@1.2.1:
-    optional: true
+  ieee754@1.2.1: {}
 
-  inherits@2.0.4:
-    optional: true
+  inherits@2.0.4: {}
 
-  ini@1.3.8:
-    optional: true
+  ini@1.3.8: {}
 
   isarray@2.0.5: {}
 
@@ -2640,27 +2624,21 @@ snapshots:
 
   math-intrinsics@1.1.0: {}
 
-  mimic-response@3.1.0:
-    optional: true
+  mimic-response@3.1.0: {}
 
-  minimist@1.2.8:
-    optional: true
+  minimist@1.2.8: {}
 
-  mkdirp-classic@0.5.3:
-    optional: true
+  mkdirp-classic@0.5.3: {}
 
   nanoid@3.3.19: {}
 
-  napi-build-utils@2.0.0:
-    optional: true
+  napi-build-utils@2.0.0: {}
 
   node-abi@3.98.0:
     dependencies:
       semver: 7.8.5
-    optional: true
 
-  node-addon-api@3.2.1:
-    optional: true
+  node-addon-api@3.2.1: {}
 
   node-gyp-build@4.8.4:
     optional: true
@@ -2670,7 +2648,6 @@ snapshots:
       bindings: 1.5.0
       node-addon-api: 3.2.1
       prebuild-install: 7.1.3
-    optional: true
 
   object-keys@1.1.1: {}
 
@@ -2679,7 +2656,6 @@ snapshots:
   once@1.4.0:
     dependencies:
       wrappy: 1.0.2
-    optional: true
 
   path-key@3.1.1: {}
 
@@ -2709,7 +2685,6 @@ snapshots:
       simple-get: 4.0.1
       tar-fs: 2.1.5
       tunnel-agent: 0.6.0
-    optional: true
 
   prettier@3.9.9: {}
 
@@ -2722,7 +2697,6 @@ snapshots:
     dependencies:
       end-of-stream: 1.4.5
       once: 1.4.0
-    optional: true
 
   pure-rand@8.4.2: {}
 
@@ -2732,14 +2706,12 @@ snapshots:
       ini: 1.3.8
       minimist: 1.2.8
       strip-json-comments: 2.0.1
-    optional: true
 
   readable-stream@3.6.2:
     dependencies:
       inherits: 2.0.4
       string_decoder: 1.3.0
       util-deprecate: 1.0.2
-    optional: true
 
   rolldown@1.2.12:
     dependencies:
@@ -2766,8 +2738,7 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  safe-buffer@5.2.1:
-    optional: true
+  safe-buffer@5.2.1: {}
 
   semver@7.7.3: {}
 
@@ -2788,15 +2759,13 @@ snapshots:
 
   shebang-regex@3.0.0: {}
 
-  simple-concat@1.0.1:
-    optional: true
+  simple-concat@1.0.1: {}
 
   simple-get@4.0.1:
     dependencies:
       decompress-response: 6.0.0
       once: 1.4.0
       simple-concat: 1.0.1
-    optional: true
 
   sisteransi@1.0.5: {}
 
@@ -2807,10 +2776,8 @@ snapshots:
   string_decoder@1.3.0:
     dependencies:
       safe-buffer: 5.2.1
-    optional: true
 
-  strip-json-comments@2.0.1:
-    optional: true
+  strip-json-comments@2.0.1: {}
 
   tar-fs@2.1.5:
     dependencies:
@@ -2818,7 +2785,6 @@ snapshots:
       mkdirp-classic: 0.5.3
       pump: 3.0.4
       tar-stream: 2.2.0
-    optional: true
 
   tar-stream@2.2.0:
     dependencies:
@@ -2827,7 +2793,6 @@ snapshots:
       fs-constants: 1.0.0
       inherits: 2.0.4
       readable-stream: 3.6.2
-    optional: true
 
   tinybench@6.2.0: {}
 
@@ -2843,7 +2808,6 @@ snapshots:
   tunnel-agent@0.6.0:
     dependencies:
       safe-buffer: 5.2.1
-    optional: true
 
   typescript@7.0.2:
     optionalDependencies:
@@ -2877,8 +2841,7 @@ snapshots:
       node-gyp-build: 4.8.4
     optional: true
 
-  util-deprecate@1.0.2:
-    optional: true
+  util-deprecate@1.0.2: {}
 
   vite@8.3.2(@types/node@26.6.4):
     dependencies:
@@ -2918,8 +2881,7 @@ snapshots:
 
   why-is-node-running@3.2.1: {}
 
-  wrappy@1.0.2:
-    optional: true
+  wrappy@1.0.2: {}
 
   ws@8.22.0(bufferutil@4.1.0)(utf-8-validate@6.0.6):
     optionalDependencies:

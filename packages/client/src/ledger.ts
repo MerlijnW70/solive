@@ -19,6 +19,7 @@ export const LEDGER_ERRORS = {
   noApp: "the Solana app is not open on the Ledger: open it and run the command again; nothing was sent",
   blindSigning: "blind signing is disabled in the Ledger's Solana app: enable it in the app's settings, since Squads instructions need it, and run the command again; nothing was sent",
   rejected: "the transaction was rejected on the Ledger; nothing was sent",
+  missing: "signing with a Ledger needs @ledgerhq/hw-app-solana@7.12.0 and @ledgerhq/hw-transport-node-hid-noevents@6.36.0, which are not installed: install both where intent-engine is installed and run the command again; nothing was sent",
   driver: "the USB driver node-hid is not built in this checkout: build it as docs/maintainers/operations.md shows under Signing with a Ledger and run the command again; nothing was sent",
 } as const;
 
@@ -48,7 +49,20 @@ type App = {
   signTransaction(path: string, message: Buffer): Promise<{ signature: Uint8Array }>;
 };
 
-const load = createRequire(import.meta.url);
+const required = createRequire(import.meta.url);
+
+export function ledgerModule(name: string, resolve: (name: string) => unknown = required): unknown {
+  try {
+    return resolve(name);
+  } catch (error) {
+    if ((error as { code?: unknown }).code === "MODULE_NOT_FOUND") {
+      throw new LedgerError(LEDGER_ERRORS.missing);
+    }
+    throw error;
+  }
+}
+
+const load = (name: string): unknown => ledgerModule(name);
 
 export const isLedgerPath = (text: string): boolean => text.startsWith("usb://");
 
