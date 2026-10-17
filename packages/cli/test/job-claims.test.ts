@@ -12,7 +12,7 @@ import { PROFILE_CHANGED } from "../src/agent/profile.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { NOT_SENT } from "../src/flows.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
-import { cli, funded, h, NOW, transport, world } from "./harness.js";
+import { cli, funded, h, NOW, setNow, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -96,13 +96,42 @@ describe("job claims from the command line", () => {
     expect(h.svm.getAccount(board).exists).toBe(false);
   });
 
+  it("claims take allows the longest claim, ends a lapsed one, and settle moves its stake while the escrow is open", async () => {
+    const j = await job();
+    expect((await j.open()).code).toBe(EXIT_OK);
+    const settle = ["claims", "settle", "--keypair", "payer.json", ...j.ref];
+    const idle = await j.run(settle);
+    expect([idle.code, idle.err]).toEqual([EXIT_FAILED, `escrow ${j.intent} is open and nobody holds its claim, so there is nothing to settle; nothing was sent`]);
+    expect((await j.run(["claims", "take", "--keypair", "worker.json", ...j.ref, "--secs", "3600"])).json()).toMatchObject({ sent: false, next: NOT_SENT });
+    expect((await j.run(["claims", "take", "--keypair", "worker.json", ...j.ref, "--secs", "600", "--yes"])).json()).toMatchObject({ sent: true });
+    const rival = await j.run(["claims", "drop", "--keypair", "rival.json", ...j.ref]);
+    expect([rival.code, rival.err]).toEqual([EXIT_FAILED, `${j.rival.address} holds no claim on escrow ${j.intent}; nothing was sent`]);
+    setNow(NOW + 600n);
+    const lapsed = await j.run(["claims", "drop", "--keypair", "worker.json", ...j.ref]);
+    expect([lapsed.code, lapsed.err]).toEqual([EXIT_FAILED, `${j.worker.address} holds no claim on escrow ${j.intent}; nothing was sent`]);
+    const taken = (await j.run(["claims", "take", "--keypair", "rival.json", ...j.ref, "--secs", "60"])).json();
+    expect(taken).toMatchObject({ state: "lapsed", sent: false });
+    expect(taken["summary"]).toContain(`Ends: the lapsed claim of ${j.worker.address}, whose stake goes to the owner ${j.w.owner.address}`);
+    const moved = (await j.run(settle)).json();
+    expect(moved).toMatchObject({ sent: false, next: NOT_SENT });
+    expect((moved["summary"] as string[])[0]).toBe(`Moves: the stake of 0.05 SOL to ${j.w.owner.address}`);
+  });
+
   it("profile set creates a profile and then updates it", async () => {
     const j = await job();
     const wallet = j.worker.address;
     const set = ["profile", "set", "--keypair", "worker.json", "--skills", "rust,code-review", "--endpoint", "https://worker.example/jobs"];
     const missing = await j.run(["profile", "show", "--wallet", wallet]);
     expect([missing.code, missing.err]).toEqual([EXIT_FAILED, `${wallet} ${NO_PROFILE}`]);
-    expect((await j.run(set)).json()).toMatchObject({ wallet, profile: await profileAddress(wallet), action: "create", sent: false, next: NOT_SENT });
+    const created = (await j.run(set)).json();
+    expect(created).toMatchObject({ wallet, profile: await profileAddress(wallet), action: "create", sent: false, next: NOT_SENT });
+    expect(created["summary"]).toEqual([
+      `Creates: the profile of ${wallet} at ${await profileAddress(wallet)}`,
+      "Skills: rust, code-review",
+      "Endpoint: https://worker.example/jobs",
+      "Document: none",
+      `Pays rent: ${wallet}`,
+    ]);
     expect((await j.run(["profile", "show", "--wallet", wallet])).code).toBe(EXIT_FAILED);
     expect((await j.run([...set, "--yes"])).json()).toMatchObject({ action: "create", sent: true });
     expect((await j.run(["profile", "show", "--wallet", wallet])).json()).toEqual({
@@ -116,7 +145,14 @@ describe("job claims from the command line", () => {
     });
     const doc = ["--doc-url", "https://worker.example/about", "--doc-sha256", "AB".repeat(32)];
     const update = ["profile", "set", "--keypair", "worker.json", "--skills", "rust", "--endpoint", "https://worker.example/v2", ...doc, "--yes"];
-    expect((await j.run(update)).json()).toMatchObject({ action: "update", sent: true });
+    const updated = (await j.run(update)).json();
+    expect(updated).toMatchObject({ action: "update", sent: true });
+    expect(updated["summary"]).toEqual([
+      `Updates: the profile of ${wallet} at ${await profileAddress(wallet)}`,
+      "Skills: rust",
+      "Endpoint: https://worker.example/v2",
+      "Document: https://worker.example/about with sha256 " + "ab".repeat(32),
+    ]);
     expect((await j.run(["profile", "show", "--wallet", wallet])).json()).toMatchObject({
       skills: ["rust"],
       endpoint: "https://worker.example/v2",
