@@ -66,6 +66,7 @@ import {
   BACKOFF_MAX_INTERVALS,
   backingOff,
   backoff,
+  badBundleSize,
   BALANCES_REFUSED,
   cachedPricer,
   type Chain,
@@ -528,6 +529,26 @@ describe("solver against the deployed engine", () => {
     expect(route.sent).toEqual([{ intent: routed, profit: 4_000n, signature: expect.any(String) }]);
   });
 
+  it("reports the hold of an inventory fill sent in a bundle", async () => {
+    const stocked = await open(1n);
+    await send(authority, [getMintToInstruction({ mint: outputMint, token: solverOutput, mintAuthority: authority, amount: AMOUNT })]);
+    const pricer = inventoryPricer(
+      [{ inputMint, outputMint, outputTokenProgram: TOKEN_PROGRAM_ADDRESS, out: 1n, in: 1n }],
+      async () => balance(solverOutput),
+    );
+    const report = await solve(pricer, {
+      sendBundle: async (wires) => {
+        for (const wire of wires) {
+          await submit(wire);
+        }
+        return "bundle-held";
+      },
+    });
+    expect(report.sent).toEqual([
+      { intent: stocked, profit: splitFees(AMOUNT, 5, 0, 0).net - MIN_OUT, signature: "bundle-held", holds: { account: solverOutput, amount: MIN_OUT } },
+    ]);
+  });
+
   it("treats what earlier fills still hold back as spent: skips the fill it leaves short and fills the one it leaves enough for", async () => {
     const intent = await open(1n);
     await send(authority, [getMintToInstruction({ mint: outputMint, token: solverOutput, mintAuthority: authority, amount: AMOUNT })]);
@@ -796,6 +817,167 @@ describe("solver against the deployed engine", () => {
     const last = instructions.at(-1);
     expect(message.staticAccounts[last?.programAddressIndex ?? -1]).toBe(SYSTEM_PROGRAM_ADDRESS);
     expect(last?.accountIndices?.map((i) => message.staticAccounts[i])).toEqual([solver.address, tipAccount]);
+  });
+
+  const accountsIn = (wire: Base64EncodedWireTransaction) =>
+    getCompiledTransactionMessageDecoder().decode(getTransactionDecoder().decode(getBase64Encoder().encode(wire)).messageBytes).staticAccounts;
+
+  function tipOf(wire: Base64EncodedWireTransaction): Address | null {
+    const message = getCompiledTransactionMessageDecoder().decode(getTransactionDecoder().decode(getBase64Encoder().encode(wire)).messageBytes);
+    const last = ("instructions" in message ? message.instructions : []).at(-1);
+    if (message.staticAccounts[last?.programAddressIndex ?? -1] !== SYSTEM_PROGRAM_ADDRESS) {
+      return null;
+    }
+    return message.staticAccounts[last?.accountIndices?.[1] ?? -1] ?? null;
+  }
+
+  async function bundled(count: number, extra: Partial<Parameters<typeof tick>[0]> = {}, first = 1) {
+    const opened: Address[] = [];
+    for (let i = 0; i < count; i += 1) {
+      opened.push(await open(BigInt(first + i)));
+    }
+    const tipAccount = (await generateKeyPairSigner()).address;
+    svm.airdrop(tipAccount, lamports(1_000_000_000n));
+    const before = svm.getBalance(tipAccount) ?? 0n;
+    const bundles: Base64EncodedWireTransaction[][] = [];
+    const report = await solve(stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n), {
+      tip: { account: tipAccount, lamports: 12_345n },
+      send: async () => {
+        throw new Error("a bundling solver sent a single transaction");
+      },
+      sendBundle: async (wires) => {
+        bundles.push([...wires]);
+        for (const wire of wires) {
+          await submit(wire);
+        }
+        return `bundle-${bundles.length}`;
+      },
+      ...extra,
+    });
+    return { opened, tipAccount, bundles, report, tipped: (svm.getBalance(tipAccount) ?? 0n) - before };
+  }
+
+  it("sends three fills of a tick as one bundle that pays one tip, on its last transaction", async () => {
+    const { opened, tipAccount, bundles, report, tipped } = await bundled(3);
+    expect([report.filled, report.skipped, report.failed]).toEqual([[], [], []]);
+    expect(new Set(report.sent.map((s) => s.intent))).toEqual(new Set(opened));
+    expect(report.sent.map((s) => [s.profit, s.signature])).toEqual(opened.map(() => [4_000n, "bundle-1"]));
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]?.map(tipOf)).toEqual([null, null, tipAccount]);
+    expect(bundles[0]?.map((wire) => accountsIn(wire).includes(tipAccount))).toEqual([false, false, true]);
+    expect(tipped).toBe(12_345n);
+    expect(balance(receiver)).toBe(3n * MIN_OUT);
+  });
+
+  it("lands a bundle's transactions in order, pays every receiver at least its required and the tip once", async () => {
+    const receivers: Address[] = [];
+    const opened: Address[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      owner = await funded();
+      await ata(authority, owner.address, inputMint, 10_000_000n);
+      receivers.push(await ata(authority, owner.address, outputMint));
+      await send(owner, [await buildInitUser({ owner })]);
+      opened.push(await open(1n + BigInt(i)));
+    }
+    const required = new Map<Address, bigint>();
+    for (const { address, intent } of await chain().intents()) {
+      required.set(address, requiredOut(decodeParamsLoose(intent.kind, Uint8Array.from(intent.params)) as IntentParams, remainingOf(intent), NOW));
+    }
+    const tipAccount = (await generateKeyPairSigner()).address;
+    svm.airdrop(tipAccount, lamports(1_000_000_000n));
+    const before = svm.getBalance(tipAccount) ?? 0n;
+    const landedInOrder: string[] = [];
+    const report = await solve(stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n), {
+      tip: { account: tipAccount, lamports: 12_345n },
+      sendBundle: async (wires) => {
+        for (const wire of wires) {
+          landedInOrder.push(await submit(wire));
+        }
+        return "bundle-landed";
+      },
+    });
+    expect(report.sent.map((s) => s.signature)).toEqual(opened.map(() => "bundle-landed"));
+    expect(landedInOrder).toHaveLength(3);
+    opened.forEach((intent, i) => {
+      const stored = svm.getAccount(intent);
+      expect(getIntentDecoder().decode(stored.exists ? stored.data : new Uint8Array()).status).toBe(IntentStatus.Filled);
+      expect(required.get(intent)).toBe(MIN_OUT);
+      expect(balance(receivers[i] ?? receiver)).toBeGreaterThanOrEqual(required.get(intent) ?? AMOUNT);
+    });
+    expect((svm.getBalance(tipAccount) ?? 0n) - before).toBe(12_345n);
+  });
+
+  it("splits seven fills into bundles of the bundle size, each tipped once", async () => {
+    const { opened, tipAccount, bundles, report, tipped } = await bundled(7, { bundleSize: 5 });
+    expect(report.sent).toHaveLength(7);
+    expect(new Set(report.sent.map((s) => s.intent))).toEqual(new Set(opened));
+    expect(bundles.map((wires) => wires.map(tipOf))).toEqual([
+      [null, null, null, null, tipAccount],
+      [null, tipAccount],
+    ]);
+    expect(report.sent.filter((s) => s.signature === "bundle-1")).toHaveLength(5);
+    expect(report.sent.filter((s) => s.signature === "bundle-2")).toHaveLength(2);
+    expect(tipped).toBe(2n * 12_345n);
+    expect(balance(receiver)).toBe(7n * MIN_OUT);
+  });
+
+  it("keeps a fill that fails its checks out of the bundle, and checks each transaction as it is sent", async () => {
+    const bad = await open(30n);
+    const simulatedWires: Base64EncodedWireTransaction[] = [];
+    const { opened, tipAccount, bundles, report, tipped } = await bundled(2, {
+      simulate: async (wire, watch) => {
+        simulatedWires.push(wire);
+        return accountsIn(wire).includes(bad) ? { err: "InstructionError", unitsConsumed: null, balances: [] } : simulated(wire, watch);
+      },
+    });
+    expect(report.failed).toEqual([{ intent: bad, error: `${SIMULATION_REFUSED}: InstructionError` }]);
+    expect(new Set(report.sent.map((s) => s.intent))).toEqual(new Set(opened));
+    expect(bundles).toHaveLength(1);
+    expect(bundles[0]?.some((wire) => accountsIn(wire).includes(bad))).toBe(false);
+    expect(bundles[0]?.map(tipOf)).toEqual([null, tipAccount]);
+    expect(bundles[0]?.every((wire) => simulatedWires.includes(wire))).toBe(true);
+    expect(tipped).toBe(12_345n);
+    const cost = 2n * LAMPORTS_PER_SIGNATURE + 12_345n;
+    const dear = await bundled(2, { maxSolCost: cost - 1n }, 20);
+    expect(dear.bundles).toEqual([]);
+    expect(dear.report.skipped.filter((s) => dear.opened.includes(s.intent)).map((s) => s.reason)).toEqual([tooCostly(cost, cost - 1n), tooCostly(cost, cost - 1n)]);
+  });
+
+  it("reports every fill of a bundle the engine refused as failed with its error", async () => {
+    const opened = [await open(40n), await open(41n)];
+    const tipAccount = (await generateKeyPairSigner()).address;
+    svm.airdrop(tipAccount, lamports(1_000_000_000n));
+    const report = await solve(stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n), {
+      tip: { account: tipAccount, lamports: 12_345n },
+      sendBundle: async () => {
+        throw new Error("jito rejected the bundle with status 429");
+      },
+    });
+    expect([report.filled, report.sent, report.skipped]).toEqual([[], [], []]);
+    expect(new Set(report.failed.map((f) => f.intent))).toEqual(new Set(opened));
+    expect(report.failed.map((f) => f.error)).toEqual(opened.map(() => "jito rejected the bundle with status 429"));
+    expect(balance(receiver)).toBe(0n);
+  });
+
+  it("sends each fill on its own with its own tip when it has no bundle sender, and refuses a bad bundle size", async () => {
+    const opened = [await open(50n), await open(51n), await open(52n)];
+    const tipAccount = (await generateKeyPairSigner()).address;
+    svm.airdrop(tipAccount, lamports(1_000_000_000n));
+    const before = svm.getBalance(tipAccount) ?? 0n;
+    const sent: Base64EncodedWireTransaction[] = [];
+    const report = await solve(stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n), {
+      tip: { account: tipAccount, lamports: 12_345n },
+      send: async (wire) => {
+        sent.push(wire);
+        return landed(wire);
+      },
+    });
+    expect(new Set(report.filled.map((f) => f.intent))).toEqual(new Set(opened));
+    expect(sent.map(tipOf)).toEqual([tipAccount, tipAccount, tipAccount]);
+    expect((svm.getBalance(tipAccount) ?? 0n) - before).toBe(3n * 12_345n);
+    for (const bad of [0, 6, 1.5]) {
+      await expect(solve(stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT), { bundleSize: bad })).rejects.toThrow(badBundleSize(bad));
+    }
   });
 
   it("skips a fill whose sol cost exceeds the cap", async () => {

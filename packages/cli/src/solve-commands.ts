@@ -16,6 +16,7 @@ import {
   backoff,
   jitoBundles,
   jupiterPricer,
+  MAX_BUNDLE,
   remembering,
   tick,
   tipAccount,
@@ -249,6 +250,7 @@ export async function solverOptions(
     maxRent: command.maxRent,
     tip: command.tipLamports === 0n ? null : { account: tipAccount(runtime.entropy()), lamports: command.tipLamports },
     lookupTables: command.lookupTables,
+    ...(bundle === undefined ? {} : { sendBundle: bundle, bundleSize: command.bundleSize ?? MAX_BUNDLE }),
     unitPrice: (instructions) => priceOf(transport, command.priority, instructions),
     simulate: async (wire, watch) => {
       const simulated = await transport.simulate(wire, watch);

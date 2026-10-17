@@ -1289,6 +1289,98 @@ describe("cli against the deployed engine", () => {
     expect(unitLimitOf(sent.params[0][0] ?? "")).toBeLessThan(MAX_COMPUTE_UNITS / 10);
   });
 
+  it("sends every fill of a solve through one jito bundle that tips only on its last transaction", async () => {
+    h.watched.length = 0;
+    h.watched.push(owner.address);
+    await cli(create("8", NOW + 3_600n), { "owner.json": owner });
+    await cli(create("9", NOW + 3_600n), { "owner.json": owner });
+    h.wires.length = 0;
+    const solver = await funded();
+    await ata(authority, feeRecipient.address, inputMint);
+    await ata(authority, solver.address, inputMint);
+    const solverOutput = await ata(authority, solver.address, outputMint);
+    for (const tip of JITO_TIP_ACCOUNTS) {
+      h.svm.airdrop(tip, lamports(1_000_000_000n));
+    }
+    const stash = await funded();
+    const stashAccount = await ata(authority, stash.address, outputMint, 1_000_000n);
+    await send(stash, [getApproveInstruction({ source: stashAccount, delegate: solver.address, owner: stash, amount: 1_000_000n })]);
+    const route = getTransferCheckedInstruction({
+      source: stashAccount,
+      mint: outputMint,
+      destination: solverOutput,
+      authority: solver.address,
+      amount: 999_999n,
+      decimals: 6,
+    });
+    const net = splitFee(ESCROW, FEE_BPS).net;
+    const quoted = [
+      { status: 200, body: { inputMint, outputMint, swapMode: "ExactIn", inAmount: net.toString(), otherAmountThreshold: "999999" } },
+      {
+        status: 200,
+        body: {
+          swapInstruction: {
+            programId: route.programAddress,
+            accounts: (route.accounts ?? []).map((m) => ({
+              pubkey: m.address,
+              isSigner: m.role === AccountRole.READONLY_SIGNER || m.role === AccountRole.WRITABLE_SIGNER,
+              isWritable: m.role === AccountRole.WRITABLE || m.role === AccountRole.WRITABLE_SIGNER,
+            })),
+            data: Buffer.from(route.data ?? new Uint8Array()).toString("base64"),
+          },
+          addressLookupTableAddresses: [],
+        },
+      },
+    ];
+    const engine = "https://" + "engine.example";
+    const run = (size: string, bundles: string[]) => {
+      h.fetched.length = 0;
+      h.jupiterReplies = [...quoted, ...quoted, ...bundles.map((id) => ({ status: 200, body: { jsonrpc: "2.0", id: 1, result: id } }))];
+      return cli(
+        [
+          "solve",
+          "--keypair",
+          "s.json",
+          "--jupiter",
+          "https://api.jup.ag/swap/v1",
+          "--jito",
+          engine,
+          "--tip",
+          "10000",
+          "--bundle-size",
+          size,
+          "--concurrency",
+          "1",
+          "--min-profit",
+          `${outputMint}=1`,
+          "--route-program",
+          route.programAddress,
+        ],
+        { "s.json": solver },
+      );
+    };
+    const [i8] = await findIntentPda({ owner: owner.address, nonce: 8n });
+    const [i9] = await findIntentPda({ owner: owner.address, nonce: 9n });
+    const tipped = (wire: string) =>
+      getCompiledTransactionMessageDecoder()
+        .decode(getTransactionDecoder().decode(getBase64Encoder().encode(wire)).messageBytes)
+        .staticAccounts.some((a) => JITO_TIP_ACCOUNTS.includes(a));
+    const bundled = (await run("5", ["bundle-1"])).json() as Json;
+    expect(bundled).toMatchObject({ filled: [], skipped: [], failed: [] });
+    expect(new Set((bundled["sent"] as { intent: string; signature: string }[]).map((s) => `${s.intent} ${s.signature}`))).toEqual(
+      new Set([`${i8} bundle-1`, `${i9} bundle-1`]),
+    );
+    const requests = h.fetched.filter((f) => f.url === engine + "/api/v1/bundles");
+    expect(requests).toHaveLength(1);
+    const wires = (JSON.parse(requests[0]?.body ?? "{}") as { params: [string[]] }).params[0];
+    expect(wires.map(tipped)).toEqual([false, true]);
+    expect(h.wires).toEqual([]);
+    const single = (await run("1", ["bundle-a", "bundle-b"])).json() as Json;
+    expect((single["sent"] as { signature: string }[]).map((s) => s.signature).sort()).toEqual(["bundle-a", "bundle-b"]);
+    const singles = h.fetched.filter((f) => f.url === engine + "/api/v1/bundles");
+    expect(singles.map((f) => (JSON.parse(f.body ?? "{}") as { params: [string[]] }).params[0].map(tipped))).toEqual([[true], [true]]);
+  });
+
   it("lists the fixed accounts a solver can keep in its own lookup table", async () => {
     const solver = await generateKeyPairSigner();
     const listed = (await cli(["solver-table", "--solver", solver.address, "--mints", inputMint], {})).json() as Json;

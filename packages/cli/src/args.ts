@@ -52,7 +52,7 @@ import { optionsFor, trustOf } from "./trust-args.js";
 import { monitorOf } from "./monitor-args.js";
 import { jobArgsOf } from "./job-args.js";
 import type { Command, Env } from "./command-types.js";
-import { DEFAULT_CONCURRENCY, DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST, MAX_CONCURRENCY } from "@intent-engine/solver";
+import { DEFAULT_CONCURRENCY, DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST, MAX_BUNDLE, MAX_CONCURRENCY } from "@intent-engine/solver";
 import { MIN_CAP_WINDOW_SECS } from "@intent-engine/core";
 
 export type { Authority, Command, Env, WalletLimits } from "./command-types.js";
@@ -103,6 +103,8 @@ export {
 export { CLUSTERS, clusterUrl, DEFAULT_URL, ENV_KEYPAIR, ENV_URL, WALLET_NOT_MAINNET } from "./clusters.js";
 
 const SETUP_CLUSTER = "devnet";
+
+export const BUNDLE_SIZE_NEEDS_JITO = "--bundle-size sets how many fills share one jito bundle and needs --jito";
 
 export const ADD_TO_NEEDS_APP = "add-to needs the app to add the server to: add-to claude or add-to codex";
 
@@ -308,6 +310,9 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       if (tipLamports > 0n && values.jito === undefined) {
         throw new UsageError("--tip pays a jito tip and needs --jito");
       }
+      if (values["bundle-size"] !== undefined && values.jito === undefined) {
+        throw new UsageError(BUNDLE_SIZE_NEEDS_JITO);
+      }
       if (values.interval !== undefined && values.watch !== true) {
         throw new UsageError("--interval needs --watch");
       }
@@ -327,6 +332,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         ...market(values),
         jito: values.jito === undefined ? undefined : https(values.jito, "jito"),
         tipLamports,
+        ...(values.jito === undefined ? {} : { bundleSize: parseBounded(values["bundle-size"] ?? String(MAX_BUNDLE), "bundle-size", MAX_BUNDLE, 1) }),
         minProfit: profitFloors(required(values, "min-profit")),
         maxFeeBps: parseBounded(values["max-fee-bps"] ?? "100", "max-fee-bps", 200),
         maxSolCost: values["max-sol-cost"] === undefined ? DEFAULT_MAX_SOL_COST : parseSolCost(values["max-sol-cost"]),

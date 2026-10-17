@@ -1,4 +1,6 @@
 export * from "./build.js";
+export * from "./flights.js";
+export * from "./bundle.js";
 export * from "./holds.js";
 export * from "./inventory.js";
 export * from "./issue.js";

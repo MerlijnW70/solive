@@ -82,6 +82,7 @@ export type Command =
       inventory?: IssueSpec[];
       jito: string | undefined;
       tipLamports: bigint;
+      bundleSize?: number;
       minProfit: ReadonlyMap<Address, bigint>;
       maxFeeBps: number;
       maxSolCost: bigint;

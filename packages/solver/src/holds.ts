@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 import { type Intent, IntentStatus } from "@intent-engine/core";
-import type { Flight } from "./solver.js";
+import type { Flight } from "./flights.js";
 
 export type Hold = { account: Address; amount: bigint };
 

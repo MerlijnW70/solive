@@ -76,6 +76,8 @@ Add `--stats` to print one JSON line after every full scan, counting the orders,
 
 `--concurrency` sets how many orders it plans at once (default 4, from 1 to 32). Fills are still simulated and sent one at a time, most profitable first.
 
+With `--jito`, a solve sends its fills together in Jito bundles, and only the last transaction of each bundle pays the `--tip`. `--bundle-size` sets how many fills share a bundle (default 5, from 1 to 5).
+
 ## 5. Check the balances
 
 ```sh

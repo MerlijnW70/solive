@@ -1,8 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { I64_MAX, I64_MIN, Kind, U64_MAX } from "@intent-engine/core";
 import { AUTO_PRICE_CAP, MAX_PRIORITY_PRICE } from "../src/compute.js";
-import { DEFAULT_CONCURRENCY, DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST, MAX_CONCURRENCY } from "@intent-engine/solver";
+import { DEFAULT_CONCURRENCY, DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST, MAX_BUNDLE, MAX_CONCURRENCY } from "@intent-engine/solver";
 import {
+  BUNDLE_SIZE_NEEDS_JITO,
   DEFAULT_URL,
   WATCH_INTERVAL,
   AGENT_DEFAULT_HOURLY_LAMPORTS,
@@ -88,6 +89,7 @@ describe("numbers", () => {
       inventory: [],
       jito: "https://engine.example",
       tipLamports: 10_000n,
+      bundleSize: MAX_BUNDLE,
       minProfit: new Map([[MINT_A, 5n]]),
       maxFeeBps: 200,
       maxSolCost: DEFAULT_MAX_SOL_COST,
@@ -174,6 +176,16 @@ describe("numbers", () => {
     expect(parse(base)).toMatchObject({ jito: undefined, tipLamports: 0n, maxFeeBps: 100, slippageBps: 50 });
     expect(usage([...base, "--tip", "5"])).toBe("--tip pays a jito tip and needs --jito");
     expect(parse([...base, "--tip", "0"])).toMatchObject({ tipLamports: 0n, jito: undefined });
+    expect(parse(base)).not.toHaveProperty("bundleSize");
+    const jito = [...base, "--jito", "https://" + "engine.example"];
+    expect(parse(jito)).toMatchObject({ bundleSize: MAX_BUNDLE });
+    expect(parse([...jito, "--bundle-size", "1"])).toMatchObject({ bundleSize: 1 });
+    expect(parse([...jito, "--bundle-size", String(MAX_BUNDLE)])).toMatchObject({ bundleSize: MAX_BUNDLE });
+    for (const bad of ["0", String(MAX_BUNDLE + 1), "1.5", "x", ""]) {
+      expect(usage([...jito, "--bundle-size", bad])).toBe(`--bundle-size must be an integer from 1 to ${MAX_BUNDLE}`);
+    }
+    expect(usage([...base, "--bundle-size", "2"])).toBe(BUNDLE_SIZE_NEEDS_JITO);
+    expect(BUNDLE_SIZE_NEEDS_JITO).toBe("--bundle-size sets how many fills share one jito bundle and needs --jito");
     expect(parse([...base, "--route-program", "11111111111111111111111111111112"])).toMatchObject({
       routeProgram: "11111111111111111111111111111112",
     });

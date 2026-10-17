@@ -1,5 +1,5 @@
 import { type Address, type Base64EncodedWireTransaction, type Blockhash, type Instruction, type TransactionSigner } from "@solana/kit";
-import { type Config, findAssociatedTokenAddress, type Intent, IntentStatus } from "@intent-engine/core";
+import { type Config, findAssociatedTokenAddress, type Intent } from "@intent-engine/core";
 import { type Backoff, backingOff } from "./backoff.js";
 import { createdRent, DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST, signaturesOf, solCost, tooCostly, tooMuchRent } from "./costs.js";
 import {
@@ -18,6 +18,8 @@ import {
   type Tip,
   wireSize,
 } from "./build.js";
+import { bundleSizeFits, badBundleSize, sendBundles, withoutTip } from "./bundle.js";
+import { MAX_BUNDLE } from "./jito.js";
 import { RateLimited } from "./jupiter.js";
 import type { Pricer } from "./market.js";
 import { decide, type Plan, standing, type Strategy } from "./plan.js";
@@ -77,6 +79,8 @@ export type SolverOptions = {
   unitPrice(instructions: readonly Instruction[]): Promise<bigint>;
   simulate(wire: Base64EncodedWireTransaction, watch: readonly Address[]): Promise<Simulated>;
   send(wire: Base64EncodedWireTransaction): Promise<Sent>;
+  sendBundle?: (wires: readonly Base64EncodedWireTransaction[]) => Promise<string>;
+  bundleSize?: number;
 };
 
 export type Report = {
@@ -131,6 +135,8 @@ type Ready = {
 };
 
 type Planned = Outcome | { kind: "ready"; ready: Ready };
+
+type Checked = { kind: "checked"; wire: Base64EncodedWireTransaction; entry: Omit<Report["sent"][number], "signature">; holds?: Hold; spend(): void };
 
 const skipped = (intent: Address, reason: string, rent?: bigint): Outcome => ({
   kind: "skipped",
@@ -217,13 +223,21 @@ async function planOrder(o: SolverOptions, config: Config, now: bigint, address:
   return skipped(address, tooLarge(size.bytes, size.accounts));
 }
 
-async function fillOrder(
+async function untipped(o: SolverOptions, ready: Ready): Promise<Planned> {
+  if (ready.context.tip === null) {
+    return { kind: "ready", ready };
+  }
+  const bare = await withoutTip(ready.plan, ready.context, o.solver, ready.latest, ready.tables, o.unitPrice);
+  return "probe" in bare ? { kind: "ready", ready: { ...ready, ...bare } } : skipped(ready.plan.address, tooLarge(bare.bytes, bare.accounts));
+}
+
+async function checkOrder(
   o: SolverOptions,
   caps: { cost: bigint; rent: bigint },
   mintData: (mint: Address) => Promise<Uint8Array | null>,
   ready: Ready,
   stock: Stock,
-): Promise<Outcome> {
+): Promise<Outcome | Checked> {
   const { plan, context, tables, probe, latest, solverInput, solverOutput } = ready;
   const address = plan.address;
   const before = await Promise.all([o.chain.tokenAmount(solverInput), o.chain.tokenAmount(solverOutput)]);
@@ -270,21 +284,62 @@ async function fillOrder(
       return failed(address, `${SIMULATION_REFUSED}: ${checked.err}`);
     }
   }
-  const sent = await o.send(wire);
-  if (plan.route.inventory === true) {
-    spend(stock, solverOutput, free, plan.required);
-  }
-  const holds = !sent.confirmed && plan.route.inventory === true ? { holds: { account: solverOutput, amount: plan.required } } : {};
   return {
-    kind: sent.confirmed ? "filled" : "sent",
-    entry: { intent: address, profit: plan.profit, signature: sent.signature, ...(kept === undefined ? {} : { rent: kept }), ...holds },
+    kind: "checked",
+    wire,
+    entry: { intent: address, profit: plan.profit, ...(kept === undefined ? {} : { rent: kept }) },
+    ...(plan.route.inventory === true ? { holds: { account: solverOutput, amount: plan.required } } : {}),
+    spend: () => {
+      if (plan.route.inventory === true) {
+        spend(stock, solverOutput, free, plan.required);
+      }
+    },
   };
+}
+
+async function fillOrder(
+  o: SolverOptions,
+  caps: { cost: bigint; rent: bigint },
+  mintData: (mint: Address) => Promise<Uint8Array | null>,
+  ready: Ready,
+  stock: Stock,
+): Promise<Outcome> {
+  const checked = await checkOrder(o, caps, mintData, ready, stock);
+  if (checked.kind !== "checked") {
+    return checked;
+  }
+  const sent = await o.send(checked.wire);
+  checked.spend();
+  const holds = !sent.confirmed && checked.holds !== undefined ? { holds: checked.holds } : {};
+  return { kind: sent.confirmed ? "filled" : "sent", entry: { ...checked.entry, signature: sent.signature, ...holds } };
+}
+
+async function queueOrder(
+  o: SolverOptions,
+  caps: { cost: bigint; rent: bigint },
+  mintData: (mint: Address) => Promise<Uint8Array | null>,
+  ready: Ready,
+  stock: Stock,
+): Promise<Outcome | Checked> {
+  const bare = await untipped(o, ready);
+  if (bare.kind !== "ready") {
+    return bare;
+  }
+  const checked = await checkOrder(o, caps, mintData, bare.ready, stock);
+  if (checked.kind === "checked") {
+    checked.spend();
+  }
+  return checked;
 }
 
 export async function tick(o: SolverOptions): Promise<Report> {
   const concurrency = o.concurrency ?? DEFAULT_CONCURRENCY;
   if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > MAX_CONCURRENCY) {
     throw new RangeError(badConcurrency(concurrency));
+  }
+  const bundleSize = o.bundleSize ?? MAX_BUNDLE;
+  if (!bundleSizeFits(bundleSize)) {
+    throw new RangeError(badBundleSize(bundleSize));
   }
   const [config, now, intents] = await Promise.all([o.chain.config(), o.chain.now(), o.chain.intents()]);
   const caps = { cost: o.maxSolCost ?? DEFAULT_MAX_SOL_COST, rent: o.maxRent ?? DEFAULT_MAX_RENT };
@@ -339,6 +394,7 @@ export async function tick(o: SolverOptions): Promise<Report> {
   planned.sort((a, b) => firstToSend(a.ready.plan, b.ready.plan) || a.index - b.index);
   const filling = new Set<Address>();
   const stock: Stock = new Map();
+  const queue: { index: number; ready: Ready; wire: Base64EncodedWireTransaction; entry: Checked["entry"]; holds?: Hold }[] = [];
   let halted: string | null = null;
   for (const { index, ready } of planned) {
     const address = ready.plan.address;
@@ -352,7 +408,16 @@ export async function tick(o: SolverOptions): Promise<Report> {
     }
     filling.add(address);
     try {
-      outcomes[index] = await fillOrder(o, caps, mintData, ready, stock);
+      if (o.sendBundle === undefined) {
+        outcomes[index] = await fillOrder(o, caps, mintData, ready, stock);
+      } else {
+        const checked = await queueOrder(o, caps, mintData, ready, stock);
+        if (checked.kind === "checked") {
+          queue.push({ index, ready, wire: checked.wire, entry: checked.entry, ...(checked.holds === undefined ? {} : { holds: checked.holds }) });
+        } else {
+          outcomes[index] = checked;
+        }
+      }
     } catch (error) {
       if (error instanceof RateLimited) {
         halted = error.message;
@@ -360,6 +425,27 @@ export async function tick(o: SolverOptions): Promise<Report> {
       } else {
         outcomes[index] = failed(address, messageOf(error));
       }
+    }
+  }
+  if (o.sendBundle !== undefined) {
+    const last = async ({ ready, wire }: (typeof queue)[number]): Promise<Base64EncodedWireTransaction | Outcome> => {
+      if (o.tip === null) {
+        return wire;
+      }
+      try {
+        const checked = await checkOrder(o, caps, mintData, ready, new Map());
+        return checked.kind === "checked" ? checked.wire : checked;
+      } catch (error) {
+        return error instanceof RateLimited ? skipped(ready.plan.address, error.message) : failed(ready.plan.address, messageOf(error));
+      }
+    };
+    for (const done of await sendBundles(queue, bundleSize, o.sendBundle, last)) {
+      outcomes[done.item.index] =
+        "refused" in done
+          ? done.refused
+          : "error" in done
+            ? failed(done.item.ready.plan.address, done.error)
+            : { kind: "sent", entry: { ...done.item.entry, signature: done.signature, ...(done.item.holds === undefined ? {} : { holds: done.item.holds }) } };
     }
   }
   const report: Report = { filled: [], sent: [], skipped: [], failed: [] };
@@ -385,34 +471,4 @@ export async function tick(o: SolverOptions): Promise<Report> {
     }
   }
   return report;
-}
-
-export type Flight = { until: bigint; signature: string; holds?: Hold };
-
-export const FAILED_ON_CHAIN = "the fill was sent but failed on chain";
-
-export async function landings(
-  flights: Map<Address, Flight>,
-  now: bigint,
-  listed: readonly { address: Address; intent: Intent }[],
-  failedOnChain: (signature: string) => Promise<boolean>,
-  held: Backoff,
-): Promise<{ intent: Address; error: string }[]> {
-  const failed: { intent: Address; error: string }[] = [];
-  for (const { address, intent } of listed) {
-    const flight = flights.get(address);
-    if (flight === undefined || flight.until > now) {
-      continue;
-    }
-    flights.delete(address);
-    if (intent.status !== IntentStatus.Open) {
-      continue;
-    }
-    const lost = await failedOnChain(flight.signature).catch(() => false);
-    if (lost) {
-      held.failed(address, intent);
-      failed.push({ intent: address, error: `${FAILED_ON_CHAIN}: ${flight.signature}` });
-    }
-  }
-  return failed;
 }
