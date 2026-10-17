@@ -7,4 +7,5 @@ export * from "./lookup.js";
 export * from "./market.js";
 export * from "./plan.js";
 export * from "./quote-cache.js";
+export * from "./remember.js";
 export * from "./solver.js";
