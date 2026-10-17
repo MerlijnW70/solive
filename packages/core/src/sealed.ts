@@ -39,7 +39,14 @@ function b64(bytes: Uint8Array): string {
   }
   return btoa(binary);
 }
-const unb64 = (text: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
+function unb64(text: string): Uint8Array<ArrayBuffer> {
+  const binary = atob(text);
+  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
+  for (let at = 0; at < binary.length; at += 1) {
+    bytes[at] = binary.charCodeAt(at);
+  }
+  return bytes;
+}
 
 function modPow(base: bigint, exponent: bigint): bigint {
   let result = 1n;

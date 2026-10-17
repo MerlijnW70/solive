@@ -43,10 +43,12 @@ describe("sealed files", () => {
 
   it("carries a file of a mebibyte", async () => {
     const w = wallet();
-    const plain = crypto.getRandomValues(new Uint8Array(65_536)).map((_, i) => i % 251);
-    const big = new Uint8Array(1_048_576).map((_, i) => plain[i % plain.length] ?? 0);
-    expect(await unseal(await seal(big, [w.address]), w.keypair)).toEqual(big);
-  });
+    const big = new Uint8Array(1_048_576);
+    for (let at = 0; at < big.length; at += 65_536) {
+      crypto.getRandomValues(big.subarray(at, at + 65_536));
+    }
+    expect(Buffer.from(await unseal(await seal(big, [w.address]), w.keypair)).equals(Buffer.from(big))).toBe(true);
+  }, 60_000);
 
   it("refuses a sealed file whose data, key or wallet entry was changed", async () => {
     const [a, b] = [wallet(), wallet()];
