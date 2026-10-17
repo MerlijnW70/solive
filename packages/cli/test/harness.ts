@@ -69,6 +69,7 @@ export const h = {
   watched: [] as Address[],
   wires: [] as string[],
   jupiterReplies: [] as { status: number; body: unknown }[],
+  specPages: new Map<string, Uint8Array>(),
   fetched: [] as { url: string; body: string | undefined; headers: Record<string, string> | undefined }[],
   requestedLimits: [] as number[],
   recentFees: [] as bigint[],
@@ -296,6 +297,13 @@ export function runtime(signers: Record<string, KeyPairSigner>): Runtime {
       }
       return createKeyPairSignerFromBytes(Uint8Array.from(JSON.parse(saved) as number[]));
     },
+    specFetch: async (url) => {
+      const page = h.specPages.get(url);
+      if (page === undefined) {
+        throw new TypeError("fetch failed");
+      }
+      return new Response(page.slice());
+    },
     loadKeypair: async (path) => {
       const saved = h.files.get(path);
       if (saved === undefined) {
@@ -362,6 +370,7 @@ export function resetHarness(): void {
   h.watched = [];
   h.wires = [];
   h.jupiterReplies = [];
+  h.specPages.clear();
   h.fetched = [];
   h.requestedLimits = [];
   h.recentFees = [];

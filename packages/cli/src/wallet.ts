@@ -18,6 +18,7 @@ export type Files = {
   readText(path: string): Promise<string>;
   saveText(path: string, text: string, secret: boolean): Promise<void>;
   loadSigner(path: string): Promise<KeyPairSigner>;
+  loadKeypair(path: string): Promise<Uint8Array>;
 };
 
 const settingsDir = (home: string) => `${home}/.config/intent-engine`;

@@ -95,6 +95,21 @@ export async function savedKeypair(wallet: WalletAccess): Promise<string | undef
   return (await withSettings(wallet.files, wallet.env))[ENV_KEYPAIR];
 }
 
+export async function walletKeypair(ctx: AgentContext): Promise<Uint8Array | undefined> {
+  if (ctx.wallet === undefined) {
+    return undefined;
+  }
+  const path = await savedKeypair(ctx.wallet);
+  if (path === undefined) {
+    return undefined;
+  }
+  try {
+    return await ctx.wallet.files.loadKeypair(path);
+  } catch {
+    return undefined;
+  }
+}
+
 export type WalletSigner = TransactionPartialSigner &
   MessagePartialSigner & {
     signBytes(bytes: Uint8Array): Promise<SignatureBytes>;

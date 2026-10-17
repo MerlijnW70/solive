@@ -24,6 +24,7 @@ import { type Check, checkEnv, type HeldSignals, holdSignals, runCheck, runConta
 import { containerArgs, containerName, dockerEnv, NO_SANDBOX, sandboxReady, shareable } from "./sandbox.js";
 import { type HostJudged, judgeHost } from "./host-judge.js";
 import { judgeNode, type NodeJudged } from "./node-judge.js";
+import { invitedTo, notInvited } from "./invites.js";
 import { type SimulatedRelease, simulateRelease } from "./release-simulation.js";
 import { type Cases, casesOf, judgeViper, type Judged as CasesJudged, pinnedWasm, runOf, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
 
@@ -152,6 +153,10 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   }
   if (first !== null && first.worker !== payTo) {
     throw new JudgeRefused(`${first.worker} announced the artifact with sha256 ${sha256} first, in ${first.signature}; it is paid, not --pay-to ${payTo}`);
+  }
+  const invited = await invitedTo(transport, runtime.specFetch, address);
+  if (invited !== undefined && !invited.includes(payTo)) {
+    throw new JudgeRefused(notInvited(payTo, address));
   }
   const signals = holdSignals();
   try {

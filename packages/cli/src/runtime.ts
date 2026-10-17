@@ -1,7 +1,7 @@
 import type { KeyPairSigner } from "@solana/kit";
 import type { Fetch } from "@intent-engine/solver";
 import type { McpServer } from "@modelcontextprotocol/server";
-import type { IntentChanges, Transport } from "@intent-engine/client";
+import type { IntentChanges, SpecFetch, Transport } from "@intent-engine/client";
 import type { SaleBook } from "./agent/sales.js";
 import type { Env } from "./command-types.js";
 
@@ -18,6 +18,7 @@ export type Runtime = {
   home: string;
   now(): bigint;
   fetch: Fetch;
+  specFetch: SpecFetch;
   entropy(): number;
   serve(server: McpServer): Promise<void>;
   saleBook?: SaleBook;

@@ -30,6 +30,7 @@ import { walletRecipient } from "../owner.js";
 import { prepare } from "../prepare.js";
 import { STATUS } from "../../accounts.js";
 import { signerOf, sent, sha256Of } from "./guard.js";
+import { invitedTo, notInvited } from "../../invites.js";
 import { notEarliest, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor } from "./delivery.js";
 
 export const PAYEE_MOVED = "this wallet's token account for the escrowed token now belongs to someone else, so a release would not reach it; ask the payee for another wallet";
@@ -94,6 +95,10 @@ export const walletAttest = define({
       throw new InvalidInput([{ path: "result", message: `must be between ${params.minResult} and ${params.maxResult}` }]);
     }
     await walletRecipient(ctx.transport, input.pay_to, "pay_to");
+    const invited = await invitedTo(ctx.transport, ctx.fetch, intent);
+    if (invited !== undefined && !invited.includes(input.pay_to)) {
+      throw new AgentRefusal("NotInvited", notInvited(input.pay_to, intent));
+    }
     const token = await mintOf(ctx.transport, held.inputMint);
     const payee = await tokenAccountIfMissing(ctx.transport, signer, input.pay_to, held.inputMint, token.tokenProgram);
     if (payee.create.length === 0) {

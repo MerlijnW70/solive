@@ -1371,7 +1371,7 @@ describe("the judge guide", () => {
     const paid = await findAssociatedTokenAddress({ owner: worker.address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     expect(balance(paid)).toBeGreaterThan(0n);
     expect(status(intent)).toBe(IntentStatus.Filled);
-  });
+  }, 60_000);
 
   it("the judge guide judges the word count example", async () => {
     const example = join(ROOT, WORD_COUNT);

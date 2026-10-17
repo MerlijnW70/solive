@@ -83,7 +83,7 @@ describe("solive_get_spec", () => {
     const intent = await escrow(SPEC_URL);
     expect(await call(client, "get_spec", { intent })).toEqual({
       isError: false,
-      value: { url: SPEC_URL, sha256: sha(SPEC), matches: true, text: SPEC },
+      value: { url: SPEC_URL, sha256: sha(SPEC), matches: true, text: SPEC, sealed_to: null },
     });
     expect(fetched.map(({ url, init }) => [url, init.redirect, init.signal instanceof AbortSignal])).toEqual([[SPEC_URL, "error", true]]);
   });
@@ -92,7 +92,7 @@ describe("solive_get_spec", () => {
     const intent = await escrow(OTHER_URL);
     expect(await call(client, "get_spec", { intent })).toEqual({
       isError: false,
-      value: { url: OTHER_URL, sha256: sha("something else"), matches: false, text: "something else" },
+      value: { url: OTHER_URL, sha256: sha("something else"), matches: false, text: "something else", sealed_to: null },
     });
   });
 

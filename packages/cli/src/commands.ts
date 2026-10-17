@@ -102,7 +102,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       if (command.wallet !== null) {
         transport.engineTransactions(ESTIMATE_SCAN).catch(() => undefined);
       }
-      await runtime.serve(agentServer({ transport, relay, agent, claims: claimsOf(), url: command.url, ...wallet }));
+      await runtime.serve(agentServer({ transport, relay, agent, claims: claimsOf(), url: command.url, fetch: runtime.specFetch, ...wallet }));
       return null;
     }
     case "setup":

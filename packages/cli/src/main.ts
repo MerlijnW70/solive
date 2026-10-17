@@ -135,6 +135,7 @@ export function nodeRuntime(clock: () => number = Date.now, pipes: Pipes = proce
     intentChanges: (url) => changesFrom(intentNotifications(url)),
     loadSigner: loadKeypairFile,
     loadKeypair: loadKeypairBytes,
+    specFetch: (url, init) => fetch(url, init),
     readText: (path) => readFile(path, "utf8"),
     sleep: (seconds) => new Promise((resolve) => setTimeout(() => resolve(true), seconds * 1000)),
     env: process.env,
