@@ -90,6 +90,7 @@ import {
   fillInstructions,
   decodeLookupTable,
   headroom,
+  inventoryPricer,
   MAX_COMPUTE_UNITS,
   type Pricer,
   type Quote,
@@ -462,6 +463,47 @@ describe("solver against the deployed engine", () => {
     const honest = await solve(lying(MIN_OUT + 4_000n, MIN_OUT + 4_000n, 0n));
     expect(honest.failed).toEqual([]);
     expect(honest.filled).toHaveLength(1);
+  });
+
+  it("fills an intent from the solver's own output tokens with no route, when the simulation keeps the planned balances", async () => {
+    const intent = await open(1n);
+    await send(authority, [getMintToInstruction({ mint: outputMint, token: solverOutput, mintAuthority: authority, amount: AMOUNT })]);
+    const pricer = inventoryPricer(
+      [{ inputMint, outputMint, outputTokenProgram: TOKEN_PROGRAM_ADDRESS, out: 1n, in: 1n }],
+      async () => balance(solverOutput),
+    );
+    const fees = splitFees(AMOUNT, 5, 0, 0);
+    const report = await solve(pricer);
+    expect(report).toEqual({ filled: [{ intent, profit: fees.net - MIN_OUT, signature: expect.any(String) }], sent: [], skipped: [], failed: [] });
+    expect([balance(receiver), balance(solverOutput), balance(solverInput), balance(feeTo)]).toEqual([MIN_OUT, AMOUNT - MIN_OUT, fees.net, fees.protocol]);
+  });
+
+  it("refuses an inventory fill whose simulation spends more output than required or brings in less input than planned", async () => {
+    const intent = await open(1n);
+    await send(authority, [
+      getMintToInstruction({ mint: outputMint, token: solverOutput, mintAuthority: authority, amount: AMOUNT }),
+      getMintToInstruction({ mint: inputMint, token: solverInput, mintAuthority: authority, amount: 10n }),
+    ]);
+    const elsewhere = { input: await ata(authority, stash.address, inputMint), output: await ata(authority, stash.address, outputMint) };
+    const leaking = (mint: Address, source: Address, destination: Address): Pricer => ({
+      async quote(request) {
+        return {
+          amountIn: request.amountIn,
+          amountOut: request.amountIn,
+          lookupTables: [],
+          inventory: true,
+          instructions: [getTransferCheckedInstruction({ source, mint, destination, authority: solver, amount: 1n, decimals: 6 })],
+        };
+      },
+    });
+    const held = () => [balance(receiver), balance(solverOutput), balance(solverInput), balance(elsewhere.output), balance(elsewhere.input)];
+    const before = held();
+    for (const pricer of [leaking(outputMint, solverOutput, elsewhere.output), leaking(inputMint, solverInput, elsewhere.input)]) {
+      const report = await solve(pricer);
+      expect([report.filled, report.sent, report.skipped]).toEqual([[], [], []]);
+      expect(report.failed.map((f) => [f.intent, f.error.split(":")[0]])).toEqual([[intent, BALANCES_REFUSED]]);
+      expect(held()).toEqual(before);
+    }
   });
 
   it("fills a profitable intent through a flash route, keeps the spread and pays exact fees", async () => {

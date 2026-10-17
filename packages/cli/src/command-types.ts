@@ -79,6 +79,7 @@ export type Command =
       name: "solve";
       jupiter: string | undefined;
       issue: IssueSpec[];
+      inventory?: IssueSpec[];
       jito: string | undefined;
       tipLamports: bigint;
       minProfit: ReadonlyMap<Address, bigint>;

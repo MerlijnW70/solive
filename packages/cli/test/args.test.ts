@@ -9,6 +9,8 @@ import {
   AGENT_NEEDS_OWNERS,
   ISSUE_ALONE,
   ISSUE_FORMAT,
+  INVENTORY_ALONE,
+  INVENTORY_FORMAT,
   ONE_MARKET,
   RELAY_NEEDS_FEES,
   RELAY_DEFAULT_HOURLY_LAMPORTS,
@@ -83,6 +85,7 @@ describe("numbers", () => {
       keypair: "k",
       jupiter: "https://quote.example/swap/v1",
       issue: [],
+      inventory: [],
       jito: "https://engine.example",
       tipLamports: 10_000n,
       minProfit: new Map([[MINT_A, 5n]]),
@@ -123,6 +126,37 @@ describe("numbers", () => {
     expect(usage(["solve", "--keypair", "k", "--min-profit", `${MINT_A}=1`])).toBe(ONE_MARKET);
     expect(usage([...issuing, `${MINT_A}:${OWNER}=1/1`, "--slippage-bps", "10"])).toBe(ISSUE_ALONE);
     expect(usage([...issuing, `${MINT_A}:${OWNER}=1/1`, "--route-program", OWNER])).toBe(ISSUE_ALONE);
+    const stocking = ["solve", "--keypair", "k", "--min-profit", `${MINT_A}=1`, "--inventory"];
+    expect(parse([...stocking, `${MINT_A}:${OWNER}=200/1, ${OWNER}:${MINT_A}=1/3`])).toMatchObject({
+      jupiter: undefined,
+      issue: [],
+      inventory: [
+        { inputMint: MINT_A, outputMint: OWNER, out: 200n, in: 1n },
+        { inputMint: OWNER, outputMint: MINT_A, out: 1n, in: 3n },
+      ],
+    });
+    expect(parse([...stocking, `${MINT_A}:${OWNER}=2/1`, "--issue", `${MINT_A}:${OWNER}=1/1`])).toMatchObject({
+      jupiter: undefined,
+      issue: [{ inputMint: MINT_A, outputMint: OWNER, out: 1n, in: 1n }],
+      inventory: [{ inputMint: MINT_A, outputMint: OWNER, out: 2n, in: 1n }],
+    });
+    expect(parse([...stocking, `${MINT_A}:${OWNER}=2/1`, "--jupiter", "https://q.example", "--slippage-bps", "10"])).toMatchObject({
+      jupiter: "https://q.example",
+      issue: [],
+      inventory: [{ inputMint: MINT_A, outputMint: OWNER, out: 2n, in: 1n }],
+      slippageBps: 10,
+    });
+    expect(parse([...issuing, `${MINT_A}:${OWNER}=1/1`])).toMatchObject({ inventory: [] });
+    for (const bad of [`${MINT_A}:${OWNER}=200`, `${MINT_A}=200/1`, ""]) {
+      expect(usage([...stocking, bad])).toBe(INVENTORY_FORMAT);
+    }
+    expect(usage([...stocking, `${MINT_A}:${OWNER}=0/1`])).toBe("--inventory rates must be positive on both sides");
+    expect(usage([...stocking, `${MINT_A}:${OWNER}=1/1,${MINT_A}:${OWNER}=2/1`])).toBe(`--inventory names ${MINT_A}:${OWNER} twice`);
+    expect(usage([...stocking, `${MINT_A}:${OWNER}=1/x`])).toMatch(/^--inventory/);
+    expect(usage([...stocking, `${MINT_A}:${OWNER}=1/1`, "--issue", `${MINT_A}:${OWNER}=1/1`, "--jupiter", "https://q.example"])).toBe(ONE_MARKET);
+    expect(usage([...stocking, `${MINT_A}:${OWNER}=1/1`, "--slippage-bps", "10"])).toBe(INVENTORY_ALONE);
+    expect(usage([...stocking, `${MINT_A}:${OWNER}=1/1`, "--route-program", OWNER])).toBe(INVENTORY_ALONE);
+    expect(usage([...stocking, `${MINT_A}:${OWNER}=1/1`, "--issue", `${MINT_A}:${OWNER}=1/1`, "--slippage-bps", "10"])).toBe(ISSUE_ALONE);
     expect(parse(["solver-table", "--solver", OWNER, "--mints", MINT_A])).toEqual({
       name: "solver-table",
       url: DEFAULT_URL,

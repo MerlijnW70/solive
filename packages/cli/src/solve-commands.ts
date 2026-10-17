@@ -1,5 +1,5 @@
 import type { Address } from "@solana/kit";
-import { getIntentDecoder, type Intent, IntentStatus } from "@intent-engine/core";
+import { findAssociatedTokenAddress, getIntentDecoder, type Intent, IntentStatus } from "@intent-engine/core";
 import {
   type Chain,
   cachedPricer,
@@ -7,6 +7,8 @@ import {
   type Pricer,
   type SolverOptions,
   decodeLookupTable,
+  firstPricer,
+  inventoryPricer,
   landings,
   issuePricer,
   backoff,
@@ -26,7 +28,7 @@ import {
   tokenProgramOf,
   type Transport,
 } from "@intent-engine/client";
-import type { Command } from "./command-types.js";
+import type { Command, IssueSpec } from "./command-types.js";
 import type { Runtime } from "./runtime.js";
 import { priceOf, withPriority } from "./compute.js";
 import { QUOTE_TTL } from "./args.js";
@@ -182,25 +184,32 @@ export async function solverOptions(command: SolveCommand, runtime: Runtime, tra
     },
   };
   const bundle = command.jito === undefined ? undefined : jitoBundles({ url: command.jito, fetch: runtime.fetch });
+  const priced = (routes: readonly IssueSpec[]) =>
+    Promise.all(routes.map(async (route) => ({ ...route, outputTokenProgram: await tokenProgramOf(transport, route.outputMint) })));
+  const held = async (mint: Address): Promise<bigint> => {
+    const token = await findAssociatedTokenAddress({ owner: solver.address, mint, tokenProgram: await tokenProgramOf(transport, mint) });
+    return tokenAmountOf((await transport.getAccount(token))?.data ?? null) ?? 0n;
+  };
+  const stocked = command.inventory ?? [];
+  const inventory = stocked.length === 0 ? null : inventoryPricer(await priced(stocked), held);
+  const routed: Pricer | null =
+    command.jupiter === undefined
+      ? command.issue.length === 0
+        ? null
+        : issuePricer(await priced(command.issue))
+      : jupiterPricer({
+          baseUrl: command.jupiter,
+          fetch: runtime.fetch,
+          slippageBps: command.slippageBps,
+          maxAccounts: SOLVER_ROUTE_ACCOUNTS,
+          ...(runtime.env[ENV_JUPITER_KEY] === undefined || !jupiterHost(command.jupiter)
+            ? {}
+            : { apiKey: runtime.env[ENV_JUPITER_KEY] }),
+          ...(command.routeProgram === undefined ? {} : { swapPrograms: new Set([command.routeProgram]) }),
+        });
   return {
     chain,
-    pricer:
-      command.jupiter === undefined
-        ? issuePricer(
-            await Promise.all(
-              command.issue.map(async (route) => ({ ...route, outputTokenProgram: await tokenProgramOf(transport, route.outputMint) })),
-            ),
-          )
-        : jupiterPricer({
-            baseUrl: command.jupiter,
-            fetch: runtime.fetch,
-            slippageBps: command.slippageBps,
-            maxAccounts: SOLVER_ROUTE_ACCOUNTS,
-            ...(runtime.env[ENV_JUPITER_KEY] === undefined || !jupiterHost(command.jupiter)
-              ? {}
-              : { apiKey: runtime.env[ENV_JUPITER_KEY] }),
-            ...(command.routeProgram === undefined ? {} : { swapPrograms: new Set([command.routeProgram]) }),
-          }),
+    pricer: firstPricer(...[inventory, routed].filter((pricer): pricer is Pricer => pricer !== null)),
     solver,
     strategy: { minProfit: command.minProfit, maxFeeBps: command.maxFeeBps },
     maxSolCost: command.maxSolCost,

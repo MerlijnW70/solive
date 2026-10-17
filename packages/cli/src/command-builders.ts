@@ -171,45 +171,49 @@ export function configChange(values: Values): ConfigChange {
 }
 
 export const ISSUE_FORMAT = "--issue takes <input mint>:<output mint>=<out>/<in> entries separated by commas";
-export const ONE_MARKET = "solve needs exactly one of --jupiter or --issue";
+export const INVENTORY_FORMAT = "--inventory takes <input mint>:<output mint>=<out>/<in> entries separated by commas";
+export const ONE_MARKET = "solve needs --inventory, one of --jupiter or --issue, or both";
 export const ISSUE_ALONE = "--issue mints the output itself, so --slippage-bps and --route-program do not apply";
+export const INVENTORY_ALONE = "--inventory pays from the solver's own tokens, so --slippage-bps and --route-program need --jupiter";
 
-function issues(text: string): IssueSpec[] {
+function rates(text: string, flag: "issue" | "inventory", format: string): IssueSpec[] {
   const routes: IssueSpec[] = [];
   for (const entry of text.split(",")) {
     const match = /^([^:=/]+):([^:=/]+)=([^:=/]+)\/([^:=/]+)$/.exec(entry.trim());
     if (match === null) {
-      throw new UsageError(ISSUE_FORMAT);
+      throw new UsageError(format);
     }
     const [, input = "", output = "", out = "", per = ""] = match;
     const route = {
-      inputMint: parseAddress(input.trim(), "issue"),
-      outputMint: parseAddress(output.trim(), "issue"),
-      out: parseU64(out.trim(), "issue"),
-      in: parseU64(per.trim(), "issue"),
+      inputMint: parseAddress(input.trim(), flag),
+      outputMint: parseAddress(output.trim(), flag),
+      out: parseU64(out.trim(), flag),
+      in: parseU64(per.trim(), flag),
     };
     if (route.out === 0n || route.in === 0n) {
-      throw new UsageError("--issue rates must be positive on both sides");
+      throw new UsageError(`--${flag} rates must be positive on both sides`);
     }
     if (routes.some((r) => r.inputMint === route.inputMint && r.outputMint === route.outputMint)) {
-      throw new UsageError(`--issue names ${route.inputMint}:${route.outputMint} twice`);
+      throw new UsageError(`--${flag} names ${route.inputMint}:${route.outputMint} twice`);
     }
     routes.push(route);
   }
   return routes;
 }
 
-export function market(values: Values): { jupiter: string | undefined; issue: IssueSpec[] } {
-  if ((values.jupiter === undefined) === (values.issue === undefined)) {
+export function market(values: Values): { jupiter: string | undefined; issue: IssueSpec[]; inventory: IssueSpec[] } {
+  const routed = values.jupiter !== undefined || values.issue !== undefined;
+  if ((values.jupiter !== undefined && values.issue !== undefined) || (!routed && values.inventory === undefined)) {
     throw new UsageError(ONE_MARKET);
   }
-  if (values.issue === undefined) {
-    return { jupiter: https(required(values, "jupiter"), "jupiter"), issue: [] };
+  const inventory = values.inventory === undefined ? [] : rates(values.inventory, "inventory", INVENTORY_FORMAT);
+  if (values.jupiter !== undefined) {
+    return { jupiter: https(required(values, "jupiter"), "jupiter"), issue: [], inventory };
   }
   if (values["slippage-bps"] !== undefined || values["route-program"] !== undefined) {
-    throw new UsageError(ISSUE_ALONE);
+    throw new UsageError(values.issue === undefined ? INVENTORY_ALONE : ISSUE_ALONE);
   }
-  return { jupiter: undefined, issue: issues(values.issue) };
+  return { jupiter: undefined, issue: values.issue === undefined ? [] : rates(values.issue, "issue", ISSUE_FORMAT), inventory };
 }
 
 export const TREASURY_CREATE_NEEDS_MINTS =

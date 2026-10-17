@@ -48,7 +48,7 @@ import {
   MAX_CREATE_FEE,
   splitFee,
 } from "@intent-engine/core";
-import { type Chain, type Pricer, type Report, type Simulated, tick } from "../src/index.js";
+import { type Chain, inventoryPricer, type Pricer, type Report, type Simulated, tick } from "../src/index.js";
 
 const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111" as Address;
 const NOW = 1_700_000_000n;
@@ -316,6 +316,38 @@ describe("the solver under load", () => {
     expect([balance(solver.input), balance(solver.output)]).toEqual([net * BigInt(intents.length), PROFIT * BigInt(intents.length)]);
     expect(perFill).toBeLessThan(250);
   }, 300_000);
+
+  it("fills a real intent from the solver's own tokens and pays the receiver at least what the intent requires", async () => {
+    await openMany(1);
+    const solver = await solverWithStash();
+    await send(authority, [
+      getMintToInstruction({ mint: outputMint, token: solver.output, mintAuthority: authority, amount: AMOUNT * BigInt(OWNERS) }),
+    ]);
+    const report = await tick({
+      chain: chain(),
+      pricer: inventoryPricer(
+        [{ inputMint, outputMint, outputTokenProgram: TOKEN_PROGRAM_ADDRESS, out: 1n, in: 1n }],
+        async () => balance(solver.output),
+      ),
+      solver: solver.key,
+      strategy: { minProfit: new Map([[outputMint, 1n]]), maxFeeBps: 100 },
+      tip: null,
+      unitPrice: async () => 0n,
+      simulate,
+      send: land,
+    });
+    expect([report.filled.length, report.sent, report.skipped, report.failed]).toEqual([OWNERS, [], [], []]);
+    expect(intents.map(statusOf).every((s) => s === IntentStatus.Filled)).toBe(true);
+    for (const owner of owners) {
+      expect(balance(owner.receiver)).toBeGreaterThanOrEqual(MIN_OUT);
+    }
+    const { net } = splitFee(AMOUNT, FEE_BPS);
+    expect([balance(solver.input), balance(solver.output), balance(solver.stashAccount)]).toEqual([
+      net * BigInt(OWNERS),
+      (AMOUNT - MIN_OUT) * BigInt(OWNERS),
+      1_000_000_000n,
+    ]);
+  });
 
   it(`lets two solvers race for the same ${CONTESTED} intents: each fills once, owners are paid once, and the loser keeps every token`, async () => {
     await openMany(CONTESTED / OWNERS);

@@ -16,12 +16,13 @@ describe("market contract", () => {
     expectTypeOf<Pricer["quote"]>().returns.toEqualTypeOf<Promise<Quote | null>>();
   });
 
-  it("returns a route as instructions with the lookup tables that compress them", () => {
+  it("returns a route as instructions with the lookup tables that compress them, and says when it fills from inventory", () => {
     expectTypeOf<Quote>().toEqualTypeOf<{
       amountIn: bigint;
       amountOut: bigint;
       instructions: Instruction[];
       lookupTables: Address[];
+      inventory?: boolean;
     }>();
   });
 

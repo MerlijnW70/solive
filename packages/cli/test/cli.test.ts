@@ -902,6 +902,44 @@ describe("cli against the deployed engine", () => {
     expect([balance(receiver), balance(solverOutput), balance(solverInput)]).toEqual([300n, net - 300n, net]);
   });
 
+  it("solves from the solver's own tokens before it mints, and finds no route from inventory alone when the balance is short", async () => {
+    h.watched.length = 0;
+    h.watched.push(owner.address);
+    h.fetched.length = 0;
+    const solver = await funded();
+    const issued = await mint(solver, 6);
+    const receiver = await ata(authority, owner.address, issued);
+    await cli(
+      create("8", NOW + 3_600n).map((arg) => (arg === outputMint ? issued : arg)),
+      { "owner.json": owner },
+    );
+    await ata(authority, feeRecipient.address, inputMint);
+    const solverInput = await ata(authority, solver.address, inputMint);
+    const solverOutput = await ata(authority, solver.address, issued);
+    const [i8] = await findIntentPda({ owner: owner.address, nonce: 8n });
+    const net = splitFee(ESCROW, FEE_BPS).net;
+    await send(solver, [getMintToInstruction({ mint: issued, token: solverOutput, mintAuthority: solver, amount: net - 1n })]);
+    const solving = async (market: string[]) => {
+      h.wires.length = 0;
+      const run = await cli(["solve", "--keypair", "s.json", ...market, "--min-profit", `${issued}=1`, "--url", "http://cluster"], {
+        "s.json": solver,
+      });
+      expect(run.code).toBe(EXIT_OK);
+      return run.json();
+    };
+    const rate = `${inputMint}:${issued}=1/1`;
+    expect(await solving(["--inventory", rate])).toEqual({ filled: [], sent: [], skipped: [{ intent: i8, reason: "no route" }], failed: [] });
+    await send(solver, [getMintToInstruction({ mint: issued, token: solverOutput, mintAuthority: solver, amount: 1n })]);
+    expect(await solving(["--inventory", rate, "--issue", rate])).toEqual({
+      filled: [{ intent: i8, profit: String(net - 300n), signature: expect.any(String) }],
+      sent: [],
+      skipped: [],
+      failed: [],
+    });
+    expect(h.wires).toHaveLength(1);
+    expect([balance(receiver), balance(solverOutput), balance(solverInput)]).toEqual([300n, net - 300n, net]);
+  });
+
   it("keeps solving with --watch: scans on the timer, fills a changed intent straight from its notification, and sends without waiting", async () => {
     h.watched.length = 0;
     h.watched.push(owner.address);

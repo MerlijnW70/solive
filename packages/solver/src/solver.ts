@@ -203,7 +203,10 @@ export async function tick(o: SolverOptions): Promise<Report> {
         continue;
       }
       const [inputAfter, outputAfter] = simulated.balances;
-      const least = [before[0] ?? 0n, (before[1] ?? 0n) + plan.profit];
+      const least =
+        plan.route.inventory === true
+          ? [(before[0] ?? 0n) + plan.fees.net, (before[1] ?? 0n) - plan.required]
+          : [before[0] ?? 0n, (before[1] ?? 0n) + plan.profit];
       if (inputAfter === null || inputAfter === undefined || outputAfter === null || outputAfter === undefined || inputAfter < (least[0] ?? 0n) || outputAfter < (least[1] ?? 0n)) {
         report.failed.push({
           intent: address,

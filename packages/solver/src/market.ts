@@ -14,10 +14,25 @@ export type Quote = {
   amountOut: bigint;
   instructions: Instruction[];
   lookupTables: Address[];
+  inventory?: boolean;
 };
 
 export interface Pricer {
   quote(request: QuoteRequest): Promise<Quote | null>;
+}
+
+export function firstPricer(...pricers: readonly Pricer[]): Pricer {
+  return {
+    async quote(request: QuoteRequest): Promise<Quote | null> {
+      for (const pricer of pricers) {
+        const quote = await pricer.quote(request);
+        if (quote !== null) {
+          return quote;
+        }
+      }
+      return null;
+    },
+  };
 }
 
 export type FetchResponse = { ok: boolean; status: number; json(): Promise<unknown> };
