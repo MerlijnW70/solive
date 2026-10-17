@@ -103,13 +103,13 @@ const sent = (calls: string[]) => calls.filter((c) => c.startsWith("solana trans
 const closed = (calls: string[]) => calls.find((c) => c.startsWith("gh issue close"));
 
 describe("the devnet faucet", () => {
-  it("is described in the quickstart with the limits the script enforces", () => {
+  it("is described in its request form with the limits the script enforces", () => {
     const script = readFileSync(SCRIPT, "utf8");
     const value = (name: string) => Number(new RegExp(`^${name}=(\\d+)$`, "m").exec(script)?.[1]);
     const sol = (lamports: number) => String(lamports / 1_000_000_000);
     const days = /^min_age=\$\(\((\d+) \* 86400\)\)$/m.exec(script)?.[1];
-    expect(readFileSync(join(ROOT, "docs/quickstart.md"), "utf8")).toContain(
-      `It sends ${sol(value("amount"))} devnet SOL, enough for this guide, once a day per GitHub account. It refuses GitHub accounts younger than ${days} days and addresses that already hold ${sol(value("funded"))} devnet SOL or more, and stops for the day after ${value("daily")} requests.`,
+    expect(FORM).toContain(
+      `It sends ${sol(value("amount"))} devnet SOL once a day per GitHub account. It refuses GitHub accounts younger than ${days} days and addresses that already hold ${sol(value("funded"))} devnet SOL or more, and stops for the day after ${value("daily")} requests.`,
     );
   });
 
@@ -236,10 +236,12 @@ describe("the devnet faucet", () => {
     const page = readFileSync(join(ROOT, "docs/quickstart.md"), "utf8");
     const repository = /^repository = "([^"]+)"$/m.exec(readFileSync(join(ROOT, "identity.toml"), "utf8"))?.[1];
     const script = readFileSync(SCRIPT, "utf8");
-    expect(page).toContain(`open a [devnet SOL request](${repository}/issues/new?template=faucet.yml) with the address \`solana address\` prints.`);
+    expect(page).toContain("If devnet refuses, it prints where to get SOL instead.");
+    expect(page).toContain("```sh\nintent-engine setup\n```");
+    expect(FORM).toContain("description: The address `intent-engine setup` prints.");
     expect(FAUCET).toBe(`${repository}/issues/new?template=faucet.yml`);
     expect(AIRDROP_REFUSED).toContain(` ${FAUCET} `);
-    expect(page).toContain("It sends 0.5 devnet SOL, enough for this guide, once a day per GitHub account.");
+    expect(FORM).toContain("It sends 0.5 devnet SOL once a day per GitHub account.");
     expect(script).toContain("amount_sol=0.5\namount=500000000\n");
     expect(script).toContain("one request per GitHub account per day");
   });

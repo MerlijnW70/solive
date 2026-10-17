@@ -1,5 +1,5 @@
 name: Request devnet SOL
-description: Get 0.5 devnet SOL to follow the quickstart.
+description: Get 0.5 devnet SOL to follow the quickstart. It sends 0.5 devnet SOL once a day per GitHub account. It refuses GitHub accounts younger than 7 days and addresses that already hold 1 devnet SOL or more, and stops for the day after 50 requests.
 title: Devnet SOL
 labels: [faucet]
 body:
@@ -7,6 +7,6 @@ body:
     id: address
     attributes:
       label: Wallet address
-      description: The address `solana address` prints.
+      description: The address `intent-engine setup` prints.
     validations:
       required: true
