@@ -20,7 +20,7 @@ If this fails with a permissions error, install Node.js with a version manager s
 intent-engine setup
 ```
 
-This makes a devnet wallet, saves it as your default and asks devnet for 1 SOL. If devnet refuses, it prints where to get SOL instead.
+This makes a devnet wallet, saves it as your default and asks devnet for 1 SOL. If devnet refuses, it prints a faucet link with your address filled in: open it, submit, and run setup again once SOL arrives.
 
 ## 3. Swap
 

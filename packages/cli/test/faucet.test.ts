@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { AIRDROP_REFUSED, FAUCET } from "../src/wallet.js";
+import { airdropRefused, FAUCET, FAUCET_FIELD, faucetLink } from "../src/wallet.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const SCRIPT = join(ROOT, "scripts/faucet.sh");
@@ -236,13 +236,26 @@ describe("the devnet faucet", () => {
     const page = readFileSync(join(ROOT, "docs/quickstart.md"), "utf8");
     const repository = /^repository = "([^"]+)"$/m.exec(readFileSync(join(ROOT, "identity.toml"), "utf8"))?.[1];
     const script = readFileSync(SCRIPT, "utf8");
-    expect(page).toContain("If devnet refuses, it prints where to get SOL instead.");
     expect(page).toContain("```sh\nintent-engine setup\n```");
     expect(FORM).toContain("description: The address `intent-engine setup` prints.");
     expect(FAUCET).toBe(`${repository}/issues/new?template=faucet.yml`);
-    expect(AIRDROP_REFUSED).toContain(` ${FAUCET} `);
+    expect(airdropRefused(ADDRESS).endsWith(": " + faucetLink(ADDRESS))).toBe(true);
     expect(FORM).toContain("It sends 0.5 devnet SOL once a day per GitHub account.");
     expect(script).toContain("amount_sol=0.5\namount=500000000\n");
     expect(script).toContain("one request per GitHub account per day");
+    expect(page).toContain(
+      "If devnet refuses, it prints a faucet link with your address filled in: open it, submit, and run setup again once SOL arrives.",
+    );
+  });
+
+  it("links to the form with only the wallet's address filled into the form's address field", () => {
+    const link = new URL(faucetLink(ADDRESS));
+    expect(link.origin + link.pathname + "?template=" + link.searchParams.get("template")).toBe(FAUCET);
+    expect(link.searchParams.get("template")).toBe("faucet.yml");
+    expect(FAUCET_FIELD).toBe("address");
+    expect([...link.searchParams.keys()]).toEqual(["template", FAUCET_FIELD]);
+    expect(link.searchParams.get(FAUCET_FIELD)).toBe(ADDRESS);
+    expect(FORM).toMatch(new RegExp("^ {2}- type: input\\n {4}id: " + FAUCET_FIELD + "\\n", "m"));
+    expect(faucetLink("a b&c=d")).toBe(FAUCET + "&address=a%20b%26c%3Dd");
   });
 });

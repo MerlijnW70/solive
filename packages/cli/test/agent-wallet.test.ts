@@ -151,7 +151,7 @@ import { claimsOf } from "../src/agent/claims.js";
 import { ACTIONS } from "../src/agent/registry.js";
 import { EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT } from "@intent-engine/core";
-import { AIRDROP, AIRDROP_REFUSED, defaultWallet, FUNDED, keptDefault, LAMPORTS_PER_SOL, savedDefault, settingsPath } from "../src/wallet.js";
+import { AIRDROP, airdropRefused, defaultWallet, faucetLink, FUNDED, keptDefault, LAMPORTS_PER_SOL, savedDefault, settingsPath } from "../src/wallet.js";
 import { ata, balance, cli, creation, FEE_BPS, funded, h, HOME, setNow, transport, world } from "./harness.js";
 import { salesPath } from "../src/agent/sales.js";
 
@@ -2576,11 +2576,14 @@ describe("the wallet server", () => {
   it("says how to fund an empty wallet before it tries to swap", async () => {
     h.airdropRefused = true;
     const made = await ok(client, "wallet_setup");
-    expect(made).toMatchObject({ sol: "0", next: AIRDROP_REFUSED });
+    const address = made["address"] as string;
+    expect(made).toMatchObject({ sol: "0", next: airdropRefused(address) });
+    expect(made["next"]).toContain(faucetLink(address));
     expect((await call(client, "wallet_swap", { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5" })).value).toMatchObject({
       code: "WalletEmpty",
-      hint: walletEmpty(made["address"] as string),
+      hint: walletEmpty(address),
     });
+    expect(walletEmpty(address)).toContain(` ${faucetLink(address)} `);
   });
 
   it("reads the cluster once per server and refuses to make, read or sign with a wallet on an RPC that serves mainnet under another name", async () => {

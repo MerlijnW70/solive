@@ -16,8 +16,10 @@ import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT } from "@intent-engine/core
 import { DEVNET_URL, testTokenElsewhere, tokenNamed } from "../src/tokens.js";
 import {
   AIRDROP,
-  AIRDROP_REFUSED,
+  airdropRefused,
   FAUCET,
+  FAUCET_STEPS,
+  faucetLink,
   defaultWallet,
   FUNDED,
   heldRefused,
@@ -157,11 +159,16 @@ describe("setup and balance", () => {
   it("points to the faucet when the airdrop is refused and never airdrops on mainnet", async () => {
     h.airdropRefused = true;
     const refused = (await cli(["setup"], {})).json();
-    expect(refused).toMatchObject({ created: true, sol: "0", next: AIRDROP_REFUSED });
-    h.svm.airdrop(refused["address"] as Address, lamports(LAMPORTS_PER_SOL / 10n));
-    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.1", next: heldRefused("0.1") });
+    const address = refused["address"] as Address;
+    expect(refused).toMatchObject({ created: true, sol: "0", next: airdropRefused(address) });
+    expect(refused["next"]).toBe(
+      "the airdrop was refused; open this link, submit the form, and run setup again once SOL arrives: " +
+        FAUCET + "&address=" + address,
+    );
+    h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 10n));
+    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.1", next: heldRefused("0.1", address) });
     expect(h.airdrops).toHaveLength(2);
-    expect(heldRefused("0.1")).toContain(` ${FAUCET} `);
+    expect(heldRefused("0.1", address).endsWith(FAUCET_STEPS + faucetLink(address))).toBe(true);
     clean();
     h.airdrops.length = 0;
     expect((await cli(["setup", "--url", "mainnet-beta", "--keypair", "main.json"], {})).json()).toMatchObject({

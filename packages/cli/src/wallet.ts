@@ -30,11 +30,13 @@ export const settingsBroken = (path: string) => `${path} is not a settings file 
 export const PUBLIC_FAUCET = "https://faucet.solana.com";
 export const FAUCET = `${PRODUCT_REPOSITORY}/issues/new?template=faucet.yml`;
 export const FUNDED = "your wallet is ready; try offering 0.05 SOL for at least 5 TEST";
-export const AIRDROP_REFUSED =
-  `the airdrop was refused; request devnet SOL for this address at ${FAUCET} or ${PUBLIC_FAUCET}, then set up again`;
+export const FAUCET_FIELD = "address";
+export const faucetLink = (address: string) => FAUCET + "&" + FAUCET_FIELD + "=" + encodeURIComponent(address);
+export const FAUCET_STEPS = "open this link, submit the form, and run setup again once SOL arrives: ";
+export const airdropRefused = (address: string) => "the airdrop was refused; " + FAUCET_STEPS + faucetLink(address);
 export const SEND_SOL = "send SOL to this address, then run setup again";
-export const heldRefused = (sol: string) =>
-  `your wallet holds ${sol} SOL; devnet refused to add more, so request more at ${FAUCET} or ${PUBLIC_FAUCET} if you run low`;
+export const heldRefused = (sol: string, address: string) =>
+  `your wallet holds ${sol} SOL; devnet refused to add more, so if you run low ` + FAUCET_STEPS + faucetLink(address);
 
 export function expandHome(path: string, home: string): string {
   if (path === "~") {
@@ -121,7 +123,7 @@ export async function setup(
         await transport.airdrop(signer.address, AIRDROP);
         held = await lamportsOf(transport, signer.address);
       } catch {
-        next = held > 0n ? heldRefused(formatAmount(held, SOL_DECIMALS)) : AIRDROP_REFUSED;
+        next = held > 0n ? heldRefused(formatAmount(held, SOL_DECIMALS), signer.address) : airdropRefused(signer.address);
       }
     }
   }

@@ -14,7 +14,7 @@ import { Charged, neverLanded } from "@intent-engine/client";
 import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "../../args.js";
 import { execute, type PreparedView } from "../../flows.js";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
-import { expandHome, FAUCET, type Files, PUBLIC_FAUCET, withSettings } from "../../wallet.js";
+import { expandHome, faucetLink, type Files, PUBLIC_FAUCET, withSettings } from "../../wallet.js";
 import type { AgentContext } from "../actions.js";
 import type { Call } from "../claims.js";
 import { tool } from "../names.js";
@@ -59,7 +59,7 @@ export const PREVIEW_FIRST = "Previews only; call with send: true after the user
 export const PREVIEW_APPROVAL = "Previews only; after the user says yes, call with send: true and its approval.";
 
 export const walletEmpty = (address: string) =>
-  `the wallet ${address} holds no SOL yet; request devnet SOL for it at ${FAUCET} or ${PUBLIC_FAUCET}, then try again`;
+  `the wallet ${address} holds no SOL yet; request devnet SOL for it at ${faucetLink(address)} or ${PUBLIC_FAUCET}, then try again`;
 
 export const NO_WALLET = `this server has no wallet yet; call ${tool("wallet_setup")} first`;
 export const WALLET_OFF = "this server runs without a wallet; start it with mcp --wallet to let it sign";
