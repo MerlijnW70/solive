@@ -35,7 +35,7 @@ import { createClient, EscrowExpired, NotSettleable, type Transport } from "../s
 import { FEE_BPS, NOW, world } from "./svm.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
-const PAGE = readFileSync(`${ROOT}/docs/sdk.md`, "utf8");
+const PAGE = readFileSync(`${ROOT}/docs/sdk.md`, "utf8") + "\n" + readFileSync(`${ROOT}/docs/sdk-client.md`, "utf8");
 const LOCAL = "http://127.0.0.1:8899";
 const SOL = 1_000_000_000n;
 const SIGNATURE_FEE = 5_000n;

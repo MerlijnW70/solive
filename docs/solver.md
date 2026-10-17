@@ -1,12 +1,15 @@
 # Run a solver
 
-Fill intents yourself on devnet. Devnet has no market to buy from, so you issue a token and pay out in what you mint. Do steps 1 to 4 of the [quickstart](quickstart.md) first, in the same terminal. The `sh` blocks are for bash and zsh. Each step that differs in Windows PowerShell also shows that form, which names your home directory `$HOME` and keeps the token's address in `$env:TOKEN`.
+Fill other people's orders on devnet and keep the difference. Devnet has no market to buy from, so you issue your own token and pay out in what you mint.
+
+Do steps 1 and 2 of the [quickstart](quickstart.md) first. You also need the Solana CLI, including `spl-token`.
 
 ## 1. Create a solver key
 
 The solver must be a different key from the owner of the intents it fills.
 
 ```sh
+solana config set --url devnet --keypair ~/.config/intent-engine/wallet.json
 solana-keygen new --no-bip39-passphrase -o ~/solive-solver.json
 solana transfer $(solana-keygen pubkey ~/solive-solver.json) 0.03 --allow-unfunded-recipient
 ```
@@ -14,13 +17,14 @@ solana transfer $(solana-keygen pubkey ~/solive-solver.json) 0.03 --allow-unfund
 In PowerShell:
 
 ```powershell
+solana config set --url devnet --keypair $HOME/.config/intent-engine/wallet.json
 solana-keygen new --no-bip39-passphrase -o $HOME/solive-solver.json
 solana transfer $(solana-keygen pubkey $HOME/solive-solver.json) 0.03 --allow-unfunded-recipient
 ```
 
 ## 2. Issue a token
 
-The solver key is the token's mint authority, so the solver can mint it.
+The solver key can mint it.
 
 ```sh
 solana-keygen new --no-bip39-passphrase -o ~/solive-token.json
@@ -36,21 +40,19 @@ spl-token create-token --decimals 9 $HOME/solive-token.json --fee-payer $HOME/so
 $env:TOKEN = solana-keygen pubkey $HOME/solive-token.json
 ```
 
-## 3. Create an intent for it
+## 3. Create an order for it
 
 Sell 0.05 wrapped SOL for at least 5 of your token:
 
 ```sh
-intent-engine create swap --input-mint So11111111111111111111111111111111111111112 --output-mint $TOKEN --units tokens --amount-in 0.05 --min-out 5 --expires-in 3600 --yes
+intent-engine create swap --input-mint SOL --output-mint $TOKEN --units tokens --amount-in 0.05 --min-out 5 --expires-in 3600 --yes
 ```
 
 In PowerShell:
 
 ```powershell
-intent-engine create swap --input-mint So11111111111111111111111111111111111111112 --output-mint $env:TOKEN --units tokens --amount-in 0.05 --min-out 5 --expires-in 3600 --yes
+intent-engine create swap --input-mint SOL --output-mint $env:TOKEN --units tokens --amount-in 0.05 --min-out 5 --expires-in 3600 --yes
 ```
-
-The devnet filler only fills the test token, so this intent stays open until you solve it.
 
 ## 4. Solve
 
@@ -64,9 +66,7 @@ In PowerShell:
 intent-engine solve --keypair $HOME/solive-solver.json --issue "So11111111111111111111111111111111111111112:$env:TOKEN=200/1" --min-profit "$env:TOKEN=1"
 ```
 
-`--issue` prices 200 of your token per wrapped SOL and mints them into the fill. The ratio is in raw units, so it means 200 per SOL because both tokens have 9 decimals, and it prices the escrow left after the protocol fee. `--min-profit` takes raw units, so the solver skips any fill that leaves it less than 1 raw unit. `solve` makes one pass over the open intents and prints the ones it filled, sent, skipped and failed. To keep solving, add `--watch`: it stays running, solves again as soon as an intent changes on chain and at least every `--interval` seconds (default 5), and prints only the rounds that send or fail, as [the devnet filler](../scripts/filler.sh) does. It sends each fill without waiting for it to confirm, so its fills show as sent; check them with `intent-engine list`.
-
-Profit counts only the output token, so `solve` also counts what each fill costs in SOL before it sends it. `--max-sol-cost` caps the lamports that leave the solver for good: 5000 lamports per signature, the priority fee (unit price times compute limit) and the `--tip`. It skips a fill that costs more, in SOL with at most 9 decimals, default 0.01. The rent of each token account the fill opens for the solver stays in that account, which the solver keeps, so it does not count against `--max-sol-cost`; `--max-rent`, in SOL with at most 9 decimals, default 0.01, caps it instead, and the skip or fill output shows it as `rent`. A Token-2022 account's rent follows its mint's extensions, which the solver reads once per mint. `--min-profit` refuses 0 for any mint, and a fixed `--priority-fee` is at most 10000000 micro-lamports per compute unit, the cap of `auto`. With `--watch`, an intent whose fill failed is skipped for 1 `--interval`, then 2, 4 and so on up to 32 intervals of the solver's clock while it keeps failing, however many change notifications arrive in between; the count resets after a fill or when the intent changes on chain, and each full scan forgets the intents that are no longer open.
+`--issue` prices 200 of your token per wrapped SOL and mints them into the fill. `--min-profit` skips fills that leave the solver less than 1 raw unit. Add `--watch` to keep solving: it solves again when an intent changes and at least every `--interval` seconds (default 5).
 
 ## 5. Check the balances
 
@@ -86,15 +86,21 @@ spl-token balance So11111111111111111111111111111111111111112 --owner $(solana-k
 
 Your wallet prints `5`. The solver keeps the rest of what it minted as its profit, and receives the escrowed wrapped SOL less the protocol fee.
 
+## Costs
+
+- `--max-sol-cost` (default 0.01 SOL) skips a fill whose network fee, priority fee and tip cost more.
+- `--max-rent` (default 0.01 SOL) caps the rent of token accounts a fill opens for the solver. The solver keeps those accounts.
+- With `--watch`, a fill that failed waits 1 interval, then 2, 4 and so on up to 32, before the solver tries it again.
+
 ## Solve from TypeScript
 
-Instead of step 4, write the solver yourself with the npm packages. Do steps 1 to 3, then install them with Node.js 22.12 or later:
+Instead of step 4, write the solver yourself. Do steps 1 to 3, then install the packages:
 
 ```sh
 npm install @intent-engine/core @intent-engine/client @solana/kit @solana-program/token
 ```
 
-Paste the TypeScript blocks below, in order, into one file `solver.mts` and run it with `node --experimental-strip-types solver.mts`. It loads the solver key and your token's address from the files steps 1 and 2 made.
+Paste the blocks below into `solver.mts` and run `node --experimental-strip-types solver.mts`.
 
 ```ts
 import { readFile } from "node:fs/promises";
@@ -110,9 +116,7 @@ const solver = await key("solive-solver.json");
 const token = (await key("solive-token.json")).address;
 ```
 
-`intents({ status: IntentStatus.Open })` lists every open intent. `termsOf`, given the chain's time from `chainTime`, says what each one sells and the least it must receive now. This solver takes the intents that sell wrapped SOL for your token, belong to another wallet and have not expired, and fills those that ask at most 200 of your token per SOL sold; both tokens have 9 decimals, so the raw amounts compare directly.
-
-`fill` fills one intent from the solver's wallet. It reads the intent and the engine's config, fills the whole escrow, creates any missing token account the fill needs, the solver's and the fee recipient's included, at the solver's cost, and passes the fee recipient the config names, the treasury wallet: the engine refuses a fill without it whenever the protocol fee is above zero. It delivers the least the intent receives at the chain's time unless `amountOut` says more, and `route` runs instructions before the fill in the same transaction, here a mint of exactly what it delivers. `fillOf` reads the fill back from the intent's history. This prints what the fill delivered and the wrapped SOL the solver received, the escrow less the protocol fee: 5 and 0.049975 for the intent from step 3.
+This takes the open intents that sell wrapped SOL for your token and ask at most 200 per SOL, and fills each one. `fill` creates any token account the fill needs and passes the fee recipient the config names, the treasury wallet: the engine refuses a fill without it whenever the protocol fee is above zero. `route` mints exactly what the fill delivers. This prints 5 and 0.049975 for the intent from step 3.
 
 ```ts
 const now = await client.chainTime();
@@ -133,7 +137,7 @@ for (const { address, intent } of open) {
 }
 ```
 
-`balances` reads a wallet's SOL and, for each mint, its token account, with 0 for an account it lacks; `name` is `SOL` for wrapped SOL and `undefined` for your token. Fills pay the solver in wrapped SOL, and `unwrap` closes that account so its balance returns to the wallet as SOL. This prints the solver's wrapped SOL and your token, then the wallet's SOL after the unwrap.
+Fills pay the solver in wrapped SOL, and `unwrap` closes that account so it returns to the wallet as SOL:
 
 ```ts
 const { tokens } = await client.balances(solver.address, [NATIVE_MINT, token]);
@@ -146,4 +150,4 @@ console.log(formatAmount((await client.balances(solver.address, [])).sol, 9));
 
 ## Next
 
-- [CLI reference](reference/cli.md)
+- [The solve command](reference/cli.md#solve)

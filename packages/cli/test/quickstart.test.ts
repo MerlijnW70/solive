@@ -12,7 +12,7 @@ import {
 } from "@solana-program/token";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ENV_KEYPAIR, ENV_URL, WATCH_INTERVAL } from "../src/args.js";
-import { AIRDROP, FUNDED } from "../src/wallet.js";
+import { AIRDROP, defaultWallet, FUNDED } from "../src/wallet.js";
 import { REVOKE_CANCELS } from "../src/agent/mandate.js";
 import { ata, balance, cli, funded, h, send, type World, world } from "./harness.js";
 
@@ -165,7 +165,7 @@ describe("the quickstart", () => {
   });
 });
 
-const SDK = read("docs/sdk.md");
+const SDK = read("docs/sdk.md") + "\n" + read("docs/sdk-client.md");
 
 describe("the sdk page", () => {
   let w: World;
@@ -322,6 +322,7 @@ describe("the solver guide", () => {
 
   it("issues a token and fills an intent for it with exactly the commands it prints", async () => {
     expect(solverLines.filter((l) => !l.startsWith("intent-engine "))).toEqual([
+      `solana config set --url devnet --keypair ~/${defaultWallet("").slice(1)}`,
       `solana-keygen new --no-bip39-passphrase -o ${SOLVER}`,
       `solana transfer ${SOLVER_ADDRESS} 0.03 --allow-unfunded-recipient`,
       `solana-keygen new --no-bip39-passphrase -o ${TOKEN_KEY}`,
@@ -332,7 +333,8 @@ describe("the solver guide", () => {
       `spl-token balance ${NATIVE_MINT} --owner ${SOLVER_ADDRESS}`,
       "npm install @intent-engine/core @intent-engine/client @solana/kit @solana-program/token",
     ]);
-    expect(SOLVER_PAGE).toContain("Do steps 1 to 4 of the [quickstart](quickstart.md) first, in the same terminal.");
+    expect(SOLVER_PAGE).toContain("Do steps 1 and 2 of the [quickstart](quickstart.md) first.");
+    expect(PAGE).toContain("## 2. Make a wallet\n\n```sh\nintent-engine setup\n```");
     const owner = await funded();
     const solver = await funded();
     const token = (await generateKeyPairSigner()).address;

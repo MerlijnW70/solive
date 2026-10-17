@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
   type Address,
@@ -49,9 +49,9 @@ import { FEE_BPS, world, type World } from "./svm.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string) => readFileSync(`${ROOT}/${path}`, "utf8");
-const PAGE = read("docs/sdk.md");
+const PAGE = read("docs/sdk.md") + "\n" + read("docs/sdk-client.md");
 const DEVNET = "https://api.devnet.solana.com";
-const WALLET = "solive-wallet.json";
+const WALLET = ".config/intent-engine/wallet.json";
 const LAMPORTS = 10_000_000_000n;
 const CREATE_FEE = 30_000;
 const BOUNTY = 20_000;
@@ -233,11 +233,7 @@ describe("the sdk page", () => {
     const [, major, minor] = /^>=(\d+)\.(\d+)\.0$/.exec(engines) ?? [];
     expect(PAGE).toContain(`Node.js ${major}.${minor} or later.`);
     expect(shell[0]).toBe("npm install @intent-engine/core @intent-engine/client @solana/kit");
-    expect(shell.slice(1)).toEqual([
-      `solana-keygen new --no-bip39-passphrase -o ~/${WALLET}`,
-      `solana config set --url devnet --keypair ~/${WALLET}`,
-      "solana airdrop 1",
-    ]);
+    expect(shell.slice(1)).toEqual(["npx @intent-engine/cli setup"]);
     expect(blocks.length).toBeGreaterThanOrEqual(6);
     expect(claims).toEqual(["SwapExactIn Open", "Open", "Cancelled", "ExpiryNotInFuture", "Filled", "IntentAttested", "Cancelled NotSettleable", "null", "true true"]);
   });
@@ -260,6 +256,7 @@ describe("the sdk page", () => {
     preset(w, WSOL, null);
     preset(w, TEST, w.authority.address);
     const { signer, secret } = await wallet(w);
+    mkdirSync(dirname(join(home, WALLET)), { recursive: true });
     writeFileSync(join(home, WALLET), JSON.stringify(secret));
     injected.transport = devnetLike(w);
     const admin = createClient({ url: DEVNET, transport: w.chain.transport });
