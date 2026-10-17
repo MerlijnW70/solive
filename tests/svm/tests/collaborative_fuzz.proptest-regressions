@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 62764790771e3ab887d5060ed6d3644b12ce6eba8458dde40c6628c1e3dabdcb # shrinks to case = Case { escrow: 1049, weights: [0, 0, 10000], slots: [0, 1, 2], judge_fee: 1048, partner: Some((1, 0)) }

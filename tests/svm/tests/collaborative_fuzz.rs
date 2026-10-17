@@ -2,6 +2,7 @@ use anchor_lang::prelude::Pubkey;
 use intent_core::bounty::split_n;
 use intent_core::fee::split_fees;
 use intent_core::kinds::{attested_result, Kind};
+use intent_engine::errors::EngineError;
 use intent_engine::state::MAX_FEE_BPS;
 use intent_engine::Economics;
 use proptest::prelude::*;
@@ -10,8 +11,8 @@ use solana_instruction::Instruction;
 use solana_keypair::Keypair;
 use solana_signer::Signer;
 use svm_tests::{
-    anchor_error_at, cosign_batch_ix, intent_pda, partner_ext, split_commit, split_digest,
-    swap_spec, vault_pda, Env, IntentSpec, TestResult, DOMAIN,
+    anchor_error_at, cosign_batch_ix, engine_error_at, intent_pda, partner_ext, split_commit,
+    split_digest, swap_spec, vault_pda, Env, IntentSpec, TestResult, DOMAIN,
 };
 
 const SMALL: u64 = 10_000;
@@ -203,12 +204,22 @@ fn run_split(case: &Case) -> TestResult {
         }
         return Ok(());
     }
-    sent?;
     let settle = case
         .escrow
         .checked_sub(case.judge_fee)
         .ok_or("judge fee above escrow")?;
-    let fees = split_fees(settle, FEE_BPS, partner_bps, cut_bps).map_err(|e| format!("{e:?}"))?;
+    let Ok(fees) = split_fees(settle, FEE_BPS, partner_bps, cut_bps) else {
+        if sent.err() != Some(engine_error_at(1, EngineError::InvalidParams)) {
+            return Err(
+                "a split whose fees exceed what the judge fee leaves was not refused".into(),
+            );
+        }
+        if left != case.escrow {
+            return Err("a refused split moved escrow".into());
+        }
+        return Ok(());
+    };
+    sent?;
     let plan = split_n(fees.net, &case.weights).map_err(|e| format!("{e:?}"))?;
     let mut by_slot = Vec::new();
     for &slot in &case.slots {
