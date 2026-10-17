@@ -11,7 +11,7 @@ npm install @intent-engine/core @intent-engine/client @solana/kit
 npx @intent-engine/cli setup
 ```
 
-`setup` makes a devnet wallet with some SOL in it.
+`setup` makes a devnet wallet with some SOL in it. Skip it if you did the quickstart.
 
 ## Run it
 
@@ -37,7 +37,7 @@ console.log(escrow.summary);
 console.log((await solive.cancel({ escrow: escrow.intent! })).summary);
 ```
 
-It swaps 0.05 SOL for at least 5 TEST, escrows 0.01 SOL for work that only the named judge can release, and then cancels that escrow.
+It sends real devnet transactions and prints one summary line for each: it swaps 0.05 SOL for at least 5 TEST, escrows 0.01 SOL for work that only the named judge can release, and then cancels that escrow. `intent-engine balance` then shows the TEST you received.
 
 ## What `connect` gives you
 

@@ -157,7 +157,8 @@ describe("the quickstart", () => {
     expect(commands[4]).toContain("--units tokens --amount-in 0.05 --min-out 50 --expires-in 3600 --yes");
     expect(outputs[5]).toMatchObject({ intents: [{ status: "filled", nonce: "0" }, { status: "open", nonce: "1" }] });
     expect(outputs[6]).toMatchObject({ sent: true });
-    expect(PAGE).toContain("Your 0.05 comes back as wrapped SOL.");
+    expect(PAGE).toContain("Your 0.05 comes back as wrapped SOL, SOL held as a token, which your next order can sell.");
+    expect(PAGE).toContain("Cancel the one that is `open`, here nonce `1`:");
     const wrapped = await findAssociatedTokenAddress({ owner, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     expect(balance(wrapped)).toBe(LAMPORTS_PER_SOL / 20n);
     const received = await findAssociatedTokenAddress({ owner, mint: TEST_TOKEN, tokenProgram: TOKEN_PROGRAM_ADDRESS });
