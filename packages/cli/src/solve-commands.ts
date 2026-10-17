@@ -248,6 +248,7 @@ export async function solverOptions(
       maxFeeBps: command.maxFeeBps,
       ...(command.target === undefined ? {} : { target: command.target }),
       ...(command.patience === undefined ? {} : { patience: command.patience }),
+      ...(command.solValue === undefined ? {} : { solValue: command.solValue }),
     },
     concurrency: command.concurrency,
     ...(heldBack === undefined ? {} : { held: heldBack }),

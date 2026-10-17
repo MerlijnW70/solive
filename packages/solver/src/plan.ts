@@ -19,6 +19,8 @@ import type { Pricer, Quote } from "./market.js";
 
 export type Cycle = (mint: Address, amount: bigint) => Promise<Quote | null>;
 
+export type SolValue = ReadonlyMap<Address, { raw: bigint; lamports: bigint }>;
+
 export type Strategy = {
   minProfit: ReadonlyMap<Address, bigint>;
   maxFeeBps: number;
@@ -26,6 +28,7 @@ export type Strategy = {
   routeAccounts?: number;
   target?: ReadonlyMap<Address, bigint>;
   patience?: number;
+  solValue?: SolValue;
 };
 
 export const DEFAULT_PATIENCE = 30;

@@ -97,7 +97,7 @@ import {
   render,
   runProcess,
 } from "../src/main.js";
-import { COMPUTE_BUDGET_ADDRESS, FAILED_ON_CHAIN, JITO_TIP_ACCOUNTS, MAX_COMPUTE_UNITS, SIMULATION_REFUSED } from "@intent-engine/solver";
+import { COMPUTE_BUDGET_ADDRESS, FAILED_ON_CHAIN, JITO_TIP_ACCOUNTS, MAX_COMPUTE_UNITS, NET_BELOW_FLOOR, SIMULATION_REFUSED } from "@intent-engine/solver";
 import { costlyFunding, FUNDING_RENT } from "../src/crank.js";
 import {
   ata,
@@ -826,7 +826,7 @@ describe("cli against the deployed engine", () => {
     const [i8] = await findIntentPda({ owner: owner.address, nonce: 8n });
     const [i9] = await findIntentPda({ owner: owner.address, nonce: 9n });
     expect(result.json()).toEqual({
-      filled: [{ intent: i8, profit: "50", signature: expect.any(String) }],
+      filled: [{ intent: i8, profit: "50", cost: expect.any(String), signature: expect.any(String) }],
       sent: [],
       skipped: [{ intent: i9, reason: "no route" }],
       failed: [],
@@ -872,14 +872,14 @@ describe("cli against the deployed engine", () => {
     const [i8] = await findIntentPda({ owner: owner.address, nonce: 8n });
     const [i9] = await findIntentPda({ owner: owner.address, nonce: 9n });
     const net = splitFee(ESCROW, FEE_BPS).net;
-    const issuing = async (rate: string, signer: KeyPairSigner) => {
+    const issuing = async (rate: string, signer: KeyPairSigner, extra: string[] = []) => {
       h.wires.length = 0;
       const run = await cli(
-        ["solve", "--keypair", "s.json", "--issue", `${inputMint}:${issued}=${rate}`, "--min-profit", `${issued}=1,${outputMint}=1`, "--url", "http://cluster"],
+        ["solve", "--keypair", "s.json", "--issue", `${inputMint}:${issued}=${rate}`, "--min-profit", `${issued}=1,${outputMint}=1`, "--url", "http://cluster", ...extra],
         { "s.json": signer },
       );
       expect(run.code).toBe(EXIT_OK);
-      return run.json() as { filled: unknown[]; sent: unknown[]; skipped: unknown[]; failed: { intent: Address; error: string }[] };
+      return run.json() as { filled: unknown[]; sent: unknown[]; skipped: { intent: Address; reason: string }[]; failed: { intent: Address; error: string }[] };
     };
     expect(await issuing("1/2", solver)).toEqual({
       filled: [],
@@ -893,8 +893,11 @@ describe("cli against the deployed engine", () => {
     const foreign = await issuing("1/1", stranger);
     expect(foreign.failed.map((f) => [f.intent, f.error.startsWith(SIMULATION_REFUSED)])).toEqual([[i8, true]]);
     expect([foreign.filled, foreign.sent, h.wires]).toEqual([[], [], []]);
+    const dear = await issuing("1/1", solver, ["--sol-value", `${issued}=${net}/1`]);
+    expect(dear.skipped.map((s) => [s.intent, s.reason.startsWith(NET_BELOW_FLOOR)])).toEqual([[i8, true], [i9, false]]);
+    expect([dear.filled, dear.sent, dear.failed, h.wires]).toEqual([[], [], [], []]);
     expect(await issuing("1/1", solver)).toEqual({
-      filled: [{ intent: i8, profit: String(net - 300n), signature: expect.any(String) }],
+      filled: [{ intent: i8, profit: String(net - 300n), cost: expect.any(String), signature: expect.any(String) }],
       sent: [],
       skipped: [{ intent: i9, reason: "no route" }],
       failed: [],
@@ -933,7 +936,7 @@ describe("cli against the deployed engine", () => {
     expect(await solving(["--inventory", rate])).toEqual({ filled: [], sent: [], skipped: [{ intent: i8, reason: "no route" }], failed: [] });
     await send(solver, [getMintToInstruction({ mint: issued, token: solverOutput, mintAuthority: solver, amount: 1n })]);
     expect(await solving(["--inventory", rate, "--issue", rate])).toEqual({
-      filled: [{ intent: i8, profit: String(net - 300n), signature: expect.any(String) }],
+      filled: [{ intent: i8, profit: String(net - 300n), cost: expect.any(String), signature: expect.any(String) }],
       sent: [],
       skipped: [],
       failed: [],
@@ -975,8 +978,8 @@ describe("cli against the deployed engine", () => {
     const profit = String(splitFee(ESCROW, FEE_BPS).net - 300n);
     const timing = { at: String(NOW + 1_000n), ms: expect.any(Number) };
     expect(run.each()).toEqual([
-      { ...timing, scan: "full", filled: [], sent: [{ intent: i7, profit, signature: expect.any(String) }], failed: [] },
-      { ...timing, scan: "changed", filled: [], sent: [{ intent: i12, profit, signature: expect.any(String) }], failed: [] },
+      { ...timing, scan: "full", filled: [], sent: [{ intent: i7, profit, cost: expect.any(String), signature: expect.any(String) }], failed: [] },
+      { ...timing, scan: "changed", filled: [], sent: [{ intent: i12, profit, cost: expect.any(String), signature: expect.any(String) }], failed: [] },
     ]);
     expect([h.scans - scans, h.submitted.length, h.waits, h.closed]).toEqual([2, 2, [3, 3, 3], 1]);
     expect(balance(receiver)).toBe(600n);

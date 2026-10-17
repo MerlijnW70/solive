@@ -20,12 +20,13 @@ import {
   setTransactionMessageFeePayerSigner,
   signTransactionMessageWithSigners,
 } from "@solana/kit";
-import { getCreateAccountInstruction, SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
+import { getCreateAccountInstruction, getTransferSolInstruction, SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import {
   getCreateAssociatedTokenIdempotentInstructionAsync,
   getInitializeMint2Instruction,
   getMintSize,
   getMintToInstruction,
+  getSyncNativeInstruction,
   getTokenDecoder,
   getTransferCheckedInstruction,
   TOKEN_PROGRAM_ADDRESS,
@@ -61,12 +62,14 @@ import {
   splitFees,
   MAX_CRANK_BOUNTY,
   MAX_CREATE_FEE,
+  NATIVE_MINT,
 } from "@intent-engine/core";
 import {
   BACKOFF_MAX_INTERVALS,
   backingOff,
   backoff,
   badBundleSize,
+  badSolValue,
   BALANCES_REFUSED,
   cachedPricer,
   type Chain,
@@ -94,6 +97,8 @@ import {
   INVENTORY_SPENT,
   inventoryPricer,
   MAX_COMPUTE_UNITS,
+  NET_BELOW_FLOOR,
+  netBelowFloor,
   type Pricer,
   type Quote,
   type QuoteRequest,
@@ -177,6 +182,7 @@ function stashMarket(
   solverOutput: Address,
   pay: (amountIn: bigint) => bigint | null,
   tables: Address[] = [],
+  decimals = 6,
 ): Pricer {
   return {
     async quote(request) {
@@ -210,7 +216,7 @@ function stashMarket(
             destination: solverOutput,
             authority: stash,
             amount: amountOut,
-            decimals: 6,
+            decimals,
           }),
         ],
       };
@@ -477,7 +483,7 @@ describe("solver against the deployed engine", () => {
     );
     const fees = splitFees(AMOUNT, 5, 0, 0);
     const report = await solve(pricer);
-    expect(report).toEqual({ filled: [{ intent, profit: fees.net - MIN_OUT, signature: expect.any(String) }], sent: [], skipped: [], failed: [] });
+    expect(report).toEqual({ filled: [{ intent, profit: fees.net - MIN_OUT, cost: expect.any(BigInt), signature: expect.any(String) }], sent: [], skipped: [], failed: [] });
     expect([balance(receiver), balance(solverOutput), balance(solverInput), balance(feeTo)]).toEqual([MIN_OUT, AMOUNT - MIN_OUT, fees.net, fees.protocol]);
   });
 
@@ -523,11 +529,11 @@ describe("solver against the deployed engine", () => {
     const unlanded = { send: async (wire: Base64EncodedWireTransaction) => ({ ...(await landed(wire)), confirmed: false }) };
     const report = await solve(pricer, unlanded);
     expect(report.sent).toEqual([
-      { intent: stocked, profit: splitFees(AMOUNT, 5, 0, 0).net - MIN_OUT, signature: expect.any(String), holds: { account: solverOutput, amount: MIN_OUT } },
+      { intent: stocked, profit: splitFees(AMOUNT, 5, 0, 0).net - MIN_OUT, cost: expect.any(BigInt), signature: expect.any(String), holds: { account: solverOutput, amount: MIN_OUT } },
     ]);
     const routed = await open(2n);
     const route = await solve(stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n), unlanded);
-    expect(route.sent).toEqual([{ intent: routed, profit: 4_000n, signature: expect.any(String) }]);
+    expect(route.sent).toEqual([{ intent: routed, profit: 4_000n, cost: expect.any(BigInt), signature: expect.any(String) }]);
   });
 
   it("reports the hold of an inventory fill sent in a bundle", async () => {
@@ -546,7 +552,7 @@ describe("solver against the deployed engine", () => {
       },
     });
     expect(report.sent).toEqual([
-      { intent: stocked, profit: splitFees(AMOUNT, 5, 0, 0).net - MIN_OUT, signature: "bundle-held", holds: { account: solverOutput, amount: MIN_OUT } },
+      { intent: stocked, profit: splitFees(AMOUNT, 5, 0, 0).net - MIN_OUT, cost: expect.any(BigInt), signature: "bundle-held", holds: { account: solverOutput, amount: MIN_OUT } },
     ]);
   });
 
@@ -605,7 +611,7 @@ describe("solver against the deployed engine", () => {
     const report = await solve(stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n));
     expect(report.skipped).toEqual([]);
     expect(report.failed).toEqual([]);
-    expect(report.filled).toEqual([{ intent, profit: 4_000n, signature: expect.any(String) }]);
+    expect(report.filled).toEqual([{ intent, profit: 4_000n, cost: expect.any(BigInt), signature: expect.any(String) }]);
     const fees = splitFees(AMOUNT, 5, 0, 0);
     expect(balance(receiver)).toBe(MIN_OUT);
     expect(balance(solverOutput)).toBe(4_000n);
@@ -782,7 +788,7 @@ describe("solver against the deployed engine", () => {
         return { signature: "bundle-1", confirmed: false };
       },
     });
-    expect(report).toEqual({ filled: [], sent: [{ intent, profit: 4_000n, signature: "bundle-1" }], skipped: [], failed: [] });
+    expect(report).toEqual({ filled: [], sent: [{ intent, profit: 4_000n, cost: expect.any(BigInt), signature: "bundle-1" }], skipped: [], failed: [] });
     expect(priced).toHaveLength(1);
     expect(sent.map((wire) => budgetOf(wire, 3))).toEqual([7_000n]);
     const free = await solve(stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n), {
@@ -809,7 +815,7 @@ describe("solver against the deployed engine", () => {
         return landed(wire);
       },
     });
-    expect(report.filled).toEqual([{ intent, profit: 4_000n, signature: expect.any(String) }]);
+    expect(report.filled).toEqual([{ intent, profit: 4_000n, cost: expect.any(BigInt), signature: expect.any(String) }]);
     expect((svm.getBalance(tipAccount) ?? 0n) - before).toBe(12_345n);
     expect(solverBefore - (svm.getBalance(solver.address) ?? 0n)).toBeGreaterThanOrEqual(12_345n);
     const tx = getTransactionDecoder().decode(getBase64Encoder().encode(sent[0] ?? ("" as Base64EncodedWireTransaction)));
@@ -1004,7 +1010,7 @@ describe("solver against the deployed engine", () => {
     expect(sent).toEqual([]);
     expect(balance(receiver)).toBe(0n);
     const allowed = await solve(pricer(), { ...priced(5_000_000n), maxSolCost: cost });
-    expect(allowed.filled).toEqual([{ intent, profit: 4_000n, signature: expect.any(String) }]);
+    expect(allowed.filled).toEqual([{ intent, profit: 4_000n, cost, signature: expect.any(String) }]);
     expect(sent.map((wire) => budgetOf(wire, 2))).toEqual([MAX_COMPUTE_UNITS]);
   });
 
@@ -1031,9 +1037,91 @@ describe("solver against the deployed engine", () => {
     expect([svm.getAccount(freshInput).exists, svm.getAccount(freshOutput).exists]).toEqual([false, false]);
     const before = svm.getBalance(solver.address) ?? 0n;
     const report = await solve(pricer(), { ...tipped, maxSolCost: cost });
-    expect(report.filled).toEqual([{ intent, profit: 4_000n, signature: expect.any(String), rent: kept }]);
+    expect(report.filled).toEqual([{ intent, profit: 4_000n, cost, signature: expect.any(String), rent: kept }]);
     expect(before - (svm.getBalance(solver.address) ?? 0n)).toBe(cost + kept);
     expect([svm.getBalance(freshInput), svm.getBalance(freshOutput)]).toEqual([rent, rent]);
+  });
+
+  async function wrapOutput() {
+    svm.withNativeMints();
+    outputMint = NATIVE_MINT;
+    receiver = await ata(authority, owner.address, NATIVE_MINT);
+    solverOutput = await ata(authority, solver.address, NATIVE_MINT);
+    stashAccount = await ata(authority, stash.address, NATIVE_MINT);
+    await send(stash, [getTransferSolInstruction({ source: stash, destination: stashAccount, amount: 10_000_000n }), getSyncNativeInstruction({ account: stashAccount })]);
+    return (spread: bigint) => stashMarket(stash, stashAccount, NATIVE_MINT, solverOutput, () => MIN_OUT + spread, [], 9);
+  }
+
+  it("skips a wrapped SOL fill whose spread covers the floor but not the floor plus its sol cost, which it sent before", async () => {
+    const market = await wrapOutput();
+    const intent = await open(60n);
+    const cost = 2n * LAMPORTS_PER_SIGNATURE;
+    const spread = 1_000n + cost - 1n;
+    const stored = (await chain().intents()).find((entry) => entry.address === intent);
+    if (stored === undefined) {
+      throw new Error("intent missing");
+    }
+    const before = await decide(intent, stored.intent, await chain().config(), NOW, market(spread), solver.address, { minProfit: floors(1_000n), maxFeeBps: 100 });
+    expect(before).toMatchObject({ kind: "fill", plan: { profit: spread } });
+    const report = await solve(market(spread));
+    expect(report).toEqual({ filled: [], sent: [], skipped: [{ intent, reason: netBelowFloor(spread, cost, cost, 1_000n) }], failed: [] });
+    expect(report.skipped[0]?.reason.startsWith(NET_BELOW_FLOOR)).toBe(true);
+    expect([balance(receiver), balance(solverOutput)]).toEqual([0n, 0n]);
+    const paid = await solve(market(spread + 1n));
+    expect(paid).toEqual({ filled: [{ intent, profit: spread + 1n, cost, signature: expect.any(String) }], sent: [], skipped: [], failed: [] });
+    expect([balance(receiver), balance(solverOutput)]).toEqual([MIN_OUT, spread + 1n]);
+  });
+
+  it("counts a tip in a wrapped SOL fill's cost, sent alone or as the tail of a bundle", async () => {
+    const market = await wrapOutput();
+    const intent = await open(61n);
+    const tipAccount = (await generateKeyPairSigner()).address;
+    svm.airdrop(tipAccount, lamports(1_000_000_000n));
+    const bare = 2n * LAMPORTS_PER_SIGNATURE;
+    const cost = bare + 12_345n;
+    const tipped = { tip: { account: tipAccount, lamports: 12_345n } };
+    const spread = 1_000n + bare;
+    expect((await solve(market(spread), tipped)).skipped).toEqual([{ intent, reason: netBelowFloor(spread, cost, cost, 1_000n) }]);
+    const second = await open(62n);
+    const bundles: Base64EncodedWireTransaction[][] = [];
+    const bundling = {
+      ...tipped,
+      sendBundle: async (wires: readonly Base64EncodedWireTransaction[]) => {
+        bundles.push([...wires]);
+        for (const wire of wires) {
+          await submit(wire);
+        }
+        return "bundle-wrapped";
+      },
+    };
+    const refused = await solve(market(spread), bundling);
+    expect([refused.sent, bundles]).toEqual([[], []]);
+    expect(new Set(refused.skipped.map((s) => s.intent))).toEqual(new Set([intent, second]));
+    expect(refused.skipped.map((s) => s.reason)).toEqual([netBelowFloor(spread, cost, cost, 1_000n), netBelowFloor(spread, cost, cost, 1_000n)]);
+    expect(balance(receiver)).toBe(0n);
+    const report = await solve(market(1_000n + cost), bundling);
+    expect(bundles.map((wires) => wires.map(tipOf))).toEqual([[null, tipAccount]]);
+    expect(report.sent.map((s) => s.cost).sort((a, b) => (a < b ? -1 : 1))).toEqual([bare, cost]);
+    expect(new Set(report.sent.map((s) => s.intent))).toEqual(new Set([intent, second]));
+    expect(balance(receiver)).toBe(2n * MIN_OUT);
+  });
+
+  it("converts a fill's sol cost into an output token with a sol value, rounding up, and judges a token without one as before", async () => {
+    const intent = await open(63n);
+    const cost = 2n * LAMPORTS_PER_SIGNATURE;
+    const market = () => stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n);
+    const valued = (floor: bigint, mint: Address, raw: bigint, per: bigint) => ({
+      strategy: { minProfit: floors(floor), maxFeeBps: 100, solValue: new Map([[mint, { raw, lamports: per }]]) },
+    });
+    await expect(solve(market(), valued(1_000n, outputMint, 0n, 1n))).rejects.toThrow(badSolValue(outputMint));
+    expect((await solve(market(), valued(667n, outputMint, 1n, 3n))).skipped).toEqual([{ intent, reason: netBelowFloor(4_000n, 3_334n, cost, 667n) }]);
+    expect(balance(receiver)).toBe(0n);
+    const paid = await solve(market(), valued(666n, outputMint, 1n, 3n));
+    expect(paid.filled).toEqual([{ intent, profit: 4_000n, cost, signature: expect.any(String) }]);
+    const plain = await open(64n);
+    const unpriced = await solve(market(), valued(4_000n, inputMint, 1n, 1_000_000n));
+    expect(unpriced).toEqual({ filled: [{ intent: plain, profit: 4_000n, cost, signature: expect.any(String) }], sent: [], skipped: [{ intent, reason: "not open" }], failed: [] });
+    expect(balance(receiver)).toBe(2n * MIN_OUT);
   });
 
   it("backoff waits in seconds not ticks", async () => {
@@ -1193,7 +1281,7 @@ describe("solver against the deployed engine", () => {
     swapping.current = { mint: inputMint, from: solverInput, to: swapping.current?.to ?? solverInput, authority: solver };
     const report = await solve(stashMarket(stash, stashAccount, outputMint, fresh, () => MIN_OUT + 4_000n));
     expect(report.failed).toEqual([]);
-    expect(report.filled).toEqual([{ intent, profit: 4_000n, signature: expect.any(String), rent: rentExempt(TOKEN_ACCOUNT_SPACE) }]);
+    expect(report.filled).toEqual([{ intent, profit: 4_000n, cost: expect.any(BigInt), signature: expect.any(String), rent: rentExempt(TOKEN_ACCOUNT_SPACE) }]);
     expect(balance(fresh)).toBe(4_000n);
     expect(balance(receiver)).toBe(MIN_OUT);
   });
@@ -1281,7 +1369,7 @@ describe("solver against the deployed engine", () => {
         },
       },
     });
-    expect(report.filled).toEqual([{ intent, profit: 4_500n, signature: expect.any(String) }]);
+    expect(report.filled).toEqual([{ intent, profit: 4_500n, cost: expect.any(BigInt), signature: expect.any(String) }]);
     expect(balance(solverOutput)).toBe(4_500n);
     expect(balance(receiver)).toBe(MIN_OUT);
   });
@@ -1412,7 +1500,7 @@ describe("solver against the deployed engine", () => {
     pay.out = MIN_OUT + 2_000n;
     const report = await solve(pricer);
     expect(report.failed).toEqual([]);
-    expect(report.filled).toEqual([{ intent, profit: 2_000n, signature: expect.any(String) }]);
+    expect(report.filled).toEqual([{ intent, profit: 2_000n, cost: expect.any(BigInt), signature: expect.any(String) }]);
     expect(asked).toEqual([undefined, true]);
     expect([balance(receiver), balance(solverOutput)]).toEqual([MIN_OUT, 2_000n]);
   });
@@ -1438,7 +1526,7 @@ describe("solver against the deployed engine", () => {
     const intent = await open(32n);
     const { asked, pricer } = cachedMarket({ out: MIN_OUT + 4_000n });
     const report = await solve(pricer);
-    expect(report.filled).toEqual([{ intent, profit: 4_000n, signature: expect.any(String) }]);
+    expect(report.filled).toEqual([{ intent, profit: 4_000n, cost: expect.any(BigInt), signature: expect.any(String) }]);
     expect(asked).toEqual([undefined]);
   });
 

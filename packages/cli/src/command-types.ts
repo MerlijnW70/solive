@@ -86,6 +86,7 @@ export type Command =
       minProfit: ReadonlyMap<Address, bigint>;
       target?: ReadonlyMap<Address, bigint>;
       patience?: number;
+      solValue?: ReadonlyMap<Address, { raw: bigint; lamports: bigint }>;
       maxFeeBps: number;
       maxSolCost: bigint;
       maxRent: bigint;

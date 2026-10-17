@@ -23,6 +23,7 @@ import { MAX_BUNDLE } from "./jito.js";
 import { RateLimited } from "./jupiter.js";
 import type { Pricer } from "./market.js";
 import { decide, type Plan, standing, type Strategy } from "./plan.js";
+import { netShort, solValueFits } from "./net.js";
 import { freshly, fromCache } from "./quote-cache.js";
 import { spend, type Stock, stockLeft } from "./inventory.js";
 import { type Hold, unheld } from "./holds.js";
@@ -84,8 +85,8 @@ export type SolverOptions = {
 };
 
 export type Report = {
-  filled: { intent: Address; profit: bigint; signature: string; rent?: bigint }[];
-  sent: { intent: Address; profit: bigint; signature: string; rent?: bigint; holds?: Hold }[];
+  filled: { intent: Address; profit: bigint; cost: bigint; signature: string; rent?: bigint }[];
+  sent: { intent: Address; profit: bigint; cost: bigint; signature: string; rent?: bigint; holds?: Hold }[];
   skipped: { intent: Address; reason: string; rent?: bigint }[];
   failed: { intent: Address; error: string }[];
 };
@@ -278,6 +279,10 @@ async function checkOrder(
   if (rent > caps.rent) {
     return skipped(address, tooMuchRent(rent, caps.rent), kept);
   }
+  const short = netShort(plan, o.strategy.minProfit.get(plan.intent.outputMint) ?? 0n, cost, o.strategy.solValue);
+  if (short !== null) {
+    return skipped(address, short, kept);
+  }
   if (wire !== probe) {
     const checked = await o.simulate(wire, [solverInput, solverOutput]);
     if (checked.err !== null) {
@@ -287,7 +292,7 @@ async function checkOrder(
   return {
     kind: "checked",
     wire,
-    entry: { intent: address, profit: plan.profit, ...(kept === undefined ? {} : { rent: kept }) },
+    entry: { intent: address, profit: plan.profit, cost, ...(kept === undefined ? {} : { rent: kept }) },
     ...(plan.route.inventory === true ? { holds: { account: solverOutput, amount: plan.required } } : {}),
     spend: () => {
       if (plan.route.inventory === true) {
@@ -340,6 +345,10 @@ export async function tick(o: SolverOptions): Promise<Report> {
   const bundleSize = o.bundleSize ?? MAX_BUNDLE;
   if (!bundleSizeFits(bundleSize)) {
     throw new RangeError(badBundleSize(bundleSize));
+  }
+  const invalid = solValueFits(o.strategy.solValue);
+  if (invalid !== null) {
+    throw new RangeError(invalid);
   }
   const [config, now, intents] = await Promise.all([o.chain.config(), o.chain.now(), o.chain.intents()]);
   const caps = { cost: o.maxSolCost ?? DEFAULT_MAX_SOL_COST, rent: o.maxRent ?? DEFAULT_MAX_RENT };
@@ -428,13 +437,18 @@ export async function tick(o: SolverOptions): Promise<Report> {
     }
   }
   if (o.sendBundle !== undefined) {
-    const last = async ({ ready, wire }: (typeof queue)[number]): Promise<Base64EncodedWireTransaction | Outcome> => {
+    const last = async (item: (typeof queue)[number]): Promise<Base64EncodedWireTransaction | Outcome> => {
+      const { ready, wire } = item;
       if (o.tip === null) {
         return wire;
       }
       try {
         const checked = await checkOrder(o, caps, mintData, ready, new Map());
-        return checked.kind === "checked" ? checked.wire : checked;
+        if (checked.kind !== "checked") {
+          return checked;
+        }
+        item.entry = checked.entry;
+        return checked.wire;
       } catch (error) {
         return error instanceof RateLimited ? skipped(ready.plan.address, error.message) : failed(ready.plan.address, messageOf(error));
       }

@@ -18,7 +18,7 @@ import {
 } from "./arg-values.js";
 import type { AgentSpec, Authority, Command, ConfigChange, IssueSpec, RelaySpec, Remote, WalletLimits } from "./command-types.js";
 import type { Address } from "@solana/kit";
-import { TOKEN_AMOUNT_PATTERN } from "@intent-engine/core";
+import { NATIVE_MINT, TOKEN_AMOUNT_PATTERN } from "@intent-engine/core";
 import { DELIVERY_PAGES } from "@intent-engine/client";
 
 export const RELAY_NEEDS_FEES =
@@ -237,6 +237,34 @@ function rates(text: string, flag: "issue" | "inventory", format: string): Issue
     routes.push(route);
   }
   return routes;
+}
+
+export const SOL_VALUE_FORMAT = "--sol-value takes <mint>=<raw>/<lamports> entries separated by commas";
+
+export const SOL_VALUE_NATIVE = "--sol-value cannot price wrapped SOL; it is always worth its own lamports";
+
+export function solValues(text: string): ReadonlyMap<Address, { raw: bigint; lamports: bigint }> {
+  const values = new Map<Address, { raw: bigint; lamports: bigint }>();
+  for (const entry of text.split(",")) {
+    const match = /^([^:=/]+)=([^:=/]+)\/([^:=/]+)$/.exec(entry.trim());
+    if (match === null) {
+      throw new UsageError(SOL_VALUE_FORMAT);
+    }
+    const [, name = "", raw = "", per = ""] = match;
+    const mint = parseAddress(name.trim(), "sol-value");
+    const value = { raw: parseU64(raw.trim(), "sol-value"), lamports: parseU64(per.trim(), "sol-value") };
+    if (value.raw === 0n || value.lamports === 0n) {
+      throw new UsageError("--sol-value rates must be positive on both sides");
+    }
+    if (mint === NATIVE_MINT) {
+      throw new UsageError(SOL_VALUE_NATIVE);
+    }
+    if (values.has(mint)) {
+      throw new UsageError(`--sol-value names ${mint} twice`);
+    }
+    values.set(mint, value);
+  }
+  return values;
 }
 
 export function market(values: Values): { jupiter: string | undefined; issue: IssueSpec[]; inventory: IssueSpec[] } {

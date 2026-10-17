@@ -101,6 +101,7 @@ Your wallet prints `5`. The solver keeps the rest of what it minted as its profi
 ## Costs
 
 - `--max-sol-cost` (default 0.01 SOL) skips a fill whose network fee, priority fee and tip cost more.
+- A fill paid in wrapped SOL is skipped when its profit less that SOL cost is below `--min-profit`. `--sol-value <mint>=<raw>/<lamports>,...` does the same for other tokens, counting `raw` units as worth `lamports` lamports. Each filled or sent fill reports its `cost` in lamports.
 - `--max-rent` (default 0.01 SOL) caps the rent of token accounts a fill opens for the solver. The solver keeps those accounts.
 - With `--watch`, a fill that failed waits 1 interval, then 2, 4 and so on up to 32, before the solver tries it again.
 

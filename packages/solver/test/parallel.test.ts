@@ -241,7 +241,7 @@ async function many(count: number, over: (i: number) => Partial<Intent> = () => 
   return { output, orders };
 }
 
-const filledEntry = (o: Order, profit: bigint) => ({ intent: o.address, profit, signature: "signature-" + o.address });
+const filledEntry = (o: Order, profit: bigint) => ({ intent: o.address, profit, cost: expect.any(BigInt), signature: "signature-" + o.address });
 
 type Held = { order: Order; release(): void; fail(error: unknown): void };
 

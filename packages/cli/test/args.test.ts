@@ -44,6 +44,7 @@ import {
   WALLET_LIMITS_NEED_WALLET,
 } from "../src/args.js";
 import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT } from "@intent-engine/core";
+import { SOL_VALUE_FORMAT, SOL_VALUE_NATIVE } from "../src/command-builders.js";
 
 const OWNER = "11111111111111111111111111111112";
 const MINT_A = "So11111111111111111111111111111111111111112";
@@ -250,6 +251,28 @@ describe("numbers", () => {
     }
     expect(usageOf("solve").options).toContain("--max-rent");
     expect(usageOf("solve").usage).toContain("[--max-rent <SOL>]");
+  });
+
+  it("solve parses sol values with the syntax of --issue and refuses bad ones", () => {
+    const solve = ["solve", "--keypair", "k", "--jupiter", "https://q.example", "--min-profit", `${MINT_A}=1`];
+    expect(parse(solve)).not.toHaveProperty("solValue");
+    expect(parse([...solve, "--sol-value", `${MINT_B}=200/1, ${OWNER}=1/3`])).toMatchObject({
+      solValue: new Map([
+        [MINT_B, { raw: 200n, lamports: 1n }],
+        [OWNER, { raw: 1n, lamports: 3n }],
+      ]),
+    });
+    for (const bad of [`${MINT_B}=200`, `${MINT_B}:${OWNER}=1/1`, `${MINT_B}=1/1/2`, ""]) {
+      expect(usage([...solve, `--sol-value=${bad}`])).toBe(SOL_VALUE_FORMAT);
+    }
+    expect(usage([...solve, "--sol-value", `${MINT_B}=0/1`])).toBe("--sol-value rates must be positive on both sides");
+    expect(usage([...solve, "--sol-value", `${MINT_B}=1/0`])).toBe("--sol-value rates must be positive on both sides");
+    expect(usage([...solve, "--sol-value", `${MINT_B}=1/x`])).toMatch(/^--sol-value/);
+    expect(usage([...solve, "--sol-value", "nope=1/1"])).toBe("--sol-value is not a base58 address");
+    expect(usage([...solve, "--sol-value", `${MINT_B}=1/1,${MINT_B}=2/1`])).toBe(`--sol-value names ${MINT_B} twice`);
+    expect(usage([...solve, "--sol-value", `${NATIVE_MINT}=1/1`])).toBe(SOL_VALUE_NATIVE);
+    expect(usageOf("solve").options).toContain("--sol-value");
+    expect(usageOf("solve").usage).toContain("[--sol-value <mint>=<raw>/<lamports>,...]");
   });
 
   it("reads an optional partner for create and needs both halves of it", () => {

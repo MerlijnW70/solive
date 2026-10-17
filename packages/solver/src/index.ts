@@ -8,6 +8,7 @@ export * from "./jito.js";
 export * from "./jupiter.js";
 export * from "./lookup.js";
 export * from "./market.js";
+export * from "./net.js";
 export * from "./plan.js";
 export * from "./quote-cache.js";
 export * from "./remember.js";
