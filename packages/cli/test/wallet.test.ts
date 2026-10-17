@@ -17,8 +17,10 @@ import { DEVNET_URL, testTokenElsewhere, tokenNamed } from "../src/tokens.js";
 import {
   AIRDROP,
   AIRDROP_REFUSED,
+  FAUCET,
   defaultWallet,
   FUNDED,
+  heldRefused,
   LAMPORTS_PER_SOL,
   SEND_SOL,
   settingsBroken,
@@ -154,7 +156,12 @@ describe("setup and balance", () => {
 
   it("points to the faucet when the airdrop is refused and never airdrops on mainnet", async () => {
     h.airdropRefused = true;
-    expect((await cli(["setup"], {})).json()).toMatchObject({ created: true, sol: "0", next: AIRDROP_REFUSED });
+    const refused = (await cli(["setup"], {})).json();
+    expect(refused).toMatchObject({ created: true, sol: "0", next: AIRDROP_REFUSED });
+    h.svm.airdrop(refused["address"] as Address, lamports(LAMPORTS_PER_SOL / 10n));
+    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.1", next: heldRefused("0.1") });
+    expect(h.airdrops).toHaveLength(2);
+    expect(heldRefused("0.1")).toContain(` ${FAUCET} `);
     clean();
     h.airdrops.length = 0;
     expect((await cli(["setup", "--url", "mainnet-beta", "--keypair", "main.json"], {})).json()).toMatchObject({

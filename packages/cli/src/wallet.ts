@@ -32,6 +32,8 @@ export const FUNDED = "your wallet is ready; try offering 0.05 SOL for at least 
 export const AIRDROP_REFUSED =
   `the airdrop was refused; request devnet SOL for this address at ${FAUCET} or ${PUBLIC_FAUCET}, then set up again`;
 export const SEND_SOL = "send SOL to this address, then run setup again";
+export const heldRefused = (sol: string) =>
+  `your wallet holds ${sol} SOL; devnet refused to add more, so request more at ${FAUCET} or ${PUBLIC_FAUCET} if you run low`;
 
 export function expandHome(path: string, home: string): string {
   if (path === "~") {
@@ -118,7 +120,7 @@ export async function setup(
         await transport.airdrop(signer.address, AIRDROP);
         held = await lamportsOf(transport, signer.address);
       } catch {
-        next = AIRDROP_REFUSED;
+        next = held > 0n ? heldRefused(formatAmount(held, SOL_DECIMALS)) : AIRDROP_REFUSED;
       }
     }
   }
