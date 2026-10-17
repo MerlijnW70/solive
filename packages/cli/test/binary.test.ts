@@ -27,7 +27,7 @@ describe("the built binary", () => {
     );
     const { tools } = await client.listTools(undefined, { timeout: STARTUP_MS });
     expect(tools.map((t) => t.name)).toEqual(ACTIONS.map((a) => a.name));
-    const result = await client.callTool({ name: "solive_get_config", arguments: {} }, undefined, { timeout: STARTUP_MS });
+    const result = await client.callTool({ name: "solive_get_config", arguments: {} }, { timeout: STARTUP_MS });
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toMatchObject({ code: "Unreachable", retryable: true, hint: unreachableHint(UNREACHABLE) });
     await client.close();
