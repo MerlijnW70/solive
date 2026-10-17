@@ -1,0 +1,25 @@
+{
+  "program": "GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU",
+  "config": {
+    "admin": "DxF6mApa3rnN7QgdqjtBvgyDesvKhVTYQ14Giike4Urv",
+    "pendingAdmin": "11111111111111111111111111111111",
+    "guardian": "EPPDJ5WaQs3GSvTwt1N5BmPtX9A7W2H5sXYk9Y2Z9ahP",
+    "feeRecipient": "HYvAgVG3fthnNbM94fr4a3ZzwNRkf1RzHQDeM94dKa5K",
+    "feeBps": 5,
+    "kindFeeMask": 30,
+    "kindFeeBps": [
+      5,
+      10,
+      5,
+      300
+    ],
+    "partnerCutBps": 2000,
+    "crankBounty": 100000,
+    "createFee": 0,
+    "enabledKinds": "30",
+    "fillDisabledKinds": "0",
+    "paused": 0
+  },
+  "upgradeAuthority": "DxF6mApa3rnN7QgdqjtBvgyDesvKhVTYQ14Giike4Urv",
+  "programHash": "a9e4b359720d963ef4e1a1c30d7510924ca0904f66576ff257898f7e799c41ba"
+}
