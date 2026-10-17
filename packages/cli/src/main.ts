@@ -11,7 +11,7 @@ import { withPriority } from "./compute.js";
 import { JudgeInterrupted } from "./judge.js";
 import { printableLines, redactUrl, render, renderText } from "./render.js";
 import { expandHome, withSettings } from "./wallet.js";
-import { certificateCode, certificateHint } from "./agent/problems.js";
+import { certificateCode, certificateHint, SERVER_PROBLEMS, unfundedSend } from "./agent/problems.js";
 import { WALLET_NOTICE } from "./agent/wallet.js";
 import { EXIT_ALERTED } from "./monitor-args.js";
 import { monitor, writeBaseline } from "./monitor.js";
@@ -38,6 +38,9 @@ const PREVIEWED = new Set(["cancel", "expire", "close"]);
 const offline = (error: unknown) => error instanceof TypeError && error.message === "fetch failed";
 
 function message(error: unknown, url: string | undefined): string {
+  if (unfundedSend(error)) {
+    return SERVER_PROBLEMS.Unfunded.hint;
+  }
   const certificate = certificateCode(error);
   if (certificate !== null) {
     return certificateHint(url, certificate);

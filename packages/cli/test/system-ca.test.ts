@@ -3,7 +3,7 @@ import tls from "node:tls";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { describe, expect, it } from "vitest";
 import { type TlsLike, trustSystemCertificates } from "../src/system-ca.js";
-import { certificateCode, certificateHint, problemOf, SERVER_PROBLEMS, simulationProblem } from "../src/agent/problems.js";
+import { certificateCode, certificateHint, problemOf, SERVER_PROBLEMS, simulationProblem, unfundedSend } from "../src/agent/problems.js";
 import { EXIT_FAILED, main } from "../src/main.js";
 import { runtime, transport } from "./harness.js";
 
@@ -93,5 +93,31 @@ describe("the cli on an untrusted certificate", () => {
     expect([code, err]).toEqual([EXIT_FAILED, [certificateHint("https://user:token@rpc.example.org/key?api-key=xyz", "SELF_SIGNED_CERT_IN_CHAIN")]]);
     expect(err[0]).toContain("https://rpc.example.org");
     expect(err[0]).not.toMatch(/token|xyz|key\?/);
+  });
+});
+
+describe("a send from a wallet that never held SOL", () => {
+  const unfunded = Object.assign(new Error("Transaction simulation failed"), {
+    context: { __code: -32002, logs: [] },
+    cause: Object.assign(new Error("Attempt to debit an account but found no record of a prior credit."), { context: { __code: 7_050_003 } }),
+  });
+
+  it("is named as an unfunded wallet, over MCP and on the command line", async () => {
+    expect(unfundedSend(unfunded)).toBe(true);
+    expect(unfundedSend(new Error("Transaction simulation failed"))).toBe(false);
+    expect(unfundedSend({ cause: { context: { __code: 7_050_004 } } })).toBe(false);
+    expect(problemOf(unfunded)).toEqual({ code: "Unfunded", retryable: false, hint: SERVER_PROBLEMS.Unfunded.hint });
+    const broke = {
+      ...runtime({}),
+      transport: () => ({
+        ...transport,
+        getAccount: async () => {
+          throw unfunded;
+        },
+      }),
+    };
+    const err: string[] = [];
+    const code = await main(["show", "config"], broke, { out: () => undefined, err: (t) => err.push(t) });
+    expect([code, err]).toEqual([EXIT_FAILED, [SERVER_PROBLEMS.Unfunded.hint]]);
   });
 });

@@ -297,6 +297,16 @@ export function certificateCode(error: unknown, depth = 0): string | null {
   return certificateCode(cause, depth + 1);
 }
 
+const ACCOUNT_NOT_FOUND = 7_050_003;
+
+export function unfundedSend(error: unknown, depth = 0): boolean {
+  if (depth > CAUSE_DEPTH || error === null || typeof error !== "object") {
+    return false;
+  }
+  const { context, cause } = error as { context?: { __code?: unknown }; cause?: unknown };
+  return context?.__code === ACCOUNT_NOT_FOUND || unfundedSend(cause, depth + 1);
+}
+
 export const certificateHint = (url: string | undefined, code: string): string =>
   `this machine does not trust the certificate of the RPC node${url === undefined ? "" : ` at ${redactUrl(url)}`} (${code}); antivirus or a proxy that inspects HTTPS often causes this`;
 
@@ -342,6 +352,9 @@ export function problemOf(error: unknown, url?: string): Problem {
   }
   if (rateLimited(error)) {
     return { code: "RateLimited", retryable: SERVER_PROBLEMS.RateLimited.retryable, hint: "the RPC node is rate limiting; wait a few seconds and call again" };
+  }
+  if (unfundedSend(error)) {
+    return { code: "Unfunded", retryable: SERVER_PROBLEMS.Unfunded.retryable, hint: SERVER_PROBLEMS.Unfunded.hint };
   }
   const certificate = certificateCode(error);
   if (certificate !== null) {
