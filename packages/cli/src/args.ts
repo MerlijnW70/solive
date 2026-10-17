@@ -7,6 +7,7 @@ import type { Values } from "./arg-options.js";
 import {
   addressList,
   amountOf,
+  confirmUrlOf,
   https,
   key,
   mintList,
@@ -231,6 +232,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         agent: agentSpec(values),
         wallet: walletLimits(values, remote.url),
         allTools: values["all-tools"] === true,
+        ...confirmUrlOf(values),
       };
     case "quote":
       noSub(sub);

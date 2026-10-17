@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { createKeyPairSignerFromBytes, createSolanaRpc, type KeyPairSigner } from "@solana/kit";
-import { changesFrom, intentNotifications, openUsb, type RpcLike, rpcTransport, signatureWatch } from "@intent-engine/client";
+import { changesFrom, ConfirmMismatch, intentNotifications, openUsb, type RpcLike, rpcTransport, signatureWatch } from "@intent-engine/client";
 import { ENV_URL, outputOf, parse, UsageError } from "./args.js";
 import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
@@ -47,6 +47,9 @@ function message(error: unknown, url: string | undefined): string {
   const certificate = certificateCode(error);
   if (certificate !== null) {
     return certificateHint(url, certificate);
+  }
+  if (error instanceof ConfirmMismatch) {
+    return printableLines(`${error.name}: ${error.message}`);
   }
   if (url !== undefined && offline(error)) {
     return unreachable(redactUrl(url));

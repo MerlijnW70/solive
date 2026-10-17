@@ -13,6 +13,9 @@ import {
 import {
   announcements,
   chainTime,
+  ConfirmMismatch,
+  confirmOnBoth,
+  type ConfirmTarget,
   DELIVERY_PAGES,
   deliveryRecord,
   deliveryInstructions,
@@ -22,7 +25,7 @@ import {
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { tool } from "../names.js";
-import { AgentRefusal } from "../problems.js";
+import { AgentRefusal, untrusted } from "../problems.js";
 import { InvalidInput, account, amount, flag, integer, list, object, optional, text } from "../schema.js";
 import { preparedSchema, preparedView } from "../shapes.js";
 import { prepare } from "../prepare.js";
@@ -206,6 +209,20 @@ export const prepareDeliver = define({
     };
   },
 });
+
+export async function confirmedRelease(ctx: AgentContext, target: ConfirmTarget): Promise<void> {
+  if (ctx.confirm === undefined) {
+    return;
+  }
+  try {
+    await confirmOnBoth(ctx.transport, ctx.confirm, target);
+  } catch (error) {
+    if (error instanceof ConfirmMismatch) {
+      throw new AgentRefusal("ConfirmMismatch", error.field === "second node" ? untrusted(error.message) : error.message);
+    }
+    throw error;
+  }
+}
 
 export const notAttestor = (attestor: string) =>
   `this intent names ${attestor} as its attestor, not this server's wallet; only that key can release it`;

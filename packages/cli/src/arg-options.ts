@@ -23,6 +23,7 @@ export const TOKEN_SIDES: Partial<Record<string, Side>> = {
 
 export const OPTIONS = {
   url: { type: "string" },
+  "confirm-url": { type: "string" },
   keypair: { type: "string" },
   relayer: { type: "string" },
   agent: { type: "string" },
@@ -224,6 +225,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
     "wallet-per-trade",
     "wallet-per-hour",
     "all-tools",
+    "confirm-url",
   ],
   quote: ["url", "owner", "nonce", "at"],
   cancel: ["url", "priority-fee", "keypair", "yes", "nonce", "close"],
@@ -259,7 +261,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   deliveries: ["url", "attestor", "intent", "max-pages"],
   receipt: ["url", "owner", "nonce", "sha256", "release"],
   "record-delivery": ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "sha256", "release"],
-  judge: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "spec", "artifact", "run", "pay-to", "result", "timeout", "verdict", "max-pages", "check", "sandbox", "sandbox-image", "sandbox-memory", "sandbox-cpus", "plain-node", "watch", "interval"],
+  judge: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "spec", "artifact", "run", "pay-to", "result", "timeout", "verdict", "max-pages", "check", "sandbox", "sandbox-image", "sandbox-memory", "sandbox-cpus", "plain-node", "watch", "interval", "confirm-url"],
   crank: ["url", "priority-fee", "keypair", "dry-run", "fund-accounts"],
   treasury: ["url", "priority-fee", "keypair", "yes", "mints", "create"],
   create: [
@@ -345,6 +347,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
     "out",
     "vote",
     "sha256",
+    "confirm-url",
   ],
   claims: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "max-secs", "stake", "secs"],
   profile: ["url", "priority-fee", "keypair", "yes", "wallet", "skills", "endpoint", "doc-url", "doc-sha256"],
@@ -401,7 +404,7 @@ export const SUB_ACCEPTS: Record<string, Record<string, readonly (keyof typeof O
     create: ["url", "priority-fee", "keypair", "yes", "members", "threshold", "fee-wallet"],
     show: ["url", "committee"],
     vote: ["url", "keypair", "yes", "owner", "nonce", "pay-to", "result", "out"],
-    release: ["url", "priority-fee", "keypair", "yes", "vote", "sha256"],
+    release: ["url", "priority-fee", "keypair", "yes", "vote", "sha256", "confirm-url"],
   },
   claims: {
     show: ["url", "owner", "nonce"],

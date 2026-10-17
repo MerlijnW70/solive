@@ -6,6 +6,7 @@ import { decodeParams, IntentStatus, Kind } from "@intent-engine/core";
 import {
   chainTime,
   type CommitteeView,
+  confirmOnBoth,
   createClient,
   deliveryRecord,
   firstDelivery,
@@ -160,7 +161,8 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   }
   const signals = holdSignals();
   try {
-    return await checkAndSettle(command, transport, signer, signals, { address, committee, specHash, sha256, payTo, result, read, specBytes, check, viper });
+    const confirm = command.confirmUrl === undefined ? undefined : runtime.transport(command.confirmUrl);
+    return await checkAndSettle(command, transport, signer, signals, { address, attestor, committee, specHash, sha256, payTo, result, read, specBytes, check, viper, confirm });
   } finally {
     signals.release();
   }
@@ -219,6 +221,7 @@ function sendRelease(command: JudgeCommand, transport: Transport, signer: KeyPai
 
 type Judged = {
   address: Address;
+  attestor: Address;
   committee: CommitteeView | null;
   specHash: string;
   sha256: string;
@@ -228,6 +231,7 @@ type Judged = {
   specBytes: Uint8Array;
   check: CheckFiles | undefined;
   viper: { cases: Cases; wasm: Buffer } | undefined;
+  confirm: Transport | undefined;
 };
 
 async function checkAndSettle(
@@ -235,7 +239,7 @@ async function checkAndSettle(
   transport: Transport,
   signer: KeyPairSigner,
   signals: HeldSignals,
-  { address, committee, specHash, sha256, payTo, result, read, specBytes, check: checkFiles, viper }: Judged,
+  { address, attestor, committee, specHash, sha256, payTo, result, read, specBytes, check: checkFiles, viper, confirm }: Judged,
 ): Promise<Verdict> {
   const { sandbox } = command;
   let check: Check = { exitCode: null, timedOut: false };
@@ -284,6 +288,9 @@ async function checkAndSettle(
   }
   const agreed = (judged: { total: number; passed: number } | undefined) => judged !== undefined && judged.total > 0 && judged.passed === judged.total;
   const passed = cases === undefined ? check.exitCode === 0 : agreed(cases) && agreed(host) && (plainNode === undefined || agreed(node));
+  if (passed && confirm !== undefined) {
+    await confirmOnBoth(transport, confirm, { intent: address, attestor, sha256, pages: command.maxPages });
+  }
   let signature: Signature | null = null;
   let vote: VoteFile | undefined;
   let simulated: SimulatedRelease | undefined;

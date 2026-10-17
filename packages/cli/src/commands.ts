@@ -114,7 +114,8 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
         relay: relay !== undefined,
         agent: agent !== undefined,
       });
-      await runtime.serve(agentServer({ transport, relay, agent, claims: claimsOf(), url: command.url, fetch: runtime.specFetch, ...wallet }, served));
+      const confirm = command.confirmUrl === undefined ? {} : { confirm: runtime.transport(command.confirmUrl) };
+      await runtime.serve(agentServer({ transport, relay, agent, claims: claimsOf(), url: command.url, fetch: runtime.specFetch, ...wallet, ...confirm }, served));
       return null;
     }
     case "setup":

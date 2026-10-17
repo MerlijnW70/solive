@@ -1,5 +1,6 @@
 import { MAX_PRIORITY_PRICE, type Priority } from "./compute.js";
 import { tokenNamed } from "./tokens.js";
+import { clusterUrl } from "./clusters.js";
 import {
   ACCEPTS,
   GLOBAL_OPTIONS,
@@ -27,6 +28,11 @@ import {
 } from "@intent-engine/core";
 
 export class UsageError extends Error {}
+
+export const confirmUrlOf = (values: Values): { confirmUrl?: string } => {
+  const text = values["confirm-url"];
+  return text === undefined ? {} : { confirmUrl: clusterUrl(text) };
+};
 
 export const KIND_NAMES: Record<string, Kind> = {
   swap: Kind.SwapExactIn,

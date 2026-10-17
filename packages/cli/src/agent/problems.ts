@@ -261,6 +261,7 @@ export const SERVER_PROBLEMS = {
   HistoryLagging: later("the RPC node has not returned every transaction the call reads yet; call again in a few seconds"),
   OtherLifecycle: never("the named release belongs to an earlier lifecycle of this escrow address, which was closed and made again at the same nonce, so it is not a release of the escrow there now"),
   AlreadyRecorded: never("the release already records a delivered sha256, in its own memo or a follow-up, and a receipt reads the first"),
+  ConfirmMismatch: later("the second RPC node the server was started with, by --confirm-url, reports another genesis hash, escrow or earliest announcer than the first, or could not be read, so nothing was signed or sent; call again once both nodes agree"),
   HistoryTooLong: never("the record a release depends on is incomplete, so it is refused rather than decided from part of it: the history is longer than the pages read, which more pages fix, or the RPC node's ledger does not reach back to the escrow's creation, or the transport cannot page signatures or report its first available slot, which more pages do not fix"),
 } as const satisfies Record<string, Entry>;
 

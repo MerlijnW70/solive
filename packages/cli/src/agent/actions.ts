@@ -17,6 +17,7 @@ export type AgentContext = {
   wallet?: WalletAccess;
   url?: string;
   fetch?: SpecFetch;
+  confirm?: Transport;
 };
 
 type AgentKey = { signer: TransactionSigner; budget: Budget; owners: ReadonlySet<Address> };

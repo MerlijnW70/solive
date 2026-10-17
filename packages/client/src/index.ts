@@ -1,6 +1,7 @@
 export * from "./accounts.js";
 export * from "./budget.js";
 export * from "./client.js";
+export * from "./confirm-release.js";
 export * from "./errors.js";
 export * from "./jobs.js";
 export * from "./ledger.js";

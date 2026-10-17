@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import type { Address, KeyPairSigner } from "@solana/kit";
 import { buildCreateCommittee, type CommitteeVote, signCommitteeVote } from "@intent-engine/core";
-import { type CommitteeBallot, createClient, type Transport } from "@intent-engine/client";
+import { type CommitteeBallot, confirmOnBoth, createClient, type Transport } from "@intent-engine/client";
 import { previewed } from "./admin-commands.js";
 import { parseAddress, parseU64 } from "./arg-values.js";
 import type { Command } from "./command-types.js";
@@ -173,6 +173,9 @@ export async function committeeCommand(command: CommitteeCommand, runtime: Runti
       const [first] = votes;
       if (first !== undefined && (first.intent !== release.intent || first.committee !== release.committee.address)) {
         throw new FlowRefused(`the votes are for escrow ${first.intent} and committee ${first.committee}, not ${release.intent} and ${release.committee.address}`);
+      }
+      if (command.confirmUrl !== undefined) {
+        await confirmOnBoth(transport, runtime.transport(command.confirmUrl), { intent: release.intent, attestor: release.committee.address, sha256: command.sha256 });
       }
       const summary = [
         `Releases: proof escrow ${release.intent} to ${target.payTo} (token account ${release.payee}) with result ${target.result}`,

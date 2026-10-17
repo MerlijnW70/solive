@@ -31,7 +31,7 @@ import { prepare } from "../prepare.js";
 import { STATUS } from "../../accounts.js";
 import { PREVIEW_APPROVAL, signerOf, sent, sha256Of } from "./guard.js";
 import { invitedTo, notInvited } from "../../invites.js";
-import { notEarliest, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor } from "./delivery.js";
+import { notEarliest, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor, confirmedRelease } from "./delivery.js";
 
 export const PAYEE_MOVED = "this wallet's token account for the escrowed token now belongs to someone else, so a release would not reach it; ask the payee for another wallet";
 
@@ -168,6 +168,7 @@ export const walletAttest = define({
         throw new AgentRefusal("NotEarliestAnnouncer", notEarliest(first.worker, delivered));
       }
     }
+    await confirmedRelease(ctx, { intent, attestor: signer.address, sha256: isProof ? delivered : undefined, pages: input.max_pages ?? ATTEST_PAGES });
     const memoText = delivered === undefined ? "" : releaseMemo(delivered);
     const memo =
       delivered === undefined

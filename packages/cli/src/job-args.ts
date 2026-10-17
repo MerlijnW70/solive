@@ -1,5 +1,5 @@
 import type { Values } from "./arg-options.js";
-import { key, memoUrlOf, noSub, parseBounded, required, sha256Of, u64, UsageError } from "./arg-values.js";
+import { confirmUrlOf, key, memoUrlOf, noSub, parseBounded, required, sha256Of, u64, UsageError } from "./arg-values.js";
 import { JUDGE_TIMEOUT, MAX_JUDGE_TIMEOUT, maxPagesOf, releaseOption, runOf } from "./command-builders.js";
 import type { Command, Remote } from "./command-types.js";
 import { sandboxOf } from "./sandbox.js";
@@ -84,6 +84,7 @@ export function jobArgsOf(verb: "deliver" | "receipt" | "record-delivery" | "jud
         maxPages: maxPagesOf(values),
         check: values.check,
         sandbox,
+        ...confirmUrlOf(values),
       };
     }
   }

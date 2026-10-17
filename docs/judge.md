@@ -199,6 +199,10 @@ intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/w
 
 Anyone can copy an announcement, so `judge` pays the earliest announcer of the work's hash. It refuses when nobody announced it.
 
+## Check a second node
+
+`judge`, `committee release` and `mcp` take `--confirm-url <rpc>`, in the forms `--url` takes, to read the escrow and the earliest announcer from a second RPC node too. A release is signed only when both nodes report the same genesis hash, escrow account and earliest announcer. Otherwise, or when the second node cannot be read, it is refused with `ConfirmMismatch` and nothing is sent.
+
 ## Judge as a committee
 
 A committee needs a `threshold` of its members to agree before an escrow pays, so one judge is no longer a single point of failure.

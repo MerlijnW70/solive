@@ -50,7 +50,7 @@ import { prepare, transactionSize } from "../prepare.js";
 import { STATUS } from "../../accounts.js";
 import { PREVIEW_APPROVAL, WAIT_SCAN, signerOf, sent, sha256Of } from "./guard.js";
 import { RELEASE_CHANGED, approvalOf } from "./attest.js";
-import { notInSplit, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor } from "./delivery.js";
+import { notInSplit, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor, confirmedRelease } from "./delivery.js";
 
 export const SPLIT_FITS = 2;
 export const SPLIT_FITS_WITH_TABLE = 4;
@@ -166,6 +166,7 @@ export const walletAttestSplit = define({
     if (first !== null && !wallets.includes(first.worker)) {
       throw new AgentRefusal("NotEarliestAnnouncer", notInSplit(first.worker, delivered));
     }
+    await confirmedRelease(ctx, { intent, attestor: signer.address, sha256: delivered, pages: input.max_pages ?? ATTEST_PAGES });
     const memoText = releaseMemo(delivered);
     const memo = { programAddress: MEMO_PROGRAM_ADDRESS, accounts: [{ address: signer.address, role: AccountRole.READONLY_SIGNER, signer }], data: new TextEncoder().encode(memoText) };
     const token = await mintOf(ctx.transport, held.inputMint);

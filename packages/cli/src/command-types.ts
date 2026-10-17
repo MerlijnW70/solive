@@ -51,7 +51,7 @@ export type Command =
   | (Remote & { name: "domain" })
   | (Remote & { name: "setup"; keypair: string | undefined })
   | (Remote & { name: "balance"; keypair: string | undefined; owner: Address | undefined; mints: Address[] | null })
-  | (Remote & { name: "mcp"; relay: RelaySpec | undefined; agent: AgentSpec | undefined; wallet: WalletLimits | null; allTools: boolean })
+  | (Remote & { name: "mcp"; relay: RelaySpec | undefined; agent: AgentSpec | undefined; wallet: WalletLimits | null; allTools: boolean; confirmUrl?: string | undefined })
   | (Remote & { name: "show-intent"; owner: Address; nonce: bigint })
   | (Remote & { name: "quote"; owner: Address; nonce: bigint; at: bigint | undefined })
   | (Keyed & { name: "cancel"; yes: boolean; nonce: bigint; close: boolean })
@@ -121,6 +121,7 @@ export type Command =
       maxPages: number;
       check: string | undefined;
       sandbox: Sandbox;
+      confirmUrl?: string | undefined;
     })
   | (Keyed & { name: "flow"; flow: FlowName; yes: boolean; input: ToolInput })
   | (Remote & { name: "lookup"; lookup: LookupName; keypair: string | undefined; input: ToolInput })
@@ -144,7 +145,7 @@ export type Command =
       result: bigint;
       out: string | undefined;
     })
-  | (Keyed & { name: "committee-release"; yes: boolean; votes: string[]; sha256: string | undefined })
+  | (Keyed & { name: "committee-release"; yes: boolean; votes: string[]; sha256: string | undefined; confirmUrl?: string | undefined })
   | (Remote & { name: "claims-show"; owner: Address; nonce: bigint })
   | (Keyed & { name: "claims-open"; yes: boolean; nonce: bigint; maxSecs: number; stake: bigint })
   | (Keyed & { name: "claims-take"; yes: boolean; owner: Address; nonce: bigint; secs: number })

@@ -10,7 +10,7 @@ import { InvalidInput, account, amount, flag, integer, list, object, optional, t
 import { preparedView } from "../shapes.js";
 import { prepare } from "../prepare.js";
 import { PREVIEW_APPROVAL, signerOf, sent, sha256Of } from "./guard.js";
-import { ATTEST_PAGES, DELIVERED_NEEDED, HISTORY_TOO_LONG, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, notEarliest } from "./delivery.js";
+import { ATTEST_PAGES, DELIVERED_NEEDED, HISTORY_TOO_LONG, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, notEarliest, confirmedRelease } from "./delivery.js";
 import { RELEASE_CHANGED } from "./attest.js";
 
 export const VOTE_CHANGED = "this vote differs from its preview: the escrow, payee, result or delivered work changed, or no approval was given; preview it again and show the user";
@@ -51,6 +51,7 @@ async function ballotOf(ctx: AgentContext, input: BallotArgs) {
   if (first !== null && first.worker !== input.pay_to) {
     throw new AgentRefusal("NotEarliestAnnouncer", notEarliest(first.worker, delivered));
   }
+  await confirmedRelease(ctx, { intent: ballot.intent, attestor: ballot.committee.address, sha256: delivered, pages: input.max_pages ?? ATTEST_PAGES });
   return { client, target, ballot, delivered };
 }
 

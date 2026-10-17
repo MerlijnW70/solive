@@ -95,10 +95,10 @@ Options: `--url`, `--output`, `--help`
 ## mcp
 
 ```text
-mcp [--wallet [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--all-tools]] [--relayer <keypair> --relay-fee <mint=amount,...> [--relay-max-lamports] [--relay-max-ttl] [--relay-per-hour] [--relay-hourly-lamports]] [--agent <keypair> --agent-owners <address,...> [--agent-hourly-lamports]]
+mcp [--wallet [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--all-tools]] [--relayer <keypair> --relay-fee <mint=amount,...> [--relay-max-lamports] [--relay-max-ttl] [--relay-per-hour] [--relay-hourly-lamports]] [--agent <keypair> --agent-owners <address,...> [--agent-hourly-lamports]] [--confirm-url <cluster>]
 ```
 
-Options: `--url`, `--priority-fee`, `--relayer`, `--relay-max-lamports`, `--relay-max-ttl`, `--relay-per-hour`, `--relay-hourly-lamports`, `--relay-fee`, `--agent`, `--agent-hourly-lamports`, `--agent-owners`, `--wallet`, `--wallet-per-trade`, `--wallet-per-hour`, `--all-tools`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--relayer`, `--relay-max-lamports`, `--relay-max-ttl`, `--relay-per-hour`, `--relay-hourly-lamports`, `--relay-fee`, `--agent`, `--agent-hourly-lamports`, `--agent-owners`, `--wallet`, `--wallet-per-trade`, `--wallet-per-hour`, `--all-tools`, `--confirm-url`, `--output`, `--help`
 
 ## quote
 
@@ -287,10 +287,10 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, 
 ## judge
 
 ```text
-judge --keypair <judge file> --owner <address> --nonce <n> --spec <file> (--artifact <file or directory> | --watch [--interval <seconds>]) (--run <command> | --sandbox viper) [--pay-to <wallet>] [--result <n>] [--timeout <seconds>] [--verdict <file>] [--max-pages <n>] [--check <file or directory>] [--sandbox docker|viper|none] [--sandbox-image <name>@sha256:<64 hex>] [--sandbox-memory <n>m|<n>g] [--sandbox-cpus <n>] [--plain-node] [--yes]
+judge --keypair <judge file> --owner <address> --nonce <n> --spec <file> (--artifact <file or directory> | --watch [--interval <seconds>]) (--run <command> | --sandbox viper) [--pay-to <wallet>] [--result <n>] [--timeout <seconds>] [--verdict <file>] [--max-pages <n>] [--check <file or directory>] [--sandbox docker|viper|none] [--sandbox-image <name>@sha256:<64 hex>] [--sandbox-memory <n>m|<n>g] [--sandbox-cpus <n>] [--plain-node] [--confirm-url <cluster>] [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--pay-to`, `--result`, `--timeout`, `--verdict`, `--max-pages`, `--check`, `--sandbox`, `--sandbox-image`, `--sandbox-memory`, `--sandbox-cpus`, `--plain-node`, `--watch`, `--interval`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--pay-to`, `--result`, `--timeout`, `--verdict`, `--max-pages`, `--check`, `--sandbox`, `--sandbox-image`, `--sandbox-memory`, `--sandbox-cpus`, `--plain-node`, `--watch`, `--interval`, `--confirm-url`, `--output`, `--help`
 
 ## crank
 
@@ -391,7 +391,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--score`,
 ## committee
 
 ```text
-committee create --keypair <payer file> --members <address,...> --threshold <n> --fee-wallet <address> [--yes] | show --committee <address> | vote --keypair <member file> --owner <address> --nonce <n> --pay-to <wallet> --result <n> [--out <file>] [--yes] | release --keypair <solver file> --vote <file> [--vote <file> ...] [--sha256 <64 hex>] [--yes]
+committee create --keypair <payer file> --members <address,...> --threshold <n> --fee-wallet <address> [--yes] | show --committee <address> | vote --keypair <member file> --owner <address> --nonce <n> --pay-to <wallet> --result <n> [--out <file>] [--yes] | release --keypair <solver file> --vote <file> [--vote <file> ...] [--sha256 <64 hex>] [--confirm-url <cluster>] [--yes]
 ```
 
 Options for `create`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--members`, `--threshold`, `--fee-wallet`, `--output`, `--help`
@@ -400,7 +400,7 @@ Options for `show`: `--url`, `--committee`, `--output`, `--help`
 
 Options for `vote`: `--url`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--pay-to`, `--result`, `--out`, `--output`, `--help`
 
-Options for `release`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--vote`, `--sha256`, `--output`, `--help`
+Options for `release`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--vote`, `--sha256`, `--confirm-url`, `--output`, `--help`
 
 ## claims
 
