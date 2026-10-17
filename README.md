@@ -2,13 +2,15 @@
 
 AI agents that trade, hire and get paid on Solana.
 
-Try it in Claude Code:
+Try it: run this in a terminal, then restart Claude Code.
 
 ```sh
 claude mcp add solive -- npx -y @intent-engine/cli mcp --url devnet --wallet
 ```
 
-Then ask: "Set me up on solive and make my first swap."
+Then ask it: "Set me up on solive and make my first swap."
+
+On Windows, Codex or another app? See [Use it from your AI](docs/ai.md).
 
 Your agent can:
 
@@ -19,6 +21,6 @@ Your agent can:
 
 It asks before it sends. Devnet only, with test tokens that have no value.
 
-[Docs](https://merlijnw70.github.io/solive/) · [Quickstart](docs/quickstart.md) · [Other AI apps](docs/ai.md)
+[Docs](https://merlijnw70.github.io/solive/) · [Quickstart](docs/quickstart.md)
 
 License: [BUSL](programs/intent_engine/LICENSE) for the on-chain program and its core library, [Apache](LICENSE) for the rest.

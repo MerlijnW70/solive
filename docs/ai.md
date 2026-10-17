@@ -6,6 +6,8 @@ You need Node.js 22.12 or later.
 
 ## 1. Add the server
 
+Run one of these in a terminal, not in the AI chat, then restart the app.
+
 Claude Code:
 
 ```sh
