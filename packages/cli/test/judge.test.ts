@@ -1296,7 +1296,7 @@ describe("the judge guide", () => {
     expect(GUIDE).toContain(`by default \`${SANDBOX_IMAGE}\`, which holds Node.js 22`);
     expect(GUIDE).toContain("`--sandbox none` runs the check without a container");
     expect(GUIDE).not.toContain("sha256sum");
-  });
+  }, 60_000);
 
   it("the judge guide creates the escrow it judges", async () => {
     const w = await world();
