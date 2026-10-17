@@ -4,6 +4,22 @@ import type { Pricer, Quote, QuoteRequest } from "./market.js";
 
 export type Holdings = (mint: Address) => Promise<bigint>;
 
+export type Stock = Map<Address, { start: bigint; spent: bigint }>;
+
+export function stockLeft(stock: Stock, account: Address, live: bigint): bigint {
+  const held = stock.get(account);
+  if (held === undefined) {
+    return live;
+  }
+  const left = held.start - held.spent;
+  return left < live ? left : live;
+}
+
+export function spend(stock: Stock, account: Address, live: bigint, amount: bigint): void {
+  const held = stock.get(account) ?? { start: live, spent: 0n };
+  stock.set(account, { start: held.start, spent: held.spent + amount });
+}
+
 export function inventoryPricer(routes: readonly IssueRoute[], held: Holdings): Pricer {
   for (const route of routes) {
     if (route.out <= 0n || route.in <= 0n) {

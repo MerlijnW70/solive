@@ -1,7 +1,7 @@
 import type { Address } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { firstPricer, inventoryPricer, type Pricer, type Quote, type QuoteRequest } from "../src/index.js";
+import { firstPricer, inventoryPricer, type Pricer, type Quote, type QuoteRequest, spend, type Stock, stockLeft } from "../src/index.js";
 
 const TAKER = "11111111111111111111111111111112" as Address;
 const INPUT = "So11111111111111111111111111111111111111112" as Address;
@@ -86,5 +86,29 @@ describe("the first pricer", () => {
     });
     await pricer.quote({ ...request, maxAccounts: 20 });
     expect(seen).toEqual([{ ...request, maxAccounts: 20 }]);
+  });
+});
+
+describe("the stock a tick has left to fill from", () => {
+  it("is the live balance until a fill spends from it", () => {
+    expect(stockLeft(new Map(), OUTPUT, 500n)).toBe(500n);
+  });
+
+  it("counts what this tick spent whether or not the chain shows it yet", () => {
+    const stock: Stock = new Map();
+    spend(stock, OUTPUT, 200n, 90n);
+    expect(stockLeft(stock, OUTPUT, 200n)).toBe(110n);
+    expect(stockLeft(stock, OUTPUT, 110n)).toBe(110n);
+    spend(stock, OUTPUT, 110n, 90n);
+    expect(stock.get(OUTPUT)).toEqual({ start: 200n, spent: 180n });
+    expect(stockLeft(stock, OUTPUT, 200n)).toBe(20n);
+    expect(stockLeft(stock, OUTPUT, 20n)).toBe(20n);
+  });
+
+  it("follows the live balance when it falls below what the tick expects", () => {
+    const stock: Stock = new Map();
+    spend(stock, OUTPUT, 200n, 90n);
+    expect(stockLeft(stock, OUTPUT, 50n)).toBe(50n);
+    expect(stockLeft(stock, OTHER, 50n)).toBe(50n);
   });
 });

@@ -21,7 +21,8 @@ import {
 import { RateLimited } from "./jupiter.js";
 import type { Pricer } from "./market.js";
 import { decide, type Plan, standing, type Strategy } from "./plan.js";
-import { fromCache } from "./quote-cache.js";
+import { freshly, fromCache } from "./quote-cache.js";
+import { spend, type Stock, stockLeft } from "./inventory.js";
 
 export { BACKOFF_MAX_INTERVALS, type Backoff, backingOff, backoff } from "./backoff.js";
 export {
@@ -99,6 +100,8 @@ export const badConcurrency = (value: number): string => `concurrency must be an
 
 export const ALREADY_FILLING = "the order already has a fill in this tick";
 
+export const INVENTORY_SPENT = "the solver no longer holds enough of the output token for this fill";
+
 export function firstToSend(a: Plan, b: Plan): number {
   if (a.profit !== b.profit) {
     return a.profit > b.profit ? -1 : 1;
@@ -134,8 +137,6 @@ const skipped = (intent: Address, reason: string, rent?: bigint): Outcome => ({
 const failed = (intent: Address, error: string): Outcome => ({ kind: "failed", entry: { intent, error } });
 
 const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
-
-const freshly = (pricer: Pricer): Pricer => ({ quote: (request) => pricer.quote({ ...request, fresh: true }) });
 
 async function planOrder(o: SolverOptions, config: Config, now: bigint, address: Address, intent: Intent): Promise<Planned> {
   const ready = standing(intent, config, now, o.strategy);
@@ -217,10 +218,15 @@ async function fillOrder(
   caps: { cost: bigint; rent: bigint },
   mintData: (mint: Address) => Promise<Uint8Array | null>,
   ready: Ready,
+  stock: Stock,
 ): Promise<Outcome> {
   const { plan, context, tables, probe, latest, solverInput, solverOutput } = ready;
   const address = plan.address;
   const before = await Promise.all([o.chain.tokenAmount(solverInput), o.chain.tokenAmount(solverOutput)]);
+  const left = stockLeft(stock, solverOutput, before[1] ?? 0n);
+  if (plan.route.inventory === true && left < plan.required) {
+    return skipped(address, `${INVENTORY_SPENT}: ${left} left, ${plan.required} needed`);
+  }
   const simulated = await o.simulate(probe, [solverInput, solverOutput]);
   if (simulated.err !== null) {
     return failed(address, `${SIMULATION_REFUSED}: ${simulated.err}`);
@@ -260,6 +266,9 @@ async function fillOrder(
     }
   }
   const sent = await o.send(wire);
+  if (plan.route.inventory === true) {
+    spend(stock, solverOutput, before[1] ?? 0n, plan.required);
+  }
   return {
     kind: sent.confirmed ? "filled" : "sent",
     entry: { intent: address, profit: plan.profit, signature: sent.signature, ...(kept === undefined ? {} : { rent: kept }) },
@@ -323,6 +332,7 @@ export async function tick(o: SolverOptions): Promise<Report> {
   }
   planned.sort((a, b) => firstToSend(a.ready.plan, b.ready.plan) || a.index - b.index);
   const filling = new Set<Address>();
+  const stock: Stock = new Map();
   let halted: string | null = null;
   for (const { index, ready } of planned) {
     const address = ready.plan.address;
@@ -336,7 +346,7 @@ export async function tick(o: SolverOptions): Promise<Report> {
     }
     filling.add(address);
     try {
-      outcomes[index] = await fillOrder(o, caps, mintData, ready);
+      outcomes[index] = await fillOrder(o, caps, mintData, ready, stock);
     } catch (error) {
       if (error instanceof RateLimited) {
         halted = error.message;

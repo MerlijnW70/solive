@@ -90,6 +90,7 @@ import {
   fillInstructions,
   decodeLookupTable,
   headroom,
+  INVENTORY_SPENT,
   inventoryPricer,
   MAX_COMPUTE_UNITS,
   type Pricer,
@@ -476,6 +477,38 @@ describe("solver against the deployed engine", () => {
     const report = await solve(pricer);
     expect(report).toEqual({ filled: [{ intent, profit: fees.net - MIN_OUT, signature: expect.any(String) }], sent: [], skipped: [], failed: [] });
     expect([balance(receiver), balance(solverOutput), balance(solverInput), balance(feeTo)]).toEqual([MIN_OUT, AMOUNT - MIN_OUT, fees.net, fees.protocol]);
+  });
+
+  it("skips, without failing, an inventory fill whose stock an earlier fill of the same tick already spent", async () => {
+    const first = await open(1n);
+    const second = await open(2n);
+    await send(authority, [getMintToInstruction({ mint: outputMint, token: solverOutput, mintAuthority: authority, amount: AMOUNT })]);
+    const pricer = inventoryPricer(
+      [{ inputMint, outputMint, outputTokenProgram: TOKEN_PROGRAM_ADDRESS, out: 1n, in: 1n }],
+      async () => balance(solverOutput),
+    );
+    const report = await solve(pricer);
+    expect(report.failed).toEqual([]);
+    expect(report.filled).toHaveLength(1);
+    expect(report.skipped.map((s) => [s.intent, s.reason.split(":")[0]])).toEqual([
+      [report.filled[0]?.intent === first ? second : first, INVENTORY_SPENT],
+    ]);
+    expect(balance(receiver)).toBe(MIN_OUT);
+  });
+
+  it("sends every inventory fill its stock covers when the sends are not yet confirmed, and skips the one it cannot cover", async () => {
+    const opened = [await open(1n), await open(2n), await open(3n)];
+    await send(authority, [getMintToInstruction({ mint: outputMint, token: solverOutput, mintAuthority: authority, amount: 2n * AMOUNT })]);
+    const pricer = inventoryPricer(
+      [{ inputMint, outputMint, outputTokenProgram: TOKEN_PROGRAM_ADDRESS, out: 1n, in: 1n }],
+      async () => 3n * AMOUNT,
+    );
+    const report = await solve(pricer, { send: async (wire) => ({ ...(await landed(wire)), confirmed: false }) });
+    expect([report.filled, report.failed]).toEqual([[], []]);
+    expect(report.sent).toHaveLength(2);
+    expect(report.skipped.map((s) => s.reason.split(":")[0])).toEqual([INVENTORY_SPENT]);
+    expect(new Set([...report.sent.map((s) => s.intent), ...report.skipped.map((s) => s.intent)])).toEqual(new Set(opened));
+    expect(balance(receiver)).toBe(2n * MIN_OUT);
   });
 
   it("refuses an inventory fill whose simulation spends more output than required or brings in less input than planned", async () => {

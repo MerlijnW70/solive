@@ -6,6 +6,8 @@ const served = new WeakSet<Quote>();
 
 export const fromCache = (quote: Quote): boolean => served.has(quote);
 
+export const freshly = (pricer: Pricer): Pricer => ({ quote: (request) => pricer.quote({ ...request, fresh: true }) });
+
 const keyOf = (request: QuoteRequest): string =>
   [request.inputMint, request.outputMint, request.amountIn.toString(), request.taker, request.maxAccounts ?? ""].join(":");
 
