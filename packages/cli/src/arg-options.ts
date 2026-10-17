@@ -84,6 +84,7 @@ export const OPTIONS = {
   mint: { type: "string" },
   amount: { type: "string" },
   out: { type: "string" },
+  to: { type: "string" },
   file: { type: "string" },
   "submit-within": { type: "string" },
   "relayer-fee": { type: "string" },
@@ -192,6 +193,9 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   balance: ["url", "keypair", "owner", "mints"],
   pda: ["owner", "nonce"],
   hash: ["artifact"],
+  seal: ["file", "to", "out"],
+  unseal: ["file", "keypair", "out"],
+  spec: ["url", "intent", "keypair", "out"],
   show: ["url", "owner", "nonce", "mint"],
   domain: ["url"],
   mcp: [

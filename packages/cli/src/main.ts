@@ -99,7 +99,7 @@ const keyLike = (path: string) => /^[1-9A-HJ-NP-Za-km-z]{32,}$/.test(path) || pa
 export const keypairUnreadable = (path: string) =>
   keyLike(path) ? `${KEYPAIR_UNREADABLE}; the value given looks like a key, not a file path, so it is not repeated here` : `${KEYPAIR_UNREADABLE}; tried ${path}`;
 
-export async function loadKeypairFile(path: string, platform: string = process.platform, home: string = homedir()): Promise<KeyPairSigner> {
+export async function loadKeypairBytes(path: string, platform: string = process.platform, home: string = homedir()): Promise<Uint8Array> {
   const file = expandHome(path, home);
   let bytes: unknown;
   let mode: number;
@@ -119,8 +119,11 @@ export async function loadKeypairFile(path: string, platform: string = process.p
   ) {
     throw new UsageError(keypairUnreadable(file));
   }
-  return createKeyPairSignerFromBytes(new Uint8Array(bytes));
+  return new Uint8Array(bytes);
 }
+
+export const loadKeypairFile = async (path: string, platform: string = process.platform, home: string = homedir()): Promise<KeyPairSigner> =>
+  createKeyPairSignerFromBytes(await loadKeypairBytes(path, platform, home));
 
 type Pipes = { stdin: Readable; stdout: Writable };
 
@@ -131,6 +134,7 @@ export function nodeRuntime(clock: () => number = Date.now, pipes: Pipes = proce
     transport: (url) => rpcTransport(createSolanaRpc(url) as unknown as RpcLike, undefined, signatureWatch(url)),
     intentChanges: (url) => changesFrom(intentNotifications(url)),
     loadSigner: loadKeypairFile,
+    loadKeypair: loadKeypairBytes,
     readText: (path) => readFile(path, "utf8"),
     sleep: (seconds) => new Promise((resolve) => setTimeout(() => resolve(true), seconds * 1000)),
     env: process.env,

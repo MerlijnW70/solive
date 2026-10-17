@@ -296,6 +296,13 @@ export function runtime(signers: Record<string, KeyPairSigner>): Runtime {
       }
       return createKeyPairSignerFromBytes(Uint8Array.from(JSON.parse(saved) as number[]));
     },
+    loadKeypair: async (path) => {
+      const saved = h.files.get(path);
+      if (saved === undefined) {
+        throw new Error(`no key file ${path}`);
+      }
+      return Uint8Array.from(JSON.parse(saved) as number[]);
+    },
     readText: async (path) => {
       const text = h.files.get(path);
       if (text === undefined) {

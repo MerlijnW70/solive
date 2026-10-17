@@ -59,6 +59,8 @@ export {
   watchSolve,
 } from "./solve-commands.js";
 
+import { readJobSpec, sealing } from "./sealed-commands.js";
+
 export * from "./accounts.js";
 export * from "./crank.js";
 
@@ -68,6 +70,9 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
   }
   if (command.name === "version") {
     return { version: VERSION };
+  }
+  if (command.name === "seal" || command.name === "unseal") {
+    return sealing(command, runtime);
   }
   if (command.name === "hash") {
     return { artifact: command.artifact, sha256: await artifactSha256(command.artifact) };
@@ -173,6 +178,8 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       );
       return { notable, transactions };
     }
+    case "spec":
+      return readJobSpec(command, runtime, transport);
     case "jobs":
     case "deliver":
     case "receipt":

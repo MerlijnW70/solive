@@ -298,6 +298,9 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet smoke", () =
       const runtime = {
         transport: () => transport,
         loadSigner: async () => solver,
+        loadKeypair: async () => {
+          throw new Error("no key file");
+        },
         readText: async () => {
           throw new Error("the devnet smoke test reads no files");
         },

@@ -3,7 +3,7 @@
 # CLI reference
 
 ```text
-usage: setup | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | profile show | profile set | profile close | reputation | feedback | monitor | hash | version | help [command]
+usage: setup | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | profile show | profile set | profile close | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
 ```
 
 Every command accepts `--output` and `--help`.
@@ -41,6 +41,30 @@ hash --artifact <file or directory>
 ```
 
 Options: `--artifact`, `--output`, `--help`
+
+## seal
+
+```text
+seal --file <file> --to <wallet,...> --out <file>
+```
+
+Options: `--file`, `--to`, `--out`, `--output`, `--help`
+
+## unseal
+
+```text
+unseal --file <sealed file> --keypair <file> --out <file>
+```
+
+Options: `--file`, `--keypair`, `--out`, `--output`, `--help`
+
+## spec
+
+```text
+spec --intent <escrow address> [--keypair <file>] [--out <file>]
+```
+
+Options: `--url`, `--intent`, `--keypair`, `--out`, `--output`, `--help`
 
 ## show
 

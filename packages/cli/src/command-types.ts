@@ -43,6 +43,9 @@ export type ConfigChange = {
 export type Command =
   | { name: "pda"; owner: Address; nonce: bigint }
   | { name: "hash"; artifact: string }
+  | { name: "seal"; file: string; to: Address[]; out: string }
+  | { name: "unseal"; file: string; keypair: string; out: string }
+  | (Remote & { name: "spec"; intent: Address; keypair: string | undefined; out: string | undefined })
   | (Remote & { name: "show-config" })
   | (Remote & { name: "domain" })
   | (Remote & { name: "setup"; keypair: string | undefined })

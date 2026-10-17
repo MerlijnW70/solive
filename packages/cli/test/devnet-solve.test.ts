@@ -275,6 +275,9 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet solve smoke"
         {
           transport: () => transport,
           loadSigner: async () => solver,
+          loadKeypair: async () => {
+            throw new Error("no key file");
+          },
           readText: async () => {
             throw new Error("the devnet solve smoke reads no files");
           },

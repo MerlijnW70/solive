@@ -153,6 +153,15 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
     case "hash":
       noSub(sub);
       return { name: "hash", artifact: required(values, "artifact") };
+    case "seal":
+      noSub(sub);
+      return { name: "seal", file: required(values, "file"), to: addressList(required(values, "to"), "to"), out: required(values, "out") };
+    case "unseal":
+      noSub(sub);
+      return { name: "unseal", file: required(values, "file"), keypair: required(values, "keypair"), out: required(values, "out") };
+    case "spec":
+      noSub(sub);
+      return { name: "spec", ...remote, intent: key(values, "intent"), keypair: values.keypair, out: values.out };
     case "show":
       if (sub === "config") {
         return { name: "show-config", ...remote };
