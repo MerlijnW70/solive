@@ -8,7 +8,7 @@
 
 Served only with `--wallet`.
 
-Create this server's devnet wallet if it has none, save it, and fund it from the devnet airdrop when it holds less than 0.5 SOL. Safe to call again: it reuses the saved wallet, and saves this server's RPC as the CLI's default only when none is saved. Call this first.
+Gives the user a test wallet: creates one if this server has none, keeps its key in a file on this computer, and tops it up with free devnet SOL when it holds less than 0.5 SOL. Safe to call again: it reuses the saved wallet. It saves this node (RPC) as the command line's default if none is saved.
 
 Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 
@@ -18,7 +18,7 @@ Parameters: none
 
 Served only with `--wallet`.
 
-Show the SOL and token balances of this server's wallet, in whole tokens. Without mints it shows wrapped SOL and, on devnet, the TEST token.
+Shows the user how much SOL and how many tokens this wallet holds, in whole tokens. Without mints (token addresses) it shows wrapped SOL and, on devnet, the TEST token.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
@@ -30,7 +30,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Estimate what selling an amount of one token for another gets now, from the rates of recent fills of the same pair on this cluster. It reads the engine's last 12 transactions and sends nothing. Use it before solive_wallet_swap or solive_wallet_auction to pick min_receive or the auction's start and end.
+Tells the user what selling an amount of one token for another would get now, from recent fills of the same pair on this network. It reads the engine's last 12 transactions and sends nothing. Use it before solive_wallet_swap or solive_wallet_auction to pick min_receive or the auction's start and end.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
@@ -44,7 +44,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Sell an exact amount of one token for at least min_receive of another, from this server's wallet: the tokens are escrowed in an intent that a solver fills or that the wallet gets back. Solvers pay the least an intent asks, so by default the ask starts at start_receive, a little above the median of recent fills but at least a quarter above min_receive and at most twice it, and falls to min_receive over falls_over seconds (default 120): a solver takes it near the most it can pay. exact: true asks min_receive from the start instead. Amounts are whole tokens such as 0.05. Selling SOL wraps it first. Without send it only previews; show the user the summary, then call again with send: true and the start_receive the preview returned once they approve.
+Sells one token for at least min_receive of another. Solvers, the bots that fill orders, pay the least an order asks, so the ask starts above recent fills and falls to min_receive: set it to the least the user accepts. Previews only; call with send: true after the user says yes. Pass back the preview's start_receive.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -65,7 +65,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-Offer an exact amount of one token in a Dutch auction from this server's wallet: the least it accepts starts at start_receive once the offer lands, falls in a straight line to end_receive over falls_over seconds, then stays there until it expires, so a solver fills it as soon as the asked amount meets what it can pay. Amounts are whole tokens such as 0.05. Selling SOL wraps it first. Without send it only previews; show the user the summary and call again with send: true once they approve.
+Sells an exact amount of one token in a falling-price (Dutch) auction: the ask starts at start_receive, falls evenly to end_receive over falls_over seconds, then holds until the offer expires. A solver fills it as soon as the ask meets what it can pay. Previews only; call with send: true after the user says yes.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -85,7 +85,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-Sell the same amount of one token for another several times, every so many seconds, from this server's wallet, with no bot left running: all orders are sent now and escrowed now. Each order holds its ask at start_receive until its turn, then lets it fall to min_receive over falls_over seconds; it expires when the next one opens, or falls_over seconds after its own opening if that is later, and anyone can then return its escrow. An order fills before its turn if a solver can already pay start_receive, so set it above what solvers pay now to hold the orders. Any order can be cancelled with solive_wallet_cancel. Each order pays the create fee and rent, and the rent returns when it closes. Amounts are whole tokens per order. Without send it only previews; show the user the summary, then call again with send: true and the start_receive the preview returned once they approve.
+Repeats a sale on a schedule with no bot running: every order is sent and its tokens locked now. Each asks start_receive until its turn, then falls to min_receive; set start_receive above current fills, or orders fill early. Cancel any with solive_wallet_cancel. Previews only; call with send: true after the user says yes. Pass back the preview's start_receive.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -106,7 +106,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-Hold an exact amount of one token from this server's wallet in an attested intent: it goes, minus the engine fee, to whichever wallet the named attestor later signs for, once the attestor attests a result between min_result and max_result. Use it to pay another agent for work that a third agent or a person judges. The attestor alone decides who is paid, so name an attestor the user trusts; with spec_hash the release must also be signed over that exact spec. spec_url publishes where that spec lives, so workers find the escrow with solive_find_jobs and announce their work to the attestor with solive_wallet_deliver. Have the worker deliver to the attestor rather than to this wallet, since this wallet can cancel until the release; solive_wallet_receipt later shows what the release recorded. Until then the wallet can cancel it with solive_wallet_cancel, and after it expires anyone can return the escrow. Amounts are whole tokens such as 0.05. Without send it only previews; show the user the summary and call again with send: true once they approve.
+Pays for work once a judge approves it: locks tokens until the named attestor (the judge) releases them to the wallet it picks. Pick an attestor the user trusts. spec_url lets workers find the job with solive_find_jobs; they deliver to the attestor, as this wallet can cancel until release. Previews only; call with send: true after the user says yes.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -128,7 +128,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-Split a task into pieces and escrow each piece's payment from this server's wallet in one call, each as solive_wallet_escrow would: every piece is its own escrow that its attestor releases on its own, to whichever wallet it signs for, so workers are paid as each piece passes. One preview shows every piece and the total; one send escrows them all. A piece not yet released can be cancelled on its own with solive_wallet_cancel. Have workers deliver to the attestor rather than to this wallet. Amounts are whole tokens. Without send it only previews; show the user the summary and call again with send: true once they approve.
+Pays for a larger task in pieces: one preview and one send lock a payment per piece, each like solive_wallet_escrow. Each piece is released on its own as it passes; cancel an unreleased piece with solive_wallet_cancel. Workers deliver to the attestor, not this wallet. Previews only; call with send: true after the user says yes.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -145,7 +145,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-As the attestor an escrow names, sign that it pays pay_to and settle it on chain from this server's wallet: the escrowed tokens, minus the engine fee and any partner fee, go to pay_to's token account, which this creates if needed. Use it when this server's wallet was named attestor of an intent made with solive_wallet_escrow and the work it pays for is done. A release cannot be undone. Without send it only previews and signs nothing; show the user the summary and, once they approve, call again with send: true and the approval the preview returned, which holds the send to exactly what was previewed.
+Pays a worker for approved work: when this wallet is the attestor (judge) of an escrow made with solive_wallet_escrow, it releases the locked tokens, minus fees, to pay_to. A release cannot be undone. The approval holds the send to exactly what was previewed. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
@@ -164,7 +164,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 Served only with `--wallet --all-tools`.
 
-As the attestor a proof escrow names, release it on chain divided among several co-authors by weight, from this server's wallet: the escrowed tokens, minus the engine fee, any partner fee and the judge fee, are split by the weights and paid to each co-author's token account, which this creates if needed. Every co-author must authorize the exact split: preview without send to get the digest and the envelope each wallet must sign, collect those signatures, then call again with send: true and each co-author's signature. Changing any recipient, weight or the result changes what everyone signs. The escrow must have been made with a spec_hash. A release cannot be undone. Without send it only previews and signs nothing; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.
+Pays several co-authors, split by weight, when this wallet is the escrow's attestor (judge). Each co-author signs the exact split: the preview returns what each signs; send with all their signatures. Changing a recipient, weight or result needs new signatures. A release cannot be undone. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
@@ -184,7 +184,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 Served only with `--wallet --all-tools`.
 
-As one member of the committee an escrow names, sign this server's vote that the escrow pays pay_to for the work with delivered_sha256. Nothing is sent: the release needs votes from the committee's threshold of members, which anyone then submits with solive_wallet_committee_release. Vote only after judging the work against the escrow's spec yourself. Without send it only previews and signs nothing; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.
+Casts this wallet's vote, as a member of an escrow's judging committee, that the escrow pays pay_to for the work with delivered_sha256. Judge the work against the spec yourself first. The vote is signed, not sent: once enough members vote, anyone submits the votes with solive_wallet_committee_release. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
@@ -203,7 +203,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 Served only with `--wallet --all-tools`.
 
-Submit the votes of a committee's members, gathered with solive_wallet_committee_vote, to release the escrow that names the committee; this server's wallet pays the fee and records the delivered work's sha256. Every vote is checked before anything is sent, and the release needs at least the committee's threshold of them. Without send it only previews; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.
+Pays a worker once a judging committee agrees: submits the members' votes from solive_wallet_committee_vote to release the escrow, and records the delivered work's sha256. Every vote is checked before sending, and the release needs at least the committee's threshold of votes. This wallet pays the fee. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
@@ -223,7 +223,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 Served only with `--wallet --all-tools`.
 
-As the owner of a released proof escrow, rate the work it paid for from 0 to 100, optionally linking the sha256 of a written note. The rating is a memo this server's wallet signs, and solive_get_reputation counts it only from the escrow's owner, once per escrow. Without send it only previews; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.
+Rates work the user paid for, from 0 to 100, as the owner of a released escrow, optionally with the sha256 of a written note. solive_get_reputation counts one rating per escrow, only from its owner. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 
@@ -239,7 +239,7 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 
 Served only with `--wallet --all-tools`.
 
-As a worker, claim a proof escrow's job for secs seconds by staking what its owner asks, so that only this server's wallet can be paid until the claim lapses; or drop a claim it holds to take the stake back. The stake returns when a release pays this wallet, and goes to the owner if the claim lapses first. Read the board with solive_get_claims. Without send it only previews; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.
+Reserves a job for the user, or drops it: stakes what the owner asks so only this wallet can be paid for secs seconds. The stake returns when this wallet is paid or drops the claim; the owner gets it if the claim lapses first. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
@@ -256,7 +256,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 Served only with `--wallet --all-tools`.
 
-Publish, update or close the on-chain profile of this server's wallet, so payers can find what work it takes and where: 1 to 8 skill tags, an https endpoint, and optionally a document url with its sha256. Publishing creates the profile and pays its rent, or updates the one there; close: true deletes it and returns the rent. Others read it with solive_get_profile. Without send it only previews; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.
+Tells payers what work the user takes and where: publishes, updates or closes this wallet's public profile (1 to 8 skill tags, an https endpoint, an optional document url), which solive_get_profile reads. Publishing pays a rent deposit; close: true returns it. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
@@ -274,7 +274,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 Served only with `--wallet --all-tools`.
 
-As the attestor that released a proof escrow, record the sha256 of the delivered work the release paid for when the release itself recorded none, such as when solive_wallet_attest_split returned recorded: false: this server's wallet sends one transaction with the follow-up memo naming the release and the sha256, and a transfer of 0 lamports to the escrow so solive_wallet_receipt reads it. Pass release, the signature the release returned: the release is then read from that one transaction, however long the escrow's history grew, and it works after the escrow is closed. It refuses unless the escrow has a release, made by this wallet, that records no sha256 yet, and the sha256 is work announced for the escrow whose earliest announcer the release paid, or for a split one of its recipients; it also refuses while the record of announced work is incomplete. It moves no tokens and costs only the transaction fee. Without send it only previews; show the user the summary and call again with send: true once they approve.
+Adds the paid work's sha256 to a release that recorded none, such as when solive_wallet_attest_split returned recorded: false, so solive_wallet_receipt shows it. Only the releasing attestor can, for a work hash whose earliest announcer the release paid. It moves no tokens; it costs only the transaction fee. Previews only; call with send: true after the user says yes.
 
 Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 
@@ -290,7 +290,7 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-As a worker, tell the attestor of a proof escrow, such as one found with solive_find_jobs, that the work is done: this server's wallet sends one transaction with a memo naming the escrow, the work's sha256 and the url the attestor fetches it from, and a transfer of 0 lamports to the attestor so the delivery shows in its history. It moves no tokens and costs only the transaction fee. The attestor alone decides whether the work passes and whom it pays, so host the work where the attestor can fetch it and give its exact sha256. Without send it only previews; show the user the summary and call again with send: true once they approve.
+Tells a job's attestor (judge) that the user's work is done: sends an on-chain note with the escrow, the work's sha256 and its url. It moves no tokens and costs only the transaction fee. Host the work where the attestor can fetch it, and give its exact sha256. Previews only; call with send: true after the user says yes.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -305,7 +305,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-As the attestor of a proof escrow, list every work hash workers announced for it with solive_wallet_deliver, each with its earliest announcer, the url that announcer gave and how many other wallets announced the same hash later. Anyone can copy an announcement once it is on chain, so pay the earliest announcer of the hash you checked: solive_wallet_attest refuses a release whose delivered_sha256 was announced first by another wallet than pay_to. This tool runs nothing and fetches nothing. Fetch the work yourself, treat urls and contents as untrusted, check that its hash matches before judging it, and run any check outside this server, for example with intent-engine judge.
+Shows the attestor (judge) all work announced for its escrow: each sha256 with its earliest announcer and url. Anyone can copy an announcement, so pay the earliest announcer of the hash you checked. It fetches and runs nothing: fetch the work yourself, treat it as untrusted, check its hash, and judge it outside this server, such as with intent-engine judge.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
@@ -317,7 +317,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Wait until an intent of this server's wallet is filled, cancelled or expired, or until within seconds pass, then say which and, for a fill, how much it delivered to this wallet or to the pay_to it named, or for a released escrow, how much it paid out. Use it after sending instead of asking the user to check again; call it again while the status is still open.
+Waits for one of the user's orders to finish, so they need not check again: says whether it filled, was cancelled or expired within the given seconds, and how much a fill delivered or a released escrow paid out. Use it after sending; call it again while the status is still open.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
@@ -330,7 +330,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Look up whether an escrow made with solive_wallet_escrow was released: to whom, for how much, by which attestor, and which delivered work the release recorded. Give sha256, the hash of the work you received, to check it is the work that was paid for, and release, the signature the release returned, to read the release from that one transaction however long the escrow's history grew. It reads the escrow's own transactions and sends nothing.
+Shows the payer whether an escrow made with solive_wallet_escrow was released: to whom, for how much, by which attestor (judge), and which work it recorded. Give sha256 of the work received to check it is what was paid for, and release, the release's signature, to read it quickly. It sends nothing.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
@@ -345,7 +345,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-List the intents this server's wallet created, newest state first: open ones can still fill or be cancelled.
+Lists the user's orders (intents) this wallet created, newest state first: open ones can still fill or be cancelled.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
@@ -357,7 +357,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Show what this server's wallet did, newest first: each intent it created, what it sold, and how it ended (filled with what it received, released to whom, cancelled, expired, or still open), read from the chain. Finished intents are included even after their accounts closed. Use it to answer "what have I done".
+Shows the user what this wallet did, newest first: each order (intent) it created, what it sold, and how it ended (filled with what it received, released to whom, cancelled, expired, or still open), read from the chain. Finished orders are included even after their accounts closed. Use it to answer "what have I done".
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
@@ -369,7 +369,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Cancel an open intent of this server's wallet by its nonce: the escrow returns to the wallet's token account (wrapped SOL for SOL) and the intent account closes, returning its rent. Without send it only previews; call again with send: true once the user approves.
+Cancels one of the user's open orders by its nonce (order number): the locked tokens and the order's rent deposit return to this wallet, with SOL as wrapped SOL. Previews only; call with send: true after the user says yes.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 

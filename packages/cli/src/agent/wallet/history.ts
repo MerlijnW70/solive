@@ -28,7 +28,7 @@ const ENDINGS: Readonly<Record<string, Outcome>> = {
 export const walletHistory = define({
   name: tool("wallet_history"),
   title: "Show the wallet's history",
-  description: `Show what this server's wallet did, newest first: each intent it created, what it sold, and how it ended (filled with what it received, released to whom, cancelled, expired, or still open), read from the chain. Finished intents are included even after their accounts closed. Use it to answer "what have I done".`,
+  description: `Shows the user what this wallet did, newest first: each order (intent) it created, what it sold, and how it ended (filled with what it received, released to whom, cancelled, expired, or still open), read from the chain. Finished orders are included even after their accounts closed. Use it to answer "what have I done".`,
   effect: "read",
   input: object({ limit: optional(integer(1, HISTORY_MAX, `how many of the newest intents to show; default ${HISTORY_DEFAULT}`)) }),
   output: object({

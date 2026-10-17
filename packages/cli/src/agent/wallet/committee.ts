@@ -9,7 +9,7 @@ import { AgentRefusal } from "../problems.js";
 import { InvalidInput, account, amount, flag, integer, list, object, optional, text } from "../schema.js";
 import { preparedView } from "../shapes.js";
 import { prepare } from "../prepare.js";
-import { signerOf, sent, sha256Of } from "./guard.js";
+import { PREVIEW_APPROVAL, signerOf, sent, sha256Of } from "./guard.js";
 import { ATTEST_PAGES, DELIVERED_NEEDED, HISTORY_TOO_LONG, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, notEarliest } from "./delivery.js";
 import { RELEASE_CHANGED } from "./attest.js";
 
@@ -66,7 +66,7 @@ const ballotLines = (ballot: CommitteeBallot, input: BallotArgs, delivered: stri
 export const walletCommitteeVote = define({
   name: tool("wallet_committee_vote"),
   title: "Vote on a release as a committee member",
-  description: `As one member of the committee an escrow names, sign this server's vote that the escrow pays pay_to for the work with delivered_sha256. Nothing is sent: the release needs votes from the committee's threshold of members, which anyone then submits with ${tool("wallet_committee_release")}. Vote only after judging the work against the escrow's spec yourself. Without send it only previews and signs nothing; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.`,
+  description: `Casts this wallet's vote, as a member of an escrow's judging committee, that the escrow pays pay_to for the work with delivered_sha256. Judge the work against the spec yourself first. The vote is signed, not sent: once enough members vote, anyone submits the votes with ${tool("wallet_committee_release")}. ${PREVIEW_APPROVAL}`,
   effect: "submit",
   input: object({
     ...ballotInput,
@@ -104,7 +104,7 @@ export const walletCommitteeVote = define({
 export const walletCommitteeRelease = define({
   name: tool("wallet_committee_release"),
   title: "Release an escrow on its committee's votes",
-  description: `Submit the votes of a committee's members, gathered with ${tool("wallet_committee_vote")}, to release the escrow that names the committee; this server's wallet pays the fee and records the delivered work's sha256. Every vote is checked before anything is sent, and the release needs at least the committee's threshold of them. Without send it only previews; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.`,
+  description: `Pays a worker once a judging committee agrees: submits the members' votes from ${tool("wallet_committee_vote")} to release the escrow, and records the delivered work's sha256. Every vote is checked before sending, and the release needs at least the committee's threshold of votes. This wallet pays the fee. ${PREVIEW_APPROVAL}`,
   effect: "submit",
   input: object({
     ...ballotInput,

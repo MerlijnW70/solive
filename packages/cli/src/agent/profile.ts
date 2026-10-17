@@ -17,7 +17,7 @@ import { AgentRefusal, ENGINE_PROBLEMS } from "./problems.js";
 import { account, choice, flag, hex32, InvalidInput, list, nullable, object, optional, text, time } from "./schema.js";
 import { preparedView } from "./shapes.js";
 import { prepare } from "./prepare.js";
-import { signerOf, sent } from "./wallet/guard.js";
+import { PREVIEW_APPROVAL, signerOf, sent } from "./wallet/guard.js";
 
 export const PROFILE_CHANGED =
   "this profile differs from its preview: its skills, endpoint or document changed, or no approval was given; preview it again and show the user";
@@ -80,7 +80,7 @@ function profileOf(input: { skills?: string[] | undefined; endpoint?: string | u
 export const walletProfile = define({
   name: tool("wallet_profile"),
   title: "Publish this wallet's profile",
-  description: `Publish, update or close the on-chain profile of this server's wallet, so payers can find what work it takes and where: 1 to 8 skill tags, an https endpoint, and optionally a document url with its sha256. Publishing creates the profile and pays its rent, or updates the one there; close: true deletes it and returns the rent. Others read it with ${tool("get_profile")}. Without send it only previews; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.`,
+  description: `Tells payers what work the user takes and where: publishes, updates or closes this wallet's public profile (1 to 8 skill tags, an https endpoint, an optional document url), which ${tool("get_profile")} reads. Publishing pays a rent deposit; close: true returns it. ${PREVIEW_APPROVAL}`,
   effect: "submit",
   input: object({
     skills: optional(list(text("a tag of 1 to 16 of a-z, 0-9 and -, not starting or ending with -"), PROFILE_MAX_SKILLS, "distinct skill tags", 1)),

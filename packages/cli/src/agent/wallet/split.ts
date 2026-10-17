@@ -48,7 +48,7 @@ import { preparedView } from "../shapes.js";
 import { walletRecipient } from "../owner.js";
 import { prepare, transactionSize } from "../prepare.js";
 import { STATUS } from "../../accounts.js";
-import { WAIT_SCAN, signerOf, sent, sha256Of } from "./guard.js";
+import { PREVIEW_APPROVAL, WAIT_SCAN, signerOf, sent, sha256Of } from "./guard.js";
 import { RELEASE_CHANGED, approvalOf } from "./attest.js";
 import { notInSplit, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor } from "./delivery.js";
 
@@ -85,7 +85,7 @@ const recordedWhere: Schema<(typeof RECORDED_WHERE)[number] | false> = {
 export const walletAttestSplit = define({
   name: tool("wallet_attest_split"),
   title: "Release a proof escrow split among co-authors",
-  description: `As the attestor a proof escrow names, release it on chain divided among several co-authors by weight, from this server's wallet: the escrowed tokens, minus the engine fee, any partner fee and the judge fee, are split by the weights and paid to each co-author's token account, which this creates if needed. Every co-author must authorize the exact split: preview without send to get the digest and the envelope each wallet must sign, collect those signatures, then call again with send: true and each co-author's signature. Changing any recipient, weight or the result changes what everyone signs. The escrow must have been made with a spec_hash. A release cannot be undone. Without send it only previews and signs nothing; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.`,
+  description: `Pays several co-authors, split by weight, when this wallet is the escrow's attestor (judge). Each co-author signs the exact split: the preview returns what each signs; send with all their signatures. Changing a recipient, weight or result needs new signatures. A release cannot be undone. ${PREVIEW_APPROVAL}`,
   effect: "submit",
   input: object({
     owner: account("the wallet that made the escrow"),

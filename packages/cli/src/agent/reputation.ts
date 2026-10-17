@@ -7,7 +7,7 @@ import { AgentRefusal } from "./problems.js";
 import { account, amount, choice, flag, hex32, integer, list, nullable, object, optional, text, time } from "./schema.js";
 import { preparedView } from "./shapes.js";
 import { prepare } from "./prepare.js";
-import { signerOf, sent } from "./wallet/guard.js";
+import { PREVIEW_APPROVAL, signerOf, sent } from "./wallet/guard.js";
 import { MAX_ATTEST_PAGES, MAX_PAGES_INPUT } from "./wallet/delivery.js";
 
 export const RECORDS_SHOWN = 50;
@@ -85,7 +85,7 @@ export const getReputation = define({
 export const walletFeedback = define({
   name: tool("wallet_feedback"),
   title: "Rate work an escrow paid for",
-  description: `As the owner of a released proof escrow, rate the work it paid for from 0 to 100, optionally linking the sha256 of a written note. The rating is a memo this server's wallet signs, and ${tool("get_reputation")} counts it only from the escrow's owner, once per escrow. Without send it only previews; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.`,
+  description: `Rates work the user paid for, from 0 to 100, as the owner of a released escrow, optionally with the sha256 of a written note. ${tool("get_reputation")} counts one rating per escrow, only from its owner. ${PREVIEW_APPROVAL}`,
   effect: "submit",
   destructive: false,
   input: object({

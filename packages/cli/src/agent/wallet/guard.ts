@@ -48,12 +48,15 @@ export const LANDING_SECONDS = 10;
 export const MAINNET_GENESIS = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
 
 export const WALLET_NOTICE = [
-  "Test network only: this wallet works on Solana devnet, testnet or localnet and refuses mainnet. Its tokens have no value.",
-  "Your key stays on this machine: setup makes one unless a keypair is already configured, and names its file. Only signed transactions leave it.",
-  "This server talks to no one but the RPC endpoint it was started with.",
-  "Nothing moves until you approve: swaps, auctions, escrows, releases and cancels only preview until you say yes.",
-  "Do not send real funds to this wallet or use its key anywhere else.",
+  "Test network only: this wallet refuses mainnet, and its tokens have no value.",
+  "Your key stays on this computer; only signed transactions leave it.",
+  "This server talks only to the Solana node (RPC) it started with.",
+  "Nothing moves until you say yes: payments are previewed first.",
+  "Never send real money to this wallet or use its key anywhere else.",
 ];
+
+export const PREVIEW_FIRST = "Previews only; call with send: true after the user says yes.";
+export const PREVIEW_APPROVAL = "Previews only; after the user says yes, call with send: true and its approval.";
 
 export const walletEmpty = (address: string) =>
   `the wallet ${address} holds no SOL yet; request devnet SOL for it at ${FAUCET} or ${PUBLIC_FAUCET}, then try again`;

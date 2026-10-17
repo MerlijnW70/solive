@@ -120,7 +120,7 @@ describe("solive_get_spec", () => {
     const findJobs = ACTIONS.find((a) => a.name === "solive_find_jobs");
     expect(findJobs?.description).toContain("Read it with solive_get_spec");
     expect(findJobs?.description).not.toContain("fetch it yourself");
-    expect(WALLET_INSTRUCTIONS).toContain("solive_get_spec reads a job's spec and says whether it matches the escrow's spec hash, so work only when matches is true");
+    expect(WALLET_INSTRUCTIONS).toContain("Take a job only if solive_get_spec says its spec matches");
   });
 
   it("is listed as a read tool by a server started without --wallet", async () => {

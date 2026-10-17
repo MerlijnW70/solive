@@ -37,7 +37,7 @@ const receiptOutput = object({
 export const walletReceipt = define({
   name: tool("wallet_receipt"),
   title: "Check an escrow's release",
-  description: `Look up whether an escrow made with ${tool("wallet_escrow")} was released: to whom, for how much, by which attestor, and which delivered work the release recorded. Give sha256, the hash of the work you received, to check it is the work that was paid for, and release, the signature the release returned, to read the release from that one transaction however long the escrow's history grew. It reads the escrow's own transactions and sends nothing.`,
+  description: `Shows the payer whether an escrow made with ${tool("wallet_escrow")} was released: to whom, for how much, by which attestor (judge), and which work it recorded. Give sha256 of the work received to check it is what was paid for, and release, the release's signature, to read it quickly. It sends nothing.`,
   effect: "read",
   input: object({
     owner: optional(account("the wallet that made the escrow; default this server's wallet")),

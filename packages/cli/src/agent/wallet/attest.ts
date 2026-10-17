@@ -29,7 +29,7 @@ import { preparedView } from "../shapes.js";
 import { walletRecipient } from "../owner.js";
 import { prepare } from "../prepare.js";
 import { STATUS } from "../../accounts.js";
-import { signerOf, sent, sha256Of } from "./guard.js";
+import { PREVIEW_APPROVAL, signerOf, sent, sha256Of } from "./guard.js";
 import { invitedTo, notInvited } from "../../invites.js";
 import { notEarliest, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor } from "./delivery.js";
 
@@ -42,7 +42,7 @@ export const approvalOf = (message: Uint8Array, memo = ""): string => createHash
 export const walletAttest = define({
   name: tool("wallet_attest"),
   title: "Release an escrow as its attestor",
-  description: `As the attestor an escrow names, sign that it pays pay_to and settle it on chain from this server's wallet: the escrowed tokens, minus the engine fee and any partner fee, go to pay_to's token account, which this creates if needed. Use it when this server's wallet was named attestor of an intent made with ${tool("wallet_escrow")} and the work it pays for is done. A release cannot be undone. Without send it only previews and signs nothing; show the user the summary and, once they approve, call again with send: true and the approval the preview returned, which holds the send to exactly what was previewed.`,
+  description: `Pays a worker for approved work: when this wallet is the attestor (judge) of an escrow made with ${tool("wallet_escrow")}, it releases the locked tokens, minus fees, to pay_to. A release cannot be undone. The approval holds the send to exactly what was previewed. ${PREVIEW_APPROVAL}`,
   effect: "submit",
   input: object({
     owner: account("the wallet that made the escrow"),

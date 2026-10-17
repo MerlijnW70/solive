@@ -10,7 +10,7 @@ import { AgentRefusal } from "./problems.js";
 import { account, amount, choice, flag, InvalidInput, integer, list, nullable, object, optional, text, time } from "./schema.js";
 import { preparedView } from "./shapes.js";
 import { prepare } from "./prepare.js";
-import { signerOf, sent } from "./wallet/guard.js";
+import { PREVIEW_APPROVAL, signerOf, sent } from "./wallet/guard.js";
 
 export const CLAIM_CHANGED =
   "this claim differs from its preview: the escrow, action, seconds or stake changed, or no approval was given; preview it again and show the user";
@@ -71,7 +71,7 @@ export const getClaims = define({
 export const walletClaim = define({
   name: tool("wallet_claim"),
   title: "Claim or drop a job",
-  description: `As a worker, claim a proof escrow's job for secs seconds by staking what its owner asks, so that only this server's wallet can be paid until the claim lapses; or drop a claim it holds to take the stake back. The stake returns when a release pays this wallet, and goes to the owner if the claim lapses first. Read the board with ${tool("get_claims")}. Without send it only previews; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.`,
+  description: `Reserves a job for the user, or drops it: stakes what the owner asks so only this wallet can be paid for secs seconds. The stake returns when this wallet is paid or drops the claim; the owner gets it if the claim lapses first. ${PREVIEW_APPROVAL}`,
   effect: "submit",
   input: object({
     ...escrowRef,

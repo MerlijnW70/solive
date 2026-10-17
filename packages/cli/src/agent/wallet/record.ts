@@ -21,7 +21,7 @@ import { AgentRefusal } from "../problems.js";
 import { InvalidInput, account, amount, flag, list, object, optional, text } from "../schema.js";
 import { preparedView } from "../shapes.js";
 import { prepare } from "../prepare.js";
-import { signerOf, sent, sha256Of } from "./guard.js";
+import { PREVIEW_FIRST, signerOf, sent, sha256Of } from "./guard.js";
 import { HISTORY_TOO_LONG } from "./delivery.js";
 import { RELEASE_UNKNOWN, outlives, releaseLookup, aroundRelease, namedRelease, releasedMint, heldMint, splitRecipients } from "./releases.js";
 
@@ -206,7 +206,7 @@ async function paidWallet(transport: Transport, release: EngineTransaction, paye
 export const walletRecordDelivery = define({
   name: tool("wallet_record_delivery"),
   title: "Record which work a release paid for",
-  description: `As the attestor that released a proof escrow, record the sha256 of the delivered work the release paid for when the release itself recorded none, such as when ${tool("wallet_attest_split")} returned recorded: false: this server's wallet sends one transaction with the follow-up memo naming the release and the sha256, and a transfer of 0 lamports to the escrow so ${tool("wallet_receipt")} reads it. Pass release, the signature the release returned: the release is then read from that one transaction, however long the escrow's history grew, and it works after the escrow is closed. It refuses unless the escrow has a release, made by this wallet, that records no sha256 yet, and the sha256 is work announced for the escrow whose earliest announcer the release paid, or for a split one of its recipients; it also refuses while the record of announced work is incomplete. It moves no tokens and costs only the transaction fee. Without send it only previews; show the user the summary and call again with send: true once they approve.`,
+  description: `Adds the paid work's sha256 to a release that recorded none, such as when ${tool("wallet_attest_split")} returned recorded: false, so ${tool("wallet_receipt")} shows it. Only the releasing attestor can, for a work hash whose earliest announcer the release paid. It moves no tokens; it costs only the transaction fee. ${PREVIEW_FIRST}`,
   effect: "submit",
   destructive: false,
   input: object({

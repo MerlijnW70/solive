@@ -8,7 +8,7 @@ import { MAX_EXPIRES_IN, MIN_EXPIRES_IN } from "../create.js";
 import { tool } from "../names.js";
 import { problemOf } from "../problems.js";
 import { InvalidInput, account, amount, flag, hex32, integer, list, object, optional, text } from "../schema.js";
-import { LANDING_SECONDS, access, mintNamed, raw, salesOf, checkSale, checkHour, refusedBeforeSending } from "./guard.js";
+import { LANDING_SECONDS, access, mintNamed, raw, salesOf, checkSale, checkHour, refusedBeforeSending, PREVIEW_FIRST } from "./guard.js";
 import { offerOutput, type Token, offered } from "./offer.js";
 
 export const ESCROW_EXPIRES_IN = 86_400;
@@ -32,7 +32,7 @@ function recordedMint(sell: Address, url: string, chosen: string | undefined): A
 export const walletEscrow = define({
   name: tool("wallet_escrow"),
   title: "Escrow a payment for an attestor to release",
-  description: `Hold an exact amount of one token from this server's wallet in an attested intent: it goes, minus the engine fee, to whichever wallet the named attestor later signs for, once the attestor attests a result between min_result and max_result. Use it to pay another agent for work that a third agent or a person judges. The attestor alone decides who is paid, so name an attestor the user trusts; with spec_hash the release must also be signed over that exact spec. spec_url publishes where that spec lives, so workers find the escrow with ${tool("find_jobs")} and announce their work to the attestor with ${tool("wallet_deliver")}. Have the worker deliver to the attestor rather than to this wallet, since this wallet can cancel until the release; ${tool("wallet_receipt")} later shows what the release recorded. Until then the wallet can cancel it with ${tool("wallet_cancel")}, and after it expires anyone can return the escrow. Amounts are whole tokens such as 0.05. Without send it only previews; show the user the summary and call again with send: true once they approve.`,
+  description: `Pays for work once a judge approves it: locks tokens until the named attestor (the judge) releases them to the wallet it picks. Pick an attestor the user trusts. spec_url lets workers find the job with ${tool("find_jobs")}; they deliver to the attestor, as this wallet can cancel until release. ${PREVIEW_FIRST}`,
   effect: "submit",
   repeats: true,
   input: object({
@@ -93,7 +93,7 @@ type Piece = { name: string; amountIn: bigint; attestor: Address };
 export const walletEscrowPlan = define({
   name: tool("wallet_escrow_plan"),
   title: "Escrow a task's pieces in one plan",
-  description: `Split a task into pieces and escrow each piece's payment from this server's wallet in one call, each as ${tool("wallet_escrow")} would: every piece is its own escrow that its attestor releases on its own, to whichever wallet it signs for, so workers are paid as each piece passes. One preview shows every piece and the total; one send escrows them all. A piece not yet released can be cancelled on its own with ${tool("wallet_cancel")}. Have workers deliver to the attestor rather than to this wallet. Amounts are whole tokens. Without send it only previews; show the user the summary and call again with send: true once they approve.`,
+  description: `Pays for a larger task in pieces: one preview and one send lock a payment per piece, each like ${tool("wallet_escrow")}. Each piece is released on its own as it passes; cancel an unreleased piece with ${tool("wallet_cancel")}. Workers deliver to the attestor, not this wallet. ${PREVIEW_FIRST}`,
   effect: "submit",
   repeats: true,
   input: object({

@@ -23,7 +23,7 @@ export const stillWaiting = (status: string) =>
 export const walletWait = define({
   name: tool("wallet_wait"),
   title: "Wait for a wallet intent",
-  description: `Wait until an intent of this server's wallet is filled, cancelled or expired, or until within seconds pass, then say which and, for a fill, how much it delivered to this wallet or to the pay_to it named, or for a released escrow, how much it paid out. Use it after sending instead of asking the user to check again; call it again while the status is still open.`,
+  description: `Waits for one of the user's orders to finish, so they need not check again: says whether it filled, was cancelled or expired within the given seconds, and how much a fill delivered or a released escrow paid out. Use it after sending; call it again while the status is still open.`,
   effect: "read",
   input: object({
     nonce: amount("the intent's nonce, from the send or wallet_intents"),

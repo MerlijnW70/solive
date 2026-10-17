@@ -6,7 +6,7 @@ import { listIntents } from "../read.js";
 import { account, amount, choice, flag, list, object, optional, text } from "../schema.js";
 import { prepareCancel } from "../settle.js";
 import { STATUS } from "../../accounts.js";
-import { WALLET_NOTICE, access, testCluster, savedKeypair, signerOf, mintNamed, sent } from "./guard.js";
+import { PREVIEW_FIRST, WALLET_NOTICE, access, testCluster, savedKeypair, signerOf, mintNamed, sent } from "./guard.js";
 
 const tokenRow = object({
   mint: account(),
@@ -19,7 +19,7 @@ export const walletSetup = define({
   name: tool("wallet_setup"),
   title: "Set up the wallet",
   description:
-    "Create this server's devnet wallet if it has none, save it, and fund it from the devnet airdrop when it holds less than 0.5 SOL. Safe to call again: it reuses the saved wallet, and saves this server's RPC as the CLI's default only when none is saved. Call this first.",
+    "Gives the user a test wallet: creates one if this server has none, keeps its key in a file on this computer, and tops it up with free devnet SOL when it holds less than 0.5 SOL. Safe to call again: it reuses the saved wallet. It saves this node (RPC) as the command line's default if none is saved.",
   effect: "submit",
   destructive: false,
   input: object({}),
@@ -42,7 +42,7 @@ export const walletSetup = define({
 export const walletBalance = define({
   name: tool("wallet_balance"),
   title: "Show the wallet's balances",
-  description: "Show the SOL and token balances of this server's wallet, in whole tokens. Without mints it shows wrapped SOL and, on devnet, the TEST token.",
+  description: "Shows the user how much SOL and how many tokens this wallet holds, in whole tokens. Without mints (token addresses) it shows wrapped SOL and, on devnet, the TEST token.",
   effect: "read",
   input: object({ mints: optional(list(text("SOL, TEST or a mint address"), 8)) }),
   output: object({ address: account(), sol: text(), tokens: list(tokenRow, 8) }),
@@ -57,7 +57,7 @@ export const walletBalance = define({
 export const walletIntents = define({
   name: tool("wallet_intents"),
   title: "List the wallet's intents",
-  description: "List the intents this server's wallet created, newest state first: open ones can still fill or be cancelled.",
+  description: "Lists the user's orders (intents) this wallet created, newest state first: open ones can still fill or be cancelled.",
   effect: "read",
   input: object({ status: optional(choice(STATUS, "only intents in this status")) }),
   output: listIntents.output,
@@ -70,8 +70,7 @@ export const walletIntents = define({
 export const walletCancel = define({
   name: tool("wallet_cancel"),
   title: "Cancel a wallet intent",
-  description:
-    "Cancel an open intent of this server's wallet by its nonce: the escrow returns to the wallet's token account (wrapped SOL for SOL) and the intent account closes, returning its rent. Without send it only previews; call again with send: true once the user approves.",
+  description: `Cancels one of the user's open orders by its nonce (order number): the locked tokens and the order's rent deposit return to this wallet, with SOL as wrapped SOL. ${PREVIEW_FIRST}`,
   effect: "submit",
   input: object({ nonce: amount("the intent's nonce, from wallet_intents"), send: optional(flag("true signs and sends; leave out to preview")) }),
   output: object({
