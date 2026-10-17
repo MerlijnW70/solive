@@ -1068,6 +1068,51 @@ fn a_payee_that_refuses_payment_cannot_block_the_fill_and_its_fee_returns_to_the
 }
 
 #[test]
+fn a_fill_cannot_vouch_for_a_mandated_intent_with_another_owners_state() -> TestResult {
+    let mut s = setup()?;
+    let owner = s.owner();
+    s.agent_creates(&swap(0, 10, 5)?)?;
+    let rival = s.env.trader(&s.market, FUNDED)?;
+    let rival_state = svm_tests::user_pda(&rival.key.pubkey());
+    s.env.user(&rival.key.pubkey())?;
+    let solver = s.env.solver(&s.market, 1_000)?;
+    let fee_to = s.env.fee_account(&s.market).ok();
+    let mut ix = s.env.fill_ix(&solver, &owner, &s.market, agent_nonce(0), &s.trader.receiver, fee_to.as_ref(), 1_000);
+    let own_state = svm_tests::user_pda(&owner);
+    let slot = ix.accounts.iter_mut().find(|meta| meta.pubkey == own_state).ok_or("no owner state in the fill")?;
+    slot.pubkey = rival_state;
+    assert_eq!(s.env.send(&solver.key, &[ix], &[]), Err(engine_error(EngineError::MandateMismatch)));
+    assert_eq!(s.env.intent(&owner, agent_nonce(0))?.status, intent_core::lifecycle::Status::Open as u8);
+    s.fill(0)?;
+    Ok(())
+}
+
+#[test]
+fn an_agent_nonce_returns_only_after_its_intent_closes_and_the_reuse_counts_against_the_mandate() -> TestResult {
+    let mut s = setup()?;
+    let owner = s.owner();
+    let agent = s.agent.pubkey();
+    let intent = intent_pda(&owner, agent_nonce(0));
+    s.agent_creates(&swap(0, 10, 5)?)?;
+    assert!(s.agent_creates(&swap(0, 10, 5)?).is_err());
+    let cancel = s.env.cancel_ix(&owner, &s.market, agent_nonce(0), &s.trader.input);
+    s.owner_sends(&[cancel])?;
+    assert!(s.agent_creates(&swap(0, 10, 5)?).is_err());
+    let cranker = s.env.funded()?;
+    let close = s.env.close_ix_with(&cranker.pubkey(), &owner, &agent, &s.market, agent_nonce(0), &s.trader.input);
+    s.env.send(&cranker, &[close], &[])?;
+    assert!(!s.env.exists(&intent));
+    s.env.set_now(START_TS + 60);
+    s.agent_creates(&swap(0, 10, 5)?)?;
+    let reborn = s.env.intent(&owner, agent_nonce(0))?;
+    assert_eq!((reborn.status, reborn.revision, reborn.filled), (intent_core::lifecycle::Status::Open as u8, 0, 0));
+    assert_eq!(reborn.created_at, START_TS + 60);
+    let m = s.env.mandate(&s.mandate)?;
+    assert_eq!((m.spent, m.intents), (20, 2));
+    Ok(())
+}
+
+#[test]
 fn an_agent_can_only_create_in_its_own_grants_nonce_lane() -> TestResult {
     let mut s = setup()?;
     let owner = s.owner();
