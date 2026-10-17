@@ -7,3 +7,19 @@ if grep -niE "$filler" "${pages[@]}"; then
   echo "filler words above; state the fact or the step instead"
   exit 1
 fi
+mapfile -t guides < <(find docs -maxdepth 1 -name '*.md'; echo README.md)
+long=$(awk '
+  FNR == 1 { flush(); code = 0 }
+  /^```/ { flush(); code = !code; next }
+  code { next }
+  /^[[:space:]]*$/ || substr($0, 1, 1) == "#" || substr($0, 1, 1) == "|" { flush(); next }
+  /^[-*] / || /^[0-9]+\. / { flush() }
+  { words += NF; if (!start) start = FNR; name = FILENAME }
+  END { flush() }
+  function flush() { if (words > 80) printf "%s:%d: %d words in one paragraph\n", name, start, words; words = 0; start = 0 }
+' "${guides[@]}")
+if [[ -n "$long" ]]; then
+  echo "$long"
+  echo "paragraphs above run past 80 words; split them or move the detail to docs/reference or docs/maintainers"
+  exit 1
+fi

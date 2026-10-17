@@ -14,7 +14,9 @@ const client = createClient({ url: "https://api.devnet.solana.com" });
 
 ## Create a swap intent
 
-Sell 0.05 SOL for at least 50 test tokens. The devnet filler prices test tokens at 200 per wrapped SOL and pays exactly the minimum asked; 50 is more than 0.05 SOL buys at that price, so the intent stays open until you cancel it. `createIntent` does its own setup in the same transaction: it registers the wallet on its first intent, wraps the SOL the escrow needs, and creates the token account that receives the test token. It picks the next free nonce and expires the intent in an hour unless you pass `nonce`, `expiresIn` or `expiresAt`.
+Sell 0.05 SOL for at least 50 test tokens. The devnet filler prices test tokens at 200 per wrapped SOL and pays exactly the minimum asked; 50 is more than 0.05 SOL buys at that price, so the intent stays open until you cancel it.
+
+`createIntent` sets up what it needs in the same transaction: it registers the wallet, wraps the SOL and creates the receiving token account. It picks the next free nonce and expires the intent in an hour, unless you pass `nonce`, `expiresIn` or `expiresAt`.
 
 ```ts
 import { DEVNET_TEST_MINT, Kind, NATIVE_MINT, parseAmount } from "@intent-engine/core";
@@ -28,7 +30,11 @@ const { nonce } = await client.createIntent({ ...order, params: swap });
 
 ## Read
 
-`intents({ owner })` returns every intent a wallet holds and `intent(owner, nonce)` one intent, or `null` once its account is closed. Reads after your own send wait for the slot it confirmed in. `configSummary` spells out the engine's settings: pauses, which kinds can be created and filled, and their fees. `kindName` and `statusName` name an intent's kind and status, and `termsOf` decodes what it sells and the least it receives now. This prints `SwapExactIn Open` and then the terms in tokens.
+- `intents({ owner })` returns a wallet's intents; `intent(owner, nonce)` returns one, or `null` once it is closed.
+- `configSummary` spells out the engine's settings: pauses, which kinds are on, and their fees.
+- `kindName`, `statusName` and `termsOf` name an intent's kind and status and decode its terms.
+
+This prints `SwapExactIn Open` and then the terms in tokens.
 
 ```ts
 import { configSummary, formatAmount, IntentStatus, kindName, statusName, termsOf } from "@intent-engine/core";
@@ -45,7 +51,7 @@ for (const { intent } of mine.filter(({ intent }) => intent.nonce === nonce)) {
 
 ## Watch
 
-`watch` calls back once after its first read with the current intents, even when it finds none, then with every intent that changed and with the last known state of each intent whose account closed, until its signal aborts. It rereads the chain every `resyncSeconds` (a client option, default `WATCH_WAIT_SECONDS`), so a dropped notification only delays a change, and it keeps going through failed reads; pass `onError` next to `owner` to hear about each one. A reread never goes back past the newest slot the watch has seen, so a lagging RPC node cannot report a live intent as closed. A filled intent's account is closed soon after the fill, so `intent` then returns `null`. This prints `Open` now and `Cancelled` once the cancel below lands.
+`watch` calls back with the current intents, then with every intent that changes, until its signal aborts. It rereads the chain every `resyncSeconds`, so a dropped notification only delays a change; pass `onError` to hear about failed reads. A filled intent's account closes soon after the fill, so `intent` then returns `null`. This prints `Open` now and `Cancelled` once the cancel below lands.
 
 ```ts
 const controller = new AbortController();
@@ -86,7 +92,7 @@ await client.unwrap(signer);
 
 A `LimitOrder` sells `makeAmount` for at least `takeAmount`. A `DutchAuction` sells `amountIn` for at least `startOut` until `startTs`, after which its minimum falls in a straight line to `endOut` at `endTs`. A fill takes the whole escrow. `termsOf` prices an intent at the time you pass it; pass the chain's time from `chainTime`, since the chain's clock and yours can differ. `tokenName` returns `SOL` for `NATIVE_MINT`, `TEST` for `DEVNET_TEST_MINT` and `undefined` for any other mint.
 
-`fillOf` reads what filled an intent from its history, also after its account closed, and returns `null` until a fill lands. A solver fills in one step, which the engine reports as `IntentFilled`, or in two, reported as `FillBegun` and `FillEnded`, as the devnet filler does. `fillOf` returns either as the `steps`, the `solver`, what it `delivered` to the owner, the minimum `required` at the fill, the protocol `fee` and the solver's `net` out of the escrow, with the `signature`, `slot` and `blockTime`, which is `null` when the cluster reports none. The devnet filler delivers the minimum it reads; an auction's minimum keeps falling, so by the time the fill lands the minimum can be below what the filler delivers.
+`fillOf` reads how an intent was filled, also after its account closed, or returns `null` before a fill. It returns the `steps`, the `solver`, what it `delivered`, the minimum `required`, the protocol `fee` and the solver's `net`, with the `signature`, `slot` and `blockTime`. An auction's minimum keeps falling, so it can end below what the filler delivered.
 
 Each order below sells 0.01 SOL, and the devnet filler fills both. The code waits for each fill, so run it while the filler is online. This prints each order's kind, the least it receives now and its token, then the steps of its fill, what it delivered and the minimum at the fill; for the limit order these are 2, 1.5 and 1.5.
 
@@ -112,7 +118,11 @@ for (const params of [limit, auction]) {
 
 ## Escrow work behind a proof
 
-An `AttestedResult` intent holds payment until its attestor, the judge, signs a result. `specHash` pins the acceptance spec the judge checks, and `judgeFee` pays the judge out of the escrow; [Who can do what](#who-can-do-what) lists what each party may do. `settleProof` is the judge's call: it signs the result over the spec and pays the worker's wallet `payTo`, creating any token account the payout needs. It refuses, before sending, an expired escrow with `EscrowExpired`, a `payTo` owned by a program with `PayToNotWallet`, and a `payTo` whose token account for the mint it no longer holds with `PayeeMoved`. The judge pays the transaction unless `payer` names another signer; here your wallet pays, so the new judge key needs no SOL. In practice the judge runs this with its own key. `history` returns the engine events for one intent, newest first, each with its signature and slot, and keeps working after the account closes. A release event carries `deliveredSha256` when the release recorded the paid work's hash, in its own memo or in a follow-up transaction its judge signed. An `IntentAttested` event's `net` is what the payee received. This prints `Filled`, then `IntentAttested` and the worker's pay in SOL.
+An `AttestedResult` intent holds payment until its judge signs a result. `specHash` pins the spec the judge checks, and `judgeFee` pays the judge out of the escrow.
+
+`settleProof` is the judge's call: it pays the worker's wallet `payTo`. Before sending, it refuses an expired escrow (`EscrowExpired`), a `payTo` owned by a program (`PayToNotWallet`), a `payTo` whose token account moved (`PayeeMoved`) and an escrow another worker has claimed (`NotSettleable`). Here your wallet pays the fee, so the new judge key needs no SOL.
+
+`history` returns an intent's events, newest first, also after it closes. An `IntentAttested` event's `net` is what the payee received. This prints `Filled`, then `IntentAttested` and the worker's pay in SOL.
 
 ```ts
 const judge = await generateKeyPairSigner();
@@ -130,7 +140,13 @@ console.log(formatAmount(paid?.fields.net ?? 0n, sell.decimals));
 
 ## Fees
 
-Each kind has a protocol fee in basis points, `feeBps` in `configSummary`, taken from what a fill pays out of the escrow. The engine caps it at `MAX_FEE_BPS` (100) for swap, limit and dutch orders and at `MAX_ATTESTED_FEE_BPS` (300) for attested ones; `maxFeeBpsFor` gives the cap of a kind. A proof escrow pays the judge its `judgeFee` first; the protocol fee, and the fee of a partner the intent names, come out of the rest, and the worker receives what remains. A partner's fee is not all the partner's: the protocol keeps `partnerCutBps` of every partner fee, read from `configSummary`, and the partner receives the rest. `splitFees` and `feeBpsFor` from `@intent-engine/core` compute the same split. This prints what the worker, the judge and the protocol received for the proof escrow above, in SOL; the three add up to the escrow.
+- Each kind has a protocol fee, `feeBps` in `configSummary`, taken from the escrow at the fill.
+- The engine caps it at `MAX_FEE_BPS` (100) for swap, limit and dutch orders and at `MAX_ATTESTED_FEE_BPS` (300) for attested ones; `maxFeeBpsFor` gives a kind's cap.
+- A proof escrow pays the judge's `judgeFee` first. The protocol fee and any partner fee come out of the rest, and the worker gets what remains.
+- The protocol keeps `partnerCutBps` of every partner fee.
+- `splitFees` and `feeBpsFor` from `@intent-engine/core` compute the same split.
+
+This prints what the worker, the judge and the protocol received, in SOL; together they make up the escrow.
 
 ```ts
 const received = [paid?.fields.net ?? 0n, work.judgeFee, paid?.fields.fee ?? 0n];
@@ -151,7 +167,7 @@ await client.unwrap(signer);
 
 ## Expire and close
 
-`expire` refunds an open intent at or after its expiry, and `close` returns the rent of a filled, cancelled or expired intent; [Who can do what](#who-can-do-what) says who receives what. Both take the wallet that signs, then the intent's owner and nonce. The devnet filler also expires and closes overdue intents, in passes with a pause between them, so on devnet an overdue intent closes soon after its expiry, often before you do. This creates a swap with a short expiry, waits until the chain's clock reaches it, expires and closes it, rethrowing a failed expire only while the intent is still open and a failed close only while it still exists, since the filler may have done either first, and prints `null`.
+`expire` refunds an open intent once it has expired, and `close` returns the rent of a finished intent. Both take the signer, then the owner and nonce. The devnet filler also expires and closes overdue intents, in passes with a pause between them, so it may get there first; the code below allows for that. This prints `null`.
 
 ```ts
 const due = (await client.chainTime()) + 10n;
@@ -179,7 +195,14 @@ await client.unwrap(signer);
 
 ## Find work and deliver it
 
-The chain holds only a proof escrow's spec hash. `specUrl` on `createIntent` publishes where the spec lives, in a memo the owner signs in the create transaction. `jobs` lists up to 50 open, unexpired proof escrows, those with the most time left first, optionally only those naming one `attestor`, each with its `specUrl`, which is `null` when none was published. `spec` fetches that url, following no redirect and reading at most 1048576 bytes, and refuses a plain http url on mainnet, devnet or testnet, and returns its `text`, its `sha256` and whether it `matches` the committed hash; it never runs the text. A worker announces its work with `deliver`: one transaction it signs, with a memo naming the intent, the work's sha256 and the url to fetch it from, and a transfer of 0 lamports to the judge, so the delivery shows in the judge's history. The judge reads them with `deliveries`, newest first, from its history back to the creation of the escrows it judges, at most 100 pages of 1000 transactions, and gets only memos that name one of its own open proof escrows, or the one of its proof escrows it asks for with `intent`. `deliveryRecord` returns the same `deliveries` with `complete` and the number of `pages` it read; pass `pages` to read further. `complete` is `true` only when the read reached a transaction older than the escrow, or reached the end of the history on a node whose ledger goes back to the escrow's creation; it is `false` when the history is longer than the pages it reads or the node has pruned the slots it would need. A transport you pass to `createClient` needs `signaturesOf`, `transactionsOf` and `firstAvailableSlot` for `deliveryRecord` to be complete. Without `signaturesOf` and `transactionsOf` it reads only the 100 most recent transactions, and without `firstAvailableSlot` it cannot tell that the node's ledger reaches back to the escrow's creation; more pages fix neither. `deliveries` is for listing; decide whom to pay only from a complete record. Here the spec is a file of this repository at a fixed commit, your wallet plays the worker, and the judge then releases the escrow to the earliest wallet that announced the hash it checked, recording that hash in the release. This prints `true true` twice.
+- `specUrl` on `createIntent` publishes where the spec lives, in a memo the owner signs.
+- `jobs` lists up to 50 open, unexpired proof escrows, those with the most time left first, each with its `specUrl`.
+- `spec` fetches that url, following no redirect and reading at most 1048576 bytes, and says whether it `matches` the committed hash. It never runs the text.
+- `deliver` announces a worker's work: a memo with the intent, the work's sha256 and its url, plus a 0-lamport transfer to the judge.
+- `deliveryRecord` lists the announcements to a judge, newest first, reading at most 100 pages of 1000 transactions. Decide whom to pay only when its `complete` is `true`.
+- A transport you pass to `createClient` needs `signaturesOf`, `transactionsOf` and `firstAvailableSlot` for a complete record.
+
+Here your wallet plays the worker, and the judge pays the earliest wallet that announced the hash it checked. This prints `true true` twice.
 
 ```ts
 import { firstDelivery } from "@intent-engine/client";
@@ -201,7 +224,7 @@ await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: p
 await client.unwrap(signer);
 ```
 
-Anyone can copy an announcement once it is on chain, so a judge pays the earliest announcer of the hash it checked: `firstDelivery(record.deliveries, sha256)` returns that announcement, or `null`. `settleProof` takes `deliveredSha256` to record the paid work's hash in the release, in the memo `intent-engine receipt` and `solive_wallet_receipt` read. [Judge a proof escrow](judge.md) does all of this from the command line.
+Anyone can copy an announcement once it is on chain, so a judge pays the earliest announcer of the hash it checked: `firstDelivery(record.deliveries, sha256)` returns that announcement, or `null`. `settleProof` takes `deliveredSha256` to record the paid work's hash in the release, in the memo `intent-engine receipt` and `solive_wallet_receipt` read. [Judge work](judge.md) does all of this from the command line.
 
 ## Who can do what
 
@@ -218,7 +241,15 @@ Anyone can copy an announcement once it is on chain, so a judge pays the earlies
 
 ## Costs
 
-`createIntent` pays from the signer's wallet: on its first intent, the rent of its user state account, which stays open; the rent of the intent account and its escrow token account; the rent of the wrapped SOL token account when it sells SOL, and of the receiver's token account, if they do not exist yet; the escrow; the create fee, which goes to the engine's fee recipient and does not come back; and the crank bounty, which the intent account holds. `cancel` returns the escrow to the owner's token account for the sold token, and `unwrap` returns the wrapped SOL account's balance and rent to the wallet. A fill or settle pays the escrow out as [Fees](#fees) describes. The intent account keeps its rent until someone closes it, and the bounty until someone expires or closes it; [Who can do what](#who-can-do-what) says who receives them. `settleProof`'s payer pays the rent of each token account it creates for the worker, the judge or the fee recipient. `expire` pays the rent of the owner's token account for the sold token when it has to create one. `configSummary` gives the create fee and the crank bounty in lamports; this prints them in SOL.
+`createIntent` pays from the signer's wallet:
+
+- the rent of its user account, once, which stays open;
+- the rent of the intent and its escrow account, and of any token account it creates;
+- the escrow itself;
+- the create fee, which does not come back;
+- the crank bounty, which the intent holds until someone expires or closes it.
+
+`cancel` returns the escrow, `close` returns the rent, and `unwrap` turns wrapped SOL back into SOL. This prints the create fee and the crank bounty in SOL.
 
 ```ts
 const { createFee, crankBounty } = configSummary(await client.config());
