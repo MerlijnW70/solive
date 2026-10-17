@@ -1,5 +1,6 @@
 import type { AnyAction } from "./actions.js";
 import { walletSetup, walletBalance, walletIntents, walletCancel } from "./wallet/account.js";
+import { walletHistory } from "./wallet/history.js";
 import { walletEstimate, walletSwap, walletAuction, walletRecurring } from "./wallet/trade.js";
 import { walletEscrow, walletEscrowPlan } from "./wallet/escrow.js";
 import { walletAttest } from "./wallet/attest.js";
@@ -139,5 +140,6 @@ export const WALLET_ACTIONS: readonly AnyAction[] = [
   walletWait,
   walletReceipt,
   walletIntents,
+  walletHistory,
   walletCancel,
 ];

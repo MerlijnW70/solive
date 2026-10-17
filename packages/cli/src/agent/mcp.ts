@@ -38,7 +38,7 @@ export const WALLET_INSTRUCTIONS = [
   `An escrow's attestor can be a committee, made with the command line's committee create, so no single judge decides: each member's server judges the work and signs its vote with ${tool("wallet_committee_vote")}, and anyone submits the threshold of votes with ${tool("wallet_committee_release")}. Both preview until called with send: true.`,
   `${tool("get_reputation")} reads a worker's track record from the chain alone: work it announced, releases that paid it for that exact work, and its payers' scores, leaving out releases it paid or judged itself. After a release pays for good or bad work, its owner rates it once with ${tool("wallet_feedback")}.`,
   `An escrow's owner can let one worker claim its job for a while against a stake. ${tool("get_claims")} shows who holds it; a worker claims or drops it with ${tool("wallet_claim")}, which previews until called with send: true. ${tool("wallet_profile")} publishes this wallet's skills and endpoint, and ${tool("get_profile")} reads any wallet's.`,
-  `After sending, ${tool("wallet_wait")} waits for the fill and says what it delivered; ${tool("wallet_intents")} and ${tool("wallet_balance")} show the rest.`,
+  `After sending, ${tool("wallet_wait")} waits for the fill and says what it delivered; ${tool("wallet_intents")} and ${tool("wallet_balance")} show the rest, and ${tool("wallet_history")} shows what the wallet did before, finished intents included.`,
 ].join("\n");
 
 export const walletInstructions = (limits: WalletLimits): string => [WALLET_INSTRUCTIONS, ...limitLines(limits)].join("\n");

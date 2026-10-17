@@ -2,7 +2,7 @@
 
 # MCP tools
 
-25 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 22 wallet tools, listed first.
+25 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 23 wallet tools, listed first.
 
 ## solive_wallet_setup
 
@@ -352,6 +352,18 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `status` | `open`, `filled`, `cancelled`, `expired`, `filling` | no | only intents in this status |
+
+## solive_wallet_history
+
+Served only with `--wallet`.
+
+Show what this server's wallet did, newest first: each intent it created, what it sold, and how it ended (filled with what it received, released to whom, cancelled, expired, or still open), read from the chain. Finished intents are included even after their accounts closed. Use it to answer "what have I done".
+
+Effect: `read` (read-only: true, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `limit` | integer 1..25 | no | how many of the newest intents to show; default 10 |
 
 ## solive_wallet_cancel
 
