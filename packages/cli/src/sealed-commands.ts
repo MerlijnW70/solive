@@ -12,6 +12,8 @@ type Reading = Extract<Command, { name: "spec" }>;
 
 export const MAX_SEALED_INPUT = 67_108_864;
 
+export const jobClosed = (intent: Address): string => `the job ${intent} is closed: it was paid, cancelled or expired, or never existed`;
+
 const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 
 async function bounded(path: string): Promise<Uint8Array> {
@@ -54,7 +56,7 @@ export async function readJobSpec(command: Reading, runtime: Runtime, transport:
     throw error instanceof SpecSealed || error instanceof SpecUnreadable ? new FlowRefused(error.message) : error;
   }
   if (spec === null) {
-    throw new FlowRefused(`the escrow ${command.intent} publishes no spec url, or is not a proof escrow; ask its owner for the spec`);
+    throw new FlowRefused((await transport.getAccount(command.intent)) === null ? jobClosed(command.intent) : `the escrow ${command.intent} publishes no spec url, or is not a proof escrow; ask its owner for the spec`);
   }
   if (command.out !== undefined) {
     await writeFile(command.out, spec.text, { flag: "wx" });

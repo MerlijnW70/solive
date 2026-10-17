@@ -3,13 +3,14 @@ import { existsSync } from "node:fs";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Address, getAddressDecoder, lamports, none } from "@solana/kit";
+import { type Address, generateKeyPairSigner, getAddressDecoder, lamports, none } from "@solana/kit";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { DEVNET_TEST_MINT, Kind, NATIVE_MINT, seal, specMemo } from "@intent-engine/core";
 import { createClient } from "@intent-engine/client";
 import { ENV_KEYPAIR, ENV_URL } from "../src/args.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
+import { jobClosed } from "../src/sealed-commands.js";
 import { ata, cli, creation, funded, h, NOW, transport, world } from "./harness.js";
 
 function keyed(path: string): Address {
@@ -134,5 +135,12 @@ describe("spec", () => {
     h.engineLog.push({ ...creation(intent), memos: [specMemo(url)] });
     const read = await cli(["spec", "--intent", intent], {});
     expect([read.code, read.err]).toEqual([EXIT_FAILED, `the spec at ${url} could not be fetched`]);
+  });
+
+  it("says a job is closed when its escrow account is gone", async () => {
+    await world();
+    const gone = (await generateKeyPairSigner()).address;
+    const read = await cli(["spec", "--intent", gone], {});
+    expect([read.code, read.err]).toEqual([EXIT_FAILED, jobClosed(gone)]);
   });
 });

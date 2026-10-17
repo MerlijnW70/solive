@@ -12,6 +12,7 @@ import { createClient } from "@intent-engine/client";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { SERVER_PROBLEMS } from "../src/agent/problems.js";
 import { notInvited } from "../src/invites.js";
+import { jobClosed } from "../src/sealed-commands.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { cli, creation, funded, h, NOW, transport, world } from "./harness.js";
 
@@ -131,4 +132,16 @@ describe("judging an invite-only job", () => {
     expect([judged.code, judged.err]).toEqual([EXIT_OK, ""]);
     expect(judged.json()).toMatchObject({ intent, verdict: "pass", payTo: invitedWorker, signature: null });
   }, 60_000);
+});
+
+describe("reading the spec of a closed job", () => {
+  it("names the job closed instead of asking for a spec url", async () => {
+    await world();
+    const client = await connect(["mcp", "--url", "devnet"]);
+    const gone = wallet();
+    expect(await call(client, "get_spec", { intent: gone })).toEqual({
+      error: true,
+      value: { code: "NotFound", retryable: SERVER_PROBLEMS.NotFound.retryable, hint: jobClosed(gone) },
+    });
+  });
 });

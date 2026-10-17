@@ -184,7 +184,7 @@ export function simulationProblem(err: string, logs: readonly string[]): Problem
       return { ...known, programError: failure.code, program: failure.program, logs: tail };
     }
   }
-  if (err === "AccountNotFound" && failure === null) {
+  if (err.replace(/^'(.*)'$/, "$1") === "AccountNotFound" && failure === null) {
     return { code: "Unfunded", retryable: SERVER_PROBLEMS.Unfunded.retryable, hint: SERVER_PROBLEMS.Unfunded.hint, logs: tail };
   }
   return {

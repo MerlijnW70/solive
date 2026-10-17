@@ -72,6 +72,8 @@ describe("certificate and funding problems", () => {
 
   it("names a fee payer with no SOL instead of a missing account", () => {
     expect(simulationProblem("AccountNotFound", [])).toEqual({ code: "Unfunded", retryable: false, hint: SERVER_PROBLEMS.Unfunded.hint, logs: [] });
+    expect(simulationProblem("'AccountNotFound'", [])).toEqual({ code: "Unfunded", retryable: false, hint: SERVER_PROBLEMS.Unfunded.hint, logs: [] });
+    expect(simulationProblem("'AccountNotFound", []).code).toBe("TransactionFailed");
     expect(simulationProblem("AccountNotFound", ["Program 11111111111111111111111111111111 failed: custom program error: 0x1"]).code).toBe("TransactionFailed");
     expect(simulationProblem("InsufficientFundsForRent", []).code).toBe("TransactionFailed");
   });

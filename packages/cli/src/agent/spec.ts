@@ -5,6 +5,7 @@ import { tool } from "./names.js";
 import { AgentRefusal, untrusted } from "./problems.js";
 import { account, flag, list, nullable, object, text } from "./schema.js";
 import { walletKeypair } from "./wallet/guard.js";
+import { jobClosed } from "../sealed-commands.js";
 import { MAX_SEALED_RECIPIENTS } from "@intent-engine/core";
 
 export const noSpecUrl = (intent: Address): string =>
@@ -43,6 +44,9 @@ export const getSpec = define({
       throw error instanceof SpecUnreadable ? new AgentRefusal("SpecUnreadable", untrusted(error.message)) : error;
     }
     if (spec === null) {
+      if ((await ctx.transport.getAccount(input.intent)) === null) {
+        throw new AgentRefusal("NotFound", jobClosed(input.intent));
+      }
       throw new AgentRefusal("NoSpecUrl", noSpecUrl(input.intent));
     }
     return { url: spec.url, sha256: spec.sha256, matches: spec.matches, text: spec.text, sealed_to: spec.sealedTo ?? null };
