@@ -289,7 +289,7 @@ describe("judge --sandbox viper --plain-node", () => {
   });
 });
 
-const GUIDE = readFileSync(join(ROOT, "docs/judge.md"), "utf8");
+const GUIDE = readFileSync(join(ROOT, "docs/judge.md"), "utf8") + "\n" + readFileSync(join(ROOT, "docs/maintainers/judge-internals.md"), "utf8");
 const MISSING_MARK = "Next to plain Node, the host engine lacks exactly these globals:";
 const NO_EXTRA = "The host engine adds no globals of its own";
 

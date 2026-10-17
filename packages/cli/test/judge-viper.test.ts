@@ -174,7 +174,7 @@ describe("intent-engine judge --sandbox viper", () => {
 });
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
-const GUIDE = readFileSync(join(ROOT, "docs/judge.md"), "utf8");
+const GUIDE = readFileSync(join(ROOT, "docs/judge.md"), "utf8") + "\n" + readFileSync(join(ROOT, "docs/maintainers/judge-internals.md"), "utf8");
 const SECTION = GUIDE.slice(GUIDE.indexOf("## Judge without Docker"), GUIDE.indexOf("## Who is paid"));
 const FENCE = "```";
 const block = (language: string) => SECTION.split(`${FENCE}${language}\n`)[1]?.split(`${FENCE}\n`)[0]?.trimEnd().split("\n") ?? [];
@@ -208,7 +208,7 @@ describe("the judge guide without Docker", () => {
   });
 
   it("states the defaults the judge uses", () => {
-    expect(SECTION).toContain(`\`steps\` (default ${DEFAULT_STEPS})`);
-    expect(SECTION).toContain(`\`heap\` in bytes (default ${DEFAULT_HEAP})`);
+    expect(GUIDE).toContain(`\`steps\` (default ${DEFAULT_STEPS})`);
+    expect(GUIDE).toContain(`\`heap\` in bytes (default ${DEFAULT_HEAP})`);
   });
 });

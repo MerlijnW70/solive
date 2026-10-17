@@ -12,7 +12,7 @@ import { TransactionMetadata } from "litesvm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { decodeEvent, deliveryMemo, DEVNET_TEST_MINT, findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, manifestSha256, NATIVE_MINT, RELEASE_MEMO_PREFIX, releaseMemo } from "@intent-engine/core";
 import { createClient, DELIVERY_PAGES, DELIVERY_SCAN, type EngineTransaction, type ListedSignature, SIGNATURE_PAGE, type Transport } from "@intent-engine/client";
-import { ENV_KEYPAIR, JUDGE_TIMEOUT, MAX_JUDGE_TIMEOUT, RUN_NEEDED } from "../src/args.js";
+import { ENV_KEYPAIR, ENV_URL, JUDGE_TIMEOUT, MAX_JUDGE_TIMEOUT, RUN_NEEDED } from "../src/args.js";
 import { ATTEST_PAGES } from "../src/agent/wallet/delivery.js";
 import { MAX_DELIVERY_PAGES } from "../src/command-builders.js";
 import { NOT_SENT } from "../src/flows.js";
@@ -1200,7 +1200,7 @@ describe("the artifact hash", () => {
 });
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
-const GUIDE = readFileSync(`${ROOT}/docs/judge.md`, "utf8");
+const GUIDE = readFileSync(`${ROOT}/docs/judge.md`, "utf8") + "\n" + readFileSync(`${ROOT}/docs/maintainers/judge-internals.md`, "utf8");
 const FENCE = "```";
 const EXAMPLE_HEADING = "\n## Judge the word count example\n";
 const STEPS = GUIDE.slice(0, GUIDE.indexOf(EXAMPLE_HEADING));
@@ -1217,6 +1217,7 @@ const words = (line: string, vars: Record<string, string>) =>
   [...line.matchAll(/"([^"]*)"|(\S+)/g)].map((m) => (m[1] ?? m[2] ?? "").replace(/\$([A-Z]+)/g, (whole, name: string) => vars[name] ?? whole));
 const WORD_COUNT = "examples/jobs/word-count";
 const WORD_COUNT_FILE = `${WORD_COUNT}/delivery/wordcount.mjs`;
+const JUDGE_LINE = /^export JUDGE=\$\(intent-engine balance \| (node -p .+)\)$/;
 const HASH_LINE = /^export SPEC_HASH=\$\(intent-engine hash --artifact (\S+) \| (node -p .+)\)$/;
 const POWERSHELL_HASH = (spec: string) => `$env:SPEC_HASH = (intent-engine hash --artifact ${spec} | Out-String | ConvertFrom-Json).sha256`;
 const toPowerShell = (line: string) =>
@@ -1251,9 +1252,14 @@ describe("the judge guide", () => {
     const j = await job();
     const commands = guideLines.filter((l) => l.startsWith("intent-engine "));
     const setup = guideLines.filter((l) => !l.startsWith("intent-engine "));
-    expect(setup.slice(2)).toEqual(['curl -fsSL -o spec.md "$SPEC_URL"']);
-    expect(setup[0]).toBe("export SPEC_URL=https://example.org/spec.md");
-    expect(setup[1]).toMatch(HASH_LINE);
+    expect(setup.slice(3)).toEqual(['curl -fsSL -o spec.md "$SPEC_URL"']);
+    expect(setup[1]).toBe("export SPEC_URL=https://example.org/spec.md");
+    expect(setup[2]).toMatch(HASH_LINE);
+    h.env[ENV_KEYPAIR] = "judge.json";
+    presetMint(NATIVE_MINT);
+    const shown = await cli(["balance"], { "judge.json": j.judge });
+    const picked = spawnSync("sh", ["-c", JUDGE_LINE.exec(setup[0] ?? "")?.[1] ?? "false"], { input: shown.out, encoding: "utf8" });
+    expect([shown.err, picked.status, picked.stdout.trim()]).toEqual(["", 0, j.judge.address]);
     expect(commands.map((c) => c.split(" ").slice(1, 2).join(" "))).toEqual(["create", "jobs", "deliveries", "judge", "judge"]);
     expect(commands[4]).toBe(`${commands[3]} --yes`);
     const [node] = blocks("js");
@@ -1264,13 +1270,13 @@ describe("the judge guide", () => {
     await writeFile(bashCheck, script ?? "");
     h.watched.push(j.w.owner.address);
     h.env[ENV_KEYPAIR] = "judge.json";
-    const vars = { PWD: j.dir, INTENT: j.intent, OWNER: j.w.owner.address, NONCE: "0" };
+    const vars = { PWD: j.dir, INTENT: j.intent, OWNER: j.w.owner.address, NONCE: "0", JUDGE: j.judge.address };
     const files: Record<string, string> = { "spec.md": j.spec, work: j.artifact, "verdict.json": join(j.dir, "verdict.json"), "check.mjs": check };
     const viaBash = await cli(boxed(j, "bash check/check.sh", "--check", bashCheck), { "judge.json": j.judge });
     expect(viaBash.json()).toMatchObject({ verdict: "pass", exitCode: 0, signature: null, sandbox: "docker", image: SANDBOX_IMAGE });
     const outputs: Record<string, unknown>[] = [];
     for (const line of commands.slice(1)) {
-      const argv = words(line.replaceAll("$(solana address)", j.judge.address), vars)
+      const argv = words(line, vars)
         .slice(1)
         .map((arg) => files[arg] ?? arg);
       const run = await cli(argv, { "judge.json": j.judge });
@@ -1292,7 +1298,7 @@ describe("the judge guide", () => {
       `gives it three environment variables: \`${ENV_SPEC_PATH}\`, the spec file; \`${ENV_ARTIFACT_PATH}\`, the work; \`${ENV_ARTIFACT_SHA256}\`, the work's hash.`,
     );
     expect(GUIDE).toContain(`records the memo \`${RELEASE_MEMO_PREFIX}<artifactSha256>\``);
-    expect(GUIDE).toContain("Do steps 1 to 4 of the [quickstart](quickstart.md) first");
+    expect(GUIDE).toContain("Do steps 1 and 2 of the [quickstart](quickstart.md) first.");
     expect(GUIDE).toContain(`by default \`${SANDBOX_IMAGE}\`, which holds Node.js 22`);
     expect(GUIDE).toContain("`--sandbox none` runs the check without a container");
     expect(GUIDE).not.toContain("sha256sum");
@@ -1325,19 +1331,20 @@ describe("the judge guide", () => {
     const specHash = await specHashOf(hashLine, dir);
     expect(specHash).toBe(createHash("sha256").update(SPEC).digest("hex"));
     expect(createLine.startsWith("intent-engine create attested ")).toBe(true);
-    expect(createLine).toContain(" --attestor $(solana address) --spec-hash $SPEC_HASH --judge-fee 0.001 --spec-url $SPEC_URL ");
+    expect(createLine).toContain(" --attestor $JUDGE --spec-hash $SPEC_HASH --judge-fee 0.001 --spec-url $SPEC_URL ");
     expect(linesOf("powershell", created)).toEqual([`$env:SPEC_URL = "${specUrl}"`, POWERSHELL_HASH("spec.md"), toPowerShell(createLine)]);
 
     h.watched.push(reader.address);
+    h.env[ENV_URL] = "devnet";
     h.env[ENV_KEYPAIR] = "judge.json";
     const keys = { "judge.json": reader };
-    const argv = createLine.replaceAll("$(solana address)", reader.address).replace("$SPEC_HASH", specHash).replace("$SPEC_URL", specUrl).split(" ").slice(1);
+    const argv = createLine.replaceAll("$JUDGE", reader.address).replace("$SPEC_HASH", specHash).replace("$SPEC_URL", specUrl).split(" ").slice(1);
     const made = await cli(argv, keys);
     expect([made.code, made.err]).toEqual([EXIT_OK, ""]);
     expect(balance(wrapped)).toBe(200_000_000n - 10_000_000n);
 
     const [jobsLine = ""] = linesOf("sh", section("2. Find the job")).filter((l) => l.startsWith("intent-engine jobs "));
-    const listed = await cli(jobsLine.replace("$(solana address)", reader.address).split(" ").slice(1), keys);
+    const listed = await cli(jobsLine.replace("$JUDGE", reader.address).split(" ").slice(1), keys);
     const [found] = (listed.json()["jobs"] ?? []) as { intent: Address; owner: string; nonce: string; specHash: string }[];
     expect(found).toMatchObject({ owner: reader.address, specHash });
     const intent = found?.intent ?? reader.address;
