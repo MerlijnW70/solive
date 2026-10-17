@@ -122,6 +122,8 @@ The release records the memo `delivery sha256:<artifactSha256>`. The payer check
 
 `judge --watch` takes the same options without `--artifact`; every `--interval` seconds (default 30) it downloads each new delivery from its `url`, checks it against the announced sha256 and judges it once. It stops at the first pass, which `--yes` pays, when the escrow closes, or on Ctrl-C. It prints one line of JSON per delivery it judged and one when it stops.
 
+On devnet, testnet and mainnet it refuses a work link that points to a private or local network address.
+
 ## Judge the word count example
 
 [`examples/jobs/word-count`](../examples/jobs/word-count) is a whole job: a spec, a passing delivery and its check. Run these from a clone of this repository. Try the check on the delivery, which prints `32 of 32 inputs hold`:

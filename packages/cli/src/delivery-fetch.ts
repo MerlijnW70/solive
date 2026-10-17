@@ -2,10 +2,13 @@ import { createHash } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Delivery, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, type SpecFetch, type Transport } from "@intent-engine/client";
+import { type Delivery, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, PUBLIC_GENESIS_HASHES, type SpecFetch, type Transport } from "@intent-engine/client";
 import { MAX_ARTIFACT_BYTES } from "./artifact.js";
+import { type Lookup, publicHost, systemLookup } from "./public-address.js";
 
 export const FETCHED_NAME = "artifact";
+
+export const NOT_PUBLIC = "points to a private, loopback or local network address, which a judge on a public cluster does not fetch";
 
 export class DeliveryUnfit extends Error {
   constructor(url: string, reason: string) {
@@ -48,7 +51,7 @@ async function body(response: Response, url: string): Promise<Uint8Array> {
   return Buffer.concat(chunks);
 }
 
-export async function fetchDelivery(get: SpecFetch, transport: Transport, delivery: Delivery, seconds: number): Promise<Fetched> {
+export async function fetchDelivery(get: SpecFetch, transport: Transport, delivery: Delivery, seconds: number, lookup: Lookup = systemLookup): Promise<Fetched> {
   let url: URL;
   try {
     url = new URL(delivery.url);
@@ -60,6 +63,9 @@ export async function fetchDelivery(get: SpecFetch, transport: Transport, delive
   }
   if (await plainHttpOnPublic(transport, delivery.url)) {
     throw new DeliveryUnfit(delivery.url, PLAIN_HTTP_ON_PUBLIC);
+  }
+  if (PUBLIC_GENESIS_HASHES.has(await transport.genesisHash()) && !(await publicHost(url.hostname, lookup))) {
+    throw new DeliveryUnfit(delivery.url, NOT_PUBLIC);
   }
   let bytes: Uint8Array;
   try {
