@@ -9,6 +9,7 @@ import { ENV_URL, outputOf, parse, UsageError } from "./args.js";
 import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
 import { JudgeInterrupted } from "./judge.js";
+import { watchJudge } from "./judge-watch.js";
 import { printableLines, redactUrl, render, renderText } from "./render.js";
 import { expandHome, withSettings } from "./wallet.js";
 import { certificateCode, certificateHint, SERVER_PROBLEMS, unfundedSend } from "./agent/problems.js";
@@ -74,6 +75,9 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
     if (command.name === "solve" && command.watch !== null) {
       await watchSolve(command, command.watch, runtime, show);
       return EXIT_OK;
+    }
+    if (command.name === "judge" && command.watch !== null) {
+      return await watchJudge(command, command.watch, runtime, withPriority(runtime.transport(command.url), command.priority), io.out);
     }
     if (command.name === "mcp" && command.wallet !== null) {
       io.err(WALLET_NOTICE.join("\n"));
@@ -141,7 +145,22 @@ export function nodeRuntime(clock: () => number = Date.now, pipes: Pipes = proce
     loadKeypair: loadKeypairBytes,
     specFetch: (url, init) => fetch(url, init),
     readText: (path) => readFile(path, "utf8"),
-    sleep: (seconds) => new Promise((resolve) => setTimeout(() => resolve(true), seconds * 1000)),
+    sleep: (seconds, stop) =>
+      new Promise((resolve) => {
+        if (stop?.aborted === true) {
+          resolve(false);
+          return;
+        }
+        const timer = setTimeout(() => resolve(true), seconds * 1000);
+        stop?.addEventListener(
+          "abort",
+          () => {
+            clearTimeout(timer);
+            resolve(false);
+          },
+          { once: true },
+        );
+      }),
     env: process.env,
     writeText: (path, text) => writeFile(path, text, { flag: "wx" }),
     saveText: async (path, text, secret) => {

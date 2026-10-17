@@ -85,7 +85,7 @@ export const pagesRead = (pages: number): string =>
 export const resultOutside = (result: bigint, intent: Address, min: bigint, max: bigint): string =>
   `--result ${result} lies outside the results intent ${intent} accepts, ${min} to ${max}; nothing was run or paid`;
 
-async function escrowFor(transport: Transport, judge: Address, owner: Address, nonce: bigint) {
+export async function escrowFor(transport: Transport, judge: Address, owner: Address, nonce: bigint) {
   const { address, intent } = await loadIntent(transport, owner, nonce);
   const params = decodeParams(intent.kind, Uint8Array.from(intent.params));
   if (params.kind !== Kind.AttestedResult || params.specHash.every((b) => b === 0)) {

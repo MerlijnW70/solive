@@ -12,7 +12,7 @@ export type Runtime = {
   loadSigner(path: string): Promise<KeyPairSigner>;
   loadKeypair(path: string): Promise<Uint8Array>;
   readText(path: string): Promise<string>;
-  sleep(seconds: number): Promise<boolean>;
+  sleep(seconds: number, stop?: AbortSignal): Promise<boolean>;
   env: Env;
   writeText(path: string, text: string): Promise<void>;
   saveText(path: string, text: string, secret: boolean): Promise<void>;

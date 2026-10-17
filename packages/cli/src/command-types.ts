@@ -103,6 +103,7 @@ export type Command =
       nonce: bigint;
       spec: string;
       artifact: string;
+      watch: number | null;
       run: string | undefined;
       payTo: Address | undefined;
       result: bigint | undefined;

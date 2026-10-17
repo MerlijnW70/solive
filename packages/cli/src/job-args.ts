@@ -4,6 +4,23 @@ import { JUDGE_TIMEOUT, MAX_JUDGE_TIMEOUT, maxPagesOf, releaseOption, runOf } fr
 import type { Command, Remote } from "./command-types.js";
 import { sandboxOf } from "./sandbox.js";
 
+export const JUDGE_WATCH_INTERVAL = 30;
+export const MAX_JUDGE_INTERVAL = 3_600;
+export const WATCH_TAKES_NO_ARTIFACT = "judge --watch fetches each delivery from its url and takes no --artifact";
+
+function watchOf(values: Values): number | null {
+  if (values.watch !== true) {
+    if (values.interval !== undefined) {
+      throw new UsageError("--interval needs --watch");
+    }
+    return null;
+  }
+  if (values.artifact !== undefined) {
+    throw new UsageError(WATCH_TAKES_NO_ARTIFACT);
+  }
+  return parseBounded(values.interval ?? String(JUDGE_WATCH_INTERVAL), "interval", MAX_JUDGE_INTERVAL, 1);
+}
+
 export const DELIVER_ONE_OF = "deliver takes exactly one of --artifact <file or directory> and --sha256 <64 hex>";
 
 function workOf(values: Values): { sha256: string } | { artifact: string } {
@@ -48,6 +65,7 @@ export function jobArgsOf(verb: "deliver" | "receipt" | "record-delivery" | "jud
       };
     case "judge": {
       const sandbox = sandboxOf(values);
+      const watch = watchOf(values);
       return {
         name: "judge",
         ...remote,
@@ -56,7 +74,8 @@ export function jobArgsOf(verb: "deliver" | "receipt" | "record-delivery" | "jud
         owner: key(values, "owner"),
         nonce: u64(values, "nonce"),
         spec: required(values, "spec"),
-        artifact: required(values, "artifact"),
+        artifact: watch === null ? required(values, "artifact") : "",
+        watch,
         run: sandbox.kind === "viper" ? undefined : runOf(required(values, "run")),
         payTo: values["pay-to"] === undefined ? undefined : key(values, "pay-to"),
         result: values.result === undefined ? undefined : u64(values, "result"),
