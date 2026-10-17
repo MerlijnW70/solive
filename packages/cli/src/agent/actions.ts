@@ -1,5 +1,5 @@
 import type { Address, TransactionSigner } from "@solana/kit";
-import { memoized, type Transport } from "@intent-engine/client";
+import { memoized, type SpecFetch, type Transport } from "@intent-engine/client";
 import { type Problem, problemOf } from "./problems.js";
 import type { Budget } from "./budget.js";
 import type { Relay } from "./relay.js";
@@ -16,6 +16,7 @@ export type AgentContext = {
   claims: Claims;
   wallet?: WalletAccess;
   url?: string;
+  fetch?: SpecFetch;
 };
 
 type AgentKey = { signer: TransactionSigner; budget: Budget; owners: ReadonlySet<Address> };

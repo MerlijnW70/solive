@@ -5,6 +5,7 @@ import { findJobs, getBalances, getConfig, getIntent, listIntents, quote } from 
 import { getReputation } from "./reputation.js";
 import { getClaims } from "./work-claims.js";
 import { getProfile } from "./profile.js";
+import { getSpec } from "./spec.js";
 import { findCrankWork, prepareCancel, prepareCrank } from "./settle.js";
 import { prepareSignedIntent, previewSignedIntent, submitSignedIntent } from "./signed.js";
 import { checkDelivery, getReceipt, prepareDeliver } from "./wallet.js";
@@ -19,6 +20,7 @@ export const ACTIONS: readonly AnyAction[] = [
   prepareCancel,
   findCrankWork,
   findJobs,
+  getSpec,
   prepareDeliver,
   checkDelivery,
   getReceipt,

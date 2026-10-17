@@ -50,6 +50,8 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `FundingExceedsBounty` | no | recreating the owner's token account costs more than the intent's bounty |
 | `OwnerAccountMissing` | no | the owner has no token account that can take the refund; crank with fund_accounts |
 | `NotDeliverable` | no | the intent is not an open proof escrow, so no work can be delivered to it |
+| `NoSpecUrl` | no | the escrow publishes no spec url, or is not a proof escrow; ask its owner where its acceptance spec lives |
+| `SpecUnreadable` | yes | the spec url could not be read: it failed, answered an error or redirect, or is larger than the limit; the hint says which |
 | `NotEarliestAnnouncer` | no | another wallet announced the delivered work first; a release recording that work pays its earliest announcer |
 | `NotAnnounced` | no | no work with this sha256 was announced for the escrow, so it is not recorded as what the release paid for |
 | `NotReleased` | no | the escrow has no release in its history, so no delivery can be recorded for it |
