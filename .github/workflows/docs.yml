@@ -24,6 +24,7 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 22
+          package-manager-cache: false
       - name: build
         run: npx --yes vitepress@1.6.4 build docs
       - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b
