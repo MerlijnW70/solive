@@ -51,7 +51,7 @@ if [[ -n "$multisig" ]]; then
   vault="$("${squads[@]}" show --multisig "$multisig" --url "$url" | node -e 'let t="";process.stdin.on("data",(d)=>t+=d).on("end",()=>console.log(JSON.parse(t).vault))')"
   current="$(solana program show "$program" --url "$url" --output json | node -e 'let t="";process.stdin.on("data",(d)=>t+=d).on("end",()=>console.log(JSON.parse(t).authority))')"
   if [[ "$current" != "$vault" ]]; then
-    echo "refusing: program $program is upgraded by $current, not the vault $vault of multisig $multisig; move the upgrade authority first as docs/operations.md describes" >&2
+    echo "refusing: program $program is upgraded by $current, not the vault $vault of multisig $multisig; move the upgrade authority first as docs/maintainers/operations.md describes" >&2
     exit 1
   fi
 fi

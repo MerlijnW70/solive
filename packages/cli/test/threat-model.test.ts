@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
-const MODEL = readFileSync(join(ROOT, "docs/threat-model.md"), "utf8");
+const MODEL = readFileSync(join(ROOT, "docs/maintainers/threat-model.md"), "utf8");
 const STATUSES = ["mitigated", "partial", "open"];
 const PACKAGES = ["core", "client", "cli", "solver", "multisig"];
 const RUST_ROOTS = ["tests/svm/tests/", "crates/intent-core/tests/"];
@@ -132,9 +132,9 @@ describe("threat model", () => {
       }
     }
     expect(problems).toEqual([]);
-    expect(MODEL).toContain("](../SECURITY.md)");
+    expect(MODEL).toContain("](../../SECURITY.md)");
     expect(MODEL).toContain("](operations.md)");
-    expect(readFileSync(join(ROOT, "SECURITY.md"), "utf8")).toContain("](docs/threat-model.md)");
+    expect(readFileSync(join(ROOT, "SECURITY.md"), "utf8")).toContain("](docs/maintainers/threat-model.md)");
   });
 
   it("the threat model covers every actor and every known open weakness", () => {

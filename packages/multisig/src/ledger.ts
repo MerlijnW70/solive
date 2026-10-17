@@ -20,7 +20,7 @@ export const LEDGER_ERRORS = {
   noApp: "the Solana app is not open on the Ledger: open it and run the command again; nothing was sent",
   blindSigning: "blind signing is disabled in the Ledger's Solana app: enable it in the app's settings, since Squads instructions need it, and run the command again; nothing was sent",
   rejected: "the transaction was rejected on the Ledger; nothing was sent",
-  driver: "the USB driver node-hid is not built in this checkout: build it as docs/operations.md shows under Signing with a Ledger and run the command again; nothing was sent",
+  driver: "the USB driver node-hid is not built in this checkout: build it as docs/maintainers/operations.md shows under Signing with a Ledger and run the command again; nothing was sent",
 } as const;
 
 const LOCKED = new Set([0x5515, 0x6982]);

@@ -26,7 +26,7 @@ In scope: the code in this repository, and the program deployed from it at `GHFB
 
 The program has not had an external audit.
 
-The [threat model](docs/threat-model.md) lists each known attack per actor and asset, the test or proof that stops it, and what is still open. The [operations runbook](docs/operations.md) names who holds the upgrade authority, the config admin and the guardian, and how they move to a multisig.
+The [threat model](docs/maintainers/threat-model.md) lists each known attack per actor and asset, the test or proof that stops it, and what is still open. The [operations runbook](docs/maintainers/operations.md) names who holds the upgrade authority, the config admin and the guardian, and how they move to a multisig.
 
 Out of scope: third-party services the tools call (RPC nodes, Jupiter, Jito, faucets), and attacks that need the victim's private key.
 

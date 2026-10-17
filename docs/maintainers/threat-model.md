@@ -1,6 +1,6 @@
 # Threat model
 
-Who can attack what, what stops them, and what is still open. Report a vulnerability as [SECURITY.md](../SECURITY.md) describes, never in a public issue.
+Who can attack what, what stops them, and what is still open. Report a vulnerability as [SECURITY.md](../../SECURITY.md) describes, never in a public issue.
 
 Every `mitigated` or `partial` row names the tests, proofs, fuzz targets or CI jobs that show it, and `packages/cli/test/threat-model.test.ts` fails if one of them does not exist. An `open` row names the planned control first and cites evidence only for the part already in place. Evidence forms:
 
