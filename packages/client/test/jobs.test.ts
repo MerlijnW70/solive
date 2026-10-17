@@ -670,7 +670,7 @@ describe("a sealed spec", () => {
   it("says when a sealed spec opens but is not the committed one, and refuses one that was changed", async () => {
     const worker = keyed();
     const other = await seal(new TextEncoder().encode("another spec"), [worker.address]);
-    const broken = new TextEncoder().encode(new TextDecoder().decode(await seal(new TextEncoder().encode(SPEC), [worker.address])).replace(/"data":"./, '"data":"A'));
+    const broken = new TextEncoder().encode(new TextDecoder().decode(await seal(new TextEncoder().encode(SPEC), [worker.address])).replace(/"data":"(.)/, (_, first: string) => `"data":"${first === "A" ? "B" : "A"}`));
     const { client, judge, order } = await setting(serving({ [SPEC_URL]: other, "https://example.org/broken": broken }));
     const wrong = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
     const changed = await client.createIntent({ ...order, params: proof(judge.address), specUrl: "https://example.org/broken" });
