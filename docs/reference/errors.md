@@ -13,6 +13,8 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `NotAMint` | no | an address passed as a mint is not a token mint |
 | `RateLimited` | yes | the RPC node is rate limiting; call again in a few seconds |
 | `Unreachable` | yes | the RPC node could not be reached: the connection was refused, the name did not resolve or the request failed; call again once it is back, and check whether a send landed before sending it again |
+| `CertificateUntrusted` | no | this machine does not trust the RPC node's certificate, often because antivirus or a proxy inspects HTTPS |
+| `Unfunded` | no | your wallet has no SOL yet; fund it, then try again |
 | `Failed` | no | an unexpected error; the hint carries its message |
 | `TransactionFailed` | no | the transaction would fail for a reason this client does not name; read the logs |
 | `WalletNotConfigured` | no | a wallet tool was called on a server started without --wallet |

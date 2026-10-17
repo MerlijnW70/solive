@@ -184,6 +184,9 @@ export function simulationProblem(err: string, logs: readonly string[]): Problem
       return { ...known, programError: failure.code, program: failure.program, logs: tail };
     }
   }
+  if (err === "AccountNotFound" && failure === null) {
+    return { code: "Unfunded", retryable: SERVER_PROBLEMS.Unfunded.retryable, hint: SERVER_PROBLEMS.Unfunded.hint, logs: tail };
+  }
   return {
     code: "TransactionFailed",
     retryable: SERVER_PROBLEMS.TransactionFailed.retryable,
@@ -209,6 +212,8 @@ export const SERVER_PROBLEMS = {
   NotAMint: never("an address passed as a mint is not a token mint"),
   RateLimited: later("the RPC node is rate limiting; call again in a few seconds"),
   Unreachable: later("the RPC node could not be reached: the connection was refused, the name did not resolve or the request failed; call again once it is back, and check whether a send landed before sending it again"),
+  CertificateUntrusted: never("this machine does not trust the RPC node's certificate, often because antivirus or a proxy inspects HTTPS"),
+  Unfunded: never("your wallet has no SOL yet; fund it, then try again"),
   Failed: never("an unexpected error; the hint carries its message"),
   TransactionFailed: never("the transaction would fail for a reason this client does not name; read the logs"),
   WalletNotConfigured: never("a wallet tool was called on a server started without --wallet"),
@@ -275,6 +280,21 @@ export const untrusted = (text: string): string => text.replace(/[^ -~]+/g, " ")
 const UNREACHABLE_CODES: ReadonlySet<string> = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH", "UND_ERR_CONNECT_TIMEOUT"]);
 const UNREACHABLE_TEXT = /fetch failed|getaddrinfo|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH/;
 const CAUSE_DEPTH = 8;
+const CERTIFICATE_CODES: ReadonlySet<string> = new Set(["UNABLE_TO_VERIFY_LEAF_SIGNATURE", "UNABLE_TO_GET_ISSUER_CERT_LOCALLY", "UNABLE_TO_GET_ISSUER_CERT", "SELF_SIGNED_CERT_IN_CHAIN", "DEPTH_ZERO_SELF_SIGNED_CERT", "CERT_UNTRUSTED"]);
+
+export function certificateCode(error: unknown, depth = 0): string | null {
+  if (depth > CAUSE_DEPTH || error === null || typeof error !== "object") {
+    return null;
+  }
+  const { code, cause } = error as { code?: unknown; cause?: unknown };
+  if (typeof code === "string" && CERTIFICATE_CODES.has(code)) {
+    return code;
+  }
+  return certificateCode(cause, depth + 1);
+}
+
+export const certificateHint = (url: string | undefined, code: string): string =>
+  `this machine does not trust the certificate of the RPC node${url === undefined ? "" : ` at ${redactUrl(url)}`} (${code}); antivirus or a proxy that inspects HTTPS often causes this`;
 
 export function unreachable(error: unknown, depth = 0): boolean {
   if (depth > CAUSE_DEPTH || error === null || typeof error !== "object") {
@@ -318,6 +338,10 @@ export function problemOf(error: unknown, url?: string): Problem {
   }
   if (rateLimited(error)) {
     return { code: "RateLimited", retryable: SERVER_PROBLEMS.RateLimited.retryable, hint: "the RPC node is rate limiting; wait a few seconds and call again" };
+  }
+  const certificate = certificateCode(error);
+  if (certificate !== null) {
+    return { code: "CertificateUntrusted", retryable: SERVER_PROBLEMS.CertificateUntrusted.retryable, hint: certificateHint(url, certificate) };
   }
   if (unreachable(error)) {
     return { code: "Unreachable", retryable: SERVER_PROBLEMS.Unreachable.retryable, hint: untrusted(unreachableHint(url)) };
