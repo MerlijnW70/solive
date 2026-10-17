@@ -9,7 +9,8 @@ if grep -niE "$filler" "${pages[@]}"; then
 fi
 mapfile -t guides < <(find docs -maxdepth 1 -name '*.md'; echo README.md)
 long=$(awk '
-  FNR == 1 { flush(); code = 0 }
+  FNR == 1 { flush(); code = 0; front = ($0 == "---"); if (front) next }
+  front { if ($0 == "---") front = 0; next }
   /^```/ { flush(); code = !code; next }
   code { next }
   /^[[:space:]]*$/ || substr($0, 1, 1) == "#" || substr($0, 1, 1) == "|" { flush(); next }

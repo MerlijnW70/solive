@@ -14,3 +14,4 @@ verifiable/
 id.json
 .env
 .env.*
+docs/.vitepress/cache/
