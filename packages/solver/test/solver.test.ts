@@ -511,6 +511,45 @@ describe("solver against the deployed engine", () => {
     expect(balance(receiver)).toBe(2n * MIN_OUT);
   });
 
+  it("reports the account and amount an unlanded inventory fill holds back, and a route fill holds nothing", async () => {
+    const stocked = await open(1n);
+    await send(authority, [getMintToInstruction({ mint: outputMint, token: solverOutput, mintAuthority: authority, amount: AMOUNT })]);
+    const pricer = inventoryPricer(
+      [{ inputMint, outputMint, outputTokenProgram: TOKEN_PROGRAM_ADDRESS, out: 1n, in: 1n }],
+      async () => balance(solverOutput),
+    );
+    const unlanded = { send: async (wire: Base64EncodedWireTransaction) => ({ ...(await landed(wire)), confirmed: false }) };
+    const report = await solve(pricer, unlanded);
+    expect(report.sent).toEqual([
+      { intent: stocked, profit: splitFees(AMOUNT, 5, 0, 0).net - MIN_OUT, signature: expect.any(String), holds: { account: solverOutput, amount: MIN_OUT } },
+    ]);
+    const routed = await open(2n);
+    const route = await solve(stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n), unlanded);
+    expect(route.sent).toEqual([{ intent: routed, profit: 4_000n, signature: expect.any(String) }]);
+  });
+
+  it("treats what earlier fills still hold back as spent: skips the fill it leaves short and fills the one it leaves enough for", async () => {
+    const intent = await open(1n);
+    await send(authority, [getMintToInstruction({ mint: outputMint, token: solverOutput, mintAuthority: authority, amount: AMOUNT })]);
+    const pricer = inventoryPricer(
+      [{ inputMint, outputMint, outputTokenProgram: TOKEN_PROGRAM_ADDRESS, out: 1n, in: 1n }],
+      async () => 3n * AMOUNT,
+    );
+    const asked: Address[] = [];
+    const holding = (amount: bigint) => (account: Address) => {
+      asked.push(account);
+      return account === solverOutput ? amount : 0n;
+    };
+    const short = await solve(pricer, { held: holding(AMOUNT - MIN_OUT + 1n) });
+    expect([short.filled, short.sent, short.failed]).toEqual([[], [], []]);
+    expect(short.skipped).toEqual([{ intent, reason: `${INVENTORY_SPENT}: ${MIN_OUT - 1n} left, ${MIN_OUT} needed` }]);
+    expect(asked).toEqual([solverOutput]);
+    expect(balance(receiver)).toBe(0n);
+    const enough = await solve(pricer, { held: holding(AMOUNT - MIN_OUT) });
+    expect(enough.filled.map((f) => f.intent)).toEqual([intent]);
+    expect(balance(receiver)).toBe(MIN_OUT);
+  });
+
   it("refuses an inventory fill whose simulation spends more output than required or brings in less input than planned", async () => {
     const intent = await open(1n);
     await send(authority, [

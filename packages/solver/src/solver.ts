@@ -23,6 +23,7 @@ import type { Pricer } from "./market.js";
 import { decide, type Plan, standing, type Strategy } from "./plan.js";
 import { freshly, fromCache } from "./quote-cache.js";
 import { spend, type Stock, stockLeft } from "./inventory.js";
+import { type Hold, unheld } from "./holds.js";
 
 export { BACKOFF_MAX_INTERVALS, type Backoff, backingOff, backoff } from "./backoff.js";
 export {
@@ -72,6 +73,7 @@ export type SolverOptions = {
   backoff?: Backoff;
   concurrency?: number;
   planned?(intent: Address): void;
+  held?(account: Address): bigint;
   unitPrice(instructions: readonly Instruction[]): Promise<bigint>;
   simulate(wire: Base64EncodedWireTransaction, watch: readonly Address[]): Promise<Simulated>;
   send(wire: Base64EncodedWireTransaction): Promise<Sent>;
@@ -79,7 +81,7 @@ export type SolverOptions = {
 
 export type Report = {
   filled: { intent: Address; profit: bigint; signature: string; rent?: bigint }[];
-  sent: { intent: Address; profit: bigint; signature: string; rent?: bigint }[];
+  sent: { intent: Address; profit: bigint; signature: string; rent?: bigint; holds?: Hold }[];
   skipped: { intent: Address; reason: string; rent?: bigint }[];
   failed: { intent: Address; error: string }[];
 };
@@ -114,7 +116,7 @@ export function firstToSend(a: Plan, b: Plan): number {
 }
 
 type Outcome =
-  | { kind: "filled" | "sent"; entry: Report["filled"][number] }
+  | { kind: "filled" | "sent"; entry: Report["sent"][number] }
   | { kind: "skipped"; entry: Report["skipped"][number] }
   | { kind: "failed"; entry: Report["failed"][number] };
 
@@ -225,7 +227,8 @@ async function fillOrder(
   const { plan, context, tables, probe, latest, solverInput, solverOutput } = ready;
   const address = plan.address;
   const before = await Promise.all([o.chain.tokenAmount(solverInput), o.chain.tokenAmount(solverOutput)]);
-  const left = stockLeft(stock, solverOutput, before[1] ?? 0n);
+  const free = unheld(before[1] ?? 0n, o.held?.(solverOutput) ?? 0n);
+  const left = stockLeft(stock, solverOutput, free);
   if (plan.route.inventory === true && left < plan.required) {
     return skipped(address, `${INVENTORY_SPENT}: ${left} left, ${plan.required} needed`);
   }
@@ -269,11 +272,12 @@ async function fillOrder(
   }
   const sent = await o.send(wire);
   if (plan.route.inventory === true) {
-    spend(stock, solverOutput, before[1] ?? 0n, plan.required);
+    spend(stock, solverOutput, free, plan.required);
   }
+  const holds = !sent.confirmed && plan.route.inventory === true ? { holds: { account: solverOutput, amount: plan.required } } : {};
   return {
     kind: sent.confirmed ? "filled" : "sent",
-    entry: { intent: address, profit: plan.profit, signature: sent.signature, ...(kept === undefined ? {} : { rent: kept }) },
+    entry: { intent: address, profit: plan.profit, signature: sent.signature, ...(kept === undefined ? {} : { rent: kept }), ...holds },
   };
 }
 
@@ -383,7 +387,7 @@ export async function tick(o: SolverOptions): Promise<Report> {
   return report;
 }
 
-export type Flight = { until: bigint; signature: string };
+export type Flight = { until: bigint; signature: string; holds?: Hold };
 
 export const FAILED_ON_CHAIN = "the fill was sent but failed on chain";
 

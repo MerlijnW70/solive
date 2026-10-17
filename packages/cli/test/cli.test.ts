@@ -1075,6 +1075,43 @@ describe("cli against the deployed engine", () => {
     expect(h.submitted).toHaveLength(2);
   });
 
+  it("does not plan a second inventory fill from tokens an unlanded first fill holds, and frees them once that flight ends", async () => {
+    h.watched.length = 0;
+    h.watched.push(owner.address);
+    h.waits.length = 0;
+    h.submitted.length = 0;
+    const solver = await funded();
+    const issued = await mint(solver, 6);
+    await ata(authority, owner.address, issued);
+    await ata(authority, feeRecipient.address, inputMint);
+    await ata(authority, solver.address, inputMint);
+    const solverOutput = await ata(authority, solver.address, issued);
+    await send(solver, [getMintToInstruction({ mint: issued, token: solverOutput, mintAuthority: solver, amount: splitFee(ESCROW, FEE_BPS).net })]);
+    for (const nonce of ["4", "6"]) {
+      await cli(create(nonce, NOW + 3_600n).map((arg) => (arg === outputMint ? issued : arg)), { "owner.json": owner });
+    }
+    const opened = await Promise.all([4n, 6n].map(async (nonce) => (await findIntentPda({ owner: owner.address, nonce }))[0]));
+    h.dropSubmits = true;
+    h.rounds = 3;
+    h.steps = [3n, IN_FLIGHT_SECONDS - 3n];
+    h.changed = [];
+    const run = await cli(
+      ["solve", "--keypair", "s.json", "--inventory", `${inputMint}:${issued}=1/1`, "--min-profit", `${issued}=1`, "--url", "http://cluster", "--watch", "--interval", "3"],
+      { "s.json": solver },
+    );
+    h.dropSubmits = false;
+    expect([run.code, run.err]).toEqual([EXIT_OK, ""]);
+    const sent = run.each().map((r) => r["sent"] as { intent: Address; holds?: unknown }[]);
+    expect(sent.map((round) => round.length)).toEqual([1, 1]);
+    expect(sent.map((round) => round[0]?.holds)).toEqual([
+      { account: solverOutput, amount: "300" },
+      { account: solverOutput, amount: "300" },
+    ]);
+    expect(opened).toContain(sent[0]?.[0]?.intent);
+    expect(h.submitted).toHaveLength(2);
+    expect(balance(solverOutput)).toBe(splitFee(ESCROW, FEE_BPS).net);
+  });
+
   it("backs off an intent whose sent fill failed on chain instead of resending it every in-flight window", async () => {
     h.watched.length = 0;
     h.watched.push(owner.address);

@@ -8,8 +8,10 @@ import {
   type SolverOptions,
   decodeLookupTable,
   firstPricer,
+  heldBy,
   inventoryPricer,
   landings,
+  releaseHolds,
   issuePricer,
   backoff,
   jitoBundles,
@@ -17,6 +19,7 @@ import {
   remembering,
   tick,
   tipAccount,
+  unheld,
 } from "@intent-engine/solver";
 import {
   chainTime,
@@ -80,7 +83,9 @@ export const watchPricer = (pricer: Pricer, ttlSeconds: number, clock: () => num
 
 export async function watchSolve(command: SolveCommand, interval: number, runtime: Runtime, emit: (value: object) => void): Promise<number> {
   const transport = withPriority(runtime.transport(command.url), command.priority);
-  return watchSolveWith(command, interval, runtime, transport, await solverOptions(command, runtime, transport), emit);
+  const inFlight = new Map<Address, Flight>();
+  const options = await solverOptions(command, runtime, transport, heldBy(inFlight));
+  return watchSolveWith(command, interval, runtime, transport, options, emit, inFlight);
 }
 
 export type WatchTransport = Pick<Transport, "submitWire" | "transactionOf" | "getAccounts">;
@@ -92,6 +97,7 @@ export async function watchSolveWith(
   transport: WatchTransport,
   options: SolverOptions,
   emit: (value: object) => void,
+  inFlight: Map<Address, Flight> = new Map(),
 ): Promise<number> {
   const chain = remembering(options.chain);
   const held = backoff(interval, () => Number(runtime.now()) * 1_000);
@@ -108,7 +114,6 @@ export async function watchSolveWith(
   const failedOnChain = async (signature: string): Promise<boolean> =>
     command.jito === undefined && (await transport.transactionOf?.(signature))?.failed === true;
   const changes = runtime.intentChanges(command.url);
-  const inFlight = new Map<Address, Flight>();
   const failing = new Map<Address, bigint>();
   let scannedAt: bigint | null = null;
   let acted = 0;
@@ -129,6 +134,7 @@ export async function watchSolveWith(
         }
         const listed = decoded.intents;
         const lost = await landings(inFlight, now, listed, failedOnChain, held);
+        releaseHolds(inFlight, listed, full);
         if (full) {
           for (const [intent, flight] of inFlight) {
             if (flight.until <= now) {
@@ -140,8 +146,8 @@ export async function watchSolveWith(
         const mark = counts.mark();
         const report = await tick({ ...live, chain: { ...chain, intents: async () => due } });
         const { filled, sent, failed } = report;
-        for (const { intent, signature } of sent) {
-          inFlight.set(intent, { until: now + IN_FLIGHT_SECONDS, signature });
+        for (const { intent, signature, holds } of sent) {
+          inFlight.set(intent, { until: now + IN_FLIGHT_SECONDS, signature, ...(holds === undefined ? {} : { holds }) });
         }
         if (filled.length + sent.length + failed.length + lost.length > 0) {
           emit({ at: now, scan: full ? "full" : "changed", ms: Math.round(performance.now() - began), filled, sent, failed: [...lost, ...failed] });
@@ -175,7 +181,12 @@ export async function watchSolveWith(
   return acted;
 }
 
-export async function solverOptions(command: SolveCommand, runtime: Runtime, transport: Transport): Promise<SolverOptions> {
+export async function solverOptions(
+  command: SolveCommand,
+  runtime: Runtime,
+  transport: Transport,
+  heldBack?: (account: Address) => bigint,
+): Promise<SolverOptions> {
   const solver = await runtime.loadSigner(command.keypair);
   let latest: Latest | undefined;
   const chain: Chain = {
@@ -208,7 +219,7 @@ export async function solverOptions(command: SolveCommand, runtime: Runtime, tra
     Promise.all(routes.map(async (route) => ({ ...route, outputTokenProgram: await tokenProgramOf(transport, route.outputMint) })));
   const held = async (mint: Address): Promise<bigint> => {
     const token = await findAssociatedTokenAddress({ owner: solver.address, mint, tokenProgram: await tokenProgramOf(transport, mint) });
-    return tokenAmountOf((await transport.getAccount(token))?.data ?? null) ?? 0n;
+    return unheld(tokenAmountOf((await transport.getAccount(token))?.data ?? null) ?? 0n, heldBack?.(token) ?? 0n);
   };
   const stocked = command.inventory ?? [];
   const inventory = stocked.length === 0 ? null : inventoryPricer(await priced(stocked), held);
@@ -233,6 +244,7 @@ export async function solverOptions(command: SolveCommand, runtime: Runtime, tra
     solver,
     strategy: { minProfit: command.minProfit, maxFeeBps: command.maxFeeBps },
     concurrency: command.concurrency,
+    ...(heldBack === undefined ? {} : { held: heldBack }),
     maxSolCost: command.maxSolCost,
     maxRent: command.maxRent,
     tip: command.tipLamports === 0n ? null : { account: tipAccount(runtime.entropy()), lamports: command.tipLamports },
