@@ -26,6 +26,7 @@ export default {
         items: [
           { text: "Server options", link: "/mcp" },
           { text: "OpenClaw", link: "/openclaw" },
+          { text: "Company-only jobs", link: "/private-jobs" },
           { text: "Agent mandates", link: "/mandate" },
           { text: "Reputation", link: "/reputation" },
           { text: "The full client", link: "/sdk-client" },

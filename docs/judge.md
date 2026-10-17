@@ -233,5 +233,6 @@ A worker that drops its claim gets its stake back. A claim that lapses loses its
 ## Next
 
 - [How the judge works](maintainers/judge-internals.md)
+- [Company-only jobs](private-jobs.md)
 - [Reputation](reputation.md)
 - [All commands](reference/cli.md)
