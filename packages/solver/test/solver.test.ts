@@ -998,7 +998,7 @@ describe("solver against the deployed engine", () => {
         return stashMarket(stash, stashAccount, outputMint, solverOutput, () => out ?? null).quote(request);
       },
     };
-    const report = await solve(pricer);
+    const report = await solve(pricer, { concurrency: 1 });
     expect(report.skipped).toEqual([{ intent: thin, reason: "profit 999 is below 1000" }]);
     expect(report.failed).toEqual([{ intent: broken, error: "market unavailable" }]);
     expect(report.filled.map((f) => f.intent)).toEqual([good]);
@@ -1115,7 +1115,7 @@ describe("solver against the deployed engine", () => {
         throw new RateLimited();
       },
     };
-    const report = await solve(limited);
+    const report = await solve(limited, { concurrency: 1 });
     const reason = new RateLimited().message;
     expect(report).toEqual({
       filled: [],

@@ -69,6 +69,7 @@ export type SolverOptions = {
   maxSolCost?: bigint;
   maxRent?: bigint;
   backoff?: Backoff;
+  concurrency?: number;
   unitPrice(instructions: readonly Instruction[]): Promise<bigint>;
   simulate(wire: Base64EncodedWireTransaction, watch: readonly Address[]): Promise<Simulated>;
   send(wire: Base64EncodedWireTransaction): Promise<Sent>;
@@ -90,11 +91,188 @@ export const ROUTE_ACCOUNT_BUDGETS = [40, 30, 20] as const;
 export const tooLarge = (bytes: number | null, accounts: number): string =>
   `even the smallest route makes the fill ${bytes === null ? "lock" : `${bytes} bytes with`} ${accounts} accounts; a transaction holds ${PACKET_DATA_SIZE} bytes and ${MAX_TX_ACCOUNTS} accounts`;
 
+export const DEFAULT_CONCURRENCY = 4;
+
+export const MAX_CONCURRENCY = 32;
+
+export const badConcurrency = (value: number): string => `concurrency must be an integer from 1 to ${MAX_CONCURRENCY}, not ${value}`;
+
+export const ALREADY_FILLING = "the order already has a fill in this tick";
+
+export function firstToSend(a: Plan, b: Plan): number {
+  if (a.profit !== b.profit) {
+    return a.profit > b.profit ? -1 : 1;
+  }
+  if (a.intent.expiresAt !== b.intent.expiresAt) {
+    return a.intent.expiresAt < b.intent.expiresAt ? -1 : 1;
+  }
+  return a.address < b.address ? -1 : a.address > b.address ? 1 : 0;
+}
+
+type Outcome =
+  | { kind: "filled" | "sent"; entry: Report["filled"][number] }
+  | { kind: "skipped"; entry: Report["skipped"][number] }
+  | { kind: "failed"; entry: Report["failed"][number] };
+
+type Ready = {
+  plan: Plan;
+  context: FillContext;
+  tables: Record<Address, Address[]>;
+  probe: Base64EncodedWireTransaction;
+  latest: { blockhash: Blockhash; lastValidBlockHeight: bigint };
+  solverInput: Address;
+  solverOutput: Address;
+};
+
+type Planned = Outcome | { kind: "ready"; ready: Ready };
+
+const skipped = (intent: Address, reason: string, rent?: bigint): Outcome => ({
+  kind: "skipped",
+  entry: { intent, reason, ...(rent === undefined ? {} : { rent }) },
+});
+
+const failed = (intent: Address, error: string): Outcome => ({ kind: "failed", entry: { intent, error } });
+
+const messageOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
+
+const freshly = (pricer: Pricer): Pricer => ({ quote: (request) => pricer.quote({ ...request, fresh: true }) });
+
+async function planOrder(o: SolverOptions, config: Config, now: bigint, address: Address, intent: Intent): Promise<Planned> {
+  const ready = standing(intent, config, now, o.strategy);
+  if (typeof ready === "string") {
+    return skipped(address, ready);
+  }
+  const waiting = o.backoff?.waiting(address, intent) ?? null;
+  if (waiting !== null) {
+    return skipped(address, backingOff(waiting.failures, waiting.seconds));
+  }
+  const [inputTokenProgram, outputTokenProgram] = await Promise.all([
+    o.chain.tokenProgram(intent.inputMint),
+    o.chain.tokenProgram(intent.outputMint),
+  ]);
+  const payable = async (draft: Parameters<typeof payoutAccounts>[0]) => {
+    const payouts = await payoutAccounts(draft, config.feeRecipient, inputTokenProgram);
+    const found = await Promise.all(payouts.map((payout) => o.chain.exists(payout.address)));
+    const missing = payouts.filter((_, i) => !found[i]).map((payout) => payout.name);
+    return missing.length === 0 ? null : `no ${missing.join(" or ")} account to pay into`;
+  };
+  const solverInput = await findAssociatedTokenAddress({
+    owner: o.solver.address,
+    mint: intent.inputMint,
+    tokenProgram: inputTokenProgram,
+  });
+  const solverOutput = await findAssociatedTokenAddress({
+    owner: o.solver.address,
+    mint: intent.outputMint,
+    tokenProgram: outputTokenProgram,
+  });
+  const [inputExists, outputExists, latest] = await Promise.all([
+    o.chain.exists(solverInput),
+    o.chain.exists(solverOutput),
+    o.chain.blockhash(),
+  ]);
+  const draft: FillContext = {
+    solver: o.solver,
+    feeRecipient: config.feeRecipient,
+    inputTokenProgram,
+    outputTokenProgram,
+    computeUnits: MAX_COMPUTE_UNITS,
+    unitPrice: 0n,
+    createSolverInput: !inputExists,
+    createSolverOutput: !outputExists,
+    tip: o.tip,
+  };
+  let size: { bytes: number | null; accounts: number } = { bytes: null, accounts: 0 };
+  for (const routeAccounts of ROUTE_ACCOUNT_BUDGETS) {
+    const budget = { ...o.strategy, routeAccounts };
+    const first = await decide(address, intent, config, now, o.pricer, o.solver.address, budget, payable);
+    const decision =
+      first.kind === "fill" && fromCache(first.plan.route)
+        ? await decide(address, intent, config, now, freshly(o.pricer), o.solver.address, budget, payable)
+        : first;
+    if (decision.kind === "skip") {
+      return skipped(address, decision.reason);
+    }
+    const plan = decision.plan;
+    const context = { ...draft, unitPrice: await o.unitPrice(await fillInstructions(plan, draft)) };
+    const instructions = await fillInstructions(plan, context);
+    const accounts = accountsOf(instructions, o.solver.address);
+    if (!locksFit(accounts)) {
+      size = { bytes: null, accounts };
+      continue;
+    }
+    const tables = await o.chain.lookupTables(lookupTablesOf(plan, o.lookupTables));
+    const probe = await compile(instructions, o.solver, latest, tables);
+    const bytes = wireSize(probe);
+    size = { bytes, accounts };
+    if (bytesFit(bytes)) {
+      return { kind: "ready", ready: { plan, context, tables, probe, latest, solverInput, solverOutput } };
+    }
+  }
+  return skipped(address, tooLarge(size.bytes, size.accounts));
+}
+
+async function fillOrder(
+  o: SolverOptions,
+  caps: { cost: bigint; rent: bigint },
+  mintData: (mint: Address) => Promise<Uint8Array | null>,
+  ready: Ready,
+): Promise<Outcome> {
+  const { plan, context, tables, probe, latest, solverInput, solverOutput } = ready;
+  const address = plan.address;
+  const before = await Promise.all([o.chain.tokenAmount(solverInput), o.chain.tokenAmount(solverOutput)]);
+  const simulated = await o.simulate(probe, [solverInput, solverOutput]);
+  if (simulated.err !== null) {
+    return failed(address, `${SIMULATION_REFUSED}: ${simulated.err}`);
+  }
+  const [inputAfter, outputAfter] = simulated.balances;
+  const least =
+    plan.route.inventory === true
+      ? [(before[0] ?? 0n) + plan.fees.net, (before[1] ?? 0n) - plan.required]
+      : [before[0] ?? 0n, (before[1] ?? 0n) + plan.profit];
+  if (inputAfter === null || inputAfter === undefined || outputAfter === null || outputAfter === undefined || inputAfter < (least[0] ?? 0n) || outputAfter < (least[1] ?? 0n)) {
+    return failed(
+      address,
+      `${BALANCES_REFUSED}: input ${before[0]} to ${inputAfter}, output ${before[1]} to ${outputAfter}, expected at least ${least[0]} and ${least[1]}`,
+    );
+  }
+  const final = simulated.unitsConsumed === null ? context : { ...context, computeUnits: headroom(simulated.unitsConsumed) };
+  const instructions = await fillInstructions(plan, final);
+  const wire = simulated.unitsConsumed === null ? probe : await compile(instructions, o.solver, latest, tables);
+  const cost = solCost({
+    signatures: signaturesOf(wire),
+    unitPrice: final.unitPrice,
+    computeUnits: final.computeUnits,
+    tip: final.tip?.lamports ?? 0n,
+  });
+  const rent = await createdRent(instructions, (account) => o.chain.exists(account), mintData);
+  const kept = rent > 0n ? rent : undefined;
+  if (cost > caps.cost) {
+    return skipped(address, tooCostly(cost, caps.cost), kept);
+  }
+  if (rent > caps.rent) {
+    return skipped(address, tooMuchRent(rent, caps.rent), kept);
+  }
+  if (wire !== probe) {
+    const checked = await o.simulate(wire, [solverInput, solverOutput]);
+    if (checked.err !== null) {
+      return failed(address, `${SIMULATION_REFUSED}: ${checked.err}`);
+    }
+  }
+  const sent = await o.send(wire);
+  return {
+    kind: sent.confirmed ? "filled" : "sent",
+    entry: { intent: address, profit: plan.profit, signature: sent.signature, ...(kept === undefined ? {} : { rent: kept }) },
+  };
+}
+
 export async function tick(o: SolverOptions): Promise<Report> {
-  const report: Report = { filled: [], sent: [], skipped: [], failed: [] };
+  const concurrency = o.concurrency ?? DEFAULT_CONCURRENCY;
+  if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > MAX_CONCURRENCY) {
+    throw new RangeError(badConcurrency(concurrency));
+  }
   const [config, now, intents] = await Promise.all([o.chain.config(), o.chain.now(), o.chain.intents()]);
-  const cap = o.maxSolCost ?? DEFAULT_MAX_SOL_COST;
-  const rentCap = o.maxRent ?? DEFAULT_MAX_RENT;
+  const caps = { cost: o.maxSolCost ?? DEFAULT_MAX_SOL_COST, rent: o.maxRent ?? DEFAULT_MAX_RENT };
   const mints = new Map<Address, Promise<Uint8Array | null>>();
   const mintData = (mint: Address): Promise<Uint8Array | null> => {
     const known = mints.get(mint);
@@ -105,150 +283,77 @@ export async function tick(o: SolverOptions): Promise<Report> {
     mints.set(mint, loaded);
     return loaded;
   };
-  const freshly: Pricer = { quote: (request) => o.pricer.quote({ ...request, fresh: true }) };
+  const outcomes: (Outcome | undefined)[] = intents.map(() => undefined);
+  const planned: { index: number; ready: Ready }[] = [];
   let limited: string | null = null;
-  for (const { address, intent } of intents) {
-    if (limited !== null) {
-      report.skipped.push({ intent: address, reason: limited });
+  let next = 0;
+  const planner = async (): Promise<void> => {
+    for (let index = next; limited === null && index < intents.length; index = next) {
+      next = index + 1;
+      const entry = intents[index];
+      if (entry === undefined) {
+        continue;
+      }
+      const { address, intent } = entry;
+      try {
+        const result = await planOrder(o, config, now, address, intent);
+        if (result.kind === "ready") {
+          planned.push({ index, ready: result.ready });
+        } else {
+          outcomes[index] = result;
+        }
+      } catch (error) {
+        if (error instanceof RateLimited) {
+          limited ??= error.message;
+          outcomes[index] = skipped(address, error.message);
+        } else {
+          outcomes[index] = failed(address, messageOf(error));
+        }
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(concurrency, intents.length) }, planner));
+  if (limited !== null) {
+    for (let index = next; index < intents.length; index += 1) {
+      const address = intents[index]?.address;
+      if (address !== undefined) {
+        outcomes[index] = skipped(address, limited);
+      }
+    }
+  }
+  planned.sort((a, b) => firstToSend(a.ready.plan, b.ready.plan) || a.index - b.index);
+  const filling = new Set<Address>();
+  let halted: string | null = null;
+  for (const { index, ready } of planned) {
+    const address = ready.plan.address;
+    if (halted !== null) {
+      outcomes[index] = skipped(address, halted);
       continue;
     }
-    const ready = standing(intent, config, now, o.strategy);
-    if (typeof ready === "string") {
-      report.skipped.push({ intent: address, reason: ready });
+    if (filling.has(address)) {
+      outcomes[index] = skipped(address, ALREADY_FILLING);
       continue;
     }
-    const waiting = o.backoff?.waiting(address, intent) ?? null;
-    if (waiting !== null) {
-      report.skipped.push({ intent: address, reason: backingOff(waiting.failures, waiting.seconds) });
-      continue;
-    }
+    filling.add(address);
     try {
-      const [inputTokenProgram, outputTokenProgram] = await Promise.all([
-        o.chain.tokenProgram(intent.inputMint),
-        o.chain.tokenProgram(intent.outputMint),
-      ]);
-      const payable = async (draft: Parameters<typeof payoutAccounts>[0]) => {
-        const payouts = await payoutAccounts(draft, config.feeRecipient, inputTokenProgram);
-        const found = await Promise.all(payouts.map((payout) => o.chain.exists(payout.address)));
-        const missing = payouts.filter((_, i) => !found[i]).map((payout) => payout.name);
-        return missing.length === 0 ? null : `no ${missing.join(" or ")} account to pay into`;
-      };
-      const solverInput = await findAssociatedTokenAddress({
-        owner: o.solver.address,
-        mint: intent.inputMint,
-        tokenProgram: inputTokenProgram,
-      });
-      const solverOutput = await findAssociatedTokenAddress({
-        owner: o.solver.address,
-        mint: intent.outputMint,
-        tokenProgram: outputTokenProgram,
-      });
-      const [inputExists, outputExists, latest] = await Promise.all([
-        o.chain.exists(solverInput),
-        o.chain.exists(solverOutput),
-        o.chain.blockhash(),
-      ]);
-      const draft: FillContext = {
-        solver: o.solver,
-        feeRecipient: config.feeRecipient,
-        inputTokenProgram,
-        outputTokenProgram,
-        computeUnits: MAX_COMPUTE_UNITS,
-        unitPrice: 0n,
-        createSolverInput: !inputExists,
-        createSolverOutput: !outputExists,
-        tip: o.tip,
-      };
-      let fitting: { plan: Plan; context: FillContext; tables: Record<Address, Address[]>; probe: Base64EncodedWireTransaction } | null =
-        null;
-      let skipped: string | null = null;
-      let size: { bytes: number | null; accounts: number } = { bytes: null, accounts: 0 };
-      for (const routeAccounts of ROUTE_ACCOUNT_BUDGETS) {
-        const budget = { ...o.strategy, routeAccounts };
-        const first = await decide(address, intent, config, now, o.pricer, o.solver.address, budget, payable);
-        const decision =
-          first.kind === "fill" && fromCache(first.plan.route)
-            ? await decide(address, intent, config, now, freshly, o.solver.address, budget, payable)
-            : first;
-        if (decision.kind === "skip") {
-          skipped = decision.reason;
-          break;
-        }
-        const plan = decision.plan;
-        const context = { ...draft, unitPrice: await o.unitPrice(await fillInstructions(plan, draft)) };
-        const instructions = await fillInstructions(plan, context);
-        const accounts = accountsOf(instructions, o.solver.address);
-        if (!locksFit(accounts)) {
-          size = { bytes: null, accounts };
-          continue;
-        }
-        const tables = await o.chain.lookupTables(lookupTablesOf(plan, o.lookupTables));
-        const probe = await compile(instructions, o.solver, latest, tables);
-        const bytes = wireSize(probe);
-        size = { bytes, accounts };
-        if (bytesFit(bytes)) {
-          fitting = { plan, context, tables, probe };
-          break;
-        }
-      }
-      if (skipped !== null || fitting === null) {
-        report.skipped.push({ intent: address, reason: skipped ?? tooLarge(size.bytes, size.accounts) });
-        continue;
-      }
-      const { plan, context, tables, probe } = fitting;
-      const before = await Promise.all([o.chain.tokenAmount(solverInput), o.chain.tokenAmount(solverOutput)]);
-      const simulated = await o.simulate(probe, [solverInput, solverOutput]);
-      if (simulated.err !== null) {
-        report.failed.push({ intent: address, error: `${SIMULATION_REFUSED}: ${simulated.err}` });
-        continue;
-      }
-      const [inputAfter, outputAfter] = simulated.balances;
-      const least =
-        plan.route.inventory === true
-          ? [(before[0] ?? 0n) + plan.fees.net, (before[1] ?? 0n) - plan.required]
-          : [before[0] ?? 0n, (before[1] ?? 0n) + plan.profit];
-      if (inputAfter === null || inputAfter === undefined || outputAfter === null || outputAfter === undefined || inputAfter < (least[0] ?? 0n) || outputAfter < (least[1] ?? 0n)) {
-        report.failed.push({
-          intent: address,
-          error: `${BALANCES_REFUSED}: input ${before[0]} to ${inputAfter}, output ${before[1]} to ${outputAfter}, expected at least ${least[0]} and ${least[1]}`,
-        });
-        continue;
-      }
-      const final = simulated.unitsConsumed === null ? context : { ...context, computeUnits: headroom(simulated.unitsConsumed) };
-      const instructions = await fillInstructions(plan, final);
-      const wire = simulated.unitsConsumed === null ? probe : await compile(instructions, o.solver, latest, tables);
-      const cost = solCost({
-        signatures: signaturesOf(wire),
-        unitPrice: final.unitPrice,
-        computeUnits: final.computeUnits,
-        tip: final.tip?.lamports ?? 0n,
-      });
-      const rent = await createdRent(instructions, (account) => o.chain.exists(account), mintData);
-      const kept = rent > 0n ? { rent } : {};
-      if (cost > cap) {
-        report.skipped.push({ intent: address, reason: tooCostly(cost, cap), ...kept });
-        continue;
-      }
-      if (rent > rentCap) {
-        report.skipped.push({ intent: address, reason: tooMuchRent(rent, rentCap), ...kept });
-        continue;
-      }
-      if (wire !== probe) {
-        const checked = await o.simulate(wire, [solverInput, solverOutput]);
-        if (checked.err !== null) {
-          report.failed.push({ intent: address, error: `${SIMULATION_REFUSED}: ${checked.err}` });
-          continue;
-        }
-      }
-      const sent = await o.send(wire);
-      (sent.confirmed ? report.filled : report.sent).push({ intent: address, profit: plan.profit, signature: sent.signature, ...kept });
+      outcomes[index] = await fillOrder(o, caps, mintData, ready);
     } catch (error) {
       if (error instanceof RateLimited) {
-        limited = error.message;
-        report.skipped.push({ intent: address, reason: limited });
-        continue;
+        halted = error.message;
+        outcomes[index] = skipped(address, halted);
+      } else {
+        outcomes[index] = failed(address, messageOf(error));
       }
-      report.failed.push({ intent: address, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+  const report: Report = { filled: [], sent: [], skipped: [], failed: [] };
+  for (const outcome of outcomes) {
+    if (outcome?.kind === "skipped") {
+      report.skipped.push(outcome.entry);
+    } else if (outcome?.kind === "failed") {
+      report.failed.push(outcome.entry);
+    } else if (outcome !== undefined) {
+      report[outcome.kind].push(outcome.entry);
     }
   }
   if (o.backoff !== undefined) {

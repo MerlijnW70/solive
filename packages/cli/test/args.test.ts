@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { I64_MAX, I64_MIN, Kind, U64_MAX } from "@intent-engine/core";
 import { AUTO_PRICE_CAP, MAX_PRIORITY_PRICE } from "../src/compute.js";
-import { DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST } from "@intent-engine/solver";
+import { DEFAULT_CONCURRENCY, DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST, MAX_CONCURRENCY } from "@intent-engine/solver";
 import {
   DEFAULT_URL,
   WATCH_INTERVAL,
@@ -95,6 +95,7 @@ describe("numbers", () => {
       slippageBps: 10_000,
       routeProgram: undefined,
       lookupTables: [],
+      concurrency: DEFAULT_CONCURRENCY,
       watch: null,
     });
     const watching = ["solve", "--keypair", "k", "--jupiter", "https://q.example", "--min-profit", `${MINT_A}=1`];
@@ -185,6 +186,13 @@ describe("numbers", () => {
     expect(usage(["solve", "--keypair", "k", "--jupiter", "https://q.example"])).toBe("missing --min-profit");
     expect(usage([...base, "--max-fee-bps", "201"])).toBe("--max-fee-bps must be an integer from 0 to 200");
     expect(usage([...base, "--slippage-bps", "10001"])).toBe("--slippage-bps must be an integer from 0 to 10000");
+    expect(DEFAULT_CONCURRENCY).toBe(4);
+    expect(MAX_CONCURRENCY).toBe(32);
+    expect(parse([...base, "--concurrency", "1"])).toMatchObject({ concurrency: 1 });
+    expect(parse([...base, "--concurrency", "32"])).toMatchObject({ concurrency: 32 });
+    for (const bad of ["0", "33", "1.5", "x", ""]) {
+      expect(usage([...base, "--concurrency", bad])).toBe("--concurrency must be an integer from 1 to 32");
+    }
   });
 
   it("solve refuses a zero min profit", () => {

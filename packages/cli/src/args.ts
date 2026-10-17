@@ -52,7 +52,7 @@ import { optionsFor, trustOf } from "./trust-args.js";
 import { monitorOf } from "./monitor-args.js";
 import { jobArgsOf } from "./job-args.js";
 import type { Command, Env } from "./command-types.js";
-import { DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST } from "@intent-engine/solver";
+import { DEFAULT_CONCURRENCY, DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST, MAX_CONCURRENCY } from "@intent-engine/solver";
 import { MIN_CAP_WINDOW_SECS } from "@intent-engine/core";
 
 export type { Authority, Command, Env, WalletLimits } from "./command-types.js";
@@ -331,6 +331,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         slippageBps: parseBounded(values["slippage-bps"] ?? "50", "slippage-bps", 10_000),
         routeProgram: values["route-program"] === undefined ? undefined : parseAddress(values["route-program"], "route-program"),
         lookupTables: values["lookup-table"] === undefined ? [] : addressList(values["lookup-table"], "lookup-table"),
+        concurrency: parseBounded(values.concurrency ?? String(DEFAULT_CONCURRENCY), "concurrency", MAX_CONCURRENCY, 1),
         watch: values.watch === true ? parseBounded(values.interval ?? String(WATCH_INTERVAL), "interval", MAX_FOLLOW_INTERVAL, 1) : null,
         ...(values.watch === true ? { quoteTtl: parseBounded(values["quote-ttl"] ?? String(QUOTE_TTL), "quote-ttl", MAX_FOLLOW_INTERVAL) } : {}),
       };

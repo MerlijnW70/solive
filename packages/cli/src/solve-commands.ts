@@ -212,6 +212,7 @@ export async function solverOptions(command: SolveCommand, runtime: Runtime, tra
     pricer: firstPricer(...[inventory, routed].filter((pricer): pricer is Pricer => pricer !== null)),
     solver,
     strategy: { minProfit: command.minProfit, maxFeeBps: command.maxFeeBps },
+    concurrency: command.concurrency,
     maxSolCost: command.maxSolCost,
     maxRent: command.maxRent,
     tip: command.tipLamports === 0n ? null : { account: tipAccount(runtime.entropy()), lamports: command.tipLamports },

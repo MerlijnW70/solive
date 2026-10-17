@@ -816,6 +816,8 @@ describe("cli against the deployed engine", () => {
       `${outputMint}=40`,
       "--route-program",
       route.programAddress,
+      "--concurrency",
+      "1",
     ];
     h.env[ENV_JUPITER_KEY] = "paid-key";
     const result = await cli(solve, { "s.json": solver });

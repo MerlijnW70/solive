@@ -89,6 +89,7 @@ export type Command =
       slippageBps: number;
       routeProgram: Address | undefined;
       lookupTables: Address[];
+      concurrency: number;
       watch: number | null;
       quoteTtl?: number;
     })

@@ -34,7 +34,7 @@ import {
   IntentStatus,
   Kind,
 } from "@intent-engine/core";
-import { DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST, SIMULATION_REFUSED } from "@intent-engine/solver";
+import { DEFAULT_CONCURRENCY, DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST, SIMULATION_REFUSED } from "@intent-engine/solver";
 import { chainTime, type RpcLike, rpcTransport } from "@intent-engine/client";
 import { run } from "../src/commands.js";
 import { loadKeypairFile } from "../src/main.js";
@@ -270,6 +270,7 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet solve smoke"
           slippageBps: Number(SLIPPAGE_BPS),
           routeProgram: SWAP_PROGRAM,
           lookupTables: [],
+          concurrency: DEFAULT_CONCURRENCY,
           watch: null,
         },
         {
