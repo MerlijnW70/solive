@@ -277,3 +277,11 @@ To add or change a dependency:
 4. Run `bash scripts/supply-chain.sh --write` and commit the tree files with the change, so the review shows the tree diff. `--write` never edits `pnpm-workspace.yaml` or `package.json`.
 
 A checkout installed before `strictDepBuilds` still records the scripts it skipped in `node_modules`, and `pnpm install` then stops with `ERR_PNPM_IGNORED_BUILDS` even for packages listed under `ignoredBuiltDependencies`. Delete `node_modules` once and install again.
+
+## Release
+
+A tag `v<version>` on a commit whose `ci` run passed starts `.github/workflows/release.yml`. It waits for approval in the `npm` environment, then `scripts/release.sh` checks that every package and `packages/cli/src/version.ts` carry the tagged version, builds and packs them, and publishes core, client, solver and cli in that order with npm provenance. A version already on npm is skipped, so a rerun finishes a partial release.
+
+The workflow holds no npm token: it signs in through npm trusted publishing. Each package must list this repository and `release.yml` as a trusted publisher on npmjs.com, and refuse publishing with tokens, before the gap in [T-51](threat-model.md) closes.
+
+To release, bump the versions as in a `Release x.y.z` commit, push it, wait for `ci`, then push the tag: `git tag v<version>` and `git push origin v<version>`.
