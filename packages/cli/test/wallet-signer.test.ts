@@ -137,7 +137,7 @@ describe("the wallet's signer", () => {
 
 async function connect(): Promise<Client> {
   h.served.length = 0;
-  const started = await cli(["mcp", "--url", "devnet", "--wallet"], {});
+  const started = await cli(["mcp", "--url", "devnet", "--wallet", "--all-tools"], {});
   expect([started.code, started.err]).toEqual([EXIT_OK, WALLET_NOTICE.join("\n")]);
   const server = h.served[0];
   if (server === undefined) {

@@ -7,6 +7,7 @@ import { annotationsOf } from "../src/agent/mcp.js";
 import { ENGINE_ERROR_BASE, ENGINE_PROBLEMS, SERVER_PROBLEMS, TOKEN_PROBLEMS } from "../src/agent/problems.js";
 import { ACTIONS } from "../src/agent/registry.js";
 import { WALLET_ACTIONS } from "../src/agent/wallet.js";
+import { EVERYDAY_TOOLS } from "../src/agent/everyday.js";
 import { ADDRESS_PATTERN, AMOUNT_PATTERN, TIME_PATTERN } from "../src/agent/schema.js";
 
 type Json = Record<string, unknown>;
@@ -124,7 +125,9 @@ function toolsPage(): string {
     return [
       `## ${action.name}`,
       "",
-      ...(WALLET_ACTIONS.includes(action) ? ["Served only with `--wallet`.", ""] : []),
+      ...(WALLET_ACTIONS.includes(action)
+        ? [EVERYDAY_TOOLS.has(action.name) ? "Served only with `--wallet`." : "Served only with `--wallet --all-tools`.", ""]
+        : []),
       action.description,
       "",
       `Effect: \`${action.effect}\` (read-only: ${String(hints.readOnlyHint)}, destructive: ${String(hints.destructiveHint)}, idempotent: ${String(hints.idempotentHint)})`,
@@ -135,7 +138,7 @@ function toolsPage(): string {
     ];
   });
   return page("MCP tools", [
-    `${ACTIONS.length} tools, served by \`intent-engine mcp\` over stdio. With \`--wallet\` it also serves the ${WALLET_ACTIONS.length} wallet tools, listed first.`,
+    `${ACTIONS.length} tools, served by \`intent-engine mcp\` over stdio. With \`--wallet\` it serves only the ${EVERYDAY_TOOLS.size} everyday tools: ${[...WALLET_ACTIONS, ...ACTIONS].filter((a) => EVERYDAY_TOOLS.has(a.name)).map((a) => `\`${a.name}\``).join(", ")}, plus the tools \`--relayer\` and \`--agent\` need. With \`--wallet --all-tools\` it serves every tool, the ${WALLET_ACTIONS.length} wallet tools listed first.`,
     "",
     ...body,
   ]);

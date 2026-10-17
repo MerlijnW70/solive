@@ -227,12 +227,12 @@ describe("the wallet server", () => {
     }
     preset(NATIVE_MINT);
     preset(TEST_TOKEN);
-    client = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    client = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
   });
 
   it("starts reading recent engine transactions as it starts, so the first estimate finds them ready", async () => {
     h.requestedLimits.length = 0;
-    await connect(["mcp", "--url", "devnet", "--wallet"]);
+    await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     expect(h.requestedLimits).toEqual([ESTIMATE_SCAN]);
     h.requestedLimits.length = 0;
     await connect(["mcp", "--url", "devnet"]);
@@ -292,13 +292,13 @@ describe("the wallet server", () => {
 
   it("wallet setup returns a redacted url", async () => {
     const secret = "https://user:pass@rpc.example.org:8443/v1/path?api-key=hidden";
-    const keyed = await connect(["mcp", "--url", secret, "--wallet"]);
+    const keyed = await connect(["mcp", "--url", secret, "--wallet", "--all-tools"]);
     const made = await ok(keyed, "wallet_setup");
     expect(made).toMatchObject({ url: "https://rpc.example.org:8443", settings: savedDefault(secret) });
     expect(savedDefault(secret)).toBe("saved https://rpc.example.org:8443 as the default RPC for later CLI commands");
     expect(JSON.stringify(made)).not.toMatch(/hidden|user:pass|v1\/path/);
     expect(JSON.parse(h.files.get(settingsPath(HOME)) ?? "{}")).toMatchObject({ url: secret });
-    const other = await connect(["mcp", "--url", "https://other.example.org/?api-key=also", "--wallet"]);
+    const other = await connect(["mcp", "--url", "https://other.example.org/?api-key=also", "--wallet", "--all-tools"]);
     const again = await ok(other, "wallet_setup");
     expect(again).toMatchObject({ url: "https://other.example.org", settings: keptDefault(secret), created: false });
     expect(keptDefault(secret)).toBe("left the saved default RPC https://rpc.example.org:8443 unchanged");
@@ -418,7 +418,7 @@ describe("the wallet server", () => {
   });
 
   it("refuses a schedule past the hourly limit before sending any of it, and reports how far a failed one got", async () => {
-    client = await connect(["mcp", "--url", "devnet", "--wallet", "--wallet-per-hour", "SOL=0.12"]);
+    client = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools", "--wallet-per-hour", "SOL=0.12"]);
     const owner = (await ok(client, "wallet_setup"))["address"] as Address;
     h.engineLog = [];
     h.watched.push(owner);
@@ -829,7 +829,7 @@ describe("the wallet server", () => {
       },
       engineTransactions: async () => [...tried.map(landedAs), ...h.engineLog],
     };
-    client = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    client = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     const timedOut = await cosignedSplit(work, payer);
     h.sendFails = { error: new Error("timed out"), landed: true, after: 1 };
     const late = await ok(client, "wallet_attest_split", timedOut.release);
@@ -990,7 +990,7 @@ describe("the wallet server", () => {
   });
 
   it("refuses a plan past the hourly limit before escrowing any of it, and reports how far a failed one got", async () => {
-    client = await connect(["mcp", "--url", "devnet", "--wallet", "--wallet-per-hour", "SOL=0.05"]);
+    client = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools", "--wallet-per-hour", "SOL=0.05"]);
     const owner = (await ok(client, "wallet_setup"))["address"] as Address;
     h.watched.push(owner);
     const plan = { sell: "SOL", attestor: owner, pieces: [{ name: "a", amount: "0.02" }, { name: "b", amount: "0.02" }, { name: "c", amount: "0.02" }], send: true };
@@ -1285,7 +1285,7 @@ describe("the wallet server", () => {
     const receipt = { intent, released: true, signature: "release", delivered_sha256: work, matches: true };
     h.engineLog = [...dust(WAIT_SCAN * 2), release];
     h.through = { ...transport, engineTransactions: async (limit) => h.engineLog.slice(0, limit) };
-    const windowed = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const windowed = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     expect(await ok(windowed, "wallet_receipt", { nonce: "9", sha256: work })).toMatchObject(receipt);
     h.engineLog = [...dust(SIGNATURE_PAGE + 10), release];
     const listed = (tx: EngineTransaction): ListedSignature => ({ signature: tx.signature, slot: tx.slot, blockTime: tx.blockTime, failed: tx.failed, memo: null });
@@ -1298,7 +1298,7 @@ describe("the wallet server", () => {
       },
       transactionsOf: async (wanted) => wanted.flatMap((entry) => h.engineLog.filter((tx) => tx.signature === entry.signature)),
     };
-    const paged = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const paged = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     expect(await ok(paged, "wallet_receipt", { nonce: "9", sha256: work })).toMatchObject(receipt);
     const plain = await connect(["mcp", "--url", "devnet"]);
     expect(await ok(plain, "get_receipt", { owner, nonce: "9", sha256: work })).toMatchObject(receipt);
@@ -1413,7 +1413,7 @@ describe("the wallet server", () => {
     const fetched: string[] = [];
     let log: EngineTransaction[] = [...zeroTransfers(flood), release];
     h.through = pagedThrough(() => log, fetched);
-    const paged = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const paged = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     const receipt = { intent, released: true, signature: release.signature, delivered_sha256: work, matches: true };
     expect(await ok(paged, "wallet_receipt", { nonce: "11", sha256: work })).toMatchObject(receipt);
     expect(fetched).toEqual([release.signature]);
@@ -1451,7 +1451,7 @@ describe("the wallet server", () => {
     const fetched: string[] = [];
     let log: EngineTransaction[] = [...zeroTransfers(HISTORY_PAGES * SIGNATURE_PAGE), plain];
     h.through = pagedThrough(() => log, fetched);
-    const paged = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const paged = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     expect(await ok(paged, "wallet_receipt", { nonce: "12" })).toEqual({ intent, released: false, complete: false, next: RELEASE_UNKNOWN });
     expect(fetched).toHaveLength(HISTORY_PAGES * SIGNATURE_PAGE);
     expect((await call(paged, "wallet_record_delivery", { owner, nonce: "12", sha256: "da".repeat(32) })).value).toMatchObject({ code: "HistoryTooLong", hint: RELEASE_UNKNOWN });
@@ -1750,7 +1750,7 @@ describe("the wallet server", () => {
     const fetched: string[] = [];
     let log: EngineTransaction[] = [...zeroTransfers(flood), stray, release];
     h.through = pagedThrough(() => log, fetched);
-    const paged = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const paged = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     expect(await ok(paged, "wallet_receipt", { nonce: "13" })).toEqual({ intent, released: false, complete: false, next: RELEASE_UNKNOWN });
     fetched.length = 0;
     const receipt = { intent, released: true, attestor: owner, payee, signature: release.signature };
@@ -1782,14 +1782,14 @@ describe("the wallet server", () => {
     expect((await call(client, "wallet_record_delivery", { owner, nonce: "14", sha256: "e2".repeat(32) })).value).toMatchObject({ code: "HistoryTooLong", hint: RELEASE_UNKNOWN });
     const fetched: string[] = [];
     h.through = pagedThrough(() => [lagging, creation(intent)], fetched);
-    const paged = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const paged = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     expect(await ok(paged, "wallet_receipt", { nonce: "14" })).toEqual({ intent, released: false, complete: false, next: RELEASE_UNKNOWN });
     expect((await call(paged, "wallet_receipt", { nonce: "14", release: lagging.signature })).value).toMatchObject({ code: "ReleaseUnread" });
     h.through = pagedThrough(() => [creation(intent)], fetched);
-    const kept = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const kept = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     expect(await ok(kept, "wallet_receipt", { nonce: "14" })).toEqual({ intent, released: false, next: NOT_RELEASED });
     h.through = pagedThrough(() => [], fetched);
-    const empty = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const empty = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     expect(await ok(empty, "wallet_receipt", { nonce: "14" })).toEqual({ intent, released: false, complete: false, next: RELEASE_UNKNOWN });
     h.through = null;
     h.engineLog = [];
@@ -1916,11 +1916,11 @@ describe("the wallet server", () => {
     expect(await ok(client, "wallet_receipt", { owner, nonce })).toEqual({ intent, released: false, next: NOT_RELEASED });
     const dated = { ...earlier, blockTime: createdAtOfEscrow(intent) - 1n };
     h.through = pagedThrough(() => [remade, dated, first], []);
-    const paged = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const paged = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     expect((await call(paged, "wallet_receipt", args)).value).toMatchObject(refused);
     markFilled(intent, IntentStatus.Open);
     h.through = pagedThrough(() => [remade, earlier, first], []);
-    const reopened = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const reopened = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     expect((await call(reopened, "wallet_receipt", args)).value).toMatchObject(refused);
     h.through = null;
     closeAccount(intent);
@@ -1992,7 +1992,7 @@ describe("the wallet server", () => {
     const followUp = { signature: "follow-up", slot: 4n, blockTime: null, failed: false, emitted: [], memos: [followUpMemo(work, release.signature)], feePayer: owner } satisfies EngineTransaction;
     let log: EngineTransaction[] = [...zeroTransfers(RELEASE_PAGES * SIGNATURE_PAGE), followUp, release];
     h.through = pagedThrough(() => log, []);
-    const paged = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const paged = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     const args = { nonce: "16", release: release.signature };
     const partial = await ok(paged, "wallet_receipt", { ...args, sha256: work });
     expect(partial).toMatchObject({ intent, released: true, complete: false, next: RECEIPT_PARTIAL, signature: release.signature, matches: false });
@@ -2018,7 +2018,7 @@ describe("the wallet server", () => {
     const answered = { signature: lagging.signature, slot: 4n, blockTime: null, failed: false, emitted: [], memos, feePayer: owner } satisfies EngineTransaction;
     const partial = { intent, released: true, complete: false, next: RECEIPT_PARTIAL, signature: release.signature };
     h.through = pagedThrough(() => [lagging, release], []);
-    const paged = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const paged = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     const named = await ok(paged, "wallet_receipt", { nonce: "17", release: release.signature });
     expect(named).toMatchObject(partial);
     expect(named).not.toHaveProperty("delivered_sha256");
@@ -2026,7 +2026,7 @@ describe("the wallet server", () => {
     const recording = { owner, nonce: "17", sha256: "e7".repeat(32), release: release.signature };
     expect((await call(paged, "wallet_record_delivery", recording)).value).toMatchObject({ code: "HistoryTooLong", hint: followUpsUnknown(release.signature) });
     h.through = pagedThrough(() => [answered, release], []);
-    const read = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const read = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     const whole = await ok(read, "wallet_receipt", { nonce: "17", release: release.signature });
     expect(whole).toMatchObject({ intent, released: true, delivered_sha256: work });
     expect(whole).not.toHaveProperty("complete");
@@ -2077,7 +2077,7 @@ describe("the wallet server", () => {
 
   async function connectThrough(routed: Transport) {
     h.through = routed;
-    return connect(["mcp", "--url", "devnet", "--wallet"]);
+    return connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
   }
 
   const earlierTransfers = (count: number, from = 0) => zeroTransfers(count, from).map((tx) => ({ ...tx, slot: 2n }));
@@ -2222,17 +2222,17 @@ describe("the wallet server", () => {
     const announced = announce("announced", 2n, worker, work);
     const args = { owner, nonce, sha256: work, release: release.signature };
     h.through = pagedThrough(() => [release, lagging, announced, made], []);
-    const lagged = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const lagged = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     const refused = (await call(lagged, "wallet_record_delivery", args)).value;
     expect(refused).toMatchObject({ code: "HistoryLagging", retryable: true, hint: historyLagging(release.signature, intent) });
     expect(historyLagging(release.signature, intent)).toContain("the node has not returned every transaction yet; call again");
     expect(refused).not.toMatchObject({ hint: escrowGone(intent) });
     expect(await ok(lagged, "wallet_receipt", { owner, nonce, release: release.signature })).toMatchObject({ released: true, complete: false });
     h.through = pagedThrough(() => [release, answered, announced, made], []);
-    const read = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const read = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     expect(await ok(read, "wallet_record_delivery", args)).toMatchObject({ intent, release: release.signature, sha256: work, sent: false });
     h.through = pagedThrough(() => [release, answered, announced], []);
-    const gone = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const gone = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     expect((await call(gone, "wallet_record_delivery", args)).value).toMatchObject({ code: "HistoryTooLong", hint: escrowGone(intent) });
     h.through = null;
     h.engineLog = [];
@@ -2325,7 +2325,7 @@ describe("the wallet server", () => {
     const fetched: string[] = [];
     let log: EngineTransaction[] = [...zeroTransfers(flood), release, creation(intent)];
     h.through = pagedThrough(() => log, fetched);
-    const paged = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const paged = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     expect(await ok(paged, "wallet_wait", { nonce: escrow["nonce"] })).toEqual({
       intent,
       status: "filled",
@@ -2393,7 +2393,7 @@ describe("the wallet server", () => {
     const marked = { ...release, memos: [releaseMemo("5f".repeat(32))], memoSigners: [[wallet]] };
     let log: EngineTransaction[] = [marked, made];
     h.through = pagedThrough(() => log, []);
-    const paged = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const paged = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     expect(await ok(paged, "wallet_wait", { nonce: escrow["nonce"] })).toEqual({ ...paid, signature: marked.signature });
     log = [later, marked, made];
     expect(await ok(paged, "wallet_wait", { nonce: escrow["nonce"] })).toEqual({ intent, status: "closed", waited: 0 });
@@ -2514,7 +2514,7 @@ describe("the wallet server", () => {
   });
 
   it("escrows SOL off devnet only with a record mint it is told, since TEST is a devnet name", async () => {
-    client = await connect(["mcp", "--url", "localnet", "--wallet"]);
+    client = await connect(["mcp", "--url", "localnet", "--wallet", "--all-tools"]);
     const owner = (await ok(client, "wallet_setup"))["address"] as Address;
     expect((await call(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner })).value).toMatchObject({
       code: "InvalidInput",
@@ -2590,7 +2590,7 @@ describe("the wallet server", () => {
     await ok(client, "wallet_intents");
     expect(h.genesisReads - reads).toBe(1);
     h.genesis = MAINNET_GENESIS;
-    client = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    client = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     for (const [name, args] of [
       ["wallet_setup", {}],
       ["wallet_balance", {}],
@@ -2652,7 +2652,7 @@ describe("the wallet server", () => {
   });
 
   it("refuses, even on preview, to sell past the limits the server was started with, and counts only what it sent", async () => {
-    client = await connect(["mcp", "--url", "devnet", "--wallet", "--wallet-per-trade", "SOL=0.1", "--wallet-per-hour", "SOL=0.15"]);
+    client = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools", "--wallet-per-trade", "SOL=0.1", "--wallet-per-hour", "SOL=0.15"]);
     expect(client.getInstructions()).toBe(
       [
         WALLET_INSTRUCTIONS,
@@ -2689,7 +2689,7 @@ describe("the wallet server", () => {
   });
 
   it("keeps counting a sale whose send failed unless the failure proves nothing landed", async () => {
-    const limited = ["mcp", "--url", "devnet", "--wallet", "--wallet-per-hour", "SOL=0.15"];
+    const limited = ["mcp", "--url", "devnet", "--wallet", "--all-tools", "--wallet-per-hour", "SOL=0.15"];
     const swap = { sell: "SOL", buy: "TEST", amount: "0.1", min_receive: "5" };
     client = await connect(limited);
     await ok(client, "wallet_setup");
@@ -2706,7 +2706,7 @@ describe("the wallet server", () => {
   });
 
   it("two wallet servers share one hourly allowance", async () => {
-    const limited = ["mcp", "--url", "devnet", "--wallet", "--wallet-per-hour", "SOL=0.15"];
+    const limited = ["mcp", "--url", "devnet", "--wallet", "--all-tools", "--wallet-per-hour", "SOL=0.15"];
     const first = await connect(limited);
     await ok(first, "wallet_setup");
     const second = await connect(limited);
@@ -2728,7 +2728,7 @@ describe("the wallet server", () => {
   });
 
   it("a tilde keypair path and its absolute form share one sales book", async () => {
-    const limited = ["mcp", "--url", "devnet", "--wallet", "--wallet-per-hour", "SOL=0.15"];
+    const limited = ["mcp", "--url", "devnet", "--wallet", "--all-tools", "--wallet-per-hour", "SOL=0.15"];
     const first = await connect(limited);
     await ok(first, "wallet_setup");
     const swap = { sell: "SOL", buy: "TEST", amount: "0.1", min_receive: "5", exact: true };
@@ -2745,7 +2745,7 @@ describe("the wallet server", () => {
   });
 
   it("a send refused at preflight does not count against the limit", async () => {
-    const limited = ["mcp", "--url", "devnet", "--wallet", "--wallet-per-hour", "SOL=0.15"];
+    const limited = ["mcp", "--url", "devnet", "--wallet", "--all-tools", "--wallet-per-hour", "SOL=0.15"];
     client = await connect(limited);
     await ok(client, "wallet_setup");
     const swap = { sell: "SOL", buy: "TEST", amount: "0.1", min_receive: "5" };
@@ -2771,7 +2771,7 @@ describe("the wallet server", () => {
   });
 
   it("a nonce collision on create is retried with the next free nonce", async () => {
-    const first = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const first = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     const owner = (await ok(first, "wallet_setup"))["address"] as Address;
     const swap = { sell: "SOL", buy: "TEST", amount: "0.01", min_receive: "1", exact: true };
     expect(await ok(first, "wallet_swap", { ...swap, send: true })).toMatchObject({ nonce: "0" });
@@ -2786,7 +2786,7 @@ describe("the wallet server", () => {
         return transport.sendWire(wire, latest);
       },
     };
-    const second = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const second = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     h.through = null;
     const [taken] = await findIntentPda({ owner, nonce: 1n });
     const [next] = await findIntentPda({ owner, nonce: 2n });
@@ -2797,7 +2797,7 @@ describe("the wallet server", () => {
   });
 
   it("sells none of a token whose limit has more decimals than the token", async () => {
-    client = await connect(["mcp", "--url", "devnet", "--wallet", "--wallet-per-trade", "SOL=0.0000000001"]);
+    client = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools", "--wallet-per-trade", "SOL=0.0000000001"]);
     await ok(client, "wallet_setup");
     expect((await call(client, "wallet_swap", { sell: "SOL", buy: "TEST", amount: "0.1", min_receive: "5" })).value).toMatchObject({
       code: "WalletTokenNotAllowed",

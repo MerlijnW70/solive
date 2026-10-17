@@ -70,6 +70,8 @@ export function relaySpec(values: Values): RelaySpec | undefined {
 
 export const WALLET_LIMITS_NEED_WALLET = "--wallet-per-trade and --wallet-per-hour need --wallet";
 
+export const ALL_TOOLS_NEED_WALLET = "--all-tools needs --wallet; without it the server already serves every tool";
+
 const wholeTokens = (key: string) => `--${key} takes token=amount pairs separated by commas, such as SOL=0.1,TEST=20`;
 
 function tokenAmounts(text: string | undefined, key: "wallet-per-trade" | "wallet-per-hour", url: string): ReadonlyMap<Address, string> {

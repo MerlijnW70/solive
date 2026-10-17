@@ -27,6 +27,7 @@ export const OPTIONS = {
   relayer: { type: "string" },
   agent: { type: "string" },
   wallet: { type: "boolean" },
+  "all-tools": { type: "boolean" },
   "wallet-per-trade": { type: "string" },
   "wallet-per-hour": { type: "string" },
   "relay-max-lamports": { type: "string" },
@@ -163,7 +164,7 @@ export const PROFILE_OPTIONS = { ...OPTIONS, wallet: { type: "string" } } as con
 
 export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill", "vote"]);
 
-export type Flag = "dry-run" | "fund-accounts" | "yes" | "help" | "version" | "follow" | "create" | "wallet" | "watch" | "close" | "once" | "plain-node";
+export type Flag = "dry-run" | "fund-accounts" | "yes" | "help" | "version" | "follow" | "create" | "wallet" | "watch" | "close" | "once" | "plain-node" | "all-tools";
 export type Many = "max-fill" | "vote";
 export type StringKey = Exclude<keyof typeof OPTIONS, Flag | Many>;
 export type Values = { [K in StringKey]?: string | undefined } & { [K in Exclude<Flag, "wallet">]?: boolean | undefined } & {
@@ -213,6 +214,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
     "wallet",
     "wallet-per-trade",
     "wallet-per-hour",
+    "all-tools",
   ],
   quote: ["url", "owner", "nonce", "at"],
   cancel: ["url", "priority-fee", "keypair", "yes", "nonce", "close"],

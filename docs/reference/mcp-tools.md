@@ -2,7 +2,7 @@
 
 # MCP tools
 
-25 tools, served by `intent-engine mcp` over stdio. With `--wallet` it also serves the 23 wallet tools, listed first.
+25 tools, served by `intent-engine mcp` over stdio. With `--wallet` it serves only the 18 everyday tools: `solive_wallet_setup`, `solive_wallet_balance`, `solive_wallet_estimate`, `solive_wallet_swap`, `solive_wallet_auction`, `solive_wallet_recurring`, `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_attest`, `solive_wallet_deliver`, `solive_wallet_check_delivery`, `solive_wallet_wait`, `solive_wallet_receipt`, `solive_wallet_intents`, `solive_wallet_history`, `solive_wallet_cancel`, `solive_find_jobs`, `solive_get_spec`, plus the tools `--relayer` and `--agent` need. With `--wallet --all-tools` it serves every tool, the 23 wallet tools listed first.
 
 ## solive_wallet_setup
 
@@ -162,7 +162,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 ## solive_wallet_attest_split
 
-Served only with `--wallet`.
+Served only with `--wallet --all-tools`.
 
 As the attestor a proof escrow names, release it on chain divided among several co-authors by weight, from this server's wallet: the escrowed tokens, minus the engine fee, any partner fee and the judge fee, are split by the weights and paid to each co-author's token account, which this creates if needed. Every co-author must authorize the exact split: preview without send to get the digest and the envelope each wallet must sign, collect those signatures, then call again with send: true and each co-author's signature. Changing any recipient, weight or the result changes what everyone signs. The escrow must have been made with a spec_hash. A release cannot be undone. Without send it only previews and signs nothing; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.
 
@@ -182,7 +182,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 ## solive_wallet_committee_vote
 
-Served only with `--wallet`.
+Served only with `--wallet --all-tools`.
 
 As one member of the committee an escrow names, sign this server's vote that the escrow pays pay_to for the work with delivered_sha256. Nothing is sent: the release needs votes from the committee's threshold of members, which anyone then submits with solive_wallet_committee_release. Vote only after judging the work against the escrow's spec yourself. Without send it only previews and signs nothing; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.
 
@@ -201,7 +201,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 ## solive_wallet_committee_release
 
-Served only with `--wallet`.
+Served only with `--wallet --all-tools`.
 
 Submit the votes of a committee's members, gathered with solive_wallet_committee_vote, to release the escrow that names the committee; this server's wallet pays the fee and records the delivered work's sha256. Every vote is checked before anything is sent, and the release needs at least the committee's threshold of them. Without send it only previews; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.
 
@@ -221,7 +221,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 ## solive_wallet_feedback
 
-Served only with `--wallet`.
+Served only with `--wallet --all-tools`.
 
 As the owner of a released proof escrow, rate the work it paid for from 0 to 100, optionally linking the sha256 of a written note. The rating is a memo this server's wallet signs, and solive_get_reputation counts it only from the escrow's owner, once per escrow. Without send it only previews; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.
 
@@ -237,7 +237,7 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 
 ## solive_wallet_claim
 
-Served only with `--wallet`.
+Served only with `--wallet --all-tools`.
 
 As a worker, claim a proof escrow's job for secs seconds by staking what its owner asks, so that only this server's wallet can be paid until the claim lapses; or drop a claim it holds to take the stake back. The stake returns when a release pays this wallet, and goes to the owner if the claim lapses first. Read the board with solive_get_claims. Without send it only previews; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.
 
@@ -254,7 +254,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 ## solive_wallet_profile
 
-Served only with `--wallet`.
+Served only with `--wallet --all-tools`.
 
 Publish, update or close the on-chain profile of this server's wallet, so payers can find what work it takes and where: 1 to 8 skill tags, an https endpoint, and optionally a document url with its sha256. Publishing creates the profile and pays its rent, or updates the one there; close: true deletes it and returns the rent. Others read it with solive_get_profile. Without send it only previews; show the user the summary and, once they approve, call again with send: true and the approval the preview returned.
 
@@ -272,7 +272,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 ## solive_wallet_record_delivery
 
-Served only with `--wallet`.
+Served only with `--wallet --all-tools`.
 
 As the attestor that released a proof escrow, record the sha256 of the delivered work the release paid for when the release itself recorded none, such as when solive_wallet_attest_split returned recorded: false: this server's wallet sends one transaction with the follow-up memo naming the release and the sha256, and a transfer of 0 lamports to the escrow so solive_wallet_receipt reads it. Pass release, the signature the release returned: the release is then read from that one transaction, however long the escrow's history grew, and it works after the escrow is closed. It refuses unless the escrow has a release, made by this wallet, that records no sha256 yet, and the sha256 is work announced for the escrow whose earliest announcer the release paid, or for a split one of its recipients; it also refuses while the record of announced work is incomplete. It moves no tokens and costs only the transaction fee. Without send it only previews; show the user the summary and call again with send: true once they approve.
 

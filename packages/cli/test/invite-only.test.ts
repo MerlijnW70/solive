@@ -65,7 +65,7 @@ describe("an invite-only job through MCP", () => {
     await world();
     preset(NATIVE_MINT);
     preset(DEVNET_TEST_MINT);
-    const client = await connect(["mcp", "--url", "devnet", "--wallet"]);
+    const client = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     const owner = (await call(client, "wallet_setup")).value["address"] as Address;
     const [worker, stranger] = [wallet(), wallet()];
     h.specPages.set(SPEC_URL, await seal(new TextEncoder().encode(SPEC), [owner, worker]));

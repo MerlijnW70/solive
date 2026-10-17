@@ -21,7 +21,7 @@ export const annotationsOf = (action: AnyAction) => ({
   ...(action.destructive === false ? { destructiveHint: false } : {}),
 });
 
-export const WALLET_INSTRUCTIONS = [
+const WALLET_LINES = [
   `This server holds a devnet wallet and trades intents with it. Devnet tokens have no value.`,
   `Before anything else, show the user this notice once, every line:`,
   ...WALLET_NOTICE.map((line) => `- ${line}`),
@@ -39,16 +39,31 @@ export const WALLET_INSTRUCTIONS = [
   `${tool("get_reputation")} reads a worker's track record from the chain alone: work it announced, releases that paid it for that exact work, and its payers' scores, leaving out releases it paid or judged itself. After a release pays for good or bad work, its owner rates it once with ${tool("wallet_feedback")}.`,
   `An escrow's owner can let one worker claim its job for a while against a stake. ${tool("get_claims")} shows who holds it; a worker claims or drops it with ${tool("wallet_claim")}, which previews until called with send: true. ${tool("wallet_profile")} publishes this wallet's skills and endpoint, and ${tool("get_profile")} reads any wallet's.`,
   `After sending, ${tool("wallet_wait")} waits for the fill and says what it delivered; ${tool("wallet_intents")} and ${tool("wallet_balance")} show the rest, and ${tool("wallet_history")} shows what the wallet did before, finished intents included.`,
-].join("\n");
+];
 
-export const walletInstructions = (limits: WalletLimits): string => [WALLET_INSTRUCTIONS, ...limitLines(limits)].join("\n");
+export const WALLET_INSTRUCTIONS = WALLET_LINES.join("\n");
+
+const TOOL_NAMES = new RegExp(`\\b${PRODUCT_SLUG}_\\w+`, "g");
+
+export function instructionsFor(served: readonly AnyAction[]): string {
+  const names = new Set(served.map((action) => action.name));
+  return WALLET_LINES.filter((line) => [...line.matchAll(TOOL_NAMES)].every(([name]) => names.has(name))).join("\n");
+}
+
+export const walletInstructions = (limits: WalletLimits, served: readonly AnyAction[]): string =>
+  [instructionsFor(served), ...limitLines(limits)].join("\n");
 
 export const START_PROMPT = `Set me up on devnet and walk me through my first swap: set up the wallet, show me its notice, show my balance, preview selling 0.05 SOL for at least 5 TEST, and send it once I approve. Then wait for it to fill and tell me what I received.`;
 
-export function agentServer(ctx: AgentContext, served: readonly AnyAction[] = ACTIONS): McpServer {
+export function agentServer(
+  ctx: AgentContext,
+  actions: readonly AnyAction[] = ctx.wallet === undefined ? ACTIONS : [...WALLET_ACTIONS, ...ACTIONS],
+): McpServer {
   const withWallet = ctx.wallet !== undefined;
-  const actions = withWallet ? [...WALLET_ACTIONS, ...served] : served;
-  const server = new McpServer({ name: PRODUCT_SLUG, version: VERSION }, ctx.wallet === undefined ? {} : { instructions: walletInstructions(ctx.wallet.limits.limits) });
+  const server = new McpServer(
+    { name: PRODUCT_SLUG, version: VERSION },
+    ctx.wallet === undefined ? {} : { instructions: walletInstructions(ctx.wallet.limits.limits, actions) },
+  );
   if (withWallet) {
     server.registerPrompt("start", { title: "Get started", description: "Set up a devnet wallet and make a first swap" }, () => ({
       messages: [{ role: "user" as const, content: { type: "text" as const, text: START_PROMPT } }],

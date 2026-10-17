@@ -20,6 +20,7 @@ import {
   tokenProgramOf,
 } from "@intent-engine/client";
 import { agentServer } from "./agent/mcp.js";
+import { servedActions } from "./agent/everyday.js";
 import { claimsOf } from "./agent/claims.js";
 import { budgetOf } from "./agent/budget.js";
 import { ESTIMATE_SCAN, walletGuard } from "./agent/wallet.js";
@@ -102,7 +103,13 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       if (command.wallet !== null) {
         transport.engineTransactions(ESTIMATE_SCAN).catch(() => undefined);
       }
-      await runtime.serve(agentServer({ transport, relay, agent, claims: claimsOf(), url: command.url, fetch: runtime.specFetch, ...wallet }));
+      const served = servedActions({
+        wallet: command.wallet !== null,
+        allTools: command.allTools,
+        relay: relay !== undefined,
+        agent: agent !== undefined,
+      });
+      await runtime.serve(agentServer({ transport, relay, agent, claims: claimsOf(), url: command.url, fetch: runtime.specFetch, ...wallet }, served));
       return null;
     }
     case "setup":

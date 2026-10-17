@@ -348,7 +348,7 @@ describe("commands", () => {
   });
 
   it("parses an agent server with an optional relayer key and its limits", () => {
-    expect(parse(["mcp", "--url", "http://x"])).toEqual({ name: "mcp", url: "http://x", priority: 0n, relay: undefined, agent: undefined, wallet: null });
+    expect(parse(["mcp", "--url", "http://x"])).toEqual({ name: "mcp", url: "http://x", priority: 0n, relay: undefined, agent: undefined, wallet: null, allTools: false });
     expect(parse(["mcp", "--url", "devnet", "--wallet"])).toMatchObject({ name: "mcp", wallet: { perTrade: new Map(), perHour: new Map() } });
     expect(parse(["mcp", "--url", "devnet", "--wallet", "--wallet-per-trade", "SOL=0.1, test=20", "--wallet-per-hour", "sol=0.5"])).toMatchObject({
       wallet: { perTrade: new Map([[NATIVE_MINT, "0.1"], [TEST_TOKEN, "20"]]), perHour: new Map([[NATIVE_MINT, "0.5"]]) },
@@ -380,6 +380,7 @@ describe("commands", () => {
       },
       agent: undefined,
       wallet: null,
+      allTools: false,
     });
     expect([RELAY_DEFAULT_TTL, RELAY_DEFAULT_HOURLY_LAMPORTS, AGENT_DEFAULT_HOURLY_LAMPORTS]).toEqual([
       86_400,

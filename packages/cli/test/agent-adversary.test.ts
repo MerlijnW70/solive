@@ -183,7 +183,7 @@ describe("the wallet's delivery tool under hostile input", () => {
       space,
     });
     h.served.length = 0;
-    const started = await cli(["mcp", "--url", "localnet", "--wallet"], {});
+    const started = await cli(["mcp", "--url", "localnet", "--wallet", "--all-tools"], {});
     expect(started.code).toBe(EXIT_OK);
     const server = h.served[0];
     if (server === undefined) {

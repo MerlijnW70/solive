@@ -2,6 +2,8 @@
 
 Ways to run `intent-engine mcp`, the server that [Use it from your AI](ai.md) adds.
 
+With `--wallet` the server serves only the everyday tools; add `--all-tools` to serve every tool, such as the committee, claim and profile tools.
+
 ## Without a wallet
 
 ```json

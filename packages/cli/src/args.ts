@@ -34,6 +34,7 @@ import {
 } from "./arg-values.js";
 import {
   agentSpec,
+  ALL_TOOLS_NEED_WALLET,
   authorityOf,
   configChange,
   market,
@@ -77,6 +78,7 @@ export { expiry, MANDATE_USE_KINDS, needsSpecHash, order, SPEC_HASH_FORMAT } fro
 export {
   AGENT_DEFAULT_HOURLY_LAMPORTS,
   AGENT_NEEDS_OWNERS,
+  ALL_TOOLS_NEED_WALLET,
   ISSUE_ALONE,
   ISSUE_FORMAT,
   JUDGE_TIMEOUT,
@@ -196,7 +198,17 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       if (values.wallet === true && remote.url === CLUSTERS["mainnet-beta"]) {
         throw new UsageError(WALLET_NOT_MAINNET);
       }
-      return { name: "mcp", ...remote, relay: relaySpec(values), agent: agentSpec(values), wallet: walletLimits(values, remote.url) };
+      if (values["all-tools"] === true && values.wallet !== true) {
+        throw new UsageError(ALL_TOOLS_NEED_WALLET);
+      }
+      return {
+        name: "mcp",
+        ...remote,
+        relay: relaySpec(values),
+        agent: agentSpec(values),
+        wallet: walletLimits(values, remote.url),
+        allTools: values["all-tools"] === true,
+      };
     case "quote":
       noSub(sub);
       return {
