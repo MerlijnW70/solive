@@ -1590,7 +1590,7 @@ describe("solver against the deployed engine", () => {
     expect(required).toBe(95_000n);
     const filled = await solve(pricer, { strategy });
     expect(filled.failed).toEqual([]);
-    expect(filled.filled).toEqual([{ intent, profit: out - required, signature: expect.any(String) }]);
+    expect(filled.filled).toEqual([{ intent, profit: out - required, cost: expect.any(BigInt), signature: expect.any(String) }]);
     expect(out - required).toBeGreaterThan(out - 100_000n);
     expect([balance(receiver), balance(solverOutput)]).toEqual([required, out - required]);
   });
