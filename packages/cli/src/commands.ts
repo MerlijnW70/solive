@@ -43,6 +43,7 @@ import { claimsCommand } from "./claim-commands.js";
 import { engineEvents } from "./event-feed.js";
 import { SOLVER_TABLE_NEXT, solverOptions } from "./solve-commands.js";
 import { flowCommand } from "./flow-commands.js";
+import { addTo } from "./add-to.js";
 
 export type { Runtime } from "./runtime.js";
 export { AUTHORITY_NEXT, configExists } from "./admin-commands.js";
@@ -71,6 +72,9 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
   }
   if (command.name === "version") {
     return { version: VERSION };
+  }
+  if (command.name === "add-to") {
+    return addTo(command.limits, runtime);
   }
   if (command.name === "seal" || command.name === "unseal") {
     return sealing(command, runtime);

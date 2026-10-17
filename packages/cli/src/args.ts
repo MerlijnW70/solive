@@ -101,7 +101,11 @@ export { CLUSTERS, clusterUrl, DEFAULT_URL, ENV_KEYPAIR, ENV_URL, WALLET_NOT_MAI
 
 const SETUP_CLUSTER = "devnet";
 
-const BALANCE_OF_ONE = "balance takes --keypair or --owner, not both";
+export const ADD_TO_NEEDS_APP = "add-to needs the app to add the server to: add-to claude";
+
+const WALLET_LIMIT_KEYS = ["wallet-per-trade", "wallet-per-hour"] as const;
+
+const BALANCE_OF_ONE ="balance takes --keypair or --owner, not both";
 
 export const MAX_FOLLOW_INTERVAL = 3_600;
 export const WATCH_INTERVAL = 5;
@@ -143,6 +147,17 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
   }
   onlyAccepted(verb, sub, values);
   unitsOf(values);
+  if (verb === "add-to") {
+    if (sub !== "claude") {
+      throw new UsageError(ADD_TO_NEEDS_APP);
+    }
+    walletLimits({ ...values, wallet: true }, clusterUrl("devnet"));
+    const limits = WALLET_LIMIT_KEYS.flatMap((k) => {
+      const text = values[k];
+      return text === undefined ? [] : [`--${k}`, text.replace(/\s+/g, "")];
+    });
+    return { name: "add-to", app: "claude", limits };
+  }
   const remote = {
     url: clusterUrl(values.url ?? env[ENV_URL] ?? (verb === "setup" ? SETUP_CLUSTER : DEFAULT_URL)),
     priority: parsePriority(values["priority-fee"]),

@@ -15,6 +15,7 @@ import { certificateCode, certificateHint, SERVER_PROBLEMS, unfundedSend } from 
 import { WALLET_NOTICE } from "./agent/wallet.js";
 import { EXIT_ALERTED } from "./monitor-args.js";
 import { monitor, writeBaseline } from "./monitor.js";
+import { launch } from "./launch.js";
 
 export const EXIT_OK = 0;
 export const EXIT_FAILED = 1;
@@ -157,6 +158,8 @@ export function nodeRuntime(clock: () => number = Date.now, pipes: Pipes = proce
       await ended;
       await server.close();
     },
+    platform: process.platform,
+    launch: (program, args) => launch(program, args),
   };
 }
 

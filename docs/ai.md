@@ -8,17 +8,13 @@ You need Node.js 22.12 or later.
 
 Run one of these in a terminal, not in the AI chat, then restart the app.
 
-Claude Code:
+Claude Code, on any system:
 
 ```sh
-claude mcp add solive -- npx -y @intent-engine/cli mcp --url devnet --wallet
+npx -y @intent-engine/cli add-to claude
 ```
 
-Claude Code on native Windows, in PowerShell or cmd, starts `npx` through `cmd /c`:
-
-```powershell
-claude mcp add solive -- cmd /c npx -y @intent-engine/cli mcp --url devnet --wallet
-```
+It runs `claude mcp add` with the server command your system needs.
 
 Codex stops a server that starts slowly, so install it first:
 
@@ -78,16 +74,10 @@ Every app on your computer uses the same wallet, the one `setup` names. Ask your
 ## 3. Cap what it sells (optional)
 
 ```sh
-claude mcp add solive -- npx -y @intent-engine/cli mcp --url devnet --wallet --wallet-per-trade SOL=0.1 --wallet-per-hour SOL=0.5
+npx -y @intent-engine/cli add-to claude --wallet-per-trade SOL=0.1 --wallet-per-hour SOL=0.5
 ```
 
-On native Windows:
-
-```powershell
-claude mcp add solive -- cmd /c npx -y @intent-engine/cli mcp --url devnet --wallet --wallet-per-trade SOL=0.1 --wallet-per-hour SOL=0.5
-```
-
-The server then refuses to sell more than that per trade or per hour, whatever it is asked.
+The server then refuses to sell more than that per trade or per hour, whatever it is asked. If you added it already, run `claude mcp remove solive` first.
 
 ## More
 

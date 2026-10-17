@@ -352,6 +352,10 @@ export function runtime(signers: Record<string, KeyPairSigner>): Runtime {
     serve: async (server) => {
       h.served.push(server);
     },
+    platform: "linux",
+    launch: async () => {
+      throw new Error("the harness launches no programs");
+    },
     saleBook,
   };
 }

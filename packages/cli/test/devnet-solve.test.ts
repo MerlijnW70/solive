@@ -302,6 +302,10 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet solve smoke"
           intentChanges: () => {
             throw new Error("the devnet solve smoke watches no intents");
           },
+          platform: "linux",
+          launch: async () => {
+            throw new Error("the devnet solve smoke launches no programs");
+          },
         },
       )) as {
         filled: { intent: Address; profit: bigint }[];

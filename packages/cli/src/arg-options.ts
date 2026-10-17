@@ -191,6 +191,7 @@ export const MANDATE_ORDER = ORDER.filter((o) => o !== "min-result" && o !== "ma
 
 export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   setup: ["url", "keypair"],
+  "add-to": ["wallet-per-trade", "wallet-per-hour"],
   balance: ["url", "keypair", "owner", "mints"],
   pda: ["owner", "nonce"],
   hash: ["artifact"],

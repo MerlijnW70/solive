@@ -714,7 +714,7 @@ describe("commands", () => {
   });
 
   it("rejects malformed input with usage errors", () => {
-    expect(usage([])).toMatch(/^usage: setup \| balance \| pda \| domain \| mcp \| show config/);
+    expect(usage([])).toMatch(/^usage: setup \| add-to claude \| balance \| pda \| domain \| mcp \| show config/);
     expect(usage(["fly"])).toMatch(/^usage:/);
     expect(usage(["pda", "--owner", OWNER])).toBe("missing --nonce");
     expect(usage(["pda", "--nonce", "1"])).toBe("missing --owner");

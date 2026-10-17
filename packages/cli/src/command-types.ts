@@ -118,6 +118,7 @@ export type Command =
   | (Keyed & { name: "signed-submit"; yes: boolean; file: string })
   | { name: "help"; verb: string | undefined }
   | { name: "version" }
+  | { name: "add-to"; app: "claude"; limits: string[] }
   | (Remote & { name: "follow"; limit: number; interval: number })
   | (Remote & { name: "treasury"; mints: Address[] | null; create: boolean; keypair: string | undefined; yes: boolean })
   | (Remote & { name: "solver-table"; solver: Address; mints: Address[] })

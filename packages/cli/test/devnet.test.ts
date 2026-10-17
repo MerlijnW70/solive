@@ -325,6 +325,10 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet smoke", () =
         intentChanges: () => {
           throw new Error("the devnet smoke test watches no intents");
         },
+        platform: "linux",
+        launch: async () => {
+          throw new Error("the devnet smoke test launches no programs");
+        },
       };
       const [crankIntent] = await findIntentPda({ owner: owner.address, nonce: 7n });
       const first = (await run({ name: "crank", url: url ?? "", priority: 0n, keypair: "solver", dryRun: false, fundAccounts: false }, runtime)) as {

@@ -19,7 +19,9 @@ describe("the AI guide", () => {
     expect(Object.keys(manifest.bin)).toHaveLength(1);
     const [claude, codex, code, limited] = sh;
     expect(sh).toHaveLength(4);
-    expect(claude).toBe(`claude mcp add solive -- npx ${ARGS.join(" ")}`);
+    expect(claude).toBe(`npx -y ${manifest.name} add-to claude`);
+    expect(parse(["add-to", "claude"], {})).toEqual({ name: "add-to", app: "claude", limits: [] });
+    expect(PAGE).not.toContain("claude mcp add solive --");
     expect(codex).toBe(`npm install -g ${manifest.name}\ncodex mcp add solive -- ${Object.keys(manifest.bin)[0]} ${ARGS.slice(2).join(" ")}`);
     const added = /^code --add-mcp '(.*)'$/.exec(code ?? "")?.[1] ?? "";
     expect(JSON.parse(added)).toEqual({ name: "solive", command: "npx", args: ARGS });
@@ -27,6 +29,7 @@ describe("the AI guide", () => {
     expect(parse(ARGS.slice(2), {})).toMatchObject({ name: "mcp", url: CLUSTERS["devnet"], wallet: { perTrade: new Map(), perHour: new Map() } });
     const limits = ["--wallet-per-trade", "SOL=0.1", "--wallet-per-hour", "SOL=0.5"];
     expect(limited).toBe(`${claude} ${limits.join(" ")}`);
+    expect(parse(["add-to", "claude", ...limits], {})).toEqual({ name: "add-to", app: "claude", limits });
     expect(parse([...ARGS.slice(2), ...limits], {})).toMatchObject({
       wallet: { perTrade: new Map([[NATIVE_MINT, "0.1"]]), perHour: new Map([[NATIVE_MINT, "0.5"]]) },
     });

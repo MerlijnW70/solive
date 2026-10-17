@@ -327,8 +327,9 @@ describe("shell forms", () => {
     const name = (JSON.parse(readFileSync(`${ROOT}/packages/cli/package.json`, "utf8")) as { name: string }).name;
     const args = ["-y", name, "mcp", "--url", "devnet", "--wallet"].join(" ");
     const windows = fencedIn(ai, "powershell").flat();
-    expect(windows).toEqual(expect.arrayContaining([`claude mcp add solive -- cmd /c npx ${args}`, `codex mcp add solive -- cmd /c intent-engine ${args.replace(`-y ${name} `, "")}`]));
-    expect(ai).toContain("Claude Code on native Windows, in PowerShell or cmd, starts `npx` through `cmd /c`:");
+    expect(windows).toEqual(expect.arrayContaining([`codex mcp add solive -- cmd /c intent-engine ${args.replace(`-y ${name} `, "")}`]));
+    expect(windows.filter((line) => line.startsWith("claude "))).toEqual([]);
+    expect(ai).toContain("Claude Code, on any system:");
     const posix = fencedIn(ai, "sh").flat().filter((line) => line.startsWith("code --add-mcp "));
     const escaped = windows.filter((line) => line.startsWith("code --add-mcp "));
     expect(escaped).toHaveLength(posix.length);

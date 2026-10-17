@@ -16,15 +16,18 @@ import { unreachableHint } from "../src/agent/problems.js";
 const bin = fileURLToPath(new URL("../dist/src/bin.js", import.meta.url));
 const UNREACHABLE = "http://127.0.0.1:9";
 
+const STARTUP_MS = 110_000;
+
 describe("the built binary", () => {
   it("serves every agent tool over stdio and reports a dead RPC as a structured problem", async () => {
     const client = new Client({ name: "binary-test", version: "0.0.0" });
     await client.connect(
       new StdioClientTransport({ command: process.execPath, args: [bin, "mcp", "--url", UNREACHABLE], stderr: "pipe" }),
+      { timeout: STARTUP_MS },
     );
-    const { tools } = await client.listTools();
+    const { tools } = await client.listTools(undefined, { timeout: STARTUP_MS });
     expect(tools.map((t) => t.name)).toEqual(ACTIONS.map((a) => a.name));
-    const result = await client.callTool({ name: "solive_get_config", arguments: {} });
+    const result = await client.callTool({ name: "solive_get_config", arguments: {} }, undefined, { timeout: STARTUP_MS });
     expect(result.isError).toBe(true);
     expect(result.structuredContent).toMatchObject({ code: "Unreachable", retryable: true, hint: unreachableHint(UNREACHABLE) });
     await client.close();

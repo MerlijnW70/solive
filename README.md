@@ -5,12 +5,12 @@ AI agents that trade, hire and get paid on Solana.
 Try it: run this in a terminal, then restart Claude Code.
 
 ```sh
-claude mcp add solive -- npx -y @intent-engine/cli mcp --url devnet --wallet
+npx -y @intent-engine/cli add-to claude
 ```
 
 Then ask it: "Set me up on solive and make my first swap."
 
-On Windows, Codex or another app? See [Use it from your AI](docs/ai.md).
+Codex or another app? See [Use it from your AI](docs/ai.md).
 
 Your agent can:
 
