@@ -261,7 +261,7 @@ describe("policy pages", () => {
     expect(scripts.length).toBeGreaterThan(4);
     expect(scripts.filter((path) => !existsSync(`${ROOT}/${path}`))).toEqual([]);
     const jobs = [...ci.slice(ci.indexOf("\njobs:")).matchAll(/^ {2}([\w-]+):$/gm)].map((m) => m[1]);
-    expect(jobs).toEqual(["check", "node-floor", "audit", "verifiable", "randomized", "attest", "fuzz", "proofs", "sign-off"]);
+    expect(jobs).toEqual(["check", "node-floor", "audit", "verifiable", "deployed", "randomized", "attest", "fuzz", "proofs", "sign-off"]);
     const randomized = ci.slice(ci.indexOf("  randomized:"), ci.indexOf("  attest:"));
     expect(randomized).toContain("if: github.event_name == 'schedule'");
     expect(randomized).toContain("FC_SEED: random");
