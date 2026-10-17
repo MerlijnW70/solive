@@ -228,6 +228,7 @@ describe("the mandate guide", () => {
 
   it("grants, uses and revokes a mandate with exactly the commands it prints", async () => {
     expect(mandateLines.filter((l) => !l.startsWith("intent-engine "))).toEqual([
+      `solana config set --url devnet --keypair ~/${defaultWallet("").slice(1)}`,
       `solana-keygen new --no-bip39-passphrase -o ${AGENT}`,
       `solana transfer $(solana-keygen pubkey ${AGENT}) 0.05 --allow-unfunded-recipient`,
     ]);

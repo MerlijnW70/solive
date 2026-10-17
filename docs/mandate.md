@@ -1,12 +1,13 @@
 # Let an agent trade within limits
 
-Grant an agent key a mandate, let it create an intent on its own, then revoke it. Complete the [quickstart](quickstart.md) first and stay in the same terminal. The `sh` blocks are for bash and zsh. Each step also shows its Windows PowerShell form, which names your home directory `$HOME`.
+Give an agent its own key and a budget it cannot exceed, let it trade on its own, then take the budget back. Do steps 1 and 2 of the [quickstart](quickstart.md) first. You also need the Solana CLI.
 
 ## 1. Create and fund the agent key
 
 The agent key pays the rent, network fees, create fee and crank bounty of every intent it creates:
 
 ```sh
+solana config set --url devnet --keypair ~/.config/intent-engine/wallet.json
 solana-keygen new --no-bip39-passphrase -o ~/solive-agent.json
 solana transfer $(solana-keygen pubkey ~/solive-agent.json) 0.05 --allow-unfunded-recipient
 ```
@@ -14,6 +15,7 @@ solana transfer $(solana-keygen pubkey ~/solive-agent.json) 0.05 --allow-unfunde
 In PowerShell:
 
 ```powershell
+solana config set --url devnet --keypair $HOME/.config/intent-engine/wallet.json
 solana-keygen new --no-bip39-passphrase -o $HOME/solive-agent.json
 solana transfer $(solana-keygen pubkey $HOME/solive-agent.json) 0.05 --allow-unfunded-recipient
 ```
@@ -30,18 +32,18 @@ Each limit is one option:
 
 
 ```sh
-intent-engine mandate grant --agent $(solana-keygen pubkey ~/solive-agent.json) --input-mint So11111111111111111111111111111111111111112 --output-mint ETU8trkkfE8gNVPDGbCaJUoH88wy6yYV6ttJdc9NKB88 --kinds swap --per-intent 0.02 --total 0.05 --max-intents 3 --max-ttl 3600 --valid-for 86400 --floor-out 100 --floor-in 1 --units tokens --yes
+intent-engine mandate grant --agent $(solana-keygen pubkey ~/solive-agent.json) --input-mint SOL --output-mint TEST --kinds swap --per-intent 0.02 --total 0.05 --max-intents 3 --max-ttl 3600 --valid-for 86400 --floor-out 100 --floor-in 1 --units tokens --yes
 intent-engine mandate show --agent $(solana-keygen pubkey ~/solive-agent.json)
 ```
 
 In PowerShell:
 
 ```powershell
-intent-engine mandate grant --agent $(solana-keygen pubkey $HOME/solive-agent.json) --input-mint So11111111111111111111111111111111111111112 --output-mint ETU8trkkfE8gNVPDGbCaJUoH88wy6yYV6ttJdc9NKB88 --kinds swap --per-intent 0.02 --total 0.05 --max-intents 3 --max-ttl 3600 --valid-for 86400 --floor-out 100 --floor-in 1 --units tokens --yes
+intent-engine mandate grant --agent $(solana-keygen pubkey $HOME/solive-agent.json) --input-mint SOL --output-mint TEST --kinds swap --per-intent 0.02 --total 0.05 --max-intents 3 --max-ttl 3600 --valid-for 86400 --floor-out 100 --floor-in 1 --units tokens --yes
 intent-engine mandate show --agent $(solana-keygen pubkey $HOME/solive-agent.json)
 ```
 
-The program enforces every limit. Proceeds always go to your own token account. Granting raises the engine's spending allowance on your wrapped SOL token account by `--total`, and wraps SOL first if that account holds less.
+The program enforces every limit. Proceeds always go to your own token account.
 
 ## 3. Let the agent create an intent
 
@@ -57,7 +59,7 @@ In PowerShell:
 intent-engine mandate use swap --keypair $HOME/solive-agent.json --owner $(solana address) --amount-in 0.02 --min-out 2 --expires-in 3600 --units tokens --yes
 ```
 
-The 0.02 wrapped SOL moves from your token account into the intent's escrow. An order below the price floor or above a cap is refused, and so is any new order after the mandate ends. Intents the agent already created stay fillable until they expire, and cancelling one does not return its share of the budget.
+The 0.02 wrapped SOL moves from your token account into the intent's escrow. An order below the price floor, above a cap or after the mandate ends is refused.
 
 ## 4. Revoke it
 
@@ -71,9 +73,7 @@ In PowerShell:
 intent-engine mandate revoke --agent $(solana-keygen pubkey $HOME/solive-agent.json) --yes
 ```
 
-Revoking lowers the engine's allowance by the unused budget in one transaction, then cancels up to 6 of the agent's open intents in one transaction each and refunds their escrow. A cancel that would fail is listed under `skipped`, with its reason, and not sent: one whose refund would fail because your token account is missing, one whose refund would fail because that account is frozen, and one whose simulation fails for any other cause. Any other intent it opened can no longer fill; cancel it to get its escrow back.
-
-A cancel that failed is listed under `failed`. A cancel that was sent but not confirmed is listed under `unknown` with its signature, since it may still land. If either list is present, the command exits with code 3; cancel those intents with `intent-engine cancel` once `intent-engine show` reports them still open.
+Revoking lowers the engine's allowance by the unused budget in one transaction, then cancels up to 6 of the agent's open intents in one transaction each and refunds their escrow. Cancels it could not make are listed under `skipped`, `failed` or `unknown`; cancel those with `intent-engine cancel`.
 
 Revoking closes the mandate, so `mandate show` then reports `NotFound`.
 

@@ -15,6 +15,7 @@ For every proof escrow the wallet announced work to, the record says whether its
 - `paid`: the release recorded the announced hash and paid the wallet's own token account, or named it in a team split.
 - `paid-other`: the escrow was released, but not to this wallet for this work.
 - `refunded` or `open`: nothing was released.
+- `unknown`: the release could not be read in full.
 
 The totals count only `paid` releases at arm's length. A release is self-dealt, and left out, when the worker owned the escrow, judged it, or sat on the committee that judged it, or when the owner judged its own escrow. `payers` and `judges` count the distinct owners and judges behind the totals; many payers and judges are harder to fake than many releases. `committee_judged` counts releases a committee approved.
 
@@ -22,7 +23,7 @@ The totals count only `paid` releases at arm's length. A release is self-dealt, 
 
 ## Rate released work
 
-The owner of a released escrow rates the work once, from 0 to 100, optionally with the sha256 of a written note:
+The owner of a released escrow rates the work once, from 0 to 100. `--note` adds the sha256 of a written note:
 
 ```sh
 intent-engine feedback --keypair owner.json --intent <escrow address> --score 90 --yes
@@ -32,7 +33,7 @@ An MCP agent rates with `solive_wallet_feedback`. A rating counts only when the 
 
 ## Publish a profile
 
-A worker tells payers what it does and where to reach it with a profile on chain: 1 to 8 skill tags, an https endpoint, and optionally a document url with its sha256. Tags are 1 to 16 of `a-z`, `0-9` and `-`, not starting or ending with `-`; urls are `https://` and at most 128 printable characters. `profile set` creates the profile and pays its rent, or updates the one there; it previews until you add `--yes`:
+A worker tells payers what it does and where to reach it with a profile on chain: skill tags, an https endpoint and optionally a document. `profile set` creates or updates it and previews until you add `--yes`:
 
 ```sh
 intent-engine profile set --keypair worker.json --skills rust,code-review --endpoint https://worker.example/jobs --yes
@@ -49,6 +50,6 @@ Two wallets held by one person look like two people. Self-dealing checks catch a
 
 ## Next
 
-- [Judge a proof escrow](judge.md)
+- [Judge work](judge.md)
 - [CLI reference](reference/cli.md)
 - [MCP tools](reference/mcp-tools.md)
