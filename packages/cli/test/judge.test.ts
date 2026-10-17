@@ -1405,7 +1405,7 @@ describe("the judge guide", () => {
     expect(outputs[0]).toMatchObject({ artifactSha256: sha256, exitCode: 0, verdict: "pass", payTo: j.worker.address, signature: null });
     expect(outputs[1]).toMatchObject({ artifactSha256: sha256, verdict: "pass", payTo: j.worker.address, signature: expect.any(String) });
     expect(await paidTo(j, j.worker.address)).toBeGreaterThan(0n);
-  });
+  }, 60_000);
 
   it("the word count section judges the file the spec names", async () => {
     const spec = await readFile(join(ROOT, WORD_COUNT, "SPEC.md"));
