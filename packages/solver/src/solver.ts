@@ -21,6 +21,7 @@ import {
 import { RateLimited } from "./jupiter.js";
 import type { Pricer } from "./market.js";
 import { decide, type Plan, standing, type Strategy } from "./plan.js";
+import { fromCache } from "./quote-cache.js";
 
 export { BACKOFF_MAX_INTERVALS, type Backoff, backingOff, backoff } from "./backoff.js";
 export {
@@ -104,6 +105,7 @@ export async function tick(o: SolverOptions): Promise<Report> {
     mints.set(mint, loaded);
     return loaded;
   };
+  const freshly: Pricer = { quote: (request) => o.pricer.quote({ ...request, fresh: true }) };
   let limited: string | null = null;
   for (const { address, intent } of intents) {
     if (limited !== null) {
@@ -162,7 +164,12 @@ export async function tick(o: SolverOptions): Promise<Report> {
       let skipped: string | null = null;
       let size: { bytes: number | null; accounts: number } = { bytes: null, accounts: 0 };
       for (const routeAccounts of ROUTE_ACCOUNT_BUDGETS) {
-        const decision = await decide(address, intent, config, now, o.pricer, o.solver.address, { ...o.strategy, routeAccounts }, payable);
+        const budget = { ...o.strategy, routeAccounts };
+        const first = await decide(address, intent, config, now, o.pricer, o.solver.address, budget, payable);
+        const decision =
+          first.kind === "fill" && fromCache(first.plan.route)
+            ? await decide(address, intent, config, now, freshly, o.solver.address, budget, payable)
+            : first;
         if (decision.kind === "skip") {
           skipped = decision.reason;
           break;

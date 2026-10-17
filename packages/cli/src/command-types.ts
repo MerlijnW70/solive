@@ -89,6 +89,7 @@ export type Command =
       routeProgram: Address | undefined;
       lookupTables: Address[];
       watch: number | null;
+      quoteTtl?: number;
     })
   | (Keyed & { name: "crank"; dryRun: boolean; fundAccounts: boolean })
   | (Remote & { name: "events"; limit: number })

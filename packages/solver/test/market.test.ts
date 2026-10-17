@@ -3,13 +3,14 @@ import { describe, expectTypeOf, it } from "vitest";
 import type { Fetch, FetchResponse, Pricer, Quote, QuoteRequest } from "../src/index.js";
 
 describe("market contract", () => {
-  it("asks a pricer for a quote by mints, exact input, taker and an optional account budget", () => {
+  it("asks a pricer for a quote by mints, exact input, taker, an optional account budget and an optional fresh flag", () => {
     expectTypeOf<QuoteRequest>().toEqualTypeOf<{
       inputMint: Address;
       outputMint: Address;
       amountIn: bigint;
       taker: Address;
       maxAccounts?: number;
+      fresh?: boolean;
     }>();
     expectTypeOf<Pricer["quote"]>().parameters.toEqualTypeOf<[QuoteRequest]>();
     expectTypeOf<Pricer["quote"]>().returns.toEqualTypeOf<Promise<Quote | null>>();

@@ -67,6 +67,7 @@ import {
   backingOff,
   backoff,
   BALANCES_REFUSED,
+  cachedPricer,
   type Chain,
   createdRent,
   FAILED_ON_CHAIN,
@@ -92,6 +93,7 @@ import {
   MAX_COMPUTE_UNITS,
   type Pricer,
   type Quote,
+  type QuoteRequest,
   RateLimited,
   ROUTE_ACCOUNT_BUDGETS,
   SIMULATION_REFUSED,
@@ -1083,6 +1085,64 @@ describe("solver against the deployed engine", () => {
       failed: [],
     });
     expect(asked).toBe(1);
+  });
+
+  const cachedMarket = (pay: { out: bigint }) => {
+    const asked: (boolean | undefined)[] = [];
+    const market = stashMarket(stash, stashAccount, outputMint, solverOutput, () => pay.out);
+    const counted: Pricer = {
+      quote: (request) => {
+        asked.push(request.fresh);
+        return market.quote(request);
+      },
+    };
+    return { asked, pricer: cachedPricer(counted, { ttlMs: 10_000, clock: () => 0 }) };
+  };
+
+  const routeRequest = (): QuoteRequest => ({
+    inputMint,
+    outputMint,
+    amountIn: splitFees(AMOUNT, 5, 0, 0).net,
+    taker: solver.address,
+    maxAccounts: ROUTE_ACCOUNT_BUDGETS[0],
+  });
+
+  it("builds a fill decided from a stored quote only from a fresh quote", async () => {
+    const intent = await open(30n);
+    const pay = { out: MIN_OUT + 4_000n };
+    const { asked, pricer } = cachedMarket(pay);
+    await pricer.quote(routeRequest());
+    pay.out = MIN_OUT + 2_000n;
+    const report = await solve(pricer);
+    expect(report.failed).toEqual([]);
+    expect(report.filled).toEqual([{ intent, profit: 2_000n, signature: expect.any(String) }]);
+    expect(asked).toEqual([undefined, true]);
+    expect([balance(receiver), balance(solverOutput)]).toEqual([MIN_OUT, 2_000n]);
+  });
+
+  it("skips a fill decided from a stored quote when the fresh quote no longer pays", async () => {
+    const intent = await open(31n);
+    const pay = { out: MIN_OUT + 4_000n };
+    const { asked, pricer } = cachedMarket(pay);
+    await pricer.quote(routeRequest());
+    pay.out = MIN_OUT - 1n;
+    const report = await solve(pricer);
+    expect(report).toEqual({
+      filled: [],
+      sent: [],
+      skipped: [{ intent, reason: `the route pays ${MIN_OUT - 1n}, less than the ${MIN_OUT} the intent requires` }],
+      failed: [],
+    });
+    expect(asked).toEqual([undefined, true]);
+    expect([balance(receiver), balance(solverOutput)]).toEqual([0n, 0n]);
+  });
+
+  it("asks the market once for a fill from a quote that was not stored", async () => {
+    const intent = await open(32n);
+    const { asked, pricer } = cachedMarket({ out: MIN_OUT + 4_000n });
+    const report = await solve(pricer);
+    expect(report.filled).toEqual([{ intent, profit: 4_000n, signature: expect.any(String) }]);
+    expect(asked).toEqual([undefined]);
   });
 
   it("compresses the route through an on-chain lookup table", async () => {

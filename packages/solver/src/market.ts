@@ -6,6 +6,7 @@ export type QuoteRequest = {
   amountIn: bigint;
   taker: Address;
   maxAccounts?: number;
+  fresh?: boolean;
 };
 
 export type Quote = {

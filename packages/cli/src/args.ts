@@ -110,6 +110,7 @@ const BALANCE_OF_ONE ="balance takes --keypair or --owner, not both";
 
 export const MAX_FOLLOW_INTERVAL = 3_600;
 export const WATCH_INTERVAL = 5;
+export const QUOTE_TTL = 10;
 
 export function parse(argv: readonly string[], env: Env = {}): Command {
   noRepeats(argv);
@@ -308,6 +309,9 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       if (values.interval !== undefined && values.watch !== true) {
         throw new UsageError("--interval needs --watch");
       }
+      if (values["quote-ttl"] !== undefined && values.watch !== true) {
+        throw new UsageError("--quote-ttl needs --watch");
+      }
       if (remote.priority !== "auto" && remote.priority > AUTO_PRICE_CAP) {
         throw new UsageError(solveFeeAboveCap);
       }
@@ -326,6 +330,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         routeProgram: values["route-program"] === undefined ? undefined : parseAddress(values["route-program"], "route-program"),
         lookupTables: values["lookup-table"] === undefined ? [] : addressList(values["lookup-table"], "lookup-table"),
         watch: values.watch === true ? parseBounded(values.interval ?? String(WATCH_INTERVAL), "interval", MAX_FOLLOW_INTERVAL, 1) : null,
+        ...(values.watch === true ? { quoteTtl: parseBounded(values["quote-ttl"] ?? String(QUOTE_TTL), "quote-ttl", MAX_FOLLOW_INTERVAL) } : {}),
       };
     }
     case "update-config":

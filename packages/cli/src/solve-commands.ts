@@ -2,7 +2,9 @@ import type { Address } from "@solana/kit";
 import { getIntentDecoder, type Intent, IntentStatus } from "@intent-engine/core";
 import {
   type Chain,
+  cachedPricer,
   type Flight,
+  type Pricer,
   type SolverOptions,
   decodeLookupTable,
   landings,
@@ -27,6 +29,7 @@ import {
 import type { Command } from "./command-types.js";
 import type { Runtime } from "./runtime.js";
 import { priceOf, withPriority } from "./compute.js";
+import { QUOTE_TTL } from "./args.js";
 
 const SOLVER_ROUTE_ACCOUNTS = 40;
 
@@ -69,6 +72,9 @@ export async function stillOpen(transport: Transport, intents: readonly Address[
   });
 }
 
+export const watchPricer = (pricer: Pricer, ttlSeconds: number, clock: () => number): Pricer =>
+  ttlSeconds === 0 ? pricer : cachedPricer(pricer, { ttlMs: ttlSeconds * 1_000, clock });
+
 export async function watchSolve(command: SolveCommand, interval: number, runtime: Runtime, emit: (value: object) => void): Promise<number> {
   const transport = withPriority(runtime.transport(command.url), command.priority);
   const options = await solverOptions(command, runtime, transport);
@@ -77,6 +83,7 @@ export async function watchSolve(command: SolveCommand, interval: number, runtim
   const live: SolverOptions = {
     ...options,
     chain,
+    pricer: watchPricer(options.pricer, command.quoteTtl ?? QUOTE_TTL, () => Number(runtime.now()) * 1_000),
     backoff: held,
     send:
       command.jito === undefined ? async (wire) => ({ signature: await transport.submitWire(wire), confirmed: false }) : options.send,
