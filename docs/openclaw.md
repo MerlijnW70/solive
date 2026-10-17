@@ -1,6 +1,6 @@
 # Use it from OpenClaw
 
-Connect OpenClaw to the engine's MCP server on devnet. You need Node.js 22.12 or later and OpenClaw. Devnet tokens have no value.
+Let OpenClaw swap, pay and escrow on Solana devnet, asking you before every call. You need Node.js 22.12 or later and OpenClaw. Devnet tokens have no value.
 
 ## 1. Add the server
 
@@ -20,7 +20,7 @@ Merge this entry into `~/.openclaw/openclaw.json`, or `$HOME\.openclaw\openclaw.
 }
 ```
 
-The version is pinned, so an update reaches the server only when you change it. `--wallet` gives the server its own devnet wallet. `--wallet-per-trade` and `--wallet-per-hour` cap what it sells per trade and per rolling hour, whatever the agent is asked, as [Use it from your AI](ai.md) shows. `requestTimeoutMs` leaves room for `intent__solive_wallet_wait`, which waits for a fill before it answers.
+The version is pinned, so updates reach the server only when you change it. `--wallet` gives the server its own devnet wallet, and the two limits cap what it sells per trade and per hour. `requestTimeoutMs` leaves room for `intent__solive_wallet_wait`, which waits for a fill.
 
 On native Windows, `command` may need to be `npx.cmd`.
 
@@ -50,12 +50,6 @@ OpenClaw's default posture runs MCP tools without asking. Make every tool of thi
 openclaw mcp configure intent --approval prompt
 ```
 
-In PowerShell:
-
-```powershell
-openclaw mcp configure intent --approval prompt
-```
-
 Never answer "Allow Always" for an `intent__solive_wallet_*` tool. It approves that tool for any arguments, `send: true` included, so later swaps, escrows and releases go out without a question.
 
 Shared or group agents get no wallet tools at all. Deny them in that agent's entry:
@@ -72,7 +66,7 @@ Shared or group agents get no wallet tools at all. Deny them in that agent's ent
 
 ## 3. Add the skill (optional)
 
-[examples/openclaw/intent-engine/SKILL.md](../examples/openclaw/intent-engine/SKILL.md) teaches the agent three flows: earn, hire and swap. Copy the `intent-engine` folder into your OpenClaw skills folder. It holds only `SKILL.md`: no scripts and no commands. Read it before you install it, as you would any wallet skill.
+[examples/openclaw/intent-engine/SKILL.md](../examples/openclaw/intent-engine/SKILL.md) teaches the agent to earn, hire and swap. Copy the `intent-engine` folder into your OpenClaw skills folder. It holds only `SKILL.md`, with no scripts; read it first, as you would any wallet skill.
 
 ## 4. Test it
 

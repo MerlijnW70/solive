@@ -107,7 +107,7 @@ describe("the openclaw guide and skill", () => {
       expect(text).not.toMatch(pipe);
     }
     const commands = [...fenced(GUIDE, "sh"), ...fenced(GUIDE, "powershell")].flatMap((block) => block.split("\n"));
-    expect(commands).toEqual([`openclaw mcp configure ${SERVER} --approval prompt`, `openclaw mcp configure ${SERVER} --approval prompt`]);
+    expect(commands).toEqual([`openclaw mcp configure ${SERVER} --approval prompt`]);
     expect(fenced(GUIDE, "[a-z0-9]+").length).toBe(fenced(GUIDE, "json5").length + commands.length);
     expect(GUIDE).toContain(`Never answer "Allow Always" for an \`${SERVER}__${PRODUCT_SLUG}_wallet_*\` tool.`);
     expect(GUIDE).toContain("`send: true` included");

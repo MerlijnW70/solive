@@ -367,3 +367,28 @@ describe("generated reference docs", () => {
     });
   }
 });
+
+describe("package readmes", () => {
+  const repository = /^repository = "([^"]+)"$/m.exec(readFileSync(`${ROOT}/identity.toml`, "utf8"))?.[1] ?? "";
+  const [owner = "", name = ""] = new URL(repository).pathname.slice(1).split("/");
+  const site = `https://${owner.toLowerCase()}.github.io/${name}/`;
+  const shLines = (text: string) => [...text.matchAll(/^```sh\n([\s\S]*?)^```$/gm)].flatMap((m) => (m[1] ?? "").trimEnd().split("\n"));
+
+  for (const pkg of ["core", "client", "solver", "cli"]) {
+    it(`${pkg} names itself, links only pages the site has and runs only commands its guides run`, () => {
+      const readme = readFileSync(`${ROOT}/packages/${pkg}/README.md`, "utf8");
+      const manifest = JSON.parse(readFileSync(`${ROOT}/packages/${pkg}/package.json`, "utf8")) as { name: string };
+      expect(readme.startsWith(`# ${manifest.name}\n`)).toBe(true);
+      const pages = [...readme.matchAll(/\]\((https:\/\/[^)#]+)(?:#[^)]*)?\)/g)].map((m) => m[1] ?? "").filter((url) => url.startsWith(site));
+      expect(pages.length).toBeGreaterThan(0);
+      for (const url of pages) {
+        expect(existsSync(`${DOCS}${url.slice(site.length)}.md`), url).toBe(true);
+      }
+      const guides = pages.map((url) => readFileSync(`${DOCS}${url.slice(site.length)}.md`, "utf8"));
+      const known = new Set(guides.flatMap(shLines));
+      for (const line of shLines(readme)) {
+        expect(known.has(line), line).toBe(true);
+      }
+    });
+  }
+});

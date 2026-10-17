@@ -48,6 +48,13 @@ export default {
           { text: "Threat model", link: `${repository}/blob/main/docs/maintainers/threat-model.md` },
         ],
       },
+      {
+        text: "Project",
+        items: [
+          { text: "Report a vulnerability", link: `${repository}/blob/main/SECURITY.md` },
+          { text: "Contributing", link: `${repository}/blob/main/CONTRIBUTING.md` },
+        ],
+      },
     ],
   },
   markdown: {
