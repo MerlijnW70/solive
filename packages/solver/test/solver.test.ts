@@ -103,6 +103,7 @@ import {
   type Simulated,
   tick,
   tooLarge,
+  WAITING_FOR_TARGET,
 } from "../src/index.js";
 
 const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111" as Address;
@@ -1464,6 +1465,46 @@ describe("solver against the deployed engine", () => {
     expect(report.failed).toEqual([]);
     expect(report.filled).toHaveLength(1);
     expect(balance(receiver)).toBe(MIN_OUT);
+  });
+
+  it("waits on a falling auction below its profit target and fills it later, when it pays more", async () => {
+    const params = { kind: Kind.DutchAuction, amountIn: AMOUNT, startOut: 100_000n, endOut: MIN_OUT, startTs: NOW, endTs: NOW + 600n } as const;
+    await send(owner, [
+      await buildCreateIntent({
+        owner,
+        treasury: feeRecipient.address,
+        maxCreateFee: MAX_CREATE_FEE,
+        maxBounty: MAX_CRANK_BOUNTY,
+        nonce: 9n,
+        params,
+        expiresAt: NOW + 3_600n,
+        inputMint,
+        outputMint,
+        inputTokenProgram: TOKEN_PROGRAM_ADDRESS,
+        outputTokenProgram: TOKEN_PROGRAM_ADDRESS,
+      }),
+    ]);
+    const [intent] = await findIntentPda({ owner: owner.address, nonce: 9n });
+    intents.push(intent);
+    const out = 100_500n;
+    const pricer = stashMarket(stash, stashAccount, outputMint, solverOutput, () => out);
+    const strategy = { minProfit: floors(100n), maxFeeBps: 100, target: floors(5_000n) };
+    const early = await solve(pricer, { strategy });
+    expect(early.filled).toEqual([]);
+    expect(early.failed).toEqual([]);
+    expect(early.skipped).toEqual([{ intent, reason: `${WAITING_FOR_TARGET}: profit ${out - 100_000n} is below the target 5000` }]);
+    expect([balance(receiver), balance(solverOutput)]).toEqual([0n, 0n]);
+    const later = NOW + 300n;
+    const clock = svm.getClock();
+    clock.unixTimestamp = later;
+    svm.setClock(clock);
+    const required = requiredOut(params, AMOUNT, later);
+    expect(required).toBe(95_000n);
+    const filled = await solve(pricer, { strategy });
+    expect(filled.failed).toEqual([]);
+    expect(filled.filled).toEqual([{ intent, profit: out - required, signature: expect.any(String) }]);
+    expect(out - required).toBeGreaterThan(out - 100_000n);
+    expect([balance(receiver), balance(solverOutput)]).toEqual([required, out - required]);
   });
 
   it("fills exactly what the program accepts and never spends on what the program refuses", async () => {

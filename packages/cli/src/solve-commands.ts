@@ -243,7 +243,12 @@ export async function solverOptions(
     chain,
     pricer: firstPricer(...[inventory, routed].filter((pricer): pricer is Pricer => pricer !== null)),
     solver,
-    strategy: { minProfit: command.minProfit, maxFeeBps: command.maxFeeBps },
+    strategy: {
+      minProfit: command.minProfit,
+      maxFeeBps: command.maxFeeBps,
+      ...(command.target === undefined ? {} : { target: command.target }),
+      ...(command.patience === undefined ? {} : { patience: command.patience }),
+    },
     concurrency: command.concurrency,
     ...(heldBack === undefined ? {} : { held: heldBack }),
     maxSolCost: command.maxSolCost,

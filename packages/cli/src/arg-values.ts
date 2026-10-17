@@ -219,7 +219,7 @@ export function https(text: string, key: string): string {
   return text.replace(/\/+$/, "");
 }
 
-export function mintAmounts(text: string | undefined, name: "relay-fee" | "min-profit"): ReadonlyMap<Address, bigint> {
+export function mintAmounts(text: string | undefined, name: "relay-fee" | "min-profit" | "target-profit"): ReadonlyMap<Address, bigint> {
   const amounts = new Map<Address, bigint>();
   for (const entry of text === undefined ? [] : text.split(",")) {
     const [mint, amount, ...rest] = entry.split("=");

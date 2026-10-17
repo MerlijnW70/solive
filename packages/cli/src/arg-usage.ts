@@ -38,7 +38,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   "raise-pause": "(--keypair <file> [--yes] | --authority <address>) --flags create|fill|all",
   "lower-pause": "(--keypair <file> [--yes] | --authority <address>) --flags create|fill|all",
   "set-economics": "(--keypair <file> [--yes] | --authority <address>) --bounty --create-fee [--kind-fees] [--partner-cut]",
-  solve: "--keypair <file> [--inventory <input mint>:<output mint>=<out>/<in>,...] [--jupiter <url> | --issue <input mint>:<output mint>=<out>/<in>,...] --min-profit <output mint=raw,...> [--priority-fee <micro-lamports|auto>] [--max-fee-bps <n>] [--max-sol-cost <SOL>] [--max-rent <SOL>] [--slippage-bps <n>] [--jito <url> [--tip <lamports>] [--bundle-size <n>]] [--route-program <program the aggregator swaps through>] [--lookup-table <address,...>] [--concurrency <n>] [--watch [--interval <seconds>] [--quote-ttl <seconds>] [--stats]]",
+  solve: "--keypair <file> [--inventory <input mint>:<output mint>=<out>/<in>,...] [--jupiter <url> | --issue <input mint>:<output mint>=<out>/<in>,...] --min-profit <output mint=raw,...> [--target-profit <output mint=raw,...> [--patience <seconds>]] [--priority-fee <micro-lamports|auto>] [--max-fee-bps <n>] [--max-sol-cost <SOL>] [--max-rent <SOL>] [--slippage-bps <n>] [--jito <url> [--tip <lamports>] [--bundle-size <n>]] [--route-program <program the aggregator swaps through>] [--lookup-table <address,...>] [--concurrency <n>] [--watch [--interval <seconds>] [--quote-ttl <seconds>] [--stats]]",
   "solver-table": "--solver <address> --mints <mint,...>",
   crank: "--keypair <file> [--dry-run] [--fund-accounts]",
   treasury: "[--mints <mint,...>] [--create --mints <mint,...> --keypair <payer file> [--yes]]",

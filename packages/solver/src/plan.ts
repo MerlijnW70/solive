@@ -24,7 +24,24 @@ export type Strategy = {
   maxFeeBps: number;
   cycle?: Cycle;
   routeAccounts?: number;
+  target?: ReadonlyMap<Address, bigint>;
+  patience?: number;
 };
+
+export const DEFAULT_PATIENCE = 30;
+
+export const WAITING_FOR_TARGET = "waiting for the profit target while the auction still falls";
+
+export function awaitingTarget(params: IntentParams, outputMint: Address, profit: bigint, now: bigint, strategy: Strategy): string | null {
+  const target = strategy.target?.get(outputMint);
+  if (params.kind !== Kind.DutchAuction || target === undefined || profit >= target) {
+    return null;
+  }
+  if (now + BigInt(strategy.patience ?? DEFAULT_PATIENCE) >= params.endTs) {
+    return null;
+  }
+  return `${WAITING_FOR_TARGET}: profit ${profit} is below the target ${target}`;
+}
 
 export type Payable = (draft: Pick<Plan, "intent" | "fees">) => Promise<string | null>;
 
@@ -120,6 +137,10 @@ export async function decide(
   const gain =
     arbitrage !== null && arbitrage.amountIn <= spread && arbitrage.amountOut > arbitrage.amountIn ? arbitrage : null;
   const profit = gain === null ? spread : spread - gain.amountIn + gain.amountOut;
+  const patient = awaitingTarget(params, intent.outputMint, profit, now, strategy);
+  if (patient !== null) {
+    return skip(patient);
+  }
   if (profit < floor) {
     return skip(`profit ${profit} is below ${floor}`);
   }

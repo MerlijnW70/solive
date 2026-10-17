@@ -142,6 +142,44 @@ export function profitFloors(text: string): ReadonlyMap<Address, bigint> {
   return floors;
 }
 
+export const MAX_PATIENCE = 3_600;
+
+export const PATIENCE_NEEDS_TARGET = "--patience needs --target-profit";
+
+export const targetBelowFloor = (mint: string, target: bigint, floor: bigint): string =>
+  `--target-profit for ${mint} is ${target}, below its --min-profit of ${floor}`;
+
+export const targetWithoutFloor = (mint: string): string => `--target-profit names ${mint}, which has no --min-profit`;
+
+export function profitTargets(values: Values): {
+  minProfit: ReadonlyMap<Address, bigint>;
+  target?: ReadonlyMap<Address, bigint>;
+  patience?: number;
+} {
+  const minProfit = profitFloors(required(values, "min-profit"));
+  if (values["target-profit"] === undefined) {
+    if (values.patience !== undefined) {
+      throw new UsageError(PATIENCE_NEEDS_TARGET);
+    }
+    return { minProfit };
+  }
+  const target = mintAmounts(values["target-profit"], "target-profit");
+  for (const [mint, raw] of target) {
+    const floor = minProfit.get(mint);
+    if (floor === undefined) {
+      throw new UsageError(targetWithoutFloor(mint));
+    }
+    if (raw < floor) {
+      throw new UsageError(targetBelowFloor(mint, raw, floor));
+    }
+  }
+  return {
+    minProfit,
+    target,
+    ...(values.patience === undefined ? {} : { patience: parseBounded(values.patience, "patience", MAX_PATIENCE) }),
+  };
+}
+
 export function authorityOf(values: Values): Authority {
   if (values.keypair !== undefined && values.authority !== undefined) {
     throw new UsageError("pass --keypair to sign and send, or --authority to print an unsigned transaction, not both");

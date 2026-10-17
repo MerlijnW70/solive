@@ -84,6 +84,8 @@ export type Command =
       tipLamports: bigint;
       bundleSize?: number;
       minProfit: ReadonlyMap<Address, bigint>;
+      target?: ReadonlyMap<Address, bigint>;
+      patience?: number;
       maxFeeBps: number;
       maxSolCost: bigint;
       maxRent: bigint;

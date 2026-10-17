@@ -8,9 +8,18 @@ import {
   Kind,
   kindBit,
   PAUSE_FILL,
+  requiredOut,
   splitFees,
 } from "@intent-engine/core";
-import { decide, type Pricer, type Quote, type QuoteRequest, type Strategy } from "../src/index.js";
+import {
+  decide,
+  DEFAULT_PATIENCE,
+  type Pricer,
+  type Quote,
+  type QuoteRequest,
+  type Strategy,
+  WAITING_FOR_TARGET,
+} from "../src/index.js";
 
 const KEY = "11111111111111111111111111111112" as Address;
 const PARTNER = "SysvarC1ock11111111111111111111111111111111" as Address;
@@ -219,5 +228,90 @@ describe("fill decisions", () => {
     expect(short).toEqual({ kind: "skip", reason: `the route pays ${MIN_OUT - 1n}, less than the ${MIN_OUT} the intent requires` });
     const even = await decide(KEY, intent(), config(), NOW, pays(MIN_OUT), SOLVER, { ...strategy, minProfit: floors(0n) });
     expect(even.kind === "fill" ? even.plan.profit : even).toBe(0n);
+  });
+});
+
+describe("patience on a falling auction", () => {
+  const END = NOW + 600n;
+  const auction = { kind: Kind.DutchAuction, amountIn: AMOUNT, startOut: 100_000n, endOut: MIN_OUT, startTs: NOW, endTs: END } as const;
+  const dutch = intent({ kind: Kind.DutchAuction, params: encodeParams(auction), expiresAt: END + 100n });
+  const fees = splitFees(AMOUNT, 5, 0, 2_000);
+  const asked = (now: bigint) => requiredOut(auction, AMOUNT, now);
+  const target = new Map([[PARTNER, 5_000n]]);
+  const plainly: Strategy = { minProfit: floors(100n), maxFeeBps: 100 };
+  const patient: Strategy = { ...plainly, target };
+  const paying = (out: bigint) => market((amountIn) => (amountIn === fees.net ? out : null));
+  const waits = (profit: bigint) => ({ kind: "skip", reason: `${WAITING_FOR_TARGET}: profit ${profit} is below the target 5000` });
+
+  it("waits early in the fall while the profit is below the target, and fills once it reaches it", async () => {
+    expect(DEFAULT_PATIENCE).toBe(30);
+    const out = 100_500n;
+    expect(await decide(KEY, dutch, config(), NOW, paying(out), SOLVER, patient)).toEqual(waits(out - asked(NOW)));
+    const early = await decide(KEY, dutch, config(), NOW, paying(out), SOLVER, plainly);
+    expect(early.kind === "fill" ? early.plan.profit : early).toBe(500n);
+    const later = NOW + 300n;
+    const filled = await decide(KEY, dutch, config(), later, paying(out), SOLVER, patient);
+    expect(filled.kind === "fill" ? [filled.plan.required, filled.plan.profit] : filled).toEqual([asked(later), out - asked(later)]);
+    expect(out - asked(later)).toBeGreaterThan(500n);
+    const exact = asked(later) + 5_000n;
+    expect((await decide(KEY, dutch, config(), later, paying(exact), SOLVER, patient)).kind).toBe("fill");
+    expect(await decide(KEY, dutch, config(), later, paying(exact - 1n), SOLVER, patient)).toEqual(waits(4_999n));
+  });
+
+  it("fills at the floor once the auction ends within the patience", async () => {
+    const last = END - BigInt(DEFAULT_PATIENCE);
+    const out = asked(last) + 200n;
+    const d = await decide(KEY, dutch, config(), last, paying(out), SOLVER, patient);
+    expect(d.kind === "fill" ? d.plan.profit : d).toBe(200n);
+    const before = last - 1n;
+    expect(await decide(KEY, dutch, config(), before, paying(asked(before) + 200n), SOLVER, patient)).toEqual(waits(200n));
+    expect(await decide(KEY, dutch, config(), last, paying(asked(last) + 99n), SOLVER, patient)).toEqual({
+      kind: "skip",
+      reason: "profit 99 is below 100",
+    });
+    const hasty = { ...patient, patience: 0 };
+    expect(await decide(KEY, dutch, config(), END - 1n, paying(asked(END - 1n) + 200n), SOLVER, hasty)).toEqual(waits(200n));
+    expect((await decide(KEY, dutch, config(), END, paying(MIN_OUT + 200n), SOLVER, hasty)).kind).toBe("fill");
+    const calm = { ...patient, patience: 600 };
+    expect((await decide(KEY, dutch, config(), NOW, paying(100_200n), SOLVER, calm)).kind).toBe("fill");
+  });
+
+  it("judges an auction after its end as it would without a target", async () => {
+    const after = END + 50n;
+    expect(asked(after)).toBe(MIN_OUT);
+    for (const out of [MIN_OUT + 50n, MIN_OUT + 200n, MIN_OUT - 1n]) {
+      const plain = await decide(KEY, dutch, config(), after, paying(out), SOLVER, plainly);
+      expect(await decide(KEY, dutch, config(), after, paying(out), SOLVER, patient)).toEqual(plain);
+    }
+  });
+
+  it("judges a swap order and a mint without a target as it would without one", async () => {
+    const swap = await decide(KEY, intent(), config(), NOW, pays(MIN_OUT + 200n), SOLVER, patient);
+    expect(swap.kind === "fill" ? swap.plan.profit : swap).toBe(200n);
+    const limit = intent({ kind: Kind.LimitOrder, params: encodeParams({ kind: Kind.LimitOrder, makeAmount: AMOUNT, takeAmount: MIN_OUT }) });
+    expect((await decide(KEY, limit, config(), NOW, pays(MIN_OUT + 200n), SOLVER, patient)).kind).toBe("fill");
+    const elsewhere = { ...patient, target: new Map([[KEY, 5_000n]]) };
+    const other = await decide(KEY, dutch, config(), NOW, paying(100_500n), SOLVER, elsewhere);
+    expect(other.kind === "fill" ? other.plan.profit : other).toBe(500n);
+    expect(await decide(KEY, dutch, config(), NOW, paying(100_050n), SOLVER, elsewhere)).toEqual({
+      kind: "skip",
+      reason: "profit 50 is below 100",
+    });
+  });
+
+  it("keeps every check the solver makes before it waits", async () => {
+    expect(await decide(KEY, dutch, config({ paused: PAUSE_FILL }), NOW, paying(100_500n), SOLVER, patient)).toEqual({
+      kind: "skip",
+      reason: "fills are paused",
+    });
+    expect(await decide(KEY, dutch, config(), NOW, paying(99_999n), SOLVER, patient)).toEqual({
+      kind: "skip",
+      reason: "the route pays 99999, less than the 100000 the intent requires",
+    });
+    const below = await decide(KEY, dutch, config(), NOW + 300n, paying(asked(NOW + 300n) + 10_000n), SOLVER, {
+      ...patient,
+      minProfit: floors(20_000n),
+    });
+    expect(below).toEqual({ kind: "skip", reason: "profit 10000 is below 20000" });
   });
 });
