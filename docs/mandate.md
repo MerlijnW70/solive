@@ -79,5 +79,5 @@ Revoking closes the mandate, so `mandate show` then reports `NotFound`.
 
 ## Next
 
-- [Connect an AI agent](mcp.md): let an AI agent use the mandate through `solive_agent_create`
+- [Server options](mcp.md): let an AI agent use the mandate through `solive_agent_create`
 - [CLI reference](reference/cli.md)

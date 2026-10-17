@@ -1,10 +1,12 @@
 # Use it from your AI
 
-You need Node.js 22.12 or later. Devnet tokens have no value.
+Let your AI assistant swap, pay and escrow on Solana devnet. It asks you before it sends anything. Devnet tokens have no value.
+
+You need Node.js 22.12 or later.
 
 ## 1. Add the server
 
-Claude Code, in bash, zsh or WSL:
+Claude Code:
 
 ```sh
 claude mcp add solive -- npx -y @intent-engine/cli mcp --url devnet --wallet
@@ -16,33 +18,31 @@ Claude Code on native Windows, in PowerShell or cmd, starts `npx` through `cmd /
 claude mcp add solive -- cmd /c npx -y @intent-engine/cli mcp --url devnet --wallet
 ```
 
-Codex, in bash, zsh or WSL:
+Codex:
 
 ```sh
 codex mcp add solive -- npx -y @intent-engine/cli mcp --url devnet --wallet
 ```
 
-Codex on native Windows, in PowerShell or cmd:
+Codex on native Windows:
 
 ```powershell
 codex mcp add solive -- cmd /c npx -y @intent-engine/cli mcp --url devnet --wallet
 ```
 
-VS Code, in bash or zsh:
+VS Code:
 
 ```sh
 code --add-mcp '{"name":"solive","command":"npx","args":["-y","@intent-engine/cli","mcp","--url","devnet","--wallet"]}'
 ```
 
-VS Code in Windows PowerShell 5.1, which drops unescaped double quotes inside an argument, so each one is escaped with a backslash:
+VS Code in Windows PowerShell, which needs each double quote escaped:
 
 ```powershell
 code --add-mcp '{\"name\":\"solive\",\"command\":\"npx\",\"args\":[\"-y\",\"@intent-engine/cli\",\"mcp\",\"--url\",\"devnet\",\"--wallet\"]}'
 ```
 
-OpenClaw: follow [Use it from OpenClaw](openclaw.md), which pins the version and makes every call ask first.
-
-Cursor: put this in `~/.cursor/mcp.json`. Other apps: add it to the app's MCP settings. Then restart the app.
+Cursor and other apps: add this to the app's MCP settings, such as `~/.cursor/mcp.json`, then restart the app.
 
 ```json
 {
@@ -55,39 +55,21 @@ Cursor: put this in `~/.cursor/mcp.json`. Other apps: add it to the app's MCP se
 }
 ```
 
-## 2. Ask your AI
+OpenClaw: see [Use it from OpenClaw](openclaw.md).
+
+## 2. Ask
 
 > Set me up on solive and make my first swap.
 
-For a better price, let the asked amount fall until a solver takes it:
-
 > Sell 0.05 SOL in a Dutch auction, asking 12 TEST and falling to 9.5 over a few minutes.
-
-Or repeat a trade on a schedule:
 
 > Buy TEST with 0.05 SOL every hour, five times, for at least 9.5 TEST each.
 
-Or pay someone in a token you do not hold:
-
-> Pay 9Z11K2yyDSMaVxUADQQryQt2gyvKPqxhbuLgBQaZTcy1 at least 9.5 TEST with 0.05 SOL.
-
-Or pay another agent once someone you trust approves its work:
-
 > Escrow 0.05 SOL for the agent that writes my report; my reviewer's wallet decides who gets it.
-
-The agent sends its work to your reviewer, not to you, because cancelling stays open to you until the release. The reviewer releases the payment with the work's hash and passes the work on. Then check it:
-
-> Check the release of my escrow and whether this report is what was paid for.
-
-For a larger task, pay per piece:
-
-> Split building my landing page into parser, API client and page pieces, and escrow 0.01 SOL for each; my reviewer releases each piece as it passes.
 
 It swaps, escrows, releases or cancels nothing until you say yes.
 
-Before a trade it can estimate the price from recent fills. After a send it waits for the fill and tells you what you received.
-
-To cap what it may sell, whatever it is asked, add limits to the server's arguments:
+## 3. Cap what it sells (optional)
 
 ```sh
 claude mcp add solive -- npx -y @intent-engine/cli mcp --url devnet --wallet --wallet-per-trade SOL=0.1 --wallet-per-hour SOL=0.5
@@ -99,34 +81,9 @@ On native Windows:
 claude mcp add solive -- cmd /c npx -y @intent-engine/cli mcp --url devnet --wallet --wallet-per-trade SOL=0.1 --wallet-per-hour SOL=0.5
 ```
 
-It then sells only the tokens named, at most that much per trade and per rolling hour. The server checks them when it signs and records each sale in `<wallet file>.sales.json`, next to the wallet file it loaded the key from, whatever directory the server runs in and however the path is written (`~/wallet.json` and its full path share one file). Every server and app that uses the same wallet draws on one hourly allowance, and a restart keeps the count. A send the RPC node refused before accepting it does not count. Only a restart changes the limits. They count the tokens sold, not fees or rent.
+The server then refuses to sell more than that per trade or per hour, whatever it is asked.
 
-## 3. Let your AI explain any trade (optional)
+## More
 
-The Solana Explorer server decodes any address or transaction, solive's instructions included, so your AI can explain what a swap did. It is read-only and holds no keys.
-
-Claude Code:
-
-```sh
-claude mcp add --transport http solana-explorer https://explorer.solana.com/mcp
-```
-
-Codex:
-
-```sh
-codex mcp add solana-explorer --url https://explorer.solana.com/mcp
-```
-
-VS Code, in bash or zsh:
-
-```sh
-code --add-mcp '{"name":"solana-explorer","type":"http","url":"https://explorer.solana.com/mcp"}'
-```
-
-VS Code in Windows PowerShell 5.1:
-
-```powershell
-code --add-mcp '{\"name\":\"solana-explorer\",\"type\":\"http\",\"url\":\"https://explorer.solana.com/mcp\"}'
-```
-
-The Claude Code and Codex commands for this server start no local process, so they run unchanged in every shell.
+- [Server options](mcp.md): no wallet, agent mandates, delivering work
+- [All MCP tools](reference/mcp-tools.md)

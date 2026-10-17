@@ -51,8 +51,8 @@ async function served(args: string[]): Promise<string[]> {
 }
 
 const local = (args: string[]) => {
-  const [path, ...rest] = args;
-  expect(path).toBe("/path/to/solive/packages/cli/dist/src/bin.js");
+  const [yes, name, ...rest] = args;
+  expect([yes, name]).toEqual(["-y", "@intent-engine/cli"]);
   return [bin, ...rest];
 };
 
@@ -61,7 +61,7 @@ describe("the agent guide", () => {
     const config = JSON.parse(jsonBlocks[0] ?? "") as { mcpServers: Record<string, { command: string; args: string[] }> };
     const entry = config.mcpServers[PRODUCT_SLUG];
     expect(Object.keys(config.mcpServers)).toEqual([PRODUCT_SLUG]);
-    expect(entry?.command).toBe("node");
+    expect(entry?.command).toBe("npx");
     expect(await served(local(entry?.args ?? []))).toEqual(ACTIONS.map((a) => a.name));
   }, 120_000);
 

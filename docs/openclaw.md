@@ -96,5 +96,5 @@ The agent calls `intent__solive_wallet_wait` and reports what the wallet receive
 
 ## Reference
 
-- [Connect an AI agent](mcp.md): every server option
+- [Server options](mcp.md)
 - [MCP tools](reference/mcp-tools.md): every tool, its parameters and what it does

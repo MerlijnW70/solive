@@ -11,20 +11,14 @@ const read = (path: string) => readFileSync(`${ROOT}/${path}`, "utf8");
 const PAGE = read("docs/ai.md");
 const manifest = JSON.parse(read("packages/cli/package.json")) as { name: string; bin: Record<string, string>; engines: { node: string } };
 const ARGS = ["-y", manifest.name, "mcp", "--url", "devnet", "--wallet"];
-const EXPLORER_MCP = "https://explorer.solana.com/mcp";
 const sh = [...PAGE.matchAll(/^```sh\n([\s\S]*?)^```$/gm)].map((m) => (m[1] ?? "").trim());
 const json = [...PAGE.matchAll(/^```json\n([\s\S]*?)^```$/gm)].map((m) => (m[1] ?? "").trim());
 
 describe("the AI guide", () => {
   it("installs the published server the same way in every app, and the server takes those arguments", () => {
     expect(Object.keys(manifest.bin)).toHaveLength(1);
-    const [claude, codex, code, limited, ...explorer] = sh;
-    expect(sh).toHaveLength(7);
-    expect(explorer).toEqual([
-      `claude mcp add --transport http solana-explorer ${EXPLORER_MCP}`,
-      `codex mcp add solana-explorer --url ${EXPLORER_MCP}`,
-      `code --add-mcp '${JSON.stringify({ name: "solana-explorer", type: "http", url: EXPLORER_MCP })}'`,
-    ]);
+    const [claude, codex, code, limited] = sh;
+    expect(sh).toHaveLength(4);
     expect(claude).toBe(`claude mcp add solive -- npx ${ARGS.join(" ")}`);
     expect(codex).toBe(`codex mcp add solive -- npx ${ARGS.join(" ")}`);
     const added = /^code --add-mcp '(.*)'$/.exec(code ?? "")?.[1] ?? "";
