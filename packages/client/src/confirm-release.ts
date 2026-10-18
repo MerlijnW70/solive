@@ -74,7 +74,7 @@ export async function confirmOnBoth(first: Transport, second: Transport, target:
     throw new ConfirmMismatch("earliest announcer", own.announcer ?? NO_ANNOUNCER, other.announcer ?? NO_ANNOUNCER);
   }
   const worker = own.announcer?.split(" ")[0];
-  if (target.payees !== undefined && own.announcer !== undefined && own.announcer !== NO_ANNOUNCER && !target.payees.some((payee) => payee === worker)) {
+  if (target.payees !== undefined && own.announcer !== undefined && !target.payees.some((payee) => payee === worker)) {
     throw new ConfirmMismatch("payee", target.payees.join(", "), own.announcer);
   }
   return own;
