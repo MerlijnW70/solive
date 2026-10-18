@@ -38,13 +38,13 @@ export const ENGINE_PROBLEMS = {
   AmountMismatch: never("the amounts do not match what the intent escrows; read the intent again and use its remaining amount"),
   InsufficientOutput: later(`the fill pays less than the intent requires right now; quote again with ${tool("quote")}`),
   InvalidTransition: never(`the intent is not in a state that allows this; read it with ${tool("get_intent")}`),
-  IntentExpired: never(`the intent has expired and can no longer be filled; its owner can still cancel it, and anyone can expire and close it (${tool("prepare_crank")})`),
+  IntentExpired: never(`the intent has expired and can no longer be filled; its owner can still cancel it; anyone can expire and close it with ${tool("prepare_crank")}`),
   NotExpired: later("the intent has not expired yet; wait until its expiry time and try again"),
   NonceUsed: never("this nonce is already used; omit the nonce so the next free one is chosen"),
   NonceOutOfWindow: never("this nonce is outside the owner's 256-nonce window or inside the agent nonce lanes; omit the nonce so the next free one is chosen"),
   NonceRegression: never("the nonce base can only move forward"),
   Unauthorized: never("a signer or a named account does not match the one recorded on-chain (owner, rent payer, mandate agent, admin, guardian or upgrade authority); let this server pick the accounts and sign with the recorded key"),
-  CreatePaused: later(`creating intents is paused by the guardian or admin; check paused.create in ${tool("get_config")} and try again later`),
+  CreatePaused: later(`creating intents is paused by the guardian or admin; try again later; paused.create in ${tool("get_config")} shows the flag`),
   KindDisabled: never(`this intent kind is not enabled; see kinds[].enabled in ${tool("get_config")}`),
   UnknownKindBits: never("the kind mask names kinds the program does not know"),
   InvalidPauseFlags: never("the pause flags are empty or name pauses the program does not know; use create, fill or all"),
@@ -56,7 +56,7 @@ export const ENGINE_PROBLEMS = {
   RefundNotCanonical: never("refunds go only to the owner's canonical token account; let this server pick accounts"),
   ReceiverNotAllowed: never("the receiver account is not owned by the named receiver authority, the authority is an engine account, or (for a mandate) the receiver is not an account the owner controls"),
   AuctionOutlivesExpiry: never("the dutch auction must end at or before the intent expires"),
-  FillPaused: later(`fills are paused by the guardian or admin; check paused.fill in ${tool("get_config")} and try again later`),
+  FillPaused: later(`fills are paused by the guardian or admin; try again later; paused.fill in ${tool("get_config")} shows the flag`),
   FeeAccountNotCanonical: never("a fee must go to its payee's canonical token account (the treasury's, the agent's or the judge's); let this server pick it"),
   FeeAccountMissing: never("a fee account was not passed: the treasury's, agent's or judge's at fill, or the relayer's at a signed create; create that token account and pass it"),
   SolverOutputNotAllowed: never("the solver's output account is not acceptable for this fill"),
@@ -143,7 +143,7 @@ export const TOKEN_PROBLEMS: Record<number, { code: string } & Entry> = {
   36: { code: "NoMemo", ...never("a token account requires a memo on incoming transfers; its owner must turn that off before it can receive") },
   42: {
     code: "CpiGuardTransferBlocked",
-    ...never(`the owner's token account has CPI Guard on, which stops the engine moving tokens on the owner's signature; use ${tool("prepare_signed_intent")}, which draws through the engine's allowance, or turn CPI Guard off`),
+    ...never(`the owner's token account has CPI Guard on, which stops the engine moving tokens on the owner's signature; turn CPI Guard off; or create with ${tool("prepare_signed_intent")}, which draws through the engine's allowance`),
   },
 };
 

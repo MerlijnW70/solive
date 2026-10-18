@@ -29,7 +29,7 @@ const clientOf = (ctx: AgentContext) => createClient({ url: ctx.url ?? "", trans
 export const getProfile = define({
   name: tool("get_profile"),
   title: "A worker's published profile",
-  description: `Read the profile a wallet published on chain: the skills it offers, the https endpoint where it takes work, and an optional document with its sha256. The wallet wrote it itself, so check its track record with ${tool("get_reputation")} before trusting it. A server with a wallet publishes its own with ${tool("wallet_profile")}.`,
+  description: `Read the profile a wallet published on chain: the skills it offers, the https endpoint where it takes work, and an optional document with its sha256. The wallet wrote it itself, so check its track record with ${tool("get_reputation")} before trusting it.`,
   effect: "read",
   input: object({ wallet: account("the wallet whose profile to read") }),
   output: object({

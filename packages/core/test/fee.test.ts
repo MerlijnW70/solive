@@ -128,7 +128,7 @@ describe("terms an owner reads before signing", () => {
       `Settles: when ${ATTESTOR} attests a result between 1 and 2`,
       `Payee: chosen by ${ATTESTOR} when it attests; one signature from it pays the sold amount, less fees, to any wallet it signs for`,
       ATTESTED_PROTOCOL_FEE,
-      `Output token: ${OUT}, recorded with the intent only; an attested settlement pays you nothing on chain`,
+      `Output token: ${OUT}, a label only; the release pays out the sold token, never this one`,
     ]);
   });
 
@@ -141,7 +141,7 @@ describe("terms an owner reads before signing", () => {
       `Receive: at least 2 of USD (${OUT})`,
     ]);
     expect(terms({ kind: Kind.AttestedResult, amountIn: 10n, minResult: 1n, maxResult: 2n, attestor: ATTESTOR, specHash: new Uint8Array(32), judgeFee: 0n }, { outputName: "USD" }).at(-1)).toBe(
-      `Output token: USD (${OUT}), recorded with the intent only; an attested settlement pays you nothing on chain`,
+      `Output token: USD (${OUT}), a label only; the release pays out the sold token, never this one`,
     );
     expect(terms({ kind: Kind.SwapExactIn, amountIn: 1n, minOut: 1n }, { inputName: "SOL" })).toEqual([`Sell: exactly 1 raw units of SOL (${IN})`, `Receive: at least 1 raw units of ${OUT}`]);
     expect(tokenOf(OUT, undefined)).toBe(OUT);

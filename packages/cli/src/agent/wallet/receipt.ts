@@ -1,5 +1,5 @@
 import { type Address, getAddressDecoder } from "@solana/kit";
-import { findIntentPda, formatAmount } from "@intent-engine/core";
+import { findIntentPda, formatAmount, NATIVE_MINT } from "@intent-engine/core";
 import { intentAt, mintOf, recordedDelivery, type Transport } from "@intent-engine/client";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
@@ -9,7 +9,9 @@ import { signerOf, sha256Of } from "./guard.js";
 import { RELEASE_INPUT, releaseOf, otherLifecycle, coverageOf } from "./record.js";
 import { RELEASE_UNKNOWN, outlives, releaseLookup, namedRelease, releasedMint, createdMint, heldMint } from "./releases.js";
 
-export const NOT_RELEASED = `no release of this escrow is in its history; ${tool("wallet_wait")} or ${tool("wallet_intents")} shows whether it is still open`;
+export const NOT_RELEASED = "no release of this escrow is in its history yet; check again later";
+
+export const PAID_WRAPPED = `paid as wrapped SOL; ${tool("wallet_unwrap")} turns it into plain SOL`;
 
 export const RECEIPT_PARTIAL =
   "the escrow's history after this release could not be read in full: it is longer than the pages read or the RPC node could not return some of its transactions yet, so a follow-up recording the delivered work may be missing, and without release given, the escrow address may have been made again since; pass release, the signature the release returned, or call again in a few seconds";
@@ -25,6 +27,7 @@ const receiptOutput = object({
   paid_to: optional(account("the wallet the release paid")),
   payee: optional(account("the token account the release paid")),
   paid: optional(text("whole tokens the payee received")),
+  mint: optional(account("the token the release paid")),
   attestor: optional(account()),
   result: optional(amount()),
   recipients: optional(amount("how many co-authors a split release paid")),
@@ -36,17 +39,26 @@ const receiptOutput = object({
 
 export const walletReceipt = define({
   name: tool("wallet_receipt"),
-  title: "Check this wallet's escrow release",
-  description: `Shows the payer whether an escrow made with ${tool("wallet_escrow")} was released: to whom, for how much, by which attestor (judge), and which work it recorded. Give sha256 of the work received to check it is what was paid for, and release, the release's signature, to read it quickly. It sends nothing.`,
+  title: "Check an escrow release",
+  description: `Shows whether an escrow was released: to whom, for how much, by which attestor (judge), and which work it recorded. A payer checks its own escrow; a worker passes the job's owner and nonce from ${tool("wallet_deliver")}. Give sha256 of the work to check it is what was paid for. It sends nothing.`,
   effect: "read",
   input: object({
     owner: optional(account("the wallet that made the escrow; default this server's wallet")),
     nonce: amount("the escrow intent's nonce"),
-    sha256: optional(text("the sha256, as 64 hex digits, of the work you received, to compare with the one the release recorded")),
+    sha256: optional(text("the sha256, as 64 hex digits, of the work, to compare with the one the release recorded")),
     release: optional(text(RELEASE_INPUT)),
   }),
   output: receiptOutput,
-  run: async (ctx: AgentContext, input) => escrowReceipt(ctx.transport, input.owner ?? (await signerOf(ctx)).address, input.nonce, input.sha256, input.release),
+  run: async (ctx: AgentContext, input) => {
+    const self = (await signerOf(ctx)).address;
+    const receipt = await escrowReceipt(ctx.transport, input.owner ?? self, input.nonce, input.sha256, input.release);
+    const wrapped = "paid_to" in receipt && receipt.paid_to === self && receipt.mint === NATIVE_MINT;
+    if (!wrapped) {
+      return receipt;
+    }
+    const next = "next" in receipt && typeof receipt.next === "string" ? `${receipt.next}; ${PAID_WRAPPED}` : PAID_WRAPPED;
+    return { ...receipt, next };
+  },
 });
 
 export const getReceipt = define({
@@ -96,7 +108,12 @@ export async function escrowReceipt(transport: Transport, owner: Address, nonce:
   if (release.event.name === "IntentSplit") {
     mint ??= await heldMint(transport, intent);
     const decimals = mint === undefined ? undefined : (await mintOf(transport, mint)).decimals;
-    return { ...common, paid: formatAmount(fields["net"] as bigint, decimals), recipients: BigInt(fields["recipients"] as number) };
+    return {
+      ...common,
+      paid: formatAmount(fields["net"] as bigint, decimals),
+      ...(mint === undefined ? {} : { mint }),
+      recipients: BigInt(fields["recipients"] as number),
+    };
   }
   const payee = fields["payee"] as Address;
   const held = await transport.getAccount(payee);
@@ -108,5 +125,6 @@ export async function escrowReceipt(transport: Transport, owner: Address, nonce:
     ...(paidTo === undefined ? {} : { paid_to: paidTo }),
     payee,
     paid: formatAmount(fields["net"] as bigint, decimals),
+    ...(mint === undefined ? {} : { mint }),
   };
 }

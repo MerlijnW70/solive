@@ -9,6 +9,7 @@ import { DEVNET_URL } from "./tokens.js";
 
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
 const FUND_BELOW = LAMPORTS_PER_SOL / 2n;
+export const ENOUGH_TO_START = LAMPORTS_PER_SOL / 10n;
 export const AIRDROP = LAMPORTS_PER_SOL;
 
 type Settings = { url: string; keypair: string };
@@ -123,7 +124,7 @@ export async function setup(
         await transport.airdrop(signer.address, AIRDROP);
         held = await lamportsOf(transport, signer.address);
       } catch {
-        next = held > 0n ? heldRefused(formatAmount(held, SOL_DECIMALS), signer.address) : airdropRefused(signer.address);
+        next = held >= ENOUGH_TO_START ? FUNDED : held > 0n ? heldRefused(formatAmount(held, SOL_DECIMALS), signer.address) : airdropRefused(signer.address);
       }
     }
   }

@@ -19,7 +19,7 @@ const OUTCOMES = ["paid", "paid-other", "refunded", "open", "unknown"] as const;
 export const getReputation = define({
   name: tool("get_reputation"),
   title: "A worker's verifiable track record",
-  description: `Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Use it before hiring a worker or trusting its delivery. Payers rate released work with ${tool("wallet_feedback")}.`,
+  description: `Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Use it before hiring a worker or trusting its delivery.`,
   effect: "read",
   input: object({
     worker: account("the worker wallet to read"),

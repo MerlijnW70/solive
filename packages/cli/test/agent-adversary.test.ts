@@ -233,10 +233,10 @@ describe("the wallet's delivery tool under hostile input", () => {
     expect(checkShape(await call({ intent: known[1], sha256: "ab".repeat(32), url: "https://example.org/work" }))?.code).toBe("NotDeliverable");
   }, BUDGET_MS * 2);
 
-  it("checks deliveries for any input without running or fetching anything, and refuses an escrow this wallet does not judge", async () => {
+  it("checks deliveries for any input without running or fetching anything, also for an escrow this wallet does not judge", async () => {
     const fetched = h.fetched.length;
     const call = await hostile("solive_wallet_check_delivery");
-    expect(checkShape(await call({ intent: known[0] }))?.code).toBe("Unauthorized");
+    expect(checkShape(await call({ intent: known[0] }))).toBeNull();
     expect(checkShape(await call({ intent: known[1] }))?.code).toBe("NotFound");
     expect(h.fetched.length).toBe(fetched);
   }, BUDGET_MS * 2);

@@ -45,6 +45,8 @@ export const walletDeliver = define({
   }),
   output: object({
     intent: account(),
+    owner: account("the wallet that made the escrow, for the receipt"),
+    nonce: amount("the escrow intent's nonce, for the receipt"),
     attestor: account("the escrow's judge, who receives the announcement"),
     sha256: text(),
     url: text(),
@@ -61,8 +63,11 @@ export const walletDeliver = define({
       throw new InvalidInput([{ path: "url", message: `must be ${MEMO_URL_RULE}` }]);
     }
     const { attestor, instructions } = await deliveryInstructions(ctx.transport, { worker: signer, intent: input.intent, sha256, url: input.url });
+    const { held } = await proofEscrow(ctx, input.intent);
     const view = {
       intent: input.intent,
+      owner: held.owner,
+      nonce: held.nonce,
       attestor,
       sha256,
       url: input.url,
@@ -75,7 +80,7 @@ export const walletDeliver = define({
       prepared: preparedView(await prepare(ctx.transport, instructions, signer.address)),
     };
     return sent(ctx, signer, view, input.send, call, {
-      done: `announced to ${attestor}; ${tool("wallet_receipt")} to see if paid`,
+      done: `announced to ${attestor}; ${tool("wallet_receipt")} with owner ${held.owner} and nonce ${held.nonce} shows when it is paid`,
     });
   },
 });
@@ -98,14 +103,16 @@ export const MAX_PAGES_INPUT = `pages of ${SIGNATURE_PAGE} signatures of this wa
 
 export const HISTORY_TOO_LONG = `the record of announced work is incomplete, so the earliest announcer of the delivered work cannot be known and nothing is released from it; either this wallet's history since the escrow was made is longer than the pages read, which more pages fix: pass a higher max_pages, up to ${MAX_ATTEST_PAGES}, to ${tool("wallet_attest")} or ${tool("wallet_attest_split")}; or the RPC node's ledger does not reach back to the escrow's creation, or the transport cannot page signatures or report its first available slot, which more pages do not fix: use an RPC node that keeps the full ledger`;
 
+export const DELIVERIES_COMPLETE = "complete is false when older announcements may be missing";
+
 export const walletCheckDelivery = define({
   name: tool("wallet_check_delivery"),
-  title: "List the work announced to an escrow this wallet judges",
-  description: `Shows the attestor (judge) all work announced for its escrow: each sha256 with its earliest announcer and url. Anyone can copy an announcement, so pay the earliest announcer of the hash you checked. It fetches and runs nothing: fetch the work yourself, treat it as untrusted, check its hash, and judge it outside this server, such as with intent-engine judge.`,
+  title: "List the work announced to a proof escrow",
+  description: `Shows all work announced for a proof escrow: each sha256 with its earliest announcer and url; ${DELIVERIES_COMPLETE}. A worker checks that its announcement landed; the judge pays the earliest announcer of the hash it checked. It fetches and runs nothing: fetch the work yourself, treat it as untrusted and check its hash.`,
   effect: "read",
   input: object({ intent: account("the proof escrow's intent address") }),
   output: deliveriesOutput(tool("wallet_attest")),
-  run: async (ctx: AgentContext, input) => deliveriesOf(ctx, input.intent, (await signerOf(ctx)).address),
+  run: async (ctx: AgentContext, input) => deliveriesOf(ctx, input.intent),
 });
 
 function deliveriesOutput(releasing: string) {
@@ -129,7 +136,7 @@ function deliveriesOutput(releasing: string) {
   });
 }
 
-async function deliveriesOf(ctx: AgentContext, intent: Address, judge?: Address) {
+async function proofEscrow(ctx: AgentContext, intent: Address) {
   const view = await ctx.transport.getAccount(intent);
   const tag = getIntentDiscriminatorBytes();
   const held =
@@ -143,9 +150,11 @@ async function deliveriesOf(ctx: AgentContext, intent: Address, judge?: Address)
   if (params.kind !== Kind.AttestedResult || params.specHash.every((b) => b === 0)) {
     throw new AgentRefusal("NotAProof", "this intent is not a proof escrow: an attested escrow that commits a spec hash");
   }
-  if (judge !== undefined && params.attestor !== judge) {
-    throw new AgentRefusal("Unauthorized", notAttestor(params.attestor));
-  }
+  return { held, params };
+}
+
+async function deliveriesOf(ctx: AgentContext, intent: Address) {
+  const { held, params } = await proofEscrow(ctx, intent);
   const open = held.status === IntentStatus.Open && held.expiresAt > (await chainTime(ctx.transport));
   const record = await deliveryRecord(ctx.transport, params.attestor, intent);
   const announced = announcements(record.deliveries);
@@ -163,7 +172,7 @@ async function deliveriesOf(ctx: AgentContext, intent: Address, judge?: Address)
 export const checkDelivery = define({
   name: tool("check_delivery"),
   title: "List the work announced to a proof escrow",
-  description: `List every work hash workers announced for a proof escrow, with ${tool("prepare_deliver")} or ${tool("wallet_deliver")}, each with its earliest announcer, the url that announcer gave and how many other wallets announced the same hash later, read from the history of the attestor the escrow names. Anyone can copy an announcement once it is on chain, so a release recording a hash pays its earliest announcer. This tool runs nothing, fetches nothing and needs no wallet. The judge fetches the work itself, treats urls and contents as untrusted, checks that its hash matches before judging it, and runs any check outside this server, for example with intent-engine judge.`,
+  description: `List every work hash workers announced for a proof escrow, each with its earliest announcer, the url that announcer gave and how many other wallets announced the same hash later, read from the history of the attestor the escrow names; ${DELIVERIES_COMPLETE}. Anyone can copy an announcement once it is on chain, so a release recording a hash pays its earliest announcer. This tool runs nothing, fetches nothing and needs no wallet. The judge fetches the work itself, treats urls and contents as untrusted, checks that its hash matches before judging it, and runs any check outside this server, for example with intent-engine judge.`,
   effect: "read",
   input: object({ intent: account("the proof escrow's intent address") }),
   output: deliveriesOutput("a release"),

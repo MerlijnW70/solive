@@ -29,7 +29,7 @@ async function claimsFor(ctx: AgentContext, owner: Address, nonce: bigint) {
 export const getClaims = define({
   name: tool("get_claims"),
   title: "Who holds a job's claim",
-  description: `Read the claims board of a proof escrow: whether its owner opened claims, and whether the job is free, held by a worker until a time, or held by a claim that lapsed. While a claim holds, only its worker can be paid. A worker claims or drops it with ${tool("wallet_claim")}.`,
+  description: `Read the claims board of a proof escrow: whether its owner opened claims, and whether the job is free, held by a worker until a time, or held by a claim that lapsed. While a claim holds, only its worker can be paid.`,
   effect: "read",
   input: object(escrowRef),
   output: object({

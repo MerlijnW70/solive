@@ -80,13 +80,13 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6007 | `AmountMismatch` | no | the amounts do not match what the intent escrows; read the intent again and use its remaining amount |
 | 6008 | `InsufficientOutput` | yes | the fill pays less than the intent requires right now; quote again with solive_quote |
 | 6009 | `InvalidTransition` | no | the intent is not in a state that allows this; read it with solive_get_intent |
-| 6010 | `IntentExpired` | no | the intent has expired and can no longer be filled; its owner can still cancel it, and anyone can expire and close it (solive_prepare_crank) |
+| 6010 | `IntentExpired` | no | the intent has expired and can no longer be filled; its owner can still cancel it; anyone can expire and close it with solive_prepare_crank |
 | 6011 | `NotExpired` | yes | the intent has not expired yet; wait until its expiry time and try again |
 | 6012 | `NonceUsed` | no | this nonce is already used; omit the nonce so the next free one is chosen |
 | 6013 | `NonceOutOfWindow` | no | this nonce is outside the owner's 256-nonce window or inside the agent nonce lanes; omit the nonce so the next free one is chosen |
 | 6014 | `NonceRegression` | no | the nonce base can only move forward |
 | 6015 | `Unauthorized` | no | a signer or a named account does not match the one recorded on-chain (owner, rent payer, mandate agent, admin, guardian or upgrade authority); let this server pick the accounts and sign with the recorded key |
-| 6016 | `CreatePaused` | yes | creating intents is paused by the guardian or admin; check paused.create in solive_get_config and try again later |
+| 6016 | `CreatePaused` | yes | creating intents is paused by the guardian or admin; try again later; paused.create in solive_get_config shows the flag |
 | 6017 | `KindDisabled` | no | this intent kind is not enabled; see kinds[].enabled in solive_get_config |
 | 6018 | `UnknownKindBits` | no | the kind mask names kinds the program does not know |
 | 6019 | `InvalidPauseFlags` | no | the pause flags are empty or name pauses the program does not know; use create, fill or all |
@@ -98,7 +98,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6025 | `RefundNotCanonical` | no | refunds go only to the owner's canonical token account; let this server pick accounts |
 | 6026 | `ReceiverNotAllowed` | no | the receiver account is not owned by the named receiver authority, the authority is an engine account, or (for a mandate) the receiver is not an account the owner controls |
 | 6027 | `AuctionOutlivesExpiry` | no | the dutch auction must end at or before the intent expires |
-| 6028 | `FillPaused` | yes | fills are paused by the guardian or admin; check paused.fill in solive_get_config and try again later |
+| 6028 | `FillPaused` | yes | fills are paused by the guardian or admin; try again later; paused.fill in solive_get_config shows the flag |
 | 6029 | `FeeAccountNotCanonical` | no | a fee must go to its payee's canonical token account (the treasury's, the agent's or the judge's); let this server pick it |
 | 6030 | `FeeAccountMissing` | no | a fee account was not passed: the treasury's, agent's or judge's at fill, or the relayer's at a signed create; create that token account and pass it |
 | 6031 | `SolverOutputNotAllowed` | no | the solver's output account is not acceptable for this fill |
@@ -177,4 +177,4 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 4 | `OwnerMismatch` | no | a token account is not owned by the expected wallet |
 | 17 | `AccountFrozen` | yes | a token account is frozen by its issuer; try again once it is thawed |
 | 36 | `NoMemo` | no | a token account requires a memo on incoming transfers; its owner must turn that off before it can receive |
-| 42 | `CpiGuardTransferBlocked` | no | the owner's token account has CPI Guard on, which stops the engine moving tokens on the owner's signature; use solive_prepare_signed_intent, which draws through the engine's allowance, or turn CPI Guard off |
+| 42 | `CpiGuardTransferBlocked` | no | the owner's token account has CPI Guard on, which stops the engine moving tokens on the owner's signature; turn CPI Guard off; or create with solive_prepare_signed_intent, which draws through the engine's allowance |

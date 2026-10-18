@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
-import { formatAmount, MEMO_URL_RULE, NATIVE_MINT } from "@intent-engine/core";
-import { chainTime, mintOf } from "@intent-engine/client";
+import { feeBpsFor, formatAmount, Kind, MEMO_URL_RULE, NATIVE_MINT, splitFees } from "@intent-engine/core";
+import { chainTime, loadConfig, mintOf } from "@intent-engine/client";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
@@ -79,22 +79,36 @@ export const walletEscrow = define({
       throw new InvalidInput([{ path: "spec_url", message: "needs spec_hash" }]);
     }
     const preflight = input.spec_url !== undefined && specHash !== undefined && input.send !== true ? await specPreflight(ctx, input.spec_url, specHash) : undefined;
-    const escrowed = (await offered(ctx, call, { sell: sold, buy: recordedMint(sold, wallet.url, input.record_mint), send: input.send }, (token, _, now) => ({
-      order: {
-        kind: "attested",
-        amount_in: raw(input.amount, token.decimals, "amount"),
-        min_result: least,
-        max_result: most,
-        attestor: input.attestor,
-        ...(specHash === undefined ? {} : { spec_hash: specHash }),
-        ...(input.judge_fee === undefined ? {} : { judge_fee: raw(input.judge_fee, token.decimals, "judge_fee") }),
-      },
-      expires_at: now + BigInt((input.expires_in ?? ESCROW_EXPIRES_IN) + LANDING_SECONDS),
-      ...(input.spec_url === undefined ? {} : { spec_url: input.spec_url }),
-    }), JOB_LIVE)) as Record<string, unknown>;
-    return preflight === undefined ? escrowed : { ...escrowed, warnings: [...((escrowed["warnings"] as string[]) ?? []), preflight] };
+    let settled: { amount: bigint; judgeFee: bigint; decimals: number } | undefined;
+    const escrowed = (await offered(ctx, call, { sell: sold, buy: recordedMint(sold, wallet.url, input.record_mint), send: input.send }, (token, _, now) => {
+      const amountIn = raw(input.amount, token.decimals, "amount");
+      const judgeFee = input.judge_fee === undefined ? 0n : raw(input.judge_fee, token.decimals, "judge_fee");
+      settled = { amount: amountIn, judgeFee, decimals: token.decimals };
+      return {
+        order: {
+          kind: "attested",
+          amount_in: amountIn,
+          min_result: least,
+          max_result: most,
+          attestor: input.attestor,
+          ...(specHash === undefined ? {} : { spec_hash: specHash }),
+          ...(input.judge_fee === undefined ? {} : { judge_fee: judgeFee }),
+        },
+        expires_at: now + BigInt((input.expires_in ?? ESCROW_EXPIRES_IN) + LANDING_SECONDS),
+        ...(input.spec_url === undefined ? {} : { spec_url: input.spec_url }),
+      };
+    }, JOB_LIVE)) as Record<string, unknown>;
+    const summary = [...((escrowed["summary"] as string[]) ?? []), ...(settled === undefined ? [] : [await feeLine(ctx, settled)])];
+    const warnings = [...((escrowed["warnings"] as string[]) ?? []), ...(preflight === undefined ? [] : [preflight])];
+    return { ...escrowed, summary, warnings };
   },
 });
+
+async function feeLine(ctx: AgentContext, settled: { amount: bigint; judgeFee: bigint; decimals: number }): Promise<string> {
+  const bps = feeBpsFor((await loadConfig(ctx.transport)).config, Kind.AttestedResult);
+  const { net } = splitFees(settled.amount - settled.judgeFee, bps, 0, 0);
+  return `Payee receives: ${formatAmount(net, settled.decimals)}, after the ${bps / 100}% protocol fee at today's config`;
+}
 
 export const MAX_PIECES = 12;
 

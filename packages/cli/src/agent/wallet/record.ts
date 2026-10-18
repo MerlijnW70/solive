@@ -25,7 +25,7 @@ import { PREVIEW_FIRST, signerOf, sent, sha256Of } from "./guard.js";
 import { HISTORY_TOO_LONG } from "./delivery.js";
 import { RELEASE_UNKNOWN, outlives, releaseLookup, aroundRelease, namedRelease, releasedMint, heldMint, splitRecipients } from "./releases.js";
 
-export const RELEASE_INPUT = `the release's transaction signature, as ${tool("wallet_attest")}, ${tool("wallet_attest_split")} or judge returned it; with it the release is read from that one transaction, with no search of the escrow's history`;
+export const RELEASE_INPUT = "the release's transaction signature, as the attestor's release returned it; with it the release is read from that one transaction, with no search of the escrow's history";
 
 const BASE58_SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{32,88}$/;
 

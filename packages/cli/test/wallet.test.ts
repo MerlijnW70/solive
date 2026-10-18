@@ -156,7 +156,7 @@ describe("setup and balance", () => {
     );
   });
 
-  it("points to the faucet when the airdrop is refused and never airdrops on mainnet", async () => {
+  it("points to the faucet when the airdrop is refused on a low balance, and never airdrops on mainnet", async () => {
     h.airdropRefused = true;
     const refused = (await cli(["setup"], {})).json();
     const address = refused["address"] as Address;
@@ -165,10 +165,13 @@ describe("setup and balance", () => {
       "the airdrop was refused; open this link, submit the form, and run setup again once SOL arrives: " +
         FAUCET + "&address=" + address,
     );
-    h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 10n));
-    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.1", next: heldRefused("0.1", address) });
+    h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 20n));
+    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.05", next: heldRefused("0.05", address) });
     expect(h.airdrops).toHaveLength(2);
-    expect(heldRefused("0.1", address).endsWith(FAUCET_STEPS + faucetLink(address))).toBe(true);
+    expect(heldRefused("0.05", address).endsWith(FAUCET_STEPS + faucetLink(address))).toBe(true);
+    h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 4n));
+    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.3", next: FUNDED });
+    expect(h.airdrops).toHaveLength(3);
     clean();
     h.airdrops.length = 0;
     expect((await cli(["setup", "--url", "mainnet-beta", "--keypair", "main.json"], {})).json()).toMatchObject({

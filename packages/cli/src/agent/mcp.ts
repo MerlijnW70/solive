@@ -43,6 +43,27 @@ export function instructionsFor(served: readonly AnyAction[]): string {
 export const walletInstructions = (limits: WalletLimits, served: readonly AnyAction[]): string =>
   [instructionsFor(served), ...limitLines(limits)].join("\n");
 
+export function servedText(text: string, names: ReadonlySet<string>): string {
+  return text
+    .split("; ")
+    .filter((clause, at) => at === 0 || [...clause.matchAll(TOOL_NAMES)].every(([name]) => names.has(name)))
+    .join("; ");
+}
+
+export function servedValue(value: unknown, names: ReadonlySet<string>): unknown {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return value;
+  }
+  const fields = value as Record<string, unknown>;
+  return {
+    ...fields,
+    ...(typeof fields["next"] === "string" ? { next: servedText(fields["next"], names) } : {}),
+    ...(Array.isArray(fields["warnings"])
+      ? { warnings: fields["warnings"].map((line) => (typeof line === "string" ? servedText(line, names) : line)) }
+      : {}),
+  };
+}
+
 export const START_PROMPT = `Set me up on devnet and walk me through my first swap: set up the wallet, show me its notice, show my balance, preview selling 0.05 SOL for at least 5 TEST, and send it once I approve. Then wait for it to fill and tell me what I received.`;
 
 export function agentServer(
@@ -59,6 +80,7 @@ export function agentServer(
       messages: [{ role: "user" as const, content: { type: "text" as const, text: START_PROMPT } }],
     }));
   }
+  const names = new Set(actions.map((action) => action.name));
   for (const action of actions) {
     server.registerTool(
       action.name,
@@ -71,13 +93,16 @@ export function agentServer(
       },
       async (args: unknown) => {
         const outcome = await invoke(action, ctx, args);
-        return outcome.ok
-          ? { content: [{ type: "text" as const, text: render(outcome.value) }], structuredContent: outcome.value }
-          : {
-              isError: true,
-              content: [{ type: "text" as const, text: `${outcome.problem.code}: ${outcome.problem.hint}` }],
-              structuredContent: outcome.problem,
-            };
+        if (outcome.ok) {
+          const value = servedValue(outcome.value, names) as typeof outcome.value;
+          return { content: [{ type: "text" as const, text: render(value) }], structuredContent: value };
+        }
+        const problem = { ...outcome.problem, hint: servedText(outcome.problem.hint, names) };
+        return {
+          isError: true,
+          content: [{ type: "text" as const, text: `${problem.code}: ${problem.hint}` }],
+          structuredContent: problem,
+        };
       },
     );
   }

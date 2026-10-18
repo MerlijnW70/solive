@@ -13,6 +13,7 @@ import { walletProfile } from "./profile.js";
 import { walletRecordDelivery } from "./wallet/record.js";
 import { walletWait } from "./wallet/wait.js";
 import { walletReceipt } from "./wallet/receipt.js";
+import { walletUnwrap } from "./wallet/unwrap.js";
 
 export {
   walletGuard,
@@ -36,6 +37,7 @@ export {
 } from "./wallet/guard.js";
 export type { WalletGuard, WalletAccess } from "./wallet/guard.js";
 export { walletBalance } from "./wallet/account.js";
+export { NOTHING_WRAPPED } from "./wallet/unwrap.js";
 export { nonceTaken } from "./wallet/offer.js";
 export { SWAP_HEADROOM_BPS, SWAP_BLIND_BPS, SWAP_CAP_BPS } from "./wallet/fills.js";
 export {
@@ -116,7 +118,7 @@ export {
 } from "./wallet/releases.js";
 export type { ReleaseLookup, AroundRelease } from "./wallet/releases.js";
 export { WAIT_STATUS, UNREAD, FILL_UNKNOWN, stillWaiting } from "./wallet/wait.js";
-export { NOT_RELEASED, RECEIPT_PARTIAL, getReceipt, escrowReceipt } from "./wallet/receipt.js";
+export { NOT_RELEASED, PAID_WRAPPED, RECEIPT_PARTIAL, getReceipt, escrowReceipt } from "./wallet/receipt.js";
 export { PACKET_DATA_SIZE } from "@intent-engine/client";
 
 export const WALLET_ACTIONS: readonly AnyAction[] = [
@@ -143,4 +145,5 @@ export const WALLET_ACTIONS: readonly AnyAction[] = [
   walletIntents,
   walletHistory,
   walletCancel,
+  walletUnwrap,
 ];

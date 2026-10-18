@@ -124,7 +124,7 @@ export function describeTerms(
             ]
           : []),
         ATTESTED_PROTOCOL_FEE,
-        `Output token: ${tokenOf(f.outputMint, o.outputName)}, recorded with the intent only; an attested settlement pays you nothing on chain`,
+        `Output token: ${tokenOf(f.outputMint, o.outputName)}, a label only; the release pays out the sold token, never this one`,
       ];
     }
   }

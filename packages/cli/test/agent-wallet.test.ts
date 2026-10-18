@@ -12,6 +12,7 @@ import {
   type KeyPairSigner,
   lamports,
   none,
+  some,
   partiallySignTransaction,
   signBytes,
   SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE,
@@ -121,6 +122,8 @@ import {
   notInSplit,
   NO_FALL,
   NOT_RELEASED,
+  NOTHING_WRAPPED,
+  PAID_WRAPPED,
   PACKET_DATA_SIZE,
   RECORDS_SPLIT,
   SPLIT_FITS,
@@ -1058,7 +1061,7 @@ describe("the wallet server", () => {
     const plain = await ok(client, "wallet_escrow", { ...terms, send: true });
 
     const job = { intent, owner, nonce: escrow["nonce"], attestor: judge, spec_hash: specHash, spec_url: null, sells: (LAMPORTS_PER_SOL / 20n).toString(), judge_fee: "0", input_mint: NATIVE_MINT };
-    expect(await ok(client, "find_jobs", { attestor: judge })).toEqual({ jobs: [{ ...job, expires_at: expect.any(String) }] });
+    expect(await ok(client, "find_jobs", { attestor: judge })).toEqual({ fee_bps: expect.any(Number), jobs: [{ ...job, expires_at: expect.any(String) }] });
     const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
     const created = getIntentCreatedEventEncoder().encode({
       intent,
@@ -1080,13 +1083,15 @@ describe("the wallet server", () => {
       { signature: "create", slot: 1n, blockTime: null, failed: false, emitted: [tag(created)], memos: [specMemo(specUrl)] },
     ];
     expect((await ok(client, "find_jobs", { attestor: judge }))["jobs"]).toMatchObject([{ ...job, spec_url: specUrl }]);
-    expect(await ok(client, "find_jobs", { attestor: owner })).toEqual({ jobs: [] });
+    expect(await ok(client, "find_jobs", { attestor: owner })).toEqual({ fee_bps: expect.any(Number), jobs: [] });
 
     const work = "e7".repeat(32);
     const delivery = { intent, sha256: work.toUpperCase(), url: "https://example.org/work.tar" };
     const preview = await ok(client, "wallet_deliver", delivery);
     expect(preview).toEqual({
       intent,
+      owner,
+      nonce: escrow["nonce"],
       attestor: judge,
       sha256: work,
       url: delivery.url,
@@ -1101,7 +1106,11 @@ describe("the wallet server", () => {
     });
     h.wires.length = 0;
     const sent = await ok(client, "wallet_deliver", { ...delivery, send: true });
-    expect(sent).toMatchObject({ sent: true, signature: expect.any(String) });
+    expect(sent).toMatchObject({
+      sent: true,
+      signature: expect.any(String),
+      next: `announced to ${judge}; solive_wallet_receipt with owner ${owner} and nonce ${escrow["nonce"]} shows when it is paid`,
+    });
     expect(Buffer.from(h.wires[0] as string, "base64").toString("latin1")).toContain(deliveryMemo({ intent, sha256: work, url: delivery.url }));
     expect((await call(client, "wallet_deliver", { ...delivery, url: "ftp://example.org/x" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "url" }] });
     expect((await call(client, "wallet_deliver", { ...delivery, sha256: "xyz" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "sha256" }] });
@@ -1146,7 +1155,7 @@ describe("the wallet server", () => {
     expect(await ok(client, "wallet_attest", { ...release, pay_to: worker })).toMatchObject({ delivered_sha256: work, sent: false });
     expect(await ok(client, "wallet_attest", { ...release, pay_to: copier, delivered_sha256: "bb".repeat(32) })).toMatchObject({ sent: false });
     const foreign = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.01", attestor: worker, spec_hash: specHash, send: true });
-    expect((await call(client, "wallet_check_delivery", { intent: foreign["intent"] })).value).toMatchObject({ code: "Unauthorized", hint: notAttestor(worker) });
+    expect(await ok(client, "wallet_check_delivery", { intent: foreign["intent"] })).toMatchObject({ intent: foreign["intent"], deliveries: [] });
     const plain = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.01", attestor: wallet, send: true });
     expect((await call(client, "wallet_check_delivery", { intent: plain["intent"] })).value).toMatchObject({ code: "NotAProof" });
     expect((await call(client, "wallet_check_delivery", { intent: worker })).value).toMatchObject({ code: "NotFound" });
@@ -1894,6 +1903,7 @@ describe("the wallet server", () => {
       intent,
       released: true,
       paid: formatAmount(net, 6),
+      mint: expect.any(String),
       attestor,
       result: "1",
       recipients: "2",
@@ -2290,6 +2300,72 @@ describe("the wallet server", () => {
     });
   }
 
+  it("shows what the payee receives after the protocol fee before an escrow is sent", async () => {
+    const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
+    const preview = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: "57".repeat(32) });
+    const { net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);
+    expect(preview["summary"]).toContain(`Payee receives: ${formatAmount(net, 9)}, after the ${FEE_BPS / 100}% protocol fee at today's config`);
+  });
+
+  it("unwraps this wallet's wrapped SOL into plain SOL, and refuses when it holds none", async () => {
+    const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
+    expect((await call(client, "wallet_unwrap")).value).toMatchObject({ code: "NotFound", hint: NOTHING_WRAPPED });
+    const wrapped = await findAssociatedTokenAddress({ owner: wallet, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const space = BigInt(getTokenSize());
+    const rent = h.svm.minimumBalanceForRentExemption(space);
+    const held = 48_500_000n;
+    h.svm.setAccount({
+      address: wrapped,
+      data: Uint8Array.from(
+        getTokenEncoder().encode({
+          mint: NATIVE_MINT,
+          owner: wallet,
+          amount: held,
+          delegate: none(),
+          state: AccountState.Initialized,
+          isNative: some(rent),
+          delegatedAmount: 0n,
+          closeAuthority: none(),
+        }),
+      ),
+      executable: false,
+      lamports: lamports(rent + held),
+      programAddress: TOKEN_PROGRAM_ADDRESS,
+      space,
+    });
+    expect(await ok(client, "wallet_unwrap")).toMatchObject({ account: wrapped, wrapped: "0.0485", sent: false, next: PREVIEW_ONLY });
+    const before = h.svm.getBalance(wallet) ?? 0n;
+    expect(await ok(client, "wallet_unwrap", { send: true })).toMatchObject({ sent: true, next: "unwrapped; solive_wallet_balance shows the SOL" });
+    expect(h.svm.getAccount(wrapped).exists).toBe(false);
+    expect((h.svm.getBalance(wallet) ?? 0n) - before).toBeGreaterThan(held);
+  });
+
+  it("tells a wallet paid in wrapped SOL how to turn it into SOL, and nobody else", async () => {
+    const { wallet, owner, intent, nonce, attestedTo } = await releasedEscrow("56");
+    const payee = (await generateKeyPairSigner()).address;
+    tokenAccountAt(payee, wallet);
+    const release = (holder: Address) =>
+      ({
+        signature: "6".repeat(87) + "f",
+        slot: 3n,
+        blockTime: null,
+        failed: false,
+        emitted: [attestedTo(payee)],
+        feePayer: wallet,
+        tokens: [{ account: payee, mint: NATIVE_MINT, owner: holder }],
+      }) satisfies EngineTransaction;
+    h.engineLog = [release(wallet), createdFrom(intent)];
+    const paid = await ok(client, "wallet_receipt", { owner, nonce });
+    expect(paid).toMatchObject({ released: true, paid_to: wallet, mint: NATIVE_MINT });
+    expect(paid["next"]).toContain(PAID_WRAPPED);
+    const other = (await generateKeyPairSigner()).address;
+    h.engineLog = [release(other), createdFrom(intent)];
+    const theirs = await ok(client, "wallet_receipt", { owner, nonce });
+    expect(theirs).toMatchObject({ released: true, paid_to: other });
+    expect(String(theirs["next"] ?? "")).not.toContain(PAID_WRAPPED);
+    h.engineLog = [];
+  });
+
   it("the earliest announcer check uses the owner at release time", async () => {
     const { wallet, owner, intent, nonce, attestedTo, announce } = await releasedEscrow("55");
     const worker = (await generateKeyPairSigner()).address;
@@ -2468,7 +2544,7 @@ describe("the wallet server", () => {
     expect(await ok(plain, "check_delivery", { intent })).toEqual(listed);
     expect((await call(plain, "check_delivery", { intent: unproven["intent"] })).value).toMatchObject({ code: "NotAProof" });
     expect((await call(plain, "check_delivery", { intent: worker })).value).toMatchObject({ code: "NotFound" });
-    expect((await call(client, "wallet_check_delivery", { intent })).value).toMatchObject({ code: "Unauthorized", hint: notAttestor(judge) });
+    expect(await ok(client, "wallet_check_delivery", { intent })).toEqual(listed);
     h.engineLog = [];
   });
 
