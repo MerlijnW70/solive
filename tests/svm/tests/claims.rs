@@ -323,6 +323,26 @@ fn a_lapsed_claim_lets_anyone_be_paid_and_sends_the_stake_to_the_owner() -> Test
 }
 
 #[test]
+fn a_lapsed_worker_paid_for_its_own_delivery_still_forfeits_the_stake() -> TestResult {
+    let mut w = world()?;
+    w.open(HOUR, STAKE)?;
+    let worker = w.worker.key.insecure_clone();
+    w.claim(&worker, 60)?;
+    w.lapse(60);
+    let owner = w.owner();
+    let payee = Solver {
+        key: worker,
+        output: w.worker.output,
+        input: w.worker.input,
+    };
+    let before = w.env.lamports(&owner);
+    w.release(&payee, true, Some(&owner))?;
+    assert_eq!(w.env.balance(&w.worker.input)?, ESCROW - 1);
+    assert_eq!(w.env.lamports(&owner), before + STAKE);
+    Ok(())
+}
+
+#[test]
 fn a_claimant_who_gives_up_gets_the_stake_back_and_no_one_else_can_drop_it() -> TestResult {
     let mut w = world()?;
     w.open(HOUR, STAKE)?;

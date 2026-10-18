@@ -101,7 +101,6 @@ pub fn stake_on_release(slot: Slot, payees: &[[u8; 32]]) -> Option<StakeTo> {
         Slot::Free => None,
         Slot::Held { worker, .. } if payees.contains(&worker) => Some(StakeTo::Worker),
         Slot::Held { .. } => None,
-        Slot::Lapsed { worker } if payees.contains(&worker) => Some(StakeTo::Worker),
         Slot::Lapsed { .. } => Some(StakeTo::Owner),
     }
 }

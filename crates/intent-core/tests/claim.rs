@@ -70,7 +70,8 @@ fn a_held_claim_lets_only_its_worker_be_paid_and_returns_the_stake() {
     let lapsed = Slot::at(WORKER, NOW, NOW);
     assert_eq!(lapsed.may_pay(&[OTHER]), Ok(()));
     assert_eq!(stake_on_release(lapsed, &[OTHER]), Some(StakeTo::Owner));
-    assert_eq!(stake_on_release(lapsed, &[WORKER]), Some(StakeTo::Worker));
+    assert_eq!(stake_on_release(lapsed, &[WORKER]), Some(StakeTo::Owner));
+    assert_eq!(stake_on_release(lapsed, &[WORKER, OTHER]), Some(StakeTo::Owner));
     assert_eq!(Slot::Free.may_pay(&[OTHER]), Ok(()));
     assert_eq!(stake_on_release(Slot::Free, &[OTHER]), None);
 }
