@@ -17,7 +17,7 @@ For every proof escrow the wallet announced work to, the record says whether its
 - `refunded` or `open`: nothing was released.
 - `unknown`: the release could not be read in full.
 
-The totals count only `paid` releases at arm's length. A release is self-dealt, and left out, when the worker owned the escrow, judged it, or sat on the committee that judged it, or when the owner judged its own escrow. `payers` and `judges` count the distinct owners and judges behind the totals; many payers and judges are harder to fake than many releases. `committee_judged` counts releases a committee approved.
+The totals count only `paid` releases at arm's length. A release is self-dealt, and left out, when the worker owned the escrow, judged it, or sat on the committee that judged it, or when the owner judged its own escrow. `payers` and `judges` count the distinct owners and judges behind the totals. `committee_judged` counts releases a committee approved.
 
 `complete` is `true` only when the RPC node holds the whole ledger and every escrow's history was read. A pruned node shows less, never more.
 

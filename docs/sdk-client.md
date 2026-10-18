@@ -1,6 +1,6 @@
 # The full client
 
-Every option of every call, in base units. Start with [Build in TypeScript](sdk.md) first: this page continues its program.
+Every option of every call, in base units. Start with [Build in TypeScript](sdk.md): this page continues its program.
 
 ## Connect
 
@@ -14,7 +14,7 @@ const client = createClient({ url: "https://api.devnet.solana.com" });
 
 ## Create a swap intent
 
-Sell 0.05 SOL for at least 50 test tokens. The devnet filler prices test tokens at 200 per wrapped SOL and pays exactly the minimum asked; 50 is more than 0.05 SOL buys at that price, so the intent stays open until you cancel it.
+Sell 0.05 SOL for at least 50 test tokens. The devnet filler prices them at 200 per wrapped SOL and pays the minimum asked; 50 is more than 0.05 SOL buys, so the intent stays open until you cancel it.
 
 `createIntent` sets up what it needs in the same transaction: it registers the wallet, wraps the SOL and creates the receiving token account. It picks the next free nonce and expires the intent in an hour, unless you pass `nonce`, `expiresIn` or `expiresAt`.
 
@@ -51,7 +51,7 @@ for (const { intent } of mine.filter(({ intent }) => intent.nonce === nonce)) {
 
 ## Watch
 
-`watch` calls back with the current intents, then with every intent that changes, until its signal aborts. It rereads the chain every `resyncSeconds`, so a dropped notification only delays a change; pass `onError` to hear about failed reads. A filled intent's account closes soon after the fill, so `intent` then returns `null`. This prints `Open` now and `Cancelled` once the cancel below lands.
+`watch` calls back with the current intents, then with every intent that changes, until its signal aborts. It rereads the chain every `resyncSeconds`; pass `onError` to hear about failed reads. A filled intent's account closes soon after the fill, so `intent` then returns `null`. This prints `Open` now and `Cancelled` once the cancel below lands.
 
 ```ts
 const controller = new AbortController();
@@ -155,7 +155,7 @@ console.log(received.map((amount) => formatAmount(amount, sell.decimals)).join("
 
 ## When the judge refuses
 
-The engine has no refusal call: a judge that rejects the work sends nothing, and the escrow stays open. The owner cancels it, which returns the escrow to the wrapped SOL token account, and `unwrap` returns that to the wallet as SOL. If the owner does not, anyone can expire the intent once its expiry passes, which also returns the escrow to the owner's token account. After the cancel, `settleProof` throws `NotSettleable`. This prints `Cancelled NotSettleable`.
+The engine has no refusal call: a judge that rejects the work sends nothing, and the escrow stays open. The owner cancels it. If the owner does not, anyone can expire the intent once its expiry passes, which returns the escrow to the owner's token account. After the cancel, `settleProof` throws `NotSettleable`. This prints `Cancelled NotSettleable`.
 
 ```ts
 const refused = await client.createIntent({ ...order, params: work });
@@ -224,7 +224,7 @@ await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: p
 await client.unwrap(signer);
 ```
 
-Anyone can copy an announcement once it is on chain, so a judge pays the earliest announcer of the hash it checked: `firstDelivery(record.deliveries, sha256)` returns that announcement, or `null`. `settleProof` takes `deliveredSha256` to record the paid work's hash in the release, in the memo `intent-engine receipt` and `solive_wallet_receipt` read. [Judge work](judge.md) does all of this from the command line.
+`firstDelivery(record.deliveries, sha256)` returns the earliest announcement of the checked hash, or `null`; the judge pays its announcer. `settleProof` takes `deliveredSha256` to record the paid work's hash in the release, in the memo `intent-engine receipt` and `solive_wallet_receipt` read. [Judge work](judge.md) does all of this from the command line.
 
 ## Who can do what
 

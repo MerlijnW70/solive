@@ -11,7 +11,7 @@ npm install @intent-engine/core @intent-engine/client @solana/kit
 npx @intent-engine/cli setup
 ```
 
-`setup` makes a devnet wallet with some SOL in it. Skip it if you did the quickstart.
+`setup` makes a devnet wallet with some SOL. Skip it if you did the quickstart.
 
 ## Run it
 
@@ -51,7 +51,7 @@ Amounts are whole tokens, such as `"0.05"`. Tokens are `SOL`, `TEST` or a mint a
 - `cancel`: get an escrow back
 - `balance` and `watch`: read your wallet and follow your orders
 
-Pass `preview: true` to a call that sends to see what it does first.
+Pass `preview: true` to a call that sends to see what it does.
 
 ## Next
 

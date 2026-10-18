@@ -205,7 +205,7 @@ Anyone can copy an announcement, so `judge` pays the earliest announcer of the w
 
 ## Judge as a committee
 
-A committee needs a `threshold` of its members to agree before an escrow pays, so one judge is no longer a single point of failure.
+A committee needs a `threshold` of its members to agree before an escrow pays.
 
 ```powershell
 intent-engine committee create --keypair payer.json --members $env:A,$env:B,$env:C --threshold 2 --fee-wallet $env:FEES --yes

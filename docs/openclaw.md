@@ -52,7 +52,7 @@ openclaw mcp configure intent --approval prompt
 
 Never answer "Allow Always" for an `intent__solive_wallet_*` tool. It approves that tool for any arguments, `send: true` included, so later swaps, escrows and releases go out without a question.
 
-Shared or group agents get no wallet tools at all. Deny them in that agent's entry:
+Shared or group agents get no wallet tools. Deny them in that agent's entry:
 
 ```json5
 {
