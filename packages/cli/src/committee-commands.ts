@@ -175,7 +175,7 @@ export async function committeeCommand(command: CommitteeCommand, runtime: Runti
         throw new FlowRefused(`the votes are for escrow ${first.intent} and committee ${first.committee}, not ${release.intent} and ${release.committee.address}`);
       }
       if (command.confirmUrl !== undefined) {
-        await confirmOnBoth(transport, runtime.transport(command.confirmUrl), { intent: release.intent, attestor: release.committee.address, sha256: command.sha256 });
+        await confirmOnBoth(transport, runtime.transport(command.confirmUrl), { intent: release.intent, attestor: release.committee.address, sha256: command.sha256, payees: [target.payTo] });
       }
       const summary = [
         `Releases: proof escrow ${release.intent} to ${target.payTo} (token account ${release.payee}) with result ${target.result}`,

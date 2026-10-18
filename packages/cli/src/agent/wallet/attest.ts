@@ -168,7 +168,7 @@ export const walletAttest = define({
         throw new AgentRefusal("NotEarliestAnnouncer", notEarliest(first.worker, delivered));
       }
     }
-    await confirmedRelease(ctx, { intent, attestor: signer.address, sha256: isProof ? delivered : undefined, pages: input.max_pages ?? ATTEST_PAGES });
+    await confirmedRelease(ctx, { intent, attestor: signer.address, sha256: isProof ? delivered : undefined, pages: input.max_pages ?? ATTEST_PAGES, payees: [input.pay_to] });
     const memoText = delivered === undefined ? "" : releaseMemo(delivered);
     const memo =
       delivered === undefined

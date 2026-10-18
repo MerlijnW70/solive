@@ -2,11 +2,11 @@ import type { Address } from "@solana/kit";
 import { deliveryRecord, firstDelivery } from "./job-deliveries.js";
 import type { Transport } from "./transport.js";
 
-export type ConfirmTarget = { intent: Address; attestor: Address; sha256?: string | undefined; pages?: number | undefined };
+export type ConfirmTarget = { intent: Address; attestor: Address; sha256?: string | undefined; pages?: number | undefined; payees?: readonly Address[] | undefined };
 
 export type NodeView = { genesis: string; intent: string; announcer: string | undefined };
 
-export type ConfirmField = "genesis hash" | "intent account" | "earliest announcer" | "second node";
+export type ConfirmField = "genesis hash" | "intent account" | "earliest announcer" | "payee" | "second node";
 
 export const NO_ACCOUNT = "no account";
 
@@ -23,7 +23,9 @@ export class ConfirmMismatch extends Error {
     super(
       field === "second node"
         ? `the second RPC node could not be read (${second}), so the release is not confirmed; nothing was signed or sent`
-        : `the two RPC nodes report a different ${field}: the first ${first}, the second ${second}; nothing was signed or sent`,
+        : field === "payee"
+          ? `both RPC nodes report the earliest announcer ${second}, which is not the payee ${first}; nothing was signed or sent`
+          : `the two RPC nodes report a different ${field}: the first ${first}, the second ${second}; nothing was signed or sent`,
     );
     this.name = "ConfirmMismatch";
     this.field = field;
@@ -70,6 +72,10 @@ export async function confirmOnBoth(first: Transport, second: Transport, target:
   }
   if (own.announcer !== other.announcer || own.announcer === INCOMPLETE_RECORD) {
     throw new ConfirmMismatch("earliest announcer", own.announcer ?? NO_ANNOUNCER, other.announcer ?? NO_ANNOUNCER);
+  }
+  const worker = own.announcer?.split(" ")[0];
+  if (target.payees !== undefined && own.announcer !== undefined && own.announcer !== NO_ANNOUNCER && !target.payees.some((payee) => payee === worker)) {
+    throw new ConfirmMismatch("payee", target.payees.join(", "), own.announcer);
   }
   return own;
 }

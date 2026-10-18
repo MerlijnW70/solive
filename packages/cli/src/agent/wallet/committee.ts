@@ -51,7 +51,7 @@ async function ballotOf(ctx: AgentContext, input: BallotArgs) {
   if (first !== null && first.worker !== input.pay_to) {
     throw new AgentRefusal("NotEarliestAnnouncer", notEarliest(first.worker, delivered));
   }
-  await confirmedRelease(ctx, { intent: ballot.intent, attestor: ballot.committee.address, sha256: delivered, pages: input.max_pages ?? ATTEST_PAGES });
+  await confirmedRelease(ctx, { intent: ballot.intent, attestor: ballot.committee.address, sha256: delivered, pages: input.max_pages ?? ATTEST_PAGES, payees: [input.pay_to] });
   return { client, target, ballot, delivered };
 }
 

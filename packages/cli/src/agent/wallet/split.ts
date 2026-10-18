@@ -166,7 +166,7 @@ export const walletAttestSplit = define({
     if (first !== null && !wallets.includes(first.worker)) {
       throw new AgentRefusal("NotEarliestAnnouncer", notInSplit(first.worker, delivered));
     }
-    await confirmedRelease(ctx, { intent, attestor: signer.address, sha256: delivered, pages: input.max_pages ?? ATTEST_PAGES });
+    await confirmedRelease(ctx, { intent, attestor: signer.address, sha256: delivered, pages: input.max_pages ?? ATTEST_PAGES, payees: wallets });
     const memoText = releaseMemo(delivered);
     const memo = { programAddress: MEMO_PROGRAM_ADDRESS, accounts: [{ address: signer.address, role: AccountRole.READONLY_SIGNER, signer }], data: new TextEncoder().encode(memoText) };
     const token = await mintOf(ctx.transport, held.inputMint);

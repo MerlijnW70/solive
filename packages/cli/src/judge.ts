@@ -289,7 +289,7 @@ async function checkAndSettle(
   const agreed = (judged: { total: number; passed: number } | undefined) => judged !== undefined && judged.total > 0 && judged.passed === judged.total;
   const passed = cases === undefined ? check.exitCode === 0 : agreed(cases) && agreed(host) && (plainNode === undefined || agreed(node));
   if (passed && confirm !== undefined) {
-    await confirmOnBoth(transport, confirm, { intent: address, attestor, sha256, pages: command.maxPages });
+    await confirmOnBoth(transport, confirm, { intent: address, attestor, sha256, pages: command.maxPages, payees: [payTo] });
   }
   let signature: Signature | null = null;
   let vote: VoteFile | undefined;
