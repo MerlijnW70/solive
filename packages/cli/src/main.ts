@@ -12,6 +12,7 @@ import { JudgeInterrupted } from "./judge.js";
 import { watchJudge } from "./judge-watch.js";
 import { printableLines, redactUrl, render, renderText } from "./render.js";
 import { expandHome, withSettings } from "./wallet.js";
+import { ENV_KEYPAIR } from "./clusters.js";
 import { certificateCode, certificateHint, SERVER_PROBLEMS, unfundedSend } from "./agent/problems.js";
 import { WALLET_NOTICE } from "./agent/wallet.js";
 import { EXIT_ALERTED } from "./monitor-args.js";
@@ -60,9 +61,10 @@ function message(error: unknown, url: string | undefined): string {
 export async function main(argv: readonly string[], runtime: Runtime, io: Io): Promise<number> {
   let url: string | undefined;
   try {
-    const command = parse(argv, await withSettings(runtime, runtime.env));
+    const settings = await withSettings(runtime, runtime.env);
+    const command = parse(argv, settings);
     url = "url" in command ? command.url : undefined;
-    checkLedgerPaths(command);
+    checkLedgerPaths(command, settings[ENV_KEYPAIR]);
     const show = (value: object) => io.out(command.name === "help" || outputOf(argv) === "text" ? renderText(value) : render(value));
     if (command.name === "follow") {
       const transport = withPriority(runtime.transport(command.url), command.priority);

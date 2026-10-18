@@ -39,8 +39,11 @@ export const needsKeyFile = (name: string, path: string) =>
 
 export const signsOnDevice = (command: Command): boolean => DEVICE_COMMANDS.has(commandName(command));
 
-export function checkLedgerPaths(command: Command): void {
-  const devices = keyPaths(command).filter(isLedgerPath);
+const walletPath = (command: Command, saved: string | undefined): string[] =>
+  command.name === "mcp" && command.wallet !== null && saved !== undefined ? [saved] : [];
+
+export function checkLedgerPaths(command: Command, saved?: string): void {
+  const devices = [...keyPaths(command), ...walletPath(command, saved)].filter(isLedgerPath);
   if (devices.length === 0) {
     return;
   }
