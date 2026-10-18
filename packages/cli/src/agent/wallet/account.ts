@@ -72,7 +72,11 @@ export const walletCancel = define({
   title: "Cancel a wallet intent",
   description: `Cancels one of the user's open orders by its nonce (order number): the locked tokens and the order's rent deposit return to this wallet, with SOL as wrapped SOL. ${PREVIEW_FIRST}`,
   effect: "submit",
-  input: object({ nonce: amount("the intent's nonce, from wallet_intents"), send: optional(flag("true signs and sends; leave out to preview")) }),
+  input: object({
+    nonce: amount("the intent's nonce, from wallet_intents"),
+    close: optional(flag("true also closes the empty intent account and returns its rent; default true. Set false when a NotRentPayer error says another wallet paid the rent")),
+    send: optional(flag("true signs and sends; leave out to preview")),
+  }),
   output: object({
     intent: account(),
     refund: amount("raw input units returned to the wallet"),
@@ -84,7 +88,7 @@ export const walletCancel = define({
   }),
   run: async (ctx: AgentContext, input, call: Call) => {
     const signer = await signerOf(ctx);
-    const view = (await prepareCancel.run(ctx, { owner: signer.address, nonce: input.nonce, close: true } as never, call)) as Record<
+    const view = (await prepareCancel.run(ctx, { owner: signer.address, nonce: input.nonce, close: input.close ?? true } as never, call)) as Record<
       string,
       unknown
     >;

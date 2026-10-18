@@ -117,8 +117,8 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `sell` | string | yes | SOL, TEST or a mint address: the token to pay with |
 | `amount` | string | yes | whole tokens to escrow, such as 0.05 |
 | `attestor` | address | yes | the wallet whose signature alone releases the escrow |
-| `min_result` | whole number as a decimal string | no | least result the attestor may attest; default 1 |
-| `max_result` | whole number as a decimal string | no | greatest result the attestor may attest; default min_result |
+| `min_result` | whole number as a decimal string | no | least result the attestor may attest, a plain count not whole tokens; default 1 |
+| `max_result` | whole number as a decimal string | no | greatest result the attestor may attest, a plain count not whole tokens; default min_result |
 | `spec_hash` | string | no | 64 hex: the sha256 of the acceptance spec the attestor must verify. Setting it binds the release to a signature over that exact spec, so the attestor cannot sign a generic result |
 | `spec_url` | string | no | where the acceptance spec is published, an https url of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would; needs spec_hash. Recorded in a memo this wallet signs with the escrow |
 | `judge_fee` | string | no | whole tokens of sell paid to the attestor out of the escrow when it settles, such as 0.001; needs spec_hash and must be below amount |
@@ -156,8 +156,8 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | `owner` | address | yes | the wallet that made the escrow |
 | `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
 | `pay_to` | address | yes | the wallet to pay |
-| `result` | whole number as a decimal string | no | the result to attest, between the intent's min_result and max_result; default min_result |
-| `delivered_sha256` | string | no | the sha256, as 64 hex digits, of the work this release pays for; required for a proof escrow, whose release pays that work's earliest announcer; recorded in a memo this wallet signs with the release, so the payer can check what it receives with solive_wallet_receipt |
+| `result` | whole number as a decimal string | no | the result to attest, a plain count not whole tokens, between the intent's min_result and max_result; default min_result |
+| `delivered_sha256` | string | no | the sha256, as 64 hex digits, of the work this release pays for: the same hash the worker announced with solive_wallet_deliver; required for a proof escrow, whose release pays that work's earliest announcer; recorded in a memo this wallet signs with the release, so the payer can check what it receives with solive_wallet_receipt |
 | `max_pages` | integer 1..100000 | no | pages of 1000 signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default 1000; raise it when the release is refused because the record of announced work is incomplete |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs the attestation and settles; leave out to preview |
@@ -299,7 +299,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `intent` | address | yes | the proof escrow's intent address |
-| `sha256` | string | yes | the sha256 of the delivered work, as 64 hex digits |
+| `sha256` | string | yes | the sha256 of the delivered work, as 64 hex digits; the judge releases for this same value, passed as delivered_sha256 |
 | `url` | string | yes | where the attestor fetches the work, an https url of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would |
 | `send` | boolean | no | true signs and sends; leave out to preview |
 
@@ -378,6 +378,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `nonce` | whole number as a decimal string | yes | the intent's nonce, from wallet_intents |
+| `close` | boolean | no | true also closes the empty intent account and returns its rent; default true. Set false when a NotRentPayer error says another wallet paid the rent |
 | `send` | boolean | no | true signs and sends; leave out to preview |
 
 ## solive_get_config
@@ -523,7 +524,7 @@ Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 | --- | --- | --- | --- |
 | `worker` | address | yes | the wallet that announces the work, signs and pays the fee, and is paid if a release records this work |
 | `intent` | address | yes | the proof escrow's intent address |
-| `sha256` | string | yes | the sha256 of the delivered work, as 64 hex digits |
+| `sha256` | string | yes | the sha256 of the delivered work, as 64 hex digits; the judge releases for this same value, passed as delivered_sha256 |
 | `url` | string | yes | where the attestor fetches the work, an https url of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would |
 
 ## solive_check_delivery

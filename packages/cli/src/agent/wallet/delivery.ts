@@ -39,7 +39,7 @@ export const walletDeliver = define({
   repeats: true,
   input: object({
     intent: account("the proof escrow's intent address"),
-    sha256: text("the sha256 of the delivered work, as 64 hex digits"),
+    sha256: text("the sha256 of the delivered work, as 64 hex digits; the judge releases for this same value, passed as delivered_sha256"),
     url: text(`where the attestor fetches the work, ${MEMO_URL_RULE}`),
     send: optional(flag("true signs and sends; leave out to preview")),
   }),
@@ -178,7 +178,7 @@ export const prepareDeliver = define({
   input: object({
     worker: account("the wallet that announces the work, signs and pays the fee, and is paid if a release records this work"),
     intent: account("the proof escrow's intent address"),
-    sha256: text("the sha256 of the delivered work, as 64 hex digits"),
+    sha256: text("the sha256 of the delivered work, as 64 hex digits; the judge releases for this same value, passed as delivered_sha256"),
     url: text(`where the attestor fetches the work, ${MEMO_URL_RULE}`),
   }),
   output: object({

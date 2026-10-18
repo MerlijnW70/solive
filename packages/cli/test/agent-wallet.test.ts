@@ -285,6 +285,7 @@ describe("the wallet server", () => {
     const cancel = await ok(client, "wallet_cancel", { nonce: "0" });
     expect(cancel).toMatchObject({ intent, refund: (LAMPORTS_PER_SOL / 20n).toString(), sent: false, next: PREVIEW_ONLY });
     expect(cancel["summary"]).toContain(`Returns 0.05 of SOL (${NATIVE_MINT}) to your token account`);
+    expect(await ok(client, "wallet_cancel", { nonce: "0", close: false })).toMatchObject({ intent, sent: false });
     expect(h.svm.getAccount(intent).exists).toBe(true);
     const cancelled = await ok(client, "wallet_cancel", { nonce: "0", send: true });
     expect(cancelled).toMatchObject({ intent, sent: true });
