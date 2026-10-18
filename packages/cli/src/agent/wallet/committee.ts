@@ -9,7 +9,7 @@ import { AgentRefusal } from "../problems.js";
 import { InvalidInput, account, amount, flag, integer, list, object, optional, text } from "../schema.js";
 import { preparedView } from "../shapes.js";
 import { prepare } from "../prepare.js";
-import { PREVIEW_APPROVAL, signerOf, sent, sha256Of } from "./guard.js";
+import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of } from "./guard.js";
 import { ATTEST_PAGES, DELIVERED_NEEDED, HISTORY_TOO_LONG, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, notEarliest, confirmedRelease } from "./delivery.js";
 import { RELEASE_CHANGED } from "./attest.js";
 
@@ -161,6 +161,9 @@ export const walletCommitteeRelease = define({
       ],
       prepared,
     };
-    return sent(ctx, signer, view, input.send, call);
+    return sent(ctx, signer, view, input.send, call, {
+      preview: PREVIEW_APPROVAL_NEXT,
+      done: `the committee release is sent; rate the work with ${tool("wallet_feedback")} if this wallet owns the escrow`,
+    });
   },
 });

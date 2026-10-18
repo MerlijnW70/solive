@@ -139,6 +139,7 @@ import {
   RECORD_MINT_NEEDED,
   NO_WALLET,
   PREVIEW_ONLY,
+  PREVIEW_APPROVAL_NEXT,
   stillWaiting,
   WALLET_ACTIONS,
   WALLET_NOTICE,
@@ -272,6 +273,7 @@ describe("the wallet server", () => {
     expect(h.svm.getAccount(intent).exists).toBe(false);
     const swapped = await ok(client, "wallet_swap", { sell: "sol", buy: "test", amount: "0.05", min_receive: "5", exact: true, send: true });
     expect(swapped).toMatchObject({ intent, sent: true, signature: expect.any(String) });
+    expect(swapped["next"]).toContain("solive_wallet_wait");
     h.watched.push(owner);
     const listed = await ok(client, "wallet_intents");
     expect(listed["intents"]).toMatchObject([{ address: intent, status: "open", nonce: "0" }]);
@@ -284,7 +286,9 @@ describe("the wallet server", () => {
     expect(cancel).toMatchObject({ intent, refund: (LAMPORTS_PER_SOL / 20n).toString(), sent: false, next: PREVIEW_ONLY });
     expect(cancel["summary"]).toContain(`Returns 0.05 of SOL (${NATIVE_MINT}) to your token account`);
     expect(h.svm.getAccount(intent).exists).toBe(true);
-    expect(await ok(client, "wallet_cancel", { nonce: "0", send: true })).toMatchObject({ intent, sent: true });
+    const cancelled = await ok(client, "wallet_cancel", { nonce: "0", send: true });
+    expect(cancelled).toMatchObject({ intent, sent: true });
+    expect(cancelled["next"]).toContain("solive_wallet_balance");
     expect(h.svm.getAccount(intent).exists).toBe(false);
     expect(balance(wrapped)).toBe(LAMPORTS_PER_SOL / 20n);
     expect((await ok(client, "wallet_intents"))["intents"]).toEqual([]);
@@ -458,6 +462,7 @@ describe("the wallet server", () => {
     expect((await call(client, "wallet_attest", { ...release, result: "4" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "result" }] });
     h.simulated.length = 0;
     const shown = await ok(client, "wallet_attest", release);
+    expect(shown).toMatchObject({ sent: false, next: PREVIEW_APPROVAL_NEXT });
     expect(h.simulated).toEqual([]);
     expect(shown["summary"][0]).toContain(WRAPPED);
     const wrapped = await findAssociatedTokenAddress({ owner, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
@@ -835,7 +840,7 @@ describe("the wallet server", () => {
     const late = await ok(client, "wallet_attest_split", timedOut.release);
     const followUp = tried.map(landedAs).find((tx) => (tx.memos ?? []).includes(followUpMemo(work, late["signature"] as string)));
     expect(late).toMatchObject({ sent: true, recorded: "follow-up", follow_up_signature: followUp?.signature });
-    expect(late).not.toHaveProperty("next");
+    expect(late["next"]).toContain("solive_wallet_feedback");
   });
 
   async function splitEscrow(work: string, weights: readonly number[] = [5000, 5000]) {
@@ -965,7 +970,7 @@ describe("the wallet server", () => {
     expect((await ok(client, "wallet_intents"))["intents"]).toEqual([]);
     const sent = await ok(client, "wallet_escrow_plan", { ...plan, send: true });
     expect(sent).toMatchObject({ sent: true, total: "0.04", pieces: [0, 1, 2].map((i) => ({ nonce: String(i), signature: expect.any(String) })) });
-    expect(sent).not.toHaveProperty("next");
+    expect(sent["next"]).toContain("pieces are escrowed");
     const listed = ((await ok(client, "wallet_intents"))["intents"] as Json[]).sort((a, b) => Number(a["nonce"]) - Number(b["nonce"]));
     expect(listed.map((intent) => intent["order"])).toEqual([
       expect.objectContaining({ kind: "attested", amount_in: String(LAMPORTS_PER_SOL / 100n), attestor: owner }),

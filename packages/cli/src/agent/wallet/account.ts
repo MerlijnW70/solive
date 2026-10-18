@@ -88,6 +88,8 @@ export const walletCancel = define({
       string,
       unknown
     >;
-    return sent(ctx, signer, view, input.send, call);
+    return sent(ctx, signer, view, input.send, call, {
+      done: `the escrow is cancelled and its tokens returned; call ${tool("wallet_balance")} to see them`,
+    });
   },
 });

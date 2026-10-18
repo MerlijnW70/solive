@@ -48,7 +48,7 @@ import { preparedView } from "../shapes.js";
 import { walletRecipient } from "../owner.js";
 import { prepare, transactionSize } from "../prepare.js";
 import { STATUS } from "../../accounts.js";
-import { PREVIEW_APPROVAL, WAIT_SCAN, signerOf, sent, sha256Of } from "./guard.js";
+import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, WAIT_SCAN, signerOf, sent, sha256Of } from "./guard.js";
 import { RELEASE_CHANGED, approvalOf } from "./attest.js";
 import { notInSplit, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor, confirmedRelease } from "./delivery.js";
 
@@ -278,7 +278,10 @@ export const walletAttestSplit = define({
       warnings: [...settlementWarnings(params), WARN_COAUTHORS],
       prepared,
     };
-    const done = await sent(ctx, signer, view2, input.send, call);
+    const done = await sent(ctx, signer, view2, input.send, call, {
+      preview: PREVIEW_APPROVAL_NEXT,
+      done: `the escrow is released to its co-authors; rate the work with ${tool("wallet_feedback")} if this wallet owns the escrow`,
+    });
     if (!("signature" in done)) {
       return done;
     }

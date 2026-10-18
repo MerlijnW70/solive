@@ -53,7 +53,8 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `NoSpecUrl` | no | the escrow publishes no spec url, or is not a proof escrow; ask its owner where its acceptance spec lives |
 | `NotInvited` | no | pay_to was not invited to the job: its spec is sealed to other wallets |
 | `SpecSealed` | no | the spec is sealed to invited wallets, and this server's wallet is not one of them or it has no wallet |
-| `SpecUnreadable` | yes | the spec url could not be read: it failed, answered an error or redirect, or is larger than the limit; the hint says which |
+| `SpecUnreadable` | yes | the spec url could not be read this time: it failed or the node answered a temporary error; try again shortly |
+| `SpecUnfetchable` | no | the spec url cannot be read: it answered not-found, redirects, is larger than the limit, or is not a public http(s) address; ask the owner for a working spec url and do not retry this one |
 | `NotEarliestAnnouncer` | no | another wallet announced the delivered work first; a release recording that work pays its earliest announcer |
 | `NotAnnounced` | no | no work with this sha256 was announced for the escrow, so it is not recorded as what the release paid for |
 | `NotReleased` | no | the escrow has no release in its history, so no delivery can be recorded for it |

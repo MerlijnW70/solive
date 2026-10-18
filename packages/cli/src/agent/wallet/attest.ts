@@ -29,7 +29,7 @@ import { preparedView } from "../shapes.js";
 import { walletRecipient } from "../owner.js";
 import { prepare } from "../prepare.js";
 import { STATUS } from "../../accounts.js";
-import { PREVIEW_APPROVAL, signerOf, sent, sha256Of } from "./guard.js";
+import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of } from "./guard.js";
 import { invitedTo, notInvited } from "../../invites.js";
 import { notEarliest, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor, confirmedRelease } from "./delivery.js";
 
@@ -204,6 +204,9 @@ export const walletAttest = define({
       warnings: settlementWarnings(params),
       prepared,
     };
-    return sent(ctx, signer, view2, input.send, call);
+    return sent(ctx, signer, view2, input.send, call, {
+      preview: PREVIEW_APPROVAL_NEXT,
+      done: `the escrow is released to ${input.pay_to}; rate the work with ${tool("wallet_feedback")} so ${tool("get_reputation")} can show this worker's track record`,
+    });
   },
 });

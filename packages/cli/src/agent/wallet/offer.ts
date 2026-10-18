@@ -33,6 +33,7 @@ export async function offered(
   call: Call,
   input: { sell: string; buy: string; pay_to?: Address | undefined; send?: boolean | undefined },
   terms: (sold: Token, bought: Token, now: bigint, inputMint: Address, outputMint: Address) => Promise<Terms> | Terms,
+  done?: string,
 ) {
   const wallet = access(ctx);
   const signer = await signerOf(ctx);
@@ -62,7 +63,7 @@ export async function offered(
   };
   const first = await created(ctx);
   if (input.send !== true) {
-    return sent(ctx, signer, first, input.send, call);
+    return sent(ctx, signer, first, input.send, call, { done });
   }
   const path = limited(guard) ? await bookOf(wallet) : undefined;
   const sale: Sale = { id: randomUUID(), mint: inputMint, at: now, amount: sold };
@@ -75,12 +76,12 @@ export async function offered(
   }
   try {
     try {
-      return await sent(ctx, signer, first, true, call);
+      return await sent(ctx, signer, first, true, call, { done });
     } catch (error) {
       if (!nonceTaken(error)) {
         throw error;
       }
-      return await sent(ctx, signer, await created({ ...ctx, transport: unmemoized(ctx.transport) }), true, call);
+      return await sent(ctx, signer, await created({ ...ctx, transport: unmemoized(ctx.transport) }), true, call, { done });
     }
   } catch (error) {
     if (path !== undefined && refusedBeforeSending(error)) {

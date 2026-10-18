@@ -13,6 +13,8 @@ import { offerOutput, type Token, offered } from "./offer.js";
 
 export const ESCROW_EXPIRES_IN = 86_400;
 
+export const JOB_LIVE = `the job is live; share its spec so workers find it with ${tool("find_jobs")}, and call ${tool("wallet_wait")} with its nonce or ${tool("wallet_check_delivery")} to watch for delivered work, then release to the earliest announcer with ${tool("wallet_attest")}`;
+
 export const RECORD_MINT_NEEDED = "selling SOL on this RPC needs record_mint: any other token's mint, which only labels the escrow";
 
 function recordedMint(sell: Address, url: string, chosen: string | undefined): Address {
@@ -76,7 +78,7 @@ export const walletEscrow = define({
       },
       expires_at: now + BigInt((input.expires_in ?? ESCROW_EXPIRES_IN) + LANDING_SECONDS),
       ...(input.spec_url === undefined ? {} : { spec_url: input.spec_url }),
-    }));
+    }), JOB_LIVE);
   },
 });
 
@@ -179,6 +181,11 @@ export const walletEscrowPlan = define({
         };
       }
     }
-    return { pieces, ...shown, sent: true };
+    return {
+      pieces,
+      ...shown,
+      sent: true,
+      next: `all ${planned.length} pieces are escrowed; watch each with ${tool("wallet_wait")} or ${tool("wallet_check_delivery")}, and release each to its earliest announcer with ${tool("wallet_attest")}`,
+    };
   },
 });

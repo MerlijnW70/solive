@@ -60,12 +60,14 @@ export const PREVIEW_FIRST = "Previews only; call with send: true after the user
 export const PREVIEW_APPROVAL = "Previews only; after the user says yes, call with send: true and its approval.";
 
 export const walletEmpty = (address: string) =>
-  `the wallet ${address} holds no SOL yet; request devnet SOL for it at ${faucetLink(address)} or ${PUBLIC_FAUCET}, then try again`;
+  `the wallet ${address} holds no SOL yet; call ${tool("wallet_setup")} to request free devnet SOL for it, or fund ${address} at ${faucetLink(address)} or ${PUBLIC_FAUCET}, then try again`;
 
 export const NO_WALLET = `this server has no wallet yet; call ${tool("wallet_setup")} first`;
 export const WALLET_OFF = "this server runs without a wallet; start it with mcp --wallet to let it sign";
 export const PREVIEW_ONLY =
   "nothing was sent; show the summary to the user and call again with send: true only after they approve";
+export const PREVIEW_APPROVAL_NEXT =
+  "nothing was sent; show the summary to the user and, only after they approve, call again with send: true and approval set to the approval field above";
 
 export function access(ctx: AgentContext): WalletAccess {
   if (ctx.wallet === undefined) {
@@ -258,16 +260,24 @@ export function checkHour(guard: WalletGuard, mint: Address, decimals: number, a
   }
 }
 
-export async function sent(ctx: AgentContext, signer: WalletSigner, view: Record<string, unknown>, send: boolean | undefined, call: Call) {
+export async function sent(
+  ctx: AgentContext,
+  signer: WalletSigner,
+  view: Record<string, unknown>,
+  send: boolean | undefined,
+  call: Call,
+  next?: { preview?: string | undefined; done?: string | undefined },
+) {
   for (const undo of call.undo.splice(0)) {
     undo();
   }
   const { prepared, ...shown } = view as { prepared: PreparedView } & Record<string, unknown>;
   if (send !== true) {
-    return { ...shown, sent: false, next: PREVIEW_ONLY };
+    return { ...shown, sent: false, next: next?.preview ?? PREVIEW_ONLY };
   }
   await notMainnet(ctx);
-  return { ...shown, sent: true, signature: await execute(ctx.transport, prepared, signer) };
+  const signature = await execute(ctx.transport, prepared, signer);
+  return { ...shown, sent: true, signature, ...(next?.done === undefined ? {} : { next: next.done }) };
 }
 
 export function sha256Of(text: string, path: string): string {

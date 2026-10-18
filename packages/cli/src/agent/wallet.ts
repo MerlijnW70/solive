@@ -30,6 +30,7 @@ export {
   NO_WALLET,
   WALLET_OFF,
   PREVIEW_ONLY,
+  PREVIEW_APPROVAL_NEXT,
   limitLines,
   rpcRefused,
 } from "./wallet/guard.js";

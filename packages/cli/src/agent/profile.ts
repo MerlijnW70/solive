@@ -17,7 +17,7 @@ import { AgentRefusal, ENGINE_PROBLEMS } from "./problems.js";
 import { account, choice, flag, hex32, InvalidInput, list, nullable, object, optional, text, time } from "./schema.js";
 import { preparedView } from "./shapes.js";
 import { prepare } from "./prepare.js";
-import { PREVIEW_APPROVAL, signerOf, sent } from "./wallet/guard.js";
+import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent } from "./wallet/guard.js";
 
 export const PROFILE_CHANGED =
   "this profile differs from its preview: its skills, endpoint or document changed, or no approval was given; preview it again and show the user";
@@ -138,6 +138,9 @@ export const walletProfile = define({
       summary,
       prepared: input.send === true ? preparedView(await prepare(ctx.transport, [instruction], signer.address)) : undefined,
     };
-    return sent(ctx, signer, shown, input.send, call);
+    return sent(ctx, signer, shown, input.send, call, {
+      preview: PREVIEW_APPROVAL_NEXT,
+      done: `your profile is live; payers read it with ${tool("get_profile")}`,
+    });
   },
 });

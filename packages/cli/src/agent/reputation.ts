@@ -7,7 +7,7 @@ import { AgentRefusal } from "./problems.js";
 import { account, amount, choice, flag, hex32, integer, list, nullable, object, optional, text, time } from "./schema.js";
 import { preparedView } from "./shapes.js";
 import { prepare } from "./prepare.js";
-import { PREVIEW_APPROVAL, signerOf, sent } from "./wallet/guard.js";
+import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent } from "./wallet/guard.js";
 import { MAX_ATTEST_PAGES, MAX_PAGES_INPUT } from "./wallet/delivery.js";
 
 export const RECORDS_SHOWN = 50;
@@ -130,6 +130,9 @@ export const walletFeedback = define({
       ],
       prepared: input.send === true ? preparedView(await prepare(ctx.transport, instructions, signer.address)) : undefined,
     };
-    return sent(ctx, signer, view, input.send, call);
+    return sent(ctx, signer, view, input.send, call, {
+      preview: PREVIEW_APPROVAL_NEXT,
+      done: `your rating is recorded; ${tool("get_reputation")} will count it toward this worker's track record`,
+    });
   },
 });

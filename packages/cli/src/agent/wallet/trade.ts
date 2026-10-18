@@ -28,6 +28,8 @@ import { recentFills, bestOf, medianOf, openingAsk, type Fill } from "./fills.js
 export const SWAP_FALLS_OVER = 120;
 export const PAY_TO = "the wallet that receives what is bought, such as someone this wallet pays; default this wallet. This wallet pays for its token account if it has none";
 
+export const ORDER_DONE = `the order is placed; call ${tool("wallet_wait")} with its nonce (shown above, or from ${tool("wallet_intents")}) to see what it received, then check ${tool("wallet_balance")}`;
+
 export const walletSwap = define({
   name: tool("wallet_swap"),
   title: "Swap from the wallet",
@@ -69,7 +71,7 @@ export const walletSwap = define({
         order: { kind: "dutch", amount_in: amountIn, start_out: ask, end_out: floor, start_time: start, end_time: start + falls },
         expires_at: start + (expiresIn > falls ? expiresIn : falls),
       };
-    });
+    }, ORDER_DONE);
     return opening === undefined ? result : { ...result, start_receive: opening };
   },
 });
@@ -188,7 +190,14 @@ export const walletRecurring = define({
         };
       }
     }
-    return { orders, summary: plan, warnings, ...shown, sent: true };
+    return {
+      orders,
+      summary: plan,
+      warnings,
+      ...shown,
+      sent: true,
+      next: `all ${input.times} orders are escrowed; call ${tool("wallet_intents")} to see them, or ${tool("wallet_wait")} on each nonce as it opens`,
+    };
   },
 });
 
@@ -231,7 +240,7 @@ export const walletAuction = define({
         },
         expires_at: start + BigInt(Math.max(input.expires_in ?? DEFAULT_EXPIRES_IN, input.falls_over)),
       };
-    }),
+    }, ORDER_DONE),
 });
 
 export const ESTIMATE_NEXT =

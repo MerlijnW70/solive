@@ -13,6 +13,10 @@ export const noSpecUrl = (intent: Address): string =>
 
 export const FETCH_FAILED = "could not be fetched";
 
+const PERMANENT_SPEC: readonly RegExp[] = [/ is larger than /, /is not an http or https url/, /is not a url/, /private, loopback/, /plain http url/, /is sealed but could not be opened/, /answered 4\d\d/];
+
+export const permanentSpec = (message: string): boolean => PERMANENT_SPEC.some((pattern) => pattern.test(message));
+
 const guarded =
   (get: SpecFetch): SpecFetch =>
   (url, init) =>
@@ -41,7 +45,10 @@ export const getSpec = define({
       if (error instanceof SpecSealed) {
         throw new AgentRefusal("SpecSealed", untrusted(error.message));
       }
-      throw error instanceof SpecUnreadable ? new AgentRefusal("SpecUnreadable", untrusted(error.message)) : error;
+      if (error instanceof SpecUnreadable) {
+        throw new AgentRefusal(permanentSpec(error.message) ? "SpecUnfetchable" : "SpecUnreadable", untrusted(error.message));
+      }
+      throw error;
     }
     if (spec === null) {
       if ((await ctx.transport.getAccount(input.intent)) === null) {

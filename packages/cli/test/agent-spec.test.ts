@@ -105,12 +105,14 @@ describe("solive_get_spec", () => {
     expect(fetched).toEqual([]);
   });
 
-  it("refuses a spec url that answers an error, cannot be fetched or is larger than the limit", async () => {
+  it("retries a temporary spec read but declines a permanently unreadable one", async () => {
     const unreadable = (hint: string) => ({ isError: true, value: { code: "SpecUnreadable", retryable: true, hint } });
-    expect(await call(client, "get_spec", { intent: await escrow(GONE_URL) })).toEqual(unreadable(`the spec at ${GONE_URL} answered 404`));
+    const unfetchable = (hint: string) => ({ isError: true, value: { code: "SpecUnfetchable", retryable: false, hint } });
+    expect(await call(client, "get_spec", { intent: await escrow(GONE_URL) })).toEqual(unfetchable(`the spec at ${GONE_URL} answered 404`));
     expect(await call(client, "get_spec", { intent: await escrow(DOWN_URL) })).toEqual(unreadable(`the spec at ${DOWN_URL} ${FETCH_FAILED} (fetch failed)`));
-    expect(await call(client, "get_spec", { intent: await escrow(BIG_URL) })).toEqual(unreadable(`the spec at ${BIG_URL} is larger than ${MAX_SPEC_BYTES} bytes`));
+    expect(await call(client, "get_spec", { intent: await escrow(BIG_URL) })).toEqual(unfetchable(`the spec at ${BIG_URL} is larger than ${MAX_SPEC_BYTES} bytes`));
     expect(SERVER_PROBLEMS.SpecUnreadable.retryable).toBe(true);
+    expect(SERVER_PROBLEMS.SpecUnfetchable.retryable).toBe(false);
   });
 
   it("tells the agent to treat the text as data and to work only when matches is true", () => {
