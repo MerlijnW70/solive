@@ -44,7 +44,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Sells one token for at least min_receive of another. Solvers, the bots that fill orders, pay the least an order asks, so the ask starts above recent fills and falls to min_receive: set it to the least the user accepts. Previews only; call with send: true after the user says yes. Pass back the preview's start_receive.
+Sells one token for another at the market: the simple sell, the ask falling to min_receive. Leave min_receive out to accept the recent median less max_slippage_bps. To buy, sell the other. For a price curve you set yourself, use solive_wallet_auction. Previews only; call with send: true after the user says yes. Pass back the preview's start_receive.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -53,7 +53,8 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `sell` | string | yes | SOL, TEST or a mint address |
 | `buy` | string | yes | SOL, TEST or a mint address |
 | `amount` | string | yes | whole tokens to sell, such as 0.05 |
-| `min_receive` | string | yes | least whole tokens to receive for all of it |
+| `min_receive` | string | no | least whole tokens to receive for all of it; default the recent median less max_slippage_bps |
+| `max_slippage_bps` | integer 1..5000 | no | how far below the recent median the default min_receive sits, in basis points; default 100 = 1% |
 | `start_receive` | string | no | whole tokens asked when the offer lands; default a little above the median recent fill, between 1.25 and 2 times min_receive |
 | `falls_over` | integer 60..31536000 | no | seconds the ask takes to fall to min_receive; default 120 |
 | `exact` | boolean | no | true asks min_receive from the start, with no falling ask |
@@ -65,7 +66,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-Sells an exact amount of one token in a falling-price (Dutch) auction: the ask starts at start_receive, falls evenly to end_receive over falls_over seconds, then holds until the offer expires. A solver fills it as soon as the ask meets what it can pay. Previews only; call with send: true after the user says yes.
+Sells an exact amount in a falling-price (Dutch) auction you design: the ask starts at start_receive, falls evenly to end_receive over falls_over seconds, then holds until it expires. A solver fills when the ask meets what it can pay. For a simple market sell, use solive_wallet_swap. Previews only; call with send: true after the user says yes.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -85,7 +86,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-Repeats a sale on a schedule with no bot running: every order is sent and its tokens locked now. Each asks start_receive until its turn, then falls to min_receive; set start_receive above current fills, or orders fill early. Cancel any with solive_wallet_cancel. Previews only; call with send: true after the user says yes. Pass back the preview's start_receive.
+Repeats a sale on a schedule: every order is sent now, each falling to min_receive. Leave min_receive out to accept the recent median less max_slippage_bps. To buy on a schedule, sell the other. Cancel any with solive_wallet_cancel. Previews only; call with send: true after the user says yes. Pass back the preview's start_receive.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -94,7 +95,8 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `sell` | string | yes | SOL, TEST or a mint address |
 | `buy` | string | yes | SOL, TEST or a mint address |
 | `amount` | string | yes | whole tokens each order sells, such as 0.05 |
-| `min_receive` | string | yes | least whole tokens each order receives |
+| `min_receive` | string | no | least whole tokens each order receives; default the recent median less max_slippage_bps |
+| `max_slippage_bps` | integer 1..5000 | no | how far below the recent median the default min_receive sits, in basis points; default 100 = 1% |
 | `every` | integer 60..2592000 | yes | seconds between one order opening and the next |
 | `times` | integer 2..12 | yes | how many orders |
 | `start_receive` | string | no | whole tokens each order asks until and when it opens; default a little above the median recent fill, between 1.25 and 2 times min_receive |

@@ -30,17 +30,35 @@ export const PAY_TO = "the wallet that receives what is bought, such as someone 
 
 export const ORDER_DONE = `the order is placed; call ${tool("wallet_wait")} with its nonce (shown above, or from ${tool("wallet_intents")}) to see what it received, then check ${tool("wallet_balance")}`;
 
+export const DEFAULT_SLIPPAGE_BPS = 100n;
+export const MAX_SLIPPAGE_BPS = 5_000;
+export const NO_MARKET = "no recent fills of this pair to set a floor from; pass min_receive, or call wallet_estimate first to see the price";
+
+export function marketFloor(fills: Fill[], amount: bigint, slippageBps: number | undefined): bigint {
+  const typical = medianOf(fills);
+  if (typical === undefined || typical.amountIn === 0n) {
+    throw new InvalidInput([{ path: "min_receive", message: NO_MARKET }]);
+  }
+  const slippage = BigInt(slippageBps ?? DEFAULT_SLIPPAGE_BPS);
+  const floor = (amount * typical.delivered * (10_000n - slippage)) / (typical.amountIn * 10_000n);
+  if (floor <= 0n) {
+    throw new InvalidInput([{ path: "min_receive", message: NO_MARKET }]);
+  }
+  return floor;
+}
+
 export const walletSwap = define({
   name: tool("wallet_swap"),
   title: "Swap from the wallet",
-  description: `Sells one token for at least min_receive of another. Solvers, the bots that fill orders, pay the least an order asks, so the ask starts above recent fills and falls to min_receive: set it to the least the user accepts. ${PREVIEW_FIRST} Pass back the preview's start_receive.`,
+  description: `Sells one token for another at the market: the simple sell, the ask falling to min_receive. Leave min_receive out to accept the recent median less max_slippage_bps. To buy, sell the other. For a price curve you set yourself, use ${tool("wallet_auction")}. ${PREVIEW_FIRST} Pass back the preview's start_receive.`,
   effect: "submit",
   repeats: true,
   input: object({
     sell: text("SOL, TEST or a mint address"),
     buy: text("SOL, TEST or a mint address"),
     amount: text("whole tokens to sell, such as 0.05"),
-    min_receive: text("least whole tokens to receive for all of it"),
+    min_receive: optional(text("least whole tokens to receive for all of it; default the recent median less max_slippage_bps")),
+    max_slippage_bps: optional(integer(1, MAX_SLIPPAGE_BPS, "how far below the recent median the default min_receive sits, in basis points; default 100 = 1%")),
     start_receive: optional(text("whole tokens asked when the offer lands; default a little above the median recent fill, between 1.25 and 2 times min_receive")),
     falls_over: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `seconds the ask takes to fall to min_receive; default ${SWAP_FALLS_OVER}`)),
     exact: optional(flag("true asks min_receive from the start, with no falling ask")),
@@ -48,18 +66,25 @@ export const walletSwap = define({
     expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds the offer stays open once sent; default ${DEFAULT_EXPIRES_IN}`)),
     send: optional(flag("true signs and sends; leave out to preview")),
   }),
-  output: object({ ...offerFields, start_receive: optional(text("whole tokens asked when the offer lands; pass it back when sending")) }),
+  output: object({
+    ...offerFields,
+    min_receive: optional(text("the floor the order will not sell below, whole tokens; echoes what you passed or the market default used")),
+    start_receive: optional(text("whole tokens asked when the offer lands; pass it back when sending")),
+  }),
   run: async (ctx: AgentContext, input, call: Call) => {
     let opening: string | undefined;
+    let floorShown: string | undefined;
     const result = await offered(ctx, call, input, async (sold, bought, now, inputMint, outputMint) => {
       const amountIn = raw(input.amount, sold.decimals, "amount");
-      const floor = raw(input.min_receive, bought.decimals, "min_receive");
+      const fills = await recentFills(ctx.transport, inputMint, outputMint);
+      const floor = input.min_receive === undefined ? marketFloor(fills, amountIn, input.max_slippage_bps) : raw(input.min_receive, bought.decimals, "min_receive");
+      floorShown = formatAmount(floor, bought.decimals);
       const expiresIn = BigInt(input.expires_in ?? DEFAULT_EXPIRES_IN);
       const ask =
         input.exact === true
           ? floor
           : input.start_receive === undefined
-            ? openingAsk(await recentFills(ctx.transport, inputMint, outputMint), amountIn, floor)
+            ? openingAsk(fills, amountIn, floor)
             : raw(input.start_receive, bought.decimals, "start_receive");
       if (ask <= floor) {
         return { order: { kind: "swap", amount_in: amountIn, min_out: floor }, expires_at: now + expiresIn + BigInt(LANDING_SECONDS) };
@@ -72,7 +97,7 @@ export const walletSwap = define({
         expires_at: start + (expiresIn > falls ? expiresIn : falls),
       };
     }, ORDER_DONE);
-    return opening === undefined ? result : { ...result, start_receive: opening };
+    return { ...result, ...(opening === undefined ? {} : { start_receive: opening }), ...(floorShown === undefined ? {} : { min_receive: floorShown }) };
   },
 });
 
@@ -93,14 +118,15 @@ export const MAX_EVERY = 30 * 24 * 60 * 60;
 export const walletRecurring = define({
   name: tool("wallet_recurring"),
   title: "Repeat a swap on a schedule",
-  description: `Repeats a sale on a schedule with no bot running: every order is sent and its tokens locked now. Each asks start_receive until its turn, then falls to min_receive; set start_receive above current fills, or orders fill early. Cancel any with ${tool("wallet_cancel")}. ${PREVIEW_FIRST} Pass back the preview's start_receive.`,
+  description: `Repeats a sale on a schedule: every order is sent now, each falling to min_receive. Leave min_receive out to accept the recent median less max_slippage_bps. To buy on a schedule, sell the other. Cancel any with ${tool("wallet_cancel")}. ${PREVIEW_FIRST} Pass back the preview's start_receive.`,
   effect: "submit",
   repeats: true,
   input: object({
     sell: text("SOL, TEST or a mint address"),
     buy: text("SOL, TEST or a mint address"),
     amount: text("whole tokens each order sells, such as 0.05"),
-    min_receive: text("least whole tokens each order receives"),
+    min_receive: optional(text("least whole tokens each order receives; default the recent median less max_slippage_bps")),
+    max_slippage_bps: optional(integer(1, MAX_SLIPPAGE_BPS, "how far below the recent median the default min_receive sits, in basis points; default 100 = 1%")),
     every: integer(MIN_EXPIRES_IN, MAX_EVERY, "seconds between one order opening and the next"),
     times: integer(2, MAX_RECURRING, "how many orders"),
     start_receive: optional(text("whole tokens each order asks until and when it opens; default a little above the median recent fill, between 1.25 and 2 times min_receive")),
@@ -116,6 +142,7 @@ export const walletRecurring = define({
     summary: list(text(), 24, "the whole plan, then the first order"),
     warnings: list(text(), 16),
     start_receive: text("whole tokens each order asks when it opens; pass it back when sending"),
+    min_receive: optional(text("the floor each order will not sell below, whole tokens; echoes what you passed or the market default used")),
     sent: flag(),
     next: optional(text()),
   }),
@@ -129,11 +156,9 @@ export const walletRecurring = define({
       chainTime(ctx.transport),
     ]);
     const amountIn = raw(input.amount, inputToken.decimals, "amount");
-    const floor = raw(input.min_receive, outputToken.decimals, "min_receive");
-    const ask =
-      input.start_receive === undefined
-        ? openingAsk(await recentFills(ctx.transport, inputMint, outputMint), amountIn, floor)
-        : raw(input.start_receive, outputToken.decimals, "start_receive");
+    const fills = await recentFills(ctx.transport, inputMint, outputMint);
+    const floor = input.min_receive === undefined ? marketFloor(fills, amountIn, input.max_slippage_bps) : raw(input.min_receive, outputToken.decimals, "min_receive");
+    const ask = input.start_receive === undefined ? openingAsk(fills, amountIn, floor) : raw(input.start_receive, outputToken.decimals, "start_receive");
     if (ask <= floor) {
       throw new InvalidInput([
         input.start_receive === undefined ? { path: "min_receive", message: NO_FALL } : { path: "start_receive", message: "must be more than min_receive, or the order has no ask to fall" },
@@ -150,7 +175,7 @@ export const walletRecurring = define({
       order: { kind: "dutch" as const, amount_in: amountIn, start_out: ask, end_out: floor, start_time: open, end_time: open + falls },
       expires_at: open + life,
     });
-    const shown = { start_receive: formatAmount(ask, outputToken.decimals) };
+    const shown = { start_receive: formatAmount(ask, outputToken.decimals), min_receive: formatAmount(floor, outputToken.decimals) };
     const last = opens[opens.length - 1] as bigint;
     const first = (await offered(ctx, call, { ...input, send: input.send }, terms(opens[0] as bigint))) as Record<string, unknown>;
     const sold = TOKEN_NAMES[inputMint] ?? inputMint;
@@ -204,7 +229,7 @@ export const walletRecurring = define({
 export const walletAuction = define({
   name: tool("wallet_auction"),
   title: "Auction from the wallet",
-  description: `Sells an exact amount of one token in a falling-price (Dutch) auction: the ask starts at start_receive, falls evenly to end_receive over falls_over seconds, then holds until the offer expires. A solver fills it as soon as the ask meets what it can pay. ${PREVIEW_FIRST}`,
+  description: `Sells an exact amount in a falling-price (Dutch) auction you design: the ask starts at start_receive, falls evenly to end_receive over falls_over seconds, then holds until it expires. A solver fills when the ask meets what it can pay. For a simple market sell, use ${tool("wallet_swap")}. ${PREVIEW_FIRST}`,
   effect: "submit",
   repeats: true,
   input: object({

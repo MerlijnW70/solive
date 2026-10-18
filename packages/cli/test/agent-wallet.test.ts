@@ -365,6 +365,13 @@ describe("the wallet server", () => {
     expect(preview).toMatchObject({ start_receive: "10.166" });
     expect(await ok(client, "wallet_swap", { ...swap, min_receive: "5" })).toMatchObject({ start_receive: "10" });
     expect(await ok(client, "wallet_swap", { ...swap, min_receive: "11" })).toMatchObject({ start_receive: "13.75" });
+    const market = await ok(client, "wallet_swap", { sell: "SOL", buy: "TEST", amount: "0.05" });
+    expect(Number(market["min_receive"])).toBeGreaterThan(9.8);
+    expect(Number(market["min_receive"])).toBeLessThan(9.967);
+    const looser = await ok(client, "wallet_swap", { sell: "SOL", buy: "TEST", amount: "0.05", max_slippage_bps: 2000 });
+    expect(Number(looser["min_receive"])).toBeLessThan(Number(market["min_receive"]));
+    h.engineLog = [];
+    expect((await call(client, "wallet_swap", { sell: "SOL", buy: "TEST", amount: "0.05" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "min_receive" }] });
     h.engineLog = [staged(3), honest];
     expect(await ok(client, "wallet_swap", swap)).toMatchObject({ start_receive: "10.166" });
     h.engineLog = [staged(3), staged(4), honest];
