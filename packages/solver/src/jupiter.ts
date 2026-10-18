@@ -1,4 +1,5 @@
 import { AccountRole, type Address, address, getBase64Encoder, type Instruction } from "@solana/kit";
+import { TOKEN_PROGRAMS } from "./build.js";
 import type { Fetch, Pricer, Quote, QuoteRequest } from "./market.js";
 
 export type JupiterOptions = {
@@ -37,6 +38,9 @@ export const ATA_CREATE_IDEMPOTENT = 1;
 const ATA_PAYER = 0;
 const ATA_WALLET = 2;
 const ATA_MINT = 3;
+const ATA_SYSTEM = 4;
+const ATA_TOKEN_PROGRAM = 5;
+const SYSTEM_PROGRAM = address("11111111111111111111111111111111");
 
 function ownAccount(ix: Instruction, request: QuoteRequest, what: string): Instruction {
   const data = ix.data ?? new Uint8Array();
@@ -47,7 +51,9 @@ function ownAccount(ix: Instruction, request: QuoteRequest, what: string): Instr
     !opens ||
     ix.accounts?.[ATA_PAYER]?.address !== request.taker ||
     ix.accounts?.[ATA_WALLET]?.address !== request.taker ||
-    (mint !== request.inputMint && mint !== request.outputMint)
+    (mint !== request.inputMint && mint !== request.outputMint) ||
+    ix.accounts?.[ATA_SYSTEM]?.address !== SYSTEM_PROGRAM ||
+    !TOKEN_PROGRAMS.some((program) => program === ix.accounts?.[ATA_TOKEN_PROGRAM]?.address)
   ) {
     throw new Error(`jupiter ${what} does more than open this solver's own token account for the traded mints`);
   }
