@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 import {
   type Address,
+  isAddress,
   isSolanaError,
   type KeyPairSigner,
   type MessagePartialSigner,
@@ -157,10 +158,10 @@ export function mintNamed(text: string, url: string, path: string): Address {
   if (mint instanceof Error) {
     throw new InvalidInput([{ path, message: mint.message }]);
   }
-  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(mint)) {
+  if (!isAddress(mint)) {
     throw new InvalidInput([{ path, message: "name SOL, TEST or a token mint address" }]);
   }
-  return mint as Address;
+  return mint;
 }
 
 export function raw(tokens: string, decimals: number, path: string): bigint {

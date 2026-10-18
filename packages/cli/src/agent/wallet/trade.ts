@@ -202,7 +202,7 @@ export const walletAuction = define({
     sell: text("SOL, TEST or a mint address"),
     buy: text("SOL, TEST or a mint address"),
     amount: text("whole tokens to sell, such as 0.05"),
-    start_receive: text("whole tokens asked when the auction starts; at least end_receive"),
+    start_receive: text("whole tokens asked when the auction starts; more than end_receive"),
     end_receive: text("least whole tokens accepted once the asked amount stops falling"),
     falls_over: integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, "seconds the asked amount takes to fall from start_receive to end_receive"),
     expires_in: optional(
@@ -215,12 +215,17 @@ export const walletAuction = define({
   run: async (ctx: AgentContext, input, call: Call) =>
     offered(ctx, call, input, (sold, bought, now) => {
       const start = now + BigInt(LANDING_SECONDS);
+      const startOut = raw(input.start_receive, bought.decimals, "start_receive");
+      const endOut = raw(input.end_receive, bought.decimals, "end_receive");
+      if (startOut <= endOut) {
+        throw new InvalidInput([{ path: "start_receive", message: `must be more than end_receive, or the ask does not fall; for a fixed price use ${tool("wallet_swap")}` }]);
+      }
       return {
         order: {
           kind: "dutch",
           amount_in: raw(input.amount, sold.decimals, "amount"),
-          start_out: raw(input.start_receive, bought.decimals, "start_receive"),
-          end_out: raw(input.end_receive, bought.decimals, "end_receive"),
+          start_out: startOut,
+          end_out: endOut,
           start_time: start,
           end_time: start + BigInt(input.falls_over),
         },

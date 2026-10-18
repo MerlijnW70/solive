@@ -74,7 +74,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `sell` | string | yes | SOL, TEST or a mint address |
 | `buy` | string | yes | SOL, TEST or a mint address |
 | `amount` | string | yes | whole tokens to sell, such as 0.05 |
-| `start_receive` | string | yes | whole tokens asked when the auction starts; at least end_receive |
+| `start_receive` | string | yes | whole tokens asked when the auction starts; more than end_receive |
 | `end_receive` | string | yes | least whole tokens accepted once the asked amount stops falling |
 | `falls_over` | integer 60..31536000 | yes | seconds the asked amount takes to fall from start_receive to end_receive |
 | `expires_in` | integer 60..31536000 | no | least seconds the offer stays open once sent, never less than falls_over; default 3600 |
