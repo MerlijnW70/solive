@@ -49,4 +49,15 @@ These are by design. Each is demonstrated by the named test in `tests/svm/tests/
 
 ## Rewards
 
-No bug bounty is offered. Reporters are credited in the advisory.
+A valid report earns SOL on mainnet, paid once its advisory is published:
+
+| Severity | Example | Reward |
+|---|---|---|
+| Critical | Anyone takes escrowed tokens or fees they are not owed, or releases an escrow without its judge | 10 SOL |
+| High | Escrowed tokens are locked for good, or a non-admin changes the config, upgrade or guardian | 4 SOL |
+| Medium | A tool signs or sends something its preview did not show, or a path is blocked for others at no cost to the attacker | 1 SOL |
+| Low | Any other issue that needs a code fix to stop | 0.25 SOL |
+
+The first report of an issue is paid. A report of something the threat model lists as open or partial, or of a behaviour listed above as accepted, is credited but not paid.
+
+Test against a local LiteSVM setup or your own accounts on devnet, never other people's. These amounts hold while the program runs only on devnet, and rise before it runs on mainnet. Reporters are credited in the advisory.
