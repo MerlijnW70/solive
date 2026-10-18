@@ -74,6 +74,7 @@ describe("the cases a spec pins", () => {
       ['{"cases": [{"args": [], "expected": 1}], "run": "x"}', 'field "run"'],
       ['{"cases": [{"args": [{}], "expected": 1}]}', "case 0, whose args"],
       ['{"cases": [{"args": [], "expected": [1]}]}', "case 0, whose expected"],
+      ['{"cases": [{"args": [], "expected": -0}]}', "case 0, whose expected answer is negative zero"],
       ['{"cases": [{"args": []}]}', "case 0, which is not"],
       ['{"cases": [{"args": [], "expected": 1, "extra": 2}]}', "case 0, which is not"],
       ['{"steps": -1, "cases": [{"args": [], "expected": 1}]}', "steps -1"],

@@ -89,6 +89,9 @@ export function casesOf(spec: Uint8Array): Cases {
     if (!isPrimitive(entry["expected"])) {
       return refuse(`has case ${index}, whose expected answer is not a JSON string, number, boolean or null`);
     }
+    if (Object.is(entry["expected"], -0)) {
+      return refuse(`has case ${index}, whose expected answer is negative zero, which the engines cannot tell from positive zero`);
+    }
     return { args, expected: entry["expected"] };
   });
   return {
