@@ -33,6 +33,9 @@ export const CONFIG_FIELDS = [
   "enabledKinds",
   "fillDisabledKinds",
   "paused",
+  "capsRequired",
+  "version",
+  "domain",
 ] as const;
 
 type ConfigField = (typeof CONFIG_FIELDS)[number];
@@ -84,6 +87,9 @@ function configValues(view: AccountView | null | undefined): ConfigValues | null
       enabledKinds: c.enabledKinds.toString(),
       fillDisabledKinds: c.fillDisabledKinds.toString(),
       paused: c.paused,
+      capsRequired: c.capsRequired,
+      version: c.version,
+      domain: [...c.domain],
     };
   } catch {
     return null;
@@ -196,10 +202,9 @@ export type MonitorState = {
   stalledFor: number;
   failing: boolean;
   seen: Set<string> | null;
-  bursting: boolean;
 };
 
-export const freshState = (): MonitorState => ({ alerted: new Map(), lastSlot: null, stalledFor: 0, failing: false, seen: null, bursting: false });
+export const freshState = (): MonitorState => ({ alerted: new Map(), lastSlot: null, stalledFor: 0, failing: false, seen: null });
 
 function differences(baseline: Baseline, now: Snapshot): { key: string; alert: Alert }[] {
   const slot = Number(now.slot);
@@ -280,7 +285,7 @@ async function fillAlerts(transport: Transport, spec: MonitorSpec, state: Monito
   }
   const gap = seen !== null && fetched.length >= limit && fresh.length === fetched.length;
   const burst = gap || (spec.maxFills !== null && fills.length > spec.maxFills);
-  if (burst && !state.bursting) {
+  if (burst) {
     const slot = (gap ? fresh : fills).reduce((top, { slot: at }) => (at > top ? at : top), 0n);
     alerts.push({
       kind: "fill-rate",
@@ -291,7 +296,6 @@ async function fillAlerts(transport: Transport, spec: MonitorSpec, state: Monito
       interval: spec.interval,
     });
   }
-  state.bursting = burst;
   return alerts;
 }
 
