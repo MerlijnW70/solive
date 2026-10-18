@@ -32,5 +32,5 @@ for p in "${packages[@]}"; do
     echo "@intent-engine/$p@$version is already published"
     continue
   fi
-  npm publish "$out/intent-engine-$p-$version.tgz" --access public --provenance
+  npm publish "$out/intent-engine-$p-$version.tgz" --access public --provenance --loglevel verbose
 done
