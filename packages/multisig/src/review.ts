@@ -14,7 +14,7 @@ import {
 } from "@solana/kit";
 import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import type { Account, Chain } from "./chain.js";
-import { engineSummary } from "./engine.js";
+import { engineDecodes, engineSummary } from "./engine.js";
 import {
   type ConfigAction,
   configTransactionCodec,
@@ -127,7 +127,7 @@ export type BufferCheck = { buffer: Address; authority: Address | null; hash: st
 
 export type Decoded = InstructionView & { summary: string };
 
-type Described = { summary: string; buffer?: BufferCheck };
+type Described = { summary: string; buffer?: BufferCheck; problem?: string };
 
 const signersOf = (ix: Instruction) => (ix.accounts ?? []).filter((k) => isSignerRole(k.role)).map((k) => k.address);
 
@@ -196,13 +196,15 @@ async function describeAuthority(chain: Chain, ix: Instruction, engineData: Addr
 async function describe(chain: Chain, ix: Instruction, engineData: Address): Promise<Described> {
   const data = ix.data ?? new Uint8Array();
   if (ix.programAddress === ENGINE_PROGRAM) {
-    return { summary: engineSummary(ix) };
+    return engineDecodes(ix)
+      ? { summary: engineSummary(ix) }
+      : { summary: engineSummary(ix), problem: `it carries an intent engine instruction whose ${data.length} bytes this version cannot decode, so approving it would sign for an effect the tool cannot show` };
   }
   if (ix.programAddress !== LOADER) {
     return { summary: raw(`Runs program ${ix.programAddress}`, ix) };
   }
   if (data.length < 4) {
-    return { summary: raw("Loader instruction that this version cannot decode", ix) };
+    return { summary: raw("Loader instruction that this version cannot decode", ix), problem: "it carries a loader instruction this version cannot decode, so approving it would sign for an effect the tool cannot show" };
   }
   const tag = u32At(data, 0);
   if (tag === UPGRADE_TAG) {
@@ -214,18 +216,22 @@ async function describe(chain: Chain, ix: Instruction, engineData: Address): Pro
   return { summary: raw(`Loader ${LOADER_NAMES[tag] ?? `instruction ${tag}`}`, ix) };
 }
 
-export async function describeInstructions(chain: Chain, instructions: readonly Instruction[]): Promise<{ decoded: Decoded[]; buffers: BufferCheck[] }> {
+export async function describeInstructions(chain: Chain, instructions: readonly Instruction[]): Promise<{ decoded: Decoded[]; buffers: BufferCheck[]; problems: string[] }> {
   const engineData = await programDataOf(ENGINE_PROGRAM);
   const decoded: Decoded[] = [];
   const buffers: BufferCheck[] = [];
+  const problems: string[] = [];
   for (const ix of instructions) {
     const described = await describe(chain, ix, engineData);
     decoded.push({ ...instructionView(ix), summary: described.summary });
     if (described.buffer !== undefined) {
       buffers.push(described.buffer);
     }
+    if (described.problem !== undefined) {
+      problems.push(described.problem);
+    }
   }
-  return { decoded, buffers };
+  return { decoded, buffers, problems };
 }
 
 export async function decodeMessage(chain: Chain, message: VaultMessage): Promise<Decoded[]> {
@@ -324,8 +330,8 @@ async function reviewVault(chain: Chain, at: Address, index: bigint, data: Reado
   const vault = await vaultPda(at, stored.vaultIndex);
   const transaction = await transactionPda(at, index);
   const ephemeral = await Promise.all(Array.from(stored.ephemeralSignerBumps, (_, i) => ephemeralSignerPda(transaction, i)));
-  const { decoded, buffers } = await describeInstructions(chain, instructions);
-  const problems: string[] = [];
+  const { decoded, buffers, problems: undecodable } = await describeInstructions(chain, instructions);
+  const problems: string[] = [...undecodable];
   for (const [i, key] of message.accountKeys.entries()) {
     if (isSignerIndex(message, i) && key !== vault && !ephemeral.includes(key)) {
       problems.push(`it asks ${key} to sign, but only the vault ${vault} and the transaction's ephemeral signers may; executing it would lend ${key}'s signature to it`);

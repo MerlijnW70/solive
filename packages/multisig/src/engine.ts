@@ -6,6 +6,15 @@ type Parsable = Parameters<typeof parseIntentEngineInstruction>[0];
 export const jsonText = (value: unknown, indent = 0): string =>
   JSON.stringify(value, (_, v: unknown) => (typeof v === "bigint" ? v.toString() : v instanceof Uint8Array ? Array.from(v) : v), indent);
 
+export function engineDecodes(ix: Instruction): boolean {
+  try {
+    parseIntentEngineInstruction({ programAddress: ix.programAddress, accounts: ix.accounts ?? [], data: new Uint8Array(ix.data ?? new Uint8Array()) } as unknown as Parsable);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function engineSummary(ix: Instruction): string {
   const accounts = ix.accounts ?? [];
   const data = ix.data ?? new Uint8Array();
