@@ -14,7 +14,7 @@ const client = createClient({ url: "https://api.devnet.solana.com" });
 
 ## Create a swap intent
 
-Sell 0.05 SOL for at least 50 test tokens. The devnet filler prices them at 200 per wrapped SOL and pays the minimum asked; 50 is more than 0.05 SOL buys, so the intent stays open until you cancel it.
+Sell 0.05 SOL for at least 50 test tokens. The devnet filler prices test tokens at 200 per wrapped SOL and pays exactly the minimum asked; 50 is more than 0.05 SOL buys at that price, so the intent stays open until you cancel it.
 
 `createIntent` sets up what it needs in the same transaction: it registers the wallet, wraps the SOL and creates the receiving token account. It picks the next free nonce and expires the intent in an hour, unless you pass `nonce`, `expiresIn` or `expiresAt`.
 

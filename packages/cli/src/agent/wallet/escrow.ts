@@ -17,7 +17,7 @@ async function specPreflight(ctx: AgentContext, specUrl: string, specHash: strin
   if ("problem" in found) {
     return `spec_url ${found.problem}; publish it or workers cannot read the job`;
   }
-  if (found.sha256 !== specHash) {
+  if (found.sha256 !== specHash.toLowerCase()) {
     return `spec_url hashes to ${found.sha256}, not spec_hash ${specHash}; publish the exact bytes, or fix spec_hash`;
   }
   return undefined;

@@ -17,7 +17,7 @@ With `--wallet` the server serves only the everyday tools; add `--all-tools` to 
 }
 ```
 
-With this entry the server holds no keys. Its tools read the engine and prepare unsigned transactions. A person's wallet signs and sends every transaction.
+With this entry the server holds no keys. Its tools read the engine and prepare unsigned transactions. A person's wallet signs and sends every transaction, and nothing moves until then.
 
 These tools take amounts in base units; `solive_get_balances` returns each token's decimals. The `--wallet` tools take whole tokens.
 
