@@ -2,7 +2,7 @@
 
 # MCP tools
 
-25 tools, served by `intent-engine mcp` over stdio. With `--wallet` it serves only the 18 everyday tools: `solive_wallet_setup`, `solive_wallet_balance`, `solive_wallet_estimate`, `solive_wallet_swap`, `solive_wallet_auction`, `solive_wallet_recurring`, `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_attest`, `solive_wallet_deliver`, `solive_wallet_check_delivery`, `solive_wallet_wait`, `solive_wallet_receipt`, `solive_wallet_intents`, `solive_wallet_history`, `solive_wallet_cancel`, `solive_find_jobs`, `solive_get_spec`, plus the tools `--relayer` and `--agent` need. With `--wallet --all-tools` it serves every tool, the 23 wallet tools listed first.
+26 tools, served by `intent-engine mcp` over stdio. With `--wallet` it serves only the 19 everyday tools: `solive_wallet_setup`, `solive_wallet_balance`, `solive_wallet_estimate`, `solive_wallet_swap`, `solive_wallet_auction`, `solive_wallet_recurring`, `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_attest`, `solive_wallet_deliver`, `solive_wallet_check_delivery`, `solive_wallet_wait`, `solive_wallet_receipt`, `solive_wallet_intents`, `solive_wallet_history`, `solive_wallet_cancel`, `solive_find_jobs`, `solive_get_spec`, `solive_hash`, plus the tools `--relayer` and `--agent` need. With `--wallet --all-tools` it serves every tool, the 23 wallet tools listed first.
 
 ## solive_wallet_setup
 
@@ -513,6 +513,16 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `intent` | address | yes | the proof escrow's intent address |
+
+## solive_hash
+
+Returns the sha256, as 64 hex digits, of the given text: use it to get the spec_hash for solive_wallet_escrow, or the delivered work's hash for solive_wallet_deliver, without leaving this server. Hash the exact bytes you will publish.
+
+Effect: `read` (read-only: true, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `text` | string | yes | the exact text to hash, such as a spec or a delivery's contents |
 
 ## solive_prepare_deliver
 

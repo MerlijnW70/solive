@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   type Address,
   generateKeyPairSigner,
@@ -293,6 +294,21 @@ describe("the wallet server", () => {
     expect(h.svm.getAccount(intent).exists).toBe(false);
     expect(balance(wrapped)).toBe(LAMPORTS_PER_SOL / 20n);
     expect((await ok(client, "wallet_intents"))["intents"]).toEqual([]);
+  });
+
+  it("hashes text and pre-checks a spec url against spec_hash before funding", async () => {
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    const spec = "the acceptance spec the work must pass\n";
+    const specHash = createHash("sha256").update(spec).digest("hex");
+    expect((await ok(client, "hash", { text: spec }))["sha256"]).toBe(specHash);
+    const url = "https://example.org/jobs/spec.md";
+    h.specPages.set(url, new TextEncoder().encode(spec));
+    const good = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash: specHash, spec_url: url });
+    expect((good["warnings"] as string[]).some((w) => w.includes("hashes to"))).toBe(false);
+    const bad = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash: "aa".repeat(32), spec_url: url });
+    expect((bad["warnings"] as string[]).some((w) => w.includes("hashes to"))).toBe(true);
+    const missing = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash: specHash, spec_url: "https://example.org/jobs/missing.md" });
+    expect((missing["warnings"] as string[]).some((w) => w.includes("could not be fetched"))).toBe(true);
   });
 
   it("wallet setup returns a redacted url", async () => {

@@ -66,6 +66,7 @@ describe("the tools a server serves", () => {
         "wallet_cancel",
         "find_jobs",
         "get_spec",
+        "hash",
       ].map(tool),
     );
     expect(instructions).toBe(instructionsFor(servedActions({ wallet: true, allTools: false, relay: false, agent: false })));

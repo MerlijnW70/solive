@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Delivery, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, PUBLIC_GENESIS_HASHES, type SpecFetch, type Transport } from "@intent-engine/client";
+import { type Delivery, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, PUBLIC_GENESIS_HASHES, SPEC_TIMEOUT_MS, type SpecFetch, type Transport } from "@intent-engine/client";
 import { MAX_ARTIFACT_BYTES } from "./artifact.js";
 import { type Lookup, publicHost, systemLookup } from "./public-address.js";
 
@@ -49,6 +49,30 @@ async function body(response: Response, url: string): Promise<Uint8Array> {
     chunks.push(next.value);
   }
   return Buffer.concat(chunks);
+}
+
+export async function fetchSha256(get: SpecFetch, transport: Transport, url: string, lookup: Lookup = systemLookup): Promise<{ sha256: string } | { problem: string }> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return { problem: "is not a url" };
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    return { problem: "is not an http or https url" };
+  }
+  if (await plainHttpOnPublic(transport, url)) {
+    return { problem: PLAIN_HTTP_ON_PUBLIC };
+  }
+  if (PUBLIC_GENESIS_HASHES.has(await transport.genesisHash()) && !(await publicHost(parsed.hostname, lookup))) {
+    return { problem: NOT_PUBLIC };
+  }
+  try {
+    const bytes = await body(await get(url, { redirect: "error", signal: AbortSignal.timeout(SPEC_TIMEOUT_MS) }), url);
+    return { sha256: createHash("sha256").update(bytes).digest("hex") };
+  } catch (error) {
+    return { problem: error instanceof DeliveryUnfit ? "could not be read within the size limit" : `could not be fetched (${error instanceof Error ? error.message : String(error)})` };
+  }
 }
 
 export async function fetchDelivery(get: SpecFetch, transport: Transport, delivery: Delivery, seconds: number, lookup: Lookup = systemLookup): Promise<Fetched> {

@@ -10,6 +10,18 @@ import { problemOf } from "../problems.js";
 import { InvalidInput, account, amount, flag, hex32, integer, list, object, optional, text } from "../schema.js";
 import { LANDING_SECONDS, access, mintNamed, raw, salesOf, checkSale, checkHour, refusedBeforeSending, PREVIEW_FIRST } from "./guard.js";
 import { offerOutput, type Token, offered } from "./offer.js";
+import { fetchSha256 } from "../../delivery-fetch.js";
+
+async function specPreflight(ctx: AgentContext, specUrl: string, specHash: string): Promise<string | undefined> {
+  const found = await fetchSha256(ctx.fetch ?? fetch, ctx.transport, specUrl);
+  if ("problem" in found) {
+    return `the spec at ${specUrl} ${found.problem}; publish it before workers rely on it, or they cannot read the job`;
+  }
+  if (found.sha256 !== specHash) {
+    return `the spec at ${specUrl} hashes to ${found.sha256}, not the spec_hash ${specHash} you gave; publish the exact bytes you hashed, or fix spec_hash, before workers rely on it`;
+  }
+  return undefined;
+}
 
 export const ESCROW_EXPIRES_IN = 86_400;
 
@@ -66,7 +78,8 @@ export const walletEscrow = define({
     if (input.spec_url !== undefined && specHash === undefined) {
       throw new InvalidInput([{ path: "spec_url", message: "needs spec_hash" }]);
     }
-    return offered(ctx, call, { sell: sold, buy: recordedMint(sold, wallet.url, input.record_mint), send: input.send }, (token, _, now) => ({
+    const preflight = input.spec_url !== undefined && specHash !== undefined && input.send !== true ? await specPreflight(ctx, input.spec_url, specHash) : undefined;
+    const escrowed = (await offered(ctx, call, { sell: sold, buy: recordedMint(sold, wallet.url, input.record_mint), send: input.send }, (token, _, now) => ({
       order: {
         kind: "attested",
         amount_in: raw(input.amount, token.decimals, "amount"),
@@ -78,7 +91,8 @@ export const walletEscrow = define({
       },
       expires_at: now + BigInt((input.expires_in ?? ESCROW_EXPIRES_IN) + LANDING_SECONDS),
       ...(input.spec_url === undefined ? {} : { spec_url: input.spec_url }),
-    }), JOB_LIVE);
+    }), JOB_LIVE)) as Record<string, unknown>;
+    return preflight === undefined ? escrowed : { ...escrowed, warnings: [...((escrowed["warnings"] as string[]) ?? []), preflight] };
   },
 });
 

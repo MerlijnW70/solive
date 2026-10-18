@@ -23,6 +23,7 @@ export const EVERYDAY_TOOLS: ReadonlySet<string> = new Set(
     "wallet_cancel",
     "find_jobs",
     "get_spec",
+    "hash",
   ].map(tool),
 );
 
