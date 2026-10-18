@@ -3,6 +3,7 @@ import type { Address } from "@solana/kit";
 import { isSealed, NotInvited, parseSpecMemo, remainingOf, SPEC_MEMO_PREFIX, sealedTo, unseal } from "@intent-engine/core";
 import { createdIn, hex, openProofEscrows, proofAt } from "./job-proofs.js";
 import { MEMOS_PER_TRANSACTION, scan } from "./job-scan.js";
+import { type Lookup, publicHost, systemLookup } from "./public-host.js";
 import { type EngineTransaction, TRANSACTION_FETCHES, type Transport } from "./transport.js";
 
 export const SPEC_SCAN = 10;
@@ -13,6 +14,8 @@ export const PUBLIC_GENESIS_HASHES: ReadonlySet<string> = new Set([MAINNET_GENES
 export const MAX_SPEC_BYTES = 1_048_576;
 export const SPEC_TIMEOUT_MS = 10_000;
 export const PLAIN_HTTP_ON_PUBLIC = "is a plain http url, which a public cluster may not use";
+export const NOT_HTTP = "is not an http or https url";
+export const NOT_PUBLIC_SPEC = "points to a private, loopback or local network address, which a public cluster does not fetch";
 
 export async function plainHttpOnPublic(transport: Transport, url: string): Promise<boolean> {
   let protocol: string;
@@ -132,7 +135,7 @@ async function bounded(response: Response, url: string): Promise<Uint8Array> {
   return Buffer.concat(chunks);
 }
 
-export async function readSpec(transport: Transport, get: SpecFetch, intent: Address, keypair?: Uint8Array): Promise<Spec | null> {
+export async function readSpec(transport: Transport, get: SpecFetch, intent: Address, keypair?: Uint8Array, lookup: Lookup = systemLookup): Promise<Spec | null> {
   const proof = await proofAt(transport, intent);
   if (proof === null) {
     return null;
@@ -141,8 +144,20 @@ export async function readSpec(transport: Transport, get: SpecFetch, intent: Add
   if (url === null) {
     return null;
   }
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new SpecUnreadable(url, "is not a url");
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new SpecUnreadable(url, NOT_HTTP);
+  }
   if (await plainHttpOnPublic(transport, url)) {
     throw new SpecUnreadable(url, PLAIN_HTTP_ON_PUBLIC);
+  }
+  if (PUBLIC_GENESIS_HASHES.has(await transport.genesisHash()) && !(await publicHost(parsed.hostname, lookup))) {
+    throw new SpecUnreadable(url, NOT_PUBLIC_SPEC);
   }
   const fetched = await bounded(await get(url, { redirect: "error", signal: AbortSignal.timeout(SPEC_TIMEOUT_MS) }), url);
   let bytes: Uint8Array = fetched;
