@@ -147,10 +147,7 @@ export const walletClaim = define({
     };
     return sent(ctx, signer, shown, input.send, call, {
       preview: PREVIEW_APPROVAL_NEXT,
-      done:
-        input.action === "take"
-          ? `you now hold escrow ${intent}; do the work, host it, then announce it with ${tool("wallet_deliver")} before your claim lapses`
-          : `the claim on escrow ${intent} is dropped and your stake returned; it is free for others now`,
+      done: input.action === "take" ? `you hold ${intent}; do the work, then ${tool("wallet_deliver")} before it lapses` : `dropped; stake returned, job free for others`,
     });
   },
 });

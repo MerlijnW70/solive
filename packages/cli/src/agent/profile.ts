@@ -140,7 +140,7 @@ export const walletProfile = define({
     };
     return sent(ctx, signer, shown, input.send, call, {
       preview: PREVIEW_APPROVAL_NEXT,
-      done: `your profile is live; payers read it with ${tool("get_profile")}`,
+      done: `profile live; ${tool("get_profile")} reads it`,
     });
   },
 });

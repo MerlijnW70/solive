@@ -280,7 +280,7 @@ export const walletAttestSplit = define({
     };
     const done = await sent(ctx, signer, view2, input.send, call, {
       preview: PREVIEW_APPROVAL_NEXT,
-      done: `the escrow is released to its co-authors; rate the work with ${tool("wallet_feedback")} if this wallet owns the escrow`,
+      done: `released to co-authors; ${tool("wallet_feedback")} to rate if you own it`,
     });
     if (!("signature" in done)) {
       return done;

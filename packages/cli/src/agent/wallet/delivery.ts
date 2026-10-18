@@ -75,7 +75,7 @@ export const walletDeliver = define({
       prepared: preparedView(await prepare(ctx.transport, instructions, signer.address)),
     };
     return sent(ctx, signer, view, input.send, call, {
-      done: `the work is announced to its attestor ${attestor}, who now reviews it; poll ${tool("wallet_receipt")} for this escrow to see if you were paid`,
+      done: `announced to ${attestor}; ${tool("wallet_receipt")} to see if paid`,
     });
   },
 });

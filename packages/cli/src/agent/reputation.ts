@@ -132,7 +132,7 @@ export const walletFeedback = define({
     };
     return sent(ctx, signer, view, input.send, call, {
       preview: PREVIEW_APPROVAL_NEXT,
-      done: `your rating is recorded; ${tool("get_reputation")} will count it toward this worker's track record`,
+      done: `recorded; ${tool("get_reputation")} counts it`,
     });
   },
 });

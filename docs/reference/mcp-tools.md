@@ -378,7 +378,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `nonce` | whole number as a decimal string | yes | the intent's nonce, from wallet_intents |
-| `close` | boolean | no | true also closes the empty intent account and returns its rent; default true. Set false when a NotRentPayer error says another wallet paid the rent |
+| `close` | boolean | no | also close the empty account and return its rent; default true. Set false on a NotRentPayer error |
 | `send` | boolean | no | true signs and sends; leave out to preview |
 
 ## solive_get_config

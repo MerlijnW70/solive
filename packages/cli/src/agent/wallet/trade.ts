@@ -28,7 +28,7 @@ import { recentFills, bestOf, medianOf, openingAsk, type Fill } from "./fills.js
 export const SWAP_FALLS_OVER = 120;
 export const PAY_TO = "the wallet that receives what is bought, such as someone this wallet pays; default this wallet. This wallet pays for its token account if it has none";
 
-export const ORDER_DONE = `the order is placed; call ${tool("wallet_wait")} with its nonce (shown above, or from ${tool("wallet_intents")}) to see what it received, then check ${tool("wallet_balance")}`;
+export const ORDER_DONE = `placed; ${tool("wallet_wait")} its nonce, then ${tool("wallet_balance")}`;
 
 export const DEFAULT_SLIPPAGE_BPS = 100n;
 export const MAX_SLIPPAGE_BPS = 5_000;
@@ -221,7 +221,7 @@ export const walletRecurring = define({
       warnings,
       ...shown,
       sent: true,
-      next: `all ${input.times} orders are escrowed; call ${tool("wallet_intents")} to see them, or ${tool("wallet_wait")} on each nonce as it opens`,
+      next: `${input.times} orders placed; ${tool("wallet_intents")} to list, ${tool("wallet_wait")} each nonce`,
     };
   },
 });

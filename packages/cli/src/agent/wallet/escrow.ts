@@ -15,17 +15,17 @@ import { fetchSha256 } from "../../delivery-fetch.js";
 async function specPreflight(ctx: AgentContext, specUrl: string, specHash: string): Promise<string | undefined> {
   const found = await fetchSha256(ctx.fetch ?? fetch, ctx.transport, specUrl);
   if ("problem" in found) {
-    return `the spec at ${specUrl} ${found.problem}; publish it before workers rely on it, or they cannot read the job`;
+    return `spec_url ${found.problem}; publish it or workers cannot read the job`;
   }
   if (found.sha256 !== specHash) {
-    return `the spec at ${specUrl} hashes to ${found.sha256}, not the spec_hash ${specHash} you gave; publish the exact bytes you hashed, or fix spec_hash, before workers rely on it`;
+    return `spec_url hashes to ${found.sha256}, not spec_hash ${specHash}; publish the exact bytes, or fix spec_hash`;
   }
   return undefined;
 }
 
 export const ESCROW_EXPIRES_IN = 86_400;
 
-export const JOB_LIVE = `the job is live; share its spec so workers find it with ${tool("find_jobs")}, and call ${tool("wallet_wait")} with its nonce or ${tool("wallet_check_delivery")} to watch for delivered work, then release to the earliest announcer with ${tool("wallet_attest")}`;
+export const JOB_LIVE = `job live; ${tool("wallet_check_delivery")} to watch for work, then ${tool("wallet_attest")} its earliest announcer`;
 
 export const RECORD_MINT_NEEDED = "selling SOL on this RPC needs record_mint: any other token's mint, which only labels the escrow";
 
@@ -199,7 +199,7 @@ export const walletEscrowPlan = define({
       pieces,
       ...shown,
       sent: true,
-      next: `all ${planned.length} pieces are escrowed; watch each with ${tool("wallet_wait")} or ${tool("wallet_check_delivery")}, and release each to its earliest announcer with ${tool("wallet_attest")}`,
+      next: `${planned.length} pieces escrowed; ${tool("wallet_check_delivery")} then ${tool("wallet_attest")} each earliest announcer`,
     };
   },
 });

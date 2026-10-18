@@ -74,7 +74,7 @@ export const walletCancel = define({
   effect: "submit",
   input: object({
     nonce: amount("the intent's nonce, from wallet_intents"),
-    close: optional(flag("true also closes the empty intent account and returns its rent; default true. Set false when a NotRentPayer error says another wallet paid the rent")),
+    close: optional(flag("also close the empty account and return its rent; default true. Set false on a NotRentPayer error")),
     send: optional(flag("true signs and sends; leave out to preview")),
   }),
   output: object({
@@ -93,7 +93,7 @@ export const walletCancel = define({
       unknown
     >;
     return sent(ctx, signer, view, input.send, call, {
-      done: `the escrow is cancelled and its tokens returned; call ${tool("wallet_balance")} to see them`,
+      done: `cancelled; ${tool("wallet_balance")} to see the refund`,
     });
   },
 });

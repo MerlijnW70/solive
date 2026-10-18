@@ -206,7 +206,7 @@ export const walletAttest = define({
     };
     return sent(ctx, signer, view2, input.send, call, {
       preview: PREVIEW_APPROVAL_NEXT,
-      done: `the escrow is released to ${input.pay_to}; rate the work with ${tool("wallet_feedback")} so ${tool("get_reputation")} can show this worker's track record`,
+      done: `released to ${input.pay_to}; ${tool("wallet_feedback")} to rate`,
     });
   },
 });

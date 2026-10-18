@@ -163,7 +163,7 @@ export const walletCommitteeRelease = define({
     };
     return sent(ctx, signer, view, input.send, call, {
       preview: PREVIEW_APPROVAL_NEXT,
-      done: `the committee release is sent; rate the work with ${tool("wallet_feedback")} if this wallet owns the escrow`,
+      done: `release sent; ${tool("wallet_feedback")} to rate if you own it`,
     });
   },
 });

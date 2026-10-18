@@ -994,7 +994,7 @@ describe("the wallet server", () => {
     expect((await ok(client, "wallet_intents"))["intents"]).toEqual([]);
     const sent = await ok(client, "wallet_escrow_plan", { ...plan, send: true });
     expect(sent).toMatchObject({ sent: true, total: "0.04", pieces: [0, 1, 2].map((i) => ({ nonce: String(i), signature: expect.any(String) })) });
-    expect(sent["next"]).toContain("pieces are escrowed");
+    expect(sent["next"]).toContain("pieces escrowed");
     const listed = ((await ok(client, "wallet_intents"))["intents"] as Json[]).sort((a, b) => Number(a["nonce"]) - Number(b["nonce"]));
     expect(listed.map((intent) => intent["order"])).toEqual([
       expect.objectContaining({ kind: "attested", amount_in: String(LAMPORTS_PER_SOL / 100n), attestor: owner }),
@@ -2612,7 +2612,7 @@ describe("the wallet server", () => {
       code: "WalletEmpty",
       hint: walletEmpty(address),
     });
-    expect(walletEmpty(address)).toContain(` ${faucetLink(address)} `);
+    expect(walletEmpty(address)).toContain(faucetLink(address));
   });
 
   it("reads the cluster once per server and refuses to make, read or sign with a wallet on an RPC that serves mainnet under another name", async () => {

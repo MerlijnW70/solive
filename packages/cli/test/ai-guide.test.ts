@@ -43,6 +43,6 @@ describe("the AI guide", () => {
     expect(PAGE).toContain("It swaps, escrows, releases or cancels nothing until you say yes.");
     expect(WALLET_ACTIONS.map((a) => a.name)).toEqual(expect.arrayContaining([tool("wallet_escrow"), tool("wallet_attest")]));
     expect(WALLET_ACTIONS.map((a) => a.name)).toContain(tool("wallet_auction"));
-    expect(PREVIEW_ONLY.startsWith("nothing was sent")).toBe(true);
+    expect(PREVIEW_ONLY.startsWith("not sent")).toBe(true);
   });
 });
