@@ -14,6 +14,8 @@ export const EVERYDAY_TOOLS: ReadonlySet<string> = new Set(
     "wallet_escrow",
     "wallet_escrow_plan",
     "wallet_attest",
+    "wallet_attest_split",
+    "wallet_claim",
     "wallet_deliver",
     "wallet_check_delivery",
     "wallet_wait",
@@ -24,6 +26,8 @@ export const EVERYDAY_TOOLS: ReadonlySet<string> = new Set(
     "find_jobs",
     "get_spec",
     "hash",
+    "get_reputation",
+    "get_claims",
   ].map(tool),
 );
 

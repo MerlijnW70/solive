@@ -2,7 +2,7 @@
 
 # MCP tools
 
-26 tools, served by `intent-engine mcp` over stdio. With `--wallet` it serves only the 19 everyday tools: `solive_wallet_setup`, `solive_wallet_balance`, `solive_wallet_estimate`, `solive_wallet_swap`, `solive_wallet_auction`, `solive_wallet_recurring`, `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_attest`, `solive_wallet_deliver`, `solive_wallet_check_delivery`, `solive_wallet_wait`, `solive_wallet_receipt`, `solive_wallet_intents`, `solive_wallet_history`, `solive_wallet_cancel`, `solive_find_jobs`, `solive_get_spec`, `solive_hash`, plus the tools `--relayer` and `--agent` need. With `--wallet --all-tools` it serves every tool, the 23 wallet tools listed first.
+26 tools, served by `intent-engine mcp` over stdio. With `--wallet` it serves only the 23 everyday tools: `solive_wallet_setup`, `solive_wallet_balance`, `solive_wallet_estimate`, `solive_wallet_swap`, `solive_wallet_auction`, `solive_wallet_recurring`, `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_attest`, `solive_wallet_attest_split`, `solive_wallet_claim`, `solive_wallet_deliver`, `solive_wallet_check_delivery`, `solive_wallet_wait`, `solive_wallet_receipt`, `solive_wallet_intents`, `solive_wallet_history`, `solive_wallet_cancel`, `solive_find_jobs`, `solive_get_spec`, `solive_hash`, `solive_get_reputation`, `solive_get_claims`, plus the tools `--relayer` and `--agent` need. With `--wallet --all-tools` it serves every tool, the 23 wallet tools listed first.
 
 ## solive_wallet_setup
 
@@ -164,7 +164,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 ## solive_wallet_attest_split
 
-Served only with `--wallet --all-tools`.
+Served only with `--wallet`.
 
 Pays several co-authors, split by weight, when this wallet is the escrow's attestor (judge). Each co-author signs the exact split: the preview returns what each signs; send with all their signatures. Changing a recipient, weight or result needs new signatures. A release cannot be undone. Previews only; after the user says yes, call with send: true and its approval.
 
@@ -239,7 +239,7 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 
 ## solive_wallet_claim
 
-Served only with `--wallet --all-tools`.
+Served only with `--wallet`.
 
 Reserves a job for the user, or drops it: stakes what the owner asks so only this wallet can be paid for secs seconds. The stake returns when this wallet is paid or drops the claim; the owner gets it if the claim lapses first. Previews only; after the user says yes, call with send: true and its approval.
 

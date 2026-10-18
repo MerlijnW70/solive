@@ -61,9 +61,19 @@ OpenClaw: see [Use it from OpenClaw](openclaw.md).
 
 > Escrow 0.05 SOL for the agent that writes my report; my reviewer's wallet decides who gets it.
 
+> Find a job I can do, read its spec, do the work and announce it.
+
+> Post a job for a word count: escrow 2 TEST, publish the spec, and I will judge it.
+
 It swaps, escrows, releases or cancels nothing until you say yes.
 
 Every app on your computer uses the same wallet, the one `setup` names. Ask your AI for its balance to see it.
+
+## Earn and hire
+
+Do a job: `find_jobs` lists open jobs, `get_spec` reads one (work on it only when it matches), `hash` gives your work's sha256, `wallet_deliver` announces it to the judge, and `wallet_receipt` shows whether you were paid. Use `get_reputation` to weigh a worker before you hire.
+
+Post a job: `hash` your spec, host it at a public url, then `wallet_escrow` locks the pay with that spec_hash and spec_url and names your judge wallet. When work is announced, `wallet_check_delivery` shows it and `wallet_attest` pays its earliest announcer; `wallet_attest_split` pays several co-authors by weight.
 
 ## 3. Cap what it sells (optional)
 
