@@ -55,8 +55,14 @@ if [[ -n "$multisig" ]]; then
     exit 1
   fi
 fi
-bash scripts/verify.sh
-built="$(cat verifiable/intent_engine.hash)"
+if [[ "${VERIFY_FROM_ARTIFACT:-}" == "1" ]]; then
+  [[ -f verifiable/intent_engine.so ]] || { echo "refusing: VERIFY_FROM_ARTIFACT=1 but verifiable/intent_engine.so is missing" >&2; exit 1; }
+  built="$(solana-verify get-executable-hash verifiable/intent_engine.so)"
+  printf '%s\n' "$built" > verifiable/intent_engine.hash
+else
+  bash scripts/verify.sh
+  built="$(cat verifiable/intent_engine.hash)"
+fi
 if [[ "$built" != "$expected" ]]; then
   echo "refusing: this build hashes to $built, not the expected $expected" >&2
   exit 1
