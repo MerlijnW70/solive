@@ -7,8 +7,9 @@ use intent_core::mint_policy::{
 use intent_core::Error as CoreError;
 use intent_engine::errors::{core_err, EngineError};
 use intent_engine::state::{
-    Config, Intent, Mandate, MintCap, UserState, CONFIG_SEED, DELEGATE_SEED, INTENT_SEED,
-    MANDATE_SEED, MINT_CAP_SEED, USER_SEED, VAULT_SEED,
+    ClaimBoard, Config, Intent, Mandate, MintCap, Standby, UserState, CLAIMS_SEED, COMMITTEE_SEED,
+    CONFIG_SEED, DELEGATE_SEED, INTENT_SEED, MANDATE_SEED, MINT_CAP_SEED, PROFILE_SEED,
+    STANDBY_SEED, USER_SEED, VAULT_SEED,
 };
 
 #[test]
@@ -17,6 +18,8 @@ fn account_sizes_are_frozen() {
     assert_eq!(UserState::SPACE, 152);
     assert_eq!(Intent::SPACE, 464);
     assert_eq!(Mandate::SPACE, 384);
+    assert_eq!(ClaimBoard::SPACE, 176);
+    assert_eq!(Standby::SPACE, 88);
 }
 
 #[test]
@@ -143,7 +146,7 @@ fn the_pinned_config_address_is_the_config_pda() {
 
 #[test]
 fn pda_seed_preimages_cannot_collide() {
-    let shapes: [(&[u8], usize); 7] = [
+    let shapes: [(&[u8], usize); 11] = [
         (CONFIG_SEED, 0),
         (USER_SEED, 32),
         (INTENT_SEED, 40),
@@ -151,6 +154,10 @@ fn pda_seed_preimages_cannot_collide() {
         (DELEGATE_SEED, 32),
         (MANDATE_SEED, 72),
         (MINT_CAP_SEED, 32),
+        (COMMITTEE_SEED, 32),
+        (CLAIMS_SEED, 32),
+        (PROFILE_SEED, 32),
+        (STANDBY_SEED, 36),
     ];
     for (i, (a, a_tail)) in shapes.iter().enumerate() {
         for (b, b_tail) in shapes.iter().skip(i + 1) {

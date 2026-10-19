@@ -169,6 +169,18 @@ pub mod intent_engine {
         handle_drop_claim(ctx)
     }
 
+    pub fn stand_by(ctx: Context<StandBy>, secs: u32) -> Result<()> {
+        handle_stand_by(ctx, secs)
+    }
+
+    pub fn advance(ctx: Context<Advance>) -> Result<()> {
+        handle_advance(ctx)
+    }
+
+    pub fn leave(ctx: Context<Leave>, seq: u32) -> Result<()> {
+        handle_leave(ctx, seq)
+    }
+
     pub fn settle_claims(ctx: Context<SettleClaims>) -> Result<()> {
         handle_settle_claims(ctx)
     }

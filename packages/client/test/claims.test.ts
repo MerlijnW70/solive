@@ -7,7 +7,9 @@ import {
   findIntentPda,
   buildClaimJob,
   buildDropClaim,
+  buildLeave,
   buildOpenClaims,
+  buildStandBy,
   checkClaimant,
   IntentStatus,
   Kind,
@@ -15,9 +17,10 @@ import {
   stakeReceiverOnCancel,
   stakeReceiverOnRelease,
   stakeReceiverOnSettle,
+  standbyAddress,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import { createClient, jobClaimOf, loadClaimsOf, NotSettleable, type Transport } from "../src/index.js";
+import { createClient, jobClaimOf, lineHandover, loadClaimsOf, loadLine, NotSettleable, type Transport } from "../src/index.js";
 import { svmTransport } from "../src/svm.js";
 import { world } from "./svm.js";
 
@@ -89,7 +92,7 @@ describe("claimed escrows", () => {
   it("client.claims reports free, held and lapsed from the chain's clock", async () => {
     const s = await setup();
     const board = await claimBoardAddress(s.intent);
-    const terms = { board, stake: STAKE, maxSecs: 3_600, owner: s.owner.address, cooldown: null };
+    const terms = { board, stake: STAKE, maxSecs: 3_600, owner: s.owner.address, cooldown: null, line: { head: 0, tail: 0, waiting: 0 } };
     expect(await s.client.claims(s.owner.address, s.nonce)).toEqual({ ...terms, state: "free", worker: null, until: 0n, secondsLeft: 0n });
     await s.claim(s.worker);
     const now = s.w.chain.svm.getClock().unixTimestamp;
@@ -182,12 +185,39 @@ describe("claimed escrows", () => {
     const views = await loadClaimsOf(counted, [s.intent, bare]);
     expect(calls).toEqual(["many"]);
     expect(views).toEqual([await s.client.claims(s.owner.address, s.nonce), null]);
-    expect(views.map(jobClaimOf)).toEqual([{ claimedBy: s.worker.address, claimEnds: views[0]?.until }, { claimedBy: null, claimEnds: null }]);
+    expect(views.map(jobClaimOf)).toEqual([{ claimedBy: s.worker.address, claimEnds: views[0]?.until, waiting: 0 }, { claimedBy: null, claimEnds: null, waiting: 0 }]);
     expect(await loadClaimsOf(counted, [])).toEqual([]);
     expect(calls).toEqual(["many"]);
     const clock = s.w.chain.svm.getClock();
     clock.unixTimestamp += 601n;
     s.w.chain.svm.setClock(clock);
-    expect((await loadClaimsOf(counted, [s.intent])).map(jobClaimOf)).toEqual([{ claimedBy: null, claimEnds: null }]);
+    expect((await loadClaimsOf(counted, [s.intent])).map(jobClaimOf)).toEqual([{ claimedBy: null, claimEnds: null, waiting: 0 }]);
+  });
+
+  it("reads the line, names the first worker still in it and the holes before it, and a drop hands the job over", async () => {
+    const s = await setup();
+    await s.claim(s.worker);
+    const third = await generateKeyPairSigner();
+    s.w.chain.svm.airdrop(third.address, lamports(10n * SOL));
+    for (const [seq, who] of [s.rival, third].entries()) {
+      await s.client.send([await buildStandBy({ worker: who, intent: s.intent, seq, secs: 300 + seq })], who);
+    }
+    const view = await s.client.claims(s.owner.address, s.nonce);
+    expect(view?.line).toEqual({ head: 0, tail: 2, waiting: 2 });
+    expect(jobClaimOf(view)).toMatchObject({ claimedBy: s.worker.address, waiting: 2 });
+    const [first, second] = await Promise.all([standbyAddress(s.intent, 0), standbyAddress(s.intent, 1)]);
+    expect(await loadLine(s.transport, s.intent, { head: 0, tail: 2 })).toEqual([
+      { seq: 0, entry: first, worker: s.rival.address, secs: 300 },
+      { seq: 1, entry: second, worker: third.address, secs: 301 },
+    ]);
+    expect(await lineHandover(s.transport, s.intent, { head: 0, tail: 2 })).toEqual({ entries: [first], nextWorker: s.rival.address });
+    await s.client.send([await buildLeave({ caller: s.rival, intent: s.intent, seq: 0, worker: s.rival.address })], s.rival);
+    expect((await loadLine(s.transport, s.intent, { head: 0, tail: 2 }))[0]).toEqual({ seq: 0, entry: first, worker: null, secs: null });
+    const handover = await lineHandover(s.transport, s.intent, { head: 0, tail: 2 });
+    expect(handover).toEqual({ entries: [first, second], nextWorker: third.address });
+    await expect(s.client.send([await buildDropClaim({ worker: s.worker, intent: s.intent })], s.worker)).rejects.toThrow();
+    await s.client.send([await buildDropClaim({ worker: s.worker, intent: s.intent, ...handover })], s.worker);
+    expect(await s.client.claims(s.owner.address, s.nonce)).toMatchObject({ state: "held", worker: third.address, line: { head: 2, tail: 2, waiting: 0 } });
+    expect(await lineHandover(s.transport, s.intent, { head: 2, tail: 2 })).toEqual({ entries: [] });
   });
 });

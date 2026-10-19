@@ -1,12 +1,10 @@
 use anchor_lang::prelude::*;
-use anchor_lang::Discriminator;
 use intent_core::claim::{stake_on_settle, StakeTo};
-use intent_core::lifecycle::Status;
 
-use crate::claims::{clear, move_lamports, slot_of, stake_receiver};
+use crate::claims::{clear, escrow_deadline, move_lamports, slot_of, stake_receiver};
 use crate::errors::{core_err, EngineError};
 use crate::events::{ClaimsClosed, StakeMoved};
-use crate::state::{ClaimBoard, Intent, CLAIMS_SEED, CLAIMS_VERSION};
+use crate::state::{ClaimBoard, CLAIMS_SEED, CLAIMS_VERSION};
 
 #[event_cpi]
 #[derive(Accounts)]
@@ -28,26 +26,9 @@ pub struct SettleClaims<'info> {
     pub worker: Option<UncheckedAccount<'info>>,
 }
 
-fn escrow_open(intent: &AccountInfo, now: i64) -> Result<bool> {
-    if *intent.owner != crate::ID {
-        return Ok(false);
-    }
-    let data = intent.try_borrow_data()?;
-    let disc = Intent::DISCRIMINATOR;
-    if data.get(..disc.len()) != Some(disc) {
-        return Ok(false);
-    }
-    let body = data
-        .get(disc.len()..Intent::SPACE)
-        .ok_or(EngineError::ClaimsMissing)?;
-    let held: &Intent = bytemuck::try_from_bytes(body).map_err(|_| EngineError::ClaimsMissing)?;
-    let status = Status::try_from(held.status).map_err(core_err)?;
-    Ok(status == Status::Open && now < held.expires_at)
-}
-
 pub fn handle_settle_claims(ctx: Context<SettleClaims>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
-    let open = escrow_open(&ctx.accounts.intent.to_account_info(), now)?;
+    let open = escrow_deadline(&ctx.accounts.intent.to_account_info(), now)?.is_some();
     let (intent, owner, worker, held, outcome) = {
         let board = ctx.accounts.board.load()?;
         let outcome = stake_on_settle(slot_of(&board, now), open).map_err(core_err)?;

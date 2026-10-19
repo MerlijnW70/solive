@@ -5,6 +5,7 @@ import {
   IntentCoreError,
   MAX_CLAIM_SECS,
   MAX_CLAIM_STAKE,
+  MAX_LINE_SEQ,
   MAX_COMMITTEE_MEMBERS,
   MAX_FEEDBACK_SCORE,
   parseAmount,
@@ -105,7 +106,7 @@ export function feedbackOf(sub: string | undefined, remote: Remote, values: Valu
   };
 }
 
-export const CLAIMS_SUBS = "claims needs show, open, take, drop or settle";
+export const CLAIMS_SUBS = "claims needs show, open, take, drop, settle, standby, leave or advance";
 export const PROFILE_SUBS = "profile needs show, set or close";
 export const STAKE_FORMAT = `--stake is SOL from 0 to ${MAX_CLAIM_STAKE / 1_000_000_000n} with at most 9 decimals, such as 0.01`;
 export const PROFILE_RULE =
@@ -145,6 +146,28 @@ function claimsOf(sub: string | undefined, remote: Remote, values: Values): Comm
         maxSecs: parseBounded(required(values, "max-secs"), "max-secs", MAX_CLAIM_SECS, 1),
         stake: stakeOf(values),
       };
+    case "standby":
+      return {
+        name: "claims-standby",
+        ...remote,
+        keypair: required(values, "keypair"),
+        yes: values.yes === true,
+        owner: key(values, "owner"),
+        nonce,
+        secs: parseBounded(required(values, "secs"), "secs", MAX_CLAIM_SECS, 1),
+      };
+    case "leave":
+      return {
+        name: "claims-leave",
+        ...remote,
+        keypair: required(values, "keypair"),
+        yes: values.yes === true,
+        owner: key(values, "owner"),
+        nonce,
+        seq: typeof values.seq === "string" ? parseBounded(values.seq, "seq", MAX_LINE_SEQ, 0) : undefined,
+      };
+    case "advance":
+      return { name: "claims-advance", ...remote, keypair: required(values, "keypair"), yes: values.yes === true, owner: key(values, "owner"), nonce };
     case "take":
       return {
         name: "claims-take",
@@ -201,7 +224,7 @@ export function trustOf(verb: string, sub: string | undefined, remote: Remote, v
     case "feedback":
       return feedbackOf(sub, remote, values);
     case "claims":
-      if (sub === undefined || !["show", "open", "take", "drop", "settle"].includes(sub)) {
+      if (sub === undefined || !["show", "open", "take", "drop", "settle", "standby", "leave", "advance"].includes(sub)) {
         throw new UsageError(CLAIMS_SUBS);
       }
       return claimsOf(sub, remote, values);

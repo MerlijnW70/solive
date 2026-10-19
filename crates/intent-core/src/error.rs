@@ -43,4 +43,7 @@ pub enum Error {
     ClaimHeld,
     ProfileInvalid,
     ClaimCooldown,
+    LineWaiting,
+    LineEmpty,
+    JobNotHeld,
 }

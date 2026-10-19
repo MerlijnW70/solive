@@ -1,11 +1,14 @@
 import type { Address, TransactionPartialSigner } from "@solana/kit";
 import {
+  buildAdvance,
   buildClaimJob,
   buildCloseProfile,
   buildCreateProfile,
   buildDropClaim,
+  buildLeave,
   buildOpenClaims,
   buildSettleClaims,
+  buildStandBy,
   buildUpdateProfile,
   claimBoardAddress,
   claimUntil,
@@ -13,10 +16,11 @@ import {
   formatAmount,
   IntentCoreError,
   IntentStatus,
+  type LineHandover,
   profileAddress,
   stakeReceiverOnSettle,
 } from "@intent-engine/core";
-import { type ClaimsView, type Client, createClient, type Transport } from "@intent-engine/client";
+import { type ClaimsView, type Client, createClient, type LineEntry, lineHandover, loadLine, type Transport } from "@intent-engine/client";
 import { previewed } from "./admin-commands.js";
 import type { Command } from "./command-types.js";
 import { FlowRefused } from "./flows.js";
@@ -25,7 +29,20 @@ import type { Runtime } from "./runtime.js";
 
 type ClaimCommand = Extract<
   Command,
-  { name: "claims-show" | "claims-open" | "claims-take" | "claims-drop" | "claims-settle" | "profile-show" | "profile-set" | "profile-close" }
+  {
+    name:
+      | "claims-show"
+      | "claims-open"
+      | "claims-take"
+      | "claims-drop"
+      | "claims-settle"
+      | "claims-standby"
+      | "claims-leave"
+      | "claims-advance"
+      | "profile-show"
+      | "profile-set"
+      | "profile-close";
+  }
 >;
 
 const NONE = "11111111111111111111111111111111" as Address;
@@ -40,6 +57,9 @@ export const heldBy = (intent: Address, worker: Address, secondsLeft: bigint) =>
 export const coolingDown = (intent: Address, worker: Address, until: bigint) =>
   `${worker} dropped its claim on escrow ${intent} and may claim it again from ${until}, when that claim would have ended; nothing was sent`;
 
+export const lineWaiting = (intent: Address, waiting: number) =>
+  `${waiting} ${waiting === 1 ? "worker stands" : "workers stand"} by for escrow ${intent}, so it is handed over in line order; join the line with claims standby; nothing was sent`;
+
 export const NO_PROFILE = "has published no profile";
 
 const claimsShown = (intent: Address, view: ClaimsView) => ({
@@ -53,6 +73,7 @@ const claimsShown = (intent: Address, view: ClaimsView) => ({
   max_secs: view.maxSecs,
   owner: view.owner,
   cooldown: view.cooldown,
+  line: view.line,
 });
 
 async function claimsOf(client: Client, owner: Address, nonce: bigint) {
@@ -88,6 +109,9 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
     ];
     return previewed(transport, [instruction], signer, { intent, board, summary }, command.yes);
   }
+  if (command.name === "claims-leave") {
+    return leaveLine(command, signer, transport, client);
+  }
   const { intent, view } = await claimsOf(client, command.owner, command.nonce);
   const shown = claimsShown(intent, view);
   switch (command.name) {
@@ -97,12 +121,112 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
       if (view.state !== "held" || view.worker !== signer.address) {
         throw new FlowRefused(`${signer.address} holds no claim on escrow ${intent}; nothing was sent`);
       }
-      const summary = [`Drops: this worker's claim on escrow ${intent}`, `Returns: its stake of ${sol(view.stake)} to ${signer.address}`];
-      return previewed(transport, [await buildDropClaim({ worker: signer, intent })], signer, { ...shown, summary }, command.yes);
+      const handover = await dropHandover(client, transport, command.owner, command.nonce, intent, view);
+      const summary = [`Drops: this worker's claim on escrow ${intent}`, `Returns: its stake of ${sol(view.stake)} to ${signer.address}`, ...handedTo(handover)];
+      return previewed(transport, [await buildDropClaim({ worker: signer, intent, ...handover })], signer, { ...shown, summary }, command.yes);
     }
+    case "claims-standby":
+      return standBy(command, signer, transport, client, intent, view, shown);
+    case "claims-advance":
+      return advanceLine(command, signer, transport, client, intent, view, shown);
     case "claims-settle":
       return settleClaims(command, signer, transport, client, intent, view, shown);
   }
+}
+
+export async function dropHandover(client: Client, transport: Transport, owner: Address, nonce: bigint, intent: Address, view: ClaimsView): Promise<LineHandover> {
+  if (view.line.waiting === 0 || (await escrowOpen(client, owner, nonce, await client.chainTime())) === null) {
+    return { entries: [] };
+  }
+  return lineHandover(transport, intent, view.line);
+}
+
+export function handedTo(handover: LineHandover): string[] {
+  const skipped = handover.entries.length - (handover.nextWorker === undefined ? 0 : 1);
+  return [
+    ...(handover.nextWorker === undefined ? [] : [`Hands: the job to ${handover.nextWorker}, first in the line`]),
+    ...(skipped > 0 ? [`Skips: ${skipped} line ${skipped === 1 ? "entry" : "entries"} whose worker left`] : []),
+  ];
+}
+
+async function standBy(
+  command: Extract<ClaimCommand, { name: "claims-standby" }>,
+  worker: TransactionPartialSigner,
+  transport: Transport,
+  client: Client,
+  intent: Address,
+  view: ClaimsView,
+  shown: object,
+) {
+  if (view.state !== "held" && view.line.waiting === 0) {
+    throw new FlowRefused(`nobody holds escrow ${intent} and nobody stands by, so claim it with claims take; nothing was sent`);
+  }
+  if (command.secs > view.maxSecs) {
+    throw new FlowRefused(`escrow ${intent} lets a worker hold its claim for at most ${view.maxSecs} seconds; pass a lower --secs`);
+  }
+  if ((await escrowOpen(client, command.owner, command.nonce, await client.chainTime())) === null) {
+    throw new FlowRefused(`escrow ${intent} is no longer open, so nobody can stand by for it`);
+  }
+  const seq = view.line.tail;
+  const summary = [
+    `Stands by: for escrow ${intent} as entry ${seq}, place ${view.line.waiting + 1} in its line; when the job reaches this worker it holds it for ${command.secs} seconds`,
+    `Locks: a stake of ${sol(view.stake)} and the entry's rent, moved onto the claim when the job reaches this worker, or returned when it leaves the line`,
+  ];
+  const instruction = await buildStandBy({ worker, intent, seq, secs: command.secs });
+  return previewed(transport, [instruction], worker, { ...shown, seq, summary }, command.yes);
+}
+
+async function advanceLine(
+  command: Extract<ClaimCommand, { name: "claims-advance" }>,
+  payer: TransactionPartialSigner,
+  transport: Transport,
+  client: Client,
+  intent: Address,
+  view: ClaimsView,
+  shown: object,
+) {
+  if (view.line.waiting === 0) {
+    throw new FlowRefused(`nobody stands by for escrow ${intent}; nothing was sent`);
+  }
+  if (view.state === "held" && view.worker !== null) {
+    throw new FlowRefused(heldBy(intent, view.worker, view.secondsLeft));
+  }
+  if ((await escrowOpen(client, command.owner, command.nonce, await client.chainTime())) === null) {
+    throw new FlowRefused(`escrow ${intent} is no longer open, so its line is not advanced; each waiter gets its stake back with claims leave`);
+  }
+  const handover = await lineHandover(transport, intent, view.line);
+  const summary = [
+    ...(view.state === "lapsed" ? [`Ends: the lapsed claim of ${view.worker}, whose stake of ${sol(view.stake)} goes to the owner ${view.owner}`] : []),
+    ...handedTo(handover),
+    `Pays the fee: ${payer.address}`,
+  ];
+  const instruction = await buildAdvance({ intent, owner: view.owner, ...handover });
+  return previewed(transport, [instruction], payer, { ...shown, summary }, command.yes);
+}
+
+async function leaveLine(command: Extract<ClaimCommand, { name: "claims-leave" }>, caller: TransactionPartialSigner, transport: Transport, client: Client) {
+  const [intent] = await findIntentPda({ owner: command.owner, nonce: command.nonce });
+  const view = await client.claims(command.owner, command.nonce);
+  let entries: LineEntry[];
+  if (command.seq !== undefined) {
+    entries = await loadLine(transport, intent, { head: command.seq, tail: command.seq + 1 });
+  } else if (view === null) {
+    throw new FlowRefused(`the claims board of escrow ${intent} is closed; pass --seq with the entry to return; nothing was sent`);
+  } else {
+    entries = (await loadLine(transport, intent, view.line, view.line.waiting)).filter(({ worker }) => worker === caller.address);
+  }
+  const found = entries.find(({ worker }) => worker !== null);
+  if (found === undefined || found.worker === null) {
+    const who = command.seq === undefined ? `${caller.address} stands by` : `entry ${command.seq} stands`;
+    throw new FlowRefused(`${who} nowhere in the line of escrow ${intent}; nothing was sent`);
+  }
+  const open = (await escrowOpen(client, command.owner, command.nonce, await client.chainTime())) !== null;
+  if (open && found.worker !== caller.address) {
+    throw new FlowRefused(`escrow ${intent} is still open, so only ${found.worker} can take entry ${found.seq} out of its line; nothing was sent`);
+  }
+  const summary = [`Leaves: entry ${found.seq} in the line of escrow ${intent}`, `Returns: the entry's stake and rent to ${found.worker}`];
+  const instruction = await buildLeave({ caller, intent, seq: found.seq, worker: found.worker });
+  return previewed(transport, [instruction], caller, { intent, seq: found.seq, entry: found.entry, worker: found.worker, summary }, command.yes);
 }
 
 async function takeClaim(
@@ -116,6 +240,9 @@ async function takeClaim(
 ) {
   if (view.state === "held" && view.worker !== null) {
     throw new FlowRefused(heldBy(intent, view.worker, view.secondsLeft));
+  }
+  if (view.line.waiting > 0) {
+    throw new FlowRefused(lineWaiting(intent, view.line.waiting));
   }
   if (view.cooldown !== null && view.cooldown.worker === worker.address) {
     throw new FlowRefused(coolingDown(intent, worker.address, view.cooldown.until));

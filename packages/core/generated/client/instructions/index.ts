@@ -7,6 +7,7 @@
  */
 
 export * from "./acceptAdmin.js";
+export * from "./advance.js";
 export * from "./advanceEpoch.js";
 export * from "./advanceNonce.js";
 export * from "./beginFill.js";
@@ -30,6 +31,7 @@ export * from "./fillAttestedSplitCommittee.js";
 export * from "./fillIntent.js";
 export * from "./initConfig.js";
 export * from "./initUser.js";
+export * from "./leave.js";
 export * from "./lowerPause.js";
 export * from "./openClaims.js";
 export * from "./proposeAdmin.js";
@@ -38,6 +40,7 @@ export * from "./revokeMandate.js";
 export * from "./setCapsRequired.js";
 export * from "./setMintCap.js";
 export * from "./settleClaims.js";
+export * from "./standBy.js";
 export * from "./updateConfig.js";
 export * from "./updateEconomics.js";
 export * from "./updateProfile.js";

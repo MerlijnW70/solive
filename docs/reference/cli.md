@@ -3,7 +3,7 @@
 # CLI reference
 
 ```text
-usage: setup | add-to claude|codex | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | profile show | profile set | profile close | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
+usage: setup | add-to claude|codex | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
 ```
 
 Every command accepts `--output` and `--help`.
@@ -405,7 +405,7 @@ Options for `release`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--vote`
 ## claims
 
 ```text
-claims show --owner <address> --nonce <n> | open --keypair <owner file> --nonce <n> --max-secs <seconds> --stake <SOL> [--yes] | take --keypair <worker file> --owner <address> --nonce <n> --secs <seconds> [--yes] | drop --keypair <worker file> --owner <address> --nonce <n> [--yes] | settle --keypair <payer file> --owner <address> --nonce <n> [--yes]
+claims show --owner <address> --nonce <n> | open --keypair <owner file> --nonce <n> --max-secs <seconds> --stake <SOL> [--yes] | take --keypair <worker file> --owner <address> --nonce <n> --secs <seconds> [--yes] | drop --keypair <worker file> --owner <address> --nonce <n> [--yes] | settle --keypair <payer file> --owner <address> --nonce <n> [--yes] | standby --keypair <worker file> --owner <address> --nonce <n> --secs <seconds> [--yes] | leave --keypair <file> --owner <address> --nonce <n> [--seq <n>] [--yes] | advance --keypair <payer file> --owner <address> --nonce <n> [--yes]
 ```
 
 Options for `show`: `--url`, `--owner`, `--nonce`, `--output`, `--help`
@@ -417,6 +417,12 @@ Options for `take`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, 
 Options for `drop`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--output`, `--help`
 
 Options for `settle`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--output`, `--help`
+
+Options for `standby`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--secs`, `--output`, `--help`
+
+Options for `leave`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--seq`, `--output`, `--help`
+
+Options for `advance`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--output`, `--help`
 
 ## profile
 

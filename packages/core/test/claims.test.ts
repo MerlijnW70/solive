@@ -5,18 +5,27 @@ import type { Address } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import {
   type BoardView,
+  buildAdvance,
+  buildDropClaim,
   buildSettleClaims,
+  buildStandBy,
+  checkAdvance,
   checkClaimant,
+  checkStandBy,
   checkClaimTerms,
   claimSlot,
   claimUntil,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   IntentCoreError,
+  lineLength,
+  lineSeqs,
   MAX_CLAIM_SECS,
   MAX_CLAIM_STAKE,
+  MAX_LINE_ENTRIES,
   stakeReceiverOnCancel,
   stakeReceiverOnRelease,
   stakeReceiverOnSettle,
+  standbyAddress,
 } from "../src/index.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
@@ -149,5 +158,49 @@ describe("settle claims", () => {
     expect(given.accounts[3]?.address).toBe(WORKER);
     expect(without.accounts[3]?.address).toBe(INTENT_ENGINE_PROGRAM_ADDRESS);
     expect(given.accounts.length).toBe(without.accounts.length);
+  });
+});
+
+describe("stand-by line", () => {
+  const line = (worker: Address, until: bigint, head: number, tail: number): BoardView => ({ ...board(worker, until), head, tail });
+
+  it("counts the waiting workers and lists at most a batch of the next entries", () => {
+    expect(lineLength(board(NONE, 0n))).toBe(0);
+    expect(lineLength({ head: 3, tail: 5 })).toBe(2);
+    expect(lineSeqs({ head: 3, tail: 5 })).toEqual([3, 4]);
+    expect(lineSeqs({ head: 0, tail: 10 })).toEqual([0, 1, 2, 3].slice(0, MAX_LINE_ENTRIES));
+    expect(lineSeqs({ head: 0, tail: 10 }, 6)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(lineSeqs({ head: 4, tail: 4 })).toEqual([]);
+  });
+
+  it("refuses a direct claim while anyone waits, a stand-by on a free job, and an advance past a held one", () => {
+    expect(code(() => checkClaimant(line(NONE, 100n, 0, 1), OTHER, 99n))).toBe("LineWaiting");
+    expect(code(() => checkClaimant(line(WORKER, 100n, 0, 1), OTHER, 100n))).toBe("LineWaiting");
+    expect(code(() => checkClaimant(line(WORKER, 100n, 1, 1), OTHER, 100n))).toBeNull();
+    expect(code(() => checkStandBy(line(NONE, 100n, 0, 0), 0n))).toBe("JobNotHeld");
+    expect(code(() => checkStandBy(line(WORKER, 100n, 0, 0), 100n))).toBe("JobNotHeld");
+    expect(code(() => checkStandBy(line(WORKER, 100n, 0, 0), 99n))).toBeNull();
+    expect(code(() => checkStandBy(line(NONE, 100n, 0, 1), 0n))).toBeNull();
+    expect(code(() => checkAdvance(line(WORKER, 100n, 0, 1), 99n))).toBe("ClaimHeld");
+    expect(code(() => checkAdvance(line(WORKER, 100n, 0, 0), 100n))).toBe("LineEmpty");
+    expect(code(() => checkAdvance(line(WORKER, 100n, 0, 1), 100n))).toBeNull();
+  });
+
+  it("builds a stand-by at the entry its sequence derives and appends the line's entries to a drop or advance", async () => {
+    const intent = "SysvarRecentB1ockHashes11111111111111111111" as Address;
+    const signer = { address: WORKER, signTransactions: async () => [] } as never;
+    const first = await standbyAddress(intent, 7);
+    expect(first).not.toBe(await standbyAddress(intent, 8));
+    const stand = await buildStandBy({ worker: signer, intent, seq: 7, secs: 60 });
+    expect(stand.accounts[3]?.address).toBe(first);
+    const plain = await buildDropClaim({ worker: signer, intent });
+    const handed = await buildDropClaim({ worker: signer, intent, entries: [first], nextWorker: OTHER });
+    expect(handed.accounts.length).toBe(plain.accounts.length);
+    expect(handed.accounts.slice(3, 8).map(({ address }) => address)).toEqual([OTHER, first, ...Array(3).fill(INTENT_ENGINE_PROGRAM_ADDRESS)]);
+    expect(plain.accounts.slice(3, 8).map(({ address }) => address)).toEqual(Array(5).fill(INTENT_ENGINE_PROGRAM_ADDRESS));
+    const advance = await buildAdvance({ intent, owner: OWNER, entries: [first] });
+    expect(advance.accounts[4]?.address).toBe(first);
+    const five = await Promise.all([0, 1, 2, 3, 4].map((seq) => standbyAddress(intent, seq)));
+    await expect(buildAdvance({ intent, owner: OWNER, entries: five })).rejects.toThrow("InvalidParams");
   });
 });

@@ -64,6 +64,8 @@ export type ClaimBoard = {
   bump: number;
   padding: ReadonlyUint8Array;
   droppedBy: Address;
+  head: number;
+  tail: number;
 };
 
 export type ClaimBoardArgs = {
@@ -78,6 +80,8 @@ export type ClaimBoardArgs = {
   bump: number;
   padding: ReadonlyUint8Array;
   droppedBy: Address;
+  head: number;
+  tail: number;
 };
 
 /** Gets the encoder for {@link ClaimBoardArgs} account data. */
@@ -96,6 +100,8 @@ export function getClaimBoardEncoder(): FixedSizeEncoder<ClaimBoardArgs> {
       ["bump", getU8Encoder()],
       ["padding", fixEncoderSize(getBytesEncoder(), 2)],
       ["droppedBy", getAddressEncoder()],
+      ["head", getU32Encoder()],
+      ["tail", getU32Encoder()],
     ]),
     (value) => ({ ...value, discriminator: CLAIM_BOARD_DISCRIMINATOR }),
   );
@@ -116,6 +122,8 @@ export function getClaimBoardDecoder(): FixedSizeDecoder<ClaimBoard> {
     ["bump", getU8Decoder()],
     ["padding", fixDecoderSize(getBytesDecoder(), 2)],
     ["droppedBy", getAddressDecoder()],
+    ["head", getU32Decoder()],
+    ["tail", getU32Decoder()],
   ]);
 }
 
@@ -181,5 +189,5 @@ export async function fetchAllMaybeClaimBoard(
 }
 
 export function getClaimBoardSize(): number {
-  return 168;
+  return 176;
 }

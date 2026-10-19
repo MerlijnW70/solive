@@ -3,7 +3,7 @@ use anchor_lang::system_program::{transfer, Transfer};
 use intent_core::claim::{Slot, StakeTo, Terms};
 use intent_core::lifecycle::Status;
 
-use crate::claims::{cooldown_of, move_lamports, slot_of, stake_receiver};
+use crate::claims::{cooldown_of, line_of, move_lamports, slot_of, stake_receiver};
 use crate::errors::{core_err, EngineError};
 use crate::events::{JobClaimed, StakeMoved};
 use crate::state::{ClaimBoard, Intent, CLAIMS_OPEN, CLAIMS_SEED, CLAIMS_VERSION, INTENT_VERSION};
@@ -44,6 +44,7 @@ pub fn handle_claim_job(ctx: Context<ClaimJob>, secs: u32) -> Result<()> {
         let board = ctx.accounts.board.load()?;
         let slot = slot_of(&board, now);
         let cooldown = cooldown_of(&board);
+        line_of(&board).check_claim().map_err(core_err)?;
         let terms = Terms::new(board.max_secs, board.stake).map_err(core_err)?;
         let lapsed = match slot {
             Slot::Lapsed { .. } => Some(stake_receiver(&board, StakeTo::Owner)),

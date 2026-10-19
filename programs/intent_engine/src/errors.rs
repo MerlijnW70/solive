@@ -101,6 +101,10 @@ pub enum EngineError {
     ProfileInvalid,
     ClaimCooldown,
     ReleaseCannotSettle,
+    LineWaiting,
+    LineEmpty,
+    JobNotHeld,
+    LineEntryMismatch,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {
@@ -148,5 +152,8 @@ pub fn core_err(e: CoreError) -> EngineError {
         CoreError::ClaimHeld => EngineError::ClaimHeld,
         CoreError::ProfileInvalid => EngineError::ProfileInvalid,
         CoreError::ClaimCooldown => EngineError::ClaimCooldown,
+        CoreError::LineWaiting => EngineError::LineWaiting,
+        CoreError::LineEmpty => EngineError::LineEmpty,
+        CoreError::JobNotHeld => EngineError::JobNotHeld,
     }
 }

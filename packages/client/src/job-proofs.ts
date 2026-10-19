@@ -70,7 +70,7 @@ export async function openProofEscrows(transport: Transport, filter?: Address | 
 async function unclaimedOnly(transport: Transport, proofs: Proof[]): Promise<Proof[]> {
   const claimable = proofs.filter(({ intent }) => intent.claims === CLAIMS_OPEN);
   const claims = await loadClaimsOf(transport, claimable.map(({ address }) => address));
-  const held = new Set(claimable.filter((_, i) => claims[i]?.state === "held").map(({ address }) => address));
+  const held = new Set(claimable.filter((_, i) => claims[i]?.state === "held" || (claims[i]?.line.waiting ?? 0) > 0).map(({ address }) => address));
   return proofs.filter(({ address }) => !held.has(address));
 }
 

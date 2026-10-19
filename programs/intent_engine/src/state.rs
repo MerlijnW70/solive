@@ -28,6 +28,7 @@ pub const COMMITTEE_VERSION: u8 = 1;
 pub const CLAIMS_SEED: &[u8] = b"claims";
 pub const CLAIMS_VERSION: u8 = 1;
 pub const CLAIMS_OPEN: u8 = 1;
+pub const STANDBY_SEED: &[u8] = b"standby";
 pub const PROFILE_SEED: &[u8] = b"profile";
 pub const PROFILE_VERSION: u8 = 1;
 pub const MIN_CAP_WINDOW_SECS: u32 = 60;
@@ -236,10 +237,26 @@ pub struct ClaimBoard {
     pub bump: u8,
     pub padding: [u8; 2],
     pub dropped_by: Pubkey,
+    pub head: u32,
+    pub tail: u32,
 }
 
 impl ClaimBoard {
     pub const SPACE: usize = 8 + core::mem::size_of::<ClaimBoard>();
+}
+
+#[account(zero_copy)]
+pub struct Standby {
+    pub worker: Pubkey,
+    pub intent: Pubkey,
+    pub seq: u32,
+    pub secs: u32,
+    pub bump: u8,
+    pub padding: [u8; 7],
+}
+
+impl Standby {
+    pub const SPACE: usize = 8 + core::mem::size_of::<Standby>();
 }
 
 #[account(zero_copy)]

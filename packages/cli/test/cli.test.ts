@@ -685,6 +685,7 @@ describe("cli against the deployed engine", () => {
           payable: true,
           claimed_by: null,
           claim_ends: null,
+          waiting: 0,
         },
       ],
     });

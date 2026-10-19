@@ -126,6 +126,10 @@ export const ENGINE_PROBLEMS = {
   ProfileInvalid: never("a profile needs 1 to 8 distinct lowercase skill tags of at most 16 letters, digits or dashes, an https endpoint of at most 128 printable characters, and a document url only together with its sha256"),
   ClaimCooldown: later("this worker dropped its claim on the job and may claim it again once that claim would have ended; any other worker may claim it now"),
   ReleaseCannotSettle: never("the judge fee leaves less of the escrow than the rounded-up protocol and partner fees, so no release could pay; lower the judge fee or escrow more"),
+  LineWaiting: later("workers stand by for this job, so it goes to them in line order and cannot be claimed directly; stand by to join the line"),
+  LineEmpty: never("nobody stands by for this job, so no line is left to advance"),
+  JobNotHeld: never("nobody holds this job and nobody stands by, so claim it instead of standing by"),
+  LineEntryMismatch: never("a line entry passed is not the line's next one, or a drop or advance passed none while workers wait; let this server build it"),
 } as const satisfies Record<string, Entry>;
 
 type EngineErrorName = keyof typeof ENGINE_PROBLEMS;

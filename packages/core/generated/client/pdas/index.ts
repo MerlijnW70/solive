@@ -10,6 +10,7 @@ export * from "./board.js";
 export * from "./committee.js";
 export * from "./config.js";
 export * from "./delegate.js";
+export * from "./entry.js";
 export * from "./mintCap.js";
 export * from "./profile.js";
 export * from "./userState.js";

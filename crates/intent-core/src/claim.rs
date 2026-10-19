@@ -121,3 +121,68 @@ pub fn stake_on_settle(slot: Slot, escrow_open: bool) -> Result<Option<StakeTo>,
         Slot::Lapsed { .. } => Ok(Some(StakeTo::Owner)),
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Line {
+    pub head: u32,
+    pub tail: u32,
+}
+
+impl Line {
+    pub fn waiting(&self) -> u32 {
+        self.tail.saturating_sub(self.head)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.waiting() == 0
+    }
+
+    pub fn check_claim(&self) -> Result<(), Error> {
+        if self.is_empty() {
+            Ok(())
+        } else {
+            Err(Error::LineWaiting)
+        }
+    }
+
+    pub fn check_join(&self, slot: Slot) -> Result<(), Error> {
+        match slot {
+            Slot::Held { .. } => Ok(()),
+            Slot::Free | Slot::Lapsed { .. } if self.is_empty() => Err(Error::JobNotHeld),
+            Slot::Free | Slot::Lapsed { .. } => Ok(()),
+        }
+    }
+
+    pub fn check_advance(&self, slot: Slot) -> Result<(), Error> {
+        slot.claimable()?;
+        if self.is_empty() {
+            return Err(Error::LineEmpty);
+        }
+        Ok(())
+    }
+
+    pub fn join(&mut self) -> Result<u32, Error> {
+        let seq = self.tail;
+        self.tail = self.tail.checked_add(1).ok_or(Error::Overflow)?;
+        Ok(seq)
+    }
+
+    pub fn front(&self) -> Option<u32> {
+        (self.head < self.tail).then_some(self.head)
+    }
+
+    pub fn pass(&mut self) -> Option<u32> {
+        let seq = self.front()?;
+        self.head = self.head.saturating_add(1);
+        Some(seq)
+    }
+
+    pub fn serve(&mut self, mut present: impl FnMut(u32) -> bool) -> Option<u32> {
+        while let Some(seq) = self.pass() {
+            if present(seq) {
+                return Some(seq);
+            }
+        }
+        None
+    }
+}

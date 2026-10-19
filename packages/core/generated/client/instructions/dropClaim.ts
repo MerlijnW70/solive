@@ -56,6 +56,11 @@ export type DropClaimInstruction<
   TAccountWorker extends string | AccountMeta<string> = string,
   TAccountIntent extends string | AccountMeta<string> = string,
   TAccountBoard extends string | AccountMeta<string> = string,
+  TAccountNextWorker extends string | AccountMeta<string> = string,
+  TAccountEntry0 extends string | AccountMeta<string> = string,
+  TAccountEntry1 extends string | AccountMeta<string> = string,
+  TAccountEntry2 extends string | AccountMeta<string> = string,
+  TAccountEntry3 extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -73,6 +78,21 @@ export type DropClaimInstruction<
       TAccountBoard extends string
         ? WritableAccount<TAccountBoard>
         : TAccountBoard,
+      TAccountNextWorker extends string
+        ? WritableAccount<TAccountNextWorker>
+        : TAccountNextWorker,
+      TAccountEntry0 extends string
+        ? WritableAccount<TAccountEntry0>
+        : TAccountEntry0,
+      TAccountEntry1 extends string
+        ? WritableAccount<TAccountEntry1>
+        : TAccountEntry1,
+      TAccountEntry2 extends string
+        ? WritableAccount<TAccountEntry2>
+        : TAccountEntry2,
+      TAccountEntry3 extends string
+        ? WritableAccount<TAccountEntry3>
+        : TAccountEntry3,
       TAccountEventAuthority extends string
         ? ReadonlyAccount<TAccountEventAuthority>
         : TAccountEventAuthority,
@@ -114,6 +134,11 @@ export type DropClaimAsyncInput<
   TAccountWorker extends InstructionSignerInput = InstructionSignerInput,
   TAccountIntent extends InstructionAccountInput = InstructionAccountInput,
   TAccountBoard extends InstructionAccountInput = InstructionAccountInput,
+  TAccountNextWorker extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEntry0 extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEntry1 extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEntry2 extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEntry3 extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -121,6 +146,11 @@ export type DropClaimAsyncInput<
   worker: TAccountWorker;
   intent: TAccountIntent;
   board?: TAccountBoard;
+  nextWorker?: TAccountNextWorker;
+  entry0?: TAccountEntry0;
+  entry1?: TAccountEntry1;
+  entry2?: TAccountEntry2;
+  entry3?: TAccountEntry3;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
 };
@@ -129,6 +159,11 @@ export async function getDropClaimInstructionAsync<
   TAccountWorker extends InstructionSignerInput,
   TAccountIntent extends InstructionAccountInput,
   TAccountBoard extends InstructionAccountInput,
+  TAccountNextWorker extends InstructionAccountInput,
+  TAccountEntry0 extends InstructionAccountInput,
+  TAccountEntry1 extends InstructionAccountInput,
+  TAccountEntry2 extends InstructionAccountInput,
+  TAccountEntry3 extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -137,6 +172,11 @@ export async function getDropClaimInstructionAsync<
     TAccountWorker,
     TAccountIntent,
     TAccountBoard,
+    TAccountNextWorker,
+    TAccountEntry0,
+    TAccountEntry1,
+    TAccountEntry2,
+    TAccountEntry3,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -155,6 +195,26 @@ export async function getDropClaimInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountBoard,
       InstructionAccountInputAddress<TAccountBoard>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextWorker,
+      InstructionAccountInputAddress<TAccountNextWorker>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountEntry0,
+      InstructionAccountInputAddress<TAccountEntry0>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountEntry1,
+      InstructionAccountInputAddress<TAccountEntry1>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountEntry2,
+      InstructionAccountInputAddress<TAccountEntry2>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountEntry3,
+      InstructionAccountInputAddress<TAccountEntry3>
     >,
     ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
@@ -178,6 +238,15 @@ export async function getDropClaimInstructionAsync<
     worker: { value: input.worker ?? null, isSigner: true, isWritable: true },
     intent: { value: input.intent ?? null, isSigner: false, isWritable: false },
     board: { value: input.board ?? null, isSigner: false, isWritable: true },
+    nextWorker: {
+      value: input.nextWorker ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    entry0: { value: input.entry0 ?? null, isSigner: false, isWritable: true },
+    entry1: { value: input.entry1 ?? null, isSigner: false, isWritable: true },
+    entry2: { value: input.entry2 ?? null, isSigner: false, isWritable: true },
+    entry3: { value: input.entry3 ?? null, isSigner: false, isWritable: true },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -212,6 +281,11 @@ export async function getDropClaimInstructionAsync<
       getAccountMeta("worker", accounts.worker),
       getAccountMeta("intent", accounts.intent),
       getAccountMeta("board", accounts.board),
+      getAccountMeta("nextWorker", accounts.nextWorker),
+      getAccountMeta("entry0", accounts.entry0),
+      getAccountMeta("entry1", accounts.entry1),
+      getAccountMeta("entry2", accounts.entry2),
+      getAccountMeta("entry3", accounts.entry3),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -232,6 +306,26 @@ export async function getDropClaimInstructionAsync<
       InstructionAccountInputAddress<TAccountBoard>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountNextWorker,
+      InstructionAccountInputAddress<TAccountNextWorker>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountEntry0,
+      InstructionAccountInputAddress<TAccountEntry0>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountEntry1,
+      InstructionAccountInputAddress<TAccountEntry1>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountEntry2,
+      InstructionAccountInputAddress<TAccountEntry2>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountEntry3,
+      InstructionAccountInputAddress<TAccountEntry3>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -246,6 +340,11 @@ export type DropClaimInput<
   TAccountWorker extends InstructionSignerInput = InstructionSignerInput,
   TAccountIntent extends InstructionAccountInput = InstructionAccountInput,
   TAccountBoard extends InstructionAccountInput = InstructionAccountInput,
+  TAccountNextWorker extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEntry0 extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEntry1 extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEntry2 extends InstructionAccountInput = InstructionAccountInput,
+  TAccountEntry3 extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -253,6 +352,11 @@ export type DropClaimInput<
   worker: TAccountWorker;
   intent: TAccountIntent;
   board: TAccountBoard;
+  nextWorker?: TAccountNextWorker;
+  entry0?: TAccountEntry0;
+  entry1?: TAccountEntry1;
+  entry2?: TAccountEntry2;
+  entry3?: TAccountEntry3;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
 };
@@ -261,6 +365,11 @@ export function getDropClaimInstruction<
   TAccountWorker extends InstructionSignerInput,
   TAccountIntent extends InstructionAccountInput,
   TAccountBoard extends InstructionAccountInput,
+  TAccountNextWorker extends InstructionAccountInput,
+  TAccountEntry0 extends InstructionAccountInput,
+  TAccountEntry1 extends InstructionAccountInput,
+  TAccountEntry2 extends InstructionAccountInput,
+  TAccountEntry3 extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -269,6 +378,11 @@ export function getDropClaimInstruction<
     TAccountWorker,
     TAccountIntent,
     TAccountBoard,
+    TAccountNextWorker,
+    TAccountEntry0,
+    TAccountEntry1,
+    TAccountEntry2,
+    TAccountEntry3,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -286,6 +400,26 @@ export function getDropClaimInstruction<
   ResolvedInstructionAccountMeta<
     TAccountBoard,
     InstructionAccountInputAddress<TAccountBoard>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountNextWorker,
+    InstructionAccountInputAddress<TAccountNextWorker>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountEntry0,
+    InstructionAccountInputAddress<TAccountEntry0>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountEntry1,
+    InstructionAccountInputAddress<TAccountEntry1>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountEntry2,
+    InstructionAccountInputAddress<TAccountEntry2>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountEntry3,
+    InstructionAccountInputAddress<TAccountEntry3>
   >,
   ResolvedInstructionAccountMeta<
     TAccountEventAuthority,
@@ -308,6 +442,15 @@ export function getDropClaimInstruction<
     worker: { value: input.worker ?? null, isSigner: true, isWritable: true },
     intent: { value: input.intent ?? null, isSigner: false, isWritable: false },
     board: { value: input.board ?? null, isSigner: false, isWritable: true },
+    nextWorker: {
+      value: input.nextWorker ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
+    entry0: { value: input.entry0 ?? null, isSigner: false, isWritable: true },
+    entry1: { value: input.entry1 ?? null, isSigner: false, isWritable: true },
+    entry2: { value: input.entry2 ?? null, isSigner: false, isWritable: true },
+    entry3: { value: input.entry3 ?? null, isSigner: false, isWritable: true },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -329,6 +472,11 @@ export function getDropClaimInstruction<
       getAccountMeta("worker", accounts.worker),
       getAccountMeta("intent", accounts.intent),
       getAccountMeta("board", accounts.board),
+      getAccountMeta("nextWorker", accounts.nextWorker),
+      getAccountMeta("entry0", accounts.entry0),
+      getAccountMeta("entry1", accounts.entry1),
+      getAccountMeta("entry2", accounts.entry2),
+      getAccountMeta("entry3", accounts.entry3),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -347,6 +495,26 @@ export function getDropClaimInstruction<
     ResolvedInstructionAccountMeta<
       TAccountBoard,
       InstructionAccountInputAddress<TAccountBoard>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountNextWorker,
+      InstructionAccountInputAddress<TAccountNextWorker>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountEntry0,
+      InstructionAccountInputAddress<TAccountEntry0>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountEntry1,
+      InstructionAccountInputAddress<TAccountEntry1>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountEntry2,
+      InstructionAccountInputAddress<TAccountEntry2>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountEntry3,
+      InstructionAccountInputAddress<TAccountEntry3>
     >,
     ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
@@ -368,8 +536,13 @@ export type ParsedDropClaimInstruction<
     worker: TAccountMetas[0];
     intent: TAccountMetas[1];
     board: TAccountMetas[2];
-    eventAuthority: TAccountMetas[3];
-    program: TAccountMetas[4];
+    nextWorker?: TAccountMetas[3] | undefined;
+    entry0?: TAccountMetas[4] | undefined;
+    entry1?: TAccountMetas[5] | undefined;
+    entry2?: TAccountMetas[6] | undefined;
+    entry3?: TAccountMetas[7] | undefined;
+    eventAuthority: TAccountMetas[8];
+    program: TAccountMetas[9];
   };
   data: DropClaimInstructionData;
 };
@@ -382,12 +555,12 @@ export function parseDropClaimInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedDropClaimInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 5) {
+  if (instruction.accounts.length < 10) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 5,
+        expectedAccountMetas: 10,
       },
     );
   }
@@ -397,12 +570,23 @@ export function parseDropClaimInstruction<
     accountIndex += 1;
     return accountMeta;
   };
+  const getNextOptionalAccount = () => {
+    const accountMeta = getNextAccount();
+    return accountMeta.address === INTENT_ENGINE_PROGRAM_ADDRESS
+      ? undefined
+      : accountMeta;
+  };
   return {
     programAddress: instruction.programAddress,
     accounts: {
       worker: getNextAccount(),
       intent: getNextAccount(),
       board: getNextAccount(),
+      nextWorker: getNextOptionalAccount(),
+      entry0: getNextOptionalAccount(),
+      entry1: getNextOptionalAccount(),
+      entry2: getNextOptionalAccount(),
+      entry3: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
     },

@@ -6,12 +6,19 @@ import {
   claimSlot,
   findIntentPda,
   getClaimBoardDecoder,
+  getStandbyDecoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
+  type LineHandover,
+  lineLength,
+  lineSeqs,
+  MAX_LINE_ENTRIES,
   PROFILE_DISCRIMINATOR,
   profileAddress,
   type ProfileView,
   profileView,
+  STANDBY_DISCRIMINATOR,
   stakeReceiverOnCancel,
+  standbyAddress,
 } from "@intent-engine/core";
 import { chainTime, CLOCK_SYSVAR, clockTime, createdAccount, createdView } from "./accounts.js";
 import type { AccountView, Transport } from "./transport.js";
@@ -26,11 +33,14 @@ export type ClaimsView = {
   maxSecs: number;
   owner: Address;
   cooldown: { worker: Address; until: bigint } | null;
+  line: { head: number; tail: number; waiting: number };
 };
+
+export type LineEntry = { seq: number; entry: Address; worker: Address | null; secs: number | null };
 
 const NONE = "11111111111111111111111111111111" as Address;
 
-export type JobClaim = { claimedBy: Address | null; claimEnds: bigint | null };
+export type JobClaim = { claimedBy: Address | null; claimEnds: bigint | null; waiting: number };
 
 async function engineData(transport: Transport, address: Address, discriminator: ArrayLike<number>): Promise<Uint8Array | null> {
   return engineDataOf(address, await createdAccount(transport, address), discriminator);
@@ -59,6 +69,7 @@ function claimsViewOf(board: Address, data: Uint8Array, now: bigint): ClaimsView
     maxSecs: stored.maxSecs,
     owner: stored.owner,
     cooldown: slot.state === "free" && stored.droppedBy !== NONE && now < stored.until ? { worker: stored.droppedBy, until: stored.until } : null,
+    line: { head: stored.head, tail: stored.tail, waiting: lineLength(stored) },
   };
 }
 
@@ -83,7 +94,36 @@ export async function loadClaimsOf(transport: Transport, intents: readonly Addre
 }
 
 export function jobClaimOf(claims: ClaimsView | null): JobClaim {
-  return claims?.state === "held" ? { claimedBy: claims.worker, claimEnds: claims.until } : { claimedBy: null, claimEnds: null };
+  const waiting = claims?.line.waiting ?? 0;
+  return claims?.state === "held" ? { claimedBy: claims.worker, claimEnds: claims.until, waiting } : { claimedBy: null, claimEnds: null, waiting };
+}
+
+export async function loadLine(transport: Transport, intent: Address, line: { head: number; tail: number }, max = MAX_LINE_ENTRIES): Promise<LineEntry[]> {
+  const seqs = lineSeqs(line, max);
+  if (seqs.length === 0) {
+    return [];
+  }
+  const entries = await Promise.all(seqs.map((seq) => standbyAddress(intent, seq)));
+  const views = await transport.getAccounts(entries);
+  return seqs.map((seq, i) => {
+    const entry = entries[i] as Address;
+    const data = engineDataOf(entry, createdView(views[i] ?? null), STANDBY_DISCRIMINATOR);
+    if (data === null) {
+      return { seq, entry, worker: null, secs: null };
+    }
+    const stored = getStandbyDecoder().decode(data);
+    return { seq, entry, worker: stored.worker, secs: stored.secs };
+  });
+}
+
+export async function lineHandover(transport: Transport, intent: Address, line: { head: number; tail: number }): Promise<LineHandover> {
+  const entries = await loadLine(transport, intent, line);
+  const live = entries.findIndex(({ worker }) => worker !== null);
+  if (live < 0) {
+    return { entries: entries.map(({ entry }) => entry) };
+  }
+  const next = entries[live] as LineEntry;
+  return { entries: entries.slice(0, live + 1).map(({ entry }) => entry), nextWorker: next.worker as Address };
 }
 
 export async function cancelClaims(transport: Transport, intent: Address, claims: number): Promise<{ board: Address; stakeTo: Address | null } | undefined> {

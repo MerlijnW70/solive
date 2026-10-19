@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
-import { buildClaimJob, buildDropClaim, claimUntil, findIntentPda, formatAmount, IntentCoreError, IntentStatus, MAX_CLAIM_SECS } from "@intent-engine/core";
+import { buildClaimJob, buildDropClaim, claimUntil, findIntentPda, formatAmount, IntentCoreError, IntentStatus, type LineHandover, MAX_CLAIM_SECS } from "@intent-engine/core";
 import { createClient } from "@intent-engine/client";
-import { coolingDown, heldBy, noClaims } from "../claim-commands.js";
+import { coolingDown, dropHandover, handedTo, heldBy, lineWaiting, noClaims } from "../claim-commands.js";
 import { type AgentContext, define } from "./actions.js";
 import type { Call } from "./claims.js";
 import { tool } from "./names.js";
@@ -45,6 +45,7 @@ export const getClaims = define({
     owner: optional(account()),
     dropped_by: optional(nullable(account("a worker that dropped its claim and may not claim again until cooldown_until"))),
     cooldown_until: optional(time("when the worker that dropped may claim again")),
+    waiting: optional(integer(0, 0xffff_ffff, "workers standing by in the job's line, who get it in order before anyone else can claim it")),
   }),
   run: async (ctx, input) => {
     const { intent, view } = await claimsFor(ctx, input.owner, input.nonce);
@@ -64,6 +65,7 @@ export const getClaims = define({
       owner: view.owner,
       dropped_by: view.cooldown?.worker ?? null,
       ...(view.cooldown === null ? {} : { cooldown_until: view.cooldown.until }),
+      waiting: view.line.waiting,
     };
   },
 });
@@ -98,12 +100,16 @@ export const walletClaim = define({
     const stake = `${formatAmount(view.stake, 9)} SOL`;
     let instruction;
     let summary: string[];
+    let handover: LineHandover = { entries: [] };
     if (input.action === "take") {
       if (input.secs === undefined) {
         throw new InvalidInput([{ path: "secs", message: "give secs with action take" }]);
       }
       if (view.state === "held" && view.worker !== null) {
         throw new AgentRefusal("ClaimHeld", heldBy(intent, view.worker, view.secondsLeft));
+      }
+      if (view.line.waiting > 0) {
+        throw new AgentRefusal("LineWaiting", lineWaiting(intent, view.line.waiting));
       }
       if (view.cooldown !== null && view.cooldown.worker === signer.address) {
         throw new AgentRefusal("ClaimCooldown", coolingDown(intent, signer.address, view.cooldown.until));
@@ -131,8 +137,9 @@ export const walletClaim = define({
       if (view.state !== "held" || view.worker !== signer.address) {
         throw new AgentRefusal("NotClaimant", `this wallet ${signer.address} holds no claim on escrow ${intent}`);
       }
-      instruction = await buildDropClaim({ worker: signer, intent });
-      summary = [`Drops: this wallet's claim on escrow ${intent}`, `Returns: its stake of ${stake} to ${signer.address}`];
+      handover = await dropHandover(client, ctx.transport, input.owner, input.nonce, intent, view);
+      instruction = await buildDropClaim({ worker: signer, intent, ...handover });
+      summary = [`Drops: this wallet's claim on escrow ${intent}`, `Returns: its stake of ${stake} to ${signer.address}`, ...handedTo(handover)];
     }
     const approval = createHash("sha256").update(`${intent}:${input.action}:${input.secs ?? ""}:${view.stake}`).digest("hex").slice(0, 16);
     if (input.send === true && input.approval !== approval) {
@@ -147,7 +154,10 @@ export const walletClaim = define({
     };
     return sent(ctx, signer, shown, input.send, call, {
       preview: PREVIEW_APPROVAL_NEXT,
-      done: input.action === "take" ? `you hold ${intent}; do the work, then ${tool("wallet_deliver")} before it lapses` : `dropped; stake returned, job free for others`,
+      done:
+        input.action === "take"
+          ? `you hold ${intent}; do the work, then ${tool("wallet_deliver")} before it lapses`
+          : `dropped; stake returned, job ${handover.nextWorker === undefined ? "free for others" : `handed to ${handover.nextWorker}, next in line`}`,
     });
   },
 });

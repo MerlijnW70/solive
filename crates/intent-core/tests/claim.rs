@@ -1,9 +1,10 @@
 use intent_core::claim::{
-    stake_on_cancel, stake_on_release, stake_on_settle, Cooldown, Slot, StakeTo, Terms,
+    stake_on_cancel, stake_on_release, stake_on_settle, Cooldown, Line, Slot, StakeTo, Terms,
     MAX_CLAIM_SECS, MAX_CLAIM_STAKE,
 };
 use intent_core::Error;
 use proptest::prelude::*;
+use std::collections::BTreeSet;
 
 const WORKER: [u8; 32] = [7; 32];
 const OTHER: [u8; 32] = [8; 32];
@@ -140,7 +141,91 @@ fn settling_refunds_a_worker_the_escrow_failed_and_forfeits_a_lapsed_claim() {
     assert_eq!(stake_on_settle(Slot::Free, true), Ok(None));
 }
 
+#[test]
+fn a_waiting_line_refuses_a_direct_claim_and_lets_workers_join_only_a_taken_job() {
+    let held = Slot::at(WORKER, NOW + 1, NOW);
+    let lapsed = Slot::at(WORKER, NOW, NOW);
+    let empty = Line::default();
+    assert_eq!(empty.check_claim(), Ok(()));
+    assert_eq!(empty.check_join(held), Ok(()));
+    assert_eq!(empty.check_join(Slot::Free), Err(Error::JobNotHeld));
+    assert_eq!(empty.check_join(lapsed), Err(Error::JobNotHeld));
+    assert_eq!(empty.check_advance(lapsed), Err(Error::LineEmpty));
+    let waiting = Line { head: 3, tail: 5 };
+    assert_eq!(waiting.waiting(), 2);
+    assert_eq!(waiting.check_claim(), Err(Error::LineWaiting));
+    assert_eq!(waiting.check_join(Slot::Free), Ok(()));
+    assert_eq!(waiting.check_join(lapsed), Ok(()));
+    assert_eq!(waiting.check_advance(lapsed), Ok(()));
+    assert_eq!(waiting.check_advance(Slot::Free), Ok(()));
+    assert_eq!(waiting.check_advance(held), Err(Error::ClaimHeld));
+}
+
+#[test]
+fn a_line_serves_in_order_skips_holes_and_never_wraps() -> Result<(), Error> {
+    let mut line = Line::default();
+    assert_eq!((line.join()?, line.join()?, line.join()?), (0, 1, 2));
+    assert_eq!(line.front(), Some(0));
+    assert_eq!(line.serve(|seq| seq != 0), Some(1));
+    assert_eq!(line, Line { head: 2, tail: 3 });
+    assert_eq!(line.serve(|_| false), None);
+    assert_eq!(line, Line { head: 3, tail: 3 });
+    assert_eq!(line.pass(), None);
+    let mut full = Line {
+        head: 0,
+        tail: u32::MAX,
+    };
+    assert_eq!(full.join(), Err(Error::Overflow));
+    Ok(())
+}
+
 proptest! {
+    #[test]
+    fn a_worker_standing_at_position_k_holds_the_job_within_k_terms(
+        head in 0u32..1_000,
+        k in 1u32..24,
+        behind in 0u32..8,
+        gone in proptest::collection::vec(any::<bool>(), 32),
+        later in proptest::collection::vec((any::<bool>(), 0usize..24, 0u32..4), 32),
+    ) {
+        let ours = head.saturating_add(k).saturating_sub(1);
+        let tail = ours.saturating_add(1).saturating_add(behind);
+        let mut line = Line { head, tail };
+        let mut present: BTreeSet<u32> = (head..tail)
+            .zip(gone.iter())
+            .filter(|(seq, left)| *seq == ours || !**left)
+            .map(|(seq, _)| seq)
+            .collect();
+        let mut steps = later.iter().cycle();
+        let mut terms = 0u32;
+        loop {
+            terms = terms.saturating_add(1);
+            prop_assert!(terms <= k, "served after {terms} terms from position {k}");
+            let served = line.serve(|seq| present.contains(&seq));
+            prop_assert!(served.is_some(), "the line emptied before our turn");
+            if served == Some(ours) {
+                break;
+            }
+            if let Some(seq) = served {
+                present.remove(&seq);
+            }
+            let Some(&(leaves, which, joins)) = steps.next() else {
+                return Err(TestCaseError::fail("no steps"));
+            };
+            if leaves {
+                let ahead: Vec<u32> = present.range(line.head..ours).copied().collect();
+                if let Some(seq) = which.checked_rem(ahead.len()).and_then(|i| ahead.get(i)) {
+                    present.remove(seq);
+                }
+            }
+            for _ in 0..joins {
+                let seq = line.join().map_err(|e| TestCaseError::fail(format!("{e:?}")))?;
+                prop_assert!(seq > ours);
+                present.insert(seq);
+            }
+        }
+    }
+
     #[test]
     fn a_held_claim_never_pays_anyone_else(
         until in (NOW + 1)..(NOW + 1_000_000),

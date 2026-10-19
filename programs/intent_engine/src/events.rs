@@ -331,6 +331,23 @@ pub struct StakeMoved {
 }
 
 #[event]
+pub struct StoodBy {
+    pub intent: Pubkey,
+    pub worker: Pubkey,
+    pub seq: u32,
+    pub secs: u32,
+    pub stake: u64,
+}
+
+#[event]
+pub struct LineLeft {
+    pub intent: Pubkey,
+    pub worker: Pubkey,
+    pub seq: u32,
+    pub refunded: u64,
+}
+
+#[event]
 pub struct ClaimsClosed {
     pub intent: Pubkey,
     pub owner: Pubkey,

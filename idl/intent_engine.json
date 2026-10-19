@@ -41,6 +41,83 @@
       "args": []
     },
     {
+      "name": "advance",
+      "discriminator": [
+        7,
+        56,
+        108,
+        201,
+        36,
+        20,
+        57,
+        89
+      ],
+      "accounts": [
+        {
+          "name": "intent"
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true
+        },
+        {
+          "name": "next_worker",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "entry_0",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "entry_1",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "entry_2",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "entry_3",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "advance_epoch",
       "discriminator": [
         93,
@@ -1468,6 +1545,31 @@
           }
         },
         {
+          "name": "next_worker",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "entry_0",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "entry_1",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "entry_2",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "entry_3",
+          "writable": true,
+          "optional": true
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -2528,6 +2630,72 @@
       "args": []
     },
     {
+      "name": "leave",
+      "discriminator": [
+        59,
+        234,
+        148,
+        108,
+        107,
+        149,
+        173,
+        112
+      ],
+      "accounts": [
+        {
+          "name": "caller",
+          "signer": true
+        },
+        {
+          "name": "intent"
+        },
+        {
+          "name": "entry",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  115,
+                  116,
+                  97,
+                  110,
+                  100,
+                  98,
+                  121
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              },
+              {
+                "kind": "arg",
+                "path": "seq"
+              }
+            ]
+          }
+        },
+        {
+          "name": "worker",
+          "writable": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "seq",
+          "type": "u32"
+        }
+      ]
+    },
+    {
       "name": "lower_pause",
       "discriminator": [
         162,
@@ -2925,6 +3093,72 @@
       "args": []
     },
     {
+      "name": "stand_by",
+      "discriminator": [
+        168,
+        157,
+        28,
+        241,
+        80,
+        118,
+        18,
+        116
+      ],
+      "accounts": [
+        {
+          "name": "worker",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "intent"
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "entry",
+          "writable": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "secs",
+          "type": "u32"
+        }
+      ]
+    },
+    {
       "name": "update_config",
       "discriminator": [
         29,
@@ -3160,6 +3394,19 @@
         63,
         127,
         188
+      ]
+    },
+    {
+      "name": "Standby",
+      "discriminator": [
+        218,
+        108,
+        92,
+        176,
+        89,
+        224,
+        201,
+        40
       ]
     },
     {
@@ -3490,6 +3737,19 @@
       ]
     },
     {
+      "name": "LineLeft",
+      "discriminator": [
+        133,
+        186,
+        108,
+        68,
+        200,
+        155,
+        242,
+        108
+      ]
+    },
+    {
       "name": "MandateClosed",
       "discriminator": [
         217,
@@ -3630,6 +3890,19 @@
         242,
         57,
         27
+      ]
+    },
+    {
+      "name": "StoodBy",
+      "discriminator": [
+        229,
+        131,
+        51,
+        137,
+        30,
+        117,
+        93,
+        169
       ]
     },
     {
@@ -4038,6 +4311,22 @@
     {
       "code": 6097,
       "name": "ReleaseCannotSettle"
+    },
+    {
+      "code": 6098,
+      "name": "LineWaiting"
+    },
+    {
+      "code": 6099,
+      "name": "LineEmpty"
+    },
+    {
+      "code": 6100,
+      "name": "JobNotHeld"
+    },
+    {
+      "code": 6101,
+      "name": "LineEntryMismatch"
     }
   ],
   "types": [
@@ -4166,6 +4455,14 @@
           {
             "name": "dropped_by",
             "type": "pubkey"
+          },
+          {
+            "name": "head",
+            "type": "u32"
+          },
+          {
+            "name": "tail",
+            "type": "u32"
           }
         ]
       }
@@ -5326,6 +5623,30 @@
       }
     },
     {
+      "name": "LineLeft",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "seq",
+            "type": "u32"
+          },
+          {
+            "name": "refunded",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "Mandate",
       "serialization": "bytemuck",
       "repr": {
@@ -6046,6 +6367,75 @@
           {
             "name": "role",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Standby",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "seq",
+            "type": "u32"
+          },
+          {
+            "name": "secs",
+            "type": "u32"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "padding",
+            "type": {
+              "array": [
+                "u8",
+                7
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "StoodBy",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "seq",
+            "type": "u32"
+          },
+          {
+            "name": "secs",
+            "type": "u32"
+          },
+          {
+            "name": "stake",
+            "type": "u64"
           }
         ]
       }

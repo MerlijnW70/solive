@@ -170,6 +170,10 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6095 | `ProfileInvalid` | no | a profile needs 1 to 8 distinct lowercase skill tags of at most 16 letters, digits or dashes, an https endpoint of at most 128 printable characters, and a document url only together with its sha256 |
 | 6096 | `ClaimCooldown` | yes | this worker dropped its claim on the job and may claim it again once that claim would have ended; any other worker may claim it now |
 | 6097 | `ReleaseCannotSettle` | no | the judge fee leaves less of the escrow than the rounded-up protocol and partner fees, so no release could pay; lower the judge fee or escrow more |
+| 6098 | `LineWaiting` | yes | workers stand by for this job, so it goes to them in line order and cannot be claimed directly; stand by to join the line |
+| 6099 | `LineEmpty` | no | nobody stands by for this job, so no line is left to advance |
+| 6100 | `JobNotHeld` | no | nobody holds this job and nobody stands by, so claim it instead of standing by |
+| 6101 | `LineEntryMismatch` | no | a line entry passed is not the line's next one, or a drop or advance passed none while workers wait; let this server build it |
 
 ## Token programs
 

@@ -215,6 +215,9 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "claims-take":
     case "claims-drop":
     case "claims-settle":
+    case "claims-standby":
+    case "claims-leave":
+    case "claims-advance":
     case "profile-show":
     case "profile-set":
     case "profile-close":
