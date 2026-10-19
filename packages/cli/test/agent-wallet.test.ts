@@ -141,7 +141,11 @@ import {
   releaseNotOf,
   releaseUnread,
   RECORD_MINT_NEEDED,
+  NO_CLOCK,
   NO_WALLET,
+  getReceipt,
+  stillUnreleased,
+  WAIT_MAX,
   PREVIEW_ONLY,
   PREVIEW_APPROVAL_NEXT,
   stillWaiting,
@@ -1109,7 +1113,7 @@ describe("the wallet server", () => {
     expect(sent).toMatchObject({
       sent: true,
       signature: expect.any(String),
-      next: `announced to ${judge}; solive_wallet_receipt with owner ${owner} and nonce ${escrow["nonce"]} shows when it is paid`,
+      next: `announced to ${judge}; solive_wallet_receipt with owner ${owner} and nonce ${escrow["nonce"]} shows when it is paid; give it wait, in seconds, to wait for the pay`,
     });
     expect(Buffer.from(h.wires[0] as string, "base64").toString("latin1")).toContain(deliveryMemo({ intent, sha256: work, url: delivery.url }));
     expect((await call(client, "wallet_deliver", { ...delivery, url: "ftp://example.org/x" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "url" }] });
@@ -1240,6 +1244,67 @@ describe("the wallet server", () => {
     expect(plain).toMatchObject({ paid: formatAmount(net, 9), matches: false });
     expect(plain).not.toHaveProperty("delivered_sha256");
     expect((await call(client, "wallet_receipt", { nonce: "7", sha256: "xyz" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "sha256" }] });
+  });
+
+  it("receipt waits for a release when given wait and reads once without it", async () => {
+    const owner = (await ok(client, "wallet_setup"))["address"] as Address;
+    const [intent] = await findIntentPda({ owner, nonce: 7n });
+    const payee = await findAssociatedTokenAddress({ owner: (await generateKeyPairSigner()).address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
+    const { fee, net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);
+    const attested = getIntentAttestedEventEncoder().encode({
+      intent,
+      owner,
+      solver: owner,
+      payee,
+      attestor: owner,
+      amountIn: LAMPORTS_PER_SOL / 20n,
+      result: 2n,
+      fee,
+      net,
+      filled: LAMPORTS_PER_SOL / 20n,
+      remaining: 0n,
+      partnerFee: 0n,
+    });
+    const released = { signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [tag(attested)] };
+    const paid = { intent, released: true, payee, paid: `${net} raw units`, attestor: owner, result: "2", signature: "release" };
+    const tools = [
+      ["wallet_receipt", { nonce: "7" }],
+      ["get_receipt", { owner, nonce: "7" }],
+    ] as const;
+    h.rounds = 10;
+    for (const [name, args] of tools) {
+      h.engineLog = [released];
+      h.sleeps.length = 0;
+      expect(await ok(client, name, { ...args, wait: 5 })).toEqual(paid);
+      expect(h.sleeps).toEqual([]);
+      expect(await ok(client, name, args)).toEqual(paid);
+      h.engineLog = [creation(intent)];
+      h.onSleep = [() => undefined, () => (h.engineLog = [released])];
+      expect(await ok(client, name, { ...args, wait: 5 })).toEqual(paid);
+      expect(h.sleeps).toEqual([1, 1]);
+      h.engineLog = [creation(intent)];
+      h.sleeps.length = 0;
+      expect(await ok(client, name, { ...args, wait: 3 })).toEqual({ intent, released: false, next: stillUnreleased(name) });
+      expect(h.sleeps).toEqual([1, 1, 1]);
+      h.sleeps.length = 0;
+      expect(await ok(client, name, args)).toEqual({ intent, released: false, next: NOT_RELEASED });
+      expect(h.sleeps).toEqual([]);
+      h.engineLog = [];
+      expect(await ok(client, name, { ...args, wait: 1 })).toEqual({ intent, released: false, complete: false, next: stillUnreleased(name) });
+      expect(await ok(client, name, args)).toEqual({ intent, released: false, complete: false, next: RELEASE_UNKNOWN });
+      expect((await call(client, name, { ...args, wait: WAIT_MAX + 1 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "wait" }] });
+      expect((await call(client, name, { ...args, wait: 0 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "wait" }] });
+    }
+    expect(stillUnreleased("get_receipt")).toContain("solive_get_receipt again with wait to keep waiting");
+    h.sleeps.length = 0;
+    h.rounds = 2;
+    h.engineLog = [creation(intent)];
+    expect(await ok(client, "wallet_receipt", { nonce: "7", wait: WAIT_MAX })).toEqual({ intent, released: false, next: stillUnreleased("wallet_receipt") });
+    expect(h.sleeps).toEqual([1, 1]);
+    const bare = { transport, relay: undefined, agent: undefined, claims: claimsOf() };
+    expect(await invoke(getReceipt, bare, { owner, nonce: "7", wait: 1 })).toEqual({ ok: false, problem: expect.objectContaining({ code: "NoClock", hint: NO_CLOCK }) });
+    expect(await invoke(getReceipt, bare, { owner, nonce: "7" })).toMatchObject({ ok: true });
   });
 
   it("receipt reads a follow-up delivery memo", async () => {

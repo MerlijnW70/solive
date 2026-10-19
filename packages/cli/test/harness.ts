@@ -77,6 +77,7 @@ export const h = {
   files: new Map<string, string>(),
   env: {} as Record<string, string | undefined>,
   sleeps: [] as number[],
+  onSleep: [] as (() => void)[],
   waits: [] as number[],
   changed: [] as { address: Address; data: Uint8Array }[][],
   scans: 0,
@@ -343,6 +344,7 @@ export function runtime(signers: Record<string, KeyPairSigner>): Runtime {
     }),
     sleep: async (seconds) => {
       h.sleeps.push(seconds);
+      h.onSleep.shift()?.();
       return h.sleeps.length < h.rounds;
     },
     env: h.env,
@@ -380,6 +382,7 @@ export function resetHarness(): void {
   h.recentFees = [];
   h.feeQueries = [];
   h.sleeps = [];
+  h.onSleep = [];
   h.waits = [];
   h.changed = [];
   h.submitted = [];

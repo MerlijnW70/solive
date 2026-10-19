@@ -217,6 +217,7 @@ export const SERVER_PROBLEMS = {
   Failed: never("an unexpected error; the hint carries its message"),
   TransactionFailed: never("the transaction would fail for a reason this client does not name; read the logs"),
   WalletNotConfigured: never("a wallet tool was called on a server started without --wallet"),
+  NoClock: never("wait was given to a server built without a clock; call again without wait"),
   WalletNotMainnet: never("the RPC serves mainnet; wallet tools work on devnet, testnet and localnet only"),
   NoWallet: never(`the server has no wallet yet; call ${tool("wallet_setup")} first`),
   WalletEmpty: never("the wallet holds no SOL; fund it from a faucet, then try again"),

@@ -35,7 +35,7 @@ export {
   limitLines,
   rpcRefused,
 } from "./wallet/guard.js";
-export type { WalletGuard, WalletAccess } from "./wallet/guard.js";
+export type { Clock, WalletGuard, WalletAccess } from "./wallet/guard.js";
 export { walletBalance } from "./wallet/account.js";
 export { NOTHING_WRAPPED } from "./wallet/unwrap.js";
 export { nonceTaken } from "./wallet/offer.js";
@@ -118,7 +118,7 @@ export {
 } from "./wallet/releases.js";
 export type { ReleaseLookup, AroundRelease } from "./wallet/releases.js";
 export { WAIT_STATUS, UNREAD, FILL_UNKNOWN, stillWaiting } from "./wallet/wait.js";
-export { NOT_RELEASED, PAID_WRAPPED, RECEIPT_PARTIAL, getReceipt, escrowReceipt } from "./wallet/receipt.js";
+export { NOT_RELEASED, NO_CLOCK, PAID_WRAPPED, RECEIPT_PARTIAL, getReceipt, escrowReceipt, stillUnreleased } from "./wallet/receipt.js";
 export { PACKET_DATA_SIZE } from "@intent-engine/client";
 
 export const WALLET_ACTIONS: readonly AnyAction[] = [

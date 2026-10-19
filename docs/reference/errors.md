@@ -18,6 +18,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `Failed` | no | an unexpected error; the hint carries its message |
 | `TransactionFailed` | no | the transaction would fail for a reason this client does not name; read the logs |
 | `WalletNotConfigured` | no | a wallet tool was called on a server started without --wallet |
+| `NoClock` | no | wait was given to a server built without a clock; call again without wait |
 | `WalletNotMainnet` | no | the RPC serves mainnet; wallet tools work on devnet, testnet and localnet only |
 | `NoWallet` | no | the server has no wallet yet; call solive_wallet_setup first |
 | `WalletEmpty` | no | the wallet holds no SOL; fund it from a faucet, then try again |

@@ -5,7 +5,7 @@ import type { Budget } from "./budget.js";
 import type { Relay } from "./relay.js";
 import { type Call, callOf, type Claims } from "./claims.js";
 import { InvalidInput, type Schema } from "./schema.js";
-import type { WalletAccess } from "./wallet.js";
+import type { Clock, WalletAccess } from "./wallet.js";
 
 export type Effect = "read" | "prepare" | "submit";
 
@@ -15,6 +15,7 @@ export type AgentContext = {
   agent: AgentKey | undefined;
   claims: Claims;
   wallet?: WalletAccess;
+  clock?: Clock;
   url?: string;
   fetch?: SpecFetch;
   confirm?: Transport;

@@ -1,11 +1,12 @@
 import { type Address, getAddressDecoder } from "@solana/kit";
 import { findIntentPda, formatAmount, NATIVE_MINT } from "@intent-engine/core";
-import { intentAt, mintOf, recordedDelivery, type Transport } from "@intent-engine/client";
+import { intentAt, memoized, mintOf, recordedDelivery, type Transport, unmemoized } from "@intent-engine/client";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
-import { account, amount, flag, object, optional, text } from "../schema.js";
-import { signerOf, sha256Of } from "./guard.js";
+import { account, amount, flag, integer, object, optional, text } from "../schema.js";
+import { WAIT_MAX, signerOf, sha256Of } from "./guard.js";
+import { poll } from "./wait.js";
 import { RELEASE_INPUT, releaseOf, otherLifecycle, coverageOf } from "./record.js";
 import { RELEASE_UNKNOWN, outlives, releaseLookup, namedRelease, releasedMint, createdMint, heldMint } from "./releases.js";
 
@@ -15,6 +16,32 @@ export const PAID_WRAPPED = `paid as wrapped SOL; ${tool("wallet_unwrap")} turns
 
 export const RECEIPT_PARTIAL =
   "the escrow's history after this release could not be read in full: it is longer than the pages read or the RPC node could not return some of its transactions yet, so a follow-up recording the delivered work may be missing, and without release given, the escrow address may have been made again since; pass release, the signature the release returned, or call again in a few seconds";
+
+export const stillUnreleased = (name: string) => `not released when the wait ran out; call ${tool(name)} again with wait to keep waiting`;
+
+export const NO_CLOCK = "this server has no clock to wait with; call again without wait";
+
+const waitInput = optional(integer(1, WAIT_MAX, "most seconds to wait for the release; without it, the tool reads once"));
+
+type Receipt = Awaited<ReturnType<typeof escrowReceipt>>;
+
+async function waitedReceipt(ctx: AgentContext, name: string, wait: number | undefined, read: (transport: Transport) => Promise<Receipt>): Promise<Receipt> {
+  if (wait === undefined) {
+    return read(ctx.transport);
+  }
+  const clock = ctx.wallet ?? ctx.clock;
+  if (clock === undefined) {
+    throw new AgentRefusal("NoClock", NO_CLOCK);
+  }
+  const fresh = unmemoized(ctx.transport);
+  let receipt: Receipt | undefined;
+  await poll(clock, wait, async () => {
+    receipt = await read(memoized(fresh));
+    return receipt.released;
+  });
+  const last = receipt as Receipt;
+  return last.released ? last : { ...last, next: stillUnreleased(name) };
+}
 
 const receiptOutput = object({
   intent: account(),
@@ -40,18 +67,19 @@ const receiptOutput = object({
 export const walletReceipt = define({
   name: tool("wallet_receipt"),
   title: "Check an escrow release",
-  description: `Shows whether an escrow was released: to whom, for how much, by which attestor (judge), and which work it recorded. A payer checks its own escrow; a worker passes the job's owner and nonce from ${tool("wallet_deliver")}. Give sha256 of the work to check it is what was paid for. It sends nothing.`,
+  description: `Shows whether an escrow was released: to whom, for how much, by which attestor (judge), and which work it recorded. A payer checks its own escrow; a worker passes the job's owner and nonce from ${tool("wallet_deliver")}. Give sha256 of the work to check it is what was paid for. Pass wait, in seconds, to wait for it. It sends nothing.`,
   effect: "read",
   input: object({
     owner: optional(account("the wallet that made the escrow; default this server's wallet")),
     nonce: amount("the escrow intent's nonce"),
     sha256: optional(text("the sha256, as 64 hex digits, of the work, to compare with the one the release recorded")),
     release: optional(text(RELEASE_INPUT)),
+    wait: waitInput,
   }),
   output: receiptOutput,
   run: async (ctx: AgentContext, input) => {
     const self = (await signerOf(ctx)).address;
-    const receipt = await escrowReceipt(ctx.transport, input.owner ?? self, input.nonce, input.sha256, input.release);
+    const receipt = await waitedReceipt(ctx, "wallet_receipt", input.wait, (transport) => escrowReceipt(transport, input.owner ?? self, input.nonce, input.sha256, input.release));
     const wrapped = "paid_to" in receipt && receipt.paid_to === self && receipt.mint === NATIVE_MINT;
     if (!wrapped) {
       return receipt;
@@ -64,16 +92,18 @@ export const walletReceipt = define({
 export const getReceipt = define({
   name: tool("get_receipt"),
   title: "Check any owner's escrow release",
-  description: `Look up whether an escrow was released: to whom, for how much, by which attestor, and which delivered work the release recorded. Give sha256, the hash of the work you received, to check it is the work that was paid for, and release, the signature the release returned, to read the release from that one transaction however long the escrow's history grew. It reads the escrow's own transactions, sends nothing and needs no wallet.`,
+  description: `Look up whether an escrow was released: to whom, for how much, by which attestor, and which delivered work the release recorded. Give sha256, the hash of the work you received, to check it is the work that was paid for, and release, the signature the release returned, to read the release from that one transaction however long the escrow's history grew. It reads the escrow's own transactions, sends nothing and needs no wallet. Pass wait, in seconds, to wait for the release.`,
   effect: "read",
   input: object({
     owner: account("the wallet that made the escrow"),
     nonce: amount("the escrow intent's nonce"),
     sha256: optional(text("the sha256, as 64 hex digits, of the work you received, to compare with the one the release recorded")),
     release: optional(text(RELEASE_INPUT)),
+    wait: waitInput,
   }),
   output: receiptOutput,
-  run: async (ctx: AgentContext, input) => escrowReceipt(ctx.transport, input.owner, input.nonce, input.sha256, input.release),
+  run: async (ctx: AgentContext, input) =>
+    waitedReceipt(ctx, "get_receipt", input.wait, (transport) => escrowReceipt(transport, input.owner, input.nonce, input.sha256, input.release)),
 });
 
 export async function escrowReceipt(transport: Transport, owner: Address, nonce: bigint, sha256: string | undefined, releaseSignature?: string) {

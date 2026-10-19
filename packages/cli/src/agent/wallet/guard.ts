@@ -36,6 +36,8 @@ export type WalletAccess = {
   limits: WalletGuard;
 };
 
+export type Clock = Pick<WalletAccess, "sleep" | "now">;
+
 export const SALE_WINDOW = 3_600n;
 export const ESTIMATE_SCAN = 12;
 export const ESTIMATE_FILLS = 5;

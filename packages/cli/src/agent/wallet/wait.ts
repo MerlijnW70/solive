@@ -5,7 +5,7 @@ import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { account, amount, choice, integer, object, optional, text } from "../schema.js";
 import { STATUS } from "../../accounts.js";
-import { WAIT_DEFAULT, WAIT_MAX, access, signerOf, nameOf } from "./guard.js";
+import { WAIT_DEFAULT, WAIT_MAX, type Clock, access, signerOf, nameOf } from "./guard.js";
 import { type Pair, historyIn } from "./fills.js";
 import { HISTORY_PAGES, releaseLookup, releasedMint, createdMint } from "./releases.js";
 
@@ -19,6 +19,15 @@ export const FILL_UNKNOWN = `this intent's history could not be read in full, so
 
 export const stillWaiting = (status: string) =>
   `still ${status}; call ${tool("wallet_wait")} again to keep waiting, or ${tool("wallet_cancel")} to take the escrow back`;
+
+export async function poll(clock: Clock, within: number, done: () => Promise<boolean>): Promise<number> {
+  const deadline = clock.now() + BigInt(within);
+  let waited = 0;
+  while (!(await done()) && waited < within && clock.now() < deadline && (await clock.sleep(1))) {
+    waited += 1;
+  }
+  return waited;
+}
 
 export const walletWait = define({
   name: tool("wallet_wait"),
@@ -45,24 +54,19 @@ export const walletWait = define({
     const [intent] = await findIntentPda({ owner, nonce: input.nonce });
     const within = input.within ?? WAIT_DEFAULT;
     const fresh = unmemoized(ctx.transport);
-    const deadline = wallet.now() + BigInt(within);
-    let waited = 0;
-    let pair: Pair | null = null;
-    let status: WaitStatus = "closed";
-    for (;;) {
+    let pair = null as Pair | null;
+    let status = "closed" as WaitStatus;
+    const waited = await poll(wallet, within, async () => {
       const view = await fresh.getAccount(intent);
       if (view === null) {
         status = "closed";
-        break;
+        return true;
       }
       const decoded = getIntentDecoder().decode(view.data);
       pair = { inputMint: decoded.inputMint, outputMint: decoded.outputMint };
       status = STATUS[decoded.status] ?? "open";
-      if ((status !== "open" && status !== "filling") || waited >= within || wallet.now() >= deadline || !(await wallet.sleep(1))) {
-        break;
-      }
-      waited += 1;
-    }
+      return status !== "open" && status !== "filling";
+    });
     if (status === "open" || status === "filling") {
       return { intent, status, waited, next: stillWaiting(status) };
     }
