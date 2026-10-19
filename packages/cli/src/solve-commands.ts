@@ -1,5 +1,5 @@
 import type { Address } from "@solana/kit";
-import { findAssociatedTokenAddress, getIntentDecoder, type Intent, IntentStatus } from "@intent-engine/core";
+import { findAssociatedTokenAddress, findVaultPda, getIntentDecoder, type Intent, IntentStatus } from "@intent-engine/core";
 import {
   type Chain,
   cachedPricer,
@@ -25,6 +25,8 @@ import {
 } from "@intent-engine/solver";
 import {
   chainTime,
+  ConfirmMismatch,
+  confirmOnBoth,
   createdAccount,
   type Latest,
   loadConfig,
@@ -54,6 +56,26 @@ export const SOLVER_TABLE_NEXT =
   "put these in an address lookup table you own (solana address-lookup-table create, then extend with them) and pass it to solve with --lookup-table";
 
 export type SolveCommand = Extract<Command, { name: "solve" }>;
+
+export const secondNodeSkip = (error: ConfirmMismatch): string =>
+  error.field === "second node"
+    ? `the second RPC node could not be read (${error.second}), so the fill was not sent`
+    : `the two RPC nodes report a different ${error.field}: the first ${error.first}, the second ${error.second}; the fill was not sent`;
+
+export function confirmedFill(transport: Transport, second: Transport): (intent: Address, accounts: readonly Address[]) => Promise<string | null> {
+  return async (intent, accounts) => {
+    const [vault] = await findVaultPda({ intent });
+    try {
+      await confirmOnBoth(transport, second, { intent, accounts: [vault, ...accounts] });
+      return null;
+    } catch (error) {
+      if (error instanceof ConfirmMismatch) {
+        return secondNodeSkip(error);
+      }
+      throw error;
+    }
+  };
+}
 
 export const IN_FLIGHT_SECONDS = 90n;
 
@@ -262,6 +284,7 @@ export async function solverOptions(
     },
     concurrency: command.concurrency,
     ...(heldBack === undefined ? {} : { held: heldBack }),
+    ...(command.confirmUrl === undefined ? {} : { confirm: confirmedFill(transport, runtime.transport(command.confirmUrl)) }),
     maxSolCost: command.maxSolCost,
     maxRent: command.maxRent,
     tip: command.tipLamports === 0n ? null : { account: tipAccount(runtime.entropy()), lamports: command.tipLamports },

@@ -1,4 +1,5 @@
 import type { Address, KeyPairSigner } from "@solana/kit";
+import { getTokenDecoder, getTokenEncoder } from "@solana-program/token";
 import { getIntentDecoder, getIntentEncoder } from "@intent-engine/core";
 import type { AccountView, EngineTransaction, Transport } from "@intent-engine/client";
 import { clusterUrl } from "../src/clusters.js";
@@ -12,6 +13,7 @@ export const SECOND_URL = clusterUrl(SECOND);
 export type Lie = {
   genesis?: string;
   intent?: Address;
+  balance?: Address;
   log?: (log: readonly EngineTransaction[]) => EngineTransaction[];
   down?: boolean;
 };
@@ -21,6 +23,11 @@ export type SecondNode = { lie: Lie; reads: number; transport: Transport };
 const changed = (view: AccountView): AccountView => {
   const held = getIntentDecoder().decode(view.data);
   return { ...view, data: Uint8Array.from(getIntentEncoder().encode({ ...held, revision: held.revision + 1 })) };
+};
+
+const richer = (view: AccountView): AccountView => {
+  const held = getTokenDecoder().decode(view.data);
+  return { ...view, data: Uint8Array.from(getTokenEncoder().encode({ ...held, amount: held.amount + 1n })) };
 };
 
 export function secondNode(): SecondNode {
@@ -34,7 +41,7 @@ export function secondNode(): SecondNode {
   const read = async (address: Address) => {
     reached();
     const view = await transport.getAccount(address);
-    return view !== null && address === node.lie.intent ? changed(view) : view;
+    return view === null ? view : address === node.lie.intent ? changed(view) : address === node.lie.balance ? richer(view) : view;
   };
   node.transport = {
     ...transport,

@@ -1,7 +1,7 @@
 import { parseArgs } from "node:util";
 import { ADD_TO_APPS } from "./add-to.js";
 import { MAX_SUBMIT_WITHIN } from "./agent/signed.js";
-import { CLUSTERS, clusterUrl, DEFAULT_URL, ENV_KEYPAIR, ENV_URL, WALLET_NOT_MAINNET } from "./clusters.js";
+import { CLUSTERS, clusterUrl, DEFAULT_URL, ENV_KEYPAIR, ENV_URL, SAVED_CONFIRM_URL, WALLET_NOT_MAINNET } from "./clusters.js";
 import { adminOf } from "./arg-admin.js";
 import { MAX_FOLLOW_INTERVAL, solveOf } from "./arg-solve.js";
 import type { Values } from "./arg-options.js";
@@ -98,6 +98,9 @@ const WALLET_LIMIT_KEYS = ["wallet-per-trade", "wallet-per-hour"] as const;
 
 const BALANCE_OF_ONE ="balance takes --keypair or --owner, not both";
 
+export const takesSavedConfirm = (verb: string | undefined, sub: string | undefined): boolean =>
+  verb === "judge" || verb === "mcp" || (verb === "committee" && sub === "release");
+
 export function parse(argv: readonly string[], env: Env = {}): Command {
   noRepeats(argv);
   let parsed;
@@ -128,6 +131,10 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
     acceptedBy(verb, sub)?.includes("keypair") === true
   ) {
     values.keypair = keypairDefault;
+  }
+  const confirmDefault = env[SAVED_CONFIRM_URL];
+  if (values["confirm-url"] === undefined && confirmDefault !== undefined && takesSavedConfirm(verb, sub)) {
+    values["confirm-url"] = confirmDefault;
   }
   const nested = verb === "mandate" || verb === "signed";
   if (extra !== undefined || (!nested && third !== undefined)) {
@@ -181,7 +188,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       throw new UsageError("show needs config, intent or mint-cap");
     case "setup":
       noSub(sub);
-      return { name: "setup", ...remote, keypair: values.keypair };
+      return { name: "setup", ...remote, keypair: values.keypair, ...confirmUrlOf(values) };
     case "balance":
       noSub(sub);
       if (values.owner !== undefined && parsed.values.keypair !== undefined) {

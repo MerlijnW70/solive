@@ -2,11 +2,18 @@ import type { Address } from "@solana/kit";
 import { deliveryRecord, firstDelivery } from "./job-deliveries.js";
 import type { Transport } from "./transport.js";
 
-export type ConfirmTarget = { intent: Address; attestor: Address; sha256?: string | undefined; pages?: number | undefined; payees?: readonly Address[] | undefined };
+export type ConfirmTarget = {
+  intent: Address;
+  attestor?: Address | undefined;
+  sha256?: string | undefined;
+  pages?: number | undefined;
+  payees?: readonly Address[] | undefined;
+  accounts?: readonly Address[] | undefined;
+};
 
-export type NodeView = { genesis: string; intent: string; announcer: string | undefined };
+export type NodeView = { genesis: string; intent: string; announcer: string | undefined; accounts?: string[] };
 
-export type ConfirmField = "genesis hash" | "intent account" | "earliest announcer" | "payee" | "second node";
+export type ConfirmField = "genesis hash" | "intent account" | "account" | "earliest announcer" | "payee" | "second node";
 
 export const NO_ACCOUNT = "no account";
 
@@ -39,7 +46,7 @@ const hex = (bytes: Uint8Array): string => Array.from(bytes, (b) => b.toString(1
 const digestOf = async (bytes: Uint8Array): Promise<string> => hex(new Uint8Array(await crypto.subtle.digest("SHA-256", bytes.slice())));
 
 async function announcerOf(transport: Transport, target: ConfirmTarget): Promise<string | undefined> {
-  if (target.sha256 === undefined) {
+  if (target.sha256 === undefined || target.attestor === undefined) {
     return undefined;
   }
   const record = await deliveryRecord(transport, target.attestor, target.intent, target.pages);
@@ -50,9 +57,19 @@ async function announcerOf(transport: Transport, target: ConfirmTarget): Promise
   return first === null ? NO_ANNOUNCER : `${first.worker} in ${first.signature}`;
 }
 
+const viewOf = async (account: { data: Uint8Array } | null): Promise<string> => (account === null ? NO_ACCOUNT : `sha256 ${await digestOf(account.data)}`);
+
 export async function nodeView(transport: Transport, target: ConfirmTarget): Promise<NodeView> {
-  const [genesis, account, announcer] = await Promise.all([transport.genesisHash(), transport.getAccount(target.intent), announcerOf(transport, target)]);
-  return { genesis, intent: account === null ? NO_ACCOUNT : `sha256 ${await digestOf(account.data)}`, announcer };
+  const [genesis, account, announcer, accounts] = await Promise.all([
+    transport.genesisHash(),
+    transport.getAccount(target.intent),
+    announcerOf(transport, target),
+    target.accounts === undefined ? undefined : transport.getAccounts(target.accounts),
+  ]);
+  const intent = await viewOf(account);
+  return accounts === undefined
+    ? { genesis, intent, announcer }
+    : { genesis, intent, announcer, accounts: await Promise.all(accounts.map((view) => viewOf(view ?? null))) };
 }
 
 const reasonOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
@@ -69,6 +86,12 @@ export async function confirmOnBoth(first: Transport, second: Transport, target:
   }
   if (own.intent !== other.intent) {
     throw new ConfirmMismatch("intent account", own.intent, other.intent);
+  }
+  for (const [i, address] of (target.accounts ?? []).entries()) {
+    const [mine, theirs] = [own.accounts?.[i], other.accounts?.[i]];
+    if (mine !== theirs) {
+      throw new ConfirmMismatch("account", `${address} ${mine ?? NO_ACCOUNT}`, `${address} ${theirs ?? NO_ACCOUNT}`);
+    }
   }
   if (own.announcer !== other.announcer || own.announcer === INCOMPLETE_RECORD) {
     throw new ConfirmMismatch("earliest announcer", own.announcer ?? NO_ANNOUNCER, other.announcer ?? NO_ANNOUNCER);

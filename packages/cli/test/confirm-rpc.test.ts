@@ -4,13 +4,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, sortMembers } from "@intent-engine/core";
 import { createClient } from "@intent-engine/client";
-import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
+import { clusterUrl } from "../src/clusters.js";
+import { EXIT_FAILED, EXIT_OK, ONE_NODE } from "../src/main.js";
+import { settingsPath } from "../src/wallet.js";
 import { sealedDelivery } from "./announce.js";
-import { balance, cli, creation, funded, h, NOW, transport, world } from "./harness.js";
-import { announced, cliWith, type Disagreement, disagreements, SECOND, SECOND_URL, secondNode, UNREADABLE, WORK_URL } from "./confirm-node.js";
+import { balance, cli, creation, funded, h, HOME, NOW, transport, world } from "./harness.js";
+import { announced, cliWith, type Disagreement, disagreements, OTHER_GENESIS, SECOND, SECOND_URL, secondNode, UNREADABLE, WORK_URL } from "./confirm-node.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
 const SPEC = `# Count words\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
@@ -64,6 +66,8 @@ const status = (intent: Address) => {
 };
 
 const paid = async (job: Job) => balance(await findAssociatedTokenAddress({ owner: job.worker, mint: job.inputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS }));
+
+const saveConfirm = (cluster: string) => h.files.set(settingsPath(HOME), JSON.stringify({ url: "http://cluster", keypair: "judge.json", "confirm-url": clusterUrl(cluster) }));
 
 const lies = (job: Job): Disagreement[] => disagreements(job.intent, job.owner, job.copied);
 
@@ -127,6 +131,59 @@ describe("judge --confirm-url", () => {
     expect(node.reads).toBe(0);
     expect(status(job.intent)).toBe(IntentStatus.Filled);
   });
+
+  it("refuses on disagreement with the confirm-url setup saved and no flag", async () => {
+    const job = await alone();
+    saveConfirm(SECOND);
+    const node = secondNode();
+    node.lie = { genesis: OTHER_GENESIS };
+    const refused = await cliWith(judging(job, "--yes"), job.keys, node);
+    expect(refused.code).toBe(EXIT_FAILED);
+    expect(refused.err).toContain("ConfirmMismatch: the two RPC nodes report a different genesis hash");
+    expect(refused.urls).toContain(SECOND_URL);
+    expect(status(job.intent)).toBe(IntentStatus.Open);
+    node.lie = {};
+    const sent = await cliWith(judging(job, "--yes"), job.keys, node);
+    expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);
+    expect(node.reads).toBeGreaterThan(0);
+    expect(status(job.intent)).toBe(IntentStatus.Filled);
+  });
+
+  it("lets --confirm-url override the saved confirm-url", async () => {
+    const job = await alone();
+    saveConfirm(SECOND);
+    const node = secondNode();
+    node.lie = { down: true };
+    const sent = await cliWith(judging(job, "--confirm-url", "devnet", "--yes"), job.keys, node);
+    expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);
+    expect(sent.urls).toContain(clusterUrl("devnet"));
+    expect(sent.urls).not.toContain(SECOND_URL);
+    expect(node.reads).toBe(0);
+    expect(status(job.intent)).toBe(IntentStatus.Filled);
+  });
+
+  it("says once that it reads one node, naming the setting, only when no second node is set", async () => {
+    const job = await alone();
+    const node = secondNode();
+    const notices = async (...more: string[]) => {
+      const written: string[] = [];
+      const writes = vi.spyOn(process.stderr, "write").mockImplementation((text) => {
+        written.push(String(text));
+        return true;
+      });
+      try {
+        expect((await cliWith(judging(job, ...more), job.keys, node)).code).toBe(EXIT_OK);
+      } finally {
+        writes.mockRestore();
+      }
+      return written.filter((text) => text.includes(ONE_NODE)).length;
+    };
+    expect(ONE_NODE).toContain("confirm-url");
+    expect(await notices()).toBe(1);
+    expect(await notices("--confirm-url", SECOND)).toBe(0);
+    saveConfirm(SECOND);
+    expect(await notices()).toBe(0);
+  });
 });
 
 describe("committee release --confirm-url", () => {
@@ -180,5 +237,16 @@ describe("committee release --confirm-url", () => {
     expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);
     expect(node.reads).toBe(0);
     expect(status(job.intent)).toBe(IntentStatus.Filled);
+  });
+
+  it("uses the saved confirm-url when no flag is given", async () => {
+    const { job, release } = await voted();
+    saveConfirm(SECOND);
+    const node = secondNode();
+    node.lie = { genesis: OTHER_GENESIS };
+    const refused = await cliWith(release, job.keys, node);
+    expect(refused.code).toBe(EXIT_FAILED);
+    expect(refused.err).toContain("ConfirmMismatch: the two RPC nodes report a different genesis hash");
+    expect(status(job.intent)).toBe(IntentStatus.Open);
   });
 });

@@ -3,6 +3,7 @@ import { getTokenDecoder } from "@solana-program/token";
 import { DEVNET_TEST_MINT, findAssociatedTokenAddress, formatAmount, NATIVE_MINT, PRODUCT_REPOSITORY } from "@intent-engine/core";
 import { createdAccount, mintOf, type Transport } from "@intent-engine/client";
 import { CLUSTERS, ENV_KEYPAIR, ENV_URL, type Env, UsageError } from "./args.js";
+import { SAVED_CONFIRM_URL } from "./clusters.js";
 import { SOL_DECIMALS } from "./agent/read.js";
 import { redactUrl } from "./render.js";
 import { DEVNET_URL } from "./tokens.js";
@@ -12,7 +13,7 @@ const FUND_BELOW = LAMPORTS_PER_SOL / 2n;
 export const ENOUGH_TO_START = LAMPORTS_PER_SOL / 10n;
 export const AIRDROP = LAMPORTS_PER_SOL;
 
-type Settings = { url: string; keypair: string };
+type Settings = { url: string; keypair: string; [SAVED_CONFIRM_URL]?: string };
 
 export type Files = {
   home: string;
@@ -49,7 +50,7 @@ export function expandHome(path: string, home: string): string {
 const set = (value: string | undefined) => (value === "" ? undefined : value);
 
 export async function withSettings(files: Files, given: Env): Promise<Env> {
-  const env = { ...given, [ENV_URL]: set(given[ENV_URL]), [ENV_KEYPAIR]: set(given[ENV_KEYPAIR]) };
+  const env = { ...given, [ENV_URL]: set(given[ENV_URL]), [ENV_KEYPAIR]: set(given[ENV_KEYPAIR]), [SAVED_CONFIRM_URL]: undefined };
   const path = settingsPath(files.home);
   let text: string;
   try {
@@ -67,12 +68,13 @@ export async function withSettings(files: Files, given: Env): Promise<Env> {
     saved === null ||
     typeof saved !== "object" ||
     typeof (saved as Settings).url !== "string" ||
-    typeof (saved as Settings).keypair !== "string"
+    typeof (saved as Settings).keypair !== "string" ||
+    !["string", "undefined"].includes(typeof (saved as Settings)[SAVED_CONFIRM_URL])
   ) {
     throw new UsageError(settingsBroken(path));
   }
-  const { url, keypair } = saved as Settings;
-  return { ...env, [ENV_URL]: env[ENV_URL] ?? url, [ENV_KEYPAIR]: env[ENV_KEYPAIR] ?? keypair };
+  const { url, keypair, [SAVED_CONFIRM_URL]: confirmUrl } = saved as Settings;
+  return { ...env, [ENV_URL]: env[ENV_URL] ?? url, [ENV_KEYPAIR]: env[ENV_KEYPAIR] ?? keypair, [SAVED_CONFIRM_URL]: confirmUrl };
 }
 
 const alreadyExists = (error: unknown) =>
@@ -103,17 +105,28 @@ export const savedDefault = (url: string) => `saved ${redactUrl(url)} as the def
 
 export const keptDefault = (saved: string) => `left the saved default RPC ${redactUrl(saved)} unchanged`;
 
+const savedConfirm = async (files: Files): Promise<string | undefined> => {
+  try {
+    return (await withSettings(files, {}))[SAVED_CONFIRM_URL];
+  } catch {
+    return undefined;
+  }
+};
+
 export async function setup(
   transport: Transport,
   files: Files,
   url: string,
   keypair: string | undefined,
   keepSavedUrl = false,
+  confirmUrl?: string,
 ): Promise<object> {
   const path = expandHome(keypair ?? defaultWallet(files.home), files.home);
   const { signer, created } = await walletAt(files, path);
   const saved = keepSavedUrl ? (await withSettings(files, {}))[ENV_URL] : undefined;
-  await files.saveText(settingsPath(files.home), `${JSON.stringify({ url: saved ?? url, keypair: path }, null, 2)}\n`, false);
+  const confirm = confirmUrl ?? (await savedConfirm(files));
+  const settings: Settings = { url: saved ?? url, keypair: path, ...(confirm === undefined ? {} : { [SAVED_CONFIRM_URL]: confirm }) };
+  await files.saveText(settingsPath(files.home), `${JSON.stringify(settings, null, 2)}\n`, false);
   let held = await lamportsOf(transport, signer.address);
   let next = FUNDED;
   if (held < FUND_BELOW) {
@@ -134,6 +147,7 @@ export async function setup(
     created,
     url: redactUrl(url),
     settings: saved === undefined ? savedDefault(url) : keptDefault(saved),
+    ...(confirm === undefined ? {} : { confirm_url: redactUrl(confirm) }),
     sol: formatAmount(held, SOL_DECIMALS),
     next,
   };

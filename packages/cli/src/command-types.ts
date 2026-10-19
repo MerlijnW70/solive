@@ -49,7 +49,7 @@ export type Command =
   | (Remote & { name: "spec"; intent: Address; keypair: string | undefined; out: string | undefined })
   | (Remote & { name: "show-config" })
   | (Remote & { name: "domain" })
-  | (Remote & { name: "setup"; keypair: string | undefined })
+  | (Remote & { name: "setup"; keypair: string | undefined; confirmUrl?: string | undefined })
   | (Remote & { name: "balance"; keypair: string | undefined; owner: Address | undefined; mints: Address[] | null })
   | (Remote & { name: "mcp"; relay: RelaySpec | undefined; agent: AgentSpec | undefined; wallet: WalletLimits | null; allTools: boolean; confirmUrl?: string | undefined })
   | (Remote & { name: "show-intent"; owner: Address; nonce: bigint })
@@ -97,6 +97,7 @@ export type Command =
       watch: number | null;
       quoteTtl?: number;
       stats?: boolean;
+      confirmUrl?: string | undefined;
     })
   | (Keyed & { name: "crank"; dryRun: boolean; fundAccounts: boolean })
   | (Remote & { name: "events"; limit: number })

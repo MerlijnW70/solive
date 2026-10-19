@@ -205,7 +205,7 @@ export const ORDER = [
 export const MANDATE_ORDER = ORDER.filter((o) => o !== "min-result" && o !== "max-result" && o !== "attestor");
 
 export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
-  setup: ["url", "keypair"],
+  setup: ["url", "keypair", "confirm-url"],
   "add-to": ["wallet-per-trade", "wallet-per-hour"],
   balance: ["url", "keypair", "owner", "mints"],
   pda: ["owner", "nonce"],
@@ -258,7 +258,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   "accept-admin": ["url", "priority-fee", "keypair", "authority", "yes"],
   "set-mint-cap": ["url", "priority-fee", "keypair", "authority", "yes", "mint", "max-per-order", "window-cap", "window-secs"],
   "set-caps-required": ["url", "priority-fee", "keypair", "authority", "yes"],
-  solve: ["url", "priority-fee", "keypair", "jupiter", "issue", "inventory", "jito", "tip", "bundle-size", "min-profit", "target-profit", "patience", "sol-value", "max-fee-bps", "max-sol-cost", "max-rent", "slippage-bps", "route-program", "lookup-table", "concurrency", "watch", "interval", "quote-ttl", "stats"],
+  solve: ["url", "priority-fee", "keypair", "jupiter", "issue", "inventory", "jito", "tip", "bundle-size", "min-profit", "target-profit", "patience", "sol-value", "max-fee-bps", "max-sol-cost", "max-rent", "slippage-bps", "route-program", "lookup-table", "concurrency", "watch", "interval", "quote-ttl", "stats", "confirm-url"],
   "solver-table": ["url", "solver", "mints"],
   "lower-pause": ["url", "priority-fee", "keypair", "authority", "yes", "flags"],
   events: ["url", "limit", "follow", "interval"],

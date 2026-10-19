@@ -76,6 +76,8 @@ Add `--stats` to print one JSON line after every full scan, counting the orders,
 
 `--inventory` takes the same rates as `--issue` and pays from tokens the solver already holds, with no swap. With `--issue` or `--jupiter`, it is tried first. It quotes nothing when the solver holds too little.
 
+`--confirm-url <rpc>`, in the forms `--url` takes, rereads the intent, its vault and the solver's two token accounts from a second RPC node before each fill. When the two nodes disagree, or the second cannot be read, the fill is skipped and its reason names what differed.
+
 `--concurrency` sets how many orders it plans at once (default 4, from 1 to 32). Fills are still simulated and sent one at a time, most profitable first.
 
 With `--jito`, a solve sends its fills together in Jito bundles, and only the last transaction of each bundle pays the `--tip`. `--bundle-size` sets how many fills share a bundle (default 5, from 1 to 5).

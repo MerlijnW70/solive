@@ -213,6 +213,8 @@ The verdict's `drawn` records the slot, blockhash and seed, so anyone with the s
 
 `judge`, `committee release` and `mcp` take `--confirm-url <rpc>`, in the forms `--url` takes, to read the escrow and the earliest announcer from a second RPC node too. A release is signed only when both nodes report the same genesis hash, escrow account and earliest announcer. Otherwise, or when the second node cannot be read, it is refused with `ConfirmMismatch` and nothing is sent.
 
+`intent-engine setup --confirm-url <rpc>` saves the second node as the `confirm-url` setting, which these commands use whenever `--confirm-url` is not given. Without either, they print once that they read one node.
+
 ## Judge as a committee
 
 A committee needs a `threshold` of its members to agree before an escrow pays.

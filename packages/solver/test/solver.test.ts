@@ -692,6 +692,29 @@ describe("solver against the deployed engine", () => {
     expect(balance(receiver)).toBe(0n);
   });
 
+  it("asks its confirm hook about the intent and its own token accounts before it sends, and skips with the hook's reason", async () => {
+    const intent = await open(13n);
+    const asked: [Address, readonly Address[]][] = [];
+    const sent: Base64EncodedWireTransaction[] = [];
+    const market = () => stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n);
+    const hooked = (reason: string | null) => ({
+      confirm: async (at: Address, accounts: readonly Address[]) => {
+        asked.push([at, accounts]);
+        return reason;
+      },
+      send: async (wire: Base64EncodedWireTransaction) => {
+        sent.push(wire);
+        return landed(wire);
+      },
+    });
+    const refused = await solve(market(), hooked("the second node disagrees"));
+    expect(refused).toEqual({ filled: [], sent: [], skipped: [{ intent, reason: "the second node disagrees" }], failed: [] });
+    expect([asked, sent]).toEqual([[[intent, [solverInput, solverOutput]]], []]);
+    const agreed = await solve(market(), hooked(null));
+    expect(agreed.filled.map((f) => f.intent)).toEqual([intent]);
+    expect(sent).toHaveLength(1);
+  });
+
   it("the sent transaction is simulated with its own compute limit", async () => {
     const pricer = () => stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n);
     const tight = await open(61n);

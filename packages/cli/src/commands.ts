@@ -119,7 +119,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       return null;
     }
     case "setup":
-      return setup(transport, runtime, command.url, command.keypair);
+      return setup(transport, runtime, command.url, command.keypair, false, command.confirmUrl);
     case "balance": {
       const owner = command.owner ?? (await runtime.loadSigner(command.keypair ?? "")).address;
       return balances(transport, owner, command.mints ?? defaultMints(command.url));

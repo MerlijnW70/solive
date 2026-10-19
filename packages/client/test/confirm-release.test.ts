@@ -67,4 +67,21 @@ describe("confirmOnBoth", () => {
     expect(down).toMatchObject({ field: "second node", second: "unreadable: fetch failed" });
     expect((down as Error).message).toBe("the second RPC node could not be read (unreadable: fetch failed), so the release is not confirmed; nothing was signed or sent");
   });
+
+  it("compares the named accounts too and refuses a node that reports another balance or none", async () => {
+    const intent = (await generateKeyPairSigner()).address;
+    const held = (await generateKeyPairSigner()).address;
+    const bytes = Uint8Array.from([1, 2, 3]);
+    const holding = (amount: number | null) => {
+      const node = stub("g", bytes);
+      node.getAccounts = async (addresses) => addresses.map(() => (amount === null ? null : { owner: intent, data: Uint8Array.from([amount]), lamports: 1n }));
+      return node;
+    };
+    const target = { intent, accounts: [held] };
+    expect(await confirmOnBoth(holding(5), holding(5), target)).toEqual({ genesis: "g", intent: digest(bytes), announcer: undefined, accounts: [digest(Uint8Array.from([5]))] });
+    const refused = async (second: Transport) => confirmOnBoth(holding(5), second, target).then(() => null, (error: unknown) => error);
+    expect(await refused(holding(6))).toMatchObject({ name: "ConfirmMismatch", field: "account", first: `${held} ${digest(Uint8Array.from([5]))}`, second: `${held} ${digest(Uint8Array.from([6]))}` });
+    expect(await refused(holding(null))).toMatchObject({ field: "account", second: `${held} ${NO_ACCOUNT}` });
+    expect(await confirmOnBoth(holding(5), holding(6), { intent })).toEqual({ genesis: "g", intent: digest(bytes), announcer: undefined });
+  });
 });

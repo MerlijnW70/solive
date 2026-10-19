@@ -1,6 +1,6 @@
 import { AUTO_PRICE_CAP } from "./compute.js";
 import type { Values } from "./arg-options.js";
-import { addressList, https, parseAddress, parseBounded, parseMaxRent, parseSolCost, required, u64, UsageError } from "./arg-values.js";
+import { addressList, confirmUrlOf, https, parseAddress, parseBounded, parseMaxRent, parseSolCost, required, u64, UsageError } from "./arg-values.js";
 import { market, profitTargets, solValues, solveFeeAboveCap } from "./command-builders.js";
 import type { Command, Remote } from "./command-types.js";
 import { DEFAULT_CONCURRENCY, DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST, MAX_BUNDLE, MAX_CONCURRENCY } from "@intent-engine/solver";
@@ -51,5 +51,6 @@ export function solveOf(remote: Remote, values: Values): Command {
     watch: values.watch === true ? parseBounded(values.interval ?? String(WATCH_INTERVAL), "interval", MAX_FOLLOW_INTERVAL, 1) : null,
     ...(values.watch === true ? { quoteTtl: parseBounded(values["quote-ttl"] ?? String(QUOTE_TTL), "quote-ttl", MAX_FOLLOW_INTERVAL) } : {}),
     ...(values.watch === true && values.stats === true ? { stats: true } : {}),
+    ...confirmUrlOf(values),
   };
 }

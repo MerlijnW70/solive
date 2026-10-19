@@ -77,6 +77,7 @@ export type SolverOptions = {
   concurrency?: number;
   planned?(intent: Address): void;
   held?(account: Address): bigint;
+  confirm?(intent: Address, accounts: readonly Address[]): Promise<string | null>;
   unitPrice(instructions: readonly Instruction[]): Promise<bigint>;
   simulate(wire: Base64EncodedWireTransaction, watch: readonly Address[]): Promise<Simulated>;
   send(wire: Base64EncodedWireTransaction): Promise<Sent>;
@@ -240,6 +241,10 @@ async function checkOrder(
   const left = stockLeft(stock, solverOutput, free);
   if (plan.route.inventory === true && left < plan.required) {
     return skipped(address, `${INVENTORY_SPENT}: ${left} left, ${plan.required} needed`);
+  }
+  const disagreed = await o.confirm?.(address, [solverInput, solverOutput]);
+  if (disagreed !== undefined && disagreed !== null) {
+    return skipped(address, disagreed);
   }
   const simulated = await o.simulate(probe, [solverInput, solverOutput]);
   if (simulated.err !== null) {

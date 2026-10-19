@@ -5,7 +5,7 @@ import type { Readable, Writable } from "node:stream";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { createKeyPairSignerFromBytes, createSolanaRpc, type KeyPairSigner } from "@solana/kit";
 import { changesFrom, ConfirmMismatch, intentNotifications, openUsb, type RpcLike, rpcTransport, signatureWatch } from "@intent-engine/client";
-import { ENV_URL, outputOf, parse, UsageError } from "./args.js";
+import { type Command, ENV_URL, outputOf, parse, UsageError } from "./args.js";
 import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
 import { JudgeInterrupted } from "./judge.js";
@@ -39,6 +39,12 @@ export const PREVIEW_ONLY = "nothing was sent; pass --yes to sign and send it";
 
 const PREVIEWED = new Set(["cancel", "expire", "close"]);
 
+export const ONE_NODE =
+  "this reads one RPC node; set the confirm-url setting with setup --confirm-url <cluster>, or pass --confirm-url, to check a second node before a release";
+
+export const readsOneNode = (command: Command): boolean =>
+  (command.name === "judge" || command.name === "committee-release" || (command.name === "mcp" && command.wallet !== null)) && command.confirmUrl === undefined;
+
 const offline = (error: unknown) => error instanceof TypeError && error.message === "fetch failed";
 
 function message(error: unknown, url: string | undefined): string {
@@ -65,6 +71,9 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
     const command = parse(argv, settings);
     url = "url" in command ? command.url : undefined;
     checkLedgerPaths(command, settings[ENV_KEYPAIR]);
+    if (readsOneNode(command)) {
+      process.stderr.write(`${ONE_NODE}\n`);
+    }
     const show = (value: object) => io.out(command.name === "help" || outputOf(argv) === "text" ? renderText(value) : render(value));
     if (command.name === "follow") {
       const transport = withPriority(runtime.transport(command.url), command.priority);

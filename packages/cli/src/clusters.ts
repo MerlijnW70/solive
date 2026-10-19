@@ -12,6 +12,8 @@ export const CLUSTERS: Readonly<Record<string, string>> = {
 export const ENV_URL = "INTENT_ENGINE_URL";
 export const ENV_KEYPAIR = "INTENT_ENGINE_KEYPAIR";
 
+export const SAVED_CONFIRM_URL = "confirm-url";
+
 export const WALLET_NOT_MAINNET = "mcp --wallet keeps its key in a file on this machine, so it serves devnet, testnet and localnet only";
 
 export function clusterUrl(text: string): string {
