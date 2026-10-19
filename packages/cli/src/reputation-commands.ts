@@ -1,5 +1,6 @@
-import { createClient, feedbackInstructions, type Transport } from "@intent-engine/client";
+import { createClient, feedbackInstructions, type Transport, trustOf } from "@intent-engine/client";
 import { previewed } from "./admin-commands.js";
+import { trustView } from "./agent/reputation.js";
 import type { Command } from "./command-types.js";
 import type { Runtime } from "./runtime.js";
 
@@ -7,8 +8,13 @@ type ReputationCommand = Extract<Command, { name: "reputation" | "feedback" }>;
 
 export async function reputationCommand(command: ReputationCommand, runtime: Runtime, transport: Transport): Promise<object> {
   switch (command.name) {
-    case "reputation":
-      return createClient({ url: command.url, transport }).reputation(command.worker, { pages: command.maxPages });
+    case "reputation": {
+      const rep = await createClient({ url: command.url, transport }).reputation(command.worker, { pages: command.maxPages });
+      if (command.reader === undefined) {
+        return rep;
+      }
+      return { ...rep, trust: trustView(await trustOf(transport, command.reader, command.worker, { pages: command.maxPages, seeds: command.seeds })) };
+    }
     case "feedback": {
       const owner = await runtime.loadSigner(command.keypair);
       const input = { owner, intent: command.intent, score: command.score, ...(command.note === undefined ? {} : { note: command.note }) };

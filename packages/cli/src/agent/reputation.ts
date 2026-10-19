@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
-import { feedbackInstructions, NotSettleable, reputationOf } from "@intent-engine/client";
+import { feedbackInstructions, NotSettleable, reputationOf, type Trust, TRUST_PATHS, TRUST_WALLETS, trustOf } from "@intent-engine/client";
 import { type AgentContext, define } from "./actions.js";
 import type { Call } from "./claims.js";
 import { tool } from "./names.js";
 import { AgentRefusal } from "./problems.js";
-import { account, amount, choice, flag, hex32, integer, list, nullable, object, optional, text, time } from "./schema.js";
+import { account, amount, choice, flag, hex32, integer, InvalidInput, list, nullable, object, optional, text, time } from "./schema.js";
 import { preparedView } from "./shapes.js";
 import { prepare } from "./prepare.js";
 import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent } from "./wallet/guard.js";
@@ -17,14 +17,28 @@ export const FEEDBACK_CHANGED = "this feedback differs from its preview: the esc
 const OUTCOMES = ["paid", "paid-other", "refunded", "open", "unknown"] as const;
 const FUNDED = ["yes", "no", "unknown"] as const;
 
+export function trustView(trust: Trust) {
+  return {
+    reader: trust.reader,
+    seeds: trust.seeds,
+    score: String(trust.score),
+    complete: trust.complete,
+    wallets: trust.wallets,
+    paths: trust.paths.map((path) => ({ wallets: path.wallets, trust: String(path.trust) })),
+    ...(trust.reason === undefined ? {} : { reason: trust.reason }),
+  };
+}
+
 export const getReputation = define({
   name: tool("get_reputation"),
   title: "A worker's verifiable track record",
-  description: `Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Releases whose payer was first funded by the worker, directly or through one wallet, are counted apart as funded by the worker and left out too. backed sums the protocol fees behind the totals by the worker's share, per mint, and backed_sol the SOL ones plus their create fees. Use it before hiring a worker or trusting its delivery.`,
+  description: `Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Releases whose payer was first funded by the worker, directly or through one wallet, are counted apart as funded by the worker and left out too. backed sums the protocol fees behind the totals by the worker's share, per mint, and backed_sol the SOL ones plus their create fees. With reader, trust adds the worker's personalized PageRank rooted only in that reader and the seeds named, over the SOL fees of its payments, so a ring paying itself gains nothing. Use it before hiring a worker or trusting its delivery.`,
   effect: "read",
   input: object({
     worker: account("the worker wallet to read"),
     max_pages: optional(integer(1, MAX_ATTEST_PAGES, MAX_PAGES_INPUT)),
+    reader: optional(account("the wallet whose trust to start from")),
+    seeds: optional(list(account(), TRUST_WALLETS, "more wallets that reader already relies on")),
   }),
   output: object({
     worker: account(),
@@ -57,9 +71,25 @@ export const getReputation = define({
       RECORDS_SHOWN,
       `the ${RECORDS_SHOWN} most recent`,
     ),
+    trust: optional(
+      object({
+        reader: account(),
+        seeds: list(account(), TRUST_WALLETS + 1),
+        score: text("trust from 0 to 1 that flows to the worker from the seeds"),
+        complete: flag("false means a limit was reached or a read failed, so the score may undercount"),
+        wallets: integer(0, Number.MAX_SAFE_INTEGER, "wallets read"),
+        paths: list(object({ wallets: list(account(), TRUST_WALLETS + 1), trust: text() }), TRUST_PATHS, "seed to worker paths that carry the most trust"),
+        reason: optional(text("why the score is 0")),
+      }),
+    ),
   }),
   run: async ({ transport }, input) => {
-    const rep = await reputationOf(transport, input.worker, input.max_pages === undefined ? {} : { pages: input.max_pages });
+    if (input.reader === undefined && input.seeds !== undefined) {
+      throw new InvalidInput([{ path: "seeds", message: "needs reader" }]);
+    }
+    const pages = input.max_pages === undefined ? {} : { pages: input.max_pages };
+    const rep = await reputationOf(transport, input.worker, pages);
+    const trust = input.reader === undefined ? undefined : await trustOf(transport, input.reader, input.worker, { ...pages, seeds: input.seeds ?? [] });
     return {
       worker: rep.wallet,
       complete: rep.complete,
@@ -87,6 +117,7 @@ export const getReputation = define({
         ...(r.earned === undefined ? {} : { earned: r.earned }),
         ...(r.feedback === undefined ? {} : { feedback: r.feedback }),
       })),
+      ...(trust === undefined ? {} : { trust: trustView(trust) }),
     };
   },
 });

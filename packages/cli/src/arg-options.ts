@@ -160,6 +160,8 @@ export const OPTIONS = {
   committee: { type: "string" },
   vote: { type: "string", multiple: true },
   worker: { type: "string" },
+  reader: { type: "string" },
+  seed: { type: "string", multiple: true },
   score: { type: "string" },
   note: { type: "string" },
   "max-secs": { type: "string" },
@@ -173,10 +175,10 @@ export const OPTIONS = {
 
 export const PROFILE_OPTIONS = { ...OPTIONS, wallet: { type: "string" } } as const;
 
-export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill", "vote"]);
+export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill", "vote", "seed"]);
 
 export type Flag = "dry-run" | "fund-accounts" | "yes" | "help" | "version" | "follow" | "create" | "wallet" | "watch" | "stats" | "close" | "once" | "plain-node" | "all-tools" | "unclaimed";
-export type Many = "max-fill" | "vote";
+export type Many = "max-fill" | "vote" | "seed";
 export type StringKey = Exclude<keyof typeof OPTIONS, Flag | Many>;
 export type Values = { [K in StringKey]?: string | undefined } & { [K in Exclude<Flag, "wallet">]?: boolean | undefined } & {
   [K in Many]?: string[] | undefined;
@@ -331,7 +333,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
     "units",
   ],
   monitor: ["url", "expect", "write-baseline", "interval", "max-fill", "max-fills", "webhook", "once"],
-  reputation: ["url", "worker", "max-pages"],
+  reputation: ["url", "worker", "max-pages", "reader", "seed"],
   feedback: ["url", "priority-fee", "keypair", "yes", "intent", "score", "note"],
   committee: [
     "url",

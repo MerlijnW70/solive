@@ -375,10 +375,10 @@ Options: `--url`, `--expect`, `--write-baseline`, `--interval`, `--max-fill`, `-
 ## reputation
 
 ```text
-reputation --worker <address> [--max-pages <n>]
+reputation --worker <address> [--max-pages <n>] [--reader <address> [--seed <address>]...]
 ```
 
-Options: `--url`, `--worker`, `--max-pages`, `--output`, `--help`
+Options: `--url`, `--worker`, `--max-pages`, `--reader`, `--seed`, `--output`, `--help`
 
 ## feedback
 

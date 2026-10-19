@@ -580,7 +580,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 ## solive_get_reputation
 
-Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Releases whose payer was first funded by the worker, directly or through one wallet, are counted apart as funded by the worker and left out too. backed sums the protocol fees behind the totals by the worker's share, per mint, and backed_sol the SOL ones plus their create fees. Use it before hiring a worker or trusting its delivery.
+Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Releases whose payer was first funded by the worker, directly or through one wallet, are counted apart as funded by the worker and left out too. backed sums the protocol fees behind the totals by the worker's share, per mint, and backed_sol the SOL ones plus their create fees. With reader, trust adds the worker's personalized PageRank rooted only in that reader and the seeds named, over the SOL fees of its payments, so a ring paying itself gains nothing. Use it before hiring a worker or trusting its delivery.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
@@ -588,6 +588,8 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 | --- | --- | --- | --- |
 | `worker` | address | yes | the worker wallet to read |
 | `max_pages` | integer 1..100000 | no | pages of 1000 signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default 1000; raise it when the release is refused because the record of announced work is incomplete |
+| `reader` | address | no | the wallet whose trust to start from |
+| `seeds` | list of address, at most 32 | no | more wallets that reader already relies on |
 
 ## solive_get_claims
 

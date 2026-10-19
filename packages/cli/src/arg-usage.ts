@@ -48,7 +48,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   deliveries: "--attestor <address> --intent <address> [--max-pages <n>]",
   receipt: "--owner <address> --nonce <n> [--sha256 <64 hex>] [--release <signature>]",
   "record-delivery": "--keypair <judge file> --owner <address> --nonce <n> --sha256 <64 hex> [--release <signature>] [--yes]",
-  reputation: "--worker <address> [--max-pages <n>]",
+  reputation: "--worker <address> [--max-pages <n>] [--reader <address> [--seed <address>]...]",
   feedback: "--keypair <owner file> --intent <address> --score <0 to 100> [--note <sha256 of a note>] [--yes]",
   committee:
     "create --keypair <payer file> --members <address,...> --threshold <n> --fee-wallet <address> [--yes] | show --committee <address> | vote --keypair <member file> --owner <address> --nonce <n> --pay-to <wallet> --result <n> [--out <file>] [--yes] | release --keypair <solver file> --vote <file> [--vote <file> ...] [--sha256 <64 hex>] [--confirm-url <cluster>] [--yes]",

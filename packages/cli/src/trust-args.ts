@@ -78,7 +78,18 @@ export function committeeOf(sub: string | undefined, remote: Remote, values: Val
 
 export function reputationOf(sub: string | undefined, remote: Remote, values: Values): Command {
   noSub(sub);
-  return { name: "reputation", ...remote, worker: key(values, "worker"), maxPages: maxPagesOf(values) };
+  const seeds = (values.seed ?? []).map((seed) => parseAddress(seed, "seed"));
+  if (values.reader === undefined && seeds.length > 0) {
+    throw new UsageError("--seed needs --reader");
+  }
+  return {
+    name: "reputation",
+    ...remote,
+    worker: key(values, "worker"),
+    maxPages: maxPagesOf(values),
+    ...(values.reader === undefined ? {} : { reader: key(values, "reader") }),
+    seeds,
+  };
 }
 
 export function feedbackOf(sub: string | undefined, remote: Remote, values: Values): Command {

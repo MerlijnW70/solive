@@ -1,16 +1,10 @@
 import type { Address, Instruction, Signature, TransactionSigner } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import {
-  decodeEvent,
   feedbackMemo,
   DELIVERY_MEMO_PREFIX,
-  type EngineEvent,
-  FILL_ATTESTED_SPLIT_COMMITTEE_DISCRIMINATOR,
-  FILL_ATTESTED_SPLIT_DISCRIMINATOR,
   findAssociatedTokenAddress,
   formatAmount,
-  getFillAttestedSplitCommitteeInstructionDataDecoder,
-  getFillAttestedSplitInstructionDataDecoder,
   NATIVE_MINT,
   parseDeliveryMemo,
   parseFeedbackMemo,
@@ -21,9 +15,9 @@ import { loadCommittee } from "./client-committee.js";
 import { HISTORY_LIMIT } from "./client-types.js";
 import { memoInstruction, recordedDelivery } from "./job-memos.js";
 import { NotSettleable } from "./client-errors.js";
-import { engineCalls } from "./job-origins.js";
 import { type FundedBy, fundedBy, fundingLookup } from "./funding.js";
 import { DELIVERY_PAGES, MEMOS_PER_TRANSACTION, scan } from "./job-scan.js";
+import { eventsOf, releaseOf, splitClaim } from "./release-reads.js";
 import type { EngineTransaction, Transport } from "./transport.js";
 
 export type WorkOutcome = "paid" | "paid-other" | "refunded" | "open" | "unknown";
@@ -71,30 +65,7 @@ export type Reputation = {
 
 export type ReputationOptions = { pages?: number; history?: number };
 
-const SPLIT_INTENT_ACCOUNT = 2;
 const SOL_DECIMALS = 9;
-
-const startsWith = (data: Uint8Array, head: ArrayLike<number>): boolean =>
-  data.length >= head.length && Array.from(head).every((b, i) => data[i] === b);
-
-function splitClaim(release: EngineTransaction, intent: Address) {
-  for (const { data, accounts } of engineCalls(release)) {
-    if (accounts?.[SPLIT_INTENT_ACCOUNT] !== intent) {
-      continue;
-    }
-    try {
-      if (startsWith(data, FILL_ATTESTED_SPLIT_DISCRIMINATOR)) {
-        return getFillAttestedSplitInstructionDataDecoder().decode(data).claim;
-      }
-      if (startsWith(data, FILL_ATTESTED_SPLIT_COMMITTEE_DISCRIMINATOR)) {
-        return getFillAttestedSplitCommitteeInstructionDataDecoder().decode(data).claim;
-      }
-    } catch {
-      continue;
-    }
-  }
-  return null;
-}
 
 type Announced = { intent: Address; sha256: string; announced: Signature; slot: bigint; blockTime: bigint | null };
 
@@ -116,19 +87,6 @@ function announcedBy(wallet: Address, transactions: readonly EngineTransaction[]
     }
   }
   return [...found.values()];
-}
-
-type Read = { event: EngineEvent; transaction: EngineTransaction };
-
-function eventsOf(transactions: readonly EngineTransaction[], intent: Address): Read[] {
-  return transactions
-    .filter(({ failed }) => !failed)
-    .flatMap((transaction) =>
-      transaction.emitted
-        .map((data) => decodeEvent(data) as EngineEvent | null)
-        .filter((event): event is EngineEvent => event !== null && "intent" in event.fields && event.fields.intent === intent)
-        .map((event) => ({ event, transaction })),
-    );
 }
 
 function feedbackOf(transactions: readonly EngineTransaction[], intent: Address, owner: Address): number | undefined {
@@ -153,7 +111,7 @@ async function recordOf(transport: Transport, wallet: Address, work: Announced, 
   const transactions = await transport.engineTransactions(history, work.intent);
   const events = eventsOf(transactions, work.intent);
   const created = events.find(({ event }) => event.name === "IntentCreated")?.event;
-  const released = events.find(({ event }) => event.name === "IntentAttested" || event.name === "IntentSplit");
+  const released = releaseOf(transactions, work.intent);
   const refunded = events.some(({ event }) => event.name === "IntentCancelled" || event.name === "IntentExpired");
   const complete = created !== undefined || transactions.length < history;
   const base = { ...work, selfDealt: false };
@@ -211,6 +169,8 @@ async function recordOf(transport: Transport, wallet: Address, work: Announced, 
   return { complete: complete && createFee !== undefined, record: { ...common, outcome: "paid", earned, ...backing, ...(feedback === undefined ? {} : { feedback }) } };
 }
 
+export const counted = (record: WorkRecord): boolean => record.outcome === "paid" && !record.selfDealt && record.fundedByWorker !== "yes";
+
 export async function reputationOf(transport: Transport, wallet: Address, options: ReputationOptions = {}): Promise<Reputation> {
   const { firstAvailableSlot } = transport;
   const fullLedger = async () => firstAvailableSlot !== undefined && (await firstAvailableSlot.call(transport)) === 0n;
@@ -224,7 +184,7 @@ export async function reputationOf(transport: Transport, wallet: Address, option
   }
   records.sort((a, b) => (a.slot < b.slot ? -1 : a.slot > b.slot ? 1 : 0));
   const arm = records.filter((r) => r.outcome === "paid" && !r.selfDealt);
-  const fair = arm.filter((r) => r.fundedByWorker !== "yes");
+  const fair = records.filter(counted);
   const earned = new Map<Address, bigint>();
   for (const r of fair) {
     if (r.mint !== undefined && r.earned !== undefined) {

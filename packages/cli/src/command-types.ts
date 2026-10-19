@@ -154,7 +154,7 @@ export type Command =
   | (Remote & { name: "profile-show"; wallet: Address })
   | (Keyed & { name: "profile-set"; yes: boolean; profile: ProfileInput })
   | (Keyed & { name: "profile-close"; yes: boolean })
-  | (Remote & { name: "reputation"; worker: Address; maxPages: number })
+  | (Remote & { name: "reputation"; worker: Address; maxPages: number; reader?: Address; seeds: Address[] })
   | (Keyed & { name: "feedback"; yes: boolean; intent: Address; score: number; note: string | undefined });
 
 export type MonitorSpec = {

@@ -27,6 +27,16 @@ A funder whose history runs past the pages read, such as a faucet, is a busy wal
 
 `complete` is `true` only when the RPC node holds the whole ledger and every escrow's history and payer's funding history was read. A pruned node shows less, never more.
 
+## Trust from your own payments
+
+```sh
+intent-engine reputation --worker <worker wallet> --reader <your wallet> [--seed <wallet>]...
+```
+
+`trust` scores the worker by personalized PageRank, restart probability a = 0.15, that starts only at your wallet and any `--seed` wallets and flows along the releases counted above, weighted by the SOL they cost: SOL protocol fees and every create fee. A ring of wallets paying each other, funded from outside your graph, scores 0, and one bribed payment into a ring gives it at most (1 − a) / a times the trust on that payment.
+
+The read stops two hops from the seeds or at a fixed number of wallets, and then `complete` is `false`. `trustOf(transport, reader, worker)` in TypeScript and the `reader` input of `solive_get_reputation` return the same `trust`.
+
 ## Rate released work
 
 The owner of a released escrow rates the work once, from 0 to 100. `--note` adds the sha256 of a written note:
