@@ -1,6 +1,6 @@
 import { type Address, getAddressDecoder } from "@solana/kit";
-import { findIntentPda, formatAmount, NATIVE_MINT } from "@intent-engine/core";
-import { intentAt, memoized, mintOf, recordedDelivery, type Transport, unmemoized } from "@intent-engine/client";
+import { type EngineEvent, findIntentPda, formatAmount, NATIVE_MINT } from "@intent-engine/core";
+import { intentAt, memoized, mintOf, paidWalletsOf, recordedRelease, releaseStandingOf, type Transport, unmemoized } from "@intent-engine/client";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
@@ -61,6 +61,9 @@ const receiptOutput = object({
   signature: optional(text("the release's transaction")),
   delivered_sha256: optional(text("the sha256 the release recorded, if any, in its own memo or in a follow-up transaction its attestor signed")),
   matches: optional(flag("whether sha256 equals the recorded one")),
+  delivered_salt: optional(text("the payee's salt the release recorded, which opens the payee's announcement")),
+  valid: optional(flag("given with delivered_salt: whether that salt opens an announcement by the payee to the recorded sha256")),
+  refuted_by: optional(text("an earlier announcement of the same work that a published opening shows, so the release paid a later announcer")),
   next: optional(text()),
 });
 
@@ -124,7 +127,20 @@ export async function escrowReceipt(transport: Transport, owner: Address, nonce:
   }
   const fields = release.event.fields as Record<string, unknown>;
   let mint = createdMint([...transactions, ...(creation === null || creation === undefined ? [] : [creation])], intent) ?? releasedMint(tx, intent, fields["payee"] as Address | undefined);
-  const recorded = recordedDelivery(transactions, tx, fields["attestor"] as Address) ?? undefined;
+  const recordedWork = recordedRelease(transactions, tx, fields["attestor"] as Address);
+  const recorded = recordedWork?.sha256;
+  const standing =
+    recordedWork?.salt === undefined
+      ? undefined
+      : await releaseStandingOf(transport, {
+          intent,
+          attestor: fields["attestor"] as Address,
+          release: tx,
+          recorded: { sha256: recordedWork.sha256, salt: recordedWork.salt },
+          payees: await paidWalletsOf(transport, { event: release.event as EngineEvent, transaction: tx }, intent),
+          createdAt: creation?.blockTime ?? null,
+          from: creation?.slot ?? null,
+        });
   const common = {
     intent,
     released: true,
@@ -134,6 +150,8 @@ export async function escrowReceipt(transport: Transport, owner: Address, nonce:
     signature: tx.signature,
     ...(recorded === undefined ? {} : { delivered_sha256: recorded }),
     ...(wanted === undefined ? {} : { matches: wanted === recorded }),
+    ...(recordedWork?.salt === undefined ? {} : { delivered_salt: recordedWork.salt }),
+    ...(standing === undefined ? {} : { valid: standing.valid, ...(standing.refutedBy === null ? {} : { refuted_by: standing.refutedBy }) }),
   };
   if (release.event.name === "IntentSplit") {
     mint ??= await heldMint(transport, intent);

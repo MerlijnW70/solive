@@ -17,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   buildFlashFill,
   buildUpdateEconomics,
+  decodeParams,
   DEVNET_TEST_MINT as TEST,
   feeBpsFor,
   findAssociatedTokenAddress,
@@ -303,8 +304,8 @@ describe("the sdk page", () => {
     }
     expect(printed.indexOf("Open")).toBeLessThan(printed.indexOf("Cancelled"));
     expect(printed[printed.indexOf("SwapExactIn Open") + 1]).toBe("0.05 50");
-    const [reviewer, judge, worker] = injected.generated;
-    expect(injected.generated).toHaveLength(3);
+    const [reviewer, worker] = injected.generated;
+    expect(injected.generated).toHaveLength(2);
     const escrowed = (await findIntentPda({ owner: signer.address, nonce: 1n }))[0];
     const specSha256 = createHash("sha256").update("the acceptance spec the work must pass").digest("hex");
     expect(printed.slice(0, 3)).toEqual([
@@ -342,7 +343,15 @@ describe("the sdk page", () => {
     expect((await client.history((await findIntentPda({ owner: signer.address, nonce: 7n }))[0])).map(({ name }) => name).slice(0, 2)).toEqual(["IntentClosed", "IntentExpired"]);
     const fillFees = 2n * splitFee(10_000_000n, FEE_BPS).fee + splitFee(50_000_000n, FEE_BPS).fee;
     expect(await loadUser(client.transport, signer.address)).not.toBeNull();
+    const proof = (await client.intent(signer.address, 5n))?.intent;
+    const params = proof === undefined ? undefined : decodeParams(proof.kind, Uint8Array.from(proof.params));
+    const judge = params?.kind === Kind.AttestedResult ? { address: params.attestor } : undefined;
     expect(judge?.address).not.toBe(signer.address);
+    expect(judge?.address).toBeDefined();
+    const opened = await client.deliveryRecord({ judge: judge?.address ?? signer.address, intent: (await findIntentPda({ owner: signer.address, nonce: 8n }))[0] });
+    expect(opened.deliveries.map(({ salt }) => salt)).toEqual([""]);
+    const released = (await client.history(opened.deliveries[0]?.intent ?? signer.address)).find(({ name }) => name === "IntentAttested");
+    expect(released?.deliveredSalt).toMatch(/^[0-9a-f]{32}$/);
     const pay = 10_000_000n;
     const judgeFee = pay / 10n;
     const fee = ((pay - judgeFee) * BigInt(FEE_BPS)) / 10_000n;

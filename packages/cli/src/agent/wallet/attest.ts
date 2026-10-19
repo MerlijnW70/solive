@@ -28,7 +28,8 @@ import { preparedView } from "../shapes.js";
 import { walletRecipient } from "../owner.js";
 import { prepare } from "../prepare.js";
 import { STATUS } from "../../accounts.js";
-import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of } from "./guard.js";
+import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of, walletKeypair } from "./guard.js";
+import { openingOutput, openingsFor, sealedRecord, sendOpenings } from "./openings.js";
 import { invitedTo, notInvited } from "../../invites.js";
 import { notEarliest, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor, confirmedRelease } from "./delivery.js";
 
@@ -62,6 +63,7 @@ export const walletAttest = define({
     result: amount(),
     approval: text("pass it back with send: true; a send that would differ from this preview is refused"),
     delivered_sha256: optional(text("the sha256 the release records")),
+    ...openingOutput,
     summary: list(text(), 8),
     warnings: list(text(), 8),
     sent: flag(),
@@ -158,18 +160,25 @@ export const walletAttest = define({
     if (isProof && delivered === undefined) {
       throw new InvalidInput([{ path: "delivered_sha256", message: DELIVERED_NEEDED }]);
     }
+    const keypair = await walletKeypair(ctx);
+    let salt: string | undefined;
+    let openings: ReturnType<typeof openingsFor> = [];
     if (delivered !== undefined && isProof) {
-      const record = await deliveryRecord(ctx.transport, signer.address, intent, input.max_pages ?? ATTEST_PAGES);
+      const record = await deliveryRecord(ctx.transport, signer.address, intent, input.max_pages ?? ATTEST_PAGES, keypair);
       if (!record.complete) {
         throw new AgentRefusal("HistoryTooLong", HISTORY_TOO_LONG);
       }
+      sealedRecord(record, keypair);
       const first = firstDelivery(record.deliveries, delivered);
       if (first !== null && first.worker !== input.pay_to) {
         throw new AgentRefusal("NotEarliestAnnouncer", notEarliest(first.worker, delivered));
       }
+      salt = first?.salt;
+      openings = openingsFor(record, first);
     }
-    await confirmedRelease(ctx, { intent, attestor: signer.address, sha256: isProof ? delivered : undefined, pages: input.max_pages ?? ATTEST_PAGES, payees: [input.pay_to] });
-    const memoText = delivered === undefined ? "" : releaseMemo(delivered);
+    const confirmed = { intent, attestor: signer.address, sha256: isProof ? delivered : undefined, pages: input.max_pages ?? ATTEST_PAGES, payees: [input.pay_to], keypair };
+    await confirmedRelease(ctx, confirmed);
+    const memoText = delivered === undefined ? "" : releaseMemo(delivered, salt);
     const memo =
       delivered === undefined
         ? []
@@ -196,7 +205,8 @@ export const walletAttest = define({
         ...(isProof && params.judgeFee > 0n ? [`Pays the judge: ${formatAmount(params.judgeFee, token.decimals)} of ${name} to this wallet, carved out of the escrow`] : []),
         ...(isProof ? [`Binds: the result to the committed spec ${getBase16Decoder().decode(params.specHash)}`] : []),
         `Attests: result ${result}, signed by this server's wallet as the escrow's attestor`,
-        ...(delivered === undefined ? [] : [`Records: the delivered work's sha256 ${delivered}, in a memo this wallet signs with the release`]),
+        ...(delivered === undefined ? [] : [`Records: the delivered work's sha256 ${delivered}${salt === undefined ? "" : " and its announcer's salt"}, in a memo this wallet signs with the release`]),
+        ...(openings.length === 0 ? [] : [`Opens: the salts of ${openings.reduce((n, o) => n + o.salts.length, 0)} earlier announcement(s), in ${openings.length} more transaction(s) after the release`]),
         ...(payee.create.length === 0 ? [] : [`Setup: creates ${input.pay_to}'s ${name} account, paid by this wallet`]),
         ...(treasury.create.length === 0 ? [] : [`Setup: creates the engine treasury's ${name} account for the fee, paid by this wallet`]),
         ...(partner.create.length === 0 ? [] : [`Setup: creates the partner ${held.partner}'s ${name} account for its fee, paid by this wallet`]),
@@ -204,9 +214,10 @@ export const walletAttest = define({
       warnings: settlementWarnings(params),
       prepared,
     };
-    return sent(ctx, signer, view2, input.send, call, {
+    const done = await sent(ctx, signer, view2, input.send, call, {
       preview: PREVIEW_APPROVAL_NEXT,
       done: `released to ${input.pay_to}; ${tool("wallet_feedback")} to rate`,
     });
+    return "signature" in done ? { ...done, ...(await sendOpenings(ctx, signer, signer.address, openings)) } : done;
   },
 });

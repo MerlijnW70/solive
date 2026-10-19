@@ -2,23 +2,24 @@ import type { Address, Instruction, Signature, TransactionSigner } from "@solana
 import { getTransferSolInstruction } from "@solana-program/system";
 import {
   feedbackMemo,
-  DELIVERY_V2_MEMO_PREFIX,
+  DELIVERY_MEMO_PREFIX,
   findAssociatedTokenAddress,
   formatAmount,
   NATIVE_MINT,
-  parseDeliveryMemoV2,
+  parseDeliveryMemo,
   parseFeedbackMemo,
   splitN,
 } from "@intent-engine/core";
 import { mintOf } from "./accounts.js";
 import { loadCommittee } from "./client-committee.js";
 import { HISTORY_LIMIT } from "./client-types.js";
-import { memoInstruction, recordedDelivery } from "./job-memos.js";
+import { memoInstruction, recordedRelease } from "./job-memos.js";
 import { NotSettleable } from "./client-errors.js";
 import { type FundedBy, fundedBy, fundingLookup } from "./funding.js";
 import { DELIVERY_PAGES, MEMOS_PER_TRANSACTION, scan } from "./job-scan.js";
 import { eventsOf, releaseOf, splitClaim } from "./release-reads.js";
-import { commitmentOf } from "./job-deliveries.js";
+import { commitmentOf, openingsIn, saltCheckOf } from "./job-deliveries.js";
+import { refutedIn } from "./delivery-openings.js";
 import type { EngineTransaction, Transport } from "./transport.js";
 
 export type WorkOutcome = "paid" | "paid-other" | "refunded" | "open" | "unknown";
@@ -27,10 +28,12 @@ export type WorkRecord = {
   intent: Address;
   sha256: string;
   commitment: string;
+  check: string;
   announced: Signature;
   slot: bigint;
   blockTime: bigint | null;
   outcome: WorkOutcome;
+  refutedBy?: Signature;
   owner?: Address;
   attestor?: Address;
   committee?: Address[];
@@ -51,6 +54,7 @@ export type Reputation = {
   complete: boolean;
   announced: number;
   paid: number;
+  refuted: number;
   selfDealt: number;
   fundedByWorker: number;
   payers: number;
@@ -69,11 +73,11 @@ export type ReputationOptions = { pages?: number; history?: number };
 
 const SOL_DECIMALS = 9;
 
-type Announced = { intent: Address; sha256: string; commitment: string; announced: Signature; slot: bigint; blockTime: bigint | null };
+type Announced = { intent: Address; sha256: string; commitment: string; check: string; announced: Signature; slot: bigint; blockTime: bigint | null };
 
-function announcedWork(text: string): { key: string; intent: Address; sha256: string; commitment: string } | null {
-  const memo = parseDeliveryMemoV2(text);
-  return memo === null ? null : { key: `${memo.intent}:${memo.commitment}`, intent: memo.intent, sha256: "", commitment: memo.commitment };
+function announcedWork(text: string): { key: string; intent: Address; sha256: string; commitment: string; check: string } | null {
+  const memo = parseDeliveryMemo(text);
+  return memo === null ? null : { key: `${memo.intent}:${memo.commitment}`, intent: memo.intent, sha256: "", commitment: memo.commitment, check: memo.check };
 }
 
 function announcedBy(wallet: Address, transactions: readonly EngineTransaction[]): Announced[] {
@@ -137,7 +141,7 @@ async function recordOf(transport: Transport, wallet: Address, work: Announced, 
     attestor === wallet ||
     event.fields.owner === attestor ||
     (committee !== undefined && (committee.includes(wallet) || committee.includes(event.fields.owner)));
-  const recorded = recordedDelivery(transactions, transaction, attestor);
+  const recorded = recordedRelease(transactions, transaction, attestor);
   const common = {
     ...base,
     owner: event.fields.owner,
@@ -147,11 +151,15 @@ async function recordOf(transport: Transport, wallet: Address, work: Announced, 
     release: transaction.signature as Signature,
     selfDealt,
   };
-  const announced = recorded !== null && commitmentOf(work.intent, wallet, recorded) === work.commitment;
+  const opened = openingsIn(transactions, new Set([work.intent])).flatMap(({ opening }) => ("announcement" in opening && opening.announcement === work.announced ? [opening.salt] : []));
+  const salts = [...(recorded?.salt === undefined ? [] : [recorded.salt]), ...opened];
+  const opens = (salt: string) => recorded !== null && saltCheckOf(salt) === work.check && commitmentOf(work.intent, wallet, salt, recorded.sha256) === work.commitment;
+  const announced = recorded !== null && salts.some(opens);
   if (!announced) {
     return { complete, record: { ...common, outcome: "paid-other" } };
   }
-  common.sha256 = recorded;
+  common.sha256 = recorded.sha256;
+
   let earned: bigint | undefined;
   let credit = (fee: bigint): bigint => fee;
   if (event.name === "IntentAttested") {
@@ -173,17 +181,23 @@ async function recordOf(transport: Transport, wallet: Address, work: Announced, 
   if (earned === undefined) {
     return { complete, record: { ...common, outcome: "paid-other" } };
   }
+  const paidWallets = event.name === "IntentSplit" ? [...(splitClaim(transaction, work.intent)?.recipients ?? [wallet])] : [wallet];
+  const createdAt = events.find(({ event: found }) => found.name === "IntentCreated")?.transaction.blockTime ?? null;
+  const judged = { attestor, createdAt, to: transaction.slot };
+  const refutedBy = await refutedIn(transport, transactions, { intent: work.intent, slot: work.slot, signature: work.announced }, recorded.sha256, paidWallets, judged);
   const feedback = feedbackOf(transactions, work.intent, event.fields.owner);
   const backing = createFee === undefined ? {} : { backed: credit(event.fields.fee), createBacked: credit(createFee) };
-  return { complete: complete && createFee !== undefined, record: { ...common, outcome: "paid", earned, ...backing, ...(feedback === undefined ? {} : { feedback }) } };
+  const refuted = refutedBy === null ? {} : { refutedBy };
+  return { complete: complete && createFee !== undefined, record: { ...common, outcome: "paid", earned, ...backing, ...refuted, ...(feedback === undefined ? {} : { feedback }) } };
 }
 
-export const counted = (record: WorkRecord): boolean => record.outcome === "paid" && !record.selfDealt && record.fundedByWorker !== "yes";
+export const counted = (record: WorkRecord): boolean =>
+  record.outcome === "paid" && !record.selfDealt && record.fundedByWorker !== "yes" && record.refutedBy === undefined;
 
 export async function reputationOf(transport: Transport, wallet: Address, options: ReputationOptions = {}): Promise<Reputation> {
   const { firstAvailableSlot } = transport;
   const fullLedger = async () => firstAvailableSlot !== undefined && (await firstAvailableSlot.call(transport)) === 0n;
-  const scanned = await scan(transport, wallet, { memo: DELIVERY_V2_MEMO_PREFIX, pages: options.pages ?? DELIVERY_PAGES, covered: fullLedger });
+  const scanned = await scan(transport, wallet, { memo: DELIVERY_MEMO_PREFIX, pages: options.pages ?? DELIVERY_PAGES, covered: fullLedger });
   const works = announcedBy(wallet, scanned.transactions);
   const read = await Promise.all(works.map((work) => recordOf(transport, wallet, work, options.history ?? HISTORY_LIMIT)));
   const lookup = fundingLookup(transport, fullLedger);
@@ -217,6 +231,7 @@ export async function reputationOf(transport: Transport, wallet: Address, option
     complete: scanned.complete && read.every(({ complete }) => complete) && records.every((r) => r.fundedByWorker !== "unknown"),
     announced: records.length,
     paid: fair.length,
+    refuted: records.filter((r) => r.refutedBy !== undefined).length,
     selfDealt: records.filter((r) => r.outcome === "paid" && r.selfDealt).length,
     fundedByWorker: arm.length - fair.length,
     payers: new Set(fair.map((r) => r.owner)).size,

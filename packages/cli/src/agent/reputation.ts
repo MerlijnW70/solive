@@ -32,7 +32,7 @@ export function trustView(trust: Trust) {
 export const getReputation = define({
   name: tool("get_reputation"),
   title: "A worker's verifiable track record",
-  description: `Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Releases whose payer was first funded by the worker, directly or through one wallet, are counted apart as funded by the worker and left out too. backed sums the protocol fees behind the totals by the worker's share, per mint, and backed_sol the SOL ones plus their create fees. With reader, trust adds the worker's personalized PageRank rooted only in that reader and the seeds named, over the SOL fees of its payments, so a ring paying itself gains nothing. Use it before hiring a worker or trusting its delivery.`,
+  description: `Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Releases whose payer was first funded by the worker, directly or through one wallet, are counted apart as funded by the worker and left out too, and so are releases a published opening refutes, because someone announced the same work earlier. backed sums the protocol fees behind the totals by the worker's share, per mint, and backed_sol the SOL ones plus their create fees. With reader, trust adds the worker's personalized PageRank rooted only in that reader and the seeds named, over the SOL fees of its payments, so a ring paying itself gains nothing. Use it before hiring a worker or trusting its delivery.`,
   effect: "read",
   input: object({
     worker: account("the worker wallet to read"),
@@ -45,6 +45,7 @@ export const getReputation = define({
     complete: flag("false means part of the history could not be read, so the totals may undercount"),
     announced: integer(0, Number.MAX_SAFE_INTEGER, "escrows it announced work to"),
     paid: integer(0, Number.MAX_SAFE_INTEGER, "releases that paid it for its announced work, at arm's length"),
+    refuted: integer(0, Number.MAX_SAFE_INTEGER, "paid releases a published opening shows someone announced the same work earlier, left out of the totals"),
     self_dealt: integer(0, Number.MAX_SAFE_INTEGER, "paid releases where it paid or judged itself, left out of the totals"),
     funded_by_worker: integer(0, Number.MAX_SAFE_INTEGER, "other paid releases whose payer it funded first, left out of the totals"),
     payers: integer(0, Number.MAX_SAFE_INTEGER, "distinct owners who paid it at arm's length"),
@@ -59,9 +60,10 @@ export const getReputation = define({
     records: list(
       object({
         intent: account(),
-        sha256: hex32(),
+        sha256: optional(hex32()),
         outcome: choice(OUTCOMES),
         self_dealt: flag(),
+        refuted_by: optional(text("an earlier announcement of the same work, shown by a published opening")),
         funded_by_worker: optional(choice(FUNDED)),
         owner: optional(account()),
         attestor: optional(account()),
@@ -95,6 +97,7 @@ export const getReputation = define({
       complete: rep.complete,
       announced: rep.announced,
       paid: rep.paid,
+      refuted: rep.refuted,
       self_dealt: rep.selfDealt,
       funded_by_worker: rep.fundedByWorker,
       payers: rep.payers,
@@ -108,9 +111,10 @@ export const getReputation = define({
       last: rep.last,
       records: rep.records.slice(-RECORDS_SHOWN).map((r) => ({
         intent: r.intent,
-        sha256: r.sha256,
+        ...(r.sha256 === "" ? {} : { sha256: r.sha256 }),
         outcome: r.outcome,
         self_dealt: r.selfDealt,
+        ...(r.refutedBy === undefined ? {} : { refuted_by: r.refutedBy }),
         ...(r.fundedByWorker === undefined ? {} : { funded_by_worker: r.fundedByWorker }),
         ...(r.owner === undefined ? {} : { owner: r.owner }),
         ...(r.attestor === undefined ? {} : { attestor: r.attestor }),

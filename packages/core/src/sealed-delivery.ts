@@ -1,30 +1,51 @@
-import { type Address, getAddressDecoder, getAddressEncoder, isAddress } from "@solana/kit";
+import { type Address, getAddressDecoder, getAddressEncoder, getBase58Encoder, isAddress } from "@solana/kit";
 import { PRODUCT_SLUG } from "../generated/identity.js";
 import { MAX_COMMITTEE_MEMBERS } from "./committee.js";
 import { isMemoUrl, isSha256Hex, MAX_MEMO_URL, MEMO_URL_RULE } from "./memo.js";
 import { SealedError, wrapKey, x25519PublicOf, x25519SecretOf } from "./sealed.js";
 
-export const DELIVERY_V2_MEMO_PREFIX = `${PRODUCT_SLUG}-delivery2:`;
-export const COMMITMENT_TAG = `${PRODUCT_SLUG}-delivery-v2`;
-export const SEALED_URL_VERSION = 1;
-export const MAX_DELIVERY_V2_MEMO = 960;
+export const DELIVERY_MEMO_MARK = `${PRODUCT_SLUG}-delivery3`;
+export const DELIVERY_MEMO_PREFIX = `${DELIVERY_MEMO_MARK}:`;
+export const OPENING_MEMO_PREFIX = `${DELIVERY_MEMO_MARK}-open:`;
+export const COMMITMENT_TAG = `${PRODUCT_SLUG}-delivery-v3`;
+export const SALT_TAG = `${PRODUCT_SLUG}-delivery-salt-v3`;
+export const SALT_CHECK_TAG = `${PRODUCT_SLUG}-delivery-check-v3`;
+export const SALT_BYTES = 16;
+export const SEALED_URL_VERSION = 2;
+export const MAX_DELIVERY_MEMO = 960;
+export const MAX_OPENING_MEMO = MAX_DELIVERY_MEMO;
 export const MAX_SEALED_URL_RECIPIENTS = MAX_COMMITTEE_MEMBERS;
+export const UNOPENED = "-";
 
-export type DeliveryMemoV2 = { intent: Address; commitment: string; blob: string };
+export type DeliveryMemo = { intent: Address; commitment: string; check: string; blob: string };
 
-export type Commitment = { intent: Address; worker: Address; sha256: string };
+export type Commitment = { intent: Address; worker: Address; salt: string; sha256: string };
 
-const INFO = new TextEncoder().encode(`${PRODUCT_SLUG}-sealed-url-v1`);
+export type SealedDelivery = { salt: string; url: string };
+
+export type JudgeOpening = { intent: Address; salts: (string | null)[] };
+
+export type SelfOpening = { intent: Address; announcement: string; salt: string };
+
+export type Opening = JudgeOpening | SelfOpening;
+
+const INFO = new TextEncoder().encode(`${PRODUCT_SLUG}-sealed-url-v2`);
 const KEY_BYTES = 32;
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
 const WRAPPED_BYTES = KEY_BYTES + TAG_BYTES;
 const EPK_BYTES = 32;
 const HEAD_BYTES = 2;
+const SIGNATURE_BYTES = 64;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
+const SALT_HEX = /^[0-9a-f]{32}$/;
+const BASE58_SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
 const ADDRESS_CHARS = 44;
-const FIXED_MEMO = DELIVERY_V2_MEMO_PREFIX.length + ADDRESS_CHARS + 1 + 64 + 1;
+const FIXED_MEMO = DELIVERY_MEMO_PREFIX.length + ADDRESS_CHARS + 1 + 64 + 1 + 2 * SALT_BYTES + 1;
+const OPENED_CHARS = 2 * SALT_BYTES + 1;
 const ZERO_IV = new Uint8Array(IV_BYTES);
+
+export const MAX_OPENED_SALTS = Math.floor((MAX_OPENING_MEMO - OPENING_MEMO_PREFIX.length - ADDRESS_CHARS - 1 + 1) / OPENED_CHARS);
 
 const toBase64 = (bytes: Uint8Array): string => btoa(String.fromCharCode(...bytes));
 
@@ -32,36 +53,72 @@ const fromBase64 = (text: string): Uint8Array<ArrayBuffer> => Uint8Array.from(at
 
 const base64Length = (bytes: number): number => 4 * Math.ceil(bytes / 3);
 
-const sealedBytes = (recipients: number, url: number): number => HEAD_BYTES + EPK_BYTES + recipients * WRAPPED_BYTES + IV_BYTES + url + TAG_BYTES;
+const sealedBytes = (recipients: number, url: number): number =>
+  HEAD_BYTES + EPK_BYTES + recipients * WRAPPED_BYTES + IV_BYTES + SALT_BYTES + url + TAG_BYTES;
+
+const hex = (bytes: Uint8Array): string => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+
+const unhex = (text: string): number[] => Array.from({ length: text.length / 2 }, (_, i) => Number.parseInt(text.slice(2 * i, 2 * i + 2), 16));
+
+const digest = async (bytes: Uint8Array<ArrayBuffer>): Promise<Uint8Array> => new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
+
+const SALT_RULE = `${2 * SALT_BYTES} lowercase hex digits`;
+
+export const isSaltHex = (text: string): boolean => SALT_HEX.test(text);
 
 export function maxSealedUrl(recipients: number): number {
   let url = MAX_MEMO_URL;
-  while (url > 0 && FIXED_MEMO + base64Length(sealedBytes(recipients, url)) > MAX_DELIVERY_V2_MEMO) {
+  while (url > 0 && FIXED_MEMO + base64Length(sealedBytes(recipients, url)) > MAX_DELIVERY_MEMO) {
     url -= 1;
   }
   return url;
 }
 
 export const sealedUrlTooLong = (length: number, recipients: number): string =>
-  `the work url has ${length} characters, but sealed to ${recipients} ${recipients === 1 ? "wallet" : "wallets"} it may have at most ${maxSealedUrl(recipients)}, so that the delivery memo stays within ${MAX_DELIVERY_V2_MEMO} bytes and fits one transaction; nothing was sent`;
+  `the work url has ${length} characters, but sealed to ${recipients} ${recipients === 1 ? "wallet" : "wallets"} it may have at most ${maxSealedUrl(recipients)}, so that the delivery memo stays within ${MAX_DELIVERY_MEMO} bytes and fits one transaction; nothing was sent`;
 
-export function commitmentPreimage({ intent, worker, sha256 }: Commitment): Uint8Array<ArrayBuffer> {
+export function saltMessage(intent: Address, sha256: string): Uint8Array<ArrayBuffer> {
+  if (!isSha256Hex(sha256)) {
+    throw new RangeError("a salt binds a sha256 of 64 lowercase hex digits");
+  }
+  return Uint8Array.from([...new TextEncoder().encode(SALT_TAG), ...getAddressEncoder().encode(intent), ...unhex(sha256)]);
+}
+
+export function saltPreimage(signature: Uint8Array): Uint8Array<ArrayBuffer> {
+  if (signature.length !== SIGNATURE_BYTES) {
+    throw new RangeError(`a salt is derived from a ${SIGNATURE_BYTES}-byte ed25519 signature`);
+  }
+  return Uint8Array.from([...new TextEncoder().encode(SALT_TAG), ...signature]);
+}
+
+export async function saltOfSignature(signature: Uint8Array): Promise<string> {
+  return hex((await digest(saltPreimage(signature))).slice(0, SALT_BYTES));
+}
+
+export function saltCheckPreimage(salt: string): Uint8Array<ArrayBuffer> {
+  if (!isSaltHex(salt)) {
+    throw new RangeError(`a salt is ${SALT_RULE}`);
+  }
+  return Uint8Array.from([...new TextEncoder().encode(SALT_CHECK_TAG), ...unhex(salt)]);
+}
+
+export async function saltCheck(salt: string): Promise<string> {
+  return hex((await digest(saltCheckPreimage(salt))).slice(0, SALT_BYTES));
+}
+
+export function commitmentPreimage({ intent, worker, salt, sha256 }: Commitment): Uint8Array<ArrayBuffer> {
   if (!isSha256Hex(sha256)) {
     throw new RangeError("a commitment binds a sha256 of 64 lowercase hex digits");
   }
+  if (!isSaltHex(salt)) {
+    throw new RangeError(`a commitment binds a salt of ${SALT_RULE}`);
+  }
   const encoder = getAddressEncoder();
-  return Uint8Array.from([
-    ...new TextEncoder().encode(COMMITMENT_TAG),
-    ...encoder.encode(intent),
-    ...encoder.encode(worker),
-    ...Array.from({ length: 32 }, (_, i) => Number.parseInt(sha256.slice(2 * i, 2 * i + 2), 16)),
-  ]);
+  return Uint8Array.from([...new TextEncoder().encode(COMMITMENT_TAG), ...encoder.encode(intent), ...encoder.encode(worker), ...unhex(salt), ...unhex(sha256)]);
 }
 
-const hex = (bytes: Uint8Array): string => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
-
 export async function deliveryCommitment(commitment: Commitment): Promise<string> {
-  return hex(new Uint8Array(await crypto.subtle.digest("SHA-256", commitmentPreimage(commitment))));
+  return hex(await digest(commitmentPreimage(commitment)));
 }
 
 const random = (length: number): Uint8Array<ArrayBuffer> => crypto.getRandomValues(new Uint8Array(new ArrayBuffer(length)));
@@ -73,10 +130,13 @@ async function sharedWith(peer: Uint8Array, mine: CryptoKey): Promise<Uint8Array
   return new Uint8Array(await crypto.subtle.deriveBits({ name: "X25519", public: key }, mine, 256));
 }
 
-export async function sealUrl(url: string, recipients: readonly Address[], intent: Address): Promise<string> {
+export async function sealDelivery({ salt, url }: SealedDelivery, recipients: readonly Address[], intent: Address): Promise<string> {
   const wallets = [...new Set(recipients)];
   if (wallets.length === 0 || wallets.length > MAX_SEALED_URL_RECIPIENTS) {
     throw new SealedError(`seal a work url to between 1 and ${MAX_SEALED_URL_RECIPIENTS} wallets`);
+  }
+  if (!isSaltHex(salt)) {
+    throw new RangeError(`a sealed delivery carries a salt of ${SALT_RULE}`);
   }
   if (!isMemoUrl(url)) {
     throw new RangeError(`a delivery url must be ${MEMO_URL_RULE}`);
@@ -95,7 +155,8 @@ export async function sealUrl(url: string, recipients: readonly Address[], inten
     wrapped.push(...new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: ZERO_IV, additionalData: INFO }, wrapping, contentKey)));
   }
   const content = await crypto.subtle.importKey("raw", contentKey, "AES-GCM", false, ["encrypt"]);
-  const data = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: aad(intent) }, content, new TextEncoder().encode(url)));
+  const plain = Uint8Array.from([...unhex(salt), ...new TextEncoder().encode(url)]);
+  const data = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: aad(intent) }, content, plain));
   return toBase64(Uint8Array.from([SEALED_URL_VERSION, wallets.length, ...epk, ...wrapped, ...iv, ...data]));
 }
 
@@ -116,7 +177,7 @@ export function sealedUrlRecipients(blob: string): number | null {
   return bytes.length > sealedBytes(count, 0) ? count : null;
 }
 
-export async function openUrl(blob: string, keypair: Uint8Array, intent: Address): Promise<string | null> {
+export async function openDelivery(blob: string, keypair: Uint8Array, intent: Address): Promise<SealedDelivery | null> {
   const count = sealedUrlRecipients(blob);
   if (count === null) {
     return null;
@@ -143,9 +204,10 @@ export async function openUrl(blob: string, keypair: Uint8Array, intent: Address
     }
     try {
       const content = await crypto.subtle.importKey("raw", contentKey, "AES-GCM", false, ["decrypt"]);
-      const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytes.slice(ivAt, ivAt + IV_BYTES), additionalData: aad(intent) }, content, bytes.slice(ivAt + IV_BYTES));
-      const url = new TextDecoder("utf-8", { fatal: true }).decode(plain);
-      return isMemoUrl(url) ? url : null;
+      const iv = bytes.slice(ivAt, ivAt + IV_BYTES);
+      const plain = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv, additionalData: aad(intent) }, content, bytes.slice(ivAt + IV_BYTES)));
+      const url = new TextDecoder("utf-8", { fatal: true }).decode(plain.slice(SALT_BYTES));
+      return isMemoUrl(url) ? { salt: hex(plain.slice(0, SALT_BYTES)), url } : null;
     } catch {
       return null;
     }
@@ -153,30 +215,79 @@ export async function openUrl(blob: string, keypair: Uint8Array, intent: Address
   return null;
 }
 
-export function deliveryMemoV2({ intent, commitment, blob }: DeliveryMemoV2): string {
+export function deliveryMemo({ intent, commitment, check, blob }: DeliveryMemo): string {
   if (!isAddress(intent)) {
     throw new RangeError("a delivery names its intent by a base58 address");
   }
   if (!isSha256Hex(commitment)) {
     throw new RangeError("a delivery's commitment must be 64 lowercase hex digits");
   }
-  if (sealedUrlRecipients(blob) === null) {
-    throw new RangeError("a delivery's sealed url must be the base64 a sealUrl call returns");
+  if (!isSaltHex(check)) {
+    throw new RangeError(`a delivery's salt check must be ${SALT_RULE}`);
   }
-  const memo = `${DELIVERY_V2_MEMO_PREFIX}${intent}:${commitment}:${blob}`;
-  if (memo.length > MAX_DELIVERY_V2_MEMO) {
-    throw new RangeError(`a delivery memo may have at most ${MAX_DELIVERY_V2_MEMO} bytes, so that it fits one transaction`);
+  if (sealedUrlRecipients(blob) === null) {
+    throw new RangeError("a delivery's sealed url must be the base64 a sealDelivery call returns");
+  }
+  const memo = `${DELIVERY_MEMO_PREFIX}${intent}:${commitment}:${check}:${blob}`;
+  if (memo.length > MAX_DELIVERY_MEMO) {
+    throw new RangeError(`a delivery memo may have at most ${MAX_DELIVERY_MEMO} bytes, so that it fits one transaction`);
   }
   return memo;
 }
 
-export function parseDeliveryMemoV2(text: string): DeliveryMemoV2 | null {
-  if (text.length > MAX_DELIVERY_V2_MEMO || !text.startsWith(DELIVERY_V2_MEMO_PREFIX)) {
+export function parseDeliveryMemo(text: string): DeliveryMemo | null {
+  if (text.length > MAX_DELIVERY_MEMO || !text.startsWith(DELIVERY_MEMO_PREFIX)) {
     return null;
   }
-  const [intent = "", commitment = "", blob = "", ...rest] = text.slice(DELIVERY_V2_MEMO_PREFIX.length).split(":");
-  if (rest.length > 0 || !isAddress(intent) || !isSha256Hex(commitment) || sealedUrlRecipients(blob) === null) {
+  const [intent = "", commitment = "", check = "", blob = "", ...rest] = text.slice(DELIVERY_MEMO_PREFIX.length).split(":");
+  if (rest.length > 0 || !isAddress(intent) || !isSha256Hex(commitment) || !isSaltHex(check) || sealedUrlRecipients(blob) === null) {
     return null;
   }
-  return { intent, commitment, blob };
+  return { intent, commitment, check, blob };
+}
+
+export function isSignatureText(text: string): boolean {
+  if (!BASE58_SIGNATURE.test(text)) {
+    return false;
+  }
+  try {
+    return getBase58Encoder().encode(text).length === SIGNATURE_BYTES;
+  } catch {
+    return false;
+  }
+}
+
+export function openingMemo(opening: Opening): string {
+  if (!isAddress(opening.intent)) {
+    throw new RangeError("an opening names its intent by a base58 address");
+  }
+  if ("announcement" in opening) {
+    if (!isSignatureText(opening.announcement) || !isSaltHex(opening.salt)) {
+      throw new RangeError(`an opening names its announcement by a base58 signature and gives its salt as ${SALT_RULE}`);
+    }
+    return `${OPENING_MEMO_PREFIX}${opening.intent}:${opening.announcement}:${opening.salt}`;
+  }
+  const { salts } = opening;
+  if (salts.length === 0 || salts.length > MAX_OPENED_SALTS || salts.some((salt) => salt !== null && !isSaltHex(salt))) {
+    throw new RangeError(`an opening lists from 1 to ${MAX_OPENED_SALTS} salts, each ${SALT_RULE} or ${UNOPENED} for one it could not open`);
+  }
+  return `${OPENING_MEMO_PREFIX}${opening.intent}:${salts.map((salt) => salt ?? UNOPENED).join(",")}`;
+}
+
+export function parseOpeningMemo(text: string): Opening | null {
+  if (text.length > MAX_OPENING_MEMO || !text.startsWith(OPENING_MEMO_PREFIX)) {
+    return null;
+  }
+  const [intent = "", first = "", second, ...rest] = text.slice(OPENING_MEMO_PREFIX.length).split(":");
+  if (rest.length > 0 || !isAddress(intent)) {
+    return null;
+  }
+  if (second !== undefined) {
+    return isSignatureText(first) && isSaltHex(second) ? { intent, announcement: first, salt: second } : null;
+  }
+  const listed = first.split(",");
+  if (listed.length > MAX_OPENED_SALTS || listed.some((salt) => salt !== UNOPENED && !isSaltHex(salt))) {
+    return null;
+  }
+  return { intent, salts: listed.map((salt) => (salt === UNOPENED ? null : salt)) };
 }

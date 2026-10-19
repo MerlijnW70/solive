@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -63,6 +64,7 @@ export const enginePath =
   fileURLToPath(new URL("../../../target/deploy/intent_engine.so", import.meta.url));
 
 export const h = {
+  keypairs: new Map<Address, Uint8Array>(),
   svm: new LiteSVM(),
   genesis: getBase58Decoder().decode(DOMAIN),
   urls: [] as string[],
@@ -307,6 +309,10 @@ export function runtime(signers: Record<string, KeyPairSigner>): Runtime {
     },
     loadKeypair: async (path) => {
       const saved = h.files.get(path);
+      const held = signers[path] === undefined ? undefined : h.keypairs.get(signers[path].address);
+      if (saved === undefined && held !== undefined) {
+        return held;
+      }
       if (saved === undefined) {
         throw new Error(`no key file ${path}`);
       }
@@ -363,12 +369,16 @@ export function runtime(signers: Record<string, KeyPairSigner>): Runtime {
 }
 
 export async function funded(): Promise<KeyPairSigner> {
-  const kp = await generateKeyPairSigner();
+  const jwk = generateKeyPairSync("ed25519").privateKey.export({ format: "jwk" });
+  const keypair = Uint8Array.from([...Buffer.from(jwk.d ?? "", "base64url"), ...Buffer.from(jwk.x ?? "", "base64url")]);
+  const kp = await createKeyPairSignerFromBytes(keypair);
+  h.keypairs.set(kp.address, keypair);
   h.svm.airdrop(kp.address, lamports(100_000_000_000n));
   return kp;
 }
 
 export function resetHarness(): void {
+  h.keypairs.clear();
   rmSync(h.saleRoot, { recursive: true, force: true });
   h.saleRoot = mkdtempSync(join(tmpdir(), "solive-sales-"));
   h.genesis = getBase58Decoder().decode(DOMAIN);

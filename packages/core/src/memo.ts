@@ -7,7 +7,13 @@ export const FEEDBACK_MEMO_PREFIX = `${PRODUCT_SLUG}-feedback:`;
 export const MAX_FEEDBACK_SCORE = 100;
 export const MAX_MEMO_URL = 200;
 
+export const RELEASE_SALT_MARK = " salt:";
+
 export type SpecMemo = { url: string };
+
+export type ReleaseRecord = { sha256: string; salt?: string };
+
+const RELEASE_SALT = /^[0-9a-f]{32}$/;
 
 export type FeedbackMemo = { intent: Address; score: number; note?: string };
 
@@ -64,16 +70,29 @@ export function parseSpecMemo(text: string): SpecMemo | null {
   return isLegacyMemoUrl(url) ? { url } : null;
 }
 
-export function releaseMemo(sha256: string): string {
+export function releaseMemo(sha256: string, salt?: string): string {
   if (!isSha256Hex(sha256)) {
     throw new RangeError("a release records a sha256 of 64 lowercase hex digits");
   }
-  return `${RELEASE_MEMO_PREFIX}${sha256}`;
+  if (salt !== undefined && !RELEASE_SALT.test(salt)) {
+    throw new RangeError("a release records its payee's salt as 32 lowercase hex digits");
+  }
+  return `${RELEASE_MEMO_PREFIX}${sha256}${salt === undefined ? "" : `${RELEASE_SALT_MARK}${salt}`}`;
+}
+
+export function parseRelease(text: string): ReleaseRecord | null {
+  if (!text.startsWith(RELEASE_MEMO_PREFIX)) {
+    return null;
+  }
+  const [sha256 = "", salt, ...rest] = text.slice(RELEASE_MEMO_PREFIX.length).split(RELEASE_SALT_MARK);
+  if (rest.length > 0 || !isSha256Hex(sha256) || (salt !== undefined && !RELEASE_SALT.test(salt))) {
+    return null;
+  }
+  return salt === undefined ? { sha256 } : { sha256, salt };
 }
 
 export function parseReleaseMemo(text: string): string | null {
-  const sha256 = text.slice(RELEASE_MEMO_PREFIX.length);
-  return text.startsWith(RELEASE_MEMO_PREFIX) && isSha256Hex(sha256) ? sha256 : null;
+  return parseRelease(text)?.sha256 ?? null;
 }
 
 const SCORE = /^(0|[1-9][0-9]{0,2})$/;

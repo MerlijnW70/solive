@@ -4,7 +4,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
 import { buildUpdateEconomics, findIntentPda, formatAmount, Kind, NATIVE_MINT, splitFee } from "@intent-engine/core";
-import { createClient } from "@intent-engine/client";
+import { createClient, deliverySalt } from "@intent-engine/client";
 import { svmTransport } from "@intent-engine/client/svm";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
@@ -80,7 +80,7 @@ describe("fee-backed reputation, in the command and the tool", () => {
       });
       const [intent] = await findIntentPda({ owner: owner.address, nonce });
       await client.deliver({ worker, intent, sha256, url: "https://example.org/work" });
-      await client.settleProof({ judge, owner: owner.address, nonce, payTo: worker.address, result: 1n, deliveredSha256: sha256 });
+      await client.settleProof({ judge, owner: owner.address, nonce, payTo: worker.address, result: 1n, deliveredSha256: sha256, deliveredSalt: await deliverySalt(worker, intent, sha256) });
     };
     await job(payer, "a1".repeat(32));
     await job(worker, "b2".repeat(32));

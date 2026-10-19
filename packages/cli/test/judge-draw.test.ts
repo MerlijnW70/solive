@@ -123,7 +123,7 @@ describe("judge --sandbox viper with cases drawn after the announcement", () => 
     const j = await job(CORRECT, drawSpec());
     const cases = casesOf(new TextEncoder().encode(drawSpec()));
     const draw = cases.draw as Draw;
-    const first = { intent: j.intent, worker: j.worker.address, sha256: j.sha256, url: "", signature: "first" as never, slot: ANNOUNCED, blockTime: null, commitment: "", sealed: "" };
+    const first = { intent: j.intent, worker: j.worker.address, sha256: j.sha256, url: "", signature: "first" as never, slot: ANNOUNCED, blockTime: null, commitment: "", check: "", salt: "", sealed: "" };
     const node = (blockhash: string) => ({ ...transport, finalizedBlock: async () => ({ slot: ANNOUNCED + BigInt(K), blockhash }) }) as Transport;
     const never = async () => false;
     const one = await drawBeacon(node(BLOCKHASH), never, first, draw, j.intent, j.sha256);

@@ -3,9 +3,15 @@ import { findIntentPda, formatAmount } from "@intent-engine/core";
 import {
   createClient,
   deliveryInstructions,
+  type Delivery,
   deliveryRecord,
+  isLedgerPath,
   loadConfig,
   mintOf,
+  type PublishedOpening,
+  publishedSalts,
+  recordedStanding,
+  releaseStandingAt,
   type Transport,
 } from "@intent-engine/client";
 import { escrowReceipt, recordingOf } from "./agent/wallet.js";
@@ -30,6 +36,11 @@ async function receiptOf(transport: Transport, url: string, intent: Address, wan
     return { intent, released: false, next: NOT_RELEASED };
   }
   const recorded = release.deliveredSha256;
+  const salt = release.deliveredSalt;
+  const standing =
+    recorded === undefined || salt === undefined
+      ? undefined
+      : await releaseStandingAt(transport, intent, release.signature, { createdAt: created?.blockTime ?? null, from: created?.slot ?? null });
   const common = {
     intent,
     released: true,
@@ -38,6 +49,8 @@ async function receiptOf(transport: Transport, url: string, intent: Address, wan
     signature: release.signature,
     ...(recorded === undefined ? {} : { delivered_sha256: recorded }),
     ...(wanted === undefined ? {} : { matches: wanted === recorded }),
+    ...(salt === undefined ? {} : { delivered_salt: salt }),
+    ...(standing === undefined || standing === null ? {} : { valid: standing.valid, ...(standing.refutedBy === null ? {} : { refuted_by: standing.refutedBy }) }),
   };
   const paid = async (net: bigint) => formatAmount(net, mint === undefined ? undefined : (await mintOf(transport, mint)).decimals);
   if (release.name === "IntentSplit") {
@@ -53,6 +66,11 @@ async function receiptOf(transport: Transport, url: string, intent: Address, wan
     payee,
     paid: await paid(release.fields.net),
   };
+}
+
+function saltOf(delivery: Delivery, openings: readonly PublishedOpening[]): { opened_salt?: string } {
+  const [salt] = publishedSalts(delivery, openings);
+  return salt === undefined ? {} : { opened_salt: salt };
 }
 
 type JobCommand = Extract<Command, { name: "jobs" | "deliver" | "receipt" | "record-delivery" | "deliveries" }>;
@@ -74,14 +92,15 @@ export async function jobCommand(command: JobCommand, runtime: Runtime, transpor
       const worker = await transactionSigner(runtime, command.keypair);
       const { intent, workUrl } = command;
       const sha256 = "sha256" in command ? command.sha256 : await artifactSha256(command.artifact);
-      const { attestor, instructions, commitment, sealedTo } = await deliveryInstructions(transport, { worker, intent, sha256, url: workUrl });
+      const { attestor, instructions, commitment, check, sealedTo } = await deliveryInstructions(transport, { worker, intent, sha256, url: workUrl });
       const shown = {
         intent,
         attestor,
         commitment,
+        check,
         summary: [
-          `Announces: the work with sha256 ${sha256}, for the proof escrow ${intent}, as the commitment ${commitment}, which binds it to ${worker.address}`,
-          `Seals: the url ${workUrl}, so only ${sealedTo.length === 1 ? `the judge ${attestor}` : `the ${sealedTo.length} committee members`} can read it`,
+          `Announces: the work with sha256 ${sha256}, for the proof escrow ${intent}, as the commitment ${commitment}, which binds it to ${worker.address} and a salt only its key derives`,
+          `Seals: the salt and the url ${workUrl}, so only ${sealedTo.length === 1 ? `the judge ${attestor}` : `the ${sealedTo.length} committee members`} can read it`,
           `Notifies: its judge ${attestor}, with a transfer of 0 lamports from ${worker.address}, which signs and pays the fee`,
         ],
         warnings: [ANNOUNCE_FIRST],
@@ -97,17 +116,30 @@ export async function jobCommand(command: JobCommand, runtime: Runtime, transpor
     }
     case "record-delivery": {
       const judge = await runtime.loadSigner(command.keypair);
-      const recording = await recordingOf(transport, judge, command.owner, command.nonce, command.sha256, command.release);
+      const keypair = isLedgerPath(command.keypair) ? undefined : await runtime.loadKeypair(command.keypair);
+      const recording = await recordingOf(transport, judge, command.owner, command.nonce, command.sha256, command.release, keypair);
       const { intent, release, sha256, memo, summary, instructions } = recording;
       return previewed(transport, instructions, judge, { intent, release, sha256, memo, summary }, command.yes);
     }
     case "deliveries": {
       const keypair = command.judgeKeypair === undefined ? undefined : await runtime.loadKeypair(command.judgeKeypair);
       const record = await deliveryRecord(transport, command.attestor, command.intent, command.maxPages, keypair);
+      const release = await recordedStanding(transport, command.intent, record);
       return {
         intent: command.intent,
         complete: record.complete,
-        deliveries: record.deliveries.map(({ worker, commitment, signature, slot, url }) => ({ worker, commitment, signature, slot, ...(url === "" ? {} : { url }) })),
+        deliveries: record.deliveries.map((delivery) => ({
+          worker: delivery.worker,
+          commitment: delivery.commitment,
+          check: delivery.check,
+          signature: delivery.signature,
+          slot: delivery.slot,
+          ...(delivery.url === "" ? {} : { url: delivery.url }),
+          ...saltOf(delivery, record.openings),
+        })),
+        ...(release === null
+          ? {}
+          : { release: { signature: release.signature, sha256: release.sha256, valid: release.valid, ...(release.refutedBy === null ? {} : { refuted_by: release.refutedBy }) } }),
       };
     }
   }

@@ -13,7 +13,7 @@ export { committeeJudged } from "./client-settle.js";
 import { type Client, type ClientOptions, type Mint, WATCH_POLL_MS, WATCH_WAIT_SECONDS } from "./client-types.js";
 import { decoded, watchIntents } from "./client-watch.js";
 import { explain } from "./errors.js";
-import { deliveriesOf, deliveryInstructions, deliveryRecord, jobsOf, readSpec } from "./jobs.js";
+import { deliveriesOf, deliveryInstructions, deliveryRecord, jobsOf, readSpec, selfOpeningInstructions } from "./jobs.js";
 import { intentNotifications, type RpcLike, rpcTransport, signatureWatch } from "./transport.js";
 
 export type {
@@ -145,5 +145,6 @@ export function createClient(options: ClientOptions): Client {
     deliver: async (input) => send((await deliveryInstructions(transport, input)).instructions, input.worker),
     deliveries: ({ judge, intent }) => deliveriesOf(transport, judge, intent),
     deliveryRecord: ({ judge, intent, pages, keypair }) => deliveryRecord(transport, judge, intent, pages, keypair),
+    openDelivery: async (input) => send((await selfOpeningInstructions(transport, input)).instructions, input.worker),
   };
 }

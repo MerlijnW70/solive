@@ -67,10 +67,16 @@ export async function originDeliveries(transport: Transport, judge: Address, ori
 
 export type Lifecycle = { intent: Address; createdAt: bigint | null; from: bigint | null; to: bigint };
 
-export async function lifecycleDeliveries(transport: Transport, judge: Address, lifecycle: Lifecycle, pages: number = DELIVERY_PAGES): Promise<DeliveryRecord> {
+export async function lifecycleDeliveries(
+  transport: Transport,
+  judge: Address,
+  lifecycle: Lifecycle,
+  pages: number = DELIVERY_PAGES,
+  keypair?: Uint8Array,
+): Promise<DeliveryRecord> {
   const { firstAvailableSlot } = transport;
   const { from, to } = lifecycle;
   const covered = async () => from !== null && firstAvailableSlot !== undefined && (await firstAvailableSlot.call(transport)) <= from;
-  const record = await judgedDeliveries(transport, judge, new Set([lifecycle.intent]), lifecycle.createdAt, covered, pages);
+  const record = await judgedDeliveries(transport, judge, new Set([lifecycle.intent]), lifecycle.createdAt, covered, pages, keypair);
   return { ...record, deliveries: record.deliveries.filter(({ slot }) => (from === null || slot >= from) && slot <= to) };
 }

@@ -262,6 +262,8 @@ export const SERVER_PROBLEMS = {
   SpecUnreadable: later("the spec url could not be read this time: it failed or the node answered a temporary error; try again shortly"),
   SpecUnfetchable: never("the spec url cannot be read: it answered not-found, redirects, is larger than the limit, or is not a public http(s) address; ask the owner for a working spec url and do not retry this one"),
   NotEarliestAnnouncer: never("another wallet announced the delivered work first; a release recording that work pays its earliest announcer"),
+  SealedSalts: never("the announcements seal their salts to the attestor's key, and this wallet cannot open them here, so the earliest announcer cannot be known; use the attestor's key file"),
+  NoMessageSigner: never("the wallet cannot sign messages, and a delivery derives its salt from the wallet's signature; use a key file or give the signature the hint asks for"),
   NotAnnounced: never("no work with this sha256 was announced for the escrow, so it is not recorded as what the release paid for"),
   NotReleased: never("the escrow has no release in its history, so no delivery can be recorded for it"),
   NotARelease: never("the transaction named as the release is not a release of this escrow"),

@@ -11,7 +11,7 @@ import { getCreateAssociatedTokenIdempotentInstructionAsync, getMintEncoder, get
 import { TransactionMetadata } from "litesvm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { decodeEvent, DEVNET_TEST_MINT, findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, manifestSha256, NATIVE_MINT, RELEASE_MEMO_PREFIX, releaseMemo } from "@intent-engine/core";
-import { commitmentOf, createClient, DELIVERY_PAGES, DELIVERY_SCAN, type EngineTransaction, type ListedSignature, SIGNATURE_PAGE, type Transport } from "@intent-engine/client";
+import { commitmentOf, createClient, DELIVERY_PAGES, saltCheckOf, DELIVERY_SCAN, type EngineTransaction, type ListedSignature, SIGNATURE_PAGE, type Transport } from "@intent-engine/client";
 import { ENV_KEYPAIR, ENV_URL, JUDGE_TIMEOUT, MAX_JUDGE_TIMEOUT, RUN_NEEDED } from "../src/args.js";
 import { ATTEST_PAGES } from "../src/agent/wallet/delivery.js";
 import { MAX_DELIVERY_PAGES } from "../src/command-builders.js";
@@ -51,7 +51,7 @@ import {
   shareable,
 } from "../src/sandbox.js";
 import { DOCKER_TEST } from "./docker-switch.js";
-import { keyed, sealedDelivery } from "./announce.js";
+import { keyed, saltFor, sealedDelivery } from "./announce.js";
 import { ata, balance, cli, creation, funded, h, NOW, send, transport, type World, world } from "./harness.js";
 
 const removal = vi.hoisted(() => ({ refused: false, retries: [] as (number | undefined)[] }));
@@ -846,8 +846,8 @@ describe("intent-engine judge", () => {
 
   it("lists the announcements of an escrow with their announcer and commitment, and their urls only to a judge key", async () => {
     const listed = [
-      { worker: j.copier.address, commitment: commitmentOf(j.intent, j.copier.address, j.sha256), signature: "copy", slot: "9" },
-      { worker: j.worker.address, commitment: commitmentOf(j.intent, j.worker.address, j.sha256), signature: "first", slot: "5" },
+      { worker: j.copier.address, commitment: commitmentOf(j.intent, j.copier.address, saltFor(j.intent), j.sha256), check: saltCheckOf(saltFor(j.intent)), signature: "copy", slot: "9" },
+      { worker: j.worker.address, commitment: commitmentOf(j.intent, j.worker.address, saltFor(j.intent), j.sha256), check: saltCheckOf(saltFor(j.intent)), signature: "first", slot: "5" },
     ];
     expect((await cli(["deliveries", "--attestor", j.judge.address, "--intent", j.intent], {})).json()).toEqual({ intent: j.intent, complete: true, deliveries: listed });
     expect((await cli(["deliveries", "--attestor", j.worker.address, "--intent", j.intent], {})).json()).toEqual({ intent: j.intent, complete: true, deliveries: [] });
@@ -1296,7 +1296,7 @@ describe("the judge guide", () => {
 
     expect(GUIDE).toContain("pass `--check check.sh --run \"bash check/check.sh\"` in place of the `--check` and `--run` of step 5");
     expect(outputs[0]).toMatchObject({ jobs: [{ intent: j.intent, owner: j.w.owner.address, nonce: "0", specUrl: null }] });
-    expect(outputs[1]).toMatchObject({ deliveries: [{ worker: j.copier.address }, { worker: j.worker.address, commitment: commitmentOf(j.intent, j.worker.address, j.sha256) }] });
+    expect(outputs[1]).toMatchObject({ deliveries: [{ worker: j.copier.address }, { worker: j.worker.address, commitment: commitmentOf(j.intent, j.worker.address, saltFor(j.intent), j.sha256) }] });
     expect(outputs[2]).toMatchObject({ verdict: "pass", command: "node check/check.mjs", sandbox: "docker", payTo: j.worker.address, signature: null });
     expect(outputs[3]).toMatchObject({ verdict: "pass", payTo: j.worker.address, signature: expect.any(String) });
     expect(await paidTo(j, j.worker.address)).toBeGreaterThan(0n);

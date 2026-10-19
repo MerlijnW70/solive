@@ -6,14 +6,14 @@ import { type Address, generateKeyPairSigner, type KeyPairSigner, type Signature
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind } from "@intent-engine/core";
-import { commitmentOf, createClient, type Delivery, DELIVERY_SCAN, DEVNET_GENESIS_HASH, type EngineTransaction, PLAIN_HTTP_ON_PUBLIC, type SpecFetch } from "@intent-engine/client";
+import { commitmentOf, createClient, type Delivery, saltCheckOf, DELIVERY_SCAN, DEVNET_GENESIS_HASH, type EngineTransaction, PLAIN_HTTP_ON_PUBLIC, type SpecFetch } from "@intent-engine/client";
 import { MAX_ARTIFACT_BYTES } from "../src/artifact.js";
 import { DeliveryUnfit, FETCHED_NAME, fetchDelivery, fetchedName } from "../src/delivery-fetch.js";
 import { NOT_SENT } from "../src/flows.js";
 import { JUDGE_WATCH_INTERVAL, WATCH_TAKES_NO_ARTIFACT } from "../src/job-args.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main, nodeRuntime } from "../src/main.js";
 import type { Runtime } from "../src/runtime.js";
-import { keyed, sealedDelivery } from "./announce.js";
+import { keyed, saltFor, sealedDelivery } from "./announce.js";
 import { balance, cli, creation, h, NOW, runtime, setNow, transport, type World, world } from "./harness.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
@@ -190,7 +190,7 @@ describe("intent-engine judge --watch", () => {
       announced: "delivery-5",
       artifactSha256: "",
       verdict: "fail",
-      reason: `the work at ${url} has sha256 ${sha(WRONG)}, which the commitment ${commitmentOf(j.intent, worker, sha(CORRECT))} of ${worker} does not bind; it is not judged again`,
+      reason: `the work at ${url} has sha256 ${sha(WRONG)}, which the commitment ${commitmentOf(j.intent, worker, saltFor(j.intent), sha(CORRECT))} of ${worker} does not bind; it is not judged again`,
     });
     expect(status(j.intent)).toBe(IntentStatus.Open);
   }, 60_000);
@@ -271,6 +271,7 @@ describe("intent-engine judge --watch", () => {
 
 const INTENT = "SysvarRent111111111111111111111111111111111" as Address;
 const WORKER = "SysvarC1ock11111111111111111111111111111111" as Address;
+const SALT = "ab".repeat(16);
 
 const delivery = (url: string, sha256: string): Delivery => ({
   intent: INTENT,
@@ -280,7 +281,9 @@ const delivery = (url: string, sha256: string): Delivery => ({
   signature: "s" as Signature,
   slot: 1n,
   blockTime: null,
-  commitment: commitmentOf(INTENT, WORKER, sha256),
+  commitment: commitmentOf(INTENT, WORKER, SALT, sha256),
+  check: saltCheckOf(SALT),
+  salt: SALT,
   sealed: "",
 });
 

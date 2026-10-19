@@ -16,6 +16,7 @@ import {
   committeeSigners,
   decodeParams,
   IntentStatus,
+  isSaltHex,
   isSha256Hex,
   Kind,
   releaseMemo,
@@ -154,14 +155,23 @@ async function planRelease<J>(
   };
 }
 
-function recorded(payer: TransactionSigner, deliveredSha256: string | undefined) {
-  return deliveredSha256 === undefined ? [] : [memoInstruction(payer, releaseMemo(deliveredSha256))];
+function checkedSalt(deliveredSalt: string | undefined, deliveredSha256: string | undefined) {
+  const lowered = deliveredSalt?.toLowerCase();
+  if (lowered !== undefined && (deliveredSha256 === undefined || !isSaltHex(lowered))) {
+    throw new RangeError("deliveredSalt must be 32 hex digits, given with deliveredSha256");
+  }
+  return lowered;
+}
+
+function recorded(payer: TransactionSigner, deliveredSha256: string | undefined, deliveredSalt: string | undefined) {
+  return deliveredSha256 === undefined ? [] : [memoInstruction(payer, releaseMemo(deliveredSha256, checkedSalt(deliveredSalt, deliveredSha256)))];
 }
 
 export function proofSettlement(context: ClientContext) {
   const settleProof = async (input: SettleProofInput) => {
     const { judge } = input;
     const deliveredSha256 = checkedSha256(input.deliveredSha256);
+    checkedSalt(input.deliveredSalt, deliveredSha256);
     const payer = input.payer ?? judge;
     const plan = await planRelease(context, { ...input, payer }, async (attestor, intent) => {
       if (attestor !== judge.address) {
@@ -172,7 +182,7 @@ export function proofSettlement(context: ClientContext) {
     const message = await attestedProofMessage(judge.address, plan.proof);
     const settle = await buildFillAttested({ ...plan.fill, ...plan.claims, solver: judge });
     return context.send(
-      [...plan.setup, await signEd25519Instruction(judge, message), settle, ...recorded(judge, deliveredSha256)],
+      [...plan.setup, await signEd25519Instruction(judge, message), settle, ...recorded(judge, deliveredSha256, input.deliveredSalt)],
       payer,
     );
   };
@@ -214,6 +224,7 @@ export function committeeSettlement(context: ClientContext) {
 
   const prepareCommitteeRelease = async (input: SettleCommitteeInput): Promise<CommitteeRelease> => {
     const deliveredSha256 = checkedSha256(input.deliveredSha256);
+    checkedSalt(input.deliveredSalt, deliveredSha256);
     const payer = input.payer ?? input.solver;
     const { plan, committee, digest } = await planned({ ...input, payer });
     for (const vote of input.votes) {
@@ -242,7 +253,7 @@ export function committeeSettlement(context: ClientContext) {
       signers: committeeSigners(committee, mask),
       payer,
       setup: plan.setup,
-      instructions: [instruction, settle, ...recorded(input.solver, deliveredSha256)],
+      instructions: [instruction, settle, ...recorded(input.solver, deliveredSha256, input.deliveredSalt)],
     };
   };
 

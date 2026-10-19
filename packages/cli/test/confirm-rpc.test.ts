@@ -48,8 +48,9 @@ async function escrow(attestor: (keys: Record<string, KeyPairSigner>) => Promise
     nonce: 0n,
     expiresAt: NOW + 3_600n,
   });
-  h.engineLog = [announced("first", 5n, worker, await sealedDelivery(intent, worker, sha(CORRECT), WORK_URL, [worker])), creation(intent)];
-  const copied = await sealedDelivery(intent, w.owner.address, sha(CORRECT), WORK_URL, [worker]);
+  const sealedTo = Object.values(keys).map(({ address }) => address);
+  h.engineLog = [announced("first", 5n, worker, await sealedDelivery(intent, worker, sha(CORRECT), WORK_URL, sealedTo)), creation(intent)];
+  const copied = await sealedDelivery(intent, w.owner.address, sha(CORRECT), WORK_URL, sealedTo);
   return { owner: w.owner.address, intent, inputMint: w.inputMint, spec, artifact, dir, worker, copied, keys };
 }
 

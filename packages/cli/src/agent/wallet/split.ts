@@ -46,7 +46,8 @@ import { preparedView } from "../shapes.js";
 import { walletRecipient } from "../owner.js";
 import { prepare, transactionSize } from "../prepare.js";
 import { STATUS } from "../../accounts.js";
-import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, WAIT_SCAN, signerOf, sent, sha256Of } from "./guard.js";
+import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, WAIT_SCAN, signerOf, sent, sha256Of, walletKeypair } from "./guard.js";
+import { openingOutput, openingsFor, sealedRecord, sendOpenings } from "./openings.js";
 import { RELEASE_CHANGED, approvalOf } from "./attest.js";
 import { notInSplit, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor, confirmedRelease } from "./delivery.js";
 
@@ -110,6 +111,7 @@ export const walletAttestSplit = define({
     recorded: optional(recordedWhere),
     follow_up_signature: optional(text("the follow-up transaction that records the sha256, when recorded is follow-up")),
     record_memo: optional(text(`when recorded is false, the memo that records the sha256 for this release; ${tool("wallet_record_delivery")} sends it from this wallet with a zero transfer to the escrow`)),
+    ...openingOutput,
     summary: list(text(), 12),
     warnings: list(text(), 8),
     sent: flag(),
@@ -156,16 +158,20 @@ export const walletAttestSplit = define({
       throw new InvalidInput([{ path: "delivered_sha256", message: DELIVERED_NEEDED }]);
     }
     const delivered = sha256Of(input.delivered_sha256, "delivered_sha256");
-    const record = await deliveryRecord(ctx.transport, signer.address, intent, input.max_pages ?? ATTEST_PAGES);
+    const keypair = await walletKeypair(ctx);
+    const record = await deliveryRecord(ctx.transport, signer.address, intent, input.max_pages ?? ATTEST_PAGES, keypair);
     if (!record.complete) {
       throw new AgentRefusal("HistoryTooLong", HISTORY_TOO_LONG);
     }
+    sealedRecord(record, keypair);
     const first = firstDelivery(record.deliveries, delivered);
     if (first !== null && !wallets.includes(first.worker)) {
       throw new AgentRefusal("NotEarliestAnnouncer", notInSplit(first.worker, delivered));
     }
-    await confirmedRelease(ctx, { intent, attestor: signer.address, sha256: delivered, pages: input.max_pages ?? ATTEST_PAGES, payees: wallets });
-    const memoText = releaseMemo(delivered);
+    const salt = first?.salt;
+    const openings = openingsFor(record, first);
+    await confirmedRelease(ctx, { intent, attestor: signer.address, sha256: delivered, pages: input.max_pages ?? ATTEST_PAGES, payees: wallets, keypair });
+    const memoText = releaseMemo(delivered, salt);
     const memo = { programAddress: MEMO_PROGRAM_ADDRESS, accounts: [{ address: signer.address, role: AccountRole.READONLY_SIGNER, signer }], data: new TextEncoder().encode(memoText) };
     const token = await mintOf(ctx.transport, held.inputMint);
     const payees = await Promise.all(wallets.map((w) => tokenAccountIfMissing(ctx.transport, signer, w, held.inputMint, token.tokenProgram)));
@@ -289,32 +295,45 @@ export const walletAttestSplit = define({
     if (!("signature" in done)) {
       return done;
     }
-    if (!followUp) {
-      return { ...done, recorded: "release" as const };
-    }
-    const unrecorded = (error: unknown) => ({
-      ...done,
-      recorded: false as const,
-      record_memo: followUpMemo(delivered, done.signature),
-      next: followUpFailed(problemOf(error).hint),
-    });
-    let recording;
-    try {
-      recording = preparedView(await prepare(ctx.transport, followUpInstructions(signer, intent, delivered, done.signature), signer.address));
-    } catch (error) {
-      return unrecorded(error);
-    }
-    try {
-      return { ...done, recorded: "follow-up" as const, follow_up_signature: await execute(ctx.transport, recording, signer) };
-    } catch (error) {
-      if (neverLanded(error)) {
-        return unrecorded(error);
-      }
-      const landed = await ctx.transport
-        .engineTransactions(WAIT_SCAN, intent)
-        .then((transactions) => followUpOf(transactions, done.signature, signer.address))
-        .catch(() => null);
-      return landed === null || landed.sha256 !== delivered ? unrecorded(error) : { ...done, recorded: "follow-up" as const, follow_up_signature: landed.signature };
-    }
+    const recorded = await recordedSplit(ctx, signer, intent, delivered, salt, done, followUp);
+    return recorded.recorded === false ? recorded : { ...recorded, ...(await sendOpenings(ctx, signer, signer.address, openings)) };
   },
 });
+
+async function recordedSplit(
+  ctx: AgentContext,
+  signer: Awaited<ReturnType<typeof signerOf>>,
+  intent: Address,
+  delivered: string,
+  salt: string | undefined,
+  done: { signature: string },
+  followUp: boolean,
+) {
+  if (!followUp) {
+    return { ...done, recorded: "release" as const };
+  }
+  const unrecorded = (error: unknown) => ({
+    ...done,
+    recorded: false as const,
+    record_memo: followUpMemo(delivered, done.signature, salt),
+    next: followUpFailed(problemOf(error).hint),
+  });
+  let recording;
+  try {
+    recording = preparedView(await prepare(ctx.transport, followUpInstructions(signer, intent, delivered, done.signature, salt), signer.address));
+  } catch (error) {
+    return unrecorded(error);
+  }
+  try {
+    return { ...done, recorded: "follow-up" as const, follow_up_signature: await execute(ctx.transport, recording, signer) };
+  } catch (error) {
+    if (neverLanded(error)) {
+      return unrecorded(error);
+    }
+    const landed = await ctx.transport
+      .engineTransactions(WAIT_SCAN, intent)
+      .then((transactions) => followUpOf(transactions, done.signature, signer.address))
+      .catch(() => null);
+    return landed === null || landed.sha256 !== delivered ? unrecorded(error) : { ...done, recorded: "follow-up" as const, follow_up_signature: landed.signature };
+  }
+}

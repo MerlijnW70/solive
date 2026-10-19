@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, none, signBytes } from "@solana/kit";
+import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, none, type Signature, signBytes } from "@solana/kit";
 import { getCreateAssociatedTokenIdempotentInstructionAsync, getMintEncoder, getMintSize, getMintToInstruction } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import {
@@ -19,7 +19,7 @@ import {
   splitN,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import { createClient, type Transport } from "../src/index.js";
+import { createClient, deliverySalt, type Transport } from "../src/index.js";
 import { followUpInstructions } from "../src/job-memos.js";
 import { svmTransport } from "../src/svm.js";
 import { FEE_BPS, world } from "./svm.js";
@@ -83,7 +83,8 @@ async function setup() {
   const job = async (owner: KeyPairSigner, judge: KeyPairSigner, worker: KeyPairSigner, sha256: string, inputMint: Address = NATIVE_MINT) => {
     const { nonce, intent } = await escrow(owner, judge.address, inputMint);
     await client.deliver({ worker, intent, sha256, url: "https://example.org/work" });
-    await client.settleProof({ judge, owner: owner.address, nonce, payTo: worker.address, result: 1n, deliveredSha256: sha256 });
+    const deliveredSalt = await deliverySalt(worker, intent, sha256);
+    await client.settleProof({ judge, owner: owner.address, nonce, payTo: worker.address, result: 1n, deliveredSha256: sha256, deliveredSalt });
     return intent;
   };
   const tokens = async (owner: Address, amount: bigint) => {
@@ -98,8 +99,9 @@ async function setup() {
   };
   const split = async (owner: KeyPairSigner, judge: KeyPairSigner, coauthors: KeyPairSigner[], weights: number[], sha256: string) => {
     const { nonce, intent } = await escrow(owner, judge.address);
+    const announced: Signature[] = [];
     for (const coauthor of coauthors) {
-      await client.deliver({ worker: coauthor, intent, sha256, url: "https://example.org/work" });
+      announced.push(await client.deliver({ worker: coauthor, intent, sha256, url: "https://example.org/work" }));
     }
     const settings = await client.config();
     const recipients = coauthors.map((c) => c.address);
@@ -138,7 +140,14 @@ async function setup() {
       maxFeeBps,
     });
     const release = await transport.send([buildEd25519CosignInstruction({ entries, message }), fill], judge);
-    await transport.send(followUpInstructions(judge, intent, sha256, release), judge);
+    const [first] = coauthors;
+    await transport.send(followUpInstructions(judge, intent, sha256, release, first === undefined ? undefined : await deliverySalt(first, intent, sha256)), judge);
+    for (const [i, coauthor] of coauthors.entries()) {
+      const announcement = announced[i];
+      if (i > 0 && announcement !== undefined) {
+        await client.openDelivery({ worker: coauthor, intent, attestor: judge.address, sha256, announcement });
+      }
+    }
     return intent;
   };
   return { w, client, transport, fresh, economics, job, tokens, split };

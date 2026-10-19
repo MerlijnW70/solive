@@ -120,12 +120,16 @@ for (const params of [limit, auction]) {
 
 An `AttestedResult` intent holds payment until its judge signs a result. `specHash` pins the spec the judge checks, and `judgeFee` pays the judge out of the escrow.
 
-`settleProof` is the judge's call: it pays the worker's wallet `payTo`. Before sending, it refuses an expired escrow (`EscrowExpired`), a `payTo` owned by a program (`PayToNotWallet`), a `payTo` whose token account moved (`PayeeMoved`) and an escrow another worker has claimed (`NotSettleable`). Here your wallet pays the fee, so the new judge key needs no SOL.
+`settleProof` is the judge's call: it pays the worker's wallet `payTo`. Before sending, it refuses an expired escrow (`EscrowExpired`), a `payTo` owned by a program (`PayToNotWallet`), a `payTo` whose token account moved (`PayeeMoved`) and an escrow another worker has claimed (`NotSettleable`). Here your wallet pays the fee, so the new judge key needs no SOL. The judge keeps its 64 key bytes, because it opens what workers seal to it.
 
 `history` returns an intent's events, newest first, also after it closes. An `IntentAttested` event's `net` is what the payee received. This prints `Filled`, then `IntentAttested` and the worker's pay in SOL.
 
 ```ts
-const judge = await generateKeyPairSigner();
+import { generateKeyPairSync } from "node:crypto";
+
+const judgeJwk = generateKeyPairSync("ed25519").privateKey.export({ format: "jwk" });
+const judgeKeypair = Uint8Array.from([...Buffer.from(judgeJwk.d ?? "", "base64url"), ...Buffer.from(judgeJwk.x ?? "", "base64url")]);
+const judge = await createKeyPairSignerFromBytes(judgeKeypair);
 const worker = await generateKeyPairSigner();
 const specHash = new Uint8Array(createHash("sha256").update("the acceptance spec the work must pass").digest());
 const pay = parseAmount("0.01", sell.decimals);
@@ -199,8 +203,9 @@ await client.unwrap(signer);
 - `specUrl` on `createIntent` publishes where the spec lives, in a memo the owner signs.
 - `jobs` lists up to 50 open, unexpired proof escrows, those with the most time left first, each with its `specUrl`.
 - `spec` fetches that url, following no redirect and reading at most 1048576 bytes, and says whether it `matches` the committed hash. It never runs the text.
-- `deliver` announces a worker's work: a memo with the intent, a commitment that binds the work's sha256 to the worker's wallet, and the url sealed to the judge or to each committee member, plus a 0-lamport transfer to the judge.
-- `deliveryRecord` lists the announcements to a judge, newest first, reading at most 100 pages of 1000 transactions. With the judge's 64-byte `keypair` it opens each sealed url. Decide whom to pay only when its `complete` is `true`.
+- `deliver` announces a worker's work: a memo with the intent, a commitment that binds the work's sha256 to the worker's wallet and a salt, a check of that salt, and the salt and url sealed to the judge or to each committee member, plus a 0-lamport transfer to the judge.
+- The salt comes from the worker's own signature over the intent and the sha256, so only its key derives it. `deliver` refuses a signer that cannot sign messages, such as a Ledger, with `NoMessageSigner`; `saltSignature` passes a signature made elsewhere, which must verify for the worker (`BadSaltSignature`).
+- `deliveryRecord` lists the announcements to a judge, newest first, reading at most 100 pages of 1000 transactions. With the judge's 64-byte `keypair` it opens each sealed salt and url. Decide whom to pay only when its `complete` is `true`.
 - A transport you pass to `createClient` needs `signaturesOf`, `transactionsOf` and `firstAvailableSlot` for a complete record.
 
 Here your wallet plays the worker, and the judge pays the earliest wallet that announced the hash it checked. This prints `true true` twice.
@@ -215,17 +220,19 @@ const listed = (await client.jobs({ attestor: judge.address })).find(({ intent }
 console.log(listed?.specUrl === specUrl, (await client.spec(posted.intent))?.matches);
 const sha256 = createHash("sha256").update("the delivered work").digest("hex");
 await client.deliver({ worker: signer, intent: posted.intent, sha256, url: "https://example.org/work.tar" });
-const record = await client.deliveryRecord({ judge: judge.address, intent: posted.intent });
+const record = await client.deliveryRecord({ judge: judge.address, intent: posted.intent, keypair: judgeKeypair });
 if (!record.complete) {
   throw new Error(`read ${record.pages} pages without reaching the escrow's creation; pass a higher pages`);
 }
 const delivery = firstDelivery(record.deliveries, sha256);
 console.log(delivery?.worker === signer.address, delivery?.sha256 === sha256);
-await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: posted.nonce, payTo: delivery!.worker, result: 1n, deliveredSha256: sha256 });
+await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: posted.nonce, payTo: delivery!.worker, result: 1n, deliveredSha256: sha256, deliveredSalt: delivery!.salt });
 await client.unwrap(signer);
 ```
 
-`firstDelivery(record.deliveries, sha256)` returns the earliest announcement of the checked hash, or `null`; the judge pays its announcer. `settleProof` takes `deliveredSha256` to record the paid work's hash in the release, in the memo `intent-engine receipt` and `solive_wallet_receipt` read. [Judge work](judge.md) does all of this from the command line.
+`firstDelivery(record.deliveries, sha256)` returns the earliest announcement whose opened salt opens its commitment to the checked hash, or `null`; the judge pays its announcer. `settleProof` takes `deliveredSha256` and `deliveredSalt` to record the paid work's hash and the payee's salt in the release, in the memo `intent-engine receipt` and `solive_wallet_receipt` read. [Judge work](judge.md) does all of this from the command line.
+
+`judgeOpenings(record.deliveries, delivery)` lists the salts of the announcements before the payee's, in order, split into as many memos as needed, and `openingInstructions` publishes each. `openDelivery` publishes one announcer's own salt. `recordedStanding` reads a release as valid when the recorded salt opens an announcement by a wallet the release paid, and gives `refutedBy` when a published salt shows an earlier announcement of the same hash.
 
 ## Who can do what
 

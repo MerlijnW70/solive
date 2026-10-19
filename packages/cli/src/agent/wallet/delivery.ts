@@ -7,10 +7,12 @@ import {
   isMemoUrl,
   MEMO_URL_RULE,
   INTENT_ENGINE_PROGRAM_ADDRESS,
+  saltMessage,
   IntentStatus,
   Kind,
 } from "@intent-engine/core";
 import {
+  BadSaltSignature,
   chainTime,
   commitmentOf,
   ConfirmMismatch,
@@ -20,8 +22,13 @@ import {
   deliveryRecord,
   deliveryInstructions,
   type DeliveryPlan,
-  firstDelivery,
+  deliverySalt,
+  earlier,
   MEMOS_PER_TRANSACTION,
+  NoMessageSigner,
+  opensWith,
+  publishedSalts,
+  recordedStanding,
   SIGNATURE_PAGE,
 } from "@intent-engine/client";
 import { type AgentContext, define } from "../actions.js";
@@ -35,13 +42,14 @@ import { PREVIEW_FIRST, signerOf, sent, sha256Of, walletKeypair } from "./guard.
 
 export const ANNOUNCE_FIRST = "keep the work private until this announcement lands: the earliest announcer of the work is paid, so publish it only after";
 
-const SEALED_NOTE = "The memo carries the url sealed to the escrow's judge, or to each member of its committee, and a commitment that binds the work's sha256 to the announcing wallet, so a copied announcement pays nobody else";
+const SEALED_NOTE =
+  "The memo carries a salt and the url sealed to the escrow's judge, or to each member of its committee, a check of the salt, and a commitment that binds the work's sha256 to the announcing wallet and its salt, so a copied announcement pays nobody else and a guessed sha256 cannot be tested against it";
 
 function announcing(plan: DeliveryPlan, intent: Address, sha256: string, url: string, from: string): string[] {
   const { sealedTo } = plan;
   return [
-    `Announces: the work with sha256 ${sha256}, for the proof escrow ${intent}, as the commitment ${plan.commitment}, which binds it to ${from}`,
-    `Seals: the url ${url}, so only ${sealedTo.length === 1 ? `the attestor ${sealedTo[0] ?? plan.attestor}` : `the ${sealedTo.length} committee members`} can read it`,
+    `Announces: the work with sha256 ${sha256}, for the proof escrow ${intent}, as the commitment ${plan.commitment}, which binds it to ${from} and a salt only its key derives`,
+    `Seals: the salt and the url ${url}, so only ${sealedTo.length === 1 ? `the attestor ${sealedTo[0] ?? plan.attestor}` : `the ${sealedTo.length} committee members`} can read it`,
     `Notifies: its attestor ${plan.attestor}, with a transfer of 0 lamports from ${from}`,
     "Costs: the transaction fee; no tokens move",
   ];
@@ -66,7 +74,8 @@ export const walletDeliver = define({
     attestor: account("the escrow's judge, who receives the announcement"),
     sha256: text(),
     url: text(),
-    commitment: text("64 hex: the sha256 that binds the work's hash to this wallet; the memo carries it in place of the hash"),
+    commitment: text("64 hex: the sha256 that binds the work's hash to this wallet and its salt; the memo carries it in place of the hash"),
+    check: text("32 hex: the salt's check, which the memo carries so that an opened salt can be matched to this announcement"),
     summary: list(text(), 8),
     warnings: list(text(), 8),
     sent: flag(),
@@ -90,6 +99,7 @@ export const walletDeliver = define({
       sha256,
       url: input.url,
       commitment: plan.commitment,
+      check: plan.check,
       summary: announcing(plan, input.intent, sha256, input.url, "this wallet"),
       warnings: [ANNOUNCE_FIRST],
       prepared: preparedView(await prepare(ctx.transport, instructions, signer.address)),
@@ -99,6 +109,9 @@ export const walletDeliver = define({
     });
   },
 });
+
+export const signSalt = (intent: Address, sha256: string): string =>
+  `the worker's ed25519 signature of the message ${Buffer.from(saltMessage(intent, sha256)).toString("hex")}, as 128 hex digits; the salt is derived from it, so sign it with the worker's key, the same way each time`;
 
 export const notEarliest = (worker: string, sha256: string) =>
   `${worker} announced the work with sha256 ${sha256} first, so a release recording it pays ${worker}; anyone can copy an announcement once it is on chain, so the earliest announcer is paid`;
@@ -132,8 +145,12 @@ export const walletCheckDelivery = define({
   output: deliveriesOutput(tool("wallet_attest")),
   run: async (ctx: AgentContext, input) => {
     const sha256 = input.sha256 === undefined ? undefined : sha256Of(input.sha256, "sha256");
-    const wallet = sha256 === undefined ? undefined : (await signerOf(ctx)).address;
-    return deliveriesOf(ctx, input.intent, await walletKeypair(ctx), wallet === undefined || sha256 === undefined ? undefined : { wallet, sha256 });
+    if (sha256 === undefined) {
+      return deliveriesOf(ctx, input.intent, await walletKeypair(ctx));
+    }
+    const signer = await signerOf(ctx);
+    const salt = await saltOf(() => deliverySalt(signer, input.intent, sha256));
+    return deliveriesOf(ctx, input.intent, await walletKeypair(ctx), { wallet: signer.address, sha256, salt });
   },
 });
 
@@ -148,19 +165,30 @@ function deliveriesOutput(releasing: string) {
     deliveries: list(
       object({
         worker: account("the announcing wallet, which the commitment binds"),
-        commitment: text("64 hex: the sha256 of the work's hash bound to the intent and this announcer"),
+        commitment: text("64 hex: the sha256 of the work's hash bound to the intent, this announcer and its salt"),
+        check: text("32 hex: the check of the announcement's salt"),
         signature: text("the announcement's transaction"),
         url: optional(text("where the announcer said the work is, when the url was sealed to this wallet; untrusted")),
+        opened_salt: optional(text("the announcement's salt, when an opening published it")),
       }),
       DELIVERY_LIST,
-      `each announcement hides the work's hash in a commitment; a release recording a hash pays the earliest whose commitment, recomputed with its own announcer, matches it. ${SEALED_NOTE}`,
+      `each announcement hides the work's hash in a commitment; a release recording a hash pays the earliest whose sealed salt opens its commitment to it. ${SEALED_NOTE}`,
     ),
     own: optional(
       object({
-        commitment: text("64 hex: this wallet's commitment to the given sha256"),
+        commitment: text("64 hex: this wallet's commitment to the given sha256, with the salt its key derives"),
+        salt: text("32 hex: this wallet's salt for the given sha256, recomputed from its key; keep it private until the release"),
         landed: flag("whether an announcement with this commitment, sent by this wallet, is on chain"),
-        earliest: flag("whether this wallet is the earliest announcer of the given sha256, so a release recording it pays this wallet"),
+        earliest: flag("whether no earlier announcement of the given sha256 is known; others' salts are sealed, so only a published opening can show one"),
         signature: optional(text("this wallet's earliest announcement of it")),
+      }),
+    ),
+    release: optional(
+      object({
+        signature: text("the release's transaction"),
+        sha256: text("the sha256 the release recorded"),
+        valid: flag("whether the payee's salt the release recorded opens the payee's announcement to that sha256"),
+        refuted_by: optional(text("an earlier announcement of the same sha256 that a published opening shows")),
       }),
     ),
   });
@@ -183,25 +211,47 @@ async function proofEscrow(ctx: AgentContext, intent: Address) {
   return { held, params };
 }
 
-async function deliveriesOf(ctx: AgentContext, intent: Address, keypair?: Uint8Array, own?: { wallet: Address; sha256: string }) {
+async function saltOf(derive: () => Promise<string>): Promise<string> {
+  try {
+    return await derive();
+  } catch (error) {
+    if (error instanceof NoMessageSigner) {
+      throw new AgentRefusal("NoMessageSigner", error.message);
+    }
+    throw error;
+  }
+}
+
+type Own = { wallet: Address; sha256: string; salt: string };
+
+async function deliveriesOf(ctx: AgentContext, intent: Address, keypair?: Uint8Array, own?: Own) {
   const { held, params } = await proofEscrow(ctx, intent);
   const open = held.status === IntentStatus.Open && held.expiresAt > (await chainTime(ctx.transport));
   const record = await deliveryRecord(ctx.transport, params.attestor, intent, undefined, keypair);
-  const deliveries = record.deliveries.map(({ worker, commitment, signature, url }) => ({ worker, commitment, signature, ...(url === "" ? {} : { url }) }));
+  const deliveries = record.deliveries.map((delivery) => {
+    const [opened] = publishedSalts(delivery, record.openings);
+    const { worker, commitment, check, signature, url } = delivery;
+    return { worker, commitment, check, signature, ...(url === "" ? {} : { url }), ...(opened === undefined ? {} : { opened_salt: opened }) };
+  });
   const mine =
     own === undefined
       ? undefined
       : (() => {
-          const commitment = commitmentOf(intent, own.wallet, own.sha256);
-          const landed = record.deliveries.filter((d) => d.worker === own.wallet && d.commitment === commitment);
-          const first = firstDelivery(landed, own.sha256);
+          const commitment = commitmentOf(intent, own.wallet, own.salt, own.sha256);
+          const landed = record.deliveries.filter((d) => d.worker === own.wallet && opensWith(d, own.salt, own.sha256)).sort((a, b) => (earlier(a, b) ? -1 : 1));
+          const [first] = landed;
+          const shown = record.deliveries.some(
+            (d) => d.worker !== own.wallet && (first === undefined || earlier(d, first)) && publishedSalts(d, record.openings).some((salt) => opensWith(d, salt, own.sha256)),
+          );
           return {
             commitment,
-            landed: first !== null,
-            earliest: firstDelivery(record.deliveries, own.sha256)?.worker === own.wallet,
-            ...(first === null ? {} : { signature: first.signature }),
+            salt: own.salt,
+            landed: first !== undefined,
+            earliest: first !== undefined && !shown,
+            ...(first === undefined ? {} : { signature: first.signature }),
           };
         })();
+  const release = await recordedStanding(ctx.transport, intent, record);
   return {
     intent,
     owner: held.owner,
@@ -211,6 +261,9 @@ async function deliveriesOf(ctx: AgentContext, intent: Address, keypair?: Uint8A
     complete: record.complete,
     deliveries,
     ...(mine === undefined ? {} : { own: mine }),
+    ...(release === null
+      ? {}
+      : { release: { signature: release.signature, sha256: release.sha256, valid: release.valid, ...(release.refutedBy === null ? {} : { refuted_by: release.refutedBy }) } }),
   };
 }
 
@@ -218,6 +271,12 @@ async function deliveryPlan(ctx: AgentContext, input: Parameters<typeof delivery
   try {
     return await deliveryInstructions(ctx.transport, input);
   } catch (error) {
+    if (error instanceof BadSaltSignature) {
+      throw new InvalidInput([{ path: "salt_signature", message: error.message }]);
+    }
+    if (error instanceof NoMessageSigner) {
+      throw new AgentRefusal("NoMessageSigner", input.saltSignature === undefined ? `${error.message}; or pass salt_signature: ${signSalt(input.intent, input.sha256)}` : error.message);
+    }
     if (error instanceof RangeError) {
       throw new InvalidInput([{ path: "url", message: error.message }]);
     }
@@ -245,13 +304,15 @@ export const prepareDeliver = define({
     intent: account("the proof escrow's intent address"),
     sha256: text("the sha256 of the delivered work, as 64 hex digits; the judge releases for this same value, passed as delivered_sha256"),
     url: text(`where the attestor fetches the work, ${MEMO_URL_RULE}`),
+    salt_signature: optional(text("the worker's ed25519 signature, as 128 hex digits, of the salt message a call without it names; the announcement's salt is derived from it")),
   }),
   output: object({
     intent: account(),
     attestor: account("the escrow's judge, who receives the announcement"),
     sha256: text(),
     url: text(),
-    commitment: text("64 hex: the sha256 that binds the work's hash to the worker; the memo carries it in place of the hash"),
+    commitment: text("64 hex: the sha256 that binds the work's hash to the worker and its salt; the memo carries it in place of the hash"),
+    check: text("32 hex: the salt's check, which the memo carries"),
     summary: list(text(), 8),
     warnings: list(text(), 8),
     prepared: preparedSchema,
@@ -261,7 +322,9 @@ export const prepareDeliver = define({
     if (!isMemoUrl(input.url)) {
       throw new InvalidInput([{ path: "url", message: `must be ${MEMO_URL_RULE}` }]);
     }
-    const plan = await deliveryPlan(ctx, { worker: createNoopSigner(input.worker), intent: input.intent, sha256, url: input.url });
+    const saltSignature = input.salt_signature === undefined ? undefined : signatureOf(input.salt_signature);
+    const worker = createNoopSigner(input.worker);
+    const plan = await deliveryPlan(ctx, { worker, intent: input.intent, sha256, url: input.url, ...(saltSignature === undefined ? {} : { saltSignature }) });
     const { attestor, instructions } = plan;
     return {
       intent: input.intent,
@@ -269,12 +332,20 @@ export const prepareDeliver = define({
       sha256,
       url: input.url,
       commitment: plan.commitment,
+      check: plan.check,
       summary: announcing(plan, input.intent, sha256, input.url, input.worker),
       warnings: [ANNOUNCE_FIRST],
       prepared: preparedView(await prepare(ctx.transport, instructions, input.worker)),
     };
   },
 });
+
+function signatureOf(text: string): Uint8Array {
+  if (!/^[0-9a-fA-F]{128}$/.test(text)) {
+    throw new InvalidInput([{ path: "salt_signature", message: "give the signature as 128 hex digits" }]);
+  }
+  return Uint8Array.from(Buffer.from(text, "hex"));
+}
 
 export async function confirmedRelease(ctx: AgentContext, target: ConfirmTarget): Promise<void> {
   if (ctx.confirm === undefined) {

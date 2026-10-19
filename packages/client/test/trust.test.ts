@@ -3,7 +3,7 @@ import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, none
 import { getCreateAssociatedTokenIdempotentInstructionAsync, getMintEncoder, getMintSize, getMintToInstruction } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { buildUpdateEconomics, findAssociatedTokenAddress, findIntentPda, Kind, NATIVE_MINT, splitFee, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { createClient, RESTART, type Transport, TRUST_HOPS, trustOf } from "../src/index.js";
+import { createClient, deliverySalt, RESTART, type Transport, TRUST_HOPS, trustOf } from "../src/index.js";
 import { svmTransport } from "../src/svm.js";
 import { FEE_BPS, world } from "./svm.js";
 
@@ -46,7 +46,7 @@ async function setup() {
     const [intent] = await findIntentPda({ owner: owner.address, nonce });
     const sha256 = (jobs++).toString(16).padStart(64, "0");
     await client.deliver({ worker, intent, sha256, url: "https://example.org/work" });
-    await client.settleProof({ judge, owner: owner.address, nonce, payTo: worker.address, result: 1n, deliveredSha256: sha256 });
+    await client.settleProof({ judge, owner: owner.address, nonce, payTo: worker.address, result: 1n, deliveredSha256: sha256, deliveredSalt: await deliverySalt(worker, intent, sha256) });
   };
   const createFee = async (fee: bigint) => {
     const settings = await client.config();

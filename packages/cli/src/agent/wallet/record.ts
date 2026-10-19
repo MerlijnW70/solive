@@ -21,7 +21,7 @@ import { AgentRefusal } from "../problems.js";
 import { InvalidInput, account, amount, flag, list, object, optional, text } from "../schema.js";
 import { preparedView } from "../shapes.js";
 import { prepare } from "../prepare.js";
-import { PREVIEW_FIRST, signerOf, sent, sha256Of } from "./guard.js";
+import { PREVIEW_FIRST, signerOf, sent, sha256Of, walletKeypair } from "./guard.js";
 import { HISTORY_TOO_LONG } from "./delivery.js";
 import { RELEASE_UNKNOWN, outlives, releaseLookup, aroundRelease, namedRelease, releasedMint, heldMint, splitRecipients } from "./releases.js";
 
@@ -77,6 +77,9 @@ export const historyLagging = (release: string, intent: string) =>
 export const otherLifecycle = (release: string, intent: string) =>
   `the release ${release} belongs to an earlier lifecycle of the escrow address ${intent}, which was closed and made again at the same nonce since, so it is not a release of the escrow there now; leave release out to read the current one`;
 
+export const SALTS_SEALED =
+  "the announcements for this escrow seal their salts to the attestor's key, and this wallet's key file cannot be read to open them, so the earliest announcer of the work cannot be known and nothing is recorded; sign with the attestor's key file";
+
 export const COVERAGE_UNPROVABLE =
   "this transport cannot report the first slot its RPC node keeps, so it cannot prove that the history read reaches back to the escrow's creation and an escrow without a release found reads as unknown rather than not released";
 
@@ -96,6 +99,7 @@ async function announcedFor(
   held: Intent | null,
   creation: EngineTransaction | null,
   release: EngineTransaction,
+  keypair: Uint8Array | undefined,
 ): Promise<DeliveryRecord> {
   const proof = (creation === null ? null : creationProof(creation, intent)) ?? (held === null ? null : heldProof(held));
   if (proof === null) {
@@ -110,7 +114,8 @@ async function announcedFor(
   if (proof.attestor !== judge) {
     throw new AgentRefusal("Unauthorized", releasedBy(proof.attestor, judge));
   }
-  return lifecycleDeliveries(transport, judge, { intent, createdAt: creation?.blockTime ?? held?.createdAt ?? null, from: creation?.slot ?? null, to: release.slot });
+  const lifecycle = { intent, createdAt: creation?.blockTime ?? held?.createdAt ?? null, from: creation?.slot ?? null, to: release.slot };
+  return lifecycleDeliveries(transport, judge, lifecycle, undefined, keypair);
 }
 
 export const coverageOf = (transport: Transport, text: string): string => (transport.firstAvailableSlot === undefined ? `${text}; ${COVERAGE_UNPROVABLE}` : text);
@@ -122,6 +127,7 @@ export async function recordingOf(
   nonce: bigint,
   sha256: string,
   releaseSignature?: string,
+  keypair?: Uint8Array,
 ): Promise<Recording> {
   const [intent] = await findIntentPda({ owner, nonce });
   const lookup = releaseSignature === undefined ? await releaseLookup(transport, intent) : await namedRelease(transport, intent, releaseSignature);
@@ -151,9 +157,12 @@ export async function recordingOf(
   }
   const creation = around === null ? (lookup.creation ?? null) : around.creation;
   const held = await intentAt(transport, intent);
-  const record = await announcedFor(transport, judge.address, intent, held !== null && !outlives(held, tx, creation) ? held : null, creation, tx);
+  const record = await announcedFor(transport, judge.address, intent, held !== null && !outlives(held, tx, creation) ? held : null, creation, tx, keypair);
   if (!record.complete) {
     throw new AgentRefusal("HistoryTooLong", HISTORY_TOO_LONG);
+  }
+  if (keypair === undefined && record.deliveries.length > 0) {
+    throw new AgentRefusal("SealedSalts", SALTS_SEALED);
   }
   const first = firstDelivery(record.deliveries, sha256);
   if (first === null) {
@@ -175,10 +184,10 @@ export async function recordingOf(
     release: tx.signature,
     attestor,
     sha256,
-    memo: followUpMemo(sha256, tx.signature),
-    instructions: followUpInstructions(judge, intent, sha256, tx.signature),
+    memo: followUpMemo(sha256, tx.signature, first.salt),
+    instructions: followUpInstructions(judge, intent, sha256, tx.signature, first.salt),
     summary: [
-      `Records: the delivered work's sha256 ${sha256} for the release ${tx.signature} of the escrow ${intent}, in a memo ${attestor} signs`,
+      `Records: the delivered work's sha256 ${sha256} and its announcer's salt for the release ${tx.signature} of the escrow ${intent}, in a memo ${attestor} signs`,
       `Notifies: the escrow ${intent}, with a transfer of 0 lamports, so the memo shows in its history`,
       "Costs: the transaction fee; no tokens move",
     ],
@@ -230,7 +239,7 @@ export const walletRecordDelivery = define({
   run: async (ctx: AgentContext, input, call: Call) => {
     const signer = await signerOf(ctx);
     const sha256 = sha256Of(input.sha256, "sha256");
-    const recording = await recordingOf(ctx.transport, signer, input.owner, input.nonce, sha256, releaseOf(input.release));
+    const recording = await recordingOf(ctx.transport, signer, input.owner, input.nonce, sha256, releaseOf(input.release), await walletKeypair(ctx));
     const view = {
       intent: recording.intent,
       release: recording.release,

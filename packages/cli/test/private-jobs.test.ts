@@ -9,7 +9,7 @@ import { type Address, createKeyPairSignerFromBytes, getAddressDecoder, lamports
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { DEVNET_TEST_MINT, NATIVE_MINT, specMemo } from "@intent-engine/core";
-import { commitmentOf } from "@intent-engine/client";
+import { commitmentOf, deliverySalt } from "@intent-engine/client";
 import { ENV_KEYPAIR, ENV_URL } from "../src/args.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { ata, cli, creation, funded, h, world } from "./harness.js";
@@ -99,8 +99,8 @@ describe("the company-only job guide", () => {
     const work = (await cli(["hash", "--artifact", join(dir, "work")], keys)).json()["sha256"] as string;
     const delivered = (await run(deliverLine)).json() as { sent: boolean; intent: string; attestor: string; summary: string[] };
     expect(delivered).toMatchObject({ sent: true, intent: vars["INTENT"], attestor: owner.address });
-    expect(delivered.summary[0]).toBe(`Announces: the work with sha256 ${work}, for the proof escrow ${vars["INTENT"]}, as the commitment ${commitmentOf(vars["INTENT"] as Address, worker.address, work)}, which binds it to ${worker.address}`);
-    expect(delivered.summary[1]).toBe(`Seals: the url ${vars["WORK_URL"]}, so only the judge ${owner.address} can read it`);
+    expect(delivered.summary[0]).toBe(`Announces: the work with sha256 ${work}, for the proof escrow ${vars["INTENT"]}, as the commitment ${commitmentOf(vars["INTENT"] as Address, worker.address, await deliverySalt(worker, vars["INTENT"] as Address, work), work)}, which binds it to ${worker.address} and a salt only its key derives`);
+    expect(delivered.summary[1]).toBe(`Seals: the salt and the url ${vars["WORK_URL"]}, so only the judge ${owner.address} can read it`);
     h.env[ENV_KEYPAIR] = "owner.json";
     expect(PAGE).toContain("The link and the work's hash are public; the work is not.");
   }, 60_000);
@@ -167,7 +167,7 @@ describe("the company-only job guide", () => {
     const delivered = (await as("worker.json", deliverLine, workerFiles)) as { sent: boolean; summary: string[] };
     expect(delivered.sent).toBe(true);
     expect(delivered.summary[0]).toContain(`Announces: the work with sha256 ${workHash}, for the proof escrow ${vars["INTENT"]}, as the commitment `);
-    expect(delivered.summary[1]).toBe(`Seals: the url ${vars["WORK_URL"]}, so only the judge ${owner.address} can read it`);
+    expect(delivered.summary[1]).toBe(`Seals: the salt and the url ${vars["WORK_URL"]}, so only the judge ${owner.address} can read it`);
 
     const judgeFiles = { "work.sealed": join(workerDir, "work.sealed"), "work.tar": join(judgeDir, "work.tar") };
     const [unsealLine = ""] = opening;

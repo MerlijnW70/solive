@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind } from "@intent-engine/core";
 import { createClient, LEDGER_ERRORS } from "@intent-engine/client";
 import { SERVER_PROBLEMS } from "../src/agent/problems.js";
+import { SALTS_SEALED } from "../src/agent/wallet/record.js";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { ENV_KEYPAIR } from "../src/clusters.js";
@@ -23,7 +24,7 @@ const WORK = createHash("sha256").update("work").digest("hex");
 
 type Escrow = { key: Key; owner: Address; worker: Address; workerKey: KeyPairSigner; intent: Address; mint: Address };
 
-async function escrow(): Promise<Escrow> {
+async function escrow(announce = false): Promise<Escrow> {
   const w = await world();
   const key = await deviceKey();
   h.svm.airdrop(key.address, lamports(10_000_000_000n));
@@ -32,7 +33,7 @@ async function escrow(): Promise<Escrow> {
   const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: key.address, specHash: new Uint8Array(32).fill(7), judgeFee: 0n } as const;
   const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
   const announced = await sealedDelivery(intent, worker, WORK, "https://" + "example.org/work", [key.address]);
-  h.engineLog = [{ signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [announced], feePayer: worker }, creation(intent)];
+  h.engineLog = [...(announce ? [{ signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [announced], feePayer: worker }] : []), creation(intent)];
   h.env[ENV_KEYPAIR] = PATH;
   return { key, owner: w.owner.address, worker, workerKey, intent, mint: w.inputMint };
 }
@@ -86,6 +87,16 @@ describe("an MCP wallet on a Ledger", () => {
     expect(wireSigner(e.key)).toBe(ledger.signatures[1]);
     expect(statusOf(e.intent)).toBe(IntentStatus.Filled);
     expect(balance(await findAssociatedTokenAddress({ owner: e.worker, mint: e.mint, tokenProgram: TOKEN_PROGRAM_ADDRESS }))).toBeGreaterThan(0n);
+  });
+
+  it("refuses to release announced work, whose sealed salts only a key file opens, without asking the device", async () => {
+    const e = await escrow(true);
+    const ledger = device(e.key, found(LEVELS, e.key));
+    const client = await served(ledger);
+    const refused = await call(client, "wallet_attest", { owner: e.owner, nonce: "0", pay_to: e.worker, delivered_sha256: WORK });
+    expect(refused).toMatchObject({ error: true, value: { code: "SealedSalts", hint: SALTS_SEALED } });
+    expect([ledger.signed, h.wires.length]).toEqual([[], 0]);
+    expect(statusOf(e.intent)).toBe(IntentStatus.Open);
   });
 
   it("a refusal on the device comes back as a problem with nothing sent", async () => {

@@ -2,15 +2,17 @@ import { createHash, generateKeyPairSync } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Address, createKeyPairSignerFromBytes, generateKeyPairSigner, type KeyPairSigner, lamports } from "@solana/kit";
+import { type Address, createKeyPairSignerFromBytes, generateKeyPairSigner, type KeyPairSigner, lamports, type Signature } from "@solana/kit";
+import { TransactionMetadata } from "litesvm";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { deliveryCommitment, deliveryMemoV2, findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, sealUrl, sortMembers } from "@intent-engine/core";
-import { createClient, type EngineTransaction } from "@intent-engine/client";
+import { deliveryMemo, EVENT_IX_TAG, findAssociatedTokenAddress, getIntentAttestedEventEncoder, getIntentDecoder, IntentStatus, Kind, openingMemo, RELEASE_MEMO_PREFIX, sealDelivery, sortMembers } from "@intent-engine/core";
+import { commitmentOf, createClient, type EngineTransaction, saltCheckOf } from "@intent-engine/client";
 import { SEALED_ELSEWHERE } from "../src/judge-watch.js";
 import { VOTE_NEXT } from "../src/judge.js";
 import { EXIT_OK, main } from "../src/main.js";
 import { balance, cli, creation, funded, h, NOW, runtime, transport, type World, world } from "./harness.js";
+import { saltFor, sealedDelivery } from "./announce.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
 const SPEC = `# Count words\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
@@ -38,8 +40,7 @@ async function escrow(w: World, attestor: Address, judgeFee = 0n) {
 
 async function sealedMemo(intent: Address, worker: Address, module: string, url: string, sealedTo: readonly Address[]): Promise<string> {
   h.specPages.set(url, new TextEncoder().encode(module));
-  const commitment = await deliveryCommitment({ intent, worker, sha256: sha(module) });
-  return deliveryMemoV2({ intent, commitment, blob: await sealUrl(url, sealedTo, intent) });
+  return sealedDelivery(intent, worker, sha(module), url, sealedTo);
 }
 
 function landed(signature: string, slot: bigint, memo: string, feePayer: Address): void {
@@ -120,6 +121,71 @@ describe("sealed announcements", () => {
     expect(account.exists ? getIntentDecoder().decode(account.data).status : undefined).toBe(IntentStatus.Open);
   }, 60_000);
 
+  it("judge pays the earliest announcement its sealed salt opens, records that salt and publishes the earlier salts in order", async () => {
+    const w = await world();
+    const judge = await keyed();
+    const { dir, spec, intent } = await escrow(w, judge.signer.address);
+    h.files.set("judge.json", JSON.stringify(Array.from(judge.keypair)));
+    const artifact = join(dir, "count.mjs");
+    await writeFile(artifact, CORRECT);
+    const [worker, other] = [await generateKeyPairSigner(), await generateKeyPairSigner()];
+    const away = await generateKeyPairSigner();
+    landed("other", 3n, await sealedMemo(intent, other.address, "export default 1;\n", "https://example.org/other.mjs", [judge.signer.address]), other.address);
+    const hidden = "cd".repeat(16);
+    const awayBlob = await sealDelivery({ salt: hidden, url: "https://example.org/away.mjs" }, [away.address], intent);
+    const awayMemo = deliveryMemo({ intent, commitment: commitmentOf(intent, away.address, hidden, sha(CORRECT)), check: saltCheckOf(hidden), blob: awayBlob });
+    landed("away", 4n, awayMemo, away.address);
+    landed("honest", 5n, await sealedMemo(intent, worker.address, CORRECT, "https://example.org/count.mjs", [judge.signer.address]), worker.address);
+    const judged = await cli(["judge", "--keypair", "judge.json", "--owner", w.owner.address, "--nonce", "0", "--spec", spec, "--artifact", artifact, "--sandbox", "viper", "--yes"], {});
+    expect([judged.code, judged.err]).toEqual([EXIT_OK, ""]);
+    const memo = openingMemo({ intent, salts: [saltFor(intent), null] });
+    expect(judged.json()).toMatchObject({ verdict: "pass", payTo: worker.address, signature: expect.any(String), openings: [{ memo, signature: expect.any(String) }] });
+    const logsOf = (signature: unknown) => {
+      const landedTx = h.svm.getTransaction(String(signature) as Signature);
+      return landedTx instanceof TransactionMetadata ? landedTx.logs().join("\n") : "";
+    };
+    expect(logsOf(judged.json()["signature"])).toContain(`${RELEASE_MEMO_PREFIX}${sha(CORRECT)} salt:${saltFor(intent)}`);
+    const [opened] = judged.json()["openings"] as { signature: string }[];
+    expect(logsOf(opened?.signature)).toContain(memo);
+    expect(await paidTo(w.inputMint, worker.address)).toBeGreaterThan(0n);
+    const signature = String(judged.json()["signature"]);
+    const payee = await findAssociatedTokenAddress({ owner: worker.address, mint: w.inputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const attested = getIntentAttestedEventEncoder().encode({
+      intent,
+      owner: w.owner.address,
+      solver: judge.signer.address,
+      payee,
+      attestor: judge.signer.address,
+      amountIn: 100n,
+      result: 1n,
+      fee: 0n,
+      net: 100n,
+      filled: 100n,
+      remaining: 0n,
+      partnerFee: 0n,
+    });
+    const releaseMemo = `${RELEASE_MEMO_PREFIX}${sha(CORRECT)} salt:${saltFor(intent)}`;
+    const release: EngineTransaction = { signature, slot: 6n, blockTime: null, failed: false, emitted: [Uint8Array.from([...EVENT_IX_TAG, ...attested])], memos: [releaseMemo], memoSigners: [[judge.signer.address]], feePayer: judge.signer.address, tokens: [{ account: payee, mint: w.inputMint, owner: worker.address }] };
+    landed(String(opened?.signature), 7n, memo, judge.signer.address);
+    h.engineLog = [h.engineLog[0] as EngineTransaction, release, ...h.engineLog.slice(1)];
+    const listed = (await cli(["deliveries", "--attestor", judge.signer.address, "--intent", intent], {})).json();
+    expect(listed["release"]).toEqual({ signature, sha256: sha(CORRECT), valid: true });
+    expect((listed["deliveries"] as { signature: string; opened_salt?: string }[]).map(({ signature, opened_salt }) => [signature, opened_salt])).toEqual([
+      ["honest", saltFor(intent)],
+      ["away", undefined],
+      ["other", saltFor(intent)],
+    ]);
+    const receipt = ["receipt", "--owner", w.owner.address, "--nonce", "0"];
+    h.engineLog = h.engineLog.filter((transaction) => transaction.signature !== `create-${intent}`);
+    const shown = await cli(receipt, {});
+    expect([shown.code, shown.err]).toEqual([EXIT_OK, ""]);
+    expect(shown.json()).toMatchObject({ delivered_salt: saltFor(intent), valid: true });
+    const bribed = { ...release, tokens: [{ account: payee, mint: w.inputMint, owner: other.address }] };
+    h.engineLog = h.engineLog.map((transaction) => (transaction.signature === signature ? bribed : transaction));
+    expect((await cli(["deliveries", "--attestor", judge.signer.address, "--intent", intent], {})).json()["release"]).toEqual({ signature, sha256: sha(CORRECT), valid: false });
+    expect((await cli(receipt, {})).json()).toMatchObject({ delivered_salt: saltFor(intent), valid: false });
+  }, 60_000);
+
   it("deliveries lists sealed announcements and opens their urls only with the judge's key", async () => {
     const w = await world();
     const judge = await keyed();
@@ -129,7 +195,7 @@ describe("sealed announcements", () => {
     const url = "https://example.org/count.mjs";
     const memo = await sealedMemo(intent, worker.address, CORRECT, url, [judge.signer.address]);
     landed("honest", 5n, memo, worker.address);
-    const listedOne = { worker: worker.address, commitment: memo.split(":")[2], signature: "honest", slot: "5" };
+    const listedOne = { worker: worker.address, commitment: memo.split(":")[2], check: memo.split(":")[3], signature: "honest", slot: "5" };
     const listed = await cli(["deliveries", "--attestor", judge.signer.address, "--intent", intent], {});
     expect([listed.code, listed.err]).toEqual([EXIT_OK, ""]);
     expect(listed.json()).toEqual({ intent, complete: true, deliveries: [listedOne] });
@@ -161,6 +227,7 @@ describe("sealed announcements", () => {
     );
     expect([judged.code, judged.err]).toEqual([EXIT_OK, ""]);
     expect(judged.json()).toMatchObject({ verdict: "pass", payTo: worker.address, committee, next: VOTE_NEXT });
+    expect(judged.json()["vote"]).toMatchObject({ salt: saltFor(intent), earlier: [saltFor(intent)] });
     const forced = await cli(
       ["judge", "--keypair", "m1.json", "--owner", w.owner.address, "--nonce", "0", "--spec", spec, "--artifact", artifact, "--sandbox", "viper", "--pay-to", copier.address],
       keys,

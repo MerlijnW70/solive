@@ -57,6 +57,8 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `SpecUnreadable` | yes | the spec url could not be read this time: it failed or the node answered a temporary error; try again shortly |
 | `SpecUnfetchable` | no | the spec url cannot be read: it answered not-found, redirects, is larger than the limit, or is not a public http(s) address; ask the owner for a working spec url and do not retry this one |
 | `NotEarliestAnnouncer` | no | another wallet announced the delivered work first; a release recording that work pays its earliest announcer |
+| `SealedSalts` | no | the announcements seal their salts to the attestor's key, and this wallet cannot open them here, so the earliest announcer cannot be known; use the attestor's key file |
+| `NoMessageSigner` | no | the wallet cannot sign messages, and a delivery derives its salt from the wallet's signature; use a key file or give the signature the hint asks for |
 | `NotAnnounced` | no | no work with this sha256 was announced for the escrow, so it is not recorded as what the release paid for |
 | `NotReleased` | no | the escrow has no release in its history, so no delivery can be recorded for it |
 | `NotARelease` | no | the transaction named as the release is not a release of this escrow |

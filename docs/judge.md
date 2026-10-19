@@ -20,6 +20,8 @@ $env:JUDGE = (intent-engine balance | Out-String | ConvertFrom-Json).address
 
 The judge's wallet can be a Ledger: pass `--keypair usb://ledger` or another Ledger form to `judge`, with or without `--watch`. Each release then waits for two approvals on the device, first the message over the proof, shown as a hex digest, then the transaction. A preview without `--yes` asks the device for nothing. A committee member can vote on a Ledger too, as below.
 
+A Ledger cannot open the salts workers seal to the judge, so a judge on a Ledger refuses an escrow with announced work and pays only `--pay-to` when nobody announced; judge announced work with a key file. A worker on a Ledger cannot derive its salt either, so `deliver` refuses it with `NoMessageSigner`.
+
 Before you approve, run `intent-engine judge digest --owner <address> --nonce <n> --pay-to <wallet>` on a second machine. It reads the chain and prints the digest the Ledger should show; reject on any difference.
 
 ## 1. Create a proof escrow
@@ -72,9 +74,9 @@ In PowerShell:
 intent-engine deliveries --attestor $env:JUDGE --intent $env:INTENT
 ```
 
-Each entry in `deliveries` names the announcing `worker`, a `commitment` that binds the work's sha256 to that wallet, and the `signature` and `slot` of its announcement. Add `--judge-keypair` with the judge's or a committee member's key file to see its `url`.
+Each entry in `deliveries` names the announcing `worker`, a `commitment` that binds the work's sha256 to that wallet and a salt, the salt's `check`, and the `signature` and `slot` of its announcement. Add `--judge-keypair` with the judge's or a committee member's key file to see its `url`. `opened_salt` shows a salt that an opening published.
 
-`judge` pays the earliest announcer whose commitment matches the work, so a copy sent from another wallet is never paid. Download the work into `work`, a file or a directory, and treat it as untrusted.
+`judge` pays the earliest announcer whose sealed salt opens its commitment to the work's hash, so a copy sent from another wallet is never paid. Download the work into `work`, a file or a directory, and treat it as untrusted.
 
 ## 4. Write your check
 
@@ -215,7 +217,13 @@ The verdict's `held` records only `count`, `passed` and `slot`. Only a single-ke
 
 ## Who is paid
 
-`judge` pays the earliest announcer whose commitment binds the work's hash, so a copied announcement pays nobody else. It refuses when nobody announced it.
+`judge` pays the earliest announcement whose sealed salt opens its commitment to the work's hash, so a copied announcement pays nobody else. The salt comes from the worker's own signature, so nobody without the worker's key can test a guessed hash against a commitment. It refuses when nobody announced it.
+
+The release memo records the hash and the payee's salt. After a release, `judge` sends the salts of every earlier announcement it could open, in order, and `-` for one it could not, in as many more transactions as the list needs; the verdict's `openings` shows them. A worker can publish its own salt with the SDK's `openDelivery`.
+
+Receipts, `deliveries`, `reputation` and its trust read a release as valid when the recorded salt opens an announcement by a wallet the release paid, and as refuted when a published salt opens an earlier announcement of the same hash.
+
+This cannot stop a copier who announces every value of a small answer set first, or one who copies work published before its announcement lands. A job claim or a spec with many possible answers covers those.
 
 ## Check a second node
 
@@ -240,6 +248,8 @@ intent-engine judge --keypair a.json --owner $env:OWNER --nonce $env:NONCE --spe
 A member whose key is on a Ledger votes with `committee vote --keypair usb://ledger` and the same `--owner`, `--nonce`, `--pay-to` and `--result`, plus `--out` for the vote file and `--yes`. The device shows one message that lists every member's key and the release digest. A vote stays valid whichever members reach the threshold.
 
 Because that message lists every member, a release by a large committee, especially one that also splits the pay, can exceed the size of one Solana transaction; keep committees small or the escrow can only be cancelled.
+
+A member's verdict also carries the payee's `salt` and the `earlier` salts it opened. `committee release` refuses votes with different payee salts, records the salt and, with `--yes`, sends the earlier salts any member opened after the release. A failed opening is reported beside the release signature.
 
 Any member who voted then submits the votes:
 

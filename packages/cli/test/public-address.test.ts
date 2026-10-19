@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { rm } from "node:fs/promises";
 import type { Address, Signature } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { commitmentOf, DEVNET_GENESIS_HASH, type Delivery } from "@intent-engine/client";
+import { commitmentOf, DEVNET_GENESIS_HASH, type Delivery, saltCheckOf } from "@intent-engine/client";
 import { DeliveryUnfit, fetchDelivery, NOT_PUBLIC } from "../src/delivery-fetch.js";
 import { type Lookup, privateAddress, publicHost } from "../src/public-address.js";
 import { h, transport, world } from "./harness.js";
@@ -71,7 +71,9 @@ describe("fetching a delivery on a public cluster", () => {
     signature: "s" as Signature,
     slot: 1n,
     blockTime: null,
-    commitment: commitmentOf(party, party, createHash("sha256").update(bytes).digest("hex")),
+    commitment: commitmentOf(party, party, "ab".repeat(16), createHash("sha256").update(bytes).digest("hex")),
+    check: saltCheckOf("ab".repeat(16)),
+    salt: "ab".repeat(16),
     sealed: "",
   });
   const lookup: Lookup = async (host) => (host === "internal.example" ? ["192.168.0.10"] : ["93.184.216.34"]);

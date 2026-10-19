@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import type { Address, MessagePartialSigner } from "@solana/kit";
-import { buildCreateCommittee, type CommitteeVote, signCommitteeVote } from "@intent-engine/core";
-import { type CommitteeBallot, confirmOnBoth, createClient, type Transport } from "@intent-engine/client";
+import { buildCreateCommittee, type CommitteeVote, isSaltHex, openingMemo, signCommitteeVote, UNOPENED } from "@intent-engine/core";
+import { type CommitteeBallot, confirmOnBoth, createClient, isLedgerPath, openingInstructions, openingsOf, type Transport, unitedSalts } from "@intent-engine/client";
 import { previewed } from "./admin-commands.js";
 import { parseAddress, parseU64 } from "./arg-values.js";
 import type { Command } from "./command-types.js";
@@ -23,7 +23,13 @@ export type VoteFile = {
   result: string;
   member: Address;
   signature: string;
+  salt?: string;
+  earlier?: string[];
 };
+
+export type VoteExtras = { salt?: string | undefined; earlier?: string[] | undefined };
+
+export type Agreed = { salt: string | undefined; earlier: (string | null)[] };
 
 export type Ballot = { owner: Address; nonce: bigint; payTo: Address; result: bigint };
 
@@ -41,7 +47,7 @@ function ballotLines(ballot: CommitteeBallot, target: Ballot): string[] {
   ];
 }
 
-export async function memberVote(member: MessagePartialSigner, ballot: CommitteeBallot, target: Ballot): Promise<VoteFile> {
+export async function memberVote(member: MessagePartialSigner, ballot: CommitteeBallot, target: Ballot, extras: VoteExtras = {}): Promise<VoteFile> {
   if (!ballot.committee.members.includes(member.address)) {
     throw new FlowRefused(`${member.address} is not a member of committee ${ballot.committee.address}; nothing was signed`);
   }
@@ -56,6 +62,8 @@ export async function memberVote(member: MessagePartialSigner, ballot: Committee
     result: target.result.toString(),
     member: member.address,
     signature: hex(signature),
+    ...(extras.salt === undefined ? {} : { salt: extras.salt }),
+    ...(extras.earlier === undefined ? {} : { earlier: extras.earlier }),
   };
 }
 
@@ -88,7 +96,31 @@ export function voteOf(text: string, file: string): VoteFile {
     result: parseU64(field("result"), "result").toString(),
     member: parseAddress(field("member"), "member"),
     signature: vote.signature,
+    ...extrasOf(vote, file),
   };
+}
+
+function extrasOf(vote: Partial<VoteFile>, file: string): { salt?: string; earlier?: string[] } {
+  if (vote.salt !== undefined && (typeof vote.salt !== "string" || !isSaltHex(vote.salt))) {
+    throw new FlowRefused(`${file} holds a salt that is not 32 lowercase hex digits`);
+  }
+  const earlier: unknown = vote.earlier;
+  if (earlier !== undefined && (!Array.isArray(earlier) || earlier.some((one) => typeof one !== "string" || (one !== UNOPENED && !isSaltHex(one))))) {
+    throw new FlowRefused(`${file} holds earlier salts that are not each 32 lowercase hex digits or ${UNOPENED}`);
+  }
+  return { ...(vote.salt === undefined ? {} : { salt: vote.salt }), ...(earlier === undefined ? {} : { earlier: earlier as string[] }) };
+}
+
+export function agreedSalt(votes: readonly VoteFile[], files: readonly string[]): Agreed {
+  const salted = votes.findIndex((vote) => vote.salt !== undefined);
+  const salt = votes[salted]?.salt;
+  for (const [i, vote] of votes.entries()) {
+    if (vote.salt !== undefined && vote.salt !== salt) {
+      throw new FlowRefused(`${files[i]} opens the payee's announcement with another salt than ${files[salted]}; every vote must come from the same judged delivery`);
+    }
+  }
+  const lists = votes.map((vote) => (vote.earlier ?? []).map((one) => (one === UNOPENED ? null : one)));
+  return { salt, earlier: unitedSalts(lists) };
 }
 
 export function sameBallot(votes: readonly VoteFile[], files: readonly string[]): Ballot {
@@ -164,19 +196,23 @@ export async function committeeCommand(command: CommitteeCommand, runtime: Runti
       const solver = await transactionSigner(runtime, command.keypair);
       const votes = await Promise.all(command.votes.map(async (file) => voteOf(await readFile(file, "utf8"), file)));
       const target = sameBallot(votes, command.votes);
+      const opened = agreedSalt(votes, command.votes);
       const cast: CommitteeVote[] = votes.map((v) => ({ member: v.member, signature: Uint8Array.from(Buffer.from(v.signature, "hex")) }));
       const release = await client.prepareCommitteeRelease({
         ...target,
         solver,
         votes: cast,
         ...(command.sha256 === undefined ? {} : { deliveredSha256: command.sha256 }),
+        ...(command.sha256 === undefined || opened.salt === undefined ? {} : { deliveredSalt: opened.salt }),
       });
       const [first] = votes;
       if (first !== undefined && (first.intent !== release.intent || first.committee !== release.committee.address)) {
         throw new FlowRefused(`the votes are for escrow ${first.intent} and committee ${first.committee}, not ${release.intent} and ${release.committee.address}`);
       }
       if (command.confirmUrl !== undefined) {
-        await confirmOnBoth(transport, runtime.transport(command.confirmUrl), { intent: release.intent, attestor: release.committee.address, sha256: command.sha256, payees: [target.payTo] });
+        const keypair = isLedgerPath(command.keypair) ? undefined : await runtime.loadKeypair(command.keypair);
+        const confirmed = { intent: release.intent, attestor: release.committee.address, sha256: command.sha256, payees: [target.payTo], keypair };
+        await confirmOnBoth(transport, runtime.transport(command.confirmUrl), confirmed);
       }
       const summary = [
         `Releases: proof escrow ${release.intent} to ${target.payTo} (token account ${release.payee}) with result ${target.result}`,
@@ -184,16 +220,33 @@ export async function committeeCommand(command: CommitteeCommand, runtime: Runti
         `Pays the fee: ${solver.address}`,
       ];
       const shown = { intent: release.intent, committee: release.committee.address, signers: release.signers };
+      const openings = command.sha256 === undefined ? [] : openingsOf(release.intent, opened.earlier);
+      const openingSummary = openings.map((opening) => `Opens after the release, in its own transaction: the salts of earlier announcements, ${openingMemo(opening)}`);
+      const openAfter = async (sent: object): Promise<object> => {
+        if (openings.length === 0 || !command.yes) {
+          return sent;
+        }
+        const signatures: string[] = [];
+        for (const [at, opening] of openings.entries()) {
+          try {
+            signatures.push(await transport.send(openingInstructions(solver, release.committee.address, opening), solver));
+          } catch (error) {
+            const reason = error instanceof Error ? error.message : String(error);
+            return { ...sent, opening_signatures: signatures, opening_memos: openings.slice(at).map(openingMemo), opening_error: `the release landed, but the opening was not sent: ${reason}` };
+          }
+        }
+        return { ...sent, opening_signatures: signatures };
+      };
       if (release.setup.length === 0) {
-        return previewed(transport, release.instructions, solver, { ...shown, summary }, command.yes);
+        return openAfter(await previewed(transport, release.instructions, solver, { ...shown, summary: [...summary, ...openingSummary] }, command.yes));
       }
       const setupSummary = "Sets up first, in its own transaction: the token accounts the release pays into";
       if (!command.yes) {
-        return previewed(transport, release.setup, solver, { ...shown, summary: [...summary, setupSummary] }, false);
+        return previewed(transport, release.setup, solver, { ...shown, summary: [...summary, setupSummary, ...openingSummary] }, false);
       }
       const prepared = await previewed(transport, release.setup, solver, {}, true);
-      const sent = await previewed(transport, release.instructions, solver, { ...shown, summary: [...summary, setupSummary] }, true);
-      return { ...sent, setup_signature: (prepared as { signature?: string }).signature };
+      const sent = await previewed(transport, release.instructions, solver, { ...shown, summary: [...summary, setupSummary, ...openingSummary] }, true);
+      return openAfter({ ...sent, setup_signature: (prepared as { signature?: string }).signature });
     }
   }
 }

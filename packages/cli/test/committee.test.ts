@@ -5,13 +5,13 @@ import { join } from "node:path";
 import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, sortMembers } from "@intent-engine/core";
-import { createClient, type EngineTransaction } from "@intent-engine/client";
+import { deliveryMemo, findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, openingMemo, sealDelivery, sortMembers } from "@intent-engine/core";
+import { commitmentOf, createClient, type EngineTransaction, saltCheckOf } from "@intent-engine/client";
 import { VOTE_NOT_SIGNED } from "../src/committee-commands.js";
 import { VOTE_NEXT } from "../src/judge.js";
 import { NOT_SENT } from "../src/flows.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
-import { sealedDelivery } from "./announce.js";
+import { saltFor, sealedDelivery } from "./announce.js";
 import { balance, cli, creation, funded, h, NOW, transport, world } from "./harness.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
@@ -102,12 +102,26 @@ describe("intent-engine committee", () => {
 
   it("pays the first announcer once two members' viper verdicts carry their votes", async () => {
     const p = await panel(CORRECT);
+    const other = (await generateKeyPairSigner()).address;
+    const earlier = await sealedDelivery(p.intent, other, "ef".repeat(32), "https://example.org/other.mjs", p.addresses);
+    const junk = (await generateKeyPairSigner()).address;
+    const hidden = "cd".repeat(16);
+    const onlyOne = await sealDelivery({ salt: hidden, url: "https://example.org/junk.mjs" }, [p.keys["m0.json"]?.address ?? junk], p.intent);
+    const junkMemo = deliveryMemo({ intent: p.intent, commitment: commitmentOf(p.intent, junk, hidden, "ab".repeat(32)), check: saltCheckOf(hidden), blob: onlyOne });
+    h.engineLog = [
+      ...h.engineLog.slice(0, 1),
+      { signature: "junk", slot: 4n, blockTime: null, failed: false, emitted: [], memos: [junkMemo], feePayer: junk },
+      { signature: "earlier", slot: 3n, blockTime: null, failed: false, emitted: [], memos: [earlier], feePayer: other },
+      ...h.engineLog.slice(1),
+    ];
+    const opening = openingMemo({ intent: p.intent, salts: [saltFor(p.intent), hidden] });
+    const seen: Record<string, string[]> = { "m0.json": [saltFor(p.intent), hidden], "m2.json": [saltFor(p.intent), "-"] };
     const v0 = join(p.dir, "v0.json");
     const v2 = join(p.dir, "v2.json");
     for (const [member, file] of [["m0.json", v0], ["m2.json", v2]] as const) {
       const judged = await cli(p.judging(member, file), p.keys);
       expect([judged.code, judged.err]).toEqual([EXIT_OK, ""]);
-      expect(judged.json()).toMatchObject({ verdict: "pass", signature: null, committee: p.committee, next: VOTE_NEXT });
+      expect(judged.json()).toMatchObject({ verdict: "pass", signature: null, committee: p.committee, next: VOTE_NEXT, vote: { salt: saltFor(p.intent), earlier: seen[member] } });
     }
     expect(p.status()).toBe(IntentStatus.Open);
     const outsider = await cli(["committee", "release", "--keypair", "solver.json", "--vote", v0, "--vote", v2, "--sha256", sha(CORRECT)], p.keys);
@@ -118,7 +132,8 @@ describe("intent-engine committee", () => {
     expect(preview.json()).toMatchObject({ intent: p.intent, committee: p.committee, sent: false, next: NOT_SENT });
     const sent = await cli([...release, "--yes"], p.keys);
     expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);
-    expect(sent.json()).toMatchObject({ sent: true, signature: expect.any(String) });
+    expect(sent.json()).toMatchObject({ sent: true, signature: expect.any(String), opening_signatures: [expect.any(String)] });
+    expect(sent.json()["summary"]).toContain(`Opens after the release, in its own transaction: the salts of earlier announcements, ${opening}`);
     expect(p.status()).toBe(IntentStatus.Filled);
     expect(await p.paid(p.feeWallet)).toBe(JUDGE_FEE);
     expect(await p.paid(p.worker.address)).toBeGreaterThan(0n);

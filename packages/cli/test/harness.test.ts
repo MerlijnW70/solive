@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { boot, h, transport } from "./harness.js";
 
-const OWN_LIFETIME = new Set(["svm", "saleRoot"]);
+const OWN_LIFETIME = new Set(["svm", "saleRoot", "keypairs"]);
 
 const dirty = (value: unknown): unknown => {
   if (Array.isArray(value)) {

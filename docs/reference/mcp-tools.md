@@ -554,6 +554,7 @@ Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 | `intent` | address | yes | the proof escrow's intent address |
 | `sha256` | string | yes | the sha256 of the delivered work, as 64 hex digits; the judge releases for this same value, passed as delivered_sha256 |
 | `url` | string | yes | where the attestor fetches the work, an https url of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would |
+| `salt_signature` | string | no | the worker's ed25519 signature, as 128 hex digits, of the salt message a call without it names; the announcement's salt is derived from it |
 
 ## solive_check_delivery
 
@@ -581,7 +582,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 ## solive_get_reputation
 
-Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Releases whose payer was first funded by the worker, directly or through one wallet, are counted apart as funded by the worker and left out too. backed sums the protocol fees behind the totals by the worker's share, per mint, and backed_sol the SOL ones plus their create fees. With reader, trust adds the worker's personalized PageRank rooted only in that reader and the seeds named, over the SOL fees of its payments, so a ring paying itself gains nothing. Use it before hiring a worker or trusting its delivery.
+Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Releases whose payer was first funded by the worker, directly or through one wallet, are counted apart as funded by the worker and left out too, and so are releases a published opening refutes, because someone announced the same work earlier. backed sums the protocol fees behind the totals by the worker's share, per mint, and backed_sol the SOL ones plus their create fees. With reader, trust adds the worker's personalized PageRank rooted only in that reader and the seeds named, over the SOL fees of its payments, so a ring paying itself gains nothing. Use it before hiring a worker or trusting its delivery.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 

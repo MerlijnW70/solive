@@ -9,6 +9,7 @@ export type ConfirmTarget = {
   pages?: number | undefined;
   payees?: readonly Address[] | undefined;
   accounts?: readonly Address[] | undefined;
+  keypair?: Uint8Array | undefined;
 };
 
 export type NodeView = { genesis: string; intent: string; announcer: string | undefined; accounts?: string[] };
@@ -49,7 +50,7 @@ async function announcerOf(transport: Transport, target: ConfirmTarget): Promise
   if (target.sha256 === undefined || target.attestor === undefined) {
     return undefined;
   }
-  const record = await deliveryRecord(transport, target.attestor, target.intent, target.pages);
+  const record = await deliveryRecord(transport, target.attestor, target.intent, target.pages, target.keypair);
   if (!record.complete) {
     return INCOMPLETE_RECORD;
   }

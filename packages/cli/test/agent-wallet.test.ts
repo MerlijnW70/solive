@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
   type Address,
+  createKeyPairSignerFromBytes,
   generateKeyPairSigner,
   getAddressEncoder,
   getBase16Decoder,
@@ -35,10 +36,11 @@ import {
   getIntentDecoder,
   getIntentEncoder,
   decodeParams,
-  DELIVERY_V2_MEMO_PREFIX,
+  DELIVERY_MEMO_PREFIX,
   RELEASE_MEMO_PREFIX,
   Kind,
-  sealUrl,
+  openingMemo,
+  saltMessage,
   specMemo,
   getFillBegunEventEncoder,
   getFillEndedEventEncoder,
@@ -81,6 +83,8 @@ import {
   MEMO_PROGRAM_ADDRESS,
   memoInstruction,
   commitmentOf,
+  deliverySalt,
+  saltCheckOf,
   signersAmong,
   type Transport,
 } from "@intent-engine/client";
@@ -164,7 +168,7 @@ import { ACTIONS } from "../src/agent/registry.js";
 import { EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT } from "@intent-engine/core";
 import { AIRDROP, airdropRefused, defaultWallet, faucetLink, FUNDED, keptDefault, LAMPORTS_PER_SOL, savedDefault, settingsPath } from "../src/wallet.js";
-import { announcement, sealedDelivery } from "./announce.js";
+import { announcement, saltFor, sealedBlob, sealedDelivery } from "./announce.js";
 import { ata, balance, cli, creation, FEE_BPS, funded, h, HOME, setNow, transport, world } from "./harness.js";
 import { salesPath } from "../src/agent/sales.js";
 
@@ -187,6 +191,11 @@ function landedAs(wire: string): EngineTransaction {
     memoSigners: memos.map((ix) => signersAmong(keys, ix.accountIndices ?? [], message.header.numSignerAccounts)),
     ...(keys[0] === undefined ? {} : { feePayer: keys[0] }),
   };
+}
+
+async function walletSalt(intent: Address, sha256: string): Promise<string> {
+  const keypair = Uint8Array.from(JSON.parse(h.files.get(defaultWallet(HOME)) ?? "[]") as number[]);
+  return deliverySalt(await createKeyPairSignerFromBytes(keypair), intent, sha256);
 }
 
 function preset(at: Address, decimals = 9): void {
@@ -763,7 +772,7 @@ describe("the wallet server", () => {
     expect(done).toMatchObject({ sent: true, recorded: "follow-up", follow_up_signature: expect.any(String) });
     const [release, followUp] = h.wires.map((wire) => Buffer.from(wire, "base64").toString("latin1"));
     expect(release).not.toContain(RELEASE_MEMO_PREFIX);
-    expect(followUp).toContain(followUpMemo(work, done["signature"] as string));
+    expect(followUp).toContain(followUpMemo(work, done["signature"] as string, saltFor(intent)));
     const held = h.svm.getAccount(intent);
     expect(held.exists && getIntentDecoder().decode(held.data).status).toBe(IntentStatus.Filled);
   });
@@ -886,7 +895,7 @@ describe("the wallet server", () => {
     const coauthors = await Promise.all(weights.map(() => generateKeyPairSigner()));
     const recipients = coauthors.map((c, i) => ({ wallet: c.address, weight: weights[i] }));
     const outsider = (await generateKeyPairSigner()).address;
-    const blob = await sealUrl("https://example.org/work", [owner], intent);
+    const blob = await sealedBlob(intent, "https://example.org/work", [owner]);
     const announce = (signature: string, slot: bigint, by: Address) => ({
       signature,
       slot,
@@ -960,11 +969,11 @@ describe("the wallet server", () => {
     h.wires.length = 0;
     expect(await ok(client, "wallet_attest_split", { owner, nonce, recipients: signed, delivered_sha256: work, approval: shown["approval"], send: true })).toMatchObject({
       delivered_sha256: work,
-      recorded: "release",
+      recorded: "follow-up",
       sent: true,
       signature: expect.any(String),
     });
-    expect(h.wires.some((wire) => Buffer.from(wire, "base64").toString("latin1").includes(`${RELEASE_MEMO_PREFIX}${work}`))).toBe(true);
+    expect(h.wires.some((wire) => Buffer.from(wire, "base64").toString("latin1").includes(`${RELEASE_MEMO_PREFIX}${work} salt:${saltFor(intent)}`))).toBe(true);
     for (const c of coauthors) {
       expect(balance(await findAssociatedTokenAddress({ owner: c.address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS }))).toBeGreaterThan(0n);
     }
@@ -1097,7 +1106,8 @@ describe("the wallet server", () => {
     const work = "e7".repeat(32);
     const delivery = { intent, sha256: work.toUpperCase(), url: "https://example.org/work.tar" };
     const preview = await ok(client, "wallet_deliver", delivery);
-    const commitment = commitmentOf(intent, owner, work);
+    const salt = await walletSalt(intent, work);
+    const commitment = commitmentOf(intent, owner, salt, work);
     expect(preview).toEqual({
       intent,
       owner,
@@ -1106,9 +1116,10 @@ describe("the wallet server", () => {
       sha256: work,
       url: delivery.url,
       commitment,
+      check: saltCheckOf(salt),
       summary: [
-        `Announces: the work with sha256 ${work}, for the proof escrow ${intent}, as the commitment ${commitment}, which binds it to this wallet`,
-        `Seals: the url ${delivery.url}, so only the attestor ${judge} can read it`,
+        `Announces: the work with sha256 ${work}, for the proof escrow ${intent}, as the commitment ${commitment}, which binds it to this wallet and a salt only its key derives`,
+        `Seals: the salt and the url ${delivery.url}, so only the attestor ${judge} can read it`,
         `Notifies: its attestor ${judge}, with a transfer of 0 lamports from this wallet`,
         "Costs: the transaction fee; no tokens move",
       ],
@@ -1124,7 +1135,8 @@ describe("the wallet server", () => {
       next: `announced to ${judge}; solive_wallet_receipt with owner ${owner} and nonce ${escrow["nonce"]} shows when it is paid; give it wait, in seconds, to wait for the pay`,
     });
     const wire = Buffer.from(h.wires[0] as string, "base64").toString("latin1");
-    expect(wire).toContain(`${DELIVERY_V2_MEMO_PREFIX}${intent}:${commitment}:`);
+    expect(wire).toContain(`${DELIVERY_MEMO_PREFIX}${intent}:${commitment}:${saltCheckOf(salt)}:`);
+    expect(wire).not.toContain(salt);
     expect(wire).not.toContain(delivery.url);
     expect((await call(client, "wallet_deliver", { ...delivery, url: "https://example.org/" + "a".repeat(200) })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "url" }] });
     expect((await call(client, "wallet_deliver", { ...delivery, url: "ftp://example.org/x" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "url" }] });
@@ -1160,6 +1172,7 @@ describe("the wallet server", () => {
       await at("first", 5n, work, "https://example.org/work", worker),
       creation(intent),
     ];
+    const check = saltCheckOf(saltFor(intent));
     expect(await ok(client, "wallet_check_delivery", { intent })).toEqual({
       intent,
       owner: wallet,
@@ -1168,9 +1181,9 @@ describe("the wallet server", () => {
       open: true,
       complete: true,
       deliveries: [
-        { worker: copier, commitment: commitmentOf(intent, copier, work), signature: "copy", url: "https://example.org/stolen" },
-        { worker: copier, commitment: commitmentOf(intent, copier, own), signature: "own", url: "https://example.org/own" },
-        { worker, commitment: commitmentOf(intent, worker, work), signature: "first", url: "https://example.org/work" },
+        { worker: copier, commitment: commitmentOf(intent, copier, saltFor(intent), work), check, signature: "copy", url: "https://example.org/stolen" },
+        { worker: copier, commitment: commitmentOf(intent, copier, saltFor(intent), own), check, signature: "own", url: "https://example.org/own" },
+        { worker, commitment: commitmentOf(intent, worker, saltFor(intent), work), check, signature: "first", url: "https://example.org/work" },
       ],
     });
     const release = { owner: wallet, nonce, delivered_sha256: work };
@@ -1199,26 +1212,65 @@ describe("the wallet server", () => {
     const copier = (await generateKeyPairSigner()).address;
     const copied = { ...honest, signature: "copied", slot: 5n, feePayer: copier };
     h.engineLog = [honest, copied, creation(intent)];
-    const commitment = commitmentOf(intent, wallet, work);
+    const salt = await walletSalt(intent, work);
+    const commitment = commitmentOf(intent, wallet, salt, work);
+    const check = saltCheckOf(salt);
     const checked = await ok(client, "wallet_check_delivery", { intent, sha256: work });
     expect(checked).toMatchObject({
       deliveries: [
-        { worker: wallet, commitment, signature: honest.signature, url },
-        { worker: copier, commitment, signature: "copied", url },
+        { worker: wallet, commitment, check, signature: honest.signature, url },
+        { worker: copier, commitment, check, signature: "copied", url },
       ],
-      own: { commitment, landed: true, earliest: true, signature: honest.signature },
+      own: { commitment, salt, landed: true, earliest: true, signature: honest.signature },
     });
-    expect((await ok(client, "wallet_check_delivery", { intent, sha256: "cd".repeat(32) }))["own"]).toEqual({ commitment: commitmentOf(intent, wallet, "cd".repeat(32)), landed: false, earliest: false });
+    const other = await walletSalt(intent, "cd".repeat(32));
+    expect((await ok(client, "wallet_check_delivery", { intent, sha256: "cd".repeat(32) }))["own"]).toEqual({
+      commitment: commitmentOf(intent, wallet, other, "cd".repeat(32)),
+      salt: other,
+      landed: false,
+      earliest: false,
+    });
     const plain = await connect(["mcp", "--url", "devnet"]);
     const outside = await ok(plain, "check_delivery", { intent });
     expect(outside["deliveries"]).toEqual([
-      { worker: wallet, commitment, signature: honest.signature },
-      { worker: copier, commitment, signature: "copied" },
+      { worker: wallet, commitment, check, signature: honest.signature },
+      { worker: copier, commitment, check, signature: "copied" },
     ]);
     expect(JSON.stringify(outside)).not.toContain("example.org");
     const release = { owner: wallet, nonce: escrow["nonce"] as string, delivered_sha256: work };
     expect((await call(client, "wallet_attest", { ...release, pay_to: copier })).value).toMatchObject({ code: "NotEarliestAnnouncer", hint: notEarliest(wallet, work) });
     expect(await ok(client, "wallet_attest", { ...release, pay_to: wallet })).toMatchObject({ delivered_sha256: work, sent: false });
+  });
+
+  it("publishes the salts of earlier announcements after a release it sends", async () => {
+    const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
+    h.watched.push(wallet);
+    h.engineLog = [];
+    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: "5e".repeat(32), send: true });
+    const intent = escrow["intent"] as Address;
+    const worker = (await generateKeyPairSigner()).address;
+    const other = (await generateKeyPairSigner()).address;
+    const work = "e9".repeat(32);
+    const at = async (signature: string, slot: bigint, sha256: string, feePayer: Address) => ({
+      signature,
+      slot,
+      blockTime: null,
+      failed: false,
+      emitted: [],
+      memos: [await sealedDelivery(intent, feePayer, sha256, "https://example.org/work", [wallet])],
+      feePayer,
+    });
+    h.engineLog = [await at("first", 5n, work, worker), await at("other", 3n, "ea".repeat(32), other), creation(intent)];
+    const release = { owner: wallet, nonce: escrow["nonce"] as string, pay_to: worker, delivered_sha256: work };
+    const shown = await ok(client, "wallet_attest", release);
+    expect(shown["summary"]).toContain("Opens: the salts of 1 earlier announcement(s), in 1 more transaction(s) after the release");
+    h.wires.length = 0;
+    const sent = await ok(client, "wallet_attest", { ...release, approval: shown["approval"], send: true });
+    expect(sent).toMatchObject({ sent: true, opening_signatures: [expect.any(String)] });
+    const [released, opened] = h.wires.map((wire) => landedAs(wire));
+    expect(released?.memos).toEqual([releaseMemo(work, saltFor(intent))]);
+    expect(opened?.memos).toEqual([openingMemo({ intent, salts: [saltFor(intent)] })]);
+    h.engineLog = [];
   });
 
   it("attest refuses a proof escrow without delivered_sha256", async () => {
@@ -1685,7 +1737,7 @@ describe("the wallet server", () => {
           ext: new Uint8Array(),
         }),
       );
-    const blob = await sealUrl("https://example.org/work", [wallet], intent);
+    const blob = await sealedBlob(intent, "https://example.org/work", [wallet]);
     const announce = (signature: string, slot: bigint, by: Address, sha256: string) => ({
       signature,
       slot,
@@ -1718,7 +1770,7 @@ describe("the wallet server", () => {
     h.engineLog = [release];
     expect((await call(client, "wallet_record_delivery", args)).value).toMatchObject({ code: "HistoryTooLong", hint: HISTORY_TOO_LONG });
     h.engineLog = [release, ...announced];
-    const memo = followUpMemo(work, releaseSignature);
+    const memo = followUpMemo(work, releaseSignature, saltFor(intent));
     const preview = await ok(client, "wallet_record_delivery", args);
     expect(preview).toMatchObject({ intent, release: releaseSignature, sha256: work, memo, sent: false, next: PREVIEW_ONLY });
     expect(preview).not.toHaveProperty("signature");
@@ -1852,7 +1904,7 @@ describe("the wallet server", () => {
     } satisfies EngineTransaction;
     const announced = announce("announced", 2n, worker, work);
     h.engineLog = [release, announced, made];
-    const memo = followUpMemo(work, release.signature);
+    const memo = followUpMemo(work, release.signature, saltFor(intent));
     const args = { owner, nonce, sha256: work, release: release.signature };
     expect(await ok(client, "wallet_record_delivery", args)).toMatchObject({ intent, release: release.signature, sha256: work, memo, sent: false });
     expect(await ok(client, "wallet_record_delivery", { owner, nonce, sha256: work })).toMatchObject({ intent, release: release.signature, memo, sent: false });
@@ -1877,7 +1929,7 @@ describe("the wallet server", () => {
     const line = ["record-delivery", "--url", "devnet", "--keypair", keypair, "--owner", owner, "--nonce", nonce, "--sha256", work, "--release", split.signature];
     const shown = await cli(line, {});
     expect(shown.code).toBe(EXIT_OK);
-    expect(shown.json()).toMatchObject({ intent, release: split.signature, memo: followUpMemo(work, split.signature), sent: false });
+    expect(shown.json()).toMatchObject({ intent, release: split.signature, memo: followUpMemo(work, split.signature, saltFor(intent)), sent: false });
     const malformed = await cli([...line.slice(0, -1), "not-a-signature"], {});
     expect([malformed.code, malformed.err]).toEqual([EXIT_USAGE, RELEASE_NEEDED]);
     h.engineLog = [];
@@ -2305,7 +2357,7 @@ describe("the wallet server", () => {
     } satisfies EngineTransaction;
     const judged = [announce("announced", 2n, worker, work)];
     const args = { owner, nonce, sha256: work, release: release.signature };
-    const recorded = { intent, release: release.signature, sha256: work, memo: followUpMemo(work, release.signature), sent: false };
+    const recorded = { intent, release: release.signature, sha256: work, memo: followUpMemo(work, release.signature, saltFor(intent)), sent: false };
     const flood = 4 * LIFECYCLE_FETCHES;
     const fetched: string[] = [];
     const routed = async (log: EngineTransaction[]) => {
@@ -2664,8 +2716,8 @@ describe("the wallet server", () => {
       open: true,
       complete: true,
       deliveries: [
-        { worker: copier, commitment: commitmentOf(intent, copier, work), signature: "copy" },
-        { worker, commitment: commitmentOf(intent, worker, work), signature: "first" },
+        { worker: copier, commitment: commitmentOf(intent, copier, saltFor(intent), work), check: saltCheckOf(saltFor(intent)), signature: "copy" },
+        { worker, commitment: commitmentOf(intent, worker, saltFor(intent), work), check: saltCheckOf(saltFor(intent)), signature: "first" },
       ],
     };
     expect(await ok(plain, "check_delivery", { intent })).toEqual(listed);
@@ -2719,18 +2771,26 @@ describe("the wallet server", () => {
     const plain = await connect(["mcp", "--url", "devnet"]);
     const worker = await funded();
     const work = "e7".repeat(32);
-    const delivery = { worker: worker.address, intent, sha256: work.toUpperCase(), url: "https://example.org/work.tar" };
+    const unsigned = { worker: worker.address, intent, sha256: work.toUpperCase(), url: "https://example.org/work.tar" };
+    const refused = (await call(plain, "prepare_deliver", unsigned)).value;
+    const message = Buffer.from(saltMessage(intent, work)).toString("hex");
+    expect(refused).toMatchObject({ code: "NoMessageSigner" });
+    expect(refused["hint"]).toContain(message);
+    const signed = Buffer.from(await signBytes(worker.keyPair.privateKey, saltMessage(intent, work))).toString("hex");
+    const delivery = { ...unsigned, salt_signature: signed };
     const prepared = await ok(plain, "prepare_deliver", delivery);
-    const commitment = commitmentOf(intent, worker.address, work);
+    const salt = await deliverySalt(worker, intent, work);
+    const commitment = commitmentOf(intent, worker.address, salt, work);
     expect(prepared).toMatchObject({
       intent,
       attestor: judge,
       sha256: work,
       url: delivery.url,
       commitment,
+      check: saltCheckOf(salt),
       summary: [
-        `Announces: the work with sha256 ${work}, for the proof escrow ${intent}, as the commitment ${commitment}, which binds it to ${worker.address}`,
-        `Seals: the url ${delivery.url}, so only the attestor ${judge} can read it`,
+        `Announces: the work with sha256 ${work}, for the proof escrow ${intent}, as the commitment ${commitment}, which binds it to ${worker.address} and a salt only its key derives`,
+        `Seals: the salt and the url ${delivery.url}, so only the attestor ${judge} can read it`,
         `Notifies: its attestor ${judge}, with a transfer of 0 lamports from ${worker.address}`,
         "Costs: the transaction fee; no tokens move",
       ],
@@ -2740,7 +2800,11 @@ describe("the wallet server", () => {
     expect(view.signers).toEqual([worker.address]);
     const wire = getTransactionDecoder().decode(getBase64Encoder().encode(view.transaction));
     expect(Object.values(wire.signatures).every((signature) => signature === null)).toBe(true);
-    expect(Buffer.from(view.transaction, "base64").toString("latin1")).toContain(`${DELIVERY_V2_MEMO_PREFIX}${intent}:${commitment}:`);
+    expect(Buffer.from(view.transaction, "base64").toString("latin1")).toContain(`${DELIVERY_MEMO_PREFIX}${intent}:${commitment}:${saltCheckOf(salt)}:`);
+    expect((await call(plain, "prepare_deliver", { ...delivery, salt_signature: "zz" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "salt_signature" }] });
+    const stranger = await generateKeyPairSigner();
+    const forged = Buffer.from(await signBytes(stranger.keyPair.privateKey, saltMessage(intent, work))).toString("hex");
+    expect((await call(plain, "prepare_deliver", { ...delivery, salt_signature: forged })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "salt_signature" }] });
     expect(h.svm.sendTransaction(await partiallySignTransaction([worker.keyPair], wire))).not.toBeInstanceOf(FailedTransactionMetadata);
     expect((await call(plain, "prepare_deliver", { ...delivery, url: "ftp://example.org/x" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "url" }] });
     expect((await call(plain, "prepare_deliver", { ...delivery, sha256: "xyz" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "sha256" }] });

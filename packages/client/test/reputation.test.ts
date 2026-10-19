@@ -4,7 +4,7 @@ import { getTransferSolInstruction } from "@solana-program/system";
 import { getMintEncoder, getMintSize } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { feedbackMemo, findIntentPda, Kind, NATIVE_MINT, parseFeedbackMemo, PRODUCT_SLUG, signCommitteeVote, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { createClient, memoInstruction, NotSettleable } from "../src/index.js";
+import { createClient, deliverySalt, memoInstruction, NotSettleable } from "../src/index.js";
 import { svmTransport } from "../src/svm.js";
 import { world } from "./svm.js";
 
@@ -46,7 +46,8 @@ async function setup() {
   const job = async (owner: KeyPairSigner, judge: KeyPairSigner, worker: KeyPairSigner, sha256: string, payTo: Address = worker.address) => {
     const { nonce, intent } = await escrow(owner, judge.address);
     await client.deliver({ worker, intent, sha256, url: "https://example.org/work" });
-    await client.settleProof({ judge, owner: owner.address, nonce, payTo, result: 1n, deliveredSha256: sha256 });
+    const deliveredSalt = await deliverySalt(worker, intent, sha256);
+    await client.settleProof({ judge, owner: owner.address, nonce, payTo, result: 1n, deliveredSha256: sha256, deliveredSalt });
     return intent;
   };
   return { w, client, fresh, escrow, job, transport };
@@ -101,7 +102,7 @@ describe("reputation from verifiable history", () => {
       const { digest, committee: ballot } = await client.committeeBallot(target);
       const votes = await Promise.all(members.slice(0, 2).map((m) => signCommitteeVote(m, digest, ballot.members)));
       const solver = members[0] as KeyPairSigner;
-      await client.settleCommittee({ ...target, solver, votes, deliveredSha256: sha256 });
+      await client.settleCommittee({ ...target, solver, votes, deliveredSha256: sha256, deliveredSalt: await deliverySalt(worker, intent, sha256) });
     };
     await run([a, b], "1a".repeat(32));
     expect(await client.reputation(worker.address)).toMatchObject({ paid: 1, selfDealt: 0, committeeJudged: 1, judges: 1 });

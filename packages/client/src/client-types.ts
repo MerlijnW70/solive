@@ -4,7 +4,7 @@ import type { Priority } from "./budget.js";
 import type { ClaimsView } from "./client-claims.js";
 import type { FeedbackInput, Reputation, ReputationOptions } from "./reputation.js";
 import type { EngineError } from "./errors.js";
-import type { DeliverInput, Delivery, DeliveryRecord, Job, Spec, SpecFetch } from "./jobs.js";
+import type { DeliverInput, Delivery, DeliveryRecord, Job, SelfOpeningInput, Spec, SpecFetch } from "./jobs.js";
 import type { Notifications, Simulation, Transport } from "./transport.js";
 
 export type ClientOptions = {
@@ -51,6 +51,7 @@ export type SettleProofInput = {
   result: bigint;
   payer?: TransactionSigner;
   deliveredSha256?: string;
+  deliveredSalt?: string;
 };
 
 export type CommitteeView = CommitteeTerms & { address: Address; id: Uint8Array; createdAt: bigint };
@@ -86,6 +87,7 @@ export type SettleCommitteeInput = BallotInput & {
   votes: readonly CommitteeVote[];
   payer?: TransactionSigner;
   deliveredSha256?: string;
+  deliveredSalt?: string;
 };
 
 export type CommitteeRelease = {
@@ -98,7 +100,7 @@ export type CommitteeRelease = {
   instructions: Instruction[];
 };
 
-export type HistoryEvent = EngineEvent & { signature: Signature; slot: bigint; blockTime: bigint | null; deliveredSha256?: string };
+export type HistoryEvent = EngineEvent & { signature: Signature; slot: bigint; blockTime: bigint | null; deliveredSha256?: string; deliveredSalt?: string };
 
 export type FillInput = {
   solver: TransactionSigner;
@@ -163,6 +165,7 @@ export type Client = {
   deliver(input: DeliverInput): Promise<Signature>;
   deliveries(filter: { judge: Address; intent?: Address }): Promise<Delivery[]>;
   deliveryRecord(filter: { judge: Address; intent?: Address; pages?: number; keypair?: Uint8Array }): Promise<DeliveryRecord>;
+  openDelivery(input: SelfOpeningInput): Promise<Signature>;
 };
 
 export const SPEC_URL_NEEDS_PROOF = "specUrl needs an AttestedResult intent with a non-zero specHash";
