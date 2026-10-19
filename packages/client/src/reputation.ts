@@ -8,8 +8,10 @@ import {
   FILL_ATTESTED_SPLIT_COMMITTEE_DISCRIMINATOR,
   FILL_ATTESTED_SPLIT_DISCRIMINATOR,
   findAssociatedTokenAddress,
+  formatAmount,
   getFillAttestedSplitCommitteeInstructionDataDecoder,
   getFillAttestedSplitInstructionDataDecoder,
+  NATIVE_MINT,
   parseDeliveryMemo,
   parseFeedbackMemo,
   splitN,
@@ -38,6 +40,8 @@ export type WorkRecord = {
   committee?: Address[];
   mint?: Address;
   earned?: bigint;
+  backed?: bigint;
+  createBacked?: bigint;
   release?: Signature;
   selfDealt: boolean;
   fundedByWorker?: FundedBy;
@@ -57,6 +61,8 @@ export type Reputation = {
   judges: number;
   committeeJudged: number;
   earned: Earned[];
+  backed: Earned[];
+  backedSol: string;
   feedback: { count: number; average: number | null };
   first: bigint | null;
   last: bigint | null;
@@ -66,6 +72,7 @@ export type Reputation = {
 export type ReputationOptions = { pages?: number; history?: number };
 
 const SPLIT_INTENT_ACCOUNT = 2;
+const SOL_DECIMALS = 9;
 
 const startsWith = (data: Uint8Array, head: ArrayLike<number>): boolean =>
   data.length >= head.length && Array.from(head).every((b, i) => data[i] === b);
@@ -152,6 +159,7 @@ async function recordOf(transport: Transport, wallet: Address, work: Announced, 
   const base = { ...work, selfDealt: false };
   const owner = created?.name === "IntentCreated" ? created.fields.owner : released?.event.name === "IntentAttested" || released?.event.name === "IntentSplit" ? released.event.fields.owner : undefined;
   const mint = created?.name === "IntentCreated" ? created.fields.inputMint : undefined;
+  const createFee = created?.name === "IntentCreated" ? BigInt(created.fields.createFee) : undefined;
   if (released === undefined || (released.event.name !== "IntentAttested" && released.event.name !== "IntentSplit")) {
     const outcome: WorkOutcome = refunded ? "refunded" : "open";
     return { complete, record: { ...base, outcome, ...(owner === undefined ? {} : { owner }), ...(mint === undefined ? {} : { mint }) } };
@@ -178,6 +186,7 @@ async function recordOf(transport: Transport, wallet: Address, work: Announced, 
     return { complete, record: { ...common, outcome: "paid-other" } };
   }
   let earned: bigint | undefined;
+  let credit = (fee: bigint): bigint => fee;
   if (event.name === "IntentAttested") {
     if (mint === undefined) {
       return { complete: false, record: { ...common, outcome: "unknown" } };
@@ -189,12 +198,17 @@ async function recordOf(transport: Transport, wallet: Address, work: Announced, 
     const claim = splitClaim(transaction, work.intent);
     const at = claim?.recipients.indexOf(wallet) ?? -1;
     earned = claim === null || at < 0 ? undefined : splitN(event.fields.net, claim.weights)[at];
+    if (claim !== null && at >= 0) {
+      const weights = claim.weights;
+      credit = (fee) => splitN(fee, weights)[at] ?? 0n;
+    }
   }
   if (earned === undefined) {
     return { complete, record: { ...common, outcome: "paid-other" } };
   }
   const feedback = feedbackOf(transactions, work.intent, event.fields.owner);
-  return { complete, record: { ...common, outcome: "paid", earned, ...(feedback === undefined ? {} : { feedback }) } };
+  const backing = createFee === undefined ? {} : { backed: credit(event.fields.fee), createBacked: credit(createFee) };
+  return { complete: complete && createFee !== undefined, record: { ...common, outcome: "paid", earned, ...backing, ...(feedback === undefined ? {} : { feedback }) } };
 }
 
 export async function reputationOf(transport: Transport, wallet: Address, options: ReputationOptions = {}): Promise<Reputation> {
@@ -217,6 +231,16 @@ export async function reputationOf(transport: Transport, wallet: Address, option
       earned.set(r.mint, (earned.get(r.mint) ?? 0n) + r.earned);
     }
   }
+  const backed = new Map<Address, bigint>();
+  let backedSol = 0n;
+  for (const r of fair) {
+    if (r.mint !== undefined && r.backed !== undefined && r.backed > 0n) {
+      backed.set(r.mint, (backed.get(r.mint) ?? 0n) + r.backed);
+    }
+    if (r.mint === NATIVE_MINT) {
+      backedSol += (r.backed ?? 0n) + (r.createBacked ?? 0n);
+    }
+  }
   const scores = fair.flatMap((r) => (r.feedback === undefined ? [] : [r.feedback]));
   const times = records.flatMap((r) => (r.blockTime === null ? [] : [r.blockTime]));
   return {
@@ -230,6 +254,8 @@ export async function reputationOf(transport: Transport, wallet: Address, option
     judges: new Set(fair.map((r) => r.attestor)).size,
     committeeJudged: fair.filter((r) => r.committee !== undefined).length,
     earned: [...earned].map(([mint, amount]) => ({ mint, amount })),
+    backed: [...backed].map(([mint, amount]) => ({ mint, amount })),
+    backedSol: formatAmount(backedSol, SOL_DECIMALS),
     feedback: { count: scores.length, average: scores.length === 0 ? null : scores.reduce((a, b) => a + b, 0) / scores.length },
     first: times.length === 0 ? null : times.reduce((a, b) => (a < b ? a : b)),
     last: times.length === 0 ? null : times.reduce((a, b) => (a > b ? a : b)),

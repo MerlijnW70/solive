@@ -580,7 +580,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 ## solive_get_reputation
 
-Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Releases whose payer was first funded by the worker, directly or through one wallet, are counted apart as funded by the worker and left out too. Use it before hiring a worker or trusting its delivery.
+Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Releases whose payer was first funded by the worker, directly or through one wallet, are counted apart as funded by the worker and left out too. backed sums the protocol fees behind the totals by the worker's share, per mint, and backed_sol the SOL ones plus their create fees. Use it before hiring a worker or trusting its delivery.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 

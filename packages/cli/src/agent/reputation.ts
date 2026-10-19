@@ -20,7 +20,7 @@ const FUNDED = ["yes", "no", "unknown"] as const;
 export const getReputation = define({
   name: tool("get_reputation"),
   title: "A worker's verifiable track record",
-  description: `Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Releases whose payer was first funded by the worker, directly or through one wallet, are counted apart as funded by the worker and left out too. Use it before hiring a worker or trusting its delivery.`,
+  description: `Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Releases whose payer was first funded by the worker, directly or through one wallet, are counted apart as funded by the worker and left out too. backed sums the protocol fees behind the totals by the worker's share, per mint, and backed_sol the SOL ones plus their create fees. Use it before hiring a worker or trusting its delivery.`,
   effect: "read",
   input: object({
     worker: account("the worker wallet to read"),
@@ -37,6 +37,8 @@ export const getReputation = define({
     judges: integer(0, Number.MAX_SAFE_INTEGER, "distinct judges or committees that released to it at arm's length"),
     committee_judged: integer(0, Number.MAX_SAFE_INTEGER, "arm's-length releases judged by a committee"),
     earned: list(object({ mint: account(), amount: amount("raw units") }), 32),
+    backed: list(object({ mint: account(), amount: amount("raw units of protocol fees") }), 32),
+    backed_sol: text("protocol and create fees paid in SOL behind the totals, in whole SOL"),
     feedback: object({ count: integer(0, Number.MAX_SAFE_INTEGER), average: nullable(text("average owner score out of 100")) }),
     first: nullable(time()),
     last: nullable(time()),
@@ -69,6 +71,8 @@ export const getReputation = define({
       judges: rep.judges,
       committee_judged: rep.committeeJudged,
       earned: rep.earned,
+      backed: rep.backed,
+      backed_sol: rep.backedSol,
       feedback: { count: rep.feedback.count, average: rep.feedback.average === null ? null : rep.feedback.average.toFixed(1) },
       first: rep.first,
       last: rep.last,
