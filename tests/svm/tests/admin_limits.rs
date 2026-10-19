@@ -150,7 +150,7 @@ fn no_admin_setting_can_stop_an_owner_from_getting_their_escrow_back() -> TestRe
 }
 
 #[test]
-fn raising_fees_under_an_open_intent_costs_the_solver_and_never_the_owner() -> TestResult {
+fn raising_fees_after_create_changes_nothing_an_open_intent_pays() -> TestResult {
     let mut w = world()?;
     let owner = w.owner();
     let input = w.trader.input;
