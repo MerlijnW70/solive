@@ -544,8 +544,6 @@ fn fee_account_is_needed_only_when_a_fee_is_charged() -> TestResult {
     let mut w = spl()?;
     w.env
         .create_intent(&w.trader, &w.market, &swap(0, ESCROW / 2, MIN_OUT)?)?;
-    w.env
-        .create_intent(&w.trader, &w.market, &swap(1, ESCROW / 2, MIN_OUT)?)?;
     let ix = w.env.fill_ix(
         &w.solver,
         &w.owner(),
@@ -564,6 +562,8 @@ fn fee_account_is_needed_only_when_a_fee_is_charged() -> TestResult {
     settings.fee_bps = 0;
     let ix = w.env.update_config_ix(&authority.pubkey(), settings);
     w.env.send(&authority, &[ix], &[])?;
+    w.env
+        .create_intent(&w.trader, &w.market, &swap(1, ESCROW / 2, MIN_OUT)?)?;
     let ix = w.env.fill_ix(
         &w.solver,
         &w.owner(),

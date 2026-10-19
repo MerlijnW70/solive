@@ -13,7 +13,6 @@ import {
   committeeProofDigest,
   committeeSigners,
   decodeParams,
-  feeBpsFor,
   IntentStatus,
   isSha256Hex,
   Kind,
@@ -100,7 +99,7 @@ async function planRelease<J>(
   const { tokenProgram } = await mint(held.inputMint);
   const account = (wallet: Address) => tokenAccountIfMissing(transport, payer, wallet, held.inputMint, tokenProgram);
   const amountIn = held.escrowed - held.filled;
-  const kindBps = feeBpsFor(settings, held.kind);
+  const kindBps = held.feeBps;
   const maxFeeBps = kindBps + held.partnerBps;
   const shares = splitFees(amountIn - params.judgeFee, kindBps, held.partnerBps, held.partnerCutBps);
   const feeRecipient = shares.protocol > 0n ? settings.feeRecipient : undefined;

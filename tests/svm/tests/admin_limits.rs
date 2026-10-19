@@ -171,13 +171,14 @@ fn raising_fees_under_an_open_intent_costs_the_solver_and_never_the_owner() -> T
     );
     w.admin_sends(ix)?;
     assert!(before < MAX_FEE_BPS);
+    assert_eq!(w.env.intent(&owner, 0)?.fee_bps, before);
     assert_eq!(
-        w.fill(0, before),
+        w.fill(0, before - 1),
         Err(engine_error(EngineError::FeeAboveBound))
     );
     assert_eq!(w.env.intent(&owner, 0)?.status, Status::Open as u8);
-    w.fill(0, MAX_FEE_BPS)?;
-    let split = split_fee(ESCROW, MAX_FEE_BPS).map_err(|e| format!("{e:?}"))?;
+    w.fill(0, before)?;
+    let split = split_fee(ESCROW, before).map_err(|e| format!("{e:?}"))?;
     assert_eq!(w.env.balance(&w.trader.receiver)?, MIN_OUT);
     assert_eq!(w.env.balance(&input)?, FUNDED - ESCROW);
     assert_eq!(w.env.balance(&w.solver.input)?, split.net);

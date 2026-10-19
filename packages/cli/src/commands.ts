@@ -136,8 +136,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     }
     case "quote": {
       const { address, intent } = await loadIntent(transport, command.owner, command.nonce);
-      const { config } = await loadConfig(transport);
-      return { address, ...quoteOf(intent, config, command.at ?? runtime.now()) };
+      return { address, ...quoteOf(intent, command.at ?? runtime.now()) };
     }
     case "cancel": {
       const owner = await transactionSigner(runtime, command.keypair);

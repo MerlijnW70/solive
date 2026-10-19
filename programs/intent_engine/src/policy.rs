@@ -505,10 +505,10 @@ impl FeeSchedule {
         }
     }
 
-    pub fn terms(&self, intent: &Intent) -> Result<FeeTerms> {
-        let kind = Kind::try_from(intent.kind).map_err(core_err)?;
+    pub fn fee_bps(&self, kind: u8) -> Result<u16> {
+        let kind = Kind::try_from(kind).map_err(core_err)?;
         let [swap, limit, dutch, attested] = self.kind_bps;
-        let fee_bps = if kind.enabled_in(u64::from(self.kind_mask)) {
+        Ok(if kind.enabled_in(u64::from(self.kind_mask)) {
             match kind {
                 Kind::SwapExactIn => swap,
                 Kind::LimitOrder => limit,
@@ -517,13 +517,18 @@ impl FeeSchedule {
             }
         } else {
             self.default_bps
-        };
-        Ok(FeeTerms {
-            fee_bps,
+        })
+    }
+}
+
+impl FeeTerms {
+    pub fn recorded(intent: &Intent) -> Self {
+        Self {
+            fee_bps: intent.fee_bps,
             partner_bps: intent.partner_bps,
             cut_bps: intent.partner_cut_bps,
             partner: intent.partner,
-        })
+        }
     }
 }
 

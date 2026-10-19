@@ -3,7 +3,6 @@ import {
   type Config,
   decodeParamsLoose,
   type FeeShares,
-  feeBpsFor,
   type Intent,
   type IntentParams,
   INTENT_VERSION,
@@ -93,7 +92,7 @@ export function standing(intent: Intent, config: Config, now: bigint, strategy: 
   if (floor === undefined) {
     return `no profit floor is set for ${intent.outputMint}`;
   }
-  const feeBps = feeBpsFor(config, params.kind);
+  const feeBps = intent.feeBps;
   if (feeBps + intent.partnerBps > strategy.maxFeeBps) {
     return `fees of ${feeBps + intent.partnerBps} bps exceed the bound of ${strategy.maxFeeBps}`;
   }

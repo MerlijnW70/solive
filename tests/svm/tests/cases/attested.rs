@@ -388,13 +388,18 @@ fn zero_fee_needs_no_fee_account() -> TestResult {
     let ix = w.env.update_config_ix(&authority.pubkey(), settings);
     w.env.send(&authority, &[ix], &[])?;
     let attestor = w.attestor.insecure_clone();
+    w.env.create_intent(
+        &w.trader,
+        &w.market,
+        &attested_spec(1, &attestor.pubkey())?,
+    )?;
     let payee = w.solver.input;
-    let message = w.attestation(0, &payee, 15);
+    let message = w.attestation(1, &payee, 15);
     let fill = w.env.fill_attested_ix(
         &w.solver.key.pubkey(),
         &w.owner(),
         &w.market,
-        0,
+        1,
         &payee,
         None,
         15,
@@ -576,8 +581,9 @@ fn attested_fill_compute_stays_within_its_measured_budget() -> TestResult {
 }
 
 #[test]
-fn an_attested_fill_pays_the_fee_in_force_when_it_lands_up_to_the_bound_its_submitter_names() -> TestResult {
+fn an_attested_fill_pays_the_fee_its_intent_recorded_not_the_one_in_force() -> TestResult {
     let mut w = world()?;
+    let recorded = w.env.config()?.fee_bps;
     let attestor = w.attestor.insecure_clone();
     let payee = w.solver.input;
     let admin = w.env.authority.insecure_clone();
@@ -594,10 +600,11 @@ fn an_attested_fill_pays_the_fee_in_force_when_it_lands_up_to_the_bound_its_subm
     w.env.send(&admin, &[raise], &[])?;
     w.env.max_fee_bps = 100;
     w.fill(&attestor, 0, &payee, 15, &payee, 15)?;
-    let fees = intent_core::fee::split_fees(ESCROW, 100, 0, 0).map_err(|e| format!("{e:?}"))?;
+    let fees = intent_core::fee::split_fees(ESCROW, recorded, 0, 0).map_err(|e| format!("{e:?}"))?;
+    let raised = intent_core::fee::split_fees(ESCROW, 100, 0, 0).map_err(|e| format!("{e:?}"))?;
+    assert!(raised.protocol > fees.protocol);
     assert_eq!(w.env.balance(&payee)?, fees.net);
     assert_eq!(w.env.balance(&w.fee_to)?, fees.protocol);
-    assert!(fees.protocol > 1);
     Ok(())
 }
 

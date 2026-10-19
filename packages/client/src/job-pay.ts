@@ -2,7 +2,6 @@ import type { Address } from "@solana/kit";
 import {
   decodeParams,
   type FeeConfig,
-  feeBpsFor,
   formatAmount,
   getIntentDecoder,
   type Intent,
@@ -32,7 +31,7 @@ export function releaseNet(intent: Intent, terms: PayTerms): bigint | null {
     return null;
   }
   try {
-    return splitFees(amountIn - params.judgeFee, feeBpsFor(terms, intent.kind), intent.partnerBps, intent.partnerCutBps).net;
+    return splitFees(amountIn - params.judgeFee, intent.feeBps, intent.partnerBps, intent.partnerCutBps).net;
   } catch {
     return null;
   }

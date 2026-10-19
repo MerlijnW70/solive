@@ -63,11 +63,11 @@ export const getConfig = define({
         kind: choice(Object.values(KIND_NAMES)),
         enabled: flag("intents of this kind can be created"),
         fills_stopped: flag("fills of this kind are stopped"),
-        fee_bps: integer(0, 10_000),
+        fee_bps: integer(0, 10_000, "protocol fee each new intent of this kind records and pays on every fill"),
       }),
       4,
     ),
-    partner_cut_bps: integer(0, 10_000, "share of every partner fee kept by the protocol"),
+    partner_cut_bps: integer(0, 10_000, "share of every partner fee kept by the protocol, recorded by each new intent"),
     crank_bounty: amount("lamports escrowed in each new intent for whoever expires or closes it"),
     create_fee: amount("lamports paid to the treasury for each new intent"),
     domain_matches_cluster: flag("false means this RPC is a different cluster than the engine was configured for"),
@@ -248,8 +248,7 @@ export const quote = define({
   }),
   run: async ({ transport }, input) => {
     const { address, intent } = await loadIntent(transport, input.owner, input.nonce);
-    const { config } = await loadConfig(transport);
-    const q = quoteOf(intent, config, input.at ?? (await chainTime(transport)));
+    const q = quoteOf(intent, input.at ?? (await chainTime(transport)));
     return {
       address,
       at: q.at,

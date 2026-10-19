@@ -8,7 +8,7 @@ use intent_core::nonce::Window;
 
 use crate::errors::{core_err, EngineError};
 use crate::instructions::CreateIntentArgs;
-use crate::policy::{can_receive, check_mint, FeeSchedule};
+use crate::policy::{can_receive, check_mint, FeeSchedule, FeeTerms};
 use crate::state::{Config, Intent, UserState, INTENT_VERSION, PAUSE_CREATE};
 
 pub struct Opening<'a, 'info> {
@@ -110,10 +110,11 @@ pub fn open_intent(o: &Opening, args: &CreateIntentArgs, now: i64) -> Result<Adm
     intent.params = args.params;
     intent.rent_payer = o.rent_payer;
     intent.bounty = bounty;
+    intent.fee_bps = schedule.fee_bps(args.kind)?;
+    intent.partner_cut_bps = partner_cut_bps;
     if let Some(p) = partner {
         intent.partner = Pubkey::new_from_array(p.key);
         intent.partner_bps = p.bps;
-        intent.partner_cut_bps = partner_cut_bps;
     }
     if let Some((mandate, serial, agent_fee)) = o.mandate {
         intent.mandate = mandate;
@@ -121,7 +122,7 @@ pub fn open_intent(o: &Opening, args: &CreateIntentArgs, now: i64) -> Result<Adm
         intent.agent_fee = agent_fee;
     }
     if kind == Kind::AttestedResult {
-        let terms = schedule.terms(&intent)?;
+        let terms = FeeTerms::recorded(&intent);
         require!(
             release_settles(
                 decoded.escrow_amount(),

@@ -679,6 +679,7 @@ describe("cli against the deployed engine", () => {
           specUrl: null,
           sells: "100",
           judgeFee: "0",
+          feeBps: FEE_BPS,
           inputMint,
           expiresAt: (NOW + 3_600n).toString(),
           net_pay: "0.000099",

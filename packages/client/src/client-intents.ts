@@ -7,7 +7,6 @@ import {
   buildFillIntent,
   decodeParams,
   escrowAmount,
-  feeBpsFor,
   findAssociatedTokenAddress,
   findIntentPda,
   IntentStatus,
@@ -127,7 +126,7 @@ export function intentSends({ transport, send, mint, config }: ClientContext) {
     const [sell, buy] = await Promise.all([mint(held.inputMint), mint(held.outputMint)]);
     const amountIn = input.amountIn ?? remainingOf(held);
     const amountOut = input.amountOut ?? requiredOut(params, amountIn, await chainTime(transport));
-    const kindBps = feeBpsFor(settings, held.kind);
+    const kindBps = held.feeBps;
     const shares = splitFees(amountIn, kindBps, held.partnerBps, held.partnerCutBps);
     const feeRecipient = shares.protocol > 0n ? settings.feeRecipient : undefined;
     const partner = shares.partner > 0n ? held.partner : undefined;

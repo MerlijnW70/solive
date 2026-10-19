@@ -36,6 +36,7 @@ export type Job = {
   specUrl: string | null;
   sells: bigint;
   judgeFee: bigint;
+  feeBps: number;
   inputMint: Address;
   expiresAt: bigint;
 };
@@ -102,6 +103,7 @@ export async function jobsOf(transport: Transport, filter?: Address | JobFilter)
     specUrl: urls[i] ?? null,
     sells: remainingOf(intent),
     judgeFee: params.judgeFee,
+    feeBps: intent.feeBps,
     inputMint: intent.inputMint,
     expiresAt: intent.expiresAt,
   }));

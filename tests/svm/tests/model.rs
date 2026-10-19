@@ -477,6 +477,7 @@ struct World {
     partner_to: Pubkey,
     partnered: std::collections::BTreeSet<(usize, u64)>,
     cuts: std::collections::BTreeMap<(usize, u64), u16>,
+    recorded_fees: std::collections::BTreeMap<(usize, u64), u16>,
     epochs: Vec<u64>,
     bases: Vec<u64>,
     grants: Vec<u64>,
@@ -551,6 +552,7 @@ impl World {
             partner_to,
             partnered: std::collections::BTreeSet::new(),
             cuts: std::collections::BTreeMap::new(),
+            recorded_fees: std::collections::BTreeMap::new(),
             epochs: vec![0; TRADERS],
             bases: vec![0; TRADERS],
             grants: vec![0; TRADERS],
@@ -964,6 +966,8 @@ impl World {
             add(&mut self.balances, vault, drawn)?;
             self.bounties.insert((trader, nonce), self.bounty);
             self.cuts.insert((trader, nonce), self.cut);
+            self.recorded_fees
+                .insert((trader, nonce), self.fee_bps_for(kind));
             if partnered {
                 self.partnered.insert((trader, nonce));
             }
@@ -1115,7 +1119,7 @@ impl World {
         };
         let split = split_fees(
             escrowed,
-            self.fee_bps_for(kind),
+            self.fee_of((trader, nonce), kind),
             partner_bps,
             self.cut_of((trader, nonce)),
         )
@@ -1144,9 +1148,16 @@ impl World {
         } else {
             0
         };
-        let fee_bps = self.fee_bps_for(kind);
+        let fee_bps = self.fee_of(key, kind);
         u32::from(fee_bps).saturating_add(u32::from(partner_bps)) <= u32::from(self.env.max_fee_bps)
             && split_fees(escrowed, fee_bps, partner_bps, self.cut_of(key)).is_ok()
+    }
+
+    fn fee_of(&self, key: (usize, u64), kind: Kind) -> u16 {
+        self.recorded_fees
+            .get(&key)
+            .copied()
+            .unwrap_or_else(|| self.fee_bps_for(kind))
     }
 
     fn cut_of(&self, key: (usize, u64)) -> u16 {

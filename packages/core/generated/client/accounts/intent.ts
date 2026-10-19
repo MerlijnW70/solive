@@ -80,6 +80,7 @@ export type Intent = {
   partner: Address;
   bounty: number;
   mandate: Address;
+  feeBps: number;
   gap: ReadonlyUint8Array;
   mandateSerial: bigint;
   agentFee: bigint;
@@ -113,6 +114,7 @@ export type IntentArgs = {
   partner: Address;
   bounty: number;
   mandate: Address;
+  feeBps: number;
   gap: ReadonlyUint8Array;
   mandateSerial: number | bigint;
   agentFee: number | bigint;
@@ -150,7 +152,8 @@ export function getIntentEncoder(): FixedSizeEncoder<IntentArgs> {
       ["partner", getAddressEncoder()],
       ["bounty", getU32Encoder()],
       ["mandate", getAddressEncoder()],
-      ["gap", fixEncoderSize(getBytesEncoder(), 4)],
+      ["feeBps", getU16Encoder()],
+      ["gap", fixEncoderSize(getBytesEncoder(), 2)],
       ["mandateSerial", getU64Encoder()],
       ["agentFee", getU64Encoder()],
       ["claims", getU8Encoder()],
@@ -189,7 +192,8 @@ export function getIntentDecoder(): FixedSizeDecoder<Intent> {
     ["partner", getAddressDecoder()],
     ["bounty", getU32Decoder()],
     ["mandate", getAddressDecoder()],
-    ["gap", fixDecoderSize(getBytesDecoder(), 4)],
+    ["feeBps", getU16Decoder()],
+    ["gap", fixDecoderSize(getBytesDecoder(), 2)],
     ["mandateSerial", getU64Decoder()],
     ["agentFee", getU64Decoder()],
     ["claims", getU8Decoder()],

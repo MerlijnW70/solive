@@ -161,6 +161,7 @@ describe("jobs", () => {
       specUrl: SPEC_URL,
       sells: 100n,
       judgeFee: 0n,
+      feeBps: expect.any(Number),
       inputMint: w.inputMint,
       expiresAt: expect.any(BigInt),
     });

@@ -6,7 +6,6 @@ import {
   buildEd25519BatchInstruction,
   buildFillAttestedSplit,
   decodeParams,
-  feeBpsFor,
   findIntentPda,
   formatAmount,
   getIntentDecoder,
@@ -173,8 +172,8 @@ export const walletAttestSplit = define({
     const payees = await Promise.all(wallets.map((w) => tokenAccountIfMissing(ctx.transport, signer, w, held.inputMint, token.tokenProgram)));
     const amountIn = held.escrowed - held.filled;
     const settleAmount = amountIn - params.judgeFee;
-    const maxFeeBps = feeBpsFor(config, held.kind) + held.partnerBps;
-    const shares = splitFees(settleAmount, feeBpsFor(config, held.kind), held.partnerBps, held.partnerCutBps);
+    const maxFeeBps = held.feeBps + held.partnerBps;
+    const shares = splitFees(settleAmount, held.feeBps, held.partnerBps, held.partnerCutBps);
     const payout = splitPayout(shares.net, weights);
     const treasury = shares.protocol > 0n ? await tokenAccountIfMissing(ctx.transport, signer, config.feeRecipient, held.inputMint, token.tokenProgram) : { create: [] };
     const partnerPaid = shares.partner > 0n;

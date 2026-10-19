@@ -521,16 +521,24 @@ fn begin_requires_the_canonical_fee_account_and_none_at_zero_fee() -> TestResult
     settings.fee_bps = 0;
     let ix = w.env.update_config_ix(&authority.pubkey(), settings);
     w.env.send(&authority, &[ix], &[])?;
+    w.env.mint_to(
+        &w.market.input_mint,
+        &w.trader.input,
+        w.market.input_program,
+        ESCROW,
+    )?;
+    w.env
+        .create_intent(&w.trader, &w.market, &swap_spec(1, ESCROW)?)?;
     let begin = w.env.begin_fill_ix(
         &w.solver.key.pubkey(),
         &w.owner(),
         &w.market,
-        0,
+        1,
         &w.solver.input,
         None,
         1,
     );
-    w.send(&[begin, w.end(0, 1)])?;
+    w.send(&[begin, w.end(1, 1)])?;
     assert_eq!(w.env.balance(&w.solver.input)?, ESCROW);
     assert_eq!(w.env.balance(&w.fee_to)?, 0);
     Ok(())

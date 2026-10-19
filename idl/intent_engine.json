@@ -5241,11 +5241,15 @@
             "type": "pubkey"
           },
           {
+            "name": "fee_bps",
+            "type": "u16"
+          },
+          {
             "name": "gap",
             "type": {
               "array": [
                 "u8",
-                4
+                2
               ]
             }
           },

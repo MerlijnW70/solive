@@ -14,7 +14,7 @@ use crate::events::{AgentPaid, FeeWithheld, FillBegun, WITHHELD_AGENT, WITHHELD_
 use crate::ext::Ext;
 use crate::policy::{
     check_fill_kind, check_mandate_live, check_mint, pay_agent, pay_out, take_remaining,
-    AgentPayout, FeeSchedule, IntentSigner, Payout,
+    AgentPayout, FeeTerms, IntentSigner, Payout,
 };
 use crate::state::{
     Config, Intent, UserState, CONFIG_ADDRESS, CONFIG_VERSION, INTENT_VERSION, PAUSE_FILL,
@@ -103,10 +103,10 @@ pub fn handle_begin_fill(
         EngineError::FlashCpi
     );
     let now = Clock::get()?.unix_timestamp;
-    let (schedule, disabled) = {
+    let disabled = {
         let config = ctx.accounts.config.load()?;
         require!(config.paused & PAUSE_FILL == 0, EngineError::FillPaused);
-        (FeeSchedule::of(&config), config.fill_disabled_kinds)
+        config.fill_disabled_kinds
     };
     check_mint(&ctx.accounts.input_mint.to_account_info())?;
     let intent_key = ctx.accounts.intent.key();
@@ -136,7 +136,7 @@ pub fn handle_begin_fill(
             ctx.accounts.mandate.as_deref(),
             ctx.accounts.owner_state.as_ref(),
         )?;
-        let terms = schedule.terms(&intent)?;
+        let terms = FeeTerms::recorded(&intent);
         let status = Status::try_from(intent.status).map_err(core_err)?;
         let next = transition(status, Action::Begin, now, intent.expires_at)
             .map_err(core_err)?

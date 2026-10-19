@@ -16,8 +16,8 @@ use crate::events::StakeMoved;
 use crate::ext::Ext;
 use crate::policy::{
     check_fill_kind, check_mint, pay_agent, pay_out, pay_out_split, take_remaining,
-    verify_preceding_batch, verify_preceding_ed25519, AgentPayout, FeeSchedule, FeeTerms,
-    IntentSigner, Payout, SplitPayout, Tally,
+    verify_preceding_batch, verify_preceding_ed25519, AgentPayout, FeeTerms, IntentSigner, Payout,
+    SplitPayout, Tally,
 };
 use crate::state::{
     ClaimBoard, Committee, Config, Intent, CLAIMS_OPEN, COMMITTEE_VERSION, PAUSE_FILL,
@@ -142,20 +142,16 @@ struct Opened {
 
 fn open(release: &Release, amount_in: u64, result: u64) -> Result<Opened> {
     let now = Clock::get()?.unix_timestamp;
-    let (schedule, domain, disabled) = {
+    let (domain, disabled) = {
         let config = release.config.load()?;
         require!(config.paused & PAUSE_FILL == 0, EngineError::FillPaused);
-        (
-            FeeSchedule::of(&config),
-            config.domain,
-            config.fill_disabled_kinds,
-        )
+        (config.domain, config.fill_disabled_kinds)
     };
     check_mint(&release.input_mint.to_account_info())?;
     let mut intent = release.intent.load_mut()?;
     check_fill_kind(intent.kind, disabled)?;
     require!(intent.agent_fee == 0, EngineError::MandateMismatch);
-    let terms = schedule.terms(&intent)?;
+    let terms = FeeTerms::recorded(&intent);
     let status = Status::try_from(intent.status).map_err(core_err)?;
     let next = transition(status, Action::Fill, now, intent.expires_at)
         .map_err(core_err)?

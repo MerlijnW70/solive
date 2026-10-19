@@ -56,7 +56,8 @@ function intent(over: Partial<Intent> = {}): Intent {
     partner: KEY,
     bounty: 0,
     mandate: "11111111111111111111111111111111" as Address,
-    gap: new Uint8Array(4),
+    feeBps: 5,
+    gap: new Uint8Array(2),
     mandateSerial: 0n,
     agentFee: 0n,
     claims: 0,
@@ -130,7 +131,8 @@ describe("fill decisions", () => {
   it("sells only what remains after the protocol fee and the partner share", async () => {
     const pricer = pays(MIN_OUT + 5_000n);
     const partnered = intent({ partner: PARTNER, partnerBps: 50 });
-    const d = await decide(KEY, partnered, config({ kindFeeMask: 0b10, kindFeeBps: [7, 0, 0, 0] }), NOW, pricer, SOLVER, strategy);
+    const recorded = intent({ partner: PARTNER, partnerBps: 50, feeBps: 7 });
+    const d = await decide(KEY, recorded, config({ kindFeeMask: 0b10, kindFeeBps: [90, 0, 0, 0] }), NOW, pricer, SOLVER, strategy);
     const fees = splitFees(AMOUNT, 7, 50, 2_000);
     expect(d.kind === "fill" ? [d.plan.feeBps, d.plan.fees] : d).toEqual([7, fees]);
     expect(pricer.asked[0]?.amountIn).toBe(fees.net);

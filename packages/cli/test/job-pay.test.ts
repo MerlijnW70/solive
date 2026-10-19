@@ -38,7 +38,9 @@ function edit<T>(address: Address, decode: (data: Uint8Array) => T, encode: (val
 const editIntent = (address: Address, change: { partner?: Address; partnerBps?: number; partnerCutBps?: number }) =>
   edit(address, (data) => getIntentDecoder().decode(data), (value) => Uint8Array.from(getIntentEncoder().encode(value)), change);
 
-async function editConfig(change: { paused?: number; fillDisabledKinds?: bigint }): Promise<void> {
+type ConfigChange = { paused?: number; fillDisabledKinds?: bigint; feeBps?: number; kindFeeMask?: number; kindFeeBps?: number[]; partnerCutBps?: number };
+
+async function editConfig(change: ConfigChange): Promise<void> {
   const [address] = await findConfigPda();
   edit(address, (data) => getConfigDecoder().decode(data), (value) => Uint8Array.from(getConfigEncoder().encode(value)), change);
 }
@@ -114,6 +116,27 @@ describe("jobs show what they pay after fees", () => {
     await editConfig({ paused: 0, fillDisabledKinds: kindBit(Kind.AttestedResult) });
     expect(await command()).toEqual(none);
     expect(await found()).toEqual(none);
+  });
+
+  it("a fee change after create leaves what each job pays and the fee it shows as the job recorded them", async () => {
+    const before = await command();
+    const recorded = [token, sol, stuck].map((intent) => {
+      const view = h.svm.getAccount(intent);
+      if (!view.exists) {
+        throw new Error("intent missing");
+      }
+      return getIntentDecoder().decode(view.data).feeBps;
+    });
+    await editConfig({ feeBps: 100, kindFeeMask: 1 << Kind.AttestedResult, kindFeeBps: [0, 0, 0, 300], partnerCutBps: 10_000 });
+    expect(await command()).toEqual(before);
+    expect(await found()).toEqual(before);
+    const client = await linked();
+    const result = await client.callTool({ name: "solive_find_jobs", arguments: {} });
+    const listed = (result.structuredContent as Json)["jobs"] as { intent: Address; fee_bps: number }[];
+    const order = [token, sol, stuck];
+    expect(listed.map(({ intent, fee_bps }) => [intent, fee_bps])).toEqual(order.map((intent, i) => [intent, recorded[i]]));
+    expect((result.structuredContent as Json)["fee_bps"]).toBe(300);
+    expect(recorded.every((bps) => bps !== 300)).toBe(true);
   });
 
   it("reads the config and each mint once per call, not once per job", async () => {

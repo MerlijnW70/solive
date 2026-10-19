@@ -2,8 +2,6 @@ import type { Address } from "@solana/kit";
 import {
   decodeParams,
   decodeParamsLoose,
-  type FeeConfig,
-  feeBpsFor,
   remainingOf,
   requiredOut,
   splitFees,
@@ -14,10 +12,10 @@ import {
 
 export const STATUS = ["open", "filled", "cancelled", "expired", "filling"] as const;
 
-export function quoteOf(intent: Intent, config: FeeConfig, at: bigint) {
+export function quoteOf(intent: Intent, at: bigint) {
   const params = decodeParams(intent.kind, Uint8Array.from(intent.params));
   const amountIn = remainingOf(intent);
-  const feeBps = feeBpsFor(config, params.kind);
+  const feeBps = intent.feeBps;
   const fees = splitFees(amountIn, feeBps, intent.partnerBps, intent.partnerCutBps);
   return {
     at,
@@ -56,7 +54,8 @@ export function describeIntent(address: Address, intent: Intent) {
     filled: intent.filled,
     revision: intent.revision,
     bounty: intent.bounty,
-    ...(intent.partnerBps === 0 ? {} : { partner: intent.partner, partnerBps: intent.partnerBps }),
+    feeBps: intent.feeBps,
+    ...(intent.partnerBps === 0 ? {} : { partner: intent.partner, partnerBps: intent.partnerBps, partnerCutBps: intent.partnerCutBps }),
     params:
       "unknown" in params && params.unknown
         ? { kind: `unknown(${params.kind})`, raw: hex(params.raw), reason: params.reason }

@@ -141,9 +141,10 @@ console.log(formatAmount(paid?.fields.net ?? 0n, sell.decimals));
 ## Fees
 
 - Each kind has a protocol fee, `feeBps` in `configSummary`, taken from the escrow at the fill.
+- An intent records its kind's fee and the partner cut, `feeBps` and `partnerCutBps`, when it is created, and every fill or release pays those. A later config change applies only to intents created after it.
 - The engine caps it at `MAX_FEE_BPS` (100) for swap, limit and dutch orders and at `MAX_ATTESTED_FEE_BPS` (300) for attested ones; `maxFeeBpsFor` gives a kind's cap.
 - A proof escrow pays the judge's `judgeFee` first. The protocol fee and any partner fee come out of the rest, and the worker gets what remains.
-- The protocol keeps `partnerCutBps` of every partner fee.
+- The protocol keeps the intent's `partnerCutBps` of every partner fee.
 - `splitFees` and `feeBpsFor` from `@intent-engine/core` compute the same split.
 
 This prints what the worker, the judge and the protocol received, in SOL; together they make up the escrow.

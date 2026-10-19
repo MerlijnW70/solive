@@ -99,7 +99,8 @@ fn intent_field_offsets_are_frozen() {
     assert_eq!(offset_of!(Intent, partner), 352);
     assert_eq!(offset_of!(Intent, bounty), 384);
     assert_eq!(offset_of!(Intent, mandate), 388);
-    assert_eq!(offset_of!(Intent, gap), 420);
+    assert_eq!(offset_of!(Intent, fee_bps), 420);
+    assert_eq!(offset_of!(Intent, gap), 422);
     assert_eq!(offset_of!(Intent, mandate_serial), 424);
     assert_eq!(offset_of!(Intent, agent_fee), 432);
     assert_eq!(offset_of!(Intent, claims), 440);

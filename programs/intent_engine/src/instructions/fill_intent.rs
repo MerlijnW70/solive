@@ -10,7 +10,7 @@ use crate::events::{AgentPaid, FeeWithheld, IntentFilled, WITHHELD_AGENT, WITHHE
 use crate::ext::Ext;
 use crate::policy::{
     check_fill_kind, check_mandate_live, check_mint, deliver, pay_agent, pay_out, take_remaining,
-    AgentPayout, FeeSchedule, IntentSigner, Payout,
+    AgentPayout, FeeTerms, IntentSigner, Payout,
 };
 use crate::state::{
     Config, Intent, UserState, CONFIG_ADDRESS, CONFIG_VERSION, INTENT_VERSION, PAUSE_FILL,
@@ -108,10 +108,10 @@ pub fn handle_fill_intent(
 ) -> Result<()> {
     ext.check(FILL_EXT_TAGS)?;
     let now = Clock::get()?.unix_timestamp;
-    let (schedule, disabled) = {
+    let disabled = {
         let config = ctx.accounts.config.load()?;
         require!(config.paused & PAUSE_FILL == 0, EngineError::FillPaused);
-        (FeeSchedule::of(&config), config.fill_disabled_kinds)
+        config.fill_disabled_kinds
     };
     check_mint(&ctx.accounts.input_mint.to_account_info())?;
     check_mint(&ctx.accounts.output_mint.to_account_info())?;
@@ -123,7 +123,7 @@ pub fn handle_fill_intent(
             ctx.accounts.mandate.as_deref(),
             ctx.accounts.owner_state.as_ref(),
         )?;
-        let terms = schedule.terms(&intent)?;
+        let terms = FeeTerms::recorded(&intent);
         let status = Status::try_from(intent.status).map_err(core_err)?;
         let next = transition(status, Action::Fill, now, intent.expires_at)
             .map_err(core_err)?
