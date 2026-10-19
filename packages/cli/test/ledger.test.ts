@@ -275,6 +275,61 @@ describe("signing with a Ledger", () => {
     expect([ledger.opened, h.urls]).toEqual([0, []]);
   });
 
+  it("judge and judge --watch refuse every Ledger form before reading the chain, a key file or the device", async () => {
+    const judging = ["judge", "--owner", w.owner.address, "--nonce", "0", "--spec", "SPEC.md"];
+    const shapes = [
+      [...judging, "--artifact", "work.mjs", "--sandbox", "viper", "--yes"],
+      [...judging, "--artifact", "work", "--run", "node check/check.mjs", "--yes"],
+      [...judging, "--sandbox", "viper", "--watch", "--yes"],
+      [...judging, "--run", "node check/check.mjs", "--watch", "--yes"],
+    ];
+    for (const path of LEDGER_FORMS.map((form) => form.replace("<account>", "1").replace("<change>", "0"))) {
+      for (const shape of shapes) {
+        const ledger = device(key, []);
+        const read: string[] = [];
+        h.urls.length = 0;
+        const wires = h.wires.length;
+        const out: string[] = [];
+        const err: string[] = [];
+        const base = runtime({});
+        const code = await main(
+          [...shape, "--keypair", path],
+          {
+            ...base,
+            ledger: ledger.open,
+            loadSigner: async (file) => {
+              read.push(file);
+              return base.loadSigner(file);
+            },
+          },
+          { out: (t) => out.push(t), err: (t) => err.push(t) },
+        );
+        expect([code, err.join("\n"), out.join("\n")], shape.join(" ")).toEqual([EXIT_USAGE, needsKeyFile("judge", path), ""]);
+        expect([ledger.opened, h.urls, read, h.wires.length]).toEqual([0, [], [], wires]);
+      }
+    }
+    h.env[ENV_KEYPAIR] = "usb://ledger";
+    for (const shape of shapes) {
+      const ledger = device(key, []);
+      h.urls.length = 0;
+      const defaulted = await run(shape, ledger);
+      expect([defaulted.code, defaulted.err, defaulted.out]).toEqual([EXIT_USAGE, needsKeyFile("judge", "usb://ledger"), ""]);
+      expect([ledger.opened, h.urls]).toEqual([0, []]);
+    }
+    expect(signsOnDevice(parse([...(shapes[0] ?? []), "--keypair", "usb://ledger"]))).toBe(false);
+    expect(LEDGER_COMMANDS).not.toContain("judge");
+  });
+
+  it("the judge guide says judge refuses a Ledger in at most three sentences", () => {
+    const page = readFileSync(`${ROOT}/docs/judge.md`, "utf8");
+    const paragraph = page.split("\n\n").find((block) => block.includes("`--keypair usb://ledger`")) ?? "";
+    expect(paragraph).toContain("`judge`");
+    expect(paragraph).toContain("`--watch`");
+    expect(paragraph).toContain("signs a message");
+    expect(paragraph).toContain("before it reads the chain");
+    expect(paragraph.split(/\.\s/).length).toBeLessThanOrEqual(3);
+  });
+
   it("a malformed Ledger path is a usage error that never opens the device or reads a key file", async () => {
     for (const path of ["usb://ledger?key=x", "usb://trezor", "usb://ledger?key=2147483648"]) {
       const ledger = device(key, []);

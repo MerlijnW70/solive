@@ -18,6 +18,8 @@ In PowerShell:
 $env:JUDGE = (intent-engine balance | Out-String | ConvertFrom-Json).address
 ```
 
+The judge's wallet must be a key file. Every release that `judge` sends, with or without `--watch`, signs a message over the proof, and a Ledger signs only transactions here. So `judge` refuses `--keypair usb://ledger` and the other Ledger forms before it reads the chain, and sends nothing.
+
 ## 1. Create a proof escrow
 
 Whoever pays creates the escrow and names its judge. To try it alone, pay yourself. Write the spec to `spec.md`, publish it at an https URL and put that URL in place of `https://example.org/spec.md`:
