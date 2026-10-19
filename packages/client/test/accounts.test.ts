@@ -2,7 +2,7 @@ import type { Address } from "@solana/kit";
 import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { createdAccount, rentExemptMinimum, tokenAmountOf } from "../src/accounts.js";
+import { createdAccount, rentExemptFor, rentExemptMinimum, rentSysvar, tokenAmountOf } from "../src/accounts.js";
 import type { AccountView, Transport } from "../src/transport.js";
 
 const AT = "11111111111111111111111111111112" as Address;
@@ -25,7 +25,7 @@ describe("created accounts", () => {
   });
 });
 
-const rentSysvar = (perByteYear: bigint, threshold: number) => {
+const rentServed = (perByteYear: bigint, threshold: number) => {
   const data = new Uint8Array(17);
   const view = new DataView(data.buffer);
   view.setBigUint64(0, perByteYear, true);
@@ -35,10 +35,19 @@ const rentSysvar = (perByteYear: bigint, threshold: number) => {
 
 describe("rent exemption", () => {
   it("prices an account's storage from the cluster's rent sysvar", async () => {
-    expect(await rentExemptMinimum(rentSysvar(3_480n, 2), 0)).toBe(890_880n);
-    expect(await rentExemptMinimum(rentSysvar(3_480n, 2), 165)).toBe(2_039_280n);
-    expect(await rentExemptMinimum(rentSysvar(6_960n, 0.5), 165)).toBe(1_019_640n);
+    expect(await rentExemptMinimum(rentServed(3_480n, 2), 0)).toBe(890_880n);
+    expect(await rentExemptMinimum(rentServed(3_480n, 2), 165)).toBe(2_039_280n);
+    expect(await rentExemptMinimum(rentServed(6_960n, 0.5), 165)).toBe(1_019_640n);
     await expect(rentExemptMinimum(holding(null), 0)).rejects.toThrow("the rent sysvar is missing");
+  });
+
+  it("reads the yearly rate and threshold and prices any size with the runtime's rounding", async () => {
+    expect(await rentSysvar(rentServed(3_387n, 1.5))).toEqual({ perByteYear: 3_387n, threshold: 1.5 });
+    expect(rentExemptFor({ perByteYear: 3_387n, threshold: 1.5 }, 165)).toBe(1_488_586n);
+    expect(rentExemptFor({ perByteYear: 3_387n, threshold: 1.5 }, 170)).toBe(1_513_989n);
+    expect(await rentExemptMinimum(rentServed(3_387n, 1.5), 165)).toBe(1_488_586n);
+    expect(rentExemptFor({ perByteYear: 5_080n, threshold: 1 }, 165)).toBe(1_488_440n);
+    await expect(rentSysvar(holding(null))).rejects.toThrow("the rent sysvar is missing");
   });
 });
 

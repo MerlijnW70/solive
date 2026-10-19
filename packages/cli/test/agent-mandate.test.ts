@@ -24,7 +24,7 @@ const FIRST_LANE = MANDATE_NONCE_BIT | (1n << 32n);
 import { getCloseAccountInstruction, getTokenDecoder, getTransferInstruction, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { MAX_COMPUTE_UNITS } from "@intent-engine/solver";
 import { type Transport, Charged } from "@intent-engine/client";
-import { createCost, rentFor, TOKEN_ACCOUNT_RENT_BYTES } from "../src/agent/budget.js";
+import { createCost, rentFor, rentRate, TOKEN_ACCOUNT_RENT_BYTES } from "../src/agent/budget.js";
 import { AGENT_NONCE_PROBES, agentNonce, freeMandateId, MANDATE_ID_PROBES, NO_MANDATE_HINT, REVOKE_CANCELS } from "../src/agent/mandate.js";
 import { callOf, claim, claimsOf } from "../src/agent/claims.js";
 import { ENGINE_PROBLEMS, type Problem } from "../src/agent/problems.js";
@@ -287,7 +287,8 @@ describe("mandates through the agent server", () => {
     expect(capped["code"], JSON.stringify(capped)).toBe(
       "MandateCap",
     );
-    const opening = createCost({ createFee: 0, crankBounty: 0 }) + rentFor(TOKEN_ACCOUNT_RENT_BYTES);
+    const rate = await rentRate(transport);
+    const opening = createCost({ createFee: 0, crankBounty: 0 }, rate) + rentFor(TOKEN_ACCOUNT_RENT_BYTES, rate);
     const tight = await serve(["--agent", "a.json", "--agent-owners", w.owner.address, "--agent-hourly-lamports", (opening - 1n).toString()], { "a.json": agent });
     expect(await fail(tight, "agent_create", { owner: w.owner.address, order: order("390", "200"), expires_in: 600 })).toMatchObject({
       code: "BudgetExhausted",
@@ -369,7 +370,7 @@ describe("mandates through the agent server", () => {
 
   it("gives parallel agent creates distinct nonces and charges the budget once each", async () => {
     await execute((await ok(client, "prepare_mandate", grant({ max_intents: 4, total: "1000" })))["prepared"], w.owner);
-    const cost = createCost({ createFee: 0, crankBounty: 0 });
+    const cost = createCost({ createFee: 0, crankBounty: 0 }, await rentRate(transport));
     const exact = await serve(["--agent", "a.json", "--agent-owners", w.owner.address, "--agent-hourly-lamports", (2n * cost).toString()], { "a.json": agent });
     const made = await Promise.all(
       [0, 1].map(() => ok(exact, "agent_create", { owner: w.owner.address, order: order("100", "50"), expires_in: 600 })),
@@ -399,7 +400,7 @@ describe("mandates through the agent server", () => {
       retryable: false,
       hint: `this agent only acts for the owners it was started with; ${w.owner.address} is not one of them`,
     });
-    const cost = createCost({ createFee: 0, crankBounty: 0 });
+    const cost = createCost({ createFee: 0, crankBounty: 0 }, await rentRate(transport));
     const frugal = await serve(["--agent", "a.json", "--agent-owners", w.owner.address, "--agent-hourly-lamports", cost.toString()], { "a.json": agent });
     await ok(frugal, "agent_create", { owner: w.owner.address, order: order("10", "5"), expires_in: 600 });
     expect(await fail(frugal, "agent_create", { owner: w.owner.address, order: order("10", "5"), expires_in: 600 })).toMatchObject({
@@ -423,7 +424,7 @@ describe("mandates through the agent server", () => {
 
   it("keeps the agent's budget spent when a send may already have been paid for, and only then", async () => {
     await execute((await ok(client, "prepare_mandate", grant()))["prepared"], w.owner);
-    const cost = createCost({ createFee: 0, crankBounty: 0 });
+    const cost = createCost({ createFee: 0, crankBounty: 0 }, await rentRate(transport));
     const args = { owner: w.owner.address, order: order("10", "5"), expires_in: 600 };
     const dropped = await serve(["--agent", "a.json", "--agent-owners", w.owner.address, "--agent-hourly-lamports", cost.toString()], { "a.json": agent });
     const delivered = transport.send;

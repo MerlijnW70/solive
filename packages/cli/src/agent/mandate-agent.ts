@@ -11,7 +11,7 @@ import {
 } from "@intent-engine/core";
 import { chainTime, loadConfig, mintCapOf, mintOf, tokenAccountIfMissing, type Transport } from "@intent-engine/client";
 import { type AgentContext, define } from "./actions.js";
-import { createCost, release, rentFor, reserve, TOKEN_ACCOUNT_RENT_BYTES } from "./budget.js";
+import { createCost, release, rentFor, rentRate, reserve, TOKEN_ACCOUNT_RENT_BYTES } from "./budget.js";
 import { expiryOf, MAX_EXPIRES_IN, MIN_EXPIRES_IN } from "./create.js";
 import { tool } from "./names.js";
 import { unusedIntent } from "./owner.js";
@@ -98,10 +98,11 @@ async function agentIntent(
     ...(mintCap === undefined ? {} : { mintCap }),
   });
   const escrow = escrowAmount(params);
+  const rate = await rentRate(transport);
   return {
     mandate,
     instructions: [...feeAccount.create, create],
-    cost: createCost(config) + (feeAccount.create.length > 0 ? rentFor(TOKEN_ACCOUNT_RENT_BYTES) : 0n),
+    cost: createCost(config, rate) + (feeAccount.create.length > 0 ? rentFor(TOKEN_ACCOUNT_RENT_BYTES, rate) : 0n),
     now,
     view: {
       intent,

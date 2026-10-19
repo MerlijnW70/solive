@@ -27,7 +27,8 @@ import {
   MANDATE_NONCE_BIT,
 } from "@intent-engine/core";
 import { COMPUTE_BUDGET_ADDRESS } from "@intent-engine/solver";
-import { BlockhashExpired, FailedOnChain, type Transport } from "@intent-engine/client";
+import { BlockhashExpired, FailedOnChain, loadConfig, type Transport } from "@intent-engine/client";
+import { createCost, rentRate } from "../src/agent/budget.js";
 import { AUTHORITY_NEXT, follow, followGap, type Runtime } from "../src/commands.js";
 import { CANCELS_FAILED, CANCELS_UNKNOWN, execute, FlowRefused, NOT_SENT } from "../src/flows.js";
 import { NOTHING_TO_CREATE, TREASURY_IS_PROGRAM, treasuryTooEmpty } from "../src/treasury.js";
@@ -477,6 +478,8 @@ describe("command line flows", () => {
     const submit = ["signed", "submit", "--keypair", "relayer.json", "--file", "s.json"];
     const checked = (await cli(submit, keys)).json() as Json;
     expect(checked).toMatchObject({ intent: prepared["intent"], exists: 0, relayer_fee: "5", sent: false, next: NOT_SENT });
+    const relayCost = createCost((await loadConfig(transport)).config, await rentRate(transport));
+    expect(checked["summary"].at(-1)).toContain(`Relaying costs you ${relayCost} lamports in create fee`);
     expect(checked["summary"].at(-1)).toMatch(/^Relaying costs you \d+ lamports in create fee, crank bounty, rent and signature fee, plus any priority fee; you receive /);
     expect(exists(prepared["intent"])).toBe(false);
     const relayed = (await cli([...submit, "--yes"], keys)).json() as Json;

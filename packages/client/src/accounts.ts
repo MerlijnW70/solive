@@ -180,14 +180,22 @@ const RENT_SYSVAR = "SysvarRent111111111111111111111111111111111" as Address;
 const ACCOUNT_STORAGE_OVERHEAD = 128n;
 const RENT_THRESHOLD_OFFSET = 8;
 
-export async function rentExemptMinimum(transport: Transport, dataLength: number): Promise<bigint> {
+export type RentSysvar = { perByteYear: bigint; threshold: number };
+
+export async function rentSysvar(transport: Transport): Promise<RentSysvar> {
   const view = await transport.getAccount(RENT_SYSVAR);
   if (view === null) {
     throw new Error("the rent sysvar is missing");
   }
   const rent = new DataView(view.data.buffer, view.data.byteOffset);
-  const perYear = rent.getBigUint64(0, true) * (ACCOUNT_STORAGE_OVERHEAD + BigInt(dataLength));
-  return BigInt(Math.floor(Number(perYear) * rent.getFloat64(RENT_THRESHOLD_OFFSET, true)));
+  return { perByteYear: rent.getBigUint64(0, true), threshold: rent.getFloat64(RENT_THRESHOLD_OFFSET, true) };
+}
+
+export const rentExemptFor = (rent: RentSysvar, dataLength: number): bigint =>
+  BigInt(Math.floor(Number(rent.perByteYear * (ACCOUNT_STORAGE_OVERHEAD + BigInt(dataLength))) * rent.threshold));
+
+export async function rentExemptMinimum(transport: Transport, dataLength: number): Promise<bigint> {
+  return rentExemptFor(await rentSysvar(transport), dataLength);
 }
 
 export async function clusterDomain(transport: Transport): Promise<Uint8Array> {

@@ -62,7 +62,7 @@ import { ACTIONS } from "../src/agent/registry.js";
 import { needsSpecHash, SHA256_NEEDED, SPEC_HASH_FORMAT, UsageError, usageOf } from "../src/args.js";
 import { expandHome } from "../src/wallet.js";
 import { DELIVER_ONE_OF } from "../src/job-args.js";
-import { commitmentOf, createClient, deliverySalt, DEVNET_GENESIS_HASH, PLAIN_HTTP_ON_PUBLIC, saltCheckOf } from "@intent-engine/client";
+import { commitmentOf, createClient, deliverySalt, DEVNET_GENESIS_HASH, PLAIN_HTTP_ON_PUBLIC, rentExemptMinimum, saltCheckOf } from "@intent-engine/client";
 import { ANNOUNCE_FIRST } from "../src/agent/wallet/delivery.js";
 import {
   crankAction,
@@ -83,7 +83,7 @@ import {
   TOKEN_ACCOUNT_BYTES,
   UNFUNDED,
 } from "../src/commands.js";
-import { rentFor } from "../src/agent/budget.js";
+import { rentFor, rentRate } from "../src/agent/budget.js";
 import {
   EXIT_FAILED,
   EXIT_OK,
@@ -99,7 +99,7 @@ import {
   runProcess,
 } from "../src/main.js";
 import { COMPUTE_BUDGET_ADDRESS, FAILED_ON_CHAIN, JITO_TIP_ACCOUNTS, MAX_COMPUTE_UNITS, NET_BELOW_FLOOR, SIMULATION_REFUSED } from "@intent-engine/solver";
-import { costlyFunding, FUNDING_RENT } from "../src/crank.js";
+import { costlyFunding, fundingRent } from "../src/crank.js";
 import {
   ata,
   balance,
@@ -443,11 +443,12 @@ describe("cli against the deployed engine", () => {
     const costly = (await cli(["crank", "--keypair", "c.json", "--fund-accounts"], { "c.json": cranker })).json() as {
       actions: { intent: string; action: string; skipped?: string }[];
     };
-    expect(costly.actions).toEqual([{ intent: i0, action: "expire", skipped: costlyFunding(0n) }]);
-    expect(costlyFunding(0n)).toBe(
-      `recreating the owner's token account costs ${FUNDING_RENT} lamports of rent, more than this intent's 0 lamport bounty; settle it with expire or close to pay that knowingly`,
+    const rent = await fundingRent(transport);
+    expect(costly.actions).toEqual([{ intent: i0, action: "expire", skipped: costlyFunding(0n, rent) }]);
+    expect(costlyFunding(0n, rent)).toBe(
+      `recreating the owner's token account costs ${rent} lamports of rent, more than this intent's 0 lamport bounty; settle it with expire or close to pay that knowingly`,
     );
-    expect(FUNDING_RENT).toBe(rentFor(TOKEN_ACCOUNT_BYTES));
+    expect(rent).toBe(rentFor(TOKEN_ACCOUNT_BYTES, await rentRate(transport)));
     expect(h.svm.getBalance(cranker.address)).toBe(lamports);
     const paid = await cli(["expire", "--keypair", "c.json", "--owner", owner.address, "--nonce", "0", "--yes"], { "c.json": cranker });
     expect(paid.code).toBe(EXIT_OK);
@@ -457,10 +458,11 @@ describe("cli against the deployed engine", () => {
   it("funds a missing refund account in a crank run when the bounty covers its rent", async () => {
     h.watched.length = 0;
     h.watched.push(owner.address);
-    const bounty = (FUNDING_RENT - 1n).toString();
+    const rent = await fundingRent(transport);
+    const bounty = (rent - 1n).toString();
     await cli(["set-economics", "--keypair", "a.json", "--yes", "--bounty", bounty, "--create-fee", "0"], { "a.json": authority });
     await cli(create("0", NOW + 10n), { "owner.json": owner });
-    await cli(["set-economics", "--keypair", "a.json", "--yes", "--bounty", FUNDING_RENT.toString(), "--create-fee", "0"], { "a.json": authority });
+    await cli(["set-economics", "--keypair", "a.json", "--yes", "--bounty", rent.toString(), "--create-fee", "0"], { "a.json": authority });
     await cli(create("1", NOW + 10n), { "owner.json": owner });
     const sink = await ata(authority, (await generateKeyPairSigner()).address, inputMint);
     await send(owner, [
@@ -481,7 +483,7 @@ describe("cli against the deployed engine", () => {
     expect(h.svm.getAccount(i1).exists).toBe(false);
     expect(balance(ownerInput)).toBeGreaterThanOrEqual(ESCROW);
     const first = by.get(i0);
-    expect(first?.signature !== undefined || first?.skipped === costlyFunding(FUNDING_RENT - 1n)).toBe(true);
+    expect(first?.signature !== undefined || first?.skipped === costlyFunding(rent - 1n, rent)).toBe(true);
   });
 
   it("records a failing crank action and carries on with the rest", async () => {
@@ -520,7 +522,8 @@ describe("cli against the deployed engine", () => {
   it("refunds into a fresh account the owner holds when their own one cannot take it, only when told to fund it", async () => {
     h.watched.length = 0;
     h.watched.push(owner.address);
-    await cli(["set-economics", "--keypair", "a.json", "--yes", "--bounty", FUNDING_RENT.toString(), "--create-fee", "0"], { "a.json": authority });
+    const rent = await fundingRent(transport);
+    await cli(["set-economics", "--keypair", "a.json", "--yes", "--bounty", rent.toString(), "--create-fee", "0"], { "a.json": authority });
     await cli(create("0", NOW + 10n), { "owner.json": owner });
     const meddler = await funded();
     await send(owner, [
@@ -549,13 +552,16 @@ describe("cli against the deployed engine", () => {
     });
     expect(refundSeed(owner.address, inputMint)).toBe(owner.address.slice(0, 16) + inputMint.slice(0, 16));
     expect(balance(spare)).toBe(ESCROW);
+    expect(h.svm.getBalance(spare)).toBe(rent);
+    expect(rent).toBe(await rentExemptMinimum(transport, TOKEN_ACCOUNT_BYTES));
+    expect(rent).toBe(h.svm.minimumBalanceForRentExemption(BigInt(TOKEN_ACCOUNT_BYTES)));
     await cli(create("1", NOW + 20n), { "owner.json": owner });
     clock.unixTimestamp = NOW + 20n;
     h.svm.setClock(clock);
     const lamports = h.svm.getBalance(cranker.address) ?? 0n;
     await cli(["crank", "--keypair", "c.json", "--fund-accounts"], { "c.json": cranker });
     expect(balance(spare)).toBe(2n * ESCROW);
-    expect(lamports - (h.svm.getBalance(cranker.address) ?? 0n)).toBeLessThan(rentFor(TOKEN_ACCOUNT_BYTES));
+    expect(lamports - (h.svm.getBalance(cranker.address) ?? 0n)).toBeLessThan(rent);
   });
 
   it("shows an intent of a version it does not understand as raw bytes with the reason", async () => {

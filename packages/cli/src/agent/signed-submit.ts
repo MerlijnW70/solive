@@ -23,7 +23,7 @@ import { tool } from "./names.js";
 import { escrowJudge } from "./create.js";
 import { prepare } from "./prepare.js";
 import { AgentRefusal } from "./problems.js";
-import { createCost, rentFor, SIGNATURE_FEE, TOKEN_ACCOUNT_RENT_BYTES } from "./budget.js";
+import { createCost, rentFor, rentRate, SIGNATURE_FEE, TOKEN_ACCOUNT_RENT_BYTES } from "./budget.js";
 import { admitRelay, type Relay } from "./relay.js";
 import { type Call, enter } from "./claims.js";
 import { paramsOf } from "./shapes.js";
@@ -128,13 +128,14 @@ async function relaySigned(transport: Transport, relay: Relay, input: SignedTerm
   const now = await chainTime(transport);
   let prepared = await prepare(transport, [...feeAccount.create, ...relayed], relay.signer.address);
   const split = feeAccount.create.length !== 0 && !preparedFits(prepared);
+  const rate = await rentRate(transport);
   const ticket = admitRelay(
     relay,
     input.owner,
     BigInt(config.createFee) + BigInt(config.crankBounty) + prepared.priorityLamports,
-    createCost(config) +
+    createCost(config, rate) +
       prepared.priorityLamports +
-      (feeAccount.create.length > 0 ? rentFor(TOKEN_ACCOUNT_RENT_BYTES) : 0n) +
+      (feeAccount.create.length > 0 ? rentFor(TOKEN_ACCOUNT_RENT_BYTES, rate) : 0n) +
       (split ? SIGNATURE_FEE + prepared.priorityLamports : 0n),
     input.expires_at,
     now,
@@ -197,7 +198,7 @@ export const previewSignedIntent = define({
       relayer_fee: input.relayer_fee,
       summary: [
         ...description.lines,
-        `Relaying costs you ${createCost(config)} lamports in create fee, crank bounty, rent and signature fee, plus any priority fee; you receive ${formatAmount(input.relayer_fee, inputToken.decimals)} of ${input.input_mint}`,
+        `Relaying costs you ${createCost(config, await rentRate(transport))} lamports in create fee, crank bounty, rent and signature fee, plus any priority fee; you receive ${formatAmount(input.relayer_fee, inputToken.decimals)} of ${input.input_mint}`,
         ...(specUrl === undefined ? [] : [publishesLine(specUrl)]),
       ],
       warnings: [...description.warnings, ...(specUrl === undefined ? [] : [SPEC_URL_UNSIGNED])],

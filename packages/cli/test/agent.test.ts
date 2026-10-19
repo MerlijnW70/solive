@@ -65,12 +65,12 @@ import { define, invoke, OutputMismatch, toJson } from "../src/agent/actions.js"
 import { ANNOTATIONS, annotationsOf } from "../src/agent/mcp.js";
 import { VERSION } from "../src/version.js";
 import { ENGINE_PROBLEMS, type Problem } from "../src/agent/problems.js";
-import { createCost, rentFor, SIGNATURE_FEE, TOKEN_ACCOUNT_RENT_BYTES } from "../src/agent/budget.js";
+import { createCost, rentFor, rentRate, SIGNATURE_FEE, TOKEN_ACCOUNT_RENT_BYTES } from "../src/agent/budget.js";
 import { ACTIONS } from "../src/agent/registry.js";
 import { WALLET_ACTIONS } from "../src/agent/wallet.js";
 import { amount, InvalidInput, object } from "../src/agent/schema.js";
 import { OWNER_ACCOUNT_MISSING } from "../src/agent/settle.js";
-import { costlyFunding, FUNDING_RENT } from "../src/crank.js";
+import { costlyFunding, fundingRent } from "../src/crank.js";
 import { SETTLED_LINE } from "../src/agent/shapes.js";
 import { DEFAULT_SUBMIT_WITHIN, publishesLine, RELAY_TOO_LARGE, SPEC_URL_TOO_LONG, SPEC_URL_UNSIGNED } from "../src/agent/signed.js";
 import { WARN_REPLACES_DELEGATE } from "../src/agent/owner.js";
@@ -617,7 +617,7 @@ describe("agent server against the deployed engine", () => {
 
   it("asks before paying for an owner's missing refund account and pays only what the bounty covers", async () => {
     await createIntent({ expires_in: 60 });
-    await cli(["set-economics", "--keypair", "a.json", "--yes", "--bounty", FUNDING_RENT.toString(), "--create-fee", "0"], { "a.json": w.authority });
+    await cli(["set-economics", "--keypair", "a.json", "--yes", "--bounty", (await fundingRent(transport)).toString(), "--create-fee", "0"], { "a.json": w.authority });
     await createIntent({ expires_in: 60 });
     const sink = await ata(w.authority, (await generateKeyPairSigner()).address, w.inputMint);
     await send(w.owner, [
@@ -632,7 +632,7 @@ describe("agent server against the deployed engine", () => {
     expect(await fail(client, "prepare_crank", { ...ref, fund_accounts: true })).toEqual({
       code: "FundingExceedsBounty",
       retryable: false,
-      hint: costlyFunding(0n),
+      hint: costlyFunding(0n, await fundingRent(transport)),
     });
     const funded2 = await ok(client, "prepare_crank", { ...ref, nonce: "1", fund_accounts: true });
     await execute(funded2["prepared"], cranker);
@@ -1090,7 +1090,7 @@ describe("agent server against the deployed engine", () => {
     const relayer = await funded();
     const owner = await funded();
     await ata(w.authority, owner.address, w.inputMint, 10_000n);
-    const cost = createCost({ createFee: 0, crankBounty: 0 });
+    const cost = createCost({ createFee: 0, crankBounty: 0 }, await rentRate(transport));
     const relaying = await connect(relayer, [...free(), "--relay-hourly-lamports", (2n * cost).toString()]);
     const terms = swap({ owner: owner.address, order: { kind: "swap", amount_in: "100", min_out: "50" } });
     const sign = async (message: string) =>
@@ -1119,7 +1119,7 @@ describe("agent server against the deployed engine", () => {
     const relayer = await funded();
     const owner = await funded();
     const ownerInput = await ata(w.authority, owner.address, w.inputMint, 1_000n);
-    const cost = createCost({ createFee: 0, crankBounty: 0 });
+    const cost = createCost({ createFee: 0, crankBounty: 0 }, await rentRate(transport));
     const relaying = await connect(relayer, [...free(), "--relay-hourly-lamports", cost.toString()]);
     const terms = swap({ owner: owner.address, order: { kind: "swap", amount_in: "100", min_out: "50" } });
     const sign = async (message: string) =>
@@ -1212,8 +1212,9 @@ describe("agent server against the deployed engine", () => {
   it("charges its budget for its own fee account, and for a second transaction only when it has to split", async () => {
     const owner = await funded();
     await ata(w.authority, owner.address, w.inputMint, 1_000n);
-    const cost = createCost({ createFee: 0, crankBounty: 0 });
-    const base = cost + rentFor(TOKEN_ACCOUNT_RENT_BYTES);
+    const rate = await rentRate(transport);
+    const cost = createCost({ createFee: 0, crankBounty: 0 }, rate);
+    const base = cost + rentFor(TOKEN_ACCOUNT_RENT_BYTES, rate);
     const needed = async (extra: string[], nonce: string, holding = false) => {
       const relayer = await funded();
       if (holding) {
@@ -1257,7 +1258,7 @@ describe("agent server against the deployed engine", () => {
     const owner = await funded();
     await ata(w.authority, owner.address, w.inputMint, 1_000n);
     const relayer = await funded();
-    const cost = createCost({ createFee: 0, crankBounty: 0 });
+    const cost = createCost({ createFee: 0, crankBounty: 0 }, await rentRate(transport));
     const limits = [...free(), "--relay-per-hour", "1", "--relay-hourly-lamports", cost.toString()];
     const relaying = await connect(relayer, limits);
     const p = await ok(relaying, "prepare_signed_intent", swap({ owner: owner.address }));

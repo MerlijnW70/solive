@@ -1,19 +1,7 @@
 import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { getIntentSize } from "@intent-engine/core";
 import { Charged } from "@intent-engine/client";
-import {
-  ACCOUNT_OVERHEAD_BYTES,
-  BUDGET_WINDOW,
-  budgetOf,
-  createCost,
-  release,
-  RENT_LAMPORTS_PER_BYTE,
-  rentFor,
-  reserve,
-  SIGNATURE_FEE,
-  VAULT_BYTES,
-} from "../src/agent/budget.js";
+import { BUDGET_WINDOW, budgetOf, release, reserve } from "../src/agent/budget.js";
 import { AgentRefusal } from "../src/agent/problems.js";
 import { admitRelay, RATE_WINDOW, relayOf } from "../src/agent/relay.js";
 import { paying, refuseRepricing, repriced } from "../src/agent/signed.js";
@@ -36,13 +24,6 @@ function refused(run: () => unknown) {
 const policy = { maxLamports: 100n, maxTtl: 60n, perHour: 2, hourlyLamports: 1_000n, fees: new Map() };
 
 describe("spending budgets", () => {
-  it("price rent the way the runtime does and count every lamport a create costs", () => {
-    expect([ACCOUNT_OVERHEAD_BYTES, RENT_LAMPORTS_PER_BYTE, VAULT_BYTES, SIGNATURE_FEE]).toEqual([128n, 6_960n, 170, 5_000n]);
-    expect(rentFor(165)).toBe(2_039_280n);
-    expect(rentFor(0)).toBe(890_880n);
-    expect(createCost({ createFee: 7, crankBounty: 11 })).toBe(18n + rentFor(getIntentSize()) + rentFor(170) + 5_000n);
-  });
-
   it("reserve spend within a sliding hour and release what was never spent", () => {
     expect(BUDGET_WINDOW).toBe(3_600n);
     const b = budgetOf(100n);

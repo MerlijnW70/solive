@@ -25,7 +25,7 @@ import {
   type Transport,
 } from "@intent-engine/client";
 import { STATUS } from "./accounts.js";
-import { rentFor } from "./agent/budget.js";
+import { rentFor, rentRate } from "./agent/budget.js";
 
 export async function vaultBalance(transport: Transport, intent: Address): Promise<bigint> {
   const [vault] = await findVaultPda({ intent });
@@ -77,14 +77,14 @@ export class UnfundedAccount extends Error {
 
 export type Funding = "never" | "covered" | "always";
 
-export const FUNDING_RENT = rentFor(TOKEN_ACCOUNT_BYTES);
+export const fundingRent = async (transport: Transport): Promise<bigint> => rentFor(TOKEN_ACCOUNT_BYTES, await rentRate(transport));
 
-export const costlyFunding = (bounty: bigint): string =>
-  `recreating the owner's token account costs ${FUNDING_RENT} lamports of rent, more than this intent's ${bounty} lamport bounty; settle it with expire or close to pay that knowingly`;
+export const costlyFunding = (bounty: bigint, rent: bigint): string =>
+  `recreating the owner's token account costs ${rent} lamports of rent, more than this intent's ${bounty} lamport bounty; settle it with expire or close to pay that knowingly`;
 
 export class CostlyFunding extends UnfundedAccount {
-  constructor(bounty: bigint) {
-    super(costlyFunding(bounty));
+  constructor(bounty: bigint, rent: bigint) {
+    super(costlyFunding(bounty, rent));
     this.name = "CostlyFunding";
   }
 }
@@ -111,9 +111,10 @@ async function refundTarget(
   if (fund === "never") {
     throw new UnfundedAccount();
   }
+  const rent = await fundingRent(transport);
   const pay = () => {
-    if (fund === "covered" && bounty < FUNDING_RENT) {
-      throw new CostlyFunding(bounty);
+    if (fund === "covered" && bounty < rent) {
+      throw new CostlyFunding(bounty, rent);
     }
   };
   if (view === null) {
@@ -137,7 +138,7 @@ async function refundTarget(
         baseAccount: payer,
         base: payer.address,
         seed,
-        amount: FUNDING_RENT,
+        amount: rent,
         space: TOKEN_ACCOUNT_BYTES,
         programAddress: tokenProgram,
       }),
