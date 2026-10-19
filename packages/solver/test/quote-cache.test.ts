@@ -58,6 +58,28 @@ describe("quote cache", () => {
     expect(stored(again)).toBe(false);
   });
 
+  it("keeps a younger quote while it stores another, whatever the clock reads", async () => {
+    const { time, seen, cached } = setup();
+    time.now = 6_000;
+    await cached.quote(request());
+    time.now += 1;
+    await cached.quote(request({ amountIn: 2_000n }));
+    const again = await cached.quote(request());
+    expect(seen).toHaveLength(2);
+    expect(stored(again)).toBe(true);
+  });
+
+  it("drops a quote as old as the time limit when it stores another, even if the clock then steps back", async () => {
+    const { time, seen, cached } = setup();
+    await cached.quote(request());
+    time.now += 10_000;
+    await cached.quote(request({ amountIn: 2_000n }));
+    time.now -= 10_000;
+    const again = await cached.quote(request());
+    expect(seen).toHaveLength(3);
+    expect(stored(again)).toBe(false);
+  });
+
   it("asks again for a different amount, account budget, taker or mints", async () => {
     const { seen, cached } = setup();
     await cached.quote(request());

@@ -60,4 +60,11 @@ describe("inventory holds", () => {
     expect(flights.size).toBe(0);
     expect([heldBy(flights)(STOCK), heldBy(flights)(OTHER)]).toEqual([0n, 0n]);
   });
+
+  it("ends a flight without calling it failed when the node cannot say how it went", async () => {
+    const flights = flying();
+    const listed = [FIRST].map((address) => ({ address, intent: intentOf(IntentStatus.Open) }));
+    expect(await landings(flights, 10n, listed, async () => Promise.reject(new Error("rpc down")), backoff(3))).toEqual([]);
+    expect([...flights.keys()]).toEqual([SECOND, THIRD]);
+  });
 });

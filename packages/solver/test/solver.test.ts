@@ -536,6 +536,27 @@ describe("solver against the deployed engine", () => {
     expect(route.sent).toEqual([{ intent: routed, profit: 4_000n, cost: expect.any(BigInt), signature: expect.any(String) }]);
   });
 
+  it("bundles only the inventory fills its stock covers before any of them is sent", async () => {
+    const opened = [await open(1n), await open(2n)];
+    await send(authority, [getMintToInstruction({ mint: outputMint, token: solverOutput, mintAuthority: authority, amount: AMOUNT })]);
+    const pricer = inventoryPricer(
+      [{ inputMint, outputMint, outputTokenProgram: TOKEN_PROGRAM_ADDRESS, out: 1n, in: 1n }],
+      async () => 3n * AMOUNT,
+    );
+    const bundled: (readonly Base64EncodedWireTransaction[])[] = [];
+    const report = await solve(pricer, {
+      sendBundle: async (wires) => {
+        bundled.push(wires);
+        return "bundle-unsent";
+      },
+    });
+    expect(report.failed).toEqual([]);
+    expect(bundled.map((wires) => wires.length)).toEqual([1]);
+    expect(report.sent).toHaveLength(1);
+    expect(report.skipped.map((s) => s.reason.split(":")[0])).toEqual([INVENTORY_SPENT]);
+    expect(new Set([...report.sent.map((s) => s.intent), ...report.skipped.map((s) => s.intent)])).toEqual(new Set(opened));
+  });
+
   it("reports the hold of an inventory fill sent in a bundle", async () => {
     const stocked = await open(1n);
     await send(authority, [getMintToInstruction({ mint: outputMint, token: solverOutput, mintAuthority: authority, amount: AMOUNT })]);
@@ -1036,7 +1057,7 @@ describe("solver against the deployed engine", () => {
     expect(stingy.skipped).toEqual([{ intent, reason: tooMuchRent(kept, kept - 1n), rent: kept }]);
     expect([svm.getAccount(freshInput).exists, svm.getAccount(freshOutput).exists]).toEqual([false, false]);
     const before = svm.getBalance(solver.address) ?? 0n;
-    const report = await solve(pricer(), { ...tipped, maxSolCost: cost });
+    const report = await solve(pricer(), { ...tipped, maxSolCost: cost, maxRent: kept });
     expect(report.filled).toEqual([{ intent, profit: 4_000n, cost, signature: expect.any(String), rent: kept }]);
     expect(before - (svm.getBalance(solver.address) ?? 0n)).toBe(cost + kept);
     expect([svm.getBalance(freshInput), svm.getBalance(freshOutput)]).toEqual([rent, rent]);

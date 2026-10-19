@@ -84,6 +84,9 @@ describe("sealed files", () => {
       encode({ ...sealed, data: 7 }),
       encode({ ...sealed, to: [{ wallet: "not-an-address", epk: "", iv: "", key: "" }] }),
       encode({ ...sealed, to: [null] }),
+      encode({ ...sealed, to: "" }),
+      ...(["epk", "iv", "key"] as const).map((field) => encode({ ...sealed, to: (sealed["to"] as Record<string, string>[]).map((r) => ({ ...r, [field]: 7 })) })),
+      Uint8Array.from([...text(JSON.stringify(sealed).slice(0, -1)), ...text(',"note":"'), 0xff, ...text('"}')]),
     ]) {
       expect(isSealed(bad)).toBe(false);
       expect(() => sealedTo(bad)).toThrow(SealedError);
@@ -100,6 +103,8 @@ describe("sealed files", () => {
     await expect(unseal(await seal(text("x"), [a.address]), a.keypair.slice(0, 32))).rejects.toThrow(SealedError);
     const identity = getAddressDecoder().decode(Uint8Array.from([1, ...new Array(31).fill(0)]));
     expect(() => x25519PublicOf(identity)).toThrow(SealedError);
+    const prime = getAddressDecoder().decode(Uint8Array.from([0xed, ...new Array(30).fill(0xff), 0x7f]));
+    expect(() => x25519PublicOf(prime)).toThrow(SealedError);
     await expect(seal(text("x"), [identity])).rejects.toThrow(SealedError);
     expect(x25519PublicOf(a.address)).toHaveLength(32);
   });

@@ -33,20 +33,10 @@ type Envelope = { [SEALED_TAG]: number; to: Recipient[]; iv: string; data: strin
 const CHUNK = 0x8000;
 
 function b64(bytes: Uint8Array): string {
-  let binary = "";
-  for (let at = 0; at < bytes.length; at += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(at, at + CHUNK));
-  }
-  return btoa(binary);
+  const chunks = Array.from({ length: Math.ceil(bytes.length / CHUNK) }, (_, k) => String.fromCharCode(...bytes.subarray(k * CHUNK, (k + 1) * CHUNK)));
+  return btoa(chunks.join(""));
 }
-function unb64(text: string): Uint8Array<ArrayBuffer> {
-  const binary = atob(text);
-  const bytes = new Uint8Array(new ArrayBuffer(binary.length));
-  for (let at = 0; at < binary.length; at += 1) {
-    bytes[at] = binary.charCodeAt(at);
-  }
-  return bytes;
-}
+const unb64 = (text: string): Uint8Array<ArrayBuffer> => Uint8Array.from(atob(text), (c) => c.charCodeAt(0));
 
 function modPow(base: bigint, exponent: bigint): bigint {
   let result = 1n;
@@ -71,13 +61,8 @@ export function x25519PublicOf(wallet: Address): Uint8Array<ArrayBuffer> {
   if (y >= P || y === 1n) {
     throw new SealedError(`${wallet} has no encryption key`);
   }
-  let u = ((1n + y) * modPow((1n - y + P) % P, P - 2n)) % P;
-  const out = new Uint8Array(32);
-  for (let i = 0; i < 32; i += 1) {
-    out[i] = Number(u & 0xffn);
-    u >>= 8n;
-  }
-  return out;
+  const u = ((1n + y) * modPow((1n - y + P) % P, P - 2n)) % P;
+  return Uint8Array.from({ length: 32 }, (_, i) => Number((u >> BigInt(8 * i)) & 0xffn));
 }
 
 async function x25519SecretOf(keypair: Uint8Array): Promise<CryptoKey> {

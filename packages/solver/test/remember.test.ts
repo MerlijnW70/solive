@@ -83,6 +83,30 @@ describe("a remembering chain", () => {
     expect((await chain.config()).feeBps).toBe(2);
   });
 
+  it("keeps the config fresh by its age, whatever the clock reads, and asks again after a failed load", async () => {
+    let clock = 1_000_000;
+    const source = counted();
+    let refused = true;
+    const chain = remembering(
+      {
+        ...source.chain,
+        config: async () => {
+          if (refused) {
+            refused = false;
+            throw new Error("rpc down");
+          }
+          return source.chain.config();
+        },
+      },
+      () => clock,
+    );
+    await expect(chain.config()).rejects.toThrow("rpc down");
+    expect((await chain.config()).feeBps).toBe(1);
+    clock += 1;
+    expect((await chain.config()).feeBps).toBe(1);
+    expect(source.calls["config"]).toBe(1);
+  });
+
   it("forgets everything on request and never keeps a failed answer", async () => {
     const source = counted();
     const chain = remembering(source.chain, () => 0);

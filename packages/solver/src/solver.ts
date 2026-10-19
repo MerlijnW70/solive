@@ -111,13 +111,7 @@ export const ALREADY_FILLING = "the order already has a fill in this tick";
 export const INVENTORY_SPENT = "the solver no longer holds enough of the output token for this fill";
 
 export function firstToSend(a: Plan, b: Plan): number {
-  if (a.profit !== b.profit) {
-    return a.profit > b.profit ? -1 : 1;
-  }
-  if (a.intent.expiresAt !== b.intent.expiresAt) {
-    return a.intent.expiresAt < b.intent.expiresAt ? -1 : 1;
-  }
-  return a.address < b.address ? -1 : a.address > b.address ? 1 : 0;
+  return Number(b.profit - a.profit) || Number(a.intent.expiresAt - b.intent.expiresAt) || (a.address < b.address ? -1 : a.address > b.address ? 1 : 0);
 }
 
 type Outcome =
@@ -363,21 +357,20 @@ export async function tick(o: SolverOptions): Promise<Report> {
     return loaded;
   };
   const outcomes: (Outcome | undefined)[] = intents.map(() => undefined);
-  const planned: { index: number; ready: Ready }[] = [];
+  const readied: ({ index: number; ready: Ready } | undefined)[] = intents.map(() => undefined);
   let limited: string | null = null;
-  let next = 0;
+  const work = intents.entries();
   const planner = async (): Promise<void> => {
-    for (let index = next; limited === null && index < intents.length; index = next) {
-      next = index + 1;
-      const entry = intents[index];
-      if (entry === undefined) {
-        continue;
+    while (limited === null) {
+      const step = work.next();
+      if (step.done === true) {
+        return;
       }
-      const { address, intent } = entry;
+      const [index, { address, intent }] = step.value;
       try {
         const result = await planOrder(o, config, now, address, intent);
         if (result.kind === "ready") {
-          planned.push({ index, ready: result.ready });
+          readied[index] = { index, ready: result.ready };
         } else {
           outcomes[index] = result;
         }
@@ -393,14 +386,11 @@ export async function tick(o: SolverOptions): Promise<Report> {
   };
   await Promise.all(Array.from({ length: Math.min(concurrency, intents.length) }, planner));
   if (limited !== null) {
-    for (let index = next; index < intents.length; index += 1) {
-      const address = intents[index]?.address;
-      if (address !== undefined) {
-        outcomes[index] = skipped(address, limited);
-      }
+    for (const [index, { address }] of work) {
+      outcomes[index] = skipped(address, limited);
     }
   }
-  planned.sort((a, b) => firstToSend(a.ready.plan, b.ready.plan) || a.index - b.index);
+  const planned = readied.filter((entry) => entry !== undefined).sort((a, b) => firstToSend(a.ready.plan, b.ready.plan));
   const filling = new Set<Address>();
   const stock: Stock = new Map();
   const queue: { index: number; ready: Ready; wire: Base64EncodedWireTransaction; entry: Checked["entry"]; holds?: Hold }[] = [];
