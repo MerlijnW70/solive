@@ -13,7 +13,6 @@ import { listIntents } from "./agent/read.js";
 import { prepareSignedIntent, previewSignedIntent, submitSignedIntent } from "./agent/signed.js";
 import { approval, ask, finish, FlowRefused, hasTokens, inRaw, NOT_SENT, perform, signMessage } from "./flows.js";
 import { RELAY_MAX_TTL } from "./command-builders.js";
-import { heldDeadline } from "./held.js";
 
 const SIGNED_FILE_VERSION = 1;
 
@@ -70,17 +69,6 @@ export async function flowCommand(command: FlowCommand, runtime: Runtime, transp
           const specUrl = raw["spec_url"];
           if (typeof specUrl === "string" && (await plainHttpOnPublic(reading, specUrl))) {
             throw new FlowRefused(`--spec-url ${specUrl} ${PLAIN_HTTP_ON_PUBLIC}`);
-          }
-          const order = raw["order"] as Record<string, unknown> | undefined;
-          const late = await heldDeadline(reading, runtime.specFetch, {
-            specUrl,
-            specHash: order?.["spec_hash"],
-            attestor: order?.["attestor"],
-            expiresAt: raw["expires_at"],
-            expiresIn: raw["expires_in"],
-          });
-          if (late !== undefined) {
-            throw new FlowRefused(late);
           }
           return perform(prepareCreate, ctx, { owner: signer.address, ...raw }, signer, command.yes);
         }

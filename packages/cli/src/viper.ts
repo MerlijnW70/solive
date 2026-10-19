@@ -25,8 +25,7 @@ export const MAX_DRAW_SLOTS = 100_000;
 export type Primitive = null | boolean | number | string;
 export type Case = { args: Primitive[]; expected: Primitive };
 export type Draw = { count: number; generator: string; checker: string; k: number };
-export type Held = { sha256: string; count: number; url: string; at: number; domain: string };
-export type Cases = { steps: number; heap: number; seed: number | undefined; clock: number | undefined; cases: Case[]; draw?: Draw; held?: Held };
+export type Cases = { steps: number; heap: number; seed: number | undefined; clock: number | undefined; cases: Case[]; draw?: Draw };
 export type Run = { seed: number; clock: number };
 export type CaseVerdict = "pass" | "wrong" | "not-primitive" | "threw" | "stopped" | "no-module" | "engine" | "crashed";
 export type CaseResult = { verdict: CaseVerdict; detail?: Primitive };
@@ -63,48 +62,11 @@ function counted(value: unknown, name: string, min: number, max: number): number
   return value;
 }
 
-function sourceOf(value: unknown, name: string, part = "draw"): string {
+function sourceOf(value: unknown, name: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
-    return refuse(`has a ${part} ${name} that is not the source of a module`);
+    return refuse(`has a draw ${name} that is not the source of a module`);
   }
   return value;
-}
-
-function httpsOf(value: unknown): string {
-  let url: URL | undefined;
-  try {
-    url = typeof value === "string" ? new URL(value) : undefined;
-  } catch {
-    url = undefined;
-  }
-  if (url === undefined || url.protocol !== "https:") {
-    return refuse("has a held url that is not an https url");
-  }
-  return value as string;
-}
-
-function heldOf(value: unknown): Held {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return refuse("has a held that is not a JSON object");
-  }
-  const fields = value as Record<string, unknown>;
-  const unknown = Object.keys(fields).find((key) => !["sha256", "count", "url", "at", "domain"].includes(key));
-  if (unknown !== undefined) {
-    return refuse(`has a held field ${JSON.stringify(unknown)} it does not know`);
-  }
-  const sha256 = fields["sha256"];
-  if (typeof sha256 !== "string" || !/^[0-9a-f]{64}$/.test(sha256)) {
-    return refuse("has a held sha256 that is not 64 lowercase hex digits");
-  }
-  const count = fields["count"];
-  if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 1 || count > MAX_CASES) {
-    return refuse(`has a held count ${JSON.stringify(count)}, which is not a whole number from 1 to ${MAX_CASES}`);
-  }
-  const at = fields["at"];
-  if (typeof at !== "number" || !Number.isSafeInteger(at) || at < 0) {
-    return refuse(`has a held at ${JSON.stringify(at)}, which is not a slot`);
-  }
-  return { sha256, count, url: httpsOf(fields["url"]), at, domain: sourceOf(fields["domain"], "domain", "held") };
 }
 
 function drawOf(value: unknown): Draw {
@@ -140,7 +102,7 @@ export function casesOf(spec: Uint8Array): Cases {
     return refuse("is not a JSON object");
   }
   const fields = parsed as Record<string, unknown>;
-  const unknown = Object.keys(fields).find((key) => !["steps", "heap", "seed", "clock", "cases", "draw", "held"].includes(key));
+  const unknown = Object.keys(fields).find((key) => !["steps", "heap", "seed", "clock", "cases", "draw"].includes(key));
   if (unknown !== undefined) {
     return refuse(`has a field ${JSON.stringify(unknown)} it does not know`);
   }
@@ -172,7 +134,6 @@ export function casesOf(spec: Uint8Array): Cases {
     clock: fields["clock"] === undefined ? undefined : bounded(fields["clock"], "clock", 0, 8.64e15),
     cases,
     ...(fields["draw"] === undefined ? {} : { draw: drawOf(fields["draw"]) }),
-    ...(fields["held"] === undefined ? {} : { held: heldOf(fields["held"]) }),
   };
 }
 

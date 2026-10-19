@@ -3,12 +3,11 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Address, Signature } from "@solana/kit";
 import { getIntentDecoder, INTENT_ENGINE_PROGRAM_ADDRESS, IntentStatus } from "@intent-engine/core";
-import { chainTime, type Delivery, deliveryRecord, type FinalizedBlock, isLedgerPath, type Transport } from "@intent-engine/client";
+import { chainTime, type Delivery, deliveryRecord, isLedgerPath, type Transport } from "@intent-engine/client";
 import { removeCopy } from "./artifact.js";
 import { holdSignals } from "./check-process.js";
 import { DeliveryUnfit, type Fetched, fetchDelivery } from "./delivery-fetch.js";
-import { HeldRefused, type InterruptSignal, JudgeInterrupted, JudgeRefused } from "./judge-errors.js";
-import { heldCommittee, heldOf, heldOnDevice, heldOnlyViper, heldReached } from "./held.js";
+import { type InterruptSignal, JudgeInterrupted, JudgeRefused } from "./judge-errors.js";
 import { escrowFor, judge, type JudgeCommand, pagesRead, type Verdict } from "./judge.js";
 import { keyFileSigner, messageSigner } from "./ledger-keys.js";
 import type { Runtime } from "./runtime.js";
@@ -45,7 +44,6 @@ async function judgeDelivery(
   delivery: Delivery,
   interrupted: () => InterruptSignal | undefined,
   seen: Set<string>,
-  reached: FinalizedBlock | null | undefined,
 ): Promise<Watched | null | "skipped"> {
   const announced: Announced = { url: delivery.url, worker: delivery.worker, announced: delivery.signature };
   const failed = (error: Error): Watched => ({ ...announced, artifactSha256: delivery.sha256, verdict: "fail", reason: error.message });
@@ -69,9 +67,9 @@ async function judgeDelivery(
       return "skipped";
     }
     seen.add(fetched.sha256);
-    return { ...announced, ...(await judge({ ...command, artifact: fetched.path }, runtime, transport, reached)) };
+    return { ...announced, ...(await judge({ ...command, artifact: fetched.path }, runtime, transport)) };
   } catch (error) {
-    if (error instanceof JudgeRefused && !(error instanceof HeldRefused)) {
+    if (error instanceof JudgeRefused) {
       return failed(error);
     }
     throw error;
@@ -87,22 +85,10 @@ export async function watchJudge(command: JudgeCommand, interval: number, runtim
   if (committee !== null) {
     keyFileSigner(signer, "judge", command.keypair);
   }
-  const specBytes = await readFile(resolve(command.spec));
-  const specSha256 = createHash("sha256").update(specBytes).digest("hex");
+  const specSha256 = createHash("sha256").update(await readFile(resolve(command.spec))).digest("hex");
   if (specSha256 !== specHash) {
     throw new JudgeRefused(`--spec ${command.spec} has sha256 ${specSha256}, but intent ${address} commits ${specHash}`);
   }
-  const held = heldOf(specBytes);
-  if (held !== undefined && command.sandbox.kind !== "viper") {
-    throw new JudgeRefused(heldOnlyViper);
-  }
-  if (held !== undefined && committee !== null) {
-    throw new JudgeRefused(heldCommittee(address, attestor));
-  }
-  if (held !== undefined && isLedgerPath(command.keypair)) {
-    throw new JudgeRefused(heldOnDevice(command.keypair));
-  }
-  const queued: Delivery[] = [];
   const seen = new Set<string>();
   let judged = 0;
   const signals = holdSignals();
@@ -127,17 +113,15 @@ export async function watchJudge(command: JudgeCommand, interval: number, runtim
           `the delivery record of intent ${address} is incomplete because the judge's history is too long to read in full or the RPC node cannot serve all of it; nothing was run or paid. ${pagesRead(record.pages)}`,
         );
       }
-      const reached = held === undefined ? undefined : await heldReached(transport, held);
-      const rerun = reached === undefined || reached === null ? [] : queued.splice(0);
-      const again = new Set<string>();
-      for (const [index, first] of [...rerun, ...unjudged(record.deliveries, seen)].entries()) {
+      const fresh = unjudged(record.deliveries, seen);
+      for (const first of fresh) {
         if (signals.caught() !== undefined) {
           break;
         }
         if (!(await stillOpen(transport, address))) {
           return stopped("closed");
         }
-        const watched = await judgeDelivery(command, runtime, transport, first, signals.caught, index < rerun.length ? again : seen, reached);
+        const watched = await judgeDelivery(command, runtime, transport, first, signals.caught, seen);
         if (watched === null) {
           break;
         }
@@ -147,9 +131,6 @@ export async function watchJudge(command: JudgeCommand, interval: number, runtim
         }
         judged += 1;
         out(line(watched));
-        if (watched.verdict === "queued") {
-          queued.push(first);
-        }
         if (watched.verdict === "pass") {
           return stopped("signature" in watched && watched.signature !== null ? "paid" : "passed");
         }

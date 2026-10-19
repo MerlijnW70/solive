@@ -5,13 +5,6 @@ export class JudgeRefused extends Error {
   }
 }
 
-export class HeldRefused extends JudgeRefused {
-  constructor(reason: string) {
-    super(reason);
-    this.name = "HeldRefused";
-  }
-}
-
 export class JudgeInterrupted extends Error {
   readonly exitCode: number;
 

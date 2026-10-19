@@ -33,17 +33,15 @@ export const DETAIL_BYTES = 256;
 export type Beacon = FinalizedBlock & { seed: string; draw: Draw };
 export type DrawJudged = { slot: number; blockhash: string; seed: string; total: number; passed: number; failures: Failure[] };
 
-export const ENTRY = "judgeDrawEntry";
+const ENTRY = "judgeDrawEntry";
 const DEFAULT_EXPORT = /\bexport\s+default\b/g;
 const FITS = `const fits = (value) => value === null || typeof value === "boolean" || typeof value === "string" || (typeof value === "number" && Number.isFinite(value));`;
 const ASCII = String.raw`.replace(/[\u0080-\uffff]/g, (c) => "\\u" + c.charCodeAt(0).toString(16).padStart(4, "0"))`;
 const GENERATOR_TAIL = `export default (seed, count, at) => { ${FITS} const lists = ${ENTRY}(seed, count); if (!(Array.isArray(lists) && lists.every((args) => Array.isArray(args) && args.every(fits)))) return false; const text = JSON.stringify(lists)${ASCII}; return at < 0 ? text.length : text.slice(at, at + ${DETAIL_BYTES}); };`;
 const CHECKER_TAIL = `export default (answer, ...args) => { const held = ${ENTRY}(args, answer); return held === true || held === false ? held : null; };`;
 
-export type Part = "generator" | "checker" | "domain";
-
-const refuseDraw = (part: Part, why: string): never => {
-  throw new JudgeRefused(`the spec's ${CASES_FENCE} ${part === "domain" ? "held" : "draw"} ${part} ${why}; the spec is at fault, not the worker, and nothing was paid`);
+const refuseDraw = (part: "generator" | "checker", why: string): never => {
+  throw new JudgeRefused(`the spec's ${CASES_FENCE} draw ${part} ${why}; the spec is at fault, not the worker, and nothing was paid`);
 };
 
 export const notAnnounced = (sha256: string, intent: Address): string =>
@@ -72,22 +70,6 @@ export function engineRun(seed: string): Run {
   };
 }
 
-export async function finalizedFrom(transport: Transport, sleep: (seconds: number) => Promise<boolean>, from: bigint): Promise<FinalizedBlock> {
-  const { finalizedBlock } = transport;
-  if (finalizedBlock === undefined) {
-    throw new JudgeRefused(noBlocks);
-  }
-  for (;;) {
-    const block = await finalizedBlock.call(transport, from);
-    if (block !== null) {
-      return block;
-    }
-    if (!(await sleep(DRAW_POLL_SECONDS))) {
-      throw new JudgeRefused(stoppedWaiting(from));
-    }
-  }
-}
-
 export async function drawBeacon(
   transport: Transport,
   sleep: (seconds: number) => Promise<boolean>,
@@ -99,11 +81,23 @@ export async function drawBeacon(
   if (first === null) {
     throw new JudgeRefused(notAnnounced(sha256, intent));
   }
-  const block = await finalizedFrom(transport, sleep, first.slot + BigInt(draw.k));
-  return { ...block, seed: drawSeed(block.blockhash, intent, sha256), draw };
+  const { finalizedBlock } = transport;
+  if (finalizedBlock === undefined) {
+    throw new JudgeRefused(noBlocks);
+  }
+  const from = first.slot + BigInt(draw.k);
+  for (;;) {
+    const block = await finalizedBlock.call(transport, from);
+    if (block !== null) {
+      return { ...block, seed: drawSeed(block.blockhash, intent, sha256), draw };
+    }
+    if (!(await sleep(DRAW_POLL_SECONDS))) {
+      throw new JudgeRefused(stoppedWaiting(from));
+    }
+  }
 }
 
-export function wrapped(source: string, part: Part, tail: string): string {
+function wrapped(source: string, part: "generator" | "checker", tail: string): string {
   const found = source.match(DEFAULT_EXPORT)?.length ?? 0;
   if (found !== 1) {
     return refuseDraw(part, `has ${found} default exports, not one`);
@@ -111,9 +105,9 @@ export function wrapped(source: string, part: Part, tail: string): string {
   return `${source.replace(DEFAULT_EXPORT, `const ${ENTRY} =`)}\n;${tail}\n`;
 }
 
-export type Unfinished = { verdict: "stopped" | "crashed"; detail: string };
+type Unfinished = { verdict: "stopped" | "crashed"; detail: string };
 
-export async function ranCases(wasm: Buffer, source: string, budget: Cases, cases: Case[], run: Run, timeoutSeconds: number): Promise<CaseResult[] | Unfinished> {
+async function ranCases(wasm: Buffer, source: string, budget: Cases, cases: Case[], run: Run, timeoutSeconds: number): Promise<CaseResult[] | Unfinished> {
   if (timeoutSeconds <= 0) {
     return { verdict: "stopped", detail: deadlineMissed("the viper judge", timeoutSeconds) };
   }
@@ -127,7 +121,7 @@ export async function ranCases(wasm: Buffer, source: string, budget: Cases, case
   return decodeOutput(ran.output, cases.length);
 }
 
-export const unfinished = (ran: CaseResult[] | Unfinished): ran is Unfinished => !Array.isArray(ran);
+const unfinished = (ran: CaseResult[] | Unfinished): ran is Unfinished => !Array.isArray(ran);
 
 function parsed(text: string): unknown {
   try {
@@ -166,62 +160,6 @@ export async function drawnArguments(wasm: Buffer, budget: Cases, draw: Draw, se
   return lists as Primitive[][];
 }
 
-export async function checkedAnswers(
-  wasm: Buffer,
-  text: string,
-  cases: Cases,
-  checker: string,
-  inputs: Primitive[][],
-  answered: CaseResult[],
-  run: Run,
-  checkerRun: Run,
-  left: () => number,
-): Promise<Failure[] | Unfinished> {
-  const failures: Failure[] = [];
-  const answers: { case: number; answer: Primitive }[] = [];
-  answered.forEach((result, index) => {
-    if (result.verdict === "pass") {
-      answers.push({ case: index, answer: null });
-    } else if (result.verdict === "wrong") {
-      answers.push({ case: index, answer: result.detail ?? null });
-    } else {
-      failures.push({ case: index, ...result });
-    }
-  });
-  const long = answers.filter(({ answer }) => typeof answer === "string" && Buffer.byteLength(answer) > DETAIL_BYTES - 4);
-  if (long.length > 0) {
-    const confirmed = await ranCases(wasm, text, cases, long.map(({ case: index, answer }) => ({ args: inputs[index] ?? [], expected: answer })), run, left());
-    if (unfinished(confirmed)) {
-      return confirmed;
-    }
-    if (confirmed.some((result) => result.verdict !== "pass")) {
-      throw new JudgeRefused(answerTooLong);
-    }
-  }
-  if (answers.length > 0) {
-    const checked = await ranCases(
-      wasm,
-      wrapped(checker, "checker", CHECKER_TAIL),
-      cases,
-      answers.map(({ case: index, answer }) => ({ args: [answer, ...(inputs[index] ?? [])], expected: true })),
-      checkerRun,
-      left(),
-    );
-    if (unfinished(checked)) {
-      return refuseDraw("checker", `did not finish: ${checked.detail}`);
-    }
-    checked.forEach((result, at) => {
-      const { case: index, answer } = answers[at] as { case: number; answer: Primitive };
-      if (result.verdict === "wrong" && result.detail === false) {
-        failures.push({ case: index, verdict: "wrong", detail: answer });
-      } else if (result.verdict !== "pass") {
-        refuseDraw("checker", result.verdict === "wrong" ? "returned something other than true or false" : told(result));
-      }
-    });
-  }
-  return failures.sort((a, b) => a.case - b.case);
-}
-
 export async function judgeDraw(
   wasm: Buffer,
   source: Uint8Array,
@@ -242,9 +180,48 @@ export async function judgeDraw(
   if (unfinished(answered)) {
     return unanswered(answered);
   }
-  const failures = await checkedAnswers(wasm, text, cases, draw.checker, drawn, answered, run, engineRun(beacon.seed), left);
-  if (unfinished(failures)) {
-    return unanswered(failures);
+  const failures: Failure[] = [];
+  const answers: { case: number; answer: Primitive }[] = [];
+  answered.forEach((result, index) => {
+    if (result.verdict === "pass") {
+      answers.push({ case: index, answer: null });
+    } else if (result.verdict === "wrong") {
+      answers.push({ case: index, answer: result.detail ?? null });
+    } else {
+      failures.push({ case: index, ...result });
+    }
+  });
+  const long = answers.filter(({ answer }) => typeof answer === "string" && Buffer.byteLength(answer) > DETAIL_BYTES - 4);
+  if (long.length > 0) {
+    const confirmed = await ranCases(wasm, text, cases, long.map(({ case: index, answer }) => ({ args: drawn[index] ?? [], expected: answer })), run, left());
+    if (unfinished(confirmed)) {
+      return unanswered(confirmed);
+    }
+    if (confirmed.some((result) => result.verdict !== "pass")) {
+      throw new JudgeRefused(answerTooLong);
+    }
   }
+  if (answers.length > 0) {
+    const checked = await ranCases(
+      wasm,
+      wrapped(draw.checker, "checker", CHECKER_TAIL),
+      cases,
+      answers.map(({ case: index, answer }) => ({ args: [answer, ...(drawn[index] ?? [])], expected: true })),
+      engineRun(beacon.seed),
+      left(),
+    );
+    if (unfinished(checked)) {
+      return refuseDraw("checker", `did not finish: ${checked.detail}`);
+    }
+    checked.forEach((result, at) => {
+      const { case: index, answer } = answers[at] as { case: number; answer: Primitive };
+      if (result.verdict === "wrong" && result.detail === false) {
+        failures.push({ case: index, verdict: "wrong", detail: answer });
+      } else if (result.verdict !== "pass") {
+        refuseDraw("checker", result.verdict === "wrong" ? "returned something other than true or false" : told(result));
+      }
+    });
+  }
+  failures.sort((a, b) => a.case - b.case);
   return { ...recorded, total: drawn.length, passed: drawn.length - failures.length, failures: failures.slice(0, REPORTED_FAILURES) };
 }
