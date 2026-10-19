@@ -2,11 +2,10 @@ import type { Address, Instruction, Signature, TransactionSigner } from "@solana
 import { getTransferSolInstruction } from "@solana-program/system";
 import {
   feedbackMemo,
-  DELIVERY_SCAN_MARK,
+  DELIVERY_V2_MEMO_PREFIX,
   findAssociatedTokenAddress,
   formatAmount,
   NATIVE_MINT,
-  parseDeliveryMemo,
   parseDeliveryMemoV2,
   parseFeedbackMemo,
   splitN,
@@ -27,7 +26,7 @@ export type WorkOutcome = "paid" | "paid-other" | "refunded" | "open" | "unknown
 export type WorkRecord = {
   intent: Address;
   sha256: string;
-  commitment?: string;
+  commitment: string;
   announced: Signature;
   slot: bigint;
   blockTime: bigint | null;
@@ -70,15 +69,11 @@ export type ReputationOptions = { pages?: number; history?: number };
 
 const SOL_DECIMALS = 9;
 
-type Announced = { intent: Address; sha256: string; commitment?: string; announced: Signature; slot: bigint; blockTime: bigint | null };
+type Announced = { intent: Address; sha256: string; commitment: string; announced: Signature; slot: bigint; blockTime: bigint | null };
 
-function announcedWork(text: string): { key: string; intent: Address; sha256: string; commitment?: string } | null {
-  const memo = parseDeliveryMemo(text);
-  if (memo !== null) {
-    return { key: `${memo.intent}:${memo.sha256}`, intent: memo.intent, sha256: memo.sha256 };
-  }
-  const sealed = parseDeliveryMemoV2(text);
-  return sealed === null ? null : { key: `${sealed.intent}:sealed:${sealed.commitment}`, intent: sealed.intent, sha256: "", commitment: sealed.commitment };
+function announcedWork(text: string): { key: string; intent: Address; sha256: string; commitment: string } | null {
+  const memo = parseDeliveryMemoV2(text);
+  return memo === null ? null : { key: `${memo.intent}:${memo.commitment}`, intent: memo.intent, sha256: "", commitment: memo.commitment };
 }
 
 function announcedBy(wallet: Address, transactions: readonly EngineTransaction[]): Announced[] {
@@ -152,11 +147,11 @@ async function recordOf(transport: Transport, wallet: Address, work: Announced, 
     release: transaction.signature as Signature,
     selfDealt,
   };
-  const announced = work.commitment === undefined ? recorded === work.sha256 : recorded !== null && commitmentOf(work.intent, wallet, recorded) === work.commitment;
+  const announced = recorded !== null && commitmentOf(work.intent, wallet, recorded) === work.commitment;
   if (!announced) {
     return { complete, record: { ...common, outcome: "paid-other" } };
   }
-  common.sha256 = recorded ?? work.sha256;
+  common.sha256 = recorded;
   let earned: bigint | undefined;
   let credit = (fee: bigint): bigint => fee;
   if (event.name === "IntentAttested") {
@@ -188,7 +183,7 @@ export const counted = (record: WorkRecord): boolean => record.outcome === "paid
 export async function reputationOf(transport: Transport, wallet: Address, options: ReputationOptions = {}): Promise<Reputation> {
   const { firstAvailableSlot } = transport;
   const fullLedger = async () => firstAvailableSlot !== undefined && (await firstAvailableSlot.call(transport)) === 0n;
-  const scanned = await scan(transport, wallet, { memo: DELIVERY_SCAN_MARK, pages: options.pages ?? DELIVERY_PAGES, covered: fullLedger });
+  const scanned = await scan(transport, wallet, { memo: DELIVERY_V2_MEMO_PREFIX, pages: options.pages ?? DELIVERY_PAGES, covered: fullLedger });
   const works = announcedBy(wallet, scanned.transactions);
   const read = await Promise.all(works.map((work) => recordOf(transport, wallet, work, options.history ?? HISTORY_LIMIT)));
   const lookup = fundingLookup(transport, fullLedger);

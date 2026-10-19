@@ -5,9 +5,10 @@ import { join } from "node:path";
 import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { deliveryMemo, findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, sortMembers } from "@intent-engine/core";
+import { findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, sortMembers } from "@intent-engine/core";
 import { createClient } from "@intent-engine/client";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
+import { sealedDelivery } from "./announce.js";
 import { balance, cli, creation, funded, h, NOW, transport, world } from "./harness.js";
 import { announced, cliWith, type Disagreement, disagreements, SECOND, SECOND_URL, secondNode, UNREADABLE, WORK_URL } from "./confirm-node.js";
 
@@ -17,7 +18,7 @@ const CORRECT = "export default function count(text) { const words = text.match(
 
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 
-type Job = { owner: Address; intent: Address; inputMint: Address; spec: string; artifact: string; dir: string; worker: Address; keys: Record<string, KeyPairSigner> };
+type Job = { owner: Address; intent: Address; inputMint: Address; spec: string; artifact: string; dir: string; worker: Address; copied: string; keys: Record<string, KeyPairSigner> };
 
 async function escrow(attestor: (keys: Record<string, KeyPairSigner>) => Promise<Address>): Promise<Job> {
   const w = await world();
@@ -45,8 +46,9 @@ async function escrow(attestor: (keys: Record<string, KeyPairSigner>) => Promise
     nonce: 0n,
     expiresAt: NOW + 3_600n,
   });
-  h.engineLog = [announced("first", 5n, worker, deliveryMemo({ intent, sha256: sha(CORRECT), url: WORK_URL })), creation(intent)];
-  return { owner: w.owner.address, intent, inputMint: w.inputMint, spec, artifact, dir, worker, keys };
+  h.engineLog = [announced("first", 5n, worker, await sealedDelivery(intent, worker, sha(CORRECT), WORK_URL, [worker])), creation(intent)];
+  const copied = await sealedDelivery(intent, w.owner.address, sha(CORRECT), WORK_URL, [worker]);
+  return { owner: w.owner.address, intent, inputMint: w.inputMint, spec, artifact, dir, worker, copied, keys };
 }
 
 const alone = () =>
@@ -63,7 +65,7 @@ const status = (intent: Address) => {
 
 const paid = async (job: Job) => balance(await findAssociatedTokenAddress({ owner: job.worker, mint: job.inputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS }));
 
-const lies = (job: Job): Disagreement[] => disagreements(job.intent, job.owner, sha(CORRECT));
+const lies = (job: Job): Disagreement[] => disagreements(job.intent, job.owner, job.copied);
 
 describe("judge --confirm-url", () => {
   const judging = (job: Job, ...more: string[]) => [

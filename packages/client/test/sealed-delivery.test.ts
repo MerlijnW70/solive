@@ -9,10 +9,10 @@ import {
   MAX_COMMITTEE_MEMBERS,
   maxSealedUrl,
   parseDeliveryMemoV2,
+  PRODUCT_SLUG,
   sealedUrlTooLong,
 } from "@intent-engine/core";
 import {
-  announcements,
   announces,
   commitmentOf,
   createClient,
@@ -110,8 +110,7 @@ describe("sealed deliveries", () => {
     expect(new Set(round.map(({ slot }) => slot)).size).toBe(1);
     expect(round.some(({ signature }) => signature < honest)).toBe(true);
     expect(firstDelivery(record.deliveries, work)).toMatchObject({ worker: worker.address, signature: honest });
-    expect(announcements(record.deliveries)).toEqual([]);
-    expect(announcements(round.flatMap((d) => withWork(d, work) ?? []))).toMatchObject([{ sha256: work, first: { worker: worker.address }, copies: 0 }]);
+    expect(round.flatMap((d) => withWork(d, work) ?? []).map(({ worker: by, sha256 }) => [by, sha256])).toEqual([[worker.address, work]]);
   });
 
   it("break a tie in slot by signature only among announcements whose commitment matches their own fee payer", () => {
@@ -124,18 +123,19 @@ describe("sealed deliveries", () => {
     expect(announces(at(honest, "z"), WORK.toUpperCase())).toBe(false);
   });
 
-  it("still pay a v1 announcement, and the earlier of a v1 and a v2 announcement of the same work", async () => {
+  it("ignore a clear v1 announcement in the judge's scan, even when it landed first", async () => {
     const { w, client, judge, job } = await escrow();
     const legacy = await funded(w.chain);
     const sealed = await funded(w.chain);
-    await client.deliver({ worker: legacy, intent: job.intent, sha256: WORK, url: WORK_URL, version: 1 });
+    const clear = `${PRODUCT_SLUG}-delivery:${job.intent}:${WORK}:${WORK_URL}`;
+    await landed(w, legacy, judge.signer.address, clear);
     w.chain.svm.warpToSlot(w.chain.svm.getClock().slot + 1n);
     await client.deliver({ worker: sealed, intent: job.intent, sha256: WORK, url: WORK_URL });
-    await client.deliver({ worker: sealed, intent: job.intent, sha256: "cd".repeat(32), url: WORK_URL });
-    const record = await deliveryRecord(w.chain.transport, judge.signer.address, job.intent);
-    expect(firstDelivery(record.deliveries, WORK)).toMatchObject({ worker: legacy.address, url: WORK_URL, sha256: WORK });
-    expect(firstDelivery(record.deliveries, "cd".repeat(32))).toMatchObject({ worker: sealed.address, sha256: "cd".repeat(32) });
-    expect(announcements(record.deliveries)).toMatchObject([{ sha256: WORK, first: { worker: legacy.address }, copies: 1 }]);
+    const record = await deliveryRecord(w.chain.transport, judge.signer.address, job.intent, undefined, judge.keypair);
+    expect(record.complete).toBe(true);
+    expect(record.deliveries).toMatchObject([{ worker: sealed.address, url: WORK_URL, commitment: commitmentOf(job.intent, sealed.address, WORK) }]);
+    expect(firstDelivery(record.deliveries, WORK)).toMatchObject({ worker: sealed.address, sha256: WORK });
+    expect(parseDeliveryMemoV2(clear)).toBeNull();
   });
 
   it("open the url for the judge and for every committee member, and for no outsider", async () => {

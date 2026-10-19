@@ -5,7 +5,6 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   DEVNET_TEST_MINT as TEST_TOKEN,
-  deliveryMemo,
   findAssociatedTokenAddress,
   IntentStatus,
   NATIVE_MINT,
@@ -16,6 +15,7 @@ import { createClient } from "@intent-engine/client";
 import { NOT_A_MEMBER, RELEASE_CHANGED, VOTE_CHANGED, WALLET_NOTICE } from "../src/agent/wallet.js";
 import { notEarliest } from "../src/agent/wallet/delivery.js";
 import { EXIT_OK } from "../src/main.js";
+import { sealedDelivery } from "./announce.js";
 import { balance, cli, creation, funded, h, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
@@ -94,7 +94,7 @@ describe("a wallet server on a committee", () => {
     const worker = (await generateKeyPairSigner()).address;
     const copier = (await generateKeyPairSigner()).address;
     const work = "e7".repeat(32);
-    const memo = deliveryMemo({ intent, sha256: work, url: "https://example.org/work" });
+    const memo = await sealedDelivery(intent, worker, work, "https://example.org/work", members);
     h.engineLog = [
       { signature: "copy", slot: 9n, blockTime: null, failed: false, emitted: [], memos: [memo], feePayer: copier },
       { signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [memo], feePayer: worker },

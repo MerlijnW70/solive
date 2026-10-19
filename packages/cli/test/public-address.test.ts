@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { rm } from "node:fs/promises";
 import type { Address, Signature } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { DEVNET_GENESIS_HASH, type Delivery } from "@intent-engine/client";
+import { commitmentOf, DEVNET_GENESIS_HASH, type Delivery } from "@intent-engine/client";
 import { DeliveryUnfit, fetchDelivery, NOT_PUBLIC } from "../src/delivery-fetch.js";
 import { type Lookup, privateAddress, publicHost } from "../src/public-address.js";
 import { h, transport, world } from "./harness.js";
@@ -62,14 +62,17 @@ describe("private addresses", () => {
 
 describe("fetching a delivery on a public cluster", () => {
   const bytes = new TextEncoder().encode("export default (a, b) => a + b;\n");
+  const party = "11111111111111111111111111111111" as Address;
   const delivery = (url: string): Delivery => ({
-    intent: "11111111111111111111111111111111" as Address,
-    sha256: createHash("sha256").update(bytes).digest("hex"),
+    intent: party,
+    sha256: "",
     url,
-    worker: "11111111111111111111111111111111" as Address,
+    worker: party,
     signature: "s" as Signature,
     slot: 1n,
     blockTime: null,
+    commitment: commitmentOf(party, party, createHash("sha256").update(bytes).digest("hex")),
+    sealed: "",
   });
   const lookup: Lookup = async (host) => (host === "internal.example" ? ["192.168.0.10"] : ["93.184.216.34"]);
   const asked: string[] = [];

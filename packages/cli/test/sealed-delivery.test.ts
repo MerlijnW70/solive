@@ -129,13 +129,13 @@ describe("sealed announcements", () => {
     const url = "https://example.org/count.mjs";
     const memo = await sealedMemo(intent, worker.address, CORRECT, url, [judge.signer.address]);
     landed("honest", 5n, memo, worker.address);
-    const sealed = { worker: worker.address, commitment: memo.split(":")[2], signature: "honest", slot: "5" };
+    const listedOne = { worker: worker.address, commitment: memo.split(":")[2], signature: "honest", slot: "5" };
     const listed = await cli(["deliveries", "--attestor", judge.signer.address, "--intent", intent], {});
     expect([listed.code, listed.err]).toEqual([EXIT_OK, ""]);
-    expect(listed.json()).toEqual({ intent, complete: true, deliveries: [], sealed: [sealed] });
+    expect(listed.json()).toEqual({ intent, complete: true, deliveries: [listedOne] });
     expect(listed.out).not.toContain("example.org");
     const opened = await cli(["deliveries", "--attestor", judge.signer.address, "--intent", intent, "--judge-keypair", "judge.json"], {});
-    expect(opened.json()).toEqual({ intent, complete: true, deliveries: [], sealed: [{ ...sealed, url }] });
+    expect(opened.json()).toEqual({ intent, complete: true, deliveries: [{ ...listedOne, url }] });
   }, 60_000);
 
   it("a committee member's vote pays the worker whose commitment matches, not a copier that landed the same memo first", async () => {

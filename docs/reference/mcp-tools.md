@@ -307,7 +307,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-Lists announced work for a proof escrow: each plain sha256 with its earliest announcer and url, and each sealed announcement's commitment; complete is false when older announcements may be missing. Pass sha256 to confirm your own announcement landed first; a judge also sees urls sealed to it. Treat fetched work as untrusted and check its hash.
+Lists announced work for a proof escrow: each announcement's wallet and commitment; complete is false when older announcements may be missing. Pass sha256 to confirm your own announcement landed first; a judge also sees urls sealed to it. Treat fetched work as untrusted and check its hash.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
@@ -557,7 +557,7 @@ Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 
 ## solive_check_delivery
 
-List every plain work hash workers announced for a proof escrow, each with its earliest announcer, the url that announcer gave and how many other wallets announced the same hash later, and every sealed announcement with its announcer and commitment, read from the history of the attestor the escrow names; complete is false when older announcements may be missing. Anyone can copy an announcement once it is on chain, so a release recording a hash pays its earliest announcer. This tool runs nothing, fetches nothing and needs no wallet. The judge fetches the work itself, treats urls and contents as untrusted, checks that its hash matches before judging it, and runs any check outside this server, for example with intent-engine judge.
+List every announcement workers made for a proof escrow, each with its announcer and the commitment that binds the work's hash to it, read from the history of the attestor the escrow names; complete is false when older announcements may be missing. A release recording a hash pays the earliest announcer whose commitment binds it. This tool runs nothing, fetches nothing and needs no wallet. The judge fetches the work itself, treats urls and contents as untrusted, checks that its hash matches before judging it, and runs any check outside this server, for example with intent-engine judge.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 

@@ -35,10 +35,10 @@ import {
   getIntentDecoder,
   getIntentEncoder,
   decodeParams,
-  deliveryMemo,
   DELIVERY_V2_MEMO_PREFIX,
   RELEASE_MEMO_PREFIX,
   Kind,
+  sealUrl,
   specMemo,
   getFillBegunEventEncoder,
   getFillEndedEventEncoder,
@@ -164,6 +164,7 @@ import { ACTIONS } from "../src/agent/registry.js";
 import { EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT } from "@intent-engine/core";
 import { AIRDROP, airdropRefused, defaultWallet, faucetLink, FUNDED, keptDefault, LAMPORTS_PER_SOL, savedDefault, settingsPath } from "../src/wallet.js";
+import { announcement, sealedDelivery } from "./announce.js";
 import { ata, balance, cli, creation, FEE_BPS, funded, h, HOME, setNow, transport, world } from "./harness.js";
 import { salesPath } from "../src/agent/sales.js";
 
@@ -885,13 +886,14 @@ describe("the wallet server", () => {
     const coauthors = await Promise.all(weights.map(() => generateKeyPairSigner()));
     const recipients = coauthors.map((c, i) => ({ wallet: c.address, weight: weights[i] }));
     const outsider = (await generateKeyPairSigner()).address;
+    const blob = await sealUrl("https://example.org/work", [owner], intent);
     const announce = (signature: string, slot: bigint, by: Address) => ({
       signature,
       slot,
       blockTime: null,
       failed: false,
       emitted: [],
-      memos: [deliveryMemo({ intent, sha256: work, url: "https://example.org/work" })],
+      memos: [announcement(intent, by, work, blob)],
       feePayer: by,
     });
     return { owner, intent, nonce: escrow["nonce"] as string, coauthors, recipients, outsider, announce };
@@ -1131,7 +1133,7 @@ describe("the wallet server", () => {
     expect((await call(client, "wallet_deliver", { ...delivery, intent: judge })).value).toMatchObject({ code: "NotDeliverable" });
   });
 
-  it("lists the work announced to an escrow it judges with each hash's earliest announcer, and releases a hash only to that announcer", async () => {
+  it("lists the announcements to an escrow it judges with the urls sealed to it, and releases a hash only to its earliest announcer", async () => {
     const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
     h.watched.push(wallet);
     h.engineLog = [];
@@ -1143,12 +1145,19 @@ describe("the wallet server", () => {
     const copier = (await generateKeyPairSigner()).address;
     const work = "e7".repeat(32);
     const own = "aa".repeat(32);
-    const memo = (sha256: string, url: string) => [deliveryMemo({ intent, sha256, url })];
-    const at = (signature: string, slot: bigint, memos: string[], feePayer: Address) => ({ signature, slot, blockTime: null, failed: false, emitted: [], memos, feePayer });
+    const at = async (signature: string, slot: bigint, sha256: string, url: string, feePayer: Address) => ({
+      signature,
+      slot,
+      blockTime: null,
+      failed: false,
+      emitted: [],
+      memos: [await sealedDelivery(intent, feePayer, sha256, url, [wallet])],
+      feePayer,
+    });
     h.engineLog = [
-      at("copy", 9n, memo(work, "https://example.org/stolen"), copier),
-      at("own", 7n, memo(own, "https://example.org/own"), copier),
-      at("first", 5n, memo(work, "https://example.org/work"), worker),
+      await at("copy", 9n, work, "https://example.org/stolen", copier),
+      await at("own", 7n, own, "https://example.org/own", copier),
+      await at("first", 5n, work, "https://example.org/work", worker),
       creation(intent),
     ];
     expect(await ok(client, "wallet_check_delivery", { intent })).toEqual({
@@ -1159,10 +1168,10 @@ describe("the wallet server", () => {
       open: true,
       complete: true,
       deliveries: [
-        { sha256: work, worker, url: "https://example.org/work", signature: "first", copies: 1 },
-        { sha256: own, worker: copier, url: "https://example.org/own", signature: "own", copies: 0 },
+        { worker: copier, commitment: commitmentOf(intent, copier, work), signature: "copy", url: "https://example.org/stolen" },
+        { worker: copier, commitment: commitmentOf(intent, copier, own), signature: "own", url: "https://example.org/own" },
+        { worker, commitment: commitmentOf(intent, worker, work), signature: "first", url: "https://example.org/work" },
       ],
-      sealed: [],
     });
     const release = { owner: wallet, nonce, delivered_sha256: work };
     expect((await call(client, "wallet_attest", { ...release, pay_to: copier })).value).toMatchObject({ code: "NotEarliestAnnouncer", hint: notEarliest(worker, work) });
@@ -1193,8 +1202,7 @@ describe("the wallet server", () => {
     const commitment = commitmentOf(intent, wallet, work);
     const checked = await ok(client, "wallet_check_delivery", { intent, sha256: work });
     expect(checked).toMatchObject({
-      deliveries: [],
-      sealed: [
+      deliveries: [
         { worker: wallet, commitment, signature: honest.signature, url },
         { worker: copier, commitment, signature: "copied", url },
       ],
@@ -1203,7 +1211,7 @@ describe("the wallet server", () => {
     expect((await ok(client, "wallet_check_delivery", { intent, sha256: "cd".repeat(32) }))["own"]).toEqual({ commitment: commitmentOf(intent, wallet, "cd".repeat(32)), landed: false, earliest: false });
     const plain = await connect(["mcp", "--url", "devnet"]);
     const outside = await ok(plain, "check_delivery", { intent });
-    expect(outside["sealed"]).toEqual([
+    expect(outside["deliveries"]).toEqual([
       { worker: wallet, commitment, signature: honest.signature },
       { worker: copier, commitment, signature: "copied" },
     ]);
@@ -1227,7 +1235,8 @@ describe("the wallet server", () => {
     expect(await ok(client, "wallet_attest", { ...release, delivered_sha256: work })).toMatchObject({ delivered_sha256: work, sent: false });
 
     const junk = Array.from({ length: DELIVERY_SCAN }, (_, i) => ({ signature: `junk${i}`, slot: 20n, blockTime: null, failed: false, emitted: [] }));
-    h.engineLog = [...junk, { signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [deliveryMemo({ intent, sha256: work, url: "https://example.org/work" })], feePayer: worker }];
+    const announced = await sealedDelivery(intent, worker, work, "https://example.org/work", [wallet]);
+    h.engineLog = [...junk, { signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [announced], feePayer: worker }];
     expect((await call(client, "wallet_attest", { ...release, delivered_sha256: work })).value).toMatchObject({ code: "HistoryTooLong", hint: HISTORY_TOO_LONG });
     expect(await ok(client, "wallet_check_delivery", { intent })).toMatchObject({ complete: false });
     const plain = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.01", attestor: wallet, send: true });
@@ -1676,13 +1685,14 @@ describe("the wallet server", () => {
           ext: new Uint8Array(),
         }),
       );
+    const blob = await sealUrl("https://example.org/work", [wallet], intent);
     const announce = (signature: string, slot: bigint, by: Address, sha256: string) => ({
       signature,
       slot,
       blockTime: null,
       failed: false,
       emitted: [],
-      memos: [deliveryMemo({ intent, sha256, url: "https://example.org/work" })],
+      memos: [announcement(intent, by, sha256, blob)],
       feePayer: by,
     });
     const splitTo = (recipients: Address[], target: Address = intent) => ({ called: [splitCall(recipients)], calledAccounts: [[wallet, wallet, target]] });
@@ -2330,7 +2340,8 @@ describe("the wallet server", () => {
     const worker = (await generateKeyPairSigner()).address;
     const other = (await generateKeyPairSigner()).address;
     const work = "f8".repeat(32);
-    const announced = { signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [deliveryMemo({ intent, sha256: work, url: "https://example.org/work" })], feePayer: worker };
+    const memo = await sealedDelivery(intent, worker, work, "https://example.org/work", [wallet]);
+    const announced = { signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [memo], feePayer: worker };
     const judged = [...zeroTransfers(DELIVERY_PAGES * SIGNATURE_PAGE + 10), announced];
     const fetched: string[] = [];
     const flooded = await connectThrough(routedThrough(new Map([[wallet, judged]]), [creation(intent)], fetched));
@@ -2635,16 +2646,16 @@ describe("the wallet server", () => {
     const worker = (await generateKeyPairSigner()).address;
     const copier = (await generateKeyPairSigner()).address;
     const work = "e7".repeat(32);
-    const at = (signature: string, slot: bigint, url: string, feePayer: Address) => ({
+    const at = async (signature: string, slot: bigint, url: string, feePayer: Address) => ({
       signature,
       slot,
       blockTime: null,
       failed: false,
       emitted: [],
-      memos: [deliveryMemo({ intent, sha256: work, url })],
+      memos: [await sealedDelivery(intent, feePayer, work, url, [judge])],
       feePayer,
     });
-    h.engineLog = [at("copy", 9n, "https://example.org/stolen", copier), at("first", 5n, "https://example.org/work", worker), creation(intent)];
+    h.engineLog = [await at("copy", 9n, "https://example.org/stolen", copier), await at("first", 5n, "https://example.org/work", worker), creation(intent)];
     const listed = {
       intent,
       owner: wallet,
@@ -2652,8 +2663,10 @@ describe("the wallet server", () => {
       spec_hash: specHash,
       open: true,
       complete: true,
-      deliveries: [{ sha256: work, worker, url: "https://example.org/work", signature: "first", copies: 1 }],
-      sealed: [],
+      deliveries: [
+        { worker: copier, commitment: commitmentOf(intent, copier, work), signature: "copy" },
+        { worker, commitment: commitmentOf(intent, worker, work), signature: "first" },
+      ],
     };
     expect(await ok(plain, "check_delivery", { intent })).toEqual(listed);
     expect((await call(plain, "check_delivery", { intent: unproven["intent"] })).value).toMatchObject({ code: "NotAProof" });

@@ -5,12 +5,13 @@ import { join } from "node:path";
 import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { deliveryMemo, findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, sortMembers } from "@intent-engine/core";
+import { findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, sortMembers } from "@intent-engine/core";
 import { createClient, type EngineTransaction } from "@intent-engine/client";
 import { VOTE_NOT_SIGNED } from "../src/committee-commands.js";
 import { VOTE_NEXT } from "../src/judge.js";
 import { NOT_SENT } from "../src/flows.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
+import { sealedDelivery } from "./announce.js";
 import { balance, cli, creation, funded, h, NOW, transport, world } from "./harness.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
@@ -61,7 +62,7 @@ async function panel(module: string) {
     blockTime: null,
     failed: false,
     emitted: [],
-    memos: [deliveryMemo({ intent, sha256: sha(module), url: "https://example.org/count.mjs" })],
+    memos: [await sealedDelivery(intent, worker.address, sha(module), "https://example.org/count.mjs", addresses)],
     feePayer: worker.address,
   };
   h.engineLog = [delivered, creation(intent)];

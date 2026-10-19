@@ -19,9 +19,9 @@ import {
 } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import { describe, expect, it } from "vitest";
-import { DELIVERY_MEMO_PREFIX, deliveryMemo, findEventAuthorityPda, findIntentPda, Kind, MAX_MEMO_URL, seal, SPEC_MEMO_PREFIX, specMemo } from "@intent-engine/core";
+import { findEventAuthorityPda, findIntentPda, Kind, MAX_MEMO_URL, PRODUCT_SLUG, seal, SPEC_MEMO_PREFIX, specMemo } from "@intent-engine/core";
 import {
-  announcements,
+  commitmentOf,
   createClient,
   creationProof,
   engineCalls,
@@ -231,28 +231,23 @@ describe("spec", () => {
 });
 
 describe("deliveries", () => {
-  it("announces a delivery to the judge and lists it, ignoring malformed, foreign and other memos", async () => {
+  it("announces a delivery to the judge and lists it, ignoring malformed, foreign, clear v1 and other memos", async () => {
     const { w, client, judge, order } = await setting();
     const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
     const foreign = await client.createIntent({ ...order, params: proof(w.authority.address) });
     const worker = await funded(w.chain);
     const stranger = await funded(w.chain);
+    const clear = (intent: Address) => `${PRODUCT_SLUG}-delivery:${intent}:${WORK}:${WORK_URL}`;
 
-    const signature = await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL, version: 1 });
-    await announce(w, stranger, judge.address, [
-      "not a delivery",
-      `delivery sha256:${WORK}`,
-      `${deliveryMemo({ intent: job.intent, sha256: WORK, url: WORK_URL })} `,
-      deliveryMemo({ intent: foreign.intent, sha256: WORK, url: WORK_URL }),
-      deliveryMemo({ intent: judge.address, sha256: WORK, url: WORK_URL }),
-      specMemo(SPEC_URL),
-    ]);
-    const later = await client.deliver({ worker: stranger, intent: job.intent, sha256: "cd".repeat(32), url: "https://example.org/v2", version: 1 });
+    const signature = await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL });
+    await announce(w, stranger, judge.address, ["not a delivery", `delivery sha256:${WORK}`, clear(job.intent), `${clear(job.intent)} `, clear(foreign.intent), specMemo(SPEC_URL)]);
+    const later = await client.deliver({ worker: stranger, intent: job.intent, sha256: "cd".repeat(32), url: "https://example.org/v2" });
 
     const found = await client.deliveries({ judge: judge.address });
+    const sealed = { sha256: "", url: "", slot: expect.any(BigInt), blockTime: expect.any(BigInt), sealed: expect.any(String) };
     expect(found).toEqual([
-      { intent: job.intent, worker: stranger.address, sha256: "cd".repeat(32), url: "https://example.org/v2", signature: later, slot: expect.any(BigInt), blockTime: expect.any(BigInt) },
-      { intent: job.intent, worker: worker.address, sha256: WORK, url: WORK_URL, signature, slot: expect.any(BigInt), blockTime: expect.any(BigInt) },
+      { intent: job.intent, worker: stranger.address, signature: later, commitment: commitmentOf(job.intent, stranger.address, "cd".repeat(32)), ...sealed },
+      { intent: job.intent, worker: worker.address, signature, commitment: commitmentOf(job.intent, worker.address, WORK), ...sealed },
     ]);
     expect(await client.deliveries({ judge: judge.address, intent: job.intent })).toEqual(found);
     expect(await client.deliveries({ judge: judge.address, intent: foreign.intent })).toEqual([]);
@@ -260,46 +255,21 @@ describe("deliveries", () => {
     expect(DELIVERY_SCAN).toBe(100);
   });
 
-  it("pays the earliest announcer of a hash: a copied announcement comes later and counts as a copy", async () => {
+  it("pays the earliest announcer of a hash: a later announcement of the same work comes second", async () => {
     const { w, client, judge, order } = await setting();
     const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
     const worker = await funded(w.chain);
     const copier = await funded(w.chain);
-    await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL, version: 1 });
+    await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL });
     w.chain.svm.warpToSlot(w.chain.svm.getClock().slot + 1n);
-    await client.deliver({ worker: copier, intent: job.intent, sha256: WORK, url: "https://example.org/stolen", version: 1 });
-    await client.deliver({ worker: copier, intent: job.intent, sha256: "cd".repeat(32), url: "https://example.org/own", version: 1 });
+    await client.deliver({ worker: copier, intent: job.intent, sha256: WORK, url: "https://example.org/stolen" });
+    await client.deliver({ worker: copier, intent: job.intent, sha256: "cd".repeat(32), url: "https://example.org/own" });
 
     const found = await client.deliveries({ judge: judge.address, intent: job.intent });
     expect(found.map(({ worker: by }) => by)).toEqual([copier.address, copier.address, worker.address]);
-    expect(firstDelivery(found, WORK)).toMatchObject({ worker: worker.address, url: WORK_URL });
+    expect(firstDelivery(found, WORK)).toMatchObject({ worker: worker.address, sha256: WORK });
+    expect(firstDelivery(found, "cd".repeat(32))).toMatchObject({ worker: copier.address, sha256: "cd".repeat(32) });
     expect(firstDelivery(found, "ef".repeat(32))).toBeNull();
-    expect(announcements(found).map(({ sha256, first, copies }) => [sha256, first.worker, copies])).toEqual([
-      [WORK, worker.address, 1],
-      ["cd".repeat(32), copier.address, 0],
-    ]);
-  });
-
-  it("a delivery announced with a 0.1.23 url still counts as earliest", async () => {
-    const { w, client, judge, order } = await setting();
-    const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
-    const worker = await funded(w.chain);
-    const copier = await funded(w.chain);
-    const legacy = ["https://Example.com/w.tar", "https://host:443/w.tar", "https://a.example/a/../b"];
-    for (const url of legacy) {
-      expect(() => deliveryMemo({ intent: job.intent, sha256: WORK, url })).toThrow(RangeError);
-    }
-    await announce(w, worker, judge.address, [`${DELIVERY_MEMO_PREFIX}${job.intent}:${WORK}:${legacy[0]}`]);
-    w.chain.svm.warpToSlot(w.chain.svm.getClock().slot + 1n);
-    await client.deliver({ worker: copier, intent: job.intent, sha256: WORK, url: "https://example.com/w.tar" });
-    w.chain.svm.warpToSlot(w.chain.svm.getClock().slot + 1n);
-    await announce(w, worker, judge.address, [`${DELIVERY_MEMO_PREFIX}${job.intent}:${"cd".repeat(32)}:${legacy[1]}`, `${DELIVERY_MEMO_PREFIX}${job.intent}:${"ef".repeat(32)}:${legacy[2]}`]);
-
-    const found = await client.deliveries({ judge: judge.address, intent: job.intent });
-    expect(firstDelivery(found, WORK)).toMatchObject({ worker: worker.address, url: legacy[0] });
-    expect(firstDelivery(found, "cd".repeat(32))).toMatchObject({ worker: worker.address, url: legacy[1] });
-    expect(firstDelivery(found, "ef".repeat(32))).toMatchObject({ worker: worker.address, url: legacy[2] });
-    expect(announcements(found).find(({ sha256 }) => sha256 === WORK)).toMatchObject({ first: { worker: worker.address, url: legacy[0] }, copies: 1 });
   });
 
   it("a spec memo with a 0.1.23 url is still read", async () => {
@@ -330,13 +300,14 @@ describe("deliveries", () => {
     expect(fetched.map(({ url }) => url)).toEqual([legacy]);
   });
 
-  it("breaks a tie in slot by the lower signature", () => {
-    const at = (worker: string, signature: string, slot: bigint) =>
-      ({ intent: WORK_URL, worker, sha256: WORK, url: WORK_URL, signature, slot, blockTime: null }) as unknown as Delivery;
-    const found = [at("late", "a", 5n), at("second", "c", 4n), at("first", "b", 4n)];
-    expect(firstDelivery(found, WORK)?.worker).toBe("first");
-    expect(firstDelivery([...found].reverse(), WORK)?.worker).toBe("first");
-    expect(announcements(found)).toEqual([{ sha256: WORK, first: found[2], copies: 2 }]);
+  it("breaks a tie in slot by the lower signature", async () => {
+    const intent = MEMO_PROGRAM_ADDRESS;
+    const [late, second, first] = await Promise.all([generateKeyPairSigner(), generateKeyPairSigner(), generateKeyPairSigner()]);
+    const at = (worker: Address, signature: string, slot: bigint) =>
+      ({ intent, worker, sha256: "", url: "", signature, slot, blockTime: null, commitment: commitmentOf(intent, worker, WORK), sealed: "" }) as unknown as Delivery;
+    const found = [at(late.address, "a", 5n), at(second.address, "c", 4n), at(first.address, "b", 4n)];
+    expect(firstDelivery(found, WORK)?.worker).toBe(first.address);
+    expect(firstDelivery([...found].reverse(), WORK)?.worker).toBe(first.address);
   });
 
   it("refuses to deliver to anything but an open proof escrow, and to a bad hash or url", async () => {
@@ -360,8 +331,8 @@ describe("deliveries", () => {
     const { w, client, judge, order } = await setting();
     const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
     const worker = await funded(w.chain);
-    await client.deliver({ worker, intent: job.intent, sha256: WORK.toUpperCase(), url: WORK_URL, version: 1 });
-    expect(await client.deliveries({ judge: judge.address })).toMatchObject([{ intent: job.intent, worker: worker.address, sha256: WORK }]);
+    await client.deliver({ worker, intent: job.intent, sha256: WORK.toUpperCase(), url: WORK_URL });
+    expect(firstDelivery(await client.deliveries({ judge: judge.address }), WORK)).toMatchObject({ intent: job.intent, worker: worker.address, sha256: WORK });
     const signature = await client.settleProof({ judge, owner: w.owner.address, nonce: job.nonce, payTo: worker.address, result: 1n, deliveredSha256: WORK.toUpperCase() });
     const released = (await client.history(job.intent)).find(({ name }) => name === "IntentAttested");
     expect(released).toMatchObject({ signature, deliveredSha256: WORK });
@@ -379,8 +350,8 @@ describe("deliveries", () => {
     await expect(devnet.deliver({ worker, intent: job.intent, sha256: WORK, url: work })).rejects.toThrow(`the work url ${work} ${PLAIN_HTTP_ON_PUBLIC}`);
     expect(await devnet.deliveries({ judge: judge.address })).toEqual([]);
     const local = createClient({ url: LOCAL, transport: w.chain.transport });
-    await local.deliver({ worker, intent: job.intent, sha256: WORK, url: work, version: 1 });
-    expect(await local.deliveries({ judge: judge.address })).toMatchObject([{ url: work }]);
+    await local.deliver({ worker, intent: job.intent, sha256: WORK, url: work });
+    expect(firstDelivery(await local.deliveries({ judge: judge.address }), WORK)).toMatchObject({ worker: worker.address });
   });
 
   it("refuses an expiresIn below a minute or above a year", async () => {
@@ -400,14 +371,14 @@ describe("history past a window of recent transactions", () => {
     const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
     const worker = await funded(w.chain);
     const copier = await funded(w.chain);
-    await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL, version: 1 });
+    await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL });
     w.chain.svm.warpToSlot(w.chain.svm.getClock().slot + 1n);
     await flood(w, judge.address, 150);
-    await client.deliver({ worker: copier, intent: job.intent, sha256: WORK, url: "https://example.org/stolen", version: 1 });
+    await client.deliver({ worker: copier, intent: job.intent, sha256: WORK, url: "https://example.org/stolen" });
 
     const record = await client.deliveryRecord({ judge: judge.address, intent: job.intent });
     expect(record.complete).toBe(true);
-    expect(firstDelivery(record.deliveries, WORK)).toMatchObject({ worker: worker.address, url: WORK_URL });
+    expect(firstDelivery(record.deliveries, WORK)).toMatchObject({ worker: worker.address });
     expect(await client.deliveries({ judge: judge.address, intent: job.intent })).toEqual(record.deliveries);
     expect(firstDelivery(await client.deliveries({ judge: judge.address }), WORK)?.worker).toBe(worker.address);
   });
@@ -478,7 +449,7 @@ describe("history past a window of recent transactions", () => {
     const { w, client, judge, order } = await setting();
     const job = await client.createIntent({ ...order, params: proof(judge.address) });
     const worker = await funded(w.chain);
-    await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL, version: 1 });
+    await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL });
     await flood(w, judge.address, 3);
     const { signaturesOf } = w.chain.transport;
     if (signaturesOf === undefined) {
@@ -498,7 +469,7 @@ describe("history past a window of recent transactions", () => {
     };
 
     const record = await deliveryRecord(pruned, judge.address, job.intent);
-    expect(record).toMatchObject({ complete: true, pages: 2, deliveries: [{ worker: worker.address, sha256: WORK }] });
+    expect(record).toMatchObject({ complete: true, pages: 2, deliveries: [{ worker: worker.address, commitment: commitmentOf(job.intent, worker.address, WORK) }] });
     expect(asked).toHaveLength(3);
     expect(asked[0]).toBeUndefined();
     expect(await signaturesOf(judge.address, SIGNATURE_PAGE, asked[2])).toEqual([]);
@@ -547,9 +518,9 @@ describe("history past a window of recent transactions", () => {
     }
     expect((await client.jobs({ attestor: judge.address })).map(({ intent }) => intent)).not.toContain(soonest.intent);
     const worker = await funded(w.chain);
-    await client.deliver({ worker, intent: soonest.intent, sha256: WORK, url: WORK_URL, version: 1 });
+    await client.deliver({ worker, intent: soonest.intent, sha256: WORK, url: WORK_URL });
 
-    expect(await client.deliveries({ judge: judge.address })).toMatchObject([{ intent: soonest.intent, worker: worker.address, sha256: WORK }]);
+    expect(await client.deliveries({ judge: judge.address })).toMatchObject([{ intent: soonest.intent, worker: worker.address, commitment: commitmentOf(soonest.intent, worker.address, WORK) }]);
   });
 
   it("refuses an http spec url on devnet", async () => {

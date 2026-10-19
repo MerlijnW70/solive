@@ -8,7 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { deliveryMemo, findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind } from "@intent-engine/core";
+import { findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind } from "@intent-engine/core";
 import { createClient, type EngineTransaction } from "@intent-engine/client";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { HOST_ENGINE, judgeHost, nodeSeed } from "../src/host-judge.js";
@@ -16,6 +16,7 @@ import { judgeNode, NODE_ENGINE } from "../src/node-judge.js";
 import { CPUS_FORMAT, IMAGE_NEEDS_DIGEST, MEMORY_FORMAT, PLAIN_NODE_ONLY, SANDBOX_CPUS, SANDBOX_IMAGE, SANDBOX_MEMORY, sandboxOnly, VIPER_TAKES_NO_RUN } from "../src/sandbox.js";
 import { type Cases, casesOf as publishedCases, judgeViper, pinnedWasm } from "../src/viper.js";
 import { DOCKER_TEST } from "./docker-switch.js";
+import { sealedDelivery } from "./announce.js";
 import { balance, cli, creation, funded, h, NOW, transport, type World, world } from "./harness.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
@@ -50,7 +51,7 @@ async function job(module: string, specText: string, name = "wordcount.mjs"): Pr
     blockTime: null,
     failed: false,
     emitted: [],
-    memos: [deliveryMemo({ intent, sha256: sha(module), url: "https://example.org/" + name })],
+    memos: [await sealedDelivery(intent, worker.address, sha(module), "https://example.org/" + name, [judge.address])],
     feePayer: worker.address,
   };
   h.engineLog = [delivered, creation(intent)];

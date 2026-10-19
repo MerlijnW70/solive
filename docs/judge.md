@@ -70,9 +70,9 @@ In PowerShell:
 intent-engine deliveries --attestor $env:JUDGE --intent $env:INTENT
 ```
 
-Each plain delivery names the work's `sha256`, the `worker` who announced it first and its `url`. Each entry in `sealed` names its `worker` and a `commitment` that binds the work's sha256 to that wallet; add `--judge-keypair` with the judge's or a committee member's key file to see its `url`.
+Each entry in `deliveries` names the announcing `worker`, a `commitment` that binds the work's sha256 to that wallet, and the `signature` and `slot` of its announcement. Add `--judge-keypair` with the judge's or a committee member's key file to see its `url`.
 
-`judge` pays the earliest announcer whose plain sha256 or commitment matches the work, so a copy sent from another wallet is never paid. Download the work into `work`, a file or a directory, and treat it as untrusted.
+`judge` pays the earliest announcer whose commitment matches the work, so a copy sent from another wallet is never paid. Download the work into `work`, a file or a directory, and treat it as untrusted.
 
 ## 4. Write your check
 
@@ -124,7 +124,7 @@ The release records the memo `delivery sha256:<artifactSha256>`. The payer check
 
 ## Keep judging
 
-`judge --watch` takes the same options without `--artifact`; every `--interval` seconds (default 30) it downloads each new delivery from its `url`, checks it against the announced sha256 or commitment and judges it once. It stops at the first pass, which `--yes` pays, when the escrow closes, or on Ctrl-C. It prints one line of JSON per delivery it judged and one when it stops.
+`judge --watch` takes the same options without `--artifact`; every `--interval` seconds (default 30) it downloads each new delivery from its `url`, checks it against the announcement's commitment and judges it once. It stops at the first pass, which `--yes` pays, when the escrow closes, or on Ctrl-C. It prints one line of JSON per delivery it judged and one when it stops.
 
 On devnet, testnet and mainnet it refuses a work link that points to a private or local network address.
 
@@ -207,7 +207,7 @@ The verdict's `drawn` records the slot, blockhash and seed, so anyone with the s
 
 ## Who is paid
 
-Anyone can copy an announcement, so `judge` pays the earliest announcer of the work's hash. It refuses when nobody announced it.
+`judge` pays the earliest announcer whose commitment binds the work's hash, so a copied announcement pays nobody else. It refuses when nobody announced it.
 
 ## Check a second node
 

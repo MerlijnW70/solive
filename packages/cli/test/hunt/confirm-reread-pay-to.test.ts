@@ -5,9 +5,10 @@ import { join } from "node:path";
 import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { deliveryMemo, findAssociatedTokenAddress, Kind } from "@intent-engine/core";
+import { findAssociatedTokenAddress, Kind } from "@intent-engine/core";
 import { createClient, type Transport } from "@intent-engine/client";
 import { main } from "../../src/main.js";
+import { sealedDelivery } from "../announce.js";
 import { balance, creation, funded, h, NOW, runtime, transport, world } from "../harness.js";
 import { announced, SECOND, SECOND_URL, secondNode, WORK_URL } from "../confirm-node.js";
 
@@ -70,8 +71,8 @@ describe("judge --confirm-url pays the earliest announcer both nodes reported", 
       nonce: 0n,
       expiresAt: NOW + 3_600n,
     });
-    const memo = deliveryMemo({ intent, sha256: sha(CORRECT), url: WORK_URL });
-    h.engineLog = [announced("copy", 7n, copier, memo), announced("first", 5n, worker, memo), creation(intent)];
+    const [copied, honest] = await Promise.all([copier, worker].map((by) => sealedDelivery(intent, by, sha(CORRECT), WORK_URL, [judge.address])));
+    h.engineLog = [announced("copy", 7n, copier, copied ?? ""), announced("first", 5n, worker, honest ?? ""), creation(intent)];
 
     const primary = shiftingPrimary("first");
     const second = secondNode();

@@ -5,19 +5,16 @@ import { describe, expect, it } from "vitest";
 import {
   COMMITMENT_TAG,
   commitmentPreimage,
-  DELIVERY_MEMO_PREFIX,
-  DELIVERY_SCAN_MARK,
   DELIVERY_V2_MEMO_PREFIX,
   deliveryCommitment,
-  deliveryMemo,
   deliveryMemoV2,
   MAX_COMMITTEE_MEMBERS,
   MAX_DELIVERY_V2_MEMO,
   MAX_MEMO_URL,
   maxSealedUrl,
   openUrl,
-  parseDeliveryMemo,
   parseDeliveryMemoV2,
+  PRODUCT_SLUG,
   sealedUrlRecipients,
   sealedUrlTooLong,
   sealUrl,
@@ -101,11 +98,8 @@ describe("sealed delivery memos", () => {
     const blob = await sealUrl(URL, [judge.address], intent);
     const memo = deliveryMemoV2({ intent, commitment, blob });
     expect(memo.startsWith(DELIVERY_V2_MEMO_PREFIX)).toBe(true);
-    expect(memo.includes(DELIVERY_SCAN_MARK)).toBe(true);
-    expect(deliveryMemo({ intent, sha256: WORK, url: URL }).startsWith(DELIVERY_SCAN_MARK)).toBe(true);
     expect(parseDeliveryMemoV2(memo)).toEqual({ intent, commitment, blob });
-    expect(parseDeliveryMemo(memo)).toBeNull();
-    expect(parseDeliveryMemoV2(`${DELIVERY_MEMO_PREFIX}${intent}:${WORK}:${URL}`)).toBeNull();
+    expect(parseDeliveryMemoV2(`${PRODUCT_SLUG}-delivery:${intent}:${WORK}:${URL}`)).toBeNull();
     for (const bad of [`${memo}:x`, `${memo} `, memo.replace(commitment, commitment.toUpperCase()), `${DELIVERY_V2_MEMO_PREFIX}${intent}:${commitment}:`, `${DELIVERY_V2_MEMO_PREFIX}x:${commitment}:${blob}`]) {
       expect(parseDeliveryMemoV2(bad)).toBeNull();
     }

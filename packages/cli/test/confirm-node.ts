@@ -1,5 +1,5 @@
 import type { Address, KeyPairSigner } from "@solana/kit";
-import { deliveryMemo, getIntentDecoder, getIntentEncoder } from "@intent-engine/core";
+import { getIntentDecoder, getIntentEncoder } from "@intent-engine/core";
 import type { AccountView, EngineTransaction, Transport } from "@intent-engine/client";
 import { clusterUrl } from "../src/clusters.js";
 import { main } from "../src/main.js";
@@ -91,17 +91,17 @@ export const WORK_URL = "https://" + "example.org/count.mjs";
 
 export type Disagreement = { field: string; lie: Lie; second: string };
 
-export const disagreements = (intent: Address, copier: Address, sha256: string): Disagreement[] => [
+export const disagreements = (intent: Address, copier: Address, copied: string): Disagreement[] => [
   { field: "genesis hash", lie: { genesis: OTHER_GENESIS }, second: `the second ${OTHER_GENESIS}` },
   { field: "intent account", lie: { intent }, second: "the second sha256 " },
   {
     field: "earliest announcer",
-    lie: { log: (log) => log.map((t) => (t.signature === "first" ? { ...t, feePayer: copier } : t)) },
+    lie: { log: (log) => log.map((t) => (t.signature === "first" ? { ...t, feePayer: copier, memos: [copied] } : t)) },
     second: `the second ${copier} in first`,
   },
   {
     field: "earliest announcer",
-    lie: { log: (log) => [announced("hidden", 3n, copier, deliveryMemo({ intent, sha256, url: WORK_URL })), ...log] },
+    lie: { log: (log) => [announced("hidden", 3n, copier, copied), ...log] },
     second: `the second ${copier} in hidden`,
   },
 ];

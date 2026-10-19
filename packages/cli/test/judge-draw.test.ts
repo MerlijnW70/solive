@@ -4,12 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Address, generateKeyPairSigner, getAddressEncoder, getBase58Encoder, type KeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { deliveryMemo, getIntentDecoder, IntentStatus, Kind } from "@intent-engine/core";
+import { getIntentDecoder, IntentStatus, Kind } from "@intent-engine/core";
 import { createClient, type EngineTransaction, type FinalizedBlock, type Transport } from "@intent-engine/client";
 import { NOT_SENT } from "../src/flows.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { answerTooLong, DETAIL_BYTES, DRAW_POLL_SECONDS, DRAW_TAG, drawBeacon, drawnArguments, drawSeed, noBlocks, notAnnounced, stoppedWaiting } from "../src/draw.js";
 import { casesOf, type Draw, OUTPUT_BYTES, pinnedWasm } from "../src/viper.js";
+import { sealedDelivery } from "./announce.js";
 import { cli, creation, funded, h, NOW, transport, type World, world } from "./harness.js";
 
 const GENERATOR = `export default function generate(seed, count) {
@@ -65,7 +66,7 @@ async function job(module: string, specText: string, chain: Chain = {}): Promise
     blockTime: null,
     failed: false,
     emitted: [],
-    memos: [deliveryMemo({ intent, sha256, url: "https://" + "example.org/count.mjs" })],
+    memos: [await sealedDelivery(intent, worker.address, sha256, "https://" + "example.org/count.mjs", [judge.address])],
     feePayer: worker.address,
   };
   h.engineLog = chain.announced === false ? [creation(intent)] : [delivered, creation(intent)];
@@ -122,7 +123,7 @@ describe("judge --sandbox viper with cases drawn after the announcement", () => 
     const j = await job(CORRECT, drawSpec());
     const cases = casesOf(new TextEncoder().encode(drawSpec()));
     const draw = cases.draw as Draw;
-    const first = { intent: j.intent, worker: j.worker.address, sha256: j.sha256, url: "", signature: "first" as never, slot: ANNOUNCED, blockTime: null };
+    const first = { intent: j.intent, worker: j.worker.address, sha256: j.sha256, url: "", signature: "first" as never, slot: ANNOUNCED, blockTime: null, commitment: "", sealed: "" };
     const node = (blockhash: string) => ({ ...transport, finalizedBlock: async () => ({ slot: ANNOUNCED + BigInt(K), blockhash }) }) as Transport;
     const never = async () => false;
     const one = await drawBeacon(node(BLOCKHASH), never, first, draw, j.intent, j.sha256);

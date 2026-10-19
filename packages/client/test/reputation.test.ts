@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, none } from "@solana/kit";
+import { getTransferSolInstruction } from "@solana-program/system";
 import { getMintEncoder, getMintSize } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { feedbackMemo, findIntentPda, Kind, NATIVE_MINT, parseFeedbackMemo, signCommitteeVote, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { createClient, NotSettleable } from "../src/index.js";
+import { feedbackMemo, findIntentPda, Kind, NATIVE_MINT, parseFeedbackMemo, PRODUCT_SLUG, signCommitteeVote, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { createClient, memoInstruction, NotSettleable } from "../src/index.js";
 import { svmTransport } from "../src/svm.js";
 import { world } from "./svm.js";
 
@@ -114,6 +115,17 @@ describe("reputation from verifiable history", () => {
     await job(owner, judge, worker, "3c".repeat(32));
     const pruned = createClient({ url: LOCAL, transport: { ...transport, firstAvailableSlot: async () => 5n } });
     expect(await pruned.reputation(worker.address)).toMatchObject({ complete: false, paid: 1 });
+  });
+
+  it("counts no clear v1 announcement, even one a release paid", async () => {
+    const { client, fresh, escrow, transport } = await setup();
+    const [worker, owner, judge] = await Promise.all([fresh(), fresh(), fresh()]);
+    const sha256 = "4d".repeat(32);
+    const { nonce, intent } = await escrow(owner, judge.address);
+    const clear = `${PRODUCT_SLUG}-delivery:${intent}:${sha256}:` + "https://" + "example.org/work";
+    await transport.send([memoInstruction(worker, clear), getTransferSolInstruction({ source: worker, destination: judge.address, amount: 0n })], worker);
+    await client.settleProof({ judge, owner: owner.address, nonce, payTo: worker.address, result: 1n, deliveredSha256: sha256 });
+    expect(await client.reputation(worker.address)).toMatchObject({ announced: 0, paid: 0, earned: [], records: [] });
   });
 
   it("knows nothing about a wallet that announced nothing", async () => {

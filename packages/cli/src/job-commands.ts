@@ -1,7 +1,6 @@
 import { type Address, getAddressDecoder } from "@solana/kit";
 import { findIntentPda, formatAmount } from "@intent-engine/core";
 import {
-  announcements,
   createClient,
   deliveryInstructions,
   deliveryRecord,
@@ -74,13 +73,13 @@ export async function jobCommand(command: JobCommand, runtime: Runtime, transpor
       const worker = await transactionSigner(runtime, command.keypair);
       const { intent, workUrl } = command;
       const sha256 = "sha256" in command ? command.sha256 : await artifactSha256(command.artifact);
-      const { attestor, instructions, commitment, sealedTo = [attestor] } = await deliveryInstructions(transport, { worker, intent, sha256, url: workUrl });
+      const { attestor, instructions, commitment, sealedTo } = await deliveryInstructions(transport, { worker, intent, sha256, url: workUrl });
       const shown = {
         intent,
         attestor,
         commitment,
         summary: [
-          `Announces: the work with sha256 ${sha256}, for the proof escrow ${intent}, as the commitment ${commitment ?? ""}, which binds it to ${worker.address}`,
+          `Announces: the work with sha256 ${sha256}, for the proof escrow ${intent}, as the commitment ${commitment}, which binds it to ${worker.address}`,
           `Seals: the url ${workUrl}, so only ${sealedTo.length === 1 ? `the judge ${attestor}` : `the ${sealedTo.length} committee members`} can read it`,
           `Notifies: its judge ${attestor}, with a transfer of 0 lamports from ${worker.address}, which signs and pays the fee`,
         ],
@@ -107,17 +106,7 @@ export async function jobCommand(command: JobCommand, runtime: Runtime, transpor
       return {
         intent: command.intent,
         complete: record.complete,
-        deliveries: announcements(record.deliveries).map(({ sha256, first, copies }) => ({
-          sha256,
-          worker: first.worker,
-          url: first.url,
-          signature: first.signature,
-          slot: first.slot,
-          copies,
-        })),
-        sealed: record.deliveries.flatMap(({ worker, commitment, signature, slot, url }) =>
-          commitment === undefined ? [] : [{ worker, commitment, signature, slot, ...(url === "" ? {} : { url }) }],
-        ),
+        deliveries: record.deliveries.map(({ worker, commitment, signature, slot, url }) => ({ worker, commitment, signature, slot, ...(url === "" ? {} : { url }) })),
       };
     }
   }

@@ -1,15 +1,10 @@
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
-  DELIVERY_MEMO_PREFIX,
-  deliveryMemo,
-  INTENT_ENGINE_PROGRAM_ADDRESS,
   isLegacyMemoUrl,
   isMemoUrl,
-  MAX_DELIVERY_MEMO,
   MAX_MEMO_URL,
   MEMO_URL_RULE,
-  parseDeliveryMemo,
   parseReleaseMemo,
   parseSpecMemo,
   PRODUCT_SLUG,
@@ -21,19 +16,14 @@ import {
 
 const URL_OK = "https://example.org/spec.md";
 const HASH = "ab".repeat(32);
-const INTENT = INTENT_ENGINE_PROGRAM_ADDRESS;
-const delivery = { intent: INTENT, sha256: HASH, url: URL_OK };
 
-describe("spec and delivery memos", () => {
+describe("spec and release memos", () => {
   it("name the product in their prefixes and round-trip", () => {
     expect(SPEC_MEMO_PREFIX).toBe(`${PRODUCT_SLUG}-spec:`);
-    expect(DELIVERY_MEMO_PREFIX).toBe(`${PRODUCT_SLUG}-delivery:`);
     expect(specMemo(URL_OK)).toBe(`${PRODUCT_SLUG}-spec:${URL_OK}`);
     expect(parseSpecMemo(specMemo(URL_OK))).toEqual({ url: URL_OK });
-    expect(deliveryMemo(delivery)).toBe(`${PRODUCT_SLUG}-delivery:${INTENT}:${HASH}:${URL_OK}`);
-    expect(parseDeliveryMemo(deliveryMemo(delivery))).toEqual(delivery);
     const local = "http://127.0.0.1:8080/a:b?c=d#e";
-    expect(parseDeliveryMemo(deliveryMemo({ ...delivery, url: local }))).toEqual({ ...delivery, url: local });
+    expect(parseSpecMemo(specMemo(local))).toEqual({ url: local });
   });
 
   it("accept https anywhere and http only on localhost, printable, without spaces or credentials, at most the limit", () => {
@@ -58,9 +48,7 @@ describe("spec and delivery memos", () => {
     ]) {
       expect(isMemoUrl(url), url).toBe(false);
       expect(() => specMemo(url)).toThrow(RangeError);
-      expect(() => deliveryMemo({ ...delivery, url })).toThrow(RangeError);
       expect(parseSpecMemo(`${SPEC_MEMO_PREFIX}${url}`)).toBeNull();
-      expect(parseDeliveryMemo(`${DELIVERY_MEMO_PREFIX}${INTENT}:${HASH}:${url}`)).toBeNull();
     }
   });
 
@@ -105,14 +93,11 @@ describe("spec and delivery memos", () => {
       expect(isMemoUrl(url), url).toBe(false);
       expect(isLegacyMemoUrl(url), url).toBe(true);
       expect(() => specMemo(url)).toThrow(`a spec url must be ${MEMO_URL_RULE}`);
-      expect(() => deliveryMemo({ ...delivery, url })).toThrow(`a delivery url must be ${MEMO_URL_RULE}`);
       expect(parseSpecMemo(`${SPEC_MEMO_PREFIX}${url}`)).toEqual({ url });
-      expect(parseDeliveryMemo(`${DELIVERY_MEMO_PREFIX}${INTENT}:${HASH}:${url}`)).toEqual({ ...delivery, url });
     }
     for (const url of ["http://example.org/x", "HTTPS://a.example/x", "https:/a.example/x", "https://user:pass@example.org/x", "https://example.org/has space", "https://a.io/" + "x".repeat(MAX_MEMO_URL - 12)]) {
       expect(isLegacyMemoUrl(url), url).toBe(false);
       expect(parseSpecMemo(`${SPEC_MEMO_PREFIX}${url}`)).toBeNull();
-      expect(parseDeliveryMemo(`${DELIVERY_MEMO_PREFIX}${INTENT}:${HASH}:${url}`)).toBeNull();
     }
     for (const url of [URL_OK, "http://127.0.0.1:8080/a:b?c=d#e", "https://a.example"]) {
       expect(isMemoUrl(url), url).toBe(true);
@@ -125,7 +110,6 @@ describe("spec and delivery memos", () => {
       expect(isLegacyMemoUrl(url), url).toBe(false);
       expect(isMemoUrl(url), url).toBe(false);
       expect(parseSpecMemo(`${SPEC_MEMO_PREFIX}${url}`)).toBeNull();
-      expect(parseDeliveryMemo(`${DELIVERY_MEMO_PREFIX}${INTENT}:${HASH}:${url}`)).toBeNull();
     }
   });
 
@@ -149,40 +133,19 @@ describe("spec and delivery memos", () => {
     expect(MEMO_URL_RULE).toContain("http on localhost, 127.0.0.1 or [::1]");
   });
 
-  it("refuse to build a delivery with a bad intent or sha256", () => {
-    for (const sha256 of ["", "AB".repeat(32), "ab".repeat(31), "ab".repeat(33), `${"ab".repeat(31)}zz`]) {
-      expect(() => deliveryMemo({ ...delivery, sha256 })).toThrow(RangeError);
-    }
-    for (const intent of ["", "x", "0OIl".repeat(11), `${INTENT}1`]) {
-      expect(() => deliveryMemo({ ...delivery, intent: intent as typeof INTENT })).toThrow(RangeError);
-    }
-  });
-
-  it("parse nothing malformed, including the release receipt memo and each other's memos", () => {
+  it("parse nothing malformed, including the release receipt memo", () => {
     for (const text of [
       "",
       SPEC_MEMO_PREFIX,
-      DELIVERY_MEMO_PREFIX,
       `delivery sha256:${HASH}`,
-      `${DELIVERY_MEMO_PREFIX}x:y:z`,
       `${SPEC_MEMO_PREFIX}has space`,
       ` ${specMemo(URL_OK)}`,
       `${specMemo(URL_OK)} `,
       specMemo(URL_OK).toUpperCase(),
-      `${DELIVERY_MEMO_PREFIX}${INTENT}:${HASH.toUpperCase()}:${URL_OK}`,
-      `${DELIVERY_MEMO_PREFIX}${INTENT}:${HASH}${URL_OK}`,
-      `${DELIVERY_MEMO_PREFIX}${INTENT}:${HASH}:`,
-      `${DELIVERY_MEMO_PREFIX}${INTENT}${HASH}:${URL_OK}`,
-      `${DELIVERY_MEMO_PREFIX}:${HASH}:${URL_OK}`,
-      `${DELIVERY_MEMO_PREFIX}${INTENT}:${HASH}:${URL_OK}\n`,
-      `${DELIVERY_MEMO_PREFIX}${INTENT}:${HASH}:${URL_OK}${"x".repeat(MAX_DELIVERY_MEMO)}`,
       `${SPEC_MEMO_PREFIX}${URL_OK}${"x".repeat(MAX_MEMO_URL)}`,
     ]) {
       expect(parseSpecMemo(text), text).toBeNull();
-      expect(parseDeliveryMemo(text), text).toBeNull();
     }
-    expect(parseSpecMemo(deliveryMemo(delivery))).toBeNull();
-    expect(parseDeliveryMemo(specMemo(URL_OK))).toBeNull();
   });
 
   it("return null or a memo that rebuilds to the same text for any input, and never throw", () => {
@@ -194,14 +157,6 @@ describe("spec and delivery memos", () => {
         expect(parsed === null || !isMemoUrl(parsed.url) || specMemo(parsed.url) === text).toBe(true);
       }),
     );
-    fc.assert(
-      fc.property(fc.oneof(tail, tail.map((s) => `${DELIVERY_MEMO_PREFIX}${INTENT}:${HASH}:${s}`), tail.map((s) => `${DELIVERY_MEMO_PREFIX}${s}`)), (text) => {
-        const parsed = parseDeliveryMemo(text);
-        expect(parsed === null || `${DELIVERY_MEMO_PREFIX}${parsed.intent}:${parsed.sha256}:${parsed.url}` === text).toBe(true);
-        expect(parsed === null || !isMemoUrl(parsed.url) || deliveryMemo(parsed) === text).toBe(true);
-        expect(parsed === null || text.length <= MAX_DELIVERY_MEMO).toBe(true);
-      }),
-    );
   });
 
   it("record a release's delivered sha256 as the exact text the wallet release writes, and read nothing else", () => {
@@ -209,7 +164,7 @@ describe("spec and delivery memos", () => {
     expect(releaseMemo(HASH)).toBe(`delivery sha256:${HASH}`);
     expect(parseReleaseMemo(releaseMemo(HASH))).toBe(HASH);
     expect(() => releaseMemo(HASH.toUpperCase())).toThrow(RangeError);
-    for (const text of [`delivery sha256:${HASH.toUpperCase()}`, `delivery sha256:${HASH} `, `delivery sha256:${HASH.slice(1)}`, deliveryMemo(delivery), ""]) {
+    for (const text of [`delivery sha256:${HASH.toUpperCase()}`, `delivery sha256:${HASH} `, `delivery sha256:${HASH.slice(1)}`, specMemo(URL_OK), ""]) {
       expect(parseReleaseMemo(text), text).toBeNull();
     }
   });

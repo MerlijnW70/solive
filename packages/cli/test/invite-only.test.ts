@@ -7,13 +7,14 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
-import { deliveryMemo, DEVNET_TEST_MINT, Kind, NATIVE_MINT, seal, specMemo } from "@intent-engine/core";
+import { DEVNET_TEST_MINT, Kind, NATIVE_MINT, seal, specMemo } from "@intent-engine/core";
 import { createClient } from "@intent-engine/client";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { SERVER_PROBLEMS } from "../src/agent/problems.js";
 import { notInvited } from "../src/invites.js";
 import { jobClosed } from "../src/sealed-commands.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
+import { sealedDelivery } from "./announce.js";
 import { cli, creation, funded, h, NOW, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown>;
@@ -84,7 +85,7 @@ describe("an invite-only job through MCP", () => {
       value: { code: "NotInvited", retryable: SERVER_PROBLEMS.NotInvited.retryable, hint: notInvited(stranger, intent) },
     });
     const work = sha(COUNT);
-    h.engineLog.unshift({ signature: "announced", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [deliveryMemo({ intent, sha256: work, url: "https://example.org/count.sealed" })], feePayer: worker });
+    h.engineLog.unshift({ signature: "announced", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [await sealedDelivery(intent, worker, work, "https://example.org/count.sealed", [owner])], feePayer: worker });
     const shown = await call(client, "wallet_attest", { ...release, pay_to: worker, delivered_sha256: work });
     expect(shown.error, JSON.stringify(shown.value)).toBe(false);
     expect(shown.value).toMatchObject({ intent, pay_to: worker, sent: false });
@@ -120,7 +121,7 @@ describe("judging an invite-only job", () => {
     const deliveredBy = async (worker: Address, invited: Address[]) => {
       h.specPages.set(SPEC_URL, await seal(new TextEncoder().encode(SPEC), invited));
       h.engineLog = [
-        { signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [deliveryMemo({ intent, sha256: sha(COUNT), url: "https://example.org/count.sealed" })], feePayer: worker },
+        { signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [await sealedDelivery(intent, worker, sha(COUNT), "https://example.org/count.sealed", [judge.address])], feePayer: worker },
         { ...creation(intent), memos: [specMemo(SPEC_URL)] },
       ];
       return cli(judging, { "judge.json": judge });

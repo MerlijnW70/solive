@@ -12,7 +12,7 @@ import {
   sortMembers,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import { budgeted, createClient, NotSettleable, PACKET_DATA_SIZE, transactionBytes, VoteRejected } from "../src/index.js";
+import { budgeted, commitmentOf, createClient, NotSettleable, PACKET_DATA_SIZE, transactionBytes, VoteRejected } from "../src/index.js";
 import { svmTransport } from "../src/svm.js";
 import { FEE_BPS, world } from "./svm.js";
 
@@ -131,8 +131,8 @@ describe("a committee judges a proof escrow", () => {
     const worker = await fresh();
     const [intent] = await findIntentPda({ owner: owner.address, nonce });
     const sha256 = "cd".repeat(32);
-    await client.deliver({ worker, intent, sha256, url: "https://example.org/work", version: 1 });
-    expect(await client.deliveries({ judge: created.committee, intent })).toMatchObject([{ intent, worker: worker.address, sha256 }]);
+    await client.deliver({ worker, intent, sha256, url: "https://example.org/work" });
+    expect(await client.deliveries({ judge: created.committee, intent })).toMatchObject([{ intent, worker: worker.address, commitment: commitmentOf(intent, worker.address, sha256) }]);
   });
 
   it("sends only the threshold's votes, and every transaction fits a packet", async () => {

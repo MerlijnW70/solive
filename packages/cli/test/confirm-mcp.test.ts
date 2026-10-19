@@ -4,10 +4,11 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
-import { deliveryMemo, DEVNET_TEST_MINT, IntentStatus, getIntentDecoder, NATIVE_MINT } from "@intent-engine/core";
+import { DEVNET_TEST_MINT, IntentStatus, getIntentDecoder, NATIVE_MINT } from "@intent-engine/core";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { SERVER_PROBLEMS } from "../src/agent/problems.js";
 import { EXIT_OK } from "../src/main.js";
+import { sealedDelivery } from "./announce.js";
 import { creation, h, world } from "./harness.js";
 import { announced, cliWith, disagreements, SECOND, secondNode, type SecondNode, UNREADABLE, WORK_URL } from "./confirm-node.js";
 
@@ -56,23 +57,24 @@ async function escrowed(more: string[]) {
   expect(escrow.error, JSON.stringify(escrow.value)).toBe(false);
   const intent = escrow.value["intent"] as Address;
   const worker = (await generateKeyPairSigner()).address;
-  h.engineLog = [announced("first", 5n, worker, deliveryMemo({ intent, sha256: WORK, url: WORK_URL })), creation(intent)];
+  h.engineLog = [announced("first", 5n, worker, await sealedDelivery(intent, worker, WORK, WORK_URL, [owner])), creation(intent)];
+  const copied = await sealedDelivery(intent, owner, WORK, WORK_URL, [owner]);
   const release = { owner, nonce: escrow.value["nonce"], pay_to: worker, delivered_sha256: WORK };
   const status = () => {
     const account = h.svm.getAccount(intent);
     return account.exists ? getIntentDecoder().decode(account.data).status : undefined;
   };
-  return { node, client, owner, intent, release, status };
+  return { node, client, owner, intent, release, status, copied };
 }
 
 describe("mcp --confirm-url", () => {
   it("lets wallet_attest release only when both nodes agree, refusing each disagreement before anything is sent", async () => {
-    const { node, client, owner, intent, release, status } = await escrowed(["--confirm-url", SECOND]);
+    const { node, client, owner, intent, release, status, copied } = await escrowed(["--confirm-url", SECOND]);
     const shown = await call(client, "wallet_attest", release);
     expect(shown.error, JSON.stringify(shown.value)).toBe(false);
     expect(node.reads).toBeGreaterThan(0);
     const approval = shown.value["approval"];
-    for (const { field, lie, second } of [...disagreements(intent, owner, WORK), UNREADABLE]) {
+    for (const { field, lie, second } of [...disagreements(intent, owner, copied), UNREADABLE]) {
       node.lie = lie;
       const wires = h.wires.length;
       for (const args of [release, { ...release, approval, send: true }]) {

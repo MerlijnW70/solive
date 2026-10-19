@@ -3,10 +3,11 @@ import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
-import { deliveryMemo, findAssociatedTokenAddress, signCommitteeVote, sortMembers } from "@intent-engine/core";
+import { findAssociatedTokenAddress, signCommitteeVote, sortMembers } from "@intent-engine/core";
 import { createClient } from "@intent-engine/client";
 import { MAINNET_GENESIS, WALLET_NOTICE } from "../../src/agent/wallet.js";
 import { EXIT_OK } from "../../src/main.js";
+import { sealedDelivery } from "../announce.js";
 import { ata, balance, cli, creation, funded, h, transport, world, type World } from "../harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
@@ -75,7 +76,7 @@ describe("a wallet server whose RPC turns to mainnet after a committee vote prev
     const intent = escrow["intent"] as Address;
     const worker = (await generateKeyPairSigner()).address;
     const work = "e7".repeat(32);
-    const memo = deliveryMemo({ intent, sha256: work, url: "https://" + "example.org/work" });
+    const memo = await sealedDelivery(intent, worker, work, "https://" + "example.org/work", members);
     h.engineLog = [{ signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [memo], feePayer: worker }, creation(intent)];
     return { other, ballot: { owner: wallet, nonce: escrow["nonce"] as string, pay_to: worker, result: "1", delivered_sha256: work } };
   }

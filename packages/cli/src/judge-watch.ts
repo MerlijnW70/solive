@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Address, Signature } from "@solana/kit";
 import { getIntentDecoder, INTENT_ENGINE_PROGRAM_ADDRESS, IntentStatus } from "@intent-engine/core";
-import { announcements, chainTime, type Delivery, deliveryRecord, type Transport } from "@intent-engine/client";
+import { chainTime, type Delivery, deliveryRecord, type Transport } from "@intent-engine/client";
 import { removeCopy } from "./artifact.js";
 import { holdSignals } from "./check-process.js";
 import { DeliveryUnfit, type Fetched, fetchDelivery } from "./delivery-fetch.js";
@@ -21,14 +21,8 @@ export const SEALED_ELSEWHERE = "is sealed to other wallets than this judge, so 
 
 const earlier = (a: Delivery, b: Delivery): number => (a.slot < b.slot ? -1 : a.slot > b.slot ? 1 : a.signature < b.signature ? -1 : a.signature > b.signature ? 1 : 0);
 
-const keyOf = (delivery: Delivery): string => (delivery.commitment === undefined ? delivery.sha256 : delivery.signature);
-
 function unjudged(deliveries: readonly Delivery[], seen: ReadonlySet<string>): Delivery[] {
-  const plain = announcements(deliveries)
-    .map(({ first }) => first)
-    .filter((first) => first.commitment === undefined);
-  const sealed = deliveries.filter(({ commitment }) => commitment !== undefined);
-  return [...plain, ...sealed].filter((delivery) => !seen.has(keyOf(delivery))).sort(earlier);
+  return deliveries.filter(({ signature }) => !seen.has(signature)).sort(earlier);
 }
 
 const line = (value: object): string => JSON.stringify(value, (_, v: unknown) => (typeof v === "bigint" ? v.toString() : v));
@@ -52,7 +46,7 @@ async function judgeDelivery(
 ): Promise<Watched | null | "skipped"> {
   const announced: Announced = { url: delivery.url, worker: delivery.worker, announced: delivery.signature };
   const failed = (error: Error): Watched => ({ ...announced, artifactSha256: delivery.sha256, verdict: "fail", reason: error.message });
-  if (delivery.commitment !== undefined && delivery.url === "") {
+  if (delivery.url === "") {
     return failed(new DeliveryUnfit(`announcement ${delivery.signature}`, SEALED_ELSEWHERE));
   }
   let fetched: Fetched;
@@ -127,7 +121,7 @@ export async function watchJudge(command: JudgeCommand, interval: number, runtim
         if (watched === null) {
           break;
         }
-        seen.add(keyOf(first));
+        seen.add(first.signature);
         if (watched === "skipped") {
           continue;
         }

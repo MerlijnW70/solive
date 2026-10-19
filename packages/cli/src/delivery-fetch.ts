@@ -101,11 +101,8 @@ export async function fetchDelivery(get: SpecFetch, transport: Transport, delive
     throw new DeliveryUnfit(delivery.url, `could not be fetched: ${error instanceof Error ? error.message : String(error)}`);
   }
   const sha256 = createHash("sha256").update(bytes).digest("hex");
-  if (delivery.commitment !== undefined && !announces(delivery, sha256)) {
+  if (!announces(delivery, sha256)) {
     throw new DeliveryUnfit(delivery.url, `has sha256 ${sha256}, which the commitment ${delivery.commitment} of ${delivery.worker} does not bind`);
-  }
-  if (delivery.commitment === undefined && sha256 !== delivery.sha256) {
-    throw new DeliveryUnfit(delivery.url, `has sha256 ${sha256}, not the announced ${delivery.sha256}`);
   }
   const root = await mkdtemp(join(tmpdir(), "judge-delivery-"));
   const path = join(root, fetchedName(url));

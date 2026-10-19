@@ -42,8 +42,6 @@ export {
   RELEASE_MARK,
 } from "./job-memos.js";
 export {
-  type Announcement,
-  announcements,
   announces,
   commitmentOf,
   type DeliverInput,

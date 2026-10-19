@@ -5,15 +5,16 @@ import { join } from "node:path";
 import { type Address, generateKeyPairSigner, type KeyPairSigner, type Signature } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { deliveryMemo, findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind } from "@intent-engine/core";
-import { createClient, type Delivery, DELIVERY_SCAN, DEVNET_GENESIS_HASH, type EngineTransaction, PLAIN_HTTP_ON_PUBLIC, type SpecFetch } from "@intent-engine/client";
+import { findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind } from "@intent-engine/core";
+import { commitmentOf, createClient, type Delivery, DELIVERY_SCAN, DEVNET_GENESIS_HASH, type EngineTransaction, PLAIN_HTTP_ON_PUBLIC, type SpecFetch } from "@intent-engine/client";
 import { MAX_ARTIFACT_BYTES } from "../src/artifact.js";
 import { DeliveryUnfit, FETCHED_NAME, fetchDelivery, fetchedName } from "../src/delivery-fetch.js";
 import { NOT_SENT } from "../src/flows.js";
 import { JUDGE_WATCH_INTERVAL, WATCH_TAKES_NO_ARTIFACT } from "../src/job-args.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main, nodeRuntime } from "../src/main.js";
 import type { Runtime } from "../src/runtime.js";
-import { balance, cli, creation, funded, h, NOW, runtime, setNow, transport, type World, world } from "./harness.js";
+import { keyed, sealedDelivery } from "./announce.js";
+import { balance, cli, creation, h, NOW, runtime, setNow, transport, type World, world } from "./harness.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
 const SPEC = `# Count words\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
@@ -26,7 +27,7 @@ type Job = { w: World; judge: KeyPairSigner; intent: Address; spec: string };
 
 async function job(): Promise<Job> {
   const w = await world();
-  const judge = await funded();
+  const judge = await keyed("judge.json");
   const dir = await mkdtemp(join(tmpdir(), "judge-watch-"));
   const spec = join(dir, "spec.md");
   await writeFile(spec, SPEC);
@@ -52,7 +53,7 @@ async function announce(j: Job, worker: Address, module: string, slot: bigint, s
     blockTime: null,
     failed: false,
     emitted: [],
-    memos: [deliveryMemo({ intent: j.intent, sha256: sha(module), url })],
+    memos: [await sealedDelivery(j.intent, worker, sha(module), url, [j.judge.address])],
     feePayer: worker,
   };
   h.engineLog = [delivered, ...h.engineLog];
@@ -142,11 +143,11 @@ describe("intent-engine judge --watch", () => {
     const j = await job();
     const [worker, copier] = [await generateKeyPairSigner(), await generateKeyPairSigner()];
     const url = await announce(j, worker.address, WRONG, 5n);
-    await announce(j, copier.address, WRONG, 6n);
+    const copied = await announce(j, copier.address, WRONG, 6n);
     const watched = await watch(j, judging(j, "--yes", "--interval", "5"), { rounds: 4 });
     expect(watched.code).toBe(EXIT_OK);
     expect(watched.sleeps).toEqual([5, 5, 5, 5]);
-    expect(watched.fetched).toEqual([url]);
+    expect(watched.fetched).toEqual([url, copied]);
     expect(watched.lines).toEqual([expect.objectContaining({ worker: worker.address, verdict: "fail" }), { stopped: "ended", intent: j.intent, judged: 1 }]);
     expect(status(j.intent)).toBe(IntentStatus.Open);
   }, 60_000);
@@ -177,18 +178,19 @@ describe("intent-engine judge --watch", () => {
     expect(await paidTo(j, worker.address)).toBe(-1n);
   }, 60_000);
 
-  it("fails work whose bytes do not hash to the announced sha256, never runs it and never fetches it again", async () => {
+  it("fails work whose bytes the announcement's commitment does not bind, never runs it and never fetches it again", async () => {
     const j = await job();
-    const url = await announce(j, (await generateKeyPairSigner()).address, CORRECT, 5n, WRONG);
+    const worker = (await generateKeyPairSigner()).address;
+    const url = await announce(j, worker, CORRECT, 5n, WRONG);
     const watched = await watch(j, judging(j, "--yes"));
     expect(watched.fetched).toEqual([url]);
     expect(watched.lines[0]).toEqual({
       url,
-      worker: expect.any(String),
+      worker,
       announced: "delivery-5",
-      artifactSha256: sha(CORRECT),
+      artifactSha256: "",
       verdict: "fail",
-      reason: `the work at ${url} has sha256 ${sha(WRONG)}, not the announced ${sha(CORRECT)}; it is not judged again`,
+      reason: `the work at ${url} has sha256 ${sha(WRONG)}, which the commitment ${commitmentOf(j.intent, worker, sha(CORRECT))} of ${worker} does not bind; it is not judged again`,
     });
     expect(status(j.intent)).toBe(IntentStatus.Open);
   }, 60_000);
@@ -267,7 +269,20 @@ describe("intent-engine judge --watch", () => {
   });
 });
 
-const delivery = (url: string, sha256: string): Delivery => ({ intent: "x" as Address, worker: "w" as Address, sha256, url, signature: "s" as Signature, slot: 1n, blockTime: null });
+const INTENT = "SysvarRent111111111111111111111111111111111" as Address;
+const WORKER = "SysvarC1ock11111111111111111111111111111111" as Address;
+
+const delivery = (url: string, sha256: string): Delivery => ({
+  intent: INTENT,
+  worker: WORKER,
+  sha256: "",
+  url,
+  signature: "s" as Signature,
+  slot: 1n,
+  blockTime: null,
+  commitment: commitmentOf(INTENT, WORKER, sha256),
+  sealed: "",
+});
 
 const serving = (response: () => Response | Promise<Response>): SpecFetch => async () => response();
 

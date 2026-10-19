@@ -4,15 +4,13 @@ import { getTransferSolInstruction } from "@solana-program/system";
 import {
   commitmentPreimage,
   deliveryCommitment,
-  deliveryMemo,
   deliveryMemoV2,
-  DELIVERY_SCAN_MARK,
+  DELIVERY_V2_MEMO_PREFIX,
   IntentStatus,
   isMemoUrl,
   isSha256Hex,
   MEMO_URL_RULE,
   openUrl,
-  parseDeliveryMemo,
   parseDeliveryMemoV2,
   sealUrl,
 } from "@intent-engine/core";
@@ -24,9 +22,9 @@ import { DELIVERY_PAGES, MEMOS_PER_TRANSACTION, scan } from "./job-scan.js";
 import { PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic } from "./job-specs.js";
 import type { Transport } from "./transport.js";
 
-export type DeliverInput = { worker: TransactionSigner; intent: Address; sha256: string; url: string; version?: 1 | 2 };
+export type DeliverInput = { worker: TransactionSigner; intent: Address; sha256: string; url: string };
 
-export type DeliveryPlan = { attestor: Address; instructions: Instruction[]; commitment?: string; sealedTo?: Address[] };
+export type DeliveryPlan = { attestor: Address; instructions: Instruction[]; commitment: string; sealedTo: Address[] };
 
 export type Delivery = {
   intent: Address;
@@ -36,13 +34,11 @@ export type Delivery = {
   signature: Signature;
   slot: bigint;
   blockTime: bigint | null;
-  commitment?: string;
-  sealed?: string;
+  commitment: string;
+  sealed: string;
 };
 
 export type DeliveryRecord = { deliveries: Delivery[]; complete: boolean; pages: number };
-
-export type Announcement = { sha256: string; first: Delivery; copies: number };
 
 export class NotDeliverable extends Error {
   readonly intent: Address;
@@ -57,9 +53,7 @@ export class NotDeliverable extends Error {
 export async function deliveryInstructions(transport: Transport, input: DeliverInput): Promise<DeliveryPlan> {
   const { worker, intent } = input;
   const sha256 = input.sha256.toLowerCase();
-  const sealed = input.version !== 1;
-  const memo = sealed ? null : deliveryMemo({ intent, sha256, url: input.url });
-  if (sealed && !isMemoUrl(input.url)) {
+  if (!isMemoUrl(input.url)) {
     throw new RangeError(`a delivery url must be ${MEMO_URL_RULE}`);
   }
   if (await plainHttpOnPublic(transport, input.url)) {
@@ -74,9 +68,6 @@ export async function deliveryInstructions(transport: Transport, input: DeliverI
   }
   const attestor = proof.params.attestor;
   const notify = getTransferSolInstruction({ source: worker, destination: attestor, amount: 0n });
-  if (memo !== null) {
-    return { attestor, instructions: [memoInstruction(worker, memo), notify] };
-  }
   const sealedTo = [...((await loadCommittee(transport, attestor))?.members ?? [attestor])];
   const commitment = await deliveryCommitment({ intent, worker: worker.address, sha256 });
   const blob = await sealUrl(input.url, sealedTo, intent);
@@ -116,17 +107,13 @@ export async function judgedDeliveries(
   pages: number,
   keypair?: Uint8Array,
 ): Promise<DeliveryRecord> {
-  const scanned = await scan(transport, judge, { floor, memo: DELIVERY_SCAN_MARK, pages, covered });
+  const scanned = await scan(transport, judge, { floor, memo: DELIVERY_V2_MEMO_PREFIX, pages, covered });
   const { transactions, complete } = scanned;
   const found = transactions.flatMap(({ signature, slot, blockTime, failed, memos, feePayer }) =>
     failed || feePayer === undefined
       ? []
       : (memos ?? []).slice(0, MEMOS_PER_TRANSACTION).flatMap((text): Delivery[] => {
           const at = { worker: feePayer, signature: signature as Signature, slot, blockTime };
-          const memo = parseDeliveryMemo(text);
-          if (memo !== null) {
-            return judged.has(memo.intent) ? [{ ...memo, ...at }] : [];
-          }
           const sealed = parseDeliveryMemoV2(text);
           return sealed === null || !judged.has(sealed.intent)
             ? []
@@ -138,9 +125,6 @@ export async function judgedDeliveries(
 }
 
 async function opened(delivery: Delivery, keypair: Uint8Array): Promise<Delivery> {
-  if (delivery.sealed === undefined) {
-    return delivery;
-  }
   const url = await openUrl(delivery.sealed, keypair, delivery.intent).catch(() => null);
   return url === null ? delivery : { ...delivery, url };
 }
@@ -156,9 +140,6 @@ export function commitmentOf(intent: Address, worker: Address, sha256: string): 
 }
 
 export function announces(delivery: Delivery, sha256: string): boolean {
-  if (delivery.commitment === undefined) {
-    return delivery.sha256 === sha256;
-  }
   return isSha256Hex(sha256) && delivery.commitment === commitmentOf(delivery.intent, delivery.worker, sha256);
 }
 
@@ -174,18 +155,4 @@ export function firstDelivery(deliveries: readonly Delivery[], sha256: string): 
     }
   }
   return first === null || first.sha256 === sha256 ? first : { ...first, sha256 };
-}
-
-export function announcements(deliveries: readonly Delivery[]): Announcement[] {
-  const hashes = [...new Set(deliveries.map(({ sha256 }) => sha256).filter((sha256) => sha256 !== ""))];
-  return hashes
-    .flatMap((sha256) => {
-      const first = firstDelivery(deliveries, sha256);
-      if (first === null) {
-        return [];
-      }
-      const others = new Set(deliveries.filter((d) => announces(d, sha256) && d.worker !== first.worker).map(({ worker }) => worker));
-      return [{ sha256, first, copies: others.size }];
-    })
-    .sort((a, b) => (earlier(a.first, b.first) ? -1 : earlier(b.first, a.first) ? 1 : 0));
 }

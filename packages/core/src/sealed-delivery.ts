@@ -5,7 +5,6 @@ import { isMemoUrl, isSha256Hex, MAX_MEMO_URL, MEMO_URL_RULE } from "./memo.js";
 import { SealedError, wrapKey, x25519PublicOf, x25519SecretOf } from "./sealed.js";
 
 export const DELIVERY_V2_MEMO_PREFIX = `${PRODUCT_SLUG}-delivery2:`;
-export const DELIVERY_SCAN_MARK = `${PRODUCT_SLUG}-delivery`;
 export const COMMITMENT_TAG = `${PRODUCT_SLUG}-delivery-v2`;
 export const SEALED_URL_VERSION = 1;
 export const MAX_DELIVERY_V2_MEMO = 960;

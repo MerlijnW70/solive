@@ -6,12 +6,13 @@ import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { deliveryMemo, Kind } from "@intent-engine/core";
+import { Kind } from "@intent-engine/core";
 import { createClient, type EngineTransaction } from "@intent-engine/client";
 import { NODE_ENGINE } from "../../src/node-judge.js";
 import { SANDBOX_IMAGE } from "../../src/sandbox.js";
 import { casesOf } from "../../src/viper.js";
 import { DOCKER_TEST } from "../docker-switch.js";
+import { sealedDelivery } from "../announce.js";
 import { cli, creation, funded, h, NOW, transport, type World, world } from "../harness.js";
 
 const DELIVERY = [
@@ -50,7 +51,7 @@ async function job(): Promise<Job> {
     blockTime: null,
     failed: false,
     emitted: [],
-    memos: [deliveryMemo({ intent, sha256: sha(DELIVERY), url: "https://example.org/" + NAME })],
+    memos: [await sealedDelivery(intent, worker.address, sha(DELIVERY), "https://example.org/" + NAME, [judge.address])],
     feePayer: worker.address,
   };
   h.engineLog = [delivered, creation(intent)];

@@ -7,13 +7,14 @@ import { fileURLToPath } from "node:url";
 import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { beforeEach, describe, expect, it } from "vitest";
-import { deliveryMemo, findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind } from "@intent-engine/core";
+import { findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind } from "@intent-engine/core";
 import { createClient, type EngineTransaction } from "@intent-engine/client";
 import { ENV_KEYPAIR } from "../src/args.js";
 import { NOT_SENT } from "../src/flows.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { sandboxOnly, VIPER_TAKES_NO_RUN } from "../src/sandbox.js";
 import { casesMissing, DEFAULT_HEAP, DEFAULT_STEPS, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "../src/viper.js";
+import { sealedDelivery } from "./announce.js";
 import { balance, cli, creation, funded, h, NOW, transport, type World, world } from "./harness.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one"], "expected": 1}, {"args": ["one\\ttwo\\u3000three"], "expected": 3}]}';
@@ -44,7 +45,7 @@ async function job(module: string, specText = SPEC): Promise<Job> {
     blockTime: null,
     failed: false,
     emitted: [],
-    memos: [deliveryMemo({ intent, sha256, url: "https://example.org/count.mjs" })],
+    memos: [await sealedDelivery(intent, worker.address, sha256, "https://example.org/count.mjs", [judge.address])],
     feePayer: worker.address,
   };
   h.engineLog = [delivered, creation(intent)];

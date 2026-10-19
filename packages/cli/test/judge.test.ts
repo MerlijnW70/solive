@@ -10,8 +10,8 @@ import { getTransferSolInstruction } from "@solana-program/system";
 import { getCreateAssociatedTokenIdempotentInstructionAsync, getMintEncoder, getMintSize, getSyncNativeInstruction, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { TransactionMetadata } from "litesvm";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { decodeEvent, deliveryMemo, DEVNET_TEST_MINT, findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, manifestSha256, NATIVE_MINT, RELEASE_MEMO_PREFIX, releaseMemo } from "@intent-engine/core";
-import { createClient, DELIVERY_PAGES, DELIVERY_SCAN, type EngineTransaction, type ListedSignature, SIGNATURE_PAGE, type Transport } from "@intent-engine/client";
+import { decodeEvent, DEVNET_TEST_MINT, findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, manifestSha256, NATIVE_MINT, RELEASE_MEMO_PREFIX, releaseMemo } from "@intent-engine/core";
+import { commitmentOf, createClient, DELIVERY_PAGES, DELIVERY_SCAN, type EngineTransaction, type ListedSignature, SIGNATURE_PAGE, type Transport } from "@intent-engine/client";
 import { ENV_KEYPAIR, ENV_URL, JUDGE_TIMEOUT, MAX_JUDGE_TIMEOUT, RUN_NEEDED } from "../src/args.js";
 import { ATTEST_PAGES } from "../src/agent/wallet/delivery.js";
 import { MAX_DELIVERY_PAGES } from "../src/command-builders.js";
@@ -51,6 +51,7 @@ import {
   shareable,
 } from "../src/sandbox.js";
 import { DOCKER_TEST } from "./docker-switch.js";
+import { keyed, sealedDelivery } from "./announce.js";
 import { ata, balance, cli, creation, funded, h, NOW, send, transport, type World, world } from "./harness.js";
 
 const removal = vi.hoisted(() => ({ refused: false, retries: [] as (number | undefined)[] }));
@@ -94,19 +95,19 @@ const STARTUP_SECONDS = 3;
 
 type Job = { w: World; judge: KeyPairSigner; worker: KeyPairSigner; copier: KeyPairSigner; intent: Address; dir: string; spec: string; artifact: string; sha256: string };
 
-const announced = (intent: Address, by: Address, sha256: string, signature: string, slot: bigint, url = WORK_URL): EngineTransaction => ({
+const announced = async (intent: Address, by: Address, sha256: string, signature: string, slot: bigint, judge: Address, url = WORK_URL): Promise<EngineTransaction> => ({
   signature,
   slot,
   blockTime: null,
   failed: false,
   emitted: [],
-  memos: [deliveryMemo({ intent, sha256, url })],
+  memos: [await sealedDelivery(intent, by, sha256, url, [judge])],
   feePayer: by,
 });
 
 async function job(specText = SPEC, workSha256?: string): Promise<Job> {
   const w = await world();
-  const judge = await funded();
+  const judge = await keyed("judge.json");
   const worker = await generateKeyPairSigner();
   const copier = await generateKeyPairSigner();
   const dir = await mkdtemp(join(tmpdir(), "judge-"));
@@ -130,7 +131,7 @@ async function job(specText = SPEC, workSha256?: string): Promise<Job> {
   const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash, judgeFee: 0n } as const;
   const client = createClient({ url: "http://cluster", transport });
   const { intent } = await client.createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
-  h.engineLog = [announced(intent, copier.address, sha256, "copy", 9n, "https://example.org/stolen"), announced(intent, worker.address, sha256, "first", 5n), creation(intent)];
+  h.engineLog = [await announced(intent, copier.address, sha256, "copy", 9n, judge.address, "https://example.org/stolen"), await announced(intent, worker.address, sha256, "first", 5n, judge.address), creation(intent)];
   return { w, judge, worker, copier, intent, dir, spec, artifact, sha256 };
 }
 
@@ -268,7 +269,7 @@ describe("intent-engine judge", () => {
     const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 2n, maxResult: 5n, attestor: j.judge.address, specHash, judgeFee: 0n } as const;
     const client = createClient({ url: "http://cluster", transport });
     const { intent } = await client.createIntent({ signer: j.w.owner, params, inputMint: j.w.inputMint, outputMint: j.w.outputMint, nonce: 1n, expiresAt: NOW + 3_600n });
-    h.engineLog = [announced(intent, j.worker.address, j.sha256, "first-of-one", 5n), creation(intent)];
+    h.engineLog = [await announced(intent, j.worker.address, j.sha256, "first-of-one", 5n, j.judge.address), creation(intent)];
     const ran = join(j.dir, "ran");
     const run = `touch "${ran}"`;
     const onNonce = (...more: string[]) => {
@@ -305,7 +306,7 @@ describe("intent-engine judge", () => {
     const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 2n, maxResult: 5n, attestor: j.judge.address, specHash, judgeFee: 0n } as const;
     const client = createClient({ url: "http://cluster", transport });
     const { intent } = await client.createIntent({ signer: j.w.owner, params, inputMint: j.w.inputMint, outputMint: j.w.outputMint, nonce: 2n, expiresAt: NOW + 3_600n });
-    h.engineLog = [announced(intent, j.worker.address, j.sha256, "first-of-two", 5n), creation(intent)];
+    h.engineLog = [await announced(intent, j.worker.address, j.sha256, "first-of-two", 5n, j.judge.address), creation(intent)];
     const verdict = join(j.dir, "result.json");
     const args = judging(j, "true", "--result", "4", "--verdict", verdict, "--yes");
     args[args.indexOf("--nonce") + 1] = "2";
@@ -691,7 +692,7 @@ describe("intent-engine judge", () => {
     const foreign = await cli(judging(j, run), { "judge.json": stranger });
     expect(foreign.err).toContain(`names ${j.judge.address} as its judge, not ${stranger.address}`);
 
-    h.engineLog = [announced(j.intent, j.worker.address, "cd".repeat(32), "other", 2n), creation(j.intent)];
+    h.engineLog = [await announced(j.intent, j.worker.address, "cd".repeat(32), "other", 2n, j.judge.address), creation(j.intent)];
     const nobody = await cli(judging(j, run, "--yes"), keys);
     expect(nobody.code).toBe(EXIT_FAILED);
     expect(nobody.err).toContain(`nobody announced the artifact with sha256 ${j.sha256} for intent ${j.intent}`);
@@ -751,7 +752,7 @@ describe("intent-engine judge", () => {
     await writeFile(file, "42\n");
     const sha256 = createHash("sha256").update("42\n").digest("hex");
     expect(await artifactSha256(file)).toBe(sha256);
-    h.engineLog = [announced(j.intent, j.worker.address, sha256, "single", 3n), creation(j.intent)];
+    h.engineLog = [await announced(j.intent, j.worker.address, sha256, "single", 3n, j.judge.address), creation(j.intent)];
     const seen = join(j.dir, "seen");
     const check = `echo "$ARTIFACT_PATH" > "${seen}" && test "$ARTIFACT_SHA256" = ${sha256} && test "$ARTIFACT_PATH" != "${file}" && test "$(cat "$ARTIFACT_PATH")" = 42`;
     const run = await cli(judging({ ...j, artifact: file }, check), keys);
@@ -843,14 +844,21 @@ describe("intent-engine judge", () => {
     expect(await cli(judging(j, " "), keys)).toMatchObject({ code: EXIT_USAGE, err: RUN_NEEDED });
   });
 
-  it("lists the announced hashes of an escrow with their earliest announcer and how many copied them", async () => {
-    expect((await cli(["deliveries", "--attestor", j.judge.address, "--intent", j.intent], {})).json()).toEqual({
+  it("lists the announcements of an escrow with their announcer and commitment, and their urls only to a judge key", async () => {
+    const listed = [
+      { worker: j.copier.address, commitment: commitmentOf(j.intent, j.copier.address, j.sha256), signature: "copy", slot: "9" },
+      { worker: j.worker.address, commitment: commitmentOf(j.intent, j.worker.address, j.sha256), signature: "first", slot: "5" },
+    ];
+    expect((await cli(["deliveries", "--attestor", j.judge.address, "--intent", j.intent], {})).json()).toEqual({ intent: j.intent, complete: true, deliveries: listed });
+    expect((await cli(["deliveries", "--attestor", j.worker.address, "--intent", j.intent], {})).json()).toEqual({ intent: j.intent, complete: true, deliveries: [] });
+    expect((await cli(["deliveries", "--attestor", j.judge.address, "--intent", j.intent, "--judge-keypair", "judge.json"], {})).json()).toEqual({
       intent: j.intent,
       complete: true,
-      deliveries: [{ sha256: j.sha256, worker: j.worker.address, url: WORK_URL, signature: "first", slot: "5", copies: 1 }],
-      sealed: [],
+      deliveries: [
+        { ...listed[0], url: "https://example.org/stolen" },
+        { ...listed[1], url: WORK_URL },
+      ],
     });
-    expect((await cli(["deliveries", "--attestor", j.worker.address, "--intent", j.intent], {})).json()).toEqual({ intent: j.intent, complete: true, deliveries: [], sealed: [] });
   });
 
   it("judge refuses an incomplete delivery record", async () => {
@@ -879,7 +887,7 @@ describe("intent-engine judge", () => {
     const further = String(DELIVERY_PAGES + 1);
     expect((await cli(["deliveries", "--attestor", j.judge.address, "--intent", j.intent, "--max-pages", further], {})).json()).toMatchObject({
       complete: true,
-      deliveries: [{ worker: j.worker.address, signature: "first", copies: 1 }],
+      deliveries: [{ worker: j.copier.address, signature: "copy" }, { worker: j.worker.address, signature: "first" }],
     });
     const paid = await cli(judging(j, "true", "--max-pages", further, "--yes"), keys);
     expect([paid.code, paid.err]).toEqual([EXIT_OK, ""]);
@@ -1288,7 +1296,7 @@ describe("the judge guide", () => {
 
     expect(GUIDE).toContain("pass `--check check.sh --run \"bash check/check.sh\"` in place of the `--check` and `--run` of step 5");
     expect(outputs[0]).toMatchObject({ jobs: [{ intent: j.intent, owner: j.w.owner.address, nonce: "0", specUrl: null }] });
-    expect(outputs[1]).toMatchObject({ deliveries: [{ sha256: j.sha256, worker: j.worker.address, copies: 1 }] });
+    expect(outputs[1]).toMatchObject({ deliveries: [{ worker: j.copier.address }, { worker: j.worker.address, commitment: commitmentOf(j.intent, j.worker.address, j.sha256) }] });
     expect(outputs[2]).toMatchObject({ verdict: "pass", command: "node check/check.mjs", sandbox: "docker", payTo: j.worker.address, signature: null });
     expect(outputs[3]).toMatchObject({ verdict: "pass", payTo: j.worker.address, signature: expect.any(String) });
     expect(await paidTo(j, j.worker.address)).toBeGreaterThan(0n);
@@ -1353,7 +1361,7 @@ describe("the judge guide", () => {
     expect(params.exists).toBe(true);
 
     const sha256 = await artifactSha256(work);
-    h.engineLog = [announced(intent, worker.address, sha256, "first", 5n), creation(intent)];
+    h.engineLog = [await announced(intent, worker.address, sha256, "first", 5n, reader.address), creation(intent)];
     const vars = { PWD: dir, OWNER: found?.owner ?? "", NONCE: found?.nonce ?? "" };
     const judged = section("5. Judge and settle");
     const commands = linesOf("sh", judged);
