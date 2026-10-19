@@ -287,3 +287,5 @@ A tag `v<version>` on a commit whose `ci` run passed starts `.github/workflows/r
 The workflow holds no npm token: it signs in through npm trusted publishing. Each package must list this repository and `release.yml` as a trusted publisher on npmjs.com, and refuse publishing with tokens, before the gap in [T-51](threat-model.md) closes.
 
 To release, bump the versions as in a `Release x.y.z` commit, push it, wait for `ci`, then push the tag: `git tag v<version>` and `git push origin v<version>`.
+
+Before pushing the tag, build as in [Tools](#tools) and run `bash scripts/mcp-smoke.sh devnet <hirer key> <worker key> <spec url>` with two funded devnet keys and an https url serving any spec. It drives a hirer's and a worker's `intent-engine mcp --wallet` through one paid job of 0.01 SOL plus fees, previewing each step before it sends, and prints one line per step and the release signature. A failing step prints its name and the tool's problem; fix it before tagging.
