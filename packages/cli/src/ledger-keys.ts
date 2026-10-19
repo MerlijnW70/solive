@@ -21,11 +21,12 @@ export const LEDGER_COMMANDS = [
   "claims drop",
   "mandate grant",
   "mandate revoke",
+  "solver float",
 ];
 
 const DEVICE_COMMANDS = new Set(LEDGER_COMMANDS);
 
-const SPACED = /^(claims|committee|judge|mandate|profile|signed)-/;
+const SPACED = /^(claims|committee|judge|mandate|profile|signed|solver)-/;
 
 export function commandName(command: Command): string {
   const name = command.name === "flow" ? command.flow : command.name === "lookup" ? command.lookup : command.name;

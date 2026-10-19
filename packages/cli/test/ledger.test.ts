@@ -1,6 +1,15 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { type Address, getBase58Decoder, getBase64Encoder, getTransactionDecoder, lamports } from "@solana/kit";
+import {
+  type Address,
+  createKeyPairSignerFromPrivateKeyBytes,
+  generateKeyPairSigner,
+  getAddressEncoder,
+  getBase58Decoder,
+  getBase64Encoder,
+  getTransactionDecoder,
+  lamports,
+} from "@solana/kit";
 import { getTokenDecoder } from "@solana-program/token";
 import { beforeEach, describe, expect, it } from "vitest";
 import { findIntentPda, getIntentDecoder, IntentStatus } from "@intent-engine/core";
@@ -92,6 +101,20 @@ describe("signing with a Ledger", () => {
     expect(cancelled.json()).toMatchObject({ intent, sent: true, signature: cancelling.signatures[0] });
     expect(statusOf(intent)).toBe(IntentStatus.Cancelled);
     expect(balance(input)).toBe(1_000n);
+  });
+
+  it("approves a solver float with the device's signature", async () => {
+    const levels = [44, 501];
+    const delegate = (await generateKeyPairSigner()).address;
+    const floating = device(key, signing(levels, key));
+    const made = await run(["solver", "float", "--keypair", "usb://ledger", "--delegate", delegate, "--mint", w.inputMint, "--amount", "5", "--units", "raw", "--yes"], floating);
+    expect([made.code, made.err]).toEqual([EXIT_OK, ""]);
+    floating.store.ensureQueueEmpty();
+    expect(floating.paths).toEqual([levels]);
+    expect(lastWireSignature(key)).toBe(floating.signatures[0]);
+    const view = h.svm.getAccount(input);
+    const state = view.exists ? getTokenDecoder().decode(view.data) : null;
+    expect([state?.delegate, state?.delegatedAmount]).toEqual([{ __option: "Some", value: delegate }, 5n]);
   });
 
   it("each path form picks its derivation", async () => {

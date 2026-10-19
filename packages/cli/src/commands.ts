@@ -46,6 +46,7 @@ import { flowCommand } from "./flow-commands.js";
 import { addTo } from "./add-to.js";
 import { transactionSigner } from "./ledger-keys.js";
 import { judgeDigest } from "./judge-digest.js";
+import { floatCommand } from "./float-commands.js";
 
 export type { Runtime } from "./runtime.js";
 export { AUTHORITY_NEXT, configExists } from "./admin-commands.js";
@@ -240,6 +241,9 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       const addresses = await solverTableAccounts(command.solver, config.feeRecipient, mints);
       return { solver: command.solver, count: addresses.length, addresses, next: SOLVER_TABLE_NEXT };
     }
+    case "solver-float":
+    case "solver-float-show":
+      return floatCommand(command, runtime, transport);
     case "crank": {
       const cranker = await runtime.loadSigner(command.keypair);
       return crank(transport, cranker, command.dryRun, command.fundAccounts);

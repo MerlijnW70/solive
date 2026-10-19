@@ -1,6 +1,7 @@
 import type { App } from "./add-to.js";
 import type { Priority } from "./compute.js";
 import type { Sandbox } from "./sandbox.js";
+import type { Tokens } from "./arg-options.js";
 import type { Address } from "@solana/kit";
 import type { EconomicsSpec, ProfileInput } from "@intent-engine/core";
 
@@ -80,6 +81,7 @@ export type Command =
       jupiter: string | undefined;
       issue: IssueSpec[];
       inventory?: IssueSpec[];
+      inventoryOwner?: Address;
       jito: string | undefined;
       tipLamports: bigint;
       bundleSize?: number;
@@ -135,6 +137,8 @@ export type Command =
   | (Remote & { name: "follow"; limit: number; interval: number })
   | (Remote & { name: "treasury"; mints: Address[] | null; create: boolean; keypair: string | undefined; yes: boolean })
   | (Remote & { name: "solver-table"; solver: Address; mints: Address[] })
+  | (Keyed & { name: "solver-float"; yes: boolean; delegate: Address; mint: Address; amount: string | Tokens })
+  | (Remote & { name: "solver-float-show"; owner: Address; delegate: Address; mints: Address[] | null })
   | (Remote & { name: "monitor"; baseline: string; watch: MonitorSpec | null })
   | (Keyed & { name: "committee-create"; yes: boolean; members: Address[]; threshold: number; feeWallet: Address })
   | (Remote & { name: "committee-show"; committee: Address })

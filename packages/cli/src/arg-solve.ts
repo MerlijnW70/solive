@@ -1,11 +1,19 @@
 import { AUTO_PRICE_CAP } from "./compute.js";
 import type { Values } from "./arg-options.js";
-import { addressList, confirmUrlOf, https, parseAddress, parseBounded, parseMaxRent, parseSolCost, required, u64, UsageError } from "./arg-values.js";
+import { addressList, amountOf, confirmUrlOf, https, key, mintList, parseAddress, parseBounded, parseMaxRent, parseSolCost, required, u64, UsageError } from "./arg-values.js";
 import { market, profitTargets, solValues, solveFeeAboveCap } from "./command-builders.js";
 import type { Command, Remote } from "./command-types.js";
 import { DEFAULT_CONCURRENCY, DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST, MAX_BUNDLE, MAX_CONCURRENCY } from "@intent-engine/solver";
 
 export const BUNDLE_SIZE_NEEDS_JITO = "--bundle-size sets how many fills share one jito bundle and needs --jito";
+
+export const INVENTORY_OWNER_ALONE = "--inventory-owner fills only from that owner's tokens, so it needs --inventory and takes no --jupiter or --issue";
+
+export const SOLVER_NEEDS_FLOAT = "solver needs float or float show";
+
+export const FLOAT_SHOW_TAKES = "solver float show takes --owner, --delegate and --mints";
+
+export const FLOAT_TAKES = "solver float takes --keypair, --delegate, --mint and --amount";
 
 export const MAX_FOLLOW_INTERVAL = 3_600;
 export const WATCH_INTERVAL = 5;
@@ -31,11 +39,15 @@ export function solveOf(remote: Remote, values: Values): Command {
   if (remote.priority !== "auto" && remote.priority > AUTO_PRICE_CAP) {
     throw new UsageError(solveFeeAboveCap);
   }
+  if (values["inventory-owner"] !== undefined && (values.inventory === undefined || values.jupiter !== undefined || values.issue !== undefined)) {
+    throw new UsageError(INVENTORY_OWNER_ALONE);
+  }
   return {
     name: "solve",
     ...remote,
     keypair: required(values, "keypair"),
     ...market(values),
+    ...(values["inventory-owner"] === undefined ? {} : { inventoryOwner: key(values, "inventory-owner") }),
     jito: values.jito === undefined ? undefined : https(values.jito, "jito"),
     tipLamports,
     ...(values.jito === undefined ? {} : { bundleSize: parseBounded(values["bundle-size"] ?? String(MAX_BUNDLE), "bundle-size", MAX_BUNDLE, 1) }),
@@ -52,5 +64,35 @@ export function solveOf(remote: Remote, values: Values): Command {
     ...(values.watch === true ? { quoteTtl: parseBounded(values["quote-ttl"] ?? String(QUOTE_TTL), "quote-ttl", MAX_FOLLOW_INTERVAL) } : {}),
     ...(values.watch === true && values.stats === true ? { stats: true } : {}),
     ...confirmUrlOf(values),
+  };
+}
+
+export function solverOf(sub: string | undefined, third: string | undefined, remote: Remote, values: Values, keyed: boolean): Command {
+  if (sub !== "float" || (third !== undefined && third !== "show")) {
+    throw new UsageError(SOLVER_NEEDS_FLOAT);
+  }
+  if (third === "show") {
+    if (keyed || values.yes !== undefined || values.mint !== undefined || values.amount !== undefined || values.units !== undefined) {
+      throw new UsageError(FLOAT_SHOW_TAKES);
+    }
+    return {
+      name: "solver-float-show",
+      ...remote,
+      owner: key(values, "owner"),
+      delegate: key(values, "delegate"),
+      mints: values.mints === undefined ? null : mintList(values.mints),
+    };
+  }
+  if (values.owner !== undefined || values.mints !== undefined) {
+    throw new UsageError(FLOAT_TAKES);
+  }
+  return {
+    name: "solver-float",
+    ...remote,
+    keypair: required(values, "keypair"),
+    yes: values.yes === true,
+    delegate: key(values, "delegate"),
+    mint: key(values, "mint"),
+    amount: amountOf(values, "amount"),
   };
 }

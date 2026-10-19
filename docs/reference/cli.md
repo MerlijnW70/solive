@@ -3,14 +3,14 @@
 # CLI reference
 
 ```text
-usage: setup | add-to claude|codex | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge [digest] | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
+usage: setup | add-to claude|codex | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | solver float | solver float show | events | jobs | deliver | deliveries | receipt | record-delivery | judge [digest] | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
 ```
 
 Every command accepts `--output` and `--help`.
 
 `INTENT_ENGINE_KEYPAIR` fills in `--keypair` and `INTENT_ENGINE_URL` fills in `--url` when they are not given. `--url` takes an RPC URL or one of `localnet`, `devnet`, `testnet`, `mainnet-beta`.
 
-`--keypair` also takes a Ledger, as `usb://ledger`, `usb://ledger?key=<account>`, `usb://ledger?key=<account>/<change>`, for `create`, `cancel`, `expire`, `close`, `approve`, `revoke-approval`, `deliver`, `judge`, `committee release`, `signed prepare`, `advance-nonce`, `advance-epoch`, `claims take`, `claims drop`, `mandate grant`, `mandate revoke`; every other command refuses one and needs a key file.
+`--keypair` also takes a Ledger, as `usb://ledger`, `usb://ledger?key=<account>`, `usb://ledger?key=<account>/<change>`, for `create`, `cancel`, `expire`, `close`, `approve`, `revoke-approval`, `deliver`, `judge`, `committee release`, `signed prepare`, `advance-nonce`, `advance-epoch`, `claims take`, `claims drop`, `mandate grant`, `mandate revoke`, `solver float`; every other command refuses one and needs a key file.
 
 ## setup
 
@@ -215,10 +215,10 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--outp
 ## solve
 
 ```text
-solve --keypair <file> [--inventory <input mint>:<output mint>=<out>/<in>,...] [--jupiter <url> | --issue <input mint>:<output mint>=<out>/<in>,...] --min-profit <output mint=raw,...> [--sol-value <mint>=<raw>/<lamports>,...] [--target-profit <output mint=raw,...> [--patience <seconds>]] [--priority-fee <micro-lamports|auto>] [--max-fee-bps <n>] [--max-sol-cost <SOL>] [--max-rent <SOL>] [--slippage-bps <n>] [--jito <url> [--tip <lamports>] [--bundle-size <n>]] [--route-program <program the aggregator swaps through>] [--lookup-table <address,...>] [--concurrency <n>] [--watch [--interval <seconds>] [--quote-ttl <seconds>] [--stats]] [--confirm-url <cluster>]
+solve --keypair <file> [--inventory <input mint>:<output mint>=<out>/<in>,... [--inventory-owner <address>]] [--jupiter <url> | --issue <input mint>:<output mint>=<out>/<in>,...] --min-profit <output mint=raw,...> [--sol-value <mint>=<raw>/<lamports>,...] [--target-profit <output mint=raw,...> [--patience <seconds>]] [--priority-fee <micro-lamports|auto>] [--max-fee-bps <n>] [--max-sol-cost <SOL>] [--max-rent <SOL>] [--slippage-bps <n>] [--jito <url> [--tip <lamports>] [--bundle-size <n>]] [--route-program <program the aggregator swaps through>] [--lookup-table <address,...>] [--concurrency <n>] [--watch [--interval <seconds>] [--quote-ttl <seconds>] [--stats]] [--confirm-url <cluster>]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--jupiter`, `--issue`, `--inventory`, `--jito`, `--tip`, `--bundle-size`, `--min-profit`, `--target-profit`, `--patience`, `--sol-value`, `--max-fee-bps`, `--max-sol-cost`, `--max-rent`, `--slippage-bps`, `--route-program`, `--lookup-table`, `--concurrency`, `--watch`, `--interval`, `--quote-ttl`, `--stats`, `--confirm-url`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--jupiter`, `--issue`, `--inventory`, `--inventory-owner`, `--jito`, `--tip`, `--bundle-size`, `--min-profit`, `--target-profit`, `--patience`, `--sol-value`, `--max-fee-bps`, `--max-sol-cost`, `--max-rent`, `--slippage-bps`, `--route-program`, `--lookup-table`, `--concurrency`, `--watch`, `--interval`, `--quote-ttl`, `--stats`, `--confirm-url`, `--output`, `--help`
 
 ## solver-table
 
@@ -227,6 +227,14 @@ solver-table --solver <address> --mints <mint,...>
 ```
 
 Options: `--url`, `--solver`, `--mints`, `--output`, `--help`
+
+## solver
+
+```text
+solver float --keypair <owner file> --delegate <solver address> --mint <mint> --amount <amount> [--units tokens|raw] [--yes] | float show --owner <address> --delegate <solver address> [--mints <mint,...>]
+```
+
+Options for `float`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--delegate`, `--mint`, `--mints`, `--amount`, `--units`, `--output`, `--help`
 
 ## lower-pause
 

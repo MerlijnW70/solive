@@ -1,10 +1,34 @@
-import type { Address } from "@solana/kit";
+import { type Address, getAddressDecoder } from "@solana/kit";
 import type { IssueRoute } from "./issue.js";
 import type { Pricer, Quote, QuoteRequest } from "./market.js";
 
 export type Holdings = (mint: Address) => Promise<bigint>;
 
 export type Stock = Map<Address, { start: bigint; spent: bigint }>;
+
+export const TOKEN_ACCOUNT_BASE = 165;
+
+const DELEGATE_TAG = 72;
+
+const DELEGATE_KEY = 76;
+
+const DELEGATED_AMOUNT = 121;
+
+export function allowanceOf(data: Uint8Array | null, delegate: Address): bigint {
+  if (data === null || data.length < TOKEN_ACCOUNT_BASE) {
+    return 0n;
+  }
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  if (view.getUint32(DELEGATE_TAG, true) !== 1) {
+    return 0n;
+  }
+  if (getAddressDecoder().decode(data.subarray(DELEGATE_KEY, DELEGATE_KEY + 32)) !== delegate) {
+    return 0n;
+  }
+  return view.getBigUint64(DELEGATED_AMOUNT, true);
+}
+
+export const spendable = (balance: bigint, allowance: bigint): bigint => (allowance < balance ? allowance : balance);
 
 export function stockLeft(stock: Stock, account: Address, live: bigint): bigint {
   const held = stock.get(account);

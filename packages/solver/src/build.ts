@@ -51,6 +51,7 @@ export type FillContext = {
   createSolverInput: boolean;
   createSolverOutput: boolean;
   tip: Tip | null;
+  inventoryOwner?: Address;
 };
 
 export async function payoutAccounts(
@@ -74,7 +75,7 @@ export async function payoutAccounts(
 
 export async function fillInstructions(plan: Plan, ctx: FillContext): Promise<Instruction[]> {
   const intent = plan.intent;
-  const owner = ctx.solver.address;
+  const owner = ctx.inventoryOwner ?? ctx.solver.address;
   const solverInput = await findAssociatedTokenAddress({
     owner,
     mint: intent.inputMint,

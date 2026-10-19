@@ -78,6 +78,10 @@ Add `--stats` to print one JSON line after every full scan, counting the orders,
 
 `--confirm-url <rpc>`, in the forms `--url` takes, rereads the intent, its vault and the solver's two token accounts from a second RPC node before each fill. When the two nodes disagree, or the second cannot be read, the fill is skipped and its reason names what differed.
 
+`--inventory-owner <address>` fills from another key's tokens, so a stolen solver key can spend only the allowance that owner gave it. The owner sets it with `intent-engine solver float --keypair <owner file or Ledger> --delegate <solver address> --mint <mint> --amount <amount> --yes`, and `solver float show --owner <address> --delegate <solver address>` prints what each mint has left. It needs `--inventory` and takes no `--jupiter` or `--issue`.
+
+The solver fills from and is paid into the owner's token accounts, and skips a fill the allowance left cannot cover. It reports `low` when what is left cannot cover another fill as large as the largest it was asked to make.
+
 `--concurrency` sets how many orders it plans at once (default 4, from 1 to 32). Fills are still simulated and sent one at a time, most profitable first.
 
 With `--jito`, a solve sends its fills together in Jito bundles, and only the last transaction of each bundle pays the `--tip`. `--bundle-size` sets how many fills share a bundle (default 5, from 1 to 5).

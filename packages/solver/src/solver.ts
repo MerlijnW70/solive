@@ -27,6 +27,7 @@ import { netShort, solValueFits } from "./net.js";
 import { freshly, fromCache } from "./quote-cache.js";
 import { spend, type Stock, stockLeft } from "./inventory.js";
 import { type Hold, unheld } from "./holds.js";
+import { ALLOWANCE_SPENT, asked, type Floats, floatFits, INVENTORY_ONLY, type Low, liveStock, lowOf } from "./float.js";
 
 export { BACKOFF_MAX_INTERVALS, type Backoff, backingOff, backoff } from "./backoff.js";
 export {
@@ -58,6 +59,7 @@ export type Chain = {
   blockhash(): Promise<{ blockhash: Blockhash; lastValidBlockHeight: bigint }>;
   tokenAmount(address: Address): Promise<bigint>;
   mintData?(mint: Address): Promise<Uint8Array | null>;
+  allowance?(account: Address, delegate: Address): Promise<bigint>;
 };
 
 export type Simulated = { err: string | null; unitsConsumed: bigint | null; balances: readonly (bigint | null)[] };
@@ -68,6 +70,7 @@ export type SolverOptions = {
   chain: Chain;
   pricer: Pricer;
   solver: TransactionSigner;
+  inventoryOwner?: Address;
   strategy: Strategy;
   tip: Tip | null;
   lookupTables?: readonly Address[];
@@ -90,6 +93,7 @@ export type Report = {
   sent: { intent: Address; profit: bigint; cost: bigint; signature: string; rent?: bigint; holds?: Hold }[];
   skipped: { intent: Address; reason: string; rent?: bigint }[];
   failed: { intent: Address; error: string }[];
+  low?: Low[];
 };
 
 export const SIMULATION_REFUSED = "the fill failed in simulation, so it was not sent";
@@ -162,16 +166,9 @@ async function planOrder(o: SolverOptions, config: Config, now: bigint, address:
     const missing = payouts.filter((_, i) => !found[i]).map((payout) => payout.name);
     return missing.length === 0 ? null : `no ${missing.join(" or ")} account to pay into`;
   };
-  const solverInput = await findAssociatedTokenAddress({
-    owner: o.solver.address,
-    mint: intent.inputMint,
-    tokenProgram: inputTokenProgram,
-  });
-  const solverOutput = await findAssociatedTokenAddress({
-    owner: o.solver.address,
-    mint: intent.outputMint,
-    tokenProgram: outputTokenProgram,
-  });
+  const holder = o.inventoryOwner ?? o.solver.address;
+  const solverInput = await findAssociatedTokenAddress({ owner: holder, mint: intent.inputMint, tokenProgram: inputTokenProgram });
+  const solverOutput = await findAssociatedTokenAddress({ owner: holder, mint: intent.outputMint, tokenProgram: outputTokenProgram });
   const [inputExists, outputExists, latest] = await Promise.all([
     o.chain.exists(solverInput),
     o.chain.exists(solverOutput),
@@ -187,6 +184,7 @@ async function planOrder(o: SolverOptions, config: Config, now: bigint, address:
     createSolverInput: !inputExists,
     createSolverOutput: !outputExists,
     tip: o.tip,
+    ...(o.inventoryOwner === undefined ? {} : { inventoryOwner: o.inventoryOwner }),
   };
   o.planned?.(address);
   let size: { bytes: number | null; accounts: number } = { bytes: null, accounts: 0 };
@@ -201,6 +199,9 @@ async function planOrder(o: SolverOptions, config: Config, now: bigint, address:
       return skipped(address, decision.reason);
     }
     const plan = decision.plan;
+    if (o.inventoryOwner !== undefined && (plan.route.inventory !== true || plan.arbitrage !== null)) {
+      return skipped(address, INVENTORY_ONLY);
+    }
     const context = { ...draft, unitPrice: await o.unitPrice(await fillInstructions(plan, draft)) };
     const instructions = await fillInstructions(plan, context);
     const accounts = accountsOf(instructions, o.solver.address);
@@ -233,14 +234,17 @@ async function checkOrder(
   mintData: (mint: Address) => Promise<Uint8Array | null>,
   ready: Ready,
   stock: Stock,
+  floats?: Floats,
 ): Promise<Outcome | Checked> {
   const { plan, context, tables, probe, latest, solverInput, solverOutput } = ready;
   const address = plan.address;
   const before = await Promise.all([o.chain.tokenAmount(solverInput), o.chain.tokenAmount(solverOutput)]);
-  const free = unheld(before[1] ?? 0n, o.held?.(solverOutput) ?? 0n);
+  const live = await liveStock(o.chain, o.inventoryOwner, o.solver.address, solverOutput, before[1] ?? 0n);
+  const free = unheld(live, o.held?.(solverOutput) ?? 0n);
   const left = stockLeft(stock, solverOutput, free);
+  asked(floats, solverOutput, free, plan.required);
   if (plan.route.inventory === true && left < plan.required) {
-    return skipped(address, `${INVENTORY_SPENT}: ${left} left, ${plan.required} needed`);
+    return skipped(address, `${o.inventoryOwner === undefined ? INVENTORY_SPENT : ALLOWANCE_SPENT}: ${left} left, ${plan.required} needed`);
   }
   const disagreed = await o.confirm?.(address, [solverInput, solverOutput]);
   if (disagreed !== undefined && disagreed !== null) {
@@ -307,8 +311,9 @@ async function fillOrder(
   mintData: (mint: Address) => Promise<Uint8Array | null>,
   ready: Ready,
   stock: Stock,
+  floats?: Floats,
 ): Promise<Outcome> {
-  const checked = await checkOrder(o, caps, mintData, ready, stock);
+  const checked = await checkOrder(o, caps, mintData, ready, stock, floats);
   if (checked.kind !== "checked") {
     return checked;
   }
@@ -324,12 +329,13 @@ async function queueOrder(
   mintData: (mint: Address) => Promise<Uint8Array | null>,
   ready: Ready,
   stock: Stock,
+  floats?: Floats,
 ): Promise<Outcome | Checked> {
   const bare = await untipped(o, ready);
   if (bare.kind !== "ready") {
     return bare;
   }
-  const checked = await checkOrder(o, caps, mintData, bare.ready, stock);
+  const checked = await checkOrder(o, caps, mintData, bare.ready, stock, floats);
   if (checked.kind === "checked") {
     checked.spend();
   }
@@ -348,6 +354,10 @@ export async function tick(o: SolverOptions): Promise<Report> {
   const invalid = solValueFits(o.strategy.solValue);
   if (invalid !== null) {
     throw new RangeError(invalid);
+  }
+  const unfloated = floatFits(o.inventoryOwner, o.solver.address, o.chain);
+  if (unfloated !== null) {
+    throw new RangeError(unfloated);
   }
   const [config, now, intents] = await Promise.all([o.chain.config(), o.chain.now(), o.chain.intents()]);
   const caps = { cost: o.maxSolCost ?? DEFAULT_MAX_SOL_COST, rent: o.maxRent ?? DEFAULT_MAX_RENT };
@@ -398,6 +408,7 @@ export async function tick(o: SolverOptions): Promise<Report> {
   const planned = readied.filter((entry) => entry !== undefined).sort((a, b) => firstToSend(a.ready.plan, b.ready.plan));
   const filling = new Set<Address>();
   const stock: Stock = new Map();
+  const floats: Floats | undefined = o.inventoryOwner === undefined ? undefined : new Map();
   const queue: { index: number; ready: Ready; wire: Base64EncodedWireTransaction; entry: Checked["entry"]; holds?: Hold }[] = [];
   let halted: string | null = null;
   for (const { index, ready } of planned) {
@@ -413,9 +424,9 @@ export async function tick(o: SolverOptions): Promise<Report> {
     filling.add(address);
     try {
       if (o.sendBundle === undefined) {
-        outcomes[index] = await fillOrder(o, caps, mintData, ready, stock);
+        outcomes[index] = await fillOrder(o, caps, mintData, ready, stock, floats);
       } else {
-        const checked = await queueOrder(o, caps, mintData, ready, stock);
+        const checked = await queueOrder(o, caps, mintData, ready, stock, floats);
         if (checked.kind === "checked") {
           queue.push({ index, ready, wire: checked.wire, entry: checked.entry, ...(checked.holds === undefined ? {} : { holds: checked.holds }) });
         } else {
@@ -467,6 +478,7 @@ export async function tick(o: SolverOptions): Promise<Report> {
       report[outcome.kind].push(outcome.entry);
     }
   }
+  Object.assign(report, lowOf(floats, stock));
   if (o.backoff !== undefined) {
     const known = new Map(intents.map(({ address, intent }) => [address, intent]));
     for (const { intent } of report.failed) {

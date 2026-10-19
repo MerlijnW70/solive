@@ -9,6 +9,7 @@ import {
   type SolverOptions,
   decodeLookupTable,
   firstPricer,
+  allowanceOf,
   heldBy,
   inventoryPricer,
   landings,
@@ -182,6 +183,9 @@ export async function watchSolveWith(
             ...(order === undefined ? {} : { intent: order }),
           });
         }
+        if (report.low !== undefined) {
+          emit({ at: now, low: report.low });
+        }
         if (filled.length + sent.length + failed.length + lost.length > 0) {
           emit({ at: now, scan: full ? "full" : "changed", ms: Math.round(performance.now() - began), filled, sent, failed: [...lost, ...failed] });
           acted += filled.length + sent.length;
@@ -231,6 +235,7 @@ export async function solverOptions(
     mintData: async (mint) => (await transport.getAccount(mint))?.data ?? null,
     exists: async (address) => (await createdAccount(transport, address)) !== null,
     tokenAmount: async (address) => tokenAmountOf((await transport.getAccount(address))?.data ?? null) ?? 0n,
+    allowance: async (address, delegate) => allowanceOf((await transport.getAccount(address))?.data ?? null, delegate),
     lookupTables: async (addresses) => {
       const tables: Record<Address, Address[]> = {};
       for (const address of addresses) {
@@ -250,8 +255,9 @@ export async function solverOptions(
   const bundle = command.jito === undefined ? undefined : jitoBundles({ url: command.jito, fetch: runtime.fetch });
   const priced = (routes: readonly IssueSpec[]) =>
     Promise.all(routes.map(async (route) => ({ ...route, outputTokenProgram: await tokenProgramOf(transport, route.outputMint) })));
+  const owner = command.inventoryOwner;
   const held = async (mint: Address): Promise<bigint> => {
-    const token = await findAssociatedTokenAddress({ owner: solver.address, mint, tokenProgram: await tokenProgramOf(transport, mint) });
+    const token = await findAssociatedTokenAddress({ owner: owner ?? solver.address, mint, tokenProgram: await tokenProgramOf(transport, mint) });
     return unheld(tokenAmountOf((await transport.getAccount(token))?.data ?? null) ?? 0n, heldBack?.(token) ?? 0n);
   };
   const stocked = command.inventory ?? [];
@@ -275,6 +281,7 @@ export async function solverOptions(
     chain,
     pricer: firstPricer(...[inventory, routed].filter((pricer): pricer is Pricer => pricer !== null)),
     solver,
+    ...(owner === undefined ? {} : { inventoryOwner: owner }),
     strategy: {
       minProfit: command.minProfit,
       maxFeeBps: command.maxFeeBps,

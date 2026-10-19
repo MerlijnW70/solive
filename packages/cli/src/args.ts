@@ -3,7 +3,7 @@ import { ADD_TO_APPS } from "./add-to.js";
 import { MAX_SUBMIT_WITHIN } from "./agent/signed.js";
 import { CLUSTERS, clusterUrl, DEFAULT_URL, ENV_KEYPAIR, ENV_URL, SAVED_CONFIRM_URL, WALLET_NOT_MAINNET } from "./clusters.js";
 import { adminOf } from "./arg-admin.js";
-import { MAX_FOLLOW_INTERVAL, solveOf } from "./arg-solve.js";
+import { MAX_FOLLOW_INTERVAL, solveOf, solverOf } from "./arg-solve.js";
 import type { Values } from "./arg-options.js";
 import {
   addressList,
@@ -43,7 +43,16 @@ import { jobArgsOf } from "./job-args.js";
 import type { Command, Env } from "./command-types.js";
 
 export type { Authority, Command, Env, WalletLimits } from "./command-types.js";
-export { BUNDLE_SIZE_NEEDS_JITO, MAX_FOLLOW_INTERVAL, QUOTE_TTL, WATCH_INTERVAL } from "./arg-solve.js";
+export {
+  BUNDLE_SIZE_NEEDS_JITO,
+  FLOAT_SHOW_TAKES,
+  FLOAT_TAKES,
+  INVENTORY_OWNER_ALONE,
+  MAX_FOLLOW_INTERVAL,
+  QUOTE_TTL,
+  SOLVER_NEEDS_FLOAT,
+  WATCH_INTERVAL,
+} from "./arg-solve.js";
 export { ACCEPTS, GLOBAL_OPTIONS, type Side, SUB_ACCEPTS, TOKEN_SIDES, type Tokens } from "./arg-options.js";
 export { COMMANDS, SHAPES, USAGE, usageOf } from "./arg-usage.js";
 export {
@@ -136,7 +145,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
   if (values["confirm-url"] === undefined && confirmDefault !== undefined && takesSavedConfirm(verb, sub)) {
     values["confirm-url"] = confirmDefault;
   }
-  const nested = verb === "mandate" || verb === "signed";
+  const nested = verb === "mandate" || verb === "signed" || verb === "solver";
   if (extra !== undefined || (!nested && third !== undefined)) {
     throw new UsageError(`unexpected argument ${nested ? extra : third}`);
   }
@@ -299,6 +308,8 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
     case "solver-table":
       noSub(sub);
       return { name: "solver-table", ...remote, solver: key(values, "solver"), mints: mintList(required(values, "mints")) };
+    case "solver":
+      return solverOf(sub, third, remote, values, parsed.values.keypair !== undefined);
     case "monitor":
       noSub(sub);
       return monitorOf(remote, values);
