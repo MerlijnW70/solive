@@ -8,8 +8,9 @@ use solana_instruction::Instruction;
 use solana_keypair::Keypair;
 use solana_signer::Signer;
 use svm_tests::{
-    cosign_batch_ix, engine_error_at, events, intent_pda, split_commit, split_digest, swap_spec,
-    vault_pda, Env, IntentSpec, Market, MintExt, TestResult, Trader, DOMAIN,
+    cosign_batch_ix, cosign_in_message, cosign_message, engine_error_at, events, intent_pda,
+    split_commit, split_digest, swap_spec, vault_pda, Env, IntentSpec, Market, MintExt, TestResult,
+    Trader, DOMAIN,
 };
 
 const FUNDED: u64 = 1_000;
@@ -140,8 +141,8 @@ fn a_collaborative_claim_rejects_a_split_a_co_author_did_not_sign() -> TestResul
 }
 
 #[test]
-fn a_split_is_rejected_unless_the_batch_is_exactly_the_co_authors_then_the_attestor() -> TestResult
-{
+fn a_split_is_rejected_unless_the_batch_is_exactly_the_co_authors_and_the_attestor_in_key_order(
+) -> TestResult {
     let (mut env, market, trader) = setup()?;
     let owner = trader.key.pubkey();
     let attestor = Keypair::new();
@@ -181,17 +182,25 @@ fn a_split_is_rejected_unless_the_batch_is_exactly_the_co_authors_then_the_attes
     );
     let fill = claim(&env);
     let impostor: Vec<Instruction> = vec![cosign_batch_ix(&[a, b, c, &stranger], &digest)?, fill];
-    assert_eq!(
-        env.send(&solver.key, &impostor, &[]).err(),
-        Some(engine_error_at(1, EngineError::SigPubkey)),
-        "a stranger signing in the attestor's place is rejected"
+    let refused = env.send(&solver.key, &impostor, &[]).err();
+    assert!(
+        [EngineError::SigHeader, EngineError::SigMessage]
+            .into_iter()
+            .any(|e| refused == Some(engine_error_at(1, e))),
+        "a stranger signing in the attestor's place is rejected: {refused:?}"
     );
+    let listed = [recipients.as_slice(), &[attestor.pubkey()]].concat();
+    let mut descending: Vec<&Keypair> = vec![a, b, c, &attestor];
+    descending.sort_by_key(|k| std::cmp::Reverse(k.pubkey()));
     let fill = claim(&env);
-    let reordered: Vec<Instruction> = vec![cosign_batch_ix(&[b, a, c, &attestor], &digest)?, fill];
+    let reordered: Vec<Instruction> = vec![
+        cosign_in_message(&descending, &cosign_message(&listed, &digest)?)?,
+        fill,
+    ];
     assert_eq!(
         env.send(&solver.key, &reordered, &[]).err(),
-        Some(engine_error_at(1, EngineError::SigPubkey)),
-        "the co-authors signed out of their committed order is rejected"
+        Some(engine_error_at(1, EngineError::SigHeader)),
+        "signatures out of key order are rejected"
     );
     assert_eq!(
         env.balance(&vault_pda(&intent))?,
@@ -199,7 +208,7 @@ fn a_split_is_rejected_unless_the_batch_is_exactly_the_co_authors_then_the_attes
         "the escrow is untouched after every rejected claim"
     );
     let fill = claim(&env);
-    let honest: Vec<Instruction> = vec![cosign_batch_ix(&[a, b, c, &attestor], &digest)?, fill];
+    let honest: Vec<Instruction> = vec![cosign_batch_ix(&[&attestor, c, a, b], &digest)?, fill];
     env.send(&solver.key, &honest, &[])?;
     assert_eq!(
         env.balance(&vault_pda(&intent))?,

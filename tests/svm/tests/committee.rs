@@ -1,6 +1,8 @@
 use anchor_lang::prelude::Pubkey;
 use intent_core::bounty::split_n;
+use intent_core::committee::COMMITTEE_COSIGN_TAG;
 use intent_core::kinds::{attested_result, Kind};
+use intent_core::sig::{offchain_envelope, SPLIT_COSIGN_TAG};
 use intent_engine::errors::EngineError;
 use intent_engine::events::{CommitteeAttested, CommitteeCreated, IntentAttested};
 use intent_engine::state::{Committee, COMMITTEE_SEED, COMMITTEE_VERSION};
@@ -10,11 +12,11 @@ use solana_keypair::Keypair;
 use solana_signer::Signer;
 use solana_transaction_error::TransactionError;
 use svm_tests::{
-    batch_ix, committee_batch_ix, committee_id, committee_message, committee_pda, cosign_batch_ix,
-    create_committee_ix, create_committee_with_id_ix, ed25519_ix, engine_error_at, events,
-    intent_pda, load, proof_digest, sorted_members, split_commit, split_cosign_message,
-    split_digest, swap_spec, vault_pda, CommitteeFill, Env, IntentSpec, Market, Solver, TestResult,
-    Trader, DOMAIN,
+    batch_ix, committee_batch_ix, committee_id, committee_message, committee_pda,
+    cosign_in_message, cosign_ix, create_committee_ix, create_committee_with_id_ix, ed25519_ix,
+    engine_error_at, events, intent_pda, load, proof_digest, proof_preimage, raw_cosign_message,
+    sorted_members, split_commit, split_digest, swap_spec, vault_pda, CommitteeFill, Env,
+    IntentSpec, Market, Solver, TestResult, Trader, DOMAIN,
 };
 
 const FUNDED: u64 = 1_000;
@@ -31,6 +33,10 @@ struct Panel {
 impl Panel {
     fn signers(&self, picks: &[usize]) -> Vec<&Keypair> {
         picks.iter().filter_map(|i| self.members.get(*i)).collect()
+    }
+
+    fn batch(&self, picks: &[usize], digest: &[u8; 32]) -> TestResult<Instruction> {
+        committee_batch_ix(&self.keys, &self.signers(picks), digest)
     }
 }
 
@@ -105,6 +111,11 @@ impl World {
 
     fn digest(&self, payee: &Pubkey) -> [u8; 32] {
         proof_digest(DOMAIN, &self.intent(), payee, ESCROW, 1, SPEC)
+    }
+
+    fn tagged(&self, tag: &[u8], payee: &Pubkey) -> [u8; 32] {
+        let preimage = proof_preimage(DOMAIN, &self.intent(), payee, ESCROW, 1, SPEC);
+        solana_sha256_hasher::hashv(&[tag, &preimage]).to_bytes()
     }
 
     fn payee(&self) -> Pubkey {
@@ -224,7 +235,7 @@ fn a_quorum_of_members_releases_the_escrow_and_is_named_in_the_event() -> TestRe
     let mut w = world(3, 2, 0)?;
     let payee = w.payee();
     let digest = w.digest(&payee);
-    let batch = committee_batch_ix(&w.panel.signers(&[0, 2]), &digest)?;
+    let batch = w.panel.batch(&[0, 2], &digest)?;
     let committee = w.panel.address;
     let meta = w.release(batch, &committee, 0b101)?;
     assert_eq!(w.env.balance(&payee)?, ESCROW - 1);
@@ -253,13 +264,13 @@ fn fewer_members_than_the_threshold_or_bits_beyond_the_committee_are_refused() -
     let payee = w.payee();
     let digest = w.digest(&payee);
     let committee = w.panel.address;
-    let lone = committee_batch_ix(&w.panel.signers(&[1]), &digest)?;
+    let lone = w.panel.batch(&[1], &digest)?;
     assert_eq!(
         w.release(lone, &committee, 0b010).err(),
         Some(engine_error_at(1, EngineError::CommitteeSigners)),
         "one signature is below a threshold of two"
     );
-    let beyond = committee_batch_ix(&w.panel.signers(&[0, 1]), &digest)?;
+    let beyond = w.panel.batch(&[0, 1], &digest)?;
     assert_eq!(
         w.release(beyond, &committee, 0b1011).err(),
         Some(engine_error_at(1, EngineError::CommitteeSigners)),
@@ -277,6 +288,12 @@ fn the_batch_must_be_exactly_the_masked_members_in_order_over_the_committee_mess
     let digest = w.digest(&payee);
     let committee = w.panel.address;
     let stranger = Keypair::new();
+    let keys = w.panel.keys.clone();
+    let mut with_stranger = keys.clone();
+    with_stranger.push(stranger.pubkey());
+    let split_tagged = w.tagged(&SPLIT_COSIGN_TAG, &payee);
+    let untagged = w.tagged(&[], &payee);
+    let elsewhere = w.digest(&Pubkey::new_unique());
     let members = std::mem::take(&mut w.panel.members);
     let [a, b, c] = [0, 1, 2].map(|i| members.get(i));
     let (Some(a), Some(b), Some(c)) = (a, b, c) else {
@@ -284,37 +301,52 @@ fn the_batch_must_be_exactly_the_masked_members_in_order_over_the_committee_mess
     };
     let cases: Vec<(Instruction, u8, EngineError, &str)> = vec![
         (
-            committee_batch_ix(&[a, &stranger], &digest)?,
+            committee_batch_ix(&with_stranger, &[a, &stranger], &digest)?,
             0b011,
-            EngineError::SigPubkey,
+            EngineError::SigHeader,
             "a stranger signing for a member",
         ),
         (
-            committee_batch_ix(&[b, a], &digest)?,
+            cosign_in_message(&[b, a], &committee_message(&keys, &digest)?)?,
             0b011,
-            EngineError::SigPubkey,
+            EngineError::SigHeader,
             "members out of order",
         ),
         (
-            committee_batch_ix(&[a, b, c], &digest)?,
+            committee_batch_ix(&keys, &[a, b, c], &digest)?,
             0b011,
             EngineError::SigHeader,
             "a signature the mask did not name",
         ),
         (
-            committee_batch_ix(&[a], &digest)?,
+            committee_batch_ix(&keys, &[a], &digest)?,
             0b011,
             EngineError::SigHeader,
             "a masked member who did not sign",
         ),
         (
-            batch_ix(&[a, b], &split_cosign_message(&digest))?,
+            committee_batch_ix(&keys, &[a, b], &split_tagged)?,
             0b011,
             EngineError::SigMessage,
-            "a split cosign envelope",
+            "a digest under the split tag",
         ),
         (
-            committee_batch_ix(&[a, b], &w.digest(&Pubkey::new_unique()))?,
+            committee_batch_ix(&keys, &[a, b], &untagged)?,
+            0b011,
+            EngineError::SigMessage,
+            "a digest without the committee tag",
+        ),
+        (
+            batch_ix(
+                &[a, b],
+                &offchain_envelope(&COMMITTEE_COSIGN_TAG, &untagged),
+            )?,
+            0b011,
+            EngineError::SigHeader,
+            "the old envelope with the tag in its signer field",
+        ),
+        (
+            committee_batch_ix(&keys, &[a, b], &elsewhere)?,
             0b011,
             EngineError::SigMessage,
             "a release to another payee",
@@ -328,8 +360,61 @@ fn the_batch_must_be_exactly_the_masked_members_in_order_over_the_committee_mess
         );
     }
     assert_eq!(w.env.balance(&vault_pda(&w.intent()))?, ESCROW);
-    let honest = committee_batch_ix(&[a, b], &digest)?;
+    let honest = committee_batch_ix(&keys, &[b, a], &digest)?;
     w.release(honest, &committee, 0b011)?;
+    assert_eq!(w.env.balance(&payee)?, ESCROW - 1);
+    Ok(())
+}
+
+#[test]
+fn the_envelope_must_list_every_member_sorted_once() -> TestResult {
+    let mut w = world(4, 2, 0)?;
+    let payee = w.payee();
+    let digest = w.digest(&payee);
+    let committee = w.panel.address;
+    let keys = w.panel.keys.clone();
+    let [ka, kb, kc, kd] = [0, 1, 2, 3].map(|i| keys.get(i).copied().unwrap_or_default());
+    let stranger = Pubkey::new_unique();
+    let cases: [(Vec<Pubkey>, EngineError, &str); 6] = [
+        (vec![ka, kb, kc], EngineError::SigHeader, "a missing member"),
+        (
+            vec![ka, kb, kc, kd, stranger],
+            EngineError::SigHeader,
+            "an extra key",
+        ),
+        (
+            vec![ka, kb, kd, kc],
+            EngineError::SigMessage,
+            "unsorted members",
+        ),
+        (
+            vec![ka, kb, kc, kc],
+            EngineError::SigMessage,
+            "a duplicated member",
+        ),
+        (
+            vec![ka, kb, kc, stranger],
+            EngineError::SigMessage,
+            "a stranger in a member's place",
+        ),
+        (
+            vec![ka, kb, kb, kc, kd],
+            EngineError::SigHeader,
+            "a duplicated key on top of every member",
+        ),
+    ];
+    for (listed, error, why) in cases {
+        let message = raw_cosign_message(&listed, &digest)?;
+        let batch = cosign_in_message(&w.panel.signers(&[0, 1]), &message)?;
+        assert_eq!(
+            w.release(batch, &committee, 0b0011).err(),
+            Some(engine_error_at(1, error)),
+            "{why}"
+        );
+    }
+    let message = raw_cosign_message(&keys, &digest)?;
+    let batch = cosign_in_message(&w.panel.signers(&[0, 1]), &message)?;
+    w.release(batch, &committee, 0b0011)?;
     assert_eq!(w.env.balance(&payee)?, ESCROW - 1);
     Ok(())
 }
@@ -340,14 +425,14 @@ fn only_the_committee_the_escrow_names_can_release_it() -> TestResult {
     let payee = w.payee();
     let digest = w.digest(&payee);
     let rival = convene(&mut w.env, 3, 2)?;
-    let batch = committee_batch_ix(&rival.signers(&[0, 1]), &digest)?;
+    let batch = rival.batch(&[0, 1], &digest)?;
     assert_eq!(
         w.release(batch, &rival.address, 0b011).err(),
         Some(engine_error_at(1, EngineError::CommitteeMismatch)),
         "a valid quorum of another committee is refused"
     );
     let member = w.panel.members.first().ok_or("panel empty")?;
-    let message = committee_message(&digest);
+    let message = offchain_envelope(&member.pubkey().to_bytes(), &digest);
     let owner = w.owner();
     let fill = w.env.fill_attested_ix(
         &w.solver.key.pubkey(),
@@ -402,7 +487,7 @@ fn a_committee_cannot_release_an_escrow_judged_by_a_single_key() -> TestResult {
         },
         &solver.input,
     );
-    let batch = committee_batch_ix(&panel.signers(&[0]), &digest)?;
+    let batch = panel.batch(&[0], &digest)?;
     assert_eq!(
         env.send(&solver.key, &[batch, fill], &[]).err(),
         Some(engine_error_at(1, EngineError::CommitteeMismatch))
@@ -422,7 +507,7 @@ fn the_judge_fee_goes_to_the_committee_fee_wallet_and_nowhere_else() -> TestResu
         .env
         .create_ata(&member, &w.market.input_mint, w.market.input_program)?;
     w.env.judge_to = Some(member_ata);
-    let batch = committee_batch_ix(&w.panel.signers(&[0, 1]), &digest)?;
+    let batch = w.panel.batch(&[0, 1], &digest)?;
     assert_eq!(
         w.release(batch, &committee, 0b011).err(),
         Some(engine_error_at(1, EngineError::FeeAccountNotCanonical)),
@@ -433,7 +518,7 @@ fn the_judge_fee_goes_to_the_committee_fee_wallet_and_nowhere_else() -> TestResu
         .env
         .create_ata(&fee_wallet, &w.market.input_mint, w.market.input_program)?;
     w.env.judge_to = Some(wallet_ata);
-    let batch = committee_batch_ix(&w.panel.signers(&[0, 1]), &digest)?;
+    let batch = w.panel.batch(&[0, 1], &digest)?;
     let fee_before = w.env.balance(&w.fee_to)?;
     w.release(batch, &committee, 0b011)?;
     let protocol = w.env.balance(&w.fee_to)? - fee_before;
@@ -487,9 +572,14 @@ fn a_team_split_is_released_by_its_co_authors_and_a_committee_quorum() -> TestRe
     };
     let committee = w.panel.address;
     let [a, b] = &coauthors;
+    let listed: Vec<Pubkey> = recipients
+        .iter()
+        .chain(w.panel.keys.iter())
+        .copied()
+        .collect();
     let short: Vec<&Keypair> = [a, b].into_iter().chain(w.panel.signers(&[0])).collect();
     let ixs = vec![
-        cosign_batch_ix(&short, &digest)?,
+        cosign_ix(&listed, &short, &digest)?,
         fill(&w.env, &committee, 0b011),
     ];
     assert_eq!(
@@ -498,8 +588,18 @@ fn a_team_split_is_released_by_its_co_authors_and_a_committee_quorum() -> TestRe
         "a quorum member missing from the cosign batch is refused"
     );
     let signers: Vec<&Keypair> = [a, b].into_iter().chain(w.panel.signers(&[0, 1])).collect();
+    let only_signers: Vec<Pubkey> = signers.iter().map(|s| s.pubkey()).collect();
     let ixs = vec![
-        cosign_batch_ix(&signers, &digest)?,
+        cosign_ix(&only_signers, &signers, &digest)?,
+        fill(&w.env, &committee, 0b011),
+    ];
+    assert_eq!(
+        w.env.send(&solver.key, &ixs, &[]).err(),
+        Some(engine_error_at(1, EngineError::SigHeader)),
+        "the envelope lists every member, not only the quorum"
+    );
+    let ixs = vec![
+        cosign_ix(&listed, &signers, &digest)?,
         fill(&w.env, &committee, 0b011),
     ];
     let meta = w.env.send(&solver.key, &ixs, &[])?;

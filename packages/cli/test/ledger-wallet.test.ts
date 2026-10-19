@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { type Address, generateKeyPairSigner, getBase58Decoder, getBase64Encoder, getTransactionDecoder, lamports } from "@solana/kit";
+import { type Address, generateKeyPairSigner, getBase16Encoder, getBase58Decoder, getBase64Encoder, getTransactionDecoder, type KeyPairSigner, lamports, signBytes } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
@@ -10,7 +10,6 @@ import { SERVER_PROBLEMS } from "../src/agent/problems.js";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { ENV_KEYPAIR } from "../src/clusters.js";
-import { needsKeyFile } from "../src/ledger-keys.js";
 import { EXIT_OK, main } from "../src/main.js";
 import { sealedDelivery } from "./announce.js";
 import { balance, creation, h, NOW, runtime, transport, world } from "./harness.js";
@@ -22,19 +21,20 @@ const PATH = "usb://ledger?key=2";
 const LEVELS = [44, 501, 2];
 const WORK = createHash("sha256").update("work").digest("hex");
 
-type Escrow = { key: Key; owner: Address; worker: Address; intent: Address; mint: Address };
+type Escrow = { key: Key; owner: Address; worker: Address; workerKey: KeyPairSigner; intent: Address; mint: Address };
 
 async function escrow(): Promise<Escrow> {
   const w = await world();
   const key = await deviceKey();
   h.svm.airdrop(key.address, lamports(10_000_000_000n));
-  const worker = (await generateKeyPairSigner()).address;
+  const workerKey = await generateKeyPairSigner();
+  const worker = workerKey.address;
   const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: key.address, specHash: new Uint8Array(32).fill(7), judgeFee: 0n } as const;
   const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
   const announced = await sealedDelivery(intent, worker, WORK, "https://" + "example.org/work", [key.address]);
   h.engineLog = [{ signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [announced], feePayer: worker }, creation(intent)];
   h.env[ENV_KEYPAIR] = PATH;
-  return { key, owner: w.owner.address, worker, intent, mint: w.inputMint };
+  return { key, owner: w.owner.address, worker, workerKey, intent, mint: w.inputMint };
 }
 
 async function served(ledger: Device): Promise<Client> {
@@ -111,15 +111,21 @@ describe("an MCP wallet on a Ledger", () => {
     }
   });
 
-  it("committee votes and split releases refuse the Ledger wallet before it is asked to sign", async () => {
+  it("a split release on the Ledger wallet signs the envelope that lists its own key and settles", async () => {
     const e = await escrow();
-    const ledger = device(e.key, found(LEVELS, e.key));
+    const ledger = device(e.key, [...found(LEVELS, e.key), ...messageThen(), ...transactionThen(), ...transactionThen()]);
     const client = await served(ledger);
-    const vote = await call(client, "wallet_committee_vote", { owner: e.owner, nonce: "0", pay_to: e.worker, result: "1", delivered_sha256: WORK });
-    expect(vote).toEqual({ error: true, value: { code: "LedgerNeedsKeyFile", retryable: false, hint: needsKeyFile(tool("wallet_committee_vote"), PATH) } });
-    const split = await call(client, "wallet_attest_split", { owner: e.owner, nonce: "0", recipients: [{ wallet: e.worker, weight: 10_000 }], delivered_sha256: WORK });
-    expect(split).toEqual({ error: true, value: { code: "LedgerNeedsKeyFile", retryable: false, hint: needsKeyFile(tool("wallet_attest_split"), PATH) } });
-    ledger.store.ensureQueueEmpty();
-    expect([ledger.signed, h.wires]).toEqual([[], []]);
+    const split = { owner: e.owner, nonce: "0", recipients: [{ wallet: e.worker, weight: 10_000 }], delivered_sha256: WORK };
+    const shown = await call(client, "wallet_attest_split", split);
+    expect(shown.error, JSON.stringify(shown.value)).toBe(false);
+    expect(ledger.signed).toEqual([]);
+    const envelope = Uint8Array.from(getBase16Encoder().encode(String(shown.value["envelope"])));
+    const signature = Buffer.from(await signBytes(e.workerKey.keyPair.privateKey, envelope)).toString("hex");
+    const recipients = [{ wallet: e.worker, weight: 10_000, signature }];
+    const sent = await call(client, "wallet_attest_split", { ...split, recipients, approval: shown.value["approval"], send: true });
+    expect(sent.error, JSON.stringify(sent.value)).toBe(false);
+    expect(ledger.signed.slice(0, 2).map(({ kind }) => kind)).toEqual([MESSAGE, SIGN]);
+    expect(Buffer.from(ledger.signed[0]?.bytes ?? []).toString("hex")).toBe(Buffer.from(envelope).toString("hex"));
+    expect(statusOf(e.intent)).toBe(IntentStatus.Filled);
   });
 });

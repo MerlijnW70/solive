@@ -13,6 +13,7 @@ export const LEDGER_COMMANDS = [
   "revoke-approval",
   "deliver",
   "judge",
+  "committee vote",
   "committee release",
   "signed prepare",
   "advance-nonce",

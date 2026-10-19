@@ -4,7 +4,7 @@ import { getCreateAssociatedTokenIdempotentInstructionAsync, getMintEncoder, get
 import { describe, expect, it } from "vitest";
 import {
   attestedSplitMessage,
-  buildEd25519BatchInstruction,
+  buildEd25519CosignInstruction,
   buildFillAttestedSplit,
   buildUpdateEconomics,
   decodeEvent,
@@ -120,7 +120,7 @@ async function setup() {
       maxFeeBps,
       specHash: SPEC,
       splitHash: await splitCommit(recipients, weights),
-    });
+    }, [...recipients, judge.address]);
     const entries = await Promise.all(
       [...coauthors, judge].map(async (signer) => ({ publicKey: signer.address, signature: new Uint8Array(await signBytes(signer.keyPair.privateKey, message)) })),
     );
@@ -137,7 +137,7 @@ async function setup() {
       result: 1n,
       maxFeeBps,
     });
-    const release = await transport.send([buildEd25519BatchInstruction({ entries, message }), fill], judge);
+    const release = await transport.send([buildEd25519CosignInstruction({ entries, message }), fill], judge);
     await transport.send(followUpInstructions(judge, intent, sha256, release), judge);
     return intent;
   };

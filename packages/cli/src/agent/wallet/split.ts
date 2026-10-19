@@ -1,9 +1,8 @@
-import { createHash } from "node:crypto";
 import { AccountRole, type Address, getBase16Decoder, getBase16Encoder } from "@solana/kit";
 import {
-  attestedSplitMessage,
-  attestedSplitPreimage,
-  buildEd25519BatchInstruction,
+  attestedSplitDigest,
+  buildEd25519CosignInstruction,
+  cosignEnvelope,
   buildFillAttestedSplit,
   decodeParams,
   findIntentPda,
@@ -47,7 +46,7 @@ import { preparedView } from "../shapes.js";
 import { walletRecipient } from "../owner.js";
 import { prepare, transactionSize } from "../prepare.js";
 import { STATUS } from "../../accounts.js";
-import { keyFileOnly, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, WAIT_SCAN, signerOf, sent, sha256Of } from "./guard.js";
+import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, WAIT_SCAN, signerOf, sent, sha256Of } from "./guard.js";
 import { RELEASE_CHANGED, approvalOf } from "./attest.js";
 import { notInSplit, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor, confirmedRelease } from "./delivery.js";
 
@@ -119,7 +118,6 @@ export const walletAttestSplit = define({
   }),
   run: async (ctx: AgentContext, input, call: Call) => {
     const signer = await signerOf(ctx);
-    keyFileOnly(signer, tool("wallet_attest_split"));
     const [intent] = await findIntentPda({ owner: input.owner, nonce: input.nonce });
     const [view, { config }] = await Promise.all([ctx.transport.getAccount(intent), loadConfig(ctx.transport)]);
     if (view === null) {
@@ -192,8 +190,9 @@ export const walletAttestSplit = define({
       specHash: params.specHash,
       splitHash,
     };
-    const message = await attestedSplitMessage(fields);
-    const digestHex = getBase16Decoder().decode(Uint8Array.from(createHash("sha256").update(await attestedSplitPreimage(fields)).digest()));
+    const digest = await attestedSplitDigest(fields);
+    const message = cosignEnvelope([...wallets, signer.address], digest);
+    const digestHex = getBase16Decoder().decode(digest);
     const settle = await buildFillAttestedSplit({
       solver: signer,
       owner: input.owner,
@@ -216,14 +215,18 @@ export const walletAttestSplit = define({
     }
     let batch;
     if (input.send === true) {
-      const entries = input.recipients.map((r, i) => {
+      const signatures = new Map<Address, Uint8Array>();
+      input.recipients.forEach((r, i) => {
+        if (r.wallet === signer.address) {
+          return;
+        }
         if (r.signature === undefined || !new RegExp(SIGNATURE_PATTERN).test(r.signature)) {
           throw new InvalidInput([{ path: `recipients.${i}.signature`, message: SPLIT_SIG_NEEDED }]);
         }
-        return { publicKey: r.wallet, signature: Uint8Array.from(getBase16Encoder().encode(r.signature)) };
+        signatures.set(r.wallet, Uint8Array.from(getBase16Encoder().encode(r.signature)));
       });
-      const attestorSignature = new Uint8Array(await signer.signBytes(message));
-      batch = buildEd25519BatchInstruction({ entries: [...entries, { publicKey: signer.address, signature: attestorSignature }], message });
+      signatures.set(signer.address, new Uint8Array(await signer.signBytes(message)));
+      batch = buildEd25519CosignInstruction({ entries: [...signatures].map(([publicKey, signature]) => ({ publicKey, signature })), message });
     }
     const setup = [...payees.flatMap((p) => p.create), ...treasury.create, ...partner.create, ...judge.create];
     const invoked = new Set<Address>([INTENT_ENGINE_PROGRAM_ADDRESS, token.tokenProgram, signer.address]);

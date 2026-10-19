@@ -1,7 +1,7 @@
 use intent_core::sig::{
-    check_ed25519_batch, check_ed25519_ix, ed25519_header, offchain_envelope, AttestedFill,
-    AttestedProof, AttestedSplit, SignedIntent, ATTEST_PROOF_TAG, ATTEST_SPLIT_TAG, ATTEST_TAG,
-    ED25519_PROGRAM_ID, INTENT_TAG, OFFCHAIN_PREFIX,
+    check_ed25519_cosign, check_ed25519_ix, ed25519_header, offchain_envelope, AttestedFill,
+    AttestedProof, AttestedSplit, Cosigners, SignedIntent, ATTEST_PROOF_TAG, ATTEST_SPLIT_TAG,
+    ATTEST_TAG, COSIGN_KEYS_AT, ED25519_PROGRAM_ID, INTENT_TAG, MAX_COSIGNERS, OFFCHAIN_PREFIX,
 };
 use intent_core::Error;
 
@@ -139,25 +139,27 @@ fn messages_too_long_for_the_precompile_are_rejected() {
     );
 }
 
-fn batch_data(pubkeys: &[[u8; 32]], message: &[u8]) -> Vec<u8> {
-    let m = pubkeys.len();
+const DIGEST: [u8; 32] = [0x33; 32];
+
+fn cosign_data(listed: &Cosigners, signers: &[[u8; 32]], message: &[u8]) -> Vec<u8> {
+    let m = signers.len();
     let len = u16::try_from(message.len()).unwrap_or(u16::MAX);
-    let pubkeys_at = 14usize.saturating_mul(m).saturating_add(2);
-    let sigs_at = pubkeys_at.saturating_add(32usize.saturating_mul(m));
+    let sigs_at = 14usize.saturating_mul(m).saturating_add(2);
     let message_at = sigs_at.saturating_add(64usize.saturating_mul(m));
     let le = |v: usize| u16::try_from(v).unwrap_or(u16::MAX).to_le_bytes();
     let mut data = vec![u8::try_from(m).unwrap_or(u8::MAX), 0];
-    for k in 0..m {
+    for (k, signer) in signers.iter().enumerate() {
+        let slot = listed.slot(signer).unwrap_or(usize::MAX);
+        let pubkey_at = message_at
+            .saturating_add(COSIGN_KEYS_AT)
+            .saturating_add(slot.saturating_mul(32));
         data.extend_from_slice(&le(sigs_at.saturating_add(64usize.saturating_mul(k))));
         data.extend_from_slice(&u16::MAX.to_le_bytes());
-        data.extend_from_slice(&le(pubkeys_at.saturating_add(32usize.saturating_mul(k))));
+        data.extend_from_slice(&le(pubkey_at));
         data.extend_from_slice(&u16::MAX.to_le_bytes());
         data.extend_from_slice(&le(message_at));
         data.extend_from_slice(&len.to_le_bytes());
         data.extend_from_slice(&u16::MAX.to_le_bytes());
-    }
-    for pk in pubkeys {
-        data.extend_from_slice(pk);
     }
     for _ in 0..m {
         data.extend_from_slice(&[0xee; 64]);
@@ -166,120 +168,162 @@ fn batch_data(pubkeys: &[[u8; 32]], message: &[u8]) -> Vec<u8> {
     data
 }
 
+fn honest(listed: &[[u8; 32]], signers: &[[u8; 32]]) -> Result<Vec<u8>, Error> {
+    let listed = Cosigners::new(listed)?;
+    let ordered = Cosigners::new(signers)?;
+    Ok(cosign_data(
+        &listed,
+        ordered.keys(),
+        listed.envelope(&DIGEST).as_bytes(),
+    ))
+}
+
+fn raw_envelope(keys: &[[u8; 32]]) -> Vec<u8> {
+    let mut out = OFFCHAIN_PREFIX.to_vec();
+    out.push(1);
+    out.push(u8::try_from(keys.len()).unwrap_or(u8::MAX));
+    for key in keys {
+        out.extend_from_slice(key);
+    }
+    out.extend(DIGEST.iter().flat_map(|b| format!("{b:02x}").into_bytes()));
+    out
+}
+
 #[test]
-fn a_batch_of_co_signatures_over_one_shared_message_is_accepted() {
-    let msg = offchain_envelope(&[9; 32], &[0x33; 32]);
-    for count in [1usize, 3, 9] {
+fn cosigners_are_sorted_and_deduplicated() -> Result<(), Error> {
+    let keys = Cosigners::new(&[[3; 32], [1; 32], [3; 32], [2; 32], [1; 32]])?;
+    assert_eq!(keys.keys(), &[[1u8; 32], [2; 32], [3; 32]][..]);
+    assert_eq!(keys.slot(&[2; 32]), Some(1));
+    assert_eq!(keys.slot(&[9; 32]), None);
+    assert_eq!(Cosigners::new(&[]), Err(Error::SigHeader));
+    let full: Vec<[u8; 32]> = (0..MAX_COSIGNERS)
+        .map(|k| [u8::try_from(k).unwrap_or(0); 32])
+        .collect();
+    assert_eq!(Cosigners::new(&full)?.keys().len(), MAX_COSIGNERS);
+    let mut over = full.clone();
+    over.push([0xaa; 32]);
+    assert_eq!(Cosigners::new(&over), Err(Error::SigHeader));
+    Ok(())
+}
+
+#[test]
+fn the_cosign_envelope_lists_every_key_in_the_v1_signer_field() -> Result<(), Error> {
+    let keys = Cosigners::new(&[[2; 32], [1; 32], [2; 32]])?;
+    let e = keys.envelope(&DIGEST);
+    let bytes = e.as_bytes();
+    assert_eq!(bytes, &raw_envelope(&[[1; 32], [2; 32]])[..]);
+    assert_eq!(bytes.get(16..18), Some(&[1, 2][..]));
+    assert_eq!(bytes.len(), 18 + 64 + 64);
+    let one = Cosigners::new(&[PK])?.envelope(&DIGEST);
+    assert_eq!(one.as_bytes(), &offchain_envelope(&PK, &DIGEST)[..]);
+    Ok(())
+}
+
+#[test]
+fn a_cosign_batch_reads_each_key_from_its_slot_in_the_message() -> Result<(), Error> {
+    for count in [1usize, 3, 9, MAX_COSIGNERS] {
         let keys: Vec<[u8; 32]> = (0..count)
-            .map(|k| [u8::try_from(k).unwrap_or(0); 32])
+            .map(|k| [u8::try_from(k).unwrap_or(0).saturating_add(1); 32])
             .collect();
+        let listed = Cosigners::new(&keys)?;
         assert_eq!(
-            check_ed25519_batch(&ED25519_PROGRAM_ID, &batch_data(&keys, &msg), &keys, &msg),
+            check_ed25519_cosign(
+                &ED25519_PROGRAM_ID,
+                &honest(&keys, &keys)?,
+                &listed,
+                &listed,
+                &DIGEST
+            ),
             Ok(())
         );
     }
+    Ok(())
 }
 
 #[test]
-fn a_batch_binds_every_pubkey_the_count_and_the_shared_message() {
-    let msg = offchain_envelope(&[9; 32], &[0x33; 32]);
+fn a_cosign_batch_may_list_members_who_do_not_sign() -> Result<(), Error> {
     let keys = [[1u8; 32], [2; 32], [3; 32]];
-    let data = batch_data(&keys, &msg);
+    let listed = Cosigners::new(&keys)?;
+    let data = honest(&keys, &[[3; 32], [1; 32]])?;
+    let run = |signers: &[[u8; 32]]| -> Result<(), Error> {
+        check_ed25519_cosign(
+            &ED25519_PROGRAM_ID,
+            &data,
+            &listed,
+            &Cosigners::new(signers)?,
+            &DIGEST,
+        )
+    };
+    assert_eq!(run(&[[1; 32], [3; 32]]), Ok(()));
+    assert_eq!(run(&[[1; 32], [2; 32]]), Err(Error::SigHeader));
+    assert_eq!(run(&[[1; 32], [4; 32]]), Err(Error::SigPubkey));
+    assert_eq!(run(&[[1; 32]]), Err(Error::SigHeader));
+    Ok(())
+}
+
+#[test]
+fn a_cosign_envelope_must_list_exactly_the_sorted_deduplicated_set() -> Result<(), Error> {
+    let keys = [[1u8; 32], [2; 32], [3; 32]];
+    let listed = Cosigners::new(&keys)?;
+    let check = |message: &[u8]| {
+        check_ed25519_cosign(
+            &ED25519_PROGRAM_ID,
+            &cosign_data(&listed, &keys, message),
+            &listed,
+            &listed,
+            &DIGEST,
+        )
+    };
+    assert_eq!(check(&raw_envelope(&keys)), Ok(()));
+    for wrong in [
+        raw_envelope(&[[1; 32], [2; 32]]),
+        raw_envelope(&[[1; 32], [2; 32], [3; 32], [4; 32]]),
+        raw_envelope(&[[2; 32], [1; 32], [3; 32]]),
+        raw_envelope(&[[1; 32], [2; 32], [2; 32], [3; 32]]),
+        offchain_envelope(&[9; 32], &DIGEST).to_vec(),
+        listed.envelope(&[0x44; 32]).as_bytes().to_vec(),
+    ] {
+        assert_ne!(check(&wrong), Ok(()));
+    }
+    Ok(())
+}
+
+#[test]
+fn a_cosign_batch_rejects_a_tampered_header_entry_or_length() -> Result<(), Error> {
+    let keys = [[1u8; 32], [2; 32], [3; 32]];
+    let listed = Cosigners::new(&keys)?;
+    let run =
+        |data: &[u8]| check_ed25519_cosign(&ED25519_PROGRAM_ID, data, &listed, &listed, &DIGEST);
+    for at in [0usize, 1, 2, 4, 6, 8, 10, 12, 14, 16] {
+        assert_eq!(
+            run(&flipped(honest(&keys, &keys)?, at)),
+            Err(Error::SigHeader),
+            "{at}"
+        );
+    }
+    let mut longer = honest(&keys, &keys)?;
+    longer.push(0);
+    assert_eq!(run(&longer), Err(Error::SigHeader));
+    assert_eq!(run(&[]), Err(Error::SigHeader));
+    let reordered = cosign_data(
+        &listed,
+        &[[2; 32], [1; 32], [3; 32]],
+        listed.envelope(&DIGEST).as_bytes(),
+    );
+    assert_eq!(run(&reordered), Err(Error::SigHeader));
     assert_eq!(
-        check_ed25519_batch(&ED25519_PROGRAM_ID, &data, &keys, &msg),
-        Ok(())
-    );
-    let wrong = check_ed25519_batch(
-        &ED25519_PROGRAM_ID,
-        &data,
-        &[[1u8; 32], [2; 32], [4; 32]],
-        &msg,
-    );
-    assert_eq!(wrong, Err(Error::SigPubkey));
-    let reordered = check_ed25519_batch(
-        &ED25519_PROGRAM_ID,
-        &data,
-        &[[2u8; 32], [1; 32], [3; 32]],
-        &msg,
-    );
-    assert_eq!(reordered, Err(Error::SigPubkey));
-    let dropped = check_ed25519_batch(&ED25519_PROGRAM_ID, &data, &[[1u8; 32], [2; 32]], &msg);
-    assert_eq!(dropped, Err(Error::SigHeader));
-    let other = offchain_envelope(&[9; 32], &[0x44; 32]);
-    assert_eq!(
-        check_ed25519_batch(&ED25519_PROGRAM_ID, &data, &keys, &other),
-        Err(Error::SigMessage)
-    );
-    assert_eq!(
-        check_ed25519_batch(&[0xaa; 32], &data, &keys, &msg),
+        check_ed25519_cosign(
+            &[0xaa; 32],
+            &honest(&keys, &keys)?,
+            &listed,
+            &listed,
+            &DIGEST
+        ),
         Err(Error::SigProgram)
     );
-}
-
-#[test]
-fn a_batch_rejects_a_tampered_count_header_or_trailing_bytes() {
-    let msg = offchain_envelope(&[9; 32], &[0x33; 32]);
-    let keys = [[1u8; 32], [2; 32], [3; 32]];
-    assert_eq!(
-        check_ed25519_batch(
-            &ED25519_PROGRAM_ID,
-            &flipped(batch_data(&keys, &msg), 0),
-            &keys,
-            &msg
-        ),
-        Err(Error::SigHeader)
-    );
-    assert_eq!(
-        check_ed25519_batch(
-            &ED25519_PROGRAM_ID,
-            &flipped(batch_data(&keys, &msg), 1),
-            &keys,
-            &msg
-        ),
-        Err(Error::SigHeader)
-    );
-    assert_eq!(
-        check_ed25519_batch(
-            &ED25519_PROGRAM_ID,
-            &flipped(batch_data(&keys, &msg), 2),
-            &keys,
-            &msg
-        ),
-        Err(Error::SigHeader)
-    );
-    let mut longer = batch_data(&keys, &msg);
-    longer.push(0);
-    assert_eq!(
-        check_ed25519_batch(&ED25519_PROGRAM_ID, &longer, &keys, &msg),
-        Err(Error::SigHeader)
-    );
-    assert_eq!(
-        check_ed25519_batch(&ED25519_PROGRAM_ID, &[], &keys, &msg),
-        Err(Error::SigHeader)
-    );
-    assert_eq!(
-        check_ed25519_batch(&ED25519_PROGRAM_ID, &batch_data(&[], &msg), &[], &msg),
-        Err(Error::SigHeader)
-    );
-}
-
-#[test]
-fn a_batch_leaves_the_signature_bytes_to_the_precompile() {
-    let msg = offchain_envelope(&[9; 32], &[0x33; 32]);
-    let keys = [[1u8; 32], [2; 32]];
-    let sigs_at = 14usize
-        .saturating_mul(keys.len())
-        .saturating_add(2)
-        .saturating_add(32usize.saturating_mul(keys.len()));
-    assert_eq!(
-        check_ed25519_batch(
-            &ED25519_PROGRAM_ID,
-            &flipped(batch_data(&keys, &msg), sigs_at),
-            &keys,
-            &msg
-        ),
-        Ok(())
-    );
+    let sigs_at = 14usize.saturating_mul(keys.len()).saturating_add(2);
+    assert_eq!(run(&flipped(honest(&keys, &keys)?, sigs_at)), Ok(()));
+    Ok(())
 }
 
 #[test]

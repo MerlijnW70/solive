@@ -16,7 +16,7 @@ use crate::events::StakeMoved;
 use crate::ext::Ext;
 use crate::policy::{
     check_fill_kind, check_mint, pay_agent, pay_out, pay_out_split, take_remaining,
-    verify_preceding_batch, verify_preceding_ed25519, AgentPayout, FeeTerms, IntentSigner, Payout,
+    verify_preceding_cosign, verify_preceding_ed25519, AgentPayout, FeeTerms, IntentSigner, Payout,
     SplitPayout, Tally,
 };
 use crate::state::{
@@ -78,6 +78,17 @@ impl Judge {
                     .map(|key| Pubkey::new_from_array(*key))
                     .collect())
             }
+        }
+    }
+
+    fn eligible(&self, attestor: &Pubkey) -> Vec<Pubkey> {
+        match self {
+            Self::Key => vec![*attestor],
+            Self::Committee { committee, .. } => committee
+                .members()
+                .iter()
+                .map(|key| Pubkey::new_from_array(*key))
+                .collect(),
         }
     }
 
@@ -258,8 +269,10 @@ pub fn release_single<'info>(
     ext.check(FILL_EXT_TAGS)?;
     let opened = open(&release, amount_in, result)?;
     let ext_hash = solana_sha256_hasher::hashv(&[&ext.0]).to_bytes();
-    let digest = if opened.spec_hash == [0u8; 32] {
-        let preimage = AttestedFill {
+    let fill_preimage;
+    let proof_preimage;
+    let preimage: &[u8] = if opened.spec_hash == [0u8; 32] {
+        fill_preimage = AttestedFill {
             program: crate::ID.to_bytes(),
             domain: opened.domain,
             intent: release.intent.key().to_bytes(),
@@ -272,9 +285,9 @@ pub fn release_single<'info>(
             ext_hash,
         }
         .preimage();
-        solana_sha256_hasher::hashv(&[&preimage]).to_bytes()
+        &fill_preimage
     } else {
-        let preimage = AttestedProof {
+        proof_preimage = AttestedProof {
             program: crate::ID.to_bytes(),
             domain: opened.domain,
             intent: release.intent.key().to_bytes(),
@@ -288,19 +301,23 @@ pub fn release_single<'info>(
             spec_hash: opened.spec_hash,
         }
         .preimage();
-        solana_sha256_hasher::hashv(&[&preimage]).to_bytes()
+        &proof_preimage
     };
     let signers = judge.signers(&opened.attestor)?;
     match judge {
         Judge::Key => verify_preceding_ed25519(
             &release.instructions,
             &opened.attestor,
-            &offchain_envelope(&opened.attestor.to_bytes(), &digest),
+            &offchain_envelope(
+                &opened.attestor.to_bytes(),
+                &solana_sha256_hasher::hashv(&[preimage]).to_bytes(),
+            ),
         )?,
-        Judge::Committee { .. } => verify_preceding_batch(
+        Judge::Committee { .. } => verify_preceding_cosign(
             &release.instructions,
+            &judge.eligible(&opened.attestor),
             &signers,
-            &offchain_envelope(&COMMITTEE_COSIGN_TAG, &digest),
+            &solana_sha256_hasher::hashv(&[&COMMITTEE_COSIGN_TAG, preimage]).to_bytes(),
         )?,
     }
     let stake = honor_on_release(
@@ -415,16 +432,14 @@ pub fn release_split<'info>(
             split_hash,
         }
         .preimage();
-        solana_sha256_hasher::hashv(&[&preimage]).to_bytes()
+        solana_sha256_hasher::hashv(&[&SPLIT_COSIGN_TAG, &preimage]).to_bytes()
     };
     let signers = judge.signers(&opened.attestor)?;
+    let mut listed = claim.recipients.clone();
+    listed.extend(judge.eligible(&opened.attestor));
     let mut cosigners = claim.recipients.clone();
     cosigners.extend_from_slice(&signers);
-    verify_preceding_batch(
-        &release.instructions,
-        &cosigners,
-        &offchain_envelope(&SPLIT_COSIGN_TAG, &digest),
-    )?;
+    verify_preceding_cosign(&release.instructions, &listed, &cosigners, &digest)?;
     for (wallet, info) in claim.recipients.iter().zip(recipients_info.iter()) {
         let canonical = get_associated_token_address_with_program_id(
             wallet,

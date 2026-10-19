@@ -98,8 +98,8 @@ describe("reputation from verifiable history", () => {
       const { nonce, intent } = await escrow(owner, committee);
       await client.deliver({ worker, intent, sha256, url: "https://example.org/work" });
       const target = { owner: owner.address, nonce, payTo: worker.address, result: 1n };
-      const { digest } = await client.committeeBallot(target);
-      const votes = await Promise.all(members.slice(0, 2).map((m) => signCommitteeVote(m, digest)));
+      const { digest, committee: ballot } = await client.committeeBallot(target);
+      const votes = await Promise.all(members.slice(0, 2).map((m) => signCommitteeVote(m, digest, ballot.members)));
       const solver = members[0] as KeyPairSigner;
       await client.settleCommittee({ ...target, solver, votes, deliveredSha256: sha256 });
     };

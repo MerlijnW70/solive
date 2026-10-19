@@ -67,7 +67,6 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `ConfirmMismatch` | yes | the second RPC node the server was started with, by --confirm-url, reports another genesis hash, escrow or earliest announcer than the first, or could not be read, so nothing was signed or sent; call again once both nodes agree |
 | `NeverSettles` | no | no release of this escrow could pay: after the judge fee, too little is left for the rounded-up protocol and partner fees; escrow more or lower the judge fee, as the hint says |
 | `Ledger` | no | the wallet's Ledger did not sign: it was rejected on the device, or the device is locked, unplugged or not in the Solana app; nothing was sent, and the hint says which |
-| `LedgerNeedsKeyFile` | no | this tool signs a message whose signer is not the wallet's key, which a Ledger cannot sign; nothing was sent, and it needs a server whose wallet is a key file |
 | `HistoryTooLong` | no | the record a release depends on is incomplete, so it is refused rather than decided from part of it: the history is longer than the pages read, which more pages fix, or the RPC node's ledger does not reach back to the escrow's creation, or the transport cannot page signatures or report its first available slot, which more pages do not fix |
 
 ## Engine program

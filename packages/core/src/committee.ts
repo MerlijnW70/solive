@@ -3,8 +3,7 @@ import {
   getAddressEncoder,
   getPublicKeyFromAddress,
   type Instruction,
-  type KeyPairSigner,
-  signBytes,
+  type MessagePartialSigner,
   type SignatureBytes,
   type TransactionSigner,
   verifySignature,
@@ -16,9 +15,9 @@ import { FILL_EXT_TAGS, validateExt } from "./ext.js";
 import {
   type AttestedProofFields,
   attestedProofPreimage,
-  buildEd25519BatchInstruction,
-  ENVELOPE_LEN,
-  OFFCHAIN_PREFIX,
+  buildEd25519CosignInstruction,
+  cosignEnvelope,
+  signMessageBytes,
 } from "./sig.js";
 
 const ascii = (s: string) => new TextEncoder().encode(s);
@@ -125,17 +124,11 @@ export function committeeMask(terms: CommitteeTerms, signers: readonly Address[]
   return mask;
 }
 
-export function committeeEnvelope(digest: Uint8Array): Uint8Array {
+export function committeeEnvelope(digest: Uint8Array, members: readonly Address[]): Uint8Array {
   if (digest.length !== 32) {
     throw new RangeError(`a committee digest is 32 bytes, got ${digest.length}`);
   }
-  const hex = Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
-  const out = new Uint8Array(ENVELOPE_LEN);
-  out.set(OFFCHAIN_PREFIX, 0);
-  out.set([1, 1], OFFCHAIN_PREFIX.length);
-  out.set(COMMITTEE_COSIGN_TAG, OFFCHAIN_PREFIX.length + 2);
-  out.set(ascii(hex), OFFCHAIN_PREFIX.length + 2 + 32);
-  return out;
+  return cosignEnvelope(members, digest);
 }
 
 export type CommitteeVote = { member: Address; signature: Uint8Array };
@@ -155,7 +148,7 @@ export function buildCommitteeBatch(
     signature: byMember.get(member) ?? new Uint8Array(),
   }));
   return {
-    instruction: buildEd25519BatchInstruction({ entries, message: committeeEnvelope(digest) }),
+    instruction: buildEd25519CosignInstruction({ entries, message: committeeEnvelope(digest, terms.members) }),
     mask,
   };
 }
@@ -177,19 +170,26 @@ export async function buildCreateCommittee(input: CommitteeTerms & { payer: Tran
 export async function committeeProofDigest(f: AttestedProofFields): Promise<Uint8Array> {
   validateExt(f.ext ?? new Uint8Array(), FILL_EXT_TAGS);
   const preimage = await attestedProofPreimage(f);
-  return new Uint8Array(await crypto.subtle.digest("SHA-256", preimage.slice()));
+  const tagged = new Uint8Array(COMMITTEE_COSIGN_TAG.length + preimage.length);
+  tagged.set(COMMITTEE_COSIGN_TAG, 0);
+  tagged.set(preimage, COMMITTEE_COSIGN_TAG.length);
+  return new Uint8Array(await crypto.subtle.digest("SHA-256", tagged));
 }
 
-export async function signCommitteeVote(member: KeyPairSigner, digest: Uint8Array): Promise<CommitteeVote> {
-  const signature = new Uint8Array(await signBytes(member.keyPair.privateKey, committeeEnvelope(digest)));
+export async function signCommitteeVote(
+  member: MessagePartialSigner,
+  digest: Uint8Array,
+  members: readonly Address[],
+): Promise<CommitteeVote> {
+  const signature = await signMessageBytes(member, committeeEnvelope(digest, members));
   return { member: member.address, signature };
 }
 
-export async function verifyCommitteeVote(vote: CommitteeVote, digest: Uint8Array): Promise<boolean> {
-  if (vote.signature.length !== 64) return false;
+export async function verifyCommitteeVote(vote: CommitteeVote, digest: Uint8Array, members: readonly Address[]): Promise<boolean> {
+  if (vote.signature.length !== 64 || !members.includes(vote.member)) return false;
   try {
     const key = await getPublicKeyFromAddress(vote.member);
-    return await verifySignature(key, vote.signature as SignatureBytes, committeeEnvelope(digest));
+    return await verifySignature(key, vote.signature as SignatureBytes, committeeEnvelope(digest, members));
   } catch {
     return false;
   }

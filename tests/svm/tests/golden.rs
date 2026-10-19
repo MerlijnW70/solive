@@ -11,8 +11,8 @@ use intent_core::kinds::{
 };
 use intent_core::math::{mul_div_ceil, mul_div_floor};
 use intent_core::sig::{
-    check_ed25519_ix, offchain_envelope, AttestedFill, AttestedProof, AttestedSplit, SignedIntent,
-    ED25519_PROGRAM_ID,
+    check_ed25519_cosign, check_ed25519_ix, offchain_envelope, AttestedFill, AttestedProof,
+    AttestedSplit, Cosigners, SignedIntent, COSIGN_KEYS_AT, ED25519_PROGRAM_ID, SPLIT_COSIGN_TAG,
 };
 use intent_core::PARAMS_LEN;
 use intent_engine::instruction as ix;
@@ -23,6 +23,48 @@ use svm_tests::{
 };
 
 const GOLDEN_EXT: [u8; 5] = [1, 2, 0, 0xaa, 0xbb];
+
+fn cosigners(keys: &[Pubkey]) -> TestResult<Cosigners> {
+    let bytes: Vec<[u8; 32]> = keys.iter().map(Pubkey::to_bytes).collect();
+    Ok(Cosigners::new(&bytes).map_err(|e| format!("{e:?}"))?)
+}
+
+fn cosign_data_with_ab_signatures(
+    listed: &Cosigners,
+    signers: &Cosigners,
+    digest: &[u8; 32],
+) -> TestResult<Vec<u8>> {
+    let envelope = listed.envelope(digest);
+    let message = envelope.as_bytes();
+    let m = signers.keys().len();
+    let sigs_at = 14usize.saturating_mul(m).saturating_add(2);
+    let message_at = sigs_at.saturating_add(64usize.saturating_mul(m));
+    let mut data = vec![u8::try_from(m)?, 0];
+    for (k, signer) in signers.keys().iter().enumerate() {
+        let slot = listed.slot(signer).ok_or("signer not listed")?;
+        let pubkey_at = message_at
+            .saturating_add(COSIGN_KEYS_AT)
+            .saturating_add(slot.saturating_mul(32));
+        for v in [
+            u16::try_from(sigs_at.saturating_add(64usize.saturating_mul(k)))?,
+            u16::MAX,
+            u16::try_from(pubkey_at)?,
+            u16::MAX,
+            u16::try_from(message_at)?,
+            u16::try_from(message.len())?,
+            u16::MAX,
+        ] {
+            data.extend_from_slice(&v.to_le_bytes());
+        }
+    }
+    for _ in 0..m {
+        data.extend_from_slice(&[0xab; 64]);
+    }
+    data.extend_from_slice(message);
+    check_ed25519_cosign(&ED25519_PROGRAM_ID, &data, listed, signers, digest)
+        .map_err(|e| format!("{e:?}"))?;
+    Ok(data)
+}
 const RANDOM_SIGNED: usize = 64;
 
 struct SplitMix(u64);
@@ -622,9 +664,22 @@ fn vectors() -> TestResult<Value> {
         split_hash,
     }
     .preimage();
-    let split_digest = solana_sha256_hasher::hashv(&[&split_preimage]).to_bytes();
-    let split_attestation = offchain_envelope(&intent_core::sig::SPLIT_COSIGN_TAG, &split_digest);
-    let committee_message = offchain_envelope(&COMMITTEE_COSIGN_TAG, &proof_digest);
+    let split_digest =
+        solana_sha256_hasher::hashv(&[&SPLIT_COSIGN_TAG, &split_preimage]).to_bytes();
+    let split_cosigners = [key(11), key(5), key(10)];
+    let split_set = cosigners(&split_cosigners)?;
+    let split_attestation = split_set.envelope(&split_digest);
+    let split_batch = cosign_data_with_ab_signatures(&split_set, &split_set, &split_digest)?;
+    let committee_digest =
+        solana_sha256_hasher::hashv(&[&COMMITTEE_COSIGN_TAG, &proof_preimage]).to_bytes();
+    let committee_members = [key(20), key(21), key(22)];
+    let committee_set = cosigners(&committee_members)?;
+    let committee_message = committee_set.envelope(&committee_digest);
+    let committee_batch = cosign_data_with_ab_signatures(
+        &committee_set,
+        &cosigners(&[key(22), key(20)])?,
+        &committee_digest,
+    )?;
     let committees: Vec<Value> = [
         (vec![key(20)], 1u8, key(30)),
         (vec![key(20), key(21), key(22)], 2, key(31)),
@@ -750,8 +805,12 @@ fn vectors() -> TestResult<Value> {
         "attest_proof_message": hex(&proof_attestation),
         "attest_split_hash": hex(&split_hash),
         "attest_split_preimage": hex(&split_preimage),
-        "attest_split_message": hex(&split_attestation),
-        "committee_message": hex(&committee_message),
+        "attest_split_cosigners": split_cosigners.iter().map(ToString::to_string).collect::<Vec<_>>(),
+        "attest_split_message": hex(split_attestation.as_bytes()),
+        "attest_split_batch_with_ab_signatures": hex(&split_batch),
+        "committee_members": committee_members.iter().map(ToString::to_string).collect::<Vec<_>>(),
+        "committee_message": hex(committee_message.as_bytes()),
+        "committee_batch_with_ab_signatures": hex(&committee_batch),
     });
 
     let ext_cases: Vec<(Vec<u8>, Vec<u8>)> = vec![

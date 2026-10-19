@@ -20,6 +20,9 @@ pub const ENVELOPE_LEN: usize = 114;
 pub const ATTEST_PREIMAGE_LEN: usize = 206;
 pub const ATTEST_PROOF_PREIMAGE_LEN: usize = 238;
 pub const ATTEST_SPLIT_PREIMAGE_LEN: usize = 238;
+pub const MAX_COSIGNERS: usize = 16;
+pub const COSIGN_KEYS_AT: usize = 18;
+pub const COSIGN_ENVELOPE_MAX: usize = COSIGN_KEYS_AT + 32 * MAX_COSIGNERS + 64;
 
 struct Buf<const N: usize> {
     out: [u8; N],
@@ -75,22 +78,74 @@ pub fn check_ed25519_ix(
     Ok(())
 }
 
-fn batch_layout(m: usize, message_len: usize) -> Result<(usize, usize, usize, usize), Error> {
-    let entries = m.checked_mul(14).ok_or(Error::SigHeader)?;
-    let pubkeys_at = entries.checked_add(2).ok_or(Error::SigHeader)?;
-    let pubkey_bytes = m.checked_mul(32).ok_or(Error::SigHeader)?;
-    let sigs_at = pubkeys_at
-        .checked_add(pubkey_bytes)
-        .ok_or(Error::SigHeader)?;
-    let sig_bytes = m.checked_mul(64).ok_or(Error::SigHeader)?;
-    let message_at = sigs_at.checked_add(sig_bytes).ok_or(Error::SigHeader)?;
-    let total = message_at
-        .checked_add(message_len)
-        .ok_or(Error::SigHeader)?;
-    Ok((pubkeys_at, sigs_at, message_at, total))
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Cosigners {
+    keys: [[u8; 32]; MAX_COSIGNERS],
+    count: usize,
 }
 
-fn batch_entry(
+impl Cosigners {
+    pub fn new(keys: &[[u8; 32]]) -> Result<Self, Error> {
+        if keys.is_empty() || keys.len() > MAX_COSIGNERS {
+            return Err(Error::SigHeader);
+        }
+        let mut sorted = [[0u8; 32]; MAX_COSIGNERS];
+        for (slot, key) in sorted.iter_mut().zip(keys) {
+            *slot = *key;
+        }
+        let filled = sorted.get_mut(..keys.len()).ok_or(Error::SigHeader)?;
+        filled.sort_unstable();
+        let mut out = [[0u8; 32]; MAX_COSIGNERS];
+        let mut count = 0usize;
+        let mut last: Option<[u8; 32]> = None;
+        for key in filled.iter() {
+            if last == Some(*key) {
+                continue;
+            }
+            let slot = out.get_mut(count).ok_or(Error::SigHeader)?;
+            *slot = *key;
+            count = count.checked_add(1).ok_or(Error::SigHeader)?;
+            last = Some(*key);
+        }
+        Ok(Self { keys: out, count })
+    }
+
+    pub fn keys(&self) -> &[[u8; 32]] {
+        self.keys.get(..self.count).unwrap_or_default()
+    }
+
+    pub fn slot(&self, key: &[u8; 32]) -> Option<usize> {
+        self.keys().binary_search(key).ok()
+    }
+
+    pub fn envelope(&self, digest: &[u8; 32]) -> CosignEnvelope {
+        let mut out = Buf::<COSIGN_ENVELOPE_MAX>::new()
+            .put(&OFFCHAIN_PREFIX)
+            .put(&[1, u8::try_from(self.count).unwrap_or(u8::MAX)]);
+        for key in self.keys() {
+            out = out.put(key);
+        }
+        let out = out.put(&hex_of(digest));
+        CosignEnvelope {
+            len: out.at,
+            bytes: out.out,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CosignEnvelope {
+    bytes: [u8; COSIGN_ENVELOPE_MAX],
+    len: usize,
+}
+
+impl CosignEnvelope {
+    pub fn as_bytes(&self) -> &[u8] {
+        self.bytes.get(..self.len).unwrap_or_default()
+    }
+}
+
+fn cosign_entry(
     sig_at: usize,
     pubkey_at: usize,
     message_at: usize,
@@ -110,45 +165,57 @@ fn batch_entry(
         .out)
 }
 
-pub fn check_ed25519_batch(
+pub fn check_ed25519_cosign(
     program: &[u8; 32],
     data: &[u8],
-    pubkeys: &[[u8; 32]],
-    message: &[u8],
+    listed: &Cosigners,
+    signers: &Cosigners,
+    digest: &[u8; 32],
 ) -> Result<(), Error> {
     if program != &ED25519_PROGRAM_ID {
         return Err(Error::SigProgram);
     }
-    let m = pubkeys.len();
-    let count = u8::try_from(m).map_err(|_| Error::SigHeader)?;
-    if count == 0 {
-        return Err(Error::SigHeader);
-    }
+    let envelope = listed.envelope(digest);
+    let message = envelope.as_bytes();
     let message_len = u16::try_from(message.len()).map_err(|_| Error::SigMessage)?;
+    let m = signers.keys().len();
+    let count = u8::try_from(m).map_err(|_| Error::SigHeader)?;
     if data.first() != Some(&count) || data.get(1) != Some(&0) {
         return Err(Error::SigHeader);
     }
-    let (pubkeys_at, sigs_at, message_at, total) = batch_layout(m, message.len())?;
+    let sigs_at = m
+        .checked_mul(14)
+        .and_then(|entries| entries.checked_add(2))
+        .ok_or(Error::SigHeader)?;
+    let message_at = m
+        .checked_mul(64)
+        .and_then(|sigs| sigs.checked_add(sigs_at))
+        .ok_or(Error::SigHeader)?;
+    let total = message_at
+        .checked_add(message.len())
+        .ok_or(Error::SigHeader)?;
     if data.len() != total {
         return Err(Error::SigHeader);
     }
-    for (k, want) in pubkeys.iter().enumerate() {
-        let offset = k.checked_mul(14).ok_or(Error::SigHeader)?;
-        let entry_at = offset.checked_add(2).ok_or(Error::SigHeader)?;
+    for (k, signer) in signers.keys().iter().enumerate() {
+        let slot = listed.slot(signer).ok_or(Error::SigPubkey)?;
+        let pubkey_at = slot
+            .checked_mul(32)
+            .and_then(|at| at.checked_add(COSIGN_KEYS_AT))
+            .and_then(|at| at.checked_add(message_at))
+            .ok_or(Error::SigHeader)?;
+        let sig_at = k
+            .checked_mul(64)
+            .and_then(|at| at.checked_add(sigs_at))
+            .ok_or(Error::SigHeader)?;
+        let entry_at = k
+            .checked_mul(14)
+            .and_then(|at| at.checked_add(2))
+            .ok_or(Error::SigHeader)?;
         let entry_end = entry_at.checked_add(14).ok_or(Error::SigHeader)?;
-        let pubkey_at = pubkeys_at
-            .checked_add(k.checked_mul(32).ok_or(Error::SigHeader)?)
-            .ok_or(Error::SigHeader)?;
-        let pubkey_end = pubkey_at.checked_add(32).ok_or(Error::SigHeader)?;
-        let sig_at = sigs_at
-            .checked_add(k.checked_mul(64).ok_or(Error::SigHeader)?)
-            .ok_or(Error::SigHeader)?;
-        let expected = batch_entry(sig_at, pubkey_at, message_at, message_len)?;
+        let expected = cosign_entry(sig_at, pubkey_at, message_at, message_len)?;
         if data.get(entry_at..entry_end) != Some(&expected[..]) {
             return Err(Error::SigHeader);
-        }
-        if data.get(pubkey_at..pubkey_end) != Some(&want[..]) {
-            return Err(Error::SigPubkey);
         }
     }
     if data.get(message_at..) != Some(message) {
@@ -210,18 +277,22 @@ fn hex_digit(nibble: u8) -> u8 {
     }
 }
 
-pub fn offchain_envelope(signer: &[u8; 32], digest: &[u8; 32]) -> [u8; ENVELOPE_LEN] {
+fn hex_of(digest: &[u8; 32]) -> [u8; 64] {
     let mut hex = [0u8; 64];
     for (pair, byte) in hex.as_chunks_mut::<2>().0.iter_mut().zip(digest) {
         for (dst, nibble) in pair.iter_mut().zip([byte / 16, byte % 16]) {
             *dst = hex_digit(nibble);
         }
     }
+    hex
+}
+
+pub fn offchain_envelope(signer: &[u8; 32], digest: &[u8; 32]) -> [u8; ENVELOPE_LEN] {
     Buf::<ENVELOPE_LEN>::new()
         .put(&OFFCHAIN_PREFIX)
         .put(&[1, 1])
         .put(signer)
-        .put(&hex)
+        .put(&hex_of(digest))
         .out
 }
 

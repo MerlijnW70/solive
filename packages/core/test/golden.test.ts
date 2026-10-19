@@ -61,7 +61,10 @@ import {
   attestedFillPreimage,
   attestedProofMessage,
   attestedProofPreimage,
+  attestedSplitDigest,
+  SPLIT_COSIGN_TAG,
   attestedSplitPreimage,
+  buildEd25519CosignInstruction,
   splitCosignEnvelope,
   splitCommit,
   splitN,
@@ -131,6 +134,7 @@ type Vectors = {
     | "attest_split_hash"
     | "attest_split_preimage"
     | "attest_split_message"
+    | "attest_split_batch_with_ab_signatures"
     | "attest_filled"
     | "attest_revision"
     | "attest_max_fee_bps"
@@ -658,8 +662,22 @@ describe("golden vectors emitted by the Rust implementation", () => {
     const preimage = await attestedSplitPreimage(fields);
     expect(preimage).toHaveLength(238);
     expect(hexOf(preimage)).toBe(s.attest_split_preimage);
-    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", preimage.slice()));
-    expect(hexOf(splitCosignEnvelope(digest))).toBe(s.attest_split_message);
+    const tagged = new Uint8Array([...SPLIT_COSIGN_TAG, ...preimage]);
+    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", tagged));
+    const plain = { ...fields, ext: new Uint8Array() };
+    const plainTagged = new Uint8Array([...SPLIT_COSIGN_TAG, ...(await attestedSplitPreimage(plain))]);
+    expect(await attestedSplitDigest(plain)).toEqual(new Uint8Array(await crypto.subtle.digest("SHA-256", plainTagged)));
+    const cosigners = (vectors.sig as unknown as { attest_split_cosigners: Address[] }).attest_split_cosigners;
+    const message = splitCosignEnvelope(digest, cosigners);
+    expect(hexOf(message)).toBe(s.attest_split_message);
+    const viaKit = getOffchainMessageV1Encoder().encode({
+      version: 1,
+      requiredSignatories: cosigners.map((address) => ({ address })),
+      content: hexOf(digest),
+    });
+    expect(hexOf(viaKit)).toBe(s.attest_split_message);
+    const entries = cosigners.map((publicKey) => ({ publicKey, signature: new Uint8Array(64).fill(0xab) }));
+    expect(hexOf(buildEd25519CosignInstruction({ entries, message }).data ?? new Uint8Array())).toBe(s.attest_split_batch_with_ab_signatures);
     const otherSplit = { ...fields, splitHash: new Uint8Array(32).fill(1) };
     expect(hexOf(await attestedSplitPreimage(otherSplit))).not.toBe(s.attest_split_preimage);
   });

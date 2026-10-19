@@ -12,7 +12,7 @@ import {
   type TransactionPartialSigner,
   verifySignature,
 } from "@solana/kit";
-import { ENVELOPE_LEN, OFFCHAIN_PREFIX } from "@intent-engine/core";
+import { COSIGN_KEYS_AT, MAX_COSIGNERS, OFFCHAIN_PREFIX } from "@intent-engine/core";
 
 export const LEDGER_FORMS = ["usb://ledger", "usb://ledger?key=<account>", "usb://ledger?key=<account>/<change>"];
 
@@ -170,18 +170,28 @@ async function signed(signer: Address, signature: Uint8Array, message: Uint8Arra
 }
 
 export const notOwnEnvelope = (signer: Address) =>
-  `the Ledger signs only an off-chain message whose one signer is its own key ${signer}, and this message names another; nothing was sent`;
+  `the Ledger signs only an off-chain message whose signers, sorted and each once, include its own key ${signer}, and this message does not; nothing was sent`;
+
+const isHex = (b: number) => (b >= 0x30 && b <= 0x39) || (b >= 0x61 && b <= 0x66);
 
 function ownEnvelope(signer: Address, message: Uint8Array): boolean {
   const key = getAddressEncoder().encode(signer);
   const head = OFFCHAIN_PREFIX.length;
+  const count = message[head + 1] ?? 0;
+  const keys = Array.from({ length: count }, (_, i) => message.subarray(COSIGN_KEYS_AT + 32 * i, COSIGN_KEYS_AT + 32 * (i + 1)));
+  const before = (a: Uint8Array, b: Uint8Array) => {
+    const at = a.findIndex((x, i) => x !== b[i]);
+    return at >= 0 && (a[at] ?? 0) < (b[at] ?? 0);
+  };
   return (
-    message.length === ENVELOPE_LEN &&
+    count >= 1 &&
+    count <= MAX_COSIGNERS &&
+    message.length === COSIGN_KEYS_AT + 32 * count + 64 &&
     OFFCHAIN_PREFIX.every((b, i) => message[i] === b) &&
     message[head] === 1 &&
-    message[head + 1] === 1 &&
-    key.every((b, i) => message[head + 2 + i] === b) &&
-    message.subarray(head + 2 + key.length).every((b) => (b >= 0x30 && b <= 0x39) || (b >= 0x61 && b <= 0x66))
+    keys.every((k, i) => i === 0 || before(keys[i - 1] ?? k, k)) &&
+    keys.some((k) => k.every((b, i) => b === key[i])) &&
+    message.subarray(COSIGN_KEYS_AT + 32 * count).every(isHex)
   );
 }
 

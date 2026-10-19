@@ -1,11 +1,12 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { type Address, generateKeyPairSigner, getAddressDecoder, signBytes } from "@solana/kit";
+import { type Address, generateKeyPairSigner, getAddressDecoder, getAddressEncoder, signBytes } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import {
   buildCommitteeBatch,
   buildCreateCommittee,
   checkCommittee,
+  COMMITTEE_COSIGN_TAG,
   committeeEnvelope,
   committeeMask,
   committeeOf,
@@ -30,14 +31,14 @@ type CommitteeCase = {
 };
 type Vectors = {
   committees: CommitteeCase[];
-  sig: { attest_proof_preimage: string; committee_message: string };
+  sig: { attest_proof_preimage: string; committee_message: string; committee_members: Address[]; committee_batch_with_ab_signatures: string };
 };
 
 const vectors = JSON.parse(
   readFileSync(fileURLToPath(new URL("./golden/vectors.json", import.meta.url)), "utf8"),
 ) as Vectors;
 
-const hexOf = (bytes: Uint8Array) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+const hexOf = (bytes: ArrayLike<number>) => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 const bytesOfHex = (hex: string) => Uint8Array.from(hex.match(/../g) ?? [], (h) => parseInt(h, 16));
 
 function termsOf(c: CommitteeCase) {
@@ -77,10 +78,18 @@ describe("committee terms match the program byte for byte", () => {
     });
   }
 
-  it("signs the committee envelope over the release digest", async () => {
-    const digest = await sha256(bytesOfHex(vectors.sig.attest_proof_preimage));
-    expect(hexOf(committeeEnvelope(digest))).toBe(vectors.sig.committee_message);
-    expect(() => committeeEnvelope(new Uint8Array(31))).toThrow(RangeError);
+  it("signs one envelope that lists every member, over the tagged release digest", async () => {
+    const members = vectors.sig.committee_members;
+    const digest = await sha256(new Uint8Array([...COMMITTEE_COSIGN_TAG, ...bytesOfHex(vectors.sig.attest_proof_preimage)]));
+    expect(hexOf(committeeEnvelope(digest, [...members].reverse()))).toBe(vectors.sig.committee_message);
+    expect(() => committeeEnvelope(new Uint8Array(31), members)).toThrow(RangeError);
+    const [first, , third] = members;
+    if (first === undefined || third === undefined) throw new Error("three members");
+    const terms = { members, threshold: 2, feeWallet: first };
+    const votes = [third, first].map((member) => ({ member, signature: new Uint8Array(64).fill(0xab) }));
+    const { instruction, mask } = buildCommitteeBatch(terms, digest, votes);
+    expect(mask).toBe(0b101);
+    expect(hexOf(instruction.data ?? new Uint8Array())).toBe(vectors.sig.committee_batch_with_ab_signatures);
   });
 });
 
@@ -114,7 +123,7 @@ describe("committee ergonomics", () => {
       feeWallet: signers[0]?.address ?? ("" as Address),
     };
     const digest = new Uint8Array(32).fill(9);
-    const message = committeeEnvelope(digest);
+    const message = committeeEnvelope(digest, terms.members);
     const voters = [signers[2], signers[0]].filter((s) => s !== undefined);
     const votes = await Promise.all(
       voters.map(async (s) => ({
@@ -127,7 +136,12 @@ describe("committee ergonomics", () => {
     expect(committeeSigners(terms, mask)).toEqual(terms.members.filter((m) => voters.some((v) => v.address === m)));
     const data = instruction.data ?? new Uint8Array();
     expect(data[0]).toBe(2);
-    expect(hexOf(data.slice(data.length - message.length))).toBe(hexOf(message));
+    const messageAt = data.length - message.length;
+    expect(hexOf(data.slice(messageAt))).toBe(hexOf(message));
+    const keyAt = (k: number) => new DataView(data.buffer, data.byteOffset).getUint16(2 + 14 * k + 4, true);
+    const listed = committeeSigners(terms, mask).map((m) => hexOf(getAddressEncoder().encode(m)));
+    expect([0, 1].map((k) => hexOf(data.slice(keyAt(k), keyAt(k) + 32)))).toEqual(listed);
+    expect([0, 1].every((k) => keyAt(k) >= messageAt + 18 && keyAt(k) < messageAt + 18 + 32 * 3)).toBe(true);
   });
 
   it("builds a create instruction for the content-addressed account", async () => {

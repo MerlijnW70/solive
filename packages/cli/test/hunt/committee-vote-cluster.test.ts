@@ -101,7 +101,7 @@ describe("a wallet server whose RPC turns to mainnet after a committee vote prev
       payTo: e.ballot.pay_to,
       result: 1n,
     });
-    const theirs = await signCommitteeVote(e.other, ballot.digest);
+    const theirs = await signCommitteeVote(e.other, ballot.digest, ballot.committee.members);
     const votes = [own, { member: theirs.member, signature: getBase16Decoder().decode(theirs.signature).toLowerCase() }];
     const shown = await ok(client, "wallet_committee_release", { ...e.ballot, votes });
     expect(shown).toMatchObject({ sent: false });

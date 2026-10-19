@@ -1,12 +1,12 @@
 import { readFile, writeFile } from "node:fs/promises";
-import type { Address, KeyPairSigner } from "@solana/kit";
+import type { Address, MessagePartialSigner } from "@solana/kit";
 import { buildCreateCommittee, type CommitteeVote, signCommitteeVote } from "@intent-engine/core";
 import { type CommitteeBallot, confirmOnBoth, createClient, type Transport } from "@intent-engine/client";
 import { previewed } from "./admin-commands.js";
 import { parseAddress, parseU64 } from "./arg-values.js";
 import type { Command } from "./command-types.js";
 import { FlowRefused } from "./flows.js";
-import { transactionSigner } from "./ledger-keys.js";
+import { messageSigner, transactionSigner } from "./ledger-keys.js";
 import type { Runtime } from "./runtime.js";
 
 export const VOTE_KIND = "committee-vote";
@@ -41,11 +41,11 @@ function ballotLines(ballot: CommitteeBallot, target: Ballot): string[] {
   ];
 }
 
-export async function memberVote(member: KeyPairSigner, ballot: CommitteeBallot, target: Ballot): Promise<VoteFile> {
+export async function memberVote(member: MessagePartialSigner, ballot: CommitteeBallot, target: Ballot): Promise<VoteFile> {
   if (!ballot.committee.members.includes(member.address)) {
     throw new FlowRefused(`${member.address} is not a member of committee ${ballot.committee.address}; nothing was signed`);
   }
-  const { signature } = await signCommitteeVote(member, ballot.digest);
+  const { signature } = await signCommitteeVote(member, ballot.digest, ballot.committee.members);
   return {
     kind: VOTE_KIND,
     intent: ballot.intent,
@@ -144,7 +144,7 @@ export async function committeeCommand(command: CommitteeCommand, runtime: Runti
       };
     }
     case "committee-vote": {
-      const member = await runtime.loadSigner(command.keypair);
+      const member = await messageSigner(runtime, command.keypair);
       const target = { owner: command.owner, nonce: command.nonce, payTo: command.payTo, result: command.result };
       const ballot = await client.committeeBallot(target);
       if (!ballot.committee.members.includes(member.address)) {

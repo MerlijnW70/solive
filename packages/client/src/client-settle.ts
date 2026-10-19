@@ -216,7 +216,7 @@ export function committeeSettlement(context: ClientContext) {
     const payer = input.payer ?? input.solver;
     const { plan, committee, digest } = await planned({ ...input, payer });
     for (const vote of input.votes) {
-      if (!(await verifyCommitteeVote(vote, digest))) {
+      if (!(await verifyCommitteeVote(vote, digest, committee.members))) {
         throw new VoteRejected(vote.member, plan.intent);
       }
     }

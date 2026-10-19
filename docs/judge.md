@@ -231,6 +231,8 @@ Pass the printed `committee` address as `--attestor` when you create the escrow.
 intent-engine judge --keypair a.json --owner $env:OWNER --nonce $env:NONCE --spec SPEC.md --artifact work.mjs --sandbox viper --verdict a.json.verdict
 ```
 
+A member whose key is on a Ledger votes with `committee vote --keypair usb://ledger` and the same `--owner`, `--nonce`, `--pay-to` and `--result`, plus `--out` for the vote file and `--yes`. The device shows one message that lists every member's key and the release digest. A vote stays valid whichever members reach the threshold.
+
 Any member who voted then submits the votes:
 
 ```powershell

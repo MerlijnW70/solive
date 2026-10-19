@@ -9,7 +9,7 @@ import { AgentRefusal } from "../problems.js";
 import { InvalidInput, account, amount, flag, integer, list, object, optional, text } from "../schema.js";
 import { preparedView } from "../shapes.js";
 import { prepare } from "../prepare.js";
-import { keyFileOnly, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of } from "./guard.js";
+import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of } from "./guard.js";
 import { ATTEST_PAGES, DELIVERED_NEEDED, HISTORY_TOO_LONG, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, notEarliest, confirmedRelease } from "./delivery.js";
 import { RELEASE_CHANGED } from "./attest.js";
 
@@ -85,7 +85,6 @@ export const walletCommitteeVote = define({
   }),
   run: async (ctx: AgentContext, input) => {
     const signer = await signerOf(ctx);
-    keyFileOnly(signer, tool("wallet_committee_vote"));
     const { ballot, delivered } = await ballotOf(ctx, input);
     if (!ballot.committee.members.includes(signer.address)) {
       throw new AgentRefusal("Unauthorized", NOT_A_MEMBER);
@@ -98,7 +97,7 @@ export const walletCommitteeVote = define({
     if (input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", VOTE_CHANGED);
     }
-    const signature = await signer.signBytes(committeeEnvelope(ballot.digest));
+    const signature = await signer.signBytes(committeeEnvelope(ballot.digest, ballot.committee.members));
     return { ...shown, signed: true, vote: { member: signer.address, signature: hex(signature) } };
   },
 });

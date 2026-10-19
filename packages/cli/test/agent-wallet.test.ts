@@ -48,7 +48,7 @@ import {
   getFillAttestedSplitInstructionDataEncoder,
   getCreateIntentInstructionDataEncoder,
   attestedSplitMessage,
-  buildEd25519BatchInstruction,
+  buildEd25519CosignInstruction,
   buildFillAttestedSplit,
   computeUnitLimit,
   computeUnitPrice,
@@ -686,8 +686,8 @@ describe("the wallet server", () => {
       maxFeeBps: FEE_BPS,
       specHash: new Uint8Array(32).fill(1),
       splitHash: await splitCommit(wallets, weights),
-    });
-    const batch = buildEd25519BatchInstruction({ entries: [...wallets, judge.address].map((publicKey) => ({ publicKey, signature: new Uint8Array(64) })), message });
+    }, [...wallets, judge.address]);
+    const batch = buildEd25519CosignInstruction({ entries: [...wallets, judge.address].map((publicKey) => ({ publicKey, signature: new Uint8Array(64) })), message });
     const memo = memoInstruction(judge, releaseMemo("ab".repeat(32)));
     const instructions = [batch, settle, ...(withMemo ? [memo] : []), computeUnitLimit(MAX_COMPUTE_UNITS), computeUnitPrice(1n)];
     const invoked = new Set<Address>([INTENT_ENGINE_PROGRAM_ADDRESS, TOKEN_PROGRAM_ADDRESS, judge.address]);
@@ -709,7 +709,7 @@ describe("the wallet server", () => {
     const { config } = await loadConfig(transport);
     await ata(payer, config.feeRecipient, NATIVE_MINT);
     const coauthors = [await generateKeyPairSigner(), await generateKeyPairSigner()];
-    for (const c of coauthors) {
+    for (const c of coauthors.slice(1)) {
       await ata(payer, c.address, NATIVE_MINT);
     }
     const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, min_result: "1", max_result: "1", spec_hash: "5d".repeat(32), send: true });
@@ -746,7 +746,7 @@ describe("the wallet server", () => {
     }
     const payer = await funded();
     const { config } = await loadConfig(transport);
-    for (const wallet of [config.feeRecipient, ...coauthors.map((c) => c.address)]) {
+    for (const wallet of [config.feeRecipient, ...coauthors.slice(1).map((c) => c.address)]) {
       await ata(payer, wallet, NATIVE_MINT);
     }
     h.engineLog = [announce("early", 5n, first.address), creation(intent)];
@@ -768,9 +768,9 @@ describe("the wallet server", () => {
     expect(held.exists && getIntentDecoder().decode(held.data).status).toBe(IntentStatus.Filled);
   });
 
-  async function cosignedSplit(work: string, payer: KeyPairSigner, weights?: readonly number[]) {
+  async function cosignedSplit(work: string, payer: KeyPairSigner, weights?: readonly number[], createdByRelease = 0) {
     const made = await splitEscrow(work, weights);
-    for (const c of made.coauthors) {
+    for (const c of made.coauthors.slice(createdByRelease)) {
       await ata(payer, c.address, NATIVE_MINT);
     }
     h.engineLog = [creation(made.intent)];
@@ -796,7 +796,7 @@ describe("the wallet server", () => {
     const payer = await funded();
     const { config } = await loadConfig(transport);
     await ata(payer, config.feeRecipient, NATIVE_MINT);
-    const split = await cosignedSplit(work, payer);
+    const split = await cosignedSplit(work, payer, undefined, 1);
     h.packetLimit = true;
     h.simulated.length = 0;
     h.wires.length = 0;
@@ -849,7 +849,7 @@ describe("the wallet server", () => {
     const payer = await funded();
     const { config } = await loadConfig(transport);
     await ata(payer, config.feeRecipient, NATIVE_MINT);
-    const lost = await cosignedSplit(work, payer);
+    const lost = await cosignedSplit(work, payer, undefined, 1);
     h.wires.length = 0;
     h.sendFails = { error: new Error("blockhash not found"), landed: false, after: 1 };
     const failed = await ok(client, "wallet_attest_split", lost.release);
@@ -870,7 +870,7 @@ describe("the wallet server", () => {
       engineTransactions: async () => [...tried.map(landedAs), ...h.engineLog],
     };
     client = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
-    const timedOut = await cosignedSplit(work, payer);
+    const timedOut = await cosignedSplit(work, payer, undefined, 1);
     h.sendFails = { error: new Error("timed out"), landed: true, after: 1 };
     const late = await ok(client, "wallet_attest_split", timedOut.release);
     const followUp = tried.map(landedAs).find((tx) => (tx.memos ?? []).includes(followUpMemo(work, late["signature"] as string)));

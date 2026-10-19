@@ -7,6 +7,7 @@ import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   buildEd25519Instruction,
+  COMMITTEE_COSIGN_TAG,
   committeeEnvelope,
   ED25519_PROGRAM_ADDRESS,
   findAssociatedTokenAddress,
@@ -14,6 +15,7 @@ import {
   getIntentDecoder,
   IntentStatus,
   Kind,
+  sortMembers,
   splitCosignEnvelope,
 } from "@intent-engine/core";
 import { committeeJudged, createClient, LEDGER_ERRORS, LEDGER_FORMS, LedgerError, ledgerSigner, notOwnEnvelope, type OpenTransport, type Transport } from "@intent-engine/client";
@@ -157,7 +159,7 @@ describe("a judge on a Ledger", () => {
     }
   }, 120_000);
 
-  it("committee and split cosigning still refuse a Ledger, and the device never signs an envelope naming another signer", async () => {
+  it("the device signs only an envelope that lists its own key", async () => {
     let committee = "" as Address;
     const c = await job(async (key) => {
       const made = await createClient({ url: "http://cluster", transport }).createCommittee({
@@ -178,18 +180,28 @@ describe("a judge on a Ledger", () => {
     expect(statusOf(c.intent)).toBe(IntentStatus.Open);
     const printed = await run(["judge", "digest", "--owner", c.w.owner.address, "--nonce", "0", "--pay-to", c.worker]);
     expect([printed.code, printed.err, printed.out]).toEqual([EXIT_FAILED, `intent ${c.intent} ${committeeJudged(committee)}`, ""]);
-    const voting = device(j.key, []);
-    const vote = ["committee", "vote", "--keypair", PATH, "--owner", c.w.owner.address, "--nonce", "0", "--pay-to", c.worker, "--result", "1", "--yes"];
-    expect(await run(vote, voting)).toMatchObject({ code: EXIT_USAGE, err: needsKeyFile("committee vote", PATH), out: "" });
-    expect(voting.opened).toBe(0);
-    const direct = device(j.key, found(LEVELS, j.key));
+    expect(signsOnDevice(parse(["committee", "vote", "--keypair", PATH, "--owner", c.w.owner.address, "--nonce", "0", "--pay-to", c.worker, "--result", "1"]))).toBe(true);
+    const direct = device(j.key, [...found(LEVELS, j.key), ...messageThen()]);
     const signer = await ledgerSigner(PATH, direct.open);
     const digest = getRandomValues(new Uint8Array(32));
-    for (const envelope of [committeeEnvelope(digest), splitCosignEnvelope(digest)]) {
+    const [a, b] = sortMembers([(await generateKeyPairSigner()).address, (await generateKeyPairSigner()).address]);
+    if (a === undefined || b === undefined) throw new Error("two keys");
+    const unsorted = sortMembers([a, j.key.address]).reverse();
+    const refused = [
+      committeeEnvelope(digest, [a, b]),
+      splitCosignEnvelope(digest, [a]),
+      Uint8Array.from([0xff, ...ascii("solana offchain"), 1, 1, ...COMMITTEE_COSIGN_TAG, ...ascii(Buffer.from(digest).toString("hex"))]),
+      Uint8Array.from([0xff, ...ascii("solana offchain"), 1, 2, ...unsorted.flatMap((k) => [...getAddressEncoder().encode(k)]), ...ascii(Buffer.from(digest).toString("hex"))]),
+    ];
+    for (const envelope of refused) {
       await expect(signer.signMessages([{ content: envelope, signatures: {} }])).rejects.toEqual(new LedgerError(notOwnEnvelope(j.key.address)));
     }
-    direct.store.ensureQueueEmpty();
     expect(direct.signed).toEqual([]);
+    const listed = committeeEnvelope(digest, [a, j.key.address, b]);
+    const [signed] = await signer.signMessages([{ content: listed, signatures: {} }]);
+    expect(signed?.[j.key.address]).toHaveLength(64);
+    direct.store.ensureQueueEmpty();
+    expect(direct.signed.map((s) => Buffer.from(s.bytes).toString("hex"))).toEqual([Buffer.from(listed).toString("hex")]);
   });
 
   it("a message signature from the device that does not verify for its key is refused", async () => {
@@ -234,7 +246,7 @@ describe("a judge on a Ledger", () => {
       }
     }
     expect(LEDGER_COMMANDS).toEqual(expect.arrayContaining(["judge", "committee release", "signed prepare"]));
-    expect(LEDGER_COMMANDS).not.toContain("committee vote");
+    expect(LEDGER_COMMANDS).toContain("committee vote");
   });
 });
 

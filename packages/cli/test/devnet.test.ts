@@ -41,13 +41,13 @@ import {
   buildCreateIntentSigned,
   buildCreateMandate,
   buildExpireIntent,
-  buildEd25519BatchInstruction,
+  buildEd25519CosignInstruction,
   buildFillAttested,
   buildFillAttestedSplit,
   buildFillIntent,
   buildFlashFill,
   buildInitUser,
-  attestedSplitPreimage,
+  attestedSplitDigest,
   ED25519_PROGRAM_ADDRESS,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   splitCommit,
@@ -790,7 +790,7 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet collaborativ
     const attestedFee = feeBpsFor(config, Kind.AttestedResult);
     const maxFeeBps = attestedFee + 0;
     const splitHash = await splitCommit(recipients, weights);
-    const preimage = await attestedSplitPreimage({
+    const digest = await attestedSplitDigest({
       domain: Uint8Array.from(config.domain),
       intent,
       amountIn: ESCROW,
@@ -799,15 +799,14 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet collaborativ
       specHash: spec,
       splitHash,
     });
-    const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", preimage.slice()));
-    const message = splitCosignEnvelope(digest);
+    const message = splitCosignEnvelope(digest, [...coauthors, attestor].map((signer) => signer.address));
     const entries = await Promise.all(
       [...coauthors, attestor].map(async (signer) => ({
         publicKey: signer.address,
         signature: new Uint8Array(await signBytes(signer.keyPair.privateKey, message)),
       })),
     );
-    const batch = buildEd25519BatchInstruction({ entries, message });
+    const batch = buildEd25519CosignInstruction({ entries, message });
     const fill = await buildFillAttestedSplit({
       solver: owner,
       owner: owner.address,

@@ -41,7 +41,7 @@ The agent then creates intents with `solive_agent_create`, only for those owners
 
 ## Sign with a Ledger
 
-Set `INTENT_ENGINE_KEYPAIR` to `usb://ledger` or another form from the [quickstart](quickstart.md#sign-with-a-ledger), then start the server with `--wallet`. The wallet keeps no key file. Every send waits for your approval on the device, and a refusal there returns the `Ledger` problem with nothing sent. Committee votes and split releases sign a message a Ledger cannot sign, so those tools return `LedgerNeedsKeyFile`.
+Set `INTENT_ENGINE_KEYPAIR` to `usb://ledger` or another form from the [quickstart](quickstart.md#sign-with-a-ledger), then start the server with `--wallet`. The wallet keeps no key file. Every send waits for your approval on the device, and a refusal there returns the `Ledger` problem with nothing sent. Committee votes and split releases sign one message that lists the wallet's key among the cosigners, so they work on a Ledger too.
 
 ## Relay signed intents
 

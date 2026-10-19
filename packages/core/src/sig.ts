@@ -24,6 +24,8 @@ export const ENVELOPE_LEN = 114;
 export const ATTEST_PREIMAGE_LEN = 206;
 export const ATTEST_PROOF_PREIMAGE_LEN = 238;
 export const ATTEST_SPLIT_PREIMAGE_LEN = 238;
+export const MAX_COSIGNERS = 16;
+export const COSIGN_KEYS_AT = 18;
 
 const key = (a: Address) => getAddressEncoder().encode(a);
 
@@ -137,14 +139,46 @@ export async function signedIntentPreimage(f: SignedIntentFields): Promise<Uint8
   );
 }
 
+const hexOf = (digest: Uint8Array) => ascii(Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join(""));
+
 export function offchainEnvelope(signer: Address, digest: Uint8Array): Uint8Array {
-  const hex = Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
-  return concat([OFFCHAIN_PREFIX, [1, 1], key(signer), ascii(hex)], ENVELOPE_LEN);
+  return concat([OFFCHAIN_PREFIX, [1, 1], key(signer), hexOf(digest)], ENVELOPE_LEN);
 }
 
-export function splitCosignEnvelope(digest: Uint8Array): Uint8Array {
-  const hex = Array.from(digest, (b) => b.toString(16).padStart(2, "0")).join("");
-  return concat([OFFCHAIN_PREFIX, [1, 1], SPLIT_COSIGN_TAG, ascii(hex)], ENVELOPE_LEN);
+function compareKeys(a: ArrayLike<number>, b: ArrayLike<number>): number {
+  for (let i = 0; i < 32; i += 1) {
+    const d = (a[i] ?? 0) - (b[i] ?? 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
+export function cosignerSet(keys: readonly Address[]): Address[] {
+  if (keys.length === 0 || keys.length > MAX_COSIGNERS) {
+    throw new RangeError(`a cosigned release lists 1 to ${MAX_COSIGNERS} keys, got ${keys.length}`);
+  }
+  return [...new Set(keys)].sort((a, b) => compareKeys(key(a), key(b)));
+}
+
+export function cosignEnvelope(keys: readonly Address[], digest: Uint8Array): Uint8Array {
+  if (digest.length !== 32) {
+    throw new RangeError(`a cosign digest is 32 bytes, got ${digest.length}`);
+  }
+  const listed = cosignerSet(keys);
+  return concat([OFFCHAIN_PREFIX, [1, listed.length], ...listed.map(key), hexOf(digest)], COSIGN_KEYS_AT + 32 * listed.length + 64);
+}
+
+export function splitCosignEnvelope(digest: Uint8Array, cosigners: readonly Address[]): Uint8Array {
+  return cosignEnvelope(cosigners, digest);
+}
+
+export async function signMessageBytes(signer: MessagePartialSigner, message: Uint8Array): Promise<Uint8Array> {
+  const [signed] = await signer.signMessages([{ content: message, signatures: {} }]);
+  const signature = signed?.[signer.address];
+  if (signature === undefined) {
+    throw new Error(`${signer.address} returned no signature for the message`);
+  }
+  return new Uint8Array(signature);
 }
 
 async function sha256(bytes: Uint8Array): Promise<Uint8Array> {
@@ -304,9 +338,14 @@ export async function attestedSplitPreimage(f: AttestedSplitFields): Promise<Uin
   );
 }
 
-export async function attestedSplitMessage(f: AttestedSplitFields): Promise<Uint8Array> {
+export async function attestedSplitDigest(f: AttestedSplitFields): Promise<Uint8Array> {
   validateExt(f.ext ?? new Uint8Array(), FILL_EXT_TAGS);
-  return splitCosignEnvelope(await sha256(await attestedSplitPreimage(f)));
+  const preimage = await attestedSplitPreimage(f);
+  return sha256(concat([SPLIT_COSIGN_TAG, preimage], SPLIT_COSIGN_TAG.length + preimage.length));
+}
+
+export async function attestedSplitMessage(f: AttestedSplitFields, cosigners: readonly Address[]): Promise<Uint8Array> {
+  return cosignEnvelope(cosigners, await attestedSplitDigest(f));
 }
 
 export function ed25519Header(messageLength: number): Uint8Array {
@@ -397,6 +436,52 @@ export function buildEd25519BatchInstruction(input: {
     parts.push(key(e.publicKey));
   }
   for (const e of input.entries) {
+    parts.push(e.signature);
+  }
+  parts.push(input.message);
+  return {
+    programAddress: ED25519_PROGRAM_ADDRESS,
+    data: concat(parts, messageAt + len),
+  };
+}
+
+export function buildEd25519CosignInstruction(input: {
+  entries: { publicKey: Address; signature: Uint8Array }[];
+  message: Uint8Array;
+}): Instruction {
+  const listed = input.message[COSIGN_KEYS_AT - 1] ?? 0;
+  const slots = Array.from({ length: listed }, (_, i) => input.message.slice(COSIGN_KEYS_AT + 32 * i, COSIGN_KEYS_AT + 32 * (i + 1)));
+  const entries = [...input.entries].sort((a, b) => compareKeys(key(a.publicKey), key(b.publicKey)));
+  const m = entries.length;
+  if (m === 0 || m > MAX_COSIGNERS) {
+    throw new RangeError(`a cosign batch holds 1 to ${MAX_COSIGNERS} signers, got ${m}`);
+  }
+  const len = input.message.length;
+  if (len > 0xffff) {
+    throw new RangeError(`an Ed25519 message of ${len} bytes does not fit the instruction header`);
+  }
+  const sigsAt = 2 + 14 * m;
+  const messageAt = sigsAt + 64 * m;
+  const parts: ArrayLike<number>[] = [new Uint8Array([m, 0])];
+  entries.forEach((e, k) => {
+    if (e.signature.length !== 64) {
+      throw new RangeError("an Ed25519 signature is 64 bytes");
+    }
+    if (k > 0 && entries[k - 1]?.publicKey === e.publicKey) {
+      throw new RangeError(`${e.publicKey} signs a cosign batch twice`);
+    }
+    const slot = slots.findIndex((s) => compareKeys(s, key(e.publicKey)) === 0);
+    if (slot < 0) {
+      throw new RangeError(`${e.publicKey} is not listed in the cosign envelope`);
+    }
+    parts.push(
+      concat(
+        [u16le(sigsAt + 64 * k), u16le(0xffff), u16le(messageAt + COSIGN_KEYS_AT + 32 * slot), u16le(0xffff), u16le(messageAt), u16le(len), u16le(0xffff)],
+        14,
+      ),
+    );
+  });
+  for (const e of entries) {
     parts.push(e.signature);
   }
   parts.push(input.message);

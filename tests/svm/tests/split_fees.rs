@@ -159,7 +159,7 @@ fn digest(
         split_hash,
     }
     .preimage();
-    solana_sha256_hasher::hashv(&[&preimage]).to_bytes()
+    solana_sha256_hasher::hashv(&[&intent_core::sig::SPLIT_COSIGN_TAG, &preimage]).to_bytes()
 }
 
 impl World {

@@ -16,7 +16,6 @@ import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "..
 import { execute, type PreparedView } from "../../flows.js";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
 import { expandHome, faucetLink, type Files, ledgerBook, PUBLIC_FAUCET, withSettings } from "../../wallet.js";
-import { needsKeyFile } from "../../ledger-keys.js";
 import type { AgentContext } from "../actions.js";
 import type { Call } from "../claims.js";
 import { tool } from "../names.js";
@@ -162,12 +161,6 @@ export function deviceSigner(ctx: AgentContext, device: DeviceSigner): WalletSig
       return signature;
     },
   } satisfies WalletSigner);
-}
-
-export function keyFileOnly(signer: WalletSigner, name: string): void {
-  if (signer.device !== undefined) {
-    throw new AgentRefusal("LedgerNeedsKeyFile", needsKeyFile(name, signer.device));
-  }
 }
 
 const devices = new WeakMap<Files, Map<string, Promise<DeviceSigner>>>();

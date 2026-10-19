@@ -88,7 +88,7 @@ describe("a committee judges a proof escrow", () => {
     expect(ballot.intent).toBe(intent);
     const [first, , third] = members;
     if (first === undefined || third === undefined) throw new Error("three members");
-    const votes = await Promise.all([third, first].map((m) => signCommitteeVote(m, ballot.digest)));
+    const votes = await Promise.all([third, first].map((m) => signCommitteeVote(m, ballot.digest, ballot.committee.members)));
     const payer = await fresh();
     const work = "ab".repeat(32);
     await expect(client.settleCommittee({ ...target, solver: payer, votes, deliveredSha256: work })).rejects.toThrow(NotSettleable);
@@ -113,15 +113,15 @@ describe("a committee judges a proof escrow", () => {
     if (a === undefined || b === undefined) throw new Error("three members");
     const solver = await fresh();
     const stranger = await generateKeyPairSigner();
-    const forged = { member: b.address, signature: (await signCommitteeVote(stranger, ballot.digest)).signature };
+    const forged = { member: b.address, signature: (await signCommitteeVote(stranger, ballot.digest, ballot.committee.members)).signature };
     await expect(
-      client.settleCommittee({ ...target, solver, votes: [await signCommitteeVote(a, ballot.digest), forged] }),
+      client.settleCommittee({ ...target, solver, votes: [await signCommitteeVote(a, ballot.digest, ballot.committee.members), forged] }),
     ).rejects.toThrow(VoteRejected);
     await expect(
-      client.settleCommittee({ ...target, solver, votes: [await signCommitteeVote(a, ballot.digest), await signCommitteeVote(b, other.digest)] }),
+      client.settleCommittee({ ...target, solver, votes: [await signCommitteeVote(a, ballot.digest, ballot.committee.members), await signCommitteeVote(b, other.digest, other.committee.members)] }),
     ).rejects.toThrow(VoteRejected);
     await expect(
-      client.settleCommittee({ ...target, solver, votes: [await signCommitteeVote(a, ballot.digest)] }),
+      client.settleCommittee({ ...target, solver, votes: [await signCommitteeVote(a, ballot.digest, ballot.committee.members)] }),
     ).rejects.toThrow("CommitteeSigners");
     expect(await tokens(worker)).toBeNull();
   });
@@ -139,8 +139,8 @@ describe("a committee judges a proof escrow", () => {
     const { w, client, members, owner, nonce, fresh } = await setup(100_000n);
     const worker = (await generateKeyPairSigner()).address;
     const target = { owner: owner.address, nonce, payTo: worker, result: 1n };
-    const { digest } = await client.committeeBallot(target);
-    const votes = await Promise.all(members.map((m) => signCommitteeVote(m, digest)));
+    const { digest, committee } = await client.committeeBallot(target);
+    const votes = await Promise.all(members.map((m) => signCommitteeVote(m, digest, committee.members)));
     const solver = members[2] as KeyPairSigner;
     w.chain.svm.airdrop(solver.address, lamports(SOL));
     const release = await client.prepareCommitteeRelease({ ...target, solver, votes, deliveredSha256: "ab".repeat(32) });

@@ -417,15 +417,77 @@ pub fn split_digest(
         split_hash,
     }
     .preimage();
-    solana_sha256_hasher::hashv(&[&preimage]).to_bytes()
+    solana_sha256_hasher::hashv(&[&intent_core::sig::SPLIT_COSIGN_TAG, &preimage]).to_bytes()
 }
 
-pub fn split_cosign_message(digest: &[u8; 32]) -> [u8; intent_core::sig::ENVELOPE_LEN] {
-    intent_core::sig::offchain_envelope(&intent_core::sig::SPLIT_COSIGN_TAG, digest)
+pub fn cosign_message(listed: &[Pubkey], digest: &[u8; 32]) -> TestResult<Vec<u8>> {
+    let keys: Vec<[u8; 32]> = listed.iter().map(Pubkey::to_bytes).collect();
+    let set = intent_core::sig::Cosigners::new(&keys).map_err(|e| format!("{e:?}"))?;
+    Ok(set.envelope(digest).as_bytes().to_vec())
+}
+
+pub fn raw_cosign_message(keys: &[Pubkey], digest: &[u8; 32]) -> TestResult<Vec<u8>> {
+    let mut out = intent_core::sig::OFFCHAIN_PREFIX.to_vec();
+    out.extend_from_slice(&[1, u8::try_from(keys.len())?]);
+    for key in keys {
+        out.extend_from_slice(key.as_ref());
+    }
+    out.extend(digest.iter().flat_map(|b| format!("{b:02x}").into_bytes()));
+    Ok(out)
+}
+
+pub fn cosign_in_message(signers: &[&Keypair], message: &[u8]) -> TestResult<Instruction> {
+    let m = signers.len();
+    let len = u16::try_from(message.len())?;
+    let listed = usize::from(*message.get(17).ok_or("envelope too short")?);
+    let sigs_at = 14usize.saturating_mul(m).saturating_add(2);
+    let message_at = sigs_at.saturating_add(64usize.saturating_mul(m));
+    let mut data = vec![u8::try_from(m)?, 0];
+    for (k, s) in signers.iter().enumerate() {
+        let key = s.pubkey().to_bytes();
+        let slot = (0..listed)
+            .find(|i| {
+                let at = intent_core::sig::COSIGN_KEYS_AT.saturating_add(i.saturating_mul(32));
+                message.get(at..at.saturating_add(32)) == Some(&key[..])
+            })
+            .ok_or("a signer is not listed in the envelope")?;
+        let sig = u16::try_from(sigs_at.saturating_add(64usize.saturating_mul(k)))?;
+        let pk = u16::try_from(
+            message_at
+                .saturating_add(intent_core::sig::COSIGN_KEYS_AT)
+                .saturating_add(slot.saturating_mul(32)),
+        )?;
+        let msg = u16::try_from(message_at)?;
+        for v in [sig, u16::MAX, pk, u16::MAX, msg, len, u16::MAX] {
+            data.extend_from_slice(&v.to_le_bytes());
+        }
+    }
+    for s in signers {
+        data.extend_from_slice(&signature_of(s, message));
+    }
+    data.extend_from_slice(message);
+    let program_id = ed25519_ix(&Keypair::new(), &[0]).program_id;
+    Ok(Instruction {
+        program_id,
+        accounts: Vec::new(),
+        data,
+    })
+}
+
+pub fn cosign_ix(
+    listed: &[Pubkey],
+    signers: &[&Keypair],
+    digest: &[u8; 32],
+) -> TestResult<Instruction> {
+    let mut ordered: Vec<&Keypair> = signers.to_vec();
+    ordered.sort_by_key(|s| s.pubkey());
+    ordered.dedup_by_key(|s| s.pubkey());
+    cosign_in_message(&ordered, &cosign_message(listed, digest)?)
 }
 
 pub fn cosign_batch_ix(signers: &[&Keypair], digest: &[u8; 32]) -> TestResult<Instruction> {
-    batch_ix(signers, &split_cosign_message(digest))
+    let listed: Vec<Pubkey> = signers.iter().map(|s| s.pubkey()).collect();
+    cosign_ix(&listed, signers, digest)
 }
 
 pub fn batch_ix(signers: &[&Keypair], message: &[u8]) -> TestResult<Instruction> {

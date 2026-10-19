@@ -22,23 +22,27 @@ pub fn sorted_members(n: usize) -> Vec<Keypair> {
     members
 }
 
-pub fn committee_message(digest: &[u8; 32]) -> [u8; intent_core::sig::ENVELOPE_LEN] {
-    intent_core::sig::offchain_envelope(&COMMITTEE_COSIGN_TAG, digest)
+pub fn committee_message(members: &[Pubkey], digest: &[u8; 32]) -> TestResult<Vec<u8>> {
+    cosign_message(members, digest)
 }
 
-pub fn committee_batch_ix(signers: &[&Keypair], digest: &[u8; 32]) -> TestResult<Instruction> {
-    batch_ix(signers, &committee_message(digest))
+pub fn committee_batch_ix(
+    members: &[Pubkey],
+    signers: &[&Keypair],
+    digest: &[u8; 32],
+) -> TestResult<Instruction> {
+    cosign_ix(members, signers, digest)
 }
 
-pub fn proof_digest(
+pub fn proof_preimage(
     domain: [u8; 32],
     intent: &Pubkey,
     payee: &Pubkey,
     amount_in: u64,
     result: u64,
     spec_hash: [u8; 32],
-) -> [u8; 32] {
-    let preimage = intent_core::sig::AttestedProof {
+) -> [u8; intent_core::sig::ATTEST_PROOF_PREIMAGE_LEN] {
+    intent_core::sig::AttestedProof {
         program: intent_engine::ID.to_bytes(),
         domain,
         intent: intent.to_bytes(),
@@ -51,8 +55,19 @@ pub fn proof_digest(
         ext_hash: empty_ext_hash(),
         spec_hash,
     }
-    .preimage();
-    solana_sha256_hasher::hashv(&[&preimage]).to_bytes()
+    .preimage()
+}
+
+pub fn proof_digest(
+    domain: [u8; 32],
+    intent: &Pubkey,
+    payee: &Pubkey,
+    amount_in: u64,
+    result: u64,
+    spec_hash: [u8; 32],
+) -> [u8; 32] {
+    let preimage = proof_preimage(domain, intent, payee, amount_in, result, spec_hash);
+    solana_sha256_hasher::hashv(&[&COMMITTEE_COSIGN_TAG, &preimage]).to_bytes()
 }
 
 pub fn create_committee_with_id_ix(

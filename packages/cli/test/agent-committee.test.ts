@@ -126,7 +126,7 @@ describe("a wallet server on a committee", () => {
       payTo: e.worker,
       result: 1n,
     });
-    const theirs = await signCommitteeVote(e.other, ballot.digest);
+    const theirs = await signCommitteeVote(e.other, ballot.digest, ballot.committee.members);
     const votes = [own, { member: theirs.member, signature: hex(theirs.signature) }];
     expect((await call(client, "wallet_committee_release", { ...e.ballot, votes: [own] })).value).toMatchObject({ code: "CommitteeSigners" });
     const forged = { member: e.other.address, signature: own.signature };
