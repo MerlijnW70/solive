@@ -18,7 +18,7 @@ In PowerShell:
 $env:JUDGE = (intent-engine balance | Out-String | ConvertFrom-Json).address
 ```
 
-The judge's wallet can be a Ledger: pass `--keypair usb://ledger` or another Ledger form to `judge`, with or without `--watch`. Each release then waits for two approvals on the device, first the message over the proof, shown as a hex digest, then the transaction. A preview without `--yes` asks the device for nothing. A committee member still votes with a key file.
+The judge's wallet can be a Ledger: pass `--keypair usb://ledger` or another Ledger form to `judge`, with or without `--watch`. Each release then waits for two approvals on the device, first the message over the proof, shown as a hex digest, then the transaction. A preview without `--yes` asks the device for nothing. A committee member can vote on a Ledger too, as below.
 
 Before you approve, run `intent-engine judge digest --owner <address> --nonce <n> --pay-to <wallet>` on a second machine. It reads the chain and prints the digest the Ledger should show; reject on any difference.
 
@@ -232,6 +232,8 @@ intent-engine judge --keypair a.json --owner $env:OWNER --nonce $env:NONCE --spe
 ```
 
 A member whose key is on a Ledger votes with `committee vote --keypair usb://ledger` and the same `--owner`, `--nonce`, `--pay-to` and `--result`, plus `--out` for the vote file and `--yes`. The device shows one message that lists every member's key and the release digest. A vote stays valid whichever members reach the threshold.
+
+Because that message lists every member, a release by a large committee, especially one that also splits the pay, can exceed the size of one Solana transaction; keep committees small or the escrow can only be cancelled.
 
 Any member who voted then submits the votes:
 
