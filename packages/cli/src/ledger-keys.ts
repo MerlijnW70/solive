@@ -1,4 +1,4 @@
-import type { TransactionPartialSigner } from "@solana/kit";
+import { isKeyPairSigner, type KeyPairSigner, type MessagePartialSigner, type TransactionPartialSigner } from "@solana/kit";
 import { isLedgerPath, LedgerPathError, ledgerSigner, openUsb, parseLedgerPath } from "@intent-engine/client";
 import { UsageError } from "./arg-values.js";
 import type { Command } from "./command-types.js";
@@ -12,6 +12,9 @@ export const LEDGER_COMMANDS = [
   "approve",
   "revoke-approval",
   "deliver",
+  "judge",
+  "committee release",
+  "signed prepare",
   "advance-nonce",
   "advance-epoch",
   "claims take",
@@ -22,7 +25,7 @@ export const LEDGER_COMMANDS = [
 
 const DEVICE_COMMANDS = new Set(LEDGER_COMMANDS);
 
-const SPACED = /^(claims|committee|mandate|profile|signed)-/;
+const SPACED = /^(claims|committee|judge|mandate|profile|signed)-/;
 
 export function commandName(command: Command): string {
   const name = command.name === "flow" ? command.flow : command.name === "lookup" ? command.lookup : command.name;
@@ -43,13 +46,14 @@ const walletPath = (command: Command, saved: string | undefined): string[] =>
   command.name === "mcp" && command.wallet !== null && saved !== undefined ? [saved] : [];
 
 export function checkLedgerPaths(command: Command, saved?: string): void {
-  const devices = [...keyPaths(command), ...walletPath(command, saved)].filter(isLedgerPath);
+  const keys = keyPaths(command).filter(isLedgerPath);
+  const devices = [...keys, ...walletPath(command, saved).filter(isLedgerPath)];
   if (devices.length === 0) {
     return;
   }
   const name = commandName(command);
-  if (!signsOnDevice(command)) {
-    throw new UsageError(needsKeyFile(name, devices[0] ?? ""));
+  if (keys.length > 0 && !signsOnDevice(command)) {
+    throw new UsageError(needsKeyFile(name, keys[0] ?? ""));
   }
   for (const path of devices) {
     try {
@@ -62,3 +66,15 @@ export function checkLedgerPaths(command: Command, saved?: string): void {
 
 export const transactionSigner = async (runtime: Runtime, path: string): Promise<TransactionPartialSigner> =>
   isLedgerPath(path) ? ledgerSigner(path, runtime.ledger ?? openUsb) : runtime.loadSigner(path);
+
+export type MessageSigner = TransactionPartialSigner & MessagePartialSigner;
+
+export const messageSigner = async (runtime: Runtime, path: string): Promise<MessageSigner> =>
+  isLedgerPath(path) ? ledgerSigner(path, runtime.ledger ?? openUsb) : runtime.loadSigner(path);
+
+export function keyFileSigner(signer: MessageSigner, name: string, path: string): KeyPairSigner {
+  if (!isKeyPairSigner(signer)) {
+    throw new UsageError(needsKeyFile(name, path));
+  }
+  return signer;
+}

@@ -406,6 +406,9 @@ export const SUB_ACCEPTS: Record<string, Record<string, readonly (keyof typeof O
     ],
     submit: ["url", "keypair", "yes", "file"],
   },
+  judge: {
+    digest: ["url", "owner", "nonce", "pay-to", "result"],
+  },
   committee: {
     create: ["url", "priority-fee", "keypair", "yes", "members", "threshold", "fee-wallet"],
     show: ["url", "committee"],

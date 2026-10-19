@@ -1,7 +1,7 @@
 import { type Address, createKeyPairSignerFromPrivateKeyBytes, getAddressEncoder, type KeyPairSigner } from "@solana/kit";
 import { getTokenDecoder } from "@solana-program/token";
 import { DEVNET_TEST_MINT, findAssociatedTokenAddress, formatAmount, NATIVE_MINT, PRODUCT_REPOSITORY } from "@intent-engine/core";
-import { createdAccount, mintOf, type Transport } from "@intent-engine/client";
+import { createdAccount, isLedgerPath, ledgerSigner, mintOf, type OpenTransport, openUsb, type Transport } from "@intent-engine/client";
 import { CLUSTERS, ENV_KEYPAIR, ENV_URL, type Env, UsageError } from "./args.js";
 import { SAVED_CONFIRM_URL } from "./clusters.js";
 import { SOL_DECIMALS } from "./agent/read.js";
@@ -21,11 +21,13 @@ export type Files = {
   saveText(path: string, text: string, secret: boolean): Promise<void>;
   loadSigner(path: string): Promise<KeyPairSigner>;
   loadKeypair(path: string): Promise<Uint8Array>;
+  ledger?: OpenTransport;
 };
 
 const settingsDir = (home: string) => `${home}/.config/intent-engine`;
 export const settingsPath = (home: string) => `${settingsDir(home)}/config.json`;
 export const defaultWallet = (home: string) => `${settingsDir(home)}/wallet.json`;
+export const ledgerBook = (home: string, path: string) => `${settingsDir(home)}/${path.replace(/[^A-Za-z0-9]+/g, "-")}.sales.json`;
 
 export const settingsBroken = (path: string) => `${path} is not a settings file this CLI wrote; delete it and run setup again`;
 
@@ -80,7 +82,10 @@ export async function withSettings(files: Files, given: Env): Promise<Env> {
 const alreadyExists = (error: unknown) =>
   error !== null && typeof error === "object" && "code" in error && error.code === "EEXIST";
 
-async function walletAt(files: Files, path: string): Promise<{ signer: KeyPairSigner; created: boolean }> {
+async function walletAt(files: Files, path: string): Promise<{ signer: { address: Address }; created: boolean }> {
+  if (isLedgerPath(path)) {
+    return { signer: await ledgerSigner(path, files.ledger ?? openUsb), created: false };
+  }
   try {
     await files.readText(path);
   } catch {

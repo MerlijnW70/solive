@@ -1,116 +1,18 @@
-import { createPrivateKey, getRandomValues, type KeyObject, sign } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import {
-  type Address,
-  createKeyPairSignerFromPrivateKeyBytes,
-  getAddressEncoder,
-  getBase58Decoder,
-  getBase64Encoder,
-  getTransactionDecoder,
-  lamports,
-} from "@solana/kit";
+import { type Address, getBase58Decoder, getBase64Encoder, getTransactionDecoder, lamports } from "@solana/kit";
 import { getTokenDecoder } from "@solana-program/token";
 import { beforeEach, describe, expect, it } from "vitest";
 import { findIntentPda, getIntentDecoder, IntentStatus } from "@intent-engine/core";
-import { LEDGER_ERRORS, LEDGER_FORMS, type LedgerTransport, type OpenTransport } from "@intent-engine/client";
+import { LEDGER_ERRORS, LEDGER_FORMS, type OpenTransport } from "@intent-engine/client";
 import { ENV_KEYPAIR } from "../src/clusters.js";
 import { parse } from "../src/args.js";
 import { LEDGER_COMMANDS, needsKeyFile, signsOnDevice } from "../src/ledger-keys.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main } from "../src/main.js";
 import { ata, balance, h, runtime, type World, world } from "./harness.js";
+import { addressApdu, BLIND_OFF, BLIND_ON, CONFIG, type Device, device, deviceKey, type Key, REJECT, signing, TransportError } from "./ledger-device.js";
 
-type Store = { passed: number; queue: [string, string][]; replayExchange(apdu: Buffer): Buffer; ensureQueueEmpty(): void };
-type Mocker = {
-  RecordStore: new (queue: [string, string][]) => Store;
-  openTransportReplayer(store: Store): Promise<LedgerTransport>;
-};
-
-const load = createRequire(import.meta.url);
-const mocker = load("@ledgerhq/hw-transport-mocker") as Mocker;
-const { TransportError } = load("@ledgerhq/hw-transport/errors") as { TransportError: new (message: string, id: string) => Error };
-
-const OK = "9000";
-const REJECT = "6985";
-const SIGN = "sign";
-const HARDENED = 0x80000000;
-const MORE = 0x02;
-const CONFIG = "e004000000";
-const BLIND_ON = `0100010309${OK}`;
-const BLIND_OFF = `0000010309${OK}`;
-const PKCS8_ED25519 = "302e020100300506032b657004220420";
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
-
-
-const hex = (bytes: Iterable<number>) => Buffer.from([...bytes]).toString("hex");
-
-const pathBytes = (levels: number[]) => [
-  levels.length,
-  ...levels.flatMap((n) => {
-    const word = (n | HARDENED) >>> 0;
-    return [word >>> 24, (word >>> 16) & 0xff, (word >>> 8) & 0xff, word & 0xff];
-  }),
-];
-
-const addressApdu = (levels: number[], key: Address): [string, string] => [
-  hex([0xe0, 0x05, 0, 0, pathBytes(levels).length, ...pathBytes(levels)]),
-  `${hex(getAddressEncoder().encode(key))}${OK}`,
-];
-
-type Key = { address: Address; secret: KeyObject };
-
-async function deviceKey(): Promise<Key> {
-  const seed = getRandomValues(new Uint8Array(32));
-  const signer = await createKeyPairSignerFromPrivateKeyBytes(seed);
-  const secret = createPrivateKey({ key: Buffer.concat([Buffer.from(PKCS8_ED25519, "hex"), seed]), format: "der", type: "pkcs8" });
-  return { address: signer.address, secret };
-}
-
-type Device = { store: Store; opened: number; paths: number[][]; signatures: string[]; open: OpenTransport };
-
-function device(key: Key, queue: [string, string][], open?: OpenTransport): Device {
-  const store = new mocker.RecordStore(queue);
-  const made: Device = { store, opened: 0, paths: [], signatures: [], open: async () => mocker.openTransportReplayer(store) };
-  const replay = store.replayExchange.bind(store);
-  let chunks: number[] = [];
-  store.replayExchange = (apdu: Buffer) => {
-    if (apdu[1] !== 0x06 || store.queue[0]?.[0] !== SIGN) {
-      return replay(apdu);
-    }
-    chunks.push(...apdu.subarray(5));
-    if (((apdu[3] ?? 0) & MORE) !== 0) {
-      return Buffer.from(OK, "hex");
-    }
-    const payload = Buffer.from(chunks);
-    chunks = [];
-    const [, answer] = store.queue.shift() ?? [SIGN, OK];
-    store.passed += 1;
-    const depth = payload[1] ?? 0;
-    const path = Array.from({ length: depth }, (_, i) => (payload.readUInt32BE(2 + 4 * i) & ~HARDENED) >>> 0);
-    made.paths.push(path);
-    if (answer !== OK) {
-      return Buffer.from(answer, "hex");
-    }
-    const signature = sign(null, payload.subarray(2 + 4 * depth), key.secret);
-    made.signatures.push(getBase58Decoder().decode(signature));
-    return Buffer.from(`${hex(signature)}${OK}`, "hex");
-  };
-  made.open = async () => {
-    made.opened += 1;
-    return open === undefined ? mocker.openTransportReplayer(store) : open();
-  };
-  return made;
-}
-
-const signing = (levels: number[], key: Key, answers: string[] = [OK]): [string, string][] => [
-  [CONFIG, BLIND_ON],
-  addressApdu(levels, key.address),
-  ...answers.flatMap((answer): [string, string][] => [
-    [CONFIG, BLIND_ON],
-    [SIGN, answer],
-  ]),
-];
 
 async function run(argv: string[], ledger?: Device) {
   const out: string[] = [];
@@ -273,61 +175,6 @@ describe("signing with a Ledger", () => {
     const defaulted = await run(["crank"], ledger);
     expect([defaulted.code, defaulted.err]).toEqual([EXIT_USAGE, needsKeyFile("crank", "usb://ledger")]);
     expect([ledger.opened, h.urls]).toEqual([0, []]);
-  });
-
-  it("judge and judge --watch refuse every Ledger form before reading the chain, a key file or the device", async () => {
-    const judging = ["judge", "--owner", w.owner.address, "--nonce", "0", "--spec", "SPEC.md"];
-    const shapes = [
-      [...judging, "--artifact", "work.mjs", "--sandbox", "viper", "--yes"],
-      [...judging, "--artifact", "work", "--run", "node check/check.mjs", "--yes"],
-      [...judging, "--sandbox", "viper", "--watch", "--yes"],
-      [...judging, "--run", "node check/check.mjs", "--watch", "--yes"],
-    ];
-    for (const path of LEDGER_FORMS.map((form) => form.replace("<account>", "1").replace("<change>", "0"))) {
-      for (const shape of shapes) {
-        const ledger = device(key, []);
-        const read: string[] = [];
-        h.urls.length = 0;
-        const wires = h.wires.length;
-        const out: string[] = [];
-        const err: string[] = [];
-        const base = runtime({});
-        const code = await main(
-          [...shape, "--keypair", path],
-          {
-            ...base,
-            ledger: ledger.open,
-            loadSigner: async (file) => {
-              read.push(file);
-              return base.loadSigner(file);
-            },
-          },
-          { out: (t) => out.push(t), err: (t) => err.push(t) },
-        );
-        expect([code, err.join("\n"), out.join("\n")], shape.join(" ")).toEqual([EXIT_USAGE, needsKeyFile("judge", path), ""]);
-        expect([ledger.opened, h.urls, read, h.wires.length]).toEqual([0, [], [], wires]);
-      }
-    }
-    h.env[ENV_KEYPAIR] = "usb://ledger";
-    for (const shape of shapes) {
-      const ledger = device(key, []);
-      h.urls.length = 0;
-      const defaulted = await run(shape, ledger);
-      expect([defaulted.code, defaulted.err, defaulted.out]).toEqual([EXIT_USAGE, needsKeyFile("judge", "usb://ledger"), ""]);
-      expect([ledger.opened, h.urls]).toEqual([0, []]);
-    }
-    expect(signsOnDevice(parse([...(shapes[0] ?? []), "--keypair", "usb://ledger"]))).toBe(false);
-    expect(LEDGER_COMMANDS).not.toContain("judge");
-  });
-
-  it("the judge guide says judge refuses a Ledger in at most three sentences", () => {
-    const page = readFileSync(`${ROOT}/docs/judge.md`, "utf8");
-    const paragraph = page.split("\n\n").find((block) => block.includes("`--keypair usb://ledger`")) ?? "";
-    expect(paragraph).toContain("`judge`");
-    expect(paragraph).toContain("`--watch`");
-    expect(paragraph).toContain("signs a message");
-    expect(paragraph).toContain("before it reads the chain");
-    expect(paragraph.split(/\.\s/).length).toBeLessThanOrEqual(3);
   });
 
   it("a malformed Ledger path is a usage error that never opens the device or reads a key file", async () => {

@@ -3,12 +3,13 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Address, Signature } from "@solana/kit";
 import { getIntentDecoder, INTENT_ENGINE_PROGRAM_ADDRESS, IntentStatus } from "@intent-engine/core";
-import { chainTime, type Delivery, deliveryRecord, type Transport } from "@intent-engine/client";
+import { chainTime, type Delivery, deliveryRecord, isLedgerPath, type Transport } from "@intent-engine/client";
 import { removeCopy } from "./artifact.js";
 import { holdSignals } from "./check-process.js";
 import { DeliveryUnfit, type Fetched, fetchDelivery } from "./delivery-fetch.js";
 import { type InterruptSignal, JudgeInterrupted, JudgeRefused } from "./judge-errors.js";
 import { escrowFor, judge, type JudgeCommand, pagesRead, type Verdict } from "./judge.js";
+import { keyFileSigner, messageSigner } from "./ledger-keys.js";
 import type { Runtime } from "./runtime.js";
 
 export type Stopped = "paid" | "passed" | "closed" | "ended" | InterruptSignal;
@@ -78,9 +79,12 @@ async function judgeDelivery(
 }
 
 export async function watchJudge(command: JudgeCommand, interval: number, runtime: Runtime, transport: Transport, out: (text: string) => void): Promise<number> {
-  const signer = await runtime.loadSigner(command.keypair);
-  const keypair = await runtime.loadKeypair(command.keypair).catch(() => undefined);
-  const { address, attestor, specHash } = await escrowFor(transport, signer.address, command.owner, command.nonce);
+  const signer = await messageSigner(runtime, command.keypair);
+  const keypair = isLedgerPath(command.keypair) ? undefined : await runtime.loadKeypair(command.keypair).catch(() => undefined);
+  const { address, attestor, committee, specHash } = await escrowFor(transport, signer.address, command.owner, command.nonce);
+  if (committee !== null) {
+    keyFileSigner(signer, "judge", command.keypair);
+  }
   const specSha256 = createHash("sha256").update(await readFile(resolve(command.spec))).digest("hex");
   if (specSha256 !== specHash) {
     throw new JudgeRefused(`--spec ${command.spec} has sha256 ${specSha256}, but intent ${address} commits ${specHash}`);

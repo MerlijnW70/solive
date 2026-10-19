@@ -3,6 +3,7 @@ import {
   appendTransactionMessageInstructions,
   compileTransaction,
   compressTransactionMessageUsingAddressLookupTables,
+  createNoopSigner,
   getTransactionEncoder,
   partiallySignTransactionMessageWithSigners,
   createTransactionMessage,
@@ -12,7 +13,7 @@ import {
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
 } from "@solana/kit";
-import type { Transport } from "@intent-engine/client";
+import { isDevice, type Transport } from "@intent-engine/client";
 import { priorityLamports } from "../compute.js";
 import { LOG_LINE_LIMIT, LOG_TAIL, SimulationFailed, simulationProblem, untrusted } from "./problems.js";
 
@@ -58,13 +59,25 @@ export async function transactionSize(
   return getTransactionEncoder().encode(compileTransaction(message)).length;
 }
 
+const withoutDevices = (instructions: readonly Instruction[]): Instruction[] =>
+  instructions.map((ix) =>
+    ix.accounts === undefined
+      ? ix
+      : {
+          ...ix,
+          accounts: ix.accounts.map((meta) =>
+            "signer" in meta && typeof meta.signer === "object" && meta.signer !== null && isDevice(meta.signer) ? { ...meta, signer: createNoopSigner(meta.address) } : meta,
+          ),
+        },
+  );
+
 export async function prepare(
   transport: Transport,
   instructions: readonly Instruction[],
   feePayer: Address,
   tables?: LookupTables,
 ): Promise<Prepared> {
-  const budgeted = await transport.budget(instructions, feePayer, tables);
+  const budgeted = await transport.budget(withoutDevices(instructions), feePayer, tables);
   const latest = await transport.latestBlockhash();
   const message = withTables(
     pipe(

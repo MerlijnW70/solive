@@ -1,4 +1,4 @@
-import type { Address, KeyPairSigner } from "@solana/kit";
+import type { Address, MessagePartialSigner, TransactionPartialSigner } from "@solana/kit";
 import { IntentCoreError, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { boundMembers, createClient, type Simulation, simulated, type Transport } from "@intent-engine/client";
 import { ENGINE_ERROR_BASE, ENGINE_ERROR_NAMES, failureOf } from "./agent/problems.js";
@@ -22,7 +22,7 @@ function engineErrorOf(logs: readonly string[]): string | undefined {
   return failure !== null && failure.program === INTENT_ENGINE_PROGRAM_ADDRESS ? ENGINE_ERROR_NAMES[failure.code - ENGINE_ERROR_BASE] : undefined;
 }
 
-export async function simulateRelease(transport: Transport, judge: KeyPairSigner, release: ReleaseInput): Promise<SimulatedRelease> {
+export async function simulateRelease(transport: Transport, judge: TransactionPartialSigner & MessagePartialSigner, release: ReleaseInput): Promise<SimulatedRelease> {
   const probe: Transport = {
     ...boundMembers(transport),
     send: async (instructions, payer) => {

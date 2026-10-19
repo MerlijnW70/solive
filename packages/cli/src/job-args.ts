@@ -42,6 +42,16 @@ function minPayOf(values: Values): string | undefined {
 }
 
 export function jobArgsOf(verb: "jobs" | "deliver" | "receipt" | "record-delivery" | "judge", sub: string | undefined, remote: Remote, values: Values): Command {
+  if (verb === "judge" && sub === "digest") {
+    return {
+      name: "judge-digest",
+      ...remote,
+      owner: key(values, "owner"),
+      nonce: u64(values, "nonce"),
+      payTo: key(values, "pay-to"),
+      result: values.result === undefined ? undefined : u64(values, "result"),
+    };
+  }
   noSub(sub);
   switch (verb) {
     case "jobs":

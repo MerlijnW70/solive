@@ -3,13 +3,16 @@ import { createRequire } from "node:module";
 import {
   type Address,
   getAddressDecoder,
+  getAddressEncoder,
   getBase58Decoder,
   getPublicKeyFromAddress,
+  type MessagePartialSigner,
   type SignatureBytes,
   type SignatureDictionary,
   type TransactionPartialSigner,
   verifySignature,
 } from "@solana/kit";
+import { ENVELOPE_LEN, OFFCHAIN_PREFIX } from "@intent-engine/core";
 
 export const LEDGER_FORMS = ["usb://ledger", "usb://ledger?key=<account>", "usb://ledger?key=<account>/<change>"];
 
@@ -18,7 +21,7 @@ export const LEDGER_ERRORS = {
   locked: "the Ledger is locked: unlock it with its PIN, open the Solana app and run the command again; nothing was sent",
   noApp: "the Solana app is not open on the Ledger: open it and run the command again; nothing was sent",
   blindSigning: "blind signing is disabled in the Ledger's Solana app: enable it in the app's settings, since Squads instructions need it, and run the command again; nothing was sent",
-  rejected: "the transaction was rejected on the Ledger; nothing was sent",
+  rejected: "signing was rejected on the Ledger; nothing was sent",
   missing: "signing with a Ledger needs @ledgerhq/hw-app-solana@7.12.0 and @ledgerhq/hw-transport-node-hid-noevents@6.36.0, which are not installed: install both where intent-engine is installed and run the command again; nothing was sent",
   driver: "the USB driver node-hid is not built in this checkout: build it as docs/maintainers/operations.md shows under Signing with a Ledger and run the command again; nothing was sent",
 } as const;
@@ -41,12 +44,13 @@ export type LedgerTransport = { close(): Promise<void> };
 
 export type OpenTransport = () => Promise<LedgerTransport>;
 
-export type DeviceSigner = TransactionPartialSigner & { readonly device: string };
+export type DeviceSigner = TransactionPartialSigner & MessagePartialSigner & { readonly device: string };
 
 type App = {
   getAppConfiguration(): Promise<{ blindSigningEnabled: boolean }>;
   getAddress(path: string): Promise<{ address: Uint8Array }>;
   signTransaction(path: string, message: Buffer): Promise<{ signature: Uint8Array }>;
+  signOffchainMessage(path: string, message: Buffer): Promise<{ signature: Uint8Array }>;
 };
 
 const required = createRequire(import.meta.url);
@@ -66,7 +70,7 @@ const load = (name: string): unknown => ledgerModule(name);
 
 export const isLedgerPath = (text: string): boolean => text.startsWith("usb://");
 
-export const isDevice = (signer: TransactionPartialSigner): signer is DeviceSigner => "device" in signer && typeof signer.device === "string";
+export const isDevice = (signer: object): signer is DeviceSigner => "device" in signer && typeof signer.device === "string";
 
 export const messageHash = (message: Uint8Array): string => getBase58Decoder().decode(createHash("sha256").update(message).digest());
 
@@ -165,6 +169,22 @@ async function signed(signer: Address, signature: Uint8Array, message: Uint8Arra
   return bytes as SignatureBytes;
 }
 
+export const notOwnEnvelope = (signer: Address) =>
+  `the Ledger signs only an off-chain message whose one signer is its own key ${signer}, and this message names another; nothing was sent`;
+
+function ownEnvelope(signer: Address, message: Uint8Array): boolean {
+  const key = getAddressEncoder().encode(signer);
+  const head = OFFCHAIN_PREFIX.length;
+  return (
+    message.length === ENVELOPE_LEN &&
+    OFFCHAIN_PREFIX.every((b, i) => message[i] === b) &&
+    message[head] === 1 &&
+    message[head + 1] === 1 &&
+    key.every((b, i) => message[head + 2 + i] === b) &&
+    message.subarray(head + 2 + key.length).every((b) => (b >= 0x30 && b <= 0x39) || (b >= 0x61 && b <= 0x66))
+  );
+}
+
 export async function ledgerSigner(text: string, open: OpenTransport = openUsb): Promise<DeviceSigner> {
   const { derivation } = parseLedgerPath(text);
   const key = await session(open, async (app) => {
@@ -188,6 +208,18 @@ export async function ledgerSigner(text: string, open: OpenTransport = openUsb):
           }
           return (await app.signTransaction(derivation, Buffer.from(message))).signature;
         });
+        out.push(Object.freeze({ [address]: await signed(address, signature, message) }));
+      }
+      return out;
+    },
+    signMessages: async (messages) => {
+      const out: SignatureDictionary[] = [];
+      for (const { content } of messages) {
+        const message = new Uint8Array(content);
+        if (!ownEnvelope(address, message)) {
+          throw new LedgerError(notOwnEnvelope(address));
+        }
+        const signature = await session(open, async (app) => (await app.signOffchainMessage(derivation, Buffer.from(message))).signature);
         out.push(Object.freeze({ [address]: await signed(address, signature, message) }));
       }
       return out;

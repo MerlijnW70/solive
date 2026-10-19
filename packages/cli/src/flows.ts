@@ -7,8 +7,7 @@ import {
   getBase64EncodedWireTransaction,
   getSignatureFromTransaction,
   getTransactionDecoder,
-  type KeyPairSigner,
-  signBytes,
+  type MessagePartialSigner,
   type TransactionPartialSigner,
 } from "@solana/kit";
 import { getRevokeInstruction, getTokenDecoder } from "@solana-program/token";
@@ -220,8 +219,14 @@ export async function perform(
   return finish(ctx.transport, await ask(action, ctx, input), signer, yes);
 }
 
-export async function signMessage(signer: KeyPairSigner, base64: string): Promise<string> {
-  return getBase58Decoder().decode(await signBytes(signer.keyPair.privateKey, getBase64Encoder().encode(base64)));
+export async function signMessage(signer: MessagePartialSigner, base64: string): Promise<string> {
+  const content = new Uint8Array(getBase64Encoder().encode(base64));
+  const [signed] = await signer.signMessages([{ content, signatures: {} }]);
+  const signature = signed?.[signer.address];
+  if (signature === undefined) {
+    throw new FlowRefused(`${signer.address} returned no signature for the message; nothing was saved`);
+  }
+  return getBase58Decoder().decode(signature);
 }
 
 export async function approval(

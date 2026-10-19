@@ -1,4 +1,4 @@
-import { type Address, isKeyPairSigner } from "@solana/kit";
+import { type Address, isMessagePartialSigner } from "@solana/kit";
 import { formatAmount, isSha256Hex } from "@intent-engine/core";
 import { NotSettleable } from "./client-errors.js";
 import { intentAt } from "./jobs.js";
@@ -6,7 +6,7 @@ import { outcome, type SimpleContext } from "./simple-orders.js";
 import { nameOfMint, wholeTokens } from "./simple-tokens.js";
 import type { CancelInput, DeliverWorkInput, OpenWork, ReleaseInput } from "./simple-types.js";
 
-export const RELEASE_NEEDS_KEY_PAIR = "release signs the judge's verdict, so connect with a key pair signer";
+export const RELEASE_NEEDS_KEY_PAIR = "release signs the judge's verdict, so connect with a signer that also signs messages";
 
 export function workSends(ctx: SimpleContext) {
   const held = async (address: Address) => {
@@ -40,7 +40,7 @@ export function workSends(ctx: SimpleContext) {
 
   const release = async (input: ReleaseInput) => {
     const judge = ctx.signer;
-    if (!isKeyPairSigner(judge)) {
+    if (!isMessagePartialSigner(judge)) {
       throw new TypeError(RELEASE_NEEDS_KEY_PAIR);
     }
     const { intent, mint } = await held(input.escrow);

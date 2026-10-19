@@ -124,6 +124,7 @@ export type Command =
       sandbox: Sandbox;
       confirmUrl?: string | undefined;
     })
+  | (Remote & { name: "judge-digest"; owner: Address; nonce: bigint; payTo: Address; result: bigint | undefined })
   | (Keyed & { name: "flow"; flow: FlowName; yes: boolean; input: ToolInput })
   | (Remote & { name: "lookup"; lookup: LookupName; keypair: string | undefined; input: ToolInput })
   | (Keyed & { name: "signed-prepare"; yes: boolean; out: string; input: ToolInput })

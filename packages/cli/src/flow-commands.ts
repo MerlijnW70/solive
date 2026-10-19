@@ -4,7 +4,7 @@ import { memoized, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, type Transport } fro
 import { claimsOf } from "./agent/claims.js";
 import { relayOf } from "./agent/relay.js";
 import type { Command } from "./command-types.js";
-import { transactionSigner } from "./ledger-keys.js";
+import { messageSigner, transactionSigner } from "./ledger-keys.js";
 import type { Runtime } from "./runtime.js";
 import type { AgentContext } from "./agent/actions.js";
 import { prepareCreate } from "./agent/create.js";
@@ -103,7 +103,7 @@ export async function flowCommand(command: FlowCommand, runtime: Runtime, transp
       return ask(action, context(transport), { ...command.input, owner });
     }
     case "signed-prepare": {
-      const owner = await runtime.loadSigner(command.keypair);
+      const owner = await messageSigner(runtime, command.keypair);
       const input = await inRaw(
         transport,
         command.input,

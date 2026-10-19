@@ -8,7 +8,8 @@ import { loadClaims, loadProfile } from "./client-claims.js";
 import { feedbackInstructions, reputationOf } from "./reputation.js";
 export { loadCommittee } from "./client-committee.js";
 export { cancelClaims, type ClaimsView, type JobClaim, jobClaimOf, type LineEntry, lineHandover, loadClaims, loadClaimsOf, loadLine, loadProfile } from "./client-claims.js";
-import { committeeSettlement, proofSettlement } from "./client-settle.js";
+import { committeeSettlement, proofBallotOf, proofSettlement } from "./client-settle.js";
+export { committeeJudged } from "./client-settle.js";
 import { type Client, type ClientOptions, type Mint, WATCH_POLL_MS, WATCH_WAIT_SECONDS } from "./client-types.js";
 import { decoded, watchIntents } from "./client-watch.js";
 import { explain } from "./errors.js";
@@ -32,7 +33,9 @@ export type {
   HistoryEvent,
   IntentAccount,
   IntentFilter,
+  MessageSigner,
   Mint,
+  ProofBallot,
   SettleCommitteeInput,
   SettleProofInput,
   TokenBalance,
@@ -87,6 +90,7 @@ export function createClient(options: ClientOptions): Client {
   const { createIntent, cancel, unwrap, fill, expire, close } = intentSends(context);
   const { history, fillOf, balances } = clientReads(context);
   const settleProof = proofSettlement(context);
+  const proofBallot = proofBallotOf(context);
   const { committeeBallot, prepareCommitteeRelease, settleCommittee } = committeeSettlement(context);
   const { committee, createCommittee } = committeeSends(context);
 
@@ -121,6 +125,7 @@ export function createClient(options: ClientOptions): Client {
     cancel,
     unwrap,
     settleProof,
+    proofBallot,
     committee,
     createCommittee,
     committeeBallot,

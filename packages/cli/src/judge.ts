@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
-import { type Address, getBase58Decoder, type KeyPairSigner, type Signature } from "@solana/kit";
+import { type Address, getBase58Decoder, type Signature } from "@solana/kit";
 import { decodeParams, IntentStatus, Kind } from "@intent-engine/core";
 import {
   chainTime,
@@ -10,6 +10,7 @@ import {
   createClient,
   deliveryRecord,
   firstDelivery,
+  isDevice,
   loadCommittee,
   loadIntent,
   SIGNATURE_PAGE,
@@ -27,6 +28,7 @@ import { type HostJudged, judgeHost } from "./host-judge.js";
 import { judgeNode, type NodeJudged } from "./node-judge.js";
 import { invitedTo, notInvited } from "./invites.js";
 import { type SimulatedRelease, simulateRelease } from "./release-simulation.js";
+import { keyFileSigner, type MessageSigner, messageSigner } from "./ledger-keys.js";
 import { type Beacon, drawBeacon, type DrawJudged, judgeDraw } from "./draw.js";
 import { type Cases, casesOf, judgeViper, type Judged as CasesJudged, pinnedWasm, runOf, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
 
@@ -119,13 +121,16 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
     await rm(command.verdict, { force: true });
   }
   await sandboxReady(command.sandbox, dockerEnv(process.env));
-  const signer = await runtime.loadSigner(command.keypair);
+  const signer = await messageSigner(runtime, command.keypair);
   const { address, attestor, committee, specHash, minResult, maxResult } = await escrowFor(
     transport,
     signer.address,
     command.owner,
     command.nonce,
   );
+  if (committee !== null) {
+    keyFileSigner(signer, "judge", command.keypair);
+  }
   const result = command.result ?? minResult;
   if (result < minResult || result > maxResult) {
     throw new JudgeRefused(resultOutside(result, address, minResult, maxResult));
@@ -180,12 +185,12 @@ export const mayHaveLanded = (signal: InterruptSignal, address: Address, signatu
 
 type Release = { address: Address; payTo: Address; result: bigint; sha256: string };
 
-function sendRelease(command: JudgeCommand, transport: Transport, signer: KeyPairSigner, signals: HeldSignals, release: Release): Promise<Signature> {
+function sendRelease(command: JudgeCommand, transport: Transport, signer: MessageSigner, signals: HeldSignals, release: Release): Promise<Signature> {
   return new Promise((done, failed) => {
     let sent = false;
     let signature: Signature | undefined;
     let after = 0;
-    const signTransactions: KeyPairSigner["signTransactions"] = async (transactions, config) => {
+    const signTransactions: MessageSigner["signTransactions"] = async (transactions, config) => {
       const caught = signals.caught();
       if (caught !== undefined) {
         throw new JudgeInterrupted(caught, notSent(caught));
@@ -242,7 +247,7 @@ type Judged = {
 async function checkAndSettle(
   command: JudgeCommand,
   transport: Transport,
-  signer: KeyPairSigner,
+  signer: MessageSigner,
   signals: HeldSignals,
   { address, attestor, committee, specHash, sha256, payTo, result, read, specBytes, check: checkFiles, viper, beacon, confirm }: Judged,
 ): Promise<Verdict> {
@@ -305,7 +310,7 @@ async function checkAndSettle(
   let simulated: SimulatedRelease | undefined;
   if (passed && committee !== null) {
     const target = { owner: command.owner, nonce: command.nonce, payTo, result };
-    vote = await memberVote(signer, await createClient({ url: command.url, transport }).committeeBallot(target), target);
+    vote = await memberVote(keyFileSigner(signer, "judge", command.keypair), await createClient({ url: command.url, transport }).committeeBallot(target), target);
   } else if (passed && command.yes) {
     try {
       signature = await sendRelease(command, transport, signer, signals, { address, payTo, result, sha256 });
@@ -322,7 +327,7 @@ async function checkAndSettle(
       }
       throw error;
     }
-  } else if (passed) {
+  } else if (passed && !isDevice(signer)) {
     simulated = await simulateRelease(transport, signer, { url: command.url, owner: command.owner, nonce: command.nonce, payTo, result, sha256 });
   }
   const verdict: Verdict = {

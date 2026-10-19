@@ -6,6 +6,7 @@ import { previewed } from "./admin-commands.js";
 import { parseAddress, parseU64 } from "./arg-values.js";
 import type { Command } from "./command-types.js";
 import { FlowRefused } from "./flows.js";
+import { transactionSigner } from "./ledger-keys.js";
 import type { Runtime } from "./runtime.js";
 
 export const VOTE_KIND = "committee-vote";
@@ -160,7 +161,7 @@ export async function committeeCommand(command: CommitteeCommand, runtime: Runti
       return { summary, signed: true, vote, ...(command.out === undefined ? {} : { written: command.out }) };
     }
     case "committee-release": {
-      const solver = await runtime.loadSigner(command.keypair);
+      const solver = await transactionSigner(runtime, command.keypair);
       const votes = await Promise.all(command.votes.map(async (file) => voteOf(await readFile(file, "utf8"), file)));
       const target = sameBallot(votes, command.votes);
       const cast: CommitteeVote[] = votes.map((v) => ({ member: v.member, signature: Uint8Array.from(Buffer.from(v.signature, "hex")) }));

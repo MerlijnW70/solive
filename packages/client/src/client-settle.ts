@@ -1,6 +1,8 @@
 import { type Address, createNoopSigner, getAddressDecoder, type Instruction, type TransactionSigner } from "@solana/kit";
+import { createHash } from "node:crypto";
 import {
   attestedProofMessage,
+  attestedProofPreimage,
   buildCommitteeBatch,
   buildFillAttested,
   claimBoardAddress,
@@ -29,6 +31,7 @@ import type {
   ClientContext,
   CommitteeBallot,
   CommitteeRelease,
+  ProofBallot,
   SettleCommitteeInput,
   SettleProofInput,
 } from "./client-types.js";
@@ -173,6 +176,22 @@ export function proofSettlement(context: ClientContext) {
     );
   };
   return settleProof;
+}
+
+export const committeeJudged = (attestor: Address) =>
+  `names committee ${attestor} as its judge, so its members sign committee votes, not this release`;
+
+export function proofBallotOf(context: ClientContext) {
+  return async (input: BallotInput): Promise<ProofBallot> => {
+    const plan = await planRelease(context, { ...input, payer: createNoopSigner(input.payTo) }, async (attestor, intent) => {
+      if ((await loadCommittee(context.transport, attestor)) !== null) {
+        throw new NotSettleable(intent, committeeJudged(attestor));
+      }
+      return { feeOwner: attestor, judge: attestor };
+    });
+    const digest = new Uint8Array(createHash("sha256").update(await attestedProofPreimage(plan.proof)).digest());
+    return { intent: plan.intent, attestor: plan.judge, payee: plan.proof.payee, digest, message: await attestedProofMessage(plan.judge, plan.proof) };
+  };
 }
 
 export function committeeSettlement(context: ClientContext) {

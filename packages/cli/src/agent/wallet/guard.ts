@@ -11,11 +11,12 @@ import {
   type TransactionPartialSigner,
 } from "@solana/kit";
 import { formatAmount, parseAmount } from "@intent-engine/core";
-import { Charged, neverLanded } from "@intent-engine/client";
+import { Charged, type DeviceSigner, isLedgerPath, LedgerError, ledgerSigner, neverLanded, openUsb } from "@intent-engine/client";
 import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "../../args.js";
 import { execute, type PreparedView } from "../../flows.js";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
-import { expandHome, faucetLink, type Files, PUBLIC_FAUCET, withSettings } from "../../wallet.js";
+import { expandHome, faucetLink, type Files, ledgerBook, PUBLIC_FAUCET, withSettings } from "../../wallet.js";
+import { needsKeyFile } from "../../ledger-keys.js";
 import type { AgentContext } from "../actions.js";
 import type { Call } from "../claims.js";
 import { tool } from "../names.js";
@@ -106,7 +107,7 @@ export async function walletKeypair(ctx: AgentContext): Promise<Uint8Array | und
     return undefined;
   }
   const path = await savedKeypair(ctx.wallet);
-  if (path === undefined) {
+  if (path === undefined || isLedgerPath(path)) {
     return undefined;
   }
   try {
@@ -119,6 +120,7 @@ export async function walletKeypair(ctx: AgentContext): Promise<Uint8Array | und
 export type WalletSigner = TransactionPartialSigner &
   MessagePartialSigner & {
     signBytes(bytes: Uint8Array): Promise<SignatureBytes>;
+    readonly device?: string;
   };
 
 async function notMainnet(ctx: AgentContext): Promise<void> {
@@ -140,11 +142,61 @@ export function guardedSigner(ctx: AgentContext, key: KeyPairSigner): WalletSign
   } satisfies WalletSigner);
 }
 
+export function deviceSigner(ctx: AgentContext, device: DeviceSigner): WalletSigner {
+  const checked = async <T>(sign: () => Promise<T>): Promise<T> => {
+    await notMainnet(ctx);
+    return sign();
+  };
+  const signMessages: WalletSigner["signMessages"] = (messages, config) => checked(() => device.signMessages(messages, config));
+  return Object.freeze({
+    address: device.address,
+    device: device.device,
+    signMessages,
+    signTransactions: (transactions, config) => checked(() => device.signTransactions(transactions, config)),
+    signBytes: async (bytes) => {
+      const [signed] = await signMessages([{ content: bytes, signatures: {} }]);
+      const signature = signed?.[device.address];
+      if (signature === undefined) {
+        throw new LedgerError(`the Ledger returned no signature for ${device.address}; nothing was sent`);
+      }
+      return signature;
+    },
+  } satisfies WalletSigner);
+}
+
+export function keyFileOnly(signer: WalletSigner, name: string): void {
+  if (signer.device !== undefined) {
+    throw new AgentRefusal("LedgerNeedsKeyFile", needsKeyFile(name, signer.device));
+  }
+}
+
+const devices = new WeakMap<Files, Map<string, Promise<DeviceSigner>>>();
+
+function deviceAt(wallet: WalletAccess, path: string): Promise<DeviceSigner> {
+  const known = devices.get(wallet.files) ?? new Map<string, Promise<DeviceSigner>>();
+  devices.set(wallet.files, known);
+  const found = known.get(path);
+  if (found !== undefined) {
+    return found;
+  }
+  const opening = ledgerSigner(path, wallet.files.ledger ?? openUsb);
+  known.set(path, opening);
+  opening.catch(() => {
+    if (known.get(path) === opening) {
+      known.delete(path);
+    }
+  });
+  return opening;
+}
+
 export async function signerOf(ctx: AgentContext): Promise<WalletSigner> {
   const wallet = await testCluster(ctx);
   const path = await savedKeypair(wallet);
   if (path === undefined) {
     throw new AgentRefusal("NoWallet", NO_WALLET);
+  }
+  if (isLedgerPath(path)) {
+    return deviceSigner(ctx, await deviceAt(wallet, path));
   }
   let key: KeyPairSigner;
   try {
@@ -209,7 +261,10 @@ function capOf(text: string, decimals: number, mint: Address): bigint {
 
 export async function bookOf(wallet: WalletAccess): Promise<string | undefined> {
   const path = await savedKeypair(wallet);
-  return path === undefined ? undefined : salesPath(resolve(expandHome(path, wallet.files.home)));
+  if (path === undefined) {
+    return undefined;
+  }
+  return isLedgerPath(path) ? ledgerBook(wallet.files.home, path) : salesPath(resolve(expandHome(path, wallet.files.home)));
 }
 
 export const live = (sales: readonly Sale[], now: bigint): Sale[] => sales.filter((s) => s.at > now - SALE_WINDOW);
@@ -314,4 +369,4 @@ export function rpcRefused(error: unknown): boolean {
 }
 
 export const refusedBeforeSending = (error: unknown): boolean =>
-  neverLanded(error) || error instanceof AgentRefusal || error instanceof InvalidInput || rpcRefused(error);
+  neverLanded(error) || error instanceof LedgerError || error instanceof AgentRefusal || error instanceof InvalidInput || rpcRefused(error);

@@ -39,6 +39,10 @@ The agent then creates intents with `solive_agent_create`, only for those owners
 3. The judge checks it with `solive_check_delivery` and pays, as [Judge work](judge.md) shows.
 4. `solive_get_receipt` shows who was paid.
 
+## Sign with a Ledger
+
+Set `INTENT_ENGINE_KEYPAIR` to `usb://ledger` or another form from the [quickstart](quickstart.md#sign-with-a-ledger), then start the server with `--wallet`. The wallet keeps no key file. Every send waits for your approval on the device, and a refusal there returns the `Ledger` problem with nothing sent. Committee votes and split releases sign a message a Ledger cannot sign, so those tools return `LedgerNeedsKeyFile`.
+
 ## Relay signed intents
 
 `--relayer` with `--relay-fee` lets `solive_submit_signed_intent` publish intents that owners signed off-chain. The relayer key pays.

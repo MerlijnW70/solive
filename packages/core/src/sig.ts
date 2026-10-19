@@ -2,8 +2,7 @@ import {
   type Address,
   getAddressEncoder,
   type Instruction,
-  type KeyPairSigner,
-  signBytes,
+  type MessagePartialSigner,
 } from "@solana/kit";
 import { INTENT_ENGINE_PROGRAM_ADDRESS } from "../generated/client/index.js";
 import { checkFlags, EXT_MAX_LEN, FILL_EXT_TAGS, partnerOf, validateExt } from "./ext.js";
@@ -341,11 +340,15 @@ export function buildEd25519Instruction(input: {
 }
 
 export async function signEd25519Instruction(
-  signer: KeyPairSigner,
+  signer: MessagePartialSigner,
   message: Uint8Array,
 ): Promise<Instruction> {
-  const signature = new Uint8Array(await signBytes(signer.keyPair.privateKey, message));
-  return buildEd25519Instruction({ publicKey: signer.address, signature, message });
+  const [signed] = await signer.signMessages([{ content: message, signatures: {} }]);
+  const signature = signed?.[signer.address];
+  if (signature === undefined) {
+    throw new RangeError(`${signer.address} returned no signature for the message`);
+  }
+  return buildEd25519Instruction({ publicKey: signer.address, signature: new Uint8Array(signature), message });
 }
 
 export const MAX_ED25519_BATCH = 255;

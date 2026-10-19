@@ -45,6 +45,7 @@ import { SOLVER_TABLE_NEXT, solverOptions } from "./solve-commands.js";
 import { flowCommand } from "./flow-commands.js";
 import { addTo } from "./add-to.js";
 import { transactionSigner } from "./ledger-keys.js";
+import { judgeDigest } from "./judge-digest.js";
 
 export type { Runtime } from "./runtime.js";
 export { AUTHORITY_NEXT, configExists } from "./admin-commands.js";
@@ -201,6 +202,8 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "judge": {
       return judge(command, runtime, transport);
     }
+    case "judge-digest":
+      return judgeDigest(command, transport);
     case "committee-create":
     case "committee-show":
     case "committee-vote":

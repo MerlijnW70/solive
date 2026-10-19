@@ -47,7 +47,7 @@ import { preparedView } from "../shapes.js";
 import { walletRecipient } from "../owner.js";
 import { prepare, transactionSize } from "../prepare.js";
 import { STATUS } from "../../accounts.js";
-import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, WAIT_SCAN, signerOf, sent, sha256Of } from "./guard.js";
+import { keyFileOnly, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, WAIT_SCAN, signerOf, sent, sha256Of } from "./guard.js";
 import { RELEASE_CHANGED, approvalOf } from "./attest.js";
 import { notInSplit, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor, confirmedRelease } from "./delivery.js";
 
@@ -119,6 +119,7 @@ export const walletAttestSplit = define({
   }),
   run: async (ctx: AgentContext, input, call: Call) => {
     const signer = await signerOf(ctx);
+    keyFileOnly(signer, tool("wallet_attest_split"));
     const [intent] = await findIntentPda({ owner: input.owner, nonce: input.nonce });
     const [view, { config }] = await Promise.all([ctx.transport.getAccount(intent), loadConfig(ctx.transport)]);
     if (view === null) {

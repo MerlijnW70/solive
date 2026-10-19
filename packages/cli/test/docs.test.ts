@@ -89,6 +89,8 @@ const table = (header: string[], body: string[][]) => [
   ...body.map((r) => `| ${r.map(cell).join(" | ")} |`),
 ];
 
+const RUNS_ALONE = new Set(["judge"]);
+
 function cliPage(): string {
   const verbs = Object.keys(ACCEPTS);
   const body = verbs.flatMap((verb) => {
@@ -97,7 +99,8 @@ function cliPage(): string {
     const subs = Object.entries(SUB_ACCEPTS[verb] ?? {}).map(
       ([sub, names]) => `Options for \`${sub}\`: ${listed([...names, ...GLOBAL_OPTIONS].map((o) => `--${o}`))}`,
     );
-    const lines = subs.length === 0 ? [`Options: ${listed(options)}`] : subs.flatMap((l) => [l, ""]).slice(0, -1);
+    const bare = subs.length > 0 && RUNS_ALONE.has(verb) ? [`Options without a subcommand: ${listed(options)}`] : [];
+    const lines = subs.length === 0 ? [`Options: ${listed(options)}`] : [...bare, ...subs].flatMap((l) => [l, ""]).slice(0, -1);
     return [`## ${verb}`, "", "```text", usage, "```", "", ...lines, ""];
   });
   const plain = (

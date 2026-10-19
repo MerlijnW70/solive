@@ -1,4 +1,4 @@
-import type { Address, Instruction, KeyPairSigner, Signature, TransactionSigner } from "@solana/kit";
+import type { Address, Instruction, MessagePartialSigner, Signature, TransactionSigner } from "@solana/kit";
 import type { CommitteeTerms, CommitteeVote, Config, EngineEvent, Intent, IntentParams, ProfileView } from "@intent-engine/core";
 import type { Priority } from "./budget.js";
 import type { ClaimsView } from "./client-claims.js";
@@ -41,8 +41,10 @@ export type CreateIntentInput = {
 
 export type CreatedIntent = { signature: Signature; intent: Address; nonce: bigint };
 
+export type MessageSigner = TransactionSigner & MessagePartialSigner;
+
 export type SettleProofInput = {
-  judge: KeyPairSigner;
+  judge: MessageSigner;
   owner: Address;
   nonce: bigint;
   payTo: Address;
@@ -69,6 +71,14 @@ export type CommitteeBallot = {
   committee: CommitteeView;
   payee: Address;
   digest: Uint8Array;
+};
+
+export type ProofBallot = {
+  intent: Address;
+  attestor: Address;
+  payee: Address;
+  digest: Uint8Array;
+  message: Uint8Array;
 };
 
 export type SettleCommitteeInput = BallotInput & {
@@ -133,6 +143,7 @@ export type Client = {
   cancel(signer: TransactionSigner, nonce: bigint): Promise<Signature>;
   unwrap(signer: TransactionSigner): Promise<Signature | null>;
   settleProof(input: SettleProofInput): Promise<Signature>;
+  proofBallot(input: BallotInput): Promise<ProofBallot>;
   committee(address: Address): Promise<CommitteeView | null>;
   createCommittee(input: CreateCommitteeInput): Promise<CreatedCommittee>;
   committeeBallot(input: BallotInput): Promise<CommitteeBallot>;

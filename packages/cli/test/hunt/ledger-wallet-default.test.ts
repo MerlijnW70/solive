@@ -1,10 +1,10 @@
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
-import type { OpenTransport } from "@intent-engine/client";
+import { LEDGER_ERRORS, type OpenTransport } from "@intent-engine/client";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ENV_KEYPAIR } from "../../src/clusters.js";
 import { needsKeyFile } from "../../src/ledger-keys.js";
-import { EXIT_USAGE, main } from "../../src/main.js";
+import { EXIT_OK, EXIT_USAGE, main } from "../../src/main.js";
 import { h, runtime, world } from "../harness.js";
 
 const LEDGER = "usb://ledger";
@@ -36,11 +36,9 @@ describe("a Ledger path as the default key of a command outside the transaction-
     expect([h.served.length, h.genesisReads + h.requestedLimits.length - reads, opened]).toEqual([0, 0, 0]);
   });
 
-  it("W-4: mcp --wallet takes usb://ledger from INTENT_ENGINE_KEYPAIR, reads the chain and makes a key file under that name its wallet", async () => {
+  it("W-4: mcp --wallet takes usb://ledger from INTENT_ENGINE_KEYPAIR as its wallet and never makes a key file under that name", async () => {
     h.env[ENV_KEYPAIR] = LEDGER;
     h.served.length = 0;
-    const genesis = h.genesisReads;
-    const scans = h.requestedLimits.length;
     const started = await start(["mcp", "--url", "devnet", "--wallet", "--all-tools"], ledger);
     let wallet: unknown = null;
     const server = h.served[0];
@@ -54,19 +52,17 @@ describe("a Ledger path as the default key of a command outside the transaction-
     expect({
       code: started.code,
       served: h.served.length,
-      chainReads: h.genesisReads - genesis + h.requestedLimits.length - scans,
       opened,
       keyFileNamedLikeTheLedger: h.files.has(LEDGER),
       airdrops: h.airdrops.length,
       wallet,
     }).toEqual({
-      code: EXIT_USAGE,
-      served: 0,
-      chainReads: 0,
-      opened: 0,
+      code: EXIT_OK,
+      served: 1,
+      opened: 1,
       keyFileNamedLikeTheLedger: false,
       airdrops: 0,
-      wallet: null,
+      wallet: { code: "Ledger", retryable: false, hint: LEDGER_ERRORS.notFound },
     });
   });
 });

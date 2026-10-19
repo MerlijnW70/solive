@@ -3,14 +3,14 @@
 # CLI reference
 
 ```text
-usage: setup | add-to claude|codex | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
+usage: setup | add-to claude|codex | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | solve | raise-pause | lower-pause | crank | treasury | solver-table | events | jobs | deliver | deliveries | receipt | record-delivery | judge [digest] | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
 ```
 
 Every command accepts `--output` and `--help`.
 
 `INTENT_ENGINE_KEYPAIR` fills in `--keypair` and `INTENT_ENGINE_URL` fills in `--url` when they are not given. `--url` takes an RPC URL or one of `localnet`, `devnet`, `testnet`, `mainnet-beta`.
 
-`--keypair` also takes a Ledger, as `usb://ledger`, `usb://ledger?key=<account>`, `usb://ledger?key=<account>/<change>`, for `create`, `cancel`, `expire`, `close`, `approve`, `revoke-approval`, `deliver`, `advance-nonce`, `advance-epoch`, `claims take`, `claims drop`, `mandate grant`, `mandate revoke`; every other command refuses one and needs a key file.
+`--keypair` also takes a Ledger, as `usb://ledger`, `usb://ledger?key=<account>`, `usb://ledger?key=<account>/<change>`, for `create`, `cancel`, `expire`, `close`, `approve`, `revoke-approval`, `deliver`, `judge`, `committee release`, `signed prepare`, `advance-nonce`, `advance-epoch`, `claims take`, `claims drop`, `mandate grant`, `mandate revoke`; every other command refuses one and needs a key file.
 
 ## setup
 
@@ -287,10 +287,12 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, 
 ## judge
 
 ```text
-judge --keypair <judge file> --owner <address> --nonce <n> --spec <file> (--artifact <file or directory> | --watch [--interval <seconds>]) (--run <command> | --sandbox viper) [--pay-to <wallet>] [--result <n>] [--timeout <seconds>] [--verdict <file>] [--max-pages <n>] [--check <file or directory>] [--sandbox docker|viper|none] [--sandbox-image <name>@sha256:<64 hex>] [--sandbox-memory <n>m|<n>g] [--sandbox-cpus <n>] [--plain-node] [--confirm-url <cluster>] [--yes]
+judge --keypair <judge file> --owner <address> --nonce <n> --spec <file> (--artifact <file or directory> | --watch [--interval <seconds>]) (--run <command> | --sandbox viper) [--pay-to <wallet>] [--result <n>] [--timeout <seconds>] [--verdict <file>] [--max-pages <n>] [--check <file or directory>] [--sandbox docker|viper|none] [--sandbox-image <name>@sha256:<64 hex>] [--sandbox-memory <n>m|<n>g] [--sandbox-cpus <n>] [--plain-node] [--confirm-url <cluster>] [--yes] | digest --owner <address> --nonce <n> --pay-to <wallet> [--result <n>]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--pay-to`, `--result`, `--timeout`, `--verdict`, `--max-pages`, `--check`, `--sandbox`, `--sandbox-image`, `--sandbox-memory`, `--sandbox-cpus`, `--plain-node`, `--watch`, `--interval`, `--confirm-url`, `--output`, `--help`
+Options without a subcommand: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--pay-to`, `--result`, `--timeout`, `--verdict`, `--max-pages`, `--check`, `--sandbox`, `--sandbox-image`, `--sandbox-memory`, `--sandbox-cpus`, `--plain-node`, `--watch`, `--interval`, `--confirm-url`, `--output`, `--help`
+
+Options for `digest`: `--url`, `--owner`, `--nonce`, `--pay-to`, `--result`, `--output`, `--help`
 
 ## crank
 
