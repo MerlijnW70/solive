@@ -118,7 +118,7 @@ describe("reputation a worker may have paid for itself", () => {
       },
     };
     const cut = await createClient({ url: LOCAL, transport: endless }).reputation(worker.address);
-    expect(cut).toMatchObject({ complete: false, paid: 1, fundedByWorker: 0 });
+    expect(cut).toMatchObject({ complete: false, paid: 1, paidVerified: 0, fundedByWorker: 0, fundingUnknown: 1 });
     expect(marks(cut.records)).toEqual({ [intent]: "unknown" });
     expect(listed.filter((at) => at === payer.address)).toHaveLength(FUNDING_PAGES);
     const pruned = await createClient({ url: LOCAL, transport: { ...transport, firstAvailableSlot: async () => 5n } }).reputation(worker.address);
@@ -168,7 +168,7 @@ describe("reputation a worker may have paid for itself", () => {
       },
     };
     const failed = await createClient({ url: LOCAL, transport: failing }).reputation(worker.address);
-    expect(failed).toMatchObject({ complete: false, paid: 1, fundedByWorker: 0 });
+    expect(failed).toMatchObject({ complete: false, paid: 1, paidVerified: 0, fundedByWorker: 0, fundingUnknown: 1 });
     expect(marks(failed.records)).toEqual({ [intent]: "unknown" });
   });
 
@@ -188,7 +188,7 @@ describe("reputation a worker may have paid for itself", () => {
     };
     const rep = await createClient({ url: LOCAL, transport: counting }).reputation(worker.address);
     expect(rep).toMatchObject({ complete: true, paid: 2, fundedByWorker: 0 });
-    expect(reads.filter((at) => at === payer.address)).toHaveLength(1);
+    expect(reads.filter((at) => at === payer.address)).toHaveLength(2);
     await expect(client.reputation(worker.address)).resolves.toMatchObject({ paid: 2 });
   });
 });

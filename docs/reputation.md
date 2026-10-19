@@ -17,15 +17,21 @@ For every proof escrow the wallet announced work to, the record says whether its
 - `refunded` or `open`: nothing was released.
 - `unknown`: the release could not be read in full.
 
+Each escrow is one record. A released escrow counts for the wallet's earliest announcement that opens to the released work, and only when that announcement landed before the release; announcing the same work again adds nothing.
+
 The totals count only `paid` releases at arm's length. A release is self-dealt, and left out, when the worker owned the escrow, judged it, or sat on the committee that judged it, or when the owner judged its own escrow. `payers` and `judges` count the distinct owners and judges behind the totals. `committee_judged` counts releases a committee approved.
 
-A paid release is also left out when the worker funded its payer: the earliest SOL transfer into the payer's wallet came from the worker, or from a wallet the worker funded first. `funded_by_worker` counts these, and each paid release shows `yes`, `no` or `unknown`.
+A paid release is also left out when the worker funded its payer: the earliest SOL into the payer's wallet came from the worker, or from a wallet the worker funded first. `funded_by_worker` counts these, and each paid release shows `yes`, `no` or `unknown`.
 
-`backed` sums, per mint, the protocol fees of the releases in the totals, which go to the protocol's fee recipient rather than to the worker: all of a single payee's fee, and a co-author's split weight of a team split's fee. `backed_sol` sums the ones paid in SOL plus their create fees, in whole SOL, and never counts a fee paid in another token. A release whose events cannot be read adds nothing and leaves `complete` `false`.
+A transfer or account creation counts from its sender, and a closed token account or nonce withdrawal from its closing or withdrawing authority. Any other rise in the payer's balance counts as coming from that transaction's fee payer. So SOL the payer moves out of an account it controls itself, with a relayer paying the fee, is not linked to the worker. Zero-lamport transfers do not use up the transactions read.
 
-A funder whose history runs past the pages read, such as a faucet, is a busy wallet: the check stops there and marks `no`. A payer or funder whose history the node cannot return in full is `unknown`, never `no`, and still counts.
+`backed` sums, per mint, the protocol fees of the releases in the totals, which go to the protocol's fee recipient rather than to the worker: all of a single payee's fee, and a co-author's split weight of a team split's fee. `backed_sol` sums the SOL ones plus every create fee, in whole SOL. A release whose events cannot be read adds nothing and leaves `complete` `false`.
 
-`complete` is `true` only when the RPC node holds the whole ledger and every escrow's history and payer's funding history was read. A pruned node shows less, never more.
+A funder whose history runs past the pages read, such as a faucet, is a busy wallet: the check stops there and marks `no`. A payer or funder whose history the node cannot return in full is `unknown`, never `no`. Only `yes` is left out: an `unknown` release still counts, and `funding_unknown` shows how many. `paid_verified` counts the paid releases whose check came back `no`.
+
+`complete` is `true` only when the RPC node holds the whole ledger and every escrow's history, refutation and payer's funding history was read. A pruned node shows less, never more.
+
+An escrow with more transactions than one page is read page by page back to its creation, up to a fixed number of pages; past that, its release is looked up in the judge's history. A stranger padding the escrow while its judge is busy can still hide a release, and `complete` is then `false`.
 
 ## Trust from your own payments
 
@@ -35,7 +41,9 @@ intent-engine reputation --worker <worker wallet> --reader <your wallet> [--seed
 
 `trust` scores the worker by personalized PageRank, restart probability a = 0.15, that starts only at your wallet and any `--seed` wallets and flows along the releases counted above, weighted by the SOL they cost: SOL protocol fees and every create fee. A ring of wallets paying each other, funded from outside your graph, scores 0, and one bribed payment into a ring gives it at most (1 − a) / a times the trust on that payment.
 
-The read stops two hops from the seeds or at a fixed number of wallets, and then `complete` is `false`. `trustOf(transport, reader, worker)` in TypeScript and the `reader` input of `solive_get_reputation` return the same `trust`.
+A payer's shares divide the SOL all its releases cost, so a wallet left out never raises another's share.
+
+The read stops two hops from the seeds or at a fixed number of wallets, and then `complete` is `false`. A wallet whose releases cost the payer no SOL is never read, at most a fixed number of each payer's payees are read, and the reader and seeds are cut to fit the wallet limit. `trustOf(transport, reader, worker)` in TypeScript and the `reader` input of `solive_get_reputation` return the same `trust`.
 
 ## Rate released work
 

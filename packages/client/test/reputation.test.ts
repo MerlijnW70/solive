@@ -115,7 +115,7 @@ describe("reputation from verifiable history", () => {
     const [worker, owner, judge] = await Promise.all([fresh(), fresh(), fresh()]);
     await job(owner, judge, worker, "3c".repeat(32));
     const pruned = createClient({ url: LOCAL, transport: { ...transport, firstAvailableSlot: async () => 5n } });
-    expect(await pruned.reputation(worker.address)).toMatchObject({ complete: false, paid: 1 });
+    expect(await pruned.reputation(worker.address)).toMatchObject({ complete: false, paid: 1, paidVerified: 0, fundingUnknown: 1 });
   });
 
   it("counts no clear v1 announcement, even one a release paid", async () => {

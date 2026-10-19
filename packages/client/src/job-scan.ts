@@ -77,6 +77,28 @@ export async function scan(transport: Transport, of: Address, options: ScanOptio
   return { transactions, complete: false, pages };
 }
 
+export type SignaturePage = { listed: ListedSignature[]; last: boolean };
+
+export async function signaturePage(
+  transport: Transport,
+  signaturesOf: NonNullable<Transport["signaturesOf"]>,
+  of: Address,
+  limit: number,
+  before?: string,
+): Promise<SignaturePage> {
+  const listed: ListedSignature[] = [];
+  let at = before;
+  while (listed.length < limit) {
+    const found = await signaturesOf.call(transport, of, limit - listed.length, at);
+    if (found.length === 0) {
+      return { listed, last: true };
+    }
+    listed.push(...found);
+    at = found[found.length - 1]?.signature;
+  }
+  return { listed, last: false };
+}
+
 export async function transactionAt(transport: Transport, signature: string, of?: Address): Promise<EngineTransaction | null> {
   const { transactionOf } = transport;
   if (transactionOf !== undefined) {

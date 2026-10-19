@@ -186,6 +186,9 @@ describe("reputation relative to the reader", () => {
       engineTransactions: async () => {
         throw new Error("the node is down");
       },
+      transactionsOf: async () => {
+        throw new Error("the node is down");
+      },
     };
     expect(await trustOf(failing, reader.address, a.address)).toMatchObject({ score: 0, complete: false });
   });

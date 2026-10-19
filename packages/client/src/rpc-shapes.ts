@@ -153,6 +153,8 @@ export type RpcLike = {
       err?: unknown;
       loadedAddresses?: { writable: readonly Address[]; readonly: readonly Address[] };
       innerInstructions?: readonly { instructions: readonly { programIdIndex: number; accounts?: readonly number[]; data: string }[] }[] | null;
+      preBalances?: readonly (bigint | number)[];
+      postBalances?: readonly (bigint | number)[];
       preTokenBalances?: readonly TokenBalance[] | null;
       postTokenBalances?: readonly TokenBalance[] | null;
     } | null;

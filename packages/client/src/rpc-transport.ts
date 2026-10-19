@@ -16,7 +16,7 @@ import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRE
 import { confirmSent, type SignatureWatch } from "./confirmation.js";
 import { patiently } from "./rpc-retry.js";
 import type { AccountView, AtLeast, EngineTransaction, FinalizedBlock, ListedSignature, RawAccount, RpcLike, SignatureLanding, Status, Transport } from "./rpc-shapes.js";
-import { SYSTEM_PROGRAM_ADDRESS } from "./accounts.js";
+import { SYSTEM_PROGRAM_ADDRESS, TOKEN_PROGRAMS } from "./accounts.js";
 import { holdingsOf, keysAt, MEMO_PROGRAM_ADDRESS, signersAmong, solTransfersOf } from "./transaction-keys.js";
 
 const INTENT_OWNER_OFFSET = 8n;
@@ -88,8 +88,11 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     const transfers = solTransfersOf(
       keys,
       [...(tx?.transaction.message.instructions ?? []), ...(tx?.meta?.innerInstructions ?? []).flatMap((group) => group.instructions)]
-        .filter((ix) => keys[ix.programIdIndex] === SYSTEM_PROGRAM_ADDRESS)
+        .filter((ix) => keys[ix.programIdIndex] === SYSTEM_PROGRAM_ADDRESS || TOKEN_PROGRAMS.includes(keys[ix.programIdIndex] as Address))
         .map((ix) => ({ program: keys[ix.programIdIndex], accounts: ix.accounts ?? [], data: Uint8Array.from(getBase58Encoder().encode(ix.data)) })),
+      tx?.meta?.preBalances === undefined || tx.meta.postBalances === undefined
+        ? undefined
+        : { before: tx.meta.preBalances.map(BigInt), after: tx.meta.postBalances.map(BigInt) },
     );
     return {
       signature: entry.signature,

@@ -1,5 +1,5 @@
 import type { Address } from "@solana/kit";
-import { SIGNATURE_PAGE } from "./job-scan.js";
+import { SIGNATURE_PAGE, signaturePage } from "./job-scan.js";
 import { type ListedSignature, TRANSACTION_FETCHES, type Transport } from "./transport.js";
 
 export const FUNDING_PAGES = 2;
@@ -22,12 +22,12 @@ async function listedOldestFirst(transport: Transport, wallet: Address): Promise
   const listed: ListedSignature[] = [];
   let before: string | undefined;
   for (let page = 1; page <= FUNDING_PAGES; page++) {
-    const found = await signaturesOf.call(transport, wallet, SIGNATURE_PAGE, before);
-    listed.push(...found);
-    if (found.length < SIGNATURE_PAGE) {
+    const found = await signaturePage(transport, signaturesOf, wallet, SIGNATURE_PAGE, before);
+    listed.push(...found.listed);
+    if (found.last) {
       return listed.filter(({ failed }) => !failed).reverse();
     }
-    before = found[found.length - 1]?.signature;
+    before = found.listed[found.listed.length - 1]?.signature;
   }
   return BUSY;
 }
@@ -49,9 +49,11 @@ async function readFunder(transport: Transport, wallet: Address, covered: () => 
   if (transactionsOf === undefined || oldest === null) {
     return { funder: null, complete: false };
   }
-  const reads = oldest.slice(0, FUNDING_READS);
-  for (let at = 0; at < reads.length; at += TRANSACTION_FETCHES) {
-    const batch = reads.slice(at, at + TRANSACTION_FETCHES);
+  let reads = 0;
+  let at = 0;
+  while (at < oldest.length && reads < FUNDING_READS) {
+    const batch = oldest.slice(at, at + TRANSACTION_FETCHES);
+    at += batch.length;
     const found = await transactionsOf.call(transport, batch);
     if (found.length < batch.length) {
       return { funder: null, complete: false };
@@ -60,13 +62,15 @@ async function readFunder(transport: Transport, wallet: Address, covered: () => 
       if (transaction.unread === true) {
         return { funder: null, complete: false };
       }
-      const into = transaction.transfers?.find(({ from, to, lamports }) => to === wallet && from !== wallet && lamports > 0n);
-      if (into !== undefined) {
-        return { funder: into.from, complete: await covered() };
+      const into = (transaction.transfers ?? []).filter(({ from, to }) => to === wallet && from !== wallet);
+      const funding = into.find(({ lamports }) => lamports > 0n);
+      if (funding !== undefined) {
+        return { funder: funding.from, complete: await covered() };
       }
+      reads += into.length === 0 ? 1 : 0;
     }
   }
-  return { funder: null, complete: oldest.length <= FUNDING_READS && (await covered()) };
+  return { funder: null, complete: at >= oldest.length && (await covered()) };
 }
 
 export function fundingLookup(transport: Transport, covered: () => Promise<boolean>): FundingLookup {

@@ -86,16 +86,16 @@ describe("reputation funded by the worker, in the command and the tool", () => {
     const expected = { [direct]: "yes", [through]: "yes", [clean]: "no" };
 
     const read = await both(worker.address);
-    expect(read.command).toMatchObject({ complete: true, announced: 3, paid: 1, selfDealt: 0, fundedByWorker: 2, payers: 1 });
-    expect(read.tool).toMatchObject({ complete: true, announced: 3, paid: 1, self_dealt: 0, funded_by_worker: 2, payers: 1 });
+    expect(read.command).toMatchObject({ complete: true, announced: 3, paid: 1, paidVerified: 1, selfDealt: 0, fundedByWorker: 2, payers: 1 });
+    expect(read.tool).toMatchObject({ complete: true, announced: 3, paid: 1, paid_verified: 1, self_dealt: 0, funded_by_worker: 2, payers: 1 });
     expect(marksOf(read.command["records"], "fundedByWorker")).toEqual(expected);
     expect(marksOf(read.tool["records"], "funded_by_worker")).toEqual(expected);
 
     h.through = { ...transport, firstAvailableSlot: async () => 5n } satisfies Transport;
     const pruned = await both(worker.address);
     const unknown = { [direct]: "yes", [through]: "unknown", [clean]: "unknown" };
-    expect(pruned.command).toMatchObject({ complete: false, paid: 2, fundedByWorker: 1 });
-    expect(pruned.tool).toMatchObject({ complete: false, paid: 2, funded_by_worker: 1 });
+    expect(pruned.command).toMatchObject({ complete: false, paid: 2, paidVerified: 0, fundedByWorker: 1, fundingUnknown: 2 });
+    expect(pruned.tool).toMatchObject({ complete: false, paid: 2, paid_verified: 0, funded_by_worker: 1, funding_unknown: 2 });
     expect(marksOf(pruned.command["records"], "fundedByWorker")).toEqual(unknown);
     expect(marksOf(pruned.tool["records"], "funded_by_worker")).toEqual(unknown);
 
@@ -128,8 +128,8 @@ describe("reputation funded by the worker, in the command and the tool", () => {
     } satisfies Transport;
     const failed = await both(worker.address);
     const unread = { [direct]: "yes", [through]: "yes", [clean]: "unknown" };
-    expect(failed.command).toMatchObject({ complete: false, paid: 1, fundedByWorker: 2 });
-    expect(failed.tool).toMatchObject({ complete: false, paid: 1, funded_by_worker: 2 });
+    expect(failed.command).toMatchObject({ complete: false, paid: 1, paidVerified: 0, fundedByWorker: 2, fundingUnknown: 1 });
+    expect(failed.tool).toMatchObject({ complete: false, paid: 1, paid_verified: 0, funded_by_worker: 2, funding_unknown: 1 });
     expect(marksOf(failed.command["records"], "fundedByWorker")).toEqual(unread);
     expect(marksOf(failed.tool["records"], "funded_by_worker")).toEqual(unread);
   });

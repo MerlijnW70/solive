@@ -81,6 +81,8 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
     const compiled = getCompiledTransactionMessageDecoder().decode(tx.messageBytes);
     const keys = loaded(compiled);
     const before = holdings(keys);
+    const lamportsOf = () => keys.map((key) => svm.getBalance(key) ?? 0n);
+    const lamportsBefore = lamportsOf();
     const result = svm.sendTransaction(tx);
     if (result instanceof FailedTransactionMetadata) {
       throw new Error(`${String(result.err())}\n${result.meta().logs().join("\n")}`);
@@ -106,10 +108,14 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
       .flat()
       .map((ix) => ix.instruction());
     const inner = everyInner.filter((ix) => keys[ix.programIdIndex()] === INTENT_ENGINE_PROGRAM_ADDRESS);
-    const transfers = solTransfersOf(keys, [
-      ...("instructions" in compiled ? compiled.instructions : []).map((ix) => ({ program: keys[ix.programAddressIndex], accounts: ix.accountIndices ?? [], data: Uint8Array.from(ix.data ?? []) })),
-      ...everyInner.map((ix) => ({ program: keys[ix.programIdIndex()], accounts: Array.from(ix.accounts()), data: new Uint8Array(ix.data()) })),
-    ]);
+    const transfers = solTransfersOf(
+      keys,
+      [
+        ...("instructions" in compiled ? compiled.instructions : []).map((ix) => ({ program: keys[ix.programAddressIndex], accounts: ix.accountIndices ?? [], data: Uint8Array.from(ix.data ?? []) })),
+        ...everyInner.map((ix) => ({ program: keys[ix.programIdIndex()], accounts: Array.from(ix.accounts()), data: new Uint8Array(ix.data()) })),
+      ],
+      { before: lamportsBefore, after: lamportsOf() },
+    );
     const found: EngineTransaction = {
       signature,
       slot: clock.slot,

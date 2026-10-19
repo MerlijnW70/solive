@@ -132,6 +132,38 @@ export function releaseStanding(
 
 export type Judged = { attestor: Address; createdAt: bigint | null; to: bigint };
 
+export type Refutation = { refutedBy: Signature | null; complete: boolean };
+
+export async function refutationIn(
+  transport: Transport,
+  transactions: readonly EngineTransaction[],
+  payee: { intent: Address; slot: bigint; signature: string },
+  sha256: string,
+  paid: readonly Address[] = [],
+  judged?: Judged,
+): Promise<Refutation> {
+  const { intent } = payee;
+  let complete = true;
+  const failed = () => {
+    complete = false;
+    return null;
+  };
+  const own = openingsIn(transactions, new Set([intent]));
+  const named = own.flatMap(({ opening }) => ("announcement" in opening && opening.announcement !== payee.signature ? [opening] : []));
+  const fetched: Delivery[] = [];
+  for (const opening of named) {
+    const announced = await transactionAt(transport, opening.announcement, intent).catch(failed);
+    complete &&= announced?.unread !== true;
+    fetched.push(...(announced === null ? [] : deliveriesIn([announced], new Set([intent]))).filter(({ signature }) => signature === opening.announcement));
+  }
+  const record =
+    judged === undefined
+      ? null
+      : await lifecycleDeliveries(transport, judged.attestor, { intent, createdAt: judged.createdAt, from: null, to: judged.to }).catch(failed);
+  const deliveries = [...fetched, ...(record?.deliveries ?? [])];
+  return { refutedBy: refutingAmong(deliveries, [...own, ...(record?.openings ?? [])], payee, sha256, paid)?.signature ?? null, complete };
+}
+
 export async function refutedIn(
   transport: Transport,
   transactions: readonly EngineTransaction[],
@@ -140,20 +172,7 @@ export async function refutedIn(
   paid: readonly Address[] = [],
   judged?: Judged,
 ): Promise<Signature | null> {
-  const { intent } = payee;
-  const own = openingsIn(transactions, new Set([intent]));
-  const named = own.flatMap(({ opening }) => ("announcement" in opening && opening.announcement !== payee.signature ? [opening] : []));
-  const fetched: Delivery[] = [];
-  for (const opening of named) {
-    const announced = await transactionAt(transport, opening.announcement, intent).catch(() => null);
-    fetched.push(...(announced === null ? [] : deliveriesIn([announced], new Set([intent]))).filter(({ signature }) => signature === opening.announcement));
-  }
-  const record =
-    judged === undefined
-      ? null
-      : await lifecycleDeliveries(transport, judged.attestor, { intent, createdAt: judged.createdAt, from: null, to: judged.to }).catch(() => null);
-  const deliveries = [...fetched, ...(record?.deliveries ?? [])];
-  return refutingAmong(deliveries, [...own, ...(record?.openings ?? [])], payee, sha256, paid)?.signature ?? null;
+  return (await refutationIn(transport, transactions, payee, sha256, paid, judged)).refutedBy;
 }
 
 export const notOpened = (announcement: string, worker: Address, intent: Address, sha256: string): string =>

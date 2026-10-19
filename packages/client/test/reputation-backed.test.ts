@@ -19,7 +19,7 @@ import {
   splitN,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import { createClient, deliverySalt, type Transport } from "../src/index.js";
+import { createClient, deliverySalt, type EngineTransaction, type Transport } from "../src/index.js";
 import { followUpInstructions } from "../src/job-memos.js";
 import { svmTransport } from "../src/svm.js";
 import { FEE_BPS, world } from "./svm.js";
@@ -183,14 +183,14 @@ describe("reputation backed by the fees its releases paid", () => {
     expect(shares[0]).toBeLessThan(fee);
   });
 
-  it("counts a fee paid in another token in backed but never in backed_sol", async () => {
+  it("counts a fee paid in another token in backed, and only its create fee in backed_sol", async () => {
     const { w, client, fresh, economics, job, tokens } = await setup();
     await economics(CREATE_FEE);
     const [worker, owner, judge] = await Promise.all([fresh(), fresh(), fresh()]);
     await tokens(owner.address, PAY);
     await job(owner, judge, worker, "c3".repeat(32), w.inputMint);
     const rep = await client.reputation(worker.address);
-    expect(rep).toMatchObject({ complete: true, paid: 1, backed: [{ mint: w.inputMint, amount: fee }], backedSol: "0" });
+    expect(rep).toMatchObject({ complete: true, paid: 1, backed: [{ mint: w.inputMint, amount: fee }], backedSol: formatAmount(BigInt(CREATE_FEE), 9) });
   });
 
   it("credits nothing for a release with no protocol fee", async () => {
@@ -219,10 +219,11 @@ describe("reputation backed by the fees its releases paid", () => {
     const [worker, owner, judge] = await Promise.all([fresh(), fresh(), fresh()]);
     await job(owner, judge, worker, "07".repeat(32));
     expect(await client.reputation(worker.address)).toMatchObject({ complete: true, backedSol: formatAmount(fee + BigInt(CREATE_FEE), 9) });
+    const uncreated = (found: EngineTransaction[]) => found.map((tx) => ({ ...tx, emitted: tx.emitted.filter((data) => decodeEvent(data)?.name !== "IntentCreated") }));
     const unread: Transport = {
       ...transport,
-      engineTransactions: async (limit, of) =>
-        (await transport.engineTransactions(limit, of)).map((tx) => ({ ...tx, emitted: tx.emitted.filter((data) => decodeEvent(data)?.name !== "IntentCreated") })),
+      engineTransactions: async (limit, of) => uncreated(await transport.engineTransactions(limit, of)),
+      transactionsOf: async (listed) => uncreated(await (transport.transactionsOf as NonNullable<Transport["transactionsOf"]>)(listed)),
     };
     const rep = await createClient({ url: LOCAL, transport: unread }).reputation(worker.address);
     expect(rep).toMatchObject({ complete: false, backed: [], backedSol: "0" });

@@ -77,6 +77,8 @@ export {
   publishedSalts,
   type RecordedStanding,
   recordedStanding,
+  type Refutation,
+  refutationIn,
   refutedIn,
   refutingAmong,
   releaseStanding,
