@@ -281,8 +281,6 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       noSub(sub);
       return treasury(remote, values);
     case "jobs":
-      noSub(sub);
-      return { name: "jobs", ...remote, attestor: values.attestor === undefined ? undefined : key(values, "attestor") };
     case "deliver":
     case "receipt":
     case "record-delivery":

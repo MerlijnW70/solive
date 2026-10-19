@@ -43,7 +43,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   crank: "--keypair <file> [--dry-run] [--fund-accounts]",
   treasury: "[--mints <mint,...>] [--create --mints <mint,...> --keypair <payer file> [--yes]]",
   events: "[--limit <n>] [--follow [--interval <seconds>]]",
-  jobs: "[--attestor <address>]",
+  jobs: "[--attestor <address>] [--mint <SOL, TEST or mint>] [--min-pay <tokens>]",
   deliver: "--keypair <worker file> --intent <address> (--artifact <file or directory> | --sha256 <64 hex>) --work-url <https url> [--yes]",
   deliveries: "--attestor <address> --intent <address> [--max-pages <n>]",
   receipt: "--owner <address> --nonce <n> [--sha256 <64 hex>] [--release <signature>]",

@@ -5,7 +5,6 @@ import {
   createClient,
   deliveryInstructions,
   deliveryRecord,
-  jobsOf,
   mintOf,
   type Transport,
 } from "@intent-engine/client";
@@ -14,6 +13,7 @@ import type { Command } from "./command-types.js";
 import type { Runtime } from "./runtime.js";
 import { previewed } from "./admin-commands.js";
 import { artifactSha256 } from "./artifact.js";
+import { jobsWanted } from "./job-filters.js";
 import { transactionSigner } from "./ledger-keys.js";
 
 export const NOT_RELEASED = "no release of this escrow is among its recent transactions; show intent says whether it is still open, and --release with the release's signature reads a release directly";
@@ -59,7 +59,7 @@ type JobCommand = Extract<Command, { name: "jobs" | "deliver" | "receipt" | "rec
 export async function jobCommand(command: JobCommand, runtime: Runtime, transport: Transport): Promise<object> {
   switch (command.name) {
     case "jobs":
-      return { jobs: await jobsOf(transport, command.attestor) };
+      return { jobs: await jobsWanted(transport, command) };
     case "deliver": {
       const worker = await transactionSigner(runtime, command.keypair);
       const { intent, workUrl } = command;

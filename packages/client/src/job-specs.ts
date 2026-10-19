@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
 import { isSealed, NotInvited, parseSpecMemo, remainingOf, SPEC_MEMO_PREFIX, sealedTo, unseal } from "@intent-engine/core";
-import { createdIn, hex, openProofEscrows, proofAt } from "./job-proofs.js";
+import { createdIn, hex, type JobFilter, openProofEscrows, proofAt } from "./job-proofs.js";
 import { MEMOS_PER_TRANSACTION, scan } from "./job-scan.js";
 import { type Lookup, publicHost, systemLookup } from "./public-host.js";
 import { type EngineTransaction, TRANSACTION_FETCHES, type Transport } from "./transport.js";
@@ -87,8 +87,8 @@ export async function specUrlOf(transport: Transport, intent: Address, createdAt
   return urls.size === 1 ? ([...urls][0] ?? null) : null;
 }
 
-export async function jobsOf(transport: Transport, attestor?: Address): Promise<Job[]> {
-  const proofs = await openProofEscrows(transport, attestor);
+export async function jobsOf(transport: Transport, filter?: Address | JobFilter): Promise<Job[]> {
+  const proofs = await openProofEscrows(transport, filter);
   const urls: (string | null)[] = [];
   for (let at = 0; at < proofs.length; at += TRANSACTION_FETCHES) {
     urls.push(...(await Promise.all(proofs.slice(at, at + TRANSACTION_FETCHES).map(({ address, intent }) => specUrlOf(transport, address, intent.createdAt)))));

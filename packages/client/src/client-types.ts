@@ -147,7 +147,7 @@ export type Client = {
   expire(cranker: TransactionSigner, owner: Address, nonce: bigint): Promise<Signature>;
   close(cranker: TransactionSigner, owner: Address, nonce: bigint): Promise<Signature>;
   balances(owner: Address, mints: readonly Address[]): Promise<Balances>;
-  jobs(filter?: { attestor?: Address }): Promise<Job[]>;
+  jobs(filter?: { attestor?: Address; mint?: Address; minSells?: bigint }): Promise<Job[]>;
   spec(intent: Address, keypair?: Uint8Array): Promise<Spec | null>;
   deliver(input: DeliverInput): Promise<Signature>;
   deliveries(filter: { judge: Address; intent?: Address }): Promise<Delivery[]>;

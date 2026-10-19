@@ -8,7 +8,7 @@ export {
   SIGNATURE_PAGE,
   transactionAt,
 } from "./job-scan.js";
-export { createdAtOf, creationSlotOf, historyCovers, intentAt, JOBS_LIMIT, openProofEscrows } from "./job-proofs.js";
+export { createdAtOf, creationSlotOf, historyCovers, intentAt, JOBS_LIMIT, type JobFilter, openProofEscrows } from "./job-proofs.js";
 export {
   DEVNET_GENESIS_HASH,
   type Job,

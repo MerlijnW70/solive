@@ -1,3 +1,4 @@
+import { TOKEN_AMOUNT_PATTERN } from "@intent-engine/core";
 import type { Values } from "./arg-options.js";
 import { confirmUrlOf, key, memoUrlOf, noSub, parseBounded, required, sha256Of, u64, UsageError } from "./arg-values.js";
 import { JUDGE_TIMEOUT, MAX_JUDGE_TIMEOUT, maxPagesOf, releaseOption, runOf } from "./command-builders.js";
@@ -30,9 +31,27 @@ function workOf(values: Values): { sha256: string } | { artifact: string } {
   return values.artifact === undefined ? { sha256: sha256Of(required(values, "sha256")) } : { artifact: values.artifact };
 }
 
-export function jobArgsOf(verb: "deliver" | "receipt" | "record-delivery" | "judge", sub: string | undefined, remote: Remote, values: Values): Command {
+export const MIN_PAY_FORMAT = "--min-pay must be a token amount like 12 or 0.5";
+
+function minPayOf(values: Values): string | undefined {
+  const text = values["min-pay"];
+  if (text !== undefined && !TOKEN_AMOUNT_PATTERN.test(text)) {
+    throw new UsageError(MIN_PAY_FORMAT);
+  }
+  return text;
+}
+
+export function jobArgsOf(verb: "jobs" | "deliver" | "receipt" | "record-delivery" | "judge", sub: string | undefined, remote: Remote, values: Values): Command {
   noSub(sub);
   switch (verb) {
+    case "jobs":
+      return {
+        name: "jobs",
+        ...remote,
+        attestor: values.attestor === undefined ? undefined : key(values, "attestor"),
+        mint: values.mint === undefined ? undefined : key(values, "mint"),
+        minPay: minPayOf(values),
+      };
     case "deliver":
       return {
         name: "deliver",

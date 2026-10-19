@@ -10,6 +10,7 @@ import {
   type Intent,
   IntentStatus,
   Kind,
+  remainingOf,
 } from "@intent-engine/core";
 import { chainTime, createdAccount } from "./accounts.js";
 import { scan } from "./job-scan.js";
@@ -18,6 +19,8 @@ import type { EngineTransaction, Transport } from "./transport.js";
 export const JOBS_LIMIT = 50;
 
 export type Proof = { address: Address; intent: Intent; params: AttestedResultParams };
+
+export type JobFilter = { attestor?: Address | undefined; mint?: Address | undefined; minSells?: bigint | undefined };
 
 export const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
 
@@ -44,7 +47,8 @@ export async function createdAtOf(transport: Transport, address: Address): Promi
   return (await intentAt(transport, address))?.createdAt ?? null;
 }
 
-export async function openProofEscrows(transport: Transport, attestor?: Address, limit: number = JOBS_LIMIT): Promise<Proof[]> {
+export async function openProofEscrows(transport: Transport, filter?: Address | JobFilter, limit: number = JOBS_LIMIT): Promise<Proof[]> {
+  const { attestor, mint, minSells }: JobFilter = typeof filter === "string" ? { attestor: filter } : (filter ?? {});
   const [accounts, now] = await Promise.all([transport.intents(), chainTime(transport)]);
   return accounts
     .map(({ address, data }) => proofOf(address, getIntentDecoder().decode(data)))
@@ -53,7 +57,9 @@ export async function openProofEscrows(transport: Transport, attestor?: Address,
         proof !== null &&
         proof.intent.status === IntentStatus.Open &&
         proof.intent.expiresAt > now &&
-        (attestor === undefined || proof.params.attestor === attestor),
+        (attestor === undefined || proof.params.attestor === attestor) &&
+        (mint === undefined || proof.intent.inputMint === mint) &&
+        (minSells === undefined || remainingOf(proof.intent) >= minSells),
     )
     .sort((a, b) => (a.intent.expiresAt === b.intent.expiresAt ? 0 : a.intent.expiresAt > b.intent.expiresAt ? -1 : 1))
     .slice(0, limit);

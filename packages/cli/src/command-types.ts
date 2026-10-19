@@ -100,7 +100,7 @@ export type Command =
     })
   | (Keyed & { name: "crank"; dryRun: boolean; fundAccounts: boolean })
   | (Remote & { name: "events"; limit: number })
-  | (Remote & { name: "jobs"; attestor: Address | undefined })
+  | (Remote & { name: "jobs"; attestor: Address | undefined; mint: Address | undefined; minPay: string | undefined })
   | (Keyed & { name: "deliver"; yes: boolean; intent: Address; workUrl: string } & ({ sha256: string } | { artifact: string }))
   | (Remote & { name: "deliveries"; attestor: Address; intent: Address; maxPages: number })
   | (Remote & { name: "receipt"; owner: Address; nonce: bigint; sha256: string | undefined; release?: string })
