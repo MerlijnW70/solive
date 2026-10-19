@@ -106,16 +106,16 @@ Approve it with two members and execute it as in step 4. `show config` then name
 
 ## Staged caps
 
-Escrow caps bound what one program bug can reach. Each input mint gets a cap account with two limits: the most one intent escrows, and the most all new intents together escrow in a window of seconds. Start the limits small and raise them as the program earns trust.
+Escrow caps bound what one program bug can reach. Each input mint gets a cap account with three limits: the most one intent escrows, the most all new intents together escrow in a window of seconds, and the most all open intents of the mint hold at once. Start the limits small and raise them as the program earns trust.
 
-1. Give every mint the engine trades a cap. Amounts are raw units of the mint; the program refuses a window shorter than `MIN_CAP_WINDOW_SECS` in `programs/intent_engine/src/state.rs`:
+1. Give every mint the engine trades a cap. Amounts are raw units of the mint; the program refuses a window shorter than `MIN_CAP_WINDOW_SECS` in `programs/intent_engine/src/state.rs`. `--total-limit` sets the outstanding limit; zero means none, and leaving it out keeps the current one, or none for a new cap:
 
    ```sh
-   node packages/multisig/dist/bin.js propose-admin --multisig <multisig> --keypair member-a.json --url devnet --yes -- node packages/cli/dist/src/bin.js set-mint-cap --authority <vault> --mint <mint> --max-per-order <raw> --window-cap <raw> --window-secs 3600 --url devnet
+   node packages/multisig/dist/bin.js propose-admin --multisig <multisig> --keypair member-a.json --url devnet --yes -- node packages/cli/dist/src/bin.js set-mint-cap --authority <vault> --mint <mint> --max-per-order <raw> --window-cap <raw> --window-secs 3600 --total-limit <raw> --url devnet
    ```
 
-   The first proposal for a mint creates its cap and the vault pays the rent; later proposals change the limits and keep the current window. Approve and execute as in step 4. `show` decodes it as `Intent engine SetMintCap {"maxPerOrder":"<raw>","windowCap":"<raw>","windowSecs":3600}, signed by <vault>`.
-2. Check each cap and its current window:
+   The first proposal for a mint creates its cap and the vault pays the rent; later proposals change the limits and keep the current window and the outstanding amount. Approve and execute as in step 4. `show` decodes it as `Intent engine SetMintCap {"maxPerOrder":"<raw>","windowCap":"<raw>","windowSecs":3600,"totalLimit":"<raw>"}, signed by <vault>`.
+2. Check each cap, its current window and its outstanding amount:
 
    ```sh
    node packages/cli/dist/src/bin.js show mint-cap --mint <mint> --url devnet
@@ -127,7 +127,13 @@ Escrow caps bound what one program bug can reach. Each input mint gets a cap acc
    node packages/multisig/dist/bin.js propose-admin --multisig <multisig> --keypair member-a.json --url devnet --yes -- node packages/cli/dist/src/bin.js set-caps-required on --authority <vault> --url devnet
    ```
 
-Every create names an optional mint cap account; a create without a cap passes the program id in its place. While caps are off, creates ignore the cap even when one is passed. The SDK, the CLI and the MCP tools pass the input mint's cap whenever it exists, so caps can be set before they are required. Clients built from 0.1.26 or earlier stop working on create once this program is deployed, because the create account lists changed. `set-caps-required off` lifts the requirement. Clients built from 0.1.26 or earlier also cannot release proof escrows on a program with job claims, because the release account lists gained the optional claims board and stake account; use 0.1.27 or later. Since the cancel of a claimed escrow passes its claims board, clients built from 0.1.28 or earlier cannot cancel an escrow whose owner opened claims; use 0.1.29 or later. A cap limits how fast escrow grows per mint, not the total held: intents created in earlier windows stay open until they fill, expire or are cancelled.
+Every create names an optional mint cap account; a create without a cap passes the program id in its place. While caps are off, creates ignore the cap even when one is passed. The SDK, the CLI and the MCP tools pass the input mint's cap whenever it exists, so caps can be set before they are required. Clients built from 0.1.26 or earlier stop working on create once this program is deployed, because the create account lists changed. `set-caps-required off` lifts the requirement. Clients built from 0.1.26 or earlier also cannot release proof escrows on a program with job claims, because the release account lists gained the optional claims board and stake account; use 0.1.27 or later. Since the cancel of a claimed escrow passes its claims board, clients built from 0.1.28 or earlier cannot cancel an escrow whose owner opened claims; use 0.1.29 or later.
+
+While caps are required, every create adds what it escrows to its mint cap's outstanding amount, and the engine refuses a create that would take it past the total limit with `MintCapTotal`. Each fill, release, cancel, expire and close subtracts what left the vault, up to what that intent added. Tokens sent to a vault from outside are never counted. The intent records what it still counts, and an exit of an intent that counts anything must pass the mint cap.
+
+Intents created while caps are off are not counted, so the total limit bounds what the program holds only while caps stay on. A funded party can fill a total limit with its own capital until the admin raises or zeroes it, so watch the outstanding amount with `show mint-cap` or the monitor.
+
+Fills, releases, cancels, expiries and closes now name the optional mint cap too, so clients built from 0.1.42 or earlier cannot settle intents on this program; use a later one. The SDK, the CLI and the solver pass the cap whenever the intent counts escrow.
 
 ## Upgrade
 
@@ -195,7 +201,9 @@ node packages/cli/dist/src/bin.js monitor --write-baseline /etc/intent-engine/ba
 
 `--write-baseline` never overwrites a file; move the old baseline away first. Without `--expect` the monitor refuses to start.
 
-Every alert is one JSON line on stdout with `kind` (`config`, `upgrade-authority`, `program-hash`, `fill-amount`, `fill-rate` or `rpc`), `field`, `expected`, `observed` and `slot`. A change alerts once, not on every poll, until the baseline is rewritten and the monitor restarted. `--max-fill <mint>=<raw amount>`, repeatable, alerts on a fill above that amount of that input token; `--max-fills <count>` alerts when more fills land in one interval. A failed read, or a slot that does not advance for three intervals, is an `rpc` alert, never a quiet poll. `--webhook <https url>` also POSTs each alert as JSON; the monitor prints only the webhook's scheme and host, and a failed POST goes to stderr. `--once` checks once and exits 0 when nothing alerted and 4 when anything did.
+Every alert is one JSON line on stdout with `kind` (`config`, `upgrade-authority`, `program-hash`, `fill-amount`, `fill-rate`, `mint-cap` or `rpc`), `field`, `expected`, `observed` and `slot`. A change alerts once, not on every poll, until the baseline is rewritten and the monitor restarted. `--max-fill <mint>=<raw amount>`, repeatable, alerts on a fill above that amount of that input token; `--max-fills <count>` alerts when more fills land in one interval. A failed read, or a slot that does not advance for three intervals, is an `rpc` alert, never a quiet poll. `--webhook <https url>` also POSTs each alert as JSON; the monitor prints only the webhook's scheme and host, and a failed POST goes to stderr. `--once` checks once and exits 0 when nothing alerted and 4 when anything did.
+
+For each mint named in `--max-fill`, the monitor prints its mint cap's outstanding amount and total limit to stderr when it starts, and raises a `mint-cap` alert while the outstanding amount has reached the total limit.
 
 Run it as a service on a host other than the members' machines, with a minimal systemd unit at `/etc/systemd/system/intent-engine-monitor.service`:
 

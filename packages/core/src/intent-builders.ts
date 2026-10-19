@@ -11,7 +11,7 @@ import {
 import { createArgs, events, INSTRUCTIONS_SYSVAR_ADDRESS, intentOf, settleExt } from "./builder-accounts.js";
 import type { Partner } from "./ext.js";
 import type { IntentParams } from "./kinds.js";
-import { mintCapSlot, withMintCap } from "./mint-caps.js";
+import { capAccount, mintCapSlot, withMintCap } from "./mint-caps.js";
 import { findAssociatedTokenAddress, findMandatePda } from "./pdas.js";
 
 export type CreateIntentSpec = {
@@ -75,6 +75,7 @@ type IntentRef = {
   nonce: bigint;
   inputMint: Address;
   tokenProgram: Address;
+  capped?: bigint;
 };
 
 async function canonicalRefund(ref: IntentRef): Promise<Address> {
@@ -97,6 +98,7 @@ export async function buildCancelIntent(
     refundTo: input.refundTo ?? (await canonicalRefund(ref)),
     tokenProgram: input.tokenProgram,
     ...(input.claims === undefined ? {} : { claims: input.claims.board, ...(input.claims.stakeTo === null ? {} : { stakeTo: input.claims.stakeTo }) }),
+    ...(await capAccount(input.inputMint, input.capped)),
     ext,
     ...(await events()),
   });
@@ -113,6 +115,7 @@ export async function buildExpireIntent(
     refundTo: input.refundTo ?? (await canonicalRefund(input)),
     canonicalRefund: await canonicalRefund(input),
     tokenProgram: input.tokenProgram,
+    ...(await capAccount(input.inputMint, input.capped)),
     ext,
     ...(await events()),
   });
@@ -137,6 +140,7 @@ export async function buildCloseIntent(
     owner: input.owner,
     rentPayer: input.rentPayer ?? input.intent?.rentPayer ?? input.owner,
     tokenProgram: input.tokenProgram,
+    ...(await capAccount(input.inputMint, input.capped)),
     ext,
     ...(await events()),
   });

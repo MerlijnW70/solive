@@ -92,6 +92,7 @@ export type FillAttestedSplitCommitteeInstruction<
   TAccountInstructions extends string | AccountMeta<string> = string,
   TAccountClaims extends string | AccountMeta<string> = string,
   TAccountStakeTo extends string | AccountMeta<string> = string,
+  TAccountMintCap extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -163,6 +164,9 @@ export type FillAttestedSplitCommitteeInstruction<
       TAccountStakeTo extends string
         ? WritableAccount<TAccountStakeTo>
         : TAccountStakeTo,
+      TAccountMintCap extends string
+        ? WritableAccount<TAccountMintCap>
+        : TAccountMintCap,
       TAccountEventAuthority extends string
         ? ReadonlyAccount<TAccountEventAuthority>
         : TAccountEventAuthority,
@@ -256,6 +260,7 @@ export type FillAttestedSplitCommitteeAsyncInput<
     InstructionAccountInput,
   TAccountClaims extends InstructionAccountInput = InstructionAccountInput,
   TAccountStakeTo extends InstructionAccountInput = InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -281,6 +286,7 @@ export type FillAttestedSplitCommitteeAsyncInput<
   instructions: TAccountInstructions;
   claims?: TAccountClaims;
   stakeTo?: TAccountStakeTo;
+  mintCap?: TAccountMintCap;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   amountIn: FillAttestedSplitCommitteeInstructionDataArgs["amountIn"];
@@ -313,6 +319,7 @@ export async function getFillAttestedSplitCommitteeInstructionAsync<
   TAccountInstructions extends InstructionAccountInput,
   TAccountClaims extends InstructionAccountInput,
   TAccountStakeTo extends InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -339,6 +346,7 @@ export async function getFillAttestedSplitCommitteeInstructionAsync<
     TAccountInstructions,
     TAccountClaims,
     TAccountStakeTo,
+    TAccountMintCap,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -429,6 +437,10 @@ export async function getFillAttestedSplitCommitteeInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountStakeTo,
       InstructionAccountInputAddress<TAccountStakeTo>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountMintCap,
+      InstructionAccountInputAddress<TAccountMintCap>
     >,
     ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
@@ -530,6 +542,11 @@ export async function getFillAttestedSplitCommitteeInstructionAsync<
       isSigner: false,
       isWritable: true,
     },
+    mintCap: {
+      value: input.mintCap ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -589,6 +606,7 @@ export async function getFillAttestedSplitCommitteeInstructionAsync<
       getAccountMeta("instructions", accounts.instructions),
       getAccountMeta("claims", accounts.claims),
       getAccountMeta("stakeTo", accounts.stakeTo),
+      getAccountMeta("mintCap", accounts.mintCap),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -683,6 +701,10 @@ export async function getFillAttestedSplitCommitteeInstructionAsync<
       InstructionAccountInputAddress<TAccountStakeTo>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountMintCap,
+      InstructionAccountInputAddress<TAccountMintCap>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -717,6 +739,7 @@ export type FillAttestedSplitCommitteeInput<
     InstructionAccountInput,
   TAccountClaims extends InstructionAccountInput = InstructionAccountInput,
   TAccountStakeTo extends InstructionAccountInput = InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -742,6 +765,7 @@ export type FillAttestedSplitCommitteeInput<
   instructions: TAccountInstructions;
   claims?: TAccountClaims;
   stakeTo?: TAccountStakeTo;
+  mintCap?: TAccountMintCap;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   amountIn: FillAttestedSplitCommitteeInstructionDataArgs["amountIn"];
@@ -774,6 +798,7 @@ export function getFillAttestedSplitCommitteeInstruction<
   TAccountInstructions extends InstructionAccountInput,
   TAccountClaims extends InstructionAccountInput,
   TAccountStakeTo extends InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -800,6 +825,7 @@ export function getFillAttestedSplitCommitteeInstruction<
     TAccountInstructions,
     TAccountClaims,
     TAccountStakeTo,
+    TAccountMintCap,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -889,6 +915,10 @@ export function getFillAttestedSplitCommitteeInstruction<
   ResolvedInstructionAccountMeta<
     TAccountStakeTo,
     InstructionAccountInputAddress<TAccountStakeTo>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountMintCap,
+    InstructionAccountInputAddress<TAccountMintCap>
   >,
   ResolvedInstructionAccountMeta<
     TAccountEventAuthority,
@@ -989,6 +1019,11 @@ export function getFillAttestedSplitCommitteeInstruction<
       isSigner: false,
       isWritable: true,
     },
+    mintCap: {
+      value: input.mintCap ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -1037,6 +1072,7 @@ export function getFillAttestedSplitCommitteeInstruction<
       getAccountMeta("instructions", accounts.instructions),
       getAccountMeta("claims", accounts.claims),
       getAccountMeta("stakeTo", accounts.stakeTo),
+      getAccountMeta("mintCap", accounts.mintCap),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -1131,6 +1167,10 @@ export function getFillAttestedSplitCommitteeInstruction<
       InstructionAccountInputAddress<TAccountStakeTo>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountMintCap,
+      InstructionAccountInputAddress<TAccountMintCap>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -1168,8 +1208,9 @@ export type ParsedFillAttestedSplitCommitteeInstruction<
     instructions: TAccountMetas[18];
     claims?: TAccountMetas[19] | undefined;
     stakeTo?: TAccountMetas[20] | undefined;
-    eventAuthority: TAccountMetas[21];
-    program: TAccountMetas[22];
+    mintCap?: TAccountMetas[21] | undefined;
+    eventAuthority: TAccountMetas[22];
+    program: TAccountMetas[23];
   };
   data: FillAttestedSplitCommitteeInstructionData;
 };
@@ -1182,12 +1223,12 @@ export function parseFillAttestedSplitCommitteeInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedFillAttestedSplitCommitteeInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 23) {
+  if (instruction.accounts.length < 24) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 23,
+        expectedAccountMetas: 24,
       },
     );
   }
@@ -1227,6 +1268,7 @@ export function parseFillAttestedSplitCommitteeInstruction<
       instructions: getNextAccount(),
       claims: getNextOptionalAccount(),
       stakeTo: getNextOptionalAccount(),
+      mintCap: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
     },

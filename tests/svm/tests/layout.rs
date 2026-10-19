@@ -56,7 +56,9 @@ fn mint_cap_field_offsets_are_frozen() {
     assert_eq!(offset_of!(MintCap, version), 68);
     assert_eq!(offset_of!(MintCap, bump), 69);
     assert_eq!(offset_of!(MintCap, padding), 70);
-    assert_eq!(offset_of!(MintCap, reserved), 72);
+    assert_eq!(offset_of!(MintCap, total_limit), 72);
+    assert_eq!(offset_of!(MintCap, outstanding), 80);
+    assert_eq!(offset_of!(MintCap, reserved), 88);
 }
 
 #[test]
@@ -104,7 +106,8 @@ fn intent_field_offsets_are_frozen() {
     assert_eq!(offset_of!(Intent, mandate_serial), 424);
     assert_eq!(offset_of!(Intent, agent_fee), 432);
     assert_eq!(offset_of!(Intent, claims), 440);
-    assert_eq!(offset_of!(Intent, reserved), 441);
+    assert_eq!(offset_of!(Intent, gap2), 441);
+    assert_eq!(offset_of!(Intent, capped), 448);
 }
 
 #[test]

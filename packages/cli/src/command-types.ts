@@ -73,7 +73,7 @@ export type Command =
   | (Administered & { name: "update-config"; change: ConfigChange })
   | (Administered & { name: "propose-admin"; pendingAdmin: Address })
   | (Administered & { name: "accept-admin" })
-  | (Administered & { name: "set-mint-cap"; mint: Address; maxPerOrder: bigint; windowCap: bigint; windowSecs: number })
+  | (Administered & { name: "set-mint-cap"; mint: Address; maxPerOrder: bigint; windowCap: bigint; windowSecs: number; totalLimit?: bigint })
   | (Administered & { name: "set-caps-required"; required: boolean })
   | (Remote & { name: "show-mint-cap"; mint: Address })
   | (Keyed & {

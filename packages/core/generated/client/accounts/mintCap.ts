@@ -62,6 +62,8 @@ export type MintCap = {
   version: number;
   bump: number;
   padding: ReadonlyUint8Array;
+  totalLimit: bigint;
+  outstanding: bigint;
   reserved: ReadonlyUint8Array;
 };
 
@@ -75,6 +77,8 @@ export type MintCapArgs = {
   version: number;
   bump: number;
   padding: ReadonlyUint8Array;
+  totalLimit: number | bigint;
+  outstanding: number | bigint;
   reserved: ReadonlyUint8Array;
 };
 
@@ -92,7 +96,9 @@ export function getMintCapEncoder(): FixedSizeEncoder<MintCapArgs> {
       ["version", getU8Encoder()],
       ["bump", getU8Encoder()],
       ["padding", fixEncoderSize(getBytesEncoder(), 2)],
-      ["reserved", fixEncoderSize(getBytesEncoder(), 56)],
+      ["totalLimit", getU64Encoder()],
+      ["outstanding", getU64Encoder()],
+      ["reserved", fixEncoderSize(getBytesEncoder(), 40)],
     ]),
     (value) => ({ ...value, discriminator: MINT_CAP_DISCRIMINATOR }),
   );
@@ -111,7 +117,9 @@ export function getMintCapDecoder(): FixedSizeDecoder<MintCap> {
     ["version", getU8Decoder()],
     ["bump", getU8Decoder()],
     ["padding", fixDecoderSize(getBytesDecoder(), 2)],
-    ["reserved", fixDecoderSize(getBytesDecoder(), 56)],
+    ["totalLimit", getU64Decoder()],
+    ["outstanding", getU64Decoder()],
+    ["reserved", fixDecoderSize(getBytesDecoder(), 40)],
   ]);
 }
 

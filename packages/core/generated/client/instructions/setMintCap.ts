@@ -110,12 +110,14 @@ export type SetMintCapInstructionData = {
   maxPerOrder: bigint;
   windowCap: bigint;
   windowSecs: number;
+  totalLimit: bigint;
 };
 
 export type SetMintCapInstructionDataArgs = {
   maxPerOrder: number | bigint;
   windowCap: number | bigint;
   windowSecs: number;
+  totalLimit: number | bigint;
 };
 
 export function getSetMintCapInstructionDataEncoder(): FixedSizeEncoder<SetMintCapInstructionDataArgs> {
@@ -125,6 +127,7 @@ export function getSetMintCapInstructionDataEncoder(): FixedSizeEncoder<SetMintC
       ["maxPerOrder", getU64Encoder()],
       ["windowCap", getU64Encoder()],
       ["windowSecs", getU32Encoder()],
+      ["totalLimit", getU64Encoder()],
     ]),
     (value) => ({ ...value, discriminator: SET_MINT_CAP_DISCRIMINATOR }),
   );
@@ -136,6 +139,7 @@ export function getSetMintCapInstructionDataDecoder(): FixedSizeDecoder<SetMintC
     ["maxPerOrder", getU64Decoder()],
     ["windowCap", getU64Decoder()],
     ["windowSecs", getU32Decoder()],
+    ["totalLimit", getU64Decoder()],
   ]);
 }
 
@@ -172,6 +176,7 @@ export type SetMintCapAsyncInput<
   maxPerOrder: SetMintCapInstructionDataArgs["maxPerOrder"];
   windowCap: SetMintCapInstructionDataArgs["windowCap"];
   windowSecs: SetMintCapInstructionDataArgs["windowSecs"];
+  totalLimit: SetMintCapInstructionDataArgs["totalLimit"];
 };
 
 export async function getSetMintCapInstructionAsync<
@@ -371,6 +376,7 @@ export type SetMintCapInput<
   maxPerOrder: SetMintCapInstructionDataArgs["maxPerOrder"];
   windowCap: SetMintCapInstructionDataArgs["windowCap"];
   windowSecs: SetMintCapInstructionDataArgs["windowSecs"];
+  totalLimit: SetMintCapInstructionDataArgs["totalLimit"];
 };
 
 export function getSetMintCapInstruction<

@@ -127,7 +127,8 @@ pub struct Intent {
     pub mandate_serial: u64,
     pub agent_fee: u64,
     pub claims: u8,
-    pub reserved: [u8; 15],
+    pub gap2: [u8; 7],
+    pub capped: u64,
 }
 
 impl Intent {
@@ -200,7 +201,9 @@ pub struct MintCap {
     pub version: u8,
     pub bump: u8,
     pub padding: [u8; 2],
-    pub reserved: [u8; 56],
+    pub total_limit: u64,
+    pub outstanding: u64,
+    pub reserved: [u8; 40],
 }
 
 impl MintCap {

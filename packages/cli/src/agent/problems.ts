@@ -109,7 +109,7 @@ export const ENGINE_PROBLEMS = {
   SplitCountMismatch: never("the recipient wallets, their weights, and the passed token accounts must be equal in number and within the engine's recipient cap"),
   RecipientNotCanonical: never("each split recipient account must be the recipient wallet's canonical associated token account for the input mint"),
   SplitNotConserved: never("the split left lamports in the escrow; the recipient weights must sum to the whole and cover the entire net after fees"),
-  MintCapMissing: never("the engine requires escrow caps and this create did not pass the input mint's cap account; the mint may have no cap yet, in which case the engine accepts no intents selling it"),
+  MintCapMissing: never("this create or exit did not pass the input mint's cap account, which the engine needs when it requires caps and whenever escrow it counted leaves; the mint may have no cap yet, in which case the engine accepts no intents selling it"),
   MintCapMismatch: never("the account passed as the mint cap is not the engine's writable cap account for the input mint"),
   MintCapPerOrder: never("the amount escrowed exceeds the per-order cap the engine set for the input mint; lower the amount"),
   MintCapWindow: later("intents selling this mint have used the engine's escrow cap for the current window; try again once the window rolls, or lower the amount"),
@@ -130,6 +130,7 @@ export const ENGINE_PROBLEMS = {
   LineEmpty: never("nobody stands by for this job, so no line is left to advance"),
   JobNotHeld: never("nobody holds this job and nobody stands by, so claim it instead of standing by"),
   LineEntryMismatch: never("a line entry passed is not the line's next one, or a drop or advance passed none while workers wait; let this server build it"),
+  MintCapTotal: later("intents selling this mint already hold the engine's total escrow limit for it; try again once open intents settle, or lower the amount"),
 } as const satisfies Record<string, Entry>;
 
 type EngineErrorName = keyof typeof ENGINE_PROBLEMS;

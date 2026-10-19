@@ -143,7 +143,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "cancel": {
       const owner = await transactionSigner(runtime, command.keypair);
       const { address, intent } = await loadIntent(transport, owner.address, command.nonce);
-      const ref = { nonce: command.nonce, inputMint: intent.inputMint, tokenProgram: await tokenProgramOf(transport, intent.inputMint) };
+      const ref = { nonce: command.nonce, inputMint: intent.inputMint, tokenProgram: await tokenProgramOf(transport, intent.inputMint), capped: intent.capped };
       const refund = await tokenAccountIfMissing(transport, owner, owner.address, intent.inputMint, ref.tokenProgram);
       const claims = await cancelClaims(transport, address, intent.claims);
       const instructions = [

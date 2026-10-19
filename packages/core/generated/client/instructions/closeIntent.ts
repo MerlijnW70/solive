@@ -69,6 +69,7 @@ export type CloseIntentInstruction<
   TAccountRentPayer extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+  TAccountMintCap extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -104,6 +105,9 @@ export type CloseIntentInstruction<
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
+      TAccountMintCap extends string
+        ? WritableAccount<TAccountMintCap>
+        : TAccountMintCap,
       TAccountEventAuthority extends string
         ? ReadonlyAccount<TAccountEventAuthority>
         : TAccountEventAuthority,
@@ -160,6 +164,7 @@ export type CloseIntentAsyncInput<
   TAccountRentPayer extends InstructionAccountInput = InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -173,6 +178,7 @@ export type CloseIntentAsyncInput<
   owner: TAccountOwner;
   rentPayer: TAccountRentPayer;
   tokenProgram?: TAccountTokenProgram;
+  mintCap?: TAccountMintCap;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   ext: CloseIntentInstructionDataArgs["ext"];
@@ -188,6 +194,7 @@ export async function getCloseIntentInstructionAsync<
   TAccountOwner extends InstructionAccountInput,
   TAccountRentPayer extends InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -202,6 +209,7 @@ export async function getCloseIntentInstructionAsync<
     TAccountOwner,
     TAccountRentPayer,
     TAccountTokenProgram,
+    TAccountMintCap,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -244,6 +252,10 @@ export async function getCloseIntentInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountTokenProgram,
       InstructionAccountInputAddress<TAccountTokenProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountMintCap,
+      InstructionAccountInputAddress<TAccountMintCap>
     >,
     ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
@@ -292,6 +304,11 @@ export async function getCloseIntentInstructionAsync<
       value: input.tokenProgram ?? null,
       isSigner: false,
       isWritable: false,
+    },
+    mintCap: {
+      value: input.mintCap ?? null,
+      isSigner: false,
+      isWritable: true,
     },
     eventAuthority: {
       value: input.eventAuthority ?? null,
@@ -340,6 +357,7 @@ export async function getCloseIntentInstructionAsync<
       getAccountMeta("owner", accounts.owner),
       getAccountMeta("rentPayer", accounts.rentPayer),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
+      getAccountMeta("mintCap", accounts.mintCap),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -386,6 +404,10 @@ export async function getCloseIntentInstructionAsync<
       InstructionAccountInputAddress<TAccountTokenProgram>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountMintCap,
+      InstructionAccountInputAddress<TAccountMintCap>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -408,6 +430,7 @@ export type CloseIntentInput<
   TAccountRentPayer extends InstructionAccountInput = InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -421,6 +444,7 @@ export type CloseIntentInput<
   owner: TAccountOwner;
   rentPayer: TAccountRentPayer;
   tokenProgram?: TAccountTokenProgram;
+  mintCap?: TAccountMintCap;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   ext: CloseIntentInstructionDataArgs["ext"];
@@ -436,6 +460,7 @@ export function getCloseIntentInstruction<
   TAccountOwner extends InstructionAccountInput,
   TAccountRentPayer extends InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -450,6 +475,7 @@ export function getCloseIntentInstruction<
     TAccountOwner,
     TAccountRentPayer,
     TAccountTokenProgram,
+    TAccountMintCap,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -491,6 +517,10 @@ export function getCloseIntentInstruction<
   ResolvedInstructionAccountMeta<
     TAccountTokenProgram,
     InstructionAccountInputAddress<TAccountTokenProgram>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountMintCap,
+    InstructionAccountInputAddress<TAccountMintCap>
   >,
   ResolvedInstructionAccountMeta<
     TAccountEventAuthority,
@@ -539,6 +569,11 @@ export function getCloseIntentInstruction<
       isSigner: false,
       isWritable: false,
     },
+    mintCap: {
+      value: input.mintCap ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -575,6 +610,7 @@ export function getCloseIntentInstruction<
       getAccountMeta("owner", accounts.owner),
       getAccountMeta("rentPayer", accounts.rentPayer),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
+      getAccountMeta("mintCap", accounts.mintCap),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -621,6 +657,10 @@ export function getCloseIntentInstruction<
       InstructionAccountInputAddress<TAccountTokenProgram>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountMintCap,
+      InstructionAccountInputAddress<TAccountMintCap>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -646,8 +686,9 @@ export type ParsedCloseIntentInstruction<
     owner: TAccountMetas[6];
     rentPayer: TAccountMetas[7];
     tokenProgram: TAccountMetas[8];
-    eventAuthority: TAccountMetas[9];
-    program: TAccountMetas[10];
+    mintCap?: TAccountMetas[9] | undefined;
+    eventAuthority: TAccountMetas[10];
+    program: TAccountMetas[11];
   };
   data: CloseIntentInstructionData;
 };
@@ -660,12 +701,12 @@ export function parseCloseIntentInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedCloseIntentInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 11) {
+  if (instruction.accounts.length < 12) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 11,
+        expectedAccountMetas: 12,
       },
     );
   }
@@ -674,6 +715,12 @@ export function parseCloseIntentInstruction<
     const accountMeta = (instruction.accounts as TAccountMetas)[accountIndex]!;
     accountIndex += 1;
     return accountMeta;
+  };
+  const getNextOptionalAccount = () => {
+    const accountMeta = getNextAccount();
+    return accountMeta.address === INTENT_ENGINE_PROGRAM_ADDRESS
+      ? undefined
+      : accountMeta;
   };
   return {
     programAddress: instruction.programAddress,
@@ -687,6 +734,7 @@ export function parseCloseIntentInstruction<
       owner: getNextAccount(),
       rentPayer: getNextAccount(),
       tokenProgram: getNextAccount(),
+      mintCap: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
     },

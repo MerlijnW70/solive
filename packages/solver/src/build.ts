@@ -104,6 +104,7 @@ export async function fillInstructions(plan: Plan, ctx: FillContext): Promise<In
     amountIn: plan.amountIn,
     amountOut: plan.required,
     maxFeeBps: plan.feeBps + intent.partnerBps,
+    capped: intent.capped,
     prefix: [
       computeUnitLimit(ctx.computeUnits),
       ...(ctx.unitPrice > 0n ? [computeUnitPrice(ctx.unitPrice)] : []),

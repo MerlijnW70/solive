@@ -117,7 +117,7 @@ export const prepareRevokeMandate = define({
         continue;
       }
       const claims = await cancelClaims(transport, intent, state.claims);
-      const cancel = await buildCancelIntent({ owner, nonce: state.nonce, inputMint: state.inputMint, tokenProgram, ...(claims === undefined ? {} : { claims }) });
+      const cancel = await buildCancelIntent({ owner, nonce: state.nonce, inputMint: state.inputMint, tokenProgram, capped: state.capped, ...(claims === undefined ? {} : { claims }) });
       try {
         cancels.push(preparedView(await prepare(transport, [cancel], input.owner)));
       } catch (error) {

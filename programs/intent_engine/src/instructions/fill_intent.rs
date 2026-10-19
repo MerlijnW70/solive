@@ -5,6 +5,7 @@ use intent_core::ext::FILL_EXT_TAGS;
 use intent_core::kinds::Intent as CoreIntent;
 use intent_core::lifecycle::{transition, Action, Status};
 
+use crate::caps::settle_mint_cap;
 use crate::errors::{core_err, EngineError};
 use crate::events::{AgentPaid, FeeWithheld, IntentFilled, WITHHELD_AGENT, WITHHELD_PARTNER};
 use crate::ext::Ext;
@@ -13,8 +14,8 @@ use crate::policy::{
     AgentPayout, FeeTerms, IntentSigner, Payout,
 };
 use crate::state::{
-    Config, Intent, UserState, CONFIG_ADDRESS, CONFIG_VERSION, INTENT_VERSION, PAUSE_FILL,
-    VAULT_SEED,
+    Config, Intent, MintCap, UserState, CONFIG_ADDRESS, CONFIG_VERSION, INTENT_VERSION,
+    MINT_CAP_SEED, MINT_CAP_VERSION, PAUSE_FILL, VAULT_SEED,
 };
 
 #[event_cpi]
@@ -97,6 +98,13 @@ pub struct FillIntent<'info> {
         ) @ EngineError::FeeAccountNotCanonical
     )]
     pub agent_to: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
+    #[account(
+        mut,
+        seeds = [MINT_CAP_SEED, input_mint.key().as_ref()],
+        bump = mint_cap.load()?.bump,
+        constraint = mint_cap.load()?.version == MINT_CAP_VERSION @ EngineError::UnsupportedVersion
+    )]
+    pub mint_cap: Option<AccountLoader<'info, MintCap>>,
 }
 
 pub fn handle_fill_intent(
@@ -115,6 +123,7 @@ pub fn handle_fill_intent(
     };
     check_mint(&ctx.accounts.input_mint.to_account_info())?;
     check_mint(&ctx.accounts.output_mint.to_account_info())?;
+    let before_vault = ctx.accounts.vault.amount;
     let (decoded, tally, signer, terms, agent) = {
         let mut intent = ctx.accounts.intent.load_mut()?;
         check_fill_kind(intent.kind, disabled)?;
@@ -209,6 +218,12 @@ pub fn handle_fill_intent(
         }),
         None => {}
     }
+    settle_mint_cap(
+        &mut ctx.accounts.vault,
+        before_vault,
+        ctx.accounts.mint_cap.as_ref(),
+        &ctx.accounts.intent,
+    )?;
     emit_cpi!(IntentFilled {
         intent: ctx.accounts.intent.key(),
         owner: signer.owner,

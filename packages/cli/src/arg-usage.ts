@@ -33,7 +33,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   "update-config": "(--keypair <file> [--yes] | --authority <address>) and any of --guardian --fee-recipient --fee-bps --kinds --fill-disabled",
   "propose-admin": "(--keypair <file> [--yes] | --authority <address>) --new-admin <address>",
   "accept-admin": "(--keypair <file> [--yes] | --authority <address>)",
-  "set-mint-cap": "(--keypair <file> [--yes] | --authority <address>) --mint <mint> --max-per-order <raw> --window-cap <raw> --window-secs <n>",
+  "set-mint-cap": "(--keypair <file> [--yes] | --authority <address>) --mint <mint> --max-per-order <raw> --window-cap <raw> --window-secs <n> [--total-limit <raw>]",
   "set-caps-required": "on|off (--keypair <file> [--yes] | --authority <address>)",
   "raise-pause": "(--keypair <file> [--yes] | --authority <address>) --flags create|fill|all",
   "lower-pause": "(--keypair <file> [--yes] | --authority <address>) --flags create|fill|all",

@@ -141,6 +141,7 @@ async function planRelease<J>(
       inputMint: held.inputMint,
       inputTokenProgram: tokenProgram,
       payee: payee.address,
+      capped: held.capped,
       ...(feeRecipient === undefined ? {} : { feeRecipient }),
       ...(partner === undefined ? {} : { partner }),
       ...(paidJudge === undefined ? {} : { judge: paidJudge }),

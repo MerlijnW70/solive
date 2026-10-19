@@ -149,6 +149,7 @@ export const walletAttest = define({
       amountIn,
       result,
       maxFeeBps,
+      capped: held.capped,
     });
     const name = TOKEN_NAMES[held.inputMint] ?? held.inputMint;
     const paid = formatAmount(shares.net, token.decimals);

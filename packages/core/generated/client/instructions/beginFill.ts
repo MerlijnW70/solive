@@ -75,6 +75,7 @@ export type BeginFillInstruction<
   TAccountMandate extends string | AccountMeta<string> = string,
   TAccountOwnerState extends string | AccountMeta<string> = string,
   TAccountAgentTo extends string | AccountMeta<string> = string,
+  TAccountMintCap extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -122,6 +123,9 @@ export type BeginFillInstruction<
       TAccountAgentTo extends string
         ? WritableAccount<TAccountAgentTo>
         : TAccountAgentTo,
+      TAccountMintCap extends string
+        ? WritableAccount<TAccountMintCap>
+        : TAccountMintCap,
       TAccountEventAuthority extends string
         ? ReadonlyAccount<TAccountEventAuthority>
         : TAccountEventAuthority,
@@ -196,6 +200,7 @@ export type BeginFillAsyncInput<
   TAccountMandate extends InstructionAccountInput = InstructionAccountInput,
   TAccountOwnerState extends InstructionAccountInput = InstructionAccountInput,
   TAccountAgentTo extends InstructionAccountInput = InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -213,6 +218,7 @@ export type BeginFillAsyncInput<
   mandate?: TAccountMandate;
   ownerState?: TAccountOwnerState;
   agentTo?: TAccountAgentTo;
+  mintCap?: TAccountMintCap;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   amountIn: BeginFillInstructionDataArgs["amountIn"];
@@ -235,6 +241,7 @@ export async function getBeginFillInstructionAsync<
   TAccountMandate extends InstructionAccountInput,
   TAccountOwnerState extends InstructionAccountInput,
   TAccountAgentTo extends InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -253,6 +260,7 @@ export async function getBeginFillInstructionAsync<
     TAccountMandate,
     TAccountOwnerState,
     TAccountAgentTo,
+    TAccountMintCap,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -311,6 +319,10 @@ export async function getBeginFillInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountAgentTo,
       InstructionAccountInputAddress<TAccountAgentTo>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountMintCap,
+      InstructionAccountInputAddress<TAccountMintCap>
     >,
     ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
@@ -376,6 +388,11 @@ export async function getBeginFillInstructionAsync<
       isSigner: false,
       isWritable: true,
     },
+    mintCap: {
+      value: input.mintCap ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -427,6 +444,7 @@ export async function getBeginFillInstructionAsync<
       getAccountMeta("mandate", accounts.mandate),
       getAccountMeta("ownerState", accounts.ownerState),
       getAccountMeta("agentTo", accounts.agentTo),
+      getAccountMeta("mintCap", accounts.mintCap),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -489,6 +507,10 @@ export async function getBeginFillInstructionAsync<
       InstructionAccountInputAddress<TAccountAgentTo>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountMintCap,
+      InstructionAccountInputAddress<TAccountMintCap>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -515,6 +537,7 @@ export type BeginFillInput<
   TAccountMandate extends InstructionAccountInput = InstructionAccountInput,
   TAccountOwnerState extends InstructionAccountInput = InstructionAccountInput,
   TAccountAgentTo extends InstructionAccountInput = InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -532,6 +555,7 @@ export type BeginFillInput<
   mandate?: TAccountMandate;
   ownerState?: TAccountOwnerState;
   agentTo?: TAccountAgentTo;
+  mintCap?: TAccountMintCap;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   amountIn: BeginFillInstructionDataArgs["amountIn"];
@@ -554,6 +578,7 @@ export function getBeginFillInstruction<
   TAccountMandate extends InstructionAccountInput,
   TAccountOwnerState extends InstructionAccountInput,
   TAccountAgentTo extends InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -572,6 +597,7 @@ export function getBeginFillInstruction<
     TAccountMandate,
     TAccountOwnerState,
     TAccountAgentTo,
+    TAccountMintCap,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -629,6 +655,10 @@ export function getBeginFillInstruction<
   ResolvedInstructionAccountMeta<
     TAccountAgentTo,
     InstructionAccountInputAddress<TAccountAgentTo>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountMintCap,
+    InstructionAccountInputAddress<TAccountMintCap>
   >,
   ResolvedInstructionAccountMeta<
     TAccountEventAuthority,
@@ -693,6 +723,11 @@ export function getBeginFillInstruction<
       isSigner: false,
       isWritable: true,
     },
+    mintCap: {
+      value: input.mintCap ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -733,6 +768,7 @@ export function getBeginFillInstruction<
       getAccountMeta("mandate", accounts.mandate),
       getAccountMeta("ownerState", accounts.ownerState),
       getAccountMeta("agentTo", accounts.agentTo),
+      getAccountMeta("mintCap", accounts.mintCap),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -795,6 +831,10 @@ export function getBeginFillInstruction<
       InstructionAccountInputAddress<TAccountAgentTo>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountMintCap,
+      InstructionAccountInputAddress<TAccountMintCap>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -824,8 +864,9 @@ export type ParsedBeginFillInstruction<
     mandate?: TAccountMetas[10] | undefined;
     ownerState?: TAccountMetas[11] | undefined;
     agentTo?: TAccountMetas[12] | undefined;
-    eventAuthority: TAccountMetas[13];
-    program: TAccountMetas[14];
+    mintCap?: TAccountMetas[13] | undefined;
+    eventAuthority: TAccountMetas[14];
+    program: TAccountMetas[15];
   };
   data: BeginFillInstructionData;
 };
@@ -838,12 +879,12 @@ export function parseBeginFillInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedBeginFillInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 15) {
+  if (instruction.accounts.length < 16) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 15,
+        expectedAccountMetas: 16,
       },
     );
   }
@@ -875,6 +916,7 @@ export function parseBeginFillInstruction<
       mandate: getNextOptionalAccount(),
       ownerState: getNextOptionalAccount(),
       agentTo: getNextOptionalAccount(),
+      mintCap: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
     },

@@ -389,14 +389,14 @@ describe("multisig", () => {
     const m = await multisig("caps", 2);
     const admin = createNoopSigner(m.vault);
     const mint = await randomAddress();
-    const cap = await buildSetMintCap({ admin, mint, maxPerOrder: 1_000n, windowCap: 5_000n, windowSecs: 3_600 });
+    const cap = await buildSetMintCap({ admin, mint, maxPerOrder: 1_000n, windowCap: 5_000n, windowSecs: 3_600, totalLimit: 9_000n });
     const required = await buildSetCapsRequired({ admin, required: true });
     s.printed = printed(m.vault, [cap, required], ["Sets a mint cap and requires caps"]);
     const command = ["intent-engine", "set-mint-cap", "--authority", m.vault];
     const proposed = await s.cli("propose-admin", "--multisig", m.address, "--keypair", m.file("a"), "--yes", "--", ...command);
     expect([proposed.code, proposed.err]).toEqual([EXIT_OK, ""]);
     const lines = [
-      `Intent engine SetMintCap {"maxPerOrder":"1000","windowCap":"5000","windowSecs":3600}, signed by ${m.vault}`,
+      `Intent engine SetMintCap {"maxPerOrder":"1000","windowCap":"5000","windowSecs":3600,"totalLimit":"9000"}, signed by ${m.vault}`,
       `Intent engine SetCapsRequired {"required":true}, signed by ${m.vault}`,
     ];
     expect(proposed.json()["summary"]).toEqual([`Proposes vault transaction 1 on multisig ${m.address}; it runs once 2 members approve`, ...lines]);

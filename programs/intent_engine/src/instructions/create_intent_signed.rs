@@ -160,6 +160,7 @@ pub fn handle_create_intent_signed(
     charge_mint_cap(
         &ctx.accounts.config,
         ctx.accounts.mint_cap.as_ref(),
+        &ctx.accounts.intent,
         &ctx.accounts.input_mint.key(),
         escrowed,
         now,

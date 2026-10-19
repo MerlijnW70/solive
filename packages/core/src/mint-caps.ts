@@ -16,6 +16,7 @@ import {
   type MintCap,
 } from "../generated/client/index.js";
 import { events } from "./builder-accounts.js";
+import { U64_MAX } from "./math.js";
 
 export const MINT_CAP_VERSION = 1;
 export const MIN_CAP_WINDOW_SECS = 60;
@@ -45,7 +46,7 @@ export function capWindow(cap: Pick<MintCap, "windowStart" | "windowUsed" | "win
   };
 }
 
-export type MintCapLimits = { maxPerOrder: bigint; windowCap: bigint; windowSecs: number };
+export type MintCapLimits = { maxPerOrder: bigint; windowCap: bigint; windowSecs: number; totalLimit?: bigint };
 
 export function checkMintCapLimits(limits: MintCapLimits): MintCapLimits {
   if (limits.maxPerOrder <= 0n) {
@@ -56,6 +57,9 @@ export function checkMintCapLimits(limits: MintCapLimits): MintCapLimits {
   }
   if (!Number.isInteger(limits.windowSecs) || limits.windowSecs < MIN_CAP_WINDOW_SECS || limits.windowSecs > 0xffff_ffff) {
     throw new RangeError(`the window must last ${MIN_CAP_WINDOW_SECS} to 4294967295 seconds`);
+  }
+  if (limits.totalLimit !== undefined && (limits.totalLimit < 0n || limits.totalLimit > U64_MAX)) {
+    throw new RangeError("the total limit must be zero, meaning none, or a raw amount");
   }
   return limits;
 }
@@ -68,7 +72,10 @@ export async function findMintCapAddress(mint: Address): Promise<Address> {
   return address;
 }
 
-export async function buildSetMintCap(input: MintCapLimits & { admin: TransactionSigner; payer?: TransactionSigner; mint: Address }) {
+export async function buildSetMintCap(input: MintCapLimits & { totalLimit: bigint; admin: TransactionSigner; payer?: TransactionSigner; mint: Address }) {
+  if (typeof input.totalLimit !== "bigint") {
+    throw new RangeError("name the total limit: zero for none, or the current one to keep it");
+  }
   const limits = checkMintCapLimits(input);
   return getSetMintCapInstructionAsync({
     admin: input.admin,
@@ -77,12 +84,17 @@ export async function buildSetMintCap(input: MintCapLimits & { admin: Transactio
     maxPerOrder: limits.maxPerOrder,
     windowCap: limits.windowCap,
     windowSecs: limits.windowSecs,
+    totalLimit: input.totalLimit,
     ...(await events()),
   });
 }
 
 export async function buildSetCapsRequired(input: { admin: TransactionSigner; required: boolean }) {
   return getSetCapsRequiredInstruction({ admin: input.admin, required: input.required, ...(await events()) });
+}
+
+export async function capAccount(inputMint: Address, capped: bigint | undefined): Promise<{ mintCap?: Address }> {
+  return capped === undefined || capped === 0n ? {} : { mintCap: await findMintCapAddress(inputMint) };
 }
 
 const MINT_CAP_FROM_END = 3;

@@ -78,6 +78,7 @@ export type FillIntentInstruction<
   TAccountMandate extends string | AccountMeta<string> = string,
   TAccountOwnerState extends string | AccountMeta<string> = string,
   TAccountAgentTo extends string | AccountMeta<string> = string,
+  TAccountMintCap extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -134,6 +135,9 @@ export type FillIntentInstruction<
       TAccountAgentTo extends string
         ? WritableAccount<TAccountAgentTo>
         : TAccountAgentTo,
+      TAccountMintCap extends string
+        ? WritableAccount<TAccountMintCap>
+        : TAccountMintCap,
       TAccountEventAuthority extends string
         ? ReadonlyAccount<TAccountEventAuthority>
         : TAccountEventAuthority,
@@ -212,6 +216,7 @@ export type FillIntentAsyncInput<
   TAccountMandate extends InstructionAccountInput = InstructionAccountInput,
   TAccountOwnerState extends InstructionAccountInput = InstructionAccountInput,
   TAccountAgentTo extends InstructionAccountInput = InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -232,6 +237,7 @@ export type FillIntentAsyncInput<
   mandate?: TAccountMandate;
   ownerState?: TAccountOwnerState;
   agentTo?: TAccountAgentTo;
+  mintCap?: TAccountMintCap;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   amountIn: FillIntentInstructionDataArgs["amountIn"];
@@ -257,6 +263,7 @@ export async function getFillIntentInstructionAsync<
   TAccountMandate extends InstructionAccountInput,
   TAccountOwnerState extends InstructionAccountInput,
   TAccountAgentTo extends InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -278,6 +285,7 @@ export async function getFillIntentInstructionAsync<
     TAccountMandate,
     TAccountOwnerState,
     TAccountAgentTo,
+    TAccountMintCap,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -348,6 +356,10 @@ export async function getFillIntentInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountAgentTo,
       InstructionAccountInputAddress<TAccountAgentTo>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountMintCap,
+      InstructionAccountInputAddress<TAccountMintCap>
     >,
     ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
@@ -428,6 +440,11 @@ export async function getFillIntentInstructionAsync<
       isSigner: false,
       isWritable: true,
     },
+    mintCap: {
+      value: input.mintCap ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -482,6 +499,7 @@ export async function getFillIntentInstructionAsync<
       getAccountMeta("mandate", accounts.mandate),
       getAccountMeta("ownerState", accounts.ownerState),
       getAccountMeta("agentTo", accounts.agentTo),
+      getAccountMeta("mintCap", accounts.mintCap),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -556,6 +574,10 @@ export async function getFillIntentInstructionAsync<
       InstructionAccountInputAddress<TAccountAgentTo>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountMintCap,
+      InstructionAccountInputAddress<TAccountMintCap>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -586,6 +608,7 @@ export type FillIntentInput<
   TAccountMandate extends InstructionAccountInput = InstructionAccountInput,
   TAccountOwnerState extends InstructionAccountInput = InstructionAccountInput,
   TAccountAgentTo extends InstructionAccountInput = InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -606,6 +629,7 @@ export type FillIntentInput<
   mandate?: TAccountMandate;
   ownerState?: TAccountOwnerState;
   agentTo?: TAccountAgentTo;
+  mintCap?: TAccountMintCap;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   amountIn: FillIntentInstructionDataArgs["amountIn"];
@@ -631,6 +655,7 @@ export function getFillIntentInstruction<
   TAccountMandate extends InstructionAccountInput,
   TAccountOwnerState extends InstructionAccountInput,
   TAccountAgentTo extends InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -652,6 +677,7 @@ export function getFillIntentInstruction<
     TAccountMandate,
     TAccountOwnerState,
     TAccountAgentTo,
+    TAccountMintCap,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -721,6 +747,10 @@ export function getFillIntentInstruction<
   ResolvedInstructionAccountMeta<
     TAccountAgentTo,
     InstructionAccountInputAddress<TAccountAgentTo>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountMintCap,
+    InstructionAccountInputAddress<TAccountMintCap>
   >,
   ResolvedInstructionAccountMeta<
     TAccountEventAuthority,
@@ -800,6 +830,11 @@ export function getFillIntentInstruction<
       isSigner: false,
       isWritable: true,
     },
+    mintCap: {
+      value: input.mintCap ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -843,6 +878,7 @@ export function getFillIntentInstruction<
       getAccountMeta("mandate", accounts.mandate),
       getAccountMeta("ownerState", accounts.ownerState),
       getAccountMeta("agentTo", accounts.agentTo),
+      getAccountMeta("mintCap", accounts.mintCap),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -917,6 +953,10 @@ export function getFillIntentInstruction<
       InstructionAccountInputAddress<TAccountAgentTo>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountMintCap,
+      InstructionAccountInputAddress<TAccountMintCap>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -949,8 +989,9 @@ export type ParsedFillIntentInstruction<
     mandate?: TAccountMetas[13] | undefined;
     ownerState?: TAccountMetas[14] | undefined;
     agentTo?: TAccountMetas[15] | undefined;
-    eventAuthority: TAccountMetas[16];
-    program: TAccountMetas[17];
+    mintCap?: TAccountMetas[16] | undefined;
+    eventAuthority: TAccountMetas[17];
+    program: TAccountMetas[18];
   };
   data: FillIntentInstructionData;
 };
@@ -963,12 +1004,12 @@ export function parseFillIntentInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedFillIntentInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 18) {
+  if (instruction.accounts.length < 19) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 18,
+        expectedAccountMetas: 19,
       },
     );
   }
@@ -1003,6 +1044,7 @@ export function parseFillIntentInstruction<
       mandate: getNextOptionalAccount(),
       ownerState: getNextOptionalAccount(),
       agentTo: getNextOptionalAccount(),
+      mintCap: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
     },

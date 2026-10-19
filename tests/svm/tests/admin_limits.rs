@@ -4,14 +4,16 @@ use intent_core::kinds::ALL_KINDS_MASK;
 use intent_core::kinds::{swap_exact_in, Kind};
 use intent_core::lifecycle::Status;
 use intent_engine::errors::EngineError;
-use intent_engine::state::{BPS, MAX_CRANK_BOUNTY, MAX_CREATE_FEE, MAX_FEE_BPS, PAUSE_ALL};
+use intent_engine::state::{
+    MintCap, BPS, MAX_CRANK_BOUNTY, MAX_CREATE_FEE, MAX_FEE_BPS, MINT_CAP_SEED, PAUSE_ALL,
+};
 use intent_engine::{ConfigUpdate, Economics};
 use solana_signer::Signer;
 use solana_transaction_error::TransactionError;
 use svm_tests::{
-    agent_lane, canonical_refund, ed25519_ix, engine_error, engine_error_at, intent_pda,
-    mandate_pda, mandate_terms, swap_spec, vault_pda, Env, IntentSpec, Market, Solver, TestResult,
-    Trader, DOMAIN, START_TS,
+    agent_lane, canonical_refund, config_pda, ed25519_ix, engine_error, engine_error_at, engine_ix,
+    event_authority, intent_pda, load, mandate_pda, mandate_terms, pda, swap_spec, vault_pda, Env,
+    IntentSpec, Market, Solver, TestResult, Trader, DOMAIN, START_TS,
 };
 
 const PROGRAM: Pubkey = anchor_spl::token::ID;
@@ -70,6 +72,47 @@ impl World {
         self.env.send(&solver, &[ix], &[]).map(|_| ())
     }
 
+    fn mint_cap(&self) -> Pubkey {
+        pda(&[MINT_CAP_SEED, self.market.input_mint.as_ref()])
+    }
+
+    fn outstanding(&self) -> TestResult<u64> {
+        Ok(load::<MintCap>(&self.env.svm, &self.mint_cap())?.outstanding)
+    }
+
+    fn set_caps(&mut self, total_limit: u64, required: bool) -> TestResult {
+        let admin = self.env.authority.pubkey();
+        let set = engine_ix(
+            intent_engine::accounts::SetMintCap {
+                admin,
+                payer: admin,
+                config: config_pda(),
+                mint: self.market.input_mint,
+                mint_cap: self.mint_cap(),
+                system_program: anchor_lang::system_program::ID,
+                event_authority: event_authority(),
+                program: intent_engine::ID,
+            },
+            intent_engine::instruction::SetMintCap {
+                max_per_order: ESCROW,
+                window_cap: FUNDED,
+                window_secs: 3_600,
+                total_limit,
+            },
+        );
+        self.admin_sends(set)?;
+        let require = engine_ix(
+            intent_engine::accounts::SetCapsRequired {
+                admin,
+                config: config_pda(),
+                event_authority: event_authority(),
+                program: intent_engine::ID,
+            },
+            intent_engine::instruction::SetCapsRequired { required },
+        );
+        self.admin_sends(require)
+    }
+
     fn worst_admin(&mut self) -> TestResult<Pubkey> {
         let admin = self.env.authority.pubkey();
         let recipient = Pubkey::new_unique();
@@ -106,13 +149,19 @@ fn no_admin_setting_can_stop_an_owner_from_getting_their_escrow_back() -> TestRe
     let mut w = world()?;
     let owner = w.owner();
     let input = w.trader.input;
+    w.set_caps(0, true)?;
+    w.env.mint_cap = Some(w.mint_cap());
     for nonce in 0..3 {
         w.env
             .create_intent(&w.trader, &w.market, &swap_spec(nonce, ESCROW)?)?;
     }
+    assert_eq!(w.outstanding()?, 3 * ESCROW);
     w.fill(2, w.env.settings().fee_bps)?;
+    assert_eq!(w.outstanding()?, 2 * ESCROW);
     let stale = w.fee_to;
     let recipient = w.worst_admin()?;
+    w.set_caps(1, false)?;
+    assert_eq!(w.env.config()?.caps_required, 0);
     assert_eq!(
         w.fill(0, MAX_FEE_BPS),
         Err(engine_error(EngineError::FeeAccountNotCanonical))
@@ -144,6 +193,7 @@ fn no_admin_setting_can_stop_an_owner_from_getting_their_escrow_back() -> TestRe
         assert!(!w.env.exists(&intent_pda(&owner, nonce)));
         assert!(!w.env.exists(&vault_pda(&intent_pda(&owner, nonce))));
     }
+    assert_eq!(w.outstanding()?, 0);
     assert_eq!(w.env.balance(&input)?, FUNDED - ESCROW);
     assert_eq!(w.env.balance(&w.trader.receiver)?, MIN_OUT);
     Ok(())

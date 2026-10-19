@@ -30,6 +30,7 @@ pub fn handle_set_mint_cap(
     max_per_order: u64,
     window_cap: u64,
     window_secs: u32,
+    total_limit: u64,
 ) -> Result<()> {
     check_limits(max_per_order, window_cap, window_secs)?;
     let now = Clock::get()?.unix_timestamp;
@@ -45,13 +46,14 @@ pub fn handle_set_mint_cap(
             now,
         )?;
     }
-    let (window_start, window_used) = {
+    let (window_start, window_used, outstanding) = {
         let mut data = info.try_borrow_mut_data()?;
         let cap = cap_in(&mut data)?;
         cap.max_per_order = max_per_order;
         cap.window_cap = window_cap;
         cap.window_secs = window_secs;
-        (cap.window_start, cap.window_used)
+        cap.total_limit = total_limit;
+        (cap.window_start, cap.window_used, cap.outstanding)
     };
     emit_cpi!(MintCapSet {
         mint,
@@ -61,6 +63,8 @@ pub fn handle_set_mint_cap(
         window_secs,
         window_start,
         window_used,
+        total_limit,
+        outstanding,
     });
     Ok(())
 }

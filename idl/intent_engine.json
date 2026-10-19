@@ -314,6 +314,32 @@
           "optional": true
         },
         {
+          "name": "mint_cap",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  99,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "input_mint"
+              }
+            ]
+          }
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -430,6 +456,32 @@
           "name": "stake_to",
           "writable": true,
           "optional": true
+        },
+        {
+          "name": "mint_cap",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  99,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "input_mint"
+              }
+            ]
+          }
         },
         {
           "name": "event_authority"
@@ -587,6 +639,32 @@
         },
         {
           "name": "token_program"
+        },
+        {
+          "name": "mint_cap",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  99,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "input_mint"
+              }
+            ]
+          }
         },
         {
           "name": "event_authority"
@@ -1702,6 +1780,32 @@
           "name": "token_program"
         },
         {
+          "name": "mint_cap",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  99,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "input_mint"
+              }
+            ]
+          }
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -1825,6 +1929,32 @@
           "name": "stake_to",
           "writable": true,
           "optional": true
+        },
+        {
+          "name": "mint_cap",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  99,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "input_mint"
+              }
+            ]
+          }
         },
         {
           "name": "event_authority"
@@ -1965,6 +2095,32 @@
           "name": "stake_to",
           "writable": true,
           "optional": true
+        },
+        {
+          "name": "mint_cap",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  99,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "input_mint"
+              }
+            ]
+          }
         },
         {
           "name": "event_authority"
@@ -2142,6 +2298,32 @@
           "name": "stake_to",
           "writable": true,
           "optional": true
+        },
+        {
+          "name": "mint_cap",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  99,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "input_mint"
+              }
+            ]
+          }
         },
         {
           "name": "event_authority"
@@ -2328,6 +2510,32 @@
           "optional": true
         },
         {
+          "name": "mint_cap",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  99,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "input_mint"
+              }
+            ]
+          }
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -2471,6 +2679,32 @@
           "name": "agent_to",
           "writable": true,
           "optional": true
+        },
+        {
+          "name": "mint_cap",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  99,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "input_mint"
+              }
+            ]
+          }
         },
         {
           "name": "event_authority"
@@ -3032,6 +3266,10 @@
         {
           "name": "window_secs",
           "type": "u32"
+        },
+        {
+          "name": "total_limit",
+          "type": "u64"
         }
       ]
     },
@@ -4327,6 +4565,10 @@
     {
       "code": 6101,
       "name": "LineEntryMismatch"
+    },
+    {
+      "code": 6102,
+      "name": "MintCapTotal"
     }
   ],
   "types": [
@@ -5266,13 +5508,17 @@
             "type": "u8"
           },
           {
-            "name": "reserved",
+            "name": "gap2",
             "type": {
               "array": [
                 "u8",
-                15
+                7
               ]
             }
+          },
+          {
+            "name": "capped",
+            "type": "u64"
           }
         ]
       }
@@ -6043,11 +6289,19 @@
             }
           },
           {
+            "name": "total_limit",
+            "type": "u64"
+          },
+          {
+            "name": "outstanding",
+            "type": "u64"
+          },
+          {
             "name": "reserved",
             "type": {
               "array": [
                 "u8",
-                56
+                40
               ]
             }
           }
@@ -6085,6 +6339,14 @@
           },
           {
             "name": "window_used",
+            "type": "u64"
+          },
+          {
+            "name": "total_limit",
+            "type": "u64"
+          },
+          {
+            "name": "outstanding",
             "type": "u64"
           }
         ]

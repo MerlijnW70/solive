@@ -101,7 +101,7 @@ export function intentSends({ transport, send, mint, config }: ClientContext) {
     const refund = await tokenAccountIfMissing(transport, signer, signer.address, intent.inputMint, tokenProgram);
     const [address] = await findIntentPda({ owner: signer.address, nonce });
     const claims = await cancelClaims(transport, address, intent.claims);
-    const cancel = await buildCancelIntent({ owner: signer, nonce, inputMint: intent.inputMint, tokenProgram, ...(claims === undefined ? {} : { claims }) });
+    const cancel = await buildCancelIntent({ owner: signer, nonce, inputMint: intent.inputMint, tokenProgram, capped: intent.capped, ...(claims === undefined ? {} : { claims }) });
     return send([...refund.create, cancel], signer);
   };
 
@@ -155,6 +155,7 @@ export function intentSends({ transport, send, mint, config }: ClientContext) {
       amountIn,
       amountOut,
       maxFeeBps: kindBps + held.partnerBps,
+      capped: held.capped,
     });
     const setup = [solverInput, solverOutput, ...payouts].flatMap(({ create }) => create);
     const wrap = input.route === undefined ? (await wrapIfShort(transport, solver, held.outputMint, buy.tokenProgram, amountOut)).instructions : [];
@@ -164,7 +165,7 @@ export function intentSends({ transport, send, mint, config }: ClientContext) {
   const settling = async (cranker: TransactionSigner, owner: Address, nonce: bigint) => {
     const { intent } = await loadIntent(transport, owner, nonce);
     const { tokenProgram } = await mint(intent.inputMint);
-    return { ref: { cranker, owner, nonce, inputMint: intent.inputMint, tokenProgram }, rentPayer: intent.rentPayer };
+    return { ref: { cranker, owner, nonce, inputMint: intent.inputMint, tokenProgram, capped: intent.capped }, rentPayer: intent.rentPayer };
   };
 
   const expire = async (cranker: TransactionSigner, owner: Address, nonce: bigint) => {

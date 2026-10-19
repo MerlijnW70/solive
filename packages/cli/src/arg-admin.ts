@@ -81,6 +81,7 @@ export function adminOf(verb: AdminVerb, sub: string | undefined, remote: Remote
         maxPerOrder,
         windowCap,
         windowSecs: parseBounded(required(values, "window-secs"), "window-secs", 0xffff_ffff, MIN_CAP_WINDOW_SECS),
+        ...(values["total-limit"] === undefined ? {} : { totalLimit: u64(values, "total-limit") }),
       };
     }
     case "set-caps-required":

@@ -49,6 +49,8 @@ export type MintCapSetEvent = {
   windowSecs: number;
   windowStart: bigint;
   windowUsed: bigint;
+  totalLimit: bigint;
+  outstanding: bigint;
 };
 
 export type MintCapSetEventArgs = {
@@ -59,6 +61,8 @@ export type MintCapSetEventArgs = {
   windowSecs: number;
   windowStart: number | bigint;
   windowUsed: number | bigint;
+  totalLimit: number | bigint;
+  outstanding: number | bigint;
 };
 
 /** Gets the encoder for {@link MintCapSetEventArgs} event data. */
@@ -72,6 +76,8 @@ export function getMintCapSetEventEncoder(): FixedSizeEncoder<MintCapSetEventArg
       ["windowSecs", getU32Encoder()],
       ["windowStart", getI64Encoder()],
       ["windowUsed", getU64Encoder()],
+      ["totalLimit", getU64Encoder()],
+      ["outstanding", getU64Encoder()],
     ]),
     [getConstantEncoder(MINT_CAP_SET_EVENT_DISCRIMINATOR)],
   );
@@ -88,6 +94,8 @@ export function getMintCapSetEventDecoder(): FixedSizeDecoder<MintCapSetEvent> {
       ["windowSecs", getU32Decoder()],
       ["windowStart", getI64Decoder()],
       ["windowUsed", getU64Decoder()],
+      ["totalLimit", getU64Decoder()],
+      ["outstanding", getU64Decoder()],
     ]),
     [getConstantDecoder(MINT_CAP_SET_EVENT_DISCRIMINATOR)],
   );

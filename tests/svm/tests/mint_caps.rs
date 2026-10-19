@@ -69,6 +69,7 @@ fn set_mint_cap_ix(
             max_per_order,
             window_cap,
             window_secs,
+            total_limit: 0,
         },
     )
 }

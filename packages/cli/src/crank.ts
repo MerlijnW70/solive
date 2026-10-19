@@ -156,7 +156,7 @@ export async function expiring(
   andClose: boolean,
 ) {
   const tokenProgram = await tokenProgramOf(transport, intent.inputMint);
-  const ref = { owner: intent.owner, nonce: intent.nonce, inputMint: intent.inputMint, tokenProgram };
+  const ref = { owner: intent.owner, nonce: intent.nonce, inputMint: intent.inputMint, tokenProgram, capped: intent.capped };
   const bounty = BigInt(intent.bounty);
   const { prep, refundTo } = await refundTarget(transport, cranker, intent.owner, intent.inputMint, tokenProgram, fund, bounty);
   const ix = await buildExpireIntent({ ...ref, cranker, refundTo });
@@ -182,6 +182,7 @@ export async function closing(
     inputMint: intent.inputMint,
     tokenProgram,
     rentPayer: intent.rentPayer,
+    capped: intent.capped,
     ...(target.refundTo === undefined ? {} : { refundTo: target.refundTo }),
   });
   return [...target.prep, ix];

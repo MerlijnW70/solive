@@ -10,6 +10,7 @@ use intent_core::sig::{
     offchain_envelope, AttestedFill, AttestedProof, AttestedSplit, SPLIT_COSIGN_TAG,
 };
 
+use crate::caps::{release_mint_cap, settle_mint_cap};
 use crate::claims::honor_on_release;
 use crate::errors::{core_err, EngineError};
 use crate::events::StakeMoved;
@@ -20,7 +21,7 @@ use crate::policy::{
     SplitPayout, Tally,
 };
 use crate::state::{
-    ClaimBoard, Committee, Config, Intent, CLAIMS_OPEN, COMMITTEE_VERSION, PAUSE_FILL,
+    ClaimBoard, Committee, Config, Intent, MintCap, CLAIMS_OPEN, COMMITTEE_VERSION, PAUSE_FILL,
 };
 
 pub const MAX_SPLIT_RECIPIENTS: usize = 8;
@@ -112,6 +113,7 @@ pub struct Release<'a, 'info> {
     pub instructions: AccountInfo<'info>,
     pub claims: Option<&'a AccountLoader<'info, ClaimBoard>>,
     pub stake_to: Option<AccountInfo<'info>>,
+    pub mint_cap: Option<&'a AccountLoader<'info, MintCap>>,
 }
 
 #[derive(Clone, Copy)]
@@ -267,6 +269,7 @@ pub fn release_single<'info>(
         max_fee_bps,
     } = fill;
     ext.check(FILL_EXT_TAGS)?;
+    let before = release.vault.amount;
     let opened = open(&release, amount_in, result)?;
     let ext_hash = solana_sha256_hasher::hashv(&[&ext.0]).to_bytes();
     let fill_preimage;
@@ -362,6 +365,7 @@ pub fn release_single<'info>(
             role: crate::events::WITHHELD_PARTNER,
         });
     }
+    settle_mint_cap(release.vault, before, release.mint_cap, release.intent)?;
     Ok(Released {
         owner: opened.signer.owner,
         attestor: opened.attestor,
@@ -505,6 +509,7 @@ pub fn release_split<'info>(
         release.vault.amount == expected,
         EngineError::SplitNotConserved
     );
+    release_mint_cap(release.mint_cap, release.intent, left)?;
     Ok(SplitReleased {
         released: Released {
             owner: opened.signer.owner,

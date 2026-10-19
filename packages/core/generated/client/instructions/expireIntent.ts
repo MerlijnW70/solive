@@ -67,6 +67,7 @@ export type ExpireIntentInstruction<
   TAccountCanonicalRefund extends string | AccountMeta<string> = string,
   TAccountTokenProgram extends string | AccountMeta<string> =
     "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA",
+  TAccountMintCap extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -96,6 +97,9 @@ export type ExpireIntentInstruction<
       TAccountTokenProgram extends string
         ? ReadonlyAccount<TAccountTokenProgram>
         : TAccountTokenProgram,
+      TAccountMintCap extends string
+        ? WritableAccount<TAccountMintCap>
+        : TAccountMintCap,
       TAccountEventAuthority extends string
         ? ReadonlyAccount<TAccountEventAuthority>
         : TAccountEventAuthority,
@@ -150,6 +154,7 @@ export type ExpireIntentAsyncInput<
     InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -161,6 +166,7 @@ export type ExpireIntentAsyncInput<
   refundTo: TAccountRefundTo;
   canonicalRefund: TAccountCanonicalRefund;
   tokenProgram?: TAccountTokenProgram;
+  mintCap?: TAccountMintCap;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   ext: ExpireIntentInstructionDataArgs["ext"];
@@ -174,6 +180,7 @@ export async function getExpireIntentInstructionAsync<
   TAccountRefundTo extends InstructionAccountInput,
   TAccountCanonicalRefund extends InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -186,6 +193,7 @@ export async function getExpireIntentInstructionAsync<
     TAccountRefundTo,
     TAccountCanonicalRefund,
     TAccountTokenProgram,
+    TAccountMintCap,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -220,6 +228,10 @@ export async function getExpireIntentInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountTokenProgram,
       InstructionAccountInputAddress<TAccountTokenProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountMintCap,
+      InstructionAccountInputAddress<TAccountMintCap>
     >,
     ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
@@ -262,6 +274,11 @@ export async function getExpireIntentInstructionAsync<
       value: input.tokenProgram ?? null,
       isSigner: false,
       isWritable: false,
+    },
+    mintCap: {
+      value: input.mintCap ?? null,
+      isSigner: false,
+      isWritable: true,
     },
     eventAuthority: {
       value: input.eventAuthority ?? null,
@@ -308,6 +325,7 @@ export async function getExpireIntentInstructionAsync<
       getAccountMeta("refundTo", accounts.refundTo),
       getAccountMeta("canonicalRefund", accounts.canonicalRefund),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
+      getAccountMeta("mintCap", accounts.mintCap),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -346,6 +364,10 @@ export async function getExpireIntentInstructionAsync<
       InstructionAccountInputAddress<TAccountTokenProgram>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountMintCap,
+      InstructionAccountInputAddress<TAccountMintCap>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -366,6 +388,7 @@ export type ExpireIntentInput<
     InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -377,6 +400,7 @@ export type ExpireIntentInput<
   refundTo: TAccountRefundTo;
   canonicalRefund: TAccountCanonicalRefund;
   tokenProgram?: TAccountTokenProgram;
+  mintCap?: TAccountMintCap;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   ext: ExpireIntentInstructionDataArgs["ext"];
@@ -390,6 +414,7 @@ export function getExpireIntentInstruction<
   TAccountRefundTo extends InstructionAccountInput,
   TAccountCanonicalRefund extends InstructionAccountInput,
   TAccountTokenProgram extends InstructionAccountInput,
+  TAccountMintCap extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -402,6 +427,7 @@ export function getExpireIntentInstruction<
     TAccountRefundTo,
     TAccountCanonicalRefund,
     TAccountTokenProgram,
+    TAccountMintCap,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -435,6 +461,10 @@ export function getExpireIntentInstruction<
   ResolvedInstructionAccountMeta<
     TAccountTokenProgram,
     InstructionAccountInputAddress<TAccountTokenProgram>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountMintCap,
+    InstructionAccountInputAddress<TAccountMintCap>
   >,
   ResolvedInstructionAccountMeta<
     TAccountEventAuthority,
@@ -477,6 +507,11 @@ export function getExpireIntentInstruction<
       isSigner: false,
       isWritable: false,
     },
+    mintCap: {
+      value: input.mintCap ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -511,6 +546,7 @@ export function getExpireIntentInstruction<
       getAccountMeta("refundTo", accounts.refundTo),
       getAccountMeta("canonicalRefund", accounts.canonicalRefund),
       getAccountMeta("tokenProgram", accounts.tokenProgram),
+      getAccountMeta("mintCap", accounts.mintCap),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -549,6 +585,10 @@ export function getExpireIntentInstruction<
       InstructionAccountInputAddress<TAccountTokenProgram>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountMintCap,
+      InstructionAccountInputAddress<TAccountMintCap>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -572,8 +612,9 @@ export type ParsedExpireIntentInstruction<
     refundTo: TAccountMetas[4];
     canonicalRefund: TAccountMetas[5];
     tokenProgram: TAccountMetas[6];
-    eventAuthority: TAccountMetas[7];
-    program: TAccountMetas[8];
+    mintCap?: TAccountMetas[7] | undefined;
+    eventAuthority: TAccountMetas[8];
+    program: TAccountMetas[9];
   };
   data: ExpireIntentInstructionData;
 };
@@ -586,12 +627,12 @@ export function parseExpireIntentInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedExpireIntentInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 9) {
+  if (instruction.accounts.length < 10) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 9,
+        expectedAccountMetas: 10,
       },
     );
   }
@@ -600,6 +641,12 @@ export function parseExpireIntentInstruction<
     const accountMeta = (instruction.accounts as TAccountMetas)[accountIndex]!;
     accountIndex += 1;
     return accountMeta;
+  };
+  const getNextOptionalAccount = () => {
+    const accountMeta = getNextAccount();
+    return accountMeta.address === INTENT_ENGINE_PROGRAM_ADDRESS
+      ? undefined
+      : accountMeta;
   };
   return {
     programAddress: instruction.programAddress,
@@ -611,6 +658,7 @@ export function parseExpireIntentInstruction<
       refundTo: getNextAccount(),
       canonicalRefund: getNextAccount(),
       tokenProgram: getNextAccount(),
+      mintCap: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
     },

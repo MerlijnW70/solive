@@ -1,10 +1,11 @@
 use anchor_lang::prelude::*;
 use anchor_lang::system_program::{allocate, assign, Allocate, Assign};
 use anchor_lang::Discriminator;
+use anchor_spl::token_interface::TokenAccount;
 
 use crate::errors::EngineError;
 use crate::policy::charge_lamports;
-use crate::state::{Config, MintCap, MINT_CAP_SEED, MINT_CAP_VERSION, MIN_CAP_WINDOW_SECS};
+use crate::state::{Config, Intent, MintCap, MINT_CAP_SEED, MINT_CAP_VERSION, MIN_CAP_WINDOW_SECS};
 pub fn check_limits(max_per_order: u64, window_cap: u64, window_secs: u32) -> Result<()> {
     require!(
         max_per_order > 0 && window_cap >= max_per_order && window_secs >= MIN_CAP_WINDOW_SECS,
@@ -48,13 +49,36 @@ pub fn take_from_window(cap: &mut MintCap, amount: u64, now: i64) -> Result<()> 
         .checked_add(amount)
         .ok_or(EngineError::Overflow)?;
     require!(used <= cap.window_cap, EngineError::MintCapWindow);
+    let outstanding = cap
+        .outstanding
+        .checked_add(amount)
+        .ok_or(EngineError::Overflow)?;
+    require!(
+        cap.total_limit == 0 || outstanding <= cap.total_limit,
+        EngineError::MintCapTotal
+    );
     cap.window_used = used;
+    cap.outstanding = outstanding;
     Ok(())
+}
+
+pub fn give_back(cap: &mut MintCap, intent: &mut Intent, left: u64) -> Result<u64> {
+    let counted = left.min(intent.capped);
+    cap.outstanding = cap
+        .outstanding
+        .checked_sub(counted)
+        .ok_or(EngineError::Overflow)?;
+    intent.capped = intent
+        .capped
+        .checked_sub(counted)
+        .ok_or(EngineError::Overflow)?;
+    Ok(counted)
 }
 
 pub fn charge_mint_cap(
     config: &AccountLoader<Config>,
     mint_cap: Option<&AccountLoader<MintCap>>,
+    intent: &AccountLoader<Intent>,
     mint: &Pubkey,
     amount: u64,
     now: i64,
@@ -65,7 +89,40 @@ pub fn charge_mint_cap(
     let mint_cap = mint_cap.ok_or(EngineError::MintCapMissing)?;
     let mut cap = mint_cap.load_mut()?;
     require_keys_eq!(cap.mint, *mint, EngineError::MintCapMismatch);
-    take_from_window(&mut cap, amount, now)
+    take_from_window(&mut cap, amount, now)?;
+    intent.load_init()?.capped = amount;
+    Ok(())
+}
+
+pub fn release_mint_cap(
+    mint_cap: Option<&AccountLoader<MintCap>>,
+    intent: &AccountLoader<Intent>,
+    left: u64,
+) -> Result<u64> {
+    let mut held = intent.load_mut()?;
+    if left == 0 || held.capped == 0 {
+        return Ok(0);
+    }
+    let mint_cap = mint_cap.ok_or(EngineError::MintCapMissing)?;
+    let mut cap = mint_cap.load_mut()?;
+    require_keys_eq!(cap.mint, held.input_mint, EngineError::MintCapMismatch);
+    give_back(&mut cap, &mut held, left)
+}
+
+pub fn settle_mint_cap(
+    vault: &mut InterfaceAccount<TokenAccount>,
+    before: u64,
+    mint_cap: Option<&AccountLoader<MintCap>>,
+    intent: &AccountLoader<Intent>,
+) -> Result<u64> {
+    if intent.load()?.capped == 0 {
+        return Ok(0);
+    }
+    vault.reload()?;
+    let left = before
+        .checked_sub(vault.amount)
+        .ok_or(EngineError::Overflow)?;
+    release_mint_cap(mint_cap, intent, left)
 }
 
 pub fn open_mint_cap<'info>(

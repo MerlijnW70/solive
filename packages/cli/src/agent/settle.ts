@@ -55,6 +55,7 @@ export const prepareCancel = define({
       nonce: input.nonce,
       inputMint: intent.inputMint,
       tokenProgram: await tokenProgramOf(transport, intent.inputMint),
+      capped: intent.capped,
     };
     const claims = await cancelClaims(transport, address, intent.claims);
     const ix = await buildCancelIntent({ ...ref, owner, ...(claims === undefined ? {} : { claims }) });

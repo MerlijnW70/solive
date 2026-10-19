@@ -199,10 +199,10 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--outp
 ## set-mint-cap
 
 ```text
-set-mint-cap (--keypair <file> [--yes] | --authority <address>) --mint <mint> --max-per-order <raw> --window-cap <raw> --window-secs <n>
+set-mint-cap (--keypair <file> [--yes] | --authority <address>) --mint <mint> --max-per-order <raw> --window-cap <raw> --window-secs <n> [--total-limit <raw>]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--mint`, `--max-per-order`, `--window-cap`, `--window-secs`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--mint`, `--max-per-order`, `--window-cap`, `--window-secs`, `--total-limit`, `--output`, `--help`
 
 ## set-caps-required
 

@@ -238,8 +238,9 @@ pub mod intent_engine {
         max_per_order: u64,
         window_cap: u64,
         window_secs: u32,
+        total_limit: u64,
     ) -> Result<()> {
-        handle_set_mint_cap(ctx, max_per_order, window_cap, window_secs)
+        handle_set_mint_cap(ctx, max_per_order, window_cap, window_secs, total_limit)
     }
 
     pub fn set_caps_required(ctx: Context<SetCapsRequired>, required: bool) -> Result<()> {

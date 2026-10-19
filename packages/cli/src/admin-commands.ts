@@ -129,8 +129,10 @@ type AdminCommand = Extract<
   }
 >;
 
-const capLine = (cap: { maxPerOrder: bigint; windowCap: bigint; windowSecs: number }) =>
-  `at most ${cap.maxPerOrder} raw units per intent and ${cap.windowCap} per ${cap.windowSecs} second window`;
+const totalLine = (totalLimit: bigint) => (totalLimit === 0n ? "no total limit" : `at most ${totalLimit} outstanding at once`);
+
+const capLine = (cap: { maxPerOrder: bigint; windowCap: bigint; windowSecs: number; totalLimit: bigint }) =>
+  `at most ${cap.maxPerOrder} raw units per intent and ${cap.windowCap} per ${cap.windowSecs} second window, ${totalLine(cap.totalLimit)}`;
 
 export async function showMintCap(transport: Transport, mint: Address): Promise<object> {
   const found = await loadMintCap(transport, mint);
@@ -147,11 +149,14 @@ export async function showMintCap(transport: Transport, mint: Address): Promise<
     maxPerOrder: cap.maxPerOrder,
     windowCap: cap.windowCap,
     windowSecs: cap.windowSecs,
+    totalLimit: cap.totalLimit,
+    outstanding: cap.outstanding,
     window: { start: window.start, ends: window.ends, used: window.used, left: window.left },
     capsRequired: config.capsRequired !== 0,
     summary: [
       `Intents selling ${mint} escrow ${capLine(cap)}`,
       `This window: ${window.used} used, ${window.left} left, until ${window.ends}`,
+      `Outstanding: ${cap.outstanding} held for open intents, ${totalLine(cap.totalLimit)}`,
       config.capsRequired !== 0 ? "Caps are required: every create must pass this cap" : "Caps are off: creates ignore this cap until set-caps-required on",
     ],
   };
@@ -287,8 +292,13 @@ export async function adminCommand(command: AdminCommand, runtime: Runtime, tran
       );
     }
     case "set-mint-cap": {
-      const limits = { maxPerOrder: command.maxPerOrder, windowCap: command.windowCap, windowSecs: command.windowSecs };
       const [found, mintCap] = await Promise.all([loadMintCap(transport, command.mint), findMintCapAddress(command.mint)]);
+      const limits = {
+        maxPerOrder: command.maxPerOrder,
+        windowCap: command.windowCap,
+        windowSecs: command.windowSecs,
+        totalLimit: command.totalLimit ?? found?.cap.totalLimit ?? 0n,
+      };
       return administer(
         transport,
         command.url,
@@ -299,7 +309,12 @@ export async function adminCommand(command: AdminCommand, runtime: Runtime, tran
           found === null
             ? `Creates the mint cap ${mintCap} for ${command.mint}, paid by ${signer}: ${capLine(limits)}`
             : `Mint cap of ${command.mint}: ${capLine(found.cap)} -> ${capLine(limits)}`,
-          ...(found === null ? [] : [`Keeps the current window: ${found.cap.windowUsed} used since ${found.cap.windowStart}`]),
+          ...(found === null
+            ? []
+            : [
+                `Keeps the current window: ${found.cap.windowUsed} used since ${found.cap.windowStart}`,
+                `Keeps the outstanding amount: ${found.cap.outstanding} held for open intents`,
+              ]),
         ],
         { mintCap },
       );

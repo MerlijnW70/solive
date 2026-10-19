@@ -85,7 +85,8 @@ export type Intent = {
   mandateSerial: bigint;
   agentFee: bigint;
   claims: number;
-  reserved: ReadonlyUint8Array;
+  gap2: ReadonlyUint8Array;
+  capped: bigint;
 };
 
 export type IntentArgs = {
@@ -119,7 +120,8 @@ export type IntentArgs = {
   mandateSerial: number | bigint;
   agentFee: number | bigint;
   claims: number;
-  reserved: ReadonlyUint8Array;
+  gap2: ReadonlyUint8Array;
+  capped: number | bigint;
 };
 
 /** Gets the encoder for {@link IntentArgs} account data. */
@@ -157,7 +159,8 @@ export function getIntentEncoder(): FixedSizeEncoder<IntentArgs> {
       ["mandateSerial", getU64Encoder()],
       ["agentFee", getU64Encoder()],
       ["claims", getU8Encoder()],
-      ["reserved", fixEncoderSize(getBytesEncoder(), 15)],
+      ["gap2", fixEncoderSize(getBytesEncoder(), 7)],
+      ["capped", getU64Encoder()],
     ]),
     (value) => ({ ...value, discriminator: INTENT_DISCRIMINATOR }),
   );
@@ -197,7 +200,8 @@ export function getIntentDecoder(): FixedSizeDecoder<Intent> {
     ["mandateSerial", getU64Decoder()],
     ["agentFee", getU64Decoder()],
     ["claims", getU8Decoder()],
-    ["reserved", fixDecoderSize(getBytesDecoder(), 15)],
+    ["gap2", fixDecoderSize(getBytesDecoder(), 7)],
+    ["capped", getU64Decoder()],
   ]);
 }
 

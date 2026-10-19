@@ -273,6 +273,8 @@ pub struct MintCapSet {
     pub window_secs: u32,
     pub window_start: i64,
     pub window_used: u64,
+    pub total_limit: u64,
+    pub outstanding: u64,
 }
 
 #[event]

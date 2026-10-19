@@ -9,6 +9,7 @@ use intent_core::kinds::Intent as CoreIntent;
 use intent_core::lifecycle::{transition, Action, Status};
 use solana_instructions_sysvar::{load_current_index_checked, load_instruction_at_checked};
 
+use crate::caps::settle_mint_cap;
 use crate::errors::{core_err, EngineError};
 use crate::events::{AgentPaid, FeeWithheld, FillBegun, WITHHELD_AGENT, WITHHELD_PARTNER};
 use crate::ext::Ext;
@@ -17,8 +18,8 @@ use crate::policy::{
     AgentPayout, FeeTerms, IntentSigner, Payout,
 };
 use crate::state::{
-    Config, Intent, UserState, CONFIG_ADDRESS, CONFIG_VERSION, INTENT_VERSION, PAUSE_FILL,
-    VAULT_SEED,
+    Config, Intent, MintCap, UserState, CONFIG_ADDRESS, CONFIG_VERSION, INTENT_VERSION,
+    MINT_CAP_SEED, MINT_CAP_VERSION, PAUSE_FILL, VAULT_SEED,
 };
 
 pub const END_FILL_INTENT_INDEX: usize = 0;
@@ -88,6 +89,13 @@ pub struct BeginFill<'info> {
         ) @ EngineError::FeeAccountNotCanonical
     )]
     pub agent_to: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
+    #[account(
+        mut,
+        seeds = [MINT_CAP_SEED, input_mint.key().as_ref()],
+        bump = mint_cap.load()?.bump,
+        constraint = mint_cap.load()?.version == MINT_CAP_VERSION @ EngineError::UnsupportedVersion
+    )]
+    pub mint_cap: Option<AccountLoader<'info, MintCap>>,
 }
 
 pub fn handle_begin_fill(
@@ -110,6 +118,7 @@ pub fn handle_begin_fill(
     };
     check_mint(&ctx.accounts.input_mint.to_account_info())?;
     let intent_key = ctx.accounts.intent.key();
+    let before_vault = ctx.accounts.vault.amount;
     let current = load_current_index_checked(&ctx.accounts.instructions.to_account_info())?;
     require!(end_index > current, EngineError::FlashEndOrder);
     let row = load_instruction_at_checked(
@@ -211,6 +220,12 @@ pub fn handle_begin_fill(
         }),
         None => {}
     }
+    settle_mint_cap(
+        &mut ctx.accounts.vault,
+        before_vault,
+        ctx.accounts.mint_cap.as_ref(),
+        &ctx.accounts.intent,
+    )?;
     emit_cpi!(FillBegun {
         intent: intent_key,
         solver: ctx.accounts.solver.key(),

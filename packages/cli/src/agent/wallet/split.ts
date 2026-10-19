@@ -207,6 +207,7 @@ export const walletAttestSplit = define({
       amountIn,
       result,
       maxFeeBps,
+      capped: held.capped,
     });
     const name = TOKEN_NAMES[held.inputMint] ?? held.inputMint;
     const approval = approvalOf(message, memoText);

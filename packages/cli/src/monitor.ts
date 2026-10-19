@@ -7,7 +7,7 @@ import {
   getConfigDiscriminatorBytes,
   INTENT_ENGINE_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import { type AccountView, CLOCK_SYSVAR, type Transport } from "@intent-engine/client";
+import { type AccountView, CLOCK_SYSVAR, loadMintCap, type Transport } from "@intent-engine/client";
 import { UsageError } from "./arg-values.js";
 import type { MonitorSpec } from "./command-types.js";
 import { fillsIn, inputMintsOf } from "./monitor-fills.js";
@@ -46,7 +46,7 @@ export type Baseline = { program: Address; config: ConfigValues; upgradeAuthorit
 
 export type Snapshot = { slot: bigint; config: ConfigValues | null; upgradeAuthority: string | null; programHash: string | null };
 
-export type AlertKind = "config" | "upgrade-authority" | "program-hash" | "fill-amount" | "fill-rate" | "rpc";
+export type AlertKind = "config" | "upgrade-authority" | "program-hash" | "fill-amount" | "fill-rate" | "mint-cap" | "rpc";
 
 export type Alert = { kind: AlertKind; field: string; expected: unknown; observed: unknown; slot: number | null } & Record<string, unknown>;
 
@@ -206,9 +206,33 @@ export type MonitorState = {
 
 export const freshState = (): MonitorState => ({ alerted: new Map(), lastSlot: null, stalledFor: 0, failing: false, seen: null });
 
-function differences(baseline: Baseline, now: Snapshot): { key: string; alert: Alert }[] {
+type Finding = { key: string; alert: Alert };
+
+export function capStatus(mint: Address, cap: { outstanding: bigint; totalLimit: bigint } | null): string {
+  if (cap === null) {
+    return `${mint} has no mint cap`;
+  }
+  const limit = cap.totalLimit === 0n ? "no total limit" : `a total limit of ${cap.totalLimit}`;
+  return `mint cap of ${mint}: ${cap.outstanding} raw units outstanding, ${limit}`;
+}
+
+async function capFindings(transport: Transport, spec: MonitorSpec, slot: bigint): Promise<Finding[]> {
+  const found: Finding[] = [];
+  for (const mint of spec.maxFill.keys()) {
+    const cap = (await loadMintCap(transport, mint))?.cap;
+    if (cap !== undefined && cap.totalLimit > 0n && cap.outstanding >= cap.totalLimit) {
+      found.push({
+        key: `mintCap.${mint}`,
+        alert: { kind: "mint-cap", field: mint, expected: `below ${cap.totalLimit}`, observed: cap.outstanding.toString(), slot: Number(slot) },
+      });
+    }
+  }
+  return found;
+}
+
+function differences(baseline: Baseline, now: Snapshot): Finding[] {
   const slot = Number(now.slot);
-  const found: { key: string; alert: Alert }[] = [];
+  const found: Finding[] = [];
   const compare = (key: string, kind: AlertKind, field: string, expected: unknown, observed: unknown) => {
     if (!same(expected, observed)) {
       found.push({ key, alert: { kind, field, expected, observed, slot } });
@@ -226,8 +250,7 @@ function differences(baseline: Baseline, now: Snapshot): { key: string; alert: A
   return found;
 }
 
-function stateAlerts(baseline: Baseline, now: Snapshot, state: MonitorState): Alert[] {
-  const found = differences(baseline, now);
+function stateAlerts(found: Finding[], state: MonitorState): Alert[] {
   const keys = new Set(found.map((f) => f.key));
   for (const key of [...state.alerted.keys()]) {
     if (!keys.has(key)) {
@@ -313,7 +336,7 @@ export async function checkOnce(
   try {
     const current = await snapshot(transport);
     alerts = [
-      ...stateAlerts(baseline, current, state),
+      ...stateAlerts([...differences(baseline, current), ...(await capFindings(transport, spec, current.slot))], state),
       ...slotAlerts(current, state),
       ...(await fillAlerts(transport, spec, state, now - BigInt(spec.interval))),
     ];
@@ -352,6 +375,13 @@ export async function monitor(url: string, file: string, spec: MonitorSpec, runt
     `watching program ${INTENT_ENGINE_PROGRAM_ADDRESS} on ${redactUrl(url)} every ${spec.interval}s` +
       (spec.webhook === null ? "" : `; alerts also go to ${redactUrl(spec.webhook)}`),
   );
+  for (const mint of spec.maxFill.keys()) {
+    try {
+      io.err(capStatus(mint, (await loadMintCap(transport, mint))?.cap ?? null));
+    } catch (error) {
+      io.err(`the mint cap of ${mint} cannot be read: ${scrubbed(error instanceof Error ? error.message : String(error), url)}`);
+    }
+  }
   let raised = 0;
   for (;;) {
     for (const alert of await checkOnce(transport, baseline, spec, state, runtime.now(), url)) {

@@ -18,6 +18,7 @@ import {
   partnerAccount,
 } from "./builder-accounts.js";
 import { MAX_SPLIT_RECIPIENTS } from "./bounty.js";
+import { capAccount } from "./mint-caps.js";
 import { findAssociatedTokenAddress } from "./pdas.js";
 
 export type FillIntentSpec = {
@@ -39,6 +40,7 @@ export type FillIntentSpec = {
   amountOut: bigint;
   maxFeeBps: number;
   ext?: Uint8Array;
+  capped?: bigint;
 };
 
 export async function buildFillIntent(input: FillIntentSpec) {
@@ -64,6 +66,7 @@ export async function buildFillIntent(input: FillIntentSpec) {
     outputTokenProgram: input.outputTokenProgram,
     ...(await mandateAccounts(input)),
     ...(await agentAccount(input)),
+    ...(await capAccount(input.inputMint, input.capped)),
     amountIn: input.amountIn,
     amountOut: input.amountOut,
     maxFeeBps: input.maxFeeBps,
@@ -88,6 +91,7 @@ export type FillAttestedSpec = {
   result: bigint;
   maxFeeBps: number;
   ext?: Uint8Array;
+  capped?: bigint;
 };
 
 type AttestedAccounts = Omit<FillAttestedSpec, "payee">;
@@ -112,6 +116,7 @@ async function attestedAccounts(input: AttestedAccounts) {
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     ...(input.claims === undefined ? {} : { claims: input.claims }),
     ...(input.stakeTo === undefined ? {} : { stakeTo: input.stakeTo }),
+    ...(await capAccount(input.inputMint, input.capped)),
     amountIn: input.amountIn,
     result: input.result,
     maxFeeBps: input.maxFeeBps,
@@ -220,6 +225,7 @@ export async function buildFlashFill(input: FlashFillSpec): Promise<Instruction[
     instructions: INSTRUCTIONS_SYSVAR_ADDRESS,
     ...(await mandateAccounts(input)),
     ...(await agentAccount(input)),
+    ...(await capAccount(input.inputMint, input.capped)),
     amountIn: input.amountIn,
     endIndex,
     maxFeeBps: input.maxFeeBps,

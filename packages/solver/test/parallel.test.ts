@@ -88,7 +88,8 @@ async function order(outputMint: Address, over: Partial<Intent> = {}): Promise<O
       mandateSerial: 0n,
       agentFee: 0n,
       claims: 0,
-      reserved: new Uint8Array(15),
+      gap2: new Uint8Array(7),
+      capped: 0n,
       ...over,
     },
   };

@@ -168,6 +168,7 @@ pub fn handle_create_intent_by_agent(
     charge_mint_cap(
         &ctx.accounts.config,
         ctx.accounts.mint_cap.as_ref(),
+        &ctx.accounts.intent,
         &ctx.accounts.input_mint.key(),
         drawn,
         now,

@@ -3,12 +3,16 @@ use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 use intent_core::ext::SETTLE_EXT_TAGS;
 use intent_core::lifecycle::{transition, Action, Status};
 
+use crate::caps::release_mint_cap;
 use crate::claims::honor_on_cancel;
 use crate::errors::{core_err, EngineError};
 use crate::events::IntentCancelled;
 use crate::ext::Ext;
 use crate::policy::{release_vault, IntentSigner};
-use crate::state::{intent_recoverable, ClaimBoard, Intent, CLAIMS_SEED, VAULT_SEED};
+use crate::state::{
+    intent_recoverable, ClaimBoard, Intent, MintCap, CLAIMS_SEED, MINT_CAP_SEED, MINT_CAP_VERSION,
+    VAULT_SEED,
+};
 
 #[event_cpi]
 #[derive(Accounts)]
@@ -48,6 +52,13 @@ pub struct CancelIntent<'info> {
     /// CHECK: receives a claim's stake; matched against the board's worker or owner
     #[account(mut)]
     pub stake_to: Option<UncheckedAccount<'info>>,
+    #[account(
+        mut,
+        seeds = [MINT_CAP_SEED, input_mint.key().as_ref()],
+        bump = mint_cap.load()?.bump,
+        constraint = mint_cap.load()?.version == MINT_CAP_VERSION @ EngineError::UnsupportedVersion
+    )]
+    pub mint_cap: Option<AccountLoader<'info, MintCap>>,
 }
 
 pub fn handle_cancel_intent(ctx: Context<CancelIntent>, ext: Ext) -> Result<()> {
@@ -87,6 +98,11 @@ pub fn handle_cancel_intent(ctx: Context<CancelIntent>, ext: Ext) -> Result<()> 
         ctx.accounts.refund_to.to_account_info(),
         ctx.accounts.intent.to_account_info(),
         &signer,
+    )?;
+    release_mint_cap(
+        ctx.accounts.mint_cap.as_ref(),
+        &ctx.accounts.intent,
+        refunded,
     )?;
     emit_cpi!(IntentCancelled {
         intent: ctx.accounts.intent.key(),

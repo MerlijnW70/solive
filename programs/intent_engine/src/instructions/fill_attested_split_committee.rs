@@ -7,8 +7,8 @@ use crate::errors::EngineError;
 use crate::events::{CommitteeAttested, FeeWithheld, IntentSplit};
 use crate::ext::Ext;
 use crate::state::{
-    ClaimBoard, Committee, Config, Intent, CLAIMS_SEED, CONFIG_ADDRESS, CONFIG_VERSION,
-    INTENT_VERSION, VAULT_SEED,
+    ClaimBoard, Committee, Config, Intent, MintCap, CLAIMS_SEED, CONFIG_ADDRESS, CONFIG_VERSION,
+    INTENT_VERSION, MINT_CAP_SEED, MINT_CAP_VERSION, VAULT_SEED,
 };
 
 #[event_cpi]
@@ -86,6 +86,13 @@ pub struct FillAttestedSplitCommittee<'info> {
     /// CHECK: receives the claim's stake; matched against the board's worker or owner
     #[account(mut)]
     pub stake_to: Option<UncheckedAccount<'info>>,
+    #[account(
+        mut,
+        seeds = [MINT_CAP_SEED, input_mint.key().as_ref()],
+        bump = mint_cap.load()?.bump,
+        constraint = mint_cap.load()?.version == MINT_CAP_VERSION @ EngineError::UnsupportedVersion
+    )]
+    pub mint_cap: Option<AccountLoader<'info, MintCap>>,
 }
 
 pub fn handle_fill_attested_split_committee(
@@ -122,6 +129,7 @@ pub fn handle_fill_attested_split_committee(
             instructions: accounts.instructions.to_account_info(),
             claims: accounts.claims.as_ref(),
             stake_to: accounts.stake_to.as_ref().map(|a| a.to_account_info()),
+            mint_cap: accounts.mint_cap.as_ref(),
         },
         &recipients,
         &judge,
