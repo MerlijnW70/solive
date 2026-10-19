@@ -254,7 +254,7 @@ const permissionText = (mask: number) =>
     .map(([name]) => name)
     .join(", ") || "no permissions";
 
-function actionText(action: ConfigAction, multisig: Multisig): string {
+export function actionText(action: ConfigAction, multisig: Multisig): string {
   switch (action.__kind) {
     case "AddMember":
       return `Adds member ${action.newMember.key} with ${permissionText(action.newMember.permissions.mask)}`;
@@ -273,7 +273,7 @@ function actionText(action: ConfigAction, multisig: Multisig): string {
   }
 }
 
-function afterConfig(actions: ConfigAction[], multisig: Multisig): string {
+export function afterConfig(actions: ConfigAction[], multisig: Multisig): string {
   let members = multisig.members.map((m) => m.key);
   let threshold = multisig.threshold;
   let timeLock = multisig.timeLock;

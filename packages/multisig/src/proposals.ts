@@ -1,8 +1,19 @@
 import { AccountRole, type Address, getBase64Encoder, type Instruction, isAddress } from "@solana/kit";
 import type { Chain } from "./chain.js";
-import { compileVaultMessage, proposalCreate, proposalPda, transactionPda, vaultTransactionCreate } from "./layout.js";
+import {
+  compileVaultMessage,
+  type ConfigAction,
+  configTransactionCreate,
+  type Multisig,
+  proposalCreate,
+  proposalPda,
+  transactionPda,
+  vaultTransactionCreate,
+} from "./layout.js";
 import { type Plan, readMultisig, Refusal, requireMember, VAULT_INDEX, vaultOf } from "./multisig-state.js";
 import {
+  actionText,
+  afterConfig,
   describeInstructions,
   instructionView,
   LOADER,
@@ -16,13 +27,16 @@ import {
   UPGRADE_TAG,
 } from "./review.js";
 
-async function propose(chain: Chain, at: Address, member: Address, instructions: Instruction[]): Promise<Plan> {
+async function nextSlot(chain: Chain, at: Address, member: Address): Promise<{ multisig: Multisig; index: bigint; transaction: Address; proposal: Address }> {
   const multisig = await readMultisig(chain, at);
   requireMember(multisig, at, member, "initiate", "propose");
   const index = multisig.transactionIndex + 1n;
+  return { multisig, index, transaction: await transactionPda(at, index), proposal: await proposalPda(at, index) };
+}
+
+async function propose(chain: Chain, at: Address, member: Address, instructions: Instruction[]): Promise<Plan> {
+  const { multisig, index, transaction, proposal } = await nextSlot(chain, at, member);
   const vault = await vaultOf(at);
-  const transaction = await transactionPda(at, index);
-  const proposal = await proposalPda(at, index);
   const { decoded } = await describeInstructions(chain, instructions);
   return {
     summary: [`Proposes vault transaction ${index} on multisig ${at}; it runs once ${multisig.threshold} members approve`, ...decoded.map((d) => d.summary)],
@@ -39,6 +53,25 @@ async function propose(chain: Chain, at: Address, member: Address, instructions:
       proposal,
       instructions: instructions.map(instructionView),
     },
+  };
+}
+
+export async function proposeTimeLock(chain: Chain, input: { multisig: Address; member: Address; seconds: number }): Promise<Plan> {
+  const at = input.multisig;
+  const { multisig, index, transaction, proposal } = await nextSlot(chain, at, input.member);
+  const actions: ConfigAction[] = [{ __kind: "SetTimeLock", newTimeLock: input.seconds }];
+  return {
+    summary: [
+      `Proposes config transaction ${index} on multisig ${at}; it runs once ${multisig.threshold} members approve and the current time lock of ${multisig.timeLock} seconds passes`,
+      ...actions.map((action) => actionText(action, multisig)),
+      afterConfig(actions, multisig),
+    ],
+    instructions: [
+      configTransactionCreate({ multisig: at, transaction, creator: input.member, actions }),
+      proposalCreate({ multisig: at, proposal, creator: input.member, index }),
+    ],
+    signers: [],
+    details: { multisig: at, index: index.toString(), transaction, proposal, time_lock: multisig.timeLock, new_time_lock: input.seconds, actions },
   };
 }
 

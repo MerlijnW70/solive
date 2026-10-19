@@ -18,7 +18,7 @@ import {
   isWritableRole,
   type ReadonlyUint8Array,
 } from "@solana/kit";
-import { memberCodec, type VaultMessage, type VaultTransaction } from "./account-codecs.js";
+import { type ConfigAction, configActionCodec, memberCodec, type VaultMessage, type VaultTransaction } from "./account-codecs.js";
 import { ALL_PERMISSIONS, DISCRIMINATORS, discriminated, ephemeralSignerPda, SQUADS_PROGRAM, SYSTEM_PROGRAM, vaultPda } from "./squads-addresses.js";
 
 export {
@@ -113,6 +113,11 @@ const proposalCreateArgs = getStructCodec([
 ]);
 
 const proposalVoteArgs = getStructCodec([["memo", memo]]);
+
+const configTransactionCreateArgs = getStructCodec([
+  ["actions", getArrayCodec(configActionCodec)],
+  ["memo", memo],
+]);
 
 
 const meta = (at: Address, role: AccountRole) => ({ address: at, role });
@@ -254,6 +259,20 @@ export function proposalCancelV2(input: { multisig: Address; proposal: Address; 
       meta(SYSTEM_PROGRAM, AccountRole.READONLY),
     ],
     proposalVoteArgs.encode({ memo: null }),
+  );
+}
+
+export function configTransactionCreate(input: { multisig: Address; transaction: Address; creator: Address; actions: ConfigAction[] }): Instruction {
+  return build(
+    "configTransactionCreate",
+    [
+      meta(input.multisig, AccountRole.WRITABLE),
+      meta(input.transaction, AccountRole.WRITABLE),
+      meta(input.creator, AccountRole.READONLY_SIGNER),
+      meta(input.creator, AccountRole.WRITABLE_SIGNER),
+      meta(SYSTEM_PROGRAM, AccountRole.READONLY),
+    ],
+    configTransactionCreateArgs.encode({ actions: input.actions, memo: null }),
   );
 }
 

@@ -15,7 +15,19 @@ import type { Chain } from "./chain.js";
 import { jsonText } from "./engine.js";
 import { isDevice, isLedgerPath, LEDGER_FORMS, LedgerError, LedgerPathError, messageHash, parseLedgerPath } from "./ledger.js";
 import { show } from "./show.js";
-import { approve, createMultisig, ENGINE_PROGRAM, execute, type Plan, proposeAuthority, proposeInstructions, proposeUpgrade, Refusal, reject } from "./squads.js";
+import {
+  approve,
+  createMultisig,
+  ENGINE_PROGRAM,
+  execute,
+  type Plan,
+  proposeAuthority,
+  proposeInstructions,
+  proposeTimeLock,
+  proposeUpgrade,
+  Refusal,
+  reject,
+} from "./squads.js";
 
 export type Deps = {
   chain(url: string): Chain;
@@ -39,6 +51,7 @@ export const USAGE = [
   "intent-engine-multisig create --members <a,b,c> --threshold <n> [--time-lock <seconds>] [--create-key <keypair>] --keypair <creator> [--yes]",
   "intent-engine-multisig propose-upgrade --multisig <m> --buffer <address> --spill <address> [--program <address>] --keypair <member> [--yes]",
   "intent-engine-multisig propose-admin --multisig <m> --keypair <member> [--yes] -- <intent engine admin command with --authority <vault>>",
+  "intent-engine-multisig propose-time-lock --multisig <m> --seconds <n> --keypair <member> [--yes]",
   "intent-engine-multisig approve --multisig <m> --index <n> [--allow-config] --keypair <member> [--yes]",
   "intent-engine-multisig execute --multisig <m> --index <n> [--expect-buffer-hash <hex>] [--allow-config] --keypair <member> [--yes]",
   "intent-engine-multisig reject --multisig <m> --index <n> --keypair <member> [--yes]",
@@ -59,6 +72,7 @@ const OPTIONS = {
   members: { type: "string" },
   threshold: { type: "string" },
   "time-lock": { type: "string" },
+  seconds: { type: "string" },
   "create-key": { type: "string" },
   buffer: { type: "string" },
   spill: { type: "string" },
@@ -255,6 +269,14 @@ async function command(name: string | undefined, values: Values, passed: string[
         program: values.program === undefined ? ENGINE_PROGRAM : key(values, "program"),
         next: key(values, "new-authority"),
       });
+      return deliver(chain, target, member, plan, yes, notify);
+    }
+    case "propose-time-lock": {
+      const multisig = key(values, "multisig");
+      const seconds = whole(required(values, "seconds"), "seconds", 0, MAX_TIME_LOCK);
+      const member = await signer();
+      const chain = deps.chain(url);
+      const plan = await proposeTimeLock(chain, { multisig, member: member.address, seconds });
       return deliver(chain, target, member, plan, yes, notify);
     }
     case "propose-admin": {

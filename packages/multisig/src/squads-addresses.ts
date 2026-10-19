@@ -11,6 +11,7 @@ export const DISCRIMINATORS = {
   vaultTransactionExecute: [194, 8, 161, 87, 153, 164, 25, 171],
   proposalReject: [243, 62, 134, 156, 230, 106, 246, 135],
   proposalCancelV2: [205, 41, 194, 61, 220, 139, 16, 247],
+  configTransactionCreate: [155, 236, 87, 228, 137, 75, 81, 39],
   configTransactionExecute: [114, 146, 244, 189, 252, 140, 36, 40],
   Multisig: [224, 116, 121, 186, 68, 161, 79, 236],
   Proposal: [26, 94, 189, 187, 116, 136, 53, 33],

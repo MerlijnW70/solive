@@ -68,6 +68,7 @@ export {
   printedSummary,
   proposeAuthority,
   proposeInstructions,
+  proposeTimeLock,
   proposeUpgrade,
   setAuthorityInstruction,
   upgradeInstruction,

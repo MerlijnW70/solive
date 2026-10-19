@@ -12,7 +12,6 @@ import {
   createTransactionMessage,
   generateKeyPairSigner,
   getAddressEncoder,
-  getArrayCodec,
   getBase64Decoder,
   getU64Encoder,
   type Instruction,
@@ -32,7 +31,7 @@ import { describeInstructions } from "../src/review.js";
 import {
   compileVaultMessage,
   type ConfigAction,
-  configActionCodec,
+  configTransactionCreate,
   encodeAccount,
   proposalApprove,
   proposalCreate,
@@ -175,20 +174,7 @@ const craftVault = (m: Made, instructions: Instruction[]) =>
     vaultTransactionCreate({ multisig: m.address, transaction, creator, vaultIndex: 0, message: compileVaultMessage(m.vault, instructions) }),
   );
 
-const CONFIG_CREATE = [...createHash("sha256").update("global:config_transaction_create").digest().subarray(0, 8)];
-
-const craftConfig = (m: Made, actions: ConfigAction[]) =>
-  craft(m, (transaction, creator) => ({
-    programAddress: SQUADS_PROGRAM,
-    accounts: [
-      { address: m.address, role: AccountRole.WRITABLE },
-      { address: transaction, role: AccountRole.WRITABLE },
-      { address: creator, role: AccountRole.READONLY_SIGNER },
-      { address: creator, role: AccountRole.WRITABLE_SIGNER },
-      { address: SYSTEM_PROGRAM, role: AccountRole.READONLY },
-    ],
-    data: Uint8Array.from([...CONFIG_CREATE, ...getArrayCodec(configActionCodec).encode(actions), 0]),
-  }));
+const craftConfig = (m: Made, actions: ConfigAction[]) => craft(m, (transaction, creator) => configTransactionCreate({ multisig: m.address, transaction, creator, actions }));
 
 async function approveDirectly(m: Made, index: bigint, names: string[]): Promise<void> {
   for (const name of names) {

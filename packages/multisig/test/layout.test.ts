@@ -20,6 +20,7 @@ import {
 import { describe, expect, it } from "vitest";
 import {
   compileVaultMessage,
+  configTransactionCreate,
   DISCRIMINATORS,
   multisigCodec,
   multisigCreateV2,
@@ -315,6 +316,19 @@ describe("squads layout", () => {
     expect(done.exists ? proposalCodec.decode(done.data, 8).status.__kind : null).toBe("Executed");
 
     expect(seen).toEqual(VECTORS);
+  });
+
+  it("the config transaction create instruction matches the idl layout", async () => {
+    const multisig = (await signer(21)).address;
+    const transaction = (await signer(22)).address;
+    const creator = (await signer(23)).address;
+    const actions = [{ __kind: "SetTimeLock" as const, newTimeLock: 3600 }];
+    const create = configTransactionCreate({ multisig, transaction, creator, actions });
+    matchesIdl("configTransactionCreate", create, [{ actions, memo: null }]);
+    expect(view(create)).toEqual({
+      accounts: [`${multisig} 1`, `${transaction} 1`, `${creator} 2`, `${creator} 3`, `${SYSTEM_PROGRAM} 0`],
+      data: "9bec57e4894b51270100000003100e000000",
+    });
   });
 
   it("a vault message holds at most the 255 accounts its u8 prefix counts", async () => {

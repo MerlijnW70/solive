@@ -33,7 +33,7 @@ pnpm --filter @intent-engine/cli build
 pnpm --filter @intent-engine/multisig build
 ```
 
-`node packages/multisig/dist/bin.js` drives the multisig: `create`, `propose-upgrade`, `propose-authority`, `propose-admin`, `approve`, `execute`, `reject` and `show`. It talks to Squads v4 at `SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf`. Every command that sends prints a preview and a simulation and sends only with `--yes`. Every command prints JSON and refuses with a JSON error, for example when the signer is not a member or a proposal has too few approvals. `--url` prints only the scheme, host and port of the RPC url, so an API key in its path or query stays out of the output. `node packages/cli/dist/src/bin.js` is the engine CLI; with `--authority <address>` an admin command prints its instructions unsigned instead of sending them, and `propose-admin` wraps exactly those instructions in a proposal.
+`node packages/multisig/dist/bin.js` drives the multisig: `create`, `propose-upgrade`, `propose-authority`, `propose-admin`, `propose-time-lock`, `approve`, `execute`, `reject` and `show`. It talks to Squads v4 at `SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf`. Every command that sends prints a preview and a simulation and sends only with `--yes`. Every command prints JSON and refuses with a JSON error, for example when the signer is not a member or a proposal has too few approvals. `--url` prints only the scheme, host and port of the RPC url, so an API key in its path or query stays out of the output. `node packages/cli/dist/src/bin.js` is the engine CLI; with `--authority <address>` an admin command prints its instructions unsigned instead of sending them, and `propose-admin` wraps exactly those instructions in a proposal.
 
 ## 1. Make the keys
 
@@ -65,6 +65,8 @@ solana transfer <vault> 0.1 --allow-unfunded-recipient --keypair member-a.json -
 ```
 
 `--time-lock <seconds>` on `create` makes every approved proposal wait that long before it executes.
+
+`propose-time-lock --multisig <multisig> --seconds <n> --keypair member-a.json` proposes a config transaction that changes the time lock later, with `n` from 0 to `MAX_TIME_LOCK`; members approve and execute it with `--allow-config`. Once it executes, the new time lock also delays this change's own successors, including the next time lock change.
 
 ## 3. Move the upgrade authority
 
