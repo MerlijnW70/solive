@@ -1,14 +1,14 @@
 import { parseArgs } from "node:util";
 import { ADD_TO_APPS } from "./add-to.js";
-import { AUTO_PRICE_CAP } from "./compute.js";
 import { MAX_SUBMIT_WITHIN } from "./agent/signed.js";
 import { CLUSTERS, clusterUrl, DEFAULT_URL, ENV_KEYPAIR, ENV_URL, WALLET_NOT_MAINNET } from "./clusters.js";
+import { adminOf } from "./arg-admin.js";
+import { MAX_FOLLOW_INTERVAL, solveOf } from "./arg-solve.js";
 import type { Values } from "./arg-options.js";
 import {
   addressList,
   amountOf,
   confirmUrlOf,
-  https,
   key,
   mintList,
   named,
@@ -18,17 +18,10 @@ import {
   onlyAccepted,
   optionalField,
   outputOf,
-  parseAddress,
   parseBounded,
-  parseFeeBps,
   parseI64,
-  parseKindFees,
-  parseKinds,
   parseLimit,
-  parseMaxRent,
-  parsePause,
   parsePriority,
-  parseSolCost,
   required,
   u64,
   unitsOf,
@@ -37,14 +30,8 @@ import {
 import {
   agentSpec,
   ALL_TOOLS_NEED_WALLET,
-  authorityOf,
-  configChange,
-  market,
   maxPagesOf,
-  profitTargets,
   relaySpec,
-  solValues,
-  solveFeeAboveCap,
   treasury,
   walletLimits,
 } from "./command-builders.js";
@@ -54,10 +41,9 @@ import { optionsFor, trustOf } from "./trust-args.js";
 import { monitorOf } from "./monitor-args.js";
 import { jobArgsOf } from "./job-args.js";
 import type { Command, Env } from "./command-types.js";
-import { DEFAULT_CONCURRENCY, DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST, MAX_BUNDLE, MAX_CONCURRENCY } from "@intent-engine/solver";
-import { MIN_CAP_WINDOW_SECS } from "@intent-engine/core";
 
 export type { Authority, Command, Env, WalletLimits } from "./command-types.js";
+export { BUNDLE_SIZE_NEEDS_JITO, MAX_FOLLOW_INTERVAL, QUOTE_TTL, WATCH_INTERVAL } from "./arg-solve.js";
 export { ACCEPTS, GLOBAL_OPTIONS, type Side, SUB_ACCEPTS, TOKEN_SIDES, type Tokens } from "./arg-options.js";
 export { COMMANDS, SHAPES, USAGE, usageOf } from "./arg-usage.js";
 export {
@@ -106,17 +92,11 @@ export { CLUSTERS, clusterUrl, DEFAULT_URL, ENV_KEYPAIR, ENV_URL, WALLET_NOT_MAI
 
 const SETUP_CLUSTER = "devnet";
 
-export const BUNDLE_SIZE_NEEDS_JITO = "--bundle-size sets how many fills share one jito bundle and needs --jito";
-
 export const ADD_TO_NEEDS_APP = "add-to needs the app to add the server to: add-to claude or add-to codex";
 
 const WALLET_LIMIT_KEYS = ["wallet-per-trade", "wallet-per-hour"] as const;
 
 const BALANCE_OF_ONE ="balance takes --keypair or --owner, not both";
-
-export const MAX_FOLLOW_INTERVAL = 3_600;
-export const WATCH_INTERVAL = 5;
-export const QUOTE_TTL = 10;
 
 export function parse(argv: readonly string[], env: Env = {}): Command {
   noRepeats(argv);
@@ -270,120 +250,19 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
     case "advance-epoch":
       noSub(sub);
       return { name: "advance-epoch", ...remote, keypair: required(values, "keypair") };
+    case "solve":
+      noSub(sub);
+      return solveOf(remote, values);
     case "init-config":
-      noSub(sub);
-      return {
-        name: "init-config",
-        ...remote,
-        by: authorityOf(values),
-        guardian: key(values, "guardian"),
-        feeRecipient: key(values, "fee-recipient"),
-        feeBps: parseFeeBps(required(values, "fee-bps")),
-        enabledKinds: parseKinds(required(values, "kinds")),
-        paused: parsePause(values.flags ?? "none", "flags"),
-      };
     case "raise-pause":
-    case "lower-pause": {
-      noSub(sub);
-      const flags = parsePause(required(values, "flags"), "flags");
-      if (flags === 0) {
-        throw new UsageError("--flags must name at least one of create, fill or all");
-      }
-      return { name: verb, ...remote, by: authorityOf(values), flags };
-    }
-    case "set-economics": {
-      noSub(sub);
-      const kindFees = parseKindFees(values["kind-fees"] ?? "");
-      return {
-        name: "set-economics",
-        ...remote,
-        by: authorityOf(values),
-        economics: {
-          kindFeeMask: kindFees.mask,
-          kindFeeBps: kindFees.bps,
-          partnerCutBps: parseBounded(values["partner-cut"] ?? "0", "partner-cut", 0xffff),
-          crankBounty: parseBounded(required(values, "bounty"), "bounty", 0xffff_ffff),
-          createFee: parseBounded(required(values, "create-fee"), "create-fee", 0xffff_ffff),
-        },
-      };
-    }
-    case "solve": {
-      noSub(sub);
-      const tipLamports = values.tip === undefined ? 0n : u64(values, "tip");
-      if (tipLamports > 0n && values.jito === undefined) {
-        throw new UsageError("--tip pays a jito tip and needs --jito");
-      }
-      if (values["bundle-size"] !== undefined && values.jito === undefined) {
-        throw new UsageError(BUNDLE_SIZE_NEEDS_JITO);
-      }
-      if (values.interval !== undefined && values.watch !== true) {
-        throw new UsageError("--interval needs --watch");
-      }
-      if (values["quote-ttl"] !== undefined && values.watch !== true) {
-        throw new UsageError("--quote-ttl needs --watch");
-      }
-      if (values.stats === true && values.watch !== true) {
-        throw new UsageError("--stats needs --watch");
-      }
-      if (remote.priority !== "auto" && remote.priority > AUTO_PRICE_CAP) {
-        throw new UsageError(solveFeeAboveCap);
-      }
-      return {
-        name: "solve",
-        ...remote,
-        keypair: required(values, "keypair"),
-        ...market(values),
-        jito: values.jito === undefined ? undefined : https(values.jito, "jito"),
-        tipLamports,
-        ...(values.jito === undefined ? {} : { bundleSize: parseBounded(values["bundle-size"] ?? String(MAX_BUNDLE), "bundle-size", MAX_BUNDLE, 1) }),
-        ...profitTargets(values),
-        ...(values["sol-value"] === undefined ? {} : { solValue: solValues(values["sol-value"]) }),
-        maxFeeBps: parseBounded(values["max-fee-bps"] ?? "100", "max-fee-bps", 200),
-        maxSolCost: values["max-sol-cost"] === undefined ? DEFAULT_MAX_SOL_COST : parseSolCost(values["max-sol-cost"]),
-        maxRent: values["max-rent"] === undefined ? DEFAULT_MAX_RENT : parseMaxRent(values["max-rent"]),
-        slippageBps: parseBounded(values["slippage-bps"] ?? "50", "slippage-bps", 10_000),
-        routeProgram: values["route-program"] === undefined ? undefined : parseAddress(values["route-program"], "route-program"),
-        lookupTables: values["lookup-table"] === undefined ? [] : addressList(values["lookup-table"], "lookup-table"),
-        concurrency: parseBounded(values.concurrency ?? String(DEFAULT_CONCURRENCY), "concurrency", MAX_CONCURRENCY, 1),
-        watch: values.watch === true ? parseBounded(values.interval ?? String(WATCH_INTERVAL), "interval", MAX_FOLLOW_INTERVAL, 1) : null,
-        ...(values.watch === true ? { quoteTtl: parseBounded(values["quote-ttl"] ?? String(QUOTE_TTL), "quote-ttl", MAX_FOLLOW_INTERVAL) } : {}),
-        ...(values.watch === true && values.stats === true ? { stats: true } : {}),
-      };
-    }
+    case "lower-pause":
+    case "set-economics":
     case "update-config":
-      noSub(sub);
-      return { name: "update-config", ...remote, by: authorityOf(values), change: configChange(values) };
     case "propose-admin":
-      noSub(sub);
-      return { name: "propose-admin", ...remote, by: authorityOf(values), pendingAdmin: key(values, "new-admin") };
     case "accept-admin":
-      noSub(sub);
-      return { name: "accept-admin", ...remote, by: authorityOf(values) };
-    case "set-mint-cap": {
-      noSub(sub);
-      const maxPerOrder = u64(values, "max-per-order");
-      const windowCap = u64(values, "window-cap");
-      if (maxPerOrder === 0n) {
-        throw new UsageError("--max-per-order must be above zero");
-      }
-      if (windowCap < maxPerOrder) {
-        throw new UsageError("--window-cap must be at least --max-per-order");
-      }
-      return {
-        name: "set-mint-cap",
-        ...remote,
-        by: authorityOf(values),
-        mint: key(values, "mint"),
-        maxPerOrder,
-        windowCap,
-        windowSecs: parseBounded(required(values, "window-secs"), "window-secs", 0xffff_ffff, MIN_CAP_WINDOW_SECS),
-      };
-    }
+    case "set-mint-cap":
     case "set-caps-required":
-      if (sub !== "on" && sub !== "off") {
-        throw new UsageError("set-caps-required needs on or off");
-      }
-      return { name: "set-caps-required", ...remote, by: authorityOf(values), required: sub === "on" };
+      return adminOf(verb, sub, remote, values);
     case "events":
       noSub(sub);
       if (values.follow === true) {
