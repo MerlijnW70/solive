@@ -40,3 +40,37 @@ export function splitFees(amount: bigint, feeBps: number, partnerBps: number, cu
   }
   return { protocol, partner: gross - cut, net: amount - fee - gross };
 }
+
+export type ReleaseTerms = { amount: bigint; judgeFee: bigint; feeBps: number; partnerBps: number; cutBps: number };
+
+function feesFit(rest: bigint, terms: ReleaseTerms): boolean {
+  try {
+    splitFees(rest, terms.feeBps, terms.partnerBps, terms.cutBps);
+    return true;
+  } catch (error) {
+    if (error instanceof IntentCoreError) {
+      return false;
+    }
+    throw error;
+  }
+}
+
+export function releaseSettles(terms: ReleaseTerms): boolean {
+  return terms.amount > terms.judgeFee && feesFit(terms.amount - terms.judgeFee, terms);
+}
+
+export type SettleBounds = { leastAmount?: bigint; mostJudgeFee?: bigint };
+
+export function settleBounds(terms: ReleaseTerms): SettleBounds {
+  for (let rest = 1n; rest <= BPS_DENOMINATOR; rest += 1n) {
+    if (!feesFit(rest, terms)) {
+      continue;
+    }
+    const leastAmount = terms.judgeFee + rest;
+    return {
+      ...(leastAmount <= U64_MAX ? { leastAmount } : {}),
+      ...(terms.amount >= rest ? { mostJudgeFee: terms.amount - rest } : {}),
+    };
+  }
+  return {};
+}

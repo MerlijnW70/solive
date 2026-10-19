@@ -65,6 +65,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `OtherLifecycle` | no | the named release belongs to an earlier lifecycle of this escrow address, which was closed and made again at the same nonce, so it is not a release of the escrow there now |
 | `AlreadyRecorded` | no | the release already records a delivered sha256, in its own memo or a follow-up, and a receipt reads the first |
 | `ConfirmMismatch` | yes | the second RPC node the server was started with, by --confirm-url, reports another genesis hash, escrow or earliest announcer than the first, or could not be read, so nothing was signed or sent; call again once both nodes agree |
+| `NeverSettles` | no | no release of this escrow could pay: after the judge fee, too little is left for the rounded-up protocol and partner fees; escrow more or lower the judge fee, as the hint says |
 | `HistoryTooLong` | no | the record a release depends on is incomplete, so it is refused rather than decided from part of it: the history is longer than the pages read, which more pages fix, or the RPC node's ledger does not reach back to the escrow's creation, or the transport cannot page signatures or report its first available slot, which more pages do not fix |
 
 ## Engine program

@@ -4,9 +4,9 @@ import { chainTime, loadConfig, mintOf } from "@intent-engine/client";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
-import { MAX_EXPIRES_IN, MIN_EXPIRES_IN } from "../create.js";
+import { MAX_EXPIRES_IN, MIN_EXPIRES_IN, neverSettles } from "../create.js";
 import { tool } from "../names.js";
-import { problemOf } from "../problems.js";
+import { AgentRefusal, problemOf } from "../problems.js";
 import { InvalidInput, account, amount, flag, hex32, integer, list, object, optional, text } from "../schema.js";
 import { LANDING_SECONDS, access, mintNamed, raw, salesOf, checkSale, checkHour, refusedBeforeSending, PREVIEW_FIRST } from "./guard.js";
 import { offerOutput, type Token, offered } from "./offer.js";
@@ -118,6 +118,8 @@ export const piecesPartlySent = (sent: number, total: number, problem: string) =
 export const piecesMayHaveLanded = (sent: number, total: number, problem: string) =>
   `${sent} of ${total} pieces were escrowed and the next may have landed too (${problem}); check ${tool("wallet_intents")} before escrowing any again, and do not repeat this call`;
 
+export const pieceUnsettled = (index: number, name: string) => `nothing was escrowed: piece ${index} (${name}) cannot be paid; `;
+
 type Piece = { name: string; amountIn: bigint; attestor: Address };
 
 export const walletEscrowPlan = define({
@@ -158,12 +160,18 @@ export const walletEscrowPlan = define({
     const wallet = access(ctx);
     const sold = mintNamed(input.sell, wallet.url, "sell");
     const buy = recordedMint(sold, wallet.url, input.record_mint);
-    const [token, now] = await Promise.all([mintOf(ctx.transport, sold), chainTime(ctx.transport)]);
+    const [token, now, { config }] = await Promise.all([mintOf(ctx.transport, sold), chainTime(ctx.transport), loadConfig(ctx.transport)]);
     const planned: Piece[] = input.pieces.map((piece, i) => ({
       name: piece.name,
       amountIn: raw(piece.amount, token.decimals, `pieces.${i}.amount`),
       attestor: piece.attestor ?? input.attestor,
     }));
+    for (const [i, piece] of planned.entries()) {
+      const unsettled = neverSettles({ kind: Kind.AttestedResult, amountIn: piece.amountIn, minResult: 1n, maxResult: 1n, attestor: piece.attestor, specHash: new Uint8Array(32), judgeFee: 0n }, config, 0, token.decimals);
+      if (unsettled !== undefined) {
+        throw new AgentRefusal("NeverSettles", `${pieceUnsettled(i + 1, piece.name)}${unsettled}`);
+      }
+    }
     const total = planned.reduce((sum, piece) => sum + piece.amountIn, 0n);
     const sales = await salesOf(wallet, now);
     for (const piece of planned) {

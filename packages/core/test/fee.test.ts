@@ -14,6 +14,8 @@ import {
   mulDivCeil,
   mulDivFloor,
   type SignedIntentFields,
+  releaseSettles,
+  settleBounds,
   splitFee,
   splitFees,
   U64_MAX,
@@ -168,5 +170,45 @@ describe("terms an owner reads before signing", () => {
     expect(codeOf(() => checkSignable({ ...fields, flags: 1 }))).toBe("FlagsUnknown");
     expect(codeOf(() => checkSignable({ ...fields, ext: new Uint8Array([1, 2]) }))).not.toBe("ok");
     expect(codeOf(() => checkSignable({ ...fields, ext: new Uint8Array([9, 0, 0]) }))).not.toBe("ok");
+  });
+});
+
+describe("release settlement", () => {
+  const terms = { feeBps: 5, partnerBps: 50, cutBps: 0 };
+
+  it("settles only when the amount after the judge fee covers the rounded-up fees", () => {
+    expect(releaseSettles({ ...terms, amount: 2n, judgeFee: 1n })).toBe(false);
+    expect(releaseSettles({ ...terms, amount: 3n, judgeFee: 1n })).toBe(true);
+    expect(releaseSettles({ ...terms, amount: 1n, judgeFee: 1n })).toBe(false);
+    expect(releaseSettles({ ...terms, amount: 0n, judgeFee: 0n })).toBe(false);
+    expect(releaseSettles({ ...terms, partnerBps: 0, amount: 1n, judgeFee: 0n })).toBe(true);
+    expect(releaseSettles({ ...terms, partnerBps: 0, amount: 5n, judgeFee: 5n })).toBe(false);
+  });
+
+  it("names the least amount and the most judge fee that settle", () => {
+    expect(settleBounds({ ...terms, amount: 2n, judgeFee: 1n })).toEqual({ leastAmount: 3n, mostJudgeFee: 0n });
+    expect(settleBounds({ ...terms, amount: 10n, judgeFee: 10n })).toEqual({ leastAmount: 12n, mostJudgeFee: 8n });
+    expect(settleBounds({ ...terms, amount: 1n, judgeFee: 0n })).toEqual({ leastAmount: 2n });
+    expect(settleBounds({ ...terms, partnerBps: 0, amount: 0n, judgeFee: 0n })).toEqual({ leastAmount: 1n });
+    expect(settleBounds({ feeBps: 6_000, partnerBps: 5_000, cutBps: 0, amount: 9n, judgeFee: 0n })).toEqual({});
+  });
+
+  it("agrees with the release fee split for any terms", () => {
+    fc.assert(
+      fc.property(fc.bigInt({ min: 0n, max: 100_000n }), fc.bigInt({ min: 0n, max: 100_000n }), fc.integer({ min: 0, max: 300 }), fc.integer({ min: 0, max: 100 }), (amount, judgeFee, feeBps, partnerBps) => {
+        const t = { amount, judgeFee, feeBps, partnerBps, cutBps: 2_000 };
+        const direct = amount > judgeFee && codeOf(() => splitFees(amount - judgeFee, feeBps, partnerBps, 2_000)) === "ok";
+        expect(releaseSettles(t)).toBe(direct);
+        const bounds = settleBounds(t);
+        if (bounds.leastAmount !== undefined) {
+          expect(releaseSettles({ ...t, amount: bounds.leastAmount })).toBe(true);
+          expect(bounds.leastAmount === judgeFee + 1n || !releaseSettles({ ...t, amount: bounds.leastAmount - 1n })).toBe(true);
+        }
+        if (bounds.mostJudgeFee !== undefined) {
+          expect(releaseSettles({ ...t, judgeFee: bounds.mostJudgeFee })).toBe(true);
+        }
+      }),
+      { numRuns: RUNS },
+    );
   });
 });

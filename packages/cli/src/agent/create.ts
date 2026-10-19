@@ -4,6 +4,9 @@ import {
   describeTerms,
   encodeParams,
   escrowAmount,
+  feeBpsFor,
+  type FeeConfig,
+  formatAmount,
   findAssociatedTokenAddress,
   findConfigPda,
   findIntentPda,
@@ -18,6 +21,8 @@ import {
   NATIVE_MINT,
   partnerBaseOf,
   partnerFeeLine,
+  releaseSettles,
+  settleBounds,
   validate,
   settlementWarnings,
   WARN_LONG_LIVED,
@@ -42,6 +47,7 @@ import { tool } from "./names.js";
 import { claim, claimedBy, PREPARED_TTL } from "./claims.js";
 import { pickNonce, setupLines, unusedIntent, walletRecipient } from "./owner.js";
 import { prepare } from "./prepare.js";
+import { AgentRefusal } from "./problems.js";
 import { InvalidInput } from "./schema.js";
 import { orderSchema, paramsOf, partnerSchema, preparedSchema, preparedView } from "./shapes.js";
 import { tokenNames } from "../tokens.js";
@@ -95,6 +101,26 @@ export function warningsOf(params: IntentParams, expiresAt: bigint, now: bigint,
   ];
 }
 
+export type SettleConfig = FeeConfig & { partnerCutBps: number };
+
+export function neverSettles(params: IntentParams, config: SettleConfig, partnerBps: number, decimals: number): string | undefined {
+  if (params.kind !== Kind.AttestedResult) {
+    return undefined;
+  }
+  const terms = { amount: params.amountIn, judgeFee: params.judgeFee, feeBps: feeBpsFor(config, Kind.AttestedResult), partnerBps, cutBps: config.partnerCutBps };
+  if (releaseSettles(terms)) {
+    return undefined;
+  }
+  const shown = (raw: bigint) => formatAmount(raw, decimals);
+  const left = terms.amount > terms.judgeFee ? terms.amount - terms.judgeFee : 0n;
+  const { leastAmount, mostJudgeFee } = settleBounds(terms);
+  const fixes = [
+    ...(leastAmount === undefined ? [] : [`escrow at least ${shown(leastAmount)}`]),
+    ...(mostJudgeFee === undefined || terms.judgeFee === 0n ? [] : [`lower the judge fee to at most ${shown(mostJudgeFee)}`]),
+  ];
+  return `no release of this escrow could settle: ${shown(terms.amount)} less the ${shown(terms.judgeFee)} judge fee leaves ${shown(left)}, too little for the rounded-up ${terms.feeBps} bps protocol fee and ${partnerBps} bps partner fee; ${fixes.length === 0 ? "no amount settles under today's config" : fixes.join(", or ")}`;
+}
+
 export const prepareCreate = define({
   name: tool("prepare_create"),
   title: "Prepare a new intent",
@@ -118,9 +144,9 @@ export const prepareCreate = define({
     await transport.warm?.([CLOCK_SYSVAR, configAddress, input.input_mint, input.output_mint, userAddress]);
     const now = await chainTime(transport);
     const expiresAt = expiryOf(input, now);
-    const params = validate(paramsOf(input.order));
+    const order = paramsOf(input.order);
     const specUrl = input.spec_url;
-    if (specUrl !== undefined && (params.kind !== Kind.AttestedResult || params.specHash.every((b) => b === 0))) {
+    if (specUrl !== undefined && (order.kind !== Kind.AttestedResult || order.specHash.every((b) => b === 0))) {
       throw new InvalidInput([{ path: "spec_url", message: "needs an attested order with spec_hash" }]);
     }
     if (specUrl !== undefined && !isMemoUrl(specUrl)) {
@@ -131,6 +157,11 @@ export const prepareCreate = define({
     }
     const { config } = await loadConfig(transport);
     const [inputToken, outputToken] = [await mintOf(transport, input.input_mint), await mintOf(transport, input.output_mint)];
+    const unsettled = neverSettles(order, config, input.partner?.bps ?? 0, inputToken.decimals);
+    if (unsettled !== undefined) {
+      throw new AgentRefusal("NeverSettles", unsettled);
+    }
+    const params = validate(order);
     const user = await loadUser(transport, input.owner);
     if (input.nonce !== undefined) {
       await unusedIntent(transport, input.owner, input.nonce);
