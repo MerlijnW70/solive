@@ -52,7 +52,7 @@ import {
   findVaultPda,
   type Intent,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  deliveryMemo,
+  DELIVERY_V2_MEMO_PREFIX,
   Kind,
   splitFee,
   splitFees,
@@ -62,7 +62,8 @@ import { ACTIONS } from "../src/agent/registry.js";
 import { needsSpecHash, SHA256_NEEDED, SPEC_HASH_FORMAT, UsageError, usageOf } from "../src/args.js";
 import { expandHome } from "../src/wallet.js";
 import { DELIVER_ONE_OF } from "../src/job-args.js";
-import { createClient, DEVNET_GENESIS_HASH, PLAIN_HTTP_ON_PUBLIC } from "@intent-engine/client";
+import { commitmentOf, createClient, DEVNET_GENESIS_HASH, PLAIN_HTTP_ON_PUBLIC } from "@intent-engine/client";
+import { ANNOUNCE_FIRST } from "../src/agent/wallet/delivery.js";
 import {
   crankAction,
   IMMUTABLE_OWNER,
@@ -693,7 +694,8 @@ describe("cli against the deployed engine", () => {
     const work = "ab".repeat(32);
     const args = ["deliver", "--keypair", "w.json", "--intent", job.intent, "--sha256", work.toUpperCase(), "--work-url", "https://example.org/work"];
     const summary = [
-      `Announces: the work with sha256 ${work} at ` + "https://example.org/work" + `, for the proof escrow ${job.intent}`,
+      `Announces: the work with sha256 ${work}, for the proof escrow ${job.intent}, as the commitment ${commitmentOf(job.intent, worker.address, work)}, which binds it to ${worker.address}`,
+      "Seals: the url " + "https://example.org/work" + `, so only the judge ${judge.address} can read it`,
       `Notifies: its judge ${judge.address}, with a transfer of 0 lamports from ${worker.address}, which signs and pays the fee`,
     ];
     const preview = await cli(args, { "w.json": worker });
@@ -728,14 +730,21 @@ describe("cli against the deployed engine", () => {
       const args = ["deliver", "--keypair", "w.json", "--intent", job.intent, "--artifact", artifact, "--work-url", "https://example.org/work"];
       const preview = await cli(args, { "w.json": worker });
       expect([preview.code, preview.err]).toEqual([EXIT_OK, ""]);
-      expect((preview.json()["summary"] as string[])[0]).toBe(`Announces: the work with sha256 ${sha256} at ` + "https://example.org/work" + `, for the proof escrow ${job.intent}`);
+      const commitment = commitmentOf(job.intent, worker.address, sha256);
+      expect(preview.json()).toMatchObject({ commitment, warnings: [ANNOUNCE_FIRST] });
+      expect(preview.json()["summary"] as string[]).toEqual([
+        `Announces: the work with sha256 ${sha256}, for the proof escrow ${job.intent}, as the commitment ${commitment}, which binds it to ${worker.address}`,
+        "Seals: the url " + "https://example.org/work" + `, so only the judge ${judge.address} can read it`,
+        `Notifies: its judge ${judge.address}, with a transfer of 0 lamports from ${worker.address}, which signs and pays the fee`,
+      ]);
       const sent = await cli([...args, "--yes"], { "w.json": worker });
       expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);
       const landed = h.svm.getTransaction(sent.json()["signature"] as Signature);
       if (!(landed instanceof TransactionMetadata)) {
         throw new Error("the delivery did not land");
       }
-      expect(landed.logs().some((line) => line.includes(deliveryMemo({ intent: job.intent, sha256, url: "https://example.org/work" })))).toBe(true);
+      expect(landed.logs().some((line) => line.includes(`${DELIVERY_V2_MEMO_PREFIX}${job.intent}:${commitment}:`))).toBe(true);
+      expect(landed.logs().some((line) => line.includes("example.org"))).toBe(false);
     }
   });
 

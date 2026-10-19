@@ -238,7 +238,7 @@ describe("deliveries", () => {
     const worker = await funded(w.chain);
     const stranger = await funded(w.chain);
 
-    const signature = await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL });
+    const signature = await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL, version: 1 });
     await announce(w, stranger, judge.address, [
       "not a delivery",
       `delivery sha256:${WORK}`,
@@ -247,7 +247,7 @@ describe("deliveries", () => {
       deliveryMemo({ intent: judge.address, sha256: WORK, url: WORK_URL }),
       specMemo(SPEC_URL),
     ]);
-    const later = await client.deliver({ worker: stranger, intent: job.intent, sha256: "cd".repeat(32), url: "https://example.org/v2" });
+    const later = await client.deliver({ worker: stranger, intent: job.intent, sha256: "cd".repeat(32), url: "https://example.org/v2", version: 1 });
 
     const found = await client.deliveries({ judge: judge.address });
     expect(found).toEqual([
@@ -265,10 +265,10 @@ describe("deliveries", () => {
     const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
     const worker = await funded(w.chain);
     const copier = await funded(w.chain);
-    await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL });
+    await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL, version: 1 });
     w.chain.svm.warpToSlot(w.chain.svm.getClock().slot + 1n);
-    await client.deliver({ worker: copier, intent: job.intent, sha256: WORK, url: "https://example.org/stolen" });
-    await client.deliver({ worker: copier, intent: job.intent, sha256: "cd".repeat(32), url: "https://example.org/own" });
+    await client.deliver({ worker: copier, intent: job.intent, sha256: WORK, url: "https://example.org/stolen", version: 1 });
+    await client.deliver({ worker: copier, intent: job.intent, sha256: "cd".repeat(32), url: "https://example.org/own", version: 1 });
 
     const found = await client.deliveries({ judge: judge.address, intent: job.intent });
     expect(found.map(({ worker: by }) => by)).toEqual([copier.address, copier.address, worker.address]);
@@ -360,7 +360,7 @@ describe("deliveries", () => {
     const { w, client, judge, order } = await setting();
     const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
     const worker = await funded(w.chain);
-    await client.deliver({ worker, intent: job.intent, sha256: WORK.toUpperCase(), url: WORK_URL });
+    await client.deliver({ worker, intent: job.intent, sha256: WORK.toUpperCase(), url: WORK_URL, version: 1 });
     expect(await client.deliveries({ judge: judge.address })).toMatchObject([{ intent: job.intent, worker: worker.address, sha256: WORK }]);
     const signature = await client.settleProof({ judge, owner: w.owner.address, nonce: job.nonce, payTo: worker.address, result: 1n, deliveredSha256: WORK.toUpperCase() });
     const released = (await client.history(job.intent)).find(({ name }) => name === "IntentAttested");
@@ -379,7 +379,7 @@ describe("deliveries", () => {
     await expect(devnet.deliver({ worker, intent: job.intent, sha256: WORK, url: work })).rejects.toThrow(`the work url ${work} ${PLAIN_HTTP_ON_PUBLIC}`);
     expect(await devnet.deliveries({ judge: judge.address })).toEqual([]);
     const local = createClient({ url: LOCAL, transport: w.chain.transport });
-    await local.deliver({ worker, intent: job.intent, sha256: WORK, url: work });
+    await local.deliver({ worker, intent: job.intent, sha256: WORK, url: work, version: 1 });
     expect(await local.deliveries({ judge: judge.address })).toMatchObject([{ url: work }]);
   });
 
@@ -400,10 +400,10 @@ describe("history past a window of recent transactions", () => {
     const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
     const worker = await funded(w.chain);
     const copier = await funded(w.chain);
-    await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL });
+    await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL, version: 1 });
     w.chain.svm.warpToSlot(w.chain.svm.getClock().slot + 1n);
     await flood(w, judge.address, 150);
-    await client.deliver({ worker: copier, intent: job.intent, sha256: WORK, url: "https://example.org/stolen" });
+    await client.deliver({ worker: copier, intent: job.intent, sha256: WORK, url: "https://example.org/stolen", version: 1 });
 
     const record = await client.deliveryRecord({ judge: judge.address, intent: job.intent });
     expect(record.complete).toBe(true);
@@ -478,7 +478,7 @@ describe("history past a window of recent transactions", () => {
     const { w, client, judge, order } = await setting();
     const job = await client.createIntent({ ...order, params: proof(judge.address) });
     const worker = await funded(w.chain);
-    await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL });
+    await client.deliver({ worker, intent: job.intent, sha256: WORK, url: WORK_URL, version: 1 });
     await flood(w, judge.address, 3);
     const { signaturesOf } = w.chain.transport;
     if (signaturesOf === undefined) {
@@ -547,7 +547,7 @@ describe("history past a window of recent transactions", () => {
     }
     expect((await client.jobs({ attestor: judge.address })).map(({ intent }) => intent)).not.toContain(soonest.intent);
     const worker = await funded(w.chain);
-    await client.deliver({ worker, intent: soonest.intent, sha256: WORK, url: WORK_URL });
+    await client.deliver({ worker, intent: soonest.intent, sha256: WORK, url: WORK_URL, version: 1 });
 
     expect(await client.deliveries({ judge: judge.address })).toMatchObject([{ intent: soonest.intent, worker: worker.address, sha256: WORK }]);
   });

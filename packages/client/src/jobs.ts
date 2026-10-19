@@ -44,14 +44,18 @@ export {
 export {
   type Announcement,
   announcements,
+  announces,
+  commitmentOf,
   type DeliverInput,
   deliveriesOf,
   type Delivery,
   deliveryInstructions,
+  type DeliveryPlan,
   deliveryRecord,
   type DeliveryRecord,
   firstDelivery,
   NotDeliverable,
+  withWork,
 } from "./job-deliveries.js";
 export {
   creationProof,

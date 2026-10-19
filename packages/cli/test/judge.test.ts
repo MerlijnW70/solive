@@ -848,8 +848,9 @@ describe("intent-engine judge", () => {
       intent: j.intent,
       complete: true,
       deliveries: [{ sha256: j.sha256, worker: j.worker.address, url: WORK_URL, signature: "first", slot: "5", copies: 1 }],
+      sealed: [],
     });
-    expect((await cli(["deliveries", "--attestor", j.worker.address, "--intent", j.intent], {})).json()).toEqual({ intent: j.intent, complete: true, deliveries: [] });
+    expect((await cli(["deliveries", "--attestor", j.worker.address, "--intent", j.intent], {})).json()).toEqual({ intent: j.intent, complete: true, deliveries: [], sealed: [] });
   });
 
   it("judge refuses an incomplete delivery record", async () => {

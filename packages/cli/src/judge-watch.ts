@@ -17,6 +17,20 @@ type Announced = { url: string; worker: Address; announced: Signature };
 
 export type Watched = Announced & (Verdict | { artifactSha256: string; verdict: "fail"; reason: string });
 
+export const SEALED_ELSEWHERE = "is sealed to other wallets than this judge, so its url cannot be read";
+
+const earlier = (a: Delivery, b: Delivery): number => (a.slot < b.slot ? -1 : a.slot > b.slot ? 1 : a.signature < b.signature ? -1 : a.signature > b.signature ? 1 : 0);
+
+const keyOf = (delivery: Delivery): string => (delivery.commitment === undefined ? delivery.sha256 : delivery.signature);
+
+function unjudged(deliveries: readonly Delivery[], seen: ReadonlySet<string>): Delivery[] {
+  const plain = announcements(deliveries)
+    .map(({ first }) => first)
+    .filter((first) => first.commitment === undefined);
+  const sealed = deliveries.filter(({ commitment }) => commitment !== undefined);
+  return [...plain, ...sealed].filter((delivery) => !seen.has(keyOf(delivery))).sort(earlier);
+}
+
 const line = (value: object): string => JSON.stringify(value, (_, v: unknown) => (typeof v === "bigint" ? v.toString() : v));
 
 async function stillOpen(transport: Transport, intent: Address): Promise<boolean> {
@@ -34,9 +48,13 @@ async function judgeDelivery(
   transport: Transport,
   delivery: Delivery,
   interrupted: () => InterruptSignal | undefined,
-): Promise<Watched | null> {
+  seen: Set<string>,
+): Promise<Watched | null | "skipped"> {
   const announced: Announced = { url: delivery.url, worker: delivery.worker, announced: delivery.signature };
   const failed = (error: Error): Watched => ({ ...announced, artifactSha256: delivery.sha256, verdict: "fail", reason: error.message });
+  if (delivery.commitment !== undefined && delivery.url === "") {
+    return failed(new DeliveryUnfit(`announcement ${delivery.signature}`, SEALED_ELSEWHERE));
+  }
   let fetched: Fetched;
   try {
     fetched = await fetchDelivery(runtime.specFetch, transport, delivery, command.timeout);
@@ -50,6 +68,10 @@ async function judgeDelivery(
     if (interrupted() !== undefined) {
       return null;
     }
+    if (seen.has(fetched.sha256)) {
+      return "skipped";
+    }
+    seen.add(fetched.sha256);
     return { ...announced, ...(await judge({ ...command, artifact: fetched.path }, runtime, transport)) };
   } catch (error) {
     if (error instanceof JudgeRefused) {
@@ -63,17 +85,19 @@ async function judgeDelivery(
 
 export async function watchJudge(command: JudgeCommand, interval: number, runtime: Runtime, transport: Transport, out: (text: string) => void): Promise<number> {
   const signer = await runtime.loadSigner(command.keypair);
+  const keypair = await runtime.loadKeypair(command.keypair).catch(() => undefined);
   const { address, attestor, specHash } = await escrowFor(transport, signer.address, command.owner, command.nonce);
   const specSha256 = createHash("sha256").update(await readFile(resolve(command.spec))).digest("hex");
   if (specSha256 !== specHash) {
     throw new JudgeRefused(`--spec ${command.spec} has sha256 ${specSha256}, but intent ${address} commits ${specHash}`);
   }
   const seen = new Set<string>();
+  let judged = 0;
   const signals = holdSignals();
   const stop = new AbortController();
   signals.listen(() => stop.abort());
   const stopped = (why: Stopped): number => {
-    out(line({ stopped: why, intent: address, judged: seen.size }));
+    out(line({ stopped: why, intent: address, judged }));
     return 0;
   };
   try {
@@ -85,25 +109,29 @@ export async function watchJudge(command: JudgeCommand, interval: number, runtim
       if (!(await stillOpen(transport, address))) {
         return stopped("closed");
       }
-      const record = await deliveryRecord(transport, attestor, address, command.maxPages);
+      const record = await deliveryRecord(transport, attestor, address, command.maxPages, keypair);
       if (!record.complete) {
         throw new JudgeRefused(
           `the delivery record of intent ${address} is incomplete because the judge's history is too long to read in full or the RPC node cannot serve all of it; nothing was run or paid. ${pagesRead(record.pages)}`,
         );
       }
-      const fresh = announcements(record.deliveries).filter(({ sha256 }) => !seen.has(sha256));
-      for (const { first } of fresh) {
+      const fresh = unjudged(record.deliveries, seen);
+      for (const first of fresh) {
         if (signals.caught() !== undefined) {
           break;
         }
         if (!(await stillOpen(transport, address))) {
           return stopped("closed");
         }
-        const watched = await judgeDelivery(command, runtime, transport, first, signals.caught);
+        const watched = await judgeDelivery(command, runtime, transport, first, signals.caught, seen);
         if (watched === null) {
           break;
         }
-        seen.add(first.sha256);
+        seen.add(keyOf(first));
+        if (watched === "skipped") {
+          continue;
+        }
+        judged += 1;
         out(line(watched));
         if (watched.verdict === "pass") {
           return stopped("signature" in watched && watched.signature !== null ? "paid" : "passed");

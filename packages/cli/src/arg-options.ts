@@ -24,6 +24,7 @@ export const TOKEN_SIDES: Partial<Record<string, Side>> = {
 export const OPTIONS = {
   url: { type: "string" },
   "confirm-url": { type: "string" },
+  "judge-keypair": { type: "string" },
   keypair: { type: "string" },
   relayer: { type: "string" },
   agent: { type: "string" },
@@ -262,7 +263,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   events: ["url", "limit", "follow", "interval"],
   jobs: ["url", "attestor", "mint", "min-pay", "unclaimed"],
   deliver: ["url", "priority-fee", "keypair", "yes", "intent", "artifact", "sha256", "work-url"],
-  deliveries: ["url", "attestor", "intent", "max-pages"],
+  deliveries: ["url", "attestor", "intent", "max-pages", "judge-keypair"],
   receipt: ["url", "owner", "nonce", "sha256", "release"],
   "record-delivery": ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "sha256", "release"],
   judge: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "spec", "artifact", "run", "pay-to", "result", "timeout", "verdict", "max-pages", "check", "sandbox", "sandbox-image", "sandbox-memory", "sandbox-cpus", "plain-node", "watch", "interval", "confirm-url"],

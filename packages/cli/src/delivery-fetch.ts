@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Delivery, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, PUBLIC_GENESIS_HASHES, SPEC_TIMEOUT_MS, type SpecFetch, type Transport } from "@intent-engine/client";
+import { announces, type Delivery, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, PUBLIC_GENESIS_HASHES, SPEC_TIMEOUT_MS, type SpecFetch, type Transport } from "@intent-engine/client";
 import { MAX_ARTIFACT_BYTES } from "./artifact.js";
 import { type Lookup, publicHost, systemLookup } from "./public-address.js";
 
@@ -17,7 +17,7 @@ export class DeliveryUnfit extends Error {
   }
 }
 
-export type Fetched = { root: string; path: string };
+export type Fetched = { root: string; path: string; sha256: string };
 
 const SAFE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/;
 
@@ -101,11 +101,14 @@ export async function fetchDelivery(get: SpecFetch, transport: Transport, delive
     throw new DeliveryUnfit(delivery.url, `could not be fetched: ${error instanceof Error ? error.message : String(error)}`);
   }
   const sha256 = createHash("sha256").update(bytes).digest("hex");
-  if (sha256 !== delivery.sha256) {
+  if (delivery.commitment !== undefined && !announces(delivery, sha256)) {
+    throw new DeliveryUnfit(delivery.url, `has sha256 ${sha256}, which the commitment ${delivery.commitment} of ${delivery.worker} does not bind`);
+  }
+  if (delivery.commitment === undefined && sha256 !== delivery.sha256) {
     throw new DeliveryUnfit(delivery.url, `has sha256 ${sha256}, not the announced ${delivery.sha256}`);
   }
   const root = await mkdtemp(join(tmpdir(), "judge-delivery-"));
   const path = join(root, fetchedName(url));
   await writeFile(path, bytes, { mode: 0o600, flag: "wx" });
-  return { root, path };
+  return { root, path, sha256 };
 }

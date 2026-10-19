@@ -263,10 +263,10 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--artifac
 ## deliveries
 
 ```text
-deliveries --attestor <address> --intent <address> [--max-pages <n>]
+deliveries --attestor <address> --intent <address> [--max-pages <n>] [--judge-keypair <judge or member file>]
 ```
 
-Options: `--url`, `--attestor`, `--intent`, `--max-pages`, `--output`, `--help`
+Options: `--url`, `--attestor`, `--intent`, `--max-pages`, `--judge-keypair`, `--output`, `--help`
 
 ## receipt
 

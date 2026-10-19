@@ -131,7 +131,7 @@ describe("a committee judges a proof escrow", () => {
     const worker = await fresh();
     const [intent] = await findIntentPda({ owner: owner.address, nonce });
     const sha256 = "cd".repeat(32);
-    await client.deliver({ worker, intent, sha256, url: "https://example.org/work" });
+    await client.deliver({ worker, intent, sha256, url: "https://example.org/work", version: 1 });
     expect(await client.deliveries({ judge: created.committee, intent })).toMatchObject([{ intent, worker: worker.address, sha256 }]);
   });
 

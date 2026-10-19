@@ -151,7 +151,7 @@ export type Client = {
   spec(intent: Address, keypair?: Uint8Array): Promise<Spec | null>;
   deliver(input: DeliverInput): Promise<Signature>;
   deliveries(filter: { judge: Address; intent?: Address }): Promise<Delivery[]>;
-  deliveryRecord(filter: { judge: Address; intent?: Address; pages?: number }): Promise<DeliveryRecord>;
+  deliveryRecord(filter: { judge: Address; intent?: Address; pages?: number; keypair?: Uint8Array }): Promise<DeliveryRecord>;
 };
 
 export const SPEC_URL_NEEDS_PROOF = "specUrl needs an AttestedResult intent with a non-zero specHash";

@@ -10,6 +10,7 @@ import {
   type Transport,
 } from "@intent-engine/client";
 import { escrowReceipt, recordingOf } from "./agent/wallet.js";
+import { ANNOUNCE_FIRST } from "./agent/wallet/delivery.js";
 import type { Command } from "./command-types.js";
 import type { Runtime } from "./runtime.js";
 import { previewed } from "./admin-commands.js";
@@ -73,14 +74,17 @@ export async function jobCommand(command: JobCommand, runtime: Runtime, transpor
       const worker = await transactionSigner(runtime, command.keypair);
       const { intent, workUrl } = command;
       const sha256 = "sha256" in command ? command.sha256 : await artifactSha256(command.artifact);
-      const { attestor, instructions } = await deliveryInstructions(transport, { worker, intent, sha256, url: workUrl });
+      const { attestor, instructions, commitment, sealedTo = [attestor] } = await deliveryInstructions(transport, { worker, intent, sha256, url: workUrl });
       const shown = {
         intent,
         attestor,
+        commitment,
         summary: [
-          `Announces: the work with sha256 ${sha256} at ${workUrl}, for the proof escrow ${intent}`,
+          `Announces: the work with sha256 ${sha256}, for the proof escrow ${intent}, as the commitment ${commitment ?? ""}, which binds it to ${worker.address}`,
+          `Seals: the url ${workUrl}, so only ${sealedTo.length === 1 ? `the judge ${attestor}` : `the ${sealedTo.length} committee members`} can read it`,
           `Notifies: its judge ${attestor}, with a transfer of 0 lamports from ${worker.address}, which signs and pays the fee`,
         ],
+        warnings: [ANNOUNCE_FIRST],
       };
       return previewed(transport, instructions, worker, shown, command.yes);
     }
@@ -98,7 +102,8 @@ export async function jobCommand(command: JobCommand, runtime: Runtime, transpor
       return previewed(transport, instructions, judge, { intent, release, sha256, memo, summary }, command.yes);
     }
     case "deliveries": {
-      const record = await deliveryRecord(transport, command.attestor, command.intent, command.maxPages);
+      const keypair = command.judgeKeypair === undefined ? undefined : await runtime.loadKeypair(command.judgeKeypair);
+      const record = await deliveryRecord(transport, command.attestor, command.intent, command.maxPages, keypair);
       return {
         intent: command.intent,
         complete: record.complete,
@@ -110,6 +115,9 @@ export async function jobCommand(command: JobCommand, runtime: Runtime, transpor
           slot: first.slot,
           copies,
         })),
+        sealed: record.deliveries.flatMap(({ worker, commitment, signature, slot, url }) =>
+          commitment === undefined ? [] : [{ worker, commitment, signature, slot, ...(url === "" ? {} : { url }) }],
+        ),
       };
     }
   }

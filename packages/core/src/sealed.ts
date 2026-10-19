@@ -65,7 +65,7 @@ export function x25519PublicOf(wallet: Address): Uint8Array<ArrayBuffer> {
   return Uint8Array.from({ length: 32 }, (_, i) => Number((u >> BigInt(8 * i)) & 0xffn));
 }
 
-async function x25519SecretOf(keypair: Uint8Array): Promise<CryptoKey> {
+export async function x25519SecretOf(keypair: Uint8Array): Promise<CryptoKey> {
   if (keypair.length !== 64) {
     throw new SealedError("a wallet key is 64 bytes: its seed and its public key");
   }
@@ -73,9 +73,9 @@ async function x25519SecretOf(keypair: Uint8Array): Promise<CryptoKey> {
   return crypto.subtle.importKey("pkcs8", Uint8Array.from([...PKCS8_X25519, ...hashed.slice(0, 32)]), { name: "X25519" }, false, ["deriveBits"]);
 }
 
-async function wrapKey(shared: Uint8Array, salt: Uint8Array): Promise<CryptoKey> {
+export async function wrapKey(shared: Uint8Array, salt: Uint8Array, info: Uint8Array = INFO): Promise<CryptoKey> {
   const base = await crypto.subtle.importKey("raw", shared.slice(), "HKDF", false, ["deriveKey"]);
-  return crypto.subtle.deriveKey({ name: "HKDF", hash: "SHA-256", salt: salt.slice(), info: INFO }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
+  return crypto.subtle.deriveKey({ name: "HKDF", hash: "SHA-256", salt: salt.slice(), info: info.slice() }, base, { name: "AES-GCM", length: 256 }, false, ["encrypt", "decrypt"]);
 }
 
 const random = (length: number): Uint8Array<ArrayBuffer> => crypto.getRandomValues(new Uint8Array(new ArrayBuffer(length)));

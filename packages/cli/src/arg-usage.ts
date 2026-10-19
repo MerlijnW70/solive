@@ -45,7 +45,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   events: "[--limit <n>] [--follow [--interval <seconds>]]",
   jobs: "[--attestor <address>] [--mint <SOL, TEST or mint>] [--min-pay <tokens>] [--unclaimed]",
   deliver: "--keypair <worker file> --intent <address> (--artifact <file or directory> | --sha256 <64 hex>) --work-url <https url> [--yes]",
-  deliveries: "--attestor <address> --intent <address> [--max-pages <n>]",
+  deliveries: "--attestor <address> --intent <address> [--max-pages <n>] [--judge-keypair <judge or member file>]",
   receipt: "--owner <address> --nonce <n> [--sha256 <64 hex>] [--release <signature>]",
   "record-delivery": "--keypair <judge file> --owner <address> --nonce <n> --sha256 <64 hex> [--release <signature>] [--yes]",
   reputation: "--worker <address> [--max-pages <n>] [--reader <address> [--seed <address>]...]",

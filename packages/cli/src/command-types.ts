@@ -102,7 +102,7 @@ export type Command =
   | (Remote & { name: "events"; limit: number })
   | (Remote & { name: "jobs"; attestor: Address | undefined; mint: Address | undefined; minPay: string | undefined; unclaimed: boolean })
   | (Keyed & { name: "deliver"; yes: boolean; intent: Address; workUrl: string } & ({ sha256: string } | { artifact: string }))
-  | (Remote & { name: "deliveries"; attestor: Address; intent: Address; maxPages: number })
+  | (Remote & { name: "deliveries"; attestor: Address; intent: Address; maxPages: number; judgeKeypair: string | undefined })
   | (Remote & { name: "receipt"; owner: Address; nonce: bigint; sha256: string | undefined; release?: string })
   | (Keyed & { name: "record-delivery"; yes: boolean; owner: Address; nonce: bigint; sha256: string; release?: string })
   | (Keyed & {

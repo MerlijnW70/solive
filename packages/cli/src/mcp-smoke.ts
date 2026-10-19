@@ -171,9 +171,9 @@ export async function smoke(parties: SmokeParties, run: SmokeRun, report: (line:
   const delivered = await send("deliver", parties.worker, "wallet_deliver", { intent, sha256: work, url: run.workUrl });
   done("deliver", `announced in ${String(delivered["signature"])}`);
 
-  const checked = await call("check delivery", parties.hirer, "wallet_check_delivery", { intent });
-  const deliveries = Array.isArray(checked["deliveries"]) ? (checked["deliveries"] as Fields[]) : [];
-  if (!deliveries.some((d) => d["sha256"] === work && d["worker"] === worker)) {
+  const checked = await call("check delivery", parties.worker, "wallet_check_delivery", { intent, sha256: work });
+  const own = typeof checked["own"] === "object" && checked["own"] !== null ? (checked["own"] as Fields) : {};
+  if (own["landed"] !== true || own["earliest"] !== true) {
     throw new SmokeFailed("check delivery", deliveryMissing(work, worker));
   }
   done("check delivery", `${work} by ${worker}`);

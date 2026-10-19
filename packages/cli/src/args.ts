@@ -288,7 +288,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       return jobArgsOf(verb, sub, remote, values);
     case "deliveries":
       noSub(sub);
-      return { name: "deliveries", ...remote, attestor: key(values, "attestor"), intent: key(values, "intent"), maxPages: maxPagesOf(values) };
+      return { name: "deliveries", ...remote, attestor: key(values, "attestor"), intent: key(values, "intent"), maxPages: maxPagesOf(values), judgeKeypair: values["judge-keypair"] };
     case "solver-table":
       noSub(sub);
       return { name: "solver-table", ...remote, solver: key(values, "solver"), mints: mintList(required(values, "mints")) };

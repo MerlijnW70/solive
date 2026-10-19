@@ -198,8 +198,8 @@ await client.unwrap(signer);
 - `specUrl` on `createIntent` publishes where the spec lives, in a memo the owner signs.
 - `jobs` lists up to 50 open, unexpired proof escrows, those with the most time left first, each with its `specUrl`.
 - `spec` fetches that url, following no redirect and reading at most 1048576 bytes, and says whether it `matches` the committed hash. It never runs the text.
-- `deliver` announces a worker's work: a memo with the intent, the work's sha256 and its url, plus a 0-lamport transfer to the judge.
-- `deliveryRecord` lists the announcements to a judge, newest first, reading at most 100 pages of 1000 transactions. Decide whom to pay only when its `complete` is `true`.
+- `deliver` announces a worker's work: a memo with the intent, a commitment that binds the work's sha256 to the worker's wallet, and the url sealed to the judge or to each committee member, plus a 0-lamport transfer to the judge. `version: 1` sends the older memo with the sha256 and url in clear.
+- `deliveryRecord` lists the announcements to a judge, newest first, reading at most 100 pages of 1000 transactions. With the judge's 64-byte `keypair` it opens each sealed url. Decide whom to pay only when its `complete` is `true`.
 - A transport you pass to `createClient` needs `signaturesOf`, `transactionsOf` and `firstAvailableSlot` for a complete record.
 
 Here your wallet plays the worker, and the judge pays the earliest wallet that announced the hash it checked. This prints `true true` twice.
