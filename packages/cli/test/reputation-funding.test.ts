@@ -5,7 +5,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
 import { findIntentPda, Kind, NATIVE_MINT } from "@intent-engine/core";
-import { createClient, type Transport } from "@intent-engine/client";
+import { createClient, FUNDING_PAGES, type ListedSignature, type Transport } from "@intent-engine/client";
 import { svmTransport } from "@intent-engine/client/svm";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
@@ -98,5 +98,39 @@ describe("reputation funded by the worker, in the command and the tool", () => {
     expect(pruned.tool).toMatchObject({ complete: false, paid: 2, funded_by_worker: 1 });
     expect(marksOf(pruned.command["records"], "fundedByWorker")).toEqual(unknown);
     expect(marksOf(pruned.tool["records"], "funded_by_worker")).toEqual(unknown);
+
+    const listed: Address[] = [];
+    h.through = {
+      ...transport,
+      signaturesOf: async (of, limit, before) => {
+        listed.push(of);
+        if (of !== stranger.address) {
+          return (transport.signaturesOf as NonNullable<Transport["signaturesOf"]>)(of, limit, before);
+        }
+        return Array.from({ length: limit }, (_, i): ListedSignature => ({ signature: `busy-${listed.length}-${i}`, slot: 1n, blockTime: null, failed: false, memo: null }));
+      },
+    } satisfies Transport;
+    const busy = await both(worker.address);
+    expect(busy.command).toMatchObject({ complete: true, paid: 1, fundedByWorker: 2, payers: 1 });
+    expect(busy.tool).toMatchObject({ complete: true, paid: 1, funded_by_worker: 2, payers: 1 });
+    expect(marksOf(busy.command["records"], "fundedByWorker")).toEqual(expected);
+    expect(marksOf(busy.tool["records"], "funded_by_worker")).toEqual(expected);
+    expect(listed.filter((at) => at === stranger.address)).toHaveLength(2 * FUNDING_PAGES);
+
+    h.through = {
+      ...transport,
+      signaturesOf: async (of, limit, before) => {
+        if (of === stranger.address) {
+          throw new Error("rpc failed");
+        }
+        return (transport.signaturesOf as NonNullable<Transport["signaturesOf"]>)(of, limit, before);
+      },
+    } satisfies Transport;
+    const failed = await both(worker.address);
+    const unread = { [direct]: "yes", [through]: "yes", [clean]: "unknown" };
+    expect(failed.command).toMatchObject({ complete: false, paid: 1, fundedByWorker: 2 });
+    expect(failed.tool).toMatchObject({ complete: false, paid: 1, funded_by_worker: 2 });
+    expect(marksOf(failed.command["records"], "fundedByWorker")).toEqual(unread);
+    expect(marksOf(failed.tool["records"], "funded_by_worker")).toEqual(unread);
   });
 });

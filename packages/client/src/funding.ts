@@ -8,11 +8,13 @@ export const FUNDING_HOPS = 2;
 
 export type FundedBy = "yes" | "no" | "unknown";
 
-export type Funder = { funder: Address | null; complete: boolean };
+export type Funder = { funder: Address | null; complete: boolean; busy?: boolean };
 
 export type FundingLookup = (wallet: Address) => Promise<Funder>;
 
-async function listedOldestFirst(transport: Transport, wallet: Address): Promise<ListedSignature[] | null> {
+const BUSY = "busy";
+
+async function listedOldestFirst(transport: Transport, wallet: Address): Promise<ListedSignature[] | typeof BUSY | null> {
   const { signaturesOf } = transport;
   if (signaturesOf === undefined) {
     return null;
@@ -27,12 +29,23 @@ async function listedOldestFirst(transport: Transport, wallet: Address): Promise
     }
     before = found[found.length - 1]?.signature;
   }
-  return null;
+  return BUSY;
 }
 
 export async function earliestFunder(transport: Transport, wallet: Address, covered: () => Promise<boolean>): Promise<Funder> {
+  try {
+    return await readFunder(transport, wallet, covered);
+  } catch {
+    return { funder: null, complete: false };
+  }
+}
+
+async function readFunder(transport: Transport, wallet: Address, covered: () => Promise<boolean>): Promise<Funder> {
   const { transactionsOf } = transport;
   const oldest = transactionsOf === undefined ? null : await listedOldestFirst(transport, wallet);
+  if (oldest === BUSY) {
+    return { funder: null, complete: false, busy: true };
+  }
   if (transactionsOf === undefined || oldest === null) {
     return { funder: null, complete: false };
   }
@@ -72,9 +85,12 @@ export function fundingLookup(transport: Transport, covered: () => Promise<boole
 export async function fundedBy(lookup: FundingLookup, payer: Address, worker: Address): Promise<FundedBy> {
   let wallet = payer;
   for (let hop = 1; hop <= FUNDING_HOPS; hop++) {
-    const { funder, complete } = await lookup(wallet);
+    const { funder, complete, busy } = await lookup(wallet);
     if (funder === worker) {
       return "yes";
+    }
+    if (busy === true && hop > 1) {
+      return "no";
     }
     if (!complete) {
       return "unknown";

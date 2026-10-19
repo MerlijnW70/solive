@@ -130,6 +130,48 @@ describe("reputation a worker may have paid for itself", () => {
     expect(Object.values(marks(unlisted.records))).toEqual(["unknown"]);
   });
 
+  it("stops at a funder too busy to read back and counts the release", async () => {
+    const { fresh, fundedBy, job, transport } = await setup();
+    const [worker, judge, faucet] = await Promise.all([fresh(), fresh(), fresh()]);
+    const payer = await fundedBy(faucet);
+    const clean = await job(payer, judge, worker, "18".repeat(32));
+    const linked = await job(await fundedBy(await fundedBy(worker, 6n * SOL)), judge, worker, "29".repeat(32));
+    const listed: Address[] = [];
+    const busy: Transport = {
+      ...transport,
+      signaturesOf: async (of, limit, before) => {
+        listed.push(of);
+        if (of !== faucet.address) {
+          return (transport.signaturesOf as NonNullable<Transport["signaturesOf"]>)(of, limit, before);
+        }
+        const page = listed.filter((at) => at === of).length;
+        return Array.from({ length: limit }, (_, i): ListedSignature => ({ signature: `busy-${page}-${i}`, slot: 1n, blockTime: null, failed: false, memo: null }));
+      },
+    };
+    const rep = await createClient({ url: LOCAL, transport: busy }).reputation(worker.address);
+    expect(rep).toMatchObject({ complete: true, paid: 1, fundedByWorker: 1, payers: 1 });
+    expect(marks(rep.records)).toEqual({ [clean]: "no", [linked]: "yes" });
+    expect(listed.filter((at) => at === faucet.address)).toHaveLength(FUNDING_PAGES);
+  });
+
+  it("marks a release unknown when the payer's funder's history cannot be read", async () => {
+    const { fresh, fundedBy, job, transport } = await setup();
+    const [worker, judge, stranger] = await Promise.all([fresh(), fresh(), fresh()]);
+    const intent = await job(await fundedBy(stranger), judge, worker, "3a".repeat(32));
+    const failing: Transport = {
+      ...transport,
+      signaturesOf: async (of, limit, before) => {
+        if (of === stranger.address) {
+          throw new Error("rpc failed");
+        }
+        return (transport.signaturesOf as NonNullable<Transport["signaturesOf"]>)(of, limit, before);
+      },
+    };
+    const failed = await createClient({ url: LOCAL, transport: failing }).reputation(worker.address);
+    expect(failed).toMatchObject({ complete: false, paid: 1, fundedByWorker: 0 });
+    expect(marks(failed.records)).toEqual({ [intent]: "unknown" });
+  });
+
   it("reads a payer's funding history once for all its releases", async () => {
     const { client, fresh, fundedBy, job, transport } = await setup();
     const [worker, judge, stranger] = await Promise.all([fresh(), fresh(), fresh()]);

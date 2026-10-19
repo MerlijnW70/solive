@@ -19,7 +19,9 @@ For every proof escrow the wallet announced work to, the record says whether its
 
 The totals count only `paid` releases at arm's length. A release is self-dealt, and left out, when the worker owned the escrow, judged it, or sat on the committee that judged it, or when the owner judged its own escrow. `payers` and `judges` count the distinct owners and judges behind the totals. `committee_judged` counts releases a committee approved.
 
-A paid release is also left out when the worker funded its payer: the earliest SOL transfer into the payer's wallet came from the worker, or from a wallet the worker funded first. `funded_by_worker` counts these, and each paid release shows `yes`, `no` or `unknown`. A payer whose funding history the node cannot return in full is `unknown`, never `no`, and still counts.
+A paid release is also left out when the worker funded its payer: the earliest SOL transfer into the payer's wallet came from the worker, or from a wallet the worker funded first. `funded_by_worker` counts these, and each paid release shows `yes`, `no` or `unknown`.
+
+A funder whose history runs past the pages read, such as a faucet, is a busy wallet: the check stops there and marks `no`. A payer or funder whose history the node cannot return in full is `unknown`, never `no`, and still counts.
 
 `complete` is `true` only when the RPC node holds the whole ledger and every escrow's history and payer's funding history was read. A pruned node shows less, never more.
 
