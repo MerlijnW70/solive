@@ -31,7 +31,7 @@ import {
   getTransferCheckedInstruction,
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
-import { FailedTransactionMetadata, LiteSVM } from "litesvm";
+import { FailedTransactionMetadata, LiteSVM, Rent } from "litesvm";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   ALL_KINDS_MASK,
@@ -88,6 +88,7 @@ import {
   tokenAccountSpace,
   tooCostly,
   tooMuchRent,
+  unsupportedRent,
   compile,
   COMPUTE_BUDGET_ADDRESS,
   decide,
@@ -1084,6 +1085,37 @@ describe("solver against the deployed engine", () => {
     expect(report.filled).toEqual([{ intent, profit: 4_000n, cost, signature: expect.any(String), rent: kept }]);
     expect(before - (svm.getBalance(solver.address) ?? 0n)).toBe(cost + kept);
     expect([svm.getBalance(freshInput), svm.getBalance(freshOutput)]).toEqual([rent, rent]);
+  });
+
+  it("prices the rent a fill opens at the chain's live rate and takes a fill only the live rate fits under the cap", async () => {
+    svm.setRent(new Rent(5_080n, 1, 50));
+    const intent = await open(33n);
+    solver = await funded();
+    const freshInput = await findAssociatedTokenAddress({ owner: solver.address, mint: inputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const freshOutput = await findAssociatedTokenAddress({ owner: solver.address, mint: outputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    swapping.current = { mint: inputMint, from: freshInput, to: swapping.current?.to ?? freshInput, authority: solver };
+    const pricer = () => stashMarket(stash, stashAccount, outputMint, freshOutput, () => MIN_OUT + 4_000n);
+    const live: Chain = { ...chain(), rent: async () => ({ perByteYear: svm.getRent().lamportsPerByteYear, threshold: svm.getRent().exemptionThreshold }) };
+    const cap = 3_000_000n;
+    const blind = await solve(pricer(), { maxRent: cap });
+    expect(blind.skipped).toEqual([{ intent, reason: tooMuchRent(4_078_560n, cap), rent: 4_078_560n }]);
+    const over = await solve(pricer(), { chain: live, maxRent: 2_976_879n });
+    expect(over.skipped).toEqual([{ intent, reason: tooMuchRent(2_976_880n, 2_976_879n), rent: 2_976_880n }]);
+    expect([svm.getAccount(freshInput).exists, svm.getAccount(freshOutput).exists]).toEqual([false, false]);
+    const report = await solve(pricer(), { chain: live, maxRent: cap });
+    expect(report.filled).toEqual([{ intent, profit: 4_000n, cost: expect.any(BigInt), signature: expect.any(String), rent: 2_976_880n }]);
+    expect([svm.getBalance(freshInput), svm.getBalance(freshOutput)]).toEqual([1_488_440n, 1_488_440n]);
+  });
+
+  it("refuses to fill on a chain whose rent is out of range", async () => {
+    await open(34n);
+    for (const rent of [
+      { perByteYear: 6_961n, threshold: 1 },
+      { perByteYear: 695n, threshold: 1 },
+    ]) {
+      const strange: Chain = { ...chain(), rent: async () => rent };
+      await expect(solve(stashMarket(stash, stashAccount, outputMint, solverOutput, () => MIN_OUT + 4_000n), { chain: strange })).rejects.toThrow(unsupportedRent(Number(rent.perByteYear)));
+    }
   });
 
   async function wrapOutput() {

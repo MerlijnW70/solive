@@ -1,4 +1,5 @@
 import type { Address } from "@solana/kit";
+import type { Rent } from "./rent.js";
 import type { Chain } from "./solver.js";
 
 export const CONFIG_TTL_MS = 30_000;
@@ -33,6 +34,8 @@ export function remembering(chain: Chain, clock: () => number = Date.now): Remem
   const programs = new Map<Address, Promise<Address>>();
   const mints = new Map<Address, Promise<Uint8Array | null>>();
   const existing = new Set<Address>();
+  const read = chain.rent;
+  let rent: Promise<Rent> | null = null;
   const config = fresh(CONFIG_TTL_MS, clock, () => chain.config());
   const blockhash = fresh(BLOCKHASH_TTL_MS, clock, () => chain.blockhash());
   return {
@@ -68,6 +71,20 @@ export function remembering(chain: Chain, clock: () => number = Date.now): Remem
               () => mints.delete(mint),
             );
             return loaded;
+          },
+        }),
+    ...(read === undefined
+      ? {}
+      : {
+          rent: () => {
+            if (rent === null) {
+              const loaded = read.call(chain);
+              rent = loaded;
+              loaded.catch(() => {
+                rent = null;
+              });
+            }
+            return rent;
           },
         }),
     exists: async (address) => {

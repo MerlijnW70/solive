@@ -27,6 +27,7 @@ import { netShort, solValueFits } from "./net.js";
 import { freshly, fromCache } from "./quote-cache.js";
 import { spend, type Stock, stockLeft } from "./inventory.js";
 import { type Hold, unheld } from "./holds.js";
+import { chainRent, type Rent } from "./rent.js";
 import { ALLOWANCE_SPENT, asked, type Floats, floatFits, INVENTORY_ONLY, type Low, liveStock, lowOf } from "./float.js";
 
 export { BACKOFF_MAX_INTERVALS, type Backoff, backingOff, backoff } from "./backoff.js";
@@ -60,6 +61,7 @@ export type Chain = {
   tokenAmount(address: Address): Promise<bigint>;
   mintData?(mint: Address): Promise<Uint8Array | null>;
   allowance?(account: Address, delegate: Address): Promise<bigint>;
+  rent?(): Promise<Rent>;
 };
 
 export type Simulated = { err: string | null; unitsConsumed: bigint | null; balances: readonly (bigint | null)[] };
@@ -230,7 +232,7 @@ async function untipped(o: SolverOptions, ready: Ready): Promise<Planned> {
 
 async function checkOrder(
   o: SolverOptions,
-  caps: { cost: bigint; rent: bigint },
+  caps: { cost: bigint; rent: bigint; rate: Rent },
   mintData: (mint: Address) => Promise<Uint8Array | null>,
   ready: Ready,
   stock: Stock,
@@ -274,7 +276,7 @@ async function checkOrder(
     computeUnits: final.computeUnits,
     tip: final.tip?.lamports ?? 0n,
   });
-  const rent = await createdRent(instructions, (account) => o.chain.exists(account), mintData);
+  const rent = await createdRent(instructions, (account) => o.chain.exists(account), mintData, caps.rate);
   const kept = rent > 0n ? rent : undefined;
   if (cost > caps.cost) {
     return skipped(address, tooCostly(cost, caps.cost), kept);
@@ -307,7 +309,7 @@ async function checkOrder(
 
 async function fillOrder(
   o: SolverOptions,
-  caps: { cost: bigint; rent: bigint },
+  caps: { cost: bigint; rent: bigint; rate: Rent },
   mintData: (mint: Address) => Promise<Uint8Array | null>,
   ready: Ready,
   stock: Stock,
@@ -325,7 +327,7 @@ async function fillOrder(
 
 async function queueOrder(
   o: SolverOptions,
-  caps: { cost: bigint; rent: bigint },
+  caps: { cost: bigint; rent: bigint; rate: Rent },
   mintData: (mint: Address) => Promise<Uint8Array | null>,
   ready: Ready,
   stock: Stock,
@@ -359,8 +361,8 @@ export async function tick(o: SolverOptions): Promise<Report> {
   if (unfloated !== null) {
     throw new RangeError(unfloated);
   }
-  const [config, now, intents] = await Promise.all([o.chain.config(), o.chain.now(), o.chain.intents()]);
-  const caps = { cost: o.maxSolCost ?? DEFAULT_MAX_SOL_COST, rent: o.maxRent ?? DEFAULT_MAX_RENT };
+  const [config, now, intents, rate] = await Promise.all([o.chain.config(), o.chain.now(), o.chain.intents(), chainRent(o.chain)]);
+  const caps = { cost: o.maxSolCost ?? DEFAULT_MAX_SOL_COST, rent: o.maxRent ?? DEFAULT_MAX_RENT, rate };
   const mints = new Map<Address, Promise<Uint8Array | null>>();
   const mintData = (mint: Address): Promise<Uint8Array | null> => {
     const known = mints.get(mint);

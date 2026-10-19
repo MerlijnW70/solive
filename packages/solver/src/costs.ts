@@ -1,5 +1,6 @@
 import { type Address, type Base64EncodedWireTransaction, getBase64Encoder, getTransactionDecoder, type Instruction } from "@solana/kit";
 import { ASSOCIATED_TOKEN_PROGRAM } from "./jupiter.js";
+import { CONSERVATIVE_RENT, type Rent, rentExemptAt } from "./rent.js";
 
 export const LAMPORTS_PER_SIGNATURE = 5_000n;
 
@@ -15,15 +16,11 @@ export const TOKEN_2022_ACCOUNT_SPACE = 170;
 
 export const TOKEN_2022_PROGRAM = "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb" as Address;
 
-const ACCOUNT_STORAGE_OVERHEAD = 128n;
-const LAMPORTS_PER_BYTE_YEAR = 3_480n;
-const EXEMPTION_YEARS = 2n;
 const ATA_ADDRESS = 1;
 const ATA_MINT = 3;
 const ATA_TOKEN_PROGRAM = 5;
 
-export const rentExempt = (space: number): bigint =>
-  (ACCOUNT_STORAGE_OVERHEAD + BigInt(space)) * LAMPORTS_PER_BYTE_YEAR * EXEMPTION_YEARS;
+export const rentExempt = (space: number): bigint => rentExemptAt(space, CONSERVATIVE_RENT);
 
 const ACCOUNT_TYPE_SPACE = 1;
 const EXTENSION_HEADER_SPACE = 4;
@@ -95,6 +92,7 @@ export async function createdRent(
   instructions: readonly Instruction[],
   exists: (address: Address) => Promise<boolean>,
   mintData: (mint: Address) => Promise<Uint8Array | null> = async () => null,
+  rates: Rent = CONSERVATIVE_RENT,
 ): Promise<bigint> {
   const opened = new Map<Address, { program: Address; mint: Address | undefined }>();
   for (const ix of instructions) {
@@ -107,7 +105,7 @@ export async function createdRent(
   for (const [account, { program, mint }] of opened) {
     if (!(await exists(account))) {
       const data = program === TOKEN_2022_PROGRAM && mint !== undefined ? await mintData(mint) : null;
-      rent += rentExempt(tokenAccountSpace(program, data));
+      rent += rentExemptAt(tokenAccountSpace(program, data), rates);
     }
   }
   return rent;

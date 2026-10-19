@@ -13,4 +13,5 @@ export * from "./net.js";
 export * from "./plan.js";
 export * from "./quote-cache.js";
 export * from "./remember.js";
+export * from "./rent.js";
 export * from "./solver.js";

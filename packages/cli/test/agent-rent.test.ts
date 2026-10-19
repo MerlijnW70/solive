@@ -1,4 +1,4 @@
-import type { Address } from "@solana/kit";
+import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import { getIntentSize } from "@intent-engine/core";
 import { memoized, type Transport } from "@intent-engine/client";
@@ -15,6 +15,9 @@ import {
   VAULT_BYTES,
 } from "../src/agent/budget.js";
 import { fundingRent } from "../src/crank.js";
+import { parse } from "../src/args.js";
+import type { Runtime } from "../src/runtime.js";
+import { type SolveCommand, solverOptions } from "../src/solve-commands.js";
 
 const RENT_SYSVAR = "SysvarRent111111111111111111111111111111111";
 
@@ -119,5 +122,18 @@ describe("live rent", () => {
       );
     }
     await expect(rentRate(rentServing(null).transport)).rejects.toThrow("the rent sysvar is missing");
+  });
+
+  it("hand the solver the cluster's rent sysvar through the same bounds", async () => {
+    const signer = await generateKeyPairSigner();
+    const runtime = { loadSigner: async () => signer, env: {}, fetch: async () => new Response("{}"), entropy: () => 0 } as unknown as Runtime;
+    const command = parse(["solve", "--keypair", "k", "--jupiter", "https://" + "q.example", "--min-profit", "So11111111111111111111111111111111111111112=10"], {}) as SolveCommand;
+    const live = rentServing(5_080n);
+    const { chain } = await solverOptions(command, runtime, live.transport);
+    expect(await chain.rent?.()).toEqual({ perByteYear: 5_080n, threshold: 1 });
+    expect(await chain.rent?.()).toEqual({ perByteYear: 5_080n, threshold: 1 });
+    expect(live.reads.count).toBe(1);
+    const strange = await solverOptions(command, runtime, rentServing(6_961n).transport);
+    await expect(strange.chain.rent?.()).rejects.toThrow(unsupportedRent(6_961));
   });
 });

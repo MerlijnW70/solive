@@ -1,37 +1,17 @@
 import { getIntentSize } from "@intent-engine/core";
 import { rentExemptFor, type RentSysvar, rentSysvar, type Transport, unmemoized } from "@intent-engine/client";
+import { checkedRent } from "@intent-engine/solver";
 import { AgentRefusal } from "./problems.js";
 
+export { MAX_RENT_PER_BYTE, MIN_RENT_PER_BYTE, UnsupportedRent, unsupportedRent, unsupportedThreshold } from "@intent-engine/solver";
+
 export const BUDGET_WINDOW = 3_600n;
-export const MIN_RENT_PER_BYTE = 696;
-export const MAX_RENT_PER_BYTE = 6_960;
 export const VAULT_BYTES = 170;
 export const SIGNATURE_FEE = 5_000n;
 export const TOKEN_ACCOUNT_RENT_BYTES = 170;
 
-export class UnsupportedRent extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "UnsupportedRent";
-  }
-}
-
-export const unsupportedRent = (rate: number): string =>
-  `the cluster charges ${rate} lamports of rent per byte; this client prices rent only from ${MIN_RENT_PER_BYTE} to ${MAX_RENT_PER_BYTE}`;
-
-export const unsupportedThreshold = (threshold: number): string =>
-  `the cluster's rent sysvar reports an exemption threshold of ${threshold}; this client prices rent only with a positive finite threshold`;
-
 async function readRent(transport: Transport): Promise<RentSysvar> {
-  const rent = await rentSysvar(transport);
-  if (!Number.isFinite(rent.threshold) || rent.threshold <= 0) {
-    throw new UnsupportedRent(unsupportedThreshold(rent.threshold));
-  }
-  const rate = Number(rent.perByteYear) * rent.threshold;
-  if (!(rate >= MIN_RENT_PER_BYTE && rate <= MAX_RENT_PER_BYTE)) {
-    throw new UnsupportedRent(unsupportedRent(rate));
-  }
-  return rent;
+  return checkedRent(await rentSysvar(transport));
 }
 
 const rentRates = new WeakMap<Transport, Promise<RentSysvar>>();

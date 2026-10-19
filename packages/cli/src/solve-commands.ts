@@ -36,6 +36,7 @@ import {
   tokenProgramOf,
   type Transport,
 } from "@intent-engine/client";
+import { rentRate } from "./agent/budget.js";
 import type { Command, IssueSpec } from "./command-types.js";
 import type { Runtime } from "./runtime.js";
 import { priceOf, withPriority } from "./compute.js";
@@ -233,6 +234,7 @@ export async function solverOptions(
     now: () => chainTime(transport),
     tokenProgram: (mint) => tokenProgramOf(transport, mint),
     mintData: async (mint) => (await transport.getAccount(mint))?.data ?? null,
+    rent: () => rentRate(transport),
     exists: async (address) => (await createdAccount(transport, address)) !== null,
     tokenAmount: async (address) => tokenAmountOf((await transport.getAccount(address))?.data ?? null) ?? 0n,
     allowance: async (address, delegate) => allowanceOf((await transport.getAccount(address))?.data ?? null, delegate),
