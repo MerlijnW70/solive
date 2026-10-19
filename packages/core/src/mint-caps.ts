@@ -17,8 +17,8 @@ import {
 } from "../generated/client/index.js";
 import { events } from "./builder-accounts.js";
 import { U64_MAX } from "./math.js";
+import { checkAccountVersion } from "./versions.js";
 
-export const MINT_CAP_VERSION = 1;
 export const MIN_CAP_WINDOW_SECS = 60;
 
 export function isMintCapData(data: Uint8Array): boolean {
@@ -29,7 +29,7 @@ export function decodeMintCapData(data: Uint8Array): MintCap {
   if (!isMintCapData(data)) {
     throw new RangeError("not a mint cap account");
   }
-  return getMintCapDecoder().decode(data);
+  return getMintCapDecoder().decode(checkAccountVersion(data));
 }
 
 export type CapWindow = { start: bigint; ends: bigint; used: bigint; left: bigint };

@@ -153,6 +153,26 @@ Fills, releases, cancels, expiries and closes now name the optional mint cap too
 
 A build larger than the program's data account fails at `execute` with `account data too small for instruction`. `solana program show GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU --url devnet` prints that size as `Data Length`. Before executing, any key can grow it with `solana program extend GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU <bytes> --url devnet`, and pays the rent for the extra bytes.
 
+## Account versions
+
+Every account the program owns carries a `version` byte, set at creation to the current version of its type in `programs/intent_engine/src/state.rs`. Each type keeps its version byte, and the wallet that paid for it, at fixed offsets listed in `programs/intent_engine/src/versions.rs`, so a later program can read the version of any older account. Every instruction refuses an account whose version is not the current one with `AccountOutdated`.
+
+A change to an account layout raises that type's version. Accounts made before versions were enforced carry version 1, or 0 for stand-by entries, and the program refuses them, with one exception: an owner always gets an escrow back.
+
+`cancel_intent`, `expire_intent` and `close_intent` accept intents from `OLDEST_INTENT_VERSION` on. They read the mint cap by hand: a cap from `OLDEST_MINT_CAP_VERSION` on gives the amount back, never below zero. A cap that is gone or of another version is skipped, and so is a cap created after the intent, whose count never held it, so no refund depends on the cap and none lowers a recreated cap's count. Cancelling and `settle_claims` accept claim boards from `OLDEST_CLAIMS_VERSION` on.
+
+`close_legacy` closes an outdated account. Anyone may send it for a program-owned account whose discriminator matches no account type, whose size differs from its type's, or whose version is not current. It never closes a config or user state, which a later program upgrades in place, and refuses them with `LegacyMigrates`.
+
+Its lamports go to the wallet its layout records as the payer: the owner of a mandate or claim board, the rent payer of an intent, the worker of a stand-by entry, or the wallet of a profile. Mint caps, committees and unknown accounts record no payer, and a payer that cannot hold lamports is skipped; theirs go to the config's fee recipient.
+
+A claim board's held stake goes where `settle_claims` would send it: to the worker of a claim on an escrow that is no longer open, to the owner for a lapsed claim, and nowhere while a claim on an open escrow is held, which `close_legacy` refuses with `ClaimHeld`. It refuses a current account with `NotLegacy`, and an intent whose vault is still a token account with `LegacyVaultOpen`: cancel, expire or close that intent instead.
+
+```sh
+intent-engine close-legacy --keypair payer.json --address <account> --url devnet
+```
+
+Without `--yes` it previews the account, its version and the payee and sends nothing.
+
 ## Publish the IDL
 
 Once the vault is the upgrade authority, only the vault can write the program's canonical IDL. From a clean checkout at `origin/main`, after the upgrade has executed, run `bash scripts/idl.sh devnet --multisig <multisig>`. The Solana CLI default keypair, or the file in `UPGRADE_AUTHORITY`, writes `idl/intent_engine.json` to a buffer and hands the buffer to the vault; the file in `MULTISIG_MEMBER` proposes one vault transaction that tops up the IDL account's rent, sets its data from the buffer and closes the buffer. Two members approve and one executes, as in step 4 of the upgrade without `--expect-buffer-hash`. `bash scripts/idl.sh devnet --check` then compares the published IDL with `idl/intent_engine.json` and exits non-zero when they differ.

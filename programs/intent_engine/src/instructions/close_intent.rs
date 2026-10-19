@@ -4,16 +4,14 @@ use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 use intent_core::ext::SETTLE_EXT_TAGS;
 use intent_core::lifecycle::{transition, Action, Status};
 
-use crate::caps::release_mint_cap;
+use crate::caps::refund_mint_cap;
 use crate::errors::{core_err, EngineError};
 use crate::events::IntentClosed;
 use crate::ext::Ext;
 use crate::policy::{
     check_refund_target, close_vault, move_lamports, pay_from_vault, IntentSigner,
 };
-use crate::state::{
-    intent_recoverable, Intent, MintCap, MINT_CAP_SEED, MINT_CAP_VERSION, VAULT_SEED,
-};
+use crate::state::{intent_readable, Intent, VAULT_SEED};
 
 #[event_cpi]
 #[derive(Accounts)]
@@ -25,7 +23,7 @@ pub struct CloseIntent<'info> {
         has_one = owner @ EngineError::Unauthorized,
         has_one = rent_payer @ EngineError::Unauthorized,
         has_one = input_mint,
-        constraint = intent_recoverable(intent.load()?.version) @ EngineError::UnsupportedVersion
+        constraint = intent_readable(intent.load()?.version) @ EngineError::AccountOutdated
     )]
     pub intent: AccountLoader<'info, Intent>,
     #[account(
@@ -57,13 +55,9 @@ pub struct CloseIntent<'info> {
     #[account(mut)]
     pub rent_payer: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
-    #[account(
-        mut,
-        seeds = [MINT_CAP_SEED, input_mint.key().as_ref()],
-        bump = mint_cap.load()?.bump,
-        constraint = mint_cap.load()?.version == MINT_CAP_VERSION @ EngineError::UnsupportedVersion
-    )]
-    pub mint_cap: Option<AccountLoader<'info, MintCap>>,
+    /// CHECK: the input mint's cap, read by hand so a cap of an earlier version, or none at all, never blocks a refund
+    #[account(mut)]
+    pub mint_cap: Option<UncheckedAccount<'info>>,
 }
 
 pub fn handle_close_intent(ctx: Context<CloseIntent>, ext: Ext) -> Result<()> {
@@ -99,7 +93,15 @@ pub fn handle_close_intent(ctx: Context<CloseIntent>, ext: Ext) -> Result<()> {
             swept,
         )?;
     }
-    release_mint_cap(ctx.accounts.mint_cap.as_ref(), &ctx.accounts.intent, swept)?;
+    refund_mint_cap(
+        ctx.accounts
+            .mint_cap
+            .as_ref()
+            .map(|a| a.to_account_info())
+            .as_ref(),
+        &ctx.accounts.intent,
+        swept,
+    )?;
     let rent_to = if ctx.accounts.rent_payer.executable {
         ctx.accounts.cranker.to_account_info()
     } else {

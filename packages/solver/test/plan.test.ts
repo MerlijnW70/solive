@@ -43,7 +43,7 @@ function intent(over: Partial<Intent> = {}): Intent {
     status: IntentStatus.Open,
     bump: 255,
     vaultBump: 255,
-    version: 1,
+    version: 2,
     padding: new Uint8Array(1),
     flags: 0,
     params: encodeParams({ kind: Kind.SwapExactIn, amountIn: AMOUNT, minOut: MIN_OUT }),
@@ -77,7 +77,7 @@ function config(over: Partial<Config> = {}): Config {
     enabledKinds: 0b1_1110n,
     feeBps: 5,
     paused: 0,
-    version: 1,
+    version: 2,
     bump: 255,
     kindFeeMask: 0,
     partnerCutBps: 2_000,
@@ -160,7 +160,7 @@ describe("fill decisions", () => {
   it("skips every intent the program would refuse to fill", async () => {
     const pricer = pays(MIN_OUT * 2n);
     const cases: [Intent, Config, bigint, string][] = [
-      [intent({ version: 2 }), config(), NOW, "unsupported intent version 2"],
+      [intent({ version: 3 }), config(), NOW, "unsupported intent version 3"],
       [intent({ status: IntentStatus.Filled }), config(), NOW, "not open"],
       [intent(), config(), NOW + 60n, "expired"],
       [intent(), config({ paused: PAUSE_FILL }), NOW, "fills are paused"],

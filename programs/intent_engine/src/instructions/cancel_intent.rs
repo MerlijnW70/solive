@@ -3,16 +3,13 @@ use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 use intent_core::ext::SETTLE_EXT_TAGS;
 use intent_core::lifecycle::{transition, Action, Status};
 
-use crate::caps::release_mint_cap;
+use crate::caps::refund_mint_cap;
 use crate::claims::honor_on_cancel;
 use crate::errors::{core_err, EngineError};
 use crate::events::IntentCancelled;
 use crate::ext::Ext;
 use crate::policy::{release_vault, IntentSigner};
-use crate::state::{
-    intent_recoverable, ClaimBoard, Intent, MintCap, CLAIMS_SEED, MINT_CAP_SEED, MINT_CAP_VERSION,
-    VAULT_SEED,
-};
+use crate::state::{intent_readable, Intent, CLAIMS_SEED, VAULT_SEED};
 
 #[event_cpi]
 #[derive(Accounts)]
@@ -21,7 +18,7 @@ pub struct CancelIntent<'info> {
     #[account(
         mut,
         has_one = owner @ EngineError::Unauthorized, has_one = input_mint,
-        constraint = intent_recoverable(intent.load()?.version) @ EngineError::UnsupportedVersion
+        constraint = intent_readable(intent.load()?.version) @ EngineError::AccountOutdated
     )]
     pub intent: AccountLoader<'info, Intent>,
     #[account(
@@ -43,22 +40,15 @@ pub struct CancelIntent<'info> {
     )]
     pub refund_to: Box<InterfaceAccount<'info, TokenAccount>>,
     pub token_program: Interface<'info, TokenInterface>,
-    #[account(
-        mut,
-        seeds = [CLAIMS_SEED, intent.key().as_ref()],
-        bump = claims.load()?.bump
-    )]
-    pub claims: Option<AccountLoader<'info, ClaimBoard>>,
+    /// CHECK: the intent's claims board, read by hand so a board of an earlier version, or one closed as legacy, still lets the owner cancel
+    #[account(mut, seeds = [CLAIMS_SEED, intent.key().as_ref()], bump)]
+    pub claims: Option<UncheckedAccount<'info>>,
     /// CHECK: receives a claim's stake; matched against the board's worker or owner
     #[account(mut)]
     pub stake_to: Option<UncheckedAccount<'info>>,
-    #[account(
-        mut,
-        seeds = [MINT_CAP_SEED, input_mint.key().as_ref()],
-        bump = mint_cap.load()?.bump,
-        constraint = mint_cap.load()?.version == MINT_CAP_VERSION @ EngineError::UnsupportedVersion
-    )]
-    pub mint_cap: Option<AccountLoader<'info, MintCap>>,
+    /// CHECK: the input mint's cap, read by hand so a cap of an earlier version, or none at all, never blocks a refund
+    #[account(mut)]
+    pub mint_cap: Option<UncheckedAccount<'info>>,
 }
 
 pub fn handle_cancel_intent(ctx: Context<CancelIntent>, ext: Ext) -> Result<()> {
@@ -83,7 +73,11 @@ pub fn handle_cancel_intent(ctx: Context<CancelIntent>, ext: Ext) -> Result<()> 
     };
     let stake = honor_on_cancel(
         claims,
-        ctx.accounts.claims.as_ref(),
+        ctx.accounts
+            .claims
+            .as_ref()
+            .map(|a| a.to_account_info())
+            .as_ref(),
         ctx.accounts
             .stake_to
             .as_ref()
@@ -99,8 +93,12 @@ pub fn handle_cancel_intent(ctx: Context<CancelIntent>, ext: Ext) -> Result<()> 
         ctx.accounts.intent.to_account_info(),
         &signer,
     )?;
-    release_mint_cap(
-        ctx.accounts.mint_cap.as_ref(),
+    refund_mint_cap(
+        ctx.accounts
+            .mint_cap
+            .as_ref()
+            .map(|a| a.to_account_info())
+            .as_ref(),
         &ctx.accounts.intent,
         refunded,
     )?;

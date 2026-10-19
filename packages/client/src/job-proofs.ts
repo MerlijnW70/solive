@@ -1,6 +1,7 @@
 import type { Address } from "@solana/kit";
 import {
   type AttestedResultParams,
+  checkAccountVersion,
   CLAIMS_OPEN,
   decodeEvent,
   decodeParams,
@@ -37,7 +38,7 @@ export async function intentAt(transport: Transport, address: Address): Promise<
   if (view === null || view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS || view.data.length !== getIntentSize() || !tag.every((b, i) => view.data[i] === b)) {
     return null;
   }
-  return getIntentDecoder().decode(view.data);
+  return getIntentDecoder().decode(checkAccountVersion(view.data));
 }
 
 export async function proofAt(transport: Transport, address: Address): Promise<Proof | null> {

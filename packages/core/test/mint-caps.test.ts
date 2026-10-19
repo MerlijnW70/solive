@@ -22,6 +22,7 @@ import {
   isMintCapData,
   Kind,
   MINT_CAP_DISCRIMINATOR,
+  MINT_CAP_VERSION,
   TOKEN_PROGRAM_ADDRESS,
 } from "../src/index.js";
 
@@ -40,17 +41,18 @@ describe("mint cap accounts", () => {
         windowStart: 1_000n,
         windowUsed: 200n,
         windowSecs: 60,
-        version: 1,
+        version: MINT_CAP_VERSION,
         bump: 254,
         padding: new Uint8Array(2),
         totalLimit: 900n,
         outstanding: 400n,
-        reserved: new Uint8Array(40),
+        createdAt: 1_000n,
+        reserved: new Uint8Array(32),
       }),
     );
     expect(isMintCapData(data)).toBe(true);
     const cap = decodeMintCapData(data);
-    expect(cap).toMatchObject({ mint: MINT, maxPerOrder: 300n, windowCap: 500n, windowStart: 1_000n, windowUsed: 200n, windowSecs: 60, version: 1, bump: 254, totalLimit: 900n, outstanding: 400n });
+    expect(cap).toMatchObject({ mint: MINT, maxPerOrder: 300n, windowCap: 500n, windowStart: 1_000n, windowUsed: 200n, windowSecs: 60, version: MINT_CAP_VERSION, bump: 254, totalLimit: 900n, outstanding: 400n });
     expect(capWindow(cap, 1_059n)).toEqual({ start: 1_000n, ends: 1_060n, used: 200n, left: 300n });
     expect(capWindow(cap, 1_060n)).toEqual({ start: 1_060n, ends: 1_120n, used: 0n, left: 500n });
     expect(isMintCapData(data.subarray(0, getMintCapSize() - 1))).toBe(false);

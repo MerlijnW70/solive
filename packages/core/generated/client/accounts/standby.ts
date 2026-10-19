@@ -54,6 +54,7 @@ export type Standby = {
   seq: number;
   secs: number;
   bump: number;
+  version: number;
   padding: ReadonlyUint8Array;
 };
 
@@ -63,6 +64,7 @@ export type StandbyArgs = {
   seq: number;
   secs: number;
   bump: number;
+  version: number;
   padding: ReadonlyUint8Array;
 };
 
@@ -76,7 +78,8 @@ export function getStandbyEncoder(): FixedSizeEncoder<StandbyArgs> {
       ["seq", getU32Encoder()],
       ["secs", getU32Encoder()],
       ["bump", getU8Encoder()],
-      ["padding", fixEncoderSize(getBytesEncoder(), 7)],
+      ["version", getU8Encoder()],
+      ["padding", fixEncoderSize(getBytesEncoder(), 6)],
     ]),
     (value) => ({ ...value, discriminator: STANDBY_DISCRIMINATOR }),
   );
@@ -91,7 +94,8 @@ export function getStandbyDecoder(): FixedSizeDecoder<Standby> {
     ["seq", getU32Decoder()],
     ["secs", getU32Decoder()],
     ["bump", getU8Decoder()],
-    ["padding", fixDecoderSize(getBytesDecoder(), 7)],
+    ["version", getU8Decoder()],
+    ["padding", fixDecoderSize(getBytesDecoder(), 6)],
   ]);
 }
 

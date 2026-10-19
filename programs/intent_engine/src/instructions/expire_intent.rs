@@ -4,14 +4,12 @@ use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 use intent_core::ext::SETTLE_EXT_TAGS;
 use intent_core::lifecycle::{transition, Action, Status};
 
-use crate::caps::release_mint_cap;
+use crate::caps::refund_mint_cap;
 use crate::errors::{core_err, EngineError};
 use crate::events::IntentExpired;
 use crate::ext::Ext;
 use crate::policy::{check_refund_target, move_lamports, release_vault, IntentSigner};
-use crate::state::{
-    intent_recoverable, Intent, MintCap, MINT_CAP_SEED, MINT_CAP_VERSION, VAULT_SEED,
-};
+use crate::state::{intent_readable, Intent, VAULT_SEED};
 
 #[event_cpi]
 #[derive(Accounts)]
@@ -21,7 +19,7 @@ pub struct ExpireIntent<'info> {
     #[account(
         mut,
         has_one = input_mint,
-        constraint = intent_recoverable(intent.load()?.version) @ EngineError::UnsupportedVersion
+        constraint = intent_readable(intent.load()?.version) @ EngineError::AccountOutdated
     )]
     pub intent: AccountLoader<'info, Intent>,
     #[account(
@@ -48,13 +46,9 @@ pub struct ExpireIntent<'info> {
     )]
     pub canonical_refund: UncheckedAccount<'info>,
     pub token_program: Interface<'info, TokenInterface>,
-    #[account(
-        mut,
-        seeds = [MINT_CAP_SEED, input_mint.key().as_ref()],
-        bump = mint_cap.load()?.bump,
-        constraint = mint_cap.load()?.version == MINT_CAP_VERSION @ EngineError::UnsupportedVersion
-    )]
-    pub mint_cap: Option<AccountLoader<'info, MintCap>>,
+    /// CHECK: the input mint's cap, read by hand so a cap of an earlier version, or none at all, never blocks a refund
+    #[account(mut)]
+    pub mint_cap: Option<UncheckedAccount<'info>>,
 }
 
 pub fn handle_expire_intent(ctx: Context<ExpireIntent>, ext: Ext) -> Result<()> {
@@ -92,8 +86,12 @@ pub fn handle_expire_intent(ctx: Context<ExpireIntent>, ext: Ext) -> Result<()> 
         ctx.accounts.intent.to_account_info(),
         &signer,
     )?;
-    release_mint_cap(
-        ctx.accounts.mint_cap.as_ref(),
+    refund_mint_cap(
+        ctx.accounts
+            .mint_cap
+            .as_ref()
+            .map(|a| a.to_account_info())
+            .as_ref(),
         &ctx.accounts.intent,
         refunded,
     )?;

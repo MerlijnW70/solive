@@ -139,13 +139,10 @@ pub fn check_mandate_live(
         bytemuck::try_from_bytes(body).map_err(|_| EngineError::MandateRevoked)?;
     require!(
         grant.version == MANDATE_VERSION,
-        EngineError::UnsupportedVersion
+        EngineError::AccountOutdated
     );
     let user = owner_state.load()?;
-    require!(
-        user.version == USER_VERSION,
-        EngineError::UnsupportedVersion
-    );
+    require!(user.version == USER_VERSION, EngineError::AccountOutdated);
     require!(
         grant.serial == intent.mandate_serial && grant.epoch == user.epoch,
         EngineError::MandateRevoked

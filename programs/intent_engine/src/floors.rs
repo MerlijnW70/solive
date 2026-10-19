@@ -53,7 +53,11 @@ pub fn check_committee_floor(
     require_keys_eq!(committee.key(), *attestor, EngineError::CommitteeRequired);
     let stored = committee.load()?;
     require!(
-        stored.version == COMMITTEE_VERSION && stored.threshold >= FLOOR_THRESHOLD,
+        stored.version == COMMITTEE_VERSION,
+        EngineError::AccountOutdated
+    );
+    require!(
+        stored.threshold >= FLOOR_THRESHOLD,
         EngineError::CommitteeRequired
     );
     Ok(())

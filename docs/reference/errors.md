@@ -182,6 +182,11 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6102 | `MintCapTotal` | yes | intents selling this mint already hold the engine's total escrow limit for it; try again once open intents settle, or lower the amount |
 | 6103 | `CommitteeRequired` | no | this escrow reaches the committee floor the engine sets for its token, so its attestor must be a committee of at least 2 judges, passed with the create; name such a committee as attestor, or escrow less |
 | 6104 | `CommitteeFloorsFull` | no | the engine already keeps a committee floor for as many tokens as it can; set one of them to zero first |
+| 6105 | `AccountOutdated` | no | an account has an earlier layout or version than this program reads; close it with intent-engine close-legacy and create it again |
+| 6106 | `NotLegacy` | no | close-legacy closes only accounts of an earlier layout or version, and this one is current |
+| 6107 | `LegacyPayeeMismatch` | no | close-legacy pays the wallet the account's layout records as its payer, or the config's fee recipient when it records none; let intent-engine close-legacy build it |
+| 6108 | `LegacyVaultOpen` | no | close-legacy closes an intent only once its vault is gone; cancel, expire or close the intent first so its owner gets every token back |
+| 6109 | `LegacyMigrates` | no | close-legacy never closes a config or user state; a later program upgrades them in place |
 
 ## Token programs
 

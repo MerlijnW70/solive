@@ -40,6 +40,7 @@ import {
   findVaultPda,
   getConfigDecoder,
   getConfigEncoder,
+  INTENT_VERSION,
   kindBit,
   Kind,
   formatAmount,
@@ -454,20 +455,20 @@ describe("agent server against the deployed engine", () => {
     expect((await fail(client, "quote", { owner: w.owner.address, nonce: "4" }))["code"]).toBe("NotFound");
   });
 
-  it("shows an intent of an unknown version without inventing its terms", async () => {
+  it("refuses to read an intent of an unknown version instead of inventing its terms", async () => {
     const made = await createIntent();
     const account = h.svm.getAccount(made["intent"]);
     if (!account.exists) {
       throw new Error("intent missing");
     }
     const data = new Uint8Array(account.data);
-    data[8 + 164] = 2;
+    data[8 + 164] = INTENT_VERSION + 1;
     data[8 + 161] = 9;
     h.svm.setAccount({ ...account, data });
-    expect(await ok(client, "get_intent", { owner: w.owner.address, nonce: "0" })).toMatchObject({
-      status: "unknown",
-      order: null,
-      summary: ["Unreadable terms: unsupported intent version 2"],
+    expect(await fail(client, "get_intent", { owner: w.owner.address, nonce: "0" })).toMatchObject({
+      code: "AccountOutdated",
+      retryable: false,
+      hint: `this intent account is of version ${INTENT_VERSION + 1}; this SDK reads intent versions 1 to ${INTENT_VERSION} only. Close it with intent-engine close-legacy`,
     });
   });
 

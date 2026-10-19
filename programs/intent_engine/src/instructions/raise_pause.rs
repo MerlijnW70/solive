@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 
 use crate::errors::EngineError;
 use crate::events::PauseRaised;
-use crate::state::{config_recoverable, Config, CONFIG_ADDRESS, PAUSE_ALL};
+use crate::state::{Config, CONFIG_ADDRESS, CONFIG_VERSION, PAUSE_ALL};
 
 #[event_cpi]
 #[derive(Accounts)]
@@ -11,7 +11,7 @@ pub struct RaisePause<'info> {
     #[account(
         mut,
         address = CONFIG_ADDRESS,
-        constraint = config_recoverable(config.load()?.version) @ EngineError::UnsupportedVersion,
+        constraint = config.load()?.version == CONFIG_VERSION @ EngineError::AccountOutdated,
         constraint = {
             let c = config.load()?;
             c.guardian == authority.key() || c.admin == authority.key()

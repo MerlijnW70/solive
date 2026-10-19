@@ -18,7 +18,7 @@ pub struct Advance<'info> {
         mut,
         seeds = [CLAIMS_SEED, intent.key().as_ref()],
         bump = board.load()?.bump,
-        constraint = board.load()?.version == CLAIMS_VERSION @ EngineError::UnsupportedVersion
+        constraint = board.load()?.version == CLAIMS_VERSION @ EngineError::AccountOutdated
     )]
     pub board: AccountLoader<'info, ClaimBoard>,
     /// CHECK: the board's recorded owner, paid a lapsed claim's stake

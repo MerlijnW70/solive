@@ -439,7 +439,7 @@ fn proposed(w: &mut World) -> TestResult<Keypair> {
 
 #[test]
 fn every_load_refuses_an_unknown_config_version() -> TestResult {
-    for version in [0u8, 2, u8::MAX] {
+    for version in [0u8, 1, 3, u8::MAX] {
         let mut w = world()?;
         let pending = proposed(&mut w)?;
         w.poke(&config_pda(), CONFIG_VERSION_AT, &[version])?;
@@ -447,7 +447,7 @@ fn every_load_refuses_an_unknown_config_version() -> TestResult {
         for (i, (signer, ixs)) in cases.iter().enumerate() {
             assert_eq!(
                 w.env.send(signer, ixs, &[]).err(),
-                Some(engine_error(EngineError::UnsupportedVersion)),
+                Some(engine_error(EngineError::AccountOutdated)),
                 "version {version} case {i}"
             );
         }
@@ -501,7 +501,7 @@ fn a_config_copied_to_any_other_address_is_refused() -> TestResult {
 
 #[test]
 fn every_load_refuses_an_unknown_user_version() -> TestResult {
-    for version in [0u8, 2, u8::MAX] {
+    for version in [0u8, 1, 3, u8::MAX] {
         let mut w = world()?;
         let owner = w.owner();
         w.poke(&user_pda(&owner), USER_VERSION_AT, &[version])?;
@@ -531,7 +531,7 @@ fn every_load_refuses_an_unknown_user_version() -> TestResult {
         for (i, (signer, ix)) in cases.iter().enumerate() {
             assert_eq!(
                 w.env.send(signer, std::slice::from_ref(ix), &[]).err(),
-                Some(engine_error(EngineError::UnsupportedVersion)),
+                Some(engine_error(EngineError::AccountOutdated)),
                 "version {version} case {i}"
             );
         }
@@ -541,7 +541,7 @@ fn every_load_refuses_an_unknown_user_version() -> TestResult {
 
 #[test]
 fn every_load_refuses_an_unknown_intent_version() -> TestResult {
-    for version in [0u8, 2, u8::MAX] {
+    for version in [0u8, 1, 3, u8::MAX] {
         let mut w = world()?;
         let owner = w.owner();
         for nonce in [SWAP, ATTESTED] {
@@ -567,10 +567,12 @@ fn every_load_refuses_an_unknown_intent_version() -> TestResult {
             (w.solver_key(), vec![w.expire_ix(SWAP)]),
             (w.solver_key(), vec![w.close_ix(SWAP)]),
         ];
-        for (i, (signer, ixs)) in cases.iter().enumerate() {
+        let refunds_too = !intent_engine::state::intent_readable(version);
+        let checked = if refunds_too { cases.len() } else { 4 };
+        for (i, (signer, ixs)) in cases.iter().enumerate().take(checked) {
             assert_eq!(
                 w.env.send(signer, ixs, &[]).err(),
-                Some(engine_error(EngineError::UnsupportedVersion)),
+                Some(engine_error(EngineError::AccountOutdated)),
                 "version {version} case {i}"
             );
         }

@@ -28,8 +28,8 @@ const resolve = (node, seen = new Set()) => {
 const unclaimed = (instruction) => ({
   ...instruction,
   accounts: instruction.accounts.map((account) => {
-    if (account.optional !== true || account.pda === undefined) return account;
-    const { pda: _derived, ...rest } = account;
+    if (account.optional !== true || (account.pda === undefined && account.address === undefined)) return account;
+    const { pda: _derived, address: _fixed, ...rest } = account;
     return rest;
   }),
 });

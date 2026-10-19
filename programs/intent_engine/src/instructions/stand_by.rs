@@ -10,7 +10,7 @@ use crate::errors::{core_err, EngineError};
 use crate::events::StoodBy;
 use crate::state::{
     ClaimBoard, Intent, Standby, CLAIMS_OPEN, CLAIMS_SEED, CLAIMS_VERSION, INTENT_VERSION,
-    STANDBY_SEED,
+    STANDBY_SEED, STANDBY_VERSION,
 };
 
 #[event_cpi]
@@ -18,13 +18,13 @@ use crate::state::{
 pub struct StandBy<'info> {
     #[account(mut)]
     pub worker: Signer<'info>,
-    #[account(constraint = intent.load()?.version == INTENT_VERSION @ EngineError::UnsupportedVersion)]
+    #[account(constraint = intent.load()?.version == INTENT_VERSION @ EngineError::AccountOutdated)]
     pub intent: AccountLoader<'info, Intent>,
     #[account(
         mut,
         seeds = [CLAIMS_SEED, intent.key().as_ref()],
         bump = board.load()?.bump,
-        constraint = board.load()?.version == CLAIMS_VERSION @ EngineError::UnsupportedVersion
+        constraint = board.load()?.version == CLAIMS_VERSION @ EngineError::AccountOutdated
     )]
     pub board: AccountLoader<'info, ClaimBoard>,
     /// CHECK: the entry at the line's tail, checked against the address its sequence derives and created here
@@ -147,6 +147,7 @@ pub fn handle_stand_by(ctx: Context<StandBy>, secs: u32) -> Result<()> {
         stored.seq = seq;
         stored.secs = secs;
         stored.bump = bump;
+        stored.version = STANDBY_VERSION;
     }
     emit_cpi!(StoodBy {
         intent,

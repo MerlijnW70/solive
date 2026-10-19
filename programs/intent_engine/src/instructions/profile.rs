@@ -37,7 +37,7 @@ pub struct UpdateProfile<'info> {
         mut,
         seeds = [PROFILE_SEED, wallet.key().as_ref()],
         bump = profile.load()?.bump,
-        constraint = profile.load()?.version == PROFILE_VERSION @ EngineError::UnsupportedVersion
+        constraint = profile.load()?.version == PROFILE_VERSION @ EngineError::AccountOutdated
     )]
     pub profile: AccountLoader<'info, Profile>,
 }
@@ -51,7 +51,8 @@ pub struct CloseProfile<'info> {
         mut,
         close = wallet,
         seeds = [PROFILE_SEED, wallet.key().as_ref()],
-        bump = profile.load()?.bump
+        bump = profile.load()?.bump,
+        constraint = profile.load()?.version == PROFILE_VERSION @ EngineError::AccountOutdated
     )]
     pub profile: AccountLoader<'info, Profile>,
 }

@@ -15,7 +15,7 @@ pub struct OpenClaims<'info> {
     #[account(
         mut,
         has_one = owner @ EngineError::Unauthorized,
-        constraint = intent.load()?.version == INTENT_VERSION @ EngineError::UnsupportedVersion
+        constraint = intent.load()?.version == INTENT_VERSION @ EngineError::AccountOutdated
     )]
     pub intent: AccountLoader<'info, Intent>,
     #[account(

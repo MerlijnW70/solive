@@ -51,6 +51,7 @@ import {
   splitFees,
   nextFreeNonce,
   CONFIG_VERSION,
+  ACCOUNT_LAYOUTS,
   PAUSE_CREATE,
   PAUSE_FILL,
   INTENT_VERSION,
@@ -688,6 +689,13 @@ describe("golden vectors emitted by the Rust implementation", () => {
     expect({ config: CONFIG_VERSION, user: USER_VERSION, intent: INTENT_VERSION }).toEqual(v.versions);
     const p = vectors as unknown as { pause: Record<"create" | "fill", number> };
     expect({ create: PAUSE_CREATE, fill: PAUSE_FILL }).toEqual(p.pause);
+  });
+
+  it("carry the version and payer offset of every account layout", () => {
+    const v = vectors as unknown as { layouts: { discriminator: string; space: number; version_at: number; version: number; oldest: number; payer_at: number | null }[] };
+    expect(
+      ACCOUNT_LAYOUTS.map((l) => ({ discriminator: hexOf(l.discriminator), space: l.space, version_at: l.versionAt, version: l.version, oldest: l.oldest, payer_at: l.payerAt })),
+    ).toEqual(v.layouts);
   });
 
   it("pick the next free nonce exactly as the program does", () => {

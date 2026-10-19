@@ -12,6 +12,7 @@ pub mod instructions;
 pub mod policy;
 mod security;
 pub mod state;
+pub mod versions;
 
 pub use attested::{SplitClaim, MAX_SPLIT_RECIPIENTS};
 pub use ext::Ext;
@@ -250,5 +251,9 @@ pub mod intent_engine {
 
     pub fn set_committee_floor(ctx: Context<SetCommitteeFloor>, floor: u64) -> Result<()> {
         handle_set_committee_floor(ctx, floor)
+    }
+
+    pub fn close_legacy(ctx: Context<CloseLegacy>) -> Result<()> {
+        handle_close_legacy(ctx)
     }
 }

@@ -14,6 +14,7 @@ export * from "./beginFill.js";
 export * from "./cancelIntent.js";
 export * from "./claimJob.js";
 export * from "./closeIntent.js";
+export * from "./closeLegacy.js";
 export * from "./closeProfile.js";
 export * from "./createCommittee.js";
 export * from "./createIntent.js";

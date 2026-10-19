@@ -13,13 +13,13 @@ use crate::state::{ClaimBoard, Intent, CLAIMS_OPEN, CLAIMS_SEED, CLAIMS_VERSION,
 pub struct ClaimJob<'info> {
     #[account(mut)]
     pub worker: Signer<'info>,
-    #[account(constraint = intent.load()?.version == INTENT_VERSION @ EngineError::UnsupportedVersion)]
+    #[account(constraint = intent.load()?.version == INTENT_VERSION @ EngineError::AccountOutdated)]
     pub intent: AccountLoader<'info, Intent>,
     #[account(
         mut,
         seeds = [CLAIMS_SEED, intent.key().as_ref()],
         bump = board.load()?.bump,
-        constraint = board.load()?.version == CLAIMS_VERSION @ EngineError::UnsupportedVersion
+        constraint = board.load()?.version == CLAIMS_VERSION @ EngineError::AccountOutdated
     )]
     pub board: AccountLoader<'info, ClaimBoard>,
     /// CHECK: the board's recorded owner, paid a lapsed claim's stake

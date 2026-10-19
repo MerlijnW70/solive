@@ -4,7 +4,7 @@ use intent_core::claim::{stake_on_settle, StakeTo};
 use crate::claims::{clear, escrow_deadline, move_lamports, slot_of, stake_receiver};
 use crate::errors::{core_err, EngineError};
 use crate::events::{ClaimsClosed, StakeMoved};
-use crate::state::{ClaimBoard, CLAIMS_SEED, CLAIMS_VERSION};
+use crate::state::{board_readable, ClaimBoard, CLAIMS_SEED};
 
 #[event_cpi]
 #[derive(Accounts)]
@@ -15,7 +15,7 @@ pub struct SettleClaims<'info> {
         mut,
         seeds = [CLAIMS_SEED, intent.key().as_ref()],
         bump = board.load()?.bump,
-        constraint = board.load()?.version == CLAIMS_VERSION @ EngineError::UnsupportedVersion
+        constraint = board_readable(board.load()?.version) @ EngineError::AccountOutdated
     )]
     pub board: AccountLoader<'info, ClaimBoard>,
     /// CHECK: the board's recorded owner, paid a forfeited stake and the board's rent

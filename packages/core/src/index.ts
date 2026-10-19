@@ -25,3 +25,4 @@ export * from "./sealed-delivery.js";
 export * from "./sig.js";
 export * from "./state.js";
 export * from "./validate.js";
+export * from "./versions.js";

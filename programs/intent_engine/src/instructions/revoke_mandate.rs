@@ -2,14 +2,19 @@ use anchor_lang::prelude::*;
 
 use crate::errors::EngineError;
 use crate::events::MandateClosed;
-use crate::state::Mandate;
+use crate::state::{Mandate, MANDATE_VERSION};
 
 #[event_cpi]
 #[derive(Accounts)]
 pub struct RevokeMandate<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
-    #[account(mut, close = owner, has_one = owner @ EngineError::Unauthorized)]
+    #[account(
+        mut,
+        close = owner,
+        has_one = owner @ EngineError::Unauthorized,
+        constraint = mandate.load()?.version == MANDATE_VERSION @ EngineError::AccountOutdated
+    )]
     pub mandate: AccountLoader<'info, Mandate>,
 }
 

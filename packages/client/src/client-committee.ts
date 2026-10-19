@@ -1,6 +1,7 @@
 import type { Address } from "@solana/kit";
 import {
   buildCreateCommittee,
+  checkAccountVersion,
   COMMITTEE_DISCRIMINATOR,
   committeeFloorOf,
   committeeOf,
@@ -26,7 +27,7 @@ export async function loadCommittee(transport: Transport, address: Address): Pro
   ) {
     return null;
   }
-  const stored = getCommitteeDecoder().decode(view.data);
+  const stored = getCommitteeDecoder().decode(checkAccountVersion(view.data));
   const members = stored.members.slice(0, stored.count);
   const terms = { members, threshold: stored.threshold, feeWallet: stored.feeWallet };
   const derived = await committeeOf(terms);

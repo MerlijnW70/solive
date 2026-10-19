@@ -17,13 +17,13 @@ pub struct FillAttestedCommittee<'info> {
     pub solver: Signer<'info>,
     #[account(
         address = CONFIG_ADDRESS,
-        constraint = config.load()?.version == CONFIG_VERSION @ EngineError::UnsupportedVersion
+        constraint = config.load()?.version == CONFIG_VERSION @ EngineError::AccountOutdated
     )]
     pub config: AccountLoader<'info, Config>,
     #[account(
         mut,
         has_one = input_mint,
-        constraint = intent.load()?.version == INTENT_VERSION @ EngineError::UnsupportedVersion
+        constraint = intent.load()?.version == INTENT_VERSION @ EngineError::AccountOutdated
     )]
     pub intent: AccountLoader<'info, Intent>,
     #[account(
@@ -77,7 +77,7 @@ pub struct FillAttestedCommittee<'info> {
         mut,
         seeds = [MINT_CAP_SEED, input_mint.key().as_ref()],
         bump = mint_cap.load()?.bump,
-        constraint = mint_cap.load()?.version == MINT_CAP_VERSION @ EngineError::UnsupportedVersion
+        constraint = mint_cap.load()?.version == MINT_CAP_VERSION @ EngineError::AccountOutdated
     )]
     pub mint_cap: Option<AccountLoader<'info, MintCap>>,
 }

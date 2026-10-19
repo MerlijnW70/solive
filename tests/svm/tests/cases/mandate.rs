@@ -8,7 +8,7 @@ use solana_keypair::Keypair;
 use solana_signer::Signer;
 use solana_transaction_error::TransactionError;
 use svm_tests::{
-    agent_lane, anchor_error, bump_search_cost, cu_gates, engine_error, events, intent_pda, mandate_pda,
+    agent_lane, anchor_error, bump_search_cost, close_legacy_ix, cu_gates, engine_error, events, intent_pda, mandate_pda,
     mandate_terms, partner_ext, vault_pda, Env, IntentSpec, Market, TestResult, Trader, START_TS,
 };
 
@@ -150,10 +150,10 @@ fn an_agent_intent_cannot_fill_while_its_owners_state_has_an_unknown_version() -
     let user = svm_tests::user_pda(&s.owner());
     let mut account = s.env.svm.get_account(&user).ok_or("user missing")?;
     assert_eq!(account.data.get(8 + 72).copied(), Some(intent_engine::state::USER_VERSION));
-    *account.data.get_mut(8 + 72).ok_or("short")? = 2;
+    *account.data.get_mut(8 + 72).ok_or("short")? = 1;
     s.env.svm.set_account(user, account)?;
-    assert_eq!(s.fill(0), Err(engine_error(EngineError::UnsupportedVersion)));
-    assert_eq!(s.begin(0), Err(engine_error(EngineError::UnsupportedVersion)));
+    assert_eq!(s.fill(0), Err(engine_error(EngineError::AccountOutdated)));
+    assert_eq!(s.begin(0), Err(engine_error(EngineError::AccountOutdated)));
     Ok(())
 }
 
@@ -171,14 +171,14 @@ fn set_byte(env: &mut Env, key: &Pubkey, at: usize, value: u8) -> TestResult {
 fn agents_and_grants_refuse_an_unknown_user_or_config_version() -> TestResult {
     let mut s = setup()?;
     let user = svm_tests::user_pda(&s.owner());
-    set_byte(&mut s.env, &user, USER_VERSION_AT, 2)?;
-    assert_eq!(s.agent_creates(&swap(0, 10, 5)?), Err(engine_error(EngineError::UnsupportedVersion)));
+    set_byte(&mut s.env, &user, USER_VERSION_AT, 1)?;
+    assert_eq!(s.agent_creates(&swap(0, 10, 5)?), Err(engine_error(EngineError::AccountOutdated)));
     let args = intent_engine::MandateArgs { id: 1, ..mandate_terms(s.agent.pubkey(), VALID_UNTIL) };
     let grant = s.env.create_mandate_ix(&s.trader, &s.market, args);
-    assert_eq!(s.owner_sends(&[grant]), Err(engine_error(EngineError::UnsupportedVersion)));
+    assert_eq!(s.owner_sends(&[grant]), Err(engine_error(EngineError::AccountOutdated)));
     set_byte(&mut s.env, &user, USER_VERSION_AT, intent_engine::state::USER_VERSION)?;
-    set_byte(&mut s.env, &svm_tests::config_pda(), CONFIG_VERSION_AT, 2)?;
-    assert_eq!(s.agent_creates(&swap(0, 10, 5)?), Err(engine_error(EngineError::UnsupportedVersion)));
+    set_byte(&mut s.env, &svm_tests::config_pda(), CONFIG_VERSION_AT, 1)?;
+    assert_eq!(s.agent_creates(&swap(0, 10, 5)?), Err(engine_error(EngineError::AccountOutdated)));
     set_byte(&mut s.env, &svm_tests::config_pda(), CONFIG_VERSION_AT, intent_engine::state::CONFIG_VERSION)?;
     s.agent_creates(&swap(0, 10, 5)?)?;
     Ok(())
@@ -232,8 +232,8 @@ fn a_flash_fill_pays_only_the_agents_canonical_account_and_reads_only_the_owners
 const MANDATE_VERSION_AT: usize = 8 + 7 * 32 + 9 * 8 + 2 * 4 + 2 + 1;
 
 #[test]
-fn an_unknown_mandate_version_admits_and_fills_nothing_and_still_revokes() -> TestResult {
-    for version in [0u8, 2, u8::MAX] {
+fn an_unknown_mandate_version_admits_fills_and_revokes_nothing_and_closes_as_legacy() -> TestResult {
+    for version in [0u8, 1, 3, u8::MAX] {
         let mut s = setup()?;
         s.agent_creates(&swap(0, 10, 5)?)?;
         let mut account = s.env.svm.get_account(&s.mandate).ok_or("mandate missing")?;
@@ -242,13 +242,20 @@ fn an_unknown_mandate_version_admits_and_fills_nothing_and_still_revokes() -> Te
         s.env.svm.set_account(s.mandate, account)?;
         assert_eq!(
             s.agent_creates(&swap(1, 10, 5)?),
-            Err(engine_error(EngineError::UnsupportedVersion)),
+            Err(engine_error(EngineError::AccountOutdated)),
             "version {version}"
         );
-        assert_eq!(s.fill(0), Err(engine_error(EngineError::UnsupportedVersion)), "version {version}");
-        assert_eq!(s.begin(0), Err(engine_error(EngineError::UnsupportedVersion)), "version {version}");
-        s.revoke()?;
+        assert_eq!(s.fill(0), Err(engine_error(EngineError::AccountOutdated)), "version {version}");
+        assert_eq!(s.begin(0), Err(engine_error(EngineError::AccountOutdated)), "version {version}");
+        let revoke = s.env.revoke_mandate_ix(&s.owner(), s.mandate);
+        assert_eq!(s.owner_sends(&[revoke]).err(), Some(engine_error(EngineError::AccountOutdated)), "version {version}");
+        let owner = s.owner();
+        let held = s.env.lamports(&s.mandate);
+        let before = s.env.lamports(&owner);
+        let payer = s.env.funded()?;
+        s.env.send(&payer, &[close_legacy_ix(&s.mandate, &owner, false)], &[])?;
         assert!(!s.env.exists(&s.mandate));
+        assert_eq!(Some(s.env.lamports(&owner)), before.checked_add(held), "version {version}");
     }
     Ok(())
 }

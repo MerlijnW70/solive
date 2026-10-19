@@ -111,3 +111,8 @@ Every error the engine program raises, from its IDL. When an SDK call fails, `cl
 | 6102 | `MintCapTotal` | yes | intents selling this mint already hold the engine's total escrow limit for it |
 | 6103 | `CommitteeRequired` | no | this escrow reaches the committee floor the engine sets for its token, so its attestor must be a committee of at least 2 judges, passed with the create |
 | 6104 | `CommitteeFloorsFull` | no | the engine already keeps a committee floor for as many tokens as it can |
+| 6105 | `AccountOutdated` | no | an account has an earlier layout or version than this program reads |
+| 6106 | `NotLegacy` | no | close-legacy closes only accounts of an earlier layout or version, and this one is current |
+| 6107 | `LegacyPayeeMismatch` | no | close-legacy pays the wallet the account's layout records as its payer, or the config's fee recipient when it records none |
+| 6108 | `LegacyVaultOpen` | no | close-legacy closes an intent only once its vault is gone |
+| 6109 | `LegacyMigrates` | no | close-legacy never closes a config or user state |

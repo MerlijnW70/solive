@@ -52,6 +52,7 @@ import {
   findVaultPda,
   type Intent,
   INTENT_ENGINE_PROGRAM_ADDRESS,
+  INTENT_VERSION,
   DELIVERY_MEMO_PREFIX,
   Kind,
   splitFee,
@@ -192,7 +193,7 @@ describe("cli against the deployed engine", () => {
       createdAt: NOW.toString(),
       expiresAt: (NOW + 3_600n).toString(),
       status: "open",
-      version: 1,
+      version: 2,
       flags: 0,
       filled: "0",
       revision: 0,
@@ -564,7 +565,7 @@ describe("cli against the deployed engine", () => {
     expect(lamports - (h.svm.getBalance(cranker.address) ?? 0n)).toBeLessThan(rent);
   });
 
-  it("shows an intent of a version it does not understand as raw bytes with the reason", async () => {
+  it("refuses to show an intent of a version it does not understand and names close-legacy", async () => {
     await cli(create("4", NOW + 3_600n), { "owner.json": owner });
     const [intent] = await findIntentPda({ owner: owner.address, nonce: 4n });
     const account = h.svm.getAccount(intent);
@@ -572,15 +573,11 @@ describe("cli against the deployed engine", () => {
       throw new Error("intent missing");
     }
     const data = new Uint8Array(account.data);
-    data[8 + 164] = 2;
+    data[8 + 164] = INTENT_VERSION + 1;
     h.svm.setAccount({ ...account, data });
-    const shown = (await cli(["show", "intent", "--owner", owner.address, "--nonce", "4"], {})).json();
-    expect(shown["version"]).toBe(2);
-    expect(shown["params"]).toEqual({
-      kind: "unknown(1)",
-      raw: Array.from(data.subarray(8 + 168, 8 + 296), (b) => b.toString(16).padStart(2, "0")).join(""),
-      reason: "unsupported version 2",
-    });
+    const shown = await cli(["show", "intent", "--owner", owner.address, "--nonce", "4"], {});
+    expect(shown.code).toBe(EXIT_FAILED);
+    expect(shown.err).toContain(`this intent account is of version ${INTENT_VERSION + 1}; this SDK reads intent versions 1 to ${INTENT_VERSION} only. Close it with intent-engine close-legacy`);
   });
 
   it("sets the economics and pays an expiring cranker the bounty held by each intent", async () => {
@@ -1802,7 +1799,7 @@ describe("refund targets", () => {
 
 describe("crank decisions", () => {
   const PAYER = "SysvarRent111111111111111111111111111111111" as Address;
-  const at = (status: number, expiresAt: bigint, version = 1) =>
+  const at = (status: number, expiresAt: bigint, version = 2) =>
     ({ status, expiresAt, version, rentPayer: PAYER }) as unknown as Intent;
 
   it("expires open intents from their deadline and closes settled ones, cancelled ones only for their payer", () => {
@@ -1820,7 +1817,7 @@ describe("crank decisions", () => {
   });
 
   it("leaves intents of a version it does not understand alone", () => {
-    for (const version of [0, 2, 255]) {
+    for (const version of [0, 1, 3, 255]) {
       expect(crankAction(at(0, 100n, version), 1_000n)).toBeUndefined();
       expect(crankAction(at(1, 100n, version), 1_000n)).toBeUndefined();
     }

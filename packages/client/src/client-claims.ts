@@ -1,6 +1,7 @@
 import type { Address } from "@solana/kit";
 import {
   CLAIM_BOARD_DISCRIMINATOR,
+  checkAccountVersion,
   claimBoardAddress,
   CLAIMS_OPEN,
   claimSlot,
@@ -53,7 +54,7 @@ function engineDataOf(address: Address, view: AccountView | null, discriminator:
   if (view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS || !Array.from(discriminator).every((b, i) => view.data[i] === b)) {
     throw new Error(`${address} is not the engine account it should be`);
   }
-  return view.data;
+  return checkAccountVersion(view.data);
 }
 
 function claimsViewOf(board: Address, data: Uint8Array, now: bigint): ClaimsView {
@@ -133,7 +134,7 @@ export async function cancelClaims(transport: Transport, intent: Address, claims
   const board = await claimBoardAddress(intent);
   const data = await engineData(transport, board, CLAIM_BOARD_DISCRIMINATOR);
   if (data === null) {
-    throw new Error(`${intent} takes claims but its claims board ${board} is missing`);
+    return { board, stakeTo: null };
   }
   return { board, stakeTo: stakeReceiverOnCancel(getClaimBoardDecoder().decode(data), await chainTime(transport)) };
 }

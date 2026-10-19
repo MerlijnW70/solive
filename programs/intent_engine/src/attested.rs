@@ -46,7 +46,7 @@ impl Judge {
         let stored = account.load()?;
         require!(
             stored.version == COMMITTEE_VERSION,
-            EngineError::UnsupportedVersion
+            EngineError::AccountOutdated
         );
         let members = stored.members.map(|member| member.to_bytes());
         let committee = CoreCommittee::from_stored(

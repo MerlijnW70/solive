@@ -1,6 +1,7 @@
 import { tool } from "./names.js";
 import type { Address } from "@solana/kit";
 import {
+  AccountVersionError,
   BPS_DENOMINATOR,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   IntentCoreError,
@@ -133,6 +134,11 @@ export const ENGINE_PROBLEMS = {
   MintCapTotal: later("intents selling this mint already hold the engine's total escrow limit for it; try again once open intents settle, or lower the amount"),
   CommitteeRequired: never("this escrow reaches the committee floor the engine sets for its token, so its attestor must be a committee of at least 2 judges, passed with the create; name such a committee as attestor, or escrow less"),
   CommitteeFloorsFull: never("the engine already keeps a committee floor for as many tokens as it can; set one of them to zero first"),
+  AccountOutdated: never("an account has an earlier layout or version than this program reads; close it with intent-engine close-legacy and create it again"),
+  NotLegacy: never("close-legacy closes only accounts of an earlier layout or version, and this one is current"),
+  LegacyPayeeMismatch: never("close-legacy pays the wallet the account's layout records as its payer, or the config's fee recipient when it records none; let intent-engine close-legacy build it"),
+  LegacyVaultOpen: never("close-legacy closes an intent only once its vault is gone; cancel, expire or close the intent first so its owner gets every token back"),
+  LegacyMigrates: never("close-legacy never closes a config or user state; a later program upgrades them in place"),
 } as const satisfies Record<string, Entry>;
 
 type EngineErrorName = keyof typeof ENGINE_PROBLEMS;
@@ -356,6 +362,9 @@ export function problemOf(error: unknown, url?: string): Problem {
   }
   if (error instanceof LedgerError) {
     return { code: "Ledger", retryable: SERVER_PROBLEMS.Ledger.retryable, hint: untrusted(error.message) };
+  }
+  if (error instanceof AccountVersionError) {
+    return { code: "AccountOutdated", retryable: ENGINE_PROBLEMS.AccountOutdated.retryable, hint: error.message };
   }
   if (error instanceof MissingAccount) {
     return { code: "NotFound", retryable: SERVER_PROBLEMS.NotFound.retryable, hint: error.message };

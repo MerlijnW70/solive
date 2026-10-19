@@ -3,7 +3,7 @@ use anchor_lang::prelude::*;
 use crate::claims::escrow_deadline;
 use crate::errors::EngineError;
 use crate::events::LineLeft;
-use crate::state::{Standby, STANDBY_SEED};
+use crate::state::{Standby, STANDBY_SEED, STANDBY_VERSION};
 
 #[event_cpi]
 #[derive(Accounts)]
@@ -16,6 +16,7 @@ pub struct Leave<'info> {
         mut,
         seeds = [STANDBY_SEED, intent.key().as_ref(), &seq.to_le_bytes()],
         bump = entry.load()?.bump,
+        constraint = entry.load()?.version == STANDBY_VERSION @ EngineError::AccountOutdated,
         close = worker
     )]
     pub entry: AccountLoader<'info, Standby>,

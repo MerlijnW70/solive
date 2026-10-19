@@ -966,6 +966,7 @@ fn vectors() -> TestResult<Value> {
         "ClaimsClosed": hex(ev::ClaimsClosed::DISCRIMINATOR),
         "ClaimsOpened": hex(ev::ClaimsOpened::DISCRIMINATOR),
         "JobClaimed": hex(ev::JobClaimed::DISCRIMINATOR),
+        "LegacyClosed": hex(ev::LegacyClosed::DISCRIMINATOR),
         "LineLeft": hex(ev::LineLeft::DISCRIMINATOR),
         "ProfileClosed": hex(ev::ProfileClosed::DISCRIMINATOR),
         "ProfileSet": hex(ev::ProfileSet::DISCRIMINATOR),
@@ -1042,6 +1043,17 @@ fn vectors() -> TestResult<Value> {
             "user": intent_engine::state::USER_VERSION,
             "intent": intent_engine::state::INTENT_VERSION,
         }),
+        "layouts": intent_engine::versions::LAYOUTS
+            .iter()
+            .map(|l| json!({
+                "discriminator": hex(l.discriminator),
+                "space": l.space,
+                "version_at": l.version_at,
+                "version": l.version,
+                "oldest": l.oldest,
+                "payer_at": l.payer_at,
+            }))
+            .collect::<Vec<_>>(),
         "pause": json!({
             "create": intent_engine::state::PAUSE_CREATE,
             "fill": intent_engine::state::PAUSE_FILL,

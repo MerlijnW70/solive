@@ -273,6 +273,9 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         owner: key(values, "owner"),
         nonce: u64(values, "nonce"),
       };
+    case "close-legacy":
+      noSub(sub);
+      return { name: "close-legacy", ...remote, keypair: required(values, "keypair"), yes: values.yes === true, address: key(values, "address") };
     case "advance-nonce":
       noSub(sub);
       return { name: "advance-nonce", ...remote, keypair: required(values, "keypair"), base: u64(values, "base") };

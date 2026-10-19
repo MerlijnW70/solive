@@ -17,7 +17,7 @@ pub struct DropClaim<'info> {
         mut,
         seeds = [CLAIMS_SEED, intent.key().as_ref()],
         bump = board.load()?.bump,
-        constraint = board.load()?.version == CLAIMS_VERSION @ EngineError::UnsupportedVersion
+        constraint = board.load()?.version == CLAIMS_VERSION @ EngineError::AccountOutdated
     )]
     pub board: AccountLoader<'info, ClaimBoard>,
     /// CHECK: the worker of the first live entry in the line, checked against that entry

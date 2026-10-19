@@ -3,9 +3,9 @@ import type { Config } from "../generated/client/index.js";
 import { Kind, kindBit, type KindName } from "./kinds.js";
 import { U64_MAX } from "./math.js";
 
-export const CONFIG_VERSION = 1;
-export const USER_VERSION = 1;
-export const INTENT_VERSION = 1;
+export const CONFIG_VERSION = 2;
+export const USER_VERSION = 2;
+export const INTENT_VERSION = 2;
 export const PAUSE_CREATE = 1;
 export const PAUSE_FILL = 2;
 export const MAX_CREATE_FEE = 10_000_000;

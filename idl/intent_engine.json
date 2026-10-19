@@ -460,28 +460,7 @@
         {
           "name": "mint_cap",
           "writable": true,
-          "optional": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  105,
-                  110,
-                  116,
-                  95,
-                  99,
-                  97,
-                  112
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "input_mint"
-              }
-            ]
-          }
+          "optional": true
         },
         {
           "name": "event_authority"
@@ -643,28 +622,7 @@
         {
           "name": "mint_cap",
           "writable": true,
-          "optional": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  105,
-                  110,
-                  116,
-                  95,
-                  99,
-                  97,
-                  112
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "input_mint"
-              }
-            ]
-          }
+          "optional": true
         },
         {
           "name": "event_authority"
@@ -683,6 +641,59 @@
           }
         }
       ]
+    },
+    {
+      "name": "close_legacy",
+      "discriminator": [
+        119,
+        17,
+        150,
+        2,
+        226,
+        13,
+        36,
+        75
+      ],
+      "accounts": [
+        {
+          "name": "account",
+          "writable": true
+        },
+        {
+          "name": "payee",
+          "writable": true
+        },
+        {
+          "name": "config",
+          "optional": true,
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "vault",
+          "optional": true
+        },
+        {
+          "name": "intent",
+          "optional": true
+        },
+        {
+          "name": "stake_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "fee_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
     },
     {
       "name": "close_profile",
@@ -1790,28 +1801,7 @@
         {
           "name": "mint_cap",
           "writable": true,
-          "optional": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  109,
-                  105,
-                  110,
-                  116,
-                  95,
-                  99,
-                  97,
-                  112
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "input_mint"
-              }
-            ]
-          }
+          "optional": true
         },
         {
           "name": "event_authority"
@@ -4038,6 +4028,19 @@
       ]
     },
     {
+      "name": "LegacyClosed",
+      "discriminator": [
+        206,
+        178,
+        254,
+        228,
+        149,
+        196,
+        78,
+        17
+      ]
+    },
+    {
       "name": "LineLeft",
       "discriminator": [
         133,
@@ -4640,6 +4643,26 @@
     {
       "code": 6104,
       "name": "CommitteeFloorsFull"
+    },
+    {
+      "code": 6105,
+      "name": "AccountOutdated"
+    },
+    {
+      "code": 6106,
+      "name": "NotLegacy"
+    },
+    {
+      "code": 6107,
+      "name": "LegacyPayeeMismatch"
+    },
+    {
+      "code": 6108,
+      "name": "LegacyVaultOpen"
+    },
+    {
+      "code": 6109,
+      "name": "LegacyMigrates"
     }
   ],
   "types": [
@@ -5978,6 +6001,30 @@
       }
     },
     {
+      "name": "LegacyClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "payee",
+            "type": "pubkey"
+          },
+          {
+            "name": "lamports",
+            "type": "u64"
+          },
+          {
+            "name": "stake",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "LineLeft",
       "type": {
         "kind": "struct",
@@ -6402,11 +6449,15 @@
             "type": "u64"
           },
           {
+            "name": "created_at",
+            "type": "i64"
+          },
+          {
             "name": "reserved",
             "type": {
               "array": [
                 "u8",
-                40
+                32
               ]
             }
           }
@@ -6772,11 +6823,15 @@
             "type": "u8"
           },
           {
+            "name": "version",
+            "type": "u8"
+          },
+          {
             "name": "padding",
             "type": {
               "array": [
                 "u8",
-                7
+                6
               ]
             }
           }

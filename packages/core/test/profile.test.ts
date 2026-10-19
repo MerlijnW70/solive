@@ -24,6 +24,8 @@ import {
   type ProfileInput,
   profileAddress,
   PROFILE_DISCRIMINATOR,
+  PROFILE_VERSION,
+  AccountVersionError,
   profileView,
 } from "../src/index.js";
 
@@ -154,15 +156,17 @@ describe("profiles", () => {
     expect(() => profileView(new Uint8Array(16))).toThrow(RangeError);
   });
 
-  it("profileView reads an account of at least the profile size that starts with its discriminator, and nothing else", () => {
-    const account = (length: number) => {
+  it("profileView reads an account of the profile size and current version that starts with its discriminator, and nothing else", () => {
+    const account = (length: number, version = PROFILE_VERSION) => {
       const data = new Uint8Array(length);
       data.set(PROFILE_DISCRIMINATOR);
+      data[8 + 456] = version;
       return data;
     };
     const empty = { skills: [], endpoint: "", docUrl: null, docSha256: null, updatedAt: 0n };
     expect(profileView(account(getProfileSize()))).toMatchObject(empty);
-    expect(profileView(account(getProfileSize() + 8))).toMatchObject(empty);
+    expect(() => profileView(account(getProfileSize() + 8))).toThrow(AccountVersionError);
+    expect(() => profileView(account(getProfileSize(), PROFILE_VERSION - 1))).toThrow(`this profile account is of version ${PROFILE_VERSION - 1}`);
     expect(() => profileView(account(getProfileSize() - 1))).toThrow("the data is not a profile account");
     const wrong = account(getProfileSize());
     wrong.set([(PROFILE_DISCRIMINATOR[7] ?? 0) ^ 1], 7);

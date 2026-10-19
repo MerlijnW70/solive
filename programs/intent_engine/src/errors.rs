@@ -108,6 +108,11 @@ pub enum EngineError {
     MintCapTotal,
     CommitteeRequired,
     CommitteeFloorsFull,
+    AccountOutdated,
+    NotLegacy,
+    LegacyPayeeMismatch,
+    LegacyVaultOpen,
+    LegacyMigrates,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {

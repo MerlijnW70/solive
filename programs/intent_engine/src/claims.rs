@@ -1,13 +1,16 @@
 use anchor_lang::prelude::*;
 use anchor_lang::Discriminator;
+use bytemuck::Zeroable;
 use intent_core::claim::{stake_on_cancel, stake_on_release, Cooldown, Line, Slot, StakeTo};
 use intent_core::lifecycle::Status;
 
 use crate::errors::{core_err, EngineError};
 use crate::events::{JobClaimed, StakeMoved, STAKE_TO_OWNER, STAKE_TO_WORKER};
 use crate::state::{
-    ClaimBoard, Intent, Standby, CLAIMS_OPEN, CLAIMS_SEED, CLAIMS_VERSION, STANDBY_SEED,
+    intent_readable, ClaimBoard, Intent, Standby, CLAIMS_OPEN, CLAIMS_SEED, STANDBY_SEED,
+    STANDBY_VERSION,
 };
+use crate::versions::{is_current, legacy_board, readable, LEGACY_BOARD_SPACE};
 
 pub fn board_address(intent: &Pubkey) -> (Pubkey, u8) {
     Pubkey::find_program_address(&[CLAIMS_SEED, intent.as_ref()], &crate::ID)
@@ -40,6 +43,7 @@ pub fn escrow_deadline(intent: &AccountInfo, now: i64) -> Result<Option<i64>> {
         .get(disc.len()..Intent::SPACE)
         .ok_or(EngineError::ClaimsMissing)?;
     let held: &Intent = bytemuck::try_from_bytes(body).map_err(|_| EngineError::ClaimsMissing)?;
+    require!(intent_readable(held.version), EngineError::AccountOutdated);
     let status = Status::try_from(held.status).map_err(core_err)?;
     Ok((status == Status::Open && now < held.expires_at).then_some(held.expires_at))
 }
@@ -54,9 +58,14 @@ pub fn read_standby(entry: &AccountInfo) -> Result<Standby> {
     let body = data
         .get(disc.len()..Standby::SPACE)
         .ok_or(EngineError::LineEntryMismatch)?;
-    bytemuck::try_from_bytes::<Standby>(body)
+    let standby = bytemuck::try_from_bytes::<Standby>(body)
         .copied()
-        .map_err(|_| error!(EngineError::LineEntryMismatch))
+        .map_err(|_| error!(EngineError::LineEntryMismatch))?;
+    require!(
+        standby.version == STANDBY_VERSION,
+        EngineError::AccountOutdated
+    );
+    Ok(standby)
 }
 
 pub fn close_entry<'info>(entry: &AccountInfo<'info>, to: &AccountInfo<'info>) -> Result<u64> {
@@ -177,28 +186,76 @@ struct Decided {
     receiver: Option<(Pubkey, u8)>,
 }
 
+fn with_board<R>(data: &mut [u8], read: impl FnOnce(&mut ClaimBoard) -> R) -> Result<R> {
+    require!(
+        data.get(..ClaimBoard::DISCRIMINATOR.len()) == Some(ClaimBoard::DISCRIMINATOR),
+        EngineError::ClaimsMissing
+    );
+    let head = ClaimBoard::DISCRIMINATOR.len();
+    if data.len() == LEGACY_BOARD_SPACE {
+        let mut copy = ClaimBoard::zeroed();
+        let prefix = LEGACY_BOARD_SPACE
+            .checked_sub(head)
+            .ok_or(EngineError::Overflow)?;
+        let stored = data
+            .get_mut(head..LEGACY_BOARD_SPACE)
+            .ok_or(EngineError::AccountOutdated)?;
+        let view = bytemuck::bytes_of_mut(&mut copy)
+            .get_mut(..prefix)
+            .ok_or(EngineError::AccountOutdated)?;
+        view.copy_from_slice(stored);
+        let out = read(&mut copy);
+        let view = bytemuck::bytes_of(&copy)
+            .get(..prefix)
+            .ok_or(EngineError::AccountOutdated)?;
+        stored.copy_from_slice(view);
+        return Ok(out);
+    }
+    let body = data
+        .get_mut(head..ClaimBoard::SPACE)
+        .ok_or(EngineError::AccountOutdated)?;
+    let board: &mut ClaimBoard =
+        bytemuck::try_from_bytes_mut(body).map_err(|_| error!(EngineError::ClaimsMissing))?;
+    Ok(read(board))
+}
+
 fn decide(
-    loader: &AccountLoader<ClaimBoard>,
+    account: &AccountInfo,
     now: i64,
+    older: bool,
     rule: impl FnOnce(Slot) -> Result<Option<StakeTo>>,
 ) -> Result<Decided> {
-    let board = loader.load()?;
-    require!(
-        board.version == CLAIMS_VERSION,
-        EngineError::UnsupportedVersion
-    );
-    let slot = slot_of(&board, now);
-    let receiver = rule(slot)?.map(|to| stake_receiver(&board, to));
+    require_keys_eq!(*account.owner, crate::ID, EngineError::ClaimsMissing);
+    let mut data = account.try_borrow_mut_data()?;
+    let accepted = if older {
+        readable(&data) || legacy_board(&data)
+    } else {
+        is_current(&data)
+    };
+    require!(accepted, EngineError::AccountOutdated);
+    let (intent, slot, held, owner, worker) = with_board(&mut data, |board| {
+        (
+            board.intent,
+            slot_of(board, now),
+            board.held,
+            board.owner,
+            board.worker,
+        )
+    })?;
+    let receiver = rule(slot)?.map(|to| match to {
+        StakeTo::Worker => (worker, STAKE_TO_WORKER),
+        StakeTo::Owner => (owner, STAKE_TO_OWNER),
+    });
     Ok(Decided {
-        intent: board.intent,
+        intent,
         slot,
-        held: board.held,
+        held,
         receiver,
     })
 }
 
 fn pay_stake(
-    loader: &AccountLoader<ClaimBoard>,
+    account: &AccountInfo,
     stake_to: Option<&AccountInfo>,
     decided: Decided,
 ) -> Result<Option<StakeMoved>> {
@@ -207,12 +264,12 @@ fn pay_stake(
     };
     let target = stake_to.ok_or(EngineError::StakeAccountMismatch)?;
     require_keys_eq!(*target.key, to, EngineError::StakeAccountMismatch);
-    move_lamports(&loader.to_account_info(), target, decided.held)?;
+    move_lamports(account, target, decided.held)?;
     let worker = match decided.slot {
         Slot::Held { worker, .. } | Slot::Lapsed { worker } => Pubkey::new_from_array(worker),
         Slot::Free => Pubkey::default(),
     };
-    clear(&mut *loader.load_mut()?);
+    with_board(&mut account.try_borrow_mut_data()?, clear)?;
     Ok(Some(StakeMoved {
         intent: decided.intent,
         worker,
@@ -232,25 +289,28 @@ pub fn honor_on_release(
     if claims != CLAIMS_OPEN {
         return Ok(None);
     }
-    let loader = board.ok_or(EngineError::ClaimsMissing)?;
+    let account = board.ok_or(EngineError::ClaimsMissing)?.to_account_info();
     let wallets: Vec<[u8; 32]> = payees.iter().map(Pubkey::to_bytes).collect();
-    let decided = decide(loader, now, |slot| {
+    let decided = decide(&account, now, false, |slot| {
         slot.may_pay(&wallets).map_err(core_err)?;
         Ok(stake_on_release(slot, &wallets))
     })?;
-    pay_stake(loader, stake_to, decided)
+    pay_stake(&account, stake_to, decided)
 }
 
 pub fn honor_on_cancel(
     claims: u8,
-    board: Option<&AccountLoader<ClaimBoard>>,
+    board: Option<&AccountInfo>,
     stake_to: Option<&AccountInfo>,
     now: i64,
 ) -> Result<Option<StakeMoved>> {
     if claims != CLAIMS_OPEN {
         return Ok(None);
     }
-    let loader = board.ok_or(EngineError::ClaimsMissing)?;
-    let decided = decide(loader, now, |slot| Ok(stake_on_cancel(slot)))?;
-    pay_stake(loader, stake_to, decided)
+    let account = board.ok_or(EngineError::ClaimsMissing)?;
+    if *account.owner != crate::ID {
+        return Ok(None);
+    }
+    let decided = decide(account, now, true, |slot| Ok(stake_on_cancel(slot)))?;
+    pay_stake(account, stake_to, decided)
 }

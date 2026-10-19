@@ -13,7 +13,7 @@ pub struct SetCommitteeFloor<'info> {
     #[account(
         mut,
         address = CONFIG_ADDRESS,
-        constraint = config.load()?.version == CONFIG_VERSION @ EngineError::UnsupportedVersion,
+        constraint = config.load()?.version == CONFIG_VERSION @ EngineError::AccountOutdated,
         has_one = admin @ EngineError::Unauthorized
     )]
     pub config: AccountLoader<'info, Config>,

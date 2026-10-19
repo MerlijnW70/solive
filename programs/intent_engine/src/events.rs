@@ -374,3 +374,11 @@ pub struct ProfileSet {
 pub struct ProfileClosed {
     pub wallet: Pubkey,
 }
+
+#[event]
+pub struct LegacyClosed {
+    pub account: Pubkey,
+    pub payee: Pubkey,
+    pub lamports: u64,
+    pub stake: u64,
+}

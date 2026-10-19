@@ -62,7 +62,7 @@ function plan(feeBps: number, partnerBps: number, mandate: Address = NONE, agent
     status: IntentStatus.Open,
     bump: 255,
     vaultBump: 255,
-    version: 1,
+    version: 2,
     padding: new Uint8Array(1),
     flags: 0,
     params: encodeParams({ kind: Kind.SwapExactIn, amountIn: AMOUNT, minOut: 1n }),

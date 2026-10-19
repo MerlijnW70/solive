@@ -28,18 +28,18 @@ pub struct CreateIntentByAgent<'info> {
         mut,
         has_one = owner @ EngineError::Unauthorized,
         has_one = agent @ EngineError::Unauthorized,
-        constraint = mandate.load()?.version == MANDATE_VERSION @ EngineError::UnsupportedVersion
+        constraint = mandate.load()?.version == MANDATE_VERSION @ EngineError::AccountOutdated
     )]
     pub mandate: AccountLoader<'info, Mandate>,
     #[account(
         address = CONFIG_ADDRESS,
-        constraint = config.load()?.version == CONFIG_VERSION @ EngineError::UnsupportedVersion
+        constraint = config.load()?.version == CONFIG_VERSION @ EngineError::AccountOutdated
     )]
     pub config: AccountLoader<'info, Config>,
     #[account(
         seeds = [USER_SEED, owner.key().as_ref()],
         bump = user_state.load()?.bump,
-        constraint = user_state.load()?.version == USER_VERSION @ EngineError::UnsupportedVersion,
+        constraint = user_state.load()?.version == USER_VERSION @ EngineError::AccountOutdated,
         has_one = owner @ EngineError::Unauthorized
     )]
     pub user_state: AccountLoader<'info, UserState>,
@@ -104,7 +104,7 @@ pub struct CreateIntentByAgent<'info> {
         mut,
         seeds = [MINT_CAP_SEED, input_mint.key().as_ref()],
         bump = mint_cap.load()?.bump,
-        constraint = mint_cap.load()?.version == MINT_CAP_VERSION @ EngineError::UnsupportedVersion
+        constraint = mint_cap.load()?.version == MINT_CAP_VERSION @ EngineError::AccountOutdated
     )]
     pub mint_cap: Option<AccountLoader<'info, MintCap>>,
 }

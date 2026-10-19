@@ -6,6 +6,7 @@ use anchor_spl::token_interface::TokenAccount;
 use crate::errors::EngineError;
 use crate::policy::charge_lamports;
 use crate::state::{Config, Intent, MintCap, MINT_CAP_SEED, MINT_CAP_VERSION, MIN_CAP_WINDOW_SECS};
+use crate::versions::readable;
 pub fn check_limits(max_per_order: u64, window_cap: u64, window_secs: u32) -> Result<()> {
     require!(
         max_per_order > 0 && window_cap >= max_per_order && window_secs >= MIN_CAP_WINDOW_SECS,
@@ -29,7 +30,7 @@ pub fn cap_in(data: &mut [u8]) -> Result<&mut MintCap> {
     let cap = cap_body(data)?;
     require!(
         cap.version == MINT_CAP_VERSION,
-        EngineError::UnsupportedVersion
+        EngineError::AccountOutdated
     );
     Ok(cap)
 }
@@ -60,6 +61,45 @@ pub fn take_from_window(cap: &mut MintCap, amount: u64, now: i64) -> Result<()> 
     cap.window_used = used;
     cap.outstanding = outstanding;
     Ok(())
+}
+
+pub fn refund_mint_cap(
+    mint_cap: Option<&AccountInfo>,
+    intent: &AccountLoader<Intent>,
+    left: u64,
+) -> Result<u64> {
+    let mut held = intent.load_mut()?;
+    if left == 0 || held.capped == 0 {
+        return Ok(0);
+    }
+    let cap = mint_cap.ok_or(EngineError::MintCapMissing)?;
+    let mint = held.input_mint;
+    let created_at = held.created_at;
+    let counted = left.min(held.capped);
+    held.capped = held
+        .capped
+        .checked_sub(counted)
+        .ok_or(EngineError::Overflow)?;
+    if *cap.owner == crate::ID {
+        let mut data = cap.try_borrow_mut_data()?;
+        if readable(&data) && data.get(..8) == Some(MintCap::DISCRIMINATOR) {
+            let stored = cap_body(&mut data)?;
+            let derived = Pubkey::create_program_address(
+                &[MINT_CAP_SEED, mint.as_ref(), &[stored.bump]],
+                &crate::ID,
+            )
+            .map_err(|_| error!(EngineError::MintCapMismatch))?;
+            require_keys_eq!(*cap.key, derived, EngineError::MintCapMismatch);
+            require_keys_eq!(stored.mint, mint, EngineError::MintCapMismatch);
+            if stored.created_at <= created_at {
+                stored.outstanding = stored.outstanding.saturating_sub(counted);
+            }
+            return Ok(counted);
+        }
+    }
+    let derived = Pubkey::find_program_address(&[MINT_CAP_SEED, mint.as_ref()], &crate::ID).0;
+    require_keys_eq!(*cap.key, derived, EngineError::MintCapMismatch);
+    Ok(counted)
 }
 
 pub fn give_back(cap: &mut MintCap, intent: &mut Intent, left: u64) -> Result<u64> {
@@ -172,5 +212,6 @@ pub fn open_mint_cap<'info>(
     fresh.version = MINT_CAP_VERSION;
     fresh.bump = bump;
     fresh.window_start = now;
+    fresh.created_at = now;
     Ok(())
 }

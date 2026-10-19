@@ -72,6 +72,7 @@ import {
   getCancelIntentInstructionAsync,
   getClaimJobInstructionAsync,
   getCloseIntentInstructionAsync,
+  getCloseLegacyInstruction,
   getCloseProfileInstructionAsync,
   getCreateCommitteeInstructionAsync,
   getCreateIntentByAgentInstructionAsync,
@@ -111,6 +112,7 @@ import {
   parseCancelIntentInstruction,
   parseClaimJobInstruction,
   parseCloseIntentInstruction,
+  parseCloseLegacyInstruction,
   parseCloseProfileInstruction,
   parseCreateCommitteeInstruction,
   parseCreateIntentByAgentInstruction,
@@ -150,6 +152,7 @@ import {
   type CancelIntentAsyncInput,
   type ClaimJobAsyncInput,
   type CloseIntentAsyncInput,
+  type CloseLegacyInput,
   type CloseProfileAsyncInput,
   type CreateCommitteeAsyncInput,
   type CreateIntentAsyncInput,
@@ -178,6 +181,7 @@ import {
   type ParsedCancelIntentInstruction,
   type ParsedClaimJobInstruction,
   type ParsedCloseIntentInstruction,
+  type ParsedCloseLegacyInstruction,
   type ParsedCloseProfileInstruction,
   type ParsedCreateCommitteeInstruction,
   type ParsedCreateIntentByAgentInstruction,
@@ -397,20 +401,21 @@ export const IntentEngineEvent = {
   22: "IntentFilled",
   23: "IntentSplit",
   24: "JobClaimed",
-  25: "LineLeft",
-  26: "MandateClosed",
-  27: "MandateCreated",
-  28: "MandateUsed",
-  29: "MintCapSet",
-  30: "NonceAdvanced",
-  31: "PauseLowered",
-  32: "PauseRaised",
-  33: "ProfileClosed",
-  34: "ProfileSet",
-  35: "RelayerPaid",
-  36: "StakeMoved",
-  37: "StoodBy",
-  38: "UserInitialized",
+  25: "LegacyClosed",
+  26: "LineLeft",
+  27: "MandateClosed",
+  28: "MandateCreated",
+  29: "MandateUsed",
+  30: "MintCapSet",
+  31: "NonceAdvanced",
+  32: "PauseLowered",
+  33: "PauseRaised",
+  34: "ProfileClosed",
+  35: "ProfileSet",
+  36: "RelayerPaid",
+  37: "StakeMoved",
+  38: "StoodBy",
+  39: "UserInitialized",
   AdminAccepted: 0,
   AdminProposed: 1,
   AgentPaid: 2,
@@ -436,20 +441,21 @@ export const IntentEngineEvent = {
   IntentFilled: 22,
   IntentSplit: 23,
   JobClaimed: 24,
-  LineLeft: 25,
-  MandateClosed: 26,
-  MandateCreated: 27,
-  MandateUsed: 28,
-  MintCapSet: 29,
-  NonceAdvanced: 30,
-  PauseLowered: 31,
-  PauseRaised: 32,
-  ProfileClosed: 33,
-  ProfileSet: 34,
-  RelayerPaid: 35,
-  StakeMoved: 36,
-  StoodBy: 37,
-  UserInitialized: 38,
+  LegacyClosed: 25,
+  LineLeft: 26,
+  MandateClosed: 27,
+  MandateCreated: 28,
+  MandateUsed: 29,
+  MintCapSet: 30,
+  NonceAdvanced: 31,
+  PauseLowered: 32,
+  PauseRaised: 33,
+  ProfileClosed: 34,
+  ProfileSet: 35,
+  RelayerPaid: 36,
+  StakeMoved: 37,
+  StoodBy: 38,
+  UserInitialized: 39,
 } as const;
 
 export type IntentEngineEvent = (typeof IntentEngineEvent)[Exclude<
@@ -740,6 +746,17 @@ export function identifyIntentEngineEvent(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([206, 178, 254, 228, 149, 196, 78, 17]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineEvent.LegacyClosed;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([133, 186, 108, 68, 200, 155, 242, 108]),
       ),
       0,
@@ -904,37 +921,38 @@ export const IntentEngineInstruction = {
   5: "CancelIntent",
   6: "ClaimJob",
   7: "CloseIntent",
-  8: "CloseProfile",
-  9: "CreateCommittee",
-  10: "CreateIntent",
-  11: "CreateIntentByAgent",
-  12: "CreateIntentSigned",
-  13: "CreateMandate",
-  14: "CreateProfile",
-  15: "DropClaim",
-  16: "EndFill",
-  17: "ExpireIntent",
-  18: "FillAttested",
-  19: "FillAttestedCommittee",
-  20: "FillAttestedSplit",
-  21: "FillAttestedSplitCommittee",
-  22: "FillIntent",
-  23: "InitConfig",
-  24: "InitUser",
-  25: "Leave",
-  26: "LowerPause",
-  27: "OpenClaims",
-  28: "ProposeAdmin",
-  29: "RaisePause",
-  30: "RevokeMandate",
-  31: "SetCapsRequired",
-  32: "SetCommitteeFloor",
-  33: "SetMintCap",
-  34: "SettleClaims",
-  35: "StandBy",
-  36: "UpdateConfig",
-  37: "UpdateEconomics",
-  38: "UpdateProfile",
+  8: "CloseLegacy",
+  9: "CloseProfile",
+  10: "CreateCommittee",
+  11: "CreateIntent",
+  12: "CreateIntentByAgent",
+  13: "CreateIntentSigned",
+  14: "CreateMandate",
+  15: "CreateProfile",
+  16: "DropClaim",
+  17: "EndFill",
+  18: "ExpireIntent",
+  19: "FillAttested",
+  20: "FillAttestedCommittee",
+  21: "FillAttestedSplit",
+  22: "FillAttestedSplitCommittee",
+  23: "FillIntent",
+  24: "InitConfig",
+  25: "InitUser",
+  26: "Leave",
+  27: "LowerPause",
+  28: "OpenClaims",
+  29: "ProposeAdmin",
+  30: "RaisePause",
+  31: "RevokeMandate",
+  32: "SetCapsRequired",
+  33: "SetCommitteeFloor",
+  34: "SetMintCap",
+  35: "SettleClaims",
+  36: "StandBy",
+  37: "UpdateConfig",
+  38: "UpdateEconomics",
+  39: "UpdateProfile",
   AcceptAdmin: 0,
   Advance: 1,
   AdvanceEpoch: 2,
@@ -943,37 +961,38 @@ export const IntentEngineInstruction = {
   CancelIntent: 5,
   ClaimJob: 6,
   CloseIntent: 7,
-  CloseProfile: 8,
-  CreateCommittee: 9,
-  CreateIntent: 10,
-  CreateIntentByAgent: 11,
-  CreateIntentSigned: 12,
-  CreateMandate: 13,
-  CreateProfile: 14,
-  DropClaim: 15,
-  EndFill: 16,
-  ExpireIntent: 17,
-  FillAttested: 18,
-  FillAttestedCommittee: 19,
-  FillAttestedSplit: 20,
-  FillAttestedSplitCommittee: 21,
-  FillIntent: 22,
-  InitConfig: 23,
-  InitUser: 24,
-  Leave: 25,
-  LowerPause: 26,
-  OpenClaims: 27,
-  ProposeAdmin: 28,
-  RaisePause: 29,
-  RevokeMandate: 30,
-  SetCapsRequired: 31,
-  SetCommitteeFloor: 32,
-  SetMintCap: 33,
-  SettleClaims: 34,
-  StandBy: 35,
-  UpdateConfig: 36,
-  UpdateEconomics: 37,
-  UpdateProfile: 38,
+  CloseLegacy: 8,
+  CloseProfile: 9,
+  CreateCommittee: 10,
+  CreateIntent: 11,
+  CreateIntentByAgent: 12,
+  CreateIntentSigned: 13,
+  CreateMandate: 14,
+  CreateProfile: 15,
+  DropClaim: 16,
+  EndFill: 17,
+  ExpireIntent: 18,
+  FillAttested: 19,
+  FillAttestedCommittee: 20,
+  FillAttestedSplit: 21,
+  FillAttestedSplitCommittee: 22,
+  FillIntent: 23,
+  InitConfig: 24,
+  InitUser: 25,
+  Leave: 26,
+  LowerPause: 27,
+  OpenClaims: 28,
+  ProposeAdmin: 29,
+  RaisePause: 30,
+  RevokeMandate: 31,
+  SetCapsRequired: 32,
+  SetCommitteeFloor: 33,
+  SetMintCap: 34,
+  SettleClaims: 35,
+  StandBy: 36,
+  UpdateConfig: 37,
+  UpdateEconomics: 38,
+  UpdateProfile: 39,
 } as const;
 
 export type IntentEngineInstruction = (typeof IntentEngineInstruction)[Exclude<
@@ -1072,6 +1091,17 @@ export function identifyIntentEngineInstruction(
     )
   ) {
     return IntentEngineInstruction.CloseIntent;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([119, 17, 150, 2, 226, 13, 36, 75]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineInstruction.CloseLegacy;
   }
   if (
     containsBytes(
@@ -1448,6 +1478,9 @@ export type ParsedIntentEngineInstruction<
       instructionType: typeof IntentEngineInstruction.CloseIntent;
     } & ParsedCloseIntentInstruction<TProgram>)
   | ({
+      instructionType: typeof IntentEngineInstruction.CloseLegacy;
+    } & ParsedCloseLegacyInstruction<TProgram>)
+  | ({
       instructionType: typeof IntentEngineInstruction.CloseProfile;
     } & ParsedCloseProfileInstruction<TProgram>)
   | ({
@@ -1600,6 +1633,13 @@ export function parseIntentEngineInstruction<TProgram extends string>(
       return {
         instructionType: IntentEngineInstruction.CloseIntent,
         ...parseCloseIntentInstruction(instruction),
+      };
+    }
+    case IntentEngineInstruction.CloseLegacy: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: IntentEngineInstruction.CloseLegacy,
+        ...parseCloseLegacyInstruction(instruction),
       };
     }
     case IntentEngineInstruction.CloseProfile: {
@@ -1891,6 +1931,9 @@ export type IntentEnginePluginInstructions = {
     input: CloseIntentAsyncInput,
   ) => ReturnType<typeof getCloseIntentInstructionAsync> &
     SelfPlanAndSendFunctions;
+  closeLegacy: (
+    input: CloseLegacyInput,
+  ) => ReturnType<typeof getCloseLegacyInstruction> & SelfPlanAndSendFunctions;
   closeProfile: (
     input: CloseProfileAsyncInput,
   ) => ReturnType<typeof getCloseProfileInstructionAsync> &
@@ -2086,6 +2129,11 @@ export function intentEngineProgram() {
             addSelfPlanAndSendFunctions(
               client,
               getCloseIntentInstructionAsync(input),
+            ),
+          closeLegacy: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getCloseLegacyInstruction(input),
             ),
           closeProfile: (input) =>
             addSelfPlanAndSendFunctions(

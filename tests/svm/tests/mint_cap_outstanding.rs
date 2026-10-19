@@ -1,4 +1,3 @@
-use anchor_lang::error::ErrorCode;
 use anchor_lang::prelude::Pubkey;
 use intent_core::kinds::{attested_result, Kind};
 use intent_engine::errors::EngineError;
@@ -12,11 +11,11 @@ use solana_keypair::Keypair;
 use solana_signer::Signer;
 use solana_transaction_error::TransactionError;
 use svm_tests::{
-    anchor_error, attestation_proof_message, committee_batch_ix, config_pda, cosign_batch_ix,
-    cosign_ix, create_committee_ix, ed25519_ix, engine_error, engine_ix, event_authority, events,
-    intent_pda, load, partner_ext, pda, proof_digest, sorted_members, split_commit, split_digest,
-    swap_spec, vault_pda, CommitteeFill, Env, IntentSpec, Market, MintExt, Solver, TestResult,
-    Trader, DOMAIN, START_TS,
+    attestation_proof_message, committee_batch_ix, config_pda, cosign_batch_ix, cosign_ix,
+    create_committee_ix, ed25519_ix, engine_error, engine_ix, event_authority, events, intent_pda,
+    load, partner_ext, pda, proof_digest, sorted_members, split_commit, split_digest, swap_spec,
+    vault_pda, CommitteeFill, Env, IntentSpec, Market, MintExt, Solver, TestResult, Trader, DOMAIN,
+    START_TS,
 };
 
 const PROGRAM: Pubkey = anchor_spl::token::ID;
@@ -683,7 +682,7 @@ fn an_exit_of_a_counted_intent_needs_its_mint_cap() -> TestResult {
     w.env.mint_cap = Some(mint_cap_pda(&other.input_mint));
     assert_eq!(
         w.cancel(1).err(),
-        Some(anchor_error(ErrorCode::ConstraintSeeds))
+        Some(engine_error(EngineError::MintCapMismatch))
     );
     w.env.mint_cap = Some(w.cap());
     w.cancel(1)?;

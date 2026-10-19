@@ -11,7 +11,7 @@ pub struct AcceptAdmin<'info> {
     #[account(
         mut,
         address = CONFIG_ADDRESS,
-        constraint = config.load()?.version == CONFIG_VERSION @ EngineError::UnsupportedVersion,
+        constraint = config.load()?.version == CONFIG_VERSION @ EngineError::AccountOutdated,
         has_one = pending_admin @ EngineError::NotPendingAdmin
     )]
     pub config: AccountLoader<'info, Config>,

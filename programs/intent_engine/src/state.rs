@@ -19,30 +19,32 @@ pub fn delegate_address(owner: &Pubkey) -> Pubkey {
     Pubkey::find_program_address(&[DELEGATE_SEED, owner.as_ref()], &crate::ID).0
 }
 
-pub const CONFIG_VERSION: u8 = 1;
-pub const USER_VERSION: u8 = 1;
-pub const INTENT_VERSION: u8 = 1;
-pub const MANDATE_VERSION: u8 = 1;
-pub const MINT_CAP_VERSION: u8 = 1;
-pub const COMMITTEE_VERSION: u8 = 1;
+pub const CONFIG_VERSION: u8 = 2;
+pub const USER_VERSION: u8 = 2;
+pub const INTENT_VERSION: u8 = 2;
+pub const MANDATE_VERSION: u8 = 2;
+pub const MINT_CAP_VERSION: u8 = 2;
+pub const COMMITTEE_VERSION: u8 = 2;
 pub const CLAIMS_SEED: &[u8] = b"claims";
-pub const CLAIMS_VERSION: u8 = 1;
+pub const CLAIMS_VERSION: u8 = 2;
 pub const CLAIMS_OPEN: u8 = 1;
 pub const STANDBY_SEED: &[u8] = b"standby";
+pub const STANDBY_VERSION: u8 = 1;
 pub const PROFILE_SEED: &[u8] = b"profile";
-pub const PROFILE_VERSION: u8 = 1;
+pub const PROFILE_VERSION: u8 = 2;
 pub const MIN_CAP_WINDOW_SECS: u32 = 60;
 pub const MAX_COMMITTEE_FLOORS: usize = 8;
 pub const FLOOR_THRESHOLD: u8 = 2;
-pub const OLDEST_CONFIG_VERSION: u8 = 1;
 pub const OLDEST_INTENT_VERSION: u8 = 1;
+pub const OLDEST_CLAIMS_VERSION: u8 = 1;
+pub const OLDEST_MINT_CAP_VERSION: u8 = 1;
 
-pub fn config_recoverable(version: u8) -> bool {
-    (OLDEST_CONFIG_VERSION..=CONFIG_VERSION).contains(&version)
+pub fn intent_readable(version: u8) -> bool {
+    (OLDEST_INTENT_VERSION..=INTENT_VERSION).contains(&version)
 }
 
-pub fn intent_recoverable(version: u8) -> bool {
-    (OLDEST_INTENT_VERSION..=INTENT_VERSION).contains(&version)
+pub fn board_readable(version: u8) -> bool {
+    (OLDEST_CLAIMS_VERSION..=CLAIMS_VERSION).contains(&version)
 }
 pub const MAX_FEE_BPS: u16 = 100;
 pub const MAX_ATTESTED_FEE_BPS: u16 = 300;
@@ -207,7 +209,8 @@ pub struct MintCap {
     pub padding: [u8; 2],
     pub total_limit: u64,
     pub outstanding: u64,
-    pub reserved: [u8; 40],
+    pub created_at: i64,
+    pub reserved: [u8; 32],
 }
 
 impl MintCap {
@@ -260,7 +263,8 @@ pub struct Standby {
     pub seq: u32,
     pub secs: u32,
     pub bump: u8,
-    pub padding: [u8; 7],
+    pub version: u8,
+    pub padding: [u8; 6],
 }
 
 impl Standby {

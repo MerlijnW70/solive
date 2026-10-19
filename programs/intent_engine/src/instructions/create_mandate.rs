@@ -35,7 +35,7 @@ pub struct CreateMandate<'info> {
         mut,
         seeds = [USER_SEED, owner.key().as_ref()],
         bump = user_state.load()?.bump,
-        constraint = user_state.load()?.version == USER_VERSION @ EngineError::UnsupportedVersion,
+        constraint = user_state.load()?.version == USER_VERSION @ EngineError::AccountOutdated,
         has_one = owner @ EngineError::Unauthorized
     )]
     pub user_state: AccountLoader<'info, UserState>,

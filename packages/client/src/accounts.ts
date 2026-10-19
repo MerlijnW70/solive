@@ -1,5 +1,6 @@
 import { type Address, getBase58Encoder } from "@solana/kit";
 import {
+  checkAccountVersion,
   decodeMintCapData,
   findConfigPda,
   findIntentPda,
@@ -52,7 +53,7 @@ export async function engineAccount(
   if (view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS || !head.every((b, i) => b === discriminator[i])) {
     throw new Error(`${address} is not an engine ${what}`);
   }
-  return view.data;
+  return checkAccountVersion(view.data);
 }
 
 export async function loadIntent(transport: Transport, owner: Address, nonce: bigint) {
@@ -104,7 +105,7 @@ export async function loadUser(transport: Transport, owner: Address): Promise<No
   if (view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS) {
     throw new Error(`${address} is not an engine user account`);
   }
-  return getUserStateDecoder().decode(view.data);
+  return getUserStateDecoder().decode(checkAccountVersion(view.data));
 }
 
 export async function tokenProgramOf(transport: Transport, mint: Address): Promise<Address> {

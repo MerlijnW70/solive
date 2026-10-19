@@ -1,3 +1,4 @@
+use anchor_lang::Discriminator;
 use anchor_spl::token_2022::spl_token_2022::extension::ExtensionType;
 use core::mem::offset_of;
 use intent_core::mint_policy::{
@@ -7,10 +8,11 @@ use intent_core::mint_policy::{
 use intent_core::Error as CoreError;
 use intent_engine::errors::{core_err, EngineError};
 use intent_engine::state::{
-    ClaimBoard, Config, Intent, Mandate, MintCap, Standby, UserState, CLAIMS_SEED, COMMITTEE_SEED,
-    CONFIG_SEED, DELEGATE_SEED, INTENT_SEED, MANDATE_SEED, MINT_CAP_SEED, PROFILE_SEED,
-    STANDBY_SEED, USER_SEED, VAULT_SEED,
+    ClaimBoard, Committee, Config, Intent, Mandate, MintCap, Profile, Standby, UserState,
+    CLAIMS_SEED, COMMITTEE_SEED, CONFIG_SEED, DELEGATE_SEED, INTENT_SEED, MANDATE_SEED,
+    MINT_CAP_SEED, PROFILE_SEED, STANDBY_SEED, USER_SEED, VAULT_SEED,
 };
+use intent_engine::versions::LAYOUTS;
 
 #[test]
 fn account_sizes_are_frozen() {
@@ -20,6 +22,53 @@ fn account_sizes_are_frozen() {
     assert_eq!(Mandate::SPACE, 384);
     assert_eq!(ClaimBoard::SPACE, 176);
     assert_eq!(Standby::SPACE, 88);
+}
+
+#[test]
+fn standby_field_offsets_are_frozen() {
+    assert_eq!(offset_of!(Standby, worker), 0);
+    assert_eq!(offset_of!(Standby, intent), 32);
+    assert_eq!(offset_of!(Standby, seq), 64);
+    assert_eq!(offset_of!(Standby, secs), 68);
+    assert_eq!(offset_of!(Standby, bump), 72);
+    assert_eq!(offset_of!(Standby, version), 73);
+    assert_eq!(offset_of!(Standby, padding), 74);
+}
+
+#[test]
+fn version_and_payer_offsets_are_frozen() {
+    let found: Vec<(usize, usize, u8, Option<usize>)> = LAYOUTS
+        .iter()
+        .map(|l| (l.space, l.version_at, l.version, l.payer_at))
+        .collect();
+    assert_eq!(
+        found,
+        vec![
+            (536, 139, 2, Some(0)),
+            (152, 72, 2, Some(0)),
+            (464, 164, 2, Some(296)),
+            (384, 307, 2, Some(0)),
+            (136, 68, 2, None),
+            (408, 330, 2, None),
+            (176, 124, 2, Some(32)),
+            (88, 73, 1, Some(0)),
+            (504, 456, 2, Some(0)),
+        ]
+    );
+    let discriminators = [
+        Config::DISCRIMINATOR,
+        UserState::DISCRIMINATOR,
+        Intent::DISCRIMINATOR,
+        Mandate::DISCRIMINATOR,
+        MintCap::DISCRIMINATOR,
+        Committee::DISCRIMINATOR,
+        ClaimBoard::DISCRIMINATOR,
+        Standby::DISCRIMINATOR,
+        Profile::DISCRIMINATOR,
+    ];
+    for (layout, discriminator) in LAYOUTS.iter().zip(discriminators) {
+        assert_eq!(layout.discriminator, discriminator);
+    }
 }
 
 #[test]
@@ -60,7 +109,8 @@ fn mint_cap_field_offsets_are_frozen() {
     assert_eq!(offset_of!(MintCap, padding), 70);
     assert_eq!(offset_of!(MintCap, total_limit), 72);
     assert_eq!(offset_of!(MintCap, outstanding), 80);
-    assert_eq!(offset_of!(MintCap, reserved), 88);
+    assert_eq!(offset_of!(MintCap, created_at), 88);
+    assert_eq!(offset_of!(MintCap, reserved), 96);
 }
 
 #[test]
@@ -276,6 +326,9 @@ fn engine_errors_start_at_anchor_offset() {
     assert_eq!(u32::from(EngineError::MintCapPerOrder), 6083);
     assert_eq!(u32::from(EngineError::MintCapWindow), 6084);
     assert_eq!(u32::from(EngineError::MintCapInvalid), 6085);
+    assert_eq!(u32::from(EngineError::AccountOutdated), 6105);
+    assert_eq!(u32::from(EngineError::NotLegacy), 6106);
+    assert_eq!(u32::from(EngineError::LegacyPayeeMismatch), 6107);
 }
 
 #[test]

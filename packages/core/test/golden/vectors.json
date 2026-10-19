@@ -853,6 +853,7 @@
     "IntentFilled": "f36bfee6c01cf448",
     "IntentSplit": "0b5138b1e7e3f4ae",
     "JobClaimed": "b06e68261bdc3dbf",
+    "LegacyClosed": "ceb2fee495c44e11",
     "LineLeft": "85ba6c44c89bf26c",
     "MandateClosed": "d9d49bf30422ff41",
     "MandateCreated": "8c1ed1fe05809371",
@@ -1189,6 +1190,80 @@
     "4": "16",
     "all": "30"
   },
+  "layouts": [
+    {
+      "discriminator": "9b0caae01efacc82",
+      "oldest": 2,
+      "payer_at": 0,
+      "space": 536,
+      "version": 2,
+      "version_at": 139
+    },
+    {
+      "discriminator": "48b155f94ca7ba7e",
+      "oldest": 2,
+      "payer_at": 0,
+      "space": 152,
+      "version": 2,
+      "version_at": 72
+    },
+    {
+      "discriminator": "f7a223a5fe6f816d",
+      "oldest": 1,
+      "payer_at": 296,
+      "space": 464,
+      "version": 2,
+      "version_at": 164
+    },
+    {
+      "discriminator": "71d8629fb93f3712",
+      "oldest": 2,
+      "payer_at": 0,
+      "space": 384,
+      "version": 2,
+      "version_at": 307
+    },
+    {
+      "discriminator": "801ad72272651e94",
+      "oldest": 1,
+      "payer_at": null,
+      "space": 136,
+      "version": 2,
+      "version_at": 68
+    },
+    {
+      "discriminator": "6088d2f4896eb268",
+      "oldest": 2,
+      "payer_at": null,
+      "space": 408,
+      "version": 2,
+      "version_at": 330
+    },
+    {
+      "discriminator": "17151716526de8a1",
+      "oldest": 1,
+      "payer_at": 32,
+      "space": 176,
+      "version": 2,
+      "version_at": 124
+    },
+    {
+      "discriminator": "da6c5cb059e0c928",
+      "oldest": 1,
+      "payer_at": 0,
+      "space": 88,
+      "version": 1,
+      "version_at": 73
+    },
+    {
+      "discriminator": "b865a5bc5f3f7fbc",
+      "oldest": 2,
+      "payer_at": 0,
+      "space": 504,
+      "version": 2,
+      "version_at": 456
+    }
+  ],
   "mandate_lanes": [
     {
       "lane": null,
@@ -10106,8 +10181,8 @@
     }
   ],
   "versions": {
-    "config": 1,
-    "intent": 1,
-    "user": 1
+    "config": 2,
+    "intent": 2,
+    "user": 2
   }
 }

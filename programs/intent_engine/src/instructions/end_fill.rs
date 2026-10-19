@@ -16,7 +16,7 @@ pub struct EndFill<'info> {
     #[account(
         mut,
         has_one = output_mint, has_one = receiver,
-        constraint = intent.load()?.version == INTENT_VERSION @ EngineError::UnsupportedVersion
+        constraint = intent.load()?.version == INTENT_VERSION @ EngineError::AccountOutdated
     )]
     pub intent: AccountLoader<'info, Intent>,
     pub solver: Signer<'info>,
