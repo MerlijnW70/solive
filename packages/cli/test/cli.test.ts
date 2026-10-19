@@ -680,6 +680,8 @@ describe("cli against the deployed engine", () => {
           judgeFee: "0",
           inputMint,
           expiresAt: (NOW + 3_600n).toString(),
+          net_pay: "0.000099",
+          payable: true,
         },
       ],
     });
