@@ -20,10 +20,12 @@ export const REPORTED_FAILURES = 20;
 export const CLOCK_FROM = Date.UTC(2020, 0, 1);
 export const CLOCK_TO = Date.UTC(2030, 0, 1);
 export const SEED_LIMIT = 2 ** 48;
+export const MAX_DRAW_SLOTS = 100_000;
 
 export type Primitive = null | boolean | number | string;
 export type Case = { args: Primitive[]; expected: Primitive };
-export type Cases = { steps: number; heap: number; seed: number | undefined; clock: number | undefined; cases: Case[] };
+export type Draw = { count: number; generator: string; checker: string; k: number };
+export type Cases = { steps: number; heap: number; seed: number | undefined; clock: number | undefined; cases: Case[]; draw?: Draw };
 export type Run = { seed: number; clock: number };
 export type CaseVerdict = "pass" | "wrong" | "not-primitive" | "threw" | "stopped" | "no-module" | "engine" | "crashed";
 export type CaseResult = { verdict: CaseVerdict; detail?: Primitive };
@@ -40,7 +42,7 @@ const refuse = (why: string): never => {
   throw new JudgeRefused(`the spec's ${CASES_FENCE} block ${why}; nothing was run or paid`);
 };
 
-const isPrimitive = (value: unknown): value is Primitive =>
+export const isPrimitive = (value: unknown): value is Primitive =>
   value === null || typeof value === "boolean" || typeof value === "string" || (typeof value === "number" && Number.isFinite(value));
 
 function bounded(value: unknown, name: string, fallback: number, max: number): number {
@@ -51,6 +53,37 @@ function bounded(value: unknown, name: string, fallback: number, max: number): n
     return refuse(`has ${name} ${JSON.stringify(value)}, which is not a whole number from 0 to ${max}`);
   }
   return value;
+}
+
+function counted(value: unknown, name: string, min: number, max: number): number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < min || value > max) {
+    return refuse(`has a draw ${name} ${JSON.stringify(value)}, which is not a whole number from ${min} to ${max}`);
+  }
+  return value;
+}
+
+function sourceOf(value: unknown, name: string): string {
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return refuse(`has a draw ${name} that is not the source of a module`);
+  }
+  return value;
+}
+
+function drawOf(value: unknown): Draw {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return refuse("has a draw that is not a JSON object");
+  }
+  const fields = value as Record<string, unknown>;
+  const unknown = Object.keys(fields).find((key) => !["count", "generator", "checker", "k"].includes(key));
+  if (unknown !== undefined) {
+    return refuse(`has a draw field ${JSON.stringify(unknown)} it does not know`);
+  }
+  return {
+    count: counted(fields["count"], "count", 1, MAX_CASES),
+    generator: sourceOf(fields["generator"], "generator"),
+    checker: sourceOf(fields["checker"], "checker"),
+    k: counted(fields["k"], "k", 1, MAX_DRAW_SLOTS),
+  };
 }
 
 export function casesOf(spec: Uint8Array): Cases {
@@ -69,7 +102,7 @@ export function casesOf(spec: Uint8Array): Cases {
     return refuse("is not a JSON object");
   }
   const fields = parsed as Record<string, unknown>;
-  const unknown = Object.keys(fields).find((key) => !["steps", "heap", "seed", "clock", "cases"].includes(key));
+  const unknown = Object.keys(fields).find((key) => !["steps", "heap", "seed", "clock", "cases", "draw"].includes(key));
   if (unknown !== undefined) {
     return refuse(`has a field ${JSON.stringify(unknown)} it does not know`);
   }
@@ -100,6 +133,7 @@ export function casesOf(spec: Uint8Array): Cases {
     seed: fields["seed"] === undefined ? undefined : bounded(fields["seed"], "seed", 1, Number.MAX_SAFE_INTEGER),
     clock: fields["clock"] === undefined ? undefined : bounded(fields["clock"], "clock", 0, 8.64e15),
     cases,
+    ...(fields["draw"] === undefined ? {} : { draw: drawOf(fields["draw"]) }),
   };
 }
 
@@ -293,13 +327,16 @@ export function runViper(wasm: Buffer, input: Buffer, timeoutSeconds: number): P
   });
 }
 
-export async function judgeViper(wasm: Buffer, source: Uint8Array, cases: Cases, timeoutSeconds: number, run: Run = runOf(cases)): Promise<Judged> {
-  let text: string;
+export function moduleText(source: Uint8Array): string {
   try {
-    text = new TextDecoder("utf-8", { fatal: true }).decode(source);
+    return new TextDecoder("utf-8", { fatal: true }).decode(source);
   } catch {
     throw new JudgeRefused("--artifact is not UTF-8 text, so it is not a module the viper judge can run; nothing was paid");
   }
+}
+
+export async function judgeViper(wasm: Buffer, source: Uint8Array, cases: Cases, timeoutSeconds: number, run: Run = runOf(cases)): Promise<Judged> {
+  const text = moduleText(source);
   if (timeoutSeconds <= 0) {
     return { ...stoppedAll(cases.cases.length, deadlineMissed("the viper judge", timeoutSeconds)), ...run };
   }

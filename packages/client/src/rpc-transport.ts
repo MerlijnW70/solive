@@ -15,7 +15,7 @@ import {
 import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { confirmSent, type SignatureWatch } from "./confirmation.js";
 import { patiently } from "./rpc-retry.js";
-import type { AccountView, AtLeast, EngineTransaction, ListedSignature, RawAccount, RpcLike, SignatureLanding, Status, Transport } from "./rpc-shapes.js";
+import type { AccountView, AtLeast, EngineTransaction, FinalizedBlock, ListedSignature, RawAccount, RpcLike, SignatureLanding, Status, Transport } from "./rpc-shapes.js";
 import { SYSTEM_PROGRAM_ADDRESS } from "./accounts.js";
 import { holdingsOf, keysAt, MEMO_PROGRAM_ADDRESS, signersAmong, solTransfersOf } from "./transaction-keys.js";
 
@@ -145,6 +145,22 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     return found;
   };
   const firstBlock = rpc.getFirstAvailableBlock?.bind(rpc);
+  const blocksFrom = rpc.getBlocksWithLimit?.bind(rpc);
+  const blockAt = rpc.getBlock?.bind(rpc);
+  const finalizedBlock =
+    blocksFrom === undefined || blockAt === undefined
+      ? undefined
+      : async (from: bigint): Promise<FinalizedBlock | null> => {
+          const [slot] = await patiently(() => blocksFrom(from, 1, { commitment: "finalized" }).send(), wait);
+          if (slot === undefined) {
+            return null;
+          }
+          const block = await patiently(
+            () => blockAt(slot, { commitment: "finalized", encoding: "json", transactionDetails: "none", rewards: false, maxSupportedTransactionVersion: 0 }).send(),
+            wait,
+          );
+          return block === null ? null : { slot, blockhash: block.blockhash };
+        };
   const listSignatures = async (of: Address, limit: number, before?: string): Promise<ListedSignature[]> => {
     const listed = await patiently(
       () => rpc.getSignaturesForAddress(of, { limit, ...(before === undefined ? {} : { before: before as Signature }), ...atLeast() }).send(),
@@ -258,6 +274,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       return found;
     },
     ...(firstBlock === undefined ? {} : { firstAvailableSlot: () => patiently(() => firstBlock().send(), wait) }),
+    ...(finalizedBlock === undefined ? {} : { finalizedBlock }),
     async intents(owner, read) {
       const least = atLeast(read?.minContextSlot);
       const found = await patiently(async () => {

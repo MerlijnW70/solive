@@ -42,6 +42,8 @@ export type LookupTables = Readonly<Record<Address, Address[]>>;
 
 export type SignatureLanding = "landed" | "failed";
 
+export type FinalizedBlock = { slot: bigint; blockhash: string };
+
 export type Simulation = { err: string | null; logs: string[]; unitsConsumed: bigint | null; accounts: (Uint8Array | null)[] };
 
 export interface Transport {
@@ -61,6 +63,7 @@ export interface Transport {
   transactionOf?(signature: string): Promise<EngineTransaction | null>;
   signatureStatuses?(signatures: readonly string[]): Promise<(SignatureLanding | null)[]>;
   firstAvailableSlot?(): Promise<bigint>;
+  finalizedBlock?(from: bigint): Promise<FinalizedBlock | null>;
   recentFees(accounts: readonly Address[]): Promise<bigint[]>;
   budget(instructions: readonly Instruction[], feePayer: Address, tables?: LookupTables): Promise<Instruction[]>;
   airdrop(address: Address, lamports: bigint): Promise<string>;
@@ -109,6 +112,11 @@ export type RpcLike = {
   ): Pending<{ context: { slot: bigint }; value: readonly (Status | null)[] }>;
   getEpochInfo(): Pending<{ blockHeight: bigint; absoluteSlot: bigint }>;
   getFirstAvailableBlock?(): Pending<bigint>;
+  getBlocksWithLimit?(start: bigint, limit: number, config: { commitment: "finalized" }): Pending<readonly bigint[]>;
+  getBlock?(
+    slot: bigint,
+    config: { commitment: "finalized"; encoding: "json"; transactionDetails: "none"; rewards: false; maxSupportedTransactionVersion: 0 },
+  ): Pending<{ blockhash: string } | null>;
   requestAirdrop(address: Address, lamports: bigint): Pending<Signature>;
   getRecentPrioritizationFees(addresses: readonly Address[]): Pending<readonly { prioritizationFee: bigint }[]>;
   getGenesisHash(): Pending<string>;

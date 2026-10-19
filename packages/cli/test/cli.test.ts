@@ -1635,6 +1635,7 @@ describe("process plumbing", () => {
       "transactionOf",
       "signatureStatuses",
       "firstAvailableSlot",
+      "finalizedBlock",
       "intents",
     ]);
     expect(Number.isInteger(rt.entropy())).toBe(true);

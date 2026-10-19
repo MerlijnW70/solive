@@ -27,6 +27,7 @@ import { type HostJudged, judgeHost } from "./host-judge.js";
 import { judgeNode, type NodeJudged } from "./node-judge.js";
 import { invitedTo, notInvited } from "./invites.js";
 import { type SimulatedRelease, simulateRelease } from "./release-simulation.js";
+import { type Beacon, drawBeacon, type DrawJudged, judgeDraw } from "./draw.js";
 import { type Cases, casesOf, judgeViper, type Judged as CasesJudged, pinnedWasm, runOf, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
 
 export { type InterruptSignal, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
@@ -63,6 +64,7 @@ export type Verdict = {
   image?: string;
   engine?: { wasmSha256: string; commit: string };
   cases?: CasesJudged;
+  drawn?: DrawJudged;
   host?: HostJudged;
   node?: NodeJudged;
   exitCode: number | null;
@@ -159,10 +161,12 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   if (invited !== undefined && !invited.includes(payTo)) {
     throw new JudgeRefused(notInvited(payTo, address));
   }
+  const draw = viper?.cases.draw;
+  const beacon = draw === undefined ? undefined : await drawBeacon(transport, (seconds) => runtime.sleep(seconds), first, draw, address, sha256);
   const signals = holdSignals();
   try {
     const confirm = command.confirmUrl === undefined ? undefined : runtime.transport(command.confirmUrl);
-    return await checkAndSettle(command, transport, signer, signals, { address, attestor, committee, specHash, sha256, payTo, result, read, specBytes, check, viper, confirm });
+    return await checkAndSettle(command, transport, signer, signals, { address, attestor, committee, specHash, sha256, payTo, result, read, specBytes, check, viper, beacon, confirm });
   } finally {
     signals.release();
   }
@@ -231,6 +235,7 @@ type Judged = {
   specBytes: Uint8Array;
   check: CheckFiles | undefined;
   viper: { cases: Cases; wasm: Buffer } | undefined;
+  beacon: Beacon | undefined;
   confirm: Transport | undefined;
 };
 
@@ -239,11 +244,12 @@ async function checkAndSettle(
   transport: Transport,
   signer: KeyPairSigner,
   signals: HeldSignals,
-  { address, attestor, committee, specHash, sha256, payTo, result, read, specBytes, check: checkFiles, viper, confirm }: Judged,
+  { address, attestor, committee, specHash, sha256, payTo, result, read, specBytes, check: checkFiles, viper, beacon, confirm }: Judged,
 ): Promise<Verdict> {
   const { sandbox } = command;
   let check: Check = { exitCode: null, timedOut: false };
   let cases: CasesJudged | undefined;
+  let drawn: DrawJudged | undefined;
   let host: HostJudged | undefined;
   let node: NodeJudged | undefined;
   let cleanup: string | undefined;
@@ -254,6 +260,9 @@ async function checkAndSettle(
     const run = runOf(viper.cases);
     const deadline = Date.now() + command.timeout * 1000;
     const left = () => Math.max(0, deadline - Date.now()) / 1000;
+    if (signals.caught() === undefined && beacon !== undefined) {
+      drawn = await judgeDraw(viper.wasm, module, viper.cases, beacon, left, run);
+    }
     if (signals.caught() === undefined) {
       cases = await judgeViper(viper.wasm, module, viper.cases, left(), run);
     }
@@ -287,7 +296,7 @@ async function checkAndSettle(
     throw new JudgeInterrupted(interrupted);
   }
   const agreed = (judged: { total: number; passed: number } | undefined) => judged !== undefined && judged.total > 0 && judged.passed === judged.total;
-  const passed = cases === undefined ? check.exitCode === 0 : agreed(cases) && agreed(host) && (plainNode === undefined || agreed(node));
+  const passed = cases === undefined ? check.exitCode === 0 : agreed(cases) && agreed(host) && (beacon === undefined || agreed(drawn)) && (plainNode === undefined || agreed(node));
   if (passed && confirm !== undefined) {
     await confirmOnBoth(transport, confirm, { intent: address, attestor, sha256, pages: command.maxPages, payees: [payTo] });
   }
@@ -324,6 +333,7 @@ async function checkAndSettle(
     sandbox: sandbox.kind,
     ...(sandbox.kind === "docker" ? { image: sandbox.image } : {}),
     ...(cases !== undefined ? { engine: { wasmSha256: VIPER_WASM_SHA256, commit: VIPER_ENGINE_COMMIT }, cases } : {}),
+    ...(drawn !== undefined ? { drawn } : {}),
     ...(host !== undefined ? { host } : {}),
     ...(node !== undefined ? { node } : {}),
     exitCode: check.exitCode,

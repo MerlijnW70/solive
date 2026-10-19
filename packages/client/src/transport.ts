@@ -1,6 +1,7 @@
 export type {
   AccountView,
   EngineTransaction,
+  FinalizedBlock,
   IntentRead,
   Latest,
   ListedSignature,

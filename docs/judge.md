@@ -197,6 +197,12 @@ In PowerShell:
 intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --sandbox viper --plain-node --verdict verdict.json
 ```
 
+So that a delivery cannot answer from a table of the published cases, the spec's `judge-cases` block can add `"draw": {"count": n, "generator": "<module>", "checker": "<module>", "k": K}`. `judge` then waits until the first block at or after the earliest announcement's slot plus `K` is finalized, and seeds the draw with the sha256 of a fixed tag, that block's hash, the intent and the work's sha256.
+
+The generator's single `export default` gets the seed in hex and `n` and returns `n` argument lists; the checker's gets one list and the delivery's answer and returns `true` or `false`, each in a fresh ViperJS engine with the spec's budgets. `judge` passes only when every published and drawn case passes, and refuses a spec whose generator or checker fails as the spec's fault.
+
+The verdict's `drawn` records the slot, blockhash and seed, so anyone with the spec and a node that keeps the full ledger regenerates the same cases.
+
 ## Who is paid
 
 Anyone can copy an announcement, so `judge` pays the earliest announcer of the work's hash. It refuses when nobody announced it.
