@@ -13,6 +13,8 @@ export type ProgramAccount = { address: Address; data: Uint8Array };
 
 export type TokenHolding = { account: Address; mint: Address; owner?: Address };
 
+export type SolTransfer = { from: Address; to: Address; lamports: bigint };
+
 export type EngineTransaction = {
   signature: string;
   slot: bigint;
@@ -26,6 +28,7 @@ export type EngineTransaction = {
   called?: Uint8Array[];
   calledAccounts?: Address[][];
   tokens?: TokenHolding[];
+  transfers?: SolTransfer[];
   unread?: true;
 };
 

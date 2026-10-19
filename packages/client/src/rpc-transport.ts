@@ -16,7 +16,8 @@ import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRE
 import { confirmSent, type SignatureWatch } from "./confirmation.js";
 import { patiently } from "./rpc-retry.js";
 import type { AccountView, AtLeast, EngineTransaction, ListedSignature, RawAccount, RpcLike, SignatureLanding, Status, Transport } from "./rpc-shapes.js";
-import { holdingsOf, keysAt, MEMO_PROGRAM_ADDRESS, signersAmong } from "./transaction-keys.js";
+import { SYSTEM_PROGRAM_ADDRESS } from "./accounts.js";
+import { holdingsOf, keysAt, MEMO_PROGRAM_ADDRESS, signersAmong, solTransfersOf } from "./transaction-keys.js";
 
 const INTENT_OWNER_OFFSET = 8n;
 
@@ -84,6 +85,12 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     const engineCalls = (tx?.transaction.message.instructions ?? []).filter((ix) => keys[ix.programIdIndex] === INTENT_ENGINE_PROGRAM_ADDRESS);
     const called = engineCalls.map((ix) => Uint8Array.from(getBase58Encoder().encode(ix.data)));
     const tokens = holdingsOf(keys, [...(tx?.meta?.preTokenBalances ?? []), ...(tx?.meta?.postTokenBalances ?? [])]);
+    const transfers = solTransfersOf(
+      keys,
+      [...(tx?.transaction.message.instructions ?? []), ...(tx?.meta?.innerInstructions ?? []).flatMap((group) => group.instructions)]
+        .filter((ix) => keys[ix.programIdIndex] === SYSTEM_PROGRAM_ADDRESS)
+        .map((ix) => ({ program: keys[ix.programIdIndex], accounts: ix.accounts ?? [], data: Uint8Array.from(getBase58Encoder().encode(ix.data)) })),
+    );
     return {
       signature: entry.signature,
       slot: entry.slot,
@@ -95,6 +102,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       ...(feePayer === undefined ? {} : { feePayer }),
       ...(called.length === 0 ? {} : { called, calledAccounts: engineCalls.map((ix) => keysAt(keys, ix.accounts ?? [])) }),
       ...(tokens.length === 0 ? {} : { tokens }),
+      ...(transfers.length === 0 ? {} : { transfers }),
       ...(tx?.meta === null || tx?.meta === undefined ? { unread: true as const } : {}),
       complete: tx?.meta !== null && tx?.meta !== undefined && entry.blockTime !== null,
     };

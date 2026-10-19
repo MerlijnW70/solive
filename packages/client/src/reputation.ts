@@ -20,6 +20,7 @@ import { HISTORY_LIMIT } from "./client-types.js";
 import { memoInstruction, recordedDelivery } from "./job-memos.js";
 import { NotSettleable } from "./client-errors.js";
 import { engineCalls } from "./job-origins.js";
+import { type FundedBy, fundedBy, fundingLookup } from "./funding.js";
 import { DELIVERY_PAGES, MEMOS_PER_TRANSACTION, scan } from "./job-scan.js";
 import type { EngineTransaction, Transport } from "./transport.js";
 
@@ -39,6 +40,7 @@ export type WorkRecord = {
   earned?: bigint;
   release?: Signature;
   selfDealt: boolean;
+  fundedByWorker?: FundedBy;
   feedback?: number;
 };
 
@@ -50,6 +52,7 @@ export type Reputation = {
   announced: number;
   paid: number;
   selfDealt: number;
+  fundedByWorker: number;
   payers: number;
   judges: number;
   committeeJudged: number;
@@ -200,8 +203,14 @@ export async function reputationOf(transport: Transport, wallet: Address, option
   const scanned = await scan(transport, wallet, { memo: DELIVERY_MEMO_PREFIX, pages: options.pages ?? DELIVERY_PAGES, covered: fullLedger });
   const works = announcedBy(wallet, scanned.transactions);
   const read = await Promise.all(works.map((work) => recordOf(transport, wallet, work, options.history ?? HISTORY_LIMIT)));
-  const records = read.map(({ record }) => record).sort((a, b) => (a.slot < b.slot ? -1 : a.slot > b.slot ? 1 : 0));
-  const fair = records.filter((r) => r.outcome === "paid" && !r.selfDealt);
+  const lookup = fundingLookup(transport, fullLedger);
+  const records: WorkRecord[] = [];
+  for (const { record } of read) {
+    records.push(record.outcome === "paid" && record.owner !== undefined ? { ...record, fundedByWorker: await fundedBy(lookup, record.owner, wallet) } : record);
+  }
+  records.sort((a, b) => (a.slot < b.slot ? -1 : a.slot > b.slot ? 1 : 0));
+  const arm = records.filter((r) => r.outcome === "paid" && !r.selfDealt);
+  const fair = arm.filter((r) => r.fundedByWorker !== "yes");
   const earned = new Map<Address, bigint>();
   for (const r of fair) {
     if (r.mint !== undefined && r.earned !== undefined) {
@@ -212,10 +221,11 @@ export async function reputationOf(transport: Transport, wallet: Address, option
   const times = records.flatMap((r) => (r.blockTime === null ? [] : [r.blockTime]));
   return {
     wallet,
-    complete: scanned.complete && read.every(({ complete }) => complete),
+    complete: scanned.complete && read.every(({ complete }) => complete) && records.every((r) => r.fundedByWorker !== "unknown"),
     announced: records.length,
     paid: fair.length,
     selfDealt: records.filter((r) => r.outcome === "paid" && r.selfDealt).length,
+    fundedByWorker: arm.length - fair.length,
     payers: new Set(fair.map((r) => r.owner)).size,
     judges: new Set(fair.map((r) => r.attestor)).size,
     committeeJudged: fair.filter((r) => r.committee !== undefined).length,

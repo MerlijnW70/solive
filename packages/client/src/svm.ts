@@ -25,6 +25,7 @@ import {
   MEMO_PROGRAM_ADDRESS,
   type ProgramAccount,
   signersAmong,
+  solTransfersOf,
   type TokenHolding,
   type Transport,
 } from "./transport.js";
@@ -100,11 +101,15 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
     const feePayer = keys[0];
     const engineCalls = ("instructions" in compiled ? compiled.instructions : []).filter((ix) => keys[ix.programAddressIndex] === INTENT_ENGINE_PROGRAM_ADDRESS);
     const called = engineCalls.map((ix) => Uint8Array.from(ix.data ?? []));
-    const inner = result
+    const everyInner = result
       .innerInstructions()
       .flat()
-      .map((ix) => ix.instruction())
-      .filter((ix) => keys[ix.programIdIndex()] === INTENT_ENGINE_PROGRAM_ADDRESS);
+      .map((ix) => ix.instruction());
+    const inner = everyInner.filter((ix) => keys[ix.programIdIndex()] === INTENT_ENGINE_PROGRAM_ADDRESS);
+    const transfers = solTransfersOf(keys, [
+      ...("instructions" in compiled ? compiled.instructions : []).map((ix) => ({ program: keys[ix.programAddressIndex], accounts: ix.accountIndices ?? [], data: Uint8Array.from(ix.data ?? []) })),
+      ...everyInner.map((ix) => ({ program: keys[ix.programIdIndex()], accounts: Array.from(ix.accounts()), data: new Uint8Array(ix.data()) })),
+    ]);
     const found: EngineTransaction = {
       signature,
       slot: clock.slot,
@@ -116,6 +121,7 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
       ...(feePayer === undefined ? {} : { feePayer }),
       ...(called.length === 0 ? {} : { called, calledAccounts: engineCalls.map((ix) => keysAt(keys, ix.accountIndices ?? [])) }),
       ...(tokens.length === 0 ? {} : { tokens }),
+      ...(transfers.length === 0 ? {} : { transfers }),
     };
     history.unshift({ touched: new Set(keys), found });
     byId.set(signature, found);

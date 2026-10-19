@@ -9,10 +9,11 @@ export type {
   RpcLike,
   SignatureLanding,
   Simulation,
+  SolTransfer,
   TokenHolding,
   Transport,
 } from "./rpc-shapes.js";
-export { holdingsOf, keysAt, MEMO_PROGRAM_ADDRESS, signersAmong } from "./transaction-keys.js";
+export { holdingsOf, keysAt, MEMO_PROGRAM_ADDRESS, signersAmong, solTransfersOf } from "./transaction-keys.js";
 export {
   behindMinSlot,
   BlockhashExpired,

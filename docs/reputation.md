@@ -19,7 +19,9 @@ For every proof escrow the wallet announced work to, the record says whether its
 
 The totals count only `paid` releases at arm's length. A release is self-dealt, and left out, when the worker owned the escrow, judged it, or sat on the committee that judged it, or when the owner judged its own escrow. `payers` and `judges` count the distinct owners and judges behind the totals. `committee_judged` counts releases a committee approved.
 
-`complete` is `true` only when the RPC node holds the whole ledger and every escrow's history was read. A pruned node shows less, never more.
+A paid release is also left out when the worker funded its payer: the earliest SOL transfer into the payer's wallet came from the worker, or from a wallet the worker funded first. `funded_by_worker` counts these, and each paid release shows `yes`, `no` or `unknown`. A payer whose funding history the node cannot return in full is `unknown`, never `no`, and still counts.
+
+`complete` is `true` only when the RPC node holds the whole ledger and every escrow's history and payer's funding history was read. A pruned node shows less, never more.
 
 ## Rate released work
 
@@ -46,7 +48,7 @@ A profile is what the worker says about itself. Its record above is what the cha
 
 ## What it cannot see
 
-Two wallets held by one person look like two people. Self-dealing checks catch a wallet paying or judging itself, not a second wallet of its owner. Weigh `payers`, `judges` and `committee_judged` over the raw count.
+Two wallets held by one person look like two people. Self-dealing checks catch a wallet paying or judging itself, and the funding check catches a payer the worker funded within two hops. A second wallet funded from elsewhere still looks independent. Weigh `payers`, `judges` and `committee_judged` over the raw count.
 
 ## Next
 

@@ -3,6 +3,7 @@ export * from "./budget.js";
 export * from "./client.js";
 export * from "./confirm-release.js";
 export * from "./errors.js";
+export * from "./funding.js";
 export * from "./jobs.js";
 export * from "./ledger.js";
 export * from "./public-host.js";

@@ -15,11 +15,12 @@ export const RECORDS_SHOWN = 50;
 export const FEEDBACK_CHANGED = "this feedback differs from its preview: the escrow, score or note changed, or no approval was given; preview it again and show the user";
 
 const OUTCOMES = ["paid", "paid-other", "refunded", "open", "unknown"] as const;
+const FUNDED = ["yes", "no", "unknown"] as const;
 
 export const getReputation = define({
   name: tool("get_reputation"),
   title: "A worker's verifiable track record",
-  description: `Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Use it before hiring a worker or trusting its delivery.`,
+  description: `Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Releases whose payer was first funded by the worker, directly or through one wallet, are counted apart as funded by the worker and left out too. Use it before hiring a worker or trusting its delivery.`,
   effect: "read",
   input: object({
     worker: account("the worker wallet to read"),
@@ -31,6 +32,7 @@ export const getReputation = define({
     announced: integer(0, Number.MAX_SAFE_INTEGER, "escrows it announced work to"),
     paid: integer(0, Number.MAX_SAFE_INTEGER, "releases that paid it for its announced work, at arm's length"),
     self_dealt: integer(0, Number.MAX_SAFE_INTEGER, "paid releases where it paid or judged itself, left out of the totals"),
+    funded_by_worker: integer(0, Number.MAX_SAFE_INTEGER, "other paid releases whose payer it funded first, left out of the totals"),
     payers: integer(0, Number.MAX_SAFE_INTEGER, "distinct owners who paid it at arm's length"),
     judges: integer(0, Number.MAX_SAFE_INTEGER, "distinct judges or committees that released to it at arm's length"),
     committee_judged: integer(0, Number.MAX_SAFE_INTEGER, "arm's-length releases judged by a committee"),
@@ -44,6 +46,7 @@ export const getReputation = define({
         sha256: hex32(),
         outcome: choice(OUTCOMES),
         self_dealt: flag(),
+        funded_by_worker: optional(choice(FUNDED)),
         owner: optional(account()),
         attestor: optional(account()),
         earned: optional(amount()),
@@ -61,6 +64,7 @@ export const getReputation = define({
       announced: rep.announced,
       paid: rep.paid,
       self_dealt: rep.selfDealt,
+      funded_by_worker: rep.fundedByWorker,
       payers: rep.payers,
       judges: rep.judges,
       committee_judged: rep.committeeJudged,
@@ -73,6 +77,7 @@ export const getReputation = define({
         sha256: r.sha256,
         outcome: r.outcome,
         self_dealt: r.selfDealt,
+        ...(r.fundedByWorker === undefined ? {} : { funded_by_worker: r.fundedByWorker }),
         ...(r.owner === undefined ? {} : { owner: r.owner }),
         ...(r.attestor === undefined ? {} : { attestor: r.attestor }),
         ...(r.earned === undefined ? {} : { earned: r.earned }),
