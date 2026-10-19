@@ -1,6 +1,6 @@
 use anchor_lang::prelude::Pubkey;
 use intent_core::bounty::split_n;
-use intent_core::fee::split_fees;
+use intent_core::fee::{release_settles, split_fees};
 use intent_core::kinds::{attested_result, Kind};
 use intent_engine::errors::EngineError;
 use intent_engine::state::MAX_FEE_BPS;
@@ -11,7 +11,7 @@ use solana_instruction::Instruction;
 use solana_keypair::Keypair;
 use solana_signer::Signer;
 use svm_tests::{
-    anchor_error_at, cosign_batch_ix, engine_error_at, intent_pda, partner_ext, split_commit,
+    anchor_error_at, cosign_batch_ix, engine_error, intent_pda, partner_ext, split_commit,
     split_digest, swap_spec, vault_pda, Env, IntentSpec, TestResult, DOMAIN,
 };
 
@@ -131,7 +131,17 @@ fn run_split(case: &Case) -> TestResult {
     } else {
         Vec::new()
     };
-    env.create_intent(&trader, &market, &proof_spec(&attestor, case, ext)?)?;
+    let created = env.create_intent(&trader, &market, &proof_spec(&attestor, case, ext)?);
+    if !release_settles(case.escrow, case.judge_fee, FEE_BPS, partner_bps, cut_bps) {
+        if created.err() != Some(engine_error(EngineError::ReleaseCannotSettle)) {
+            return Err("an escrow no release can settle was not refused at creation".into());
+        }
+        if env.balance(&trader.input)? != case.escrow {
+            return Err("a refused creation moved escrow".into());
+        }
+        return Ok(());
+    }
+    created?;
     let intent = intent_pda(&owner, 0);
     let vault = vault_pda(&intent);
     let judge_to = env.create_ata(&attestor.pubkey(), &market.input_mint, program)?;
@@ -208,17 +218,7 @@ fn run_split(case: &Case) -> TestResult {
         .escrow
         .checked_sub(case.judge_fee)
         .ok_or("judge fee above escrow")?;
-    let Ok(fees) = split_fees(settle, FEE_BPS, partner_bps, cut_bps) else {
-        if sent.err() != Some(engine_error_at(1, EngineError::InvalidParams)) {
-            return Err(
-                "a split whose fees exceed what the judge fee leaves was not refused".into(),
-            );
-        }
-        if left != case.escrow {
-            return Err("a refused split moved escrow".into());
-        }
-        return Ok(());
-    };
+    let fees = split_fees(settle, FEE_BPS, partner_bps, cut_bps).map_err(|e| format!("{e:?}"))?;
     sent?;
     let plan = split_n(fees.net, &case.weights).map_err(|e| format!("{e:?}"))?;
     let mut by_slot = Vec::new();

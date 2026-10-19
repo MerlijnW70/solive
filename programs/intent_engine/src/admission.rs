@@ -1,13 +1,14 @@
 use anchor_lang::prelude::*;
 use anchor_spl::token_interface::Mint;
 use intent_core::ext::check_flags;
+use intent_core::fee::release_settles;
 use intent_core::kinds::{Intent as CoreIntent, Kind};
 use intent_core::mandate::{in_lane, is_mandated_nonce};
 use intent_core::nonce::Window;
 
 use crate::errors::{core_err, EngineError};
 use crate::instructions::CreateIntentArgs;
-use crate::policy::{can_receive, check_mint};
+use crate::policy::{can_receive, check_mint, FeeSchedule};
 use crate::state::{Config, Intent, UserState, INTENT_VERSION, PAUSE_CREATE};
 
 pub struct Opening<'a, 'info> {
@@ -35,7 +36,7 @@ pub fn open_intent(o: &Opening, args: &CreateIntentArgs, now: i64) -> Result<Adm
     let kind = Kind::try_from(args.kind).map_err(core_err)?;
     check_flags(args.flags).map_err(core_err)?;
     let partner = intent_core::ext::partner(&args.ext.0).map_err(core_err)?;
-    let (bounty, create_fee, partner_cut_bps) = {
+    let (bounty, create_fee, partner_cut_bps, schedule) = {
         let config = o.config.load()?;
         require!(config.paused & PAUSE_CREATE == 0, EngineError::CreatePaused);
         require!(
@@ -46,6 +47,7 @@ pub fn open_intent(o: &Opening, args: &CreateIntentArgs, now: i64) -> Result<Adm
             config.crank_bounty,
             config.create_fee,
             config.partner_cut_bps,
+            FeeSchedule::of(&config),
         )
     };
     require!(
@@ -117,6 +119,19 @@ pub fn open_intent(o: &Opening, args: &CreateIntentArgs, now: i64) -> Result<Adm
         intent.mandate = mandate;
         intent.mandate_serial = serial;
         intent.agent_fee = agent_fee;
+    }
+    if kind == Kind::AttestedResult {
+        let terms = schedule.terms(&intent)?;
+        require!(
+            release_settles(
+                decoded.escrow_amount(),
+                decoded.judge_fee(),
+                terms.fee_bps,
+                terms.partner_bps,
+                terms.cut_bps,
+            ),
+            EngineError::ReleaseCannotSettle
+        );
     }
     Ok(Admission {
         decoded,

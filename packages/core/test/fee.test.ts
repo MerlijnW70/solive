@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { Address } from "@solana/kit";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
@@ -210,5 +212,18 @@ describe("release settlement", () => {
       }),
       { numRuns: RUNS },
     );
+  });
+
+  it("agrees with the program's release_settles on every case of the shared table", () => {
+    const table = JSON.parse(readFileSync(fileURLToPath(new URL("./golden/release-settles.json", import.meta.url)), "utf8")) as {
+      cases: { amount: string; judge_fee: string; fee_bps: number; partner_bps: number; cut_bps: number; settles: boolean }[];
+    };
+    expect(table.cases.length).toBeGreaterThan(400);
+    expect(table.cases.some((c) => c.settles)).toBe(true);
+    expect(table.cases.some((c) => !c.settles)).toBe(true);
+    for (const c of table.cases) {
+      const t = { amount: BigInt(c.amount), judgeFee: BigInt(c.judge_fee), feeBps: c.fee_bps, partnerBps: c.partner_bps, cutBps: c.cut_bps };
+      expect(releaseSettles(t), JSON.stringify(c)).toBe(c.settles);
+    }
   });
 });

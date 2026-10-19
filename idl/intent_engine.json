@@ -4034,6 +4034,10 @@
     {
       "code": 6096,
       "name": "ClaimCooldown"
+    },
+    {
+      "code": 6097,
+      "name": "ReleaseCannotSettle"
     }
   ],
   "types": [

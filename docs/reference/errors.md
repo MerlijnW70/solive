@@ -169,6 +169,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6094 | `StakeAccountMismatch` | no | the stake goes to the claimant when it is paid, otherwise to the escrow's owner; pass that account |
 | 6095 | `ProfileInvalid` | no | a profile needs 1 to 8 distinct lowercase skill tags of at most 16 letters, digits or dashes, an https endpoint of at most 128 printable characters, and a document url only together with its sha256 |
 | 6096 | `ClaimCooldown` | yes | this worker dropped its claim on the job and may claim it again once that claim would have ended; any other worker may claim it now |
+| 6097 | `ReleaseCannotSettle` | no | the judge fee leaves less of the escrow than the rounded-up protocol and partner fees, so no release could pay; lower the judge fee or escrow more |
 
 ## Token programs
 

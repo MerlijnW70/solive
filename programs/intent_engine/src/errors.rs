@@ -100,6 +100,7 @@ pub enum EngineError {
     StakeAccountMismatch,
     ProfileInvalid,
     ClaimCooldown,
+    ReleaseCannotSettle,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {

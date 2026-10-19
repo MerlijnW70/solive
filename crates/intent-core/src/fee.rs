@@ -43,3 +43,16 @@ pub fn split_fees(
         net,
     })
 }
+
+pub fn release_settles(
+    amount: u64,
+    judge_fee: u64,
+    fee_bps: u16,
+    partner_bps: u16,
+    cut_bps: u16,
+) -> bool {
+    amount > judge_fee
+        && amount
+            .checked_sub(judge_fee)
+            .is_some_and(|rest| split_fees(rest, fee_bps, partner_bps, cut_bps).is_ok())
+}

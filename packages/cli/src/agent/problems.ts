@@ -125,6 +125,7 @@ export const ENGINE_PROBLEMS = {
   StakeAccountMismatch: never("the stake goes to the claimant when it is paid, otherwise to the escrow's owner; pass that account"),
   ProfileInvalid: never("a profile needs 1 to 8 distinct lowercase skill tags of at most 16 letters, digits or dashes, an https endpoint of at most 128 printable characters, and a document url only together with its sha256"),
   ClaimCooldown: later("this worker dropped its claim on the job and may claim it again once that claim would have ended; any other worker may claim it now"),
+  ReleaseCannotSettle: never("the judge fee leaves less of the escrow than the rounded-up protocol and partner fees, so no release could pay; lower the judge fee or escrow more"),
 } as const satisfies Record<string, Entry>;
 
 type EngineErrorName = keyof typeof ENGINE_PROBLEMS;
