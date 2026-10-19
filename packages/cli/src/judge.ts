@@ -9,8 +9,10 @@ import {
   confirmOnBoth,
   createClient,
   deliveryRecord,
+  type FinalizedBlock,
   firstDelivery,
   isDevice,
+  isLedgerPath,
   loadCommittee,
   loadIntent,
   SIGNATURE_PAGE,
@@ -30,7 +32,8 @@ import { invitedTo, notInvited } from "./invites.js";
 import { type SimulatedRelease, simulateRelease } from "./release-simulation.js";
 import { keyFileSigner, type MessageSigner, messageSigner } from "./ledger-keys.js";
 import { type Beacon, drawBeacon, type DrawJudged, judgeDraw } from "./draw.js";
-import { type Cases, casesOf, judgeViper, type Judged as CasesJudged, pinnedWasm, runOf, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
+import { heldCommittee, heldDomain, type HeldJudged, heldOf, heldOnDevice, heldOnlyViper, heldQueued, heldReached, judgeHeld, type Opened, openHeld } from "./held.js";
+import { type Cases, casesOf, type Held, judgeViper, type Judged as CasesJudged, moduleText, pinnedWasm, runOf, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
 
 export { type InterruptSignal, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
 export { artifactSha256, CHECK_COPY, CLEANUP_RETRIES, MAX_ARTIFACT_BYTES, MAX_ARTIFACT_FILES, removeCopy, SKIPPED, SPEC_COPY } from "./artifact.js";
@@ -69,8 +72,9 @@ export type Verdict = {
   drawn?: DrawJudged;
   host?: HostJudged;
   node?: NodeJudged;
+  held?: HeldJudged;
   exitCode: number | null;
-  verdict: "pass" | "fail";
+  verdict: "pass" | "fail" | "queued";
   payTo: Address;
   signature: Signature | null;
   simulated?: SimulatedRelease;
@@ -116,7 +120,19 @@ export async function escrowFor(transport: Transport, judge: Address, owner: Add
   };
 }
 
-export async function judge(command: JudgeCommand, runtime: Runtime, transport: Transport): Promise<Verdict> {
+type Viper = { cases: Cases; wasm: Buffer };
+
+async function heldOpened(command: JudgeCommand, runtime: Runtime, transport: Transport, viper: Viper, held: Held, reached: FinalizedBlock | null | undefined): Promise<Opened | null> {
+  const block = reached === undefined ? await heldReached(transport, held) : reached;
+  if (block === null) {
+    return null;
+  }
+  const entries = await openHeld(runtime.specFetch, transport, viper.cases, await runtime.loadKeypair(command.keypair));
+  await heldDomain(viper.wasm, viper.cases, entries, runOf(viper.cases), command.timeout);
+  return { block, entries };
+}
+
+export async function judge(command: JudgeCommand, runtime: Runtime, transport: Transport, reached?: FinalizedBlock | null): Promise<Verdict> {
   if (command.verdict !== undefined) {
     await rm(command.verdict, { force: true });
   }
@@ -140,7 +156,17 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   if (specSha256 !== specHash) {
     throw new JudgeRefused(`--spec ${command.spec} has sha256 ${specSha256}, but intent ${address} commits ${specHash}`);
   }
-  const viper = command.sandbox.kind === "viper" ? { cases: casesOf(specBytes), wasm: await pinnedWasm() } : undefined;
+  const viper: Viper | undefined = command.sandbox.kind === "viper" ? { cases: casesOf(specBytes), wasm: await pinnedWasm() } : undefined;
+  const held = viper?.cases.held;
+  if (viper === undefined && heldOf(specBytes) !== undefined) {
+    throw new JudgeRefused(heldOnlyViper);
+  }
+  if (held !== undefined && committee !== null) {
+    throw new JudgeRefused(heldCommittee(address, attestor));
+  }
+  if (held !== undefined && isLedgerPath(command.keypair)) {
+    throw new JudgeRefused(heldOnDevice(command.keypair));
+  }
   const artifact = resolve(command.artifact);
   const read = await readArtifact(artifact);
   if (viper !== undefined && !read.single) {
@@ -168,10 +194,11 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   }
   const draw = viper?.cases.draw;
   const beacon = draw === undefined ? undefined : await drawBeacon(transport, (seconds) => runtime.sleep(seconds), first, draw, address, sha256);
+  const opened = viper === undefined || held === undefined ? undefined : await heldOpened(command, runtime, transport, viper, held, reached);
   const signals = holdSignals();
   try {
     const confirm = command.confirmUrl === undefined ? undefined : runtime.transport(command.confirmUrl);
-    return await checkAndSettle(command, transport, signer, signals, { address, attestor, committee, specHash, sha256, payTo, result, read, specBytes, check, viper, beacon, confirm });
+    return await checkAndSettle(command, transport, signer, signals, { address, attestor, committee, specHash, sha256, payTo, result, read, specBytes, check, viper, beacon, opened, confirm });
   } finally {
     signals.release();
   }
@@ -239,8 +266,9 @@ type Judged = {
   read: Artifact;
   specBytes: Uint8Array;
   check: CheckFiles | undefined;
-  viper: { cases: Cases; wasm: Buffer } | undefined;
+  viper: Viper | undefined;
   beacon: Beacon | undefined;
+  opened: Opened | null | undefined;
   confirm: Transport | undefined;
 };
 
@@ -249,7 +277,7 @@ async function checkAndSettle(
   transport: Transport,
   signer: MessageSigner,
   signals: HeldSignals,
-  { address, attestor, committee, specHash, sha256, payTo, result, read, specBytes, check: checkFiles, viper, beacon, confirm }: Judged,
+  { address, attestor, committee, specHash, sha256, payTo, result, read, specBytes, check: checkFiles, viper, beacon, opened, confirm }: Judged,
 ): Promise<Verdict> {
   const { sandbox } = command;
   let check: Check = { exitCode: null, timedOut: false };
@@ -257,7 +285,9 @@ async function checkAndSettle(
   let drawn: DrawJudged | undefined;
   let host: HostJudged | undefined;
   let node: NodeJudged | undefined;
+  let held: HeldJudged | undefined;
   let cleanup: string | undefined;
+  const agreed = (judged: { total: number; passed: number } | undefined) => judged !== undefined && judged.total > 0 && judged.passed === judged.total;
   const plainNode = sandbox.kind === "viper" ? sandbox.node : undefined;
   if (viper !== undefined) {
     const [entry] = read.entries;
@@ -278,6 +308,12 @@ async function checkAndSettle(
       const ran = await judgeNode(plainNode, module, entry?.path ?? "", viper.cases, run.seed, left());
       node = ran.judged;
       cleanup = ran.cleanup;
+    }
+    const sofar = agreed(cases) && agreed(host) && (beacon === undefined || agreed(drawn)) && (plainNode === undefined || agreed(node));
+    if (signals.caught() === undefined && sofar && opened !== undefined && opened !== null) {
+      const ran = await judgeHeld({ wasm: viper.wasm, module, text: moduleText(module), path: entry?.path ?? "", cases: viper.cases, run, left, node: plainNode }, opened);
+      held = ran.held;
+      cleanup = ran.cleanup ?? cleanup;
     }
   } else {
     const copy = await copyOf(read, specBytes, checkFiles);
@@ -300,8 +336,9 @@ async function checkAndSettle(
   if (interrupted !== undefined) {
     throw new JudgeInterrupted(interrupted);
   }
-  const agreed = (judged: { total: number; passed: number } | undefined) => judged !== undefined && judged.total > 0 && judged.passed === judged.total;
-  const passed = cases === undefined ? check.exitCode === 0 : agreed(cases) && agreed(host) && (beacon === undefined || agreed(drawn)) && (plainNode === undefined || agreed(node));
+  const rest = cases !== undefined && agreed(cases) && agreed(host) && (beacon === undefined || agreed(drawn)) && (plainNode === undefined || agreed(node));
+  const passed = cases === undefined ? check.exitCode === 0 : rest && (opened === undefined || held?.passed === true);
+  const queued = rest && opened === null;
   if (passed && confirm !== undefined) {
     await confirmOnBoth(transport, confirm, { intent: address, attestor, sha256, pages: command.maxPages, payees: [payTo] });
   }
@@ -341,14 +378,16 @@ async function checkAndSettle(
     ...(drawn !== undefined ? { drawn } : {}),
     ...(host !== undefined ? { host } : {}),
     ...(node !== undefined ? { node } : {}),
+    ...(held !== undefined ? { held } : {}),
     exitCode: check.exitCode,
-    verdict: passed ? "pass" : "fail",
+    verdict: passed ? "pass" : queued ? "queued" : "fail",
     payTo,
     signature,
     ...(simulated === undefined ? {} : { simulated }),
     ...(committee === null ? {} : { committee: committee.address }),
     ...(vote === undefined ? {} : { vote, next: VOTE_NEXT }),
     ...(passed && committee === null && !command.yes ? { next: NOT_SENT } : {}),
+    ...(queued ? { next: heldQueued(viper?.cases.held?.at ?? 0) } : {}),
     ...(cleanup !== undefined ? { cleanup } : {}),
   };
   if (command.verdict !== undefined) {

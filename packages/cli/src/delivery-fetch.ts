@@ -28,7 +28,7 @@ export const fetchedName = (url: URL): string => {
 
 const tooLarge = `is larger than ${MAX_ARTIFACT_BYTES} bytes`;
 
-async function body(response: Response, url: string): Promise<Uint8Array> {
+export async function body(response: Response, url: string): Promise<Uint8Array> {
   if (!response.ok) {
     await response.body?.cancel().catch(() => undefined);
     throw new DeliveryUnfit(url, `answered ${response.status}`);

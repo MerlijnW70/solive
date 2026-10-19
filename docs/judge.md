@@ -207,6 +207,12 @@ The generator's single `export default` gets the seed in hex and `n` and returns
 
 The verdict's `drawn` records the slot, blockhash and seed, so anyone with the spec and a node that keeps the full ledger regenerates the same cases.
 
+So that a delivery cannot pass by recognising generated inputs, the block can add `"held": {"sha256": "<64 hex>", "count": m, "url": "<https url>", "at": S, "domain": "<module>"}`. The url serves `m` real inputs as a JSON array of `{args, expected?}`, sealed with `seal` to the judge, and `sha256` pins the plaintext.
+
+Until a block at or after slot `S` is finalized, `judge` runs the other cases, sends nothing and answers `queued`; `judge --watch` queues such deliveries in announcement order. Then the judge opens the file, refuses the spec as its own fault when the hash differs or an entry fails `domain`, and pays the first queued delivery that passes every held case in fresh engines, checking an entry without `expected` with the draw checker.
+
+The verdict's `held` records only `count`, `passed` and `slot`. Only a single-key judge with a key file opens held cases, and `create attested` refuses a committee or an expiry too soon after `S`, naming the margin.
+
 ## Who is paid
 
 `judge` pays the earliest announcer whose commitment binds the work's hash, so a copied announcement pays nobody else. It refuses when nobody announced it.
