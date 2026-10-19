@@ -1,6 +1,7 @@
 import type { Address } from "@solana/kit";
 import {
   type AttestedResultParams,
+  CLAIMS_OPEN,
   decodeEvent,
   decodeParams,
   getIntentDecoder,
@@ -13,6 +14,7 @@ import {
   remainingOf,
 } from "@intent-engine/core";
 import { chainTime, createdAccount } from "./accounts.js";
+import { loadClaimsOf } from "./client-claims.js";
 import { scan } from "./job-scan.js";
 import type { EngineTransaction, Transport } from "./transport.js";
 
@@ -20,7 +22,7 @@ export const JOBS_LIMIT = 50;
 
 export type Proof = { address: Address; intent: Intent; params: AttestedResultParams };
 
-export type JobFilter = { attestor?: Address | undefined; mint?: Address | undefined; minSells?: bigint | undefined };
+export type JobFilter = { attestor?: Address | undefined; mint?: Address | undefined; minSells?: bigint | undefined; unclaimed?: boolean | undefined };
 
 export const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
 
@@ -48,9 +50,9 @@ export async function createdAtOf(transport: Transport, address: Address): Promi
 }
 
 export async function openProofEscrows(transport: Transport, filter?: Address | JobFilter, limit: number = JOBS_LIMIT): Promise<Proof[]> {
-  const { attestor, mint, minSells }: JobFilter = typeof filter === "string" ? { attestor: filter } : (filter ?? {});
+  const { attestor, mint, minSells, unclaimed }: JobFilter = typeof filter === "string" ? { attestor: filter } : (filter ?? {});
   const [accounts, now] = await Promise.all([transport.intents(), chainTime(transport)]);
-  return accounts
+  const open = accounts
     .map(({ address, data }) => proofOf(address, getIntentDecoder().decode(data)))
     .filter(
       (proof): proof is Proof =>
@@ -61,8 +63,15 @@ export async function openProofEscrows(transport: Transport, filter?: Address | 
         (mint === undefined || proof.intent.inputMint === mint) &&
         (minSells === undefined || remainingOf(proof.intent) >= minSells),
     )
-    .sort((a, b) => (a.intent.expiresAt === b.intent.expiresAt ? 0 : a.intent.expiresAt > b.intent.expiresAt ? -1 : 1))
-    .slice(0, limit);
+    .sort((a, b) => (a.intent.expiresAt === b.intent.expiresAt ? 0 : a.intent.expiresAt > b.intent.expiresAt ? -1 : 1));
+  return (unclaimed === true ? await unclaimedOnly(transport, open) : open).slice(0, limit);
+}
+
+async function unclaimedOnly(transport: Transport, proofs: Proof[]): Promise<Proof[]> {
+  const claimable = proofs.filter(({ intent }) => intent.claims === CLAIMS_OPEN);
+  const claims = await loadClaimsOf(transport, claimable.map(({ address }) => address));
+  const held = new Set(claimable.filter((_, i) => claims[i]?.state === "held").map(({ address }) => address));
+  return proofs.filter(({ address }) => !held.has(address));
 }
 
 export const createdIn = (emitted: readonly Uint8Array[], intent: Address): boolean =>

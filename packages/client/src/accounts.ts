@@ -20,9 +20,12 @@ import type { AccountView, Transport } from "./transport.js";
 
 export const SYSTEM_PROGRAM_ADDRESS = "11111111111111111111111111111111" as Address;
 
-export async function createdAccount(transport: Transport, address: Address): Promise<AccountView | null> {
-  const view = await transport.getAccount(address);
+export function createdView(view: AccountView | null): AccountView | null {
   return view === null || (view.owner === SYSTEM_PROGRAM_ADDRESS && view.data.length === 0) ? null : view;
+}
+
+export async function createdAccount(transport: Transport, address: Address): Promise<AccountView | null> {
+  return createdView(await transport.getAccount(address));
 }
 
 export class MissingAccount extends Error {
@@ -163,7 +166,10 @@ export function tokenAmountOf(data: Uint8Array | null): bigint | null {
 }
 
 export async function chainTime(transport: Transport): Promise<bigint> {
-  const view = await transport.getAccount(CLOCK_SYSVAR);
+  return clockTime(await transport.getAccount(CLOCK_SYSVAR));
+}
+
+export function clockTime(view: AccountView | null): bigint {
   if (view === null) {
     throw new Error("the clock sysvar is missing");
   }

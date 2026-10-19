@@ -1,7 +1,20 @@
 import type { Address } from "@solana/kit";
-import { type Job, type JobPay, jobPays, JOBS_LIMIT, jobsOf, mintOf, openProofEscrows, type PayTerms, type Transport } from "@intent-engine/client";
+import {
+  type Job,
+  type JobClaim,
+  jobClaimOf,
+  type JobPay,
+  jobPays,
+  JOBS_LIMIT,
+  jobsOf,
+  loadClaimsOf,
+  mintOf,
+  openProofEscrows,
+  type PayTerms,
+  type Transport,
+} from "@intent-engine/client";
 
-export type JobsWanted = { attestor?: Address | undefined; mint?: Address | undefined; minPay?: string | undefined };
+export type JobsWanted = { attestor?: Address | undefined; mint?: Address | undefined; minPay?: string | undefined; unclaimed?: boolean | undefined };
 
 export function leastUnits(tokens: string, decimals: number): bigint {
   const [whole = "0", fraction = ""] = tokens.split(".");
@@ -25,23 +38,23 @@ export function decimalsOnce(transport: Transport): DecimalsOf {
 
 export async function jobsWanted(
   transport: Transport,
-  { attestor, mint, minPay }: JobsWanted,
+  { attestor, mint, minPay, unclaimed }: JobsWanted,
   decimalsOf: DecimalsOf = decimalsOnce(transport),
 ): Promise<Job[]> {
   if (minPay === undefined) {
-    return jobsOf(transport, { attestor, mint });
+    return jobsOf(transport, { attestor, mint, unclaimed });
   }
   const open = await openProofEscrows(transport, { attestor, mint }, Number.POSITIVE_INFINITY);
   const mints = [...new Set(open.map(({ intent }) => intent.inputMint))];
   const lists = await Promise.all(
-    mints.map(async (each) => jobsOf(transport, { attestor, mint: each, minSells: leastUnits(minPay, await decimalsOf(each)) })),
+    mints.map(async (each) => jobsOf(transport, { attestor, mint: each, minSells: leastUnits(minPay, await decimalsOf(each)), unclaimed })),
   );
   return lists.flat().sort(latestFirst).slice(0, JOBS_LIMIT);
 }
 
-export async function pricedJobs(transport: Transport, wanted: JobsWanted, terms: PayTerms): Promise<(Job & JobPay)[]> {
+export async function pricedJobs(transport: Transport, wanted: JobsWanted, terms: PayTerms): Promise<(Job & JobPay & JobClaim)[]> {
   const decimalsOf = decimalsOnce(transport);
   const jobs = await jobsWanted(transport, wanted, decimalsOf);
-  const pays = await jobPays(transport, jobs, terms, decimalsOf);
-  return jobs.map((job, i) => ({ ...job, ...(pays[i] ?? { netPay: "0", payable: false }) }));
+  const [pays, claims] = await Promise.all([jobPays(transport, jobs, terms, decimalsOf), loadClaimsOf(transport, jobs.map(({ intent }) => intent))]);
+  return jobs.map((job, i) => ({ ...job, ...(pays[i] ?? { netPay: "0", payable: false }), ...jobClaimOf(claims[i] ?? null) }));
 }

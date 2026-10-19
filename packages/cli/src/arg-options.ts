@@ -65,6 +65,7 @@ export const OPTIONS = {
   follow: { type: "boolean" },
   watch: { type: "boolean" },
   stats: { type: "boolean" },
+  unclaimed: { type: "boolean" },
   output: { type: "string" },
   interval: { type: "string" },
   "expires-in": { type: "string" },
@@ -174,7 +175,7 @@ export const PROFILE_OPTIONS = { ...OPTIONS, wallet: { type: "string" } } as con
 
 export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill", "vote"]);
 
-export type Flag = "dry-run" | "fund-accounts" | "yes" | "help" | "version" | "follow" | "create" | "wallet" | "watch" | "stats" | "close" | "once" | "plain-node" | "all-tools";
+export type Flag = "dry-run" | "fund-accounts" | "yes" | "help" | "version" | "follow" | "create" | "wallet" | "watch" | "stats" | "close" | "once" | "plain-node" | "all-tools" | "unclaimed";
 export type Many = "max-fill" | "vote";
 export type StringKey = Exclude<keyof typeof OPTIONS, Flag | Many>;
 export type Values = { [K in StringKey]?: string | undefined } & { [K in Exclude<Flag, "wallet">]?: boolean | undefined } & {
@@ -257,7 +258,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   "solver-table": ["url", "solver", "mints"],
   "lower-pause": ["url", "priority-fee", "keypair", "authority", "yes", "flags"],
   events: ["url", "limit", "follow", "interval"],
-  jobs: ["url", "attestor", "mint", "min-pay"],
+  jobs: ["url", "attestor", "mint", "min-pay", "unclaimed"],
   deliver: ["url", "priority-fee", "keypair", "yes", "intent", "artifact", "sha256", "work-url"],
   deliveries: ["url", "attestor", "intent", "max-pages"],
   receipt: ["url", "owner", "nonce", "sha256", "release"],

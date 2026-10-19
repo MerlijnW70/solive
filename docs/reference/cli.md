@@ -247,10 +247,10 @@ Options: `--url`, `--limit`, `--follow`, `--interval`, `--output`, `--help`
 ## jobs
 
 ```text
-jobs [--attestor <address>] [--mint <SOL, TEST or mint>] [--min-pay <tokens>]
+jobs [--attestor <address>] [--mint <SOL, TEST or mint>] [--min-pay <tokens>] [--unclaimed]
 ```
 
-Options: `--url`, `--attestor`, `--mint`, `--min-pay`, `--output`, `--help`
+Options: `--url`, `--attestor`, `--mint`, `--min-pay`, `--unclaimed`, `--output`, `--help`
 
 ## deliver
 

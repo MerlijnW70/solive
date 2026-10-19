@@ -17,7 +17,7 @@ import {
   stakeReceiverOnSettle,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import { createClient, NotSettleable } from "../src/index.js";
+import { createClient, jobClaimOf, loadClaimsOf, NotSettleable, type Transport } from "../src/index.js";
 import { svmTransport } from "../src/svm.js";
 import { world } from "./svm.js";
 
@@ -60,7 +60,7 @@ async function setup() {
     client.send([await buildClaimJob({ worker: who, intent, owner: owner.address, secs: 600 })], who);
   const settle = (payTo: Address) => client.settleProof({ judge, owner: owner.address, nonce, payTo, result: 1n });
   const balance = (address: Address) => w.chain.svm.getBalance(address) ?? 0n;
-  return { w, client, owner, judge, worker, rival, intent, nonce, claim, settle, balance };
+  return { w, transport, client, owner, judge, worker, rival, intent, nonce, claim, settle, balance };
 }
 
 describe("claimed escrows", () => {
@@ -155,5 +155,39 @@ describe("claimed escrows", () => {
     await expect(s.claim(s.worker)).rejects.toThrow("ClaimCooldown");
     await s.claim(s.rival);
     expect(await s.client.claims(s.owner.address, s.nonce)).toMatchObject({ state: "held", worker: s.rival.address, cooldown: null });
+  });
+
+  it("loadClaimsOf reads many boards and the clock in one batch, matching client.claims", async () => {
+    const s = await setup();
+    const { nonce } = await s.client.createIntent({
+      signer: s.owner,
+      params: { kind: Kind.AttestedResult, amountIn: 1_000_000n, minResult: 1n, maxResult: 1n, attestor: s.judge.address, specHash: SPEC, judgeFee: 0n },
+      inputMint: NATIVE_MINT,
+      outputMint: s.w.outputMint,
+    });
+    const [bare] = await findIntentPda({ owner: s.owner.address, nonce });
+    await s.claim(s.worker);
+    const calls: string[] = [];
+    const counted: Transport = {
+      ...s.transport,
+      getAccount: async (address) => {
+        calls.push("one");
+        return s.transport.getAccount(address);
+      },
+      getAccounts: async (addresses) => {
+        calls.push("many");
+        return s.transport.getAccounts(addresses);
+      },
+    };
+    const views = await loadClaimsOf(counted, [s.intent, bare]);
+    expect(calls).toEqual(["many"]);
+    expect(views).toEqual([await s.client.claims(s.owner.address, s.nonce), null]);
+    expect(views.map(jobClaimOf)).toEqual([{ claimedBy: s.worker.address, claimEnds: views[0]?.until }, { claimedBy: null, claimEnds: null }]);
+    expect(await loadClaimsOf(counted, [])).toEqual([]);
+    expect(calls).toEqual(["many"]);
+    const clock = s.w.chain.svm.getClock();
+    clock.unixTimestamp += 601n;
+    s.w.chain.svm.setClock(clock);
+    expect((await loadClaimsOf(counted, [s.intent])).map(jobClaimOf)).toEqual([{ claimedBy: null, claimEnds: null }]);
   });
 });

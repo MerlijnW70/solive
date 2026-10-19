@@ -51,6 +51,7 @@ export function jobArgsOf(verb: "jobs" | "deliver" | "receipt" | "record-deliver
         attestor: values.attestor === undefined ? undefined : key(values, "attestor"),
         mint: values.mint === undefined ? undefined : key(values, "mint"),
         minPay: minPayOf(values),
+        unclaimed: values.unclaimed === true,
       };
     case "deliver":
       return {
