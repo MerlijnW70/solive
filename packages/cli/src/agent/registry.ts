@@ -1,7 +1,8 @@
 import type { AnyAction } from "./actions.js";
 import { prepareCreate } from "./create.js";
 import { agentCreate, getMandate, prepareAgentCreate, prepareMandate, prepareRevokeMandate } from "./mandate.js";
-import { findJobs, getBalances, getConfig, getIntent, listIntents, quote } from "./read.js";
+import { findJobs } from "./jobs.js";
+import { getBalances, getConfig, getIntent, listIntents, quote } from "./read.js";
 import { getReputation } from "./reputation.js";
 import { getClaims } from "./work-claims.js";
 import { getProfile } from "./profile.js";
