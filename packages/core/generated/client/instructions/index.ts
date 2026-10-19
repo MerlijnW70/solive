@@ -38,6 +38,7 @@ export * from "./proposeAdmin.js";
 export * from "./raisePause.js";
 export * from "./revokeMandate.js";
 export * from "./setCapsRequired.js";
+export * from "./setCommitteeFloor.js";
 export * from "./setMintCap.js";
 export * from "./settleClaims.js";
 export * from "./standBy.js";

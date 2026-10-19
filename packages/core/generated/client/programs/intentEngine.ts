@@ -96,6 +96,7 @@ import {
   getRaisePauseInstruction,
   getRevokeMandateInstruction,
   getSetCapsRequiredInstruction,
+  getSetCommitteeFloorInstruction,
   getSetMintCapInstructionAsync,
   getSettleClaimsInstructionAsync,
   getStandByInstructionAsync,
@@ -134,6 +135,7 @@ import {
   parseRaisePauseInstruction,
   parseRevokeMandateInstruction,
   parseSetCapsRequiredInstruction,
+  parseSetCommitteeFloorInstruction,
   parseSetMintCapInstruction,
   parseSettleClaimsInstruction,
   parseStandByInstruction,
@@ -200,6 +202,7 @@ import {
   type ParsedRaisePauseInstruction,
   type ParsedRevokeMandateInstruction,
   type ParsedSetCapsRequiredInstruction,
+  type ParsedSetCommitteeFloorInstruction,
   type ParsedSetMintCapInstruction,
   type ParsedSettleClaimsInstruction,
   type ParsedStandByInstruction,
@@ -210,6 +213,7 @@ import {
   type RaisePauseInput,
   type RevokeMandateInput,
   type SetCapsRequiredInput,
+  type SetCommitteeFloorInput,
   type SetMintCapAsyncInput,
   type SettleClaimsAsyncInput,
   type StandByAsyncInput,
@@ -377,35 +381,36 @@ export const IntentEngineEvent = {
   6: "ClaimsOpened",
   7: "CommitteeAttested",
   8: "CommitteeCreated",
-  9: "ConfigInitialized",
-  10: "ConfigUpdated",
-  11: "EconomicsUpdated",
-  12: "EpochAdvanced",
-  13: "FeeWithheld",
-  14: "FillBegun",
-  15: "FillEnded",
-  16: "IntentAttested",
-  17: "IntentCancelled",
-  18: "IntentClosed",
-  19: "IntentCreated",
-  20: "IntentExpired",
-  21: "IntentFilled",
-  22: "IntentSplit",
-  23: "JobClaimed",
-  24: "LineLeft",
-  25: "MandateClosed",
-  26: "MandateCreated",
-  27: "MandateUsed",
-  28: "MintCapSet",
-  29: "NonceAdvanced",
-  30: "PauseLowered",
-  31: "PauseRaised",
-  32: "ProfileClosed",
-  33: "ProfileSet",
-  34: "RelayerPaid",
-  35: "StakeMoved",
-  36: "StoodBy",
-  37: "UserInitialized",
+  9: "CommitteeFloorSet",
+  10: "ConfigInitialized",
+  11: "ConfigUpdated",
+  12: "EconomicsUpdated",
+  13: "EpochAdvanced",
+  14: "FeeWithheld",
+  15: "FillBegun",
+  16: "FillEnded",
+  17: "IntentAttested",
+  18: "IntentCancelled",
+  19: "IntentClosed",
+  20: "IntentCreated",
+  21: "IntentExpired",
+  22: "IntentFilled",
+  23: "IntentSplit",
+  24: "JobClaimed",
+  25: "LineLeft",
+  26: "MandateClosed",
+  27: "MandateCreated",
+  28: "MandateUsed",
+  29: "MintCapSet",
+  30: "NonceAdvanced",
+  31: "PauseLowered",
+  32: "PauseRaised",
+  33: "ProfileClosed",
+  34: "ProfileSet",
+  35: "RelayerPaid",
+  36: "StakeMoved",
+  37: "StoodBy",
+  38: "UserInitialized",
   AdminAccepted: 0,
   AdminProposed: 1,
   AgentPaid: 2,
@@ -415,35 +420,36 @@ export const IntentEngineEvent = {
   ClaimsOpened: 6,
   CommitteeAttested: 7,
   CommitteeCreated: 8,
-  ConfigInitialized: 9,
-  ConfigUpdated: 10,
-  EconomicsUpdated: 11,
-  EpochAdvanced: 12,
-  FeeWithheld: 13,
-  FillBegun: 14,
-  FillEnded: 15,
-  IntentAttested: 16,
-  IntentCancelled: 17,
-  IntentClosed: 18,
-  IntentCreated: 19,
-  IntentExpired: 20,
-  IntentFilled: 21,
-  IntentSplit: 22,
-  JobClaimed: 23,
-  LineLeft: 24,
-  MandateClosed: 25,
-  MandateCreated: 26,
-  MandateUsed: 27,
-  MintCapSet: 28,
-  NonceAdvanced: 29,
-  PauseLowered: 30,
-  PauseRaised: 31,
-  ProfileClosed: 32,
-  ProfileSet: 33,
-  RelayerPaid: 34,
-  StakeMoved: 35,
-  StoodBy: 36,
-  UserInitialized: 37,
+  CommitteeFloorSet: 9,
+  ConfigInitialized: 10,
+  ConfigUpdated: 11,
+  EconomicsUpdated: 12,
+  EpochAdvanced: 13,
+  FeeWithheld: 14,
+  FillBegun: 15,
+  FillEnded: 16,
+  IntentAttested: 17,
+  IntentCancelled: 18,
+  IntentClosed: 19,
+  IntentCreated: 20,
+  IntentExpired: 21,
+  IntentFilled: 22,
+  IntentSplit: 23,
+  JobClaimed: 24,
+  LineLeft: 25,
+  MandateClosed: 26,
+  MandateCreated: 27,
+  MandateUsed: 28,
+  MintCapSet: 29,
+  NonceAdvanced: 30,
+  PauseLowered: 31,
+  PauseRaised: 32,
+  ProfileClosed: 33,
+  ProfileSet: 34,
+  RelayerPaid: 35,
+  StakeMoved: 36,
+  StoodBy: 37,
+  UserInitialized: 38,
 } as const;
 
 export type IntentEngineEvent = (typeof IntentEngineEvent)[Exclude<
@@ -553,6 +559,17 @@ export function identifyIntentEngineEvent(
     )
   ) {
     return IntentEngineEvent.CommitteeCreated;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([1, 246, 179, 215, 89, 88, 97, 182]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineEvent.CommitteeFloorSet;
   }
   if (
     containsBytes(
@@ -911,12 +928,13 @@ export const IntentEngineInstruction = {
   29: "RaisePause",
   30: "RevokeMandate",
   31: "SetCapsRequired",
-  32: "SetMintCap",
-  33: "SettleClaims",
-  34: "StandBy",
-  35: "UpdateConfig",
-  36: "UpdateEconomics",
-  37: "UpdateProfile",
+  32: "SetCommitteeFloor",
+  33: "SetMintCap",
+  34: "SettleClaims",
+  35: "StandBy",
+  36: "UpdateConfig",
+  37: "UpdateEconomics",
+  38: "UpdateProfile",
   AcceptAdmin: 0,
   Advance: 1,
   AdvanceEpoch: 2,
@@ -949,12 +967,13 @@ export const IntentEngineInstruction = {
   RaisePause: 29,
   RevokeMandate: 30,
   SetCapsRequired: 31,
-  SetMintCap: 32,
-  SettleClaims: 33,
-  StandBy: 34,
-  UpdateConfig: 35,
-  UpdateEconomics: 36,
-  UpdateProfile: 37,
+  SetCommitteeFloor: 32,
+  SetMintCap: 33,
+  SettleClaims: 34,
+  StandBy: 35,
+  UpdateConfig: 36,
+  UpdateEconomics: 37,
+  UpdateProfile: 38,
 } as const;
 
 export type IntentEngineInstruction = (typeof IntentEngineInstruction)[Exclude<
@@ -1322,6 +1341,17 @@ export function identifyIntentEngineInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([124, 248, 31, 82, 112, 216, 14, 173]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineInstruction.SetCommitteeFloor;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([192, 119, 105, 42, 212, 12, 202, 79]),
       ),
       0,
@@ -1489,6 +1519,9 @@ export type ParsedIntentEngineInstruction<
   | ({
       instructionType: typeof IntentEngineInstruction.SetCapsRequired;
     } & ParsedSetCapsRequiredInstruction<TProgram>)
+  | ({
+      instructionType: typeof IntentEngineInstruction.SetCommitteeFloor;
+    } & ParsedSetCommitteeFloorInstruction<TProgram>)
   | ({
       instructionType: typeof IntentEngineInstruction.SetMintCap;
     } & ParsedSetMintCapInstruction<TProgram>)
@@ -1737,6 +1770,13 @@ export function parseIntentEngineInstruction<TProgram extends string>(
         ...parseSetCapsRequiredInstruction(instruction),
       };
     }
+    case IntentEngineInstruction.SetCommitteeFloor: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: IntentEngineInstruction.SetCommitteeFloor,
+        ...parseSetCommitteeFloorInstruction(instruction),
+      };
+    }
     case IntentEngineInstruction.SetMintCap: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -1941,6 +1981,10 @@ export type IntentEnginePluginInstructions = {
   setCapsRequired: (
     input: SetCapsRequiredInput,
   ) => ReturnType<typeof getSetCapsRequiredInstruction> &
+    SelfPlanAndSendFunctions;
+  setCommitteeFloor: (
+    input: SetCommitteeFloorInput,
+  ) => ReturnType<typeof getSetCommitteeFloorInstruction> &
     SelfPlanAndSendFunctions;
   setMintCap: (
     input: MakeOptional<SetMintCapAsyncInput, "payer">,
@@ -2165,6 +2209,11 @@ export function intentEngineProgram() {
             addSelfPlanAndSendFunctions(
               client,
               getSetCapsRequiredInstruction(input),
+            ),
+          setCommitteeFloor: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getSetCommitteeFloorInstruction(input),
             ),
           setMintCap: (input) =>
             addSelfPlanAndSendFunctions(

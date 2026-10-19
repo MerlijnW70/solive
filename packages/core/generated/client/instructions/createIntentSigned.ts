@@ -88,6 +88,7 @@ export type CreateIntentSignedInstruction<
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
   TAccountInstructions extends string | AccountMeta<string> = string,
+  TAccountCommittee extends string | AccountMeta<string> = string,
   TAccountMintCap extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
@@ -151,6 +152,9 @@ export type CreateIntentSignedInstruction<
       TAccountInstructions extends string
         ? ReadonlyAccount<TAccountInstructions>
         : TAccountInstructions,
+      TAccountCommittee extends string
+        ? ReadonlyAccount<TAccountCommittee>
+        : TAccountCommittee,
       TAccountMintCap extends string
         ? WritableAccount<TAccountMintCap>
         : TAccountMintCap,
@@ -236,6 +240,7 @@ export type CreateIntentSignedAsyncInput<
     InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountCommittee extends InstructionAccountInput = InstructionAccountInput,
   TAccountMintCap extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
@@ -259,6 +264,7 @@ export type CreateIntentSignedAsyncInput<
   relayerFeeTo?: TAccountRelayerFeeTo;
   systemProgram?: TAccountSystemProgram;
   instructions: TAccountInstructions;
+  committee?: TAccountCommittee;
   mintCap?: TAccountMintCap;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
@@ -286,6 +292,7 @@ export async function getCreateIntentSignedInstructionAsync<
   TAccountRelayerFeeTo extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput,
+  TAccountCommittee extends InstructionAccountInput,
   TAccountMintCap extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
@@ -310,6 +317,7 @@ export async function getCreateIntentSignedInstructionAsync<
     TAccountRelayerFeeTo,
     TAccountSystemProgram,
     TAccountInstructions,
+    TAccountCommittee,
     TAccountMintCap,
     TAccountEventAuthority,
     TAccountProgram
@@ -389,6 +397,10 @@ export async function getCreateIntentSignedInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountInstructions,
       InstructionAccountInputAddress<TAccountInstructions>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountCommittee,
+      InstructionAccountInputAddress<TAccountCommittee>
     >,
     ResolvedInstructionAccountMeta<
       TAccountMintCap,
@@ -483,6 +495,11 @@ export async function getCreateIntentSignedInstructionAsync<
       isSigner: false,
       isWritable: false,
     },
+    committee: {
+      value: input.committee ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     mintCap: {
       value: input.mintCap ?? null,
       isSigner: false,
@@ -570,6 +587,7 @@ export async function getCreateIntentSignedInstructionAsync<
       getAccountMeta("relayerFeeTo", accounts.relayerFeeTo),
       getAccountMeta("systemProgram", accounts.systemProgram),
       getAccountMeta("instructions", accounts.instructions),
+      getAccountMeta("committee", accounts.committee),
       getAccountMeta("mintCap", accounts.mintCap),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
@@ -653,6 +671,10 @@ export async function getCreateIntentSignedInstructionAsync<
       InstructionAccountInputAddress<TAccountInstructions>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountCommittee,
+      InstructionAccountInputAddress<TAccountCommittee>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountMintCap,
       InstructionAccountInputAddress<TAccountMintCap>
     >,
@@ -692,6 +714,7 @@ export type CreateIntentSignedInput<
     InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountCommittee extends InstructionAccountInput = InstructionAccountInput,
   TAccountMintCap extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
@@ -715,6 +738,7 @@ export type CreateIntentSignedInput<
   relayerFeeTo?: TAccountRelayerFeeTo;
   systemProgram?: TAccountSystemProgram;
   instructions: TAccountInstructions;
+  committee?: TAccountCommittee;
   mintCap?: TAccountMintCap;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
@@ -742,6 +766,7 @@ export function getCreateIntentSignedInstruction<
   TAccountRelayerFeeTo extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
   TAccountInstructions extends InstructionAccountInput,
+  TAccountCommittee extends InstructionAccountInput,
   TAccountMintCap extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
@@ -766,6 +791,7 @@ export function getCreateIntentSignedInstruction<
     TAccountRelayerFeeTo,
     TAccountSystemProgram,
     TAccountInstructions,
+    TAccountCommittee,
     TAccountMintCap,
     TAccountEventAuthority,
     TAccountProgram
@@ -844,6 +870,10 @@ export function getCreateIntentSignedInstruction<
   ResolvedInstructionAccountMeta<
     TAccountInstructions,
     InstructionAccountInputAddress<TAccountInstructions>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountCommittee,
+    InstructionAccountInputAddress<TAccountCommittee>
   >,
   ResolvedInstructionAccountMeta<
     TAccountMintCap,
@@ -937,6 +967,11 @@ export function getCreateIntentSignedInstruction<
       isSigner: false,
       isWritable: false,
     },
+    committee: {
+      value: input.committee ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     mintCap: {
       value: input.mintCap ?? null,
       isSigner: false,
@@ -991,6 +1026,7 @@ export function getCreateIntentSignedInstruction<
       getAccountMeta("relayerFeeTo", accounts.relayerFeeTo),
       getAccountMeta("systemProgram", accounts.systemProgram),
       getAccountMeta("instructions", accounts.instructions),
+      getAccountMeta("committee", accounts.committee),
       getAccountMeta("mintCap", accounts.mintCap),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
@@ -1074,6 +1110,10 @@ export function getCreateIntentSignedInstruction<
       InstructionAccountInputAddress<TAccountInstructions>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountCommittee,
+      InstructionAccountInputAddress<TAccountCommittee>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountMintCap,
       InstructionAccountInputAddress<TAccountMintCap>
     >,
@@ -1112,9 +1152,10 @@ export type ParsedCreateIntentSignedInstruction<
     relayerFeeTo?: TAccountMetas[15] | undefined;
     systemProgram: TAccountMetas[16];
     instructions: TAccountMetas[17];
-    mintCap?: TAccountMetas[18] | undefined;
-    eventAuthority: TAccountMetas[19];
-    program: TAccountMetas[20];
+    committee?: TAccountMetas[18] | undefined;
+    mintCap?: TAccountMetas[19] | undefined;
+    eventAuthority: TAccountMetas[20];
+    program: TAccountMetas[21];
   };
   data: CreateIntentSignedInstructionData;
 };
@@ -1127,12 +1168,12 @@ export function parseCreateIntentSignedInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedCreateIntentSignedInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 21) {
+  if (instruction.accounts.length < 22) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 21,
+        expectedAccountMetas: 22,
       },
     );
   }
@@ -1169,6 +1210,7 @@ export function parseCreateIntentSignedInstruction<
       relayerFeeTo: getNextOptionalAccount(),
       systemProgram: getNextAccount(),
       instructions: getNextAccount(),
+      committee: getNextOptionalAccount(),
       mintCap: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),

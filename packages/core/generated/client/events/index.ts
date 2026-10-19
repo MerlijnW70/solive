@@ -15,6 +15,7 @@ export * from "./claimsClosed.js";
 export * from "./claimsOpened.js";
 export * from "./committeeAttested.js";
 export * from "./committeeCreated.js";
+export * from "./committeeFloorSet.js";
 export * from "./configInitialized.js";
 export * from "./configUpdated.js";
 export * from "./economicsUpdated.js";

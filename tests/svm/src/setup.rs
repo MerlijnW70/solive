@@ -97,6 +97,7 @@ pub struct Env {
     pub claims: Option<Pubkey>,
     pub stake_to: Option<Pubkey>,
     pub mint_cap: Option<Pubkey>,
+    pub committee: Option<Pubkey>,
 }
 
 impl Env {
@@ -128,6 +129,7 @@ impl Env {
             claims: None,
             stake_to: None,
             mint_cap: None,
+            committee: None,
         };
         env.set_now(START_TS);
         let key = env.authority.pubkey();

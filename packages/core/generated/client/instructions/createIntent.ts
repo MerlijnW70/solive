@@ -77,6 +77,7 @@ export type CreateIntentInstruction<
   TAccountTreasury extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
+  TAccountCommittee extends string | AccountMeta<string> = string,
   TAccountMintCap extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
@@ -128,6 +129,9 @@ export type CreateIntentInstruction<
       TAccountSystemProgram extends string
         ? ReadonlyAccount<TAccountSystemProgram>
         : TAccountSystemProgram,
+      TAccountCommittee extends string
+        ? ReadonlyAccount<TAccountCommittee>
+        : TAccountCommittee,
       TAccountMintCap extends string
         ? WritableAccount<TAccountMintCap>
         : TAccountMintCap,
@@ -194,6 +198,7 @@ export type CreateIntentAsyncInput<
   TAccountTreasury extends InstructionAccountInput = InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountCommittee extends InstructionAccountInput = InstructionAccountInput,
   TAccountMintCap extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
@@ -213,6 +218,7 @@ export type CreateIntentAsyncInput<
   outputTokenProgram: TAccountOutputTokenProgram;
   treasury: TAccountTreasury;
   systemProgram?: TAccountSystemProgram;
+  committee?: TAccountCommittee;
   mintCap?: TAccountMintCap;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
@@ -234,6 +240,7 @@ export async function getCreateIntentInstructionAsync<
   TAccountOutputTokenProgram extends InstructionAccountInput,
   TAccountTreasury extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
+  TAccountCommittee extends InstructionAccountInput,
   TAccountMintCap extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
@@ -254,6 +261,7 @@ export async function getCreateIntentInstructionAsync<
     TAccountOutputTokenProgram,
     TAccountTreasury,
     TAccountSystemProgram,
+    TAccountCommittee,
     TAccountMintCap,
     TAccountEventAuthority,
     TAccountProgram
@@ -317,6 +325,10 @@ export async function getCreateIntentInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountSystemProgram,
       InstructionAccountInputAddress<TAccountSystemProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountCommittee,
+      InstructionAccountInputAddress<TAccountCommittee>
     >,
     ResolvedInstructionAccountMeta<
       TAccountMintCap,
@@ -395,6 +407,11 @@ export async function getCreateIntentInstructionAsync<
       isSigner: false,
       isWritable: false,
     },
+    committee: {
+      value: input.committee ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     mintCap: {
       value: input.mintCap ?? null,
       isSigner: false,
@@ -467,6 +484,7 @@ export async function getCreateIntentInstructionAsync<
       getAccountMeta("outputTokenProgram", accounts.outputTokenProgram),
       getAccountMeta("treasury", accounts.treasury),
       getAccountMeta("systemProgram", accounts.systemProgram),
+      getAccountMeta("committee", accounts.committee),
       getAccountMeta("mintCap", accounts.mintCap),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
@@ -534,6 +552,10 @@ export async function getCreateIntentInstructionAsync<
       InstructionAccountInputAddress<TAccountSystemProgram>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountCommittee,
+      InstructionAccountInputAddress<TAccountCommittee>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountMintCap,
       InstructionAccountInputAddress<TAccountMintCap>
     >,
@@ -567,6 +589,7 @@ export type CreateIntentInput<
   TAccountTreasury extends InstructionAccountInput = InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountCommittee extends InstructionAccountInput = InstructionAccountInput,
   TAccountMintCap extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
@@ -586,6 +609,7 @@ export type CreateIntentInput<
   outputTokenProgram: TAccountOutputTokenProgram;
   treasury: TAccountTreasury;
   systemProgram?: TAccountSystemProgram;
+  committee?: TAccountCommittee;
   mintCap?: TAccountMintCap;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
@@ -607,6 +631,7 @@ export function getCreateIntentInstruction<
   TAccountOutputTokenProgram extends InstructionAccountInput,
   TAccountTreasury extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
+  TAccountCommittee extends InstructionAccountInput,
   TAccountMintCap extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
@@ -627,6 +652,7 @@ export function getCreateIntentInstruction<
     TAccountOutputTokenProgram,
     TAccountTreasury,
     TAccountSystemProgram,
+    TAccountCommittee,
     TAccountMintCap,
     TAccountEventAuthority,
     TAccountProgram
@@ -689,6 +715,10 @@ export function getCreateIntentInstruction<
   ResolvedInstructionAccountMeta<
     TAccountSystemProgram,
     InstructionAccountInputAddress<TAccountSystemProgram>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountCommittee,
+    InstructionAccountInputAddress<TAccountCommittee>
   >,
   ResolvedInstructionAccountMeta<
     TAccountMintCap,
@@ -766,6 +796,11 @@ export function getCreateIntentInstruction<
       isSigner: false,
       isWritable: false,
     },
+    committee: {
+      value: input.committee ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     mintCap: {
       value: input.mintCap ?? null,
       isSigner: false,
@@ -816,6 +851,7 @@ export function getCreateIntentInstruction<
       getAccountMeta("outputTokenProgram", accounts.outputTokenProgram),
       getAccountMeta("treasury", accounts.treasury),
       getAccountMeta("systemProgram", accounts.systemProgram),
+      getAccountMeta("committee", accounts.committee),
       getAccountMeta("mintCap", accounts.mintCap),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
@@ -883,6 +919,10 @@ export function getCreateIntentInstruction<
       InstructionAccountInputAddress<TAccountSystemProgram>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountCommittee,
+      InstructionAccountInputAddress<TAccountCommittee>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountMintCap,
       InstructionAccountInputAddress<TAccountMintCap>
     >,
@@ -917,9 +957,10 @@ export type ParsedCreateIntentInstruction<
     outputTokenProgram: TAccountMetas[11];
     treasury: TAccountMetas[12];
     systemProgram: TAccountMetas[13];
-    mintCap?: TAccountMetas[14] | undefined;
-    eventAuthority: TAccountMetas[15];
-    program: TAccountMetas[16];
+    committee?: TAccountMetas[14] | undefined;
+    mintCap?: TAccountMetas[15] | undefined;
+    eventAuthority: TAccountMetas[16];
+    program: TAccountMetas[17];
   };
   data: CreateIntentInstructionData;
 };
@@ -932,12 +973,12 @@ export function parseCreateIntentInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedCreateIntentInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 17) {
+  if (instruction.accounts.length < 18) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 17,
+        expectedAccountMetas: 18,
       },
     );
   }
@@ -970,6 +1011,7 @@ export function parseCreateIntentInstruction<
       outputTokenProgram: getNextAccount(),
       treasury: getNextAccount(),
       systemProgram: getNextAccount(),
+      committee: getNextOptionalAccount(),
       mintCap: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),

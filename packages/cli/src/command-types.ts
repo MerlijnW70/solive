@@ -75,6 +75,7 @@ export type Command =
   | (Administered & { name: "accept-admin" })
   | (Administered & { name: "set-mint-cap"; mint: Address; maxPerOrder: bigint; windowCap: bigint; windowSecs: number; totalLimit?: bigint })
   | (Administered & { name: "set-caps-required"; required: boolean })
+  | (Administered & { name: "set-committee-floor"; mint: Address; floor: bigint })
   | (Remote & { name: "show-mint-cap"; mint: Address })
   | (Keyed & {
       name: "solve";

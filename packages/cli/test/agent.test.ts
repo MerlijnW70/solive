@@ -1212,9 +1212,13 @@ describe("agent server against the deployed engine", () => {
   it("charges its budget for its own fee account, and for a second transaction only when it has to split", async () => {
     const owner = await funded();
     await ata(w.authority, owner.address, w.inputMint, 1_000n);
-    const base = createCost({ createFee: 0, crankBounty: 0 }) + rentFor(TOKEN_ACCOUNT_RENT_BYTES);
-    const needed = async (extra: string[], nonce: string) => {
+    const cost = createCost({ createFee: 0, crankBounty: 0 });
+    const base = cost + rentFor(TOKEN_ACCOUNT_RENT_BYTES);
+    const needed = async (extra: string[], nonce: string, holding = false) => {
       const relayer = await funded();
+      if (holding) {
+        await ata(w.authority, relayer.address, w.inputMint, 0n);
+      }
       const signer = await connect(relayer, ["--relay-fee", `${w.inputMint}=25`, ...extra]);
       const p = await ok(signer, "prepare_signed_intent", swap({ owner: owner.address, nonce }));
       await execute(p["setup"], owner);
@@ -1224,7 +1228,8 @@ describe("agent server against the deployed engine", () => {
       expect(refused["code"]).toBe("BudgetExhausted");
       return BigInt(/this needs (\d+)$/.exec(refused["hint"] as string)?.[1] ?? "0");
     };
-    expect(await needed([], "40")).toBe(base);
+    expect(await needed([], "39", true)).toBe(cost);
+    expect(await needed([], "40")).toBe(base + SIGNATURE_FEE);
     const split = await needed(["--priority-fee", "1000", "--relay-max-lamports", "100000"], "41");
     expect(split - base - SIGNATURE_FEE).toBeGreaterThan(0n);
     expect((split - base - SIGNATURE_FEE) % 2n).toBe(0n);

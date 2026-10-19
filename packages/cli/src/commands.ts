@@ -3,6 +3,7 @@ import {
   buildAdvanceNonce,
   buildCancelIntent,
   buildCloseIntent,
+  committeeFloors,
   findIntentPda,
   findUserStatePda,
   findVaultPda,
@@ -130,7 +131,8 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       return { genesisHash: await transport.genesisHash(), domain: await clusterDomain(transport) };
     case "show-config": {
       const { address, config } = await loadConfig(transport);
-      return { address, ...config, domainMatchesCluster: sameBytes(config.domain, await clusterDomain(transport)) };
+      const fields = Object.fromEntries(Object.entries(config).filter(([field]) => field !== "floorMints" && field !== "floorAmounts"));
+      return { address, ...fields, committeeFloors: committeeFloors(config), domainMatchesCluster: sameBytes(config.domain, await clusterDomain(transport)) };
     }
     case "show-intent": {
       const { address, intent } = await loadIntent(transport, command.owner, command.nonce);
@@ -257,6 +259,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "set-economics":
     case "set-mint-cap":
     case "set-caps-required":
+    case "set-committee-floor":
       return adminCommand(command, runtime, transport);
     case "show-mint-cap":
       return showMintCap(transport, command.mint);

@@ -954,6 +954,7 @@ fn vectors() -> TestResult<Value> {
         "create_intent_by_agent": hex(ix::CreateIntentByAgent::DISCRIMINATOR),
         "set_mint_cap": hex(ix::SetMintCap::DISCRIMINATOR),
         "set_caps_required": hex(ix::SetCapsRequired::DISCRIMINATOR),
+        "set_committee_floor": hex(ix::SetCommitteeFloor::DISCRIMINATOR),
     });
 
     let event_discriminators = json!({
@@ -972,6 +973,7 @@ fn vectors() -> TestResult<Value> {
         "StoodBy": hex(ev::StoodBy::DISCRIMINATOR),
         "CommitteeAttested": hex(ev::CommitteeAttested::DISCRIMINATOR),
         "CommitteeCreated": hex(ev::CommitteeCreated::DISCRIMINATOR),
+        "CommitteeFloorSet": hex(ev::CommitteeFloorSet::DISCRIMINATOR),
         "ConfigInitialized": hex(ev::ConfigInitialized::DISCRIMINATOR),
         "ConfigUpdated": hex(ev::ConfigUpdated::DISCRIMINATOR),
         "EconomicsUpdated": hex(ev::EconomicsUpdated::DISCRIMINATOR),

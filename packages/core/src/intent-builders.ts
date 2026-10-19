@@ -33,6 +33,7 @@ export type CreateIntentSpec = {
   receiver?: Address;
   receiverAuthority?: Address;
   mintCap?: Address;
+  committee?: Address;
 };
 
 export async function buildCreateIntent(input: CreateIntentSpec) {
@@ -64,6 +65,7 @@ export async function buildCreateIntent(input: CreateIntentSpec) {
     inputTokenProgram: input.inputTokenProgram,
     outputTokenProgram: input.outputTokenProgram,
     args,
+    ...(input.committee === undefined ? {} : { committee: input.committee }),
     mintCap: mintCapSlot(input.mintCap),
     ...(await events()),
   });
@@ -205,13 +207,14 @@ export async function buildCreateIntentSigned(input: CreateIntentSignedSpec) {
     args,
     submitBy: input.submitBy,
     relayerFee,
+    ...(input.committee === undefined ? {} : { committee: input.committee }),
     mintCap: mintCapSlot(input.mintCap),
     ...(await events()),
   });
   return withMintCap(create, input.mintCap);
 }
 
-export type CreateIntentByAgentSpec = Omit<CreateIntentSpec, "owner" | "treasury" | "receiverAuthority"> & {
+export type CreateIntentByAgentSpec = Omit<CreateIntentSpec, "owner" | "treasury" | "receiverAuthority" | "committee"> & {
   agent: TransactionSigner;
   owner: Address;
   mandateId: bigint;

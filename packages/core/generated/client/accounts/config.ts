@@ -73,6 +73,8 @@ export type Config = {
   createFee: number;
   capsRequired: number;
   reserved: ReadonlyUint8Array;
+  floorMints: Array<Address>;
+  floorAmounts: Array<bigint>;
 };
 
 export type ConfigArgs = {
@@ -94,6 +96,8 @@ export type ConfigArgs = {
   createFee: number;
   capsRequired: number;
   reserved: ReadonlyUint8Array;
+  floorMints: Array<Address>;
+  floorAmounts: Array<number | bigint>;
 };
 
 /** Gets the encoder for {@link ConfigArgs} account data. */
@@ -119,6 +123,8 @@ export function getConfigEncoder(): FixedSizeEncoder<ConfigArgs> {
       ["createFee", getU32Encoder()],
       ["capsRequired", getU8Encoder()],
       ["reserved", fixEncoderSize(getBytesEncoder(), 7)],
+      ["floorMints", getArrayEncoder(getAddressEncoder(), { size: 8 })],
+      ["floorAmounts", getArrayEncoder(getU64Encoder(), { size: 8 })],
     ]),
     (value) => ({ ...value, discriminator: CONFIG_DISCRIMINATOR }),
   );
@@ -146,6 +152,8 @@ export function getConfigDecoder(): FixedSizeDecoder<Config> {
     ["createFee", getU32Decoder()],
     ["capsRequired", getU8Decoder()],
     ["reserved", fixDecoderSize(getBytesDecoder(), 7)],
+    ["floorMints", getArrayDecoder(getAddressDecoder(), { size: 8 })],
+    ["floorAmounts", getArrayDecoder(getU64Decoder(), { size: 8 })],
   ]);
 }
 
@@ -208,5 +216,5 @@ export async function fetchAllMaybeConfig(
 }
 
 export function getConfigSize(): number {
-  return 216;
+  return 536;
 }

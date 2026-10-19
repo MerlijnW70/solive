@@ -102,6 +102,7 @@ impl Env {
                 output_token_program: market.output_program,
                 treasury: self.fee_recipient,
                 system_program: anchor_lang::system_program::ID,
+                committee: self.committee,
                 mint_cap: self.mint_cap,
                 event_authority: event_authority(),
                 program: intent_engine::ID,

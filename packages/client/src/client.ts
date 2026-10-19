@@ -6,7 +6,7 @@ import { clientReads } from "./client-reads.js";
 import { committeeSends } from "./client-committee.js";
 import { loadClaims, loadProfile } from "./client-claims.js";
 import { feedbackInstructions, reputationOf } from "./reputation.js";
-export { loadCommittee } from "./client-committee.js";
+export { escrowCommittee, loadCommittee } from "./client-committee.js";
 export { cancelClaims, type ClaimsView, type JobClaim, jobClaimOf, type LineEntry, lineHandover, loadClaims, loadClaimsOf, loadLine, loadProfile } from "./client-claims.js";
 import { committeeSettlement, proofBallotOf, proofSettlement } from "./client-settle.js";
 export { committeeJudged } from "./client-settle.js";
@@ -53,6 +53,7 @@ export {
   WATCH_WAIT_SECONDS,
 } from "./client-types.js";
 export {
+  CommitteeNeeded,
   EscrowExpired,
   NoFreeNonce,
   NotFillable,

@@ -156,6 +156,7 @@ pub fn handle_create_intent_by_agent(
             rent_payer: agent,
             intent_bump: ctx.bumps.intent,
             vault_bump: ctx.bumps.vault,
+            committee: None,
             mandate: Some((ctx.accounts.mandate.key(), serial, agent_fee)),
         },
         &args,

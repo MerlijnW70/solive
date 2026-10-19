@@ -178,6 +178,8 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6100 | `JobNotHeld` | no | nobody holds this job and nobody stands by, so claim it instead of standing by |
 | 6101 | `LineEntryMismatch` | no | a line entry passed is not the line's next one, or a drop or advance passed none while workers wait; let this server build it |
 | 6102 | `MintCapTotal` | yes | intents selling this mint already hold the engine's total escrow limit for it; try again once open intents settle, or lower the amount |
+| 6103 | `CommitteeRequired` | no | this escrow reaches the committee floor the engine sets for its token, so its attestor must be a committee of at least 2 judges, passed with the create; name such a committee as attestor, or escrow less |
+| 6104 | `CommitteeFloorsFull` | no | the engine already keeps a committee floor for as many tokens as it can; set one of them to zero first |
 
 ## Token programs
 

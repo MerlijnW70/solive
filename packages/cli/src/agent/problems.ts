@@ -131,6 +131,8 @@ export const ENGINE_PROBLEMS = {
   JobNotHeld: never("nobody holds this job and nobody stands by, so claim it instead of standing by"),
   LineEntryMismatch: never("a line entry passed is not the line's next one, or a drop or advance passed none while workers wait; let this server build it"),
   MintCapTotal: later("intents selling this mint already hold the engine's total escrow limit for it; try again once open intents settle, or lower the amount"),
+  CommitteeRequired: never("this escrow reaches the committee floor the engine sets for its token, so its attestor must be a committee of at least 2 judges, passed with the create; name such a committee as attestor, or escrow less"),
+  CommitteeFloorsFull: never("the engine already keeps a committee floor for as many tokens as it can; set one of them to zero first"),
 } as const satisfies Record<string, Entry>;
 
 type EngineErrorName = keyof typeof ENGINE_PROBLEMS;

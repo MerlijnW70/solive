@@ -88,6 +88,8 @@ function config(over: Partial<Config> = {}): Config {
     createFee: 0,
     capsRequired: 0,
     reserved: new Uint8Array(7),
+    floorMints: [],
+    floorAmounts: [],
     ...over,
   };
 }

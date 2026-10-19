@@ -104,7 +104,7 @@ node packages/cli/dist/src/bin.js show config --url devnet
 node packages/multisig/dist/bin.js propose-admin --multisig <multisig> --keypair member-a.json --url devnet --yes -- node packages/cli/dist/src/bin.js update-config --authority <vault> --guardian <guardian> --url devnet
 ```
 
-Approve it with two members and execute it as in step 4. `show config` then names `<guardian>` as guardian. `admin.json` now holds no role. Every later admin change, such as `set-economics`, `update-config`, `raise-pause`, `lower-pause`, `set-mint-cap` or `set-caps-required`, goes through `propose-admin` with `--authority <vault>` in the same way.
+Approve it with two members and execute it as in step 4. `show config` then names `<guardian>` as guardian. `admin.json` now holds no role. Every later admin change, such as `set-economics`, `update-config`, `raise-pause`, `lower-pause`, `set-mint-cap`, `set-caps-required` or `set-committee-floor`, goes through `propose-admin` with `--authority <vault>` in the same way.
 
 ## Staged caps
 

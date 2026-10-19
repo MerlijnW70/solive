@@ -32,6 +32,8 @@ pub const STANDBY_SEED: &[u8] = b"standby";
 pub const PROFILE_SEED: &[u8] = b"profile";
 pub const PROFILE_VERSION: u8 = 1;
 pub const MIN_CAP_WINDOW_SECS: u32 = 60;
+pub const MAX_COMMITTEE_FLOORS: usize = 8;
+pub const FLOOR_THRESHOLD: u8 = 2;
 pub const OLDEST_CONFIG_VERSION: u8 = 1;
 pub const OLDEST_INTENT_VERSION: u8 = 1;
 
@@ -72,6 +74,8 @@ pub struct Config {
     pub create_fee: u32,
     pub caps_required: u8,
     pub reserved: [u8; 7],
+    pub floor_mints: [Pubkey; MAX_COMMITTEE_FLOORS],
+    pub floor_amounts: [u64; MAX_COMMITTEE_FLOORS],
 }
 
 impl Config {

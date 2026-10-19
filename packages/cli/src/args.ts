@@ -278,6 +278,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
     case "accept-admin":
     case "set-mint-cap":
     case "set-caps-required":
+    case "set-committee-floor":
       return adminOf(verb, sub, remote, values);
     case "events":
       noSub(sub);

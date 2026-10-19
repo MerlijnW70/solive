@@ -106,6 +106,8 @@ pub enum EngineError {
     JobNotHeld,
     LineEntryMismatch,
     MintCapTotal,
+    CommitteeRequired,
+    CommitteeFloorsFull,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {

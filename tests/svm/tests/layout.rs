@@ -14,7 +14,7 @@ use intent_engine::state::{
 
 #[test]
 fn account_sizes_are_frozen() {
-    assert_eq!(Config::SPACE, 216);
+    assert_eq!(Config::SPACE, 536);
     assert_eq!(UserState::SPACE, 152);
     assert_eq!(Intent::SPACE, 464);
     assert_eq!(Mandate::SPACE, 384);
@@ -42,6 +42,8 @@ fn config_field_offsets_are_frozen() {
     assert_eq!(offset_of!(Config, create_fee), 196);
     assert_eq!(offset_of!(Config, caps_required), 200);
     assert_eq!(offset_of!(Config, reserved), 201);
+    assert_eq!(offset_of!(Config, floor_mints), 208);
+    assert_eq!(offset_of!(Config, floor_amounts), 464);
 }
 
 #[test]

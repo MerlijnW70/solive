@@ -1,4 +1,5 @@
 import type { Address } from "@solana/kit";
+import { FLOOR_THRESHOLD } from "@intent-engine/core";
 
 export class NoFreeNonce extends Error {
   readonly owner: Address;
@@ -75,5 +76,21 @@ export class VoteRejected extends Error {
     this.name = "VoteRejected";
     this.member = member;
     this.intent = intent;
+  }
+}
+
+export class CommitteeNeeded extends Error {
+  readonly attestor: Address;
+  readonly escrow: bigint;
+  readonly floor: bigint;
+
+  constructor(attestor: Address, escrow: bigint, floor: bigint) {
+    super(
+      `this escrow of ${escrow} raw units reaches the committee floor of ${floor} the engine sets for its token, and the attestor ${attestor} is not a committee of at least ${FLOOR_THRESHOLD} judges; name such a committee as attestor, or escrow less`,
+    );
+    this.name = "CommitteeNeeded";
+    this.attestor = attestor;
+    this.escrow = escrow;
+    this.floor = floor;
   }
 }

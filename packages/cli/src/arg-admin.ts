@@ -13,7 +13,8 @@ export type AdminVerb =
   | "propose-admin"
   | "accept-admin"
   | "set-mint-cap"
-  | "set-caps-required";
+  | "set-caps-required"
+  | "set-committee-floor";
 
 export function adminOf(verb: AdminVerb, sub: string | undefined, remote: Remote, values: Values): Command {
   switch (verb) {
@@ -89,5 +90,8 @@ export function adminOf(verb: AdminVerb, sub: string | undefined, remote: Remote
         throw new UsageError("set-caps-required needs on or off");
       }
       return { name: "set-caps-required", ...remote, by: authorityOf(values), required: sub === "on" };
+    case "set-committee-floor":
+      noSub(sub);
+      return { name: "set-committee-floor", ...remote, by: authorityOf(values), mint: key(values, "mint"), floor: u64(values, "floor") };
   }
 }

@@ -21,7 +21,7 @@ import {
 } from "@intent-engine/client";
 import { define } from "./actions.js";
 import { tool } from "./names.js";
-import { expiryOf, termsInput, termsOutput, warningsOf } from "./create.js";
+import { escrowJudge, expiryOf, termsInput, termsOutput, warningsOf } from "./create.js";
 import { pickNonce, raiseAllowance, setupLines, unusedIntent } from "./owner.js";
 import { prepare } from "./prepare.js";
 import { AgentRefusal } from "./problems.js";
@@ -100,6 +100,7 @@ export const prepareSignedIntent = define({
     };
     claim(claims, call, input.owner, terms.nonce, terms.submit_by, now);
     const { config, inputToken, fields } = await fieldsOf(transport, terms, params, outputToken.tokenProgram);
+    const judged = await escrowJudge(transport, config, terms.input_mint, params, inputToken.decimals);
     if (relay !== undefined) {
       const placeholder = buildEd25519Instruction({
         publicKey: input.owner,
@@ -113,6 +114,7 @@ export const prepareSignedIntent = define({
         params,
         { input: inputToken.tokenProgram, output: outputToken.tokenProgram },
         await mintCapOf(transport, terms.input_mint),
+        judged.committee,
       );
       if (!(await relayFits(transport, relay, [placeholder, create, ...published(relay.signer, specUrl)]))) {
         const memoOnly = specUrl !== undefined && (await relayFits(transport, relay, [placeholder, create]));

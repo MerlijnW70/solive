@@ -9,8 +9,8 @@ use crate::events::{FeeWithheld, IntentCreated, RelayerPaid, WITHHELD_TREASURY};
 use crate::instructions::CreateIntentArgs;
 use crate::policy::{charge_lamports, charge_treasury, verify_preceding_ed25519, Draw};
 use crate::state::{
-    Config, Intent, MintCap, UserState, CONFIG_ADDRESS, CONFIG_VERSION, DELEGATE_SEED, INTENT_SEED,
-    MINT_CAP_SEED, MINT_CAP_VERSION, USER_SEED, USER_VERSION, VAULT_SEED,
+    Committee, Config, Intent, MintCap, UserState, CONFIG_ADDRESS, CONFIG_VERSION, DELEGATE_SEED,
+    INTENT_SEED, MINT_CAP_SEED, MINT_CAP_VERSION, USER_SEED, USER_VERSION, VAULT_SEED,
 };
 
 #[event_cpi]
@@ -92,6 +92,7 @@ pub struct CreateIntentSigned<'info> {
     pub system_program: Program<'info, System>,
     /// CHECK: read only through the checked instructions-sysvar loaders
     pub instructions: UncheckedAccount<'info>,
+    pub committee: Option<AccountLoader<'info, Committee>>,
     #[account(
         mut,
         seeds = [MINT_CAP_SEED, input_mint.key().as_ref()],
@@ -151,6 +152,7 @@ pub fn handle_create_intent_signed(
             rent_payer: payer,
             intent_bump: ctx.bumps.intent,
             vault_bump: ctx.bumps.vault,
+            committee: ctx.accounts.committee.as_ref(),
             mandate: None,
         },
         &args,

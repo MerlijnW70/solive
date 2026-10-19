@@ -19,8 +19,13 @@ import {
   buildRaisePause,
   buildUpdateEconomics,
   buildSetCapsRequired,
+  buildSetCommitteeFloor,
   buildSetMintCap,
   capWindow,
+  committeeFloorOf,
+  committeeFloors,
+  FLOOR_THRESHOLD,
+  MAX_COMMITTEE_FLOORS,
   findConfigPda,
   findMintCapAddress,
   feeBpsFor,
@@ -125,9 +130,15 @@ type AdminCommand = Extract<
       | "accept-admin"
       | "set-economics"
       | "set-mint-cap"
-      | "set-caps-required";
+      | "set-caps-required"
+      | "set-committee-floor";
   }
 >;
+
+const floorLine = (floor: bigint) => (floor === 0n ? "none" : `${floor} raw units`);
+
+export const floorsFull = (mint: Address) =>
+  `the engine keeps a committee floor for at most ${MAX_COMMITTEE_FLOORS} tokens and has no room for ${mint}; set one of them to zero first`;
 
 const totalLine = (totalLimit: bigint) => (totalLimit === 0n ? "no total limit" : `at most ${totalLimit} outstanding at once`);
 
@@ -333,6 +344,26 @@ export async function adminCommand(command: AdminCommand, runtime: Runtime, tran
           command.required
             ? "Every create must then pass the input mint's cap, and a mint without a cap takes no new intents"
             : "Creates then ignore mint caps",
+        ],
+      );
+    }
+    case "set-committee-floor": {
+      const { config } = await loadConfig(transport);
+      const now = committeeFloorOf(config, command.mint);
+      if (now === 0n && command.floor !== 0n && committeeFloors(config).length >= MAX_COMMITTEE_FLOORS) {
+        throw new Error(floorsFull(command.mint));
+      }
+      return administer(
+        transport,
+        command.url,
+        runtime,
+        command.by,
+        async (admin) => [await buildSetCommitteeFloor({ admin, mint: command.mint, floor: command.floor })],
+        () => [
+          `Committee floor of ${command.mint}: ${floorLine(now)} -> ${floorLine(command.floor)}`,
+          command.floor === 0n
+            ? "Any attestor may then judge proof escrows of this token"
+            : `Proof escrows of ${command.floor} raw units or more of this token then need a committee of at least ${FLOOR_THRESHOLD} judges as attestor`,
         ],
       );
     }

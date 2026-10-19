@@ -1,6 +1,9 @@
-import { createNoopSigner } from "@solana/kit";
+import { type Address, createNoopSigner } from "@solana/kit";
 import {
   buildCreateIntent,
+  committeeFloorOf,
+  type Config,
+  FLOOR_THRESHOLD,
   describeTerms,
   encodeParams,
   escrowAmount,
@@ -31,6 +34,8 @@ import {
 import {
   chainTime,
   CLOCK_SYSVAR,
+  CommitteeNeeded,
+  escrowCommittee,
   initUserIfMissing,
   loadConfig,
   loadUser,
@@ -40,6 +45,7 @@ import {
   PLAIN_HTTP_ON_PUBLIC,
   plainHttpOnPublic,
   tokenAccountIfMissing,
+  type Transport,
   wrapIfShort,
 } from "@intent-engine/client";
 import { define } from "./actions.js";
@@ -121,6 +127,27 @@ export function neverSettles(params: IntentParams, config: SettleConfig, partner
   return `no release of this escrow could settle: ${shown(terms.amount)} less the ${shown(terms.judgeFee)} judge fee leaves ${shown(left)}, too little for the rounded-up ${terms.feeBps} bps protocol fee and ${partnerBps} bps partner fee; ${fixes.length === 0 ? "no amount settles under today's config" : fixes.join(", or ")}`;
 }
 
+type Floors = Pick<Config, "floorMints" | "floorAmounts">;
+
+export const committeeNeeded = (escrow: string, floor: string, attestor: Address) =>
+  `this escrow of ${escrow} reaches its token's committee floor of ${floor}, so its attestor must be a committee of at least ${FLOOR_THRESHOLD} judges; ${attestor} is not. Name such a committee, or escrow less`;
+
+export function floorLines(config: Floors, mint: Address, decimals: number): string[] {
+  const floor = committeeFloorOf(config, mint);
+  return floor === 0n ? [] : [`Committee floor: escrows of ${formatAmount(floor, decimals)} or more of this token need a committee of at least ${FLOOR_THRESHOLD} judges as attestor`];
+}
+
+export async function escrowJudge(transport: Transport, config: Floors, mint: Address, params: IntentParams, decimals: number): Promise<{ committee?: Address }> {
+  try {
+    return await escrowCommittee(transport, config, mint, params);
+  } catch (error) {
+    if (error instanceof CommitteeNeeded) {
+      throw new AgentRefusal("CommitteeRequired", committeeNeeded(formatAmount(error.escrow, decimals), formatAmount(error.floor, decimals), error.attestor));
+    }
+    throw error;
+  }
+}
+
 export const prepareCreate = define({
   name: tool("prepare_create"),
   title: "Prepare a new intent",
@@ -162,6 +189,7 @@ export const prepareCreate = define({
       throw new AgentRefusal("NeverSettles", unsettled);
     }
     const params = validate(order);
+    const judged = await escrowJudge(transport, config, input.input_mint, params, inputToken.decimals);
     const user = await loadUser(transport, input.owner);
     if (input.nonce !== undefined) {
       await unusedIntent(transport, input.owner, input.nonce);
@@ -198,6 +226,7 @@ export const prepareCreate = define({
       outputTokenProgram: outputToken.tokenProgram,
       ...(elsewhere ? { receiver: receiver.address, receiverAuthority: recipient } : {}),
       ...(mintCap === undefined ? {} : { mintCap }),
+      ...judged,
     });
     const register = await initUserIfMissing(user, input.owner);
     const wrap = await wrapIfShort(transport, input.owner, input.input_mint, inputToken.tokenProgram, escrowAmount(params));
@@ -214,6 +243,8 @@ export const prepareCreate = define({
           { inputDecimals: inputToken.decimals, outputDecimals: outputToken.decimals, ...tokenNames(input.input_mint, input.output_mint) },
         ),
         `Expires: ${formatTime(expiresAt)}`,
+        ...(params.kind === Kind.AttestedResult ? floorLines(config, input.input_mint, inputToken.decimals) : []),
+        ...(judged.committee === undefined ? [] : [`Judged by: the committee ${judged.committee}, passed with the create`]),
         ...(specUrl === undefined ? [] : [`Publishes: the acceptance spec's url ${specUrl}, in a memo the owner signs`]),
         ...(elsewhere ? [`Pays to: ${recipient}, who receives what the solver pays${input.output_mint === NATIVE_MINT ? WRAPPED : ""}`] : []),
         ...(input.partner === undefined ? [] : [partnerFeeLine(input.partner.bps, input.partner.account, partnerBaseOf(params))]),

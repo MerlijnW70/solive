@@ -34,6 +34,7 @@ import {
   SPEC_URL_NEEDS_PROOF,
 } from "./client-types.js";
 import { cancelClaims } from "./client-claims.js";
+import { escrowCommittee } from "./client-committee.js";
 import { memoInstruction, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic } from "./jobs.js";
 import { initUserIfMissing, tokenAccountIfMissing, wrapIfShort } from "./setup.js";
 
@@ -69,6 +70,7 @@ export function intentSends({ transport, send, mint, config }: ClientContext) {
       loadUser(transport, owner),
       mintCapOf(transport, inputMint),
     ]);
+    const judged = await escrowCommittee(transport, settings, inputMint, params);
     const nonce = input.nonce ?? nonceAfter(owner, user);
     const expiresAt = input.expiresAt ?? (await chainTime(transport)) + (input.expiresIn ?? DEFAULT_EXPIRES_IN);
     const recipient = input.receiver ?? owner;
@@ -88,6 +90,7 @@ export function intentSends({ transport, send, mint, config }: ClientContext) {
       outputTokenProgram: buy.tokenProgram,
       ...(recipient === owner ? {} : { receiver: receiver.address, receiverAuthority: recipient }),
       ...(mintCap === undefined ? {} : { mintCap }),
+      ...judged,
     });
     const register = await initUserIfMissing(user, signer);
     const signature = await send([...register, ...receiver.create, ...wrap.instructions, create, ...published], signer);

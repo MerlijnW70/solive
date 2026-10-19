@@ -819,6 +819,7 @@
     "raise_pause": "977fc2f285fd59f3",
     "revoke_mandate": "fc618c77432bb16c",
     "set_caps_required": "1c43793be5311eef",
+    "set_committee_floor": "7cf81f5270d80ead",
     "set_mint_cap": "c077692ad40cca4f",
     "update_config": "1d9efcbf0a53db63"
   },
@@ -836,6 +837,7 @@
     "ClaimsOpened": "7e5c1894f242081c",
     "CommitteeAttested": "170765a8f85f6805",
     "CommitteeCreated": "96779019abaa432b",
+    "CommitteeFloorSet": "01f6b3d7595861b6",
     "ConfigInitialized": "b531c89c13a7b25b",
     "ConfigUpdated": "28f1e67a0b13c6c2",
     "EconomicsUpdated": "429afe7f7fcc3b39",

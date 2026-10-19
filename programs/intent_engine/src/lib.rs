@@ -7,6 +7,7 @@ pub mod claims;
 pub mod errors;
 pub mod events;
 pub mod ext;
+pub mod floors;
 pub mod instructions;
 pub mod policy;
 mod security;
@@ -245,5 +246,9 @@ pub mod intent_engine {
 
     pub fn set_caps_required(ctx: Context<SetCapsRequired>, required: bool) -> Result<()> {
         handle_set_caps_required(ctx, required)
+    }
+
+    pub fn set_committee_floor(ctx: Context<SetCommitteeFloor>, floor: u64) -> Result<()> {
+        handle_set_committee_floor(ctx, floor)
     }
 }

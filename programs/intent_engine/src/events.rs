@@ -283,6 +283,12 @@ pub struct CapsRequiredSet {
 }
 
 #[event]
+pub struct CommitteeFloorSet {
+    pub mint: Pubkey,
+    pub floor: u64,
+}
+
+#[event]
 pub struct CommitteeCreated {
     pub committee: Pubkey,
     pub members: Vec<Pubkey>,

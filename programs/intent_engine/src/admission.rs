@@ -7,9 +7,10 @@ use intent_core::mandate::{in_lane, is_mandated_nonce};
 use intent_core::nonce::Window;
 
 use crate::errors::{core_err, EngineError};
+use crate::floors::{check_committee_floor, committee_floor};
 use crate::instructions::CreateIntentArgs;
 use crate::policy::{can_receive, check_mint, FeeSchedule, FeeTerms};
-use crate::state::{Config, Intent, UserState, INTENT_VERSION, PAUSE_CREATE};
+use crate::state::{Committee, Config, Intent, UserState, INTENT_VERSION, PAUSE_CREATE};
 
 pub struct Opening<'a, 'info> {
     pub config: &'a AccountLoader<'info, Config>,
@@ -24,6 +25,7 @@ pub struct Opening<'a, 'info> {
     pub intent_bump: u8,
     pub vault_bump: u8,
     pub mandate: Option<(Pubkey, u64, u64)>,
+    pub committee: Option<&'a AccountLoader<'info, Committee>>,
 }
 
 pub struct Admission {
@@ -36,7 +38,8 @@ pub fn open_intent(o: &Opening, args: &CreateIntentArgs, now: i64) -> Result<Adm
     let kind = Kind::try_from(args.kind).map_err(core_err)?;
     check_flags(args.flags).map_err(core_err)?;
     let partner = intent_core::ext::partner(&args.ext.0).map_err(core_err)?;
-    let (bounty, create_fee, partner_cut_bps, schedule) = {
+    let input_mint = o.input_mint.key();
+    let (bounty, create_fee, partner_cut_bps, schedule, floor) = {
         let config = o.config.load()?;
         require!(config.paused & PAUSE_CREATE == 0, EngineError::CreatePaused);
         require!(
@@ -48,6 +51,7 @@ pub fn open_intent(o: &Opening, args: &CreateIntentArgs, now: i64) -> Result<Adm
             config.create_fee,
             config.partner_cut_bps,
             FeeSchedule::of(&config),
+            committee_floor(&config, &input_mint),
         )
     };
     require!(
@@ -55,6 +59,14 @@ pub fn open_intent(o: &Opening, args: &CreateIntentArgs, now: i64) -> Result<Adm
         EngineError::CreateCostAboveCeiling
     );
     let decoded = CoreIntent::decode(args.kind, &args.params).map_err(core_err)?;
+    if let CoreIntent::AttestedResult(p) = &decoded {
+        check_committee_floor(
+            floor,
+            decoded.escrow_amount(),
+            &Pubkey::new_from_array(p.attestor),
+            o.committee,
+        )?;
+    }
     require!(args.expires_at > now, EngineError::ExpiryNotInFuture);
     require!(
         decoded.fits_expiry(args.expires_at),
@@ -65,7 +77,6 @@ pub fn open_intent(o: &Opening, args: &CreateIntentArgs, now: i64) -> Result<Adm
         crate::ID,
         EngineError::ReceiverNotAllowed
     );
-    let input_mint = o.input_mint.key();
     let output_mint = o.output_mint.key();
     require_keys_neq!(input_mint, output_mint, EngineError::SameMint);
     check_mint(&o.input_mint.to_account_info())?;

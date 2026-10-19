@@ -20,6 +20,7 @@ import {
 } from "@intent-engine/client";
 import { define } from "./actions.js";
 import { tool } from "./names.js";
+import { escrowJudge } from "./create.js";
 import { prepare } from "./prepare.js";
 import { AgentRefusal } from "./problems.js";
 import { createCost, rentFor, SIGNATURE_FEE, TOKEN_ACCOUNT_RENT_BYTES } from "./budget.js";
@@ -120,6 +121,7 @@ async function relaySigned(transport: Transport, relay: Relay, input: SignedTerm
       params,
       { input: inputToken.tokenProgram, output: outputToken.tokenProgram },
       await mintCapOf(transport, input.input_mint),
+      (await escrowJudge(transport, config, input.input_mint, params, inputToken.decimals)).committee,
     ),
     ...published(relay.signer, specUrl),
   ];

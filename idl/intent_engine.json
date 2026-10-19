@@ -942,6 +942,10 @@
           "address": "11111111111111111111111111111111"
         },
         {
+          "name": "committee",
+          "optional": true
+        },
+        {
           "name": "mint_cap",
           "writable": true,
           "optional": true,
@@ -1347,6 +1351,10 @@
         },
         {
           "name": "instructions"
+        },
+        {
+          "name": "committee",
+          "optional": true
         },
         {
           "name": "mint_cap",
@@ -3187,6 +3195,48 @@
       ]
     },
     {
+      "name": "set_committee_floor",
+      "discriminator": [
+        124,
+        248,
+        31,
+        82,
+        112,
+        216,
+        14,
+        173
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "mint"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "floor",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "set_mint_cap",
       "discriminator": [
         192,
@@ -3777,6 +3827,19 @@
         170,
         67,
         43
+      ]
+    },
+    {
+      "name": "CommitteeFloorSet",
+      "discriminator": [
+        1,
+        246,
+        179,
+        215,
+        89,
+        88,
+        97,
+        182
       ]
     },
     {
@@ -4569,6 +4632,14 @@
     {
       "code": 6102,
       "name": "MintCapTotal"
+    },
+    {
+      "code": 6103,
+      "name": "CommitteeRequired"
+    },
+    {
+      "code": 6104,
+      "name": "CommitteeFloorsFull"
     }
   ],
   "types": [
@@ -4890,6 +4961,22 @@
       }
     },
     {
+      "name": "CommitteeFloorSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "floor",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "Config",
       "serialization": "bytemuck",
       "repr": {
@@ -4982,6 +5069,24 @@
               "array": [
                 "u8",
                 7
+              ]
+            }
+          },
+          {
+            "name": "floor_mints",
+            "type": {
+              "array": [
+                "pubkey",
+                8
+              ]
+            }
+          },
+          {
+            "name": "floor_amounts",
+            "type": {
+              "array": [
+                "u64",
+                8
               ]
             }
           }

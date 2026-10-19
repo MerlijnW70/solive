@@ -116,7 +116,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | --- | --- | --- | --- |
 | `sell` | string | yes | SOL, TEST or a mint address: the token to pay with |
 | `amount` | string | yes | whole tokens to escrow, such as 0.05 |
-| `attestor` | address | yes | the wallet whose signature alone releases the escrow |
+| `attestor` | address | yes | the wallet whose signature alone releases the escrow, or a committee's address; at or above the token's committee floor it must be a committee of 2 or more |
 | `min_result` | whole number as a decimal string | no | least result the attestor may attest, a plain count not whole tokens; default 1 |
 | `max_result` | whole number as a decimal string | no | greatest result the attestor may attest, a plain count not whole tokens; default min_result |
 | `spec_hash` | string | no | 64 hex: the sha256 of the acceptance spec the attestor must verify. Setting it binds the release to a signature over that exact spec, so the attestor cannot sign a generic result |

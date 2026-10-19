@@ -89,6 +89,8 @@ const config = (feeRecipient: Address): Config => ({
   createFee: 0,
   capsRequired: 0,
   reserved: new Uint8Array(7),
+  floorMints: [],
+  floorAmounts: [],
 });
 
 const MINT = "So11111111111111111111111111111111111111112" as Address;

@@ -4,7 +4,7 @@ import { chainTime, loadConfig, mintOf } from "@intent-engine/client";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
-import { MAX_EXPIRES_IN, MIN_EXPIRES_IN, neverSettles } from "../create.js";
+import { escrowJudge, MAX_EXPIRES_IN, MIN_EXPIRES_IN, neverSettles } from "../create.js";
 import { tool } from "../names.js";
 import { AgentRefusal, problemOf } from "../problems.js";
 import { InvalidInput, account, amount, flag, hex32, integer, list, object, optional, text } from "../schema.js";
@@ -52,7 +52,7 @@ export const walletEscrow = define({
   input: object({
     sell: text("SOL, TEST or a mint address: the token to pay with"),
     amount: text("whole tokens to escrow, such as 0.05"),
-    attestor: account("the wallet whose signature alone releases the escrow"),
+    attestor: account("the wallet whose signature alone releases the escrow, or a committee's address; at or above the token's committee floor it must be a committee of 2 or more"),
     min_result: optional(amount("least result the attestor may attest, a plain count not whole tokens; default 1")),
     max_result: optional(amount("greatest result the attestor may attest, a plain count not whole tokens; default min_result")),
     spec_hash: optional(hex32("64 hex: the sha256 of the acceptance spec the attestor must verify. Setting it binds the release to a signature over that exact spec, so the attestor cannot sign a generic result")),
@@ -167,10 +167,14 @@ export const walletEscrowPlan = define({
       attestor: piece.attestor ?? input.attestor,
     }));
     for (const [i, piece] of planned.entries()) {
-      const unsettled = neverSettles({ kind: Kind.AttestedResult, amountIn: piece.amountIn, minResult: 1n, maxResult: 1n, attestor: piece.attestor, specHash: new Uint8Array(32), judgeFee: 0n }, config, 0, token.decimals);
+      const order = { kind: Kind.AttestedResult, amountIn: piece.amountIn, minResult: 1n, maxResult: 1n, attestor: piece.attestor, specHash: new Uint8Array(32), judgeFee: 0n } as const;
+      const unsettled = neverSettles(order, config, 0, token.decimals);
       if (unsettled !== undefined) {
         throw new AgentRefusal("NeverSettles", `${pieceUnsettled(i + 1, piece.name)}${unsettled}`);
       }
+      await escrowJudge(ctx.transport, config, sold, order, token.decimals).catch((error: unknown) => {
+        throw error instanceof AgentRefusal ? new AgentRefusal("CommitteeRequired", `${pieceUnsettled(i + 1, piece.name)}${error.message}`) : error;
+      });
     }
     const total = planned.reduce((sum, piece) => sum + piece.amountIn, 0n);
     const sales = await salesOf(wallet, now);
