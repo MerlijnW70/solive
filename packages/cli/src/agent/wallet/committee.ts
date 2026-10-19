@@ -9,10 +9,10 @@ import { AgentRefusal } from "../problems.js";
 import { InvalidInput, account, amount, flag, integer, list, object, optional, text } from "../schema.js";
 import { preparedView } from "../shapes.js";
 import { prepare } from "../prepare.js";
-import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of, walletKeypair } from "./guard.js";
+import { deviceOutput, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of, walletKeypair } from "./guard.js";
 import { openingOutput, openingsFor, sealedRecord, sendOpenings } from "./openings.js";
 import { ATTEST_PAGES, DELIVERED_NEEDED, HISTORY_TOO_LONG, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, notEarliest, confirmedRelease } from "./delivery.js";
-import { RELEASE_CHANGED } from "./attest.js";
+import { DEVICE_DIGEST, RELEASE_CHANGED } from "./attest.js";
 
 export const VOTE_CHANGED = "this vote differs from its preview: the escrow, payee, result or delivered work changed, or no approval was given; preview it again and show the user";
 
@@ -82,6 +82,7 @@ export const walletCommitteeVote = define({
     intent: account(),
     committee: account(),
     approval: text(),
+    digest: text(DEVICE_DIGEST),
     summary: list(text(), 8),
     signed: flag(),
     vote: optional(object({ member: account(), signature: text("the member's ed25519 signature as 128 hex digits") })),
@@ -94,7 +95,7 @@ export const walletCommitteeVote = define({
       throw new AgentRefusal("Unauthorized", NOT_A_MEMBER);
     }
     const approval = ballotApproval(ballot, delivered, salt);
-    const shown = { intent: ballot.intent, committee: ballot.committee.address, approval, summary: ballotLines(ballot, input, delivered) };
+    const shown = { intent: ballot.intent, committee: ballot.committee.address, approval, digest: hex(ballot.digest), summary: ballotLines(ballot, input, delivered) };
     if (input.send !== true) {
       return { ...shown, signed: false, next: `call again with send: true and this approval to sign the vote, then pass it to ${tool("wallet_committee_release")}` };
     }
@@ -122,6 +123,7 @@ export const walletCommitteeRelease = define({
     committee: account(),
     signers: list(account(), 8),
     approval: text(),
+    ...deviceOutput,
     ...openingOutput,
     summary: list(text(), 8),
     sent: flag(),
@@ -150,10 +152,12 @@ export const walletCommitteeRelease = define({
     if (input.send === true && input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", RELEASE_CHANGED);
     }
-    if (input.send === true && release.setup.length > 0) {
+    const device = signer.device !== undefined;
+    if (input.send === true && release.setup.length > 0 && !device) {
       await ctx.transport.send(release.setup, signer);
     }
-    const prepared = input.send === true ? preparedView(await prepare(ctx.transport, release.instructions, signer.address)) : undefined;
+    const instructions = device ? [...release.setup, ...release.instructions] : release.instructions;
+    const prepared = input.send === true || device ? preparedView(await prepare(ctx.transport, instructions, signer.address)) : undefined;
     const view = {
       intent: release.intent,
       committee: release.committee.address,

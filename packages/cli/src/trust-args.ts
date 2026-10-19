@@ -70,7 +70,7 @@ export function committeeOf(sub: string | undefined, remote: Remote, values: Val
         yes: values.yes === true,
         votes: votesOf(values),
         sha256: values.sha256 === undefined ? undefined : sha256Of(values.sha256),
-        ...confirmUrlOf(values),
+        ...confirmUrlOf(values, remote.url),
       };
     default:
       throw new UsageError(COMMITTEE_SUBS);

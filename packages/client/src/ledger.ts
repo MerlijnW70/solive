@@ -74,6 +74,22 @@ export const isDevice = (signer: object): signer is DeviceSigner => "device" in 
 
 export const messageHash = (message: Uint8Array): string => getBase58Decoder().decode(createHash("sha256").update(message).digest());
 
+export const ENVELOPE_DIGEST_CHARS = 64;
+
+export const envelopeDigest = (envelope: Uint8Array): string => new TextDecoder().decode(envelope.subarray(envelope.length - ENVELOPE_DIGEST_CHARS));
+
+export const MESSAGE_ONLY =
+  "this Ledger signs only the release message here, never a transaction, so a host cannot add an instruction to what it signs; a fee-payer key signs and pays the transaction; nothing was sent";
+
+export function messageOnly<S extends MessagePartialSigner & { readonly address: Address }>(signer: S): S & TransactionPartialSigner {
+  return Object.freeze({
+    ...signer,
+    signTransactions: async () => {
+      throw new LedgerError(MESSAGE_ONLY);
+    },
+  });
+}
+
 function index(text: string | undefined, path: string): number | undefined {
   if (text === undefined) {
     return undefined;

@@ -2,9 +2,10 @@ import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana
 import { getApproveInstruction, getTokenDecoder, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { beforeEach, describe, expect, it } from "vitest";
 import { findAssociatedTokenAddress, findIntentPda, splitFee } from "@intent-engine/core";
-import { ALLOWANCE_LOW, ALLOWANCE_SPENT } from "@intent-engine/solver";
+import { ALLOWANCE_LOW, ALLOWANCE_SPENT, OWN_INTENT } from "@intent-engine/solver";
 import { DEFAULT_URL, ENV_KEYPAIR, FLOAT_SHOW_TAKES, FLOAT_TAKES, INVENTORY_OWNER_ALONE, parse, SOLVER_NEEDS_FLOAT, UsageError } from "../src/args.js";
-import { FLOAT_TO_OWNER, replacesDelegate } from "../src/float-commands.js";
+import { FLOAT_REVOKE_TAKES } from "../src/arg-solve.js";
+import { FLOAT_TO_OWNER, NO_DELEGATE, replacesDelegate, REVOKE_NEXT } from "../src/float-commands.js";
 import { signsOnDevice } from "../src/ledger-keys.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { ata, balance, cli, ESCROW, FEE_BPS, funded, h, mint, NOW, send, type World, world } from "./harness.js";
@@ -68,6 +69,16 @@ describe("solver float arguments", () => {
       "solver float does not take --jupiter",
     );
     expect(signsOnDevice(parse(["solver", "float", "--keypair", "usb://ledger", "--delegate", A, "--mint", B, "--amount", "1"]))).toBe(true);
+  });
+
+  it("reads float revoke with the owner key and mint only", () => {
+    expect(parse(["solver", "float", "revoke", "--keypair", "o.json", "--mint", B])).toEqual({ name: "solver-float-revoke", url: DEFAULT_URL, priority: 0n, keypair: "o.json", yes: false, mint: B });
+    expect(parse(["solver", "float", "revoke", "--keypair", "o.json", "--mint", B, "--yes"])).toMatchObject({ yes: true });
+    expect(parse(["solver", "float", "revoke", "--mint", B], { [ENV_KEYPAIR]: "k.json" })).toMatchObject({ keypair: "k.json" });
+    expect(usage(["solver", "float", "revoke", "--keypair", "o.json", "--mint", B, "--delegate", A])).toBe(FLOAT_REVOKE_TAKES);
+    expect(usage(["solver", "float", "revoke", "--keypair", "o.json", "--mint", B, "--amount", "1"])).toBe(FLOAT_REVOKE_TAKES);
+    expect(usage(["solver", "float", "revoke", "--keypair", "o.json"])).toBe("missing --mint");
+    expect(signsOnDevice(parse(["solver", "float", "revoke", "--keypair", "usb://ledger", "--mint", B]))).toBe(true);
   });
 
   it("solve takes --inventory-owner only with --inventory and no route", () => {
@@ -139,6 +150,52 @@ describe("solver float on the engine", () => {
       `${empty.address} holds no token account for ${w.inputMint} at ${await findAssociatedTokenAddress({ owner: empty.address, mint: w.inputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS })}`,
     );
     expect((await cli(["solver", "float", "--keypair", "owner.json"], keys)).code).toBe(EXIT_USAGE);
+  });
+
+  it("float revoke previews, then takes back the solver's allowance, and refuses an account with no delegate", async () => {
+    await floating("500", "--units", "raw", "--yes");
+    expect(allowance(w.ownerInput)).toBe(500n);
+    const revoking = (...rest: string[]) => cli(["solver", "float", "revoke", "--keypair", "owner.json", "--mint", w.inputMint, "--url", "http://cluster", ...rest], keys);
+    const preview = await revoking();
+    expect([preview.code, preview.err]).toEqual([EXIT_OK, ""]);
+    expect(preview.json()).toMatchObject({ account: w.ownerInput, delegate: solver.address, sent: false, next: expect.any(String) });
+    expect(preview.json()["summary"]).toEqual([`Revokes ${solver.address}'s allowance of 0.0005 on ${w.ownerInput}, so it can spend nothing the owner holds`]);
+    expect(allowance(w.ownerInput)).toBe(500n);
+    const sent = await revoking("--yes");
+    expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);
+    expect(sent.json()).toMatchObject({ sent: true, next: REVOKE_NEXT });
+    expect(allowance(w.ownerInput)).toBe(0n);
+    expect((await showing()).json()["floats"]).toMatchObject([{ allowance: "0", spendable: "0" }, {}]);
+    const again = await revoking("--yes");
+    expect([again.code, again.err]).toEqual([EXIT_FAILED, NO_DELEGATE]);
+  });
+
+  it("solve --inventory-owner skips, saying why, an intent whose owner or receiver is the inventory owner", async () => {
+    const holder = await funded();
+    keys["holder.json"] = holder;
+    const issued = await mint(w.authority, 6);
+    await ata(w.authority, holder.address, issued, 10n * ESCROW);
+    await ata(w.authority, holder.address, w.inputMint, ESCROW);
+    await ata(w.authority, w.feeRecipient.address, w.inputMint);
+    h.watched.length = 0;
+    h.watched.push(w.owner.address, holder.address);
+    const create = (key: string, nonce: string, ...rest: string[]) =>
+      cli(
+        ["create", "swap", "--keypair", key, "--nonce", nonce, "--input-mint", w.inputMint, "--output-mint", issued, "--expires-at", (NOW + 3_600n).toString(), "--amount-in", ESCROW.toString(), "--min-out", "300", "--units", "raw", "--url", "http://cluster", ...rest, "--yes"],
+        keys,
+      );
+    expect((await create("holder.json", "1")).code).toBe(EXIT_OK);
+    expect((await create("owner.json", "2", "--pay-to", holder.address)).code).toBe(EXIT_OK);
+    const [own] = await findIntentPda({ owner: holder.address, nonce: 1n });
+    const paysHolder = (await findIntentPda({ owner: w.owner.address, nonce: 2n }))[0];
+    const floated = await cli(["solver", "float", "--keypair", "holder.json", "--delegate", solver.address, "--mint", issued, "--amount", "900", "--units", "raw", "--url", "http://cluster", "--yes"], keys);
+    expect([floated.code, floated.err]).toEqual([EXIT_OK, ""]);
+    const run = await cli(["solve", "--keypair", "s.json", "--inventory", `${w.inputMint}:${issued}=1/1`, "--inventory-owner", holder.address, "--min-profit", `${issued}=1`, "--url", "http://cluster"], keys);
+    expect([run.code, run.err]).toEqual([EXIT_OK, ""]);
+    const report = run.json() as { filled: unknown[]; failed: unknown[]; skipped: { intent: Address; reason: string }[] };
+    expect([report.filled, report.failed]).toEqual([[], []]);
+    expect(report.skipped).toEqual(expect.arrayContaining([{ intent: own, reason: OWN_INTENT }, { intent: paysHolder, reason: OWN_INTENT }]));
+    expect(allowance(await findAssociatedTokenAddress({ owner: holder.address, mint: issued, tokenProgram: TOKEN_PROGRAM_ADDRESS }))).toBe(900n);
   });
 
   it("solve --inventory-owner fills from the owner's float, pays the owner, and says when the float runs low", async () => {

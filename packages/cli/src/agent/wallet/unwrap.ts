@@ -8,7 +8,7 @@ import { AgentRefusal } from "../problems.js";
 import { account, flag, list, object, optional, text } from "../schema.js";
 import { preparedView } from "../shapes.js";
 import { prepare } from "../prepare.js";
-import { PREVIEW_FIRST, signerOf, sent } from "./guard.js";
+import { deviceOutput, PREVIEW_FIRST, signerOf, sent } from "./guard.js";
 
 const SOL_DECIMALS = 9;
 
@@ -25,6 +25,7 @@ export const walletUnwrap = define({
     account: account("the wrapped SOL account this closes"),
     wrapped: text("whole SOL the account holds"),
     summary: list(text(), 4),
+    ...deviceOutput,
     sent: flag(),
     signature: optional(text()),
     next: optional(text()),

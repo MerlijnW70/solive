@@ -38,7 +38,7 @@ import { AgentRefusal, untrusted } from "../problems.js";
 import { InvalidInput, account, amount, flag, integer, list, object, optional, text } from "../schema.js";
 import { preparedSchema, preparedView } from "../shapes.js";
 import { prepare } from "../prepare.js";
-import { PREVIEW_FIRST, signerOf, sent, sha256Of, walletKeypair } from "./guard.js";
+import { deviceOutput, PREVIEW_FIRST, signerOf, sent, sha256Of, walletKeypair } from "./guard.js";
 
 export const ANNOUNCE_FIRST = "keep the work private until this announcement lands: the earliest announcer of the work is paid, so publish it only after";
 
@@ -78,6 +78,7 @@ export const walletDeliver = define({
     check: text("32 hex: the salt's check, which the memo carries so that an opened salt can be matched to this announcement"),
     summary: list(text(), 8),
     warnings: list(text(), 8),
+    ...deviceOutput,
     sent: flag(),
     signature: optional(text()),
     next: optional(text()),

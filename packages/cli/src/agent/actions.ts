@@ -61,8 +61,27 @@ export class OutputMismatch extends Error {
 
 export type Outcome = { ok: true; value: Record<string, unknown> } | { ok: false; problem: Problem };
 
+const SENDING = new Set(["send", "approval"]);
+
+const canonical = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(canonical)
+    : value !== null && typeof value === "object"
+      ? Object.fromEntries(
+          Object.entries(value)
+            .filter(([, v]) => v !== undefined)
+            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+            .map(([k, v]) => [k, canonical(v)]),
+        )
+      : value;
+
+export function askedOf(name: string, raw: unknown): string {
+  const input = raw !== null && typeof raw === "object" && !Array.isArray(raw) ? Object.fromEntries(Object.entries(raw).filter(([k]) => !SENDING.has(k))) : raw;
+  return JSON.stringify([name, canonical(input ?? {})]);
+}
+
 export async function invoke(action: AnyAction, ctx: AgentContext, raw: unknown): Promise<Outcome> {
-  const call = callOf();
+  const call = callOf(askedOf(action.name, raw));
   try {
     const input = action.input.read(raw ?? {}, "");
     const value = toJson(await action.run({ ...ctx, transport: memoized(ctx.transport) }, input as never, call));

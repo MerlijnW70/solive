@@ -9,6 +9,7 @@ import {
   addressList,
   amountOf,
   confirmUrlOf,
+  mcpFeePayer,
   key,
   mintList,
   named,
@@ -107,6 +108,8 @@ const WALLET_LIMIT_KEYS = ["wallet-per-trade", "wallet-per-hour"] as const;
 
 const BALANCE_OF_ONE ="balance takes --keypair or --owner, not both";
 
+export const CONFIRM_URL_OR_NOT = "--no-confirm-url skips the second node, so it takes no --confirm-url";
+
 export const takesSavedConfirm = (verb: string | undefined, sub: string | undefined): boolean =>
   verb === "judge" || verb === "mcp" || (verb === "committee" && sub === "release");
 
@@ -141,8 +144,17 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
   ) {
     values.keypair = keypairDefault;
   }
+  if (values["no-confirm-url"] === true && values["confirm-url"] !== undefined) {
+    throw new UsageError(CONFIRM_URL_OR_NOT);
+  }
   const confirmDefault = env[SAVED_CONFIRM_URL];
-  if (values["confirm-url"] === undefined && confirmDefault !== undefined && takesSavedConfirm(verb, sub)) {
+  if (
+    values["confirm-url"] === undefined &&
+    values["no-confirm-url"] !== true &&
+    confirmDefault !== undefined &&
+    takesSavedConfirm(verb, sub) &&
+    acceptedBy(verb, sub)?.includes("confirm-url") === true
+  ) {
     values["confirm-url"] = confirmDefault;
   }
   const nested = verb === "mandate" || verb === "signed" || verb === "solver";
@@ -197,7 +209,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       throw new UsageError("show needs config, intent or mint-cap");
     case "setup":
       noSub(sub);
-      return { name: "setup", ...remote, keypair: values.keypair, ...confirmUrlOf(values) };
+      return { name: "setup", ...remote, keypair: values.keypair, ...confirmUrlOf(values, remote.url) };
     case "balance":
       noSub(sub);
       if (values.owner !== undefined && parsed.values.keypair !== undefined) {
@@ -228,7 +240,8 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         agent: agentSpec(values),
         wallet: walletLimits(values, remote.url),
         allTools: values["all-tools"] === true,
-        ...confirmUrlOf(values),
+        ...mcpFeePayer(values),
+        ...confirmUrlOf(values, remote.url),
       };
     case "quote":
       noSub(sub);

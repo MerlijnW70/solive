@@ -46,9 +46,9 @@ import { preparedView } from "../shapes.js";
 import { walletRecipient } from "../owner.js";
 import { prepare, transactionSize } from "../prepare.js";
 import { STATUS } from "../../accounts.js";
-import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, WAIT_SCAN, signerOf, sent, sha256Of, walletKeypair } from "./guard.js";
+import { feePayerOf, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, WAIT_SCAN, signerOf, sent, sha256Of, walletKeypair } from "./guard.js";
 import { openingOutput, openingsFor, sealedRecord, sendOpenings } from "./openings.js";
-import { RELEASE_CHANGED, approvalOf } from "./attest.js";
+import { DEVICE_RELEASE, RELEASE_CHANGED, approvalOf } from "./attest.js";
 import { notInSplit, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor, confirmedRelease } from "./delivery.js";
 
 export const SPLIT_FITS = 2;
@@ -57,6 +57,9 @@ export const splitTooLarge = (size: number, recipients: number, withTable: boole
   `this ${recipients}-co-author split builds a ${size}-byte transaction without the delivery memo, over the ${PACKET_DATA_SIZE}-byte limit${withTable ? " even with the lookup table" : ""}; a release fits ${SPLIT_FITS} co-authors without a lookup table and ${SPLIT_FITS_WITH_TABLE} with one when their token accounts exist, and fewer when this wallet creates them in the same transaction${withTable ? ", so reduce recipients or pay the rest in a second release" : ", so pass lookup_table with the preview's lookup_accounts to fit more, or reduce recipients"}`;
 export const RECORDS_SPLIT = (delivered: string): string =>
   `Records: the delivered work's sha256 ${delivered}, in a memo this wallet signs with the release, or in a follow-up transaction this wallet signs right after it when the release has no room for the memo`;
+export const unrecordedOnDevice = (): string =>
+  `released; the Ledger signed only the release message and the fee payer the transaction, so no memo records the delivered work's sha256; to record it, call ${tool("wallet_record_delivery")} with the same owner and nonce, the delivered_sha256 as sha256 and this signature as release`;
+
 export const followUpFailed = (reason: string): string =>
   `the release landed, but the follow-up transaction that records the delivered work's sha256 failed, so the hash is not recorded on chain: ${reason}; to record it, call ${tool("wallet_record_delivery")} with the same owner and nonce, the delivered_sha256 as sha256 and this signature as release, which sends the memo in record_memo for ${tool("wallet_receipt")} to read`;
 export const SPLIT_WEIGHTS_WRONG = "the weights must be whole basis points that add up to 10000";
@@ -120,6 +123,8 @@ export const walletAttestSplit = define({
   }),
   run: async (ctx: AgentContext, input, call: Call) => {
     const signer = await signerOf(ctx);
+    const device = signer.device !== undefined;
+    const payer = device ? await feePayerOf(ctx) : signer;
     const [intent] = await findIntentPda({ owner: input.owner, nonce: input.nonce });
     const [view, { config }] = await Promise.all([ctx.transport.getAccount(intent), loadConfig(ctx.transport)]);
     if (view === null) {
@@ -174,16 +179,16 @@ export const walletAttestSplit = define({
     const memoText = releaseMemo(delivered, salt);
     const memo = { programAddress: MEMO_PROGRAM_ADDRESS, accounts: [{ address: signer.address, role: AccountRole.READONLY_SIGNER, signer }], data: new TextEncoder().encode(memoText) };
     const token = await mintOf(ctx.transport, held.inputMint);
-    const payees = await Promise.all(wallets.map((w) => tokenAccountIfMissing(ctx.transport, signer, w, held.inputMint, token.tokenProgram)));
+    const payees = await Promise.all(wallets.map((w) => tokenAccountIfMissing(ctx.transport, payer, w, held.inputMint, token.tokenProgram)));
     const amountIn = held.escrowed - held.filled;
     const settleAmount = amountIn - params.judgeFee;
     const maxFeeBps = held.feeBps + held.partnerBps;
     const shares = splitFees(settleAmount, held.feeBps, held.partnerBps, held.partnerCutBps);
     const payout = splitPayout(shares.net, weights);
-    const treasury = shares.protocol > 0n ? await tokenAccountIfMissing(ctx.transport, signer, config.feeRecipient, held.inputMint, token.tokenProgram) : { create: [] };
+    const treasury = shares.protocol > 0n ? await tokenAccountIfMissing(ctx.transport, payer, config.feeRecipient, held.inputMint, token.tokenProgram) : { create: [] };
     const partnerPaid = shares.partner > 0n;
-    const partner = partnerPaid ? await tokenAccountIfMissing(ctx.transport, signer, held.partner, held.inputMint, token.tokenProgram) : { create: [] };
-    const judge = params.judgeFee > 0n ? await tokenAccountIfMissing(ctx.transport, signer, signer.address, held.inputMint, token.tokenProgram) : { create: [] };
+    const partner = partnerPaid ? await tokenAccountIfMissing(ctx.transport, payer, held.partner, held.inputMint, token.tokenProgram) : { create: [] };
+    const judge = params.judgeFee > 0n ? await tokenAccountIfMissing(ctx.transport, payer, signer.address, held.inputMint, token.tokenProgram) : { create: [] };
     const splitHash = await splitCommit(wallets, weights);
     const fields = {
       domain: Uint8Array.from(config.domain),
@@ -200,7 +205,7 @@ export const walletAttestSplit = define({
     const message = cosignEnvelope([...wallets, signer.address], digest);
     const digestHex = getBase16Decoder().decode(digest);
     const settle = await buildFillAttestedSplit({
-      solver: signer,
+      solver: payer,
       owner: input.owner,
       nonce: input.nonce,
       inputMint: held.inputMint,
@@ -236,7 +241,7 @@ export const walletAttestSplit = define({
       batch = buildEd25519CosignInstruction({ entries: [...signatures].map(([publicKey, signature]) => ({ publicKey, signature })), message });
     }
     const setup = [...payees.flatMap((p) => p.create), ...treasury.create, ...partner.create, ...judge.create];
-    const invoked = new Set<Address>([INTENT_ENGINE_PROGRAM_ADDRESS, token.tokenProgram, signer.address]);
+    const invoked = new Set<Address>([INTENT_ENGINE_PROGRAM_ADDRESS, token.tokenProgram, payer.address]);
     const lookupAccounts = [...new Set((settle.accounts ?? []).map((a) => a.address))].filter((a) => !invoked.has(a));
     let tables: Record<Address, Address[]> | undefined;
     if (input.send === true && input.lookup_table !== undefined) {
@@ -250,16 +255,20 @@ export const walletAttestSplit = define({
     let followUp = false;
     if (input.send === true && batch !== undefined) {
       const sizeOf = async (ixs: Parameters<typeof prepare>[1]) =>
-        transactionSize(ctx.transport, await ctx.transport.budget(ixs, signer.address, tables), signer.address, tables);
+        transactionSize(ctx.transport, await ctx.transport.budget(ixs, payer.address, tables), payer.address, tables);
       const bare = [...setup, batch, settle];
-      followUp = (await sizeOf([...bare, memo])) > PACKET_DATA_SIZE;
+      followUp = !device && (await sizeOf([...bare, memo])) > PACKET_DATA_SIZE;
       if (followUp) {
         const size = await sizeOf(bare);
         if (size > PACKET_DATA_SIZE) {
           throw new AgentRefusal("ReleaseTooLarge", splitTooLarge(size, input.recipients.length, input.lookup_table !== undefined));
         }
       }
-      prepared = preparedView(await prepare(ctx.transport, followUp ? bare : [...bare, memo], signer.address, tables));
+      const bareSize = device ? await sizeOf(bare) : 0;
+      if (bareSize > PACKET_DATA_SIZE) {
+        throw new AgentRefusal("ReleaseTooLarge", splitTooLarge(bareSize, input.recipients.length, input.lookup_table !== undefined));
+      }
+      prepared = preparedView(await prepare(ctx.transport, followUp || device ? bare : [...bare, memo], payer.address, tables));
     }
     const view2 = {
       intent,
@@ -282,18 +291,23 @@ export const walletAttestSplit = define({
         ...(params.judgeFee > 0n ? [`Pays the judge: ${formatAmount(params.judgeFee, token.decimals)} of ${name} to this wallet, carved out of the escrow`] : []),
         `Binds: the result to the committed spec ${getBase16Decoder().decode(params.specHash)}`,
         `Attests: result ${result}, signed by this server's wallet as the escrow's attestor`,
-        RECORDS_SPLIT(delivered),
-        ...(setup.length === 0 ? [] : [`Setup: creates ${setup.length} token account(s), paid by this wallet`]),
+        ...(device
+          ? [`Signs: only the release message on the Ledger, which shows digest ${digestHex}; the fee payer ${payer.address} signs and pays the transaction, so no memo records the delivered work`]
+          : [RECORDS_SPLIT(delivered)]),
+        ...(setup.length === 0 ? [] : [`Setup: creates ${setup.length} token account(s), paid by ${device ? "the fee payer" : "this wallet"}`]),
       ],
       warnings: [...settlementWarnings(params), WARN_COAUTHORS],
       prepared,
     };
-    const done = await sent(ctx, signer, view2, input.send, call, {
-      preview: PREVIEW_APPROVAL_NEXT,
+    const done = await sent(ctx, payer, view2, input.send, call, {
+      preview: device ? `${PREVIEW_APPROVAL_NEXT}; ${DEVICE_RELEASE}` : PREVIEW_APPROVAL_NEXT,
       done: `released to co-authors; ${tool("wallet_feedback")} to rate if you own it`,
     });
     if (!("signature" in done)) {
       return done;
+    }
+    if (device) {
+      return { ...done, recorded: false as const, record_memo: followUpMemo(delivered, done.signature, salt), next: unrecordedOnDevice() };
     }
     const recorded = await recordedSplit(ctx, signer, intent, delivered, salt, done, followUp);
     return recorded.recorded === false ? recorded : { ...recorded, ...(await sendOpenings(ctx, signer, signer.address, openings)) };

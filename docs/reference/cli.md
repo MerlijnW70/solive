@@ -3,7 +3,7 @@
 # CLI reference
 
 ```text
-usage: setup | add-to claude|codex | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | set-committee-floor | solve | raise-pause | lower-pause | crank | treasury | solver-table | solver float | solver float show | events | jobs | deliver | deliveries | receipt | record-delivery | judge [digest] | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
+usage: setup | add-to claude|codex | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | set-committee-floor | solve | raise-pause | lower-pause | crank | treasury | solver-table | solver float | solver float show | solver float revoke | events | jobs | deliver | deliveries | receipt | record-delivery | judge [digest] | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
 ```
 
 Every command accepts `--output` and `--help`.
@@ -95,10 +95,10 @@ Options: `--url`, `--output`, `--help`
 ## mcp
 
 ```text
-mcp [--wallet [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--all-tools]] [--relayer <keypair> --relay-fee <mint=amount,...> [--relay-max-lamports] [--relay-max-ttl] [--relay-per-hour] [--relay-hourly-lamports]] [--agent <keypair> --agent-owners <address,...> [--agent-hourly-lamports]] [--confirm-url <cluster>]
+mcp [--wallet [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--all-tools]] [--relayer <keypair> --relay-fee <mint=amount,...> [--relay-max-lamports] [--relay-max-ttl] [--relay-per-hour] [--relay-hourly-lamports]] [--agent <keypair> --agent-owners <address,...> [--agent-hourly-lamports]] [--fee-payer <key file, with --wallet>] [--confirm-url <cluster> | --no-confirm-url]
 ```
 
-Options: `--url`, `--priority-fee`, `--relayer`, `--relay-max-lamports`, `--relay-max-ttl`, `--relay-per-hour`, `--relay-hourly-lamports`, `--relay-fee`, `--agent`, `--agent-hourly-lamports`, `--agent-owners`, `--wallet`, `--wallet-per-trade`, `--wallet-per-hour`, `--all-tools`, `--confirm-url`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--relayer`, `--relay-max-lamports`, `--relay-max-ttl`, `--relay-per-hour`, `--relay-hourly-lamports`, `--relay-fee`, `--agent`, `--agent-hourly-lamports`, `--agent-owners`, `--wallet`, `--wallet-per-trade`, `--wallet-per-hour`, `--all-tools`, `--confirm-url`, `--no-confirm-url`, `--fee-payer`, `--output`, `--help`
 
 ## quote
 
@@ -239,7 +239,7 @@ Options: `--url`, `--solver`, `--mints`, `--output`, `--help`
 ## solver
 
 ```text
-solver float --keypair <owner file> --delegate <solver address> --mint <mint> --amount <amount> [--units tokens|raw] [--yes] | float show --owner <address> --delegate <solver address> [--mints <mint,...>]
+solver float --keypair <owner file> --delegate <solver address> --mint <mint> --amount <amount> [--units tokens|raw] [--yes] | float show --owner <address> --delegate <solver address> [--mints <mint,...>] | float revoke --keypair <owner file> --mint <mint> [--yes]
 ```
 
 Options for `float`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--delegate`, `--mint`, `--mints`, `--amount`, `--units`, `--output`, `--help`
@@ -303,10 +303,10 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, 
 ## judge
 
 ```text
-judge --keypair <judge file> --owner <address> --nonce <n> --spec <file> (--artifact <file or directory> | --watch [--interval <seconds>]) (--run <command> | --sandbox viper) [--pay-to <wallet>] [--result <n>] [--timeout <seconds>] [--verdict <file>] [--max-pages <n>] [--check <file or directory>] [--sandbox docker|viper|none] [--sandbox-image <name>@sha256:<64 hex>] [--sandbox-memory <n>m|<n>g] [--sandbox-cpus <n>] [--plain-node] [--confirm-url <cluster>] [--yes] | digest --owner <address> --nonce <n> --pay-to <wallet> [--result <n>]
+judge --keypair <judge file> --owner <address> --nonce <n> --spec <file> (--artifact <file or directory> | --watch [--interval <seconds>]) (--run <command> | --sandbox viper) [--pay-to <wallet>] [--result <n>] [--timeout <seconds>] [--verdict <file>] [--max-pages <n>] [--check <file or directory>] [--sandbox docker|viper|none] [--sandbox-image <name>@sha256:<64 hex>] [--sandbox-memory <n>m|<n>g] [--sandbox-cpus <n>] [--plain-node] [--fee-payer <key file, with a Ledger --keypair>] [--confirm-url <cluster> | --no-confirm-url] [--yes] | digest --owner <address> --nonce <n> --pay-to <wallet> [--result <n>]
 ```
 
-Options without a subcommand: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--pay-to`, `--result`, `--timeout`, `--verdict`, `--max-pages`, `--check`, `--sandbox`, `--sandbox-image`, `--sandbox-memory`, `--sandbox-cpus`, `--plain-node`, `--watch`, `--interval`, `--confirm-url`, `--output`, `--help`
+Options without a subcommand: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--pay-to`, `--result`, `--timeout`, `--verdict`, `--max-pages`, `--check`, `--sandbox`, `--sandbox-image`, `--sandbox-memory`, `--sandbox-cpus`, `--plain-node`, `--watch`, `--interval`, `--confirm-url`, `--no-confirm-url`, `--fee-payer`, `--output`, `--help`
 
 Options for `digest`: `--url`, `--owner`, `--nonce`, `--pay-to`, `--result`, `--output`, `--help`
 
@@ -409,7 +409,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--score`,
 ## committee
 
 ```text
-committee create --keypair <payer file> --members <address,...> --threshold <n> --fee-wallet <address> [--yes] | show --committee <address> | vote --keypair <member file> --owner <address> --nonce <n> --pay-to <wallet> --result <n> [--out <file>] [--yes] | release --keypair <solver file> --vote <file> [--vote <file> ...] [--sha256 <64 hex>] [--confirm-url <cluster>] [--yes]
+committee create --keypair <payer file> --members <address,...> --threshold <n> --fee-wallet <address> [--yes] | show --committee <address> | vote --keypair <member file> --owner <address> --nonce <n> --pay-to <wallet> --result <n> [--out <file>] [--yes] | release --keypair <solver file> --vote <file> [--vote <file> ...] [--sha256 <64 hex>] [--confirm-url <cluster> | --no-confirm-url] [--yes]
 ```
 
 Options for `create`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--members`, `--threshold`, `--fee-wallet`, `--output`, `--help`
@@ -418,7 +418,7 @@ Options for `show`: `--url`, `--committee`, `--output`, `--help`
 
 Options for `vote`: `--url`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--pay-to`, `--result`, `--out`, `--output`, `--help`
 
-Options for `release`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--vote`, `--sha256`, `--confirm-url`, `--output`, `--help`
+Options for `release`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--vote`, `--sha256`, `--confirm-url`, `--no-confirm-url`, `--output`, `--help`
 
 ## claims
 

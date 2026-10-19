@@ -80,6 +80,8 @@ Add `--stats` to print one JSON line after every full scan, counting the orders,
 
 `--inventory-owner <address>` fills from another key's tokens, so a stolen solver key can spend only the allowance that owner gave it. The owner sets it with `intent-engine solver float --keypair <owner file or Ledger> --delegate <solver address> --mint <mint> --amount <amount> --yes`, and `solver float show --owner <address> --delegate <solver address>` prints what each mint has left. It needs `--inventory` and takes no `--jupiter` or `--issue`.
 
+`solver float revoke --keypair <owner file or Ledger> --mint <mint> --yes` takes the allowance back. The solver skips, with a reason, an intent whose owner is the inventory owner or whose receiver is that owner's token account, since the fill would pay the owner from its own float.
+
 The solver fills from and is paid into the owner's token accounts, and skips a fill the allowance left cannot cover. It reports `low` when what is left cannot cover another fill as large as the largest it was asked to make.
 
 `--concurrency` sets how many orders it plans at once (default 4, from 1 to 32). Fills are still simulated and sent one at a time, most profitable first.

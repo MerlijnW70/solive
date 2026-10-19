@@ -52,7 +52,7 @@ export type Command =
   | (Remote & { name: "domain" })
   | (Remote & { name: "setup"; keypair: string | undefined; confirmUrl?: string | undefined })
   | (Remote & { name: "balance"; keypair: string | undefined; owner: Address | undefined; mints: Address[] | null })
-  | (Remote & { name: "mcp"; relay: RelaySpec | undefined; agent: AgentSpec | undefined; wallet: WalletLimits | null; allTools: boolean; confirmUrl?: string | undefined })
+  | (Remote & { name: "mcp"; relay: RelaySpec | undefined; agent: AgentSpec | undefined; wallet: WalletLimits | null; allTools: boolean; feePayer?: string | undefined; confirmUrl?: string | undefined })
   | (Remote & { name: "show-intent"; owner: Address; nonce: bigint })
   | (Remote & { name: "quote"; owner: Address; nonce: bigint; at: bigint | undefined })
   | (Keyed & { name: "cancel"; yes: boolean; nonce: bigint; close: boolean })
@@ -125,6 +125,7 @@ export type Command =
       maxPages: number;
       check: string | undefined;
       sandbox: Sandbox;
+      feePayer?: string | undefined;
       confirmUrl?: string | undefined;
     })
   | (Remote & { name: "judge-digest"; owner: Address; nonce: bigint; payTo: Address; result: bigint | undefined })
@@ -140,6 +141,7 @@ export type Command =
   | (Remote & { name: "solver-table"; solver: Address; mints: Address[] })
   | (Keyed & { name: "solver-float"; yes: boolean; delegate: Address; mint: Address; amount: string | Tokens })
   | (Remote & { name: "solver-float-show"; owner: Address; delegate: Address; mints: Address[] | null })
+  | (Keyed & { name: "solver-float-revoke"; yes: boolean; mint: Address })
   | (Remote & { name: "monitor"; baseline: string; watch: MonitorSpec | null })
   | (Keyed & { name: "committee-create"; yes: boolean; members: Address[]; threshold: number; feeWallet: Address })
   | (Remote & { name: "committee-show"; committee: Address })

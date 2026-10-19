@@ -21,6 +21,8 @@ import {
   checkHour,
   refusedBeforeSending,
   PREVIEW_FIRST,
+  oneAtATime,
+  signerOf,
 } from "./guard.js";
 import { offerFields, offerOutput, offered } from "./offer.js";
 import { recentFills, bestOf, medianOf, openingAsk, type Fill } from "./fills.js";
@@ -148,6 +150,7 @@ export const walletRecurring = define({
   }),
   run: async (ctx: AgentContext, input, call: Call) => {
     const wallet = access(ctx);
+    oneAtATime(await signerOf(ctx));
     const inputMint = mintNamed(input.sell, wallet.url, "sell");
     const outputMint = mintNamed(input.buy, wallet.url, "buy");
     const [inputToken, outputToken, now] = await Promise.all([

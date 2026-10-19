@@ -8,7 +8,7 @@ import { escrowJudge, MAX_EXPIRES_IN, MIN_EXPIRES_IN, neverSettles } from "../cr
 import { tool } from "../names.js";
 import { AgentRefusal, problemOf } from "../problems.js";
 import { InvalidInput, account, amount, flag, hex32, integer, list, object, optional, text } from "../schema.js";
-import { LANDING_SECONDS, access, mintNamed, raw, salesOf, checkSale, checkHour, refusedBeforeSending, PREVIEW_FIRST } from "./guard.js";
+import { LANDING_SECONDS, access, mintNamed, raw, salesOf, checkSale, checkHour, refusedBeforeSending, PREVIEW_FIRST, oneAtATime, signerOf } from "./guard.js";
 import { offerOutput, type Token, offered } from "./offer.js";
 import { fetchSha256 } from "../../delivery-fetch.js";
 
@@ -158,6 +158,7 @@ export const walletEscrowPlan = define({
   }),
   run: async (ctx: AgentContext, input, call: Call) => {
     const wallet = access(ctx);
+    oneAtATime(await signerOf(ctx));
     const sold = mintNamed(input.sell, wallet.url, "sell");
     const buy = recordedMint(sold, wallet.url, input.record_mint);
     const [token, now, { config }] = await Promise.all([mintOf(ctx.transport, sold), chainTime(ctx.transport), loadConfig(ctx.transport)]);

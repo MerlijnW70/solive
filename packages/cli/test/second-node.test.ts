@@ -1,10 +1,11 @@
 import type { Address } from "@solana/kit";
 import { beforeEach, describe, expect, it } from "vitest";
 import { findIntentPda, findVaultPda } from "@intent-engine/core";
-import { parse } from "../src/args.js";
+import { CONFIRM_URL_OR_NOT, parse } from "../src/args.js";
+import { sameNode } from "../src/arg-values.js";
 import { clusterUrl, SAVED_CONFIRM_URL } from "../src/clusters.js";
-import { EXIT_OK, readsOneNode } from "../src/main.js";
-import { settingsPath, withSettings } from "../src/wallet.js";
+import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, readsOneNode } from "../src/main.js";
+import { confirmElsewhere, confirmUnreachable, settingsPath, withSettings } from "../src/wallet.js";
 import { ata, balance, cli, ESCROW, h, HOME, mint, NOW, runtime, type World, world, funded } from "./harness.js";
 import { cliWith, type Lie, OTHER_GENESIS, SECOND, SECOND_URL, secondNode } from "./confirm-node.js";
 
@@ -98,8 +99,53 @@ describe("the confirm-url setting", () => {
     expect(JSON.parse(h.files.get(SETTINGS) ?? "{}")).toMatchObject({ [SAVED_CONFIRM_URL]: SECOND_URL });
     expect((await cli(["setup"], {})).json()).toMatchObject({ confirm_url: SECOND_URL });
     expect(JSON.parse(h.files.get(SETTINGS) ?? "{}")).toMatchObject({ [SAVED_CONFIRM_URL]: SECOND_URL });
-    await cli(["setup", "--confirm-url", "devnet"], {});
-    expect(JSON.parse(h.files.get(SETTINGS) ?? "{}")).toMatchObject({ [SAVED_CONFIRM_URL]: clusterUrl("devnet") });
+    await cli(["setup", "--confirm-url", "localnet"], {});
+    expect(JSON.parse(h.files.get(SETTINGS) ?? "{}")).toMatchObject({ [SAVED_CONFIRM_URL]: clusterUrl("localnet") });
+  });
+
+  it("is saved by setup only when the url answers on the same cluster", async () => {
+    const node = secondNode();
+    node.lie = { down: true };
+    const down = await cliWith(["setup", "--confirm-url", SECOND], {}, node);
+    expect([down.code, down.err]).toEqual([EXIT_FAILED, confirmUnreachable(SECOND_URL, "fetch failed")]);
+    expect(h.files.has(SETTINGS)).toBe(false);
+    node.lie = { genesis: OTHER_GENESIS };
+    const elsewhere = await cliWith(["setup", "--confirm-url", SECOND], {}, node);
+    expect([elsewhere.code, elsewhere.err]).toEqual([EXIT_FAILED, confirmElsewhere(SECOND_URL, h.genesis, OTHER_GENESIS)]);
+    expect(h.files.has(SETTINGS)).toBe(false);
+    node.lie = {};
+    const saved = await cliWith(["setup", "--confirm-url", SECOND], {}, node);
+    expect([saved.code, saved.err]).toEqual([EXIT_OK, ""]);
+    expect(JSON.parse(h.files.get(SETTINGS) ?? "{}")).toMatchObject({ [SAVED_CONFIRM_URL]: SECOND_URL });
+    const same = await cli(["setup", "--url", "devnet", "--confirm-url", "https://API.devnet.solana.com/"], {});
+    expect([same.code, same.err]).toEqual([EXIT_USAGE, sameNode("https://API.devnet.solana.com/")]);
+  });
+
+  it("applies the saved confirm-url only to commands that take it, skips it for one run with --no-confirm-url, and refuses the first node as the second", () => {
+    const env = { [SAVED_CONFIRM_URL]: SECOND_URL };
+    const owner = "11111111111111111111111111111112";
+    const judge = ["judge", "--keypair", "k", "--owner", owner, "--nonce", "0", "--spec", "s", "--artifact", "a", "--sandbox", "viper"];
+    const digest = parse(["judge", "digest", "--owner", owner, "--nonce", "0", "--pay-to", owner], env);
+    expect(digest).toMatchObject({ name: "judge-digest" });
+    expect(digest).not.toHaveProperty("confirmUrl");
+    for (const argv of [judge, ["committee", "release", "--keypair", "k", "--vote", "v"], ["mcp", "--wallet"]]) {
+      expect(parse(argv, env), argv[0]).toMatchObject({ confirmUrl: SECOND_URL });
+      expect(parse([...argv, "--no-confirm-url"], env), argv[0]).not.toHaveProperty("confirmUrl");
+      expect(readsOneNode(parse([...argv, "--no-confirm-url"], env)), argv[0]).toBe(true);
+      expect(() => parse([...argv, "--no-confirm-url", "--confirm-url", SECOND], env), argv[0]).toThrow(CONFIRM_URL_OR_NOT);
+      expect(() => parse([...argv, "--url", SECOND], env), argv[0]).toThrow(sameNode(SECOND_URL));
+      expect(parse([...argv, "--url", SECOND, "--no-confirm-url"], env), argv[0]).not.toHaveProperty("confirmUrl");
+    }
+    expect(() => parse([...judge, "--url", "devnet", "--confirm-url", `${clusterUrl("devnet")}/`])).toThrow(sameNode(`${clusterUrl("devnet")}/`));
+    const local = "http://" + "127.0.0.1:8899";
+    for (const confirm of ["http://" + "localhost:8899/", "http://" + "[::1]:8899", "HTTP://" + "LOCALHOST.:8899"]) {
+      expect(() => parse([...judge, "--url", local, "--confirm-url", confirm]), confirm).toThrow(sameNode(confirm));
+    }
+    expect(parse([...judge, "--url", local, "--confirm-url", "http://" + "localhost:8900"])).toMatchObject({ confirmUrl: "http://" + "localhost:8900" });
+    const keyed = "https://" + "rpc.example.org/?b=2&a=1";
+    expect(() => parse([...judge, "--url", "https://" + "rpc.example.org./?a=1&b=2", "--confirm-url", keyed])).toThrow(sameNode(keyed));
+    expect(parse([...judge, "--url", "https://" + "rpc.example.org/?a=1", "--confirm-url", keyed])).toMatchObject({ confirmUrl: keyed });
+    expect(() => parse(["judge", "digest", "--owner", owner, "--nonce", "0", "--pay-to", owner, "--no-confirm-url"])).toThrow("judge digest does not take --no-confirm-url");
   });
 
   it("is left out when never set, and a settings file with a non-text confirm-url is refused", async () => {

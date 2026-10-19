@@ -6,11 +6,11 @@ export const MAX_PENDING_PER_OWNER = 16;
 
 export type Claims = { held: Map<Address, Map<bigint, bigint>>; busy: Set<string> };
 
-export type Call = { undo: (() => void)[] };
+export type Call = { undo: (() => void)[]; asked?: string };
 
 export const claimsOf = (): Claims => ({ held: new Map(), busy: new Set() });
 
-export const callOf = (): Call => ({ undo: [] });
+export const callOf = (asked?: string): Call => ({ undo: [], ...(asked === undefined ? {} : { asked }) });
 
 function prune(claims: Claims, now: bigint): void {
   for (const [owner, held] of claims.held) {

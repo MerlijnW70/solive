@@ -16,7 +16,7 @@ import {
   splitFees,
   settlementWarnings,
 } from "@intent-engine/core";
-import { chainTime, deliveryRecord, firstDelivery, loadConfig, MEMO_PROGRAM_ADDRESS, mintOf, tokenAccountIfMissing } from "@intent-engine/client";
+import { chainTime, deliveryRecord, envelopeDigest, firstDelivery, loadConfig, MEMO_PROGRAM_ADDRESS, mintOf, tokenAccountIfMissing } from "@intent-engine/client";
 import { TOKEN_NAMES } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
@@ -28,7 +28,7 @@ import { preparedView } from "../shapes.js";
 import { walletRecipient } from "../owner.js";
 import { prepare } from "../prepare.js";
 import { STATUS } from "../../accounts.js";
-import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of, walletKeypair } from "./guard.js";
+import { feePayerOf, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of, walletKeypair } from "./guard.js";
 import { openingOutput, openingsFor, sealedRecord, sendOpenings } from "./openings.js";
 import { invitedTo, notInvited } from "../../invites.js";
 import { notEarliest, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor, confirmedRelease } from "./delivery.js";
@@ -36,6 +36,10 @@ import { notEarliest, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGE
 export const PAYEE_MOVED = "this wallet's token account for the escrowed token now belongs to someone else, so a release would not reach it; ask the payee for another wallet";
 
 export const RELEASE_CHANGED = "this release differs from its preview: the payee, amount, result, fee or the escrow itself changed, or no approval was given; preview it again and show the user";
+
+export const DEVICE_DIGEST = "the digest the Ledger shows when it signs the release message: compare the two before approving on the device";
+
+export const DEVICE_RELEASE = "the Ledger shows digest when it signs the release message: show it to the user, who approves on the device only if its screen shows the same digest";
 
 export const approvalOf = (message: Uint8Array, memo = ""): string => createHash("sha256").update(message).update(memo).digest("hex").slice(0, 16);
 
@@ -49,7 +53,7 @@ export const walletAttest = define({
     nonce: amount("the escrow intent's nonce"),
     pay_to: account("the wallet to pay"),
     result: optional(amount("the result to attest, a plain count not whole tokens, between the intent's min_result and max_result; default min_result")),
-    delivered_sha256: optional(text(`the sha256, as 64 hex digits, of the work this release pays for: the same hash the worker announced with ${tool("wallet_deliver")}; required for a proof escrow, whose release pays that work's earliest announcer; recorded in a memo this wallet signs with the release, so the payer can check what it receives with ${tool("wallet_receipt")}`)),
+    delivered_sha256: optional(text(`the sha256, as 64 hex digits, of the work this release pays for: the same hash the worker announced with ${tool("wallet_deliver")}; required for a proof escrow, whose release pays that work's earliest announcer; recorded in a memo this wallet signs with the release, so the payer can check what it receives with ${tool("wallet_receipt")}; a Ledger wallet records none`)),
     max_pages: optional(integer(1, MAX_ATTEST_PAGES, MAX_PAGES_INPUT)),
     approval: optional(text("the approval the preview returned; needed with send")),
     send: optional(flag("true signs the attestation and settles; leave out to preview")),
@@ -62,7 +66,9 @@ export const walletAttest = define({
     fee: text("whole tokens kept as fees"),
     result: amount(),
     approval: text("pass it back with send: true; a send that would differ from this preview is refused"),
-    delivered_sha256: optional(text("the sha256 the release records")),
+    digest: optional(text(DEVICE_DIGEST)),
+    delivered_sha256: optional(text("the sha256 the release records in a memo; absent on a Ledger wallet, whose release records none")),
+    recorded: optional(flag("false when the release records no delivered work, as on a Ledger wallet")),
     ...openingOutput,
     summary: list(text(), 8),
     warnings: list(text(), 8),
@@ -72,6 +78,8 @@ export const walletAttest = define({
   }),
   run: async (ctx: AgentContext, input, call: Call) => {
     const signer = await signerOf(ctx);
+    const device = signer.device !== undefined;
+    const payer = device ? await feePayerOf(ctx) : signer;
     const [intent] = await findIntentPda({ owner: input.owner, nonce: input.nonce });
     const [view, { config }] = await Promise.all([ctx.transport.getAccount(intent), loadConfig(ctx.transport)]);
     if (view === null) {
@@ -101,7 +109,7 @@ export const walletAttest = define({
       throw new AgentRefusal("NotInvited", notInvited(input.pay_to, intent));
     }
     const token = await mintOf(ctx.transport, held.inputMint);
-    const payee = await tokenAccountIfMissing(ctx.transport, signer, input.pay_to, held.inputMint, token.tokenProgram);
+    const payee = await tokenAccountIfMissing(ctx.transport, payer, input.pay_to, held.inputMint, token.tokenProgram);
     if (payee.create.length === 0) {
       const existing = await ctx.transport.getAccount(payee.address);
       const holder = existing === null || existing.data.length < 64 ? null : getAddressDecoder().decode(existing.data.subarray(32, 64));
@@ -116,14 +124,14 @@ export const walletAttest = define({
     const shares = splitFees(settleAmount, held.feeBps, held.partnerBps, held.partnerCutBps);
     const treasury =
       shares.protocol > 0n
-        ? await tokenAccountIfMissing(ctx.transport, signer, config.feeRecipient, held.inputMint, token.tokenProgram)
+        ? await tokenAccountIfMissing(ctx.transport, payer, config.feeRecipient, held.inputMint, token.tokenProgram)
         : { create: [] };
     const partnerPaid = shares.partner > 0n;
     const partner =
-      partnerPaid ? await tokenAccountIfMissing(ctx.transport, signer, held.partner, held.inputMint, token.tokenProgram) : { create: [] };
+      partnerPaid ? await tokenAccountIfMissing(ctx.transport, payer, held.partner, held.inputMint, token.tokenProgram) : { create: [] };
     const judge =
       isProof && params.judgeFee > 0n
-        ? await tokenAccountIfMissing(ctx.transport, signer, signer.address, held.inputMint, token.tokenProgram)
+        ? await tokenAccountIfMissing(ctx.transport, payer, signer.address, held.inputMint, token.tokenProgram)
         : { create: [] };
     const attestFields = {
       domain: Uint8Array.from(config.domain),
@@ -139,7 +147,7 @@ export const walletAttest = define({
       ? await attestedProofMessage(signer.address, { ...attestFields, specHash: params.specHash })
       : await attestedFillMessage(signer.address, attestFields);
     const settle = await buildFillAttested({
-      solver: signer,
+      solver: payer,
       owner: input.owner,
       nonce: input.nonce,
       inputMint: held.inputMint,
@@ -178,9 +186,9 @@ export const walletAttest = define({
     }
     const confirmed = { intent, attestor: signer.address, sha256: isProof ? delivered : undefined, pages: input.max_pages ?? ATTEST_PAGES, payees: [input.pay_to], keypair };
     await confirmedRelease(ctx, confirmed);
-    const memoText = delivered === undefined ? "" : releaseMemo(delivered, salt);
+    const memoText = delivered === undefined || device ? "" : releaseMemo(delivered, salt);
     const memo =
-      delivered === undefined
+      memoText === ""
         ? []
         : [{ programAddress: MEMO_PROGRAM_ADDRESS, accounts: [{ address: signer.address, role: AccountRole.READONLY_SIGNER, signer }], data: new TextEncoder().encode(memoText) }];
     const approval = approvalOf(message, memoText);
@@ -189,8 +197,9 @@ export const walletAttest = define({
     }
     const prepared =
       input.send === true
-        ? preparedView(await prepare(ctx.transport, [...setup, buildEd25519Instruction({ publicKey: signer.address, signature: await signer.signBytes(message), message }), settle, ...memo], signer.address))
+        ? preparedView(await prepare(ctx.transport, [...setup, buildEd25519Instruction({ publicKey: signer.address, signature: await signer.signBytes(message), message }), settle, ...memo], payer.address))
         : undefined;
+    const paidBy = device ? "the fee payer" : "this wallet";
     const view2 = {
       intent,
       pay_to: input.pay_to,
@@ -199,23 +208,25 @@ export const walletAttest = define({
       fee: formatAmount(shares.protocol + shares.partner, token.decimals),
       result,
       approval,
-      ...(delivered === undefined ? {} : { delivered_sha256: delivered }),
+      ...(device ? { digest: envelopeDigest(message) } : {}),
+      ...(delivered === undefined ? {} : device ? { recorded: false } : { delivered_sha256: delivered }),
       summary: [
         `Pays: ${paid} of ${name} to ${input.pay_to} from ${input.owner}'s escrow${held.inputMint === NATIVE_MINT ? WRAPPED : ""}`,
         ...(isProof && params.judgeFee > 0n ? [`Pays the judge: ${formatAmount(params.judgeFee, token.decimals)} of ${name} to this wallet, carved out of the escrow`] : []),
         ...(isProof ? [`Binds: the result to the committed spec ${getBase16Decoder().decode(params.specHash)}`] : []),
         `Attests: result ${result}, signed by this server's wallet as the escrow's attestor`,
-        ...(delivered === undefined ? [] : [`Records: the delivered work's sha256 ${delivered}${salt === undefined ? "" : " and its announcer's salt"}, in a memo this wallet signs with the release`]),
+        ...(delivered === undefined || device ? [] : [`Records: the delivered work's sha256 ${delivered}${salt === undefined ? "" : " and its announcer's salt"}, in a memo this wallet signs with the release`]),
+        ...(device ? [`Signs: only the release message on the Ledger, which shows digest ${envelopeDigest(message)}; the fee payer ${payer.address} signs and pays the transaction, so no memo records the delivered work`] : []),
         ...(openings.length === 0 ? [] : [`Opens: the salts of ${openings.reduce((n, o) => n + o.salts.length, 0)} earlier announcement(s), in ${openings.length} more transaction(s) after the release`]),
-        ...(payee.create.length === 0 ? [] : [`Setup: creates ${input.pay_to}'s ${name} account, paid by this wallet`]),
-        ...(treasury.create.length === 0 ? [] : [`Setup: creates the engine treasury's ${name} account for the fee, paid by this wallet`]),
-        ...(partner.create.length === 0 ? [] : [`Setup: creates the partner ${held.partner}'s ${name} account for its fee, paid by this wallet`]),
+        ...(payee.create.length === 0 ? [] : [`Setup: creates ${input.pay_to}'s ${name} account, paid by ${paidBy}`]),
+        ...(treasury.create.length === 0 ? [] : [`Setup: creates the engine treasury's ${name} account for the fee, paid by ${paidBy}`]),
+        ...(partner.create.length === 0 ? [] : [`Setup: creates the partner ${held.partner}'s ${name} account for its fee, paid by ${paidBy}`]),
       ],
       warnings: settlementWarnings(params),
       prepared,
     };
-    const done = await sent(ctx, signer, view2, input.send, call, {
-      preview: PREVIEW_APPROVAL_NEXT,
+    const done = await sent(ctx, payer, view2, input.send, call, {
+      preview: device ? `${PREVIEW_APPROVAL_NEXT}; ${DEVICE_RELEASE}` : PREVIEW_APPROVAL_NEXT,
       done: `released to ${input.pay_to}; ${tool("wallet_feedback")} to rate`,
     });
     return "signature" in done ? { ...done, ...(await sendOpenings(ctx, signer, signer.address, openings)) } : done;

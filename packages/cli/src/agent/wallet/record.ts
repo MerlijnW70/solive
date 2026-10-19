@@ -21,7 +21,7 @@ import { AgentRefusal } from "../problems.js";
 import { InvalidInput, account, amount, flag, list, object, optional, text } from "../schema.js";
 import { preparedView } from "../shapes.js";
 import { prepare } from "../prepare.js";
-import { PREVIEW_FIRST, signerOf, sent, sha256Of, walletKeypair } from "./guard.js";
+import { deviceOutput, PREVIEW_FIRST, signerOf, sent, sha256Of, walletKeypair } from "./guard.js";
 import { HISTORY_TOO_LONG } from "./delivery.js";
 import { RELEASE_UNKNOWN, outlives, releaseLookup, aroundRelease, namedRelease, releasedMint, heldMint, splitRecipients } from "./releases.js";
 
@@ -232,6 +232,7 @@ export const walletRecordDelivery = define({
     memo: text("the memo the transaction records"),
     summary: list(text(), 8),
     warnings: list(text(), 8),
+    ...deviceOutput,
     sent: flag(),
     signature: optional(text()),
     next: optional(text()),

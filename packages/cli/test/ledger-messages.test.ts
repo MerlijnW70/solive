@@ -2,7 +2,7 @@ import { createHash, getRandomValues } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Address, generateKeyPairSigner, getAddressEncoder, getBase58Encoder, type Instruction, type KeyPairSigner, lamports } from "@solana/kit";
+import { type Address, createNoopSigner, generateKeyPairSigner, getAddressEncoder, getBase58Encoder, type Instruction, type KeyPairSigner, lamports } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
@@ -18,15 +18,17 @@ import {
   sortMembers,
   splitCosignEnvelope,
 } from "@intent-engine/core";
-import { cannotSignMessages, committeeJudged, createClient, LEDGER_ERRORS, LEDGER_FORMS, LedgerError, ledgerSigner, notOwnEnvelope, type OpenTransport, type Transport } from "@intent-engine/client";
+import { cannotSignMessages, committeeJudged, createClient, FEE_PAYER_ALONE, LEDGER_ERRORS, LEDGER_FORMS, LedgerError, ledgerSigner, MESSAGE_ONLY, messageOnly, notOwnEnvelope, type OpenTransport, type Transport } from "@intent-engine/client";
+import { getTransferSolInstruction } from "@solana-program/system";
 import { parse } from "../src/args.js";
 import { DIGEST_NEXT } from "../src/judge-digest.js";
-import { sealedOnDevice } from "../src/judge.js";
+import { DEVICE_PREVIEW, FEE_PAYER_IS_JUDGE, sealedOnDevice } from "../src/judge.js";
+import { FEE_PAYER_FOR_LEDGER, FEE_PAYER_KEY_FILE, ledgerNeedsFeePayer } from "../src/arg-values.js";
 import { LEDGER_COMMANDS, needsKeyFile, signsOnDevice } from "../src/ledger-keys.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main } from "../src/main.js";
 import { sealedDelivery } from "./announce.js";
 import { ata, balance, creation, funded, h, NOW, runtime, transport, type World, world } from "./harness.js";
-import { BLIND_OFF, BLIND_ON, CONFIG, type Device, device, deviceKey, found, type Key, MESSAGE, messageThen, OK, REJECT, SIGN, transactionThen, TransportError } from "./ledger-device.js";
+import { CONFIG, type Device, device, deviceKey, found, type Key, MESSAGE, messageThen, REJECT, SIGN, transactionThen, TransportError } from "./ledger-device.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
 const SPEC = `# Count words\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
@@ -70,7 +72,7 @@ const statusOf = (intent: Address) => {
   return view.exists ? getIntentDecoder().decode(view.data).status : undefined;
 };
 
-type Job = { w: World; key: Key; worker: Address; intent: Address; spec: string; artifact: string };
+type Job = { w: World; key: Key; worker: Address; intent: Address; spec: string; artifact: string; payer: KeyPairSigner; keys: Record<string, KeyPairSigner> };
 
 async function job(attestorOf?: (key: Key) => Promise<Address>, announce = false): Promise<Job> {
   const w = await world();
@@ -87,10 +89,15 @@ async function job(attestorOf?: (key: Key) => Promise<Address>, announce = false
   const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
   const announced = await sealedDelivery(intent, worker, sha(COUNT).toString("hex"), "https://" + "example.org/count.mjs", [attestor]);
   h.engineLog = [...(announce ? [{ signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [announced], feePayer: worker }] : []), creation(intent)];
-  return { w, key, worker, intent, spec, artifact };
+  const payer = await funded();
+  return { w, key, worker, intent, spec, artifact, payer, keys: { "payer.json": payer } };
 }
 
-const judging = (j: Job, path = PATH) => ["judge", "--keypair", path, "--owner", j.w.owner.address, "--nonce", "0", "--spec", j.spec, "--artifact", j.artifact, "--sandbox", "viper", "--pay-to", j.worker];
+const judging = (j: Job, path = PATH) => [
+  "judge", "--keypair", path, "--owner", j.w.owner.address, "--nonce", "0", "--spec", j.spec, "--artifact", j.artifact, "--sandbox", "viper", "--pay-to", j.worker, "--fee-payer", "payer.json",
+];
+
+const kinds = (ledger: Device) => ledger.signed.map(({ kind }) => kind);
 
 describe("a judge on a Ledger", () => {
   it("judge digest prints the digest the Ledger then signs, as the program's offchain_envelope, for a release that lands in LiteSVM", async () => {
@@ -101,15 +108,12 @@ describe("a judge on a Ledger", () => {
     const printed = digest.json();
     expect(printed).toEqual({ intent: j.intent, judge: j.key.address, pay_to: j.worker, payee, result: "1", digest: expect.stringMatching(/^[0-9a-f]{64}$/), next: DIGEST_NEXT });
     const sent = recording();
-    const ledger = device(j.key, [...found(LEVELS, j.key), ...messageThen(), ...transactionThen()]);
-    const judged = await run([...judging(j), "--yes"], ledger);
+    const ledger = device(j.key, [...found(LEVELS, j.key), ...messageThen()]);
+    const judged = await run([...judging(j), "--yes"], ledger, j.keys);
     expect([judged.code, judged.err]).toEqual([EXIT_OK, ""]);
     ledger.store.ensureQueueEmpty();
-    expect(judged.json()).toMatchObject({ verdict: "pass", payTo: j.worker, signature: expect.any(String) });
-    expect(ledger.signed.map(({ kind, path }) => [kind, path])).toEqual([
-      [MESSAGE, LEVELS],
-      [SIGN, LEVELS],
-    ]);
+    expect(judged.json()).toMatchObject({ verdict: "pass", payTo: j.worker, signature: expect.any(String), digest: printed["digest"], feePayer: j.payer.address });
+    expect(ledger.signed.map(({ kind, path }) => [kind, path])).toEqual([[MESSAGE, LEVELS]]);
     const envelope = ledger.signed[0]?.bytes ?? new Uint8Array();
     expect(envelope).toEqual(programEnvelope(j.key.address, String(printed["digest"])));
     const signature = Uint8Array.from(getBase58Encoder().encode(ledger.signatures[0] ?? ""));
@@ -123,7 +127,7 @@ describe("a judge on a Ledger", () => {
   it("refuses announced work, whose sealed salts only a key file opens, before asking the Ledger to sign", async () => {
     const j = await job(undefined, true);
     const ledger = device(j.key, found(LEVELS, j.key));
-    const refused = await run([...judging(j), "--yes"], ledger);
+    const refused = await run([...judging(j), "--yes"], ledger, j.keys);
     expect([refused.code, refused.err, refused.out]).toEqual([EXIT_FAILED, sealedOnDevice(PATH, j.intent), ""]);
     ledger.store.ensureQueueEmpty();
     expect(ledger.signed).toEqual([]);
@@ -140,14 +144,15 @@ describe("a judge on a Ledger", () => {
     expect(sent).toEqual([]);
   });
 
-  it("previews a release without asking the Ledger to sign", async () => {
+  it("previews a release without asking the Ledger to sign, showing the digest it will sign", async () => {
     const j = await job();
     const ledger = device(j.key, found(LEVELS, j.key));
-    const previewed = await run(judging(j), ledger);
+    const previewed = await run(judging(j), ledger, j.keys);
     expect([previewed.code, previewed.err]).toEqual([EXIT_OK, ""]);
     ledger.store.ensureQueueEmpty();
     expect(ledger.signed).toEqual([]);
-    expect(previewed.json()).toMatchObject({ verdict: "pass", signature: null });
+    const digest = await run(["judge", "digest", "--owner", j.w.owner.address, "--nonce", "0", "--pay-to", j.worker]);
+    expect(previewed.json()).toMatchObject({ verdict: "pass", signature: null, digest: digest.json()["digest"], next: DEVICE_PREVIEW });
     expect(previewed.json()["simulated"]).toBeUndefined();
     expect(statusOf(j.intent)).toBe(IntentStatus.Open);
   });
@@ -167,12 +172,10 @@ describe("a judge on a Ledger", () => {
       [LEDGER_ERRORS.noApp, device(j.key, [[CONFIG, "6e01"]])],
       [LEDGER_ERRORS.rejected, device(j.key, [...found(LEVELS, j.key), [MESSAGE, REJECT]])],
       [LEDGER_ERRORS.locked, device(j.key, [...found(LEVELS, j.key), [MESSAGE, "6982"]])],
-      [LEDGER_ERRORS.blindSigning, device(j.key, [...found(LEVELS, j.key), [MESSAGE, OK], [CONFIG, BLIND_OFF]])],
-      [LEDGER_ERRORS.rejected, device(j.key, [...found(LEVELS, j.key), [MESSAGE, OK], [CONFIG, BLIND_ON], [SIGN, REJECT]])],
     ];
     for (const [error, ledger] of cases) {
       const sent = recording();
-      const result = await run([...judging(j), "--yes"], ledger);
+      const result = await run([...judging(j), "--yes"], ledger, j.keys);
       expect([result.code, result.err, result.out]).toEqual([EXIT_FAILED, error, ""]);
       ledger.store.ensureQueueEmpty();
       expect(sent).toEqual([]);
@@ -194,7 +197,7 @@ describe("a judge on a Ledger", () => {
     });
     const j = c;
     const judged = device(j.key, found(LEVELS, j.key));
-    const asCommittee = await run([...judging(c), "--yes"], judged);
+    const asCommittee = await run([...judging(c), "--yes"], judged, c.keys);
     expect([asCommittee.code, asCommittee.err, asCommittee.out]).toEqual([EXIT_USAGE, needsKeyFile("judge", PATH), ""]);
     judged.store.ensureQueueEmpty();
     expect(judged.signed).toEqual([]);
@@ -228,7 +231,7 @@ describe("a judge on a Ledger", () => {
   it("a message signature from the device that does not verify for its key is refused", async () => {
     const key = await deviceKey();
     const other = await deviceKey();
-    const lying = device({ address: key.address, secret: other.secret }, [...found(LEVELS, key), ...messageThen()]);
+    const lying = device({ ...key, secret: other.secret }, [...found(LEVELS, key), ...messageThen()]);
     const signer = await ledgerSigner(PATH, lying.open);
     const envelope = programEnvelope(key.address, "ab".repeat(32));
     await expect(signer.signMessages([{ content: envelope, signatures: {} }])).rejects.toEqual(
@@ -236,6 +239,49 @@ describe("a judge on a Ledger", () => {
     );
     lying.store.ensureQueueEmpty();
     expect(lying.signed.map(({ bytes }) => bytes)).toEqual([envelope]);
+  });
+
+  it("a host that appends an instruction to the release cannot get the Ledger to sign it", async () => {
+    const j = await job();
+    const thief = (await generateKeyPairSigner()).address;
+    const through: Transport = {
+      ...transport,
+      send: async (instructions, payer) =>
+        transport.send([...instructions, getTransferSolInstruction({ source: createNoopSigner(j.key.address), destination: thief, amount: 1_000_000n })], payer),
+    };
+    h.through = through;
+    const ledger = device(j.key, [...found(LEVELS, j.key), ...messageThen()]);
+    const judged = await run([...judging(j), "--yes"], ledger, j.keys);
+    expect([judged.code, judged.err]).toEqual([EXIT_FAILED, `Transaction is missing signatures for addresses: ${j.key.address}.`]);
+    ledger.store.ensureQueueEmpty();
+    expect(kinds(ledger)).toEqual([MESSAGE]);
+    expect(ledger.signed[0]?.bytes.subarray(0, 16)).toEqual(Uint8Array.from([0xff, ...ascii("solana offchain")]));
+    expect(h.svm.getAccount(thief).exists).toBe(false);
+    expect(statusOf(j.intent)).toBe(IntentStatus.Open);
+    const direct = device(j.key, found(LEVELS, j.key));
+    const held = messageOnly(await ledgerSigner(PATH, direct.open));
+    await expect(held.signTransactions([])).rejects.toEqual(new LedgerError(MESSAGE_ONLY));
+    direct.store.ensureQueueEmpty();
+    expect(direct.signed).toEqual([]);
+  });
+
+  it("a judge on a Ledger without --fee-payer is refused naming the option, and the fee payer is a key file other than the judge", async () => {
+    const owner = "11111111111111111111111111111111";
+    const shape = ["judge", "--owner", owner, "--nonce", "0", "--spec", "SPEC.md", "--artifact", "work.mjs", "--sandbox", "viper"];
+    expect(() => parse([...shape, "--keypair", PATH])).toThrow(ledgerNeedsFeePayer(PATH));
+    expect(() => parse([...shape.slice(0, -4), "--watch", "--sandbox", "viper", "--keypair", PATH])).toThrow(ledgerNeedsFeePayer(PATH));
+    expect(() => parse([...shape, "--keypair", PATH, "--fee-payer", "usb://ledger"])).toThrow(FEE_PAYER_KEY_FILE);
+    expect(() => parse([...shape, "--keypair", "judge.json", "--fee-payer", "payer.json"])).toThrow(FEE_PAYER_FOR_LEDGER);
+    expect(parse([...shape, "--keypair", PATH, "--fee-payer", "payer.json"])).toMatchObject({ keypair: PATH, feePayer: "payer.json" });
+    expect(parse([...shape, "--keypair", "judge.json"])).not.toHaveProperty("feePayer");
+    const j = await job();
+    const ledger = device(j.key, found(LEVELS, j.key));
+    const sent = recording();
+    const refused = await run([...judging(j).slice(0, -2), "--fee-payer", "self.json", "--yes"], ledger, { "self.json": j.key.signer });
+    expect([refused.code, refused.err]).toEqual([EXIT_FAILED, FEE_PAYER_IS_JUDGE]);
+    expect([ledger.signed, sent]).toEqual([[], []]);
+    const settling = { judge: j.payer, feePayer: j.payer, owner: j.w.owner.address, nonce: 0n, payTo: j.worker, result: 1n, deliveredSha256: "ab".repeat(32) };
+    await expect(createClient({ url: "http://cluster", transport }).settleProof(settling)).rejects.toEqual(new RangeError(FEE_PAYER_ALONE));
   });
 
   it("judge digest reads only the escrow and its payee, and takes no key", () => {
@@ -256,8 +302,8 @@ describe("a judge on a Ledger", () => {
   it("judge, judge --watch, committee release and signed prepare take every Ledger form", () => {
     const owner = "11111111111111111111111111111111";
     const shapes = [
-      ["judge", "--owner", owner, "--nonce", "0", "--spec", "SPEC.md", "--artifact", "work.mjs", "--sandbox", "viper"],
-      ["judge", "--owner", owner, "--nonce", "0", "--spec", "SPEC.md", "--run", "node check.mjs", "--watch"],
+      ["judge", "--owner", owner, "--nonce", "0", "--spec", "SPEC.md", "--artifact", "work.mjs", "--sandbox", "viper", "--fee-payer", "payer.json"],
+      ["judge", "--owner", owner, "--nonce", "0", "--spec", "SPEC.md", "--run", "node check.mjs", "--watch", "--fee-payer", "payer.json"],
       ["committee", "release", "--vote", "vote.json"],
       ["signed", "prepare", "swap", "--out", "s.json", "--input-mint", owner, "--output-mint", owner, "--expires-in", "60", "--amount-in", "1", "--min-out", "1", "--units", "raw"],
     ];

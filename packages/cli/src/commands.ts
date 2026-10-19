@@ -107,7 +107,17 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       const wallet =
         command.wallet === null
           ? {}
-          : { wallet: { url: command.url, files: runtime, env: runtime.env, sleep: runtime.sleep, now: runtime.now, limits: walletGuard(command.wallet, runtime.saleBook) } };
+          : {
+              wallet: {
+                url: command.url,
+                files: runtime,
+                env: runtime.env,
+                sleep: runtime.sleep,
+                now: runtime.now,
+                limits: walletGuard(command.wallet, runtime.saleBook),
+                ...(command.feePayer === undefined ? {} : { feePayer: command.feePayer }),
+              },
+            };
       if (command.wallet !== null) {
         transport.engineTransactions(ESTIMATE_SCAN).catch(() => undefined);
       }
@@ -122,7 +132,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       return null;
     }
     case "setup":
-      return setup(transport, runtime, command.url, command.keypair, false, command.confirmUrl);
+      return setup(transport, runtime, command.url, command.keypair, false, command.confirmUrl, command.confirmUrl === undefined ? undefined : runtime.transport(command.confirmUrl));
     case "balance": {
       const owner = command.owner ?? (await runtime.loadSigner(command.keypair ?? "")).address;
       return balances(transport, owner, command.mints ?? defaultMints(command.url));
@@ -245,6 +255,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     }
     case "solver-float":
     case "solver-float-show":
+    case "solver-float-revoke":
       return floatCommand(command, runtime, transport);
     case "crank": {
       const cranker = await runtime.loadSigner(command.keypair);

@@ -157,7 +157,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
 | `pay_to` | address | yes | the wallet to pay |
 | `result` | whole number as a decimal string | no | the result to attest, a plain count not whole tokens, between the intent's min_result and max_result; default min_result |
-| `delivered_sha256` | string | no | the sha256, as 64 hex digits, of the work this release pays for: the same hash the worker announced with solive_wallet_deliver; required for a proof escrow, whose release pays that work's earliest announcer; recorded in a memo this wallet signs with the release, so the payer can check what it receives with solive_wallet_receipt |
+| `delivered_sha256` | string | no | the sha256, as 64 hex digits, of the work this release pays for: the same hash the worker announced with solive_wallet_deliver; required for a proof escrow, whose release pays that work's earliest announcer; recorded in a memo this wallet signs with the release, so the payer can check what it receives with solive_wallet_receipt; a Ledger wallet records none |
 | `max_pages` | integer 1..100000 | no | pages of 1000 signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default 1000; raise it when the release is refused because the record of announced work is incomplete |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs the attestation and settles; leave out to preview |

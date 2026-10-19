@@ -31,7 +31,7 @@ const SPACED = /^(claims|committee|judge|mandate|profile|signed|solver)-/;
 
 export function commandName(command: Command): string {
   const name = command.name === "flow" ? command.flow : command.name === "lookup" ? command.lookup : command.name;
-  return name.replace(SPACED, "$1 ");
+  return name.replace(SPACED, "$1 ").replace(/^solver float-revoke$/, "solver float");
 }
 
 function keyPaths(command: Command): string[] {

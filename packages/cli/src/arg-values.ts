@@ -1,6 +1,8 @@
 import { MAX_PRIORITY_PRICE, type Priority } from "./compute.js";
 import { tokenNamed } from "./tokens.js";
 import { clusterUrl } from "./clusters.js";
+import { redactUrl } from "./render.js";
+import { isLedgerPath } from "@intent-engine/client";
 import {
   ACCEPTS,
   GLOBAL_OPTIONS,
@@ -29,10 +31,70 @@ import {
 
 export class UsageError extends Error {}
 
-export const confirmUrlOf = (values: Values): { confirmUrl?: string } => {
-  const text = values["confirm-url"];
-  return text === undefined ? {} : { confirmUrl: clusterUrl(text) };
+const LOOPBACK = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+const endpoint = (url: string): string => {
+  try {
+    const parsed = new URL(url);
+    const host = parsed.hostname.replace(/\.$/, "");
+    const query = [...parsed.searchParams].map(([name, value]) => [name, value].join("=")).sort();
+    return [parsed.protocol, LOOPBACK.has(host) ? "loopback" : host, parsed.port, parsed.pathname.replace(/\/+$/, ""), ...query].join(" ");
+  } catch {
+    return url;
+  }
 };
+
+export const sameNode = (confirm: string): string =>
+  `--confirm-url ${redactUrl(confirm)} names the same RPC node as --url, so it confirms nothing; name another node, or pass --no-confirm-url to read one node this run`;
+
+export const confirmUrlOf = (values: Values, url: string): { confirmUrl?: string } => {
+  const text = values["confirm-url"];
+  if (text === undefined) {
+    return {};
+  }
+  const confirmUrl = clusterUrl(text);
+  if (endpoint(confirmUrl) === endpoint(url)) {
+    throw new UsageError(sameNode(confirmUrl));
+  }
+  return { confirmUrl };
+};
+
+export const FEE_PAYER_KEY_FILE = "--fee-payer takes a key file, never a Ledger: it signs and pays the release transaction, and the Ledger signs only the release message";
+
+export const FEE_PAYER_FOR_LEDGER = "--fee-payer pays for a judge on a Ledger; a judge with a key file signs and pays its own release";
+
+export const ledgerNeedsFeePayer = (path: string): string =>
+  `a judge on the Ledger ${path} signs only the release message, never a transaction, so another key must sign and pay the release: pass --fee-payer <key file>`;
+
+export const FEE_PAYER_NEEDS_WALLET = "mcp --fee-payer pays the releases a Ledger wallet judges, so it needs --wallet";
+
+export function mcpFeePayer(values: Values): { feePayer?: string } {
+  const feePayer = values["fee-payer"];
+  if (feePayer === undefined) {
+    return {};
+  }
+  if (values.wallet !== true) {
+    throw new UsageError(FEE_PAYER_NEEDS_WALLET);
+  }
+  if (isLedgerPath(feePayer)) {
+    throw new UsageError(FEE_PAYER_KEY_FILE);
+  }
+  return { feePayer };
+}
+
+export function feePayerOf(values: Values, judge: string): { feePayer?: string } {
+  const feePayer = values["fee-payer"];
+  if (feePayer !== undefined && isLedgerPath(feePayer)) {
+    throw new UsageError(FEE_PAYER_KEY_FILE);
+  }
+  if (feePayer === undefined && isLedgerPath(judge)) {
+    throw new UsageError(ledgerNeedsFeePayer(judge));
+  }
+  if (feePayer !== undefined && !isLedgerPath(judge)) {
+    throw new UsageError(FEE_PAYER_FOR_LEDGER);
+  }
+  return feePayer === undefined ? {} : { feePayer };
+}
 
 export const KIND_NAMES: Record<string, Kind> = {
   swap: Kind.SwapExactIn,

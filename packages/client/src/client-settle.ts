@@ -167,12 +167,18 @@ function recorded(payer: TransactionSigner, deliveredSha256: string | undefined,
   return deliveredSha256 === undefined ? [] : [memoInstruction(payer, releaseMemo(deliveredSha256, checkedSalt(deliveredSalt, deliveredSha256)))];
 }
 
+export const FEE_PAYER_ALONE =
+  "feePayer signs and pays the release alone, so it takes no payer and no deliveredSha256: only a memo the judge signs records the delivered work";
+
 export function proofSettlement(context: ClientContext) {
   const settleProof = async (input: SettleProofInput) => {
-    const { judge } = input;
+    const { judge, feePayer } = input;
     const deliveredSha256 = checkedSha256(input.deliveredSha256);
     checkedSalt(input.deliveredSalt, deliveredSha256);
-    const payer = input.payer ?? judge;
+    if (feePayer !== undefined && (deliveredSha256 !== undefined || input.payer !== undefined)) {
+      throw new RangeError(FEE_PAYER_ALONE);
+    }
+    const payer = feePayer ?? input.payer ?? judge;
     const plan = await planRelease(context, { ...input, payer }, async (attestor, intent) => {
       if (attestor !== judge.address) {
         throw new NotSettleable(intent, `names ${attestor} as its judge, not ${judge.address}`);
@@ -180,7 +186,10 @@ export function proofSettlement(context: ClientContext) {
       return { feeOwner: judge.address, judge: judge.address };
     });
     const message = await attestedProofMessage(judge.address, plan.proof);
-    const settle = await buildFillAttested({ ...plan.fill, ...plan.claims, solver: judge });
+    const settle = await buildFillAttested({ ...plan.fill, ...plan.claims, solver: feePayer ?? judge });
+    if (feePayer !== undefined) {
+      return context.send([...plan.setup, await signEd25519Instruction(judge, message), settle], feePayer);
+    }
     return context.send(
       [...plan.setup, await signEd25519Instruction(judge, message), settle, ...recorded(judge, deliveredSha256, input.deliveredSalt)],
       payer,

@@ -11,6 +11,12 @@ export const OWNER_IS_SOLVER = "the inventory owner must be another key than the
 
 export const ALLOWANCE_LOW = "the allowance left is below the largest fill it was asked to cover; approve more with solver float";
 
+export const OWN_INTENT = "the intent's owner or receiver is the inventory owner, so a fill would pay the owner from its own float; fill it without --inventory-owner";
+
+export function ownIntent(owner: Address | undefined, intent: { owner: Address; receiver: Address }, ownerOutput: Address): string | null {
+  return owner !== undefined && (intent.owner === owner || intent.receiver === ownerOutput) ? OWN_INTENT : null;
+}
+
 export type Low = { account: Address; left: bigint; needed: bigint; warning: string };
 
 export type Floats = Map<Address, { live: bigint; needed: bigint }>;

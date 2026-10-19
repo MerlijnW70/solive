@@ -1,6 +1,6 @@
 import { createPrivateKey, getRandomValues, type KeyObject, sign } from "node:crypto";
 import { createRequire } from "node:module";
-import { type Address, createKeyPairSignerFromPrivateKeyBytes, getAddressEncoder, getBase58Decoder } from "@solana/kit";
+import { type Address, createKeyPairSignerFromPrivateKeyBytes, getAddressEncoder, getBase58Decoder, type KeyPairSigner } from "@solana/kit";
 import type { LedgerTransport, OpenTransport } from "@intent-engine/client";
 
 type Store = { passed: number; queue: [string, string][]; replayExchange(apdu: Buffer): Buffer; ensureQueueEmpty(): void };
@@ -40,13 +40,13 @@ export const addressApdu = (levels: number[], key: Address): [string, string] =>
   `${hex(getAddressEncoder().encode(key))}${OK}`,
 ];
 
-export type Key = { address: Address; secret: KeyObject };
+export type Key = { address: Address; secret: KeyObject; signer: KeyPairSigner };
 
 export async function deviceKey(): Promise<Key> {
   const seed = getRandomValues(new Uint8Array(32));
   const signer = await createKeyPairSignerFromPrivateKeyBytes(seed);
   const secret = createPrivateKey({ key: Buffer.concat([Buffer.from(PKCS8_ED25519, "hex"), seed]), format: "der", type: "pkcs8" });
-  return { address: signer.address, secret };
+  return { address: signer.address, secret, signer };
 }
 
 export type Signed = { kind: string; path: number[]; bytes: Uint8Array };

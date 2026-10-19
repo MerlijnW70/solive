@@ -10,7 +10,7 @@ import { AgentRefusal } from "./problems.js";
 import { account, amount, choice, flag, InvalidInput, integer, list, nullable, object, optional, text, time } from "./schema.js";
 import { preparedView } from "./shapes.js";
 import { prepare } from "./prepare.js";
-import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent } from "./wallet/guard.js";
+import { deviceOutput, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent } from "./wallet/guard.js";
 
 export const CLAIM_CHANGED =
   "this claim differs from its preview: the escrow, action, seconds or stake changed, or no approval was given; preview it again and show the user";
@@ -87,6 +87,7 @@ export const walletClaim = define({
     action: choice(["take", "drop"] as const),
     approval: text(),
     summary: list(text(), 4),
+    ...deviceOutput,
     sent: flag(),
     signature: optional(text()),
     next: optional(text()),
@@ -150,7 +151,7 @@ export const walletClaim = define({
       action: input.action,
       approval,
       summary,
-      prepared: input.send === true ? preparedView(await prepare(ctx.transport, [instruction], signer.address)) : undefined,
+      prepared: input.send === true || signer.device !== undefined ? preparedView(await prepare(ctx.transport, [instruction], signer.address)) : undefined,
     };
     return sent(ctx, signer, shown, input.send, call, {
       preview: PREVIEW_APPROVAL_NEXT,

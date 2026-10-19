@@ -18,11 +18,13 @@ In PowerShell:
 $env:JUDGE = (intent-engine balance | Out-String | ConvertFrom-Json).address
 ```
 
-The judge's wallet can be a Ledger: pass `--keypair usb://ledger` or another Ledger form to `judge`, with or without `--watch`. Each release then waits for two approvals on the device, first the message over the proof, shown as a hex digest, then the transaction. A preview without `--yes` asks the device for nothing. A committee member can vote on a Ledger too, as below.
+The judge's wallet can be a Ledger: pass `--keypair usb://ledger` or another Ledger form to `judge`, with or without `--watch`, and `--fee-payer <key file>`. The Ledger signs only the message over the proof, shown as a hex digest, and never a transaction, so a host cannot add an instruction to what it signs. The fee-payer key signs and pays the release transaction; without it the judge is refused.
 
-A Ledger cannot open the salts workers seal to the judge, so a judge on a Ledger refuses an escrow with announced work and pays only `--pay-to` when nobody announced; judge announced work with a key file. A worker on a Ledger cannot derive its salt either, so `deliver` refuses it with `NoMessageSigner`.
+A Ledger cannot open the salts workers seal to the judge, so a judge on a Ledger refuses an escrow with announced work and pays only `--pay-to` when nobody announced; judge announced work with a key file. Since the Ledger signs no transaction, its release carries no memo recording the work. A worker on a Ledger cannot derive its salt either, so `deliver` refuses it with `NoMessageSigner`. A committee member can vote on a Ledger too, as below.
 
-Before you approve, run `intent-engine judge digest --owner <address> --nonce <n> --pay-to <wallet>` on a second machine. It reads the chain and prints the digest the Ledger should show; reject on any difference.
+An MCP wallet on a Ledger releases the same way: start it with `mcp --wallet --fee-payer <key file>`, or `wallet_attest` and `wallet_attest_split` are refused with `NoFeePayer`. Their previews show the `digest` the device signs. For a transaction the wallet itself signs on the device, the preview shows the `message_hash` the device shows, and a send with the same arguments signs exactly that kept transaction; without one, or once it expired, the send is refused with `DeviceUnpreviewed`.
+
+A preview without `--yes` asks the device for nothing and prints the `digest` it will sign. Before you approve, run `intent-engine judge digest --owner <address> --nonce <n> --pay-to <wallet>` on a second machine. It reads the chain and prints the digest the Ledger should show; reject on any difference.
 
 ## 1. Create a proof escrow
 
@@ -223,7 +225,7 @@ This cannot stop a copier who announces every value of a small answer set first,
 
 `judge`, `committee release` and `mcp` take `--confirm-url <rpc>`, in the forms `--url` takes, to read the escrow and the earliest announcer from a second RPC node too. A release is signed only when both nodes report the same genesis hash, escrow account and earliest announcer. Otherwise, or when the second node cannot be read, it is refused with `ConfirmMismatch` and nothing is sent.
 
-`intent-engine setup --confirm-url <rpc>` saves the second node as the `confirm-url` setting, which these commands use whenever `--confirm-url` is not given. Without either, they print once that they read one node.
+`intent-engine setup --confirm-url <rpc>` checks that the node answers on the same cluster, by genesis hash, then saves it as the `confirm-url` setting. These three commands use the setting whenever `--confirm-url` is not given; other commands, such as `judge digest`, ignore it. `--no-confirm-url` skips the setting for one run. A second node at the same endpoint as `--url` is refused. Without a second node, they print once that they read one node.
 
 ## Judge as a committee
 
@@ -241,7 +243,7 @@ Pass the printed `committee` address as `--attestor` when you create the escrow.
 intent-engine judge --keypair a.json --owner $env:OWNER --nonce $env:NONCE --spec SPEC.md --artifact work.mjs --sandbox viper --verdict a.json.verdict
 ```
 
-A member whose key is on a Ledger votes with `committee vote --keypair usb://ledger` and the same `--owner`, `--nonce`, `--pay-to` and `--result`, plus `--out` for the vote file and `--yes`. The device shows one message that lists every member's key and the release digest. A vote stays valid whichever members reach the threshold.
+A member whose key is on a Ledger votes with `committee vote --keypair usb://ledger` and the same `--owner`, `--nonce`, `--pay-to` and `--result`, plus `--out` for the vote file and `--yes`. The device shows one message that lists every member's key and the release digest, the `digest` the preview prints, and signs no transaction. A vote stays valid whichever members reach the threshold.
 
 Because that message lists every member, a release by a large committee, especially one that also splits the pay, can exceed the size of one Solana transaction; keep committees small or the escrow can only be cancelled.
 

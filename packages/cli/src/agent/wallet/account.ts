@@ -6,7 +6,7 @@ import { listIntents } from "../read.js";
 import { account, amount, choice, flag, list, object, optional, text } from "../schema.js";
 import { prepareCancel } from "../settle.js";
 import { STATUS } from "../../accounts.js";
-import { PREVIEW_FIRST, WALLET_NOTICE, access, testCluster, savedKeypair, signerOf, mintNamed, sent } from "./guard.js";
+import { deviceOutput, PREVIEW_FIRST, WALLET_NOTICE, access, testCluster, savedKeypair, signerOf, mintNamed, sent } from "./guard.js";
 
 const tokenRow = object({
   mint: account(),
@@ -82,6 +82,7 @@ export const walletCancel = define({
     refund: amount("raw input units returned to the wallet"),
     summary: list(text(), 16),
     warnings: list(text(), 8),
+    ...deviceOutput,
     sent: flag(),
     signature: optional(text()),
     next: optional(text()),

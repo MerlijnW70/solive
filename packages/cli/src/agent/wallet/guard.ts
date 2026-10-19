@@ -1,6 +1,8 @@
 import { resolve } from "node:path";
 import {
   type Address,
+  getBase64Encoder,
+  getTransactionDecoder,
   isAddress,
   isSolanaError,
   type KeyPairSigner,
@@ -11,7 +13,7 @@ import {
   type TransactionPartialSigner,
 } from "@solana/kit";
 import { formatAmount, parseAmount } from "@intent-engine/core";
-import { Charged, type DeviceSigner, isLedgerPath, LedgerError, ledgerSigner, neverLanded, openUsb } from "@intent-engine/client";
+import { Charged, type DeviceSigner, isLedgerPath, LedgerError, ledgerSigner, messageHash, neverLanded, openUsb } from "@intent-engine/client";
 import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "../../args.js";
 import { execute, type PreparedView } from "../../flows.js";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
@@ -20,7 +22,7 @@ import type { AgentContext } from "../actions.js";
 import type { Call } from "../claims.js";
 import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
-import { InvalidInput } from "../schema.js";
+import { flag, InvalidInput, optional, text } from "../schema.js";
 import { fileSales, type Sale, type SaleBook, salesPath } from "../sales.js";
 
 export type WalletGuard = { limits: WalletLimits; book: SaleBook };
@@ -34,6 +36,7 @@ export type WalletAccess = {
   sleep(seconds: number): Promise<boolean>;
   now(): bigint;
   limits: WalletGuard;
+  feePayer?: string;
 };
 
 export type Clock = Pick<WalletAccess, "sleep" | "now">;
@@ -182,6 +185,8 @@ function deviceAt(wallet: WalletAccess, path: string): Promise<DeviceSigner> {
   return opening;
 }
 
+const keyFile = (wallet: WalletAccess, path: string): Promise<KeyPairSigner> => wallet.files.loadSigner(path);
+
 export async function signerOf(ctx: AgentContext): Promise<WalletSigner> {
   const wallet = await testCluster(ctx);
   const path = await savedKeypair(wallet);
@@ -193,11 +198,70 @@ export async function signerOf(ctx: AgentContext): Promise<WalletSigner> {
   }
   let key: KeyPairSigner;
   try {
-    key = await wallet.files.loadSigner(path);
+    key = await keyFile(wallet, path);
   } catch {
     throw new AgentRefusal("NoWallet", NO_WALLET);
   }
   return guardedSigner(ctx, key);
+}
+
+export const NO_FEE_PAYER =
+  "this wallet is a Ledger, which signs only the release message, never the release transaction; a fee-payer key must sign and pay it: the user restarts the server with mcp --wallet --fee-payer <key file>";
+
+export async function feePayerOf(ctx: AgentContext): Promise<WalletSigner> {
+  const wallet = access(ctx);
+  if (wallet.feePayer === undefined) {
+    throw new AgentRefusal("NoFeePayer", NO_FEE_PAYER);
+  }
+  return guardedSigner(ctx, await keyFile(wallet, wallet.feePayer));
+}
+
+export const ONE_AT_A_TIME =
+  "this wallet is a Ledger, which signs only a transaction whose message_hash a preview showed, one at a time; send each piece with its own preview and send";
+
+export function oneAtATime(signer: WalletSigner): void {
+  if (signer.device !== undefined) {
+    throw new AgentRefusal("DeviceUnpreviewed", ONE_AT_A_TIME);
+  }
+}
+
+export const deviceOutput = {
+  message_hash: optional(text("on a Ledger wallet, the hash the device shows when it signs this transaction: compare the two before approving")),
+  as_previewed: optional(flag("true on a Ledger wallet's send, which signs the transaction its preview kept: every figure in this output is as of that preview, not re-read at send")),
+};
+
+export const DEVICE_COMPARE = "the Ledger shows message_hash when it signs: show it to the user, who approves on the device only if its screen shows the same hash";
+
+export const DEVICE_UNPREVIEWED =
+  "nothing was signed: a Ledger wallet signs only the transaction a preview showed by message_hash, and no preview with these exact arguments is kept; preview it, show message_hash, then send with the same arguments";
+
+export const DEVICE_EXPIRED =
+  "nothing was signed: the transaction this preview showed has expired; preview it again, show the new message_hash, then send with the same arguments";
+
+const BLOCKHASH_WINDOW = 150n;
+const KEPT_TRANSACTIONS = 16;
+
+type Kept = { view: PreparedView; shown: Record<string, unknown> };
+
+const messageOf = (view: PreparedView): Uint8Array => new Uint8Array(getTransactionDecoder().decode(getBase64Encoder().encode(view.transaction)).messageBytes);
+
+const keptViews = new WeakMap<WalletAccess, Map<string, Kept>>();
+
+function keptOf(wallet: WalletAccess): Map<string, Kept> {
+  const kept = keptViews.get(wallet) ?? new Map<string, Kept>();
+  keptViews.set(wallet, kept);
+  return kept;
+}
+
+function keep(kept: Map<string, Kept>, key: string, view: Kept): void {
+  kept.delete(key);
+  kept.set(key, view);
+  for (const old of kept.keys()) {
+    if (kept.size <= KEPT_TRANSACTIONS) {
+      break;
+    }
+    kept.delete(old);
+  }
 }
 
 export function mintNamed(text: string, url: string, path: string): Address {
@@ -320,12 +384,44 @@ export async function sent(
     undo();
   }
   const { prepared, ...shown } = view as { prepared: PreparedView } & Record<string, unknown>;
+  if (signer.device !== undefined && prepared !== undefined) {
+    return sentOnDevice(ctx, signer, shown, prepared, send, call, next);
+  }
   if (send !== true) {
     return { ...shown, sent: false, next: next?.preview ?? PREVIEW_ONLY };
   }
   await notMainnet(ctx);
   const signature = await execute(ctx.transport, prepared, signer);
   return { ...shown, sent: true, signature, ...(next?.done === undefined ? {} : { next: next.done }) };
+}
+
+async function sentOnDevice(
+  ctx: AgentContext,
+  signer: WalletSigner,
+  shown: Record<string, unknown>,
+  prepared: PreparedView,
+  send: boolean | undefined,
+  call: Call,
+  next?: { preview?: string | undefined; done?: string | undefined },
+) {
+  const kept = keptOf(access(ctx));
+  const key = call.asked ?? "";
+  if (send !== true) {
+    keep(kept, key, { view: prepared, shown });
+    return { ...shown, message_hash: messageHash(messageOf(prepared)), sent: false, next: `${next?.preview ?? PREVIEW_ONLY}; ${DEVICE_COMPARE}` };
+  }
+  const previewed = call.asked === undefined ? undefined : kept.get(key);
+  if (previewed === undefined) {
+    throw new AgentRefusal("DeviceUnpreviewed", DEVICE_UNPREVIEWED);
+  }
+  kept.delete(key);
+  const latest = await ctx.transport.latestBlockhash();
+  if (latest.lastValidBlockHeight - BLOCKHASH_WINDOW > BigInt(previewed.view.last_valid_block_height)) {
+    throw new AgentRefusal("DeviceUnpreviewed", DEVICE_EXPIRED);
+  }
+  await notMainnet(ctx);
+  const signature = await execute(ctx.transport, previewed.view, signer);
+  return { ...previewed.shown, message_hash: messageHash(messageOf(previewed.view)), as_previewed: true, sent: true, signature, ...(next?.done === undefined ? {} : { next: next.done }) };
 }
 
 export function sha256Of(text: string, path: string): string {

@@ -7,7 +7,7 @@ import { AgentRefusal } from "./problems.js";
 import { account, amount, choice, flag, hex32, integer, InvalidInput, list, nullable, object, optional, text, time } from "./schema.js";
 import { preparedView } from "./shapes.js";
 import { prepare } from "./prepare.js";
-import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent } from "./wallet/guard.js";
+import { deviceOutput, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent } from "./wallet/guard.js";
 import { MAX_ATTEST_PAGES, MAX_PAGES_INPUT } from "./wallet/delivery.js";
 
 export const RECORDS_SHOWN = 50;
@@ -148,6 +148,7 @@ export const walletFeedback = define({
     score: integer(0, 100),
     approval: text(),
     summary: list(text(), 4),
+    ...deviceOutput,
     sent: flag(),
     signature: optional(text()),
     next: optional(text()),
@@ -176,7 +177,7 @@ export const walletFeedback = define({
         `Rates: the work escrow ${input.intent} paid for, ${input.score} out of 100, signed by this wallet as its owner`,
         ...(note === undefined ? [] : [`Links: the note with sha256 ${note}`]),
       ],
-      prepared: input.send === true ? preparedView(await prepare(ctx.transport, instructions, signer.address)) : undefined,
+      prepared: input.send === true || signer.device !== undefined ? preparedView(await prepare(ctx.transport, instructions, signer.address)) : undefined,
     };
     return sent(ctx, signer, view, input.send, call, {
       preview: PREVIEW_APPROVAL_NEXT,

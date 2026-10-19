@@ -118,6 +118,27 @@ const savedConfirm = async (files: Files): Promise<string | undefined> => {
   }
 };
 
+export class SecondNodeRefused extends Error {}
+
+export const confirmUnreachable = (url: string, reason: string): string =>
+  `--confirm-url ${redactUrl(url)} could not be read (${reason}), so it was not saved; name a node that answers`;
+
+export const confirmElsewhere = (url: string, first: string, second: string): string =>
+  `--confirm-url ${redactUrl(url)} serves another cluster than --url: genesis hash ${second}, not ${first}, so it was not saved; name a node on the same cluster`;
+
+async function checkedSecond(transport: Transport, confirm: Transport, url: string): Promise<void> {
+  let second: string;
+  try {
+    second = await confirm.genesisHash();
+  } catch (error) {
+    throw new SecondNodeRefused(confirmUnreachable(url, error instanceof Error ? error.message : String(error)));
+  }
+  const first = await transport.genesisHash();
+  if (second !== first) {
+    throw new SecondNodeRefused(confirmElsewhere(url, first, second));
+  }
+}
+
 export async function setup(
   transport: Transport,
   files: Files,
@@ -125,7 +146,11 @@ export async function setup(
   keypair: string | undefined,
   keepSavedUrl = false,
   confirmUrl?: string,
+  confirmTransport?: Transport,
 ): Promise<object> {
+  if (confirmUrl !== undefined && confirmTransport !== undefined) {
+    await checkedSecond(transport, confirmTransport, confirmUrl);
+  }
   const path = expandHome(keypair ?? defaultWallet(files.home), files.home);
   const { signer, created } = await walletAt(files, path);
   const saved = keepSavedUrl ? (await withSettings(files, {}))[ENV_URL] : undefined;

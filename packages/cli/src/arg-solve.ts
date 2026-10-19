@@ -9,11 +9,13 @@ export const BUNDLE_SIZE_NEEDS_JITO = "--bundle-size sets how many fills share o
 
 export const INVENTORY_OWNER_ALONE = "--inventory-owner fills only from that owner's tokens, so it needs --inventory and takes no --jupiter or --issue";
 
-export const SOLVER_NEEDS_FLOAT = "solver needs float or float show";
+export const SOLVER_NEEDS_FLOAT = "solver needs float, float show or float revoke";
 
 export const FLOAT_SHOW_TAKES = "solver float show takes --owner, --delegate and --mints";
 
 export const FLOAT_TAKES = "solver float takes --keypair, --delegate, --mint and --amount";
+
+export const FLOAT_REVOKE_TAKES = "solver float revoke takes --keypair and --mint";
 
 export const MAX_FOLLOW_INTERVAL = 3_600;
 export const WATCH_INTERVAL = 5;
@@ -63,13 +65,19 @@ export function solveOf(remote: Remote, values: Values): Command {
     watch: values.watch === true ? parseBounded(values.interval ?? String(WATCH_INTERVAL), "interval", MAX_FOLLOW_INTERVAL, 1) : null,
     ...(values.watch === true ? { quoteTtl: parseBounded(values["quote-ttl"] ?? String(QUOTE_TTL), "quote-ttl", MAX_FOLLOW_INTERVAL) } : {}),
     ...(values.watch === true && values.stats === true ? { stats: true } : {}),
-    ...confirmUrlOf(values),
+    ...confirmUrlOf(values, remote.url),
   };
 }
 
 export function solverOf(sub: string | undefined, third: string | undefined, remote: Remote, values: Values, keyed: boolean): Command {
-  if (sub !== "float" || (third !== undefined && third !== "show")) {
+  if (sub !== "float" || (third !== undefined && third !== "show" && third !== "revoke")) {
     throw new UsageError(SOLVER_NEEDS_FLOAT);
+  }
+  if (third === "revoke") {
+    if (values.owner !== undefined || values.delegate !== undefined || values.mints !== undefined || values.amount !== undefined || values.units !== undefined) {
+      throw new UsageError(FLOAT_REVOKE_TAKES);
+    }
+    return { name: "solver-float-revoke", ...remote, keypair: required(values, "keypair"), yes: values.yes === true, mint: key(values, "mint") };
   }
   if (third === "show") {
     if (keyed || values.yes !== undefined || values.mint !== undefined || values.amount !== undefined || values.units !== undefined) {

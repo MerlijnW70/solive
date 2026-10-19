@@ -8,13 +8,14 @@ import { AgentRefusal, problemOf } from "../problems.js";
 import { account, amount, flag, list, object, optional, type Schema, text } from "../schema.js";
 import { orderSchema } from "../shapes.js";
 import type { Sale } from "../sales.js";
-import { walletEmpty, access, signerOf, mintNamed, limited, bookOf, live, salesOf, checkSale, sent, refusedBeforeSending } from "./guard.js";
+import { walletEmpty, access, signerOf, mintNamed, limited, bookOf, live, salesOf, checkSale, sent, refusedBeforeSending, deviceOutput } from "./guard.js";
 
 export const offerFields = {
   intent: account(),
   nonce: amount(),
   summary: list(text(), 24),
   warnings: list(text(), 16),
+  ...deviceOutput,
   sent: flag(),
   signature: optional(text()),
   next: optional(text()),

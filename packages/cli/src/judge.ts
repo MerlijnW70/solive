@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
-import { type Address, getBase58Decoder, type Signature } from "@solana/kit";
+import { type Address, getBase58Decoder, type Signature, type TransactionPartialSigner } from "@solana/kit";
 import { decodeParams, IntentStatus, Kind, openingMemo, UNOPENED } from "@intent-engine/core";
 import {
   chainTime,
@@ -15,6 +15,7 @@ import {
   earlierSalts,
   loadCommittee,
   loadIntent,
+  messageOnly,
   openingInstructions,
   openingsOf,
   SIGNATURE_PAGE,
@@ -78,6 +79,8 @@ export type Verdict = {
   payTo: Address;
   signature: Signature | null;
   simulated?: SimulatedRelease;
+  digest?: string;
+  feePayer?: Address;
   committee?: Address;
   vote?: VoteFile;
   openings?: { memo: string; signature: Signature | null; error?: string }[];
@@ -94,6 +97,11 @@ export const pagesRead = (pages: number): string =>
 
 export const sealedOnDevice = (path: string, intent: Address): string =>
   `a judge on the Ledger ${path} cannot open the salts sealed in the announcements for intent ${intent}, so it cannot know which announcement came first; judge with a key file; nothing was run or paid`;
+
+export const DEVICE_PREVIEW =
+  "nothing was sent; with --yes the Ledger signs only the release message and shows this digest: compare it with judge digest run on another machine before pressing approve, and reject on any difference";
+
+export const FEE_PAYER_IS_JUDGE = "--fee-payer is the judge's own key; name another key file to sign and pay the release";
 
 export const resultOutside = (result: bigint, intent: Address, min: bigint, max: bigint): string =>
   `--result ${result} lies outside the results intent ${intent} accepts, ${min} to ${max}; nothing was run or paid`;
@@ -129,7 +137,12 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
     await rm(command.verdict, { force: true });
   }
   await sandboxReady(command.sandbox, dockerEnv(process.env));
-  const signer = await messageSigner(runtime, command.keypair);
+  const held = await messageSigner(runtime, command.keypair);
+  const signer = isDevice(held) ? messageOnly(held) : held;
+  const feePayer = command.feePayer === undefined ? undefined : await runtime.loadSigner(command.feePayer);
+  if (feePayer?.address === signer.address) {
+    throw new JudgeRefused(FEE_PAYER_IS_JUDGE);
+  }
   const { address, attestor, committee, specHash, minResult, maxResult } = await escrowFor(
     transport,
     signer.address,
@@ -185,7 +198,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   const signals = holdSignals();
   try {
     const confirm = command.confirmUrl === undefined ? undefined : runtime.transport(command.confirmUrl);
-    const judged = { address, attestor, committee, specHash, sha256, salt, earlier, payTo, result, read, specBytes, check, viper, beacon, confirm, keypair };
+    const judged = { address, attestor, committee, specHash, sha256, salt, earlier, payTo, result, read, specBytes, check, viper, beacon, confirm, keypair, feePayer };
     return await checkAndSettle(command, transport, signer, signals, judged);
   } finally {
     signals.release();
@@ -198,21 +211,22 @@ export const notSent = (signal: InterruptSignal): string =>
 export const mayHaveLanded = (signal: InterruptSignal, address: Address, signature: Signature | undefined): string =>
   `the check passed and the release was sent${signature === undefined ? "" : ` in ${signature}`}; a second ${signal} stopped the judge before the send was confirmed, so the release may have landed. Read intent ${address} before judging it again; no verdict was written`;
 
-type Release = { address: Address; payTo: Address; result: bigint; sha256: string; salt: string | undefined };
+type Release = { address: Address; payTo: Address; result: bigint; sha256: string; salt: string | undefined; feePayer: TransactionPartialSigner | undefined };
 
 function sendRelease(command: JudgeCommand, transport: Transport, signer: MessageSigner, signals: HeldSignals, release: Release): Promise<Signature> {
+  const payer = release.feePayer ?? signer;
   return new Promise((done, failed) => {
     let sent = false;
     let signature: Signature | undefined;
     let after = 0;
-    const signTransactions: MessageSigner["signTransactions"] = async (transactions, config) => {
+    const signTransactions: TransactionPartialSigner["signTransactions"] = async (transactions, config) => {
       const caught = signals.caught();
       if (caught !== undefined) {
         throw new JudgeInterrupted(caught, notSent(caught));
       }
       sent = true;
-      const signed = await signer.signTransactions(transactions, config);
-      const own = signed[0]?.[signer.address];
+      const signed = await payer.signTransactions(transactions, config);
+      const own = signed[0]?.[payer.address];
       signature = own === undefined ? signature : (getBase58Decoder().decode(own) as Signature);
       return signed;
     };
@@ -229,13 +243,17 @@ function sendRelease(command: JudgeCommand, transport: Transport, signer: Messag
     });
     createClient({ url: command.url, transport })
       .settleProof({
-        judge: Object.freeze({ ...signer, signTransactions }),
         owner: command.owner,
         nonce: command.nonce,
         payTo: release.payTo,
         result: release.result,
-        deliveredSha256: release.sha256,
-        ...(release.salt === undefined ? {} : { deliveredSalt: release.salt }),
+        ...(release.feePayer === undefined
+          ? {
+              judge: Object.freeze({ ...signer, signTransactions }),
+              deliveredSha256: release.sha256,
+              ...(release.salt === undefined ? {} : { deliveredSalt: release.salt }),
+            }
+          : { judge: signer, feePayer: Object.freeze({ ...release.feePayer, signTransactions }) }),
       })
       .then((confirmed) => {
         signals.listen(() => undefined);
@@ -261,6 +279,7 @@ type Judged = {
   beacon: Beacon | undefined;
   confirm: Transport | undefined;
   keypair: Uint8Array | undefined;
+  feePayer: TransactionPartialSigner | undefined;
 };
 
 async function sendOpenings(transport: Transport, signer: MessageSigner, attestor: Address, intent: Address, earlier: readonly (string | null)[]): Promise<NonNullable<Verdict["openings"]>> {
@@ -281,7 +300,7 @@ async function checkAndSettle(
   transport: Transport,
   signer: MessageSigner,
   signals: HeldSignals,
-  { address, attestor, committee, specHash, sha256, salt, earlier, payTo, result, read, specBytes, check: checkFiles, viper, beacon, confirm, keypair }: Judged,
+  { address, attestor, committee, specHash, sha256, salt, earlier, payTo, result, read, specBytes, check: checkFiles, viper, beacon, confirm, keypair, feePayer }: Judged,
 ): Promise<Verdict> {
   const { sandbox } = command;
   let check: Check = { exitCode: null, timedOut: false };
@@ -341,13 +360,17 @@ async function checkAndSettle(
   let vote: VoteFile | undefined;
   let simulated: SimulatedRelease | undefined;
   let openingsSent: Verdict["openings"];
+  const digest =
+    passed && committee === null && isDevice(signer)
+      ? hex((await createClient({ url: command.url, transport }).proofBallot({ owner: command.owner, nonce: command.nonce, payTo, result })).digest)
+      : undefined;
   if (passed && committee !== null) {
     const target = { owner: command.owner, nonce: command.nonce, payTo, result };
     const ballot = await createClient({ url: command.url, transport }).committeeBallot(target);
     vote = await memberVote(keyFileSigner(signer, "judge", command.keypair), ballot, target, { salt, earlier: earlier.length === 0 ? undefined : earlier.map((one) => one ?? UNOPENED) });
   } else if (passed && command.yes) {
     try {
-      signature = await sendRelease(command, transport, signer, signals, { address, payTo, result, sha256, salt });
+      signature = await sendRelease(command, transport, signer, signals, { address, payTo, result, sha256, salt, feePayer });
     } catch (error) {
       if (error instanceof JudgeInterrupted) {
         throw error;
@@ -383,10 +406,12 @@ async function checkAndSettle(
     payTo,
     signature,
     ...(simulated === undefined ? {} : { simulated }),
+    ...(digest === undefined ? {} : { digest }),
+    ...(feePayer === undefined ? {} : { feePayer: feePayer.address }),
     ...(committee === null ? {} : { committee: committee.address }),
     ...(vote === undefined ? {} : { vote, next: VOTE_NEXT }),
     ...(openingsSent === undefined ? {} : { openings: openingsSent }),
-    ...(passed && committee === null && !command.yes ? { next: NOT_SENT } : {}),
+    ...(passed && committee === null && !command.yes ? { next: digest === undefined ? NOT_SENT : DEVICE_PREVIEW } : {}),
     ...(cleanup !== undefined ? { cleanup } : {}),
   };
   if (command.verdict !== undefined) {

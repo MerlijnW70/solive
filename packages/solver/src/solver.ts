@@ -28,7 +28,7 @@ import { freshly, fromCache } from "./quote-cache.js";
 import { spend, type Stock, stockLeft } from "./inventory.js";
 import { type Hold, unheld } from "./holds.js";
 import { chainRent, type Rent } from "./rent.js";
-import { ALLOWANCE_SPENT, asked, type Floats, floatFits, INVENTORY_ONLY, type Low, liveStock, lowOf } from "./float.js";
+import { ALLOWANCE_SPENT, asked, type Floats, floatFits, INVENTORY_ONLY, type Low, liveStock, lowOf, ownIntent } from "./float.js";
 
 export { BACKOFF_MAX_INTERVALS, type Backoff, backingOff, backoff } from "./backoff.js";
 export {
@@ -158,10 +158,7 @@ async function planOrder(o: SolverOptions, config: Config, now: bigint, address:
   if (waiting !== null) {
     return skipped(address, backingOff(waiting.failures, waiting.seconds));
   }
-  const [inputTokenProgram, outputTokenProgram] = await Promise.all([
-    o.chain.tokenProgram(intent.inputMint),
-    o.chain.tokenProgram(intent.outputMint),
-  ]);
+  const [inputTokenProgram, outputTokenProgram] = await Promise.all([o.chain.tokenProgram(intent.inputMint), o.chain.tokenProgram(intent.outputMint)]);
   const payable = async (draft: Parameters<typeof payoutAccounts>[0]) => {
     const payouts = await payoutAccounts(draft, config.feeRecipient, inputTokenProgram);
     const found = await Promise.all(payouts.map((payout) => o.chain.exists(payout.address)));
@@ -171,6 +168,10 @@ async function planOrder(o: SolverOptions, config: Config, now: bigint, address:
   const holder = o.inventoryOwner ?? o.solver.address;
   const solverInput = await findAssociatedTokenAddress({ owner: holder, mint: intent.inputMint, tokenProgram: inputTokenProgram });
   const solverOutput = await findAssociatedTokenAddress({ owner: holder, mint: intent.outputMint, tokenProgram: outputTokenProgram });
+  const own = ownIntent(o.inventoryOwner, intent, solverOutput);
+  if (own !== null) {
+    return skipped(address, own);
+  }
   const [inputExists, outputExists, latest] = await Promise.all([
     o.chain.exists(solverInput),
     o.chain.exists(solverOutput),

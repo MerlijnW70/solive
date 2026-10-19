@@ -50,6 +50,7 @@ export type SettleProofInput = {
   payTo: Address;
   result: bigint;
   payer?: TransactionSigner;
+  feePayer?: TransactionSigner;
   deliveredSha256?: string;
   deliveredSalt?: string;
 };
