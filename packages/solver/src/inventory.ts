@@ -1,4 +1,5 @@
 import { type Address, getAddressDecoder } from "@solana/kit";
+import { least } from "./amounts.js";
 import type { IssueRoute } from "./issue.js";
 import type { Pricer, Quote, QuoteRequest } from "./market.js";
 
@@ -28,15 +29,14 @@ export function allowanceOf(data: Uint8Array | null, delegate: Address): bigint 
   return view.getBigUint64(DELEGATED_AMOUNT, true);
 }
 
-export const spendable = (balance: bigint, allowance: bigint): bigint => (allowance < balance ? allowance : balance);
+export const spendable = (balance: bigint, allowance: bigint): bigint => least(allowance, balance);
 
 export function stockLeft(stock: Stock, account: Address, live: bigint): bigint {
   const held = stock.get(account);
   if (held === undefined) {
     return live;
   }
-  const left = held.start - held.spent;
-  return left < live ? left : live;
+  return least(held.start - held.spent, live);
 }
 
 export function spend(stock: Stock, account: Address, live: bigint, amount: bigint): void {

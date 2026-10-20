@@ -1,11 +1,12 @@
 import type { Address } from "@solana/kit";
 import { type Intent, IntentStatus } from "@intent-engine/core";
+import { most } from "./amounts.js";
 import type { Flight } from "./flights.js";
 
 export type Hold = { account: Address; amount: bigint };
 
 export function unheld(live: bigint, held: bigint): bigint {
-  return live > held ? live - held : 0n;
+  return most(live - held, 0n);
 }
 
 export function heldBy(flights: ReadonlyMap<Address, Flight>): (account: Address) => bigint {

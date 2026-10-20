@@ -76,6 +76,29 @@ describe("bundles", () => {
     ]);
   });
 
+  it("splits a queue that fills its bundles exactly into full bundles and sends nothing for an empty queue", async () => {
+    const chunks = async (count: number, size: number) => {
+      const sent: string[][] = [];
+      const lasts: string[] = [];
+      const done = await sendBundles(
+        items(count),
+        size,
+        async (wires) => {
+          sent.push([...wires]);
+          return `b${sent.length}`;
+        },
+        async (item) => {
+          lasts.push(item.name);
+          return item.wire;
+        },
+      );
+      return { sent, lasts, done: done.length };
+    };
+    expect(await chunks(4, 2)).toEqual({ sent: [["f0", "f1"], ["f2", "f3"]], lasts: ["f1", "f3"], done: 4 });
+    expect(await chunks(2, 1)).toEqual({ sent: [["f0"], ["f1"]], lasts: ["f0", "f1"], done: 2 });
+    expect(await chunks(0, 3)).toEqual({ sent: [], lasts: [], done: 0 });
+  });
+
   it("takes bundle sizes from 1 to the most a bundle holds", async () => {
     expect([1, MAX_BUNDLE].map(bundleSizeFits)).toEqual([true, true]);
     for (const bad of [0, MAX_BUNDLE + 1, 1.5, Number.NaN]) {

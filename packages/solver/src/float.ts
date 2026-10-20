@@ -1,4 +1,5 @@
 import type { Address } from "@solana/kit";
+import { most } from "./amounts.js";
 import { spendable, type Stock, stockLeft } from "./inventory.js";
 
 export const ALLOWANCE_SPENT = "the inventory owner's allowance to the solver no longer covers this fill";
@@ -48,7 +49,7 @@ export function asked(floats: Floats | undefined, account: Address, live: bigint
     return;
   }
   const seen = floats.get(account);
-  floats.set(account, { live, needed: seen === undefined || needed > seen.needed ? needed : seen.needed });
+  floats.set(account, { live, needed: seen === undefined ? needed : most(needed, seen.needed) });
 }
 
 export function lows(floats: Floats, stock: Stock): Low[] {

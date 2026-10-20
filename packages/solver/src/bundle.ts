@@ -39,8 +39,7 @@ export async function sendBundles<T extends { wire: Base64EncodedWireTransaction
     throw new RangeError(badBundleSize(size));
   }
   const done: Bundled<T, O>[] = [];
-  for (let at = 0; at < queue.length; at += size) {
-    const bundle = queue.slice(at, at + size);
+  for (const bundle of queue.flatMap((_, at) => (at % size === 0 ? [queue.slice(at, at + size)] : []))) {
     const wires = bundle.map((item) => item.wire);
     for (let tail = bundle.at(-1); tail !== undefined; tail = bundle.at(-1)) {
       const wire = await last(tail);
