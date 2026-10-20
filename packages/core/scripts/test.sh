@@ -8,7 +8,7 @@ if [[ -n "${1:-}" ]]; then
 fi
 case "${2:-all}" in
   build) node_modules/.bin/tsc -p tsconfig.json --noEmit ;;
-  test) node_modules/.bin/vitest run --fsModuleCache --bail=1 --testTimeout=60000 --config ./vitest.setup.ts ;;
+  test) timeout 1200 node_modules/.bin/vitest run --fsModuleCache --bail=1 --testTimeout=60000 --config ./vitest.setup.ts ;;
   all) node_modules/.bin/tsc -p tsconfig.json --noEmit && node_modules/.bin/vitest run --fsModuleCache --config ./vitest.setup.ts ;;
   *) echo "mode must be build, test or all" >&2; exit 2 ;;
 esac
