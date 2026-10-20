@@ -15,17 +15,20 @@ import {
   type Transport,
 } from "@intent-engine/client";
 import { escrowReceipt, recordingOf } from "./agent/wallet.js";
-import { ANNOUNCE_FIRST } from "./agent/wallet/delivery.js";
+import { ANNOUNCE_FIRST, sealedForLine } from "./agent/wallet/delivery.js";
 import type { Command } from "./command-types.js";
 import type { Runtime } from "./runtime.js";
 import { previewed } from "./admin-commands.js";
 import { artifactSha256 } from "./artifact.js";
 import { pricedJobs } from "./job-filters.js";
 import { transactionSigner } from "./ledger-keys.js";
+import { loadEncryptionKeys } from "./sealed-commands.js";
 
 export const NOT_RELEASED = "no release of this escrow is among its recent transactions; show intent says whether it is still open, and --release with the release's signature reads a release directly";
 
 const TOKEN_ACCOUNT_HEAD = 64;
+
+
 
 async function receiptOf(transport: Transport, url: string, intent: Address, wanted: string | undefined): Promise<object> {
   const events = await createClient({ url, transport }).history(intent);
@@ -92,7 +95,7 @@ export async function jobCommand(command: JobCommand, runtime: Runtime, transpor
       const worker = await transactionSigner(runtime, command.keypair);
       const { intent, workUrl } = command;
       const sha256 = "sha256" in command ? command.sha256 : await artifactSha256(command.artifact);
-      const { attestor, instructions, commitment, check, sealedTo } = await deliveryInstructions(transport, { worker, intent, sha256, url: workUrl });
+      const { attestor, instructions, commitment, check, sealedTo, sealedFor } = await deliveryInstructions(transport, { worker, intent, sha256, url: workUrl });
       const shown = {
         intent,
         attestor,
@@ -102,6 +105,7 @@ export async function jobCommand(command: JobCommand, runtime: Runtime, transpor
           `Announces: the work with sha256 ${sha256}, for the proof escrow ${intent}, as the commitment ${commitment}, which binds it to ${worker.address} and a salt only its key derives`,
           `Seals: the salt and the url ${workUrl}, so only ${sealedTo.length === 1 ? `the judge ${attestor}` : `the ${sealedTo.length} committee members`} can read it`,
           `Notifies: its judge ${attestor}, with a transfer of 0 lamports from ${worker.address}, which signs and pays the fee`,
+          ...sealedFor.map(sealedForLine),
         ],
         warnings: [ANNOUNCE_FIRST],
       };
@@ -122,7 +126,9 @@ export async function jobCommand(command: JobCommand, runtime: Runtime, transpor
       return previewed(transport, instructions, judge, { intent, release, sha256, memo, summary }, command.yes);
     }
     case "deliveries": {
-      const keypair = command.judgeKeypair === undefined ? undefined : await runtime.loadKeypair(command.judgeKeypair);
+      const own = command.judgeKeypair === undefined ? [] : [await runtime.loadKeypair(command.judgeKeypair)];
+      const sealed = await loadEncryptionKeys(runtime, command.encryptionKeypairs);
+      const keypair = [...own, ...sealed];
       const record = await deliveryRecord(transport, command.attestor, command.intent, command.maxPages, keypair);
       const release = await recordedStanding(transport, command.intent, record);
       return {

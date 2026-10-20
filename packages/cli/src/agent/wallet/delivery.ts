@@ -1,6 +1,7 @@
 import { type Address, createNoopSigner, getBase16Decoder } from "@solana/kit";
 import {
   decodeParams,
+  type DeliveryOpener,
   getIntentDecoder,
   getIntentDiscriminatorBytes,
   getIntentSize,
@@ -21,6 +22,7 @@ import {
   DELIVERY_PAGES,
   deliveryRecord,
   deliveryInstructions,
+  type SealedFor,
   type DeliveryPlan,
   deliverySalt,
   earlier,
@@ -38,12 +40,15 @@ import { AgentRefusal, untrusted } from "../problems.js";
 import { InvalidInput, account, amount, flag, integer, list, object, optional, text } from "../schema.js";
 import { preparedSchema, preparedView } from "../shapes.js";
 import { prepare } from "../prepare.js";
-import { deviceOutput, PREVIEW_FIRST, signerOf, sent, sha256Of, walletKeypair } from "./guard.js";
+import { deviceOutput, PREVIEW_FIRST, signerOf, sent, sha256Of, walletOpeners } from "./guard.js";
 
 export const ANNOUNCE_FIRST = "keep the work private until this announcement lands: the earliest announcer of the work is paid, so publish it only after";
 
 const SEALED_NOTE =
   "The memo carries a salt and the url sealed to the escrow's judge, or to each member of its committee, a check of the salt, and a commitment that binds the work's sha256 to the announcing wallet and its salt, so a copied announcement pays nobody else and a guessed sha256 cannot be tested against it";
+
+export const sealedForLine = ({ wallet, kind, key }: SealedFor): string =>
+  `Seals to: ${wallet} with the key ${key}, ${kind === "profile" ? "the encryption key its profile publishes" : "derived from its wallet"}`;
 
 function announcing(plan: DeliveryPlan, intent: Address, sha256: string, url: string, from: string): string[] {
   const { sealedTo } = plan;
@@ -52,6 +57,7 @@ function announcing(plan: DeliveryPlan, intent: Address, sha256: string, url: st
     `Seals: the salt and the url ${url}, so only ${sealedTo.length === 1 ? `the attestor ${sealedTo[0] ?? plan.attestor}` : `the ${sealedTo.length} committee members`} can read it`,
     `Notifies: its attestor ${plan.attestor}, with a transfer of 0 lamports from ${from}`,
     "Costs: the transaction fee; no tokens move",
+    plan.sealedFor.map(sealedForLine).join("; "),
   ];
 }
 
@@ -147,11 +153,11 @@ export const walletCheckDelivery = define({
   run: async (ctx: AgentContext, input) => {
     const sha256 = input.sha256 === undefined ? undefined : sha256Of(input.sha256, "sha256");
     if (sha256 === undefined) {
-      return deliveriesOf(ctx, input.intent, await walletKeypair(ctx));
+      return deliveriesOf(ctx, input.intent, await walletOpeners(ctx));
     }
     const signer = await signerOf(ctx);
     const salt = await saltOf(() => deliverySalt(signer, input.intent, sha256));
-    return deliveriesOf(ctx, input.intent, await walletKeypair(ctx), { wallet: signer.address, sha256, salt });
+    return deliveriesOf(ctx, input.intent, await walletOpeners(ctx), { wallet: signer.address, sha256, salt });
   },
 });
 
@@ -225,7 +231,7 @@ async function saltOf(derive: () => Promise<string>): Promise<string> {
 
 type Own = { wallet: Address; sha256: string; salt: string };
 
-async function deliveriesOf(ctx: AgentContext, intent: Address, keypair?: Uint8Array, own?: Own) {
+async function deliveriesOf(ctx: AgentContext, intent: Address, keypair: readonly DeliveryOpener[], own?: Own) {
   const { held, params } = await proofEscrow(ctx, intent);
   const open = held.status === IntentStatus.Open && held.expiresAt > (await chainTime(ctx.transport));
   const record = await deliveryRecord(ctx.transport, params.attestor, intent, undefined, keypair);
@@ -292,7 +298,7 @@ export const checkDelivery = define({
   effect: "read",
   input: object({ intent: account("the proof escrow's intent address") }),
   output: deliveriesOutput("a release"),
-  run: async (ctx: AgentContext, input) => deliveriesOf(ctx, input.intent),
+  run: async (ctx: AgentContext, input) => deliveriesOf(ctx, input.intent, []),
 });
 
 export const prepareDeliver = define({

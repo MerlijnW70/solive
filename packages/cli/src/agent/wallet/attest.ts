@@ -28,8 +28,8 @@ import { preparedView } from "../shapes.js";
 import { walletRecipient } from "../owner.js";
 import { prepare } from "../prepare.js";
 import { STATUS } from "../../accounts.js";
-import { feePayerOf, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of, walletKeypair } from "./guard.js";
-import { openingOutput, openingsFor, sealedRecord, sendOpenings } from "./openings.js";
+import { feePayerOf, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of, walletOpeners } from "./guard.js";
+import { openingOutput, openingsFor, sendOpenings, skippedOf } from "./openings.js";
 import { invitedTo, notInvited } from "../../invites.js";
 import { notEarliest, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor, confirmedRelease } from "./delivery.js";
 
@@ -168,16 +168,17 @@ export const walletAttest = define({
     if (isProof && delivered === undefined) {
       throw new InvalidInput([{ path: "delivered_sha256", message: DELIVERED_NEEDED }]);
     }
-    const keypair = await walletKeypair(ctx);
+    const keypair = await walletOpeners(ctx);
     let salt: string | undefined;
     let openings: ReturnType<typeof openingsFor> = [];
+    let passed: { skipped?: string[] } = {};
     if (delivered !== undefined && isProof) {
       const record = await deliveryRecord(ctx.transport, signer.address, intent, input.max_pages ?? ATTEST_PAGES, keypair);
       if (!record.complete) {
         throw new AgentRefusal("HistoryTooLong", HISTORY_TOO_LONG);
       }
-      sealedRecord(record, keypair);
       const first = firstDelivery(record.deliveries, delivered);
+      passed = await skippedOf(ctx, { judge: signer.address, intent, device, recipients: [signer.address], record, first, openers: keypair });
       if (first !== null && first.worker !== input.pay_to) {
         throw new AgentRefusal("NotEarliestAnnouncer", notEarliest(first.worker, delivered));
       }
@@ -229,6 +230,6 @@ export const walletAttest = define({
       preview: device ? `${PREVIEW_APPROVAL_NEXT}; ${DEVICE_RELEASE}` : PREVIEW_APPROVAL_NEXT,
       done: `released to ${input.pay_to}; ${tool("wallet_feedback")} to rate`,
     });
-    return "signature" in done ? { ...done, ...(await sendOpenings(ctx, signer, signer.address, openings)) } : done;
+    return "signature" in done ? { ...done, ...passed, ...(await sendOpenings(ctx, payer, signer.address, openings)) } : { ...done, ...passed };
   },
 });

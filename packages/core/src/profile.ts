@@ -9,6 +9,7 @@ import {
   PROFILE_DISCRIMINATOR,
 } from "../generated/client/index.js";
 import { events } from "./builder-accounts.js";
+import { ENCRYPTION_KEY_BYTES, encryptionKeyText, isEncryptionKeyText, parseEncryptionKey } from "./encryption-key.js";
 import { IntentCoreError } from "./errors.js";
 import { checkAccountVersion } from "./versions.js";
 
@@ -16,7 +17,7 @@ export const PROFILE_MAX_SKILLS = 8;
 export const PROFILE_SKILL_LEN = 16;
 export const PROFILE_MAX_URL_LEN = 128;
 
-export type ProfileInput = { skills: string[]; endpoint: string; docUrl?: string; docSha256?: string };
+export type ProfileInput = { skills: string[]; endpoint: string; docUrl?: string; docSha256?: string; encryptionKey?: string };
 
 export type ProfileView = {
   wallet: Address;
@@ -24,6 +25,7 @@ export type ProfileView = {
   endpoint: string;
   docUrl: string | null;
   docSha256: string | null;
+  encryptionKey: string | null;
   updatedAt: bigint;
 };
 
@@ -35,7 +37,7 @@ const ZERO_HASH = "0".repeat(64);
 const validUrl = (text: string) => text.length <= PROFILE_MAX_URL_LEN && URL_BODY.test(text);
 
 export function checkProfile(input: ProfileInput): ProfileInput {
-  const { skills, endpoint, docUrl, docSha256 } = input;
+  const { skills, endpoint, docUrl, docSha256, encryptionKey } = input;
   const hash = docSha256?.toLowerCase();
   const skillsValid =
     skills.length >= 1 &&
@@ -46,10 +48,15 @@ export function checkProfile(input: ProfileInput): ProfileInput {
     (docUrl === undefined) === (hash === undefined) &&
     (docUrl === undefined || validUrl(docUrl)) &&
     (hash === undefined || (SHA256.test(hash) && hash !== ZERO_HASH));
-  if (!skillsValid || !validUrl(endpoint) || !docValid) {
+  if (!skillsValid || !validUrl(endpoint) || !docValid || (encryptionKey !== undefined && !isEncryptionKeyText(encryptionKey))) {
     throw new IntentCoreError("ProfileInvalid");
   }
-  return { skills: [...skills], endpoint, ...(docUrl === undefined || hash === undefined ? {} : { docUrl, docSha256: hash }) };
+  return {
+    skills: [...skills],
+    endpoint,
+    ...(docUrl === undefined || hash === undefined ? {} : { docUrl, docSha256: hash }),
+    ...(encryptionKey === undefined ? {} : { encryptionKey }),
+  };
 }
 
 function fieldsOf(input: ProfileInput) {
@@ -59,6 +66,7 @@ function fieldsOf(input: ProfileInput) {
     endpoint: checked.endpoint,
     docUrl: checked.docUrl ?? "",
     docHash: checked.docSha256 === undefined ? new Uint8Array(32) : getBase16Encoder().encode(checked.docSha256),
+    encryptionKey: checked.encryptionKey === undefined ? new Uint8Array(ENCRYPTION_KEY_BYTES) : parseEncryptionKey(checked.encryptionKey),
   };
 }
 
@@ -98,6 +106,7 @@ export function profileView(data: ReadonlyUint8Array): ProfileView {
     endpoint: ascii(stored.endpoint),
     docUrl: docUrl === "" ? null : docUrl,
     docSha256: docSha256 === ZERO_HASH ? null : docSha256,
+    encryptionKey: stored.encryptionKey.some((b) => b !== 0) ? encryptionKeyText(Uint8Array.from(stored.encryptionKey)) : null,
     updatedAt: stored.updatedAt,
   };
 }

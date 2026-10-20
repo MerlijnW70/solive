@@ -1,4 +1,6 @@
-use intent_core::profile::{document, skill, skills, url, MAX_SKILLS, MAX_URL_LEN, SKILL_LEN};
+use intent_core::profile::{
+    document, encryption_key, skill, skills, url, KEY_LEN, MAX_SKILLS, MAX_URL_LEN, SKILL_LEN,
+};
 use intent_core::Error;
 use proptest::prelude::*;
 
@@ -80,6 +82,40 @@ fn a_document_url_comes_with_its_hash_and_no_hash_without_a_url() -> Result<(), 
         Err(Error::ProfileInvalid)
     );
     assert_eq!(document(b"", &[7; 32]), Err(Error::ProfileInvalid));
+    Ok(())
+}
+
+fn key_of(low: u8, middle: u8, top: u8) -> [u8; KEY_LEN] {
+    let mut key = [middle; KEY_LEN];
+    key[0] = low;
+    key[KEY_LEN - 1] = top;
+    key
+}
+
+#[test]
+fn an_encryption_key_is_zero_or_a_canonical_key_of_large_order() -> Result<(), Error> {
+    assert_eq!(encryption_key(&[0; KEY_LEN])?, [0; KEY_LEN]);
+    let fine = key_of(9, 3, 0x11);
+    assert_eq!(encryption_key(&fine)?, fine);
+    assert_eq!(
+        encryption_key(&key_of(0xeb, 0xff, 0x7f))?,
+        key_of(0xeb, 0xff, 0x7f)
+    );
+    let mut order_eight = [0; KEY_LEN];
+    order_eight[..8].copy_from_slice(&[0xe0, 0xeb, 0x7a, 0x7c, 0x3b, 0x41, 0xb8, 0xae]);
+    order_eight[8..16].copy_from_slice(&[0x16, 0x56, 0xe3, 0xfa, 0xf1, 0x9f, 0xc4, 0x6a]);
+    order_eight[16..24].copy_from_slice(&[0xda, 0x09, 0x8d, 0xeb, 0x9c, 0x32, 0xb1, 0xfd]);
+    order_eight[24..].copy_from_slice(&[0x86, 0x62, 0x05, 0x16, 0x5f, 0x49, 0xb8, 0x00]);
+    for bad in [
+        key_of(1, 0, 0),
+        key_of(0xec, 0xff, 0x7f),
+        key_of(0xed, 0xff, 0x7f),
+        key_of(0xee, 0xff, 0x7f),
+        key_of(9, 3, 0x91),
+        order_eight,
+    ] {
+        assert_eq!(encryption_key(&bad), Err(Error::ProfileInvalid), "{bad:?}");
+    }
     Ok(())
 }
 

@@ -66,6 +66,8 @@ intent-engine profile show --wallet <worker wallet>
 
 Add `--doc-url <https url> --doc-sha256 <64 hex>` to link a document; a reader checks it against the hash. `profile close --keypair worker.json --yes` deletes the profile and returns its rent. From TypeScript, `client.profile(wallet)` reads it; an MCP agent reads one with `solive_get_profile` and publishes its own with `solive_wallet_profile`.
 
+A judge or committee member adds `--encryption-key <base58>`, printed by `profile encryption-key new`, to publish the key workers seal their deliveries to; [judge.md](judge.md) shows how a Ledger judge uses it. A later `profile set` without it keeps the key, and `--encryption-key none` removes it; `solive_wallet_profile` takes the same as `encryption_key`. Without one, workers seal to the key derived from the wallet.
+
 A profile is what the worker says about itself. Its record above is what the chain says.
 
 ## What it cannot see

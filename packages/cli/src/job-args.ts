@@ -1,6 +1,6 @@
 import { TOKEN_AMOUNT_PATTERN } from "@intent-engine/core";
 import type { Values } from "./arg-options.js";
-import { confirmUrlOf, feePayerOf, key, memoUrlOf, noSub, parseBounded, required, sha256Of, u64, UsageError } from "./arg-values.js";
+import { confirmUrlOf, encryptionKeypairOf, feePayerOf, key, memoUrlOf, noSub, parseBounded, required, sha256Of, u64, UsageError } from "./arg-values.js";
 import { JUDGE_TIMEOUT, MAX_JUDGE_TIMEOUT, maxPagesOf, releaseOption, runOf } from "./command-builders.js";
 import type { Command, Remote } from "./command-types.js";
 import { sandboxOf } from "./sandbox.js";
@@ -116,6 +116,7 @@ export function jobArgsOf(verb: "jobs" | "deliver" | "receipt" | "record-deliver
         check: values.check,
         sandbox,
         ...feePayerOf(values, keypair),
+        ...encryptionKeypairOf(values),
         ...confirmUrlOf(values, remote.url),
       };
     }

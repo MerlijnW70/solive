@@ -82,6 +82,7 @@ fn profile_fields() -> ProfileFields {
         endpoint: "https://".to_owned() + "worker.example",
         doc_url: String::new(),
         doc_hash: [0; 32],
+        encryption_key: [0; 32],
     }
 }
 

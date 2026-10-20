@@ -51,6 +51,7 @@ export type ProfileSetEvent = {
   endpoint: string;
   docUrl: string;
   docHash: ReadonlyUint8Array;
+  encryptionKey: ReadonlyUint8Array;
 };
 
 export type ProfileSetEventArgs = ProfileSetEvent;
@@ -69,6 +70,7 @@ export function getProfileSetEventEncoder(): Encoder<ProfileSetEventArgs> {
       ["endpoint", addEncoderSizePrefix(getUtf8Encoder(), getU32Encoder())],
       ["docUrl", addEncoderSizePrefix(getUtf8Encoder(), getU32Encoder())],
       ["docHash", fixEncoderSize(getBytesEncoder(), 32)],
+      ["encryptionKey", fixEncoderSize(getBytesEncoder(), 32)],
     ]),
     [getConstantEncoder(PROFILE_SET_EVENT_DISCRIMINATOR)],
   );
@@ -88,6 +90,7 @@ export function getProfileSetEventDecoder(): Decoder<ProfileSetEvent> {
       ["endpoint", addDecoderSizePrefix(getUtf8Decoder(), getU32Decoder())],
       ["docUrl", addDecoderSizePrefix(getUtf8Decoder(), getU32Decoder())],
       ["docHash", fixDecoderSize(getBytesDecoder(), 32)],
+      ["encryptionKey", fixDecoderSize(getBytesDecoder(), 32)],
     ]),
     [getConstantDecoder(PROFILE_SET_EVENT_DISCRIMINATOR)],
   );

@@ -268,6 +268,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | `endpoint` | string | no | an https url of at most 128 printable characters where this wallet takes work |
 | `doc_url` | string | no | an https url of a document describing this wallet's work; needs doc_sha256 |
 | `doc_sha256` | string | no | the document's sha256; needs doc_url |
+| `encryption_key` | string | no | the encryption key deliveries to this wallet are sealed to: an X25519 public key: 32 bytes in base58, canonical and not of small order, which intent-engine profile encryption-key new prints, or none to remove it; leave out to keep the published one |
 | `close` | boolean | no | true closes the profile instead |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true sends the change; leave out to preview |

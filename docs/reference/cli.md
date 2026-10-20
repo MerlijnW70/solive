@@ -3,14 +3,14 @@
 # CLI reference
 
 ```text
-usage: setup | add-to claude|codex | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | close-legacy | migrate | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | set-committee-floor | solve | raise-pause | lower-pause | crank | treasury | solver-table | solver float | solver float show | solver float revoke | events | jobs | deliver | deliveries | receipt | record-delivery | judge [digest] | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
+usage: setup | add-to claude|codex | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | close-legacy | migrate | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | set-committee-floor | solve | raise-pause | lower-pause | crank | treasury | solver-table | solver float | solver float show | solver float revoke | events | jobs | deliver | deliveries | receipt | record-delivery | judge [digest] | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | profile encryption-key new | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
 ```
 
 Every command accepts `--output` and `--help`.
 
 `INTENT_ENGINE_KEYPAIR` fills in `--keypair` and `INTENT_ENGINE_URL` fills in `--url` when they are not given. `--url` takes an RPC URL or one of `localnet`, `devnet`, `testnet`, `mainnet-beta`.
 
-`--keypair` also takes a Ledger, as `usb://ledger`, `usb://ledger?key=<account>`, `usb://ledger?key=<account>/<change>`, for `create`, `cancel`, `expire`, `close`, `approve`, `revoke-approval`, `deliver`, `judge`, `committee vote`, `committee release`, `signed prepare`, `advance-nonce`, `advance-epoch`, `claims take`, `claims drop`, `mandate grant`, `mandate revoke`, `solver float`; every other command refuses one and needs a key file.
+`--keypair` also takes a Ledger, as `usb://ledger`, `usb://ledger?key=<account>`, `usb://ledger?key=<account>/<change>`, for `create`, `cancel`, `expire`, `close`, `approve`, `revoke-approval`, `deliver`, `judge`, `committee vote`, `committee release`, `signed prepare`, `advance-nonce`, `advance-epoch`, `claims take`, `claims drop`, `mandate grant`, `mandate revoke`, `profile set`, `profile close`, `solver float`; every other command refuses one and needs a key file.
 
 ## setup
 
@@ -95,10 +95,10 @@ Options: `--url`, `--output`, `--help`
 ## mcp
 
 ```text
-mcp [--wallet [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--all-tools]] [--relayer <keypair> --relay-fee <mint=amount,...> [--relay-max-lamports] [--relay-max-ttl] [--relay-per-hour] [--relay-hourly-lamports]] [--agent <keypair> --agent-owners <address,...> [--agent-hourly-lamports]] [--fee-payer <key file, with --wallet>] [--confirm-url <cluster> | --no-confirm-url]
+mcp [--wallet [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--all-tools]] [--relayer <keypair> --relay-fee <mint=amount,...> [--relay-max-lamports] [--relay-max-ttl] [--relay-per-hour] [--relay-hourly-lamports]] [--agent <keypair> --agent-owners <address,...> [--agent-hourly-lamports]] [--fee-payer <key file, with --wallet>] [--encryption-keypair <encryption key file, with --wallet> ...] [--confirm-url <cluster> | --no-confirm-url]
 ```
 
-Options: `--url`, `--priority-fee`, `--relayer`, `--relay-max-lamports`, `--relay-max-ttl`, `--relay-per-hour`, `--relay-hourly-lamports`, `--relay-fee`, `--agent`, `--agent-hourly-lamports`, `--agent-owners`, `--wallet`, `--wallet-per-trade`, `--wallet-per-hour`, `--all-tools`, `--confirm-url`, `--no-confirm-url`, `--fee-payer`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--relayer`, `--relay-max-lamports`, `--relay-max-ttl`, `--relay-per-hour`, `--relay-hourly-lamports`, `--relay-fee`, `--agent`, `--agent-hourly-lamports`, `--agent-owners`, `--wallet`, `--wallet-per-trade`, `--wallet-per-hour`, `--all-tools`, `--confirm-url`, `--no-confirm-url`, `--fee-payer`, `--encryption-keypair`, `--output`, `--help`
 
 ## quote
 
@@ -295,10 +295,10 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--artifac
 ## deliveries
 
 ```text
-deliveries --attestor <address> --intent <address> [--max-pages <n>] [--judge-keypair <judge or member file>]
+deliveries --attestor <address> --intent <address> [--max-pages <n>] [--judge-keypair <judge or member file>] [--encryption-keypair <encryption key file> ...]
 ```
 
-Options: `--url`, `--attestor`, `--intent`, `--max-pages`, `--judge-keypair`, `--output`, `--help`
+Options: `--url`, `--attestor`, `--intent`, `--max-pages`, `--judge-keypair`, `--encryption-keypair`, `--output`, `--help`
 
 ## receipt
 
@@ -319,10 +319,10 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, 
 ## judge
 
 ```text
-judge --keypair <judge file> --owner <address> --nonce <n> --spec <file> (--artifact <file or directory> | --watch [--interval <seconds>]) (--run <command> | --sandbox viper) [--pay-to <wallet>] [--result <n>] [--timeout <seconds>] [--verdict <file>] [--max-pages <n>] [--check <file or directory>] [--sandbox docker|viper|none] [--sandbox-image <name>@sha256:<64 hex>] [--sandbox-memory <n>m|<n>g] [--sandbox-cpus <n>] [--plain-node] [--fee-payer <key file, with a Ledger --keypair>] [--confirm-url <cluster> | --no-confirm-url] [--yes] | digest --owner <address> --nonce <n> --pay-to <wallet> [--result <n>]
+judge --keypair <judge file> --owner <address> --nonce <n> --spec <file> (--artifact <file or directory> | --watch [--interval <seconds>]) (--run <command> | --sandbox viper) [--pay-to <wallet>] [--result <n>] [--timeout <seconds>] [--verdict <file>] [--max-pages <n>] [--check <file or directory>] [--sandbox docker|viper|none] [--sandbox-image <name>@sha256:<64 hex>] [--sandbox-memory <n>m|<n>g] [--sandbox-cpus <n>] [--plain-node] [--fee-payer <key file, with a Ledger --keypair>] [--encryption-keypair <encryption key file> ...] [--confirm-url <cluster> | --no-confirm-url] [--yes] | digest --owner <address> --nonce <n> --pay-to <wallet> [--result <n>]
 ```
 
-Options without a subcommand: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--pay-to`, `--result`, `--timeout`, `--verdict`, `--max-pages`, `--check`, `--sandbox`, `--sandbox-image`, `--sandbox-memory`, `--sandbox-cpus`, `--plain-node`, `--watch`, `--interval`, `--confirm-url`, `--no-confirm-url`, `--fee-payer`, `--output`, `--help`
+Options without a subcommand: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--pay-to`, `--result`, `--timeout`, `--verdict`, `--max-pages`, `--check`, `--sandbox`, `--sandbox-image`, `--sandbox-memory`, `--sandbox-cpus`, `--plain-node`, `--watch`, `--interval`, `--confirm-url`, `--no-confirm-url`, `--fee-payer`, `--encryption-keypair`, `--output`, `--help`
 
 Options for `digest`: `--url`, `--owner`, `--nonce`, `--pay-to`, `--result`, `--output`, `--help`
 
@@ -461,14 +461,16 @@ Options for `advance`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner
 ## profile
 
 ```text
-profile show --wallet <address> | set --keypair <file> --skills <tag,...> --endpoint <https url> [--doc-url <https url> --doc-sha256 <64 hex>] [--yes] | close --keypair <file> [--yes]
+profile show --wallet <address> | set --keypair <file> --skills <tag,...> --endpoint <https url> [--doc-url <https url> --doc-sha256 <64 hex>] [--encryption-key <base58> | --encryption-key none] [--yes] | close --keypair <file> [--yes] | encryption-key new --out <file>
 ```
 
 Options for `show`: `--url`, `--wallet`, `--output`, `--help`
 
-Options for `set`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--skills`, `--endpoint`, `--doc-url`, `--doc-sha256`, `--output`, `--help`
+Options for `set`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--skills`, `--endpoint`, `--doc-url`, `--doc-sha256`, `--encryption-key`, `--output`, `--help`
 
 Options for `close`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--output`, `--help`
+
+Options for `encryption-key`: `--out`, `--output`, `--help`
 
 ## version
 

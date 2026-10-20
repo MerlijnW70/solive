@@ -141,6 +141,7 @@ describe("job claims from the command line", () => {
       endpoint: "https://worker.example/jobs",
       doc_url: null,
       doc_sha256: null,
+      encryption_key: null,
       updated_at: NOW.toString(),
     });
     const doc = ["--doc-url", "https://worker.example/about", "--doc-sha256", "AB".repeat(32)];

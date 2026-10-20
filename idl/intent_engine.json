@@ -6737,7 +6737,7 @@
             }
           },
           {
-            "name": "reserved",
+            "name": "encryption_key",
             "type": {
               "array": [
                 "u8",
@@ -6787,6 +6787,15 @@
                 32
               ]
             }
+          },
+          {
+            "name": "encryption_key",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
           }
         ]
       }
@@ -6816,6 +6825,15 @@
           },
           {
             "name": "doc_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "encryption_key",
             "type": {
               "array": [
                 "u8",

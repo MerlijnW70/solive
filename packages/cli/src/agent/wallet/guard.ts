@@ -12,7 +12,7 @@ import {
   SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR,
   type TransactionPartialSigner,
 } from "@solana/kit";
-import { formatAmount, parseAmount } from "@intent-engine/core";
+import { type DeliveryOpener, EncryptionKeyError, formatAmount, parseAmount, readEncryptionKeyFile } from "@intent-engine/core";
 import { Charged, type DeviceSigner, isLedgerPath, LedgerError, ledgerSigner, messageHash, neverLanded, openUsb } from "@intent-engine/client";
 import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "../../args.js";
 import { execute, type PreparedView } from "../../flows.js";
@@ -37,6 +37,7 @@ export type WalletAccess = {
   now(): bigint;
   limits: WalletGuard;
   feePayer?: string;
+  encryptionKeypairs?: readonly string[];
 };
 
 export type Clock = Pick<WalletAccess, "sleep" | "now">;
@@ -117,6 +118,22 @@ export async function walletKeypair(ctx: AgentContext): Promise<Uint8Array | und
   } catch {
     return undefined;
   }
+}
+
+async function encryptionKeyAt(files: Files, path: string): Promise<DeliveryOpener> {
+  try {
+    return await readEncryptionKeyFile(await files.readText(expandHome(path, files.home)));
+  } catch (error) {
+    throw error instanceof EncryptionKeyError ? new AgentRefusal("EncryptionKeyInvalid", `${path}: ${error.message}`) : error;
+  }
+}
+
+
+export async function walletOpeners(ctx: AgentContext): Promise<DeliveryOpener[]> {
+  const own = await walletKeypair(ctx);
+  const files = ctx.wallet?.files;
+  const sealed = files === undefined ? [] : await Promise.all((ctx.wallet?.encryptionKeypairs ?? []).map((path) => encryptionKeyAt(files, path)));
+  return [...(own === undefined ? [] : [own]), ...sealed];
 }
 
 export type WalletSigner = TransactionPartialSigner &

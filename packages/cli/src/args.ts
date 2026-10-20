@@ -9,6 +9,8 @@ import {
   addressList,
   amountOf,
   confirmUrlOf,
+  encryptionKeypairOf,
+  mcpEncryptionKeypair,
   mcpFeePayer,
   key,
   mintList,
@@ -158,7 +160,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
   ) {
     values["confirm-url"] = confirmDefault;
   }
-  const nested = verb === "mandate" || verb === "signed" || verb === "solver";
+  const nested = verb === "mandate" || verb === "signed" || verb === "solver" || (verb === "profile" && sub === "encryption-key");
   if (extra !== undefined || (!nested && third !== undefined)) {
     throw new UsageError(`unexpected argument ${nested ? extra : third}`);
   }
@@ -242,6 +244,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         wallet: walletLimits(values, remote.url),
         allTools: values["all-tools"] === true,
         ...mcpFeePayer(values),
+        ...mcpEncryptionKeypair(values),
         ...confirmUrlOf(values, remote.url),
       };
     case "quote":
@@ -330,7 +333,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       return jobArgsOf(verb, sub, remote, values);
     case "deliveries":
       noSub(sub);
-      return { name: "deliveries", ...remote, attestor: key(values, "attestor"), intent: key(values, "intent"), maxPages: maxPagesOf(values), judgeKeypair: values["judge-keypair"] };
+      return { name: "deliveries", ...remote, attestor: key(values, "attestor"), intent: key(values, "intent"), maxPages: maxPagesOf(values), judgeKeypair: values["judge-keypair"], ...encryptionKeypairOf(values) };
     case "solver-table":
       noSub(sub);
       return { name: "solver-table", ...remote, solver: key(values, "solver"), mints: mintList(required(values, "mints")) };
@@ -376,7 +379,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
     case "feedback":
     case "claims":
     case "profile":
-      return trustOf(verb, sub, remote, values);
+      return trustOf(verb, sub, remote, values, third);
     case "approve":
     case "revoke-approval":
       noSub(sub);

@@ -187,7 +187,7 @@ Devnet runs the stand-by line program (`220dde3`). The current program keeps eve
 | Committee | 408 | 408 | 338: 1 to 2 | nothing |
 | ClaimBoard | 176, or 168 before the stand-by line | 176 | 132: 1 to 2 | `head` at 168 and `tail` at 172 on a 168 board |
 | Standby | 88 | 88 | 81: 0 to 1 | `version` at 81, in the old `padding` |
-| Profile | 504 | 504 | 464: 1 to 2 | nothing |
+| Profile | 504 | 504 | 464: 1 to 2 | `encryption_key` at 472, in the old `reserved`; zero is no key |
 
 `OUTDATED` in `programs/intent_engine/src/versions.rs` lists each layout `migrate` reads: these, and a version-1 config of the current size, which `main` wrote before it enforced versions.
 

@@ -1,8 +1,9 @@
-import { type Address, getAddressDecoder, getAddressEncoder, getBase58Encoder, isAddress } from "@solana/kit";
+import { type Address, getAddressEncoder, getBase58Encoder, isAddress } from "@solana/kit";
 import { PRODUCT_SLUG } from "../generated/identity.js";
 import { MAX_COMMITTEE_MEMBERS } from "./committee.js";
 import { isMemoUrl, isSha256Hex, MAX_MEMO_URL, MEMO_URL_RULE } from "./memo.js";
-import { SealedError, wrapKey, x25519PublicOf, x25519SecretOf } from "./sealed.js";
+import { type DeliveryOpener, deliveryKeyOf, ENCRYPTION_KEY_BYTES } from "./encryption-key.js";
+import { SealedError, wrapKey, x25519PublicOf } from "./sealed.js";
 
 export const DELIVERY_MEMO_MARK = `${PRODUCT_SLUG}-delivery3`;
 export const DELIVERY_MEMO_PREFIX = `${DELIVERY_MEMO_MARK}:`;
@@ -11,7 +12,7 @@ export const COMMITMENT_TAG = `${PRODUCT_SLUG}-delivery-v3`;
 export const SALT_TAG = `${PRODUCT_SLUG}-delivery-salt-v3`;
 export const SALT_CHECK_TAG = `${PRODUCT_SLUG}-delivery-check-v3`;
 export const SALT_BYTES = 16;
-export const SEALED_URL_VERSION = 2;
+export const SEALED_URL_VERSION = 3;
 export const MAX_DELIVERY_MEMO = 960;
 export const MAX_OPENING_MEMO = MAX_DELIVERY_MEMO;
 export const MAX_SEALED_URL_RECIPIENTS = MAX_COMMITTEE_MEMBERS;
@@ -29,13 +30,19 @@ export type SelfOpening = { intent: Address; announcement: string; salt: string 
 
 export type Opening = JudgeOpening | SelfOpening;
 
+export type SealedKey = "wallet" | "profile";
+
+export type SealRecipient = Address | { wallet: Address; encryptionKey: Uint8Array | null };
+
 const INFO = new TextEncoder().encode(`${PRODUCT_SLUG}-sealed-url-v2`);
 const KEY_BYTES = 32;
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
 const WRAPPED_BYTES = KEY_BYTES + TAG_BYTES;
 const EPK_BYTES = 32;
-const HEAD_BYTES = 2;
+const HEAD_BYTES = 3;
+export const FINGERPRINT_BYTES = 8;
+export const FINGERPRINT_TAG = `${PRODUCT_SLUG}-delivery-key-v3`;
 const SIGNATURE_BYTES = 64;
 const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const SALT_HEX = /^[0-9a-f]{32}$/;
@@ -53,8 +60,10 @@ const fromBase64 = (text: string): Uint8Array<ArrayBuffer> => Uint8Array.from(at
 
 const base64Length = (bytes: number): number => 4 * Math.ceil(bytes / 3);
 
-const sealedBytes = (recipients: number, url: number): number =>
-  HEAD_BYTES + EPK_BYTES + recipients * WRAPPED_BYTES + IV_BYTES + SALT_BYTES + url + TAG_BYTES;
+const headBytes = (recipients: number): number => HEAD_BYTES + recipients * FINGERPRINT_BYTES;
+
+const sealedBytes = (recipients: number, url: number, head = headBytes(recipients)): number =>
+  head + EPK_BYTES + recipients * WRAPPED_BYTES + IV_BYTES + SALT_BYTES + url + TAG_BYTES;
 
 const hex = (bytes: Uint8Array): string => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 
@@ -123,15 +132,36 @@ export async function deliveryCommitment(commitment: Commitment): Promise<string
 
 const random = (length: number): Uint8Array<ArrayBuffer> => crypto.getRandomValues(new Uint8Array(new ArrayBuffer(length)));
 
-const aad = (intent: Address): Uint8Array<ArrayBuffer> => Uint8Array.from([...INFO, ...getAddressEncoder().encode(intent)]);
+const aad = (intent: Address, head: Uint8Array): Uint8Array<ArrayBuffer> => Uint8Array.from([...INFO, ...getAddressEncoder().encode(intent), ...head]);
+
+type Layout = { head: number; count: number; mask: number };
+
+export async function keyFingerprint(publicKey: Uint8Array): Promise<string> {
+  return hex((await digest(Uint8Array.from([...new TextEncoder().encode(FINGERPRINT_TAG), ...publicKey]))).slice(0, FINGERPRINT_BYTES));
+}
+
+function recipientsOf(recipients: readonly SealRecipient[]): Map<Address, Uint8Array | null> {
+  const keys = new Map<Address, Uint8Array | null>();
+  for (const recipient of recipients) {
+    const [wallet, key] = typeof recipient === "string" ? [recipient, null] : [recipient.wallet, recipient.encryptionKey];
+    if (key !== null && key.length !== ENCRYPTION_KEY_BYTES) {
+      throw new SealedError(`${wallet}'s encryption key is not ${ENCRYPTION_KEY_BYTES} bytes`);
+    }
+    if (!keys.has(wallet) || (keys.get(wallet) === null && key !== null)) {
+      keys.set(wallet, key);
+    }
+  }
+  return keys;
+}
 
 async function sharedWith(peer: Uint8Array, mine: CryptoKey): Promise<Uint8Array> {
   const key = await crypto.subtle.importKey("raw", peer.slice(), { name: "X25519" }, false, []);
   return new Uint8Array(await crypto.subtle.deriveBits({ name: "X25519", public: key }, mine, 256));
 }
 
-export async function sealDelivery({ salt, url }: SealedDelivery, recipients: readonly Address[], intent: Address): Promise<string> {
-  const wallets = [...new Set(recipients)];
+export async function sealDelivery({ salt, url }: SealedDelivery, recipients: readonly SealRecipient[], intent: Address): Promise<string> {
+  const keys = recipientsOf(recipients);
+  const wallets = [...keys.keys()];
   if (wallets.length === 0 || wallets.length > MAX_SEALED_URL_RECIPIENTS) {
     throw new SealedError(`seal a work url to between 1 and ${MAX_SEALED_URL_RECIPIENTS} wallets`);
   }
@@ -149,18 +179,25 @@ export async function sealDelivery({ salt, url }: SealedDelivery, recipients: re
   const ephemeral = (await crypto.subtle.generateKey({ name: "X25519" }, true, ["deriveBits"])) as unknown as { publicKey: CryptoKey; privateKey: CryptoKey };
   const epk = new Uint8Array(await crypto.subtle.exportKey("raw", ephemeral.publicKey));
   const wrapped: number[] = [];
-  for (const wallet of wallets) {
-    const theirs = x25519PublicOf(wallet);
-    const wrapping = await wrapKey(await sharedWith(theirs, ephemeral.privateKey), Uint8Array.from([...epk, ...theirs]), INFO);
+  let mask = 0;
+  const fingerprints: number[] = [];
+  for (const [at, wallet] of wallets.entries()) {
+    const profileKey = keys.get(wallet) ?? null;
+    const usable = profileKey === null ? null : await sharedWith(profileKey, ephemeral.privateKey).catch(() => null);
+    const theirs = profileKey === null || usable === null ? x25519PublicOf(wallet) : Uint8Array.from(profileKey);
+    mask |= usable === null ? 0 : 1 << at;
+    fingerprints.push(...unhex(await keyFingerprint(theirs)));
+    const wrapping = await wrapKey(usable ?? (await sharedWith(theirs, ephemeral.privateKey)), Uint8Array.from([...epk, ...theirs]), INFO);
     wrapped.push(...new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv: ZERO_IV, additionalData: INFO }, wrapping, contentKey)));
   }
   const content = await crypto.subtle.importKey("raw", contentKey, "AES-GCM", false, ["encrypt"]);
   const plain = Uint8Array.from([...unhex(salt), ...new TextEncoder().encode(url)]);
-  const data = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: aad(intent) }, content, plain));
-  return toBase64(Uint8Array.from([SEALED_URL_VERSION, wallets.length, ...epk, ...wrapped, ...iv, ...data]));
+  const head = Uint8Array.from([SEALED_URL_VERSION, wallets.length, mask, ...fingerprints]);
+  const data = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv, additionalData: aad(intent, head) }, content, plain));
+  return toBase64(Uint8Array.from([...head, ...epk, ...wrapped, ...iv, ...data]));
 }
 
-export function sealedUrlRecipients(blob: string): number | null {
+function layoutOf(blob: string): Layout | null {
   if (!BASE64.test(blob)) {
     return null;
   }
@@ -170,29 +207,50 @@ export function sealedUrlRecipients(blob: string): number | null {
   } catch {
     return null;
   }
+  const version = bytes[0];
   const count = bytes[1] ?? 0;
-  if (toBase64(bytes) !== blob || bytes[0] !== SEALED_URL_VERSION || count < 1 || count > MAX_SEALED_URL_RECIPIENTS) {
+  const head = headBytes(count);
+  const mask = bytes[2] ?? 0;
+  if (toBase64(bytes) !== blob || version !== SEALED_URL_VERSION || count < 1 || count > MAX_SEALED_URL_RECIPIENTS || mask >> count !== 0) {
     return null;
   }
-  return bytes.length > sealedBytes(count, 0) ? count : null;
+  return bytes.length > sealedBytes(count, 0, head) ? { head, count, mask } : null;
 }
 
-export async function openDelivery(blob: string, keypair: Uint8Array, intent: Address): Promise<SealedDelivery | null> {
-  const count = sealedUrlRecipients(blob);
-  if (count === null) {
+export function sealedUrlRecipients(blob: string): number | null {
+  return layoutOf(blob)?.count ?? null;
+}
+
+export function sealedKeys(blob: string): SealedKey[] | null {
+  const layout = layoutOf(blob);
+  return layout === null ? null : Array.from({ length: layout.count }, (_, at): SealedKey => ((layout.mask >> at) & 1 ? "profile" : "wallet"));
+}
+
+export function sealedFingerprints(blob: string): string[] | null {
+  const layout = layoutOf(blob);
+  if (layout === null) {
     return null;
   }
   const bytes = fromBase64(blob);
-  const epk = bytes.slice(HEAD_BYTES, HEAD_BYTES + EPK_BYTES);
-  const mine = await x25519SecretOf(keypair);
-  const ours = x25519PublicOf(getAddressDecoder().decode(keypair.slice(32)));
+  return Array.from({ length: layout.count }, (_, at) => hex(bytes.slice(HEAD_BYTES + at * FINGERPRINT_BYTES, HEAD_BYTES + (at + 1) * FINGERPRINT_BYTES)));
+}
+
+export async function openDelivery(blob: string, opener: DeliveryOpener, intent: Address): Promise<SealedDelivery | null> {
+  const layout = layoutOf(blob);
+  if (layout === null) {
+    return null;
+  }
+  const { head, count } = layout;
+  const bytes = fromBase64(blob);
+  const epk = bytes.slice(head, head + EPK_BYTES);
+  const { publicKey: ours, secret: mine } = await deliveryKeyOf(opener);
   let wrapping: CryptoKey;
   try {
     wrapping = await wrapKey(await sharedWith(epk, mine), Uint8Array.from([...epk, ...ours]), INFO);
   } catch {
     return null;
   }
-  const keysAt = HEAD_BYTES + EPK_BYTES;
+  const keysAt = head + EPK_BYTES;
   const ivAt = keysAt + count * WRAPPED_BYTES;
   for (let at = 0; at < count; at += 1) {
     let contentKey: Uint8Array<ArrayBuffer>;
@@ -205,7 +263,7 @@ export async function openDelivery(blob: string, keypair: Uint8Array, intent: Ad
     try {
       const content = await crypto.subtle.importKey("raw", contentKey, "AES-GCM", false, ["decrypt"]);
       const iv = bytes.slice(ivAt, ivAt + IV_BYTES);
-      const plain = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv, additionalData: aad(intent) }, content, bytes.slice(ivAt + IV_BYTES)));
+      const plain = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv, additionalData: aad(intent, bytes.slice(0, head)) }, content, bytes.slice(ivAt + IV_BYTES)));
       const url = new TextDecoder("utf-8", { fatal: true }).decode(plain.slice(SALT_BYTES));
       return isMemoUrl(url) ? { salt: hex(plain.slice(0, SALT_BYTES)), url } : null;
     } catch {
@@ -240,7 +298,7 @@ export function parseDeliveryMemo(text: string): DeliveryMemo | null {
     return null;
   }
   const [intent = "", commitment = "", check = "", blob = "", ...rest] = text.slice(DELIVERY_MEMO_PREFIX.length).split(":");
-  if (rest.length > 0 || !isAddress(intent) || !isSha256Hex(commitment) || !isSaltHex(check) || sealedUrlRecipients(blob) === null) {
+  if (rest.length > 0 || !isAddress(intent) || !isSha256Hex(commitment) || !isSaltHex(check) || !BASE64.test(blob)) {
     return null;
   }
   return { intent, commitment, check, blob };

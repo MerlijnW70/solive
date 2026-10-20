@@ -1,6 +1,6 @@
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { type Address, createKeyPairSignerFromBytes, type KeyPairSigner, lamports } from "@solana/kit";
-import { deliveryMemo, sealDelivery } from "@intent-engine/core";
+import { deliveryMemo, type SealRecipient, sealDelivery } from "@intent-engine/core";
 import { commitmentOf, saltCheckOf } from "@intent-engine/client";
 import { h } from "./harness.js";
 
@@ -22,8 +22,8 @@ export const announcement = (intent: Address, worker: Address, sha256: string, b
   return deliveryMemo({ intent, commitment: commitmentOf(intent, worker, salt, sha256), check: saltCheckOf(salt), blob });
 };
 
-export const sealedBlob = (intent: Address, url: string, sealedTo: readonly Address[]): Promise<string> => sealDelivery({ salt: saltFor(intent), url }, sealedTo, intent);
+export const sealedBlob = (intent: Address, url: string, sealedTo: readonly SealRecipient[]): Promise<string> => sealDelivery({ salt: saltFor(intent), url }, sealedTo, intent);
 
-export async function sealedDelivery(intent: Address, worker: Address, sha256: string, url: string, sealedTo: readonly Address[]): Promise<string> {
+export async function sealedDelivery(intent: Address, worker: Address, sha256: string, url: string, sealedTo: readonly SealRecipient[]): Promise<string> {
   return announcement(intent, worker, sha256, await sealedBlob(intent, url, sealedTo));
 }

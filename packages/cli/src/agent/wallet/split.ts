@@ -46,8 +46,8 @@ import { preparedView } from "../shapes.js";
 import { walletRecipient } from "../owner.js";
 import { prepare, transactionSize } from "../prepare.js";
 import { STATUS } from "../../accounts.js";
-import { feePayerOf, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, WAIT_SCAN, signerOf, sent, sha256Of, walletKeypair } from "./guard.js";
-import { openingOutput, openingsFor, sealedRecord, sendOpenings } from "./openings.js";
+import { feePayerOf, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, WAIT_SCAN, signerOf, sent, sha256Of, walletOpeners } from "./guard.js";
+import { openingOutput, openingsFor, sendOpenings, skippedOf } from "./openings.js";
 import { DEVICE_RELEASE, RELEASE_CHANGED, approvalOf } from "./attest.js";
 import { notInSplit, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor, confirmedRelease } from "./delivery.js";
 
@@ -163,13 +163,13 @@ export const walletAttestSplit = define({
       throw new InvalidInput([{ path: "delivered_sha256", message: DELIVERED_NEEDED }]);
     }
     const delivered = sha256Of(input.delivered_sha256, "delivered_sha256");
-    const keypair = await walletKeypair(ctx);
+    const keypair = await walletOpeners(ctx);
     const record = await deliveryRecord(ctx.transport, signer.address, intent, input.max_pages ?? ATTEST_PAGES, keypair);
     if (!record.complete) {
       throw new AgentRefusal("HistoryTooLong", HISTORY_TOO_LONG);
     }
-    sealedRecord(record, keypair);
     const first = firstDelivery(record.deliveries, delivered);
+    const passed = await skippedOf(ctx, { judge: signer.address, intent, device, recipients: [signer.address], record, first, openers: keypair });
     if (first !== null && !wallets.includes(first.worker)) {
       throw new AgentRefusal("NotEarliestAnnouncer", notInSplit(first.worker, delivered));
     }
@@ -304,13 +304,13 @@ export const walletAttestSplit = define({
       done: `released to co-authors; ${tool("wallet_feedback")} to rate if you own it`,
     });
     if (!("signature" in done)) {
-      return done;
+      return { ...done, ...passed };
     }
     if (device) {
-      return { ...done, recorded: false as const, record_memo: followUpMemo(delivered, done.signature, salt), next: unrecordedOnDevice() };
+      return { ...done, ...passed, recorded: false as const, record_memo: followUpMemo(delivered, done.signature, salt), next: unrecordedOnDevice(), ...(await sendOpenings(ctx, payer, signer.address, openings)) };
     }
     const recorded = await recordedSplit(ctx, signer, intent, delivered, salt, done, followUp);
-    return recorded.recorded === false ? recorded : { ...recorded, ...(await sendOpenings(ctx, signer, signer.address, openings)) };
+    return recorded.recorded === false ? { ...recorded, ...passed } : { ...recorded, ...passed, ...(await sendOpenings(ctx, signer, signer.address, openings)) };
   },
 });
 

@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use intent_core::profile::{document, skills, url};
+use intent_core::profile::{document, encryption_key, skills, url};
 
 use crate::errors::{core_err, EngineError};
 use crate::events::{ProfileClosed, ProfileSet};
@@ -11,6 +11,7 @@ pub struct ProfileFields {
     pub endpoint: String,
     pub doc_url: String,
     pub doc_hash: [u8; 32],
+    pub encryption_key: [u8; 32],
 }
 
 #[event_cpi]
@@ -63,6 +64,7 @@ fn write(profile: &mut Profile, args: &ProfileFields, now: i64) -> Result<()> {
     profile.endpoint = url(args.endpoint.as_bytes(), false).map_err(core_err)?;
     profile.doc_url = document(args.doc_url.as_bytes(), &args.doc_hash).map_err(core_err)?;
     profile.doc_hash = args.doc_hash;
+    profile.encryption_key = encryption_key(&args.encryption_key).map_err(core_err)?;
     profile.updated_at = now;
     Ok(())
 }
@@ -74,6 +76,7 @@ fn announced(wallet: Pubkey, args: ProfileFields) -> ProfileSet {
         endpoint: args.endpoint,
         doc_url: args.doc_url,
         doc_hash: args.doc_hash,
+        encryption_key: args.encryption_key,
     }
 }
 

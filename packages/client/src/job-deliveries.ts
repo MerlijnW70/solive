@@ -12,8 +12,14 @@ import {
 } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import {
+  AccountVersionError,
   commitmentPreimage,
+  type DeliveryKey,
+  deliveryKeyOf,
+  type DeliveryOpener,
   DELIVERY_MEMO_MARK,
+  encryptionKeyText,
+  isEncryptionKeyText,
   deliveryMemo,
   IntentStatus,
   isMemoUrl,
@@ -23,14 +29,19 @@ import {
   type Opening,
   openDelivery,
   parseDeliveryMemo,
+  parseEncryptionKey,
   parseOpeningMemo,
   saltCheckPreimage,
   saltMessage,
   saltOfSignature,
   sealDelivery,
+  type SealedKey,
+  sealedKeys,
+  x25519PublicOf,
 } from "@intent-engine/core";
 import { chainTime } from "./accounts.js";
 import { isDevice } from "./ledger.js";
+import { loadProfile } from "./client-claims.js";
 import { loadCommittee } from "./client-committee.js";
 import { memoInstruction } from "./job-memos.js";
 import { historyCovers, openProofEscrows, type Proof, proofAt } from "./job-proofs.js";
@@ -40,7 +51,20 @@ import type { EngineTransaction, Transport } from "./transport.js";
 
 export type DeliverInput = { worker: TransactionSigner; intent: Address; sha256: string; url: string; saltSignature?: Uint8Array };
 
-export type DeliveryPlan = { attestor: Address; instructions: Instruction[]; commitment: string; check: string; salt: string; sealedTo: Address[] };
+export type SealedFor = { wallet: Address; kind: SealedKey; key: string };
+
+export type DeliveryPlan = {
+  attestor: Address;
+  instructions: Instruction[];
+  commitment: string;
+  check: string;
+  salt: string;
+  sealedTo: Address[];
+  sealedKeys: SealedKey[];
+  sealedFor: SealedFor[];
+};
+
+export type DeliveryOpeners = DeliveryOpener | readonly DeliveryOpener[];
 
 export type Delivery = {
   intent: Address;
@@ -126,6 +150,17 @@ export async function deliverySalt(worker: TransactionSigner, intent: Address, s
   return saltOfSignature(signature);
 }
 
+async function recipientOf(transport: Transport, wallet: Address): Promise<{ wallet: Address; encryptionKey: Uint8Array | null }> {
+  const profile = await loadProfile(transport, wallet).catch((error: unknown) => {
+    if (error instanceof AccountVersionError) {
+      return null;
+    }
+    throw error;
+  });
+  const key = profile?.encryptionKey ?? null;
+  return { wallet, encryptionKey: key === null || !isEncryptionKeyText(key) ? null : parseEncryptionKey(key) };
+}
+
 export async function deliveryInstructions(transport: Transport, input: DeliverInput): Promise<DeliveryPlan> {
   const { worker, intent } = input;
   const sha256 = input.sha256.toLowerCase();
@@ -148,8 +183,15 @@ export async function deliveryInstructions(transport: Transport, input: DeliverI
   const salt = await deliverySalt(worker, intent, sha256, input.saltSignature);
   const commitment = commitmentOf(intent, worker.address, salt, sha256);
   const check = saltCheckOf(salt);
-  const blob = await sealDelivery({ salt, url: input.url }, sealedTo, intent);
-  return { attestor, instructions: [memoInstruction(worker, deliveryMemo({ intent, commitment, check, blob })), notify], commitment, check, salt, sealedTo };
+  const recipients = await Promise.all(sealedTo.map((wallet) => recipientOf(transport, wallet)));
+  const blob = await sealDelivery({ salt, url: input.url }, recipients, intent);
+  const instructions = [memoInstruction(worker, deliveryMemo({ intent, commitment, check, blob })), notify];
+  const kinds = sealedKeys(blob) ?? [];
+  const sealedFor = recipients.map(({ wallet, encryptionKey }, at): SealedFor => {
+    const kind = kinds[at] ?? "wallet";
+    return { wallet, kind, key: encryptionKeyText(kind === "profile" && encryptionKey !== null ? encryptionKey : x25519PublicOf(wallet)) };
+  });
+  return { attestor, instructions, commitment, check, salt, sealedTo, sealedKeys: kinds, sealedFor };
 }
 
 export async function deliveryRecord(
@@ -157,7 +199,7 @@ export async function deliveryRecord(
   judge: Address,
   intent?: Address,
   pages: number = DELIVERY_PAGES,
-  keypair?: Uint8Array,
+  keypair?: DeliveryOpeners,
 ): Promise<DeliveryRecord> {
   let proofs: Proof[];
   if (intent === undefined) {
@@ -208,12 +250,13 @@ export async function judgedDeliveries(
   floor: bigint | null,
   covered: () => Promise<boolean>,
   pages: number,
-  keypair?: Uint8Array,
+  keypair?: DeliveryOpeners,
 ): Promise<DeliveryRecord> {
   const scanned = await scan(transport, judge, { floor, memo: DELIVERY_MEMO_MARK, pages, covered });
   const { transactions, complete } = scanned;
   const found = deliveriesIn(transactions, judged);
-  const deliveries = keypair === undefined ? found : await Promise.all(found.map((delivery) => opened(delivery, keypair)));
+  const keys = await Promise.all(openersOf(keypair).map(deliveryKeyOf));
+  const deliveries = keys.length === 0 ? found : await Promise.all(found.map((delivery) => opened(delivery, keys)));
   return {
     deliveries,
     openings: openingsIn(transactions, judged),
@@ -222,8 +265,18 @@ export async function judgedDeliveries(
   };
 }
 
-async function opened(delivery: Delivery, keypair: Uint8Array): Promise<Delivery> {
-  const open = await openDelivery(delivery.sealed, keypair, delivery.intent).catch(() => null);
+export function openersOf(keys: DeliveryOpeners | undefined): readonly DeliveryOpener[] {
+  if (keys === undefined) {
+    return [];
+  }
+  return keys instanceof Uint8Array || !Array.isArray(keys) ? [keys as DeliveryOpener] : (keys as readonly DeliveryOpener[]);
+}
+
+async function opened(delivery: Delivery, keys: readonly DeliveryKey[]): Promise<Delivery> {
+  let open = null;
+  for (const key of keys) {
+    open ??= await openDelivery(delivery.sealed, key, delivery.intent).catch(() => null);
+  }
   if (open === null) {
     return delivery;
   }

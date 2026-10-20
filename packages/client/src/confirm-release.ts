@@ -1,5 +1,5 @@
 import type { Address } from "@solana/kit";
-import { deliveryRecord, firstDelivery } from "./job-deliveries.js";
+import { type DeliveryOpeners, deliveryRecord, firstDelivery } from "./job-deliveries.js";
 import type { Transport } from "./transport.js";
 
 export type ConfirmTarget = {
@@ -9,12 +9,12 @@ export type ConfirmTarget = {
   pages?: number | undefined;
   payees?: readonly Address[] | undefined;
   accounts?: readonly Address[] | undefined;
-  keypair?: Uint8Array | undefined;
+  keypair?: DeliveryOpeners | undefined;
 };
 
 export type NodeView = { genesis: string; intent: string; announcer: string | undefined; accounts?: string[] };
 
-export type ConfirmField = "genesis hash" | "intent account" | "account" | "earliest announcer" | "payee" | "second node";
+export type ConfirmField = "genesis hash" | "intent account" | "account" | "earliest announcer" | "payee" | "second node" | "profile history";
 
 export const NO_ACCOUNT = "no account";
 

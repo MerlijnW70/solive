@@ -17,7 +17,7 @@ describe("profiles", () => {
     const published = { skills: ["rust", "anchor"], endpoint: "https://worker.example/jobs", docUrl: "https://worker.example/about", docSha256: "cd".repeat(32) };
     await client.send([await buildCreateProfile({ wallet, ...published })], wallet);
     const now = await client.chainTime();
-    expect(await client.profile(wallet.address)).toEqual({ wallet: wallet.address, ...published, updatedAt: now });
+    expect(await client.profile(wallet.address)).toEqual({ wallet: wallet.address, ...published, encryptionKey: null, updatedAt: now });
     await client.send([await buildUpdateProfile({ wallet, skills: ["rust"], endpoint: "https://worker.example/v2" })], wallet);
     expect(await client.profile(wallet.address)).toMatchObject({ skills: ["rust"], endpoint: "https://worker.example/v2", docUrl: null, docSha256: null });
     expect(await client.profile(w.owner.address)).toBeNull();

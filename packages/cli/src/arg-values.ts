@@ -82,6 +82,28 @@ export function mcpFeePayer(values: Values): { feePayer?: string } {
   return { feePayer };
 }
 
+export const ENCRYPTION_KEY_FILE = "--encryption-keypair takes an encryption key file, which only decrypts, never a Ledger; make one with profile encryption-key new";
+
+export const ENCRYPTION_KEY_NEEDS_WALLET = "mcp --encryption-keypair opens the deliveries sealed to this wallet, so it needs --wallet";
+
+export function encryptionKeypairOf(values: Values): { encryptionKeypairs?: string[] } {
+  const paths = values["encryption-keypair"];
+  if (paths === undefined) {
+    return {};
+  }
+  if (paths.some(isLedgerPath)) {
+    throw new UsageError(ENCRYPTION_KEY_FILE);
+  }
+  return { encryptionKeypairs: [...paths] };
+}
+
+export function mcpEncryptionKeypair(values: Values): { encryptionKeypairs?: string[] } {
+  if (values["encryption-keypair"] !== undefined && values.wallet !== true) {
+    throw new UsageError(ENCRYPTION_KEY_NEEDS_WALLET);
+  }
+  return encryptionKeypairOf(values);
+}
+
 export function feePayerOf(values: Values, judge: string): { feePayer?: string } {
   const feePayer = values["fee-payer"];
   if (feePayer !== undefined && isLedgerPath(feePayer)) {

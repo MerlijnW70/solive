@@ -4,12 +4,16 @@ import {
   buildCreateProfile,
   buildUpdateProfile,
   checkProfile,
+  ENCRYPTION_KEY_RULE,
   IntentCoreError,
+  isEncryptionKeyText,
+  NO_ENCRYPTION_KEY,
   PROFILE_MAX_SKILLS,
   type ProfileInput,
   profileAddress,
 } from "@intent-engine/core";
-import { createClient } from "@intent-engine/client";
+import { createClient, escrowsJudgedBy, keepsKey } from "@intent-engine/client";
+import { encryptionKeyLines } from "../sealed-commands.js";
 import { type AgentContext, define } from "./actions.js";
 import type { Call } from "./claims.js";
 import { tool } from "./names.js";
@@ -40,6 +44,7 @@ export const getProfile = define({
     endpoint: optional(text()),
     doc_url: optional(nullable(text())),
     doc_sha256: optional(nullable(text("the document's sha256 as 64 hex digits"))),
+    encryption_key: optional(nullable(text("the X25519 public key in base58 that deliveries to this wallet are sealed to; null seals them to the key derived from the wallet"))),
     updated_at: optional(time()),
   }),
   run: async (ctx, input) => {
@@ -56,6 +61,7 @@ export const getProfile = define({
       endpoint: found.endpoint,
       doc_url: found.docUrl,
       doc_sha256: found.docSha256,
+      encryption_key: found.encryptionKey,
       updated_at: found.updatedAt,
     };
   },
@@ -77,6 +83,21 @@ function profileOf(input: { skills?: string[] | undefined; endpoint?: string | u
   }
 }
 
+export const ENCRYPTION_KEY_INPUT = `the encryption key deliveries to this wallet are sealed to: ${ENCRYPTION_KEY_RULE}, which intent-engine profile encryption-key new prints, or ${NO_ENCRYPTION_KEY} to remove it; leave out to keep the published one`;
+
+function encryptionKeyOf(given: string | undefined, kept: string | null): string | null {
+  if (given === undefined) {
+    return kept;
+  }
+  if (given === NO_ENCRYPTION_KEY) {
+    return null;
+  }
+  if (!isEncryptionKeyText(given)) {
+    throw new InvalidInput([{ path: "encryption_key", message: ENCRYPTION_KEY_INPUT }]);
+  }
+  return given;
+}
+
 export const walletProfile = define({
   name: tool("wallet_profile"),
   title: "Publish this wallet's profile",
@@ -87,6 +108,7 @@ export const walletProfile = define({
     endpoint: optional(text("an https url of at most 128 printable characters where this wallet takes work")),
     doc_url: optional(text("an https url of a document describing this wallet's work; needs doc_sha256")),
     doc_sha256: optional(hex32("the document's sha256; needs doc_url")),
+    encryption_key: optional(text(ENCRYPTION_KEY_INPUT)),
     close: optional(flag("true closes the profile instead")),
     approval: optional(text("the approval the preview returned; needed with send")),
     send: optional(flag("true sends the change; leave out to preview")),
@@ -106,6 +128,11 @@ export const walletProfile = define({
     const signer = await signerOf(ctx);
     const profile = await profileAddress(signer.address);
     const existing = await clientOf(ctx).profile(signer.address);
+    const dropsKey = (existing?.encryptionKey ?? null) !== null && (input.close === true || input.encryption_key === NO_ENCRYPTION_KEY);
+    const judging = dropsKey && signer.device !== undefined ? await escrowsJudgedBy(ctx.transport, signer.address) : [];
+    if (judging.length > 0) {
+      throw new AgentRefusal("SealedSalts", keepsKey(signer.address, judging));
+    }
     let instruction;
     let action: "create" | "update" | "close";
     let summary: string[];
@@ -117,7 +144,8 @@ export const walletProfile = define({
       action = "close";
       summary = [`Closes: the profile of this wallet ${signer.address} and returns its rent`];
     } else {
-      const fields = profileOf(input);
+      const encryptionKey = encryptionKeyOf(input.encryption_key, existing?.encryptionKey ?? null);
+      const fields = { ...profileOf(input), ...(encryptionKey === null ? {} : { encryptionKey }) };
       action = existing === null ? "create" : "update";
       instruction = existing === null ? await buildCreateProfile({ wallet: signer, ...fields }) : await buildUpdateProfile({ wallet: signer, ...fields });
       summary = [
@@ -125,6 +153,7 @@ export const walletProfile = define({
         `Skills: ${fields.skills.join(", ")}`,
         `Endpoint: ${fields.endpoint}`,
         fields.docUrl === undefined ? "Document: none" : `Document: ${fields.docUrl} with sha256 ${fields.docSha256}`,
+        ...encryptionKeyLines(encryptionKey, input.encryption_key === NO_ENCRYPTION_KEY),
       ];
     }
     const approval = createHash("sha256").update(JSON.stringify({ action, summary })).digest("hex").slice(0, 16);

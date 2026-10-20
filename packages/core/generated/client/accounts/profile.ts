@@ -60,7 +60,7 @@ export type Profile = {
   version: number;
   bump: number;
   padding: ReadonlyUint8Array;
-  reserved: ReadonlyUint8Array;
+  encryptionKey: ReadonlyUint8Array;
 };
 
 export type ProfileArgs = {
@@ -73,7 +73,7 @@ export type ProfileArgs = {
   version: number;
   bump: number;
   padding: ReadonlyUint8Array;
-  reserved: ReadonlyUint8Array;
+  encryptionKey: ReadonlyUint8Array;
 };
 
 /** Gets the encoder for {@link ProfileArgs} account data. */
@@ -93,7 +93,7 @@ export function getProfileEncoder(): FixedSizeEncoder<ProfileArgs> {
       ["version", getU8Encoder()],
       ["bump", getU8Encoder()],
       ["padding", fixEncoderSize(getBytesEncoder(), 6)],
-      ["reserved", fixEncoderSize(getBytesEncoder(), 32)],
+      ["encryptionKey", fixEncoderSize(getBytesEncoder(), 32)],
     ]),
     (value) => ({ ...value, discriminator: PROFILE_DISCRIMINATOR }),
   );
@@ -115,7 +115,7 @@ export function getProfileDecoder(): FixedSizeDecoder<Profile> {
     ["version", getU8Decoder()],
     ["bump", getU8Decoder()],
     ["padding", fixDecoderSize(getBytesDecoder(), 6)],
-    ["reserved", fixDecoderSize(getBytesDecoder(), 32)],
+    ["encryptionKey", fixDecoderSize(getBytesDecoder(), 32)],
   ]);
 }
 

@@ -459,10 +459,7 @@ fn main_keeps_every_stand_by_line_field_where_it_was() {
     kept!(
         old::Profile,
         Profile,
-        [
-            wallet, doc_hash, updated_at, skills, endpoint, doc_url, version, bump, padding,
-            reserved
-        ]
+        [wallet, doc_hash, updated_at, skills, endpoint, doc_url, version, bump, padding]
     );
 }
 
@@ -488,6 +485,11 @@ fn main_puts_new_fields_only_where_the_stand_by_line_kept_zeros() {
         offsets!(ClaimBoard, [head, tail]),
         [size_of::<old::LineFreeBoard>(), 164]
     );
+    assert_eq!(
+        offset_of!(Profile, encryption_key),
+        offset_of!(old::Profile, reserved)
+    );
+    assert_eq!(size_of::<Profile>(), size_of::<old::Profile>());
 }
 
 #[test]

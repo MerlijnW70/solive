@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { type Address, getBase58Decoder, type Signature, type TransactionPartialSigner } from "@solana/kit";
-import { decodeParams, IntentStatus, Kind, openingMemo, UNOPENED } from "@intent-engine/core";
+import { decodeParams, type DeliveryOpener, IntentStatus, Kind, openingMemo, UNOPENED } from "@intent-engine/core";
 import {
   chainTime,
   type CommitteeView,
@@ -20,6 +20,13 @@ import {
   openingsOf,
   SIGNATURE_PAGE,
   type Transport,
+  missingKey,
+  deviceJudgeReady,
+  type MissingKey,
+  NoKeyAtCreation,
+  ProfileHistoryIncomplete,
+  skippedNote,
+  unopenedOf,
 } from "@intent-engine/client";
 import type { Command } from "./args.js";
 import { NOT_SENT } from "./flows.js";
@@ -33,7 +40,8 @@ import { type HostJudged, judgeHost } from "./host-judge.js";
 import { judgeNode, type NodeJudged } from "./node-judge.js";
 import { invitedTo, notInvited } from "./invites.js";
 import { type SimulatedRelease, simulateRelease } from "./release-simulation.js";
-import { keyFileSigner, type MessageSigner, messageSigner } from "./ledger-keys.js";
+import { type MessageSigner, messageSigner } from "./ledger-keys.js";
+import { loadEncryptionKeys } from "./sealed-commands.js";
 import { type Beacon, drawBeacon, type DrawJudged, judgeDraw } from "./draw.js";
 import { type Cases, casesOf, judgeViper, type Judged as CasesJudged, pinnedWasm, runOf, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
 
@@ -84,6 +92,7 @@ export type Verdict = {
   committee?: Address;
   vote?: VoteFile;
   openings?: { memo: string; signature: Signature | null; error?: string }[];
+  skipped?: string[];
   next?: string;
   cleanup?: string;
 };
@@ -96,7 +105,25 @@ export const pagesRead = (pages: number): string =>
   `It read ${pages} ${pages === 1 ? "page" : "pages"} of ${SIGNATURE_PAGE} signatures; a higher --max-pages reads further, but does not help when the RPC node's ledger does not reach back to the escrow's creation or the node cannot page signatures or report its first available slot`;
 
 export const sealedOnDevice = (path: string, intent: Address): string =>
-  `a judge on the Ledger ${path} cannot open the salts sealed in the announcements for intent ${intent}, so it cannot know which announcement came first; judge with a key file; nothing was run or paid`;
+  `a judge on the Ledger ${path} cannot open the salts sealed in the announcements for intent ${intent}, so it cannot know which announcement came first; pass --encryption-keypair with the encryption key file whose public key its profile publishes, or judge with a key file; nothing was run or paid`;
+
+export const DEVICE_VOTE_PREVIEW =
+  "nothing was signed; with --yes the Ledger signs only this member's vote, one message that lists every member's key and this digest: compare it with committee vote's preview on another machine before pressing approve";
+
+export const historyRefused = (error: unknown): never => {
+  throw error instanceof ProfileHistoryIncomplete || error instanceof NoKeyAtCreation ? new JudgeRefused(error.message) : error;
+};
+
+export const GIVE_KEY_FLAG = "pass the encryption key file of that key with --encryption-keypair";
+
+export const unopenedRefusal = (missing: MissingKey, path: string, device: boolean): string =>
+  missing.key.kind === "wallet" && device ? sealedOnDevice(path, missing.delivery.intent) : missingKey(missing, GIVE_KEY_FLAG);
+
+export async function judgeOpeners(runtime: Runtime, command: JudgeCommand, device: boolean): Promise<DeliveryOpener[]> {
+  const own = device ? [] : [await runtime.loadKeypair(command.keypair)];
+  const sealed = await loadEncryptionKeys(runtime, command.encryptionKeypairs);
+  return [...own, ...sealed];
+}
 
 export const DEVICE_PREVIEW =
   "nothing was sent; with --yes the Ledger signs only the release message and shows this digest: compare it with judge digest run on another machine before pressing approve, and reject on any difference";
@@ -149,8 +176,8 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
     command.owner,
     command.nonce,
   );
-  if (committee !== null) {
-    keyFileSigner(signer, "judge", command.keypair);
+  if (isDevice(signer)) {
+    await deviceJudgeReady(transport, signer.address, address).catch(historyRefused);
   }
   const result = command.result ?? minResult;
   if (result < minResult || result > maxResult) {
@@ -169,17 +196,20 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   }
   const sha256 = read.sha256;
   const check = command.check === undefined ? undefined : { name: basename(resolve(command.check)), read: await readArtifact(resolve(command.check)) };
-  const keypair = isDevice(signer) ? undefined : await runtime.loadKeypair(command.keypair);
+  const keypair = await judgeOpeners(runtime, command, isDevice(signer));
   const record = await deliveryRecord(transport, attestor, address, command.maxPages, keypair);
   if (!record.complete) {
     throw new JudgeRefused(
       `the delivery record is incomplete because the judge's history is too long to read in full or the RPC node cannot serve all of it, so the earliest announcer of the artifact with sha256 ${sha256} for intent ${address} cannot be known; nothing was run or paid. ${pagesRead(record.pages)}`,
     );
   }
-  if (keypair === undefined && record.deliveries.length > 0) {
-    throw new JudgeRefused(sealedOnDevice(command.keypair, address));
-  }
   const first = firstDelivery(record.deliveries, sha256);
+  const confirm = command.confirmUrl === undefined ? undefined : runtime.transport(command.confirmUrl);
+  const recipients = committee?.members ?? [attestor];
+  const { missing, skipped } = await unopenedOf(transport, { judge: signer.address, recipients, deliveries: record.deliveries, first, openers: keypair, confirm }).catch(historyRefused);
+  if (missing !== null) {
+    throw new JudgeRefused(unopenedRefusal(missing, command.keypair, isDevice(signer)));
+  }
   const salt = first?.salt;
   const earlier = first === null ? [] : earlierSalts(record.deliveries, first);
   const payTo = command.payTo ?? first?.worker;
@@ -197,8 +227,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   const beacon = draw === undefined ? undefined : await drawBeacon(transport, (seconds) => runtime.sleep(seconds), first, draw, address, sha256);
   const signals = holdSignals();
   try {
-    const confirm = command.confirmUrl === undefined ? undefined : runtime.transport(command.confirmUrl);
-    const judged = { address, attestor, committee, specHash, sha256, salt, earlier, payTo, result, read, specBytes, check, viper, beacon, confirm, keypair, feePayer };
+    const judged = { address, attestor, committee, specHash, sha256, salt, earlier, payTo, result, read, specBytes, check, viper, beacon, confirm, keypair, feePayer, skipped: skipped.map(skippedNote) };
     return await checkAndSettle(command, transport, signer, signals, judged);
   } finally {
     signals.release();
@@ -278,11 +307,12 @@ type Judged = {
   viper: { cases: Cases; wasm: Buffer } | undefined;
   beacon: Beacon | undefined;
   confirm: Transport | undefined;
-  keypair: Uint8Array | undefined;
+  keypair: DeliveryOpener[];
   feePayer: TransactionPartialSigner | undefined;
+  skipped: string[];
 };
 
-async function sendOpenings(transport: Transport, signer: MessageSigner, attestor: Address, intent: Address, earlier: readonly (string | null)[]): Promise<NonNullable<Verdict["openings"]>> {
+async function sendOpenings(transport: Transport, signer: TransactionPartialSigner, attestor: Address, intent: Address, earlier: readonly (string | null)[]): Promise<NonNullable<Verdict["openings"]>> {
   const sent: NonNullable<Verdict["openings"]> = [];
   for (const opening of openingsOf(intent, earlier)) {
     const memo = openingMemo(opening);
@@ -300,7 +330,7 @@ async function checkAndSettle(
   transport: Transport,
   signer: MessageSigner,
   signals: HeldSignals,
-  { address, attestor, committee, specHash, sha256, salt, earlier, payTo, result, read, specBytes, check: checkFiles, viper, beacon, confirm, keypair, feePayer }: Judged,
+  { address, attestor, committee, specHash, sha256, salt, earlier, payTo, result, read, specBytes, check: checkFiles, viper, beacon, confirm, keypair, feePayer, skipped }: Judged,
 ): Promise<Verdict> {
   const { sandbox } = command;
   let check: Check = { exitCode: null, timedOut: false };
@@ -360,14 +390,18 @@ async function checkAndSettle(
   let vote: VoteFile | undefined;
   let simulated: SimulatedRelease | undefined;
   let openingsSent: Verdict["openings"];
-  const digest =
+  let digest =
     passed && committee === null && isDevice(signer)
       ? hex((await createClient({ url: command.url, transport }).proofBallot({ owner: command.owner, nonce: command.nonce, payTo, result })).digest)
       : undefined;
   if (passed && committee !== null) {
     const target = { owner: command.owner, nonce: command.nonce, payTo, result };
     const ballot = await createClient({ url: command.url, transport }).committeeBallot(target);
-    vote = await memberVote(keyFileSigner(signer, "judge", command.keypair), ballot, target, { salt, earlier: earlier.length === 0 ? undefined : earlier.map((one) => one ?? UNOPENED) });
+    if (isDevice(signer) && !command.yes) {
+      digest = hex(ballot.digest);
+    } else {
+      vote = await memberVote(signer, ballot, target, { salt, earlier: earlier.length === 0 ? undefined : earlier.map((one) => one ?? UNOPENED) });
+    }
   } else if (passed && command.yes) {
     try {
       signature = await sendRelease(command, transport, signer, signals, { address, payTo, result, sha256, salt, feePayer });
@@ -388,7 +422,7 @@ async function checkAndSettle(
     simulated = await simulateRelease(transport, signer, { url: command.url, owner: command.owner, nonce: command.nonce, payTo, result, sha256, salt });
   }
   if (signature !== null && earlier.length > 0) {
-    openingsSent = await sendOpenings(transport, signer, attestor, address, earlier);
+    openingsSent = await sendOpenings(transport, feePayer ?? signer, attestor, address, earlier);
   }
   const verdict: Verdict = {
     intent: address,
@@ -410,9 +444,11 @@ async function checkAndSettle(
     ...(feePayer === undefined ? {} : { feePayer: feePayer.address }),
     ...(committee === null ? {} : { committee: committee.address }),
     ...(vote === undefined ? {} : { vote, next: VOTE_NEXT }),
+    ...(passed && committee !== null && vote === undefined ? { next: DEVICE_VOTE_PREVIEW } : {}),
     ...(openingsSent === undefined ? {} : { openings: openingsSent }),
     ...(passed && committee === null && !command.yes ? { next: digest === undefined ? NOT_SENT : DEVICE_PREVIEW } : {}),
     ...(cleanup !== undefined ? { cleanup } : {}),
+    ...(skipped.length === 0 ? {} : { skipped }),
   };
   if (command.verdict !== undefined) {
     await writeFile(command.verdict, `${JSON.stringify(verdict, null, 2)}\n`);

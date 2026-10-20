@@ -4,7 +4,7 @@ import type { Priority } from "./budget.js";
 import type { ClaimsView } from "./client-claims.js";
 import type { FeedbackInput, Reputation, ReputationOptions } from "./reputation.js";
 import type { EngineError } from "./errors.js";
-import type { DeliverInput, Delivery, DeliveryRecord, Job, SelfOpeningInput, Spec, SpecFetch } from "./jobs.js";
+import type { DeliverInput, Delivery, DeliveryOpeners, DeliveryRecord, Job, SelfOpeningInput, Spec, SpecFetch } from "./jobs.js";
 import type { Notifications, Simulation, Transport } from "./transport.js";
 
 export type ClientOptions = {
@@ -165,7 +165,7 @@ export type Client = {
   spec(intent: Address, keypair?: Uint8Array): Promise<Spec | null>;
   deliver(input: DeliverInput): Promise<Signature>;
   deliveries(filter: { judge: Address; intent?: Address }): Promise<Delivery[]>;
-  deliveryRecord(filter: { judge: Address; intent?: Address; pages?: number; keypair?: Uint8Array }): Promise<DeliveryRecord>;
+  deliveryRecord(filter: { judge: Address; intent?: Address; pages?: number; keypair?: DeliveryOpeners }): Promise<DeliveryRecord>;
   openDelivery(input: SelfOpeningInput): Promise<Signature>;
 };
 

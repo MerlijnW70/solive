@@ -178,7 +178,6 @@ describe("signing with a Ledger", () => {
       ["crank", ["crank", "--keypair", "usb://ledger"]],
       ["balance", ["balance", "--keypair", "usb://ledger?key=2"]],
       ["setup", ["setup", "--keypair", "usb://ledger"]],
-      ["profile close", ["profile", "close", "--keypair", "usb://ledger"]],
       ["claims open", ["claims", "open", "--keypair", "usb://ledger", "--nonce", "0", "--max-secs", "60", "--stake", "1"]],
       ["record-delivery", ["record-delivery", "--keypair", "usb://ledger", "--owner", w.owner.address, "--nonce", "0", "--sha256", "ab".repeat(32)]],
       ["signed submit", ["signed", "submit", "--keypair", "usb://ledger", "--file", "signed.json"]],
@@ -226,6 +225,8 @@ describe("signing with a Ledger", () => {
       ["claims", "take", "--owner", owner, "--nonce", "0", "--secs", "60"],
       ["claims", "drop", "--owner", owner, "--nonce", "0"],
       ["mandate", "revoke", "--agent", owner],
+      ["profile", "set", "--skills", "judge", "--endpoint", "https://" + "judge.example", "--encryption-key", "none"],
+      ["profile", "close"],
     ];
     for (const argv of signs) {
       expect(signsOnDevice(parse([...argv, "--keypair", "usb://ledger"])), argv.join(" ")).toBe(true);

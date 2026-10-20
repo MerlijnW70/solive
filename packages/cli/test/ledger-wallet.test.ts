@@ -16,6 +16,7 @@ import { parse } from "../src/args.js";
 import { ENV_KEYPAIR } from "../src/clusters.js";
 import { EXIT_OK, main } from "../src/main.js";
 import { sealedDelivery } from "./announce.js";
+import { keyedProfile } from "./encryption-job.js";
 import { ata, balance, creation, funded, h, NOW, runtime, setNow, transport, world } from "./harness.js";
 import { type Device, device, deviceKey, found, type Key, MESSAGE, messageThen, REJECT, SIGN, transactionThen } from "./ledger-device.js";
 
@@ -31,13 +32,14 @@ async function escrow(announce = false, attestorOf?: (key: Key) => Promise<Addre
   const w = await world();
   const key = await deviceKey();
   h.svm.airdrop(key.address, lamports(10_000_000_000n));
+  const profile = await keyedProfile(key);
   const workerKey = await generateKeyPairSigner();
   const worker = workerKey.address;
   const attestor = attestorOf === undefined ? key.address : await attestorOf(key);
   const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor, specHash: new Uint8Array(32).fill(7), judgeFee: 0n } as const;
   const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
-  const announced = await sealedDelivery(intent, worker, WORK, "https://" + "example.org/work", [key.address]);
-  h.engineLog = [...(announce ? [{ signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [announced], feePayer: worker }] : []), creation(intent)];
+  const announced = await sealedDelivery(intent, worker, WORK, "https://" + "example.org/work", [{ wallet: key.address, encryptionKey: profile.encryptionKey }]);
+  h.engineLog = [...(announce ? [{ signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [announced], feePayer: worker }] : []), creation(intent), profile.entry];
   h.env[ENV_KEYPAIR] = PATH;
   return { key, owner: w.owner.address, worker, workerKey, intent, mint: w.inputMint, output: w.outputMint, authority: w.authority, payer: await funded() };
 }
@@ -128,7 +130,9 @@ describe("an MCP wallet on a Ledger", () => {
     const ledger = device(e.key, found(LEVELS, e.key));
     const client = await served(ledger, e.payer);
     const refused = await call(client, "wallet_attest", { owner: e.owner, nonce: "0", pay_to: e.worker, delivered_sha256: WORK });
-    expect(refused).toMatchObject({ error: true, value: { code: "SealedSalts", hint: SALTS_SEALED } });
+    expect(refused).toMatchObject({ error: true, value: { code: "SealedSalts" } });
+    expect(String(refused.value["hint"])).toContain("mcp --encryption-keypair");
+    expect(SALTS_SEALED).toContain("mcp --encryption-keypair");
     expect([ledger.signed, h.wires.length]).toEqual([[], 0]);
     expect(statusOf(e.intent)).toBe(IntentStatus.Open);
   });

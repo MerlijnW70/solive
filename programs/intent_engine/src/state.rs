@@ -282,7 +282,7 @@ pub struct Profile {
     pub version: u8,
     pub bump: u8,
     pub padding: [u8; 6],
-    pub reserved: [u8; 32],
+    pub encryption_key: [u8; 32],
 }
 
 impl Profile {

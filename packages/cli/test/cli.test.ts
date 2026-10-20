@@ -57,6 +57,8 @@ import {
   Kind,
   splitFee,
   splitFees,
+  encryptionKeyText,
+  x25519PublicOf,
 } from "@intent-engine/core";
 import { agentServer } from "../src/agent/mcp.js";
 import { ACTIONS } from "../src/agent/registry.js";
@@ -703,6 +705,7 @@ describe("cli against the deployed engine", () => {
       `Announces: the work with sha256 ${work}, for the proof escrow ${job.intent}, as the commitment ${commitmentOf(job.intent, worker.address, salt, work)}, which binds it to ${worker.address} and a salt only its key derives`,
       "Seals: the salt and the url " + "https://example.org/work" + `, so only the judge ${judge.address} can read it`,
       `Notifies: its judge ${judge.address}, with a transfer of 0 lamports from ${worker.address}, which signs and pays the fee`,
+      `Seals to: ${judge.address} with the key ${encryptionKeyText(x25519PublicOf(judge.address))}, derived from its wallet`,
     ];
     const preview = await cli(args, { "w.json": worker });
     expect(preview.json()).toMatchObject({ intent: job.intent, attestor: judge.address, check: saltCheckOf(salt), summary, sent: false });
@@ -744,6 +747,7 @@ describe("cli against the deployed engine", () => {
         `Announces: the work with sha256 ${sha256}, for the proof escrow ${job.intent}, as the commitment ${commitment}, which binds it to ${worker.address} and a salt only its key derives`,
         "Seals: the salt and the url " + "https://example.org/work" + `, so only the judge ${judge.address} can read it`,
         `Notifies: its judge ${judge.address}, with a transfer of 0 lamports from ${worker.address}, which signs and pays the fee`,
+        `Seals to: ${judge.address} with the key ${encryptionKeyText(x25519PublicOf(judge.address))}, derived from its wallet`,
       ]);
       const sent = await cli([...args, "--yes"], { "w.json": worker });
       expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);

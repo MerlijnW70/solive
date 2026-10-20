@@ -44,8 +44,10 @@ import {
   mintOf,
   PLAIN_HTTP_ON_PUBLIC,
   plainHttpOnPublic,
+  keylessJudges,
   tokenAccountIfMissing,
   type Transport,
+  WARN_NO_JUDGE_KEY,
   wrapIfShort,
 } from "@intent-engine/client";
 import { define } from "./actions.js";
@@ -232,6 +234,7 @@ export const prepareCreate = define({
     const wrap = await wrapIfShort(transport, input.owner, input.input_mint, inputToken.tokenProgram, escrowAmount(params));
     const published = specUrl === undefined ? [] : [memoInstruction(owner, specMemo(specUrl))];
     const prepared = await prepare(transport, [...register, ...receiver.create, ...wrap.instructions, create, ...published], input.owner);
+    const keyless = params.kind === Kind.AttestedResult && params.specHash.some((b) => b !== 0) ? await keylessJudges(transport, params.attestor) : [];
     return {
       intent,
       nonce,
@@ -259,6 +262,7 @@ export const prepareCreate = define({
       warnings: [
         ...warningsOf(params, expiresAt, now, inputToken.scaled || outputToken.scaled),
         ...(elsewhere ? [WARN_RECEIVER] : []),
+        ...keyless.map((wallet) => `${WARN_NO_JUDGE_KEY}: the profile of ${wallet} publishes no encryption key`),
       ],
       create_fee: BigInt(config.createFee),
       crank_bounty: BigInt(config.crankBounty),

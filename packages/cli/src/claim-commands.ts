@@ -20,11 +20,12 @@ import {
   profileAddress,
   stakeReceiverOnSettle,
 } from "@intent-engine/core";
-import { type ClaimsView, type Client, createClient, type LineEntry, lineHandover, loadLine, type Transport } from "@intent-engine/client";
+import { type ClaimsView, type Client, createClient, escrowsJudgedBy, isDevice, keepsKey, type LineEntry, lineHandover, loadLine, type Transport } from "@intent-engine/client";
 import { previewed } from "./admin-commands.js";
 import type { Command } from "./command-types.js";
 import { FlowRefused } from "./flows.js";
 import { transactionSigner } from "./ledger-keys.js";
+import { encryptionKeyLines } from "./sealed-commands.js";
 import type { Runtime } from "./runtime.js";
 
 type ClaimCommand = Extract<
@@ -316,12 +317,18 @@ async function profileCommand(command: Extract<ClaimCommand, { name: `profile-${
       endpoint: found.endpoint,
       doc_url: found.docUrl,
       doc_sha256: found.docSha256,
+      encryption_key: found.encryptionKey,
       updated_at: found.updatedAt,
     };
   }
-  const wallet = await runtime.loadSigner(command.keypair);
+  const wallet = await transactionSigner(runtime, command.keypair);
   const profile = await profileAddress(wallet.address);
   const existing = await client.profile(wallet.address);
+  const dropsKey = (existing?.encryptionKey ?? null) !== null && (command.name === "profile-close" || command.encryptionKey === null);
+  const judging = dropsKey && isDevice(wallet) ? await escrowsJudgedBy(transport, wallet.address) : [];
+  if (judging.length > 0) {
+    throw new FlowRefused(keepsKey(wallet.address, judging));
+  }
   if (command.name === "profile-close") {
     if (existing === null) {
       throw new FlowRefused(`${wallet.address} ${NO_PROFILE}; nothing was sent`);
@@ -329,7 +336,8 @@ async function profileCommand(command: Extract<ClaimCommand, { name: `profile-${
     const summary = [`Closes: the profile of ${wallet.address} and returns its rent to it`];
     return previewed(transport, [await buildCloseProfile({ wallet })], wallet, { wallet: wallet.address, profile, summary }, command.yes);
   }
-  const input = { wallet, ...command.profile };
+  const encryptionKey = command.encryptionKey === undefined ? (existing?.encryptionKey ?? null) : command.encryptionKey;
+  const input = { wallet, ...command.profile, ...(encryptionKey === null ? {} : { encryptionKey }) };
   const instruction = existing === null ? await buildCreateProfile(input) : await buildUpdateProfile(input);
   const { docUrl, docSha256 } = command.profile;
   const summary = [
@@ -337,6 +345,7 @@ async function profileCommand(command: Extract<ClaimCommand, { name: `profile-${
     `Skills: ${command.profile.skills.join(", ")}`,
     `Endpoint: ${command.profile.endpoint}`,
     docUrl === undefined ? "Document: none" : `Document: ${docUrl} with sha256 ${docSha256}`,
+    ...encryptionKeyLines(encryptionKey, command.encryptionKey === null),
     ...(existing === null ? [`Pays rent: ${wallet.address}`] : []),
   ];
   const shown = { wallet: wallet.address, profile, action: existing === null ? "create" : "update", summary };

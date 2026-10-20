@@ -23,6 +23,7 @@ export * from "./pdas.js";
 export * from "./profile.js";
 export * from "./sealed.js";
 export * from "./sealed-delivery.js";
+export * from "./encryption-key.js";
 export * from "./sig.js";
 export * from "./state.js";
 export * from "./validate.js";

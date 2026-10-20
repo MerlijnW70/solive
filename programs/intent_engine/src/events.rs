@@ -368,6 +368,7 @@ pub struct ProfileSet {
     pub endpoint: String,
     pub doc_url: String,
     pub doc_hash: [u8; 32],
+    pub encryption_key: [u8; 32],
 }
 
 #[event]

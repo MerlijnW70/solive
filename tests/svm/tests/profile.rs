@@ -19,6 +19,14 @@ fn args(skills: &[&str], endpoint: &str, doc: Option<(&str, [u8; 32])>) -> Profi
         endpoint: endpoint.to_owned(),
         doc_url,
         doc_hash,
+        encryption_key: [0; 32],
+    }
+}
+
+fn keyed(endpoint: &str, encryption_key: [u8; 32]) -> ProfileFields {
+    ProfileFields {
+        encryption_key,
+        ..args(&["judge"], endpoint, None)
     }
 }
 
@@ -104,6 +112,68 @@ fn a_wallet_publishes_its_skills_endpoint_and_document() -> TestResult {
 }
 
 #[test]
+fn a_wallet_sets_changes_and_clears_its_encryption_key() -> TestResult {
+    let mut env = Env::new()?;
+    let judge = env.funded()?;
+    let stranger = env.funded()?;
+    let me = judge.pubkey();
+    let meta = env.send(
+        &judge,
+        &[create_ix(
+            &me,
+            profile_pda(&me),
+            keyed("https://j.example", [3; 32]),
+        )],
+        &[],
+    )?;
+    let stored: Profile = load(&env.svm, &profile_pda(&me))?;
+    assert_eq!(stored.encryption_key, [3; 32]);
+    let announced: Vec<_> = events::<ProfileSet>(&meta)
+        .into_iter()
+        .map(|e| e.encryption_key)
+        .collect();
+    assert_eq!(announced, [[3; 32]]);
+    let hijack = update_ix(
+        &stranger.pubkey(),
+        profile_pda(&me),
+        keyed("https://j.example", [6; 32]),
+    );
+    assert!(env.send(&stranger, &[hijack], &[]).is_err());
+    let stored: Profile = load(&env.svm, &profile_pda(&me))?;
+    assert_eq!(stored.encryption_key, [3; 32]);
+    env.send(
+        &judge,
+        &[update_ix(
+            &me,
+            profile_pda(&me),
+            keyed("https://j.example", [4; 32]),
+        )],
+        &[],
+    )?;
+    let stored: Profile = load(&env.svm, &profile_pda(&me))?;
+    assert_eq!(
+        (stored.encryption_key, stored.version),
+        ([4; 32], PROFILE_VERSION)
+    );
+    env.send(
+        &judge,
+        &[update_ix(
+            &me,
+            profile_pda(&me),
+            keyed("https://k.example", [0; 32]),
+        )],
+        &[],
+    )?;
+    let stored: Profile = load(&env.svm, &profile_pda(&me))?;
+    assert_eq!(stored.encryption_key, [0; 32]);
+    let before = env.svm.get_balance(&me).unwrap_or(0);
+    env.send(&judge, &[close_ix(&me, profile_pda(&me))], &[])?;
+    assert!(!env.exists(&profile_pda(&me)));
+    assert!(env.svm.get_balance(&me).unwrap_or(0) > before);
+    Ok(())
+}
+
+#[test]
 fn only_the_wallet_updates_or_closes_its_profile() -> TestResult {
     let mut env = Env::new()?;
     let agent = env.funded()?;
@@ -164,6 +234,12 @@ fn a_malformed_profile_is_refused() -> TestResult {
             Some(("https://a.example/p", [0; 32])),
         ),
         args(&["rust"], "https://a.example", Some(("", [5; 32]))),
+        keyed("https://a.example", [0xff; 32]),
+        keyed("https://a.example", {
+            let mut one = [0; 32];
+            one[0] = 1;
+            one
+        }),
     ] {
         assert_eq!(
             env.send(

@@ -20,9 +20,27 @@ $env:JUDGE = (intent-engine balance | Out-String | ConvertFrom-Json).address
 
 The judge's wallet can be a Ledger: pass `--keypair usb://ledger` or another Ledger form to `judge`, with or without `--watch`, and `--fee-payer <key file>`. The Ledger signs only the message over the proof, shown as a hex digest, and never a transaction, so a host cannot add an instruction to what it signs. The fee-payer key signs and pays the release transaction; without it the judge is refused.
 
-A Ledger cannot open the salts workers seal to the judge, so a judge on a Ledger refuses an escrow with announced work and pays only `--pay-to` when nobody announced; judge announced work with a key file. Since the Ledger signs no transaction, its release carries no memo recording the work. A worker on a Ledger cannot derive its salt either, so `deliver` refuses it with `NoMessageSigner`. A committee member can vote on a Ledger too, as below.
+A Ledger cannot open the salts workers seal to the judge, so a judge on a Ledger opens them with an encryption key file, which only decrypts and never signs. Make one with `intent-engine profile encryption-key new --out judge.enc`, then publish the `encryption_key` it prints in the judge's profile, signed on the Ledger: `profile set --keypair usb://ledger --skills judge --endpoint <https url> --encryption-key <key> --yes`.
+
+Workers then seal each announcement to that key, and their memo records which key each recipient got. Pass `--encryption-keypair judge.enc` to `judge`, with or without `--watch`, and to `deliveries`. Without it, a judge on a Ledger refuses an escrow with announced work, naming `--encryption-keypair`, and pays only `--pay-to` when nobody announced.
+
+Each sealed announcement lists a short fingerprint of every key it was sealed to.
+
+For an announcement the judge cannot open, it reads its profile's history to find the key an honest worker had to use when the announcement landed: the profile's encryption key then, or else the key derived from the wallet. If the announcement names that key and the judge lacks its file, the release stops and names it. Anything else is passed over and listed under `skipped`.
+
+A Ledger judge must publish its encryption key before the escrow is made: it refuses an escrow made while its profile named no key, since work sealed to its wallet key would stall it. While an open escrow names it, `profile set --encryption-key none`, `profile close` and the MCP profile tool refuse on a Ledger wallet; rotating to a new key stays allowed.
+
+Hirers see a warning when they name a judge whose profile has no key. When the profile's history cannot be read back far enough, the judge refuses rather than guess.
+
+Rotate only between escrows: a worker that read the profile before a rotation and lands in or after its slot sealed to the old key, so a judge without the old key file passes that announcement over and lists it under `skipped`.
+
+After a new key replaces the old one, repeat `--encryption-keypair` once per key file. On a Ledger, the fee payer signs and pays the openings of earlier announcements; readers check each salt against its announcement, not who sent it.
+
+Since the Ledger signs no transaction, its release carries no memo recording the work. A worker on a Ledger cannot derive its salt either, so `deliver` refuses it with `NoMessageSigner`. A committee member can vote on a Ledger too, as below.
 
 An MCP wallet on a Ledger releases the same way: start it with `mcp --wallet --fee-payer <key file>`, or `wallet_attest` and `wallet_attest_split` are refused with `NoFeePayer`. Their previews show the `digest` the device signs. For a transaction the wallet itself signs on the device, the preview shows the `message_hash` the device shows, and a send with the same arguments signs exactly that kept transaction; without one, or once it expired, the send is refused with `DeviceUnpreviewed`.
+
+Start an MCP wallet on a Ledger with `--encryption-keypair <file>` too, repeated per key file, so it opens what workers seal to its profile key; its `--fee-payer` also signs the openings. Without it, `wallet_attest`, `wallet_attest_split` and `wallet_committee_vote` refuse announced work with `SealedSalts`.
 
 A preview without `--yes` asks the device for nothing and prints the `digest` it will sign. Before you approve, run `intent-engine judge digest --owner <address> --nonce <n> --pay-to <wallet>` on a second machine. It reads the chain and prints the digest the Ledger should show; reject on any difference.
 
@@ -244,6 +262,8 @@ intent-engine judge --keypair a.json --owner $env:OWNER --nonce $env:NONCE --spe
 ```
 
 A member whose key is on a Ledger votes with `committee vote --keypair usb://ledger` and the same `--owner`, `--nonce`, `--pay-to` and `--result`, plus `--out` for the vote file and `--yes`. The device shows one message that lists every member's key and the release digest, the `digest` the preview prints, and signs no transaction. A vote stays valid whichever members reach the threshold.
+
+A member on a Ledger can also judge, with `judge --keypair usb://ledger --fee-payer <key file> --encryption-keypair <file>`. It opens the announcements with the encryption key its profile publishes and, with `--yes`, signs its vote on the device; without `--yes` it prints the vote's `digest` and signs nothing. Without an encryption key file it refuses announced work.
 
 Because that message lists every member, a release by a large committee, especially one that also splits the pay, can exceed the size of one Solana transaction; keep committees small or the escrow can only be cancelled.
 

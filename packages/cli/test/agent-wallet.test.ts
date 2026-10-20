@@ -67,6 +67,8 @@ import {
   WARN_PROOF,
   WARN_RECEIVER,
   formatTime,
+  encryptionKeyText,
+  x25519PublicOf,
 } from "@intent-engine/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
@@ -1122,6 +1124,7 @@ describe("the wallet server", () => {
         `Seals: the salt and the url ${delivery.url}, so only the attestor ${judge} can read it`,
         `Notifies: its attestor ${judge}, with a transfer of 0 lamports from this wallet`,
         "Costs: the transaction fee; no tokens move",
+        `Seals to: ${judge} with the key ${encryptionKeyText(x25519PublicOf(judge))}, derived from its wallet`,
       ],
       warnings: [ANNOUNCE_FIRST],
       sent: false,
@@ -2793,6 +2796,7 @@ describe("the wallet server", () => {
         `Seals: the salt and the url ${delivery.url}, so only the attestor ${judge} can read it`,
         `Notifies: its attestor ${judge}, with a transfer of 0 lamports from ${worker.address}`,
         "Costs: the transaction fee; no tokens move",
+        `Seals to: ${judge} with the key ${encryptionKeyText(x25519PublicOf(judge))}, derived from its wallet`,
       ],
       warnings: [ANNOUNCE_FIRST],
     });

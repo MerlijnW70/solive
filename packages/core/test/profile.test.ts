@@ -26,6 +26,7 @@ import {
   PROFILE_DISCRIMINATOR,
   PROFILE_VERSION,
   AccountVersionError,
+  newEncryptionKeyFile,
   profileView,
 } from "../src/index.js";
 
@@ -55,7 +56,7 @@ async function funded(): Promise<KeyPairSigner> {
 
 async function rawCreate(wallet: KeyPairSigner, args: { skills: string[]; endpoint: string; docUrl: string; docHash: Uint8Array }) {
   const [eventAuthority] = await findEventAuthorityPda();
-  return getCreateProfileInstructionAsync({ wallet, args, eventAuthority, program: INTENT_ENGINE_PROGRAM_ADDRESS });
+  return getCreateProfileInstructionAsync({ wallet, args: { ...args, encryptionKey: new Uint8Array(32) }, eventAuthority, program: INTENT_ENGINE_PROGRAM_ADDRESS });
 }
 
 function refusal(build: () => Promise<unknown>): Promise<string> {
@@ -137,7 +138,8 @@ describe("profiles", () => {
 
   it("profileView reads back what create_profile stored", async () => {
     const wallet = await funded();
-    const input = { skills: ["solana", "ts"], endpoint: "https://worker.example/jobs", docUrl: "https://worker.example/about.md", docSha256: HASH };
+    const { publicKey } = await newEncryptionKeyFile();
+    const input = { skills: ["solana", "ts"], endpoint: "https://worker.example/jobs", docUrl: "https://worker.example/about.md", docSha256: HASH, encryptionKey: publicKey };
     expect(await attempt(wallet, [await buildCreateProfile({ wallet, ...input })])).toBeNull();
     const address = await profileAddress(wallet.address);
     const read = () => {
@@ -152,7 +154,7 @@ describe("profiles", () => {
     clock.unixTimestamp = NOW + 60n;
     svm.setClock(clock);
     expect(await attempt(wallet, [await buildUpdateProfile({ wallet, skills: ["rust"], endpoint: "https://other.example" })])).toBeNull();
-    expect(read()).toEqual({ wallet: wallet.address, skills: ["rust"], endpoint: "https://other.example", docUrl: null, docSha256: null, updatedAt: NOW + 60n });
+    expect(read()).toEqual({ wallet: wallet.address, skills: ["rust"], endpoint: "https://other.example", docUrl: null, docSha256: null, encryptionKey: null, updatedAt: NOW + 60n });
     expect(() => profileView(new Uint8Array(16))).toThrow(RangeError);
   });
 
@@ -163,7 +165,7 @@ describe("profiles", () => {
       data[8 + 456] = version;
       return data;
     };
-    const empty = { skills: [], endpoint: "", docUrl: null, docSha256: null, updatedAt: 0n };
+    const empty = { skills: [], endpoint: "", docUrl: null, docSha256: null, encryptionKey: null, updatedAt: 0n };
     expect(profileView(account(getProfileSize()))).toMatchObject(empty);
     expect(() => profileView(account(getProfileSize() + 8))).toThrow(AccountVersionError);
     expect(() => profileView(account(getProfileSize(), PROFILE_VERSION - 1))).toThrow(`this profile account is of version ${PROFILE_VERSION - 1}`);

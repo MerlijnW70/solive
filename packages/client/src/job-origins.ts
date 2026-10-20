@@ -7,7 +7,7 @@ import {
   getCreateIntentSignedDiscriminatorBytes,
   Kind,
 } from "@intent-engine/core";
-import { type DeliveryRecord, judgedDeliveries } from "./job-deliveries.js";
+import { type DeliveryOpeners, type DeliveryRecord, judgedDeliveries } from "./job-deliveries.js";
 import { createdAtOf, createdIn, hex } from "./job-proofs.js";
 import { DELIVERY_PAGES, scan } from "./job-scan.js";
 import type { EngineTransaction, Transport } from "./transport.js";
@@ -72,7 +72,7 @@ export async function lifecycleDeliveries(
   judge: Address,
   lifecycle: Lifecycle,
   pages: number = DELIVERY_PAGES,
-  keypair?: Uint8Array,
+  keypair?: DeliveryOpeners,
 ): Promise<DeliveryRecord> {
   const { firstAvailableSlot } = transport;
   const { from, to } = lifecycle;

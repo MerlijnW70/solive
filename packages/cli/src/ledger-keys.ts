@@ -22,6 +22,8 @@ export const LEDGER_COMMANDS = [
   "claims drop",
   "mandate grant",
   "mandate revoke",
+  "profile set",
+  "profile close",
   "solver float",
 ];
 

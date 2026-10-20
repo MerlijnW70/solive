@@ -744,6 +744,7 @@ fn after_migrating_the_engine_runs_on_devnet_accounts() -> TestResult {
             (kept.wallet, kept.endpoint, kept.skills, kept.doc_hash)
         );
         assert_eq!(profile.version, intent_engine::state::PROFILE_VERSION);
+        assert_eq!(profile.encryption_key, [0; 32]);
     }
     Ok(())
 }

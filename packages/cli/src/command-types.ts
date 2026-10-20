@@ -52,7 +52,7 @@ export type Command =
   | (Remote & { name: "domain" })
   | (Remote & { name: "setup"; keypair: string | undefined; confirmUrl?: string | undefined })
   | (Remote & { name: "balance"; keypair: string | undefined; owner: Address | undefined; mints: Address[] | null })
-  | (Remote & { name: "mcp"; relay: RelaySpec | undefined; agent: AgentSpec | undefined; wallet: WalletLimits | null; allTools: boolean; feePayer?: string | undefined; confirmUrl?: string | undefined })
+  | (Remote & { name: "mcp"; relay: RelaySpec | undefined; agent: AgentSpec | undefined; wallet: WalletLimits | null; allTools: boolean; feePayer?: string | undefined; encryptionKeypairs?: string[] | undefined; confirmUrl?: string | undefined })
   | (Remote & { name: "show-intent"; owner: Address; nonce: bigint })
   | (Remote & { name: "quote"; owner: Address; nonce: bigint; at: bigint | undefined })
   | (Keyed & { name: "cancel"; yes: boolean; nonce: bigint; close: boolean })
@@ -108,7 +108,7 @@ export type Command =
   | (Remote & { name: "events"; limit: number })
   | (Remote & { name: "jobs"; attestor: Address | undefined; mint: Address | undefined; minPay: string | undefined; unclaimed: boolean })
   | (Keyed & { name: "deliver"; yes: boolean; intent: Address; workUrl: string } & ({ sha256: string } | { artifact: string }))
-  | (Remote & { name: "deliveries"; attestor: Address; intent: Address; maxPages: number; judgeKeypair: string | undefined })
+  | (Remote & { name: "deliveries"; attestor: Address; intent: Address; maxPages: number; judgeKeypair: string | undefined; encryptionKeypairs?: string[] | undefined })
   | (Remote & { name: "receipt"; owner: Address; nonce: bigint; sha256: string | undefined; release?: string })
   | (Keyed & { name: "record-delivery"; yes: boolean; owner: Address; nonce: bigint; sha256: string; release?: string })
   | (Keyed & {
@@ -128,6 +128,7 @@ export type Command =
       check: string | undefined;
       sandbox: Sandbox;
       feePayer?: string | undefined;
+      encryptionKeypairs?: string[] | undefined;
       confirmUrl?: string | undefined;
     })
   | (Remote & { name: "judge-digest"; owner: Address; nonce: bigint; payTo: Address; result: bigint | undefined })
@@ -166,7 +167,8 @@ export type Command =
   | (Keyed & { name: "claims-leave"; yes: boolean; owner: Address; nonce: bigint; seq: number | undefined })
   | (Keyed & { name: "claims-advance"; yes: boolean; owner: Address; nonce: bigint })
   | (Remote & { name: "profile-show"; wallet: Address })
-  | (Keyed & { name: "profile-set"; yes: boolean; profile: ProfileInput })
+  | (Keyed & { name: "profile-set"; yes: boolean; profile: ProfileInput; encryptionKey?: string | null | undefined })
+  | { name: "profile-encryption-key"; out: string }
   | (Keyed & { name: "profile-close"; yes: boolean })
   | (Remote & { name: "reputation"; worker: Address; maxPages: number; reader?: Address; seeds: Address[] })
   | (Keyed & { name: "feedback"; yes: boolean; intent: Address; score: number; note: string | undefined });
