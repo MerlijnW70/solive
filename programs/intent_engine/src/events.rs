@@ -382,3 +382,15 @@ pub struct LegacyClosed {
     pub lamports: u64,
     pub stake: u64,
 }
+
+#[event]
+pub struct AccountMigrated {
+    pub account: Pubkey,
+    pub from_version: u8,
+    pub version: u8,
+    pub from_space: u32,
+    pub space: u32,
+    pub top_up: u64,
+    pub fee_bps: u16,
+    pub fee_dropped: bool,
+}

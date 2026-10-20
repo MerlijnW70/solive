@@ -256,4 +256,8 @@ pub mod intent_engine {
     pub fn close_legacy(ctx: Context<CloseLegacy>) -> Result<()> {
         handle_close_legacy(ctx)
     }
+
+    pub fn migrate(ctx: Context<Migrate>) -> Result<()> {
+        handle_migrate(ctx)
+    }
 }

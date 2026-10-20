@@ -828,6 +828,7 @@
     "create_fee": 10000000
   },
   "event_discriminators": {
+    "AccountMigrated": "9979fc801ef1a665",
     "AdminAccepted": "ae0c4c8b9e636efe",
     "AdminProposed": "81f9e2e3c7526ef3",
     "AgentPaid": "8ba67dcba3181f5d",
@@ -3713,6 +3714,63 @@
         "0"
       ],
       "next": "18446744073709551611"
+    }
+  ],
+  "outdated": [
+    {
+      "discriminator": "9b0caae01efacc82",
+      "space": 216,
+      "version": 1
+    },
+    {
+      "discriminator": "9b0caae01efacc82",
+      "space": 536,
+      "version": 1
+    },
+    {
+      "discriminator": "48b155f94ca7ba7e",
+      "space": 152,
+      "version": 1
+    },
+    {
+      "discriminator": "f7a223a5fe6f816d",
+      "space": 464,
+      "version": 1
+    },
+    {
+      "discriminator": "71d8629fb93f3712",
+      "space": 384,
+      "version": 1
+    },
+    {
+      "discriminator": "801ad72272651e94",
+      "space": 136,
+      "version": 1
+    },
+    {
+      "discriminator": "6088d2f4896eb268",
+      "space": 408,
+      "version": 1
+    },
+    {
+      "discriminator": "17151716526de8a1",
+      "space": 168,
+      "version": 1
+    },
+    {
+      "discriminator": "17151716526de8a1",
+      "space": 176,
+      "version": 1
+    },
+    {
+      "discriminator": "da6c5cb059e0c928",
+      "space": 88,
+      "version": 0
+    },
+    {
+      "discriminator": "b865a5bc5f3f7fbc",
+      "space": 504,
+      "version": 1
     }
   ],
   "params": [

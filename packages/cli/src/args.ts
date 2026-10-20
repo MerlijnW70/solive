@@ -108,6 +108,7 @@ const WALLET_LIMIT_KEYS = ["wallet-per-trade", "wallet-per-hour"] as const;
 
 const BALANCE_OF_ONE ="balance takes --keypair or --owner, not both";
 
+export const MIGRATE_ONE_OR_ALL = "migrate takes --address <account> or --all, not both";
 export const CONFIRM_URL_OR_NOT = "--no-confirm-url skips the second node, so it takes no --confirm-url";
 
 export const takesSavedConfirm = (verb: string | undefined, sub: string | undefined): boolean =>
@@ -276,6 +277,14 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
     case "close-legacy":
       noSub(sub);
       return { name: "close-legacy", ...remote, keypair: required(values, "keypair"), yes: values.yes === true, address: key(values, "address") };
+    case "migrate": {
+      noSub(sub);
+      const all = values.all === true;
+      if (all === (values.address !== undefined)) {
+        throw new UsageError(MIGRATE_ONE_OR_ALL);
+      }
+      return { name: "migrate", ...remote, keypair: required(values, "keypair"), yes: values.yes === true, address: all ? null : key(values, "address") };
+    }
     case "advance-nonce":
       noSub(sub);
       return { name: "advance-nonce", ...remote, keypair: required(values, "keypair"), base: u64(values, "base") };

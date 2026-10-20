@@ -6,6 +6,7 @@
  * @see https://github.com/codama-idl/codama
  */
 
+export * from "./accountMigrated.js";
 export * from "./adminAccepted.js";
 export * from "./adminProposed.js";
 export * from "./agentPaid.js";

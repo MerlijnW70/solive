@@ -89,18 +89,22 @@ async function administer(
     return { ...described, sent: true, signature: await transport.send(instructions, signer) };
   }
   const instructions = await build(createNoopSigner(by.authority));
-  const unbudgeted: Transport = { ...transport, budget: async (ixs) => [...ixs] };
-  const view = preparedView(await prepare(unbudgeted, instructions, by.authority));
   return {
     ...extra,
     cluster,
     summary: summary(by.authority),
-    unsigned: {
-      ...view,
-      transaction_base58: getBase58Decoder().decode(getBase64Encoder().encode(view.transaction)),
-      instructions: instructions.map(instructionView),
-      next: AUTHORITY_NEXT,
-    },
+    unsigned: await unsignedFor(transport, by.authority, instructions),
+  };
+}
+
+export async function unsignedFor(transport: Transport, authority: Address, instructions: Instruction[]) {
+  const unbudgeted: Transport = { ...transport, budget: async (ixs) => [...ixs] };
+  const view = preparedView(await prepare(unbudgeted, instructions, authority));
+  return {
+    ...view,
+    transaction_base58: getBase58Decoder().decode(getBase64Encoder().encode(view.transaction)),
+    instructions: instructions.map(instructionView),
+    next: AUTHORITY_NEXT,
   };
 }
 

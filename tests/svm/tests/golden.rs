@@ -958,6 +958,7 @@ fn vectors() -> TestResult<Value> {
     });
 
     let event_discriminators = json!({
+        "AccountMigrated": hex(ev::AccountMigrated::DISCRIMINATOR),
         "AdminAccepted": hex(ev::AdminAccepted::DISCRIMINATOR),
         "AdminProposed": hex(ev::AdminProposed::DISCRIMINATOR),
         "AgentPaid": hex(ev::AgentPaid::DISCRIMINATOR),
@@ -1052,6 +1053,14 @@ fn vectors() -> TestResult<Value> {
                 "version": l.version,
                 "oldest": l.oldest,
                 "payer_at": l.payer_at,
+            }))
+            .collect::<Vec<_>>(),
+        "outdated": intent_engine::versions::OUTDATED
+            .iter()
+            .map(|o| json!({
+                "discriminator": hex(o.discriminator),
+                "space": o.space,
+                "version": o.version,
             }))
             .collect::<Vec<_>>(),
         "pause": json!({

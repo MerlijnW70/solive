@@ -188,3 +188,60 @@ pub fn board_terms(data: &[u8]) -> Option<BoardTerms> {
         held: u64::from_le_bytes(word_at(body, offset_of!(ClaimBoard, held))?),
     })
 }
+
+pub const LEGACY_CONFIG_SPACE: usize = 216;
+pub const FIRST_VERSION: u8 = 1;
+pub const UNVERSIONED: u8 = 0;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Outdated {
+    pub discriminator: &'static [u8],
+    pub space: usize,
+    pub version: u8,
+}
+
+const fn outdated(discriminator: &'static [u8], space: usize, version: u8) -> Outdated {
+    Outdated {
+        discriminator,
+        space,
+        version,
+    }
+}
+
+pub const OUTDATED: [Outdated; 11] = [
+    outdated(Config::DISCRIMINATOR, LEGACY_CONFIG_SPACE, FIRST_VERSION),
+    outdated(Config::DISCRIMINATOR, Config::SPACE, FIRST_VERSION),
+    outdated(UserState::DISCRIMINATOR, UserState::SPACE, FIRST_VERSION),
+    outdated(Intent::DISCRIMINATOR, Intent::SPACE, FIRST_VERSION),
+    outdated(Mandate::DISCRIMINATOR, Mandate::SPACE, FIRST_VERSION),
+    outdated(MintCap::DISCRIMINATOR, MintCap::SPACE, FIRST_VERSION),
+    outdated(Committee::DISCRIMINATOR, Committee::SPACE, FIRST_VERSION),
+    outdated(ClaimBoard::DISCRIMINATOR, LEGACY_BOARD_SPACE, FIRST_VERSION),
+    outdated(ClaimBoard::DISCRIMINATOR, ClaimBoard::SPACE, FIRST_VERSION),
+    outdated(Standby::DISCRIMINATOR, Standby::SPACE, UNVERSIONED),
+    outdated(Profile::DISCRIMINATOR, Profile::SPACE, FIRST_VERSION),
+];
+
+pub fn migration_of(data: &[u8]) -> Option<(&'static Layout, &'static Outdated)> {
+    let (layout, version) = stored_version(data)?;
+    let from = OUTDATED.iter().find(|o| {
+        o.discriminator == layout.discriminator && o.space == data.len() && o.version == version
+    })?;
+    Some((layout, from))
+}
+
+pub fn config_terms(data: &[u8]) -> Option<Config> {
+    if data.get(..Config::DISCRIMINATOR.len()) != Some(Config::DISCRIMINATOR) {
+        return None;
+    }
+    let readable = is_current(data) || migration_of(data).is_some();
+    if !readable {
+        return None;
+    }
+    let body = data.get(Config::DISCRIMINATOR.len()..)?;
+    let mut config = <Config as bytemuck::Zeroable>::zeroed();
+    let view = bytemuck::bytes_of_mut(&mut config);
+    let shared = view.len().min(body.len());
+    view.get_mut(..shared)?.copy_from_slice(body.get(..shared)?);
+    Some(config)
+}

@@ -94,7 +94,10 @@ describe("agent problems", () => {
     expect(simulationProblem("err", [failed(ENGINE, 6107)])).toMatchObject({ code: "LegacyPayeeMismatch", retryable: false });
     expect(simulationProblem("err", [failed(ENGINE, 6108)])).toMatchObject({ code: "LegacyVaultOpen", retryable: false });
     expect(simulationProblem("err", [failed(ENGINE, 6109)])).toMatchObject({ code: "LegacyMigrates", retryable: false });
-    for (const code of [5999, 6110]) {
+    expect(simulationProblem("err", [failed(ENGINE, 6110)])).toMatchObject({ code: "AlreadyCurrent", retryable: false });
+    expect(simulationProblem("err", [failed(ENGINE, 6111)])).toMatchObject({ code: "UnknownLayout", retryable: false });
+    expect(simulationProblem("err", [failed(ENGINE, 6112)])).toMatchObject({ code: "ConfigMissing", retryable: false });
+    for (const code of [5999, 6113]) {
       expect(simulationProblem("e", [failed(ENGINE, code)])).toMatchObject({ code: "TransactionFailed", programError: code });
     }
     const funds = simulationProblem("err", [failed(TOKEN_PROGRAMS[1] ?? "", 1)]);

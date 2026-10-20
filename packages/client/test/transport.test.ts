@@ -509,6 +509,23 @@ describe("intent scan", () => {
     expect(s.calls).toEqual([`program-accounts:${INTENT_ENGINE_PROGRAM_ADDRESS}:${JSON.stringify(filters)}`]);
     expect(getIntentSize()).toBe(464);
   });
+
+  it("lists every engine account with its lamports and no filter", async () => {
+    const s = stub([]);
+    const plain = await rpcTransport(s.rpc, s.wait).engineAccounts?.();
+    expect(plain).toEqual([{ address: OWNER, data: new Uint8Array([7, 8]), lamports: 0n }]);
+    expect(s.calls).toEqual([`program-accounts:${INTENT_ENGINE_PROGRAM_ADDRESS}:${JSON.stringify({ encoding: "base64", commitment: "confirmed", filters: [] })}`]);
+    const rpc = {
+      ...s.rpc,
+      getProgramAccounts: () => ({
+        send: async () => ({
+          context: { slot: 3n },
+          value: [{ pubkey: OTHER, account: { data: [Buffer.from([9]).toString("base64"), "base64"] as const, lamports: 11n } }],
+        }),
+      }),
+    } satisfies RpcLike;
+    expect(await rpcTransport(rpc, s.wait).engineAccounts?.()).toEqual([{ address: OTHER, data: new Uint8Array([9]), lamports: 11n }]);
+  });
 });
 
 describe("engine transactions", () => {

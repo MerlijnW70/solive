@@ -11,6 +11,8 @@ export type AccountView = { owner: Address; data: Uint8Array; lamports: bigint; 
 
 export type ProgramAccount = { address: Address; data: Uint8Array };
 
+export type EngineAccount = ProgramAccount & { lamports: bigint };
+
 export type TokenHolding = { account: Address; mint: Address; owner?: Address };
 
 export type SolTransfer = { from: Address; to: Address; lamports: bigint };
@@ -57,6 +59,7 @@ export interface Transport {
   simulate(wire: Base64EncodedWireTransaction, watch?: readonly Address[]): Promise<Simulation>;
   genesisHash(): Promise<string>;
   intents(owner?: Address, read?: IntentRead): Promise<ProgramAccount[]>;
+  engineAccounts?(): Promise<EngineAccount[]>;
   engineTransactions(limit: number, of?: Address, memo?: string): Promise<EngineTransaction[]>;
   signaturesOf?(of: Address, limit: number, before?: string): Promise<ListedSignature[]>;
   transactionsOf?(listed: readonly ListedSignature[]): Promise<EngineTransaction[]>;
@@ -75,7 +78,7 @@ export type RawAccount = { owner: Address; data: readonly [string, string]; lamp
 
 export type AtLeast = { minContextSlot?: bigint };
 
-export type ProgramEntry = { pubkey: Address; account: { data: readonly [string, string] } };
+export type ProgramEntry = { pubkey: Address; account: { data: readonly [string, string]; lamports?: bigint } };
 
 export type Status = { err: unknown; confirmationStatus: string | null; slot?: bigint };
 

@@ -1,5 +1,6 @@
 import {
   IntentEngineEvent,
+  parseAccountMigratedEvent,
   parseAgentPaidEvent,
   identifyIntentEngineEvent,
   parseAdminAcceptedEvent,
@@ -48,6 +49,7 @@ export const EVENT_IX_TAG = new Uint8Array([0xe4, 0x45, 0xa5, 0x2e, 0x51, 0xcb, 
 type EventName = (typeof IntentEngineEvent)[IntentEngineEvent];
 
 const PARSERS = {
+  AccountMigrated: parseAccountMigratedEvent,
   AdminAccepted: parseAdminAcceptedEvent,
   AgentPaid: parseAgentPaidEvent,
   AdminProposed: parseAdminProposedEvent,

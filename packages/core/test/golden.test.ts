@@ -52,6 +52,7 @@ import {
   nextFreeNonce,
   CONFIG_VERSION,
   ACCOUNT_LAYOUTS,
+  OUTDATED_LAYOUTS,
   PAUSE_CREATE,
   PAUSE_FILL,
   INTENT_VERSION,
@@ -696,6 +697,11 @@ describe("golden vectors emitted by the Rust implementation", () => {
     expect(
       ACCOUNT_LAYOUTS.map((l) => ({ discriminator: hexOf(l.discriminator), space: l.space, version_at: l.versionAt, version: l.version, oldest: l.oldest, payer_at: l.payerAt })),
     ).toEqual(v.layouts);
+  });
+
+  it("list every outdated layout the program migrates", () => {
+    const v = vectors as unknown as { outdated: { discriminator: string; space: number; version: number }[] };
+    expect(OUTDATED_LAYOUTS.map((o) => ({ discriminator: hexOf(o.discriminator), space: o.space, version: o.version }))).toEqual(v.outdated);
   });
 
   it("pick the next free nonce exactly as the program does", () => {

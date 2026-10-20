@@ -49,6 +49,7 @@ import { transactionSigner } from "./ledger-keys.js";
 import { judgeDigest } from "./judge-digest.js";
 import { floatCommand } from "./float-commands.js";
 import { closeLegacy } from "./legacy-commands.js";
+import { migrate } from "./migrate-commands.js";
 
 export type { Runtime } from "./runtime.js";
 export { AUTHORITY_NEXT, configExists } from "./admin-commands.js";
@@ -277,6 +278,8 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       return showMintCap(transport, command.mint);
     case "close-legacy":
       return closeLegacy(command, runtime, transport);
+    case "migrate":
+      return migrate(command, runtime, transport);
     case "advance-nonce": {
       const owner = await transactionSigner(runtime, command.keypair);
       const ix = await buildAdvanceNonce({ owner, nonceBase: command.base });

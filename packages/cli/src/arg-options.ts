@@ -63,6 +63,7 @@ export const OPTIONS = {
   flags: { type: "string" },
   "dry-run": { type: "boolean" },
   yes: { type: "boolean" },
+  all: { type: "boolean" },
   help: { type: "boolean" },
   version: { type: "boolean" },
   follow: { type: "boolean" },
@@ -186,7 +187,7 @@ export const PROFILE_OPTIONS = { ...OPTIONS, wallet: { type: "string" } } as con
 
 export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill", "vote", "seed"]);
 
-export type Flag = "dry-run" | "fund-accounts" | "yes" | "help" | "version" | "follow" | "create" | "wallet" | "watch" | "stats" | "close" | "once" | "plain-node" | "all-tools" | "unclaimed" | "no-confirm-url";
+export type Flag = "dry-run" | "fund-accounts" | "yes" | "all" | "help" | "version" | "follow" | "create" | "wallet" | "watch" | "stats" | "close" | "once" | "plain-node" | "all-tools" | "unclaimed" | "no-confirm-url";
 export type Many = "max-fill" | "vote" | "seed";
 export type StringKey = Exclude<keyof typeof OPTIONS, Flag | Many>;
 export type Values = { [K in StringKey]?: string | undefined } & { [K in Exclude<Flag, "wallet">]?: boolean | undefined } & {
@@ -248,6 +249,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   close: ["url", "priority-fee", "keypair", "yes", "owner", "nonce"],
   "advance-nonce": ["url", "priority-fee", "keypair", "base"],
   "close-legacy": ["url", "priority-fee", "keypair", "yes", "address"],
+  migrate: ["url", "priority-fee", "keypair", "yes", "address", "all"],
   "advance-epoch": ["url", "priority-fee", "keypair"],
   "init-config": ["url", "priority-fee", "keypair", "authority", "yes", "guardian", "fee-recipient", "fee-bps", "kinds", "flags"],
   "raise-pause": ["url", "priority-fee", "keypair", "authority", "yes", "flags"],

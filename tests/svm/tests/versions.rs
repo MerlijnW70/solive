@@ -3,7 +3,7 @@ use anchor_lang::prelude::Pubkey;
 use anchor_lang::Discriminator;
 use intent_core::kinds::{attested_result, Kind};
 use intent_engine::errors::EngineError;
-use intent_engine::events::LegacyClosed;
+use intent_engine::events::{AccountMigrated, LegacyClosed};
 use intent_engine::state::{
     ClaimBoard, Committee, Config, Intent, Mandate, MintCap, Profile, Standby, UserState,
     MINT_CAP_SEED, PROFILE_SEED,
@@ -19,10 +19,10 @@ use solana_signer::Signer;
 use solana_transaction_error::TransactionError;
 use svm_tests::{
     anchor_error, claim_job_ix, claims_pda, close_legacy_full_ix, config_pda, create_committee_ix,
-    drop_claim_ix, engine_error, engine_ix, event_authority, events, intent_pda, leave_ix,
-    mandate_pda, mandate_terms, pda, settle_claims_ix, sorted_members, stand_by_ix, standby_pda,
-    swap_spec, user_pda, vault_pda, CommitteeFill, Env, IntentSpec, LegacyClose, Market,
-    TestResult, Trader, START_TS,
+    drop_claim_ix, drop_claim_line_ix, engine_error, engine_ix, event_authority, events,
+    intent_pda, leave_ix, mandate_pda, mandate_terms, migrate_ix, pda, settle_claims_ix,
+    sorted_members, stand_by_ix, standby_pda, swap_spec, user_pda, vault_pda, CommitteeFill, Env,
+    IntentSpec, LegacyClose, Market, TestResult, Trader, START_TS,
 };
 
 const FUNDED: u64 = 1_000;
@@ -1066,5 +1066,237 @@ fn a_refund_refuses_another_mints_cap_and_skips_a_cap_address_no_program_account
     w.env.send(&trader, &[cancel], &[])?;
     assert_eq!(Some(w.env.balance(&refund)?), tokens.checked_add(CAPPED));
     assert_eq!(outstanding(&w)?, 2 * CAPPED);
+    Ok(())
+}
+
+fn migrate(
+    w: &mut World,
+    address: &Pubkey,
+    payer: &Keypair,
+    config: bool,
+) -> Option<TransactionError> {
+    let ix = migrate_ix(&payer.pubkey(), address, config.then(config_pda));
+    w.send(payer, ix)
+}
+
+#[test]
+fn every_account_of_the_previous_version_migrates_in_place_once() -> TestResult {
+    let mut w = world()?;
+    let caller = w.caller.insecure_clone();
+    let admin = w.env.authority.insecure_clone();
+    let intent: Intent = svm_tests::load(&w.env.svm, &w.intent())?;
+    assert_ne!(intent.fee_bps, 0, "the escrow records a fee");
+    for h in w.held() {
+        let current = w.data(&h.address)?;
+        let lamports = w.env.lamports(&h.address);
+        let old = if h.discriminator == Standby::DISCRIMINATOR {
+            0
+        } else {
+            OLD
+        };
+        w.set_version(&h.address, old)?;
+        let is_config = h.discriminator == Config::DISCRIMINATOR;
+        let signer = if is_config {
+            assert_eq!(
+                migrate(&mut w, &h.address, &caller, false),
+                Some(engine_error(EngineError::Unauthorized)),
+                "{}",
+                h.name
+            );
+            &admin
+        } else {
+            &caller
+        };
+        assert_eq!(
+            migrate(&mut w, &h.address, signer, !is_config),
+            None,
+            "{}",
+            h.name
+        );
+        assert_eq!(w.data(&h.address)?, current, "{} keeps every value", h.name);
+        assert_eq!(w.env.lamports(&h.address), lamports, "{}", h.name);
+        assert_eq!(
+            migrate(&mut w, &h.address, signer, !is_config),
+            Some(engine_error(EngineError::AlreadyCurrent)),
+            "{}",
+            h.name
+        );
+    }
+    let intent = w.intent();
+    let waiting = w.waiting.insecure_clone();
+    let leave = leave_ix(&waiting.pubkey(), &intent, 0, &waiting.pubkey());
+    assert_eq!(w.send(&waiting, leave), None);
+    let worker = w.worker.insecure_clone();
+    let entries = [standby_pda(&intent, 0)];
+    let drop = drop_claim_line_ix(&worker.pubkey(), &intent, &entries, None);
+    assert_eq!(w.send(&worker, drop), None);
+    Ok(())
+}
+
+#[test]
+fn an_open_escrow_without_a_fee_takes_the_configured_one_and_needs_the_config() -> TestResult {
+    let mut w = world()?;
+    let caller = w.caller.insecure_clone();
+    let intent = w.intent();
+    let mut account = w.env.svm.get_account(&intent).ok_or("intent missing")?;
+    let fee_at = 8 + core::mem::offset_of!(Intent, fee_bps);
+    let recorded = account
+        .data
+        .get(fee_at..fee_at.saturating_add(2))
+        .ok_or("short")?
+        .to_vec();
+    account
+        .data
+        .get_mut(fee_at..fee_at.saturating_add(2))
+        .ok_or("short")?
+        .copy_from_slice(&[0, 0]);
+    w.env.svm.set_account(intent, account)?;
+    w.set_version(&intent, OLD)?;
+    assert_eq!(
+        migrate(&mut w, &intent, &caller, false),
+        Some(engine_error(EngineError::ConfigMissing))
+    );
+    assert_eq!(migrate(&mut w, &intent, &caller, true), None);
+    let data = w.data(&intent)?;
+    assert_eq!(
+        data.get(fee_at..fee_at.saturating_add(2)),
+        Some(recorded.as_slice())
+    );
+    Ok(())
+}
+
+fn migrated_with(w: &mut World, address: &Pubkey) -> TestResult<AccountMigrated> {
+    let caller = w.caller.insecure_clone();
+    let ix = migrate_ix(&caller.pubkey(), address, Some(config_pda()));
+    let meta = w.env.send(&caller, &[ix], &[])?;
+    Ok(events::<AccountMigrated>(&meta)
+        .into_iter()
+        .next()
+        .ok_or("no event")?)
+}
+
+fn put_bytes(w: &mut World, address: &Pubkey, at: usize, bytes: &[u8]) -> TestResult {
+    let mut account = w.env.svm.get_account(address).ok_or("missing")?;
+    account
+        .data
+        .get_mut(at..at.saturating_add(bytes.len()))
+        .ok_or("short")?
+        .copy_from_slice(bytes);
+    w.env.svm.set_account(*address, account)?;
+    Ok(())
+}
+
+#[test]
+fn an_open_escrow_keeps_a_recovered_fee_only_when_its_release_still_settles() -> TestResult {
+    let fee_at = 8 + core::mem::offset_of!(Intent, fee_bps);
+    let params_at = core::mem::offset_of!(Intent, params).saturating_add(8);
+    let partner_at = core::mem::offset_of!(Intent, partner_bps).saturating_add(8);
+    for tight in [false, true] {
+        let mut w = world()?;
+        let intent = w.intent();
+        let held: Intent = svm_tests::load(&w.env.svm, &intent)?;
+        let recorded = held.fee_bps;
+        assert_ne!(recorded, 0);
+        put_bytes(&mut w, &intent, fee_at, &[0, 0])?;
+        if tight {
+            let mut params =
+                attested_result::Params::decode(&held.params).map_err(|e| format!("{e:?}"))?;
+            params.judge_fee = ESCROW.saturating_sub(1);
+            let encoded = params.encode().map_err(|e| format!("{e:?}"))?;
+            put_bytes(&mut w, &intent, params_at, &encoded)?;
+            put_bytes(&mut w, &intent, partner_at, &50u16.to_le_bytes())?;
+        }
+        w.set_version(&intent, OLD)?;
+        let event = migrated_with(&mut w, &intent)?;
+        let after: Intent = svm_tests::load(&w.env.svm, &intent)?;
+        let kept = if tight { 0 } else { recorded };
+        assert_eq!((event.fee_bps, event.fee_dropped), (kept, tight));
+        assert_eq!(after.fee_bps, kept);
+    }
+    Ok(())
+}
+
+#[test]
+fn a_168_byte_board_holding_a_stake_grows_rent_exempt_beyond_the_stake() -> TestResult {
+    let mut w = world()?;
+    let intent = w.intent();
+    let board = claims_pda(&intent);
+    let held: ClaimBoard = svm_tests::load(&w.env.svm, &board)?;
+    assert_eq!(held.held, STAKE);
+    let small = w.env.svm.minimum_balance_for_rent_exemption(168);
+    let large = w
+        .env
+        .svm
+        .minimum_balance_for_rent_exemption(ClaimBoard::SPACE);
+    let mut account = w.env.svm.get_account(&board).ok_or("board missing")?;
+    account.data.truncate(168);
+    account.lamports = small.checked_add(STAKE).ok_or("overflow")?;
+    w.env.svm.set_account(board, account)?;
+    w.set_version(&board, OLD)?;
+    let event = migrated_with(&mut w, &board)?;
+    assert_eq!(
+        w.env.lamports(&board),
+        large.checked_add(STAKE).ok_or("overflow")?
+    );
+    assert_eq!(Some(event.top_up), large.checked_sub(small));
+    let worker = w.worker.insecure_clone();
+    let before = w.env.lamports(&worker.pubkey());
+    assert_eq!(
+        w.send(&worker, drop_claim_ix(&worker.pubkey(), &intent)),
+        None
+    );
+    assert_eq!(w.env.lamports(&board), large);
+    assert!(w.env.lamports(&worker.pubkey()) > before);
+    Ok(())
+}
+
+#[test]
+fn caps_and_capped_escrows_keep_their_counts_through_migration() -> TestResult {
+    let mut w = capped_world()?;
+    create_capped(&mut w, 1)?.map_err(|e| format!("{e:?}"))?;
+    let caller = w.caller.insecure_clone();
+    let cap = mint_cap_pda(&w.market.input_mint);
+    let capped = intent_pda(&w.owner(), 1);
+    assert_eq!(outstanding(&w)?, CAPPED);
+    for address in [cap, capped] {
+        let current = w.data(&address)?;
+        w.set_version(&address, OLD)?;
+        assert_eq!(migrate(&mut w, &address, &caller, true), None);
+        assert_eq!(w.data(&address)?, current);
+    }
+    assert_eq!(outstanding(&w)?, CAPPED);
+    let owner = w.owner();
+    let refund = w.trader.input;
+    let trader = w.trader.key.insecure_clone();
+    let cancel = w.env.cancel_ix(&owner, &w.market, 1, &refund);
+    w.env.send(&trader, &[cancel], &[])?;
+    assert_eq!(outstanding(&w)?, 0);
+    Ok(())
+}
+
+#[test]
+fn a_layout_no_version_describes_is_refused_and_stays_closable() -> TestResult {
+    let mut w = world()?;
+    let caller = w.caller.insecure_clone();
+    let profile = profile_pda(&w.wallet.pubkey());
+    w.set_version(&profile, 0)?;
+    assert_eq!(
+        migrate(&mut w, &profile, &caller, false),
+        Some(engine_error(EngineError::UnknownLayout))
+    );
+    let wallet = w.wallet.pubkey();
+    w.close(&profile, &wallet, false)
+        .map_err(|e| format!("{e:?}"))?;
+    assert!(!w.env.exists(&profile));
+    let odd = w.plant(vec![9; 48], 1_000_000)?;
+    assert_eq!(
+        migrate(&mut w, &odd, &caller, false),
+        Some(engine_error(EngineError::UnknownLayout))
+    );
+    let user = user_pda(&w.owner());
+    assert_eq!(
+        migrate(&mut w, &user, &caller, false),
+        Some(engine_error(EngineError::AlreadyCurrent))
+    );
     Ok(())
 }

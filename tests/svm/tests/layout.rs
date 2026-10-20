@@ -329,6 +329,10 @@ fn engine_errors_start_at_anchor_offset() {
     assert_eq!(u32::from(EngineError::AccountOutdated), 6105);
     assert_eq!(u32::from(EngineError::NotLegacy), 6106);
     assert_eq!(u32::from(EngineError::LegacyPayeeMismatch), 6107);
+    assert_eq!(u32::from(EngineError::LegacyMigrates), 6109);
+    assert_eq!(u32::from(EngineError::AlreadyCurrent), 6110);
+    assert_eq!(u32::from(EngineError::UnknownLayout), 6111);
+    assert_eq!(u32::from(EngineError::ConfigMissing), 6112);
 }
 
 #[test]

@@ -34,6 +34,7 @@ export * from "./initConfig.js";
 export * from "./initUser.js";
 export * from "./leave.js";
 export * from "./lowerPause.js";
+export * from "./migrate.js";
 export * from "./openClaims.js";
 export * from "./proposeAdmin.js";
 export * from "./raisePause.js";

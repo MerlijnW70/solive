@@ -278,6 +278,18 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     },
     ...(firstBlock === undefined ? {} : { firstAvailableSlot: () => patiently(() => firstBlock().send(), wait) }),
     ...(finalizedBlock === undefined ? {} : { finalizedBlock }),
+    async engineAccounts() {
+      const found = await patiently(
+        () => rpc.getProgramAccounts(INTENT_ENGINE_PROGRAM_ADDRESS, { encoding: "base64", commitment: "confirmed", filters: [] }).send(),
+        wait,
+      );
+      const entries = "context" in found ? found.value : found;
+      return entries.map(({ pubkey, account }) => ({
+        address: pubkey,
+        data: new Uint8Array(Buffer.from(account.data[0], "base64")),
+        lamports: account.lamports ?? 0n,
+      }));
+    },
     async intents(owner, read) {
       const least = atLeast(read?.minContextSlot);
       const found = await patiently(async () => {

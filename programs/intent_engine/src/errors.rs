@@ -113,6 +113,9 @@ pub enum EngineError {
     LegacyPayeeMismatch,
     LegacyVaultOpen,
     LegacyMigrates,
+    AlreadyCurrent,
+    UnknownLayout,
+    ConfigMissing,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {

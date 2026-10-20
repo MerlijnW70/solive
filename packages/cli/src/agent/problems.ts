@@ -134,11 +134,14 @@ export const ENGINE_PROBLEMS = {
   MintCapTotal: later("intents selling this mint already hold the engine's total escrow limit for it; try again once open intents settle, or lower the amount"),
   CommitteeRequired: never("this escrow reaches the committee floor the engine sets for its token, so its attestor must be a committee of at least 2 judges, passed with the create; name such a committee as attestor, or escrow less"),
   CommitteeFloorsFull: never("the engine already keeps a committee floor for as many tokens as it can; set one of them to zero first"),
-  AccountOutdated: never("an account has an earlier layout or version than this program reads; close it with intent-engine close-legacy and create it again"),
+  AccountOutdated: never("an account has an earlier layout or version than this program reads; upgrade it with intent-engine migrate, or close it with intent-engine close-legacy and create it again"),
   NotLegacy: never("close-legacy closes only accounts of an earlier layout or version, and this one is current"),
   LegacyPayeeMismatch: never("close-legacy pays the wallet the account's layout records as its payer, or the config's fee recipient when it records none; let intent-engine close-legacy build it"),
   LegacyVaultOpen: never("close-legacy closes an intent only once its vault is gone; cancel, expire or close the intent first so its owner gets every token back"),
-  LegacyMigrates: never("close-legacy never closes a config or user state; a later program upgrades them in place"),
+  LegacyMigrates: never("close-legacy never closes a config or user state; intent-engine migrate upgrades them in place"),
+  AlreadyCurrent: never("migrate rewrites only accounts of an earlier layout or version, and this one is current"),
+  UnknownLayout: never("migrate reads only the layouts earlier programs wrote; close this account with intent-engine close-legacy"),
+  ConfigMissing: never("migrating an open escrow reads the fee schedule from the config; let intent-engine migrate build it"),
 } as const satisfies Record<string, Entry>;
 
 type EngineErrorName = keyof typeof ENGINE_PROBLEMS;

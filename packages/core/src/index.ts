@@ -17,6 +17,7 @@ export * from "./math.js";
 export * from "./memo.js";
 export * from "./mint-caps.js";
 export * from "./committee-floors.js";
+export * from "./migrate.js";
 export * from "./mints.js";
 export * from "./pdas.js";
 export * from "./profile.js";

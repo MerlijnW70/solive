@@ -157,11 +157,11 @@ A build larger than the program's data account fails at `execute` with `account 
 
 Every account the program owns carries a `version` byte, set at creation to the current version of its type in `programs/intent_engine/src/state.rs`. Each type keeps its version byte, and the wallet that paid for it, at fixed offsets listed in `programs/intent_engine/src/versions.rs`, so a later program can read the version of any older account. Every instruction refuses an account whose version is not the current one with `AccountOutdated`.
 
-A change to an account layout raises that type's version. Accounts made before versions were enforced carry version 1, or 0 for stand-by entries, and the program refuses them, with one exception: an owner always gets an escrow back.
+A change to an account layout raises that type's version. Accounts made before versions were enforced carry version 1, or 0 for stand-by entries, and the program refuses them until `migrate` rewrites them, with one exception: an owner always gets an escrow back.
 
 `cancel_intent`, `expire_intent` and `close_intent` accept intents from `OLDEST_INTENT_VERSION` on. They read the mint cap by hand: a cap from `OLDEST_MINT_CAP_VERSION` on gives the amount back, never below zero. A cap that is gone or of another version is skipped, and so is a cap created after the intent, whose count never held it, so no refund depends on the cap and none lowers a recreated cap's count. Cancelling and `settle_claims` accept claim boards from `OLDEST_CLAIMS_VERSION` on.
 
-`close_legacy` closes an outdated account. Anyone may send it for a program-owned account whose discriminator matches no account type, whose size differs from its type's, or whose version is not current. It never closes a config or user state, which a later program upgrades in place, and refuses them with `LegacyMigrates`.
+`close_legacy` closes an outdated account. Anyone may send it for a program-owned account whose discriminator matches no account type, whose size differs from its type's, or whose version is not current. It never closes a config or user state, which `migrate` upgrades in place, and refuses them with `LegacyMigrates`.
 
 Its lamports go to the wallet its layout records as the payer: the owner of a mandate or claim board, the rent payer of an intent, the worker of a stand-by entry, or the wallet of a profile. Mint caps, committees and unknown accounts record no payer, and a payer that cannot hold lamports is skipped; theirs go to the config's fee recipient.
 
@@ -173,6 +173,38 @@ intent-engine close-legacy --keypair payer.json --address <account> --url devnet
 
 Without `--yes` it previews the account, its version and the payee and sends nothing.
 
+## Migrate accounts
+
+Devnet runs the stand-by line program (`220dde3`). The current program keeps every field of that program at the same offset and adds fields only in bytes the stand-by line kept zero, or past its end. `tests/svm/tests/layout_history.rs` pins both layouts. Offsets below count from the start of the account, discriminator included.
+
+| Type | Stand-by line size | Current size | Version byte, old to new | Added since the stand-by line |
+|---|---|---|---|---|
+| Config | 216 | 536 | 147: 1 to 2 | `floor_mints` at 216, `floor_amounts` at 472; zero is no floor |
+| UserState | 152 | 152 | 80: 1 to 2 | nothing |
+| Intent | 464 | 464 | 172: 1 to 2 | `fee_bps` at 428, in the old `gap`; `capped` at 456, in the old `reserved` |
+| Mandate | 384 | 384 | 315: 1 to 2 | nothing |
+| MintCap | 136 | 136 | 76: 1 to 2 | `total_limit` at 80, `outstanding` at 88, `created_at` at 96, in the old `reserved` |
+| Committee | 408 | 408 | 338: 1 to 2 | nothing |
+| ClaimBoard | 176, or 168 before the stand-by line | 176 | 132: 1 to 2 | `head` at 168 and `tail` at 172 on a 168 board |
+| Standby | 88 | 88 | 81: 0 to 1 | `version` at 81, in the old `padding` |
+| Profile | 504 | 504 | 464: 1 to 2 | nothing |
+
+`OUTDATED` in `programs/intent_engine/src/versions.rs` lists each layout `migrate` reads: these, and a version-1 config of the current size, which `main` wrote before it enforced versions.
+
+`migrate` rewrites one such account in place. It keeps every byte, sets the version, and grows a config or a 168 board with zero bytes. The payer adds the rent difference between the two sizes, and more if needed so a board holds the larger size's rent on top of its held stake; the account never loses lamports. Anyone may send it; for the config the payer must be the admin. It refuses a current account with `AlreadyCurrent` and any other layout with `UnknownLayout`; `close_legacy` still closes those.
+
+An open intent of the stand-by line records no fee: its fills paid the config's schedule at fill time. `migrate` sets `fee_bps` from the config's schedule for its kind, which is the fee it was charged at creation while the config's fee terms are unchanged since. On devnet no `update_config` or `update_economics` ran after the two open escrows in the fixture were created, so both record the attested fee, 300. As at creation, an open proof escrow keeps that fee only if its release still settles under it; otherwise `migrate` writes zero, so the escrow stays releasable, and sets `fee_dropped` in `AccountMigrated`. Intents that are not open keep zero, and an intent that already records a fee keeps it.
+
+Refunds never wait for `migrate`: `cancel_intent`, `expire_intent` and `close_intent` read version-1 intents, cancelling reads 168 boards, and `close_legacy` closes boards, mandates and profiles before they migrate. `tests/svm/tests/devnet_migration.rs` loads every devnet account and shows each refund before and after migrating.
+
+`node scripts/devnet-snapshot.mjs` saves every account the devnet program owns, with each intent's vault and input mint and the rent sysvar, to `tests/svm/fixtures/devnet.json`. It only reads, pausing and retrying when the node limits it. Refresh it before an upgrade and rerun `bash scripts/test.sh`.
+
+```sh
+intent-engine migrate --keypair payer.json --all --url devnet
+intent-engine migrate --keypair payer.json --address <account> --url devnet
+```
+
+Without `--yes` both preview. `--all` lists every account the program owns, skips current ones, sends the rest in batches of `MIGRATE_BATCH` instructions, and reports counts per type, the rent it adds and every account it cannot read. When the signer is not the config's admin, as on devnet where the admin is the Squads vault, the output carries `config_proposal`: import its `transaction_base58` into the multisig as with `propose-admin --authority`. The admin pays the config's rent top-up, shown in `config.top_up_lamports`: send the vault that many lamports before the proposal executes. After the upgrade executes, run `--all`, then approve the config proposal.
 ## Publish the IDL
 
 Once the vault is the upgrade authority, only the vault can write the program's canonical IDL. From a clean checkout at `origin/main`, after the upgrade has executed, run `bash scripts/idl.sh devnet --multisig <multisig>`. The Solana CLI default keypair, or the file in `UPGRADE_AUTHORITY`, writes `idl/intent_engine.json` to a buffer and hands the buffer to the vault; the file in `MULTISIG_MEMBER` proposes one vault transaction that tops up the IDL account's rent, sets its data from the buffer and closes the buffer. Two members approve and one executes, as in step 4 of the upgrade without `--expect-buffer-hash`. `bash scripts/idl.sh devnet --check` then compares the published IDL with `idl/intent_engine.json` and exits non-zero when they differ.

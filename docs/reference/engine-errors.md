@@ -116,3 +116,6 @@ Every error the engine program raises, from its IDL. When an SDK call fails, `cl
 | 6107 | `LegacyPayeeMismatch` | no | close-legacy pays the wallet the account's layout records as its payer, or the config's fee recipient when it records none |
 | 6108 | `LegacyVaultOpen` | no | close-legacy closes an intent only once its vault is gone |
 | 6109 | `LegacyMigrates` | no | close-legacy never closes a config or user state |
+| 6110 | `AlreadyCurrent` | no | migrate rewrites only accounts of an earlier layout or version, and this one is current |
+| 6111 | `UnknownLayout` | no | migrate reads only the layouts earlier programs wrote |
+| 6112 | `ConfigMissing` | no | migrating an open escrow reads the fee schedule from the config |
