@@ -22,7 +22,7 @@ import { cannotSignMessages, committeeJudged, createClient, FEE_PAYER_ALONE, LED
 import { getTransferSolInstruction } from "@solana-program/system";
 import { parse } from "../src/args.js";
 import { DIGEST_NEXT } from "../src/judge-digest.js";
-import { DEVICE_PREVIEW, DEVICE_VOTE_PREVIEW, FEE_PAYER_IS_JUDGE, sealedOnDevice } from "../src/judge.js";
+import { DEVICE_PREVIEW, DEVICE_VOTE_PREVIEW, FEE_PAYER_IS_JUDGE, GIVE_KEY_FLAG } from "../src/judge.js";
 import { FEE_PAYER_FOR_LEDGER, FEE_PAYER_KEY_FILE, ledgerNeedsFeePayer } from "../src/arg-values.js";
 import { LEDGER_COMMANDS, signsOnDevice } from "../src/ledger-keys.js";
 import { EXIT_FAILED, EXIT_OK, main } from "../src/main.js";
@@ -131,8 +131,7 @@ describe("a judge on a Ledger", () => {
     const ledger = device(j.key, found(LEVELS, j.key));
     const refused = await run([...judging(j), "--yes"], ledger, j.keys);
     expect([refused.code, refused.out]).toEqual([EXIT_FAILED, ""]);
-    expect(refused.err).toContain("the encryption key file of that key with --encryption-keypair");
-    expect(sealedOnDevice(PATH, j.intent)).toContain("pass --encryption-keypair with the encryption key file");
+    expect(refused.err).toMatch(new RegExp(`^the announcement \\S+ by \\S+ for intent ${j.intent} came before the work being paid and is sealed to the encryption key \\S+ the judge's profile named when it landed, which none of the keys given opens; ${GIVE_KEY_FLAG}; nothing was paid$`));
     ledger.store.ensureQueueEmpty();
     expect(ledger.signed).toEqual([]);
     expect(statusOf(j.intent)).toBe(IntentStatus.Open);
