@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { type Address, AccountRole, getAddressEncoder } from "@solana/kit";
+import { type Address, AccountRole, getAddressDecoder, getAddressEncoder } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import {
   ACCOUNT_LAYOUTS,
@@ -99,6 +99,47 @@ describe("account versions", () => {
     expect([lineIntent(board), lineIntent(entry)]).toEqual([escrow, escrow]);
     expect(lineIntent(account(named("intent"), 1))).toBeNull();
     expect(lineIntent(entry.slice(0, 40))).toBeNull();
+  });
+
+  it("read a board, a stand-by entry and a payer from data that ends right after the field, and nothing shorter", () => {
+    const board = account(named("claim board"), 1);
+    const worker = "So11111111111111111111111111111111111111112" as Address;
+    board.set(getAddressEncoder().encode(worker), 8 + 64);
+    board.set([0x10, 0x27], 8 + 96);
+    board.set([7], 8 + 112);
+    const exact = board.slice(0, 8 + 120);
+    expect(boardTerms(exact)).toEqual({ intent: "11111111111111111111111111111111", owner: PAYER, worker, until: 10_000n, held: 7n });
+    expect(boardTerms(board.slice(0, 8 + 119))).toBeNull();
+    expect(boardTerms(board.slice(0, 50))).toBeNull();
+    const escrow = "So11111111111111111111111111111111111111112" as Address;
+    const entry = account(named("stand-by entry"), 0);
+    entry.set(getAddressEncoder().encode(escrow), 8 + 32);
+    expect(lineIntent(entry.slice(0, 8 + 64))).toBe(escrow);
+    expect(lineIntent(entry.slice(0, 8 + 63))).toBeNull();
+    const payerAt = named("claim board").payerAt ?? 0;
+    expect(recordedPayer(board.slice(0, 8 + payerAt + 32))).toBe(PAYER);
+    expect(recordedPayer(board.slice(0, 8 + payerAt + 31))).toBeNull();
+  });
+
+  it("build close-legacy with each optional account it is given, in its own slot", async () => {
+    const target = "So11111111111111111111111111111111111111112" as Address;
+    const [config, vault, intent, stakeTo, feeTo] = [1, 2, 3, 4, 5].map((n) => getAddressDecoder().decode(new Uint8Array(32).fill(n))) as [Address, Address, Address, Address, Address];
+    const slots = (ix: { accounts: readonly { address: Address }[] }) => ix.accounts.slice(2, 7).map(({ address }) => address);
+    expect(slots(await buildCloseLegacy({ account: target, payee: PAYER, config, vault, intent, stakeTo, feeTo }))).toEqual([config, vault, intent, stakeTo, feeTo]);
+    expect(slots(await buildCloseLegacy({ account: target, payee: PAYER, vault, feeTo }))).toEqual([
+      INTENT_ENGINE_PROGRAM_ADDRESS,
+      vault,
+      INTENT_ENGINE_PROGRAM_ADDRESS,
+      INTENT_ENGINE_PROGRAM_ADDRESS,
+      feeTo,
+    ]);
+    expect(slots(await buildCloseLegacy({ account: target, payee: PAYER, intent, stakeTo }))).toEqual([
+      INTENT_ENGINE_PROGRAM_ADDRESS,
+      INTENT_ENGINE_PROGRAM_ADDRESS,
+      intent,
+      stakeTo,
+      INTENT_ENGINE_PROGRAM_ADDRESS,
+    ]);
   });
 
   it("refuse an account of an earlier size with its length", () => {

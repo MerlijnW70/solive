@@ -48,11 +48,12 @@ const BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
 const SALT_HEX = /^[0-9a-f]{32}$/;
 const BASE58_SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
 const ADDRESS_CHARS = 44;
-const FIXED_MEMO = DELIVERY_MEMO_PREFIX.length + ADDRESS_CHARS + 1 + 64 + 1 + 2 * SALT_BYTES + 1;
+const MEMO_SEPARATORS = 3;
+const FIXED_MEMO = DELIVERY_MEMO_PREFIX.length + ADDRESS_CHARS + MEMO_SEPARATORS + 64 + 2 * SALT_BYTES;
 const OPENED_CHARS = 2 * SALT_BYTES + 1;
 const ZERO_IV = new Uint8Array(IV_BYTES);
 
-export const MAX_OPENED_SALTS = Math.floor((MAX_OPENING_MEMO - OPENING_MEMO_PREFIX.length - ADDRESS_CHARS - 1 + 1) / OPENED_CHARS);
+export const MAX_OPENED_SALTS = Math.floor((MAX_OPENING_MEMO - OPENING_MEMO_PREFIX.length - ADDRESS_CHARS) / OPENED_CHARS);
 
 const toBase64 = (bytes: Uint8Array): string => btoa(String.fromCharCode(...bytes));
 
@@ -176,7 +177,7 @@ export async function sealDelivery({ salt, url }: SealedDelivery, recipients: re
   }
   const contentKey = random(KEY_BYTES);
   const iv = random(IV_BYTES);
-  const ephemeral = (await crypto.subtle.generateKey({ name: "X25519" }, true, ["deriveBits"])) as unknown as { publicKey: CryptoKey; privateKey: CryptoKey };
+  const ephemeral = (await crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"])) as unknown as { publicKey: CryptoKey; privateKey: CryptoKey };
   const epk = new Uint8Array(await crypto.subtle.exportKey("raw", ephemeral.publicKey));
   const wrapped: number[] = [];
   let mask = 0;
@@ -252,10 +253,9 @@ export async function openDelivery(blob: string, opener: DeliveryOpener, intent:
   }
   const keysAt = head + EPK_BYTES;
   const ivAt = keysAt + count * WRAPPED_BYTES;
-  for (let at = 0; at < count; at += 1) {
+  for (const start of Array.from({ length: count }, (_, at) => keysAt + at * WRAPPED_BYTES)) {
     let contentKey: Uint8Array<ArrayBuffer>;
     try {
-      const start = keysAt + at * WRAPPED_BYTES;
       contentKey = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv: ZERO_IV, additionalData: INFO }, wrapping, bytes.slice(start, start + WRAPPED_BYTES)));
     } catch {
       continue;
@@ -264,7 +264,7 @@ export async function openDelivery(blob: string, opener: DeliveryOpener, intent:
       const content = await crypto.subtle.importKey("raw", contentKey, "AES-GCM", false, ["decrypt"]);
       const iv = bytes.slice(ivAt, ivAt + IV_BYTES);
       const plain = new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv, additionalData: aad(intent, bytes.slice(0, head)) }, content, bytes.slice(ivAt + IV_BYTES)));
-      const url = new TextDecoder("utf-8", { fatal: true }).decode(plain.slice(SALT_BYTES));
+      const url = new TextDecoder().decode(plain.slice(SALT_BYTES));
       return isMemoUrl(url) ? { salt: hex(plain.slice(0, SALT_BYTES)), url } : null;
     } catch {
       return null;
@@ -305,14 +305,7 @@ export function parseDeliveryMemo(text: string): DeliveryMemo | null {
 }
 
 export function isSignatureText(text: string): boolean {
-  if (!BASE58_SIGNATURE.test(text)) {
-    return false;
-  }
-  try {
-    return getBase58Encoder().encode(text).length === SIGNATURE_BYTES;
-  } catch {
-    return false;
-  }
+  return BASE58_SIGNATURE.test(text) && getBase58Encoder().encode(text).length === SIGNATURE_BYTES;
 }
 
 export function openingMemo(opening: Opening): string {
@@ -333,7 +326,7 @@ export function openingMemo(opening: Opening): string {
 }
 
 export function parseOpeningMemo(text: string): Opening | null {
-  if (text.length > MAX_OPENING_MEMO || !text.startsWith(OPENING_MEMO_PREFIX)) {
+  if (!text.startsWith(OPENING_MEMO_PREFIX)) {
     return null;
   }
   const [intent = "", first = "", second, ...rest] = text.slice(OPENING_MEMO_PREFIX.length).split(":");

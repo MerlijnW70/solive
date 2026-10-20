@@ -105,6 +105,35 @@ describe("judge encryption keys", () => {
     expect(sealedKeys(changed.toString("base64"))).toBeNull();
   });
 
+  it("mark the key of each recipient at its own position", async () => {
+    const intent = wallet().address;
+    const [judge, member] = [wallet(), wallet()];
+    const sealed = await encryptionKey();
+    const blob = await sealDelivery({ salt: SALT, url: URL }, [member.address, { wallet: judge.address, encryptionKey: sealed.publicKey }], intent);
+    expect(sealedKeys(blob)).toEqual(["wallet", "profile"]);
+    expect(Buffer.from(blob, "base64")[2]).toBe(0b10);
+    expect(await openDelivery(blob, sealed.key, intent)).toEqual({ salt: SALT, url: URL });
+    expect(await openDelivery(blob, member.keypair, intent)).toEqual({ salt: SALT, url: URL });
+  });
+
+  it("keep a wallet listed twice once, with its first encryption key, or the key a later listing adds", async () => {
+    const intent = wallet().address;
+    const judge = wallet();
+    const [first, second] = [await encryptionKey(), await encryptionKey()];
+    const seal = (recipients: Parameters<typeof sealDelivery>[1]) => sealDelivery({ salt: SALT, url: URL }, recipients, intent);
+    const keyed = { wallet: judge.address, encryptionKey: first.publicKey };
+    const twice = await seal([keyed, { wallet: judge.address, encryptionKey: second.publicKey }]);
+    expect(sealedFingerprints(twice)).toEqual([await keyFingerprint(first.publicKey)]);
+    expect(await openDelivery(twice, first.key, intent)).toEqual({ salt: SALT, url: URL });
+    expect(await openDelivery(twice, second.key, intent)).toBeNull();
+    for (const recipients of [[judge.address, keyed], [keyed, judge.address], [{ wallet: judge.address, encryptionKey: null }, keyed]]) {
+      const blob = await seal(recipients);
+      expect([sealedKeys(blob), sealedFingerprints(blob)]).toEqual([["profile"], [await keyFingerprint(first.publicKey)]]);
+    }
+    const bare = await seal([judge.address, { wallet: judge.address, encryptionKey: null }]);
+    expect(sealedKeys(bare)).toEqual(["wallet"]);
+  });
+
   it("seal to the key derived from the wallet when a recipient publishes no encryption key, or a low-order one", async () => {
     const intent = wallet().address;
     const judge = wallet();

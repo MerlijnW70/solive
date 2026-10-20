@@ -15,6 +15,7 @@ import {
   MAX_COMMITTEE_FLOORS,
   needsCommittee,
   TOKEN_PROGRAM_ADDRESS,
+  U64_MAX,
 } from "../src/index.js";
 
 const MINT = "So11111111111111111111111111111111111111112" as Address;
@@ -61,6 +62,10 @@ describe("committee floors", () => {
     expect(ix.accounts).toContainEqual({ address: MINT, role: AccountRole.READONLY });
     await expect(buildSetCommitteeFloor({ admin, mint: MINT, floor: -1n })).rejects.toThrow(RangeError);
     await expect(buildSetCommitteeFloor({ admin, mint: MINT, floor: 1n << 64n })).rejects.toThrow(RangeError);
+    for (const floor of [0n, U64_MAX]) {
+      const edge = await buildSetCommitteeFloor({ admin, mint: MINT, floor });
+      expect(getSetCommitteeFloorInstructionDataDecoder().decode(edge.data ?? new Uint8Array()).floor).toBe(floor);
+    }
   });
 
   it("a create names the committee when given and the program id in its place when not", async () => {

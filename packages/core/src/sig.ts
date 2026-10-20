@@ -146,11 +146,7 @@ export function offchainEnvelope(signer: Address, digest: Uint8Array): Uint8Arra
 }
 
 function compareKeys(a: ArrayLike<number>, b: ArrayLike<number>): number {
-  for (let i = 0; i < 32; i += 1) {
-    const d = (a[i] ?? 0) - (b[i] ?? 0);
-    if (d !== 0) return d;
-  }
-  return 0;
+  return Array.from(b, (byte, i) => (a[i] ?? 0) - byte).find((d) => d !== 0) ?? 0;
 }
 
 export function cosignerSet(keys: readonly Address[]): Address[] {
@@ -467,7 +463,7 @@ export function buildEd25519CosignInstruction(input: {
     if (e.signature.length !== 64) {
       throw new RangeError("an Ed25519 signature is 64 bytes");
     }
-    if (k > 0 && entries[k - 1]?.publicKey === e.publicKey) {
+    if (entries[k - 1]?.publicKey === e.publicKey) {
       throw new RangeError(`${e.publicKey} signs a cosign batch twice`);
     }
     const slot = slots.findIndex((s) => compareKeys(s, key(e.publicKey)) === 0);

@@ -195,6 +195,14 @@ describe("release settlement", () => {
     expect(settleBounds({ feeBps: 6_000, partnerBps: 5_000, cutBps: 0, amount: 9n, judgeFee: 0n })).toEqual({});
   });
 
+  it("searches rests up to a whole denominator and names a least amount of exactly u64 max", () => {
+    const whole = { feeBps: 1, partnerBps: 9_999, cutBps: 0 };
+    expect(releaseSettles({ ...whole, amount: BPS_DENOMINATOR - 1n, judgeFee: 0n })).toBe(false);
+    expect(settleBounds({ ...whole, amount: BPS_DENOMINATOR, judgeFee: 0n })).toStrictEqual({ leastAmount: BPS_DENOMINATOR, mostJudgeFee: 0n });
+    expect(settleBounds({ ...terms, partnerBps: 0, feeBps: 0, amount: U64_MAX, judgeFee: U64_MAX - 1n })).toStrictEqual({ leastAmount: U64_MAX, mostJudgeFee: U64_MAX - 1n });
+    expect(settleBounds({ ...terms, partnerBps: 0, feeBps: 0, amount: 0n, judgeFee: U64_MAX })).toStrictEqual({});
+  });
+
   it("agrees with the release fee split for any terms", () => {
     fc.assert(
       fc.property(fc.bigInt({ min: 0n, max: 100_000n }), fc.bigInt({ min: 0n, max: 100_000n }), fc.integer({ min: 0, max: 300 }), fc.integer({ min: 0, max: 100 }), (amount, judgeFee, feeBps, partnerBps) => {

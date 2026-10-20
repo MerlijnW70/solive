@@ -1,4 +1,4 @@
-import { type Address, generateKeyPairSigner, getAddressEncoder, getPublicKeyFromAddress, type SignatureBytes, verifySignature } from "@solana/kit";
+import { type Address, generateKeyPairSigner, getAddressDecoder, getAddressEncoder, getPublicKeyFromAddress, type SignatureBytes, verifySignature } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import {
   buildEd25519CosignInstruction,
@@ -75,6 +75,34 @@ describe("cosign instruction", () => {
     expect(() => buildEd25519CosignInstruction({ entries: [], message })).toThrow(RangeError);
   });
 
+  it("reads the listed count from the byte before the keys, so a key starting with zero is still found", async () => {
+    const zero = getAddressDecoder().decode(new Uint8Array(32));
+    const [b] = await keys(1);
+    if (b === undefined) throw new Error("one key");
+    const message = cosignEnvelope([b, zero], digest);
+    expect([...message.slice(COSIGN_KEYS_AT - 1, COSIGN_KEYS_AT + 1)]).toEqual([2, 0]);
+    const ix = buildEd25519CosignInstruction({ entries: [{ publicKey: b, signature: new Uint8Array(64) }], message });
+    const data = ix.data ?? new Uint8Array();
+    const messageAt = 2 + 14 + 64;
+    expect(new DataView(data.buffer, data.byteOffset).getUint16(2 + 4, true)).toBe(messageAt + COSIGN_KEYS_AT + 32);
+  });
+
+  it("takes every cosigner a batch holds and a message up to the largest offset the header names", async () => {
+    const all = await keys(MAX_COSIGNERS);
+    const entries = all.map((publicKey) => ({ publicKey, signature: new Uint8Array(64) }));
+    const full = buildEd25519CosignInstruction({ entries, message: cosignEnvelope(all, digest) });
+    expect((full.data ?? new Uint8Array())[0]).toBe(MAX_COSIGNERS);
+    const [first] = all;
+    if (first === undefined) throw new Error("one key");
+    const longest = new Uint8Array(0xffff);
+    longest.set(cosignEnvelope([first], digest));
+    const ix = buildEd25519CosignInstruction({ entries: [{ publicKey: first, signature: new Uint8Array(64) }], message: longest });
+    expect(ix.data?.length).toBe(2 + 14 + 64 + 0xffff);
+    const over = new Uint8Array(0x10000);
+    over.set(cosignEnvelope([first], digest));
+    expect(() => buildEd25519CosignInstruction({ entries: [{ publicKey: first, signature: new Uint8Array(64) }], message: over })).toThrow(RangeError);
+  });
+
   it("signs and verifies a committee vote through any message signer", async () => {
     const signers = await Promise.all([0, 1].map(() => generateKeyPairSigner()));
     const members = signers.map((s) => s.address);
@@ -84,6 +112,11 @@ describe("cosign instruction", () => {
     expect(await verifyCommitteeVote(vote, digest, members)).toBe(true);
     expect(await verifyCommitteeVote(vote, digest, [first.address])).toBe(false);
     expect(await verifyCommitteeVote({ ...vote, member: signers[1]?.address ?? first.address }, digest, members)).toBe(false);
+    const stranger = await generateKeyPairSigner();
+    const outside = await signCommitteeVote(stranger, digest, members);
+    expect(await verifySignature(await getPublicKeyFromAddress(stranger.address), outside.signature as SignatureBytes, cosignEnvelope(members, digest))).toBe(true);
+    expect(await verifyCommitteeVote(outside, digest, members)).toBe(false);
+    expect(await verifyCommitteeVote({ ...vote, signature: vote.signature.slice(0, 63) }, digest, members)).toBe(false);
     const raw = await signMessageBytes(first, cosignEnvelope(members, digest));
     expect(await verifySignature(await getPublicKeyFromAddress(first.address), raw as SignatureBytes, cosignEnvelope(members, digest))).toBe(true);
   });

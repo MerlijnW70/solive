@@ -203,4 +203,16 @@ describe("stand-by line", () => {
     const five = await Promise.all([0, 1, 2, 3, 4].map((seq) => standbyAddress(intent, seq)));
     await expect(buildAdvance({ intent, owner: OWNER, entries: five })).rejects.toThrow("InvalidParams");
   });
+
+  it("seats a full batch of entries in order and the next worker only when given", async () => {
+    const intent = "SysvarRecentB1ockHashes11111111111111111111" as Address;
+    const signer = { address: WORKER, signTransactions: async () => [] } as never;
+    const four = await Promise.all([0, 1, 2, 3].map((seq) => standbyAddress(intent, seq)));
+    expect(four).toHaveLength(MAX_LINE_ENTRIES);
+    const seated = (ix: { accounts: readonly { address: Address }[] }) => ix.accounts.slice(3, 8).map(({ address }) => address);
+    expect(seated(await buildAdvance({ intent, owner: OWNER, entries: four, nextWorker: OTHER }))).toEqual([OTHER, ...four]);
+    expect(seated(await buildAdvance({ intent, owner: OWNER, entries: four }))).toEqual([INTENT_ENGINE_PROGRAM_ADDRESS, ...four]);
+    expect(seated(await buildAdvance({ intent, owner: OWNER, entries: [] }))).toEqual(Array(5).fill(INTENT_ENGINE_PROGRAM_ADDRESS));
+    expect(seated(await buildDropClaim({ worker: signer, intent, entries: four, nextWorker: OTHER }))).toEqual([OTHER, ...four]);
+  });
 });

@@ -12,6 +12,8 @@ import {
   MAX_DELIVERY_MEMO,
   MAX_MEMO_URL,
   MAX_OPENED_SALTS,
+  MAX_OPENING_MEMO,
+  MAX_SEALED_URL_RECIPIENTS,
   maxSealedUrl,
   OPENING_MEMO_PREFIX,
   openDelivery,
@@ -24,6 +26,7 @@ import {
   releaseMemo,
   SALT_BYTES,
   saltCheck,
+  saltCheckPreimage,
   saltMessage,
   saltOfSignature,
   sealDelivery,
@@ -184,6 +187,76 @@ describe("sealed delivery memos", () => {
     await expect(sealDelivery({ salt: SALT, url: URL }, [], intent)).rejects.toThrow("between 1 and");
     await expect(sealDelivery({ salt: SALT, url: "ftp://example.org/x" }, [intent], intent)).rejects.toThrow(RangeError);
     await expect(sealDelivery({ salt: "ab", url: URL }, [intent], intent)).rejects.toThrow(RangeError);
+  });
+});
+
+describe("sealed delivery bounds", () => {
+  const LONGEST = getAddressDecoder().decode(new Uint8Array(32).fill(0xff));
+  const blobOf = (head: number[], length: number) => Buffer.from([...head, ...new Uint8Array(length - head.length)]).toString("base64");
+
+  it("fit the longest url each recipient count allows into one memo, even for the longest intent", async () => {
+    expect(LONGEST).toHaveLength(44);
+    const members = Array.from({ length: MAX_SEALED_URL_RECIPIENTS }, wallet);
+    const commitment = await deliveryCommitment({ intent: LONGEST, worker: LONGEST, salt: SALT, sha256: WORK });
+    const check = await saltCheck(SALT);
+    let bound = 0;
+    for (let n = 1; n <= MAX_SEALED_URL_RECIPIENTS; n += 1) {
+      const limit = maxSealedUrl(n);
+      bound += limit < MAX_MEMO_URL ? 1 : 0;
+      const blob = await sealDelivery({ salt: SALT, url: urlOf(limit) }, members.slice(0, n).map((m) => m.address), LONGEST);
+      const memo = deliveryMemo({ intent: LONGEST, commitment, check, blob });
+      expect(memo.length, `${n} recipients`).toBeLessThanOrEqual(MAX_DELIVERY_MEMO);
+      const oneMore = memo.length - blob.length + 4 * Math.ceil((Buffer.from(blob, "base64").length + 1) / 3);
+      expect(limit === MAX_MEMO_URL || oneMore > MAX_DELIVERY_MEMO, `${n} recipients`).toBe(true);
+    }
+    expect(bound).toBeGreaterThan(0);
+    expect(maxSealedUrl(4 * MAX_SEALED_URL_RECIPIENTS)).toBe(0);
+  });
+
+  it("fit the most salts into one opening memo for the longest intent", () => {
+    const full = openingMemo({ intent: LONGEST, salts: Array.from({ length: MAX_OPENED_SALTS }, () => SALT) });
+    expect(full.length).toBeLessThanOrEqual(MAX_OPENING_MEMO);
+    expect(full.length + 1 + 2 * SALT_BYTES).toBeGreaterThan(MAX_OPENING_MEMO);
+  });
+
+  it("name the wallet count and the salt length in their refusals", () => {
+    expect(sealedUrlTooLong(300, 1)).toContain("sealed to 1 wallet it may");
+    expect(sealedUrlTooLong(300, 2)).toContain("sealed to 2 wallets it may");
+    expect(() => saltCheckPreimage("ab")).toThrow(`a salt is ${2 * SALT_BYTES} lowercase hex digits`);
+  });
+
+  it("read a sealed url's layout only when every header field is sound and the body is longer than an empty url", () => {
+    const empty = 3 + 8 + 32 + 48 + 12 + 16 + 16;
+    expect(sealedUrlRecipients(blobOf([3, 1, 0], 301))).toBe(1);
+    expect(sealedUrlRecipients(blobOf([3, 1, 0], empty + 1))).toBe(1);
+    expect(sealedUrlRecipients(blobOf([3, 1, 0], empty))).toBeNull();
+    const canonical = blobOf([3, 1, 0], 301);
+    expect(canonical.endsWith("A==")).toBe(true);
+    const loose = `${canonical.slice(0, -3)}B==`;
+    expect(Buffer.from(loose, "base64")).toEqual(Buffer.from(canonical, "base64"));
+    expect(sealedUrlRecipients(loose)).toBeNull();
+    expect(sealedUrlRecipients(blobOf([2, 1, 0], 301))).toBeNull();
+    expect(sealedUrlRecipients(blobOf([3, 0, 0], 301))).toBeNull();
+    expect(sealedUrlRecipients(blobOf([3, MAX_SEALED_URL_RECIPIENTS + 1, 0], 1000))).toBeNull();
+    expect(sealedUrlRecipients(blobOf([3, MAX_SEALED_URL_RECIPIENTS, 0], 1000))).toBe(MAX_SEALED_URL_RECIPIENTS);
+    expect(sealedUrlRecipients(blobOf([3, 2, 0b100], 1000))).toBeNull();
+    expect(sealedUrlRecipients(blobOf([3, 2, 0b10], 1000))).toBe(2);
+  });
+
+  it("parse a delivery memo of exactly the most bytes, and refuse one byte more", async () => {
+    const intent = wallet().address;
+    const head = `${DELIVERY_MEMO_PREFIX}${intent}:${WORK}:${await saltCheck(SALT)}:`;
+    const exact = head + "A".repeat(MAX_DELIVERY_MEMO - head.length);
+    expect(parseDeliveryMemo(exact)).toEqual({ intent, commitment: WORK, check: await saltCheck(SALT), blob: exact.slice(head.length) });
+    expect(parseDeliveryMemo(`${exact}A`)).toBeNull();
+  });
+
+  it("refuse an opening memo with a foreign prefix or a trailing field", () => {
+    const intent = wallet().address;
+    const memo = openingMemo({ intent, announcement: signatureText, salt: SALT });
+    expect(parseOpeningMemo(memo)).toEqual({ intent, announcement: signatureText, salt: SALT });
+    expect(parseOpeningMemo(`${memo}:${SALT}`)).toBeNull();
+    expect(parseOpeningMemo("x".repeat(OPENING_MEMO_PREFIX.length) + memo.slice(OPENING_MEMO_PREFIX.length))).toBeNull();
   });
 });
 

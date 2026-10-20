@@ -92,7 +92,7 @@ export async function seal(plain: Uint8Array, recipients: readonly Address[]): P
   const to: Recipient[] = [];
   for (const wallet of wallets) {
     const theirs = x25519PublicOf(wallet);
-    const ephemeral = (await crypto.subtle.generateKey({ name: "X25519" }, true, ["deriveBits"])) as unknown as { publicKey: CryptoKey; privateKey: CryptoKey };
+    const ephemeral = (await crypto.subtle.generateKey({ name: "X25519" }, false, ["deriveBits"])) as unknown as { publicKey: CryptoKey; privateKey: CryptoKey };
     const epk = new Uint8Array(await crypto.subtle.exportKey("raw", ephemeral.publicKey));
     const peer = await crypto.subtle.importKey("raw", theirs, { name: "X25519" }, false, []);
     const shared = new Uint8Array(await crypto.subtle.deriveBits({ name: "X25519", public: peer }, ephemeral.privateKey, 256));

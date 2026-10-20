@@ -64,6 +64,7 @@ describe("mint cap accounts", () => {
     expect(() => checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 60, totalLimit: -1n })).toThrow(RangeError);
     expect(() => checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 60, totalLimit: 1n << 64n })).toThrow(RangeError);
     expect(checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 60, totalLimit: 0n }).totalLimit).toBe(0n);
+    expect(checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 60, totalLimit: (1n << 64n) - 1n }).totalLimit).toBe((1n << 64n) - 1n);
   });
 
   it("a create names the mint cap when given and the program id in its place when not", async () => {

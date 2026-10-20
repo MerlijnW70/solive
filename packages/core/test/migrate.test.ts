@@ -64,6 +64,21 @@ describe("migration", () => {
     expect(isConfigAccount(account(named("user"), 1))).toBe(false);
   });
 
+  it("never takes an account for another type's outdated layout of the same size and version", () => {
+    const same = (a: ArrayLike<number>, b: ArrayLike<number>) => Array.from(a).every((byte, i) => byte === b[i]);
+    let checked = 0;
+    for (const layout of ACCOUNT_LAYOUTS) {
+      for (const o of OUTDATED_LAYOUTS.filter((other) => !same(other.discriminator, layout.discriminator) && other.space > 8 + layout.versionAt)) {
+        const found = migrationOf(account(layout, o.version, o.space));
+        expect(found === null || same(found.from.discriminator, layout.discriminator)).toBe(true);
+        checked += found === null ? 1 : 0;
+      }
+    }
+    expect(checked).toBeGreaterThan(0);
+    const entry = named("stand-by entry");
+    expect(migrationOf(account(entry, 1, LEGACY_CONFIG_SPACE))).toBeNull();
+  });
+
   it("builds migrate with the config only when it is passed", async () => {
     const [config] = await findConfigPda();
     const tag = [...createHash("sha256").update("global:migrate").digest().subarray(0, 8)];
