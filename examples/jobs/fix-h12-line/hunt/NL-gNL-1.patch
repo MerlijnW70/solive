@@ -1,0 +1,163 @@
+diff --git a/tests/svm/tests/h12_nl_line_eviction.rs b/tests/svm/tests/h12_nl_line_eviction.rs
+new file mode 100644
+index 0000000..ed39c61
+--- /dev/null
++++ b/tests/svm/tests/h12_nl_line_eviction.rs
+@@ -0,0 +1,157 @@
++use anchor_lang::prelude::Pubkey;
++use core::mem::offset_of;
++use intent_core::kinds::{attested_result, Kind};
++use intent_engine::state::{ClaimBoard, Intent, Standby};
++use intent_engine::versions::is_current;
++use litesvm::types::TransactionMetadata;
++use solana_instruction::Instruction;
++use solana_keypair::Keypair;
++use solana_signer::Signer;
++use solana_transaction_error::TransactionError;
++use svm_tests::{
++    advance_ix, claim_job_ix, claims_pda, close_legacy_ix, config_pda, intent_pda, load,
++    migrate_ix, open_claims_ix, put, stand_by_ix, standby_pda, swap_spec, Env, IntentSpec, Saved,
++    TestResult, Trader,
++};
++
++const FUNDED: u64 = 1_000;
++const ESCROW: u64 = 400;
++const SPEC: [u8; 32] = [0x5a; 32];
++const STAKE: u64 = 50_000_000;
++const HOUR: u32 = 3_600;
++const HEAD: usize = 8;
++
++struct World {
++    env: Env,
++    trader: Trader,
++    payer: Keypair,
++}
++
++impl World {
++    fn owner(&self) -> Pubkey {
++        self.trader.key.pubkey()
++    }
++
++    fn intent(&self) -> Pubkey {
++        intent_pda(&self.owner(), 0)
++    }
++
++    fn entry(&self, seq: u32) -> Pubkey {
++        standby_pda(&self.intent(), seq)
++    }
++
++    fn run(
++        &mut self,
++        ixs: &[Instruction],
++        signers: &[&Keypair],
++    ) -> Result<TransactionMetadata, TransactionError> {
++        let payer = self.payer.insecure_clone();
++        self.env.send(&payer, ixs, signers)
++    }
++
++    fn as_stand_by_line_wrote(&mut self, address: &Pubkey, writes: &[(usize, &[u8])]) -> TestResult {
++        let account = self.env.svm.get_account(address).ok_or("missing")?;
++        let mut data = account.data.clone();
++        for (at, bytes) in writes {
++            data.get_mut(*at..at.saturating_add(bytes.len()))
++                .ok_or("short")?
++                .copy_from_slice(bytes);
++        }
++        put(
++            &mut self.env.svm,
++            &Saved {
++                address: *address,
++                owner: account.owner,
++                lamports: account.lamports,
++                data,
++            },
++        )
++    }
++}
++
++fn world() -> TestResult<World> {
++    let mut env = Env::new()?;
++    env.init_config()?;
++    let market = env.market(anchor_spl::token::ID, &[], anchor_spl::token::ID, &[])?;
++    let trader = env.trader(&market, FUNDED)?;
++    let spec = IntentSpec {
++        kind: Kind::AttestedResult as u8,
++        params: attested_result::Params {
++            amount_in: ESCROW,
++            min_result: 1,
++            max_result: 1,
++            attestor: Keypair::new().pubkey().to_bytes(),
++            spec_hash: SPEC,
++            judge_fee: 0,
++        }
++        .encode()
++        .map_err(|e| format!("{e:?}"))?,
++        ..swap_spec(0, ESCROW)?
++    };
++    env.create_intent(&trader, &market, &spec)?;
++    let payer = env.funded()?;
++    let mut w = World { env, trader, payer };
++    let ix = open_claims_ix(&w.owner(), &w.intent(), HOUR, STAKE);
++    let owner = w.trader.key.insecure_clone();
++    w.env.send(&owner, &[ix], &[])?;
++    Ok(w)
++}
++
++#[test]
++fn nl3_a_later_waiter_closes_an_earlier_unmigrated_entry_and_takes_the_job_ahead_of_it(
++) -> TestResult {
++    let mut w = world()?;
++    let holder = w.env.funded()?;
++    let first = w.env.funded()?;
++    let second = w.env.funded()?;
++    let intent = w.intent();
++    let owner = w.owner();
++    let board = claims_pda(&intent);
++
++    let claim = claim_job_ix(&holder.pubkey(), &intent, &owner, 600);
++    w.run(&[claim], &[&holder])?;
++    let join = stand_by_ix(&first.pubkey(), &intent, 0, 600);
++    w.run(&[join], &[&first])?;
++    let join = stand_by_ix(&second.pubkey(), &intent, 1, 600);
++    w.run(&[join], &[&second])?;
++
++    let intent_version = HEAD + offset_of!(Intent, version);
++    let intent_fee = HEAD + offset_of!(Intent, fee_bps);
++    w.as_stand_by_line_wrote(&intent, &[(intent_version, &[1]), (intent_fee, &[0, 0])])?;
++    w.as_stand_by_line_wrote(&board, &[(HEAD + offset_of!(ClaimBoard, version), &[1])])?;
++    let entry_version = HEAD + offset_of!(Standby, version);
++    w.as_stand_by_line_wrote(&w.entry(0), &[(entry_version, &[0])])?;
++    w.as_stand_by_line_wrote(&w.entry(1), &[(entry_version, &[0])])?;
++
++    let upgrade = [
++        migrate_ix(&second.pubkey(), &intent, Some(config_pda())),
++        migrate_ix(&second.pubkey(), &board, Some(config_pda())),
++        migrate_ix(&second.pubkey(), &w.entry(1), Some(config_pda())),
++    ];
++    w.run(&upgrade, &[&second])?;
++    for migrated in [intent, board, w.entry(1)] {
++        let data = w.env.svm.get_account(&migrated).ok_or("missing")?.data;
++        assert!(is_current(&data));
++    }
++    let evict = close_legacy_ix(&w.entry(0), &first.pubkey(), false);
++    let evicted = w.env.send(&second, &[evict], &[]).is_ok();
++    if !evicted {
++        let own = migrate_ix(&first.pubkey(), &w.entry(0), Some(config_pda()));
++        w.run(&[own], &[&first])?;
++    }
++
++    let now = w.env.now();
++    w.env.set_now(now.saturating_add(600));
++    let entries = [w.entry(0), w.entry(1)];
++    let next = if evicted { second.pubkey() } else { first.pubkey() };
++    let advance = advance_ix(&intent, &owner, &entries, Some(&next));
++    w.run(&[advance], &[])?;
++
++    let served: ClaimBoard = load(&w.env.svm, &board)?;
++    assert_eq!(
++        served.worker,
++        first.pubkey(),
++        "the line serves the worker that stood by first, not a later waiter that closed its entry"
++    );
++    Ok(())
++}

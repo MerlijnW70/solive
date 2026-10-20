@@ -1,0 +1,155 @@
+diff --git a/tests/svm/tests/h12_nx_paused_line.rs b/tests/svm/tests/h12_nx_paused_line.rs
+new file mode 100644
+index 0000000..adecf47
+--- /dev/null
++++ b/tests/svm/tests/h12_nx_paused_line.rs
+@@ -0,0 +1,149 @@
++use anchor_lang::prelude::Pubkey;
++use intent_core::kinds::{attested_result, Kind};
++use intent_engine::state::{ClaimBoard, PAUSE_ALL};
++use intent_engine::ConfigUpdate;
++use litesvm::types::TransactionMetadata;
++use solana_instruction::Instruction;
++use solana_keypair::Keypair;
++use solana_signer::Signer;
++use solana_transaction_error::TransactionError;
++use svm_tests::{
++    claim_job_ix, claims_pda, intent_pda, load, open_claims_ix, stand_by_ix, standby_pda,
++    swap_spec, Env, IntentSpec, Market, TestResult, Trader,
++};
++
++const FUNDED: u64 = 1_000;
++const ESCROW: u64 = 400;
++const SPEC: [u8; 32] = [0x6b; 32];
++const STAKE: u64 = 50_000_000;
++const HOUR: u32 = 3_600;
++
++struct World {
++    env: Env,
++    _market: Market,
++    trader: Trader,
++    payer: Keypair,
++}
++
++fn world() -> TestResult<World> {
++    let mut env = Env::new()?;
++    env.init_config()?;
++    let market = env.market(anchor_spl::token::ID, &[], anchor_spl::token::ID, &[])?;
++    let trader = env.trader(&market, FUNDED)?;
++    let spec = IntentSpec {
++        kind: Kind::AttestedResult as u8,
++        params: attested_result::Params {
++            amount_in: ESCROW,
++            min_result: 1,
++            max_result: 1,
++            attestor: Keypair::new().pubkey().to_bytes(),
++            spec_hash: SPEC,
++            judge_fee: 0,
++        }
++        .encode()
++        .map_err(|e| format!("{e:?}"))?,
++        ..swap_spec(0, ESCROW)?
++    };
++    env.create_intent(&trader, &market, &spec)?;
++    let payer = env.funded()?;
++    let mut w = World {
++        env,
++        _market: market,
++        trader,
++        payer,
++    };
++    let ix = open_claims_ix(&w.owner(), &w.intent(), HOUR, STAKE);
++    let owner = w.trader.key.insecure_clone();
++    w.env.send(&owner, &[ix], &[])?;
++    Ok(w)
++}
++
++impl World {
++    fn owner(&self) -> Pubkey {
++        self.trader.key.pubkey()
++    }
++
++    fn intent(&self) -> Pubkey {
++        intent_pda(&self.owner(), 0)
++    }
++
++    fn run(
++        &mut self,
++        ixs: &[Instruction],
++        signers: &[&Keypair],
++    ) -> Result<TransactionMetadata, TransactionError> {
++        let payer = self.payer.insecure_clone();
++        self.env.send(&payer, ixs, signers)
++    }
++
++    fn board(&self) -> TestResult<ClaimBoard> {
++        load(&self.env.svm, &claims_pda(&self.intent()))
++    }
++
++    fn hold(&mut self) -> TestResult<Keypair> {
++        let holder = self.env.funded()?;
++        let ix = claim_job_ix(&holder.pubkey(), &self.intent(), &self.owner(), 600);
++        self.run(&[ix], &[&holder])?;
++        Ok(holder)
++    }
++
++    fn join(&mut self, waiter: &Keypair) -> Result<TransactionMetadata, TransactionError> {
++        let ix = stand_by_ix(&waiter.pubkey(), &self.intent(), 0, 600);
++        self.run(&[ix], &[waiter])
++    }
++}
++
++#[test]
++fn nx2_a_worker_joins_the_stand_by_line_while_the_guardian_has_paused_the_program() -> TestResult {
++    let mut w = world()?;
++    w.hold()?;
++    let guardian = w.env.guardian.insecure_clone();
++    let pause = w.env.raise_pause_ix(&guardian.pubkey(), PAUSE_ALL);
++    w.env.send(&guardian, &[pause], &[])?;
++    assert_eq!(w.env.config()?.paused, PAUSE_ALL);
++    let waiter = w.env.funded()?;
++    let before = w.env.lamports(&waiter.pubkey());
++    let joined = w.join(&waiter);
++    let entry = standby_pda(&w.intent(), 0);
++    let tail = w.board()?.tail;
++    let staked = before.saturating_sub(w.env.lamports(&waiter.pubkey()));
++    assert_eq!(
++        (joined.is_err(), tail, w.env.exists(&entry)),
++        (true, 0, false),
++        "with every pause raised a stand-by join must be refused, yet the line grew to {tail} and the waiter locked {staked} lamports"
++    );
++    Ok(())
++}
++
++#[test]
++fn nx2_a_worker_joins_the_stand_by_line_of_an_escrow_whose_kind_is_disabled() -> TestResult {
++    let mut w = world()?;
++    w.hold()?;
++    let s = w.env.settings();
++    let admin = w.env.authority.insecure_clone();
++    let disable = w.env.update_ix(
++        &admin.pubkey(),
++        ConfigUpdate {
++            guardian: s.guardian,
++            fee_recipient: s.fee_recipient,
++            enabled_kinds: s.enabled_kinds,
++            fee_bps: s.fee_bps,
++            fill_disabled_kinds: Kind::AttestedResult.bit(),
++        },
++    );
++    w.env.send(&admin, &[disable], &[])?;
++    assert_eq!(
++        w.env.config()?.fill_disabled_kinds,
++        Kind::AttestedResult.bit()
++    );
++    let waiter = w.env.funded()?;
++    let joined = w.join(&waiter);
++    let entry = standby_pda(&w.intent(), 0);
++    let tail = w.board()?.tail;
++    assert_eq!(
++        (joined.is_err(), tail, w.env.exists(&entry)),
++        (true, 0, false),
++        "with the escrow's kind disabled a stand-by join must be refused, yet the line grew to {tail}"
++    );
++    Ok(())
++}
