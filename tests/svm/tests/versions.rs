@@ -9,7 +9,7 @@ use intent_engine::state::{
     MINT_CAP_SEED, PROFILE_SEED,
 };
 use intent_engine::versions::{
-    board_terms, is_current, layout_of, recorded_payer, stored_version, LAYOUTS,
+    board_terms, is_current, layout_of, line_intent, recorded_payer, stored_version, LAYOUTS,
 };
 use intent_engine::ProfileFields;
 use litesvm::types::TransactionMetadata;
@@ -291,8 +291,7 @@ impl World {
             .env
             .svm
             .get_account(address)
-            .and_then(|a| board_terms(&a.data))
-            .map(|t| t.intent);
+            .and_then(|a| line_intent(&a.data));
         self.close_with(&LegacyClose {
             account: *address,
             payee: *payee,
@@ -372,6 +371,7 @@ fn an_account_of_another_version_closes_to_the_wallet_its_layout_records() -> Te
     let mut w = world()?;
     for version in [0u8, OLD, 3, u8::MAX] {
         let mut w = world()?;
+        let open = version == OLD;
         for h in w.held() {
             let version = if layout_of(&w.data(&h.address)?).map(|l| l.version) == Some(version) {
                 OLD.wrapping_sub(1)
@@ -384,12 +384,13 @@ fn an_account_of_another_version_closes_to_the_wallet_its_layout_records() -> Te
             let with_config = recorded_payer(&data).is_none();
             let refused = if h.discriminator == Intent::DISCRIMINATOR {
                 Some(EngineError::LegacyVaultOpen)
+            } else if (h.discriminator == ClaimBoard::DISCRIMINATOR
+                || h.discriminator == Standby::DISCRIMINATOR)
+                && open
+            {
+                Some(EngineError::LegacyLineOpen)
             } else if h.discriminator == ClaimBoard::DISCRIMINATOR {
-                Some(if version == OLD {
-                    EngineError::ClaimHeld
-                } else {
-                    EngineError::StakeAccountMismatch
-                })
+                Some(EngineError::StakeAccountMismatch)
             } else if h.discriminator == Config::DISCRIMINATOR
                 || h.discriminator == UserState::DISCRIMINATOR
             {
@@ -457,12 +458,23 @@ fn a_lapsed_claim_board_of_the_earlier_168_byte_layout_closes_to_its_owner() -> 
         .ok_or("overflow")?;
     let old = w.plant(data, lamports)?;
     assert!(!is_current(&w.data(&old)?));
+    let owner = w.owner();
+    assert_eq!(
+        w.close(&old, &owner, false).err(),
+        Some(engine_error(EngineError::LegacyLineOpen))
+    );
+    let intent = w.intent();
+    let mut account = w.env.svm.get_account(&intent).ok_or("intent missing")?;
+    *account
+        .data
+        .get_mut(core::mem::offset_of!(Intent, status).saturating_add(8))
+        .ok_or("short")? = 1;
+    w.env.svm.set_account(intent, account)?;
     let worker = w.worker.pubkey();
     assert_eq!(
         w.close(&old, &worker, false).err(),
         Some(engine_error(EngineError::LegacyPayeeMismatch))
     );
-    let owner = w.owner();
     let before = w.env.lamports(&owner);
     let worker_before = w.env.lamports(&worker);
     let meta = w.close(&old, &owner, false)?;
@@ -649,8 +661,8 @@ fn an_intent_board_and_entry_of_the_previous_version_return_every_token_stake_an
 }
 
 #[test]
-fn an_intent_with_a_lapsed_168_byte_board_cancels_once_close_legacy_settled_the_stake() -> TestResult
-{
+fn an_intent_with_a_lapsed_168_byte_board_cancels_and_close_legacy_then_returns_the_board(
+) -> TestResult {
     let mut w = world()?;
     let owner = w.owner();
     let intent = w.intent();
@@ -661,17 +673,24 @@ fn an_intent_with_a_lapsed_168_byte_board_cancels_once_close_legacy_settled_the_
     w.env.svm.set_account(board, account)?;
     let refund = w.trader.input;
     let trader = w.trader.key.insecure_clone();
-    w.env.claims = Some(board);
-    w.env.stake_to = Some(w.worker.pubkey());
     let held = w.env.lamports(&board);
-    let before = w.env.lamports(&owner);
-    w.close(&board, &owner, false)?;
-    assert_eq!(Some(w.env.lamports(&owner)), before.checked_add(held));
+    assert_eq!(
+        w.close(&board, &owner, false).err(),
+        Some(engine_error(EngineError::LegacyLineOpen))
+    );
+    w.env.claims = Some(board);
+    w.env.stake_to = Some(owner);
     let tokens = w.env.balance(&refund)?;
-    w.env.stake_to = None;
     let cancel = w.env.cancel_ix(&owner, &w.market, 0, &refund);
     w.env.send(&trader, &[cancel], &[])?;
+    w.env.stake_to = None;
     assert_eq!(Some(w.env.balance(&refund)?), tokens.checked_add(ESCROW));
+    let rest = w.env.lamports(&board);
+    assert_eq!(Some(rest), held.checked_sub(STAKE));
+    let before = w.env.lamports(&owner);
+    w.close(&board, &owner, false)?;
+    assert!(!w.env.exists(&board));
+    assert_eq!(Some(w.env.lamports(&owner)), before.checked_add(rest));
     Ok(())
 }
 
@@ -786,7 +805,7 @@ fn close_legacy_pays_a_held_stake_as_settle_claims_would() -> TestResult {
     w.set_version(&board, OLD)?;
     assert_eq!(
         w.close(&board, &owner, false).err(),
-        Some(engine_error(EngineError::ClaimHeld))
+        Some(engine_error(EngineError::LegacyLineOpen))
     );
     let mut account = w.env.svm.get_account(&intent).ok_or("intent missing")?;
     *account.data.get_mut(8 + 161).ok_or("short")? = 1;

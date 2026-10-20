@@ -63,6 +63,22 @@ describe("the stand-by line from the command line", () => {
     expect(await j.refused(["claims", "take", "--keypair", "second.json", ...j.ref, "--secs", "60", "--yes"])).toBe(lineWaiting(j.intent, 1));
   });
 
+  it("claims take and claims standby refuse while fills are paused, and a waiter still leaves", async () => {
+    const j = await job();
+    const pause = (verb: string) => cli([verb, "--keypair", "a.json", "--yes", "--flags", "fill"], { "a.json": j.w.authority });
+    const paused = `fills are paused by the guardian or admin, and with them new claims and stand-by joins on escrow ${j.intent}; try again once the pause is lowered; nothing was sent`;
+    expect((await pause("raise-pause")).code).toBe(EXIT_OK);
+    expect(await j.refused(["claims", "take", "--keypair", "worker.json", ...j.ref, "--secs", "600", "--yes"])).toContain(paused);
+    expect((await pause("lower-pause")).code).toBe(EXIT_OK);
+    await j.ok(["claims", "take", "--keypair", "worker.json", ...j.ref, "--secs", "600", "--yes"]);
+    await j.standBy("first.json", "600");
+    expect((await pause("raise-pause")).code).toBe(EXIT_OK);
+    expect(await j.refused(["claims", "standby", "--keypair", "second.json", ...j.ref, "--secs", "600", "--yes"])).toContain(paused);
+    const before = j.sol(j.first.address);
+    await j.ok(["claims", "leave", "--keypair", "first.json", ...j.ref, "--yes"]);
+    expect(j.sol(j.first.address) - before).toBeGreaterThan(STAKE);
+  });
+
   it("claims drop hands the job to the first worker still in the line", async () => {
     const j = await job();
     await j.ok(["claims", "take", "--keypair", "worker.json", ...j.ref, "--secs", "600", "--yes"]);

@@ -116,6 +116,7 @@ pub enum EngineError {
     AlreadyCurrent,
     UnknownLayout,
     ConfigMissing,
+    LegacyLineOpen,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {

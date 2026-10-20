@@ -57,7 +57,7 @@ export const ENGINE_PROBLEMS = {
   RefundNotCanonical: never("refunds go only to the owner's canonical token account; let this server pick accounts"),
   ReceiverNotAllowed: never("the receiver account is not owned by the named receiver authority, the authority is an engine account, or (for a mandate) the receiver is not an account the owner controls"),
   AuctionOutlivesExpiry: never("the dutch auction must end at or before the intent expires"),
-  FillPaused: later(`fills are paused by the guardian or admin; try again later; paused.fill in ${tool("get_config")} shows the flag`),
+  FillPaused: later(`fills are paused by the guardian or admin, and with them new claims and stand-by joins; try again later; paused.fill in ${tool("get_config")} shows the flag`),
   FeeAccountNotCanonical: never("a fee must go to its payee's canonical token account (the treasury's, the agent's or the judge's); let this server pick it"),
   FeeAccountMissing: never("a fee account was not passed: the treasury's, agent's or judge's at fill, or the relayer's at a signed create; create that token account and pass it"),
   SolverOutputNotAllowed: never("the solver's output account is not acceptable for this fill"),
@@ -82,7 +82,7 @@ export const ENGINE_PROBLEMS = {
   ExtMalformed: never("the extension data is malformed: badly encoded, tags unsorted or repeated, or a partner with a zero key or zero bps"),
   ExtUnknown: never("the extension data holds a field the program does not know"),
   FlagsUnknown: never("the intent flags name options the program does not know; leave flags unset"),
-  FillKindDisabled: never(`the admin stopped fills of this kind; see kinds[].fills_stopped in ${tool("get_config")}`),
+  FillKindDisabled: never(`the admin stopped fills of this kind, and with them new claims and stand-by joins; see kinds[].fills_stopped in ${tool("get_config")}`),
   UnsupportedVersion: never("an account has a version this program does not support"),
   AmountInMismatch: never("the fill must sell exactly the intent's remaining amount; read the intent again"),
   EpochRegression: never("the signing epoch can only move forward"),
@@ -142,6 +142,7 @@ export const ENGINE_PROBLEMS = {
   AlreadyCurrent: never("migrate rewrites only accounts of an earlier layout or version, and this one is current"),
   UnknownLayout: never("migrate reads only the layouts earlier programs wrote; close this account with intent-engine close-legacy"),
   ConfigMissing: never("migrating an open escrow reads the fee schedule from the config; let intent-engine migrate build it"),
+  LegacyLineOpen: never("close-legacy never closes a claim board or stand-by entry of an open escrow, so the line keeps its order; intent-engine migrate upgrades it in place"),
 } as const satisfies Record<string, Entry>;
 
 type EngineErrorName = keyof typeof ENGINE_PROBLEMS;

@@ -34,7 +34,7 @@ Every error the engine program raises, from its IDL. When an SDK call fails, `cl
 | 6025 | `RefundNotCanonical` | no | refunds go only to the owner's canonical token account |
 | 6026 | `ReceiverNotAllowed` | no | the receiver account is not owned by the named receiver authority, the authority is an engine account, or (for a mandate) the receiver is not an account the owner controls |
 | 6027 | `AuctionOutlivesExpiry` | no | the dutch auction must end at or before the intent expires |
-| 6028 | `FillPaused` | yes | fills are paused by the guardian or admin |
+| 6028 | `FillPaused` | yes | fills are paused by the guardian or admin, and with them new claims and stand-by joins |
 | 6029 | `FeeAccountNotCanonical` | no | a fee must go to its payee's canonical token account (the treasury's, the agent's or the judge's) |
 | 6030 | `FeeAccountMissing` | no | a fee account was not passed: the treasury's, agent's or judge's at fill, or the relayer's at a signed create |
 | 6031 | `SolverOutputNotAllowed` | no | the solver's output account is not acceptable for this fill |
@@ -59,7 +59,7 @@ Every error the engine program raises, from its IDL. When an SDK call fails, `cl
 | 6050 | `ExtMalformed` | no | the extension data is malformed: badly encoded, tags unsorted or repeated, or a partner with a zero key or zero bps |
 | 6051 | `ExtUnknown` | no | the extension data holds a field the program does not know |
 | 6052 | `FlagsUnknown` | no | the intent flags name options the program does not know |
-| 6053 | `FillKindDisabled` | no | the admin stopped fills of this kind |
+| 6053 | `FillKindDisabled` | no | the admin stopped fills of this kind, and with them new claims and stand-by joins |
 | 6054 | `UnsupportedVersion` | no | an account has a version this program does not support |
 | 6055 | `AmountInMismatch` | no | the fill must sell exactly the intent's remaining amount |
 | 6056 | `EpochRegression` | no | the signing epoch can only move forward |
@@ -119,3 +119,4 @@ Every error the engine program raises, from its IDL. When an SDK call fails, `cl
 | 6110 | `AlreadyCurrent` | no | migrate rewrites only accounts of an earlier layout or version, and this one is current |
 | 6111 | `UnknownLayout` | no | migrate reads only the layouts earlier programs wrote |
 | 6112 | `ConfigMissing` | no | migrating an open escrow reads the fee schedule from the config |
+| 6113 | `LegacyLineOpen` | no | close-legacy never closes a claim board or stand-by entry of an open escrow, so the line keeps its order |

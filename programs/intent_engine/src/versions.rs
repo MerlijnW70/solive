@@ -189,6 +189,17 @@ pub fn board_terms(data: &[u8]) -> Option<BoardTerms> {
     })
 }
 
+pub fn line_intent(data: &[u8]) -> Option<Pubkey> {
+    if let Some(terms) = board_terms(data) {
+        return Some(terms.intent);
+    }
+    if data.get(..Standby::DISCRIMINATOR.len()) != Some(Standby::DISCRIMINATOR) {
+        return None;
+    }
+    let body = data.get(Standby::DISCRIMINATOR.len()..)?;
+    key_at(body, offset_of!(Standby, intent))
+}
+
 pub const LEGACY_CONFIG_SPACE: usize = 216;
 pub const FIRST_VERSION: u8 = 1;
 pub const UNVERSIONED: u8 = 0;

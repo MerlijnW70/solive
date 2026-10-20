@@ -1,5 +1,6 @@
 use intent_core::mint_cap::{
-    charge, give_back, refund_outstanding, take_back, Limits, Refusal, Returned, Usage,
+    charge, give_back, give_back_since, refund_outstanding, take_back, Limits, Refusal, Returned,
+    Usage,
 };
 
 const LIMITS: Limits = Limits {
@@ -91,4 +92,32 @@ fn a_refund_lowers_only_a_cap_that_predates_the_intent() {
     assert_eq!(refund_outstanding(90, 40, 5, 9), 50);
     assert_eq!(refund_outstanding(90, 40, 9, 5), 90);
     assert_eq!(refund_outstanding(10, 40, 5, 9), 0);
+}
+
+#[test]
+fn a_fill_gives_back_only_to_a_cap_that_predates_the_intent() {
+    let counted = Ok(Returned {
+        counted: 40,
+        capped: 0,
+        outstanding: 50,
+    });
+    assert_eq!(give_back_since(90, 40, 100, 5, 5), counted);
+    assert_eq!(give_back_since(90, 40, 100, 5, 9), counted);
+    assert_eq!(
+        give_back_since(90, 40, 10, 9, 5),
+        Ok(Returned {
+            counted: 10,
+            capped: 30,
+            outstanding: 90,
+        })
+    );
+    assert_eq!(
+        give_back_since(10, 40, 100, 9, 5),
+        Ok(Returned {
+            counted: 40,
+            capped: 0,
+            outstanding: 10,
+        })
+    );
+    assert_eq!(give_back_since(10, 40, 100, 5, 9), Err(Refusal::Overflow));
 }

@@ -74,6 +74,24 @@ pub fn give_back(outstanding: u64, capped: u64, left: u64) -> Result<Returned, R
     })
 }
 
+pub fn give_back_since(
+    outstanding: u64,
+    capped: u64,
+    left: u64,
+    cap_created_at: i64,
+    intent_created_at: i64,
+) -> Result<Returned, Refusal> {
+    if cap_created_at <= intent_created_at {
+        return give_back(outstanding, capped, left);
+    }
+    let (counted, capped) = take_back(capped, left);
+    Ok(Returned {
+        counted,
+        capped,
+        outstanding,
+    })
+}
+
 pub fn refund_outstanding(
     outstanding: u64,
     counted: u64,

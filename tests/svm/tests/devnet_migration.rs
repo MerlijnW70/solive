@@ -22,10 +22,11 @@ use solana_signer::Signer;
 use solana_transaction_error::TransactionError;
 use std::collections::BTreeMap;
 use svm_tests::{
-    claim_job_ix, claims_pda, close_legacy_ix, config_pda, devnet_env, devnet_snapshot, ed25519_ix,
-    empty_ext_hash, engine_error, engine_ix, event_authority, events, intent_pda, leave_ix, load,
-    migrate_ix, open_claims_ix, pda, send_as, settle_claims_ix, stand_by_ix, standby_pda,
-    swap_spec, user_pda, vault_pda, Env, IntentSpec, Market, Saved, Snapshot, TestResult, FUNDING,
+    claim_job_ix, claims_pda, close_legacy_full_ix, close_legacy_ix, config_pda, devnet_env,
+    devnet_snapshot, ed25519_ix, empty_ext_hash, engine_error, engine_ix, event_authority, events,
+    intent_pda, leave_ix, load, migrate_ix, open_claims_ix, pda, send_as, settle_claims_ix,
+    stand_by_ix, standby_pda, swap_spec, user_pda, vault_pda, Env, IntentSpec, LegacyClose, Market,
+    Saved, Snapshot, TestResult, FUNDING,
 };
 
 const HEAD: usize = 8;
@@ -445,7 +446,15 @@ fn refund_rest(d: &mut Devnet, migrated: bool) -> TestResult {
         let ix = if migrated {
             settle_claims_ix(&board.intent, &board.owner, None)
         } else {
-            close_legacy_ix(&address, &board.owner, false)
+            close_legacy_full_ix(&LegacyClose {
+                account: address,
+                payee: board.owner,
+                with_config: false,
+                vault: None,
+                stake_to: None,
+                intent: Some(board.intent),
+                fee_to: None,
+            })
         };
         d.send(&[ix])?;
         assert_eq!(address, claims_pda(&board.intent));

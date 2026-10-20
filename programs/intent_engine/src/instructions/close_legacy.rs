@@ -6,7 +6,7 @@ use crate::errors::{core_err, EngineError};
 use crate::events::LegacyClosed;
 use crate::state::{Config, CONFIG_ADDRESS, CONFIG_VERSION, VAULT_SEED};
 use crate::versions::{
-    board_terms, is_current, is_intent, migrates_in_place, readable, recorded_payer,
+    board_terms, is_current, is_intent, line_intent, migrates_in_place, readable, recorded_payer,
 };
 
 #[event_cpi]
@@ -25,7 +25,7 @@ pub struct CloseLegacy<'info> {
     pub config: Option<AccountLoader<'info, Config>>,
     /// CHECK: an intent's vault, checked against the address its intent derives; an intent closes only once its vault is no live token account
     pub vault: Option<UncheckedAccount<'info>>,
-    /// CHECK: a claim board's escrow, read only to learn whether it is still open, as settle_claims does
+    /// CHECK: a claim board's or stand-by entry's escrow, read only to learn whether it is still open, as settle_claims does
     pub intent: Option<UncheckedAccount<'info>>,
     /// CHECK: receives a claim board's held stake: its worker or its owner, as settle_claims decides
     #[account(mut)]
@@ -41,6 +41,14 @@ fn live_token_account(vault: &AccountInfo) -> bool {
     token_owned && !vault.data_is_empty()
 }
 
+fn escrow_open(escrow: &AccountInfo, now: i64) -> Result<bool> {
+    let frozen = {
+        let data = escrow.try_borrow_data()?;
+        *escrow.owner == crate::ID && is_intent(&data) && !readable(&data)
+    };
+    Ok(!frozen && escrow_deadline(escrow, now)?.is_some())
+}
+
 fn fee_recipient(config: Option<&AccountLoader<Config>>) -> Result<Pubkey> {
     let config = config.ok_or(EngineError::LegacyPayeeMismatch)?;
     Ok(config.load()?.fee_recipient)
@@ -49,12 +57,29 @@ fn fee_recipient(config: Option<&AccountLoader<Config>>) -> Result<Pubkey> {
 pub fn handle_close_legacy(ctx: Context<CloseLegacy>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let account = ctx.accounts.account.to_account_info();
-    let (recorded, intent, board) = {
+    let (recorded, intent, board, line) = {
         let data = account.try_borrow_data()?;
         require!(!is_current(&data), EngineError::NotLegacy);
         require!(!migrates_in_place(&data), EngineError::LegacyMigrates);
-        (recorded_payer(&data), is_intent(&data), board_terms(&data))
+        (
+            recorded_payer(&data),
+            is_intent(&data),
+            board_terms(&data),
+            line_intent(&data),
+        )
     };
+    if let Some(recorded_intent) = line {
+        let escrow = ctx
+            .accounts
+            .intent
+            .as_ref()
+            .ok_or(EngineError::ClaimsMissing)?;
+        require_keys_eq!(escrow.key(), recorded_intent, EngineError::ClaimsMissing);
+        require!(
+            !escrow_open(&escrow.to_account_info(), now)?,
+            EngineError::LegacyLineOpen
+        );
+    }
     if intent {
         let vault = ctx
             .accounts
@@ -90,20 +115,8 @@ pub fn handle_close_legacy(ctx: Context<CloseLegacy>) -> Result<()> {
     };
     let mut staked = 0;
     if let Some(terms) = board.filter(|t| t.held > 0) {
-        let escrow = ctx
-            .accounts
-            .intent
-            .as_ref()
-            .ok_or(EngineError::ClaimsMissing)?;
-        require_keys_eq!(escrow.key(), terms.intent, EngineError::ClaimsMissing);
-        let escrow = escrow.to_account_info();
-        let frozen = {
-            let data = escrow.try_borrow_data()?;
-            *escrow.owner == crate::ID && is_intent(&data) && !readable(&data)
-        };
-        let open = !frozen && escrow_deadline(&escrow, now)?.is_some();
         let slot = Slot::at(terms.worker.to_bytes(), terms.until, now);
-        let receiver = match stake_on_settle(slot, open).map_err(core_err)? {
+        let receiver = match stake_on_settle(slot, false).map_err(core_err)? {
             Some(StakeTo::Worker) => Some(terms.worker),
             Some(StakeTo::Owner) => Some(terms.owner),
             None => None,

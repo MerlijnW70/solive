@@ -1,6 +1,8 @@
 import { type Address, type KeyPairSigner, lamports as toLamports } from "@solana/kit";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+  claimBoardAddress,
+  CLAIMS_VERSION,
   findIntentPda,
   findUserStatePda,
   findVaultPda,
@@ -20,6 +22,7 @@ type Json = Record<string, any>;
 const INTENT_VERSION_AT = 8 + 164;
 const USER_VERSION_AT = 8 + 72;
 const PROFILE_VERSION_AT = 8 + 456;
+const BOARD_VERSION_AT = 8 + 124;
 
 describe("close-legacy on the command line", () => {
   let w: World;
@@ -30,10 +33,10 @@ describe("close-legacy on the command line", () => {
     keys = { "owner.json": w.owner, "payer.json": await funded() };
   });
 
-  const createIntent = async (): Promise<Address> => {
+  const createIntent = async (extra: string[] = []): Promise<Address> => {
     const judge = (await funded()).address;
     const args = ["create", "attested", "--keypair", "owner.json", "--input-mint", w.inputMint, "--output-mint", w.outputMint, "--expires-in", "3600"];
-    const terms = ["--units", "raw", "--amount-in", "100", "--min-result", "1", "--max-result", "1", "--attestor", judge, "--nonce", "0", "--yes"];
+    const terms = ["--units", "raw", "--amount-in", "100", "--min-result", "1", "--max-result", "1", "--attestor", judge, "--nonce", "0", ...extra, "--yes"];
     const created = await cli([...args, ...terms], keys);
     expect([created.code, created.err]).toEqual([EXIT_OK, ""]);
     return (await findIntentPda({ owner: w.owner.address, nonce: 0n }))[0];
@@ -76,6 +79,28 @@ describe("close-legacy on the command line", () => {
     expect(balance(w.ownerInput)).toBe(tokens + 100n);
     expect(h.svm.getAccount(intent).exists).toBe(false);
     expect(h.svm.getAccount(vault).exists).toBe(false);
+  });
+
+  it("refuses an outdated claim board of an open escrow, and closes it to its owner once the escrow is cancelled", async () => {
+    const intent = await createIntent(["--spec-hash", "ab".repeat(32)]);
+    const opened = await cli(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], keys);
+    expect([opened.code, opened.err]).toEqual([EXIT_OK, ""]);
+    const board = await claimBoardAddress(intent);
+    setVersion(board, BOARD_VERSION_AT, CLAIMS_VERSION - 1);
+    const kept = await close(board, true);
+    expect(kept.code).toBe(EXIT_FAILED);
+    expect(kept.err).toContain(
+      `${board} is an outdated claim board account of escrow ${intent}, which is still open; closing it would drop its place in the line, so upgrade it with intent-engine migrate instead`,
+    );
+    expect(h.svm.getAccount(board).exists).toBe(true);
+    const cancelled = await cli(["cancel", "--keypair", "owner.json", "--nonce", "0", "--yes"], keys);
+    expect([cancelled.code, cancelled.err]).toEqual([EXIT_OK, ""]);
+    const held = lamportsOf(board);
+    const before = lamportsOf(w.owner.address);
+    const sent = await close(board, true);
+    expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);
+    expect(h.svm.getAccount(board).exists).toBe(false);
+    expect(lamportsOf(w.owner.address)).toBe(before + held);
   });
 
   it("refuses a user state and closes an outdated profile to its wallet after a preview", async () => {

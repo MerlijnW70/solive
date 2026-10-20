@@ -106,7 +106,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6025 | `RefundNotCanonical` | no | refunds go only to the owner's canonical token account; let this server pick accounts |
 | 6026 | `ReceiverNotAllowed` | no | the receiver account is not owned by the named receiver authority, the authority is an engine account, or (for a mandate) the receiver is not an account the owner controls |
 | 6027 | `AuctionOutlivesExpiry` | no | the dutch auction must end at or before the intent expires |
-| 6028 | `FillPaused` | yes | fills are paused by the guardian or admin; try again later; paused.fill in solive_get_config shows the flag |
+| 6028 | `FillPaused` | yes | fills are paused by the guardian or admin, and with them new claims and stand-by joins; try again later; paused.fill in solive_get_config shows the flag |
 | 6029 | `FeeAccountNotCanonical` | no | a fee must go to its payee's canonical token account (the treasury's, the agent's or the judge's); let this server pick it |
 | 6030 | `FeeAccountMissing` | no | a fee account was not passed: the treasury's, agent's or judge's at fill, or the relayer's at a signed create; create that token account and pass it |
 | 6031 | `SolverOutputNotAllowed` | no | the solver's output account is not acceptable for this fill |
@@ -131,7 +131,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6050 | `ExtMalformed` | no | the extension data is malformed: badly encoded, tags unsorted or repeated, or a partner with a zero key or zero bps |
 | 6051 | `ExtUnknown` | no | the extension data holds a field the program does not know |
 | 6052 | `FlagsUnknown` | no | the intent flags name options the program does not know; leave flags unset |
-| 6053 | `FillKindDisabled` | no | the admin stopped fills of this kind; see kinds[].fills_stopped in solive_get_config |
+| 6053 | `FillKindDisabled` | no | the admin stopped fills of this kind, and with them new claims and stand-by joins; see kinds[].fills_stopped in solive_get_config |
 | 6054 | `UnsupportedVersion` | no | an account has a version this program does not support |
 | 6055 | `AmountInMismatch` | no | the fill must sell exactly the intent's remaining amount; read the intent again |
 | 6056 | `EpochRegression` | no | the signing epoch can only move forward |
@@ -191,6 +191,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6110 | `AlreadyCurrent` | no | migrate rewrites only accounts of an earlier layout or version, and this one is current |
 | 6111 | `UnknownLayout` | no | migrate reads only the layouts earlier programs wrote; close this account with intent-engine close-legacy |
 | 6112 | `ConfigMissing` | no | migrating an open escrow reads the fee schedule from the config; let intent-engine migrate build it |
+| 6113 | `LegacyLineOpen` | no | close-legacy never closes a claim board or stand-by entry of an open escrow, so the line keeps its order; intent-engine migrate upgrades it in place |
 
 ## Token programs
 

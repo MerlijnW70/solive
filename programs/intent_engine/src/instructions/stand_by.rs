@@ -8,9 +8,10 @@ use intent_core::lifecycle::Status;
 use crate::claims::{line_of, slot_of, standby_address};
 use crate::errors::{core_err, EngineError};
 use crate::events::StoodBy;
+use crate::policy::check_fills_on;
 use crate::state::{
-    ClaimBoard, Intent, Standby, CLAIMS_OPEN, CLAIMS_SEED, CLAIMS_VERSION, INTENT_VERSION,
-    STANDBY_SEED, STANDBY_VERSION,
+    ClaimBoard, Config, Intent, Standby, CLAIMS_OPEN, CLAIMS_SEED, CLAIMS_VERSION, CONFIG_ADDRESS,
+    CONFIG_VERSION, INTENT_VERSION, STANDBY_SEED, STANDBY_VERSION,
 };
 
 #[event_cpi]
@@ -31,6 +32,11 @@ pub struct StandBy<'info> {
     #[account(mut)]
     pub entry: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
+    #[account(
+        address = CONFIG_ADDRESS,
+        constraint = config.load()?.version == CONFIG_VERSION @ EngineError::AccountOutdated
+    )]
+    pub config: AccountLoader<'info, Config>,
 }
 
 fn create_entry(ctx: &Context<StandBy>, seq: u32, bump: u8, stake: u64) -> Result<()> {
@@ -108,6 +114,7 @@ pub fn handle_stand_by(ctx: Context<StandBy>, secs: u32) -> Result<()> {
             EngineError::InvalidTransition
         );
         require!(held.claims == CLAIMS_OPEN, EngineError::ClaimsMissing);
+        check_fills_on(&*ctx.accounts.config.load()?, held.kind)?;
     }
     let (seq, stake) = {
         let mut board = ctx.accounts.board.load_mut()?;

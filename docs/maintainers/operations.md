@@ -12,6 +12,8 @@ Who holds the engine's power, and the exact steps to move it to a multisig. The 
 
 The guardian acts alone and at once, because a pause has to be fast; a stolen guardian key can only pause, and the admin lowers the pause. Every other change waits for two of the three members.
 
+The create pause stops new intents. The fill pause stops fills and judge releases, and with them `claims take` and `claims standby`, so no worker locks a new stake; a kind whose fills the admin stopped refuses the same. Nothing that returns funds waits for a pause: cancel, expire, `claims drop`, `claims leave`, `claims advance`, `claims settle`, `migrate` and `close-legacy` still work.
+
 Devnet today:
 
 | Devnet role | Holder |
@@ -161,11 +163,15 @@ A change to an account layout raises that type's version. Accounts made before v
 
 `cancel_intent`, `expire_intent` and `close_intent` accept intents from `OLDEST_INTENT_VERSION` on. They read the mint cap by hand: a cap from `OLDEST_MINT_CAP_VERSION` on gives the amount back, never below zero. A cap that is gone or of another version is skipped, and so is a cap created after the intent, whose count never held it, so no refund depends on the cap and none lowers a recreated cap's count. Cancelling and `settle_claims` accept claim boards from `OLDEST_CLAIMS_VERSION` on.
 
+Fills and releases give back to the cap by the same rule: against a cap created after the intent they only clear the intent's own count, so an intent charged before its cap was closed and recreated never lowers the new cap's count.
+
 `close_legacy` closes an outdated account. Anyone may send it for a program-owned account whose discriminator matches no account type, whose size differs from its type's, or whose version is not current. It never closes a config or user state, which `migrate` upgrades in place, and refuses them with `LegacyMigrates`.
 
 Its lamports go to the wallet its layout records as the payer: the owner of a mandate or claim board, the rent payer of an intent, the worker of a stand-by entry, or the wallet of a profile. Mint caps, committees and unknown accounts record no payer, and a payer that cannot hold lamports is skipped; theirs go to the config's fee recipient.
 
-A claim board's held stake goes where `settle_claims` would send it: to the worker of a claim on an escrow that is no longer open, to the owner for a lapsed claim, and nowhere while a claim on an open escrow is held, which `close_legacy` refuses with `ClaimHeld`. It refuses a current account with `NotLegacy`, and an intent whose vault is still a token account with `LegacyVaultOpen`: cancel, expire or close that intent instead.
+`close_legacy` reads the escrow of a claim board or stand-by entry and refuses one whose escrow is still open with `LegacyLineOpen`; `migrate` upgrades it in place, so it keeps its place in the line. Once the escrow is no longer open, a board's held stake goes where `settle_claims` would send it: to the worker of a held claim, or to the owner for a lapsed one.
+
+It refuses a current account with `NotLegacy`, and an intent whose vault is still a token account with `LegacyVaultOpen`: cancel, expire or close that intent instead.
 
 ```sh
 intent-engine close-legacy --keypair payer.json --address <account> --url devnet
@@ -195,7 +201,7 @@ Devnet runs the stand-by line program (`220dde3`). The current program keeps eve
 
 An open intent of the stand-by line records no fee: its fills paid the config's schedule at fill time. `migrate` sets `fee_bps` from the config's schedule for its kind, which is the fee it was charged at creation while the config's fee terms are unchanged since. On devnet no `update_config` or `update_economics` ran after the two open escrows in the fixture were created, so both record the attested fee, 300. As at creation, an open proof escrow keeps that fee only if its release still settles under it; otherwise `migrate` writes zero, so the escrow stays releasable, and sets `fee_dropped` in `AccountMigrated`. Intents that are not open keep zero, and an intent that already records a fee keeps it.
 
-Refunds never wait for `migrate`: `cancel_intent`, `expire_intent` and `close_intent` read version-1 intents, cancelling reads 168 boards, and `close_legacy` closes boards, mandates and profiles before they migrate. `tests/svm/tests/devnet_migration.rs` loads every devnet account and shows each refund before and after migrating.
+Refunds never wait for `migrate`: `cancel_intent`, `expire_intent` and `close_intent` read version-1 intents, cancelling reads 168 boards, and `close_legacy` closes mandates and profiles before they migrate, and boards and stand-by entries once their escrow has ended. `tests/svm/tests/devnet_migration.rs` loads every devnet account and shows each refund before and after migrating.
 
 `node scripts/devnet-snapshot.mjs` saves every account the devnet program owns, with each intent's vault and input mint and the rent sysvar, to `tests/svm/fixtures/devnet.json`. It only reads, pausing and retrying when the node limits it. Refresh it before an upgrade and rerun `bash scripts/test.sh`.
 

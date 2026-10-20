@@ -8,6 +8,7 @@ import {
   boardTerms,
   IntentCoreError,
   legacyStakeTo,
+  lineIntent,
   migratesInPlace,
   buildCloseLegacy,
   checkAccountVersion,
@@ -87,6 +88,17 @@ describe("account versions", () => {
     expect(legacyStakeTo(terms, true, 10_000n)).toBe(PAYER);
     expect(legacyStakeTo({ ...terms, held: 0n }, false, 0n)).toBeNull();
     expect(boardTerms(account(named("intent"), 1))).toBeNull();
+  });
+
+  it("name the escrow of a claim board and a stand-by entry, and of nothing else", () => {
+    const escrow = "So11111111111111111111111111111111111111112" as Address;
+    const board = account(named("claim board"), 1);
+    board.set(getAddressEncoder().encode(escrow), 8);
+    const entry = account(named("stand-by entry"), 0);
+    entry.set(getAddressEncoder().encode(escrow), 8 + 32);
+    expect([lineIntent(board), lineIntent(entry)]).toEqual([escrow, escrow]);
+    expect(lineIntent(account(named("intent"), 1))).toBeNull();
+    expect(lineIntent(entry.slice(0, 40))).toBeNull();
   });
 
   it("refuse an account of an earlier size with its length", () => {

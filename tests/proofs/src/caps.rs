@@ -1,4 +1,6 @@
-use intent_core::mint_cap::{charge, give_back, refund_outstanding, take_back, Limits, Usage};
+use intent_core::mint_cap::{
+    charge, give_back_since, refund_outstanding, take_back, Limits, Usage,
+};
 
 const INTENTS: usize = 2;
 const STEPS: usize = 3;
@@ -57,7 +59,13 @@ impl Book {
     }
 
     fn give_back(&mut self, i: usize, left: u64) {
-        let returned = give_back(self.usage.outstanding, self.capped[i], left);
+        let returned = give_back_since(
+            self.usage.outstanding,
+            self.capped[i],
+            left,
+            self.created_at,
+            self.born[i],
+        );
         assert!(returned.is_ok());
         if let Ok(r) = returned {
             assert_eq!(r.counted, left.min(self.capped[i]));
@@ -120,7 +128,7 @@ fn after_refunds_a_charge_passes_only_within_the_live_total() {
 
 #[kani::proof]
 #[kani::unwind(4)]
-fn refunds_of_older_intents_never_lower_a_recreated_cap_below_its_own_charges() {
+fn refunds_and_fills_of_older_intents_never_lower_a_recreated_cap_below_its_own_charges() {
     let mut book = Book::open();
     let old: [u64; INTENTS] = kani::any();
     let old_born: [i64; INTENTS] = kani::any();
@@ -129,10 +137,11 @@ fn refunds_of_older_intents_never_lower_a_recreated_cap_below_its_own_charges() 
         let i: usize = kani::any();
         kani::assume(i < INTENTS);
         let amount: u64 = kani::any();
-        match kani::any::<u8>() % 3 {
+        match kani::any::<u8>() % 5 {
             0 => book.charge(i, amount, kani::any()),
             1 => book.refund(i, amount),
-            _ => {
+            2 => book.give_back(i, amount),
+            3 => {
                 kani::assume(old_born[i] < book.created_at);
                 let (counted, capped) = take_back(old_capped[i], amount);
                 old_capped[i] = capped;
@@ -142,6 +151,22 @@ fn refunds_of_older_intents_never_lower_a_recreated_cap_below_its_own_charges() 
                     book.created_at,
                     old_born[i],
                 );
+            }
+            _ => {
+                kani::assume(old_born[i] < book.created_at);
+                let returned = give_back_since(
+                    book.usage.outstanding,
+                    old_capped[i],
+                    amount,
+                    book.created_at,
+                    old_born[i],
+                );
+                assert!(returned.is_ok());
+                if let Ok(r) = returned {
+                    assert_eq!(r.counted, amount.min(old_capped[i]));
+                    old_capped[i] = r.capped;
+                    book.usage.outstanding = r.outstanding;
+                }
             }
         }
         assert!(u128::from(book.usage.outstanding) >= book.live());

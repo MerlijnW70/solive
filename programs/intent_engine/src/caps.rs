@@ -3,7 +3,7 @@ use anchor_lang::system_program::{allocate, assign, Allocate, Assign};
 use anchor_lang::Discriminator;
 use anchor_spl::token_interface::TokenAccount;
 use intent_core::mint_cap::{
-    charge, give_back as core_give_back, refund_outstanding, take_back, Limits, Refusal, Usage,
+    charge, give_back_since, refund_outstanding, take_back, Limits, Refusal, Usage,
 };
 
 use crate::errors::EngineError;
@@ -102,7 +102,14 @@ pub fn refund_mint_cap(
 }
 
 pub fn give_back(cap: &mut MintCap, intent: &mut Intent, left: u64) -> Result<u64> {
-    let returned = core_give_back(cap.outstanding, intent.capped, left).map_err(refused)?;
+    let returned = give_back_since(
+        cap.outstanding,
+        intent.capped,
+        left,
+        cap.created_at,
+        intent.created_at,
+    )
+    .map_err(refused)?;
     cap.outstanding = returned.outstanding;
     intent.capped = returned.capped;
     Ok(returned.counted)

@@ -61,6 +61,8 @@ export type ClaimJobInstruction<
   TAccountOwner extends string | AccountMeta<string> = string,
   TAccountSystemProgram extends string | AccountMeta<string> =
     "11111111111111111111111111111111",
+  TAccountConfig extends string | AccountMeta<string> =
+    "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz",
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -84,6 +86,9 @@ export type ClaimJobInstruction<
       TAccountSystemProgram extends string
         ? ReadonlyAccount<TAccountSystemProgram>
         : TAccountSystemProgram,
+      TAccountConfig extends string
+        ? ReadonlyAccount<TAccountConfig>
+        : TAccountConfig,
       TAccountEventAuthority extends string
         ? ReadonlyAccount<TAccountEventAuthority>
         : TAccountEventAuthority,
@@ -135,6 +140,7 @@ export type ClaimJobAsyncInput<
   TAccountOwner extends InstructionAccountInput = InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountConfig extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -144,6 +150,7 @@ export type ClaimJobAsyncInput<
   board?: TAccountBoard;
   owner: TAccountOwner;
   systemProgram?: TAccountSystemProgram;
+  config?: TAccountConfig;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   secs: ClaimJobInstructionDataArgs["secs"];
@@ -155,6 +162,7 @@ export async function getClaimJobInstructionAsync<
   TAccountBoard extends InstructionAccountInput,
   TAccountOwner extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
+  TAccountConfig extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -165,6 +173,7 @@ export async function getClaimJobInstructionAsync<
     TAccountBoard,
     TAccountOwner,
     TAccountSystemProgram,
+    TAccountConfig,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -191,6 +200,10 @@ export async function getClaimJobInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountSystemProgram,
       InstructionAccountInputAddress<TAccountSystemProgram>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountConfig,
+      InstructionAccountInputAddress<TAccountConfig>
     >,
     ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
@@ -220,6 +233,7 @@ export async function getClaimJobInstructionAsync<
       isSigner: false,
       isWritable: false,
     },
+    config: { value: input.config ?? null, isSigner: false, isWritable: false },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -255,6 +269,10 @@ export async function getClaimJobInstructionAsync<
     accounts.systemProgram.value =
       "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
   }
+  if (!accounts.config.value) {
+    accounts.config.value =
+      "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz" as Address<"6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz">;
+  }
 
   return Object.freeze({
     accounts: [
@@ -263,6 +281,7 @@ export async function getClaimJobInstructionAsync<
       getAccountMeta("board", accounts.board),
       getAccountMeta("owner", accounts.owner),
       getAccountMeta("systemProgram", accounts.systemProgram),
+      getAccountMeta("config", accounts.config),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -293,6 +312,10 @@ export async function getClaimJobInstructionAsync<
       InstructionAccountInputAddress<TAccountSystemProgram>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountConfig,
+      InstructionAccountInputAddress<TAccountConfig>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -310,6 +333,7 @@ export type ClaimJobInput<
   TAccountOwner extends InstructionAccountInput = InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput =
     InstructionAccountInput,
+  TAccountConfig extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -319,6 +343,7 @@ export type ClaimJobInput<
   board: TAccountBoard;
   owner: TAccountOwner;
   systemProgram?: TAccountSystemProgram;
+  config?: TAccountConfig;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
   secs: ClaimJobInstructionDataArgs["secs"];
@@ -330,6 +355,7 @@ export function getClaimJobInstruction<
   TAccountBoard extends InstructionAccountInput,
   TAccountOwner extends InstructionAccountInput,
   TAccountSystemProgram extends InstructionAccountInput,
+  TAccountConfig extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -340,6 +366,7 @@ export function getClaimJobInstruction<
     TAccountBoard,
     TAccountOwner,
     TAccountSystemProgram,
+    TAccountConfig,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -365,6 +392,10 @@ export function getClaimJobInstruction<
   ResolvedInstructionAccountMeta<
     TAccountSystemProgram,
     InstructionAccountInputAddress<TAccountSystemProgram>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountConfig,
+    InstructionAccountInputAddress<TAccountConfig>
   >,
   ResolvedInstructionAccountMeta<
     TAccountEventAuthority,
@@ -393,6 +424,7 @@ export function getClaimJobInstruction<
       isSigner: false,
       isWritable: false,
     },
+    config: { value: input.config ?? null, isSigner: false, isWritable: false },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -417,6 +449,10 @@ export function getClaimJobInstruction<
     accounts.systemProgram.value =
       "11111111111111111111111111111111" as Address<"11111111111111111111111111111111">;
   }
+  if (!accounts.config.value) {
+    accounts.config.value =
+      "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz" as Address<"6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz">;
+  }
 
   return Object.freeze({
     accounts: [
@@ -425,6 +461,7 @@ export function getClaimJobInstruction<
       getAccountMeta("board", accounts.board),
       getAccountMeta("owner", accounts.owner),
       getAccountMeta("systemProgram", accounts.systemProgram),
+      getAccountMeta("config", accounts.config),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -455,6 +492,10 @@ export function getClaimJobInstruction<
       InstructionAccountInputAddress<TAccountSystemProgram>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountConfig,
+      InstructionAccountInputAddress<TAccountConfig>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -476,8 +517,9 @@ export type ParsedClaimJobInstruction<
     board: TAccountMetas[2];
     owner: TAccountMetas[3];
     systemProgram: TAccountMetas[4];
-    eventAuthority: TAccountMetas[5];
-    program: TAccountMetas[6];
+    config: TAccountMetas[5];
+    eventAuthority: TAccountMetas[6];
+    program: TAccountMetas[7];
   };
   data: ClaimJobInstructionData;
 };
@@ -490,12 +532,12 @@ export function parseClaimJobInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedClaimJobInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 7) {
+  if (instruction.accounts.length < 8) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 7,
+        expectedAccountMetas: 8,
       },
     );
   }
@@ -513,6 +555,7 @@ export function parseClaimJobInstruction<
       board: getNextAccount(),
       owner: getNextAccount(),
       systemProgram: getNextAccount(),
+      config: getNextAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
     },

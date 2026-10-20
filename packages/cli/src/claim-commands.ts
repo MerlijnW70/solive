@@ -16,7 +16,9 @@ import {
   formatAmount,
   IntentCoreError,
   IntentStatus,
+  kindBit,
   type LineHandover,
+  PAUSE_FILL,
   profileAddress,
   stakeReceiverOnSettle,
 } from "@intent-engine/core";
@@ -89,6 +91,16 @@ async function claimsOf(client: Client, owner: Address, nonce: bigint) {
 async function escrowOpen(client: Client, owner: Address, nonce: bigint, now: bigint) {
   const found = await client.intent(owner, nonce);
   return found !== null && found.intent.status === IntentStatus.Open && now < found.intent.expiresAt ? found.intent.expiresAt : null;
+}
+
+async function fillsStopped(client: Client, owner: Address, nonce: bigint, intent: Address) {
+  const [config, found] = await Promise.all([client.config(), client.intent(owner, nonce)]);
+  if ((config.paused & PAUSE_FILL) !== 0) {
+    throw new FlowRefused(`fills are paused by the guardian or admin, and with them new claims and stand-by joins on escrow ${intent}; try again once the pause is lowered; nothing was sent`);
+  }
+  if (found !== null && (config.fillDisabledKinds & kindBit(found.intent.kind)) !== 0n) {
+    throw new FlowRefused(`the admin stopped fills of the kind of escrow ${intent}, and with them new claims and stand-by joins on it; nothing was sent`);
+  }
 }
 
 async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${string}` }>, runtime: Runtime, transport: Transport, client: Client): Promise<object> {
@@ -168,6 +180,7 @@ async function standBy(
   if ((await escrowOpen(client, command.owner, command.nonce, await client.chainTime())) === null) {
     throw new FlowRefused(`escrow ${intent} is no longer open, so nobody can stand by for it`);
   }
+  await fillsStopped(client, command.owner, command.nonce, intent);
   const seq = view.line.tail;
   const summary = [
     `Stands by: for escrow ${intent} as entry ${seq}, place ${view.line.waiting + 1} in its line; when the job reaches this worker it holds it for ${command.secs} seconds`,
@@ -256,6 +269,7 @@ async function takeClaim(
   if (expiresAt === null) {
     throw new FlowRefused(`escrow ${intent} is no longer open, so its job cannot be claimed`);
   }
+  await fillsStopped(client, command.owner, command.nonce, intent);
   let until: bigint;
   try {
     until = claimUntil(view.maxSecs, now, command.secs, expiresAt);

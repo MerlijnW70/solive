@@ -126,6 +126,17 @@ export function boardTerms(data: ReadonlyUint8Array): BoardTerms | null {
   return { intent: key(0), owner: key(32), worker: key(64), until: view.getBigInt64(HEAD + 96, true), held: view.getBigUint64(HEAD + 112, true) };
 }
 
+export function lineIntent(data: ReadonlyUint8Array): Address | null {
+  const board = boardTerms(data);
+  if (board !== null) {
+    return board.intent;
+  }
+  if (!STANDBY_DISCRIMINATOR.every((b, i) => data[i] === b) || data.length < HEAD + 64) {
+    return null;
+  }
+  return getAddressDecoder().decode(data.slice(HEAD + 32, HEAD + 64));
+}
+
 export function legacyStakeTo(terms: BoardTerms, escrowOpen: boolean, now: bigint): Address | null {
   if (terms.held === 0n) {
     return null;

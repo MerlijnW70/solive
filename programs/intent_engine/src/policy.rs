@@ -21,7 +21,7 @@ use crate::errors::{core_err, EngineError};
 use crate::state::{
     delegate_address, Config, Intent, Mandate, UserState, BPS, DELEGATE_SEED, INTENT_SEED,
     MANDATE_VERSION, MAX_ATTESTED_FEE_BPS, MAX_CRANK_BOUNTY, MAX_CREATE_FEE, MAX_FEE_BPS,
-    PAUSE_ALL, USER_VERSION,
+    PAUSE_ALL, PAUSE_FILL, USER_VERSION,
 };
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -110,6 +110,11 @@ pub fn charge_treasury<'info>(
     }
     charge_lamports(system_program, from, treasury, u64::from(fee))?;
     Ok(fee)
+}
+
+pub fn check_fills_on(config: &Config, kind: u8) -> Result<()> {
+    require!(config.paused & PAUSE_FILL == 0, EngineError::FillPaused);
+    check_fill_kind(kind, config.fill_disabled_kinds)
 }
 
 pub fn check_fill_kind(kind: u8, disabled: u64) -> Result<()> {

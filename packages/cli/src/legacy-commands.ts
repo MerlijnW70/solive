@@ -10,6 +10,7 @@ import {
   IntentStatus,
   isCurrentAccount,
   legacyStakeTo,
+  lineIntent,
   migratesInPlace,
   recordedPayer,
   storedVersion,
@@ -64,6 +65,12 @@ export async function closeLegacy(command: CloseLegacy, runtime: Runtime, transp
   if (migratesInPlace(view.data)) {
     throw new Error(`${account} is a ${stored?.layout.name ?? "engine"} account, which is upgraded in place and never closed`);
   }
+  const line = lineIntent(view.data);
+  if (line !== null && (await escrowOpen(transport, line, await chainTime(transport)))) {
+    throw new Error(
+      `${account} is an outdated ${stored?.layout.name ?? "line"} account of escrow ${line}, which is still open; closing it would drop its place in the line, so upgrade it with intent-engine migrate instead`,
+    );
+  }
   const intent = isIntent(view.data);
   const [vault] = await findVaultPda({ intent: account });
   const vaultView = intent ? await createdAccount(transport, vault) : null;
@@ -91,7 +98,7 @@ export async function closeLegacy(command: CloseLegacy, runtime: Runtime, transp
     payee,
     ...(config === null ? {} : { config: config.address }),
     ...(intent ? { vault } : {}),
-    ...(terms === null || terms.held === 0n ? {} : { intent: terms.intent }),
+    ...(line === null ? {} : { intent: line }),
     ...(stakeTo === null ? {} : { stakeTo }),
     ...(unpayable ? { feeTo: rentTo } : {}),
   });

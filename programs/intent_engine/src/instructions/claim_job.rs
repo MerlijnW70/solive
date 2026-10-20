@@ -6,7 +6,11 @@ use intent_core::lifecycle::Status;
 use crate::claims::{cooldown_of, line_of, move_lamports, slot_of, stake_receiver};
 use crate::errors::{core_err, EngineError};
 use crate::events::{JobClaimed, StakeMoved};
-use crate::state::{ClaimBoard, Intent, CLAIMS_OPEN, CLAIMS_SEED, CLAIMS_VERSION, INTENT_VERSION};
+use crate::policy::check_fills_on;
+use crate::state::{
+    ClaimBoard, Config, Intent, CLAIMS_OPEN, CLAIMS_SEED, CLAIMS_VERSION, CONFIG_ADDRESS,
+    CONFIG_VERSION, INTENT_VERSION,
+};
 
 #[event_cpi]
 #[derive(Accounts)]
@@ -26,6 +30,11 @@ pub struct ClaimJob<'info> {
     #[account(mut, address = board.load()?.owner @ EngineError::StakeAccountMismatch)]
     pub owner: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
+    #[account(
+        address = CONFIG_ADDRESS,
+        constraint = config.load()?.version == CONFIG_VERSION @ EngineError::AccountOutdated
+    )]
+    pub config: AccountLoader<'info, Config>,
 }
 
 pub fn handle_claim_job(ctx: Context<ClaimJob>, secs: u32) -> Result<()> {
@@ -38,6 +47,7 @@ pub fn handle_claim_job(ctx: Context<ClaimJob>, secs: u32) -> Result<()> {
             EngineError::InvalidTransition
         );
         require!(intent.claims == CLAIMS_OPEN, EngineError::ClaimsMissing);
+        check_fills_on(&*ctx.accounts.config.load()?, intent.kind)?;
         intent.expires_at
     };
     let (slot, cooldown, terms, held, lapsed) = {

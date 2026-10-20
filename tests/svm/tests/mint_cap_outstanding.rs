@@ -1,4 +1,5 @@
 use anchor_lang::prelude::Pubkey;
+use core::mem::offset_of;
 use intent_core::kinds::{attested_result, Kind};
 use intent_engine::errors::EngineError;
 use intent_engine::events::MintCapSet;
@@ -11,11 +12,11 @@ use solana_keypair::Keypair;
 use solana_signer::Signer;
 use solana_transaction_error::TransactionError;
 use svm_tests::{
-    attestation_proof_message, committee_batch_ix, config_pda, cosign_batch_ix, cosign_ix,
-    create_committee_ix, ed25519_ix, engine_error, engine_ix, event_authority, events, intent_pda,
-    load, partner_ext, pda, proof_digest, sorted_members, split_commit, split_digest, swap_spec,
-    vault_pda, CommitteeFill, Env, IntentSpec, Market, MintExt, Solver, TestResult, Trader, DOMAIN,
-    START_TS,
+    attestation_proof_message, close_legacy_ix, committee_batch_ix, config_pda, cosign_batch_ix,
+    cosign_ix, create_committee_ix, ed25519_ix, engine_error, engine_ix, event_authority, events,
+    intent_pda, load, partner_ext, pda, proof_digest, sorted_members, split_commit, split_digest,
+    swap_spec, vault_pda, CommitteeFill, Env, IntentSpec, Market, MintExt, Solver, TestResult,
+    Trader, DOMAIN, START_TS,
 };
 
 const PROGRAM: Pubkey = anchor_spl::token::ID;
@@ -784,6 +785,59 @@ fn run(total_limit: u64, ops: &[Op]) -> TestResult {
         let _ = w.close(nonce);
         assert!(!w.open(nonce));
     }
+    assert_eq!(w.outstanding()?, 0);
+    Ok(())
+}
+
+#[test]
+fn fills_and_releases_of_intents_charged_before_a_cap_was_recreated_leave_the_new_cap_intact(
+) -> TestResult {
+    let mut w = capped_world(0)?;
+    let filled = w.swap(0, 300, false)?;
+    w.create(&filled)?;
+    let attestor = w.attestor.pubkey();
+    let released = w.judged(1, 50, &attestor, false)?;
+    w.create(&released)?;
+    assert_eq!(w.outstanding()?, 350);
+
+    let cap = w.cap();
+    let mut account = w.env.svm.get_account(&cap).ok_or("cap missing")?;
+    *account
+        .data
+        .get_mut(offset_of!(MintCap, version).saturating_add(8))
+        .ok_or("short")? = 1;
+    w.env.svm.set_account(cap, account)?;
+    let fees = w.env.fee_recipient;
+    let admin = w.admin();
+    w.env
+        .send(&admin, &[close_legacy_ix(&cap, &fees, true)], &[])?;
+    assert!(!w.env.exists(&cap));
+    let now = w.env.now();
+    w.env.set_now(now.saturating_add(1));
+    w.limit(0)??;
+    assert_eq!(w.outstanding()?, 0);
+    let fresh = w.swap(2, 100, false)?;
+    w.create(&fresh)?;
+    assert_eq!(w.outstanding()?, 100);
+
+    w.fill(0)?;
+    assert_eq!(
+        w.outstanding()?,
+        100,
+        "a fill of an intent charged against the closed cap leaves the new cap's count"
+    );
+    w.release(1)??;
+    assert_eq!(
+        w.outstanding()?,
+        100,
+        "a release of an intent charged against the closed cap leaves the new cap's count"
+    );
+    for nonce in [0, 1] {
+        if w.open(nonce) {
+            assert_eq!(w.capped(nonce)?, 0);
+        }
+    }
+    w.fill(2)?;
     assert_eq!(w.outstanding()?, 0);
     Ok(())
 }

@@ -533,6 +533,10 @@
           "address": "11111111111111111111111111111111"
         },
         {
+          "name": "config",
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -3463,6 +3467,10 @@
           "address": "11111111111111111111111111111111"
         },
         {
+          "name": "config",
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -4728,6 +4736,10 @@
     {
       "code": 6112,
       "name": "ConfigMissing"
+    },
+    {
+      "code": 6113,
+      "name": "LegacyLineOpen"
     }
   ],
   "types": [
