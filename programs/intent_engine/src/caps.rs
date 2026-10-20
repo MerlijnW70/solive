@@ -2,6 +2,9 @@ use anchor_lang::prelude::*;
 use anchor_lang::system_program::{allocate, assign, Allocate, Assign};
 use anchor_lang::Discriminator;
 use anchor_spl::token_interface::TokenAccount;
+use intent_core::mint_cap::{
+    charge, give_back as core_give_back, refund_outstanding, take_back, Limits, Refusal, Usage,
+};
 
 use crate::errors::EngineError;
 use crate::policy::charge_lamports;
@@ -35,31 +38,31 @@ pub fn cap_in(data: &mut [u8]) -> Result<&mut MintCap> {
     Ok(cap)
 }
 
-pub fn take_from_window(cap: &mut MintCap, amount: u64, now: i64) -> Result<()> {
-    require!(amount <= cap.max_per_order, EngineError::MintCapPerOrder);
-    let ends = cap
-        .window_start
-        .checked_add(i64::from(cap.window_secs))
-        .ok_or(EngineError::Overflow)?;
-    if now >= ends {
-        cap.window_start = now;
-        cap.window_used = 0;
+fn refused(refusal: Refusal) -> Error {
+    match refusal {
+        Refusal::PerOrder => error!(EngineError::MintCapPerOrder),
+        Refusal::Window => error!(EngineError::MintCapWindow),
+        Refusal::Total => error!(EngineError::MintCapTotal),
+        Refusal::Overflow => EngineError::Overflow.into(),
     }
-    let used = cap
-        .window_used
-        .checked_add(amount)
-        .ok_or(EngineError::Overflow)?;
-    require!(used <= cap.window_cap, EngineError::MintCapWindow);
-    let outstanding = cap
-        .outstanding
-        .checked_add(amount)
-        .ok_or(EngineError::Overflow)?;
-    require!(
-        cap.total_limit == 0 || outstanding <= cap.total_limit,
-        EngineError::MintCapTotal
-    );
-    cap.window_used = used;
-    cap.outstanding = outstanding;
+}
+
+pub fn take_from_window(cap: &mut MintCap, amount: u64, now: i64) -> Result<()> {
+    let limits = Limits {
+        max_per_order: cap.max_per_order,
+        window_cap: cap.window_cap,
+        window_secs: cap.window_secs,
+        total_limit: cap.total_limit,
+    };
+    let usage = Usage {
+        window_start: cap.window_start,
+        window_used: cap.window_used,
+        outstanding: cap.outstanding,
+    };
+    let next = charge(limits, usage, amount, now).map_err(refused)?;
+    cap.window_start = next.window_start;
+    cap.window_used = next.window_used;
+    cap.outstanding = next.outstanding;
     Ok(())
 }
 
@@ -75,11 +78,8 @@ pub fn refund_mint_cap(
     let cap = mint_cap.ok_or(EngineError::MintCapMissing)?;
     let mint = held.input_mint;
     let created_at = held.created_at;
-    let counted = left.min(held.capped);
-    held.capped = held
-        .capped
-        .checked_sub(counted)
-        .ok_or(EngineError::Overflow)?;
+    let (counted, capped) = take_back(held.capped, left);
+    held.capped = capped;
     if *cap.owner == crate::ID {
         let mut data = cap.try_borrow_mut_data()?;
         if readable(&data) && data.get(..8) == Some(MintCap::DISCRIMINATOR) {
@@ -91,9 +91,8 @@ pub fn refund_mint_cap(
             .map_err(|_| error!(EngineError::MintCapMismatch))?;
             require_keys_eq!(*cap.key, derived, EngineError::MintCapMismatch);
             require_keys_eq!(stored.mint, mint, EngineError::MintCapMismatch);
-            if stored.created_at <= created_at {
-                stored.outstanding = stored.outstanding.saturating_sub(counted);
-            }
+            stored.outstanding =
+                refund_outstanding(stored.outstanding, counted, stored.created_at, created_at);
             return Ok(counted);
         }
     }
@@ -103,16 +102,10 @@ pub fn refund_mint_cap(
 }
 
 pub fn give_back(cap: &mut MintCap, intent: &mut Intent, left: u64) -> Result<u64> {
-    let counted = left.min(intent.capped);
-    cap.outstanding = cap
-        .outstanding
-        .checked_sub(counted)
-        .ok_or(EngineError::Overflow)?;
-    intent.capped = intent
-        .capped
-        .checked_sub(counted)
-        .ok_or(EngineError::Overflow)?;
-    Ok(counted)
+    let returned = core_give_back(cap.outstanding, intent.capped, left).map_err(refused)?;
+    cap.outstanding = returned.outstanding;
+    intent.capped = returned.capped;
+    Ok(returned.counted)
 }
 
 pub fn charge_mint_cap(

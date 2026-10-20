@@ -51,8 +51,11 @@ pub fn release_settles(
     partner_bps: u16,
     cut_bps: u16,
 ) -> bool {
-    amount > judge_fee
-        && amount
-            .checked_sub(judge_fee)
-            .is_some_and(|rest| split_fees(rest, fee_bps, partner_bps, cut_bps).is_ok())
+    settles_after(amount, judge_fee, |rest| {
+        split_fees(rest, fee_bps, partner_bps, cut_bps).is_ok()
+    })
+}
+
+pub fn settles_after(amount: u64, judge_fee: u64, splits: impl FnOnce(u64) -> bool) -> bool {
+    amount > judge_fee && amount.checked_sub(judge_fee).is_some_and(splits)
 }

@@ -3,6 +3,7 @@ use anchor_lang::Discriminator;
 use intent_core::fee::release_settles;
 use intent_core::kinds::{Intent as CoreIntent, Kind};
 use intent_core::lifecycle::Status;
+use intent_core::migrate::top_up;
 
 use crate::errors::{core_err, EngineError};
 use crate::events::AccountMigrated;
@@ -90,10 +91,12 @@ fn write_fee(data: &mut [u8], fee_bps: u16) -> Result<()> {
 
 fn top_up_for(lamports: u64, held: u64, from: usize, to: usize) -> Result<u64> {
     let rent = Rent::get()?;
-    let new_min = rent.minimum_balance(to);
-    let grown = lamports.saturating_add(new_min.saturating_sub(rent.minimum_balance(from)));
-    let target = grown.max(new_min.saturating_add(held));
-    Ok(target.saturating_sub(lamports))
+    Ok(top_up(
+        lamports,
+        held,
+        rent.minimum_balance(from),
+        rent.minimum_balance(to),
+    ))
 }
 
 pub fn handle_migrate(ctx: Context<Migrate>) -> Result<()> {

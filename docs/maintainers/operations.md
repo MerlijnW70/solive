@@ -325,6 +325,18 @@ The devnet members are files on one machine. Before mainnet:
 - The guardian key sits on a host that runs nothing else and is watched, so a pause is fast.
 - Run the steps above on devnet with the real keys first, including one recovery drill, and set a time lock so the members can [reject or cancel](#reject-or-cancel) a proposal they did not expect before it executes.
 
+## Proofs
+
+`bash scripts/kani.sh` runs every Kani proof in `tests/proofs`, and the CI `kani` job runs the same script. The money logic the proofs cover lives in `crates/intent-core` as pure functions the program calls. Proofs over a sequence of steps are bounded so each finishes on a normal machine:
+
+| File | What it proves | Bound |
+| --- | --- | --- |
+| `settle.rs` | `release_settles` holds exactly when the rest after the judge fee splits, and a settling release pays out exactly the amount | none, all inputs |
+| `stakes.rs` | the release, cancel and settle stake decisions agree on one party: a lapsed claim pays the owner, a held one never does | up to 2 payees |
+| `caps.rs` | outstanding equals the live intents' capped amounts and stays within `total_limit`; refunds never let a later charge pass the live total; an older intent's refund never lowers a recreated cap | 3 steps over 2 intents |
+| `top_up.rs` | a migration top-up never lowers lamports and leaves the new size's rent plus the held stake | none, all inputs |
+| `line.rs` | join and pass keep `head <= tail`, never skip or repeat a place, and `waiting()` counts joined minus served; serving hands out the first present place | 4 steps; a line of up to 4 places for serving |
+
 ## Dependencies
 
 `bash scripts/supply-chain.sh` runs in the CI audit job and fails when:

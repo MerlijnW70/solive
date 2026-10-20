@@ -12,6 +12,8 @@ pub mod kinds;
 pub mod lifecycle;
 pub mod mandate;
 pub mod math;
+pub mod migrate;
+pub mod mint_cap;
 pub mod mint_policy;
 pub mod nonce;
 pub mod profile;
