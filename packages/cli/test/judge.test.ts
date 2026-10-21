@@ -1257,7 +1257,7 @@ function presetMint(at: Address): void {
 }
 
 describe("the judge guide", () => {
-  it("finds, checks and settles a proof escrow with exactly the commands it prints", async () => {
+  it("finds, checks and settles a proof escrow with exactly the commands it prints", DOCKER_TEST, async () => {
     const j = await job();
     const commands = guideLines.filter((l) => l.startsWith("intent-engine "));
     const setup = guideLines.filter((l) => !l.startsWith("intent-engine "));
@@ -1313,7 +1313,7 @@ describe("the judge guide", () => {
     expect(GUIDE).not.toContain("sha256sum");
   }, 60_000);
 
-  it("the judge guide creates the escrow it judges", async () => {
+  it("the judge guide creates the escrow it judges", DOCKER_TEST, async () => {
     const w = await world();
     const reader = await funded();
     const worker = await generateKeyPairSigner();
@@ -1382,7 +1382,7 @@ describe("the judge guide", () => {
     expect(status(intent)).toBe(IntentStatus.Filled);
   }, 60_000);
 
-  it("the judge guide judges the word count example", async () => {
+  it("the judge guide judges the word count example", DOCKER_TEST, async () => {
     const example = join(ROOT, WORD_COUNT);
     expect(GUIDE.indexOf(EXAMPLE_HEADING)).toBeGreaterThan(0);
     expect(EXAMPLE).toContain(`[\`${WORD_COUNT}\`](../${WORD_COUNT})`);
