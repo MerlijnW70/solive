@@ -20,7 +20,7 @@ export type Watched = Announced & (Verdict | { artifactSha256: string; verdict: 
 
 export const SEALED_ELSEWHERE = "is sealed to other wallets than this judge, so its url cannot be read";
 
-const earlier = (a: Delivery, b: Delivery): number => (a.slot < b.slot ? -1 : a.slot > b.slot ? 1 : a.signature < b.signature ? -1 : a.signature > b.signature ? 1 : 0);
+const earlier = (a: Delivery, b: Delivery): number => (a.slot < b.slot ? -1 : a.slot > b.slot ? 1 : Buffer.compare(Buffer.from(a.signature), Buffer.from(b.signature)));
 
 function unjudged(deliveries: readonly Delivery[], seen: ReadonlySet<string>): Delivery[] {
   return deliveries.filter(({ signature }) => !seen.has(signature)).sort(earlier);

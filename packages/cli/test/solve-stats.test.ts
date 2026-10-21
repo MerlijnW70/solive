@@ -14,7 +14,7 @@ import type { Chain, Pricer, Quote, SolverOptions } from "@intent-engine/solver"
 import type { ProgramAccount } from "@intent-engine/client";
 import { parse, UsageError } from "../src/args.js";
 import { type SolveCommand, watchSolveWith, type WatchTransport } from "../src/solve-commands.js";
-import { skipCounts, skipKey } from "../src/solve-stats.js";
+import { skipCounts, skipKey, tally } from "../src/solve-stats.js";
 
 const KEY = "11111111111111111111111111111112" as Address;
 const NOW = 1_700_000_000n;
@@ -240,6 +240,26 @@ describe("solve --watch --stats", () => {
       expired: 1,
     });
     expect(skipCounts([])).toEqual({});
+  });
+
+  it("counts each scan's own quotes, cache hits and failures, with the cache ttl in seconds", async () => {
+    const clock = { ms: 0 };
+    const quote: Quote = { amountIn: 1n, amountOut: 2n, instructions: [], lookupTables: [] };
+    const counted = tally({ quote: async () => quote }, 2, () => clock.ms);
+    const request = { inputMint: KEY, outputMint: KEY, amountIn: 1n, taker: KEY };
+    const report = { filled: [], sent: [], skipped: [{ intent: KEY, reason: "no route" }], failed: [{ intent: KEY, error: "x" }] };
+    const first = counted.mark();
+    await counted.pricer.quote(request);
+    clock.ms = 1_500;
+    await counted.pricer.quote(request);
+    counted.planned(KEY);
+    expect(first({ orders: 3, report, lost: 2, ms: 7 })).toStrictEqual({ orders: 3, planned: 1, quotes: 1, cached: 1, filled: 0, sent: 0, failed: 3, skipped: { "no route": 1 }, ms: 7 });
+    const second = counted.mark();
+    await counted.pricer.quote(request);
+    expect(second({ orders: 1, report, lost: 0, ms: 1 })).toStrictEqual({ orders: 1, planned: 0, quotes: 0, cached: 1, filled: 0, sent: 0, failed: 1, skipped: { "no route": 1 }, ms: 1 });
+    clock.ms = 3_600;
+    await counted.pricer.quote(request);
+    expect(second({ orders: 1, report, lost: 0, ms: 1 })).toMatchObject({ quotes: 1, cached: 1 });
   });
 
   it("prints one stats line per full scan, none for a changed-only scan, with counts that match the scan", async () => {
