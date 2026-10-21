@@ -24,7 +24,7 @@ export async function recentFills(transport: Transport, inputMint: Address, outp
 }
 
 const byRate = (fills: Fill[]): Fill[] =>
-  [...fills].sort((a, b) => (a.delivered * b.amountIn < b.delivered * a.amountIn ? -1 : a.delivered * b.amountIn > b.delivered * a.amountIn ? 1 : 0));
+  [...fills].sort((a, b) => Number(a.delivered * b.amountIn - b.delivered * a.amountIn));
 
 export const bestOf = (fills: Fill[]): Fill | undefined => byRate(fills).at(-1);
 
@@ -35,8 +35,9 @@ export function openingAsk(fills: Fill[], amount: bigint, floor: bigint): bigint
   const blind = (floor * (10_000n + SWAP_BLIND_BPS)) / 10_000n;
   const seen = typical === undefined ? 0n : (amount * typical.delivered * (10_000n + SWAP_HEADROOM_BPS)) / (typical.amountIn * 10_000n);
   const cap = (floor * SWAP_CAP_BPS) / 10_000n;
-  const ask = seen > blind ? seen : blind;
-  return ask < cap ? ask : cap;
+  const [ask = blind] = [seen, blind].sort((a, b) => Number(b - a));
+  const [capped = cap] = [ask, cap].sort((a, b) => Number(a - b));
+  return capped;
 }
 
 export type Fill = { intent: Address; amountIn: bigint; delivered: bigint; signature: string; blockTime: bigint | null };
