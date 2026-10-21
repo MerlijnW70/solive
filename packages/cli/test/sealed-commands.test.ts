@@ -8,10 +8,11 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { describe, expect, it } from "vitest";
 import { DEVNET_TEST_MINT, Kind, NATIVE_MINT, seal, specMemo } from "@intent-engine/core";
 import { createClient } from "@intent-engine/client";
-import { ENV_KEYPAIR, ENV_URL } from "../src/args.js";
+import { ENV_KEYPAIR, ENV_URL, parse } from "../src/args.js";
+import { FlowRefused } from "../src/flows.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
-import { jobClosed } from "../src/sealed-commands.js";
-import { ata, cli, creation, funded, h, NOW, transport, world } from "./harness.js";
+import { jobClosed, readJobSpec } from "../src/sealed-commands.js";
+import { ata, cli, creation, funded, h, NOW, runtime, transport, world } from "./harness.js";
 
 function keyed(path: string): Address {
   const jwk = generateKeyPairSync("ed25519").privateKey.export({ format: "jwk" });
@@ -135,6 +136,9 @@ describe("spec", () => {
     h.engineLog.push({ ...creation(intent), memos: [specMemo(url)] });
     const read = await cli(["spec", "--intent", intent], {});
     expect([read.code, read.err]).toEqual([EXIT_FAILED, `the spec at ${url} could not be fetched`]);
+    const command = parse(["spec", "--intent", intent]) as Parameters<typeof readJobSpec>[0];
+    await expect(readJobSpec(command, runtime({}), transport)).rejects.toStrictEqual(new FlowRefused(`the spec at ${url} could not be fetched`));
+    await expect(readJobSpec(command, runtime({}), transport)).rejects.toBeInstanceOf(FlowRefused);
   });
 
   it("says a job is closed when its escrow account is gone", async () => {

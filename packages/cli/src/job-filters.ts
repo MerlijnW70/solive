@@ -23,7 +23,7 @@ export function leastUnits(tokens: string, decimals: number): bigint {
   return BigInt(whole === "" ? "0" : whole) * 10n ** BigInt(decimals) + BigInt(kept === "" ? "0" : kept) + finer;
 }
 
-const latestFirst = (a: Job, b: Job) => (a.expiresAt === b.expiresAt ? 0 : a.expiresAt > b.expiresAt ? -1 : 1);
+const latestFirst = (a: Job, b: Job) => (a.expiresAt === b.expiresAt ? 0 : Number(b.expiresAt - a.expiresAt));
 
 export type DecimalsOf = (mint: Address) => Promise<number>;
 

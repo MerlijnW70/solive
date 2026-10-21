@@ -180,10 +180,13 @@ describe("sealed announcements", () => {
     const shown = await cli(receipt, {});
     expect([shown.code, shown.err]).toEqual([EXIT_OK, ""]);
     expect(shown.json()).toMatchObject({ delivered_salt: saltFor(intent), valid: true });
+    expect(shown.json()).not.toHaveProperty("refuted_by");
     const bribed = { ...release, tokens: [{ account: payee, mint: w.inputMint, owner: other.address }] };
     h.engineLog = h.engineLog.map((transaction) => (transaction.signature === signature ? bribed : transaction));
     expect((await cli(["deliveries", "--attestor", judge.signer.address, "--intent", intent], {})).json()["release"]).toEqual({ signature, sha256: sha(CORRECT), valid: false });
-    expect((await cli(receipt, {})).json()).toMatchObject({ delivered_salt: saltFor(intent), valid: false });
+    const refused = (await cli(receipt, {})).json();
+    expect(refused).toMatchObject({ delivered_salt: saltFor(intent), valid: false });
+    expect(refused).not.toHaveProperty("refuted_by");
   }, 60_000);
 
   it("deliveries lists sealed announcements and opens their urls only with the judge's key", async () => {

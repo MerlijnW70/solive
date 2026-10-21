@@ -172,6 +172,16 @@ describe("mint caps on the command line", () => {
     expect(capOf(cap)?.outstanding).toBe(100n);
   });
 
+  it("the monitor raises no alert on a cap without a total limit", async () => {
+    expect((await cli(["set-mint-cap", "--keypair", "admin.json", "--yes", ...limits("300", "5000", "3600")], keys)).code).toBe(EXIT_OK);
+    expect((await cli(["set-caps-required", "on", "--keypair", "admin.json", "--yes"], keys)).code).toBe(EXIT_OK);
+    expect((await cli(["monitor", "--write-baseline", "/srv/monitor/open.json"], {})).code).toBe(EXIT_OK);
+    expect((await cli(swap("200"), keys)).code).toBe(EXIT_OK);
+    const open = await cli(["monitor", "--expect", "/srv/monitor/open.json", "--once", "--max-fill", `${w.inputMint}=1000`], {});
+    expect([open.code, open.out]).toEqual([EXIT_OK, ""]);
+    expect(open.err).toContain(`mint cap of ${w.inputMint}: 200 raw units outstanding, no total limit`);
+  });
+
   it("the monitor shows the outstanding amount and alerts once it reaches the total limit", async () => {
     const watch = (baseline: string) => ["monitor", "--expect", baseline, "--once", "--max-fill", `${w.inputMint}=1000`];
     expect((await cli(["monitor", "--write-baseline", "/srv/monitor/bare.json"], {})).code).toBe(EXIT_OK);

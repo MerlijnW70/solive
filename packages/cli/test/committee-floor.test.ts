@@ -1,10 +1,11 @@
 import { type Address, getBase64Encoder, getTransactionDecoder, type KeyPairSigner, partiallySignTransaction } from "@solana/kit";
 import { FailedTransactionMetadata } from "litesvm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { committeeFloorOf, findConfigPda, findIntentPda, getConfigDecoder, sortMembers } from "@intent-engine/core";
+import { committeeFloorOf, findConfigPda, findIntentPda, getConfigDecoder, MAX_COMMITTEE_FLOORS, sortMembers } from "@intent-engine/core";
+import { floorsFull } from "../src/admin-commands.js";
 import { AUTHORITY_NEXT } from "../src/commands.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
-import { cli, funded, h, type World, world } from "./harness.js";
+import { cli, funded, h, mint, type World, world } from "./harness.js";
 
 type Json = Record<string, any>;
 
@@ -103,6 +104,26 @@ describe("committee floor on the command line", () => {
     for (const args of usage) {
       expect([args.join(" "), (await cli(args, keys)).code]).toEqual([args.join(" "), EXIT_USAGE]);
     }
+  });
+
+  it("refuses a new floor once every slot is taken, but still changes a held floor and accepts a zero floor", async () => {
+    const floor = (m: Address, amount: string) => cli(["set-committee-floor", "--keypair", "admin.json", "--mint", m, "--floor", amount], keys);
+    const held: Address[] = [];
+    for (let i = 0; i < MAX_COMMITTEE_FLOORS; i++) {
+      const m = await mint(w.authority);
+      const set = await cli(["set-committee-floor", "--keypair", "admin.json", "--yes", "--mint", m, "--floor", String(100 + i)], keys);
+      expect([set.code, set.err]).toEqual([EXIT_OK, ""]);
+      held.push(m);
+    }
+    expect(((await cli(["show", "config"], {})).json() as Json)["committeeFloors"]).toHaveLength(MAX_COMMITTEE_FLOORS);
+    const extra = await mint(w.authority);
+    const full = await floor(extra, "5");
+    expect([full.code, full.err]).toEqual([EXIT_FAILED, floorsFull(extra)]);
+    const zero = await floor(extra, "0");
+    expect([zero.code, zero.json()["sent"]]).toEqual([EXIT_OK, false]);
+    const changed = await floor(held[0] ?? extra, "7");
+    expect([changed.code, changed.json()["sent"]]).toEqual([EXIT_OK, false]);
+    expect(changed.json()["summary"]).toContain(`Committee floor of ${held[0]}: 100 raw units -> 7 raw units`);
   });
 
   it("create attested refuses a single judge at the floor before sending and passes a two-of-n committee", async () => {

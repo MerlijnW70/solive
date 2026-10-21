@@ -130,6 +130,7 @@ describe("intent-engine committee", () => {
     const release = ["committee", "release", "--keypair", "m2.json", "--vote", v0, "--vote", v2, "--sha256", sha(CORRECT)];
     const preview = await cli(release, p.keys);
     expect(preview.json()).toMatchObject({ intent: p.intent, committee: p.committee, sent: false, next: NOT_SENT });
+    expect(preview.json()).not.toHaveProperty("opening_signatures");
     const sent = await cli([...release, "--yes"], p.keys);
     expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);
     expect(sent.json()).toMatchObject({ sent: true, signature: expect.any(String), opening_signatures: [expect.any(String)] });
@@ -173,6 +174,22 @@ describe("intent-engine committee", () => {
     const stranger = await cli([...base, "--keypair", "outsider.json", "--pay-to", p.worker.address], p.keys);
     expect(stranger.code).toBe(EXIT_FAILED);
     expect(stranger.err).toContain("is not a member");
+  });
+
+  it("a release without a delivered hash sends no opening and names none", async () => {
+    const p = await panel(CORRECT);
+    const base = ["committee", "vote", "--owner", p.w.owner.address, "--nonce", "0", "--result", "1", "--pay-to", p.worker.address, "--yes"];
+    const files = [join(p.dir, "a.json"), join(p.dir, "b.json")];
+    for (const [member, file] of [["m0.json", files[0] ?? ""], ["m1.json", files[1] ?? ""]] as const) {
+      const voted = await cli([...base, "--keypair", member, "--out", file], p.keys);
+      expect([voted.code, voted.err]).toEqual([EXIT_OK, ""]);
+    }
+    const release = ["committee", "release", "--keypair", "m0.json", ...files.flatMap((file) => ["--vote", file]), "--yes"];
+    const sent = await cli(release, p.keys);
+    expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);
+    expect(sent.json()).toMatchObject({ sent: true, signature: expect.any(String) });
+    expect(sent.json()).not.toHaveProperty("opening_signatures");
+    expect(p.status()).toBe(IntentStatus.Filled);
   });
 });
 

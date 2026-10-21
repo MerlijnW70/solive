@@ -16,7 +16,7 @@ const ADMIN_AT = 8;
 
 export const NOTHING_TO_MIGRATE = "nothing to migrate: every engine account is current or needs close-legacy";
 
-const adminOf = (data: Uint8Array): Address => getAddressDecoder().decode(data.slice(ADMIN_AT, ADMIN_AT + 32));
+const adminOf = (data: Uint8Array): Address => getAddressDecoder().decode(data, ADMIN_AT);
 
 async function listed(command: Migrate, transport: Transport): Promise<Listed[]> {
   if (command.address !== null) {
@@ -52,8 +52,8 @@ const topUpFor = (rent: RentSysvar, entry: Listed, from: number, to: number): bi
   const newMin = rentExemptFor(rent, to);
   const grown = entry.lamports + newMin - rentExemptFor(rent, from);
   const floor = newMin + (boardTerms(entry.data)?.held ?? 0n);
-  const target = grown > floor ? grown : floor;
-  return target > entry.lamports ? target - entry.lamports : 0n;
+  const [target = floor] = [grown, floor].sort((a, b) => Number(b - a));
+  return target - entry.lamports;
 };
 
 const errorText = (error: unknown) => (error instanceof Error ? error.message : String(error));

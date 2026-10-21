@@ -63,6 +63,14 @@ describe("the stand-by line from the command line", () => {
     expect(await j.refused(["claims", "take", "--keypair", "second.json", ...j.ref, "--secs", "60", "--yes"])).toBe(lineWaiting(j.intent, 1));
   });
 
+  it("claims standby takes a hold of exactly the escrow's longest claim", async () => {
+    const j = await job();
+    await j.ok(["claims", "take", "--keypair", "worker.json", ...j.ref, "--secs", "600", "--yes"]);
+    const longest = await j.standBy("first.json", "3600", false);
+    expect(longest).toMatchObject({ seq: 0, sent: false, next: NOT_SENT });
+    expect(longest["summary"][0]).toContain("it holds it for 3600 seconds");
+  });
+
   it("claims take and claims standby refuse while fills are paused, and a waiter still leaves", async () => {
     const j = await job();
     const pause = (verb: string) => cli([verb, "--keypair", "a.json", "--yes", "--flags", "fill"], { "a.json": j.w.authority });

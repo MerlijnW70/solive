@@ -21,15 +21,19 @@ import {
   FAUCET_STEPS,
   faucetLink,
   defaultWallet,
+  ENOUGH_TO_START,
   FUNDED,
   heldRefused,
   LAMPORTS_PER_SOL,
+  savedDefault,
   SEND_SOL,
   settingsBroken,
   settingsPath,
+  setup,
 } from "../src/wallet.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main } from "../src/main.js";
-import { balance, cli, funded, h, HOME, runtime, type World, world } from "./harness.js";
+import { balance, cli, funded, h, HOME, runtime, transport, type World, world } from "./harness.js";
+import { device, deviceKey, found } from "./ledger-device.js";
 
 const WALLET = defaultWallet(HOME);
 const SYSTEM_PROGRAM = "11111111111111111111111111111111" as Address;
@@ -223,6 +227,30 @@ describe("setup and balance", () => {
     const denied: string[] = [];
     expect(await main(["setup"], raced("EACCES"), { out: () => undefined, err: (t) => denied.push(t) })).toBe(EXIT_FAILED);
     expect(denied).toEqual([`EACCES: ${WALLET}`]);
+  });
+
+  it("setup with --url saves the new node over the one saved before", async () => {
+    expect((await cli(["setup"], {})).code).toBe(EXIT_OK);
+    const moved = await cli(["setup", "--url", "http://flag"], {});
+    expect([moved.code, moved.err]).toEqual([EXIT_OK, ""]);
+    expect(moved.json()).toMatchObject({ created: false, url: "http://flag", settings: savedDefault("http://flag") });
+    expect(JSON.parse(h.files.get(SETTINGS) ?? "{}")).toEqual({ url: "http://flag", keypair: WALLET });
+  });
+
+  it("a refused airdrop leaves a wallet holding exactly enough to start ready", async () => {
+    h.airdropRefused = true;
+    const made = (await cli(["setup"], {})).json();
+    const address = made["address"] as Address;
+    h.svm.airdrop(address, lamports(ENOUGH_TO_START));
+    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.1", next: FUNDED });
+  });
+
+  it("setup on a Ledger names the device's address and creates no key file", async () => {
+    const key = await deviceKey();
+    const ledger = device(key, found([44, 501], key));
+    const made = await setup(transport, { ...runtime({}), ledger: ledger.open }, "http://flag", "usb://ledger");
+    expect(made).toMatchObject({ address: key.address, keypair: "usb://ledger", created: false });
+    expect(h.files.has("usb://ledger")).toBe(false);
   });
 
   it("refuses a settings file it did not write", async () => {
