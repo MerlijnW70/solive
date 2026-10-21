@@ -1257,7 +1257,7 @@ function presetMint(at: Address): void {
 }
 
 describe("the judge guide", () => {
-  it("finds, checks and settles a proof escrow with exactly the commands it prints", DOCKER_TEST, async () => {
+  it("finds, checks and settles a proof escrow with exactly the commands it prints", { ...DOCKER_TEST, timeout: 60_000 }, async () => {
     const j = await job();
     const commands = guideLines.filter((l) => l.startsWith("intent-engine "));
     const setup = guideLines.filter((l) => !l.startsWith("intent-engine "));
@@ -1311,9 +1311,9 @@ describe("the judge guide", () => {
     expect(GUIDE).toContain(`by default \`${SANDBOX_IMAGE}\`, which holds Node.js 22`);
     expect(GUIDE).toContain("`--sandbox none` runs the check without a container");
     expect(GUIDE).not.toContain("sha256sum");
-  }, 60_000);
+  });
 
-  it("the judge guide creates the escrow it judges", DOCKER_TEST, async () => {
+  it("the judge guide creates the escrow it judges", { ...DOCKER_TEST, timeout: 60_000 }, async () => {
     const w = await world();
     const reader = await funded();
     const worker = await generateKeyPairSigner();
@@ -1380,9 +1380,9 @@ describe("the judge guide", () => {
     const paid = await findAssociatedTokenAddress({ owner: worker.address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     expect(balance(paid)).toBeGreaterThan(0n);
     expect(status(intent)).toBe(IntentStatus.Filled);
-  }, 60_000);
+  });
 
-  it("the judge guide judges the word count example", DOCKER_TEST, async () => {
+  it("the judge guide judges the word count example", { ...DOCKER_TEST, timeout: 60_000 }, async () => {
     const example = join(ROOT, WORD_COUNT);
     expect(GUIDE.indexOf(EXAMPLE_HEADING)).toBeGreaterThan(0);
     expect(EXAMPLE).toContain(`[\`${WORD_COUNT}\`](../${WORD_COUNT})`);
@@ -1414,7 +1414,7 @@ describe("the judge guide", () => {
     expect(outputs[0]).toMatchObject({ artifactSha256: sha256, exitCode: 0, verdict: "pass", payTo: j.worker.address, signature: null });
     expect(outputs[1]).toMatchObject({ artifactSha256: sha256, verdict: "pass", payTo: j.worker.address, signature: expect.any(String) });
     expect(await paidTo(j, j.worker.address)).toBeGreaterThan(0n);
-  }, 60_000);
+  });
 
   it("the word count section judges the file the spec names", async () => {
     const spec = await readFile(join(ROOT, WORD_COUNT, "SPEC.md"));
