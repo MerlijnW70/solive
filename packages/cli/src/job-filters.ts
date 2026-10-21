@@ -9,6 +9,7 @@ import {
   jobsOf,
   loadClaimsOf,
   mintOf,
+  type MintView,
   openProofEscrows,
   type PayTerms,
   type Transport,
@@ -27,14 +28,38 @@ const latestFirst = (a: Job, b: Job) => (a.expiresAt === b.expiresAt ? 0 : Numbe
 
 export type DecimalsOf = (mint: Address) => Promise<number>;
 
-export function decimalsOnce(transport: Transport): DecimalsOf {
-  const seen = new Map<Address, Promise<number>>();
+export type MintsOf = (mint: Address) => Promise<MintView>;
+
+export function mintsOnce(transport: Transport): MintsOf {
+  const seen = new Map<Address, Promise<MintView>>();
   return (mint) => {
-    const known = seen.get(mint) ?? mintOf(transport, mint).then(({ decimals }) => decimals);
+    const known = seen.get(mint) ?? mintOf(transport, mint);
     seen.set(mint, known);
     return known;
   };
 }
+
+export function decimalsOnce(transport: Transport, mintsOf: MintsOf = mintsOnce(transport)): DecimalsOf {
+  return async (mint) => (await mintsOf(mint)).decimals;
+}
+
+export async function freezeAuthorityRead(read: Promise<MintView>): Promise<Address | null> {
+  try {
+    return (await read).freezeAuthority;
+  } catch {
+    return null;
+  }
+}
+
+export const freezeWarning = (authority: Address, owner: Address): string =>
+  authority === owner
+    ? `the escrow's owner ${owner} holds the freeze authority of this job's token and can freeze the payment`
+    : `${authority} holds the freeze authority of this job's token and can freeze the payment`;
+
+export type FreezeFields = { freeze_authority: Address | null; freeze_warning?: string };
+
+export const freezeFields = (authority: Address | null, owner: Address): FreezeFields =>
+  authority === null ? { freeze_authority: null } : { freeze_authority: authority, freeze_warning: freezeWarning(authority, owner) };
 
 export async function jobsWanted(
   transport: Transport,
@@ -52,9 +77,21 @@ export async function jobsWanted(
   return lists.flat().sort(latestFirst).slice(0, JOBS_LIMIT);
 }
 
-export async function pricedJobs(transport: Transport, wanted: JobsWanted, terms: PayTerms): Promise<(Job & JobPay & JobClaim)[]> {
-  const decimalsOf = decimalsOnce(transport);
+export type PricedJob = Job & JobPay & JobClaim & { freezeAuthority: Address | null };
+
+export async function pricedJobs(transport: Transport, wanted: JobsWanted, terms: PayTerms): Promise<PricedJob[]> {
+  const mintsOf = mintsOnce(transport);
+  const decimalsOf = decimalsOnce(transport, mintsOf);
   const jobs = await jobsWanted(transport, wanted, decimalsOf);
-  const [pays, claims] = await Promise.all([jobPays(transport, jobs, terms, decimalsOf), loadClaimsOf(transport, jobs.map(({ intent }) => intent))]);
-  return jobs.map((job, i) => ({ ...job, ...(pays[i] ?? { netPay: "0", payable: false }), ...jobClaimOf(claims[i] ?? null) }));
+  const [pays, claims, freezes] = await Promise.all([
+    jobPays(transport, jobs, terms, decimalsOf),
+    loadClaimsOf(transport, jobs.map(({ intent }) => intent)),
+    Promise.all(jobs.map(({ inputMint }) => freezeAuthorityRead(mintsOf(inputMint)))),
+  ]);
+  return jobs.map((job, i) => ({
+    ...job,
+    ...(pays[i] ?? { netPay: "0", payable: false }),
+    ...jobClaimOf(claims[i] ?? null),
+    freezeAuthority: freezes[i] ?? null,
+  }));
 }

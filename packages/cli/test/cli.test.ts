@@ -692,6 +692,7 @@ describe("cli against the deployed engine", () => {
           claimed_by: null,
           claim_ends: null,
           waiting: 0,
+          freeze_authority: null,
         },
       ],
     });

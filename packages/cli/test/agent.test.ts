@@ -500,11 +500,11 @@ describe("agent server against the deployed engine", () => {
       return address;
     };
     const base = new Uint8Array(template.data);
-    expect(await mintOf(transport, await plant(base))).toEqual({ tokenProgram: TOKEN_PROGRAM_ADDRESS, decimals: 6, scaled: false });
+    expect(await mintOf(transport, await plant(base))).toEqual({ tokenProgram: TOKEN_PROGRAM_ADDRESS, decimals: 6, scaled: false, freezeAuthority: null });
     const extended = new Uint8Array(170);
     extended.set(base);
     extended[165] = 1;
-    expect(await mintOf(transport, await plant(extended, T22))).toEqual({ tokenProgram: T22, decimals: 6, scaled: false });
+    expect(await mintOf(transport, await plant(extended, T22))).toEqual({ tokenProgram: T22, decimals: 6, scaled: false, freezeAuthority: null });
     for (const extension of [10, 25]) {
       const scaled = new Uint8Array(178);
       scaled.set(base);

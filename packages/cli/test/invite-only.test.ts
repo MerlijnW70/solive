@@ -77,7 +77,7 @@ describe("an invite-only job through MCP", () => {
 
     expect(await call(client, "get_spec", { intent })).toEqual({
       error: false,
-      value: { url: SPEC_URL, sha256: sha(SPEC), matches: true, text: SPEC, sealed_to: [owner, worker] },
+      value: { url: SPEC_URL, sha256: sha(SPEC), matches: true, text: SPEC, sealed_to: [owner, worker], freeze_authority: null },
     });
     const release = { owner, nonce: escrow.value["nonce"] };
     expect(await call(client, "wallet_attest", { ...release, pay_to: stranger })).toEqual({

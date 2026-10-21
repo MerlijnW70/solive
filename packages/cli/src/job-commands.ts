@@ -20,7 +20,7 @@ import type { Command } from "./command-types.js";
 import type { Runtime } from "./runtime.js";
 import { previewed } from "./admin-commands.js";
 import { artifactSha256 } from "./artifact.js";
-import { pricedJobs } from "./job-filters.js";
+import { freezeFields, pricedJobs } from "./job-filters.js";
 import { transactionSigner } from "./ledger-keys.js";
 import { loadEncryptionKeys } from "./sealed-commands.js";
 
@@ -82,14 +82,17 @@ export async function jobCommand(command: JobCommand, runtime: Runtime, transpor
   switch (command.name) {
     case "jobs":
       return {
-        jobs: (await pricedJobs(transport, command, (await loadConfig(transport)).config)).map(({ netPay, payable, claimedBy, claimEnds, waiting, ...job }) => ({
-          ...job,
-          net_pay: netPay,
-          payable,
-          claimed_by: claimedBy,
-          claim_ends: claimEnds,
-          waiting,
-        })),
+        jobs: (await pricedJobs(transport, command, (await loadConfig(transport)).config)).map(
+          ({ netPay, payable, claimedBy, claimEnds, waiting, freezeAuthority, ...job }) => ({
+            ...job,
+            net_pay: netPay,
+            payable,
+            claimed_by: claimedBy,
+            claim_ends: claimEnds,
+            waiting,
+            ...freezeFields(freezeAuthority, job.owner),
+          }),
+        ),
       };
     case "deliver": {
       const worker = await transactionSigner(runtime, command.keypair);

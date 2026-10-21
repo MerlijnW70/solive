@@ -1,4 +1,4 @@
-import { type Address, getBase58Encoder } from "@solana/kit";
+import { type Address, getAddressDecoder, getBase58Encoder } from "@solana/kit";
 import {
   checkAccountVersion,
   decodeMintCapData,
@@ -117,6 +117,8 @@ export async function tokenProgramOf(transport: Transport, mint: Address): Promi
 }
 
 const MINT_DECIMALS_OFFSET = 44;
+export const MINT_FREEZE_TAG_OFFSET = 46;
+export const MINT_FREEZE_AUTHORITY_OFFSET = 50;
 export const MINT_BASE_SIZE = 82;
 export const TOKEN_PROGRAMS: Address[] = [TOKEN_PROGRAM_ADDRESS, TOKEN_2022_PROGRAM_ADDRESS];
 
@@ -133,10 +135,17 @@ export function scalesDisplay(data: Uint8Array): boolean {
   return false;
 }
 
-export async function mintOf(
-  transport: Transport,
-  mint: Address,
-): Promise<{ tokenProgram: Address; decimals: number; scaled: boolean }> {
+export function freezeAuthorityOf(data: Uint8Array): Address | null {
+  if (data.length < MINT_BASE_SIZE) {
+    return null;
+  }
+  const tag = new DataView(data.buffer, data.byteOffset, data.byteLength).getUint32(MINT_FREEZE_TAG_OFFSET, true);
+  return tag === 1 ? getAddressDecoder().decode(data.subarray(MINT_FREEZE_AUTHORITY_OFFSET, MINT_BASE_SIZE)) : null;
+}
+
+export type MintView = { tokenProgram: Address; decimals: number; scaled: boolean; freezeAuthority: Address | null };
+
+export async function mintOf(transport: Transport, mint: Address): Promise<MintView> {
   const view = await transport.getAccount(mint);
   if (view === null) {
     throw new MissingAccount("mint", mint);
@@ -144,7 +153,12 @@ export async function mintOf(
   if (!TOKEN_PROGRAMS.includes(view.owner) || !isMintData(view.data)) {
     throw new NotAMint(mint);
   }
-  return { tokenProgram: view.owner, decimals: view.data[MINT_DECIMALS_OFFSET] as number, scaled: scalesDisplay(view.data) };
+  return {
+    tokenProgram: view.owner,
+    decimals: view.data[MINT_DECIMALS_OFFSET] as number,
+    scaled: scalesDisplay(view.data),
+    freezeAuthority: freezeAuthorityOf(view.data),
+  };
 }
 
 export const EXTENDED_TYPE_OFFSET = 165;
