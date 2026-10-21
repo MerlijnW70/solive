@@ -20,7 +20,7 @@
     "fillDisabledKinds": "0",
     "paused": 0,
     "capsRequired": 0,
-    "version": 1,
+    "version": 2,
     "domain": [
       206,
       89,
@@ -57,5 +57,5 @@
     ]
   },
   "upgradeAuthority": "DxF6mApa3rnN7QgdqjtBvgyDesvKhVTYQ14Giike4Urv",
-  "programHash": "009f7c159d2864dd33ae73a576ce0f8a5bd0fb6129a2052f3927bacb9710ac55"
+  "programHash": "bf142f6ce4d1a91741afb2af6d90c13d0afe39a4856fa037bfb0d35c8d68cb33"
 }
