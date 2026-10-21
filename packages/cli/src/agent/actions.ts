@@ -68,9 +68,10 @@ const canonical = (value: unknown): unknown =>
     ? value.map(canonical)
     : value !== null && typeof value === "object"
       ? Object.fromEntries(
-          Object.entries(value)
+          Object.keys(value)
+            .sort()
+            .map((k): [string, unknown] => [k, (value as Record<string, unknown>)[k]])
             .filter(([, v]) => v !== undefined)
-            .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
             .map(([k, v]) => [k, canonical(v)]),
         )
       : value;

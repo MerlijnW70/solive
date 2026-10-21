@@ -201,4 +201,15 @@ describe("setting the codex startup timeout", () => {
   it("puts the timeout right under a header with an empty table", () => {
     expect(withStartupTimeout(`[mcp_servers.${PRODUCT_SLUG}]\n\n[next]\n`)).toEqual({ text: `[mcp_servers.${PRODUCT_SLUG}]\n${set}\n\n[next]\n`, was: null });
   });
+
+  it("reads and changes only the lines of its own table", () => {
+    const header = `[mcp_servers.${PRODUCT_SLUG}]`;
+    expect(withStartupTimeout(`${header}\n[other]\nstartup_timeout_sec = 5\n`)).toEqual({ text: `${header}\n${set}\n[other]\nstartup_timeout_sec = 5\n`, was: null });
+    expect(withStartupTimeout(`[other]\nstartup_timeout_sec = 5\n${header}\ncommand = "npx"\n`)).toEqual({
+      text: `[other]\nstartup_timeout_sec = 5\n${header}\ncommand = "npx"\n${set}\n`,
+      was: null,
+    });
+    expect(withStartupTimeout(`${header}\ncommand = "npx"\n\n[next]\nk = 1\n`)).toEqual({ text: `${header}\ncommand = "npx"\n${set}\n\n[next]\nk = 1\n`, was: null });
+    expect(withStartupTimeout(`a = 1\n\n${header}\n\n\n`)).toEqual({ text: `a = 1\n\n${header}\n${set}\n\n\n`, was: null });
+  });
 });

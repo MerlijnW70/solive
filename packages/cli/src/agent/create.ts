@@ -120,7 +120,7 @@ export function neverSettles(params: IntentParams, config: SettleConfig, partner
     return undefined;
   }
   const shown = (raw: bigint) => formatAmount(raw, decimals);
-  const left = terms.amount > terms.judgeFee ? terms.amount - terms.judgeFee : 0n;
+  const left = terms.amount <= terms.judgeFee ? 0n : terms.amount - terms.judgeFee;
   const { leastAmount, mostJudgeFee } = settleBounds(terms);
   const fixes = [
     ...(leastAmount === undefined ? [] : [`escrow at least ${shown(leastAmount)}`]),

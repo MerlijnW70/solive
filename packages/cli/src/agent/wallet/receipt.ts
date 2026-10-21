@@ -87,7 +87,8 @@ export const walletReceipt = define({
     if (!wrapped) {
       return receipt;
     }
-    const next = "next" in receipt && typeof receipt.next === "string" ? `${receipt.next}; ${PAID_WRAPPED}` : PAID_WRAPPED;
+    const prior: unknown = "next" in receipt ? receipt.next : undefined;
+    const next = typeof prior === "string" ? `${prior}; ${PAID_WRAPPED}` : PAID_WRAPPED;
     return { ...receipt, next };
   },
 });

@@ -65,7 +65,7 @@ export function withStartupTimeout(text: string): { text: string; was: string | 
   const end = after < 0 ? lines.length : start + 1 + after;
   const eol = text.includes("\r\n") ? "\r" : "";
   const setting = `startup_timeout_sec = ${CODEX_STARTUP_TIMEOUT}${eol}`;
-  for (let i = start + 1; i < end; i++) {
+  for (let i = start + 1; i !== end; i++) {
     const found = TIMEOUT.exec(lines[i] ?? "");
     if (found !== null) {
       lines[i] = setting;
@@ -73,7 +73,7 @@ export function withStartupTimeout(text: string): { text: string; was: string | 
     }
   }
   let last = end;
-  while (last > start + 1 && (lines[last - 1] ?? "").trim() === "") {
+  while (lines[last - 1]?.trim() === "") {
     last--;
   }
   lines.splice(last, 0, setting);

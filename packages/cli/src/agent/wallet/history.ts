@@ -56,7 +56,7 @@ export const walletHistory = define({
     const client = createClient({ url: ctx.url ?? "http://cluster", transport: ctx.transport });
     const next = await client.nextNonce(wallet);
     const limit = BigInt(input.limit ?? HISTORY_DEFAULT);
-    const oldest = next > limit ? next - limit : 0n;
+    const oldest = next - limit;
     const decimals = new Map<Address, number>();
     const tokens = async (mint: Address, raw: bigint) => {
       if (!decimals.has(mint)) {
@@ -65,7 +65,7 @@ export const walletHistory = define({
       return formatAmount(raw, decimals.get(mint) ?? 0);
     };
     const activity = [];
-    for (let nonce = next - 1n; nonce >= oldest; nonce -= 1n) {
+    for (let nonce = next - 1n; nonce >= oldest && nonce >= 0n; nonce -= 1n) {
       const [intent] = await findIntentPda({ owner: wallet, nonce });
       const events = await client.history(intent, EVENTS_PER_INTENT);
       const created = fields(events.find((e) => e.name === "IntentCreated"));
