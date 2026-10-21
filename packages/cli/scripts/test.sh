@@ -14,6 +14,7 @@ if [[ "${2:-}" == test && "$PWD" == /mnt/* && -f "$base/.ready" && "$(cat "$base
   ln -sfn "$base/packages/cli/node_modules" "$copy/node_modules"
   export INTENT_ENGINE_SO="$base/target/deploy/intent_engine.so"
   export INTENT_ENGINE_ROOT="$base"
+  [[ -x "$base/.nodocker/docker" ]] && export PATH="$base/.nodocker:$PATH"
   cd "$copy"
 fi
 case "${2:-all}" in
