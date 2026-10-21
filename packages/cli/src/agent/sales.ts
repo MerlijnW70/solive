@@ -107,7 +107,7 @@ async function written(file: string, text: string): Promise<void> {
     await handle.sync();
   } catch (error) {
     await handle.close().catch(() => undefined);
-    await rm(file, { force: true }).catch(() => undefined);
+    await rm(file).catch(() => undefined);
     throw error;
   }
   await handle.close();
@@ -125,7 +125,7 @@ async function sweep(file: string): Promise<void> {
         const leftover = join(folder, name);
         const seen = await stat(leftover).catch(() => null);
         if (seen !== null && seen.mtimeMs < cutoff) {
-          await rm(leftover, { force: true }).catch(() => undefined);
+          await rm(leftover).catch(() => undefined);
         }
       }),
   );
@@ -139,7 +139,7 @@ async function writeSales(file: string, sales: Sale[], files: SaleFiles): Promis
   try {
     await retried(() => files.rename(temporary, file));
   } catch (error) {
-    await rm(temporary, { force: true }).catch(() => undefined);
+    await rm(temporary).catch(() => undefined);
     throw error;
   }
 }
@@ -162,57 +162,50 @@ async function linksFail(linker: Linker, temporary: string, lock: string): Promi
   } catch {
     return true;
   }
-  await rm(probe, { force: true }).catch(() => undefined);
+  await rm(probe).catch(() => undefined);
   return false;
 }
 
-async function created(lock: string, token: string): Promise<boolean> {
+async function created(lock: string, token: string): Promise<void> {
   try {
     await written(lock, token);
   } catch (error) {
-    if (taken(error) || busy(error)) {
-      return false;
+    if (!taken(error) && !busy(error)) {
+      throw error;
     }
-    throw error;
   }
-  return true;
 }
 
-async function linked(lock: string, token: string, linker: Linker): Promise<boolean | null> {
+async function linked(lock: string, token: string, linker: Linker): Promise<void> {
   const temporary = `${lock}.${randomUUID()}.tmp`;
   await written(temporary, token);
   try {
     await linker(temporary, lock);
   } catch (error) {
-    if (taken(error)) {
-      return false;
-    }
     if (unlinkable(error) && (await linksFail(linker, temporary, lock))) {
-      return null;
+      linkless.add(dirname(lock));
+    } else if (!taken(error) && !busy(error)) {
+      throw error;
     }
-    if (busy(error)) {
-      return false;
-    }
-    throw error;
   } finally {
-    await rm(temporary, { force: true }).catch(() => undefined);
+    await rm(temporary).catch(() => undefined);
   }
-  return true;
 }
 
 async function claim(lock: string, token: string, linker: Linker): Promise<boolean> {
   const folder = dirname(lock);
-  let placed = linkless.has(folder) ? null : await linked(lock, token, linker);
-  if (placed === null) {
-    linkless.add(folder);
-    placed = await created(lock, token);
+  if (!linkless.has(folder)) {
+    await linked(lock, token, linker);
   }
-  return placed && (await ownerOf(lock)) === token;
+  if (linkless.has(folder)) {
+    await created(lock, token);
+  }
+  return (await ownerOf(lock)) === token;
 }
 
 async function release(lock: string, token: string): Promise<void> {
   if ((await ownerOf(lock)) === token) {
-    await retried(() => rm(lock, { force: true }));
+    await retried(() => rm(lock));
   }
 }
 

@@ -68,10 +68,11 @@ export async function raiseAllowance(
   const [engine] = await findDelegatePda({ owner });
   const current = token !== null && isSome(token.delegate) ? token.delegate.value : null;
   const before = current === engine && token !== null ? token.delegatedAmount : 0n;
+  const [after = U64_MAX] = [before + by, U64_MAX].sort((x, y) => Number(x - y));
   return {
     account,
     before,
-    after: before > U64_MAX - by ? U64_MAX : before + by,
+    after,
     replaces: current === null || current === engine ? null : current,
   };
 }
@@ -87,7 +88,8 @@ export async function lowerAllowance(
   const [engine] = await findDelegatePda({ owner });
   const current = token !== null && isSome(token.delegate) ? token.delegate.value : null;
   const before = current === engine && token !== null ? token.delegatedAmount : 0n;
-  return { account, before, after: before > by ? before - by : 0n, replaces: null };
+  const [after = 0n] = [before - by, 0n].sort((x, y) => Number(y - x));
+  return { account, before, after, replaces: null };
 }
 
 export const WARN_REPLACES_DELEGATE = "the setup replaces another app's spending approval on your token account";

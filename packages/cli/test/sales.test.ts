@@ -1,10 +1,21 @@
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
-import { rename } from "node:fs/promises";
+import { link, rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Address } from "@solana/kit";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { BUSY_ATTEMPTS, fileSales, LEFTOVER_MS, LOCK_STALE_MS, LOCK_WAIT_MS, type Sale, salesPath, WALLET_BUSY } from "../src/agent/sales.js";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  BUSY_ATTEMPTS,
+  BUSY_BACKOFF_CAP_MS,
+  BUSY_BACKOFF_MS,
+  fileSales,
+  LEFTOVER_MS,
+  LOCK_STALE_MS,
+  LOCK_WAIT_MS,
+  type Sale,
+  salesPath,
+  WALLET_BUSY,
+} from "../src/agent/sales.js";
 
 const MINT = "So11111111111111111111111111111111111111112" as Address;
 
@@ -18,6 +29,22 @@ const aged = (path: string, ms: number) => {
 };
 
 const PATIENT_MS = 10 * 60 * 1000;
+
+const WHOLE_SECOND_MS = 1_700_000_000_000;
+
+const stamped = (path: string, ms: number) => utimesSync(path, ms / 1000, ms / 1000);
+
+const onPlatform = async (platform: string, work: () => Promise<void>) => {
+  const real = Object.getOwnPropertyDescriptor(process, "platform");
+  Object.defineProperty(process, "platform", { value: platform, configurable: true });
+  try {
+    await work();
+  } finally {
+    if (real !== undefined) {
+      Object.defineProperty(process, "platform", real);
+    }
+  }
+};
 
 const failing = (code: string) => Object.assign(new Error(`${code}: operation not permitted, rename`), { code });
 
@@ -161,5 +188,103 @@ describe("the shared sales book", () => {
     expect(overlapped).toBe(false);
     expect((await first.read(book)).map((s) => s.id).sort()).toEqual(Array.from({ length: 12 }, (_, i) => `sale-${i}`).sort());
     expect(readdirSync(root).sort()).toEqual(["wallet.json.sales.json"]);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("a link error that is not about links fails the sale on Linux but falls back to plain files on Windows", async () => {
+    const broken = (code: string) => ({
+      rename,
+      link: async () => {
+        throw failing(code);
+      },
+    });
+    await onPlatform("linux", async () => {
+      await expect(fileSales(undefined, broken("EIO"), 0).update(book, appended(sale(1)))).rejects.toMatchObject({ code: "EIO" });
+      expect(readdirSync(root)).toEqual([]);
+    });
+    const windows = join(root, "windows");
+    await onPlatform("win32", async () => {
+      const sales = fileSales((path) => join(windows, path), broken("EIO"), 0);
+      await sales.update("book.json", appended(sale(2)));
+      expect(await sales.read("book.json")).toEqual([sale(2)]);
+      await expect(fileSales((path) => join(root, "busy", path), broken("EBUSY"), 0).update("book.json", appended(sale(3)))).rejects.toMatchObject({
+        problem: { code: "WalletBusy" },
+      });
+    });
+  });
+
+  it("a link refused only for the lock is a busy lock, not a folder without links", async () => {
+    const files = {
+      rename,
+      link: async (existing: string, path: string) => {
+        if (path === `${book}.lock`) {
+          throw failing("EPERM");
+        }
+        await link(existing, path);
+      },
+    };
+    await expect(fileSales(undefined, files, 0).update(book, appended(sale(1)))).rejects.toMatchObject({ problem: { code: "WalletBusy" } });
+    expect(readdirSync(root)).toEqual([]);
+  });
+
+  it("a busy rename backs off by doubling delays up to the cap", async () => {
+    const timers = vi.spyOn(globalThis, "setTimeout");
+    const sales = fileSales(undefined, {
+      rename: async () => {
+        throw failing("EBUSY");
+      },
+    });
+    await expect(sales.update(book, appended(sale(1)))).rejects.toMatchObject({ code: "EBUSY" });
+    const delays = timers.mock.calls.map((args) => args[1]);
+    expect(delays).toEqual(
+      Array.from({ length: BUSY_ATTEMPTS - 1 }, (_, i) => Math.min(BUSY_BACKOFF_MS * 2 ** i, BUSY_BACKOFF_CAP_MS)),
+    );
+    expect(delays.slice(0, 5)).toEqual([10, 20, 40, 80, 160]);
+  });
+
+  it("the sweep removes only this book's temporary files, and only once they are older than a minute", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(WHOLE_SECOND_MS + LEFTOVER_MS);
+    const edge = `${book}.edge.tmp`;
+    const older = `${book}.older.tmp`;
+    const foreign = join(root, "other.tmp");
+    const notes = `${book}.notes`;
+    for (const path of [edge, older, foreign, notes]) {
+      writeFileSync(path, "[]");
+      stamped(path, WHOLE_SECOND_MS);
+    }
+    for (const path of [older, foreign, notes]) {
+      stamped(path, WHOLE_SECOND_MS - 1_000);
+    }
+    await fileSales().update(book, appended(sale(1)));
+    expect(readdirSync(root).sort()).toEqual(["other.tmp", "wallet.json.sales.json", "wallet.json.sales.json.edge.tmp", "wallet.json.sales.json.notes"]);
+  });
+
+  it("a lock is stale only once it is older than the stale age", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(WHOLE_SECOND_MS + LOCK_STALE_MS);
+    writeFileSync(`${book}.lock`, "someone-else");
+    stamped(`${book}.lock`, WHOLE_SECOND_MS);
+    await expect(fileSales(undefined, undefined, 0).update(book, appended(sale(1)))).rejects.toMatchObject({ problem: { code: "WalletBusy" } });
+    expect(readFileSync(`${book}.lock`, "utf8")).toBe("someone-else");
+    stamped(`${book}.lock`, WHOLE_SECOND_MS - 1_000);
+    await fileSales(undefined, undefined, 0).update(book, appended(sale(2)));
+    expect(await fileSales().read(book)).toEqual([sale(2)]);
+    expect(readdirSync(root).sort()).toEqual(["wallet.json.sales.json"]);
+  });
+
+  it("a lock wait gives up once the deadline is reached, even while the clock stands still", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(WHOLE_SECOND_MS);
+    writeFileSync(`${book}.lock`, "someone-else");
+    stamped(`${book}.lock`, WHOLE_SECOND_MS);
+    const outcome = fileSales(undefined, undefined, 0)
+      .update(book, appended(sale(1)))
+      .then(
+        () => "saved",
+        (error: { problem?: { code?: string } }) => error.problem?.code,
+      );
+    setTimeout(() => rmSync(`${book}.lock`, { force: true }), 200);
+    expect(await outcome).toBe("WalletBusy");
   });
 });
