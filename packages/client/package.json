@@ -1,6 +1,6 @@
 {
   "name": "@intent-engine/client",
-  "version": "0.1.44",
+  "version": "0.1.45",
   "description": "Runtime client for the intent engine on Solana: transport, confirmation, account readers and intent notifications",
   "license": "Apache-2.0",
   "repository": {
