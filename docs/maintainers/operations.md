@@ -298,7 +298,7 @@ sudo systemctl enable --now intent-engine-monitor
 journalctl -u intent-engine-monitor -f
 ```
 
-`.github/workflows/monitor.yml` also runs `monitor --once` every hour, at minute 37, on GitHub against `monitoring/devnet.json`, first on the public devnet node and then on a second node when the `ALCHEMY_DEVNET_RPC` secret holds its address. It passes `--since 3900`, so consecutive runs overlap, and `--max-fill` for wrapped SOL at 10 SOL in raw units. A failed run is the alert: GitHub emails the repository owner. After each intended change, commit the new baseline, and update the command line version in the workflow when releasing.
+`.github/workflows/monitor.yml` also runs `monitor --once` every hour, at minute 37, on GitHub against `monitoring/devnet.json`, first on the public devnet node and then on a second node when the `SECOND_DEVNET_RPC` secret holds its address. It passes `--since 3900`, so consecutive runs overlap, and `--max-fill` for wrapped SOL at 10 SOL in raw units. A failed run is the alert: GitHub emails the repository owner. After each intended change, commit the new baseline, and update the command line version in the workflow when releasing.
 
 Alerts go to the journal and to the webhook, which should page a person, for example a chat or paging service. After each intended change, write the new baseline and run `sudo systemctl restart intent-engine-monitor`. The monitor cannot report its own death: alert on the unit failing, and watch the webhook for silence.
 

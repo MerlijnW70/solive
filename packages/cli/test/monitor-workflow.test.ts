@@ -41,7 +41,7 @@ describe("the hosted monitor", () => {
   });
 
   it("asks a second node only when its address is set, and keeps that address out of the repository", () => {
-    expect(WORKFLOW).toContain("SECOND_RPC: ${{ secrets.ALCHEMY_DEVNET_RPC }}");
+    expect(WORKFLOW).toContain("SECOND_RPC: ${{ secrets.SECOND_DEVNET_RPC }}");
     expect(WORKFLOW).toContain("if: env.SECOND_RPC != ''");
     expect(WORKFLOW).not.toMatch(/alchemy\.com|api-key|alch_/i);
   });
