@@ -244,10 +244,14 @@ jobs:
       - name: fuzz
         run: bash scripts/fuzz.sh 120
 
-  proofs:
+  kani:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [committee, rest]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
@@ -263,7 +267,24 @@ jobs:
           cargo install kani-verifier --locked --version "$KANI_VERSION"
           cargo kani setup --use-local-bundle "$bundle"
       - name: prove
-        run: bash scripts/kani.sh
+        env:
+          SHARD: ${{ matrix.shard }}
+        run: |
+          modules=$(sed -n "s/^mod \([a-z_]*\);$/\1/p" tests/proofs/src/lib.rs)
+          if [ "$SHARD" = committee ]; then picked=committee; else picked=$(printf "%s\n" $modules | grep -vx committee); fi
+          test -n "$picked"
+          bash scripts/kani.sh $(printf -- "--harness %s:: " $picked)
+
+  proofs:
+    if: always() && github.event_name != 'schedule'
+    needs: kani
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: every shard proved
+        env:
+          RESULT: ${{ needs.kani.result }}
+        run: test "$RESULT" = success
 
   sign-off:
     if: github.event_name == 'pull_request'
