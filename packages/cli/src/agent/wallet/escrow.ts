@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 import { feeBpsFor, formatAmount, isMemoUrl, Kind, MEMO_URL_RULE, NATIVE_MINT, splitFees } from "@intent-engine/core";
-import { chainTime, loadConfig, mintOf, plainHttpOnPublic } from "@intent-engine/client";
+import { chainTime, loadConfig, mintOf, plainHttpOnPublic, WARN_NO_JUDGE_KEY } from "@intent-engine/client";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
@@ -30,6 +30,9 @@ export const NO_SPEC_HASH = `no spec_hash, so workers cannot find this escrow wi
 export const JOB_LIVE = `job live; ${tool("wallet_check_delivery")} to watch for work, then ${tool("wallet_attest")} its earliest announcer`;
 
 export const SPEC_MUST = "the spec must say what to deliver, in what form, and how it is checked";
+
+export const SPEC_NO_ANSWER =
+  "the earliest announcer is paid, so for work anyone could compute keep the answer and its sha256 out of the spec, or another wallet can build it and announce first; for such work open claims with intent-engine claims open, which reserve the job for one worker";
 
 export const recordAccountWhy = (mint: Address) =>
   `Why: the program needs a token account for the recorded output ${mint} even though an escrow pays nothing into it; later escrows that record the same token reuse it`;
@@ -67,7 +70,7 @@ export const walletEscrow = define({
     attestor: account("the wallet whose signature alone releases the escrow, such as this wallet's own address to judge the work yourself, or a committee's address; at or above the token's committee floor it must be a committee of 2 or more"),
     min_result: optional(amount("least result the attestor may attest, a plain count not whole tokens; default 1")),
     max_result: optional(amount("greatest result the attestor may attest, a plain count not whole tokens; default min_result")),
-    spec_hash: optional(hex32(`64 hex: the sha256 of the acceptance spec the attestor must verify; ${SPEC_MUST}. Setting it binds the release to a signature over that exact spec, so the attestor cannot sign a generic result`)),
+    spec_hash: optional(hex32(`64 hex: the sha256 of the acceptance spec the attestor must verify; ${SPEC_MUST}. Setting it binds the release to a signature over that exact spec, so the attestor cannot sign a generic result; never put the answer or its sha256 in the spec of work others could compute`)),
     spec_url: optional(text(`where the acceptance spec is published, ${MEMO_URL_RULE}; needs spec_hash. Recorded in a memo this wallet signs with the escrow`)),
     judge_fee: optional(text("whole tokens of sell paid to the attestor out of the escrow when it settles, such as 0.001; needs spec_hash and must be below amount")),
     expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds the escrow stays open once sent; default ${ESCROW_EXPIRES_IN}`)),
@@ -112,7 +115,13 @@ export const walletEscrow = define({
       };
     }, JOB_LIVE)) as Record<string, unknown>;
     const summary = [...explainedSetup((escrowed["summary"] as string[]) ?? [], buy), ...(settled === undefined ? [] : [await feeLine(ctx, settled)])];
-    const warnings = [...((escrowed["warnings"] as string[]) ?? []), ...(preflight === undefined ? [] : [preflight]), ...(specHash === undefined ? [NO_SPEC_HASH] : [])];
+    const signer = await signerOf(ctx);
+    const ownKey = input.attestor === signer.address && signer.device === undefined;
+    const warnings = [
+      ...((escrowed["warnings"] as string[]) ?? []).filter((line) => !(ownKey && line.startsWith(WARN_NO_JUDGE_KEY))),
+      ...(preflight === undefined ? [] : [preflight]),
+      ...(specHash === undefined ? [NO_SPEC_HASH] : input.send === true ? [] : [SPEC_NO_ANSWER]),
+    ];
     return { ...escrowed, summary, warnings };
   },
 });

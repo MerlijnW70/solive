@@ -83,7 +83,7 @@ export async function jobCommand(command: JobCommand, runtime: Runtime, transpor
     case "jobs":
       return {
         jobs: (await pricedJobs(transport, command, (await loadConfig(transport)).config)).map(
-          ({ netPay, payable, claimedBy, claimEnds, waiting, freezeAuthority, ...job }) => ({
+          ({ netPay, payable, claimedBy, claimEnds, waiting, freezeAuthority, pays, ...job }) => ({
             ...job,
             net_pay: netPay,
             payable,

@@ -1,4 +1,5 @@
 import type { Address } from "@solana/kit";
+import { formatAmount } from "@intent-engine/core";
 import {
   type Job,
   type JobClaim,
@@ -77,19 +78,29 @@ export async function jobsWanted(
   return lists.flat().sort(latestFirst).slice(0, JOBS_LIMIT);
 }
 
-export type PricedJob = Job & JobPay & JobClaim & { freezeAuthority: Address | null };
+export type PricedJob = Job & JobPay & JobClaim & { pays: string | null; freezeAuthority: Address | null };
+
+async function wholeTokens(raw: bigint, read: Promise<number>): Promise<string | null> {
+  try {
+    return formatAmount(raw, await read);
+  } catch {
+    return null;
+  }
+}
 
 export async function pricedJobs(transport: Transport, wanted: JobsWanted, terms: PayTerms): Promise<PricedJob[]> {
   const mintsOf = mintsOnce(transport);
   const decimalsOf = decimalsOnce(transport, mintsOf);
   const jobs = await jobsWanted(transport, wanted, decimalsOf);
-  const [pays, claims, freezes] = await Promise.all([
+  const [pays, claims, freezes, whole] = await Promise.all([
     jobPays(transport, jobs, terms, decimalsOf),
     loadClaimsOf(transport, jobs.map(({ intent }) => intent)),
     Promise.all(jobs.map(({ inputMint }) => freezeAuthorityRead(mintsOf(inputMint)))),
+    Promise.all(jobs.map(({ sells, inputMint }) => wholeTokens(sells, decimalsOf(inputMint)))),
   ]);
   return jobs.map((job, i) => ({
     ...job,
+    pays: whole[i] ?? null,
     ...(pays[i] ?? { netPay: "0", payable: false }),
     ...jobClaimOf(claims[i] ?? null),
     freezeAuthority: freezes[i] ?? null,

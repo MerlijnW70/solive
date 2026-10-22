@@ -102,7 +102,9 @@ describe("the company-only job guide", () => {
     expect(delivered.summary[0]).toBe(`Announces: the work with sha256 ${work}, for the proof escrow ${vars["INTENT"]}, as the commitment ${commitmentOf(vars["INTENT"] as Address, worker.address, await deliverySalt(worker, vars["INTENT"] as Address, work), work)}, which binds it to ${worker.address} and a salt only its key derives`);
     expect(delivered.summary[1]).toBe(`Seals: the salt and the url ${vars["WORK_URL"]}, so only the judge ${owner.address} can read it`);
     h.env[ENV_KEYPAIR] = "owner.json";
-    expect(PAGE).toContain("The link and the work's hash are public; the work is not.");
+    expect(PAGE).toContain("`deliver` seals the link to the judge and hides the work's hash until a release records it.");
+    expect(PAGE).toContain("Without private hosting, upload the work to a public host under a long random path or file name, such as 32 random hex characters, so nobody can guess the link.");
+    expect(PAGE).toContain("Run `deliver` right after the upload: the earliest announcer is paid");
   }, 60_000);
 
   it("seals the spec to invited wallets, lets an invited worker read it and seal the work to the judge, and lets the judge open it", async () => {

@@ -47,7 +47,7 @@ import {
   keylessJudges,
   tokenAccountIfMissing,
   type Transport,
-  WARN_NO_JUDGE_KEY,
+  noJudgeKey,
   wrapIfShort,
 } from "@intent-engine/client";
 import { define } from "./actions.js";
@@ -262,7 +262,7 @@ export const prepareCreate = define({
       warnings: [
         ...warningsOf(params, expiresAt, now, inputToken.scaled || outputToken.scaled),
         ...(elsewhere ? [WARN_RECEIVER] : []),
-        ...keyless.map((wallet) => `${WARN_NO_JUDGE_KEY}: the profile of ${wallet} publishes no encryption key`),
+        ...keyless.map(noJudgeKey),
       ],
       create_fee: BigInt(config.createFee),
       crank_bounty: BigInt(config.crankBounty),

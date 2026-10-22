@@ -7,7 +7,7 @@ import { createClient } from "@intent-engine/client";
 import { agentServer } from "../src/agent/mcp.js";
 import { claimsOf } from "../src/agent/claims.js";
 import { NO_CLOCK } from "../src/agent/wallet/receipt.js";
-import { NO_JOB_YET } from "../src/agent/jobs.js";
+import { NO_JOB_NOW, NO_JOB_YET } from "../src/agent/jobs.js";
 import { WAIT_MAX } from "../src/agent/wallet/guard.js";
 import { ata, h, NOW, runtime, transport, type World, world } from "./harness.js";
 
@@ -122,9 +122,9 @@ describe("solive_find_jobs with wait", () => {
     expect(h.sleeps).toEqual([]);
   });
 
-  it("without wait reads once and adds next only when it finds a job", async () => {
+  it("without wait reads once and hints a wait when it finds nothing", async () => {
     const client = await linked();
-    expect(await ok(client, {})).toEqual({ fee_bps: expect.any(Number), jobs: [] });
+    expect(await ok(client, {})).toEqual({ fee_bps: expect.any(Number), jobs: [], next: NO_JOB_NOW });
     const job = await open(w.inputMint, w.outputMint, 100n)();
     const value = await ok(client, {});
     expect(intents(value)).toEqual([job]);

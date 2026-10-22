@@ -74,6 +74,9 @@ export const missingKey = ({ delivery, key }: MissingKey, give: string = GIVE_KE
 
 export const WARN_NO_JUDGE_KEY = "this judge cannot use a Ledger for announced work";
 
+export const noJudgeKey = (wallet: Address): string =>
+  `${WARN_NO_JUDGE_KEY}: the profile of ${wallet} publishes no encryption key. It matters only if ${wallet} judges on a Ledger, which cannot open work sealed to its wallet and so refuses this escrow; to judge on a Ledger, that wallet makes a key with intent-engine profile encryption-key new and publishes it with profile set --encryption-key before this escrow is sent. A judge with a key file can ignore this`;
+
 export const noKeyAtCreation = (judge: Address, intent: Address): string =>
   `${judge} signs on a Ledger, which cannot open work sealed to the key derived from its wallet, and its profile named no encryption key when escrow ${intent} was made, so work sealed to that key could stall it; the escrow is refused. A hirer should name a judge whose profile publishes an encryption key before the escrow is made; nothing was run or paid`;
 

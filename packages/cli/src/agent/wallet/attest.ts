@@ -33,6 +33,9 @@ import { openingOutput, openingsFor, sendOpenings, skippedOf } from "./openings.
 import { invitedTo, notInvited } from "../../invites.js";
 import { notEarliest, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor, confirmedRelease } from "./delivery.js";
 
+export const RESULT_MEANS =
+  "the plain count the attestor signs, between the escrow's min_result and max_result; it does not change the amount paid. On a proof escrow it records that the work passed the spec, and is 1 unless the escrow allows a range";
+
 export const PAYEE_MOVED = "this wallet's token account for the escrowed token now belongs to someone else, so a release would not reach it; ask the payee for another wallet";
 
 export const RELEASE_CHANGED = "this release differs from its preview: the payee, amount, result, fee or the escrow itself changed, or no approval was given; preview it again and show the user";
@@ -60,11 +63,11 @@ export const walletAttest = define({
   }),
   output: object({
     intent: account(),
-    pay_to: account(),
-    payee: account("pay_to's token account that receives the escrow"),
+    pay_to: account("the wallet this release pays, as given"),
+    payee: account("pay_to's token account for the escrowed token, where the tokens land; it belongs to pay_to, and for SOL it holds wrapped SOL"),
     paid: text("whole tokens pay_to receives"),
     fee: text("whole tokens kept as fees"),
-    result: amount(),
+    result: amount(RESULT_MEANS),
     approval: text("pass it back with send: true; a send that would differ from this preview is refused"),
     digest: optional(text(DEVICE_DIGEST)),
     delivered_sha256: optional(text("the sha256 the release records in a memo; absent on a Ledger wallet, whose release records none")),

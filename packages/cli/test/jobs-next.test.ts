@@ -7,7 +7,8 @@ import { createClient } from "@intent-engine/client";
 import { agentServer } from "../src/agent/mcp.js";
 import { claimsOf } from "../src/agent/claims.js";
 import { type Serving, servedActions } from "../src/agent/everyday.js";
-import { checkDelivery, DELIVER_NEXT, prepareDeliver, walletCheckDelivery, walletDeliver } from "../src/agent/wallet/delivery.js";
+import { checkDelivery, DELIVER_NEXT, prepareDeliver, UNGUESSABLE_URL, walletCheckDelivery, walletDeliver } from "../src/agent/wallet/delivery.js";
+import { NO_JOB_NOW } from "../src/agent/jobs.js";
 import { ata, h, NOW, runtime, transport, type World, world } from "./harness.js";
 
 type Json = Record<string, unknown>;
@@ -62,21 +63,23 @@ describe("solive_find_jobs next hint", () => {
   for (const { label, serving, next } of MODES) {
     it(`names the next served steps once it finds a job: ${label}`, async () => {
       const client = await linked(serving);
-      expect(await found(client, {})).toEqual({ fee_bps: expect.any(Number), jobs: [] });
+      expect(await found(client, {})).toEqual({ fee_bps: expect.any(Number), jobs: [], next: NO_JOB_NOW });
       const job = await openJob();
       const listed = await found(client, {});
       expect((listed["jobs"] as { intent: Address }[]).map(({ intent }) => intent)).toEqual([job]);
       expect(listed["next"]).toBe(next);
       expect((await found(client, { wait: 3 }))["next"]).toBe(next);
       const served = new Set(servedActions(serving).map((action) => action.name));
-      expect([...next.matchAll(/solive_\w+/g)].map(([name]) => name).filter((name) => !served.has(name))).toEqual([]);
+      expect([...`${next} ${NO_JOB_NOW}`.matchAll(/solive_\w+/g)].map(([name]) => name).filter((name) => !served.has(name))).toEqual([]);
     });
   }
 });
 
 describe("delivery tool texts", () => {
-  it("tell the worker to keep the url and the work unshared, not to host privately", () => {
-    expect(walletDeliver.description).toContain("Host the work at a url nobody but the judge knows, give its exact sha256, and keep both unshared until this lands.");
+  it("tell the worker to keep the url unguessable without private hosting and to announce right after hosting", () => {
+    expect(walletDeliver.description).toContain("Host the work at a url nobody can guess, such as a long random path, and announce right after hosting.");
+    expect(UNGUESSABLE_URL).toBe("without private hosting, use a public host under a long random path or file name, such as 32 random hex characters, so nobody can guess it, and announce right after hosting");
+    expect(JSON.stringify(walletDeliver.input.json)).toContain(UNGUESSABLE_URL);
     expect(prepareDeliver.description).toContain("host the work at a url the attestor can fetch and nobody else knows");
     expect(prepareDeliver.description).toContain("share neither the url nor the work until the announcement lands");
     for (const text of [walletDeliver.description, prepareDeliver.description]) {

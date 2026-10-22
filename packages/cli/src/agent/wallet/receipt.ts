@@ -7,6 +7,7 @@ import { AgentRefusal } from "../problems.js";
 import { account, amount, flag, integer, object, optional, text } from "../schema.js";
 import { WAIT_MAX, signerOf, sha256Of } from "./guard.js";
 import { poll } from "./wait.js";
+import { RESULT_MEANS } from "./attest.js";
 import { RELEASE_INPUT, releaseOf, otherLifecycle, coverageOf } from "./record.js";
 import { RELEASE_UNKNOWN, outlives, releaseLookup, namedRelease, releasedMint, createdMint, heldMint } from "./releases.js";
 
@@ -57,12 +58,12 @@ const receiptOutput = object({
       "false when the history read was not enough: with released false, no release was found in it, so released is unknown rather than known; with released true, a follow-up recording the delivered work, or a later lifecycle of the escrow address, may be missing from it",
     ),
   ),
-  paid_to: optional(account("the wallet the release paid")),
-  payee: optional(account("the token account the release paid")),
+  paid_to: optional(account("the wallet the release paid, the pay_to its attestor gave; it owns payee")),
+  payee: optional(account("the token account the tokens landed in, owned by paid_to; for SOL it holds wrapped SOL")),
   paid: optional(text("whole tokens the payee received")),
   mint: optional(account("the token the release paid")),
   attestor: optional(account()),
-  result: optional(amount()),
+  result: optional(amount(RESULT_MEANS)),
   recipients: optional(amount("how many co-authors a split release paid")),
   signature: optional(text("the release's transaction")),
   delivered_sha256: optional(text("the sha256 the release recorded, if any, in its own memo or in a follow-up transaction its attestor signed")),

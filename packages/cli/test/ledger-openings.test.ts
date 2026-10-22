@@ -1,7 +1,7 @@
 import { type Address, generateKeyPairSigner, getBase16Encoder, type KeyPairSigner, signBytes } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import { IntentStatus } from "@intent-engine/core";
-import { createClient, keepsKey, WARN_NO_JUDGE_KEY } from "@intent-engine/client";
+import { createClient, keepsKey, noJudgeKey, WARN_NO_JUDGE_KEY } from "@intent-engine/client";
 import { OPENINGS_NEED_FEE_PAYER } from "../src/agent/wallet/openings.js";
 import { SALTS_SEALED } from "../src/agent/wallet/record.js";
 import { ENV_KEYPAIR } from "../src/clusters.js";
@@ -31,7 +31,7 @@ describe("the MCP wallet's encryption key", () => {
     const terms = ["--units", "raw", "--amount-in", "100", "--min-result", "1", "--max-result", "1", "--nonce", "5", "--spec-hash", "ab".repeat(32)];
     const shown = await run([...args, ...terms, "--attestor", keyless], undefined, { "owner.json": j.w.owner });
     expect([shown.code, shown.err]).toEqual([EXIT_OK, ""]);
-    expect(shown.json()["warnings"]).toContain(`${WARN_NO_JUDGE_KEY}: the profile of ${keyless} publishes no encryption key`);
+    expect(shown.json()["warnings"]).toContain(noJudgeKey(keyless));
     const keyed = await run([...args, ...terms, "--attestor", j.key.address], undefined, { "owner.json": j.w.owner });
     expect(JSON.stringify(keyed.json()["warnings"])).not.toContain(WARN_NO_JUDGE_KEY);
   });

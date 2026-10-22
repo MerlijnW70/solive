@@ -3,6 +3,7 @@ import { WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
 import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, PREVIEW_FIRST, PREVIEW_ONLY } from "../src/agent/wallet/guard.js";
 import { ORDER_DONE } from "../src/agent/wallet/trade.js";
 import { JOB_LIVE } from "../src/agent/wallet/escrow.js";
+import { NO_JOB_NOW } from "../src/agent/jobs.js";
 import { WALLET_ACTIONS, WALLET_NOTICE } from "../src/agent/wallet.js";
 
 const words = (text: string) => text.split(/\s+/).filter((token) => /[\p{L}\p{N}]/u.test(token)).length;
@@ -23,7 +24,7 @@ describe("the wallet server's texts", () => {
   });
 
   it("keeps the forward hints small", () => {
-    for (const hint of [PREVIEW_ONLY, PREVIEW_APPROVAL_NEXT, ORDER_DONE, JOB_LIVE]) {
+    for (const hint of [PREVIEW_ONLY, PREVIEW_APPROVAL_NEXT, ORDER_DONE, JOB_LIVE, NO_JOB_NOW]) {
       expect(words(hint)).toBeLessThanOrEqual(16);
     }
   });

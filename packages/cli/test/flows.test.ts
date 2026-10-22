@@ -27,7 +27,7 @@ import {
   MANDATE_NONCE_BIT,
 } from "@intent-engine/core";
 import { COMPUTE_BUDGET_ADDRESS } from "@intent-engine/solver";
-import { BlockhashExpired, FailedOnChain, loadConfig, type Transport, WARN_NO_JUDGE_KEY } from "@intent-engine/client";
+import { BlockhashExpired, FailedOnChain, loadConfig, type Transport, noJudgeKey } from "@intent-engine/client";
 import { createCost, rentRate } from "../src/agent/budget.js";
 import { AUTHORITY_NEXT, follow, followGap, type Runtime } from "../src/commands.js";
 import { CANCELS_FAILED, CANCELS_UNKNOWN, execute, FlowRefused, NOT_SENT } from "../src/flows.js";
@@ -181,7 +181,7 @@ describe("command line flows", () => {
       keys,
     );
     expect(attested.json()["warnings"]).toHaveLength(2);
-    expect(attested.json()["warnings"]).toContain(`${WARN_NO_JUDGE_KEY}: the profile of ${attestor} publishes no encryption key`);
+    expect(attested.json()["warnings"]).toContain(noJudgeKey(attestor));
     const listed = (await cli(["list", "--keypair", "owner.json"], keys)).json() as Json;
     expect(listed["intents"].map((i: Json) => i["order"]["kind"]).sort()).toEqual(["attested", "dutch", "limit"]);
     expect((await cli(["list", "--owner", w.owner.address], {})).json()).toEqual(listed);

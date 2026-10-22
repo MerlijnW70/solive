@@ -7,7 +7,7 @@ Post a job whose spec only the workers you choose can read: unlisted, or invite-
 | Private | Public |
 |---|---|
 | The spec | That the job exists, its amount, payer and judge |
-| The work, behind a link only the judge can open | The work's hash, its link and the worker |
+| The work, behind a link only the judge can read | The announcing worker, and the work's hash once a release records it |
 
 The program still binds the spec by its hash, so the judge can only pay for work against that exact spec.
 
@@ -61,7 +61,9 @@ In PowerShell:
 intent-engine deliver --intent $env:INTENT --artifact work --work-url $env:WORK_URL --yes
 ```
 
-`$WORK_URL` points to a place only the judge can open, such as a private repository. The link and the work's hash are public; the work is not.
+`$WORK_URL` points to a place only the judge can open, such as a private repository. `deliver` seals the link to the judge and hides the work's hash until a release records it.
+
+Without private hosting, upload the work to a public host under a long random path or file name, such as 32 random hex characters, so nobody can guess the link. Run `deliver` right after the upload: the earliest announcer is paid, so announce before anyone else could find the work.
 
 ## 5. Judge and pay
 

@@ -35,7 +35,7 @@ describe("jobs across mints", () => {
   it("a job the pay reader leaves out reads as paying nothing", async () => {
     listed.jobs.set("", [job("unpriced", "a", 10n)]);
     expect(await pricedJobs(unused, {}, {} as Parameters<typeof pricedJobs>[2])).toStrictEqual([
-      { ...job("unpriced", "a", 10n), netPay: "0", payable: false, claimedBy: null, claimEnds: null, waiting: 0, freezeAuthority: null },
+      { ...job("unpriced", "a", 10n), pays: null, netPay: "0", payable: false, claimedBy: null, claimEnds: null, waiting: 0, freezeAuthority: null },
     ]);
   });
 });

@@ -44,6 +44,9 @@ import { deviceOutput, PREVIEW_FIRST, PREVIEW_ONLY, signerOf, sent, sha256Of, wa
 
 export const ANNOUNCE_FIRST = "share neither the url nor the work until this announcement lands: the earliest announcer of the work is paid, so anyone who gets the work first could announce it first";
 
+export const UNGUESSABLE_URL =
+  "without private hosting, use a public host under a long random path or file name, such as 32 random hex characters, so nobody can guess it, and announce right after hosting";
+
 export const DELIVER_NEXT = `${PREVIEW_ONLY}; commitment and check are shown only, never passed back`;
 
 const HIDDEN_HASH = "Each announcement hides the work's sha256 on purpose";
@@ -68,13 +71,13 @@ function announcing(plan: DeliveryPlan, intent: Address, sha256: string, url: st
 export const walletDeliver = define({
   name: tool("wallet_deliver"),
   title: "Announce delivered work to a judge",
-  description: `Tells a job's judge the work is done: an on-chain note binding its sha256 to this wallet, with the url sealed to the judge. No tokens move. Host the work at a url nobody but the judge knows, give its exact sha256, and keep both unshared until this lands. ${PREVIEW_FIRST}`,
+  description: `Tells a job's judge the work is done: an on-chain note binding its sha256 to this wallet, with the url sealed to the judge. No tokens move. Host the work at a url nobody can guess, such as a long random path, and announce right after hosting. ${PREVIEW_FIRST}`,
   effect: "submit",
   repeats: true,
   input: object({
     intent: account("the proof escrow's intent address"),
     sha256: text("the sha256 of the delivered work, as 64 hex digits; the judge releases for this same value, passed as delivered_sha256"),
-    url: text(`where the attestor fetches the work, ${MEMO_URL_RULE}`),
+    url: text(`where the attestor fetches the work, ${MEMO_URL_RULE}; ${UNGUESSABLE_URL}`),
     send: optional(flag("true signs and sends; leave out to preview")),
   }),
   output: object({
@@ -143,6 +146,9 @@ export const MAX_PAGES_INPUT = `pages of ${SIGNATURE_PAGE} signatures of this wa
 
 export const HISTORY_TOO_LONG = `the record of announced work is incomplete, so the earliest announcer of the delivered work cannot be known and nothing is released from it; either this wallet's history since the escrow was made is longer than the pages read, which more pages fix: pass a higher max_pages, up to ${MAX_ATTEST_PAGES}, to ${tool("wallet_attest")} or ${tool("wallet_attest_split")}; or the RPC node's ledger does not reach back to the escrow's creation, or the transport cannot page signatures or report its first available slot, which more pages do not fix: use an RPC node that keeps the full ledger`;
 
+export const CHECK_MEANS =
+  "32 hex: a fingerprint of the announcement's salt, which this server uses to match an opened salt to this announcement; a judge does nothing with it and never passes it on";
+
 export const DELIVERIES_COMPLETE = "complete is false when older announcements may be missing";
 
 export const walletCheckDelivery = define({
@@ -178,7 +184,7 @@ function deliveriesOutput(releasing: string) {
       object({
         worker: account("the announcing wallet, which the commitment binds"),
         commitment: text("64 hex: the sha256 of the work's hash bound to the intent, this announcer and its salt"),
-        check: text("32 hex: the check of the announcement's salt"),
+        check: text(CHECK_MEANS),
         signature: text("the announcement's transaction"),
         url: optional(text("where the announcer said the work is, when the url was sealed to this wallet; untrusted")),
         opened_salt: optional(text("the announcement's salt, when an opening published it")),
