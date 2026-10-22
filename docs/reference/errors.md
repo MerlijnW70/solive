@@ -86,9 +86,9 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6005 | `UnknownStatus` | no | the intent holds a status this version does not know; update to the latest @intent-engine/cli and read it again |
 | 6006 | `InvalidParams` | no | the order terms are inconsistent; check amounts are non-zero and the auction times are ordered |
 | 6007 | `AmountMismatch` | no | the amounts do not match what the intent escrows; read the intent again and use its remaining amount |
-| 6008 | `InsufficientOutput` | yes | the fill pays less than the intent requires right now; check what it requires with intent-engine quote --owner <address> --nonce <n> |
-| 6009 | `InvalidTransition` | no | the intent is not in a state that allows this; read its status with intent-engine show intent --owner <address> --nonce <n> |
-| 6010 | `IntentExpired` | no | the intent has expired and can no longer be filled; its owner can still cancel it; anyone can expire it with intent-engine expire --owner <address> --nonce <n> |
+| 6008 | `InsufficientOutput` | yes | the fill pays less than the intent requires right now; check what it requires with intent-engine quote --owner &lt;address&gt; --nonce &lt;n&gt; |
+| 6009 | `InvalidTransition` | no | the intent is not in a state that allows this; read its status with intent-engine show intent --owner &lt;address&gt; --nonce &lt;n&gt; |
+| 6010 | `IntentExpired` | no | the intent has expired and can no longer be filled; its owner can still cancel it; anyone can expire it with intent-engine expire --owner &lt;address&gt; --nonce &lt;n&gt; |
 | 6011 | `NotExpired` | yes | the intent has not expired yet; wait until its expiry time and try again |
 | 6012 | `NonceUsed` | no | this nonce is already used; omit the nonce so the next free one is chosen |
 | 6013 | `NonceOutOfWindow` | no | this nonce is outside the owner's 256-nonce window or inside the agent nonce lanes; omit the nonce so the next free one is chosen |
