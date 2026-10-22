@@ -107,7 +107,7 @@ describe("agent problems", () => {
     expect(TOKEN_PROBLEMS[17]?.retryable).toBe(true);
     expect([TOKEN_PROBLEMS[36]?.code, TOKEN_PROBLEMS[36]?.retryable]).toEqual(["NoMemo", false]);
     expect(TOKEN_PROBLEMS[42]?.code).toBe("CpiGuardTransferBlocked");
-    expect(TOKEN_PROBLEMS[42]?.hint).toContain("prepare_signed_intent");
+    expect(TOKEN_PROBLEMS[42]?.hint).toContain("intent-engine signed prepare");
     expect([TOKEN_PROBLEMS[3]?.code, TOKEN_PROBLEMS[4]?.code, TOKEN_PROBLEMS[17]?.code]).toEqual([
       "MintMismatch",
       "OwnerMismatch",

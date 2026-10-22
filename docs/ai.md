@@ -14,7 +14,7 @@ Claude Code, on any system:
 npx -y @intent-engine/cli add-to claude
 ```
 
-It runs `claude mcp add` with the server command your system needs.
+It runs `claude mcp add --scope user` with the server command your system needs, so the server is there in every project.
 
 Codex, on any system:
 

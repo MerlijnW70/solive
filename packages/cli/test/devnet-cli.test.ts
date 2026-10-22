@@ -122,7 +122,7 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet cli sweep", 
     try {
       expect(ok("version")).toEqual({ version: VERSION });
       expect(String(ok("help")["raw"])).toContain("create swap|limit|dutch|attested");
-      expect(String(ok("help create")["raw"])).toContain("create swap|limit|dutch|attested --keypair <file>");
+      expect(String(ok("help create")["raw"])).toContain("create swap|limit|dutch|attested [--keypair <file>]");
       ok("domain");
       const config = ok("show config");
       ok(`pda --owner ${owner.address} --nonce 0`);

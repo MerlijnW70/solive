@@ -118,6 +118,8 @@ function cliPage(): string {
     "",
     `\`${ENV_KEYPAIR}\` fills in \`--keypair\` and \`${ENV_URL}\` fills in \`--url\` when they are not given. \`--url\` takes an RPC URL or one of ${Object.keys(CLUSTERS).map((c) => `\`${c}\``).join(", ")}.`,
     "",
+    `When neither \`--keypair\` nor \`${ENV_KEYPAIR}\` is given, the wallet \`setup\` saved is the default, which is why \`--keypair\` is in brackets below; only \`signed submit\` always needs its relayer's \`--keypair\`.`,
+    "",
     `\`--keypair\` also takes a Ledger, as ${LEDGER_FORMS.map((f) => `\`${f}\``).join(", ")}, for ${LEDGER_COMMANDS.map((c) => `\`${c}\``).join(", ")}; every other command refuses one and needs a key file.`,
     "",
     ...body,

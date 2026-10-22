@@ -988,7 +988,7 @@ describe("global options", () => {
     expect(parse(["help", "create"])).toEqual({ name: "help", verb: "create" });
     expect(parse(["cancel", "--help"])).toEqual({ name: "help", verb: "cancel" });
     expect(usageOf("cancel")).toEqual({
-      usage: "cancel --keypair <file> --nonce <n> [--close] [--yes]",
+      usage: "cancel [--keypair <file>] --nonce <n> [--close] [--yes]",
       options: ["--url", "--priority-fee", "--keypair", "--yes", "--nonce", "--close", "--output", "--help"],
     });
     expect(usageOf("domain").usage).toBe("domain");

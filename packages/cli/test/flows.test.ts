@@ -697,9 +697,9 @@ describe("command line flows", () => {
   it("answers help, prints text on request and honours the environment and cluster names", async () => {
     const help = await cli(["help", "cancel"], {});
     expect(help.out).toBe(
-      "usage: cancel --keypair <file> --nonce <n> [--close] [--yes]\noptions: --url, --priority-fee, --keypair, --yes, --nonce, --close, --output, --help",
+      "usage: cancel [--keypair <file>] --nonce <n> [--close] [--yes]\noptions: --url, --priority-fee, --keypair, --yes, --nonce, --close, --output, --help",
     );
-    expect((await cli(["approve", "--help"], {})).out.startsWith("usage: approve --keypair <file>")).toBe(true);
+    expect((await cli(["approve", "--help"], {})).out.startsWith("usage: approve [--keypair <file>]")).toBe(true);
     const text = await cli(["show", "config", "--output", "text"], {});
     expect(text.out.split("\n")).toContain(`feeRecipient: ${w.feeRecipient.address}`);
     const preview = await cli([...create("swap", "--amount-in", "400", "--min-out", "300"), "--output", "text"], keys);

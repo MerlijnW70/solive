@@ -24,6 +24,13 @@ const failed = (app: App) => (code: number, output: string) =>
 
 export const claudeFailed = failed(CLAUDE);
 
+export const CLAUDE_SCOPE = ["--scope", "user"];
+
+const ALREADY_EXISTS = /already exists/i;
+
+export const claudeExists = (limits: readonly string[]) =>
+  `${PRODUCT_SLUG} is already added to Claude Code for your user, so nothing was changed; to replace it, run ${[CLAUDE, "mcp", "remove", ...CLAUDE_SCOPE, PRODUCT_SLUG].join(" ")}, then ${["npx", "-y", CLI_PACKAGE, "add-to", CLAUDE, ...limits].join(" ")}`;
+
 export const codexFailed = failed(CODEX);
 
 export const codexConfigPath = (runtime: Pick<Runtime, "env" | "home">): string =>
@@ -96,10 +103,13 @@ async function setCodexTimeout(runtime: Runtime): Promise<object> {
 export async function addTo(app: App, limits: readonly string[], runtime: Runtime): Promise<object> {
   const target = APPS[app];
   const server = serverCommand(runtime.platform, limits);
-  const args = ["mcp", "add", PRODUCT_SLUG, "--", ...server];
+  const args = ["mcp", "add", ...(app === CLAUDE ? CLAUDE_SCOPE : []), PRODUCT_SLUG, "--", ...server];
   const launched = await runtime.launch(app, args);
   if (launched === null) {
     throw new Error(target.missing);
+  }
+  if (launched.code !== 0 && app === CLAUDE && ALREADY_EXISTS.test(launched.output)) {
+    throw new Error(claudeExists(limits));
   }
   if (launched.code !== 0) {
     throw new Error(target.failed(launched.code, launched.output));

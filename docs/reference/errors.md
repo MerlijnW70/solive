@@ -83,19 +83,19 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6002 | `Truncated` | no | the instruction data was cut short; rebuild the transaction with this server |
 | 6003 | `NonCanonical` | no | the instruction data was not encoded canonically; rebuild the transaction with this server |
 | 6004 | `UnknownKind` | no | the intent kind is not one the program knows; use swap, limit, dutch or attested |
-| 6005 | `UnknownStatus` | no | the intent holds a status this version does not know; read it again with solive_get_intent |
+| 6005 | `UnknownStatus` | no | the intent holds a status this version does not know; update to the latest @intent-engine/cli and read it again |
 | 6006 | `InvalidParams` | no | the order terms are inconsistent; check amounts are non-zero and the auction times are ordered |
 | 6007 | `AmountMismatch` | no | the amounts do not match what the intent escrows; read the intent again and use its remaining amount |
-| 6008 | `InsufficientOutput` | yes | the fill pays less than the intent requires right now; quote again with solive_quote |
-| 6009 | `InvalidTransition` | no | the intent is not in a state that allows this; read it with solive_get_intent |
-| 6010 | `IntentExpired` | no | the intent has expired and can no longer be filled; its owner can still cancel it; anyone can expire and close it with solive_prepare_crank |
+| 6008 | `InsufficientOutput` | yes | the fill pays less than the intent requires right now; check what it requires with intent-engine quote --owner <address> --nonce <n> |
+| 6009 | `InvalidTransition` | no | the intent is not in a state that allows this; read its status with intent-engine show intent --owner <address> --nonce <n> |
+| 6010 | `IntentExpired` | no | the intent has expired and can no longer be filled; its owner can still cancel it; anyone can expire it with intent-engine expire --owner <address> --nonce <n> |
 | 6011 | `NotExpired` | yes | the intent has not expired yet; wait until its expiry time and try again |
 | 6012 | `NonceUsed` | no | this nonce is already used; omit the nonce so the next free one is chosen |
 | 6013 | `NonceOutOfWindow` | no | this nonce is outside the owner's 256-nonce window or inside the agent nonce lanes; omit the nonce so the next free one is chosen |
 | 6014 | `NonceRegression` | no | the nonce base can only move forward |
 | 6015 | `Unauthorized` | no | a signer or a named account does not match the one recorded on-chain (owner, rent payer, mandate agent, admin, guardian or upgrade authority); let this server pick the accounts and sign with the recorded key |
-| 6016 | `CreatePaused` | yes | creating intents is paused by the guardian or admin; try again later; paused.create in solive_get_config shows the flag |
-| 6017 | `KindDisabled` | no | this intent kind is not enabled; see kinds[].enabled in solive_get_config |
+| 6016 | `CreatePaused` | yes | creating intents is paused by the guardian or admin; try again later; intent-engine show config shows the pause bits in paused |
+| 6017 | `KindDisabled` | no | this intent kind is not enabled; intent-engine show config shows the enabled kinds as bits in enabledKinds |
 | 6018 | `UnknownKindBits` | no | the kind mask names kinds the program does not know |
 | 6019 | `InvalidPauseFlags` | no | the pause flags are empty or name pauses the program does not know; use create, fill or all |
 | 6020 | `FeeTooHigh` | no | the configured fee exceeds the program's maximum |
@@ -106,14 +106,14 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6025 | `RefundNotCanonical` | no | refunds go only to the owner's canonical token account; let this server pick accounts |
 | 6026 | `ReceiverNotAllowed` | no | the receiver account is not owned by the named receiver authority, the authority is an engine account, or (for a mandate) the receiver is not an account the owner controls |
 | 6027 | `AuctionOutlivesExpiry` | no | the dutch auction must end at or before the intent expires |
-| 6028 | `FillPaused` | yes | fills are paused by the guardian or admin, and with them new claims and stand-by joins; try again later; paused.fill in solive_get_config shows the flag |
+| 6028 | `FillPaused` | yes | fills are paused by the guardian or admin, and with them new claims and stand-by joins; try again later; intent-engine show config shows the pause bits in paused |
 | 6029 | `FeeAccountNotCanonical` | no | a fee must go to its payee's canonical token account (the treasury's, the agent's or the judge's); let this server pick it |
 | 6030 | `FeeAccountMissing` | no | a fee account was not passed: the treasury's, agent's or judge's at fill, or the relayer's at a signed create; create that token account and pass it |
 | 6031 | `SolverOutputNotAllowed` | no | the solver's output account is not acceptable for this fill |
 | 6032 | `SigProgram` | no | the signature instruction must come from the Ed25519 program |
 | 6033 | `SigHeader` | no | the Ed25519 instruction is malformed; rebuild it with this server |
 | 6034 | `SigPubkey` | no | the signature was made by a different key than the owner |
-| 6035 | `SigMessage` | no | the signed message does not match this intent; sign the exact message from solive_prepare_signed_intent |
+| 6035 | `SigMessage` | no | the signed message does not match this intent; sign the exact message solive_prepare_signed_intent returns on a server started with --relayer |
 | 6036 | `KindMismatch` | no | the instruction does not match the intent's kind |
 | 6037 | `ResultOutOfBounds` | no | the attested result is outside the intent's bounds |
 | 6038 | `SigMissing` | no | the Ed25519 signature instruction is missing; rebuild the transaction with this server |
@@ -131,7 +131,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6050 | `ExtMalformed` | no | the extension data is malformed: badly encoded, tags unsorted or repeated, or a partner with a zero key or zero bps |
 | 6051 | `ExtUnknown` | no | the extension data holds a field the program does not know |
 | 6052 | `FlagsUnknown` | no | the intent flags name options the program does not know; leave flags unset |
-| 6053 | `FillKindDisabled` | no | the admin stopped fills of this kind, and with them new claims and stand-by joins; see kinds[].fills_stopped in solive_get_config |
+| 6053 | `FillKindDisabled` | no | the admin stopped fills of this kind, and with them new claims and stand-by joins; intent-engine show config shows the stopped kinds as bits in fillDisabledKinds |
 | 6054 | `UnsupportedVersion` | no | an account has a version this program does not support |
 | 6055 | `AmountInMismatch` | no | the fill must sell exactly the intent's remaining amount; read the intent again |
 | 6056 | `EpochRegression` | no | the signing epoch can only move forward |
@@ -143,11 +143,11 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6062 | `PartnerAccountMissing` | yes | the partner has no token account for the input mint yet; it must be created before a fill |
 | 6063 | `PartnerAccountNotCanonical` | no | the partner fee must go to the partner's canonical token account |
 | 6064 | `MandateInvalid` | no | the mandate's terms are unsound: kinds must be swap, limit or dutch; per-intent cap above the agent fee; total at least the per-intent cap; max intents, max lifetime and floors non-zero; valid until a future time; a partner needs both key and bps; the agent neither empty nor the owner; or the owner has used every grant lane |
-| 6065 | `MandateExpired` | no | the mandate has expired; the owner must grant a new one with solive_prepare_mandate |
+| 6065 | `MandateExpired` | no | the mandate has expired; the owner must grant a new one with intent-engine mandate grant |
 | 6066 | `MandateKind` | no | the mandate does not allow this kind of intent |
 | 6067 | `MandateTtl` | no | the intent lives longer than the mandate allows; choose an earlier expiry within it |
 | 6068 | `MandateCap` | no | the intent draws more than the mandate's per-intent cap (amount sold plus agent fee); the owner set that cap, so stay within it or ask the owner, and never split or reword an order to get around it |
-| 6069 | `MandateBudget` | no | the mandate's total budget would be exceeded; check what remains with solive_get_mandate |
+| 6069 | `MandateBudget` | no | the mandate's total budget would be exceeded; check what remains with solive_get_mandate, served with --agent |
 | 6070 | `MandateCount` | no | the mandate has already created as many intents as it allows |
 | 6071 | `MandatePrice` | no | the minimum output is below the price floor the owner set; do not weaken the person's price on your own: tell them the order is cheaper than the owner allows, or ask for at least the floor |
 | 6072 | `MandateRevoked` | no | this mandate no longer stands: the owner revoked it, granted that id again, or advanced their signing epoch; the owner must grant a new one |
@@ -202,4 +202,4 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 4 | `OwnerMismatch` | no | a token account is not owned by the expected wallet |
 | 17 | `AccountFrozen` | yes | a token account is frozen by its issuer; try again once it is thawed |
 | 36 | `NoMemo` | no | a token account requires a memo on incoming transfers; its owner must turn that off before it can receive |
-| 42 | `CpiGuardTransferBlocked` | no | the owner's token account has CPI Guard on, which stops the engine moving tokens on the owner's signature; turn CPI Guard off; or create with solive_prepare_signed_intent, which draws through the engine's allowance |
+| 42 | `CpiGuardTransferBlocked` | no | the owner's token account has CPI Guard on, which stops the engine moving tokens on the owner's signature; turn CPI Guard off, or create a signed intent with intent-engine signed prepare, which draws through the engine's allowance |

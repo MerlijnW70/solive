@@ -2037,7 +2037,7 @@ describe("the cli reaches what the other surfaces do", () => {
     }
     expect(h.svm.getAccount(second).exists).toBe(true);
     expect(balance(w.ownerInput)).toBe(1_000n);
-    expect(usageOf("cancel").usage).toBe("cancel --keypair <file> --nonce <n> [--close] [--yes]");
+    expect(usageOf("cancel").usage).toBe("cancel [--keypair <file>] --nonce <n> [--close] [--yes]");
   });
 
   it("create takes pay to", async () => {

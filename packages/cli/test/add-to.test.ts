@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { PRODUCT_SLUG } from "@intent-engine/core";
 import { ADD_TO_NEEDS_APP, CLUSTERS, parse, usageOf } from "../src/args.js";
-import { CLAUDE_MISSING, CLI_PACKAGE, claudeFailed } from "../src/add-to.js";
+import { CLAUDE_MISSING, CLAUDE_SCOPE, CLI_PACKAGE, claudeExists, claudeFailed } from "../src/add-to.js";
 import { invocation, launch, notFound, WINDOWS_NOT_FOUND, type Launched } from "../src/launch.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main, nodeRuntime } from "../src/main.js";
 import { runtime } from "./harness.js";
@@ -35,11 +35,11 @@ describe("add-to claude", () => {
   it("adds the server through cmd /c on native Windows and says what it added", async () => {
     const run = await addTo(["add-to", "claude"], "win32", { code: 0, output: "Added stdio MCP server" });
     expect(run.code).toBe(EXIT_OK);
-    expect(run.launched).toEqual([{ program: "claude", args: ["mcp", "add", PRODUCT_SLUG, "--", "cmd", "/c", ...SERVER] }]);
+    expect(run.launched).toEqual([{ program: "claude", args: ["mcp", "add", "--scope", "user", PRODUCT_SLUG, "--", "cmd", "/c", ...SERVER] }]);
     expect(JSON.parse(run.out)).toEqual({
       added: PRODUCT_SLUG,
       to: "Claude Code",
-      ran: `claude mcp add ${PRODUCT_SLUG} -- cmd /c ${SERVER.join(" ")}`,
+      ran: `claude mcp add --scope user ${PRODUCT_SLUG} -- cmd /c ${SERVER.join(" ")}`,
       server: `cmd /c ${SERVER.join(" ")}`,
       next: "restart Claude Code, then ask it to set you up and make your first swap",
     });
@@ -50,7 +50,7 @@ describe("add-to claude", () => {
     for (const platform of ["linux", "darwin"]) {
       const run = await addTo(["add-to", "claude"], platform, { code: 0, output: "" });
       expect(run.code).toBe(EXIT_OK);
-      expect(run.launched).toEqual([{ program: "claude", args: ["mcp", "add", PRODUCT_SLUG, "--", ...SERVER] }]);
+      expect(run.launched).toEqual([{ program: "claude", args: ["mcp", "add", "--scope", "user", PRODUCT_SLUG, "--", ...SERVER] }]);
       expect(JSON.parse(run.out)).toMatchObject({ added: PRODUCT_SLUG, server: SERVER.join(" ") });
     }
   });
@@ -69,20 +69,42 @@ describe("add-to claude", () => {
   });
 
   it("reports a failing claude mcp add with what claude printed", async () => {
-    const run = await addTo(["add-to", "claude"], "linux", { code: 1, output: `MCP server ${PRODUCT_SLUG} already exists in local config\n` });
+    const run = await addTo(["add-to", "claude"], "linux", { code: 1, output: "error: unknown option '--scope'\n" });
     expect(run.code).toBe(EXIT_FAILED);
-    expect(run.err).toBe(`claude mcp add failed with exit code 1, so nothing was added: MCP server ${PRODUCT_SLUG} already exists in local config`);
+    expect(run.err).toBe("claude mcp add failed with exit code 1, so nothing was added: error: unknown option '--scope'");
     expect(run.out).toBe("");
     const silent = await addTo(["add-to", "claude"], "win32", { code: 5, output: " \n" });
     expect(silent.err).toBe(claudeFailed(5, ""));
     expect(silent.err).toBe("claude mcp add failed with exit code 5, so nothing was added: it printed nothing");
   });
 
+  it("says the server is already added and gives the exact commands that replace it", async () => {
+    const run = await addTo(["add-to", "claude"], "linux", { code: 1, output: `MCP server ${PRODUCT_SLUG} already exists in user config\n` });
+    expect(run.code).toBe(EXIT_FAILED);
+    expect(run.err).toBe(claudeExists([]));
+    expect(run.err).toBe(
+      `${PRODUCT_SLUG} is already added to Claude Code for your user, so nothing was changed; to replace it, run claude mcp remove --scope user ${PRODUCT_SLUG}, then npx -y ${manifest.name} add-to claude`,
+    );
+    expect(run.out).toBe("");
+    const limited = await addTo(["add-to", "claude", "--wallet-per-trade", "SOL=0.1"], "win32", { code: 1, output: `MCP server ${PRODUCT_SLUG} already exists in user config` });
+    expect(limited.err).toBe(
+      `${PRODUCT_SLUG} is already added to Claude Code for your user, so nothing was changed; to replace it, run claude mcp remove --scope user ${PRODUCT_SLUG}, then npx -y ${manifest.name} add-to claude --wallet-per-trade SOL=0.1`,
+    );
+    expect(parse(["add-to", "claude", "--wallet-per-trade", "SOL=0.1"], {})).toEqual({ name: "add-to", app: "claude", limits: ["--wallet-per-trade", "SOL=0.1"] });
+  });
+
+  it("registers the server for the user, the scope claude mcp add and remove both take", async () => {
+    const run = await addTo(["add-to", "claude"], "linux", { code: 0, output: "" });
+    expect(run.launched[0]?.args.slice(0, 4)).toEqual(["mcp", "add", ...CLAUDE_SCOPE]);
+    expect(CLAUDE_SCOPE).toEqual(["--scope", "user"]);
+    expect(JSON.parse(run.out)).toMatchObject({ ran: `claude mcp add --scope user ${PRODUCT_SLUG} -- ${SERVER.join(" ")}` });
+  });
+
   it("passes wallet limits on to the server once they parse", async () => {
     const run = await addTo(["add-to", "claude", "--wallet-per-trade", "SOL= 0.1", "--wallet-per-hour", "SOL=0.5"], "linux", { code: 0, output: "" });
     expect(run.code).toBe(EXIT_OK);
     const limits = ["--wallet-per-trade", "SOL=0.1", "--wallet-per-hour", "SOL=0.5"];
-    expect(run.launched[0]?.args).toEqual(["mcp", "add", PRODUCT_SLUG, "--", ...SERVER, ...limits]);
+    expect(run.launched[0]?.args).toEqual(["mcp", "add", "--scope", "user", PRODUCT_SLUG, "--", ...SERVER, ...limits]);
     expect(parse([...SERVER.slice(3), ...limits], {})).toMatchObject({ name: "mcp" });
     const bad = await addTo(["add-to", "claude", "--wallet-per-trade", "SOL"], "linux", { code: 0, output: "" });
     expect(bad.code).toBe(EXIT_USAGE);
