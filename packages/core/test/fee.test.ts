@@ -47,7 +47,7 @@ describe("fee splits", () => {
   });
 
   it("fee helpers refuse out of range inputs", () => {
-    for (const bad of [-1, 10_001, 65_535, 1.5, Number.NaN]) {
+    for (const bad of [-1, 65_536, 1.5, Number.NaN]) {
       expect(() => splitFee(100n, bad), String(bad)).toThrow(RangeError);
       expect(() => splitFee(0n, bad), String(bad)).toThrow(RangeError);
       expect(() => splitFees(100n, bad, 0, 0), String(bad)).toThrow(RangeError);
@@ -65,6 +65,17 @@ describe("fee splits", () => {
     expect(splitFee(U64_MAX, 10_000)).toEqual({ fee: U64_MAX, net: 0n });
     expect(splitFees(0n, 10_000, 0, 10_000)).toEqual({ protocol: 0n, partner: 0n, net: 0n });
     expect(codeOf(() => mulDivFloor(1n, 1n, 0n))).toBe("DivideByZero");
+  });
+
+  it("take any u16 bps the program takes and refuse only where the program refuses", () => {
+    expect(splitFee(0n, 18_449)).toEqual({ fee: 0n, net: 0n });
+    expect(splitFee(0n, 65_535)).toEqual({ fee: 0n, net: 0n });
+    expect(codeOf(() => splitFee(100n, 10_001))).toBe("InvalidParams");
+    expect(splitFees(0n, 10_001, 0, 0)).toEqual({ protocol: 0n, partner: 0n, net: 0n });
+    expect(splitFees(100n, 0, 1, 10_001)).toEqual({ protocol: 1n, partner: 0n, net: 99n });
+    expect(codeOf(() => splitFees(100n, 0, 10_001, 0))).toBe("InvalidParams");
+    expect(releaseSettles({ amount: 1n, judgeFee: 0n, feeBps: 15_387, partnerBps: 147, cutBps: 0 })).toBe(false);
+    expect(releaseSettles({ amount: 1n, judgeFee: 0n, feeBps: 0, partnerBps: 0, cutBps: 65_535 })).toBe(true);
   });
 
   it("split protocol, partner and net exactly, with the protocol cut taken from the partner", () => {

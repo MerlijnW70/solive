@@ -331,11 +331,6 @@ describe("golden vectors emitted by the Rust implementation", () => {
 
   it("split fees identically, including the over-full rate", () => {
     for (const f of vectors.split_fee) {
-      if (Number(f.bps) > 10_000) {
-        expect(f.result.err, `${f.amount} @ ${f.bps}`).toBe("InvalidParams");
-        expect(() => splitFee(BigInt(f.amount), Number(f.bps))).toThrow(RangeError);
-        continue;
-      }
       const got = settle(() => {
         const s = splitFee(BigInt(f.amount), Number(f.bps));
         return { fee: s.fee.toString(), net: s.net.toString() };
@@ -730,10 +725,7 @@ describe("golden vectors emitted by the Rust implementation", () => {
     expect(v.split_fees.length).toBeGreaterThan(8);
     for (const c of v.split_fees) {
       const run = () => splitFees(BigInt(c.amount), Number(c.fee_bps), Number(c.partner_bps), Number(c.cut_bps));
-      if ([c.fee_bps, c.partner_bps, c.cut_bps].some((b) => Number(b) > 10_000)) {
-        expect(c.result.err, c.amount).toBe("InvalidParams");
-        expect(run, c.amount).toThrow(RangeError);
-      } else if (c.result.err === undefined) {
+      if (c.result.err === undefined) {
         expect(run(), c.amount).toEqual({
           protocol: BigInt(c.result.protocol ?? ""),
           partner: BigInt(c.result.partner ?? ""),

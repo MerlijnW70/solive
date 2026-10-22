@@ -10,11 +10,20 @@ export function checkBps(bps: number, name = "bps"): bigint {
   return BigInt(bps);
 }
 
+const U16_MAX = 0xffff;
+
+function checkU16(bps: number, name: string): bigint {
+  if (!Number.isInteger(bps) || bps < 0 || bps > U16_MAX) {
+    throw new RangeError(`${name} ${String(bps)} is not between 0 and ${U16_MAX}`);
+  }
+  return BigInt(bps);
+}
+
 export type FeeSplit = { fee: bigint; net: bigint };
 
 export function splitFee(amount: bigint, feeBps: number): FeeSplit {
   checkU64(amount);
-  const fee = mulDivCeil(amount, checkBps(feeBps, "fee bps"), BPS_DENOMINATOR);
+  const fee = mulDivCeil(amount, checkU16(feeBps, "fee bps"), BPS_DENOMINATOR);
   if (fee > amount) {
     throw new IntentCoreError("InvalidParams");
   }
@@ -25,9 +34,9 @@ export type FeeShares = { protocol: bigint; partner: bigint; net: bigint };
 
 export function splitFees(amount: bigint, feeBps: number, partnerBps: number, cutBps: number): FeeShares {
   checkU64(amount);
-  const fee = mulDivCeil(amount, checkBps(feeBps, "fee bps"), BPS_DENOMINATOR);
-  const gross = mulDivCeil(amount, checkBps(partnerBps, "partner bps"), BPS_DENOMINATOR);
-  const cut = mulDivFloor(gross, checkBps(cutBps, "partner cut bps"), BPS_DENOMINATOR);
+  const fee = mulDivCeil(amount, checkU16(feeBps, "fee bps"), BPS_DENOMINATOR);
+  const gross = mulDivCeil(amount, checkU16(partnerBps, "partner bps"), BPS_DENOMINATOR);
+  const cut = mulDivFloor(gross, checkU16(cutBps, "partner cut bps"), BPS_DENOMINATOR);
   if (cut > gross) {
     throw new IntentCoreError("InvalidParams");
   }

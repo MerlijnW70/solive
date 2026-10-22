@@ -121,7 +121,7 @@ describe("claimed escrows", () => {
     expect(stakeReceiverOnRelease(board, 99n, [worker])).toBe(worker);
     expect(() => stakeReceiverOnRelease(board, 99n, [other])).toThrow("ClaimHeld");
     expect(stakeReceiverOnRelease(board, 100n, [other])).toBe(owner);
-    expect(stakeReceiverOnRelease(board, 100n, [worker])).toBe(worker);
+    expect(stakeReceiverOnRelease(board, 100n, [worker])).toBe(owner);
     expect(stakeReceiverOnRelease({ ...board, worker: "11111111111111111111111111111111" as Address }, 0n, [other])).toBeNull();
     expect(() => stakeReceiverOnSettle(board, 99n, true)).toThrow("ClaimHeld");
     expect(stakeReceiverOnSettle(board, 99n, false)).toBe(worker);

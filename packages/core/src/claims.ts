@@ -81,7 +81,7 @@ export function stakeReceiverOnRelease(board: BoardView, now: bigint, payees: re
     if (!payees.includes(slot.worker)) throw new IntentCoreError("ClaimHeld");
     return slot.worker;
   }
-  return payees.includes(slot.worker) ? slot.worker : board.owner;
+  return board.owner;
 }
 
 export function stakeReceiverOnCancel(board: BoardView, now: bigint): Address | null {

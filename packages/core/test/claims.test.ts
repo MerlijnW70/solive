@@ -120,7 +120,8 @@ describe("stake receiver", () => {
     expect(stakeReceiverOnRelease(held, at, [WORKER])).toBe(WORKER);
     expect(stakeReceiverOnRelease(held, at, [OTHER, WORKER])).toBe(WORKER);
     expect(code(() => stakeReceiverOnRelease(held, at, [OTHER]))).toBe("ClaimHeld");
-    expect(stakeReceiverOnRelease(held, lapsedAt, [WORKER])).toBe(WORKER);
+    expect(stakeReceiverOnRelease(held, lapsedAt, [WORKER])).toBe(OWNER);
+    expect(stakeReceiverOnRelease(held, lapsedAt, [OTHER, WORKER])).toBe(OWNER);
     expect(stakeReceiverOnRelease(held, lapsedAt, [OTHER])).toBe(OWNER);
   });
 
