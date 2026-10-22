@@ -173,9 +173,9 @@ describe("the devnet faucet", () => {
     expect(readFileSync(SCRIPT, "utf8")).toMatch(/gh issue list --author "\$author" --label faucet /);
   });
 
-  it("runs one workflow at a time on every request and every 15 minutes, so a cancelled run leaves nothing unanswered", () => {
+  it("runs one workflow at a time on every request and every hour, so a cancelled run leaves nothing unanswered", () => {
     expect(WORKFLOW).toContain("concurrency:\n  group: faucet\n  cancel-in-progress: false\n");
-    expect(WORKFLOW).toContain('  schedule:\n    - cron: "*/15 * * * *"\n');
+    expect(WORKFLOW).toContain('  schedule:\n    - cron: "7 * * * *"\n');
     expect(WORKFLOW).toContain("if: github.event_name == 'schedule' || contains(github.event.issue.labels.*.name, 'faucet')");
   });
 

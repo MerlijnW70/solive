@@ -2,7 +2,7 @@ name: monitor
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "37 * * * *"
   workflow_dispatch:
 
 permissions:

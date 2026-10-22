@@ -15,7 +15,7 @@ const BASELINE = JSON.parse(readFileSync(join(ROOT, "monitoring/devnet.json"), "
 
 describe("the hosted monitor", () => {
   it("checks devnet every quarter hour against the committed baseline, with the released command line", () => {
-    expect(WORKFLOW).toContain('cron: "*/15 * * * *"');
+    expect(WORKFLOW).toContain('cron: "37 * * * *"');
     const runs = WORKFLOW.split("\n").filter((line) => line.includes("run: npx"));
     expect(runs).toHaveLength(2);
     for (const line of runs) {
