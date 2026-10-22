@@ -170,7 +170,10 @@ import { claimsOf } from "../src/agent/claims.js";
 import { ACTIONS } from "../src/agent/registry.js";
 import { EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT } from "@intent-engine/core";
-import { AIRDROP, airdropRefused, defaultWallet, faucetLink, FUNDED, keptDefault, LAMPORTS_PER_SOL, savedDefault, settingsPath } from "../src/wallet.js";
+import { AIRDROP, airdropRefused, defaultWallet, faucetLink, holdsEnough, keptDefault, LAMPORTS_PER_SOL, savedDefault, settingsPath } from "../src/wallet.js";
+import { WALLET_START } from "../src/agent/wallet/account.js";
+import { unwrapped } from "../src/agent/wallet/unwrap.js";
+import { RELEASE_LANDING, stillUnknown } from "../src/agent/wallet/receipt.js";
 import { announcement, saltFor, sealedBlob, sealedDelivery } from "./announce.js";
 import { ata, balance, cli, creation, FEE_BPS, funded, h, HOME, setNow, transport, world } from "./harness.js";
 import { salesPath } from "../src/agent/sales.js";
@@ -283,7 +286,7 @@ describe("the wallet server", () => {
       hint: NO_WALLET,
     });
     const made = await ok(client, "wallet_setup");
-    expect(made).toMatchObject({ keypair: defaultWallet(HOME), created: true, sol: "1", next: FUNDED, notice: WALLET_NOTICE });
+    expect(made).toMatchObject({ keypair: defaultWallet(HOME), created: true, sol: "1", next: holdsEnough("1", WALLET_START), notice: WALLET_NOTICE });
     const owner = made["address"] as Address;
     expect(h.airdrops).toEqual([{ address: owner, lamports: AIRDROP }]);
     expect(await ok(client, "wallet_setup")).toMatchObject({ address: owner, created: false });
@@ -1404,7 +1407,7 @@ describe("the wallet server", () => {
       expect(await ok(client, name, args)).toEqual({ intent, released: false, next: NOT_RELEASED });
       expect(h.sleeps).toEqual([]);
       h.engineLog = [];
-      expect(await ok(client, name, { ...args, wait: 1 })).toEqual({ intent, released: false, complete: false, next: stillUnreleased(name) });
+      expect(await ok(client, name, { ...args, wait: 1 })).toEqual({ intent, released: false, complete: false, next: stillUnknown(name) });
       expect(await ok(client, name, args)).toEqual({ intent, released: false, complete: false, next: RELEASE_UNKNOWN });
       expect((await call(client, name, { ...args, wait: WAIT_MAX + 1 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "wait" }] });
       expect((await call(client, name, { ...args, wait: 0 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "wait" }] });
@@ -2131,7 +2134,7 @@ describe("the wallet server", () => {
     expect(await ok(client, "wallet_receipt", args)).toMatchObject({ intent, released: true, payee, signature: earlier.signature });
     h.engineLog = [remade, earlier, first];
     expect((await call(client, "wallet_receipt", args)).value).toMatchObject(refused);
-    expect(await ok(client, "wallet_receipt", { owner, nonce })).toEqual({ intent, released: false, next: NOT_RELEASED });
+    expect(await ok(client, "wallet_receipt", { owner, nonce })).toEqual({ intent, released: false, complete: false, next: RELEASE_LANDING });
     const dated = { ...earlier, blockTime: createdAtOfEscrow(intent) - 1n };
     h.through = pagedThrough(() => [remade, dated, first], []);
     const paged = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
@@ -2515,7 +2518,7 @@ describe("the wallet server", () => {
     });
     expect(await ok(client, "wallet_unwrap")).toMatchObject({ account: wrapped, wrapped: "0.0485", sent: false, next: PREVIEW_ONLY });
     const before = h.svm.getBalance(wallet) ?? 0n;
-    expect(await ok(client, "wallet_unwrap", { send: true })).toMatchObject({ sent: true, next: "unwrapped; solive_wallet_balance shows the SOL" });
+    expect(await ok(client, "wallet_unwrap", { send: true })).toMatchObject({ sent: true, next: unwrapped("0.0485", formatAmount(rent, 9), formatAmount(rent + held, 9)) });
     expect(h.svm.getAccount(wrapped).exists).toBe(false);
     expect((h.svm.getBalance(wallet) ?? 0n) - before).toBeGreaterThan(held);
   });

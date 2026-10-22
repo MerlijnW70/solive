@@ -14,6 +14,12 @@ const SOL_DECIMALS = 9;
 
 export const NOTHING_WRAPPED = "this wallet has no wrapped SOL account to unwrap";
 
+export const unwrapReturns = (wrapped: string, rent: string, total: string) =>
+  `Returns: ${total} SOL to this wallet, the ${wrapped} wrapped plus the account's ${rent} SOL rent deposit`;
+
+export const unwrapped = (wrapped: string, rent: string, total: string) =>
+  `unwrapped; this wallet gained ${total} SOL (${wrapped} wrapped plus ${rent} rent) less the transaction fee; ${tool("wallet_balance")} shows the SOL`;
+
 export const walletUnwrap = define({
   name: tool("wallet_unwrap"),
   title: "Turn wrapped SOL into SOL",
@@ -24,6 +30,7 @@ export const walletUnwrap = define({
   output: object({
     account: account("the wrapped SOL account this closes"),
     wrapped: text("whole SOL the account holds"),
+    rent: text("whole SOL of the account's rent deposit, which also returns to the wallet"),
     summary: list(text(), 4),
     ...deviceOutput,
     sent: flag(),
@@ -37,14 +44,18 @@ export const walletUnwrap = define({
     if (held === null || held.owner !== TOKEN_PROGRAM_ADDRESS) {
       throw new AgentRefusal("NotFound", NOTHING_WRAPPED);
     }
-    const wrapped = formatAmount(getTokenDecoder().decode(held.data).amount, SOL_DECIMALS);
+    const amount = getTokenDecoder().decode(held.data).amount;
+    const wrapped = formatAmount(amount, SOL_DECIMALS);
+    const rent = formatAmount(held.lamports - amount, SOL_DECIMALS);
+    const total = formatAmount(held.lamports, SOL_DECIMALS);
     const close = getCloseAccountInstruction({ account: wrappedAccount, destination: signer.address, owner: createNoopSigner(signer.address) });
     const view = {
       account: wrappedAccount,
       wrapped,
-      summary: [`Unwraps: ${wrapped} wrapped SOL in ${wrappedAccount}, and the account's rent, into plain SOL in this wallet`, "Costs: the transaction fee"],
+      rent,
+      summary: [`Unwraps: ${wrapped} wrapped SOL in ${wrappedAccount} into plain SOL in this wallet, and closes the account`, unwrapReturns(wrapped, rent, total), "Costs: the transaction fee"],
       prepared: preparedView(await prepare(ctx.transport, [close], signer.address)),
     };
-    return sent(ctx, signer, view, input.send, call, { done: `unwrapped; ${tool("wallet_balance")} shows the SOL` });
+    return sent(ctx, signer, view, input.send, call, { done: unwrapped(wrapped, rent, total) });
   },
 });

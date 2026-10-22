@@ -9,7 +9,7 @@ import { redactUrl } from "./render.js";
 import { DEVNET_URL } from "./tokens.js";
 
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
-const FUND_BELOW = LAMPORTS_PER_SOL / 2n;
+export const FUND_BELOW = LAMPORTS_PER_SOL / 2n;
 export const ENOUGH_TO_START = LAMPORTS_PER_SOL / 10n;
 export const AIRDROP = LAMPORTS_PER_SOL;
 
@@ -33,14 +33,17 @@ export const settingsBroken = (path: string) => `${path} is not a settings file 
 
 export const PUBLIC_FAUCET = "https://faucet.solana.com";
 export const FAUCET = `${PRODUCT_REPOSITORY}/issues/new?template=faucet.yml`;
-export const FUNDED = "your wallet is ready; try offering 0.05 SOL for at least 5 TEST";
+export const CLI_START = "try offering 0.05 SOL for at least 5 TEST";
+const solOf = (lamports: bigint) => formatAmount(lamports, SOL_DECIMALS);
+export const holdsEnough = (sol: string, start: string) => `your wallet holds ${sol} SOL, enough to start; ${start}`;
+export const refusedEnough = (sol: string, start: string) => `devnet refused more free SOL, but your wallet holds ${sol} SOL, enough to start; ${start}`;
 export const FAUCET_FIELD = "address";
 export const faucetLink = (address: string) => FAUCET + "&" + FAUCET_FIELD + "=" + encodeURIComponent(address);
 export const FAUCET_STEPS = "open this link, submit the form, and run setup again once SOL arrives: ";
-export const airdropRefused = (address: string) => "the airdrop was refused; " + FAUCET_STEPS + faucetLink(address);
+export const airdropRefused = (address: string) => "your wallet holds no SOL yet and the airdrop was refused; " + FAUCET_STEPS + faucetLink(address);
 export const SEND_SOL = "send SOL to this address, then run setup again";
 export const heldRefused = (sol: string, address: string) =>
-  `your wallet holds ${sol} SOL; devnet refused to add more, so if you run low ` + FAUCET_STEPS + faucetLink(address);
+  `your wallet holds ${sol} SOL, less than the ${solOf(ENOUGH_TO_START)} SOL setup counts as enough to start, and devnet refused to add more; ` + FAUCET_STEPS + faucetLink(address);
 
 export function expandHome(path: string, home: string): string {
   if (path === "~") {
@@ -147,6 +150,7 @@ export async function setup(
   keepSavedUrl = false,
   confirmUrl?: string,
   confirmTransport?: Transport,
+  start = CLI_START,
 ): Promise<object> {
   if (confirmUrl !== undefined && confirmTransport !== undefined) {
     await checkedSecond(transport, confirmTransport, confirmUrl);
@@ -158,19 +162,24 @@ export async function setup(
   const settings: Settings = { url: saved ?? url, keypair: path, ...(confirm === undefined ? {} : { [SAVED_CONFIRM_URL]: confirm }) };
   await files.saveText(settingsPath(files.home), `${JSON.stringify(settings, null, 2)}\n`, false);
   let held = await lamportsOf(transport, signer.address);
-  let next = FUNDED;
-  if (held < FUND_BELOW) {
-    if (url === CLUSTERS["mainnet-beta"]) {
-      next = SEND_SOL;
-    } else {
-      try {
-        await transport.airdrop(signer.address, AIRDROP);
-        held = await lamportsOf(transport, signer.address);
-      } catch {
-        next = held >= ENOUGH_TO_START ? FUNDED : held > 0n ? heldRefused(formatAmount(held, SOL_DECIMALS), signer.address) : airdropRefused(signer.address);
-      }
+  let refused = false;
+  if (held < FUND_BELOW && url !== CLUSTERS["mainnet-beta"]) {
+    try {
+      await transport.airdrop(signer.address, AIRDROP);
+      held = await lamportsOf(transport, signer.address);
+    } catch {
+      refused = true;
     }
   }
+  const sol = solOf(held);
+  const next =
+    url === CLUSTERS["mainnet-beta"] && held < FUND_BELOW
+      ? SEND_SOL
+      : held >= ENOUGH_TO_START
+        ? (refused ? refusedEnough : holdsEnough)(sol, start)
+        : held > 0n
+          ? heldRefused(sol, signer.address)
+          : airdropRefused(signer.address);
   return {
     address: signer.address,
     keypair: path,
@@ -178,7 +187,7 @@ export async function setup(
     url: redactUrl(url),
     settings: saved === undefined ? savedDefault(url) : keptDefault(saved),
     ...(confirm === undefined ? {} : { confirm_url: redactUrl(confirm) }),
-    sol: formatAmount(held, SOL_DECIMALS),
+    sol,
     next,
   };
 }
@@ -199,7 +208,7 @@ export async function balances(transport: Transport, owner: Address, mints: read
     tokens.push({
       mint,
       ...(TOKEN_LABELS[mint] === undefined ? {} : { name: TOKEN_LABELS[mint] }),
-      account,
+      ...(view === null ? {} : { account }),
       balance: formatAmount(raw, token.decimals),
     });
   }

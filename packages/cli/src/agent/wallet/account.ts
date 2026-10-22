@@ -1,17 +1,24 @@
-import { balances, defaultMints, setup } from "../../wallet.js";
+import { formatAmount } from "@intent-engine/core";
+import { balances, defaultMints, FUND_BELOW, setup } from "../../wallet.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { tool } from "../names.js";
-import { listIntents } from "../read.js";
+import { listIntents, SOL_DECIMALS } from "../read.js";
 import { account, amount, choice, flag, list, object, optional, text } from "../schema.js";
 import { prepareCancel } from "../settle.js";
 import { STATUS } from "../../accounts.js";
 import { deviceOutput, PREVIEW_FIRST, WALLET_NOTICE, access, testCluster, savedKeypair, signerOf, mintNamed, sent } from "./guard.js";
 
+export const WALLET_START = [
+  `trade with ${tool("wallet_swap")}, such as 0.05 SOL for at least 5 TEST`,
+  `hire someone with ${tool("wallet_escrow")}, which pays once the attestor approves the work`,
+  `earn by taking a paid job from ${tool("find_jobs")}`,
+].join("; ");
+
 const tokenRow = object({
   mint: account(),
   name: optional(text()),
-  account: account("the wallet's token account for this mint"),
+  account: optional(account(`the wallet's token account for this mint; absent when it has none, for example after ${tool("wallet_unwrap")} closed it`)),
   balance: text("in whole tokens"),
 });
 
@@ -19,7 +26,7 @@ export const walletSetup = define({
   name: tool("wallet_setup"),
   title: "Set up the wallet",
   description:
-    "Gives the user a test wallet: creates one if this server has none, keeps its key in a file on this computer, and tops it up with free devnet SOL when it holds less than 0.5 SOL. Safe to call again: it reuses the saved wallet. It saves this node (RPC) as the command line's default if none is saved.",
+    `Gives the user a test wallet: creates one if this server has none, keeps its key on this computer, and asks devnet for free SOL below ${formatAmount(FUND_BELOW, SOL_DECIMALS)} SOL. Devnet may refuse; next says what the wallet holds and whether that is enough to start. Safe to call again. Saves this node (RPC) as the CLI's default if none is saved.`,
   effect: "submit",
   destructive: false,
   input: object({}),
@@ -30,12 +37,12 @@ export const walletSetup = define({
     url: text("the RPC node this server uses, as scheme, host and port only"),
     settings: text("whether this call saved the RPC as the CLI's default; it does so only when none is saved yet"),
     sol: text("SOL the wallet holds"),
-    next: text("what to tell the user"),
+    next: text("what to tell the user: what the wallet holds, and how to trade, hire or earn"),
     notice: list(text(), 8, "the notice from the server instructions; show it if the user has not seen it yet"),
   }),
   run: async (ctx: AgentContext) => {
     const wallet = await testCluster(ctx);
-    return { ...(await setup(ctx.transport, wallet.files, wallet.url, await savedKeypair(wallet), true)), notice: WALLET_NOTICE };
+    return { ...(await setup(ctx.transport, wallet.files, wallet.url, await savedKeypair(wallet), true, undefined, undefined, WALLET_START)), notice: WALLET_NOTICE };
   },
 });
 

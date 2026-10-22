@@ -12,7 +12,7 @@ import {
 } from "@solana-program/token";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ENV_KEYPAIR, ENV_URL, WATCH_INTERVAL } from "../src/args.js";
-import { AIRDROP, defaultWallet, FUNDED } from "../src/wallet.js";
+import { AIRDROP, CLI_START, defaultWallet, holdsEnough } from "../src/wallet.js";
 import { REVOKE_CANCELS } from "../src/agent/mandate.js";
 import { ata, balance, cli, funded, h, send, type World, world } from "./harness.js";
 
@@ -145,7 +145,7 @@ describe("the quickstart", () => {
       "cancel --nonce",
     ]);
     const owner = outputs[0]?.["address"] as Address;
-    expect(outputs[0]).toMatchObject({ created: true, sol: String(AIRDROP / LAMPORTS_PER_SOL), next: FUNDED });
+    expect(outputs[0]).toMatchObject({ created: true, sol: String(AIRDROP / LAMPORTS_PER_SOL), next: holdsEnough(String(AIRDROP / LAMPORTS_PER_SOL), CLI_START) });
     expect(PAGE).toContain("Offer 0.05 SOL for at least 5 TEST:");
     expect(commands[1]).toContain("--units tokens --amount-in 0.05 --min-out 5 --expires-in 3600");
     expect(commands[2]).toBe(`${commands[1]} --yes`);

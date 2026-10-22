@@ -17,14 +17,16 @@ import { DEVNET_URL, testTokenElsewhere, tokenNamed } from "../src/tokens.js";
 import {
   AIRDROP,
   airdropRefused,
+  CLI_START,
   FAUCET,
   FAUCET_STEPS,
   faucetLink,
   defaultWallet,
   ENOUGH_TO_START,
-  FUNDED,
   heldRefused,
+  holdsEnough,
   LAMPORTS_PER_SOL,
+  refusedEnough,
   savedDefault,
   SEND_SOL,
   settingsBroken,
@@ -114,7 +116,7 @@ describe("setup and balance", () => {
     const first = await cli(["setup"], {});
     expect(first.err).toBe("");
     const made = first.json();
-    expect(made).toMatchObject({ keypair: WALLET, created: true, url: DEVNET_URL, sol: "1", next: FUNDED });
+    expect(made).toMatchObject({ keypair: WALLET, created: true, url: DEVNET_URL, sol: "1", next: holdsEnough("1", CLI_START) });
     expect(h.urls.at(-1)).toBe(DEVNET_URL);
     expect(JSON.parse(h.files.get(WALLET) ?? "[]")).toHaveLength(64);
     expect(JSON.parse(h.files.get(SETTINGS) ?? "{}")).toEqual({ url: DEVNET_URL, keypair: WALLET });
@@ -122,7 +124,7 @@ describe("setup and balance", () => {
     expect(h.airdrops).toEqual([{ address, lamports: AIRDROP }]);
     expect(h.svm.getBalance(address)).toBe(LAMPORTS_PER_SOL);
     const again = (await cli(["setup"], {})).json();
-    expect(again).toMatchObject({ address, keypair: WALLET, created: false, sol: "1", next: FUNDED });
+    expect(again).toMatchObject({ address, keypair: WALLET, created: false, sol: "1", next: holdsEnough("1", CLI_START) });
     expect(h.airdrops).toHaveLength(1);
     preset(NATIVE_MINT);
     preset(TEST_TOKEN);
@@ -133,13 +135,8 @@ describe("setup and balance", () => {
       address,
       sol: "1",
       tokens: [
-        { mint: NATIVE_MINT, name: "wrapped SOL", account: await wrappedOf(address), balance: "0" },
-        {
-          mint: TEST_TOKEN,
-          name: "TEST",
-          account: await findAssociatedTokenAddress({ owner: address, mint: TEST_TOKEN, tokenProgram: TOKEN_PROGRAM_ADDRESS }),
-          balance: "0",
-        },
+        { mint: NATIVE_MINT, name: "wrapped SOL", balance: "0" },
+        { mint: TEST_TOKEN, name: "TEST", balance: "0" },
       ],
     });
   });
@@ -166,7 +163,7 @@ describe("setup and balance", () => {
     const address = refused["address"] as Address;
     expect(refused).toMatchObject({ created: true, sol: "0", next: airdropRefused(address) });
     expect(refused["next"]).toBe(
-      "the airdrop was refused; open this link, submit the form, and run setup again once SOL arrives: " +
+      "your wallet holds no SOL yet and the airdrop was refused; open this link, submit the form, and run setup again once SOL arrives: " +
         FAUCET + "&address=" + address,
     );
     h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 20n));
@@ -174,7 +171,7 @@ describe("setup and balance", () => {
     expect(h.airdrops).toHaveLength(2);
     expect(heldRefused("0.05", address).endsWith(FAUCET_STEPS + faucetLink(address))).toBe(true);
     h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 4n));
-    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.3", next: FUNDED });
+    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.3", next: refusedEnough("0.3", CLI_START) });
     expect(h.airdrops).toHaveLength(3);
     clean();
     h.airdrops.length = 0;
@@ -242,7 +239,7 @@ describe("setup and balance", () => {
     const made = (await cli(["setup"], {})).json();
     const address = made["address"] as Address;
     h.svm.airdrop(address, lamports(ENOUGH_TO_START));
-    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.1", next: FUNDED });
+    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.1", next: refusedEnough("0.1", CLI_START) });
   });
 
   it("setup on a Ledger names the device's address and creates no key file", async () => {

@@ -1,5 +1,5 @@
 import { type Address, getAddressDecoder } from "@solana/kit";
-import { type EngineEvent, findIntentPda, formatAmount, NATIVE_MINT } from "@intent-engine/core";
+import { type EngineEvent, findIntentPda, formatAmount, IntentStatus, Kind, NATIVE_MINT } from "@intent-engine/core";
 import { intentAt, memoized, mintOf, paidWalletsOf, recordedRelease, releaseStandingOf, type Transport, unmemoized } from "@intent-engine/client";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
@@ -18,6 +18,12 @@ export const RECEIPT_PARTIAL =
   "the escrow's history after this release could not be read in full: it is longer than the pages read or the RPC node could not return some of its transactions yet, so a follow-up recording the delivered work may be missing, and without release given, the escrow address may have been made again since; pass release, the signature the release returned, or call again in a few seconds";
 
 export const stillUnreleased = (name: string) => `not released when the wait ran out; call ${tool(name)} again with wait to keep waiting`;
+
+export const RELEASE_LANDING =
+  "the escrow is marked released on chain, but the RPC node has not returned the release transaction yet, so who it paid is not known; call again in a few seconds";
+
+export const stillUnknown = (name: string) =>
+  `the RPC node had not returned the escrow's release when the wait ran out, so whether and how it was paid is still unknown; call ${tool(name)} again with wait in a few seconds`;
 
 export const NO_CLOCK = "this server has no clock to wait with; call again without wait";
 
@@ -40,7 +46,7 @@ async function waitedReceipt(ctx: AgentContext, name: string, wait: number | und
     return receipt.released;
   });
   const last = receipt as Receipt;
-  return last.released ? last : { ...last, next: stillUnreleased(name) };
+  return last.released ? last : { ...last, next: "complete" in last && last.complete === false ? stillUnknown(name) : stillUnreleased(name) };
 }
 
 const receiptOutput = object({
@@ -117,6 +123,10 @@ export async function escrowReceipt(transport: Transport, owner: Address, nonce:
   const lookup = named === undefined ? await releaseLookup(transport, intent) : await namedRelease(transport, intent, named);
   const { release, transactions, complete, bound, creation } = lookup;
   if (release === null) {
+    const held = await intentAt(transport, intent);
+    if (held !== null && held.kind === Kind.AttestedResult && held.status === IntentStatus.Filled) {
+      return { intent, released: false, complete: false, next: RELEASE_LANDING };
+    }
     return complete ? { intent, released: false, next: NOT_RELEASED } : { intent, released: false, complete: false, next: coverageOf(transport, RELEASE_UNKNOWN) };
   }
   const { tx } = release;

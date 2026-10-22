@@ -8,7 +8,7 @@
 
 Served only with `--wallet`.
 
-Gives the user a test wallet: creates one if this server has none, keeps its key in a file on this computer, and tops it up with free devnet SOL when it holds less than 0.5 SOL. Safe to call again: it reuses the saved wallet. It saves this node (RPC) as the command line's default if none is saved.
+Gives the user a test wallet: creates one if this server has none, keeps its key on this computer, and asks devnet for free SOL below 0.5 SOL. Devnet may refuse; next says what the wallet holds and whether that is enough to start. Safe to call again. Saves this node (RPC) as the CLI's default if none is saved.
 
 Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 
@@ -108,7 +108,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-Pays for work once a judge approves it: locks tokens until the named attestor (the judge) releases them to the wallet it picks. Pick an attestor the user trusts. spec_url lets workers find the job with solive_find_jobs; they deliver to the attestor, as this wallet can cancel until release. Previews only; call with send: true after the user says yes.
+Pays for work once its attestor (the judge) approves: locks tokens until the attestor releases them to the wallet it picks; this wallet may be the attestor. spec_url lists the job in solive_find_jobs; the spec must say what to deliver, in what form, and how it is checked. Previews only; call with send: true after the user says yes.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -116,10 +116,10 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | --- | --- | --- | --- |
 | `sell` | string | yes | SOL, TEST or a mint address: the token to pay with |
 | `amount` | string | yes | whole tokens to escrow, such as 0.05 |
-| `attestor` | address | yes | the wallet whose signature alone releases the escrow, or a committee's address; at or above the token's committee floor it must be a committee of 2 or more |
+| `attestor` | address | yes | the wallet whose signature alone releases the escrow, such as this wallet's own address to judge the work yourself, or a committee's address; at or above the token's committee floor it must be a committee of 2 or more |
 | `min_result` | whole number as a decimal string | no | least result the attestor may attest, a plain count not whole tokens; default 1 |
 | `max_result` | whole number as a decimal string | no | greatest result the attestor may attest, a plain count not whole tokens; default min_result |
-| `spec_hash` | string | no | 64 hex: the sha256 of the acceptance spec the attestor must verify. Setting it binds the release to a signature over that exact spec, so the attestor cannot sign a generic result |
+| `spec_hash` | string | no | 64 hex: the sha256 of the acceptance spec the attestor must verify; the spec must say what to deliver, in what form, and how it is checked. Setting it binds the release to a signature over that exact spec, so the attestor cannot sign a generic result |
 | `spec_url` | string | no | where the acceptance spec is published, an https url of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would; needs spec_hash. Recorded in a memo this wallet signs with the escrow |
 | `judge_fee` | string | no | whole tokens of sell paid to the attestor out of the escrow when it settles, such as 0.001; needs spec_hash and must be below amount |
 | `expires_in` | integer 60..31536000 | no | least seconds the escrow stays open once sent; default 86400 |

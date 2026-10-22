@@ -29,6 +29,16 @@ export const NO_SPEC_HASH = `no spec_hash, so workers cannot find this escrow wi
 
 export const JOB_LIVE = `job live; ${tool("wallet_check_delivery")} to watch for work, then ${tool("wallet_attest")} its earliest announcer`;
 
+export const SPEC_MUST = "the spec must say what to deliver, in what form, and how it is checked";
+
+export const recordAccountWhy = (mint: Address) =>
+  `Why: the program needs a token account for the recorded output ${mint} even though an escrow pays nothing into it; later escrows that record the same token reuse it`;
+
+const createsRecordAccount = (mint: Address) => `Setup: creates your token account for ${mint} (you pay its rent)`;
+
+export const explainedSetup = (summary: readonly string[], mint: Address): string[] =>
+  summary.flatMap((line) => (line === createsRecordAccount(mint) ? [line, recordAccountWhy(mint)] : [line]));
+
 export const RECORD_MINT_NEEDED = "selling SOL on this RPC needs record_mint: any other token's mint, which only labels the escrow";
 
 function recordedMint(sell: Address, url: string, chosen: string | undefined): Address {
@@ -48,16 +58,16 @@ function recordedMint(sell: Address, url: string, chosen: string | undefined): A
 export const walletEscrow = define({
   name: tool("wallet_escrow"),
   title: "Escrow a payment for an attestor to release",
-  description: `Pays for work once a judge approves it: locks tokens until the named attestor (the judge) releases them to the wallet it picks. Pick an attestor the user trusts. spec_url lets workers find the job with ${tool("find_jobs")}; they deliver to the attestor, as this wallet can cancel until release. ${PREVIEW_FIRST}`,
+  description: `Pays for work once its attestor (the judge) approves: locks tokens until the attestor releases them to the wallet it picks; this wallet may be the attestor. spec_url lists the job in ${tool("find_jobs")}; ${SPEC_MUST}. ${PREVIEW_FIRST}`,
   effect: "submit",
   repeats: true,
   input: object({
     sell: text("SOL, TEST or a mint address: the token to pay with"),
     amount: text("whole tokens to escrow, such as 0.05"),
-    attestor: account("the wallet whose signature alone releases the escrow, or a committee's address; at or above the token's committee floor it must be a committee of 2 or more"),
+    attestor: account("the wallet whose signature alone releases the escrow, such as this wallet's own address to judge the work yourself, or a committee's address; at or above the token's committee floor it must be a committee of 2 or more"),
     min_result: optional(amount("least result the attestor may attest, a plain count not whole tokens; default 1")),
     max_result: optional(amount("greatest result the attestor may attest, a plain count not whole tokens; default min_result")),
-    spec_hash: optional(hex32("64 hex: the sha256 of the acceptance spec the attestor must verify. Setting it binds the release to a signature over that exact spec, so the attestor cannot sign a generic result")),
+    spec_hash: optional(hex32(`64 hex: the sha256 of the acceptance spec the attestor must verify; ${SPEC_MUST}. Setting it binds the release to a signature over that exact spec, so the attestor cannot sign a generic result`)),
     spec_url: optional(text(`where the acceptance spec is published, ${MEMO_URL_RULE}; needs spec_hash. Recorded in a memo this wallet signs with the escrow`)),
     judge_fee: optional(text("whole tokens of sell paid to the attestor out of the escrow when it settles, such as 0.001; needs spec_hash and must be below amount")),
     expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds the escrow stays open once sent; default ${ESCROW_EXPIRES_IN}`)),
@@ -82,7 +92,8 @@ export const walletEscrow = define({
     }
     const preflight = input.spec_url !== undefined && specHash !== undefined && input.send !== true ? await specPreflight(ctx, input.spec_url, specHash) : undefined;
     let settled: { amount: bigint; judgeFee: bigint; decimals: number } | undefined;
-    const escrowed = (await offered(ctx, call, { sell: sold, buy: recordedMint(sold, wallet.url, input.record_mint), send: input.send }, (token, _, now) => {
+    const buy = recordedMint(sold, wallet.url, input.record_mint);
+    const escrowed = (await offered(ctx, call, { sell: sold, buy, send: input.send }, (token, _, now) => {
       const amountIn = raw(input.amount, token.decimals, "amount");
       const judgeFee = input.judge_fee === undefined ? 0n : raw(input.judge_fee, token.decimals, "judge_fee");
       settled = { amount: amountIn, judgeFee, decimals: token.decimals };
@@ -100,7 +111,7 @@ export const walletEscrow = define({
         ...(input.spec_url === undefined ? {} : { spec_url: input.spec_url }),
       };
     }, JOB_LIVE)) as Record<string, unknown>;
-    const summary = [...((escrowed["summary"] as string[]) ?? []), ...(settled === undefined ? [] : [await feeLine(ctx, settled)])];
+    const summary = [...explainedSetup((escrowed["summary"] as string[]) ?? [], buy), ...(settled === undefined ? [] : [await feeLine(ctx, settled)])];
     const warnings = [...((escrowed["warnings"] as string[]) ?? []), ...(preflight === undefined ? [] : [preflight]), ...(specHash === undefined ? [NO_SPEC_HASH] : [])];
     return { ...escrowed, summary, warnings };
   },
@@ -265,7 +276,7 @@ export const walletEscrowPlan = define({
           (piece, i) =>
             `Piece ${i + 1}: ${piece.name}, ${formatAmount(piece.amountIn, token.decimals)} of ${name}, released by ${piece.attestor}${piece.specHash === undefined ? "" : ` against spec ${piece.specHash}`}`,
         ),
-        ...(first["summary"] as string[]),
+        ...explainedSetup(first["summary"] as string[], buy),
       ],
       warnings: [...(first["warnings"] as string[]), ...unlisted, ...preflights.flat()],
     };
