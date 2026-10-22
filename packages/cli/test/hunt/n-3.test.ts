@@ -4,6 +4,7 @@ import { EVENT_IX_TAG, getIntentCreatedEventEncoder, getIntentFilledEventEncoder
 import type { EngineTransaction } from "@intent-engine/client";
 import { EXIT_OK, main } from "../../src/main.js";
 import { cli, h, NOW, runtime, world } from "../harness.js";
+import { listAccounts } from "../monitor-transport.js";
 
 const BASELINE = "/srv/hunt-n/rate-baseline.json";
 const RECENT = NOW + 1_000n;
@@ -86,6 +87,7 @@ async function watch(argv: string[], polls: number, between: (poll: number) => v
 describe("hunt N operations monitor rate dedup", () => {
   it("N-3: a second distinct burst of fills after the first goes unreported", async () => {
     await world();
+    listAccounts();
     const written = await cli(["monitor", "--write-baseline", BASELINE], {});
     expect(written.code).toBe(EXIT_OK);
 

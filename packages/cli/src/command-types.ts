@@ -175,6 +175,7 @@ export type Command =
 
 export type MonitorSpec = {
   interval: number;
+  since: number;
   maxFill: ReadonlyMap<Address, bigint>;
   maxFills: number | null;
   webhook: string | null;

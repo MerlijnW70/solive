@@ -263,7 +263,7 @@ A lost guardian key is replaced with `update-config --guardian` through the mult
 
 ## Monitoring
 
-`monitor` reads the program and its config every `--interval` seconds, 30 by default, and compares them with a baseline file: every config field, the upgrade authority and the program hash, the value `solana-verify get-program-hash` prints. It signs nothing and needs no keypair. Write the baseline after each intended change, once `show config` and the program hash are what the proposal promised:
+`monitor` reads the program and its config every `--interval` seconds, 30 by default, and compares them with a baseline file: every config field, every committee floor, the limits of every mint cap, the upgrade authority and the program hash, the value `solana-verify get-program-hash` prints. It signs nothing and needs no keypair. Write the baseline after each intended change, once `show config` and the program hash are what the proposal promised:
 
 ```sh
 node packages/cli/dist/src/bin.js monitor --write-baseline /etc/intent-engine/baseline.json --url devnet
@@ -271,7 +271,9 @@ node packages/cli/dist/src/bin.js monitor --write-baseline /etc/intent-engine/ba
 
 `--write-baseline` never overwrites a file; move the old baseline away first. Without `--expect` the monitor refuses to start.
 
-Every alert is one JSON line on stdout with `kind` (`config`, `upgrade-authority`, `program-hash`, `fill-amount`, `fill-rate`, `mint-cap` or `rpc`), `field`, `expected`, `observed` and `slot`. A change alerts once, not on every poll, until the baseline is rewritten and the monitor restarted. `--max-fill <mint>=<raw amount>`, repeatable, alerts on a fill above that amount of that input token; `--max-fills <count>` alerts when more fills land in one interval. A failed read, or a slot that does not advance for three intervals, is an `rpc` alert, never a quiet poll. `--webhook <https url>` also POSTs each alert as JSON; the monitor prints only the webhook's scheme and host, and a failed POST goes to stderr. `--once` checks once and exits 0 when nothing alerted and 4 when anything did.
+The baseline holds `committeeFloors`, each mint with a committee floor and its raw floor, and `mintCaps`, each mint with a cap account and its `maxPerOrder`, `windowCap`, `windowSecs` and `totalLimit` as the program stores them. The monitor lists the program's accounts to find every mint cap. A baseline without these fields is refused; write a new one.
+
+Every alert is one JSON line on stdout with `kind` (`config`, `upgrade-authority`, `program-hash`, `fill-amount`, `fill-rate`, `mint-cap`, `committee-floor`, `mint-cap-limit` or `rpc`), `field`, `expected`, `observed` and `slot`. A `committee-floor` or `mint-cap-limit` alert also names the `mint`; a floor that is gone reads `0`, a cap that is gone or new reads `missing`. A change alerts once, not on every poll, until the baseline is rewritten and the monitor restarted. `--max-fill <mint>=<raw amount>`, repeatable, alerts on a fill above that amount of that input token; `--max-fills <count>` alerts when more fills land in one interval. A failed read, or a slot that does not advance for three intervals, is an `rpc` alert, never a quiet poll. `--webhook <https url>` also POSTs each alert as JSON; the monitor prints only the webhook's scheme and host, and a failed POST goes to stderr. `--once` checks once and exits 0 when nothing alerted and 4 when anything did. With `--once`, `--since <seconds>` sets how far back it reads fills, the interval by default.
 
 For each mint named in `--max-fill`, the monitor prints its mint cap's outstanding amount and total limit to stderr when it starts, and raises a `mint-cap` alert while the outstanding amount has reached the total limit.
 
@@ -296,9 +298,37 @@ sudo systemctl enable --now intent-engine-monitor
 journalctl -u intent-engine-monitor -f
 ```
 
-`.github/workflows/monitor.yml` also runs `monitor --once` every quarter hour on GitHub against `monitoring/devnet.json`, first on the public devnet node and then on a second node when the `ALCHEMY_DEVNET_RPC` secret holds its address. A failed run is the alert: GitHub emails the repository owner. After each intended change, commit the new baseline, and update the command line version in the workflow when releasing.
+`.github/workflows/monitor.yml` also runs `monitor --once` every hour, at minute 37, on GitHub against `monitoring/devnet.json`, first on the public devnet node and then on a second node when the `ALCHEMY_DEVNET_RPC` secret holds its address. It passes `--since 3900`, so consecutive runs overlap, and `--max-fill` for wrapped SOL at 10 SOL in raw units. A failed run is the alert: GitHub emails the repository owner. After each intended change, commit the new baseline, and update the command line version in the workflow when releasing.
 
 Alerts go to the journal and to the webhook, which should page a person, for example a chat or paging service. After each intended change, write the new baseline and run `sudo systemctl restart intent-engine-monitor`. The monitor cannot report its own death: alert on the unit failing, and watch the webhook for silence.
+
+## Incident
+
+When an alert shows a change nobody proposed, the guardian raises the pause at once, alone:
+
+```sh
+node packages/cli/dist/src/bin.js raise-pause --keypair guardian.json --flags all --url devnet --yes
+```
+
+The admin can also raise it through the multisig, but that waits for two members. Funds still return while paused, as [Roles](#roles) describes.
+
+Once the cause is fixed, the multisig lowers the pause:
+
+```sh
+node packages/multisig/dist/bin.js propose-admin --multisig <multisig> --keypair member-a.json --url devnet --yes -- node packages/cli/dist/src/bin.js lower-pause --authority <vault> --flags all --url devnet
+```
+
+Two members approve and one executes, as in step 4. `show config` then shows `paused` as 0.
+
+Then rewrite the baseline. Check `show config`, the program hash and every mint cap against what the multisig approved, move the old baseline away and write a new one:
+
+```sh
+mv monitoring/devnet.json /tmp/devnet-before.json
+node packages/cli/dist/src/bin.js monitor --write-baseline monitoring/devnet.json --url devnet
+diff /tmp/devnet-before.json monitoring/devnet.json
+```
+
+Commit the new baseline once every difference is one the multisig approved, and restart the monitor service.
 
 ## Signing with a Ledger
 

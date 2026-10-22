@@ -56,6 +56,8 @@
       171
     ]
   },
+  "committeeFloors": {},
+  "mintCaps": {},
   "upgradeAuthority": "DxF6mApa3rnN7QgdqjtBvgyDesvKhVTYQ14Giike4Urv",
   "programHash": "bf142f6ce4d1a91741afb2af6d90c13d0afe39a4856fa037bfb0d35c8d68cb33"
 }

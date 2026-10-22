@@ -9,11 +9,14 @@ export const MONITOR_INTERVAL = 30;
 export const MIN_MONITOR_INTERVAL = 5;
 export const MAX_MONITOR_INTERVAL = 3_600;
 export const MAX_MONITOR_FILLS = 999;
+export const MAX_MONITOR_SINCE = 86_400;
 
 export const MONITOR_NEEDS_BASELINE =
   "monitor needs --expect <baseline file>; write one first with monitor --write-baseline <file> after checking the current config and program are the ones you intend";
 
 export const BASELINE_ALONE = "--write-baseline writes the current values and exits, so it takes no other monitor option but --url";
+
+export const SINCE_NEEDS_ONCE = "--since sets how far back --once reads fills, so it needs --once";
 
 export const MAX_FILL_FORMAT = "--max-fill takes <mint>=<raw amount>, once per input mint";
 
@@ -38,7 +41,7 @@ function maxFills(entries: readonly string[], url: string): ReadonlyMap<Address,
 }
 
 export function monitorOf(remote: Remote, values: Values): Command {
-  const watching = [values.expect, values.interval, values["max-fill"], values["max-fills"], values.webhook, values.once];
+  const watching = [values.expect, values.interval, values["max-fill"], values["max-fills"], values.webhook, values.once, values.since];
   const write = values["write-baseline"];
   if (write !== undefined) {
     if (watching.some((v) => v !== undefined)) {
@@ -52,12 +55,17 @@ export function monitorOf(remote: Remote, values: Values): Command {
   if (values.webhook !== undefined) {
     https(values.webhook, "webhook");
   }
+  if (values.since !== undefined && values.once !== true) {
+    throw new UsageError(SINCE_NEEDS_ONCE);
+  }
+  const interval = parseBounded(values.interval ?? String(MONITOR_INTERVAL), "interval", MAX_MONITOR_INTERVAL, MIN_MONITOR_INTERVAL);
   return {
     name: "monitor",
     ...remote,
     baseline: values.expect,
     watch: {
-      interval: parseBounded(values.interval ?? String(MONITOR_INTERVAL), "interval", MAX_MONITOR_INTERVAL, MIN_MONITOR_INTERVAL),
+      interval,
+      since: values.since === undefined ? interval : parseBounded(values.since, "since", MAX_MONITOR_SINCE, 1),
       maxFill: maxFills(values["max-fill"] ?? [], remote.url),
       maxFills: values["max-fills"] === undefined ? null : parseBounded(values["max-fills"], "max-fills", MAX_MONITOR_FILLS),
       webhook: values.webhook ?? null,

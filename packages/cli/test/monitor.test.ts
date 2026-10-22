@@ -16,7 +16,8 @@ import {
 import type { EngineTransaction, Transport } from "@intent-engine/client";
 import { EXIT_ALERTED, EXIT_OK, EXIT_USAGE, main } from "../src/main.js";
 import { MONITOR_NEEDS_BASELINE } from "../src/monitor-args.js";
-import { cli, enginePath, h, NOW, runtime, transport, world } from "./harness.js";
+import { cli, enginePath, h, NOW, runtime, world } from "./harness.js";
+import { listAccounts, listing } from "./monitor-transport.js";
 
 const BASELINE = "/srv/monitor/baseline.json";
 const SECRET_PATH = "/hooks/T0001/s3cret-token";
@@ -123,6 +124,7 @@ async function fillTx(signature: string, inputMint: Address, amountIn: bigint, s
 describe("monitor", () => {
   beforeEach(async () => {
     await world();
+    listAccounts();
   });
 
   it("the monitor alerts when the config changes", async () => {
@@ -199,6 +201,19 @@ describe("monitor", () => {
     expect(quiet.code).toBe(EXIT_OK);
   });
 
+  it("the monitor with --once reads fills as far back as --since", async () => {
+    await baseline();
+    const mint = (await generateKeyPairSigner()).address;
+    h.engineLog = [
+      { ...(await fillTx("hour-old", mint, 5_001n, 7n)), blockTime: RECENT - 3_600n },
+      { ...(await fillTx("too-old", mint, 9_000n, 6n)), blockTime: RECENT - 3_901n },
+    ];
+    expect(await once("--max-fill", `${mint}=5000`)).toMatchObject({ code: EXIT_OK, alerts: [] });
+    const { code, alerts } = await once("--max-fill", `${mint}=5000`, "--since", "3900");
+    expect(code).toBe(EXIT_ALERTED);
+    expect(alerts).toEqual([{ kind: "fill-amount", field: mint, expected: "5000", observed: "5001", slot: 7, intent: alerts[0]?.["intent"], signature: "hour-old" }]);
+  });
+
   it("the monitor stays quiet when nothing changed", async () => {
     await baseline();
     const mint = (await generateKeyPairSigner()).address;
@@ -240,12 +255,12 @@ describe("monitor", () => {
     await baseline();
     let down = true;
     const failing: Transport = {
-      ...transport,
+      ...listing,
       getAccounts: async (addresses) => {
         if (down) {
           throw new Error("fetch to https://rpc.example.com/key-abc123 failed");
         }
-        return transport.getAccounts(addresses);
+        return listing.getAccounts(addresses);
       },
     };
     h.through = failing;

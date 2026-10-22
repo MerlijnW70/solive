@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { type Address, getAddressDecoder } from "@solana/kit";
 import {
+  type Config,
   findConfigPda,
   findProgramDataAddress,
   getConfigDecoder,
@@ -11,6 +12,7 @@ import { type AccountView, CLOCK_SYSVAR, loadMintCap, type Transport } from "@in
 import { UsageError } from "./arg-values.js";
 import type { MonitorSpec } from "./command-types.js";
 import { fillsIn, inputMintsOf } from "./monitor-fills.js";
+import { capChanges, type Floors, floorChanges, floorsOf, isFloors, isMintCaps, type MintCaps, mintCapsOf } from "./monitor-limits.js";
 import { printableLines, redactUrl, render } from "./render.js";
 import type { Runtime } from "./runtime.js";
 
@@ -42,11 +44,34 @@ type ConfigField = (typeof CONFIG_FIELDS)[number];
 type Value = string | number | number[];
 type ConfigValues = Record<ConfigField, Value>;
 
-export type Baseline = { program: Address; config: ConfigValues; upgradeAuthority: string; programHash: string };
+export type Baseline = {
+  program: Address;
+  config: ConfigValues;
+  committeeFloors: Floors;
+  mintCaps: MintCaps;
+  upgradeAuthority: string;
+  programHash: string;
+};
 
-export type Snapshot = { slot: bigint; config: ConfigValues | null; upgradeAuthority: string | null; programHash: string | null };
+export type Snapshot = {
+  slot: bigint;
+  config: ConfigValues | null;
+  committeeFloors: Floors | null;
+  mintCaps: MintCaps;
+  upgradeAuthority: string | null;
+  programHash: string | null;
+};
 
-export type AlertKind = "config" | "upgrade-authority" | "program-hash" | "fill-amount" | "fill-rate" | "mint-cap" | "rpc";
+export type AlertKind =
+  | "config"
+  | "upgrade-authority"
+  | "program-hash"
+  | "fill-amount"
+  | "fill-rate"
+  | "mint-cap"
+  | "committee-floor"
+  | "mint-cap-limit"
+  | "rpc";
 
 export type Alert = { kind: AlertKind; field: string; expected: unknown; observed: unknown; slot: number | null } & Record<string, unknown>;
 
@@ -66,34 +91,37 @@ export const otherProgram = (file: string, program: string) =>
 
 const sameBytes = (a: ArrayLike<number>, b: ArrayLike<number>) => a.length === b.length && Array.from(a).every((x, i) => x === b[i]);
 
-function configValues(view: AccountView | null | undefined): ConfigValues | null {
+function decodedConfig(view: AccountView | null | undefined): Config | null {
   const discriminator = getConfigDiscriminatorBytes();
   if (view === null || view === undefined || view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS || !sameBytes(view.data.subarray(0, discriminator.length), discriminator)) {
     return null;
   }
   try {
-    const c = getConfigDecoder().decode(view.data);
-    return {
-      admin: c.admin,
-      pendingAdmin: c.pendingAdmin,
-      guardian: c.guardian,
-      feeRecipient: c.feeRecipient,
-      feeBps: c.feeBps,
-      kindFeeMask: c.kindFeeMask,
-      kindFeeBps: [...c.kindFeeBps],
-      partnerCutBps: c.partnerCutBps,
-      crankBounty: c.crankBounty,
-      createFee: c.createFee,
-      enabledKinds: c.enabledKinds.toString(),
-      fillDisabledKinds: c.fillDisabledKinds.toString(),
-      paused: c.paused,
-      capsRequired: c.capsRequired,
-      version: c.version,
-      domain: [...c.domain],
-    };
+    return getConfigDecoder().decode(view.data);
   } catch {
     return null;
   }
+}
+
+function configValues(c: Config): ConfigValues {
+  return {
+    admin: c.admin,
+    pendingAdmin: c.pendingAdmin,
+    guardian: c.guardian,
+    feeRecipient: c.feeRecipient,
+    feeBps: c.feeBps,
+    kindFeeMask: c.kindFeeMask,
+    kindFeeBps: [...c.kindFeeBps],
+    partnerCutBps: c.partnerCutBps,
+    crankBounty: c.crankBounty,
+    createFee: c.createFee,
+    enabledKinds: c.enabledKinds.toString(),
+    fillDisabledKinds: c.fillDisabledKinds.toString(),
+    paused: c.paused,
+    capsRequired: c.capsRequired,
+    version: c.version,
+    domain: [...c.domain],
+  };
 }
 
 export function executableHash(data: Uint8Array): string {
@@ -129,14 +157,28 @@ export async function snapshot(transport: Transport): Promise<Snapshot> {
     throw new Error("the node returned no clock, so it cannot say which slot it has reached");
   }
   const slot = new DataView(clock.data.buffer, clock.data.byteOffset, clock.data.byteLength).getBigUint64(0, true);
-  return { slot, config: configValues(config), ...programState(program, data, programData) };
+  const decoded = decodedConfig(config);
+  return {
+    slot,
+    config: decoded === null ? null : configValues(decoded),
+    committeeFloors: decoded === null ? null : floorsOf(decoded),
+    mintCaps: await mintCapsOf(transport),
+    ...programState(program, data, programData),
+  };
 }
 
 export function baselineOf(now: Snapshot): Baseline {
-  if (now.config === null || now.upgradeAuthority === null || now.programHash === null) {
+  if (now.config === null || now.committeeFloors === null || now.upgradeAuthority === null || now.programHash === null) {
     throw new Error(`cannot write a baseline: the config or the upgradeable program ${INTENT_ENGINE_PROGRAM_ADDRESS} is missing on this cluster`);
   }
-  return { program: INTENT_ENGINE_PROGRAM_ADDRESS, config: now.config, upgradeAuthority: now.upgradeAuthority, programHash: now.programHash };
+  return {
+    program: INTENT_ENGINE_PROGRAM_ADDRESS,
+    config: now.config,
+    committeeFloors: now.committeeFloors,
+    mintCaps: now.mintCaps,
+    upgradeAuthority: now.upgradeAuthority,
+    programHash: now.programHash,
+  };
 }
 
 const isValue = (v: unknown) =>
@@ -161,7 +203,9 @@ export function parseBaseline(text: string, file: string): Baseline {
     config === null ||
     typeof config !== "object" ||
     Object.keys(config).length !== CONFIG_FIELDS.length ||
-    !CONFIG_FIELDS.every((field) => isValue(config[field]))
+    !CONFIG_FIELDS.every((field) => isValue(config[field])) ||
+    !isFloors(b.committeeFloors) ||
+    !isMintCaps(b.mintCaps)
   ) {
     throw new UsageError(notABaseline(file));
   }
@@ -245,6 +289,10 @@ function differences(baseline: Baseline, now: Snapshot): Finding[] {
       compare(`config.${field}`, "config", field, baseline.config[field], now.config[field]);
     }
   }
+  const limits = [...(now.committeeFloors === null ? [] : floorChanges(baseline.committeeFloors, now.committeeFloors)), ...capChanges(baseline.mintCaps, now.mintCaps, MISSING)];
+  for (const { key, kind, field, mint, expected, observed } of limits) {
+    found.push({ key, alert: { kind, field, expected, observed, slot, mint } });
+  }
   compare("upgradeAuthority", "upgrade-authority", "upgradeAuthority", baseline.upgradeAuthority, now.upgradeAuthority ?? MISSING);
   compare("programHash", "program-hash", "programHash", baseline.programHash, now.programHash ?? MISSING);
   return found;
@@ -291,10 +339,10 @@ async function fillAlerts(transport: Transport, spec: MonitorSpec, state: Monito
   const seen = state.seen;
   const fresh = fetched.filter((tx) => (seen === null ? tx.blockTime !== null && tx.blockTime >= since : !seen.has(tx.signature)));
   state.seen = new Set([...(seen ?? []), ...fetched.map((tx) => tx.signature)].slice(-limit * 4));
-  const { fills, created } = fillsIn(fresh);
+  const { fills, known } = fillsIn(fresh);
   const alerts: Alert[] = [];
   if (spec.maxFill.size > 0 && fills.length > 0) {
-    const mints = await inputMintsOf(transport, fills, created);
+    const mints = await inputMintsOf(transport, fills, known);
     for (const fill of fills) {
       const mint = mints.get(fill.intent);
       const cap = mint === undefined ? undefined : spec.maxFill.get(mint);
@@ -338,7 +386,7 @@ export async function checkOnce(
     alerts = [
       ...stateAlerts([...differences(baseline, current), ...(await capFindings(transport, spec, current.slot))], state),
       ...slotAlerts(current, state),
-      ...(await fillAlerts(transport, spec, state, now - BigInt(spec.interval))),
+      ...(await fillAlerts(transport, spec, state, now - BigInt(spec.since))),
     ];
   } catch (error) {
     if (state.failing) {

@@ -5,6 +5,7 @@ import { decodeMintCapData, findConfigPda, findMintCapAddress, getConfigDecoder,
 import { AUTHORITY_NEXT } from "../src/commands.js";
 import { EXIT_ALERTED, EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { balance, cli, h, NOW, setNow, type World, world } from "./harness.js";
+import { listAccounts } from "./monitor-transport.js";
 
 type Json = Record<string, any>;
 
@@ -173,6 +174,7 @@ describe("mint caps on the command line", () => {
   });
 
   it("the monitor raises no alert on a cap without a total limit", async () => {
+    listAccounts();
     expect((await cli(["set-mint-cap", "--keypair", "admin.json", "--yes", ...limits("300", "5000", "3600")], keys)).code).toBe(EXIT_OK);
     expect((await cli(["set-caps-required", "on", "--keypair", "admin.json", "--yes"], keys)).code).toBe(EXIT_OK);
     expect((await cli(["monitor", "--write-baseline", "/srv/monitor/open.json"], {})).code).toBe(EXIT_OK);
@@ -183,6 +185,7 @@ describe("mint caps on the command line", () => {
   });
 
   it("the monitor shows the outstanding amount and alerts once it reaches the total limit", async () => {
+    listAccounts();
     const watch = (baseline: string) => ["monitor", "--expect", baseline, "--once", "--max-fill", `${w.inputMint}=1000`];
     expect((await cli(["monitor", "--write-baseline", "/srv/monitor/bare.json"], {})).code).toBe(EXIT_OK);
     const bare = await cli(watch("/srv/monitor/bare.json"), {});

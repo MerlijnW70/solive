@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { buildSetCapsRequired, findConfigPda, getConfigDecoder } from "@intent-engine/core";
 import { EXIT_OK } from "../../src/main.js";
 import { cli, h, send, world } from "../harness.js";
+import { listAccounts } from "../monitor-transport.js";
 
 const BASELINE = "/srv/hunt-n/caps-baseline.json";
 
@@ -10,6 +11,7 @@ type Alert = { kind: string } & Record<string, unknown>;
 describe("hunt N operations monitor baseline", () => {
   it("N-1: admin flips capsRequired and the monitor does not alert", async () => {
     const w = await world();
+    listAccounts();
     const written = await cli(["monitor", "--write-baseline", BASELINE], {});
     expect(written.code).toBe(EXIT_OK);
 

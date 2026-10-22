@@ -159,6 +159,7 @@ export const OPTIONS = {
   "max-fills": { type: "string" },
   webhook: { type: "string" },
   once: { type: "boolean" },
+  since: { type: "string" },
   "max-per-order": { type: "string" },
   "window-cap": { type: "string" },
   "window-secs": { type: "string" },
@@ -351,7 +352,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
     "partner-bps",
     "units",
   ],
-  monitor: ["url", "expect", "write-baseline", "interval", "max-fill", "max-fills", "webhook", "once"],
+  monitor: ["url", "expect", "write-baseline", "interval", "max-fill", "max-fills", "webhook", "once", "since"],
   reputation: ["url", "worker", "max-pages", "reader", "seed"],
   feedback: ["url", "priority-fee", "keypair", "yes", "intent", "score", "note"],
   committee: [

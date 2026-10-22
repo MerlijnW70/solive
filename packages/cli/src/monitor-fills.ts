@@ -6,9 +6,9 @@ export type SeenFill = { signature: string; slot: bigint; intent: Address; amoun
 
 const PAID_IN_ONE_STEP: ReadonlySet<string> = new Set(["IntentFilled", "IntentAttested", "IntentSplit"]);
 
-export function fillsIn(transactions: readonly EngineTransaction[]): { fills: SeenFill[]; created: Map<Address, Address> } {
+export function fillsIn(transactions: readonly EngineTransaction[]): { fills: SeenFill[]; known: Map<Address, Address> } {
   const fills: SeenFill[] = [];
-  const created = new Map<Address, Address>();
+  const known = new Map<Address, Address>();
   for (const tx of transactions) {
     if (tx.failed) {
       continue;
@@ -21,7 +21,7 @@ export function fillsIn(transactions: readonly EngineTransaction[]): { fills: Se
       const fields = event.fields as Record<string, unknown>;
       const intent = fields["intent"] as Address;
       if (event.name === "IntentCreated") {
-        created.set(intent, fields["inputMint"] as Address);
+        known.set(intent, fields["inputMint"] as Address);
       }
       if (event.name === "FillBegun") {
         begun.set(intent, fields["amountIn"] as bigint);
@@ -33,18 +33,22 @@ export function fillsIn(transactions: readonly EngineTransaction[]): { fills: Se
           : undefined;
       if (amountIn !== undefined) {
         fills.push({ signature: tx.signature, slot: tx.slot, intent, amountIn: amountIn ?? 0n });
+        const vault = tx.tokens?.find((held) => held.owner === intent);
+        if (vault !== undefined && !known.has(intent)) {
+          known.set(intent, vault.mint);
+        }
       }
     }
   }
-  return { fills, created };
+  return { fills, known };
 }
 
 export async function inputMintsOf(
   transport: Transport,
   fills: readonly SeenFill[],
-  created: ReadonlyMap<Address, Address>,
+  known: ReadonlyMap<Address, Address>,
 ): Promise<Map<Address, Address>> {
-  const mints = new Map(created);
+  const mints = new Map(known);
   const unknown = [...new Set(fills.map((f) => f.intent).filter((intent) => !mints.has(intent)))];
   if (unknown.length === 0) {
     return mints;
