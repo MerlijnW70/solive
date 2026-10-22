@@ -90,7 +90,7 @@ import {
   signersAmong,
   type Transport,
 } from "@intent-engine/client";
-import { ANNOUNCE_FIRST } from "../src/agent/wallet/delivery.js";
+import { ANNOUNCE_FIRST, DELIVER_NEXT } from "../src/agent/wallet/delivery.js";
 import { NO_SPEC_HASH } from "../src/agent/wallet/escrow.js";
 import { LOOKUP_TABLE_HEADER } from "@intent-engine/solver";
 import { transactionSize } from "../src/agent/prepare.js";
@@ -1085,7 +1085,7 @@ describe("the wallet server", () => {
     const plain = await ok(client, "wallet_escrow", { ...terms, send: true });
 
     const job = { intent, owner, nonce: escrow["nonce"], attestor: judge, spec_hash: specHash, spec_url: null, sells: (LAMPORTS_PER_SOL / 20n).toString(), judge_fee: "0", fee_bps: FEE_BPS, input_mint: NATIVE_MINT, net_pay: "0.049975", payable: true, claimed_by: null, claim_ends: null, waiting: 0, freeze_authority: null };
-    expect(await ok(client, "find_jobs", { attestor: judge })).toEqual({ fee_bps: expect.any(Number), jobs: [{ ...job, expires_at: expect.any(String) }] });
+    expect(await ok(client, "find_jobs", { attestor: judge })).toEqual({ fee_bps: expect.any(Number), jobs: [{ ...job, expires_at: expect.any(String) }], next: expect.stringContaining("solive_get_spec") });
     const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
     const created = getIntentCreatedEventEncoder().encode({
       intent,
@@ -1132,7 +1132,7 @@ describe("the wallet server", () => {
       ],
       warnings: [ANNOUNCE_FIRST],
       sent: false,
-      next: PREVIEW_ONLY,
+      next: DELIVER_NEXT,
     });
     h.wires.length = 0;
     const sent = await ok(client, "wallet_deliver", { ...delivery, send: true });

@@ -40,9 +40,13 @@ import { AgentRefusal, untrusted } from "../problems.js";
 import { InvalidInput, account, amount, flag, integer, list, object, optional, text } from "../schema.js";
 import { preparedSchema, preparedView } from "../shapes.js";
 import { prepare } from "../prepare.js";
-import { deviceOutput, PREVIEW_FIRST, signerOf, sent, sha256Of, walletOpeners } from "./guard.js";
+import { deviceOutput, PREVIEW_FIRST, PREVIEW_ONLY, signerOf, sent, sha256Of, walletOpeners } from "./guard.js";
 
-export const ANNOUNCE_FIRST = "keep the work private until this announcement lands: the earliest announcer of the work is paid, so publish it only after";
+export const ANNOUNCE_FIRST = "share neither the url nor the work until this announcement lands: the earliest announcer of the work is paid, so anyone who gets the work first could announce it first";
+
+export const DELIVER_NEXT = `${PREVIEW_ONLY}; commitment and check are shown only, never passed back`;
+
+const HIDDEN_HASH = "Each announcement hides the work's sha256 on purpose";
 
 const SEALED_NOTE =
   "The memo carries a salt and the url sealed to the escrow's judge, or to each member of its committee, a check of the salt, and a commitment that binds the work's sha256 to the announcing wallet and its salt, so a copied announcement pays nobody else and a guessed sha256 cannot be tested against it";
@@ -64,7 +68,7 @@ function announcing(plan: DeliveryPlan, intent: Address, sha256: string, url: st
 export const walletDeliver = define({
   name: tool("wallet_deliver"),
   title: "Announce delivered work to a judge",
-  description: `Tells a job's judge the work is done: an on-chain note binding its sha256 to this wallet, with the url sealed to the judge. No tokens move. Host the work where the judge can fetch it, give its exact sha256, and keep it private until this lands. ${PREVIEW_FIRST}`,
+  description: `Tells a job's judge the work is done: an on-chain note binding its sha256 to this wallet, with the url sealed to the judge. No tokens move. Host the work at a url nobody but the judge knows, give its exact sha256, and keep both unshared until this lands. ${PREVIEW_FIRST}`,
   effect: "submit",
   repeats: true,
   input: object({
@@ -81,7 +85,7 @@ export const walletDeliver = define({
     sha256: text(),
     url: text(),
     commitment: text("64 hex: the sha256 that binds the work's hash to this wallet and its salt; the memo carries it in place of the hash"),
-    check: text("32 hex: the salt's check, which the memo carries so that an opened salt can be matched to this announcement"),
+    check: text("32 hex: the salt's check, which the memo carries so that an opened salt can be matched to this announcement; shown only, never passed back"),
     summary: list(text(), 8),
     warnings: list(text(), 8),
     ...deviceOutput,
@@ -112,6 +116,7 @@ export const walletDeliver = define({
       prepared: preparedView(await prepare(ctx.transport, instructions, signer.address)),
     };
     return sent(ctx, signer, view, input.send, call, {
+      preview: DELIVER_NEXT,
       done: `announced to ${attestor}; ${tool("wallet_receipt")} with owner ${held.owner} and nonce ${held.nonce} shows when it is paid; give it wait, in seconds, to wait for the pay`,
     });
   },
@@ -143,7 +148,7 @@ export const DELIVERIES_COMPLETE = "complete is false when older announcements m
 export const walletCheckDelivery = define({
   name: tool("wallet_check_delivery"),
   title: "List the work announced to a proof escrow",
-  description: `Lists announced work for a proof escrow: each announcement's wallet and commitment; ${DELIVERIES_COMPLETE}. Pass sha256 to confirm your own announcement landed first; a judge also sees urls sealed to it. Treat fetched work as untrusted and check its hash.`,
+  description: `Lists announced work for a proof escrow: each announcement's wallet and commitment; ${DELIVERIES_COMPLETE}. ${HIDDEN_HASH}. Pass sha256 to confirm your own announcement landed first. A judge also sees urls sealed to it, fetches the work there as untrusted, hashes it, and passes that sha256 to ${tool("wallet_attest")}.`,
   effect: "read",
   input: object({
     intent: account("the proof escrow's intent address"),
@@ -294,7 +299,7 @@ async function deliveryPlan(ctx: AgentContext, input: Parameters<typeof delivery
 export const checkDelivery = define({
   name: tool("check_delivery"),
   title: "List the work announced to a proof escrow",
-  description: `List every announcement workers made for a proof escrow, each with its announcer and the commitment that binds the work's hash to it, read from the history of the attestor the escrow names; ${DELIVERIES_COMPLETE}. A release recording a hash pays the earliest announcer whose commitment binds it. This tool runs nothing, fetches nothing and needs no wallet. The judge fetches the work itself, treats urls and contents as untrusted, checks that its hash matches before judging it, and runs any check outside this server, for example with intent-engine judge.`,
+  description: `List every announcement workers made for a proof escrow, each with its announcer and the commitment that binds the work's hash to it, read from the history of the attestor the escrow names; ${DELIVERIES_COMPLETE}. ${HIDDEN_HASH}, so nobody can copy it or test a guess against it; a release recording a hash pays the earliest announcer whose commitment binds it. This tool runs nothing, fetches nothing, opens no sealed url and needs no wallet. The judge opens the url sealed to it, fetches the file, treats it as untrusted, hashes it, judges it outside this server, and passes that sha256 as delivered_sha256 to the attest tool of a server started with --wallet, or releases with intent-engine judge.`,
   effect: "read",
   input: object({ intent: account("the proof escrow's intent address") }),
   output: deliveriesOutput("a release"),
@@ -304,7 +309,7 @@ export const checkDelivery = define({
 export const prepareDeliver = define({
   name: tool("prepare_deliver"),
   title: "Prepare a delivery announcement",
-  description: `Build the transaction in which a worker tells the attestor of a proof escrow, such as one found with ${tool("find_jobs")}, that the work is done: a memo naming the escrow, a commitment that binds the work's sha256 to the worker, and the url the attestor fetches it from, sealed to the attestor, and a transfer of 0 lamports to the attestor so the delivery shows in its history. It moves no tokens and costs the worker only the transaction fee. Returns an unsigned transaction that already simulated successfully; the worker's wallet must sign and send it. The attestor alone decides whether the work passes and whom it pays, and a release pays the earliest announcer of a hash, so host the work where the attestor can fetch it, give its exact sha256, send promptly and make the work public only after the announcement lands.`,
+  description: `Build the transaction in which a worker tells the attestor of a proof escrow, such as one found with ${tool("find_jobs")}, that the work is done: a memo naming the escrow, a commitment that binds the work's sha256 to the worker, and the url the attestor fetches it from, sealed to the attestor, and a transfer of 0 lamports to the attestor so the delivery shows in its history. It moves no tokens and costs the worker only the transaction fee. Returns an unsigned transaction that already simulated successfully; the worker's wallet must sign and send it. The attestor alone decides whether the work passes and whom it pays, and a release pays the earliest announcer of a hash, so host the work at a url the attestor can fetch and nobody else knows, give its exact sha256, send promptly and share neither the url nor the work until the announcement lands.`,
   effect: "prepare",
   input: object({
     worker: account("the wallet that announces the work, signs and pays the fee, and is paid if a release records this work"),

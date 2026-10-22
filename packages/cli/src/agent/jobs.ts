@@ -14,6 +14,8 @@ import { poll } from "./wallet/wait.js";
 
 export const NO_JOB_YET = `no matching job when the wait ran out; call ${tool("find_jobs")} again with wait to keep waiting`;
 
+export const JOBS_FOUND = `read a job's spec with ${tool("get_spec")} and work on it only when matches is true; ${tool("get_claims")} shows whether the job takes claims and who holds it; ${tool("wallet_claim")} reserves a job that takes claims for this wallet while you work`;
+
 function mintOfName(name: string, url: string): Address {
   const mint = tokenNamed(name.trim(), url);
   if (mint instanceof Error) {
@@ -68,6 +70,8 @@ async function jobsListed(transport: Transport, wanted: JobsWanted) {
 
 type Listed = Awaited<ReturnType<typeof jobsListed>>;
 
+const hinted = (listed: Listed) => (listed.jobs.length > 0 ? { ...listed, next: JOBS_FOUND } : listed);
+
 export const findJobs = define({
   name: tool("find_jobs"),
   title: "Find paid work",
@@ -110,7 +114,7 @@ export const findJobs = define({
   run: async (ctx: AgentContext, input) => {
     const wanted = filterOf(input, ctx.url ?? ctx.wallet?.url ?? "");
     if (input.wait === undefined) {
-      return jobsListed(ctx.transport, wanted);
+      return hinted(await jobsListed(ctx.transport, wanted));
     }
     const clock = ctx.wallet ?? ctx.clock;
     if (clock === undefined) {
@@ -123,6 +127,6 @@ export const findJobs = define({
       return listed.jobs.length > 0;
     });
     const last = listed as Listed;
-    return last.jobs.length > 0 ? last : { ...last, next: NO_JOB_YET };
+    return last.jobs.length > 0 ? hinted(last) : { ...last, next: NO_JOB_YET };
   },
 });

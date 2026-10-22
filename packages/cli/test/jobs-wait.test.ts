@@ -73,7 +73,7 @@ describe("solive_find_jobs with wait", () => {
     const job = await open(w.inputMint, w.outputMint, 100n)();
     const value = await ok(client, { wait: 5 });
     expect(intents(value)).toEqual([job]);
-    expect(value["next"]).toBeUndefined();
+    expect(value["next"]).toContain("solive_get_spec");
     expect(h.sleeps).toEqual([]);
   });
 
@@ -84,7 +84,7 @@ describe("solive_find_jobs with wait", () => {
     opening = [async () => undefined, async () => (job = await open(w.inputMint, w.outputMint, 100n)())];
     const value = await ok(client, { wait: 5 });
     expect(intents(value)).toEqual([job]);
-    expect(value["next"]).toBeUndefined();
+    expect(value["next"]).toContain("solive_get_spec");
     expect(h.sleeps).toEqual([1, 1]);
   });
 
@@ -122,13 +122,13 @@ describe("solive_find_jobs with wait", () => {
     expect(h.sleeps).toEqual([]);
   });
 
-  it("without wait reads once and adds no next", async () => {
+  it("without wait reads once and adds next only when it finds a job", async () => {
     const client = await linked();
     expect(await ok(client, {})).toEqual({ fee_bps: expect.any(Number), jobs: [] });
     const job = await open(w.inputMint, w.outputMint, 100n)();
     const value = await ok(client, {});
     expect(intents(value)).toEqual([job]);
-    expect(Object.keys(value).sort()).toEqual(["fee_bps", "jobs"]);
+    expect(Object.keys(value).sort()).toEqual(["fee_bps", "jobs", "next"]);
     expect(h.sleeps).toEqual([]);
     const bare = await linked(false);
     expect(intents(await ok(bare, {}))).toEqual([job]);

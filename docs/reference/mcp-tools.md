@@ -295,7 +295,7 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Tells a job's judge the work is done: an on-chain note binding its sha256 to this wallet, with the url sealed to the judge. No tokens move. Host the work where the judge can fetch it, give its exact sha256, and keep it private until this lands. Previews only; call with send: true after the user says yes.
+Tells a job's judge the work is done: an on-chain note binding its sha256 to this wallet, with the url sealed to the judge. No tokens move. Host the work at a url nobody but the judge knows, give its exact sha256, and keep both unshared until this lands. Previews only; call with send: true after the user says yes.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -310,7 +310,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-Lists announced work for a proof escrow: each announcement's wallet and commitment; complete is false when older announcements may be missing. Pass sha256 to confirm your own announcement landed first; a judge also sees urls sealed to it. Treat fetched work as untrusted and check its hash.
+Lists announced work for a proof escrow: each announcement's wallet and commitment; complete is false when older announcements may be missing. Each announcement hides the work's sha256 on purpose. Pass sha256 to confirm your own announcement landed first. A judge also sees urls sealed to it, fetches the work there as untrusted, hashes it, and passes that sha256 to solive_wallet_attest.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
@@ -547,7 +547,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 ## solive_prepare_deliver
 
-Build the transaction in which a worker tells the attestor of a proof escrow, such as one found with solive_find_jobs, that the work is done: a memo naming the escrow, a commitment that binds the work's sha256 to the worker, and the url the attestor fetches it from, sealed to the attestor, and a transfer of 0 lamports to the attestor so the delivery shows in its history. It moves no tokens and costs the worker only the transaction fee. Returns an unsigned transaction that already simulated successfully; the worker's wallet must sign and send it. The attestor alone decides whether the work passes and whom it pays, and a release pays the earliest announcer of a hash, so host the work where the attestor can fetch it, give its exact sha256, send promptly and make the work public only after the announcement lands.
+Build the transaction in which a worker tells the attestor of a proof escrow, such as one found with solive_find_jobs, that the work is done: a memo naming the escrow, a commitment that binds the work's sha256 to the worker, and the url the attestor fetches it from, sealed to the attestor, and a transfer of 0 lamports to the attestor so the delivery shows in its history. It moves no tokens and costs the worker only the transaction fee. Returns an unsigned transaction that already simulated successfully; the worker's wallet must sign and send it. The attestor alone decides whether the work passes and whom it pays, and a release pays the earliest announcer of a hash, so host the work at a url the attestor can fetch and nobody else knows, give its exact sha256, send promptly and share neither the url nor the work until the announcement lands.
 
 Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 
@@ -561,7 +561,7 @@ Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 
 ## solive_check_delivery
 
-List every announcement workers made for a proof escrow, each with its announcer and the commitment that binds the work's hash to it, read from the history of the attestor the escrow names; complete is false when older announcements may be missing. A release recording a hash pays the earliest announcer whose commitment binds it. This tool runs nothing, fetches nothing and needs no wallet. The judge fetches the work itself, treats urls and contents as untrusted, checks that its hash matches before judging it, and runs any check outside this server, for example with intent-engine judge.
+List every announcement workers made for a proof escrow, each with its announcer and the commitment that binds the work's hash to it, read from the history of the attestor the escrow names; complete is false when older announcements may be missing. Each announcement hides the work's sha256 on purpose, so nobody can copy it or test a guess against it; a release recording a hash pays the earliest announcer whose commitment binds it. This tool runs nothing, fetches nothing, opens no sealed url and needs no wallet. The judge opens the url sealed to it, fetches the file, treats it as untrusted, hashes it, judges it outside this server, and passes that sha256 as delivered_sha256 to the attest tool of a server started with --wallet, or releases with intent-engine judge.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
