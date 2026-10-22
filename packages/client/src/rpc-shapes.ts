@@ -3,6 +3,7 @@ import type {
   Base64EncodedWireTransaction,
   Blockhash,
   Instruction,
+  ReadonlyUint8Array,
   Signature,
   TransactionSigner,
 } from "@solana/kit";
@@ -12,6 +13,8 @@ export type AccountView = { owner: Address; data: Uint8Array; lamports: bigint; 
 export type ProgramAccount = { address: Address; data: Uint8Array };
 
 export type EngineAccount = ProgramAccount & { lamports: bigint };
+
+export type EngineAccountFilter = { discriminator: ReadonlyUint8Array; dataSize?: number };
 
 export type TokenHolding = { account: Address; mint: Address; owner?: Address };
 
@@ -59,7 +62,7 @@ export interface Transport {
   simulate(wire: Base64EncodedWireTransaction, watch?: readonly Address[]): Promise<Simulation>;
   genesisHash(): Promise<string>;
   intents(owner?: Address, read?: IntentRead): Promise<ProgramAccount[]>;
-  engineAccounts?(): Promise<EngineAccount[]>;
+  engineAccounts?(filter?: EngineAccountFilter): Promise<EngineAccount[]>;
   engineTransactions(limit: number, of?: Address, memo?: string): Promise<EngineTransaction[]>;
   signaturesOf?(of: Address, limit: number, before?: string): Promise<ListedSignature[]>;
   transactionsOf?(listed: readonly ListedSignature[]): Promise<EngineTransaction[]>;

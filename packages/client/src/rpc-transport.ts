@@ -19,11 +19,21 @@ import {
 import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { confirmSent, type SignatureWatch } from "./confirmation.js";
 import { BlockhashExpired, patiently, staleBlockhash } from "./rpc-retry.js";
-import type { AccountView, AtLeast, EngineTransaction, FinalizedBlock, ListedSignature, RawAccount, RpcLike, SignatureLanding, Status, Transport } from "./rpc-shapes.js";
+import type { AccountView, AtLeast, EngineAccountFilter, EngineTransaction, FinalizedBlock, ListedSignature, RawAccount, RpcLike, SignatureLanding, Status, Transport } from "./rpc-shapes.js";
 import { SYSTEM_PROGRAM_ADDRESS, TOKEN_PROGRAMS } from "./accounts.js";
 import { holdingsOf, keysAt, MEMO_PROGRAM_ADDRESS, signersAmong, solTransfersOf } from "./transaction-keys.js";
 
 const INTENT_OWNER_OFFSET = 8n;
+
+function accountFilters(filter?: EngineAccountFilter) {
+  if (filter === undefined) {
+    return [];
+  }
+  return [
+    ...(filter.dataSize === undefined ? [] : [{ dataSize: BigInt(filter.dataSize) }]),
+    { memcmp: { offset: 0n, bytes: getBase58Decoder().decode(filter.discriminator), encoding: "base58" as const } },
+  ];
+}
 
 const withoutMark = ({ complete: _, ...found }: EngineTransaction & { complete: boolean }): EngineTransaction => found;
 
@@ -296,9 +306,10 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     },
     ...(firstBlock === undefined ? {} : { firstAvailableSlot: () => patiently(() => firstBlock().send(), wait) }),
     ...(finalizedBlock === undefined ? {} : { finalizedBlock }),
-    async engineAccounts() {
+    async engineAccounts(filter) {
+      const filters = accountFilters(filter);
       const found = await patiently(
-        () => rpc.getProgramAccounts(INTENT_ENGINE_PROGRAM_ADDRESS, { encoding: "base64", commitment: "confirmed", filters: [] }).send(),
+        () => rpc.getProgramAccounts(INTENT_ENGINE_PROGRAM_ADDRESS, { encoding: "base64", commitment: "confirmed", filters }).send(),
         wait,
       );
       const entries = "context" in found ? found.value : found;

@@ -1,5 +1,12 @@
-import { committeeFloors, type Config, decodeMintCapData, isMintCapData } from "@intent-engine/core";
-import type { Transport } from "@intent-engine/client";
+import {
+  committeeFloors,
+  type Config,
+  decodeMintCapData,
+  getMintCapSize,
+  isMintCapData,
+  MINT_CAP_DISCRIMINATOR,
+} from "@intent-engine/core";
+import type { EngineAccountFilter, Transport } from "@intent-engine/client";
 
 export const CAP_LIMITS = ["maxPerOrder", "windowCap", "windowSecs", "totalLimit"] as const;
 
@@ -10,6 +17,8 @@ export type CapLimits = Record<CapLimit, string | number>;
 export type Floors = Record<string, string>;
 
 export type MintCaps = Record<string, CapLimits>;
+
+export const MINT_CAP_FILTER: EngineAccountFilter = { discriminator: MINT_CAP_DISCRIMINATOR, dataSize: getMintCapSize() };
 
 export const NO_FLOOR = "0";
 
@@ -27,7 +36,7 @@ export async function mintCapsOf(transport: Transport): Promise<MintCaps> {
     throw new Error(CANNOT_LIST);
   }
   const caps: MintCaps = {};
-  for (const account of await transport.engineAccounts()) {
+  for (const account of await transport.engineAccounts(MINT_CAP_FILTER)) {
     if (!isMintCapData(account.data)) {
       continue;
     }
