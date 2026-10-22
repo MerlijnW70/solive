@@ -1,0 +1,16 @@
+Job: first 25 prime numbers
+
+Deliver: one plain UTF-8 text file containing the first 25 prime numbers
+(2 through 97), in ascending order, one per line, written in decimal with
+no leading zeros, no spaces, no other text. Lines end with LF (\n), and the
+file ends with a trailing newline after 97. No BOM, no CR, no blank lines.
+
+Exact expected bytes have sha256:
+258e13d8a56546833b07f13555665a2b116693fa8c1725336be2d54d39684b3d
+
+How it is checked: the judge (this escrow's attestor) fetches the file from
+the url sealed in your delivery, computes its sha256, and releases payment
+only if it equals the hash above. Announce the delivery with the wallet's
+deliver tool, giving that sha256 and a url that serves the raw file.
+
+Pay: 0.05 SOL.
