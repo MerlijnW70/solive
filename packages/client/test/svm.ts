@@ -77,7 +77,18 @@ async function tokenAccount(chain: Chain, authority: KeyPairSigner, owner: Addre
   );
 }
 
+export const COLLECT_EVERY = 8;
+let built = 0;
+
+export function collectDropped(): void {
+  built++;
+  if (built % COLLECT_EVERY === 0) {
+    (globalThis as { gc?: () => void }).gc?.();
+  }
+}
+
 export async function world(): Promise<World> {
+  collectDropped();
   const svm = new LiteSVM().withPrecompiles();
   svm.addProgramFromFile(INTENT_ENGINE_PROGRAM_ADDRESS, enginePath);
   const clock = svm.getClock();

@@ -53,6 +53,7 @@ import type { EngineTransaction, Transport } from "@intent-engine/client";
 import type { Runtime } from "../src/commands.js";
 import { main } from "../src/main.js";
 import { fileSales } from "../src/agent/sales.js";
+import { collectDropped } from "./collect.js";
 
 const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111" as Address;
 export const NOW = 1_700_000_000n;
@@ -423,6 +424,7 @@ export function resetHarness(): void {
 
 export async function boot(): Promise<KeyPairSigner> {
   resetHarness();
+  collectDropped();
   h.svm = new LiteSVM().withPrecompiles();
   h.svm.addProgramFromFile(INTENT_ENGINE_PROGRAM_ADDRESS, enginePath);
   setNow(NOW);

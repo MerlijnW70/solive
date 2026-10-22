@@ -1,6 +1,7 @@
 import { inspect } from "node:util";
 import {
   type Address,
+  type Base64EncodedWireTransaction,
   appendTransactionMessageInstructions,
   createTransactionMessage,
   getBase64EncodedWireTransaction,
@@ -11,10 +12,13 @@ import {
   signTransactionMessageWithSigners,
   getBase58Decoder,
   getBase58Encoder,
+  getBase64Encoder,
+  getSignatureFromTransaction,
+  getTransactionDecoder,
 } from "@solana/kit";
 import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { confirmSent, type SignatureWatch } from "./confirmation.js";
-import { patiently } from "./rpc-retry.js";
+import { BlockhashExpired, patiently, staleBlockhash } from "./rpc-retry.js";
 import type { AccountView, AtLeast, EngineTransaction, FinalizedBlock, ListedSignature, RawAccount, RpcLike, SignatureLanding, Status, Transport } from "./rpc-shapes.js";
 import { SYSTEM_PROGRAM_ADDRESS, TOKEN_PROGRAMS } from "./accounts.js";
 import { holdingsOf, keysAt, MEMO_PROGRAM_ADDRESS, signersAmong, solTransfersOf } from "./transaction-keys.js";
@@ -56,6 +60,21 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       reached = slot;
     }
     return signature;
+  };
+  const sent = async (wire: Base64EncodedWireTransaction) => {
+    try {
+      return await patiently(() => rpc.sendTransaction(wire, { encoding: "base64" }).send(), wait);
+    } catch (error) {
+      if (!staleBlockhash(error)) {
+        throw error;
+      }
+      const signature = getSignatureFromTransaction(getTransactionDecoder().decode(getBase64Encoder().encode(wire)));
+      const { value } = await patiently(() => rpc.getSignatureStatuses([signature], { searchTransactionHistory: true }).send(), wait);
+      if (value[0]) {
+        return signature;
+      }
+      throw new BlockhashExpired("the node refused the transaction because its blockhash expired; nothing was charged, so sign it again with a fresh blockhash", { cause: error });
+    }
   };
   const read = (signature: string) =>
     patiently(
@@ -200,8 +219,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
         (m) => appendTransactionMessageInstructions(instructions, m),
       );
       const signed = await signTransactionMessageWithSigners(message);
-      const wire = getBase64EncodedWireTransaction(signed);
-      const signature = await patiently(() => rpc.sendTransaction(wire, { encoding: "base64" }).send(), wait);
+      const signature = await sent(getBase64EncodedWireTransaction(signed));
       return confirmed(signature, latest.lastValidBlockHeight);
     },
     async airdrop(address, lamports) {
@@ -214,7 +232,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       return value;
     },
     async sendWire(wire, latest) {
-      const signature = await patiently(() => rpc.sendTransaction(wire, { encoding: "base64" }).send(), wait);
+      const signature = await sent(wire);
       return confirmed(signature, latest.lastValidBlockHeight);
     },
     async submitWire(wire) {

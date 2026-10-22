@@ -1,4 +1,4 @@
-import { isSolanaError, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR } from "@solana/kit";
+import { isSolanaError, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SOLANA_ERROR__TRANSACTION_ERROR__BLOCKHASH_NOT_FOUND } from "@solana/kit";
 
 export const POLL_MS = 500;
 
@@ -64,10 +64,13 @@ export class Charged extends Error {
 export class FailedOnChain extends Charged {}
 
 export class BlockhashExpired extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = "BlockhashExpired";
   }
 }
 
 export const neverLanded = (error: unknown): boolean => error instanceof FailedOnChain || error instanceof BlockhashExpired;
+
+export const staleBlockhash = (error: unknown): boolean =>
+  !(error instanceof Charged) && causes(error).some((link) => isSolanaError(link, SOLANA_ERROR__TRANSACTION_ERROR__BLOCKHASH_NOT_FOUND));
