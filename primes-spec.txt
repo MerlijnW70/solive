@@ -1,0 +1,10 @@
+Acceptance spec: first 25 primes
+
+Deliver one plain UTF-8 text file.
+It contains the first 25 prime numbers in ascending order, starting at 2, one per line.
+Lines end with LF (\n), no CR. The file ends with a single trailing newline.
+No other text, no spaces, no blank lines, no BOM.
+The file is exactly 70 bytes; the judge compares its sha256 with the expected file.
+
+Deliver with solive_wallet_deliver: the file's sha256 and an https url where the judge can fetch it.
+Payment: 0.05 SOL, released by the attestor after checking the file.
