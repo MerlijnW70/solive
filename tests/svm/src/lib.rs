@@ -40,6 +40,7 @@ mod fills;
 mod intents;
 mod legacy;
 mod mandates;
+mod releases;
 mod setup;
 mod sig;
 
@@ -53,5 +54,6 @@ pub use fills::*;
 pub use intents::*;
 pub use legacy::*;
 pub use mandates::*;
+pub use releases::*;
 pub use setup::*;
 pub use sig::*;
