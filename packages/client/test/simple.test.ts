@@ -106,8 +106,9 @@ describe("the simple sdk layer", () => {
     const work = sha("the delivered work");
     const delivered = await seller.deliver({ escrow: escrowAddress, sha256: work, url: "https://example.org/work.tar" });
     expect(w.chain.sent).toContain(delivered.signature);
+    await seller.client.openDelivery({ worker, intent: escrowAddress, attestor: judge.address, sha256: work, announcement: delivered.signature });
     const released = await reviewer.release({ escrow: escrowAddress, to: worker.address, deliveredSha256: work });
-    expect(released.summary).toBe(`Release escrow ${escrowAddress} holding 0.01 SOL to ${worker.address} for work ${work}`);
+    expect(released.summary).toBe(`Release escrow ${escrowAddress} holding 0.01 SOL to ${worker.address} for work ${work}, announced first in ${delivered.signature}`);
     expect(w.chain.sent).toContain(released.signature);
     expect((await buyer.client.intent(owner.address, escrow.nonce ?? 0n))?.intent.status).toBe(IntentStatus.Filled);
     const pay = 10_000_000n;

@@ -9,8 +9,10 @@ import type { ConnectOptions, SimpleClient, WalletBalance } from "./simple-types
 import { workSends } from "./simple-work.js";
 
 export type {
+  Announcement,
   CancelInput,
   ConnectOptions,
+  DeliveriesInput,
   DeliverWorkInput,
   HeldToken,
   LimitInput,
@@ -18,7 +20,9 @@ export type {
   Outcome,
   PayForWorkInput,
   Preview,
+  ReceiptInput,
   ReleaseInput,
+  ReleaseReceipt,
   Seconds,
   Sent,
   SimpleClient,
@@ -26,7 +30,7 @@ export type {
   WalletBalance,
 } from "./simple-types.js";
 export { ESCROW_EXPIRES_IN, PREVIEW_SIGNATURE, RECORD_TOKEN_NEEDED } from "./simple-orders.js";
-export { RELEASE_NEEDS_KEY_PAIR } from "./simple-work.js";
+export { notFirstAnnouncer, nothingOpens, RELEASE_NEEDS_KEY_PAIR, recordIncomplete } from "./simple-work.js";
 export {
   type Cluster,
   CLUSTER_URLS,
@@ -53,7 +57,7 @@ export async function connect(options: ConnectOptions): Promise<SimpleClient> {
   }
   const ctx: SimpleContext = { url, signer, client, options: clientOptions };
   const { swap, limit, payForWork } = orderSends(ctx);
-  const { findWork, deliver, release, cancel } = workSends(ctx);
+  const { findWork, deliver, release, cancel, deliveries, receipt } = workSends(ctx);
 
   const balance = async (tokens?: readonly string[]): Promise<WalletBalance> => {
     const named = tokens ?? (url === CLUSTER_URLS.devnet ? ["SOL", "TEST"] : ["SOL"]);
@@ -84,6 +88,8 @@ export async function connect(options: ConnectOptions): Promise<SimpleClient> {
     balance,
     ...send,
     findWork,
+    deliveries,
+    receipt,
     watch: (onChange, signal, filter = { owner: signer.address }) => client.watch(onChange, signal, filter),
   };
 }

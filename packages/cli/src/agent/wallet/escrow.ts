@@ -1,10 +1,10 @@
 import type { Address } from "@solana/kit";
-import { feeBpsFor, formatAmount, Kind, MEMO_URL_RULE, NATIVE_MINT, splitFees } from "@intent-engine/core";
-import { chainTime, loadConfig, mintOf } from "@intent-engine/client";
+import { feeBpsFor, formatAmount, isMemoUrl, Kind, MEMO_URL_RULE, NATIVE_MINT, splitFees } from "@intent-engine/core";
+import { chainTime, loadConfig, mintOf, plainHttpOnPublic } from "@intent-engine/client";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
-import { escrowJudge, MAX_EXPIRES_IN, MIN_EXPIRES_IN, neverSettles } from "../create.js";
+import { escrowJudge, MAX_EXPIRES_IN, MIN_EXPIRES_IN, neverSettles, SPEC_URL_PLAIN } from "../create.js";
 import { tool } from "../names.js";
 import { AgentRefusal, problemOf } from "../problems.js";
 import { InvalidInput, account, amount, flag, hex32, integer, list, object, optional, text } from "../schema.js";
@@ -24,6 +24,8 @@ async function specPreflight(ctx: AgentContext, specUrl: string, specHash: strin
 }
 
 export const ESCROW_EXPIRES_IN = 86_400;
+
+export const NO_SPEC_HASH = `no spec_hash, so workers cannot find this escrow with ${tool("find_jobs")}; give spec_hash and spec_url to list it`;
 
 export const JOB_LIVE = `job live; ${tool("wallet_check_delivery")} to watch for work, then ${tool("wallet_attest")} its earliest announcer`;
 
@@ -99,7 +101,7 @@ export const walletEscrow = define({
       };
     }, JOB_LIVE)) as Record<string, unknown>;
     const summary = [...((escrowed["summary"] as string[]) ?? []), ...(settled === undefined ? [] : [await feeLine(ctx, settled)])];
-    const warnings = [...((escrowed["warnings"] as string[]) ?? []), ...(preflight === undefined ? [] : [preflight])];
+    const warnings = [...((escrowed["warnings"] as string[]) ?? []), ...(preflight === undefined ? [] : [preflight]), ...(specHash === undefined ? [NO_SPEC_HASH] : [])];
     return { ...escrowed, summary, warnings };
   },
 });
@@ -120,22 +122,49 @@ export const piecesMayHaveLanded = (sent: number, total: number, problem: string
 
 export const pieceUnsettled = (index: number, name: string) => `nothing was escrowed: piece ${index} (${name}) cannot be paid; `;
 
-type Piece = { name: string; amountIn: bigint; attestor: Address };
+type Piece = { name: string; amountIn: bigint; attestor: Address; specHash: string | undefined; specUrl: string | undefined };
+
+type Spec = { spec_hash?: string | undefined; spec_url?: string | undefined };
+
+async function checkedSpec(ctx: AgentContext, plan: Spec, piece: Spec, i: number): Promise<{ specHash: string | undefined; specUrl: string | undefined }> {
+  const specHash = piece.spec_hash ?? plan.spec_hash;
+  const specUrl = piece.spec_url ?? plan.spec_url;
+  if (specUrl === undefined) {
+    return { specHash, specUrl };
+  }
+  const path = piece.spec_url === undefined ? "spec_url" : `pieces.${i}.spec_url`;
+  if (specHash === undefined) {
+    throw new InvalidInput([{ path, message: "needs spec_hash" }]);
+  }
+  if (!isMemoUrl(specUrl)) {
+    throw new InvalidInput([{ path, message: `must be ${MEMO_URL_RULE}` }]);
+  }
+  if (await plainHttpOnPublic(ctx.transport, specUrl)) {
+    throw new InvalidInput([{ path, message: SPEC_URL_PLAIN }]);
+  }
+  return { specHash, specUrl };
+}
+
+const specBytes = (specHash: string | undefined): Uint8Array => (specHash === undefined ? new Uint8Array(32) : Uint8Array.from(Buffer.from(specHash, "hex")));
 
 export const walletEscrowPlan = define({
   name: tool("wallet_escrow_plan"),
   title: "Escrow a task's pieces in one plan",
-  description: `Pays for a larger task in pieces: one preview and one send lock a payment per piece, each like ${tool("wallet_escrow")}. Each piece is released on its own as it passes; cancel an unreleased piece with ${tool("wallet_cancel")}. Workers deliver to the attestor, not this wallet. ${PREVIEW_FIRST}`,
+  description: `Pays for a larger task in pieces: one preview and one send lock a payment per piece, each like ${tool("wallet_escrow")}. Each piece is released on its own; cancel an unreleased one with ${tool("wallet_cancel")}. spec_hash and spec_url list pieces in ${tool("find_jobs")}. Workers deliver to the attestor, not this wallet. ${PREVIEW_FIRST}`,
   effect: "submit",
   repeats: true,
   input: object({
     sell: text("SOL, TEST or a mint address: the token to pay with"),
     attestor: account("the wallet that releases every piece that names no attestor of its own"),
+    spec_hash: optional(hex32("64 hex: the sha256 of the acceptance spec of every piece that names none; it binds each release to that spec")),
+    spec_url: optional(text(`where that spec is published, ${MEMO_URL_RULE}; needs spec_hash; for every piece that names none`)),
     pieces: list(
       object({
         name: text("a label for the piece, shown in the plan only"),
         amount: text("whole tokens this piece pays, such as 0.01"),
         attestor: optional(account("this piece's attestor, instead of the plan's")),
+        spec_hash: optional(hex32("this piece's spec_hash, instead of the plan's")),
+        spec_url: optional(text("this piece's spec_url, instead of the plan's")),
       }),
       MAX_PIECES,
       "the pieces, in order",
@@ -147,7 +176,16 @@ export const walletEscrowPlan = define({
   }),
   output: object({
     pieces: list(
-      object({ name: text(), amount: text(), attestor: account(), intent: optional(account()), nonce: optional(amount()), signature: optional(text()) }),
+      object({
+        name: text(),
+        amount: text(),
+        attestor: account(),
+        spec_hash: optional(text()),
+        spec_url: optional(text()),
+        intent: optional(account()),
+        nonce: optional(amount()),
+        signature: optional(text()),
+      }),
       MAX_PIECES,
     ),
     total: text("whole tokens escrowed across all pieces"),
@@ -162,13 +200,17 @@ export const walletEscrowPlan = define({
     const sold = mintNamed(input.sell, wallet.url, "sell");
     const buy = recordedMint(sold, wallet.url, input.record_mint);
     const [token, now, { config }] = await Promise.all([mintOf(ctx.transport, sold), chainTime(ctx.transport), loadConfig(ctx.transport)]);
-    const planned: Piece[] = input.pieces.map((piece, i) => ({
-      name: piece.name,
-      amountIn: raw(piece.amount, token.decimals, `pieces.${i}.amount`),
-      attestor: piece.attestor ?? input.attestor,
-    }));
+    const planned: Piece[] = [];
+    for (const [i, piece] of input.pieces.entries()) {
+      planned.push({
+        name: piece.name,
+        amountIn: raw(piece.amount, token.decimals, `pieces.${i}.amount`),
+        attestor: piece.attestor ?? input.attestor,
+        ...(await checkedSpec(ctx, input, piece, i)),
+      });
+    }
     for (const [i, piece] of planned.entries()) {
-      const order = { kind: Kind.AttestedResult, amountIn: piece.amountIn, minResult: 1n, maxResult: 1n, attestor: piece.attestor, specHash: new Uint8Array(32), judgeFee: 0n } as const;
+      const order = { kind: Kind.AttestedResult, amountIn: piece.amountIn, minResult: 1n, maxResult: 1n, attestor: piece.attestor, specHash: specBytes(piece.specHash), judgeFee: 0n } as const;
       const unsettled = neverSettles(order, config, 0, token.decimals);
       if (unsettled !== undefined) {
         throw new AgentRefusal("NeverSettles", `${pieceUnsettled(i + 1, piece.name)}${unsettled}`);
@@ -184,21 +226,48 @@ export const walletEscrowPlan = define({
     }
     checkHour(wallet.limits, sold, token.decimals, total, now, sales);
     const terms = (piece: Piece) => (_sold: Token, _bought: Token, at: bigint) => ({
-      order: { kind: "attested" as const, amount_in: piece.amountIn, min_result: 1n, max_result: 1n, attestor: piece.attestor },
+      order: {
+        kind: "attested" as const,
+        amount_in: piece.amountIn,
+        min_result: 1n,
+        max_result: 1n,
+        attestor: piece.attestor,
+        ...(piece.specHash === undefined ? {} : { spec_hash: piece.specHash }),
+      },
       expires_at: at + BigInt((input.expires_in ?? ESCROW_EXPIRES_IN) + LANDING_SECONDS),
+      ...(piece.specUrl === undefined ? {} : { spec_url: piece.specUrl }),
     });
     const name = TOKEN_NAMES[sold] ?? sold;
-    const listed = (piece: Piece) => ({ name: piece.name, amount: formatAmount(piece.amountIn, token.decimals), attestor: piece.attestor });
+    const listed = (piece: Piece) => ({
+      name: piece.name,
+      amount: formatAmount(piece.amountIn, token.decimals),
+      attestor: piece.attestor,
+      ...(piece.specHash === undefined ? {} : { spec_hash: piece.specHash }),
+      ...(piece.specUrl === undefined ? {} : { spec_url: piece.specUrl }),
+    });
+    const unlisted = planned.flatMap((piece, i) => (piece.specHash === undefined ? [`Piece ${i + 1} (${piece.name}): ${NO_SPEC_HASH}`] : []));
+    const preflights =
+      input.send === true
+        ? []
+        : await Promise.all(
+            planned.map(async (piece, i) => {
+              const found = piece.specUrl === undefined || piece.specHash === undefined ? undefined : await specPreflight(ctx, piece.specUrl, piece.specHash);
+              return found === undefined ? [] : [`Piece ${i + 1} (${piece.name}): ${found}`];
+            }),
+          );
     const [head, ...rest] = planned as [Piece, ...Piece[]];
     const first = (await offered(ctx, call, { sell: sold, buy, send: input.send }, terms(head))) as Record<string, unknown>;
     const shown = {
       total: formatAmount(total, token.decimals),
       summary: [
         `Plan: ${planned.length} pieces, ${formatAmount(total, token.decimals)} of ${name} in all, each escrowed now and released on its own`,
-        ...planned.map((piece, i) => `Piece ${i + 1}: ${piece.name}, ${formatAmount(piece.amountIn, token.decimals)} of ${name}, released by ${piece.attestor}`),
+        ...planned.map(
+          (piece, i) =>
+            `Piece ${i + 1}: ${piece.name}, ${formatAmount(piece.amountIn, token.decimals)} of ${name}, released by ${piece.attestor}${piece.specHash === undefined ? "" : ` against spec ${piece.specHash}`}`,
+        ),
         ...(first["summary"] as string[]),
       ],
-      warnings: first["warnings"] as string[],
+      warnings: [...(first["warnings"] as string[]), ...unlisted, ...preflights.flat()],
     };
     if (input.send !== true) {
       return { pieces: planned.map(listed), ...shown, sent: false, next: first["next"] };

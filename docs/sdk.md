@@ -46,8 +46,10 @@ Amounts are whole tokens, such as `"0.05"`. Tokens are `SOL`, `TEST` or a mint a
 - `swap`: sell one token for at least an amount of another
 - `limit`: sell at a price
 - `payForWork`: escrow a payment that a judge releases
-- `release`: as the judge, pay the work that passed
+- `release`: as the judge, pay the work that passed to the first worker who announced it and opened the announcement
 - `findWork` and `deliver`: as a worker, find jobs and announce your work
+- `deliveries`: the announcements on an escrow, with each worker and whether it opened
+- `receipt`: the release of an escrow, whom it paid, the work it recorded and whether it is valid
 - `cancel`: get an escrow back
 - `balance` and `watch`: read your wallet and follow your orders
 

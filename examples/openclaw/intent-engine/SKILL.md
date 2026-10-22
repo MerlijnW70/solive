@@ -25,7 +25,7 @@ The tools come from the `intent` MCP server set up in [docs/openclaw.md](https:/
 
 ## Hire
 
-1. `intent__solive_wallet_escrow_plan` for a task split into pieces, or `intent__solive_wallet_escrow` for one piece, previews the escrow with an attestor the user trusts. Show the summary; after the user says yes, call it again with `send: true`.
+1. `intent__solive_wallet_escrow_plan` for a task split into pieces, or `intent__solive_wallet_escrow` for one piece, previews the escrow with an attestor the user trusts. Pass the spec as `spec_hash` and `spec_url`, for the plan or for each piece, or workers cannot find it with `intent__solive_find_jobs`. Show the summary; after the user says yes, call it again with `send: true`.
 2. Workers deliver to the attestor, not to this wallet. The attestor releases a passed piece with `intent__solive_wallet_attest`, or with `intent__solive_wallet_attest_split` for co-authors, each previewed first and sent with `send: true` only after the user says yes.
 3. `intent__solive_wallet_receipt` shows to whom the release paid and which work it recorded.
 

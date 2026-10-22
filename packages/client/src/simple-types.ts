@@ -1,6 +1,7 @@
 import type { Address, Instruction, Signature, TransactionSigner } from "@solana/kit";
 import type { Priority } from "./budget.js";
 import type { Client, WatchCallback, WatchOptions } from "./client-types.js";
+import type { DeliveryOpeners } from "./job-deliveries.js";
 import type { Job } from "./jobs.js";
 import type { Cluster } from "./simple-tokens.js";
 import type { Transport } from "./transport.js";
@@ -39,7 +40,26 @@ export type PayForWorkInput = PreviewOption & {
 
 export type DeliverWorkInput = PreviewOption & { escrow: Address; sha256: string; url: string };
 
-export type ReleaseInput = PreviewOption & { escrow: Address; to: Address; deliveredSha256: string; result?: number | bigint };
+export type ReleaseInput = PreviewOption & { escrow: Address; to?: Address; deliveredSha256: string; result?: number | bigint; keypair?: DeliveryOpeners };
+
+export type DeliveriesInput = { escrow: Address; sha256?: string; keypair?: DeliveryOpeners };
+
+export type Announcement = { worker: Address; sha256: string | null; url: string | null; opened: boolean; signature: Signature };
+
+export type ReceiptInput = { escrow: Address };
+
+export type ReleaseReceipt = {
+  escrow: Address;
+  released: boolean;
+  signature: Signature | null;
+  payee: Address | null;
+  payees: Address[];
+  deliveredSha256: string | null;
+  valid: boolean;
+  refutedBy: Signature | null;
+  complete: boolean;
+  summary: string;
+};
 
 export type CancelInput = PreviewOption & ({ escrow: Address; intent?: undefined } | { intent: Address; escrow?: undefined });
 
@@ -60,6 +80,8 @@ export type SimpleClient = {
   findWork(filter?: { judge?: Address }): Promise<OpenWork[]>;
   deliver<I extends DeliverWorkInput>(input: I): Promise<Outcome<I>>;
   release<I extends ReleaseInput>(input: I): Promise<Outcome<I>>;
+  deliveries(input: DeliveriesInput): Promise<Announcement[]>;
+  receipt(input: ReceiptInput): Promise<ReleaseReceipt>;
   cancel<I extends CancelInput>(input: I): Promise<Outcome<I>>;
   watch(onChange: WatchCallback, signal: AbortSignal, filter?: WatchOptions): Promise<void>;
 };

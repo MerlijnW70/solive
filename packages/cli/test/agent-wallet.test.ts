@@ -91,6 +91,7 @@ import {
   type Transport,
 } from "@intent-engine/client";
 import { ANNOUNCE_FIRST } from "../src/agent/wallet/delivery.js";
+import { NO_SPEC_HASH } from "../src/agent/wallet/escrow.js";
 import { LOOKUP_TABLE_HEADER } from "@intent-engine/solver";
 import { transactionSize } from "../src/agent/prepare.js";
 import { RELEASE_NEEDED, WALLET_NOT_MAINNET } from "../src/args.js";
@@ -1005,7 +1006,7 @@ describe("the wallet server", () => {
         { name: "api client", amount: "0.02", attestor: other },
         { name: "page", amount: "0.01", attestor: owner },
       ],
-      warnings: [WARN_ATTESTOR],
+      warnings: [WARN_ATTESTOR, `Piece 1 (parser): ${NO_SPEC_HASH}`, `Piece 2 (api client): ${NO_SPEC_HASH}`, `Piece 3 (page): ${NO_SPEC_HASH}`],
     });
     expect(preview["pieces"][0]).not.toHaveProperty("intent");
     expect(preview["summary"].slice(0, 4)).toEqual([

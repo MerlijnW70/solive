@@ -130,7 +130,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-Pays for a larger task in pieces: one preview and one send lock a payment per piece, each like solive_wallet_escrow. Each piece is released on its own as it passes; cancel an unreleased piece with solive_wallet_cancel. Workers deliver to the attestor, not this wallet. Previews only; call with send: true after the user says yes.
+Pays for a larger task in pieces: one preview and one send lock a payment per piece, each like solive_wallet_escrow. Each piece is released on its own; cancel an unreleased one with solive_wallet_cancel. spec_hash and spec_url list pieces in solive_find_jobs. Workers deliver to the attestor, not this wallet. Previews only; call with send: true after the user says yes.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -138,6 +138,8 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | --- | --- | --- | --- |
 | `sell` | string | yes | SOL, TEST or a mint address: the token to pay with |
 | `attestor` | address | yes | the wallet that releases every piece that names no attestor of its own |
+| `spec_hash` | string | no | 64 hex: the sha256 of the acceptance spec of every piece that names none; it binds each release to that spec |
+| `spec_url` | string | no | where that spec is published, an https url of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would; needs spec_hash; for every piece that names none |
 | `pieces` | list of object, 2 to 12 | yes | the pieces, in order |
 | `expires_in` | integer 60..31536000 | no | least seconds each escrow stays open once sent; default 86400 |
 | `record_mint` | string | no | a token the escrows record as their output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet |
