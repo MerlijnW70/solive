@@ -1,6 +1,8 @@
 #[cfg(kani)]
 mod caps;
 #[cfg(kani)]
+mod committee;
+#[cfg(kani)]
 mod flash;
 #[cfg(kani)]
 mod lanes;
