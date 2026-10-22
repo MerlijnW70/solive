@@ -50,8 +50,10 @@ if [[ "$served" == "$mainnet_genesis" && "$mode" != check ]]; then
   fi
 fi
 if [[ "$mode" == multisig ]]; then
+  pnpm --filter @intent-engine/core build > /dev/null
+  pnpm --filter @intent-engine/multisig build > /dev/null
   squads=(node packages/multisig/dist/bin.js)
-  vault="$("${squads[@]}" show --multisig "$multisig" --url "$url" | node -e 'let t="";process.stdin.on("data",(d)=>t+=d).on("end",()=>console.log(JSON.parse(t).vault))')"
+  vault="$("${squads[@]}" vault --multisig "$multisig" --url "$url" | node -e 'let t="";process.stdin.on("data",(d)=>t+=d).on("end",()=>console.log(JSON.parse(t).vault))')"
   created="$("${pmp[@]}" create-buffer "$idl" --format json)"
   buffer="$(printf '%s\n' "$created" | sed -n 's/.*buffer: *\([1-9A-HJ-NP-Za-km-z]\{32,44\}\).*/\1/p' | head -1)"
   if [[ -z "$buffer" ]]; then

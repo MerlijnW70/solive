@@ -44,11 +44,33 @@ program_keypair="$HOME/.config/intent-engine/program-keypair.json"
 program="${PROGRAM_ID:-$(solana-keygen pubkey "$program_keypair")}"
 squads=()
 vault=""
+if [[ "$actual" == "$mainnet" && -z "$multisig" ]]; then
+  if found="$(solana program show "$program" --url "$url" --output json 2>&1)"; then
+    echo "refusing: program $program already exists on mainnet; upgrade it through its multisig with --multisig <multisig>" >&2
+    exit 1
+  fi
+  if [[ "$found" != *"Unable to find the account"* ]]; then
+    echo "refusing: could not tell whether program $program exists on mainnet: $found" >&2
+    exit 1
+  fi
+fi
 if [[ -n "$multisig" ]]; then
   pnpm --filter @intent-engine/core build > /dev/null
   pnpm --filter @intent-engine/multisig build > /dev/null
   squads=(node packages/multisig/dist/bin.js)
-  vault="$("${squads[@]}" show --multisig "$multisig" --url "$url" | node -e 'let t="";process.stdin.on("data",(d)=>t+=d).on("end",()=>console.log(JSON.parse(t).vault))')"
+  read_vault='let t="";process.stdin.on("data",(d)=>t+=d).on("end",()=>{const v=JSON.parse(t);console.log([v.vault,v.threshold,v.timeLock].join(" "))})'
+  fields="$("${squads[@]}" vault --multisig "$multisig" --url "$url" | node -e "$read_vault")"
+  read -r vault threshold time_lock <<< "$fields"
+  if [[ "$actual" == "$mainnet" ]]; then
+    if [[ ! "$threshold" =~ ^[0-9]+$ ]] || (( threshold < 2 )); then
+      echo "refusing: multisig $multisig has threshold $threshold, but a mainnet upgrade needs at least 2" >&2
+      exit 1
+    fi
+    if [[ ! "$time_lock" =~ ^[0-9]+$ ]] || (( time_lock == 0 )); then
+      echo "refusing: multisig $multisig has time lock $time_lock, but a mainnet upgrade needs one above 0; raise it with propose-time-lock" >&2
+      exit 1
+    fi
+  fi
   current="$(solana program show "$program" --url "$url" --output json | node -e 'let t="";process.stdin.on("data",(d)=>t+=d).on("end",()=>console.log(JSON.parse(t).authority))')"
   if [[ "$current" != "$vault" ]]; then
     echo "refusing: program $program is upgraded by $current, not the vault $vault of multisig $multisig; move the upgrade authority first as docs/maintainers/operations.md describes" >&2

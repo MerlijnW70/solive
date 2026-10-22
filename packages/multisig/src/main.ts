@@ -28,6 +28,7 @@ import {
   Refusal,
   reject,
 } from "./squads.js";
+import { vault } from "./vault.js";
 
 export type Deps = {
   chain(url: string): Chain;
@@ -56,6 +57,7 @@ export const USAGE = [
   "intent-engine-multisig execute --multisig <m> --index <n> [--expect-buffer-hash <hex>] [--allow-config] --keypair <member> [--yes]",
   "intent-engine-multisig reject --multisig <m> --index <n> --keypair <member> [--yes]",
   "intent-engine-multisig show --multisig <m> [--index <n>]",
+  "intent-engine-multisig vault --multisig <m>",
   "intent-engine-multisig propose-authority --multisig <m> --new-authority <address> [--program <address>] --keypair <member> [--yes]",
   "every command takes --url devnet|testnet|mainnet-beta|localhost|<rpc url>, default devnet",
   `--keypair and --create-key take a keypair file or a Ledger: ${LEDGER_FORMS.join(", ")}`,
@@ -317,6 +319,12 @@ async function command(name: string | undefined, values: Values, passed: string[
         throw new UsageError("show only reads; it takes no --keypair, --yes, --allow-config or --expect-buffer-hash");
       }
       return show(deps.chain(url), key(values, "multisig"), values.index === undefined ? undefined : indexOf(values));
+    }
+    case "vault": {
+      if (values.yes !== undefined || values.keypair !== undefined || values["allow-config"] !== undefined || values["expect-buffer-hash"] !== undefined || values.index !== undefined) {
+        throw new UsageError("vault only reads the multisig; it takes no --keypair, --yes, --index, --allow-config or --expect-buffer-hash");
+      }
+      return vault(deps.chain(url), key(values, "multisig"));
     }
     default:
       throw new UsageError(name === undefined ? "name a command" : `unknown command ${name}`);

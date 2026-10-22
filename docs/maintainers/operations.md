@@ -142,7 +142,7 @@ Fills, releases, cancels, expiries and closes now name the optional mint cap too
 ## Upgrade
 
 1. CI builds the program verifiably and prints its hash, `<hash>`, and uploads the build as the `intent-engine-verifiable` artifact.
-2. From a clean checkout at `origin/main`, run `bash scripts/deploy.sh devnet <hash> --multisig <multisig>`. The Solana CLI default keypair, or the file in `UPGRADE_AUTHORITY`, pays for the buffer; the file in `MULTISIG_MEMBER`, by default the same key, proposes and has to be a member. It checks the cluster genesis, a clean tree, that HEAD is `origin/main`, that the program is upgraded by the vault and that the build hashes to `<hash>`. It writes the build to a buffer, checks the buffer hash, hands the buffer to the vault and proposes the upgrade. It executes nothing. To reuse the CI build instead of rebuilding locally, place that artifact's `intent_engine.so` in `verifiable/` and set `VERIFY_FROM_ARTIFACT=1`; the hash is recomputed from the bytes and still has to equal `<hash>`.
+2. From a clean checkout at `origin/main`, run `bash scripts/deploy.sh devnet <hash> --multisig <multisig>`. The Solana CLI default keypair, or the file in `UPGRADE_AUTHORITY`, pays for the buffer; the file in `MULTISIG_MEMBER`, by default the same key, proposes and has to be a member. It checks the cluster genesis, a clean tree, that HEAD is `origin/main`, that the program is upgraded by the vault and that the build hashes to `<hash>`. It learns the vault from `vault`, as below. It writes the build to a buffer, checks the buffer hash, hands the buffer to the vault and proposes the upgrade. It executes nothing. To reuse the CI build instead of rebuilding locally, place that artifact's `intent_engine.so` in `verifiable/` and set `VERIFY_FROM_ARTIFACT=1`; the hash is recomputed from the bytes and still has to equal `<hash>`.
 3. Each approving member reads the proposal first: `show --index <n>` prints `Upgrades program GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU to the code in buffer <buffer>, signed by <vault>; the buffer's rent goes to <spill>; the buffer hashes to <hash> and is controlled by <vault>`. `approve` refuses unless the buffer exists and the vault controls it, and prints the hash as `buffer_hash`; it has to equal `<hash>`, the same value `solana-verify get-buffer-hash --url devnet <buffer>` prints.
 4. Two members approve and one executes with the hash it approved:
 
@@ -154,6 +154,16 @@ Fills, releases, cancels, expiries and closes now name the optional mint cap too
 5. `solana-verify get-program-hash --url devnet GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU` prints `<hash>`.
 
 A build larger than the program's data account fails at `execute` with `account data too small for instruction`. `solana program show GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU --url devnet` prints that size as `Data Length`. Before executing, any key can grow it with `solana program extend GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU <bytes> --url devnet`, and pays the rent for the extra bytes.
+
+`node packages/multisig/dist/bin.js vault --multisig <multisig> --url devnet` reads the multisig account once and prints `vault`, `threshold`, `timeLock`, `members` and `transactionIndex` as JSON. It reads no proposals, so a rate-limited public RPC answers it, and it refuses an address that is not a Squads v4 multisig. `deploy.sh` and `idl.sh` read the vault with it; both build `packages/core` and `packages/multisig` first.
+
+On mainnet-beta, told apart by the genesis hash, `deploy.sh` also refuses:
+
+- to upgrade a program that already exists without `--multisig`; only a first deploy goes without one, and it refuses when `solana program show` fails for any reason other than a missing account;
+- a multisig with a threshold below 2;
+- a multisig with a time lock of 0; raise it with `propose-time-lock` first.
+
+An `https` url that serves the mainnet-beta genesis counts as mainnet-beta. On every other cluster `deploy.sh` accepts any threshold and time lock and upgrades without `--multisig`, as before.
 
 ## Account versions
 
