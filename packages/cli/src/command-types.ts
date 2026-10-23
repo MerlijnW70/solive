@@ -159,7 +159,7 @@ export type Command =
     })
   | (Keyed & { name: "committee-release"; yes: boolean; votes: string[]; sha256: string | undefined; confirmUrl?: string | undefined })
   | (Remote & { name: "claims-show"; owner: Address; nonce: bigint })
-  | (Keyed & { name: "claims-open"; yes: boolean; nonce: bigint; maxSecs: number; stake: bigint })
+  | (Keyed & { name: "claims-open"; yes: boolean; nonce: bigint; maxSecs: number; stake: bigint; workers: Address[] | undefined })
   | (Keyed & { name: "claims-take"; yes: boolean; owner: Address; nonce: bigint; secs: number })
   | (Keyed & { name: "claims-drop"; yes: boolean; owner: Address; nonce: bigint })
   | (Keyed & { name: "claims-settle"; yes: boolean; owner: Address; nonce: bigint })

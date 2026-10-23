@@ -14,8 +14,8 @@ use anchor_spl::token_2022::spl_token_2022::state::{
     Account as TokenState, AccountState, Mint as MintState,
 };
 use intent_engine::state::{
-    CLAIMS_SEED, COMMITTEE_SEED, CONFIG_SEED, DELEGATE_SEED, INTENT_SEED, MANDATE_SEED,
-    STANDBY_SEED, USER_SEED, VAULT_SEED,
+    CLAIMS_SEED, CLAIM_LIST_SEED, COMMITTEE_SEED, CONFIG_SEED, DELEGATE_SEED, INTENT_SEED,
+    MANDATE_SEED, STANDBY_SEED, USER_SEED, VAULT_SEED,
 };
 use intent_engine::{ConfigSettings, ConfigUpdate};
 use litesvm::types::TransactionMetadata;

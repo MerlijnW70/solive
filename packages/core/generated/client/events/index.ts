@@ -11,6 +11,7 @@ export * from "./adminAccepted.js";
 export * from "./adminProposed.js";
 export * from "./agentPaid.js";
 export * from "./capsRequiredSet.js";
+export * from "./claimantsListed.js";
 export * from "./claimDropped.js";
 export * from "./claimsClosed.js";
 export * from "./claimsOpened.js";

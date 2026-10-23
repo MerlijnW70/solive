@@ -109,8 +109,11 @@ export async function buildOpenClaims(input: { owner: TransactionSigner; intent:
   return getOpenClaimsInstructionAsync({ ...input, ...(await events()) });
 }
 
-export async function buildClaimJob(input: { worker: TransactionSigner; intent: Address; owner: Address; secs: number }) {
-  return getClaimJobInstructionAsync({ ...input, ...(await events()) });
+const listed = (claimList: Address | undefined) => (claimList === undefined ? {} : { claimList });
+
+export async function buildClaimJob(input: { worker: TransactionSigner; intent: Address; owner: Address; secs: number; claimList?: Address | undefined }) {
+  const { claimList, ...rest } = input;
+  return getClaimJobInstructionAsync({ ...rest, ...listed(claimList), ...(await events()) });
 }
 
 export async function standbyAddress(intent: Address, seq: number): Promise<Address> {
@@ -135,9 +138,9 @@ export async function buildDropClaim(input: { worker: TransactionSigner; intent:
   return getDropClaimInstructionAsync({ ...rest, ...(nextWorker === undefined ? {} : { nextWorker }), ...entryAccounts(entries), ...(await events()) });
 }
 
-export async function buildStandBy(input: { worker: TransactionSigner; intent: Address; seq: number; secs: number }) {
+export async function buildStandBy(input: { worker: TransactionSigner; intent: Address; seq: number; secs: number; claimList?: Address | undefined }) {
   const entry = await standbyAddress(input.intent, input.seq);
-  return getStandByInstructionAsync({ worker: input.worker, intent: input.intent, entry, secs: input.secs, ...(await events()) });
+  return getStandByInstructionAsync({ worker: input.worker, intent: input.intent, entry, secs: input.secs, ...listed(input.claimList), ...(await events()) });
 }
 
 export async function buildAdvance(input: { intent: Address; owner: Address } & LineHandover) {
@@ -154,11 +157,12 @@ export async function buildLeave(input: { caller: TransactionSigner; intent: Add
   return getLeaveInstructionAsync({ ...input, ...(await events()) });
 }
 
-export async function buildSettleClaims(input: { intent: Address; owner: Address; worker?: Address }) {
+export async function buildSettleClaims(input: { intent: Address; owner: Address; worker?: Address; claimList?: Address | undefined }) {
   return getSettleClaimsInstructionAsync({
     intent: input.intent,
     owner: input.owner,
     ...(input.worker === undefined ? {} : { worker: input.worker }),
+    ...listed(input.claimList),
     ...(await events()),
   });
 }

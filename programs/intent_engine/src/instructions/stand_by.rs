@@ -9,9 +9,11 @@ use crate::claims::{line_of, slot_of, standby_address};
 use crate::errors::{core_err, EngineError};
 use crate::events::StoodBy;
 use crate::policy::check_fills_on;
+use crate::roster::check_listed;
 use crate::state::{
-    ClaimBoard, Config, Intent, Standby, CLAIMS_OPEN, CLAIMS_SEED, CLAIMS_VERSION, CONFIG_ADDRESS,
-    CONFIG_VERSION, INTENT_VERSION, STANDBY_SEED, STANDBY_VERSION,
+    ClaimBoard, ClaimList, Config, Intent, Standby, CLAIMS_OPEN, CLAIMS_SEED, CLAIMS_VERSION,
+    CLAIM_LIST_SEED, CLAIM_LIST_VERSION, CONFIG_ADDRESS, CONFIG_VERSION, INTENT_VERSION,
+    STANDBY_SEED, STANDBY_VERSION,
 };
 
 #[event_cpi]
@@ -37,6 +39,12 @@ pub struct StandBy<'info> {
         constraint = config.load()?.version == CONFIG_VERSION @ EngineError::AccountOutdated
     )]
     pub config: AccountLoader<'info, Config>,
+    #[account(
+        seeds = [CLAIM_LIST_SEED, intent.key().as_ref()],
+        bump = claim_list.load()?.bump,
+        constraint = claim_list.load()?.version == CLAIM_LIST_VERSION @ EngineError::AccountOutdated
+    )]
+    pub claim_list: Option<AccountLoader<'info, ClaimList>>,
 }
 
 fn create_entry(ctx: &Context<StandBy>, seq: u32, bump: u8, stake: u64) -> Result<()> {
@@ -118,6 +126,11 @@ pub fn handle_stand_by(ctx: Context<StandBy>, secs: u32) -> Result<()> {
     }
     let (seq, stake) = {
         let mut board = ctx.accounts.board.load_mut()?;
+        check_listed(
+            &board,
+            ctx.accounts.claim_list.as_ref(),
+            &ctx.accounts.worker.key(),
+        )?;
         let terms = Terms::new(board.max_secs, board.stake).map_err(core_err)?;
         require!(
             secs >= 1 && secs <= terms.max_secs(),

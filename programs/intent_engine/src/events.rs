@@ -362,6 +362,15 @@ pub struct ClaimsClosed {
 }
 
 #[event]
+pub struct ClaimantsListed {
+    pub intent: Pubkey,
+    pub owner: Pubkey,
+    pub size: u8,
+    pub count: u8,
+    pub workers: Vec<Pubkey>,
+}
+
+#[event]
 pub struct ProfileSet {
     pub wallet: Pubkey,
     pub skills: Vec<String>,

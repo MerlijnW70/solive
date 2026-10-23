@@ -834,6 +834,7 @@
     "AgentPaid": "8ba67dcba3181f5d",
     "CapsRequiredSet": "b89fadf016f3ec9e",
     "ClaimDropped": "abdc31d0acf2479a",
+    "ClaimantsListed": "923a3dc02baecb7b",
     "ClaimsClosed": "dab9f62aa4b2596c",
     "ClaimsOpened": "7e5c1894f242081c",
     "CommitteeAttested": "170765a8f85f6805",
@@ -1263,6 +1264,14 @@
       "space": 504,
       "version": 2,
       "version_at": 456
+    },
+    {
+      "discriminator": "cd44e12a2811eae0",
+      "oldest": 1,
+      "payer_at": 32,
+      "space": 1104,
+      "version": 1,
+      "version_at": 1090
     }
   ],
   "mandate_lanes": [

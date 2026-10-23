@@ -11,7 +11,8 @@ import { MAX_SPEC_BYTES, SPEC_REDIRECTS } from "@intent-engine/client";
 import { tool } from "../src/agent/names.js";
 import { NOT_TEXT } from "../src/agent/spec.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
-import { notSealedTo, SEALED_CLAIMS, SPEC_TOO_LARGE } from "../src/agent/wallet/escrow.js";
+import { notSealedTo, SPEC_TOO_LARGE } from "../src/agent/wallet/escrow.js";
+import { sealedLimits } from "../src/agent/wallet/escrow-claims.js";
 import { EXIT_OK } from "../src/main.js";
 import { sealedDelivery } from "./announce.js";
 import { cli, creation, funded, h, world } from "./harness.js";
@@ -182,17 +183,16 @@ describe("the escrow spec check", () => {
     expect({ code: preview.value["code"], fetched }).toStrictEqual({ code: "InvalidInput", fetched: [] });
   }, 60_000);
 
-  it("warns when a sealed spec leaves out the attestor, and when claims open on it", async () => {
+  it("warns when a sealed spec leaves out the attestor, and limits claims to the workers it invites", async () => {
     const { client, owner } = await wallet();
     const [judge, worker] = [(await generateKeyPairSigner()).address, (await generateKeyPairSigner()).address];
     h.specPages.set(SEALED_URL, await seal(encoded(SPEC), [owner, worker]));
     const terms = { sell: "SOL", amount: "0.05", spec_hash: sha(SPEC), spec_url: SEALED_URL };
     const missed = warnings(await ok(client, "wallet_escrow", { ...terms, attestor: judge }));
     expect(missed).toContain(notSealedTo([judge], false));
-    expect(missed).not.toContain(SEALED_CLAIMS);
-    const covered = warnings(await ok(client, "wallet_escrow", { ...terms, attestor: owner, claim_stake: "0.01", claim_secs: 600 }));
-    expect(covered.filter((line) => line.startsWith("spec_url holds a spec not sealed"))).toEqual([]);
-    expect(covered).toContain(SEALED_CLAIMS);
+    const covered = await ok(client, "wallet_escrow", { ...terms, attestor: owner, claim_stake: "0.01", claim_secs: 600 });
+    expect(warnings(covered).filter((line) => line.startsWith("spec_url holds a spec not sealed"))).toEqual([]);
+    expect(covered["summary"]).toContain(sealedLimits([worker]));
     const plan = await ok(client, "wallet_escrow_plan", {
       sell: "SOL",
       attestor: judge,
@@ -204,7 +204,7 @@ describe("the escrow spec check", () => {
     });
     expect(warnings(plan)).toContain(`Piece 1 (a): ${notSealedTo([judge], false)}`);
     expect(warnings(plan).filter((line) => line.startsWith("Piece 2 (b): spec_url holds"))).toEqual([]);
-    expect(warnings(plan).filter((line) => line === SEALED_CLAIMS)).toHaveLength(1);
+    expect((plan["summary"] as string[]).filter((line) => line.includes(sealedLimits([worker])))).toEqual([sealedLimits([worker])]);
   }, 60_000);
 
   it("warns when a sealed spec leaves out a member of a committee attestor", async () => {

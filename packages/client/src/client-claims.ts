@@ -1,12 +1,15 @@
 import type { Address } from "@solana/kit";
 import {
   CLAIM_BOARD_DISCRIMINATOR,
+  CLAIM_LIST_DISCRIMINATOR,
   checkAccountVersion,
+  claimListAddress,
   claimBoardAddress,
   CLAIMS_OPEN,
   claimSlot,
   findIntentPda,
   getClaimBoardDecoder,
+  getClaimListDecoder,
   getStandbyDecoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   IntentCoreError,
@@ -27,6 +30,8 @@ import { chainTime, CLOCK_SYSVAR, clockTime, createdAccount, createdView, engine
 import { ClaimHeldBy } from "./client-errors.js";
 import type { AccountView, Transport } from "./transport.js";
 
+export type ClaimListView = { address: Address; size: number; workers: Address[]; complete: boolean };
+
 export type ClaimsView = {
   board: Address;
   state: "free" | "held" | "lapsed";
@@ -38,6 +43,7 @@ export type ClaimsView = {
   owner: Address;
   cooldown: { worker: Address; until: bigint } | null;
   line: { head: number; tail: number; waiting: number };
+  list: ClaimListView | null;
 };
 
 export type LineEntry = { seq: number; entry: Address; worker: Address | null; secs: number | null };
@@ -60,6 +66,34 @@ function engineDataOf(address: Address, view: AccountView | null, discriminator:
   return checkAccountVersion(view.data);
 }
 
+function claimListOf(address: Address, view: AccountView | null): ClaimListView {
+  const data = engineDataOf(address, view, CLAIM_LIST_DISCRIMINATOR);
+  if (data === null) {
+    throw new Error(`the claim list ${address} its board records is missing`);
+  }
+  const stored = getClaimListDecoder().decode(data);
+  return { address, size: stored.size, workers: stored.workers.slice(0, stored.count), complete: stored.count === stored.size };
+}
+
+const listedIntent = (data: Uint8Array | null): Address | null => {
+  const stored = data === null ? null : getClaimBoardDecoder().decode(data);
+  return stored === null || stored.listed === 0 ? null : stored.intent;
+};
+
+async function withLists(transport: Transport, views: (ClaimsView | null)[], datas: (Uint8Array | null)[]): Promise<(ClaimsView | null)[]> {
+  const wanted = datas.flatMap((data, i) => {
+    const intent = listedIntent(data);
+    return intent === null ? [] : [{ i, intent }];
+  });
+  if (wanted.length === 0) {
+    return views;
+  }
+  const addresses = await Promise.all(wanted.map(({ intent }) => claimListAddress(intent)));
+  const found = await transport.getAccounts(addresses);
+  const lists = new Map(wanted.map(({ i }, at) => [i, claimListOf(addresses[at] as Address, createdView(found[at] ?? null))]));
+  return views.map((view, i) => (view === null ? null : { ...view, list: lists.get(i) ?? null }));
+}
+
 function claimsViewOf(board: Address, data: Uint8Array, now: bigint): ClaimsView {
   const stored = getClaimBoardDecoder().decode(data);
   const slot = claimSlot(stored, now);
@@ -74,6 +108,7 @@ function claimsViewOf(board: Address, data: Uint8Array, now: bigint): ClaimsView
     owner: stored.owner,
     cooldown: slot.state === "free" && stored.droppedBy !== NONE && now < stored.until ? { worker: stored.droppedBy, until: stored.until } : null,
     line: { head: stored.head, tail: stored.tail, waiting: lineLength(stored) },
+    list: null,
   };
 }
 
@@ -81,7 +116,8 @@ export async function loadClaims(transport: Transport, owner: Address, nonce: bi
   const [intent] = await findIntentPda({ owner, nonce });
   const board = await claimBoardAddress(intent);
   const data = await engineData(transport, board, CLAIM_BOARD_DISCRIMINATOR);
-  return data === null ? null : claimsViewOf(board, data, await chainTime(transport));
+  const view = data === null ? null : claimsViewOf(board, data, await chainTime(transport));
+  return (await withLists(transport, [view], [data]))[0] ?? null;
 }
 
 export async function loadClaimsOf(transport: Transport, intents: readonly Address[]): Promise<(ClaimsView | null)[]> {
@@ -91,10 +127,9 @@ export async function loadClaimsOf(transport: Transport, intents: readonly Addre
   const boards = await Promise.all(intents.map(claimBoardAddress));
   const views = await transport.getAccounts([...boards, CLOCK_SYSVAR]);
   const now = clockTime(views[boards.length] ?? null);
-  return boards.map((board, i) => {
-    const data = engineDataOf(board, createdView(views[i] ?? null), CLAIM_BOARD_DISCRIMINATOR);
-    return data === null ? null : claimsViewOf(board, data, now);
-  });
+  const datas = boards.map((board, i) => engineDataOf(board, createdView(views[i] ?? null), CLAIM_BOARD_DISCRIMINATOR));
+  const shown = datas.map((data, i) => (data === null ? null : claimsViewOf(boards[i] as Address, data, now)));
+  return withLists(transport, shown, datas);
 }
 
 export function jobClaimOf(claims: ClaimsView | null): JobClaim {

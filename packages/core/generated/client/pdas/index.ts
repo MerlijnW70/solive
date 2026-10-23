@@ -7,6 +7,7 @@
  */
 
 export * from "./board.js";
+export * from "./claimList.js";
 export * from "./committee.js";
 export * from "./config.js";
 export * from "./delegate.js";

@@ -124,7 +124,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `judge_fee` | string | no | whole tokens of sell paid to the attestor out of the escrow when it settles, such as 0.001; needs spec_hash and must be below amount |
 | `expires_in` | integer 60..31536000 | no | least seconds the escrow stays open once sent; default 86400 |
 | `record_mint` | string | no | a token the escrow records as its output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet |
-| `claim_stake` | string | no | whole SOL a worker stakes to claim the job, such as 0.01; with claim_secs it opens claims, so one worker at a time can be paid; needs spec_hash |
+| `claim_stake` | string | no | whole SOL a worker stakes to claim the job, such as 0.01; with claim_secs it opens claims, so one worker at a time can be paid; on a spec sealed at spec_url only the workers it invites may claim; needs spec_hash |
 | `claim_secs` | integer 1..604800 | no | the longest a worker may hold the job by claiming it, in seconds; with claim_stake |
 | `send` | boolean | no | true signs and sends; leave out to preview |
 
@@ -145,7 +145,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `pieces` | list of object, 2 to 12 | yes | the pieces, in order |
 | `expires_in` | integer 60..31536000 | no | least seconds each escrow stays open once sent; default 86400 |
 | `record_mint` | string | no | a token the escrows record as their output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet |
-| `claim_stake` | string | no | whole SOL a worker stakes to claim the job, such as 0.01; with claim_secs it opens claims, so one worker at a time can be paid; needs spec_hash |
+| `claim_stake` | string | no | whole SOL a worker stakes to claim the job, such as 0.01; with claim_secs it opens claims, so one worker at a time can be paid; on a spec sealed at spec_url only the workers it invites may claim; needs spec_hash |
 | `claim_secs` | integer 1..604800 | no | the longest a worker may hold the job by claiming it, in seconds; with claim_stake |
 | `send` | boolean | no | true signs and sends every piece; leave out to preview |
 
@@ -673,7 +673,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 ## solive_get_claims
 
-Read the claims board of a proof escrow: whether its owner opened claims, whether the escrow is still open, released or gone, and whether the job is free, held by a worker until a time, or held by a claim that lapsed. While a claim holds, only its worker can be paid. invited lists the wallets an invite-only job's sealed spec names; only they can be paid. next says what to do about the claim.
+Read the claims board of a proof escrow: whether its owner opened claims, whether the escrow is still open, released or gone, and whether the job is free, held by a worker until a time, or held by a claim that lapsed. While a claim holds, only its worker can be paid. claim_list names the only wallets the program lets claim. invited lists the wallets an invite-only job's sealed spec names; only they can be paid. next says what to do about the claim.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 

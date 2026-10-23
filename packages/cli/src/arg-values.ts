@@ -399,7 +399,7 @@ export function mintList(text: string): Address[] {
   return addressList(text, "mints");
 }
 
-export function addressList(text: string, name: "mints" | "lookup-table" | "members" | "to"): Address[] {
+export function addressList(text: string, name: "mints" | "lookup-table" | "members" | "to" | "workers"): Address[] {
   const items = [...new Set(text.split(",").map((m) => m.trim()))];
   if (items.some((m) => m === "")) {
     throw new UsageError(`--${name} takes a comma list of addresses`);

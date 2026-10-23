@@ -7,6 +7,7 @@
  */
 
 export * from "./claimBoard.js";
+export * from "./claimList.js";
 export * from "./committee.js";
 export * from "./config.js";
 export * from "./intent.js";

@@ -441,12 +441,12 @@ Options for `release`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--vote`
 ## claims
 
 ```text
-claims show --owner <address> --nonce <n> | open [--keypair <owner file>] --nonce <n> --max-secs <seconds> --stake <SOL> [--yes] | take [--keypair <worker file>] --owner <address> --nonce <n> --secs <seconds> [--yes] | drop [--keypair <worker file>] --owner <address> --nonce <n> [--yes] | settle [--keypair <payer file>] --owner <address> --nonce <n> [--yes] | standby [--keypair <worker file>] --owner <address> --nonce <n> --secs <seconds> [--yes] | leave [--keypair <file>] --owner <address> --nonce <n> [--seq <n>] [--yes] | advance [--keypair <payer file>] --owner <address> --nonce <n> [--yes]
+claims show --owner <address> --nonce <n> | open [--keypair <owner file>] --nonce <n> --max-secs <seconds> --stake <SOL> [--workers <a,b,...>] [--yes] | take [--keypair <worker file>] --owner <address> --nonce <n> --secs <seconds> [--yes] | drop [--keypair <worker file>] --owner <address> --nonce <n> [--yes] | settle [--keypair <payer file>] --owner <address> --nonce <n> [--yes] | standby [--keypair <worker file>] --owner <address> --nonce <n> --secs <seconds> [--yes] | leave [--keypair <file>] --owner <address> --nonce <n> [--seq <n>] [--yes] | advance [--keypair <payer file>] --owner <address> --nonce <n> [--yes]
 ```
 
 Options for `show`: `--url`, `--owner`, `--nonce`, `--output`, `--help`
 
-Options for `open`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--nonce`, `--max-secs`, `--stake`, `--output`, `--help`
+Options for `open`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--nonce`, `--max-secs`, `--stake`, `--workers`, `--output`, `--help`
 
 Options for `take`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--secs`, `--output`, `--help`
 

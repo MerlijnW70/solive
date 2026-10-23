@@ -2,6 +2,8 @@ import { type Address, createNoopSigner, type Instruction, type TransactionSigne
 import {
   buildCreateIntent,
   committeeFloorOf,
+  computeUnitLimit,
+  computeUnitPrice,
   type Config,
   FLOOR_THRESHOLD,
   describeTerms,
@@ -20,6 +22,7 @@ import {
   MEMO_URL_RULE,
   specMemo,
   LONG_LIVED_SECONDS,
+  MAX_COMPUTE_UNITS,
   NATIVE_MINT,
   partnerBaseOf,
   partnerFeeLine,
@@ -47,6 +50,7 @@ import {
   tokenAccountIfMissing,
   type Transport,
   noJudgeKey,
+  PACKET_DATA_SIZE,
   wrapIfShort,
 } from "@intent-engine/client";
 import { expiresLine } from "./expiry.js";
@@ -54,7 +58,7 @@ import { type AgentContext, define } from "./actions.js";
 import { tool } from "./names.js";
 import { type Call, claim, claimedBy, PREPARED_TTL } from "./claims.js";
 import { pickNonce, setupLines, unusedIntent, walletRecipient } from "./owner.js";
-import { prepare } from "./prepare.js";
+import { prepare, transactionSize } from "./prepare.js";
 import { AgentRefusal } from "./problems.js";
 import { InvalidInput } from "./schema.js";
 import { orderSchema, paramsOf, partnerSchema, preparedSchema, preparedView } from "./shapes.js";
@@ -160,6 +164,16 @@ type CreateInput = typeof createInput extends Schema<infer T> ? T : never;
 
 export type AfterCreate = (owner: TransactionSigner, intent: Address) => Promise<Instruction[]>;
 
+export const claimsTooLarge = (size: number): string =>
+  `the escrow and the claims it opens build a ${size}-byte transaction, over the ${PACKET_DATA_SIZE}-byte limit, and a Ledger signs only the one transaction it previewed; nothing was sent; seal the spec to fewer workers, or escrow without claim_stake and claim_secs and open claims with intent-engine claims open --workers, which sends a long list in parts`;
+
+async function checkFits(transport: Transport, instructions: readonly Instruction[], payer: Address): Promise<void> {
+  const size = await transactionSize(transport, [...instructions, computeUnitLimit(MAX_COMPUTE_UNITS), computeUnitPrice(1n)], payer);
+  if (size > PACKET_DATA_SIZE) {
+    throw new AgentRefusal("ClaimListTooLarge", claimsTooLarge(size));
+  }
+}
+
 export const prepareCreate = define({
   name: tool("prepare_create"),
   title: "Prepare a new intent",
@@ -243,7 +257,11 @@ export async function createIntent({ transport, claims }: AgentContext, input: C
   const wrap = await wrapIfShort(transport, input.owner, input.input_mint, inputToken.tokenProgram, escrowAmount(params));
   const published = specUrl === undefined ? [] : [memoInstruction(owner, specMemo(specUrl))];
   const opened = after === undefined ? [] : await after(owner, intent);
-  const prepared = await prepare(transport, [...register, ...receiver.create, ...wrap.instructions, create, ...published, ...opened], input.owner);
+  const instructions = [...register, ...receiver.create, ...wrap.instructions, create, ...published, ...opened];
+  if (opened.length > 0) {
+    await checkFits(transport, instructions, input.owner);
+  }
+  const prepared = await prepare(transport, instructions, input.owner);
   const keyless = params.kind === Kind.AttestedResult && params.specHash.some((b) => b !== 0) ? await keylessJudges(transport, params.attestor) : [];
   return {
     intent,

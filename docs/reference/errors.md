@@ -71,6 +71,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `AlreadyRecorded` | no | the release already records a delivered sha256, in its own memo or a follow-up, and a receipt reads the first |
 | `ConfirmMismatch` | yes | the second RPC node the server was started with, by --confirm-url, reports another genesis hash, escrow or earliest announcer than the first, or could not be read, so nothing was signed or sent; call again once both nodes agree |
 | `NeverSettles` | no | no release of this escrow could pay: after the judge fee, too little is left for the rounded-up protocol and partner fees; escrow more or lower the judge fee, as the hint says |
+| `ClaimListTooLarge` | no | the escrow and the claim list its sealed spec sets do not fit in one transaction, and a Ledger signs only the one transaction it previewed; seal the spec to fewer workers, or escrow without claims and open them with intent-engine claims open --workers, which sends the list in parts |
 | `Ledger` | no | the wallet's Ledger did not sign: it was rejected on the device, or the device is locked, unplugged or not in the Solana app; nothing was sent, and the hint says which |
 | `NoFeePayer` | no | the wallet is a Ledger, which signs only the release message, and the server was started without --fee-payer, the key file that signs and pays the release transaction |
 | `DeviceUnpreviewed` | no | the wallet is a Ledger, which signs only the transaction a preview with the same arguments showed by message_hash: no such preview is kept, it expired, or this tool sends several at once; preview again, or send each piece with its own preview |
@@ -194,6 +195,11 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6111 | `UnknownLayout` | no | migrate reads only the layouts earlier programs wrote; close this account with intent-engine close-legacy |
 | 6112 | `ConfigMissing` | no | migrating an open escrow reads the fee schedule from the config; let intent-engine migrate build it |
 | 6113 | `LegacyLineOpen` | no | close-legacy never closes a claim board or stand-by entry of an open escrow, so the line keeps its order; intent-engine migrate upgrades it in place |
+| 6114 | `ClaimListInvalid` | no | a claim list names 1 to 32 distinct wallets, none of them the empty address, and never more than the size its owner set |
+| 6115 | `ClaimListIncomplete` | yes | the owner has not yet added every wallet its claim list names, so nobody can claim or stand by until the list is complete |
+| 6116 | `NotListed` | no | the escrow's owner named the wallets that may claim it, and this wallet is not one of them |
+| 6117 | `ClaimListMissing` | no | this escrow's claims board records a claim list, so a claim, stand-by or closing settle must pass it; let this server build it |
+| 6118 | `ClaimListSet` | no | this escrow's claim list is already set, and a set list never changes |
 
 ## Token programs
 

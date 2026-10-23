@@ -25,6 +25,7 @@ import {
 } from "@intent-engine/core";
 import { type ClaimsView, type Client, createClient, escrowsJudgedBy, isDevice, keepsKey, type LineEntry, lineHandover, loadLine, type Transport } from "@intent-engine/client";
 import { previewed } from "./admin-commands.js";
+import { finishList, listAccount, listRefusal, listShown, openListed } from "./claim-lists.js";
 import type { Command } from "./command-types.js";
 import { FlowRefused } from "./flows.js";
 import { claimNotInvited, sealedInvites } from "./invites.js";
@@ -79,6 +80,7 @@ const claimsShown = (intent: Address, view: ClaimsView) => ({
   owner: view.owner,
   cooldown: view.cooldown,
   line: view.line,
+  claim_list: listShown(view.list),
 });
 
 async function claimsOf(client: Client, owner: Address, nonce: bigint) {
@@ -114,14 +116,19 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
   if (command.name === "claims-open") {
     const [intent] = await findIntentPda({ owner: signer.address, nonce: command.nonce });
     const board = await claimBoardAddress(intent);
-    if ((await client.claims(signer.address, command.nonce)) !== null) {
+    const existing = await client.claims(signer.address, command.nonce);
+    if (existing !== null) {
+      if (command.workers !== undefined && existing.list !== null && !existing.list.complete) {
+        return finishList(command.workers, signer, transport, intent, existing.list, command.yes);
+      }
       throw new FlowRefused(`escrow ${intent} already takes claims on board ${board}`);
     }
+    const opens = `Opens: claims on escrow ${intent}; a worker holds the job for up to ${command.maxSecs} seconds by staking ${sol(command.stake)}`;
+    if (command.workers !== undefined) {
+      return openListed({ ...command, workers: command.workers }, signer, transport, intent, board, opens);
+    }
     const instruction = await buildOpenClaims({ owner: signer, intent, maxSecs: command.maxSecs, stake: command.stake });
-    const summary = [
-      `Opens: claims on escrow ${intent}; a worker holds the job for up to ${command.maxSecs} seconds by staking ${sol(command.stake)}`,
-      `Pays rent: ${signer.address}, for the claims board ${board}`,
-    ];
+    const summary = [opens, `Pays rent: ${signer.address}, for the claims board ${board}`];
     return previewed(transport, [instruction], signer, { intent, board, summary }, command.yes);
   }
   if (command.name === "claims-leave") {
@@ -133,6 +140,10 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
     const invited = await sealedInvites(transport, runtime.specFetch, intent);
     if (invited !== undefined && !invited.includes(signer.address)) {
       throw new FlowRefused(claimNotInvited(signer.address, intent));
+    }
+    const unlisted = listRefusal(view.list, signer.address, intent);
+    if (unlisted !== undefined) {
+      throw new FlowRefused(unlisted);
     }
   }
   switch (command.name) {
@@ -194,7 +205,7 @@ async function standBy(
     `Stands by: for escrow ${intent} as entry ${seq}, place ${view.line.waiting + 1} in its line; when the job reaches this worker it holds it for ${command.secs} seconds`,
     `Locks: a stake of ${sol(view.stake)} and the entry's rent, moved onto the claim when the job reaches this worker, or returned when it leaves the line`,
   ];
-  const instruction = await buildStandBy({ worker, intent, seq, secs: command.secs });
+  const instruction = await buildStandBy({ worker, intent, seq, secs: command.secs, ...listAccount(view.list) });
   return previewed(transport, [instruction], worker, { ...shown, seq, summary }, command.yes);
 }
 
@@ -289,7 +300,7 @@ async function takeClaim(
     `Stakes: ${sol(view.stake)}, returned when a release pays this worker or it drops the claim, and lost to the owner if the claim lapses first`,
     ...(view.state === "lapsed" ? [`Ends: the lapsed claim of ${view.worker}, whose stake goes to the owner ${view.owner}`] : []),
   ];
-  const instruction = await buildClaimJob({ worker, intent, owner: view.owner, secs: command.secs });
+  const instruction = await buildClaimJob({ worker, intent, owner: view.owner, secs: command.secs, ...listAccount(view.list) });
   return previewed(transport, [instruction], worker, { ...shown, summary }, command.yes);
 }
 
@@ -319,10 +330,10 @@ async function settleClaims(
   }
   const summary = [
     receiver === null ? "Moves: no stake; nobody holds the claim" : `Moves: the stake of ${sol(view.stake)} to ${receiver}`,
-    ...(open ? [] : [`Closes: the claims board ${view.board}, returning its rent to the owner ${view.owner}`]),
+    ...(open ? [] : [`Closes: the claims board ${view.board}${view.list === null ? "" : ` and its claim list ${view.list.address}`}, returning ${view.list === null ? "its" : "their"} rent to the owner ${view.owner}`]),
     `Pays the fee: ${payer.address}`,
   ];
-  const instruction = await buildSettleClaims({ intent, owner: view.owner, ...(view.worker === null ? {} : { worker: view.worker }) });
+  const instruction = await buildSettleClaims({ intent, owner: view.owner, ...(view.worker === null ? {} : { worker: view.worker }), ...listAccount(view.list) });
   return previewed(transport, [instruction], payer, { ...shown, summary }, command.yes);
 }
 

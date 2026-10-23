@@ -7,6 +7,7 @@ import {
   isEncryptionKeyText,
   MAX_CLAIM_SECS,
   MAX_CLAIM_STAKE,
+  MAX_CLAIMANTS,
   MAX_LINE_SEQ,
   MAX_COMMITTEE_MEMBERS,
   MAX_FEEDBACK_SCORE,
@@ -136,6 +137,19 @@ function stakeOf(values: Values): bigint {
   return lamports;
 }
 
+export const WORKERS_LIMIT = `--workers takes 1 to ${MAX_CLAIMANTS} addresses`;
+
+function workersOf(values: Values): Address[] | undefined {
+  if (typeof values.workers !== "string") {
+    return undefined;
+  }
+  const workers = addressList(values.workers, "workers");
+  if (workers.length > MAX_CLAIMANTS) {
+    throw new UsageError(WORKERS_LIMIT);
+  }
+  return workers;
+}
+
 function claimsOf(sub: string | undefined, remote: Remote, values: Values): Command {
   const nonce = u64(values, "nonce");
   switch (sub) {
@@ -150,6 +164,7 @@ function claimsOf(sub: string | undefined, remote: Remote, values: Values): Comm
         nonce,
         maxSecs: parseBounded(required(values, "max-secs"), "max-secs", MAX_CLAIM_SECS, 1),
         stake: stakeOf(values),
+        workers: workersOf(values),
       };
     case "standby":
       return {

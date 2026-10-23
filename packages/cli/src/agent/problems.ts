@@ -143,6 +143,11 @@ export const ENGINE_PROBLEMS = {
   UnknownLayout: never("migrate reads only the layouts earlier programs wrote; close this account with intent-engine close-legacy"),
   ConfigMissing: never("migrating an open escrow reads the fee schedule from the config; let intent-engine migrate build it"),
   LegacyLineOpen: never("close-legacy never closes a claim board or stand-by entry of an open escrow, so the line keeps its order; intent-engine migrate upgrades it in place"),
+  ClaimListInvalid: never("a claim list names 1 to 32 distinct wallets, none of them the empty address, and never more than the size its owner set"),
+  ClaimListIncomplete: later("the owner has not yet added every wallet its claim list names, so nobody can claim or stand by until the list is complete"),
+  NotListed: never("the escrow's owner named the wallets that may claim it, and this wallet is not one of them"),
+  ClaimListMissing: never("this escrow's claims board records a claim list, so a claim, stand-by or closing settle must pass it; let this server build it"),
+  ClaimListSet: never("this escrow's claim list is already set, and a set list never changes"),
 } as const satisfies Record<string, Entry>;
 
 type EngineErrorName = keyof typeof ENGINE_PROBLEMS;
@@ -288,6 +293,7 @@ export const SERVER_PROBLEMS = {
   AlreadyRecorded: never("the release already records a delivered sha256, in its own memo or a follow-up, and a receipt reads the first"),
   ConfirmMismatch: later("the second RPC node the server was started with, by --confirm-url, reports another genesis hash, escrow or earliest announcer than the first, or could not be read, so nothing was signed or sent; call again once both nodes agree"),
   NeverSettles: never("no release of this escrow could pay: after the judge fee, too little is left for the rounded-up protocol and partner fees; escrow more or lower the judge fee, as the hint says"),
+  ClaimListTooLarge: never("the escrow and the claim list its sealed spec sets do not fit in one transaction, and a Ledger signs only the one transaction it previewed; seal the spec to fewer workers, or escrow without claims and open them with intent-engine claims open --workers, which sends the list in parts"),
   Ledger: never("the wallet's Ledger did not sign: it was rejected on the device, or the device is locked, unplugged or not in the Solana app; nothing was sent, and the hint says which"),
   NoFeePayer: never("the wallet is a Ledger, which signs only the release message, and the server was started without --fee-payer, the key file that signs and pays the release transaction"),
   DeviceUnpreviewed: never("the wallet is a Ledger, which signs only the transaction a preview with the same arguments showed by message_hash: no such preview is kept, it expired, or this tool sends several at once; preview again, or send each piece with its own preview"),

@@ -39,7 +39,7 @@ const named = (name: string): AccountLayout => {
 
 describe("account versions", () => {
   it("name one layout per account type, each discriminator the hash of its type name", () => {
-    const types = ["Config", "UserState", "Intent", "Mandate", "MintCap", "Committee", "ClaimBoard", "Standby", "Profile"];
+    const types = ["Config", "UserState", "Intent", "Mandate", "MintCap", "Committee", "ClaimBoard", "Standby", "Profile", "ClaimList"];
     expect(ACCOUNT_LAYOUTS.map((l) => [...l.discriminator])).toEqual(
       types.map((t) => [...createHash("sha256").update(`account:${t}`).digest().subarray(0, 8)]),
     );

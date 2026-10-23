@@ -1,10 +1,11 @@
 use anchor_lang::prelude::*;
 use intent_core::claim::{stake_on_settle, StakeTo};
 
-use crate::claims::{clear, escrow_deadline, move_lamports, slot_of, stake_receiver};
+use crate::claims::{clear, close_entry, escrow_deadline, move_lamports, slot_of, stake_receiver};
 use crate::errors::{core_err, EngineError};
 use crate::events::{ClaimsClosed, StakeMoved};
-use crate::state::{board_readable, ClaimBoard, CLAIMS_SEED};
+use crate::roster::is_listed;
+use crate::state::{board_readable, ClaimBoard, CLAIMS_SEED, CLAIM_LIST_SEED};
 
 #[event_cpi]
 #[derive(Accounts)]
@@ -24,6 +25,9 @@ pub struct SettleClaims<'info> {
     /// CHECK: the board's recorded worker, refunded a stake the escrow failed
     #[account(mut, address = board.load()?.worker @ EngineError::StakeAccountMismatch)]
     pub worker: Option<UncheckedAccount<'info>>,
+    /// CHECK: the escrow's claim list, closed with the board when the board records one; one already closed is skipped
+    #[account(mut, seeds = [CLAIM_LIST_SEED, intent.key().as_ref()], bump)]
+    pub claim_list: Option<UncheckedAccount<'info>>,
 }
 
 pub fn handle_settle_claims(ctx: Context<SettleClaims>) -> Result<()> {
@@ -64,6 +68,17 @@ pub fn handle_settle_claims(ctx: Context<SettleClaims>) -> Result<()> {
         return err!(EngineError::InvalidTransition);
     }
     if !open {
+        if is_listed(&*ctx.accounts.board.load()?) {
+            let list = ctx
+                .accounts
+                .claim_list
+                .as_ref()
+                .ok_or(EngineError::ClaimListMissing)?
+                .to_account_info();
+            if *list.owner == crate::ID {
+                close_entry(&list, &ctx.accounts.owner.to_account_info())?;
+            }
+        }
         ctx.accounts
             .board
             .close(ctx.accounts.owner.to_account_info())?;

@@ -92,7 +92,7 @@ describe("claimed escrows", () => {
   it("client.claims reports free, held and lapsed from the chain's clock", async () => {
     const s = await setup();
     const board = await claimBoardAddress(s.intent);
-    const terms = { board, stake: STAKE, maxSecs: 3_600, owner: s.owner.address, cooldown: null, line: { head: 0, tail: 0, waiting: 0 } };
+    const terms = { board, stake: STAKE, maxSecs: 3_600, owner: s.owner.address, cooldown: null, line: { head: 0, tail: 0, waiting: 0 }, list: null };
     expect(await s.client.claims(s.owner.address, s.nonce)).toEqual({ ...terms, state: "free", worker: null, until: 0n, secondsLeft: 0n });
     await s.claim(s.worker);
     const now = s.w.chain.svm.getClock().unixTimestamp;

@@ -537,6 +537,33 @@
           "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
         },
         {
+          "name": "claim_list",
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  95,
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -1826,6 +1853,72 @@
       ]
     },
     {
+      "name": "extend_claimants",
+      "discriminator": [
+        167,
+        198,
+        71,
+        145,
+        207,
+        75,
+        8,
+        218
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "signer": true,
+          "relations": [
+            "claim_list"
+          ]
+        },
+        {
+          "name": "intent"
+        },
+        {
+          "name": "claim_list",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  95,
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "workers",
+          "type": {
+            "vec": "pubkey"
+          }
+        }
+      ]
+    },
+    {
       "name": "fill_attested",
       "discriminator": [
         241,
@@ -2932,6 +3025,105 @@
       ]
     },
     {
+      "name": "list_claimants",
+      "discriminator": [
+        141,
+        9,
+        120,
+        20,
+        17,
+        243,
+        224,
+        62
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "intent",
+            "board"
+          ]
+        },
+        {
+          "name": "intent"
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "claim_list",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  95,
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "size",
+          "type": "u8"
+        },
+        {
+          "name": "workers",
+          "type": {
+            "vec": "pubkey"
+          }
+        }
+      ]
+    },
+    {
       "name": "lower_pause",
       "discriminator": [
         162,
@@ -3077,6 +3269,113 @@
         {
           "name": "stake",
           "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "open_claims_listed",
+      "discriminator": [
+        240,
+        197,
+        105,
+        76,
+        62,
+        110,
+        154,
+        3
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "intent",
+          "writable": true
+        },
+        {
+          "name": "board",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "claim_list",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  95,
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "max_secs",
+          "type": "u32"
+        },
+        {
+          "name": "stake",
+          "type": "u64"
+        },
+        {
+          "name": "size",
+          "type": "u8"
+        },
+        {
+          "name": "workers",
+          "type": {
+            "vec": "pubkey"
+          }
         }
       ]
     },
@@ -3406,6 +3705,34 @@
           "optional": true
         },
         {
+          "name": "claim_list",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  95,
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -3469,6 +3796,33 @@
         {
           "name": "config",
           "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "claim_list",
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  95,
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
         },
         {
           "name": "event_authority"
@@ -3642,6 +3996,19 @@
         109,
         232,
         161
+      ]
+    },
+    {
+      "name": "ClaimList",
+      "discriminator": [
+        205,
+        68,
+        225,
+        42,
+        40,
+        17,
+        234,
+        224
       ]
     },
     {
@@ -3826,6 +4193,19 @@
         242,
         71,
         154
+      ]
+    },
+    {
+      "name": "ClaimantsListed",
+      "discriminator": [
+        146,
+        58,
+        61,
+        192,
+        43,
+        174,
+        203,
+        123
       ]
     },
     {
@@ -4740,6 +5120,26 @@
     {
       "code": 6113,
       "name": "LegacyLineOpen"
+    },
+    {
+      "code": 6114,
+      "name": "ClaimListInvalid"
+    },
+    {
+      "code": 6115,
+      "name": "ClaimListIncomplete"
+    },
+    {
+      "code": 6116,
+      "name": "NotListed"
+    },
+    {
+      "code": 6117,
+      "name": "ClaimListMissing"
+    },
+    {
+      "code": 6118,
+      "name": "ClaimListSet"
     }
   ],
   "types": [
@@ -4897,11 +5297,15 @@
             "type": "u8"
           },
           {
+            "name": "listed",
+            "type": "u8"
+          },
+          {
             "name": "padding",
             "type": {
               "array": [
                 "u8",
-                2
+                1
               ]
             }
           },
@@ -4936,6 +5340,90 @@
           {
             "name": "refunded",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ClaimList",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "workers",
+            "type": {
+              "array": [
+                "pubkey",
+                32
+              ]
+            }
+          },
+          {
+            "name": "size",
+            "type": "u8"
+          },
+          {
+            "name": "count",
+            "type": "u8"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "padding",
+            "type": {
+              "array": [
+                "u8",
+                4
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "ClaimantsListed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "size",
+            "type": "u8"
+          },
+          {
+            "name": "count",
+            "type": "u8"
+          },
+          {
+            "name": "workers",
+            "type": {
+              "vec": "pubkey"
+            }
           }
         ]
       }

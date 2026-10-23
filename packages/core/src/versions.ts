@@ -1,9 +1,11 @@
 import { type Address, getAddressDecoder, type ReadonlyUint8Array, type TransactionSigner } from "@solana/kit";
 import {
   CLAIM_BOARD_DISCRIMINATOR,
+  CLAIM_LIST_DISCRIMINATOR,
   COMMITTEE_DISCRIMINATOR,
   CONFIG_DISCRIMINATOR,
   getClaimBoardSize,
+  getClaimListSize,
   getCloseLegacyInstruction,
   getCommitteeSize,
   getConfigSize,
@@ -31,6 +33,7 @@ export const COMMITTEE_VERSION = 2;
 export const CLAIMS_VERSION = 2;
 export const STANDBY_VERSION = 1;
 export const PROFILE_VERSION = 2;
+export const CLAIM_LIST_VERSION = 1;
 export const OLDEST_INTENT_VERSION = 1;
 export const OLDEST_CLAIMS_VERSION = 1;
 export const OLDEST_MINT_CAP_VERSION = 1;
@@ -58,6 +61,7 @@ export const ACCOUNT_LAYOUTS: readonly AccountLayout[] = [
   { name: "claim board", discriminator: CLAIM_BOARD_DISCRIMINATOR, space: getClaimBoardSize(), versionAt: 124, version: CLAIMS_VERSION, oldest: OLDEST_CLAIMS_VERSION, payerAt: 32 },
   { name: "stand-by entry", discriminator: STANDBY_DISCRIMINATOR, space: getStandbySize(), versionAt: 73, version: STANDBY_VERSION, oldest: STANDBY_VERSION, payerAt: 0 },
   { name: "profile", discriminator: PROFILE_DISCRIMINATOR, space: getProfileSize(), versionAt: 456, version: PROFILE_VERSION, oldest: PROFILE_VERSION, payerAt: 0 },
+  { name: "claim list", discriminator: CLAIM_LIST_DISCRIMINATOR, space: getClaimListSize(), versionAt: 1090, version: CLAIM_LIST_VERSION, oldest: CLAIM_LIST_VERSION, payerAt: 32 },
 ];
 
 export function accountLayoutOf(data: ReadonlyUint8Array): AccountLayout | null {

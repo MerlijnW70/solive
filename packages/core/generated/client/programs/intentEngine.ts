@@ -36,6 +36,7 @@ import {
 } from "@solana/kit/program-client-core";
 import {
   getClaimBoardCodec,
+  getClaimListCodec,
   getCommitteeCodec,
   getConfigCodec,
   getIntentCodec,
@@ -46,6 +47,8 @@ import {
   getUserStateCodec,
   type ClaimBoard,
   type ClaimBoardArgs,
+  type ClaimList,
+  type ClaimListArgs,
   type Committee,
   type CommitteeArgs,
   type Config,
@@ -83,6 +86,7 @@ import {
   getDropClaimInstructionAsync,
   getEndFillInstruction,
   getExpireIntentInstructionAsync,
+  getExtendClaimantsInstructionAsync,
   getFillAttestedCommitteeInstructionAsync,
   getFillAttestedInstructionAsync,
   getFillAttestedSplitCommitteeInstructionAsync,
@@ -91,9 +95,11 @@ import {
   getInitConfigInstructionAsync,
   getInitUserInstructionAsync,
   getLeaveInstructionAsync,
+  getListClaimantsInstructionAsync,
   getLowerPauseInstruction,
   getMigrateInstruction,
   getOpenClaimsInstructionAsync,
+  getOpenClaimsListedInstructionAsync,
   getProposeAdminInstruction,
   getRaisePauseInstruction,
   getRevokeMandateInstruction,
@@ -124,6 +130,7 @@ import {
   parseDropClaimInstruction,
   parseEndFillInstruction,
   parseExpireIntentInstruction,
+  parseExtendClaimantsInstruction,
   parseFillAttestedCommitteeInstruction,
   parseFillAttestedInstruction,
   parseFillAttestedSplitCommitteeInstruction,
@@ -132,9 +139,11 @@ import {
   parseInitConfigInstruction,
   parseInitUserInstruction,
   parseLeaveInstruction,
+  parseListClaimantsInstruction,
   parseLowerPauseInstruction,
   parseMigrateInstruction,
   parseOpenClaimsInstruction,
+  parseOpenClaimsListedInstruction,
   parseProposeAdminInstruction,
   parseRaisePauseInstruction,
   parseRevokeMandateInstruction,
@@ -165,6 +174,7 @@ import {
   type DropClaimAsyncInput,
   type EndFillInput,
   type ExpireIntentAsyncInput,
+  type ExtendClaimantsAsyncInput,
   type FillAttestedAsyncInput,
   type FillAttestedCommitteeAsyncInput,
   type FillAttestedSplitAsyncInput,
@@ -173,9 +183,11 @@ import {
   type InitConfigAsyncInput,
   type InitUserAsyncInput,
   type LeaveAsyncInput,
+  type ListClaimantsAsyncInput,
   type LowerPauseInput,
   type MigrateInput,
   type OpenClaimsAsyncInput,
+  type OpenClaimsListedAsyncInput,
   type ParsedAcceptAdminInstruction,
   type ParsedAdvanceEpochInstruction,
   type ParsedAdvanceInstruction,
@@ -195,6 +207,7 @@ import {
   type ParsedDropClaimInstruction,
   type ParsedEndFillInstruction,
   type ParsedExpireIntentInstruction,
+  type ParsedExtendClaimantsInstruction,
   type ParsedFillAttestedCommitteeInstruction,
   type ParsedFillAttestedInstruction,
   type ParsedFillAttestedSplitCommitteeInstruction,
@@ -203,9 +216,11 @@ import {
   type ParsedInitConfigInstruction,
   type ParsedInitUserInstruction,
   type ParsedLeaveInstruction,
+  type ParsedListClaimantsInstruction,
   type ParsedLowerPauseInstruction,
   type ParsedMigrateInstruction,
   type ParsedOpenClaimsInstruction,
+  type ParsedOpenClaimsListedInstruction,
   type ParsedProposeAdminInstruction,
   type ParsedRaisePauseInstruction,
   type ParsedRevokeMandateInstruction,
@@ -231,6 +246,7 @@ import {
 } from "../instructions/index.js";
 import {
   findBoardPda,
+  findClaimListPda,
   findCommitteePda,
   findConfigPda,
   findDelegatePda,
@@ -246,23 +262,25 @@ export const INTENT_ENGINE_PROGRAM_ADDRESS =
 
 export const IntentEngineAccount = {
   0: "ClaimBoard",
-  1: "Committee",
-  2: "Config",
-  3: "Intent",
-  4: "Mandate",
-  5: "MintCap",
-  6: "Profile",
-  7: "Standby",
-  8: "UserState",
+  1: "ClaimList",
+  2: "Committee",
+  3: "Config",
+  4: "Intent",
+  5: "Mandate",
+  6: "MintCap",
+  7: "Profile",
+  8: "Standby",
+  9: "UserState",
   ClaimBoard: 0,
-  Committee: 1,
-  Config: 2,
-  Intent: 3,
-  Mandate: 4,
-  MintCap: 5,
-  Profile: 6,
-  Standby: 7,
-  UserState: 8,
+  ClaimList: 1,
+  Committee: 2,
+  Config: 3,
+  Intent: 4,
+  Mandate: 5,
+  MintCap: 6,
+  Profile: 7,
+  Standby: 8,
+  UserState: 9,
 } as const;
 
 export type IntentEngineAccount = (typeof IntentEngineAccount)[Exclude<
@@ -284,6 +302,17 @@ export function identifyIntentEngineAccount(
     )
   ) {
     return IntentEngineAccount.ClaimBoard;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([205, 68, 225, 42, 40, 17, 234, 224]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineAccount.ClaimList;
   }
   if (
     containsBytes(
@@ -386,82 +415,84 @@ export const IntentEngineEvent = {
   3: "AgentPaid",
   4: "CapsRequiredSet",
   5: "ClaimDropped",
-  6: "ClaimsClosed",
-  7: "ClaimsOpened",
-  8: "CommitteeAttested",
-  9: "CommitteeCreated",
-  10: "CommitteeFloorSet",
-  11: "ConfigInitialized",
-  12: "ConfigUpdated",
-  13: "EconomicsUpdated",
-  14: "EpochAdvanced",
-  15: "FeeWithheld",
-  16: "FillBegun",
-  17: "FillEnded",
-  18: "IntentAttested",
-  19: "IntentCancelled",
-  20: "IntentClosed",
-  21: "IntentCreated",
-  22: "IntentExpired",
-  23: "IntentFilled",
-  24: "IntentSplit",
-  25: "JobClaimed",
-  26: "LegacyClosed",
-  27: "LineLeft",
-  28: "MandateClosed",
-  29: "MandateCreated",
-  30: "MandateUsed",
-  31: "MintCapSet",
-  32: "NonceAdvanced",
-  33: "PauseLowered",
-  34: "PauseRaised",
-  35: "ProfileClosed",
-  36: "ProfileSet",
-  37: "RelayerPaid",
-  38: "StakeMoved",
-  39: "StoodBy",
-  40: "UserInitialized",
+  6: "ClaimantsListed",
+  7: "ClaimsClosed",
+  8: "ClaimsOpened",
+  9: "CommitteeAttested",
+  10: "CommitteeCreated",
+  11: "CommitteeFloorSet",
+  12: "ConfigInitialized",
+  13: "ConfigUpdated",
+  14: "EconomicsUpdated",
+  15: "EpochAdvanced",
+  16: "FeeWithheld",
+  17: "FillBegun",
+  18: "FillEnded",
+  19: "IntentAttested",
+  20: "IntentCancelled",
+  21: "IntentClosed",
+  22: "IntentCreated",
+  23: "IntentExpired",
+  24: "IntentFilled",
+  25: "IntentSplit",
+  26: "JobClaimed",
+  27: "LegacyClosed",
+  28: "LineLeft",
+  29: "MandateClosed",
+  30: "MandateCreated",
+  31: "MandateUsed",
+  32: "MintCapSet",
+  33: "NonceAdvanced",
+  34: "PauseLowered",
+  35: "PauseRaised",
+  36: "ProfileClosed",
+  37: "ProfileSet",
+  38: "RelayerPaid",
+  39: "StakeMoved",
+  40: "StoodBy",
+  41: "UserInitialized",
   AccountMigrated: 0,
   AdminAccepted: 1,
   AdminProposed: 2,
   AgentPaid: 3,
   CapsRequiredSet: 4,
   ClaimDropped: 5,
-  ClaimsClosed: 6,
-  ClaimsOpened: 7,
-  CommitteeAttested: 8,
-  CommitteeCreated: 9,
-  CommitteeFloorSet: 10,
-  ConfigInitialized: 11,
-  ConfigUpdated: 12,
-  EconomicsUpdated: 13,
-  EpochAdvanced: 14,
-  FeeWithheld: 15,
-  FillBegun: 16,
-  FillEnded: 17,
-  IntentAttested: 18,
-  IntentCancelled: 19,
-  IntentClosed: 20,
-  IntentCreated: 21,
-  IntentExpired: 22,
-  IntentFilled: 23,
-  IntentSplit: 24,
-  JobClaimed: 25,
-  LegacyClosed: 26,
-  LineLeft: 27,
-  MandateClosed: 28,
-  MandateCreated: 29,
-  MandateUsed: 30,
-  MintCapSet: 31,
-  NonceAdvanced: 32,
-  PauseLowered: 33,
-  PauseRaised: 34,
-  ProfileClosed: 35,
-  ProfileSet: 36,
-  RelayerPaid: 37,
-  StakeMoved: 38,
-  StoodBy: 39,
-  UserInitialized: 40,
+  ClaimantsListed: 6,
+  ClaimsClosed: 7,
+  ClaimsOpened: 8,
+  CommitteeAttested: 9,
+  CommitteeCreated: 10,
+  CommitteeFloorSet: 11,
+  ConfigInitialized: 12,
+  ConfigUpdated: 13,
+  EconomicsUpdated: 14,
+  EpochAdvanced: 15,
+  FeeWithheld: 16,
+  FillBegun: 17,
+  FillEnded: 18,
+  IntentAttested: 19,
+  IntentCancelled: 20,
+  IntentClosed: 21,
+  IntentCreated: 22,
+  IntentExpired: 23,
+  IntentFilled: 24,
+  IntentSplit: 25,
+  JobClaimed: 26,
+  LegacyClosed: 27,
+  LineLeft: 28,
+  MandateClosed: 29,
+  MandateCreated: 30,
+  MandateUsed: 31,
+  MintCapSet: 32,
+  NonceAdvanced: 33,
+  PauseLowered: 34,
+  PauseRaised: 35,
+  ProfileClosed: 36,
+  ProfileSet: 37,
+  RelayerPaid: 38,
+  StakeMoved: 39,
+  StoodBy: 40,
+  UserInitialized: 41,
 } as const;
 
 export type IntentEngineEvent = (typeof IntentEngineEvent)[Exclude<
@@ -538,6 +569,17 @@ export function identifyIntentEngineEvent(
     )
   ) {
     return IntentEngineEvent.ClaimDropped;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([146, 58, 61, 192, 43, 174, 203, 123]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineEvent.ClaimantsListed;
   }
   if (
     containsBytes(
@@ -949,28 +991,31 @@ export const IntentEngineInstruction = {
   16: "DropClaim",
   17: "EndFill",
   18: "ExpireIntent",
-  19: "FillAttested",
-  20: "FillAttestedCommittee",
-  21: "FillAttestedSplit",
-  22: "FillAttestedSplitCommittee",
-  23: "FillIntent",
-  24: "InitConfig",
-  25: "InitUser",
-  26: "Leave",
-  27: "LowerPause",
-  28: "Migrate",
-  29: "OpenClaims",
-  30: "ProposeAdmin",
-  31: "RaisePause",
-  32: "RevokeMandate",
-  33: "SetCapsRequired",
-  34: "SetCommitteeFloor",
-  35: "SetMintCap",
-  36: "SettleClaims",
-  37: "StandBy",
-  38: "UpdateConfig",
-  39: "UpdateEconomics",
-  40: "UpdateProfile",
+  19: "ExtendClaimants",
+  20: "FillAttested",
+  21: "FillAttestedCommittee",
+  22: "FillAttestedSplit",
+  23: "FillAttestedSplitCommittee",
+  24: "FillIntent",
+  25: "InitConfig",
+  26: "InitUser",
+  27: "Leave",
+  28: "ListClaimants",
+  29: "LowerPause",
+  30: "Migrate",
+  31: "OpenClaims",
+  32: "OpenClaimsListed",
+  33: "ProposeAdmin",
+  34: "RaisePause",
+  35: "RevokeMandate",
+  36: "SetCapsRequired",
+  37: "SetCommitteeFloor",
+  38: "SetMintCap",
+  39: "SettleClaims",
+  40: "StandBy",
+  41: "UpdateConfig",
+  42: "UpdateEconomics",
+  43: "UpdateProfile",
   AcceptAdmin: 0,
   Advance: 1,
   AdvanceEpoch: 2,
@@ -990,28 +1035,31 @@ export const IntentEngineInstruction = {
   DropClaim: 16,
   EndFill: 17,
   ExpireIntent: 18,
-  FillAttested: 19,
-  FillAttestedCommittee: 20,
-  FillAttestedSplit: 21,
-  FillAttestedSplitCommittee: 22,
-  FillIntent: 23,
-  InitConfig: 24,
-  InitUser: 25,
-  Leave: 26,
-  LowerPause: 27,
-  Migrate: 28,
-  OpenClaims: 29,
-  ProposeAdmin: 30,
-  RaisePause: 31,
-  RevokeMandate: 32,
-  SetCapsRequired: 33,
-  SetCommitteeFloor: 34,
-  SetMintCap: 35,
-  SettleClaims: 36,
-  StandBy: 37,
-  UpdateConfig: 38,
-  UpdateEconomics: 39,
-  UpdateProfile: 40,
+  ExtendClaimants: 19,
+  FillAttested: 20,
+  FillAttestedCommittee: 21,
+  FillAttestedSplit: 22,
+  FillAttestedSplitCommittee: 23,
+  FillIntent: 24,
+  InitConfig: 25,
+  InitUser: 26,
+  Leave: 27,
+  ListClaimants: 28,
+  LowerPause: 29,
+  Migrate: 30,
+  OpenClaims: 31,
+  OpenClaimsListed: 32,
+  ProposeAdmin: 33,
+  RaisePause: 34,
+  RevokeMandate: 35,
+  SetCapsRequired: 36,
+  SetCommitteeFloor: 37,
+  SetMintCap: 38,
+  SettleClaims: 39,
+  StandBy: 40,
+  UpdateConfig: 41,
+  UpdateEconomics: 42,
+  UpdateProfile: 43,
 } as const;
 
 export type IntentEngineInstruction = (typeof IntentEngineInstruction)[Exclude<
@@ -1236,6 +1284,17 @@ export function identifyIntentEngineInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([167, 198, 71, 145, 207, 75, 8, 218]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineInstruction.ExtendClaimants;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([241, 100, 218, 154, 206, 21, 102, 122]),
       ),
       0,
@@ -1324,6 +1383,17 @@ export function identifyIntentEngineInstruction(
     containsBytes(
       data,
       fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([141, 9, 120, 20, 17, 243, 224, 62]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineInstruction.ListClaimants;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
         new Uint8Array([162, 105, 90, 233, 47, 43, 98, 41]),
       ),
       0,
@@ -1352,6 +1422,17 @@ export function identifyIntentEngineInstruction(
     )
   ) {
     return IntentEngineInstruction.OpenClaims;
+  }
+  if (
+    containsBytes(
+      data,
+      fixEncoderSize(getBytesEncoder(), 8).encode(
+        new Uint8Array([240, 197, 105, 76, 62, 110, 154, 3]),
+      ),
+      0,
+    )
+  ) {
+    return IntentEngineInstruction.OpenClaimsListed;
   }
   if (
     containsBytes(
@@ -1541,6 +1622,9 @@ export type ParsedIntentEngineInstruction<
       instructionType: typeof IntentEngineInstruction.ExpireIntent;
     } & ParsedExpireIntentInstruction<TProgram>)
   | ({
+      instructionType: typeof IntentEngineInstruction.ExtendClaimants;
+    } & ParsedExtendClaimantsInstruction<TProgram>)
+  | ({
       instructionType: typeof IntentEngineInstruction.FillAttested;
     } & ParsedFillAttestedInstruction<TProgram>)
   | ({
@@ -1565,6 +1649,9 @@ export type ParsedIntentEngineInstruction<
       instructionType: typeof IntentEngineInstruction.Leave;
     } & ParsedLeaveInstruction<TProgram>)
   | ({
+      instructionType: typeof IntentEngineInstruction.ListClaimants;
+    } & ParsedListClaimantsInstruction<TProgram>)
+  | ({
       instructionType: typeof IntentEngineInstruction.LowerPause;
     } & ParsedLowerPauseInstruction<TProgram>)
   | ({
@@ -1573,6 +1660,9 @@ export type ParsedIntentEngineInstruction<
   | ({
       instructionType: typeof IntentEngineInstruction.OpenClaims;
     } & ParsedOpenClaimsInstruction<TProgram>)
+  | ({
+      instructionType: typeof IntentEngineInstruction.OpenClaimsListed;
+    } & ParsedOpenClaimsListedInstruction<TProgram>)
   | ({
       instructionType: typeof IntentEngineInstruction.ProposeAdmin;
     } & ParsedProposeAdminInstruction<TProgram>)
@@ -1745,6 +1835,13 @@ export function parseIntentEngineInstruction<TProgram extends string>(
         ...parseExpireIntentInstruction(instruction),
       };
     }
+    case IntentEngineInstruction.ExtendClaimants: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: IntentEngineInstruction.ExtendClaimants,
+        ...parseExtendClaimantsInstruction(instruction),
+      };
+    }
     case IntentEngineInstruction.FillAttested: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -1801,6 +1898,13 @@ export function parseIntentEngineInstruction<TProgram extends string>(
         ...parseLeaveInstruction(instruction),
       };
     }
+    case IntentEngineInstruction.ListClaimants: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: IntentEngineInstruction.ListClaimants,
+        ...parseListClaimantsInstruction(instruction),
+      };
+    }
     case IntentEngineInstruction.LowerPause: {
       assertIsInstructionWithAccounts(instruction);
       return {
@@ -1820,6 +1924,13 @@ export function parseIntentEngineInstruction<TProgram extends string>(
       return {
         instructionType: IntentEngineInstruction.OpenClaims,
         ...parseOpenClaimsInstruction(instruction),
+      };
+    }
+    case IntentEngineInstruction.OpenClaimsListed: {
+      assertIsInstructionWithAccounts(instruction);
+      return {
+        instructionType: IntentEngineInstruction.OpenClaimsListed,
+        ...parseOpenClaimsListedInstruction(instruction),
       };
     }
     case IntentEngineInstruction.ProposeAdmin: {
@@ -1922,6 +2033,8 @@ export type IntentEnginePlugin = {
 export type IntentEnginePluginAccounts = {
   claimBoard: ReturnType<typeof getClaimBoardCodec> &
     SelfFetchFunctions<ClaimBoardArgs, ClaimBoard>;
+  claimList: ReturnType<typeof getClaimListCodec> &
+    SelfFetchFunctions<ClaimListArgs, ClaimList>;
   committee: ReturnType<typeof getCommitteeCodec> &
     SelfFetchFunctions<CommitteeArgs, Committee>;
   config: ReturnType<typeof getConfigCodec> &
@@ -2013,6 +2126,10 @@ export type IntentEnginePluginInstructions = {
     input: ExpireIntentAsyncInput,
   ) => ReturnType<typeof getExpireIntentInstructionAsync> &
     SelfPlanAndSendFunctions;
+  extendClaimants: (
+    input: ExtendClaimantsAsyncInput,
+  ) => ReturnType<typeof getExtendClaimantsInstructionAsync> &
+    SelfPlanAndSendFunctions;
   fillAttested: (
     input: FillAttestedAsyncInput,
   ) => ReturnType<typeof getFillAttestedInstructionAsync> &
@@ -2044,6 +2161,10 @@ export type IntentEnginePluginInstructions = {
   leave: (
     input: LeaveAsyncInput,
   ) => ReturnType<typeof getLeaveInstructionAsync> & SelfPlanAndSendFunctions;
+  listClaimants: (
+    input: ListClaimantsAsyncInput,
+  ) => ReturnType<typeof getListClaimantsInstructionAsync> &
+    SelfPlanAndSendFunctions;
   lowerPause: (
     input: LowerPauseInput,
   ) => ReturnType<typeof getLowerPauseInstruction> & SelfPlanAndSendFunctions;
@@ -2053,6 +2174,10 @@ export type IntentEnginePluginInstructions = {
   openClaims: (
     input: OpenClaimsAsyncInput,
   ) => ReturnType<typeof getOpenClaimsInstructionAsync> &
+    SelfPlanAndSendFunctions;
+  openClaimsListed: (
+    input: OpenClaimsListedAsyncInput,
+  ) => ReturnType<typeof getOpenClaimsListedInstructionAsync> &
     SelfPlanAndSendFunctions;
   proposeAdmin: (
     input: ProposeAdminInput,
@@ -2103,6 +2228,7 @@ export type IntentEnginePluginPdas = {
   profile: typeof findProfilePda;
   committee: typeof findCommitteePda;
   delegate: typeof findDelegatePda;
+  claimList: typeof findClaimListPda;
   config: typeof findConfigPda;
   entry: typeof findEntryPda;
   mintCap: typeof findMintCapPda;
@@ -2123,6 +2249,7 @@ export function intentEngineProgram() {
       intentEngine: {
         accounts: {
           claimBoard: addSelfFetchFunctions(client, getClaimBoardCodec()),
+          claimList: addSelfFetchFunctions(client, getClaimListCodec()),
           committee: addSelfFetchFunctions(client, getCommitteeCodec()),
           config: addSelfFetchFunctions(client, getConfigCodec()),
           intent: addSelfFetchFunctions(client, getIntentCodec()),
@@ -2231,6 +2358,11 @@ export function intentEngineProgram() {
               client,
               getExpireIntentInstructionAsync(input),
             ),
+          extendClaimants: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getExtendClaimantsInstructionAsync(input),
+            ),
           fillAttested: (input) =>
             addSelfPlanAndSendFunctions(
               client,
@@ -2271,6 +2403,11 @@ export function intentEngineProgram() {
               client,
               getLeaveInstructionAsync(input),
             ),
+          listClaimants: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getListClaimantsInstructionAsync(input),
+            ),
           lowerPause: (input) =>
             addSelfPlanAndSendFunctions(
               client,
@@ -2288,6 +2425,11 @@ export function intentEngineProgram() {
             addSelfPlanAndSendFunctions(
               client,
               getOpenClaimsInstructionAsync(input),
+            ),
+          openClaimsListed: (input) =>
+            addSelfPlanAndSendFunctions(
+              client,
+              getOpenClaimsListedInstructionAsync(input),
             ),
           proposeAdmin: (input) =>
             addSelfPlanAndSendFunctions(
@@ -2355,6 +2497,7 @@ export function intentEngineProgram() {
           profile: findProfilePda,
           committee: findCommitteePda,
           delegate: findDelegatePda,
+          claimList: findClaimListPda,
           config: findConfigPda,
           entry: findEntryPda,
           mintCap: findMintCapPda,

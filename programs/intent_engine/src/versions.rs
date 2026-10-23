@@ -3,10 +3,10 @@ use anchor_lang::Discriminator;
 use core::mem::offset_of;
 
 use crate::state::{
-    ClaimBoard, Committee, Config, Intent, Mandate, MintCap, Profile, Standby, UserState,
-    CLAIMS_VERSION, COMMITTEE_VERSION, CONFIG_VERSION, INTENT_VERSION, MANDATE_VERSION,
-    MINT_CAP_VERSION, OLDEST_CLAIMS_VERSION, OLDEST_INTENT_VERSION, OLDEST_MINT_CAP_VERSION,
-    PROFILE_VERSION, STANDBY_VERSION, USER_VERSION,
+    ClaimBoard, ClaimList, Committee, Config, Intent, Mandate, MintCap, Profile, Standby,
+    UserState, CLAIMS_VERSION, CLAIM_LIST_VERSION, COMMITTEE_VERSION, CONFIG_VERSION,
+    INTENT_VERSION, MANDATE_VERSION, MINT_CAP_VERSION, OLDEST_CLAIMS_VERSION,
+    OLDEST_INTENT_VERSION, OLDEST_MINT_CAP_VERSION, PROFILE_VERSION, STANDBY_VERSION, USER_VERSION,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -19,7 +19,7 @@ pub struct Layout {
     pub payer_at: Option<usize>,
 }
 
-pub const LAYOUTS: [Layout; 9] = [
+pub const LAYOUTS: [Layout; 10] = [
     Layout {
         discriminator: Config::DISCRIMINATOR,
         space: Config::SPACE,
@@ -91,6 +91,14 @@ pub const LAYOUTS: [Layout; 9] = [
         version: PROFILE_VERSION,
         oldest: PROFILE_VERSION,
         payer_at: Some(offset_of!(Profile, wallet)),
+    },
+    Layout {
+        discriminator: ClaimList::DISCRIMINATOR,
+        space: ClaimList::SPACE,
+        version_at: offset_of!(ClaimList, version),
+        version: CLAIM_LIST_VERSION,
+        oldest: CLAIM_LIST_VERSION,
+        payer_at: Some(offset_of!(ClaimList, owner)),
     },
 ];
 
@@ -192,6 +200,10 @@ pub fn board_terms(data: &[u8]) -> Option<BoardTerms> {
 pub fn line_intent(data: &[u8]) -> Option<Pubkey> {
     if let Some(terms) = board_terms(data) {
         return Some(terms.intent);
+    }
+    if data.get(..ClaimList::DISCRIMINATOR.len()) == Some(ClaimList::DISCRIMINATOR) {
+        let body = data.get(ClaimList::DISCRIMINATOR.len()..)?;
+        return key_at(body, offset_of!(ClaimList, intent));
     }
     if data.get(..Standby::DISCRIMINATOR.len()) != Some(Standby::DISCRIMINATOR) {
         return None;

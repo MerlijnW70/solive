@@ -2,6 +2,7 @@ use anchor_lang::prelude::*;
 use intent_core::committee::MAX_MEMBERS;
 use intent_core::mandate::{Limits, Usage};
 use intent_core::profile::{MAX_SKILLS, MAX_URL_LEN, SKILL_LEN};
+use intent_core::roster::MAX_CLAIMANTS;
 use intent_core::PARAMS_LEN;
 
 pub const CONFIG_SEED: &[u8] = b"config";
@@ -30,6 +31,9 @@ pub const CLAIMS_VERSION: u8 = 2;
 pub const CLAIMS_OPEN: u8 = 1;
 pub const STANDBY_SEED: &[u8] = b"standby";
 pub const STANDBY_VERSION: u8 = 1;
+pub const CLAIM_LIST_SEED: &[u8] = b"claim_list";
+pub const CLAIM_LIST_VERSION: u8 = 1;
+pub const LISTED: u8 = 1;
 pub const PROFILE_SEED: &[u8] = b"profile";
 pub const PROFILE_VERSION: u8 = 2;
 pub const MIN_CAP_WINDOW_SECS: u32 = 60;
@@ -246,7 +250,8 @@ pub struct ClaimBoard {
     pub max_secs: u32,
     pub version: u8,
     pub bump: u8,
-    pub padding: [u8; 2],
+    pub listed: u8,
+    pub padding: [u8; 1],
     pub dropped_by: Pubkey,
     pub head: u32,
     pub tail: u32,
@@ -269,6 +274,22 @@ pub struct Standby {
 
 impl Standby {
     pub const SPACE: usize = 8 + core::mem::size_of::<Standby>();
+}
+
+#[account(zero_copy)]
+pub struct ClaimList {
+    pub intent: Pubkey,
+    pub owner: Pubkey,
+    pub workers: [Pubkey; MAX_CLAIMANTS],
+    pub size: u8,
+    pub count: u8,
+    pub version: u8,
+    pub bump: u8,
+    pub padding: [u8; 4],
+}
+
+impl ClaimList {
+    pub const SPACE: usize = 8 + core::mem::size_of::<ClaimList>();
 }
 
 #[account(zero_copy)]

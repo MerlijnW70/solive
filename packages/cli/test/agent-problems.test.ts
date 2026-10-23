@@ -98,7 +98,9 @@ describe("agent problems", () => {
     expect(simulationProblem("err", [failed(ENGINE, 6110)])).toMatchObject({ code: "AlreadyCurrent", retryable: false });
     expect(simulationProblem("err", [failed(ENGINE, 6111)])).toMatchObject({ code: "UnknownLayout", retryable: false });
     expect(simulationProblem("err", [failed(ENGINE, 6112)])).toMatchObject({ code: "ConfigMissing", retryable: false });
-    for (const code of [5999, 6114]) {
+    expect(simulationProblem("err", [failed(ENGINE, 6116)])).toMatchObject({ code: "NotListed", retryable: false });
+    expect(simulationProblem("err", [failed(ENGINE, 6117)])).toMatchObject({ code: "ClaimListMissing", retryable: false });
+    for (const code of [5999, 6119]) {
       expect(simulationProblem("e", [failed(ENGINE, code)])).toMatchObject({ code: "TransactionFailed", programError: code });
     }
     const funds = simulationProblem("err", [failed(TOKEN_PROGRAMS[1] ?? "", 1)]);

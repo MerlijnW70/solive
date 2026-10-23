@@ -1,5 +1,5 @@
 import type { Address } from "@solana/kit";
-import { findAssociatedTokenAddress, formatAmount, getClaimBoardSize, getIntentSize, getUserStateSize, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { findAssociatedTokenAddress, formatAmount, getClaimBoardSize, getClaimListSize, getIntentSize, getUserStateSize, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { createdAccount, loadConfig, loadUser, mintOf, type Transport } from "@intent-engine/client";
 import { TOKEN_NAMES } from "../../tokens.js";
 import { rentFor, rentRate, SIGNATURE_FEE, TOKEN_ACCOUNT_RENT_BYTES } from "../budget.js";
@@ -25,7 +25,7 @@ type Cost = { what: string; lamports: bigint };
 
 export type EscrowCosts = { sell: Address; decimals: number; fees: Cost[]; rent: Cost[]; setup: Cost[] };
 
-export async function escrowCosts(transport: Transport, input: { owner: Address; sell: Address; buy: Address; claims: boolean }): Promise<EscrowCosts> {
+export async function escrowCosts(transport: Transport, input: { owner: Address; sell: Address; buy: Address; claims: boolean; listed?: boolean }): Promise<EscrowCosts> {
   const [{ config }, rent, sold, bought, user] = await Promise.all([
     loadConfig(transport),
     rentRate(transport),
@@ -53,6 +53,7 @@ export async function escrowCosts(transport: Transport, input: { owner: Address;
       { what: "the escrow account", lamports: rentFor(getIntentSize(), rent) },
       { what: "its token vault", lamports: rentFor(TOKEN_ACCOUNT_BYTES, rent) },
       ...(input.claims ? [{ what: BOARD_RENT, lamports: rentFor(getClaimBoardSize(), rent) }] : []),
+      ...(input.listed === true ? [{ what: LIST_RENT, lamports: rentFor(getClaimListSize(), rent) }] : []),
     ],
     setup: [
       ...(user === null ? [{ what: "your engine registration", lamports: rentFor(getUserStateSize(), rent) }] : []),
@@ -68,12 +69,17 @@ const sum = (costs: readonly Cost[]): bigint => costs.reduce((total, cost) => to
 
 export const BOARD_RENT = "the claims board";
 
+export const LIST_RENT = "the claim list";
+
+const onBoard = (cost: Cost): boolean => cost.what === BOARD_RENT || cost.what === LIST_RENT;
+
 export function rentBack(costs: EscrowCosts, each: string): string {
-  const board = costs.rent.filter((cost) => cost.what === BOARD_RENT);
-  const escrow = costs.rent.filter((cost) => cost.what !== BOARD_RENT);
+  const board = costs.rent.filter(onBoard);
+  const escrow = costs.rent.filter((cost) => !onBoard(cost));
+  const held = board.some((cost) => cost.what === LIST_RENT) ? "the claims board and its claim list" : "the claims board";
   return [
     `Rent back${each}: ${sol(sum(escrow))} for the escrow account and its vault returns to this wallet when the escrow closes, at once with ${tool("wallet_cancel")} or by a cranker after its release or expiry`,
-    ...(board.length === 0 ? [] : [`${sol(sum(board))} for the claims board does not return until ${tool("wallet_claim")} action settle closes the board once the escrow is released or gone`]),
+    ...(board.length === 0 ? [] : [`${sol(sum(board))} for ${held} does not return until ${tool("wallet_claim")} action settle closes the board once the escrow is released or gone`]),
     ...(costs.setup.length === 0 ? [] : ["the setup rent stays in this wallet's own accounts"]),
   ].join("; ");
 }

@@ -19,6 +19,16 @@ pub fn open_claims_ix(owner: &Pubkey, intent: &Pubkey, max_secs: u32, stake: u64
 }
 
 pub fn claim_job_ix(worker: &Pubkey, intent: &Pubkey, owner: &Pubkey, secs: u32) -> Instruction {
+    claim_job_listed_ix(worker, intent, owner, secs, None)
+}
+
+pub fn claim_job_listed_ix(
+    worker: &Pubkey,
+    intent: &Pubkey,
+    owner: &Pubkey,
+    secs: u32,
+    claim_list: Option<Pubkey>,
+) -> Instruction {
     engine_ix(
         intent_engine::accounts::ClaimJob {
             worker: *worker,
@@ -27,10 +37,80 @@ pub fn claim_job_ix(worker: &Pubkey, intent: &Pubkey, owner: &Pubkey, secs: u32)
             config: config_pda(),
             owner: *owner,
             system_program: anchor_lang::system_program::ID,
+            claim_list,
             event_authority: event_authority(),
             program: intent_engine::ID,
         },
         intent_engine::instruction::ClaimJob { secs },
+    )
+}
+
+pub fn claim_list_pda(intent: &Pubkey) -> Pubkey {
+    pda(&[CLAIM_LIST_SEED, intent.as_ref()])
+}
+
+pub fn open_claims_listed_ix(
+    owner: &Pubkey,
+    intent: &Pubkey,
+    max_secs: u32,
+    stake: u64,
+    size: u8,
+    workers: &[Pubkey],
+) -> Instruction {
+    engine_ix(
+        intent_engine::accounts::OpenClaimsListed {
+            owner: *owner,
+            intent: *intent,
+            board: claims_pda(intent),
+            claim_list: claim_list_pda(intent),
+            system_program: anchor_lang::system_program::ID,
+            event_authority: event_authority(),
+            program: intent_engine::ID,
+        },
+        intent_engine::instruction::OpenClaimsListed {
+            max_secs,
+            stake,
+            size,
+            workers: workers.to_vec(),
+        },
+    )
+}
+
+pub fn list_claimants_ix(
+    owner: &Pubkey,
+    intent: &Pubkey,
+    size: u8,
+    workers: &[Pubkey],
+) -> Instruction {
+    engine_ix(
+        intent_engine::accounts::ListClaimants {
+            owner: *owner,
+            intent: *intent,
+            board: claims_pda(intent),
+            claim_list: claim_list_pda(intent),
+            system_program: anchor_lang::system_program::ID,
+            event_authority: event_authority(),
+            program: intent_engine::ID,
+        },
+        intent_engine::instruction::ListClaimants {
+            size,
+            workers: workers.to_vec(),
+        },
+    )
+}
+
+pub fn extend_claimants_ix(owner: &Pubkey, intent: &Pubkey, workers: &[Pubkey]) -> Instruction {
+    engine_ix(
+        intent_engine::accounts::ExtendClaimants {
+            owner: *owner,
+            intent: *intent,
+            claim_list: claim_list_pda(intent),
+            event_authority: event_authority(),
+            program: intent_engine::ID,
+        },
+        intent_engine::instruction::ExtendClaimants {
+            workers: workers.to_vec(),
+        },
     )
 }
 
@@ -70,6 +150,16 @@ pub fn drop_claim_line_ix(
 }
 
 pub fn stand_by_ix(worker: &Pubkey, intent: &Pubkey, seq: u32, secs: u32) -> Instruction {
+    stand_by_listed_ix(worker, intent, seq, secs, None)
+}
+
+pub fn stand_by_listed_ix(
+    worker: &Pubkey,
+    intent: &Pubkey,
+    seq: u32,
+    secs: u32,
+    claim_list: Option<Pubkey>,
+) -> Instruction {
     engine_ix(
         intent_engine::accounts::StandBy {
             worker: *worker,
@@ -78,6 +168,7 @@ pub fn stand_by_ix(worker: &Pubkey, intent: &Pubkey, seq: u32, secs: u32) -> Ins
             config: config_pda(),
             entry: standby_pda(intent, seq),
             system_program: anchor_lang::system_program::ID,
+            claim_list,
             event_authority: event_authority(),
             program: intent_engine::ID,
         },
@@ -123,12 +214,22 @@ pub fn leave_ix(caller: &Pubkey, intent: &Pubkey, seq: u32, worker: &Pubkey) -> 
 }
 
 pub fn settle_claims_ix(intent: &Pubkey, owner: &Pubkey, worker: Option<&Pubkey>) -> Instruction {
+    settle_claims_listed_ix(intent, owner, worker, None)
+}
+
+pub fn settle_claims_listed_ix(
+    intent: &Pubkey,
+    owner: &Pubkey,
+    worker: Option<&Pubkey>,
+    claim_list: Option<Pubkey>,
+) -> Instruction {
     engine_ix(
         intent_engine::accounts::SettleClaims {
             board: claims_pda(intent),
             intent: *intent,
             owner: *owner,
             worker: worker.copied(),
+            claim_list,
             event_authority: event_authority(),
             program: intent_engine::ID,
         },

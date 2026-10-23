@@ -56,6 +56,7 @@ export type SettleClaimsInstruction<
   TAccountBoard extends string | AccountMeta<string> = string,
   TAccountOwner extends string | AccountMeta<string> = string,
   TAccountWorker extends string | AccountMeta<string> = string,
+  TAccountClaimList extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -75,6 +76,9 @@ export type SettleClaimsInstruction<
       TAccountWorker extends string
         ? WritableAccount<TAccountWorker>
         : TAccountWorker,
+      TAccountClaimList extends string
+        ? WritableAccount<TAccountClaimList>
+        : TAccountClaimList,
       TAccountEventAuthority extends string
         ? ReadonlyAccount<TAccountEventAuthority>
         : TAccountEventAuthority,
@@ -117,6 +121,7 @@ export type SettleClaimsAsyncInput<
   TAccountBoard extends InstructionAccountInput = InstructionAccountInput,
   TAccountOwner extends InstructionAccountInput = InstructionAccountInput,
   TAccountWorker extends InstructionAccountInput = InstructionAccountInput,
+  TAccountClaimList extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -125,6 +130,7 @@ export type SettleClaimsAsyncInput<
   board?: TAccountBoard;
   owner: TAccountOwner;
   worker?: TAccountWorker;
+  claimList?: TAccountClaimList;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
 };
@@ -134,6 +140,7 @@ export async function getSettleClaimsInstructionAsync<
   TAccountBoard extends InstructionAccountInput,
   TAccountOwner extends InstructionAccountInput,
   TAccountWorker extends InstructionAccountInput,
+  TAccountClaimList extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -143,6 +150,7 @@ export async function getSettleClaimsInstructionAsync<
     TAccountBoard,
     TAccountOwner,
     TAccountWorker,
+    TAccountClaimList,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -167,6 +175,10 @@ export async function getSettleClaimsInstructionAsync<
       InstructionAccountInputAddress<TAccountWorker>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountClaimList,
+      InstructionAccountInputAddress<TAccountClaimList>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -189,6 +201,11 @@ export async function getSettleClaimsInstructionAsync<
     board: { value: input.board ?? null, isSigner: false, isWritable: true },
     owner: { value: input.owner ?? null, isSigner: false, isWritable: true },
     worker: { value: input.worker ?? null, isSigner: false, isWritable: true },
+    claimList: {
+      value: input.claimList ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -224,6 +241,7 @@ export async function getSettleClaimsInstructionAsync<
       getAccountMeta("board", accounts.board),
       getAccountMeta("owner", accounts.owner),
       getAccountMeta("worker", accounts.worker),
+      getAccountMeta("claimList", accounts.claimList),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -248,6 +266,10 @@ export async function getSettleClaimsInstructionAsync<
       InstructionAccountInputAddress<TAccountWorker>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountClaimList,
+      InstructionAccountInputAddress<TAccountClaimList>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -263,6 +285,7 @@ export type SettleClaimsInput<
   TAccountBoard extends InstructionAccountInput = InstructionAccountInput,
   TAccountOwner extends InstructionAccountInput = InstructionAccountInput,
   TAccountWorker extends InstructionAccountInput = InstructionAccountInput,
+  TAccountClaimList extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -271,6 +294,7 @@ export type SettleClaimsInput<
   board: TAccountBoard;
   owner: TAccountOwner;
   worker?: TAccountWorker;
+  claimList?: TAccountClaimList;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
 };
@@ -280,6 +304,7 @@ export function getSettleClaimsInstruction<
   TAccountBoard extends InstructionAccountInput,
   TAccountOwner extends InstructionAccountInput,
   TAccountWorker extends InstructionAccountInput,
+  TAccountClaimList extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -289,6 +314,7 @@ export function getSettleClaimsInstruction<
     TAccountBoard,
     TAccountOwner,
     TAccountWorker,
+    TAccountClaimList,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -312,6 +338,10 @@ export function getSettleClaimsInstruction<
     InstructionAccountInputAddress<TAccountWorker>
   >,
   ResolvedInstructionAccountMeta<
+    TAccountClaimList,
+    InstructionAccountInputAddress<TAccountClaimList>
+  >,
+  ResolvedInstructionAccountMeta<
     TAccountEventAuthority,
     InstructionAccountInputAddress<TAccountEventAuthority>
   >,
@@ -333,6 +363,11 @@ export function getSettleClaimsInstruction<
     board: { value: input.board ?? null, isSigner: false, isWritable: true },
     owner: { value: input.owner ?? null, isSigner: false, isWritable: true },
     worker: { value: input.worker ?? null, isSigner: false, isWritable: true },
+    claimList: {
+      value: input.claimList ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -355,6 +390,7 @@ export function getSettleClaimsInstruction<
       getAccountMeta("board", accounts.board),
       getAccountMeta("owner", accounts.owner),
       getAccountMeta("worker", accounts.worker),
+      getAccountMeta("claimList", accounts.claimList),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -379,6 +415,10 @@ export function getSettleClaimsInstruction<
       InstructionAccountInputAddress<TAccountWorker>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountClaimList,
+      InstructionAccountInputAddress<TAccountClaimList>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -399,8 +439,9 @@ export type ParsedSettleClaimsInstruction<
     board: TAccountMetas[1];
     owner: TAccountMetas[2];
     worker?: TAccountMetas[3] | undefined;
-    eventAuthority: TAccountMetas[4];
-    program: TAccountMetas[5];
+    claimList?: TAccountMetas[4] | undefined;
+    eventAuthority: TAccountMetas[5];
+    program: TAccountMetas[6];
   };
   data: SettleClaimsInstructionData;
 };
@@ -413,12 +454,12 @@ export function parseSettleClaimsInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedSettleClaimsInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 6) {
+  if (instruction.accounts.length < 7) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 6,
+        expectedAccountMetas: 7,
       },
     );
   }
@@ -441,6 +482,7 @@ export function parseSettleClaimsInstruction<
       board: getNextAccount(),
       owner: getNextAccount(),
       worker: getNextOptionalAccount(),
+      claimList: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
     },

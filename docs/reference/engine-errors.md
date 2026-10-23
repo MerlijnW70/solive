@@ -120,3 +120,8 @@ Every error the engine program raises, from its IDL. When an SDK call fails, `cl
 | 6111 | `UnknownLayout` | no | migrate reads only the layouts earlier programs wrote |
 | 6112 | `ConfigMissing` | no | migrating an open escrow reads the fee schedule from the config |
 | 6113 | `LegacyLineOpen` | no | close-legacy never closes a claim board or stand-by entry of an open escrow, so the line keeps its order |
+| 6114 | `ClaimListInvalid` | no | a claim list names 1 to 32 distinct wallets, none of them the empty address, and never more than the size its owner set |
+| 6115 | `ClaimListIncomplete` | yes | the owner has not yet added every wallet its claim list names, so nobody can claim or stand by until the list is complete |
+| 6116 | `NotListed` | no | the escrow's owner named the wallets that may claim it, and this wallet is not one of them |
+| 6117 | `ClaimListMissing` | no | this escrow's claims board records a claim list, so a claim, stand-by or closing settle must pass it |
+| 6118 | `ClaimListSet` | no | this escrow's claim list is already set, and a set list never changes |

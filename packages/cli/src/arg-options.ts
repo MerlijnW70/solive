@@ -178,6 +178,7 @@ export const OPTIONS = {
   note: { type: "string" },
   "max-secs": { type: "string" },
   stake: { type: "string" },
+  workers: { type: "string" },
   secs: { type: "string" },
   seq: { type: "string" },
   skills: { type: "string" },
@@ -374,7 +375,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
     "confirm-url",
     "no-confirm-url",
   ],
-  claims: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "max-secs", "stake", "secs", "seq"],
+  claims: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "max-secs", "stake", "secs", "seq", "workers"],
   profile: ["url", "priority-fee", "keypair", "yes", "wallet", "skills", "endpoint", "doc-url", "doc-sha256", "encryption-key", "out"],
 };
 
@@ -436,7 +437,7 @@ export const SUB_ACCEPTS: Record<string, Record<string, readonly (keyof typeof O
   },
   claims: {
     show: ["url", "owner", "nonce"],
-    open: ["url", "priority-fee", "keypair", "yes", "nonce", "max-secs", "stake"],
+    open: ["url", "priority-fee", "keypair", "yes", "nonce", "max-secs", "stake", "workers"],
     take: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "secs"],
     drop: ["url", "priority-fee", "keypair", "yes", "owner", "nonce"],
     settle: ["url", "priority-fee", "keypair", "yes", "owner", "nonce"],

@@ -10,6 +10,7 @@ pub mod ext;
 pub mod floors;
 pub mod instructions;
 pub mod policy;
+pub mod roster;
 mod security;
 pub mod state;
 pub mod versions;
@@ -161,6 +162,28 @@ pub mod intent_engine {
 
     pub fn open_claims(ctx: Context<OpenClaims>, max_secs: u32, stake: u64) -> Result<()> {
         handle_open_claims(ctx, max_secs, stake)
+    }
+
+    pub fn open_claims_listed(
+        ctx: Context<OpenClaimsListed>,
+        max_secs: u32,
+        stake: u64,
+        size: u8,
+        workers: Vec<Pubkey>,
+    ) -> Result<()> {
+        handle_open_claims_listed(ctx, max_secs, stake, size, workers)
+    }
+
+    pub fn list_claimants(
+        ctx: Context<ListClaimants>,
+        size: u8,
+        workers: Vec<Pubkey>,
+    ) -> Result<()> {
+        handle_list_claimants(ctx, size, workers)
+    }
+
+    pub fn extend_claimants(ctx: Context<ExtendClaimants>, workers: Vec<Pubkey>) -> Result<()> {
+        handle_extend_claimants(ctx, workers)
     }
 
     pub fn claim_job(ctx: Context<ClaimJob>, secs: u32) -> Result<()> {

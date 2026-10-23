@@ -7,9 +7,10 @@ use crate::claims::{cooldown_of, line_of, move_lamports, slot_of, stake_receiver
 use crate::errors::{core_err, EngineError};
 use crate::events::{JobClaimed, StakeMoved};
 use crate::policy::check_fills_on;
+use crate::roster::check_listed;
 use crate::state::{
-    ClaimBoard, Config, Intent, CLAIMS_OPEN, CLAIMS_SEED, CLAIMS_VERSION, CONFIG_ADDRESS,
-    CONFIG_VERSION, INTENT_VERSION,
+    ClaimBoard, ClaimList, Config, Intent, CLAIMS_OPEN, CLAIMS_SEED, CLAIMS_VERSION,
+    CLAIM_LIST_SEED, CLAIM_LIST_VERSION, CONFIG_ADDRESS, CONFIG_VERSION, INTENT_VERSION,
 };
 
 #[event_cpi]
@@ -35,6 +36,12 @@ pub struct ClaimJob<'info> {
         constraint = config.load()?.version == CONFIG_VERSION @ EngineError::AccountOutdated
     )]
     pub config: AccountLoader<'info, Config>,
+    #[account(
+        seeds = [CLAIM_LIST_SEED, intent.key().as_ref()],
+        bump = claim_list.load()?.bump,
+        constraint = claim_list.load()?.version == CLAIM_LIST_VERSION @ EngineError::AccountOutdated
+    )]
+    pub claim_list: Option<AccountLoader<'info, ClaimList>>,
 }
 
 pub fn handle_claim_job(ctx: Context<ClaimJob>, secs: u32) -> Result<()> {
@@ -52,6 +59,11 @@ pub fn handle_claim_job(ctx: Context<ClaimJob>, secs: u32) -> Result<()> {
     };
     let (slot, cooldown, terms, held, lapsed) = {
         let board = ctx.accounts.board.load()?;
+        check_listed(
+            &board,
+            ctx.accounts.claim_list.as_ref(),
+            &ctx.accounts.worker.key(),
+        )?;
         let slot = slot_of(&board, now);
         let cooldown = cooldown_of(&board);
         line_of(&board).check_claim().map_err(core_err)?;

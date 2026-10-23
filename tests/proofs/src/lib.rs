@@ -13,6 +13,8 @@ mod line;
 #[cfg(kani)]
 mod math;
 #[cfg(kani)]
+mod roster;
+#[cfg(kani)]
 mod settle;
 #[cfg(kani)]
 mod split;

@@ -45,6 +45,9 @@ export const CORE_ERROR_CODES = [
   "LineWaiting",
   "LineEmpty",
   "JobNotHeld",
+  "ClaimListInvalid",
+  "ClaimListIncomplete",
+  "NotListed",
 ] as const;
 
 export type CoreErrorCode = (typeof CORE_ERROR_CODES)[number];

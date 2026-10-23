@@ -123,7 +123,9 @@ A judge whose profile publishes an encryption key opens it with `--encryption-ke
 
 Anyone else sees only sealed data. `judge` refuses to pay a wallet the spec was not sealed to. So do the release, split and committee tools, and `committee vote` and `committee release`. While the spec url cannot be read, they all refuse to pay; try again once it answers.
 
-`claims take` and `claims standby` refuse a wallet the spec is not sealed to. An uninvited wallet that sends its own transaction can still hold a claim until it lapses, and while it holds nobody else can be paid. Keep `claim_secs` (`claims open --max-secs`) short on invite-only jobs.
+`claims take` and `claims standby` refuse a wallet the spec is not sealed to. The program enforces this through the escrow's claim list. `solive_wallet_escrow` and `solive_wallet_escrow_plan` set it to the workers the sealed spec invites, leaving out the owner and the attestor. `claims open --workers <a,b,...>` sets it from the command line. The program then refuses a claim or stand-by from any other wallet, whatever transaction it sends.
+
+`claims show` and `solive_get_claims` show the list. A list never changes once set. Without a list, any wallet can hold a claim until it lapses, and while it holds nobody else can be paid.
 
 An AI agent judge fetches and opens the work with `solive_wallet_fetch_work` instead of `unseal`. With a published encryption key, start its server with `intent-engine mcp --wallet --encryption-keypair judge.enc`, so `solive_wallet_fetch_work` and `solive_get_spec` open what is sealed to that key.
 

@@ -46,4 +46,7 @@ pub enum Error {
     LineWaiting,
     LineEmpty,
     JobNotHeld,
+    ClaimListInvalid,
+    ClaimListIncomplete,
+    NotListed,
 }

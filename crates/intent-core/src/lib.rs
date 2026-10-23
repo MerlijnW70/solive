@@ -17,6 +17,7 @@ pub mod mint_cap;
 pub mod mint_policy;
 pub mod nonce;
 pub mod profile;
+pub mod roster;
 pub mod sig;
 
 pub use error::Error;

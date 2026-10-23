@@ -5,8 +5,8 @@ use intent_core::kinds::{attested_result, Kind};
 use intent_engine::errors::EngineError;
 use intent_engine::events::{AccountMigrated, LegacyClosed};
 use intent_engine::state::{
-    ClaimBoard, Committee, Config, Intent, Mandate, MintCap, Profile, Standby, UserState,
-    MINT_CAP_SEED, PROFILE_SEED,
+    ClaimBoard, ClaimList, Committee, Config, Intent, Mandate, MintCap, Profile, Standby,
+    UserState, CLAIM_LIST_VERSION, MINT_CAP_SEED, PROFILE_SEED,
 };
 use intent_engine::versions::{
     board_terms, is_current, layout_of, line_intent, recorded_payer, stored_version, LAYOUTS,
@@ -18,11 +18,12 @@ use solana_keypair::Keypair;
 use solana_signer::Signer;
 use solana_transaction_error::TransactionError;
 use svm_tests::{
-    anchor_error, claim_job_ix, claims_pda, close_legacy_full_ix, config_pda, create_committee_ix,
-    drop_claim_ix, drop_claim_line_ix, engine_error, engine_ix, event_authority, events,
-    intent_pda, leave_ix, mandate_pda, mandate_terms, migrate_ix, pda, settle_claims_ix,
-    sorted_members, stand_by_ix, standby_pda, swap_spec, user_pda, vault_pda, CommitteeFill, Env,
-    IntentSpec, LegacyClose, Market, TestResult, Trader, START_TS,
+    anchor_error, claim_job_ix, claim_list_pda, claims_pda, close_legacy_full_ix, config_pda,
+    create_committee_ix, drop_claim_ix, drop_claim_line_ix, engine_error, engine_ix,
+    event_authority, events, intent_pda, leave_ix, mandate_pda, mandate_terms, migrate_ix,
+    open_claims_listed_ix, pda, settle_claims_ix, sorted_members, stand_by_ix, standby_pda,
+    swap_spec, user_pda, vault_pda, CommitteeFill, Env, IntentSpec, LegacyClose, Market,
+    TestResult, Trader, START_TS,
 };
 
 const FUNDED: u64 = 1_000;
@@ -30,6 +31,7 @@ const ESCROW: u64 = 400;
 const STAKE: u64 = 50_000_000;
 const HOUR: u32 = 3_600;
 const OLD: u8 = 1;
+const LISTED_NONCE: u64 = 9;
 
 struct World {
     env: Env,
@@ -168,6 +170,14 @@ fn world() -> TestResult<World> {
     let waiting = env.funded()?;
     let line = stand_by_ix(&waiting.pubkey(), &intent, 0, HOUR);
     env.send(&waiting, &[line], &[])?;
+    let listed_spec = IntentSpec {
+        nonce: LISTED_NONCE,
+        ..escrow_spec(&committee)?
+    };
+    env.create_intent(&trader, &market, &listed_spec)?;
+    let listed = intent_pda(&owner, LISTED_NONCE);
+    let list = open_claims_listed_ix(&owner, &listed, HOUR, STAKE, 1, &[worker.pubkey()]);
+    env.send(&trader.key, &[list], &[])?;
     let agent = Pubkey::new_unique();
     env.approve_delegate(&trader, &market, FUNDED)?;
     let grant = env.create_mandate_ix(
@@ -244,6 +254,12 @@ impl World {
                 standby_pda(&self.intent(), 0),
                 Standby::DISCRIMINATOR,
                 self.waiting.pubkey(),
+            ),
+            held(
+                "claim list",
+                claim_list_pda(&intent_pda(&owner, LISTED_NONCE)),
+                ClaimList::DISCRIMINATOR,
+                owner,
             ),
             held(
                 "profile",
@@ -387,6 +403,7 @@ fn an_account_of_another_version_closes_to_the_wallet_its_layout_records() -> Te
             } else if (h.discriminator == ClaimBoard::DISCRIMINATOR
                 || h.discriminator == Standby::DISCRIMINATOR)
                 && open
+                || h.discriminator == ClaimList::DISCRIMINATOR
             {
                 Some(EngineError::LegacyLineOpen)
             } else if h.discriminator == ClaimBoard::DISCRIMINATOR {
@@ -1109,6 +1126,16 @@ fn every_account_of_the_previous_version_migrates_in_place_once() -> TestResult 
     for h in w.held() {
         let current = w.data(&h.address)?;
         let lamports = w.env.lamports(&h.address);
+        if h.discriminator == ClaimList::DISCRIMINATOR {
+            w.set_version(&h.address, 0)?;
+            assert_eq!(
+                migrate(&mut w, &h.address, &caller, false),
+                Some(engine_error(EngineError::UnknownLayout)),
+                "a claim list has no earlier layout"
+            );
+            w.set_version(&h.address, CLAIM_LIST_VERSION)?;
+            continue;
+        }
         let old = if h.discriminator == Standby::DISCRIMINATOR {
             0
         } else {

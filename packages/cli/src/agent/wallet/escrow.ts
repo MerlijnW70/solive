@@ -1,29 +1,28 @@
 import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
-import { buildOpenClaims, feeBpsFor, formatAmount, isMemoUrl, isSealed, Kind, MAX_CLAIM_SECS, MAX_CLAIM_STAKE, MEMO_URL_RULE, NATIVE_MINT, sealedTo, splitFees } from "@intent-engine/core";
+import { feeBpsFor, formatAmount, isMemoUrl, isSealed, Kind, MAX_CLAIM_SECS, MAX_CLAIM_STAKE, MEMO_URL_RULE, NATIVE_MINT, sealedTo, splitFees } from "@intent-engine/core";
 import { chainTime, loadCommittee, loadConfig, MAX_SPEC_BYTES, mintOf, pinnedFetch, plainHttpOnPublic, WARN_NO_JUDGE_KEY } from "@intent-engine/client";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
-import { type AfterCreate, escrowJudge, MAX_EXPIRES_IN, MIN_EXPIRES_IN, neverSettles, SPEC_URL_PLAIN } from "../create.js";
+import { escrowJudge, MAX_EXPIRES_IN, MIN_EXPIRES_IN, neverSettles, SPEC_URL_PLAIN } from "../create.js";
 import { tool } from "../names.js";
 import { AgentRefusal, problemOf } from "../problems.js";
 import { InvalidInput, account, amount, flag, hex32, integer, list, object, optional, text } from "../schema.js";
 import { LANDING_SECONDS, access, mintNamed, raw, salesOf, checkSale, checkHour, refusedBeforeSending, PREVIEW_FIRST, oneAtATime, signerOf } from "./guard.js";
-import { offerOutput, type Token, offered } from "./offer.js";
+import { offerOutput, type Token } from "./offer.js";
 import { fetchBytes, tooLarge } from "../../delivery-fetch.js";
 import { systemLookup } from "../../public-address.js";
 import { costLines, escrowCosts } from "./costs.js";
 import { openedSpec, SEALED_UNCHECKED } from "./seal.js";
+import { type Claimants, claimantsOf, type ClaimTerms, listedLines, offeredWithClaims } from "./escrow-claims.js";
 
 export const SPEC_TOO_LARGE = `spec_url ${tooLarge(MAX_SPEC_BYTES)}, the most ${tool("get_spec")} reads, so workers cannot read the job; shorten the spec`;
 
 export const notSealedTo = (missing: readonly Address[], committee: boolean): string =>
   `spec_url holds a spec not sealed to the ${committee ? "committee members" : "attestor"} ${missing.join(", ")}, so the work cannot be judged; seal it again to ${committee ? "every member" : "the attestor"}`;
 
-export const SEALED_CLAIMS = "the spec is sealed, but any wallet can claim: an uninvited wallet can hold a claim, blocking payment until it lapses; keep claim_secs short";
-
-type Preflight = { lines: string[]; sealed: boolean };
+type Preflight = { lines: string[] };
 
 async function unreadBy(ctx: AgentContext, bytes: Uint8Array, attestor: Address): Promise<string[]> {
   const recipients = new Set<string>(sealedTo(bytes));
@@ -35,22 +34,19 @@ async function unreadBy(ctx: AgentContext, bytes: Uint8Array, attestor: Address)
 async function specPreflight(ctx: AgentContext, specUrl: string, specHash: string, attestor: Address): Promise<Preflight> {
   const found = await fetchBytes(ctx.fetch ?? pinnedFetch, ctx.transport, specUrl, systemLookup, MAX_SPEC_BYTES);
   if ("problem" in found) {
-    return { lines: [found.problem === tooLarge(MAX_SPEC_BYTES) ? SPEC_TOO_LARGE : `spec_url ${found.problem}; publish it or workers cannot read the job`], sealed: false };
+    return { lines: [found.problem === tooLarge(MAX_SPEC_BYTES) ? SPEC_TOO_LARGE : `spec_url ${found.problem}; publish it or workers cannot read the job`] };
   }
-  const sealed = isSealed(found.bytes);
-  const lines = sealed ? await unreadBy(ctx, found.bytes, attestor) : [];
+  const lines = isSealed(found.bytes) ? await unreadBy(ctx, found.bytes, attestor) : [];
   const opened = await openedSpec(ctx, found.bytes);
   if (opened === undefined) {
-    return { lines: [...lines, SEALED_UNCHECKED], sealed };
+    return { lines: [...lines, SEALED_UNCHECKED] };
   }
   const sha256 = createHash("sha256").update(opened).digest("hex");
   if (sha256 !== specHash.toLowerCase()) {
     lines.push(`spec_url ${opened === found.bytes ? "hashes" : "opens to a spec that hashes"} to ${sha256}, not spec_hash ${specHash}; publish the exact bytes, or fix spec_hash`);
   }
-  return { lines, sealed };
+  return { lines };
 }
-
-const sealedClaims = (claims: boolean, checked: readonly Preflight[]): string[] => (claims && checked.some(({ sealed }) => sealed) ? [SEALED_CLAIMS] : []);
 
 export const ESCROW_EXPIRES_IN = 86_400;
 
@@ -72,16 +68,16 @@ export const CLAIMS_TOGETHER = "give claim_stake and claim_secs together, or nei
 export const CLAIMS_NEED_SPEC = "claims need spec_hash, since only a proof escrow takes claims";
 
 const claimInputs = {
-  claim_stake: optional(text("whole SOL a worker stakes to claim the job, such as 0.01; with claim_secs it opens claims, so one worker at a time can be paid; needs spec_hash")),
+  claim_stake: optional(text("whole SOL a worker stakes to claim the job, such as 0.01; with claim_secs it opens claims, so one worker at a time can be paid; on a spec sealed at spec_url only the workers it invites may claim; needs spec_hash")),
   claim_secs: optional(integer(1, MAX_CLAIM_SECS, "the longest a worker may hold the job by claiming it, in seconds; with claim_stake")),
 };
 
-type ClaimTerms = { line: string; after: AfterCreate };
+type Claims = ClaimTerms & { line: string };
 
 export const claimsLine = (secs: number, stake: string, every: boolean) =>
   `Opens: claims on ${every ? "every piece" : "the escrow"}; a worker can hold the job for up to ${secs} seconds by staking ${stake} SOL`;
 
-function claimTerms(input: { claim_stake?: string | undefined; claim_secs?: number | undefined }, every: boolean): ClaimTerms | undefined {
+function claimTerms(input: { claim_stake?: string | undefined; claim_secs?: number | undefined }, every: boolean): Claims | undefined {
   if (input.claim_stake === undefined && input.claim_secs === undefined) {
     return undefined;
   }
@@ -93,10 +89,7 @@ function claimTerms(input: { claim_stake?: string | undefined; claim_secs?: numb
     throw new InvalidInput([{ path: "claim_stake", message: `must be at most ${formatAmount(MAX_CLAIM_STAKE, 9)}` }]);
   }
   const maxSecs = input.claim_secs;
-  return {
-    line: claimsLine(maxSecs, formatAmount(stake, 9), every),
-    after: async (owner, intent) => [await buildOpenClaims({ owner, intent, maxSecs, stake })],
-  };
+  return { line: claimsLine(maxSecs, formatAmount(stake, 9), every), maxSecs, stake };
 }
 
 export const recordAccountWhy = (mint: Address) =>
@@ -170,12 +163,14 @@ export const walletEscrow = define({
     let settled: { amount: bigint; judgeFee: bigint; decimals: number } | undefined;
     const buy = recordedMint(sold, wallet.url, input.record_mint);
     const signer = await signerOf(ctx);
-    const costs = await escrowCosts(ctx.transport, { owner: signer.address, sell: sold, buy, claims: claims !== undefined });
+    const workers = claims !== undefined && input.spec_url !== undefined ? await claimantsOf(ctx, signer.address)(input.spec_url, input.attestor) : undefined;
+    const listed = claims === undefined ? undefined : { terms: claims, workers };
+    const costs = await escrowCosts(ctx.transport, { owner: signer.address, sell: sold, buy, claims: claims !== undefined, listed: workers !== undefined });
     let network = 0n;
     const priced = (lamports: bigint) => {
       network = lamports;
     };
-    const escrowed = (await offered(ctx, call, { sell: sold, buy, send: input.send, after: claims?.after, priced }, (token, _, now) => {
+    const escrowed = await offeredWithClaims(ctx, call, { sell: sold, buy, send: input.send, priced }, (token, _, now) => {
       const amountIn = raw(input.amount, token.decimals, "amount");
       const judgeFee = input.judge_fee === undefined ? 0n : raw(input.judge_fee, token.decimals, "judge_fee");
       settled = { amount: amountIn, judgeFee, decimals: token.decimals };
@@ -192,17 +187,16 @@ export const walletEscrow = define({
         expires_at: now + BigInt((input.expires_in ?? ESCROW_EXPIRES_IN) + LANDING_SECONDS),
         ...(input.spec_url === undefined ? {} : { spec_url: input.spec_url }),
       };
-    }, JOB_LIVE)) as Record<string, unknown>;
+    }, JOB_LIVE, listed, signer);
     const summary = [
       ...explainedSetup((escrowed["summary"] as string[]) ?? [], buy),
-      ...(claims === undefined ? [] : [claims.line]),
+      ...(claims === undefined ? [] : [claims.line, ...listedLines(workers)]),
       ...(settled === undefined ? [] : [await feeLine(ctx, settled), ...costLines(costs, network, settled.amount, 1)]),
     ];
     const ownKey = input.attestor === signer.address && signer.device === undefined;
     const warnings = [
       ...((escrowed["warnings"] as string[]) ?? []).filter((line) => !(ownKey && line.startsWith(WARN_NO_JUDGE_KEY))),
       ...preflight.flatMap(({ lines }) => lines),
-      ...sealedClaims(claims !== undefined, preflight),
       ...(specHash === undefined ? [NO_SPEC_HASH] : input.send === true ? [] : [claims === undefined ? SPEC_NO_ANSWER : SPEC_ANSWER_OUT]),
     ];
     return { ...escrowed, summary, warnings };
@@ -248,6 +242,14 @@ async function checkedSpec(ctx: AgentContext, plan: Spec, piece: Spec, i: number
     throw new InvalidInput([{ path, message: SPEC_URL_PLAIN }]);
   }
   return { specHash, specUrl };
+}
+
+function pieceLimits(planned: readonly Piece[], lists: readonly Claimants[]): string[] {
+  const shown = lists.map((workers) => listedLines(workers).join(""));
+  if (shown.every((line) => line === shown[0])) {
+    return shown[0] === "" || shown[0] === undefined ? [] : [shown[0]];
+  }
+  return shown.flatMap((line, i) => (line === "" ? [] : [`Piece ${i + 1} (${planned[i]?.name ?? ""}): ${line}`]));
 }
 
 const specBytes = (specHash: string | undefined): Uint8Array => (specHash === undefined ? new Uint8Array(32) : Uint8Array.from(Buffer.from(specHash, "hex")));
@@ -321,6 +323,12 @@ export const walletEscrowPlan = define({
     if (claims !== undefined && unproven >= 0) {
       throw new InvalidInput([{ path: `pieces.${unproven}.spec_hash`, message: CLAIMS_NEED_SPEC }]);
     }
+    const invites = claimantsOf(ctx, signer.address);
+    const lists: Claimants[] = [];
+    for (const piece of planned) {
+      lists.push(claims === undefined || piece.specUrl === undefined ? undefined : await invites(piece.specUrl, piece.attestor));
+    }
+    const listedOf = (i: number) => (claims === undefined ? undefined : { terms: claims, workers: lists[i] });
     for (const [i, piece] of planned.entries()) {
       const order = { kind: Kind.AttestedResult, amountIn: piece.amountIn, minResult: 1n, maxResult: 1n, attestor: piece.attestor, specHash: specBytes(piece.specHash), judgeFee: 0n } as const;
       const unsettled = neverSettles(order, config, 0, token.decimals);
@@ -363,17 +371,17 @@ export const walletEscrowPlan = define({
         ? []
         : await Promise.all(
             planned.map(async (piece, i) => {
-              const found = piece.specUrl === undefined || piece.specHash === undefined ? { lines: [], sealed: false } : await specPreflight(ctx, piece.specUrl, piece.specHash, piece.attestor);
-              return { lines: found.lines.map((line) => `Piece ${i + 1} (${piece.name}): ${line}`), sealed: found.sealed };
+              const found = piece.specUrl === undefined || piece.specHash === undefined ? { lines: [] } : await specPreflight(ctx, piece.specUrl, piece.specHash, piece.attestor);
+              return { lines: found.lines.map((line) => `Piece ${i + 1} (${piece.name}): ${line}`) };
             }),
           );
     const [head, ...rest] = planned as [Piece, ...Piece[]];
-    const costs = await escrowCosts(ctx.transport, { owner: signer.address, sell: sold, buy, claims: claims !== undefined });
+    const costs = await escrowCosts(ctx.transport, { owner: signer.address, sell: sold, buy, claims: claims !== undefined, listed: lists.some((workers) => workers !== undefined) });
     let network = 0n;
     const priced = (lamports: bigint) => {
       network = lamports;
     };
-    const first = (await offered(ctx, call, { sell: sold, buy, send: input.send, after: claims?.after, priced }, terms(head))) as Record<string, unknown>;
+    const first = await offeredWithClaims(ctx, call, { sell: sold, buy, send: input.send, priced }, terms(head), undefined, listedOf(0), signer);
     const ownKey = head.attestor === signer.address && signer.device === undefined;
     const shown = {
       total: formatAmount(total, token.decimals),
@@ -384,18 +392,18 @@ export const walletEscrowPlan = define({
             `Piece ${i + 1}: ${piece.name}, ${formatAmount(piece.amountIn, token.decimals)} of ${name}, released by ${piece.attestor}${piece.specHash === undefined ? "" : ` against spec ${piece.specHash}`}`,
         ),
         ...costLines(costs, network, total, planned.length),
-        ...(claims === undefined ? [] : [claims.line]),
+        ...(claims === undefined ? [] : [claims.line, ...pieceLimits(planned, lists)]),
         ...explainedSetup(first["summary"] as string[], buy).map((line) => `${PIECE_ONE}: ${line}`),
       ],
-      warnings: [...(first["warnings"] as string[]).filter((line) => !(ownKey && line.startsWith(WARN_NO_JUDGE_KEY))), ...unlisted, ...preflights.flatMap(({ lines }) => lines), ...sealedClaims(claims !== undefined, preflights)],
+      warnings: [...(first["warnings"] as string[]).filter((line) => !(ownKey && line.startsWith(WARN_NO_JUDGE_KEY))), ...unlisted, ...preflights.flatMap(({ lines }) => lines)],
     };
     if (input.send !== true) {
       return { pieces: planned.map(listed), ...shown, sent: false, next: first["next"] };
     }
     const pieces = [{ ...listed(head), intent: first["intent"], nonce: first["nonce"], signature: first["signature"] }];
-    for (const piece of rest) {
+    for (const [i, piece] of rest.entries()) {
       try {
-        const made = (await offered(ctx, call, { sell: sold, buy, send: true, after: claims?.after }, terms(piece))) as Record<string, unknown>;
+        const made = await offeredWithClaims(ctx, call, { sell: sold, buy, send: true }, terms(piece), undefined, listedOf(i + 1), signer);
         pieces.push({ ...listed(piece), intent: made["intent"], nonce: made["nonce"], signature: made["signature"] });
       } catch (error) {
         for (const undo of call.undo.splice(0)) {

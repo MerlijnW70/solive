@@ -446,14 +446,14 @@ fn main_keeps_every_stand_by_line_field_where_it_was() {
         old::ClaimBoard,
         ClaimBoard,
         [
-            intent, owner, worker, until, stake, held, max_secs, version, bump, padding,
-            dropped_by, head, tail
+            intent, owner, worker, until, stake, held, max_secs, version, bump, dropped_by, head,
+            tail
         ]
     );
     kept!(
         old::LineFreeBoard,
         ClaimBoard,
-        [intent, owner, worker, until, stake, held, max_secs, version, bump, padding, dropped_by]
+        [intent, owner, worker, until, stake, held, max_secs, version, bump, dropped_by]
     );
     kept!(old::Standby, Standby, [worker, intent, seq, secs, bump]);
     kept!(
@@ -485,6 +485,11 @@ fn main_puts_new_fields_only_where_the_stand_by_line_kept_zeros() {
         offsets!(ClaimBoard, [head, tail]),
         [size_of::<old::LineFreeBoard>(), 164]
     );
+    assert_eq!(
+        offsets!(ClaimBoard, [listed, padding]),
+        [offset_of!(old::ClaimBoard, padding), 127]
+    );
+    assert_eq!(size_of::<ClaimBoard>(), size_of::<old::ClaimBoard>());
     assert_eq!(
         offset_of!(Profile, encryption_key),
         offset_of!(old::Profile, reserved)

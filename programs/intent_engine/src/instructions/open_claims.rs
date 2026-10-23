@@ -29,36 +29,51 @@ pub struct OpenClaims<'info> {
     pub system_program: Program<'info, System>,
 }
 
-pub fn handle_open_claims(ctx: Context<OpenClaims>, max_secs: u32, stake: u64) -> Result<()> {
+pub fn open_terms(intent: &mut Intent, now: i64, max_secs: u32, stake: u64) -> Result<Terms> {
     let terms = Terms::new(max_secs, stake).map_err(core_err)?;
-    let now = Clock::get()?.unix_timestamp;
-    let owner = ctx.accounts.owner.key();
-    {
-        let mut intent = ctx.accounts.intent.load_mut()?;
-        let status = Status::try_from(intent.status).map_err(core_err)?;
-        require!(
-            status == Status::Open && now < intent.expires_at,
-            EngineError::InvalidTransition
-        );
-        require!(intent.claims != CLAIMS_OPEN, EngineError::ClaimsOpen);
-        let decoded = CoreIntent::decode(intent.kind, &intent.params).map_err(core_err)?;
-        require!(decoded.spec_hash() != [0u8; 32], EngineError::NotAProof);
-        intent.claims = CLAIMS_OPEN;
-    }
-    {
-        let mut board = ctx.accounts.board.load_init()?;
-        board.intent = ctx.accounts.intent.key();
-        board.owner = owner;
-        board.stake = terms.stake();
-        board.max_secs = terms.max_secs();
-        board.version = CLAIMS_VERSION;
-        board.bump = ctx.bumps.board;
-    }
-    emit_cpi!(ClaimsOpened {
-        intent: ctx.accounts.intent.key(),
+    let status = Status::try_from(intent.status).map_err(core_err)?;
+    require!(
+        status == Status::Open && now < intent.expires_at,
+        EngineError::InvalidTransition
+    );
+    require!(intent.claims != CLAIMS_OPEN, EngineError::ClaimsOpen);
+    let decoded = CoreIntent::decode(intent.kind, &intent.params).map_err(core_err)?;
+    require!(decoded.spec_hash() != [0u8; 32], EngineError::NotAProof);
+    intent.claims = CLAIMS_OPEN;
+    Ok(terms)
+}
+
+pub fn fill_board(
+    board: &mut ClaimBoard,
+    intent: Pubkey,
+    owner: Pubkey,
+    terms: Terms,
+    bump: u8,
+) -> ClaimsOpened {
+    board.intent = intent;
+    board.owner = owner;
+    board.stake = terms.stake();
+    board.max_secs = terms.max_secs();
+    board.version = CLAIMS_VERSION;
+    board.bump = bump;
+    ClaimsOpened {
+        intent,
         owner,
         max_secs: terms.max_secs(),
         stake: terms.stake(),
-    });
+    }
+}
+
+pub fn handle_open_claims(ctx: Context<OpenClaims>, max_secs: u32, stake: u64) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    let terms = open_terms(&mut *ctx.accounts.intent.load_mut()?, now, max_secs, stake)?;
+    let opened = fill_board(
+        &mut *ctx.accounts.board.load_init()?,
+        ctx.accounts.intent.key(),
+        ctx.accounts.owner.key(),
+        terms,
+        ctx.bumps.board,
+    );
+    emit_cpi!(opened);
     Ok(())
 }

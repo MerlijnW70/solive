@@ -8,8 +8,8 @@ use intent_core::mint_policy::{
 use intent_core::Error as CoreError;
 use intent_engine::errors::{core_err, EngineError};
 use intent_engine::state::{
-    ClaimBoard, Committee, Config, Intent, Mandate, MintCap, Profile, Standby, UserState,
-    CLAIMS_SEED, COMMITTEE_SEED, CONFIG_SEED, DELEGATE_SEED, INTENT_SEED, MANDATE_SEED,
+    ClaimBoard, ClaimList, Committee, Config, Intent, Mandate, MintCap, Profile, Standby,
+    UserState, CLAIMS_SEED, COMMITTEE_SEED, CONFIG_SEED, DELEGATE_SEED, INTENT_SEED, MANDATE_SEED,
     MINT_CAP_SEED, PROFILE_SEED, STANDBY_SEED, USER_SEED, VAULT_SEED,
 };
 use intent_engine::versions::LAYOUTS;
@@ -22,6 +22,20 @@ fn account_sizes_are_frozen() {
     assert_eq!(Mandate::SPACE, 384);
     assert_eq!(ClaimBoard::SPACE, 176);
     assert_eq!(Standby::SPACE, 88);
+    assert_eq!(ClaimList::SPACE, 1104);
+}
+
+#[test]
+fn claim_list_field_offsets_are_frozen() {
+    assert_eq!(offset_of!(ClaimList, intent), 0);
+    assert_eq!(offset_of!(ClaimList, owner), 32);
+    assert_eq!(offset_of!(ClaimList, workers), 64);
+    assert_eq!(offset_of!(ClaimList, size), 1088);
+    assert_eq!(offset_of!(ClaimList, count), 1089);
+    assert_eq!(offset_of!(ClaimList, version), 1090);
+    assert_eq!(offset_of!(ClaimList, bump), 1091);
+    assert_eq!(offset_of!(ClaimList, padding), 1092);
+    assert_eq!(offset_of!(ClaimBoard, listed), 126);
 }
 
 #[test]
@@ -53,6 +67,7 @@ fn version_and_payer_offsets_are_frozen() {
             (176, 124, 2, Some(32)),
             (88, 73, 1, Some(0)),
             (504, 456, 2, Some(0)),
+            (1104, 1090, 1, Some(32)),
         ]
     );
     let discriminators = [
@@ -65,6 +80,7 @@ fn version_and_payer_offsets_are_frozen() {
         ClaimBoard::DISCRIMINATOR,
         Standby::DISCRIMINATOR,
         Profile::DISCRIMINATOR,
+        ClaimList::DISCRIMINATOR,
     ];
     for (layout, discriminator) in LAYOUTS.iter().zip(discriminators) {
         assert_eq!(layout.discriminator, discriminator);

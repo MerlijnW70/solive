@@ -5,8 +5,10 @@ import {
   buildSettleClaims,
   buildStandBy,
   claimBoardAddress,
+  claimListAddress,
   formatAmount,
   getClaimBoardSize,
+  getClaimListSize,
   getStandbySize,
   IntentCoreError,
   IntentStatus,
@@ -14,6 +16,7 @@ import {
 } from "@intent-engine/core";
 import { type ClaimsView, type Client, type LineEntry, lineHandover, loadLine, type Transport } from "@intent-engine/client";
 import { handedTo } from "../claim-commands.js";
+import { listAccount } from "../claim-lists.js";
 import { rentFor, rentRate, SIGNATURE_FEE } from "./budget.js";
 import { tool } from "./names.js";
 import { AgentRefusal } from "./problems.js";
@@ -58,7 +61,12 @@ export async function boardLeft(transport: Transport, owner: Address, nonce: big
   if ((await transport.getAccount(board)) === null) {
     return undefined;
   }
-  return `the claims board ${board} stays open afterwards, holding ${sol(await boardRent(transport))} of rent that ${owner} paid; ${settleCall(owner, nonce)} closes it and returns that rent to ${owner}`;
+  const list = await claimListAddress(intent);
+  if ((await transport.getAccount(list)) === null) {
+    return `the claims board ${board} stays open afterwards, holding ${sol(await boardRent(transport))} of rent that ${owner} paid; ${settleCall(owner, nonce)} closes it and returns that rent to ${owner}`;
+  }
+  const rent = (await boardRent(transport)) + rentFor(getClaimListSize(), await rentRate(transport));
+  return `the claims board ${board} and its claim list ${list} stay open afterwards, holding ${sol(rent)} of rent that ${owner} paid; ${settleCall(owner, nonce)} closes them and returns that rent to ${owner}`;
 }
 
 export const leavesBoard = (left: string | undefined): string[] => (left === undefined ? [] : [`Leaves: ${left}`]);
@@ -81,13 +89,14 @@ export async function settleStep(client: Client, transport: Transport, escrow: E
   if (open && receiver === null) {
     throw new AgentRefusal("InvalidTransition", `escrow ${escrow.intent} is open and nobody holds its claim, so there is nothing to settle; nothing was sent`);
   }
-  const rent = await boardRent(transport);
+  const rent = (await boardRent(transport)) + (view.list === null ? 0n : rentFor(getClaimListSize(), await rentRate(transport)));
+  const closed = view.list === null ? `the claims board ${view.board}` : `the claims board ${view.board} and its claim list ${view.list.address}`;
   const summary = [
     receiver === null ? "Moves: no stake; nobody holds the claim" : `Moves: the claim stake of ${sol(view.stake)} to ${receiver}`,
-    ...(open ? [] : [`Closes: the claims board ${view.board}, returning its ${sol(rent)} of rent to the owner ${view.owner}`]),
+    ...(open ? [] : [`Closes: ${closed}, returning ${view.list === null ? "its " : ""}${sol(rent)} of rent to the owner ${view.owner}`]),
     feeLine(payer),
   ];
-  const instruction = await buildSettleClaims({ intent: escrow.intent, owner: view.owner, ...(view.worker === null ? {} : { worker: view.worker }) });
+  const instruction = await buildSettleClaims({ intent: escrow.intent, owner: view.owner, ...(view.worker === null ? {} : { worker: view.worker }), ...listAccount(view.list) });
   const done = open ? `settled; the lapsed claim's stake went to ${receiver}` : `settled; the claims board is closed and its rent returned to ${view.owner}`;
   return { instruction, summary, key: `settle:${open}:${receiver}:${view.stake}`, done };
 }
@@ -112,7 +121,7 @@ export async function standbyStep(client: Client, transport: Transport, escrow: 
     `Locks: a stake of ${sol(view.stake)} and ${sol(rent)} of the entry's rent from this wallet; the stake moves onto the claim when the job reaches it, the rent returns then, and both return when it leaves the line`,
     feeLine(worker.address),
   ];
-  const instruction = await buildStandBy({ worker, intent: escrow.intent, seq, secs });
+  const instruction = await buildStandBy({ worker, intent: escrow.intent, seq, secs, ...listAccount(view.list) });
   const done = `you stand by for ${escrow.intent} as entry ${seq}; ${tool("get_claims")} shows this wallet as worker once the job reaches it`;
   return { instruction, summary, key: `standby:${secs}:${seq}:${view.stake}`, done };
 }

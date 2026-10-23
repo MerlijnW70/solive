@@ -161,6 +161,7 @@ describe("claims from the wallet tools", () => {
   });
 
   it("wallet_escrow_plan opens claims on every piece, marks the lines of piece 1, and drops the Ledger warning for its own key", async () => {
+    h.specPages.set(SPEC_URL, new TextEncoder().encode("# Claimed job\n"));
     const plan = {
       sell: "SOL",
       attestor: wallet,

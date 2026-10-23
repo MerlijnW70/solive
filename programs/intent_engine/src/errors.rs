@@ -117,6 +117,11 @@ pub enum EngineError {
     UnknownLayout,
     ConfigMissing,
     LegacyLineOpen,
+    ClaimListInvalid,
+    ClaimListIncomplete,
+    NotListed,
+    ClaimListMissing,
+    ClaimListSet,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {
@@ -167,5 +172,8 @@ pub fn core_err(e: CoreError) -> EngineError {
         CoreError::LineWaiting => EngineError::LineWaiting,
         CoreError::LineEmpty => EngineError::LineEmpty,
         CoreError::JobNotHeld => EngineError::JobNotHeld,
+        CoreError::ClaimListInvalid => EngineError::ClaimListInvalid,
+        CoreError::ClaimListIncomplete => EngineError::ClaimListIncomplete,
+        CoreError::NotListed => EngineError::NotListed,
     }
 }

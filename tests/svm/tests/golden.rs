@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 use intent_engine::events as ev;
 use std::path::PathBuf;
 
@@ -964,6 +966,7 @@ fn vectors() -> TestResult<Value> {
         "AgentPaid": hex(ev::AgentPaid::DISCRIMINATOR),
         "CapsRequiredSet": hex(ev::CapsRequiredSet::DISCRIMINATOR),
         "ClaimDropped": hex(ev::ClaimDropped::DISCRIMINATOR),
+        "ClaimantsListed": hex(ev::ClaimantsListed::DISCRIMINATOR),
         "ClaimsClosed": hex(ev::ClaimsClosed::DISCRIMINATOR),
         "ClaimsOpened": hex(ev::ClaimsOpened::DISCRIMINATOR),
         "JobClaimed": hex(ev::JobClaimed::DISCRIMINATOR),

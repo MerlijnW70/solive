@@ -62,6 +62,7 @@ export type ClaimBoard = {
   maxSecs: number;
   version: number;
   bump: number;
+  listed: number;
   padding: ReadonlyUint8Array;
   droppedBy: Address;
   head: number;
@@ -78,6 +79,7 @@ export type ClaimBoardArgs = {
   maxSecs: number;
   version: number;
   bump: number;
+  listed: number;
   padding: ReadonlyUint8Array;
   droppedBy: Address;
   head: number;
@@ -98,7 +100,8 @@ export function getClaimBoardEncoder(): FixedSizeEncoder<ClaimBoardArgs> {
       ["maxSecs", getU32Encoder()],
       ["version", getU8Encoder()],
       ["bump", getU8Encoder()],
-      ["padding", fixEncoderSize(getBytesEncoder(), 2)],
+      ["listed", getU8Encoder()],
+      ["padding", fixEncoderSize(getBytesEncoder(), 1)],
       ["droppedBy", getAddressEncoder()],
       ["head", getU32Encoder()],
       ["tail", getU32Encoder()],
@@ -120,7 +123,8 @@ export function getClaimBoardDecoder(): FixedSizeDecoder<ClaimBoard> {
     ["maxSecs", getU32Decoder()],
     ["version", getU8Decoder()],
     ["bump", getU8Decoder()],
-    ["padding", fixDecoderSize(getBytesDecoder(), 2)],
+    ["listed", getU8Decoder()],
+    ["padding", fixDecoderSize(getBytesDecoder(), 1)],
     ["droppedBy", getAddressDecoder()],
     ["head", getU32Decoder()],
     ["tail", getU32Decoder()],

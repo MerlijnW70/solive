@@ -2,6 +2,7 @@ export * from "../generated/client/index.js";
 export * from "../generated/identity.js";
 export * from "./bounty.js";
 export * from "./builders.js";
+export * from "./claim-list.js";
 export * from "./claims.js";
 export * from "./committee.js";
 export * from "./compute.js";
