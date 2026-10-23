@@ -68,13 +68,23 @@ describe("solive_find_jobs with wait", () => {
     h.rounds = 10;
   });
 
-  it("returns a job already open without waiting", async () => {
+  it("does not return early for a job it already listed", async () => {
     const client = await linked();
     const job = await open(w.inputMint, w.outputMint, 100n)();
     const value = await ok(client, { wait: 5 });
     expect(intents(value)).toEqual([job]);
     expect(value["next"]).toContain("solive_get_spec");
-    expect(h.sleeps).toEqual([]);
+    expect(h.sleeps).toEqual([1, 1, 1, 1, 1]);
+  });
+
+  it("returns early once a job its first read did not list appears beside one it did", async () => {
+    const client = await linked();
+    const seen = await open(w.inputMint, w.outputMint, 100n)();
+    let job: unknown;
+    opening = [async () => undefined, async () => (job = await open(w.inputMint, w.outputMint, 100n)())];
+    const value = await ok(client, { wait: 10 });
+    expect(new Set(intents(value))).toEqual(new Set([seen, job]));
+    expect(h.sleeps).toEqual([1, 1]);
   });
 
   it("reads afresh until a job opened during the wait appears", async () => {

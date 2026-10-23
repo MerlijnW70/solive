@@ -1,5 +1,5 @@
 import { type Address, getAddressDecoder } from "@solana/kit";
-import { type EngineEvent, findIntentPda, formatAmount, IntentStatus, Kind, NATIVE_MINT } from "@intent-engine/core";
+import { type EngineEvent, findIntentPda, formatAmount, IntentStatus, Kind, MAX_RECIPIENTS, NATIVE_MINT } from "@intent-engine/core";
 import { intentAt, memoized, mintOf, paidWalletsOf, recordedRelease, releaseStandingOf, type Transport, unmemoized } from "@intent-engine/client";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
@@ -41,27 +41,70 @@ const alsoInput = optional(
   list(
     object({ owner: account("the wallet that made this escrow"), nonce: amount("this escrow's nonce") }),
     ALSO_MAX,
-    `up to ${ALSO_MAX} more escrows, each by owner and nonce, read with the one nonce names; the result is the first released, and its owner and nonce say which; sha256 and release apply only to the one nonce names`,
+    `up to ${ALSO_MAX} more escrows, each by owner and nonce, read with the one nonce names; the result is the first released, and its owner and nonce say which, and escrows gives the state of each; sha256 and release apply only to the one nonce names`,
   ),
 );
 
-type Receipt = Awaited<ReturnType<typeof escrowReceipt>> & { owner?: Address; nonce?: bigint };
+type Paid = { released: boolean; paid_to?: Address | undefined; paid_wallets?: readonly Address[] | undefined };
+
+type EscrowState = Paid & { owner: Address; nonce: bigint; intent: Address; complete?: false; paid_this_wallet?: boolean };
+
+type Receipt = Awaited<ReturnType<typeof escrowReceipt>> & { owner?: Address; nonce?: bigint; escrows?: EscrowState[]; paid_this_wallet?: boolean };
 
 type Escrow = { owner: Address; nonce: bigint; sha256?: string | undefined; release?: string | undefined };
 
 const unknownIn = (receipt: Receipt): boolean => "complete" in receipt && receipt.complete === false;
 
+const paidWalletsIn = (paid: Paid): readonly Address[] | undefined => (!paid.released ? undefined : paid.paid_to !== undefined ? [paid.paid_to] : paid.paid_wallets);
+
+const stateOf = ({ owner, nonce }: Escrow, receipt: Receipt): EscrowState => {
+  const paid: Paid = receipt;
+  return {
+    owner,
+    nonce,
+    intent: receipt.intent,
+    released: receipt.released,
+    ...(unknownIn(receipt) ? { complete: false as const } : {}),
+    ...(!paid.released ? {} : paid.paid_to !== undefined ? { paid_to: paid.paid_to } : paid.paid_wallets !== undefined ? { paid_wallets: paid.paid_wallets } : {}),
+  };
+};
+
 async function firstReleased(transport: Transport, escrows: readonly Escrow[]): Promise<Receipt> {
   const read: Receipt[] = [];
   for (const { owner, nonce, sha256, release } of escrows) {
-    const receipt: Receipt = await escrowReceipt(transport, owner, nonce, sha256, release);
-    if (receipt.released) {
-      return escrows.length === 1 ? receipt : { ...receipt, owner, nonce };
-    }
-    read.push(receipt);
+    read.push(await escrowReceipt(transport, owner, nonce, sha256, release));
   }
   const [first] = read as [Receipt];
-  return escrows.length === 1 || !read.some(unknownIn) ? first : { intent: first.intent, released: false, complete: false, next: "" };
+  if (escrows.length === 1) {
+    return first;
+  }
+  const states = escrows.map((escrow, at) => stateOf(escrow, read[at] as Receipt));
+  const at = read.findIndex(({ released }) => released);
+  const escrow = escrows[at];
+  if (escrow !== undefined) {
+    return { ...(read[at] as Receipt), owner: escrow.owner, nonce: escrow.nonce, escrows: states };
+  }
+  return read.some(unknownIn) ? { intent: first.intent, released: false, complete: false, next: "", escrows: states } : { ...first, escrows: states };
+}
+
+export const paidOther = (wallets: readonly Address[], self: Address) =>
+  `this release paid ${wallets.join(", ")}, not this wallet ${self}: matches and valid describe the recorded work, and this wallet was not paid for it`;
+
+function forWallet(receipt: Receipt, self: Address): Receipt {
+  const paid = (state: Paid): { paid_this_wallet?: boolean } => {
+    const wallets = paidWalletsIn(state);
+    return wallets === undefined ? {} : { paid_this_wallet: wallets.includes(self) };
+  };
+  const escrows = receipt.escrows?.map((state) => ({ ...state, ...paid(state) }));
+  const own = paid(receipt);
+  const wallets = paidWalletsIn(receipt);
+  const shown = { ...receipt, ...own, ...(escrows === undefined ? {} : { escrows }) };
+  if (own.paid_this_wallet !== false || wallets === undefined) {
+    return shown;
+  }
+  const prior: unknown = "next" in receipt ? receipt.next : undefined;
+  const line = paidOther(wallets, self);
+  return { ...shown, next: typeof prior === "string" && prior !== "" ? `${line}; ${prior}` : line };
 }
 
 async function waitedReceipt(ctx: AgentContext, name: string, wait: number | undefined, escrows: readonly Escrow[]): Promise<Receipt> {
@@ -115,8 +158,26 @@ const receiptOutput = object({
   delivered_salt: optional(text("the payee's salt the release recorded, which opens the payee's announcement")),
   valid: optional(flag("given with delivered_salt: whether that salt opens an announcement by the payee to the recorded sha256")),
   refuted_by: optional(text("an earlier announcement of the same work that a published opening shows, so the release paid a later announcer")),
+  paid_wallets: optional(list(account(), MAX_RECIPIENTS, "the wallets a split release paid")),
+  paid_this_wallet: optional(flag("wallet_receipt with a released escrow whose payees are known: whether the release paid this server's wallet")),
   owner: optional(account("given with also: the owner of the escrow released")),
   nonce: optional(amount("given with also: the nonce of the escrow released")),
+  escrows: optional(
+    list(
+      object({
+        owner: account(),
+        nonce: amount(),
+        intent: account(),
+        released: flag(),
+        complete: optional(flag("false when the history read was not enough to know whether it was released")),
+        paid_to: optional(account("the wallet the release paid")),
+        paid_wallets: optional(list(account(), MAX_RECIPIENTS, "the wallets a split release paid")),
+        paid_this_wallet: optional(flag("wallet_receipt only: whether the release paid this server's wallet")),
+      }),
+      ALSO_MAX + 1,
+      "given with also: every named escrow in the order given, released or not, with whom each release paid",
+    ),
+  ),
   next: optional(text()),
 });
 
@@ -137,7 +198,7 @@ export const walletReceipt = define({
   run: async (ctx: AgentContext, input) => {
     const self = (await signerOf(ctx)).address;
     const escrows = escrowsOf({ owner: input.owner ?? self, nonce: input.nonce, sha256: input.sha256, release: input.release }, input.also);
-    const receipt = await waitedReceipt(ctx, "wallet_receipt", input.wait, escrows);
+    const receipt = forWallet(await waitedReceipt(ctx, "wallet_receipt", input.wait, escrows), self);
     const wrapped = "paid_to" in receipt && receipt.paid_to === self && receipt.mint === NATIVE_MINT;
     if (!wrapped) {
       return receipt;
@@ -217,11 +278,13 @@ export async function escrowReceipt(transport: Transport, owner: Address, nonce:
   if (release.event.name === "IntentSplit") {
     mint ??= await heldMint(transport, intent);
     const decimals = mint === undefined ? undefined : (await mintOf(transport, mint)).decimals;
+    const wallets = await paidWalletsOf(transport, { event: release.event as EngineEvent, transaction: tx }, intent);
     return {
       ...common,
       paid: formatAmount(fields["net"] as bigint, decimals),
       ...(mint === undefined ? {} : { mint }),
       recipients: BigInt(fields["recipients"] as number),
+      ...(wallets === null ? {} : { paid_wallets: wallets }),
     };
   }
   const payee = fields["payee"] as Address;

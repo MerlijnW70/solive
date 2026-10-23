@@ -689,6 +689,7 @@ describe("cli against the deployed engine", () => {
           expiresAt: (NOW + 3_600n).toString(),
           net_pay: "0.000099",
           payable: true,
+          takes_claims: false,
           claimed_by: null,
           claim_ends: null,
           waiting: 0,

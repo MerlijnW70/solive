@@ -185,13 +185,13 @@ describe("claimed escrows", () => {
     const views = await loadClaimsOf(counted, [s.intent, bare]);
     expect(calls).toEqual(["many"]);
     expect(views).toEqual([await s.client.claims(s.owner.address, s.nonce), null]);
-    expect(views.map(jobClaimOf)).toEqual([{ claimedBy: s.worker.address, claimEnds: views[0]?.until, waiting: 0 }, { claimedBy: null, claimEnds: null, waiting: 0 }]);
+    expect(views.map(jobClaimOf)).toEqual([{ takesClaims: true, claimedBy: s.worker.address, claimEnds: views[0]?.until, waiting: 0 }, { takesClaims: false, claimedBy: null, claimEnds: null, waiting: 0 }]);
     expect(await loadClaimsOf(counted, [])).toEqual([]);
     expect(calls).toEqual(["many"]);
     const clock = s.w.chain.svm.getClock();
     clock.unixTimestamp += 601n;
     s.w.chain.svm.setClock(clock);
-    expect((await loadClaimsOf(counted, [s.intent])).map(jobClaimOf)).toEqual([{ claimedBy: null, claimEnds: null, waiting: 0 }]);
+    expect((await loadClaimsOf(counted, [s.intent])).map(jobClaimOf)).toEqual([{ takesClaims: true, claimedBy: null, claimEnds: null, waiting: 0 }]);
   });
 
   it("reads the line, names the first worker still in it and the holes before it, and a drop hands the job over", async () => {

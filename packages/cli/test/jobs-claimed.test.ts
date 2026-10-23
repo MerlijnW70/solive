@@ -10,7 +10,7 @@ import { EXIT_OK } from "../src/main.js";
 import { cli, funded, h, NOW, send, setNow, transport, type World, world } from "./harness.js";
 
 type Json = Record<string, unknown>;
-type Held = { intent: Address; claimed_by: Address | null; claim_ends: string | null };
+type Held = { intent: Address; takes_claims: boolean; claimed_by: Address | null; claim_ends: string | null };
 
 const specHash = new Uint8Array(32).fill(7);
 const batches: Address[][] = [];
@@ -32,7 +32,7 @@ async function linked(): Promise<Client> {
   return client;
 }
 
-const held = (jobs: Held[]) => jobs.map(({ intent, claimed_by, claim_ends }) => ({ intent, claimed_by, claim_ends }));
+const held = (jobs: Held[]) => jobs.map(({ intent, takes_claims, claimed_by, claim_ends }) => ({ intent, takes_claims, claimed_by, claim_ends }));
 
 describe("jobs show which are claimed", () => {
   let w: World;
@@ -93,9 +93,15 @@ describe("jobs show which are claimed", () => {
     return held((result.structuredContent as Json)["jobs"] as Held[]);
   };
 
-  it("name the live claimant and when its claim ends, and no one for a job never claimed, lapsed or dropped", async () => {
-    const free = (intent: Address) => ({ intent, claimed_by: null, claim_ends: null });
-    const expected = [free(never), free(open), { intent: live, claimed_by: worker.address, claim_ends: String(NOW + 3_000n) }, free(lapsed), free(dropped)];
+  it("say which jobs take claims, name the live claimant and when its claim ends, and no one for a job never claimed, lapsed or dropped", async () => {
+    const free = (intent: Address) => ({ intent, takes_claims: true, claimed_by: null, claim_ends: null });
+    const expected = [
+      { ...free(never), takes_claims: false },
+      free(open),
+      { intent: live, takes_claims: true, claimed_by: worker.address, claim_ends: String(NOW + 3_000n) },
+      free(lapsed),
+      free(dropped),
+    ];
     expect(await command()).toEqual(expected);
     expect(await found()).toEqual(expected);
   });

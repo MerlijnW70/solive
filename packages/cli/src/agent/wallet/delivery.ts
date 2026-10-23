@@ -38,6 +38,7 @@ import {
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { tool } from "../names.js";
+import { claimOf, deliverClaimWarnings } from "../job-claims.js";
 import { AgentRefusal, untrusted } from "../problems.js";
 import { InvalidInput, account, amount, flag, integer, list, object, optional, text, time } from "../schema.js";
 import { preparedSchema, preparedView } from "../shapes.js";
@@ -119,7 +120,7 @@ export const walletDeliver = define({
       commitment: plan.commitment,
       check: plan.check,
       summary: announcing(plan, input.intent, sha256, input.url, "this wallet"),
-      warnings: [ANNOUNCE_FIRST],
+      warnings: [...deliverClaimWarnings(await claimOf(ctx.transport, input.intent), signer.address), ANNOUNCE_FIRST],
       prepared: preparedView(await prepare(ctx.transport, instructions, signer.address)),
     };
     return sent(ctx, signer, view, input.send, call, {

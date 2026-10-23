@@ -14,8 +14,8 @@ import { ata, h, NOW, runtime, transport, type World, world } from "./harness.js
 type Json = Record<string, unknown>;
 
 const SPEC_STEP = "read a job's spec with solive_get_spec and work on it only when matches is true";
-const CLAIMS_STEP = "solive_get_claims shows whether the job takes claims and who holds it";
-const CLAIM_STEP = "solive_wallet_claim reserves a job that takes claims for this wallet while you work";
+const CLAIMS_STEP = "a job with takes_claims true pays only the worker holding its claim while the claim holds";
+const CLAIM_STEP = "claim one with solive_wallet_claim before working on it";
 
 const MODES: { label: string; serving: Serving; next: string }[] = [
   { label: "no wallet", serving: { wallet: false, allTools: false, relay: false, agent: false }, next: `${SPEC_STEP}; ${CLAIMS_STEP}` },

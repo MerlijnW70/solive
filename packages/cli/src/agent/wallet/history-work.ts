@@ -1,12 +1,15 @@
 import type { Address } from "@solana/kit";
-import { decodeEvent, type EngineEvent, formatAmount, tokenName } from "@intent-engine/core";
+import { decodeEvent, type EngineEvent, formatAmount, IntentStatus, tokenName } from "@intent-engine/core";
 import {
+  chainTime,
   type Delivery,
   deliveriesIn,
   earlier,
   type EngineTransaction,
+  intentAt,
   loadClaimsOf,
   opensWith,
+  paidWalletsOf,
   recordedRelease,
   releaseShareOf,
   type Transport,
@@ -22,7 +25,10 @@ const SOL_DECIMALS = 9;
 export const STAKE_OUTCOMES = ["held", "returned", "forfeited", "unknown"] as const;
 type StakeOutcome = (typeof STAKE_OUTCOMES)[number];
 
-const CLAIM_ACTIONS = ["claimed", "dropped"] as const;
+export const UNPAID_REASONS = ["released_to_other", "open", "cancelled", "expired", "unknown"] as const;
+type UnpaidReason = (typeof UNPAID_REASONS)[number];
+
+const CLAIM_ACTIONS =["claimed", "dropped"] as const;
 type ClaimAction = (typeof CLAIM_ACTIONS)[number];
 
 const landedAt = (what: string) => nullable(time(`unix seconds ${what} landed, when the cluster reports it`));
@@ -35,6 +41,13 @@ export const workItem = object({
   amount: nullable(text("whole tokens the release paid this wallet")),
   token: nullable(text("SOL, TEST or the mint the release paid")),
   release: nullable(text("the release's transaction")),
+  unpaid_reason: nullable(
+    choice(
+      UNPAID_REASONS,
+      "null when paid; released_to_other: a release paid released_to, not this wallet; open: the escrow is still open; cancelled or expired: it ended unpaid; unknown: not found",
+    ),
+  ),
+  released_to: nullable(account("with released_to_other: the wallet the release paid; for a split, its first recipient")),
 });
 
 export const claimItem = object({
@@ -89,6 +102,25 @@ async function paidFor(transport: Transport, delivery: Delivery, wallet: Address
   };
 }
 
+type Unpaid = { reason: UnpaidReason; releasedTo: Address | null };
+
+const ENDED: Readonly<Record<string, UnpaidReason>> = { IntentCancelled: "cancelled", IntentExpired: "expired" };
+
+async function unpaidOf(transport: Transport, intent: Address, wallet: Address, lookup: ReleaseLookup): Promise<Unpaid> {
+  const { release, transactions } = lookup;
+  if (release !== null) {
+    const wallets = await paidWalletsOf(transport, { event: release.event as EngineEvent, transaction: release.tx }, intent);
+    const [first] = wallets ?? [];
+    return wallets === null || first === undefined || wallets.includes(wallet) ? { reason: "unknown", releasedTo: null } : { reason: "released_to_other", releasedTo: first };
+  }
+  const held = await intentAt(transport, intent);
+  if (held !== null && held.status === IntentStatus.Open) {
+    return { reason: held.expiresAt > (await chainTime(transport)) ? "open" : "expired", releasedTo: null };
+  }
+  const ending = eventsIn(transactions).find((event) => event.name in ENDED && (event.fields as Record<string, unknown>)["intent"] === intent);
+  return { reason: ending === undefined ? "unknown" : (ENDED[ending.name] ?? "unknown"), releasedTo: null };
+}
+
 export async function workOf(transport: Transport, wallet: Address, transactions: readonly EngineTransaction[], limit: number, tokens: Tokens) {
   const announced = newestFirst(deliveriesIn(transactions).filter(({ worker }) => worker === wallet));
   const lookups = new Map<Address, Promise<ReleaseLookup>>();
@@ -98,6 +130,7 @@ export async function workOf(transport: Transport, wallet: Address, transactions
     const lookup = lookups.get(intent) ?? releaseLookup(transport, intent);
     lookups.set(intent, lookup);
     const paid = await paidFor(transport, delivery, wallet, await lookup, tokens);
+    const unpaid = paid === null ? await unpaidOf(transport, intent, wallet, await lookup) : { reason: null, releasedTo: null };
     work.push({
       intent,
       signature: delivery.signature,
@@ -106,6 +139,8 @@ export async function workOf(transport: Transport, wallet: Address, transactions
       amount: paid?.amount ?? null,
       token: paid?.token ?? null,
       release: paid?.release ?? null,
+      unpaid_reason: unpaid.reason,
+      released_to: unpaid.releasedTo,
     });
   }
   return { work, more: announced.length > limit };

@@ -191,8 +191,8 @@ describe("wallet_history of a worker paid for announced work", () => {
       activity: [],
       more: false,
       work: [
-        { intent: other, signature: unpaid.signature, at: String(at + 6n), paid: false, amount: null, token: null, release: null },
-        { intent, signature: announced.signature, at: String(at + 5n), paid: true, amount: formatAmount(net, 9), token: "SOL", release: "released" },
+        { intent: other, signature: unpaid.signature, at: String(at + 6n), paid: false, amount: null, token: null, release: null, unpaid_reason: "open", released_to: null },
+        { intent, signature: announced.signature, at: String(at + 5n), paid: true, amount: formatAmount(net, 9), token: "SOL", release: "released", unpaid_reason: null, released_to: null },
       ],
       claims: [],
       more_work: false,
@@ -259,7 +259,7 @@ describe("wallet_history of a worker paid for announced work", () => {
       made.tx,
     ];
     const seen = await ok(client, "wallet_history");
-    expect(seen["work"]).toEqual([{ intent, signature: announced.signature, at: String(made.createdAt + 5n), paid: false, amount: null, token: null, release: null }]);
+    expect(seen["work"]).toEqual([{ intent, signature: announced.signature, at: String(made.createdAt + 5n), paid: false, amount: null, token: null, release: null, unpaid_reason: "open", released_to: null }]);
     h.files.set(defaultWallet(HOME), payerKey);
   });
 });

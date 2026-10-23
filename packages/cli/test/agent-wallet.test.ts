@@ -1084,7 +1084,7 @@ describe("the wallet server", () => {
     const intent = escrow["intent"] as Address;
     const plain = await ok(client, "wallet_escrow", { ...terms, send: true });
 
-    const job = { intent, owner, nonce: escrow["nonce"], attestor: judge, spec_hash: specHash, spec_url: null, sells: (LAMPORTS_PER_SOL / 20n).toString(), pays: "0.05", judge_fee: "0", fee_bps: FEE_BPS, input_mint: NATIVE_MINT, net_pay: "0.049975", payable: true, claimed_by: null, claim_ends: null, waiting: 0, freeze_authority: null };
+    const job = { intent, owner, nonce: escrow["nonce"], attestor: judge, spec_hash: specHash, spec_url: null, sells: (LAMPORTS_PER_SOL / 20n).toString(), pays: "0.05", judge_fee: "0", fee_bps: FEE_BPS, input_mint: NATIVE_MINT, net_pay: "0.049975", payable: true, takes_claims: false, claimed_by: null, claim_ends: null, waiting: 0, freeze_authority: null };
     expect(await ok(client, "find_jobs", { attestor: judge })).toEqual({ fee_bps: expect.any(Number), jobs: [{ ...job, expires_at: expect.any(String) }], next: expect.stringContaining("solive_get_spec") });
     const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
     const created = getIntentCreatedEventEncoder().encode({

@@ -1,5 +1,5 @@
 import type { Address } from "@solana/kit";
-import { findIntentPda, formatAmount, kindName, tokenName } from "@intent-engine/core";
+import { findIntentPda, formatAmount, Kind, kindName, tokenName } from "@intent-engine/core";
 import { createClient, type HistoryEvent, mintOf, ownHistory, paidWalletsOf, transactionAt, type Transport } from "@intent-engine/client";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
@@ -35,7 +35,7 @@ async function paidWalletOf(transport: Transport, ending: HistoryEvent, intent: 
 export const walletHistory = define({
   name: tool("wallet_history"),
   title: "Show the wallet's history",
-  description: `Shows the user what this wallet did, newest first, read from the chain: orders (intents) it created and how each ended, closed ones included; work it announced with ${tool("wallet_deliver")} and whether a release paid it; claims it took or dropped and the stake's outcome. It leaves out transfers, releases it judged, fills of others' orders, and standby lines.`,
+  description: `Shows the user what this wallet did, newest first, read from the chain: orders (intents) it created and how each ended, closed ones included; work it announced with ${tool("wallet_deliver")} whether a release paid it, and why not; claims it took or dropped and the stake's outcome. It leaves out transfers, releases it judged, fills of others' orders, and standby lines.`,
   effect: "read",
   input: object({
     limit: optional(integer(1, HISTORY_MAX, `how many of the newest intents, and of the newest announcements and claims, to show; default ${HISTORY_DEFAULT}`)),
@@ -51,7 +51,7 @@ export const walletHistory = define({
         sold: text("whole tokens the intent escrowed"),
         sell_token: text("SOL, TEST or the mint"),
         received: nullable(text("whole tokens delivered by the fill")),
-        receive_token: text("SOL, TEST or the mint"),
+        receive_token: nullable(text("SOL, TEST or the mint a fill delivers; null for a work escrow, which pays a worker and receives nothing")),
         paid_to: nullable(account("the wallet a release paid: the owner of payee")),
         payee: nullable(account("the token account a release paid into, owned by paid_to; for SOL it holds wrapped SOL")),
         signature: nullable(text("the transaction that ended it")),
@@ -88,6 +88,7 @@ export const walletHistory = define({
       if (inputMint === undefined || outputMint === undefined) {
         continue;
       }
+      const kind = Number(created["kind"]);
       const ending = events.find((e) => e.name in ENDINGS);
       const outcome: Outcome = ending === undefined ? ((await ctx.transport.getAccount(intent)) === null ? "unknown" : "open") : (ENDINGS[ending.name] ?? "unknown");
       const ended = fields(ending);
@@ -96,12 +97,12 @@ export const walletHistory = define({
       activity.push({
         nonce,
         intent,
-        kind: kindName(Number(created["kind"])) ?? "unknown",
+        kind: kindName(kind) ?? "unknown",
         outcome,
         sold: await tokens(inputMint, created["escrowed"] as bigint),
         sell_token: tokenName(inputMint) ?? inputMint,
         received: delivered === undefined ? null : await tokens(outputMint, delivered),
-        receive_token: tokenName(outputMint) ?? outputMint,
+        receive_token: kind === Kind.AttestedResult ? null : (tokenName(outputMint) ?? outputMint),
         paid_to: attested === undefined ? null : await paidWalletOf(ctx.transport, attested, intent),
         payee: attested === undefined ? null : attested.fields.payee,
         signature: ending?.signature ?? null,

@@ -44,7 +44,7 @@ export type LineEntry = { seq: number; entry: Address; worker: Address | null; s
 
 const NONE = "11111111111111111111111111111111" as Address;
 
-export type JobClaim = { claimedBy: Address | null; claimEnds: bigint | null; waiting: number };
+export type JobClaim = { takesClaims: boolean; claimedBy: Address | null; claimEnds: bigint | null; waiting: number };
 
 async function engineData(transport: Transport, address: Address, discriminator: ArrayLike<number>): Promise<Uint8Array | null> {
   return engineDataOf(address, await createdAccount(transport, address), discriminator);
@@ -99,7 +99,8 @@ export async function loadClaimsOf(transport: Transport, intents: readonly Addre
 
 export function jobClaimOf(claims: ClaimsView | null): JobClaim {
   const waiting = claims?.line.waiting ?? 0;
-  return claims?.state === "held" ? { claimedBy: claims.worker, claimEnds: claims.until, waiting } : { claimedBy: null, claimEnds: null, waiting };
+  const takesClaims = claims !== null;
+  return claims?.state === "held" ? { takesClaims, claimedBy: claims.worker, claimEnds: claims.until, waiting } : { takesClaims, claimedBy: null, claimEnds: null, waiting };
 }
 
 export async function loadLine(transport: Transport, intent: Address, line: { head: number; tail: number }, max = MAX_LINE_ENTRIES): Promise<LineEntry[]> {

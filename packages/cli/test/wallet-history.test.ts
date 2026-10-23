@@ -150,9 +150,9 @@ describe("solive_wallet_history", () => {
       more: false,
       activity: [
         { nonce: "3", intent: filled, kind: "SwapExactIn", outcome: "filled", sold: "0.05", sell_token: "SOL", received: "6.375", receive_token: "TEST", paid_to: null, payee: null, signature: "fill", at: "1700000900" },
-        { nonce: "2", intent: open, kind: "AttestedResult", outcome: "open", sold: "0.05", sell_token: "SOL", received: null, receive_token: "TEST", paid_to: null, payee: null, signature: null, at: null },
-        { nonce: "1", intent: cancelled, kind: "AttestedResult", outcome: "cancelled", sold: "0.05", sell_token: "SOL", received: null, receive_token: "TEST", paid_to: null, payee: null, signature: "cancel", at: null },
-        { nonce: "0", intent: released, kind: "AttestedResult", outcome: "released", sold: "0.05", sell_token: "SOL", received: null, receive_token: "TEST", paid_to: worker, payee, signature: "release", at: null },
+        { nonce: "2", intent: open, kind: "AttestedResult", outcome: "open", sold: "0.05", sell_token: "SOL", received: null, receive_token: null, paid_to: null, payee: null, signature: null, at: null },
+        { nonce: "1", intent: cancelled, kind: "AttestedResult", outcome: "cancelled", sold: "0.05", sell_token: "SOL", received: null, receive_token: null, paid_to: null, payee: null, signature: "cancel", at: null },
+        { nonce: "0", intent: released, kind: "AttestedResult", outcome: "released", sold: "0.05", sell_token: "SOL", received: null, receive_token: null, paid_to: worker, payee, signature: "release", at: null },
       ],
       work: [],
       claims: [],

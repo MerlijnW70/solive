@@ -18,7 +18,7 @@ import type { EngineTransaction } from "@intent-engine/client";
 import { tool } from "../src/agent/names.js";
 import { WALLET_ACTIONS } from "../src/agent/wallet.js";
 import { EARLIEST_MEANS, escrowClosed, noEscrow } from "../src/agent/wallet/delivery.js";
-import { ALSO_MAX, noneKnown, noneReleased, stillUnreleased } from "../src/agent/wallet/receipt.js";
+import { ALSO_MAX, noneKnown, noneReleased, paidOther, stillUnreleased } from "../src/agent/wallet/receipt.js";
 import { EXIT_OK } from "../src/main.js";
 import { LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { cli, FEE_BPS, h, world } from "./harness.js";
@@ -142,8 +142,9 @@ async function setUp(flags = ["--wallet", "--all-tools"]) {
   preset(NATIVE_MINT);
   preset(DEVNET_TEST_MINT);
   const client = await connect(flags);
-  if (flags.includes("--wallet")) {
-    h.watched.push((await ok(client, "wallet_setup"))["address"] as Address);
+  const self = flags.includes("--wallet") ? ((await ok(client, "wallet_setup"))["address"] as Address) : undefined;
+  if (self !== undefined) {
+    h.watched.push(self);
   }
   const worker = (await generateKeyPairSigner()).address;
   const judge = (await generateKeyPairSigner()).address;
@@ -152,22 +153,28 @@ async function setUp(flags = ["--wallet", "--all-tools"]) {
   const jobs = [await escrowOf(1n), await escrowOf(2n), await escrowOf(3n)];
   h.engineLog = [];
   h.rounds = 10;
-  return { client, worker, judge, payee, jobs };
+  return { client, worker, judge, payee, jobs, self: self as Address };
 }
 
 const named = ({ owner, nonce }: Escrow) => ({ owner, nonce: String(nonce) });
 
+const unreleased = (job: Escrow) => ({ ...named(job), intent: job.intent, released: false });
+
 describe("waiting on several escrows at once", () => {
   it("returns the escrow released among several, naming it and whom it paid, whichever place it has", async () => {
-    const { client, worker, judge, payee, jobs } = await setUp();
+    const { client, worker, judge, payee, jobs, self } = await setUp();
     const [first, second, third] = jobs as [Escrow, Escrow, Escrow];
     const created = jobs.map(createdOf);
     const args = { ...named(first), also: [named(second), named(third)] };
     for (const name of ["wallet_receipt", "get_receipt"]) {
+      const own = name === "wallet_receipt" ? { paid_this_wallet: false } : {};
       for (const released of [second, third]) {
         h.engineLog = [releaseOf(released, payee, judge), ...created];
         h.sleeps.length = 0;
         expect(await ok(client, name, args)).toEqual({
+          ...own,
+          ...(name === "wallet_receipt" ? { next: paidOther([worker], self) } : {}),
+          escrows: jobs.map((job) => (job === released ? { ...named(job), intent: job.intent, released: true, paid_to: worker, ...own } : unreleased(job))),
           intent: released.intent,
           released: true,
           owner: released.owner,
@@ -194,13 +201,15 @@ describe("waiting on several escrows at once", () => {
     const args = { ...named(first), also: [named(second), named(third)] };
     for (const name of ["wallet_receipt", "get_receipt"]) {
       h.engineLog = jobs.map(createdOf);
-      const none = { intent: first.intent, released: false, next: noneReleased(name, 3) };
+      const none = { intent: first.intent, released: false, next: noneReleased(name, 3), escrows: jobs.map(unreleased) };
       expect(await ok(client, name, args)).toEqual(none);
       h.sleeps.length = 0;
       expect(await ok(client, name, { ...args, wait: 3 })).toEqual(none);
       expect(h.sleeps).toEqual([1, 1, 1]);
       h.engineLog = [createdOf(first), createdOf(second)];
-      expect(await ok(client, name, args)).toEqual({ intent: first.intent, released: false, complete: false, next: noneKnown(name, 3) });
+      const partial = await ok(client, name, args);
+      expect(partial).toMatchObject({ intent: first.intent, released: false, complete: false, next: noneKnown(name, 3) });
+      expect(partial["escrows"]).toContainEqual({ ...unreleased(third), complete: false });
       h.engineLog = [createdOf(first)];
       const alone = { intent: first.intent, released: false, next: stillUnreleased(name) };
       expect(await ok(client, name, named(first))).toEqual(alone);
