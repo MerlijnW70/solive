@@ -1,0 +1,17 @@
+# Job: Count every long word in one book (book 2701)
+
+Input: one file, exactly as these bytes are hosted:
+https://raw.githubusercontent.com/MerlijnW70/solive/e2e-fixtures/chain-book-2701.txt sha256 b5e88b71a1cda068e9ab1d94344c9d932338ba6da1a66def97a1aecd9cfcc87d
+
+## Rules
+
+- Read the file as bytes. Fold A-Z to a-z. A word is a maximal run of the bytes a-z; every other byte separates words.
+- Count every word of 6 or more letters in the whole file, including the Project Gutenberg header and licence text; ignore shorter words.
+
+## Deliver
+
+A UTF-8 text file with one line per distinct word of 6 or more letters in the file, each `word<TAB>count` ending in LF: ALL such words, not a top-N. Sorted by count from high to low, ties by word in byte order. Nothing else in the file.
+
+## Check
+
+The judge computes the table from the same bytes and compares the delivered file byte for byte. Any difference fails. Deliver with solive_wallet_deliver to this escrow; the judge pays the earliest exact delivery.
