@@ -27,7 +27,7 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - name: the program and its config match the baseline
-        run: npx --yes @intent-engine/cli@0.1.48 monitor --expect monitoring/devnet.json --url devnet --max-fills 50 --max-fill So11111111111111111111111111111111111111112=10000000000 --once --since 3900
+        run: npx --yes @intent-engine/cli@0.1.49 monitor --expect monitoring/devnet.json --url devnet --max-fills 50 --max-fill So11111111111111111111111111111111111111112=10000000000 --once --since 3900
       - name: a second node agrees
         if: env.SECOND_RPC != ''
-        run: npx --yes @intent-engine/cli@0.1.48 monitor --expect monitoring/devnet.json --url "$SECOND_RPC" --max-fills 50 --max-fill So11111111111111111111111111111111111111112=10000000000 --once --since 3900
+        run: npx --yes @intent-engine/cli@0.1.49 monitor --expect monitoring/devnet.json --url "$SECOND_RPC" --max-fills 50 --max-fill So11111111111111111111111111111111111111112=10000000000 --once --since 3900
