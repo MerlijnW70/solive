@@ -273,6 +273,8 @@ export const SERVER_PROBLEMS = {
   SpecSealed: never("the spec is sealed to invited wallets, and this server's wallet is not one of them or it has no wallet"),
   SpecUnreadable: later("the spec url could not be read this time: it failed or the node answered a temporary error; try again shortly"),
   SpecUnfetchable: never("the spec url cannot be read: it answered not-found, redirects, is larger than the limit, or is not a public http(s) address; ask the owner for a working spec url and do not retry this one"),
+  WorkUnreadable: later("the announced work could not be fetched this time: the request failed or the host answered a temporary error; try again shortly"),
+  WorkUnfetchable: never("the announced work cannot be read here: its url is not sealed to this wallet, answers not-found, redirects, is larger than the limit, is not a public https address, or holds sealed work this wallet cannot open; do not retry it"),
   NotEarliestAnnouncer: never("another wallet announced the delivered work first; a release recording that work pays its earliest announcer"),
   SealedSalts: never("the announcements seal their salts to the attestor's key, and this wallet cannot open them here, so the earliest announcer cannot be known; use the attestor's key file, or start the server with mcp --encryption-keypair naming the encryption key file whose public key the attestor's profile publishes"),
   EncryptionKeyInvalid: never("the file mcp --encryption-keypair names is not an encryption key file that profile encryption-key new writes, so nothing sealed to it can be opened; start the server with the right file"),

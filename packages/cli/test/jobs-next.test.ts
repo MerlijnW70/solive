@@ -77,7 +77,7 @@ describe("solive_find_jobs next hint", () => {
 
 describe("delivery tool texts", () => {
   it("tell the worker to keep the url unguessable without private hosting and to announce right after hosting", () => {
-    expect(walletDeliver.description).toContain("Host the work at a url nobody can guess, such as a long random path, and announce right after hosting.");
+    expect(walletDeliver.description).toContain("Host the work at a url nobody can guess and announce right after hosting.");
     expect(UNGUESSABLE_URL).toBe("without private hosting, use a public host under a long random path or file name, such as 32 random hex characters, so nobody can guess it, and announce right after hosting");
     expect(JSON.stringify(walletDeliver.input.json)).toContain(UNGUESSABLE_URL);
     expect(prepareDeliver.description).toContain("host the work at a url the attestor can fetch and nobody else knows");
@@ -90,7 +90,7 @@ describe("delivery tool texts", () => {
 
   it("tell the judge the sha256 is hidden and how it gets the sha256 to release for", () => {
     expect(walletCheckDelivery.description).toContain("Each announcement hides the work's sha256 on purpose");
-    expect(walletCheckDelivery.description).toContain("A judge also sees urls sealed to it, fetches the work there as untrusted, hashes it, and passes that sha256 to solive_wallet_attest.");
+    expect(walletCheckDelivery.description).toContain("A judge fetches and opens work at urls sealed to it with solive_wallet_fetch_work (intent-engine unseal), then passes its sha256 to solive_wallet_attest.");
     expect(checkDelivery.description).toContain("Each announcement hides the work's sha256 on purpose, so nobody can copy it or test a guess against it");
     expect(checkDelivery.description).toContain("The judge opens the url sealed to it, fetches the file, treats it as untrusted, hashes it");
     expect(checkDelivery.description).toContain("passes that sha256 as delivered_sha256 to the attest tool of a server started with --wallet");

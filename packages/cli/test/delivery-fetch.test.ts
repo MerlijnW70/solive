@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { DEVNET_GENESIS_HASH, type SpecFetch, type Transport } from "@intent-engine/client";
 import { MAX_ARTIFACT_BYTES } from "../src/artifact.js";
-import { fetchSha256, NOT_PUBLIC } from "../src/delivery-fetch.js";
+import { fetchSha256, NOT_PUBLIC, tooLarge } from "../src/delivery-fetch.js";
 import type { Lookup } from "../src/public-address.js";
 
 const cluster = (genesis: string) => ({ genesisHash: async () => genesis }) as unknown as Transport;
@@ -57,8 +57,8 @@ describe("hashing a spec by its url", () => {
     const announced = serving(() => new Response("spec", { headers: { "content-length": String(MAX_ARTIFACT_BYTES) } }));
     expect(await fetchSha256(announced, LOCAL, url, lookup)).toStrictEqual({ sha256: sha("spec") });
     const tooLong = serving(() => new Response("spec", { headers: { "content-length": String(MAX_ARTIFACT_BYTES + 1) } }));
-    expect(await fetchSha256(tooLong, LOCAL, url, lookup)).toStrictEqual({ problem: "could not be read within the size limit" });
+    expect(await fetchSha256(tooLong, LOCAL, url, lookup)).toStrictEqual({ problem: tooLarge(MAX_ARTIFACT_BYTES) });
     expect(await fetchSha256(serving(() => new Response(stream(MAX_ARTIFACT_BYTES))), LOCAL, url, lookup)).toStrictEqual({ sha256: sha(new Uint8Array(MAX_ARTIFACT_BYTES)) });
-    expect(await fetchSha256(serving(() => new Response(stream(MAX_ARTIFACT_BYTES + 1))), LOCAL, url, lookup)).toStrictEqual({ problem: "could not be read within the size limit" });
+    expect(await fetchSha256(serving(() => new Response(stream(MAX_ARTIFACT_BYTES + 1))), LOCAL, url, lookup)).toStrictEqual({ problem: tooLarge(MAX_ARTIFACT_BYTES) });
   }, 60_000);
 });

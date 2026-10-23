@@ -11,9 +11,12 @@ export const FETCHED_NAME = "artifact";
 export const NOT_PUBLIC = "points to a private, loopback or local network address, which a judge on a public cluster does not fetch";
 
 export class DeliveryUnfit extends Error {
+  readonly reason: string;
+
   constructor(url: string, reason: string) {
     super(`the work at ${url} ${reason}; it is not judged again`);
     this.name = "DeliveryUnfit";
+    this.reason = reason;
   }
 }
 
@@ -26,25 +29,25 @@ export const fetchedName = (url: URL): string => {
   return SAFE_NAME.test(last) ? last : FETCHED_NAME;
 };
 
-const tooLarge = `is larger than ${MAX_ARTIFACT_BYTES} bytes`;
+export const tooLarge = (cap: number): string => `is larger than ${cap} bytes`;
 
-async function body(response: Response, url: string): Promise<Uint8Array> {
+async function body(response: Response, url: string, cap = MAX_ARTIFACT_BYTES): Promise<Uint8Array> {
   if (!response.ok) {
     await response.body?.cancel().catch(() => undefined);
     throw new DeliveryUnfit(url, `answered ${response.status}`);
   }
-  if (Number(response.headers.get("content-length") ?? "0") > MAX_ARTIFACT_BYTES) {
+  if (Number(response.headers.get("content-length") ?? "0") > cap) {
     await response.body?.cancel().catch(() => undefined);
-    throw new DeliveryUnfit(url, tooLarge);
+    throw new DeliveryUnfit(url, tooLarge(cap));
   }
   const reader = response.body?.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
   for (let next = await reader?.read(); next !== undefined && next.done !== true; next = await reader?.read()) {
     size += next.value.length;
-    if (size > MAX_ARTIFACT_BYTES) {
+    if (size > cap) {
       await reader?.cancel();
-      throw new DeliveryUnfit(url, tooLarge);
+      throw new DeliveryUnfit(url, tooLarge(cap));
     }
     chunks.push(next.value);
   }
@@ -56,7 +59,7 @@ export async function fetchSha256(get: SpecFetch, transport: Transport, url: str
   return "problem" in found ? found : { sha256: createHash("sha256").update(found.bytes).digest("hex") };
 }
 
-export async function fetchBytes(get: SpecFetch, transport: Transport, url: string, lookup: Lookup = systemLookup): Promise<{ bytes: Uint8Array } | { problem: string }> {
+export async function fetchBytes(get: SpecFetch, transport: Transport, url: string, lookup: Lookup = systemLookup, cap = MAX_ARTIFACT_BYTES): Promise<{ bytes: Uint8Array } | { problem: string }> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -73,11 +76,17 @@ export async function fetchBytes(get: SpecFetch, transport: Transport, url: stri
     return { problem: NOT_PUBLIC };
   }
   try {
-    return { bytes: await body(await get(url, { redirect: "error", signal: AbortSignal.timeout(SPEC_TIMEOUT_MS) }), url) };
+    return { bytes: await body(await get(url, { redirect: "error", signal: AbortSignal.timeout(SPEC_TIMEOUT_MS) }), url, cap) };
   } catch (error) {
-    return { problem: error instanceof DeliveryUnfit ? "could not be read within the size limit" : `could not be fetched (${error instanceof Error ? error.message : String(error)})` };
+    return { problem: error instanceof DeliveryUnfit ? error.reason : `could not be fetched (${fetchFailure(error)})` };
   }
 }
+
+const fetchFailure = (error: unknown): string => {
+  const message = error instanceof Error ? error.message : String(error);
+  const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
+  return cause === "" ? message : `${message}: ${cause}`;
+};
 
 export async function fetchDelivery(get: SpecFetch, transport: Transport, delivery: Delivery, seconds: number, lookup: Lookup = systemLookup): Promise<Fetched> {
   let url: URL;

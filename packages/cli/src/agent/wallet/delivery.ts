@@ -76,7 +76,7 @@ function announcing(plan: DeliveryPlan, intent: Address, sha256: string, url: st
 export const walletDeliver = define({
   name: tool("wallet_deliver"),
   title: "Announce delivered work to a judge",
-  description: `Tells a job's judge the work is done: an on-chain note binding its sha256 to this wallet, with the url sealed to the judge. No tokens move. Host the work at a url nobody can guess, such as a long random path, and announce right after hosting. ${PREVIEW_FIRST}`,
+  description: `Tells a job's judge the work is done: an on-chain note binding its sha256 to this wallet, with the url sealed to the judge; no tokens move. Host the work at a url nobody can guess and announce right after hosting. Invite-only: seal it first with ${tool("wallet_seal_work")} (intent-engine seal). ${PREVIEW_FIRST}`,
   effect: "submit",
   repeats: true,
   input: object({
@@ -162,7 +162,7 @@ export const DELIVERIES_COMPLETE ="complete is false when older announcements ma
 export const walletCheckDelivery = define({
   name: tool("wallet_check_delivery"),
   title: "List the work announced to a proof escrow",
-  description: `Lists announced work earliest first, as a release orders it: wallet, commitment, slot. ${HIDDEN_HASH}. Pass sha256 to check yours landed first, or wait, in seconds, for a new one. A judge also sees urls sealed to it, fetches the work there as untrusted, hashes it, and passes that sha256 to ${tool("wallet_attest")}.`,
+  description: `Lists announced work earliest first, as a release orders it: wallet, commitment, slot. ${HIDDEN_HASH}. Pass sha256 to check yours landed first, or wait, in seconds, for a new one. A judge fetches and opens work at urls sealed to it with ${tool("wallet_fetch_work")} (intent-engine unseal), then passes its sha256 to ${tool("wallet_attest")}.`,
   effect: "read",
   input: object({
     intent: account("the proof escrow's intent address"),
@@ -252,7 +252,7 @@ export const escrowClosed = (intent: Address, owner: Address, nonce: bigint, rec
 export const noEscrow = (intent: Address, receipt: string) =>
   `no intent ${intent}: it was never made, or it was settled and closed; ${tool(receipt)} with the escrow's owner and nonce shows whether it was released and to whom`;
 
-async function proofEscrow(ctx: AgentContext, intent: Address, receipt: string) {
+export async function proofEscrow(ctx: AgentContext, intent: Address, receipt: string) {
   const view = await ctx.transport.getAccount(intent);
   const tag = getIntentDiscriminatorBytes();
   const held =

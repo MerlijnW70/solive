@@ -15,6 +15,7 @@ import { walletWait } from "./wallet/wait.js";
 import { walletReceipt } from "./wallet/receipt.js";
 import { walletUnwrap } from "./wallet/unwrap.js";
 import { walletSealSpec } from "./wallet/seal.js";
+import { walletFetchWork, walletSealWork } from "./wallet/work.js";
 
 export {
   walletGuard,
@@ -141,8 +142,10 @@ export const WALLET_ACTIONS: readonly AnyAction[] = [
   walletClaim,
   walletProfile,
   walletRecordDelivery,
+  walletSealWork,
   walletDeliver,
   walletCheckDelivery,
+  walletFetchWork,
   walletWait,
   walletReceipt,
   walletIntents,

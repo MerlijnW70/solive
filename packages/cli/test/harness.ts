@@ -49,7 +49,7 @@ import {
   MANDATE_NONCE_BIT,
 } from "@intent-engine/core";
 import type { Fetch } from "@intent-engine/solver";
-import type { EngineTransaction, Transport } from "@intent-engine/client";
+import type { EngineTransaction, SpecFetch, Transport } from "@intent-engine/client";
 import type { Runtime } from "../src/commands.js";
 import { main } from "../src/main.js";
 import { fileSales } from "../src/agent/sales.js";
@@ -73,6 +73,7 @@ export const h = {
   wires: [] as string[],
   jupiterReplies: [] as { status: number; body: unknown }[],
   specPages: new Map<string, Uint8Array>(),
+  specReplies: new Map<string, SpecFetch>(),
   fetched: [] as { url: string; body: string | undefined; headers: Record<string, string> | undefined }[],
   requestedLimits: [] as number[],
   recentFees: [] as bigint[],
@@ -301,7 +302,11 @@ export function runtime(signers: Record<string, KeyPairSigner>): Runtime {
       }
       return createKeyPairSignerFromBytes(Uint8Array.from(JSON.parse(saved) as number[]));
     },
-    specFetch: async (url) => {
+    specFetch: async (url, init) => {
+      const reply = h.specReplies.get(url);
+      if (reply !== undefined) {
+        return reply(url, init);
+      }
       const page = h.specPages.get(url);
       if (page === undefined) {
         throw new TypeError("fetch failed");
@@ -388,6 +393,7 @@ export function resetHarness(): void {
   h.wires = [];
   h.jupiterReplies = [];
   h.specPages.clear();
+  h.specReplies.clear();
   h.fetched = [];
   h.requestedLimits = [];
   h.recentFees = [];

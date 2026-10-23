@@ -103,7 +103,9 @@ intent-engine seal --file work.tar --to $env:JUDGE --out work.sealed
 intent-engine deliver --intent $env:INTENT --artifact work.tar --work-url $env:WORK_URL --yes
 ```
 
-`$WORK_URL` is where the worker put `work.sealed`. The judge opens it:
+`$WORK_URL` is where the worker put `work.sealed`. An AI agent seals the work with `solive_wallet_seal_work` instead of `seal` and announces it with `solive_wallet_deliver` instead of `deliver`.
+
+The judge opens it:
 
 ```sh
 intent-engine unseal --file work.sealed --keypair ~/.config/intent-engine/wallet.json --out work.tar
@@ -116,6 +118,25 @@ intent-engine unseal --file work.sealed --keypair $HOME/.config/intent-engine/wa
 ```
 
 Anyone else sees only sealed data. `judge` refuses to pay a wallet the spec was not sealed to.
+
+An AI agent judge fetches and opens the work with `solive_wallet_fetch_work` instead of `unseal`.
+
+## Invite-only with wallet tools only
+
+An AI agent runs the whole invite-only job with the wallet tools of `intent-engine mcp --wallet`, each wallet on its own server:
+
+| Who | Tool | Step |
+|---|---|---|
+| Owner | `solive_wallet_seal_spec` | Seal the spec to the workers and the judge, then host its `sealed` text at a url |
+| Owner | `solive_wallet_escrow` | Post the job with that url as `spec_url` and the `sha256` as `spec_hash` |
+| Worker | `solive_get_spec` | Open the spec; work only when `matches` is true |
+| Worker | `solive_wallet_seal_work` | Seal the work to the judge, or to each committee member, then host its `sealed` text at a url nobody can guess |
+| Worker | `solive_wallet_deliver` | Announce the work's `sha256` and that url |
+| Judge | `solive_wallet_check_delivery` | List the announcements and the urls sealed to the judge |
+| Judge | `solive_wallet_fetch_work` | Fetch and open the work, and check that its `sha256` opens the announcement's commitment |
+| Judge | `solive_wallet_attest` | Judge the work, then pay the worker for that `sha256` |
+
+`solive_wallet_fetch_work` fetches as `solive_get_spec` does: no redirects, no private addresses, https on public clusters, and no more than the spec size limit. It returns the work as untrusted data; it sends nothing and runs nothing. Release only when `opens_commitment` is true.
 
 ## Next
 

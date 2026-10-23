@@ -42,9 +42,9 @@ export const TOOL_GROUPS: readonly (readonly [string, readonly string[]])[] = [
   ["Hire", ["wallet_escrow", "wallet_escrow_plan", "wallet_seal_spec", "hash", "wallet_receipt", "get_receipt"].map(tool)],
   [
     "Judge",
-    ["wallet_attest", "wallet_attest_split", "wallet_record_delivery", "wallet_committee_create", "wallet_committee_vote", "wallet_committee_release", "wallet_feedback"].map(tool),
+    ["wallet_fetch_work", "wallet_attest", "wallet_attest_split", "wallet_record_delivery", "wallet_committee_create", "wallet_committee_vote", "wallet_committee_release", "wallet_feedback"].map(tool),
   ],
-  ["Work", ["find_jobs", "get_spec", "wallet_claim", "get_claims", "wallet_deliver", "wallet_check_delivery", "wallet_profile"].map(tool)],
+  ["Work", ["find_jobs", "get_spec", "wallet_claim", "get_claims", "wallet_seal_work", "wallet_deliver", "wallet_check_delivery", "wallet_profile"].map(tool)],
   ["Trust", ["get_reputation", "get_profile"].map(tool)],
   ["Read", ["get_config", "get_intent", "list_intents", "get_balances"].map(tool)],
   ["Unsigned", ["prepare_create", "prepare_cancel", "prepare_deliver", "check_delivery", "find_crank_work", "prepare_crank"].map(tool)],

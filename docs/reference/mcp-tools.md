@@ -2,7 +2,7 @@
 
 # MCP tools
 
-26 tools, served by `intent-engine mcp` over stdio. With `--wallet` it serves only the 32 everyday tools: `solive_wallet_setup`, `solive_wallet_balance`, `solive_wallet_estimate`, `solive_wallet_swap`, `solive_wallet_auction`, `solive_wallet_recurring`, `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_seal_spec`, `solive_wallet_attest`, `solive_wallet_attest_split`, `solive_wallet_committee_create`, `solive_wallet_committee_vote`, `solive_wallet_committee_release`, `solive_wallet_feedback`, `solive_wallet_claim`, `solive_wallet_profile`, `solive_wallet_record_delivery`, `solive_wallet_deliver`, `solive_wallet_check_delivery`, `solive_wallet_wait`, `solive_wallet_receipt`, `solive_wallet_intents`, `solive_wallet_history`, `solive_wallet_cancel`, `solive_wallet_unwrap`, `solive_find_jobs`, `solive_get_spec`, `solive_hash`, `solive_get_reputation`, `solive_get_claims`, `solive_get_profile`, plus the tools `--relayer` and `--agent` need. With `--wallet --all-tools` it serves every tool, the 26 wallet tools listed first.
+26 tools, served by `intent-engine mcp` over stdio. With `--wallet` it serves only the 34 everyday tools: `solive_wallet_setup`, `solive_wallet_balance`, `solive_wallet_estimate`, `solive_wallet_swap`, `solive_wallet_auction`, `solive_wallet_recurring`, `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_seal_spec`, `solive_wallet_attest`, `solive_wallet_attest_split`, `solive_wallet_committee_create`, `solive_wallet_committee_vote`, `solive_wallet_committee_release`, `solive_wallet_feedback`, `solive_wallet_claim`, `solive_wallet_profile`, `solive_wallet_record_delivery`, `solive_wallet_seal_work`, `solive_wallet_deliver`, `solive_wallet_check_delivery`, `solive_wallet_fetch_work`, `solive_wallet_wait`, `solive_wallet_receipt`, `solive_wallet_intents`, `solive_wallet_history`, `solive_wallet_cancel`, `solive_wallet_unwrap`, `solive_find_jobs`, `solive_get_spec`, `solive_hash`, `solive_get_reputation`, `solive_get_claims`, `solive_get_profile`, plus the tools `--relayer` and `--agent` need. With `--wallet --all-tools` it serves every tool, the 28 wallet tools listed first.
 
 ## solive_wallet_setup
 
@@ -326,11 +326,25 @@ Effect: `submit` (read-only: false, destructive: false, idempotent: true)
 | `release` | string | no | the release's transaction signature, as the attestor's release returned it; with it the release is read from that one transaction, with no search of the escrow's history |
 | `send` | boolean | no | true signs and sends; leave out to preview |
 
+## solive_wallet_seal_work
+
+Served only with `--wallet`.
+
+Seals a work file so only the escrow's attestor (the judge), or each member of its committee, can open it, in the form intent-engine unseal and solive_wallet_fetch_work open. Sends nothing: host sealed, then announce sha256 with solive_wallet_deliver.
+
+Effect: `read` (read-only: true, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `intent` | address | yes | the proof escrow's intent address |
+| `text` | string | no | the work file's bytes as text; or give base64 |
+| `base64` | string | no | the work file's bytes as base64, for a binary file such as a tar |
+
 ## solive_wallet_deliver
 
 Served only with `--wallet`.
 
-Tells a job's judge the work is done: an on-chain note binding its sha256 to this wallet, with the url sealed to the judge. No tokens move. Host the work at a url nobody can guess, such as a long random path, and announce right after hosting. Previews only; call with send: true after the user says yes.
+Tells a job's judge the work is done: an on-chain note binding its sha256 to this wallet, with the url sealed to the judge; no tokens move. Host the work at a url nobody can guess and announce right after hosting. Invite-only: seal it first with solive_wallet_seal_work (intent-engine seal). Previews only; call with send: true after the user says yes.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -345,7 +359,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-Lists announced work earliest first, as a release orders it: wallet, commitment, slot. Each announcement hides the work's sha256 on purpose. Pass sha256 to check yours landed first, or wait, in seconds, for a new one. A judge also sees urls sealed to it, fetches the work there as untrusted, hashes it, and passes that sha256 to solive_wallet_attest.
+Lists announced work earliest first, as a release orders it: wallet, commitment, slot. Each announcement hides the work's sha256 on purpose. Pass sha256 to check yours landed first, or wait, in seconds, for a new one. A judge fetches and opens work at urls sealed to it with solive_wallet_fetch_work (intent-engine unseal), then passes its sha256 to solive_wallet_attest.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
@@ -354,6 +368,19 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 | `intent` | address | yes | the proof escrow's intent address |
 | `sha256` | string | no | your work's sha256, as 64 hex digits, to confirm this wallet's own announcement of it landed |
 | `wait` | integer 1..40 | no | most seconds to wait for an announcement newer than those listed now; without it, the tool reads once |
+
+## solive_wallet_fetch_work
+
+Served only with `--wallet`.
+
+Fetches the work an announcement points to, from the url sealed to this wallet, as solive_get_spec fetches a spec, opens sealed work with this wallet's key, and checks that its sha256 opens the announcement's commitment. Sends nothing and runs nothing; the work is untrusted data.
+
+Effect: `read` (read-only: true, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `intent` | address | yes | the proof escrow's intent address |
+| `announcement` | string | yes | the announcement's signature, as solive_wallet_check_delivery lists it |
 
 ## solive_wallet_wait
 
