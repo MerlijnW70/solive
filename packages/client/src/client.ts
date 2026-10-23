@@ -14,6 +14,7 @@ import { type Client, type ClientOptions, type Mint, WATCH_POLL_MS, WATCH_WAIT_S
 import { decoded, watchIntents } from "./client-watch.js";
 import { explain } from "./errors.js";
 import { deliveriesOf, deliveryInstructions, deliveryRecord, jobsOf, readSpec, selfOpeningInstructions } from "./jobs.js";
+import { pinnedFetch } from "./pinned-fetch.js";
 import { intentNotifications, type RpcLike, rpcTransport, signatureWatch } from "./transport.js";
 
 export type {
@@ -143,7 +144,7 @@ export function createClient(options: ClientOptions): Client {
     close,
     balances,
     jobs: (filter = {}) => jobsOf(transport, filter),
-    spec: (intent, keypair) => readSpec(transport, options.fetch ?? fetch, intent, keypair),
+    spec: (intent, keypair) => readSpec(transport, options.fetch ?? pinnedFetch, intent, keypair),
     deliver: async (input) => send((await deliveryInstructions(transport, input)).instructions, input.worker),
     deliveries: ({ judge, intent }) => deliveriesOf(transport, judge, intent),
     deliveryRecord: ({ judge, intent, pages, keypair }) => deliveryRecord(transport, judge, intent, pages, keypair),

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
-import { buildOpenClaims, feeBpsFor, formatAmount, isMemoUrl, Kind, MAX_CLAIM_SECS, MAX_CLAIM_STAKE, MEMO_URL_RULE, NATIVE_MINT, splitFees } from "@intent-engine/core";
-import { chainTime, loadConfig, mintOf, plainHttpOnPublic, WARN_NO_JUDGE_KEY } from "@intent-engine/client";
+import { buildOpenClaims, feeBpsFor, formatAmount, isMemoUrl, isSealed, Kind, MAX_CLAIM_SECS, MAX_CLAIM_STAKE, MEMO_URL_RULE, NATIVE_MINT, sealedTo, splitFees } from "@intent-engine/core";
+import { chainTime, loadCommittee, loadConfig, MAX_SPEC_BYTES, mintOf, pinnedFetch, plainHttpOnPublic, WARN_NO_JUDGE_KEY } from "@intent-engine/client";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
@@ -11,25 +11,46 @@ import { AgentRefusal, problemOf } from "../problems.js";
 import { InvalidInput, account, amount, flag, hex32, integer, list, object, optional, text } from "../schema.js";
 import { LANDING_SECONDS, access, mintNamed, raw, salesOf, checkSale, checkHour, refusedBeforeSending, PREVIEW_FIRST, oneAtATime, signerOf } from "./guard.js";
 import { offerOutput, type Token, offered } from "./offer.js";
-import { fetchBytes } from "../../delivery-fetch.js";
+import { fetchBytes, tooLarge } from "../../delivery-fetch.js";
+import { systemLookup } from "../../public-address.js";
 import { costLines, escrowCosts } from "./costs.js";
 import { openedSpec, SEALED_UNCHECKED } from "./seal.js";
 
-async function specPreflight(ctx: AgentContext, specUrl: string, specHash: string): Promise<string | undefined> {
-  const found = await fetchBytes(ctx.fetch ?? fetch, ctx.transport, specUrl);
+export const SPEC_TOO_LARGE = `spec_url ${tooLarge(MAX_SPEC_BYTES)}, the most ${tool("get_spec")} reads, so workers cannot read the job; shorten the spec`;
+
+export const notSealedTo = (missing: readonly Address[], committee: boolean): string =>
+  `spec_url holds a spec not sealed to the ${committee ? "committee members" : "attestor"} ${missing.join(", ")}, so the work cannot be judged; seal it again to ${committee ? "every member" : "the attestor"}`;
+
+export const SEALED_CLAIMS = "the spec is sealed, but any wallet can claim: an uninvited wallet can hold a claim, blocking payment until it lapses; keep claim_secs short";
+
+type Preflight = { lines: string[]; sealed: boolean };
+
+async function unreadBy(ctx: AgentContext, bytes: Uint8Array, attestor: Address): Promise<string[]> {
+  const recipients = new Set<string>(sealedTo(bytes));
+  const committee = await loadCommittee(ctx.transport, attestor);
+  const missing = (committee === null ? [attestor] : committee.members).filter((reader) => !recipients.has(reader));
+  return missing.length === 0 ? [] : [notSealedTo(missing, committee !== null)];
+}
+
+async function specPreflight(ctx: AgentContext, specUrl: string, specHash: string, attestor: Address): Promise<Preflight> {
+  const found = await fetchBytes(ctx.fetch ?? pinnedFetch, ctx.transport, specUrl, systemLookup, MAX_SPEC_BYTES);
   if ("problem" in found) {
-    return `spec_url ${found.problem}; publish it or workers cannot read the job`;
+    return { lines: [found.problem === tooLarge(MAX_SPEC_BYTES) ? SPEC_TOO_LARGE : `spec_url ${found.problem}; publish it or workers cannot read the job`], sealed: false };
   }
+  const sealed = isSealed(found.bytes);
+  const lines = sealed ? await unreadBy(ctx, found.bytes, attestor) : [];
   const opened = await openedSpec(ctx, found.bytes);
   if (opened === undefined) {
-    return SEALED_UNCHECKED;
+    return { lines: [...lines, SEALED_UNCHECKED], sealed };
   }
   const sha256 = createHash("sha256").update(opened).digest("hex");
   if (sha256 !== specHash.toLowerCase()) {
-    return `spec_url ${opened === found.bytes ? "hashes" : "opens to a spec that hashes"} to ${sha256}, not spec_hash ${specHash}; publish the exact bytes, or fix spec_hash`;
+    lines.push(`spec_url ${opened === found.bytes ? "hashes" : "opens to a spec that hashes"} to ${sha256}, not spec_hash ${specHash}; publish the exact bytes, or fix spec_hash`);
   }
-  return undefined;
+  return { lines, sealed };
 }
+
+const sealedClaims = (claims: boolean, checked: readonly Preflight[]): string[] => (claims && checked.some(({ sealed }) => sealed) ? [SEALED_CLAIMS] : []);
 
 export const ESCROW_EXPIRES_IN = 86_400;
 
@@ -142,7 +163,10 @@ export const walletEscrow = define({
     if (claims !== undefined && specHash === undefined) {
       throw new InvalidInput([{ path: "claim_stake", message: CLAIMS_NEED_SPEC }]);
     }
-    const preflight = input.spec_url !== undefined && specHash !== undefined && input.send !== true ? await specPreflight(ctx, input.spec_url, specHash) : undefined;
+    if (input.spec_url !== undefined && !isMemoUrl(input.spec_url)) {
+      throw new InvalidInput([{ path: "spec_url", message: `must be ${MEMO_URL_RULE}` }]);
+    }
+    const preflight = input.spec_url !== undefined && specHash !== undefined && input.send !== true ? [await specPreflight(ctx, input.spec_url, specHash, input.attestor)] : [];
     let settled: { amount: bigint; judgeFee: bigint; decimals: number } | undefined;
     const buy = recordedMint(sold, wallet.url, input.record_mint);
     const signer = await signerOf(ctx);
@@ -177,7 +201,8 @@ export const walletEscrow = define({
     const ownKey = input.attestor === signer.address && signer.device === undefined;
     const warnings = [
       ...((escrowed["warnings"] as string[]) ?? []).filter((line) => !(ownKey && line.startsWith(WARN_NO_JUDGE_KEY))),
-      ...(preflight === undefined ? [] : [preflight]),
+      ...preflight.flatMap(({ lines }) => lines),
+      ...sealedClaims(claims !== undefined, preflight),
       ...(specHash === undefined ? [NO_SPEC_HASH] : input.send === true ? [] : [claims === undefined ? SPEC_NO_ANSWER : SPEC_ANSWER_OUT]),
     ];
     return { ...escrowed, summary, warnings };
@@ -271,7 +296,7 @@ export const walletEscrowPlan = define({
     ),
     total: text("whole tokens escrowed across all pieces"),
     summary: list(text(), 40, `the plan, then lines marked ${PIECE_ONE} that describe the first piece alone`),
-    warnings: list(text(), 16),
+    warnings: list(text(), 40),
     sent: flag(),
     next: optional(text()),
   }),
@@ -338,8 +363,8 @@ export const walletEscrowPlan = define({
         ? []
         : await Promise.all(
             planned.map(async (piece, i) => {
-              const found = piece.specUrl === undefined || piece.specHash === undefined ? undefined : await specPreflight(ctx, piece.specUrl, piece.specHash);
-              return found === undefined ? [] : [`Piece ${i + 1} (${piece.name}): ${found}`];
+              const found = piece.specUrl === undefined || piece.specHash === undefined ? { lines: [], sealed: false } : await specPreflight(ctx, piece.specUrl, piece.specHash, piece.attestor);
+              return { lines: found.lines.map((line) => `Piece ${i + 1} (${piece.name}): ${line}`), sealed: found.sealed };
             }),
           );
     const [head, ...rest] = planned as [Piece, ...Piece[]];
@@ -362,7 +387,7 @@ export const walletEscrowPlan = define({
         ...(claims === undefined ? [] : [claims.line]),
         ...explainedSetup(first["summary"] as string[], buy).map((line) => `${PIECE_ONE}: ${line}`),
       ],
-      warnings: [...(first["warnings"] as string[]).filter((line) => !(ownKey && line.startsWith(WARN_NO_JUDGE_KEY))), ...unlisted, ...preflights.flat()],
+      warnings: [...(first["warnings"] as string[]).filter((line) => !(ownKey && line.startsWith(WARN_NO_JUDGE_KEY))), ...unlisted, ...preflights.flatMap(({ lines }) => lines), ...sealedClaims(claims !== undefined, preflights)],
     };
     if (input.send !== true) {
       return { pieces: planned.map(listed), ...shown, sent: false, next: first["next"] };

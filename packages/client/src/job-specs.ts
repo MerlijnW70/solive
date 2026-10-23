@@ -3,7 +3,8 @@ import type { Address } from "@solana/kit";
 import { isSealed, NotInvited, parseSpecMemo, remainingOf, SPEC_MEMO_PREFIX, sealedTo, unseal } from "@intent-engine/core";
 import { createdIn, hex, type JobFilter, openProofEscrows, proofAt } from "./job-proofs.js";
 import { MEMOS_PER_TRANSACTION, scan } from "./job-scan.js";
-import { type Lookup, publicHost, systemLookup } from "./public-host.js";
+import { UNEXPECTED_REDIRECT } from "./pinned-fetch.js";
+import { type Lookup, publicAddresses, systemLookup } from "./public-host.js";
 import { type EngineTransaction, TRANSACTION_FETCHES, type Transport } from "./transport.js";
 
 export const SPEC_SCAN = 10;
@@ -16,6 +17,8 @@ export const SPEC_TIMEOUT_MS = 10_000;
 export const PLAIN_HTTP_ON_PUBLIC = "is a plain http url, which a public cluster may not use";
 export const NOT_HTTP = "is not an http or https url";
 export const NOT_PUBLIC_SPEC = "points to a private, loopback or local network address, which a public cluster does not fetch";
+export const SPEC_FETCH_FAILED = "could not be fetched";
+export const SPEC_REDIRECTS = "redirects, and a spec url is read without following redirects";
 
 export async function plainHttpOnPublic(transport: Transport, url: string): Promise<boolean> {
   let protocol: string;
@@ -41,9 +44,9 @@ export type Job = {
   expiresAt: bigint;
 };
 
-export type Spec = { url: string; text: string; sha256: string; matches: boolean; sealedTo?: Address[] };
+export type Spec = { url: string; text: string; bytes: Uint8Array; sha256: string; matches: boolean; sealedTo?: Address[] };
 
-export type SpecFetch = (url: string, init: { redirect: "error"; signal: AbortSignal }) => Promise<Response>;
+export type SpecFetch = (url: string, init: { redirect: "error"; signal: AbortSignal; addresses?: readonly string[] }) => Promise<Response>;
 
 export class SpecSealed extends Error {
   readonly url: string;
@@ -137,6 +140,15 @@ async function bounded(response: Response, url: string): Promise<Uint8Array> {
   return Buffer.concat(chunks);
 }
 
+function fetchProblem(error: unknown): string {
+  const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
+  if (cause === UNEXPECTED_REDIRECT) {
+    return SPEC_REDIRECTS;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return `${SPEC_FETCH_FAILED} (${cause === "" ? message : `${message}: ${cause}`})`;
+}
+
 export async function readSpec(transport: Transport, get: SpecFetch, intent: Address, keypair?: Uint8Array, lookup: Lookup = systemLookup): Promise<Spec | null> {
   const proof = await proofAt(transport, intent);
   if (proof === null) {
@@ -158,10 +170,17 @@ export async function readSpec(transport: Transport, get: SpecFetch, intent: Add
   if (await plainHttpOnPublic(transport, url)) {
     throw new SpecUnreadable(url, PLAIN_HTTP_ON_PUBLIC);
   }
-  if (PUBLIC_GENESIS_HASHES.has(await transport.genesisHash()) && !(await publicHost(parsed.hostname, lookup))) {
+  const addresses = PUBLIC_GENESIS_HASHES.has(await transport.genesisHash()) ? await publicAddresses(parsed.hostname, lookup) : undefined;
+  if (addresses === null) {
     throw new SpecUnreadable(url, NOT_PUBLIC_SPEC);
   }
-  const fetched = await bounded(await get(url, { redirect: "error", signal: AbortSignal.timeout(SPEC_TIMEOUT_MS) }), url);
+  let fetched: Uint8Array;
+  try {
+    const signal = AbortSignal.timeout(SPEC_TIMEOUT_MS);
+    fetched = await bounded(await get(url, { redirect: "error", signal, ...(addresses === undefined ? {} : { addresses }) }), url);
+  } catch (error) {
+    throw error instanceof SpecUnreadable ? error : new SpecUnreadable(url, fetchProblem(error));
+  }
   let bytes: Uint8Array = fetched;
   let to: Address[] | null = null;
   if (isSealed(fetched)) {
@@ -176,5 +195,5 @@ export async function readSpec(transport: Transport, get: SpecFetch, intent: Add
     }
   }
   const sha256 = createHash("sha256").update(bytes).digest("hex");
-  return { url, text: new TextDecoder().decode(bytes), sha256, matches: sha256 === hex(proof.params.specHash), ...(to === null ? {} : { sealedTo: to }) };
+  return { url, text: new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes), bytes, sha256, matches: sha256 === hex(proof.params.specHash), ...(to === null ? {} : { sealedTo: to }) };
 }

@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { createKeyPairSignerFromBytes, createSolanaRpc, type KeyPairSigner } from "@solana/kit";
-import { changesFrom, ConfirmMismatch, intentNotifications, openUsb, type RpcLike, rpcTransport, signatureWatch } from "@intent-engine/client";
+import { changesFrom, ConfirmMismatch, intentNotifications, openUsb, pinnedFetch, type RpcLike, rpcTransport, signatureWatch } from "@intent-engine/client";
 import { type Command, ENV_URL, outputOf, parse, UsageError } from "./args.js";
 import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
@@ -159,7 +159,7 @@ export function nodeRuntime(clock: () => number = Date.now, pipes: Pipes = proce
     intentChanges: (url) => changesFrom(intentNotifications(url)),
     loadSigner: loadKeypairFile,
     loadKeypair: loadKeypairBytes,
-    specFetch: (url, init) => fetch(url, init),
+    specFetch: pinnedFetch,
     readText: (path) => readFile(path, "utf8"),
     sleep: (seconds, stop) =>
       new Promise((resolve) => {

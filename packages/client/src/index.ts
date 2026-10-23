@@ -6,6 +6,7 @@ export * from "./errors.js";
 export * from "./funding.js";
 export * from "./jobs.js";
 export * from "./ledger.js";
+export * from "./pinned-fetch.js";
 export * from "./public-host.js";
 export * from "./reputation.js";
 export * from "./setup.js";

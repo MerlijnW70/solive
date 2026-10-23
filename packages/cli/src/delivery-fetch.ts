@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { announces, type Delivery, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, PUBLIC_GENESIS_HASHES, SPEC_TIMEOUT_MS, type SpecFetch, type Transport } from "@intent-engine/client";
 import { MAX_ARTIFACT_BYTES } from "./artifact.js";
-import { type Lookup, publicHost, systemLookup } from "./public-address.js";
+import { type Lookup, publicAddresses, systemLookup } from "./public-address.js";
 
 export const FETCHED_NAME = "artifact";
 
@@ -54,6 +54,14 @@ async function body(response: Response, url: string, cap = MAX_ARTIFACT_BYTES): 
   return Buffer.concat(chunks);
 }
 
+async function checkedAddresses(transport: Transport, url: URL, lookup: Lookup): Promise<{ addresses?: string[] } | null> {
+  if (!PUBLIC_GENESIS_HASHES.has(await transport.genesisHash())) {
+    return {};
+  }
+  const addresses = await publicAddresses(url.hostname, lookup);
+  return addresses === null ? null : { addresses };
+}
+
 export async function fetchSha256(get: SpecFetch, transport: Transport, url: string, lookup: Lookup = systemLookup): Promise<{ sha256: string } | { problem: string }> {
   const found = await fetchBytes(get, transport, url, lookup);
   return "problem" in found ? found : { sha256: createHash("sha256").update(found.bytes).digest("hex") };
@@ -72,11 +80,12 @@ export async function fetchBytes(get: SpecFetch, transport: Transport, url: stri
   if (await plainHttpOnPublic(transport, url)) {
     return { problem: PLAIN_HTTP_ON_PUBLIC };
   }
-  if (PUBLIC_GENESIS_HASHES.has(await transport.genesisHash()) && !(await publicHost(parsed.hostname, lookup))) {
+  const addresses = await checkedAddresses(transport, parsed, lookup);
+  if (addresses === null) {
     return { problem: NOT_PUBLIC };
   }
   try {
-    return { bytes: await body(await get(url, { redirect: "error", signal: AbortSignal.timeout(SPEC_TIMEOUT_MS) }), url, cap) };
+    return { bytes: await body(await get(url, { redirect: "error", signal: AbortSignal.timeout(SPEC_TIMEOUT_MS), ...addresses }), url, cap) };
   } catch (error) {
     return { problem: error instanceof DeliveryUnfit ? error.reason : `could not be fetched (${fetchFailure(error)})` };
   }
@@ -101,12 +110,13 @@ export async function fetchDelivery(get: SpecFetch, transport: Transport, delive
   if (await plainHttpOnPublic(transport, delivery.url)) {
     throw new DeliveryUnfit(delivery.url, PLAIN_HTTP_ON_PUBLIC);
   }
-  if (PUBLIC_GENESIS_HASHES.has(await transport.genesisHash()) && !(await publicHost(url.hostname, lookup))) {
+  const addresses = await checkedAddresses(transport, url, lookup);
+  if (addresses === null) {
     throw new DeliveryUnfit(delivery.url, NOT_PUBLIC);
   }
   let bytes: Uint8Array;
   try {
-    bytes = await body(await get(delivery.url, { redirect: "error", signal: AbortSignal.timeout(seconds * 1000) }), delivery.url);
+    bytes = await body(await get(delivery.url, { redirect: "error", signal: AbortSignal.timeout(seconds * 1000), ...addresses }), delivery.url);
   } catch (error) {
     if (error instanceof DeliveryUnfit) {
       throw error;

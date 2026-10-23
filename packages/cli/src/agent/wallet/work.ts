@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { isSealed, MAX_SEALED_RECIPIENTS, NotInvited, seal, SealedError, sealedTo, unseal } from "@intent-engine/core";
-import { announces, deliveryRecord, loadCommittee, MAX_SPEC_BYTES } from "@intent-engine/client";
+import { announces, deliveryRecord, loadCommittee, MAX_SPEC_BYTES, pinnedFetch } from "@intent-engine/client";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { AgentRefusal, untrusted } from "../problems.js";
@@ -113,7 +113,7 @@ export const walletFetchWork = define({
     if (delivery.url === "") {
       throw new AgentRefusal("WorkUnfetchable", `the announcement ${delivery.signature}: ${NOT_SEALED_HERE}`);
     }
-    const found = await fetchBytes(ctx.fetch ?? fetch, ctx.transport, delivery.url, systemLookup, MAX_SPEC_BYTES);
+    const found = await fetchBytes(ctx.fetch ?? pinnedFetch, ctx.transport, delivery.url, systemLookup, MAX_SPEC_BYTES);
     if ("problem" in found) {
       const hint = untrusted(`the work at ${delivery.url} ${found.problem}`);
       throw new AgentRefusal(PERMANENT_WORK.some((pattern) => pattern.test(found.problem)) ? "WorkUnfetchable" : "WorkUnreadable", hint);
@@ -123,7 +123,7 @@ export const walletFetchWork = define({
     const opens = announces(delivery, hash);
     let shown: string | undefined;
     try {
-      shown = new TextDecoder("utf-8", { fatal: true }).decode(work);
+      shown = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(work);
     } catch {
       shown = undefined;
     }

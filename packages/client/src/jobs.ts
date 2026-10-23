@@ -22,6 +22,8 @@ export {
   readSpec,
   type Spec,
   type SpecFetch,
+  SPEC_FETCH_FAILED,
+  SPEC_REDIRECTS,
   SPEC_SCAN,
   SPEC_TIMEOUT_MS,
   SpecSealed,

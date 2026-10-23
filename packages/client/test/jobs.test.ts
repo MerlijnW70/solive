@@ -217,7 +217,7 @@ describe("spec", () => {
     const swapped = await client.createIntent({ ...order, params: proof(judge.address), specUrl: "https://example.org/other.md" });
     const silent = await client.createIntent({ ...order, params: proof(judge.address) });
 
-    expect(await client.spec(good.intent)).toEqual({ url: SPEC_URL, text: SPEC, sha256: Buffer.from(sha(SPEC)).toString("hex"), matches: true });
+    expect(await client.spec(good.intent)).toEqual({ url: SPEC_URL, text: SPEC, bytes: expect.any(Uint8Array), sha256: Buffer.from(sha(SPEC)).toString("hex"), matches: true });
     expect(fetched[0]?.url).toBe(SPEC_URL);
     expect(fetched[0]?.init.redirect).toBe("error");
     expect(fetched[0]?.init.signal).toBeInstanceOf(AbortSignal);
@@ -306,7 +306,7 @@ describe("deliveries", () => {
     const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
     expect((await client.jobs())[0]).toMatchObject({ intent: job.intent, specUrl: legacy });
     expect(await client.jobs({ attestor: judge.address })).toMatchObject([{ intent: job.intent, specUrl: legacy }]);
-    expect(await client.spec(job.intent)).toEqual({ url: legacy, text: SPEC, sha256: Buffer.from(sha(SPEC)).toString("hex"), matches: true });
+    expect(await client.spec(job.intent)).toEqual({ url: legacy, text: SPEC, bytes: expect.any(Uint8Array), sha256: Buffer.from(sha(SPEC)).toString("hex"), matches: true });
     expect(fetched.map(({ url }) => url)).toEqual([legacy]);
   });
 
@@ -635,6 +635,7 @@ describe("a sealed spec", () => {
     expect(await client.spec(job.intent, worker.keypair)).toEqual({
       url: SPEC_URL,
       text: SPEC,
+      bytes: expect.any(Uint8Array),
       sha256: Buffer.from(sha(SPEC)).toString("hex"),
       matches: true,
       sealedTo: [worker.address, other.address],
@@ -664,7 +665,7 @@ describe("a sealed spec", () => {
     const worker = keyed();
     const { client, judge, order } = await setting(serving({ [SPEC_URL]: SPEC }));
     const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
-    const plain = { url: SPEC_URL, text: SPEC, sha256: Buffer.from(sha(SPEC)).toString("hex"), matches: true };
+    const plain = { url: SPEC_URL, text: SPEC, bytes: expect.any(Uint8Array), sha256: Buffer.from(sha(SPEC)).toString("hex"), matches: true };
     expect(await client.spec(job.intent, worker.keypair)).toEqual(plain);
     expect(await client.spec(job.intent)).toEqual(plain);
   });

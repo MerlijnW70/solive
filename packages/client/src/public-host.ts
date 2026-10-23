@@ -68,19 +68,27 @@ function v6Groups(ip: string): number[] | null {
   return groups.length === 8 && groups.every((g) => Number.isInteger(g) && g >= 0 && g <= 0xffff) ? groups : null;
 }
 
+const embedded = (high: number, low: number): string => `${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`;
+
 function privateV6(ip: string): boolean {
   const g = v6Groups(ip);
   if (g === null) {
     return true;
   }
-  const [a = 0, b = 0, , , , f = 0, x = 0, y = 0] = g;
+  const [a = 0, b = 0, c = 0, d = 0, e = 0, f = 0, x = 0, y = 0] = g;
   if (g.slice(0, 5).every((v) => v === 0) && f === 0xffff) {
-    return privateV4(`${x >> 8}.${x & 255}.${y >> 8}.${y & 255}`);
+    return privateV4(embedded(x, y));
   }
-  if (g.every((v) => v === 0) || (g.slice(0, 7).every((v) => v === 0) && y === 1)) {
+  if (g.slice(0, 6).every((v) => v === 0) || (g.slice(0, 4).every((v) => v === 0) && e === 0xffff && f === 0)) {
     return true;
   }
-  return (a & 0xfe00) === 0xfc00 || (a & 0xffc0) === 0xfe80 || (a & 0xff00) === 0xff00 || (a === 0x2001 && b === 0x0db8) || (a === 0x0064 && b === 0xff9b);
+  if (a === 0x2002) {
+    return privateV4(embedded(b, c));
+  }
+  if (a === 0x2001 && b === 0) {
+    return privateV4(embedded(c, d)) || privateV4(embedded(x ^ 0xffff, y ^ 0xffff));
+  }
+  return (a & 0xfe00) === 0xfc00 || (a & 0xffc0) === 0xfe80 || (a & 0xffc0) === 0xfec0 || (a & 0xff00) === 0xff00 || (a === 0x2001 && b === 0x0db8) || (a === 0x0064 && b === 0xff9b);
 }
 
 export function privateAddress(ip: string): boolean {
@@ -94,13 +102,17 @@ export function privateAddress(ip: string): boolean {
   return true;
 }
 
-export async function publicHost(hostname: string, lookup: Lookup): Promise<boolean> {
+export async function publicAddresses(hostname: string, lookup: Lookup): Promise<string[] | null> {
   const host = hostname.replace(/^\[/, "").replace(/\]$/, "");
   let addresses: string[];
   try {
     addresses = isIP(host) === 0 ? await lookup(host) : [host];
   } catch {
-    return false;
+    return null;
   }
-  return addresses.length > 0 && !addresses.some(privateAddress);
+  return addresses.length > 0 && !addresses.some(privateAddress) ? addresses : null;
+}
+
+export async function publicHost(hostname: string, lookup: Lookup): Promise<boolean> {
+  return (await publicAddresses(hostname, lookup)) !== null;
 }
