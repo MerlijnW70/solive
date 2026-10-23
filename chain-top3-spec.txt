@@ -1,0 +1,20 @@
+# Job: The 40 most common four-letter words across three books
+
+Count words across all three files below together, exactly as these bytes are hosted.
+
+1. https://raw.githubusercontent.com/MerlijnW70/solive/e2e-fixtures/chain-book-1342.txt sha256 3f6bb9d6f78e0293b56acd4714dd68cb7d6d1d293402031ce9d5a216bcaf9d75
+2. https://raw.githubusercontent.com/MerlijnW70/solive/e2e-fixtures/chain-book-2701.txt sha256 b5e88b71a1cda068e9ab1d94344c9d932338ba6da1a66def97a1aecd9cfcc87d
+3. https://raw.githubusercontent.com/MerlijnW70/solive/e2e-fixtures/chain-book-84.txt sha256 7810cd483cffcf2cc8a1d8f0d5807931e69d4f48cd14149b8c76f88af82fead3
+
+## Rules
+
+- Read each file as bytes. Fold A-Z to a-z. A word is a maximal run of the bytes a-z; every other byte separates words.
+- Count every word of exactly 4 letters over all three files combined, including the Project Gutenberg header and licence text; ignore all other words.
+
+## Deliver
+
+A UTF-8 text file of exactly 40 lines, each `word<TAB>count` ending in LF: the 40 words of exactly 4 letters with the highest combined count, sorted by count from high to low, ties by word in byte order. Nothing else in the file.
+
+## Check
+
+The judge computes the table from the same bytes and compares the delivered file byte for byte. Any difference fails.
