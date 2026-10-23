@@ -1,6 +1,6 @@
 {
   "name": "@intent-engine/solver",
-  "version": "0.1.50",
+  "version": "0.1.51",
   "description": "A solver that fills intent engine intents at a profit",
   "license": "Apache-2.0",
   "repository": {
