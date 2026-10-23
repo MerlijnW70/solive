@@ -121,7 +121,7 @@ describe("claims from the wallet tools", () => {
     const job = await claimed(client, wallet, wallet);
     h.engineLog = [creation(job.intent)];
     const board = await claimBoardAddress(job.intent);
-    const release = { owner: wallet, nonce: job.nonce, delivered_sha256: WORK };
+    const release = { owner: wallet, nonce: job.nonce, delivered_sha256: WORK, received_outside_announcement: true };
     const wires = h.wires.length;
     for (const args of [{ ...release, pay_to: job.rival }, { ...release, pay_to: job.rival, approval: "0".repeat(16), send: true }]) {
       expect((await call(client, "wallet_attest", args)).value).toMatchObject({ code: "ClaimHeld", hint: claimHeldBy(job.worker.address, job.until) });
@@ -144,7 +144,7 @@ describe("claims from the wallet tools", () => {
   it("wallet_attest_split passes the claims board and refuses a split that leaves out the claiming worker", async () => {
     const job = await claimed(client, wallet, wallet);
     h.engineLog = [creation(job.intent)];
-    const release = { owner: wallet, nonce: job.nonce, delivered_sha256: WORK };
+    const release = { owner: wallet, nonce: job.nonce, delivered_sha256: WORK, received_outside_announcement: true };
     expect((await call(client, "wallet_attest_split", { ...release, recipients: [{ wallet: job.rival, weight: 10000 }] })).value).toMatchObject({
       code: "ClaimHeld",
       hint: claimHeldBy(job.worker.address, job.until),

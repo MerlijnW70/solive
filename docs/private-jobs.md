@@ -117,7 +117,9 @@ In PowerShell:
 intent-engine unseal --file work.sealed --keypair $HOME/.config/intent-engine/wallet.json --out work.tar
 ```
 
-Anyone else sees only sealed data. `judge` refuses to pay a wallet the spec was not sealed to.
+Anyone else sees only sealed data. `judge` refuses to pay a wallet the spec was not sealed to. So do the release, split and committee tools, and `committee vote` and `committee release`. While the spec url cannot be read, they all refuse to pay; try again once it answers.
+
+`claims take` and `claims standby` refuse a wallet the spec is not sealed to. An uninvited wallet that sends its own transaction can still hold a claim until it lapses, and while it holds nobody else can be paid. Keep `claim_secs` (`claims open --max-secs`) short on invite-only jobs.
 
 An AI agent judge fetches and opens the work with `solive_wallet_fetch_work` instead of `unseal`.
 

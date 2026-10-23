@@ -24,7 +24,7 @@ import type { Call } from "../claims.js";
 import { WRAPPED } from "../create.js";
 import { tool } from "../names.js";
 import { boardLeft, leavesBoard, thenSettle } from "../claim-line.js";
-import { AgentRefusal } from "../problems.js";
+import { AgentRefusal, untrusted } from "../problems.js";
 import { InvalidInput, account, amount, flag, integer, list, object, optional, text } from "../schema.js";
 import { preparedView } from "../shapes.js";
 import { sol, tokenAccountRent } from "./costs.js";
@@ -33,7 +33,7 @@ import { prepare } from "../prepare.js";
 import { STATUS } from "../../accounts.js";
 import { feePayerOf, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of, walletOpeners } from "./guard.js";
 import { openingOutput, openingsFor, sendOpenings, skippedOf } from "./openings.js";
-import { invitedTo, notInvited } from "../../invites.js";
+import { checkInvited, InviteRefused } from "../../invites.js";
 import { notEarliest, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor, confirmedRelease } from "./delivery.js";
 
 export const RESULT_MEANS =
@@ -61,6 +61,27 @@ export async function claimsOfRelease(ctx: AgentContext, intent: Address, claims
   }
 }
 
+export const RECEIVED_OUTSIDE = "received_outside_announcement";
+
+export const unannounced = (intent: Address, sha256: string): string =>
+  `no announcement to the escrow ${intent} backs delivered_sha256 ${sha256}, so nobody is known to have delivered it; pass ${RECEIVED_OUTSIDE}: true only when the work reached this wallet outside an announcement; nothing was released`;
+
+export const receivedOutside = optional(flag("true when the work reached this wallet outside an announcement, so none backs delivered_sha256; leave out to require an announcement"));
+
+export function backedOrReceived(first: object | null, intent: Address, delivered: string, outside: boolean | undefined): void {
+  if (first === null && outside !== true) {
+    throw new AgentRefusal("NotAnnounced", unannounced(intent, delivered));
+  }
+}
+
+export async function invitedPayees(ctx: AgentContext, intent: Address, payees: readonly Address[]): Promise<void> {
+  try {
+    await checkInvited(ctx.transport, ctx.fetch ?? fetch, intent, payees);
+  } catch (error) {
+    throw error instanceof InviteRefused ? new AgentRefusal(error.code, error.code === "NotInvited" ? error.message : untrusted(error.message)) : error;
+  }
+}
+
 export const stakeReturned = (stake: bigint, stakeTo: Address | undefined): string[] =>
   stakeTo === undefined || stake === 0n ? [] : [`Returns: the claim stake of ${formatAmount(stake, 9)} SOL to ${stakeTo}`];
 
@@ -77,6 +98,7 @@ export const walletAttest = define({
     pay_to: account("the wallet to pay"),
     result: optional(amount("the result to attest, a plain count not whole tokens, between the intent's min_result and max_result; default min_result")),
     delivered_sha256: optional(text(`the sha256, as 64 hex digits, of the work this release pays for: the same hash the worker announced with ${tool("wallet_deliver")}; required for a proof escrow, whose release pays that work's earliest announcer; recorded in a memo this wallet signs with the release, so the payer can check what it receives with ${tool("wallet_receipt")}; a Ledger wallet records none`)),
+    received_outside_announcement: receivedOutside,
     max_pages: optional(integer(1, MAX_ATTEST_PAGES, MAX_PAGES_INPUT)),
     approval: optional(text("the approval the preview returned; needed with send")),
     send: optional(flag("true signs the attestation and settles; leave out to preview")),
@@ -127,10 +149,7 @@ export const walletAttest = define({
       throw new InvalidInput([{ path: "result", message: `must be between ${params.minResult} and ${params.maxResult}` }]);
     }
     await walletRecipient(ctx.transport, input.pay_to, "pay_to");
-    const invited = await invitedTo(ctx.transport, ctx.fetch, intent);
-    if (invited !== undefined && !invited.includes(input.pay_to)) {
-      throw new AgentRefusal("NotInvited", notInvited(input.pay_to, intent));
-    }
+    await invitedPayees(ctx, intent, [input.pay_to]);
     const claimed = await claimsOfRelease(ctx, intent, held.claims, [input.pay_to]);
     const left = claimed.accounts.claims === undefined ? undefined : await boardLeft(ctx.transport, input.owner, input.nonce, intent);
     const token = await mintOf(ctx.transport, held.inputMint);
@@ -208,6 +227,7 @@ export const walletAttest = define({
       if (first !== null && first.worker !== input.pay_to) {
         throw new AgentRefusal("NotEarliestAnnouncer", notEarliest(first.worker, delivered));
       }
+      backedOrReceived(first, intent, delivered, input.received_outside_announcement);
       salt = first?.salt;
       openings = openingsFor(record, first);
     }

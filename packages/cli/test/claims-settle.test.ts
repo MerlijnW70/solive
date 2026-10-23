@@ -92,7 +92,7 @@ describe("settling a claims board from the wallet tools", () => {
     const worker = await funded();
     await send(worker, [await buildClaimJob({ worker, intent: job.intent, owner: wallet, secs: 600 })]);
     h.engineLog = [creation(job.intent)];
-    const release = { ...job.ref, pay_to: worker.address, delivered_sha256: WORK };
+    const release = { ...job.ref, pay_to: worker.address, delivered_sha256: WORK, received_outside_announcement: true };
     const shown = await ok(client, "wallet_attest", release);
     expect(shown["summary"]).toContain(`Leaves: ${leaves(job.board, wallet, job.nonce)}`);
     const released = await ok(client, "wallet_attest", { ...release, approval: shown["approval"], send: true });
@@ -121,7 +121,7 @@ describe("settling a claims board from the wallet tools", () => {
     const job = await escrow();
     h.engineLog = [creation(job.intent)];
     const worker = await funded();
-    const shown = await ok(client, "wallet_attest_split", { ...job.ref, delivered_sha256: WORK, recipients: [{ wallet: worker.address, weight: 10000 }] });
+    const shown = await ok(client, "wallet_attest_split", { ...job.ref, delivered_sha256: WORK, received_outside_announcement: true, recipients: [{ wallet: worker.address, weight: 10000 }] });
     expect(shown["summary"]).toContain(`Leaves: ${leaves(job.board, wallet, job.nonce)}`);
   });
 

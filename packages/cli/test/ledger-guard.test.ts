@@ -131,7 +131,7 @@ describe("a Ledger wallet's kept previews and device", () => {
     const e = await escrow();
     const ledger = device(e.key, found(LEVELS, e.key));
     const client = await served(ledger.open, e.payer);
-    const shown = await call(client, "wallet_attest", { owner: e.owner, nonce: "0", pay_to: e.worker, delivered_sha256: WORK });
+    const shown = await call(client, "wallet_attest", { owner: e.owner, nonce: "0", pay_to: e.worker, delivered_sha256: WORK, received_outside_announcement: true });
     expect(shown.error, JSON.stringify(shown.value)).toBe(false);
     expect(shown.value["recorded"]).toBe(false);
     expect(shown.value).not.toHaveProperty("delivered_sha256");
@@ -145,7 +145,7 @@ describe("a Ledger wallet's kept previews and device", () => {
     });
     const ledger = device(e.key, [...found(LEVELS, e.key), ...messageThen()]);
     const client = await served(ledger.open);
-    const ballot = { owner: e.owner, nonce: "0", pay_to: e.worker, result: "1", delivered_sha256: WORK };
+    const ballot = { owner: e.owner, nonce: "0", pay_to: e.worker, result: "1", delivered_sha256: WORK, received_outside_announcement: true };
     const shown = await call(client, "wallet_committee_vote", ballot);
     const voted = await call(client, "wallet_committee_vote", { ...ballot, approval: shown.value["approval"], send: true });
     expect(voted.error, JSON.stringify(voted.value)).toBe(false);
@@ -159,7 +159,7 @@ describe("a Ledger wallet's split release size", () => {
   const engineIn = (instructions: readonly { programAddress: Address }[]) => instructions.some((ix) => ix.programAddress === INTENT_ENGINE_PROGRAM_ADDRESS);
 
   async function cosigned(e: Escrow, client: Client) {
-    const split = { owner: e.owner, nonce: "0", recipients: [{ wallet: e.worker, weight: 10_000 }], delivered_sha256: WORK };
+    const split = { owner: e.owner, nonce: "0", recipients: [{ wallet: e.worker, weight: 10_000 }], delivered_sha256: WORK, received_outside_announcement: true };
     const shown = await call(client, "wallet_attest_split", split);
     expect(shown.error, JSON.stringify(shown.value)).toBe(false);
     const envelope = Uint8Array.from(getBase16Encoder().encode(String(shown.value["envelope"])));

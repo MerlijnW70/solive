@@ -14,6 +14,7 @@ import {
   claimUntil,
   findIntentPda,
   formatAmount,
+  formatTime,
   IntentCoreError,
   IntentStatus,
   kindBit,
@@ -26,6 +27,7 @@ import { type ClaimsView, type Client, createClient, escrowsJudgedBy, isDevice, 
 import { previewed } from "./admin-commands.js";
 import type { Command } from "./command-types.js";
 import { FlowRefused } from "./flows.js";
+import { claimNotInvited, sealedInvites } from "./invites.js";
 import { transactionSigner } from "./ledger-keys.js";
 import { encryptionKeyLines } from "./sealed-commands.js";
 import type { Runtime } from "./runtime.js";
@@ -127,6 +129,12 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
   }
   const { intent, view } = await claimsOf(client, command.owner, command.nonce);
   const shown = claimsShown(intent, view);
+  if (command.name === "claims-take" || command.name === "claims-standby") {
+    const invited = await sealedInvites(transport, runtime.specFetch, intent);
+    if (invited !== undefined && !invited.includes(signer.address)) {
+      throw new FlowRefused(claimNotInvited(signer.address, intent));
+    }
+  }
   switch (command.name) {
     case "claims-take":
       return takeClaim(command, signer, transport, client, intent, view, shown);
@@ -277,7 +285,7 @@ async function takeClaim(
     throw error instanceof IntentCoreError ? new FlowRefused(`a claim of ${command.secs} seconds would outlive escrow ${intent}, which expires at ${expiresAt}`) : error;
   }
   const summary = [
-    `Claims: escrow ${intent} until ${until}, ${command.secs} seconds; until then only ${worker.address} can be paid`,
+    `Claims: escrow ${intent} until ${formatTime(until)}, ${until - now} seconds from now; until then only ${worker.address} can be paid`,
     `Stakes: ${sol(view.stake)}, returned when a release pays this worker or it drops the claim, and lost to the owner if the claim lapses first`,
     ...(view.state === "lapsed" ? [`Ends: the lapsed claim of ${view.worker}, whose stake goes to the owner ${view.owner}`] : []),
   ];

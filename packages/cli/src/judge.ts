@@ -38,7 +38,7 @@ import { type Check, checkEnv, type HeldSignals, holdSignals, runCheck, runConta
 import { containerArgs, containerName, dockerEnv, NO_SANDBOX, sandboxReady, shareable } from "./sandbox.js";
 import { type HostJudged, judgeHost } from "./host-judge.js";
 import { judgeNode, type NodeJudged } from "./node-judge.js";
-import { invitedTo, notInvited } from "./invites.js";
+import { checkInvited, InviteRefused } from "./invites.js";
 import { type SimulatedRelease, simulateRelease } from "./release-simulation.js";
 import { type MessageSigner, messageSigner } from "./ledger-keys.js";
 import { loadEncryptionKeys } from "./sealed-commands.js";
@@ -219,10 +219,9 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   if (first !== null && first.worker !== payTo) {
     throw new JudgeRefused(`${first.worker} announced the artifact with sha256 ${sha256} first, in ${first.signature}; it is paid, not --pay-to ${payTo}`);
   }
-  const invited = await invitedTo(transport, runtime.specFetch, address);
-  if (invited !== undefined && !invited.includes(payTo)) {
-    throw new JudgeRefused(notInvited(payTo, address));
-  }
+  await checkInvited(transport, runtime.specFetch, address, [payTo]).catch((error: unknown) => {
+    throw error instanceof InviteRefused ? new JudgeRefused(error.message) : error;
+  });
   const draw = viper?.cases.draw;
   const beacon = draw === undefined ? undefined : await drawBeacon(transport, (seconds) => runtime.sleep(seconds), first, draw, address, sha256);
   const signals = holdSignals();

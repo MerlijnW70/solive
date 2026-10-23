@@ -155,7 +155,7 @@ const receiptOutput = object({
   signature: optional(text("the release's transaction")),
   delivered_sha256: optional(text("the sha256 the release recorded, if any, in its own memo or in a follow-up transaction its attestor signed")),
   matches: optional(flag("whether sha256 equals the recorded one")),
-  delivered_salt: optional(text("the payee's salt the release recorded, which opens the payee's announcement")),
+  delivered_salt: optional(text("the payee's salt the release recorded, which opens the payee's announcement; it becomes public once a release records it, and is safe to share only after that")),
   valid: optional(flag("given with delivered_salt: whether that salt opens an announcement by the payee to the recorded sha256")),
   refuted_by: optional(text("an earlier announcement of the same work that a published opening shows, so the release paid a later announcer")),
   paid_wallets: optional(list(account(), MAX_RECIPIENTS, "the wallets a split release paid")),

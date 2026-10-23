@@ -96,7 +96,7 @@ describe("an MCP wallet on a Ledger", () => {
     const e = await escrow();
     const ledger = device(e.key, [...found(LEVELS, e.key), ...messageThen()]);
     const client = await served(ledger, e.payer);
-    const release = { owner: e.owner, nonce: "0", pay_to: e.worker, delivered_sha256: WORK };
+    const release = { owner: e.owner, nonce: "0", pay_to: e.worker, delivered_sha256: WORK, received_outside_announcement: true };
     const shown = await call(client, "wallet_attest", release);
     expect(shown.error, JSON.stringify(shown.value)).toBe(false);
     expect([ledger.signed, h.wires.length]).toEqual([[], 0]);
@@ -117,7 +117,7 @@ describe("an MCP wallet on a Ledger", () => {
     const e = await escrow();
     const ledger = device(e.key, found(LEVELS, e.key));
     const client = await served(ledger);
-    const refused = await call(client, "wallet_attest", { owner: e.owner, nonce: "0", pay_to: e.worker, delivered_sha256: WORK });
+    const refused = await call(client, "wallet_attest", { owner: e.owner, nonce: "0", pay_to: e.worker, delivered_sha256: WORK, received_outside_announcement: true });
     expect(refused).toMatchObject({ error: true, value: { code: "NoFeePayer", hint: NO_FEE_PAYER } });
     expect([ledger.signed, h.wires.length]).toEqual([[], 0]);
     expect(() => parse(["mcp", "--url", "devnet", "--fee-payer", "payer.json"])).toThrow(FEE_PAYER_NEEDS_WALLET);
@@ -129,7 +129,7 @@ describe("an MCP wallet on a Ledger", () => {
     const e = await escrow(true);
     const ledger = device(e.key, found(LEVELS, e.key));
     const client = await served(ledger, e.payer);
-    const refused = await call(client, "wallet_attest", { owner: e.owner, nonce: "0", pay_to: e.worker, delivered_sha256: WORK });
+    const refused = await call(client, "wallet_attest", { owner: e.owner, nonce: "0", pay_to: e.worker, delivered_sha256: WORK, received_outside_announcement: true });
     expect(refused).toMatchObject({ error: true, value: { code: "SealedSalts" } });
     expect(String(refused.value["hint"])).toContain("mcp --encryption-keypair");
     expect(SALTS_SEALED).toContain("mcp --encryption-keypair");
@@ -145,7 +145,7 @@ describe("an MCP wallet on a Ledger", () => {
       const e = await escrow();
       const ledger = device(e.key, [...found(LEVELS, e.key), ...queue]);
       const client = await served(ledger, e.payer);
-      const release = { owner: e.owner, nonce: "0", pay_to: e.worker, delivered_sha256: WORK };
+      const release = { owner: e.owner, nonce: "0", pay_to: e.worker, delivered_sha256: WORK, received_outside_announcement: true };
       const shown = await call(client, "wallet_attest", release);
       const refused = await call(client, "wallet_attest", { ...release, approval: shown.value["approval"], send: true });
       expect(refused).toEqual({ error: true, value: { code: "Ledger", retryable: SERVER_PROBLEMS.Ledger.retryable, hint } });
@@ -159,7 +159,7 @@ describe("an MCP wallet on a Ledger", () => {
     const e = await escrow();
     const ledger = device(e.key, [...found(LEVELS, e.key), ...messageThen()]);
     const client = await served(ledger, e.payer);
-    const split = { owner: e.owner, nonce: "0", recipients: [{ wallet: e.worker, weight: 10_000 }], delivered_sha256: WORK };
+    const split = { owner: e.owner, nonce: "0", recipients: [{ wallet: e.worker, weight: 10_000 }], delivered_sha256: WORK, received_outside_announcement: true };
     const shown = await call(client, "wallet_attest_split", split);
     expect(shown.error, JSON.stringify(shown.value)).toBe(false);
     expect(ledger.signed).toEqual([]);
@@ -262,7 +262,7 @@ describe("an MCP wallet on a Ledger", () => {
     });
     const ledger = device(e.key, [...found(LEVELS, e.key), ...messageThen()]);
     const client = await served(ledger);
-    const ballot = { owner: e.owner, nonce: "0", pay_to: e.worker, result: "1", delivered_sha256: WORK };
+    const ballot = { owner: e.owner, nonce: "0", pay_to: e.worker, result: "1", delivered_sha256: WORK, received_outside_announcement: true };
     const shown = await call(client, "wallet_committee_vote", ballot);
     expect(shown.error, JSON.stringify(shown.value)).toBe(false);
     expect(ledger.signed).toEqual([]);

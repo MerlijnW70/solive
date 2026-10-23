@@ -1,11 +1,12 @@
 import { readFile, writeFile } from "node:fs/promises";
 import type { Address, MessagePartialSigner } from "@solana/kit";
-import { buildCreateCommittee, type CommitteeVote, isSaltHex, openingMemo, signCommitteeVote, UNOPENED } from "@intent-engine/core";
+import { buildCreateCommittee, type CommitteeVote, findIntentPda, isSaltHex, openingMemo, signCommitteeVote, UNOPENED } from "@intent-engine/core";
 import { type CommitteeBallot, confirmOnBoth, createClient, isLedgerPath, openingInstructions, openingsOf, type Transport, unitedSalts } from "@intent-engine/client";
 import { previewed } from "./admin-commands.js";
 import { parseAddress, parseU64 } from "./arg-values.js";
 import type { Command } from "./command-types.js";
 import { FlowRefused } from "./flows.js";
+import { checkInvited, InviteRefused } from "./invites.js";
 import { messageSigner, transactionSigner } from "./ledger-keys.js";
 import type { Runtime } from "./runtime.js";
 
@@ -39,6 +40,12 @@ type CommitteeCommand = Extract<
 >;
 
 const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString("hex");
+
+async function invitedPayee(runtime: Runtime, transport: Transport, intent: Address, payTo: Address): Promise<void> {
+  await checkInvited(transport, runtime.specFetch, intent, [payTo]).catch((error: unknown) => {
+    throw error instanceof InviteRefused ? new FlowRefused(error.message) : error;
+  });
+}
 
 function ballotLines(ballot: CommitteeBallot, target: Ballot): string[] {
   return [
@@ -182,6 +189,7 @@ export async function committeeCommand(command: CommitteeCommand, runtime: Runti
       if (!ballot.committee.members.includes(member.address)) {
         throw new FlowRefused(`${member.address} is not a member of committee ${ballot.committee.address}; nothing was signed`);
       }
+      await invitedPayee(runtime, transport, ballot.intent, target.payTo);
       const summary = ballotLines(ballot, target);
       if (!command.yes) {
         return { intent: ballot.intent, digest: hex(ballot.digest), summary, signed: false, next: VOTE_NOT_SIGNED };
@@ -196,6 +204,8 @@ export async function committeeCommand(command: CommitteeCommand, runtime: Runti
       const solver = await transactionSigner(runtime, command.keypair);
       const votes = await Promise.all(command.votes.map(async (file) => voteOf(await readFile(file, "utf8"), file)));
       const target = sameBallot(votes, command.votes);
+      const [escrow] = await findIntentPda({ owner: target.owner, nonce: target.nonce });
+      await invitedPayee(runtime, transport, escrow, target.payTo);
       const opened = agreedSalt(votes, command.votes);
       const cast: CommitteeVote[] = votes.map((v) => ({ member: v.member, signature: Uint8Array.from(Buffer.from(v.signature, "hex")) }));
       const release = await client.prepareCommitteeRelease({

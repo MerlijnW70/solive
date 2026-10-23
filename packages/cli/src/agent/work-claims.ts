@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
-import { buildClaimJob, buildDropClaim, claimUntil, findIntentPda, formatAmount, IntentCoreError, IntentStatus, type LineHandover, MAX_CLAIM_SECS } from "@intent-engine/core";
+import { buildClaimJob, buildDropClaim, claimUntil, findIntentPda, formatAmount, formatTime, IntentCoreError, IntentStatus, type LineHandover, MAX_CLAIM_SECS, MAX_SEALED_RECIPIENTS } from "@intent-engine/core";
 import { type ClaimsView, createClient } from "@intent-engine/client";
 import { coolingDown, dropHandover, handedTo, heldBy, noClaims } from "../claim-commands.js";
+import { claimNotInvited, sealedInvites } from "../invites.js";
 import { type AgentContext, define } from "./actions.js";
 import { advanceStep, closedEscrow, type EscrowState, escrowState, leaveStep, type LineStep, lineWaitingHere, settleCall, settleStep, standbyStep } from "./claim-line.js";
 import type { Call } from "./claims.js";
@@ -31,7 +32,10 @@ async function claimsFor(ctx: AgentContext, owner: Address, nonce: bigint) {
 
 const waitingWorkers = (waiting: number) => `${waiting} ${waiting === 1 ? "worker stands" : "workers stand"} by`;
 
-function claimsNext(intent: Address, escrow: EscrowState, view: ClaimsView, owner: Address, nonce: bigint): string {
+export const inviteOnly = (invited: readonly Address[]): string =>
+  `the job is invite-only: its spec is sealed to ${invited.join(", ")}, and only those wallets can be paid; an invited wallet claims it with ${tool("wallet_claim")} action take before working on it or hosting the work`;
+
+function claimsNext(intent: Address, escrow: EscrowState, view: ClaimsView, owner: Address, nonce: bigint, invited: readonly Address[] | undefined): string {
   if (escrow !== "open") {
     return `${closedEscrow(intent, escrow)}; ${settleCall(owner, nonce)} closes its claims board and returns the rent to ${view.owner}`;
   }
@@ -41,13 +45,16 @@ function claimsNext(intent: Address, escrow: EscrowState, view: ClaimsView, owne
   if (view.line.waiting > 0) {
     return `${waitingWorkers(view.line.waiting)}, so the job goes to them in line order; ${tool("wallet_claim")} action advance hands it to the first, and action standby joins the line`;
   }
+  if (invited !== undefined) {
+    return inviteOnly(invited);
+  }
   return `the job is free to claim; claim it with ${tool("wallet_claim")} action take before working on it or hosting the work`;
 }
 
 export const getClaims = define({
   name: tool("get_claims"),
   title: "Who holds a job's claim",
-  description: "Read the claims board of a proof escrow: whether its owner opened claims, whether the escrow is still open, released or gone, and whether the job is free, held by a worker until a time, or held by a claim that lapsed. While a claim holds, only its worker can be paid. next says what to do about the claim.",
+  description: "Read the claims board of a proof escrow: whether its owner opened claims, whether the escrow is still open, released or gone, and whether the job is free, held by a worker until a time, or held by a claim that lapsed. While a claim holds, only its worker can be paid. invited lists the wallets an invite-only job's sealed spec names; only they can be paid. next says what to do about the claim.",
   effect: "read",
   input: object(escrowRef),
   output: object({
@@ -65,13 +72,16 @@ export const getClaims = define({
     dropped_by: optional(nullable(account("a worker that dropped its claim and may not claim again until cooldown_until"))),
     cooldown_until: optional(time("when the worker that dropped may claim again")),
     waiting: optional(integer(0, 0xffff_ffff, "workers standing by in the job's line, who get it in order before anyone else can claim it")),
+    invited: optional(list(account(), MAX_SEALED_RECIPIENTS, "present on an invite-only job: the wallets its sealed spec names, the only ones a release can pay")),
     next: optional(text()),
   }),
   run: async (ctx, input) => {
     const { client, intent, view } = await claimsFor(ctx, input.owner, input.nonce);
     const escrow = await escrowState(client, input.owner, input.nonce);
+    const invited = escrow === "open" ? await sealedInvites(ctx.transport, ctx.fetch ?? fetch, intent) : undefined;
+    const named = invited === undefined ? {} : { invited };
     if (view === null) {
-      return { intent, takes_claims: false, escrow, ...(escrow === "open" ? {} : { next: closedEscrow(intent, escrow) }) };
+      return { intent, takes_claims: false, escrow, ...named, ...(escrow === "open" ? {} : { next: closedEscrow(intent, escrow) }) };
     }
     return {
       intent,
@@ -88,7 +98,8 @@ export const getClaims = define({
       dropped_by: view.cooldown?.worker ?? null,
       ...(view.cooldown === null ? {} : { cooldown_until: view.cooldown.until }),
       waiting: view.line.waiting,
-      next: claimsNext(intent, escrow, view, input.owner, input.nonce),
+      ...named,
+      next: claimsNext(intent, escrow, view, input.owner, input.nonce, invited),
     };
   },
 });
@@ -123,6 +134,12 @@ export const walletClaim = define({
     const signer = await signerOf(ctx);
     const { client, intent, view } = await claimsFor(ctx, input.owner, input.nonce);
     const escrow = { owner: input.owner, nonce: input.nonce, intent };
+    if (input.action === "take" || input.action === "standby") {
+      const invited = await sealedInvites(ctx.transport, ctx.fetch ?? fetch, intent);
+      if (invited !== undefined && !invited.includes(signer.address)) {
+        throw new AgentRefusal("NotInvited", claimNotInvited(signer.address, intent));
+      }
+    }
     let step: LineStep;
     if (input.action === "leave") {
       step = await leaveStep(client, ctx.transport, escrow, view, signer, input.seq);
@@ -195,7 +212,7 @@ async function takeStep(client: ReturnType<typeof createClient>, escrow: Escrow,
   return {
     instruction: await buildClaimJob({ worker: signer, intent, owner: view.owner, secs }),
     summary: [
-      `Claims: escrow ${intent} until ${until}, ${secs} seconds; until then only this wallet ${signer.address} can be paid`,
+      `Claims: escrow ${intent} until ${formatTime(until)}, ${until - now} seconds from now; until then only this wallet ${signer.address} can be paid`,
       `Stakes: ${stake}, returned when a release pays this wallet or it drops the claim, and lost to the owner if the claim lapses first`,
       ...(view.state === "lapsed" ? [`Ends: the lapsed claim of ${view.worker}, whose stake goes to the owner ${view.owner}`] : []),
     ],

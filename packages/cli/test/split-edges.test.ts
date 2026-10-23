@@ -70,7 +70,7 @@ async function splitJob(terms: string[], before?: (authority: KeyPairSigner) => 
   const [intent] = await findIntentPda({ owner: w.owner.address, nonce: 0n });
   const coauthor = await generateKeyPairSigner();
   h.engineLog = [creation(intent)];
-  const split = { owner: w.owner.address, nonce: "0", recipients: [{ wallet: coauthor.address, weight: 10_000 }], delivered_sha256: WORK };
+  const split = { owner: w.owner.address, nonce: "0", recipients: [{ wallet: coauthor.address, weight: 10_000 }], delivered_sha256: WORK, received_outside_announcement: true };
   const signed = async (shown: Json) => {
     const envelope = Uint8Array.from(getBase16Encoder().encode(String(shown["envelope"])));
     const signature = getBase16Decoder().decode(new Uint8Array(await signBytes(coauthor.keyPair.privateKey, envelope)));
@@ -84,7 +84,7 @@ describe("a single release's setup", () => {
   it("names the rent of every account it creates, the judge's own included", async () => {
     const s = await splitJob(["--judge-fee", "10"]);
     const worker = (await generateKeyPairSigner()).address;
-    const shown = await ok(s.client, "wallet_attest", { owner: s.w.owner.address, nonce: "0", pay_to: worker, delivered_sha256: WORK });
+    const shown = await ok(s.client, "wallet_attest", { owner: s.w.owner.address, nonce: "0", pay_to: worker, delivered_sha256: WORK, received_outside_announcement: true });
     const rent = `${formatAmount(h.svm.minimumBalanceForRentExemption(165n), 9)} SOL of rent`;
     expect(shown["summary"]).toContain(`Setup: creates ${worker}'s ${s.w.inputMint} account, paid by this wallet: ${rent}`);
     expect(shown["summary"]).toContain(`Setup: creates this wallet's ${s.w.inputMint} account for the judge fee, paid by this wallet: ${rent}`);

@@ -46,8 +46,11 @@ import { prepare } from "../prepare.js";
 import { deviceOutput, PREVIEW_FIRST, PREVIEW_ONLY, signerOf, sent, sha256Of, WAIT_MAX, walletOpeners } from "./guard.js";
 import { NO_CLOCK, poll } from "./wait.js";
 import { creatorOf } from "./releases.js";
+import { deliverNotInvited, sealedInvites } from "../../invites.js";
 
 export const ANNOUNCE_FIRST = "share neither the url nor the work until this announcement lands: the earliest announcer of the work is paid, so anyone who gets the work first could announce it first";
+
+export const SALT_PUBLIC = "it becomes public once a release records it, and is safe to share only after that";
 
 export const UNGUESSABLE_URL =
   "without private hosting, use a public host under a long random path or file name, such as 32 random hex characters, so nobody can guess it, and announce right after hosting";
@@ -110,6 +113,8 @@ export const walletDeliver = define({
     const plan = await deliveryPlan(ctx, { worker: signer, intent: input.intent, sha256, url: input.url });
     const { attestor, instructions } = plan;
     const { held } = await proofEscrow(ctx, input.intent, "wallet_receipt");
+    const invited = await sealedInvites(ctx.transport, ctx.fetch ?? fetch, input.intent);
+    const uninvited = invited === undefined || invited.includes(signer.address) ? [] : [deliverNotInvited(signer.address, input.intent)];
     const view = {
       intent: input.intent,
       owner: held.owner,
@@ -120,7 +125,7 @@ export const walletDeliver = define({
       commitment: plan.commitment,
       check: plan.check,
       summary: announcing(plan, input.intent, sha256, input.url, "this wallet"),
-      warnings: [...deliverClaimWarnings(await claimOf(ctx.transport, input.intent), signer.address), ANNOUNCE_FIRST],
+      warnings: [...uninvited, ...deliverClaimWarnings(await claimOf(ctx.transport, input.intent), signer.address), ANNOUNCE_FIRST],
       prepared: preparedView(await prepare(ctx.transport, instructions, signer.address)),
     };
     return sent(ctx, signer, view, input.send, call, {
@@ -229,7 +234,7 @@ function deliveriesOutput(releasing: string) {
     own: optional(
       object({
         commitment: text("64 hex: this wallet's commitment to the given sha256, with the salt its key derives"),
-        salt: text("32 hex: this wallet's salt for the given sha256, recomputed from its key; keep it private until the release"),
+        salt: text(`32 hex: this wallet's salt for the given sha256, recomputed from its key; ${SALT_PUBLIC}`),
         landed: flag("whether an announcement with this commitment, sent by this wallet, is on chain"),
         earliest: flag(EARLIEST_MEANS),
         signature: optional(text("this wallet's earliest announcement of it")),

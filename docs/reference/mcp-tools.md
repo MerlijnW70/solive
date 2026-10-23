@@ -178,6 +178,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | `pay_to` | address | yes | the wallet to pay |
 | `result` | whole number as a decimal string | no | the result to attest, a plain count not whole tokens, between the intent's min_result and max_result; default min_result |
 | `delivered_sha256` | string | no | the sha256, as 64 hex digits, of the work this release pays for: the same hash the worker announced with solive_wallet_deliver; required for a proof escrow, whose release pays that work's earliest announcer; recorded in a memo this wallet signs with the release, so the payer can check what it receives with solive_wallet_receipt; a Ledger wallet records none |
+| `received_outside_announcement` | boolean | no | true when the work reached this wallet outside an announcement, so none backs delivered_sha256; leave out to require an announcement |
 | `max_pages` | integer 1..100000 | no | pages of 1000 signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default 1000; raise it when the release is refused because the record of announced work is incomplete |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs the attestation and settles; leave out to preview |
@@ -198,6 +199,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | `result` | whole number as a decimal string | no | the result to attest, between the intent's min_result and max_result; default min_result |
 | `lookup_table` | address | no | an address lookup table holding this split's lookup_accounts, to fit more co-authors under the transaction size limit; create one with the preview's lookup_accounts and pass it with send |
 | `delivered_sha256` | string | no | the sha256, as 64 hex digits, of the work this release pays for; required, since a release recording it must include that work's earliest announcer among the recipients; recorded in a memo this wallet signs with the release, or right after it when the release has no room for the memo, so the payer can check what it receives with solive_wallet_receipt |
+| `received_outside_announcement` | boolean | no | true when the work reached this wallet outside an announcement, so none backs delivered_sha256; leave out to require an announcement |
 | `max_pages` | integer 1..100000 | no | pages of 1000 signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default 1000; raise it when the release is refused because the record of announced work is incomplete |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs the attestation and settles; leave out to preview |
@@ -233,6 +235,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | `pay_to` | address | yes | the wallet the release pays |
 | `result` | whole number as a decimal string | yes | the result the release attests, between the intent's min_result and max_result |
 | `delivered_sha256` | string | yes | the sha256, as 64 hex digits, of the work the release pays for; its earliest announcer must be pay_to |
+| `received_outside_announcement` | boolean | no | true when the work reached this wallet outside an announcement, so none backs delivered_sha256; leave out to require an announcement |
 | `max_pages` | integer 1..100000 | no | pages of 1000 signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default 1000; raise it when the release is refused because the record of announced work is incomplete |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs the vote; leave out to preview |
@@ -252,6 +255,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | `pay_to` | address | yes | the wallet the release pays |
 | `result` | whole number as a decimal string | yes | the result the release attests, between the intent's min_result and max_result |
 | `delivered_sha256` | string | yes | the sha256, as 64 hex digits, of the work the release pays for; its earliest announcer must be pay_to |
+| `received_outside_announcement` | boolean | no | true when the work reached this wallet outside an announcement, so none backs delivered_sha256; leave out to require an announcement |
 | `max_pages` | integer 1..100000 | no | pages of 1000 signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default 1000; raise it when the release is refused because the record of announced work is incomplete |
 | `votes` | list of object, 1 to 8 | yes | one vote per member, in any order |
 | `approval` | string | no | the approval the preview returned; needed with send |
@@ -669,7 +673,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 ## solive_get_claims
 
-Read the claims board of a proof escrow: whether its owner opened claims, whether the escrow is still open, released or gone, and whether the job is free, held by a worker until a time, or held by a claim that lapsed. While a claim holds, only its worker can be paid. next says what to do about the claim.
+Read the claims board of a proof escrow: whether its owner opened claims, whether the escrow is still open, released or gone, and whether the job is free, held by a worker until a time, or held by a claim that lapsed. While a claim holds, only its worker can be paid. invited lists the wallets an invite-only job's sealed spec names; only they can be paid. next says what to do about the claim.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 

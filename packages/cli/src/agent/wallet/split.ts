@@ -49,7 +49,7 @@ import { prepare, transactionSize } from "../prepare.js";
 import { STATUS } from "../../accounts.js";
 import { feePayerOf, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, WAIT_SCAN, signerOf, sent, sha256Of, walletOpeners } from "./guard.js";
 import { openingOutput, openingsFor, sendOpenings, skippedOf } from "./openings.js";
-import { DEVICE_RELEASE, RELEASE_CHANGED, approvalOf, claimsOfRelease, stakeReturned } from "./attest.js";
+import { DEVICE_RELEASE, RELEASE_CHANGED, approvalOf, backedOrReceived, claimsOfRelease, invitedPayees, receivedOutside, stakeReturned } from "./attest.js";
 import { sol, tokenAccountRent } from "./costs.js";
 import { notInSplit, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor, confirmedRelease } from "./delivery.js";
 
@@ -103,6 +103,7 @@ export const walletAttestSplit = define({
     result: optional(amount("the result to attest, between the intent's min_result and max_result; default min_result")),
     lookup_table: optional(account("an address lookup table holding this split's lookup_accounts, to fit more co-authors under the transaction size limit; create one with the preview's lookup_accounts and pass it with send")),
     delivered_sha256: optional(text(`the sha256, as 64 hex digits, of the work this release pays for; required, since a release recording it must include that work's earliest announcer among the recipients; recorded in a memo this wallet signs with the release, or right after it when the release has no room for the memo, so the payer can check what it receives with ${tool("wallet_receipt")}`)),
+    received_outside_announcement: receivedOutside,
     max_pages: optional(integer(1, MAX_ATTEST_PAGES, MAX_PAGES_INPUT)),
     approval: optional(text("the approval the preview returned; needed with send")),
     send: optional(flag("true signs the attestation and settles; leave out to preview")),
@@ -166,6 +167,7 @@ export const walletAttestSplit = define({
     for (const [i, r] of input.recipients.entries()) {
       await walletRecipient(ctx.transport, r.wallet, `recipients.${i}.wallet`);
     }
+    await invitedPayees(ctx, intent, wallets);
     const claimed = await claimsOfRelease(ctx, intent, held.claims, wallets);
     const left = claimed.accounts.claims === undefined ? undefined : await boardLeft(ctx.transport, input.owner, input.nonce, intent);
     if (input.delivered_sha256 === undefined) {
@@ -182,6 +184,7 @@ export const walletAttestSplit = define({
     if (first !== null && !wallets.includes(first.worker)) {
       throw new AgentRefusal("NotEarliestAnnouncer", notInSplit(first.worker, delivered));
     }
+    backedOrReceived(first, intent, delivered, input.received_outside_announcement);
     const salt = first?.salt;
     const openings = openingsFor(record, first);
     await confirmedRelease(ctx, { intent, attestor: signer.address, sha256: delivered, pages: input.max_pages ?? ATTEST_PAGES, payees: wallets, keypair });
