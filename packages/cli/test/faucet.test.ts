@@ -54,7 +54,7 @@ const healthy: Stub = {
   invalid: "",
 };
 
-type Issue = { number: number; body: string; author?: string; untagged?: boolean };
+type Issue = { number: number; body: string; author?: string; untagged?: boolean; listed?: boolean };
 
 function request(body: string, stub: Partial<Stub> = {}, author = "a-user") {
   return requests([{ number: 7, body, author }], stub);
@@ -64,7 +64,7 @@ function requests(issues: Issue[], stub: Partial<Stub> = {}) {
   const dir = mkdtempSync(join(tmpdir(), "faucet-"));
   const store = join(dir, "issues");
   mkdirSync(store);
-  writeFileSync(join(store, "open"), issues.map((i) => `${i.number}\n`).join(""));
+  writeFileSync(join(store, "open"), issues.filter((i) => i.listed !== false).map((i) => `${i.number}\n`).join(""));
   writeFileSync(join(store, "untagged"), issues.filter((i) => i.untagged === true).map((i) => `${i.number}\n`).join(""));
   for (const issue of issues) {
     mkdirSync(join(store, String(issue.number)));
@@ -218,6 +218,12 @@ describe("the devnet faucet", () => {
     const { out, calls } = requests([]);
     expect(out).toBe("");
     expect(calls).toHaveLength(2);
+  });
+
+  it("serves a Devnet SOL request filed without the form, though the label search does not list it yet", () => {
+    const { calls } = requests([{ number: 7, body: ADDRESS, untagged: true, listed: false }]);
+    expect(calls.filter((c) => c.startsWith("gh issue list --label faucet --state open"))).toHaveLength(1);
+    expect(sent(calls)).toHaveLength(1);
   });
 
   it("labels a Devnet SOL request filed without the form, then serves it", () => {

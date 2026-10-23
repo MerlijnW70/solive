@@ -88,7 +88,7 @@ for issue in $(printf '%s\n' "$untagged" | grep -Ex '[0-9]+'); do
   gh issue edit "$issue" --add-label faucet > /dev/null
 done
 waiting=$(gh issue list --label faucet --state open --limit 100 --json number,labels --jq '.[] | select(all(.labels[]; .name != "faucet-sent")) | .number')
-mapfile -t open < <(printf '%s\n' "$waiting" | grep -Ex '[0-9]+' | sort -n)
+mapfile -t open < <(printf '%s\n%s\n' "$waiting" "$untagged" | grep -Ex '[0-9]+' | sort -nu)
 status=0
 for issue in "${open[@]}"; do
   set +e
