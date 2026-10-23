@@ -1,0 +1,30 @@
+# Bounty: a critical or high issue in Revert v4lend, oracle
+
+Find one critical or high severity issue in Revert v4lend at commit f6d0fb41b7487f60ce64e011312a956e184e2a75 of https://github.com/revert-finance/v4lend, and prove it with a Foundry test.
+
+## Focus
+
+V4Oracle and position valuation: Chainlink and Uniswap v3 TWAP checks, LiquidityCalculator, any path that values collateral (src/oracle/V4Oracle.sol, src/shared/math/**). Issues that start in this area and reach other in-scope contracts count.
+
+## Pays only for
+
+An issue an unprivileged account can trigger that causes one of:
+- theft of user or protocol funds, or profit for the attacker at the vault's or a user's expense;
+- bad debt or insolvency: debt that collateral cannot cover, or lenders unable to withdraw what their shares are worth;
+- borrowing against collateral value that is not there;
+- permanent freezing of user funds or positions;
+- a liquidation that seizes more than it should, or a solvent position that can be liquidated, or an insolvent one that cannot.
+
+## Does not pay
+
+- Anything listed as out of scope or intentional on https://cantina.xyz/competitions/e275368c-547d-4d91-a418-053ad31082a8: trusted roles (vault owner, hook owner, approved operators, approved transformers) acting against users, MEV, gas griefing, front-running, frontend and off-chain parts, and the AUDIT-ACCEPTED behaviours named in the repository.
+- Low or informational issues, style, gas, missing events, and issues without a working test.
+- Findings that need a price feed, a token or Uniswap itself to misbehave beyond what an attacker can cause.
+
+## Deliver
+
+One text file holding two parts: a short report (title, severity, root cause with file and line, attack steps, impact in numbers) and one Foundry test file that compiles in the repository's test folder at that commit and passes with `forge test --match-path <file>` on the repository's own mainnet fork setup, asserting the loss or wrong state in numbers. Seal the file to the judge and host only the sealed form; findings stay confidential until the judge submits them.
+
+## Check
+
+The judge opens the file, reads the report, runs the test at that commit, checks the impact and that the issue is not excluded above. Pays the earliest announcer of a valid finding. Duplicates of an issue already paid are not paid.
