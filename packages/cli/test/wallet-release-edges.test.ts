@@ -314,7 +314,7 @@ describe("wallet_history", () => {
     h.requestedOf.length = 0;
     const listed = await ok(client, "wallet_history");
     expect(listed["activity"]).toHaveLength(0);
-    expect(h.requestedOf.filter((of) => of !== undefined)).toEqual([made[1], made[0]]);
+    expect(h.requestedOf.filter((of) => of !== undefined)).toEqual([made[1], made[0], wallet]);
     const [next] = await findIntentPda({ owner: wallet, nonce: 2n });
     expect(h.requestedOf).not.toContain(next);
   });

@@ -1,10 +1,11 @@
 import type { Address } from "@solana/kit";
 import { findIntentPda, formatAmount, kindName, tokenName } from "@intent-engine/core";
-import { createClient, type HistoryEvent, mintOf } from "@intent-engine/client";
+import { createClient, type HistoryEvent, mintOf, ownHistory, paidWalletsOf, transactionAt, type Transport } from "@intent-engine/client";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { account, amount, choice, flag, integer, list, nullable, object, optional, text, time } from "../schema.js";
 import { signerOf } from "./guard.js";
+import { claimItem, claimsOf, OWN_TRANSACTIONS, workItem, workOf } from "./history-work.js";
 
 export const HISTORY_DEFAULT = 10;
 export const HISTORY_MAX = 25;
@@ -25,31 +26,44 @@ const ENDINGS: Readonly<Record<string, Outcome>> = {
   IntentExpired: "expired",
 };
 
+async function paidWalletOf(transport: Transport, ending: HistoryEvent, intent: Address): Promise<Address | null> {
+  const { signature, slot, blockTime } = ending;
+  const transaction = (await transactionAt(transport, signature, intent)) ?? { signature, slot, blockTime, failed: false, emitted: [] };
+  return (await paidWalletsOf(transport, { event: ending, transaction }, intent))?.[0] ?? null;
+}
+
 export const walletHistory = define({
   name: tool("wallet_history"),
   title: "Show the wallet's history",
-  description: `Shows the user what this wallet did, newest first: each order (intent) it created, what it sold, and how it ended (filled with what it received, released to whom, cancelled, expired, or still open), read from the chain. Finished orders are included even after their accounts closed. Use it to answer "what have I done".`,
+  description: `Shows the user what this wallet did, newest first, read from the chain: orders (intents) it created and how each ended, closed ones included; work it announced with ${tool("wallet_deliver")} and whether a release paid it; claims it took or dropped and the stake's outcome. It leaves out transfers, releases it judged, fills of others' orders, and standby lines.`,
   effect: "read",
-  input: object({ limit: optional(integer(1, HISTORY_MAX, `how many of the newest intents to show; default ${HISTORY_DEFAULT}`)) }),
+  input: object({
+    limit: optional(integer(1, HISTORY_MAX, `how many of the newest intents, and of the newest announcements and claims, to show; default ${HISTORY_DEFAULT}`)),
+  }),
   output: object({
-    wallet: account(),
+    wallet: account("this server's wallet, whose history this is"),
     activity: list(
       object({
-        nonce: amount(),
-        intent: account(),
-        kind: text(),
-        outcome: choice(OUTCOMES),
+        nonce: amount("the intent's nonce, its number among this wallet's intents"),
+        intent: account("the intent's address"),
+        kind: text("the kind of intent, such as AttestedResult for an escrow or SwapExactIn for a swap"),
+        outcome: choice(OUTCOMES, "how it ended: open, filled, released, cancelled, expired, or unknown when its history was not found"),
         sold: text("whole tokens the intent escrowed"),
         sell_token: text("SOL, TEST or the mint"),
         received: nullable(text("whole tokens delivered by the fill")),
         receive_token: text("SOL, TEST or the mint"),
-        paid_to: nullable(account("the wallet a release paid")),
+        paid_to: nullable(account("the wallet a release paid: the owner of payee")),
+        payee: nullable(account("the token account a release paid into, owned by paid_to; for SOL it holds wrapped SOL")),
         signature: nullable(text("the transaction that ended it")),
         at: nullable(time("unix seconds of the last event, when the cluster reports it")),
       }),
       HISTORY_MAX,
+      "the intents this wallet created, newest first",
     ),
     more: flag("true when older intents exist beyond limit"),
+    work: list(workItem, HISTORY_MAX, `the work this wallet announced with ${tool("wallet_deliver")}, newest first`),
+    claims: list(claimItem, HISTORY_MAX, "the claims this wallet took or dropped, newest first"),
+    more_work: flag(`true when older announcements or claims exist beyond limit, or this wallet has transactions older than the newest ${OWN_TRANSACTIONS} read`),
   }),
   run: async (ctx: AgentContext, input) => {
     const wallet = (await signerOf(ctx)).address;
@@ -78,6 +92,7 @@ export const walletHistory = define({
       const outcome: Outcome = ending === undefined ? ((await ctx.transport.getAccount(intent)) === null ? "unknown" : "open") : (ENDINGS[ending.name] ?? "unknown");
       const ended = fields(ending);
       const delivered = outcome === "filled" ? (ended["delivered"] as bigint | undefined) : undefined;
+      const attested = ending?.name === "IntentAttested" ? ending : undefined;
       activity.push({
         nonce,
         intent,
@@ -87,11 +102,16 @@ export const walletHistory = define({
         sell_token: tokenName(inputMint) ?? inputMint,
         received: delivered === undefined ? null : await tokens(outputMint, delivered),
         receive_token: tokenName(outputMint) ?? outputMint,
-        paid_to: ending?.name === "IntentAttested" ? (ended["payee"] as Address) : null,
+        paid_to: attested === undefined ? null : await paidWalletOf(ctx.transport, attested, intent),
+        payee: attested === undefined ? null : attested.fields.payee,
         signature: ending?.signature ?? null,
         at: (ending ?? events[0])?.blockTime ?? null,
       });
     }
-    return { wallet, activity, more: oldest > 0n };
+    const own = await ownHistory(ctx.transport, wallet, OWN_TRANSACTIONS);
+    const count = Number(limit);
+    const { work, more: moreWork } = await workOf(ctx.transport, wallet, own.transactions, count, tokens);
+    const { claims, more: moreClaims } = await claimsOf(ctx.transport, wallet, own.transactions, count);
+    return { wallet, activity, more: oldest > 0n, work, claims, more_work: moreWork || moreClaims || !own.complete };
   },
 });

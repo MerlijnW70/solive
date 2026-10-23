@@ -13,3 +13,4 @@ export * from "./simple.js";
 export * from "./transport.js";
 export * from "./trust.js";
 export * from "./unopened.js";
+export * from "./wallet-reads.js";

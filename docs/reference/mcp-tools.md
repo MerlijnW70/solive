@@ -368,13 +368,13 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Shows the user what this wallet did, newest first: each order (intent) it created, what it sold, and how it ended (filled with what it received, released to whom, cancelled, expired, or still open), read from the chain. Finished orders are included even after their accounts closed. Use it to answer "what have I done".
+Shows the user what this wallet did, newest first, read from the chain: orders (intents) it created and how each ended, closed ones included; work it announced with solive_wallet_deliver and whether a release paid it; claims it took or dropped and the stake's outcome. It leaves out transfers, releases it judged, fills of others' orders, and standby lines.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `limit` | integer 1..25 | no | how many of the newest intents to show; default 10 |
+| `limit` | integer 1..25 | no | how many of the newest intents, and of the newest announcements and claims, to show; default 10 |
 
 ## solive_wallet_cancel
 
