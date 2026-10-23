@@ -15,7 +15,7 @@ type Json = Record<string, unknown>;
 
 const SPEC_STEP = "read a job's spec with solive_get_spec and work on it only when matches is true";
 const CLAIMS_STEP = "a job with takes_claims true pays only the worker holding its claim while the claim holds";
-const CLAIM_STEP = "claim one with solive_wallet_claim before working on it";
+const CLAIM_STEP = "claim one with solive_wallet_claim before working on it or hosting the work";
 
 const MODES: { label: string; serving: Serving; next: string }[] = [
   { label: "no wallet", serving: { wallet: false, allTools: false, relay: false, agent: false }, next: `${SPEC_STEP}; ${CLAIMS_STEP}` },

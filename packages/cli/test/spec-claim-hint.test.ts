@@ -87,7 +87,7 @@ describe("solive_get_spec on a job that takes claims", () => {
   }
 
   it("names the claim tool only where it is served", async () => {
-    expect(servedText(SPEC_TAKES_CLAIMS, new Set(servedActions(WITH_WALLET).map(({ name }) => name)))).toContain("claim it with solive_wallet_claim before working on it");
+    expect(servedText(SPEC_TAKES_CLAIMS, new Set(servedActions(WITH_WALLET).map(({ name }) => name)))).toContain("claim it with solive_wallet_claim before working on it or hosting the work");
     expect(servedText(SPEC_TAKES_CLAIMS, new Set(servedActions(WITHOUT).map(({ name }) => name)))).toBe("this job takes claims: while one holds, only its worker can be paid");
   });
 

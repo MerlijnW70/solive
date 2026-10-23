@@ -23,6 +23,7 @@ import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { WRAPPED } from "../create.js";
 import { tool } from "../names.js";
+import { boardLeft, leavesBoard, thenSettle } from "../claim-line.js";
 import { AgentRefusal } from "../problems.js";
 import { InvalidInput, account, amount, flag, integer, list, object, optional, text } from "../schema.js";
 import { preparedView } from "../shapes.js";
@@ -131,6 +132,7 @@ export const walletAttest = define({
       throw new AgentRefusal("NotInvited", notInvited(input.pay_to, intent));
     }
     const claimed = await claimsOfRelease(ctx, intent, held.claims, [input.pay_to]);
+    const left = claimed.accounts.claims === undefined ? undefined : await boardLeft(ctx.transport, input.owner, input.nonce, intent);
     const token = await mintOf(ctx.transport, held.inputMint);
     const payee = await tokenAccountIfMissing(ctx.transport, payer, input.pay_to, held.inputMint, token.tokenProgram);
     if (payee.create.length === 0) {
@@ -243,6 +245,7 @@ export const walletAttest = define({
         ...(delivered === undefined || device ? [] : [`Records: the delivered work's sha256 ${delivered}${salt === undefined ? "" : " and its announcer's salt"}, in a memo this wallet signs with the release`]),
         ...(device ? [`Signs: only the release message on the Ledger, which shows digest ${envelopeDigest(message)}; the fee payer ${payer.address} signs and pays the transaction, so no memo records the delivered work`] : []),
         ...stakeReturned(claimed.stake, claimed.accounts.stakeTo),
+        ...leavesBoard(left),
         ...(openings.length === 0 ? [] : [`Opens: the salts of ${openings.reduce((n, o) => n + o.salts.length, 0)} earlier announcement(s), in ${openings.length} more transaction(s) after the release`]),
         ...(payee.create.length === 0 ? [] : [`Setup: creates ${input.pay_to}'s ${name} account, paid by ${paidBy}`]),
         ...(treasury.create.length === 0 ? [] : [`Setup: creates the engine treasury's ${name} account for the fee, paid by ${paidBy}`]),
@@ -254,7 +257,7 @@ export const walletAttest = define({
     };
     const done = await sent(ctx, payer, view2, input.send, call, {
       preview: device ? `${PREVIEW_APPROVAL_NEXT}; ${DEVICE_RELEASE}` : PREVIEW_APPROVAL_NEXT,
-      done: `released to ${input.pay_to}; ${tool("wallet_feedback")} to rate`,
+      done: thenSettle(`released to ${input.pay_to}; ${tool("wallet_feedback")} to rate`, left),
     });
     return "signature" in done ? { ...done, ...passed, ...(await sendOpenings(ctx, payer, signer.address, openings)) } : { ...done, ...passed };
   },

@@ -1,7 +1,9 @@
+import type { Address } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
 import { balances, defaultMints, FUND_BELOW, setup } from "../../wallet.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
+import { boardLeft, leavesBoard, thenSettle } from "../claim-line.js";
 import { tool } from "../names.js";
 import { listIntents, SOL_DECIMALS } from "../read.js";
 import { account, amount, choice, flag, list, object, optional, text } from "../schema.js";
@@ -87,7 +89,7 @@ export const walletCancel = define({
   output: object({
     intent: account(),
     refund: amount("raw input units returned to the wallet"),
-    summary: list(text(), 16),
+    summary: list(text(), 18),
     warnings: list(text(), 8),
     ...deviceOutput,
     sent: flag(),
@@ -99,9 +101,10 @@ export const walletCancel = define({
     const view = (await prepareCancel.run(ctx, { owner: signer.address, nonce: input.nonce, close: input.close ?? true } as never, call)) as Record<
       string,
       unknown
-    >;
-    return sent(ctx, signer, view, input.send, call, {
-      done: `cancelled; ${tool("wallet_balance")} to see the refund`,
+    > & { intent: Address; summary: string[] };
+    const left = await boardLeft(ctx.transport, signer.address, input.nonce, view.intent);
+    return sent(ctx, signer, { ...view, summary: [...view.summary, ...leavesBoard(left)] }, input.send, call, {
+      done: thenSettle(`cancelled; ${tool("wallet_balance")} to see the refund`, left),
     });
   },
 });

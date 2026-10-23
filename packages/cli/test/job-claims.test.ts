@@ -218,7 +218,7 @@ describe("job claims and profiles over MCP", () => {
     const client = await connect();
     const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
     const escrow = { owner: j.w.owner.address, nonce: "0" };
-    expect(await ok(client, "get_claims", escrow)).toEqual({ intent: j.intent, takes_claims: false });
+    expect(await ok(client, "get_claims", escrow)).toEqual({ intent: j.intent, takes_claims: false, escrow: "open" });
     expect((await call(client, "wallet_claim", { ...escrow, action: "take", secs: 600 })).value).toMatchObject({ code: "ClaimsMissing", hint: noClaims(j.intent) });
     expect((await j.open()).code).toBe(EXIT_OK);
     expect(await ok(client, "get_claims", escrow)).toMatchObject({ takes_claims: true, state: "free", worker: null, stake: STAKE.toString(), max_secs: 3600 });

@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
 import { buildClaimJob, buildDropClaim, claimUntil, findIntentPda, formatAmount, IntentCoreError, IntentStatus, type LineHandover, MAX_CLAIM_SECS } from "@intent-engine/core";
-import { createClient } from "@intent-engine/client";
-import { coolingDown, dropHandover, handedTo, heldBy, lineWaiting, noClaims } from "../claim-commands.js";
+import { type ClaimsView, createClient } from "@intent-engine/client";
+import { coolingDown, dropHandover, handedTo, heldBy, noClaims } from "../claim-commands.js";
 import { type AgentContext, define } from "./actions.js";
+import { advanceStep, closedEscrow, type EscrowState, escrowState, leaveStep, type LineStep, lineWaitingHere, settleCall, settleStep, standbyStep } from "./claim-line.js";
 import type { Call } from "./claims.js";
 import { tool } from "./names.js";
 import { AgentRefusal } from "./problems.js";
@@ -14,6 +15,8 @@ import { deviceOutput, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent }
 
 export const CLAIM_CHANGED =
   "this claim differs from its preview: the escrow, action, seconds or stake changed, or no approval was given; preview it again and show the user";
+
+const ACTIONS = ["take", "drop", "settle", "standby", "leave", "advance"] as const;
 
 const escrowRef = {
   owner: account("the wallet that made the escrow"),
@@ -26,15 +29,31 @@ async function claimsFor(ctx: AgentContext, owner: Address, nonce: bigint) {
   return { client, intent, view: await client.claims(owner, nonce) };
 }
 
+const waitingWorkers = (waiting: number) => `${waiting} ${waiting === 1 ? "worker stands" : "workers stand"} by`;
+
+function claimsNext(intent: Address, escrow: EscrowState, view: ClaimsView, owner: Address, nonce: bigint): string {
+  if (escrow !== "open") {
+    return `${closedEscrow(intent, escrow)}; ${settleCall(owner, nonce)} closes its claims board and returns the rent to ${view.owner}`;
+  }
+  if (view.state === "held" && view.worker !== null) {
+    return `${view.worker} holds this job's claim for ${view.secondsLeft} more seconds; ${tool("wallet_claim")} action standby joins the line that gets the job next`;
+  }
+  if (view.line.waiting > 0) {
+    return `${waitingWorkers(view.line.waiting)}, so the job goes to them in line order; ${tool("wallet_claim")} action advance hands it to the first, and action standby joins the line`;
+  }
+  return `the job is free to claim; claim it with ${tool("wallet_claim")} action take before working on it or hosting the work`;
+}
+
 export const getClaims = define({
   name: tool("get_claims"),
   title: "Who holds a job's claim",
-  description: `Read the claims board of a proof escrow: whether its owner opened claims, and whether the job is free, held by a worker until a time, or held by a claim that lapsed. While a claim holds, only its worker can be paid.`,
+  description: "Read the claims board of a proof escrow: whether its owner opened claims, whether the escrow is still open, released or gone, and whether the job is free, held by a worker until a time, or held by a claim that lapsed. While a claim holds, only its worker can be paid. next says what to do about the claim.",
   effect: "read",
   input: object(escrowRef),
   output: object({
     intent: account(),
     takes_claims: flag("false means the owner opened no claims, so anyone can be paid"),
+    escrow: choice(["open", "released", "gone"] as const, "open while the escrow can still be paid; released once paid; gone once cancelled, expired or closed"),
     board: optional(account()),
     state: optional(choice(["free", "held", "lapsed"] as const)),
     worker: optional(nullable(account())),
@@ -46,15 +65,18 @@ export const getClaims = define({
     dropped_by: optional(nullable(account("a worker that dropped its claim and may not claim again until cooldown_until"))),
     cooldown_until: optional(time("when the worker that dropped may claim again")),
     waiting: optional(integer(0, 0xffff_ffff, "workers standing by in the job's line, who get it in order before anyone else can claim it")),
+    next: optional(text()),
   }),
   run: async (ctx, input) => {
-    const { intent, view } = await claimsFor(ctx, input.owner, input.nonce);
+    const { client, intent, view } = await claimsFor(ctx, input.owner, input.nonce);
+    const escrow = await escrowState(client, input.owner, input.nonce);
     if (view === null) {
-      return { intent, takes_claims: false };
+      return { intent, takes_claims: false, escrow, ...(escrow === "open" ? {} : { next: closedEscrow(intent, escrow) }) };
     }
     return {
       intent,
       takes_claims: true,
+      escrow,
       board: view.board,
       state: view.state,
       worker: view.worker,
@@ -66,27 +88,32 @@ export const getClaims = define({
       dropped_by: view.cooldown?.worker ?? null,
       ...(view.cooldown === null ? {} : { cooldown_until: view.cooldown.until }),
       waiting: view.line.waiting,
+      next: claimsNext(intent, escrow, view, input.owner, input.nonce),
     };
   },
 });
 
 export const walletClaim = define({
   name: tool("wallet_claim"),
-  title: "Claim or drop a job",
-  description: `Reserves a job for the user, or drops it: stakes what the owner asks so only this wallet can be paid for secs seconds. The stake returns when this wallet is paid or drops the claim; the owner gets it if the claim lapses first. ${PREVIEW_APPROVAL}`,
+  title: "Claim, drop or queue for a job",
+  description: `Reserves a job: take stakes what the owner asks so only this wallet is paid for secs seconds, lost if it lapses; drop returns it. standby queues behind another claim, leave quits, advance passes a lapsed job down the line, settle returns a finished board's rent. ${PREVIEW_APPROVAL}`,
   effect: "submit",
   input: object({
     ...escrowRef,
-    action: choice(["take", "drop"] as const, "take claims the job, drop gives up a claim this wallet holds"),
-    secs: optional(integer(1, MAX_CLAIM_SECS, "how long to hold the claim; needed with take")),
+    action: choice(
+      ACTIONS,
+      "take claims the job; drop gives up this wallet's claim and its stake returns; standby joins the line for a job another worker holds; leave quits the line, returning the entry's stake and rent; advance hands a lapsed job to the first in line; settle moves a lapsed claim's stake to the owner and, once the escrow is released or gone, closes the claims board and returns its rent to the owner",
+    ),
+    secs: optional(integer(1, MAX_CLAIM_SECS, "how long to hold the claim; needed with take and standby")),
+    seq: optional(integer(0, 0xffff_ffff, "with leave: the line entry to return, needed once the claims board is closed")),
     approval: optional(text("the approval the preview returned; needed with send")),
     send: optional(flag("true sends the claim; leave out to preview")),
   }),
   output: object({
     intent: account(),
-    action: choice(["take", "drop"] as const),
+    action: choice(ACTIONS),
     approval: text(),
-    summary: list(text(), 4),
+    summary: list(text(), 6),
     ...deviceOutput,
     sent: flag(),
     signature: optional(text()),
@@ -95,54 +122,24 @@ export const walletClaim = define({
   run: async (ctx: AgentContext, input, call: Call) => {
     const signer = await signerOf(ctx);
     const { client, intent, view } = await claimsFor(ctx, input.owner, input.nonce);
-    if (view === null) {
+    const escrow = { owner: input.owner, nonce: input.nonce, intent };
+    let step: LineStep;
+    if (input.action === "leave") {
+      step = await leaveStep(client, ctx.transport, escrow, view, signer, input.seq);
+    } else if (view === null) {
       throw new AgentRefusal("ClaimsMissing", noClaims(intent));
-    }
-    const stake = `${formatAmount(view.stake, 9)} SOL`;
-    let instruction;
-    let summary: string[];
-    let handover: LineHandover = { entries: [] };
-    if (input.action === "take") {
-      if (input.secs === undefined) {
-        throw new InvalidInput([{ path: "secs", message: "give secs with action take" }]);
-      }
-      if (view.state === "held" && view.worker !== null) {
-        throw new AgentRefusal("ClaimHeld", heldBy(intent, view.worker, view.secondsLeft));
-      }
-      if (view.line.waiting > 0) {
-        throw new AgentRefusal("LineWaiting", lineWaiting(intent, view.line.waiting));
-      }
-      if (view.cooldown !== null && view.cooldown.worker === signer.address) {
-        throw new AgentRefusal("ClaimCooldown", coolingDown(intent, signer.address, view.cooldown.until));
-      }
-      if (input.secs > view.maxSecs) {
-        throw new InvalidInput([{ path: "secs", message: `this escrow allows at most ${view.maxSecs} seconds` }]);
-      }
-      const now = await client.chainTime();
-      const found = await client.intent(input.owner, input.nonce);
-      if (found === null || found.intent.status !== IntentStatus.Open || now >= found.intent.expiresAt) {
-        throw new AgentRefusal("InvalidTransition", `escrow ${intent} is no longer open, so its job cannot be claimed`);
-      }
-      let until: bigint;
-      try {
-        until = claimUntil(view.maxSecs, now, input.secs, found.intent.expiresAt);
-      } catch (error) {
-        throw error instanceof IntentCoreError ? new AgentRefusal("ClaimTerms", `a claim of ${input.secs} seconds would outlive escrow ${intent}`) : error;
-      }
-      instruction = await buildClaimJob({ worker: signer, intent, owner: view.owner, secs: input.secs });
-      summary = [
-        `Claims: escrow ${intent} until ${until}, ${input.secs} seconds; until then only this wallet ${signer.address} can be paid`,
-        `Stakes: ${stake}, returned when a release pays this wallet or it drops the claim, and lost to the owner if the claim lapses first`,
-      ];
+    } else if (input.action === "settle") {
+      step = await settleStep(client, ctx.transport, escrow, view, signer.address);
+    } else if (input.action === "standby") {
+      step = await standbyStep(client, ctx.transport, escrow, view, signer, needSecs(input.secs, input.action));
+    } else if (input.action === "advance") {
+      step = await advanceStep(client, ctx.transport, escrow, view, signer.address);
+    } else if (input.action === "take") {
+      step = await takeStep(client, escrow, view, signer, needSecs(input.secs, input.action));
     } else {
-      if (view.state !== "held" || view.worker !== signer.address) {
-        throw new AgentRefusal("NotClaimant", `this wallet ${signer.address} holds no claim on escrow ${intent}`);
-      }
-      handover = await dropHandover(client, ctx.transport, input.owner, input.nonce, intent, view);
-      instruction = await buildDropClaim({ worker: signer, intent, ...handover });
-      summary = [`Drops: this wallet's claim on escrow ${intent}`, `Returns: its stake of ${stake} to ${signer.address}`, ...handedTo(handover)];
+      step = await dropStep(ctx, client, escrow, view, signer);
     }
-    const approval = createHash("sha256").update(`${intent}:${input.action}:${input.secs ?? ""}:${view.stake}`).digest("hex").slice(0, 16);
+    const approval = createHash("sha256").update(`${intent}:${input.action}:${step.key}`).digest("hex").slice(0, 16);
     if (input.send === true && input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", CLAIM_CHANGED);
     }
@@ -150,15 +147,73 @@ export const walletClaim = define({
       intent,
       action: input.action,
       approval,
-      summary,
-      prepared: input.send === true || signer.device !== undefined ? preparedView(await prepare(ctx.transport, [instruction], signer.address)) : undefined,
+      summary: step.summary,
+      prepared: input.send === true || signer.device !== undefined ? preparedView(await prepare(ctx.transport, [step.instruction], signer.address)) : undefined,
     };
-    return sent(ctx, signer, shown, input.send, call, {
-      preview: PREVIEW_APPROVAL_NEXT,
-      done:
-        input.action === "take"
-          ? `you hold ${intent}; do the work, then ${tool("wallet_deliver")} before it lapses`
-          : `dropped; stake returned, job ${handover.nextWorker === undefined ? "free for others" : `handed to ${handover.nextWorker}, next in line`}`,
-    });
+    return sent(ctx, signer, shown, input.send, call, { preview: PREVIEW_APPROVAL_NEXT, done: step.done });
   },
 });
+
+function needSecs(secs: number | undefined, action: string): number {
+  if (secs === undefined) {
+    throw new InvalidInput([{ path: "secs", message: `give secs with action ${action}` }]);
+  }
+  return secs;
+}
+
+type Signer = Awaited<ReturnType<typeof signerOf>>;
+
+type Escrow = { owner: Address; nonce: bigint; intent: Address };
+
+async function takeStep(client: ReturnType<typeof createClient>, escrow: Escrow, view: ClaimsView, signer: Signer, secs: number): Promise<LineStep> {
+  const { intent } = escrow;
+  if (view.state === "held" && view.worker !== null) {
+    const held = heldBy(intent, view.worker, view.secondsLeft);
+    throw new AgentRefusal("ClaimHeld", view.worker === signer.address ? held : `${held}; join the line with ${tool("wallet_claim")} action standby`);
+  }
+  if (view.line.waiting > 0) {
+    throw new AgentRefusal("LineWaiting", lineWaitingHere(intent, view.line.waiting));
+  }
+  if (view.cooldown !== null && view.cooldown.worker === signer.address) {
+    throw new AgentRefusal("ClaimCooldown", coolingDown(intent, signer.address, view.cooldown.until));
+  }
+  if (secs > view.maxSecs) {
+    throw new InvalidInput([{ path: "secs", message: `this escrow allows at most ${view.maxSecs} seconds` }]);
+  }
+  const now = await client.chainTime();
+  const found = await client.intent(escrow.owner, escrow.nonce);
+  if (found === null || found.intent.status !== IntentStatus.Open || now >= found.intent.expiresAt) {
+    throw new AgentRefusal("InvalidTransition", `escrow ${intent} is no longer open, so its job cannot be claimed`);
+  }
+  let until: bigint;
+  try {
+    until = claimUntil(view.maxSecs, now, secs, found.intent.expiresAt);
+  } catch (error) {
+    throw error instanceof IntentCoreError ? new AgentRefusal("ClaimTerms", `a claim of ${secs} seconds would outlive escrow ${intent}`) : error;
+  }
+  const stake = `${formatAmount(view.stake, 9)} SOL`;
+  return {
+    instruction: await buildClaimJob({ worker: signer, intent, owner: view.owner, secs }),
+    summary: [
+      `Claims: escrow ${intent} until ${until}, ${secs} seconds; until then only this wallet ${signer.address} can be paid`,
+      `Stakes: ${stake}, returned when a release pays this wallet or it drops the claim, and lost to the owner if the claim lapses first`,
+      ...(view.state === "lapsed" ? [`Ends: the lapsed claim of ${view.worker}, whose stake goes to the owner ${view.owner}`] : []),
+    ],
+    key: `${secs}:${view.stake}`,
+    done: `you hold ${intent}; do the work, then ${tool("wallet_deliver")} before it lapses`,
+  };
+}
+
+async function dropStep(ctx: AgentContext, client: ReturnType<typeof createClient>, escrow: Escrow, view: ClaimsView, signer: Signer): Promise<LineStep> {
+  const { intent } = escrow;
+  if (view.state !== "held" || view.worker !== signer.address) {
+    throw new AgentRefusal("NotClaimant", `this wallet ${signer.address} holds no claim on escrow ${intent}`);
+  }
+  const handover: LineHandover = await dropHandover(client, ctx.transport, escrow.owner, escrow.nonce, intent, view);
+  return {
+    instruction: await buildDropClaim({ worker: signer, intent, ...handover }),
+    summary: [`Drops: this wallet's claim on escrow ${intent}`, `Returns: its stake of ${formatAmount(view.stake, 9)} SOL to ${signer.address}`, ...handedTo(handover)],
+    key: `:${view.stake}`,
+    done: `dropped; stake returned, job ${handover.nextWorker === undefined ? "free for others" : `handed to ${handover.nextWorker}, next in line`}`,
+  };
+}

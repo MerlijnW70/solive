@@ -40,6 +40,7 @@ import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { WRAPPED } from "../create.js";
 import { tool } from "../names.js";
+import { boardLeft, leavesBoard, thenSettle } from "../claim-line.js";
 import { AgentRefusal, problemOf } from "../problems.js";
 import { InvalidInput, account, amount, choice, flag, integer, list, object, optional, type Schema, text } from "../schema.js";
 import { preparedView } from "../shapes.js";
@@ -121,7 +122,7 @@ export const walletAttestSplit = define({
     follow_up_signature: optional(text("the follow-up transaction that records the sha256, when recorded is follow-up")),
     record_memo: optional(text(`when recorded is false, the memo that records the sha256 for this release; ${tool("wallet_record_delivery")} sends it from this wallet with a zero transfer to the escrow`)),
     ...openingOutput,
-    summary: list(text(), 16),
+    summary: list(text(), 18),
     warnings: list(text(), 8),
     sent: flag(),
     signature: optional(text()),
@@ -166,6 +167,7 @@ export const walletAttestSplit = define({
       await walletRecipient(ctx.transport, r.wallet, `recipients.${i}.wallet`);
     }
     const claimed = await claimsOfRelease(ctx, intent, held.claims, wallets);
+    const left = claimed.accounts.claims === undefined ? undefined : await boardLeft(ctx.transport, input.owner, input.nonce, intent);
     if (input.delivered_sha256 === undefined) {
       throw new InvalidInput([{ path: "delivered_sha256", message: DELIVERED_NEEDED }]);
     }
@@ -303,6 +305,7 @@ export const walletAttestSplit = define({
           ? [`Signs: only the release message on the Ledger, which shows digest ${digestHex}; the fee payer ${payer.address} signs and pays the transaction, so no memo records the delivered work`]
           : [RECORDS_SPLIT(delivered)]),
         ...stakeReturned(claimed.stake, claimed.accounts.stakeTo),
+        ...leavesBoard(left),
         ...(setup.length === 0 ? [] : [await setupLine(ctx, setup.length, token.tokenProgram, device)]),
       ],
       warnings: [...settlementWarnings(params), WARN_COAUTHORS],
@@ -310,7 +313,7 @@ export const walletAttestSplit = define({
     };
     const done = await sent(ctx, payer, view2, input.send, call, {
       preview: device ? `${PREVIEW_APPROVAL_NEXT}; ${DEVICE_RELEASE}` : PREVIEW_APPROVAL_NEXT,
-      done: `released to co-authors; ${tool("wallet_feedback")} to rate if you own it`,
+      done: thenSettle(`released to co-authors; ${tool("wallet_feedback")} to rate if you own it`, left),
     });
     if (!("signature" in done)) {
       return { ...done, ...passed };

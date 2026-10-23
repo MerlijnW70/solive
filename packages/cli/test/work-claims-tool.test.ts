@@ -6,7 +6,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
 import { DEVNET_TEST_MINT, Kind, NATIVE_MINT } from "@intent-engine/core";
 import { createClient } from "@intent-engine/client";
-import { lineWaiting } from "../src/claim-commands.js";
+import { lineWaitingHere } from "../src/agent/claim-line.js";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
@@ -93,6 +93,6 @@ describe("wallet_claim over MCP", () => {
     await j.run(["claims", "standby", "--keypair", "waiter.json", ...j.ref, "--secs", "600", "--yes"]);
     setNow(NOW + 600n);
     const refused = await call(j.client, "wallet_claim", { ...j.escrow, action: "take", secs: 60 });
-    expect(refused).toMatchObject({ error: true, value: { code: "LineWaiting", hint: lineWaiting(j.intent, 1) } });
+    expect(refused).toMatchObject({ error: true, value: { code: "LineWaiting", hint: lineWaitingHere(j.intent, 1) } });
   });
 });

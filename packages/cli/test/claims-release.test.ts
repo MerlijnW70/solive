@@ -114,7 +114,7 @@ describe("claims from the wallet tools", () => {
       owner: wallet,
     });
     const plain = await ok(client, "wallet_escrow", { ...base, send: true });
-    expect(await ok(client, "get_claims", { owner: wallet, nonce: plain["nonce"] })).toEqual({ intent: plain["intent"], takes_claims: false });
+    expect(await ok(client, "get_claims", { owner: wallet, nonce: plain["nonce"] })).toEqual({ intent: plain["intent"], takes_claims: false, escrow: "open" });
   });
 
   it("wallet_attest passes the claims board, pays the claiming worker and returns its stake, and refuses another payee before sending", async () => {

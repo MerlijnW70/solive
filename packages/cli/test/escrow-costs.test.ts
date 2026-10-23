@@ -60,6 +60,8 @@ function totalOf(summary: unknown): bigint {
 
 const rentOf = (bytes: number) => `${formatAmount(h.svm.minimumBalanceForRentExemption(BigInt(bytes)), 9)} SOL`;
 
+const escrowRent = () => `${formatAmount(h.svm.minimumBalanceForRentExemption(BigInt(getIntentSize())) + h.svm.minimumBalanceForRentExemption(165n), 9)} SOL`;
+
 const balance = (address: Address) => h.svm.getBalance(address) ?? 0n;
 
 describe("the costs an escrow preview names", () => {
@@ -89,6 +91,9 @@ describe("the costs an escrow preview names", () => {
       expect(rent).toContain(`${rentOf(getIntentSize())} for the escrow account, ${rentOf(165)} for its token vault, ${rentOf(getClaimBoardSize())} for the claims board`);
       expect(rent.includes("for your wrapped SOL account")).toBe(round === 0);
       expect(rent.includes(`for your token account for ${DEVNET_TEST_MINT}`)).toBe(round === 0);
+      expect(summary).toContain(
+        `Rent back: ${escrowRent()} for the escrow account and its vault returns to this wallet when the escrow closes, at once with solive_wallet_cancel or by a cranker after its release or expiry; ${rentOf(getClaimBoardSize())} for the claims board does not return until solive_wallet_claim action settle closes the board once the escrow is released or gone${round === 0 ? "; the setup rent stays in this wallet's own accounts" : ""}`,
+      );
       expect(summary).toContain("Fees: 0.000009 SOL create fee to the treasury, 0.000007 SOL crank bounty the escrow holds for whoever closes it, 0.000005 SOL network fee");
       const total = totalOf(summary);
       expect(total).toBeGreaterThan(LAMPORTS_PER_SOL / 20n);
@@ -106,6 +111,9 @@ describe("the costs an escrow preview names", () => {
     expect(summary).toContain("Fees per piece: 0.000009 SOL create fee to the treasury, 0.000007 SOL crank bounty the escrow holds for whoever closes it, 0.000005 SOL network fee");
     expect(summary).toContain(`Rent per piece: ${rentOf(getIntentSize())} for the escrow account, ${rentOf(165)} for its token vault`);
     expect(summary).toContainEqual(expect.stringMatching(/^Rent once: .*for your wrapped SOL account$/));
+    expect(summary).toContain(
+      `Rent back per piece: ${escrowRent()} for the escrow account and its vault returns to this wallet when the escrow closes, at once with solive_wallet_cancel or by a cranker after its release or expiry; the setup rent stays in this wallet's own accounts`,
+    );
     const total = totalOf(summary);
     const before = balance(wallet);
     expect(await ok(client, "wallet_escrow_plan", { ...plan, send: true })).toMatchObject({ sent: true });
