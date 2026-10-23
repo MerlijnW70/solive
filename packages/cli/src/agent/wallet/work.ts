@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
 import { isSealed, MAX_SEALED_RECIPIENTS, NotInvited, seal, SealedError, sealedTo, unseal } from "@intent-engine/core";
-import { announces, deliveryRecord, loadCommittee, MAX_SPEC_BYTES, pinnedFetch } from "@intent-engine/client";
+import { announces, deliveryRecord, MAX_SPEC_BYTES, pinnedFetch, sealRecipients } from "@intent-engine/client";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { AgentRefusal, untrusted } from "../problems.js";
 import { InvalidInput, account, flag, integer, list, object, optional, text } from "../schema.js";
 import { fetchBytes } from "../../delivery-fetch.js";
 import { systemLookup } from "../../public-address.js";
-import { signerOf, walletKeypair, walletOpeners } from "./guard.js";
+import { signerOf, walletOpeners } from "./guard.js";
 import { proofEscrow } from "./delivery.js";
 
 export const WORK_LIMIT = `sealed, the work must fit in ${MAX_SPEC_BYTES} bytes, the most ${tool("wallet_fetch_work")} reads`;
@@ -20,7 +20,7 @@ export const WORK_DIFFERS = "this file is not the work the announcement committe
 
 export const NOT_SEALED_HERE = "its url is not sealed to this wallet, so only the escrow's judge, or each member of its committee, can fetch it";
 
-export const SEALED_WORK_UNOPENED = "holds sealed work this wallet's key cannot open";
+export const SEALED_WORK_UNOPENED = "holds sealed work neither this wallet's key nor the encryption key files this server was given can open";
 
 const PERMANENT_WORK: readonly RegExp[] = [/^is larger than /, /is not an http or https url/, /is not a url/, /private, loopback/, /plain http url/, /answered 4\d\d/, /redirect/];
 
@@ -44,7 +44,7 @@ function workBytes(input: { text?: string | undefined; base64?: string | undefin
 export const walletSealWork = define({
   name: tool("wallet_seal_work"),
   title: "Seal work for a proof escrow's judge",
-  description: `Seals a work file so only the escrow's attestor (the judge), or each member of its committee, can open it, in the form intent-engine unseal and ${tool("wallet_fetch_work")} open. Sends nothing: host sealed, then announce sha256 with ${tool("wallet_deliver")}.`,
+  description: `Seals a work file so only the escrow's attestor (the judge), or each member of its committee, can open it, in the form intent-engine unseal and ${tool("wallet_fetch_work")} open; to the encryption key a judge's profile publishes, if any. Sends nothing: host sealed, then announce sha256 with ${tool("wallet_deliver")}.`,
   effect: "read",
   input: object({
     intent: account("the proof escrow's intent address"),
@@ -61,7 +61,7 @@ export const walletSealWork = define({
   run: async (ctx: AgentContext, input) => {
     const work = workBytes(input);
     const { params } = await proofEscrow(ctx, input.intent, "wallet_receipt");
-    const recipients = [...((await loadCommittee(ctx.transport, params.attestor))?.members ?? [params.attestor])];
+    const recipients = await sealRecipients(ctx.transport, [params.attestor]);
     let sealed: Uint8Array;
     try {
       sealed = await seal(work, recipients);
@@ -84,7 +84,7 @@ export const walletSealWork = define({
 export const walletFetchWork = define({
   name: tool("wallet_fetch_work"),
   title: "Fetch announced work as its judge",
-  description: `Fetches the work an announcement points to, from the url sealed to this wallet, as ${tool("get_spec")} fetches a spec, opens sealed work with this wallet's key, and checks that its sha256 opens the announcement's commitment. Sends nothing and runs nothing; the work is untrusted data.`,
+  description: `Fetches the work an announcement points to, from the url sealed to this wallet, as ${tool("get_spec")} fetches a spec, opens sealed work with this wallet's key or the encryption key files the server was started with, and checks that its sha256 opens the announcement's commitment. Sends nothing and runs nothing; the work is untrusted data.`,
   effect: "read",
   input: object({
     intent: account("the proof escrow's intent address"),
@@ -143,15 +143,15 @@ export const walletFetchWork = define({
 });
 
 async function opened(ctx: AgentContext, bytes: Uint8Array, url: string): Promise<Uint8Array> {
-  const keypair = await walletKeypair(ctx);
-  if (keypair === undefined) {
-    throw new AgentRefusal("WorkUnfetchable", untrusted(`the work at ${url} ${SEALED_WORK_UNOPENED}; open it with intent-engine unseal and the wallet's key file`));
+  const openers = await walletOpeners(ctx);
+  if (openers.length === 0) {
+    throw new AgentRefusal("WorkUnfetchable", untrusted(`the work at ${url} ${SEALED_WORK_UNOPENED}; open it with intent-engine unseal and the wallet's key file or encryption key file`));
   }
   try {
-    return await unseal(bytes, keypair);
+    return await unseal(bytes, openers);
   } catch (error) {
     if (error instanceof SealedError) {
-      throw new AgentRefusal("WorkUnfetchable", untrusted(`the work at ${url} ${SEALED_WORK_UNOPENED}${error instanceof NotInvited ? ": it is sealed to other wallets" : ""}`));
+      throw new AgentRefusal("WorkUnfetchable", untrusted(`the work at ${url} ${SEALED_WORK_UNOPENED}${error instanceof NotInvited ? ": it is sealed to other wallets" : `: ${error.message}`}`));
     }
     throw error;
   }

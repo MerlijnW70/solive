@@ -27,6 +27,7 @@ import {
   parsePriority,
   required,
   u64,
+  UNSEAL_NEEDS_KEY,
   unitsOf,
   UsageError,
 } from "./arg-values.js";
@@ -192,10 +193,13 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       return { name: "hash", artifact: required(values, "artifact") };
     case "seal":
       noSub(sub);
-      return { name: "seal", file: required(values, "file"), to: addressList(required(values, "to"), "to"), out: required(values, "out") };
+      return { name: "seal", ...remote, file: required(values, "file"), to: addressList(required(values, "to"), "to"), out: required(values, "out") };
     case "unseal":
       noSub(sub);
-      return { name: "unseal", file: required(values, "file"), keypair: required(values, "keypair"), out: required(values, "out") };
+      if (values.keypair === undefined && values["encryption-keypair"] === undefined) {
+        throw new UsageError(UNSEAL_NEEDS_KEY);
+      }
+      return { name: "unseal", file: required(values, "file"), keypair: values.keypair, out: required(values, "out"), ...encryptionKeypairOf(values) };
     case "spec":
       noSub(sub);
       return { name: "spec", ...remote, intent: key(values, "intent"), keypair: values.keypair, out: values.out };
@@ -290,7 +294,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
     }
     case "advance-nonce":
       noSub(sub);
-      return { name: "advance-nonce", ...remote, keypair: required(values, "keypair"), base: u64(values, "base") };
+      return { name: "advance-nonce", ...remote, keypair: required(values, "keypair"), yes: values.yes === true, base: u64(values, "base") };
     case "advance-epoch":
       noSub(sub);
       return { name: "advance-epoch", ...remote, keypair: required(values, "keypair") };

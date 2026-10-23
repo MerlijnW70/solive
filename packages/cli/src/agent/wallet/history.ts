@@ -44,7 +44,7 @@ async function paidWalletOf(transport: Transport, ending: HistoryEvent, intent: 
 export const walletHistory = define({
   name: tool("wallet_history"),
   title: "Show the wallet's history",
-  description: `Shows what this wallet did, newest first, from the chain: orders (intents) it created and how each ended; work it announced with ${tool("wallet_deliver")} and whether a release paid it; claims it took or dropped. escrow, since and until narrow the lists; paid_from adds profit: what a job paid against what its sub-escrows cost. Leaves out transfers and releases it judged.`,
+  description: `Shows this wallet's history from the chain: intents it created and how each ended; work it announced with ${tool("wallet_deliver")} and whether a release paid it; claims it took, dropped or queued for, with each stake's outcome. escrow, since and until narrow the lists; paid_from adds profit: a job's pay less its sub-escrows' cost. Leaves out transfers and releases it judged.`,
   effect: "read",
   input: object({
     limit: optional(integer(1, HISTORY_MAX, `how many of the newest intents, and of the newest announcements and claims, to show; default ${HISTORY_DEFAULT}`)),
@@ -75,7 +75,7 @@ export const walletHistory = define({
     ),
     more: flag("true when older intents exist beyond limit"),
     work: list(workItem, HISTORY_MAX, `the work this wallet announced with ${tool("wallet_deliver")}, newest first`),
-    claims: list(claimItem, HISTORY_MAX, "the claims this wallet took or dropped, newest first"),
+    claims: list(claimItem, HISTORY_MAX, "the claims this wallet took, dropped or queued for, released escrows included, newest first"),
     more_work: flag(`true when older announcements or claims exist beyond limit, or this wallet has transactions older than the newest ${OWN_TRANSACTIONS} read`),
     profit: optional(profitItem),
   }),

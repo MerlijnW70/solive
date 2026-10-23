@@ -12,14 +12,12 @@ import {
 } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import {
-  AccountVersionError,
   commitmentPreimage,
   type DeliveryKey,
   deliveryKeyOf,
   type DeliveryOpener,
   DELIVERY_MEMO_MARK,
   encryptionKeyText,
-  isEncryptionKeyText,
   deliveryMemo,
   IntentStatus,
   isMemoUrl,
@@ -29,7 +27,6 @@ import {
   type Opening,
   openDelivery,
   parseDeliveryMemo,
-  parseEncryptionKey,
   parseOpeningMemo,
   saltCheckPreimage,
   saltMessage,
@@ -41,12 +38,12 @@ import {
 } from "@intent-engine/core";
 import { chainTime } from "./accounts.js";
 import { isDevice } from "./ledger.js";
-import { loadProfile } from "./client-claims.js";
 import { loadCommittee } from "./client-committee.js";
 import { memoInstruction } from "./job-memos.js";
 import { historyCovers, openProofEscrows, type Proof, proofAt } from "./job-proofs.js";
 import { DELIVERY_PAGES, MEMOS_PER_TRANSACTION, scan } from "./job-scan.js";
 import { PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic } from "./job-specs.js";
+import { recipientOf } from "./seal-recipients.js";
 import type { EngineTransaction, Transport } from "./transport.js";
 
 export type DeliverInput = { worker: TransactionSigner; intent: Address; sha256: string; url: string; saltSignature?: Uint8Array };
@@ -148,17 +145,6 @@ export async function deliverySalt(worker: TransactionSigner, intent: Address, s
     throw new NoMessageSigner(worker.address);
   }
   return saltOfSignature(signature);
-}
-
-async function recipientOf(transport: Transport, wallet: Address): Promise<{ wallet: Address; encryptionKey: Uint8Array | null }> {
-  const profile = await loadProfile(transport, wallet).catch((error: unknown) => {
-    if (error instanceof AccountVersionError) {
-      return null;
-    }
-    throw error;
-  });
-  const key = profile?.encryptionKey ?? null;
-  return { wallet, encryptionKey: key === null || !isEncryptionKeyText(key) ? null : parseEncryptionKey(key) };
 }
 
 export async function deliveryInstructions(transport: Transport, input: DeliverInput): Promise<DeliveryPlan> {

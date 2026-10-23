@@ -19,8 +19,8 @@ import { createdMint, heldMint, type ReleaseLookup, releaseLookup, releasedMint 
 
 export const OWN_TRANSACTIONS = 250;
 const ESCROW_EVENTS = 20;
-const STAKE_TO_WORKER = 0;
-const SOL_DECIMALS = 9;
+export const STAKE_TO_WORKER = 0;
+export const SOL_DECIMALS = 9;
 
 export const STAKE_OUTCOMES = ["held", "returned", "forfeited", "unknown"] as const;
 type StakeOutcome = (typeof STAKE_OUTCOMES)[number];
@@ -28,7 +28,7 @@ type StakeOutcome = (typeof STAKE_OUTCOMES)[number];
 export const UNPAID_REASONS = ["released_to_other", "open", "cancelled", "expired", "unknown"] as const;
 type UnpaidReason = (typeof UNPAID_REASONS)[number];
 
-const CLAIM_ACTIONS =["claimed", "dropped"] as const;
+const CLAIM_ACTIONS = ["claimed", "dropped", "queued", "left"] as const;
 type ClaimAction = (typeof CLAIM_ACTIONS)[number];
 
 const landedAt = (what: string) => nullable(time(`unix seconds ${what} landed, when the cluster reports it`));
@@ -51,15 +51,15 @@ export const workItem = object({
 });
 
 export const claimItem = object({
-  intent: account("the escrow whose claim this wallet took or dropped"),
-  action: choice(CLAIM_ACTIONS, "claimed: this wallet took the claim; dropped: it gave the claim up"),
-  stake: text("whole SOL the claim staked, or that dropping returned"),
+  intent: account("the escrow whose claim this wallet took, dropped or queued for"),
+  action: choice(CLAIM_ACTIONS, "claimed: this wallet took the claim, or was handed it from the line; dropped: it gave the claim up; queued: it stood by in the line; left: it left the line"),
+  stake: text("whole SOL the claim or place in line staked, or that dropping or leaving returned"),
   stake_outcome: choice(
     STAKE_OUTCOMES,
-    "held: the stake still sits on the claim; returned: it went back to this wallet; forfeited: it went to the escrow's owner; unknown: what became of it was not found",
+    "held: the stake still sits on the claim or in the line; returned: it went back to this wallet; forfeited: it went to the escrow's owner; unknown: what became of it was not found",
   ),
-  signature: text("the transaction that took or dropped the claim"),
-  at: landedAt("the claim or drop"),
+  signature: text("the transaction that took, dropped or queued for the claim, or left the line"),
+  at: landedAt("the claim, drop, queue or leave"),
 });
 
 type Tokens = (mint: Address, raw: bigint) => Promise<string>;
@@ -153,6 +153,8 @@ export async function workOf(transport: Transport, wallet: Address, transactions
 type Claim = Landed & { intent: Address; action: ClaimAction; stake: bigint };
 type StakeEnd = Landed & { outcome: StakeOutcome };
 
+const keyOf = ({ signature, action, intent }: Claim): string => `${signature}:${action}:${intent}`;
+
 function claimsIn(transactions: readonly EngineTransaction[], wallet: Address): Claim[] {
   return eventsIn(transactions).flatMap((event): Claim[] => {
     const { signature, slot, blockTime } = event;
@@ -162,6 +164,12 @@ function claimsIn(transactions: readonly EngineTransaction[], wallet: Address): 
     if (event.name === "ClaimDropped" && event.fields.worker === wallet) {
       return [{ intent: event.fields.intent, action: "dropped", stake: event.fields.refunded, signature, slot, blockTime }];
     }
+    if (event.name === "StoodBy" && event.fields.worker === wallet) {
+      return [{ intent: event.fields.intent, action: "queued", stake: event.fields.stake, signature, slot, blockTime }];
+    }
+    if (event.name === "LineLeft" && event.fields.worker === wallet) {
+      return [{ intent: event.fields.intent, action: "left", stake: event.fields.refunded, signature, slot, blockTime }];
+    }
     return [];
   });
 }
@@ -169,7 +177,7 @@ function claimsIn(transactions: readonly EngineTransaction[], wallet: Address): 
 function stakeEndsIn(transactions: readonly EngineTransaction[], wallet: Address, intent: Address): StakeEnd[] {
   return eventsIn(transactions).flatMap((event): StakeEnd[] => {
     const { signature, slot, blockTime } = event;
-    if (event.name === "ClaimDropped" && event.fields.worker === wallet && event.fields.intent === intent) {
+    if ((event.name === "ClaimDropped" || event.name === "LineLeft") && event.fields.worker === wallet && event.fields.intent === intent) {
       return [{ outcome: "returned", signature, slot, blockTime }];
     }
     if (event.name === "StakeMoved" && event.fields.worker === wallet && event.fields.intent === intent) {
@@ -179,8 +187,8 @@ function stakeEndsIn(transactions: readonly EngineTransaction[], wallet: Address
   });
 }
 
-const endAfter = (claim: Claim, ends: readonly StakeEnd[]): StakeEnd | undefined =>
-  ends.filter((end) => earlier(claim, end)).reduce<StakeEnd | undefined>((first, end) => (first === undefined || earlier(end, first) ? end : first), undefined);
+const firstAfter = <T extends Landed>(from: Landed, items: readonly T[]): T | undefined =>
+  items.filter((item) => earlier(from, item)).reduce<T | undefined>((first, item) => (first === undefined || earlier(item, first) ? item : first), undefined);
 
 async function heldBy(transport: Transport, wallet: Address, intents: readonly Address[]): Promise<Set<Address>> {
   try {
@@ -191,31 +199,77 @@ async function heldBy(transport: Transport, wallet: Address, intents: readonly A
   }
 }
 
+type Histories = (intent: Address) => Promise<EngineTransaction[]>;
+
+function escrowHistories(transport: Transport): Histories {
+  const read = new Map<Address, Promise<EngineTransaction[]>>();
+  return (intent) => {
+    const found = read.get(intent) ?? transport.engineTransactions(ESCROW_EVENTS, intent);
+    read.set(intent, found);
+    return found;
+  };
+}
+
+async function allClaims(wallet: Address, transactions: readonly EngineTransaction[], history: Histories): Promise<Claim[]> {
+  const own = claimsIn(transactions, wallet);
+  const claimed = new Set(own.filter(({ action }) => action === "claimed").map(({ intent }) => intent));
+  const queued = own.filter(({ action }) => action === "queued").map(({ intent }) => intent);
+  const moved = eventsIn(transactions).flatMap((event) => (event.name === "StakeMoved" && event.fields.worker === wallet && !claimed.has(event.fields.intent) ? [event.fields.intent] : []));
+  const seen = new Set(own.map(keyOf));
+  const found = [...own];
+  for (const intent of new Set([...queued, ...moved])) {
+    for (const claim of claimsIn(await history(intent), wallet)) {
+      if (claim.intent === intent && !seen.has(keyOf(claim))) {
+        seen.add(keyOf(claim));
+        found.push(claim);
+      }
+    }
+  }
+  return found;
+}
+
+async function outcomeOf(claim: Claim, wallet: Address, transactions: readonly EngineTransaction[], history: Histories, all: readonly Claim[]): Promise<StakeOutcome> {
+  if (claim.action === "dropped" || claim.action === "left") {
+    return "returned";
+  }
+  const end = firstAfter(claim, stakeEndsIn(transactions, wallet, claim.intent)) ?? firstAfter(claim, stakeEndsIn(await history(claim.intent), wallet, claim.intent));
+  const handover = claim.action === "queued" ? firstAfter(claim, all.filter((later) => later.intent === claim.intent && later.action === "claimed")) : undefined;
+  if (handover !== undefined && (end === undefined || earlier(handover, end))) {
+    return outcomeOf(handover, wallet, transactions, history, all);
+  }
+  return end?.outcome ?? "unknown";
+}
+
+async function openLines(transport: Transport, intents: readonly Address[]): Promise<Set<Address>> {
+  const open = new Set<Address>();
+  for (const intent of intents) {
+    const escrow = await intentAt(transport, intent);
+    if (escrow !== null && escrow.status === IntentStatus.Open) {
+      open.add(intent);
+    }
+  }
+  return open;
+}
+
 export async function claimsOf(transport: Transport, wallet: Address, transactions: readonly EngineTransaction[], limit: number, kept: Kept = everything) {
-  const found = newestFirst(claimsIn(transactions, wallet).filter(kept));
+  const history = escrowHistories(transport);
+  const all = await allClaims(wallet, transactions, history);
+  const found = newestFirst(all.filter(kept));
   const shown = found.slice(0, limit);
-  const histories = new Map<Address, EngineTransaction[]>();
   const outcomes: StakeOutcome[] = [];
   for (const claim of shown) {
-    if (claim.action === "dropped") {
-      outcomes.push("returned");
-      continue;
-    }
-    let end = endAfter(claim, stakeEndsIn(transactions, wallet, claim.intent));
-    if (end === undefined) {
-      const history = histories.get(claim.intent) ?? (await transport.engineTransactions(ESCROW_EVENTS, claim.intent));
-      histories.set(claim.intent, history);
-      end = endAfter(claim, stakeEndsIn(history, wallet, claim.intent));
-    }
-    outcomes.push(end?.outcome ?? "unknown");
+    outcomes.push(await outcomeOf(claim, wallet, transactions, history, all));
   }
-  const open = [...new Set(shown.filter((claim, at) => claim.action === "claimed" && outcomes[at] === "unknown").map(({ intent }) => intent))];
-  const held = open.length === 0 ? new Set<Address>() : await heldBy(transport, wallet, open);
+  const unknown = (action: ClaimAction) => [...new Set(shown.filter((claim, at) => claim.action === action && outcomes[at] === "unknown").map(({ intent }) => intent))];
+  const claimedOpen = unknown("claimed");
+  const held = claimedOpen.length === 0 ? new Set<Address>() : await heldBy(transport, wallet, claimedOpen);
+  const lines = await openLines(transport, unknown("queued"));
+  const stillHeld = (claim: Claim): boolean => (claim.action === "claimed" ? held : lines).has(claim.intent);
   const claims = shown.map((claim, at) => ({
     intent: claim.intent,
     action: claim.action,
     stake: formatAmount(claim.stake, SOL_DECIMALS),
-    stake_outcome: outcomes[at] === "unknown" && held.has(claim.intent) ? ("held" as const) : (outcomes[at] ?? "unknown"),
+    stake_outcome: outcomes[at] === "unknown" && stillHeld(claim) ? ("held" as const) : (outcomes[at] ?? "unknown"),
     signature: claim.signature,
     at: claim.blockTime,
   }));

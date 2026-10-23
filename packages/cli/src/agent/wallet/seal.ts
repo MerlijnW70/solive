@@ -1,13 +1,13 @@
 import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
-import { isSealed, MAX_SEALED_RECIPIENTS, seal, SealedError, unseal } from "@intent-engine/core";
-import { MAX_SPEC_BYTES } from "@intent-engine/client";
+import { isSealed, MAX_SEALED_RECIPIENTS, seal, SealedError, sealedTo, unseal } from "@intent-engine/core";
+import { MAX_SPEC_BYTES, sealRecipients } from "@intent-engine/client";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { InvalidInput, account, list, object, optional, text } from "../schema.js";
-import { signerOf, walletKeypair } from "./guard.js";
+import { signerOf, walletOpeners } from "./guard.js";
 
-export const SEAL_LIMIT = `seal to at most ${MAX_SEALED_RECIPIENTS} wallets in all, the attestor included`;
+export const SEAL_LIMIT = `seal to at most ${MAX_SEALED_RECIPIENTS} wallets in all, the attestor or each member of its committee included`;
 
 export const SEALED_UNCHECKED = "spec_url holds a sealed spec this wallet cannot open, so its sha256 was not checked against spec_hash";
 
@@ -21,14 +21,14 @@ export async function openedSpec(ctx: AgentContext, bytes: Uint8Array): Promise<
   if (!isSealed(bytes)) {
     return bytes;
   }
-  const keypair = await walletKeypair(ctx);
-  return keypair === undefined ? undefined : unseal(bytes, keypair).catch(() => undefined);
+  const openers = await walletOpeners(ctx).catch(() => []);
+  return openers.length === 0 ? undefined : unseal(bytes, openers).catch(() => undefined);
 }
 
 export const walletSealSpec = define({
   name: tool("wallet_seal_spec"),
   title: "Seal a spec for an invite-only job",
-  description: `Seals an acceptance spec so only the wallets it invites and the attestor (the judge) can read it, in the form ${tool("get_spec")} opens. Sends nothing: host sealed at a public url, then pass that url as spec_url and sha256 as spec_hash to ${tool("wallet_escrow")}.`,
+  description: `Seals an acceptance spec so only the invited wallets and the attestor (the judge), or its committee members, can read it with ${tool("get_spec")}, to each profile's encryption key if one is published. Sends nothing: host sealed at a public url, then pass that url as spec_url and sha256 as spec_hash to ${tool("wallet_escrow")}.`,
   effect: "read",
   input: object({
     text: text("the spec, exactly as invited workers should read it"),
@@ -39,12 +39,12 @@ export const walletSealSpec = define({
     sealed: text("the sealed spec to host, byte for byte"),
     sha256: text("64 hex: the sha256 of the spec text; pass it as spec_hash"),
     sealed_sha256: text("64 hex: the sha256 of sealed, to check the hosted copy"),
-    sealed_to: list(account(), MAX_SEALED_RECIPIENTS, "every wallet that can open it, the attestor included"),
+    sealed_to: list(account(), MAX_SEALED_RECIPIENTS, "every wallet that can open it, the attestor or each committee member included"),
     next: text(),
   }),
   run: async (ctx: AgentContext, input) => {
     const attestor: Address = input.attestor ?? (await signerOf(ctx)).address;
-    const recipients = [...new Set([...input.invite, attestor])];
+    const recipients = await sealRecipients(ctx.transport, [...input.invite, attestor]);
     if (recipients.length > MAX_SEALED_RECIPIENTS) {
       throw new InvalidInput([{ path: "invite", message: SEAL_LIMIT }]);
     }
@@ -61,7 +61,7 @@ export const walletSealSpec = define({
       sealed: new TextDecoder().decode(sealed),
       sha256: sha256(input.text),
       sealed_sha256: sha256(sealed),
-      sealed_to: recipients,
+      sealed_to: sealedTo(sealed),
       next: SEALED_NEXT,
     };
   },

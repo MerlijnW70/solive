@@ -3,7 +3,7 @@ import { PRODUCT_SLUG } from "../generated/identity.js";
 import { MAX_COMMITTEE_MEMBERS } from "./committee.js";
 import { isMemoUrl, isSha256Hex, MAX_MEMO_URL, MEMO_URL_RULE } from "./memo.js";
 import { type DeliveryOpener, deliveryKeyOf, ENCRYPTION_KEY_BYTES } from "./encryption-key.js";
-import { SealedError, wrapKey, x25519PublicOf } from "./sealed.js";
+import { type SealRecipient, SealedError, wrapKey, x25519PublicOf } from "./sealed.js";
 
 export const DELIVERY_MEMO_MARK = `${PRODUCT_SLUG}-delivery3`;
 export const DELIVERY_MEMO_PREFIX = `${DELIVERY_MEMO_MARK}:`;
@@ -31,8 +31,6 @@ export type SelfOpening = { intent: Address; announcement: string; salt: string 
 export type Opening = JudgeOpening | SelfOpening;
 
 export type SealedKey = "wallet" | "profile";
-
-export type SealRecipient = Address | { wallet: Address; encryptionKey: Uint8Array | null };
 
 const INFO = new TextEncoder().encode(`${PRODUCT_SLUG}-sealed-url-v2`);
 const KEY_BYTES = 32;

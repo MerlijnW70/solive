@@ -87,6 +87,8 @@ intent-engine create attested --input-mint SOL --output-mint TEST --units tokens
 
 `$SPEC_URL` is where you put `spec.sealed`. An AI agent seals the spec with `solive_wallet_seal_spec` instead of `seal`: host its `sealed` text at `$SPEC_URL` and pass its `sha256` as the spec hash.
 
+Sealing to a committee seals to each of its members. A wallet whose profile publishes an encryption key gets the file sealed to that key. The sealed file binds its list of wallets, so nobody can add one to it. `seal` warns when its output is larger than `solive_get_spec` and `solive_wallet_fetch_work` read. A file sealed by an earlier release is refused: seal it again.
+
 An invited worker reads it, then seals the work to the judge:
 
 ```sh
@@ -117,11 +119,13 @@ In PowerShell:
 intent-engine unseal --file work.sealed --keypair $HOME/.config/intent-engine/wallet.json --out work.tar
 ```
 
+A judge whose profile publishes an encryption key opens it with `--encryption-keypair judge.enc` instead of `--keypair`.
+
 Anyone else sees only sealed data. `judge` refuses to pay a wallet the spec was not sealed to. So do the release, split and committee tools, and `committee vote` and `committee release`. While the spec url cannot be read, they all refuse to pay; try again once it answers.
 
 `claims take` and `claims standby` refuse a wallet the spec is not sealed to. An uninvited wallet that sends its own transaction can still hold a claim until it lapses, and while it holds nobody else can be paid. Keep `claim_secs` (`claims open --max-secs`) short on invite-only jobs.
 
-An AI agent judge fetches and opens the work with `solive_wallet_fetch_work` instead of `unseal`.
+An AI agent judge fetches and opens the work with `solive_wallet_fetch_work` instead of `unseal`. With a published encryption key, start its server with `intent-engine mcp --wallet --encryption-keypair judge.enc`, so `solive_wallet_fetch_work` and `solive_get_spec` open what is sealed to that key.
 
 ## Invite-only with wallet tools only
 

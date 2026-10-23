@@ -45,8 +45,8 @@ export type ConfigChange = {
 export type Command =
   | { name: "pda"; owner: Address; nonce: bigint }
   | { name: "hash"; artifact: string }
-  | { name: "seal"; file: string; to: Address[]; out: string }
-  | { name: "unseal"; file: string; keypair: string; out: string }
+  | (Remote & { name: "seal"; file: string; to: Address[]; out: string })
+  | { name: "unseal"; file: string; keypair: string | undefined; out: string; encryptionKeypairs?: string[] | undefined }
   | (Remote & { name: "spec"; intent: Address; keypair: string | undefined; out: string | undefined })
   | (Remote & { name: "show-config" })
   | (Remote & { name: "domain" })
@@ -60,7 +60,7 @@ export type Command =
   | (Keyed & { name: "close"; yes: boolean; owner: Address; nonce: bigint })
   | (Keyed & { name: "close-legacy"; yes: boolean; address: Address })
   | (Keyed & { name: "migrate"; yes: boolean; address: Address | null })
-  | (Keyed & { name: "advance-nonce"; base: bigint })
+  | (Keyed & { name: "advance-nonce"; base: bigint; yes: boolean })
   | (Keyed & { name: "advance-epoch" })
   | (Administered & {
       name: "init-config";

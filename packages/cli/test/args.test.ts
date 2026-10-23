@@ -579,6 +579,7 @@ describe("commands", () => {
       url: DEFAULT_URL,
       priority: 0n,
       keypair: "k.json",
+      yes: false,
       base: 9n,
     });
   });

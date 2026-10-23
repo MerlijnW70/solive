@@ -657,7 +657,7 @@ describe("a sealed spec", () => {
     const wrong = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
     const changed = await client.createIntent({ ...order, params: proof(judge.address), specUrl: "https://example.org/broken" });
     expect(await client.spec(wrong.intent, worker.keypair)).toMatchObject({ text: "another spec", matches: false, sealedTo: [worker.address] });
-    await expect(client.spec(changed.intent, worker.keypair)).rejects.toThrow(new SpecUnreadable("https://example.org/broken", "is sealed but could not be opened"));
+    await expect(client.spec(changed.intent, worker.keypair)).rejects.toThrow(new SpecUnreadable("https://example.org/broken", "is sealed but could not be opened: the sealed file or its list of wallets was changed, or it was not sealed to this key"));
     expect(await client.spec(wrong.intent, keyed().keypair).catch((e: unknown) => e)).toBeInstanceOf(SpecSealed);
   });
 

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
-import { isSealed, NotInvited, parseSpecMemo, remainingOf, SPEC_MEMO_PREFIX, sealedTo, unseal } from "@intent-engine/core";
+import { type DeliveryOpener, isSealed, NotInvited, parseSpecMemo, remainingOf, SealedError, SPEC_MEMO_PREFIX, sealedTo, unseal } from "@intent-engine/core";
 import { createdIn, hex, type JobFilter, openProofEscrows, proofAt } from "./job-proofs.js";
 import { MEMOS_PER_TRANSACTION, scan } from "./job-scan.js";
 import { UNEXPECTED_REDIRECT } from "./pinned-fetch.js";
@@ -149,7 +149,13 @@ function fetchProblem(error: unknown): string {
   return `${SPEC_FETCH_FAILED} (${cause === "" ? message : `${message}: ${cause}`})`;
 }
 
-export async function readSpec(transport: Transport, get: SpecFetch, intent: Address, keypair?: Uint8Array, lookup: Lookup = systemLookup): Promise<Spec | null> {
+export async function readSpec(
+  transport: Transport,
+  get: SpecFetch,
+  intent: Address,
+  keypair?: DeliveryOpener | readonly DeliveryOpener[],
+  lookup: Lookup = systemLookup,
+): Promise<Spec | null> {
   const proof = await proofAt(transport, intent);
   if (proof === null) {
     return null;
@@ -184,14 +190,18 @@ export async function readSpec(transport: Transport, get: SpecFetch, intent: Add
   let bytes: Uint8Array = fetched;
   let to: Address[] | null = null;
   if (isSealed(fetched)) {
-    to = sealedTo(fetched);
-    if (keypair === undefined) {
+    try {
+      to = sealedTo(fetched);
+    } catch (error) {
+      throw error instanceof SealedError ? new SpecUnreadable(url, `is sealed but could not be opened: ${error.message}`) : error;
+    }
+    if (keypair === undefined || (Array.isArray(keypair) && keypair.length === 0)) {
       throw new SpecSealed(url, to, false);
     }
     try {
       bytes = await unseal(fetched, keypair);
     } catch (error) {
-      throw error instanceof NotInvited ? new SpecSealed(url, to, true) : new SpecUnreadable(url, "is sealed but could not be opened");
+      throw error instanceof NotInvited ? new SpecSealed(url, to, true) : new SpecUnreadable(url, `is sealed but could not be opened${error instanceof SealedError ? `: ${error.message}` : ""}`);
     }
   }
   const sha256 = createHash("sha256").update(bytes).digest("hex");

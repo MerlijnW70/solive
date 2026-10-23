@@ -57,18 +57,18 @@ Options: `--artifact`, `--output`, `--help`
 ## seal
 
 ```text
-seal --file <file> --to <wallet,...> --out <file>
+seal --file <file> --to <wallet or committee,...> --out <file>
 ```
 
-Options: `--file`, `--to`, `--out`, `--output`, `--help`
+Options: `--url`, `--file`, `--to`, `--out`, `--output`, `--help`
 
 ## unseal
 
 ```text
-unseal --file <sealed file> [--keypair <file>] --out <file>
+unseal --file <sealed file> ([--keypair <file>] | --encryption-keypair <encryption key file> ...) --out <file>
 ```
 
-Options: `--file`, `--keypair`, `--out`, `--output`, `--help`
+Options: `--file`, `--keypair`, `--encryption-keypair`, `--out`, `--output`, `--help`
 
 ## spec
 
@@ -137,10 +137,10 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, 
 ## advance-nonce
 
 ```text
-advance-nonce [--keypair <file>] --base <n>
+advance-nonce [--keypair <file>] --base <n> [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--base`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--base`, `--output`, `--help`
 
 ## close-legacy
 

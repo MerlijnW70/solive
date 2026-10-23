@@ -107,3 +107,4 @@ export {
   lifecycleDeliveries,
   originDeliveries,
 } from "./job-origins.js";
+export { type KeyedRecipient, sealRecipients } from "./seal-recipients.js";

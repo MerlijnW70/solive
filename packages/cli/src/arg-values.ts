@@ -86,6 +86,8 @@ export const ENCRYPTION_KEY_FILE = "--encryption-keypair takes an encryption key
 
 export const ENCRYPTION_KEY_NEEDS_WALLET = "mcp --encryption-keypair opens the deliveries sealed to this wallet, so it needs --wallet";
 
+export const UNSEAL_NEEDS_KEY = "unseal needs --keypair with an invited wallet's key file, or --encryption-keypair with the encryption key file its profile publishes";
+
 export function encryptionKeypairOf(values: Values): { encryptionKeypairs?: string[] } {
   const paths = values["encryption-keypair"];
   if (paths === undefined) {

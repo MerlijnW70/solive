@@ -287,7 +287,8 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "advance-nonce": {
       const owner = await transactionSigner(runtime, command.keypair);
       const ix = await buildAdvanceNonce({ owner, nonceBase: command.base });
-      return { signature: await transport.send([ix], owner) };
+      const summary = [`Advances the nonce window of ${owner.address} to base ${command.base}: no intent can be created with a nonce below it afterwards, which cannot be undone`];
+      return previewed(transport, [ix], owner, { owner: owner.address, base: command.base, summary }, command.yes);
     }
     case "solve":
       return tick(await solverOptions(command, runtime, transport));

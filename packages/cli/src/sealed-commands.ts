@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import type { Address } from "@solana/kit";
 import { type DeliveryKey, EncryptionKeyError, newEncryptionKeyFile, NotInvited, readEncryptionKeyFile, seal, sealedTo, SealedError, unseal } from "@intent-engine/core";
-import { createClient, SpecSealed, SpecUnreadable, type Transport } from "@intent-engine/client";
+import { createClient, MAX_SPEC_BYTES, sealRecipients, SpecSealed, SpecUnreadable, type Transport } from "@intent-engine/client";
+import { tool } from "./agent/names.js";
 import type { Command } from "./command-types.js";
 import { FlowRefused } from "./flows.js";
 import type { Runtime } from "./runtime.js";
@@ -36,6 +37,9 @@ export async function loadEncryptionKey(runtime: Runtime, path: string): Promise
 
 export const MAX_SEALED_INPUT = 67_108_864;
 
+export const sealedOverLimit = (bytes: number): string =>
+  `the sealed file is ${bytes} bytes, over the ${MAX_SPEC_BYTES} bytes ${tool("get_spec")} and ${tool("wallet_fetch_work")} read, so they cannot open it; shorten it, or have readers use intent-engine unseal`;
+
 export const jobClosed = (intent: Address): string => `the job ${intent} is closed: it was paid, cancelled or expired, or never existed`;
 
 const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
@@ -51,14 +55,23 @@ async function bounded(path: string): Promise<Uint8Array> {
 export async function sealing(command: Sealing, runtime: Runtime): Promise<object> {
   const input = await bounded(command.file);
   if (command.name === "seal") {
-    const sealed = await seal(input, command.to);
+    let sealed: Uint8Array;
+    try {
+      sealed = await seal(input, await sealRecipients(runtime.transport(command.url), command.to));
+    } catch (error) {
+      throw error instanceof SealedError ? new FlowRefused(`${error.message}; nothing was written`) : error;
+    }
     await writeFile(command.out, sealed, { flag: "wx" });
-    return { out: command.out, sha256: sha256(input), sealed_sha256: sha256(sealed), to: sealedTo(sealed) };
+    const over = sealed.length > MAX_SPEC_BYTES ? { warnings: [sealedOverLimit(sealed.length)] } : {};
+    return { out: command.out, sha256: sha256(input), sealed_sha256: sha256(sealed), to: sealedTo(sealed), ...over };
   }
-  const keypair = await runtime.loadKeypair(command.keypair);
+  const openers = [
+    ...(command.keypair === undefined ? [] : [await runtime.loadKeypair(command.keypair)]),
+    ...(await loadEncryptionKeys(runtime, command.encryptionKeypairs)),
+  ];
   let plain: Uint8Array;
   try {
-    plain = await unseal(input, keypair);
+    plain = await unseal(input, openers);
   } catch (error) {
     throw error instanceof SealedError ? new FlowRefused(error instanceof NotInvited ? `${error.message}; nothing was written` : `${command.file}: ${error.message}`) : error;
   }

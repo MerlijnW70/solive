@@ -10,6 +10,7 @@ import { NO_CLOCK, poll } from "./wait.js";
 import { RESULT_MEANS } from "./attest.js";
 import { RELEASE_INPUT, releaseOf, otherLifecycle, coverageOf } from "./record.js";
 import { RELEASE_UNKNOWN, outlives, releaseLookup, namedRelease, releasedMint, createdMint, heldMint } from "./releases.js";
+import { eventsIn, SOL_DECIMALS, STAKE_TO_WORKER } from "./history-work.js";
 
 export const NOT_RELEASED = "no release of this escrow is in its history yet; check again later";
 
@@ -146,8 +147,10 @@ const receiptOutput = object({
     ),
   ),
   paid_to: optional(account("the wallet the release paid, the pay_to its attestor gave; it owns payee")),
-  payee: optional(account("the token account the tokens landed in, owned by paid_to; for SOL it holds wrapped SOL")),
-  paid: optional(text("whole tokens the payee received")),
+  payee: optional(account("a token account, not a wallet: the one the tokens landed in, owned by paid_to; for SOL it holds wrapped SOL")),
+  paid: optional(text("whole tokens paid into the payee token account")),
+  stake_returned: optional(text("whole SOL of the job's claim stake that went back to stake_returned_to, the worker who held the claim, at or after the release")),
+  stake_returned_to: optional(account("the wallet the claim stake returned to")),
   mint: optional(account("the token the release paid")),
   attestor: optional(account()),
   result: optional(amount(RESULT_MEANS)),
@@ -263,9 +266,14 @@ export async function escrowReceipt(transport: Transport, owner: Address, nonce:
           createdAt: creation?.blockTime ?? null,
           from: creation?.slot ?? null,
         });
+  const stake = eventsIn([tx, ...transactions]).find(
+    (event) => event.name === "StakeMoved" && event.fields.intent === intent && event.fields.role === STAKE_TO_WORKER && event.slot >= tx.slot,
+  );
+  const returned = stake?.name === "StakeMoved" ? { stake_returned: formatAmount(stake.fields.amount, SOL_DECIMALS), stake_returned_to: stake.fields.to } : {};
   const common = {
     intent,
     released: true,
+    ...returned,
     ...(complete && bound ? {} : { complete: false, next: RECEIPT_PARTIAL }),
     attestor: fields["attestor"] as Address,
     result: fields["result"] as bigint,

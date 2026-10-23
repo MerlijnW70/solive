@@ -1447,7 +1447,7 @@ describe("cli against the deployed engine", () => {
 
   it("advances the nonce window", async () => {
     await cli(create("0", NOW + 3_600n), { "owner.json": owner });
-    const advanced = await cli(["advance-nonce", "--keypair", "owner.json", "--base", "300"], { "owner.json": owner });
+    const advanced = await cli(["advance-nonce", "--keypair", "owner.json", "--base", "300", "--yes"], { "owner.json": owner });
     expect(advanced.code).toBe(EXIT_OK);
     const stale = await cli(create("3", NOW + 3_600n), { "owner.json": owner });
     expect(stale.code).toBe(EXIT_FAILED);

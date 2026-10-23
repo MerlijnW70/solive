@@ -70,25 +70,27 @@ describe("sealed files", () => {
     expect(await unseal(encode(stolen), b.keypair).catch((e: unknown) => e)).toBeInstanceOf(SealedError);
   });
 
-  it("names only well formed envelopes of its version as sealed", async () => {
+  it("names only tagged envelopes as sealed and refuses any that is malformed or of another version", async () => {
     const a = wallet();
     const sealed = json(await seal(text("x"), [a.address]));
     const encode = (e: unknown) => text(JSON.stringify(e));
     expect(sealed[SEALED_TAG]).toBe(SEALED_VERSION);
+    for (const plain of [text("# a plain spec\n"), new Uint8Array([0xff, 0xfe]), text("null"), text("[]"), Uint8Array.from([...text(JSON.stringify(sealed).slice(0, -1)), ...text(',"note":"'), 0xff, ...text('"}')])]) {
+      expect(isSealed(plain)).toBe(false);
+      expect(() => sealedTo(plain)).toThrow(SealedError);
+      expect(await unseal(plain, a.keypair).catch((e: unknown) => e)).toBeInstanceOf(SealedError);
+    }
     for (const bad of [
-      text("# a plain spec\n"),
-      new Uint8Array([0xff, 0xfe]),
-      text("null"),
       encode({ ...sealed, [SEALED_TAG]: SEALED_VERSION + 1 }),
       encode({ ...sealed, to: "nobody" }),
       encode({ ...sealed, data: 7 }),
-      encode({ ...sealed, to: [{ wallet: "not-an-address", epk: "", iv: "", key: "" }] }),
+      encode({ ...sealed, to: [{ wallet: "not-an-address", pk: "", epk: "", iv: "", key: "" }] }),
       encode({ ...sealed, to: [null] }),
       encode({ ...sealed, to: "" }),
-      ...(["epk", "iv", "key"] as const).map((field) => encode({ ...sealed, to: (sealed["to"] as Record<string, string>[]).map((r) => ({ ...r, [field]: 7 })) })),
-      Uint8Array.from([...text(JSON.stringify(sealed).slice(0, -1)), ...text(',"note":"'), 0xff, ...text('"}')]),
+      ...(["pk", "epk", "iv", "key"] as const).map((field) => encode({ ...sealed, to: (sealed["to"] as Record<string, string>[]).map((r) => ({ ...r, [field]: 7 })) })),
+      ...(["pk", "epk", "iv", "key"] as const).map((field) => encode({ ...sealed, to: (sealed["to"] as Record<string, string>[]).map((r) => ({ ...r, [field]: "AAAA" })) })),
     ]) {
-      expect(isSealed(bad)).toBe(false);
+      expect(isSealed(bad)).toBe(true);
       expect(() => sealedTo(bad)).toThrow(SealedError);
       expect(await unseal(bad, a.keypair).catch((e: unknown) => e)).toBeInstanceOf(SealedError);
     }
