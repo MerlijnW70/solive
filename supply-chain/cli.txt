@@ -74,4 +74,4 @@ typescript@7.0.2
 undici-types@8.11.2
 utf-8-validate@6.0.6
 ws@8.22.0
-zod@4.6.5
+zod@4.6.7
