@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -315,6 +315,26 @@ describe("the host engine next to plain Node", () => {
     expect(loading.failures).toEqual([]);
     const meta = await judgeHost(bytes("export default () => String(import.meta.url);"), casesOf([{ args: [], expected: "undefined" }]), 20);
     expect(meta.passed).toBe(1);
+  });
+
+  it("judge refuses --plain-node without --sandbox viper before any check runs or anything is paid", async () => {
+    const j = await job(WORD_COUNT, WORD_SPEC);
+    const keys = { "judge.json": j.judge };
+    const marker = join(j.dir, "ran");
+    const run = `${JSON.stringify(process.execPath)} -e "require('node:fs').writeFileSync(process.argv[1], 'ran')" ${JSON.stringify(marker)}`;
+    const base = ["judge", "--keypair", "judge.json", "--owner", j.w.owner.address, "--nonce", "0", "--spec", j.spec, "--run", run];
+    for (const argv of [
+      [...base, "--artifact", j.artifact, "--plain-node"],
+      [...base, "--artifact", j.artifact, "--plain-node", "--sandbox", "none"],
+      [...base, "--artifact", j.artifact, "--sandbox", "none", "--plain-node", "--yes"],
+      [...base, "--watch", "--plain-node", "--sandbox", "none"],
+    ]) {
+      expect(await cli(argv, keys)).toMatchObject({ code: EXIT_USAGE, err: PLAIN_NODE_ONLY, out: "" });
+      expect(existsSync(marker)).toBe(false);
+      expect(status(j.intent)).toBe(IntentStatus.Open);
+    }
+    await cli([...base, "--artifact", j.artifact, "--sandbox", "none"], keys);
+    expect(existsSync(marker)).toBe(true);
   });
 
   it("judge refuses --plain-node without --sandbox viper, and the sandbox options with --sandbox viper but without --plain-node", async () => {

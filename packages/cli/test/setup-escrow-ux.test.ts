@@ -206,7 +206,7 @@ describe("setup, escrow and balance explain themselves", () => {
     const intent = escrow["intent"] as Address;
     const nonce = escrow["nonce"] as string;
     h.engineLog = [creation(intent)];
-    expect(await ok(client, "wallet_receipt", { nonce })).toMatchObject({ released: false, next: expect.stringContaining("no release") });
+    expect(await ok(client, "wallet_receipt", { nonce })).toMatchObject({ released: false, next: stillUnreleased("wallet_receipt") });
     const account = h.svm.getAccount(intent);
     if (!account.exists) {
       throw new Error("the escrow was not created");

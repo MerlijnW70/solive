@@ -51,6 +51,18 @@ export async function escrowHistory(transport: Transport, intent: Address): Prom
   return (await scan(transport, intent, { floor, pages: HISTORY_PAGES, until: (tx) => createdIn(tx, intent) })).transactions;
 }
 
+export async function creatorOf(transport: Transport, intent: Address): Promise<{ owner: Address; nonce: bigint } | null> {
+  for (const tx of await escrowHistory(transport, intent)) {
+    for (const event of tx.failed ? [] : tx.emitted.map(decodeEvent)) {
+      const fields = event?.fields as Record<string, unknown> | undefined;
+      if (event?.name === "IntentCreated" && fields?.["intent"] === intent) {
+        return { owner: fields["owner"] as Address, nonce: fields["nonce"] as bigint };
+      }
+    }
+  }
+  return null;
+}
+
 export const RELEASE_PAGES = 50;
 
 export const RELEASE_UNKNOWN = `the escrow's history could not be read in full and no release was found in what was read, so whether it was released is unknown: it is longer than the ${HISTORY_PAGES} pages read, the RPC node's ledger does not reach back to its creation, or the node could not return some of its transactions yet; a release that carries a memo is found past this cap, one without a memo is not, so pass release, the signature the release returned, to read it directly`;

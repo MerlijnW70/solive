@@ -341,7 +341,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Shows whether an escrow was released: to whom, for how much, by which attestor (judge), and which work it recorded. A payer checks its own escrow; a worker passes the job's owner and nonce from solive_wallet_deliver. Give sha256 of the work to check it is what was paid for. Pass wait, in seconds, to wait for it. It sends nothing.
+Shows whether an escrow was released: to whom, for how much, by which attestor (judge), and which work it recorded. A worker passes the job's owner and nonce from solive_wallet_deliver, and in also up to 9 more jobs. Give sha256 to check the paid work. Pass wait, in seconds, to wait for the first release. It sends nothing.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
@@ -351,7 +351,8 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 | `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
 | `sha256` | string | no | the sha256, as 64 hex digits, of the work, to compare with the one the release recorded |
 | `release` | string | no | the release's transaction signature, as the attestor's release returned it; with it the release is read from that one transaction, with no search of the escrow's history |
-| `wait` | integer 1..40 | no | most seconds to wait for the release; without it, the tool reads once |
+| `wait` | integer 1..40 | no | most seconds to wait for a release; without it, the tool reads once |
+| `also` | list of object, at most 9 | no | up to 9 more escrows, each by owner and nonce, read with the one nonce names; the result is the first released, and its owner and nonce say which; sha256 and release apply only to the one nonce names |
 
 ## solive_wallet_intents
 
@@ -576,7 +577,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 ## solive_get_receipt
 
-Look up whether an escrow was released: to whom, for how much, by which attestor, and which delivered work the release recorded. Give sha256, the hash of the work you received, to check it is the work that was paid for, and release, the signature the release returned, to read the release from that one transaction however long the escrow's history grew. It reads the escrow's own transactions, sends nothing and needs no wallet. Pass wait, in seconds, to wait for the release.
+Look up whether an escrow was released: to whom, for how much, by which attestor, and which delivered work the release recorded. Give sha256, the hash of the work you received, to check it is the work that was paid for, and release, the signature the release returned, to read the release from that one transaction however long the escrow's history grew. It reads the escrow's own transactions, sends nothing and needs no wallet. Pass wait, in seconds, to wait for the release, and in also up to 9 more escrows by owner and nonce, to wait for the first release among them.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
@@ -586,7 +587,8 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 | `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
 | `sha256` | string | no | the sha256, as 64 hex digits, of the work you received, to compare with the one the release recorded |
 | `release` | string | no | the release's transaction signature, as the attestor's release returned it; with it the release is read from that one transaction, with no search of the escrow's history |
-| `wait` | integer 1..40 | no | most seconds to wait for the release; without it, the tool reads once |
+| `wait` | integer 1..40 | no | most seconds to wait for a release; without it, the tool reads once |
+| `also` | list of object, at most 9 | no | up to 9 more escrows, each by owner and nonce, read with the one nonce names; the result is the first released, and its owner and nonce say which; sha256 and release apply only to the one nonce names |
 
 ## solive_get_reputation
 

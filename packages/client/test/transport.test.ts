@@ -16,7 +16,7 @@ import {
   SolanaError,
 } from "@solana/kit";
 import { getEventListeners } from "node:events";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computeUnitLimit, getIntentDiscriminatorBytes, getIntentSize, headroom, INTENT_ENGINE_PROGRAM_ADDRESS, MAX_COMPUTE_UNITS } from "@intent-engine/core";
 import { Charged,
   behindMinSlot,
@@ -55,8 +55,13 @@ const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
 
 type Status = { err: unknown; confirmationStatus: string | null } | null;
 
+beforeEach(() => {
+  vi.spyOn(Math, "random").mockReturnValue(0);
+});
+
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
 });
 
 function stub(statuses: Status[], heights: bigint[] = [0n], seen: bigint[] = []) {

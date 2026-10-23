@@ -132,7 +132,6 @@ import {
   notEarliest,
   notInSplit,
   NO_FALL,
-  NOT_RELEASED,
   NOTHING_WRAPPED,
   PAID_WRAPPED,
   PACKET_DATA_SIZE,
@@ -1310,7 +1309,7 @@ describe("the wallet server", () => {
     h.engineLog = [];
     expect(await ok(client, "wallet_receipt", { nonce: "7" })).toEqual({ intent, released: false, complete: false, next: RELEASE_UNKNOWN });
     h.engineLog = [creation(intent)];
-    expect(await ok(client, "wallet_receipt", { nonce: "7" })).toEqual({ intent, released: false, next: NOT_RELEASED });
+    expect(await ok(client, "wallet_receipt", { nonce: "7" })).toEqual({ intent, released: false, next: stillUnreleased("wallet_receipt") });
     const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
     const { fee, net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);
     const attested = getIntentAttestedEventEncoder().encode({
@@ -1405,7 +1404,7 @@ describe("the wallet server", () => {
       expect(await ok(client, name, { ...args, wait: 3 })).toEqual({ intent, released: false, next: stillUnreleased(name) });
       expect(h.sleeps).toEqual([1, 1, 1]);
       h.sleeps.length = 0;
-      expect(await ok(client, name, args)).toEqual({ intent, released: false, next: NOT_RELEASED });
+      expect(await ok(client, name, args)).toEqual({ intent, released: false, next: stillUnreleased(name) });
       expect(h.sleeps).toEqual([]);
       h.engineLog = [];
       expect(await ok(client, name, { ...args, wait: 1 })).toEqual({ intent, released: false, complete: false, next: stillUnknown(name) });
@@ -1413,7 +1412,7 @@ describe("the wallet server", () => {
       expect((await call(client, name, { ...args, wait: WAIT_MAX + 1 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "wait" }] });
       expect((await call(client, name, { ...args, wait: 0 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "wait" }] });
     }
-    expect(stillUnreleased("get_receipt")).toContain("solive_get_receipt again with wait to keep waiting");
+    expect(stillUnreleased("get_receipt")).toContain("solive_get_receipt again with wait, in seconds");
     h.sleeps.length = 0;
     h.rounds = 2;
     h.engineLog = [creation(intent)];
@@ -1680,7 +1679,7 @@ describe("the wallet server", () => {
     log = zeroTransfers(10);
     expect(await ok(paged, "wallet_receipt", { nonce: "12" })).toEqual({ intent, released: false, complete: false, next: RELEASE_UNKNOWN });
     log = [...zeroTransfers(10), creation(intent)];
-    expect(await ok(paged, "wallet_receipt", { nonce: "12" })).toEqual({ intent, released: false, next: NOT_RELEASED });
+    expect(await ok(paged, "wallet_receipt", { nonce: "12" })).toEqual({ intent, released: false, next: stillUnreleased("wallet_receipt") });
     h.through = null;
     h.engineLog = [];
   });
@@ -1997,7 +1996,7 @@ describe("the wallet server", () => {
     const [intent] = await findIntentPda({ owner, nonce: 14n });
     const lagging = { signature: "5".repeat(87) + "f", slot: 2n, blockTime: null, failed: false, emitted: [], unread: true as const };
     h.engineLog = [creation(intent)];
-    expect(await ok(client, "wallet_receipt", { nonce: "14" })).toEqual({ intent, released: false, next: NOT_RELEASED });
+    expect(await ok(client, "wallet_receipt", { nonce: "14" })).toEqual({ intent, released: false, next: stillUnreleased("wallet_receipt") });
     h.engineLog = [lagging, creation(intent)];
     expect(await ok(client, "wallet_receipt", { nonce: "14" })).toEqual({ intent, released: false, complete: false, next: RELEASE_UNKNOWN });
     expect((await call(client, "wallet_record_delivery", { owner, nonce: "14", sha256: "e2".repeat(32) })).value).toMatchObject({ code: "HistoryTooLong", hint: RELEASE_UNKNOWN });
@@ -2008,7 +2007,7 @@ describe("the wallet server", () => {
     expect((await call(paged, "wallet_receipt", { nonce: "14", release: lagging.signature })).value).toMatchObject({ code: "ReleaseUnread" });
     h.through = pagedThrough(() => [creation(intent)], fetched);
     const kept = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
-    expect(await ok(kept, "wallet_receipt", { nonce: "14" })).toEqual({ intent, released: false, next: NOT_RELEASED });
+    expect(await ok(kept, "wallet_receipt", { nonce: "14" })).toEqual({ intent, released: false, next: stillUnreleased("wallet_receipt") });
     h.through = pagedThrough(() => [], fetched);
     const empty = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     expect(await ok(empty, "wallet_receipt", { nonce: "14" })).toEqual({ intent, released: false, complete: false, next: RELEASE_UNKNOWN });
@@ -2147,7 +2146,7 @@ describe("the wallet server", () => {
     h.through = null;
     closeAccount(intent);
     expect((await call(client, "wallet_receipt", args)).value).toMatchObject(refused);
-    expect(await ok(client, "wallet_receipt", { owner, nonce })).toEqual({ intent, released: false, next: NOT_RELEASED });
+    expect(await ok(client, "wallet_receipt", { owner, nonce })).toEqual({ intent, released: false, next: stillUnreleased("wallet_receipt") });
     h.engineLog = [earlier, first];
     expect(await ok(client, "wallet_receipt", args)).toMatchObject({ intent, released: true, signature: earlier.signature });
     h.engineLog = [];
@@ -2741,7 +2740,7 @@ describe("the wallet server", () => {
     const [intent] = await findIntentPda({ owner, nonce: 7n });
     const payee = await findAssociatedTokenAddress({ owner: (await generateKeyPairSigner()).address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     h.engineLog = [creation(intent)];
-    expect(await ok(plain, "get_receipt", { owner, nonce: "7" })).toEqual({ intent, released: false, next: NOT_RELEASED });
+    expect(await ok(plain, "get_receipt", { owner, nonce: "7" })).toEqual({ intent, released: false, next: stillUnreleased("get_receipt") });
     expect((await call(plain, "get_receipt", { nonce: "7" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "owner" }] });
     const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
     const { fee, net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);

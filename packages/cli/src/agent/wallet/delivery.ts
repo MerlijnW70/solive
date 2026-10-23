@@ -44,6 +44,7 @@ import { preparedSchema, preparedView } from "../shapes.js";
 import { prepare } from "../prepare.js";
 import { deviceOutput, PREVIEW_FIRST, PREVIEW_ONLY, signerOf, sent, sha256Of, WAIT_MAX, walletOpeners } from "./guard.js";
 import { NO_CLOCK, poll } from "./wait.js";
+import { creatorOf } from "./releases.js";
 
 export const ANNOUNCE_FIRST = "share neither the url nor the work until this announcement lands: the earliest announcer of the work is paid, so anyone who gets the work first could announce it first";
 
@@ -107,7 +108,7 @@ export const walletDeliver = define({
     }
     const plan = await deliveryPlan(ctx, { worker: signer, intent: input.intent, sha256, url: input.url });
     const { attestor, instructions } = plan;
-    const { held } = await proofEscrow(ctx, input.intent);
+    const { held } = await proofEscrow(ctx, input.intent, "wallet_receipt");
     const view = {
       intent: input.intent,
       owner: held.owner,
@@ -152,7 +153,10 @@ export const HISTORY_TOO_LONG = `the record of announced work is incomplete, so 
 export const CHECK_MEANS =
   "32 hex: a fingerprint of the announcement's salt, which this server uses to match an opened salt to this announcement; a judge does nothing with it and never passes it on";
 
-export const DELIVERIES_COMPLETE = "complete is false when older announcements may be missing";
+export const EARLIEST_MEANS =
+  "about the given sha256, not the whole escrow: whether no earlier announcement of that same work is known; earlier announcements listed may be of other work, and others' salts are sealed, so only a published opening can show one of the same work";
+
+export const DELIVERIES_COMPLETE ="complete is false when older announcements may be missing";
 
 export const walletCheckDelivery = define({
   name: tool("wallet_check_delivery"),
@@ -226,7 +230,7 @@ function deliveriesOutput(releasing: string) {
         commitment: text("64 hex: this wallet's commitment to the given sha256, with the salt its key derives"),
         salt: text("32 hex: this wallet's salt for the given sha256, recomputed from its key; keep it private until the release"),
         landed: flag("whether an announcement with this commitment, sent by this wallet, is on chain"),
-        earliest: flag("whether no earlier announcement of the given sha256 is known; others' salts are sealed, so only a published opening can show one"),
+        earliest: flag(EARLIEST_MEANS),
         signature: optional(text("this wallet's earliest announcement of it")),
       }),
     ),
@@ -241,7 +245,13 @@ function deliveriesOutput(releasing: string) {
   });
 }
 
-async function proofEscrow(ctx: AgentContext, intent: Address) {
+export const escrowClosed = (intent: Address, owner: Address, nonce: bigint, receipt: string) =>
+  `the escrow ${intent} is closed: it was released, cancelled or expired; call ${tool(receipt)} with owner ${owner} and nonce ${nonce} to see whether it was released and to whom`;
+
+export const noEscrow = (intent: Address, receipt: string) =>
+  `no intent ${intent}: it was never made, or it was settled and closed; ${tool(receipt)} with the escrow's owner and nonce shows whether it was released and to whom`;
+
+async function proofEscrow(ctx: AgentContext, intent: Address, receipt: string) {
   const view = await ctx.transport.getAccount(intent);
   const tag = getIntentDiscriminatorBytes();
   const held =
@@ -249,7 +259,8 @@ async function proofEscrow(ctx: AgentContext, intent: Address) {
       ? null
       : getIntentDecoder().decode(view.data);
   if (held === null) {
-    throw new AgentRefusal("NotFound", `no intent ${intent}; it was settled and closed, or never made`);
+    const creator = view === null ? await creatorOf(ctx.transport, intent) : null;
+    throw new AgentRefusal("NotFound", creator === null ? noEscrow(intent, receipt) : escrowClosed(intent, creator.owner, creator.nonce, receipt));
   }
   const params = decodeParams(held.kind, Uint8Array.from(held.params));
   if (params.kind !== Kind.AttestedResult || params.specHash.every((b) => b === 0)) {
@@ -273,8 +284,8 @@ type Own = { wallet: Address; sha256: string; salt: string };
 
 const earliestFirst = (a: { slot: bigint; signature: string }, b: { slot: bigint; signature: string }): number => (earlier(a, b) ? -1 : earlier(b, a) ? 1 : 0);
 
-async function deliveriesOf(ctx: AgentContext, intent: Address, keypair: readonly DeliveryOpener[], own?: Own) {
-  const { held, params } = await proofEscrow(ctx, intent);
+async function deliveriesOf(ctx: AgentContext, intent: Address, keypair: readonly DeliveryOpener[], own?: Own, receipt = "wallet_receipt") {
+  const { held, params } = await proofEscrow(ctx, intent, receipt);
   const open = held.status === IntentStatus.Open && held.expiresAt > (await chainTime(ctx.transport));
   const record = await deliveryRecord(ctx.transport, params.attestor, intent, undefined, keypair);
   const deliveries = [...record.deliveries].sort(earliestFirst).map((delivery) => {
@@ -349,7 +360,7 @@ export const checkDelivery = define({
   effect: "read",
   input: object({ intent: account("the proof escrow's intent address") }),
   output: deliveriesOutput("a release"),
-  run: async (ctx: AgentContext, input) => deliveriesOf(ctx, input.intent, []),
+  run: async (ctx: AgentContext, input) => deliveriesOf(ctx, input.intent, [], undefined, "get_receipt"),
 });
 
 export const prepareDeliver = define({

@@ -4,7 +4,7 @@ import { intentAt, memoized, mintOf, paidWalletsOf, recordedRelease, releaseStan
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
-import { account, amount, flag, integer, object, optional, text } from "../schema.js";
+import { account, amount, flag, integer, list, object, optional, text } from "../schema.js";
 import { WAIT_MAX, signerOf, sha256Of } from "./guard.js";
 import { NO_CLOCK, poll } from "./wait.js";
 import { RESULT_MEANS } from "./attest.js";
@@ -18,7 +18,14 @@ export const PAID_WRAPPED = `paid as wrapped SOL; ${tool("wallet_unwrap")} turns
 export const RECEIPT_PARTIAL =
   "the escrow's history after this release could not be read in full: it is longer than the pages read or the RPC node could not return some of its transactions yet, so a follow-up recording the delivered work may be missing, and without release given, the escrow address may have been made again since; pass release, the signature the release returned, or call again in a few seconds";
 
-export const stillUnreleased = (name: string) => `not released when the wait ran out; call ${tool(name)} again with wait to keep waiting`;
+export const stillUnreleased = (name: string) => `not released yet; call ${tool(name)} again with wait, in seconds, to wait for the release`;
+
+export const ALSO_MAX = 9;
+
+export const noneReleased = (name: string, count: number) => `none of the ${count} escrows is released yet; call ${tool(name)} again with wait, in seconds, to wait for the first release`;
+
+export const noneKnown = (name: string, count: number) =>
+  `no release of the ${count} escrows was found, but the history of some could not be read in full, so whether they were released is unknown; call ${tool(name)} again in a few seconds, or read each alone`;
 
 export const RELEASE_LANDING =
   "the escrow is marked released on chain, but the RPC node has not returned the release transaction yet, so who it paid is not known; call again in a few seconds";
@@ -28,13 +35,49 @@ export const stillUnknown = (name: string) =>
 
 export { NO_CLOCK } from "./wait.js";
 
-const waitInput = optional(integer(1, WAIT_MAX, "most seconds to wait for the release; without it, the tool reads once"));
+const waitInput = optional(integer(1, WAIT_MAX, "most seconds to wait for a release; without it, the tool reads once"));
 
-type Receipt = Awaited<ReturnType<typeof escrowReceipt>>;
+const alsoInput = optional(
+  list(
+    object({ owner: account("the wallet that made this escrow"), nonce: amount("this escrow's nonce") }),
+    ALSO_MAX,
+    `up to ${ALSO_MAX} more escrows, each by owner and nonce, read with the one nonce names; the result is the first released, and its owner and nonce say which; sha256 and release apply only to the one nonce names`,
+  ),
+);
 
-async function waitedReceipt(ctx: AgentContext, name: string, wait: number | undefined, read: (transport: Transport) => Promise<Receipt>): Promise<Receipt> {
+type Receipt = Awaited<ReturnType<typeof escrowReceipt>> & { owner?: Address; nonce?: bigint };
+
+type Escrow = { owner: Address; nonce: bigint; sha256?: string | undefined; release?: string | undefined };
+
+const unknownIn = (receipt: Receipt): boolean => "complete" in receipt && receipt.complete === false;
+
+async function firstReleased(transport: Transport, escrows: readonly Escrow[]): Promise<Receipt> {
+  const read: Receipt[] = [];
+  for (const { owner, nonce, sha256, release } of escrows) {
+    const receipt: Receipt = await escrowReceipt(transport, owner, nonce, sha256, release);
+    if (receipt.released) {
+      return escrows.length === 1 ? receipt : { ...receipt, owner, nonce };
+    }
+    read.push(receipt);
+  }
+  const [first] = read as [Receipt];
+  return escrows.length === 1 || !read.some(unknownIn) ? first : { intent: first.intent, released: false, complete: false, next: "" };
+}
+
+async function waitedReceipt(ctx: AgentContext, name: string, wait: number | undefined, escrows: readonly Escrow[]): Promise<Receipt> {
+  const many = escrows.length > 1;
+  const told = (last: Receipt): Receipt =>
+    last.released
+      ? last
+      : unknownIn(last)
+        ? many
+          ? { ...last, next: noneKnown(name, escrows.length) }
+          : wait === undefined
+            ? last
+            : { ...last, next: stillUnknown(name) }
+        : { ...last, next: many ? noneReleased(name, escrows.length) : stillUnreleased(name) };
   if (wait === undefined) {
-    return read(ctx.transport);
+    return told(await firstReleased(ctx.transport, escrows));
   }
   const clock = ctx.wallet ?? ctx.clock;
   if (clock === undefined) {
@@ -43,12 +86,13 @@ async function waitedReceipt(ctx: AgentContext, name: string, wait: number | und
   const fresh = unmemoized(ctx.transport);
   let receipt: Receipt | undefined;
   await poll(clock, wait, async () => {
-    receipt = await read(memoized(fresh));
+    receipt = await firstReleased(memoized(fresh), escrows);
     return receipt.released;
   });
-  const last = receipt as Receipt;
-  return last.released ? last : { ...last, next: "complete" in last && last.complete === false ? stillUnknown(name) : stillUnreleased(name) };
+  return told(receipt as Receipt);
 }
+
+const escrowsOf = (first: Escrow, also: readonly Escrow[] | undefined): Escrow[] => [first, ...(also ?? [])];
 
 const receiptOutput = object({
   intent: account(),
@@ -71,13 +115,15 @@ const receiptOutput = object({
   delivered_salt: optional(text("the payee's salt the release recorded, which opens the payee's announcement")),
   valid: optional(flag("given with delivered_salt: whether that salt opens an announcement by the payee to the recorded sha256")),
   refuted_by: optional(text("an earlier announcement of the same work that a published opening shows, so the release paid a later announcer")),
+  owner: optional(account("given with also: the owner of the escrow released")),
+  nonce: optional(amount("given with also: the nonce of the escrow released")),
   next: optional(text()),
 });
 
 export const walletReceipt = define({
   name: tool("wallet_receipt"),
   title: "Check an escrow release",
-  description: `Shows whether an escrow was released: to whom, for how much, by which attestor (judge), and which work it recorded. A payer checks its own escrow; a worker passes the job's owner and nonce from ${tool("wallet_deliver")}. Give sha256 of the work to check it is what was paid for. Pass wait, in seconds, to wait for it. It sends nothing.`,
+  description: `Shows whether an escrow was released: to whom, for how much, by which attestor (judge), and which work it recorded. A worker passes the job's owner and nonce from ${tool("wallet_deliver")}, and in also up to ${ALSO_MAX} more jobs. Give sha256 to check the paid work. Pass wait, in seconds, to wait for the first release. It sends nothing.`,
   effect: "read",
   input: object({
     owner: optional(account("the wallet that made the escrow; default this server's wallet")),
@@ -85,11 +131,13 @@ export const walletReceipt = define({
     sha256: optional(text("the sha256, as 64 hex digits, of the work, to compare with the one the release recorded")),
     release: optional(text(RELEASE_INPUT)),
     wait: waitInput,
+    also: alsoInput,
   }),
   output: receiptOutput,
   run: async (ctx: AgentContext, input) => {
     const self = (await signerOf(ctx)).address;
-    const receipt = await waitedReceipt(ctx, "wallet_receipt", input.wait, (transport) => escrowReceipt(transport, input.owner ?? self, input.nonce, input.sha256, input.release));
+    const escrows = escrowsOf({ owner: input.owner ?? self, nonce: input.nonce, sha256: input.sha256, release: input.release }, input.also);
+    const receipt = await waitedReceipt(ctx, "wallet_receipt", input.wait, escrows);
     const wrapped = "paid_to" in receipt && receipt.paid_to === self && receipt.mint === NATIVE_MINT;
     if (!wrapped) {
       return receipt;
@@ -103,7 +151,7 @@ export const walletReceipt = define({
 export const getReceipt = define({
   name: tool("get_receipt"),
   title: "Check any owner's escrow release",
-  description: `Look up whether an escrow was released: to whom, for how much, by which attestor, and which delivered work the release recorded. Give sha256, the hash of the work you received, to check it is the work that was paid for, and release, the signature the release returned, to read the release from that one transaction however long the escrow's history grew. It reads the escrow's own transactions, sends nothing and needs no wallet. Pass wait, in seconds, to wait for the release.`,
+  description: `Look up whether an escrow was released: to whom, for how much, by which attestor, and which delivered work the release recorded. Give sha256, the hash of the work you received, to check it is the work that was paid for, and release, the signature the release returned, to read the release from that one transaction however long the escrow's history grew. It reads the escrow's own transactions, sends nothing and needs no wallet. Pass wait, in seconds, to wait for the release, and in also up to ${ALSO_MAX} more escrows by owner and nonce, to wait for the first release among them.`,
   effect: "read",
   input: object({
     owner: account("the wallet that made the escrow"),
@@ -111,10 +159,11 @@ export const getReceipt = define({
     sha256: optional(text("the sha256, as 64 hex digits, of the work you received, to compare with the one the release recorded")),
     release: optional(text(RELEASE_INPUT)),
     wait: waitInput,
+    also: alsoInput,
   }),
   output: receiptOutput,
   run: async (ctx: AgentContext, input) =>
-    waitedReceipt(ctx, "get_receipt", input.wait, (transport) => escrowReceipt(transport, input.owner, input.nonce, input.sha256, input.release)),
+    waitedReceipt(ctx, "get_receipt", input.wait, escrowsOf({ owner: input.owner, nonce: input.nonce, sha256: input.sha256, release: input.release }, input.also)),
 });
 
 export async function escrowReceipt(transport: Transport, owner: Address, nonce: bigint, sha256: string | undefined, releaseSignature?: string) {
