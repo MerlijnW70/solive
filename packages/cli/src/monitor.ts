@@ -12,6 +12,7 @@ import { type AccountView, CLOCK_SYSVAR, loadMintCap, type Transport } from "@in
 import { UsageError } from "./arg-values.js";
 import type { MonitorSpec } from "./command-types.js";
 import { fillsIn, inputMintsOf } from "./monitor-fills.js";
+import { healthFindings } from "./monitor-health.js";
 import { capChanges, type Floors, floorChanges, floorsOf, isFloors, isMintCaps, type MintCaps, mintCapsOf } from "./monitor-limits.js";
 import { printableLines, redactUrl, render } from "./render.js";
 import type { Runtime } from "./runtime.js";
@@ -71,6 +72,8 @@ export type AlertKind =
   | "mint-cap"
   | "committee-floor"
   | "mint-cap-limit"
+  | "balance"
+  | "swap-wait"
   | "rpc";
 
 export type Alert = { kind: AlertKind; field: string; expected: unknown; observed: unknown; slot: number | null } & Record<string, unknown>;
@@ -250,7 +253,7 @@ export type MonitorState = {
 
 export const freshState = (): MonitorState => ({ alerted: new Map(), lastSlot: null, stalledFor: 0, failing: false, seen: null });
 
-type Finding = { key: string; alert: Alert };
+type Finding = { key: string; alert: Alert; mark?: string };
 
 export function capStatus(mint: Address, cap: { outstanding: bigint; totalLimit: bigint } | null): string {
   if (cap === null) {
@@ -306,8 +309,8 @@ function stateAlerts(found: Finding[], state: MonitorState): Alert[] {
     }
   }
   const fresh: Alert[] = [];
-  for (const { key, alert } of found) {
-    const observed = JSON.stringify(alert.observed);
+  for (const { key, alert, mark } of found) {
+    const observed = mark ?? JSON.stringify(alert.observed);
     if (state.alerted.get(key) !== observed) {
       state.alerted.set(key, observed);
       fresh.push(alert);
@@ -384,7 +387,10 @@ export async function checkOnce(
   try {
     const current = await snapshot(transport);
     alerts = [
-      ...stateAlerts([...differences(baseline, current), ...(await capFindings(transport, spec, current.slot))], state),
+      ...stateAlerts(
+        [...differences(baseline, current), ...(await capFindings(transport, spec, current.slot)), ...(await healthFindings(transport, spec, current.slot))],
+        state,
+      ),
       ...slotAlerts(current, state),
       ...(await fillAlerts(transport, spec, state, now - BigInt(spec.since))),
     ];

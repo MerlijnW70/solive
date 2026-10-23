@@ -403,10 +403,10 @@ Options for `submit`: `--url`, `--keypair`, `--yes`, `--file`, `--output`, `--he
 ## monitor
 
 ```text
-monitor --expect <baseline file> [--interval <seconds>] [--max-fill <mint>=<raw amount>]... [--max-fills <count>] [--webhook <https url>] [--once [--since <seconds>]] | --write-baseline <file>; prints each alert as one JSON line; with --once it reads fills of the last --since seconds, the interval by default, and exits 0 when nothing alerted and 4 when anything did
+monitor --expect <baseline file> [--interval <seconds>] [--max-fill <mint>=<raw amount>]... [--max-fills <count>] [--min-balance <wallet>=<SOL>]... [--max-swap-wait <seconds>] [--webhook <https url>] [--once [--since <seconds>]] | --write-baseline <file>; prints each alert as one JSON line; with --once it reads fills of the last --since seconds, the interval by default, and exits 0 when nothing alerted and 4 when anything did
 ```
 
-Options: `--url`, `--expect`, `--write-baseline`, `--interval`, `--max-fill`, `--max-fills`, `--webhook`, `--once`, `--since`, `--output`, `--help`
+Options: `--url`, `--expect`, `--write-baseline`, `--interval`, `--max-fill`, `--max-fills`, `--min-balance`, `--max-swap-wait`, `--webhook`, `--once`, `--since`, `--output`, `--help`
 
 ## reputation
 

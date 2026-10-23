@@ -2,6 +2,8 @@
 set -uo pipefail
 if [[ -n "${FILLER_CLI:-}" ]]; then
   cli=("$FILLER_CLI")
+elif [[ -x "$(dirname "$0")/node_modules/.bin/intent-engine" ]]; then
+  cli=("$(dirname "$0")/node_modules/.bin/intent-engine")
 else
   cli=(node "$(dirname "$0")/../packages/cli/dist/src/bin.js")
 fi

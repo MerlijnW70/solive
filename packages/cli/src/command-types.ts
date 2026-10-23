@@ -178,6 +178,8 @@ export type MonitorSpec = {
   since: number;
   maxFill: ReadonlyMap<Address, bigint>;
   maxFills: number | null;
+  minBalance: ReadonlyMap<Address, bigint>;
+  maxSwapWait: number | null;
   webhook: string | null;
   once: boolean;
 };

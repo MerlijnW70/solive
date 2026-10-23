@@ -1,7 +1,9 @@
 import type { Address } from "@solana/kit";
+import { parseAmount } from "@intent-engine/core";
 import type { Values } from "./arg-options.js";
 import { https, parseAddress, parseBounded, parseU64, UsageError } from "./arg-values.js";
 import type { Command, Remote } from "./command-types.js";
+import { LAMPORT_DECIMALS } from "./monitor-health.js";
 import { tokenNamed } from "./tokens.js";
 
 export const EXIT_ALERTED = 4;
@@ -10,6 +12,7 @@ export const MIN_MONITOR_INTERVAL = 5;
 export const MAX_MONITOR_INTERVAL = 3_600;
 export const MAX_MONITOR_FILLS = 999;
 export const MAX_MONITOR_SINCE = 86_400;
+export const MAX_SWAP_WAIT = 86_400;
 
 export const MONITOR_NEEDS_BASELINE =
   "monitor needs --expect <baseline file>; write one first with monitor --write-baseline <file> after checking the current config and program are the ones you intend";
@@ -19,6 +22,33 @@ export const BASELINE_ALONE = "--write-baseline writes the current values and ex
 export const SINCE_NEEDS_ONCE = "--since sets how far back --once reads fills, so it needs --once";
 
 export const MAX_FILL_FORMAT = "--max-fill takes <mint>=<raw amount>, once per input mint";
+
+export const MIN_BALANCE_FORMAT = "--min-balance takes <wallet>=<SOL>, such as <address>=0.5, once per wallet";
+
+function minBalances(entries: readonly string[]): ReadonlyMap<Address, bigint> {
+  const floors = new Map<Address, bigint>();
+  for (const entry of entries) {
+    const at = entry.lastIndexOf("=");
+    if (at <= 0) {
+      throw new UsageError(MIN_BALANCE_FORMAT);
+    }
+    const wallet = parseAddress(entry.slice(0, at).trim(), "min-balance");
+    if (floors.has(wallet)) {
+      throw new UsageError(`${MIN_BALANCE_FORMAT}; ${wallet} is given twice`);
+    }
+    let lamports: bigint;
+    try {
+      lamports = parseAmount(entry.slice(at + 1).trim(), LAMPORT_DECIMALS);
+    } catch {
+      throw new UsageError(MIN_BALANCE_FORMAT);
+    }
+    if (lamports === 0n) {
+      throw new UsageError(MIN_BALANCE_FORMAT);
+    }
+    floors.set(wallet, lamports);
+  }
+  return floors;
+}
 
 function maxFills(entries: readonly string[], url: string): ReadonlyMap<Address, bigint> {
   const limits = new Map<Address, bigint>();
@@ -41,7 +71,7 @@ function maxFills(entries: readonly string[], url: string): ReadonlyMap<Address,
 }
 
 export function monitorOf(remote: Remote, values: Values): Command {
-  const watching = [values.expect, values.interval, values["max-fill"], values["max-fills"], values.webhook, values.once, values.since];
+  const watching = [values.expect, values.interval, values["max-fill"], values["max-fills"], values["min-balance"], values["max-swap-wait"], values.webhook, values.once, values.since];
   const write = values["write-baseline"];
   if (write !== undefined) {
     if (watching.some((v) => v !== undefined)) {
@@ -68,6 +98,8 @@ export function monitorOf(remote: Remote, values: Values): Command {
       since: values.since === undefined ? interval : parseBounded(values.since, "since", MAX_MONITOR_SINCE, 1),
       maxFill: maxFills(values["max-fill"] ?? [], remote.url),
       maxFills: values["max-fills"] === undefined ? null : parseBounded(values["max-fills"], "max-fills", MAX_MONITOR_FILLS),
+      minBalance: minBalances(values["min-balance"] ?? []),
+      maxSwapWait: values["max-swap-wait"] === undefined ? null : parseBounded(values["max-swap-wait"], "max-swap-wait", MAX_SWAP_WAIT, 1),
       webhook: values.webhook ?? null,
       once: values.once === true,
     },

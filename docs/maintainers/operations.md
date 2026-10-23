@@ -273,7 +273,9 @@ node packages/cli/dist/src/bin.js monitor --write-baseline /etc/intent-engine/ba
 
 The baseline holds `committeeFloors`, each mint with a committee floor and its raw floor, and `mintCaps`, each mint with a cap account and its `maxPerOrder`, `windowCap`, `windowSecs` and `totalLimit` as the program stores them. The monitor lists the program's accounts to find every mint cap. A baseline without these fields is refused; write a new one.
 
-Every alert is one JSON line on stdout with `kind` (`config`, `upgrade-authority`, `program-hash`, `fill-amount`, `fill-rate`, `mint-cap`, `committee-floor`, `mint-cap-limit` or `rpc`), `field`, `expected`, `observed` and `slot`. A `committee-floor` or `mint-cap-limit` alert also names the `mint`; a floor that is gone reads `0`, a cap that is gone or new reads `missing`. A change alerts once, not on every poll, until the baseline is rewritten and the monitor restarted. `--max-fill <mint>=<raw amount>`, repeatable, alerts on a fill above that amount of that input token; `--max-fills <count>` alerts when more fills land in one interval. A failed read, or a slot that does not advance for three intervals, is an `rpc` alert, never a quiet poll. `--webhook <https url>` also POSTs each alert as JSON; the monitor prints only the webhook's scheme and host, and a failed POST goes to stderr. `--once` checks once and exits 0 when nothing alerted and 4 when anything did. With `--once`, `--since <seconds>` sets how far back it reads fills, the interval by default.
+Every alert is one JSON line on stdout with `kind` (`config`, `upgrade-authority`, `program-hash`, `fill-amount`, `fill-rate`, `mint-cap`, `committee-floor`, `mint-cap-limit`, `balance`, `swap-wait` or `rpc`), `field`, `expected`, `observed` and `slot`. A `committee-floor` or `mint-cap-limit` alert also names the `mint`; a floor that is gone reads `0`, a cap that is gone or new reads `missing`. A change alerts once, not on every poll, until the baseline is rewritten and the monitor restarted. `--max-fill <mint>=<raw amount>`, repeatable, alerts on a fill above that amount of that input token; `--max-fills <count>` alerts when more fills land in one interval. A failed read, or a slot that does not advance for three intervals, is an `rpc` alert, never a quiet poll. `--webhook <https url>` also POSTs each alert as JSON; the monitor prints only the webhook's scheme and host, and a failed POST goes to stderr. `--once` checks once and exits 0 when nothing alerted and 4 when anything did. With `--once`, `--since <seconds>` sets how far back it reads fills, the interval by default.
+
+`--min-balance <wallet>=<SOL>`, repeatable, raises a `balance` alert while that wallet holds less SOL than the floor; `field` and `wallet` name the wallet, `expected` the floor and `observed` its balance. `--max-swap-wait <seconds>` raises a `swap-wait` alert for each open intent the devnet filler would fill that has waited longer than that: it sells SOL for TEST, asks no more than the filler's `--issue` rate pays less its `--min-profit`, and its fees are within the filler's `--max-fee-bps`. `intent` names it and `waited` gives the seconds since it became fillable, by the chain's clock. Both read only the chain, and each alerts once until the wallet recovers or the intent leaves.
 
 For each mint named in `--max-fill`, the monitor prints its mint cap's outstanding amount and total limit to stderr when it starts, and raises a `mint-cap` alert while the outstanding amount has reached the total limit.
 
@@ -298,9 +300,82 @@ sudo systemctl enable --now intent-engine-monitor
 journalctl -u intent-engine-monitor -f
 ```
 
-`.github/workflows/monitor.yml` also runs `monitor --once` every hour, at minute 37, on GitHub against `monitoring/devnet.json`, first on the public devnet node and then on a second node when the `SECOND_DEVNET_RPC` secret holds its address. It passes `--since 3900`, so consecutive runs overlap, and `--max-fill` for wrapped SOL at 10 SOL in raw units. A failed run is the alert: GitHub emails the repository owner. After each intended change, commit the new baseline, and update the command line version in the workflow when releasing.
+`.github/workflows/monitor.yml` also runs `monitor --once` every hour, at minute 37, on GitHub against `monitoring/devnet.json`, first on the public devnet node and then on a second node when the `SECOND_DEVNET_RPC` secret holds its address. It passes `--since 3900`, so consecutive runs overlap, and `--max-fill` for wrapped SOL at 10 SOL in raw units. The first step also passes `--min-balance` for the filler's and the faucet's wallets and a `--max-swap-wait` above the filler's polling interval. A failed run is the alert: GitHub emails the repository owner. After each intended change, commit the new baseline, and update the command line version in the workflow when releasing.
 
 Alerts go to the journal and to the webhook, which should page a person, for example a chat or paging service. After each intended change, write the new baseline and run `sudo systemctl restart intent-engine-monitor`. The monitor cannot report its own death: alert on the unit failing, and watch the webhook for silence.
+
+## Devnet filler and faucet
+
+The devnet filler fills the quickstart's swaps. `scripts/filler-install.sh` packs the workspace and installs it in `~/solive-filler` on the WSL filesystem, copies `filler.sh` and `faucet-topup.sh` beside it, and prints the installed command line version beside the published one. The installed `filler.sh` runs the command line next to it, so an edit in the checkout reaches the filler only through a new install. The unit at `/etc/systemd/system/solive-filler.service`:
+
+```ini
+[Unit]
+Description=solive devnet filler
+After=network-online.target
+
+[Service]
+User=dev
+WorkingDirectory=/home/dev/solive-filler
+Environment=FILLER_KEYPAIR=/home/dev/.config/intent-engine/filler.json
+ExecStart=/bin/bash /home/dev/solive-filler/filler.sh
+Restart=always
+RestartSec=15
+StandardOutput=append:/home/dev/filler.log
+StandardError=append:/home/dev/filler.log
+
+[Install]
+WantedBy=multi-user.target
+```
+
+To upgrade, check out the release tag in the checkout, install, compare the two versions the install prints, and restart:
+
+```sh
+git fetch --tags
+git switch --detach v<version>
+bash scripts/filler-install.sh
+sudo systemctl restart solive-filler
+journalctl -u solive-filler -n 20
+```
+
+`scripts/faucet-topup.sh` refills the faucet wallet from a funding wallet. It refuses any node whose genesis hash is not devnet's. When the faucet holds less than `TOPUP_FLOOR` SOL it previews a transfer that brings it to `TOPUP_TARGET` SOL, and sends it only with `--yes`, printing the amount and the explorer link. `TOPUP_KEYPAIR` is the funding wallet's key file; `TOPUP_FAUCET`, `TOPUP_URL`, `TOPUP_FLOOR` and `TOPUP_TARGET` default to the devnet faucet's address, devnet and the values at the top of the script.
+
+Run it weekly with `/etc/systemd/system/solive-faucet-topup.service`:
+
+```ini
+[Unit]
+Description=solive devnet faucet top-up
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=dev
+Environment=PATH=/home/dev/.local/share/solana/install/active_release/bin:/usr/bin:/bin
+Environment=TOPUP_KEYPAIR=/home/dev/.config/intent-engine/faucet-funding.json
+ExecStart=/bin/bash /home/dev/solive-filler/faucet-topup.sh --yes
+```
+
+and `/etc/systemd/system/solive-faucet-topup.timer`:
+
+```ini
+[Unit]
+Description=weekly solive devnet faucet top-up
+
+[Timer]
+OnCalendar=weekly
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+As `dev`, preview once by hand, then enable the timer:
+
+```sh
+env TOPUP_KEYPAIR=/home/dev/.config/intent-engine/faucet-funding.json bash /home/dev/solive-filler/faucet-topup.sh
+sudo systemctl daemon-reload
+sudo systemctl enable --now solive-faucet-topup.timer
+systemctl list-timers solive-faucet-topup.timer
+```
 
 ## Incident
 
