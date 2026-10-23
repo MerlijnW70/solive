@@ -24,7 +24,7 @@ import { createdAccount, FailedOnChain, mintOf, type Transport, unmemoized } fro
 import { type AgentContext, type AnyAction, invoke } from "./agent/actions.js";
 import { WARN_REPLACES_DELEGATE } from "./agent/owner.js";
 import { prepare } from "./agent/prepare.js";
-import { problemOf } from "./agent/problems.js";
+import { problemOf, refusalText } from "./agent/problems.js";
 import { preparedView } from "./agent/shapes.js";
 import { type Side, type Tokens, UsageError } from "./args.js";
 import { printableLines } from "./render.js";
@@ -141,7 +141,7 @@ export async function landingOf(transport: Transport, signature: string, intent:
 export async function ask(action: AnyAction, ctx: AgentContext, input: object): Promise<Record<string, unknown>> {
   const outcome = await invoke(action, ctx, input);
   if (!outcome.ok) {
-    const message = `${outcome.problem.code}: ${outcome.problem.hint}`;
+    const message = refusalText(outcome.problem);
     throw outcome.problem.code === "InvalidInput" ? new UsageError(message) : new FlowRefused(message);
   }
   return outcome.value;

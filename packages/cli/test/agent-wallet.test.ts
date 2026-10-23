@@ -1189,9 +1189,9 @@ describe("the wallet server", () => {
       open: true,
       complete: true,
       deliveries: [
-        { worker: copier, commitment: commitmentOf(intent, copier, saltFor(intent), work), check, signature: "copy", url: "https://example.org/stolen" },
-        { worker: copier, commitment: commitmentOf(intent, copier, saltFor(intent), own), check, signature: "own", url: "https://example.org/own" },
-        { worker, commitment: commitmentOf(intent, worker, saltFor(intent), work), check, signature: "first", url: "https://example.org/work" },
+        { worker, commitment: commitmentOf(intent, worker, saltFor(intent), work), check, signature: "first", slot: "5", url: "https://example.org/work" },
+        { worker: copier, commitment: commitmentOf(intent, copier, saltFor(intent), own), check, signature: "own", slot: "7", url: "https://example.org/own" },
+        { worker: copier, commitment: commitmentOf(intent, copier, saltFor(intent), work), check, signature: "copy", slot: "9", url: "https://example.org/stolen" },
       ],
     });
     const release = { owner: wallet, nonce, delivered_sha256: work };
@@ -1226,8 +1226,8 @@ describe("the wallet server", () => {
     const checked = await ok(client, "wallet_check_delivery", { intent, sha256: work });
     expect(checked).toMatchObject({
       deliveries: [
-        { worker: wallet, commitment, check, signature: honest.signature, url },
-        { worker: copier, commitment, check, signature: "copied", url },
+        { worker: copier, commitment, check, signature: "copied", slot: "5", url },
+        { worker: wallet, commitment, check, signature: honest.signature, slot: "9", url },
       ],
       own: { commitment, salt, landed: true, earliest: true, signature: honest.signature },
     });
@@ -1241,8 +1241,8 @@ describe("the wallet server", () => {
     const plain = await connect(["mcp", "--url", "devnet"]);
     const outside = await ok(plain, "check_delivery", { intent });
     expect(outside["deliveries"]).toEqual([
-      { worker: wallet, commitment, check, signature: honest.signature },
-      { worker: copier, commitment, check, signature: "copied" },
+      { worker: copier, commitment, check, signature: "copied", slot: "5" },
+      { worker: wallet, commitment, check, signature: honest.signature, slot: "9" },
     ]);
     expect(JSON.stringify(outside)).not.toContain("example.org");
     const release = { owner: wallet, nonce: escrow["nonce"] as string, delivered_sha256: work };
@@ -2724,8 +2724,8 @@ describe("the wallet server", () => {
       open: true,
       complete: true,
       deliveries: [
-        { worker: copier, commitment: commitmentOf(intent, copier, saltFor(intent), work), check: saltCheckOf(saltFor(intent)), signature: "copy" },
-        { worker, commitment: commitmentOf(intent, worker, saltFor(intent), work), check: saltCheckOf(saltFor(intent)), signature: "first" },
+        { worker, commitment: commitmentOf(intent, worker, saltFor(intent), work), check: saltCheckOf(saltFor(intent)), signature: "first", slot: "5" },
+        { worker: copier, commitment: commitmentOf(intent, copier, saltFor(intent), work), check: saltCheckOf(saltFor(intent)), signature: "copy", slot: "9" },
       ],
     };
     expect(await ok(plain, "check_delivery", { intent })).toEqual(listed);

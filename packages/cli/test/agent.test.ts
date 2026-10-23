@@ -65,7 +65,7 @@ import {
 import { define, invoke, OutputMismatch, toJson } from "../src/agent/actions.js";
 import { ANNOTATIONS, annotationsOf } from "../src/agent/mcp.js";
 import { VERSION } from "../src/version.js";
-import { ENGINE_PROBLEMS, type Problem } from "../src/agent/problems.js";
+import { ENGINE_PROBLEMS, type Problem, refusalText } from "../src/agent/problems.js";
 import { createCost, rentFor, rentRate, SIGNATURE_FEE, TOKEN_ACCOUNT_RENT_BYTES } from "../src/agent/budget.js";
 import { ACTIONS } from "../src/agent/registry.js";
 import { WALLET_ACTIONS } from "../src/agent/wallet.js";
@@ -115,7 +115,7 @@ async function fail(client: Client, name: string, args: object = {}): Promise<Pr
   const result = await client.callTool({ name: `solive_${name}`, arguments: args as Record<string, unknown> });
   expect(result.isError).toBe(true);
   const problem = result.structuredContent as Problem;
-  expect((result.content as { text: string }[])[0]?.text).toBe(`${problem.code}: ${problem.hint}`);
+  expect((result.content as { text: string }[])[0]?.text).toBe(refusalText(problem));
   return problem;
 }
 

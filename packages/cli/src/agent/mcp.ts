@@ -6,6 +6,7 @@ import { ACTIONS } from "./registry.js";
 import { limitLines, WALLET_ACTIONS, WALLET_NOTICE } from "./wallet.js";
 import { tool } from "./names.js";
 import { passThrough } from "./schema.js";
+import { type Problem, refusalText } from "./problems.js";
 import { VERSION } from "../version.js";
 import type { WalletLimits } from "../args.js";
 
@@ -49,6 +50,9 @@ export function servedText(text: string, names: ReadonlySet<string>): string {
     .filter((clause, at) => at === 0 || [...clause.matchAll(TOOL_NAMES)].every(([name]) => names.has(name)))
     .join("; ");
 }
+
+export const servedRefusal = (problem: Problem, names: ReadonlySet<string>): string =>
+  refusalText(problem.issues === undefined ? problem : { ...problem, issues: problem.issues.map((issue) => ({ ...issue, message: servedText(issue.message, names) })) });
 
 export function servedValue(value: unknown, names: ReadonlySet<string>): unknown {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -100,7 +104,7 @@ export function agentServer(
         const problem = { ...outcome.problem, hint: servedText(outcome.problem.hint, names) };
         return {
           isError: true,
-          content: [{ type: "text" as const, text: `${problem.code}: ${problem.hint}` }],
+          content: [{ type: "text" as const, text: servedRefusal(problem, names) }],
           structuredContent: problem,
         };
       },

@@ -6,7 +6,7 @@ import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
 import { account, amount, flag, integer, object, optional, text } from "../schema.js";
 import { WAIT_MAX, signerOf, sha256Of } from "./guard.js";
-import { poll } from "./wait.js";
+import { NO_CLOCK, poll } from "./wait.js";
 import { RESULT_MEANS } from "./attest.js";
 import { RELEASE_INPUT, releaseOf, otherLifecycle, coverageOf } from "./record.js";
 import { RELEASE_UNKNOWN, outlives, releaseLookup, namedRelease, releasedMint, createdMint, heldMint } from "./releases.js";
@@ -26,7 +26,7 @@ export const RELEASE_LANDING =
 export const stillUnknown = (name: string) =>
   `the RPC node had not returned the escrow's release when the wait ran out, so whether and how it was paid is still unknown; call ${tool(name)} again with wait in a few seconds`;
 
-export const NO_CLOCK = "this server has no clock to wait with; call again without wait";
+export { NO_CLOCK } from "./wait.js";
 
 const waitInput = optional(integer(1, WAIT_MAX, "most seconds to wait for the release; without it, the tool reads once"));
 

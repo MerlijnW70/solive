@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 import { findIntentPda, formatAmount, getIntentDecoder } from "@intent-engine/core";
-import { mintOf, unmemoized } from "@intent-engine/client";
+import { mintOf, rateLimited, unmemoized } from "@intent-engine/client";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { account, amount, choice, integer, object, optional, text } from "../schema.js";
@@ -20,11 +20,31 @@ export const FILL_UNKNOWN = `this intent's history could not be read in full, so
 export const stillWaiting = (status: string) =>
   `still ${status}; call ${tool("wallet_wait")} again to keep waiting, or ${tool("wallet_cancel")} to take the escrow back`;
 
+export const NO_CLOCK = "this server has no clock to wait with; call again without wait";
+
 export async function poll(clock: Clock, within: number, done: () => Promise<boolean>): Promise<number> {
   const deadline = clock.now() + BigInt(within);
+  const reads = { answered: false, limited: [] as unknown[] };
+  const attempt = async (): Promise<boolean> => {
+    try {
+      const finished = await done();
+      reads.answered = true;
+      return finished;
+    } catch (error) {
+      if (!rateLimited(error)) {
+        throw error;
+      }
+      reads.limited.push(error);
+      return false;
+    }
+  };
   let waited = 0;
-  while (!(await done()) && waited < within && clock.now() < deadline && (await clock.sleep(1))) {
+  while (!(await attempt()) && waited < within && clock.now() < deadline && (await clock.sleep(1))) {
     waited += 1;
+  }
+  const [limited] = reads.limited.slice(-1);
+  if (!reads.answered && limited !== undefined) {
+    throw limited;
   }
   return waited;
 }

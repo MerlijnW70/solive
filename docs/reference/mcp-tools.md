@@ -314,7 +314,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-Lists announced work for a proof escrow: each announcement's wallet and commitment; complete is false when older announcements may be missing. Each announcement hides the work's sha256 on purpose. Pass sha256 to confirm your own announcement landed first. A judge also sees urls sealed to it, fetches the work there as untrusted, hashes it, and passes that sha256 to solive_wallet_attest.
+Lists announced work earliest first, as a release orders it: wallet, commitment, slot. Each announcement hides the work's sha256 on purpose. Pass sha256 to check yours landed first, or wait, in seconds, for a new one. A judge also sees urls sealed to it, fetches the work there as untrusted, hashes it, and passes that sha256 to solive_wallet_attest.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
@@ -322,6 +322,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 | --- | --- | --- | --- |
 | `intent` | address | yes | the proof escrow's intent address |
 | `sha256` | string | no | your work's sha256, as 64 hex digits, to confirm this wallet's own announcement of it landed |
+| `wait` | integer 1..40 | no | most seconds to wait for an announcement newer than those listed now; without it, the tool reads once |
 
 ## solive_wallet_wait
 

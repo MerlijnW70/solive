@@ -238,8 +238,8 @@ describe("the openings after a release and the deliveries it shows", () => {
     const check = saltCheckOf(saltFor(intent));
     const listed = await ok(client, "wallet_check_delivery", { intent });
     expect(listed["deliveries"]).toEqual([
-      { worker, commitment: commitmentOf(intent, worker, saltFor(intent), work), check, signature: "first", url: URL_OF_WORK, opened_salt: saltFor(intent) },
-      { worker: other, commitment: commitmentOf(intent, other, saltFor(intent), "e2".repeat(32)), check, signature: "other", url: URL_OF_WORK, opened_salt: saltFor(intent) },
+      { worker: other, commitment: commitmentOf(intent, other, saltFor(intent), "e2".repeat(32)), check, signature: "other", slot: "3", url: URL_OF_WORK, opened_salt: saltFor(intent) },
+      { worker, commitment: commitmentOf(intent, worker, saltFor(intent), work), check, signature: "first", slot: "5", url: URL_OF_WORK, opened_salt: saltFor(intent) },
     ]);
     expect(listed["release"]).toStrictEqual({ signature: "released", sha256: work, valid: true });
   });

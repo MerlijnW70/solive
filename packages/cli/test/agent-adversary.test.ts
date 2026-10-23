@@ -12,6 +12,7 @@ import {
   LOG_TAIL,
   type Problem,
   problemOf,
+  refusalText,
   simulationProblem,
 } from "../src/agent/problems.js";
 import { ADDRESS_PATTERN } from "../src/agent/schema.js";
@@ -81,7 +82,8 @@ function checkShape(result: Result): Problem | null {
     return null;
   }
   const problem = result.structuredContent as Problem;
-  expect(text).toBe(`${problem.code}: ${problem.hint}`);
+  expect(text).toBe(refusalText(problem));
+  expect(text).toMatch(PRINTABLE);
   expect(problem.hint).toMatch(PRINTABLE);
   for (const line of problem.logs ?? []) {
     expect(line).toMatch(PRINTABLE);

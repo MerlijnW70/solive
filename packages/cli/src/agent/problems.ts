@@ -309,6 +309,10 @@ export const HINT_LIMIT = 300;
 
 export const untrusted = (text: string): string => text.replace(/[^ -~]+/g, " ").slice(0, HINT_LIMIT);
 
+export const issueText = ({ path, message }: Issue): string => untrusted(path === "" ? message : `${path}: ${message}`);
+
+export const refusalText = (problem: Problem): string => [`${problem.code}: ${problem.hint}`, ...(problem.issues ?? []).map(issueText)].join("; ");
+
 const UNREACHABLE_CODES: ReadonlySet<string> = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH", "UND_ERR_CONNECT_TIMEOUT"]);
 const UNREACHABLE_TEXT = /fetch failed|getaddrinfo|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH/;
 const CAUSE_DEPTH = 8;

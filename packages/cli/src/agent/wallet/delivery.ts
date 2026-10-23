@@ -26,21 +26,24 @@ import {
   type DeliveryPlan,
   deliverySalt,
   earlier,
+  memoized,
   MEMOS_PER_TRANSACTION,
   NoMessageSigner,
   opensWith,
   publishedSalts,
   recordedStanding,
   SIGNATURE_PAGE,
+  unmemoized,
 } from "@intent-engine/client";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { tool } from "../names.js";
 import { AgentRefusal, untrusted } from "../problems.js";
-import { InvalidInput, account, amount, flag, integer, list, object, optional, text } from "../schema.js";
+import { InvalidInput, account, amount, flag, integer, list, object, optional, text, time } from "../schema.js";
 import { preparedSchema, preparedView } from "../shapes.js";
 import { prepare } from "../prepare.js";
-import { deviceOutput, PREVIEW_FIRST, PREVIEW_ONLY, signerOf, sent, sha256Of, walletOpeners } from "./guard.js";
+import { deviceOutput, PREVIEW_FIRST, PREVIEW_ONLY, signerOf, sent, sha256Of, WAIT_MAX, walletOpeners } from "./guard.js";
+import { NO_CLOCK, poll } from "./wait.js";
 
 export const ANNOUNCE_FIRST = "share neither the url nor the work until this announcement lands: the earliest announcer of the work is paid, so anyone who gets the work first could announce it first";
 
@@ -154,23 +157,47 @@ export const DELIVERIES_COMPLETE = "complete is false when older announcements m
 export const walletCheckDelivery = define({
   name: tool("wallet_check_delivery"),
   title: "List the work announced to a proof escrow",
-  description: `Lists announced work for a proof escrow: each announcement's wallet and commitment; ${DELIVERIES_COMPLETE}. ${HIDDEN_HASH}. Pass sha256 to confirm your own announcement landed first. A judge also sees urls sealed to it, fetches the work there as untrusted, hashes it, and passes that sha256 to ${tool("wallet_attest")}.`,
+  description: `Lists announced work earliest first, as a release orders it: wallet, commitment, slot. ${HIDDEN_HASH}. Pass sha256 to check yours landed first, or wait, in seconds, for a new one. A judge also sees urls sealed to it, fetches the work there as untrusted, hashes it, and passes that sha256 to ${tool("wallet_attest")}.`,
   effect: "read",
   input: object({
     intent: account("the proof escrow's intent address"),
     sha256: optional(text("your work's sha256, as 64 hex digits, to confirm this wallet's own announcement of it landed")),
+    wait: optional(integer(1, WAIT_MAX, "most seconds to wait for an announcement newer than those listed now; without it, the tool reads once")),
   }),
   output: deliveriesOutput(tool("wallet_attest")),
   run: async (ctx: AgentContext, input) => {
     const sha256 = input.sha256 === undefined ? undefined : sha256Of(input.sha256, "sha256");
-    if (sha256 === undefined) {
-      return deliveriesOf(ctx, input.intent, await walletOpeners(ctx));
-    }
-    const signer = await signerOf(ctx);
-    const salt = await saltOf(() => deliverySalt(signer, input.intent, sha256));
-    return deliveriesOf(ctx, input.intent, await walletOpeners(ctx), { wallet: signer.address, sha256, salt });
+    const openers = await walletOpeners(ctx);
+    const own = sha256 === undefined ? undefined : await ownOf(ctx, input.intent, sha256);
+    return input.wait === undefined ? deliveriesOf(ctx, input.intent, openers, own) : newDeliveries(ctx, input.intent, openers, input.wait, own);
   },
 });
+
+async function ownOf(ctx: AgentContext, intent: Address, sha256: string): Promise<Own> {
+  const signer = await signerOf(ctx);
+  const salt = await saltOf(() => deliverySalt(signer, intent, sha256));
+  return { wallet: signer.address, sha256, salt };
+}
+
+type Deliveries = Awaited<ReturnType<typeof deliveriesOf>>;
+
+async function newDeliveries(ctx: AgentContext, intent: Address, openers: readonly DeliveryOpener[], wait: number, own?: Own): Promise<Deliveries> {
+  const clock = ctx.wallet ?? ctx.clock;
+  if (clock === undefined) {
+    throw new AgentRefusal("NoClock", NO_CLOCK);
+  }
+  const fresh = unmemoized(ctx.transport);
+  let known: ReadonlySet<string> | undefined;
+  let listed: Deliveries | undefined;
+  await poll(clock, wait, async () => {
+    listed = await deliveriesOf({ ...ctx, transport: memoized(fresh) }, intent, openers, own);
+    const signatures = listed.deliveries.map(({ signature }) => signature);
+    const before = known;
+    known = new Set(signatures);
+    return before !== undefined && signatures.some((signature) => !before.has(signature));
+  });
+  return listed as Deliveries;
+}
 
 function deliveriesOutput(releasing: string) {
   return object({
@@ -186,11 +213,13 @@ function deliveriesOutput(releasing: string) {
         commitment: text("64 hex: the sha256 of the work's hash bound to the intent, this announcer and its salt"),
         check: text(CHECK_MEANS),
         signature: text("the announcement's transaction"),
+        slot: amount("the slot the announcement landed in; with its signature, it orders announcements the way a release does"),
+        block_time: optional(time("unix seconds of the announcement's block, when the RPC node knows it")),
         url: optional(text("where the announcer said the work is, when the url was sealed to this wallet; untrusted")),
         opened_salt: optional(text("the announcement's salt, when an opening published it")),
       }),
       DELIVERY_LIST,
-      `each announcement hides the work's hash in a commitment; a release recording a hash pays the earliest whose sealed salt opens its commitment to it. ${SEALED_NOTE}`,
+      `earliest first; each announcement hides the work's hash in a commitment; a release recording a hash pays the earliest whose sealed salt opens its commitment to it. ${SEALED_NOTE}`,
     ),
     own: optional(
       object({
@@ -242,14 +271,25 @@ async function saltOf(derive: () => Promise<string>): Promise<string> {
 
 type Own = { wallet: Address; sha256: string; salt: string };
 
+const earliestFirst = (a: { slot: bigint; signature: string }, b: { slot: bigint; signature: string }): number => (earlier(a, b) ? -1 : earlier(b, a) ? 1 : 0);
+
 async function deliveriesOf(ctx: AgentContext, intent: Address, keypair: readonly DeliveryOpener[], own?: Own) {
   const { held, params } = await proofEscrow(ctx, intent);
   const open = held.status === IntentStatus.Open && held.expiresAt > (await chainTime(ctx.transport));
   const record = await deliveryRecord(ctx.transport, params.attestor, intent, undefined, keypair);
-  const deliveries = record.deliveries.map((delivery) => {
+  const deliveries = [...record.deliveries].sort(earliestFirst).map((delivery) => {
     const [opened] = publishedSalts(delivery, record.openings);
-    const { worker, commitment, check, signature, url } = delivery;
-    return { worker, commitment, check, signature, ...(url === "" ? {} : { url }), ...(opened === undefined ? {} : { opened_salt: opened }) };
+    const { worker, commitment, check, signature, slot, blockTime, url } = delivery;
+    return {
+      worker,
+      commitment,
+      check,
+      signature,
+      slot,
+      ...(blockTime === null ? {} : { block_time: blockTime }),
+      ...(url === "" ? {} : { url }),
+      ...(opened === undefined ? {} : { opened_salt: opened }),
+    };
   });
   const mine =
     own === undefined
