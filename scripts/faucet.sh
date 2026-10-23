@@ -83,6 +83,10 @@ serve() {
   answer "Sent $amount_sol devnet SOL to \`$address\`: https://explorer.solana.com/tx/$signature?cluster=devnet" completed
 }
 
+untagged=$(gh issue list --state open --limit 100 --search 'in:title "Devnet SOL" -label:faucet' --json number,title --jq '.[] | select(.title == "Devnet SOL") | .number')
+for issue in $(printf '%s\n' "$untagged" | grep -Ex '[0-9]+'); do
+  gh issue edit "$issue" --add-label faucet > /dev/null
+done
 waiting=$(gh issue list --label faucet --state open --limit 100 --json number,labels --jq '.[] | select(all(.labels[]; .name != "faucet-sent")) | .number')
 mapfile -t open < <(printf '%s\n' "$waiting" | grep -Ex '[0-9]+' | sort -n)
 status=0

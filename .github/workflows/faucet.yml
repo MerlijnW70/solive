@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   send:
-    if: github.event_name == 'schedule' || contains(github.event.issue.labels.*.name, 'faucet')
+    if: github.event_name == 'schedule' || contains(github.event.issue.labels.*.name, 'faucet') || github.event.issue.title == 'Devnet SOL'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:

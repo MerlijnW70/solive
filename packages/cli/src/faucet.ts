@@ -3,7 +3,6 @@ import { PRODUCT_REPOSITORY } from "@intent-engine/core";
 import type { Launched } from "./launch.js";
 
 export const GH = "gh";
-export const FAUCET_TEMPLATE = "Request devnet SOL";
 export const FAUCET_TITLE = "Devnet SOL";
 export const FAUCET_MINUTE = 7;
 export const FAUCET_RUN_MINUTES = 10;
@@ -15,10 +14,6 @@ export const GH_HINT = "with the GitHub CLI signed in, setup --faucet files the 
 export const GH_GONE = "the GitHub CLI (gh) was not found";
 export const GH_MISSING = `${GH_GONE}, so `;
 export const GH_SIGNED_OUT = "the GitHub CLI is not signed in (run gh auth login), so ";
-
-export const REPOSITORY_ID = "query($owner:String!,$name:String!){repository(owner:$owner,name:$name){id}}";
-export const CREATE_ISSUE =
-  "mutation($repo:ID!,$title:String!,$body:String!,$template:String!){createIssue(input:{repositoryId:$repo,title:$title,body:$body,issueTemplate:$template}){issue{url}}}";
 
 export const faucetWaiting = (url: string) =>
   `filed ${url}; waiting up to ${FAUCET_WAIT_MINUTES} minutes for SOL, checking every ${FAUCET_POLL_SECONDS} seconds`;
@@ -55,22 +50,6 @@ export async function fileFaucetRequest(launch: Launch, address: Address): Promi
     return { hint: GH_SIGNED_OUT };
   }
   const { owner, name } = repository();
-  const id = await gh(launch, ["api", "graphql", "-f", `query=${REPOSITORY_ID}`, "-f", `owner=${owner}`, "-f", `name=${name}`, "--jq", ".data.repository.id"]);
-  const url = await gh(launch, [
-    "api",
-    "graphql",
-    "-f",
-    `query=${CREATE_ISSUE}`,
-    "-f",
-    `repo=${id}`,
-    "-f",
-    `title=${FAUCET_TITLE}`,
-    "-f",
-    `body=${address}`,
-    "-f",
-    `template=${FAUCET_TEMPLATE}`,
-    "--jq",
-    ".data.createIssue.issue.url",
-  ]);
-  return { url };
+  const filed = await gh(launch, ["issue", "create", "--repo", `${owner}/${name}`, "--title", FAUCET_TITLE, "--body", address]);
+  return { url: filed.split("\n").pop()?.trim() ?? filed };
 }

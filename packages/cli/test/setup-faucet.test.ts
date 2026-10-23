@@ -6,12 +6,10 @@ import { NATIVE_MINT, PRODUCT_REPOSITORY } from "@intent-engine/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FAUCET_DEVNET_ONLY } from "../src/args.js";
 import {
-  CREATE_ISSUE,
   FAUCET_MINUTE,
   FAUCET_POLL_SECONDS,
   FAUCET_RUN_MINUTES,
   FAUCET_SCHEDULE,
-  FAUCET_TEMPLATE,
   FAUCET_TITLE,
   FAUCET_WAIT_MINUTES,
   faucetPending,
@@ -20,7 +18,6 @@ import {
   GH_MISSING,
   GH_SIGNED_OUT,
   ghFailed,
-  REPOSITORY_ID,
 } from "../src/faucet.js";
 import type { Launched } from "../src/launch.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main } from "../src/main.js";
@@ -46,6 +43,7 @@ const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../.
 const read = (path: string) => readFileSync(`${ROOT}/${path}`, "utf8");
 const WORKFLOW = read(".github/workflows/faucet.yml");
 const FORM = read(".github/ISSUE_TEMPLATE/faucet.yml");
+const FAUCET_SCRIPT = read("scripts/faucet.sh");
 const GUIDE = read("docs/first-job.md");
 const ISSUE = PRODUCT_REPOSITORY + "/issues/41";
 const SOL = (text: string) => {
@@ -91,8 +89,7 @@ const refusing = (above: bigint) => {
 };
 
 const SIGNED_IN: Reply = { code: 0, output: "Logged in to github.com" };
-const REPO_ID: Reply = { code: 0, output: "R_kgDOabc\n" };
-const FILED: Reply = { code: 0, output: `${ISSUE}\n` };
+const FILED: Reply = { code: 0, output: `\nCreating issue in owner/repo\n\n${ISSUE}\n` };
 
 function preset(at: Address): void {
   const space = BigInt(getMintSize());
@@ -194,14 +191,13 @@ describe("setup --faucet", () => {
       () => undefined,
       () => h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 2n)),
     );
-    const ran = await run(["setup", "--faucet"], [SIGNED_IN, REPO_ID, FILED]);
+    const ran = await run(["setup", "--faucet"], [SIGNED_IN, FILED]);
     expect([ran.code, ran.err]).toEqual([EXIT_OK, ""]);
     expect(ran.json()["address"]).toBe(address);
     const [owner, name] = new URL(PRODUCT_REPOSITORY).pathname.split("/").filter((p) => p !== "");
     expect(ran.launched).toEqual([
       ["gh", "auth", "status", "--hostname", "github.com"],
-      ["gh", "api", "graphql", "-f", `query=${REPOSITORY_ID}`, "-f", `owner=${owner}`, "-f", `name=${name}`, "--jq", ".data.repository.id"],
-      ["gh", "api", "graphql", "-f", `query=${CREATE_ISSUE}`, "-f", "repo=R_kgDOabc", "-f", `title=${FAUCET_TITLE}`, "-f", `body=${address}`, "-f", `template=${FAUCET_TEMPLATE}`, "--jq", ".data.createIssue.issue.url"],
+      ["gh", "issue", "create", "--repo", `${owner}/${name}`, "--title", FAUCET_TITLE, "--body", address],
     ]);
     expect(ran.notes).toBe(`${faucetWaiting(ISSUE)}\n`);
     expect(ran.notes).toContain(`waiting up to ${FAUCET_WAIT_MINUTES} minutes`);
@@ -216,7 +212,7 @@ describe("setup --faucet", () => {
         h.clock += BigInt(FAUCET_POLL_SECONDS);
       });
     }
-    const ran = await run(["setup", "--faucet"], [SIGNED_IN, REPO_ID, FILED]);
+    const ran = await run(["setup", "--faucet"], [SIGNED_IN, FILED]);
     expect(ran.code).toBe(EXIT_OK);
     expect(h.sleeps).toHaveLength((FAUCET_WAIT_MINUTES * 60) / FAUCET_POLL_SECONDS);
     expect(ran.json()).toMatchObject({ sol: "0", faucet_request: ISSUE, next: faucetPending(ISSUE) });
@@ -242,9 +238,9 @@ describe("setup --faucet", () => {
   });
 
   it("fails with what the GitHub CLI said when it cannot file the request", async () => {
-    const ran = await run(["setup", "--faucet"], [SIGNED_IN, REPO_ID, { code: 1, output: "GraphQL: Could not resolve to a Repository\n" }]);
+    const ran = await run(["setup", "--faucet"], [SIGNED_IN, { code: 1, output: "could not create issue: HTTP 404\n" }]);
     expect(ran.code).toBe(EXIT_FAILED);
-    expect(ran.err).toBe(ghFailed(1, "GraphQL: Could not resolve to a Repository"));
+    expect(ran.err).toBe(ghFailed(1, "could not create issue: HTTP 404"));
     expect(h.sleeps).toEqual([]);
   });
 
@@ -273,12 +269,13 @@ describe("the faucet text", () => {
     expect(FAUCET_SCHEDULE).toBe("a scheduled run answers faucet requests at minute 7 of every hour, so SOL arrives within the hour");
     expect(FAUCET_STEPS).toContain(FAUCET_SCHEDULE);
     expect(FAUCET_STEPS).toContain("needs a browser and a GitHub account");
-    expect(FORM.startsWith(`name: ${FAUCET_TEMPLATE}\n`)).toBe(true);
     expect(FORM).toContain(`\ntitle: ${FAUCET_TITLE}\n`);
     expect(FORM).toContain("\nlabels: [faucet]\n");
-    expect(CREATE_ISSUE).toContain("issueTemplate:$template");
-    for (const query of [REPOSITORY_ID, CREATE_ISSUE]) {
-      expect(query).not.toMatch(/[\s"'&|<>^%]/);
-    }
+  });
+
+  it("serves a request filed without the form, by its title", () => {
+    expect(WORKFLOW).toContain(`github.event.issue.title == '${FAUCET_TITLE}'`);
+    expect(FAUCET_SCRIPT).toContain(`select(.title == "${FAUCET_TITLE}")`);
+    expect(FAUCET_SCRIPT.indexOf("--add-label faucet ")).toBeLessThan(FAUCET_SCRIPT.indexOf("waiting=$(gh issue list --label faucet"));
   });
 });

@@ -25,7 +25,8 @@ case "$1 $2" in
   "issue view")
     if [[ "$*" == *"--json body"* ]]; then cat "$STUB_ISSUES/$3/body"; else cat "$STUB_ISSUES/$3/author"; fi ;;
   "issue list")
-    if [[ "$*" == *"--state open"* ]]; then cat "$STUB_ISSUES/open"
+    if [[ "$*" == *"--search"* ]]; then cat "$STUB_ISSUES/untagged"
+    elif [[ "$*" == *"--state open"* ]]; then cat "$STUB_ISSUES/open"
     elif [[ "$*" == *faucet-sent* ]]; then echo $((STUB_SENT + $(grep -c -- "--add-label faucet-sent" "$STUB_LOG")))
     else echo "$STUB_EARLIER"; fi ;;
 esac
@@ -53,7 +54,7 @@ const healthy: Stub = {
   invalid: "",
 };
 
-type Issue = { number: number; body: string; author?: string };
+type Issue = { number: number; body: string; author?: string; untagged?: boolean };
 
 function request(body: string, stub: Partial<Stub> = {}, author = "a-user") {
   return requests([{ number: 7, body, author }], stub);
@@ -64,6 +65,7 @@ function requests(issues: Issue[], stub: Partial<Stub> = {}) {
   const store = join(dir, "issues");
   mkdirSync(store);
   writeFileSync(join(store, "open"), issues.map((i) => `${i.number}\n`).join(""));
+  writeFileSync(join(store, "untagged"), issues.filter((i) => i.untagged === true).map((i) => `${i.number}\n`).join(""));
   for (const issue of issues) {
     mkdirSync(join(store, String(issue.number)));
     writeFileSync(join(store, String(issue.number), "body"), `${issue.body}\n`);
@@ -215,7 +217,15 @@ describe("the devnet faucet", () => {
   it("answers nothing when no request is open", () => {
     const { out, calls } = requests([]);
     expect(out).toBe("");
-    expect(calls).toHaveLength(1);
+    expect(calls).toHaveLength(2);
+  });
+
+  it("labels a Devnet SOL request filed without the form, then serves it", () => {
+    const { calls } = requests([{ number: 7, body: ADDRESS, untagged: true }]);
+    expect(calls[0]).toBe(`gh issue list --state open --limit 100 --search in:title "Devnet SOL" -label:faucet --json number,title --jq .[] | select(.title == "Devnet SOL") | .number`);
+    expect(calls).toContain("gh issue edit 7 --add-label faucet");
+    expect(calls.indexOf("gh issue edit 7 --add-label faucet")).toBeLessThan(calls.findIndex((c) => c.startsWith("gh issue list --label faucet --state open")));
+    expect(sent(calls)).toHaveLength(1);
   });
 
   it("runs nothing a request smuggles in", () => {
