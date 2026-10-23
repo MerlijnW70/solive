@@ -10,3 +10,7 @@ regexes = ['''US517G5965aydkZ46HS38QLi7UQiSojurfbQfKCELFx''']
 [[allowlists]]
 description = "public mint address of the devnet test token"
 regexes = ['''ETU8trkkfE8gNVPDGbCaJUoH88wy6yYV6ttJdc9NKB88''']
+
+[[allowlists]]
+description = "sealed e2e fixtures: wrapped keys inside sealed ciphertext on the e2e-fixtures branch"
+paths = ['''^chain-[A-Za-z0-9._-]+\.sealed$''']
