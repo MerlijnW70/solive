@@ -19,6 +19,7 @@ import {
   type Transport,
 } from "@intent-engine/client";
 import { define } from "./actions.js";
+import { withFromNow } from "./expiry.js";
 import { tool } from "./names.js";
 import { escrowJudge } from "./create.js";
 import { prepare } from "./prepare.js";
@@ -183,8 +184,9 @@ export const previewSignedIntent = define({
     const [intent] = await findIntentPda({ owner: input.owner, nonce: input.nonce });
     const exists = (await createdAccount(transport, intent)) !== null;
     const user = await loadUser(transport, input.owner);
+    const shownAt = await chainTime(transport);
     const description = await describeSignedIntent(fields, {
-      now: await chainTime(transport),
+      now: shownAt,
       currentEpoch: user?.epoch ?? 0n,
       expectedDomain: await clusterDomain(transport),
       outputTokenProgram: outputToken.tokenProgram,
@@ -197,7 +199,7 @@ export const previewSignedIntent = define({
       exists: exists ? 1 : 0,
       relayer_fee: input.relayer_fee,
       summary: [
-        ...description.lines,
+        ...withFromNow(description.lines, fields.expiresAt, shownAt),
         `Relaying costs you ${createCost(config, await rentRate(transport))} lamports in create fee, crank bounty, rent and signature fee, plus any priority fee; you receive ${formatAmount(input.relayer_fee, inputToken.decimals)} of ${input.input_mint}`,
         ...(specUrl === undefined ? [] : [publishesLine(specUrl)]),
       ],

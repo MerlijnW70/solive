@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
+import { INDEX_HEAD, toolIndex, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
+import { ACTIONS } from "../src/agent/registry.js";
 import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, PREVIEW_FIRST, PREVIEW_ONLY } from "../src/agent/wallet/guard.js";
 import { ORDER_DONE } from "../src/agent/wallet/trade.js";
 import { JOB_LIVE } from "../src/agent/wallet/escrow.js";
@@ -12,6 +13,7 @@ const INSTRUCTION_WORDS = 150;
 const DESCRIPTION_WORDS = 60;
 const NOTICE_LINES = 5;
 const NOTICE_LINE_WORDS = 14;
+const INDEX_LINE_TOOLS = 8;
 
 describe("the wallet server's texts", () => {
   it("counts words, not dashes or punctuation", () => {
@@ -21,6 +23,18 @@ describe("the wallet server's texts", () => {
 
   it("keeps the server instructions within the word limit", () => {
     expect(words(WALLET_INSTRUCTIONS)).toBeLessThanOrEqual(INSTRUCTION_WORDS);
+  });
+
+  it("keeps the tool index to one short line per group: a one-word group and at most 8 tool names", () => {
+    const [head, ...lines] = toolIndex([...WALLET_ACTIONS, ...ACTIONS]);
+    expect(head).toBe(INDEX_HEAD);
+    expect(words(INDEX_HEAD)).toBeLessThanOrEqual(3);
+    for (const line of lines) {
+      const [, group, names] = /^- (\w+): (.+)$/.exec(line) ?? [];
+      expect([line, group === undefined ? 0 : words(group)]).toEqual([line, 1]);
+      expect([line, (names ?? "").split(", ").every((name) => /^solive_[a-z_]+$/.test(name))]).toEqual([line, true]);
+      expect([line, (names ?? "").split(", ").length <= INDEX_LINE_TOOLS]).toEqual([line, true]);
+    }
   });
 
   it("keeps the forward hints small", () => {

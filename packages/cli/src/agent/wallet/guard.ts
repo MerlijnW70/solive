@@ -222,6 +222,14 @@ export async function signerOf(ctx: AgentContext): Promise<WalletSigner> {
   return guardedSigner(ctx, key);
 }
 
+export async function keyFileAddress(wallet: WalletAccess): Promise<Address | undefined> {
+  const path = await savedKeypair(wallet);
+  if (path === undefined || isLedgerPath(path)) {
+    return undefined;
+  }
+  return (await keyFile(wallet, path)).address;
+}
+
 export const NO_FEE_PAYER =
   "this wallet is a Ledger, which signs only the release message, never the release transaction; a fee-payer key must sign and pay it: the user restarts the server with mcp --wallet --fee-payer <key file>";
 

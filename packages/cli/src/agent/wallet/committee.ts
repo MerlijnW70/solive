@@ -1,20 +1,28 @@
 import { createHash } from "node:crypto";
 import { type Address, getBase16Decoder } from "@solana/kit";
-import { committeeEnvelope, releaseMemo } from "@intent-engine/core";
+import { buildCreateCommittee, committeeEnvelope, getCommitteeSize, IntentCoreError, MAX_COMMITTEE_MEMBERS, MAX_COMMITTEE_THRESHOLD, releaseMemo } from "@intent-engine/core";
 import { ClaimHeldBy, type CommitteeBallot, createClient, deliveryRecord, firstDelivery, NotSettleable, VoteRejected } from "@intent-engine/client";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { tool } from "../names.js";
-import { AgentRefusal } from "../problems.js";
+import { AgentRefusal, ENGINE_PROBLEMS } from "../problems.js";
 import { InvalidInput, account, amount, flag, integer, list, object, optional, text } from "../schema.js";
 import { preparedView } from "../shapes.js";
 import { prepare } from "../prepare.js";
+import { rentFor, rentRate } from "../budget.js";
+import { sol } from "./costs.js";
 import { deviceOutput, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of, walletOpeners } from "./guard.js";
 import { openingOutput, openingPayerOf, openingsFor, sendOpenings, skippedOf } from "./openings.js";
 import { ATTEST_PAGES, DELIVERED_NEEDED, HISTORY_TOO_LONG, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, notEarliest, confirmedRelease } from "./delivery.js";
 import { claimHeldBy, DEVICE_DIGEST, RELEASE_CHANGED } from "./attest.js";
 
 export const VOTE_CHANGED = "this vote differs from its preview: the escrow, payee, result or delivered work changed, or no approval was given; preview it again and show the user";
+
+export const COMMITTEE_CHANGED = "this committee differs from its preview: its members, threshold or fee wallet changed, or no approval was given; preview it again and show the user";
+
+export const COMMITTEE_EXISTS = `this committee already exists; name it as attestor in ${tool("wallet_escrow")}`;
+
+export const COMMITTEE_LIVE = `committee live; name it as attestor in ${tool("wallet_escrow")}, then each member votes with ${tool("wallet_committee_vote")}`;
 
 export const NOT_A_MEMBER = "this server's wallet is not a member of the committee this escrow names, so it has no vote";
 
@@ -74,7 +82,7 @@ const ballotLines = (ballot: CommitteeBallot, input: BallotArgs, delivered: stri
 export const walletCommitteeVote = define({
   name: tool("wallet_committee_vote"),
   title: "Vote on a release as a committee member",
-  description: `Casts this wallet's vote, as a member of an escrow's judging committee, that the escrow pays pay_to for the work with delivered_sha256. Judge the work against the spec yourself first. The vote is signed, not sent: once enough members vote, anyone submits the votes with ${tool("wallet_committee_release")}. ${PREVIEW_APPROVAL}`,
+  description: `Votes, as a member of an escrow's judging committee, that it pays pay_to for the work with delivered_sha256. A team judges together: each member checks the work against the spec and votes; the signed vote is not sent but given to whoever releases with ${tool("wallet_committee_release")}. ${PREVIEW_APPROVAL}`,
   effect: "submit",
   input: object({
     ...ballotInput,
@@ -114,7 +122,7 @@ export const walletCommitteeVote = define({
 export const walletCommitteeRelease = define({
   name: tool("wallet_committee_release"),
   title: "Release an escrow on its committee's votes",
-  description: `Pays a worker once a judging committee agrees: submits the members' votes from ${tool("wallet_committee_vote")} to release the escrow, and records the delivered work's sha256. Every vote is checked before sending, and the release needs at least the committee's threshold of votes. This wallet pays the fee. ${PREVIEW_APPROVAL}`,
+  description: `Pays a worker once a judging committee agrees: any one wallet collects the members' votes from ${tool("wallet_committee_vote")}, at least the committee's threshold, and submits them to release the escrow, recording the delivered work's sha256. Every vote is checked before sending. This wallet pays the fee. ${PREVIEW_APPROVAL}`,
   effect: "submit",
   input: object({
     ...ballotInput,
@@ -180,5 +188,67 @@ export const walletCommitteeRelease = define({
       done: `release sent; ${tool("wallet_feedback")} to rate if you own it`,
     });
     return "signature" in done ? { ...done, ...passed, ...(await sendOpenings(ctx, opener, ballot.committee.address, openings)) } : { ...done, ...passed };
+  },
+});
+
+export const walletCommitteeCreate = define({
+  name: tool("wallet_committee_create"),
+  title: "Create a judging committee",
+  description: `Creates a committee so a team judges together: its members and a threshold, how many of them must vote to release. Name the committee as attestor in ${tool("wallet_escrow")}; members vote with ${tool("wallet_committee_vote")}, then anyone releases with ${tool("wallet_committee_release")}. This wallet pays its rent. ${PREVIEW_APPROVAL}`,
+  effect: "submit",
+  input: object({
+    members: list(account(), MAX_COMMITTEE_MEMBERS, "the distinct member wallets, in any order", 1),
+    threshold: integer(1, MAX_COMMITTEE_THRESHOLD, "how many members must vote to release, at most the member count"),
+    fee_wallet: optional(account("the wallet the committee's judge fees go to; default this wallet")),
+    approval: optional(text("the approval the preview returned; needed with send")),
+    send: optional(flag("true creates the committee; leave out to preview")),
+  }),
+  output: object({
+    committee: account("the committee's address: name it as attestor in an escrow"),
+    members: list(account(), MAX_COMMITTEE_MEMBERS),
+    threshold: integer(1, MAX_COMMITTEE_THRESHOLD),
+    fee_wallet: account(),
+    exists: flag("true when this committee already exists, so nothing needs sending"),
+    approval: optional(text()),
+    summary: optional(list(text(), 6)),
+    ...deviceOutput,
+    sent: flag(),
+    signature: optional(text()),
+    next: optional(text()),
+  }),
+  run: async (ctx: AgentContext, input, call: Call) => {
+    const signer = await signerOf(ctx);
+    const terms = { members: input.members, threshold: input.threshold, feeWallet: input.fee_wallet ?? signer.address };
+    let built;
+    try {
+      built = await buildCreateCommittee({ ...terms, payer: signer });
+    } catch (error) {
+      throw error instanceof IntentCoreError ? new AgentRefusal("CommitteeInvalid", ENGINE_PROBLEMS.CommitteeInvalid.hint) : error;
+    }
+    const { committee, instruction } = built;
+    const shown = { committee: committee.address, members: committee.members, threshold: committee.threshold, fee_wallet: committee.feeWallet };
+    const client = createClient({ url: ctx.url ?? "", transport: ctx.transport });
+    if ((await client.committee(committee.address)) !== null) {
+      return { ...shown, exists: true, sent: false, next: COMMITTEE_EXISTS };
+    }
+    const rent = rentFor(getCommitteeSize(), await rentRate(ctx.transport));
+    const summary = [
+      `Creates: committee ${committee.address}; any ${committee.threshold} of its ${committee.members.length} members release an escrow that names it`,
+      `Members: ${committee.members.join(", ")}`,
+      `Pays judge fees to: ${committee.feeWallet}`,
+      `Rent: ${sol(rent)} from this wallet ${signer.address}, kept by the committee account`,
+    ];
+    const approval = createHash("sha256").update(JSON.stringify(summary)).digest("hex").slice(0, 16);
+    if (input.send === true && input.approval !== approval) {
+      throw new AgentRefusal("ReleaseChanged", COMMITTEE_CHANGED);
+    }
+    const view = {
+      ...shown,
+      exists: false,
+      approval,
+      summary,
+      prepared: input.send === true || signer.device !== undefined ? preparedView(await prepare(ctx.transport, [instruction], signer.address)) : undefined,
+    };
+    return sent(ctx, signer, view, input.send, call, { preview: PREVIEW_APPROVAL_NEXT, done: COMMITTEE_LIVE });
   },
 });

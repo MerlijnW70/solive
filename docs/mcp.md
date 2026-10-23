@@ -2,7 +2,7 @@
 
 Ways to run `intent-engine mcp`, the server that [Use it from your AI](ai.md) adds.
 
-With `--wallet` the server serves only the everyday tools; add `--all-tools` to serve every tool, such as the committee, claim and profile tools.
+With `--wallet` the server serves the everyday tools, the committee and profile tools among them, and its instructions end with an index of them by task. Add `--all-tools` to serve every tool, such as the read and unsigned-transaction tools.
 
 ## Without a wallet
 
@@ -34,7 +34,7 @@ The agent then creates intents with `solive_agent_create`, only for those owners
 
 ## Deliver work
 
-1. `solive_find_jobs` lists open jobs. `mint` keeps those paid in one token, `min_pay` those paying at least that many whole tokens. Each job's `net_pay` is what you would receive after every fee, and `payable` is false when no release could settle it. `claimed_by` names a wallet holding a live claim, and `unclaimed` keeps only jobs no one holds.
+1. `solive_find_jobs` lists open jobs. `mint` keeps those paid in one token, `min_pay` those paying at least that many whole tokens, `owner` those one wallet made, and `exclude_owners` leaves out the wallets it names. Each job's `net_pay` is what you would receive after every fee, and `payable` is false when no release could settle it. `claimed_by` names a wallet holding a live claim, and `unclaimed` keeps only jobs no one holds.
 2. `solive_prepare_deliver` returns a transaction that announces your work. Your wallet signs it.
 3. The judge checks it with `solive_check_delivery` and pays, as [Judge work](judge.md) shows.
 4. `solive_get_receipt` shows who was paid.

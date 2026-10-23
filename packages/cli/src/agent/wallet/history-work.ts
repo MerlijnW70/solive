@@ -64,11 +64,15 @@ export const claimItem = object({
 
 type Tokens = (mint: Address, raw: bigint) => Promise<string>;
 
+export type Kept = (item: { intent: Address; blockTime: bigint | null }) => boolean;
+
+const everything: Kept = () => true;
+
 type Landed = { signature: string; slot: bigint; blockTime: bigint | null };
 
 const newestFirst = <T extends { slot: bigint }>(items: readonly T[]): T[] => [...items].sort((a, b) => (a.slot === b.slot ? 0 : a.slot < b.slot ? 1 : -1));
 
-function eventsIn(transactions: readonly EngineTransaction[]): (EngineEvent & Landed)[] {
+export function eventsIn(transactions: readonly EngineTransaction[]): (EngineEvent & Landed)[] {
   return transactions
     .filter(({ failed }) => !failed)
     .flatMap(({ signature, slot, blockTime, emitted }) =>
@@ -121,8 +125,8 @@ async function unpaidOf(transport: Transport, intent: Address, wallet: Address, 
   return { reason: ending === undefined ? "unknown" : (ENDED[ending.name] ?? "unknown"), releasedTo: null };
 }
 
-export async function workOf(transport: Transport, wallet: Address, transactions: readonly EngineTransaction[], limit: number, tokens: Tokens) {
-  const announced = newestFirst(deliveriesIn(transactions).filter(({ worker }) => worker === wallet));
+export async function workOf(transport: Transport, wallet: Address, transactions: readonly EngineTransaction[], limit: number, tokens: Tokens, kept: Kept = everything) {
+  const announced = newestFirst(deliveriesIn(transactions).filter((delivery) => delivery.worker === wallet && kept(delivery)));
   const lookups = new Map<Address, Promise<ReleaseLookup>>();
   const work = [];
   for (const delivery of announced.slice(0, limit)) {
@@ -187,8 +191,8 @@ async function heldBy(transport: Transport, wallet: Address, intents: readonly A
   }
 }
 
-export async function claimsOf(transport: Transport, wallet: Address, transactions: readonly EngineTransaction[], limit: number) {
-  const found = newestFirst(claimsIn(transactions, wallet));
+export async function claimsOf(transport: Transport, wallet: Address, transactions: readonly EngineTransaction[], limit: number, kept: Kept = everything) {
+  const found = newestFirst(claimsIn(transactions, wallet).filter(kept));
   const shown = found.slice(0, limit);
   const histories = new Map<Address, EngineTransaction[]>();
   const outcomes: StakeOutcome[] = [];

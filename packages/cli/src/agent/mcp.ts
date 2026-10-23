@@ -36,13 +36,44 @@ export const WALLET_INSTRUCTIONS = WALLET_LINES.join("\n");
 
 const TOOL_NAMES = new RegExp(`\\b${PRODUCT_SLUG}_\\w+`, "g");
 
-export function instructionsFor(served: readonly AnyAction[]): string {
-  const names = new Set(served.map((action) => action.name));
-  return WALLET_LINES.filter((line) => [...line.matchAll(TOOL_NAMES)].every(([name]) => names.has(name))).join("\n");
+export const TOOL_GROUPS: readonly (readonly [string, readonly string[]])[] = [
+  ["Wallet", ["wallet_setup", "wallet_balance", "wallet_unwrap", "wallet_intents", "wallet_history", "wallet_cancel"].map(tool)],
+  ["Trade", ["wallet_estimate", "wallet_swap", "wallet_auction", "wallet_recurring", "wallet_wait", "quote"].map(tool)],
+  ["Hire", ["wallet_escrow", "wallet_escrow_plan", "wallet_seal_spec", "hash", "wallet_receipt", "get_receipt"].map(tool)],
+  [
+    "Judge",
+    ["wallet_attest", "wallet_attest_split", "wallet_record_delivery", "wallet_committee_create", "wallet_committee_vote", "wallet_committee_release", "wallet_feedback"].map(tool),
+  ],
+  ["Work", ["find_jobs", "get_spec", "wallet_claim", "get_claims", "wallet_deliver", "wallet_check_delivery", "wallet_profile"].map(tool)],
+  ["Trust", ["get_reputation", "get_profile"].map(tool)],
+  ["Read", ["get_config", "get_intent", "list_intents", "get_balances"].map(tool)],
+  ["Unsigned", ["prepare_create", "prepare_cancel", "prepare_deliver", "check_delivery", "find_crank_work", "prepare_crank"].map(tool)],
+  ["Relay", ["prepare_signed_intent", "preview_signed_intent", "submit_signed_intent"].map(tool)],
+  ["Mandate", ["prepare_mandate", "get_mandate", "prepare_revoke_mandate", "prepare_agent_create", "agent_create"].map(tool)],
+];
+
+export const INDEX_HEAD = "Tools by task:";
+
+export function toolIndex(served: readonly AnyAction[]): string[] {
+  const names = served.map((action) => action.name);
+  const grouped = new Set(TOOL_GROUPS.flatMap(([, tools]) => tools));
+  const groups: (readonly [string, readonly string[]])[] = [...TOOL_GROUPS, ["Other", names.filter((name) => !grouped.has(name))]];
+  const lines = groups.flatMap(([group, tools]) => {
+    const shown = tools.filter((name) => names.includes(name));
+    return shown.length === 0 ? [] : [`- ${group}: ${shown.join(", ")}`];
+  });
+  return [INDEX_HEAD, ...lines];
 }
 
-export const walletInstructions = (limits: WalletLimits, served: readonly AnyAction[]): string =>
-  [instructionsFor(served), ...limitLines(limits)].join("\n");
+export const proseFor = (served: readonly AnyAction[]): string[] => {
+  const names = new Set(served.map((action) => action.name));
+  return WALLET_LINES.filter((line) => [...line.matchAll(TOOL_NAMES)].every(([name]) => names.has(name)));
+};
+
+export const instructionsFor = (served: readonly AnyAction[], limits: readonly string[] = []): string =>
+  [...proseFor(served), ...limits, ...toolIndex(served)].join("\n");
+
+export const walletInstructions = (limits: WalletLimits, served: readonly AnyAction[]): string => instructionsFor(served, limitLines(limits));
 
 export function servedText(text: string, names: ReadonlySet<string>): string {
   return text

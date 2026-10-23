@@ -16,7 +16,14 @@ import {
   type Transport,
 } from "@intent-engine/client";
 
-export type JobsWanted = { attestor?: Address | undefined; mint?: Address | undefined; minPay?: string | undefined; unclaimed?: boolean | undefined };
+export type JobsWanted = {
+  attestor?: Address | undefined;
+  mint?: Address | undefined;
+  minPay?: string | undefined;
+  unclaimed?: boolean | undefined;
+  owner?: Address | undefined;
+  excludeOwners?: readonly Address[] | undefined;
+};
 
 export function leastUnits(tokens: string, decimals: number): bigint {
   const [whole = "0", fraction = ""] = tokens.split(".");
@@ -64,16 +71,17 @@ export const freezeFields = (authority: Address | null, owner: Address): FreezeF
 
 export async function jobsWanted(
   transport: Transport,
-  { attestor, mint, minPay, unclaimed }: JobsWanted,
+  { attestor, mint, minPay, unclaimed, owner, excludeOwners }: JobsWanted,
   decimalsOf: DecimalsOf = decimalsOnce(transport),
 ): Promise<Job[]> {
+  const owners = { owner, excludeOwners };
   if (minPay === undefined) {
-    return jobsOf(transport, { attestor, mint, unclaimed });
+    return jobsOf(transport, { attestor, mint, unclaimed, ...owners });
   }
-  const open = await openProofEscrows(transport, { attestor, mint }, Number.POSITIVE_INFINITY);
+  const open = await openProofEscrows(transport, { attestor, mint, ...owners }, Number.POSITIVE_INFINITY);
   const mints = [...new Set(open.map(({ intent }) => intent.inputMint))];
   const lists = await Promise.all(
-    mints.map(async (each) => jobsOf(transport, { attestor, mint: each, minSells: leastUnits(minPay, await decimalsOf(each)), unclaimed })),
+    mints.map(async (each) => jobsOf(transport, { attestor, mint: each, minSells: leastUnits(minPay, await decimalsOf(each)), unclaimed, ...owners })),
   );
   return lists.flat().sort(latestFirst).slice(0, JOBS_LIMIT);
 }

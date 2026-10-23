@@ -23,7 +23,14 @@ export const JOBS_LIMIT = 50;
 
 export type Proof = { address: Address; intent: Intent; params: AttestedResultParams };
 
-export type JobFilter = { attestor?: Address | undefined; mint?: Address | undefined; minSells?: bigint | undefined; unclaimed?: boolean | undefined };
+export type JobFilter = {
+  attestor?: Address | undefined;
+  mint?: Address | undefined;
+  minSells?: bigint | undefined;
+  unclaimed?: boolean | undefined;
+  owner?: Address | undefined;
+  excludeOwners?: readonly Address[] | undefined;
+};
 
 export const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
 
@@ -51,7 +58,7 @@ export async function createdAtOf(transport: Transport, address: Address): Promi
 }
 
 export async function openProofEscrows(transport: Transport, filter?: Address | JobFilter, limit: number = JOBS_LIMIT): Promise<Proof[]> {
-  const { attestor, mint, minSells, unclaimed }: JobFilter = typeof filter === "string" ? { attestor: filter } : (filter ?? {});
+  const { attestor, mint, minSells, unclaimed, owner, excludeOwners = [] }: JobFilter = typeof filter === "string" ? { attestor: filter } : (filter ?? {});
   const [accounts, now] = await Promise.all([transport.intents(), chainTime(transport)]);
   const open = accounts
     .map(({ address, data }) => proofOf(address, getIntentDecoder().decode(data)))
@@ -62,6 +69,8 @@ export async function openProofEscrows(transport: Transport, filter?: Address | 
         proof.intent.expiresAt > now &&
         (attestor === undefined || proof.params.attestor === attestor) &&
         (mint === undefined || proof.intent.inputMint === mint) &&
+        (owner === undefined || proof.intent.owner === owner) &&
+        !excludeOwners.includes(proof.intent.owner) &&
         (minSells === undefined || remainingOf(proof.intent) >= minSells),
     )
     .sort((a, b) => (a.intent.expiresAt === b.intent.expiresAt ? 0 : a.intent.expiresAt > b.intent.expiresAt ? -1 : 1));

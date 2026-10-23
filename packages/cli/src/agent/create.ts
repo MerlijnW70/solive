@@ -14,7 +14,6 @@ import {
   findConfigPda,
   findIntentPda,
   findUserStatePda,
-  formatTime,
   type IntentParams,
   isMemoUrl,
   Kind,
@@ -50,6 +49,7 @@ import {
   noJudgeKey,
   wrapIfShort,
 } from "@intent-engine/client";
+import { expiresLine } from "./expiry.js";
 import { type AgentContext, define } from "./actions.js";
 import { tool } from "./names.js";
 import { type Call, claim, claimedBy, PREPARED_TTL } from "./claims.js";
@@ -255,7 +255,7 @@ export async function createIntent({ transport, claims }: AgentContext, input: C
         { kind: params.kind, params: encodeParams(params), inputMint: input.input_mint, outputMint: input.output_mint },
         { inputDecimals: inputToken.decimals, outputDecimals: outputToken.decimals, ...tokenNames(input.input_mint, input.output_mint) },
       ),
-      `Expires: ${formatTime(expiresAt)}`,
+      expiresLine(expiresAt, now),
       ...(params.kind === Kind.AttestedResult ? floorLines(config, input.input_mint, inputToken.decimals) : []),
       ...(judged.committee === undefined ? [] : [`Judged by: the committee ${judged.committee}, passed with the create`]),
       ...(specUrl === undefined ? [] : [`Publishes: the acceptance spec's url ${specUrl}, in a memo the owner signs`]),

@@ -16,9 +16,13 @@ export const EVERYDAY_TOOLS: ReadonlySet<string> = new Set(
     "wallet_seal_spec",
     "wallet_attest",
     "wallet_attest_split",
+    "wallet_committee_create",
+    "wallet_committee_vote",
+    "wallet_committee_release",
     "wallet_record_delivery",
     "wallet_feedback",
     "wallet_claim",
+    "wallet_profile",
     "wallet_deliver",
     "wallet_check_delivery",
     "wallet_wait",
@@ -32,6 +36,7 @@ export const EVERYDAY_TOOLS: ReadonlySet<string> = new Set(
     "hash",
     "get_reputation",
     "get_claims",
+    "get_profile",
   ].map(tool),
 );
 

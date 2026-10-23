@@ -20,6 +20,7 @@ import {
   tokenAccountIfMissing,
 } from "@intent-engine/client";
 import { define } from "./actions.js";
+import { withFromNow } from "./expiry.js";
 import { tool } from "./names.js";
 import { escrowJudge, expiryOf, termsInput, termsOutput, warningsOf } from "./create.js";
 import { pickNonce, raiseAllowance, setupLines, unusedIntent } from "./owner.js";
@@ -158,7 +159,7 @@ export const prepareSignedIntent = define({
       expires_at: expiresAt,
       escrow,
       summary: [
-        ...description.lines,
+        ...withFromNow(description.lines, expiresAt, now),
         terms.relayer_fee === 0n
           ? `Cost to you: no relayer fee; only ${setupFee} lamports of SOL for the setup transaction's network fee, once`
           : `Cost to you: ${formatAmount(terms.relayer_fee, inputToken.decimals)} of ${input.input_mint} to the relayer, plus ${setupFee} lamports of SOL for the setup transaction's network fee, once`,

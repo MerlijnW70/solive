@@ -92,7 +92,7 @@ import {
 } from "@intent-engine/client";
 import { ANNOUNCE_FIRST, DELIVER_NEXT } from "../src/agent/wallet/delivery.js";
 import { NO_SPEC_HASH } from "../src/agent/wallet/escrow.js";
-import { NO_JOB_NOW } from "../src/agent/jobs.js";
+import { NO_JOB_NOW, PUBLISH_PROFILE } from "../src/agent/jobs.js";
 import { LOOKUP_TABLE_HEADER } from "@intent-engine/solver";
 import { transactionSize } from "../src/agent/prepare.js";
 import { RELEASE_NEEDED, WALLET_NOT_MAINNET } from "../src/args.js";
@@ -100,7 +100,7 @@ import { WRAPPED } from "../src/agent/create.js";
 import { AgentRefusal } from "../src/agent/problems.js";
 import { InvalidInput } from "../src/agent/schema.js";
 import { notAWallet, TOKEN_ACCOUNT_RECIPIENT } from "../src/agent/owner.js";
-import { START_PROMPT, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
+import { instructionsFor, START_PROMPT, toolIndex, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
 import {
   DEFAULT_EXPIRES_IN,
   DELIVERED_NEEDED,
@@ -270,7 +270,8 @@ describe("the wallet server", () => {
   it("offers its wallet tools first, says how to use them and how to start", async () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name)).toEqual([...WALLET_ACTIONS, ...ACTIONS].map((a) => a.name));
-    expect(client.getInstructions()).toBe(WALLET_INSTRUCTIONS);
+    expect(client.getInstructions()).toBe(instructionsFor([...WALLET_ACTIONS, ...ACTIONS]));
+    expect(client.getInstructions()?.startsWith(WALLET_INSTRUCTIONS)).toBe(true);
     for (const line of WALLET_NOTICE) {
       expect(WALLET_INSTRUCTIONS).toContain(`- ${line}`);
     }
@@ -444,7 +445,7 @@ describe("the wallet server", () => {
     expect(preview["orders"][0]).not.toHaveProperty("intent");
     expect(preview["summary"].slice(0, 2)).toEqual([
       "Plan: 3 orders of 0.05 of SOL, 0.15 of SOL in all, escrowed now",
-      `Schedule: the orders open from ${formatTime(opens[0] as bigint)} to ${formatTime(opens[2] as bigint)}; the last expires ${formatTime((opens[2] as bigint) + 600n)}`,
+      `Schedule: the orders open from ${formatTime(opens[0] as bigint)} to ${formatTime(opens[2] as bigint)}; the last expires ${formatTime((opens[2] as bigint) + 600n)}, 30 minutes 10 seconds from now`,
     ]);
     expect(preview["warnings"]).toEqual([WARN_EARLY]);
     const yearly = await ok(client, "wallet_recurring", { ...plan, every: 30 * 24 * 60 * 60, times: 2 });
@@ -1107,7 +1108,7 @@ describe("the wallet server", () => {
       { signature: "create", slot: 1n, blockTime: null, failed: false, emitted: [tag(created)], memos: [specMemo(specUrl)] },
     ];
     expect((await ok(client, "find_jobs", { attestor: judge }))["jobs"]).toMatchObject([{ ...job, spec_url: specUrl }]);
-    expect(await ok(client, "find_jobs", { attestor: owner })).toEqual({ fee_bps: expect.any(Number), jobs: [], next: NO_JOB_NOW });
+    expect(await ok(client, "find_jobs", { attestor: owner })).toEqual({ fee_bps: expect.any(Number), jobs: [], next: `${NO_JOB_NOW}; ${PUBLISH_PROFILE}` });
 
     const work = "e7".repeat(32);
     const delivery = { intent, sha256: work.toUpperCase(), url: "https://example.org/work.tar" };
@@ -2938,7 +2939,7 @@ describe("the wallet server", () => {
       expires_at: String(start + BigInt(DEFAULT_EXPIRES_IN)),
     });
     const longer = await ok(client, "wallet_auction", { ...args, falls_over: DEFAULT_EXPIRES_IN * 2 });
-    expect(longer["summary"]).toContain(`Expires: ${new Date(Number(start + BigInt(DEFAULT_EXPIRES_IN * 2)) * 1000).toISOString()}`);
+    expect(longer["summary"]).toContain(`Expires: ${new Date(Number(start + BigInt(DEFAULT_EXPIRES_IN * 2)) * 1000).toISOString()}, 2 hours from now`);
     expect((await call(client, "wallet_auction", { ...args, start_receive: "9", end_receive: "12" })).error).toBe(true);
   });
 
@@ -2969,6 +2970,7 @@ describe("the wallet server", () => {
         "Whoever started this server set sell limits that no tool call can change:",
         "- SOL: at most 0.1 per trade and 0.15 per hour",
         "It sells no other token. Plan trades within these limits and tell the user when a request exceeds them.",
+        ...toolIndex([...WALLET_ACTIONS, ...ACTIONS]),
       ].join("\n"),
     );
     await ok(client, "wallet_setup");

@@ -253,6 +253,8 @@ A committee needs a `threshold` of its members to agree before an escrow pays.
 intent-engine committee create --keypair payer.json --members $env:A,$env:B,$env:C --threshold 2 --fee-wallet $env:FEES --yes
 ```
 
+An MCP wallet creates one with `solive_wallet_committee_create`, votes with `solive_wallet_committee_vote` and releases with `solive_wallet_committee_release`, all served with `--wallet`.
+
 The admin can set a committee floor per token with `set-committee-floor --mint <mint> --floor <raw>`, and `show config` lists the floors under `committeeFloors`. The engine refuses a proof escrow of at least its token's floor with `CommitteeRequired` unless its attestor is a committee with a threshold of two or more. `create attested` and the escrow tools say so before sending, and pass the committee with the create.
 
 Pass the printed `committee` address as `--attestor` when you create the escrow. Each member judges on their own; a pass writes that member's signed vote to the verdict file:

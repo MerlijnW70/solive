@@ -4,6 +4,7 @@ import { TOKEN_NAMES } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { MAX_EXPIRES_IN, MIN_EXPIRES_IN } from "../create.js";
+import { whenFromNow } from "../expiry.js";
 import { tool } from "../names.js";
 import { problemOf } from "../problems.js";
 import { InvalidInput, account, amount, flag, integer, list, object, optional, text, time } from "../schema.js";
@@ -184,7 +185,7 @@ export const walletRecurring = define({
     const sold = TOKEN_NAMES[inputMint] ?? inputMint;
     const plan = [
       `Plan: ${input.times} orders of ${formatAmount(amountIn, inputToken.decimals)} of ${sold}, ${formatAmount(amountIn * BigInt(input.times), inputToken.decimals)} of ${sold} in all, escrowed now`,
-      `Schedule: the orders open from ${formatTime(opens[0] as bigint)} to ${formatTime(last)}; the last expires ${formatTime(last + life)}`,
+      `Schedule: the orders open from ${formatTime(opens[0] as bigint)} to ${formatTime(last)}; the last expires ${whenFromNow(last + life, now)}`,
       ...(first["summary"] as string[]),
     ];
     const warned = first["warnings"] as string[];

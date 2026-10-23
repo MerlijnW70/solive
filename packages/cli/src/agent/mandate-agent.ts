@@ -5,7 +5,6 @@ import {
   encodeParams,
   escrowAmount,
   formatAmount,
-  formatTime,
   validate,
   tokenOf,
 } from "@intent-engine/core";
@@ -13,6 +12,7 @@ import { chainTime, loadConfig, mintCapOf, mintOf, tokenAccountIfMissing, type T
 import { type AgentContext, define } from "./actions.js";
 import { createCost, release, rentFor, rentRate, reserve, TOKEN_ACCOUNT_RENT_BYTES } from "./budget.js";
 import { expiryOf, MAX_EXPIRES_IN, MIN_EXPIRES_IN } from "./create.js";
+import { expiresLine } from "./expiry.js";
 import { tool } from "./names.js";
 import { unusedIntent } from "./owner.js";
 import { prepare } from "./prepare.js";
@@ -116,7 +116,7 @@ async function agentIntent(
           { kind: params.kind, params: encodeParams(params), inputMint: mandate.inputMint, outputMint: mandate.outputMint },
           { inputDecimals: inputToken.decimals, outputDecimals: outputToken.decimals, ...tokenNames(mandate.inputMint, mandate.outputMint) },
         ),
-        `Expires: ${formatTime(expiresAt)}`,
+        expiresLine(expiresAt, now),
         ...(mandate.agentFee === 0n
           ? []
           : [

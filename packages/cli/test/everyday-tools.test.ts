@@ -4,7 +4,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
 import { NATIVE_MINT } from "@intent-engine/core";
 import { AGENT_TOOLS, EVERYDAY_TOOLS, RELAY_TOOLS, servedActions } from "../src/agent/everyday.js";
-import { instructionsFor, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
+import { INDEX_HEAD, instructionsFor, toolIndex, TOOL_GROUPS, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
 import { ACTIONS } from "../src/agent/registry.js";
 import { WALLET_ACTIONS, WALLET_NOTICE } from "../src/agent/wallet.js";
 import { tool } from "../src/agent/names.js";
@@ -41,9 +41,9 @@ describe("the tools a server serves", () => {
     agent = await generateKeyPairSigner();
   });
 
-  it("serves at most 27 everyday tools with --wallet, wallet tools first, and tells the AI only about those", async () => {
+  it("serves at most 32 everyday tools with --wallet, wallet tools first, and tells the AI only about those", async () => {
     const { tools, instructions } = await served(["mcp", "--url", "devnet", "--wallet"]);
-    expect(tools.length).toBeLessThanOrEqual(27);
+    expect(tools.length).toBeLessThanOrEqual(32);
     expect(tools).toEqual(EVERY.filter((name) => EVERYDAY_TOOLS.has(name)));
     expect(new Set(tools)).toEqual(EVERYDAY_TOOLS);
     expect(tools).toEqual(
@@ -59,8 +59,12 @@ describe("the tools a server serves", () => {
         "wallet_seal_spec",
         "wallet_attest",
         "wallet_attest_split",
+        "wallet_committee_create",
+        "wallet_committee_vote",
+        "wallet_committee_release",
         "wallet_feedback",
         "wallet_claim",
+        "wallet_profile",
         "wallet_record_delivery",
         "wallet_deliver",
         "wallet_check_delivery",
@@ -75,6 +79,7 @@ describe("the tools a server serves", () => {
         "hash",
         "get_reputation",
         "get_claims",
+        "get_profile",
       ].map(tool),
     );
     expect(instructions).toBe(instructionsFor(servedActions({ wallet: true, allTools: false, relay: false, agent: false })));
@@ -84,14 +89,39 @@ describe("the tools a server serves", () => {
     const named = new Set([...(instructions ?? "").matchAll(/\bsolive_\w+/g)].map(([name]) => name));
     expect([...named].filter((name) => !tools.includes(name))).toEqual([]);
     expect(named).toContain(tool("wallet_setup"));
-    expect(instructions).not.toContain(tool("wallet_committee_vote"));
+    expect(new Set(named)).toEqual(new Set(tools));
+    expect(instructions).not.toContain(tool("get_config"));
+  });
+
+  it("ends the instructions with an index naming each served tool once, one line per group", async () => {
+    for (const argv of [["--wallet"], ["--wallet", "--all-tools"]]) {
+      const { tools, instructions } = await served(["mcp", "--url", "devnet", ...argv]);
+      const lines = (instructions ?? "").split("\n");
+      const head = lines.lastIndexOf(INDEX_HEAD);
+      const index = lines.slice(head + 1);
+      expect(head).toBeGreaterThan(0);
+      expect(index.length).toBeLessThanOrEqual(TOOL_GROUPS.length + 1);
+      const listed = index.flatMap((line) => {
+        const [, group, names] = /^- ([A-Z][a-z]+): (.+)$/.exec(line) ?? [];
+        expect([line, group]).toEqual([line, expect.any(String)]);
+        return (names ?? "").split(", ");
+      });
+      expect([...listed].sort()).toEqual([...tools].sort());
+      expect(index.some((line) => line.startsWith("- Other:"))).toBe(false);
+    }
+    expect(toolIndex(servedActions({ wallet: true, allTools: false, relay: false, agent: false }))).toContain(
+      `- Judge: ${["wallet_attest", "wallet_attest_split", "wallet_record_delivery", "wallet_committee_create", "wallet_committee_vote", "wallet_committee_release", "wallet_feedback"].map(tool).join(", ")}`,
+    );
+    const stray = { ...(WALLET_ACTIONS[0] as (typeof WALLET_ACTIONS)[number]), name: tool("unlisted") };
+    expect(toolIndex([stray]).at(-1)).toBe(`- Other: ${tool("unlisted")}`);
   });
 
   it("serves every tool with --wallet --all-tools, as before, with the full instructions", async () => {
     const { tools, instructions } = await served(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     expect(tools).toEqual(EVERY);
     expect(tools.length).toBeGreaterThan(20);
-    expect(instructions).toBe(WALLET_INSTRUCTIONS);
+    expect(instructions).toBe(instructionsFor([...WALLET_ACTIONS, ...ACTIONS]));
+    expect(instructions?.startsWith(`${WALLET_INSTRUCTIONS}\n${INDEX_HEAD}\n`)).toBe(true);
   });
 
   it("still brings the relay tools with --relayer and the mandate tools with --agent", async () => {

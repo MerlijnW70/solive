@@ -25,6 +25,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { FailedTransactionMetadata } from "litesvm";
 import { beforeEach, describe, expect, it } from "vitest";
+import { fromNow, withFromNow } from "../src/agent/expiry.js";
 import {
   createExt,
   describeSignedIntent,
@@ -313,7 +314,7 @@ describe("agent server against the deployed engine", () => {
     expect(first["summary"]).toEqual([
       `Sell: exactly 0.0004 of ${w.inputMint}`,
       `Receive: at least 0.0003 of ${w.outputMint}`,
-      `Expires: ${new Date(Number(NOW + 3_600n) * 1000).toISOString()}`,
+      `Expires: ${new Date(Number(NOW + 3_600n) * 1000).toISOString()}, 1 hour from now`,
       "Setup: registers you with the engine (a one-time account you pay rent for)",
       `Setup: creates your token account for ${w.outputMint} (you pay its rent)`,
     ]);
@@ -841,7 +842,8 @@ describe("agent server against the deployed engine", () => {
         outputDecimals: 6,
       });
       expect(prepared["digest"], `round ${round}`).toBe(described.digest);
-      expect((prepared["summary"] as string[]).slice(0, described.lines.length), `round ${round}`).toEqual(described.lines);
+      expect((prepared["summary"] as string[]).slice(0, described.lines.length), `round ${round}`).toEqual(withFromNow(described.lines, fields.expiresAt, NOW));
+      expect(prepared["summary"], `round ${round}`).toContain(`Expires: ${new Date(Number(fields.expiresAt) * 1000).toISOString()}, ${fromNow(fields.expiresAt, NOW)}`);
       await execute(prepared["setup"], owner);
       const signature = getBase58Decoder().decode(
         await signBytes(owner.keyPair.privateKey, getBase64Encoder().encode(prepared["message"])),
@@ -1433,6 +1435,7 @@ describe("tool annotations", () => {
         "solive_wallet_cancel",
         "solive_wallet_claim",
         "solive_wallet_profile",
+        "solive_wallet_committee_create",
         "solive_wallet_committee_release",
         "solive_wallet_committee_vote",
         "solive_wallet_deliver",
