@@ -3,7 +3,7 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
-import { DEVNET_TEST_MINT, findAssociatedTokenAddress, findIntentPda, NATIVE_MINT, RELEASE_MEMO_PREFIX } from "@intent-engine/core";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress, findIntentPda, formatAmount, NATIVE_MINT, RELEASE_MEMO_PREFIX } from "@intent-engine/core";
 import { MEMO_PROGRAM_ADDRESS } from "@intent-engine/client";
 import { tool } from "../src/agent/names.js";
 import { PACKET_DATA_SIZE, WALLET_NOTICE } from "../src/agent/wallet.js";
@@ -80,12 +80,23 @@ async function splitJob(terms: string[], before?: (authority: KeyPairSigner) => 
   return { w, client, wallet, intent, coauthor, split, signed, tokenOf };
 }
 
+describe("a single release's setup", () => {
+  it("names the rent of every account it creates, the judge's own included", async () => {
+    const s = await splitJob(["--judge-fee", "10"]);
+    const worker = (await generateKeyPairSigner()).address;
+    const shown = await ok(s.client, "wallet_attest", { owner: s.w.owner.address, nonce: "0", pay_to: worker, delivered_sha256: WORK });
+    const rent = `${formatAmount(h.svm.minimumBalanceForRentExemption(165n), 9)} SOL of rent`;
+    expect(shown["summary"]).toContain(`Setup: creates ${worker}'s ${s.w.inputMint} account, paid by this wallet: ${rent}`);
+    expect(shown["summary"]).toContain(`Setup: creates this wallet's ${s.w.inputMint} account for the judge fee, paid by this wallet: ${rent}`);
+  });
+});
+
 describe("a split release's fees and setup", () => {
   it("covers a partner's fee in its bound, creates every missing account including the judge's, and says how many", async () => {
     const partner = (await generateKeyPairSigner()).address;
     const s = await splitJob(["--partner", partner, "--partner-bps", "50", "--judge-fee", "10"]);
     const shown = await ok(s.client, "wallet_attest_split", s.split);
-    expect(shown["summary"]).toContain("Setup: creates 4 token account(s), paid by this wallet");
+    expect(shown["summary"]).toContain(`Setup: creates 4 token account(s), paid by this wallet: ${formatAmount(h.svm.minimumBalanceForRentExemption(165n), 9)} SOL of rent each, ${formatAmount(4n * h.svm.minimumBalanceForRentExemption(165n), 9)} SOL in all`);
     const sent = await ok(s.client, "wallet_attest_split", await s.signed(shown));
     expect(sent).toMatchObject({ sent: true });
     expect(balance(await s.tokenOf(partner))).toBe(5n);

@@ -6,7 +6,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { buildClaimJob, claimBoardAddress, DEVNET_TEST_MINT, findAssociatedTokenAddress, formatAmount, NATIVE_MINT, signCommitteeVote, sortMembers, specMemo, splitFee } from "@intent-engine/core";
 import { createClient, noJudgeKey, WARN_NO_JUDGE_KEY } from "@intent-engine/client";
 import { claimHeldBy } from "../src/agent/wallet/attest.js";
-import { CLAIMS_NEED_SPEC, CLAIMS_TOGETHER, claimsLine, PIECE_ONE, SPEC_NO_ANSWER } from "../src/agent/wallet/escrow.js";
+import { CLAIMS_ADVICE, CLAIMS_NEED_SPEC, CLAIMS_TOGETHER, claimsLine, PIECE_ONE, SPEC_ANSWER_OUT, SPEC_NO_ANSWER } from "../src/agent/wallet/escrow.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { LAMPORTS_PER_SOL } from "../src/wallet.js";
@@ -98,7 +98,8 @@ describe("claims from the wallet tools", () => {
     const preview = await ok(client, "wallet_escrow", { ...base, claim_stake: "0.05", claim_secs: 3600 });
     expect(preview["summary"]).toContain(claimsLine(3600, "0.05", false));
     expect(claimsLine(3600, "0.05", false)).toContain("a worker can hold the job for up to 3600 seconds by staking 0.05 SOL");
-    expect(preview["warnings"]).toContain(SPEC_NO_ANSWER);
+    expect(preview["warnings"]).toContain(SPEC_ANSWER_OUT);
+    expect(JSON.stringify(preview["warnings"])).not.toContain(CLAIMS_ADVICE);
     expect(SPEC_NO_ANSWER).toContain("give claim_stake and claim_secs to open claims");
     expect(SPEC_NO_ANSWER).not.toContain("intent-engine");
     expect(h.wires.length).toBe(wires);

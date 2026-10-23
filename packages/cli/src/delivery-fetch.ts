@@ -52,6 +52,11 @@ async function body(response: Response, url: string): Promise<Uint8Array> {
 }
 
 export async function fetchSha256(get: SpecFetch, transport: Transport, url: string, lookup: Lookup = systemLookup): Promise<{ sha256: string } | { problem: string }> {
+  const found = await fetchBytes(get, transport, url, lookup);
+  return "problem" in found ? found : { sha256: createHash("sha256").update(found.bytes).digest("hex") };
+}
+
+export async function fetchBytes(get: SpecFetch, transport: Transport, url: string, lookup: Lookup = systemLookup): Promise<{ bytes: Uint8Array } | { problem: string }> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -68,8 +73,7 @@ export async function fetchSha256(get: SpecFetch, transport: Transport, url: str
     return { problem: NOT_PUBLIC };
   }
   try {
-    const bytes = await body(await get(url, { redirect: "error", signal: AbortSignal.timeout(SPEC_TIMEOUT_MS) }), url);
-    return { sha256: createHash("sha256").update(bytes).digest("hex") };
+    return { bytes: await body(await get(url, { redirect: "error", signal: AbortSignal.timeout(SPEC_TIMEOUT_MS) }), url) };
   } catch (error) {
     return { problem: error instanceof DeliveryUnfit ? "could not be read within the size limit" : `could not be fetched (${error instanceof Error ? error.message : String(error)})` };
   }

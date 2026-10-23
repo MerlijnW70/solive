@@ -8,6 +8,7 @@ import { AgentRefusal, problemOf } from "../problems.js";
 import { account, amount, flag, list, object, optional, type Schema, text } from "../schema.js";
 import { orderSchema } from "../shapes.js";
 import type { Sale } from "../sales.js";
+import { networkFee } from "./costs.js";
 import { walletEmpty, access, signerOf, mintNamed, limited, bookOf, live, salesOf, checkSale, sent, refusedBeforeSending, deviceOutput } from "./guard.js";
 
 export const offerFields = {
@@ -32,7 +33,7 @@ type Terms = { order: Order; expires_at: bigint; spec_url?: string };
 export async function offered(
   ctx: AgentContext,
   call: Call,
-  input: { sell: string; buy: string; pay_to?: Address | undefined; send?: boolean | undefined; after?: AfterCreate | undefined },
+  input: { sell: string; buy: string; pay_to?: Address | undefined; send?: boolean | undefined; after?: AfterCreate | undefined; priced?: ((network: bigint) => void) | undefined },
   terms: (sold: Token, bought: Token, now: bigint, inputMint: Address, outputMint: Address) => Promise<Terms> | Terms,
   done?: string,
 ) {
@@ -64,6 +65,7 @@ export async function offered(
     return { intent, nonce, summary, warnings, prepared };
   };
   const first = await created(ctx);
+  input.priced?.(networkFee(first.prepared as Parameters<typeof networkFee>[0]));
   if (input.send !== true) {
     return sent(ctx, signer, first, input.send, call, { done });
   }

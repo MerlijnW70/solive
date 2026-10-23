@@ -41,9 +41,9 @@ describe("the tools a server serves", () => {
     agent = await generateKeyPairSigner();
   });
 
-  it("serves at most 26 everyday tools with --wallet, wallet tools first, and tells the AI only about those", async () => {
+  it("serves at most 27 everyday tools with --wallet, wallet tools first, and tells the AI only about those", async () => {
     const { tools, instructions } = await served(["mcp", "--url", "devnet", "--wallet"]);
-    expect(tools.length).toBeLessThanOrEqual(26);
+    expect(tools.length).toBeLessThanOrEqual(27);
     expect(tools).toEqual(EVERY.filter((name) => EVERYDAY_TOOLS.has(name)));
     expect(new Set(tools)).toEqual(EVERYDAY_TOOLS);
     expect(tools).toEqual(
@@ -56,6 +56,7 @@ describe("the tools a server serves", () => {
         "wallet_recurring",
         "wallet_escrow",
         "wallet_escrow_plan",
+        "wallet_seal_spec",
         "wallet_attest",
         "wallet_attest_split",
         "wallet_feedback",

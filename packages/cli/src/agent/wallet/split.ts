@@ -49,7 +49,13 @@ import { STATUS } from "../../accounts.js";
 import { feePayerOf, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, WAIT_SCAN, signerOf, sent, sha256Of, walletOpeners } from "./guard.js";
 import { openingOutput, openingsFor, sendOpenings, skippedOf } from "./openings.js";
 import { DEVICE_RELEASE, RELEASE_CHANGED, approvalOf, claimsOfRelease, stakeReturned } from "./attest.js";
+import { sol, tokenAccountRent } from "./costs.js";
 import { notInSplit, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor, confirmedRelease } from "./delivery.js";
+
+async function setupLine(ctx: AgentContext, count: number, tokenProgram: Address, device: boolean): Promise<string> {
+  const rent = await tokenAccountRent(ctx.transport, tokenProgram);
+  return `Setup: creates ${count} token account(s), paid by ${device ? "the fee payer" : "this wallet"}: ${sol(rent)} of rent each, ${sol(rent * BigInt(count))} in all`;
+}
 
 export const SPLIT_FITS = 2;
 export const SPLIT_FITS_WITH_TABLE = 4;
@@ -297,7 +303,7 @@ export const walletAttestSplit = define({
           ? [`Signs: only the release message on the Ledger, which shows digest ${digestHex}; the fee payer ${payer.address} signs and pays the transaction, so no memo records the delivered work`]
           : [RECORDS_SPLIT(delivered)]),
         ...stakeReturned(claimed.stake, claimed.accounts.stakeTo),
-        ...(setup.length === 0 ? [] : [`Setup: creates ${setup.length} token account(s), paid by ${device ? "the fee payer" : "this wallet"}`]),
+        ...(setup.length === 0 ? [] : [await setupLine(ctx, setup.length, token.tokenProgram, device)]),
       ],
       warnings: [...settlementWarnings(params), WARN_COAUTHORS],
       prepared,

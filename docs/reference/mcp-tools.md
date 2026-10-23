@@ -2,7 +2,7 @@
 
 # MCP tools
 
-26 tools, served by `intent-engine mcp` over stdio. With `--wallet` it serves only the 26 everyday tools: `solive_wallet_setup`, `solive_wallet_balance`, `solive_wallet_estimate`, `solive_wallet_swap`, `solive_wallet_auction`, `solive_wallet_recurring`, `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_attest`, `solive_wallet_attest_split`, `solive_wallet_feedback`, `solive_wallet_claim`, `solive_wallet_record_delivery`, `solive_wallet_deliver`, `solive_wallet_check_delivery`, `solive_wallet_wait`, `solive_wallet_receipt`, `solive_wallet_intents`, `solive_wallet_history`, `solive_wallet_cancel`, `solive_wallet_unwrap`, `solive_find_jobs`, `solive_get_spec`, `solive_hash`, `solive_get_reputation`, `solive_get_claims`, plus the tools `--relayer` and `--agent` need. With `--wallet --all-tools` it serves every tool, the 24 wallet tools listed first.
+26 tools, served by `intent-engine mcp` over stdio. With `--wallet` it serves only the 27 everyday tools: `solive_wallet_setup`, `solive_wallet_balance`, `solive_wallet_estimate`, `solive_wallet_swap`, `solive_wallet_auction`, `solive_wallet_recurring`, `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_seal_spec`, `solive_wallet_attest`, `solive_wallet_attest_split`, `solive_wallet_feedback`, `solive_wallet_claim`, `solive_wallet_record_delivery`, `solive_wallet_deliver`, `solive_wallet_check_delivery`, `solive_wallet_wait`, `solive_wallet_receipt`, `solive_wallet_intents`, `solive_wallet_history`, `solive_wallet_cancel`, `solive_wallet_unwrap`, `solive_find_jobs`, `solive_get_spec`, `solive_hash`, `solive_get_reputation`, `solive_get_claims`, plus the tools `--relayer` and `--agent` need. With `--wallet --all-tools` it serves every tool, the 25 wallet tools listed first.
 
 ## solive_wallet_setup
 
@@ -148,6 +148,20 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `claim_stake` | string | no | whole SOL a worker stakes to claim the job, such as 0.01; with claim_secs it opens claims, so one worker at a time can be paid; needs spec_hash |
 | `claim_secs` | integer 1..604800 | no | the longest a worker may hold the job by claiming it, in seconds; with claim_stake |
 | `send` | boolean | no | true signs and sends every piece; leave out to preview |
+
+## solive_wallet_seal_spec
+
+Served only with `--wallet`.
+
+Seals an acceptance spec so only the wallets it invites and the attestor (the judge) can read it, in the form solive_get_spec opens. Sends nothing: host sealed at a public url, then pass that url as spec_url and sha256 as spec_hash to solive_wallet_escrow.
+
+Effect: `read` (read-only: true, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `text` | string | yes | the spec, exactly as invited workers should read it |
+| `invite` | list of address, 1 to 32 | yes | the wallets that may read the spec, such as the workers you hire; seal to at most 32 wallets in all, the attestor included |
+| `attestor` | address | no | the escrow's attestor, who reads the spec to judge the work; default this wallet |
 
 ## solive_wallet_attest
 

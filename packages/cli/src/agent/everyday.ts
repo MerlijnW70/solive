@@ -13,6 +13,7 @@ export const EVERYDAY_TOOLS: ReadonlySet<string> = new Set(
     "wallet_recurring",
     "wallet_escrow",
     "wallet_escrow_plan",
+    "wallet_seal_spec",
     "wallet_attest",
     "wallet_attest_split",
     "wallet_record_delivery",

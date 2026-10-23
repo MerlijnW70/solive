@@ -85,7 +85,9 @@ intent-engine seal --file spec.md --to "$env:WORKER,$env:JUDGE" --out spec.seale
 intent-engine create attested --input-mint SOL --output-mint TEST --units tokens --amount-in 0.01 --min-result 1 --max-result 1 --attestor $env:JUDGE --spec-hash $env:SPEC_HASH --spec-url $env:SPEC_URL --expires-in 86400 --yes
 ```
 
-`$SPEC_URL` is where you put `spec.sealed`. An invited worker reads it, then seals the work to the judge:
+`$SPEC_URL` is where you put `spec.sealed`. An AI agent seals the spec with `solive_wallet_seal_spec` instead of `seal`: host its `sealed` text at `$SPEC_URL` and pass its `sha256` as the spec hash.
+
+An invited worker reads it, then seals the work to the judge:
 
 ```sh
 intent-engine spec --intent $INTENT --out spec.md

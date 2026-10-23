@@ -26,6 +26,7 @@ import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
 import { InvalidInput, account, amount, flag, integer, list, object, optional, text } from "../schema.js";
 import { preparedView } from "../shapes.js";
+import { sol, tokenAccountRent } from "./costs.js";
 import { walletRecipient } from "../owner.js";
 import { prepare } from "../prepare.js";
 import { STATUS } from "../../accounts.js";
@@ -223,7 +224,7 @@ export const walletAttest = define({
       input.send === true
         ? preparedView(await prepare(ctx.transport, [...setup, buildEd25519Instruction({ publicKey: signer.address, signature: await signer.signBytes(message), message }), settle, ...memo], payer.address))
         : undefined;
-    const paidBy = device ? "the fee payer" : "this wallet";
+    const paidBy = `${device ? "the fee payer" : "this wallet"}: ${setup.length === 0 ? "" : sol(await tokenAccountRent(ctx.transport, token.tokenProgram))} of rent`;
     const view2 = {
       intent,
       pay_to: input.pay_to,
@@ -246,6 +247,7 @@ export const walletAttest = define({
         ...(payee.create.length === 0 ? [] : [`Setup: creates ${input.pay_to}'s ${name} account, paid by ${paidBy}`]),
         ...(treasury.create.length === 0 ? [] : [`Setup: creates the engine treasury's ${name} account for the fee, paid by ${paidBy}`]),
         ...(partner.create.length === 0 ? [] : [`Setup: creates the partner ${held.partner}'s ${name} account for its fee, paid by ${paidBy}`]),
+        ...(judge.create.length === 0 ? [] : [`Setup: creates this wallet's ${name} account for the judge fee, paid by ${paidBy}`]),
       ],
       warnings: settlementWarnings(params),
       prepared,

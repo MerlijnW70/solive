@@ -524,8 +524,8 @@ describe("the wallet server", () => {
     const { fee, net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);
     expect(shown).toMatchObject({ intent, pay_to: worker, payee, result: "1", paid: formatAmount(net, 9), fee: formatAmount(fee, 9), sent: false });
     expect(shown["summary"][0]).toBe(`Pays: ${formatAmount(net, 9)} of SOL to ${worker} from ${owner}'s escrow${WRAPPED}`);
-    expect(shown["summary"]).toContain(`Setup: creates ${worker}'s SOL account, paid by this wallet`);
-    expect(shown["summary"]).toContain("Setup: creates the engine treasury's SOL account for the fee, paid by this wallet");
+    expect(shown["summary"]).toContain(`Setup: creates ${worker}'s SOL account, paid by this wallet: ${formatAmount(h.svm.minimumBalanceForRentExemption(165n), 9)} SOL of rent`);
+    expect(shown["summary"]).toContain(`Setup: creates the engine treasury's SOL account for the fee, paid by this wallet: ${formatAmount(h.svm.minimumBalanceForRentExemption(165n), 9)} SOL of rent`);
     expect(JSON.stringify(shown)).not.toMatch(/transaction/);
     expect(h.svm.getAccount(payee).exists).toBe(false);
     expect((await call(client, "wallet_attest", { ...release, pay_to: intent })).value).toMatchObject({

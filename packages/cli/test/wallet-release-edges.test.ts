@@ -194,7 +194,7 @@ describe("a wallet release of a partner's escrow", () => {
     expect([made.code, made.err]).toEqual([EXIT_OK, ""]);
     const release = { owner: w.owner.address, nonce: "0", pay_to: worker };
     const shown = await ok(client, "wallet_attest", release);
-    expect(shown["summary"]).toContain(`Setup: creates the partner ${partner}'s ${w.inputMint} account for its fee, paid by this wallet`);
+    expect(shown["summary"]).toContain(`Setup: creates the partner ${partner}'s ${w.inputMint} account for its fee, paid by this wallet: ${formatAmount(h.svm.minimumBalanceForRentExemption(165n), 9)} SOL of rent`);
     expect((shown["summary"] as string[]).filter((line) => line.startsWith("Records:"))).toEqual([]);
     expect(await ok(client, "wallet_attest", { ...release, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
     expect(balance(await findAssociatedTokenAddress({ owner: partner, mint: w.inputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS }))).toBe(5n);
