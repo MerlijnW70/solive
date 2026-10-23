@@ -1,4 +1,4 @@
-import { type Address, createNoopSigner } from "@solana/kit";
+import { type Address, createNoopSigner, type Instruction, type TransactionSigner } from "@solana/kit";
 import {
   buildCreateIntent,
   committeeFloorOf,
@@ -50,16 +50,16 @@ import {
   noJudgeKey,
   wrapIfShort,
 } from "@intent-engine/client";
-import { define } from "./actions.js";
+import { type AgentContext, define } from "./actions.js";
 import { tool } from "./names.js";
-import { claim, claimedBy, PREPARED_TTL } from "./claims.js";
+import { type Call, claim, claimedBy, PREPARED_TTL } from "./claims.js";
 import { pickNonce, setupLines, unusedIntent, walletRecipient } from "./owner.js";
 import { prepare } from "./prepare.js";
 import { AgentRefusal } from "./problems.js";
 import { InvalidInput } from "./schema.js";
 import { orderSchema, paramsOf, partnerSchema, preparedSchema, preparedView } from "./shapes.js";
 import { tokenNames } from "../tokens.js";
-import { account, amount, integer, list, object, optional, text, time } from "./schema.js";
+import { account, amount, integer, list, object, optional, type Schema, text, time } from "./schema.js";
 
 export const SPEC_URL_PLAIN = `${PLAIN_HTTP_ON_PUBLIC}; give an https url`;
 
@@ -150,17 +150,23 @@ export async function escrowJudge(transport: Transport, config: Floors, mint: Ad
   }
 }
 
+const createInput = object({
+  ...termsInput,
+  pay_to: optional(account("the wallet that receives what the solver pays; default the owner")),
+  spec_url: optional(text(`where the acceptance spec of an attested order with spec_hash is published, ${MEMO_URL_RULE}; recorded in a memo the owner signs with the create, so workers find it`)),
+});
+
+type CreateInput = typeof createInput extends Schema<infer T> ? T : never;
+
+export type AfterCreate = (owner: TransactionSigner, intent: Address) => Promise<Instruction[]>;
+
 export const prepareCreate = define({
   name: tool("prepare_create"),
   title: "Prepare a new intent",
   description:
     "Build the transaction that escrows the owner's tokens in a new intent: sell exactly the given amount and receive at least the given output before the expiry (for attested orders, an amount set by the attested result), or get everything back. Returns an unsigned transaction that already simulated successfully; the owner's wallet must sign and send it. Nothing moves until then.",
   effect: "prepare",
-  input: object({
-    ...termsInput,
-    pay_to: optional(account("the wallet that receives what the solver pays; default the owner")),
-    spec_url: optional(text(`where the acceptance spec of an attested order with spec_hash is published, ${MEMO_URL_RULE}; recorded in a memo the owner signs with the create, so workers find it`)),
-  }),
+  input: createInput,
   output: object({
     ...termsOutput,
     create_fee: amount("lamports the owner pays the treasury"),
@@ -168,106 +174,109 @@ export const prepareCreate = define({
     wraps: amount("lamports of the owner's SOL wrapped first so the escrow can be drawn from their wrapped SOL account; 0 for other tokens"),
     prepared: preparedSchema,
   }),
-  run: async ({ transport, claims }, input, call) => {
-    const [[configAddress], [userAddress]] = await Promise.all([findConfigPda(), findUserStatePda({ owner: input.owner })]);
-    await transport.warm?.([CLOCK_SYSVAR, configAddress, input.input_mint, input.output_mint, userAddress]);
-    const now = await chainTime(transport);
-    const expiresAt = expiryOf(input, now);
-    const order = paramsOf(input.order);
-    const specUrl = input.spec_url;
-    if (specUrl !== undefined && (order.kind !== Kind.AttestedResult || order.specHash.every((b) => b === 0))) {
-      throw new InvalidInput([{ path: "spec_url", message: "needs an attested order with spec_hash" }]);
-    }
-    if (specUrl !== undefined && !isMemoUrl(specUrl)) {
-      throw new InvalidInput([{ path: "spec_url", message: `must be ${MEMO_URL_RULE}` }]);
-    }
-    if (specUrl !== undefined && (await plainHttpOnPublic(transport, specUrl))) {
-      throw new InvalidInput([{ path: "spec_url", message: SPEC_URL_PLAIN }]);
-    }
-    const { config } = await loadConfig(transport);
-    const [inputToken, outputToken] = [await mintOf(transport, input.input_mint), await mintOf(transport, input.output_mint)];
-    const unsettled = neverSettles(order, config, input.partner?.bps ?? 0, inputToken.decimals);
-    if (unsettled !== undefined) {
-      throw new AgentRefusal("NeverSettles", unsettled);
-    }
-    const params = validate(order);
-    const judged = await escrowJudge(transport, config, input.input_mint, params, inputToken.decimals);
-    const user = await loadUser(transport, input.owner);
-    if (input.nonce !== undefined) {
-      await unusedIntent(transport, input.owner, input.nonce);
-    }
-    const nonce = pickNonce(user, input.nonce, claimedBy(claims, input.owner, now));
-    claim(claims, call, input.owner, nonce, now + PREPARED_TTL, now);
-    const recipient = input.pay_to ?? input.owner;
-    if (recipient !== input.owner) {
-      await walletRecipient(transport, recipient, "pay_to");
-    }
-    const [[intentAddress], receiverAddress, sourceAddress] = await Promise.all([
-      findIntentPda({ owner: input.owner, nonce }),
-      findAssociatedTokenAddress({ owner: recipient, mint: input.output_mint, tokenProgram: outputToken.tokenProgram }),
-      findAssociatedTokenAddress({ owner: input.owner, mint: input.input_mint, tokenProgram: inputToken.tokenProgram }),
-    ]);
-    await transport.warm?.([intentAddress, receiverAddress, sourceAddress]);
-    const intent = await unusedIntent(transport, input.owner, nonce);
-    const owner = createNoopSigner(input.owner);
-    const receiver = await tokenAccountIfMissing(transport, owner, recipient, input.output_mint, outputToken.tokenProgram);
-    const elsewhere = recipient !== input.owner;
-    const mintCap = await mintCapOf(transport, input.input_mint);
-    const create = await buildCreateIntent({
-      owner,
-      treasury: config.feeRecipient,
-      maxCreateFee: config.createFee,
-      maxBounty: config.crankBounty,
-      nonce,
-      params,
-      expiresAt,
-      ...(input.partner === undefined ? {} : { partner: { key: input.partner.account, bps: input.partner.bps } }),
-      inputMint: input.input_mint,
-      outputMint: input.output_mint,
-      inputTokenProgram: inputToken.tokenProgram,
-      outputTokenProgram: outputToken.tokenProgram,
-      ...(elsewhere ? { receiver: receiver.address, receiverAuthority: recipient } : {}),
-      ...(mintCap === undefined ? {} : { mintCap }),
-      ...judged,
-    });
-    const register = await initUserIfMissing(user, input.owner);
-    const wrap = await wrapIfShort(transport, input.owner, input.input_mint, inputToken.tokenProgram, escrowAmount(params));
-    const published = specUrl === undefined ? [] : [memoInstruction(owner, specMemo(specUrl))];
-    const prepared = await prepare(transport, [...register, ...receiver.create, ...wrap.instructions, create, ...published], input.owner);
-    const keyless = params.kind === Kind.AttestedResult && params.specHash.some((b) => b !== 0) ? await keylessJudges(transport, params.attestor) : [];
-    return {
-      intent,
-      nonce,
-      expires_at: expiresAt,
-      escrow: escrowAmount(params),
-      summary: [
-        ...describeTerms(
-          { kind: params.kind, params: encodeParams(params), inputMint: input.input_mint, outputMint: input.output_mint },
-          { inputDecimals: inputToken.decimals, outputDecimals: outputToken.decimals, ...tokenNames(input.input_mint, input.output_mint) },
-        ),
-        `Expires: ${formatTime(expiresAt)}`,
-        ...(params.kind === Kind.AttestedResult ? floorLines(config, input.input_mint, inputToken.decimals) : []),
-        ...(judged.committee === undefined ? [] : [`Judged by: the committee ${judged.committee}, passed with the create`]),
-        ...(specUrl === undefined ? [] : [`Publishes: the acceptance spec's url ${specUrl}, in a memo the owner signs`]),
-        ...(elsewhere ? [`Pays to: ${recipient}, who receives what the solver pays${input.output_mint === NATIVE_MINT ? WRAPPED : ""}`] : []),
-        ...(input.partner === undefined ? [] : [partnerFeeLine(input.partner.bps, input.partner.account, partnerBaseOf(params))]),
-        ...setupLines({
-          registers: register.length > 0,
-          creates: receiver.create.length > 0 && !elsewhere ? [input.output_mint] : [],
-          allowance: null,
-          wraps: wrap.lamports,
-        }).lines,
-        ...(receiver.create.length > 0 && elsewhere ? [`Setup: creates ${recipient}'s token account for ${input.output_mint} (you pay its rent)`] : []),
-      ],
-      warnings: [
-        ...warningsOf(params, expiresAt, now, inputToken.scaled || outputToken.scaled),
-        ...(elsewhere ? [WARN_RECEIVER] : []),
-        ...keyless.map(noJudgeKey),
-      ],
-      create_fee: BigInt(config.createFee),
-      crank_bounty: BigInt(config.crankBounty),
-      wraps: wrap.lamports,
-      prepared: preparedView(prepared),
-    };
-  },
+  run: (ctx, input, call) => createIntent(ctx, input, call),
 });
+
+export async function createIntent({ transport, claims }: AgentContext, input: CreateInput, call: Call, after?: AfterCreate) {
+  const [[configAddress], [userAddress]] = await Promise.all([findConfigPda(), findUserStatePda({ owner: input.owner })]);
+  await transport.warm?.([CLOCK_SYSVAR, configAddress, input.input_mint, input.output_mint, userAddress]);
+  const now = await chainTime(transport);
+  const expiresAt = expiryOf(input, now);
+  const order = paramsOf(input.order);
+  const specUrl = input.spec_url;
+  if (specUrl !== undefined && (order.kind !== Kind.AttestedResult || order.specHash.every((b) => b === 0))) {
+    throw new InvalidInput([{ path: "spec_url", message: "needs an attested order with spec_hash" }]);
+  }
+  if (specUrl !== undefined && !isMemoUrl(specUrl)) {
+    throw new InvalidInput([{ path: "spec_url", message: `must be ${MEMO_URL_RULE}` }]);
+  }
+  if (specUrl !== undefined && (await plainHttpOnPublic(transport, specUrl))) {
+    throw new InvalidInput([{ path: "spec_url", message: SPEC_URL_PLAIN }]);
+  }
+  const { config } = await loadConfig(transport);
+  const [inputToken, outputToken] = [await mintOf(transport, input.input_mint), await mintOf(transport, input.output_mint)];
+  const unsettled = neverSettles(order, config, input.partner?.bps ?? 0, inputToken.decimals);
+  if (unsettled !== undefined) {
+    throw new AgentRefusal("NeverSettles", unsettled);
+  }
+  const params = validate(order);
+  const judged = await escrowJudge(transport, config, input.input_mint, params, inputToken.decimals);
+  const user = await loadUser(transport, input.owner);
+  if (input.nonce !== undefined) {
+    await unusedIntent(transport, input.owner, input.nonce);
+  }
+  const nonce = pickNonce(user, input.nonce, claimedBy(claims, input.owner, now));
+  claim(claims, call, input.owner, nonce, now + PREPARED_TTL, now);
+  const recipient = input.pay_to ?? input.owner;
+  if (recipient !== input.owner) {
+    await walletRecipient(transport, recipient, "pay_to");
+  }
+  const [[intentAddress], receiverAddress, sourceAddress] = await Promise.all([
+    findIntentPda({ owner: input.owner, nonce }),
+    findAssociatedTokenAddress({ owner: recipient, mint: input.output_mint, tokenProgram: outputToken.tokenProgram }),
+    findAssociatedTokenAddress({ owner: input.owner, mint: input.input_mint, tokenProgram: inputToken.tokenProgram }),
+  ]);
+  await transport.warm?.([intentAddress, receiverAddress, sourceAddress]);
+  const intent = await unusedIntent(transport, input.owner, nonce);
+  const owner = createNoopSigner(input.owner);
+  const receiver = await tokenAccountIfMissing(transport, owner, recipient, input.output_mint, outputToken.tokenProgram);
+  const elsewhere = recipient !== input.owner;
+  const mintCap = await mintCapOf(transport, input.input_mint);
+  const create = await buildCreateIntent({
+    owner,
+    treasury: config.feeRecipient,
+    maxCreateFee: config.createFee,
+    maxBounty: config.crankBounty,
+    nonce,
+    params,
+    expiresAt,
+    ...(input.partner === undefined ? {} : { partner: { key: input.partner.account, bps: input.partner.bps } }),
+    inputMint: input.input_mint,
+    outputMint: input.output_mint,
+    inputTokenProgram: inputToken.tokenProgram,
+    outputTokenProgram: outputToken.tokenProgram,
+    ...(elsewhere ? { receiver: receiver.address, receiverAuthority: recipient } : {}),
+    ...(mintCap === undefined ? {} : { mintCap }),
+    ...judged,
+  });
+  const register = await initUserIfMissing(user, input.owner);
+  const wrap = await wrapIfShort(transport, input.owner, input.input_mint, inputToken.tokenProgram, escrowAmount(params));
+  const published = specUrl === undefined ? [] : [memoInstruction(owner, specMemo(specUrl))];
+  const opened = after === undefined ? [] : await after(owner, intent);
+  const prepared = await prepare(transport, [...register, ...receiver.create, ...wrap.instructions, create, ...published, ...opened], input.owner);
+  const keyless = params.kind === Kind.AttestedResult && params.specHash.some((b) => b !== 0) ? await keylessJudges(transport, params.attestor) : [];
+  return {
+    intent,
+    nonce,
+    expires_at: expiresAt,
+    escrow: escrowAmount(params),
+    summary: [
+      ...describeTerms(
+        { kind: params.kind, params: encodeParams(params), inputMint: input.input_mint, outputMint: input.output_mint },
+        { inputDecimals: inputToken.decimals, outputDecimals: outputToken.decimals, ...tokenNames(input.input_mint, input.output_mint) },
+      ),
+      `Expires: ${formatTime(expiresAt)}`,
+      ...(params.kind === Kind.AttestedResult ? floorLines(config, input.input_mint, inputToken.decimals) : []),
+      ...(judged.committee === undefined ? [] : [`Judged by: the committee ${judged.committee}, passed with the create`]),
+      ...(specUrl === undefined ? [] : [`Publishes: the acceptance spec's url ${specUrl}, in a memo the owner signs`]),
+      ...(elsewhere ? [`Pays to: ${recipient}, who receives what the solver pays${input.output_mint === NATIVE_MINT ? WRAPPED : ""}`] : []),
+      ...(input.partner === undefined ? [] : [partnerFeeLine(input.partner.bps, input.partner.account, partnerBaseOf(params))]),
+      ...setupLines({
+        registers: register.length > 0,
+        creates: receiver.create.length > 0 && !elsewhere ? [input.output_mint] : [],
+        allowance: null,
+        wraps: wrap.lamports,
+      }).lines,
+      ...(receiver.create.length > 0 && elsewhere ? [`Setup: creates ${recipient}'s token account for ${input.output_mint} (you pay its rent)`] : []),
+    ],
+    warnings: [
+      ...warningsOf(params, expiresAt, now, inputToken.scaled || outputToken.scaled),
+      ...(elsewhere ? [WARN_RECEIVER] : []),
+      ...keyless.map(noJudgeKey),
+    ],
+    create_fee: BigInt(config.createFee),
+    crank_bounty: BigInt(config.crankBounty),
+    wraps: wrap.lamports,
+    prepared: preparedView(prepared),
+  };
+}

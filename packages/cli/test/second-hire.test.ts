@@ -78,7 +78,7 @@ describe("the gaps a second blind hire left", () => {
     const preview = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash: "71".repeat(32) });
     expect(preview["warnings"]).toContain(SPEC_NO_ANSWER);
     expect(SPEC_NO_ANSWER).toContain("keep the answer and its sha256 out of the spec");
-    expect(SPEC_NO_ANSWER).toContain("open claims with intent-engine claims open, which reserve the job for one worker");
+    expect(SPEC_NO_ANSWER).toContain("give claim_stake and claim_secs to open claims, which reserve the job for one worker");
     const unlisted = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner });
     expect(unlisted["warnings"]).not.toContain(SPEC_NO_ANSWER);
   });

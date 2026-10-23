@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { type Address, getBase16Decoder } from "@solana/kit";
 import { committeeEnvelope, releaseMemo } from "@intent-engine/core";
-import { type CommitteeBallot, createClient, deliveryRecord, firstDelivery, NotSettleable, VoteRejected } from "@intent-engine/client";
+import { ClaimHeldBy, type CommitteeBallot, createClient, deliveryRecord, firstDelivery, NotSettleable, VoteRejected } from "@intent-engine/client";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { tool } from "../names.js";
@@ -12,7 +12,7 @@ import { prepare } from "../prepare.js";
 import { deviceOutput, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of, walletOpeners } from "./guard.js";
 import { openingOutput, openingPayerOf, openingsFor, sendOpenings, skippedOf } from "./openings.js";
 import { ATTEST_PAGES, DELIVERED_NEEDED, HISTORY_TOO_LONG, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, notEarliest, confirmedRelease } from "./delivery.js";
-import { DEVICE_DIGEST, RELEASE_CHANGED } from "./attest.js";
+import { claimHeldBy, DEVICE_DIGEST, RELEASE_CHANGED } from "./attest.js";
 
 export const VOTE_CHANGED = "this vote differs from its preview: the escrow, payee, result or delivered work changed, or no approval was given; preview it again and show the user";
 
@@ -38,6 +38,9 @@ async function ballotOf(ctx: AgentContext, input: BallotArgs, judge: Address, de
   try {
     ballot = await client.committeeBallot(target);
   } catch (error) {
+    if (error instanceof ClaimHeldBy) {
+      throw new AgentRefusal("ClaimHeld", claimHeldBy(error.worker, error.until));
+    }
     if (error instanceof NotSettleable) {
       throw new AgentRefusal("KindMismatch", error.message);
     }

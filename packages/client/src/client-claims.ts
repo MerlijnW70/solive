@@ -9,6 +9,7 @@ import {
   getClaimBoardDecoder,
   getStandbyDecoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
+  IntentCoreError,
   type LineHandover,
   lineLength,
   lineSeqs,
@@ -19,9 +20,11 @@ import {
   profileView,
   STANDBY_DISCRIMINATOR,
   stakeReceiverOnCancel,
+  stakeReceiverOnRelease,
   standbyAddress,
 } from "@intent-engine/core";
-import { chainTime, CLOCK_SYSVAR, clockTime, createdAccount, createdView } from "./accounts.js";
+import { chainTime, CLOCK_SYSVAR, clockTime, createdAccount, createdView, engineAccount } from "./accounts.js";
+import { ClaimHeldBy } from "./client-errors.js";
 import type { AccountView, Transport } from "./transport.js";
 
 export type ClaimsView = {
@@ -137,6 +140,25 @@ export async function cancelClaims(transport: Transport, intent: Address, claims
     return { board, stakeTo: null };
   }
   return { board, stakeTo: stakeReceiverOnCancel(getClaimBoardDecoder().decode(data), await chainTime(transport)) };
+}
+
+export type ReleaseClaims = { accounts: { claims?: Address; stakeTo?: Address }; stake: bigint };
+
+export async function releaseClaims(transport: Transport, intent: Address, claims: number, payees: readonly Address[]): Promise<ReleaseClaims> {
+  if (claims !== CLAIMS_OPEN) {
+    return { accounts: {}, stake: 0n };
+  }
+  const board = await claimBoardAddress(intent);
+  const view = getClaimBoardDecoder().decode(await engineAccount(transport, board, CLAIM_BOARD_DISCRIMINATOR, "claim board"));
+  try {
+    const stakeTo = stakeReceiverOnRelease(view, await chainTime(transport), payees);
+    return stakeTo === null ? { accounts: { claims: board }, stake: 0n } : { accounts: { claims: board, stakeTo }, stake: view.held };
+  } catch (error) {
+    if (error instanceof IntentCoreError) {
+      throw new ClaimHeldBy(intent, view.worker, view.until);
+    }
+    throw error;
+  }
 }
 
 export async function loadProfile(transport: Transport, wallet: Address): Promise<ProfileView | null> {

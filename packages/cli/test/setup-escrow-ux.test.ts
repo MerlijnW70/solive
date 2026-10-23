@@ -16,7 +16,7 @@ import {
 } from "@intent-engine/core";
 import { beforeEach, describe, expect, it } from "vitest";
 import { WALLET_START } from "../src/agent/wallet/account.js";
-import { recordAccountWhy, SPEC_MUST } from "../src/agent/wallet/escrow.js";
+import { PIECE_ONE, recordAccountWhy, SPEC_MUST } from "../src/agent/wallet/escrow.js";
 import { RELEASE_LANDING, stillUnknown, stillUnreleased } from "../src/agent/wallet/receipt.js";
 import { unwrapped, unwrapReturns } from "../src/agent/wallet/unwrap.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
@@ -167,7 +167,7 @@ describe("setup, escrow and balance explain themselves", () => {
         { name: "two", amount: "0.02" },
       ],
     });
-    expect(plan["summary"]).toContain(recordAccountWhy(TEST_TOKEN));
+    expect(plan["summary"]).toContain(`${PIECE_ONE}: ${recordAccountWhy(TEST_TOKEN)}`);
     const mine = await findAssociatedTokenAddress({ owner, mint: TEST_TOKEN, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     const sent = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash: "64".repeat(32), send: true });
     expect(sent).toMatchObject({ sent: true });

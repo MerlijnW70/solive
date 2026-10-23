@@ -21,6 +21,18 @@ export class NotSettleable extends Error {
   }
 }
 
+export class ClaimHeldBy extends NotSettleable {
+  readonly worker: Address;
+  readonly until: bigint;
+
+  constructor(intent: Address, worker: Address, until: bigint) {
+    super(intent, `is claimed by ${worker} until ${until}, so only that worker can be paid until then`);
+    this.name = "ClaimHeldBy";
+    this.worker = worker;
+    this.until = until;
+  }
+}
+
 export class NotFillable extends Error {
   readonly intent: Address;
 

@@ -48,7 +48,7 @@ import { prepare, transactionSize } from "../prepare.js";
 import { STATUS } from "../../accounts.js";
 import { feePayerOf, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, WAIT_SCAN, signerOf, sent, sha256Of, walletOpeners } from "./guard.js";
 import { openingOutput, openingsFor, sendOpenings, skippedOf } from "./openings.js";
-import { DEVICE_RELEASE, RELEASE_CHANGED, approvalOf } from "./attest.js";
+import { DEVICE_RELEASE, RELEASE_CHANGED, approvalOf, claimsOfRelease, stakeReturned } from "./attest.js";
 import { notInSplit, DELIVERED_NEEDED, ATTEST_PAGES, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, HISTORY_TOO_LONG, notAttestor, confirmedRelease } from "./delivery.js";
 
 export const SPLIT_FITS = 2;
@@ -115,7 +115,7 @@ export const walletAttestSplit = define({
     follow_up_signature: optional(text("the follow-up transaction that records the sha256, when recorded is follow-up")),
     record_memo: optional(text(`when recorded is false, the memo that records the sha256 for this release; ${tool("wallet_record_delivery")} sends it from this wallet with a zero transfer to the escrow`)),
     ...openingOutput,
-    summary: list(text(), 12),
+    summary: list(text(), 16),
     warnings: list(text(), 8),
     sent: flag(),
     signature: optional(text()),
@@ -159,6 +159,7 @@ export const walletAttestSplit = define({
     for (const [i, r] of input.recipients.entries()) {
       await walletRecipient(ctx.transport, r.wallet, `recipients.${i}.wallet`);
     }
+    const claimed = await claimsOfRelease(ctx, intent, held.claims, wallets);
     if (input.delivered_sha256 === undefined) {
       throw new InvalidInput([{ path: "delivered_sha256", message: DELIVERED_NEEDED }]);
     }
@@ -215,6 +216,7 @@ export const walletAttestSplit = define({
       ...(shares.protocol > 0n ? { feeRecipient: config.feeRecipient } : {}),
       ...(partnerPaid ? { partner: held.partner } : {}),
       ...(params.judgeFee > 0n ? { judge: signer.address } : {}),
+      ...claimed.accounts,
       amountIn,
       result,
       maxFeeBps,
@@ -294,6 +296,7 @@ export const walletAttestSplit = define({
         ...(device
           ? [`Signs: only the release message on the Ledger, which shows digest ${digestHex}; the fee payer ${payer.address} signs and pays the transaction, so no memo records the delivered work`]
           : [RECORDS_SPLIT(delivered)]),
+        ...stakeReturned(claimed.stake, claimed.accounts.stakeTo),
         ...(setup.length === 0 ? [] : [`Setup: creates ${setup.length} token account(s), paid by ${device ? "the fee payer" : "this wallet"}`]),
       ],
       warnings: [...settlementWarnings(params), WARN_COAUTHORS],

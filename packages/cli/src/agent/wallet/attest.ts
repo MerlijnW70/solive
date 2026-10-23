@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { AccountRole, getAddressDecoder, getBase16Decoder } from "@solana/kit";
+import { AccountRole, type Address, getAddressDecoder, getBase16Decoder } from "@solana/kit";
 import {
   attestedFillMessage,
   attestedProofMessage,
@@ -8,6 +8,7 @@ import {
   decodeParams,
   findIntentPda,
   formatAmount,
+  formatTime,
   getIntentDecoder,
   IntentStatus,
   Kind,
@@ -16,7 +17,7 @@ import {
   splitFees,
   settlementWarnings,
 } from "@intent-engine/core";
-import { chainTime, deliveryRecord, envelopeDigest, firstDelivery, loadConfig, MEMO_PROGRAM_ADDRESS, mintOf, tokenAccountIfMissing } from "@intent-engine/client";
+import { chainTime, ClaimHeldBy, deliveryRecord, envelopeDigest, firstDelivery, loadConfig, MEMO_PROGRAM_ADDRESS, mintOf, releaseClaims, tokenAccountIfMissing } from "@intent-engine/client";
 import { TOKEN_NAMES } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
@@ -43,6 +44,23 @@ export const RELEASE_CHANGED = "this release differs from its preview: the payee
 export const DEVICE_DIGEST = "the digest the Ledger shows when it signs the release message: compare the two before approving on the device";
 
 export const DEVICE_RELEASE = "the Ledger shows digest when it signs the release message: show it to the user, who approves on the device only if its screen shows the same digest";
+
+export const claimHeldBy = (worker: Address, until: bigint) =>
+  `${worker} holds this job's claim until ${formatTime(until)}, so only that worker can be paid until then; nothing was sent`;
+
+export async function claimsOfRelease(ctx: AgentContext, intent: Address, claims: number, payees: readonly Address[]) {
+  try {
+    return await releaseClaims(ctx.transport, intent, claims, payees);
+  } catch (error) {
+    if (error instanceof ClaimHeldBy) {
+      throw new AgentRefusal("ClaimHeld", claimHeldBy(error.worker, error.until));
+    }
+    throw error;
+  }
+}
+
+export const stakeReturned = (stake: bigint, stakeTo: Address | undefined): string[] =>
+  stakeTo === undefined || stake === 0n ? [] : [`Returns: the claim stake of ${formatAmount(stake, 9)} SOL to ${stakeTo}`];
 
 export const approvalOf = (message: Uint8Array, memo = ""): string => createHash("sha256").update(message).update(memo).digest("hex").slice(0, 16);
 
@@ -73,7 +91,7 @@ export const walletAttest = define({
     delivered_sha256: optional(text("the sha256 the release records in a memo; absent on a Ledger wallet, whose release records none")),
     recorded: optional(flag("false when the release records no delivered work, as on a Ledger wallet")),
     ...openingOutput,
-    summary: list(text(), 8),
+    summary: list(text(), 12),
     warnings: list(text(), 8),
     sent: flag(),
     signature: optional(text()),
@@ -111,6 +129,7 @@ export const walletAttest = define({
     if (invited !== undefined && !invited.includes(input.pay_to)) {
       throw new AgentRefusal("NotInvited", notInvited(input.pay_to, intent));
     }
+    const claimed = await claimsOfRelease(ctx, intent, held.claims, [input.pay_to]);
     const token = await mintOf(ctx.transport, held.inputMint);
     const payee = await tokenAccountIfMissing(ctx.transport, payer, input.pay_to, held.inputMint, token.tokenProgram);
     if (payee.create.length === 0) {
@@ -159,6 +178,7 @@ export const walletAttest = define({
       ...(shares.protocol > 0n ? { feeRecipient: config.feeRecipient } : {}),
       ...(partnerPaid ? { partner: held.partner } : {}),
       ...(isProof && params.judgeFee > 0n ? { judge: signer.address } : {}),
+      ...claimed.accounts,
       amountIn,
       result,
       maxFeeBps,
@@ -221,6 +241,7 @@ export const walletAttest = define({
         `Attests: result ${result}, signed by this server's wallet as the escrow's attestor`,
         ...(delivered === undefined || device ? [] : [`Records: the delivered work's sha256 ${delivered}${salt === undefined ? "" : " and its announcer's salt"}, in a memo this wallet signs with the release`]),
         ...(device ? [`Signs: only the release message on the Ledger, which shows digest ${envelopeDigest(message)}; the fee payer ${payer.address} signs and pays the transaction, so no memo records the delivered work`] : []),
+        ...stakeReturned(claimed.stake, claimed.accounts.stakeTo),
         ...(openings.length === 0 ? [] : [`Opens: the salts of ${openings.reduce((n, o) => n + o.salts.length, 0)} earlier announcement(s), in ${openings.length} more transaction(s) after the release`]),
         ...(payee.create.length === 0 ? [] : [`Setup: creates ${input.pay_to}'s ${name} account, paid by ${paidBy}`]),
         ...(treasury.create.length === 0 ? [] : [`Setup: creates the engine treasury's ${name} account for the fee, paid by ${paidBy}`]),

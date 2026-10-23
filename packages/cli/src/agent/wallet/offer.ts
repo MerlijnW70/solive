@@ -3,7 +3,7 @@ import type { Address } from "@solana/kit";
 import { chainTime, CLOCK_SYSVAR, explain, mintOf, unmemoized } from "@intent-engine/client";
 import type { AgentContext } from "../actions.js";
 import type { Call } from "../claims.js";
-import { prepareCreate } from "../create.js";
+import { type AfterCreate, createIntent } from "../create.js";
 import { AgentRefusal, problemOf } from "../problems.js";
 import { account, amount, flag, list, object, optional, type Schema, text } from "../schema.js";
 import { orderSchema } from "../shapes.js";
@@ -32,7 +32,7 @@ type Terms = { order: Order; expires_at: bigint; spec_url?: string };
 export async function offered(
   ctx: AgentContext,
   call: Call,
-  input: { sell: string; buy: string; pay_to?: Address | undefined; send?: boolean | undefined },
+  input: { sell: string; buy: string; pay_to?: Address | undefined; send?: boolean | undefined; after?: AfterCreate | undefined },
   terms: (sold: Token, bought: Token, now: bigint, inputMint: Address, outputMint: Address) => Promise<Terms> | Terms,
   done?: string,
 ) {
@@ -54,10 +54,11 @@ export async function offered(
   const guard = wallet.limits;
   checkSale(guard, inputMint, inputToken.decimals, sold, now, await salesOf(wallet, now));
   const created = async (context: AgentContext) => {
-    const view = (await prepareCreate.run(
+    const view = (await createIntent(
       context,
       { owner: signer.address, input_mint: inputMint, output_mint: outputMint, ...(input.pay_to === undefined ? {} : { pay_to: input.pay_to }), ...made } as never,
       call,
+      input.after,
     )) as Record<string, unknown>;
     const { intent, nonce, summary, warnings, prepared } = view;
     return { intent, nonce, summary, warnings, prepared };

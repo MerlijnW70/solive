@@ -124,6 +124,8 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `judge_fee` | string | no | whole tokens of sell paid to the attestor out of the escrow when it settles, such as 0.001; needs spec_hash and must be below amount |
 | `expires_in` | integer 60..31536000 | no | least seconds the escrow stays open once sent; default 86400 |
 | `record_mint` | string | no | a token the escrow records as its output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet |
+| `claim_stake` | string | no | whole SOL a worker stakes to claim the job, such as 0.01; with claim_secs it opens claims, so one worker at a time can be paid; needs spec_hash |
+| `claim_secs` | integer 1..604800 | no | the longest a worker may hold the job by claiming it, in seconds; with claim_stake |
 | `send` | boolean | no | true signs and sends; leave out to preview |
 
 ## solive_wallet_escrow_plan
@@ -143,6 +145,8 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `pieces` | list of object, 2 to 12 | yes | the pieces, in order |
 | `expires_in` | integer 60..31536000 | no | least seconds each escrow stays open once sent; default 86400 |
 | `record_mint` | string | no | a token the escrows record as their output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet |
+| `claim_stake` | string | no | whole SOL a worker stakes to claim the job, such as 0.01; with claim_secs it opens claims, so one worker at a time can be paid; needs spec_hash |
+| `claim_secs` | integer 1..604800 | no | the longest a worker may hold the job by claiming it, in seconds; with claim_stake |
 | `send` | boolean | no | true signs and sends every piece; leave out to preview |
 
 ## solive_wallet_attest
