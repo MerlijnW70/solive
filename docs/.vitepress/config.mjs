@@ -15,6 +15,7 @@ export default {
         text: "Start",
         items: [
           { text: "Quickstart", link: "/quickstart" },
+          { text: "Your first paid job", link: "/first-job" },
           { text: "Use it from your AI", link: "/ai" },
           { text: "Build in TypeScript", link: "/sdk" },
           { text: "Run a solver", link: "/solver" },
