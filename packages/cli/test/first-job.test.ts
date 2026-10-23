@@ -7,10 +7,11 @@ import { fileURLToPath } from "node:url";
 import { type Address, createKeyPairSignerFromBytes, getBase58Decoder, type KeyPairSigner, lamports, none } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEVNET_TEST_MINT, findAssociatedTokenAddress, findIntentPda, formatAmount, getIntentDecoder, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
 import { svmTransport } from "@intent-engine/client/svm";
 import { EXIT_FAILED, EXIT_OK, ONE_NODE } from "../src/main.js";
+import { quietWebCryptoWarnings } from "../src/node-warnings.js";
 import { AIRDROP, ENOUGH_TO_START } from "../src/wallet.js";
 import { ata, balance, cli, DOMAIN, FEE_BPS, h, send, world } from "./harness.js";
 
@@ -177,6 +178,10 @@ const named = (ran: readonly Ran[], verb: string) => ran.filter((r) => verbOf(r.
 
 describe("the first paid job guide", () => {
   let follower: Follower;
+
+  beforeAll(() => {
+    quietWebCryptoWarnings();
+  });
 
   beforeEach(async () => {
     const w = await world();
