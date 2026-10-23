@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
-import { balances, defaultMints, FUND_BELOW, setup } from "../../wallet.js";
+import { balances, defaultMints, FUND_BELOW, setup, SWAP_START } from "../../wallet.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { boardLeft, leavesBoard, thenSettle } from "../claim-line.js";
@@ -10,6 +10,8 @@ import { account, amount, choice, flag, list, object, optional, text } from "../
 import { prepareCancel } from "../settle.js";
 import { STATUS } from "../../accounts.js";
 import { deviceOutput, PREVIEW_FIRST, WALLET_NOTICE, access, testCluster, savedKeypair, signerOf, mintNamed, sent } from "./guard.js";
+
+export const WALLET_SMALL_START = `hire with ${tool("wallet_escrow")} or earn from ${tool("find_jobs")}; a 0.05 SOL swap needs ${formatAmount(SWAP_START, SOL_DECIMALS)} SOL`;
 
 export const WALLET_START = [
   `trade with ${tool("wallet_swap")}, such as 0.05 SOL for at least 5 TEST`,
@@ -39,12 +41,13 @@ export const walletSetup = define({
     url: text("the RPC node this server uses, as scheme, host and port only"),
     settings: text("whether this call saved the RPC as the CLI's default; it does so only when none is saved yet"),
     sol: text("SOL the wallet holds"),
+    airdrop: optional(text("SOL devnet sent; less than asked when it refused a larger airdrop")),
     next: text("what to tell the user: what the wallet holds, and how to trade, hire or earn"),
     notice: list(text(), 8, "the notice from the server instructions; show it if the user has not seen it yet"),
   }),
   run: async (ctx: AgentContext) => {
     const wallet = await testCluster(ctx);
-    return { ...(await setup(ctx.transport, wallet.files, wallet.url, await savedKeypair(wallet), true, undefined, undefined, WALLET_START)), notice: WALLET_NOTICE };
+    return { ...(await setup(ctx.transport, wallet.files, wallet.url, await savedKeypair(wallet), true, undefined, undefined, WALLET_START, WALLET_SMALL_START)), notice: WALLET_NOTICE };
   },
 });
 

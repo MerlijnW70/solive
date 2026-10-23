@@ -15,13 +15,13 @@ import {
   splitFee,
 } from "@intent-engine/core";
 import { beforeEach, describe, expect, it } from "vitest";
-import { WALLET_START } from "../src/agent/wallet/account.js";
+import { WALLET_SMALL_START, WALLET_START } from "../src/agent/wallet/account.js";
 import { PIECE_ONE, recordAccountWhy, SPEC_MUST } from "../src/agent/wallet/escrow.js";
 import { RELEASE_LANDING, stillUnknown, stillUnreleased } from "../src/agent/wallet/receipt.js";
 import { unwrapped, unwrapReturns } from "../src/agent/wallet/unwrap.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
-import { airdropRefused, CLI_START, ENOUGH_TO_START, heldRefused, holdsEnough, LAMPORTS_PER_SOL, refusedEnough } from "../src/wallet.js";
+import { AIRDROPS, airdropRefused, CLI_START, ENOUGH_TO_START, heldRefused, holdsEnough, LAMPORTS_PER_SOL, refusedEnough } from "../src/wallet.js";
 import { cli, creation, FEE_BPS, h, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
@@ -110,16 +110,20 @@ describe("setup, escrow and balance explain themselves", () => {
     const empty = await ok(client, "wallet_setup");
     const address = empty["address"] as Address;
     expect(empty).toMatchObject({ sol: "0", next: airdropRefused(address) });
-    h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 20n));
+    h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 50n));
     const low = await ok(client, "wallet_setup");
-    expect(low).toMatchObject({ sol: "0.05", next: heldRefused("0.05", address) });
-    expect(low["next"]).toContain(`your wallet holds 0.05 SOL, less than the ${formatAmount(ENOUGH_TO_START, 9)} SOL setup counts as enough to start`);
+    expect(low).toMatchObject({ sol: "0.02", next: heldRefused("0.02", address) });
+    expect(low["next"]).toContain(`your wallet holds 0.02 SOL, less than the ${formatAmount(ENOUGH_TO_START, 9)} SOL setup counts as enough to start`);
+    expect(low["next"]).not.toContain("--faucet");
+    h.svm.airdrop(address, lamports(ENOUGH_TO_START - LAMPORTS_PER_SOL / 50n));
+    const small = await ok(client, "wallet_setup");
+    expect(small).toMatchObject({ sol: "0.05", next: refusedEnough("0.05", WALLET_SMALL_START) });
     h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 4n));
     const held = await ok(client, "wallet_setup");
     expect(held["next"]).not.toBe(OLD_NEXT);
     expect(held).toMatchObject({ sol: "0.3", next: refusedEnough("0.3", WALLET_START) });
     expect(held["next"]).toMatch(/^devnet refused more free SOL, but your wallet holds 0\.3 SOL, enough to start; /);
-    expect(h.airdrops).toHaveLength(3);
+    expect(h.airdrops).toHaveLength(4 * AIRDROPS.length);
   });
 
   it("points a funded wallet at trading, hiring and earning, also when only the everyday tools are served", async () => {

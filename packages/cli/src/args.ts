@@ -104,6 +104,7 @@ export {
 export { CLUSTERS, clusterUrl, DEFAULT_URL, ENV_KEYPAIR, ENV_URL, WALLET_NOT_MAINNET } from "./clusters.js";
 
 const SETUP_CLUSTER = "devnet";
+export const FAUCET_DEVNET_ONLY = "--faucet asks the devnet faucet, so it works only with --url devnet";
 
 export const ADD_TO_NEEDS_APP = "add-to needs the app to add the server to: add-to claude or add-to codex";
 
@@ -216,7 +217,10 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       throw new UsageError("show needs config, intent or mint-cap");
     case "setup":
       noSub(sub);
-      return { name: "setup", ...remote, keypair: values.keypair, ...confirmUrlOf(values, remote.url) };
+      if (values.faucet === true && remote.url !== clusterUrl(SETUP_CLUSTER)) {
+        throw new UsageError(FAUCET_DEVNET_ONLY);
+      }
+      return { name: "setup", ...remote, keypair: values.keypair, ...confirmUrlOf(values, remote.url), faucet: values.faucet === true };
     case "balance":
       noSub(sub);
       if (values.owner !== undefined && parsed.values.keypair !== undefined) {

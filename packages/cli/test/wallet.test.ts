@@ -16,7 +16,9 @@ import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT } from "@intent-engine/core
 import { DEVNET_URL, testTokenElsewhere, tokenNamed } from "../src/tokens.js";
 import {
   AIRDROP,
+  AIRDROPS,
   airdropRefused,
+  CLI_SMALL_START,
   CLI_START,
   FAUCET,
   FAUCET_STEPS,
@@ -34,6 +36,7 @@ import {
   setup,
 } from "../src/wallet.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main } from "../src/main.js";
+import { GH_HINT } from "../src/faucet.js";
 import { balance, cli, funded, h, HOME, runtime, transport, type World, world } from "./harness.js";
 import { device, deviceKey, found } from "./ledger-device.js";
 
@@ -161,18 +164,18 @@ describe("setup and balance", () => {
     h.airdropRefused = true;
     const refused = (await cli(["setup"], {})).json();
     const address = refused["address"] as Address;
-    expect(refused).toMatchObject({ created: true, sol: "0", next: airdropRefused(address) });
+    expect(refused).toMatchObject({ created: true, sol: "0", next: airdropRefused(address, GH_HINT) });
     expect(refused["next"]).toBe(
-      "your wallet holds no SOL yet and the airdrop was refused; open this link, submit the form, and run setup again once SOL arrives: " +
+      "your wallet holds no SOL yet and the airdrop was refused; with the GitHub CLI signed in, setup --faucet files the request and waits for SOL; otherwise the faucet request needs a browser and a GitHub account, and a scheduled run answers faucet requests at minute 7 of every hour, so SOL arrives within the hour; open this link, submit the form, and run setup again once SOL arrives: " +
         FAUCET + "&address=" + address,
     );
-    h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 20n));
-    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.05", next: heldRefused("0.05", address) });
-    expect(h.airdrops).toHaveLength(2);
-    expect(heldRefused("0.05", address).endsWith(FAUCET_STEPS + faucetLink(address))).toBe(true);
+    h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 50n));
+    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.02", next: heldRefused("0.02", address, GH_HINT) });
+    expect(h.airdrops).toHaveLength(2 * AIRDROPS.length);
+    expect(heldRefused("0.02", address).endsWith(FAUCET_STEPS + faucetLink(address))).toBe(true);
     h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 4n));
-    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.3", next: refusedEnough("0.3", CLI_START) });
-    expect(h.airdrops).toHaveLength(3);
+    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.27", next: refusedEnough("0.27", CLI_START) });
+    expect(h.airdrops).toHaveLength(3 * AIRDROPS.length);
     clean();
     h.airdrops.length = 0;
     expect((await cli(["setup", "--url", "mainnet-beta", "--keypair", "main.json"], {})).json()).toMatchObject({
@@ -239,7 +242,7 @@ describe("setup and balance", () => {
     const made = (await cli(["setup"], {})).json();
     const address = made["address"] as Address;
     h.svm.airdrop(address, lamports(ENOUGH_TO_START));
-    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.1", next: refusedEnough("0.1", CLI_START) });
+    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.05", next: refusedEnough("0.05", CLI_SMALL_START) });
   });
 
   it("setup on a Ledger names the device's address and creates no key file", async () => {

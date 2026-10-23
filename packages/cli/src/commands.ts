@@ -28,7 +28,7 @@ import { ESTIMATE_SCAN, walletGuard } from "./agent/wallet.js";
 import { relayOf } from "./agent/relay.js";
 import { type Command, usageOf } from "./args.js";
 import { VERSION } from "./version.js";
-import { balances, defaultMints, setup } from "./wallet.js";
+import { balances, CLI_SMALL_START, CLI_START, defaultMints, setup } from "./wallet.js";
 import { FlowRefused } from "./flows.js";
 import { describeIntent, quoteOf, sameBytes } from "./accounts.js";
 import { closing, crank, expiring } from "./crank.js";
@@ -138,7 +138,13 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       return null;
     }
     case "setup":
-      return setup(transport, runtime, command.url, command.keypair, false, command.confirmUrl, command.confirmUrl === undefined ? undefined : runtime.transport(command.confirmUrl));
+      return setup(transport, runtime, command.url, command.keypair, false, command.confirmUrl, command.confirmUrl === undefined ? undefined : runtime.transport(command.confirmUrl), CLI_START, CLI_SMALL_START, {
+        file: command.faucet,
+        launch: runtime.launch,
+        sleep: (seconds) => runtime.sleep(seconds),
+        now: runtime.now,
+        note: (text) => process.stderr.write(`${text}\n`),
+      });
     case "balance": {
       const owner = command.owner ?? (await runtime.loadSigner(command.keypair ?? "")).address;
       return balances(transport, owner, command.mints ?? defaultMints(command.url));

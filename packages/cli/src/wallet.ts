@@ -7,11 +7,14 @@ import { SAVED_CONFIRM_URL } from "./clusters.js";
 import { SOL_DECIMALS } from "./agent/read.js";
 import { redactUrl } from "./render.js";
 import { DEVNET_URL } from "./tokens.js";
+import { FAUCET_POLL_SECONDS, FAUCET_SCHEDULE, FAUCET_WAIT_MINUTES, faucetPending, faucetWaiting, fileFaucetRequest, GH_HINT, type Launch } from "./faucet.js";
 
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
 export const FUND_BELOW = LAMPORTS_PER_SOL / 2n;
-export const ENOUGH_TO_START = LAMPORTS_PER_SOL / 10n;
+export const ENOUGH_TO_START = LAMPORTS_PER_SOL / 20n;
+export const SWAP_START = LAMPORTS_PER_SOL / 10n;
 export const AIRDROP = LAMPORTS_PER_SOL;
+export const AIRDROPS: readonly bigint[] = [AIRDROP, AIRDROP / 2n, AIRDROP / 4n, AIRDROP / 10n];
 
 type Settings = { url: string; keypair: string; [SAVED_CONFIRM_URL]?: string };
 
@@ -35,15 +38,19 @@ export const PUBLIC_FAUCET = "https://faucet.solana.com";
 export const FAUCET = `${PRODUCT_REPOSITORY}/issues/new?template=faucet.yml`;
 export const CLI_START = "try offering 0.05 SOL for at least 5 TEST";
 const solOf = (lamports: bigint) => formatAmount(lamports, SOL_DECIMALS);
+export const CLI_SMALL_START = `follow the first paid job guide; a 0.05 SOL swap needs ${solOf(SWAP_START)} SOL`;
+export const smallerAirdrop = (got: bigint) => `devnet refused ${solOf(AIRDROP)} SOL and sent ${solOf(got)} SOL; `;
 export const holdsEnough = (sol: string, start: string) => `your wallet holds ${sol} SOL, enough to start; ${start}`;
 export const refusedEnough = (sol: string, start: string) => `devnet refused more free SOL, but your wallet holds ${sol} SOL, enough to start; ${start}`;
 export const FAUCET_FIELD = "address";
 export const faucetLink = (address: string) => FAUCET + "&" + FAUCET_FIELD + "=" + encodeURIComponent(address);
-export const FAUCET_STEPS = "open this link, submit the form, and run setup again once SOL arrives: ";
-export const airdropRefused = (address: string) => "your wallet holds no SOL yet and the airdrop was refused; " + FAUCET_STEPS + faucetLink(address);
+export const FAUCET_STEPS = `the faucet request needs a browser and a GitHub account, and ${FAUCET_SCHEDULE}; open this link, submit the form, and run setup again once SOL arrives: `;
+export const airdropRefused = (address: string, hint = "") => "your wallet holds no SOL yet and the airdrop was refused; " + hint + FAUCET_STEPS + faucetLink(address);
 export const SEND_SOL = "send SOL to this address, then run setup again";
-export const heldRefused = (sol: string, address: string) =>
-  `your wallet holds ${sol} SOL, less than the ${solOf(ENOUGH_TO_START)} SOL setup counts as enough to start, and devnet refused to add more; ` + FAUCET_STEPS + faucetLink(address);
+export const heldRefused = (sol: string, address: string, hint = "") =>
+  `your wallet holds ${sol} SOL, less than the ${solOf(ENOUGH_TO_START)} SOL setup counts as enough to start, and devnet refused to add more; ` + hint + FAUCET_STEPS + faucetLink(address);
+
+export type FaucetRun = { file: boolean; launch: Launch; sleep(seconds: number): Promise<boolean>; now(): bigint; note(text: string): void };
 
 export function expandHome(path: string, home: string): string {
   if (path === "~") {
@@ -109,6 +116,27 @@ async function walletAt(files: Files, path: string): Promise<{ signer: { address
 
 const lamportsOf = async (transport: Transport, owner: Address) => (await transport.getAccount(owner))?.lamports ?? 0n;
 
+async function airdropped(transport: Transport, owner: Address): Promise<bigint | undefined> {
+  for (const amount of AIRDROPS) {
+    try {
+      await transport.airdrop(owner, amount);
+      return amount;
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
+async function arrived(transport: Transport, owner: Address, faucet: FaucetRun): Promise<bigint> {
+  const until = faucet.now() + BigInt(FAUCET_WAIT_MINUTES * 60);
+  let held = await lamportsOf(transport, owner);
+  while (held < ENOUGH_TO_START && faucet.now() < until && (await faucet.sleep(FAUCET_POLL_SECONDS))) {
+    held = await lamportsOf(transport, owner);
+  }
+  return held;
+}
+
 export const savedDefault = (url: string) => `saved ${redactUrl(url)} as the default RPC for later CLI commands`;
 
 export const keptDefault = (saved: string) => `left the saved default RPC ${redactUrl(saved)} unchanged`;
@@ -151,6 +179,8 @@ export async function setup(
   confirmUrl?: string,
   confirmTransport?: Transport,
   start = CLI_START,
+  smallStart = start,
+  faucet?: FaucetRun,
 ): Promise<object> {
   if (confirmUrl !== undefined && confirmTransport !== undefined) {
     await checkedSecond(transport, confirmTransport, confirmUrl);
@@ -163,23 +193,36 @@ export async function setup(
   await files.saveText(settingsPath(files.home), `${JSON.stringify(settings, null, 2)}\n`, false);
   let held = await lamportsOf(transport, signer.address);
   let refused = false;
+  let got: bigint | undefined;
   if (held < FUND_BELOW && url !== CLUSTERS["mainnet-beta"]) {
-    try {
-      await transport.airdrop(signer.address, AIRDROP);
-      held = await lamportsOf(transport, signer.address);
-    } catch {
-      refused = true;
+    got = await airdropped(transport, signer.address);
+    refused = got === undefined;
+    held = await lamportsOf(transport, signer.address);
+  }
+  let hint = faucet === undefined || url !== DEVNET_URL ? "" : GH_HINT;
+  let filed: string | undefined;
+  if (faucet?.file === true && held < ENOUGH_TO_START) {
+    const request = await fileFaucetRequest(faucet.launch, signer.address);
+    if ("url" in request) {
+      filed = request.url;
+      faucet.note(faucetWaiting(filed));
+      held = await arrived(transport, signer.address, faucet);
+    } else {
+      hint = request.hint;
     }
   }
   const sol = solOf(held);
+  const smaller = got === undefined || got === AIRDROP ? "" : smallerAirdrop(got);
   const next =
     url === CLUSTERS["mainnet-beta"] && held < FUND_BELOW
       ? SEND_SOL
       : held >= ENOUGH_TO_START
-        ? (refused ? refusedEnough : holdsEnough)(sol, start)
-        : held > 0n
-          ? heldRefused(sol, signer.address)
-          : airdropRefused(signer.address);
+        ? smaller + (refused ? refusedEnough : holdsEnough)(sol, held >= SWAP_START ? start : smallStart)
+        : filed !== undefined
+          ? faucetPending(filed)
+          : held > 0n
+            ? heldRefused(sol, signer.address, hint)
+            : airdropRefused(signer.address, hint);
   return {
     address: signer.address,
     keypair: path,
@@ -188,6 +231,8 @@ export async function setup(
     settings: saved === undefined ? savedDefault(url) : keptDefault(saved),
     ...(confirm === undefined ? {} : { confirm_url: redactUrl(confirm) }),
     sol,
+    ...(got === undefined ? {} : { airdrop: solOf(got) }),
+    ...(filed === undefined ? {} : { faucet_request: filed }),
     next,
   };
 }

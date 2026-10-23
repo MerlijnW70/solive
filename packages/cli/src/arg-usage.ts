@@ -12,7 +12,7 @@ const ORDER_SHAPE = "(--amount-in --min-out | --make --take | --amount-in --star
 const PARTNER_SHAPE = "[--partner <address> --partner-bps <n>]";
 
 export const SHAPES: Readonly<Record<string, string>> = {
-  setup: "[--url <cluster>] [--keypair <file>] [--confirm-url <cluster>]",
+  setup: "[--url <cluster>] [--keypair <file>] [--confirm-url <cluster>] [--faucet]",
   "add-to": "claude|codex [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>]",
   balance: "[--keypair <file> | --owner <address>] [--mints <mint,...>]",
   pda: "--owner <address> --nonce <n>",

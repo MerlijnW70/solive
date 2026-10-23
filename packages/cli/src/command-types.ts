@@ -50,7 +50,7 @@ export type Command =
   | (Remote & { name: "spec"; intent: Address; keypair: string | undefined; out: string | undefined })
   | (Remote & { name: "show-config" })
   | (Remote & { name: "domain" })
-  | (Remote & { name: "setup"; keypair: string | undefined; confirmUrl?: string | undefined })
+  | (Remote & { name: "setup"; keypair: string | undefined; confirmUrl?: string | undefined; faucet: boolean })
   | (Remote & { name: "balance"; keypair: string | undefined; owner: Address | undefined; mints: Address[] | null })
   | (Remote & { name: "mcp"; relay: RelaySpec | undefined; agent: AgentSpec | undefined; wallet: WalletLimits | null; allTools: boolean; feePayer?: string | undefined; encryptionKeypairs?: string[] | undefined; confirmUrl?: string | undefined })
   | (Remote & { name: "show-intent"; owner: Address; nonce: bigint })

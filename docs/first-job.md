@@ -14,7 +14,7 @@ Your own wallet hires and judges:
 intent-engine setup
 ```
 
-It prints your `address` and the `keypair` file that holds it, and asks devnet for 1 SOL when it holds little. If devnet refuses, open the faucet link it prints. If you ran the quickstart, it is the same wallet.
+It prints your `address` and the `keypair` file that holds it, and asks devnet for 1 SOL when it holds little, then for less if devnet refuses. This guide needs 0.05 SOL in your wallet. If devnet sends none, `intent-engine setup --faucet` files a faucet request with a signed-in [GitHub CLI](https://cli.github.com) and waits for the SOL; without it, open the faucet link setup prints. If you ran the quickstart, it is the same wallet.
 
 Make a second wallet that works, and send it 0.01 SOL from yours for its network fees. Put your `keypair` file in place of `<keypair>`:
 
@@ -49,7 +49,7 @@ Post the job with 0.01 SOL of pay for a day, and your own wallet as the judge. P
 intent-engine create attested --input-mint SOL --output-mint TEST --units tokens --amount-in 0.01 --min-result 1 --max-result 1 --attestor <address> --spec-hash <sha256> --expires-in 86400 --yes
 ```
 
-It prints the job's `intent` and `nonce`. The 0.01 SOL leaves your wallet and waits in the escrow.
+It prints the job's `intent` and `nonce`. The 0.01 SOL leaves your wallet and waits in the escrow. It also warns about judging on a Ledger; your wallet is a key file, so that warning does not apply.
 
 ## 3. Deliver wrong work
 
@@ -74,7 +74,7 @@ Announce it to the judge, with the job's `intent` in place of `<intent>`:
 intent-engine deliver --keypair worker.json --intent <intent> --artifact wrong.mjs --work-url https://example.org/wrong.mjs --yes
 ```
 
-`--work-url` tells the judge where to download the work. Here the judge already has the file, so the link is not opened.
+`--work-url` tells the judge where to download the work. Here the judge already has the file, so the link is not opened. `deliver` prints `"sent": true`, the `signature` of the announcement, and a warning to share neither the work nor its url until the announcement lands, since the first wallet to announce the work is paid.
 
 As the judge, check it, with the job's `nonce` in place of `<nonce>`:
 
@@ -93,32 +93,46 @@ Save this as `right.mjs`:
 export default () => 42;
 ```
 
-Announce it as the worker, then check it and pay as the judge:
+Announce it as the worker:
 
 ```sh
 intent-engine deliver --keypair worker.json --intent <intent> --artifact right.mjs --work-url https://example.org/right.mjs --yes
+```
+
+## 5. Copy the work
+
+A third wallet gets the same work before the release and announces it as its own. Send it 0.01 SOL for its network fees:
+
+```sh
+solana-keygen new --no-bip39-passphrase -o copier.json
+solana transfer --url devnet --keypair <keypair> copier.json 0.01 --allow-unfunded-recipient
+intent-engine deliver --keypair copier.json --intent <intent> --artifact right.mjs --work-url https://example.org/right.mjs --yes
+```
+
+`deliver` prints `"sent": true` for the copier too. Now check the work and pay as the judge:
+
+```sh
 intent-engine judge --owner <address> --nonce <nonce> --spec spec.md --artifact right.mjs --sandbox viper --yes
 ```
 
-`judge` prints `"verdict": "pass"`, the worker's address as `payTo` and the `signature` of the release. Read the receipt:
+`judge` prints `"verdict": "pass"`, the worker's address as `payTo` and the `signature` of the release: the judge pays only the wallet that announced the work first, so the copier gets nothing. Read the receipt:
 
 ```sh
 intent-engine receipt --owner <address> --nonce <nonce>
 solana-keygen pubkey worker.json
 ```
 
-The receipt shows who was paid as `paid_to`, the address `solana-keygen` prints, how much as `paid`, the job's `net_pay`, and for which work as `delivered_sha256`, the `sha256` that `intent-engine hash --artifact right.mjs` prints. `"valid": true` means the release paid the wallet that announced that work first. The pay arrives as wrapped SOL, SOL held as a token.
+The receipt shows who was paid as `paid_to`, the address `solana-keygen` prints, how much as `paid`, the job's `net_pay`, and for which work as `delivered_sha256`, the `sha256` that `intent-engine hash --artifact right.mjs` prints. `"valid": true` means the release paid the wallet that announced that work first. The pay arrives as wrapped SOL, SOL held as a token. `payee` is the wrapped SOL account the pay landed in, which `paid_to` owns.
 
-## 5. Try two cheats
+## 6. Try two more cheats
 
-A third wallet copies the paid work and announces it as its own:
+The copier announces the work again, now that the job is paid:
 
 ```sh
-solana-keygen new --no-bip39-passphrase -o copier.json
 intent-engine deliver --keypair copier.json --intent <intent> --artifact right.mjs --work-url https://example.org/right.mjs --yes
 ```
 
-`deliver` refuses: the job is paid and no longer open, so the copier gets nothing. It needs no SOL, since nothing is sent. A copy announced before the release fails too: the judge pays only the wallet that announced the work first.
+`deliver` refuses: the job is paid and no longer open, so the copier gets nothing and sends nothing.
 
 Now try to pay the same job twice:
 

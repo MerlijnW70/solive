@@ -159,6 +159,10 @@ describe("the devnet faucet", () => {
     expect(sent(request(form(ADDRESS), { held: SOL - 1, left: SOL + SOL / 2 }).calls)).toHaveLength(1);
   });
 
+  it("serves a request whose body is the address alone, as setup --faucet files it", () => {
+    expect(sent(request(ADDRESS).calls)[0]).toContain(ADDRESS);
+  });
+
   it("serves the 32-byte address of all ones", () => {
     expect(sent(request(form("1".repeat(32))).calls)).toHaveLength(1);
   });

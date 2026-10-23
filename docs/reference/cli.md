@@ -17,10 +17,10 @@ When neither `--keypair` nor `INTENT_ENGINE_KEYPAIR` is given, the wallet `setup
 ## setup
 
 ```text
-setup [--url <cluster>] [--keypair <file>] [--confirm-url <cluster>]
+setup [--url <cluster>] [--keypair <file>] [--confirm-url <cluster>] [--faucet]
 ```
 
-Options: `--url`, `--keypair`, `--confirm-url`, `--output`, `--help`
+Options: `--url`, `--keypair`, `--confirm-url`, `--faucet`, `--output`, `--help`
 
 ## add-to
 

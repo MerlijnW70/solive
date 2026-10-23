@@ -11,7 +11,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEVNET_TEST_MINT, findAssociatedTokenAddress, findIntentPda, formatAmount, getIntentDecoder, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
 import { svmTransport } from "@intent-engine/client/svm";
 import { EXIT_FAILED, EXIT_OK, ONE_NODE } from "../src/main.js";
-import { AIRDROP } from "../src/wallet.js";
+import { AIRDROP, ENOUGH_TO_START } from "../src/wallet.js";
 import { ata, balance, cli, DOMAIN, FEE_BPS, h, send, world } from "./harness.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
@@ -200,19 +200,21 @@ describe("the first paid job guide", () => {
     expect(lines.filter((line) => !line.startsWith("intent-engine "))).toEqual([
       "solana-keygen new --no-bip39-passphrase -o worker.json",
       "solana transfer --url devnet --keypair <keypair> worker.json 0.01 --allow-unfunded-recipient",
-      "solana-keygen pubkey worker.json",
       "solana-keygen new --no-bip39-passphrase -o copier.json",
+      "solana transfer --url devnet --keypair <keypair> copier.json 0.01 --allow-unfunded-recipient",
+      "solana-keygen pubkey worker.json",
     ]);
-    expect(commands.map(verbOf)).toEqual(["setup", "hash", "create attested", "jobs", "hash", "deliver", "judge", "balance", "deliver", "judge", "receipt", "deliver", "judge"]);
+    expect(commands.map(verbOf)).toEqual(["setup", "hash", "create attested", "jobs", "hash", "deliver", "judge", "balance", "deliver", "deliver", "judge", "receipt", "deliver", "judge"]);
     expect(Object.keys(files)).toEqual(["spec.md", "wrong.mjs", "right.mjs"]);
     const ran = await follower.follow(STEPS);
-    const [setup, specHash, created, jobs, checked, wrong, refused, shown, right, paid, receipt, copied, again] = ran.filter((r) => r.line.startsWith("intent-engine "));
+    const [setup, specHash, created, jobs, checked, wrong, refused, shown, right, early, paid, receipt, copied, again] = ran.filter((r) => r.line.startsWith("intent-engine "));
     const { keys, values } = follower;
     const worker = keys["worker.json"]?.address;
+    const copier = keys["copier.json"]?.address;
 
-    expect(PAGE).toContain(`asks devnet for ${AIRDROP / SOL} SOL when it holds little`);
+    expect(PAGE).toContain(`asks devnet for ${AIRDROP / SOL} SOL when it holds little, then for less if devnet refuses.`);
     expect([setup?.code, setup?.err]).toEqual([EXIT_OK, ""]);
-    expect(setup?.out).toMatchObject({ created: true, sol: String(AIRDROP / SOL) });
+    expect(setup?.out).toMatchObject({ created: true, sol: String(AIRDROP / SOL), airdrop: String(AIRDROP / SOL) });
 
     expect(PAGE).toContain("send it 0.01 SOL from yours for its network fees");
     const fees = raw("0.01");
@@ -226,6 +228,10 @@ describe("the first paid job guide", () => {
     const [intent] = await findIntentPda({ owner: values["address"] as Address, nonce: BigInt(values["nonce"] ?? "") });
     expect(values["intent"]).toBe(intent);
     expect(statusOf(intent)?.escrowed).toBe(raw(TEXT_AMOUNT));
+    expect(PAGE).toContain("It also warns about judging on a Ledger; your wallet is a key file, so that warning does not apply.");
+    const warnings = created?.out["warnings"] as string[];
+    expect(warnings.filter((w) => w.includes("Ledger"))).toEqual([expect.stringMatching(/A judge with a key file can ignore this$/)]);
+    expect(values["keypair"]?.endsWith(".json")).toBe(true);
 
     const net = raw(TEXT_AMOUNT) - (raw(TEXT_AMOUNT) * BigInt(FEE_BPS)) / BPS;
     expect(PAGE).toContain("what the worker gets, the 0.01 less the protocol fee");
@@ -233,45 +239,53 @@ describe("the first paid job guide", () => {
     expect(checked?.out["sha256"]).toBe(specHash?.out["sha256"]);
 
     expect([wrong?.code, wrong?.err]).toEqual([EXIT_OK, ""]);
-    expect(wrong?.out).toMatchObject({ intent, sent: true });
+    expect(PAGE).toContain('`deliver` prints `"sent": true`, the `signature` of the announcement, and a warning to share neither the work nor its url until the announcement lands, since the first wallet to announce the work is paid.');
+    expect(wrong?.out).toMatchObject({ intent, sent: true, signature: expect.any(String) });
+    expect(wrong?.out["warnings"]).toEqual([expect.stringMatching(/^share neither the url nor the work until this announcement lands: the earliest announcer of the work is paid/)]);
     expect(PAGE).toContain('`judge` prints `"verdict": "fail"`: the module returned 41 where the spec wants 42, so it sends nothing.');
     expect(files["wrong.mjs"]).toBe("export default () => 41;\n");
     expect(refused?.out).toMatchObject({ intent, verdict: "fail", artifactSha256: await follower.hash("wrong.mjs") });
     expect(refused?.out["signature"]).toBeNull();
     expect(refused?.code).toBe(EXIT_FAILED);
     expect(PAGE).toContain("Each `judge` first warns that it reads one RPC node, which is fine for a test job.");
-    expect(named(ran, "judge").map((r) => r.warned)).toEqual([`${ONE_NODE}
-`, `${ONE_NODE}
-`, `${ONE_NODE}
-`]);
+    expect(named(ran, "judge").map((r) => r.warned)).toEqual([`${ONE_NODE}\n`, `${ONE_NODE}\n`, `${ONE_NODE}\n`]);
     expect(ran.filter((r) => verbOf(r.line) !== "judge").map((r) => r.warned).join("")).toBe("");
     expect(PAGE).toContain("`balance` shows the worker's `wrapped SOL` at `0`.");
     expect(shown?.out).toMatchObject({ address: worker, tokens: [{ name: "wrapped SOL", balance: "0" }, { name: "TEST" }] });
     expect([wrong?.status, refused?.status, shown?.status]).toEqual([IntentStatus.Open, IntentStatus.Open, IntentStatus.Open]);
 
     expect(right?.out).toMatchObject({ intent, sent: true });
-    expect(PAGE).toContain('`judge` prints `"verdict": "pass"`, the worker\'s address as `payTo` and the `signature` of the release.');
+    expect(PAGE).toContain("A third wallet gets the same work before the release and announces it as its own.");
+    expect(PAGE).toContain('`deliver` prints `"sent": true` for the copier too.');
+    expect(early?.line).toContain("--keypair copier.json ");
+    expect([early?.code, early?.err]).toEqual([EXIT_OK, ""]);
+    expect(early?.out).toMatchObject({ intent, sent: true });
+    expect(early?.status).toBe(IntentStatus.Open);
+
+    expect(PAGE).toContain('`judge` prints `"verdict": "pass"`, the worker\'s address as `payTo` and the `signature` of the release: the judge pays only the wallet that announced the work first, so the copier gets nothing.');
     expect([paid?.code, paid?.err]).toEqual([EXIT_OK, ""]);
     expect(paid?.out).toMatchObject({ intent, verdict: "pass", payTo: worker, signature: expect.any(String) });
     expect(paid?.status).toBe(IntentStatus.Filled);
+    expect(await follower.wrapped("copier.json")).toBe(-1n);
 
     const pubkey = ran.find((r) => r.line === "solana-keygen pubkey worker.json");
     expect(pubkey?.out["address"]).toBe(worker);
     expect(PAGE).toContain("The receipt shows who was paid as `paid_to`, the address `solana-keygen` prints, how much as `paid`, the job's `net_pay`, and for which work as `delivered_sha256`, the `sha256` that `intent-engine hash --artifact right.mjs` prints.");
+    expect(PAGE).toContain("`payee` is the wrapped SOL account the pay landed in, which `paid_to` owns.");
     expect(receipt?.out).toMatchObject({
       intent,
       released: true,
       paid_to: worker,
+      payee: await findAssociatedTokenAddress({ owner: worker as Address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS }),
       paid: formatAmount(net, 9),
       delivered_sha256: await follower.hash("right.mjs"),
       signature: paid?.out["signature"],
       valid: true,
     });
 
-    expect(PAGE).toContain("`deliver` refuses: the job is paid and no longer open, so the copier gets nothing. It needs no SOL, since nothing is sent.");
+    expect(PAGE).toContain("`deliver` refuses: the job is paid and no longer open, so the copier gets nothing and sends nothing.");
     expect(copied?.code).not.toBe(EXIT_OK);
     expect(copied?.err).toContain(`${intent} is no longer open`);
-    expect(h.svm.getBalance(keys["copier.json"]?.address as Address) ?? 0n).toBe(0n);
     expect(await follower.wrapped("copier.json")).toBe(-1n);
 
     expect(PAGE).toContain("`judge` refuses, since the job is no longer open, and sends nothing.");
@@ -280,25 +294,28 @@ describe("the first paid job guide", () => {
     expect(await follower.wrapped("worker.json")).toBe(net);
     const left = h.svm.getBalance(worker as Address) ?? 0n;
     expect(left > 0n && left < fees).toBe(true);
+    const copierLeft = h.svm.getBalance(copier as Address) ?? 0n;
+    expect(copierLeft > 0n && copierLeft < fees).toBe(true);
   });
 
-  it("pays the worker, not a copier that announces the same work before the release", async () => {
-    expect(PAGE).toContain("A copy announced before the release fails too: the judge pays only the wallet that announced the work first.");
-    const rightAnnounced = STEPS.findIndex((step) => "line" in step && step.line.startsWith("intent-engine deliver --keypair worker.json") && step.line.includes("right.mjs"));
-    const copierMade = STEPS.findIndex((step) => "line" in step && step.line.endsWith("-o copier.json"));
-    const copy = STEPS[copierMade + 1];
-    const pay = STEPS[rightAnnounced + 1];
-    if (copy === undefined || pay === undefined || !("line" in copy) || !("line" in pay)) {
-      throw new Error("the guide lost its copy or its pay step");
+  it("runs from a wallet that holds only the SOL it says it needs", async () => {
+    const need = /This guide needs ([\d.]+) SOL in your wallet\./.exec(PAGE)?.[1] ?? "missing";
+    expect(raw(need)).toBe(ENOUGH_TO_START);
+    const through = h.through;
+    if (through === null) {
+      throw new Error("the guide runs on a node");
     }
-    expect(verbOf(pay.line)).toBe("judge");
-    await follower.follow([...STEPS.slice(0, rightAnnounced + 1), STEPS[copierMade] as Step]);
-    h.svm.airdrop(follower.keys["copier.json"]?.address as Address, lamports(SOL / 100n));
-    const ran = await follower.follow([copy, pay]);
-    const [copied, paid] = ran.slice(-2);
-    expect(copied?.out).toMatchObject({ sent: true });
-    expect(paid?.out).toMatchObject({ verdict: "pass", payTo: follower.keys["worker.json"]?.address });
-    expect(await follower.wrapped("copier.json")).toBe(-1n);
+    h.through = { ...through, airdrop: async () => Promise.reject(new Error("429 Too Many Requests")) };
+    const setupAt = STEPS.findIndex((step) => "line" in step && verbOf(step.line) === "setup");
+    await follower.follow(STEPS.slice(0, setupAt + 1));
+    h.svm.airdrop(follower.values["address"] as Address, lamports(raw(need)));
+    const ran = await follower.follow(STEPS.slice(setupAt + 1));
+    expect(ran.filter((r) => r.code !== EXIT_OK).map((r) => r.line)).toEqual([
+      "intent-engine judge --owner <address> --nonce <nonce> --spec spec.md --artifact wrong.mjs --sandbox viper --yes",
+      "intent-engine deliver --keypair copier.json --intent <intent> --artifact right.mjs --work-url https://example.org/right.mjs --yes",
+      "intent-engine judge --owner <address> --nonce <nonce> --spec spec.md --artifact right.mjs --sandbox viper --yes",
+    ]);
+    expect(named(ran, "judge")[1]?.out).toMatchObject({ verdict: "pass", payTo: follower.keys["worker.json"]?.address });
     expect(await follower.wrapped("worker.json")).toBeGreaterThan(0n);
   });
 });
