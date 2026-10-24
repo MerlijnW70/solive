@@ -1,6 +1,10 @@
 use crate::pairs::{nums, Val};
 use crate::rng::{to_i64, to_u64, Rng};
 use intent_core::claim::{MAX_CLAIM_SECS, MAX_CLAIM_STAKE};
+use intent_core::delivery::{
+    BLOB_FIXED_LEN, BLOB_HEAD_LEN, BLOB_PER_RECIPIENT_LEN, BLOB_VERSION, FINGERPRINT_LEN,
+    MAX_BLOB_RECIPIENTS, MAX_BLOB_URL, MAX_SPLIT_RECIPIENTS, REFUTE_WINDOW_SECS,
+};
 use intent_core::mandate::{lane_of, MAX_LANE_SERIAL};
 use intent_core::nonce::Window;
 
@@ -337,4 +341,226 @@ pub fn required_out_gen(r: &mut Rng) -> Vec<Val> {
         Val::N(i128::from(amount_in)),
         Val::N(i128::from(to_i64(now))),
     ]
+}
+
+fn byte(r: &mut Rng) -> i128 {
+    match r.below(5) {
+        0 => i128::from(r.pick(&[0u8, 1, 0x7f, 0x80, 0xff], 0)),
+        _ => i128::from(r.below(256)),
+    }
+}
+
+fn bytes(r: &mut Rng, count: u64) -> Vec<i128> {
+    (0..count).map(|_| byte(r)).collect()
+}
+
+pub fn commitment_preimage_gen(r: &mut Rng) -> Vec<Val> {
+    (0..4).map(|_| Val::N(byte(r))).collect()
+}
+
+pub fn fingerprint_preimage_gen(r: &mut Rng) -> Vec<Val> {
+    vec![Val::N(byte(r))]
+}
+
+fn blob_url(r: &mut Rng) -> u64 {
+    let max = u64::try_from(MAX_BLOB_URL).unwrap_or(0);
+    match r.below(5) {
+        0 => r.pick(
+            &[
+                0,
+                1,
+                max.saturating_sub(1),
+                max,
+                max.saturating_add(1),
+                max.saturating_add(5),
+                max.saturating_add(6),
+            ],
+            1,
+        ),
+        1 => r.upto(max.saturating_add(50)),
+        _ => r.below(max).saturating_add(1),
+    }
+}
+
+pub fn blob_head_gen(r: &mut Rng) -> Vec<Val> {
+    if r.one_in(10) {
+        let len = r.upto(20);
+        return vec![Val::L(bytes(r, len))];
+    }
+    let most = u64::try_from(MAX_BLOB_RECIPIENTS).unwrap_or(0);
+    let version = if r.one_in(10) {
+        r.below(256)
+    } else {
+        u64::from(BLOB_VERSION)
+    };
+    let count = if r.one_in(6) {
+        r.pick(&[0, most.saturating_add(1), 255], 0)
+    } else {
+        r.below(most).saturating_add(1)
+    };
+    let mask = if r.one_in(6) {
+        r.below(256)
+    } else {
+        r.below(
+            1u64.checked_shl(u32::try_from(count).unwrap_or(8))
+                .unwrap_or(256)
+                .min(256),
+        )
+    };
+    let listed = count.min(most.saturating_add(1));
+    let fixed = u64::try_from(BLOB_FIXED_LEN.saturating_sub(BLOB_HEAD_LEN)).unwrap_or(0);
+    let per = u64::try_from(BLOB_PER_RECIPIENT_LEN.saturating_sub(FINGERPRINT_LEN)).unwrap_or(0);
+    let rest = fixed
+        .saturating_add(per.saturating_mul(listed))
+        .saturating_add(blob_url(r));
+    let fp_bytes = u64::try_from(FINGERPRINT_LEN).unwrap_or(0);
+    let mut out = vec![i128::from(version), i128::from(count), i128::from(mask)];
+    out.extend(bytes(r, listed.saturating_mul(fp_bytes)));
+    out.extend(bytes(r, rest));
+    match r.below(8) {
+        0 => {
+            let keep = usize::try_from(r.upto(u64::try_from(out.len()).unwrap_or(0))).unwrap_or(0);
+            out.truncate(keep);
+        }
+        1 => {
+            let extra = r.upto(10);
+            out.extend(bytes(r, extra));
+        }
+        _ => {}
+    }
+    vec![Val::L(out)]
+}
+
+pub fn may_announce_gen(r: &mut Rng) -> Vec<Val> {
+    let mut out = board_gen(r);
+    let holder = match out.get(1) {
+        Some(Val::N(w)) => *w,
+        _ => 0,
+    };
+    let announcer = if r.one_in(2) {
+        holder
+    } else {
+        i128::from(r.below(4))
+    };
+    out.push(Val::N(announcer));
+    out
+}
+
+pub fn ann_state_gen(r: &mut Rng) -> Vec<Val> {
+    let state = match r.below(3) {
+        0 => r.pick(&[0, 1, 2, 3, 127, 128, 254, 255], 0),
+        1 => r.below(2),
+        _ => r.below(256),
+    };
+    nums(&[state])
+}
+
+fn refute_time(r: &mut Rng) -> i64 {
+    let last = i128::from(i64::MAX).saturating_sub(i128::from(REFUTE_WINDOW_SECS));
+    match r.below(4) {
+        0 => to_i64(r.wobble(last, 2)),
+        1 => to_i64(r.wobble(1_700_000_000, 100_000)),
+        _ => r.i64(),
+    }
+}
+
+pub fn closable_gen(r: &mut Rng) -> Vec<Val> {
+    let state = r.below(2);
+    let by_worker = r.below(2);
+    let intent_open = r.below(2);
+    let expires_at = refute_time(r);
+    let paid_at = refute_time(r);
+    let from = if state == 1 { paid_at } else { expires_at };
+    let edge = i128::from(from).saturating_add(i128::from(REFUTE_WINDOW_SECS));
+    let now = match r.below(4) {
+        0 | 1 => to_i64(r.wobble(edge, 2)),
+        2 => to_i64(r.wobble(i128::from(from), 2)),
+        _ => r.i64(),
+    };
+    vec![
+        Val::N(i128::from(state)),
+        Val::N(i128::from(by_worker)),
+        Val::N(i128::from(intent_open)),
+        Val::N(i128::from(now)),
+        Val::N(i128::from(expires_at)),
+        Val::N(i128::from(paid_at)),
+    ]
+}
+
+pub fn refutes_gen(r: &mut Rng) -> Vec<Val> {
+    let paid = r.u64();
+    let earlier = match r.below(4) {
+        0 => to_u64(r.wobble(i128::from(paid), 1)),
+        1 => r.upto(paid),
+        2 => paid.saturating_sub(1),
+        _ => r.u64(),
+    };
+    let worker = r.below(4);
+    let len = r.upto(4);
+    let payees = (0..len).map(|_| i128::from(r.below(4))).collect();
+    vec![
+        Val::N(i128::from(earlier)),
+        Val::N(i128::from(paid)),
+        Val::N(i128::from(worker)),
+        Val::L(payees),
+    ]
+}
+
+pub fn split_hash_preimage_gen(r: &mut Rng) -> Vec<Val> {
+    let most = u64::try_from(MAX_SPLIT_RECIPIENTS).unwrap_or(0);
+    let n = match r.below(4) {
+        0 => r.pick(&[0, 1, most, most.saturating_add(1), 16], 1),
+        _ => r.upto(most),
+    };
+    let weighted = match r.below(6) {
+        0 => to_u64(r.wobble(i128::from(n), 1)),
+        1 => r.upto(most.saturating_add(2)),
+        _ => n,
+    };
+    let recipients = bytes(r, n);
+    let weights = (0..weighted).map(|_| i128::from(r.bps())).collect();
+    vec![Val::L(recipients), Val::L(weights)]
+}
+
+fn revision(r: &mut Rng) -> i128 {
+    match r.below(3) {
+        0 => i128::from(r.pick(&[0u32, 1, u32::MAX - 1, u32::MAX], 0)),
+        1 => i128::from(r.below(1_000)),
+        _ => i128::from(r.next().checked_shr(32).unwrap_or(0)),
+    }
+}
+
+fn terms(r: &mut Rng) -> Vec<Val> {
+    vec![
+        Val::N(i128::from(r.amount())),
+        Val::N(i128::from(r.u64())),
+        Val::N(i128::from(r.u64())),
+        Val::N(revision(r)),
+        Val::N(i128::from(r.bps())),
+    ]
+}
+
+fn opening(r: &mut Rng) -> Vec<Val> {
+    vec![
+        Val::N(byte(r)),
+        Val::N(i128::from(r.u64())),
+        Val::N(byte(r)),
+        Val::N(byte(r)),
+    ]
+}
+
+pub fn attested_delivery_preimage_gen(r: &mut Rng) -> Vec<Val> {
+    let mut out: Vec<Val> = (0..4).map(|_| Val::N(byte(r))).collect();
+    out.extend(terms(r));
+    out.extend([Val::N(byte(r)), Val::N(byte(r))]);
+    out.extend(opening(r));
+    out
+}
+
+pub fn attested_split_delivery_preimage_gen(r: &mut Rng) -> Vec<Val> {
+    let mut out: Vec<Val> = (0..3).map(|_| Val::N(byte(r))).collect();
+    out.extend(terms(r));
+    out.extend([Val::N(byte(r)), Val::N(byte(r)), Val::N(byte(r))]);
+    out.extend(opening(r));
+    out
 }

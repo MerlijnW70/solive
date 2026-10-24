@@ -1,22 +1,18 @@
-import {
-  type Address,
-  getAddressEncoder,
-  type Instruction,
-  type MessagePartialSigner,
-} from "@solana/kit";
+import type { Address, Instruction, MessagePartialSigner } from "@solana/kit";
 import { INTENT_ENGINE_PROGRAM_ADDRESS } from "../generated/client/index.js";
+import { ascii, compareKeys, concat, i64le, key, sized, u16le, u32le, u64le } from "./bytes.js";
 import { checkFlags, EXT_MAX_LEN, FILL_EXT_TAGS, partnerOf, validateExt } from "./ext.js";
-import { I64_MAX, I64_MIN, PARAMS_LEN } from "./kinds.js";
-import { U64_MAX } from "./math.js";
+import { PARAMS_LEN } from "./kinds.js";
 
 export const ED25519_PROGRAM_ADDRESS =
   "Ed25519SigVerify111111111111111111111111111" as Address<"Ed25519SigVerify111111111111111111111111111">;
 
-const ascii = (s: string) => new TextEncoder().encode(s);
 export const INTENT_TAG = ascii("intent-engine-v1");
 export const ATTEST_TAG = ascii("intent-engine-at");
 export const ATTEST_PROOF_TAG = ascii("intent-engine-pf");
 export const ATTEST_SPLIT_TAG = ascii("intent-engine-sp");
+export const ATTEST_DELIVERY_TAG = ascii("intent-engine-dl");
+export const ATTEST_SPLIT_DELIVERY_TAG = ascii("intent-engine-sd");
 export const SPLIT_COSIGN_TAG = ascii("intent-engine-split-cosigner\0\0\0\0");
 export const OFFCHAIN_PREFIX = new Uint8Array([0xff, ...ascii("solana offchain")]);
 export const PREIMAGE_LEN = 448;
@@ -24,44 +20,10 @@ export const ENVELOPE_LEN = 114;
 export const ATTEST_PREIMAGE_LEN = 206;
 export const ATTEST_PROOF_PREIMAGE_LEN = 238;
 export const ATTEST_SPLIT_PREIMAGE_LEN = 238;
+export const ATTEST_DELIVERY_PREIMAGE_LEN = 326;
+export const ATTEST_SPLIT_DELIVERY_PREIMAGE_LEN = 326;
 export const MAX_COSIGNERS = 16;
 export const COSIGN_KEYS_AT = 18;
-
-const key = (a: Address) => getAddressEncoder().encode(a);
-
-function u64le(v: bigint): Uint8Array {
-  if (v < 0n || v > U64_MAX) {
-    throw new RangeError(`${v} is outside u64`);
-  }
-  const out = new Uint8Array(8);
-  new DataView(out.buffer).setBigUint64(0, v, true);
-  return out;
-}
-
-function i64le(v: bigint): Uint8Array {
-  if (v < I64_MIN || v > I64_MAX) {
-    throw new RangeError(`${v} is outside i64`);
-  }
-  const out = new Uint8Array(8);
-  new DataView(out.buffer).setBigInt64(0, v, true);
-  return out;
-}
-
-function u32le(v: number): Uint8Array {
-  if (!Number.isInteger(v) || v < 0 || v > 0xffff_ffff) {
-    throw new RangeError(`${v} is outside u32`);
-  }
-  const out = new Uint8Array(4);
-  new DataView(out.buffer).setUint32(0, v, true);
-  return out;
-}
-
-function u16le(v: number): Uint8Array {
-  if (!Number.isInteger(v) || v < 0 || v > 0xffff) {
-    throw new RangeError(`${v} is outside u16`);
-  }
-  return Uint8Array.of(v & 0xff, v >> 8);
-}
 
 function kindWord(kind: number, flags: number): number[] {
   if (!Number.isInteger(kind) || kind < 0 || kind > 255) {
@@ -71,19 +33,6 @@ function kindWord(kind: number, flags: number): number[] {
     throw new RangeError(`${flags} is not a u16 flag set`);
   }
   return [kind, flags & 0xff, flags >> 8, 0, 0, 0, 0, 0];
-}
-
-function concat(parts: ArrayLike<number>[], length: number): Uint8Array {
-  const out = new Uint8Array(length);
-  let at = 0;
-  for (const p of parts) {
-    out.set(p, at);
-    at += p.length;
-  }
-  if (at !== length) {
-    throw new RangeError(`expected ${length} bytes, built ${at}`);
-  }
-  return out;
 }
 
 export type SignedIntentFields = {
@@ -143,10 +92,6 @@ const hexOf = (digest: Uint8Array) => ascii(Array.from(digest, (b) => b.toString
 
 export function offchainEnvelope(signer: Address, digest: Uint8Array): Uint8Array {
   return concat([OFFCHAIN_PREFIX, [1, 1], key(signer), hexOf(digest)], ENVELOPE_LEN);
-}
-
-function compareKeys(a: ArrayLike<number>, b: ArrayLike<number>): number {
-  return Array.from(b, (byte, i) => (a[i] ?? 0) - byte).find((d) => d !== 0) ?? 0;
 }
 
 export function cosignerSet(keys: readonly Address[]): Address[] {
@@ -342,6 +287,65 @@ export async function attestedSplitDigest(f: AttestedSplitFields): Promise<Uint8
 
 export async function attestedSplitMessage(f: AttestedSplitFields, cosigners: readonly Address[]): Promise<Uint8Array> {
   return cosignEnvelope(cosigners, await attestedSplitDigest(f));
+}
+
+export type AttestedDeliveryFields = Omit<AttestedFillFields, "ext"> & {
+  extHash: Uint8Array;
+  specHash: Uint8Array;
+  announcement: Address;
+  seq: bigint;
+  delivered: Uint8Array;
+  salt: Uint8Array;
+};
+
+export type AttestedSplitDeliveryFields = Omit<AttestedDeliveryFields, "payee"> & { splitHash: Uint8Array };
+
+export function attestedDeliveryPreimage(f: AttestedDeliveryFields): Uint8Array {
+  return concat(
+    [
+      ATTEST_DELIVERY_TAG,
+      key(f.program ?? INTENT_ENGINE_PROGRAM_ADDRESS),
+      sized("domain", f.domain, 32),
+      key(f.intent),
+      key(f.payee),
+      u64le(f.amountIn),
+      u64le(f.result),
+      u64le(f.filled ?? 0n),
+      u32le(f.revision ?? 0),
+      u16le(f.maxFeeBps),
+      sized("extHash", f.extHash, 32),
+      sized("specHash", f.specHash, 32),
+      key(f.announcement),
+      u64le(f.seq),
+      sized("delivered", f.delivered, 32),
+      sized("salt", f.salt, 16),
+    ],
+    ATTEST_DELIVERY_PREIMAGE_LEN,
+  );
+}
+
+export function attestedSplitDeliveryPreimage(f: AttestedSplitDeliveryFields): Uint8Array {
+  return concat(
+    [
+      ATTEST_SPLIT_DELIVERY_TAG,
+      key(f.program ?? INTENT_ENGINE_PROGRAM_ADDRESS),
+      sized("domain", f.domain, 32),
+      key(f.intent),
+      u64le(f.amountIn),
+      u64le(f.result),
+      u64le(f.filled ?? 0n),
+      u32le(f.revision ?? 0),
+      u16le(f.maxFeeBps),
+      sized("extHash", f.extHash, 32),
+      sized("specHash", f.specHash, 32),
+      sized("splitHash", f.splitHash, 32),
+      key(f.announcement),
+      u64le(f.seq),
+      sized("delivered", f.delivered, 32),
+      sized("salt", f.salt, 16),
+    ],
+    ATTEST_SPLIT_DELIVERY_PREIMAGE_LEN,
+  );
 }
 
 export function ed25519Header(messageLength: number): Uint8Array {

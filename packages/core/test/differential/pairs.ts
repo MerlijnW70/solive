@@ -1,11 +1,13 @@
 import { type Address, getAddressDecoder } from "@solana/kit";
 import { splitN } from "../../src/bounty.js";
-import { type BoardView, checkClaimTerms, claimUntil, stakeReceiverOnCancel, stakeReceiverOnRelease, stakeReceiverOnSettle } from "../../src/claims.js";
+import { type BoardView, checkClaimTerms, claimSlot, claimUntil, stakeReceiverOnCancel, stakeReceiverOnRelease, stakeReceiverOnSettle } from "../../src/claims.js";
+import { blobHead, closable, commitmentPreimage, decodeAnnState, encodeAnnState, fingerprintPreimage, mayAnnounce, refutes, splitHashPreimage } from "../../src/delivery.js";
 import { IntentCoreError } from "../../src/errors.js";
 import { releaseSettles, splitFee, splitFees } from "../../src/fee.js";
 import { type IntentParams, Kind, requiredOut, validate } from "../../src/kinds.js";
 import { inLane, mandateLane } from "../../src/mandate.js";
 import { mulDivCeil, mulDivFloor } from "../../src/math.js";
+import { attestedDeliveryPreimage, attestedSplitDeliveryPreimage } from "../../src/sig.js";
 import { nextFreeNonce } from "../../src/state.js";
 
 type Args = readonly string[];
@@ -38,6 +40,61 @@ const keyIndex = (address: Address | null): string => (address === null ? "none"
 const orNone = (value: bigint | null): string => (value === null ? "none" : String(value));
 
 const board = (args: Args): BoardView => ({ owner: key(arg(args, 0)), worker: key(arg(args, 1)), until: big(args, 2), held: 0n });
+const filled = (args: Args, i: number, length: number): Uint8Array => new Uint8Array(length).fill(num(args, i));
+const wallet = (byte: string): Address => getAddressDecoder().decode(new Uint8Array(32).fill(Number(byte)));
+const hex = (bytes: Uint8Array): string => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+
+function blobHeadAnswer(args: Args): string {
+  const head = blobHead(Uint8Array.from(list(args, 0).map(Number)));
+  return `${head.count} ${head.mask} ${head.fps.map(hex).join("")} ${head.urlLen}`;
+}
+
+function splitHashAnswer(args: Args): string {
+  const { bytes, len } = splitHashPreimage(list(args, 0).map(wallet), list(args, 1).map(Number));
+  return `${hex(bytes)} ${len}`;
+}
+
+const attestedDelivery = (a: Args): string =>
+  hex(
+    attestedDeliveryPreimage({
+      program: wallet(arg(a, 0)),
+      domain: filled(a, 1, 32),
+      intent: wallet(arg(a, 2)),
+      payee: wallet(arg(a, 3)),
+      amountIn: big(a, 4),
+      result: big(a, 5),
+      filled: big(a, 6),
+      revision: num(a, 7),
+      maxFeeBps: num(a, 8),
+      extHash: filled(a, 9, 32),
+      specHash: filled(a, 10, 32),
+      announcement: wallet(arg(a, 11)),
+      seq: big(a, 12),
+      delivered: filled(a, 13, 32),
+      salt: filled(a, 14, 16),
+    }),
+  );
+
+const attestedSplitDelivery = (a: Args): string =>
+  hex(
+    attestedSplitDeliveryPreimage({
+      program: wallet(arg(a, 0)),
+      domain: filled(a, 1, 32),
+      intent: wallet(arg(a, 2)),
+      amountIn: big(a, 3),
+      result: big(a, 4),
+      filled: big(a, 5),
+      revision: num(a, 6),
+      maxFeeBps: num(a, 7),
+      extHash: filled(a, 8, 32),
+      specHash: filled(a, 9, 32),
+      splitHash: filled(a, 10, 32),
+      announcement: wallet(arg(a, 11)),
+      seq: big(a, 12),
+      delivered: filled(a, 13, 32),
+      salt: filled(a, 14, 16),
+    }),
+  );
 
 function intentOf(args: Args): IntentParams {
   const kind = num(args, 0);
@@ -78,6 +135,25 @@ const PAIRS: Record<string, Run> = {
   in_lane: (a) => String(inLane(big(a, 0), big(a, 1))),
   next_free: (a) => orNone(nextFreeNonce({ nonceBase: big(a, 0), nonceBitmap: [1, 2, 3, 4].map((i) => big(a, i)) })),
   required_out: (a) => String(requiredOut(validate(intentOf(a)), big(a, 6), big(a, 7))),
+  commitment_preimage: (a) => hex(commitmentPreimage(wallet(arg(a, 0)), wallet(arg(a, 1)), filled(a, 2, 16), filled(a, 3, 32))),
+  fingerprint_preimage: (a) => hex(fingerprintPreimage(filled(a, 0, 32))),
+  blob_head: blobHeadAnswer,
+  may_announce: (a) => {
+    mayAnnounce(claimSlot({ worker: key(arg(a, 1)), until: big(a, 2) }, big(a, 3)), key(arg(a, 4)));
+    return "done";
+  },
+  ann_state: (a) => String(encodeAnnState(decodeAnnState(num(a, 0)))),
+  closable: (a) => {
+    closable(decodeAnnState(num(a, 0)), arg(a, 1) === "1", arg(a, 2) === "1", big(a, 3), big(a, 4), big(a, 5));
+    return "done";
+  },
+  refutes: (a) => {
+    refutes(big(a, 0), big(a, 1), key(arg(a, 2)), list(a, 3).map(key));
+    return "done";
+  },
+  split_hash_preimage: splitHashAnswer,
+  attested_delivery_preimage: attestedDelivery,
+  attested_split_delivery_preimage: attestedSplitDelivery,
 };
 
 export function answer(line: string): string {

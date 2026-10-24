@@ -5,6 +5,7 @@ export * from "./builders.js";
 export * from "./claim-list.js";
 export * from "./claims.js";
 export * from "./committee.js";
+export * as delivery from "./delivery.js";
 export * from "./compute.js";
 export * from "./describe.js";
 export * from "./errors.js";

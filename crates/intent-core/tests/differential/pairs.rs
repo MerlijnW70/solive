@@ -1,18 +1,26 @@
 use crate::gen::{
-    board_gen, claim_terms_gen, claim_until_gen, in_lane_gen, lane_of_gen, mul_div_gen,
-    next_free_gen, release_settles_gen, required_out_gen, split_fee_gen, split_fees_gen,
-    split_n_gen, stake_on_release_gen, stake_on_settle_gen,
+    ann_state_gen, attested_delivery_preimage_gen, attested_split_delivery_preimage_gen,
+    blob_head_gen, board_gen, claim_terms_gen, claim_until_gen, closable_gen,
+    commitment_preimage_gen, fingerprint_preimage_gen, in_lane_gen, lane_of_gen, may_announce_gen,
+    mul_div_gen, next_free_gen, refutes_gen, release_settles_gen, required_out_gen, split_fee_gen,
+    split_fees_gen, split_hash_preimage_gen, split_n_gen, stake_on_release_gen,
+    stake_on_settle_gen,
 };
 use crate::rng::{to_i64, to_u64, Rng};
 use intent_core::bounty::split_n;
 use intent_core::claim::{
     stake_on_cancel, stake_on_release, stake_on_settle, Slot, StakeTo, Terms,
 };
+use intent_core::delivery::{
+    blob_head, closable, commitment_preimage, fingerprint_preimage, may_announce, refutes,
+    split_hash_preimage, AnnState,
+};
 use intent_core::fee::{release_settles, split_fee, split_fees};
 use intent_core::kinds::{dutch_auction, limit_order, swap_exact_in, Intent};
 use intent_core::mandate::{in_lane, lane_of};
 use intent_core::math::{mul_div_ceil, mul_div_floor};
 use intent_core::nonce::Window;
+use intent_core::sig::{AttestedDelivery, AttestedSplitDelivery};
 use intent_core::Error;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -137,6 +145,90 @@ fn release_rust(a: &[Val]) -> String {
     }
 }
 
+fn byte(v: i128) -> u8 {
+    u8::try_from(v).unwrap_or(0)
+}
+
+fn fill<const N: usize>(args: &[Val], i: usize) -> [u8; N] {
+    [byte(n(args, i)); N]
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn keys(args: &[Val], i: usize) -> Vec<[u8; 32]> {
+    l(args, i).into_iter().map(key).collect()
+}
+
+fn blob_head_rust(a: &[Val]) -> String {
+    let bytes: Vec<u8> = l(a, 0).into_iter().map(byte).collect();
+    outcome(blob_head(&bytes), |h| {
+        format!(
+            "{} {} {} {}",
+            h.count,
+            h.mask,
+            hex(h.fps.as_flattened()),
+            h.url_len
+        )
+    })
+}
+
+fn closable_rust(a: &[Val]) -> String {
+    let r = AnnState::try_from(byte(n(a, 0)))
+        .and_then(|state| closable(state, n(a, 1) == 1, n(a, 2) == 1, s(a, 3), s(a, 4), s(a, 5)));
+    outcome(r, |()| "done".to_string())
+}
+
+fn split_hash_rust(a: &[Val]) -> String {
+    let weights: Vec<u16> = l(a, 1).into_iter().map(w).collect();
+    outcome(split_hash_preimage(&keys(a, 0), &weights), |(out, len)| {
+        format!("{} {len}", hex(&out))
+    })
+}
+
+fn attested_delivery_rust(a: &[Val]) -> String {
+    let p = AttestedDelivery {
+        program: fill(a, 0),
+        domain: fill(a, 1),
+        intent: fill(a, 2),
+        payee: fill(a, 3),
+        amount_in: u(a, 4),
+        result: u(a, 5),
+        filled: u(a, 6),
+        revision: secs(n(a, 7)),
+        max_fee_bps: w(n(a, 8)),
+        ext_hash: fill(a, 9),
+        spec_hash: fill(a, 10),
+        announcement: fill(a, 11),
+        seq: u(a, 12),
+        delivered: fill(a, 13),
+        salt: fill(a, 14),
+    };
+    format!("ok {}", hex(&p.preimage()))
+}
+
+fn attested_split_delivery_rust(a: &[Val]) -> String {
+    let p = AttestedSplitDelivery {
+        program: fill(a, 0),
+        domain: fill(a, 1),
+        intent: fill(a, 2),
+        amount_in: u(a, 3),
+        result: u(a, 4),
+        filled: u(a, 5),
+        revision: secs(n(a, 6)),
+        max_fee_bps: w(n(a, 7)),
+        ext_hash: fill(a, 8),
+        spec_hash: fill(a, 9),
+        split_hash: fill(a, 10),
+        announcement: fill(a, 11),
+        seq: u(a, 12),
+        delivered: fill(a, 13),
+        salt: fill(a, 14),
+    };
+    format!("ok {}", hex(&p.preimage()))
+}
+
 pub const PAIRS: &[Pair] = &[
     Pair {
         name: "mul_div_floor",
@@ -251,6 +343,81 @@ pub const PAIRS: &[Pair] = &[
         name: "required_out",
         gen: required_out_gen,
         rust: required_out,
+        same_refusal: &[],
+    },
+    Pair {
+        name: "commitment_preimage",
+        gen: commitment_preimage_gen,
+        rust: |a| {
+            let p = commitment_preimage(&fill(a, 0), &fill(a, 1), &fill(a, 2), &fill(a, 3));
+            format!("ok {}", hex(&p))
+        },
+        same_refusal: &[],
+    },
+    Pair {
+        name: "fingerprint_preimage",
+        gen: fingerprint_preimage_gen,
+        rust: |a| format!("ok {}", hex(&fingerprint_preimage(&fill(a, 0)))),
+        same_refusal: &[],
+    },
+    Pair {
+        name: "blob_head",
+        gen: blob_head_gen,
+        rust: blob_head_rust,
+        same_refusal: &[],
+    },
+    Pair {
+        name: "may_announce",
+        gen: may_announce_gen,
+        rust: |a| {
+            outcome(may_announce(slot_of(a), key(n(a, 4))), |()| {
+                "done".to_string()
+            })
+        },
+        same_refusal: &[],
+    },
+    Pair {
+        name: "ann_state",
+        gen: ann_state_gen,
+        rust: |a| {
+            outcome(AnnState::try_from(byte(n(a, 0))), |st| {
+                u8::from(st).to_string()
+            })
+        },
+        same_refusal: &[],
+    },
+    Pair {
+        name: "closable",
+        gen: closable_gen,
+        rust: closable_rust,
+        same_refusal: &[],
+    },
+    Pair {
+        name: "refutes",
+        gen: refutes_gen,
+        rust: |a| {
+            outcome(refutes(u(a, 0), u(a, 1), key(n(a, 2)), &keys(a, 3)), |()| {
+                "done".to_string()
+            })
+        },
+        same_refusal: &[],
+    },
+    Pair {
+        name: "split_hash_preimage",
+        gen: split_hash_preimage_gen,
+        rust: split_hash_rust,
+        same_refusal: &[],
+    },
+    Pair {
+        name: "attested_delivery_preimage",
+        gen: attested_delivery_preimage_gen,
+        rust: attested_delivery_rust,
+        same_refusal: &[],
+    },
+    Pair {
+        name: "attested_split_delivery_preimage",
+        gen: attested_split_delivery_preimage_gen,
+        rust: attested_split_delivery_rust,
         same_refusal: &[],
     },
 ];
