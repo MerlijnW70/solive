@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { type Address, getBase16Decoder } from "@solana/kit";
-import { buildCreateCommittee, committeeEnvelope, getCommitteeSize, IntentCoreError, MAX_COMMITTEE_MEMBERS, MAX_COMMITTEE_THRESHOLD, releaseMemo } from "@intent-engine/core";
-import { ClaimHeldBy, type CommitteeBallot, createClient, deliveryRecord, firstDelivery, NotSettleable, VoteRejected } from "@intent-engine/client";
+import { buildCreateCommittee, committeeEnvelope, decodeParams, findIntentPda, Kind, getCommitteeSize, IntentCoreError, MAX_COMMITTEE_MEMBERS, MAX_COMMITTEE_THRESHOLD } from "@intent-engine/core";
+import { type CommitteeBallot, createClient, intentAt, VoteRejected } from "@intent-engine/client";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { tool } from "../names.js";
@@ -12,9 +12,9 @@ import { prepare } from "../prepare.js";
 import { rentFor, rentRate } from "../budget.js";
 import { sol } from "./costs.js";
 import { deviceOutput, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of, walletOpeners } from "./guard.js";
-import { openingOutput, openingPayerOf, openingsFor, sendOpenings, skippedOf } from "./openings.js";
-import { ATTEST_PAGES, DELIVERED_NEEDED, HISTORY_TOO_LONG, MAX_ATTEST_PAGES, MAX_PAGES_INPUT, notEarliest, confirmedRelease } from "./delivery.js";
-import { backedOrReceived, claimHeldBy, DEVICE_DIGEST, invitedPayees, receivedOutside, RELEASE_CHANGED } from "./attest.js";
+import { firstOpeningFor, skippedField, skippedOutput } from "./openings.js";
+import { confirmedRelease } from "./delivery.js";
+import { DEVICE_DIGEST, invitedPayees, RELEASE_CHANGED, settleRefused } from "./attest.js";
 
 export const VOTE_CHANGED = "this vote differs from its preview: the escrow, payee, result or delivered work changed, or no approval was given; preview it again and show the user";
 
@@ -31,64 +31,53 @@ const hex = (bytes: Uint8Array) => getBase16Decoder().decode(bytes).toLowerCase(
 const ballotInput = {
   owner: account("the wallet that made the escrow"),
   nonce: amount("the escrow intent's nonce"),
-  pay_to: account("the wallet the release pays"),
   result: amount("the result the release attests, between the intent's min_result and max_result"),
-  delivered_sha256: text("the sha256, as 64 hex digits, of the work the release pays for; its earliest announcer must be pay_to"),
-  received_outside_announcement: receivedOutside,
-  max_pages: optional(integer(1, MAX_ATTEST_PAGES, MAX_PAGES_INPUT)),
+  delivered_sha256: text(`the sha256, as 64 hex digits, of the work the release pays for, as ${tool("wallet_fetch_work")} shows it; the release pays the first announcement that opens to it`),
 };
 
-type BallotArgs = { owner: Address; nonce: bigint; pay_to: Address; result: bigint; delivered_sha256: string; received_outside_announcement?: boolean | undefined; max_pages?: number | undefined };
+type BallotArgs = { owner: Address; nonce: bigint; result: bigint; delivered_sha256: string };
 
 async function ballotOf(ctx: AgentContext, input: BallotArgs, judge: Address, device: boolean, voting: boolean) {
   const client = createClient({ url: ctx.url ?? "", transport: ctx.transport });
-  const target = { owner: input.owner, nonce: input.nonce, payTo: input.pay_to, result: input.result };
-  let ballot: CommitteeBallot;
-  try {
-    ballot = await client.committeeBallot(target);
-  } catch (error) {
-    if (error instanceof ClaimHeldBy) {
-      throw new AgentRefusal("ClaimHeld", claimHeldBy(error.worker, error.until));
+  const delivered = sha256Of(input.delivered_sha256, "delivered_sha256");
+  const [intent] = await findIntentPda({ owner: input.owner, nonce: input.nonce });
+  if (voting) {
+    const held = await intentAt(ctx.transport, intent);
+    const params = held === null ? null : decodeParams(held.kind, Uint8Array.from(held.params));
+    const judging = params === null || params.kind !== Kind.AttestedResult ? null : await client.committee(params.attestor);
+    if (judging !== null && !judging.members.includes(judge)) {
+      throw new AgentRefusal("Unauthorized", NOT_A_MEMBER);
     }
-    if (error instanceof NotSettleable) {
-      throw new AgentRefusal("KindMismatch", error.message);
-    }
-    throw error;
   }
+  const { opening, skipped } = await firstOpeningFor(ctx, judge, intent, delivered, device);
+  const target = { owner: input.owner, nonce: input.nonce, announcement: opening.announcement, opening: { sha256: delivered, salt: opening.salt }, result: input.result };
+  const ballot: CommitteeBallot = await client.committeeBallot(target).catch(settleRefused);
   if (voting && !ballot.committee.members.includes(judge)) {
     throw new AgentRefusal("Unauthorized", NOT_A_MEMBER);
   }
-  await invitedPayees(ctx, ballot.intent, [input.pay_to]);
-  const delivered = sha256Of(input.delivered_sha256, "delivered_sha256");
-  const keypair = await walletOpeners(ctx);
-  const record = await deliveryRecord(ctx.transport, ballot.committee.address, ballot.intent, input.max_pages ?? ATTEST_PAGES, keypair);
-  if (!record.complete) {
-    throw new AgentRefusal("HistoryTooLong", HISTORY_TOO_LONG);
-  }
-  const first = firstDelivery(record.deliveries, delivered);
-  const passed = await skippedOf(ctx, { judge, intent: ballot.intent, device, recipients: ballot.committee.members, record, first, openers: keypair });
-  if (first !== null && first.worker !== input.pay_to) {
-    throw new AgentRefusal("NotEarliestAnnouncer", notEarliest(first.worker, delivered));
-  }
-  backedOrReceived(first, ballot.intent, delivered, input.received_outside_announcement);
-  const confirmed = { intent: ballot.intent, attestor: ballot.committee.address, sha256: delivered, pages: input.max_pages ?? ATTEST_PAGES, payees: [input.pay_to], keypair };
-  await confirmedRelease(ctx, confirmed);
-  return { client, target, ballot, delivered, salt: first?.salt, openings: openingsFor(record, first), passed };
+  await invitedPayees(ctx, ballot.intent, [opening.worker]);
+  await confirmedRelease(ctx, { intent: ballot.intent, attestor: ballot.committee.address, sha256: delivered, payees: [opening.worker], keypair: await walletOpeners(ctx) });
+  return { client, target, ballot, delivered, opening, skipped };
 }
 
-const ballotApproval = (ballot: CommitteeBallot, delivered: string, salt: string | undefined) =>
-  createHash("sha256").update(ballot.digest).update(releaseMemo(delivered, salt)).digest("hex").slice(0, 16);
+const ballotApproval = (ballot: CommitteeBallot) => createHash("sha256").update(ballot.digest).digest("hex").slice(0, 16);
 
-const ballotLines = (ballot: CommitteeBallot, input: BallotArgs, delivered: string) => [
-  `Releases: escrow ${ballot.intent} to ${input.pay_to} with result ${input.result}`,
+const ballotLines = (ballot: CommitteeBallot, input: BallotArgs, delivered: string, worker: Address, announcement: Address) => [
+  `Releases: escrow ${ballot.intent} to ${worker}, who made the announcement ${announcement}, with result ${input.result}`,
   `Pays for: the work with sha256 ${delivered}`,
   `Judged by: committee ${ballot.committee.address}, any ${ballot.committee.threshold} of its ${ballot.committee.members.length} members`,
 ];
 
+const announced = {
+  announcement: account("the announcement the release pays"),
+  worker: account("the wallet the release pays"),
+  seq: amount(),
+};
+
 export const walletCommitteeVote = define({
   name: tool("wallet_committee_vote"),
   title: "Vote on a release as a committee member",
-  description: `Votes, as a member of an escrow's judging committee, that it pays pay_to for the work with delivered_sha256. A team judges together: each member checks the work against the spec and votes; the signed vote is not sent but given to whoever releases with ${tool("wallet_committee_release")}. ${PREVIEW_APPROVAL}`,
+  description: `Votes, as a member of an escrow's judging committee, that it pays the first announcement that opens to delivered_sha256. A team judges together: each member checks the work against the spec and votes; the signed vote is not sent but given to whoever releases with ${tool("wallet_committee_release")}. ${PREVIEW_APPROVAL}`,
   effect: "submit",
   input: object({
     ...ballotInput,
@@ -98,19 +87,30 @@ export const walletCommitteeVote = define({
   output: object({
     intent: account(),
     committee: account(),
+    ...announced,
     approval: text(),
     digest: text(DEVICE_DIGEST),
     summary: list(text(), 8),
     signed: flag(),
     vote: optional(object({ member: account(), signature: text("the member's ed25519 signature as 128 hex digits") })),
     next: optional(text()),
-    skipped: openingOutput.skipped,
+    skipped: skippedOutput,
   }),
   run: async (ctx: AgentContext, input) => {
     const signer = await signerOf(ctx);
-    const { ballot, delivered, salt, passed } = await ballotOf(ctx, input, signer.address, signer.device !== undefined, true);
-    const approval = ballotApproval(ballot, delivered, salt);
-    const shown = { intent: ballot.intent, committee: ballot.committee.address, approval, digest: hex(ballot.digest), summary: ballotLines(ballot, input, delivered), ...passed };
+    const { ballot, delivered, opening, skipped } = await ballotOf(ctx, input, signer.address, signer.device !== undefined, true);
+    const approval = ballotApproval(ballot);
+    const shown = {
+      intent: ballot.intent,
+      committee: ballot.committee.address,
+      announcement: opening.announcement,
+      worker: opening.worker,
+      seq: opening.seq,
+      approval,
+      digest: hex(ballot.digest),
+      summary: ballotLines(ballot, input, delivered, opening.worker, opening.announcement),
+      ...skippedField(skipped),
+    };
     if (input.send !== true) {
       return { ...shown, signed: false, next: `call again with send: true and this approval to sign the vote, then pass it to ${tool("wallet_committee_release")}` };
     }
@@ -125,7 +125,7 @@ export const walletCommitteeVote = define({
 export const walletCommitteeRelease = define({
   name: tool("wallet_committee_release"),
   title: "Release an escrow on its committee's votes",
-  description: `Pays a worker once a judging committee agrees: any one wallet collects the members' votes from ${tool("wallet_committee_vote")}, at least the committee's threshold, and submits them to release the escrow, recording the delivered work's sha256. Every vote is checked before sending. This wallet pays the fee. ${PREVIEW_APPROVAL}`,
+  description: `Pays a worker once a judging committee agrees: any one wallet collects the members' votes from ${tool("wallet_committee_vote")}, at least the committee's threshold, and submits them to pay the announcement they voted on. Every vote is checked before sending. This wallet pays the fee. ${PREVIEW_APPROVAL}`,
   effect: "submit",
   input: object({
     ...ballotInput,
@@ -136,10 +136,11 @@ export const walletCommitteeRelease = define({
   output: object({
     intent: account(),
     committee: account(),
+    ...announced,
     signers: list(account(), 8),
     approval: text(),
     ...deviceOutput,
-    ...openingOutput,
+    skipped: skippedOutput,
     summary: list(text(), 8),
     sent: flag(),
     signature: optional(text()),
@@ -147,7 +148,7 @@ export const walletCommitteeRelease = define({
   }),
   run: async (ctx: AgentContext, input, call: Call) => {
     const signer = await signerOf(ctx);
-    const { client, target, ballot, delivered, salt, openings, passed } = await ballotOf(ctx, input, signer.address, false, false);
+    const { client, target, ballot, delivered, opening, skipped } = await ballotOf(ctx, input, signer.address, false, false);
     const votes = input.votes.map((vote, i) => {
       if (!/^[0-9a-fA-F]{128}$/.test(vote.signature)) {
         throw new InvalidInput([{ path: `votes.${i}.signature`, message: "give the signature as 128 hex digits" }]);
@@ -156,19 +157,18 @@ export const walletCommitteeRelease = define({
     });
     let release;
     try {
-      release = await client.prepareCommitteeRelease({ ...target, solver: signer, votes, deliveredSha256: delivered, ...(salt === undefined ? {} : { deliveredSalt: salt }) });
+      release = await client.prepareCommitteeRelease({ ...target, solver: signer, votes });
     } catch (error) {
       if (error instanceof VoteRejected) {
         throw new AgentRefusal("SigMessage", error.message);
       }
-      throw error;
+      return settleRefused(error);
     }
-    const approval = ballotApproval(ballot, delivered, salt);
+    const approval = ballotApproval(ballot);
     if (input.send === true && input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", RELEASE_CHANGED);
     }
     const device = signer.device !== undefined;
-    const opener = device && openings.length > 0 ? await openingPayerOf(ctx) : signer;
     if (input.send === true && release.setup.length > 0 && !device) {
       await ctx.transport.send(release.setup, signer);
     }
@@ -177,20 +177,23 @@ export const walletCommitteeRelease = define({
     const view = {
       intent: release.intent,
       committee: release.committee.address,
+      announcement: opening.announcement,
+      worker: opening.worker,
+      seq: opening.seq,
       signers: release.signers,
       approval,
+      ...skippedField(skipped),
       summary: [
-        ...ballotLines(ballot, input, delivered),
+        ...ballotLines(ballot, input, delivered, opening.worker, opening.announcement),
         `Signed by: ${release.signers.length} of its members, ${release.signers.join(", ")}`,
         `Pays the fee: this server's wallet ${signer.address}`,
       ],
       prepared,
     };
-    const done = await sent(ctx, signer, view, input.send, call, {
+    return sent(ctx, signer, view, input.send, call, {
       preview: PREVIEW_APPROVAL_NEXT,
       done: `release sent; ${tool("wallet_feedback")} to rate if you own it`,
     });
-    return "signature" in done ? { ...done, ...passed, ...(await sendOpenings(ctx, opener, ballot.committee.address, openings)) } : { ...done, ...passed };
   },
 });
 

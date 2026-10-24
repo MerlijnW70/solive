@@ -12,12 +12,14 @@ From TypeScript, `client.reputation(worker)` returns the same record. An MCP age
 
 For every proof escrow the wallet announced work to, the record says whether its release paid that wallet for that hash:
 
-- `paid`: the release recorded the announced hash and paid the wallet's own token account, or named it in a team split.
+- `paid`: the release paid the wallet's own announcement, or named the wallet in a team split.
 - `paid-other`: the escrow was released, but not to this wallet for this work.
 - `refunded` or `open`: nothing was released.
 - `unknown`: the release could not be read in full.
 
-Each escrow is one record. A released escrow counts for the wallet's earliest announcement that opens to the released work, and only when that announcement landed before the release; announcing the same work again adds nothing.
+Each escrow is one record, found from the wallet's own `DeliveryAnnounced` events. A released escrow counts for the announcement it paid, read from the release itself, so a record stays after the announcement account closes. Each record names its `announcement`, `seq` and `role`: `announcer` when the wallet made the paid announcement, `co-author` when a split release named it; announcing on an escrow alone credits nothing.
+
+A record lists every refutation of its paid announcement. A refutation counts against the worker, and leaves the release out of the totals as `refutedBy`, only when it is `substantiated`: the earlier announcement it reveals opens, at every slot, to the paid work. `unsubstantiated` and `unverifiable` refutations are listed and not counted; `refuted` counts the substantiated ones.
 
 The totals count only `paid` releases at arm's length. A release is self-dealt, and left out, when the worker owned the escrow, judged it, or sat on the committee that judged it, or when the owner judged its own escrow. `payers` and `judges` count the distinct owners and judges behind the totals. `committee_judged` counts releases a committee approved.
 
@@ -31,7 +33,7 @@ A funder whose history runs past the pages read, such as a faucet, is a busy wal
 
 `complete` is `true` only when the RPC node holds the whole ledger and every escrow's history, refutation and payer's funding history was read. A pruned node shows less, never more.
 
-An escrow with more transactions than one page is read page by page back to its creation, up to a fixed number of pages; past that, its release is looked up in the judge's history. A stranger padding the escrow while its judge is busy can still hide a release, and `complete` is then `false`.
+An escrow with more transactions than one page is read page by page back to its creation, up to a fixed number of pages, and each release is read from the history of the announcement it paid. `complete` is `false`, with a `reason`, whenever a page limit or an unreadable account cut the record short.
 
 ## Trust from your own payments
 
@@ -66,7 +68,7 @@ intent-engine profile show --wallet <worker wallet>
 
 Add `--doc-url <https url> --doc-sha256 <64 hex>` to link a document; a reader checks it against the hash. `profile close --keypair worker.json --yes` deletes the profile and returns its rent. From TypeScript, `client.profile(wallet)` reads it; an MCP agent reads one with `solive_get_profile` and publishes its own with `solive_wallet_profile`.
 
-A judge or committee member adds `--encryption-key <base58>`, printed by `profile encryption-key new`, to publish the key workers seal their deliveries to; [judge.md](judge.md) shows how a Ledger judge uses it. A later `profile set` without it keeps the key, and `--encryption-key none` removes it; `solive_wallet_profile` takes the same as `encryption_key`. Without one, workers seal to the key derived from the wallet.
+A judge or committee member adds `--encryption-key <base58>`, printed by `profile encryption-key new`, to publish the key workers seal their announcements to; [judge.md](judge.md) shows how a Ledger judge uses it. A later `profile set` without it keeps the key, and `--encryption-key none` removes it; `solive_wallet_profile` takes the same as `encryption_key`. Without one, workers seal to the key derived from the wallet.
 
 A profile is what the worker says about itself. Its record above is what the chain says.
 

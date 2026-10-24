@@ -204,7 +204,7 @@ describe("the first paid job guide", () => {
   it("runs the commands it prints in order, and every outcome it promises holds", async () => {
     expect(lines.filter((line) => !line.startsWith("intent-engine "))).toEqual([
       "solana-keygen new --no-bip39-passphrase -o worker.json",
-      "solana transfer --url devnet --keypair <keypair> worker.json 0.01 --allow-unfunded-recipient",
+      "solana transfer --url devnet --keypair <keypair> worker.json 0.02 --allow-unfunded-recipient",
       "solana-keygen new --no-bip39-passphrase -o copier.json",
       "solana transfer --url devnet --keypair <keypair> copier.json 0.01 --allow-unfunded-recipient",
       "solana-keygen pubkey worker.json",
@@ -221,8 +221,8 @@ describe("the first paid job guide", () => {
     expect([setup?.code, setup?.err]).toEqual([EXIT_OK, ""]);
     expect(setup?.out).toMatchObject({ created: true, sol: String(AIRDROP / SOL), airdrop: String(AIRDROP / SOL) });
 
-    expect(PAGE).toContain("send it 0.01 SOL from yours for its network fees");
-    const fees = raw("0.01");
+    expect(PAGE).toContain("send it 0.02 SOL from yours for its network fees and the rent of its two announcements");
+    const fees = raw("0.02");
     expect(PAGE).toContain("the judge runs the module's default export and pays only when it returns 42");
     expect(files["spec.md"]).toContain('```judge-cases\n{"cases": [{"args": [], "expected": 42}]}\n```');
     expect(specHash?.out["sha256"]).toBe(await follower.hash("spec.md"));
@@ -246,7 +246,7 @@ describe("the first paid job guide", () => {
     expect([wrong?.code, wrong?.err]).toEqual([EXIT_OK, ""]);
     expect(PAGE).toContain('`deliver` prints `"sent": true`, the `signature` of the announcement, and a warning to share neither the work nor its url until the announcement lands, since the first wallet to announce the work is paid.');
     expect(wrong?.out).toMatchObject({ intent, sent: true, signature: expect.any(String) });
-    expect(wrong?.out["warnings"]).toEqual([expect.stringMatching(/^share neither the url nor the work until this announcement lands: the earliest announcer of the work is paid/)]);
+    expect(wrong?.out["warnings"]).toEqual([expect.stringMatching(/^share neither the url nor the work until this announcement lands: the first announcement that opens to the work is paid/)]);
     expect(PAGE).toContain('`judge` prints `"verdict": "fail"`: the module returned 41 where the spec wants 42, so it sends nothing.');
     expect(files["wrong.mjs"]).toBe("export default () => 41;\n");
     expect(refused?.out).toMatchObject({ intent, verdict: "fail", artifactSha256: await follower.hash("wrong.mjs") });
@@ -267,7 +267,7 @@ describe("the first paid job guide", () => {
     expect(early?.out).toMatchObject({ intent, sent: true });
     expect(early?.status).toBe(IntentStatus.Open);
 
-    expect(PAGE).toContain('`judge` prints `"verdict": "pass"`, the worker\'s address as `payTo` and the `signature` of the release: the judge pays only the wallet that announced the work first, so the copier gets nothing.');
+    expect(PAGE).toContain('`judge` prints `"verdict": "pass"`, the worker\'s address as `payTo` and the `signature` of the release: the judge pays only the first announcement that opens to the work, so the copier gets nothing.');
     expect([paid?.code, paid?.err]).toEqual([EXIT_OK, ""]);
     expect(paid?.out).toMatchObject({ intent, verdict: "pass", payTo: worker, signature: expect.any(String) });
     expect(paid?.status).toBe(IntentStatus.Filled);
@@ -285,7 +285,7 @@ describe("the first paid job guide", () => {
       paid: formatAmount(net, 9),
       delivered_sha256: await follower.hash("right.mjs"),
       signature: paid?.out["signature"],
-      valid: true,
+      announcer: worker,
     });
 
     expect(PAGE).toContain("`deliver` refuses: the job is paid and no longer open, so the copier gets nothing and sends nothing.");
@@ -300,7 +300,7 @@ describe("the first paid job guide", () => {
     const left = h.svm.getBalance(worker as Address) ?? 0n;
     expect(left > 0n && left < fees).toBe(true);
     const copierLeft = h.svm.getBalance(copier as Address) ?? 0n;
-    expect(copierLeft > 0n && copierLeft < fees).toBe(true);
+    expect(copierLeft > 0n && copierLeft < raw("0.01")).toBe(true);
   });
 
   it("runs from a wallet that holds only the SOL it says it needs", async () => {

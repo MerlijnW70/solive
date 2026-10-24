@@ -107,10 +107,12 @@ export type Command =
   | (Keyed & { name: "crank"; dryRun: boolean; fundAccounts: boolean })
   | (Remote & { name: "events"; limit: number })
   | (Remote & { name: "jobs"; attestor: Address | undefined; mint: Address | undefined; minPay: string | undefined; unclaimed: boolean })
-  | (Keyed & { name: "deliver"; yes: boolean; intent: Address; workUrl: string } & ({ sha256: string } | { artifact: string }))
-  | (Remote & { name: "deliveries"; attestor: Address; intent: Address; maxPages: number; judgeKeypair: string | undefined; encryptionKeypairs?: string[] | undefined })
+  | (Keyed & { name: "deliver"; yes: boolean; intent: Address; workUrl: string; feePayer?: string | undefined } & ({ sha256: string } | { artifact: string }))
+  | (Remote & { name: "deliveries"; intent: Address; judgeKeypair: string | undefined; encryptionKeypairs?: string[] | undefined })
+  | (Keyed & { name: "refute"; yes: boolean; earlier: Address; paid: Address; workUrl?: string | undefined; split?: Split | undefined; feePayer?: string | undefined })
+  | (Keyed & { name: "reclaim"; yes: boolean; feePayer?: string | undefined })
+  | (Keyed & { name: "close-book"; yes: boolean; intent: Address })
   | (Remote & { name: "receipt"; owner: Address; nonce: bigint; sha256: string | undefined; release?: string })
-  | (Keyed & { name: "record-delivery"; yes: boolean; owner: Address; nonce: bigint; sha256: string; release?: string })
   | (Keyed & {
       name: "judge";
       yes: boolean;
@@ -120,18 +122,16 @@ export type Command =
       artifact: string;
       watch: number | null;
       run: string | undefined;
-      payTo: Address | undefined;
       result: bigint | undefined;
       timeout: number;
       verdict: string | undefined;
-      maxPages: number;
       check: string | undefined;
       sandbox: Sandbox;
       feePayer?: string | undefined;
       encryptionKeypairs?: string[] | undefined;
       confirmUrl?: string | undefined;
     })
-  | (Remote & { name: "judge-digest"; owner: Address; nonce: bigint; payTo: Address; result: bigint | undefined })
+  | (Remote & { name: "judge-digest"; owner: Address; nonce: bigint; announcement: Address; sha256: string; salt: string; result: bigint | undefined })
   | (Keyed & { name: "flow"; flow: FlowName; yes: boolean; input: ToolInput })
   | (Remote & { name: "lookup"; lookup: LookupName; keypair: string | undefined; input: ToolInput })
   | (Keyed & { name: "signed-prepare"; yes: boolean; out: string; input: ToolInput })
@@ -153,11 +153,12 @@ export type Command =
       yes: boolean;
       owner: Address;
       nonce: bigint;
-      payTo: Address;
+      sha256: string;
       result: bigint;
       out: string | undefined;
+      encryptionKeypairs?: string[] | undefined;
     })
-  | (Keyed & { name: "committee-release"; yes: boolean; votes: string[]; sha256: string | undefined; confirmUrl?: string | undefined })
+  | (Keyed & { name: "committee-release"; yes: boolean; votes: string[]; confirmUrl?: string | undefined })
   | (Remote & { name: "claims-show"; owner: Address; nonce: bigint })
   | (Keyed & { name: "claims-open"; yes: boolean; nonce: bigint; maxSecs: number; stake: bigint; workers: Address[] | undefined })
   | (Keyed & { name: "claims-take"; yes: boolean; owner: Address; nonce: bigint; secs: number })
@@ -172,6 +173,8 @@ export type Command =
   | (Keyed & { name: "profile-close"; yes: boolean })
   | (Remote & { name: "reputation"; worker: Address; maxPages: number; reader?: Address; seeds: Address[] })
   | (Keyed & { name: "feedback"; yes: boolean; intent: Address; score: number; note: string | undefined });
+
+export type Split = { recipients: Address[]; weights: number[] };
 
 export type MonitorSpec = {
   interval: number;

@@ -125,7 +125,7 @@ describe("the confirm-url setting", () => {
     const env = { [SAVED_CONFIRM_URL]: SECOND_URL };
     const owner = "11111111111111111111111111111112";
     const judge = ["judge", "--keypair", "k", "--owner", owner, "--nonce", "0", "--spec", "s", "--artifact", "a", "--sandbox", "viper"];
-    const digest = parse(["judge", "digest", "--owner", owner, "--nonce", "0", "--pay-to", owner], env);
+    const digest = parse(["judge", "digest", "--owner", owner, "--nonce", "0", "--announcement", owner, "--sha256", "ab".repeat(32), "--salt", "cd".repeat(16)], env);
     expect(digest).toMatchObject({ name: "judge-digest" });
     expect(digest).not.toHaveProperty("confirmUrl");
     for (const argv of [judge, ["committee", "release", "--keypair", "k", "--vote", "v"], ["mcp", "--wallet"]]) {
@@ -145,7 +145,7 @@ describe("the confirm-url setting", () => {
     const keyed = "https://" + "rpc.example.org/?b=2&a=1";
     expect(() => parse([...judge, "--url", "https://" + "rpc.example.org./?a=1&b=2", "--confirm-url", keyed])).toThrow(sameNode(keyed));
     expect(parse([...judge, "--url", "https://" + "rpc.example.org/?a=1", "--confirm-url", keyed])).toMatchObject({ confirmUrl: keyed });
-    expect(() => parse(["judge", "digest", "--owner", owner, "--nonce", "0", "--pay-to", owner, "--no-confirm-url"])).toThrow("judge digest does not take --no-confirm-url");
+    expect(() => parse(["judge", "digest", "--owner", owner, "--nonce", "0", "--announcement", owner, "--sha256", "ab".repeat(32), "--salt", "cd".repeat(16), "--no-confirm-url"])).toThrow("judge digest does not take --no-confirm-url");
   });
 
   it("is left out when never set, and a settings file with a non-text confirm-url is refused", async () => {

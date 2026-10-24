@@ -1,21 +1,9 @@
 import type { Address } from "@solana/kit";
 import { decodeEvent, type EngineEvent, formatAmount, IntentStatus, tokenName } from "@intent-engine/core";
-import {
-  chainTime,
-  type Delivery,
-  deliveriesIn,
-  earlier,
-  type EngineTransaction,
-  intentAt,
-  loadClaimsOf,
-  opensWith,
-  paidWalletsOf,
-  recordedRelease,
-  releaseShareOf,
-  type Transport,
-} from "@intent-engine/client";
+import { chainTime, type EngineTransaction, intentAt, loadClaimsOf, paidWalletsOf, releaseShareOf, type Transport } from "@intent-engine/client";
 import { account, choice, flag, nullable, object, text, time } from "../schema.js";
 import { createdMint, heldMint, type ReleaseLookup, releaseLookup, releasedMint } from "./releases.js";
+import { deliveryReleased } from "./standing.js";
 
 export const OWN_TRANSACTIONS = 250;
 const ESCROW_EVENTS = 20;
@@ -35,9 +23,10 @@ const landedAt = (what: string) => nullable(time(`unix seconds ${what} landed, w
 
 export const workItem = object({
   intent: account("the escrow the work was announced to"),
+  announcement: account("the announcement account"),
   signature: text("the announcement's transaction"),
   at: landedAt("the announcement"),
-  paid: flag("whether a release of the escrow paid this wallet for this announcement"),
+  paid: flag("whether a release of the escrow paid this announcement, or paid this wallet as a co-author of the paid one"),
   amount: nullable(text("whole tokens the release paid this wallet")),
   token: nullable(text("SOL, TEST or the mint the release paid")),
   release: nullable(text("the release's transaction")),
@@ -70,6 +59,18 @@ const everything: Kept = () => true;
 
 type Landed = { signature: string; slot: bigint; blockTime: bigint | null };
 
+const earlier = (a: Landed, b: Landed): boolean => a.slot < b.slot || (a.slot === b.slot && a.signature < b.signature);
+
+type Announcement = Landed & { intent: Address; announcement: Address };
+
+function announcedIn(transactions: readonly EngineTransaction[], wallet: Address): Announcement[] {
+  return eventsIn(transactions).flatMap((event): Announcement[] =>
+    event.name === "DeliveryAnnounced" && event.fields.worker === wallet
+      ? [{ intent: event.fields.intent, announcement: event.fields.announcement, signature: event.signature, slot: event.slot, blockTime: event.blockTime }]
+      : [],
+  );
+}
+
 const newestFirst = <T extends { slot: bigint }>(items: readonly T[]): T[] => [...items].sort((a, b) => (a.slot === b.slot ? 0 : a.slot < b.slot ? 1 : -1));
 
 export function eventsIn(transactions: readonly EngineTransaction[]): (EngineEvent & Landed)[] {
@@ -80,25 +81,25 @@ export function eventsIn(transactions: readonly EngineTransaction[]): (EngineEve
     );
 }
 
-async function paidFor(transport: Transport, delivery: Delivery, wallet: Address, lookup: ReleaseLookup, tokens: Tokens) {
+async function paidFor(transport: Transport, work: Announcement, wallet: Address, lookup: ReleaseLookup, tokens: Tokens) {
   const { release, transactions } = lookup;
-  if (release === null || !earlier(delivery, release.tx)) {
+  if (release === null) {
     return null;
   }
   const event = release.event as EngineEvent;
   if (event.name !== "IntentAttested" && event.name !== "IntentSplit") {
     return null;
   }
-  const recorded = recordedRelease(transactions, release.tx, event.fields.attestor);
-  if (recorded?.salt !== undefined && !opensWith(delivery, recorded.salt, recorded.sha256)) {
+  const paidWork = deliveryReleased(release.tx, work.intent);
+  if (paidWork === null || (paidWork.announcement !== work.announcement && event.name === "IntentAttested")) {
     return null;
   }
-  const share = await releaseShareOf(transport, { event, transaction: release.tx }, delivery.intent, wallet);
+  const share = await releaseShareOf(transport, { event, transaction: release.tx }, work.intent, wallet);
   if (share === null) {
     return null;
   }
   const payee = event.name === "IntentAttested" ? event.fields.payee : undefined;
-  const mint = releasedMint(release.tx, delivery.intent, payee) ?? createdMint(transactions, delivery.intent) ?? (await heldMint(transport, delivery.intent));
+  const mint = releasedMint(release.tx, work.intent, payee) ?? createdMint(transactions, work.intent) ?? (await heldMint(transport, work.intent));
   return {
     amount: mint === undefined ? null : await tokens(mint, share),
     token: mint === undefined ? null : (tokenName(mint) ?? mint),
@@ -126,17 +127,19 @@ async function unpaidOf(transport: Transport, intent: Address, wallet: Address, 
 }
 
 export async function workOf(transport: Transport, wallet: Address, transactions: readonly EngineTransaction[], limit: number, tokens: Tokens, kept: Kept = everything) {
-  const announced = newestFirst(deliveriesIn(transactions).filter((delivery) => delivery.worker === wallet && kept(delivery)));
+  const announced = newestFirst(announcedIn(transactions, wallet).filter((work) => kept(work)));
   const lookups = new Map<Address, Promise<ReleaseLookup>>();
   const work = [];
   for (const delivery of announced.slice(0, limit)) {
     const { intent } = delivery;
+    const announcement = delivery.announcement;
     const lookup = lookups.get(intent) ?? releaseLookup(transport, intent);
     lookups.set(intent, lookup);
     const paid = await paidFor(transport, delivery, wallet, await lookup, tokens);
     const unpaid = paid === null ? await unpaidOf(transport, intent, wallet, await lookup) : { reason: null, releasedTo: null };
     work.push({
       intent,
+      announcement,
       signature: delivery.signature,
       at: delivery.blockTime,
       paid: paid !== null,

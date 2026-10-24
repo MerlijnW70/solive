@@ -38,7 +38,7 @@ export async function loadEncryptionKey(runtime: Runtime, path: string): Promise
 export const MAX_SEALED_INPUT = 67_108_864;
 
 export const sealedOverLimit = (bytes: number): string =>
-  `the sealed file is ${bytes} bytes, over the ${MAX_SPEC_BYTES} bytes ${tool("get_spec")} and ${tool("wallet_fetch_work")} read, so they cannot open it; shorten it, or have readers use intent-engine unseal`;
+  `the sealed file is ${bytes} bytes, over the ${MAX_SPEC_BYTES} bytes ${tool("get_spec")} reads, so it cannot open it; shorten it, or have readers use intent-engine unseal`;
 
 export const jobClosed = (intent: Address): string => `the job ${intent} is closed: it was paid, cancelled or expired, or never existed`;
 

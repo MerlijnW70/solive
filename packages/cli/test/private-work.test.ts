@@ -2,16 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  type Address,
-  getBase64Encoder,
-  getCompiledTransactionMessageDecoder,
-  getSignatureFromTransaction,
-  getTransactionDecoder,
-  type KeyPairSigner,
-  lamports,
-  none,
-} from "@solana/kit";
+import { type Address, type KeyPairSigner, lamports, none } from "@solana/kit";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
@@ -24,14 +15,13 @@ import {
   getIntentDecoder,
   NATIVE_MINT,
   NotInvited,
-  sealedTo,
   specMemo,
   unseal,
 } from "@intent-engine/core";
-import { type EngineTransaction, MEMO_PROGRAM_ADDRESS, signersAmong } from "@intent-engine/client";
+import type { EngineTransaction } from "@intent-engine/client";
 import { tool } from "../src/agent/names.js";
 import { EVERYDAY_TOOLS } from "../src/agent/everyday.js";
-import { NOT_SEALED_HERE, SEALED_WORK_NEXT, WORK_DIFFERS, WORK_OPENS } from "../src/agent/wallet/work.js";
+import { NONE_OPENS, WORK_DIFFERS, WORK_OPENS } from "../src/agent/wallet/work.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { defaultWallet } from "../src/wallet.js";
@@ -44,7 +34,7 @@ type Json = Record<string, unknown>;
 const SPEC = "# Answer\n\nDeliver answer.txt holding 42.\n";
 const WORK = "answer.txt: 42\n";
 const SPEC_URL = "https://" + "files.example.com/jobs/7d1c5e0a9b3f4e62.sealed";
-const WORK_URL = "https://" + "files.example.com/work/c41e9a07d2b85f36.sealed";
+const WORK_URL = "https://" + "files.example.com/work/c41e9a07d2b85f36c41e9a07d2b85f36.txt";
 const sha = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const bytesOf = (text: unknown) => new TextEncoder().encode(text as string);
 
@@ -86,23 +76,6 @@ const useKey = (signer: KeyPairSigner) => h.files.set(defaultWallet(HOME), JSON.
 
 const keyOf = (signer: KeyPairSigner): Uint8Array => h.keypairs.get(signer.address) ?? new Uint8Array();
 
-function landedAs(wire: string, slot: bigint): EngineTransaction {
-  const tx = getTransactionDecoder().decode(getBase64Encoder().encode(wire));
-  const message = getCompiledTransactionMessageDecoder().decode(tx.messageBytes);
-  const keys = message.staticAccounts;
-  const memos = ("instructions" in message ? message.instructions : []).filter((ix) => keys[ix.programAddressIndex] === MEMO_PROGRAM_ADDRESS);
-  return {
-    signature: getSignatureFromTransaction(tx),
-    slot,
-    blockTime: null,
-    failed: false,
-    emitted: [],
-    memos: memos.map((ix) => new TextDecoder().decode(Uint8Array.from(ix.data ?? []))),
-    memoSigners: memos.map((ix) => signersAmong(keys, ix.accountIndices ?? [], message.header.numSignerAccounts)),
-    ...(keys[0] === undefined ? {} : { feePayer: keys[0] }),
-  };
-}
-
 function createdFrom(intent: Address, memos: string[]): EngineTransaction {
   const held = h.svm.getAccount(intent);
   if (!held.exists) {
@@ -141,58 +114,45 @@ describe("an invite-only job with wallet tools only", () => {
     return { intent, nonce: escrow["nonce"] as string, made };
   };
 
-  const announce = async (intent: Address, made: EngineTransaction, hosted: Uint8Array, sha256: string) => {
+  const announce = async (intent: Address, hosted: Uint8Array, sha256: string) => {
     useKey(worker);
     h.specPages.set(WORK_URL, hosted);
-    h.wires.length = 0;
-    await ok(client, "wallet_deliver", { intent, sha256, url: WORK_URL, send: true });
-    const landed = landedAs(h.wires[0] as string, 5n);
-    h.engineLog = [landed, made];
-    return landed.signature;
+    return (await ok(client, "wallet_deliver", { intent, sha256, url: WORK_URL, send: true }))["announcement"] as Address;
   };
 
-  it("seals the spec, escrows it, lets the invited worker read it, seal and announce work, and lets the judge fetch, check and release it", async () => {
-    expect([tool("wallet_seal_work"), tool("wallet_fetch_work")].every((name) => EVERYDAY_TOOLS.has(name))).toBe(true);
-    const { intent, nonce, made } = await post();
+  it("seals the spec, escrows it, lets the invited worker read it and announce work, and lets the judge fetch, check and release it", async () => {
+    expect([tool("wallet_fetch_work"), tool("wallet_deliver")].every((name) => EVERYDAY_TOOLS.has(name))).toBe(true);
+    const { intent, nonce } = await post();
 
     useKey(worker);
     expect(await ok(client, "get_spec", { intent })).toMatchObject({ url: SPEC_URL, matches: true, text: SPEC, sealed_to: [worker.address, judge.address] });
-    const wires = h.wires.length;
-    const sealed = await ok(client, "wallet_seal_work", { intent, text: WORK });
-    expect(h.wires.length).toBe(wires);
-    expect(sealed).toMatchObject({ sha256: sha(WORK), sealed_to: [judge.address], next: SEALED_WORK_NEXT });
-    expect(await ok(client, "wallet_seal_work", { intent, base64: Buffer.from(WORK).toString("base64") })).toMatchObject({ sha256: sha(WORK) });
-    const hosted = bytesOf(sealed["sealed"]);
-    expect(sealed["sealed_sha256"]).toBe(sha(hosted));
-    expect(sealedTo(hosted)).toEqual([judge.address]);
-    expect(new TextDecoder().decode(hosted)).not.toContain("answer.txt");
-    const announcement = await announce(intent, made, hosted, sealed["sha256"] as string);
+    const announcement = await announce(intent, bytesOf(WORK), sha(WORK));
 
     useKey(stranger);
     expect((await call(client, "get_spec", { intent })).value).toMatchObject({ code: "SpecSealed" });
-    expect((await call(client, "wallet_fetch_work", { intent, announcement })).value).toMatchObject({ code: "WorkUnfetchable", hint: `the announcement ${announcement}: ${NOT_SEALED_HERE}` });
+    expect((await call(client, "wallet_fetch_work", { intent, announcement })).value).toMatchObject({ code: "WorkUnfetchable", hint: NONE_OPENS });
     await expect(unseal(h.specPages.get(SPEC_URL) ?? new Uint8Array(), keyOf(stranger))).rejects.toBeInstanceOf(NotInvited);
-    await expect(unseal(hosted, keyOf(stranger))).rejects.toBeInstanceOf(NotInvited);
 
     useKey(judge);
     const listed = await ok(client, "wallet_check_delivery", { intent });
-    expect(listed["deliveries"]).toMatchObject([{ worker: worker.address, signature: announcement, url: WORK_URL }]);
+    expect(listed["announcements"]).toMatchObject([{ announcement, worker: worker.address, seq: "1", state: "announced" }]);
     const before = h.wires.length;
     const fetched = await ok(client, "wallet_fetch_work", { intent, announcement });
     expect(h.wires.length).toBe(before);
     expect(fetched).toEqual({
       intent,
       announcement,
+      seq: "1",
       worker: worker.address,
       url: WORK_URL,
-      sealed: true,
       sha256: sha(WORK),
       opens_commitment: true,
       bytes: WORK.length,
       untrusted_text: WORK,
+      first: { announcement, seq: "1", worker: worker.address, commitment: expect.any(String) },
       next: WORK_OPENS,
     });
-    const release = { owner: judge.address, nonce, pay_to: fetched["worker"], delivered_sha256: fetched["sha256"] };
+    const release = { owner: judge.address, nonce, delivered_sha256: fetched["sha256"] };
     const shown = await ok(client, "wallet_attest", release);
     expect(await ok(client, "wallet_attest", { ...release, approval: shown["approval"], send: true })).toMatchObject({ sent: true, pay_to: worker.address });
     const payee = await findAssociatedTokenAddress({ owner: worker.address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
@@ -200,30 +160,20 @@ describe("an invite-only job with wallet tools only", () => {
   }, 60_000);
 
   it("reports work that does not open the announcement's commitment, and takes no input that skips the check", async () => {
-    const { intent, made } = await post();
-    useKey(worker);
-    const announced = await ok(client, "wallet_seal_work", { intent, text: WORK });
-    const swapped = await ok(client, "wallet_seal_work", { intent, text: "answer.txt: 41\n" });
-    const announcement = await announce(intent, made, bytesOf(swapped["sealed"]), announced["sha256"] as string);
+    const { intent } = await post();
+    const swapped = "answer.txt: 41\n";
+    const announcement = await announce(intent, bytesOf(swapped), sha(WORK));
 
     useKey(judge);
     const fetched = await ok(client, "wallet_fetch_work", { intent, announcement });
-    expect(fetched).toMatchObject({ worker: worker.address, sha256: sha("answer.txt: 41\n"), opens_commitment: false, next: WORK_DIFFERS });
+    expect(fetched).toMatchObject({ worker: worker.address, sha256: sha(swapped), opens_commitment: false, next: WORK_DIFFERS });
     expect(WORK_DIFFERS).toContain("do not release for it");
     for (const skip of [{ check: false }, { opens_commitment: true }, { skip_check: true }]) {
       expect((await call(client, "wallet_fetch_work", { intent, announcement, ...skip })).value).toMatchObject({ code: "InvalidInput" });
     }
-    expect(await ok(client, "wallet_fetch_work", { intent, announcement })).toMatchObject({ opens_commitment: false });
-    h.specPages.set(WORK_URL, bytesOf(announced["sealed"]));
-    expect(await ok(client, "wallet_fetch_work", { intent, announcement })).toMatchObject({ sha256: announced["sha256"], opens_commitment: true, next: WORK_OPENS });
+    h.specPages.set(WORK_URL, bytesOf(WORK));
+    expect(await ok(client, "wallet_fetch_work", { intent, announcement })).toMatchObject({ sha256: sha(WORK), opens_commitment: true, next: WORK_OPENS });
   }, 60_000);
-
-  it("refuses work given both as text and as base64, or as bad base64", async () => {
-    const { intent } = await post();
-    expect((await call(client, "wallet_seal_work", { intent, text: WORK, base64: "YQ==" })).value).toMatchObject({ code: "InvalidInput" });
-    expect((await call(client, "wallet_seal_work", { intent })).value).toMatchObject({ code: "InvalidInput" });
-    expect((await call(client, "wallet_seal_work", { intent, base64: "not base64!" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "base64" }] });
-  });
 });
 
 describe("the private job guide", () => {
@@ -236,7 +186,6 @@ describe("the private job guide", () => {
       ["Owner", tool("wallet_seal_spec")],
       ["Owner", tool("wallet_escrow")],
       ["Worker", tool("get_spec")],
-      ["Worker", tool("wallet_seal_work")],
       ["Worker", tool("wallet_deliver")],
       ["Judge", tool("wallet_check_delivery")],
       ["Judge", tool("wallet_fetch_work")],
@@ -244,7 +193,8 @@ describe("the private job guide", () => {
     ]);
     expect(rows.every(([, name]) => EVERYDAY_TOOLS.has(name ?? ""))).toBe(true);
     expect(section).not.toContain("intent-engine seal");
-    expect(page).toContain("An AI agent seals the work with `solive_wallet_seal_work` instead of `seal` and announces it with `solive_wallet_deliver` instead of `deliver`.");
-    expect(page).toContain("An AI agent judge fetches and opens the work with `solive_wallet_fetch_work` instead of `unseal`.");
+    expect(page).toContain("An AI agent announces it with `solive_wallet_deliver` instead of `deliver`.");
+    expect(page).toContain("An AI agent judge opens and fetches the work with `solive_wallet_fetch_work`.");
+    expect(page).not.toContain("seal_work");
   });
 });

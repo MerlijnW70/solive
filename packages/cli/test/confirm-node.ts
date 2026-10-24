@@ -1,7 +1,7 @@
 import type { Address, KeyPairSigner } from "@solana/kit";
 import { getTokenDecoder, getTokenEncoder } from "@solana-program/token";
-import { getIntentDecoder, getIntentEncoder } from "@intent-engine/core";
-import type { AccountView, EngineTransaction, Transport } from "@intent-engine/client";
+import { deliveryBookAddress, getDeliveryBookDecoder, getDeliveryBookEncoder, getIntentDecoder, getIntentEncoder } from "@intent-engine/core";
+import type { AccountView, EngineAccount, Transport } from "@intent-engine/client";
 import { clusterUrl } from "../src/clusters.js";
 import { main } from "../src/main.js";
 import { h, runtime, transport } from "./harness.js";
@@ -14,7 +14,8 @@ export type Lie = {
   genesis?: string;
   intent?: Address;
   balance?: Address;
-  log?: (log: readonly EngineTransaction[]) => EngineTransaction[];
+  book?: Address;
+  accounts?: (found: readonly EngineAccount[]) => EngineAccount[];
   down?: boolean;
 };
 
@@ -23,6 +24,11 @@ export type SecondNode = { lie: Lie; reads: number; transport: Transport };
 const changed = (view: AccountView): AccountView => {
   const held = getIntentDecoder().decode(view.data);
   return { ...view, data: Uint8Array.from(getIntentEncoder().encode({ ...held, revision: held.revision + 1 })) };
+};
+
+const later = (view: AccountView): AccountView => {
+  const held = getDeliveryBookDecoder().decode(view.data);
+  return { ...view, data: Uint8Array.from(getDeliveryBookEncoder().encode({ ...held, nextSeq: held.nextSeq + 1n })) };
 };
 
 const richer = (view: AccountView): AccountView => {
@@ -41,7 +47,10 @@ export function secondNode(): SecondNode {
   const read = async (address: Address) => {
     reached();
     const view = await transport.getAccount(address);
-    return view === null ? view : address === node.lie.intent ? changed(view) : address === node.lie.balance ? richer(view) : view;
+    if (view === null) {
+      return view;
+    }
+    return address === node.lie.intent ? changed(view) : address === node.lie.balance ? richer(view) : address === node.lie.book ? later(view) : view;
   };
   node.transport = {
     ...transport,
@@ -53,8 +62,12 @@ export function secondNode(): SecondNode {
     },
     engineTransactions: async (limit, of, memo) => {
       reached();
-      const log = await transport.engineTransactions(limit, of, memo);
-      return node.lie.log === undefined ? log : node.lie.log(log);
+      return transport.engineTransactions(limit, of, memo);
+    },
+    engineAccounts: async (filter) => {
+      reached();
+      const found = (await transport.engineAccounts?.(filter)) ?? [];
+      return node.lie.accounts === undefined ? found : node.lie.accounts(found);
     },
     send: async () => {
       throw new Error("the second node sends nothing");
@@ -82,35 +95,20 @@ export async function cliWith(argv: string[], signers: Record<string, KeyPairSig
   return { code, urls, out: out.join("\n"), err: err.join("\n"), json: () => JSON.parse(out.join("\n")) as Record<string, unknown> };
 }
 
-export const announced = (signature: string, slot: bigint, worker: Address, memo: string): EngineTransaction => ({
-  signature,
-  slot,
-  blockTime: null,
-  failed: false,
-  emitted: [],
-  memos: [memo],
-  feePayer: worker,
-});
-
 export const OTHER_GENESIS = "11111111111111111111111111111111";
 
 export const WORK_URL = "https://" + "example.org/count.mjs";
 
 export type Disagreement = { field: string; lie: Lie; second: string };
 
-export const disagreements = (intent: Address, copier: Address, copied: string): Disagreement[] => [
-  { field: "genesis hash", lie: { genesis: OTHER_GENESIS }, second: `the second ${OTHER_GENESIS}` },
-  { field: "intent account", lie: { intent }, second: "the second sha256 " },
-  {
-    field: "earliest announcer",
-    lie: { log: (log) => log.map((t) => (t.signature === "first" ? { ...t, feePayer: copier, memos: [copied] } : t)) },
-    second: `the second ${copier} in first`,
-  },
-  {
-    field: "earliest announcer",
-    lie: { log: (log) => [announced("hidden", 3n, copier, copied), ...log] },
-    second: `the second ${copier} in hidden`,
-  },
-];
+export async function disagreements(intent: Address): Promise<Disagreement[]> {
+  const book = await deliveryBookAddress(intent);
+  return [
+    { field: "genesis hash", lie: { genesis: OTHER_GENESIS }, second: `the second ${OTHER_GENESIS}` },
+    { field: "intent account", lie: { intent }, second: "the second sha256 " },
+    { field: "delivery book", lie: { book }, second: "the second next seq " },
+    { field: "announcements", lie: { accounts: (found) => found.slice(1) }, second: "the second " },
+  ];
+}
 
 export const UNREADABLE: Disagreement = { field: "second node", lie: { down: true }, second: "the second RPC node could not be read (unreadable: fetch failed)" };

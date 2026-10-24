@@ -1,6 +1,8 @@
 import { type Address, getAddressDecoder } from "@solana/kit";
 import { type EngineEvent, findIntentPda, formatAmount, IntentStatus, Kind, MAX_RECIPIENTS, NATIVE_MINT } from "@intent-engine/core";
-import { intentAt, memoized, mintOf, paidWalletsOf, recordedRelease, releaseStandingOf, type Transport, unmemoized } from "@intent-engine/client";
+import { intentAt, memoized, mintOf, paidWalletsOf, type Transport, unmemoized } from "@intent-engine/client";
+import { InvalidInput } from "../schema.js";
+import { deliveryReleased, releaseStanding, standingOutput } from "./standing.js";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
@@ -8,16 +10,36 @@ import { account, amount, flag, integer, list, object, optional, text } from "..
 import { WAIT_MAX, signerOf, sha256Of } from "./guard.js";
 import { NO_CLOCK, poll } from "./wait.js";
 import { RESULT_MEANS } from "./attest.js";
-import { RELEASE_INPUT, releaseOf, otherLifecycle, coverageOf } from "./record.js";
 import { RELEASE_UNKNOWN, outlives, releaseLookup, namedRelease, releasedMint, createdMint, heldMint } from "./releases.js";
 import { eventsIn, SOL_DECIMALS, STAKE_TO_WORKER } from "./history-work.js";
 
 export const NOT_RELEASED = "no release of this escrow is in its history yet; check again later";
 
+export const RELEASE_INPUT = "the release's transaction signature, as the attestor's release returned it; with it the release is read from that one transaction, with no search of the escrow's history";
+
+const BASE58_SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{32,88}$/;
+
+export const RELEASE_SIGNATURE = "must be a base58 transaction signature";
+
+export function releaseOf(signature: string | undefined): string | undefined {
+  if (signature !== undefined && !BASE58_SIGNATURE.test(signature)) {
+    throw new InvalidInput([{ path: "release", message: RELEASE_SIGNATURE }]);
+  }
+  return signature;
+}
+
+export const otherLifecycle = (release: string, intent: string) =>
+  `the release ${release} belongs to an earlier lifecycle of the escrow address ${intent}, which was closed and made again at the same nonce since, so it is not a release of the escrow there now; leave release out to read the current one`;
+
+export const COVERAGE_UNPROVABLE =
+  "this transport cannot report the first slot its RPC node keeps, so it cannot prove that the history read reaches back to the escrow's creation and an escrow without a release found reads as unknown rather than not released";
+
+export const coverageOf = (transport: Transport, text: string): string => (transport.firstAvailableSlot === undefined ? `${text}; ${COVERAGE_UNPROVABLE}` : text);
+
 export const PAID_WRAPPED = `paid as wrapped SOL; ${tool("wallet_unwrap")} turns it into plain SOL`;
 
 export const RECEIPT_PARTIAL =
-  "the escrow's history after this release could not be read in full: it is longer than the pages read or the RPC node could not return some of its transactions yet, so a follow-up recording the delivered work may be missing, and without release given, the escrow address may have been made again since; pass release, the signature the release returned, or call again in a few seconds";
+  "the escrow's history around this release could not be read in full: it is longer than the pages read or the RPC node could not return some of its transactions yet, so the escrow address may have been made again since; pass release, the signature the release returned, or call again in a few seconds";
 
 export const stillUnreleased = (name: string) => `not released yet; call ${tool(name)} again with wait, in seconds, to wait for the release`;
 
@@ -143,7 +165,7 @@ const receiptOutput = object({
   released: flag(),
   complete: optional(
     flag(
-      "false when the history read was not enough: with released false, no release was found in it, so released is unknown rather than known; with released true, a follow-up recording the delivered work, or a later lifecycle of the escrow address, may be missing from it",
+      "false when the history read was not enough: with released false, no release was found in it, so released is unknown rather than known; with released true, a later lifecycle of the escrow address may be missing from it",
     ),
   ),
   paid_to: optional(account("the wallet the release paid, the pay_to its attestor gave; it owns payee")),
@@ -156,11 +178,10 @@ const receiptOutput = object({
   result: optional(amount(RESULT_MEANS)),
   recipients: optional(amount("how many co-authors a split release paid")),
   signature: optional(text("the release's transaction")),
-  delivered_sha256: optional(text("the sha256 the release recorded, if any, in its own memo or in a follow-up transaction its attestor signed")),
-  matches: optional(flag("whether sha256 equals the recorded one")),
-  delivered_salt: optional(text("the payee's salt the release recorded, which opens the payee's announcement; it becomes public once a release records it, and is safe to share only after that")),
-  valid: optional(flag("given with delivered_salt: whether that salt opens an announcement by the payee to the recorded sha256")),
-  refuted_by: optional(text("an earlier announcement of the same work that a published opening shows, so the release paid a later announcer")),
+  delivered_sha256: optional(text("the sha256 of the work the release paid for, which the program checked against the paid announcement")),
+  matches: optional(flag("whether sha256 equals the paid one")),
+  delivered_salt: optional(text("the paid announcement's salt, public once a release records it")),
+  ...standingOutput,
   paid_wallets: optional(list(account(), MAX_RECIPIENTS, "the wallets a split release paid")),
   paid_this_wallet: optional(flag("wallet_receipt with a released escrow whose payees are known: whether the release paid this server's wallet")),
   owner: optional(account("given with also: the owner of the escrow released")),
@@ -252,20 +273,8 @@ export async function escrowReceipt(transport: Transport, owner: Address, nonce:
   }
   const fields = release.event.fields as Record<string, unknown>;
   let mint = createdMint([...transactions, ...(creation === null || creation === undefined ? [] : [creation])], intent) ?? releasedMint(tx, intent, fields["payee"] as Address | undefined);
-  const recordedWork = recordedRelease(transactions, tx, fields["attestor"] as Address);
-  const recorded = recordedWork?.sha256;
-  const standing =
-    recordedWork?.salt === undefined
-      ? undefined
-      : await releaseStandingOf(transport, {
-          intent,
-          attestor: fields["attestor"] as Address,
-          release: tx,
-          recorded: { sha256: recordedWork.sha256, salt: recordedWork.salt },
-          payees: await paidWalletsOf(transport, { event: release.event as EngineEvent, transaction: tx }, intent),
-          createdAt: creation?.blockTime ?? null,
-          from: creation?.slot ?? null,
-        });
+  const paidWork = deliveryReleased(tx, intent);
+  const standing = paidWork === null ? {} : await releaseStanding(transport, intent, paidWork);
   const stake = eventsIn([tx, ...transactions]).find(
     (event) => event.name === "StakeMoved" && event.fields.intent === intent && event.fields.role === STAKE_TO_WORKER && event.slot >= tx.slot,
   );
@@ -278,10 +287,9 @@ export async function escrowReceipt(transport: Transport, owner: Address, nonce:
     attestor: fields["attestor"] as Address,
     result: fields["result"] as bigint,
     signature: tx.signature,
-    ...(recorded === undefined ? {} : { delivered_sha256: recorded }),
-    ...(wanted === undefined ? {} : { matches: wanted === recorded }),
-    ...(recordedWork?.salt === undefined ? {} : { delivered_salt: recordedWork.salt }),
-    ...(standing === undefined ? {} : { valid: standing.valid, ...(standing.refutedBy === null ? {} : { refuted_by: standing.refutedBy }) }),
+    ...(paidWork === null ? {} : { delivered_sha256: paidWork.sha256, delivered_salt: paidWork.salt }),
+    ...(wanted === undefined ? {} : { matches: wanted === paidWork?.sha256 }),
+    ...standing,
   };
   if (release.event.name === "IntentSplit") {
     mint ??= await heldMint(transport, intent);

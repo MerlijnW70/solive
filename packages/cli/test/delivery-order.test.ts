@@ -1,20 +1,20 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { type Address, generateKeyPairSigner, lamports, none, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SolanaError } from "@solana/kit";
+import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, none, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SolanaError } from "@solana/kit";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { afterEach, describe, expect, it } from "vitest";
 import { DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
-import { commitmentOf, type EngineTransaction, saltCheckOf, type Transport } from "@intent-engine/client";
+import type { Transport } from "@intent-engine/client";
 import { tool } from "../src/agent/names.js";
 import { refusalText } from "../src/agent/problems.js";
 import { poll } from "../src/agent/wallet/wait.js";
 import { notEarliest, WALLET_NOTICE } from "../src/agent/wallet.js";
 import { escrowFor } from "../src/judge.js";
 import { EXIT_OK, nodeRuntime } from "../src/main.js";
-import { saltFor, sealedDelivery } from "./announce.js";
-import { cli, creation, h, transport, world } from "./harness.js";
+import { announced, keyed } from "./announce.js";
+import { cli, h, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -23,7 +23,7 @@ const URL_OF_COPY = "https://" + "example.org/copy";
 
 const tooMany = () => new SolanaError(SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, { headers: new Headers(), message: "Too Many Requests", statusCode: 429 });
 
-const node = { limits: 0, after: [] as { sleeps: number; act: () => void }[] };
+const node = { limits: 0, after: [] as { sleeps: number; act: () => void | Promise<void> }[] };
 
 function throttling(inner: Transport): Transport {
   return Object.fromEntries(
@@ -34,7 +34,7 @@ function throttling(inner: Transport): Transport {
         : async (...args: unknown[]) => {
             for (let next = node.after[0]; next !== undefined && h.sleeps.length >= next.sleeps; next = node.after[0]) {
               node.after.shift();
-              next.act();
+              await next.act();
             }
             if (node.limits > 0) {
               node.limits -= 1;
@@ -98,15 +98,11 @@ async function setUp() {
   return { client, wallet, intent: escrow["intent"] as Address, nonce: escrow["nonce"] as string };
 }
 
-const announced = async (intent: Address, judge: Address, signature: string, slot: bigint, blockTime: bigint | null, url: string, worker: Address): Promise<EngineTransaction> => ({
-  signature,
-  slot,
-  blockTime,
-  failed: false,
-  emitted: [],
-  memos: [await sealedDelivery(intent, worker, "e5".repeat(32), url, [judge])],
-  feePayer: worker,
-});
+const WORK = "e5".repeat(32);
+
+const announce = (intent: Address, worker: KeyPairSigner, url: string) => announced(intent, worker, WORK, url);
+
+const listedOf = (listed: Json) => (listed["announcements"] as Json[]).map(({ announcement, seq, worker }) => [announcement, seq, worker]);
 
 afterEach(() => {
   node.limits = 0;
@@ -114,59 +110,40 @@ afterEach(() => {
 });
 
 describe("the order of announcements", () => {
-  it("lists the earlier of two announcements of the same work first, with both slots and block times, though the node returns the later first", async () => {
+  it("lists announcements in seq order from accounts, and a release for the work pays the first, not a copier", async () => {
     const { client, wallet, intent, nonce } = await setUp();
-    const worker = (await generateKeyPairSigner()).address;
-    const copier = (await generateKeyPairSigner()).address;
-    const work = "e5".repeat(32);
-    h.engineLog = [
-      await announced(intent, wallet, "later", 12n, 1_700_000_012n, URL_OF_COPY, copier),
-      await announced(intent, wallet, "earlier", 11n, null, URL_OF_WORK, worker),
-      creation(intent),
-    ];
-    const check = saltCheckOf(saltFor(intent));
+    const [worker, copier] = [await keyed(), await keyed()];
+    const first = await announce(intent, worker, URL_OF_WORK);
+    const copied = await announce(intent, copier, URL_OF_COPY);
     const listed = await ok(client, "wallet_check_delivery", { intent });
-    expect(listed["deliveries"]).toEqual([
-      { worker, commitment: commitmentOf(intent, worker, saltFor(intent), work), check, signature: "earlier", slot: "11", url: URL_OF_WORK },
-      { worker: copier, commitment: commitmentOf(intent, copier, saltFor(intent), work), check, signature: "later", slot: "12", block_time: "1700000012", url: URL_OF_COPY },
+    expect(listedOf(listed)).toEqual([
+      [first.announcement, "1", worker.address],
+      [copied.announcement, "2", copier.address],
     ]);
-    const release = { owner: wallet, nonce, delivered_sha256: work };
-    expect((await call(client, "wallet_attest", { ...release, pay_to: copier })).value).toMatchObject({ code: "NotEarliestAnnouncer", hint: notEarliest(worker, work) });
-    expect(await ok(client, "wallet_attest", { ...release, pay_to: (listed["deliveries"] as Json[])[0]?.["worker"] })).toMatchObject({ sent: false });
-  });
-
-  it("orders announcements in the same slot by signature, as a release does", async () => {
-    const { client, wallet, intent } = await setUp();
-    const one = (await generateKeyPairSigner()).address;
-    const two = (await generateKeyPairSigner()).address;
-    h.engineLog = [await announced(intent, wallet, "b-second", 4n, null, URL_OF_WORK, two), await announced(intent, wallet, "a-first", 4n, null, URL_OF_WORK, one), creation(intent)];
-    const listed = await ok(client, "check_delivery", { intent });
-    expect((listed["deliveries"] as Json[]).map(({ signature, slot }) => [signature, slot])).toEqual([
-      ["a-first", "4"],
-      ["b-second", "4"],
-    ]);
+    expect(listed).toMatchObject({ complete: true, next_seq: "3", missing: [] });
+    expect((await ok(client, "check_delivery", { intent }))["announcements"]).toEqual(listed["announcements"]);
+    const release = { owner: wallet, nonce, delivered_sha256: WORK };
+    expect((await call(client, "wallet_attest", { ...release, pay_to: copier.address })).value).toMatchObject({ code: "NotEarliestAnnouncer", hint: notEarliest(worker.address, WORK) });
+    expect(await ok(client, "wallet_attest", release)).toMatchObject({ sent: false, pay_to: worker.address, announcement: first.announcement });
   });
 });
 
 describe("waiting for a new announcement", () => {
   it("returns as soon as an announcement newer than those already listed lands", async () => {
-    const { client, wallet, intent } = await setUp();
-    const worker = (await generateKeyPairSigner()).address;
-    const first = await announced(intent, wallet, "first", 5n, null, URL_OF_WORK, worker);
-    const second = await announced(intent, wallet, "second", 8n, null, URL_OF_COPY, worker);
-    h.engineLog = [first, creation(intent)];
-    node.after = [{ sleeps: 2, act: () => (h.engineLog = [second, first, creation(intent)]) }];
+    const { client, intent } = await setUp();
+    const worker = await keyed();
+    await announce(intent, worker, URL_OF_WORK);
+    node.after = [{ sleeps: 2, act: async () => void (await announce(intent, worker, URL_OF_COPY)) }];
     const listed = await ok(client, "wallet_check_delivery", { intent, wait: 10 });
-    expect((listed["deliveries"] as Json[]).map(({ signature }) => signature)).toEqual(["first", "second"]);
+    expect(listedOf(listed).map(([, seq]) => seq)).toEqual(["1", "2"]);
     expect(h.sleeps).toEqual([1, 1]);
   });
 
   it("returns the list when the time is up with nothing new, and refuses a wait out of bounds", async () => {
-    const { client, wallet, intent } = await setUp();
-    const worker = (await generateKeyPairSigner()).address;
-    h.engineLog = [await announced(intent, wallet, "first", 5n, null, URL_OF_WORK, worker), creation(intent)];
+    const { client, intent } = await setUp();
+    await announce(intent, await keyed(), URL_OF_WORK);
     const listed = await ok(client, "wallet_check_delivery", { intent, wait: 3 });
-    expect((listed["deliveries"] as Json[]).map(({ signature }) => signature)).toEqual(["first"]);
+    expect(listedOf(listed).map(([, seq]) => seq)).toEqual(["1"]);
     expect(h.sleeps).toEqual([1, 1, 1]);
     for (const wait of [0, 41]) {
       expect((await call(client, "wallet_check_delivery", { intent, wait })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "wait" }] });
@@ -176,17 +153,15 @@ describe("waiting for a new announcement", () => {
 
 describe("waiting through rate limiting", () => {
   it("keeps waiting for a new announcement after the node rate-limits a read once", async () => {
-    const { client, wallet, intent } = await setUp();
-    const worker = (await generateKeyPairSigner()).address;
-    const first = await announced(intent, wallet, "first", 5n, null, URL_OF_WORK, worker);
-    const landed = await announced(intent, wallet, "landed", 9n, null, URL_OF_COPY, worker);
-    h.engineLog = [first, creation(intent)];
+    const { client, intent } = await setUp();
+    const worker = await keyed();
+    await announce(intent, worker, URL_OF_WORK);
     node.after = [
-      { sleeps: 1, act: () => (node.limits = 1) },
-      { sleeps: 2, act: () => (h.engineLog = [landed, first, creation(intent)]) },
+      { sleeps: 1, act: () => void (node.limits = 1) },
+      { sleeps: 2, act: async () => void (await announce(intent, worker, URL_OF_COPY)) },
     ];
     const listed = await ok(client, "wallet_check_delivery", { intent, wait: 10 });
-    expect((listed["deliveries"] as Json[]).map(({ signature }) => signature)).toEqual(["first", "landed"]);
+    expect(listedOf(listed).map(([, seq]) => seq)).toEqual(["1", "2"]);
     expect([node.limits, h.sleeps]).toEqual([0, [1, 1]]);
   });
 

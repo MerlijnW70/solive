@@ -131,3 +131,25 @@ Every error the engine program raises, from its IDL. When an SDK call fails, `cl
 | 6122 | `AnnouncementRetained` | yes | an announcement stays through the refute window after its escrow expires or after it is paid, so an earlier worker can still refute the release |
 | 6123 | `RefuteNotEarlier` | no | a refutation needs an announcement made before the paid one, and this one came later |
 | 6124 | `RefuteSamePayee` | no | the earlier announcement belongs to a wallet the release paid |
+| 6125 | `AttestorMismatch` | no | the attestor account is not the attestor this escrow names |
+| 6126 | `BlobRecipients` | no | the sealed delivery is sealed to a different number of keys than this escrow's judge or committee holds |
+| 6127 | `BlobKeyMismatch` | no | the sealed delivery is not sealed to the key the judge's profile publishes now |
+| 6128 | `CommitteeKeysUnsynced` | yes | the committee has not recorded its members' encryption keys yet |
+| 6129 | `CommitmentZero` | no | an announcement must carry the commitment to the delivered work, and this one is empty |
+| 6130 | `ProfileMismatch` | no | the judge's profile account is missing or is not a profile of this program |
+| 6131 | `BookMismatch` | no | the delivery book account does not belong to this escrow |
+| 6132 | `AnnounceFeeMissing` | no | the engine charges an announce fee, so the transaction must pass the fee recipient's wallet |
+| 6133 | `AnnouncementMissing` | no | a release of a proof escrow names the announcement it pays, and this one names none |
+| 6134 | `AnnouncementUnexpected` | no | this escrow commits no spec hash, so its release names no announcement and no opening |
+| 6135 | `AnnouncementMismatch` | no | the announcement belongs to another escrow than the one this names |
+| 6136 | `AnnouncementPaid` | no | this announcement was already paid |
+| 6137 | `PayeeNotAnnouncer` | no | the payee token account does not belong to the wallet that made the announcement |
+| 6138 | `CommitmentMismatch` | no | the opening does not open the announcement's commitment to this work |
+| 6139 | `AnnouncerNotRecipient` | no | a split release must pay the wallet that made the announcement among its recipients |
+| 6140 | `RentRecipientMismatch` | no | rent goes back only to the wallet that paid it |
+| 6141 | `DeliveryBookOpen` | no | the delivery book of an open escrow stays |
+| 6142 | `DeliveryBookLive` | no | the delivery book still holds announcements |
+| 6143 | `RefuteNotPaid` | no | only a paid announcement can be refuted |
+| 6144 | `RefuteNotAnnouncer` | no | only the wallet that made the earlier announcement refutes with it |
+| 6145 | `RefuteSplitMismatch` | no | the recipients and weights given are not the split the release paid |
+| 6146 | `DeliveryRecordKept` | no | a delivery record account is not closed as a legacy account |

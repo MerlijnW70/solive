@@ -13,10 +13,9 @@ import {
 } from "@intent-engine/core";
 import { createClient } from "@intent-engine/client";
 import { NOT_A_MEMBER, RELEASE_CHANGED, VOTE_CHANGED, WALLET_NOTICE } from "../src/agent/wallet.js";
-import { notEarliest } from "../src/agent/wallet/delivery.js";
 import { EXIT_OK } from "../src/main.js";
-import { sealedDelivery } from "./announce.js";
-import { balance, cli, creation, funded, h, transport, world } from "./harness.js";
+import { announced, keyed } from "./announce.js";
+import { balance, cli, funded, h, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -91,27 +90,19 @@ describe("a wallet server on a committee", () => {
     const specHash = "6d".repeat(32);
     const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: specHash, send: true });
     const intent = escrow["intent"] as Address;
-    const worker = (await generateKeyPairSigner()).address;
-    const copier = (await generateKeyPairSigner()).address;
+    const workerKey = await keyed();
+    const worker = workerKey.address;
     const work = "e7".repeat(32);
-    const memo = await sealedDelivery(intent, worker, work, "https://example.org/work", members);
-    h.engineLog = [
-      { signature: "copy", slot: 9n, blockTime: null, failed: false, emitted: [], memos: [memo], feePayer: copier },
-      { signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [memo], feePayer: worker },
-      creation(intent),
-    ];
-    const ballot = { owner: wallet, nonce: escrow["nonce"] as string, pay_to: worker, result: "1", delivered_sha256: work };
-    return { wallet, other, committee, intent, worker, copier, work, ballot };
+    const made = await announced(intent, workerKey, work);
+    const ballot = { owner: wallet, nonce: escrow["nonce"] as string, result: "1", delivered_sha256: work };
+    return { wallet, other, committee, intent, worker, work, ballot, made };
   }
 
   it("votes after a preview, and releases once the threshold of votes is in", async () => {
     const e = await committeeEscrow(true);
-    expect((await call(client, "wallet_committee_vote", { ...e.ballot, pay_to: e.copier })).value).toMatchObject({
-      code: "NotEarliestAnnouncer",
-      hint: notEarliest(e.worker, e.work),
-    });
+    expect((await call(client, "wallet_committee_vote", { ...e.ballot, delivered_sha256: "e8".repeat(32) })).value).toMatchObject({ code: "NotAnnounced" });
     const preview = await ok(client, "wallet_committee_vote", e.ballot);
-    expect(preview).toMatchObject({ intent: e.intent, committee: e.committee, signed: false });
+    expect(preview).toMatchObject({ intent: e.intent, committee: e.committee, announcement: e.made.announcement, worker: e.worker, signed: false });
     expect(preview).not.toHaveProperty("vote");
     expect((await call(client, "wallet_committee_vote", { ...e.ballot, result: "1", send: true })).value).toMatchObject({
       code: "ReleaseChanged",
@@ -123,7 +114,8 @@ describe("a wallet server on a committee", () => {
     const ballot = await createClient({ url: "http://cluster", transport }).committeeBallot({
       owner: e.wallet,
       nonce: BigInt(e.ballot.nonce),
-      payTo: e.worker,
+      announcement: e.made.announcement,
+      opening: { sha256: e.work, salt: e.made.salt },
       result: 1n,
     });
     const theirs = await signCommitteeVote(e.other, ballot.digest, ballot.committee.members);

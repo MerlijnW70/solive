@@ -1439,6 +1439,8 @@ describe("tool annotations", () => {
         "solive_wallet_committee_release",
         "solive_wallet_committee_vote",
         "solive_wallet_deliver",
+        "solive_wallet_reclaim",
+        "solive_wallet_refute",
         "solive_wallet_escrow",
         "solive_wallet_escrow_plan",
         "solive_wallet_recurring",

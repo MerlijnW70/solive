@@ -39,9 +39,9 @@ import {
   findConfigPda,
   formatAmount,
   getConfigDecoder,
+  getDeliveryReleasedEventEncoder,
   getIntentAttestedEventEncoder,
   getIntentCreatedEventEncoder,
-  releaseMemo,
   specMemo,
   EVENT_IX_TAG,
   findIntentPda,
@@ -53,20 +53,18 @@ import {
   type Intent,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   INTENT_VERSION,
-  DELIVERY_MEMO_PREFIX,
   Kind,
   splitFee,
   splitFees,
-  encryptionKeyText,
-  x25519PublicOf,
 } from "@intent-engine/core";
 import { agentServer } from "../src/agent/mcp.js";
 import { ACTIONS } from "../src/agent/registry.js";
 import { needsSpecHash, SHA256_NEEDED, SPEC_HASH_FORMAT, UsageError, usageOf } from "../src/args.js";
 import { expandHome } from "../src/wallet.js";
 import { DELIVER_ONE_OF } from "../src/job-args.js";
-import { commitmentOf, createClient, deliverySalt, DEVNET_GENESIS_HASH, PLAIN_HTTP_ON_PUBLIC, rentExemptMinimum, saltCheckOf } from "@intent-engine/client";
+import { type AnnouncementPlan, createClient, DEVNET_GENESIS_HASH, loadAnnouncement, PLAIN_HTTP_ON_PUBLIC, rentExemptMinimum } from "@intent-engine/client";
 import { ANNOUNCE_FIRST } from "../src/agent/wallet/delivery.js";
+import { RELEASE_UNKNOWN } from "../src/agent/wallet.js";
 import {
   crankAction,
   IMMUTABLE_OWNER,
@@ -78,7 +76,6 @@ import {
   IN_FLIGHT_SECONDS,
   REFRESH_AFTER_SECONDS,
   jupiterHost,
-  NOT_RELEASED,
   run,
   stillOpen,
   SOLVER_TABLE_NEXT,
@@ -662,6 +659,12 @@ describe("cli against the deployed engine", () => {
     );
   });
 
+  const announcedLines = (plan: AnnouncementPlan, sha256: string, url: string, worker: string, judge: string) => [
+    `Announces: the work with sha256 ${sha256} to the proof escrow ${plan.intent} in ${plan.announcement}, whose commitment ${plan.commitment} binds it to ${worker} and the salt ${plan.salt}`,
+    `Seals: the salt and the url ${url} to ${judge} (the key derived from its wallet), so only they can open it`,
+    `Pays: the announcement's rent and the fee, from ${worker}; the rent returns to it when the announcement closes`,
+  ];
+
   it("lists open proof escrows as jobs and announces a delivery to the judge, previewing unless --yes", async () => {
     h.watched.push(owner.address);
     h.engineLog = [];
@@ -701,19 +704,15 @@ describe("cli against the deployed engine", () => {
     expect((await cli(["jobs", "--attestor", worker.address], {})).json()).toEqual({ jobs: [] });
 
     const work = "ab".repeat(32);
-    const args = ["deliver", "--keypair", "w.json", "--intent", job.intent, "--sha256", work.toUpperCase(), "--work-url", "https://example.org/work"];
-    const salt = await deliverySalt(worker, job.intent, work);
-    const summary = [
-      `Announces: the work with sha256 ${work}, for the proof escrow ${job.intent}, as the commitment ${commitmentOf(job.intent, worker.address, salt, work)}, which binds it to ${worker.address} and a salt only its key derives`,
-      "Seals: the salt and the url " + "https://example.org/work" + `, so only the judge ${judge.address} can read it`,
-      `Notifies: its judge ${judge.address}, with a transfer of 0 lamports from ${worker.address}, which signs and pays the fee`,
-      `Seals to: ${judge.address} with the key ${encryptionKeyText(x25519PublicOf(judge.address))}, derived from its wallet`,
-    ];
+    const url = "https://" + "example.org/work";
+    const args = ["deliver", "--keypair", "w.json", "--intent", job.intent, "--sha256", work.toUpperCase(), "--work-url", url];
+    const plan = await client.prepareAnnouncement({ worker, intent: job.intent, sha256: work, url });
+    const summary = announcedLines(plan, work, url, worker.address, judge.address);
     const preview = await cli(args, { "w.json": worker });
-    expect(preview.json()).toMatchObject({ intent: job.intent, attestor: judge.address, check: saltCheckOf(salt), summary, sent: false });
-    expect(JSON.stringify(preview.json())).not.toContain(salt);
+    expect(preview.json()).toMatchObject({ intent: job.intent, attestor: judge.address, announcement: plan.announcement, commitment: plan.commitment, salt: plan.salt, summary, sent: false });
     const sent = await cli([...args, "--yes"], { "w.json": worker });
-    expect(sent.json()).toMatchObject({ intent: job.intent, attestor: judge.address, summary, sent: true, signature: expect.any(String) });
+    expect(sent.json()).toMatchObject({ intent: job.intent, attestor: judge.address, summary, seq: "1", sent: true, signature: expect.any(String) });
+    expect((await cli([...args, "--yes"], { "w.json": worker })).json()).toMatchObject({ announcement: plan.announcement, seq: "1", sent: false });
 
     const bad = await cli([...args.slice(0, 6), "xyz", ...args.slice(7)], { "w.json": worker });
     expect([bad.code, bad.err]).toEqual([EXIT_USAGE, SHA256_NEEDED]);
@@ -742,22 +741,16 @@ describe("cli against the deployed engine", () => {
       const args = ["deliver", "--keypair", "w.json", "--intent", job.intent, "--artifact", artifact, "--work-url", "https://example.org/work"];
       const preview = await cli(args, { "w.json": worker });
       expect([preview.code, preview.err]).toEqual([EXIT_OK, ""]);
-      const salt = await deliverySalt(worker, job.intent, sha256);
-      const commitment = commitmentOf(job.intent, worker.address, salt, sha256);
-      expect(preview.json()).toMatchObject({ commitment, warnings: [ANNOUNCE_FIRST] });
-      expect(preview.json()["summary"] as string[]).toEqual([
-        `Announces: the work with sha256 ${sha256}, for the proof escrow ${job.intent}, as the commitment ${commitment}, which binds it to ${worker.address} and a salt only its key derives`,
-        "Seals: the salt and the url " + "https://example.org/work" + `, so only the judge ${judge.address} can read it`,
-        `Notifies: its judge ${judge.address}, with a transfer of 0 lamports from ${worker.address}, which signs and pays the fee`,
-        `Seals to: ${judge.address} with the key ${encryptionKeyText(x25519PublicOf(judge.address))}, derived from its wallet`,
-      ]);
+      const plan = await client.prepareAnnouncement({ worker, intent: job.intent, sha256, url: "https://" + "example.org/work" });
+      expect(preview.json()).toMatchObject({ commitment: plan.commitment, warnings: [ANNOUNCE_FIRST] });
+      expect(preview.json()["summary"] as string[]).toEqual(announcedLines(plan, sha256, "https://" + "example.org/work", worker.address, judge.address));
       const sent = await cli([...args, "--yes"], { "w.json": worker });
       expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);
       const landed = h.svm.getTransaction(sent.json()["signature"] as Signature);
       if (!(landed instanceof TransactionMetadata)) {
         throw new Error("the delivery did not land");
       }
-      expect(landed.logs().some((line) => line.includes(`${DELIVERY_MEMO_PREFIX}${job.intent}:${commitment}:${saltCheckOf(salt)}:`))).toBe(true);
+      expect((await loadAnnouncement(transport, plan.announcement))?.state).toBe("announced");
       expect(landed.logs().some((line) => line.includes("example.org"))).toBe(false);
     }
   });
@@ -2056,7 +2049,7 @@ describe("the cli reaches what the other surfaces do", () => {
   it("receipt prints the recorded delivery", async () => {
     const [intent] = await findIntentPda({ owner: w.owner.address, nonce: 7n });
     const receipt = ["receipt", "--owner", w.owner.address, "--nonce", "7"];
-    expect((await cli(receipt, {})).json()).toEqual({ intent, released: false, next: NOT_RELEASED });
+    expect((await cli(receipt, {})).json()).toEqual({ intent, released: false, complete: false, next: RELEASE_UNKNOWN });
     const worker = await generateKeyPairSigner();
     const judge = await generateKeyPairSigner();
     const payee = await ata(w.authority, worker.address, w.inputMint);
@@ -2091,7 +2084,19 @@ describe("the cli reaches what the other surfaces do", () => {
       createFee: 0,
     });
     const work = "c".repeat(64);
-    const release = { signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [tag(released)], memos: [releaseMemo(work)], memoSigners: [[judge.address]] };
+    const salt = "5a".repeat(16);
+    const announcement = (await generateKeyPairSigner()).address;
+    const delivered = getDeliveryReleasedEventEncoder().encode({
+      intent,
+      announcement,
+      seq: 4n,
+      worker: worker.address,
+      attestor: judge.address,
+      delivered: Buffer.from(work, "hex"),
+      salt: Buffer.from(salt, "hex"),
+      splitHash: new Uint8Array(32),
+    });
+    const release = { signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [tag(delivered), tag(released)] };
     h.engineLog = [{ ...release, signature: "failed", failed: true }, release, { signature: "create", slot: 1n, blockTime: null, failed: false, emitted: [tag(created)] }];
     const recorded = {
       intent,
@@ -2100,9 +2105,15 @@ describe("the cli reaches what the other surfaces do", () => {
       result: "2",
       signature: "release",
       delivered_sha256: work,
+      delivered_salt: salt,
+      announcement,
+      seq: "4",
+      announcer: worker.address,
+      standing_complete: false,
       paid_to: worker.address,
       payee,
       paid: formatAmount(2_500_000n, 6),
+      mint: w.inputMint,
     };
     expect((await cli([...receipt, "--sha256", work.toUpperCase()], {})).json()).toEqual({ ...recorded, matches: true });
     expect((await cli([...receipt, "--sha256", "d".repeat(64)], {})).json()).toEqual({ ...recorded, matches: false });

@@ -38,6 +38,7 @@ import { artifactSha256, judge } from "./judge.js";
 import type { Runtime } from "./runtime.js";
 import { adminCommand, previewed, showMintCap } from "./admin-commands.js";
 import { jobCommand } from "./job-commands.js";
+import { announceCommand } from "./announce-commands.js";
 import { committeeCommand } from "./committee-commands.js";
 import { reputationCommand } from "./reputation-commands.js";
 import { claimsCommand } from "./claim-commands.js";
@@ -53,7 +54,7 @@ import { migrate } from "./migrate-commands.js";
 
 export type { Runtime } from "./runtime.js";
 export { AUTHORITY_NEXT, configExists } from "./admin-commands.js";
-export { NOT_RELEASED } from "./job-commands.js";
+export { NOT_RELEASED } from "./agent/wallet.js";
 export { follow, followGap } from "./event-feed.js";
 export {
   decodedChanges,
@@ -219,11 +220,14 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "spec":
       return readJobSpec(command, runtime, transport);
     case "jobs":
-    case "deliver":
     case "receipt":
-    case "record-delivery":
-    case "deliveries":
       return jobCommand(command, runtime, transport);
+    case "deliver":
+    case "deliveries":
+    case "refute":
+    case "reclaim":
+    case "close-book":
+      return announceCommand(command, runtime, transport);
     case "judge": {
       return judge(command, runtime, transport);
     }

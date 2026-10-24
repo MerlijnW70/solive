@@ -19,6 +19,7 @@ import {
   I64_MAX,
   I64_MIN,
   isMemoUrl,
+  isSaltHex,
   Kind,
   kindBit,
   MAX_FEE_BPS,
@@ -118,6 +119,43 @@ export function feePayerOf(values: Values, judge: string): { feePayer?: string }
     throw new UsageError(FEE_PAYER_FOR_LEDGER);
   }
   return feePayer === undefined ? {} : { feePayer };
+}
+
+export const RELAY_PAYER_KEY_FILE = "--fee-payer must name a key file, which signs and pays the transaction";
+
+export function relayPayerOf(values: Values): { feePayer?: string } {
+  const feePayer = values["fee-payer"];
+  if (feePayer !== undefined && isLedgerPath(feePayer)) {
+    throw new UsageError(RELAY_PAYER_KEY_FILE);
+  }
+  return feePayer === undefined ? {} : { feePayer };
+}
+
+export const SALT_NEEDED = "--salt must be the announcement's salt as 32 hex digits";
+
+export function saltOf(text: string): string {
+  const lowered = text.toLowerCase();
+  if (!isSaltHex(lowered)) {
+    throw new UsageError(SALT_NEEDED);
+  }
+  return lowered;
+}
+
+export const SPLIT_SHAPE = "--recipients and --weights name the split's wallets and their basis points, in the same order, adding up to 10000";
+
+export function splitOf(values: Values): { split?: { recipients: Address[]; weights: number[] } } {
+  if (values.recipients === undefined && values.weights === undefined) {
+    return {};
+  }
+  if (values.recipients === undefined || values.weights === undefined) {
+    throw new UsageError(SPLIT_SHAPE);
+  }
+  const recipients = values.recipients.split(",").map((wallet) => parseAddress(wallet.trim(), "recipients"));
+  const weights = values.weights.split(",").map((weight) => parseBounded(weight.trim(), "weights", 10_000, 1));
+  if (recipients.length !== weights.length || weights.reduce((sum, weight) => sum + weight, 0) !== 10_000) {
+    throw new UsageError(SPLIT_SHAPE);
+  }
+  return { split: { recipients, weights } };
 }
 
 export const KIND_NAMES: Record<string, Kind> = {

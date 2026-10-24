@@ -13,10 +13,12 @@ import {
   getAddressEncoder,
   getBase58Decoder,
   getBase64Encoder,
+  getCompiledTransactionMessageDecoder,
   getProgramDerivedAddress,
   getSignatureFromTransaction,
   getTransactionDecoder,
   type Instruction,
+  type Transaction,
   type KeyPairSigner,
   lamports,
   pipe,
@@ -50,7 +52,7 @@ import {
   MANDATE_NONCE_BIT,
 } from "@intent-engine/core";
 import type { Fetch } from "@intent-engine/solver";
-import type { EngineTransaction, SpecFetch, Transport } from "@intent-engine/client";
+import type { EngineAccountFilter, EngineTransaction, SpecFetch, Transport } from "@intent-engine/client";
 import type { Runtime } from "../src/commands.js";
 import { main } from "../src/main.js";
 import { fileSales } from "../src/agent/sales.js";
@@ -106,12 +108,27 @@ export const h = {
   airdropRefused: false,
   airdrops: [] as { address: Address; lamports: bigint }[],
   saleRoot: mkdtempSync(join(tmpdir(), "solive-sales-")),
+  touched: new Set<Address>(),
 };
 
 export const saleBook = fileSales((path) => join(h.saleRoot, path));
 
 export const HOME = "/home/tester";
 export const PACKET_LIMIT = 1_232;
+
+function touch(tx: Transaction): void {
+  for (const address of getCompiledTransactionMessageDecoder().decode(tx.messageBytes).staticAccounts) {
+    h.touched.add(address);
+  }
+}
+
+const startsWith = (data: Uint8Array, head: ArrayLike<number>, at: number): boolean =>
+  data.length >= at + head.length && Array.from(head).every((b, i) => data[at + i] === b);
+
+const matches = (data: Uint8Array, filter: EngineAccountFilter): boolean =>
+  (filter.dataSize === undefined || data.length === filter.dataSize) &&
+  startsWith(data, filter.discriminator, 0) &&
+  (filter.match ?? []).every(({ offset, address }) => startsWith(data, getAddressEncoder().encode(address), offset));
 
 export async function send(payer: TransactionSigner, ixs: readonly Instruction[]): Promise<string> {
   h.svm.expireBlockhash();
@@ -128,6 +145,7 @@ export async function send(payer: TransactionSigner, ixs: readonly Instruction[]
   if (result instanceof FailedTransactionMetadata) {
     throw new Error(String(result.err()));
   }
+  touch(tx);
   return getSignatureFromTransaction(tx);
 }
 
@@ -156,6 +174,7 @@ export const transport: Transport = {
     if (result instanceof FailedTransactionMetadata) {
       throw new Error(`${String(result.err())}\n${result.meta().logs().join("\n")}`);
     }
+    touch(tx);
     h.wires.push(wire);
     return getSignatureFromTransaction(tx);
   },
@@ -171,12 +190,16 @@ export const transport: Transport = {
       throw fails.error;
     }
     const result = h.svm.sendTransaction(tx);
+    if (!(result instanceof FailedTransactionMetadata)) {
+      touch(tx);
+    }
     if (fails !== null) {
       throw fails.error;
     }
     if (result instanceof FailedTransactionMetadata) {
       throw new Error(`${String(result.err())}\n${result.meta().logs().join("\n")}`);
     }
+    touch(tx);
     h.wires.push(wire);
     return getSignatureFromTransaction(tx);
   },
@@ -237,6 +260,15 @@ export const transport: Transport = {
     h.requestedOf.push(of);
     return h.engineLog;
   },
+  engineAccounts: async (filter) =>
+    [...h.touched].flatMap((address) => {
+      const account = h.svm.getAccount(address);
+      if (!account.exists || account.programAddress !== INTENT_ENGINE_PROGRAM_ADDRESS) {
+        return [];
+      }
+      const data = new Uint8Array(account.data);
+      return filter === undefined || matches(data, filter) ? [{ address, data, lamports: account.lamports }] : [];
+    }),
   firstAvailableSlot: async () => h.firstSlot,
   recentFees: async (accounts) => {
     h.feeQueries.push([...accounts]);
@@ -252,6 +284,8 @@ export const transport: Transport = {
     return "airdrop";
   },
 };
+
+export const unlisting = Object.fromEntries(Object.entries(transport).filter(([name]) => name !== "engineAccounts")) as Transport;
 
 export function ownerSigned(intent: Address, memos: string[]): Pick<EngineTransaction, "memos" | "memoSigners"> {
   const held = h.svm.getAccount(intent);
@@ -421,6 +455,7 @@ export function resetHarness(): void {
   h.airdrops = [];
   h.files.clear();
   h.reads.clear();
+  h.touched = new Set();
   for (const key of Object.keys(h.env)) {
     delete h.env[key];
   }

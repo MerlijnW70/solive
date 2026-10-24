@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Client, ClaimsView, Transport } from "@intent-engine/client";
 import { parse, takesSavedConfirm, UsageError } from "../src/args.js";
 import { dropHandover, handedTo, lineWaiting } from "../src/claim-commands.js";
-import { agreedSalt, VOTE_KIND, voteOf } from "../src/committee-commands.js";
+import { sameBallot, VOTE_KIND, voteOf } from "../src/committee-commands.js";
 import { FlowRefused } from "../src/flows.js";
 import { checkLedgerPaths } from "../src/ledger-keys.js";
 import { EXIT_FAILED, nodeRuntime } from "../src/main.js";
@@ -17,6 +17,7 @@ import { cli, h } from "./harness.js";
 const ADDRESS = "11111111111111111111111111111111" as Address;
 const SALT = "ab".repeat(16);
 const OTHER_SALT = "cd".repeat(16);
+const SHA256 = "ef".repeat(32);
 
 const vote = (extra: Record<string, unknown> = {}) => ({
   kind: VOTE_KIND,
@@ -24,7 +25,9 @@ const vote = (extra: Record<string, unknown> = {}) => ({
   committee: ADDRESS,
   owner: ADDRESS,
   nonce: "0",
-  pay_to: ADDRESS,
+  announcement: ADDRESS,
+  sha256: SHA256,
+  salt: SALT,
   result: "1",
   member: ADDRESS,
   signature: "0".repeat(128),
@@ -87,30 +90,22 @@ describe("claim line wording and hand-over", () => {
 });
 
 describe("committee vote files", () => {
-  it("keeps salt and earlier only when the vote names them", () => {
+  it("reads a vote that names its announcement, sha256 and salt", () => {
     expect(voteOf(JSON.stringify(vote()), "v.json")).toStrictEqual(vote());
-    expect(voteOf(JSON.stringify(vote({ salt: SALT })), "v.json")).toStrictEqual(vote({ salt: SALT }));
-    expect(voteOf(JSON.stringify(vote({ earlier: [SALT, "-"] })), "v.json")).toStrictEqual(vote({ earlier: [SALT, "-"] }));
+    expect(voteOf(JSON.stringify({ vote: vote() }), "v.json")).toStrictEqual(vote());
   });
 
-  it("refuses a salt or earlier salts that are not lowercase hex", () => {
-    expect(() => voteOf(JSON.stringify(vote({ salt: "XY".repeat(16) })), "v.json")).toThrow(
-      new FlowRefused("v.json holds a salt that is not 32 lowercase hex digits"),
-    );
-    const earlier = "v.json holds earlier salts that are not each 32 lowercase hex digits or -";
-    expect(() => voteOf(JSON.stringify(vote({ earlier: ["zz"] })), "v.json")).toThrow(new FlowRefused(earlier));
-    expect(() => voteOf(JSON.stringify(vote({ earlier: SALT })), "v.json")).toThrow(new FlowRefused(earlier));
+  it("refuses a vote without its announcement, or with a sha256 or salt that is not lowercase hex", () => {
+    expect(() => voteOf(JSON.stringify(vote({ announcement: undefined })), "v.json")).toThrow(new FlowRefused("v.json holds a committee vote without announcement"));
+    expect(() => voteOf(JSON.stringify(vote({ salt: "XY".repeat(16) })), "v.json")).toThrow(new FlowRefused("v.json holds a salt that is not 32 lowercase hex digits"));
+    expect(() => voteOf(JSON.stringify(vote({ sha256: "zz" })), "v.json")).toThrow(new FlowRefused("v.json holds a sha256 that is not 64 lowercase hex digits"));
   });
 
-  it("agrees on the one salt the votes name and refuses two salts", () => {
-    const salted = voteOf(JSON.stringify(vote({ salt: SALT })), "a.json");
-    const plain = voteOf(JSON.stringify(vote()), "b.json");
-    expect(agreedSalt([salted, plain], ["a.json", "b.json"])).toStrictEqual({ salt: SALT, earlier: [] });
-    expect(agreedSalt([plain, salted], ["b.json", "a.json"])).toStrictEqual({ salt: SALT, earlier: [] });
+  it("agrees only when every vote names the same announcement and opening", () => {
+    const a = voteOf(JSON.stringify(vote()), "a.json");
+    expect(sameBallot([a, a], ["a.json", "b.json"])).toStrictEqual({ owner: ADDRESS, nonce: 0n, announcement: ADDRESS, sha256: SHA256, salt: SALT, result: 1n });
     const other = voteOf(JSON.stringify(vote({ salt: OTHER_SALT })), "c.json");
-    expect(() => agreedSalt([salted, other], ["a.json", "c.json"])).toThrow(
-      new FlowRefused("c.json opens the payee's announcement with another salt than a.json; every vote must come from the same judged delivery"),
-    );
+    expect(() => sameBallot([a, other], ["a.json", "c.json"])).toThrow(new FlowRefused(`c.json votes on salt ${OTHER_SALT}, but a.json votes on ${SALT}`));
   });
 });
 

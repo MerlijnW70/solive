@@ -17,7 +17,7 @@ import {
 import type { EngineTransaction } from "@intent-engine/client";
 import { tool } from "../src/agent/names.js";
 import { WALLET_ACTIONS } from "../src/agent/wallet.js";
-import { EARLIEST_MEANS, escrowClosed, noEscrow } from "../src/agent/wallet/delivery.js";
+import { escrowClosed, noEscrow } from "../src/agent/wallet/delivery.js";
 import { ALSO_MAX, noneKnown, noneReleased, paidOther, stillUnreleased } from "../src/agent/wallet/receipt.js";
 import { EXIT_OK } from "../src/main.js";
 import { LAMPORTS_PER_SOL } from "../src/wallet.js";
@@ -254,11 +254,9 @@ describe("checking delivery on a closed escrow", () => {
     expect(noEscrow(closed.intent, "wallet_receipt")).toContain("solive_wallet_receipt with the escrow's owner and nonce");
   });
 
-  it("says own.earliest is about the given sha256, not the whole escrow", () => {
+  it("says how many announcements by other wallets came before each of this wallet's own", () => {
     const check = WALLET_ACTIONS.find((action) => action.name === tool("wallet_check_delivery"));
-    const own = (check?.output.json as Json)["properties"]["own"];
-    expect(own["properties"]["earliest"]["description"]).toBe(EARLIEST_MEANS);
-    expect(EARLIEST_MEANS).toContain("about the given sha256, not the whole escrow");
-    expect(EARLIEST_MEANS).toContain("no earlier announcement of that same work is known");
+    const mine = (check?.output.json as Json)["properties"]["mine"];
+    expect(mine["items"]["properties"]["earlier"]["description"]).toBe("how many announcements by other wallets came before it");
   });
 });

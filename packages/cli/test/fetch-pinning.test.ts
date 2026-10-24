@@ -4,8 +4,8 @@ import { type AddressInfo, createServer as createSocketServer, type Server as So
 import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import { Kind, specMemo } from "@intent-engine/core";
-import { createClient, DEVNET_GENESIS_HASH, type Delivery, MAX_SPEC_BYTES, pinnedFetch, readSpec, type SpecFetch, type Transport, UNEXPECTED_REDIRECT } from "@intent-engine/client";
-import { fetchBytes, fetchDelivery, NOT_PUBLIC } from "../src/delivery-fetch.js";
+import { createClient, DEVNET_GENESIS_HASH, MAX_SPEC_BYTES, pinnedFetch, readSpec, type SpecFetch, type Transport, UNEXPECTED_REDIRECT } from "@intent-engine/client";
+import { type Announced, fetchBytes, fetchDelivery, NOT_PUBLIC } from "../src/delivery-fetch.js";
 import { type Lookup, privateAddress, publicAddresses } from "../src/public-address.js";
 import { creation, h, NOW, ownerSigned, transport, world } from "./harness.js";
 
@@ -83,7 +83,7 @@ describe("a fetch connects only to the addresses the check passed", () => {
       lookups++;
       return [CHECKED];
     };
-    const delivery = { url: "https://" + "work.example/w", worker: "w", commitment: "c", salt: "", sha256: "" } as unknown as Delivery;
+    const delivery = { url: "https://" + "work.example/w", salt: "", announcement: { worker: "w", commitment: new Uint8Array(32) } } as unknown as Announced;
     await fetchDelivery(get, PUBLIC, delivery, 5, lookup).catch(() => undefined);
     const w = await world();
     const specUrl = "https://" + "spec.example/jobs/pinned.md";

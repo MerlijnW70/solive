@@ -63,7 +63,9 @@ Your 0.05 comes back as wrapped SOL, SOL held as a token, which your next order 
 
 ## Sign with a Ledger
 
-Install `@ledgerhq/hw-app-solana@7.12.0` and `@ledgerhq/hw-transport-node-hid-noevents@6.36.0` where intent-engine is installed, open the Solana app on the Ledger and pass `--keypair usb://ledger`, `usb://ledger?key=<account>` or `usb://ledger?key=<account>/<change>` instead of a key file. This works for `create`, `cancel`, `expire`, `close`, `approve`, `revoke-approval`, `deliver`, `judge`, `committee vote`, `committee release`, `signed prepare`, `advance-nonce`, `advance-epoch`, `claims take`, `claims drop`, `mandate grant`, `mandate revoke`, `profile set`, `profile close` and `solver float`. Any other command refuses a Ledger before it reads the chain and asks for a key file.
+Install `@ledgerhq/hw-app-solana@7.12.0` and `@ledgerhq/hw-transport-node-hid-noevents@6.36.0` where intent-engine is installed, open the Solana app on the Ledger and pass `--keypair usb://ledger`, `usb://ledger?key=<account>` or `usb://ledger?key=<account>/<change>` instead of a key file. This works for `create`, `cancel`, `expire`, `close`, `approve`, `revoke-approval`, `deliver`, `refute`, `reclaim`, `close-book`, `judge`, `committee vote`, `committee release`, `signed prepare`, `advance-nonce`, `advance-epoch`, `claims take`, `claims drop`, `mandate grant`, `mandate revoke`, `profile set`, `profile close` and `solver float`.
+
+Any other command refuses a Ledger before it reads the chain and asks for a key file.
 
 ## Next
 

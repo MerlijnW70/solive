@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { rm } from "node:fs/promises";
-import type { Address, Signature } from "@solana/kit";
+import type { Address } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { commitmentOf, DEVNET_GENESIS_HASH, type Delivery, saltCheckOf } from "@intent-engine/client";
-import { DeliveryUnfit, fetchDelivery, NOT_PUBLIC } from "../src/delivery-fetch.js";
+import { type AnnouncementView, DEVNET_GENESIS_HASH } from "@intent-engine/client";
+import { announcementCommitment } from "@intent-engine/core";
+import { type Announced, DeliveryUnfit, fetchDelivery, NOT_PUBLIC } from "../src/delivery-fetch.js";
 import { type Lookup, privateAddress, publicHost } from "../src/public-address.js";
 import { h, transport, world } from "./harness.js";
 
@@ -63,19 +64,11 @@ describe("private addresses", () => {
 describe("fetching a delivery on a public cluster", () => {
   const bytes = new TextEncoder().encode("export default (a, b) => a + b;\n");
   const party = "11111111111111111111111111111111" as Address;
-  const delivery = (url: string): Delivery => ({
-    intent: party,
-    sha256: "",
-    url,
-    worker: party,
-    signature: "s" as Signature,
-    slot: 1n,
-    blockTime: null,
-    commitment: commitmentOf(party, party, "ab".repeat(16), createHash("sha256").update(bytes).digest("hex")),
-    check: saltCheckOf("ab".repeat(16)),
-    salt: "ab".repeat(16),
-    sealed: "",
-  });
+  const salt = new Uint8Array(16).fill(0xab);
+  const delivery = async (url: string): Promise<Announced> => {
+    const commitment = await announcementCommitment(party, party, { delivered: Uint8Array.from(createHash("sha256").update(bytes).digest()), salt });
+    return { announcement: { address: party, intent: party, worker: party, commitment } as unknown as AnnouncementView, salt: Buffer.from(salt).toString("hex"), url };
+  };
   const lookup: Lookup = async (host) => (host === "internal.example" ? ["192.168.0.10"] : ["93.184.216.34"]);
   const asked: string[] = [];
   const get = async (url: string) => {
@@ -87,10 +80,10 @@ describe("fetching a delivery on a public cluster", () => {
     await world();
     h.genesis = DEVNET_GENESIS_HASH;
     for (const url of ["https://internal.example/work.mjs", "https://127.0.0.1/work.mjs", "https://[::1]/work.mjs", "https://169.254.169.254/latest"]) {
-      await expect(fetchDelivery(get, transport, delivery(url), 5, lookup), url).rejects.toThrow(new DeliveryUnfit(url, NOT_PUBLIC));
+      await expect(fetchDelivery(get, transport, await delivery(url), 5, lookup), url).rejects.toThrow(new DeliveryUnfit(url, NOT_PUBLIC));
     }
     expect(asked).toEqual([]);
-    const fetched = await fetchDelivery(get, transport, delivery("https://work.example/work.mjs"), 5, lookup);
+    const fetched = await fetchDelivery(get, transport, await delivery("https://work.example/work.mjs"), 5, lookup);
     expect(asked).toEqual(["https://work.example/work.mjs"]);
     await rm(fetched.root, { recursive: true, force: true });
   });
@@ -98,7 +91,7 @@ describe("fetching a delivery on a public cluster", () => {
   it("fetches a local address on a local cluster", async () => {
     await world();
     asked.length = 0;
-    const fetched = await fetchDelivery(get, transport, delivery("https://127.0.0.1/work.mjs"), 5, lookup);
+    const fetched = await fetchDelivery(get, transport, await delivery("https://127.0.0.1/work.mjs"), 5, lookup);
     expect(asked).toEqual(["https://127.0.0.1/work.mjs"]);
     await rm(fetched.root, { recursive: true, force: true });
   });

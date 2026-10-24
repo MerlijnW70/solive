@@ -30,7 +30,7 @@ import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { listedOnly } from "../src/agent/work-claims.js";
 import { limitsLine, listDiffers, listIncomplete, notListed } from "../src/claim-lists.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
-import { sealedDelivery } from "./announce.js";
+import { announced } from "./announce.js";
 import { cli, creation, funded, h, NOW, ownerSigned, send, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
@@ -123,9 +123,8 @@ describe("a claim list on chain", () => {
     await send(worker, [await claim(worker, true)]);
     await expect(send(stranger, [await standBy(stranger, true)])).rejects.toThrow(onChain("NotListed"));
     await expect(send(stranger, [await standBy(stranger, false)])).rejects.toThrow(onChain("ClaimListMissing"));
-    const memo = await sealedDelivery(intent, worker.address, WORK, WORK_URL, [s.wallet]);
-    h.engineLog.unshift({ signature: "announced", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [memo], feePayer: worker.address });
-    const release = { owner, nonce: "0", pay_to: worker.address, delivered_sha256: WORK };
+    await announced(intent, worker, WORK, WORK_URL);
+    const release = { owner, nonce: "0", delivered_sha256: WORK };
     const shown = await ok(s.client, "wallet_attest", release);
     expect(await ok(s.client, "wallet_attest", { ...release, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
     const found = await createClient({ url: "http://cluster", transport }).intent(owner, 0n);

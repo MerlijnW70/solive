@@ -179,7 +179,7 @@ describe("signing with a Ledger", () => {
       ["balance", ["balance", "--keypair", "usb://ledger?key=2"]],
       ["setup", ["setup", "--keypair", "usb://ledger"]],
       ["claims open", ["claims", "open", "--keypair", "usb://ledger", "--nonce", "0", "--max-secs", "60", "--stake", "1"]],
-      ["record-delivery", ["record-delivery", "--keypair", "usb://ledger", "--owner", w.owner.address, "--nonce", "0", "--sha256", "ab".repeat(32)]],
+      ["unseal", ["unseal", "--keypair", "usb://ledger", "--file", "sealed.bin", "--out", "plain.bin"]],
       ["signed submit", ["signed", "submit", "--keypair", "usb://ledger", "--file", "signed.json"]],
     ];
     for (const [name, argv] of refused) {

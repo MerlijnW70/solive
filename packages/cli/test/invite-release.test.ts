@@ -2,7 +2,7 @@ import { createHash, generateKeyPairSync } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Address, generateKeyPairSigner, getAddressDecoder, lamports, none } from "@solana/kit";
+import { type Address, getAddressDecoder, type KeyPairSigner, lamports, none } from "@solana/kit";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
@@ -12,10 +12,9 @@ import { createClient } from "@intent-engine/client";
 import { tool } from "../src/agent/names.js";
 import { SERVER_PROBLEMS } from "../src/agent/problems.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
-import { RECEIVED_OUTSIDE, unannounced } from "../src/agent/wallet/attest.js";
 import { notInvited } from "../src/invites.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
-import { sealedDelivery } from "./announce.js";
+import { announced as made, keyed } from "./announce.js";
 import { cli, creation, funded, h, NOW, ownerSigned, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
@@ -87,10 +86,11 @@ async function post(s: Setup, attestor: Address, invited: Address[]): Promise<Ad
   return intent;
 }
 
-async function announced(intent: Address, worker: Address, judges: Address[], sha256 = WORK): Promise<void> {
-  const memo = await sealedDelivery(intent, worker, sha256, WORK_URL, judges);
-  h.engineLog.unshift({ signature: `announced-${worker}`, slot: 5n, blockTime: null, failed: false, emitted: [], memos: [memo], feePayer: worker });
+async function announced(intent: Address, worker: KeyPairSigner, sha256 = WORK): Promise<void> {
+  await made(intent, worker, sha256, WORK_URL);
 }
+
+const OTHER = "e9".repeat(32);
 
 async function committeeOf(members: Address[]): Promise<Address> {
   const payer = await funded();
@@ -104,9 +104,10 @@ async function committeeOf(members: Address[]): Promise<Address> {
 describe("the shared invite check on every MCP release path", () => {
   it("refuses a split that pays a co-author the spec is not sealed to", async () => {
     const s = await setup();
-    const [worker, stranger] = [address(), address()];
+    const [workerKey, stranger] = [await keyed(), address()];
+    const worker = workerKey.address;
     const intent = await post(s, s.wallet, [s.wallet, worker]);
-    await announced(intent, worker, [s.wallet]);
+    await announced(intent, workerKey);
     const recipients = [
       { wallet: worker, weight: 5_000 },
       { wallet: stranger, weight: 5_000 },
@@ -123,10 +124,11 @@ describe("the shared invite check on every MCP release path", () => {
     const s = await setup();
     const members = sortMembers([s.wallet, address()]);
     const committee = await committeeOf(members);
-    const [worker, stranger] = [address(), address()];
+    const [worker, strangerKey] = [address(), await keyed()];
+    const stranger = strangerKey.address;
     const intent = await post(s, committee, [...members, worker]);
-    await announced(intent, stranger, members);
-    const ballot = { owner: s.w.owner.address, nonce: "0", pay_to: stranger, result: "1", delivered_sha256: WORK };
+    await announced(intent, strangerKey);
+    const ballot = { owner: s.w.owner.address, nonce: "0", result: "1", delivered_sha256: WORK };
     expect(await call(s.client, "wallet_committee_vote", ballot)).toEqual({
       error: true,
       value: { code: "NotInvited", retryable: SERVER_PROBLEMS.NotInvited.retryable, hint: notInvited(stranger, intent) },
@@ -137,16 +139,16 @@ describe("the shared invite check on every MCP release path", () => {
 
   it("refuses every payee, retryably, while the sealed spec cannot be fetched or is over the size limit", async () => {
     const s = await setup();
-    const [worker, stranger] = [address(), address()];
+    const [worker, strangerKey] = [address(), await keyed()];
+    const stranger = strangerKey.address;
     const intent = await post(s, s.wallet, [s.wallet, worker]);
-    await announced(intent, stranger, [s.wallet]);
-    const release = { owner: s.w.owner.address, nonce: "0", pay_to: stranger, delivered_sha256: WORK };
+    await announced(intent, strangerKey);
+    const release = { owner: s.w.owner.address, nonce: "0", delivered_sha256: WORK };
     expect(await call(s.client, "wallet_attest", release)).toMatchObject({ error: true, value: { code: "NotInvited" } });
     h.specPages.delete(SPEC_URL);
     const unread = await call(s.client, "wallet_attest", release);
     expect(unread).toMatchObject({ error: true, value: { code: "SpecUnreadable", retryable: true } });
     expect(unread.value["hint"]).toContain(UNCHECKED(intent));
-    expect(await call(s.client, "wallet_attest", { ...release, pay_to: worker })).toMatchObject({ error: true, value: { code: "SpecUnreadable" } });
     const split = { owner: s.w.owner.address, nonce: "0", recipients: [{ wallet: stranger, weight: 10_000 }], delivered_sha256: WORK };
     expect(await call(s.client, "wallet_attest_split", split)).toMatchObject({ error: true, value: { code: "SpecUnreadable" } });
     const big = await seal(encoded(`${SPEC}${"a".repeat(900_000)}`), [s.wallet, worker]);
@@ -159,48 +161,34 @@ describe("the shared invite check on every MCP release path", () => {
     const s = await setup();
     const members = sortMembers([s.wallet, address()]);
     const committee = await committeeOf(members);
-    const worker = address();
-    const intent = await post(s, committee, [...members, worker]);
-    await announced(intent, worker, members);
+    const worker = await keyed();
+    const intent = await post(s, committee, [...members, worker.address]);
+    await announced(intent, worker);
     h.specPages.clear();
-    const vote = await call(s.client, "wallet_committee_vote", { owner: s.w.owner.address, nonce: "0", pay_to: worker, result: "1", delivered_sha256: WORK });
+    const vote = await call(s.client, "wallet_committee_vote", { owner: s.w.owner.address, nonce: "0", result: "1", delivered_sha256: WORK });
     expect(vote).toMatchObject({ error: true, value: { code: "SpecUnreadable", retryable: true } });
   });
 });
 
-describe("a release for work no announcement backs", () => {
-  it("wallet_attest refuses an unannounced delivered_sha256 and accepts it with the opt-in", async () => {
+describe("a release for work no announcement opens to", () => {
+  it("wallet_attest, wallet_attest_split and wallet_committee_vote refuse a delivered_sha256 no announcement opens to", async () => {
     const s = await setup();
-    const worker = address();
-    const intent = await post(s, s.wallet, [s.wallet, worker]);
+    const worker = await keyed();
+    const intent = await post(s, s.wallet, [s.wallet, worker.address]);
+    await announced(intent, worker);
     const unbacked = "ab".repeat(32);
-    const release = { owner: s.w.owner.address, nonce: "0", pay_to: worker, delivered_sha256: unbacked };
-    const refused = await call(s.client, "wallet_attest", release);
-    expect(refused).toEqual({ error: true, value: { code: "NotAnnounced", retryable: false, hint: unannounced(intent, unbacked) } });
-    expect(refused.value["hint"]).toContain(RECEIVED_OUTSIDE);
-    const shown = await ok(s.client, "wallet_attest", { ...release, [RECEIVED_OUTSIDE]: true });
-    expect(shown).toMatchObject({ sent: false, pay_to: worker, delivered_sha256: unbacked });
-    const sent = await ok(s.client, "wallet_attest", { ...release, [RECEIVED_OUTSIDE]: true, approval: shown["approval"], send: true });
-    expect(sent).toMatchObject({ sent: true });
-  });
-
-  it("wallet_attest_split and wallet_committee_vote refuse an unannounced delivered_sha256 unless opted in", async () => {
-    const s = await setup();
-    const worker = address();
-    const intent = await post(s, s.wallet, [s.wallet, worker]);
-    const unbacked = "cd".repeat(32);
-    const split = { owner: s.w.owner.address, nonce: "0", recipients: [{ wallet: worker, weight: 10_000 }], delivered_sha256: unbacked };
-    expect(await call(s.client, "wallet_attest_split", split)).toMatchObject({ error: true, value: { code: "NotAnnounced", hint: unannounced(intent, unbacked) } });
-    expect(await ok(s.client, "wallet_attest_split", { ...split, [RECEIVED_OUTSIDE]: true })).toMatchObject({ intent, sent: false });
-
+    const refused = await call(s.client, "wallet_attest", { owner: s.w.owner.address, nonce: "0", delivered_sha256: unbacked });
+    expect(refused).toMatchObject({ error: true, value: { code: "NotAnnounced", retryable: false, hint: expect.stringContaining(`has no announcement that opens to the work ${unbacked}`) } });
+    const split = { owner: s.w.owner.address, nonce: "0", recipients: [{ wallet: worker.address, weight: 10_000 }], delivered_sha256: unbacked };
+    expect(await call(s.client, "wallet_attest_split", split)).toMatchObject({ error: true, value: { code: "NotAnnounced" } });
     const members = sortMembers([s.wallet, address()]);
     const committee = await committeeOf(members);
     const escrow = await ok(s.client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: sha(SPEC), spec_url: SPEC_URL, send: true });
-    h.specPages.set(SPEC_URL, await seal(encoded(SPEC), [...members, worker]));
+    h.specPages.set(SPEC_URL, await seal(encoded(SPEC), [...members, worker.address]));
     h.engineLog = [{ ...creation(escrow["intent"] as Address), ...ownerSigned(escrow["intent"] as Address, [specMemo(SPEC_URL)]) }];
-    const ballot = { owner: s.wallet, nonce: escrow["nonce"], pay_to: worker, result: "1", delivered_sha256: unbacked };
+    await announced(escrow["intent"] as Address, worker);
+    const ballot = { owner: s.wallet, nonce: escrow["nonce"], result: "1", delivered_sha256: unbacked };
     expect(await call(s.client, "wallet_committee_vote", ballot)).toMatchObject({ error: true, value: { code: "NotAnnounced" } });
-    expect(await ok(s.client, "wallet_committee_vote", { ...ballot, [RECEIVED_OUTSIDE]: true })).toMatchObject({ signed: false });
   });
 });
 
@@ -213,13 +201,12 @@ describe("the shared invite check on the command line", () => {
     await writeFile(spec, SPEC);
     const artifact = join(dir, "count.mjs");
     await writeFile(artifact, COUNT);
-    const worker = (await generateKeyPairSigner()).address;
+    const workerKey = await keyed();
+    const worker = workerKey.address;
     const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash: Uint8Array.from(Buffer.from(sha(SPEC), "hex")), judgeFee: 0n } as const;
     const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
-    h.engineLog = [
-      { signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [await sealedDelivery(intent, worker, sha(COUNT), WORK_URL, [judge.address])], feePayer: worker },
-      { ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) },
-    ];
+    h.engineLog = [{ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) }];
+    await announced(intent, workerKey, sha(COUNT));
     const judging = ["judge", "--keypair", "judge.json", "--owner", w.owner.address, "--nonce", "0", "--spec", spec, "--artifact", artifact, "--sandbox", "viper"];
     const refused = await cli(judging, { "judge.json": judge });
     expect(refused.code).toBe(EXIT_FAILED);
@@ -236,15 +223,18 @@ describe("the shared invite check on the command line", () => {
     const keys = { "m0.json": m0, "m1.json": m1, "solver.json": solver };
     const members = sortMembers([m0.address, m1.address]);
     const committee = await committeeOf(members);
-    const [worker, stranger] = [address(), address()];
+    const [workerKey, strangerKey] = [await keyed(), await keyed()];
+    const [worker, stranger] = [workerKey.address, strangerKey.address];
     const intent = await post({ w } as Setup, committee, [...members, worker]);
+    await announced(intent, strangerKey, OTHER);
+    await announced(intent, workerKey);
     const dir = await mkdtemp(join(tmpdir(), "invite-votes-"));
     const base = ["committee", "vote", "--owner", w.owner.address, "--nonce", "0", "--result", "1"];
-    const outsider = await cli([...base, "--keypair", "m0.json", "--pay-to", stranger, "--yes"], keys);
+    const outsider = await cli([...base, "--keypair", "m0.json", "--sha256", OTHER, "--yes"], keys);
     expect([outsider.code, outsider.err]).toEqual([EXIT_FAILED, notInvited(stranger, intent)]);
     const files = [join(dir, "a.json"), join(dir, "b.json")];
     for (const [member, file] of [["m0.json", files[0] ?? ""], ["m1.json", files[1] ?? ""]] as const) {
-      const voted = await cli([...base, "--keypair", member, "--pay-to", worker, "--out", file, "--yes"], keys);
+      const voted = await cli([...base, "--keypair", member, "--sha256", WORK, "--out", file, "--yes"], keys);
       expect([voted.code, voted.err]).toEqual([EXIT_OK, ""]);
     }
     h.specPages.set(SPEC_URL, await seal(encoded(SPEC), members));

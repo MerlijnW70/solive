@@ -171,14 +171,14 @@ export async function smoke(parties: SmokeParties, run: SmokeRun, report: (line:
   const delivered = await send("deliver", parties.worker, "wallet_deliver", { intent, sha256: work, url: run.workUrl });
   done("deliver", `announced in ${String(delivered["signature"])}`);
 
-  const checked = await call("check delivery", parties.worker, "wallet_check_delivery", { intent, sha256: work });
-  const own = typeof checked["own"] === "object" && checked["own"] !== null ? (checked["own"] as Fields) : {};
-  if (own["landed"] !== true || own["earliest"] !== true) {
+  const checked = await call("check delivery", parties.worker, "wallet_check_delivery", { intent });
+  const mine = Array.isArray(checked["mine"]) ? (checked["mine"] as Fields[]) : [];
+  if (!mine.some((one) => one["announcement"] === delivered["announcement"] && one["earlier"] === 0)) {
     throw new SmokeFailed("check delivery", deliveryMissing(work, worker));
   }
   done("check delivery", `${work} by ${worker}`);
 
-  const attested = await send("attest", parties.hirer, "wallet_attest", { owner: hirer, nonce, pay_to: worker, delivered_sha256: work });
+  const attested = await send("attest", parties.hirer, "wallet_attest", { owner: hirer, nonce, delivered_sha256: work });
   const release = String(attested["signature"]);
   done("attest", `paid ${String(attested["paid"])} in ${release}`);
 

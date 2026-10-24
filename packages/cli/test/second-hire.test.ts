@@ -7,7 +7,7 @@ import { noJudgeKey, WARN_NO_JUDGE_KEY } from "@intent-engine/client";
 import { beforeEach, describe, expect, it } from "vitest";
 import { findJobs } from "../src/agent/jobs.js";
 import { RESULT_MEANS, walletAttest } from "../src/agent/wallet/attest.js";
-import { CHECK_MEANS, checkDelivery, walletCheckDelivery } from "../src/agent/wallet/delivery.js";
+import { checkDelivery, walletCheckDelivery } from "../src/agent/wallet/delivery.js";
 import { SPEC_NO_ANSWER } from "../src/agent/wallet/escrow.js";
 import { getReceipt, walletReceipt } from "../src/agent/wallet/receipt.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
@@ -93,12 +93,12 @@ describe("the gaps a second blind hire left", () => {
     expect(noJudgeKey(other)).toContain("publishes it with profile set --encryption-key before this escrow is sent. A judge with a key file can ignore this");
   });
 
-  it("describes result, pay_to, payee, paid_to and check", () => {
+  it("describes result, pay_to, payee, paid_to and commitment", () => {
     expect(RESULT_MEANS).toContain("On a proof escrow it records that the work passed the spec");
     expect(RESULT_MEANS).toContain("it does not change the amount paid");
     const attest = walletAttest.output.json;
     expect(field(attest, "result")).toBe(RESULT_MEANS);
-    expect(field(attest, "pay_to")).toBe("the wallet this release pays, as given");
+    expect(field(attest, "pay_to")).toBe("the wallet this release pays");
     expect(field(attest, "payee")).toContain("pay_to's token account for the escrowed token, where the tokens land");
     for (const receipt of [walletReceipt.output.json, getReceipt.output.json]) {
       expect(field(receipt, "result")).toBe(RESULT_MEANS);
@@ -106,9 +106,8 @@ describe("the gaps a second blind hire left", () => {
       expect(field(receipt, "payee")).toContain("owned by paid_to");
     }
     for (const listing of [walletCheckDelivery.output.json, checkDelivery.output.json]) {
-      expect(field(listing, "deliveries", "[]", "check")).toBe(CHECK_MEANS);
+      expect(field(listing, "announcements", "[]", "commitment")).toBe("64 hex: binds the work's sha256 to the worker and its salt");
     }
-    expect(CHECK_MEANS).toContain("a judge does nothing with it and never passes it on");
   });
 
   it("names what a job pays in whole tokens next to net_pay", () => {

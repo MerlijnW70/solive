@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { announces, type Delivery, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, PUBLIC_GENESIS_HASHES, SPEC_TIMEOUT_MS, type SpecFetch, type Transport } from "@intent-engine/client";
+import { type AnnouncementView, opensTo, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, PUBLIC_GENESIS_HASHES, SPEC_TIMEOUT_MS, type SpecFetch, type Transport } from "@intent-engine/client";
+import { hex } from "./announcement-views.js";
 import { MAX_ARTIFACT_BYTES } from "./artifact.js";
 import { type Lookup, publicAddresses, systemLookup } from "./public-address.js";
 
@@ -97,7 +98,9 @@ const fetchFailure = (error: unknown): string => {
   return cause === "" ? message : `${message}: ${cause}`;
 };
 
-export async function fetchDelivery(get: SpecFetch, transport: Transport, delivery: Delivery, seconds: number, lookup: Lookup = systemLookup): Promise<Fetched> {
+export type Announced = { announcement: AnnouncementView; salt: string; url: string };
+
+export async function fetchDelivery(get: SpecFetch, transport: Transport, delivery: Announced, seconds: number, lookup: Lookup = systemLookup): Promise<Fetched> {
   let url: URL;
   try {
     url = new URL(delivery.url);
@@ -123,9 +126,10 @@ export async function fetchDelivery(get: SpecFetch, transport: Transport, delive
     }
     throw new DeliveryUnfit(delivery.url, `could not be fetched: ${error instanceof Error ? error.message : String(error)}`);
   }
-  const sha256 = createHash("sha256").update(bytes).digest("hex");
-  if (!announces(delivery, sha256)) {
-    throw new DeliveryUnfit(delivery.url, `has sha256 ${sha256}, which the commitment ${delivery.commitment} of ${delivery.worker} does not bind`);
+  const digest = createHash("sha256").update(bytes).digest();
+  const sha256 = digest.toString("hex");
+  if (!(await opensTo(delivery.announcement, Uint8Array.from(digest), Uint8Array.from(Buffer.from(delivery.salt, "hex"))))) {
+    throw new DeliveryUnfit(delivery.url, `has sha256 ${sha256}, which the commitment ${hex(delivery.announcement.commitment)} of ${delivery.announcement.worker} does not bind`);
   }
   const root = await mkdtemp(join(tmpdir(), "judge-delivery-"));
   const path = join(root, fetchedName(url));

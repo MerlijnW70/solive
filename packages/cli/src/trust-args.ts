@@ -16,7 +16,7 @@ import {
   TOKEN_AMOUNT_PATTERN,
 } from "@intent-engine/core";
 import { OPTIONS, PROFILE_OPTIONS, type Values } from "./arg-options.js";
-import { addressList, confirmUrlOf, key, noSub, parseAddress, parseBounded, required, sha256Of, u64, UsageError } from "./arg-values.js";
+import { addressList, confirmUrlOf, encryptionKeypairOf, key, noSub, parseAddress, parseBounded, required, sha256Of, u64, UsageError } from "./arg-values.js";
 import { maxPagesOf } from "./command-builders.js";
 import type { Command, Remote } from "./command-types.js";
 
@@ -62,9 +62,10 @@ export function committeeOf(sub: string | undefined, remote: Remote, values: Val
         yes: values.yes === true,
         owner: key(values, "owner"),
         nonce: u64(values, "nonce"),
-        payTo: key(values, "pay-to"),
+        sha256: sha256Of(required(values, "sha256")),
         result: u64(values, "result"),
         out: values.out,
+        ...encryptionKeypairOf(values),
       };
     case "release":
       return {
@@ -73,7 +74,6 @@ export function committeeOf(sub: string | undefined, remote: Remote, values: Val
         keypair: required(values, "keypair"),
         yes: values.yes === true,
         votes: votesOf(values),
-        sha256: values.sha256 === undefined ? undefined : sha256Of(values.sha256),
         ...confirmUrlOf(values, remote.url),
       };
     default:

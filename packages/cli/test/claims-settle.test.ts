@@ -10,7 +10,8 @@ import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { LAMPORTS_PER_SOL } from "../src/wallet.js";
-import { cli, creation, funded, h, NOW, send, setNow, world } from "./harness.js";
+import { cli, funded, h, NOW, send, setNow, world } from "./harness.js";
+import { announced } from "./announce.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -91,8 +92,8 @@ describe("settling a claims board from the wallet tools", () => {
     const job = await escrow();
     const worker = await funded();
     await send(worker, [await buildClaimJob({ worker, intent: job.intent, owner: wallet, secs: 600 })]);
-    h.engineLog = [creation(job.intent)];
-    const release = { ...job.ref, pay_to: worker.address, delivered_sha256: WORK, received_outside_announcement: true };
+    await announced(job.intent, worker, WORK);
+    const release = { ...job.ref, delivered_sha256: WORK };
     const shown = await ok(client, "wallet_attest", release);
     expect(shown["summary"]).toContain(`Leaves: ${leaves(job.board, wallet, job.nonce)}`);
     const released = await ok(client, "wallet_attest", { ...release, approval: shown["approval"], send: true });
@@ -119,9 +120,9 @@ describe("settling a claims board from the wallet tools", () => {
 
   it("wallet_attest_split names the settle call for the board it leaves", async () => {
     const job = await escrow();
-    h.engineLog = [creation(job.intent)];
     const worker = await funded();
-    const shown = await ok(client, "wallet_attest_split", { ...job.ref, delivered_sha256: WORK, received_outside_announcement: true, recipients: [{ wallet: worker.address, weight: 10000 }] });
+    await announced(job.intent, worker, WORK);
+    const shown = await ok(client, "wallet_attest_split", { ...job.ref, delivered_sha256: WORK, recipients: [{ wallet: worker.address, weight: 10000 }] });
     expect(shown["summary"]).toContain(`Leaves: ${leaves(job.board, wallet, job.nonce)}`);
   });
 

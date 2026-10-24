@@ -7,8 +7,8 @@ import { findAssociatedTokenAddress, signCommitteeVote, sortMembers } from "@int
 import { createClient } from "@intent-engine/client";
 import { MAINNET_GENESIS, WALLET_NOTICE } from "../../src/agent/wallet.js";
 import { EXIT_OK } from "../../src/main.js";
-import { sealedDelivery } from "../announce.js";
-import { ata, balance, cli, creation, funded, h, transport, world, type World } from "../harness.js";
+import { announced, keyed } from "../announce.js";
+import { ata, balance, cli, funded, h, transport, world, type World } from "../harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -74,11 +74,11 @@ describe("a wallet server whose RPC turns to mainnet after a committee vote prev
       send: true,
     });
     const intent = escrow["intent"] as Address;
-    const worker = (await generateKeyPairSigner()).address;
+    const workerKey = await keyed();
+    const worker = workerKey.address;
     const work = "e7".repeat(32);
-    const memo = await sealedDelivery(intent, worker, work, "https://" + "example.org/work", members);
-    h.engineLog = [{ signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [memo], feePayer: worker }, creation(intent)];
-    return { other, ballot: { owner: wallet, nonce: escrow["nonce"] as string, pay_to: worker, result: "1", delivered_sha256: work } };
+    const made = await announced(intent, workerKey, work);
+    return { other, worker, made, ballot: { owner: wallet, nonce: escrow["nonce"] as string, result: "1", delivered_sha256: work } };
   }
 
   it("M-2: the RPC serves mainnet's genesis after the preview and the wallet still signs the committee vote", async () => {
@@ -98,14 +98,15 @@ describe("a wallet server whose RPC turns to mainnet after a committee vote prev
     const ballot = await createClient({ url: "http://cluster", transport }).committeeBallot({
       owner: e.ballot.owner,
       nonce: BigInt(e.ballot.nonce),
-      payTo: e.ballot.pay_to,
+      announcement: e.made.announcement,
+      opening: { sha256: e.ballot.delivered_sha256, salt: e.made.salt },
       result: 1n,
     });
     const theirs = await signCommitteeVote(e.other, ballot.digest, ballot.committee.members);
     const votes = [own, { member: theirs.member, signature: getBase16Decoder().decode(theirs.signature).toLowerCase() }];
     const shown = await ok(client, "wallet_committee_release", { ...e.ballot, votes });
     expect(shown).toMatchObject({ sent: false });
-    const payee = await findAssociatedTokenAddress({ owner: e.ballot.pay_to, mint: w.inputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const payee = await findAssociatedTokenAddress({ owner: e.worker, mint: w.inputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     expect(balance(payee)).toBe(-1n);
     h.genesis = MAINNET_GENESIS;
     const { value } = await call(client, "wallet_committee_release", { ...e.ballot, votes, approval: shown["approval"], send: true });

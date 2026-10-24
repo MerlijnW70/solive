@@ -3,7 +3,7 @@
 # CLI reference
 
 ```text
-usage: setup | add-to claude|codex | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | close-legacy | migrate | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | set-committee-floor | solve | raise-pause | lower-pause | crank | treasury | solver-table | solver float | solver float show | solver float revoke | events | jobs | deliver | deliveries | receipt | record-delivery | judge [digest] | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | profile encryption-key new | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
+usage: setup | add-to claude|codex | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | close-legacy | migrate | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | set-committee-floor | solve | raise-pause | lower-pause | crank | treasury | solver-table | solver float | solver float show | solver float revoke | events | jobs | deliver | deliveries | refute | reclaim | close-book | receipt | judge [digest] | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | profile encryption-key new | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
 ```
 
 Every command accepts `--output` and `--help`.
@@ -12,7 +12,7 @@ Every command accepts `--output` and `--help`.
 
 When neither `--keypair` nor `INTENT_ENGINE_KEYPAIR` is given, the wallet `setup` saved is the default, which is why `--keypair` is in brackets below; only `signed submit` always needs its relayer's `--keypair`.
 
-`--keypair` also takes a Ledger, as `usb://ledger`, `usb://ledger?key=<account>`, `usb://ledger?key=<account>/<change>`, for `create`, `cancel`, `expire`, `close`, `approve`, `revoke-approval`, `deliver`, `judge`, `committee vote`, `committee release`, `signed prepare`, `advance-nonce`, `advance-epoch`, `claims take`, `claims drop`, `mandate grant`, `mandate revoke`, `profile set`, `profile close`, `solver float`; every other command refuses one and needs a key file.
+`--keypair` also takes a Ledger, as `usb://ledger`, `usb://ledger?key=<account>`, `usb://ledger?key=<account>/<change>`, for `create`, `cancel`, `expire`, `close`, `approve`, `revoke-approval`, `deliver`, `refute`, `reclaim`, `close-book`, `judge`, `committee vote`, `committee release`, `signed prepare`, `advance-nonce`, `advance-epoch`, `claims take`, `claims drop`, `mandate grant`, `mandate revoke`, `profile set`, `profile close`, `solver float`; every other command refuses one and needs a key file.
 
 ## setup
 
@@ -289,18 +289,42 @@ Options: `--url`, `--attestor`, `--mint`, `--min-pay`, `--unclaimed`, `--output`
 ## deliver
 
 ```text
-deliver [--keypair <worker file>] --intent <address> (--artifact <file or directory> | --sha256 <64 hex>) --work-url <https url> [--yes]
+deliver [--keypair <worker file>] --intent <address> (--artifact <file or directory> | --sha256 <64 hex>) --work-url <https url> [--fee-payer <key file>] [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--artifact`, `--sha256`, `--work-url`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--artifact`, `--sha256`, `--work-url`, `--fee-payer`, `--output`, `--help`
 
 ## deliveries
 
 ```text
-deliveries --attestor <address> --intent <address> [--max-pages <n>] [--judge-keypair <judge or member file>] [--encryption-keypair <encryption key file> ...]
+deliveries --intent <address> [--judge-keypair <judge or member file>] [--encryption-keypair <encryption key file> ...]
 ```
 
-Options: `--url`, `--attestor`, `--intent`, `--max-pages`, `--judge-keypair`, `--encryption-keypair`, `--output`, `--help`
+Options: `--url`, `--intent`, `--judge-keypair`, `--encryption-keypair`, `--output`, `--help`
+
+## refute
+
+```text
+refute [--keypair <worker file>] --earlier <your announcement> --paid <paid announcement> [--work-url <https url>] [--recipients <wallet,...> --weights <bps,...>] [--fee-payer <key file>] [--yes]
+```
+
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--earlier`, `--paid`, `--work-url`, `--recipients`, `--weights`, `--fee-payer`, `--output`, `--help`
+
+## reclaim
+
+```text
+reclaim [--keypair <worker file>] [--fee-payer <key file>] [--yes]
+```
+
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--fee-payer`, `--output`, `--help`
+
+## close-book
+
+```text
+close-book [--keypair <payer file>] --intent <address> [--yes]
+```
+
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--output`, `--help`
 
 ## receipt
 
@@ -310,23 +334,15 @@ receipt --owner <address> --nonce <n> [--sha256 <64 hex>] [--release <signature>
 
 Options: `--url`, `--owner`, `--nonce`, `--sha256`, `--release`, `--output`, `--help`
 
-## record-delivery
-
-```text
-record-delivery [--keypair <judge file>] --owner <address> --nonce <n> --sha256 <64 hex> [--release <signature>] [--yes]
-```
-
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--sha256`, `--release`, `--output`, `--help`
-
 ## judge
 
 ```text
-judge [--keypair <judge file>] --owner <address> --nonce <n> --spec <file> (--artifact <file or directory> | --watch [--interval <seconds>]) (--run <command> | --sandbox viper) [--pay-to <wallet>] [--result <n>] [--timeout <seconds>] [--verdict <file>] [--max-pages <n>] [--check <file or directory>] [--sandbox docker|viper|none] [--sandbox-image <name>@sha256:<64 hex>] [--sandbox-memory <n>m|<n>g] [--sandbox-cpus <n>] [--plain-node] [--fee-payer <key file, with a Ledger --keypair>] [--encryption-keypair <encryption key file> ...] [--confirm-url <cluster> | --no-confirm-url] [--yes] | digest --owner <address> --nonce <n> --pay-to <wallet> [--result <n>]
+judge [--keypair <judge file>] --owner <address> --nonce <n> --spec <file> (--artifact <file or directory> | --watch [--interval <seconds>]) (--run <command> | --sandbox viper) [--result <n>] [--timeout <seconds>] [--verdict <file>] [--check <file or directory>] [--sandbox docker|viper|none] [--sandbox-image <name>@sha256:<64 hex>] [--sandbox-memory <n>m|<n>g] [--sandbox-cpus <n>] [--plain-node] [--fee-payer <key file, with a Ledger --keypair>] [--encryption-keypair <encryption key file> ...] [--confirm-url <cluster> | --no-confirm-url] [--yes] | digest --owner <address> --nonce <n> --announcement <address> --sha256 <64 hex> --salt <32 hex> [--result <n>]
 ```
 
-Options without a subcommand: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--pay-to`, `--result`, `--timeout`, `--verdict`, `--max-pages`, `--check`, `--sandbox`, `--sandbox-image`, `--sandbox-memory`, `--sandbox-cpus`, `--plain-node`, `--watch`, `--interval`, `--confirm-url`, `--no-confirm-url`, `--fee-payer`, `--encryption-keypair`, `--output`, `--help`
+Options without a subcommand: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--result`, `--timeout`, `--verdict`, `--check`, `--sandbox`, `--sandbox-image`, `--sandbox-memory`, `--sandbox-cpus`, `--plain-node`, `--watch`, `--interval`, `--confirm-url`, `--no-confirm-url`, `--fee-payer`, `--encryption-keypair`, `--output`, `--help`
 
-Options for `digest`: `--url`, `--owner`, `--nonce`, `--pay-to`, `--result`, `--output`, `--help`
+Options for `digest`: `--url`, `--owner`, `--nonce`, `--announcement`, `--sha256`, `--salt`, `--result`, `--output`, `--help`
 
 ## crank
 
@@ -427,16 +443,16 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--score`,
 ## committee
 
 ```text
-committee create [--keypair <payer file>] --members <address,...> --threshold <n> --fee-wallet <address> [--yes] | show --committee <address> | vote [--keypair <member file>] --owner <address> --nonce <n> --pay-to <wallet> --result <n> [--out <file>] [--yes] | release [--keypair <solver file>] --vote <file> [--vote <file> ...] [--sha256 <64 hex>] [--confirm-url <cluster> | --no-confirm-url] [--yes]
+committee create [--keypair <payer file>] --members <address,...> --threshold <n> --fee-wallet <address> [--yes] | show --committee <address> | vote [--keypair <member file>] --owner <address> --nonce <n> --sha256 <64 hex> --result <n> [--encryption-keypair <encryption key file> ...] [--out <file>] [--yes] | release [--keypair <solver file>] --vote <file> [--vote <file> ...] [--confirm-url <cluster> | --no-confirm-url] [--yes]
 ```
 
 Options for `create`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--members`, `--threshold`, `--fee-wallet`, `--output`, `--help`
 
 Options for `show`: `--url`, `--committee`, `--output`, `--help`
 
-Options for `vote`: `--url`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--pay-to`, `--result`, `--out`, `--output`, `--help`
+Options for `vote`: `--url`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--sha256`, `--encryption-keypair`, `--result`, `--out`, `--output`, `--help`
 
-Options for `release`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--vote`, `--sha256`, `--confirm-url`, `--no-confirm-url`, `--output`, `--help`
+Options for `release`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--vote`, `--confirm-url`, `--no-confirm-url`, `--output`, `--help`
 
 ## claims
 

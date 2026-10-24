@@ -2,16 +2,17 @@ import { createHash } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Address, generateKeyPairSigner, getAddressEncoder, getBase58Encoder, type KeyPairSigner } from "@solana/kit";
+import { type Address, getAddressEncoder, getBase58Encoder, type KeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import { getIntentDecoder, IntentStatus, Kind } from "@intent-engine/core";
-import { createClient, type EngineTransaction, type FinalizedBlock, type Transport } from "@intent-engine/client";
+import { createClient, type FinalizedBlock, type Transport } from "@intent-engine/client";
+import { NOBODY_ANNOUNCED } from "../src/announcement-views.js";
 import { NOT_SENT } from "../src/flows.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { answerTooLong, DETAIL_BYTES, DRAW_POLL_SECONDS, DRAW_TAG, drawBeacon, drawnArguments, drawSeed, noBlocks, notAnnounced, stoppedWaiting } from "../src/draw.js";
 import { casesOf, type Draw, OUTPUT_BYTES, pinnedWasm } from "../src/viper.js";
-import { sealedDelivery } from "./announce.js";
-import { cli, creation, funded, h, NOW, transport, type World, world } from "./harness.js";
+import { announced, keyed } from "./announce.js";
+import { cli, funded, h, NOW, transport, type World, world } from "./harness.js";
 
 const GENERATOR = `export default function generate(seed, count) {
   const out = [];
@@ -50,7 +51,7 @@ type Chain = { blocks?: (FinalizedBlock | null)[]; announced?: boolean; finalize
 async function job(module: string, specText: string, chain: Chain = {}): Promise<Job> {
   const w = await world();
   const judge = await funded();
-  const worker = await generateKeyPairSigner();
+  const worker = await keyed();
   const dir = await mkdtemp(join(tmpdir(), "judge-draw-"));
   const spec = join(dir, "spec.md");
   await writeFile(spec, specText);
@@ -60,16 +61,10 @@ async function job(module: string, specText: string, chain: Chain = {}): Promise
   const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash: new Uint8Array(createHash("sha256").update(specText).digest()), judgeFee: 0n } as const;
   const client = createClient({ url: "http://cluster", transport });
   const { intent } = await client.createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
-  const delivered: EngineTransaction = {
-    signature: "first",
-    slot: ANNOUNCED,
-    blockTime: null,
-    failed: false,
-    emitted: [],
-    memos: [await sealedDelivery(intent, worker.address, sha256, "https://" + "example.org/count.mjs", [judge.address])],
-    feePayer: worker.address,
-  };
-  h.engineLog = chain.announced === false ? [creation(intent)] : [delivered, creation(intent)];
+  if (chain.announced !== false) {
+    h.svm.warpToSlot(ANNOUNCED - 1n);
+    await announced(intent, worker, sha256, "https://" + "example.org/count.mjs");
+  }
   const asked: bigint[] = [];
   const blocks = [...(chain.blocks ?? [{ slot: ANNOUNCED + BigInt(K) + 1n, blockhash: BLOCKHASH }])];
   const finalizedBlock = async (from: bigint) => {
@@ -123,7 +118,7 @@ describe("judge --sandbox viper with cases drawn after the announcement", () => 
     const j = await job(CORRECT, drawSpec());
     const cases = casesOf(new TextEncoder().encode(drawSpec()));
     const draw = cases.draw as Draw;
-    const first = { intent: j.intent, worker: j.worker.address, sha256: j.sha256, url: "", signature: "first" as never, slot: ANNOUNCED, blockTime: null, commitment: "", check: "", salt: "", sealed: "" };
+    const first = { slot: ANNOUNCED };
     const node = (blockhash: string) => ({ ...transport, finalizedBlock: async () => ({ slot: ANNOUNCED + BigInt(K), blockhash }) }) as Transport;
     const never = async () => false;
     const one = await drawBeacon(node(BLOCKHASH), never, first, draw, j.intent, j.sha256);
@@ -222,8 +217,10 @@ describe("judge --sandbox viper with cases drawn after the announcement", () => 
     expect(h.sleeps).toEqual([DRAW_POLL_SECONDS]);
     expect(status(waiting.intent)).toBe(IntentStatus.Open);
     const silent = await job(CORRECT, drawSpec(), { announced: false });
-    const unannounced = await cli(judging(silent, "--yes", "--pay-to", silent.worker.address), { "judge.json": silent.judge });
-    expect([unannounced.code, unannounced.err]).toEqual([EXIT_FAILED, expect.stringContaining(notAnnounced(silent.sha256, silent.intent))]);
+    const unannounced = await cli(judging(silent, "--yes"), { "judge.json": silent.judge });
+    expect([unannounced.code, unannounced.err]).toEqual([EXIT_FAILED, expect.stringContaining(NOBODY_ANNOUNCED)]);
+    const draw = casesOf(new TextEncoder().encode(drawSpec())).draw as Draw;
+    await expect(drawBeacon(transport, async () => false, null, draw, silent.intent, silent.sha256)).rejects.toThrow(notAnnounced(silent.sha256, silent.intent));
     expect(status(silent.intent)).toBe(IntentStatus.Open);
     const blind = await job(CORRECT, drawSpec(), { finalized: false });
     const refused = await cli(judging(blind, "--yes"), { "judge.json": blind.judge });

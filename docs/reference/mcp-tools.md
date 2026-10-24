@@ -2,7 +2,7 @@
 
 # MCP tools
 
-26 tools, served by `intent-engine mcp` over stdio. With `--wallet` it serves only the 34 everyday tools: `solive_wallet_setup`, `solive_wallet_balance`, `solive_wallet_estimate`, `solive_wallet_swap`, `solive_wallet_auction`, `solive_wallet_recurring`, `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_seal_spec`, `solive_wallet_attest`, `solive_wallet_attest_split`, `solive_wallet_committee_create`, `solive_wallet_committee_vote`, `solive_wallet_committee_release`, `solive_wallet_feedback`, `solive_wallet_claim`, `solive_wallet_profile`, `solive_wallet_record_delivery`, `solive_wallet_seal_work`, `solive_wallet_deliver`, `solive_wallet_check_delivery`, `solive_wallet_fetch_work`, `solive_wallet_wait`, `solive_wallet_receipt`, `solive_wallet_intents`, `solive_wallet_history`, `solive_wallet_cancel`, `solive_wallet_unwrap`, `solive_find_jobs`, `solive_get_spec`, `solive_hash`, `solive_get_reputation`, `solive_get_claims`, `solive_get_profile`, plus the tools `--relayer` and `--agent` need. With `--wallet --all-tools` it serves every tool, the 28 wallet tools listed first.
+26 tools, served by `intent-engine mcp` over stdio. With `--wallet` it serves only the 34 everyday tools: `solive_wallet_setup`, `solive_wallet_balance`, `solive_wallet_estimate`, `solive_wallet_swap`, `solive_wallet_auction`, `solive_wallet_recurring`, `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_seal_spec`, `solive_wallet_attest`, `solive_wallet_attest_split`, `solive_wallet_committee_create`, `solive_wallet_committee_vote`, `solive_wallet_committee_release`, `solive_wallet_feedback`, `solive_wallet_claim`, `solive_wallet_profile`, `solive_wallet_deliver`, `solive_wallet_check_delivery`, `solive_wallet_fetch_work`, `solive_wallet_refute`, `solive_wallet_reclaim`, `solive_wallet_wait`, `solive_wallet_receipt`, `solive_wallet_intents`, `solive_wallet_history`, `solive_wallet_cancel`, `solive_wallet_unwrap`, `solive_find_jobs`, `solive_get_spec`, `solive_hash`, `solive_get_reputation`, `solive_get_claims`, `solive_get_profile`, plus the tools `--relayer` and `--agent` need. With `--wallet --all-tools` it serves every tool, the 28 wallet tools listed first.
 
 ## solive_wallet_setup
 
@@ -167,7 +167,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Pays a worker for approved work: when this wallet is the attestor (judge) of an escrow made with solive_wallet_escrow, it releases the locked tokens, minus fees, to pay_to. A release cannot be undone. The approval holds the send to exactly what was previewed. Previews only; after the user says yes, call with send: true and its approval.
+Pays for approved work when this wallet is the escrow's attestor (judge): a proof escrow pays the first announcement that opens to delivered_sha256, any other attested escrow pays pay_to. A release cannot be undone; the approval holds the send to the preview. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
@@ -175,11 +175,9 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | --- | --- | --- | --- |
 | `owner` | address | yes | the wallet that made the escrow |
 | `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
-| `pay_to` | address | yes | the wallet to pay |
+| `delivered_sha256` | string | no | the sha256, as 64 hex digits, of the work this release pays for, as solive_wallet_fetch_work shows it; required for a proof escrow |
+| `pay_to` | address | no | the wallet to pay, only for an attested escrow without a spec hash; a proof escrow pays its announcing worker |
 | `result` | whole number as a decimal string | no | the result to attest, a plain count not whole tokens, between the intent's min_result and max_result; default min_result |
-| `delivered_sha256` | string | no | the sha256, as 64 hex digits, of the work this release pays for: the same hash the worker announced with solive_wallet_deliver; required for a proof escrow, whose release pays that work's earliest announcer; recorded in a memo this wallet signs with the release, so the payer can check what it receives with solive_wallet_receipt; a Ledger wallet records none |
-| `received_outside_announcement` | boolean | no | true when the work reached this wallet outside an announcement, so none backs delivered_sha256; leave out to require an announcement |
-| `max_pages` | integer 1..100000 | no | pages of 1000 signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default 1000; raise it when the release is refused because the record of announced work is incomplete |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs the attestation and settles; leave out to preview |
 
@@ -187,7 +185,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 Served only with `--wallet`.
 
-Pays several co-authors, split by weight, when this wallet is the escrow's attestor (judge). Each co-author signs the exact split: the preview returns what each signs; send with all their signatures. Changing a recipient, weight or result needs new signatures. A release cannot be undone. Previews only; after the user says yes, call with send: true and its approval.
+Pays co-authors by weight when this wallet is the escrow's attestor (judge); one must have made the first announcement that opens to delivered_sha256. The preview returns what each co-author signs; send with all their signatures. A release cannot be undone. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
@@ -196,11 +194,9 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | `owner` | address | yes | the wallet that made the escrow |
 | `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
 | `recipients` | list of object, 1 to 8 | yes | the co-authors and their weighted shares, up to 8 |
+| `delivered_sha256` | string | yes | the sha256, as 64 hex digits, of the work this release pays for, as solive_wallet_fetch_work shows it |
 | `result` | whole number as a decimal string | no | the result to attest, between the intent's min_result and max_result; default min_result |
 | `lookup_table` | address | no | an address lookup table holding this split's lookup_accounts, to fit more co-authors under the transaction size limit; create one with the preview's lookup_accounts and pass it with send |
-| `delivered_sha256` | string | no | the sha256, as 64 hex digits, of the work this release pays for; required, since a release recording it must include that work's earliest announcer among the recipients; recorded in a memo this wallet signs with the release, or right after it when the release has no room for the memo, so the payer can check what it receives with solive_wallet_receipt |
-| `received_outside_announcement` | boolean | no | true when the work reached this wallet outside an announcement, so none backs delivered_sha256; leave out to require an announcement |
-| `max_pages` | integer 1..100000 | no | pages of 1000 signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default 1000; raise it when the release is refused because the record of announced work is incomplete |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs the attestation and settles; leave out to preview |
 
@@ -224,7 +220,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 Served only with `--wallet`.
 
-Votes, as a member of an escrow's judging committee, that it pays pay_to for the work with delivered_sha256. A team judges together: each member checks the work against the spec and votes; the signed vote is not sent but given to whoever releases with solive_wallet_committee_release. Previews only; after the user says yes, call with send: true and its approval.
+Votes, as a member of an escrow's judging committee, that it pays the first announcement that opens to delivered_sha256. A team judges together: each member checks the work against the spec and votes; the signed vote is not sent but given to whoever releases with solive_wallet_committee_release. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
@@ -232,11 +228,8 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | --- | --- | --- | --- |
 | `owner` | address | yes | the wallet that made the escrow |
 | `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
-| `pay_to` | address | yes | the wallet the release pays |
 | `result` | whole number as a decimal string | yes | the result the release attests, between the intent's min_result and max_result |
-| `delivered_sha256` | string | yes | the sha256, as 64 hex digits, of the work the release pays for; its earliest announcer must be pay_to |
-| `received_outside_announcement` | boolean | no | true when the work reached this wallet outside an announcement, so none backs delivered_sha256; leave out to require an announcement |
-| `max_pages` | integer 1..100000 | no | pages of 1000 signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default 1000; raise it when the release is refused because the record of announced work is incomplete |
+| `delivered_sha256` | string | yes | the sha256, as 64 hex digits, of the work the release pays for, as solive_wallet_fetch_work shows it; the release pays the first announcement that opens to it |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs the vote; leave out to preview |
 
@@ -244,7 +237,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 Served only with `--wallet`.
 
-Pays a worker once a judging committee agrees: any one wallet collects the members' votes from solive_wallet_committee_vote, at least the committee's threshold, and submits them to release the escrow, recording the delivered work's sha256. Every vote is checked before sending. This wallet pays the fee. Previews only; after the user says yes, call with send: true and its approval.
+Pays a worker once a judging committee agrees: any one wallet collects the members' votes from solive_wallet_committee_vote, at least the committee's threshold, and submits them to pay the announcement they voted on. Every vote is checked before sending. This wallet pays the fee. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
@@ -252,11 +245,8 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | --- | --- | --- | --- |
 | `owner` | address | yes | the wallet that made the escrow |
 | `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
-| `pay_to` | address | yes | the wallet the release pays |
 | `result` | whole number as a decimal string | yes | the result the release attests, between the intent's min_result and max_result |
-| `delivered_sha256` | string | yes | the sha256, as 64 hex digits, of the work the release pays for; its earliest announcer must be pay_to |
-| `received_outside_announcement` | boolean | no | true when the work reached this wallet outside an announcement, so none backs delivered_sha256; leave out to require an announcement |
-| `max_pages` | integer 1..100000 | no | pages of 1000 signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default 1000; raise it when the release is refused because the record of announced work is incomplete |
+| `delivered_sha256` | string | yes | the sha256, as 64 hex digits, of the work the release pays for, as solive_wallet_fetch_work shows it; the release pays the first announcement that opens to it |
 | `votes` | list of object, 1 to 8 | yes | one vote per member, in any order |
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true submits the release; leave out to preview |
@@ -314,41 +304,11 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true sends the change; leave out to preview |
 
-## solive_wallet_record_delivery
-
-Served only with `--wallet`.
-
-Adds the paid work's sha256 to a release that recorded none, such as when solive_wallet_attest_split returned recorded: false, so solive_wallet_receipt shows it. Only the releasing attestor can, for a work hash whose earliest announcer the release paid. It moves no tokens; it costs only the transaction fee. Previews only; call with send: true after the user says yes.
-
-Effect: `submit` (read-only: false, destructive: false, idempotent: true)
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `owner` | address | yes | the wallet that made the escrow |
-| `nonce` | whole number as a decimal string | yes | the escrow intent's nonce |
-| `sha256` | string | yes | the sha256, as 64 hex digits, of the work the release paid for: the delivered_sha256 it was sent with |
-| `release` | string | no | the release's transaction signature, as the attestor's release returned it; with it the release is read from that one transaction, with no search of the escrow's history |
-| `send` | boolean | no | true signs and sends; leave out to preview |
-
-## solive_wallet_seal_work
-
-Served only with `--wallet`.
-
-Seals a work file so only the escrow's attestor (the judge), or each member of its committee, can open it, in the form intent-engine unseal and solive_wallet_fetch_work open; to the encryption key a judge's profile publishes, if any. Sends nothing: host sealed, then announce sha256 with solive_wallet_deliver.
-
-Effect: `read` (read-only: true, destructive: false, idempotent: true)
-
-| Parameter | Type | Required | Description |
-| --- | --- | --- | --- |
-| `intent` | address | yes | the proof escrow's intent address |
-| `text` | string | no | the work file's bytes as text; or give base64 |
-| `base64` | string | no | the work file's bytes as base64, for a binary file such as a tar |
-
 ## solive_wallet_deliver
 
 Served only with `--wallet`.
 
-Tells a job's judge the work is done: an on-chain note binding its sha256 to this wallet, with the url sealed to the judge; no tokens move. Host the work at a url nobody can guess and announce right after hosting. Invite-only: seal it first with solive_wallet_seal_work (intent-engine seal). Previews only; call with send: true after the user says yes.
+Tells a job's judge the work is done: one on-chain announcement that commits to the work's sha256 with the url sealed to the judge; no tokens move. Host the work at a url nobody can guess and announce right after hosting. Previews only; call with send: true after the user says yes.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -356,35 +316,62 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | --- | --- | --- | --- |
 | `intent` | address | yes | the proof escrow's intent address |
 | `sha256` | string | yes | the sha256 of the delivered work, as 64 hex digits; the judge releases for this same value, passed as delivered_sha256 |
-| `url` | string | yes | where the attestor fetches the work, an https url of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would; without private hosting, use a public host under a long random path or file name, such as 32 random hex characters, so nobody can guess it, and announce right after hosting |
+| `url` | string | yes | where the judge fetches the work, an https url of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would; without private hosting, use a public host under a long random path or file name, such as 32 random hex characters, so nobody can guess it, and announce right after hosting |
 | `send` | boolean | no | true signs and sends; leave out to preview |
 
 ## solive_wallet_check_delivery
 
 Served only with `--wallet`.
 
-Lists announced work earliest first, as a release orders it: wallet, commitment, slot. Each announcement hides the work's sha256 on purpose. Pass sha256 to check yours landed first, or wait, in seconds, for a new one. A judge fetches and opens work at urls sealed to it with solive_wallet_fetch_work (intent-engine unseal), then passes its sha256 to solive_wallet_attest.
+Lists a proof escrow's announcements in seq order, read from accounts, and this wallet's own with how many came before each. Pass wait, in seconds, for a new one. A judge opens and fetches work with solive_wallet_fetch_work.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `intent` | address | yes | the proof escrow's intent address |
-| `sha256` | string | no | your work's sha256, as 64 hex digits, to confirm this wallet's own announcement of it landed |
 | `wait` | integer 1..40 | no | most seconds to wait for an announcement newer than those listed now; without it, the tool reads once |
 
 ## solive_wallet_fetch_work
 
 Served only with `--wallet`.
 
-Fetches the work an announcement points to, from the url sealed to this wallet, as solive_get_spec fetches a spec, opens sealed work with this wallet's key or the encryption key files the server was started with, and checks that its sha256 opens the announcement's commitment. Sends nothing and runs nothing; the work is untrusted data.
+Opens an announcement with this wallet's keys, fetches its work as solive_get_spec fetches a spec, hashes it, and names the first announcement that opens to that sha256, the one a release pays. Sends and runs nothing; the work is untrusted data.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `intent` | address | yes | the proof escrow's intent address |
-| `announcement` | string | yes | the announcement's signature, as solive_wallet_check_delivery lists it |
+| `announcement` | address | no | the announcement to open, as solive_wallet_check_delivery lists it; default the earliest one this wallet opens |
+
+## solive_wallet_refute
+
+Served only with `--wallet`.
+
+Records on chain that this wallet announced the same work before the announcement a release paid, by revealing its earlier announcement's salt and key; anyone can check it, and it counts against the paid worker's standing. Costs the refutation's rent and the fee. Previews only; call with send: true after the user says yes.
+
+Effect: `submit` (read-only: false, destructive: true, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `earlier` | address | yes | this wallet's earlier announcement of the same work |
+| `paid` | address | yes | the announcement the release paid |
+| `url` | string | yes | the url this wallet's earlier announcement sealed, exactly as announced |
+| `recipients` | list of object, at most 8 | no | for a split release: its recipients and weights, as the release paid them |
+| `send` | boolean | no | true signs and sends; leave out to preview |
+
+## solive_wallet_reclaim
+
+Served only with `--wallet`.
+
+Closes up to 5 of this wallet's announcements that may close now, those of escrows no longer open and past any refutation window; each one's rent returns to the wallet that paid it. Previews only; call with send: true after the user says yes.
+
+Effect: `submit` (read-only: false, destructive: true, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `send` | boolean | no | true signs and sends; leave out to preview |
 
 ## solive_wallet_wait
 
@@ -621,21 +608,21 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 ## solive_prepare_deliver
 
-Build the transaction in which a worker tells the attestor of a proof escrow, such as one found with solive_find_jobs, that the work is done: a memo naming the escrow, a commitment that binds the work's sha256 to the worker, and the url the attestor fetches it from, sealed to the attestor, and a transfer of 0 lamports to the attestor so the delivery shows in its history. It moves no tokens and costs the worker only the transaction fee. Returns an unsigned transaction that already simulated successfully; the worker's wallet must sign and send it. The attestor alone decides whether the work passes and whom it pays, and a release pays the earliest announcer of a hash, so host the work at a url the attestor can fetch and nobody else knows, give its exact sha256, send promptly and share neither the url nor the work until the announcement lands.
+Build the transaction in which a worker announces work to a proof escrow, such as one found with solive_find_jobs: one announcement that commits to the work's sha256 and seals the url to the judge. It moves no tokens; the worker pays its rent and fee. Returns an unsigned transaction that already simulated; the worker's wallet signs and sends it. A release pays the first announcement that opens to the work, so host it where nobody can guess, give its exact sha256 and send promptly.
 
 Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
-| `worker` | address | yes | the wallet that announces the work, signs and pays the fee, and is paid if a release records this work |
+| `worker` | address | yes | the wallet that announces, signs, pays and is paid if a release pays this announcement |
 | `intent` | address | yes | the proof escrow's intent address |
-| `sha256` | string | yes | the sha256 of the delivered work, as 64 hex digits; the judge releases for this same value, passed as delivered_sha256 |
-| `url` | string | yes | where the attestor fetches the work, an https url of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would |
-| `salt_signature` | string | no | the worker's ed25519 signature, as 128 hex digits, of the salt message a call without it names; the announcement's salt is derived from it |
+| `sha256` | string | yes | the sha256 of the delivered work, as 64 hex digits |
+| `url` | string | yes | where the judge fetches the work, an https url of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would |
+| `salt_signature` | string | no | the worker's ed25519 signature, as 128 hex digits, of the salt message a call without it names |
 
 ## solive_check_delivery
 
-List every announcement workers made for a proof escrow, each with its announcer and the commitment that binds the work's hash to it, read from the history of the attestor the escrow names; complete is false when older announcements may be missing. Each announcement hides the work's sha256 on purpose, so nobody can copy it or test a guess against it; a release recording a hash pays the earliest announcer whose commitment binds it. This tool runs nothing, fetches nothing, opens no sealed url and needs no wallet. The judge opens the url sealed to it, fetches the file, treats it as untrusted, hashes it, judges it outside this server, and passes that sha256 as delivered_sha256 to the attest tool of a server started with --wallet, or releases with intent-engine judge.
+List a proof escrow's announcements in seq order, read from accounts: each worker, commitment and state, and whether the list is complete. Each hides the work's sha256 in its commitment and seals its url to the judge. This tool fetches and opens nothing and needs no wallet.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
@@ -660,14 +647,14 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 ## solive_get_reputation
 
-Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Releases whose payer was first funded by the worker, directly or through one wallet, are counted apart as funded by the worker and left out too; releases whose payer's funding could not be checked still count, are also shown as funding_unknown, and paid_verified counts only the checked ones. Releases a published opening refutes, because someone announced the same work earlier, are left out too. Each released escrow counts once, for the worker's earliest announcement that opens to the released work and landed before the release. backed sums the protocol fees behind the totals by the worker's share, per mint, and backed_sol the SOL ones plus every create fee. With reader, trust adds the worker's personalized PageRank rooted only in that reader and the seeds named, over the SOL its counted payments cost: a ring paying itself gets only trust that flows in from those roots, at most (1 - a) / a times the trust on the payments into it, with a = 0.15. Use it before hiring a worker or trusting its delivery.
+Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Releases whose payer was first funded by the worker, directly or through one wallet, are counted apart as funded by the worker and left out too; releases whose payer's funding could not be checked still count, are also shown as funding_unknown, and paid_verified counts only the checked ones. Releases a substantiated refutation shows someone announced the same work earlier are left out too. Each released escrow counts once, for the announcement it paid; a co-author counts only when a split release names it. backed sums the protocol fees behind the totals by the worker's share, per mint, and backed_sol the SOL ones plus every create fee. With reader, trust adds the worker's personalized PageRank rooted only in that reader and the seeds named, over the SOL its counted payments cost: a ring paying itself gets only trust that flows in from those roots, at most (1 - a) / a times the trust on the payments into it, with a = 0.15. Use it before hiring a worker or trusting its delivery.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 | Parameter | Type | Required | Description |
 | --- | --- | --- | --- |
 | `worker` | address | yes | the worker wallet to read |
-| `max_pages` | integer 1..100000 | no | pages of 1000 signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default 1000; raise it when the release is refused because the record of announced work is incomplete |
+| `max_pages` | integer 1..100000 | no | pages of 1000 signatures of the worker's own history to read for its announcements; default 100; raise it when complete is false |
 | `reader` | address | no | the wallet whose trust to start from |
 | `seeds` | list of address, at most 32 | no | more wallets that reader already relies on |
 

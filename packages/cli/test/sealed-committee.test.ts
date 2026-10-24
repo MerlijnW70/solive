@@ -7,14 +7,14 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
-import { DEVNET_TEST_MINT, NATIVE_MINT, sealedTo, sortMembers, specMemo, unseal } from "@intent-engine/core";
-import { MAX_SPEC_BYTES } from "@intent-engine/client";
+import { DEVNET_TEST_MINT, NATIVE_MINT, sealedTo, sortMembers, specMemo } from "@intent-engine/core";
+import { createClient, MAX_SPEC_BYTES } from "@intent-engine/client";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { sealedOverLimit } from "../src/sealed-commands.js";
 import { defaultWallet } from "../src/wallet.js";
-import { cli, creation, funded, h, HOME, ownerSigned, world } from "./harness.js";
+import { cli, creation, funded, h, HOME, ownerSigned, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown>;
 
@@ -107,17 +107,19 @@ describe("sealing to a committee", () => {
     expect((await call(client, "get_spec", { intent })).value).toMatchObject({ code: "SpecSealed" });
   }, 60_000);
 
-  it("seals work for a committee's escrow to its members", async () => {
+  it("seals an announcement to a committee's escrow to its members, so each member opens it", async () => {
     const owner = await funded();
     useKey(owner);
     h.specPages.set(SPEC_URL, bytesOf(SPEC));
     const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: sha(SPEC), spec_url: SPEC_URL, send: true });
     const intent = escrow["intent"] as Address;
     h.engineLog = [{ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) }];
-    const sealed = await ok(client, "wallet_seal_work", { intent, text: "the report\n" });
-    expect(new Set(sealed["sealed_to"] as Address[])).toEqual(new Set(members.map(({ address }) => address)));
+    const work = sha("the report\n");
+    const delivered = await ok(client, "wallet_deliver", { intent, sha256: work, url: "https://" + "example.org/report", send: true });
+    expect(new Set(delivered["sealed_to"] as Address[])).toEqual(new Set(members.map(({ address }) => address)));
     for (const member of members) {
-      expect(new TextDecoder().decode(await unseal(bytesOf(sealed["sealed"]), h.keypairs.get(member.address) ?? new Uint8Array()))).toBe("the report\n");
+      const first = await createClient({ url: "http://cluster", transport }).firstOpening({ intent, sha256: work, keypair: h.keypairs.get(member.address) });
+      expect(first).toMatchObject({ announcement: delivered["announcement"], worker: owner.address });
     }
   }, 60_000);
 

@@ -8,13 +8,11 @@ import {
   getIntentEncoder,
   type Intent,
   IntentStatus,
-  releaseMemo,
 } from "@intent-engine/core";
-import { type AccountView, type EngineTransaction, followUpMemo, type ListedSignature, TRANSACTION_FETCHES, type Transport } from "@intent-engine/client";
+import { type AccountView, type EngineTransaction, type ListedSignature, TRANSACTION_FETCHES, type Transport } from "@intent-engine/client";
 import { cli, ESCROW, h, NOW, world } from "./harness.js";
 
 export const FLOOR = 1_000n;
-export const WORK = "ab".repeat(32);
 export const RELEASE = "5".repeat(64);
 
 const tagged = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
@@ -91,12 +89,8 @@ export function released(intent: Address, shape: Shape = {}): EngineTransaction 
     remaining: 0n,
     partnerFee: 0n,
   });
-  return plain(RELEASE, { memos: [releaseMemo(WORK)], ...shape, emitted: [tagged(event)] });
+  return plain(RELEASE, { ...shape, emitted: [tagged(event)] });
 }
-
-export const naming = (signature: string, shape: Shape = {}): EngineTransaction => plain(signature, { ...shape, memos: [followUpMemo(WORK, RELEASE)] });
-
-export const decoy = (signature: string, shape: Shape = {}): EngineTransaction => plain(signature, { ...shape, memos: [releaseMemo(WORK)] });
 
 const listedOf = (tx: EngineTransaction): ListedSignature => ({
   signature: tx.signature,

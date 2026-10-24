@@ -5,11 +5,11 @@ import { join } from "node:path";
 import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import { Kind } from "@intent-engine/core";
-import { createClient, type EngineTransaction, type Transport } from "@intent-engine/client";
+import { createClient, type Transport } from "@intent-engine/client";
 import { EXIT_OK, main } from "../src/main.js";
 import type { Runtime } from "../src/runtime.js";
-import { keyed, sealedDelivery } from "./announce.js";
-import { creation, h, NOW, runtime, setNow, transport, world } from "./harness.js";
+import { announced, keyed } from "./announce.js";
+import { h, NOW, runtime, setNow, transport, world } from "./harness.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
 const SPEC = `# Count words\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
@@ -28,16 +28,16 @@ async function job(): Promise<Job> {
   await writeFile(spec, SPEC);
   const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash: new Uint8Array(createHash("sha256").update(SPEC).digest()), judgeFee: 0n } as const;
   const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: EXPIRES });
-  h.engineLog = [creation(intent)];
   return { owner: w.owner.address, judge, intent, spec };
 }
 
-async function announce(j: Job, signature: string, slot: bigint, worker: Address, module: string): Promise<void> {
-  const url = ["https://work.example.org", signature, "count.mjs"].join("/");
+let urls = 0;
+
+async function announce(j: Job, worker: KeyPairSigner, module: string): Promise<void> {
+  urls += 1;
+  const url = ["https://work.example.org", String(urls), "count.mjs"].join("/");
   h.specPages.set(url, new TextEncoder().encode(module));
-  const memos = [await sealedDelivery(j.intent, worker, sha(module), url, [j.judge.address])];
-  const delivered: EngineTransaction = { signature, slot, blockTime: null, failed: false, emitted: [], memos, feePayer: worker };
-  h.engineLog = [delivered, ...h.engineLog];
+  await announced(j.intent, worker, sha(module), url);
 }
 
 const judging = (j: Job) => ["judge", "--keypair", "judge.json", "--owner", j.owner, "--nonce", "0", "--spec", j.spec, "--sandbox", "viper", "--watch", "--yes"];
@@ -59,28 +59,14 @@ async function watch(j: Job, slept: (round: number) => void = () => undefined) {
   return { code, err: err.join("\n"), order: lines.map((l) => l["worker"] ?? l["stopped"]), last: lines.at(-1) };
 }
 
-const workers = async () => [(await generateKeyPairSigner()).address, (await generateKeyPairSigner()).address] as const;
-
 describe("the order judge --watch judges deliveries in", () => {
-  const inOrder = async (correctFirst: boolean, wrong: [string, bigint], correct: [string, bigint]) => {
-    const j = await job();
-    const [first, second] = await workers();
-    const announced = [() => announce(j, ...wrong, first, WRONG), () => announce(j, ...correct, second, CORRECT)];
-    for (const step of correctFirst ? announced.reverse() : announced) {
-      await step();
-    }
-    expect((await watch(j)).order, String(correctFirst)).toEqual([first, second, "paid"]);
-  };
-
-  it("takes the lower slot first, whatever the signatures say, in whichever order they were announced", async () => {
+  it("takes announcements in seq order, whichever work comes first", async () => {
     for (const correctFirst of [false, true]) {
-      await inOrder(correctFirst, ["delivery-9", 9n], ["delivery-10", 10n]);
-    }
-  }, 60_000);
-
-  it("breaks a tie in slot by signature, in whichever order they were announced", async () => {
-    for (const correctFirst of [false, true]) {
-      await inOrder(correctFirst, ["sig-a", 6n], ["sig-b", 6n]);
+      const j = await job();
+      const [first, second] = [await keyed(), await keyed()];
+      await announce(j, first, correctFirst ? CORRECT : WRONG);
+      await announce(j, second, correctFirst ? WRONG : CORRECT);
+      expect((await watch(j)).order, String(correctFirst)).toEqual(correctFirst ? [first.address, "paid"] : [first.address, second.address, "paid"]);
     }
   }, 60_000);
 });
@@ -88,7 +74,7 @@ describe("the order judge --watch judges deliveries in", () => {
 describe("judge --watch stops when the escrow is no longer open", () => {
   const closing = async (change: (j: Job) => void, read?: Transport["getAccount"]) => {
     const j = await job();
-    await announce(j, "delivery-5", 5n, (await generateKeyPairSigner()).address, WRONG);
+    await announce(j, await keyed(), WRONG);
     let changed = false;
     if (read !== undefined) {
       h.through = { ...transport, getAccount: async (address) => (changed && address === j.intent ? read(address) : transport.getAccount(address)) };

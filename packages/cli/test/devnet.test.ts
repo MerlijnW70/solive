@@ -47,11 +47,8 @@ import {
   buildFillIntent,
   buildFlashFill,
   buildInitUser,
-  attestedSplitDigest,
   ED25519_PROGRAM_ADDRESS,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  splitCommit,
-  splitCosignEnvelope,
   splitN,
   encodeParams,
   feeBpsFor,
@@ -73,7 +70,7 @@ import {
   splitFee,
   splitFees,
 } from "@intent-engine/core";
-import { chainTime, type RpcLike, rpcTransport } from "@intent-engine/client";
+import { chainTime, createClient, type RpcLike, rpcTransport } from "@intent-engine/client";
 import { agentServer } from "../src/agent/mcp.js";
 import { budgetOf } from "../src/agent/budget.js";
 import { relayOf } from "../src/agent/relay.js";
@@ -789,17 +786,11 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet collaborativ
     const [intent] = await findIntentPda({ owner: owner.address, nonce: 0n });
     const attestedFee = feeBpsFor(config, Kind.AttestedResult);
     const maxFeeBps = attestedFee + 0;
-    const splitHash = await splitCommit(recipients, weights);
-    const digest = await attestedSplitDigest({
-      domain: Uint8Array.from(config.domain),
-      intent,
-      amountIn: ESCROW,
-      result: 1n,
-      maxFeeBps,
-      specHash: spec,
-      splitHash,
-    });
-    const message = splitCosignEnvelope(digest, [...coauthors, attestor].map((signer) => signer.address));
+    const work = "5e".repeat(32);
+    const client = createClient({ url: url ?? "", transport });
+    const made = await client.announce({ worker: coauthors[0] as KeyPairSigner, payer: owner, intent, sha256: work, url: "https://" + "example.org/devnet-split" });
+    const shares = recipients.map((wallet, i) => ({ wallet, weight: weights[i] ?? 0 }));
+    const { message } = await client.splitBallot({ owner: owner.address, nonce: 0n, announcement: made.announcement, opening: { sha256: work, salt: made.salt }, result: 1n, recipients: shares });
     const entries = await Promise.all(
       [...coauthors, attestor].map(async (signer) => ({
         publicKey: signer.address,
@@ -816,6 +807,8 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet collaborativ
       recipients,
       weights,
       feeRecipient: config.feeRecipient,
+      announcement: made.announcement,
+      opening: { delivered: Uint8Array.from(Buffer.from(work, "hex")), salt: Uint8Array.from(Buffer.from(made.salt, "hex")) },
       amountIn: ESCROW,
       result: 1n,
       maxFeeBps,

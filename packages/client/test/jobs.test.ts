@@ -23,7 +23,6 @@ import { describe, expect, it } from "vitest";
 import { findEventAuthorityPda, findIntentPda, Kind, MAX_MEMO_URL, seal, SPEC_MEMO_PREFIX, specMemo } from "@intent-engine/core";
 import {
   createClient,
-  creationProof,
   engineCalls,
   DEVNET_GENESIS_HASH,
   EXPIRES_IN_RANGE,
@@ -392,7 +391,6 @@ describe("svm transport", () => {
     const calls = landed === null || landed === undefined ? [] : engineCalls(landed);
     expect(calls.some(({ inner, accounts }) => !inner && accounts?.includes(made.intent) === true)).toBe(true);
     expect(calls.some(({ inner, accounts }) => inner && accounts?.includes(eventAuthority) === true)).toBe(true);
-    expect(landed === null || landed === undefined ? null : creationProof(landed, made.intent)).toEqual({ attestor: judge.address, specHash: Buffer.from(sha(SPEC)).toString("hex") });
     expect((await w.chain.transport.signaturesOf?.(made.intent, SIGNATURE_PAGE))?.map((entry) => entry.signature)).toEqual([signature]);
   });
 });

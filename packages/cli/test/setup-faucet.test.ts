@@ -161,7 +161,7 @@ describe("setup when devnet refuses", () => {
     const address = (await run(["setup"])).json()["address"] as Address;
     h.svm.airdrop(address, lamports(ENOUGH_TO_START - 1n));
     const held = (await run(["setup"])).json();
-    expect(held).toMatchObject({ sol: "0.049999999", next: heldRefused("0.049999999", address, GH_HINT) });
+    expect(held).toMatchObject({ sol: "0.059999999", next: heldRefused("0.059999999", address, GH_HINT) });
   });
 
   it("offers the starter swap only to a wallet that can pay for it", async () => {

@@ -5,7 +5,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
 import { findIntentPda, Kind, NATIVE_MINT } from "@intent-engine/core";
-import { createClient, deliverySalt, FUNDING_PAGES, type ListedSignature, type Transport } from "@intent-engine/client";
+import { createClient, FUNDING_PAGES, type ListedSignature, type Transport } from "@intent-engine/client";
 import { svmTransport } from "@intent-engine/client/svm";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
@@ -76,8 +76,8 @@ describe("reputation funded by the worker, in the command and the tool", () => {
         outputMint: w.outputMint,
       });
       const [intent] = await findIntentPda({ owner: owner.address, nonce });
-      await client.deliver({ worker, intent, sha256, url: "https://example.org/work" });
-      await client.settleProof({ judge, owner: owner.address, nonce, payTo: worker.address, result: 1n, deliveredSha256: sha256, deliveredSalt: await deliverySalt(worker, intent, sha256) });
+      const made = await client.announce({ worker, intent, sha256, url: "https://" + "example.org/work" });
+      await client.settleProof({ judge, owner: owner.address, nonce, announcement: made.announcement, opening: { sha256, salt: made.salt }, result: 1n });
       return intent;
     };
     const direct = await job(await fundedBy(worker), "a1".repeat(32));

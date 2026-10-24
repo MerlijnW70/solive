@@ -1,13 +1,4 @@
-import {
-  type Address,
-  getBase64Encoder,
-  getCompiledTransactionMessageDecoder,
-  getSignatureFromTransaction,
-  getTransactionDecoder,
-  type KeyPairSigner,
-  lamports,
-  none,
-} from "@solana/kit";
+import { type Address, type KeyPairSigner, lamports, none } from "@solana/kit";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
@@ -18,14 +9,15 @@ import {
   findAssociatedTokenAddress,
   findVaultPda,
   formatAmount,
+  getDeliveryAnnouncedEventEncoder,
+  getDeliveryReleasedEventEncoder,
   getIntentAttestedEventEncoder,
   getIntentCreatedEventEncoder,
   getIntentDecoder,
   NATIVE_MINT,
-  releaseMemo,
   splitFee,
 } from "@intent-engine/core";
-import { deliverySalt, type EngineTransaction, MEMO_PROGRAM_ADDRESS, signersAmong } from "@intent-engine/client";
+import type { EngineTransaction } from "@intent-engine/client";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { notMadeHere, PROFIT_NEEDS_JOB } from "../src/agent/wallet/history-profit.js";
@@ -79,21 +71,14 @@ const useKey = (signer: KeyPairSigner): void => {
   h.files.set(defaultWallet(HOME), JSON.stringify(Array.from(h.keypairs.get(signer.address) ?? [])));
 };
 
-function landedAs(wire: string, slot: bigint, blockTime: bigint): EngineTransaction {
-  const tx = getTransactionDecoder().decode(getBase64Encoder().encode(wire));
-  const message = getCompiledTransactionMessageDecoder().decode(tx.messageBytes);
-  const keys = message.staticAccounts;
-  const memos = ("instructions" in message ? message.instructions : []).filter((ix) => keys[ix.programAddressIndex] === MEMO_PROGRAM_ADDRESS);
-  return {
-    signature: getSignatureFromTransaction(tx),
-    slot,
-    blockTime,
-    failed: false,
-    emitted: [],
-    memos: memos.map((ix) => new TextDecoder().decode(Uint8Array.from(ix.data ?? []))),
-    memoSigners: memos.map((ix) => signersAmong(keys, ix.accountIndices ?? [], message.header.numSignerAccounts)),
-    ...(keys[0] === undefined ? {} : { feePayer: keys[0] }),
-  };
+function announcedEvent(intent: Address, announcement: Address, worker: Address, attestor: Address): Uint8Array {
+  return tag(getDeliveryAnnouncedEventEncoder().encode({ intent, announcement, seq: 1n, worker, payer: worker, attestor, commitment: new Uint8Array(32), slot: 5n, recipients: 1 }));
+}
+
+function releasedEvent(intent: Address, announcement: Address, worker: Address, attestor: Address, sha256: string): Uint8Array {
+  return tag(
+    getDeliveryReleasedEventEncoder().encode({ intent, announcement, seq: 1n, worker, attestor, delivered: Uint8Array.from(Buffer.from(sha256, "hex")), salt: new Uint8Array(16), splitHash: new Uint8Array(32) }),
+  );
 }
 
 function made(intent: Address, slot: bigint, createFee: bigint): EngineTransaction {
@@ -122,7 +107,7 @@ function made(intent: Address, slot: bigint, createFee: bigint): EngineTransacti
 
 type Release = { intent: Address; owner: Address; to: Address; payee: Address; amount: bigint; judgeFee: bigint; signature: string; slot: bigint; at: bigint };
 
-function released(r: Release, memos: string[] = []): EngineTransaction {
+function released(r: Release, extra: Uint8Array[] = []): EngineTransaction {
   const { fee, net } = splitFee(r.amount - r.judgeFee, FEE_BPS);
   const event = getIntentAttestedEventEncoder().encode({
     intent: r.intent,
@@ -143,9 +128,7 @@ function released(r: Release, memos: string[] = []): EngineTransaction {
     slot: r.slot,
     blockTime: r.at,
     failed: false,
-    emitted: [tag(event)],
-    memos,
-    memoSigners: memos.map(() => [r.owner]),
+    emitted: [...extra, tag(event)],
     feePayer: r.owner,
     tokens: [{ account: r.payee, mint: NATIVE_MINT, owner: r.to }],
   };
@@ -169,13 +152,20 @@ describe("wallet_history of a job a contractor resold", () => {
     const contractor = await funded();
     useKey(contractor);
     const work = "e4".repeat(32);
-    h.wires.length = 0;
-    await ok(client, "wallet_deliver", { intent: jobIntent, sha256: work, url: URL_OF_WORK, send: true });
-    const announced = landedAs(h.wires[0] as string, 5n, at + 5n);
+    const delivered = await ok(client, "wallet_deliver", { intent: jobIntent, sha256: work, url: URL_OF_WORK, send: true });
+    const announcement = delivered["announcement"] as Address;
+    const announced: EngineTransaction = {
+      signature: delivered["signature"] as string,
+      slot: 5n,
+      blockTime: at + 5n,
+      failed: false,
+      emitted: [announcedEvent(jobIntent, announcement, contractor.address, payer)],
+      feePayer: contractor.address,
+    };
 
     h.files.set(defaultWallet(HOME), payerKey);
     h.engineLog = [announced, jobMade];
-    const attest = { owner: payer, nonce: job["nonce"], pay_to: contractor.address, delivered_sha256: work };
+    const attest = { owner: payer, nonce: job["nonce"], delivered_sha256: work };
     const shown = await ok(client, "wallet_attest", attest);
     expect(await ok(client, "wallet_attest", { ...attest, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
 
@@ -191,7 +181,7 @@ describe("wallet_history of a job a contractor resold", () => {
     const judgeFee = 1_000_000n;
     const jobRelease = released(
       { intent: jobIntent, owner: payer, to: contractor.address, payee: await payeeOf(contractor.address), amount: jobAmount, judgeFee: 0n, signature: "job-released", slot: 9n, at: at + 9n },
-      [releaseMemo(work, await deliverySalt(contractor, jobIntent, work))],
+      [releasedEvent(jobIntent, announcement, contractor.address, payer, work)],
     );
     const firstRelease = released({ intent: first, owner: contractor.address, to: payer, payee: await payeeOf(payer), amount: subAmount, judgeFee, signature: "first-released", slot: 14n, at: at + 14n });
     const secondRelease = released({ intent: second, owner: contractor.address, to: payer, payee: await payeeOf(payer), amount: subAmount, judgeFee: 0n, signature: "second-released", slot: 15n, at: at + 15n });

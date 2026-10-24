@@ -5,19 +5,19 @@ import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
+import type { Address, KeyPairSigner } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind } from "@intent-engine/core";
-import { createClient, type EngineTransaction } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { HOST_ENGINE, judgeHost, nodeSeed } from "../src/host-judge.js";
 import { judgeNode, NODE_ENGINE } from "../src/node-judge.js";
 import { CPUS_FORMAT, IMAGE_NEEDS_DIGEST, MEMORY_FORMAT, PLAIN_NODE_ONLY, SANDBOX_CPUS, SANDBOX_IMAGE, SANDBOX_MEMORY, sandboxOnly, VIPER_TAKES_NO_RUN } from "../src/sandbox.js";
 import { type Cases, casesOf as publishedCases, judgeViper, pinnedWasm } from "../src/viper.js";
 import { DOCKER_TEST } from "./docker-switch.js";
-import { sealedDelivery } from "./announce.js";
-import { balance, cli, creation, funded, h, NOW, transport, type World, world } from "./harness.js";
+import { announced, keyed } from "./announce.js";
+import { balance, cli, funded, h, NOW, transport, type World, world } from "./harness.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const EXAMPLE = join(ROOT, "examples/jobs/word-count");
@@ -36,7 +36,7 @@ const sha = (text: string | Uint8Array) => createHash("sha256").update(text).dig
 async function job(module: string, specText: string, name = "wordcount.mjs"): Promise<Job> {
   const w = await world();
   const judge = await funded();
-  const worker = await generateKeyPairSigner();
+  const worker = await keyed();
   const dir = await mkdtemp(join(tmpdir(), "judge-node-test-"));
   const spec = join(dir, "SPEC.md");
   await writeFile(spec, specText);
@@ -45,16 +45,7 @@ async function job(module: string, specText: string, name = "wordcount.mjs"): Pr
   const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash: new Uint8Array(createHash("sha256").update(specText).digest()), judgeFee: 0n } as const;
   const client = createClient({ url: "http://cluster", transport });
   const { intent } = await client.createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
-  const delivered: EngineTransaction = {
-    signature: "first",
-    slot: 5n,
-    blockTime: null,
-    failed: false,
-    emitted: [],
-    memos: [await sealedDelivery(intent, worker.address, sha(module), "https://example.org/" + name, [judge.address])],
-    feePayer: worker.address,
-  };
-  h.engineLog = [delivered, creation(intent)];
+  await announced(intent, worker, sha(module), "https://" + "example.org/" + name);
   return { w, judge, worker, intent, dir, spec, artifact };
 }
 

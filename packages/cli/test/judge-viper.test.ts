@@ -4,32 +4,32 @@ import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
+import type { Address, KeyPairSigner } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { beforeEach, describe, expect, it } from "vitest";
 import { findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind } from "@intent-engine/core";
-import { createClient, type EngineTransaction } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client";
 import { ENV_KEYPAIR } from "../src/args.js";
 import { NOT_SENT } from "../src/flows.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { sandboxOnly, VIPER_TAKES_NO_RUN } from "../src/sandbox.js";
 import { casesMissing, DEFAULT_HEAP, DEFAULT_STEPS, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "../src/viper.js";
-import { sealedDelivery } from "./announce.js";
-import { balance, cli, creation, funded, h, NOW, transport, type World, world } from "./harness.js";
+import { announced, keyed } from "./announce.js";
+import { balance, cli, funded, h, NOW, transport, type World, world } from "./harness.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one"], "expected": 1}, {"args": ["one\\ttwo\\u3000three"], "expected": 3}]}';
 const SPEC = `# Count words\n\nCount whitespace-separated words.\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
 const CORRECT = "export default function count(text) { const words = text.match(/\\S+/g); return words === null ? 0 : words.length; }\n";
 const WRONG = "export default function count(text) { return text.split(' ').length; }\n";
 
-type Job = { w: World; judge: KeyPairSigner; worker: KeyPairSigner; intent: Address; dir: string; spec: string; artifact: string; sha256: string };
+type Job = { w: World; judge: KeyPairSigner; worker: KeyPairSigner; intent: Address; dir: string; spec: string; artifact: string; sha256: string; announcement: Address; salt: string };
 
 const sha = (text: string | Uint8Array) => createHash("sha256").update(text).digest("hex");
 
 async function job(module: string, specText = SPEC): Promise<Job> {
   const w = await world();
   const judge = await funded();
-  const worker = await generateKeyPairSigner();
+  const worker = await keyed();
   const dir = await mkdtemp(join(tmpdir(), "judge-viper-"));
   const spec = join(dir, "spec.md");
   await writeFile(spec, specText);
@@ -39,17 +39,8 @@ async function job(module: string, specText = SPEC): Promise<Job> {
   const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash: new Uint8Array(createHash("sha256").update(specText).digest()), judgeFee: 0n } as const;
   const client = createClient({ url: "http://cluster", transport });
   const { intent } = await client.createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
-  const delivered: EngineTransaction = {
-    signature: "first",
-    slot: 5n,
-    blockTime: null,
-    failed: false,
-    emitted: [],
-    memos: [await sealedDelivery(intent, worker.address, sha256, "https://example.org/count.mjs", [judge.address])],
-    feePayer: worker.address,
-  };
-  h.engineLog = [delivered, creation(intent)];
-  return { w, judge, worker, intent, dir, spec, artifact, sha256 };
+  const made = await announced(intent, worker, sha256, "https://" + "example.org/count.mjs");
+  return { w, judge, worker, intent, dir, spec, artifact, sha256, announcement: made.announcement, salt: made.salt };
 }
 
 const judging = (j: Job, ...more: string[]) => ["judge", "--keypair", "judge.json", "--owner", j.w.owner.address, "--nonce", "0", "--spec", j.spec, "--artifact", j.artifact, "--sandbox", "viper", ...more];
@@ -86,6 +77,9 @@ describe("intent-engine judge --sandbox viper", () => {
       exitCode: null,
       verdict: "pass",
       payTo: j.worker.address,
+      announcement: j.announcement,
+      seq: "1",
+      salt: j.salt,
       signature: null,
     };
     expect(preview.json()).toEqual({ ...shown, simulated: { ok: true, units_consumed: expect.any(Number) }, next: NOT_SENT });

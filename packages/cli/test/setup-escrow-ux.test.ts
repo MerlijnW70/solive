@@ -117,12 +117,12 @@ describe("setup, escrow and balance explain themselves", () => {
     expect(low["next"]).not.toContain("--faucet");
     h.svm.airdrop(address, lamports(ENOUGH_TO_START - LAMPORTS_PER_SOL / 50n));
     const small = await ok(client, "wallet_setup");
-    expect(small).toMatchObject({ sol: "0.05", next: refusedEnough("0.05", WALLET_SMALL_START) });
+    expect(small).toMatchObject({ sol: "0.06", next: refusedEnough("0.06", WALLET_SMALL_START) });
     h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 4n));
     const held = await ok(client, "wallet_setup");
     expect(held["next"]).not.toBe(OLD_NEXT);
-    expect(held).toMatchObject({ sol: "0.3", next: refusedEnough("0.3", WALLET_START) });
-    expect(held["next"]).toMatch(/^devnet refused more free SOL, but your wallet holds 0\.3 SOL, enough to start; /);
+    expect(held).toMatchObject({ sol: "0.31", next: refusedEnough("0.31", WALLET_START) });
+    expect(held["next"]).toMatch(/^devnet refused more free SOL, but your wallet holds 0\.31 SOL, enough to start; /);
     expect(h.airdrops).toHaveLength(4 * AIRDROPS.length);
   });
 

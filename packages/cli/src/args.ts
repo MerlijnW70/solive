@@ -34,7 +34,6 @@ import {
 import {
   agentSpec,
   ALL_TOOLS_NEED_WALLET,
-  maxPagesOf,
   relaySpec,
   treasury,
   walletLimits,
@@ -44,6 +43,7 @@ import { USAGE } from "./arg-usage.js";
 import { optionsFor, trustOf } from "./trust-args.js";
 import { monitorOf } from "./monitor-args.js";
 import { jobArgsOf } from "./job-args.js";
+import { announceArgsOf } from "./arg-announce.js";
 import type { Command, Env } from "./command-types.js";
 
 export type { Authority, Command, Env, WalletLimits } from "./command-types.js";
@@ -336,12 +336,14 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
     case "jobs":
     case "deliver":
     case "receipt":
-    case "record-delivery":
     case "judge":
       return jobArgsOf(verb, sub, remote, values);
     case "deliveries":
+    case "refute":
+    case "reclaim":
+    case "close-book":
       noSub(sub);
-      return { name: "deliveries", ...remote, attestor: key(values, "attestor"), intent: key(values, "intent"), maxPages: maxPagesOf(values), judgeKeypair: values["judge-keypair"], ...encryptionKeypairOf(values) };
+      return announceArgsOf(verb, remote, values);
     case "solver-table":
       noSub(sub);
       return { name: "solver-table", ...remote, solver: key(values, "solver"), mints: mintList(required(values, "mints")) };

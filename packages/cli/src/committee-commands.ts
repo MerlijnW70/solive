@@ -1,18 +1,35 @@
 import { readFile, writeFile } from "node:fs/promises";
 import type { Address, MessagePartialSigner } from "@solana/kit";
-import { buildCreateCommittee, type CommitteeVote, findIntentPda, isSaltHex, openingMemo, signCommitteeVote, UNOPENED } from "@intent-engine/core";
-import { type CommitteeBallot, confirmOnBoth, createClient, isLedgerPath, openingInstructions, openingsOf, type Transport, unitedSalts } from "@intent-engine/client";
+import { buildCreateCommittee, type CommitteeVote, decodeParams, findIntentPda, isSaltHex, isSha256Hex, Kind, signCommitteeVote } from "@intent-engine/core";
+import {
+  type BallotInput,
+  type CommitteeBallot,
+  confirmOnBoth,
+  createClient,
+  firstOpeningIn,
+  FirstOpeningRefused,
+  isLedgerPath,
+  loadAnnouncement,
+  loadIntent,
+  type Transport,
+} from "@intent-engine/client";
 import { previewed } from "./admin-commands.js";
+import { NOBODY_ANNOUNCED, refusalNext } from "./announcement-views.js";
 import { parseAddress, parseU64 } from "./arg-values.js";
 import type { Command } from "./command-types.js";
 import { FlowRefused } from "./flows.js";
 import { checkInvited, InviteRefused } from "./invites.js";
 import { messageSigner, transactionSigner } from "./ledger-keys.js";
 import type { Runtime } from "./runtime.js";
+import { loadEncryptionKeys } from "./sealed-commands.js";
 
 export const VOTE_KIND = "committee-vote";
 
 export const VOTE_NOT_SIGNED = "nothing was signed; rerun with --yes to sign this vote, then pass the file to committee release";
+
+export const MEMBER_KEY_FLAG = "pass the encryption key file of that key with --encryption-keypair";
+
+export const MEMBER_WAIT = "the RPC node does not show every announcement yet; vote again in a few seconds";
 
 export type VoteFile = {
   kind: typeof VOTE_KIND;
@@ -20,26 +37,27 @@ export type VoteFile = {
   committee: Address;
   owner: Address;
   nonce: string;
-  pay_to: Address;
+  announcement: Address;
+  sha256: string;
+  salt: string;
   result: string;
   member: Address;
   signature: string;
-  salt?: string;
-  earlier?: string[];
 };
 
-export type VoteExtras = { salt?: string | undefined; earlier?: string[] | undefined };
+export type Ballot = { owner: Address; nonce: bigint; announcement: Address; sha256: string; salt: string; result: bigint };
 
-export type Agreed = { salt: string | undefined; earlier: (string | null)[] };
-
-export type Ballot = { owner: Address; nonce: bigint; payTo: Address; result: bigint };
-
-type CommitteeCommand = Extract<
-  Command,
-  { name: "committee-create" | "committee-show" | "committee-vote" | "committee-release" }
->;
+type CommitteeCommand = Extract<Command, { name: "committee-create" | "committee-show" | "committee-vote" | "committee-release" }>;
 
 const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString("hex");
+
+export const ballotInput = (target: Ballot): BallotInput => ({
+  owner: target.owner,
+  nonce: target.nonce,
+  announcement: target.announcement,
+  opening: { sha256: target.sha256, salt: target.salt },
+  result: target.result,
+});
 
 async function invitedPayee(runtime: Runtime, transport: Transport, intent: Address, payTo: Address): Promise<void> {
   await checkInvited(transport, runtime.specFetch, intent, [payTo]).catch((error: unknown) => {
@@ -47,14 +65,23 @@ async function invitedPayee(runtime: Runtime, transport: Transport, intent: Addr
   });
 }
 
-function ballotLines(ballot: CommitteeBallot, target: Ballot): string[] {
+async function workerOf(transport: Transport, announcement: Address): Promise<Address> {
+  const found = await loadAnnouncement(transport, announcement);
+  if (found === null) {
+    throw new FlowRefused(`${announcement} is not an announcement of this program; nothing was signed or sent`);
+  }
+  return found.worker;
+}
+
+function ballotLines(ballot: CommitteeBallot, target: Ballot, worker: Address): string[] {
   return [
-    `Releases: proof escrow ${ballot.intent} to ${target.payTo} (token account ${ballot.payee}) with result ${target.result}`,
+    `Releases: proof escrow ${ballot.intent} to ${worker} (token account ${ballot.payee}), who made the announcement ${target.announcement}, with result ${target.result}`,
+    `Pays for: the work with sha256 ${target.sha256}`,
     `Judged by: committee ${ballot.committee.address}, ${ballot.committee.threshold} of ${ballot.committee.members.length} members must sign`,
   ];
 }
 
-export async function memberVote(member: MessagePartialSigner, ballot: CommitteeBallot, target: Ballot, extras: VoteExtras = {}): Promise<VoteFile> {
+export async function memberVote(member: MessagePartialSigner, ballot: CommitteeBallot, target: Ballot): Promise<VoteFile> {
   if (!ballot.committee.members.includes(member.address)) {
     throw new FlowRefused(`${member.address} is not a member of committee ${ballot.committee.address}; nothing was signed`);
   }
@@ -65,12 +92,12 @@ export async function memberVote(member: MessagePartialSigner, ballot: Committee
     committee: ballot.committee.address,
     owner: target.owner,
     nonce: target.nonce.toString(),
-    pay_to: target.payTo,
+    announcement: target.announcement,
+    sha256: target.sha256,
+    salt: target.salt,
     result: target.result.toString(),
     member: member.address,
     signature: hex(signature),
-    ...(extras.salt === undefined ? {} : { salt: extras.salt }),
-    ...(extras.earlier === undefined ? {} : { earlier: extras.earlier }),
   };
 }
 
@@ -93,42 +120,30 @@ export function voteOf(text: string, file: string): VoteFile {
     }
     return value;
   };
+  const sha256 = field("sha256");
+  const salt = field("salt");
+  if (!isSha256Hex(sha256)) {
+    throw new FlowRefused(`${file} holds a sha256 that is not 64 lowercase hex digits`);
+  }
+  if (!isSaltHex(salt)) {
+    throw new FlowRefused(`${file} holds a salt that is not 32 lowercase hex digits`);
+  }
   return {
     kind: VOTE_KIND,
     intent: parseAddress(field("intent"), "intent"),
     committee: parseAddress(field("committee"), "committee"),
     owner: parseAddress(field("owner"), "owner"),
     nonce: parseU64(field("nonce"), "nonce").toString(),
-    pay_to: parseAddress(field("pay_to"), "pay_to"),
+    announcement: parseAddress(field("announcement"), "announcement"),
+    sha256,
+    salt,
     result: parseU64(field("result"), "result").toString(),
     member: parseAddress(field("member"), "member"),
     signature: vote.signature,
-    ...extrasOf(vote, file),
   };
 }
 
-function extrasOf(vote: Partial<VoteFile>, file: string): { salt?: string; earlier?: string[] } {
-  if (vote.salt !== undefined && (typeof vote.salt !== "string" || !isSaltHex(vote.salt))) {
-    throw new FlowRefused(`${file} holds a salt that is not 32 lowercase hex digits`);
-  }
-  const earlier: unknown = vote.earlier;
-  if (earlier !== undefined && (!Array.isArray(earlier) || earlier.some((one) => typeof one !== "string" || (one !== UNOPENED && !isSaltHex(one))))) {
-    throw new FlowRefused(`${file} holds earlier salts that are not each 32 lowercase hex digits or ${UNOPENED}`);
-  }
-  return { ...(vote.salt === undefined ? {} : { salt: vote.salt }), ...(earlier === undefined ? {} : { earlier: earlier as string[] }) };
-}
-
-export function agreedSalt(votes: readonly VoteFile[], files: readonly string[]): Agreed {
-  const salted = votes.findIndex((vote) => vote.salt !== undefined);
-  const salt = votes[salted]?.salt;
-  for (const [i, vote] of votes.entries()) {
-    if (vote.salt !== undefined && vote.salt !== salt) {
-      throw new FlowRefused(`${files[i]} opens the payee's announcement with another salt than ${files[salted]}; every vote must come from the same judged delivery`);
-    }
-  }
-  const lists = votes.map((vote) => (vote.earlier ?? []).map((one) => (one === UNOPENED ? null : one)));
-  return { salt, earlier: unitedSalts(lists) };
-}
+export const BALLOT_FIELDS = ["intent", "committee", "owner", "nonce", "announcement", "sha256", "salt", "result"] as const;
 
 export function sameBallot(votes: readonly VoteFile[], files: readonly string[]): Ballot {
   const [first] = votes;
@@ -136,13 +151,82 @@ export function sameBallot(votes: readonly VoteFile[], files: readonly string[])
     throw new FlowRefused("committee release needs at least one --vote");
   }
   votes.forEach((vote, i) => {
-    for (const name of ["intent", "committee", "owner", "nonce", "pay_to", "result"] as const) {
+    for (const name of BALLOT_FIELDS) {
       if (vote[name] !== first[name]) {
         throw new FlowRefused(`${files[i]} votes on ${name} ${vote[name]}, but ${files[0]} votes on ${first[name]}`);
       }
     }
   });
-  return { owner: first.owner, nonce: BigInt(first.nonce), payTo: first.pay_to, result: BigInt(first.result) };
+  return { owner: first.owner, nonce: BigInt(first.nonce), announcement: first.announcement, sha256: first.sha256, salt: first.salt, result: BigInt(first.result) };
+}
+
+async function memberVoteCommand(command: Extract<CommitteeCommand, { name: "committee-vote" }>, runtime: Runtime, transport: Transport): Promise<object> {
+  const client = createClient({ url: command.url, transport });
+  const member = await messageSigner(runtime, command.keypair);
+  const openers = [...(isLedgerPath(command.keypair) ? [] : [await runtime.loadKeypair(command.keypair)]), ...(await loadEncryptionKeys(runtime, command.encryptionKeypairs))];
+  const { address: intent, intent: held } = await loadIntent(transport, command.owner, command.nonce);
+  const params = decodeParams(held.kind, Uint8Array.from(held.params));
+  const judging = params.kind === Kind.AttestedResult ? await client.committee(params.attestor) : null;
+  if (judging !== null && !judging.members.includes(member.address)) {
+    throw new FlowRefused(`${member.address} is not a member of committee ${judging.address}; nothing was signed`);
+  }
+  const { opening } = await firstOpeningIn(transport, { intent, sha256: command.sha256, keypair: openers });
+  if (opening instanceof FirstOpeningRefused) {
+    throw new FlowRefused(`${opening.message}; ${refusalNext(opening, { key: MEMBER_KEY_FLAG, wait: MEMBER_WAIT, closed: NOBODY_ANNOUNCED })}`);
+  }
+  const target: Ballot = { owner: command.owner, nonce: command.nonce, announcement: opening.announcement, sha256: opening.sha256, salt: opening.salt, result: command.result };
+  const ballot = await client.committeeBallot(ballotInput(target));
+  if (!ballot.committee.members.includes(member.address)) {
+    throw new FlowRefused(`${member.address} is not a member of committee ${ballot.committee.address}; nothing was signed`);
+  }
+  await invitedPayee(runtime, transport, ballot.intent, opening.worker);
+  const summary = ballotLines(ballot, target, opening.worker);
+  const skipped = opening.skipped.length === 0 ? {} : { skipped: opening.skipped };
+  if (!command.yes) {
+    return { intent: ballot.intent, announcement: opening.announcement, seq: opening.seq, digest: hex(ballot.digest), summary, ...skipped, signed: false, next: VOTE_NOT_SIGNED };
+  }
+  const vote = await memberVote(member, ballot, target);
+  if (command.out !== undefined) {
+    await writeFile(command.out, `${JSON.stringify(vote, null, 2)}\n`);
+  }
+  return { summary, ...skipped, signed: true, vote, ...(command.out === undefined ? {} : { written: command.out }) };
+}
+
+async function releaseCommand(command: Extract<CommitteeCommand, { name: "committee-release" }>, runtime: Runtime, transport: Transport): Promise<object> {
+  const client = createClient({ url: command.url, transport });
+  const solver = await transactionSigner(runtime, command.keypair);
+  const votes = await Promise.all(command.votes.map(async (file) => voteOf(await readFile(file, "utf8"), file)));
+  const target = sameBallot(votes, command.votes);
+  const [escrow] = await findIntentPda({ owner: target.owner, nonce: target.nonce });
+  const worker = await workerOf(transport, target.announcement);
+  await invitedPayee(runtime, transport, escrow, worker);
+  const cast: CommitteeVote[] = votes.map((v) => ({ member: v.member, signature: Uint8Array.from(Buffer.from(v.signature, "hex")) }));
+  const release = await client.prepareCommitteeRelease({ ...ballotInput(target), solver, votes: cast });
+  const [first] = votes;
+  if (first !== undefined && (first.intent !== release.intent || first.committee !== release.committee.address)) {
+    throw new FlowRefused(`the votes are for escrow ${first.intent} and committee ${first.committee}, not ${release.intent} and ${release.committee.address}`);
+  }
+  if (command.confirmUrl !== undefined) {
+    const keypair = isLedgerPath(command.keypair) ? undefined : await runtime.loadKeypair(command.keypair);
+    const confirmed = { intent: release.intent, attestor: release.committee.address, sha256: target.sha256, payees: [worker], keypair };
+    await confirmOnBoth(transport, runtime.transport(command.confirmUrl), confirmed);
+  }
+  const summary = [
+    `Releases: proof escrow ${release.intent} to ${worker} (token account ${release.payee}), who made the announcement ${target.announcement}, with result ${target.result}`,
+    `Signed by: ${release.signers.join(", ")}, ${release.signers.length} of committee ${release.committee.address}, which needs ${release.committee.threshold}`,
+    `Pays the fee: ${solver.address}`,
+  ];
+  const shown = { intent: release.intent, committee: release.committee.address, announcement: target.announcement, signers: release.signers };
+  if (release.setup.length === 0) {
+    return previewed(transport, release.instructions, solver, { ...shown, summary }, command.yes);
+  }
+  const setupSummary = "Sets up first, in its own transaction: the token accounts the release pays into";
+  if (!command.yes) {
+    return previewed(transport, release.setup, solver, { ...shown, summary: [...summary, setupSummary] }, false);
+  }
+  const prepared = await previewed(transport, release.setup, solver, {}, true);
+  const sent = await previewed(transport, release.instructions, solver, { ...shown, summary: [...summary, setupSummary] }, true);
+  return { ...sent, setup_signature: (prepared as { signature?: string }).signature };
 }
 
 export async function committeeCommand(command: CommitteeCommand, runtime: Runtime, transport: Transport): Promise<object> {
@@ -182,81 +266,9 @@ export async function committeeCommand(command: CommitteeCommand, runtime: Runti
         created_at: found.createdAt,
       };
     }
-    case "committee-vote": {
-      const member = await messageSigner(runtime, command.keypair);
-      const target = { owner: command.owner, nonce: command.nonce, payTo: command.payTo, result: command.result };
-      const ballot = await client.committeeBallot(target);
-      if (!ballot.committee.members.includes(member.address)) {
-        throw new FlowRefused(`${member.address} is not a member of committee ${ballot.committee.address}; nothing was signed`);
-      }
-      await invitedPayee(runtime, transport, ballot.intent, target.payTo);
-      const summary = ballotLines(ballot, target);
-      if (!command.yes) {
-        return { intent: ballot.intent, digest: hex(ballot.digest), summary, signed: false, next: VOTE_NOT_SIGNED };
-      }
-      const vote = await memberVote(member, ballot, target);
-      if (command.out !== undefined) {
-        await writeFile(command.out, `${JSON.stringify(vote, null, 2)}\n`);
-      }
-      return { summary, signed: true, vote, ...(command.out === undefined ? {} : { written: command.out }) };
-    }
-    case "committee-release": {
-      const solver = await transactionSigner(runtime, command.keypair);
-      const votes = await Promise.all(command.votes.map(async (file) => voteOf(await readFile(file, "utf8"), file)));
-      const target = sameBallot(votes, command.votes);
-      const [escrow] = await findIntentPda({ owner: target.owner, nonce: target.nonce });
-      await invitedPayee(runtime, transport, escrow, target.payTo);
-      const opened = agreedSalt(votes, command.votes);
-      const cast: CommitteeVote[] = votes.map((v) => ({ member: v.member, signature: Uint8Array.from(Buffer.from(v.signature, "hex")) }));
-      const release = await client.prepareCommitteeRelease({
-        ...target,
-        solver,
-        votes: cast,
-        ...(command.sha256 === undefined ? {} : { deliveredSha256: command.sha256 }),
-        ...(command.sha256 === undefined || opened.salt === undefined ? {} : { deliveredSalt: opened.salt }),
-      });
-      const [first] = votes;
-      if (first !== undefined && (first.intent !== release.intent || first.committee !== release.committee.address)) {
-        throw new FlowRefused(`the votes are for escrow ${first.intent} and committee ${first.committee}, not ${release.intent} and ${release.committee.address}`);
-      }
-      if (command.confirmUrl !== undefined) {
-        const keypair = isLedgerPath(command.keypair) ? undefined : await runtime.loadKeypair(command.keypair);
-        const confirmed = { intent: release.intent, attestor: release.committee.address, sha256: command.sha256, payees: [target.payTo], keypair };
-        await confirmOnBoth(transport, runtime.transport(command.confirmUrl), confirmed);
-      }
-      const summary = [
-        `Releases: proof escrow ${release.intent} to ${target.payTo} (token account ${release.payee}) with result ${target.result}`,
-        `Signed by: ${release.signers.join(", ")}, ${release.signers.length} of committee ${release.committee.address}, which needs ${release.committee.threshold}`,
-        `Pays the fee: ${solver.address}`,
-      ];
-      const shown = { intent: release.intent, committee: release.committee.address, signers: release.signers };
-      const openings = command.sha256 === undefined ? [] : openingsOf(release.intent, opened.earlier);
-      const openingSummary = openings.map((opening) => `Opens after the release, in its own transaction: the salts of earlier announcements, ${openingMemo(opening)}`);
-      const openAfter = async (sent: object): Promise<object> => {
-        if (openings.length === 0 || !command.yes) {
-          return sent;
-        }
-        const signatures: string[] = [];
-        for (const [at, opening] of openings.entries()) {
-          try {
-            signatures.push(await transport.send(openingInstructions(solver, release.committee.address, opening), solver));
-          } catch (error) {
-            const reason = error instanceof Error ? error.message : String(error);
-            return { ...sent, opening_signatures: signatures, opening_memos: openings.slice(at).map(openingMemo), opening_error: `the release landed, but the opening was not sent: ${reason}` };
-          }
-        }
-        return { ...sent, opening_signatures: signatures };
-      };
-      if (release.setup.length === 0) {
-        return openAfter(await previewed(transport, release.instructions, solver, { ...shown, summary: [...summary, ...openingSummary] }, command.yes));
-      }
-      const setupSummary = "Sets up first, in its own transaction: the token accounts the release pays into";
-      if (!command.yes) {
-        return previewed(transport, release.setup, solver, { ...shown, summary: [...summary, setupSummary, ...openingSummary] }, false);
-      }
-      const prepared = await previewed(transport, release.setup, solver, {}, true);
-      const sent = await previewed(transport, release.instructions, solver, { ...shown, summary: [...summary, setupSummary, ...openingSummary] }, true);
-      return openAfter({ ...sent, setup_signature: (prepared as { signature?: string }).signature });
-    }
+    case "committee-vote":
+      return memberVoteCommand(command, runtime, transport);
+    case "committee-release":
+      return releaseCommand(command, runtime, transport);
   }
 }

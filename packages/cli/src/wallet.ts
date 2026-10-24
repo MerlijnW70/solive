@@ -11,7 +11,7 @@ import { FAUCET_POLL_SECONDS, FAUCET_SCHEDULE, FAUCET_WAIT_MINUTES, faucetPendin
 
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
 export const FUND_BELOW = LAMPORTS_PER_SOL / 2n;
-export const ENOUGH_TO_START = LAMPORTS_PER_SOL / 20n;
+export const ENOUGH_TO_START = (LAMPORTS_PER_SOL * 6n) / 100n;
 export const SWAP_START = LAMPORTS_PER_SOL / 10n;
 export const AIRDROP = LAMPORTS_PER_SOL;
 export const AIRDROPS: readonly bigint[] = [AIRDROP, AIRDROP / 2n, AIRDROP / 4n, AIRDROP / 10n];
@@ -27,7 +27,7 @@ export type Files = {
   ledger?: OpenTransport;
 };
 
-const settingsDir = (home: string) => `${home}/.config/intent-engine`;
+export const settingsDir = (home: string) => `${home}/.config/intent-engine`;
 export const settingsPath = (home: string) => `${settingsDir(home)}/config.json`;
 export const defaultWallet = (home: string) => `${settingsDir(home)}/wallet.json`;
 export const ledgerBook = (home: string, path: string) => `${settingsDir(home)}/${path.replace(/[^A-Za-z0-9]+/g, "-")}.sales.json`;

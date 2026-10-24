@@ -2,35 +2,27 @@ import { createHash } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { type Address, getBase58Decoder, type Signature, type TransactionPartialSigner } from "@solana/kit";
-import { decodeParams, type DeliveryOpener, IntentStatus, Kind, openingMemo, UNOPENED } from "@intent-engine/core";
+import { decodeParams, type DeliveryOpener, IntentStatus, Kind } from "@intent-engine/core";
 import {
   chainTime,
   type CommitteeView,
   confirmOnBoth,
   createClient,
-  deliveryRecord,
-  firstDelivery,
+  deviceJudgeReady,
+  firstOpeningIn,
+  FirstOpeningRefused,
   isDevice,
-  isLedgerPath,
-  earlierSalts,
   loadCommittee,
   loadIntent,
   messageOnly,
-  openingInstructions,
-  openingsOf,
-  SIGNATURE_PAGE,
-  type Transport,
-  missingKey,
-  deviceJudgeReady,
-  type MissingKey,
   NoKeyAtCreation,
   ProfileHistoryIncomplete,
-  skippedNote,
-  unopenedOf,
+  type Transport,
 } from "@intent-engine/client";
 import type { Command } from "./args.js";
 import { NOT_SENT } from "./flows.js";
 import { memberVote, type VoteFile } from "./committee-commands.js";
+import { NOBODY_ANNOUNCED, refusalNext, type SkippedLine, skippedLines } from "./announcement-views.js";
 import type { Runtime } from "./commands.js";
 import { type InterruptSignal, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
 import { type Artifact, type CheckFiles, copyOf, readArtifact, removeCopy } from "./artifact.js";
@@ -85,14 +77,16 @@ export type Verdict = {
   exitCode: number | null;
   verdict: "pass" | "fail";
   payTo: Address;
+  announcement: Address;
+  seq: bigint;
+  salt: string;
   signature: Signature | null;
   simulated?: SimulatedRelease;
   digest?: string;
   feePayer?: Address;
   committee?: Address;
   vote?: VoteFile;
-  openings?: { memo: string; signature: Signature | null; error?: string }[];
-  skipped?: string[];
+  skipped?: SkippedLine[];
   next?: string;
   cleanup?: string;
 };
@@ -100,9 +94,6 @@ export type Verdict = {
 const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
 
 const reasonOf = (error: unknown): string => (error instanceof Error ? error.message : String(error));
-
-export const pagesRead = (pages: number): string =>
-  `It read ${pages} ${pages === 1 ? "page" : "pages"} of ${SIGNATURE_PAGE} signatures; a higher --max-pages reads further, but does not help when the RPC node's ledger does not reach back to the escrow's creation or the node cannot page signatures or report its first available slot`;
 
 export const sealedOnDevice = (path: string, intent: Address): string =>
   `a judge on the Ledger ${path} cannot open the salts sealed in the announcements for intent ${intent}, so it cannot know which announcement came first; pass --encryption-keypair with the encryption key file whose public key its profile publishes, or judge with a key file; nothing was run or paid`;
@@ -116,8 +107,14 @@ export const historyRefused = (error: unknown): never => {
 
 export const GIVE_KEY_FLAG = "pass the encryption key file of that key with --encryption-keypair";
 
-export const unopenedRefusal = (missing: MissingKey, path: string, device: boolean): string =>
-  missing.key.kind === "wallet" && device ? sealedOnDevice(path, missing.delivery.intent) : missingKey(missing, GIVE_KEY_FLAG);
+export const WAIT_FOR_NODE = "the RPC node does not show every announcement yet; run again in a few seconds";
+
+export function refusedOpening(refusal: FirstOpeningRefused, path: string, device: boolean, judge: Address): string {
+  if (device && refusal.reason === "key-not-given" && refusal.sealedTo.some(({ kind, wallet }) => kind === "wallet" && wallet === judge)) {
+    return sealedOnDevice(path, refusal.intent);
+  }
+  return `${refusal.message}; ${refusalNext(refusal, { key: GIVE_KEY_FLAG, wait: WAIT_FOR_NODE, closed: NOBODY_ANNOUNCED })}`;
+}
 
 export async function judgeOpeners(runtime: Runtime, command: JudgeCommand, device: boolean): Promise<DeliveryOpener[]> {
   const own = device ? [] : [await runtime.loadKeypair(command.keypair)];
@@ -197,28 +194,13 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   const sha256 = read.sha256;
   const check = command.check === undefined ? undefined : { name: basename(resolve(command.check)), read: await readArtifact(resolve(command.check)) };
   const keypair = await judgeOpeners(runtime, command, isDevice(signer));
-  const record = await deliveryRecord(transport, attestor, address, command.maxPages, keypair);
-  if (!record.complete) {
-    throw new JudgeRefused(
-      `the delivery record is incomplete because the judge's history is too long to read in full or the RPC node cannot serve all of it, so the earliest announcer of the artifact with sha256 ${sha256} for intent ${address} cannot be known; nothing was run or paid. ${pagesRead(record.pages)}`,
-    );
+  const { list, opening } = await firstOpeningIn(transport, { intent: address, sha256, keypair });
+  if (opening instanceof FirstOpeningRefused) {
+    throw new JudgeRefused(refusedOpening(opening, command.keypair, isDevice(signer), signer.address));
   }
-  const first = firstDelivery(record.deliveries, sha256);
+  const first = list.announcements.find(({ address: at }) => at === opening.announcement) ?? null;
+  const payTo = opening.worker;
   const confirm = command.confirmUrl === undefined ? undefined : runtime.transport(command.confirmUrl);
-  const recipients = committee?.members ?? [attestor];
-  const { missing, skipped } = await unopenedOf(transport, { judge: signer.address, recipients, deliveries: record.deliveries, first, openers: keypair, confirm }).catch(historyRefused);
-  if (missing !== null) {
-    throw new JudgeRefused(unopenedRefusal(missing, command.keypair, isDevice(signer)));
-  }
-  const salt = first?.salt;
-  const earlier = first === null ? [] : earlierSalts(record.deliveries, first);
-  const payTo = command.payTo ?? first?.worker;
-  if (payTo === undefined) {
-    throw new JudgeRefused(`nobody announced the artifact with sha256 ${sha256} for intent ${address}; pass --pay-to to pay a worker who did not announce it`);
-  }
-  if (first !== null && first.worker !== payTo) {
-    throw new JudgeRefused(`${first.worker} announced the artifact with sha256 ${sha256} first, in ${first.signature}; it is paid, not --pay-to ${payTo}`);
-  }
   await checkInvited(transport, runtime.specFetch, address, [payTo]).catch((error: unknown) => {
     throw error instanceof InviteRefused ? new JudgeRefused(error.message) : error;
   });
@@ -226,7 +208,27 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   const beacon = draw === undefined ? undefined : await drawBeacon(transport, (seconds) => runtime.sleep(seconds), first, draw, address, sha256);
   const signals = holdSignals();
   try {
-    const judged = { address, attestor, committee, specHash, sha256, salt, earlier, payTo, result, read, specBytes, check, viper, beacon, confirm, keypair, feePayer, skipped: skipped.map(skippedNote) };
+    const judged = {
+      address,
+      attestor,
+      committee,
+      specHash,
+      sha256,
+      salt: opening.salt,
+      announcement: opening.announcement,
+      seq: opening.seq,
+      payTo,
+      result,
+      read,
+      specBytes,
+      check,
+      viper,
+      beacon,
+      confirm,
+      keypair,
+      feePayer,
+      skipped: skippedLines(opening),
+    };
     return await checkAndSettle(command, transport, signer, signals, judged);
   } finally {
     signals.release();
@@ -239,7 +241,7 @@ export const notSent = (signal: InterruptSignal): string =>
 export const mayHaveLanded = (signal: InterruptSignal, address: Address, signature: Signature | undefined): string =>
   `the check passed and the release was sent${signature === undefined ? "" : ` in ${signature}`}; a second ${signal} stopped the judge before the send was confirmed, so the release may have landed. Read intent ${address} before judging it again; no verdict was written`;
 
-type Release = { address: Address; payTo: Address; result: bigint; sha256: string; salt: string | undefined; feePayer: TransactionPartialSigner | undefined };
+type Release = { address: Address; announcement: Address; result: bigint; sha256: string; salt: string; feePayer: TransactionPartialSigner | undefined };
 
 function sendRelease(command: JudgeCommand, transport: Transport, signer: MessageSigner, signals: HeldSignals, release: Release): Promise<Signature> {
   const payer = release.feePayer ?? signer;
@@ -273,15 +275,12 @@ function sendRelease(command: JudgeCommand, transport: Transport, signer: Messag
       .settleProof({
         owner: command.owner,
         nonce: command.nonce,
-        payTo: release.payTo,
+        announcement: release.announcement,
+        opening: { sha256: release.sha256, salt: release.salt },
         result: release.result,
         ...(release.feePayer === undefined
-          ? {
-              judge: Object.freeze({ ...signer, signTransactions }),
-              deliveredSha256: release.sha256,
-              ...(release.salt === undefined ? {} : { deliveredSalt: release.salt }),
-            }
-          : { judge: signer, feePayer: Object.freeze({ ...release.feePayer, signTransactions }) }),
+          ? { judge: Object.freeze({ ...signer, signTransactions }) }
+          : { judge: signer, payer: Object.freeze({ ...release.feePayer, signTransactions }) }),
       })
       .then((confirmed) => {
         signals.listen(() => undefined);
@@ -296,8 +295,9 @@ type Judged = {
   committee: CommitteeView | null;
   specHash: string;
   sha256: string;
-  salt: string | undefined;
-  earlier: (string | null)[];
+  salt: string;
+  announcement: Address;
+  seq: bigint;
   payTo: Address;
   result: bigint;
   read: Artifact;
@@ -308,28 +308,15 @@ type Judged = {
   confirm: Transport | undefined;
   keypair: DeliveryOpener[];
   feePayer: TransactionPartialSigner | undefined;
-  skipped: string[];
+  skipped: SkippedLine[];
 };
-
-async function sendOpenings(transport: Transport, signer: TransactionPartialSigner, attestor: Address, intent: Address, earlier: readonly (string | null)[]): Promise<NonNullable<Verdict["openings"]>> {
-  const sent: NonNullable<Verdict["openings"]> = [];
-  for (const opening of openingsOf(intent, earlier)) {
-    const memo = openingMemo(opening);
-    try {
-      sent.push({ memo, signature: (await transport.send(openingInstructions(signer, attestor, opening), signer)) as Signature });
-    } catch (error) {
-      sent.push({ memo, signature: null, error: reasonOf(error) });
-    }
-  }
-  return sent;
-}
 
 async function checkAndSettle(
   command: JudgeCommand,
   transport: Transport,
   signer: MessageSigner,
   signals: HeldSignals,
-  { address, attestor, committee, specHash, sha256, salt, earlier, payTo, result, read, specBytes, check: checkFiles, viper, beacon, confirm, keypair, feePayer, skipped }: Judged,
+  { address, attestor, committee, specHash, sha256, salt, announcement, seq, payTo, result, read, specBytes, check: checkFiles, viper, beacon, confirm, keypair, feePayer, skipped }: Judged,
 ): Promise<Verdict> {
   const { sandbox } = command;
   let check: Check = { exitCode: null, timedOut: false };
@@ -383,27 +370,24 @@ async function checkAndSettle(
   const agreed = (judged: { total: number; passed: number } | undefined) => judged !== undefined && judged.total > 0 && judged.passed === judged.total;
   const passed = cases === undefined ? check.exitCode === 0 : agreed(cases) && agreed(host) && (beacon === undefined || agreed(drawn)) && (plainNode === undefined || agreed(node));
   if (passed && confirm !== undefined) {
-    await confirmOnBoth(transport, confirm, { intent: address, attestor, sha256, pages: command.maxPages, payees: [payTo], keypair });
+    await confirmOnBoth(transport, confirm, { intent: address, attestor, sha256, payees: [payTo], keypair });
   }
   let signature: Signature | null = null;
   let vote: VoteFile | undefined;
   let simulated: SimulatedRelease | undefined;
-  let openingsSent: Verdict["openings"];
+  const target = { owner: command.owner, nonce: command.nonce, announcement, opening: { sha256, salt }, result };
   let digest =
-    passed && committee === null && isDevice(signer)
-      ? hex((await createClient({ url: command.url, transport }).proofBallot({ owner: command.owner, nonce: command.nonce, payTo, result })).digest)
-      : undefined;
+    passed && committee === null && isDevice(signer) ? hex((await createClient({ url: command.url, transport }).proofBallot(target)).digest) : undefined;
   if (passed && committee !== null) {
-    const target = { owner: command.owner, nonce: command.nonce, payTo, result };
     const ballot = await createClient({ url: command.url, transport }).committeeBallot(target);
     if (isDevice(signer) && !command.yes) {
       digest = hex(ballot.digest);
     } else {
-      vote = await memberVote(signer, ballot, target, { salt, earlier: earlier.length === 0 ? undefined : earlier.map((one) => one ?? UNOPENED) });
+      vote = await memberVote(signer, ballot, { owner: command.owner, nonce: command.nonce, announcement, sha256, salt, result });
     }
   } else if (passed && command.yes) {
     try {
-      signature = await sendRelease(command, transport, signer, signals, { address, payTo, result, sha256, salt, feePayer });
+      signature = await sendRelease(command, transport, signer, signals, { address, announcement, result, sha256, salt, feePayer });
     } catch (error) {
       if (error instanceof JudgeInterrupted) {
         throw error;
@@ -418,10 +402,7 @@ async function checkAndSettle(
       throw error;
     }
   } else if (passed && !isDevice(signer)) {
-    simulated = await simulateRelease(transport, signer, { url: command.url, owner: command.owner, nonce: command.nonce, payTo, result, sha256, salt });
-  }
-  if (signature !== null && earlier.length > 0) {
-    openingsSent = await sendOpenings(transport, feePayer ?? signer, attestor, address, earlier);
+    simulated = await simulateRelease(transport, signer, { url: command.url, owner: command.owner, nonce: command.nonce, announcement, result, sha256, salt });
   }
   const verdict: Verdict = {
     intent: address,
@@ -437,6 +418,9 @@ async function checkAndSettle(
     exitCode: check.exitCode,
     verdict: passed ? "pass" : "fail",
     payTo,
+    announcement,
+    seq,
+    salt,
     signature,
     ...(simulated === undefined ? {} : { simulated }),
     ...(digest === undefined ? {} : { digest }),
@@ -444,13 +428,12 @@ async function checkAndSettle(
     ...(committee === null ? {} : { committee: committee.address }),
     ...(vote === undefined ? {} : { vote, next: VOTE_NEXT }),
     ...(passed && committee !== null && vote === undefined ? { next: DEVICE_VOTE_PREVIEW } : {}),
-    ...(openingsSent === undefined ? {} : { openings: openingsSent }),
     ...(passed && committee === null && !command.yes ? { next: digest === undefined ? NOT_SENT : DEVICE_PREVIEW } : {}),
     ...(cleanup !== undefined ? { cleanup } : {}),
     ...(skipped.length === 0 ? {} : { skipped }),
   };
   if (command.verdict !== undefined) {
-    await writeFile(command.verdict, `${JSON.stringify(verdict, null, 2)}\n`);
+    await writeFile(command.verdict, `${JSON.stringify(verdict, (_, value: unknown) => (typeof value === "bigint" ? value.toString() : value), 2)}\n`);
   }
   const during = signals.caught();
   if (signature !== null && during !== undefined) {

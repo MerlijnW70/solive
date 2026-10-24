@@ -2,7 +2,7 @@ import { createHash, generateKeyPairSync } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Address, generateKeyPairSigner, getAddressDecoder, lamports, none } from "@solana/kit";
+import { type Address, generateKeyPairSigner, getAddressDecoder, type KeyPairSigner, lamports, none } from "@solana/kit";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
@@ -14,7 +14,7 @@ import { SERVER_PROBLEMS } from "../src/agent/problems.js";
 import { notInvited } from "../src/invites.js";
 import { jobClosed } from "../src/sealed-commands.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
-import { sealedDelivery } from "./announce.js";
+import { announced, keyed } from "./announce.js";
 import { cli, creation, funded, h, NOW, ownerSigned, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown>;
@@ -68,7 +68,8 @@ describe("an invite-only job through MCP", () => {
     preset(DEVNET_TEST_MINT);
     const client = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     const owner = (await call(client, "wallet_setup")).value["address"] as Address;
-    const [worker, stranger] = [wallet(), wallet()];
+    const [workerKey, strangerKey] = [await keyed(), await keyed()];
+    const [worker, stranger] = [workerKey.address, strangerKey.address];
     h.specPages.set(SPEC_URL, await seal(new TextEncoder().encode(SPEC), [owner, worker]));
     const escrow = await call(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash: sha(SPEC), spec_url: SPEC_URL, send: true });
     expect(escrow.error, JSON.stringify(escrow.value)).toBe(false);
@@ -80,13 +81,15 @@ describe("an invite-only job through MCP", () => {
       value: { url: SPEC_URL, sha256: sha(SPEC), matches: true, text: SPEC, sealed_to: [owner, worker], freeze_authority: null },
     });
     const release = { owner, nonce: escrow.value["nonce"] };
-    expect(await call(client, "wallet_attest", { ...release, pay_to: stranger })).toEqual({
+    const copied = sha("stranger's work");
+    await announced(intent, strangerKey, copied, "https://" + "example.org/stranger.mjs");
+    expect(await call(client, "wallet_attest", { ...release, delivered_sha256: copied })).toEqual({
       error: true,
       value: { code: "NotInvited", retryable: SERVER_PROBLEMS.NotInvited.retryable, hint: notInvited(stranger, intent) },
     });
     const work = sha(COUNT);
-    h.engineLog.unshift({ signature: "announced", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [await sealedDelivery(intent, worker, work, "https://example.org/count.sealed", [owner])], feePayer: worker });
-    const shown = await call(client, "wallet_attest", { ...release, pay_to: worker, delivered_sha256: work });
+    await announced(intent, workerKey, work, "https://" + "example.org/count.mjs");
+    const shown = await call(client, "wallet_attest", { ...release, delivered_sha256: work });
     expect(shown.error, JSON.stringify(shown.value)).toBe(false);
     expect(shown.value).toMatchObject({ intent, pay_to: worker, sent: false });
   });
@@ -116,22 +119,20 @@ describe("judging an invite-only job", () => {
     const artifact = join(dir, "count.mjs");
     await writeFile(artifact, COUNT);
     const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash: new Uint8Array(createHash("sha256").update(SPEC).digest()), judgeFee: 0n } as const;
-    const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
-    const judging = ["judge", "--keypair", "judge.json", "--owner", w.owner.address, "--nonce", "0", "--spec", spec, "--artifact", artifact, "--sandbox", "viper"];
-    const deliveredBy = async (worker: Address, invited: Address[]) => {
+    const deliveredBy = async (worker: KeyPairSigner, invited: Address[], nonce: bigint) => {
+      const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce, expiresAt: NOW + 3_600n });
       h.specPages.set(SPEC_URL, await seal(new TextEncoder().encode(SPEC), invited));
-      h.engineLog = [
-        { signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [await sealedDelivery(intent, worker, sha(COUNT), "https://example.org/count.sealed", [judge.address])], feePayer: worker },
-        { ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) },
-      ];
-      return cli(judging, { "judge.json": judge });
+      h.engineLog = [{ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) }];
+      await announced(intent, worker, sha(COUNT), "https://" + "example.org/count.mjs");
+      const judging = ["judge", "--keypair", "judge.json", "--owner", w.owner.address, "--nonce", String(nonce), "--spec", spec, "--artifact", artifact, "--sandbox", "viper"];
+      return { intent, run: await cli(judging, { "judge.json": judge }) };
     };
-    const [invitedWorker, outsider] = [(await generateKeyPairSigner()).address, (await generateKeyPairSigner()).address];
-    const refused = await deliveredBy(outsider, [judge.address, invitedWorker]);
-    expect([refused.code, refused.err]).toEqual([EXIT_FAILED, notInvited(outsider, intent)]);
-    const judged = await deliveredBy(invitedWorker, [judge.address, invitedWorker]);
-    expect([judged.code, judged.err]).toEqual([EXIT_OK, ""]);
-    expect(judged.json()).toMatchObject({ intent, verdict: "pass", payTo: invitedWorker, signature: null });
+    const [invitedWorker, outsider] = [await keyed(), await keyed()];
+    const refused = await deliveredBy(outsider, [judge.address, invitedWorker.address], 0n);
+    expect([refused.run.code, refused.run.err]).toEqual([EXIT_FAILED, notInvited(outsider.address, refused.intent)]);
+    const judged = await deliveredBy(invitedWorker, [judge.address, invitedWorker.address], 1n);
+    expect([judged.run.code, judged.run.err]).toEqual([EXIT_OK, ""]);
+    expect(judged.run.json()).toMatchObject({ intent: judged.intent, verdict: "pass", payTo: invitedWorker.address, signature: null });
   }, 60_000);
 });
 

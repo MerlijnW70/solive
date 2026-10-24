@@ -80,24 +80,22 @@ describe("delivery tool texts", () => {
     expect(walletDeliver.description).toContain("Host the work at a url nobody can guess and announce right after hosting.");
     expect(UNGUESSABLE_URL).toBe("without private hosting, use a public host under a long random path or file name, such as 32 random hex characters, so nobody can guess it, and announce right after hosting");
     expect(JSON.stringify(walletDeliver.input.json)).toContain(UNGUESSABLE_URL);
-    expect(prepareDeliver.description).toContain("host the work at a url the attestor can fetch and nobody else knows");
-    expect(prepareDeliver.description).toContain("share neither the url nor the work until the announcement lands");
+    expect(prepareDeliver.description).toContain("so host it where nobody can guess, give its exact sha256 and send promptly");
     for (const text of [walletDeliver.description, prepareDeliver.description]) {
       expect(text).not.toContain("keep it private");
       expect(text).not.toContain("make the work public");
     }
   });
 
-  it("tell the judge the sha256 is hidden and how it gets the sha256 to release for", () => {
-    expect(walletCheckDelivery.description).toContain("Each announcement hides the work's sha256 on purpose");
-    expect(walletCheckDelivery.description).toContain("A judge fetches and opens work at urls sealed to it with solive_wallet_fetch_work (intent-engine unseal), then passes its sha256 to solive_wallet_attest.");
-    expect(checkDelivery.description).toContain("Each announcement hides the work's sha256 on purpose, so nobody can copy it or test a guess against it");
-    expect(checkDelivery.description).toContain("The judge opens the url sealed to it, fetches the file, treats it as untrusted, hashes it");
-    expect(checkDelivery.description).toContain("passes that sha256 as delivered_sha256 to the attest tool of a server started with --wallet");
+  it("tell the judge the sha256 is hidden and how it gets the work to release for", () => {
+    expect(walletCheckDelivery.description).toContain("read from accounts");
+    expect(walletCheckDelivery.description).toContain("A judge opens and fetches work with solive_wallet_fetch_work.");
+    expect(checkDelivery.description).toContain("Each hides the work's sha256 in its commitment and seals its url to the judge.");
+    expect(checkDelivery.description).toContain("This tool fetches and opens nothing and needs no wallet.");
   });
 
   it("say in the deliver preview that only send: true is passed back", () => {
-    expect(DELIVER_NEXT).toBe("not sent; show the summary, then resend with send: true after approval; commitment and check are shown only, never passed back");
-    expect(JSON.stringify(walletDeliver.output.json)).toContain("shown only, never passed back");
+    expect(DELIVER_NEXT).toBe("not sent; show the summary, then resend with send: true after approval; the commitment is shown only, never passed back");
+    expect(JSON.stringify(walletDeliver.output.json)).toContain("the chain holds it in place of the hash");
   });
 });

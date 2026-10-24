@@ -12,8 +12,8 @@ import { walletCommitteeCreate, walletCommitteeRelease, walletCommitteeVote } fr
 import { sol } from "../src/agent/wallet/costs.js";
 import { EXIT_OK } from "../src/main.js";
 import { defaultWallet } from "../src/wallet.js";
-import { sealedDelivery } from "./announce.js";
-import { balance, cli, creation, funded, h, HOME, transport, world } from "./harness.js";
+import { announced, keyed } from "./announce.js";
+import { balance, cli, funded, h, HOME, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -109,13 +109,11 @@ describe("a team judging together through the default wallet tools", () => {
 
     const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: "5a".repeat(32), send: true });
     const intent = escrow["intent"] as Address;
-    const worker = (await funded()).address;
+    const workerKey = await keyed();
+    const worker = workerKey.address;
     const work = "b6".repeat(32);
-    h.engineLog = [
-      { signature: "announced", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [await sealedDelivery(intent, worker, work, URL_OF_WORK, members)], feePayer: worker },
-      creation(intent),
-    ];
-    const ballot = { owner: lead, nonce: escrow["nonce"] as string, pay_to: worker, result: "1", delivered_sha256: work };
+    await announced(intent, workerKey, work, URL_OF_WORK);
+    const ballot = { owner: lead, nonce: escrow["nonce"] as string, result: "1", delivered_sha256: work };
 
     const vote = async (): Promise<{ member: Address; signature: string }> => {
       const shown = await ok(client, "wallet_committee_vote", ballot);

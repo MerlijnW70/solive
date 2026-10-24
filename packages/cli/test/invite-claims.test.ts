@@ -8,7 +8,6 @@ import { DEVNET_TEST_MINT, formatTime, Kind, NATIVE_MINT, seal, specMemo } from 
 import { createClient } from "@intent-engine/client";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
-import { SALT_PUBLIC } from "../src/agent/wallet/delivery.js";
 import { inviteOnly } from "../src/agent/work-claims.js";
 import { claimNotInvited, deliverNotInvited } from "../src/invites.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
@@ -151,13 +150,5 @@ describe("delivering to an invite-only job", () => {
     h.specPages.set(SPEC_URL, await seal(encoded(SPEC), [address(), s.wallet]));
     const invited = await ok(s.client, "wallet_deliver", { intent, sha256: WORK, url: WORK_URL });
     expect(invited["warnings"]).not.toContain(deliverNotInvited(s.wallet, intent));
-  });
-
-  it("says in the outputs that show a salt when it is safe to share", async () => {
-    const s = await setup();
-    const { tools } = await s.client.listTools();
-    const described = (name: string) => JSON.stringify(tools.find((one) => one.name === tool(name))?.outputSchema ?? {});
-    expect(described("wallet_check_delivery")).toContain(SALT_PUBLIC);
-    expect(described("wallet_receipt")).toContain(SALT_PUBLIC);
   });
 });

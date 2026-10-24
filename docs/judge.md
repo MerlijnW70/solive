@@ -20,29 +20,25 @@ $env:JUDGE = (intent-engine balance | Out-String | ConvertFrom-Json).address
 
 The judge's wallet can be a Ledger: pass `--keypair usb://ledger` or another Ledger form to `judge`, with or without `--watch`, and `--fee-payer <key file>`. The Ledger signs only the message over the proof, shown as a hex digest, and never a transaction, so a host cannot add an instruction to what it signs. The fee-payer key signs and pays the release transaction; without it the judge is refused.
 
-A Ledger cannot open the salts workers seal to the judge, so a judge on a Ledger opens them with an encryption key file, which only decrypts and never signs. Make one with `intent-engine profile encryption-key new --out judge.enc`, then publish the `encryption_key` it prints in the judge's profile, signed on the Ledger: `profile set --keypair usb://ledger --skills judge --endpoint <https url> --encryption-key <key> --yes`.
+A Ledger cannot open what workers seal to the judge, so a judge on a Ledger opens their announcements with an encryption key file, which only decrypts and never signs. Make one with `intent-engine profile encryption-key new --out judge.enc`, then publish the `encryption_key` it prints in the judge's profile, signed on the Ledger: `profile set --keypair usb://ledger --skills judge --endpoint <https url> --encryption-key <key> --yes`.
 
-Workers then seal each announcement to that key, and their memo records which key each recipient got. Pass `--encryption-keypair judge.enc` to `judge`, with or without `--watch`, and to `deliveries`. Without it, a judge on a Ledger refuses an escrow with announced work, naming `--encryption-keypair`, and pays only `--pay-to` when nobody announced.
+Workers then seal each announcement to that key, and each announcement lists a short fingerprint of every key it was sealed to. Pass `--encryption-keypair judge.enc` to `judge`, with or without `--watch`, and to `deliveries`.
 
-Each sealed announcement lists a short fingerprint of every key it was sealed to.
-
-For an announcement the judge cannot open, it reads its profile's history to find the key an honest worker had to use when the announcement landed: the profile's encryption key then, or else the key derived from the wallet. If the announcement names that key and the judge lacks its file, the release stops and names it. Anything else is passed over and listed under `skipped`.
+`judge` pays the first announcement that opens to the work with the keys it is given. An earlier announcement sealed to a key it was not given stops the release and names that key; nothing is signed. An earlier one sealed to a key it holds that does not open can never open for anyone, so `judge` passes over it and lists it under `skipped`.
 
 A Ledger judge must publish its encryption key before the escrow is made: it refuses an escrow made while its profile named no key, since work sealed to its wallet key would stall it. While an open escrow names it, `profile set --encryption-key none`, `profile close` and the MCP profile tool refuse on a Ledger wallet; rotating to a new key stays allowed.
 
 Hirers see a warning when they name a judge whose profile has no key. When the profile's history cannot be read back far enough, the judge refuses rather than guess.
 
-Rotate only between escrows: a worker that read the profile before a rotation and lands in or after its slot sealed to the old key, so a judge without the old key file passes that announcement over and lists it under `skipped`.
+Rotate only between escrows, and after a new key replaces the old one, repeat `--encryption-keypair` once per key file, so that announcements sealed to the old key still open.
 
-After a new key replaces the old one, repeat `--encryption-keypair` once per key file. On a Ledger, the fee payer signs and pays the openings of earlier announcements; readers check each salt against its announcement, not who sent it.
-
-Since the Ledger signs no transaction, its release carries no memo recording the work. A worker on a Ledger cannot derive its salt either, so `deliver` refuses it with `NoMessageSigner`. A committee member can vote on a Ledger too, as below.
+A worker on a Ledger cannot sign messages, so `deliver` gives it random delivery secrets and writes them, with the url, to a file under `~/.config/intent-engine/secrets` that only its owner can read; `refute` reads that file later. A committee member can vote on a Ledger too, as below.
 
 An MCP wallet on a Ledger releases the same way: start it with `mcp --wallet --fee-payer <key file>`, or `wallet_attest` and `wallet_attest_split` are refused with `NoFeePayer`. Their previews show the `digest` the device signs. For a transaction the wallet itself signs on the device, the preview shows the `message_hash` the device shows, and a send with the same arguments signs exactly that kept transaction; without one, or once it expired, the send is refused with `DeviceUnpreviewed`.
 
-Start an MCP wallet on a Ledger with `--encryption-keypair <file>` too, repeated per key file, so it opens what workers seal to its profile key; its `--fee-payer` also signs the openings. Without it, `wallet_attest`, `wallet_attest_split` and `wallet_committee_vote` refuse announced work with `SealedSalts`.
+Start an MCP wallet on a Ledger with `--encryption-keypair <file>` too, repeated per key file, so it opens what workers seal to its profile key. Without it, `wallet_attest`, `wallet_attest_split` and `wallet_committee_vote` refuse announced work with `KeyNotGiven`.
 
-A preview without `--yes` asks the device for nothing and prints the `digest` it will sign. Before you approve, run `intent-engine judge digest --owner <address> --nonce <n> --pay-to <wallet>` on a second machine. It reads the chain and prints the digest the Ledger should show; reject on any difference.
+A preview without `--yes` asks the device for nothing and prints the `digest` it will sign, with the `announcement`, `artifactSha256` and `salt` it pays. Before you approve, run `intent-engine judge digest --owner <address> --nonce <n> --announcement <address> --sha256 <hex> --salt <hex>` with those values on a second machine. It reads the chain and prints the digest the Ledger should show; reject on any difference.
 
 ## 1. Create a proof escrow
 
@@ -85,18 +81,20 @@ curl.exe -fsSL -o spec.md $env:SPEC_URL
 ## 3. Fetch the delivery
 
 ```sh
-intent-engine deliveries --attestor $JUDGE --intent $INTENT
+intent-engine deliveries --intent $INTENT
 ```
 
 In PowerShell:
 
 ```powershell
-intent-engine deliveries --attestor $env:JUDGE --intent $env:INTENT
+intent-engine deliveries --intent $env:INTENT
 ```
 
-Each entry in `deliveries` names the announcing `worker`, a `commitment` that binds the work's sha256 to that wallet and a salt, the salt's `check`, and the `signature` and `slot` of its announcement. Add `--judge-keypair` with the judge's or a committee member's key file to see its `url`. `opened_salt` shows a salt that an opening published.
+`deliveries` prints the escrow's `intent` and its `announcements` in `seq` order, read from accounts: each one's `announcement` address, `worker`, the `commitment` that binds the work's sha256 to that wallet and a salt, its `state`, `announced` or `paid`, and the `slot` and `announced_at` time it landed. `complete` is true when every seq below `next_seq` is listed, `missing` names any the node did not return, and `closed` says the escrow is no longer open.
 
-`judge` pays the earliest announcer whose sealed salt opens its commitment to the work's hash, so a copy sent from another wallet is never paid. Download the work into `work`, a file or a directory, and treat it as untrusted.
+Add `--judge-keypair` with the judge's or a committee member's key file, or `--encryption-keypair`, and each announcement those keys open shows its `url`.
+
+`judge` pays the first announcement that opens to the work's hash, so a copy announced later from another wallet is never paid. Download the work into `work`, a file or a directory, and treat it as untrusted.
 
 ## 4. Write your check
 
@@ -144,11 +142,11 @@ In PowerShell:
 intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec spec.md --artifact work --check check.mjs --run "node check/check.mjs" --verdict verdict.json --yes
 ```
 
-The release records the memo `delivery sha256:<artifactSha256>`. The payer checks it with `intent-engine receipt`.
+The release pays the announcement the verdict names and records its sha256 and salt on chain. The payer checks it with `intent-engine receipt`.
 
 ## Keep judging
 
-`judge --watch` takes the same options without `--artifact`; every `--interval` seconds (default 30) it downloads each new delivery from its `url`, checks it against the announcement's commitment and judges it once. It stops at the first pass, which `--yes` pays, when the escrow closes, or on Ctrl-C. It prints one line of JSON per delivery it judged and one when it stops.
+`judge --watch` takes the same options without `--artifact`; every `--interval` seconds (default 30) it lists the announcements to its judge from accounts, opens each new one, downloads the work from its `url`, checks it against the announcement's commitment and judges it once. It stops at the first pass, which `--yes` pays, when the escrow closes, or on Ctrl-C. It prints one line of JSON per delivery it judged and one when it stops.
 
 On devnet, testnet and mainnet it refuses a work link that points to a private or local network address.
 
@@ -231,17 +229,19 @@ The verdict's `drawn` records the slot, blockhash and seed, so anyone with the s
 
 ## Who is paid
 
-`judge` pays the earliest announcement whose sealed salt opens its commitment to the work's hash, so a copied announcement pays nobody else. The salt comes from the worker's own signature, so nobody without the worker's key can test a guessed hash against a commitment. It refuses when nobody announced it.
+`judge` pays the first announcement, in `seq` order, that opens to the work's hash, so a copied announcement pays nobody else. The salt and the sealing keys come from the worker's own signature, so nobody without the worker's key can test a guessed hash against a commitment.
 
-The release memo records the hash and the payee's salt. After a release, `judge` sends the salts of every earlier announcement it could open, in order, and `-` for one it could not, in as many more transactions as the list needs; the verdict's `openings` shows them. A worker can publish its own salt with the SDK's `openDelivery`.
+It refuses while the list of announcements is incomplete, while an earlier announcement is sealed to a key it was not given, while another worker holds the job's claim, and when nobody announced the work.
 
-Receipts, `deliveries`, `reputation` and its trust read a release as valid when the recorded salt opens an announcement by a wallet the release paid, and as refuted when a published salt opens an earlier announcement of the same hash.
+The release names the paid announcement and records the hash and its salt. An earlier worker whose announcement of the same work was passed over runs `intent-engine refute --earlier <its announcement> --paid <paid announcement> --work-url <its url> --yes`, which reveals its announcement's secrets on chain. `reputation` counts a refutation against the paid worker only when that earlier announcement opens to the paid work.
+
+Once an escrow closes, `intent-engine reclaim` closes the worker's announcements that may close and returns their rent, and `close-book --intent <address>` closes an escrow's empty delivery book.
 
 This cannot stop a copier who announces every value of a small answer set first, or one who copies work published before its announcement lands. A job claim or a spec with many possible answers covers those.
 
 ## Check a second node
 
-`judge`, `committee release` and `mcp` take `--confirm-url <rpc>`, in the forms `--url` takes, to read the escrow and the earliest announcer from a second RPC node too. A release is signed only when both nodes report the same genesis hash, escrow account and earliest announcer. Otherwise, or when the second node cannot be read, it is refused with `ConfirmMismatch` and nothing is sent.
+`judge`, `committee release` and `mcp` take `--confirm-url <rpc>`, in the forms `--url` takes, to read the escrow and its announcements from a second RPC node too. A release is signed only when both nodes report the same genesis hash, escrow account, delivery book, announcements and first announcement that opens to the work. Otherwise, or when the second node cannot be read, it is refused with `ConfirmMismatch` and nothing is sent.
 
 `intent-engine setup --confirm-url <rpc>` checks that the node answers on the same cluster, by genesis hash, then saves it as the `confirm-url` setting. These three commands use the setting whenever `--confirm-url` is not given; other commands, such as `judge digest`, ignore it. `--no-confirm-url` skips the setting for one run. A second node at the same endpoint as `--url` is refused. Without a second node, they print once that they read one node.
 
@@ -263,18 +263,18 @@ Pass the printed `committee` address as `--attestor` when you create the escrow.
 intent-engine judge --keypair a.json --owner $env:OWNER --nonce $env:NONCE --spec SPEC.md --artifact work.mjs --sandbox viper --verdict a.json.verdict
 ```
 
-A member whose key is on a Ledger votes with `committee vote --keypair usb://ledger` and the same `--owner`, `--nonce`, `--pay-to` and `--result`, plus `--out` for the vote file and `--yes`. The device shows one message that lists every member's key and the release digest, the `digest` the preview prints, and signs no transaction. A vote stays valid whichever members reach the threshold.
+A member whose key is on a Ledger votes with `committee vote --keypair usb://ledger --encryption-keypair <file>` and the same `--owner`, `--nonce` and `--result`, the work's `--sha256`, plus `--out` for the vote file and `--yes`. The device shows one message that lists every member's key and the release digest, the `digest` the preview prints, and signs no transaction. A vote stays valid whichever members reach the threshold.
 
 A member on a Ledger can also judge, with `judge --keypair usb://ledger --fee-payer <key file> --encryption-keypair <file>`. It opens the announcements with the encryption key its profile publishes and, with `--yes`, signs its vote on the device; without `--yes` it prints the vote's `digest` and signs nothing. Without an encryption key file it refuses announced work.
 
 Because that message lists every member, a release by a large committee, especially one that also splits the pay, can exceed the size of one Solana transaction; keep committees small or the escrow can only be cancelled.
 
-A member's verdict also carries the payee's `salt` and the `earlier` salts it opened. `committee release` refuses votes with different payee salts, records the salt and, with `--yes`, sends the earlier salts any member opened after the release. A failed opening is reported beside the release signature.
+Each vote names the `announcement` it pays, the work's `sha256` and that announcement's `salt`. `committee release` refuses votes that differ in any of them, and pays that announcement.
 
 Any member who voted then submits the votes:
 
 ```powershell
-intent-engine committee release --keypair a.json --vote a.json.verdict --vote b.json.verdict --sha256 $env:WORK --yes
+intent-engine committee release --keypair a.json --vote a.json.verdict --vote b.json.verdict --yes
 ```
 
 ## Job claims

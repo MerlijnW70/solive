@@ -6,16 +6,16 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DEVNET_TEST_MINT, NATIVE_MINT, seal, sortMembers } from "@intent-engine/core";
+import { DEVNET_TEST_MINT, NATIVE_MINT, sortMembers } from "@intent-engine/core";
 import { DEVNET_GENESIS_HASH, MAX_SPEC_BYTES, type SpecFetch } from "@intent-engine/client";
 import { tool } from "../src/agent/names.js";
 import { untrusted } from "../src/agent/problems.js";
-import { WORK_OPENS } from "../src/agent/wallet/work.js";
+import { NONE_OPENS, WORK_OPENS } from "../src/agent/wallet/work.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { NOT_PUBLIC, tooLarge } from "../src/delivery-fetch.js";
 import { EXIT_OK } from "../src/main.js";
-import { sealedDelivery } from "./announce.js";
-import { cli, creation, funded, h, world } from "./harness.js";
+import { announced as announce, keyed } from "./announce.js";
+import { cli, funded, h, world } from "./harness.js";
 
 type Json = Record<string, unknown>;
 
@@ -83,15 +83,13 @@ describe("fetching announced work with the wallet", () => {
     return escrow["intent"] as Address;
   };
 
-  const announced = async (intent: Address, urls: string[], sealedTo: Address[]) => {
-    const worker = (await generateKeyPairSigner()).address;
-    h.engineLog = [
-      ...(await Promise.all(
-        urls.map(async (url, at) => ({ signature: `announced-${at}`, slot: BigInt(5 + at), blockTime: null, failed: false, emitted: [], memos: [await sealedDelivery(intent, worker, sha(WORK), url, sealedTo)], feePayer: worker })),
-      )),
-      creation(intent),
-    ];
-    return worker;
+  const announced = async (intent: Address, urls: string[]) => {
+    const made: { worker: Address; announcement: Address }[] = [];
+    for (const url of urls) {
+      const worker = await keyed();
+      made.push({ worker: worker.address, announcement: (await announce(intent, worker, sha(WORK), url)).announcement });
+    }
+    return made;
   };
 
   it("refuses a redirect, a private address and a body over the cap, as get_spec does", async () => {
@@ -106,8 +104,8 @@ describe("fetching announced work with the wallet", () => {
     const inits: Parameters<SpecFetch>[1][] = [];
     const urls = {
       moved: "https://" + `${PUBLIC_HOST}/moved`,
-      inside: "https://" + "10.0.0.8/work.sealed",
-      big: "https://" + `${PUBLIC_HOST}/big.sealed`,
+      inside: "https://" + "10.0.0.8/work.txt",
+      big: "https://" + `${PUBLIC_HOST}/big.txt`,
       full: "https://" + `${PUBLIC_HOST}/full`,
     };
     h.specReplies.set(urls.moved, (_url, init) => {
@@ -119,9 +117,9 @@ describe("fetching announced work with the wallet", () => {
     });
     h.specPages.set(urls.big, new Uint8Array(MAX_SPEC_BYTES + 1));
     h.specPages.set(urls.full, new Uint8Array(MAX_SPEC_BYTES).fill(0x61));
-    const worker = await announced(intent, Object.values(urls), [judge]);
+    const made = await announced(intent, Object.values(urls));
     h.genesis = DEVNET_GENESIS_HASH;
-    const fetchAt = (at: number) => call(client, "wallet_fetch_work", { intent, announcement: `announced-${at}` });
+    const fetchAt = (at: number) => call(client, "wallet_fetch_work", { intent, announcement: made[at]?.announcement });
 
     expect(await fetchAt(0)).toEqual(refused("WorkUnfetchable", urls.moved, "could not be fetched (fetch failed: unexpected redirect)"));
     expect(inits.map((init) => init.redirect)).toEqual(["error"]);
@@ -129,22 +127,26 @@ describe("fetching announced work with the wallet", () => {
     expect(await fetchAt(1)).toEqual(refused("WorkUnfetchable", urls.inside, NOT_PUBLIC));
     expect(await fetchAt(2)).toEqual(refused("WorkUnfetchable", urls.big, tooLarge(MAX_SPEC_BYTES)));
     const full = await fetchAt(3);
-    expect(full.value).toMatchObject({ worker, sealed: false, bytes: MAX_SPEC_BYTES, opens_commitment: false });
+    expect(full.value).toMatchObject({ worker: made[3]?.worker, bytes: MAX_SPEC_BYTES, opens_commitment: false, refused: { reason: "nothing-opens" } });
     expect(full.value["untrusted_text"]).toHaveLength(MAX_SPEC_BYTES);
   }, 60_000);
 
   it("retries a fetch that failed this time", async () => {
     const intent = await escrowTo(judge);
-    const down = "https://" + "files.example.com/down.sealed";
-    await announced(intent, [down], [judge]);
-    expect(await call(client, "wallet_fetch_work", { intent, announcement: "announced-0" })).toEqual({
+    const down = "https://" + "files.example.com/down.txt";
+    await announced(intent, [down]);
+    expect(await call(client, "wallet_fetch_work", { intent })).toEqual({
       error: true,
       value: { code: "WorkUnreadable", retryable: true, hint: untrusted(`the work at ${down} could not be fetched (fetch failed)`) },
     });
-    expect((await call(client, "wallet_fetch_work", { intent, announcement: "elsewhere" })).value).toMatchObject({ code: "NotAnnounced" });
+    expect((await call(client, "wallet_fetch_work", { intent, announcement: (await generateKeyPairSigner()).address })).value).toEqual({
+      code: "WorkUnfetchable",
+      retryable: false,
+      hint: NONE_OPENS,
+    });
   });
 
-  it("seals work to each member of a committee that judges, and a member opens it", async () => {
+  it("opens work announced to a committee that judges, as one of its members", async () => {
     const payer = await funded();
     const members = sortMembers([judge, (await generateKeyPairSigner()).address]);
     const created = await cli(
@@ -153,20 +155,16 @@ describe("fetching announced work with the wallet", () => {
     );
     expect([created.code, created.err]).toEqual([EXIT_OK, ""]);
     const intent = await escrowTo(created.json()["committee"] as Address);
-    const sealed = await ok(client, "wallet_seal_work", { intent, text: WORK });
-    expect(sealed).toMatchObject({ sha256: sha(WORK), sealed_to: members });
-    const url = "https://" + "files.example.com/work/5b0e1f.sealed";
-    h.specPages.set(url, new TextEncoder().encode(sealed["sealed"] as string));
-    const worker = await announced(intent, [url], members);
-    expect(await ok(client, "wallet_fetch_work", { intent, announcement: "announced-0" })).toMatchObject({
-      worker,
-      sealed: true,
+    const url = "https://" + "files.example.com/work/5b0e1f.txt";
+    h.specPages.set(url, new TextEncoder().encode(WORK));
+    const [made] = await announced(intent, [url]);
+    expect(await ok(client, "wallet_fetch_work", { intent })).toMatchObject({
+      worker: made?.worker,
+      first: { announcement: made?.announcement, worker: made?.worker },
       sha256: sha(WORK),
       opens_commitment: true,
       untrusted_text: WORK,
       next: WORK_OPENS,
     });
-    h.specPages.set(url, await seal(new TextEncoder().encode(WORK), [(await generateKeyPairSigner()).address]));
-    expect((await call(client, "wallet_fetch_work", { intent, announcement: "announced-0" })).value).toMatchObject({ code: "WorkUnfetchable" });
   }, 60_000);
 });

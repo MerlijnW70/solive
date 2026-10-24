@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { EXIT_ALERTED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { BASELINE_ALONE, SINCE_NEEDS_ONCE } from "../src/monitor-args.js";
 import { CANNOT_LIST } from "../src/monitor-limits.js";
-import { cli, h, transport, type World, world } from "./harness.js";
+import { cli, h, unlisting, type World, world } from "./harness.js";
 import { listAccounts } from "./monitor-transport.js";
 
 const BASELINE = "/srv/monitor/limits.json";
@@ -124,7 +124,7 @@ describe("monitor of committee floors and mint cap limits", () => {
 
   it("the monitor refuses a connection that cannot list the program's accounts", async () => {
     await write();
-    h.through = transport;
+    h.through = unlisting;
     const written = await cli(["monitor", "--write-baseline", "/srv/monitor/unlisted.json"], {});
     expect(written.code).not.toBe(EXIT_OK);
     expect(written.err).toContain(CANNOT_LIST);

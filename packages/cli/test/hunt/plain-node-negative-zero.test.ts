@@ -4,16 +4,16 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
+import type { Address, KeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import { Kind } from "@intent-engine/core";
-import { createClient, type EngineTransaction } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client";
 import { NODE_ENGINE } from "../../src/node-judge.js";
 import { SANDBOX_IMAGE } from "../../src/sandbox.js";
 import { casesOf } from "../../src/viper.js";
 import { DOCKER_TEST } from "../docker-switch.js";
-import { sealedDelivery } from "../announce.js";
-import { cli, creation, funded, h, NOW, transport, type World, world } from "../harness.js";
+import { announced, keyed } from "../announce.js";
+import { cli, funded, h, NOW, transport, type World, world } from "../harness.js";
 
 const DELIVERY = [
   "export default function sign(x) {",
@@ -36,7 +36,7 @@ const sha = (text: string | Uint8Array) => createHash("sha256").update(text).dig
 async function job(): Promise<Job> {
   const w = await world();
   const judge = await funded();
-  const worker = await generateKeyPairSigner();
+  const worker = await keyed();
   const dir = await mkdtemp(join(tmpdir(), "hunt-plain-node-"));
   const spec = join(dir, "SPEC.md");
   await writeFile(spec, SPEC);
@@ -45,16 +45,7 @@ async function job(): Promise<Job> {
   const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash: new Uint8Array(createHash("sha256").update(SPEC).digest()), judgeFee: 0n } as const;
   const client = createClient({ url: "http://cluster", transport });
   const { intent } = await client.createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
-  const delivered: EngineTransaction = {
-    signature: "first",
-    slot: 5n,
-    blockTime: null,
-    failed: false,
-    emitted: [],
-    memos: [await sealedDelivery(intent, worker.address, sha(DELIVERY), "https://example.org/" + NAME, [judge.address])],
-    feePayer: worker.address,
-  };
-  h.engineLog = [delivered, creation(intent)];
+  await announced(intent, worker, sha(DELIVERY), "https://" + "example.org/" + NAME);
   return { w, judge, intent, spec, artifact };
 }
 

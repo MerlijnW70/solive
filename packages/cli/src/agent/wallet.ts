@@ -10,12 +10,12 @@ import { walletCommitteeCreate, walletCommitteeRelease, walletCommitteeVote } fr
 import { walletFeedback } from "./reputation.js";
 import { walletClaim } from "./work-claims.js";
 import { walletProfile } from "./profile.js";
-import { walletRecordDelivery } from "./wallet/record.js";
 import { walletWait } from "./wallet/wait.js";
 import { walletReceipt } from "./wallet/receipt.js";
 import { walletUnwrap } from "./wallet/unwrap.js";
 import { walletSealSpec } from "./wallet/seal.js";
-import { walletFetchWork, walletSealWork } from "./wallet/work.js";
+import { walletFetchWork } from "./wallet/work.js";
+import { walletReclaim, walletRefute } from "./wallet/refute.js";
 
 export {
   walletGuard,
@@ -55,53 +55,13 @@ export {
   NO_FILLS,
 } from "./wallet/trade.js";
 export { ESCROW_EXPIRES_IN, RECORD_MINT_NEEDED, MAX_PIECES, piecesPartlySent, piecesMayHaveLanded } from "./wallet/escrow.js";
-export { PAYEE_MOVED, RELEASE_CHANGED, approvalOf } from "./wallet/attest.js";
+export { PAYEE_MOVED, RELEASE_CHANGED, approvalOf, notEarliest, PAY_TO_NEEDED } from "./wallet/attest.js";
 export { COMMITTEE_CHANGED, COMMITTEE_EXISTS, COMMITTEE_LIVE, NOT_A_MEMBER, VOTE_CHANGED } from "./wallet/committee.js";
-export {
-  notEarliest,
-  notInSplit,
-  DELIVERY_LIST,
-  DELIVERED_NEEDED,
-  ATTEST_PAGES,
-  MAX_ATTEST_PAGES,
-  HISTORY_TOO_LONG,
-  checkDelivery,
-  prepareDeliver,
-  notAttestor,
-} from "./wallet/delivery.js";
-export {
-  SPLIT_FITS,
-  SPLIT_FITS_WITH_TABLE,
-  splitTooLarge,
-  RECORDS_SPLIT,
-  followUpFailed,
-  SPLIT_WEIGHTS_WRONG,
-  SPLIT_SIG_NEEDED,
-  SIGNATURE_PATTERN,
-  WARN_COAUTHORS,
-} from "./wallet/split.js";
-export {
-  RELEASE_INPUT,
-  RELEASE_SIGNATURE,
-  releaseOf,
-  notReleasedYet,
-  alreadyRecorded,
-  releasedBy,
-  escrowGone,
-  creationUnread,
-  notAProofEscrow,
-  neverAnnounced,
-  paidOther,
-  splitPaidOthers,
-  recipientsUnread,
-  followUpsUnknown,
-  historyLagging,
-  otherLifecycle,
-  COVERAGE_UNPROVABLE,
-  coverageOf,
-  recordingOf,
-} from "./wallet/record.js";
-export type { Recording } from "./wallet/record.js";
+export { ALREADY_ANNOUNCED, DELIVERED_NEEDED, checkDelivery, prepareDeliver, notAttestor, SYNC_FIRST } from "./wallet/delivery.js";
+export { SPLIT_FITS, SPLIT_FITS_WITH_TABLE, splitTooLarge, SPLIT_WEIGHTS_WRONG, SPLIT_SIG_NEEDED, SIGNATURE_PATTERN, WARN_COAUTHORS, notInSplit } from "./wallet/split.js";
+export { RELEASE_INPUT, RELEASE_SIGNATURE, releaseOf, otherLifecycle, COVERAGE_UNPROVABLE, coverageOf } from "./wallet/receipt.js";
+export { NOT_ANNOUNCEMENT, RECLAIM_MORE } from "./wallet/refute.js";
+export { KEY_ON_DEVICE } from "./wallet/openings.js";
 export {
   releaseNotOf,
   releaseUnread,
@@ -141,11 +101,11 @@ export const WALLET_ACTIONS: readonly AnyAction[] = [
   walletFeedback,
   walletClaim,
   walletProfile,
-  walletRecordDelivery,
-  walletSealWork,
   walletDeliver,
   walletCheckDelivery,
   walletFetchWork,
+  walletRefute,
+  walletReclaim,
   walletWait,
   walletReceipt,
   walletIntents,

@@ -5,14 +5,14 @@ import { join } from "node:path";
 import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { deliveryMemo, findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, openingMemo, sealDelivery, sortMembers } from "@intent-engine/core";
-import { commitmentOf, createClient, type EngineTransaction, saltCheckOf } from "@intent-engine/client";
+import { findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, sortMembers } from "@intent-engine/core";
+import { createClient } from "@intent-engine/client";
 import { VOTE_NOT_SIGNED } from "../src/committee-commands.js";
 import { VOTE_NEXT } from "../src/judge.js";
 import { NOT_SENT } from "../src/flows.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
-import { saltFor, sealedDelivery } from "./announce.js";
-import { balance, cli, creation, funded, h, NOW, transport, world } from "./harness.js";
+import { announced, keyed } from "./announce.js";
+import { balance, cli, funded, h, NOW, transport, world } from "./harness.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
 const SPEC = `# Count words\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
@@ -29,7 +29,7 @@ async function panel(module: string) {
   const outsider = await funded();
   const payer = await funded();
   const solver = await funded();
-  const worker = await generateKeyPairSigner();
+  const worker = await keyed();
   const feeWallet = (await generateKeyPairSigner()).address;
   const keys: Record<string, KeyPairSigner> = { "payer.json": payer, "solver.json": solver, "outsider.json": outsider };
   members.forEach((m, i) => (keys[`m${i}.json`] = m));
@@ -56,16 +56,7 @@ async function panel(module: string) {
   } as const;
   const client = createClient({ url: "http://cluster", transport });
   const { intent } = await client.createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
-  const delivered: EngineTransaction = {
-    signature: "first",
-    slot: 5n,
-    blockTime: null,
-    failed: false,
-    emitted: [],
-    memos: [await sealedDelivery(intent, worker.address, sha(module), "https://example.org/count.mjs", addresses)],
-    feePayer: worker.address,
-  };
-  h.engineLog = [delivered, creation(intent)];
+  const made = await announced(intent, worker, sha(module), "https://" + "example.org/count.mjs");
   const judging = (member: string, verdict: string) => [
     "judge", "--keypair", member, "--owner", w.owner.address, "--nonce", "0", "--spec", spec, "--artifact", artifact, "--sandbox", "viper", "--verdict", verdict,
   ];
@@ -75,7 +66,7 @@ async function panel(module: string) {
     const account = h.svm.getAccount(intent);
     return account.exists ? getIntentDecoder().decode(account.data).status : undefined;
   };
-  return { w, keys, committee, addresses, worker, feeWallet, intent, dir, judging, paid, status };
+  return { w, keys, committee, addresses, worker, feeWallet, intent, dir, judging, paid, status, made };
 }
 
 describe("intent-engine committee", () => {
@@ -102,39 +93,28 @@ describe("intent-engine committee", () => {
 
   it("pays the first announcer once two members' viper verdicts carry their votes", async () => {
     const p = await panel(CORRECT);
-    const other = (await generateKeyPairSigner()).address;
-    const earlier = await sealedDelivery(p.intent, other, "ef".repeat(32), "https://example.org/other.mjs", p.addresses);
-    const junk = (await generateKeyPairSigner()).address;
-    const hidden = "cd".repeat(16);
-    const onlyOne = await sealDelivery({ salt: hidden, url: "https://example.org/junk.mjs" }, [p.keys["m0.json"]?.address ?? junk], p.intent);
-    const junkMemo = deliveryMemo({ intent: p.intent, commitment: commitmentOf(p.intent, junk, hidden, "ab".repeat(32)), check: saltCheckOf(hidden), blob: onlyOne });
-    h.engineLog = [
-      ...h.engineLog.slice(0, 1),
-      { signature: "junk", slot: 4n, blockTime: null, failed: false, emitted: [], memos: [junkMemo], feePayer: junk },
-      { signature: "earlier", slot: 3n, blockTime: null, failed: false, emitted: [], memos: [earlier], feePayer: other },
-      ...h.engineLog.slice(1),
-    ];
-    const opening = openingMemo({ intent: p.intent, salts: [saltFor(p.intent), hidden] });
-    const seen: Record<string, string[]> = { "m0.json": [saltFor(p.intent), hidden], "m2.json": [saltFor(p.intent), "-"] };
+    await announced(p.intent, await keyed(), "ef".repeat(32), "https://" + "example.org/other.mjs");
     const v0 = join(p.dir, "v0.json");
     const v2 = join(p.dir, "v2.json");
     for (const [member, file] of [["m0.json", v0], ["m2.json", v2]] as const) {
       const judged = await cli(p.judging(member, file), p.keys);
       expect([judged.code, judged.err]).toEqual([EXIT_OK, ""]);
-      expect(judged.json()).toMatchObject({ verdict: "pass", signature: null, committee: p.committee, next: VOTE_NEXT, vote: { salt: saltFor(p.intent), earlier: seen[member] } });
+      expect(judged.json()).toMatchObject({
+        verdict: "pass",
+        signature: null,
+        committee: p.committee,
+        next: VOTE_NEXT,
+        announcement: p.made.announcement,
+        vote: { announcement: p.made.announcement, sha256: sha(CORRECT), salt: p.made.salt },
+      });
     }
     expect(p.status()).toBe(IntentStatus.Open);
-    const outsider = await cli(["committee", "release", "--keypair", "solver.json", "--vote", v0, "--vote", v2, "--sha256", sha(CORRECT)], p.keys);
-    expect(outsider.code).toBe(EXIT_FAILED);
-    expect(outsider.err).toContain("only when a member who voted submits the release");
-    const release = ["committee", "release", "--keypair", "m2.json", "--vote", v0, "--vote", v2, "--sha256", sha(CORRECT)];
+    const release = ["committee", "release", "--keypair", "m2.json", "--vote", v0, "--vote", v2];
     const preview = await cli(release, p.keys);
-    expect(preview.json()).toMatchObject({ intent: p.intent, committee: p.committee, sent: false, next: NOT_SENT });
-    expect(preview.json()).not.toHaveProperty("opening_signatures");
+    expect(preview.json()).toMatchObject({ intent: p.intent, committee: p.committee, announcement: p.made.announcement, sent: false, next: NOT_SENT });
     const sent = await cli([...release, "--yes"], p.keys);
     expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);
-    expect(sent.json()).toMatchObject({ sent: true, signature: expect.any(String), opening_signatures: [expect.any(String)] });
-    expect(sent.json()["summary"]).toContain(`Opens after the release, in its own transaction: the salts of earlier announcements, ${opening}`);
+    expect(sent.json()).toMatchObject({ sent: true, signature: expect.any(String) });
     expect(p.status()).toBe(IntentStatus.Filled);
     expect(await p.paid(p.feeWallet)).toBe(JUDGE_FEE);
     expect(await p.paid(p.worker.address)).toBeGreaterThan(0n);
@@ -159,26 +139,30 @@ describe("intent-engine committee", () => {
 
   it("lets a member vote by hand and refuses votes on different ballots", async () => {
     const p = await panel(CORRECT);
+    const other = "ef".repeat(32);
+    await announced(p.intent, await keyed(), other, "https://" + "example.org/other.mjs");
     const base = ["committee", "vote", "--owner", p.w.owner.address, "--nonce", "0", "--result", "1"];
-    const unsigned = await cli([...base, "--keypair", "m0.json", "--pay-to", p.worker.address], p.keys);
-    expect(unsigned.json()).toMatchObject({ intent: p.intent, signed: false, next: VOTE_NOT_SIGNED });
+    const unsigned = await cli([...base, "--keypair", "m0.json", "--sha256", sha(CORRECT)], p.keys);
+    expect(unsigned.json()).toMatchObject({ intent: p.intent, announcement: p.made.announcement, signed: false, next: VOTE_NOT_SIGNED });
     const a = join(p.dir, "a.json");
     const b = join(p.dir, "b.json");
-    await cli([...base, "--keypair", "m0.json", "--pay-to", p.worker.address, "--out", a, "--yes"], p.keys);
-    const elsewhere = (await generateKeyPairSigner()).address;
-    await cli([...base, "--keypair", "m1.json", "--pay-to", elsewhere, "--out", b, "--yes"], p.keys);
-    expect(JSON.parse(await readFile(a, "utf8"))).toMatchObject({ kind: "committee-vote", member: p.keys["m0.json"]?.address });
+    await cli([...base, "--keypair", "m0.json", "--sha256", sha(CORRECT), "--out", a, "--yes"], p.keys);
+    await cli([...base, "--keypair", "m1.json", "--sha256", other, "--out", b, "--yes"], p.keys);
+    expect(JSON.parse(await readFile(a, "utf8"))).toMatchObject({ kind: "committee-vote", member: p.keys["m0.json"]?.address, announcement: p.made.announcement });
     const split = await cli(["committee", "release", "--keypair", "solver.json", "--vote", a, "--vote", b], p.keys);
     expect(split.code).toBe(EXIT_FAILED);
-    expect(split.err).toContain("votes on pay_to");
-    const stranger = await cli([...base, "--keypair", "outsider.json", "--pay-to", p.worker.address], p.keys);
+    expect(split.err).toContain("votes on announcement");
+    const unknown = await cli([...base, "--keypair", "m0.json", "--sha256", "ab".repeat(32)], p.keys);
+    expect(unknown.code).toBe(EXIT_FAILED);
+    expect(unknown.err).toContain("has no announcement that opens to the work");
+    const stranger = await cli([...base, "--keypair", "outsider.json", "--sha256", sha(CORRECT)], p.keys);
     expect(stranger.code).toBe(EXIT_FAILED);
-    expect(stranger.err).toContain("is not a member");
+    expect(stranger.err).toContain("is not a member of committee");
   });
 
-  it("a release without a delivered hash sends no opening and names none", async () => {
+  it("releases on votes signed by hand", async () => {
     const p = await panel(CORRECT);
-    const base = ["committee", "vote", "--owner", p.w.owner.address, "--nonce", "0", "--result", "1", "--pay-to", p.worker.address, "--yes"];
+    const base = ["committee", "vote", "--owner", p.w.owner.address, "--nonce", "0", "--result", "1", "--sha256", sha(CORRECT), "--yes"];
     const files = [join(p.dir, "a.json"), join(p.dir, "b.json")];
     for (const [member, file] of [["m0.json", files[0] ?? ""], ["m1.json", files[1] ?? ""]] as const) {
       const voted = await cli([...base, "--keypair", member, "--out", file], p.keys);
@@ -188,8 +172,8 @@ describe("intent-engine committee", () => {
     const sent = await cli(release, p.keys);
     expect([sent.code, sent.err]).toEqual([EXIT_OK, ""]);
     expect(sent.json()).toMatchObject({ sent: true, signature: expect.any(String) });
-    expect(sent.json()).not.toHaveProperty("opening_signatures");
     expect(p.status()).toBe(IntentStatus.Filled);
+    expect(await p.paid(p.worker.address)).toBeGreaterThan(0n);
   });
 });
 

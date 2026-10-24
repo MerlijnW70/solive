@@ -1,7 +1,7 @@
 import { TOKEN_AMOUNT_PATTERN } from "@intent-engine/core";
 import type { Values } from "./arg-options.js";
-import { confirmUrlOf, encryptionKeypairOf, feePayerOf, key, memoUrlOf, noSub, parseBounded, required, sha256Of, u64, UsageError } from "./arg-values.js";
-import { JUDGE_TIMEOUT, MAX_JUDGE_TIMEOUT, maxPagesOf, releaseOption, runOf } from "./command-builders.js";
+import { confirmUrlOf, encryptionKeypairOf, feePayerOf, key, memoUrlOf, noSub, parseBounded, relayPayerOf, required, saltOf, sha256Of, u64, UsageError } from "./arg-values.js";
+import { JUDGE_TIMEOUT, MAX_JUDGE_TIMEOUT, releaseOption, runOf } from "./command-builders.js";
 import type { Command, Remote } from "./command-types.js";
 import { sandboxOf } from "./sandbox.js";
 
@@ -41,14 +41,16 @@ function minPayOf(values: Values): string | undefined {
   return text;
 }
 
-export function jobArgsOf(verb: "jobs" | "deliver" | "receipt" | "record-delivery" | "judge", sub: string | undefined, remote: Remote, values: Values): Command {
+export function jobArgsOf(verb: "jobs" | "deliver" | "receipt" | "judge", sub: string | undefined, remote: Remote, values: Values): Command {
   if (verb === "judge" && sub === "digest") {
     return {
       name: "judge-digest",
       ...remote,
       owner: key(values, "owner"),
       nonce: u64(values, "nonce"),
-      payTo: key(values, "pay-to"),
+      announcement: key(values, "announcement"),
+      sha256: sha256Of(required(values, "sha256")),
+      salt: saltOf(required(values, "salt")),
       result: values.result === undefined ? undefined : u64(values, "result"),
     };
   }
@@ -72,6 +74,7 @@ export function jobArgsOf(verb: "jobs" | "deliver" | "receipt" | "record-deliver
         intent: key(values, "intent"),
         ...workOf(values),
         workUrl: memoUrlOf(required(values, "work-url"), "work-url"),
+        ...relayPayerOf(values),
       };
     case "receipt":
       return {
@@ -80,17 +83,6 @@ export function jobArgsOf(verb: "jobs" | "deliver" | "receipt" | "record-deliver
         owner: key(values, "owner"),
         nonce: u64(values, "nonce"),
         sha256: values.sha256 === undefined ? undefined : sha256Of(values.sha256),
-        ...releaseOption(values),
-      };
-    case "record-delivery":
-      return {
-        name: "record-delivery",
-        ...remote,
-        keypair: required(values, "keypair"),
-        yes: values.yes === true,
-        owner: key(values, "owner"),
-        nonce: u64(values, "nonce"),
-        sha256: sha256Of(required(values, "sha256")),
         ...releaseOption(values),
       };
     case "judge": {
@@ -108,11 +100,9 @@ export function jobArgsOf(verb: "jobs" | "deliver" | "receipt" | "record-deliver
         artifact: watch === null ? required(values, "artifact") : "",
         watch,
         run: sandbox.kind === "viper" ? undefined : runOf(required(values, "run")),
-        payTo: values["pay-to"] === undefined ? undefined : key(values, "pay-to"),
         result: values.result === undefined ? undefined : u64(values, "result"),
         timeout: parseBounded(values.timeout ?? String(JUDGE_TIMEOUT), "timeout", MAX_JUDGE_TIMEOUT, 1),
         verdict: values.verdict,
-        maxPages: maxPagesOf(values),
         check: values.check,
         sandbox,
         ...feePayerOf(values, keypair),

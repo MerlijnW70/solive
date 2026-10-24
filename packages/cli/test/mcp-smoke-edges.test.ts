@@ -23,8 +23,8 @@ const WORKER: Replies = {
   find_jobs: () => ({ structuredContent: { jobs: [{ intent: "intent", spec_url: SPEC_URL, spec_hash: "spec-hash", net_pay: "0.01" }] } }),
   get_spec: () => ({ structuredContent: { sha256: "spec-hash", matches: true } }),
   hash: () => ({ structuredContent: { sha256: "work-hash" } }),
-  wallet_deliver: sending({ signature: "delivered" }),
-  wallet_check_delivery: () => ({ structuredContent: { own: { landed: true, earliest: true } } }),
+  wallet_deliver: sending({ signature: "delivered", announcement: "announced" }),
+  wallet_check_delivery: () => ({ structuredContent: { mine: [{ announcement: "announced", earlier: 0 }] } }),
   wallet_receipt: () => ({ structuredContent: { released: true, matches: true, signature: "released" } }),
   wallet_unwrap: sending({ signature: "unwrapped", wrapped: "0.01" }),
 };
@@ -70,8 +70,8 @@ describe("the MCP smoke steps", () => {
   });
 
   it("fails a delivery check that did not land first or holds no own delivery", async () => {
-    for (const own of [{ landed: true, earliest: false }, { landed: false, earliest: true }, null]) {
-      expect(await failure({}, { wallet_check_delivery: () => ({ structuredContent: { own } }) }), JSON.stringify(own)).toBe(`check delivery failed: ${deliveryMissing("work-hash", "worker")}`);
+    for (const mine of [[{ announcement: "announced", earlier: 1 }], [{ announcement: "other", earlier: 0 }], []]) {
+      expect(await failure({}, { wallet_check_delivery: () => ({ structuredContent: { mine } }) }), JSON.stringify(mine)).toBe(`check delivery failed: ${deliveryMissing("work-hash", "worker")}`);
     }
   });
 });

@@ -33,7 +33,8 @@ import { AgentRefusal } from "../src/agent/problems.js";
 import { guardedSigner, signerOf, walletGuard } from "../src/agent/wallet/guard.js";
 import { MAINNET_GENESIS, WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
-import { balance, cli, creation, h, resetHarness, runtime, saleBook, transport, world } from "./harness.js";
+import { balance, cli, h, resetHarness, runtime, saleBook, transport, world } from "./harness.js";
+import { announced, keyed } from "./announce.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -186,11 +187,11 @@ describe("a wallet server whose RPC turns to mainnet after a split release previ
 
   it("wallet_attest_split signs nothing once the RPC serves mainnet after its preview", async () => {
     const owner = (await ok(client, "wallet_setup"))["address"] as Address;
-    const coauthor = await generateKeyPairSigner();
+    const coauthor = await keyed();
     const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, min_result: "1", max_result: "1", spec_hash: "a".repeat(64), send: true });
     const intent = escrow["intent"] as Address;
-    const release = { owner, nonce: escrow["nonce"] as string, delivered_sha256: "ab".repeat(32), received_outside_announcement: true };
-    h.engineLog = [creation(intent)];
+    await announced(intent, coauthor, "ab".repeat(32));
+    const release = { owner, nonce: escrow["nonce"] as string, delivered_sha256: "ab".repeat(32) };
     const recipients = [{ wallet: coauthor.address, weight: 10000 }];
     const shown = await ok(client, "wallet_attest_split", { ...release, recipients });
     expect(shown).toMatchObject({ sent: false });

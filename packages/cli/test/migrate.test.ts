@@ -17,7 +17,7 @@ import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { AUTHORITY_NEXT } from "../src/admin-commands.js";
 import { MIGRATE_ONE_OR_ALL } from "../src/args.js";
 import { NOTHING_TO_MIGRATE } from "../src/migrate-commands.js";
-import { balance, cli, funded, h, transport, type World, world } from "./harness.js";
+import { balance, cli, funded, h, transport, unlisting, type World, world } from "./harness.js";
 
 type Json = Record<string, any>;
 
@@ -187,7 +187,7 @@ describe("migrate on the command line", () => {
     const missing = (await generateKeyPairSigner()).address;
     expect((await one(false, missing)).err).toContain(`${missing} does not exist`);
 
-    h.through = null;
+    h.through = unlisting;
     const unlisted = await cli(["migrate", "--keypair", "payer.json", "--all"], keys);
     expect(unlisted.code).toBe(EXIT_FAILED);
     expect(unlisted.err).toContain("this connection cannot list program accounts; migrate them one by one with --address");

@@ -131,7 +131,7 @@ export const walletProfile = define({
     const dropsKey = (existing?.encryptionKey ?? null) !== null && (input.close === true || input.encryption_key === NO_ENCRYPTION_KEY);
     const judging = dropsKey && signer.device !== undefined ? await escrowsJudgedBy(ctx.transport, signer.address) : [];
     if (judging.length > 0) {
-      throw new AgentRefusal("SealedSalts", keepsKey(signer.address, judging));
+      throw new AgentRefusal("KeyInUse", keepsKey(signer.address, judging));
     }
     let instruction;
     let action: "create" | "update" | "close";

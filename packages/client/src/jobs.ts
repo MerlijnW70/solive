@@ -33,12 +33,5 @@ export {
 } from "./job-specs.js";
 export { memoInstruction, memosSignedBy } from "./job-memos.js";
 export { paidWalletsOf } from "./release-reads.js";
-export {
-  creationProof,
-  type EngineCall,
-  engineCalls,
-  escrowOrigin,
-  type EscrowOrigin,
-  type EscrowProof,
-} from "./job-origins.js";
+export { type EngineCall, engineCalls } from "./job-origins.js";
 export { type KeyedRecipient, sealRecipients } from "./seal-recipients.js";

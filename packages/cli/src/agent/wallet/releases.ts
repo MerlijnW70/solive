@@ -9,7 +9,6 @@ import {
   type Intent,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   IntentStatus,
-  parseReleaseMemo,
 } from "@intent-engine/core";
 import {
   createdAtOf,
@@ -19,8 +18,6 @@ import {
   type ListedSignature,
   historyCovers,
   intentAt,
-  parseFollowUpMemo,
-  recordedDelivery,
   scan,
   SIGNATURE_PAGE,
   TRANSACTION_FETCHES,
@@ -65,7 +62,7 @@ export async function creatorOf(transport: Transport, intent: Address): Promise<
 
 export const RELEASE_PAGES = 50;
 
-export const RELEASE_UNKNOWN = `the escrow's history could not be read in full and no release was found in what was read, so whether it was released is unknown: it is longer than the ${HISTORY_PAGES} pages read, the RPC node's ledger does not reach back to its creation, or the node could not return some of its transactions yet; a release that carries a memo is found past this cap, one without a memo is not, so pass release, the signature the release returned, to read it directly`;
+export const RELEASE_UNKNOWN = `the escrow's history could not be read in full and no release was found in what was read, so whether it was released is unknown: it is longer than the ${HISTORY_PAGES} pages read, the RPC node's ledger does not reach back to its creation, or the node could not return some of its transactions yet; pass release, the signature the release returned, to read it directly`;
 
 type ReleaseEvent = NonNullable<ReturnType<typeof decodeEvent>>;
 
@@ -98,86 +95,12 @@ export const outlives = (held: Intent, release: EngineTransaction, creation: Eng
   (release.blockTime !== null && release.blockTime < held.createdAt) ||
   (creation !== null && creation !== undefined && creation.blockTime !== null && creation.blockTime < held.createdAt);
 
-const LISTED_MEMO_LENGTH = /^\[\d+\] /;
-
-const listedMemos = (memo: string | null): string[] => (memo === null ? [] : memo.split("; ").map((part) => part.replace(LISTED_MEMO_LENGTH, "")));
-
-const namesRelease = (texts: readonly string[], release: string): boolean => texts.some((text) => parseFollowUpMemo(text)?.release === release);
-
 const unreadIn = (transactions: readonly EngineTransaction[]): boolean => transactions.some((tx) => tx.unread === true);
-
-async function fetched(transport: Transport, listed: readonly ListedSignature[]): Promise<EngineTransaction[]> {
-  const { transactionsOf } = transport;
-  const found: EngineTransaction[] = [];
-  for (let at = 0; transactionsOf !== undefined && at < listed.length; at += TRANSACTION_FETCHES) {
-    found.push(...(await transactionsOf.call(transport, listed.slice(at, at + TRANSACTION_FETCHES))));
-  }
-  return found;
-}
-
-async function markedRelease(transport: Transport, intent: Address, floor: bigint | null): Promise<ReleaseLookup | null> {
-  const { signaturesOf, transactionsOf } = transport;
-  if (signaturesOf === undefined || transactionsOf === undefined) {
-    return null;
-  }
-  const followUps = new Map<string, ListedSignature[]>();
-  const newer: ListedSignature[] = [];
-  let before: string | undefined;
-  for (let page = 1; page <= RELEASE_PAGES; page++) {
-    const listed = await signaturesOf.call(transport, intent, SIGNATURE_PAGE, before);
-    const within = listed.filter((entry) => floor === null || entry.blockTime === null || entry.blockTime >= floor);
-    const candidates: ListedSignature[] = [];
-    for (const entry of within) {
-      if (entry.failed) {
-        continue;
-      }
-      const memos = listedMemos(entry.memo);
-      for (const named of memos.map(parseFollowUpMemo)) {
-        if (named !== null) {
-          followUps.set(named.release, [...(followUps.get(named.release) ?? []), entry]);
-        }
-      }
-      if (followUps.has(entry.signature) || memos.some((text) => parseReleaseMemo(text) !== null)) {
-        candidates.push(entry);
-      }
-    }
-    for (let at = 0; at < candidates.length; at += TRANSACTION_FETCHES) {
-      for (const tx of await transactionsOf.call(transport, candidates.slice(at, at + TRANSACTION_FETCHES))) {
-        const event = releaseEventIn(tx, intent);
-        if (event === null) {
-          continue;
-        }
-        const since = [...newer, ...within.slice(0, within.findIndex((entry) => entry.signature === tx.signature))].filter((entry) => !entry.failed);
-        if (floor !== null || since.length > LIFECYCLE_FETCHES) {
-          const recorded = await fetched(transport, followUps.get(tx.signature) ?? []);
-          const bound = floor !== null;
-          return { release: { tx, event }, transactions: [...recorded, tx], complete: bound && !unreadIn(recorded), bound };
-        }
-        const read = await fetched(transport, since);
-        if (read.some((later) => createdIn(later, intent))) {
-          return null;
-        }
-        const bound = read.length === since.length && !unreadIn(read);
-        return { release: { tx, event }, transactions: [...read, tx], complete: bound, bound };
-      }
-    }
-    newer.push(...within);
-    before = listed[listed.length - 1]?.signature;
-    if (within.length < listed.length || before === undefined) {
-      return null;
-    }
-  }
-  return null;
-}
 
 export async function releaseLookup(transport: Transport, intent: Address): Promise<ReleaseLookup> {
   const held = await intentAt(transport, intent);
   const floor = held?.createdAt ?? null;
   const ours = (tx: EngineTransaction) => held === null || !outlives(held, tx, null);
-  const marked = await markedRelease(transport, intent, floor);
-  if (marked !== null && marked.release !== null && ours(marked.release.tx)) {
-    return marked;
-  }
   const covered = () => historyCovers(transport, intent, floor ?? undefined);
   const scanned = await scan(transport, intent, { floor, pages: HISTORY_PAGES, until: (tx) => createdIn(tx, intent), covered });
   const at = scanned.transactions.findIndex((tx) => releaseEventIn(tx, intent) !== null);
@@ -189,7 +112,7 @@ export async function releaseLookup(transport: Transport, intent: Address): Prom
   return { release: null, transactions: scanned.transactions, complete: scanned.complete && !unreadIn(scanned.transactions), bound: true };
 }
 
-export type AroundRelease = { followUps: EngineTransaction[]; creation: EngineTransaction | null; later: boolean; complete: boolean; lagged?: boolean };
+export type AroundRelease = { creation: EngineTransaction | null; later: boolean; complete: boolean; lagged?: boolean };
 
 const atOrBefore = (entry: ListedSignature, release: EngineTransaction): boolean =>
   entry.slot <= release.slot || (entry.blockTime !== null && release.blockTime !== null && entry.blockTime <= release.blockTime);
@@ -200,19 +123,16 @@ export async function aroundRelease(transport: Transport, intent: Address, relea
     const found = await transport.engineTransactions(DELIVERY_SCAN, intent);
     const at = found.findIndex((tx) => tx.signature === release.signature);
     const newer = at < 0 ? found : found.slice(0, at);
-    const followUps = newer.filter((tx) => tx.unread === true || namesRelease(tx.memos ?? [], release.signature));
     return {
-      followUps,
       creation: at < 0 ? null : (found.slice(at + 1).find((tx) => createdIn(tx, intent)) ?? null),
       later: newer.some((tx) => createdIn(tx, intent)),
-      complete: at >= 0 && !unreadIn(followUps),
+      complete: at >= 0,
     };
   }
   const held = await intentAt(transport, intent);
   const current = held !== null && release.blockTime !== null && !outlives(held, release, null);
   const candidate = (entry: ListedSignature): boolean =>
     !entry.failed && (current ? entry.blockTime !== null && entry.blockTime === held?.createdAt : atOrBefore(entry, release));
-  const named: ListedSignature[] = [];
   let reached = false;
   let creation: EngineTransaction | null = null;
   let settled = false;
@@ -225,7 +145,6 @@ export async function aroundRelease(transport: Transport, intent: Address, relea
     let older = listed;
     if (!reached) {
       const end = listed.findIndex((entry) => entry.signature === release.signature || entry.slot < release.slot);
-      named.push(...(end < 0 ? listed : listed.slice(0, end)).filter((entry) => !entry.failed && namesRelease(listedMemos(entry.memo), release.signature)));
       reached = end >= 0;
       older = end < 0 ? [] : listed.slice(listed[end]?.signature === release.signature ? end + 1 : end);
     }
@@ -252,8 +171,7 @@ export async function aroundRelease(transport: Transport, intent: Address, relea
       break;
     }
   }
-  const followUps = await fetched(transport, named);
-  return { followUps, creation, later: false, complete: reached && !capped && !lagged && !unreadIn(followUps), ...(lagged ? { lagged } : {}) };
+  return { creation, later: false, complete: reached && !capped && !lagged, ...(lagged ? { lagged } : {}) };
 }
 
 export async function namedRelease(transport: Transport, intent: Address, signature: string): Promise<ReleaseLookup> {
@@ -265,13 +183,11 @@ export async function namedRelease(transport: Transport, intent: Address, signat
   if (event === null) {
     throw new AgentRefusal("NotARelease", releaseNotOf(signature, intent));
   }
-  const attestor = (event.fields as Record<string, unknown>)["attestor"] as Address;
   const around = await aroundRelease(transport, intent, tx);
-  const inline = recordedDelivery([], tx, attestor) !== null;
   return {
     release: { tx, event },
-    transactions: [...(inline ? [] : around.followUps), tx],
-    complete: inline || around.complete,
+    transactions: [tx],
+    complete: around.complete,
     bound: true,
     creation: around.creation,
     later: around.later,

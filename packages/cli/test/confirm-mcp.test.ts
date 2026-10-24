@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { type Address, generateKeyPairSigner, lamports, none } from "@solana/kit";
+import { type Address, lamports, none } from "@solana/kit";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
@@ -8,9 +8,9 @@ import { DEVNET_TEST_MINT, IntentStatus, getIntentDecoder, NATIVE_MINT } from "@
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { SERVER_PROBLEMS } from "../src/agent/problems.js";
 import { EXIT_OK } from "../src/main.js";
-import { sealedDelivery } from "./announce.js";
-import { creation, h, world } from "./harness.js";
-import { announced, cliWith, disagreements, SECOND, secondNode, type SecondNode, UNREADABLE, WORK_URL } from "./confirm-node.js";
+import { announced, keyed } from "./announce.js";
+import { h, world } from "./harness.js";
+import { cliWith, disagreements, SECOND, secondNode, type SecondNode, UNREADABLE, WORK_URL } from "./confirm-node.js";
 
 type Json = Record<string, unknown>;
 
@@ -56,25 +56,23 @@ async function escrowed(more: string[]) {
   const escrow = await call(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash, send: true });
   expect(escrow.error, JSON.stringify(escrow.value)).toBe(false);
   const intent = escrow.value["intent"] as Address;
-  const worker = (await generateKeyPairSigner()).address;
-  h.engineLog = [announced("first", 5n, worker, await sealedDelivery(intent, worker, WORK, WORK_URL, [owner])), creation(intent)];
-  const copied = await sealedDelivery(intent, owner, WORK, WORK_URL, [owner]);
-  const release = { owner, nonce: escrow.value["nonce"], pay_to: worker, delivered_sha256: WORK };
+  await announced(intent, await keyed(), WORK, WORK_URL);
+  const release = { owner, nonce: escrow.value["nonce"], delivered_sha256: WORK };
   const status = () => {
     const account = h.svm.getAccount(intent);
     return account.exists ? getIntentDecoder().decode(account.data).status : undefined;
   };
-  return { node, client, owner, intent, release, status, copied };
+  return { node, client, intent, release, status };
 }
 
 describe("mcp --confirm-url", () => {
   it("lets wallet_attest release only when both nodes agree, refusing each disagreement before anything is sent", async () => {
-    const { node, client, owner, intent, release, status, copied } = await escrowed(["--confirm-url", SECOND]);
+    const { node, client, intent, release, status } = await escrowed(["--confirm-url", SECOND]);
     const shown = await call(client, "wallet_attest", release);
     expect(shown.error, JSON.stringify(shown.value)).toBe(false);
     expect(node.reads).toBeGreaterThan(0);
     const approval = shown.value["approval"];
-    for (const { field, lie, second } of [...disagreements(intent, owner, copied), UNREADABLE]) {
+    for (const { field, lie, second } of [...(await disagreements(intent)), UNREADABLE]) {
       node.lie = lie;
       const wires = h.wires.length;
       for (const args of [release, { ...release, approval, send: true }]) {

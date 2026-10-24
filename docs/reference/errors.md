@@ -57,25 +57,28 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `SpecUnreadable` | yes | the spec url could not be read this time: it failed or the node answered a temporary error; try again shortly |
 | `SpecUnfetchable` | no | the spec url cannot be read: it answered not-found, redirects, is larger than the limit, or is not a public http(s) address; ask the owner for a working spec url and do not retry this one |
 | `WorkUnreadable` | yes | the announced work could not be fetched this time: the request failed or the host answered a temporary error; try again shortly |
-| `WorkUnfetchable` | no | the announced work cannot be read here: its url is not sealed to this wallet, answers not-found, redirects, is larger than the limit, is not a public https address, or holds sealed work this wallet cannot open; do not retry it |
-| `NotEarliestAnnouncer` | no | another wallet announced the delivered work first; a release recording that work pays its earliest announcer |
-| `SealedSalts` | no | the announcements seal their salts to the attestor's key, and this wallet cannot open them here, so the earliest announcer cannot be known; use the attestor's key file, or start the server with mcp --encryption-keypair naming the encryption key file whose public key the attestor's profile publishes |
+| `WorkUnfetchable` | no | the announced work cannot be read here: no announcement opens with this wallet's keys, or its url answers not-found, redirects, is larger than the limit or is not a public https address; do not retry it |
+| `NotEarliestAnnouncer` | no | another wallet made the first announcement that opens to the delivered work; a release pays that announcement's worker |
+| `AnnouncementsIncomplete` | yes | the RPC node does not list every announcement of the escrow yet, or the escrow is closed, so the first one that opens to the work cannot be known; nothing was signed |
+| `KeyNotGiven` | no | an earlier announcement is sealed to a key this server was not given, so the first one that opens to the work cannot be known; start the server with mcp --encryption-keypair naming that key's file |
 | `EncryptionKeyInvalid` | no | the file mcp --encryption-keypair names is not an encryption key file that profile encryption-key new writes, so nothing sealed to it can be opened; start the server with the right file |
-| `NoMessageSigner` | no | the wallet cannot sign messages, and a delivery derives its salt from the wallet's signature; use a key file or give the signature the hint asks for |
-| `NotAnnounced` | no | no work with this sha256 was announced for the escrow, so it is not recorded as what the release paid for |
-| `NotReleased` | no | the escrow has no release in its history, so no delivery can be recorded for it |
+| `NoMessageSigner` | no | the wallet cannot sign messages, and an announcement derives its salt and keys from the wallet's signature; use a key file or give the signature the hint asks for |
+| `NotAnnounced` | no | no announcement to the escrow opens to this work with this wallet's keys, so no release can pay for it |
+| `NotReleased` | no | the escrow has no release in its history yet |
+| `KeyInUse` | no | this wallet signs on a Ledger and judges open escrows, whose announcements only its encryption key opens; rotate the key instead of removing it, or wait until they close |
+| `NotRefutable` | no | the announcements named cannot refute this release: the hint says why; nothing was sent |
+| `NothingToReclaim` | no | none of this wallet's announcements can close now: each belongs to an open escrow or is kept for the refutation window |
 | `NotARelease` | no | the transaction named as the release is not a release of this escrow |
 | `ReleaseUnread` | yes | the RPC node could not return the named release transaction; call again in a few seconds |
 | `HistoryLagging` | yes | the RPC node has not returned every transaction the call reads yet; call again in a few seconds |
 | `OtherLifecycle` | no | the named release belongs to an earlier lifecycle of this escrow address, which was closed and made again at the same nonce, so it is not a release of the escrow there now |
-| `AlreadyRecorded` | no | the release already records a delivered sha256, in its own memo or a follow-up, and a receipt reads the first |
-| `ConfirmMismatch` | yes | the second RPC node the server was started with, by --confirm-url, reports another genesis hash, escrow or earliest announcer than the first, or could not be read, so nothing was signed or sent; call again once both nodes agree |
+| `ConfirmMismatch` | yes | the second RPC node the server was started with, by --confirm-url, reports another genesis hash, escrow, announcement list or first announcer than the first, or could not be read, so nothing was signed or sent; call again once both nodes agree |
 | `NeverSettles` | no | no release of this escrow could pay: after the judge fee, too little is left for the rounded-up protocol and partner fees; escrow more or lower the judge fee, as the hint says |
 | `ClaimListTooLarge` | no | the escrow and the claim list its sealed spec sets do not fit in one transaction, and a Ledger signs only the one transaction it previewed; seal the spec to fewer workers, or escrow without claims and open them with intent-engine claims open --workers, which sends the list in parts |
 | `Ledger` | no | the wallet's Ledger did not sign: it was rejected on the device, or the device is locked, unplugged or not in the Solana app; nothing was sent, and the hint says which |
 | `NoFeePayer` | no | the wallet is a Ledger, which signs only the release message, and the server was started without --fee-payer, the key file that signs and pays the release transaction |
 | `DeviceUnpreviewed` | no | the wallet is a Ledger, which signs only the transaction a preview with the same arguments showed by message_hash: no such preview is kept, it expired, or this tool sends several at once; preview again, or send each piece with its own preview |
-| `HistoryTooLong` | no | the record a release depends on is incomplete, so it is refused rather than decided from part of it: the history is longer than the pages read, which more pages fix, or the RPC node's ledger does not reach back to the escrow's creation, or the transport cannot page signatures or report its first available slot, which more pages do not fix |
+| `HistoryTooLong` | no | the history a Ledger judge's check depends on could not be read in full, so the release is refused rather than decided from part of it; use an RPC node that keeps the full ledger |
 
 ## Engine program
 
@@ -206,6 +209,28 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6122 | `AnnouncementRetained` | yes | an announcement stays through the refute window after its escrow expires or after it is paid, so an earlier worker can still refute the release |
 | 6123 | `RefuteNotEarlier` | no | a refutation needs an announcement made before the paid one, and this one came later |
 | 6124 | `RefuteSamePayee` | no | the earlier announcement belongs to a wallet the release paid; only an announcement by an unpaid wallet refutes a release |
+| 6125 | `AttestorMismatch` | no | the attestor account is not the attestor this escrow names; pass the escrow's attestor |
+| 6126 | `BlobRecipients` | no | the sealed delivery is sealed to a different number of keys than this escrow's judge or committee holds; seal it again to the judge's keys |
+| 6127 | `BlobKeyMismatch` | no | the sealed delivery is not sealed to the key the judge's profile publishes now; seal it again to the published key |
+| 6128 | `CommitteeKeysUnsynced` | yes | the committee has not recorded its members' encryption keys yet; anyone can record them with sync_committee_keys, then announce again |
+| 6129 | `CommitmentZero` | no | an announcement must carry the commitment to the delivered work, and this one is empty |
+| 6130 | `ProfileMismatch` | no | the judge's profile account is missing or is not a profile of this program; pass the judge's profile address |
+| 6131 | `BookMismatch` | no | the delivery book account does not belong to this escrow |
+| 6132 | `AnnounceFeeMissing` | no | the engine charges an announce fee, so the transaction must pass the fee recipient's wallet; let this server build it |
+| 6133 | `AnnouncementMissing` | no | a release of a proof escrow names the announcement it pays, and this one names none; release through the first announcement that opens to the work |
+| 6134 | `AnnouncementUnexpected` | no | this escrow commits no spec hash, so its release names no announcement and no opening |
+| 6135 | `AnnouncementMismatch` | no | the announcement belongs to another escrow than the one this names |
+| 6136 | `AnnouncementPaid` | no | this announcement was already paid; an announcement is paid once |
+| 6137 | `PayeeNotAnnouncer` | no | the payee token account does not belong to the wallet that made the announcement; a proof release pays the announcing worker |
+| 6138 | `CommitmentMismatch` | no | the opening does not open the announcement's commitment to this work; use the salt and sha256 the announcement commits to |
+| 6139 | `AnnouncerNotRecipient` | no | a split release must pay the wallet that made the announcement among its recipients |
+| 6140 | `RentRecipientMismatch` | no | rent goes back only to the wallet that paid it; let this server pick the account |
+| 6141 | `DeliveryBookOpen` | no | the delivery book of an open escrow stays; close it once the escrow is released, cancelled or expired |
+| 6142 | `DeliveryBookLive` | no | the delivery book still holds announcements; close them first |
+| 6143 | `RefuteNotPaid` | no | only a paid announcement can be refuted |
+| 6144 | `RefuteNotAnnouncer` | no | only the wallet that made the earlier announcement refutes with it |
+| 6145 | `RefuteSplitMismatch` | no | the recipients and weights given are not the split the release paid; pass them exactly as the release named them |
+| 6146 | `DeliveryRecordKept` | no | a delivery record account is not closed as a legacy account |
 
 ## Token programs
 

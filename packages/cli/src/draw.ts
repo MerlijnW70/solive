@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { type Address, getAddressEncoder, getBase58Encoder } from "@solana/kit";
-import type { Delivery, FinalizedBlock, Transport } from "@intent-engine/client";
+import type { FinalizedBlock, Transport } from "@intent-engine/client";
 import { JudgeRefused } from "./judge-errors.js";
 import {
   type Case,
@@ -73,7 +73,7 @@ export function engineRun(seed: string): Run {
 export async function drawBeacon(
   transport: Transport,
   sleep: (seconds: number) => Promise<boolean>,
-  first: Delivery | null,
+  first: { slot: bigint } | null,
   draw: Draw,
   intent: Address,
   sha256: string,

@@ -14,7 +14,7 @@ import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { notSealedTo, SPEC_TOO_LARGE } from "../src/agent/wallet/escrow.js";
 import { sealedLimits } from "../src/agent/wallet/escrow-claims.js";
 import { EXIT_OK } from "../src/main.js";
-import { sealedDelivery } from "./announce.js";
+import { announced, keyed } from "./announce.js";
 import { cli, creation, funded, h, ownerSigned, world } from "./harness.js";
 
 type Json = Record<string, unknown>;
@@ -148,11 +148,10 @@ describe("get_spec returning text only when it is the bytes it hashed", () => {
     const { client, owner } = await wallet();
     const intent = await job(client, owner, "https://" + "example.org/jobs/w.md", encoded("spec\n"));
     const work = Uint8Array.from([0xef, 0xbb, 0xbf, ...encoded("export default 1;\n")]);
-    const worker = (await generateKeyPairSigner()).address;
     const url = "https://" + `files.example.com/${sha(work).slice(0, 32)}`;
     h.specPages.set(url, work);
-    h.engineLog = [{ signature: "announced-0", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [await sealedDelivery(intent, worker, sha(work), url, [owner])], feePayer: worker }, creation(intent)];
-    const fetched = await ok(client, "wallet_fetch_work", { intent, announcement: "announced-0" });
+    const made = await announced(intent, await keyed(), sha(work), url);
+    const fetched = await ok(client, "wallet_fetch_work", { intent, announcement: made.announcement });
     expect(fetched).toMatchObject({ opens_commitment: true, sha256: sha(work) });
     expect(hexOf(encoded(fetched["untrusted_text"] as string))).toBe(hexOf(work));
   }, 60_000);

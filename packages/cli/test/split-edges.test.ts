@@ -3,14 +3,12 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
-import { DEVNET_TEST_MINT, findAssociatedTokenAddress, findIntentPda, formatAmount, NATIVE_MINT, RELEASE_MEMO_PREFIX } from "@intent-engine/core";
-import { MEMO_PROGRAM_ADDRESS } from "@intent-engine/client";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress, findIntentPda, formatAmount, NATIVE_MINT } from "@intent-engine/core";
 import { tool } from "../src/agent/names.js";
-import { PACKET_DATA_SIZE, WALLET_NOTICE } from "../src/agent/wallet.js";
+import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
-import { sealedDelivery } from "./announce.js";
-import { ata, balance, cli, creation, h, world } from "./harness.js";
-import { paddedTransport, type Padding, walletServer } from "./pad-budget.js";
+import { announced, keyed } from "./announce.js";
+import { ata, balance, cli, h, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -52,25 +50,22 @@ async function ok(client: Client, name: string, args: object = {}): Promise<Json
   return value;
 }
 
-const releaseMemoIn = (instructions: readonly { programAddress: Address; data?: ArrayLike<number> }[]) =>
-  instructions.some((ix) => ix.programAddress === MEMO_PROGRAM_ADDRESS && new TextDecoder().decode(Uint8Array.from(ix.data ?? [])).startsWith(RELEASE_MEMO_PREFIX));
-
-async function splitJob(terms: string[], before?: (authority: KeyPairSigner) => Promise<void>, padding?: Padding) {
+async function splitJob(terms: string[], before?: (authority: KeyPairSigner) => Promise<void>) {
   const w = await world();
   h.files.clear();
   preset(NATIVE_MINT);
   preset(DEVNET_TEST_MINT);
   await before?.(w.authority);
-  const client = padding === undefined ? await connect() : await walletServer(paddedTransport(padding, releaseMemoIn));
+  const client = await connect();
   const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
   h.watched.push(wallet);
   const base = ["--units", "raw", "--amount-in", "1000", "--min-result", "1", "--max-result", "1", "--attestor", wallet, "--spec-hash", SPEC, "--nonce", "0"];
   const made = await cli(["create", "attested", "--keypair", "owner.json", "--input-mint", w.inputMint, "--output-mint", w.outputMint, "--expires-in", "3600", ...base, ...terms, "--yes"], { "owner.json": w.owner });
   expect([made.code, made.err]).toEqual([EXIT_OK, ""]);
   const [intent] = await findIntentPda({ owner: w.owner.address, nonce: 0n });
-  const coauthor = await generateKeyPairSigner();
-  h.engineLog = [creation(intent)];
-  const split = { owner: w.owner.address, nonce: "0", recipients: [{ wallet: coauthor.address, weight: 10_000 }], delivered_sha256: WORK, received_outside_announcement: true };
+  const coauthor = await keyed();
+  await announced(intent, coauthor, WORK, URL_OF_WORK);
+  const split = { owner: w.owner.address, nonce: "0", recipients: [{ wallet: coauthor.address, weight: 10_000 }], delivered_sha256: WORK };
   const signed = async (shown: Json) => {
     const envelope = Uint8Array.from(getBase16Encoder().encode(String(shown["envelope"])));
     const signature = getBase16Decoder().decode(new Uint8Array(await signBytes(coauthor.keyPair.privateKey, envelope)));
@@ -83,8 +78,8 @@ async function splitJob(terms: string[], before?: (authority: KeyPairSigner) => 
 describe("a single release's setup", () => {
   it("names the rent of every account it creates, the judge's own included", async () => {
     const s = await splitJob(["--judge-fee", "10"]);
-    const worker = (await generateKeyPairSigner()).address;
-    const shown = await ok(s.client, "wallet_attest", { owner: s.w.owner.address, nonce: "0", pay_to: worker, delivered_sha256: WORK, received_outside_announcement: true });
+    const worker = s.coauthor.address;
+    const shown = await ok(s.client, "wallet_attest", { owner: s.w.owner.address, nonce: "0", delivered_sha256: WORK });
     const rent = `${formatAmount(h.svm.minimumBalanceForRentExemption(165n), 9)} SOL of rent`;
     expect(shown["summary"]).toContain(`Setup: creates ${worker}'s ${s.w.inputMint} account, paid by this wallet: ${rent}`);
     expect(shown["summary"]).toContain(`Setup: creates this wallet's ${s.w.inputMint} account for the judge fee, paid by this wallet: ${rent}`);
@@ -96,8 +91,12 @@ describe("a split release's fees and setup", () => {
     const partner = (await generateKeyPairSigner()).address;
     const s = await splitJob(["--partner", partner, "--partner-bps", "50", "--judge-fee", "10"]);
     const shown = await ok(s.client, "wallet_attest_split", s.split);
-    expect(shown["summary"]).toContain(`Setup: creates 4 token account(s), paid by this wallet: ${formatAmount(h.svm.minimumBalanceForRentExemption(165n), 9)} SOL of rent each, ${formatAmount(4n * h.svm.minimumBalanceForRentExemption(165n), 9)} SOL in all`);
-    const sent = await ok(s.client, "wallet_attest_split", await s.signed(shown));
+    expect(shown["summary"]).toContain(`Setup: creates 4 token account(s), paid by this wallet: ${formatAmount(h.svm.minimumBalanceForRentExemption(165n), 9)} SOL of rent each, ${formatAmount(4n * h.svm.minimumBalanceForRentExemption(165n), 9)} SOL in all, in its own transaction before the release`);
+    await ata(s.w.authority, s.coauthor.address, s.w.inputMint);
+    await ata(s.w.authority, s.w.feeRecipient.address, s.w.inputMint);
+    const fewer = await ok(s.client, "wallet_attest_split", s.split);
+    expect(fewer["summary"]).toContain(`Setup: creates 2 token account(s), paid by this wallet: ${formatAmount(h.svm.minimumBalanceForRentExemption(165n), 9)} SOL of rent each, ${formatAmount(2n * h.svm.minimumBalanceForRentExemption(165n), 9)} SOL in all, in its own transaction before the release`);
+    const sent = await ok(s.client, "wallet_attest_split", await s.signed(fewer));
     expect(sent).toMatchObject({ sent: true });
     expect(balance(await s.tokenOf(partner))).toBe(5n);
     expect(balance(await s.tokenOf(s.wallet))).toBe(10n);
@@ -115,38 +114,5 @@ describe("a split release's fees and setup", () => {
     expect(await ok(s.client, "wallet_attest_split", await s.signed(shown))).toMatchObject({ sent: true });
     expect(h.svm.getAccount(await s.tokenOf(s.w.feeRecipient.address)).exists).toBe(false);
     expect(h.svm.getAccount(await s.tokenOf(s.wallet)).exists).toBe(false);
-  });
-});
-
-describe("where a split release records the delivered work", () => {
-  it("puts the memo in the release while the two fit in one packet, up to its last byte", async () => {
-    const s = await splitJob([]);
-    await ata(s.w.authority, s.coauthor.address, s.w.inputMint);
-    const shown = await ok(s.client, "wallet_attest_split", s.split);
-    h.wires.length = 0;
-    expect(await ok(s.client, "wallet_attest_split", await s.signed(shown))).toMatchObject({ sent: true, recorded: "release" });
-    expect(h.wires).toHaveLength(1);
-
-    const padding: Padding = { size: PACKET_DATA_SIZE };
-    const t = await splitJob([], undefined, padding);
-    await ata(t.w.authority, t.coauthor.address, t.w.inputMint);
-    const full = await ok(t.client, "wallet_attest_split", t.split);
-    h.wires.length = 0;
-    expect(await ok(t.client, "wallet_attest_split", await t.signed(full))).toMatchObject({ sent: true, recorded: "release" });
-    expect(h.wires).toHaveLength(1);
-    expect(Buffer.from(h.wires[0] as string, "base64")).toHaveLength(PACKET_DATA_SIZE);
-  });
-
-  it("publishes the salts of earlier announcements after a release recorded in a follow-up", async () => {
-    const s = await splitJob([]);
-    const rival = (await generateKeyPairSigner()).address;
-    h.engineLog = [
-      { signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [await sealedDelivery(s.intent, s.coauthor.address, WORK, URL_OF_WORK, [s.wallet])], feePayer: s.coauthor.address },
-      { signature: "rival", slot: 3n, blockTime: null, failed: false, emitted: [], memos: [await sealedDelivery(s.intent, rival, "5c".repeat(32), URL_OF_WORK, [s.wallet])], feePayer: rival },
-      creation(s.intent),
-    ];
-    const shown = await ok(s.client, "wallet_attest_split", s.split);
-    const sent = await ok(s.client, "wallet_attest_split", await s.signed(shown));
-    expect(sent).toMatchObject({ sent: true, recorded: "follow-up", opening_signatures: [expect.any(String)] });
   });
 });

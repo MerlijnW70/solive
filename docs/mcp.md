@@ -35,8 +35,8 @@ The agent then creates intents with `solive_agent_create`, only for those owners
 ## Deliver work
 
 1. `solive_find_jobs` lists open jobs. `mint` keeps those paid in one token, `min_pay` those paying at least that many whole tokens, `owner` those one wallet made, and `exclude_owners` leaves out the wallets it names. Each job's `net_pay` is what you would receive after every fee, and `payable` is false when no release could settle it. `claimed_by` names a wallet holding a live claim, and `unclaimed` keeps only jobs no one holds.
-2. `solive_prepare_deliver` returns a transaction that announces your work. Your wallet signs it.
-3. The judge checks it with `solive_check_delivery` and pays, as [Judge work](judge.md) shows.
+2. `solive_prepare_deliver` returns a transaction that announces your work on chain, its url sealed to the judge. Your wallet signs it.
+3. `solive_check_delivery` lists the escrow's announcements in seq order; the judge pays the first that opens to the work, as [Judge work](judge.md) shows.
 4. `solive_get_receipt` shows who was paid.
 
 ## Sign with a Ledger

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { feedbackInstructions, NotSettleable, reputationOf, RESTART, type Trust, TRUST_PATHS, TRUST_WALLETS, trustOf } from "@intent-engine/client";
+import { DELIVERY_PAGES, feedbackInstructions, NotSettleable, reputationOf, RESTART, SIGNATURE_PAGE, type Trust, TRUST_PATHS, TRUST_WALLETS, trustOf } from "@intent-engine/client";
 import { type AgentContext, define } from "./actions.js";
 import type { Call } from "./claims.js";
 import { tool } from "./names.js";
@@ -8,9 +8,15 @@ import { account, amount, choice, flag, hex32, integer, InvalidInput, list, null
 import { preparedView } from "./shapes.js";
 import { prepare } from "./prepare.js";
 import { deviceOutput, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent } from "./wallet/guard.js";
-import { MAX_ATTEST_PAGES, MAX_PAGES_INPUT } from "./wallet/delivery.js";
+import { refutationItem } from "./wallet/standing.js";
 
 export const RECORDS_SHOWN = 50;
+
+export const MAX_REPUTATION_PAGES = 100_000;
+
+export const REPUTATION_PAGES = `pages of ${SIGNATURE_PAGE} signatures of the worker's own history to read for its announcements; default ${DELIVERY_PAGES}; raise it when complete is false`;
+
+const ROLES = ["announcer", "co-author"] as const;
 
 export const FEEDBACK_CHANGED = "this feedback differs from its preview: the escrow, score or note changed, or no approval was given; preview it again and show the user";
 
@@ -32,21 +38,22 @@ export function trustView(trust: Trust) {
 export const getReputation = define({
   name: tool("get_reputation"),
   title: "A worker's verifiable track record",
-  description: `Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Releases whose payer was first funded by the worker, directly or through one wallet, are counted apart as funded by the worker and left out too; releases whose payer's funding could not be checked still count, are also shown as funding_unknown, and paid_verified counts only the checked ones. Releases a published opening refutes, because someone announced the same work earlier, are left out too. Each released escrow counts once, for the worker's earliest announcement that opens to the released work and landed before the release. backed sums the protocol fees behind the totals by the worker's share, per mint, and backed_sol the SOL ones plus every create fee. With reader, trust adds the worker's personalized PageRank rooted only in that reader and the seeds named, over the SOL its counted payments cost: a ring paying itself gets only trust that flows in from those roots, at most (1 - a) / a times the trust on the payments into it, with a = ${RESTART}. Use it before hiring a worker or trusting its delivery.`,
+  description: `Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Releases whose payer was first funded by the worker, directly or through one wallet, are counted apart as funded by the worker and left out too; releases whose payer's funding could not be checked still count, are also shown as funding_unknown, and paid_verified counts only the checked ones. Releases a substantiated refutation shows someone announced the same work earlier are left out too. Each released escrow counts once, for the announcement it paid; a co-author counts only when a split release names it. backed sums the protocol fees behind the totals by the worker's share, per mint, and backed_sol the SOL ones plus every create fee. With reader, trust adds the worker's personalized PageRank rooted only in that reader and the seeds named, over the SOL its counted payments cost: a ring paying itself gets only trust that flows in from those roots, at most (1 - a) / a times the trust on the payments into it, with a = ${RESTART}. Use it before hiring a worker or trusting its delivery.`,
   effect: "read",
   input: object({
     worker: account("the worker wallet to read"),
-    max_pages: optional(integer(1, MAX_ATTEST_PAGES, MAX_PAGES_INPUT)),
+    max_pages: optional(integer(1, MAX_REPUTATION_PAGES, REPUTATION_PAGES)),
     reader: optional(account("the wallet whose trust to start from")),
     seeds: optional(list(account(), TRUST_WALLETS, "more wallets that reader already relies on")),
   }),
   output: object({
     worker: account(),
     complete: flag("false means part of the history could not be read, so the totals may undercount"),
+    reason: optional(text("why complete is false")),
     announced: integer(0, Number.MAX_SAFE_INTEGER, "escrows it announced work to"),
     paid: integer(0, Number.MAX_SAFE_INTEGER, "releases that paid it for its announced work, at arm's length"),
     paid_verified: integer(0, Number.MAX_SAFE_INTEGER, "of paid, the releases whose payer's funding was checked and not traced to it"),
-    refuted: integer(0, Number.MAX_SAFE_INTEGER, "paid releases a published opening shows someone announced the same work earlier, left out of the totals"),
+    refuted: integer(0, Number.MAX_SAFE_INTEGER, "paid releases a substantiated refutation shows someone announced the same work earlier, left out of the totals"),
     self_dealt: integer(0, Number.MAX_SAFE_INTEGER, "paid releases where it paid or judged itself, left out of the totals"),
     funded_by_worker: integer(0, Number.MAX_SAFE_INTEGER, "other paid releases whose payer it funded first, left out of the totals"),
     funding_unknown: integer(0, Number.MAX_SAFE_INTEGER, "paid releases whose payer's funding could not be checked; they still count"),
@@ -62,10 +69,14 @@ export const getReputation = define({
     records: list(
       object({
         intent: account(),
+        announcement: account("the announcement the record is about; for a co-author, the one the split paid"),
+        seq: amount(),
+        role: choice(ROLES, "announcer: this wallet made the announcement; co-author: a split release paying it named this wallet"),
         sha256: optional(hex32()),
         outcome: choice(OUTCOMES),
         self_dealt: flag(),
-        refuted_by: optional(text("an earlier announcement of the same work, shown by a published opening")),
+        refuted_by: optional(text("a substantiated refutation: someone announced the same work earlier")),
+        refutations: optional(list(refutationItem, 16, "refutations of the paid announcement, with their standing; only substantiated ones count")),
         funded_by_worker: optional(choice(FUNDED)),
         owner: optional(account()),
         attestor: optional(account()),
@@ -97,6 +108,7 @@ export const getReputation = define({
     return {
       worker: rep.wallet,
       complete: rep.complete,
+      ...(rep.reason === undefined ? {} : { reason: rep.reason }),
       announced: rep.announced,
       paid: rep.paid,
       paid_verified: rep.paidVerified,
@@ -115,10 +127,24 @@ export const getReputation = define({
       last: rep.last,
       records: rep.records.slice(-RECORDS_SHOWN).map((r) => ({
         intent: r.intent,
+        announcement: r.announcement,
+        seq: r.seq,
+        role: r.role,
         ...(r.sha256 === "" ? {} : { sha256: r.sha256 }),
         outcome: r.outcome,
         self_dealt: r.selfDealt,
         ...(r.refutedBy === undefined ? {} : { refuted_by: r.refutedBy }),
+        ...(r.refutations.length === 0
+          ? {}
+          : {
+              refutations: r.refutations.slice(0, 16).map(({ refutation, earlier, earlierSeq, earlierWorker, standing }) => ({
+                refutation,
+                earlier,
+                earlier_seq: earlierSeq,
+                earlier_worker: earlierWorker,
+                standing,
+              })),
+            }),
         ...(r.fundedByWorker === undefined ? {} : { funded_by_worker: r.fundedByWorker }),
         ...(r.owner === undefined ? {} : { owner: r.owner }),
         ...(r.attestor === undefined ? {} : { attestor: r.attestor }),

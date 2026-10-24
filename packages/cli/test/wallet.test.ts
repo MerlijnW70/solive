@@ -242,7 +242,7 @@ describe("setup and balance", () => {
     const made = (await cli(["setup"], {})).json();
     const address = made["address"] as Address;
     h.svm.airdrop(address, lamports(ENOUGH_TO_START));
-    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.05", next: refusedEnough("0.05", CLI_SMALL_START) });
+    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.06", next: refusedEnough("0.06", CLI_SMALL_START) });
   });
 
   it("setup on a Ledger names the device's address and creates no key file", async () => {

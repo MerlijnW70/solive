@@ -10,9 +10,9 @@ import { createClient } from "@intent-engine/client";
 import { clusterUrl } from "../src/clusters.js";
 import { EXIT_FAILED, EXIT_OK, ONE_NODE } from "../src/main.js";
 import { settingsPath } from "../src/wallet.js";
-import { sealedDelivery } from "./announce.js";
-import { balance, cli, creation, funded, h, HOME, NOW, transport, world } from "./harness.js";
-import { announced, cliWith, type Disagreement, disagreements, OTHER_GENESIS, SECOND, SECOND_URL, secondNode, UNREADABLE, WORK_URL } from "./confirm-node.js";
+import { announced, keyed } from "./announce.js";
+import { balance, cli, funded, h, HOME, NOW, transport, world } from "./harness.js";
+import { cliWith, type Disagreement, disagreements, OTHER_GENESIS, SECOND, SECOND_URL, secondNode, UNREADABLE, WORK_URL } from "./confirm-node.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
 const SPEC = `# Count words\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
@@ -20,12 +20,11 @@ const CORRECT = "export default function count(text) { const words = text.match(
 
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 
-type Job = { owner: Address; intent: Address; inputMint: Address; spec: string; artifact: string; dir: string; worker: Address; copied: string; keys: Record<string, KeyPairSigner> };
+type Job = { owner: Address; intent: Address; inputMint: Address; spec: string; artifact: string; dir: string; worker: Address; keys: Record<string, KeyPairSigner> };
 
 async function escrow(attestor: (keys: Record<string, KeyPairSigner>) => Promise<Address>): Promise<Job> {
   const w = await world();
   const keys: Record<string, KeyPairSigner> = {};
-  const worker = (await generateKeyPairSigner()).address;
   const dir = await mkdtemp(join(tmpdir(), "confirm-rpc-"));
   const spec = join(dir, "spec.md");
   const artifact = join(dir, "count.mjs");
@@ -48,10 +47,9 @@ async function escrow(attestor: (keys: Record<string, KeyPairSigner>) => Promise
     nonce: 0n,
     expiresAt: NOW + 3_600n,
   });
-  const sealedTo = Object.values(keys).map(({ address }) => address);
-  h.engineLog = [announced("first", 5n, worker, await sealedDelivery(intent, worker, sha(CORRECT), WORK_URL, sealedTo)), creation(intent)];
-  const copied = await sealedDelivery(intent, w.owner.address, sha(CORRECT), WORK_URL, sealedTo);
-  return { owner: w.owner.address, intent, inputMint: w.inputMint, spec, artifact, dir, worker, copied, keys };
+  const worker = await keyed();
+  await announced(intent, worker, sha(CORRECT), WORK_URL);
+  return { owner: w.owner.address, intent, inputMint: w.inputMint, spec, artifact, dir, worker: worker.address, keys };
 }
 
 const alone = () =>
@@ -70,7 +68,7 @@ const paid = async (job: Job) => balance(await findAssociatedTokenAddress({ owne
 
 const saveConfirm = (cluster: string) => h.files.set(settingsPath(HOME), JSON.stringify({ url: "http://cluster", keypair: "judge.json", "confirm-url": clusterUrl(cluster) }));
 
-const lies = (job: Job): Disagreement[] => disagreements(job.intent, job.owner, job.copied);
+const lies = (job: Job): Promise<Disagreement[]> => disagreements(job.intent);
 
 describe("judge --confirm-url", () => {
   const judging = (job: Job, ...more: string[]) => [
@@ -92,7 +90,7 @@ describe("judge --confirm-url", () => {
   it("refuses with ConfirmMismatch and sends nothing when the second node differs", async () => {
     for (const i of [0, 1, 2, 3]) {
       const job = await alone();
-      const { field, lie, second } = lies(job)[i] as Disagreement;
+      const { field, lie, second } = (await lies(job))[i] as Disagreement;
       const node = secondNode();
       node.lie = lie;
       const wires = h.wires.length;
@@ -204,14 +202,14 @@ describe("committee release --confirm-url", () => {
       const judged = await cli(["judge", "--keypair", member, "--owner", job.owner, "--nonce", "0", "--spec", job.spec, "--artifact", job.artifact, "--sandbox", "viper", "--verdict", file], job.keys);
       expect([judged.code, judged.err]).toEqual([EXIT_OK, ""]);
     }
-    const release = ["committee", "release", "--keypair", "m0.json", ...votes.flatMap(({ file }) => ["--vote", file]), "--sha256", sha(CORRECT), "--yes"];
+    const release = ["committee", "release", "--keypair", "m0.json", ...votes.flatMap(({ file }) => ["--vote", file]), "--yes"];
     return { job, release };
   }
 
   it("refuses each disagreement and an unreadable second node without sending, then releases when both agree", async () => {
     const { job, release } = await voted();
     const node = secondNode();
-    for (const { field, lie, second } of [...lies(job), UNREADABLE]) {
+    for (const { field, lie, second } of [...(await lies(job)), UNREADABLE]) {
       node.lie = lie;
       const wires = h.wires.length;
       const refused = await cliWith([...release, "--confirm-url", SECOND], job.keys, node);

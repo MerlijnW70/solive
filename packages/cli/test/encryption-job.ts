@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Address, generateKeyPairSigner, getBase64Encoder, getTransactionDecoder, type KeyPairSigner, lamports } from "@solana/kit";
+import { type Address, getBase64Encoder, getTransactionDecoder, type KeyPairSigner, lamports } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
@@ -10,7 +10,6 @@ import { expect } from "vitest";
 import {
   buildCreateProfile,
   buildUpdateProfile,
-  DELIVERY_MEMO_PREFIX,
   EVENT_IX_TAG,
   findAssociatedTokenAddress,
   getIntentDecoder,
@@ -18,13 +17,13 @@ import {
   Kind,
   newEncryptionKeyFile,
   parseEncryptionKey,
-  sealDelivery,
+  type SealRecipient,
 } from "@intent-engine/core";
-import { commitmentOf, createClient, deliveryInstructions, type EngineTransaction, MEMO_PROGRAM_ADDRESS, type OpenTransport, saltCheckOf } from "@intent-engine/client";
+import { createClient, type EngineTransaction, type OpenTransport } from "@intent-engine/client";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK, main } from "../src/main.js";
-import { saltFor } from "./announce.js";
+import { nextSlot } from "./announce.js";
 import { creation, funded, h, NOW, runtime, send, transport, type World, world } from "./harness.js";
 import { type Device, deviceKey, type Key } from "./ledger-device.js";
 
@@ -81,25 +80,18 @@ export async function job(attestorOf?: (key: Key) => Promise<Address>): Promise<
 
 export type Logged = { signature: string; slot: bigint; memos: string[]; feePayer: Address; emitted: Uint8Array[] };
 
-export type Announced = Logged & { sealedKeys: string[]; sealedTo: Address[]; salt: string };
+export type Announced = { announcement: Address; seq: bigint; salt: string; sealedTo: SealRecipient[] };
 
-export async function announce(j: Job, worker: KeyPairSigner, at: number, work = WORK): Promise<Announced> {
-  const plan = await deliveryInstructions(transport, { worker, intent: j.intent, sha256: work, url: WORK_URL });
-  const memo = plan.instructions.find(({ programAddress }) => programAddress === MEMO_PROGRAM_ADDRESS);
-  const text = new TextDecoder().decode(Uint8Array.from(memo?.data ?? []));
-  return { signature: `announced${at}`, slot: BigInt(4 + at), memos: [text], feePayer: worker.address, emitted: [], sealedKeys: plan.sealedKeys, sealedTo: plan.sealedTo, salt: plan.salt };
+export async function announce(j: Job, worker: KeyPairSigner, work = WORK): Promise<Announced> {
+  nextSlot();
+  const client = createClient({ url: "http://cluster", transport });
+  const input = { worker, intent: j.intent, sha256: work, url: WORK_URL };
+  const plan = await client.prepareAnnouncement(input);
+  const made = await client.announce(input);
+  return { announcement: made.announcement, seq: made.seq, salt: made.salt, sealedTo: plan.sealedTo };
 }
 
-export const memoAt = (at: number, feePayer: Address, memo: string): Logged => ({ signature: `announced${at}`, slot: BigInt(4 + at), memos: [memo], feePayer, emitted: [] });
-
-export async function forged(j: Job, at: number, by: Address, fingerprints: readonly string[], version = 3): Promise<Logged> {
-  const wallets = await Promise.all(fingerprints.map(async () => (await generateKeyPairSigner()).address));
-  const bytes = Buffer.from(await sealDelivery({ salt: saltFor(j.intent), url: WORK_URL }, wallets, j.intent), "base64");
-  fingerprints.forEach((fingerprint, i) => Buffer.from(fingerprint, "hex").copy(bytes, 3 + 8 * i));
-  bytes[0] = version;
-  const salt = saltFor(j.intent);
-  return memoAt(at, by, `${DELIVERY_MEMO_PREFIX}${j.intent}:${commitmentOf(j.intent, by, salt, WORK)}:${saltCheckOf(salt)}:${bytes.toString("base64")}`);
-}
+export const sealedKind = (recipient: SealRecipient): "wallet" | "profile" => (typeof recipient === "string" ? "wallet" : "profile");
 
 export function logged(j: Job, entries: readonly Logged[]): void {
   h.engineLog = [...[...entries].reverse().map((entry) => ({ ...entry, blockTime: null, failed: false })), creation(j.intent, CREATED_SLOT)];
@@ -108,12 +100,19 @@ export function logged(j: Job, entries: readonly Logged[]): void {
 export async function publish(j: Job, encryptionKey: string, at: number, update = false): Promise<Logged> {
   const fields = { wallet: j.key.signer, skills: ["judge"], endpoint: ENDPOINT, encryptionKey };
   await send(j.key.signer, [update ? await buildUpdateProfile(fields) : await buildCreateProfile(fields)]);
+  return profileEntry(j, encryptionKey, at);
+}
+
+export function profileEntry(j: Job, encryptionKey: string, at: number): Logged {
   const event = getProfileSetEventEncoder().encode({ wallet: j.key.address, skills: ["judge"], endpoint: ENDPOINT, docUrl: "", docHash: new Uint8Array(32), encryptionKey: parseEncryptionKey(encryptionKey) });
   return { signature: `profile${at}`, slot: BigInt(4 + at), memos: [], feePayer: j.key.address, emitted: [Uint8Array.from([...EVENT_IX_TAG, ...event])] };
 }
 
-export async function keyedProfile(key: Key): Promise<{ entry: EngineTransaction; encryptionKey: Uint8Array }> {
-  const { publicKey } = await newEncryptionKeyFile();
+export async function keyedProfile(key: Key, file?: string): Promise<{ entry: EngineTransaction; encryptionKey: Uint8Array }> {
+  const { text, publicKey } = await newEncryptionKeyFile();
+  if (file !== undefined) {
+    h.files.set(file, text);
+  }
   await send(key.signer, [await buildCreateProfile({ wallet: key.signer, skills: ["judge"], endpoint: ENDPOINT, encryptionKey: publicKey })]);
   const event = getProfileSetEventEncoder().encode({ wallet: key.address, skills: ["judge"], endpoint: ENDPOINT, docUrl: "", docHash: new Uint8Array(32), encryptionKey: parseEncryptionKey(publicKey) });
   const entry: EngineTransaction = { signature: `profile-${key.address}`, slot: 0n, blockTime: null, failed: false, memos: [], feePayer: key.address, emitted: [Uint8Array.from([...EVENT_IX_TAG, ...event])] };

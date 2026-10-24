@@ -2,25 +2,15 @@ import { createHash } from "node:crypto";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  type Address,
-  getBase64Encoder,
-  getCompiledTransactionMessageDecoder,
-  getSignatureFromTransaction,
-  getTransactionDecoder,
-  type KeyPairSigner,
-  lamports,
-  none,
-} from "@solana/kit";
+import { type Address, type KeyPairSigner, lamports, none } from "@solana/kit";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { DEVNET_TEST_MINT, NATIVE_MINT, parseEncryptionKey, sealedTo, specMemo, unseal } from "@intent-engine/core";
-import { type EngineTransaction, MEMO_PROGRAM_ADDRESS, signersAmong } from "@intent-engine/client";
+import { DEVNET_TEST_MINT, NATIVE_MINT, specMemo } from "@intent-engine/core";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
-import { NOT_SEALED_HERE, WORK_OPENS } from "../src/agent/wallet/work.js";
+import { NONE_OPENS, WORK_OPENS } from "../src/agent/wallet/work.js";
 import { UNSEAL_NEEDS_KEY } from "../src/arg-values.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { defaultWallet } from "../src/wallet.js";
@@ -33,7 +23,7 @@ type Json = Record<string, unknown>;
 const SPEC = "# Answer\n\nDeliver answer.txt holding 42.\n";
 const WORK = "answer.txt: 42\n";
 const SPEC_URL = "https://" + "files.example.com/jobs/0f4e2a.md";
-const WORK_URL = "https://" + "files.example.com/work/9b1d7c3e5a2f4806.sealed";
+const WORK_URL = "https://" + "files.example.com/work/9b1d7c3e5a2f48069b1d7c3e5a2f4806.txt";
 const KEY_FILE = "judge.enc";
 const sha = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
 const bytesOf = (text: unknown) => new TextEncoder().encode(text as string);
@@ -74,23 +64,6 @@ async function ok(client: Client, name: string, args: object = {}): Promise<Json
 
 const useKey = (signer: KeyPairSigner) => h.files.set(defaultWallet(HOME), JSON.stringify(Array.from(h.keypairs.get(signer.address) ?? [])));
 
-function landedAs(wire: string, slot: bigint): EngineTransaction {
-  const tx = getTransactionDecoder().decode(getBase64Encoder().encode(wire));
-  const message = getCompiledTransactionMessageDecoder().decode(tx.messageBytes);
-  const keys = message.staticAccounts;
-  const memos = ("instructions" in message ? message.instructions : []).filter((ix) => keys[ix.programAddressIndex] === MEMO_PROGRAM_ADDRESS);
-  return {
-    signature: getSignatureFromTransaction(tx),
-    slot,
-    blockTime: null,
-    failed: false,
-    emitted: [],
-    memos: memos.map((ix) => new TextDecoder().decode(Uint8Array.from(ix.data ?? []))),
-    memoSigners: memos.map((ix) => signersAmong(keys, ix.accountIndices ?? [], message.header.numSignerAccounts)),
-    ...(keys[0] === undefined ? {} : { feePayer: keys[0] }),
-  };
-}
-
 async function publishedKey(judge: KeyPairSigner): Promise<string> {
   const made = await cli(["profile", "encryption-key", "new", "--out", KEY_FILE], {});
   expect([made.code, made.err]).toEqual([EXIT_OK, ""]);
@@ -115,42 +88,32 @@ describe("sealing to a judge whose profile publishes an encryption key", () => {
     publicKey = await publishedKey(judge);
   });
 
-  it("seals the work to that key, which wallet_fetch_work opens given only the encryption key file", async () => {
+  it("seals the announced work's url to that key, which wallet_fetch_work opens given only the encryption key file", async () => {
     const plain = await connect();
     await ok(plain, "wallet_setup");
     useKey(judge);
     h.specPages.set(SPEC_URL, bytesOf(SPEC));
     const escrow = await ok(plain, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: judge.address, spec_hash: sha(SPEC), spec_url: SPEC_URL, send: true });
     const intent = escrow["intent"] as Address;
-    const made = { ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) };
-    h.engineLog = [made];
+    h.engineLog = [{ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) }];
 
     useKey(worker);
-    const sealed = await ok(plain, "wallet_seal_work", { intent, text: WORK });
-    expect(sealed["sealed_to"]).toEqual([judge.address]);
-    const hosted = bytesOf(sealed["sealed"]);
-    expect(sealedTo(hosted)).toEqual([judge.address]);
-    const entry = (JSON.parse(new TextDecoder().decode(hosted)) as { to: { pk: string }[] }).to[0];
-    expect(entry?.pk).toBe(Buffer.from(parseEncryptionKey(publicKey)).toString("base64"));
-    await expect(unseal(hosted, h.keypairs.get(judge.address) ?? new Uint8Array())).rejects.toThrow("open it with that encryption key file");
-    h.specPages.set(WORK_URL, hosted);
-    h.wires.length = 0;
-    await ok(plain, "wallet_deliver", { intent, sha256: sealed["sha256"], url: WORK_URL, send: true });
-    const landed = landedAs(h.wires[0] as string, 5n);
-    h.engineLog = [landed, made];
+    h.specPages.set(WORK_URL, bytesOf(WORK));
+    const delivered = await ok(plain, "wallet_deliver", { intent, sha256: sha(WORK), url: WORK_URL, send: true });
+    expect(delivered).toMatchObject({ sent: true, sealed_to: [judge.address] });
+    expect(delivered["summary"] as string[]).toContain(`Seals: the salt and the url ${WORK_URL} to ${judge.address} (the encryption key its profile publishes), so only they can open it`);
+    expect(publicKey).not.toBe("");
 
     useKey(judge);
-    expect((await call(plain, "wallet_fetch_work", { intent, announcement: landed.signature })).value).toMatchObject({
-      code: "WorkUnfetchable",
-      hint: `the announcement ${landed.signature}: ${NOT_SEALED_HERE}`,
-    });
+    expect((await call(plain, "wallet_fetch_work", { intent })).value).toMatchObject({ code: "WorkUnfetchable", hint: NONE_OPENS });
     const keyed = await connect(["--encryption-keypair", KEY_FILE]);
-    expect(await ok(keyed, "wallet_fetch_work", { intent, announcement: landed.signature })).toMatchObject({
+    expect(await ok(keyed, "wallet_fetch_work", { intent })).toMatchObject({
+      announcement: delivered["announcement"],
       worker: worker.address,
-      sealed: true,
       sha256: sha(WORK),
       opens_commitment: true,
       untrusted_text: WORK,
+      first: { announcement: delivered["announcement"], worker: worker.address },
       next: WORK_OPENS,
     });
   }, 60_000);

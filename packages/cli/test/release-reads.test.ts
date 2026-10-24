@@ -4,32 +4,18 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
-import {
-  DEVNET_TEST_MINT,
-  EVENT_IX_TAG,
-  findAssociatedTokenAddress,
-  findIntentPda,
-  getIntentAttestedEventEncoder,
-  getIntentDecoder,
-  getIntentEncoder,
-  IntentStatus,
-  Kind,
-  NATIVE_MINT,
-  signCommitteeVote,
-  sortMembers,
-} from "@intent-engine/core";
-import { createClient, deliverySalt, type EngineTransaction, TRUST_WALLETS, type Transport } from "@intent-engine/client";
+import { DEVNET_TEST_MINT, findIntentPda, IntentStatus, Kind, NATIVE_MINT, signCommitteeVote, sortMembers } from "@intent-engine/core";
+import { createClient, TRUST_WALLETS, type Transport } from "@intent-engine/client";
 import { svmTransport } from "@intent-engine/client/svm";
 import { invoke } from "../src/agent/actions.js";
 import { claimsOf } from "../src/agent/claims.js";
 import { tool } from "../src/agent/names.js";
 import { getReputation } from "../src/agent/reputation.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
-import { recordingOf } from "../src/agent/wallet/record.js";
 import { EXIT_OK } from "../src/main.js";
-import { sealedDelivery } from "./announce.js";
+import { announced, keyed } from "./announce.js";
 import { cliWith, secondNode, SECOND } from "./confirm-node.js";
-import { ata, cli, creation, funded, h, NOW, transport, world } from "./harness.js";
+import { ata, cli, funded, h, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -70,50 +56,6 @@ async function ok(client: Client, name: string, args: object = {}): Promise<Json
 
 const ctxOf = (over: Transport) => ({ transport: over, relay: undefined, agent: undefined, claims: claimsOf() });
 
-describe("recording the work a release paid for", () => {
-  it("refuses sealed announcements without a key to open them, and an unannounced hash once there are none", async () => {
-    const w = await world();
-    const judge = await funded();
-    const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash: new Uint8Array(32).fill(2), judgeFee: 0n } as const;
-    const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
-    const held = h.svm.getAccount(intent);
-    if (!held.exists) {
-      throw new Error("the escrow was not created");
-    }
-    h.svm.setAccount({ ...held, data: Uint8Array.from(getIntentEncoder().encode({ ...getIntentDecoder().decode(held.data), status: IntentStatus.Filled })) });
-    const worker = (await generateKeyPairSigner()).address;
-    const payee = await findAssociatedTokenAddress({ owner: worker, mint: w.inputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS });
-    const attested = getIntentAttestedEventEncoder().encode({
-      intent,
-      owner: w.owner.address,
-      solver: judge.address,
-      payee,
-      attestor: judge.address,
-      amountIn: 100n,
-      result: 1n,
-      fee: 1n,
-      net: 99n,
-      filled: 100n,
-      remaining: 0n,
-      partnerFee: 0n,
-    });
-    const release: EngineTransaction = {
-      signature: "release",
-      slot: 3n,
-      blockTime: null,
-      failed: false,
-      emitted: [new Uint8Array([...EVENT_IX_TAG, ...attested])],
-      feePayer: judge.address,
-      tokens: [{ account: payee, mint: w.inputMint, owner: worker }],
-    };
-    const announced: EngineTransaction = { signature: "announced", slot: 2n, blockTime: null, failed: false, emitted: [], memos: [await sealedDelivery(intent, worker, WORK, URL_OF_WORK, [judge.address])], feePayer: worker };
-    h.engineLog = [release, announced, creation(intent)];
-    await expect(recordingOf(transport, judge, w.owner.address, 0n, WORK)).rejects.toMatchObject({ problem: { code: "SealedSalts" } });
-    h.engineLog = [release, creation(intent)];
-    await expect(recordingOf(transport, judge, w.owner.address, 0n, WORK)).rejects.toMatchObject({ problem: { code: "NotAnnounced" } });
-  });
-});
-
 describe("a worker's reputation", () => {
   async function paidWorker() {
     const w = await world();
@@ -129,8 +71,8 @@ describe("a worker's reputation", () => {
       outputMint: w.outputMint,
     });
     const [intent] = await findIntentPda({ owner: owner.address, nonce });
-    await client.deliver({ worker, intent, sha256, url: URL_OF_WORK });
-    await client.settleProof({ judge, owner: owner.address, nonce, payTo: worker.address, result: 1n, deliveredSha256: sha256, deliveredSalt: await deliverySalt(worker, intent, sha256) });
+    const made = await client.announce({ worker, intent, sha256, url: URL_OF_WORK });
+    await client.settleProof({ judge, owner: owner.address, nonce, announcement: made.announcement, opening: { sha256, salt: made.salt }, result: 1n });
     return { svm, worker, intent, sha256, owner, judge };
   }
 
@@ -169,9 +111,8 @@ describe("a second node that cannot be read", () => {
     const owner = (await ok(client, "wallet_setup"))["address"] as Address;
     const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash: createHash("sha256").update("spec").digest("hex"), send: true });
     const intent = escrow["intent"] as Address;
-    const worker = (await generateKeyPairSigner()).address;
-    h.engineLog = [{ signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [await sealedDelivery(intent, worker, WORK, URL_OF_WORK, [owner])], feePayer: worker }, creation(intent)];
-    const refused = await call(client, "wallet_attest", { owner, nonce: escrow["nonce"], pay_to: worker, delivered_sha256: WORK });
+    await announced(intent, await keyed(), WORK, URL_OF_WORK);
+    const refused = await call(client, "wallet_attest", { owner, nonce: escrow["nonce"], delivered_sha256: WORK });
     expect(refused).toMatchObject({ error: true, value: { code: "ConfirmMismatch" } });
     expect(refused.value["hint"]).toContain("bad node");
     expect(refused.value["hint"]).not.toContain("\n");
@@ -194,7 +135,7 @@ describe("a committee release from a key file", () => {
     h.served.length = 0;
     const client = await linked(await cli(["mcp", "--url", "devnet", "--wallet", "--all-tools"], {}));
     const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
-    const other = await generateKeyPairSigner();
+    const other = await keyed();
     const payer: KeyPairSigner = await funded();
     const members = sortMembers([wallet, other.address]);
     const created = await cli(["committee", "create", "--url", "devnet", "--keypair", "payer.json", "--members", members.join(","), "--threshold", "2", "--fee-wallet", payer.address, "--yes"], { "payer.json": payer });
@@ -202,15 +143,17 @@ describe("a committee release from a key file", () => {
     const committee = created.json()["committee"] as Address;
     const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: "6e".repeat(32), send: true });
     const intent = escrow["intent"] as Address;
-    const worker = (await generateKeyPairSigner()).address;
-    for (const owner of [worker, w.feeRecipient.address, payer.address]) {
+    const worker = await keyed();
+    for (const owner of [worker.address, w.feeRecipient.address, payer.address]) {
       await ata(w.authority, owner, NATIVE_MINT);
     }
-    h.engineLog = [{ signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [await sealedDelivery(intent, worker, WORK, URL_OF_WORK, members)], feePayer: worker }, creation(intent)];
-    const ballot = { owner: wallet, nonce: escrow["nonce"] as string, pay_to: worker, result: "1", delivered_sha256: WORK };
+    await announced(intent, worker, WORK, URL_OF_WORK);
+    const ballot = { owner: wallet, nonce: escrow["nonce"] as string, result: "1", delivered_sha256: WORK };
     const preview = await ok(client, "wallet_committee_vote", ballot);
     const own = (await ok(client, "wallet_committee_vote", { ...ballot, approval: preview["approval"], send: true }))["vote"] as { member: Address; signature: string };
-    const digest = await createClient({ url: "http://cluster", transport }).committeeBallot({ owner: wallet, nonce: BigInt(ballot.nonce), payTo: worker, result: 1n });
+    const local = createClient({ url: "http://cluster", transport });
+    const first = await local.firstOpening({ intent, sha256: WORK, keypair: h.keypairs.get(other.address) });
+    const digest = await local.committeeBallot({ owner: wallet, nonce: BigInt(ballot.nonce), announcement: first.announcement, opening: first, result: 1n });
     const theirs = await signCommitteeVote(other, digest.digest, digest.committee.members);
     const votes = [own, { member: theirs.member, signature: Buffer.from(theirs.signature).toString("hex") }];
     const shown = await ok(client, "wallet_committee_release", { ...ballot, votes });

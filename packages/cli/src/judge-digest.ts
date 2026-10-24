@@ -20,11 +20,12 @@ export async function judgeDigest(command: JudgeDigestCommand, transport: Transp
   if (result < params.minResult || result > params.maxResult) {
     throw new JudgeRefused(`--result ${result} lies outside the results intent ${address} accepts, ${params.minResult} to ${params.maxResult}`);
   }
-  const ballot = await createClient({ url: command.url, transport }).proofBallot({ owner: command.owner, nonce: command.nonce, payTo: command.payTo, result });
+  const opening = { sha256: command.sha256, salt: command.salt };
+  const ballot = await createClient({ url: command.url, transport }).proofBallot({ owner: command.owner, nonce: command.nonce, announcement: command.announcement, opening, result });
   return {
     intent: ballot.intent,
     judge: ballot.attestor,
-    pay_to: command.payTo,
+    announcement: command.announcement,
     payee: ballot.payee,
     result,
     digest: hex(ballot.digest),

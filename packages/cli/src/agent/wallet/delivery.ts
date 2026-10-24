@@ -1,255 +1,53 @@
 import { type Address, createNoopSigner, getBase16Decoder } from "@solana/kit";
+import { decodeParams, getIntentDecoder, getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS, IntentStatus, isMemoUrl, Kind, MEMO_URL_RULE, saltMessage } from "@intent-engine/core";
 import {
-  decodeParams,
-  type DeliveryOpener,
-  getIntentDecoder,
-  getIntentDiscriminatorBytes,
-  getIntentSize,
-  isMemoUrl,
-  MEMO_URL_RULE,
-  INTENT_ENGINE_PROGRAM_ADDRESS,
-  saltMessage,
-  IntentStatus,
-  Kind,
-} from "@intent-engine/core";
-import {
+  type AnnounceInput,
+  type AnnouncementList,
+  type AnnouncementPlan,
   BadSaltSignature,
   chainTime,
-  commitmentOf,
   ConfirmMismatch,
   confirmOnBoth,
   type ConfirmTarget,
-  DELIVERY_PAGES,
-  deliveryRecord,
-  deliveryInstructions,
-  type SealedFor,
-  type DeliveryPlan,
-  deliverySalt,
-  earlier,
+  createClient,
+  loadAnnouncement,
   memoized,
-  MEMOS_PER_TRANSACTION,
   NoMessageSigner,
-  opensWith,
-  publishedSalts,
-  recordedStanding,
-  SIGNATURE_PAGE,
+  NotDeliverable,
   unmemoized,
+  UrlTooLong,
 } from "@intent-engine/client";
+import { ANNOUNCE_FIRST, announcementLine, sealedToText, walletOf } from "../../announcement-views.js";
+import { execute } from "../../flows.js";
+import { deliverNotInvited, sealedInvites } from "../../invites.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
-import { tool } from "../names.js";
 import { claimOf, deliverClaimWarnings } from "../job-claims.js";
-import { AgentRefusal, untrusted } from "../problems.js";
-import { InvalidInput, account, amount, flag, integer, list, object, optional, text, time } from "../schema.js";
-import { preparedSchema, preparedView } from "../shapes.js";
+import { tool } from "../names.js";
 import { prepare } from "../prepare.js";
-import { deviceOutput, PREVIEW_FIRST, PREVIEW_ONLY, signerOf, sent, sha256Of, WAIT_MAX, walletOpeners } from "./guard.js";
-import { NO_CLOCK, poll } from "./wait.js";
+import { AgentRefusal, untrusted } from "../problems.js";
+import { account, amount, flag, InvalidInput, integer, list, object, optional, text, time } from "../schema.js";
+import { preparedSchema, preparedView } from "../shapes.js";
 import { creatorOf } from "./releases.js";
-import { deliverNotInvited, sealedInvites } from "../../invites.js";
+import { deviceOutput, PREVIEW_FIRST, PREVIEW_ONLY, sent, sha256Of, signerOf, WAIT_MAX } from "./guard.js";
+import { NO_CLOCK, poll } from "./wait.js";
 
-export const ANNOUNCE_FIRST = "share neither the url nor the work until this announcement lands: the earliest announcer of the work is paid, so anyone who gets the work first could announce it first";
-
-export const SALT_PUBLIC = "it becomes public once a release records it, and is safe to share only after that";
+export { ANNOUNCE_FIRST } from "../../announcement-views.js";
 
 export const UNGUESSABLE_URL =
   "without private hosting, use a public host under a long random path or file name, such as 32 random hex characters, so nobody can guess it, and announce right after hosting";
 
-export const DELIVER_NEXT = `${PREVIEW_ONLY}; commitment and check are shown only, never passed back`;
+export const DELIVER_NEXT = `${PREVIEW_ONLY}; the commitment is shown only, never passed back`;
 
-const HIDDEN_HASH = "Each announcement hides the work's sha256 on purpose";
+export const SYNC_FIRST = "the committee's key snapshot is out of date, so this sends the key sync first and then the announcement";
 
-const SEALED_NOTE =
-  "The memo carries a salt and the url sealed to the escrow's judge, or to each member of its committee, a check of the salt, and a commitment that binds the work's sha256 to the announcing wallet and its salt, so a copied announcement pays nobody else and a guessed sha256 cannot be tested against it";
+export const ALREADY_ANNOUNCED = "this work is already announced to this escrow with this url; nothing was sent";
 
-export const sealedForLine = ({ wallet, kind, key }: SealedFor): string =>
-  `Seals to: ${wallet} with the key ${key}, ${kind === "profile" ? "the encryption key its profile publishes" : "derived from its wallet"}`;
+export const DELIVERED_NEEDED = "a proof escrow pays the first announcement that opens to the work it releases for, so give that work's sha256";
 
-function announcing(plan: DeliveryPlan, intent: Address, sha256: string, url: string, from: string): string[] {
-  const { sealedTo } = plan;
-  return [
-    `Announces: the work with sha256 ${sha256}, for the proof escrow ${intent}, as the commitment ${plan.commitment}, which binds it to ${from} and a salt only its key derives`,
-    `Seals: the salt and the url ${url}, so only ${sealedTo.length === 1 ? `the attestor ${sealedTo[0] ?? plan.attestor}` : `the ${sealedTo.length} committee members`} can read it`,
-    `Notifies: its attestor ${plan.attestor}, with a transfer of 0 lamports from ${from}`,
-    "Costs: the transaction fee; no tokens move",
-    plan.sealedFor.map(sealedForLine).join("; "),
-  ];
-}
+export const MAX_LISTED = 64;
 
-export const walletDeliver = define({
-  name: tool("wallet_deliver"),
-  title: "Announce delivered work to a judge",
-  description: `Tells a job's judge the work is done: an on-chain note binding its sha256 to this wallet, with the url sealed to the judge; no tokens move. Host the work at a url nobody can guess and announce right after hosting. Invite-only: seal it first with ${tool("wallet_seal_work")} (intent-engine seal). ${PREVIEW_FIRST}`,
-  effect: "submit",
-  repeats: true,
-  input: object({
-    intent: account("the proof escrow's intent address"),
-    sha256: text("the sha256 of the delivered work, as 64 hex digits; the judge releases for this same value, passed as delivered_sha256"),
-    url: text(`where the attestor fetches the work, ${MEMO_URL_RULE}; ${UNGUESSABLE_URL}`),
-    send: optional(flag("true signs and sends; leave out to preview")),
-  }),
-  output: object({
-    intent: account(),
-    owner: account("the wallet that made the escrow, for the receipt"),
-    nonce: amount("the escrow intent's nonce, for the receipt"),
-    attestor: account("the escrow's judge, who receives the announcement"),
-    sha256: text(),
-    url: text(),
-    commitment: text("64 hex: the sha256 that binds the work's hash to this wallet and its salt; the memo carries it in place of the hash"),
-    check: text("32 hex: the salt's check, which the memo carries so that an opened salt can be matched to this announcement; shown only, never passed back"),
-    summary: list(text(), 8),
-    warnings: list(text(), 8),
-    ...deviceOutput,
-    sent: flag(),
-    signature: optional(text()),
-    next: optional(text()),
-  }),
-  run: async (ctx: AgentContext, input, call: Call) => {
-    const signer = await signerOf(ctx);
-    const sha256 = sha256Of(input.sha256, "sha256");
-    if (!isMemoUrl(input.url)) {
-      throw new InvalidInput([{ path: "url", message: `must be ${MEMO_URL_RULE}` }]);
-    }
-    const plan = await deliveryPlan(ctx, { worker: signer, intent: input.intent, sha256, url: input.url });
-    const { attestor, instructions } = plan;
-    const { held } = await proofEscrow(ctx, input.intent, "wallet_receipt");
-    const invited = await sealedInvites(ctx.transport, ctx.fetch ?? fetch, input.intent);
-    const uninvited = invited === undefined || invited.includes(signer.address) ? [] : [deliverNotInvited(signer.address, input.intent)];
-    const view = {
-      intent: input.intent,
-      owner: held.owner,
-      nonce: held.nonce,
-      attestor,
-      sha256,
-      url: input.url,
-      commitment: plan.commitment,
-      check: plan.check,
-      summary: announcing(plan, input.intent, sha256, input.url, "this wallet"),
-      warnings: [...uninvited, ...deliverClaimWarnings(await claimOf(ctx.transport, input.intent), signer.address), ANNOUNCE_FIRST],
-      prepared: preparedView(await prepare(ctx.transport, instructions, signer.address)),
-    };
-    return sent(ctx, signer, view, input.send, call, {
-      preview: DELIVER_NEXT,
-      done: `announced to ${attestor}; ${tool("wallet_receipt")} with owner ${held.owner} and nonce ${held.nonce} shows when it is paid; give it wait, in seconds, to wait for the pay`,
-    });
-  },
-});
-
-export const signSalt = (intent: Address, sha256: string): string =>
-  `the worker's ed25519 signature of the message ${Buffer.from(saltMessage(intent, sha256)).toString("hex")}, as 128 hex digits; the salt is derived from it, so sign it with the worker's key, the same way each time`;
-
-export const notEarliest = (worker: string, sha256: string) =>
-  `${worker} announced the work with sha256 ${sha256} first, so a release recording it pays ${worker}; anyone can copy an announcement once it is on chain, so the earliest announcer is paid`;
-
-export const notInSplit = (worker: string, sha256: string) =>
-  `${worker} announced the work with sha256 ${sha256} first, so a split recording it must pay ${worker} among its recipients; anyone can copy an announcement once it is on chain, so the earliest announcer is paid`;
-
-export const DELIVERY_LIST = DELIVERY_PAGES * SIGNATURE_PAGE * MEMOS_PER_TRANSACTION;
-
-export const DELIVERED_NEEDED = "a proof escrow pays the earliest announcer of the work it releases for, so give that work's sha256";
-
-export const ATTEST_PAGES = 1_000;
-
-export const MAX_ATTEST_PAGES = 100_000;
-
-export const MAX_PAGES_INPUT = `pages of ${SIGNATURE_PAGE} signatures of this wallet's history to read for announced work, listing every signature but fetching only announcements; default ${ATTEST_PAGES}; raise it when the release is refused because the record of announced work is incomplete`;
-
-export const HISTORY_TOO_LONG = `the record of announced work is incomplete, so the earliest announcer of the delivered work cannot be known and nothing is released from it; either this wallet's history since the escrow was made is longer than the pages read, which more pages fix: pass a higher max_pages, up to ${MAX_ATTEST_PAGES}, to ${tool("wallet_attest")} or ${tool("wallet_attest_split")}; or the RPC node's ledger does not reach back to the escrow's creation, or the transport cannot page signatures or report its first available slot, which more pages do not fix: use an RPC node that keeps the full ledger`;
-
-export const CHECK_MEANS =
-  "32 hex: a fingerprint of the announcement's salt, which this server uses to match an opened salt to this announcement; a judge does nothing with it and never passes it on";
-
-export const EARLIEST_MEANS =
-  "about the given sha256, not the whole escrow: whether no earlier announcement of that same work is known; earlier announcements listed may be of other work, and others' salts are sealed, so only a published opening can show one of the same work";
-
-export const DELIVERIES_COMPLETE ="complete is false when older announcements may be missing";
-
-export const walletCheckDelivery = define({
-  name: tool("wallet_check_delivery"),
-  title: "List the work announced to a proof escrow",
-  description: `Lists announced work earliest first, as a release orders it: wallet, commitment, slot. ${HIDDEN_HASH}. Pass sha256 to check yours landed first, or wait, in seconds, for a new one. A judge fetches and opens work at urls sealed to it with ${tool("wallet_fetch_work")} (intent-engine unseal), then passes its sha256 to ${tool("wallet_attest")}.`,
-  effect: "read",
-  input: object({
-    intent: account("the proof escrow's intent address"),
-    sha256: optional(text("your work's sha256, as 64 hex digits, to confirm this wallet's own announcement of it landed")),
-    wait: optional(integer(1, WAIT_MAX, "most seconds to wait for an announcement newer than those listed now; without it, the tool reads once")),
-  }),
-  output: deliveriesOutput(tool("wallet_attest")),
-  run: async (ctx: AgentContext, input) => {
-    const sha256 = input.sha256 === undefined ? undefined : sha256Of(input.sha256, "sha256");
-    const openers = await walletOpeners(ctx);
-    const own = sha256 === undefined ? undefined : await ownOf(ctx, input.intent, sha256);
-    return input.wait === undefined ? deliveriesOf(ctx, input.intent, openers, own) : newDeliveries(ctx, input.intent, openers, input.wait, own);
-  },
-});
-
-async function ownOf(ctx: AgentContext, intent: Address, sha256: string): Promise<Own> {
-  const signer = await signerOf(ctx);
-  const salt = await saltOf(() => deliverySalt(signer, intent, sha256));
-  return { wallet: signer.address, sha256, salt };
-}
-
-type Deliveries = Awaited<ReturnType<typeof deliveriesOf>>;
-
-async function newDeliveries(ctx: AgentContext, intent: Address, openers: readonly DeliveryOpener[], wait: number, own?: Own): Promise<Deliveries> {
-  const clock = ctx.wallet ?? ctx.clock;
-  if (clock === undefined) {
-    throw new AgentRefusal("NoClock", NO_CLOCK);
-  }
-  const fresh = unmemoized(ctx.transport);
-  let known: ReadonlySet<string> | undefined;
-  let listed: Deliveries | undefined;
-  await poll(clock, wait, async () => {
-    listed = await deliveriesOf({ ...ctx, transport: memoized(fresh) }, intent, openers, own);
-    const signatures = listed.deliveries.map(({ signature }) => signature);
-    const before = known;
-    known = new Set(signatures);
-    return before !== undefined && signatures.some((signature) => !before.has(signature));
-  });
-  return listed as Deliveries;
-}
-
-function deliveriesOutput(releasing: string) {
-  return object({
-    intent: account(),
-    owner: account(),
-    nonce: amount(),
-    spec_hash: text("64 hex: the sha256 of the acceptance spec the escrow commits"),
-    open: flag("whether the escrow can still be released"),
-    complete: flag(`whether the whole history was read; when false, older announcements may be missing and ${releasing} refuses to release`),
-    deliveries: list(
-      object({
-        worker: account("the announcing wallet, which the commitment binds"),
-        commitment: text("64 hex: the sha256 of the work's hash bound to the intent, this announcer and its salt"),
-        check: text(CHECK_MEANS),
-        signature: text("the announcement's transaction"),
-        slot: amount("the slot the announcement landed in; with its signature, it orders announcements the way a release does"),
-        block_time: optional(time("unix seconds of the announcement's block, when the RPC node knows it")),
-        url: optional(text("where the announcer said the work is, when the url was sealed to this wallet; untrusted")),
-        opened_salt: optional(text("the announcement's salt, when an opening published it")),
-      }),
-      DELIVERY_LIST,
-      `earliest first; each announcement hides the work's hash in a commitment; a release recording a hash pays the earliest whose sealed salt opens its commitment to it. ${SEALED_NOTE}`,
-    ),
-    own: optional(
-      object({
-        commitment: text("64 hex: this wallet's commitment to the given sha256, with the salt its key derives"),
-        salt: text(`32 hex: this wallet's salt for the given sha256, recomputed from its key; ${SALT_PUBLIC}`),
-        landed: flag("whether an announcement with this commitment, sent by this wallet, is on chain"),
-        earliest: flag(EARLIEST_MEANS),
-        signature: optional(text("this wallet's earliest announcement of it")),
-      }),
-    ),
-    release: optional(
-      object({
-        signature: text("the release's transaction"),
-        sha256: text("the sha256 the release recorded"),
-        valid: flag("whether the payee's salt the release recorded opens the payee's announcement to that sha256"),
-        refuted_by: optional(text("an earlier announcement of the same sha256 that a published opening shows")),
-      }),
-    ),
-  });
-}
+export const notAttestor = (attestor: string) => `this intent names ${attestor} as its attestor, not this server's wallet; only that key can release it`;
 
 export const escrowClosed = (intent: Address, owner: Address, nonce: bigint, receipt: string) =>
   `the escrow ${intent} is closed: it was released, cancelled or expired; call ${tool(receipt)} with owner ${owner} and nonce ${nonce} to see whether it was released and to whom`;
@@ -275,153 +73,6 @@ export async function proofEscrow(ctx: AgentContext, intent: Address, receipt: s
   return { held, params };
 }
 
-async function saltOf(derive: () => Promise<string>): Promise<string> {
-  try {
-    return await derive();
-  } catch (error) {
-    if (error instanceof NoMessageSigner) {
-      throw new AgentRefusal("NoMessageSigner", error.message);
-    }
-    throw error;
-  }
-}
-
-type Own = { wallet: Address; sha256: string; salt: string };
-
-const earliestFirst = (a: { slot: bigint; signature: string }, b: { slot: bigint; signature: string }): number => (earlier(a, b) ? -1 : earlier(b, a) ? 1 : 0);
-
-async function deliveriesOf(ctx: AgentContext, intent: Address, keypair: readonly DeliveryOpener[], own?: Own, receipt = "wallet_receipt") {
-  const { held, params } = await proofEscrow(ctx, intent, receipt);
-  const open = held.status === IntentStatus.Open && held.expiresAt > (await chainTime(ctx.transport));
-  const record = await deliveryRecord(ctx.transport, params.attestor, intent, undefined, keypair);
-  const deliveries = [...record.deliveries].sort(earliestFirst).map((delivery) => {
-    const [opened] = publishedSalts(delivery, record.openings);
-    const { worker, commitment, check, signature, slot, blockTime, url } = delivery;
-    return {
-      worker,
-      commitment,
-      check,
-      signature,
-      slot,
-      ...(blockTime === null ? {} : { block_time: blockTime }),
-      ...(url === "" ? {} : { url }),
-      ...(opened === undefined ? {} : { opened_salt: opened }),
-    };
-  });
-  const mine =
-    own === undefined
-      ? undefined
-      : (() => {
-          const commitment = commitmentOf(intent, own.wallet, own.salt, own.sha256);
-          const landed = record.deliveries.filter((d) => d.worker === own.wallet && opensWith(d, own.salt, own.sha256)).sort((a, b) => (earlier(a, b) ? -1 : 1));
-          const [first] = landed;
-          const shown = record.deliveries.some(
-            (d) => d.worker !== own.wallet && (first === undefined || earlier(d, first)) && publishedSalts(d, record.openings).some((salt) => opensWith(d, salt, own.sha256)),
-          );
-          return {
-            commitment,
-            salt: own.salt,
-            landed: first !== undefined,
-            earliest: first !== undefined && !shown,
-            ...(first === undefined ? {} : { signature: first.signature }),
-          };
-        })();
-  const release = await recordedStanding(ctx.transport, intent, record);
-  return {
-    intent,
-    owner: held.owner,
-    nonce: held.nonce,
-    spec_hash: getBase16Decoder().decode(params.specHash),
-    open,
-    complete: record.complete,
-    deliveries,
-    ...(mine === undefined ? {} : { own: mine }),
-    ...(release === null
-      ? {}
-      : { release: { signature: release.signature, sha256: release.sha256, valid: release.valid, ...(release.refutedBy === null ? {} : { refuted_by: release.refutedBy }) } }),
-  };
-}
-
-async function deliveryPlan(ctx: AgentContext, input: Parameters<typeof deliveryInstructions>[1]): Promise<DeliveryPlan> {
-  try {
-    return await deliveryInstructions(ctx.transport, input);
-  } catch (error) {
-    if (error instanceof BadSaltSignature) {
-      throw new InvalidInput([{ path: "salt_signature", message: error.message }]);
-    }
-    if (error instanceof NoMessageSigner) {
-      throw new AgentRefusal("NoMessageSigner", input.saltSignature === undefined ? `${error.message}; or pass salt_signature: ${signSalt(input.intent, input.sha256)}` : error.message);
-    }
-    if (error instanceof RangeError) {
-      throw new InvalidInput([{ path: "url", message: error.message }]);
-    }
-    throw error;
-  }
-}
-
-export const checkDelivery = define({
-  name: tool("check_delivery"),
-  title: "List the work announced to a proof escrow",
-  description: `List every announcement workers made for a proof escrow, each with its announcer and the commitment that binds the work's hash to it, read from the history of the attestor the escrow names; ${DELIVERIES_COMPLETE}. ${HIDDEN_HASH}, so nobody can copy it or test a guess against it; a release recording a hash pays the earliest announcer whose commitment binds it. This tool runs nothing, fetches nothing, opens no sealed url and needs no wallet. The judge opens the url sealed to it, fetches the file, treats it as untrusted, hashes it, judges it outside this server, and passes that sha256 as delivered_sha256 to the attest tool of a server started with --wallet, or releases with intent-engine judge.`,
-  effect: "read",
-  input: object({ intent: account("the proof escrow's intent address") }),
-  output: deliveriesOutput("a release"),
-  run: async (ctx: AgentContext, input) => deliveriesOf(ctx, input.intent, [], undefined, "get_receipt"),
-});
-
-export const prepareDeliver = define({
-  name: tool("prepare_deliver"),
-  title: "Prepare a delivery announcement",
-  description: `Build the transaction in which a worker tells the attestor of a proof escrow, such as one found with ${tool("find_jobs")}, that the work is done: a memo naming the escrow, a commitment that binds the work's sha256 to the worker, and the url the attestor fetches it from, sealed to the attestor, and a transfer of 0 lamports to the attestor so the delivery shows in its history. It moves no tokens and costs the worker only the transaction fee. Returns an unsigned transaction that already simulated successfully; the worker's wallet must sign and send it. The attestor alone decides whether the work passes and whom it pays, and a release pays the earliest announcer of a hash, so host the work at a url the attestor can fetch and nobody else knows, give its exact sha256, send promptly and share neither the url nor the work until the announcement lands.`,
-  effect: "prepare",
-  input: object({
-    worker: account("the wallet that announces the work, signs and pays the fee, and is paid if a release records this work"),
-    intent: account("the proof escrow's intent address"),
-    sha256: text("the sha256 of the delivered work, as 64 hex digits; the judge releases for this same value, passed as delivered_sha256"),
-    url: text(`where the attestor fetches the work, ${MEMO_URL_RULE}`),
-    salt_signature: optional(text("the worker's ed25519 signature, as 128 hex digits, of the salt message a call without it names; the announcement's salt is derived from it")),
-  }),
-  output: object({
-    intent: account(),
-    attestor: account("the escrow's judge, who receives the announcement"),
-    sha256: text(),
-    url: text(),
-    commitment: text("64 hex: the sha256 that binds the work's hash to the worker and its salt; the memo carries it in place of the hash"),
-    check: text("32 hex: the salt's check, which the memo carries"),
-    summary: list(text(), 8),
-    warnings: list(text(), 8),
-    prepared: preparedSchema,
-  }),
-  run: async (ctx: AgentContext, input) => {
-    const sha256 = sha256Of(input.sha256, "sha256");
-    if (!isMemoUrl(input.url)) {
-      throw new InvalidInput([{ path: "url", message: `must be ${MEMO_URL_RULE}` }]);
-    }
-    const saltSignature = input.salt_signature === undefined ? undefined : signatureOf(input.salt_signature);
-    const worker = createNoopSigner(input.worker);
-    const plan = await deliveryPlan(ctx, { worker, intent: input.intent, sha256, url: input.url, ...(saltSignature === undefined ? {} : { saltSignature }) });
-    const { attestor, instructions } = plan;
-    return {
-      intent: input.intent,
-      attestor,
-      sha256,
-      url: input.url,
-      commitment: plan.commitment,
-      check: plan.check,
-      summary: announcing(plan, input.intent, sha256, input.url, input.worker),
-      warnings: [ANNOUNCE_FIRST],
-      prepared: preparedView(await prepare(ctx.transport, instructions, input.worker)),
-    };
-  },
-});
-
-function signatureOf(text: string): Uint8Array {
-  if (!/^[0-9a-fA-F]{128}$/.test(text)) {
-    throw new InvalidInput([{ path: "salt_signature", message: "give the signature as 128 hex digits" }]);
-  }
-  return Uint8Array.from(Buffer.from(text, "hex"));
-}
-
 export async function confirmedRelease(ctx: AgentContext, target: ConfirmTarget): Promise<void> {
   if (ctx.confirm === undefined) {
     return;
@@ -436,5 +87,278 @@ export async function confirmedRelease(ctx: AgentContext, target: ConfirmTarget)
   }
 }
 
-export const notAttestor = (attestor: string) =>
-  `this intent names ${attestor} as its attestor, not this server's wallet; only that key can release it`;
+export const signSalt = (intent: Address, sha256: string): string =>
+  `the worker's ed25519 signature of the message ${Buffer.from(saltMessage(intent, sha256)).toString("hex")}, as 128 hex digits; the salt and sealing keys are derived from it, so sign it with the worker's key, the same way each time`;
+
+async function planOf(ctx: AgentContext, input: AnnounceInput, saltHint = false): Promise<AnnouncementPlan> {
+  try {
+    return await createClient({ url: ctx.url ?? "", transport: ctx.transport }).prepareAnnouncement(input);
+  } catch (error) {
+    if (error instanceof BadSaltSignature) {
+      throw new InvalidInput([{ path: "salt_signature", message: error.message }]);
+    }
+    if (error instanceof NoMessageSigner) {
+      throw new AgentRefusal("NoMessageSigner", saltHint && input.saltSignature === undefined ? `${error.message}; or pass salt_signature: ${signSalt(input.intent, input.sha256)}` : error.message);
+    }
+    if (error instanceof NotDeliverable) {
+      throw new AgentRefusal("NotDeliverable", error.message);
+    }
+    if (error instanceof UrlTooLong || error instanceof RangeError) {
+      throw new InvalidInput([{ path: "url", message: error.message }]);
+    }
+    throw error;
+  }
+}
+
+function announcing(plan: AnnouncementPlan, sha256: string, url: string, from: string): string[] {
+  return [
+    `Announces: the work with sha256 ${sha256} to the proof escrow ${plan.intent} in ${plan.announcement}, whose commitment ${plan.commitment} binds it to ${from} and a salt only its key derives`,
+    `Seals: the salt and the url ${url} to ${sealedToText(plan.sealedTo)}, so only they can open it`,
+    `Pays: the announcement's rent and the transaction fee from ${from}; the rent returns when the announcement closes, and no tokens move`,
+    ...(plan.setup.length === 0 ? [] : [`Syncs first, in its own transaction: the key snapshot of committee ${plan.attestor}`]),
+  ];
+}
+
+const announcedOutput = {
+  intent: account(),
+  attestor: account("the escrow's judge or committee, which the work is sealed to"),
+  announcement: account("the announcement account this delivery makes"),
+  sha256: text(),
+  url: text(),
+  commitment: text("64 hex: binds the work's sha256 to the announcing wallet and its salt; the chain holds it in place of the hash"),
+  sealed_to: list(account(), 8, "the wallets whose keys open the sealed url"),
+  summary: list(text(), 8),
+  warnings: list(text(), 8),
+};
+
+export const walletDeliver = define({
+  name: tool("wallet_deliver"),
+  title: "Announce delivered work to a judge",
+  description: `Tells a job's judge the work is done: one on-chain announcement that commits to the work's sha256 with the url sealed to the judge; no tokens move. Host the work at a url nobody can guess and announce right after hosting. ${PREVIEW_FIRST}`,
+  effect: "submit",
+  repeats: true,
+  input: object({
+    intent: account("the proof escrow's intent address"),
+    sha256: text("the sha256 of the delivered work, as 64 hex digits; the judge releases for this same value, passed as delivered_sha256"),
+    url: text(`where the judge fetches the work, ${MEMO_URL_RULE}; ${UNGUESSABLE_URL}`),
+    send: optional(flag("true signs and sends; leave out to preview")),
+  }),
+  output: object({
+    ...announcedOutput,
+    owner: account("the wallet that made the escrow, for the receipt"),
+    nonce: amount("the escrow intent's nonce, for the receipt"),
+    seq: optional(amount("the announcement's place among the escrow's announcements; a release pays the first that opens to the work")),
+    ...deviceOutput,
+    sent: flag(),
+    signature: optional(text()),
+    next: optional(text()),
+  }),
+  run: async (ctx: AgentContext, input, call: Call) => {
+    const signer = await signerOf(ctx);
+    const sha256 = sha256Of(input.sha256, "sha256");
+    if (!isMemoUrl(input.url)) {
+      throw new InvalidInput([{ path: "url", message: `must be ${MEMO_URL_RULE}` }]);
+    }
+    const { held } = await proofEscrow(ctx, input.intent, "wallet_receipt");
+    const announce: AnnounceInput = { worker: signer, intent: input.intent, sha256, url: input.url };
+    const plan = await planOf(ctx, announce);
+    const invited = await sealedInvites(ctx.transport, ctx.fetch ?? fetch, input.intent);
+    const shown = {
+      intent: input.intent,
+      owner: held.owner,
+      nonce: held.nonce,
+      attestor: plan.attestor,
+      announcement: plan.announcement,
+      sha256,
+      url: input.url,
+      commitment: plan.commitment,
+      sealed_to: plan.sealedTo.map(walletOf),
+      summary: announcing(plan, sha256, input.url, "this wallet"),
+      warnings: [
+        ...(invited === undefined || invited.includes(signer.address) ? [] : [deliverNotInvited(signer.address, input.intent)]),
+        ...deliverClaimWarnings(await claimOf(ctx.transport, input.intent), signer.address),
+        ANNOUNCE_FIRST,
+      ],
+    };
+    if (plan.existing !== null) {
+      return { ...shown, seq: plan.existing.seq, sent: false, next: ALREADY_ANNOUNCED };
+    }
+    const first = plan.setup.length > 0 ? plan.setup : plan.instructions;
+    const view = { ...shown, prepared: preparedView(await prepare(ctx.transport, first, signer.address)) };
+    const done = await sent(ctx, signer, view, input.send, call, {
+      preview: plan.setup.length > 0 ? `${DELIVER_NEXT}; ${SYNC_FIRST}` : DELIVER_NEXT,
+      done: `announced to ${plan.attestor}; ${tool("wallet_receipt")} with owner ${held.owner} and nonce ${held.nonce} shows when it is paid; give it wait, in seconds, to wait for the pay`,
+    });
+    if (!("signature" in done)) {
+      return done;
+    }
+    if (plan.setup.length > 0) {
+      const after = await planOf(ctx, announce);
+      const announced = preparedView(await prepare(ctx.transport, after.instructions, signer.address));
+      const signature = await execute(ctx.transport, announced, signer);
+      const found = await loadAnnouncement(ctx.transport, after.announcement);
+      return { ...done, signature, ...(found === null ? {} : { seq: found.seq }) };
+    }
+    const found = await loadAnnouncement(ctx.transport, plan.announcement);
+    return { ...done, ...(found === null ? {} : { seq: found.seq }) };
+  },
+});
+
+const listedItem = object({
+  announcement: account(),
+  seq: amount("its place among the escrow's announcements, from 1"),
+  worker: account("the announcing wallet, which a release of this announcement pays"),
+  state: text("announced, or paid once a release paid it"),
+  commitment: text("64 hex: binds the work's sha256 to the worker and its salt"),
+  slot: amount("the slot it landed in"),
+  announced_at: time("unix seconds it landed"),
+  paid_at: optional(time("unix seconds a release paid it")),
+});
+
+function listOutput(own: boolean) {
+  return object({
+    intent: account(),
+    owner: account(),
+    nonce: amount(),
+    spec_hash: text("64 hex: the sha256 of the acceptance spec the escrow commits"),
+    open: flag("whether the escrow can still be released"),
+    complete: flag("whether every announcement from seq 1 on is listed; a release is refused while it is false"),
+    closed: flag("true once the escrow is no longer open or its delivery book is gone, so earlier announcements may have closed"),
+    next_seq: amount("the seq the next announcement gets"),
+    missing: list(amount(), 16, "seqs below next_seq that the RPC node did not list"),
+    announcements: list(listedItem, MAX_LISTED, "in seq order; a release pays the first that opens to the work it pays for"),
+    ...(own
+      ? {
+          mine: optional(
+            list(
+              object({ announcement: account(), seq: amount(), state: text(), earlier: integer(0, Number.MAX_SAFE_INTEGER, "how many announcements by other wallets came before it") }),
+              MAX_LISTED,
+              "this wallet's announcements to the escrow",
+            ),
+          ),
+        }
+      : {}),
+  });
+}
+
+async function listOf(ctx: AgentContext, intent: Address, receipt: string, self?: Address) {
+  const { held, params } = await proofEscrow(ctx, intent, receipt);
+  const open = held.status === IntentStatus.Open && held.expiresAt > (await chainTime(ctx.transport));
+  const list: AnnouncementList = await createClient({ url: ctx.url ?? "", transport: ctx.transport }).announcements(intent);
+  const shown = list.announcements.slice(0, MAX_LISTED);
+  const mine =
+    self === undefined
+      ? undefined
+      : list.announcements
+          .filter(({ worker }) => worker === self)
+          .map((a) => ({ announcement: a.address, seq: a.seq, state: a.state, earlier: list.announcements.filter((b) => b.seq < a.seq && b.worker !== self).length }));
+  return {
+    intent,
+    owner: held.owner,
+    nonce: held.nonce,
+    spec_hash: getBase16Decoder().decode(params.specHash).toLowerCase(),
+    open,
+    complete: list.complete,
+    closed: list.closed,
+    next_seq: list.nextSeq,
+    missing: list.missing,
+    announcements: shown.map(announcementLine),
+    ...(mine === undefined ? {} : { mine }),
+  };
+}
+
+type Listed = Awaited<ReturnType<typeof listOf>>;
+
+async function newAnnouncements(ctx: AgentContext, intent: Address, wait: number, self: Address): Promise<Listed> {
+  const clock = ctx.wallet ?? ctx.clock;
+  if (clock === undefined) {
+    throw new AgentRefusal("NoClock", NO_CLOCK);
+  }
+  const fresh = unmemoized(ctx.transport);
+  let known: bigint | undefined;
+  let listed: Listed | undefined;
+  await poll(clock, wait, async () => {
+    listed = await listOf({ ...ctx, transport: memoized(fresh) }, intent, "wallet_receipt", self);
+    const before = known;
+    known = listed.next_seq;
+    return before !== undefined && listed.next_seq > before;
+  });
+  return listed as Listed;
+}
+
+export const walletCheckDelivery = define({
+  name: tool("wallet_check_delivery"),
+  title: "List the work announced to a proof escrow",
+  description: `Lists a proof escrow's announcements in seq order, read from accounts, and this wallet's own with how many came before each. Pass wait, in seconds, for a new one. A judge opens and fetches work with ${tool("wallet_fetch_work")}.`,
+  effect: "read",
+  input: object({
+    intent: account("the proof escrow's intent address"),
+    wait: optional(integer(1, WAIT_MAX, "most seconds to wait for an announcement newer than those listed now; without it, the tool reads once")),
+  }),
+  output: listOutput(true),
+  run: async (ctx: AgentContext, input) => {
+    const self = (await signerOf(ctx)).address;
+    return input.wait === undefined ? listOf(ctx, input.intent, "wallet_receipt", self) : newAnnouncements(ctx, input.intent, input.wait, self);
+  },
+});
+
+export const checkDelivery = define({
+  name: tool("check_delivery"),
+  title: "List the work announced to a proof escrow",
+  description: `List a proof escrow's announcements in seq order, read from accounts: each worker, commitment and state, and whether the list is complete. Each hides the work's sha256 in its commitment and seals its url to the judge. This tool fetches and opens nothing and needs no wallet.`,
+  effect: "read",
+  input: object({ intent: account("the proof escrow's intent address") }),
+  output: listOutput(false),
+  run: async (ctx: AgentContext, input) => listOf(ctx, input.intent, "get_receipt"),
+});
+
+export const prepareDeliver = define({
+  name: tool("prepare_deliver"),
+  title: "Prepare a delivery announcement",
+  description: `Build the transaction in which a worker announces work to a proof escrow, such as one found with ${tool("find_jobs")}: one announcement that commits to the work's sha256 and seals the url to the judge. It moves no tokens; the worker pays its rent and fee. Returns an unsigned transaction that already simulated; the worker's wallet signs and sends it. A release pays the first announcement that opens to the work, so host it where nobody can guess, give its exact sha256 and send promptly.`,
+  effect: "prepare",
+  input: object({
+    worker: account("the wallet that announces, signs, pays and is paid if a release pays this announcement"),
+    intent: account("the proof escrow's intent address"),
+    sha256: text("the sha256 of the delivered work, as 64 hex digits"),
+    url: text(`where the judge fetches the work, ${MEMO_URL_RULE}`),
+    salt_signature: optional(text("the worker's ed25519 signature, as 128 hex digits, of the salt message a call without it names")),
+  }),
+  output: object({
+    ...announcedOutput,
+    sync_first: flag("true when prepared is the committee key sync; send it, then call again for the announcement"),
+    prepared: preparedSchema,
+    next: text(),
+  }),
+  run: async (ctx: AgentContext, input) => {
+    const sha256 = sha256Of(input.sha256, "sha256");
+    if (!isMemoUrl(input.url)) {
+      throw new InvalidInput([{ path: "url", message: `must be ${MEMO_URL_RULE}` }]);
+    }
+    const saltSignature = input.salt_signature === undefined ? undefined : signatureOf(input.salt_signature);
+    const worker = createNoopSigner(input.worker);
+    const plan = await planOf(ctx, { worker, intent: input.intent, sha256, url: input.url, ...(saltSignature === undefined ? {} : { saltSignature }) }, true);
+    const syncFirst = plan.setup.length > 0;
+    return {
+      intent: input.intent,
+      attestor: plan.attestor,
+      announcement: plan.announcement,
+      sha256,
+      url: input.url,
+      commitment: plan.commitment,
+      sealed_to: plan.sealedTo.map(walletOf),
+      summary: announcing(plan, sha256, input.url, input.worker),
+      warnings: [ANNOUNCE_FIRST],
+      sync_first: syncFirst,
+      prepared: preparedView(await prepare(ctx.transport, syncFirst ? plan.setup : plan.instructions, input.worker)),
+      next: syncFirst ? "sign and send this key sync, then call again for the announcement" : "sign with the worker's wallet and send",
+    };
+  },
+});
+
+function signatureOf(text: string): Uint8Array {
+  if (!/^[0-9a-fA-F]{128}$/.test(text)) {
+    throw new InvalidInput([{ path: "salt_signature", message: "give the signature as 128 hex digits" }]);
+  }
+  return Uint8Array.from(Buffer.from(text, "hex"));
+}

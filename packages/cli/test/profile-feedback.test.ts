@@ -76,7 +76,7 @@ describe("wallet_profile and the encryption key", () => {
     const kept = await callOn(client, "wallet_profile", { skills: ["judge"], endpoint: ENDPOINT });
     expect(kept.error, JSON.stringify(kept.value)).toBe(false);
     expect(kept.value["summary"]).toContain(`Encryption key: ${j.publicKey}; deliveries are sealed to it`);
-    expect(await callOn(client, "wallet_profile", { close: true })).toMatchObject({ error: true, value: { code: "SealedSalts", hint: keepsKey(j.key.address, [j.intent]) } });
+    expect(await callOn(client, "wallet_profile", { close: true })).toMatchObject({ error: true, value: { code: "KeyInUse", hint: keepsKey(j.key.address, [j.intent]) } });
   });
 });
 

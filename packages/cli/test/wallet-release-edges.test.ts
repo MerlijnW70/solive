@@ -1,13 +1,4 @@
-import {
-  type Address,
-  generateKeyPairSigner,
-  getBase64Encoder,
-  getCompiledTransactionMessageDecoder,
-  getSignatureFromTransaction,
-  getTransactionDecoder,
-  lamports,
-  none,
-} from "@solana/kit";
+import { type Address, generateKeyPairSigner, lamports, none } from "@solana/kit";
 import { AccountState, getMintEncoder, getMintSize, getTokenEncoder, getTokenSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
@@ -25,17 +16,15 @@ import {
   getIntentEncoder,
   IntentStatus,
   NATIVE_MINT,
-  openingMemo,
-  releaseMemo,
   splitFee,
 } from "@intent-engine/core";
-import { commitmentOf, type EngineTransaction, MEMO_PROGRAM_ADDRESS, saltCheckOf, signersAmong } from "@intent-engine/client";
+import type { EngineTransaction } from "@intent-engine/client";
 import { tool } from "../src/agent/names.js";
 import { LANDING_SECONDS, PAID_WRAPPED, RECEIPT_PARTIAL, WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { LAMPORTS_PER_SOL } from "../src/wallet.js";
-import { saltFor, sealedDelivery } from "./announce.js";
-import { balance, cli, creation, FEE_BPS, h, NOW, world } from "./harness.js";
+import { announced, keyed } from "./announce.js";
+import { balance, cli, FEE_BPS, h, NOW, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -65,23 +54,6 @@ function tokenAccountAt(address: Address, holder: Address): void {
     programAddress: TOKEN_PROGRAM_ADDRESS,
     space,
   });
-}
-
-function landedAs(wire: string, slot: bigint): EngineTransaction {
-  const tx = getTransactionDecoder().decode(getBase64Encoder().encode(wire));
-  const message = getCompiledTransactionMessageDecoder().decode(tx.messageBytes);
-  const keys = message.staticAccounts;
-  const memos = ("instructions" in message ? message.instructions : []).filter((ix) => keys[ix.programAddressIndex] === MEMO_PROGRAM_ADDRESS);
-  return {
-    signature: getSignatureFromTransaction(tx),
-    slot,
-    blockTime: null,
-    failed: false,
-    emitted: [],
-    memos: memos.map((ix) => new TextDecoder().decode(Uint8Array.from(ix.data ?? []))),
-    memoSigners: memos.map((ix) => signersAmong(keys, ix.accountIndices ?? [], message.header.numSignerAccounts)),
-    ...(keys[0] === undefined ? {} : { feePayer: keys[0] }),
-  };
 }
 
 async function connect(): Promise<Client> {
@@ -117,16 +89,6 @@ async function proofEscrow(client: Client, wallet: Address, hint: string) {
   const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: hint.repeat(32), send: true });
   return { intent: escrow["intent"] as Address, nonce: escrow["nonce"] as string };
 }
-
-const sealedAt = async (intent: Address, wallet: Address, signature: string, slot: bigint, sha256: string, feePayer: Address): Promise<EngineTransaction> => ({
-  signature,
-  slot,
-  blockTime: null,
-  failed: false,
-  emitted: [],
-  memos: [await sealedDelivery(intent, feePayer, sha256, URL_OF_WORK, [wallet])],
-  feePayer,
-});
 
 const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
 
@@ -202,60 +164,37 @@ describe("a wallet release of a partner's escrow", () => {
   });
 });
 
-describe("the openings after a release and the deliveries it shows", () => {
-  it("names no skipped work, keeps no empty signature list when the opening fails, and lists the opened salt and the release", async () => {
+describe("the announcements a release and a worker see", () => {
+  it("pays the first announcement that opens to the work, names no skipped one, and lists every announcement with its state", async () => {
     const { client, wallet } = await setUp();
     const { intent, nonce } = await proofEscrow(client, wallet, "71");
-    const worker = (await generateKeyPairSigner()).address;
-    const other = (await generateKeyPairSigner()).address;
+    const [worker, other] = [await keyed(), await keyed()];
     const work = "e1".repeat(32);
-    const first = await sealedAt(intent, wallet, "first", 5n, work, worker);
-    const earlier = await sealedAt(intent, wallet, "other", 3n, "e2".repeat(32), other);
-    h.engineLog = [first, earlier, creation(intent)];
-    const release = { owner: wallet, nonce, pay_to: worker, delivered_sha256: work };
+    const earlier = await announced(intent, other, "e2".repeat(32), URL_OF_WORK);
+    const first = await announced(intent, worker, work, URL_OF_WORK);
+    const release = { owner: wallet, nonce, delivered_sha256: work };
     const shown = await ok(client, "wallet_attest", release);
+    expect(shown).toMatchObject({ pay_to: worker.address, announcement: first.announcement, seq: "2" });
     expect(shown).not.toHaveProperty("skipped");
-    h.sendFails = { error: new Error("blockhash not found"), landed: false, after: 1 };
     const sent = await ok(client, "wallet_attest", { ...release, approval: shown["approval"], send: true });
-    expect(sent).toMatchObject({ sent: true, opening_memos: [openingMemo({ intent, salts: [saltFor(intent)] })] });
-    expect(sent).not.toHaveProperty("opening_signatures");
+    expect(sent).toMatchObject({ sent: true });
     expect(sent).not.toHaveProperty("skipped");
-
-    const payee = await findAssociatedTokenAddress({ owner: worker, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
-    const released: EngineTransaction = {
-      signature: "released",
-      slot: 7n,
-      blockTime: null,
-      failed: false,
-      emitted: [attestedTo(intent, wallet, payee)],
-      memos: [releaseMemo(work, saltFor(intent))],
-      memoSigners: [[wallet]],
-      feePayer: wallet,
-      tokens: [{ account: payee, mint: NATIVE_MINT, owner: worker }],
-    };
-    const opening: EngineTransaction = { signature: "opening", slot: 8n, blockTime: null, failed: false, emitted: [], memos: [openingMemo({ intent, salts: [saltFor(intent)] })], feePayer: wallet };
-    h.engineLog = [opening, released, first, earlier, creation(intent)];
-    const check = saltCheckOf(saltFor(intent));
     const listed = await ok(client, "wallet_check_delivery", { intent });
-    expect(listed["deliveries"]).toEqual([
-      { worker: other, commitment: commitmentOf(intent, other, saltFor(intent), "e2".repeat(32)), check, signature: "other", slot: "3", url: URL_OF_WORK, opened_salt: saltFor(intent) },
-      { worker, commitment: commitmentOf(intent, worker, saltFor(intent), work), check, signature: "first", slot: "5", url: URL_OF_WORK, opened_salt: saltFor(intent) },
+    expect(listed).toMatchObject({ open: false, complete: false, closed: true, mine: [] });
+    expect((listed["announcements"] as Json[]).map((a) => [a["announcement"], a["seq"], a["worker"], a["state"]])).toEqual([
+      [earlier.announcement, "1", other.address, "announced"],
+      [first.announcement, "2", worker.address, "paid"],
     ]);
-    expect(listed["release"]).toStrictEqual({ signature: "released", sha256: work, valid: true });
   });
 
-  it("tells a worker its own announcement is not the earliest once an earlier one of the same work is opened", async () => {
+  it("tells a worker how many announcements by others came before its own", async () => {
     const { client, wallet } = await setUp();
     const { intent } = await proofEscrow(client, wallet, "72");
     const work = "e3".repeat(32);
-    h.wires.length = 0;
-    await ok(client, "wallet_deliver", { intent, sha256: work, url: URL_OF_WORK, send: true });
-    const own = landedAs(h.wires[0] as string, 9n);
-    const rival = (await generateKeyPairSigner()).address;
-    const opening: EngineTransaction = { signature: "opening", slot: 4n, blockTime: null, failed: false, emitted: [], memos: [openingMemo({ intent, salts: [saltFor(intent)] })], feePayer: rival };
-    h.engineLog = [own, opening, await sealedAt(intent, wallet, "rival", 3n, work, rival), creation(intent)];
-    const checked = await ok(client, "wallet_check_delivery", { intent, sha256: work });
-    expect(checked["own"]).toMatchObject({ landed: true, earliest: false, signature: own.signature });
+    await announced(intent, await keyed(), work, URL_OF_WORK);
+    const own = await ok(client, "wallet_deliver", { intent, sha256: work, url: URL_OF_WORK, send: true });
+    const checked = await ok(client, "wallet_check_delivery", { intent });
+    expect(checked["mine"]).toEqual([{ announcement: own["announcement"], seq: "2", state: "announced", earlier: 1 }]);
   });
 });
 

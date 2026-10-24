@@ -87,7 +87,8 @@ const config = (feeRecipient: Address): Config => ({
   crankBounty: 0,
   createFee: 0,
   capsRequired: 0,
-  reserved: new Uint8Array(7),
+  padding: new Uint8Array(3),
+  announceFee: 0,
   floorMints: [],
   floorAmounts: [],
 });
