@@ -12,7 +12,7 @@ import {
   type TransactionPartialSigner,
   verifySignature,
 } from "@solana/kit";
-import { COSIGN_KEYS_AT, MAX_COSIGNERS, OFFCHAIN_PREFIX } from "@intent-engine/core";
+import { COSIGN_KEYS_AT, MAX_COSIGNERS, OFFCHAIN_PREFIX, SdkError } from "@intent-engine/core";
 
 export const LEDGER_FORMS = ["usb://ledger", "usb://ledger?key=<account>", "usb://ledger?key=<account>/<change>"];
 
@@ -34,9 +34,15 @@ const MAX_INDEX = 2 ** 31 - 1;
 const ADDRESS_BYTES = 32;
 const SIGNATURE_BYTES = 64;
 
-export class LedgerPathError extends Error {}
+export class LedgerPathError extends SdkError {
+  readonly code = "ledger-path-error";
+  override readonly name = "LedgerPathError";
+}
 
-export class LedgerError extends Error {}
+export class LedgerError extends SdkError {
+  readonly code = "ledger-error";
+  override readonly name = "LedgerError";
+}
 
 export type LedgerPath = { account?: number; change?: number; derivation: string };
 

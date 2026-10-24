@@ -12,8 +12,8 @@ import {
   SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR,
   type TransactionPartialSigner,
 } from "@solana/kit";
-import { type DeliveryOpener, EncryptionKeyError, formatAmount, parseAmount, readEncryptionKeyFile } from "@intent-engine/core";
-import { Charged, type DeviceSigner, isLedgerPath, LedgerError, ledgerSigner, messageHash, neverLanded, openUsb } from "@intent-engine/client";
+import { type DeliveryOpener, formatAmount, parseAmount, readEncryptionKeyFile } from "@intent-engine/core";
+import { type DeviceSigner, isLedgerPath, isSdkError, LedgerError, ledgerSigner, messageHash, neverLanded, openUsb } from "@intent-engine/client";
 import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "../../args.js";
 import { execute, type PreparedView } from "../../flows.js";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
@@ -124,10 +124,9 @@ async function encryptionKeyAt(files: Files, path: string): Promise<DeliveryOpen
   try {
     return await readEncryptionKeyFile(await files.readText(expandHome(path, files.home)));
   } catch (error) {
-    throw error instanceof EncryptionKeyError ? new AgentRefusal("EncryptionKeyInvalid", `${path}: ${error.message}`) : error;
+    throw isSdkError(error, "encryption-key-error") ? new AgentRefusal("EncryptionKeyInvalid", `${path}: ${error.message}`) : error;
   }
 }
-
 
 export async function walletOpeners(ctx: AgentContext): Promise<DeliveryOpener[]> {
   const own = await walletKeypair(ctx);
@@ -464,7 +463,7 @@ const JSON_RPC_FIRST = -32_000;
 const JSON_RPC_LAST = -32_768;
 
 export function rpcRefused(error: unknown): boolean {
-  if (error instanceof Charged) {
+  if (isSdkError(error)) {
     return false;
   }
   let link: unknown = error;
@@ -483,4 +482,4 @@ export function rpcRefused(error: unknown): boolean {
 }
 
 export const refusedBeforeSending = (error: unknown): boolean =>
-  neverLanded(error) || error instanceof LedgerError || error instanceof AgentRefusal || error instanceof InvalidInput || rpcRefused(error);
+  neverLanded(error) || isSdkError(error, "ledger-error") || error instanceof AgentRefusal || error instanceof InvalidInput || rpcRefused(error);

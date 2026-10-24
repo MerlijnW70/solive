@@ -166,7 +166,7 @@ export function answer(line: string): string {
     return `ok ${run(args)}`;
   } catch (error) {
     if (error instanceof IntentCoreError) {
-      return `err ${error.code}`;
+      return `err ${error.engineError}`;
     }
     return `throw ${error instanceof Error ? error.name : "Unknown"}`;
   }

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { manifestSha256 } from "../src/index.js";
+import { InvalidInput } from "../src/errors.js";
 
 const enc = (text: string) => new TextEncoder().encode(text);
 
@@ -45,7 +46,7 @@ describe("manifestSha256", () => {
   });
 
   it("refuses an empty path or a path named twice", async () => {
-    await expect(manifestSha256([{ path: "", bytes: enc("1") }])).rejects.toThrow(RangeError);
+    await expect(manifestSha256([{ path: "", bytes: enc("1") }])).rejects.toThrow(InvalidInput);
     await expect(manifestSha256([{ path: "a", bytes: enc("1") }, { path: "a", bytes: enc("2") }])).rejects.toThrow("names a more than once");
   });
 

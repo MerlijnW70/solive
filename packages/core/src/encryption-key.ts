@@ -1,5 +1,6 @@
 import { getAddressDecoder, getBase58Decoder, getBase58Encoder } from "@solana/kit";
 import { PRODUCT_SLUG } from "../generated/identity.js";
+import { InvalidInput, SdkError } from "./errors.js";
 import { PKCS8_X25519, x25519PublicOf, x25519SecretOf } from "./sealed.js";
 
 export const ENCRYPTION_KEY_KIND = `${PRODUCT_SLUG}-encryption-key`;
@@ -33,11 +34,9 @@ export type DeliveryOpener = Uint8Array | DeliveryKey;
 
 export type EncryptionKeyFile = { text: string; publicKey: string };
 
-export class EncryptionKeyError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "EncryptionKeyError";
-  }
+export class EncryptionKeyError extends SdkError {
+  readonly code = "encryption-key-error";
+  override readonly name = "EncryptionKeyError";
 }
 
 export const NOT_ENCRYPTION_KEY_FILE = `this is not an encryption key file: it holds a JSON object of kind ${ENCRYPTION_KEY_KIND}, which profile encryption-key new writes`;
@@ -63,7 +62,7 @@ export function isEncryptionKeyText(text: string): boolean {
 
 export function parseEncryptionKey(text: string): Uint8Array<ArrayBuffer> {
   if (!isEncryptionKeyText(text)) {
-    throw new RangeError(`an encryption key is ${ENCRYPTION_KEY_RULE}`);
+    throw new InvalidInput("key", "format", `an encryption key is ${ENCRYPTION_KEY_RULE}`);
   }
   return Uint8Array.from(decoded(text) ?? []);
 }

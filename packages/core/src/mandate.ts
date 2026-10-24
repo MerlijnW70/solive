@@ -2,6 +2,7 @@ import type { Address } from "@solana/kit";
 import { formatAmount, formatTime, partnerFeeLine, type TokenNames, tokenOf } from "./describe.js";
 import { encodePartner, type Partner } from "./ext.js";
 import { Kind, kindBit } from "./kinds.js";
+import { InvalidInput } from "./errors.js";
 
 export const MANDATE_KINDS = Number(kindBit(Kind.SwapExactIn) | kindBit(Kind.LimitOrder) | kindBit(Kind.DutchAuction));
 
@@ -49,7 +50,7 @@ const KIND_NAMES: [Kind, string][] = [
 
 export function mandateKinds(kinds: number): string[] {
   if (!Number.isInteger(kinds) || kinds <= 0 || (kinds & ~MANDATE_KINDS) !== 0) {
-    throw new RangeError(`a mandate may cover only swap, limit and dutch intents, got kind bits ${kinds}`);
+    throw new InvalidInput("kinds", "unsupported", `a mandate may cover only swap, limit and dutch intents, got kind bits ${kinds}`);
   }
   return KIND_NAMES.filter(([kind]) => (kinds & Number(kindBit(kind))) !== 0).map(([, name]) => name);
 }
@@ -91,7 +92,7 @@ export function describeMandate(spec: MandateSpec, o: MandateContext): { lines: 
   const kinds = mandateKinds(spec.kinds);
   const agentFee = spec.agentFee ?? 0n;
   if (agentFee >= spec.perIntent) {
-    throw new RangeError(`an agent fee of ${agentFee} leaves nothing to sell under a per-intent cap of ${spec.perIntent}`);
+    throw new InvalidInput("agentFee", "range", `an agent fee of ${agentFee} leaves nothing to sell under a per-intent cap of ${spec.perIntent}`);
   }
   const sell = (amount: bigint) => `${formatAmount(amount, o.inputDecimals)} of ${tokenOf(o.inputMint, o.inputName)}`;
   const warnings = spec.validUntil - o.now > LONG_MANDATE_SECONDS ? [WARN_LONG_MANDATE] : [];

@@ -1,5 +1,5 @@
 import type { Address } from "@solana/kit";
-import { AccountVersionError, decodeEvent, parseEncryptionKey, profileAddress } from "@intent-engine/core";
+import { AccountVersionError, decodeEvent, parseEncryptionKey, profileAddress, SdkError } from "@intent-engine/core";
 import { loadProfile } from "./client-claims.js";
 import { loadCommittee } from "./client-committee.js";
 import { creationSlotOf, openProofEscrows } from "./job-proofs.js";
@@ -10,14 +10,15 @@ type KeyEvent = { slot: bigint; key: Uint8Array | null };
 
 type History = { events: KeyEvent[]; before: Uint8Array | null };
 
-export class ProfileHistoryIncomplete extends Error {
+export class ProfileHistoryIncomplete extends SdkError {
+  readonly code = "profile-history-incomplete";
+  override readonly name = "ProfileHistoryIncomplete";
   readonly judge: Address;
 
   constructor(judge: Address) {
     super(
       `the history of ${judge}'s profile could not be read back far enough to know which encryption key it named when the escrow was made; nothing was paid. Use an RPC node that keeps the full ledger`,
     );
-    this.name = "ProfileHistoryIncomplete";
     this.judge = judge;
   }
 }
@@ -30,12 +31,13 @@ export const noJudgeKey = (wallet: Address): string =>
 export const noKeyAtCreation = (judge: Address, intent: Address): string =>
   `${judge} signs on a Ledger, which cannot open work sealed to the key derived from its wallet, and its profile named no encryption key when escrow ${intent} was made, so work sealed to that key could stall it; the escrow is refused. A hirer should name a judge whose profile publishes an encryption key before the escrow is made; nothing was run or paid`;
 
-export class NoKeyAtCreation extends Error {
+export class NoKeyAtCreation extends SdkError {
+  readonly code = "no-key-at-creation";
+  override readonly name = "NoKeyAtCreation";
   readonly intent: Address;
 
   constructor(judge: Address, intent: Address) {
     super(noKeyAtCreation(judge, intent));
-    this.name = "NoKeyAtCreation";
     this.intent = intent;
   }
 }

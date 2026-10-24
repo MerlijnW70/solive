@@ -3,7 +3,7 @@ import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, none
 import { AccountState, getMintEncoder, getMintSize, getTokenEncoder, getTokenSize } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { findAssociatedTokenAddress, findIntentPda, IntentStatus, Kind, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { createClient, EscrowExpired, loadUser, NotSettleable, PayeeMoved, PayToNotWallet, type Transport } from "../src/index.js";
+import { createClient, EscrowExpired, InvalidInput, loadUser, NotSettleable, PayeeMoved, PayToNotWallet, type Transport } from "../src/index.js";
 import { svmTransport } from "../src/svm.js";
 import { FEE_BPS, NOW, world, type World } from "./svm.js";
 import { announced, sha } from "./work.js";
@@ -208,7 +208,7 @@ describe("one call per action", () => {
     const sends = counted.sends;
     await expect(settle({ opening: { sha256: sha("not delivered"), salt: delivered.opening.salt } })).rejects.toThrow("which this salt does not open");
     await expect(settle({ opening: { sha256: WORK, salt: "00".repeat(16) } })).rejects.toThrow(NotSettleable);
-    await expect(settle({ opening: { sha256: WORK, salt: "zz" } })).rejects.toThrow(RangeError);
+    await expect(settle({ opening: { sha256: WORK, salt: "zz" } })).rejects.toThrow(InvalidInput);
     await expect(settle({ announcement: elsewhere.announcement })).rejects.toThrow(`which belongs to ${other.intent}`);
     await expect(settle({ announcement: owner.address })).rejects.toThrow(`has no announcement ${owner.address}`);
     expect(counted.sends).toBe(sends);

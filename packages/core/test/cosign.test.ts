@@ -13,6 +13,7 @@ import {
   signMessageBytes,
   verifyCommitteeVote,
 } from "../src/index.js";
+import { InvalidInput } from "../src/errors.js";
 
 const bytes = (a: Address) => getAddressEncoder().encode(a);
 const hexOf = (b: ArrayLike<number>) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
@@ -40,9 +41,9 @@ describe("cosign envelope", () => {
   it("refuses no keys, too many keys and a short digest", async () => {
     const many = await keys(MAX_COSIGNERS + 1);
     expect(cosignEnvelope(many.slice(0, MAX_COSIGNERS), digest)).toHaveLength(COSIGN_KEYS_AT + 32 * MAX_COSIGNERS + 64);
-    expect(() => cosignEnvelope(many, digest)).toThrow(RangeError);
-    expect(() => cosignEnvelope([], digest)).toThrow(RangeError);
-    expect(() => cosignEnvelope(many.slice(0, 2), new Uint8Array(31))).toThrow(RangeError);
+    expect(() => cosignEnvelope(many, digest)).toThrow(InvalidInput);
+    expect(() => cosignEnvelope([], digest)).toThrow(InvalidInput);
+    expect(() => cosignEnvelope(many.slice(0, 2), new Uint8Array(31))).toThrow(InvalidInput);
   });
 });
 
@@ -71,8 +72,8 @@ describe("cosign instruction", () => {
     const entry = (publicKey: Address, length = 64) => ({ publicKey, signature: new Uint8Array(length) });
     expect(() => buildEd25519CosignInstruction({ entries: [entry(a), entry(stranger)], message })).toThrow("is not listed");
     expect(() => buildEd25519CosignInstruction({ entries: [entry(a), entry(a)], message })).toThrow("twice");
-    expect(() => buildEd25519CosignInstruction({ entries: [entry(a, 63)], message })).toThrow(RangeError);
-    expect(() => buildEd25519CosignInstruction({ entries: [], message })).toThrow(RangeError);
+    expect(() => buildEd25519CosignInstruction({ entries: [entry(a, 63)], message })).toThrow(InvalidInput);
+    expect(() => buildEd25519CosignInstruction({ entries: [], message })).toThrow(InvalidInput);
   });
 
   it("reads the listed count from the byte before the keys, so a key starting with zero is still found", async () => {
@@ -100,7 +101,7 @@ describe("cosign instruction", () => {
     expect(ix.data?.length).toBe(2 + 14 + 64 + 0xffff);
     const over = new Uint8Array(0x10000);
     over.set(cosignEnvelope([first], digest));
-    expect(() => buildEd25519CosignInstruction({ entries: [{ publicKey: first, signature: new Uint8Array(64) }], message: over })).toThrow(RangeError);
+    expect(() => buildEd25519CosignInstruction({ entries: [{ publicKey: first, signature: new Uint8Array(64) }], message: over })).toThrow(InvalidInput);
   });
 
   it("signs and verifies a committee vote through any message signer", async () => {

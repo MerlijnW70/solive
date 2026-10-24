@@ -10,6 +10,7 @@ import {
   type KeyPairSigner,
   lamports,
   partiallySignTransaction,
+  type Signature,
   signBytes,
   some,
 } from "@solana/kit";
@@ -52,7 +53,8 @@ import {
   WARN_LONG_LIVED,
 } from "@intent-engine/core";
 import {
-  Charged,
+  FailedOnChain,
+  failure,
   DEVNET_GENESIS_HASH,
   EXTENDED_MINT_TYPE,
   EXTENDED_TYPE_OFFSET,
@@ -1299,7 +1301,7 @@ describe("agent server against the deployed engine", () => {
     const signature = getBase58Decoder().decode(await signBytes(owner.keyPair.privateKey, getBase64Encoder().encode(p["message"])));
     const delivered = transport.send;
     transport.send = async () => {
-      throw new Charged("transaction landed and failed");
+      throw new FailedOnChain("transaction landed and failed", failure("1".repeat(64) as Signature, null));
     };
     try {
       expect((await fail(relaying, "submit_signed_intent", { ...p["submit"], signature }))["code"]).toBe("Failed");

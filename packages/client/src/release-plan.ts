@@ -1,5 +1,5 @@
 import { type Address, getAddressDecoder, type Instruction, type TransactionSigner } from "@solana/kit";
-import { announcementCommitment, decodeParams, IntentStatus, isSaltHex, Kind, splitFees } from "@intent-engine/core";
+import { announcementCommitment, decodeParams, IntentStatus, InvalidInput, isSaltHex, Kind, splitFees } from "@intent-engine/core";
 import { chainTime, createdAccount, loadIntent, SYSTEM_PROGRAM_ADDRESS } from "./accounts.js";
 import { sha256Bytes } from "./announce.js";
 import { loadAnnouncement } from "./announcement-reads.js";
@@ -23,7 +23,7 @@ export type Judged<J> = { feeOwner: Address; judge: J };
 export function saltBytes(salt: string): Uint8Array {
   const lowered = salt.trim().toLowerCase();
   if (!isSaltHex(lowered)) {
-    throw new RangeError("an opening's salt must be 32 hex digits");
+    throw new InvalidInput("salt", "format", "an opening's salt must be 32 hex digits");
   }
   return Uint8Array.from(Buffer.from(lowered, "hex"));
 }
@@ -35,16 +35,16 @@ async function announced(context: ClientContext, intent: Address, target: Releas
   const salt = saltBytes(target.opening.salt);
   const found = await loadAnnouncement(context.transport, target.announcement);
   if (found === null) {
-    throw new NotSettleable(intent, `has no announcement ${target.announcement}; nothing was sent`);
+    throw new NotSettleable(intent, "unknown-announcement", `has no announcement ${target.announcement}; nothing was sent`);
   }
   if (found.intent !== intent) {
-    throw new NotSettleable(intent, `is not the escrow of the announcement ${target.announcement}, which belongs to ${found.intent}; nothing was sent`);
+    throw new NotSettleable(intent, "other-escrow", `is not the escrow of the announcement ${target.announcement}, which belongs to ${found.intent}; nothing was sent`);
   }
   if (found.state !== "announced") {
-    throw new NotSettleable(intent, `already paid the announcement ${target.announcement}; nothing was sent`);
+    throw new NotSettleable(intent, "already-paid", `already paid the announcement ${target.announcement}; nothing was sent`);
   }
   if (!equal(await announcementCommitment(intent, found.worker, { delivered, salt }), found.commitment)) {
-    throw new NotSettleable(intent, `holds the announcement ${target.announcement}, which this salt does not open to the work ${hex(delivered)}; nothing was sent`);
+    throw new NotSettleable(intent, "salt-mismatch", `holds the announcement ${target.announcement}, which this salt does not open to the work ${hex(delivered)}; nothing was sent`);
   }
   return { found, delivered, salt };
 }
@@ -67,13 +67,13 @@ export async function releaseBasis<J>(
   const [{ address, intent: held }, settings] = await Promise.all([loadIntent(transport, owner, nonce), config()]);
   const params = decodeParams(held.kind, Uint8Array.from(held.params));
   if (params.kind !== Kind.AttestedResult) {
-    throw new NotSettleable(address, "is not an AttestedResult intent");
+    throw new NotSettleable(address, "not-attested", "is not an AttestedResult intent");
   }
   if (params.specHash.every((b) => b === 0)) {
-    throw new NotSettleable(address, "commits no spec hash, so it is not a proof intent");
+    throw new NotSettleable(address, "not-a-proof-escrow", "commits no spec hash, so it is not a proof intent");
   }
   if (held.status !== IntentStatus.Open) {
-    throw new NotSettleable(address, "is not open");
+    throw new NotSettleable(address, "not-open", "is not open");
   }
   const { feeOwner, judge } = await judgeOf(params.attestor, address);
   if (held.expiresAt <= (await chainTime(transport))) {

@@ -4,6 +4,7 @@ import {
   getTransactionDecoder,
   type KeyPairSigner,
   partiallySignTransaction,
+  type Signature,
 } from "@solana/kit";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
@@ -23,7 +24,7 @@ import {
 const FIRST_LANE = MANDATE_NONCE_BIT | (1n << 32n);
 import { getCloseAccountInstruction, getTokenDecoder, getTransferInstruction, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { MAX_COMPUTE_UNITS } from "@intent-engine/solver";
-import { type Transport, Charged } from "@intent-engine/client";
+import { FailedOnChain, failure, type Transport } from "@intent-engine/client";
 import { createCost, rentFor, rentRate, TOKEN_ACCOUNT_RENT_BYTES } from "../src/agent/budget.js";
 import { AGENT_NONCE_PROBES, agentNonce, freeMandateId, MANDATE_ID_PROBES, NO_MANDATE_HINT, REVOKE_CANCELS } from "../src/agent/mandate.js";
 import { callOf, claim, claimsOf } from "../src/agent/claims.js";
@@ -439,7 +440,7 @@ describe("mandates through the agent server", () => {
     await ok(dropped, "agent_create", args);
     const charged = await serve(["--agent", "a.json", "--agent-owners", w.owner.address, "--agent-hourly-lamports", cost.toString()], { "a.json": agent });
     transport.send = async () => {
-      throw new Charged("transaction landed and failed");
+      throw new FailedOnChain("transaction landed and failed", failure("1".repeat(64) as Signature, null));
     };
     try {
       expect((await fail(charged, "agent_create", args))["code"]).toBe("Failed");

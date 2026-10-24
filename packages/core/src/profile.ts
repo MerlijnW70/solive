@@ -10,7 +10,7 @@ import {
 } from "../generated/client/index.js";
 import { events } from "./builder-accounts.js";
 import { ENCRYPTION_KEY_BYTES, encryptionKeyText, isEncryptionKeyText, parseEncryptionKey } from "./encryption-key.js";
-import { IntentCoreError } from "./errors.js";
+import { IntentCoreError, NotAnEngineAccount } from "./errors.js";
 import { checkAccountVersion } from "./versions.js";
 
 export const PROFILE_MAX_SKILLS = 8;
@@ -95,7 +95,7 @@ const ascii = (bytes: ReadonlyUint8Array) => {
 
 export function profileView(data: ReadonlyUint8Array): ProfileView {
   if (data.length < getProfileSize() || !PROFILE_DISCRIMINATOR.every((b, i) => data[i] === b)) {
-    throw new RangeError("the data is not a profile account");
+    throw new NotAnEngineAccount(null, "the data is not a profile account");
   }
   const stored = getProfileDecoder().decode(checkAccountVersion(data));
   const docUrl = ascii(stored.docUrl);

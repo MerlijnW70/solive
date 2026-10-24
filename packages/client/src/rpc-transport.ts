@@ -17,8 +17,9 @@ import {
   getTransactionDecoder,
 } from "@solana/kit";
 import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { confirmSent, type SignatureWatch } from "./confirmation.js";
-import { BlockhashExpired, patiently, staleBlockhash } from "./rpc-retry.js";
+import { confirmSent, type SignatureWatch, signatureStatus } from "./confirmation.js";
+import { patiently, refusedUnsent, staleBlockhash } from "./rpc-retry.js";
+import { BehindMinSlot, BlockhashExpired, MaybeSent } from "./send-errors.js";
 import type {
   AccountView,
   AtLeast,
@@ -93,14 +94,22 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     }
     return signature;
   };
-  const sent = async (wire: Base64EncodedWireTransaction) => {
+  const sent = async (wire: Base64EncodedWireTransaction, lastValidBlockHeight: bigint | null, skipPreflight = false) => {
     try {
-      return await patiently(() => rpc.sendTransaction(wire, { encoding: "base64" }).send(), wait);
+      return await patiently(() => rpc.sendTransaction(wire, { encoding: "base64", ...(skipPreflight ? { skipPreflight } : {}) }).send(), wait);
     } catch (error) {
-      if (!staleBlockhash(error)) {
-        throw error;
-      }
       const signature = getSignatureFromTransaction(getTransactionDecoder().decode(getBase64Encoder().encode(wire)));
+      if (!staleBlockhash(error)) {
+        if (refusedUnsent(error)) {
+          throw error;
+        }
+        throw new MaybeSent(
+          signature,
+          lastValidBlockHeight,
+          `transaction ${signature} may have reached the node before sending it failed (${error instanceof Error ? error.message : String(error)}); look the signature up before sending again`,
+          { cause: error },
+        );
+      }
       const { value } = await patiently(() => rpc.getSignatureStatuses([signature], { searchTransactionHistory: true }).send(), wait);
       if (value[0]) {
         return signature;
@@ -243,7 +252,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
         return response;
       }
       if (least.minContextSlot !== undefined && response.context.slot < least.minContextSlot) {
-        throw new Error(`Minimum context slot has not been reached: the node read at slot ${response.context.slot}, below ${least.minContextSlot}`);
+        throw new BehindMinSlot(response.context.slot, least.minContextSlot);
       }
       onSlot?.(response.context.slot);
       return response.value;
@@ -271,7 +280,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
         (m) => appendTransactionMessageInstructions(instructions, m),
       );
       const signed = await signTransactionMessageWithSigners(message);
-      const signature = await sent(getBase64EncodedWireTransaction(signed));
+      const signature = await sent(getBase64EncodedWireTransaction(signed), latest.lastValidBlockHeight);
       return confirmed(signature, latest.lastValidBlockHeight);
     },
     async airdrop(address, lamports) {
@@ -284,11 +293,11 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       return value;
     },
     async sendWire(wire, latest) {
-      const signature = await sent(wire);
+      const signature = await sent(wire, latest.lastValidBlockHeight);
       return confirmed(signature, latest.lastValidBlockHeight);
     },
     async submitWire(wire) {
-      return patiently(() => rpc.sendTransaction(wire, { encoding: "base64", skipPreflight: true }).send(), wait);
+      return sent(wire, null, true);
     },
     async simulate(wire, watch = []) {
       const { value } = await patiently(
@@ -346,6 +355,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       }
       return found;
     },
+    sendStatus: (signature, lastValidBlockHeight) => signatureStatus(rpc, signature as Signature, lastValidBlockHeight, wait),
     ...(firstBlock === undefined ? {} : { firstAvailableSlot: () => patiently(() => firstBlock().send(), wait) }),
     ...(finalizedBlock === undefined ? {} : { finalizedBlock }),
     async engineAccounts(filter) {

@@ -16,6 +16,7 @@ import {
   signedIntentPreimage,
   U64_MAX,
 } from "../src/index.js";
+import { InvalidInput } from "../src/errors.js";
 
 const roundTrip = (p: IntentParams) => decodeParams(p.kind, encodeParams(p));
 
@@ -54,8 +55,8 @@ describe("params field ranges", () => {
     for (const [name, make] of unsignedFields) {
       expect(roundTrip(make(U64_MAX)), name).toEqual(make(U64_MAX));
       expect(() => encodeParams(make(0n)), name).not.toThrow();
-      expect(() => encodeParams(make(-1n)), name).toThrow(RangeError);
-      expect(() => encodeParams(make(U64_MAX + 1n)), name).toThrow(RangeError);
+      expect(() => encodeParams(make(-1n)), name).toThrow(InvalidInput);
+      expect(() => encodeParams(make(U64_MAX + 1n)), name).toThrow(InvalidInput);
     }
   });
 
@@ -64,8 +65,8 @@ describe("params field ranges", () => {
       expect(() => encodeParams(make(I64_MIN)), name).not.toThrow();
       expect(() => encodeParams(make(I64_MAX)), name).not.toThrow();
       expect(() => encodeParams(make(-5n)), name).not.toThrow();
-      expect(() => encodeParams(make(I64_MIN - 1n)), name).toThrow(RangeError);
-      expect(() => encodeParams(make(I64_MAX + 1n)), name).toThrow(RangeError);
+      expect(() => encodeParams(make(I64_MIN - 1n)), name).toThrow(InvalidInput);
+      expect(() => encodeParams(make(I64_MAX + 1n)), name).toThrow(InvalidInput);
     }
     const negative = {
       kind: Kind.DutchAuction,
@@ -143,17 +144,17 @@ describe("signature builders refuse malformed inputs", () => {
       epoch: 0n,
     };
     await expect(signedIntentPreimage(f)).resolves.toHaveLength(448);
-    await expect(signedIntentPreimage({ ...f, domain: new Uint8Array(31) })).rejects.toThrow(RangeError);
-    await expect(signedIntentPreimage({ ...f, params: new Uint8Array(127) })).rejects.toThrow(RangeError);
+    await expect(signedIntentPreimage({ ...f, domain: new Uint8Array(31) })).rejects.toThrow(InvalidInput);
+    await expect(signedIntentPreimage({ ...f, params: new Uint8Array(127) })).rejects.toThrow(InvalidInput);
     const a = { domain: new Uint8Array(32), intent: owner, payee: owner, amountIn: 1n, result: 1n, maxFeeBps: 0 };
     await expect(attestedFillPreimage(a)).resolves.toHaveLength(206);
-    await expect(attestedFillPreimage({ ...a, domain: new Uint8Array(33) })).rejects.toThrow(RangeError);
+    await expect(attestedFillPreimage({ ...a, domain: new Uint8Array(33) })).rejects.toThrow(InvalidInput);
   });
 
   it("require a 64-byte signature", () => {
     expect(() =>
       buildEd25519Instruction({ publicKey: owner, signature: new Uint8Array(63), message: new Uint8Array(1) }),
-    ).toThrow(RangeError);
+    ).toThrow(InvalidInput);
     const ix = buildEd25519Instruction({
       publicKey: owner,
       signature: new Uint8Array(64),
@@ -185,8 +186,8 @@ describe("loose params decoding", () => {
     });
     const zero = encodeParams({ kind: Kind.SwapExactIn, amountIn: 1n, minOut: 1n }).fill(0);
     expect(decodeParamsLoose(Kind.SwapExactIn, zero)).toMatchObject({ unknown: true, reason: "InvalidParams" });
-    expect(() => decodeParamsLoose(9, new Uint8Array(3))).toThrow(RangeError);
-    expect(() => decodeParamsLoose(Kind.SwapExactIn, new Uint8Array(129))).toThrow(RangeError);
+    expect(() => decodeParamsLoose(9, new Uint8Array(3))).toThrow(InvalidInput);
+    expect(() => decodeParamsLoose(Kind.SwapExactIn, new Uint8Array(129))).toThrow(InvalidInput);
   });
 });
 

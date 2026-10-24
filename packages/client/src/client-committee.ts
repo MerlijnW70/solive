@@ -12,6 +12,7 @@ import {
   type IntentParams,
   Kind,
   needsCommittee,
+  NotAnEngineAccount,
 } from "@intent-engine/core";
 import { createdAccount } from "./accounts.js";
 import { CommitteeNeeded } from "./client-errors.js";
@@ -32,7 +33,7 @@ export async function loadCommittee(transport: Transport, address: Address): Pro
   const terms = { members, threshold: stored.threshold, feeWallet: stored.feeWallet };
   const derived = await committeeOf(terms);
   if (derived.address !== address) {
-    throw new Error(`${address} holds a committee whose contents address ${derived.address}`);
+    throw new NotAnEngineAccount(address, `${address} holds a committee whose contents address ${derived.address}`);
   }
   return { ...terms, address, id: derived.id, createdAt: stored.createdAt };
 }

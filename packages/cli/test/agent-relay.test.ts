@@ -1,6 +1,6 @@
-import { type Address, generateKeyPairSigner } from "@solana/kit";
+import { type Address, generateKeyPairSigner, type Signature } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { Charged } from "@intent-engine/client";
+import { FailedOnChain, failure, MaybeSent } from "@intent-engine/client";
 import { BUDGET_WINDOW, budgetOf, release, reserve } from "../src/agent/budget.js";
 import { AgentRefusal } from "../src/agent/problems.js";
 import { admitRelay, RATE_WINDOW, relayOf } from "../src/agent/relay.js";
@@ -112,8 +112,11 @@ describe("relayer payment accounting", () => {
     await expect(paying(sent, Promise.resolve("sig"))).resolves.toBe("sig");
     expect(sent.any).toBe(true);
     const charged = { any: false };
-    await expect(paying(charged, Promise.reject(new Charged("landed and failed")))).rejects.toThrow("landed and failed");
+    await expect(paying(charged, Promise.reject(new FailedOnChain("landed and failed", failure("1".repeat(64) as Signature, null))))).rejects.toThrow("landed and failed");
     expect(charged.any).toBe(true);
+    const unsure = { any: false };
+    await expect(paying(unsure, Promise.reject(new MaybeSent("1".repeat(64) as Signature, 9n, "may have landed")))).rejects.toThrow("may have landed");
+    expect(unsure.any).toBe(true);
     const dropped = { any: false };
     await expect(paying(dropped, Promise.reject(new Error("rejected")))).rejects.toThrow("rejected");
     expect(dropped.any).toBe(false);

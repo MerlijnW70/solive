@@ -4,6 +4,7 @@ import { partnerOf } from "./ext.js";
 import { U64_MAX } from "./math.js";
 import { findAssociatedTokenAddress } from "./pdas.js";
 import { checkSignable, type SignedIntentFields, signedIntentPreimage } from "./sig.js";
+import { InvalidInput } from "./errors.js";
 
 export const LONG_LIVED_SECONDS = 30n * 24n * 60n * 60n;
 export const WARN_ATTESTOR =
@@ -53,7 +54,7 @@ export function formatAmount(raw: bigint, decimals?: number): string {
     return `${raw} raw units`;
   }
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
-    throw new RangeError(`${decimals} is not a token decimals value`);
+    throw new InvalidInput("decimals", "range", `${decimals} is not a token decimals value`);
   }
   const scale = 10n ** BigInt(decimals);
   const whole = raw / scale;
@@ -65,19 +66,19 @@ export const TOKEN_AMOUNT_PATTERN = /^(\d+)(?:\.(\d+))?$/;
 
 export function parseAmount(text: string, decimals: number): bigint {
   if (!Number.isInteger(decimals) || decimals < 0 || decimals > 255) {
-    throw new RangeError(`${decimals} is not a token decimals value`);
+    throw new InvalidInput("decimals", "range", `${decimals} is not a token decimals value`);
   }
   const match = TOKEN_AMOUNT_PATTERN.exec(text);
   if (match === null) {
-    throw new RangeError(`${text} is not a token amount like 12 or 0.5`);
+    throw new InvalidInput("amount", "format", `${text} is not a token amount like 12 or 0.5`);
   }
   const fraction = match[2] ?? "";
   if (fraction.length > decimals) {
-    throw new RangeError(`${text} has more than the token's ${decimals} decimal places`);
+    throw new InvalidInput("amount", "format", `${text} has more than the token's ${decimals} decimal places`);
   }
   const raw = BigInt(match[1] ?? "0") * 10n ** BigInt(decimals) + BigInt(fraction.padEnd(decimals, "0") || "0");
   if (raw > U64_MAX) {
-    throw new RangeError(`${text} is more than a token account can hold`);
+    throw new InvalidInput("amount", "range", `${text} is more than a token account can hold`);
   }
   return raw;
 }
@@ -155,7 +156,7 @@ export async function describeSignedIntent(
 ): Promise<SignedIntentDescription> {
   checkSignable(f);
   if (f.epoch > o.currentEpoch) {
-    throw new RangeError(
+    throw new InvalidInput("epoch", "range",
       `refusing to describe a signature for epoch ${f.epoch}: the owner is at epoch ${o.currentEpoch}, and a later epoch change would arm it`,
     );
   }

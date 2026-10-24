@@ -25,6 +25,7 @@ import {
   MINT_CAP_VERSION,
   TOKEN_PROGRAM_ADDRESS,
 } from "../src/index.js";
+import { InvalidInput, NotAnEngineAccount } from "../src/errors.js";
 
 const MINT = "So11111111111111111111111111111111111111112" as Address;
 const OUT = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" as Address;
@@ -56,13 +57,13 @@ describe("mint cap accounts", () => {
     expect(capWindow(cap, 1_059n)).toEqual({ start: 1_000n, ends: 1_060n, used: 200n, left: 300n });
     expect(capWindow(cap, 1_060n)).toEqual({ start: 1_060n, ends: 1_120n, used: 0n, left: 500n });
     expect(isMintCapData(data.subarray(0, getMintCapSize() - 1))).toBe(false);
-    expect(() => decodeMintCapData(new Uint8Array(getMintCapSize()))).toThrow(RangeError);
-    expect(() => checkMintCapLimits({ maxPerOrder: 0n, windowCap: 1n, windowSecs: 60 })).toThrow(RangeError);
-    expect(() => checkMintCapLimits({ maxPerOrder: 2n, windowCap: 1n, windowSecs: 60 })).toThrow(RangeError);
-    expect(() => checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 59 })).toThrow(RangeError);
+    expect(() => decodeMintCapData(new Uint8Array(getMintCapSize()))).toThrow(NotAnEngineAccount);
+    expect(() => checkMintCapLimits({ maxPerOrder: 0n, windowCap: 1n, windowSecs: 60 })).toThrow(InvalidInput);
+    expect(() => checkMintCapLimits({ maxPerOrder: 2n, windowCap: 1n, windowSecs: 60 })).toThrow(InvalidInput);
+    expect(() => checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 59 })).toThrow(InvalidInput);
     expect(checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 60 })).toEqual({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 60 });
-    expect(() => checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 60, totalLimit: -1n })).toThrow(RangeError);
-    expect(() => checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 60, totalLimit: 1n << 64n })).toThrow(RangeError);
+    expect(() => checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 60, totalLimit: -1n })).toThrow(InvalidInput);
+    expect(() => checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 60, totalLimit: 1n << 64n })).toThrow(InvalidInput);
     expect(checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 60, totalLimit: 0n }).totalLimit).toBe(0n);
     expect(checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 60, totalLimit: (1n << 64n) - 1n }).totalLimit).toBe((1n << 64n) - 1n);
   });
@@ -98,7 +99,7 @@ describe("mint cap accounts", () => {
     const none = await buildSetMintCap({ ...limits, totalLimit: 0n });
     const some = await buildSetMintCap({ ...limits, totalLimit: 70n });
     const unnamed = limits as unknown as Parameters<typeof buildSetMintCap>[0];
-    await expect(buildSetMintCap(unnamed)).rejects.toThrow(RangeError);
+    await expect(buildSetMintCap(unnamed)).rejects.toThrow(InvalidInput);
     expect(decoder.decode(none.data ?? new Uint8Array()).totalLimit).toBe(0n);
     expect(decoder.decode(some.data ?? new Uint8Array()).totalLimit).toBe(70n);
   });

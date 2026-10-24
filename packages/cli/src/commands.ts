@@ -44,7 +44,7 @@ import { reputationCommand } from "./reputation-commands.js";
 import { claimsCommand } from "./claim-commands.js";
 import { engineEvents } from "./event-feed.js";
 import { SOLVER_TABLE_NEXT, solverOptions } from "./solve-commands.js";
-import { flowCommand } from "./flow-commands.js";
+import { flowCommand, signatureLookup } from "./flow-commands.js";
 import { addTo } from "./add-to.js";
 import { transactionSigner } from "./ledger-keys.js";
 import { judgeDigest } from "./judge-digest.js";
@@ -302,6 +302,8 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     }
     case "solve":
       return tick(await solverOptions(command, runtime, transport));
+    case "signature-lookup":
+      return signatureLookup(transport, command.signature, command.validUntil);
     case "flow":
     case "lookup":
     case "signed-prepare":

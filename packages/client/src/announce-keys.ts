@@ -5,6 +5,7 @@ import {
   COMMITTEE_DISCRIMINATOR,
   getCommitteeDecoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
+  InvalidInput,
   keyFingerprintV4,
   parseEncryptionKey,
   saltMessage,
@@ -47,7 +48,7 @@ export async function publishedKey(transport: Transport, wallet: Address, intent
   try {
     return parseEncryptionKey(text);
   } catch {
-    throw new NotDeliverable(intent, `cannot be announced: the profile of ${wallet} names the encryption key ${text}, with which no shared secret can be made`);
+    throw new NotDeliverable(intent, "no-shared-secret", `cannot be announced: the profile of ${wallet} names the encryption key ${text}, with which no shared secret can be made`);
   }
 }
 
@@ -91,7 +92,7 @@ async function signedBy(worker: Address, signature: Uint8Array, message: Uint8Ar
 export async function secretSource(worker: TransactionSigner, intent: Address, sha256: string, given: SecretInput): Promise<Uint8Array> {
   if (given.secret !== undefined) {
     if (given.secret.length !== SECRET_BYTES) {
-      throw new RangeError(SECRET_RULE);
+      throw new InvalidInput("secret", "length", SECRET_RULE);
     }
     return Uint8Array.from(given.secret);
   }

@@ -133,13 +133,13 @@ export async function feedbackInstructions(transport: Transport, input: Feedback
   const events = eventsOf(transactions, input.intent);
   const released = events.find(({ event }) => event.name === "IntentAttested" || event.name === "IntentSplit")?.event;
   if (released === undefined || (released.name !== "IntentAttested" && released.name !== "IntentSplit")) {
-    throw new NotSettleable(input.intent, "has no release among its recent transactions, so there is no work to give feedback on");
+    throw new NotSettleable(input.intent, "no-release", "has no release among its recent transactions, so there is no work to give feedback on");
   }
   if (released.fields.owner !== input.owner.address) {
-    throw new NotSettleable(input.intent, `was paid for by ${released.fields.owner}, and only that owner gives feedback on it`);
+    throw new NotSettleable(input.intent, "not-owner", `was paid for by ${released.fields.owner}, and only that owner gives feedback on it`);
   }
   if (feedbackOf(transactions, input.intent, input.owner.address) !== undefined) {
-    throw new NotSettleable(input.intent, "already has its owner's feedback; the first one counts");
+    throw new NotSettleable(input.intent, "feedback-given", "already has its owner's feedback; the first one counts");
   }
   return [memoInstruction(input.owner, memo), getTransferSolInstruction({ source: input.owner, destination: input.intent, amount: 0n })];
 }

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { DELIVERY_PAGES, feedbackInstructions, NotSettleable, reputationOf, RESTART, SIGNATURE_PAGE, type Trust, TRUST_PATHS, TRUST_WALLETS, trustOf } from "@intent-engine/client";
+import { DELIVERY_PAGES, feedbackInstructions, isSdkError, reputationOf, RESTART, SIGNATURE_PAGE, type Trust, TRUST_PATHS, TRUST_WALLETS, trustOf } from "@intent-engine/client";
 import { type AgentContext, define } from "./actions.js";
 import type { Call } from "./claims.js";
 import { tool } from "./names.js";
@@ -186,7 +186,7 @@ export const walletFeedback = define({
     try {
       instructions = await feedbackInstructions(ctx.transport, { owner: signer, intent: input.intent, score: input.score, ...(note === undefined ? {} : { note }) });
     } catch (error) {
-      if (error instanceof NotSettleable) {
+      if (isSdkError(error, "not-settleable")) {
         throw new AgentRefusal("Unauthorized", error.message);
       }
       throw error;

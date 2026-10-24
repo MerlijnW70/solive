@@ -4,7 +4,7 @@ import { type AddressInfo, createServer as createSocketServer, type Server as So
 import { gzipSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import { Kind, specMemo } from "@intent-engine/core";
-import { createClient, DEVNET_GENESIS_HASH, MAX_SPEC_BYTES, pinnedFetch, readSpec, type SpecFetch, type Transport, UNEXPECTED_REDIRECT } from "@intent-engine/client";
+import { createClient, DEVNET_GENESIS_HASH, FetchFailed, MAX_SPEC_BYTES, pinnedFetch, readSpec, type SpecFetch, type Transport, UNEXPECTED_REDIRECT } from "@intent-engine/client";
 import { type Announced, fetchBytes, fetchDelivery, NOT_PUBLIC } from "../src/delivery-fetch.js";
 import { type Lookup, privateAddress, publicAddresses } from "../src/public-address.js";
 import { creation, h, NOW, ownerSigned, transport, world } from "./harness.js";
@@ -111,8 +111,8 @@ describe("a fetch connects only to the addresses the check passed", () => {
     const init = { redirect: "error" as const, signal: AbortSignal.timeout(5_000), addresses: ["127.0.0.1"] };
     expect(await (await pinnedFetch(`${base}/spec`, init)).text()).toBe("pinned spec\n");
     const moved = await pinnedFetch(`${base}/moved`, init).catch((error: unknown) => error);
-    expect(moved).toBeInstanceOf(TypeError);
-    expect(((moved as TypeError).cause as Error).message).toBe(UNEXPECTED_REDIRECT);
+    expect(moved).toBeInstanceOf(FetchFailed);
+    expect(moved).toMatchObject({ code: "fetch-failed", url: `${base}/moved`, reason: "redirect", detail: UNEXPECTED_REDIRECT, message: "fetch failed" });
   }, 30_000);
 });
 

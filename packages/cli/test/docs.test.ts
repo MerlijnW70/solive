@@ -9,7 +9,9 @@ import { ACTIONS } from "../src/agent/registry.js";
 import { WALLET_ACTIONS } from "../src/agent/wallet.js";
 import { EVERYDAY_TOOLS } from "../src/agent/everyday.js";
 import { ADDRESS_PATTERN, AMOUNT_PATTERN, TIME_PATTERN } from "../src/agent/schema.js";
-import { LEDGER_FORMS } from "@intent-engine/client";
+import * as core from "@intent-engine/core";
+import * as client from "@intent-engine/client";
+import { LEDGER_FORMS, SDK_ERRORS, SdkError } from "@intent-engine/client";
 import { LEDGER_COMMANDS } from "../src/ledger-keys.js";
 
 type Json = Record<string, unknown>;
@@ -170,6 +172,12 @@ function errorsPage(): string {
   ]);
   const token = Object.entries(TOKEN_PROBLEMS).map(([code, p]) => [code, `\`${p.code}\``, p.retryable ? "yes" : "no", p.hint]);
   const server = Object.entries(SERVER_PROBLEMS).map(([name, p]) => [`\`${name}\``, p.retryable ? "yes" : "no", p.hint]);
+  const sdk = Object.entries(SDK_ERRORS).map(([code, entry]) => [
+    `\`${code}\``,
+    `\`${entry.error.name}\``,
+    entry.fields.length === 0 ? "none" : entry.fields.map((field) => `\`${field}\``).join(", "),
+    entry.meaning,
+  ]);
   return page("Errors", [
     "## This server",
     "",
@@ -184,6 +192,12 @@ function errorsPage(): string {
     "## Token programs",
     "",
     ...table(["Code", "Name", "Retry later", "What to do"], token),
+    "",
+    "## SDK",
+    "",
+    "Every error `@intent-engine/core` and `@intent-engine/client` throw extends `SdkError`, which carries a fixed `code`. Switch on `error.code`, or narrow with `isSdkError(error, code)`; the standard `cause` holds the underlying error, if any.",
+    "",
+    ...table(["Code", "Class", "Fields", "Meaning"], sdk),
   ]);
 }
 
@@ -374,6 +388,21 @@ describe("generated reference docs", () => {
     expect(idl.errors.map((e) => [e.code, pascal(e.name)])).toEqual(
       Object.keys(ENGINE_PROBLEMS).map((name, i) => [ENGINE_ERROR_BASE + i, name]),
     );
+  });
+
+  it("reference/errors.md lists every SDK error class core and client export", () => {
+    const page = errorsPage();
+    const values: unknown[] = [...Object.values(core as Record<string, unknown>), ...Object.values(client as Record<string, unknown>)];
+    const exported = new Set(
+      values.filter((value): value is typeof SdkError => typeof value === "function" && (value as { prototype?: unknown }).prototype instanceof SdkError),
+    );
+    const listed = new Map<unknown, string>(Object.entries(SDK_ERRORS).map(([code, entry]) => [entry.error, code]));
+    expect(exported.size).toBeGreaterThan(40);
+    for (const error of exported) {
+      const code = listed.get(error);
+      expect(code, error.name).toBeDefined();
+      expect(page, error.name).toContain(`| \`${code ?? ""}\` | \`${error.name}\` |`);
+    }
   });
 
   for (const [path, render] of Object.entries(PAGES)) {

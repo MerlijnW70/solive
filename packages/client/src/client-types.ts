@@ -11,6 +11,7 @@ import type { SettleSplitInput, SplitBallot, SplitBallotInput } from "./client-s
 import type { FirstOpening, FirstOpeningInput } from "./first-opening.js";
 import type { Job, Spec } from "./jobs.js";
 import type { CheckedFetch } from "./pinned-fetch.js";
+import type { SendStatus } from "./send-errors.js";
 import type { Notifications, Simulation, Transport } from "./transport.js";
 
 export type ClientOptions = {
@@ -143,6 +144,7 @@ export type Client = {
   nextNonce(owner: Address): Promise<bigint>;
   simulate(instructions: readonly Instruction[], signer: TransactionSigner): Promise<Simulation>;
   send(instructions: readonly Instruction[], signer: TransactionSigner): Promise<Signature>;
+  status(signature: Signature, lastValidBlockHeight?: bigint): Promise<SendStatus>;
   watch(onChange: WatchCallback, signal: AbortSignal, filter?: WatchOptions): Promise<void>;
   explain(error: unknown): EngineError | null;
   mint(address: Address): Promise<Mint>;

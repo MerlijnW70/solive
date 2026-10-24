@@ -14,6 +14,8 @@ import {
   INTENT_ENGINE_PROGRAM_ADDRESS,
   isMintCapData,
   type MintCap,
+  NotAnEngineAccount,
+  SdkError,
   TOKEN_2022_PROGRAM_ADDRESS,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
@@ -29,12 +31,13 @@ export async function createdAccount(transport: Transport, address: Address): Pr
   return createdView(await transport.getAccount(address));
 }
 
-export class MissingAccount extends Error {
+export class MissingAccount extends SdkError {
+  readonly code = "missing-account";
+  override readonly name = "MissingAccount";
   readonly address: Address;
 
-  constructor(what: string, address: Address) {
-    super(`${what} ${address} does not exist`);
-    this.name = "MissingAccount";
+  constructor(what: string, address: Address, message = `${what} ${address} does not exist`) {
+    super(message);
     this.address = address;
   }
 }
@@ -51,7 +54,7 @@ export async function engineAccount(
   }
   const head = view.data.subarray(0, discriminator.length);
   if (view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS || !head.every((b, i) => b === discriminator[i])) {
-    throw new Error(`${address} is not an engine ${what}`);
+    throw new NotAnEngineAccount(address, `${address} is not an engine ${what}`);
   }
   return checkAccountVersion(view.data);
 }
@@ -62,12 +65,13 @@ export async function loadIntent(transport: Transport, owner: Address, nonce: bi
   return { address, intent: getIntentDecoder().decode(data) };
 }
 
-export class NotAMint extends Error {
+export class NotAMint extends SdkError {
+  readonly code = "not-a-mint";
+  override readonly name = "NotAMint";
   readonly address: Address;
 
   constructor(address: Address) {
     super(`${address} is not a token mint`);
-    this.name = "NotAMint";
     this.address = address;
   }
 }
@@ -85,7 +89,7 @@ export async function loadMintCap(transport: Transport, mint: Address): Promise<
     return null;
   }
   if (view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS || !isMintCapData(view.data)) {
-    throw new Error(`${address} is not an engine mint cap`);
+    throw new NotAnEngineAccount(address, `${address} is not an engine mint cap`);
   }
   return { address, cap: decodeMintCapData(view.data) };
 }
@@ -103,7 +107,7 @@ export async function loadUser(transport: Transport, owner: Address): Promise<No
     return null;
   }
   if (view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS) {
-    throw new Error(`${address} is not an engine user account`);
+    throw new NotAnEngineAccount(address, `${address} is not an engine user account`);
   }
   return getUserStateDecoder().decode(checkAccountVersion(view.data));
 }
@@ -186,7 +190,7 @@ export async function chainTime(transport: Transport): Promise<bigint> {
 
 export function clockTime(view: AccountView | null): bigint {
   if (view === null) {
-    throw new Error("the clock sysvar is missing");
+    throw new MissingAccount("the clock sysvar", CLOCK_SYSVAR, "the clock sysvar is missing");
   }
   return new DataView(view.data.buffer, view.data.byteOffset).getBigInt64(CLOCK_UNIX_TIMESTAMP, true);
 }
@@ -200,7 +204,7 @@ export type RentSysvar = { perByteYear: bigint; threshold: number };
 export async function rentSysvar(transport: Transport): Promise<RentSysvar> {
   const view = await transport.getAccount(RENT_SYSVAR);
   if (view === null) {
-    throw new Error("the rent sysvar is missing");
+    throw new MissingAccount("the rent sysvar", RENT_SYSVAR, "the rent sysvar is missing");
   }
   const rent = new DataView(view.data.buffer, view.data.byteOffset);
   return { perByteYear: rent.getBigUint64(0, true), threshold: rent.getFloat64(RENT_THRESHOLD_OFFSET, true) };

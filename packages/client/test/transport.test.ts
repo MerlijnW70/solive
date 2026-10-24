@@ -18,7 +18,7 @@ import {
 import { getEventListeners } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { computeUnitLimit, getIntentDiscriminatorBytes, getIntentSize, headroom, INTENT_ENGINE_PROGRAM_ADDRESS, MAX_COMPUTE_UNITS } from "@intent-engine/core";
-import { Charged,
+import { MaybeSent,
   behindMinSlot,
   heardSlot,
   MIN_CONTEXT_SLOT_NOT_REACHED,
@@ -219,7 +219,7 @@ describe("confirm", () => {
     await expect(confirm(s.rpc, SIG, 10n, s.wait)).rejects.toThrow(`transaction ${SIG} failed: { InstructionError: [ 0, { Custom: 6008 } ] }`);
     const again = stub([{ err: { InstructionError: [0, { Custom: 6008 }] }, confirmationStatus: "confirmed" }]);
     const failed = await confirm(again.rpc, SIG, 10n, again.wait).catch((e: unknown) => e);
-    expect(failed).toBeInstanceOf(Charged);
+    expect(failed).not.toBeInstanceOf(MaybeSent);
     expect(failed).toBeInstanceOf(FailedOnChain);
     expect(neverLanded(failed)).toBe(true);
   });
@@ -231,7 +231,7 @@ describe("confirm", () => {
     const late = stub([null, null], [10n, 11n]);
     const expired = await confirm(late.rpc, SIG, 10n, late.wait).catch((e: unknown) => e);
     expect(expired).toBeInstanceOf(Error);
-    expect(expired).not.toBeInstanceOf(Charged);
+    expect(expired).not.toBeInstanceOf(MaybeSent);
     expect(expired).toBeInstanceOf(BlockhashExpired);
     expect(neverLanded(expired)).toBe(true);
   });
@@ -243,7 +243,7 @@ describe("confirm", () => {
     const failed = await confirm(stub([null, { err: "boom", confirmationStatus: "confirmed" }], [11n]).rpc, SIG, 10n).catch((e: unknown) => e);
     expect(failed).toBeInstanceOf(FailedOnChain);
     const pending = await confirm(stub([null, { err: null, confirmationStatus: "processed" }], [11n]).rpc, SIG, 10n).catch((e: unknown) => e);
-    expect(pending).toBeInstanceOf(Charged);
+    expect(pending).toBeInstanceOf(MaybeSent);
     expect(neverLanded(pending)).toBe(false);
   });
 
@@ -262,7 +262,7 @@ describe("confirm", () => {
     const s = stub([{ err: "boom", confirmationStatus: "processed" }, { err: null, confirmationStatus: "confirmed" }]);
     await confirm(s.rpc, SIG, 10n, s.wait);
     const late = await confirm(stub([null, { err: "boom", confirmationStatus: "processed" }], [11n]).rpc, SIG, 10n).catch((e: unknown) => e);
-    expect(late).toBeInstanceOf(Charged);
+    expect(late).toBeInstanceOf(MaybeSent);
     expect(neverLanded(late)).toBe(false);
   });
 
@@ -270,7 +270,9 @@ describe("confirm", () => {
     const s = stub([]);
     const throttled = { ...s.rpc, getSignatureStatuses: () => ({ send: async () => Promise.reject(new Error("HTTP error (429): Too Many Requests")) }) };
     const lost = await confirmSent(throttled, SIG, 10n, s.wait).catch((e: unknown) => e);
-    expect(lost).toBeInstanceOf(Charged);
+    expect(lost).toBeInstanceOf(MaybeSent);
+    expect(lost).toMatchObject({ code: "maybe-sent", signature: SIG, lastValidBlockHeight: 10n });
+    expect((lost as Error).cause).toBeInstanceOf(Error);
     expect(neverLanded(lost)).toBe(false);
     expect(rateLimited(lost)).toBe(false);
     expect((lost as Error).message).toBe(
@@ -291,7 +293,7 @@ describe("confirm", () => {
     expect(stuck.waits).toHaveLength(CONFIRM_POLLS - 1);
     const still = stub([], Array.from({ length: CONFIRM_POLLS + 5 }, () => 5n));
     const unsure = await confirm(still.rpc, SIG, 10n, still.wait).catch((e: unknown) => e);
-    expect(unsure).toBeInstanceOf(Charged);
+    expect(unsure).toBeInstanceOf(MaybeSent);
     expect(neverLanded(unsure)).toBe(false);
     expect(neverLanded(new Error("fetch failed"))).toBe(false);
     expect(stuck.calls.filter((c) => c === `status:${SIG}`)).toHaveLength(CONFIRM_POLLS);
@@ -329,10 +331,11 @@ describe("confirm", () => {
     const failed = stub([]);
     const slow = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms > 0 ? 20 : 0));
     await expect(
-      confirm(failed.rpc, SIG, 10n, slow, async () => {
-        throw new Charged(`transaction ${SIG} failed: boom`);
-      }),
-    ).rejects.toThrow(`transaction ${SIG} failed: boom`);
+      confirm(failed.rpc, SIG, 10n, slow, async () => heardSlot(SIG, { context: { slot: 1n }, value: { err: { boom: 1 } } })),
+    ).rejects.toThrow(`transaction ${SIG} failed: { boom: 1 }`);
+    const heard = await confirm(failed.rpc, SIG, 10n, slow, async () => heardSlot(SIG, { value: { err: { boom: 1 } } })).catch((e: unknown) => e);
+    expect(heard).toBeInstanceOf(FailedOnChain);
+    expect(heard).toMatchObject({ code: "failed-on-chain", signature: SIG, err: { boom: 1 }, program: null });
     const broken = stub([null, { err: null, confirmationStatus: "confirmed" }]);
     await confirm(broken.rpc, SIG, 10n, broken.wait, async () => {
       throw new Error("websocket refused");
@@ -1013,7 +1016,7 @@ describe("read your writes", () => {
     expect(behindMinSlot(behind())).toBe(true);
     expect(behindMinSlot(new Error("JSON-RPC error -32016: Minimum context slot has not been reached"))).toBe(true);
     expect(behindMinSlot(new Error("HTTP error (500): boom"))).toBe(false);
-    expect(behindMinSlot(new Charged("Minimum context slot has not been reached"))).toBe(false);
+    expect(behindMinSlot(new MaybeSent(SIG, 10n, "Minimum context slot has not been reached"))).toBe(false);
     expect(MIN_CONTEXT_SLOT_NOT_REACHED).toBe(-32016);
     const r = recording([9n], 2);
     const t = rpcTransport(r.rpc, r.wait);

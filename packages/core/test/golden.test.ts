@@ -93,6 +93,7 @@ import {
   NONCE_CEILING,
   nextEpoch,
 } from "../src/index.js";
+import { InvalidInput } from "../src/errors.js";
 
 type Outcome = { ok?: string; err?: string; fee?: string; net?: string };
 type Vectors = {
@@ -204,7 +205,7 @@ function settle<T>(f: () => T): { ok: T } | { err: string } {
     return { ok: f() };
   } catch (e) {
     if (e instanceof IntentCoreError) {
-      return { err: e.code };
+      return { err: e.engineError };
     }
     throw e;
   }
@@ -508,16 +509,16 @@ describe("golden vectors emitted by the Rust implementation", () => {
     await expect(ok({ nonce: -1n })).rejects.toThrow("-1 is outside u64");
     await expect(ok({ nonce: U64_MAX + 1n })).rejects.toThrow(`${U64_MAX + 1n} is outside u64`);
     await expect(ok({ expiresAt: I64_MIN - 1n })).rejects.toThrow(`${I64_MIN - 1n} is outside i64`);
-    await expect(ok({ expiresAt: I64_MAX + 1n })).rejects.toThrow(RangeError);
-    await expect(ok({ submitBy: I64_MAX + 1n })).rejects.toThrow(RangeError);
-    await expect(ok({ submitBy: I64_MIN - 1n })).rejects.toThrow(RangeError);
+    await expect(ok({ expiresAt: I64_MAX + 1n })).rejects.toThrow(InvalidInput);
+    await expect(ok({ submitBy: I64_MAX + 1n })).rejects.toThrow(InvalidInput);
+    await expect(ok({ submitBy: I64_MIN - 1n })).rejects.toThrow(InvalidInput);
     await expect(ok({ kind: 256 })).rejects.toThrow("256 is not a kind byte");
-    await expect(ok({ kind: -1 })).rejects.toThrow(RangeError);
-    await expect(ok({ kind: 1.5 })).rejects.toThrow(RangeError);
+    await expect(ok({ kind: -1 })).rejects.toThrow(InvalidInput);
+    await expect(ok({ kind: 1.5 })).rejects.toThrow(InvalidInput);
     await expect(ok({ flags: 0x10000 })).rejects.toThrow("65536 is not a u16 flag set");
-    await expect(ok({ flags: -1 })).rejects.toThrow(RangeError);
-    await expect(ok({ epoch: -1n })).rejects.toThrow(RangeError);
-    await expect(ok({ epoch: U64_MAX + 1n })).rejects.toThrow(RangeError);
+    await expect(ok({ flags: -1 })).rejects.toThrow(InvalidInput);
+    await expect(ok({ epoch: -1n })).rejects.toThrow(InvalidInput);
+    await expect(ok({ epoch: U64_MAX + 1n })).rejects.toThrow(InvalidInput);
     await expect(ok({ ext: new Uint8Array(513) })).rejects.toThrow("ext must be at most 512 bytes");
     const attest = {
       domain: bytes(s.domain),
@@ -530,15 +531,15 @@ describe("golden vectors emitted by the Rust implementation", () => {
     await expect(attestedFillPreimage({ ...attest, amountIn: U64_MAX, result: 0n })).resolves.toHaveLength(206);
     await expect(attestedFillPreimage({ ...attest, maxFeeBps: 0xffff })).resolves.toHaveLength(206);
     await expect(attestedFillPreimage({ ...attest, maxFeeBps: 0x1_0000 })).rejects.toThrow("65536 is outside u16");
-    await expect(attestedFillPreimage({ ...attest, maxFeeBps: -1 })).rejects.toThrow(RangeError);
-    await expect(attestedFillPreimage({ ...attest, maxFeeBps: 0.5 })).rejects.toThrow(RangeError);
-    await expect(attestedFillPreimage({ ...attest, amountIn: -1n })).rejects.toThrow(RangeError);
-    await expect(attestedFillPreimage({ ...attest, result: U64_MAX + 1n })).rejects.toThrow(RangeError);
+    await expect(attestedFillPreimage({ ...attest, maxFeeBps: -1 })).rejects.toThrow(InvalidInput);
+    await expect(attestedFillPreimage({ ...attest, maxFeeBps: 0.5 })).rejects.toThrow(InvalidInput);
+    await expect(attestedFillPreimage({ ...attest, amountIn: -1n })).rejects.toThrow(InvalidInput);
+    await expect(attestedFillPreimage({ ...attest, result: U64_MAX + 1n })).rejects.toThrow(InvalidInput);
     await expect(attestedFillPreimage({ ...attest, filled: U64_MAX, revision: 0xffff_ffff })).resolves.toHaveLength(206);
-    await expect(attestedFillPreimage({ ...attest, filled: -1n })).rejects.toThrow(RangeError);
+    await expect(attestedFillPreimage({ ...attest, filled: -1n })).rejects.toThrow(InvalidInput);
     await expect(attestedFillPreimage({ ...attest, revision: 0x1_0000_0000 })).rejects.toThrow("4294967296 is outside u32");
-    await expect(attestedFillPreimage({ ...attest, revision: -1 })).rejects.toThrow(RangeError);
-    await expect(attestedFillPreimage({ ...attest, revision: 0.5 })).rejects.toThrow(RangeError);
+    await expect(attestedFillPreimage({ ...attest, revision: -1 })).rejects.toThrow(InvalidInput);
+    await expect(attestedFillPreimage({ ...attest, revision: 0.5 })).rejects.toThrow(InvalidInput);
     await expect(attestedFillPreimage({ ...attest, ext: new Uint8Array(512) })).resolves.toHaveLength(206);
     await expect(attestedFillPreimage({ ...attest, ext: new Uint8Array(513) })).rejects.toThrow(
       "ext must be at most 512 bytes",
@@ -867,7 +868,7 @@ describe("error codes", () => {
     expect(mandate).toEqual(["MandateInvalid", "MandateExpired", "MandateKind", "MandateTtl", "MandateCap", "MandateBudget", "MandateCount", "MandatePrice"]);
     expect([...core.CORE_ERROR_CODES]).toEqual(rust);
     for (const code of core.CORE_ERROR_CODES) {
-      expect(new core.IntentCoreError(code).code).toBe(code);
+      expect(new core.IntentCoreError(code).engineError).toBe(code);
     }
   });
 });

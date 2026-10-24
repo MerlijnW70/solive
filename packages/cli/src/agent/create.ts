@@ -36,9 +36,9 @@ import {
 import {
   chainTime,
   CLOCK_SYSVAR,
-  CommitteeNeeded,
   escrowCommittee,
   initUserIfMissing,
+  isSdkError,
   loadConfig,
   loadUser,
   memoInstruction,
@@ -147,7 +147,7 @@ export async function escrowJudge(transport: Transport, config: Floors, mint: Ad
   try {
     return await escrowCommittee(transport, config, mint, params);
   } catch (error) {
-    if (error instanceof CommitteeNeeded) {
+    if (isSdkError(error, "committee-needed")) {
       throw new AgentRefusal("CommitteeRequired", committeeNeeded(formatAmount(error.escrow, decimals), formatAmount(error.floor, decimals), error.attestor));
     }
     throw error;

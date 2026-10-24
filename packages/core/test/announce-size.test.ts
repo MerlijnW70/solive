@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { type AnnounceShape, announceWireSize, delivery, maxSealedUrl, PACKET_DATA_SIZE } from "../src/index.js";
+import { InvalidInput } from "../src/errors.js";
 
 const light = (committee: boolean, version: AnnounceShape["version"] = "legacy"): AnnounceShape => ({
   recipients: committee ? 8 : 1,
@@ -64,9 +65,9 @@ describe("the longest sealed url an announce transaction carries", () => {
   });
 
   it("refuses shapes the program refuses", () => {
-    expect(() => maxSealedUrl({ ...light(true), recipients: 0 })).toThrow(RangeError);
-    expect(() => maxSealedUrl({ ...light(true), recipients: 9 })).toThrow(RangeError);
-    expect(() => maxSealedUrl({ ...light(false), recipients: 2 })).toThrow(RangeError);
-    expect(() => maxSealedUrl({ ...light(true), recipients: 1.5 })).toThrow(RangeError);
+    expect(() => maxSealedUrl({ ...light(true), recipients: 0 })).toThrow(InvalidInput);
+    expect(() => maxSealedUrl({ ...light(true), recipients: 9 })).toThrow(InvalidInput);
+    expect(() => maxSealedUrl({ ...light(false), recipients: 2 })).toThrow(InvalidInput);
+    expect(() => maxSealedUrl({ ...light(true), recipients: 1.5 })).toThrow(InvalidInput);
   });
 });

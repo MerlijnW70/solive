@@ -1,10 +1,10 @@
 import type { Address } from "@solana/kit";
 import {
+  checkAccountVersion,
   CLAIM_BOARD_DISCRIMINATOR,
   CLAIM_LIST_DISCRIMINATOR,
-  checkAccountVersion,
-  claimListAddress,
   claimBoardAddress,
+  claimListAddress,
   CLAIMS_OPEN,
   claimSlot,
   findIntentPda,
@@ -17,16 +17,17 @@ import {
   lineLength,
   lineSeqs,
   MAX_LINE_ENTRIES,
+  NotAnEngineAccount,
   PROFILE_DISCRIMINATOR,
   profileAddress,
-  type ProfileView,
   profileView,
-  STANDBY_DISCRIMINATOR,
+  type ProfileView,
   stakeReceiverOnCancel,
   stakeReceiverOnRelease,
+  STANDBY_DISCRIMINATOR,
   standbyAddress,
 } from "@intent-engine/core";
-import { chainTime, CLOCK_SYSVAR, clockTime, createdAccount, createdView, engineAccount } from "./accounts.js";
+import { chainTime, CLOCK_SYSVAR, clockTime, createdAccount, createdView, engineAccount, MissingAccount } from "./accounts.js";
 import { ClaimHeldBy } from "./client-errors.js";
 import type { AccountView, Transport } from "./transport.js";
 
@@ -61,7 +62,7 @@ function engineDataOf(address: Address, view: AccountView | null, discriminator:
     return null;
   }
   if (view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS || !Array.from(discriminator).every((b, i) => view.data[i] === b)) {
-    throw new Error(`${address} is not the engine account it should be`);
+    throw new NotAnEngineAccount(address, `${address} is not the engine account it should be`);
   }
   return checkAccountVersion(view.data);
 }
@@ -69,7 +70,7 @@ function engineDataOf(address: Address, view: AccountView | null, discriminator:
 function claimListOf(address: Address, view: AccountView | null): ClaimListView {
   const data = engineDataOf(address, view, CLAIM_LIST_DISCRIMINATOR);
   if (data === null) {
-    throw new Error(`the claim list ${address} its board records is missing`);
+    throw new MissingAccount("the claim list", address, `the claim list ${address} its board records is missing`);
   }
   const stored = getClaimListDecoder().decode(data);
   return { address, size: stored.size, workers: stored.workers.slice(0, stored.count), complete: stored.count === stored.size };

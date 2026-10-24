@@ -7,8 +7,8 @@ import {
   confirmOnBoth,
   createClient,
   firstOpeningIn,
-  FirstOpeningRefused,
   isLedgerPath,
+  isSdkError,
   loadAnnouncement,
   loadIntent,
   type Transport,
@@ -171,7 +171,7 @@ async function memberVoteCommand(command: Extract<CommitteeCommand, { name: "com
     throw new FlowRefused(`${member.address} is not a member of committee ${judging.address}; nothing was signed`);
   }
   const { opening } = await firstOpeningIn(transport, { intent, sha256: command.sha256, keypair: openers });
-  if (opening instanceof FirstOpeningRefused) {
+  if (isSdkError(opening, "first-opening-refused")) {
     throw new FlowRefused(`${opening.message}; ${refusalNext(opening, { key: MEMBER_KEY_FLAG, wait: MEMBER_WAIT, closed: NOBODY_ANNOUNCED })}`);
   }
   const target: Ballot = { owner: command.owner, nonce: command.nonce, announcement: opening.announcement, sha256: opening.sha256, salt: opening.salt, result: command.result };

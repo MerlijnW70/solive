@@ -47,7 +47,7 @@ function code(run: () => unknown): string | null {
     run();
     return null;
   } catch (e) {
-    if (e instanceof IntentCoreError) return e.code;
+    if (e instanceof IntentCoreError) return e.engineError;
     throw e;
   }
 }

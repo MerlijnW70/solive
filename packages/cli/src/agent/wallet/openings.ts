@@ -6,8 +6,7 @@ import {
   type FirstOpening,
   firstOpeningIn,
   FirstOpeningRefused,
-  NoKeyAtCreation,
-  ProfileHistoryIncomplete,
+  isSdkError,
 } from "@intent-engine/client";
 import { refusalNext, type SkippedLine, skippedLines } from "../../announcement-views.js";
 import type { AgentContext } from "../actions.js";
@@ -50,10 +49,10 @@ export function refused(refusal: FirstOpeningRefused, device: boolean, judge: Ad
 }
 
 const refusedHistory = (error: unknown): never => {
-  if (error instanceof ProfileHistoryIncomplete) {
+  if (isSdkError(error, "profile-history-incomplete")) {
     throw new AgentRefusal("HistoryTooLong", error.message);
   }
-  if (error instanceof NoKeyAtCreation) {
+  if (isSdkError(error, "no-key-at-creation")) {
     throw new AgentRefusal("KeyNotGiven", error.message);
   }
   throw error;
@@ -66,7 +65,7 @@ export async function firstOpeningFor(ctx: AgentContext, judge: Address, intent:
     await deviceJudgeReady(ctx.transport, judge, intent).catch(refusedHistory);
   }
   const { list, opening } = await firstOpeningIn(ctx.transport, { intent, sha256, keypair: await walletOpeners(ctx) });
-  if (opening instanceof FirstOpeningRefused) {
+  if (isSdkError(opening, "first-opening-refused")) {
     throw refused(opening, device, judge);
   }
   return { list, opening, skipped: skippedLines(opening) };
@@ -75,7 +74,7 @@ export async function firstOpeningFor(ctx: AgentContext, judge: Address, intent:
 export const skippedField = (skipped: readonly SkippedLine[]): { skipped?: SkippedLine[] } => (skipped.length === 0 ? {} : { skipped: [...skipped] });
 
 export function confirmRefused(error: unknown): never {
-  if (error instanceof ConfirmMismatch) {
+  if (isSdkError(error, "confirm-mismatch")) {
     throw new AgentRefusal("ConfirmMismatch", error.message);
   }
   throw error;

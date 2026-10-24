@@ -151,7 +151,7 @@ function headVerdict(blob: Uint8Array): "accepted" | "malformed" {
     delivery.blobHead(blob);
     return "accepted";
   } catch (error) {
-    if (error instanceof IntentCoreError && error.code === "BlobMalformed") {
+    if (error instanceof IntentCoreError && error.engineError === "BlobMalformed") {
       return "malformed";
     }
     throw error;

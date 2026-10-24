@@ -5,14 +5,13 @@ import {
   buildUpdateProfile,
   checkProfile,
   ENCRYPTION_KEY_RULE,
-  IntentCoreError,
   isEncryptionKeyText,
   NO_ENCRYPTION_KEY,
   PROFILE_MAX_SKILLS,
   type ProfileInput,
   profileAddress,
 } from "@intent-engine/core";
-import { createClient, escrowsJudgedBy, keepsKey } from "@intent-engine/client";
+import { createClient, escrowsJudgedBy, isSdkError, keepsKey } from "@intent-engine/client";
 import { encryptionKeyLines } from "../sealed-commands.js";
 import { type AgentContext, define } from "./actions.js";
 import type { Call } from "./claims.js";
@@ -79,7 +78,7 @@ function profileOf(input: { skills?: string[] | undefined; endpoint?: string | u
       ...(input.doc_sha256 === undefined ? {} : { docSha256: input.doc_sha256 }),
     });
   } catch (error) {
-    throw error instanceof IntentCoreError ? new AgentRefusal("ProfileInvalid", ENGINE_PROBLEMS.ProfileInvalid.hint) : error;
+    throw isSdkError(error, "intent-core-error") ? new AgentRefusal("ProfileInvalid", ENGINE_PROBLEMS.ProfileInvalid.hint) : error;
   }
 }
 

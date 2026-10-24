@@ -4,18 +4,17 @@ import {
   type AnnounceInput,
   type AnnouncementList,
   type AnnouncementPlan,
-  BadSaltSignature,
   chainTime,
   ConfirmMismatch,
   confirmOnBoth,
   type ConfirmTarget,
   createClient,
+  isSdkError,
   loadAnnouncement,
   memoized,
   NoMessageSigner,
   NotDeliverable,
   unmemoized,
-  UrlTooLong,
 } from "@intent-engine/client";
 import { ANNOUNCE_FIRST, announcementLine, sealedToText, walletOf } from "../../announcement-views.js";
 import { execute } from "../../flows.js";
@@ -80,7 +79,7 @@ export async function confirmedRelease(ctx: AgentContext, target: ConfirmTarget)
   try {
     await confirmOnBoth(ctx.transport, ctx.confirm, target);
   } catch (error) {
-    if (error instanceof ConfirmMismatch) {
+    if (isSdkError(error, "confirm-mismatch")) {
       throw new AgentRefusal("ConfirmMismatch", error.field === "second node" ? untrusted(error.message) : error.message);
     }
     throw error;
@@ -94,16 +93,16 @@ async function planOf(ctx: AgentContext, input: AnnounceInput, saltHint = false)
   try {
     return await createClient({ url: ctx.url ?? "", transport: ctx.transport }).prepareAnnouncement(input);
   } catch (error) {
-    if (error instanceof BadSaltSignature) {
+    if (isSdkError(error, "bad-salt-signature")) {
       throw new InvalidInput([{ path: "salt_signature", message: error.message }]);
     }
-    if (error instanceof NoMessageSigner) {
+    if (isSdkError(error, "no-message-signer")) {
       throw new AgentRefusal("NoMessageSigner", saltHint && input.saltSignature === undefined ? `${error.message}; or pass salt_signature: ${signSalt(input.intent, input.sha256)}` : error.message);
     }
-    if (error instanceof NotDeliverable) {
+    if (isSdkError(error, "not-deliverable")) {
       throw new AgentRefusal("NotDeliverable", error.message);
     }
-    if (error instanceof UrlTooLong || error instanceof RangeError) {
+    if (isSdkError(error, "url-too-long") || isSdkError(error, "invalid-input")) {
       throw new InvalidInput([{ path: "url", message: error.message }]);
     }
     throw error;

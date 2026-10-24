@@ -1,11 +1,11 @@
-import { type Address, generateKeyPairSigner, lamports, none, SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SolanaError } from "@solana/kit";
+import { type Address, generateKeyPairSigner, lamports, none, type Signature, SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SolanaError } from "@solana/kit";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { AccountState, getTokenEncoder, getTokenSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { EVENT_IX_TAG, findAssociatedTokenAddress, findIntentPda, getIntentCancelledEventEncoder, getIntentCreatedEventEncoder, getIntentDecoder, getIntentEncoder, getFillBegunEventEncoder, getFillEndedEventEncoder, getIntentFilledEventEncoder, IntentStatus, WARN_RECEIVER } from "@intent-engine/core";
 import { beforeEach, describe, expect, it } from "vitest";
-import { BlockhashExpired, Charged, FailedOnChain } from "@intent-engine/client";
+import { BlockhashExpired, FailedOnChain, failure, MaybeSent } from "@intent-engine/client";
 import { WALLET_NOT_MAINNET } from "../src/args.js";
 import { WRAPPED } from "../src/agent/create.js";
 import { InvalidInput } from "../src/agent/schema.js";
@@ -216,7 +216,7 @@ describe("the wallet server's limits and reads", () => {
     expect((await call(client, "wallet_swap", { ...swap, send: true })).error).toBe(true);
     expect((await call(client, "wallet_swap", swap)).value).toMatchObject({ code: "WalletHourLimit" });
     setNow(h.svm.getClock().unixTimestamp + 3_601n);
-    for (const error of [new BlockhashExpired("expired"), new FailedOnChain("failed")]) {
+    for (const error of [new BlockhashExpired("expired"), new FailedOnChain("failed", failure("1".repeat(64) as Signature, null))]) {
       client = await connect(limited);
       h.sendFails = { error, landed: false };
       expect((await call(client, "wallet_swap", { ...swap, send: true })).error).toBe(true);
@@ -284,8 +284,11 @@ describe("the wallet server's limits and reads", () => {
       expect(await ok(client, "wallet_swap", swap)).toMatchObject({ sent: false });
     }
     expect(JSON.parse(readFileSync(join(h.saleRoot, salesPath(defaultWallet(HOME))), "utf8"))).toEqual([]);
-    h.sendFails = { error: new Charged("transaction was sent but its confirmation could not be read"), landed: true };
-    expect((await call(client, "wallet_swap", { ...swap, send: true })).error).toBe(true);
+    h.sendFails = { error: new MaybeSent("1".repeat(64) as Signature, 0n, "transaction was sent but its confirmation could not be read"), landed: true };
+    const unsure = await call(client, "wallet_swap", { ...swap, send: true });
+    expect(unsure.error).toBe(true);
+    expect(unsure.value).toMatchObject({ code: "MaybeSent", retryable: false, signature: "1".repeat(64) });
+    expect(unsure.value["hint"]).toContain(`intent-engine lookup --signature ${"1".repeat(64)} --valid-until 0`);
     expect((await call(client, "wallet_swap", swap)).value).toMatchObject({ code: "WalletHourLimit" });
   });
 

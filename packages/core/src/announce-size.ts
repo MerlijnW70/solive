@@ -16,6 +16,7 @@ import { getAnnounceDeliveryInstruction, INTENT_ENGINE_PROGRAM_ADDRESS } from ".
 import { computeUnitLimit, computeUnitPrice } from "./compute.js";
 import { MAX_BLOB_RECIPIENTS, MAX_BLOB_URL } from "./delivery.js";
 import { sealedBlobLength } from "./sealed-delivery-v4.js";
+import { InvalidInput } from "./errors.js";
 
 export const PACKET_DATA_SIZE = 1_232;
 export const PRIORITY_UNIT_LIMIT = 200_000;
@@ -43,10 +44,10 @@ const STAND_IN: Record<Role, Address> = Object.fromEntries(
 function checkShape(shape: AnnounceShape): void {
   const { recipients, committee } = shape;
   if (!Number.isInteger(recipients) || recipients < 1 || recipients > MAX_BLOB_RECIPIENTS) {
-    throw new RangeError(`an announcement is sealed to between 1 and ${MAX_BLOB_RECIPIENTS} recipients`);
+    throw new InvalidInput("recipients", "range", `an announcement is sealed to between 1 and ${MAX_BLOB_RECIPIENTS} recipients`);
   }
   if (!committee && recipients !== 1) {
-    throw new RangeError("an announcement to a single judge is sealed to exactly 1 recipient");
+    throw new InvalidInput("recipients", "range", "an announcement to a single judge is sealed to exactly 1 recipient");
   }
 }
 

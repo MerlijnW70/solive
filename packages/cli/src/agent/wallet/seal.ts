@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
-import { isSealed, MAX_SEALED_RECIPIENTS, seal, SealedError, sealedTo, unseal } from "@intent-engine/core";
-import { MAX_SPEC_BYTES, sealRecipients } from "@intent-engine/client";
+import { isSealed, MAX_SEALED_RECIPIENTS, seal, sealedTo, unseal } from "@intent-engine/core";
+import { isSdkError, MAX_SPEC_BYTES, sealRecipients } from "@intent-engine/client";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { InvalidInput, account, list, object, optional, text } from "../schema.js";
@@ -52,7 +52,7 @@ export const walletSealSpec = define({
     try {
       sealed = await seal(new TextEncoder().encode(input.text), recipients);
     } catch (error) {
-      throw error instanceof SealedError ? new InvalidInput([{ path: "invite", message: error.message }]) : error;
+      throw isSdkError(error, "sealed-error") ? new InvalidInput([{ path: "invite", message: error.message }]) : error;
     }
     if (sealed.length > MAX_SPEC_BYTES) {
       throw new InvalidInput([{ path: "text", message: sealedTooLarge(sealed.length) }]);

@@ -51,7 +51,7 @@ const BULLETS = {
 const SENTENCES = {
   settle: "`settleProof` is the judge's call: it pays the worker that made the announcement it names, given its opening, the work's sha256 and the announcement's salt.",
   refuses:
-    "Before sending, it refuses an expired escrow (`EscrowExpired`), a worker owned by a program (`PayToNotWallet`), a worker whose token account moved (`PayeeMoved`), an opening that does not open the announcement and an escrow another worker has claimed (`NotSettleable`).",
+    "Before sending, it refuses an expired escrow (`EscrowExpired`), a worker owned by a program (`PayToNotWallet`), a worker whose token account moved (`PayeeMoved`), an opening that does not open the announcement (`NotSettleable`) and an escrow another worker has claimed (`ClaimHeldBy`).",
   relay: "Here your wallet pays for the worker's announcement and for the release, so neither new key needs SOL.",
   signs: "`settleProof`, `settleCommittee` and `settleSplit` sign over the announcement and its opening and pay the announcing worker's token account; any wallet can send the signed release.",
   history: "`history` reads the paid work's sha256 and salt from the release itself.",

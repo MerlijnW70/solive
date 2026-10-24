@@ -54,6 +54,7 @@ import {
   sortMembers,
   validateIxAgainstIdl,
 } from "../src/index.js";
+import { InvalidInput } from "../src/errors.js";
 
 const idl = JSON.parse(readFileSync(fileURLToPath(new URL("../generated/idl.json", import.meta.url)), "utf8")) as IdlLike;
 const keyOf = (n: number) => getAddressDecoder().decode(new Uint8Array(32).fill(n));
@@ -86,7 +87,7 @@ describe("delivery addresses", () => {
     expect((await findAnnouncementPda({ intent, worker, blobHash: hash }))[0]).toBe(expected);
     expect(await announcementAddress(intent, worker, sealed)).toBe(expected);
     expect(await announcementAddress(intent, judge, sealed)).not.toBe(expected);
-    await expect(findAnnouncementPda({ intent, worker, blobHash: hash.slice(1) })).rejects.toThrow(RangeError);
+    await expect(findAnnouncementPda({ intent, worker, blobHash: hash.slice(1) })).rejects.toThrow(InvalidInput);
     expect(await findDeliveryBookPda({ intent })).toEqual(await findBookPda({ intent }));
     expect(await deliveryBookAddress(intent)).toBe((await findBookPda({ intent }))[0]);
     expect(await findRefutationPda({ earlier })).toEqual(await generatedRefutationPda({ earlier }));
@@ -118,8 +119,8 @@ describe("settlement builders", () => {
 
   it("refuse at runtime an opening without its announcement, the reverse, or a mis-sized opening", async () => {
     const loose = { ...base, payee: worker } as FillAttestedSpec;
-    await expect(buildFillAttested({ ...loose, opening } as FillAttestedSpec)).rejects.toThrow(RangeError);
-    await expect(buildFillAttested({ ...loose, announcement: judge } as FillAttestedSpec)).rejects.toThrow(RangeError);
+    await expect(buildFillAttested({ ...loose, opening } as FillAttestedSpec)).rejects.toThrow(InvalidInput);
+    await expect(buildFillAttested({ ...loose, announcement: judge } as FillAttestedSpec)).rejects.toThrow(InvalidInput);
     await expect(buildFillAttested({ ...loose, announcement: judge, opening: { ...opening, salt: new Uint8Array(15) } })).rejects.toThrow("opening.salt must be 16 bytes");
     await expect(buildFillAttested({ ...loose, announcement: judge, opening: { ...opening, delivered: new Uint8Array(31) } })).rejects.toThrow("opening.delivered must be 32 bytes");
   });
@@ -142,7 +143,7 @@ describe("settlement builders", () => {
     expect([data.fill.amountIn, data.opening, data.claim.recipients]).toEqual([400n, opening, [worker, owner]]);
     expect(slotOf(ix, "fill_attested_split_committee", "announcement")).toBe(announced.announcement);
     expect(validateIxAgainstIdl(ix, idl)).toEqual([]);
-    await expect(buildFillAttestedSplit({ ...base, ...announced, opening: { ...opening, salt: new Uint8Array(17) }, recipients: [worker], weights: [10_000] })).rejects.toThrow(RangeError);
+    await expect(buildFillAttestedSplit({ ...base, ...announced, opening: { ...opening, salt: new Uint8Array(17) }, recipients: [worker], weights: [10_000] })).rejects.toThrow(InvalidInput);
   });
 });
 
@@ -211,7 +212,7 @@ describe("delivery builders", () => {
     const malformed = blob(1);
     malformed[0] = 3;
     await expect(buildAnnounceDelivery({ worker: signer, intent, attestor: judge, commitment, blob: malformed })).rejects.toThrow(new IntentCoreError("BlobMalformed"));
-    await expect(buildAnnounceDelivery({ worker: signer, intent, attestor: judge, commitment: new Uint8Array(32), blob: blob(1) })).rejects.toThrow(RangeError);
+    await expect(buildAnnounceDelivery({ worker: signer, intent, attestor: judge, commitment: new Uint8Array(32), blob: blob(1) })).rejects.toThrow(InvalidInput);
     await expect(buildAnnounceDelivery({ worker: signer, intent, attestor: judge, commitment: new Uint8Array(31).fill(1), blob: blob(1) })).rejects.toThrow("commitment must be 32 bytes");
   });
 
@@ -221,7 +222,7 @@ describe("delivery builders", () => {
     expect(getSetAnnounceFeeInstructionDataDecoder().decode(ix.data).fee).toBe(MAX_CREATE_FEE);
     expect(validateIxAgainstIdl(ix, idl)).toEqual([]);
     for (const fee of [MAX_CREATE_FEE + 1, -1, 0.5]) {
-      await expect(buildSetAnnounceFee({ admin, fee }), String(fee)).rejects.toThrow(RangeError);
+      await expect(buildSetAnnounceFee({ admin, fee }), String(fee)).rejects.toThrow(InvalidInput);
     }
   });
 
@@ -234,7 +235,7 @@ describe("delivery builders", () => {
     expect(ix.accounts[0]).toEqual({ address: judge, role: AccountRole.WRITABLE });
     expect(validateIxAgainstIdl(ix, idl)).toEqual([]);
     for (const bad of [[], Array.from({ length: 9 }, (_, i) => keyOf(i + 1)), [keyOf(1), keyOf(1)]]) {
-      await expect(buildSyncCommitteeKeys({ committee: judge, members: bad }), String(bad.length)).rejects.toThrow(RangeError);
+      await expect(buildSyncCommitteeKeys({ committee: judge, members: bad }), String(bad.length)).rejects.toThrow(InvalidInput);
     }
   });
 

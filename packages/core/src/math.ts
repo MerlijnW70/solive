@@ -1,10 +1,10 @@
-import { IntentCoreError } from "./errors.js";
+import { IntentCoreError, InvalidInput } from "./errors.js";
 
 export const U64_MAX = (1n << 64n) - 1n;
 
 export function checkU64(value: bigint, name = "amount"): bigint {
   if (value < 0n || value > U64_MAX) {
-    throw new RangeError(`${name} ${String(value)} is not between 0 and ${U64_MAX}`);
+    throw new InvalidInput(name, "range", `${name} ${String(value)} is not between 0 and ${U64_MAX}`);
   }
   return value;
 }

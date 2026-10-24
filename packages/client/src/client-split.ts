@@ -49,12 +49,12 @@ export function splitSettlement(context: ClientContext) {
     const target: ReleaseTarget = { ...input, payer };
     const basis = await releaseBasis(context, target, () => wallets, async (attestor, intent) => {
       if ((await loadCommittee(context.transport, attestor)) !== null) {
-        throw new NotSettleable(intent, committeeJudged(attestor));
+        throw new NotSettleable(intent, "committee-judged", committeeJudged(attestor));
       }
       return { feeOwner: attestor, judge: attestor };
     });
     if (!wallets.includes(basis.worker)) {
-      throw new NotSettleable(basis.intent, `pays only a split that includes ${basis.worker}, who made the announcement; nothing was sent`);
+      throw new NotSettleable(basis.intent, "split-excludes-announcer", `pays only a split that includes ${basis.worker}, who made the announcement; nothing was sent`);
     }
     const terms = { ...basis.terms, splitHash: await splitCommit(wallets, weights) };
     const cosigners = [...wallets, basis.judge];
@@ -70,7 +70,7 @@ export function splitSettlement(context: ClientContext) {
     const payer = input.payer ?? input.judge;
     const { basis, wallets, weights, message } = await planned(input, payer);
     if (basis.judge !== input.judge.address) {
-      throw new NotSettleable(basis.intent, `names ${basis.judge} as its judge, not ${input.judge.address}`);
+      throw new NotSettleable(basis.intent, "wrong-judge", `names ${basis.judge} as its judge, not ${input.judge.address}`);
     }
     const given = new Map(input.signatures.map(({ wallet, signature }) => [wallet, signature]));
     const entries = [];

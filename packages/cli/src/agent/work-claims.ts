@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
-import { buildClaimJob, buildDropClaim, claimUntil, findIntentPda, formatAmount, formatTime, IntentCoreError, IntentStatus, type LineHandover, MAX_CLAIM_SECS, MAX_CLAIMANTS, MAX_SEALED_RECIPIENTS } from "@intent-engine/core";
-import { type ClaimListView, type ClaimsView, createClient } from "@intent-engine/client";
+import { buildClaimJob, buildDropClaim, claimUntil, findIntentPda, formatAmount, formatTime, IntentStatus, type LineHandover, MAX_CLAIM_SECS, MAX_CLAIMANTS, MAX_SEALED_RECIPIENTS } from "@intent-engine/core";
+import { type ClaimListView, type ClaimsView, createClient, isSdkError } from "@intent-engine/client";
 import { listAccount, listRefusal } from "../claim-lists.js";
 import { coolingDown, dropHandover, handedTo, heldBy, noClaims } from "../claim-commands.js";
 import { claimNotInvited, sealedInvites } from "../invites.js";
@@ -230,7 +230,7 @@ async function takeStep(client: ReturnType<typeof createClient>, escrow: Escrow,
   try {
     until = claimUntil(view.maxSecs, now, secs, found.intent.expiresAt);
   } catch (error) {
-    throw error instanceof IntentCoreError ? new AgentRefusal("ClaimTerms", `a claim of ${secs} seconds would outlive escrow ${intent}`) : error;
+    throw isSdkError(error, "intent-core-error") ? new AgentRefusal("ClaimTerms", `a claim of ${secs} seconds would outlive escrow ${intent}`) : error;
   }
   const stake = `${formatAmount(view.stake, 9)} SOL`;
   return {

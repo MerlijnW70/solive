@@ -35,6 +35,7 @@ import {
   agentSpec,
   ALL_TOOLS_NEED_WALLET,
   relaySpec,
+  signatureOf,
   treasury,
   walletLimits,
 } from "./command-builders.js";
@@ -369,6 +370,14 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
         keypair: required(values, "keypair"),
         yes: values.yes === true,
         input: createTerms(sub, values),
+      };
+    case "lookup":
+      noSub(sub);
+      return {
+        name: "signature-lookup",
+        ...remote,
+        signature: signatureOf(values),
+        validUntil: values["valid-until"] === undefined ? undefined : u64(values, "valid-until"),
       };
     case "list":
       noSub(sub);

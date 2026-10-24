@@ -4,7 +4,7 @@ import { dirname } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { createKeyPairSignerFromBytes, createSolanaRpc, type KeyPairSigner } from "@solana/kit";
-import { changesFrom, ConfirmMismatch, intentNotifications, openUsb, pinnedFetch, type RpcLike, rpcTransport, signatureWatch } from "@intent-engine/client";
+import { changesFrom, intentNotifications, isSdkError, openUsb, pinnedFetch, type RpcLike, rpcTransport, signatureWatch } from "@intent-engine/client";
 import { type Command, ENV_URL, outputOf, parse, UsageError } from "./args.js";
 import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
@@ -13,7 +13,7 @@ import { watchJudge } from "./judge-watch.js";
 import { printableLines, redactUrl, render, renderText } from "./render.js";
 import { expandHome, withSettings } from "./wallet.js";
 import { ENV_KEYPAIR } from "./clusters.js";
-import { certificateCode, certificateHint, SERVER_PROBLEMS, unfundedSend } from "./agent/problems.js";
+import { certificateCode, certificateHint, maybeSentHint, SERVER_PROBLEMS, unfundedSend } from "./agent/problems.js";
 import { WALLET_NOTICE } from "./agent/wallet.js";
 import { EXIT_ALERTED } from "./monitor-args.js";
 import { monitor, writeBaseline } from "./monitor.js";
@@ -55,8 +55,11 @@ function message(error: unknown, url: string | undefined): string {
   if (certificate !== null) {
     return certificateHint(url, certificate);
   }
-  if (error instanceof ConfirmMismatch) {
+  if (isSdkError(error, "confirm-mismatch")) {
     return printableLines(`${error.name}: ${error.message}`);
+  }
+  if (isSdkError(error, "maybe-sent")) {
+    return printableLines(`${error.message}; ${maybeSentHint(error)}`);
   }
   if (url !== undefined && offline(error)) {
     return unreachable(redactUrl(url));

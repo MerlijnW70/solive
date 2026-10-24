@@ -16,7 +16,7 @@ import {
   splitFees,
   settlementWarnings,
 } from "@intent-engine/core";
-import { type BallotInput, chainTime, ClaimHeldBy, createClient, envelopeDigest, loadConfig, mintOf, NotSettleable, PayeeMoved, releaseClaims, tokenAccountIfMissing } from "@intent-engine/client";
+import { type BallotInput, chainTime, createClient, envelopeDigest, isSdkError, loadConfig, mintOf, releaseClaims, tokenAccountIfMissing } from "@intent-engine/client";
 import { capturing } from "../../announcement-views.js";
 import { TOKEN_NAMES } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";
@@ -59,7 +59,7 @@ export async function claimsOfRelease(ctx: AgentContext, intent: Address, claims
   try {
     return await releaseClaims(ctx.transport, intent, claims, payees);
   } catch (error) {
-    if (error instanceof ClaimHeldBy) {
+    if (isSdkError(error, "claim-held-by")) {
       throw new AgentRefusal("ClaimHeld", claimHeldBy(error.worker, error.until));
     }
     throw error;
@@ -75,13 +75,13 @@ export async function invitedPayees(ctx: AgentContext, intent: Address, payees: 
 }
 
 export function settleRefused(error: unknown): never {
-  if (error instanceof ClaimHeldBy) {
+  if (isSdkError(error, "claim-held-by")) {
     throw new AgentRefusal("ClaimHeld", claimHeldBy(error.worker, error.until));
   }
-  if (error instanceof PayeeMoved) {
+  if (isSdkError(error, "payee-moved")) {
     throw new InvalidInput([{ path: "delivered_sha256", message: PAYEE_MOVED }]);
   }
-  if (error instanceof NotSettleable) {
+  if (isSdkError(error, "not-settleable")) {
     throw new AgentRefusal("KindMismatch", error.message);
   }
   throw error;

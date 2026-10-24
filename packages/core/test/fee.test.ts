@@ -22,6 +22,7 @@ import {
   splitFees,
   U64_MAX,
 } from "../src/index.js";
+import { InvalidInput } from "../src/errors.js";
 
 const RUNS = Number(process.env["PROPERTY_RUNS"] ?? 500);
 const amount = fc.oneof(fc.bigInt({ min: 0n, max: U64_MAX }), fc.constantFrom(0n, 1n, 9_999n, 10_000n, U64_MAX - 1n, U64_MAX));
@@ -31,7 +32,7 @@ const codeOf = (run: () => unknown) => {
   try {
     run();
   } catch (error) {
-    return error instanceof IntentCoreError ? error.code : String(error);
+    return error instanceof IntentCoreError ? error.engineError : String(error);
   }
   return "ok";
 };
@@ -50,17 +51,17 @@ describe("fee splits", () => {
     for (const bad of [-1, 65_536, 1.5, Number.NaN]) {
       expect(() => splitFee(100n, bad), String(bad)).toThrow(`fee bps ${String(bad)} is not between 0 and 65535`);
       expect(() => splitFee(0n, bad), String(bad)).toThrow(`fee bps ${String(bad)} is not between 0 and 65535`);
-      expect(() => splitFees(100n, bad, 0, 0), String(bad)).toThrow(RangeError);
-      expect(() => splitFees(100n, 0, bad, 0), String(bad)).toThrow(RangeError);
-      expect(() => splitFees(100n, 0, 1, bad), String(bad)).toThrow(RangeError);
+      expect(() => splitFees(100n, bad, 0, 0), String(bad)).toThrow(InvalidInput);
+      expect(() => splitFees(100n, 0, bad, 0), String(bad)).toThrow(InvalidInput);
+      expect(() => splitFees(100n, 0, 1, bad), String(bad)).toThrow(InvalidInput);
     }
-    expect(() => splitFee(100n, -50)).toThrow(RangeError);
+    expect(() => splitFee(100n, -50)).toThrow(InvalidInput);
     for (const bad of [-1n, U64_MAX + 1n]) {
-      expect(() => splitFee(bad, 30)).toThrow(RangeError);
-      expect(() => splitFees(bad, 30, 0, 0)).toThrow(RangeError);
-      expect(() => mulDivFloor(bad, 1n, 1n)).toThrow(RangeError);
-      expect(() => mulDivCeil(1n, bad, 1n)).toThrow(RangeError);
-      expect(() => mulDivFloor(1n, 1n, bad)).toThrow(RangeError);
+      expect(() => splitFee(bad, 30)).toThrow(InvalidInput);
+      expect(() => splitFees(bad, 30, 0, 0)).toThrow(InvalidInput);
+      expect(() => mulDivFloor(bad, 1n, 1n)).toThrow(InvalidInput);
+      expect(() => mulDivCeil(1n, bad, 1n)).toThrow(InvalidInput);
+      expect(() => mulDivFloor(1n, 1n, bad)).toThrow(InvalidInput);
     }
     expect(splitFee(U64_MAX, 10_000)).toEqual({ fee: U64_MAX, net: 0n });
     expect(splitFees(0n, 10_000, 0, 10_000)).toEqual({ protocol: 0n, partner: 0n, net: 0n });

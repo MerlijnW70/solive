@@ -8,6 +8,7 @@ import {
   type FirstOpening,
   FirstOpeningRefused,
   heldKeys,
+  isSdkError,
   openingOf,
   type SkippedAnnouncement,
   type Transport,
@@ -93,7 +94,7 @@ export function refusalNext(refusal: FirstOpeningRefused, hints: RefusalHints): 
   }
 }
 
-export const refusalOf = (error: unknown): FirstOpeningRefused | null => (error instanceof FirstOpeningRefused ? error : null);
+export const refusalOf = (error: unknown): FirstOpeningRefused | null => (isSdkError(error, "first-opening-refused") ? error : null);
 
 export type Captured = { instructions: Instruction[]; payer: TransactionSigner };
 

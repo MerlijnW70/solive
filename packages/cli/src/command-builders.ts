@@ -307,6 +307,16 @@ export const RELEASE_NEEDED = "--release needs the release's base58 transaction 
 
 const RELEASE_SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{32,88}$/;
 
+export const SIGNATURE_NEEDED = "--signature needs a base58 transaction signature";
+
+export function signatureOf(values: Values): string {
+  const signature = values.signature;
+  if (signature === undefined || !RELEASE_SIGNATURE.test(signature)) {
+    throw new UsageError(SIGNATURE_NEEDED);
+  }
+  return signature;
+}
+
 export function releaseOption(values: Values): { release?: string } {
   if (values.release === undefined) {
     return {};

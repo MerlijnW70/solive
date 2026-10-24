@@ -122,7 +122,7 @@ for (const params of [limit, auction]) {
 
 An `AttestedResult` intent holds payment until its judge signs a result. `specHash` pins the spec the judge checks, and `judgeFee` pays the judge out of the escrow.
 
-A worker announces its work with `announce`. `settleProof` is the judge's call: it pays the worker that made the announcement it names, given its opening, the work's sha256 and the announcement's salt. Before sending, it refuses an expired escrow (`EscrowExpired`), a worker owned by a program (`PayToNotWallet`), a worker whose token account moved (`PayeeMoved`), an opening that does not open the announcement and an escrow another worker has claimed (`NotSettleable`).
+A worker announces its work with `announce`. `settleProof` is the judge's call: it pays the worker that made the announcement it names, given its opening, the work's sha256 and the announcement's salt. Before sending, it refuses an expired escrow (`EscrowExpired`), a worker owned by a program (`PayToNotWallet`), a worker whose token account moved (`PayeeMoved`), an opening that does not open the announcement (`NotSettleable`) and an escrow another worker has claimed (`ClaimHeldBy`).
 
 Here your wallet pays for the worker's announcement and for the release, so neither new key needs SOL. The judge keeps its 64 key bytes, because it opens what workers seal to it.
 

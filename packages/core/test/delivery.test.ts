@@ -17,6 +17,7 @@ import {
   delivery,
   IntentCoreError,
 } from "../src/index.js";
+import { InvalidInput } from "../src/errors.js";
 
 const {
   BLOB_FIXED_LEN,
@@ -57,7 +58,7 @@ function refusal(run: () => unknown): string {
     run();
   } catch (error) {
     if (error instanceof IntentCoreError) {
-      return error.code;
+      return error.engineError;
     }
     throw error;
   }
@@ -99,9 +100,9 @@ describe("commitment and fingerprint preimages", () => {
   });
 
   it("refuses inputs of the wrong length", () => {
-    expect(() => commitmentPreimage(INTENT, WORKER, fill(4, 15), SHA)).toThrow(RangeError);
-    expect(() => commitmentPreimage(INTENT, WORKER, SALT, fill(5, 31))).toThrow(RangeError);
-    expect(() => fingerprintPreimage(fill(9, 33))).toThrow(RangeError);
+    expect(() => commitmentPreimage(INTENT, WORKER, fill(4, 15), SHA)).toThrow(InvalidInput);
+    expect(() => commitmentPreimage(INTENT, WORKER, SALT, fill(5, 31))).toThrow(InvalidInput);
+    expect(() => fingerprintPreimage(fill(9, 33))).toThrow(InvalidInput);
   });
 });
 
@@ -327,8 +328,8 @@ describe("attested delivery preimages", () => {
     const p = attestedDeliveryPreimage(rest);
     expect(p.slice(160, 168)).toEqual(fill(0, 8));
     expect(p.slice(168, 172)).toEqual(fill(0, 4));
-    expect(() => attestedDeliveryPreimage({ ...fields(), extHash: fill(15, 31) })).toThrow(RangeError);
-    expect(() => attestedDeliveryPreimage({ ...fields(), salt: fill(19, 32) })).toThrow(RangeError);
+    expect(() => attestedDeliveryPreimage({ ...fields(), extHash: fill(15, 31) })).toThrow(InvalidInput);
+    expect(() => attestedDeliveryPreimage({ ...fields(), salt: fill(19, 32) })).toThrow(InvalidInput);
   });
 });
 

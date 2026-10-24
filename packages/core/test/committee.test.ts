@@ -19,6 +19,7 @@ import {
   MAX_COMMITTEE_MEMBERS,
   sortMembers,
 } from "../src/index.js";
+import { InvalidInput } from "../src/errors.js";
 
 type MaskCase = { mask: number; outcome: { ok: Address[] } | { err: string } };
 type CommitteeCase = {
@@ -84,7 +85,7 @@ describe("committee terms match the program byte for byte", () => {
     const members = vectors.sig.committee_members;
     const digest = await sha256(new Uint8Array([...COMMITTEE_COSIGN_TAG, ...bytesOfHex(vectors.sig.attest_delivery_preimage)]));
     expect(hexOf(committeeEnvelope(digest, [...members].reverse()))).toBe(vectors.sig.committee_message);
-    expect(() => committeeEnvelope(new Uint8Array(31), members)).toThrow(RangeError);
+    expect(() => committeeEnvelope(new Uint8Array(31), members)).toThrow(InvalidInput);
     const [first, , third] = members;
     if (first === undefined || third === undefined) throw new Error("three members");
     const terms = { members, threshold: 2, feeWallet: first };

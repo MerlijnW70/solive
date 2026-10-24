@@ -22,6 +22,7 @@ import { sized } from "./bytes.js";
 import { SALT_LEN } from "./delivery.js";
 import { capAccount } from "./mint-caps.js";
 import { findAssociatedTokenAddress } from "./pdas.js";
+import { InvalidInput } from "./errors.js";
 
 export type FillIntentSpec = {
   solver: TransactionSigner;
@@ -112,7 +113,7 @@ function deliveryAccounts(input: { announcement?: Address | undefined; opening?:
     return { opening: UNOPENED };
   }
   if (input.announcement === undefined || input.opening === undefined) {
-    throw new RangeError("a release names its announcement together with the opening, or neither");
+    throw new InvalidInput("announcement", "conflict", "a release names its announcement together with the opening, or neither");
   }
   return {
     announcement: input.announcement,
@@ -179,10 +180,10 @@ export type FillAttestedSplitSpec = AttestedTerms &
 
 async function splitAccounts(input: FillAttestedSplitSpec) {
   if (input.recipients.length < 1 || input.recipients.length > MAX_SPLIT_RECIPIENTS) {
-    throw new Error(`split needs 1..=${MAX_SPLIT_RECIPIENTS} recipients, got ${input.recipients.length}`);
+    throw new InvalidInput("recipients", "range", `split needs 1..=${MAX_SPLIT_RECIPIENTS} recipients, got ${input.recipients.length}`);
   }
   if (input.weights.length !== input.recipients.length) {
-    throw new Error(`split needs one weight per recipient, got ${input.weights.length} for ${input.recipients.length}`);
+    throw new InvalidInput("weights", "length", `split needs one weight per recipient, got ${input.weights.length} for ${input.recipients.length}`);
   }
   const slots = await Promise.all(input.recipients.map((owner) => ataOf(owner, input)));
   return {
@@ -225,13 +226,13 @@ export type FlashFillSpec = Omit<FillIntentSpec, "ext"> & {
 export async function buildFlashFill(input: FlashFillSpec): Promise<Instruction[]> {
   const baseIndex = input.baseIndex ?? 0;
   if (!Number.isInteger(baseIndex) || baseIndex < 0) {
-    throw new RangeError(`baseIndex must be a non-negative integer, got ${baseIndex}`);
+    throw new InvalidInput("baseIndex", "range", `baseIndex must be a non-negative integer, got ${baseIndex}`);
   }
   const prefix = input.prefix ?? [];
   const route = input.route ?? [];
   const endIndex = baseIndex + prefix.length + 1 + route.length;
   if (endIndex > 0xffff) {
-    throw new RangeError(`a flash fill cannot end at instruction ${endIndex}`);
+    throw new InvalidInput("endIndex", "range", `a flash fill cannot end at instruction ${endIndex}`);
   }
   const intent = await intentOf(input.owner, input.nonce);
   const feeTo =

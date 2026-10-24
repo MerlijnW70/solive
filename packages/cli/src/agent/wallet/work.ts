@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { createClient, firstOpeningIn, FirstOpeningRefused, MAX_SPEC_BYTES, opensTo, pinnedFetch } from "@intent-engine/client";
+import { createClient, firstOpeningIn, isSdkError, MAX_SPEC_BYTES, opensTo, pinnedFetch } from "@intent-engine/client";
 import { openedBy, skippedLines } from "../../announcement-views.js";
 import { fetchBytes } from "../../delivery-fetch.js";
 import { systemLookup } from "../../public-address.js";
@@ -79,7 +79,7 @@ export const walletFetchWork = define({
     }
     const { opening } = await firstOpeningIn(ctx.transport, { intent: input.intent, sha256, keypair: openers });
     const first =
-      opening instanceof FirstOpeningRefused
+      isSdkError(opening, "first-opening-refused")
         ? { refused: { reason: opening.reason, message: refused(opening, signer.device !== undefined, signer.address).message } }
         : {
             first: { announcement: opening.announcement, seq: opening.seq, worker: opening.worker, commitment: opening.commitment },
@@ -96,7 +96,7 @@ export const walletFetchWork = define({
       bytes: found.bytes.length,
       ...(shown === undefined ? {} : { untrusted_text: shown }),
       ...first,
-      next: !opens ? WORK_DIFFERS : opening instanceof FirstOpeningRefused ? refused(opening, signer.device !== undefined, signer.address).message : WORK_OPENS,
+      next: !opens ? WORK_DIFFERS : isSdkError(opening, "first-opening-refused") ? refused(opening, signer.device !== undefined, signer.address).message : WORK_OPENS,
     };
   },
 });

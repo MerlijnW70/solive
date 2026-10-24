@@ -14,7 +14,7 @@ import {
   signMessageBytes,
   x25519PublicOf,
 } from "@intent-engine/core";
-import { BadSaltSignature, createClient, NoMessageSigner, NotDeliverable } from "../src/index.js";
+import { BadSaltSignature, createClient, InvalidInput, NoMessageSigner, NotDeliverable } from "../src/index.js";
 import { world } from "./svm.js";
 import { announced, fundedSigner, keypairSigner, LOCAL, nativeMint, sha, specHash, tokensOf, workUrl } from "./work.js";
 
@@ -125,7 +125,7 @@ describe("announcing a delivery", () => {
     const signing = await fundedSigner(w);
     const device: TransactionSigner = { address: signing.address, signTransactions: (txs) => signing.signTransactions(txs) };
     await expect(client.announce({ worker: device, intent, sha256: WORK, url: workUrl() })).rejects.toThrow(NoMessageSigner);
-    await expect(client.announce({ worker: device, intent, sha256: WORK, url: workUrl(), secret: new Uint8Array(31) })).rejects.toThrow(RangeError);
+    await expect(client.announce({ worker: device, intent, sha256: WORK, url: workUrl(), secret: new Uint8Array(31) })).rejects.toThrow(InvalidInput);
     const secret = crypto.getRandomValues(new Uint8Array(32));
     const kept = await client.announce({ worker: device, intent, sha256: WORK, url: workUrl(), secret });
     expect(await client.announce({ worker: device, intent, sha256: WORK, url: workUrl(), secret })).toMatchObject({ announcement: kept.announcement, signature: null });

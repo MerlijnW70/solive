@@ -10,7 +10,7 @@ import {
   type MandateSpec,
   mandateLane,
 } from "@intent-engine/core";
-import { createdAccount, engineAccount, MissingAccount, type Transport } from "@intent-engine/client";
+import { createdAccount, engineAccount, isSdkError, type Transport } from "@intent-engine/client";
 import { type Call, claim, claimedBy, type Claims, PREPARED_TTL } from "./claims.js";
 import { AgentRefusal, SimulationFailed } from "./problems.js";
 import { account, amount, optional } from "./schema.js";
@@ -31,7 +31,7 @@ export const NO_MANDATE_HINT = "it was never granted, or the owner revoked it, w
 export async function loadMandate(transport: Transport, owner: Address, agent: Address, id: bigint) {
   const [address] = await findMandatePda({ owner, agent, id });
   const data = await engineAccount(transport, address, getMandateDiscriminatorBytes(), "mandate").catch((error: unknown) => {
-    if (error instanceof MissingAccount) {
+    if (isSdkError(error, "missing-account")) {
       error.message = `${error.message}; ${NO_MANDATE_HINT}`;
     }
     throw error;

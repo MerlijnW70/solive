@@ -14,6 +14,7 @@ import {
   SPEC_MEMO_PREFIX,
   specMemo,
 } from "../src/index.js";
+import { InvalidInput } from "../src/errors.js";
 
 const URL_OK = "https://example.org/spec.md";
 const HASH = "ab".repeat(32);
@@ -48,7 +49,7 @@ describe("spec and release memos", () => {
       "https://a.io/" + "x".repeat(MAX_MEMO_URL - 12),
     ]) {
       expect(isMemoUrl(url), url).toBe(false);
-      expect(() => specMemo(url)).toThrow(RangeError);
+      expect(() => specMemo(url)).toThrow(InvalidInput);
       expect(parseSpecMemo(`${SPEC_MEMO_PREFIX}${url}`)).toBeNull();
     }
   });
@@ -84,7 +85,7 @@ describe("spec and release memos", () => {
       "https:/a.example/x",
     ]) {
       expect(isMemoUrl(url), url).toBe(false);
-      expect(() => specMemo(url)).toThrow(RangeError);
+      expect(() => specMemo(url)).toThrow(InvalidInput);
       expect(parseSpecMemo(`${SPEC_MEMO_PREFIX}${url}`)).toEqual(isLegacyMemoUrl(url) ? { url } : null);
     }
   });
@@ -164,7 +165,7 @@ describe("spec and release memos", () => {
     expect(RELEASE_MEMO_PREFIX).toBe("delivery sha256:");
     expect(releaseMemo(HASH)).toBe(`delivery sha256:${HASH}`);
     expect(parseReleaseMemo(releaseMemo(HASH))).toBe(HASH);
-    expect(() => releaseMemo(HASH.toUpperCase())).toThrow(RangeError);
+    expect(() => releaseMemo(HASH.toUpperCase())).toThrow(InvalidInput);
     for (const text of [`delivery sha256:${HASH.toUpperCase()}`, `delivery sha256:${HASH} `, `delivery sha256:${HASH.slice(1)}`, specMemo(URL_OK), ""]) {
       expect(parseReleaseMemo(text), text).toBeNull();
     }
@@ -179,6 +180,6 @@ describe("spec and release memos", () => {
     expect(parseRelease(releaseMemo(HASH))).toEqual({ sha256: HASH });
     expect(parseRelease(`${memo} salt:${salt}`)).toBeNull();
     expect(parseRelease(`delivery sha256:${HASH} salt:ab`)).toBeNull();
-    expect(() => releaseMemo(HASH, "ab")).toThrow(RangeError);
+    expect(() => releaseMemo(HASH, "ab")).toThrow(InvalidInput);
   });
 });

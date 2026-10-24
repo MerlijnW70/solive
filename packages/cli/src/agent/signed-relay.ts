@@ -1,7 +1,7 @@
 import { type Address, getBase64Encoder, type Instruction } from "@solana/kit";
 import { buildCreateIntentSigned, type IntentParams } from "@intent-engine/core";
 import { bytesFit } from "@intent-engine/solver";
-import { Charged, type Transport } from "@intent-engine/client";
+import { isSdkError, type Transport } from "@intent-engine/client";
 import { type Prepared, transactionSize } from "./prepare.js";
 import { AgentRefusal } from "./problems.js";
 import type { Relay } from "./relay.js";
@@ -80,7 +80,7 @@ export async function paying<T>(paid: { any: boolean }, sending: Promise<T>): Pr
     paid.any = true;
     return result;
   } catch (error) {
-    if (error instanceof Charged) {
+    if (isSdkError(error, "maybe-sent") || isSdkError(error, "failed-on-chain")) {
       paid.any = true;
     }
     throw error;

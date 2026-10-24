@@ -2,6 +2,7 @@ import type { Address } from "@solana/kit";
 import type { Config } from "../generated/client/index.js";
 import { Kind, kindBit, type KindName } from "./kinds.js";
 import { U64_MAX } from "./math.js";
+import { InvalidInput } from "./errors.js";
 
 export const CONFIG_VERSION = 2;
 export const USER_VERSION = 2;
@@ -19,7 +20,7 @@ export function maxFeeBpsFor(kind: number): number {
 
 export function remainingOf(intent: { escrowed: bigint; filled: bigint }): bigint {
   if (intent.filled > intent.escrowed) {
-    throw new RangeError(`an intent cannot have filled ${intent.filled} of ${intent.escrowed}`);
+    throw new InvalidInput("intent", "range", `an intent cannot have filled ${intent.filled} of ${intent.escrowed}`);
   }
   return intent.escrowed - intent.filled;
 }
@@ -40,7 +41,7 @@ export function feeBpsFor(config: FeeConfig, kind: number): number {
   }
   const bps = config.kindFeeBps.at(kind - 1);
   if (bps === undefined) {
-    throw new RangeError(`no fee is configured for kind ${kind}`);
+    throw new InvalidInput("kind", "unsupported", `no fee is configured for kind ${kind}`);
   }
   return bps;
 }
@@ -98,7 +99,7 @@ export const NONCE_WINDOW_WORDS = 4;
 
 export function nextFreeNonce(window: { nonceBase: bigint; nonceBitmap: readonly bigint[] }): bigint | null {
   if (window.nonceBitmap.length !== NONCE_WINDOW_WORDS) {
-    throw new RangeError(`a nonce window has ${NONCE_WINDOW_WORDS} words, got ${window.nonceBitmap.length}`);
+    throw new InvalidInput("window", "length", `a nonce window has ${NONCE_WINDOW_WORDS} words, got ${window.nonceBitmap.length}`);
   }
   const word = window.nonceBitmap.findIndex((w) => w !== U64_MAX);
   if (word < 0) {

@@ -10,6 +10,7 @@ import {
   findAssociatedTokenAddress,
   findIntentPda,
   IntentStatus,
+  InvalidInput,
   Kind,
   NATIVE_MINT,
   nextFreeNonce,
@@ -54,14 +55,14 @@ export function intentSends({ transport, send, mint, config }: ClientContext) {
     const { signer, params, inputMint, outputMint } = input;
     const owner = signer.address;
     if (input.specUrl !== undefined && (params.kind !== Kind.AttestedResult || params.specHash.every((b) => b === 0))) {
-      throw new RangeError(SPEC_URL_NEEDS_PROOF);
+      throw new InvalidInput("specUrl", "conflict", SPEC_URL_NEEDS_PROOF);
     }
     if (input.expiresIn !== undefined && (input.expiresIn < MIN_EXPIRES_IN || input.expiresIn > MAX_EXPIRES_IN)) {
-      throw new RangeError(EXPIRES_IN_RANGE);
+      throw new InvalidInput("expiresIn", "range", EXPIRES_IN_RANGE);
     }
     const published = input.specUrl === undefined ? [] : [memoInstruction(signer, specMemo(input.specUrl))];
     if (input.specUrl !== undefined && (await plainHttpOnPublic(transport, input.specUrl))) {
-      throw new RangeError(`the spec url ${input.specUrl} ${PLAIN_HTTP_ON_PUBLIC}`);
+      throw new InvalidInput("specUrl", "format", `the spec url ${input.specUrl} ${PLAIN_HTTP_ON_PUBLIC}`);
     }
     const [settings, sell, buy, user, mintCap] = await Promise.all([
       config(),
@@ -120,11 +121,11 @@ export function intentSends({ transport, send, mint, config }: ClientContext) {
     const { solver, owner, nonce } = input;
     const [{ address, intent: held }, settings] = await Promise.all([loadIntent(transport, owner, nonce), config()]);
     if (held.status !== IntentStatus.Open) {
-      throw new NotFillable(address, "is not open");
+      throw new NotFillable(address, "not-open", "is not open");
     }
     const params = decodeParams(held.kind, Uint8Array.from(held.params));
     if (params.kind === Kind.AttestedResult) {
-      throw new NotFillable(address, "is an AttestedResult intent, which only its judge settles");
+      throw new NotFillable(address, "attested", "is an AttestedResult intent, which only its judge settles");
     }
     const [sell, buy] = await Promise.all([mint(held.inputMint), mint(held.outputMint)]);
     const amountIn = input.amountIn ?? remainingOf(held);

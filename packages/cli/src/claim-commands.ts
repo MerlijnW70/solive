@@ -15,7 +15,6 @@ import {
   findIntentPda,
   formatAmount,
   formatTime,
-  IntentCoreError,
   IntentStatus,
   kindBit,
   type LineHandover,
@@ -23,7 +22,7 @@ import {
   profileAddress,
   stakeReceiverOnSettle,
 } from "@intent-engine/core";
-import { type ClaimsView, type Client, createClient, escrowsJudgedBy, isDevice, keepsKey, type LineEntry, lineHandover, loadLine, type Transport } from "@intent-engine/client";
+import { type ClaimsView, type Client, createClient, escrowsJudgedBy, isDevice, isSdkError, keepsKey, type LineEntry, lineHandover, loadLine, type Transport } from "@intent-engine/client";
 import { previewed } from "./admin-commands.js";
 import { finishList, listAccount, listRefusal, listShown, openListed } from "./claim-lists.js";
 import type { Command } from "./command-types.js";
@@ -293,7 +292,7 @@ async function takeClaim(
   try {
     until = claimUntil(view.maxSecs, now, command.secs, expiresAt);
   } catch (error) {
-    throw error instanceof IntentCoreError ? new FlowRefused(`a claim of ${command.secs} seconds would outlive escrow ${intent}, which expires at ${expiresAt}`) : error;
+    throw isSdkError(error, "intent-core-error") ? new FlowRefused(`a claim of ${command.secs} seconds would outlive escrow ${intent}, which expires at ${expiresAt}`) : error;
   }
   const summary = [
     `Claims: escrow ${intent} until ${formatTime(until)}, ${until - now} seconds from now; until then only ${worker.address} can be paid`,
@@ -320,7 +319,7 @@ async function settleClaims(
   try {
     receiver = stakeReceiverOnSettle(board, now, open);
   } catch (error) {
-    if (error instanceof IntentCoreError && view.worker !== null) {
+    if (isSdkError(error, "intent-core-error") && view.worker !== null) {
       throw new FlowRefused(`${heldBy(intent, view.worker, view.secondsLeft)}; settle once it lapses or the escrow closes`);
     }
     throw error;

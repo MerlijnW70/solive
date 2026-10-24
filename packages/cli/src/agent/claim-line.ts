@@ -10,11 +10,10 @@ import {
   getClaimBoardSize,
   getClaimListSize,
   getStandbySize,
-  IntentCoreError,
   IntentStatus,
   stakeReceiverOnSettle,
 } from "@intent-engine/core";
-import { type ClaimsView, type Client, type LineEntry, lineHandover, loadLine, type Transport } from "@intent-engine/client";
+import { type ClaimsView, type Client, isSdkError, type LineEntry, lineHandover, loadLine, type Transport } from "@intent-engine/client";
 import { handedTo } from "../claim-commands.js";
 import { listAccount } from "../claim-lists.js";
 import { rentFor, rentRate, SIGNATURE_FEE } from "./budget.js";
@@ -81,7 +80,7 @@ export async function settleStep(client: Client, transport: Transport, escrow: E
   try {
     receiver = stakeReceiverOnSettle(board, now, open);
   } catch (error) {
-    if (error instanceof IntentCoreError && view.worker !== null) {
+    if (isSdkError(error, "intent-core-error") && view.worker !== null) {
       throw new AgentRefusal("ClaimHeld", `${view.worker} holds the claim on escrow ${escrow.intent} for ${view.secondsLeft} more seconds, so there is nothing to settle; nothing was sent`);
     }
     throw error;

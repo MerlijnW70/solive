@@ -22,6 +22,7 @@ import {
   PRODUCT_SLUG,
 } from "../src/index.js";
 import { clamp, committee, profileMember, refBinding, referenceBlob, refSecrets, saltSignature, urlOf, type Wallet, wallet, walletMember, WORK } from "./sealed-v4-reference.js";
+import { InvalidInput } from "../src/errors.js";
 
 const URL_A = "https://example.org/work-a.tar";
 const URL_B = "https://example.org/work-b.tar";
@@ -157,7 +158,7 @@ describe("sealed delivery v4", () => {
     const blob = await sealDeliveryV4(first, intent, worker);
     expect(hex(await sealDeliveryV4(kept, intent, worker))).toBe(hex(blob));
     expect((await openDeliveryV4(blob, member.opener, intent, worker))?.url).toBe(URL_A);
-    await expect(deliverySecrets(URL_A, [member.recipient], new Uint8Array(33))).rejects.toThrow(RangeError);
+    await expect(deliverySecrets(URL_A, [member.recipient], new Uint8Array(33))).rejects.toThrow(InvalidInput);
   });
 
   it("lets a third party rebuild every wrap from the revealed ephemeral secret", async () => {
@@ -240,10 +241,10 @@ describe("sealed delivery v4", () => {
     await expect(deliverySecrets(URL_A, [one.recipient, one.recipient], sig)).rejects.toThrow(SealedError);
     const weak = { wallet: wallet().address, encryptionKey: new Uint8Array(32) };
     await expect(deliverySecrets(URL_A, [weak], sig)).rejects.toThrow(SealedError);
-    await expect(deliverySecrets("http://example.org/plain", [one.recipient], sig)).rejects.toThrow(RangeError);
-    await expect(deliverySecrets(urlOf(201), [one.recipient], sig)).rejects.toThrow(RangeError);
+    await expect(deliverySecrets("http://example.org/plain", [one.recipient], sig)).rejects.toThrow(InvalidInput);
+    await expect(deliverySecrets(urlOf(201), [one.recipient], sig)).rejects.toThrow(InvalidInput);
     const secrets = await deliverySecrets(URL_A, [one.recipient], sig);
-    await expect(sealDeliveryV4({ ...secrets, url: urlOf(201) }, intent, worker)).rejects.toThrow(RangeError);
+    await expect(sealDeliveryV4({ ...secrets, url: urlOf(201) }, intent, worker)).rejects.toThrow(InvalidInput);
     await expect(sealDeliveryV4({ ...secrets, recipients: [] }, intent, worker)).rejects.toThrow(SealedError);
     const relabelled = await sealDeliveryV4({ ...secrets, url: URL_B }, intent, worker);
     expect(hex(relabelled)).toBe(hex((await seal(URL_B, [one.recipient], intent, worker, sig)).blob));
@@ -287,8 +288,8 @@ describe("delivery salts", () => {
     expect(hex(await saltOf(worker, intent, YES))).not.toBe(salt);
     expect(SALT_TAG).toBe(`${PRODUCT_SLUG}-delivery-salt-v3`);
     expect(saltMessage(intent, WORK)).toEqual(Uint8Array.from([...Buffer.from(SALT_TAG), ...getAddressEncoder().encode(intent), ...Buffer.from(WORK, "hex")]));
-    expect(() => saltMessage(intent, "zz")).toThrow(RangeError);
-    expect(() => saltMessage(intent, WORK.toUpperCase())).toThrow(RangeError);
+    expect(() => saltMessage(intent, "zz")).toThrow(InvalidInput);
+    expect(() => saltMessage(intent, WORK.toUpperCase())).toThrow(InvalidInput);
     expect(["ab".repeat(16), "AB".repeat(16), "ab".repeat(15), "ab".repeat(17), "zz".repeat(16)].map(isSaltHex)).toEqual([true, false, false, false, false]);
   });
 

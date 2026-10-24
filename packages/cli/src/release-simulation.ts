@@ -1,6 +1,6 @@
 import type { Address, MessagePartialSigner, TransactionPartialSigner } from "@solana/kit";
-import { IntentCoreError, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { boundMembers, createClient, type Simulation, simulated, type Transport } from "@intent-engine/client";
+import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { boundMembers, createClient, isSdkError, type Simulation, simulated, type Transport } from "@intent-engine/client";
 import { ENGINE_ERROR_BASE, ENGINE_ERROR_NAMES, failureOf } from "./agent/problems.js";
 
 export type SimulatedRelease = { ok: true; units_consumed: number } | { ok: false; error: string };
@@ -43,8 +43,8 @@ export async function simulateRelease(transport: Transport, judge: TransactionPa
       const { err, logs, unitsConsumed } = error.simulation;
       return err === null ? { ok: true, units_consumed: Number(unitsConsumed ?? 0n) } : { ok: false, error: engineErrorOf(logs) ?? err };
     }
-    if (error instanceof IntentCoreError) {
-      return { ok: false, error: error.code };
+    if (isSdkError(error, "intent-core-error")) {
+      return { ok: false, error: error.engineError };
     }
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }

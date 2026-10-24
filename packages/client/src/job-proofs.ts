@@ -8,10 +8,11 @@ import {
   getIntentDecoder,
   getIntentDiscriminatorBytes,
   getIntentSize,
-  INTENT_ENGINE_PROGRAM_ADDRESS,
   type Intent,
+  INTENT_ENGINE_PROGRAM_ADDRESS,
   IntentStatus,
   Kind,
+  NotAnEngineAccount,
   remainingOf,
 } from "@intent-engine/core";
 import { chainTime, createdAccount } from "./accounts.js";
@@ -43,7 +44,7 @@ const tagged = (data: Uint8Array): boolean => getIntentDiscriminatorBytes().ever
 
 export function intentFrom(data: Uint8Array): Intent {
   if (!tagged(data)) {
-    throw new RangeError("the data is not an intent account");
+    throw new NotAnEngineAccount(null, "the data is not an intent account");
   }
   return getIntentDecoder().decode(checkAccountVersion(data));
 }

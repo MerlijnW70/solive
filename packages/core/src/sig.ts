@@ -3,6 +3,7 @@ import { INTENT_ENGINE_PROGRAM_ADDRESS } from "../generated/client/index.js";
 import { ascii, compareKeys, concat, i64le, key, sized, u16le, u32le, u64le } from "./bytes.js";
 import { checkFlags, EXT_MAX_LEN, FILL_EXT_TAGS, partnerOf, validateExt } from "./ext.js";
 import { PARAMS_LEN } from "./kinds.js";
+import { InvalidInput, NoSignature } from "./errors.js";
 
 export const INTENT_TAG = ascii("intent-engine-v1");
 export const ATTEST_TAG = ascii("intent-engine-at");
@@ -21,10 +22,10 @@ export const COSIGN_KEYS_AT = 18;
 
 function kindWord(kind: number, flags: number): number[] {
   if (!Number.isInteger(kind) || kind < 0 || kind > 255) {
-    throw new RangeError(`${kind} is not a kind byte`);
+    throw new InvalidInput("kind", "range", `${kind} is not a kind byte`);
   }
   if (!Number.isInteger(flags) || flags < 0 || flags > 0xffff) {
-    throw new RangeError(`${flags} is not a u16 flag set`);
+    throw new InvalidInput("flags", "range", `${flags} is not a u16 flag set`);
   }
   return [kind, flags & 0xff, flags >> 8, 0, 0, 0, 0, 0];
 }
@@ -50,11 +51,11 @@ export type SignedIntentFields = {
 
 export async function signedIntentPreimage(f: SignedIntentFields): Promise<Uint8Array> {
   if (f.domain.length !== 32 || f.params.length !== PARAMS_LEN) {
-    throw new RangeError("domain must be 32 bytes and params 128 bytes");
+    throw new InvalidInput("domain", "length", "domain must be 32 bytes and params 128 bytes");
   }
   const ext = f.ext ?? new Uint8Array();
   if (ext.length > EXT_MAX_LEN) {
-    throw new RangeError(`ext must be at most ${EXT_MAX_LEN} bytes`);
+    throw new InvalidInput("ext", "length", `ext must be at most ${EXT_MAX_LEN} bytes`);
   }
   const word = kindWord(f.kind, f.flags ?? 0);
   const epoch = u64le(f.epoch);
@@ -90,14 +91,14 @@ export function offchainEnvelope(signer: Address, digest: Uint8Array): Uint8Arra
 
 export function cosignerSet(keys: readonly Address[]): Address[] {
   if (keys.length === 0 || keys.length > MAX_COSIGNERS) {
-    throw new RangeError(`a cosigned release lists 1 to ${MAX_COSIGNERS} keys, got ${keys.length}`);
+    throw new InvalidInput("keys", "range", `a cosigned release lists 1 to ${MAX_COSIGNERS} keys, got ${keys.length}`);
   }
   return [...new Set(keys)].sort((a, b) => compareKeys(key(a), key(b)));
 }
 
 export function cosignEnvelope(keys: readonly Address[], digest: Uint8Array): Uint8Array {
   if (digest.length !== 32) {
-    throw new RangeError(`a cosign digest is 32 bytes, got ${digest.length}`);
+    throw new InvalidInput("digest", "length", `a cosign digest is 32 bytes, got ${digest.length}`);
   }
   const listed = cosignerSet(keys);
   return concat([OFFCHAIN_PREFIX, [1, listed.length], ...listed.map(key), hexOf(digest)], COSIGN_KEYS_AT + 32 * listed.length + 64);
@@ -111,7 +112,7 @@ export async function signMessageBytes(signer: MessagePartialSigner, message: Ui
   const [signed] = await signer.signMessages([{ content: message, signatures: {} }]);
   const signature = signed?.[signer.address];
   if (signature === undefined) {
-    throw new Error(`${signer.address} returned no signature for the message`);
+    throw new NoSignature(signer.address);
   }
   return new Uint8Array(signature);
 }
@@ -145,11 +146,11 @@ export type AttestedFillFields = {
 
 export async function attestedFillPreimage(f: AttestedFillFields): Promise<Uint8Array> {
   if (f.domain.length !== 32) {
-    throw new RangeError("domain must be 32 bytes");
+    throw new InvalidInput("domain", "length", "domain must be 32 bytes");
   }
   const ext = f.ext ?? new Uint8Array();
   if (ext.length > EXT_MAX_LEN) {
-    throw new RangeError(`ext must be at most ${EXT_MAX_LEN} bytes`);
+    throw new InvalidInput("ext", "length", `ext must be at most ${EXT_MAX_LEN} bytes`);
   }
   const head = [
     ATTEST_TAG,
@@ -182,13 +183,13 @@ export async function splitCommit(
   weights: number[],
 ): Promise<Uint8Array> {
   if (recipients.length !== weights.length) {
-    throw new RangeError("recipients and weights must have equal length");
+    throw new InvalidInput("weights", "length", "recipients and weights must have equal length");
   }
   const parts: ArrayLike<number>[] = [];
   for (const [i, recipient] of recipients.entries()) {
     const weight = weights[i];
     if (weight === undefined) {
-      throw new RangeError("recipients and weights must have equal length");
+      throw new InvalidInput("weights", "length", "recipients and weights must have equal length");
     }
     parts.push(key(recipient));
     parts.push(u16le(weight));

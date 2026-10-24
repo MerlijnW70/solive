@@ -1,7 +1,7 @@
 import type { Address } from "@solana/kit";
 import { ascii, concat, key, sized, u16le } from "./bytes.js";
 import type { ClaimSlot } from "./claims.js";
-import { IntentCoreError } from "./errors.js";
+import { IntentCoreError, InvalidInput } from "./errors.js";
 import { I64_MAX, I64_MIN } from "./kinds.js";
 import { U64_MAX } from "./math.js";
 
@@ -75,7 +75,7 @@ export function encodeAnnState(state: AnnState): number {
 
 function checkI64(name: string, v: bigint): void {
   if (v < I64_MIN || v > I64_MAX) {
-    throw new RangeError(`${name} ${v} is outside i64`);
+    throw new InvalidInput(name, "range", `${name} ${v} is outside i64`);
   }
 }
 
@@ -100,7 +100,7 @@ export function closable(state: AnnState, byWorker: boolean, intentOpen: boolean
 
 function checkSeq(name: string, v: bigint): void {
   if (v < 0n || v > U64_MAX) {
-    throw new RangeError(`${name} ${v} is outside u64`);
+    throw new InvalidInput(name, "range", `${name} ${v} is outside u64`);
   }
 }
 

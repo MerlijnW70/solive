@@ -20,7 +20,7 @@ import {
   standbyAddress,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import { createClient, FirstOpeningRefused, jobClaimOf, lineHandover, loadClaimsOf, loadLine, NotDeliverable, NotSettleable, type Transport } from "../src/index.js";
+import { ClaimHeldBy, createClient, FirstOpeningRefused, jobClaimOf, lineHandover, loadClaimsOf, loadLine, NotDeliverable, NotSettleable, type Transport } from "../src/index.js";
 import { svmTransport } from "../src/svm.js";
 import { world } from "./svm.js";
 import { announced, type Delivered, keyed, sha } from "./work.js";
@@ -77,7 +77,7 @@ describe("claimed escrows", () => {
     await s.claim(s.worker);
     await expect(s.announce(s.rival)).rejects.toThrow(NotDeliverable);
     const own = await s.announce(s.worker);
-    await expect(s.settle(early)).rejects.toThrow(NotSettleable);
+    await expect(s.settle(early)).rejects.toThrow(ClaimHeldBy);
     const refused = await s.client.firstOpening({ intent: s.intent, sha256: WORK, keypair: s.keypair }).catch((error: unknown) => error);
     expect(refused).toBeInstanceOf(FirstOpeningRefused);
     expect(refused).toMatchObject({ reason: "claim-held", announcement: early.announcement, worker: s.rival.address, holder: s.worker.address });

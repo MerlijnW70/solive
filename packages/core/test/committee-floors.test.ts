@@ -17,6 +17,7 @@ import {
   TOKEN_PROGRAM_ADDRESS,
   U64_MAX,
 } from "../src/index.js";
+import { InvalidInput } from "../src/errors.js";
 
 const MINT = "So11111111111111111111111111111111111111112" as Address;
 const OUT = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" as Address;
@@ -60,8 +61,8 @@ describe("committee floors", () => {
     const ix = await buildSetCommitteeFloor({ admin, mint: MINT, floor: 500n });
     expect(getSetCommitteeFloorInstructionDataDecoder().decode(ix.data ?? new Uint8Array()).floor).toBe(500n);
     expect(ix.accounts).toContainEqual({ address: MINT, role: AccountRole.READONLY });
-    await expect(buildSetCommitteeFloor({ admin, mint: MINT, floor: -1n })).rejects.toThrow(RangeError);
-    await expect(buildSetCommitteeFloor({ admin, mint: MINT, floor: 1n << 64n })).rejects.toThrow(RangeError);
+    await expect(buildSetCommitteeFloor({ admin, mint: MINT, floor: -1n })).rejects.toThrow(InvalidInput);
+    await expect(buildSetCommitteeFloor({ admin, mint: MINT, floor: 1n << 64n })).rejects.toThrow(InvalidInput);
     for (const floor of [0n, U64_MAX]) {
       const edge = await buildSetCommitteeFloor({ admin, mint: MINT, floor });
       expect(getSetCommitteeFloorInstructionDataDecoder().decode(edge.data ?? new Uint8Array()).floor).toBe(floor);

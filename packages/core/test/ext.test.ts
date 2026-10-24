@@ -13,6 +13,7 @@ import {
   KNOWN_FLAGS,
   validateExt,
 } from "../src/index.js";
+import { InvalidInput } from "../src/errors.js";
 
 describe("extension fields", () => {
   it("encode tag, little-endian length and value in strictly rising tag order", () => {
@@ -31,13 +32,13 @@ describe("extension fields", () => {
 
   it("refuse tags out of order, out of range or too long", () => {
     const v = new Uint8Array();
-    expect(() => encodeExt([{ tag: 0, value: v }])).toThrow(RangeError);
-    expect(() => encodeExt([{ tag: 256, value: v }])).toThrow(RangeError);
-    expect(() => encodeExt([{ tag: 1.5, value: v }])).toThrow(RangeError);
+    expect(() => encodeExt([{ tag: 0, value: v }])).toThrow(InvalidInput);
+    expect(() => encodeExt([{ tag: 256, value: v }])).toThrow(InvalidInput);
+    expect(() => encodeExt([{ tag: 1.5, value: v }])).toThrow(InvalidInput);
     expect(() => encodeExt([{ tag: 2, value: v }, { tag: 2, value: v }])).toThrow(
       "extension tags must rise strictly within 1..255, got 2 after 2",
     );
-    expect(() => encodeExt([{ tag: 3, value: v }, { tag: 2, value: v }])).toThrow(RangeError);
+    expect(() => encodeExt([{ tag: 3, value: v }, { tag: 2, value: v }])).toThrow(InvalidInput);
     expect(encodeExt([{ tag: 255, value: v }])).toEqual(new Uint8Array([255, 0, 0]));
     expect(() => encodeExt([{ tag: 1, value: new Uint8Array(0x10000) }])).toThrow(
       new IntentCoreError("ExtTooLong"),
@@ -61,7 +62,7 @@ describe("extension fields", () => {
       expect(() => checkFlags(flags)).toThrow(new IntentCoreError("FlagsUnknown"));
     }
     for (const flags of [-1, 0x10000, 0.5]) {
-      expect(() => checkFlags(flags)).toThrow(RangeError);
+      expect(() => checkFlags(flags)).toThrow(InvalidInput);
     }
   });
 });

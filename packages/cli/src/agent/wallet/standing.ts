@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 import { decodeEvent, type EngineEvent } from "@intent-engine/core";
-import { announcementsOf, AnnouncementsUnreadable, type EngineTransaction, reputationOf, type Transport } from "@intent-engine/client";
+import { announcementsOf, type EngineTransaction, isSdkError, reputationOf, type Transport } from "@intent-engine/client";
 import { account, amount, choice, flag, list, object, optional } from "../schema.js";
 
 export const MAX_STANDING = 64;
@@ -34,7 +34,7 @@ async function passedOver(transport: Transport, intent: Address, paid: PaidAnnou
     const list = await announcementsOf(transport, intent);
     return list.announcements.filter(({ seq }) => seq < paid.seq).map(({ address, seq, worker }) => ({ announcement: address, seq, worker }));
   } catch (error) {
-    if (error instanceof AnnouncementsUnreadable) {
+    if (isSdkError(error, "announcements-unreadable")) {
       return [];
     }
     throw error;

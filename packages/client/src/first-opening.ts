@@ -123,7 +123,7 @@ export async function firstOpeningIn(transport: Transport, input: FirstOpeningIn
   const sha256 = hex(delivered);
   const proof = await proofAt(transport, intent);
   if (proof === null) {
-    throw new NotSettleable(intent, "is not a proof escrow: an AttestedResult intent that commits a spec hash");
+    throw new NotSettleable(intent, "not-a-proof-escrow", "is not a proof escrow: an AttestedResult intent that commits a spec hash");
   }
   const list = await announcementsOf(transport, intent);
   const refused = (refusal: Refusal): FirstOpeningOutcome => ({ list, opening: new FirstOpeningRefused(intent, sha256, refusal) });

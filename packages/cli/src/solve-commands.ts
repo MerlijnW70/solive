@@ -29,6 +29,7 @@ import {
   ConfirmMismatch,
   confirmOnBoth,
   createdAccount,
+  isSdkError,
   type Latest,
   loadConfig,
   type ProgramAccount,
@@ -71,7 +72,7 @@ export function confirmedFill(transport: Transport, second: Transport): (intent:
       await confirmOnBoth(transport, second, { intent, accounts: [vault, ...accounts] });
       return null;
     } catch (error) {
-      if (error instanceof ConfirmMismatch) {
+      if (isSdkError(error, "confirm-mismatch")) {
         return secondNodeSkip(error);
       }
       throw error;

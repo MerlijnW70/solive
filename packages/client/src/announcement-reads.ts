@@ -2,15 +2,16 @@ import type { Address } from "@solana/kit";
 import {
   ANNOUNCEMENT_DISCRIMINATOR,
   checkAccountVersion,
+  delivery,
   DELIVERY_BOOK_DISCRIMINATOR,
   deliveryBookAddress,
-  delivery,
   getAnnouncementDecoder,
   getAnnouncementSize,
   getDeliveryBookDecoder,
   getRefutationDecoder,
   getRefutationSize,
   IntentStatus,
+  NotAnEngineAccount,
   REFUTATION_DISCRIMINATOR,
 } from "@intent-engine/core";
 import { chainTime, createdAccount } from "./accounts.js";
@@ -104,7 +105,7 @@ export async function loadAnnouncement(transport: Transport, address: Address): 
     return null;
   }
   if (!tagged(view.data, ANNOUNCEMENT_DISCRIMINATOR) || view.data.length !== getAnnouncementSize()) {
-    throw new Error(`${address} is not an engine announcement`);
+    throw new NotAnEngineAccount(address, `${address} is not an engine announcement`);
   }
   return announcementOf(address, view.data, view.lamports);
 }
@@ -116,7 +117,7 @@ export async function loadDeliveryBook(transport: Transport, intent: Address): P
     return null;
   }
   if (!tagged(view.data, DELIVERY_BOOK_DISCRIMINATOR)) {
-    throw new Error(`${address} is not an engine delivery book`);
+    throw new NotAnEngineAccount(address, `${address} is not an engine delivery book`);
   }
   const stored = getDeliveryBookDecoder().decode(checkAccountVersion(view.data));
   return { address, intent: stored.intent, payer: stored.payer, nextSeq: stored.nextSeq, live: stored.live };

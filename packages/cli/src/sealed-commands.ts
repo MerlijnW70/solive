@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import type { Address } from "@solana/kit";
-import { type DeliveryKey, EncryptionKeyError, newEncryptionKeyFile, NotInvited, readEncryptionKeyFile, seal, sealedTo, SealedError, unseal } from "@intent-engine/core";
-import { createClient, MAX_SPEC_BYTES, sealRecipients, SpecSealed, SpecUnreadable, type Transport } from "@intent-engine/client";
+import { type DeliveryKey, newEncryptionKeyFile, readEncryptionKeyFile, seal, sealedTo, unseal } from "@intent-engine/core";
+import { createClient, isSdkError, MAX_SPEC_BYTES, sealRecipients, SpecUnreadable, type Transport } from "@intent-engine/client";
 import { tool } from "./agent/names.js";
 import type { Command } from "./command-types.js";
 import { FlowRefused } from "./flows.js";
@@ -31,7 +31,7 @@ export async function loadEncryptionKey(runtime: Runtime, path: string): Promise
   try {
     return await readEncryptionKeyFile(await runtime.readText(path));
   } catch (error) {
-    throw error instanceof EncryptionKeyError ? new FlowRefused(`--encryption-keypair ${path}: ${error.message}`) : error;
+    throw isSdkError(error, "encryption-key-error") ? new FlowRefused(`--encryption-keypair ${path}: ${error.message}`) : error;
   }
 }
 
@@ -59,7 +59,7 @@ export async function sealing(command: Sealing, runtime: Runtime): Promise<objec
     try {
       sealed = await seal(input, await sealRecipients(runtime.transport(command.url), command.to));
     } catch (error) {
-      throw error instanceof SealedError ? new FlowRefused(`${error.message}; nothing was written`) : error;
+      throw isSdkError(error, "sealed-error") ? new FlowRefused(`${error.message}; nothing was written`) : error;
     }
     await writeFile(command.out, sealed, { flag: "wx" });
     const over = sealed.length > MAX_SPEC_BYTES ? { warnings: [sealedOverLimit(sealed.length)] } : {};
@@ -73,7 +73,10 @@ export async function sealing(command: Sealing, runtime: Runtime): Promise<objec
   try {
     plain = await unseal(input, openers);
   } catch (error) {
-    throw error instanceof SealedError ? new FlowRefused(error instanceof NotInvited ? `${error.message}; nothing was written` : `${command.file}: ${error.message}`) : error;
+    if (isSdkError(error, "not-invited")) {
+      throw new FlowRefused(`${error.message}; nothing was written`);
+    }
+    throw isSdkError(error, "sealed-error") ? new FlowRefused(`${command.file}: ${error.message}`) : error;
   }
   await writeFile(command.out, plain, { flag: "wx" });
   return { out: command.out, sha256: sha256(plain) };
@@ -90,7 +93,7 @@ export async function readJobSpec(command: Reading, runtime: Runtime, transport:
   try {
     spec = await client.spec(command.intent, keypair);
   } catch (error) {
-    throw error instanceof SpecSealed || error instanceof SpecUnreadable ? new FlowRefused(error.message) : error;
+    throw isSdkError(error, "spec-sealed") || isSdkError(error, "spec-unreadable") ? new FlowRefused(error.message) : error;
   }
   if (spec === null) {
     throw new FlowRefused((await transport.getAccount(command.intent)) === null ? jobClosed(command.intent) : `the escrow ${command.intent} publishes no spec url, or is not a proof escrow; ask its owner for the spec`);

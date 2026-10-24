@@ -3,9 +3,27 @@ import { request as tlsRequest } from "node:https";
 import { isIP, type LookupFunction } from "node:net";
 import { pipeline, Readable, type Transform } from "node:stream";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
+import { isSdkError, SdkError } from "@intent-engine/core";
 import type { SpecFetch } from "./job-specs.js";
 
 export const UNEXPECTED_REDIRECT = "unexpected redirect";
+
+export type FetchFailure = "redirect" | "status" | "network" | "no-address" | "aborted";
+
+export class FetchFailed extends SdkError {
+  readonly code = "fetch-failed";
+  override readonly name = "FetchFailed";
+  readonly url: string;
+  readonly reason: FetchFailure;
+  readonly detail: string;
+
+  constructor(url: string, reason: FetchFailure, detail: string, options?: ErrorOptions) {
+    super("fetch failed", options);
+    this.url = url;
+    this.reason = reason;
+    this.detail = detail;
+  }
+}
 
 export type CheckedFetch = (url: string, init: { redirect: "error"; signal: AbortSignal; addresses: readonly string[] }) => Promise<Response>;
 
@@ -15,12 +33,12 @@ const NO_BODY: ReadonlySet<number> = new Set([204, 205, 304]);
 const DECODERS: Readonly<Record<string, () => Transform>> = { gzip: createGunzip, "x-gzip": createGunzip, deflate: createInflate, br: createBrotliDecompress };
 
 const pinned =
-  (addresses: readonly string[]): LookupFunction =>
+  (url: string, addresses: readonly string[]): LookupFunction =>
   (_host, options, done) => {
     const found = addresses.map((address) => ({ address, family: isIP(address) }));
     const first = found[0];
     if (first === undefined) {
-      done(new Error("no checked address to connect to"), "");
+      done(new FetchFailed(url, "no-address", "no checked address to connect to"), "");
       return;
     }
     if (options.all === true) {
@@ -53,14 +71,14 @@ export const pinnedFetch: SpecFetch = (url, init) => {
   return new Promise<Response>((resolve, reject) => {
     const target = new URL(url);
     const send = target.protocol === "https:" ? tlsRequest : plainRequest;
-    const request = send(target, { method: "GET", lookup: pinned(addresses), signal: init.signal, headers: { "accept-encoding": "gzip, deflate, br" } }, (response) => {
+    const request = send(target, { method: "GET", lookup: pinned(url, addresses), signal: init.signal, headers: { "accept-encoding": "gzip, deflate, br" } }, (response) => {
       const status = response.statusCode ?? 0;
       if (REDIRECTS.has(status) || status < 200 || status > 599) {
         response.destroy();
-        reject(new TypeError("fetch failed", { cause: new Error(REDIRECTS.has(status) ? UNEXPECTED_REDIRECT : `answered status ${status}`) }));
+        reject(REDIRECTS.has(status) ? new FetchFailed(url, "redirect", UNEXPECTED_REDIRECT) : new FetchFailed(url, "status", `answered status ${status}`));
         return;
       }
-      init.signal.addEventListener("abort", () => response.destroy(init.signal.reason instanceof Error ? init.signal.reason : new Error("aborted")), { once: true });
+      init.signal.addEventListener("abort", () => response.destroy(init.signal.reason instanceof Error ? init.signal.reason : new FetchFailed(url, "aborted", "aborted")), { once: true });
       if (NO_BODY.has(status)) {
         response.destroy();
         resolve(new Response(null, { status, headers: headersOf(response) }));
@@ -68,7 +86,7 @@ export const pinnedFetch: SpecFetch = (url, init) => {
       }
       resolve(new Response(Readable.toWeb(decoded(response)) as ReadableStream<Uint8Array>, { status, headers: headersOf(response) }));
     });
-    request.on("error", (error) => reject(new TypeError("fetch failed", { cause: error })));
+    request.on("error", (error) => reject(isSdkError(error, "fetch-failed") ? error : new FetchFailed(url, "network", error.message, { cause: error })));
     request.end();
   });
 };

@@ -1,11 +1,11 @@
-import { IntentCoreError } from "./errors.js";
+import { IntentCoreError, InvalidInput } from "./errors.js";
 import { checkU64, mulDivCeil, mulDivFloor, U64_MAX } from "./math.js";
 
 export const BPS_DENOMINATOR = 10_000n;
 
 export function checkBps(bps: number, name = "bps"): bigint {
   if (!Number.isInteger(bps) || bps < 0 || bps > Number(BPS_DENOMINATOR)) {
-    throw new RangeError(`${name} ${String(bps)} is not between 0 and ${BPS_DENOMINATOR}`);
+    throw new InvalidInput(name, "range", `${name} ${String(bps)} is not between 0 and ${BPS_DENOMINATOR}`);
   }
   return BigInt(bps);
 }
@@ -14,7 +14,7 @@ const U16_MAX = 0xffff;
 
 function checkU16(bps: number, name: string): bigint {
   if (!Number.isInteger(bps) || bps < 0 || bps > U16_MAX) {
-    throw new RangeError(`${name} ${String(bps)} is not between 0 and ${U16_MAX}`);
+    throw new InvalidInput(name, "range", `${name} ${String(bps)} is not between 0 and ${U16_MAX}`);
   }
   return BigInt(bps);
 }

@@ -16,6 +16,7 @@ import {
   CLUSTER_URLS,
   connect,
   DEVNET_GENESIS_HASH,
+  InvalidInput,
   MAINNET_GENESIS_HASH,
   MainnetNotAllowed,
   mintOfToken,
@@ -123,13 +124,13 @@ describe("the simple sdk layer", () => {
     expect(tokenAmount("1.5", 6)).toBe(1_500_000n);
     expect(tokenAmount("12", 0)).toBe(12n);
     for (const bad of ["0.0000001", "-1", "1e3", "0", "", " ", "1.", ".5", "0x10"]) {
-      expect(() => tokenAmount(bad, 6), bad).toThrow(RangeError);
+      expect(() => tokenAmount(bad, 6), bad).toThrow(InvalidInput);
     }
     expect(() => tokenAmount("0.0000001", 6)).toThrow("more than the token's 6 decimal places");
     expect(mintOfToken("SOL", CLUSTER_URLS.localnet)).toBe(WSOL);
     expect(mintOfToken("test", CLUSTER_URLS.devnet)).toBe(TEST);
-    expect(() => mintOfToken("TEST", CLUSTER_URLS.localnet)).toThrow(RangeError);
-    expect(() => mintOfToken("DOGE", CLUSTER_URLS.devnet)).toThrow(RangeError);
+    expect(() => mintOfToken("TEST", CLUSTER_URLS.localnet)).toThrow(InvalidInput);
+    expect(() => mintOfToken("DOGE", CLUSTER_URLS.devnet)).toThrow(InvalidInput);
 
     const w = await devnet();
     const solive = await connect({ url: "http://127.0.0.1:8899", signer: w.owner, transport: w.chain.transport });

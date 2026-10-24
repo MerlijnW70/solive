@@ -1,5 +1,5 @@
 import { isMemoUrl } from "@intent-engine/core";
-import { createClient, loadAnnouncement, NoMessageSigner, NotRefutable, RECLAIM_BATCH } from "@intent-engine/client";
+import { createClient, isSdkError, loadAnnouncement, NoMessageSigner, NotRefutable, RECLAIM_BATCH } from "@intent-engine/client";
 import { capturing, hex } from "../../announcement-views.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
@@ -20,10 +20,10 @@ async function refutable<T>(run: () => Promise<T>): Promise<T> {
   try {
     return await run();
   } catch (error) {
-    if (error instanceof NotRefutable) {
+    if (isSdkError(error, "not-refutable")) {
       throw new AgentRefusal("NotRefutable", error.message);
     }
-    if (error instanceof NoMessageSigner) {
+    if (isSdkError(error, "no-message-signer")) {
       throw new AgentRefusal("NoMessageSigner", error.message);
     }
     throw error;

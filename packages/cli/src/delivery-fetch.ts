@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type AnnouncementView, opensTo, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, PUBLIC_GENESIS_HASHES, SPEC_TIMEOUT_MS, type SpecFetch, type Transport } from "@intent-engine/client";
+import { type AnnouncementView, isSdkError, opensTo, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, PUBLIC_GENESIS_HASHES, SPEC_TIMEOUT_MS, type SpecFetch, type Transport } from "@intent-engine/client";
 import { hex } from "./announcement-views.js";
 import { MAX_ARTIFACT_BYTES } from "./artifact.js";
 import { type Lookup, publicAddresses, systemLookup } from "./public-address.js";
@@ -93,6 +93,9 @@ export async function fetchBytes(get: SpecFetch, transport: Transport, url: stri
 }
 
 const fetchFailure = (error: unknown): string => {
+  if (isSdkError(error, "fetch-failed")) {
+    return `${error.message}: ${error.detail}`;
+  }
   const message = error instanceof Error ? error.message : String(error);
   const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
   return cause === "" ? message : `${message}: ${cause}`;

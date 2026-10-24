@@ -1,5 +1,6 @@
+import { isSdkError } from "@intent-engine/client";
 import type { Address, Instruction, TransactionPartialSigner } from "@solana/kit";
-import { buildClaimsWithList, buildExtendClaimants, checkListed, claimantChunks, claimListAddress, IntentCoreError } from "@intent-engine/core";
+import { buildClaimsWithList, buildExtendClaimants, checkListed, claimantChunks, claimListAddress } from "@intent-engine/core";
 import type { ClaimListView, Transport } from "@intent-engine/client";
 import { previewed } from "./admin-commands.js";
 import { FlowRefused } from "./flows.js";
@@ -24,10 +25,10 @@ export function listRefusal(list: ClaimListView | null, worker: Address, intent:
     checkListed(list, worker);
     return undefined;
   } catch (error) {
-    if (!(error instanceof IntentCoreError)) {
+    if (!isSdkError(error, "intent-core-error")) {
       throw error;
     }
-    return error.code === "NotListed" ? notListed(worker, intent) : listIncomplete(intent, list);
+    return error.engineError === "NotListed" ? notListed(worker, intent) : listIncomplete(intent, list);
   }
 }
 

@@ -1,5 +1,6 @@
 import { type Address, isAddress } from "@solana/kit";
 import { PRODUCT_SLUG } from "../generated/identity.js";
+import { InvalidInput } from "./errors.js";
 
 export const SPEC_MEMO_PREFIX = `${PRODUCT_SLUG}-spec:`;
 export const RELEASE_MEMO_PREFIX = "delivery sha256:";
@@ -57,7 +58,7 @@ export function isSha256Hex(text: string): boolean {
 
 export function specMemo(url: string): string {
   if (!isMemoUrl(url)) {
-    throw new RangeError(`a spec url must be ${MEMO_URL_RULE}`);
+    throw new InvalidInput("url", "format", `a spec url must be ${MEMO_URL_RULE}`);
   }
   return `${SPEC_MEMO_PREFIX}${url}`;
 }
@@ -72,10 +73,10 @@ export function parseSpecMemo(text: string): SpecMemo | null {
 
 export function releaseMemo(sha256: string, salt?: string): string {
   if (!isSha256Hex(sha256)) {
-    throw new RangeError("a release records a sha256 of 64 lowercase hex digits");
+    throw new InvalidInput("sha256", "format", "a release records a sha256 of 64 lowercase hex digits");
   }
   if (salt !== undefined && !RELEASE_SALT.test(salt)) {
-    throw new RangeError("a release records its payee's salt as 32 lowercase hex digits");
+    throw new InvalidInput("salt", "format", "a release records its payee's salt as 32 lowercase hex digits");
   }
   return `${RELEASE_MEMO_PREFIX}${sha256}${salt === undefined ? "" : `${RELEASE_SALT_MARK}${salt}`}`;
 }
@@ -99,13 +100,13 @@ const SCORE = /^(0|[1-9][0-9]{0,2})$/;
 
 export function feedbackMemo({ intent, score, note }: FeedbackMemo): string {
   if (!isAddress(intent)) {
-    throw new RangeError("feedback names its intent by a base58 address");
+    throw new InvalidInput("intent", "format", "feedback names its intent by a base58 address");
   }
   if (!Number.isInteger(score) || score < 0 || score > MAX_FEEDBACK_SCORE) {
-    throw new RangeError(`a feedback score is a whole number from 0 to ${MAX_FEEDBACK_SCORE}`);
+    throw new InvalidInput("score", "range", `a feedback score is a whole number from 0 to ${MAX_FEEDBACK_SCORE}`);
   }
   if (note !== undefined && !isSha256Hex(note)) {
-    throw new RangeError("a feedback note is the sha256 of the note as 64 lowercase hex digits");
+    throw new InvalidInput("note", "format", "a feedback note is the sha256 of the note as 64 lowercase hex digits");
   }
   return `${FEEDBACK_MEMO_PREFIX}${intent}:${score}${note === undefined ? "" : `:${note}`}`;
 }

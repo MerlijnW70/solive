@@ -13,6 +13,7 @@ import { escrowAmount, type IntentParams, validate } from "./kinds.js";
 import { checkU64, U64_MAX } from "./math.js";
 import { MANDATE_NONCE_BIT, type MandateSpec, mandateArgs } from "./mandate.js";
 import { findAssociatedTokenAddress, findMandatePda } from "./pdas.js";
+import { InvalidInput } from "./errors.js";
 
 export async function buildInitUser(input: { owner: TransactionSigner }) {
   return getInitUserInstructionAsync({ owner: input.owner, ...(await events()) });
@@ -33,10 +34,10 @@ export const NONCE_CEILING = MANDATE_NONCE_BIT - 256n;
 
 export function nextEpoch(current: bigint, entropy: Uint8Array = crypto.getRandomValues(new Uint8Array(6))): bigint {
   if (current < 0n || current >= U64_MAX) {
-    throw new RangeError(`no epoch follows ${current}`);
+    throw new InvalidInput("current", "range", `no epoch follows ${current}`);
   }
   if (entropy.length !== Number(EPOCH_JUMP_BITS / 8n)) {
-    throw new RangeError(`epoch entropy must be ${EPOCH_JUMP_BITS / 8n} bytes`);
+    throw new InvalidInput("entropy", "length", `epoch entropy must be ${EPOCH_JUMP_BITS / 8n} bytes`);
   }
   const drawn = entropy.reduce((acc, b) => (acc << 8n) | BigInt(b), 0n);
   return current + (drawn % (U64_MAX - current)) + 1n;
@@ -89,7 +90,7 @@ export async function buildApproveForIntent(input: {
   const alreadyApproved = checkU64(input.alreadyApproved ?? 0n, "existing allowance");
   const amount = escrow + relayerFee + alreadyApproved;
   if (amount > U64_MAX) {
-    throw new RangeError(`an allowance of ${amount} does not fit a token account`);
+    throw new InvalidInput("amount", "range", `an allowance of ${amount} does not fit a token account`);
   }
   return buildApproveDelegate({ ...input, amount });
 }

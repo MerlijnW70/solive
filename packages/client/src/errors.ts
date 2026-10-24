@@ -1,4 +1,4 @@
-import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { INTENT_ENGINE_PROGRAM_ADDRESS, isSdkError } from "@intent-engine/core";
 import idl from "@intent-engine/core/idl.json" with { type: "json" };
 
 export type EngineError = { code: number; name: string; message: string };
@@ -63,6 +63,9 @@ function codeOf(error: unknown, depth: number): number | null {
 }
 
 export function explain(error: unknown): EngineError | null {
+  if (isSdkError(error, "failed-on-chain") && error.program !== null) {
+    return error.engine ?? null;
+  }
   const code = codeOf(error, 0);
   return code === null ? null : (ENGINE_ERRORS.get(code) ?? null);
 }

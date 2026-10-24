@@ -1,9 +1,9 @@
+import { isSdkError } from "@intent-engine/client";
 import { parseArgs } from "node:util";
 import type { Address } from "@solana/kit";
 import {
   checkProfile,
   ENCRYPTION_KEY_RULE,
-  IntentCoreError,
   isEncryptionKeyText,
   MAX_CLAIM_SECS,
   MAX_CLAIM_STAKE,
@@ -215,7 +215,7 @@ function profileInput(values: Values) {
   try {
     return checkProfile(input);
   } catch (error) {
-    throw error instanceof IntentCoreError ? new UsageError(PROFILE_RULE) : error;
+    throw isSdkError(error, "intent-core-error") ? new UsageError(PROFILE_RULE) : error;
   }
 }
 

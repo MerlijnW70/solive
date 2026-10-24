@@ -1,5 +1,5 @@
 import { type Address, getAddressDecoder, getAddressEncoder } from "@solana/kit";
-import { IntentCoreError } from "./errors.js";
+import { IntentCoreError, InvalidInput } from "./errors.js";
 
 export const EXT_MAX_LEN = 512;
 export const KNOWN_FLAGS = 0;
@@ -14,7 +14,7 @@ export type ExtField = { tag: number; value: Uint8Array };
 
 export function checkFlags(flags: number): number {
   if (!Number.isInteger(flags) || flags < 0 || flags > 0xffff) {
-    throw new RangeError(`${flags} is not a u16 flag set`);
+    throw new InvalidInput("flags", "range", `${flags} is not a u16 flag set`);
   }
   if ((flags & ~KNOWN_FLAGS) !== 0) {
     throw new IntentCoreError("FlagsUnknown");
@@ -60,7 +60,7 @@ export function encodeExt(fields: readonly ExtField[]): Uint8Array {
   let last = 0;
   for (const { tag, value } of fields) {
     if (!Number.isInteger(tag) || tag <= last || tag > 255) {
-      throw new RangeError(`extension tags must rise strictly within 1..255, got ${tag} after ${last}`);
+      throw new InvalidInput("ext", "order", `extension tags must rise strictly within 1..255, got ${tag} after ${last}`);
     }
     parts.push(tag, value.length & 0xff, value.length >> 8, ...value);
     last = tag;
@@ -79,7 +79,7 @@ export type Partner = { key: Address; bps: number };
 
 export function encodePartner(partner: Partner): Uint8Array {
   if (!Number.isInteger(partner.bps) || partner.bps < 1 || partner.bps > MAX_PARTNER_BPS) {
-    throw new RangeError(`a partner share must be 1 to ${MAX_PARTNER_BPS} bps, got ${partner.bps}`);
+    throw new InvalidInput("bps", "range", `a partner share must be 1 to ${MAX_PARTNER_BPS} bps, got ${partner.bps}`);
   }
   const value = new Uint8Array(PARTNER_LEN);
   value.set(getAddressEncoder().encode(partner.key));

@@ -65,6 +65,7 @@ import {
   splitN,
   splitPayout,
 } from "../src/index.js";
+import { InvalidInput } from "../src/errors.js";
 
 const read = (rel: string) =>
   JSON.parse(readFileSync(fileURLToPath(new URL(rel, import.meta.url)), "utf8")) as unknown;
@@ -462,13 +463,13 @@ describe("flash fill builder", () => {
     ).resolves.toHaveLength(0xffff);
     await expect(
       buildFlashFill({ ...spec, baseIndex: 2, route: new Array<Instruction>(0xfffd).fill(noop) }),
-    ).rejects.toThrow(RangeError);
+    ).rejects.toThrow(InvalidInput);
   });
 
   it("refuses a flash fill too long to index", async () => {
     await expect(
       buildFlashFill({ ...spec, route: new Array<Instruction>(0xffff).fill(noop) }),
-    ).rejects.toThrow(RangeError);
+    ).rejects.toThrow(InvalidInput);
     await expect(
       buildFlashFill({ ...spec, route: new Array<Instruction>(0xfffe).fill(noop) }),
     ).resolves.toHaveLength(0x10000);
@@ -537,8 +538,8 @@ describe("refund overrides and exact approvals", () => {
     expect(await approved({ relayerFee: 0n })).toBe(1234n);
     const signed = { relayerFee: 5n, submitBy: 9n, nonce: 1n };
     expect(await approved(signed)).toBe(1239n);
-    await expect(approved({ relayerFee: -1n })).rejects.toThrow(RangeError);
-    await expect(approved({ relayerFee: U64_MAX })).rejects.toThrow(RangeError);
+    await expect(approved({ relayerFee: -1n })).rejects.toThrow(InvalidInput);
+    await expect(approved({ relayerFee: U64_MAX })).rejects.toThrow(InvalidInput);
   });
 
   it("approve for intent adds to an existing allowance", async () => {
@@ -551,8 +552,8 @@ describe("refund overrides and exact approvals", () => {
     expect(await approved({ alreadyApproved: 1_000n, relayerFee: 6n })).toBe(2240n);
     expect(await approved({ alreadyApproved: 0n })).toBe(1234n);
     expect(await approved({ alreadyApproved: U64_MAX - 1234n })).toBe(U64_MAX);
-    await expect(approved({ alreadyApproved: U64_MAX - 1233n })).rejects.toThrow(RangeError);
-    await expect(approved({ alreadyApproved: -5n })).rejects.toThrow(RangeError);
+    await expect(approved({ alreadyApproved: U64_MAX - 1233n })).rejects.toThrow(InvalidInput);
+    await expect(approved({ alreadyApproved: -5n })).rejects.toThrow(InvalidInput);
   });
 });
 
@@ -698,7 +699,7 @@ describe("foundation fields", () => {
 
   it("refuse flags and extensions the program would reject before anything is signed", async () => {
     await expect(buildCreateIntent({ ...create, flags: 1 })).rejects.toThrow(new IntentCoreError("FlagsUnknown"));
-    await expect(buildCreateIntent({ ...create, flags: 0x10000 })).rejects.toThrow(RangeError);
+    await expect(buildCreateIntent({ ...create, flags: 0x10000 })).rejects.toThrow(InvalidInput);
     await expect(buildCreateIntent({ ...create, ext: new Uint8Array([2, 0, 0]) })).rejects.toThrow(unknown);
     await expect(buildCreateIntent({ ...create, ext })).rejects.toThrow(new IntentCoreError("ExtMalformed"));
     const partner = { key: feeRecipient, bps: 30 };
@@ -773,9 +774,9 @@ describe("epoch advancement", () => {
 
   it("refuses an epoch with no successor or the wrong amount of entropy", () => {
     expect(() => nextEpoch(U64_MAX)).toThrow(`no epoch follows ${U64_MAX}`);
-    expect(() => nextEpoch(-1n)).toThrow(RangeError);
+    expect(() => nextEpoch(-1n)).toThrow(InvalidInput);
     expect(() => nextEpoch(1n, new Uint8Array(5))).toThrow("epoch entropy must be 6 bytes");
-    expect(() => nextEpoch(1n, new Uint8Array(7))).toThrow(RangeError);
+    expect(() => nextEpoch(1n, new Uint8Array(7))).toThrow(InvalidInput);
   });
 });
 

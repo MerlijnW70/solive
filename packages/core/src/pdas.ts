@@ -6,6 +6,7 @@ import {
   type ProgramDerivedAddress,
 } from "@solana/kit";
 import { INTENT_ENGINE_PROGRAM_ADDRESS } from "../generated/client/index.js";
+import { InvalidInput } from "./errors.js";
 
 export const ASSOCIATED_TOKEN_PROGRAM_ADDRESS =
   "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL" as Address<"ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL">;
@@ -42,7 +43,7 @@ export async function findAnnouncementPda(
   programAddress: Address = INTENT_ENGINE_PROGRAM_ADDRESS,
 ): Promise<ProgramDerivedAddress> {
   if (seeds.blobHash.length !== 32) {
-    throw new RangeError("blobHash must be the 32-byte sha256 of the sealed blob");
+    throw new InvalidInput("blobHash", "length", "blobHash must be the 32-byte sha256 of the sealed blob");
   }
   const address = getAddressEncoder();
   return getProgramDerivedAddress({

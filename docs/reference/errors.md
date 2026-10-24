@@ -16,6 +16,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `CertificateUntrusted` | no | this machine does not trust the RPC node's certificate, often because antivirus or a proxy inspects HTTPS |
 | `Unfunded` | no | your wallet has no SOL yet; fund it, then try again |
 | `Failed` | no | an unexpected error; the hint carries its message |
+| `MaybeSent` | no | the transaction may have landed, so it must not be sent again: look its signature up with intent-engine lookup --signature, as the hint says, and send again only once that reports expired |
 | `TransactionFailed` | no | the transaction would fail for a reason this client does not name; read the logs |
 | `WalletNotConfigured` | no | a wallet tool was called on a server started without --wallet |
 | `NoClock` | no | wait was given to a server built without a clock; call again without wait |
@@ -242,3 +243,56 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 17 | `AccountFrozen` | yes | a token account is frozen by its issuer; try again once it is thawed |
 | 36 | `NoMemo` | no | a token account requires a memo on incoming transfers; its owner must turn that off before it can receive |
 | 42 | `CpiGuardTransferBlocked` | no | the owner's token account has CPI Guard on, which stops the engine moving tokens on the owner's signature; turn CPI Guard off, or create a signed intent with intent-engine signed prepare, which draws through the engine's allowance |
+
+## SDK
+
+Every error `@intent-engine/core` and `@intent-engine/client` throw extends `SdkError`, which carries a fixed `code`. Switch on `error.code`, or narrow with `isSdkError(error, code)`; the standard `cause` holds the underlying error, if any.
+
+| Code | Class | Fields | Meaning |
+| --- | --- | --- | --- |
+| `invalid-input` | `InvalidInput` | `field`, `rule` | an argument breaks a rule: field names it, rule says which kind of rule |
+| `intent-core-error` | `IntentCoreError` | `engineError` | a check that mirrors the engine program refused; engineError names the engine error it would raise |
+| `encryption-key-error` | `EncryptionKeyError` | none | an encryption key file is not one profile encryption-key new writes, or its keys do not match |
+| `sealed-error` | `SealedError` | none | a sealed file cannot be made or opened: malformed, changed, too many wallets or a key that does not fit |
+| `not-invited` | `NotInvited` | `wallet` | none of the keys given is one the file was sealed to |
+| `account-version-error` | `AccountVersionError` | `account`, `version`, `current` | an engine account has a layout this SDK does not read; close or migrate it |
+| `not-an-engine-account` | `NotAnEngineAccount` | `address` | the account or data is not the engine account the call expects |
+| `no-signature` | `NoSignature` | `signer` | a signer returned no signature for the message |
+| `missing-account` | `MissingAccount` | `address` | an account the call reads does not exist on this cluster |
+| `not-a-mint` | `NotAMint` | `address` | an address passed as a mint is not a token mint |
+| `not-deliverable` | `NotDeliverable` | `intent`, `reason` | work cannot be announced to this intent; reason says why |
+| `no-message-signer` | `NoMessageSigner` | `worker` | the wallet cannot sign messages, which an announcement needs for its salt and keys |
+| `bad-salt-signature` | `BadSaltSignature` | `worker` | the salt signature given is not the worker's signature of the salt message |
+| `url-too-long` | `UrlTooLong` | `bytes`, `max`, `recipients` | the work url does not fit one transaction when sealed to this many recipients |
+| `announcements-unreadable` | `AnnouncementsUnreadable` | none | the transport cannot list engine accounts, so announcements cannot be read |
+| `first-opening-refused` | `FirstOpeningRefused` | `intent`, `reason`, `sha256`, `announcement`, `seq`, `worker`, `sealedTo`, `missing`, `closed`, `holder` | the first announcement that opens to the work cannot be known or cannot be paid; reason says why |
+| `not-refutable` | `NotRefutable` | `earlier` | the announcements named cannot refute the release |
+| `book-not-closable` | `BookNotClosable` | `intent` | the delivery book of the intent cannot be closed yet |
+| `no-free-nonce` | `NoFreeNonce` | `owner` | every nonce in the owner's window is used; advance the window first |
+| `not-settleable` | `NotSettleable` | `intent`, `reason` | the intent cannot be released, paid or given feedback this way; reason says why |
+| `claim-held-by` | `ClaimHeldBy` | `intent`, `worker`, `until` | another worker holds the job's claim, so only that worker can be paid until it ends |
+| `not-fillable` | `NotFillable` | `intent`, `reason` | the intent cannot be filled; reason says why |
+| `pay-to-not-wallet` | `PayToNotWallet` | `payTo`, `program` | the payee belongs to a program, not a wallet, so nothing paid to it could be spent |
+| `payee-moved` | `PayeeMoved` | `payTo`, `account` | the payee's token account changed hands, so a release would not reach the payee |
+| `escrow-expired` | `EscrowExpired` | `intent`, `expiresAt` | the escrow expired; its owner gets it back instead |
+| `vote-rejected` | `VoteRejected` | `member`, `intent` | a committee vote is not a valid signature over the release |
+| `cosign-rejected` | `CosignRejected` | `wallet`, `intent` | a co-author gave no valid signature over the split release |
+| `committee-needed` | `CommitteeNeeded` | `attestor`, `escrow`, `floor` | the escrow reaches the committee floor, so its attestor must be a committee |
+| `intent-unreadable` | `IntentUnreadable` | `intent` | a watched intent account could not be decoded; cause holds why |
+| `stale-read` | `StaleRead` | `slot`, `seen` | the node answered from a slot older than one the watch already saw |
+| `preview-refused` | `PreviewRefused` | none | a preview tried to send; previews send nothing |
+| `transport-lacks` | `TransportLacks` | `method` | the transport does not implement a method the call needs |
+| `confirm-mismatch` | `ConfirmMismatch` | `field`, `first`, `second` | the second RPC node disagrees with the first or could not be read; nothing was signed or sent |
+| `spec-sealed` | `SpecSealed` | `url`, `to`, `keyed` | the spec is sealed to invited wallets and no key given opens it |
+| `spec-unreadable` | `SpecUnreadable` | `url` | the spec url could not be fetched or opened |
+| `ledger-error` | `LedgerError` | none | the Ledger did not sign; nothing was sent |
+| `ledger-path-error` | `LedgerPathError` | none | the text is not a Ledger path this SDK accepts |
+| `maybe-sent` | `MaybeSent` | `signature`, `lastValidBlockHeight` | the transaction may have landed; resolve it with client.status(signature, lastValidBlockHeight) and do not send it again |
+| `failed-on-chain` | `FailedOnChain` | `signature`, `err`, `program`, `logs`, `engine` | the transaction landed and failed, so its fee was paid and nothing else changed; engine is set when the engine program failed |
+| `blockhash-expired` | `BlockhashExpired` | none | the transaction certainly did not land: its blockhash expired; sign it again |
+| `behind-min-slot` | `BehindMinSlot` | `slot`, `minContextSlot` | the node answered from a slot older than one already seen; the read is retried |
+| `subscription-ended` | `SubscriptionEnded` | `signature`, `reason` | a signature subscription ended without a result; confirmation falls back to polling |
+| `fetch-failed` | `FetchFailed` | `url`, `reason`, `detail` | a pinned fetch failed: redirect, bad status, network, no address or aborted |
+| `mainnet-not-allowed` | `MainnetNotAllowed` | `url` | the url serves mainnet and allowMainnet was not given |
+| `profile-history-incomplete` | `ProfileHistoryIncomplete` | `judge` | the judge's profile history could not be read back far enough; nothing was paid |
+| `no-key-at-creation` | `NoKeyAtCreation` | `intent` | the Ledger judge's profile named no encryption key when the escrow was made |

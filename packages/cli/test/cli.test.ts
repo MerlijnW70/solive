@@ -1650,6 +1650,7 @@ describe("process plumbing", () => {
       "transactionsOf",
       "transactionOf",
       "signatureStatuses",
+      "sendStatus",
       "firstAvailableSlot",
       "finalizedBlock",
       "engineAccounts",

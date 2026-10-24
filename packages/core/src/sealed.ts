@@ -1,5 +1,6 @@
 import { type Address, getAddressDecoder, getAddressEncoder } from "@solana/kit";
 import type { DeliveryOpener } from "./encryption-key.js";
+import { SdkError } from "./errors.js";
 
 export const SEALED_VERSION = 2;
 export const SEALED_TAG = "solive-sealed";
@@ -18,19 +19,18 @@ export const OLD_SEALED = "this file was sealed in an older format, which does n
 
 export const SEALED_LIMIT = `a sealed file lists between 1 and ${MAX_SEALED_RECIPIENTS} wallets, each once`;
 
-export class SealedError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "SealedError";
-  }
+export class SealedError extends SdkError {
+  readonly code = "sealed-error";
+  override readonly name = "SealedError";
 }
 
-export class NotInvited extends SealedError {
+export class NotInvited extends SdkError {
+  readonly code = "not-invited";
+  override readonly name = "NotInvited";
   readonly wallet: Address | null;
 
   constructor(wallet: Address | null) {
     super(wallet === null ? "none of the keys given is one this was sealed to" : `${wallet} is not one of the wallets this was sealed to`);
-    this.name = "NotInvited";
     this.wallet = wallet;
   }
 }

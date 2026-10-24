@@ -20,7 +20,7 @@ import {
   IntentStatus,
   parseAmount,
 } from "@intent-engine/core";
-import { createdAccount, FailedOnChain, mintOf, type Transport, unmemoized } from "@intent-engine/client";
+import { createdAccount, isSdkError, mintOf, type Transport, unmemoized } from "@intent-engine/client";
 import { type AgentContext, type AnyAction, invoke } from "./agent/actions.js";
 import { WARN_REPLACES_DELEGATE } from "./agent/owner.js";
 import { prepare } from "./agent/prepare.js";
@@ -37,7 +37,7 @@ export const CANCELS_FAILED =
   "the revoke landed and signatures lists every transaction that did; the intents in failed are still open, so cancel each with intent-engine cancel";
 
 export const CANCELS_UNKNOWN =
-  "the cancels in unknown were sent but not confirmed and may still land; look each signature up, or read the intent with intent-engine show, before cancelling it again";
+  "the cancels in unknown were sent but not confirmed and may still land; look each signature up with intent-engine lookup --signature, or read the intent with intent-engine show, before cancelling it again";
 
 export const NOT_SENT = "nothing was sent; check the summary and pass --yes to sign and send";
 
@@ -186,7 +186,7 @@ export async function finish(
       signatures.push(await transport.sendWire(sending.wire, sending.latest));
       landed.push(intent);
     } catch (error) {
-      const landing = error instanceof FailedOnChain ? "failed" : await landingOf(transport, sending.signature, intent);
+      const landing = isSdkError(error, "failed-on-chain") ? "failed" : await landingOf(transport, sending.signature, intent);
       if (landing === "landed") {
         signatures.push(sending.signature);
         landed.push(intent);

@@ -29,6 +29,7 @@ import {
   newEncryptionKeyFile,
   profileView,
 } from "../src/index.js";
+import { NotAnEngineAccount } from "../src/errors.js";
 
 const NOW = 1_700_000_000n;
 const enginePath =
@@ -62,7 +63,7 @@ async function rawCreate(wallet: KeyPairSigner, args: { skills: string[]; endpoi
 function refusal(build: () => Promise<unknown>): Promise<string> {
   return build().then(
     () => "built",
-    (error: unknown) => (error instanceof IntentCoreError ? error.code : String(error)),
+    (error: unknown) => (error instanceof IntentCoreError ? error.engineError : String(error)),
   );
 }
 
@@ -155,7 +156,7 @@ describe("profiles", () => {
     svm.setClock(clock);
     expect(await attempt(wallet, [await buildUpdateProfile({ wallet, skills: ["rust"], endpoint: "https://other.example" })])).toBeNull();
     expect(read()).toEqual({ wallet: wallet.address, skills: ["rust"], endpoint: "https://other.example", docUrl: null, docSha256: null, encryptionKey: null, updatedAt: NOW + 60n });
-    expect(() => profileView(new Uint8Array(16))).toThrow(RangeError);
+    expect(() => profileView(new Uint8Array(16))).toThrow(NotAnEngineAccount);
   });
 
   it("profileView reads an account of the profile size and current version that starts with its discriminator, and nothing else", () => {

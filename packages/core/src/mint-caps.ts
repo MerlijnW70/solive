@@ -18,6 +18,7 @@ import {
 import { events } from "./builder-accounts.js";
 import { U64_MAX } from "./math.js";
 import { checkAccountVersion } from "./versions.js";
+import { InvalidInput, NotAnEngineAccount } from "./errors.js";
 
 export const MIN_CAP_WINDOW_SECS = 60;
 
@@ -27,7 +28,7 @@ export function isMintCapData(data: Uint8Array): boolean {
 
 export function decodeMintCapData(data: Uint8Array): MintCap {
   if (!isMintCapData(data)) {
-    throw new RangeError("not a mint cap account");
+    throw new NotAnEngineAccount(null, "not a mint cap account");
   }
   return getMintCapDecoder().decode(checkAccountVersion(data));
 }
@@ -50,16 +51,16 @@ export type MintCapLimits = { maxPerOrder: bigint; windowCap: bigint; windowSecs
 
 export function checkMintCapLimits(limits: MintCapLimits): MintCapLimits {
   if (limits.maxPerOrder <= 0n) {
-    throw new RangeError("the per-order cap must be above zero");
+    throw new InvalidInput("maxPerOrder", "range", "the per-order cap must be above zero");
   }
   if (limits.windowCap < limits.maxPerOrder) {
-    throw new RangeError("the window cap must be at least the per-order cap");
+    throw new InvalidInput("windowCap", "range", "the window cap must be at least the per-order cap");
   }
   if (!Number.isInteger(limits.windowSecs) || limits.windowSecs < MIN_CAP_WINDOW_SECS || limits.windowSecs > 0xffff_ffff) {
-    throw new RangeError(`the window must last ${MIN_CAP_WINDOW_SECS} to 4294967295 seconds`);
+    throw new InvalidInput("windowSecs", "range", `the window must last ${MIN_CAP_WINDOW_SECS} to 4294967295 seconds`);
   }
   if (limits.totalLimit !== undefined && (limits.totalLimit < 0n || limits.totalLimit > U64_MAX)) {
-    throw new RangeError("the total limit must be zero, meaning none, or a raw amount");
+    throw new InvalidInput("totalLimit", "range", "the total limit must be zero, meaning none, or a raw amount");
   }
   return limits;
 }
@@ -74,7 +75,7 @@ export async function findMintCapAddress(mint: Address): Promise<Address> {
 
 export async function buildSetMintCap(input: MintCapLimits & { totalLimit: bigint; admin: TransactionSigner; payer?: TransactionSigner; mint: Address }) {
   if (typeof input.totalLimit !== "bigint") {
-    throw new RangeError("name the total limit: zero for none, or the current one to keep it");
+    throw new InvalidInput("totalLimit", "missing", "name the total limit: zero for none, or the current one to keep it");
   }
   const limits = checkMintCapLimits(input);
   return getSetMintCapInstructionAsync({

@@ -1,3 +1,4 @@
+import { InvalidInput } from "./errors.js";
 export type ManifestEntry = { path: string; bytes: Uint8Array };
 
 const LENGTH_BYTES = 8;
@@ -23,7 +24,7 @@ export async function manifestSha256(entries: readonly ManifestEntry[]): Promise
   const encoder = new TextEncoder();
   const named = entries.map((entry) => {
     if (entry.path === "") {
-      throw new RangeError("a manifest entry needs a non-empty path");
+      throw new InvalidInput("path", "length", "a manifest entry needs a non-empty path");
     }
     return { name: encoder.encode(entry.path), bytes: entry.bytes };
   });
@@ -32,7 +33,7 @@ export async function manifestSha256(entries: readonly ManifestEntry[]): Promise
   for (const [i, entry] of named.entries()) {
     const previous = named[i - 1];
     if (previous !== undefined && compareBytes(previous.name, entry.name) === 0) {
-      throw new RangeError(`the manifest names ${new TextDecoder().decode(entry.name)} more than once`);
+      throw new InvalidInput("entries", "duplicate", `the manifest names ${new TextDecoder().decode(entry.name)} more than once`);
     }
     parts.push(lengthOf(entry.name.length), entry.name, lengthOf(entry.bytes.length), entry.bytes);
   }

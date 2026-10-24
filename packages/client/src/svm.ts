@@ -13,12 +13,14 @@ import {
   lamports,
   pipe,
   setTransactionMessageFeePayerSigner,
+  type Signature,
   signTransactionMessageWithSigners,
   type Transaction,
 } from "@solana/kit";
 import { getIntentDecoder, getIntentDiscriminatorBytes, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { FailedTransactionMetadata, type LiteSVM } from "litesvm";
 import { TOKEN_PROGRAMS } from "./accounts.js";
+import { FailedOnChain, type Failure, failure } from "./send-errors.js";
 import {
   type EngineTransaction,
   keysAt,
@@ -48,6 +50,17 @@ const startsWith = (data: Uint8Array, head: ArrayLike<number>, at: number): bool
 
 const decodeWire = (wire: string) => getTransactionDecoder().decode(getBase64Encoder().encode(wire));
 
+function errOf(failed: FailedTransactionMetadata): unknown {
+  const err: unknown = failed.err();
+  const { index, err: detailOf } = err as { index?: unknown; err?: unknown };
+  if (typeof index !== "number" || typeof detailOf !== "function") {
+    return String(err);
+  }
+  const detail: unknown = (detailOf as () => unknown).call(err);
+  const code = (detail as { code?: unknown }).code;
+  return { InstructionError: [index, typeof code === "number" ? { Custom: code } : String(detail)] };
+}
+
 export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): Transport {
   const seen = new Set<Address>();
   const touched = new Set<Address>();
@@ -58,6 +71,7 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
   };
   const history: { touched: ReadonlySet<Address>; found: EngineTransaction }[] = [];
   const byId = new Map<string, EngineTransaction>();
+  const failures = new Map<string, Failure>();
   const holdings = (keys: readonly Address[]): TokenHolding[] =>
     keys.flatMap((account) => {
       const held = svm.getAccount(account);
@@ -92,7 +106,11 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
     const lamportsBefore = lamportsOf();
     const result = svm.sendTransaction(tx);
     if (result instanceof FailedTransactionMetadata) {
-      throw new Error(`${String(result.err())}\n${result.meta().logs().join("\n")}`);
+      const logs = result.meta().logs();
+      const programs = ("instructions" in compiled ? compiled.instructions : []).flatMap((ix) => keys[ix.programAddressIndex] ?? []);
+      const failed = failure(getSignatureFromTransaction(tx), errOf(result), logs, programs);
+      failures.set(failed.signature, failed);
+      throw new FailedOnChain(`${String(result.err())}\n${logs.join("\n")}`, failed);
     }
     const after = holdings(keys).filter((held) => !before.some(({ account }) => account === held.account));
     const tokens = [...before, ...after];
@@ -232,6 +250,18 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
     },
     transactionsOf: async (listed) => listed.flatMap(({ signature }) => byId.get(signature) ?? []),
     transactionOf: async (signature) => byId.get(signature) ?? null,
+    sendStatus: async (signature, lastValidBlockHeight) => {
+      const failed = failures.get(signature);
+      if (failed !== undefined) {
+        return { status: "failed", ...failed };
+      }
+      const found = byId.get(signature);
+      const known = signature as Signature;
+      if (found !== undefined) {
+        return { status: "confirmed", signature: known, slot: found.slot };
+      }
+      return lastValidBlockHeight === undefined ? { status: "pending", signature: known } : { status: "expired", signature: known };
+    },
     firstAvailableSlot: async () => 0n,
     recentFees: async () => [],
     budget: async (instructions) => [...instructions],

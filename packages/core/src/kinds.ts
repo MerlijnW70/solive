@@ -1,5 +1,5 @@
 import { type Address, getAddressDecoder, getAddressEncoder } from "@solana/kit";
-import { IntentCoreError } from "./errors.js";
+import { IntentCoreError, InvalidInput } from "./errors.js";
 import { mulDivCeil, mulDivFloor, U64_MAX } from "./math.js";
 
 export const PARAMS_LEN = 128;
@@ -122,13 +122,13 @@ export function encodeParams(intent: IntentParams): Uint8Array {
       out.set(getAddressEncoder().encode(field.value), at);
     } else if (field.type === "bytes32") {
       if (field.value.length !== 32) {
-        throw new RangeError(`params field ${i} must be 32 bytes`);
+        throw new InvalidInput("params", "length", `params field ${i} must be 32 bytes`);
       }
       out.set(field.value, at);
     } else {
       const [lo, hi] = field.type === "i64" ? [I64_MIN, I64_MAX] : [0n, U64_MAX];
       if (field.value < lo || field.value > hi) {
-        throw new RangeError(`params field ${i} is outside [${lo}, ${hi}]`);
+        throw new InvalidInput("params", "range", `params field ${i} is outside [${lo}, ${hi}]`);
       }
       view.setBigUint64(at, BigInt.asUintN(64, field.value), true);
     }
@@ -154,7 +154,7 @@ function kindOf(code: number): Kind {
 
 export function decodeParams(code: number, params: Uint8Array): IntentParams {
   if (params.length !== PARAMS_LEN) {
-    throw new RangeError(`params must be ${PARAMS_LEN} bytes, got ${params.length}`);
+    throw new InvalidInput("params", "length", `params must be ${PARAMS_LEN} bytes, got ${params.length}`);
   }
   const kind = kindOf(code);
   const view = new DataView(params.buffer, params.byteOffset, params.byteLength);
@@ -201,7 +201,7 @@ export function decodeParamsLoose(code: number, params: Uint8Array): IntentParam
     return decodeParams(code, params);
   } catch (error) {
     if (error instanceof IntentCoreError) {
-      return { kind: code, unknown: true, raw: params.slice(), reason: error.code };
+      return { kind: code, unknown: true, raw: params.slice(), reason: error.engineError };
     }
     throw error;
   }

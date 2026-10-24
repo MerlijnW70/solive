@@ -1,4 +1,5 @@
 import type { Address } from "@solana/kit";
+import { IntentUnreadable, StaleRead } from "./client-errors.js";
 import type { IntentAccount, WatchCallback, WatchOptions } from "./client-types.js";
 import { intentFrom } from "./job-proofs.js";
 import { changesFrom, type HeardAccount, type Notifications, pause, type ProgramAccount, type Transport } from "./transport.js";
@@ -36,7 +37,7 @@ export function watchIntents(
         view = decoded(account);
       } catch (error) {
         skipped.set(account.address, key);
-        failed(new Error(`intent ${account.address} cannot be read: ${error instanceof Error ? error.message : String(error)}`, { cause: error }));
+        failed(new IntentUnreadable(account.address, error));
         return [];
       }
       skipped.delete(account.address);
@@ -92,7 +93,7 @@ export function watchIntents(
       }
       const { at } = reading;
       if (at !== undefined && floor !== undefined && at < floor) {
-        failed(new Error(`the intents read at slot ${at} is older than slot ${floor}, which the watch has already seen`));
+        failed(new StaleRead(at, floor));
         return;
       }
       raise(at);

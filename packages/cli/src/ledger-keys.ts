@@ -1,5 +1,5 @@
 import { isKeyPairSigner, type KeyPairSigner, type MessagePartialSigner, type TransactionPartialSigner } from "@solana/kit";
-import { isLedgerPath, LedgerPathError, ledgerSigner, openUsb, parseLedgerPath } from "@intent-engine/client";
+import { isLedgerPath, isSdkError, ledgerSigner, openUsb, parseLedgerPath } from "@intent-engine/client";
 import { UsageError } from "./arg-values.js";
 import type { Command } from "./command-types.js";
 import type { Runtime } from "./runtime.js";
@@ -66,7 +66,7 @@ export function checkLedgerPaths(command: Command, saved?: string): void {
     try {
       parseLedgerPath(path);
     } catch (error) {
-      throw new UsageError(`--keypair ${error instanceof LedgerPathError ? error.message : String(error)}`);
+      throw new UsageError(`--keypair ${isSdkError(error, "ledger-path-error") ? error.message : String(error)}`);
     }
   }
 }

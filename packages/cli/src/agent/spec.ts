@@ -1,5 +1,5 @@
 import type { Address } from "@solana/kit";
-import { intentAt, MAX_SPEC_BYTES, mintOf, pinnedFetch, readSpec, SPEC_FETCH_FAILED, SPEC_REDIRECTS, SpecSealed, SpecUnreadable } from "@intent-engine/client";
+import { intentAt, isSdkError, MAX_SPEC_BYTES, mintOf, pinnedFetch, readSpec, SPEC_FETCH_FAILED, SPEC_REDIRECTS, SpecSealed, SpecUnreadable } from "@intent-engine/client";
 import { define } from "./actions.js";
 import { tool } from "./names.js";
 import { claimOf, specClaimHint } from "./job-claims.js";
@@ -51,10 +51,10 @@ export const getSpec = define({
     try {
       spec = await readSpec(ctx.transport, ctx.fetch ?? pinnedFetch, input.intent, await walletOpeners(ctx));
     } catch (error) {
-      if (error instanceof SpecSealed) {
+      if (isSdkError(error, "spec-sealed")) {
         throw new AgentRefusal("SpecSealed", untrusted(error.message));
       }
-      if (error instanceof SpecUnreadable) {
+      if (isSdkError(error, "spec-unreadable")) {
         throw new AgentRefusal(permanentSpec(error.message) ? "SpecUnfetchable" : "SpecUnreadable", untrusted(error.message));
       }
       throw error;

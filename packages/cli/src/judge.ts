@@ -12,11 +12,10 @@ import {
   firstOpeningIn,
   FirstOpeningRefused,
   isDevice,
+  isSdkError,
   loadCommittee,
   loadIntent,
   messageOnly,
-  NoKeyAtCreation,
-  ProfileHistoryIncomplete,
   type Transport,
 } from "@intent-engine/client";
 import type { Command } from "./args.js";
@@ -102,7 +101,7 @@ export const DEVICE_VOTE_PREVIEW =
   "nothing was signed; with --yes the Ledger signs only this member's vote, one message that lists every member's key and this digest: compare it with committee vote's preview on another machine before pressing approve";
 
 export const historyRefused = (error: unknown): never => {
-  throw error instanceof ProfileHistoryIncomplete || error instanceof NoKeyAtCreation ? new JudgeRefused(error.message) : error;
+  throw isSdkError(error, "profile-history-incomplete") || isSdkError(error, "no-key-at-creation") ? new JudgeRefused(error.message) : error;
 };
 
 export const GIVE_KEY_FLAG = "pass the encryption key file of that key with --encryption-keypair";
@@ -195,7 +194,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   const check = command.check === undefined ? undefined : { name: basename(resolve(command.check)), read: await readArtifact(resolve(command.check)) };
   const keypair = await judgeOpeners(runtime, command, isDevice(signer));
   const { list, opening } = await firstOpeningIn(transport, { intent: address, sha256, keypair });
-  if (opening instanceof FirstOpeningRefused) {
+  if (isSdkError(opening, "first-opening-refused")) {
     throw new JudgeRefused(refusedOpening(opening, command.keypair, isDevice(signer), signer.address));
   }
   const first = list.announcements.find(({ address: at }) => at === opening.announcement) ?? null;

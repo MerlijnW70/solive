@@ -1,5 +1,5 @@
 import type { Address, Signature } from "@solana/kit";
-import { isSha256Hex } from "@intent-engine/core";
+import { InvalidInput, isSha256Hex } from "@intent-engine/core";
 import { AnnouncementsUnreadable } from "./announce-errors.js";
 import { refutationsOf } from "./announcement-reads.js";
 import { HISTORY_LIMIT } from "./client-types.js";
@@ -12,7 +12,7 @@ import type { Announcement, DeliveriesInput, ReceiptInput, ReleaseReceipt } from
 export function sha256Given(sha256: string, name: string): string {
   const lowered = sha256.trim().toLowerCase();
   if (!isSha256Hex(lowered)) {
-    throw new RangeError(`${name} must be 64 hex digits`);
+    throw new InvalidInput(name, "format", `${name} must be 64 hex digits`);
   }
   return lowered;
 }

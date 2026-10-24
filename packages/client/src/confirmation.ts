@@ -1,8 +1,10 @@
 import { inspect } from "node:util";
-import { createSolanaRpcSubscriptions, type Signature } from "@solana/kit";
+import { type Address, createSolanaRpcSubscriptions, type Signature } from "@solana/kit";
+import { isSdkError } from "@intent-engine/core";
 import { socketUrl } from "./intent-notifications.js";
-import { BlockhashExpired, Charged, FailedOnChain, patiently, POLL_MS, sleep } from "./rpc-retry.js";
+import { patiently, POLL_MS, sleep } from "./rpc-retry.js";
 import type { RpcLike, Status } from "./rpc-shapes.js";
+import { BlockhashExpired, FailedOnChain, type Failure, failure, MaybeSent, type SendStatus, SubscriptionEnded } from "./send-errors.js";
 
 export const CONFIRM_POLLS = 360;
 
@@ -19,7 +21,7 @@ export function signatureWatch(url: string): SignatureWatch {
         return heardSlot(signature, note);
       }
     }
-    throw new Error(`the signature subscription for ${signature} ended without a notification`);
+    throw new SubscriptionEnded(signature, "ended");
   };
 }
 
@@ -30,15 +32,29 @@ const settles = (note: unknown): note is { context?: { slot?: unknown }; value: 
 
 export function heardSlot(signature: Signature, note: unknown): Confirmed {
   if (!settles(note)) {
-    throw new Error(`the signature notification for ${signature} carries no result`);
+    throw new SubscriptionEnded(signature, "no-result");
   }
   const { context, value } = note;
   const err = value.err ?? null;
   if (err !== null) {
-    throw new FailedOnChain(`transaction ${signature} failed: ${inspect(err)}`);
+    throw failedOnChain(failure(signature, err));
   }
   return typeof context?.slot === "bigint" ? { slot: context.slot } : {};
 }
+
+export const failedOnChain = (found: Failure): FailedOnChain => new FailedOnChain(`transaction ${found.signature} failed: ${inspect(found.err)}`, found);
+
+export async function failureRead(rpc: RpcLike, signature: Signature, err: unknown): Promise<Failure> {
+  const tx = await (async () => rpc.getTransaction(signature, { encoding: "json", maxSupportedTransactionVersion: 0, commitment: "confirmed" }).send())().catch(
+    () => null,
+  );
+  const keys: readonly Address[] = tx?.transaction.message.accountKeys ?? [];
+  const programs = (tx?.transaction.message.instructions ?? []).flatMap((ix) => keys[ix.programIdIndex] ?? []);
+  const logs = tx?.meta?.logMessages ?? undefined;
+  return failure(signature, err, logs === null ? undefined : logs, programs);
+}
+
+const failedRead = async (rpc: RpcLike, signature: Signature, err: unknown): Promise<FailedOnChain> => failedOnChain(await failureRead(rpc, signature, err));
 
 const never = new Promise<Confirmed>(() => undefined);
 
@@ -55,8 +71,11 @@ export async function confirm(
   const controller = new AbortController();
   const heard = watch(signature, controller.signal).then(
     (found) => found ?? {},
-    (error: unknown) => {
-      if (error instanceof Charged) {
+    async (error: unknown): Promise<Confirmed> => {
+      if (isSdkError(error, "failed-on-chain")) {
+        throw await failedRead(rpc, signature, error.err);
+      }
+      if (isSdkError(error, "maybe-sent")) {
         throw error;
       }
       return never;
@@ -69,12 +88,12 @@ export async function confirm(
   }
 }
 
-function settled(signature: Signature, status: Status | null | undefined): Confirmed | null {
+async function settled(rpc: RpcLike, signature: Signature, status: Status | null | undefined): Promise<Confirmed | null> {
   if (!status || (status.confirmationStatus !== "confirmed" && status.confirmationStatus !== "finalized")) {
     return null;
   }
   if (status.err !== null) {
-    throw new FailedOnChain(`transaction ${signature} failed: ${inspect(status.err)}`);
+    throw await failedRead(rpc, signature, status.err);
   }
   return status.slot === undefined ? {} : { slot: status.slot };
 }
@@ -89,11 +108,14 @@ export async function confirmSent(
   try {
     return await confirm(rpc, signature, lastValidBlockHeight, wait, watch);
   } catch (error) {
-    if (error instanceof Charged || error instanceof BlockhashExpired) {
+    if (isSdkError(error, "maybe-sent") || isSdkError(error, "failed-on-chain") || isSdkError(error, "blockhash-expired")) {
       throw error;
     }
-    throw new Charged(
+    throw new MaybeSent(
+      signature,
+      lastValidBlockHeight,
       `transaction ${signature} was sent but its confirmation could not be read (${error instanceof Error ? error.message : String(error)}); look the signature up before sending again`,
+      { cause: error },
     );
   }
 }
@@ -107,7 +129,7 @@ async function polled(
 ): Promise<Confirmed> {
   for (let poll = 1; stop?.aborted !== true; poll++) {
     const [status] = (await patiently(() => rpc.getSignatureStatuses([signature]).send(), wait)).value;
-    const confirmed = settled(signature, status);
+    const confirmed = await settled(rpc, signature, status);
     if (confirmed !== null) {
       return confirmed;
     }
@@ -115,23 +137,45 @@ async function polled(
     if (epoch.blockHeight > lastValidBlockHeight) {
       const late = await patiently(() => rpc.getSignatureStatuses([signature], { searchTransactionHistory: true }).send(), wait);
       const [found] = late.value;
-      const landed = settled(signature, found);
+      const landed = await settled(rpc, signature, found);
       if (landed !== null) {
         return landed;
       }
       if (found) {
-        throw new Charged(`transaction ${signature} landed but is not confirmed yet; look the signature up before sending again`);
+        throw new MaybeSent(signature, lastValidBlockHeight, `transaction ${signature} landed but is not confirmed yet; look the signature up before sending again`);
       }
       if (late.context.slot >= epoch.absoluteSlot) {
         throw new BlockhashExpired(`transaction ${signature} expired before confirmation`);
       }
     }
     if (poll >= CONFIRM_POLLS) {
-      throw new Charged(
+      throw new MaybeSent(
+        signature,
+        lastValidBlockHeight,
         `transaction ${signature} was neither confirmed nor expired after ${CONFIRM_POLLS} checks; the node may be stuck, so look the signature up before sending again`,
       );
     }
     await wait(POLL_MS);
   }
   return {};
+}
+
+export async function signatureStatus(
+  rpc: RpcLike,
+  signature: Signature,
+  lastValidBlockHeight?: bigint,
+  wait: (ms: number) => Promise<void> = sleep,
+): Promise<SendStatus> {
+  const epoch = lastValidBlockHeight === undefined ? undefined : await patiently(() => rpc.getEpochInfo().send(), wait);
+  const late = await patiently(() => rpc.getSignatureStatuses([signature], { searchTransactionHistory: true }).send(), wait);
+  const [found] = late.value;
+  if (found && (found.confirmationStatus === "confirmed" || found.confirmationStatus === "finalized")) {
+    if (found.err === null) {
+      return { status: "confirmed", signature, ...(found.slot === undefined ? {} : { slot: found.slot }) };
+    }
+    return { status: "failed", ...(await failureRead(rpc, signature, found.err)) };
+  }
+  const expired =
+    epoch !== undefined && lastValidBlockHeight !== undefined && epoch.blockHeight > lastValidBlockHeight && late.context.slot >= epoch.absoluteSlot;
+  return !found && expired ? { status: "expired", signature } : { status: "pending", signature };
 }

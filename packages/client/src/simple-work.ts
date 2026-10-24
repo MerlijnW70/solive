@@ -1,5 +1,5 @@
 import { type Address, isMessagePartialSigner } from "@solana/kit";
-import { formatAmount } from "@intent-engine/core";
+import { formatAmount, InvalidInput } from "@intent-engine/core";
 import { NotSettleable } from "./client-errors.js";
 import { intentAt } from "./jobs.js";
 import { outcome, type SimpleContext } from "./simple-orders.js";
@@ -18,7 +18,7 @@ export function workSends(ctx: SimpleContext) {
   const held = async (address: Address) => {
     const intent = await intentAt(ctx.client.transport, address);
     if (intent === null) {
-      throw new NotSettleable(address, "is not an intent account of the engine");
+      throw new NotSettleable(address, "not-an-intent", "is not an intent account of the engine");
     }
     return { intent, mint: await ctx.client.mint(intent.inputMint) };
   };
@@ -48,13 +48,13 @@ export function workSends(ctx: SimpleContext) {
   const release = async (input: ReleaseInput) => {
     const judge = ctx.signer;
     if (!isMessagePartialSigner(judge)) {
-      throw new TypeError(RELEASE_NEEDS_KEY_PAIR);
+      throw new InvalidInput("signer", "unsupported", RELEASE_NEEDS_KEY_PAIR);
     }
     const sha256 = sha256Given(input.deliveredSha256, "deliveredSha256");
     const { intent, mint } = await held(input.escrow);
     const first = await ctx.client.firstOpening({ intent: input.escrow, sha256, keypair: input.keypair });
     if (input.to !== undefined && input.to !== first.worker) {
-      throw new NotSettleable(input.escrow, notFirstAnnouncer(first.worker, first.announcement, sha256, input.to));
+      throw new NotSettleable(input.escrow, "not-first-announcer", notFirstAnnouncer(first.worker, first.announcement, sha256, input.to));
     }
     const result = BigInt(input.result ?? 1n);
     const summary = `Release escrow ${input.escrow} holding ${wholeTokens(intent.escrowed - intent.filled, mint.decimals, intent.inputMint)} to ${first.worker} for work ${sha256}, announced first in ${first.announcement}`;
@@ -76,7 +76,7 @@ export function workSends(ctx: SimpleContext) {
     const address = input.escrow ?? input.intent;
     const { intent, mint } = await held(address);
     if (intent.owner !== ctx.signer.address) {
-      throw new RangeError(`intent ${address} belongs to ${intent.owner}, not to ${ctx.signer.address}`);
+      throw new InvalidInput("escrow", "conflict", `intent ${address} belongs to ${intent.owner}, not to ${ctx.signer.address}`);
     }
     const summary = `Cancel ${address} and return ${wholeTokens(intent.escrowed - intent.filled, mint.decimals, intent.inputMint)} to ${ctx.signer.address}`;
     return outcome(ctx, input.preview, summary, async (client) => ({

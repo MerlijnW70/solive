@@ -23,9 +23,10 @@ import { describe, expect, it } from "vitest";
 import { findEventAuthorityPda, findIntentPda, Kind, MAX_MEMO_URL, seal, SPEC_MEMO_PREFIX, specMemo } from "@intent-engine/core";
 import {
   createClient,
-  engineCalls,
   DEVNET_GENESIS_HASH,
+  engineCalls,
   EXPIRES_IN_RANGE,
+  InvalidInput,
   JOBS_LIMIT,
   MAX_EXPIRES_IN,
   MAX_SPEC_BYTES,
@@ -36,9 +37,9 @@ import {
   PLAIN_HTTP_ON_PUBLIC,
   SIGNATURE_PAGE,
   SPEC_URL_NEEDS_PROOF,
+  type SpecFetch,
   SpecSealed,
   SpecUnreadable,
-  type SpecFetch,
   type Transport,
 } from "../src/index.js";
 import { funded, world, type World } from "./svm.js";
@@ -136,7 +137,7 @@ describe("jobs", () => {
     await expect(client.createIntent({ ...order, params: swap, specUrl: SPEC_URL })).rejects.toThrow(SPEC_URL_NEEDS_PROOF);
     const plain = { ...proof(judge.address), specHash: new Uint8Array(32) };
     await expect(client.createIntent({ ...order, params: plain, specUrl: SPEC_URL })).rejects.toThrow(SPEC_URL_NEEDS_PROOF);
-    await expect(client.createIntent({ ...order, params: proof(judge.address), specUrl: "http://example.org/spec" })).rejects.toThrow(RangeError);
+    await expect(client.createIntent({ ...order, params: proof(judge.address), specUrl: "http://example.org/spec" })).rejects.toThrow(InvalidInput);
     expect(await client.jobs()).toEqual([]);
   });
 
@@ -204,7 +205,7 @@ describe("deliveries", () => {
     const client = createClient({ url: LOCAL, transport: written, fetch: serving({ [legacy]: SPEC }, fetched) });
     const judge = await funded(w.chain);
     const order = { signer: w.owner, inputMint: w.inputMint, outputMint: w.outputMint };
-    expect(() => specMemo(legacy)).toThrow(RangeError);
+    expect(() => specMemo(legacy)).toThrow(InvalidInput);
     const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
     expect((await client.jobs())[0]).toMatchObject({ intent: job.intent, specUrl: legacy });
     expect(await client.jobs({ attestor: judge.address })).toMatchObject([{ intent: job.intent, specUrl: legacy }]);
@@ -224,8 +225,8 @@ describe("deliveries", () => {
       await expect(client.announce({ worker, intent, sha256: WORK, url: WORK_URL })).rejects.toThrow(NotDeliverable);
     }
     const open = await client.createIntent({ ...order, params: proof(judge.address) });
-    await expect(client.announce({ worker, intent: open.intent, sha256: "zz".repeat(32), url: WORK_URL })).rejects.toThrow(RangeError);
-    await expect(client.announce({ worker, intent: open.intent, sha256: WORK, url: "ftp://example.org/x" })).rejects.toThrow(RangeError);
+    await expect(client.announce({ worker, intent: open.intent, sha256: "zz".repeat(32), url: WORK_URL })).rejects.toThrow(InvalidInput);
+    await expect(client.announce({ worker, intent: open.intent, sha256: WORK, url: "ftp://example.org/x" })).rejects.toThrow(InvalidInput);
     expect(await client.announcementsTo(judge.address)).toEqual([]);
   });
   it("uppercase sha256 is accepted", async () => {

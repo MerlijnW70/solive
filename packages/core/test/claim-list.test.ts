@@ -27,7 +27,7 @@ const code = (run: () => void): string | undefined => {
     run();
     return undefined;
   } catch (error) {
-    return error instanceof IntentCoreError ? error.code : String(error);
+    return error instanceof IntentCoreError ? error.engineError : String(error);
   }
 };
 

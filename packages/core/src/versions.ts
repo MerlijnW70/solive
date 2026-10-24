@@ -30,7 +30,7 @@ import {
 } from "../generated/client/index.js";
 import { events } from "./builder-accounts.js";
 import { claimSlot } from "./claims.js";
-import { IntentCoreError } from "./errors.js";
+import { IntentCoreError, NotAnEngineAccount, SdkError } from "./errors.js";
 import { CONFIG_VERSION, INTENT_VERSION, USER_VERSION } from "./state.js";
 
 export const MANDATE_VERSION = 2;
@@ -91,7 +91,9 @@ export function isCurrentAccount(data: ReadonlyUint8Array): boolean {
   return stored !== null && data.length === stored.layout.space && stored.version === stored.layout.version;
 }
 
-export class AccountVersionError extends Error {
+export class AccountVersionError extends SdkError {
+  readonly code = "account-version-error";
+  override readonly name = "AccountVersionError";
   readonly account: string;
   readonly version: number | null;
   readonly current: number;
@@ -100,7 +102,6 @@ export class AccountVersionError extends Error {
     const found = version === null ? `${size} bytes long, not the ${account} layout` : `of version ${version}`;
     const reads = oldest === current ? `version ${current}` : `versions ${oldest} to ${current}`;
     super(`this ${account} account is ${found}; this SDK reads ${account} ${reads} only. Close it with intent-engine close-legacy`);
-    this.name = "AccountVersionError";
     this.account = account;
     this.version = version;
     this.current = current;
@@ -110,7 +111,7 @@ export class AccountVersionError extends Error {
 export function checkAccountVersion<T extends ReadonlyUint8Array>(data: T): T {
   const stored = storedVersion(data);
   if (stored === null) {
-    throw new RangeError("the data is not an engine account");
+    throw new NotAnEngineAccount(null, "the data is not an engine account");
   }
   const { layout, version } = stored;
   if (data.length !== layout.space) {

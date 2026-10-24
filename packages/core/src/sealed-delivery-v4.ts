@@ -16,6 +16,7 @@ import {
 import { type DeliveryOpener, deliveryKeyOf, isUsableKey } from "./encryption-key.js";
 import { isMemoUrl, isSha256Hex, MEMO_URL_RULE } from "./memo.js";
 import { PKCS8_X25519, type SealRecipient, SealedError, x25519PublicOf } from "./sealed.js";
+import { InvalidInput } from "./errors.js";
 
 export const SALT_TAG = `${PRODUCT_SLUG}-delivery-salt-v3`;
 export const KC_TAG = ascii("intent-engine-kc");
@@ -78,7 +79,7 @@ export const isSaltHex = (text: string): boolean => SALT_HEX.test(text);
 
 export function saltMessage(intent: Address, sha256: string): Uint8Array<ArrayBuffer> {
   if (!isSha256Hex(sha256)) {
-    throw new RangeError("a salt binds a sha256 of 64 lowercase hex digits");
+    throw new InvalidInput("sha256", "format", "a salt binds a sha256 of 64 lowercase hex digits");
   }
   return bytesOf([ascii(SALT_TAG), key(intent), hexBytes(sha256)]);
 }
@@ -107,11 +108,11 @@ export async function keyFingerprintV4(publicKey: Uint8Array): Promise<Uint8Arra
 
 const urlBytesOf = (url: string): Uint8Array<ArrayBuffer> => {
   if (!isMemoUrl(url)) {
-    throw new RangeError(`a delivery url must be ${MEMO_URL_RULE}`);
+    throw new InvalidInput("url", "format", `a delivery url must be ${MEMO_URL_RULE}`);
   }
   const bytes = new TextEncoder().encode(url);
   if (bytes.length > MAX_BLOB_URL) {
-    throw new RangeError(`a sealed delivery url may have at most ${MAX_BLOB_URL} bytes`);
+    throw new InvalidInput("url", "length", `a sealed delivery url may have at most ${MAX_BLOB_URL} bytes`);
   }
   return bytes;
 };
@@ -131,7 +132,7 @@ export async function deliverySecrets(url: string, recipients: readonly SealReci
   const binding = await recipientBinding(recipients);
   const kept = source === undefined ? crypto.getRandomValues(new Uint8Array(RANDOM_SOURCE_LEN)) : Uint8Array.from(source);
   if (kept.length !== SIGNATURE_SOURCE_LEN && kept.length !== RANDOM_SOURCE_LEN) {
-    throw new RangeError(`delivery secrets come from a ${SIGNATURE_SOURCE_LEN}-byte salt signature or ${RANDOM_SOURCE_LEN} kept random bytes`);
+    throw new InvalidInput("source", "length", `delivery secrets come from a ${SIGNATURE_SOURCE_LEN}-byte salt signature or ${RANDOM_SOURCE_LEN} kept random bytes`);
   }
   const [salt, esk, contentKey] = await Promise.all([
     sha256([ascii(SALT_TAG), kept]),
@@ -151,7 +152,7 @@ async function exchange(secret: CryptoKey, peer: Uint8Array): Promise<Uint8Array
 
 export async function ephemeralPublic(esk: Uint8Array): Promise<Uint8Array<ArrayBuffer>> {
   if (esk.length !== ESK_LEN) {
-    throw new RangeError(`an ephemeral secret is ${ESK_LEN} bytes`);
+    throw new InvalidInput("ephemeralSecret", "length", `an ephemeral secret is ${ESK_LEN} bytes`);
   }
   return exchange(await importSecret(esk), BASE_POINT);
 }

@@ -1,4 +1,5 @@
 import { isSolanaError, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SOLANA_ERROR__TRANSACTION_ERROR__BLOCKHASH_NOT_FOUND } from "@solana/kit";
+import { isSdkError } from "@intent-engine/core";
 
 export const POLL_MS = 500;
 
@@ -19,7 +20,7 @@ function causes(error: unknown): Error[] {
 const said = (chain: readonly Error[], text: RegExp): boolean => chain.some((link) => !isSolanaError(link) && text.test(link.message));
 
 export function rateLimited(error: unknown): boolean {
-  if (!(error instanceof Error) || error instanceof Charged) {
+  if (!(error instanceof Error) || isSdkError(error)) {
     return false;
   }
   const chain = causes(error);
@@ -34,7 +35,10 @@ export function rateLimited(error: unknown): boolean {
 export const MIN_CONTEXT_SLOT_NOT_REACHED = -32016;
 
 export function behindMinSlot(error: unknown): boolean {
-  if (!(error instanceof Error) || error instanceof Charged) {
+  if (isSdkError(error, "behind-min-slot")) {
+    return true;
+  }
+  if (!(error instanceof Error) || isSdkError(error)) {
     return false;
   }
   const chain = causes(error);
@@ -86,23 +90,29 @@ export async function patiently<T>(call: () => Promise<T>, wait: (ms: number) =>
   }
 }
 
-export class Charged extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "Charged";
-  }
-}
-
-export class FailedOnChain extends Charged {}
-
-export class BlockhashExpired extends Error {
-  constructor(message: string, options?: ErrorOptions) {
-    super(message, options);
-    this.name = "BlockhashExpired";
-  }
-}
-
-export const neverLanded = (error: unknown): boolean => error instanceof FailedOnChain || error instanceof BlockhashExpired;
+export const neverLanded = (error: unknown): boolean => isSdkError(error, "failed-on-chain") || isSdkError(error, "blockhash-expired");
 
 export const staleBlockhash = (error: unknown): boolean =>
-  !(error instanceof Charged) && causes(error).some((link) => isSolanaError(link, SOLANA_ERROR__TRANSACTION_ERROR__BLOCKHASH_NOT_FOUND));
+  !isSdkError(error) && causes(error).some((link) => isSolanaError(link, SOLANA_ERROR__TRANSACTION_ERROR__BLOCKHASH_NOT_FOUND));
+
+const UNSENT_CODES: ReadonlySet<unknown> = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH", "UND_ERR_CONNECT_TIMEOUT"]);
+const JSON_RPC_FIRST = -32_000;
+const JSON_RPC_LAST = -32_768;
+
+export function refusedUnsent(error: unknown): boolean {
+  if (isSdkError(error)) {
+    return false;
+  }
+  for (const link of causes(error)) {
+    if (isSolanaError(link, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR)) {
+      return link.context.statusCode >= 400 && link.context.statusCode < 500;
+    }
+    if (isSolanaError(link) && link.context.__code <= JSON_RPC_FIRST && link.context.__code >= JSON_RPC_LAST) {
+      return true;
+    }
+    if (UNSENT_CODES.has((link as { code?: unknown }).code)) {
+      return true;
+    }
+  }
+  return false;
+}

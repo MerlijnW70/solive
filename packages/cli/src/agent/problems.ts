@@ -1,15 +1,7 @@
 import { tool } from "./names.js";
 import type { Address } from "@solana/kit";
-import {
-  AccountVersionError,
-  BPS_DENOMINATOR,
-  INTENT_ENGINE_PROGRAM_ADDRESS,
-  IntentCoreError,
-  MAX_PARTNER_BPS,
-  TOKEN_2022_PROGRAM_ADDRESS,
-  TOKEN_PROGRAM_ADDRESS,
-} from "@intent-engine/core";
-import { LedgerError, MissingAccount, NotAMint, NotDeliverable, rateLimited } from "@intent-engine/client";
+import { BPS_DENOMINATOR, INTENT_ENGINE_PROGRAM_ADDRESS, MAX_PARTNER_BPS, TOKEN_2022_PROGRAM_ADDRESS, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { type AnySdkError, isSdkError, type MaybeSent, rateLimited } from "@intent-engine/client";
 import { InvalidInput, type Issue } from "./schema.js";
 import { redactUrl } from "../render.js";
 
@@ -21,6 +13,7 @@ export type Problem = {
   program?: Address;
   issues?: Issue[];
   logs?: string[];
+  signature?: string;
 };
 
 type Entry = { retryable: boolean; hint: string };
@@ -266,6 +259,7 @@ export const SERVER_PROBLEMS = {
   CertificateUntrusted: never("this machine does not trust the RPC node's certificate, often because antivirus or a proxy inspects HTTPS"),
   Unfunded: never("your wallet has no SOL yet; fund it, then try again"),
   Failed: never("an unexpected error; the hint carries its message"),
+  MaybeSent: never("the transaction may have landed, so it must not be sent again: look its signature up with intent-engine lookup --signature, as the hint says, and send again only once that reports expired"),
   TransactionFailed: never("the transaction would fail for a reason this client does not name; read the logs"),
   WalletNotConfigured: never("a wallet tool was called on a server started without --wallet"),
   NoClock: never("wait was given to a server built without a clock; call again without wait"),
@@ -398,6 +392,37 @@ export function unreachable(error: unknown, depth = 0): boolean {
 export const unreachableHint = (url: string | undefined): string =>
   `the RPC node${url === undefined ? "" : ` at ${redactUrl(url)}`} could not be reached; call again once it answers, and if this call sent a transaction, check whether it landed before sending it again`;
 
+export const lookupCommand = (error: MaybeSent): string =>
+  `intent-engine lookup --signature ${error.signature}${error.lastValidBlockHeight === null ? "" : ` --valid-until ${error.lastValidBlockHeight}`}`;
+
+export const maybeSentHint = (error: MaybeSent): string =>
+  `this transaction may have landed, so do not send it again: run ${lookupCommand(error)} and send again only once it reports expired`;
+
+function sdkProblem(error: AnySdkError): Problem | null {
+  switch (error.code) {
+    case "intent-core-error":
+      return engineProblem(error.engineError);
+    case "ledger-error":
+      return { code: "Ledger", retryable: SERVER_PROBLEMS.Ledger.retryable, hint: untrusted(error.message) };
+    case "account-version-error":
+      return { code: "AccountOutdated", retryable: ENGINE_PROBLEMS.AccountOutdated.retryable, hint: error.message };
+    case "missing-account":
+      return { code: "NotFound", retryable: SERVER_PROBLEMS.NotFound.retryable, hint: error.message };
+    case "not-deliverable":
+      return { code: "NotDeliverable", retryable: SERVER_PROBLEMS.NotDeliverable.retryable, hint: untrusted(error.message) };
+    case "not-a-mint":
+      return {
+        code: "NotAMint",
+        retryable: SERVER_PROBLEMS.NotAMint.retryable,
+        hint: `${error.address} is not a token mint; pass the mint of the token itself, not a wallet or a token account`,
+      };
+    case "maybe-sent":
+      return { code: "MaybeSent", retryable: SERVER_PROBLEMS.MaybeSent.retryable, hint: untrusted(maybeSentHint(error)), signature: error.signature };
+    default:
+      return null;
+  }
+}
+
 export function problemOf(error: unknown, url?: string): Problem {
   if (error instanceof InvalidInput) {
     return { code: "InvalidInput", retryable: SERVER_PROBLEMS.InvalidInput.retryable, hint: "fix the listed fields and call again", issues: error.issues };
@@ -405,27 +430,9 @@ export function problemOf(error: unknown, url?: string): Problem {
   if (error instanceof SimulationFailed || error instanceof AgentRefusal) {
     return error.problem;
   }
-  if (error instanceof IntentCoreError) {
-    return engineProblem(error.code);
-  }
-  if (error instanceof LedgerError) {
-    return { code: "Ledger", retryable: SERVER_PROBLEMS.Ledger.retryable, hint: untrusted(error.message) };
-  }
-  if (error instanceof AccountVersionError) {
-    return { code: "AccountOutdated", retryable: ENGINE_PROBLEMS.AccountOutdated.retryable, hint: error.message };
-  }
-  if (error instanceof MissingAccount) {
-    return { code: "NotFound", retryable: SERVER_PROBLEMS.NotFound.retryable, hint: error.message };
-  }
-  if (error instanceof NotDeliverable) {
-    return { code: "NotDeliverable", retryable: SERVER_PROBLEMS.NotDeliverable.retryable, hint: untrusted(error.message) };
-  }
-  if (error instanceof NotAMint) {
-    return {
-      code: "NotAMint",
-      retryable: SERVER_PROBLEMS.NotAMint.retryable,
-      hint: `${error.address} is not a token mint; pass the mint of the token itself, not a wallet or a token account`,
-    };
+  const sdk = isSdkError(error) ? sdkProblem(error) : null;
+  if (sdk !== null) {
+    return sdk;
   }
   if (rateLimited(error)) {
     return { code: "RateLimited", retryable: SERVER_PROBLEMS.RateLimited.retryable, hint: "the RPC node is rate limiting; wait a few seconds and call again" };

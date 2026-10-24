@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
-import { decodeEvent, type DeliveryOpener, type EngineEvent, isSealed, NotInvited, parseSpecMemo, remainingOf, SealedError, SPEC_MEMO_PREFIX, sealedTo, unseal } from "@intent-engine/core";
+import { decodeEvent, type DeliveryOpener, type EngineEvent, isSdkError, isSealed, NotInvited, parseSpecMemo, remainingOf, SdkError, SealedError, sealedTo, SPEC_MEMO_PREFIX, unseal } from "@intent-engine/core";
 import { memosSignedBy } from "./job-memos.js";
 import { createdIn, hex, intentAt, type JobFilter, openProofEscrows, proofAt } from "./job-proofs.js";
 import { MEMOS_PER_TRANSACTION, scan } from "./job-scan.js";
@@ -49,7 +49,9 @@ export type Spec = { url: string; text: string; bytes: Uint8Array; sha256: strin
 
 export type SpecFetch = (url: string, init: { redirect: "error"; signal: AbortSignal; addresses?: readonly string[] }) => Promise<Response>;
 
-export class SpecSealed extends Error {
+export class SpecSealed extends SdkError {
+  readonly code = "spec-sealed";
+  override readonly name = "SpecSealed";
   readonly url: string;
   readonly to: Address[];
   readonly keyed: boolean;
@@ -58,19 +60,19 @@ export class SpecSealed extends Error {
     super(
       `the spec at ${url} is sealed to ${to.length} invited wallet${to.length === 1 ? "" : "s"}; ${keyed ? "this wallet is not one of them" : "read it with the key of an invited wallet"}`,
     );
-    this.name = "SpecSealed";
     this.url = url;
     this.to = to;
     this.keyed = keyed;
   }
 }
 
-export class SpecUnreadable extends Error {
+export class SpecUnreadable extends SdkError {
+  readonly code = "spec-unreadable";
+  override readonly name = "SpecUnreadable";
   readonly url: string;
 
-  constructor(url: string, reason: string) {
-    super(`the spec at ${url} ${reason}`);
-    this.name = "SpecUnreadable";
+  constructor(url: string, reason: string, options?: ErrorOptions) {
+    super(`the spec at ${url} ${reason}`, options);
     this.url = url;
   }
 }
@@ -172,6 +174,9 @@ async function bounded(response: Response, url: string, signal: AbortSignal): Pr
 }
 
 function fetchProblem(error: unknown): string {
+  if (isSdkError(error, "fetch-failed")) {
+    return error.reason === "redirect" ? SPEC_REDIRECTS : `${SPEC_FETCH_FAILED} (${error.message}: ${error.detail})`;
+  }
   const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
   if (cause === UNEXPECTED_REDIRECT) {
     return SPEC_REDIRECTS;
@@ -217,7 +222,7 @@ export async function readSpec(
     }
     fetched = await bounded(await before(signal, get(url, { redirect: "error", signal, addresses })), url, signal);
   } catch (error) {
-    throw error instanceof SpecUnreadable ? error : new SpecUnreadable(url, fetchProblem(error));
+    throw error instanceof SpecUnreadable ? error : new SpecUnreadable(url, fetchProblem(error), { cause: error });
   }
   let bytes: Uint8Array = fetched;
   let to: Address[] | null = null;
@@ -225,7 +230,7 @@ export async function readSpec(
     try {
       to = sealedTo(fetched);
     } catch (error) {
-      throw error instanceof SealedError ? new SpecUnreadable(url, `is sealed but could not be opened: ${error.message}`) : error;
+      throw error instanceof SealedError ? new SpecUnreadable(url, `is sealed but could not be opened: ${error.message}`, { cause: error }) : error;
     }
     if (keypair === undefined || (Array.isArray(keypair) && keypair.length === 0)) {
       throw new SpecSealed(url, to, false);

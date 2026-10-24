@@ -3,6 +3,7 @@ import { FirstOpeningRefused } from "./announce-errors.js";
 import { type AnnouncementView, loadDeliveryBook } from "./announcement-reads.js";
 import { type DeliveryOpeners, firstOpeningIn } from "./first-opening.js";
 import type { Transport } from "./transport.js";
+import { SdkError } from "@intent-engine/core";
 
 export type ConfirmTarget = {
   intent: Address;
@@ -21,7 +22,9 @@ export const NO_ACCOUNT = "no account";
 
 export const REFUSED = "refused";
 
-export class ConfirmMismatch extends Error {
+export class ConfirmMismatch extends SdkError {
+  readonly code = "confirm-mismatch";
+  override readonly name = "ConfirmMismatch";
   readonly field: ConfirmField;
   readonly first: string;
   readonly second: string;
@@ -36,7 +39,6 @@ export class ConfirmMismatch extends Error {
           ? `both RPC nodes report the earliest announcer ${second}, which is not the payee ${first}; nothing was signed or sent`
           : `the two RPC nodes report a different ${field}: the first ${first}, the second ${second}; nothing was signed or sent`,
     );
-    this.name = "ConfirmMismatch";
     this.field = field;
     this.first = first;
     this.second = second;

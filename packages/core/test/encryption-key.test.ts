@@ -27,6 +27,7 @@ import {
   WALLET_KEY_GIVEN,
   x25519PublicOf,
 } from "../src/index.js";
+import { InvalidInput } from "../src/errors.js";
 
 type Wallet = { address: Address; keypair: Uint8Array };
 
@@ -77,7 +78,7 @@ describe("judge encryption keys", () => {
     expect(isEncryptionKeyText(encryptionKeyText(new Uint8Array(32)))).toBe(false);
     expect(isEncryptionKeyText(encryptionKeyText(new Uint8Array(31).fill(1)))).toBe(false);
     expect(isEncryptionKeyText("0OIl")).toBe(false);
-    expect(() => parseEncryptionKey("x")).toThrow(RangeError);
+    expect(() => parseEncryptionKey("x")).toThrow(InvalidInput);
     const profile = { skills: ["judge"], endpoint: "https://judge.example" };
     expect(checkProfile({ ...profile, encryptionKey: publicKey })).toEqual({ ...profile, encryptionKey: publicKey });
     expect(() => checkProfile({ ...profile, encryptionKey: "11111111111111111111111111111111" })).toThrow();

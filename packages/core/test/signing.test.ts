@@ -18,6 +18,7 @@ import {
   signedIntentPreimage,
   U64_MAX,
 } from "../src/index.js";
+import { InvalidInput } from "../src/errors.js";
 
 const TOKEN_PROGRAM_ADDRESS = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
 
@@ -246,9 +247,9 @@ describe("ed25519 batch", () => {
     expect(full.data?.length).toBe(2 + 255 * (14 + 32 + 64) + message.length);
     for (const count of [256, 257, 511]) {
       expect(() => buildEd25519BatchInstruction({ entries: Array.from({ length: count }, () => entry), message }), String(count)).toThrow(
-        RangeError,
+        InvalidInput,
       );
     }
-    expect(() => buildEd25519BatchInstruction({ entries: [], message })).toThrow(RangeError);
+    expect(() => buildEd25519BatchInstruction({ entries: [], message })).toThrow(InvalidInput);
   });
 });

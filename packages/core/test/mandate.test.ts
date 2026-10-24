@@ -15,6 +15,7 @@ import {
   WARN_LONG_MANDATE,
 } from "../src/index.js";
 import vectors from "./golden/vectors.json" with { type: "json" };
+import { InvalidInput } from "../src/errors.js";
 
 const AGENT = "11111111111111111111111111111112" as Address;
 const PARTNER = "SysvarC1ock11111111111111111111111111111111" as Address;
@@ -89,7 +90,7 @@ describe("mandates", () => {
     expect(mandateArgs(spec())).toMatchObject({ partner: NO_PARTNER, partnerBps: 0 });
     expect(mandateArgs(spec({ partner: { key: PARTNER, bps: 100 } }))).toMatchObject({ partner: PARTNER, partnerBps: 100 });
     expect(() => mandateArgs(spec({ partner: { key: PARTNER, bps: 101 } }))).toThrow("a partner share must be 1 to 100 bps");
-    expect(() => mandateArgs(spec({ kinds: 0b1_0000 }))).toThrow(RangeError);
+    expect(() => mandateArgs(spec({ kinds: 0b1_0000 }))).toThrow(InvalidInput);
   });
 
   it("describe every limit the owner grants in plain words", () => {
@@ -130,7 +131,7 @@ describe("mandates", () => {
       "an agent fee of 5 leaves nothing to sell under a per-intent cap of 5",
     );
     expect(() => describeMandate(spec({ perIntent: 5n, agentFee: 6n }), { inputMint: IN, outputMint: OUT, now: NOW })).toThrow(
-      RangeError,
+      InvalidInput,
     );
     const thin = describeMandate(spec({ perIntent: 6n, agentFee: 5n }), { inputMint: IN, outputMint: OUT, now: NOW });
     expect(thin.lines[8]).toBe(`Largest single sale: 1 raw units of ${IN}, the per-intent cap less the agent fee`);

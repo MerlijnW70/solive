@@ -10,7 +10,7 @@ import {
 } from "@solana/kit";
 import { findCommitteePda, getCreateCommitteeInstructionAsync } from "../generated/client/index.js";
 import { events } from "./builder-accounts.js";
-import { IntentCoreError } from "./errors.js";
+import { IntentCoreError, InvalidInput } from "./errors.js";
 import { buildEd25519CosignInstruction } from "./ed25519.js";
 import {
   attestedDeliveryFields,
@@ -126,7 +126,7 @@ export function committeeMask(terms: CommitteeTerms, signers: readonly Address[]
 
 export function committeeEnvelope(digest: Uint8Array, members: readonly Address[]): Uint8Array {
   if (digest.length !== 32) {
-    throw new RangeError(`a committee digest is 32 bytes, got ${digest.length}`);
+    throw new InvalidInput("digest", "length", `a committee digest is 32 bytes, got ${digest.length}`);
   }
   return cosignEnvelope(members, digest);
 }

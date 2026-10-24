@@ -12,6 +12,7 @@ import {
 import { encodeParams, type IntentParams, validate } from "./kinds.js";
 import { NO_MANDATE } from "./mandate.js";
 import { findAssociatedTokenAddress, findEventAuthorityPda, findIntentPda } from "./pdas.js";
+import { InvalidInput } from "./errors.js";
 
 export const INSTRUCTIONS_SYSVAR_ADDRESS =
   "Sysvar1nstructions1111111111111111111111111" as Address<"Sysvar1nstructions1111111111111111111111111">;
@@ -26,7 +27,7 @@ export const settleExt = (ext?: Uint8Array) => validateExt(ext ?? new Uint8Array
 
 export function createExt(input: { ext?: Uint8Array; partner?: Partner }): Uint8Array {
   if (input.ext !== undefined && input.partner !== undefined) {
-    throw new RangeError("pass either raw extension bytes or a partner, not both");
+    throw new InvalidInput("ext", "conflict", "pass either raw extension bytes or a partner, not both");
   }
   const ext = input.ext ?? (input.partner === undefined ? new Uint8Array() : encodePartner(input.partner));
   partnerOf(ext);

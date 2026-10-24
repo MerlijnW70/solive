@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { type Address, getBase16Decoder } from "@solana/kit";
-import { buildCreateCommittee, committeeEnvelope, decodeParams, findIntentPda, Kind, getCommitteeSize, IntentCoreError, MAX_COMMITTEE_MEMBERS, MAX_COMMITTEE_THRESHOLD } from "@intent-engine/core";
-import { type CommitteeBallot, createClient, intentAt, VoteRejected } from "@intent-engine/client";
+import { buildCreateCommittee, committeeEnvelope, decodeParams, findIntentPda, Kind, getCommitteeSize, MAX_COMMITTEE_MEMBERS, MAX_COMMITTEE_THRESHOLD } from "@intent-engine/core";
+import { type CommitteeBallot, createClient, intentAt, isSdkError } from "@intent-engine/client";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { tool } from "../names.js";
@@ -159,7 +159,7 @@ export const walletCommitteeRelease = define({
     try {
       release = await client.prepareCommitteeRelease({ ...target, solver: signer, votes });
     } catch (error) {
-      if (error instanceof VoteRejected) {
+      if (isSdkError(error, "vote-rejected")) {
         throw new AgentRefusal("SigMessage", error.message);
       }
       return settleRefused(error);
@@ -229,7 +229,7 @@ export const walletCommitteeCreate = define({
     try {
       built = await buildCreateCommittee({ ...terms, payer: signer });
     } catch (error) {
-      throw error instanceof IntentCoreError ? new AgentRefusal("CommitteeInvalid", ENGINE_PROBLEMS.CommitteeInvalid.hint) : error;
+      throw isSdkError(error, "intent-core-error") ? new AgentRefusal("CommitteeInvalid", ENGINE_PROBLEMS.CommitteeInvalid.hint) : error;
     }
     const { committee, instruction } = built;
     const shown = { committee: committee.address, members: committee.members, threshold: committee.threshold, fee_wallet: committee.feeWallet };

@@ -40,7 +40,7 @@ import {
 } from "@intent-engine/core";
 import {
   BlockhashExpired,
-  Charged,
+  MaybeSent,
   changedAccount,
   type Confirmed,
   confirm,
@@ -215,7 +215,7 @@ describe.skipIf(url === undefined || authorityFile === undefined)("the client ag
       (error: unknown) => error,
     );
     expect(refused).toBeInstanceOf(BlockhashExpired);
-    expect(refused).not.toBeInstanceOf(Charged);
+    expect(refused).not.toBeInstanceOf(MaybeSent);
     expect(await plain.signatureStatuses?.([getSignatureFromTransaction(late) as Signature])).toEqual([null]);
     expect((await rpc.getBalance(owner.address).send()).value).toBe(before);
   });

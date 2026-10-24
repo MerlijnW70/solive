@@ -1,3 +1,14 @@
+export {
+  type AnySdkError,
+  type InputRule,
+  InvalidInput,
+  isSdkError,
+  NoSignature,
+  NotAnEngineAccount,
+  SdkError,
+  type SdkErrorCode,
+  type SdkErrors,
+} from "@intent-engine/core";
 export * from "./accounts.js";
 export * from "./announce.js";
 export * from "./announce-errors.js";
@@ -15,6 +26,7 @@ export * from "./ledger.js";
 export * from "./pinned-fetch.js";
 export * from "./public-host.js";
 export * from "./reputation.js";
+export * from "./sdk-errors.js";
 export * from "./setup.js";
 export * from "./simple.js";
 export * from "./transport.js";

@@ -3,20 +3,21 @@ import {
   announcementAddress,
   announcementCommitment,
   buildAnnounceDelivery,
-  CLAIMS_OPEN,
-  claimBoardAddress,
   CLAIM_BOARD_DISCRIMINATOR,
+  claimBoardAddress,
   claimListAddress,
+  CLAIMS_OPEN,
   claimSlot,
   deliverySecrets,
   getClaimBoardDecoder,
   IntentStatus,
+  InvalidInput,
   isMemoUrl,
   isSha256Hex,
   maxSealedUrl,
   MEMO_URL_RULE,
-  type SealRecipient,
   sealDeliveryV4,
+  type SealRecipient,
 } from "@intent-engine/core";
 import { chainTime, engineAccount } from "./accounts.js";
 import { NotDeliverable, UrlTooLong } from "./announce-errors.js";
@@ -65,7 +66,7 @@ export const ANNOUNCED_UNSEEN = "the announcement landed but the node does not s
 export function sha256Bytes(sha256: string): Uint8Array {
   const lowered = sha256.trim().toLowerCase();
   if (!isSha256Hex(lowered)) {
-    throw new RangeError("sha256 must be 64 hex digits");
+    throw new InvalidInput("sha256", "format", "sha256 must be 64 hex digits");
   }
   return Uint8Array.from(Buffer.from(lowered, "hex"));
 }
@@ -78,7 +79,7 @@ async function claimAccounts(transport: Transport, intent: Address, claims: numb
   const stored = getClaimBoardDecoder().decode(await engineAccount(transport, board, CLAIM_BOARD_DISCRIMINATOR, "claim board"));
   const slot = claimSlot(stored, await chainTime(transport));
   if (slot.state === "held" && slot.worker !== worker) {
-    throw new NotDeliverable(intent, `is claimed by ${slot.worker} until ${slot.until}, so only that worker can announce until then; nothing was sent`);
+    throw new NotDeliverable(intent, "claim-held", `is claimed by ${slot.worker} until ${slot.until}, so only that worker can announce until then; nothing was sent`);
   }
   const listed = stored.listed !== 0;
   return { board: true, claimList: listed, accounts: { claims: board, ...(listed ? { claimList: await claimListAddress(intent) } : {}) } };
@@ -91,17 +92,17 @@ export async function announcementPlan(context: ClientContext, input: AnnounceIn
   const delivered = sha256Bytes(input.sha256);
   const sha256 = hex(delivered);
   if (!isMemoUrl(input.url)) {
-    throw new RangeError(`a delivery url must be ${MEMO_URL_RULE}`);
+    throw new InvalidInput("url", "format", `a delivery url must be ${MEMO_URL_RULE}`);
   }
   if (await plainHttpOnPublic(transport, input.url)) {
-    throw new RangeError(`the work url ${input.url} ${PLAIN_HTTP_ON_PUBLIC}`);
+    throw new InvalidInput("url", "format", `the work url ${input.url} ${PLAIN_HTTP_ON_PUBLIC}`);
   }
   const [proof, now, config] = await Promise.all([proofAt(transport, intent), chainTime(transport), context.config()]);
   if (proof === null) {
-    throw new NotDeliverable(intent, "is not a proof escrow: an AttestedResult intent that commits a spec hash");
+    throw new NotDeliverable(intent, "not-a-proof-escrow", "is not a proof escrow: an AttestedResult intent that commits a spec hash");
   }
   if (proof.intent.status !== IntentStatus.Open || proof.intent.expiresAt <= now) {
-    throw new NotDeliverable(intent, "is no longer open");
+    throw new NotDeliverable(intent, "not-open", "is no longer open");
   }
   const attestor = proof.params.attestor;
   const { committee, recipients, sync } = await recipientsFor(transport, attestor, intent);
@@ -176,7 +177,7 @@ export function announcing(context: ClientContext) {
     }
     const found = await loadAnnouncement(context.transport, plan.announcement);
     if (found === null) {
-      throw new NotDeliverable(plan.intent, `${ANNOUNCED_UNSEEN}: ${plan.announcement} in ${signature}`);
+      throw new NotDeliverable(plan.intent, "announced-unseen", `${ANNOUNCED_UNSEEN}: ${plan.announcement} in ${signature}`);
     }
     return announcedFrom(plan, found, signature, synced);
   };

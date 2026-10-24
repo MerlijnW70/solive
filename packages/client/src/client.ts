@@ -1,5 +1,6 @@
 import { type Address, createSolanaRpc, type Instruction, type Signature, type TransactionSigner } from "@solana/kit";
-import { chainTime, loadConfig, loadIntent, loadUser, MissingAccount, mintOf } from "./accounts.js";
+import { isSdkError } from "@intent-engine/core";
+import { chainTime, loadConfig, loadIntent, loadUser, mintOf } from "./accounts.js";
 import { budgeted, simulated } from "./budget.js";
 import { intentSends, nonceAfter } from "./client-intents.js";
 import { clientReads } from "./client-reads.js";
@@ -9,6 +10,7 @@ import { feedbackInstructions, reputationOf } from "./reputation.js";
 export { escrowCommittee, loadCommittee } from "./client-committee.js";
 export { cancelClaims, type ClaimListView, type ClaimsView, releaseClaims, type ReleaseClaims, type JobClaim, jobClaimOf, type LineEntry, lineHandover, loadClaims, loadClaimsOf, loadLine, loadProfile } from "./client-claims.js";
 import { committeeSettlement, proofBallotOf, proofSettlement } from "./client-settle.js";
+import { TransportLacks } from "./client-errors.js";
 export { committeeJudged } from "./client-settle.js";
 import { type Client, type ClientOptions, type Mint, WATCH_POLL_MS, WATCH_WAIT_SECONDS } from "./client-types.js";
 import { decoded, watchIntents } from "./client-watch.js";
@@ -64,11 +66,17 @@ export {
   CommitteeNeeded,
   CosignRejected,
   EscrowExpired,
+  IntentUnreadable,
   NoFreeNonce,
   NotFillable,
+  type NotFillableReason,
   NotSettleable,
+  type NotSettleableReason,
   PayeeMoved,
   PayToNotWallet,
+  PreviewRefused,
+  StaleRead,
+  TransportLacks,
   VoteRejected,
 } from "./client-errors.js";
 
@@ -114,7 +122,7 @@ export function createClient(options: ClientOptions): Client {
       try {
         return await loadIntent(transport, owner, nonce);
       } catch (error) {
-        if (error instanceof MissingAccount) {
+        if (isSdkError(error, "missing-account")) {
           return null;
         }
         throw error;
@@ -129,6 +137,12 @@ export function createClient(options: ClientOptions): Client {
     simulate: async (instructions, signer) =>
       simulated(transport, await budgeted(transport, priority, instructions, signer.address), signer.address),
     send,
+    status: async (signature, lastValidBlockHeight) => {
+      if (transport.sendStatus === undefined) {
+        throw new TransportLacks("sendStatus");
+      }
+      return transport.sendStatus(signature, lastValidBlockHeight);
+    },
     watch,
     explain,
     mint,

@@ -1,6 +1,7 @@
 import type { Address, Instruction, Signature, TransactionSigner } from "@solana/kit";
-import { type IntentParams, Kind, NATIVE_MINT } from "@intent-engine/core";
+import { type IntentParams, InvalidInput, Kind, NATIVE_MINT } from "@intent-engine/core";
 import { createClient } from "./client.js";
+import { PreviewRefused } from "./client-errors.js";
 import { type Client, type ClientOptions, DEFAULT_EXPIRES_IN } from "./client-types.js";
 import { boundMembers } from "./memoized-transport.js";
 import { hexOf, mintOfToken, nameOfMint, secondsOf, specHashBytes, tokenAmount, wholeTokens } from "./simple-tokens.js";
@@ -18,7 +19,7 @@ type Done = { signature: Signature; intent?: Address; nonce?: bigint };
 function capturing(transport: Transport): { transport: Transport; taken: Instruction[] } {
   const taken: Instruction[] = [];
   const refuse = async (): Promise<never> => {
-    throw new Error("a preview sends nothing");
+    throw new PreviewRefused();
   };
   return {
     taken,
@@ -53,7 +54,7 @@ async function pair(ctx: SimpleContext, sell: string, buy: string) {
   const inputMint = mintOfToken(sell, ctx.url);
   const outputMint = mintOfToken(buy, ctx.url);
   if (inputMint === outputMint) {
-    throw new RangeError("sell and buy name the same token");
+    throw new InvalidInput("buy", "conflict", "sell and buy name the same token");
   }
   const [sold, bought] = await Promise.all([ctx.client.mint(inputMint), ctx.client.mint(outputMint)]);
   return { inputMint, outputMint, sold, bought };
@@ -95,7 +96,7 @@ export function orderSends(ctx: SimpleContext) {
     try {
       return mintOfToken("TEST", ctx.url);
     } catch {
-      throw new RangeError(RECORD_TOKEN_NEEDED);
+      throw new InvalidInput("recordToken", "missing", RECORD_TOKEN_NEEDED);
     }
   };
 
@@ -103,13 +104,13 @@ export function orderSends(ctx: SimpleContext) {
     const inputMint = mintOfToken(input.token ?? "SOL", ctx.url);
     const outputMint = recordMint(inputMint, input.recordToken);
     if (inputMint === outputMint) {
-      throw new RangeError("recordToken must differ from the token paid");
+      throw new InvalidInput("recordToken", "conflict", "recordToken must differ from the token paid");
     }
     const { decimals } = await ctx.client.mint(inputMint);
     const amountIn = tokenAmount(input.amount, decimals, "amount");
     const judgeFee = input.judgeFee === undefined ? 0n : tokenAmount(input.judgeFee, decimals, "judgeFee");
     if (judgeFee >= amountIn) {
-      throw new RangeError("judgeFee must be below amount");
+      throw new InvalidInput("judgeFee", "range", "judgeFee must be below amount");
     }
     const specHash = specHashBytes(input.specHash);
     const expiresIn = secondsOf(input.expiresIn, ESCROW_EXPIRES_IN);

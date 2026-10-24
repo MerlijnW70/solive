@@ -9,6 +9,7 @@ import {
   type KeyPairSigner,
   lamports,
   partiallySignTransaction,
+  type Signature,
 } from "@solana/kit";
 import { getApproveInstruction, getTokenDecoder, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { FailedTransactionMetadata } from "litesvm";
@@ -27,7 +28,7 @@ import {
   MANDATE_NONCE_BIT,
 } from "@intent-engine/core";
 import { COMPUTE_BUDGET_ADDRESS } from "@intent-engine/solver";
-import { BlockhashExpired, FailedOnChain, loadConfig, type Transport, noJudgeKey } from "@intent-engine/client";
+import { BlockhashExpired, FailedOnChain, failure, loadConfig, type Transport, noJudgeKey } from "@intent-engine/client";
 import { createCost, rentRate } from "../src/agent/budget.js";
 import { AUTHORITY_NEXT, follow, followGap, type Runtime } from "../src/commands.js";
 import { CANCELS_FAILED, CANCELS_UNKNOWN, execute, FlowRefused, NOT_SENT } from "../src/flows.js";
@@ -369,7 +370,7 @@ describe("command line flows", () => {
   it("revoke exits non zero when a cancel failed", async () => {
     const { agent, first, second } = await twoAgentIntents();
     h.engineLog = [];
-    h.sendFails = { error: new FailedOnChain("the cancel failed on chain"), landed: false, after: 1 };
+    h.sendFails = { error: new FailedOnChain("the cancel failed on chain", failure("1".repeat(64) as Signature, null)), landed: false, after: 1 };
     const revoked = await cli(["mandate", "revoke", "--keypair", "owner.json", "--agent", agent.address, "--yes"], keys);
     expect([revoked.code, revoked.err]).toEqual([EXIT_PARTIAL, ""]);
     expect(EXIT_PARTIAL).not.toBe(EXIT_FAILED);

@@ -1,13 +1,14 @@
 import type { Address, Instruction, MessagePartialSigner } from "@solana/kit";
 import { compareKeys, concat, key, u16le } from "./bytes.js";
 import { COSIGN_KEYS_AT, MAX_COSIGNERS } from "./sig.js";
+import { InvalidInput, NoSignature } from "./errors.js";
 
 export const ED25519_PROGRAM_ADDRESS =
   "Ed25519SigVerify111111111111111111111111111" as Address<"Ed25519SigVerify111111111111111111111111111">;
 
 export function ed25519Header(messageLength: number): Uint8Array {
   if (!Number.isInteger(messageLength) || messageLength < 0 || messageLength > 0xffff) {
-    throw new RangeError(`an Ed25519 message of ${messageLength} bytes does not fit the instruction header`);
+    throw new InvalidInput("message", "length", `an Ed25519 message of ${messageLength} bytes does not fit the instruction header`);
   }
   const out = new Uint8Array(16);
   const view = new DataView(out.buffer);
@@ -24,7 +25,7 @@ export function buildEd25519Instruction(input: {
   message: Uint8Array;
 }): Instruction {
   if (input.signature.length !== 64) {
-    throw new RangeError("an Ed25519 signature is 64 bytes");
+    throw new InvalidInput("signature", "length", "an Ed25519 signature is 64 bytes");
   }
   return {
     programAddress: ED25519_PROGRAM_ADDRESS,
@@ -42,7 +43,7 @@ export async function signEd25519Instruction(
   const [signed] = await signer.signMessages([{ content: message, signatures: {} }]);
   const signature = signed?.[signer.address];
   if (signature === undefined) {
-    throw new RangeError(`${signer.address} returned no signature for the message`);
+    throw new NoSignature(signer.address);
   }
   return buildEd25519Instruction({ publicKey: signer.address, signature: new Uint8Array(signature), message });
 }
@@ -55,19 +56,19 @@ export function buildEd25519BatchInstruction(input: {
 }): Instruction {
   const m = input.entries.length;
   if (m === 0) {
-    throw new RangeError("an Ed25519 batch needs at least one signer");
+    throw new InvalidInput("signers", "range", "an Ed25519 batch needs at least one signer");
   }
   if (m > MAX_ED25519_BATCH) {
-    throw new RangeError(`an Ed25519 batch holds at most ${MAX_ED25519_BATCH} signers, got ${m}`);
+    throw new InvalidInput("signers", "range", `an Ed25519 batch holds at most ${MAX_ED25519_BATCH} signers, got ${m}`);
   }
   for (const e of input.entries) {
     if (e.signature.length !== 64) {
-      throw new RangeError("an Ed25519 signature is 64 bytes");
+      throw new InvalidInput("signature", "length", "an Ed25519 signature is 64 bytes");
     }
   }
   const len = input.message.length;
   if (len > 0xffff) {
-    throw new RangeError(`an Ed25519 message of ${len} bytes does not fit the instruction header`);
+    throw new InvalidInput("message", "length", `an Ed25519 message of ${len} bytes does not fit the instruction header`);
   }
   const pubkeysAt = 2 + 14 * m;
   const sigsAt = pubkeysAt + 32 * m;
@@ -111,11 +112,11 @@ export function buildEd25519CosignInstruction(input: {
   const entries = [...input.entries].sort((a, b) => compareKeys(key(a.publicKey), key(b.publicKey)));
   const m = entries.length;
   if (m === 0 || m > MAX_COSIGNERS) {
-    throw new RangeError(`a cosign batch holds 1 to ${MAX_COSIGNERS} signers, got ${m}`);
+    throw new InvalidInput("signers", "range", `a cosign batch holds 1 to ${MAX_COSIGNERS} signers, got ${m}`);
   }
   const len = input.message.length;
   if (len > 0xffff) {
-    throw new RangeError(`an Ed25519 message of ${len} bytes does not fit the instruction header`);
+    throw new InvalidInput("message", "length", `an Ed25519 message of ${len} bytes does not fit the instruction header`);
   }
   const sigsAt = 2 + 14 * m;
   const messageAt = sigsAt + 64 * m;
@@ -123,15 +124,15 @@ export function buildEd25519CosignInstruction(input: {
   const seen = new Set<Address>();
   entries.forEach((e, k) => {
     if (e.signature.length !== 64) {
-      throw new RangeError("an Ed25519 signature is 64 bytes");
+      throw new InvalidInput("signature", "length", "an Ed25519 signature is 64 bytes");
     }
     if (seen.has(e.publicKey)) {
-      throw new RangeError(`${e.publicKey} signs a cosign batch twice`);
+      throw new InvalidInput("signers", "duplicate", `${e.publicKey} signs a cosign batch twice`);
     }
     seen.add(e.publicKey);
     const slot = slots.findIndex((s) => compareKeys(s, key(e.publicKey)) === 0);
     if (slot < 0) {
-      throw new RangeError(`${e.publicKey} is not listed in the cosign envelope`);
+      throw new InvalidInput("signers", "conflict", `${e.publicKey} is not listed in the cosign envelope`);
     }
     parts.push(
       concat(

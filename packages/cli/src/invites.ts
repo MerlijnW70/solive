@@ -1,5 +1,5 @@
 import type { Address } from "@solana/kit";
-import { readSpec, SpecSealed, SpecUnreadable, type SpecFetch, type Transport } from "@intent-engine/client";
+import { isSdkError, readSpec, SpecUnreadable, type SpecFetch, type Transport } from "@intent-engine/client";
 
 export type Invites = { kind: "open" } | { kind: "sealed"; to: Address[] } | { kind: "unread"; reason: string };
 
@@ -39,10 +39,10 @@ export async function invitesOf(transport: Transport, get: SpecFetch, intent: Ad
     const spec = await readSpec(transport, watched, intent);
     return spec?.sealedTo === undefined ? OPEN : { kind: "sealed", to: spec.sealedTo };
   } catch (error) {
-    if (error instanceof SpecSealed) {
+    if (isSdkError(error, "spec-sealed")) {
       return { kind: "sealed", to: error.to };
     }
-    if (error instanceof SpecUnreadable) {
+    if (isSdkError(error, "spec-unreadable")) {
       return { kind: "unread", reason: error.message };
     }
     if (fetching) {

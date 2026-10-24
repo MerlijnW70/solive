@@ -21,6 +21,7 @@ import {
   recordedPayer,
   storedVersion,
 } from "../src/index.js";
+import { NotAnEngineAccount } from "../src/errors.js";
 
 const PAYER = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" as Address;
 
@@ -171,7 +172,7 @@ describe("account versions", () => {
     const old = account(board, 1, 168);
     expect(isCurrentAccount(old)).toBe(false);
     expect(() => checkAccountVersion(old)).toThrow("this claim board account is 168 bytes long, not the claim board layout");
-    expect(() => checkAccountVersion(new Uint8Array(40).fill(7))).toThrow(RangeError);
+    expect(() => checkAccountVersion(new Uint8Array(40).fill(7))).toThrow(NotAnEngineAccount);
   });
 
   it("find the wallet a layout records as the payer, and none where it records none", () => {

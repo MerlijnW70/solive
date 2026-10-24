@@ -134,6 +134,7 @@ export type Command =
   | (Remote & { name: "judge-digest"; owner: Address; nonce: bigint; announcement: Address; sha256: string; salt: string; result: bigint | undefined })
   | (Keyed & { name: "flow"; flow: FlowName; yes: boolean; input: ToolInput })
   | (Remote & { name: "lookup"; lookup: LookupName; keypair: string | undefined; input: ToolInput })
+  | (Remote & { name: "signature-lookup"; signature: string; validUntil: bigint | undefined })
   | (Keyed & { name: "signed-prepare"; yes: boolean; out: string; input: ToolInput })
   | (Keyed & { name: "signed-submit"; yes: boolean; file: string })
   | { name: "help"; verb: string | undefined }

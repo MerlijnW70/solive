@@ -1,6 +1,7 @@
+import { inspect } from "node:util";
 import type { Address, TransactionSigner } from "@solana/kit";
 import { U64_MAX } from "@intent-engine/core";
-import { memoized, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, type Transport } from "@intent-engine/client";
+import { memoized, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, type Transport, TransportLacks } from "@intent-engine/client";
 import { claimsOf } from "./agent/claims.js";
 import { relayOf } from "./agent/relay.js";
 import type { Command } from "./command-types.js";
@@ -143,4 +144,22 @@ export async function flowCommand(command: FlowCommand, runtime: Runtime, transp
       return { ...(await ask(submitSignedIntent, context(transport, relayAnything(relayer, String(saved.submit["input_mint"]) as Address)), signed)), sent: true };
     }
   }
+}
+
+export async function signatureLookup(transport: Transport, signature: string, validUntil: bigint | undefined): Promise<object> {
+  if (transport.sendStatus === undefined) {
+    throw new TransportLacks("sendStatus");
+  }
+  const found = await transport.sendStatus(signature, validUntil);
+  if (found.status !== "failed") {
+    return found;
+  }
+  return {
+    status: found.status,
+    signature: found.signature,
+    program: found.program,
+    ...(found.engine === undefined ? {} : { engine_error: found.engine.name }),
+    error: inspect(found.err, { depth: null, breakLength: Infinity }),
+    ...(found.logs === undefined ? {} : { logs: found.logs }),
+  };
 }

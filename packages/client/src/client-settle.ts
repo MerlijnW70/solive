@@ -34,7 +34,7 @@ export function proofSettlement(context: ClientContext) {
     const payer = input.payer ?? judge;
     const plan = await planRelease(context, { ...input, payer }, async (attestor, intent) => {
       if (attestor !== judge.address) {
-        throw new NotSettleable(intent, `names ${attestor} as its judge, not ${judge.address}`);
+        throw new NotSettleable(intent, "wrong-judge", `names ${attestor} as its judge, not ${judge.address}`);
       }
       return { feeOwner: judge.address, judge: judge.address };
     });
@@ -51,7 +51,7 @@ export function proofBallotOf(context: ClientContext) {
   return async (input: BallotInput): Promise<ProofBallot> => {
     const plan = await planRelease(context, ballotTarget(input), async (attestor, intent) => {
       if ((await loadCommittee(context.transport, attestor)) !== null) {
-        throw new NotSettleable(intent, committeeJudged(attestor));
+        throw new NotSettleable(intent, "committee-judged", committeeJudged(attestor));
       }
       return { feeOwner: attestor, judge: attestor };
     });
@@ -65,7 +65,7 @@ export function committeeSettlement(context: ClientContext) {
     const plan = await planRelease(context, target, async (attestor, intent) => {
       const committee = await loadCommittee(context.transport, attestor);
       if (committee === null) {
-        throw new NotSettleable(intent, `names ${attestor} as its judge, which is not a committee`);
+        throw new NotSettleable(intent, "not-a-committee", `names ${attestor} as its judge, which is not a committee`);
       }
       return { feeOwner: committee.feeWallet, judge: committee };
     });

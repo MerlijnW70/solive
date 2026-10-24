@@ -7,6 +7,7 @@ import type {
   Signature,
   TransactionSigner,
 } from "@solana/kit";
+import type { SendStatus } from "./send-errors.js";
 
 export type AccountView = { owner: Address; data: Uint8Array; lamports: bigint; executable?: boolean };
 
@@ -70,6 +71,7 @@ export interface Transport {
   transactionsOf?(listed: readonly ListedSignature[]): Promise<EngineTransaction[]>;
   transactionOf?(signature: string): Promise<EngineTransaction | null>;
   signatureStatuses?(signatures: readonly string[]): Promise<(SignatureLanding | null)[]>;
+  sendStatus?(signature: string, lastValidBlockHeight?: bigint): Promise<SendStatus>;
   firstAvailableSlot?(): Promise<bigint>;
   finalizedBlock?(from: bigint): Promise<FinalizedBlock | null>;
   recentFees(accounts: readonly Address[]): Promise<bigint[]>;
@@ -159,6 +161,7 @@ export type RpcLike = {
     };
     meta: {
       err?: unknown;
+      logMessages?: readonly string[] | null;
       loadedAddresses?: { writable: readonly Address[]; readonly: readonly Address[] };
       innerInstructions?: readonly { instructions: readonly { programIdIndex: number; accounts?: readonly number[]; data: string }[] }[] | null;
       preBalances?: readonly (bigint | number)[];

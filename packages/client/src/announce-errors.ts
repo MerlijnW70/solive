@@ -1,25 +1,31 @@
 import type { Address } from "@solana/kit";
-import { NotSettleable } from "./client-errors.js";
+import { SdkError } from "@intent-engine/core";
 
-export class NotDeliverable extends Error {
+export type NotDeliverableReason = "no-shared-secret" | "claim-held" | "not-a-proof-escrow" | "not-open" | "announced-unseen";
+
+export class NotDeliverable extends SdkError {
+  readonly code = "not-deliverable";
+  override readonly name = "NotDeliverable";
   readonly intent: Address;
+  readonly reason: NotDeliverableReason;
 
-  constructor(intent: Address, reason: string) {
-    super(`intent ${intent} ${reason}`);
-    this.name = "NotDeliverable";
+  constructor(intent: Address, reason: NotDeliverableReason, text: string) {
+    super(`intent ${intent} ${text}`);
     this.intent = intent;
+    this.reason = reason;
   }
 }
 
 export const cannotSignMessages = (worker: Address): string =>
   `the wallet ${worker} cannot sign messages, and an announcement derives its salt and keys from the wallet's own signature over the intent and the work's sha256; announce with a key file, a wallet that signs messages, or 32 secret bytes of your own that you keep; nothing was sent`;
 
-export class NoMessageSigner extends Error {
+export class NoMessageSigner extends SdkError {
+  readonly code = "no-message-signer";
+  override readonly name = "NoMessageSigner";
   readonly worker: Address;
 
   constructor(worker: Address) {
     super(cannotSignMessages(worker));
-    this.name = "NoMessageSigner";
     this.worker = worker;
   }
 }
@@ -27,12 +33,13 @@ export class NoMessageSigner extends Error {
 export const saltSignatureRefused = (worker: Address): string =>
   `the salt signature is not ${worker}'s ed25519 signature of the salt message for this intent and sha256; nothing was sent`;
 
-export class BadSaltSignature extends Error {
+export class BadSaltSignature extends SdkError {
+  readonly code = "bad-salt-signature";
+  override readonly name = "BadSaltSignature";
   readonly worker: Address;
 
   constructor(worker: Address) {
     super(saltSignatureRefused(worker));
-    this.name = "BadSaltSignature";
     this.worker = worker;
   }
 }
@@ -44,14 +51,15 @@ export const SECRET_RULE = `a secret is ${SECRET_BYTES} bytes the worker keeps`;
 export const urlTooLong = (bytes: number, max: number, recipients: number): string =>
   `the work url has ${bytes} bytes, but sealed to ${recipients} ${recipients === 1 ? "recipient" : "recipients"} in this announcement it may have at most ${max}, so that the transaction stays within one packet; nothing was sent`;
 
-export class UrlTooLong extends RangeError {
+export class UrlTooLong extends SdkError {
+  readonly code = "url-too-long";
+  override readonly name = "UrlTooLong";
   readonly bytes: number;
   readonly max: number;
   readonly recipients: number;
 
   constructor(bytes: number, max: number, recipients: number) {
     super(urlTooLong(bytes, max, recipients));
-    this.name = "UrlTooLong";
     this.bytes = bytes;
     this.max = max;
     this.recipients = recipients;
@@ -60,10 +68,11 @@ export class UrlTooLong extends RangeError {
 
 export const ACCOUNTS_UNREADABLE = "this transport cannot list engine accounts, so the announcements cannot be read; give it engineAccounts";
 
-export class AnnouncementsUnreadable extends Error {
+export class AnnouncementsUnreadable extends SdkError {
+  readonly code = "announcements-unreadable";
+  override readonly name = "AnnouncementsUnreadable";
   constructor() {
     super(ACCOUNTS_UNREADABLE);
-    this.name = "AnnouncementsUnreadable";
   }
 }
 
@@ -106,7 +115,10 @@ export function refusalText(sha256: string, refusal: Refusal): string {
   }
 }
 
-export class FirstOpeningRefused extends NotSettleable {
+export class FirstOpeningRefused extends SdkError {
+  readonly code = "first-opening-refused";
+  override readonly name = "FirstOpeningRefused";
+  readonly intent: Address;
   readonly reason: RefusalReason;
   readonly sha256: string;
   readonly announcement: Address | null;
@@ -118,8 +130,8 @@ export class FirstOpeningRefused extends NotSettleable {
   readonly holder: Address | null;
 
   constructor(intent: Address, sha256: string, refusal: Refusal) {
-    super(intent, refusalText(sha256, refusal));
-    this.name = "FirstOpeningRefused";
+    super(`intent ${intent} ${refusalText(sha256, refusal)}`);
+    this.intent = intent;
     this.reason = refusal.reason;
     this.sha256 = sha256;
     this.announcement = refusal.announcement ?? null;
@@ -132,22 +144,24 @@ export class FirstOpeningRefused extends NotSettleable {
   }
 }
 
-export class NotRefutable extends Error {
+export class NotRefutable extends SdkError {
+  readonly code = "not-refutable";
+  override readonly name = "NotRefutable";
   readonly earlier: Address;
 
   constructor(earlier: Address, reason: string) {
     super(`announcement ${earlier} ${reason}; nothing was sent`);
-    this.name = "NotRefutable";
     this.earlier = earlier;
   }
 }
 
-export class BookNotClosable extends Error {
+export class BookNotClosable extends SdkError {
+  readonly code = "book-not-closable";
+  override readonly name = "BookNotClosable";
   readonly intent: Address;
 
   constructor(intent: Address, reason: string) {
     super(`the delivery book of intent ${intent} ${reason}; nothing was sent`);
-    this.name = "BookNotClosable";
     this.intent = intent;
   }
 }

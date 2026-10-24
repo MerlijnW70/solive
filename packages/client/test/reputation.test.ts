@@ -4,7 +4,7 @@ import { getTransferSolInstruction } from "@solana-program/system";
 import { getMintEncoder, getMintSize } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { feedbackMemo, findIntentPda, Kind, NATIVE_MINT, parseFeedbackMemo, PRODUCT_SLUG, signCommitteeVote, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { createClient, memoInstruction, NotSettleable } from "../src/index.js";
+import { createClient, InvalidInput, memoInstruction, NotSettleable } from "../src/index.js";
 import { svmTransport } from "../src/svm.js";
 import { world } from "./svm.js";
 import { announced } from "./work.js";
@@ -144,7 +144,7 @@ describe("reputation from verifiable history", () => {
     expect(parseFeedbackMemo(memo)).toEqual({ intent, score: 77, note: "ab".repeat(32) });
     expect(parseFeedbackMemo(feedbackMemo({ intent, score: 0 }))).toEqual({ intent, score: 0 });
     for (const bad of [101, -1, 1.5]) {
-      expect(() => feedbackMemo({ intent, score: bad })).toThrow(RangeError);
+      expect(() => feedbackMemo({ intent, score: bad })).toThrow(InvalidInput);
     }
     for (const text of [`${memo}:x`, memo.replace(":77:", ":077:"), memo.replace(":77:", ":101:"), memo.slice(0, -1)]) {
       expect(parseFeedbackMemo(text), text).toBeNull();
