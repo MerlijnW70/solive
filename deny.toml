@@ -11,6 +11,7 @@ ignore = [
     { id = "RUSTSEC-2025-0161", reason = "libsecp256k1 is unmaintained and only reaches the LiteSVM test simulator through agave-precompiles and solana-syscalls" },
     { id = "RUSTSEC-2024-0436", reason = "paste is an unmaintained proc-macro used at build time by ark-ff inside solana-syscalls for the test simulator" },
     { id = "RUSTSEC-2024-0388", reason = "derivative is an unmaintained proc-macro used at build time by ark-ec inside solana-syscalls for the test simulator" },
+    { id = "RUSTSEC-2026-0387", reason = "crypto-bigint 0.5.5 only reaches the LiteSVM test simulator through k256 in agave-precompiles and solana-syscalls; the program does not depend on it and elliptic-curve 0.13 has no 0.7 upgrade" },
     { id = "RUSTSEC-2021-0139", reason = "ansi_term is unmaintained and only formats LiteSVM test logs" },
 ]
 
