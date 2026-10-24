@@ -45,6 +45,42 @@ export type IntentParams =
   | DutchAuctionParams
   | AttestedResultParams;
 
+export type SwapExactInFields = Omit<SwapExactInParams, "kind">;
+export type LimitOrderFields = Omit<LimitOrderParams, "kind">;
+export type DutchAuctionFields = Omit<DutchAuctionParams, "kind">;
+export type AttestedResultFields = Omit<AttestedResultParams, "kind">;
+
+export function swapExactIn(fields: SwapExactInFields): SwapExactInParams {
+  return { kind: Kind.SwapExactIn, amountIn: fields.amountIn, minOut: fields.minOut };
+}
+
+export function limitOrder(fields: LimitOrderFields): LimitOrderParams {
+  return { kind: Kind.LimitOrder, makeAmount: fields.makeAmount, takeAmount: fields.takeAmount };
+}
+
+export function dutchAuction(fields: DutchAuctionFields): DutchAuctionParams {
+  return {
+    kind: Kind.DutchAuction,
+    amountIn: fields.amountIn,
+    startOut: fields.startOut,
+    endOut: fields.endOut,
+    startTs: fields.startTs,
+    endTs: fields.endTs,
+  };
+}
+
+export function attestedResult(fields: AttestedResultFields): AttestedResultParams {
+  return {
+    kind: Kind.AttestedResult,
+    amountIn: fields.amountIn,
+    minResult: fields.minResult,
+    maxResult: fields.maxResult,
+    attestor: fields.attestor,
+    specHash: fields.specHash,
+    judgeFee: fields.judgeFee,
+  };
+}
+
 type Field =
   | { type: "u64"; value: bigint }
   | { type: "i64"; value: bigint }

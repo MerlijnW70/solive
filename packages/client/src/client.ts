@@ -7,8 +7,8 @@ import { clientReads } from "./client-reads.js";
 import { committeeSends } from "./client-committee.js";
 import { loadClaims, loadProfile } from "./client-claims.js";
 import { feedbackInstructions, reputationOf } from "./reputation.js";
-export { escrowCommittee, loadCommittee } from "./client-committee.js";
-export { cancelClaims, type ClaimListView, type ClaimsView, releaseClaims, type ReleaseClaims, type JobClaim, jobClaimOf, type LineEntry, lineHandover, loadClaims, loadClaimsOf, loadLine, loadProfile } from "./client-claims.js";
+export { type EscrowCommittee, escrowCommittee, loadCommittee } from "./client-committee.js";
+export { type CancelClaims, cancelClaims, type ClaimListView, type ClaimsView, releaseClaims, type ReleaseClaims, type JobClaim, jobClaimOf, type LineEntry, lineHandover, loadClaims, loadClaimsOf, loadLine, loadProfile } from "./client-claims.js";
 import { committeeSettlement, proofBallotOf, proofSettlement } from "./client-settle.js";
 import { TransportLacks } from "./client-errors.js";
 export { committeeJudged } from "./client-settle.js";
@@ -41,8 +41,10 @@ export type {
   HistoryEvent,
   IntentAccount,
   IntentFilter,
+  IntentPlacement,
   MessageSigner,
   Mint,
+  ParamsWithSpec,
   ProofBallot,
   ReleaseOpening,
   SettleCommitteeInput,

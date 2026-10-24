@@ -19,12 +19,11 @@ import { BookNotClosable, NotDeliverable, NotRefutable } from "./announce-errors
 import { committeeKeys, publishedKey, secretSource, type SecretInput } from "./announce-keys.js";
 import { sha256Bytes } from "./announce.js";
 import { type AnnouncementView, announcementsBy, loadAnnouncement, loadDeliveryBook } from "./announcement-reads.js";
-import type { ClientContext } from "./client-types.js";
+import type { Client, ClientContext } from "./client-types.js";
 import { hex, readableIntent } from "./job-proofs.js";
 import type { Transport } from "./transport.js";
 
 export type RefuteInput = SecretInput & {
-  worker: TransactionSigner;
   earlier: Address;
   paid: Address;
   sha256: string;
@@ -86,7 +85,9 @@ function payeesOf(paid: AnnouncementView, claim: RefuteInput["claim"]): readonly
   return claim.recipients;
 }
 
-export function announcementSends(context: ClientContext) {
+export type AnnouncementSends = Pick<Client, "refute" | "reclaim" | "closeBook">;
+
+export function announcementSends(context: ClientContext): AnnouncementSends {
   const { transport } = context;
 
   const refute = async (input: RefuteInput): Promise<Refuted> => {
@@ -114,7 +115,7 @@ export function announcementSends(context: ClientContext) {
       throw error;
     }
     const recipients = await sealedRecipients(transport, earlier);
-    const source = await secretSource(worker, earlier.intent, hex(delivered), input);
+    const source = await secretSource(input, earlier.intent, hex(delivered));
     const { salt, esk } = await deliverySecrets(input.url, recipients, source);
     if (!equal(await announcementCommitment(earlier.intent, earlier.worker, { delivered, salt }), earlier.commitment)) {
       throw new NotRefutable(earlier.address, `does not commit to the work ${hex(delivered)} with this worker's secret`);

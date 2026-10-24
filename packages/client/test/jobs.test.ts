@@ -134,7 +134,8 @@ describe("jobs", () => {
   it("refuses a spec url on anything but a proof escrow, or one that is not an https url", async () => {
     const { client, judge, order } = await setting();
     const swap = { kind: Kind.SwapExactIn, amountIn: 10n, minOut: 1n } as const;
-    await expect(client.createIntent({ ...order, params: swap, specUrl: SPEC_URL })).rejects.toThrow(SPEC_URL_NEEDS_PROOF);
+    const unproven = { ...order, params: swap, specUrl: SPEC_URL } as unknown as Parameters<typeof client.createIntent>[0];
+    await expect(client.createIntent(unproven)).rejects.toThrow(SPEC_URL_NEEDS_PROOF);
     const plain = { ...proof(judge.address), specHash: new Uint8Array(32) };
     await expect(client.createIntent({ ...order, params: plain, specUrl: SPEC_URL })).rejects.toThrow(SPEC_URL_NEEDS_PROOF);
     await expect(client.createIntent({ ...order, params: proof(judge.address), specUrl: "http://example.org/spec" })).rejects.toThrow(InvalidInput);

@@ -1,4 +1,4 @@
-import { type Address, createNoopSigner, getBase16Decoder } from "@solana/kit";
+import { type Address, createNoopSigner, getBase16Decoder, type TransactionSigner } from "@solana/kit";
 import { decodeParams, getIntentDecoder, getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS, IntentStatus, isMemoUrl, Kind, MEMO_URL_RULE, saltMessage } from "@intent-engine/core";
 import {
   type AnnounceInput,
@@ -14,6 +14,8 @@ import {
   memoized,
   NoMessageSigner,
   NotDeliverable,
+  type SecretInput,
+  secretInputOf,
   unmemoized,
 } from "@intent-engine/client";
 import { ANNOUNCE_FIRST, announcementLine, sealedToText, walletOf } from "../../announcement-views.js";
@@ -89,9 +91,12 @@ export async function confirmedRelease(ctx: AgentContext, target: ConfirmTarget)
 export const signSalt = (intent: Address, sha256: string): string =>
   `the worker's ed25519 signature of the message ${Buffer.from(saltMessage(intent, sha256)).toString("hex")}, as 128 hex digits; the salt and sealing keys are derived from it, so sign it with the worker's key, the same way each time`;
 
-async function planOf(ctx: AgentContext, input: AnnounceInput, saltHint = false): Promise<AnnouncementPlan> {
+type Announcing = Omit<AnnounceInput, keyof SecretInput> & { worker: TransactionSigner; saltSignature?: Uint8Array };
+
+async function planOf(ctx: AgentContext, input: Announcing, saltHint = false): Promise<AnnouncementPlan> {
+  const { worker, saltSignature, ...rest } = input;
   try {
-    return await createClient({ url: ctx.url ?? "", transport: ctx.transport }).prepareAnnouncement(input);
+    return await createClient({ url: ctx.url ?? "", transport: ctx.transport }).prepareAnnouncement({ ...rest, ...secretInputOf(worker, { saltSignature }) });
   } catch (error) {
     if (isSdkError(error, "bad-salt-signature")) {
       throw new InvalidInput([{ path: "salt_signature", message: error.message }]);
@@ -159,7 +164,7 @@ export const walletDeliver = define({
       throw new InvalidInput([{ path: "url", message: `must be ${MEMO_URL_RULE}` }]);
     }
     const { held } = await proofEscrow(ctx, input.intent, "wallet_receipt");
-    const announce: AnnounceInput = { worker: signer, intent: input.intent, sha256, url: input.url };
+    const announce: Announcing = { worker: signer, intent: input.intent, sha256, url: input.url };
     const plan = await planOf(ctx, announce);
     const invited = await sealedInvites(ctx.transport, ctx.fetch ?? fetch, input.intent);
     const shown = {

@@ -167,7 +167,9 @@ export async function lineHandover(transport: Transport, intent: Address, line: 
   return { entries: entries.slice(0, live + 1).map(({ entry }) => entry), nextWorker: next.worker as Address };
 }
 
-export async function cancelClaims(transport: Transport, intent: Address, claims: number): Promise<{ board: Address; stakeTo: Address | null } | undefined> {
+export type CancelClaims = { board: Address; stakeTo: Address | null };
+
+export async function cancelClaims(transport: Transport, intent: Address, claims: number): Promise<CancelClaims | undefined> {
   if (claims !== CLAIMS_OPEN) {
     return undefined;
   }

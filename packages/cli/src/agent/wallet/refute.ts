@@ -1,5 +1,5 @@
 import { isMemoUrl } from "@intent-engine/core";
-import { createClient, isSdkError, loadAnnouncement, NoMessageSigner, NotRefutable, RECLAIM_BATCH } from "@intent-engine/client";
+import { createClient, isSdkError, loadAnnouncement, NoMessageSigner, NotRefutable, RECLAIM_BATCH, secretInputOf } from "@intent-engine/client";
 import { capturing, hex } from "../../announcement-views.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
@@ -67,9 +67,9 @@ export const walletRefute = define({
     }
     const sha256 = hex(paid.delivered);
     const claim = input.recipients === undefined ? undefined : { recipients: input.recipients.map(({ wallet }) => wallet), weights: input.recipients.map(({ weight }) => weight) };
-    const refuting = { worker: signer, earlier: earlier.address, paid: paid.address, sha256, url: input.url, ...(claim === undefined ? {} : { claim }) };
+    const refuting = { earlier: earlier.address, paid: paid.address, sha256, url: input.url, ...(claim === undefined ? {} : { claim }) };
     const probe = capturing(ctx.transport);
-    const planned = await refutable(() => createClient({ url: ctx.url ?? "", transport: probe.transport }).refute(refuting));
+    const planned = await refutable(() => createClient({ url: ctx.url ?? "", transport: probe.transport }).refute({ ...refuting, ...secretInputOf(signer) }));
     const view = {
       earlier: earlier.address,
       paid: paid.address,

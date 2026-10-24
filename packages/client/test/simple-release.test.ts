@@ -35,7 +35,7 @@ async function job() {
   return { w, owner, judge, buyer, reviewer, at, escrow: made.intent as Address, nonce: made.nonce ?? 0n };
 }
 
-async function delivered(seller: SimpleClient, escrow: Address, url = workUrl()) {
+async function delivered(seller: SimpleClient<KeyPairSigner>, escrow: Address, url = workUrl()) {
   const done = await seller.deliver({ escrow, sha256: WORK, url });
   return done.announcement;
 }

@@ -38,12 +38,14 @@ export async function loadCommittee(transport: Transport, address: Address): Pro
   return { ...terms, address, id: derived.id, createdAt: stored.createdAt };
 }
 
+export type EscrowCommittee = { committee?: Address };
+
 export async function escrowCommittee(
   transport: Transport,
   config: Pick<Config, "floorMints" | "floorAmounts">,
   inputMint: Address,
   params: IntentParams,
-): Promise<{ committee?: Address }> {
+): Promise<EscrowCommittee> {
   if (params.kind !== Kind.AttestedResult) {
     return {};
   }

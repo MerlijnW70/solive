@@ -18,13 +18,15 @@ Sell 0.05 SOL for at least 50 test tokens. The devnet filler prices test tokens 
 
 `createIntent` sets up what it needs in the same transaction: it registers the wallet, wraps the SOL and creates the receiving token account. It picks the next free nonce and expires the intent in an hour, unless you pass `nonce`, `expiresIn` or `expiresAt`.
 
+`swapExactIn`, `limitOrder`, `dutchAuction` and `attestedResult` build the params of each kind.
+
 ```ts
-import { DEVNET_TEST_MINT, Kind, NATIVE_MINT, parseAmount } from "@intent-engine/core";
+import { DEVNET_TEST_MINT, NATIVE_MINT, parseAmount, swapExactIn } from "@intent-engine/core";
 
 const sell = await client.mint(NATIVE_MINT);
 const buy = await client.mint(DEVNET_TEST_MINT);
 const order = { signer, inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT };
-const swap = { kind: Kind.SwapExactIn, amountIn: parseAmount("0.05", sell.decimals), minOut: parseAmount("50", buy.decimals) } as const;
+const swap = swapExactIn({ amountIn: parseAmount("0.05", sell.decimals), minOut: parseAmount("50", buy.decimals) });
 const { nonce } = await client.createIntent({ ...order, params: swap });
 ```
 
@@ -100,11 +102,11 @@ Each order below sells 0.01 SOL, and the devnet filler fills both. The code wait
 
 ```ts
 import { setTimeout as sleep } from "node:timers/promises";
-import { eventNamed, tokenName } from "@intent-engine/core";
+import { dutchAuction, eventNamed, limitOrder, tokenName } from "@intent-engine/core";
 
 const start = await client.chainTime();
-const limit = { kind: Kind.LimitOrder, makeAmount: parseAmount("0.01", sell.decimals), takeAmount: parseAmount("1.5", buy.decimals) } as const;
-const auction = { kind: Kind.DutchAuction, amountIn: limit.makeAmount, startOut: parseAmount("1.9", buy.decimals), endOut: parseAmount("1", buy.decimals), startTs: start, endTs: start + 600n } as const;
+const limit = limitOrder({ makeAmount: parseAmount("0.01", sell.decimals), takeAmount: parseAmount("1.5", buy.decimals) });
+const auction = dutchAuction({ amountIn: limit.makeAmount, startOut: parseAmount("1.9", buy.decimals), endOut: parseAmount("1", buy.decimals), startTs: start, endTs: start + 600n });
 for (const params of [limit, auction]) {
   const placed = await client.createIntent({ ...order, params });
   const { intent } = (await client.intent(signer.address, placed.nonce))!;
@@ -130,6 +132,7 @@ Here your wallet pays for the worker's announcement and for the release, so neit
 
 ```ts
 import { generateKeyPairSync } from "node:crypto";
+import { attestedResult } from "@intent-engine/core";
 
 const judgeJwk = generateKeyPairSync("ed25519").privateKey.export({ format: "jwk" });
 const judgeKeypair = Uint8Array.from([...Buffer.from(judgeJwk.d ?? "", "base64url"), ...Buffer.from(judgeJwk.x ?? "", "base64url")]);
@@ -137,7 +140,7 @@ const judge = await createKeyPairSignerFromBytes(judgeKeypair);
 const worker = await generateKeyPairSigner();
 const specHash = new Uint8Array(createHash("sha256").update("the acceptance spec the work must pass").digest());
 const pay = parseAmount("0.01", sell.decimals);
-const work = { kind: Kind.AttestedResult, amountIn: pay, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash, judgeFee: pay / 10n } as const;
+const work = attestedResult({ amountIn: pay, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash, judgeFee: pay / 10n });
 const job = await client.createIntent({ ...order, params: work });
 const workSha256 = createHash("sha256").update("the work behind the proof").digest("hex");
 const made = await client.announce({ worker, payer: signer, intent: job.intent, sha256: workSha256, url: "https://example.org/proof.tar" });

@@ -28,8 +28,9 @@ import { hex, proofAt } from "./job-proofs.js";
 import { PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic } from "./job-specs.js";
 import type { Transport } from "./transport.js";
 
+export { isSaltSigner, type SaltSigner, type SecretInput, secretInputOf, type SecretOptions } from "./announce-keys.js";
+
 export type AnnounceInput = SecretInput & {
-  worker: TransactionSigner;
   payer?: TransactionSigner;
   intent: Address;
   sha256: string;
@@ -122,7 +123,7 @@ export async function announcementPlan(context: ClientContext, input: AnnounceIn
   if (bytes > maxUrl) {
     throw new UrlTooLong(bytes, maxUrl, recipients.length);
   }
-  const source = await secretSource(worker, intent, sha256, input);
+  const source = await secretSource(input, intent, sha256);
   const { salt } = await deliverySecrets(input.url, recipients, source);
   const blob = await sealDeliveryV4({ source, url: input.url, recipients }, intent, worker.address);
   const commitment = await announcementCommitment(intent, worker.address, { delivered, salt });
@@ -158,7 +159,9 @@ function announcedFrom(plan: AnnouncementPlan, found: AnnouncementView, signatur
   return { announcement: plan.announcement, seq: found.seq, commitment: plan.commitment, salt: plan.salt, attestor: plan.attestor, signature, synced };
 }
 
-export function announcing(context: ClientContext) {
+export type AnnounceSend = (input: AnnounceInput) => Promise<Announced>;
+
+export function announcing(context: ClientContext): AnnounceSend {
   return async (input: AnnounceInput): Promise<Announced> => {
     const plan = await announcementPlan(context, input);
     if (plan.existing !== null) {

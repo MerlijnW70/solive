@@ -1,4 +1,4 @@
-import type { Address } from "@solana/kit";
+import type { Address, TransactionSigner } from "@solana/kit";
 import { formatAmount, NATIVE_MINT } from "@intent-engine/core";
 import { createClient } from "./client.js";
 import type { ClientOptions } from "./client-types.js";
@@ -11,8 +11,10 @@ import { workSends } from "./simple-work.js";
 export type {
   Announcement,
   CancelInput,
+  ClusterChoice,
   ConnectOptions,
   DeliveredWork,
+  DeliverSend,
   DeliveriesInput,
   DeliverWorkInput,
   HeldToken,
@@ -24,8 +26,10 @@ export type {
   ReceiptInput,
   ReleaseInput,
   ReleaseReceipt,
+  ReleaseSend,
   Seconds,
   Sent,
+  SignerCannot,
   SimpleClient,
   SwapInput,
   WalletBalance,
@@ -44,7 +48,7 @@ export {
 
 const SOL_DECIMALS = 9;
 
-export async function connect(options: ConnectOptions): Promise<SimpleClient> {
+export async function connect<S extends TransactionSigner>(options: ConnectOptions<S>): Promise<SimpleClient<S>> {
   const url = clusterUrl(options);
   const { signer } = options;
   const clientOptions: ClientOptions = {
@@ -77,17 +81,17 @@ export async function connect(options: ConnectOptions): Promise<SimpleClient> {
     return { sol: formatAmount(sol, SOL_DECIMALS), tokens: listed, summary };
   };
 
-  const send = { swap, limit, payForWork, deliver, release, cancel } as Pick<
-    SimpleClient,
-    "swap" | "limit" | "payForWork" | "deliver" | "release" | "cancel"
-  >;
-
   return {
     url,
     signer,
     client,
     balance,
-    ...send,
+    swap,
+    limit,
+    payForWork,
+    deliver: deliver as SimpleClient<S>["deliver"],
+    release: release as SimpleClient<S>["release"],
+    cancel,
     findWork,
     deliveries,
     receipt,

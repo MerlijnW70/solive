@@ -1,11 +1,11 @@
 import type { Address, Instruction, Signature, TransactionSigner } from "@solana/kit";
-import { type IntentParams, InvalidInput, Kind, NATIVE_MINT } from "@intent-engine/core";
+import { attestedResult, InvalidInput, limitOrder, NATIVE_MINT, swapExactIn } from "@intent-engine/core";
 import { createClient } from "./client.js";
 import { PreviewRefused } from "./client-errors.js";
-import { type Client, type ClientOptions, DEFAULT_EXPIRES_IN } from "./client-types.js";
+import { type Client, type ClientOptions, DEFAULT_EXPIRES_IN, type ParamsWithSpec } from "./client-types.js";
 import { boundMembers } from "./memoized-transport.js";
 import { hexOf, mintOfToken, nameOfMint, secondsOf, specHashBytes, tokenAmount, wholeTokens } from "./simple-tokens.js";
-import type { LimitInput, PayForWorkInput, Preview, Sent, SwapInput } from "./simple-types.js";
+import type { LimitInput, Outcome, PayForWorkInput, Preview, PreviewOption, Sent, SwapInput } from "./simple-types.js";
 import type { Transport } from "./transport.js";
 
 export const ESCROW_EXPIRES_IN = 86_400n;
@@ -36,12 +36,16 @@ function capturing(transport: Transport): { transport: Transport; taken: Instruc
   };
 }
 
-export async function outcome(
+export async function outcome<I extends PreviewOption>(
   ctx: SimpleContext,
-  preview: boolean | undefined,
+  input: I,
   summary: string,
   act: (client: Client) => Promise<Done>,
-): Promise<Sent | Preview> {
+): Promise<Outcome<I>> {
+  return (await outcomeOf(ctx, input.preview, summary, act)) as Outcome<I>;
+}
+
+async function outcomeOf(ctx: SimpleContext, preview: boolean | undefined, summary: string, act: (client: Client) => Promise<Done>): Promise<Sent | Preview> {
   if (preview !== true) {
     return { ...(await act(ctx.client)), summary };
   }
@@ -60,22 +64,21 @@ async function pair(ctx: SimpleContext, sell: string, buy: string) {
   return { inputMint, outputMint, sold, bought };
 }
 
-function placed(ctx: SimpleContext, params: IntentParams, inputMint: Address, outputMint: Address, expiresIn: bigint, specUrl?: string) {
-  return (client: Client) =>
-    client.createIntent({ signer: ctx.signer, params, inputMint, outputMint, expiresIn, ...(specUrl === undefined ? {} : { specUrl }) });
+function placed(ctx: SimpleContext, terms: ParamsWithSpec, inputMint: Address, outputMint: Address, expiresIn: bigint) {
+  return (client: Client) => client.createIntent({ signer: ctx.signer, inputMint, outputMint, expiresIn, ...terms });
 }
 
 export function orderSends(ctx: SimpleContext) {
-  const swap = async (input: SwapInput) => {
+  const swap = async <I extends SwapInput>(input: I): Promise<Outcome<I>> => {
     const { inputMint, outputMint, sold, bought } = await pair(ctx, input.sell, input.buy);
     const amountIn = tokenAmount(input.amount, sold.decimals, "amount");
     const minOut = tokenAmount(input.minReceive, bought.decimals, "minReceive");
     const expiresIn = secondsOf(input.expiresIn, DEFAULT_EXPIRES_IN);
     const summary = `Swap ${wholeTokens(amountIn, sold.decimals, inputMint)} for at least ${wholeTokens(minOut, bought.decimals, outputMint)}, open for ${expiresIn} seconds`;
-    return outcome(ctx, input.preview, summary, placed(ctx, { kind: Kind.SwapExactIn, amountIn, minOut }, inputMint, outputMint, expiresIn));
+    return outcome(ctx, input, summary, placed(ctx, { params: swapExactIn({ amountIn, minOut }) }, inputMint, outputMint, expiresIn));
   };
 
-  const limit = async (input: LimitInput) => {
+  const limit = async <I extends LimitInput>(input: I): Promise<Outcome<I>> => {
     const { inputMint, outputMint, sold, bought } = await pair(ctx, input.sell, input.buy);
     const makeAmount = tokenAmount(input.amount, sold.decimals, "amount");
     const price = tokenAmount(input.price, bought.decimals, "price");
@@ -83,7 +86,7 @@ export function orderSends(ctx: SimpleContext) {
     const takeAmount = (makeAmount * price + scale - 1n) / scale;
     const expiresIn = secondsOf(input.expiresIn, DEFAULT_EXPIRES_IN);
     const summary = `Limit order: sell ${wholeTokens(makeAmount, sold.decimals, inputMint)} for at least ${wholeTokens(takeAmount, bought.decimals, outputMint)} (${input.price.trim()} ${nameOfMint(outputMint)} per ${nameOfMint(inputMint)}), open for ${expiresIn} seconds`;
-    return outcome(ctx, input.preview, summary, placed(ctx, { kind: Kind.LimitOrder, makeAmount, takeAmount }, inputMint, outputMint, expiresIn));
+    return outcome(ctx, input, summary, placed(ctx, { params: limitOrder({ makeAmount, takeAmount }) }, inputMint, outputMint, expiresIn));
   };
 
   const recordMint = (paid: Address, chosen: string | undefined): Address => {
@@ -100,7 +103,7 @@ export function orderSends(ctx: SimpleContext) {
     }
   };
 
-  const payForWork = async (input: PayForWorkInput) => {
+  const payForWork = async <I extends PayForWorkInput>(input: I): Promise<Outcome<I>> => {
     const inputMint = mintOfToken(input.token ?? "SOL", ctx.url);
     const outputMint = recordMint(inputMint, input.recordToken);
     if (inputMint === outputMint) {
@@ -114,9 +117,9 @@ export function orderSends(ctx: SimpleContext) {
     }
     const specHash = specHashBytes(input.specHash);
     const expiresIn = secondsOf(input.expiresIn, ESCROW_EXPIRES_IN);
-    const params = { kind: Kind.AttestedResult, amountIn, minResult: 1n, maxResult: 1n, attestor: input.judge, specHash, judgeFee } as const;
+    const params = attestedResult({ amountIn, minResult: 1n, maxResult: 1n, attestor: input.judge, specHash, judgeFee });
     const summary = `Pay ${wholeTokens(amountIn, decimals, inputMint)} for work judged by ${input.judge} against spec ${hexOf(specHash)}, judge fee ${wholeTokens(judgeFee, decimals, inputMint)}, open for ${expiresIn} seconds`;
-    return outcome(ctx, input.preview, summary, placed(ctx, params, inputMint, outputMint, expiresIn, input.specUrl));
+    return outcome(ctx, input, summary, placed(ctx, input.specUrl === undefined ? { params } : { params, specUrl: input.specUrl }, inputMint, outputMint, expiresIn));
   };
 
   return { swap, limit, payForWork };

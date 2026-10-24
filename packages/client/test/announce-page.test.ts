@@ -117,7 +117,8 @@ describe("the announcement sentences of the full client page", () => {
     const { w, client, intent } = await escrowTo(judge.address);
     const signer = await fundedSigner(w);
     const device: TransactionSigner = { address: signer.address, signTransactions: (txs) => signer.signTransactions(txs) };
-    await expect(client.announce({ worker: device, intent, sha256: WORK, url: workUrl() })).rejects.toThrow(NoMessageSigner);
+    const unsigned = { worker: device, intent, sha256: WORK, url: workUrl() } as unknown as Parameters<typeof client.announce>[0];
+    await expect(client.announce(unsigned)).rejects.toThrow(NoMessageSigner);
     const secret = new Uint8Array(32).fill(3);
     expect((await client.announce({ worker: device, intent, sha256: WORK, url: workUrl(), secret })).seq).toBe(1n);
     const signed = await client.announce({ worker: signer, intent, sha256: WORK, url: workUrl("signed") });

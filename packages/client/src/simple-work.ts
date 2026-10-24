@@ -1,11 +1,13 @@
 import { type Address, isMessagePartialSigner } from "@solana/kit";
 import { formatAmount, InvalidInput } from "@intent-engine/core";
+import { NoMessageSigner } from "./announce-errors.js";
+import { isSaltSigner } from "./announce-keys.js";
 import { NotSettleable } from "./client-errors.js";
 import { intentAt } from "./jobs.js";
 import { outcome, type SimpleContext } from "./simple-orders.js";
 import { sha256Given, workReads } from "./simple-reads.js";
 import { nameOfMint, wholeTokens } from "./simple-tokens.js";
-import type { CancelInput, DeliveredWork, DeliverWorkInput, OpenWork, Preview, ReleaseInput } from "./simple-types.js";
+import type { CancelInput, DeliveredWork, DeliverWorkInput, OpenWork, Outcome, Preview, ReleaseInput } from "./simple-types.js";
 
 export const RELEASE_NEEDS_KEY_PAIR = "release signs the judge's verdict, so connect with a signer that also signs messages";
 
@@ -33,10 +35,14 @@ export function workSends(ctx: SimpleContext) {
     );
   };
 
-  const deliver = async (input: DeliverWorkInput): Promise<DeliveredWork | Preview> => {
+  const delivered = async (input: DeliverWorkInput): Promise<DeliveredWork | Preview> => {
     const sha256 = sha256Given(input.sha256, "sha256");
+    const worker = ctx.signer;
+    if (!isSaltSigner(worker)) {
+      throw new NoMessageSigner(worker.address);
+    }
     const summary = `Deliver work ${sha256} at ${input.url} for escrow ${input.escrow}`;
-    const work = { worker: ctx.signer, intent: input.escrow, sha256, url: input.url };
+    const work = { worker, intent: input.escrow, sha256, url: input.url };
     if (input.preview === true) {
       const plan = await ctx.client.prepareAnnouncement(work);
       return { summary, instructions: plan.existing === null ? [...plan.setup, ...plan.instructions] : [] };
@@ -45,7 +51,9 @@ export function workSends(ctx: SimpleContext) {
     return { signature, announcement, seq, summary };
   };
 
-  const release = async (input: ReleaseInput) => {
+  const deliver = async <I extends DeliverWorkInput>(input: I): Promise<Outcome<I, DeliveredWork>> => (await delivered(input)) as Outcome<I, DeliveredWork>;
+
+  const release = async <I extends ReleaseInput>(input: I): Promise<Outcome<I>> => {
     const judge = ctx.signer;
     if (!isMessagePartialSigner(judge)) {
       throw new InvalidInput("signer", "unsupported", RELEASE_NEEDS_KEY_PAIR);
@@ -58,7 +66,7 @@ export function workSends(ctx: SimpleContext) {
     }
     const result = BigInt(input.result ?? 1n);
     const summary = `Release escrow ${input.escrow} holding ${wholeTokens(intent.escrowed - intent.filled, mint.decimals, intent.inputMint)} to ${first.worker} for work ${sha256}, announced first in ${first.announcement}`;
-    return outcome(ctx, input.preview, summary, async (client) => ({
+    return outcome(ctx, input, summary, async (client) => ({
       signature: await client.settleProof({
         judge,
         owner: intent.owner,
@@ -72,14 +80,14 @@ export function workSends(ctx: SimpleContext) {
     }));
   };
 
-  const cancel = async (input: CancelInput) => {
+  const cancel = async <I extends CancelInput>(input: I): Promise<Outcome<I>> => {
     const address = input.escrow ?? input.intent;
     const { intent, mint } = await held(address);
     if (intent.owner !== ctx.signer.address) {
       throw new InvalidInput("escrow", "conflict", `intent ${address} belongs to ${intent.owner}, not to ${ctx.signer.address}`);
     }
     const summary = `Cancel ${address} and return ${wholeTokens(intent.escrowed - intent.filled, mint.decimals, intent.inputMint)} to ${ctx.signer.address}`;
-    return outcome(ctx, input.preview, summary, async (client) => ({
+    return outcome(ctx, input, summary, async (client) => ({
       signature: await client.cancel(ctx.signer, intent.nonce),
       intent: address,
       nonce: intent.nonce,

@@ -124,7 +124,8 @@ describe("announcing a delivery", () => {
     const { w, client, intent } = await job(judge.signer.address);
     const signing = await fundedSigner(w);
     const device: TransactionSigner = { address: signing.address, signTransactions: (txs) => signing.signTransactions(txs) };
-    await expect(client.announce({ worker: device, intent, sha256: WORK, url: workUrl() })).rejects.toThrow(NoMessageSigner);
+    const unsigned = { worker: device, intent, sha256: WORK, url: workUrl() } as unknown as Parameters<typeof client.announce>[0];
+    await expect(client.announce(unsigned)).rejects.toThrow(NoMessageSigner);
     await expect(client.announce({ worker: device, intent, sha256: WORK, url: workUrl(), secret: new Uint8Array(31) })).rejects.toThrow(InvalidInput);
     const secret = crypto.getRandomValues(new Uint8Array(32));
     const kept = await client.announce({ worker: device, intent, sha256: WORK, url: workUrl(), secret });

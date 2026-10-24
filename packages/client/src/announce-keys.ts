@@ -12,6 +12,7 @@ import {
   type SealRecipient,
 } from "@intent-engine/core";
 import { createdAccount } from "./accounts.js";
+import type { MessageSigner } from "./client-types.js";
 import { BadSaltSignature, NoMessageSigner, NotDeliverable, SECRET_BYTES, SECRET_RULE } from "./announce-errors.js";
 import { loadProfile } from "./client-claims.js";
 import { isDevice } from "./ledger.js";
@@ -21,7 +22,29 @@ export type CommitteeKeys = { address: Address; members: Address[]; synced: bool
 
 export type Recipients = { committee: CommitteeKeys | null; recipients: SealRecipient[]; sync: Instruction | null };
 
-export type SecretInput = { secret?: Uint8Array | undefined; saltSignature?: Uint8Array | undefined };
+export type SaltSigner = MessageSigner & { readonly device?: undefined };
+
+export type SecretInput =
+  | { worker: TransactionSigner; secret: Uint8Array; saltSignature?: Uint8Array | undefined }
+  | { worker: TransactionSigner; saltSignature: Uint8Array; secret?: undefined }
+  | { worker: SaltSigner; secret?: undefined; saltSignature?: undefined };
+
+export const isSaltSigner = <S extends TransactionSigner>(signer: S): signer is S & SaltSigner => isMessagePartialSigner(signer) && !isDevice(signer);
+
+export type SecretOptions = { secret?: Uint8Array | undefined; saltSignature?: Uint8Array | undefined };
+
+export function secretInputOf(worker: TransactionSigner, given: SecretOptions = {}): SecretInput {
+  if (given.secret !== undefined) {
+    return { worker, secret: given.secret, saltSignature: given.saltSignature };
+  }
+  if (given.saltSignature !== undefined) {
+    return { worker, saltSignature: given.saltSignature };
+  }
+  if (isSaltSigner(worker)) {
+    return { worker };
+  }
+  throw new NoMessageSigner(worker.address);
+}
 
 const equal = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((byte, i) => byte === b[i]);
 
@@ -89,7 +112,8 @@ async function signedBy(worker: Address, signature: Uint8Array, message: Uint8Ar
   }
 }
 
-export async function secretSource(worker: TransactionSigner, intent: Address, sha256: string, given: SecretInput): Promise<Uint8Array> {
+export async function secretSource(given: SecretInput, intent: Address, sha256: string): Promise<Uint8Array> {
+  const { worker } = given;
   if (given.secret !== undefined) {
     if (given.secret.length !== SECRET_BYTES) {
       throw new InvalidInput("secret", "length", SECRET_RULE);
@@ -103,7 +127,7 @@ export async function secretSource(worker: TransactionSigner, intent: Address, s
     }
     return Uint8Array.from(given.saltSignature);
   }
-  if (!isMessagePartialSigner(worker) || isDevice(worker)) {
+  if (!isSaltSigner(worker)) {
     throw new NoMessageSigner(worker.address);
   }
   const [signed] = await worker.signMessages([createSignableMessage(message)]);

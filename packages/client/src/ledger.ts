@@ -191,7 +191,7 @@ async function signed(signer: Address, signature: Uint8Array, message: Uint8Arra
   return bytes as SignatureBytes;
 }
 
-export const notOwnEnvelope = (signer: Address) =>
+export const notOwnEnvelope = (signer: Address): string =>
   `the Ledger signs only an off-chain message whose signers, sorted and each once, include its own key ${signer}, and this message does not; nothing was sent`;
 
 const isHex = (b: number) => (b >= 0x30 && b <= 0x39) || (b >= 0x61 && b <= 0x66);

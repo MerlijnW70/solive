@@ -44,7 +44,7 @@ export function proofSettlement(context: ClientContext) {
   };
 }
 
-export const committeeJudged = (attestor: Address) =>
+export const committeeJudged = (attestor: Address): string =>
   `names committee ${attestor} as its judge, so its members sign committee votes, not this release`;
 
 export function proofBallotOf(context: ClientContext) {

@@ -1,4 +1,5 @@
 import { type Address, isAddress } from "@solana/kit";
+import type { ClusterChoice } from "./simple-types.js";
 import { DEVNET_TEST_MINT, formatAmount, InvalidInput, NATIVE_MINT, parseAmount, SdkError, tokenName } from "@intent-engine/core";
 
 export type Cluster = "devnet" | "testnet" | "mainnet" | "localnet";
@@ -23,7 +24,7 @@ export class MainnetNotAllowed extends SdkError {
   }
 }
 
-export function clusterUrl(options: { cluster?: Cluster | undefined; url?: string | undefined }): string {
+export function clusterUrl(options: ClusterChoice): string {
   if (options.url !== undefined && options.cluster !== undefined) {
     throw new InvalidInput("cluster", "conflict", "pass cluster or url, not both");
   }

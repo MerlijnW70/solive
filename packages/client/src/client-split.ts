@@ -10,7 +10,7 @@ import {
 import { loadCommittee } from "./client-committee.js";
 import { CosignRejected, NotSettleable } from "./client-errors.js";
 import { committeeJudged } from "./client-settle.js";
-import type { BallotInput, ClientContext, MessageSigner } from "./client-types.js";
+import type { BallotInput, Client, ClientContext, MessageSigner } from "./client-types.js";
 import { releaseBasis, type ReleaseTarget } from "./release-plan.js";
 
 export type SplitShare = { wallet: Address; weight: number };
@@ -42,7 +42,9 @@ async function signs(wallet: Address, signature: Uint8Array, message: Uint8Array
   }
 }
 
-export function splitSettlement(context: ClientContext) {
+export type SplitSettlement = Pick<Client, "splitBallot" | "settleSplit">;
+
+export function splitSettlement(context: ClientContext): SplitSettlement {
   const planned = async (input: SplitBallotInput, payer: TransactionSigner) => {
     const wallets = input.recipients.map(({ wallet }) => wallet);
     const weights = input.recipients.map(({ weight }) => weight);

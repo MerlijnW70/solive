@@ -1,13 +1,16 @@
 import type { Address, Instruction, Signature, TransactionSigner } from "@solana/kit";
+import type { SaltSigner } from "./announce-keys.js";
 import type { Priority } from "./budget.js";
-import type { Client, WatchCallback, WatchOptions } from "./client-types.js";
+import type { Client, MessageSigner, WatchCallback, WatchOptions } from "./client-types.js";
 import type { DeliveryOpeners } from "./first-opening.js";
 import type { Job } from "./jobs.js";
 import type { Cluster } from "./simple-tokens.js";
 import type { Transport } from "./transport.js";
 
-export type ConnectOptions = ({ cluster: Cluster; url?: undefined } | { url: string; cluster?: undefined }) & {
-  signer: TransactionSigner;
+export type ClusterChoice = { cluster: Cluster; url?: undefined } | { url: string; cluster?: undefined };
+
+export type ConnectOptions<S extends TransactionSigner = TransactionSigner> = ClusterChoice & {
+  signer: S;
   transport?: Transport;
   priority?: Priority;
   allowMainnet?: boolean;
@@ -21,7 +24,7 @@ export type Preview = { summary: string; instructions: Instruction[]; intent?: A
 
 export type PreviewOption = { preview?: boolean };
 
-export type Outcome<I> = I extends { preview: true } ? Preview : Sent;
+export type Outcome<I, R = Sent> = I extends { preview: true } ? Preview : "preview" extends keyof I ? (I extends { preview?: false } ? R : Preview | R) : R;
 
 export type Seconds = number | bigint;
 
@@ -71,17 +74,23 @@ export type WalletBalance = { sol: string; tokens: HeldToken[]; summary: string 
 
 export type OpenWork = Job & { amount: string; fee: string; token: string };
 
-export type SimpleClient = {
+export type DeliverSend = <I extends DeliverWorkInput>(input: I) => Promise<Outcome<I, DeliveredWork>>;
+
+export type ReleaseSend = <I extends ReleaseInput>(input: I) => Promise<Outcome<I>>;
+
+export type SignerCannot = (input: never) => Promise<never>;
+
+export type SimpleClient<S extends TransactionSigner = TransactionSigner> = {
   readonly url: string;
-  readonly signer: TransactionSigner;
+  readonly signer: S;
   readonly client: Client;
   balance(tokens?: readonly string[]): Promise<WalletBalance>;
   swap<I extends SwapInput>(input: I): Promise<Outcome<I>>;
   limit<I extends LimitInput>(input: I): Promise<Outcome<I>>;
   payForWork<I extends PayForWorkInput>(input: I): Promise<Outcome<I>>;
   findWork(filter?: { judge?: Address }): Promise<OpenWork[]>;
-  deliver<I extends DeliverWorkInput>(input: I): Promise<I extends { preview: true } ? Preview : DeliveredWork>;
-  release<I extends ReleaseInput>(input: I): Promise<Outcome<I>>;
+  readonly deliver: [S] extends [SaltSigner] ? DeliverSend : SignerCannot;
+  readonly release: [S] extends [MessageSigner] ? ReleaseSend : SignerCannot;
   deliveries(input: DeliveriesInput): Promise<Announcement[]>;
   receipt(input: ReceiptInput): Promise<ReleaseReceipt>;
   cancel<I extends CancelInput>(input: I): Promise<Outcome<I>>;

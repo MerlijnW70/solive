@@ -14,13 +14,15 @@ export async function initUserIfMissing(user: NonceWindow | null, owner: Owner):
   return user === null ? [await buildInitUser({ owner: signerOf(owner) })] : [];
 }
 
+export type TokenAccountSetup = { address: Address; create: Instruction[] };
+
 export async function tokenAccountIfMissing(
   transport: Transport,
   payer: TransactionSigner,
   owner: Address,
   mint: Address,
   tokenProgram: Address,
-): Promise<{ address: Address; create: Instruction[] }> {
+): Promise<TokenAccountSetup> {
   const address = await findAssociatedTokenAddress({ owner, mint, tokenProgram });
   const create =
     (await createdAccount(transport, address)) === null

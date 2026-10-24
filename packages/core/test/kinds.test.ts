@@ -2,18 +2,22 @@ import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import {
   attestedFillPreimage,
+  attestedResult,
   buildEd25519Instruction,
   ed25519Header,
   checkAttested,
   decodeParams,
   decodeParamsLoose,
+  dutchAuction,
   encodeParams,
   I64_MAX,
   I64_MIN,
   IntentCoreError,
   type IntentParams,
   Kind,
+  limitOrder,
   signedIntentPreimage,
+  swapExactIn,
   U64_MAX,
 } from "../src/index.js";
 import { InvalidInput } from "../src/errors.js";
@@ -49,6 +53,22 @@ const signedFields: [string, (v: bigint) => IntentParams][] = [
     (v) => ({ kind: Kind.DutchAuction, amountIn: 1n, startOut: 2n, endOut: 1n, startTs: I64_MIN, endTs: v }),
   ],
 ];
+
+describe("params constructors", () => {
+  it("build each kind's params that decode back to themselves", async () => {
+    const attestor = (await generateKeyPairSigner()).address;
+    const made: IntentParams[] = [
+      swapExactIn({ amountIn: 7n, minOut: 3n }),
+      limitOrder({ makeAmount: 7n, takeAmount: 3n }),
+      dutchAuction({ amountIn: 7n, startOut: 9n, endOut: 3n, startTs: 10n, endTs: 20n }),
+      attestedResult({ amountIn: 7n, minResult: 1n, maxResult: 1n, attestor, specHash: new Uint8Array(32).fill(5), judgeFee: 1n }),
+    ];
+    expect(made.map(({ kind }) => kind)).toEqual([Kind.SwapExactIn, Kind.LimitOrder, Kind.DutchAuction, Kind.AttestedResult]);
+    for (const params of made) {
+      expect(decodeParams(params.kind, encodeParams(params))).toEqual(params);
+    }
+  });
+});
 
 describe("params field ranges", () => {
   it("accept every unsigned field up to u64::MAX and reject negatives and overflow", () => {

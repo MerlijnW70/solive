@@ -1,5 +1,5 @@
 import type { Address, TransactionPartialSigner } from "@solana/kit";
-import { type AnnounceInput, createClient, loadAnnouncement, loadDeliveryBook, type RefuteInput, type Transport } from "@intent-engine/client";
+import { type AnnounceInput, createClient, loadAnnouncement, loadDeliveryBook, type RefuteInput, secretInputOf, type Transport } from "@intent-engine/client";
 import { previewed } from "./admin-commands.js";
 import { claimOf, deliverClaimWarnings } from "./agent/job-claims.js";
 import { ANNOUNCE_FIRST, capturing, hex, listView, openedBy, sealedToText, walletOf } from "./announcement-views.js";
@@ -33,7 +33,7 @@ async function deliver(command: Extract<AnnounceCommand, { name: "deliver" }>, r
   const sha256 = "sha256" in command ? command.sha256 : await artifactSha256(command.artifact);
   const kept = signsMessages(worker) ? undefined : await secretFor(runtime, worker.address, intent, sha256, workUrl);
   const client = createClient({ url: command.url, transport });
-  const input: AnnounceInput = { worker, payer, intent, sha256, url: workUrl, ...(kept === undefined ? {} : { secret: kept.secret }) };
+  const input: AnnounceInput = { payer, intent, sha256, url: workUrl, ...secretInputOf(worker, { secret: kept?.secret }) };
   const plan = await client.prepareAnnouncement(input);
   const invited = await sealedInvites(transport, runtime.specFetch, intent);
   const keptAt = kept === undefined ? undefined : secretsPath(runtime.home, worker.address, intent, sha256);
@@ -85,13 +85,12 @@ async function refute(command: Extract<AnnounceCommand, { name: "refute" }>, run
     throw new FlowRefused(WORK_URL_NEEDED);
   }
   const input: RefuteInput = {
-    worker,
     payer,
     earlier: earlier.address,
     paid: paid.address,
     sha256,
     url,
-    ...(kept === null || signsMessages(worker) ? {} : { secret: kept.secret }),
+    ...secretInputOf(worker, { secret: kept === null || signsMessages(worker) ? undefined : kept.secret }),
     ...(command.split === undefined ? {} : { claim: command.split }),
   };
   const shown = {

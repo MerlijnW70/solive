@@ -1,5 +1,5 @@
 import type { Address, Instruction, MessagePartialSigner, Signature, TransactionSigner } from "@solana/kit";
-import type { CommitteeTerms, CommitteeVote, Config, EngineEvent, Intent, IntentParams, ProfileView } from "@intent-engine/core";
+import type { AttestedResultParams, CommitteeTerms, CommitteeVote, Config, EngineEvent, Intent, IntentParams, ProfileView } from "@intent-engine/core";
 import type { Priority } from "./budget.js";
 import type { ClaimsView } from "./client-claims.js";
 import type { FeedbackInput, Reputation, ReputationOptions } from "./reputation.js";
@@ -34,17 +34,19 @@ export type WatchOptions = { owner?: Address; onError?: (error: unknown) => void
 
 export type Mint = { decimals: number; tokenProgram: Address };
 
-export type CreateIntentInput = {
+export type IntentPlacement = {
   signer: TransactionSigner;
-  params: IntentParams;
   inputMint: Address;
   outputMint: Address;
   expiresIn?: bigint;
   expiresAt?: bigint;
   nonce?: bigint;
   receiver?: Address;
-  specUrl?: string;
 };
+
+export type ParamsWithSpec = { params: AttestedResultParams; specUrl: string } | { params: IntentParams; specUrl?: undefined };
+
+export type CreateIntentInput = IntentPlacement & ParamsWithSpec;
 
 export type CreatedIntent = { signature: Signature; intent: Address; nonce: bigint };
 

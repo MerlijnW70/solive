@@ -13,12 +13,14 @@ import {
   getUserStateDecoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   isMintCapData,
+  type Config,
   type MintCap,
   NotAnEngineAccount,
   SdkError,
   TOKEN_2022_PROGRAM_ADDRESS,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
+import type { IntentAccount } from "./client-types.js";
 import type { AccountView, Transport } from "./transport.js";
 
 export const SYSTEM_PROGRAM_ADDRESS = "11111111111111111111111111111111" as Address;
@@ -59,7 +61,7 @@ export async function engineAccount(
   return checkAccountVersion(view.data);
 }
 
-export async function loadIntent(transport: Transport, owner: Address, nonce: bigint) {
+export async function loadIntent(transport: Transport, owner: Address, nonce: bigint): Promise<IntentAccount> {
   const [address] = await findIntentPda({ owner, nonce });
   const data = await engineAccount(transport, address, getIntentDiscriminatorBytes(), "intent");
   return { address, intent: getIntentDecoder().decode(data) };
@@ -76,13 +78,17 @@ export class NotAMint extends SdkError {
   }
 }
 
-export async function loadConfig(transport: Transport) {
+export type ConfigAccount = { address: Address; config: Config };
+
+export async function loadConfig(transport: Transport): Promise<ConfigAccount> {
   const [address] = await findConfigPda();
   const data = await engineAccount(transport, address, getConfigDiscriminatorBytes(), "config");
   return { address, config: getConfigDecoder().decode(data) };
 }
 
-export async function loadMintCap(transport: Transport, mint: Address): Promise<{ address: Address; cap: MintCap } | null> {
+export type MintCapAccount = { address: Address; cap: MintCap };
+
+export async function loadMintCap(transport: Transport, mint: Address): Promise<MintCapAccount | null> {
   const address = await findMintCapAddress(mint);
   const view = await createdAccount(transport, address);
   if (view === null) {
