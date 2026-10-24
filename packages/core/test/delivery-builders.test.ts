@@ -229,9 +229,10 @@ describe("delivery builders", () => {
     const members = [keyOf(40), keyOf(20), keyOf(30)];
     const ix = await buildSyncCommitteeKeys({ committee: judge, members });
     const profiles = await Promise.all(sortMembers(members).map(profileAddress));
-    expect(ix.accounts.slice(-3)).toEqual(profiles.map((address) => ({ address, role: AccountRole.READONLY })));
+    const slots = [0, 1, 2, 3, 4, 5, 6, 7].map((i) => slotOf(ix, "sync_committee_keys", `profile${i}`));
+    expect(slots).toEqual([...profiles, ...Array.from({ length: 5 }, () => INTENT_ENGINE_PROGRAM_ADDRESS)]);
     expect(ix.accounts[0]).toEqual({ address: judge, role: AccountRole.WRITABLE });
-    expect(ix.accounts).toHaveLength(3 + 3);
+    expect(validateIxAgainstIdl(ix, idl)).toEqual([]);
     for (const bad of [[], Array.from({ length: 9 }, (_, i) => keyOf(i + 1)), [keyOf(1), keyOf(1)]]) {
       await expect(buildSyncCommitteeKeys({ committee: judge, members: bad }), String(bad.length)).rejects.toThrow(RangeError);
     }

@@ -4332,6 +4332,38 @@
           "writable": true
         },
         {
+          "name": "profile0",
+          "optional": true
+        },
+        {
+          "name": "profile1",
+          "optional": true
+        },
+        {
+          "name": "profile2",
+          "optional": true
+        },
+        {
+          "name": "profile3",
+          "optional": true
+        },
+        {
+          "name": "profile4",
+          "optional": true
+        },
+        {
+          "name": "profile5",
+          "optional": true
+        },
+        {
+          "name": "profile6",
+          "optional": true
+        },
+        {
+          "name": "profile7",
+          "optional": true
+        },
+        {
           "name": "event_authority"
         },
         {

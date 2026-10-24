@@ -3,7 +3,7 @@ use std::str::FromStr;
 use anchor_lang::prelude::Pubkey;
 use intent_core::delivery::{MAX_BLOB_RECIPIENTS, MAX_BLOB_URL, MAX_SEALED_BLOB};
 use solana_instruction::Instruction;
-use solana_message::Message;
+use solana_message::{v0, Message, VersionedMessage};
 use svm_tests::{test_blob, Announce, TestResult};
 
 const PACKET_DATA_SIZE: usize = 1_232;
@@ -36,6 +36,21 @@ fn wire_size(a: &Announce) -> TestResult<usize> {
         .saturating_mul(usize::from(message.header.num_required_signatures))
         .saturating_add(1);
     Ok(signatures.saturating_add(message.serialize().len()))
+}
+
+fn v0_wire_size(a: &Announce) -> TestResult<usize> {
+    let [limit, price] = compute_budget()?;
+    let message = v0::Message::try_compile(
+        &a.payer,
+        &[limit, price, a.ix()],
+        &[],
+        solana_message::Hash::default(),
+    )
+    .map_err(|e| format!("{e:?}"))?;
+    let signatures = 64usize
+        .saturating_mul(usize::from(message.header.num_required_signatures))
+        .saturating_add(1);
+    Ok(signatures.saturating_add(VersionedMessage::V0(message).serialize().len()))
 }
 
 fn shaped(committee: bool, heavy: bool, url: usize) -> Announce {
@@ -97,5 +112,23 @@ fn a_relayed_committee_announcement_with_claims_and_a_fee_needs_a_shorter_url() 
     assert_eq!(longest, 116);
     assert!(wire_size(&shaped(true, true, longest))? <= PACKET_DATA_SIZE);
     assert!(wire_size(&shaped(true, true, longest + 1))? > PACKET_DATA_SIZE);
+    Ok(())
+}
+
+#[test]
+fn a_v0_transaction_is_two_bytes_larger_so_the_heaviest_committee_url_is_shorter() -> TestResult {
+    for committee in [false, true] {
+        for heavy in [false, true] {
+            let a = shaped(committee, heavy, 40);
+            assert_eq!(v0_wire_size(&a)?, wire_size(&a)?.saturating_add(2));
+        }
+    }
+    let fits = |url: usize| -> TestResult<bool> {
+        Ok(v0_wire_size(&shaped(true, true, url))? <= PACKET_DATA_SIZE)
+    };
+    assert!(fits(114)?);
+    assert!(!fits(115)?);
+    assert!(v0_wire_size(&shaped(true, false, MAX_BLOB_URL))? <= PACKET_DATA_SIZE);
+    assert!(v0_wire_size(&shaped(false, true, MAX_BLOB_URL))? <= PACKET_DATA_SIZE);
     Ok(())
 }

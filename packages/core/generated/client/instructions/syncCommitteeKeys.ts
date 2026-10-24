@@ -50,6 +50,14 @@ export function getSyncCommitteeKeysDiscriminatorBytes(): ReadonlyUint8Array {
 export type SyncCommitteeKeysInstruction<
   TProgram extends string = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
   TAccountCommittee extends string | AccountMeta<string> = string,
+  TAccountProfile0 extends string | AccountMeta<string> = string,
+  TAccountProfile1 extends string | AccountMeta<string> = string,
+  TAccountProfile2 extends string | AccountMeta<string> = string,
+  TAccountProfile3 extends string | AccountMeta<string> = string,
+  TAccountProfile4 extends string | AccountMeta<string> = string,
+  TAccountProfile5 extends string | AccountMeta<string> = string,
+  TAccountProfile6 extends string | AccountMeta<string> = string,
+  TAccountProfile7 extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -60,6 +68,30 @@ export type SyncCommitteeKeysInstruction<
       TAccountCommittee extends string
         ? WritableAccount<TAccountCommittee>
         : TAccountCommittee,
+      TAccountProfile0 extends string
+        ? ReadonlyAccount<TAccountProfile0>
+        : TAccountProfile0,
+      TAccountProfile1 extends string
+        ? ReadonlyAccount<TAccountProfile1>
+        : TAccountProfile1,
+      TAccountProfile2 extends string
+        ? ReadonlyAccount<TAccountProfile2>
+        : TAccountProfile2,
+      TAccountProfile3 extends string
+        ? ReadonlyAccount<TAccountProfile3>
+        : TAccountProfile3,
+      TAccountProfile4 extends string
+        ? ReadonlyAccount<TAccountProfile4>
+        : TAccountProfile4,
+      TAccountProfile5 extends string
+        ? ReadonlyAccount<TAccountProfile5>
+        : TAccountProfile5,
+      TAccountProfile6 extends string
+        ? ReadonlyAccount<TAccountProfile6>
+        : TAccountProfile6,
+      TAccountProfile7 extends string
+        ? ReadonlyAccount<TAccountProfile7>
+        : TAccountProfile7,
       TAccountEventAuthority extends string
         ? ReadonlyAccount<TAccountEventAuthority>
         : TAccountEventAuthority,
@@ -101,23 +133,55 @@ export function getSyncCommitteeKeysInstructionDataCodec(): FixedSizeCodec<
 
 export type SyncCommitteeKeysInput<
   TAccountCommittee extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProfile0 extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProfile1 extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProfile2 extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProfile3 extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProfile4 extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProfile5 extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProfile6 extends InstructionAccountInput = InstructionAccountInput,
+  TAccountProfile7 extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
 > = {
   committee: TAccountCommittee;
+  profile0?: TAccountProfile0;
+  profile1?: TAccountProfile1;
+  profile2?: TAccountProfile2;
+  profile3?: TAccountProfile3;
+  profile4?: TAccountProfile4;
+  profile5?: TAccountProfile5;
+  profile6?: TAccountProfile6;
+  profile7?: TAccountProfile7;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
 };
 
 export function getSyncCommitteeKeysInstruction<
   TAccountCommittee extends InstructionAccountInput,
+  TAccountProfile0 extends InstructionAccountInput,
+  TAccountProfile1 extends InstructionAccountInput,
+  TAccountProfile2 extends InstructionAccountInput,
+  TAccountProfile3 extends InstructionAccountInput,
+  TAccountProfile4 extends InstructionAccountInput,
+  TAccountProfile5 extends InstructionAccountInput,
+  TAccountProfile6 extends InstructionAccountInput,
+  TAccountProfile7 extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
 >(
   input: SyncCommitteeKeysInput<
     TAccountCommittee,
+    TAccountProfile0,
+    TAccountProfile1,
+    TAccountProfile2,
+    TAccountProfile3,
+    TAccountProfile4,
+    TAccountProfile5,
+    TAccountProfile6,
+    TAccountProfile7,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -127,6 +191,38 @@ export function getSyncCommitteeKeysInstruction<
   ResolvedInstructionAccountMeta<
     TAccountCommittee,
     InstructionAccountInputAddress<TAccountCommittee>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountProfile0,
+    InstructionAccountInputAddress<TAccountProfile0>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountProfile1,
+    InstructionAccountInputAddress<TAccountProfile1>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountProfile2,
+    InstructionAccountInputAddress<TAccountProfile2>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountProfile3,
+    InstructionAccountInputAddress<TAccountProfile3>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountProfile4,
+    InstructionAccountInputAddress<TAccountProfile4>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountProfile5,
+    InstructionAccountInputAddress<TAccountProfile5>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountProfile6,
+    InstructionAccountInputAddress<TAccountProfile6>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountProfile7,
+    InstructionAccountInputAddress<TAccountProfile7>
   >,
   ResolvedInstructionAccountMeta<
     TAccountEventAuthority,
@@ -151,6 +247,46 @@ export function getSyncCommitteeKeysInstruction<
       isSigner: false,
       isWritable: true,
     },
+    profile0: {
+      value: input.profile0 ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    profile1: {
+      value: input.profile1 ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    profile2: {
+      value: input.profile2 ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    profile3: {
+      value: input.profile3 ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    profile4: {
+      value: input.profile4 ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    profile5: {
+      value: input.profile5 ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    profile6: {
+      value: input.profile6 ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
+    profile7: {
+      value: input.profile7 ?? null,
+      isSigner: false,
+      isWritable: false,
+    },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -170,6 +306,14 @@ export function getSyncCommitteeKeysInstruction<
   return Object.freeze({
     accounts: [
       getAccountMeta("committee", accounts.committee),
+      getAccountMeta("profile0", accounts.profile0),
+      getAccountMeta("profile1", accounts.profile1),
+      getAccountMeta("profile2", accounts.profile2),
+      getAccountMeta("profile3", accounts.profile3),
+      getAccountMeta("profile4", accounts.profile4),
+      getAccountMeta("profile5", accounts.profile5),
+      getAccountMeta("profile6", accounts.profile6),
+      getAccountMeta("profile7", accounts.profile7),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -180,6 +324,38 @@ export function getSyncCommitteeKeysInstruction<
     ResolvedInstructionAccountMeta<
       TAccountCommittee,
       InstructionAccountInputAddress<TAccountCommittee>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountProfile0,
+      InstructionAccountInputAddress<TAccountProfile0>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountProfile1,
+      InstructionAccountInputAddress<TAccountProfile1>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountProfile2,
+      InstructionAccountInputAddress<TAccountProfile2>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountProfile3,
+      InstructionAccountInputAddress<TAccountProfile3>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountProfile4,
+      InstructionAccountInputAddress<TAccountProfile4>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountProfile5,
+      InstructionAccountInputAddress<TAccountProfile5>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountProfile6,
+      InstructionAccountInputAddress<TAccountProfile6>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountProfile7,
+      InstructionAccountInputAddress<TAccountProfile7>
     >,
     ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
@@ -199,8 +375,16 @@ export type ParsedSyncCommitteeKeysInstruction<
   programAddress: Address<TProgram>;
   accounts: {
     committee: TAccountMetas[0];
-    eventAuthority: TAccountMetas[1];
-    program: TAccountMetas[2];
+    profile0?: TAccountMetas[1] | undefined;
+    profile1?: TAccountMetas[2] | undefined;
+    profile2?: TAccountMetas[3] | undefined;
+    profile3?: TAccountMetas[4] | undefined;
+    profile4?: TAccountMetas[5] | undefined;
+    profile5?: TAccountMetas[6] | undefined;
+    profile6?: TAccountMetas[7] | undefined;
+    profile7?: TAccountMetas[8] | undefined;
+    eventAuthority: TAccountMetas[9];
+    program: TAccountMetas[10];
   };
   data: SyncCommitteeKeysInstructionData;
 };
@@ -213,12 +397,12 @@ export function parseSyncCommitteeKeysInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedSyncCommitteeKeysInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 3) {
+  if (instruction.accounts.length < 11) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 3,
+        expectedAccountMetas: 11,
       },
     );
   }
@@ -228,10 +412,24 @@ export function parseSyncCommitteeKeysInstruction<
     accountIndex += 1;
     return accountMeta;
   };
+  const getNextOptionalAccount = () => {
+    const accountMeta = getNextAccount();
+    return accountMeta.address === INTENT_ENGINE_PROGRAM_ADDRESS
+      ? undefined
+      : accountMeta;
+  };
   return {
     programAddress: instruction.programAddress,
     accounts: {
       committee: getNextAccount(),
+      profile0: getNextOptionalAccount(),
+      profile1: getNextOptionalAccount(),
+      profile2: getNextOptionalAccount(),
+      profile3: getNextOptionalAccount(),
+      profile4: getNextOptionalAccount(),
+      profile5: getNextOptionalAccount(),
+      profile6: getNextOptionalAccount(),
+      profile7: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
     },

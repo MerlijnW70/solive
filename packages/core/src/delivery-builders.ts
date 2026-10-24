@@ -1,6 +1,5 @@
 import {
   type AccountMeta,
-  AccountRole,
   type Address,
   type Instruction,
   type InstructionWithAccounts,
@@ -90,6 +89,8 @@ export async function buildSetAnnounceFee(input: { admin: TransactionSigner; fee
   return getSetAnnounceFeeInstruction({ admin: input.admin, fee: input.fee, ...(await events()) });
 }
 
+const PROFILE_SLOTS = ["profile0", "profile1", "profile2", "profile3", "profile4", "profile5", "profile6", "profile7"] as const;
+
 type KeySyncInstruction = Instruction & InstructionWithAccounts<readonly AccountMeta[]> & InstructionWithData<ReadonlyUint8Array>;
 
 export async function buildSyncCommitteeKeys(input: { committee: Address; members: readonly Address[] }): Promise<KeySyncInstruction> {
@@ -98,8 +99,8 @@ export async function buildSyncCommitteeKeys(input: { committee: Address; member
     throw new RangeError(`a committee syncs 1 to ${MAX_COMMITTEE_MEMBERS} distinct member profiles, got ${members.length}`);
   }
   const profiles = await Promise.all(members.map(profileAddress));
-  const instruction = getSyncCommitteeKeysInstruction({ committee: input.committee, ...(await events()) });
-  return { ...instruction, accounts: [...instruction.accounts, ...profiles.map((address) => ({ address, role: AccountRole.READONLY }))] };
+  const named: Partial<Record<(typeof PROFILE_SLOTS)[number], Address>> = Object.fromEntries(profiles.map((address, i) => [PROFILE_SLOTS[i], address]));
+  return getSyncCommitteeKeysInstruction({ committee: input.committee, ...named, ...(await events()) });
 }
 
 export async function buildCloseAnnouncement(input: { by: TransactionSigner; announcement: Address; intent: Address; rentTo: Address }) {
