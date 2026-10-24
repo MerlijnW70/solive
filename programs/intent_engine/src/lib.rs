@@ -4,6 +4,7 @@ pub mod admission;
 pub mod attested;
 pub mod caps;
 pub mod claims;
+pub mod delivery;
 pub mod errors;
 pub mod events;
 pub mod ext;
@@ -198,6 +199,15 @@ pub mod intent_engine {
         handle_stand_by(ctx, secs)
     }
 
+    pub fn announce_delivery(
+        ctx: Context<AnnounceDelivery>,
+        commitment: [u8; 32],
+        blob_hash: [u8; 32],
+        blob: Vec<u8>,
+    ) -> Result<()> {
+        handle_announce_delivery(ctx, commitment, blob_hash, blob)
+    }
+
     pub fn advance(ctx: Context<Advance>) -> Result<()> {
         handle_advance(ctx)
     }
@@ -270,6 +280,10 @@ pub mod intent_engine {
 
     pub fn set_caps_required(ctx: Context<SetCapsRequired>, required: bool) -> Result<()> {
         handle_set_caps_required(ctx, required)
+    }
+
+    pub fn set_announce_fee(ctx: Context<SetAnnounceFee>, fee: u32) -> Result<()> {
+        handle_set_announce_fee(ctx, fee)
     }
 
     pub fn set_committee_floor(ctx: Context<SetCommitteeFloor>, floor: u64) -> Result<()> {

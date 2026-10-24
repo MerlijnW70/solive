@@ -404,3 +404,21 @@ pub struct AccountMigrated {
     pub fee_bps: u16,
     pub fee_dropped: bool,
 }
+
+#[event]
+pub struct DeliveryAnnounced {
+    pub intent: Pubkey,
+    pub announcement: Pubkey,
+    pub seq: u64,
+    pub worker: Pubkey,
+    pub payer: Pubkey,
+    pub attestor: Pubkey,
+    pub commitment: [u8; 32],
+    pub slot: u64,
+    pub recipients: u8,
+}
+
+#[event]
+pub struct AnnounceFeeSet {
+    pub fee: u32,
+}

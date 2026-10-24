@@ -31,6 +31,7 @@ use solana_transaction_error::TransactionError;
 pub type TestResult<T = ()> = Result<T, Box<dyn Error>>;
 
 mod addresses;
+mod announcements;
 mod claims;
 mod committee;
 mod cu;
@@ -45,6 +46,7 @@ mod setup;
 mod sig;
 
 pub use addresses::*;
+pub use announcements::*;
 pub use claims::*;
 pub use committee::*;
 pub use cu::*;

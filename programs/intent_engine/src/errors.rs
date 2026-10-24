@@ -128,6 +128,15 @@ pub enum EngineError {
     AnnouncementRetained,
     RefuteNotEarlier,
     RefuteSamePayee,
+    AttestorMismatch,
+    BlobRecipients,
+    BlobKeyMismatch,
+    BlobHashMismatch,
+    CommitteeKeysUnsynced,
+    CommitmentZero,
+    ProfileMismatch,
+    BookMismatch,
+    AnnounceFeeMissing,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {
