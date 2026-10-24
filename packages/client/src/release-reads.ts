@@ -1,4 +1,4 @@
-import type { Address } from "@solana/kit";
+import { type Address, getAddressDecoder } from "@solana/kit";
 import {
   decodeEvent,
   type EngineEvent,
@@ -6,7 +6,6 @@ import {
   FILL_ATTESTED_SPLIT_DISCRIMINATOR,
   getFillAttestedSplitCommitteeInstructionDataDecoder,
   getFillAttestedSplitInstructionDataDecoder,
-  RELEASE_MEMO_PREFIX,
 } from "@intent-engine/core";
 import { engineCalls } from "./job-origins.js";
 import { scan, signaturePage } from "./job-scan.js";
@@ -80,14 +79,46 @@ export async function intentHistory(transport: Transport, intent: Address, histo
   return { transactions, complete: false };
 }
 
-export async function releaseThrough(transport: Transport, intent: Address, wallets: readonly Address[], pages: number, floor: bigint | null): Promise<EngineTransaction[]> {
-  for (const wallet of wallets) {
-    const until = (transaction: EngineTransaction) => releaseOf([transaction], intent) !== undefined;
-    const found = await scan(transport, wallet, { floor, memo: RELEASE_MEMO_PREFIX, pages, until });
-    const release = found.transactions.filter((transaction) => releaseOf([transaction], intent) !== undefined);
+export async function releaseThrough(transport: Transport, intent: Address, addresses: readonly Address[], pages: number, floor: bigint | null): Promise<EngineTransaction[]> {
+  const until = (transaction: EngineTransaction) => releaseOf([transaction], intent) !== undefined;
+  for (const address of addresses) {
+    const release = (await scan(transport, address, { floor, pages, until })).transactions.filter(until);
     if (release.length > 0) {
       return release;
     }
   }
   return [];
+}
+
+const TOKEN_ACCOUNT_HEAD = 64;
+
+export async function paidWalletsOf(transport: Transport, { event, transaction }: Read, intent: Address): Promise<Address[] | null> {
+  if (event.name === "IntentSplit") {
+    const claim = splitClaim(transaction, intent);
+    return claim === null ? null : [...claim.recipients];
+  }
+  if (event.name !== "IntentAttested") {
+    return null;
+  }
+  const payee = event.fields.payee;
+  const recorded = transaction.tokens?.find(({ account }) => account === payee)?.owner;
+  if (recorded !== undefined) {
+    return [recorded];
+  }
+  const held = await transport.getAccount(payee);
+  return held === null || held.data.length < TOKEN_ACCOUNT_HEAD ? null : [getAddressDecoder().decode(held.data.subarray(32, TOKEN_ACCOUNT_HEAD))];
+}
+
+export type ReleasedDelivery = { announcement: Address; seq: bigint; worker: Address; sha256: string; salt: string };
+
+const hexOf = (bytes: ArrayLike<number>): string => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+
+export function releasedDelivery(release: EngineTransaction, intent: Address): ReleasedDelivery | null {
+  for (const { event } of eventsOf([release], intent)) {
+    if (event.name === "DeliveryReleased") {
+      const { announcement, seq, worker, delivered, salt } = event.fields;
+      return { announcement, seq, worker, sha256: hexOf(delivered), salt: hexOf(salt) };
+    }
+  }
+  return null;
 }

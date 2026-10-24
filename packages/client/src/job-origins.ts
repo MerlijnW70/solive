@@ -7,7 +7,6 @@ import {
   getCreateIntentSignedDiscriminatorBytes,
   Kind,
 } from "@intent-engine/core";
-import { type DeliveryOpeners, type DeliveryRecord, judgedDeliveries } from "./job-deliveries.js";
 import { createdAtOf, createdIn, hex } from "./job-proofs.js";
 import { DELIVERY_PAGES, scan } from "./job-scan.js";
 import type { EngineTransaction, Transport } from "./transport.js";
@@ -57,26 +56,4 @@ export async function escrowOrigin(transport: Transport, intent: Address, pages:
   const { transactions } = await scan(transport, intent, { floor, pages, until: created });
   const tx = transactions.find(created);
   return tx === undefined ? null : { intent, signature: tx.signature, slot: tx.slot, createdAt: floor ?? tx.blockTime, proof: creationProof(tx, intent) };
-}
-
-export async function originDeliveries(transport: Transport, judge: Address, origin: EscrowOrigin, pages: number = DELIVERY_PAGES): Promise<DeliveryRecord> {
-  const { firstAvailableSlot } = transport;
-  const covered = async () => firstAvailableSlot !== undefined && (await firstAvailableSlot.call(transport)) <= origin.slot;
-  return judgedDeliveries(transport, judge, new Set([origin.intent]), origin.createdAt, covered, pages);
-}
-
-export type Lifecycle = { intent: Address; createdAt: bigint | null; from: bigint | null; to: bigint };
-
-export async function lifecycleDeliveries(
-  transport: Transport,
-  judge: Address,
-  lifecycle: Lifecycle,
-  pages: number = DELIVERY_PAGES,
-  keypair?: DeliveryOpeners,
-): Promise<DeliveryRecord> {
-  const { firstAvailableSlot } = transport;
-  const { from, to } = lifecycle;
-  const covered = async () => from !== null && firstAvailableSlot !== undefined && (await firstAvailableSlot.call(transport)) <= from;
-  const record = await judgedDeliveries(transport, judge, new Set([lifecycle.intent]), lifecycle.createdAt, covered, pages, keypair);
-  return { ...record, deliveries: record.deliveries.filter(({ slot }) => (from === null || slot >= from) && slot <= to) };
 }

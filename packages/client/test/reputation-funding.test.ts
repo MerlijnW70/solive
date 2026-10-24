@@ -4,9 +4,10 @@ import { getTransferSolInstruction } from "@solana-program/system";
 import { getMintEncoder, getMintSize } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { findIntentPda, Kind, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { createClient, deliverySalt, FUNDING_PAGES, type ListedSignature, type Transport } from "../src/index.js";
+import { createClient, FUNDING_PAGES, type ListedSignature, type Transport } from "../src/index.js";
 import { svmTransport } from "../src/svm.js";
 import { world } from "./svm.js";
+import { announced } from "./work.js";
 
 const LOCAL = "http://127.0.0.1:8899";
 const SOL = 1_000_000_000n;
@@ -46,8 +47,8 @@ async function setup() {
       outputMint: w.outputMint,
     });
     const [intent] = await findIntentPda({ owner: owner.address, nonce });
-    await client.deliver({ worker, intent, sha256, url: "https://example.org/work" });
-    await client.settleProof({ judge, owner: owner.address, nonce, payTo: worker.address, result: 1n, deliveredSha256: sha256, deliveredSalt: await deliverySalt(worker, intent, sha256) });
+    const delivered = await announced(client, worker, intent, sha256);
+    await client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n });
     return intent;
   };
   return { client, fresh, fundedBy, job, transport };

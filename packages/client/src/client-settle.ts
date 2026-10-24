@@ -1,27 +1,18 @@
-import { type Address, createNoopSigner, getAddressDecoder, type Instruction, type TransactionSigner } from "@solana/kit";
-import { createHash } from "node:crypto";
+import { type Address, createNoopSigner } from "@solana/kit";
 import {
+  attestedDeliveryFields,
+  attestedDeliveryPreimage,
   attestedProofMessage,
-  attestedProofPreimage,
   buildCommitteeBatch,
   buildFillAttested,
   buildFillAttestedCommittee,
   committeeProofDigest,
   committeeSigners,
-  decodeParams,
-  IntentStatus,
-  isSaltHex,
-  isSha256Hex,
-  Kind,
-  releaseMemo,
   signEd25519Instruction,
-  splitFees,
   verifyCommitteeVote,
 } from "@intent-engine/core";
-import { chainTime, createdAccount, loadIntent, SYSTEM_PROGRAM_ADDRESS } from "./accounts.js";
-import { releaseClaims } from "./client-claims.js";
 import { loadCommittee } from "./client-committee.js";
-import { EscrowExpired, NotSettleable, PayeeMoved, PayToNotWallet, VoteRejected } from "./client-errors.js";
+import { NotSettleable, VoteRejected } from "./client-errors.js";
 import type {
   BallotInput,
   ClientContext,
@@ -31,130 +22,16 @@ import type {
   SettleCommitteeInput,
   SettleProofInput,
 } from "./client-types.js";
-import { memoInstruction } from "./jobs.js";
-import { tokenAccountIfMissing } from "./setup.js";
+import { planRelease, type ReleaseTarget } from "./release-plan.js";
 
-type ReleaseTarget = {
-  owner: Address;
-  nonce: bigint;
-  payTo: Address;
-  result: bigint;
-  payer: TransactionSigner;
-  deliveredSha256?: string | undefined;
-};
+const digestOf = async (bytes: Uint8Array): Promise<Uint8Array> => new Uint8Array(await crypto.subtle.digest("SHA-256", bytes.slice()));
 
-function checkedSha256(deliveredSha256: string | undefined) {
-  const lowered = deliveredSha256?.toLowerCase();
-  if (lowered !== undefined && !isSha256Hex(lowered)) {
-    throw new RangeError("deliveredSha256 must be 64 hex digits");
-  }
-  return lowered;
-}
-
-type Judged<J> = { feeOwner: Address; judge: J };
-
-async function planRelease<J>(
-  { transport, mint, config }: ClientContext,
-  target: ReleaseTarget,
-  judgeOf: (attestor: Address, intent: Address) => Promise<Judged<J>>,
-) {
-  const { owner, nonce, payTo, result, payer } = target;
-  const [{ address, intent: held }, settings] = await Promise.all([loadIntent(transport, owner, nonce), config()]);
-  const params = decodeParams(held.kind, Uint8Array.from(held.params));
-  if (params.kind !== Kind.AttestedResult) {
-    throw new NotSettleable(address, "is not an AttestedResult intent");
-  }
-  if (params.specHash.every((b) => b === 0)) {
-    throw new NotSettleable(address, "commits no spec hash, so it is not a proof intent");
-  }
-  if (held.status !== IntentStatus.Open) {
-    throw new NotSettleable(address, "is not open");
-  }
-  const { feeOwner, judge } = await judgeOf(params.attestor, address);
-  if (held.expiresAt <= (await chainTime(transport))) {
-    throw new EscrowExpired(address, held.expiresAt);
-  }
-  const holder = await transport.getAccount(payTo);
-  if (holder !== null && holder.owner !== SYSTEM_PROGRAM_ADDRESS) {
-    throw new PayToNotWallet(payTo, holder.owner);
-  }
-  const { accounts: claims } = await releaseClaims(transport, address, held.claims, [payTo]);
-  const { tokenProgram } = await mint(held.inputMint);
-  const account = (wallet: Address) => tokenAccountIfMissing(transport, payer, wallet, held.inputMint, tokenProgram);
-  const amountIn = held.escrowed - held.filled;
-  const kindBps = held.feeBps;
-  const maxFeeBps = kindBps + held.partnerBps;
-  const shares = splitFees(amountIn - params.judgeFee, kindBps, held.partnerBps, held.partnerCutBps);
-  const feeRecipient = shares.protocol > 0n ? settings.feeRecipient : undefined;
-  const partner = shares.partner > 0n ? held.partner : undefined;
-  const paidJudge = params.judgeFee > 0n ? feeOwner : undefined;
-  const payee = await account(payTo);
-  if (payee.create.length === 0) {
-    const existing = await createdAccount(transport, payee.address);
-    const data = existing === null || existing.owner !== tokenProgram || existing.data.length < 64 ? null : existing.data;
-    if (
-      data === null ||
-      getAddressDecoder().decode(data.subarray(0, 32)) !== held.inputMint ||
-      getAddressDecoder().decode(data.subarray(32, 64)) !== payTo
-    ) {
-      throw new PayeeMoved(payTo, payee.address);
-    }
-  }
-  const others = await Promise.all([feeRecipient, partner, paidJudge].filter((wallet) => wallet !== undefined).map(account));
-  const fields = { amountIn, result, maxFeeBps };
-  return {
-    intent: address,
-    judge,
-    proof: {
-      ...fields,
-      domain: Uint8Array.from(settings.domain),
-      intent: address,
-      payee: payee.address,
-      filled: held.filled,
-      revision: held.revision,
-      specHash: params.specHash,
-    },
-    fill: {
-      ...fields,
-      owner,
-      nonce,
-      inputMint: held.inputMint,
-      inputTokenProgram: tokenProgram,
-      payee: payee.address,
-      capped: held.capped,
-      ...(feeRecipient === undefined ? {} : { feeRecipient }),
-      ...(partner === undefined ? {} : { partner }),
-      ...(paidJudge === undefined ? {} : { judge: paidJudge }),
-    },
-    setup: [payee, ...others].flatMap(({ create }): Instruction[] => create),
-    claims,
-  };
-}
-
-function checkedSalt(deliveredSalt: string | undefined, deliveredSha256: string | undefined) {
-  const lowered = deliveredSalt?.toLowerCase();
-  if (lowered !== undefined && (deliveredSha256 === undefined || !isSaltHex(lowered))) {
-    throw new RangeError("deliveredSalt must be 32 hex digits, given with deliveredSha256");
-  }
-  return lowered;
-}
-
-function recorded(payer: TransactionSigner, deliveredSha256: string | undefined, deliveredSalt: string | undefined) {
-  return deliveredSha256 === undefined ? [] : [memoInstruction(payer, releaseMemo(deliveredSha256, checkedSalt(deliveredSalt, deliveredSha256)))];
-}
-
-export const FEE_PAYER_ALONE =
-  "feePayer signs and pays the release alone, so it takes no payer and no deliveredSha256: only a memo the judge signs records the delivered work";
+const ballotTarget = (input: BallotInput): ReleaseTarget => ({ ...input, payer: createNoopSigner(input.owner) });
 
 export function proofSettlement(context: ClientContext) {
-  const settleProof = async (input: SettleProofInput) => {
-    const { judge, feePayer } = input;
-    const deliveredSha256 = checkedSha256(input.deliveredSha256);
-    checkedSalt(input.deliveredSalt, deliveredSha256);
-    if (feePayer !== undefined && (deliveredSha256 !== undefined || input.payer !== undefined)) {
-      throw new RangeError(FEE_PAYER_ALONE);
-    }
-    const payer = feePayer ?? input.payer ?? judge;
+  return async (input: SettleProofInput) => {
+    const { judge } = input;
+    const payer = input.payer ?? judge;
     const plan = await planRelease(context, { ...input, payer }, async (attestor, intent) => {
       if (attestor !== judge.address) {
         throw new NotSettleable(intent, `names ${attestor} as its judge, not ${judge.address}`);
@@ -162,16 +39,9 @@ export function proofSettlement(context: ClientContext) {
       return { feeOwner: judge.address, judge: judge.address };
     });
     const message = await attestedProofMessage(judge.address, plan.proof);
-    const settle = await buildFillAttested({ ...plan.fill, ...plan.claims, solver: feePayer ?? judge });
-    if (feePayer !== undefined) {
-      return context.send([...plan.setup, await signEd25519Instruction(judge, message), settle], feePayer);
-    }
-    return context.send(
-      [...plan.setup, await signEd25519Instruction(judge, message), settle, ...recorded(judge, deliveredSha256, input.deliveredSalt)],
-      payer,
-    );
+    const settle = await buildFillAttested({ ...plan.fill, ...plan.claims, solver: payer });
+    return context.send([...plan.setup, await signEd25519Instruction(judge, message), settle], payer);
   };
-  return settleProof;
 }
 
 export const committeeJudged = (attestor: Address) =>
@@ -179,13 +49,13 @@ export const committeeJudged = (attestor: Address) =>
 
 export function proofBallotOf(context: ClientContext) {
   return async (input: BallotInput): Promise<ProofBallot> => {
-    const plan = await planRelease(context, { ...input, payer: createNoopSigner(input.payTo) }, async (attestor, intent) => {
+    const plan = await planRelease(context, ballotTarget(input), async (attestor, intent) => {
       if ((await loadCommittee(context.transport, attestor)) !== null) {
         throw new NotSettleable(intent, committeeJudged(attestor));
       }
       return { feeOwner: attestor, judge: attestor };
     });
-    const digest = new Uint8Array(createHash("sha256").update(await attestedProofPreimage(plan.proof)).digest());
+    const digest = await digestOf(attestedDeliveryPreimage(await attestedDeliveryFields(plan.proof)));
     return { intent: plan.intent, attestor: plan.judge, payee: plan.proof.payee, digest, message: await attestedProofMessage(plan.judge, plan.proof) };
   };
 }
@@ -203,22 +73,17 @@ export function committeeSettlement(context: ClientContext) {
   };
 
   const committeeBallot = async (input: BallotInput): Promise<CommitteeBallot> => {
-    const { plan, committee, digest } = await planned({ ...input, payer: createNoopSigner(input.payTo) });
+    const { plan, committee, digest } = await planned(ballotTarget(input));
     return { intent: plan.intent, committee, payee: plan.proof.payee, digest };
   };
 
   const prepareCommitteeRelease = async (input: SettleCommitteeInput): Promise<CommitteeRelease> => {
-    const deliveredSha256 = checkedSha256(input.deliveredSha256);
-    checkedSalt(input.deliveredSalt, deliveredSha256);
     const payer = input.payer ?? input.solver;
     const { plan, committee, digest } = await planned({ ...input, payer });
     for (const vote of input.votes) {
       if (!(await verifyCommitteeVote(vote, digest, committee.members))) {
         throw new VoteRejected(vote.member, plan.intent);
       }
-    }
-    if (deliveredSha256 !== undefined && !input.votes.some((vote) => vote.member === input.solver.address)) {
-      throw new NotSettleable(plan.intent, `records the delivered work only when a member who voted submits the release, and ${input.solver.address} did not vote`);
     }
     const needed = [...input.votes]
       .sort((a, b) => committee.members.indexOf(a.member) - committee.members.indexOf(b.member))
@@ -238,7 +103,7 @@ export function committeeSettlement(context: ClientContext) {
       signers: committeeSigners(committee, mask),
       payer,
       setup: plan.setup,
-      instructions: [instruction, settle, ...recorded(input.solver, deliveredSha256, input.deliveredSalt)],
+      instructions: [instruction, settle],
     };
   };
 

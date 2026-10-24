@@ -1,5 +1,5 @@
-import { createHash, randomBytes } from "node:crypto";
-import { AccountRole, type Address, generateKeyPairSigner, getAddressEncoder, type KeyPairSigner, lamports, none, type Signature } from "@solana/kit";
+import { createHash } from "node:crypto";
+import { AccountRole, type Address, generateKeyPairSigner, getAddressEncoder, type KeyPairSigner, lamports, none } from "@solana/kit";
 import { getCreateAccountInstruction, getTransferSolInstruction } from "@solana-program/system";
 import {
   getCloseAccountInstruction,
@@ -10,19 +10,13 @@ import {
   getSyncNativeInstruction,
 } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { deliveryMemo, findAssociatedTokenAddress, findIntentPda, Kind, NATIVE_MINT, sealDelivery, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { findAssociatedTokenAddress, findIntentPda, Kind, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
 import {
-  commitmentOf,
   createClient,
-  deliverySalt,
   FUNDING_READS,
-  memoInstruction,
-  NOTIFIED_WALLETS,
-  openingInstructions,
   RECORD_READS,
   reputationOf,
   RESTART,
-  saltCheckOf,
   solTransfersOf,
   SYSTEM_PROGRAM_ADDRESS,
   type Transport,
@@ -32,12 +26,12 @@ import {
 import { INTENT_HISTORY_PAGES } from "../src/release-reads.js";
 import { svmTransport } from "../src/svm.js";
 import { world } from "./svm.js";
+import { announced, type Delivered, workUrl } from "./work.js";
 
 const LOCAL = "http://127.0.0.1:8899";
 const SOL = 1_000_000_000n;
 const SPEC = new Uint8Array(createHash("sha256").update("the review spec").digest());
 const PAY = 1_000_000n;
-const WORK_URL = "https://" + "example.org/work";
 
 async function setup() {
   const w = await world();
@@ -69,97 +63,68 @@ async function setup() {
     const [intent] = await findIntentPda({ owner: owner.address, nonce });
     return { nonce, intent };
   };
-  const release = async (owner: KeyPairSigner, judge: KeyPairSigner, worker: KeyPairSigner, nonce: bigint, intent: Address, sha256: string) =>
-    client.settleProof({ judge, owner: owner.address, nonce, payTo: worker.address, result: 1n, deliveredSha256: sha256, deliveredSalt: await deliverySalt(worker, intent, sha256) });
+  const release = async (owner: KeyPairSigner, judge: KeyPairSigner, nonce: bigint, delivered: Delivered) =>
+    client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n });
   const job = async (owner: KeyPairSigner, judge: KeyPairSigner, worker: KeyPairSigner, sha256: string, inputMint: Address = NATIVE_MINT, amountIn: bigint = PAY) => {
     const { nonce, intent } = await escrow(owner, judge, inputMint, amountIn);
-    await client.deliver({ worker, intent, sha256, url: WORK_URL });
-    await release(owner, judge, worker, nonce, intent, sha256);
+    await release(owner, judge, nonce, await announced(client, worker, intent, sha256));
     return intent;
-  };
-  const announce = async (worker: KeyPairSigner, judge: Address, intent: Address, sha256: string, salt: string) => {
-    const blob = await sealDelivery({ salt, url: WORK_URL }, [judge], intent);
-    const memo = deliveryMemo({ intent, commitment: commitmentOf(intent, worker.address, salt, sha256), check: saltCheckOf(salt), blob });
-    return (await transport.send([memoInstruction(worker, memo), getTransferSolInstruction({ source: worker, destination: judge, amount: 0n })], worker)) as Signature;
-  };
-  const selfOpened = async (worker: KeyPairSigner, judge: Address, intent: Address, sha256: string) => {
-    const salt = randomBytes(16).toString("hex");
-    const announcement = await announce(worker, judge, intent, sha256, salt);
-    await transport.send(openingInstructions(worker, judge, { intent, announcement, salt }), worker);
-    return announcement;
   };
   const pad = async (from: KeyPairSigner, to: Address, count: number) => {
     for (let i = 0; i < count; i++) {
       await transport.send([getTransferSolInstruction({ source: from, destination: to, amount: 0n })], from);
     }
   };
-  return { w, client, transport, fresh, escrow, release, job, announce, selfOpened, pad };
+  return { w, client, transport, fresh, escrow, release, job, pad };
 }
 
 const marks = (records: readonly { intent: Address; fundedByWorker?: string }[]) => Object.fromEntries(records.map((r) => [r.intent, r.fundedByWorker]));
 
 describe("reputation that counts each release once", () => {
-  it("adds nothing for repeated self-opened announcements after a release", async () => {
-    const { client, transport, fresh, job, selfOpened } = await setup();
+  it("adds nothing for repeated announcements of the same work on one escrow", async () => {
+    const { client, transport, fresh, escrow, release, job } = await setup();
     const [worker, honest, owner, judge] = await Promise.all([fresh(), fresh(), fresh(), fresh()]);
     const sha256 = "a1".repeat(32);
-    const intent = await job(owner, judge, worker, sha256);
-    await job(owner, judge, honest, "b2".repeat(32));
-    const once = await client.reputation(worker.address);
-    const trusted = (await trustOf(transport, owner.address, worker.address)).score;
-    expect(once).toMatchObject({ complete: true, announced: 1, paid: 1, payers: 1 });
-    expect(trusted).toBeCloseTo((RESTART * (1 - RESTART)) / 2, 12);
-    for (let i = 0; i < 3; i++) {
-      await selfOpened(worker, judge.address, intent, sha256);
+    const { nonce, intent } = await escrow(owner, judge);
+    const first = await announced(client, worker, intent, sha256);
+    for (const name of ["again", "more", "most"]) {
+      await announced(client, worker, intent, sha256, workUrl(name));
     }
-    const again = await client.reputation(worker.address);
-    expect(again).toMatchObject({ complete: true, announced: 1, paid: 1, payers: 1, earned: once.earned, backed: once.backed, backedSol: once.backedSol });
-    expect(again.records.map((r) => [r.announced, r.outcome])).toEqual([[once.records[0]?.announced, "paid"]]);
-    expect((await trustOf(transport, owner.address, worker.address)).score).toBeCloseTo(trusted, 12);
-  });
-
-  it("does not count an announcement that landed after the release", async () => {
-    const { w, client, fresh, escrow, release, announce } = await setup();
-    const [worker, owner, judge] = await Promise.all([fresh(), fresh(), fresh()]);
-    const sha256 = "c3".repeat(32);
-    const same = await escrow(owner, judge);
-    await release(owner, judge, worker, same.nonce, same.intent, sha256);
-    await announce(worker, judge.address, same.intent, sha256, await deliverySalt(worker, same.intent, sha256));
-    const later = await escrow(owner, judge);
-    await release(owner, judge, worker, later.nonce, later.intent, sha256);
-    w.chain.svm.warpToSlot(w.chain.svm.getClock().slot + 1n);
-    await announce(worker, judge.address, later.intent, sha256, await deliverySalt(worker, later.intent, sha256));
+    await release(owner, judge, nonce, first);
+    await job(owner, judge, honest, "b2".repeat(32));
     const rep = await client.reputation(worker.address);
-    expect(rep).toMatchObject({ complete: true, announced: 2, paid: 0, earned: [], backedSol: "0" });
-    expect(rep.records.map((r) => r.outcome)).toEqual(["paid-other", "paid-other"]);
+    expect(rep).toMatchObject({ complete: true, announced: 1, paid: 1, payers: 1 });
+    expect(rep.records.map((r) => [r.announcement, r.outcome])).toEqual([[first.announcement, "paid"]]);
+    expect((await trustOf(transport, owner.address, worker.address)).score).toBeCloseTo((RESTART * (1 - RESTART)) / 2, 12);
   });
-
-  it("says it is incomplete when a refutation read fails", async () => {
-    const { transport, fresh, job, selfOpened } = await setup();
+  it("does not count work a release paid through another wallet's announcement", async () => {
+    const { client, fresh, escrow, release } = await setup();
+    const [worker, other, owner, judge] = await Promise.all([fresh(), fresh(), fresh(), fresh()]);
+    const sha256 = "c3".repeat(32);
+    const { nonce, intent } = await escrow(owner, judge);
+    await announced(client, worker, intent, sha256);
+    await release(owner, judge, nonce, await announced(client, other, intent, sha256));
+    const rep = await client.reputation(worker.address);
+    expect(rep).toMatchObject({ complete: true, announced: 1, paid: 0, earned: [], backedSol: "0" });
+    expect(rep.records.map((r) => r.outcome)).toEqual(["paid-other"]);
+  });
+  it("says it is incomplete when the refutations cannot be read", async () => {
+    const { transport, fresh, job } = await setup();
     const [worker, owner, judge] = await Promise.all([fresh(), fresh(), fresh()]);
-    const sha256 = "d4".repeat(32);
-    const intent = await job(owner, judge, worker, sha256);
-    await selfOpened(worker, judge.address, intent, sha256);
+    await job(owner, judge, worker, "d4".repeat(32));
     expect(await reputationOf(transport, worker.address)).toMatchObject({ complete: true, paid: 1 });
-    const failing: Transport = {
-      ...transport,
-      transactionOf: async () => {
-        throw new Error("rpc failed");
-      },
-    };
-    expect(await reputationOf(failing, worker.address)).toMatchObject({ complete: false, paid: 1 });
+    const { engineAccounts: _, ...blind } = transport;
+    expect(await reputationOf(blind, worker.address)).toMatchObject({ complete: false, paid: 1 });
   });
-
   it("counts a refuted release as refuted, never as funded by the worker", async () => {
-    const { w, client, fresh, escrow, release } = await setup();
+    const { client, fresh, escrow, release } = await setup();
     const [first, later, owner, judge] = await Promise.all([fresh(), fresh(), fresh(), fresh()]);
     const sha256 = "e5".repeat(32);
     const { nonce, intent } = await escrow(owner, judge);
-    const before = await client.deliver({ worker: first, intent, sha256, url: WORK_URL });
-    w.chain.svm.warpToSlot(w.chain.svm.getClock().slot + 1n);
-    await client.deliver({ worker: later, intent, sha256, url: WORK_URL });
-    await release(owner, judge, later, nonce, intent, sha256);
-    await client.openDelivery({ worker: first, intent, attestor: judge.address, sha256, announcement: before });
+    const before = await announced(client, first, intent, sha256);
+    const paid = await announced(client, later, intent, sha256);
+    await release(owner, judge, nonce, paid);
+    await client.refute({ worker: first, earlier: before.announcement, paid: paid.announcement, sha256, url: workUrl() });
     const rep = await client.reputation(later.address);
     expect(rep).toMatchObject({ paid: 0, refuted: 1, fundedByWorker: 0, fundingUnknown: 0 });
     expect(marks(rep.records)).toEqual({ [intent]: "no" });
@@ -289,48 +254,28 @@ describe("reputation reading every way history can hide", () => {
     expect(rep.records[0]?.earned).toBeGreaterThan(0n);
   });
 
-  it("looks for a buried release in at most two wallets its first announcement notified, and only at release memos", async () => {
+  it("looks for a buried release only through the worker's own announcements", async () => {
     const { client, transport, fresh, escrow, release, pad } = await setup();
     const [worker, owner, judge, padder] = await Promise.all([fresh(), fresh(), fresh(), fresh()]);
-    const busy = await Promise.all(Array.from({ length: 5 }, () => fresh()));
-    const padding = new Set<string>();
-    for (const wallet of busy) {
-      for (let i = 0; i < 3; i++) {
-        padding.add(await transport.send([getTransferSolInstruction({ source: padder, destination: wallet.address, amount: 1n })], padder));
-      }
-    }
     const sha256 = "9a".repeat(32);
     const { nonce, intent } = await escrow(owner, judge);
-    const salt = await deliverySalt(worker, intent, sha256);
-    const blob = await sealDelivery({ salt, url: WORK_URL }, [judge.address], intent);
-    const memo = deliveryMemo({ intent, commitment: commitmentOf(intent, worker.address, salt, sha256), check: saltCheckOf(salt), blob });
-    const notices = [...busy.map(({ address }) => address), judge.address].map((destination) => getTransferSolInstruction({ source: worker, destination, amount: 0n }));
-    await transport.send([memoInstruction(worker, memo), ...notices], worker);
-    await release(owner, judge, worker, nonce, intent, sha256);
+    const delivered = await announced(client, worker, intent, sha256);
+    await release(owner, judge, nonce, delivered);
     await pad(padder, intent, INTENT_HISTORY_PAGES + 2);
-    expect(await client.reputation(worker.address)).toMatchObject({ announced: 1 });
     const listed = new Set<Address>();
-    const fetched: string[] = [];
     const list = transport.signaturesOf as NonNullable<Transport["signaturesOf"]>;
-    const fetch = transport.transactionsOf as NonNullable<Transport["transactionsOf"]>;
     const counting: Transport = {
       ...transport,
       signaturesOf: async (of, limit, before) => {
         listed.add(of);
         return list(of, limit, before);
       },
-      transactionsOf: async (wanted) => {
-        fetched.push(...wanted.map(({ signature }) => signature));
-        return fetch(wanted);
-      },
     };
     const rep = await reputationOf(counting, worker.address, { history: 1 });
-    expect(rep).toMatchObject({ complete: false, paid: 0 });
-    expect(busy.filter(({ address }) => listed.has(address))).toHaveLength(NOTIFIED_WALLETS);
+    expect(rep).toMatchObject({ complete: false, paid: 1 });
+    expect(listed.has(delivered.announcement)).toBe(true);
     expect(listed.has(judge.address)).toBe(false);
-    expect(fetched.filter((signature) => padding.has(signature))).toEqual([]);
   });
-
   it("reads on past a short page of signatures in the middle of a history", async () => {
     const { transport, fresh, job, pad } = await setup();
     const [worker, owner, judge, padder] = await Promise.all([fresh(), fresh(), fresh(), fresh()]);

@@ -122,7 +122,9 @@ for (const params of [limit, auction]) {
 
 An `AttestedResult` intent holds payment until its judge signs a result. `specHash` pins the spec the judge checks, and `judgeFee` pays the judge out of the escrow.
 
-`settleProof` is the judge's call: it pays the worker's wallet `payTo`. Before sending, it refuses an expired escrow (`EscrowExpired`), a `payTo` owned by a program (`PayToNotWallet`), a `payTo` whose token account moved (`PayeeMoved`) and an escrow another worker has claimed (`NotSettleable`). Here your wallet pays the fee, so the new judge key needs no SOL. The judge keeps its 64 key bytes, because it opens what workers seal to it.
+A worker announces its work with `announce`. `settleProof` is the judge's call: it pays the worker that made the announcement it names, given its opening, the work's sha256 and the announcement's salt. Before sending, it refuses an expired escrow (`EscrowExpired`), a worker owned by a program (`PayToNotWallet`), a worker whose token account moved (`PayeeMoved`), an opening that does not open the announcement and an escrow another worker has claimed (`NotSettleable`).
+
+Here your wallet pays for the worker's announcement and for the release, so neither new key needs SOL. The judge keeps its 64 key bytes, because it opens what workers seal to it.
 
 `history` returns an intent's events, newest first, also after it closes. An `IntentAttested` event's `net` is what the payee received. This prints `Filled`, then `IntentAttested` and the worker's pay in SOL.
 
@@ -137,7 +139,10 @@ const specHash = new Uint8Array(createHash("sha256").update("the acceptance spec
 const pay = parseAmount("0.01", sell.decimals);
 const work = { kind: Kind.AttestedResult, amountIn: pay, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash, judgeFee: pay / 10n } as const;
 const job = await client.createIntent({ ...order, params: work });
-await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: job.nonce, payTo: worker.address, result: 1n });
+const workSha256 = createHash("sha256").update("the work behind the proof").digest("hex");
+const made = await client.announce({ worker, payer: signer, intent: job.intent, sha256: workSha256, url: "https://example.org/proof.tar" });
+const opening = { sha256: workSha256, salt: made.salt };
+await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: job.nonce, announcement: made.announcement, opening, result: 1n });
 console.log(statusName((await client.intent(signer.address, job.nonce))?.intent.status ?? -1));
 const paid = eventNamed(await client.history(job.intent), "IntentAttested");
 console.log(paid?.name);
@@ -167,7 +172,7 @@ The engine has no refusal call: a judge that rejects the work sends nothing, and
 ```ts
 const refused = await client.createIntent({ ...order, params: work });
 await client.cancel(signer, refused.nonce);
-const late = await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: refused.nonce, payTo: worker.address, result: 1n }).catch((error: unknown) => error);
+const late = await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: refused.nonce, announcement: made.announcement, opening, result: 1n }).catch((error: unknown) => error);
 console.log(statusName((await client.intent(signer.address, refused.nonce))?.intent.status ?? -1), (late as Error).name);
 await client.unwrap(signer);
 ```
@@ -207,36 +212,33 @@ await client.unwrap(signer);
 - `spec` fetches that url, following no redirect and reading at most 1048576 bytes, and says whether it `matches` the committed hash. It never runs the text.
 - `spec` refuses a url whose host resolves to a private, link-local or loopback address on every cluster, allowing loopback only when the RPC url is loopback, and reads only a spec memo the escrow's owner signed.
 - A `fetch` you pass to `createClient` is handed the checked `addresses` of the host and must connect only to them.
-- `deliver` announces a worker's work: a memo with the intent, a commitment that binds the work's sha256 to the worker's wallet and a salt, a check of that salt, and the salt and url sealed to the judge or to each committee member, plus a 0-lamport transfer to the judge.
-- The salt comes from the worker's own signature over the intent and the sha256, so only its key derives it. `deliver` refuses a signer that cannot sign messages, such as a Ledger, with `NoMessageSigner`; `saltSignature` passes a signature made elsewhere, which must verify for the worker (`BadSaltSignature`).
-- `deliveryRecord` lists the announcements to a judge, newest first, reading at most 100 pages of 1000 transactions. With the judge's 64-byte `keypair` it opens each sealed salt and url. Decide whom to pay only when its `complete` is `true`.
-- A transport you pass to `createClient` needs `signaturesOf`, `transactionsOf` and `firstAvailableSlot` for a complete record.
+- `announce` records a worker's delivery on chain: an announcement account with a commitment that binds the work's sha256 to the worker's wallet and a salt, and the salt and url sealed to the judge's published encryption key, to the key derived from its wallet when it publishes none, or to each committee member's key.
+- `announce` syncs a committee's keys first when its snapshot does not match its members' published keys, and announcing the same work and url again returns the same announcement without sending.
+- The salt and the sealing keys come from the worker's own signature over the intent and the sha256, so only its key derives them. `announce` refuses a signer that cannot sign messages, such as a Ledger, with `NoMessageSigner`; such a worker passes `secret`, 32 bytes of its own that it keeps, or `saltSignature`, a signature made elsewhere, which must verify for the worker (`BadSaltSignature`).
+- `announce` refuses a url longer than its transaction can carry with `UrlTooLong` before sending.
+- `announcements` lists an escrow's announcements in seq order from accounts alone, never from transaction history, and says whether the list is `complete`: every seq from 1 to the last one present.
+- `firstOpening` returns the first announcement that opens to the checked sha256 with the keys it is given, and refuses with `FirstOpeningRefused` while the list is incomplete, an earlier announcement is sealed to a key it was not given or that does not open it, or another worker holds the claim.
+- A transport you pass to `createClient` needs `engineAccounts` to list announcements.
 
-Here your wallet plays the worker, and the judge pays the earliest wallet that announced the hash it checked. This prints `true true` twice.
+Here your wallet plays the worker, and the judge pays the first announcement that opens to the hash it checked. This prints `true true` twice.
 
 ```ts
-import { firstDelivery } from "@intent-engine/client";
-
 const specUrl = "https://raw.githubusercontent.com/MerlijnW70/solive/3aad6ee86067e10695d44e47fbc5ed67535a5cfb/SECURITY.md";
 const spec = new Uint8Array(createHash("sha256").update(new Uint8Array(await (await fetch(specUrl)).arrayBuffer())).digest());
 const posted = await client.createIntent({ ...order, params: { ...work, specHash: spec }, specUrl });
 const listed = (await client.jobs({ attestor: judge.address })).find(({ intent }) => intent === posted.intent);
 console.log(listed?.specUrl === specUrl, (await client.spec(posted.intent))?.matches);
 const sha256 = createHash("sha256").update("the delivered work").digest("hex");
-await client.deliver({ worker: signer, intent: posted.intent, sha256, url: "https://example.org/work.tar" });
-const record = await client.deliveryRecord({ judge: judge.address, intent: posted.intent, keypair: judgeKeypair });
-if (!record.complete) {
-  throw new Error(`read ${record.pages} pages without reaching the escrow's creation; pass a higher pages`);
-}
-const delivery = firstDelivery(record.deliveries, sha256);
-console.log(delivery?.worker === signer.address, delivery?.sha256 === sha256);
-await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: posted.nonce, payTo: delivery!.worker, result: 1n, deliveredSha256: sha256, deliveredSalt: delivery!.salt });
+await client.announce({ worker: signer, intent: posted.intent, sha256, url: "https://example.org/work.tar" });
+const first = await client.firstOpening({ intent: posted.intent, sha256, keypair: judgeKeypair });
+console.log(first.worker === signer.address, first.sha256 === sha256);
+await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: posted.nonce, announcement: first.announcement, opening: first, result: 1n });
 await client.unwrap(signer);
 ```
 
-`firstDelivery(record.deliveries, sha256)` returns the earliest announcement whose opened salt opens its commitment to the checked hash, or `null`; the judge pays its announcer. `settleProof` takes `deliveredSha256` and `deliveredSalt` to record the paid work's hash and the payee's salt in the release, in the memo `intent-engine receipt` and `solive_wallet_receipt` read. [Judge work](judge.md) does all of this from the command line.
+`settleProof`, `settleCommittee` and `settleSplit` sign over the announcement and its opening and pay the announcing worker's token account; any wallet can send the signed release. `history` reads the paid work's sha256 and salt from the release itself.
 
-`judgeOpenings(record.deliveries, delivery)` lists the salts of the announcements before the payee's, in order, split into as many memos as needed, and `openingInstructions` publishes each. `openDelivery` publishes one announcer's own salt. `recordedStanding` reads a release as valid when the recorded salt opens an announcement by a wallet the release paid, and gives `refutedBy` when a published salt shows an earlier announcement of the same hash.
+`refute` lets an earlier worker record on chain that a later announcement of the same work was paid, `reclaim` closes every announcement of a worker that the program lets close now, rent back to whoever paid it, and `closeBook` closes an escrow's empty delivery book. [Judge work](judge.md) does all of this from the command line.
 
 ## Who can do what
 

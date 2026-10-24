@@ -12,6 +12,7 @@ export type {
   Announcement,
   CancelInput,
   ConnectOptions,
+  DeliveredWork,
   DeliveriesInput,
   DeliverWorkInput,
   HeldToken,
@@ -30,7 +31,7 @@ export type {
   WalletBalance,
 } from "./simple-types.js";
 export { ESCROW_EXPIRES_IN, PREVIEW_SIGNATURE, RECORD_TOKEN_NEEDED } from "./simple-orders.js";
-export { notFirstAnnouncer, nothingOpens, RELEASE_NEEDS_KEY_PAIR, recordIncomplete } from "./simple-work.js";
+export { notFirstAnnouncer, RELEASE_NEEDS_KEY_PAIR } from "./simple-work.js";
 export {
   type Cluster,
   CLUSTER_URLS,

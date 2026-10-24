@@ -1,7 +1,7 @@
 import type { Address, Instruction, Signature, TransactionSigner } from "@solana/kit";
 import type { Priority } from "./budget.js";
 import type { Client, WatchCallback, WatchOptions } from "./client-types.js";
-import type { DeliveryOpeners } from "./job-deliveries.js";
+import type { DeliveryOpeners } from "./first-opening.js";
 import type { Job } from "./jobs.js";
 import type { Cluster } from "./simple-tokens.js";
 import type { Transport } from "./transport.js";
@@ -14,6 +14,8 @@ export type ConnectOptions = ({ cluster: Cluster; url?: undefined } | { url: str
 };
 
 export type Sent = { signature: Signature; intent?: Address; nonce?: bigint; summary: string };
+
+export type DeliveredWork = { signature: Signature | null; announcement: Address; seq: bigint; summary: string };
 
 export type Preview = { summary: string; instructions: Instruction[]; intent?: Address; nonce?: bigint };
 
@@ -44,7 +46,7 @@ export type ReleaseInput = PreviewOption & { escrow: Address; to?: Address; deli
 
 export type DeliveriesInput = { escrow: Address; sha256?: string; keypair?: DeliveryOpeners };
 
-export type Announcement = { worker: Address; sha256: string | null; url: string | null; opened: boolean; signature: Signature };
+export type Announcement = { worker: Address; sha256: string | null; url: string | null; opened: boolean; announcement: Address; seq: bigint };
 
 export type ReceiptInput = { escrow: Address };
 
@@ -56,7 +58,7 @@ export type ReleaseReceipt = {
   payees: Address[];
   deliveredSha256: string | null;
   valid: boolean;
-  refutedBy: Signature | null;
+  refutedBy: Address | null;
   complete: boolean;
   summary: string;
 };
@@ -78,7 +80,7 @@ export type SimpleClient = {
   limit<I extends LimitInput>(input: I): Promise<Outcome<I>>;
   payForWork<I extends PayForWorkInput>(input: I): Promise<Outcome<I>>;
   findWork(filter?: { judge?: Address }): Promise<OpenWork[]>;
-  deliver<I extends DeliverWorkInput>(input: I): Promise<Outcome<I>>;
+  deliver<I extends DeliverWorkInput>(input: I): Promise<I extends { preview: true } ? Preview : DeliveredWork>;
   release<I extends ReleaseInput>(input: I): Promise<Outcome<I>>;
   deliveries(input: DeliveriesInput): Promise<Announcement[]>;
   receipt(input: ReceiptInput): Promise<ReleaseReceipt>;

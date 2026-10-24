@@ -91,6 +91,18 @@ export class VoteRejected extends Error {
   }
 }
 
+export class CosignRejected extends Error {
+  readonly wallet: Address;
+  readonly intent: Address;
+
+  constructor(wallet: Address, intent: Address) {
+    super(`the co-author ${wallet} gave no valid signature over the split release of ${intent}; nothing was sent`);
+    this.name = "CosignRejected";
+    this.wallet = wallet;
+    this.intent = intent;
+  }
+}
+
 export class CommitteeNeeded extends Error {
   readonly attestor: Address;
   readonly escrow: bigint;

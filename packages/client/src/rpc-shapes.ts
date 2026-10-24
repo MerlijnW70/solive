@@ -14,7 +14,9 @@ export type ProgramAccount = { address: Address; data: Uint8Array };
 
 export type EngineAccount = ProgramAccount & { lamports: bigint };
 
-export type EngineAccountFilter = { discriminator: ReadonlyUint8Array; dataSize?: number };
+export type AccountMatch = { offset: number; address: Address };
+
+export type EngineAccountFilter = { discriminator: ReadonlyUint8Array; dataSize?: number; match?: readonly AccountMatch[] };
 
 export type TokenHolding = { account: Address; mint: Address; owner?: Address };
 

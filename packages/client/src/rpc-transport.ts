@@ -19,21 +19,43 @@ import {
 import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { confirmSent, type SignatureWatch } from "./confirmation.js";
 import { BlockhashExpired, patiently, staleBlockhash } from "./rpc-retry.js";
-import type { AccountView, AtLeast, EngineAccountFilter, EngineTransaction, FinalizedBlock, ListedSignature, RawAccount, RpcLike, SignatureLanding, Status, Transport } from "./rpc-shapes.js";
+import type {
+  AccountView,
+  AtLeast,
+  EngineAccountFilter,
+  EngineTransaction,
+  FinalizedBlock,
+  ListedSignature,
+  ProgramEntry,
+  RawAccount,
+  RpcLike,
+  SignatureLanding,
+  Status,
+  Transport,
+} from "./rpc-shapes.js";
 import { SYSTEM_PROGRAM_ADDRESS, TOKEN_PROGRAMS } from "./accounts.js";
 import { holdingsOf, keysAt, MEMO_PROGRAM_ADDRESS, signersAmong, solTransfersOf } from "./transaction-keys.js";
 
 const INTENT_OWNER_OFFSET = 8n;
 
-function accountFilters(filter?: EngineAccountFilter) {
+type ProgramFilter = { dataSize: bigint } | { memcmp: { offset: bigint; bytes: string; encoding: "base58" } };
+
+function accountFilters(filter?: EngineAccountFilter): ProgramFilter[] {
   if (filter === undefined) {
     return [];
   }
   return [
     ...(filter.dataSize === undefined ? [] : [{ dataSize: BigInt(filter.dataSize) }]),
     { memcmp: { offset: 0n, bytes: getBase58Decoder().decode(filter.discriminator), encoding: "base58" as const } },
+    ...(filter.match ?? []).map(({ offset, address }) => ({ memcmp: { offset: BigInt(offset), bytes: address as string, encoding: "base58" as const } })),
   ];
 }
+
+const decodedEntry = ({ pubkey, account }: ProgramEntry) => ({
+  address: pubkey,
+  data: new Uint8Array(Buffer.from(account.data[0], "base64")),
+  lamports: account.lamports ?? 0n,
+});
 
 const withoutMark = ({ complete: _, ...found }: EngineTransaction & { complete: boolean }): EngineTransaction => found;
 
@@ -206,6 +228,26 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       memo: entry.memo ?? null,
     }));
   };
+  const programAccounts = (filters: readonly ProgramFilter[], least: AtLeast, withContext: boolean, onSlot?: (slot: bigint) => void) =>
+    patiently(async () => {
+      const response = await rpc
+        .getProgramAccounts(INTENT_ENGINE_PROGRAM_ADDRESS, {
+          encoding: "base64",
+          commitment: "confirmed",
+          filters,
+          ...least,
+          ...(withContext ? { withContext: true as const } : {}),
+        })
+        .send();
+      if (!("context" in response)) {
+        return response;
+      }
+      if (least.minContextSlot !== undefined && response.context.slot < least.minContextSlot) {
+        throw new Error(`Minimum context slot has not been reached: the node read at slot ${response.context.slot}, below ${least.minContextSlot}`);
+      }
+      onSlot?.(response.context.slot);
+      return response.value;
+    }, wait);
   return {
     async getAccount(address) {
       const { value } = await patiently(() => rpc.getAccountInfo(address, { encoding: "base64", ...atLeast() }).send(), wait);
@@ -307,53 +349,18 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     ...(firstBlock === undefined ? {} : { firstAvailableSlot: () => patiently(() => firstBlock().send(), wait) }),
     ...(finalizedBlock === undefined ? {} : { finalizedBlock }),
     async engineAccounts(filter) {
-      const filters = accountFilters(filter);
-      const found = await patiently(
-        () => rpc.getProgramAccounts(INTENT_ENGINE_PROGRAM_ADDRESS, { encoding: "base64", commitment: "confirmed", filters }).send(),
-        wait,
-      );
-      const entries = "context" in found ? found.value : found;
-      return entries.map(({ pubkey, account }) => ({
-        address: pubkey,
-        data: new Uint8Array(Buffer.from(account.data[0], "base64")),
-        lamports: account.lamports ?? 0n,
-      }));
+      return (await programAccounts(accountFilters(filter), atLeast(), true)).map(decodedEntry);
     },
     async intents(owner, read) {
-      const least = atLeast(read?.minContextSlot);
-      const found = await patiently(async () => {
-        const response = await rpc
-          .getProgramAccounts(INTENT_ENGINE_PROGRAM_ADDRESS, {
-            encoding: "base64",
-            commitment: "confirmed",
-            filters: [
-              { dataSize: BigInt(getIntentSize()) },
-              {
-                memcmp: {
-                  offset: 0n,
-                  bytes: getBase58Decoder().decode(getIntentDiscriminatorBytes()),
-                  encoding: "base58",
-                },
-              },
-              ...(owner === undefined
-                ? []
-                : [{ memcmp: { offset: INTENT_OWNER_OFFSET, bytes: owner as string, encoding: "base58" as const } }]),
-            ],
-            ...least,
-            ...(read === undefined ? {} : { withContext: true as const }),
-          })
-          .send();
-        if (!("context" in response)) {
-          return response;
-        }
-        if (least.minContextSlot !== undefined && response.context.slot < least.minContextSlot) {
-          throw new Error(
-            `Minimum context slot has not been reached: the node read at slot ${response.context.slot}, below ${least.minContextSlot}`,
-          );
-        }
-        read?.onSlot?.(response.context.slot);
-        return response.value;
-      }, wait);
+      const found = await programAccounts(
+        [
+          ...accountFilters({ discriminator: getIntentDiscriminatorBytes(), dataSize: getIntentSize() }),
+          ...(owner === undefined ? [] : [{ memcmp: { offset: INTENT_OWNER_OFFSET, bytes: owner as string, encoding: "base58" as const } }]),
+        ],
+        atLeast(read?.minContextSlot),
+        read !== undefined,
+        read?.onSlot,
+      );
       return found.map(({ pubkey, account }) => ({
         address: pubkey,
         data: new Uint8Array(Buffer.from(account.data[0], "base64")),

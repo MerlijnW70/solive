@@ -4,7 +4,12 @@ import type { Priority } from "./budget.js";
 import type { ClaimsView } from "./client-claims.js";
 import type { FeedbackInput, Reputation, ReputationOptions } from "./reputation.js";
 import type { EngineError } from "./errors.js";
-import type { DeliverInput, Delivery, DeliveryOpeners, DeliveryRecord, Job, SelfOpeningInput, Spec } from "./jobs.js";
+import type { AnnounceInput, Announced, AnnouncementPlan } from "./announce.js";
+import type { AnnouncementList, AnnouncementView } from "./announcement-reads.js";
+import type { ReclaimInput, Reclaimed, RefuteInput, Refuted } from "./announcement-sends.js";
+import type { SettleSplitInput, SplitBallot, SplitBallotInput } from "./client-split.js";
+import type { FirstOpening, FirstOpeningInput } from "./first-opening.js";
+import type { Job, Spec } from "./jobs.js";
 import type { CheckedFetch } from "./pinned-fetch.js";
 import type { Notifications, Simulation, Transport } from "./transport.js";
 
@@ -44,16 +49,16 @@ export type CreatedIntent = { signature: Signature; intent: Address; nonce: bigi
 
 export type MessageSigner = TransactionSigner & MessagePartialSigner;
 
+export type ReleaseOpening = { sha256: string; salt: string };
+
 export type SettleProofInput = {
   judge: MessageSigner;
   owner: Address;
   nonce: bigint;
-  payTo: Address;
+  announcement: Address;
+  opening: ReleaseOpening;
   result: bigint;
   payer?: TransactionSigner;
-  feePayer?: TransactionSigner;
-  deliveredSha256?: string;
-  deliveredSalt?: string;
 };
 
 export type CommitteeView = CommitteeTerms & { address: Address; id: Uint8Array; createdAt: bigint };
@@ -65,7 +70,8 @@ export type CreatedCommittee = { committee: Address; signature: Signature | null
 export type BallotInput = {
   owner: Address;
   nonce: bigint;
-  payTo: Address;
+  announcement: Address;
+  opening: ReleaseOpening;
   result: bigint;
 };
 
@@ -88,8 +94,6 @@ export type SettleCommitteeInput = BallotInput & {
   solver: TransactionSigner;
   votes: readonly CommitteeVote[];
   payer?: TransactionSigner;
-  deliveredSha256?: string;
-  deliveredSalt?: string;
 };
 
 export type CommitteeRelease = {
@@ -164,10 +168,17 @@ export type Client = {
   balances(owner: Address, mints: readonly Address[]): Promise<Balances>;
   jobs(filter?: { attestor?: Address; mint?: Address; minSells?: bigint }): Promise<Job[]>;
   spec(intent: Address, keypair?: Uint8Array): Promise<Spec | null>;
-  deliver(input: DeliverInput): Promise<Signature>;
-  deliveries(filter: { judge: Address; intent?: Address }): Promise<Delivery[]>;
-  deliveryRecord(filter: { judge: Address; intent?: Address; pages?: number; keypair?: DeliveryOpeners }): Promise<DeliveryRecord>;
-  openDelivery(input: SelfOpeningInput): Promise<Signature>;
+  announce(input: AnnounceInput): Promise<Announced>;
+  prepareAnnouncement(input: AnnounceInput): Promise<AnnouncementPlan>;
+  announcements(intent: Address): Promise<AnnouncementList>;
+  announcementsTo(attestor: Address): Promise<AnnouncementView[]>;
+  announcementsBy(worker: Address): Promise<AnnouncementView[]>;
+  firstOpening(input: FirstOpeningInput): Promise<FirstOpening>;
+  splitBallot(input: SplitBallotInput): Promise<SplitBallot>;
+  settleSplit(input: SettleSplitInput): Promise<Signature>;
+  refute(input: RefuteInput): Promise<Refuted>;
+  reclaim(input: ReclaimInput): Promise<Reclaimed>;
+  closeBook(intent: Address, by: TransactionSigner): Promise<Signature>;
 };
 
 export const SPEC_URL_NEEDS_PROOF = "specUrl needs an AttestedResult intent with a non-zero specHash";

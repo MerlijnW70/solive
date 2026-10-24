@@ -1,23 +1,12 @@
-import { createHash, generateKeyPairSync } from "node:crypto";
-import { type Address, createKeyPairSignerFromBytes, type KeyPairSigner, lamports } from "@solana/kit";
+import type { Address, KeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { buildCreateProfile, buildUpdateProfile, Kind, newEncryptionKeyFile, readEncryptionKeyFile } from "@intent-engine/core";
-import { createClient, deliveryInstructions, deliveryRecord, firstDelivery } from "../src/index.js";
+import { buildCreateProfile, buildUpdateProfile, delivery, Kind, newEncryptionKeyFile, readEncryptionKeyFile } from "@intent-engine/core";
+import { createClient, FirstOpeningRefused } from "../src/index.js";
 import { funded, world, type World } from "./svm.js";
+import { announced, keyed, LOCAL, sha, specHash, workUrl } from "./work.js";
 
-const LOCAL = "http://127.0.0.1:8899";
-const SPEC = new Uint8Array(createHash("sha256").update("the spec").digest());
-const WORK = createHash("sha256").update("the work").digest("hex");
-const WORK_URL = "https://example.org/work.tar";
+const WORK = sha("the work");
 const ENDPOINT = "https://" + "judge.example";
-
-async function keyed(w: World): Promise<{ signer: KeyPairSigner; keypair: Uint8Array }> {
-  const jwk = generateKeyPairSync("ed25519").privateKey.export({ format: "jwk" });
-  const keypair = Uint8Array.from([...Buffer.from(jwk.d ?? "", "base64url"), ...Buffer.from(jwk.x ?? "", "base64url")]);
-  const signer = await createKeyPairSignerFromBytes(keypair);
-  w.chain.svm.airdrop(signer.address, lamports(10_000_000_000n));
-  return { signer, keypair };
-}
 
 async function publish(w: World, wallet: KeyPairSigner, encryptionKey?: string): Promise<void> {
   const fields = { wallet, skills: ["judge"], endpoint: ENDPOINT, ...(encryptionKey === undefined ? {} : { encryptionKey }) };
@@ -27,77 +16,69 @@ async function publish(w: World, wallet: KeyPairSigner, encryptionKey?: string):
 
 async function escrowFor(w: World, attestor: Address) {
   const client = createClient({ url: LOCAL, transport: w.chain.transport });
-  const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor, specHash: SPEC, judgeFee: 0n } as const;
+  const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor, specHash: specHash("the spec"), judgeFee: 0n } as const;
   return { client, job: await client.createIntent({ signer: w.owner, inputMint: w.inputMint, outputMint: w.outputMint, params }) };
 }
 
+const maskOf = async (client: ReturnType<typeof createClient>, intent: Address) =>
+  (await client.announcements(intent)).announcements.map(({ blob }) => delivery.blobHead(blob).mask);
+
 describe("deliveries sealed to a profile's encryption key", () => {
-  it("seal to the judge's profile encryption key, which opens the announcement while its wallet key does not, and pay its worker", async () => {
+  it("refuse while an earlier announcement is sealed to the judge's published key and no key is given, and pay once it is", async () => {
     const w = await world();
     const judge = await keyed(w);
     const file = await newEncryptionKeyFile();
     const key = await readEncryptionKeyFile(file.text);
     await publish(w, judge.signer, file.publicKey);
     const { client, job } = await escrowFor(w, judge.signer.address);
-    expect((await client.profile(judge.signer.address))?.encryptionKey).toBe(file.publicKey);
-    const worker = await funded(w.chain);
-    const plan = await deliveryInstructions(w.chain.transport, { worker, intent: job.intent, sha256: WORK, url: WORK_URL });
-    expect([plan.sealedTo, plan.sealedKeys]).toEqual([[judge.signer.address], ["profile"]]);
-    await w.chain.transport.send(plan.instructions, worker);
-    const opened = await deliveryRecord(w.chain.transport, judge.signer.address, job.intent, undefined, key);
-    expect(opened.deliveries).toMatchObject([{ worker: worker.address, url: WORK_URL, salt: plan.salt }]);
-    const walletOnly = await deliveryRecord(w.chain.transport, judge.signer.address, job.intent, undefined, judge.keypair);
-    expect(walletOnly.deliveries).toMatchObject([{ worker: worker.address, url: "", salt: "" }]);
-    const both = await client.deliveryRecord({ judge: judge.signer.address, intent: job.intent, keypair: [judge.keypair, key] });
-    const first = firstDelivery(both.deliveries, WORK);
-    expect(first?.worker).toBe(worker.address);
-    const settled = { judge: judge.signer, owner: w.owner.address, nonce: job.nonce, payTo: worker.address, result: 1n, deliveredSha256: WORK, deliveredSalt: plan.salt };
-    await expect(client.settleProof(settled)).resolves.toBeTypeOf("string");
+    const [copier, worker] = [await funded(w.chain), await funded(w.chain)];
+    await announced(client, copier, job.intent, sha("not the work"));
+    const delivered = await announced(client, worker, job.intent, WORK);
+    expect(await maskOf(client, job.intent)).toEqual([1, 1]);
+    for (const keypair of [undefined, judge.keypair]) {
+      const refused = await client.firstOpening({ intent: job.intent, sha256: WORK, keypair }).catch((error: unknown) => error);
+      expect(refused).toBeInstanceOf(FirstOpeningRefused);
+      expect(refused).toMatchObject({ reason: "key-not-given", seq: 1n, worker: copier.address, sealedTo: [{ wallet: judge.signer.address, kind: "profile", published: true }] });
+    }
+    const first = await client.firstOpening({ intent: job.intent, sha256: WORK, keypair: key });
+    expect(first).toMatchObject({ announcement: delivered.announcement, seq: 2n, worker: worker.address, url: workUrl() });
+    const both = await client.firstOpening({ intent: job.intent, sha256: WORK, keypair: [judge.keypair, key] });
+    expect(both.announcement).toBe(delivered.announcement);
+    await expect(client.settleProof({ judge: judge.signer, owner: w.owner.address, nonce: job.nonce, ...delivered, result: 1n })).resolves.toBeTypeOf("string");
+  });
+
+  it("refuse when an earlier announcement is sealed to a key the judge rotated away from and not given, instead of skipping it", async () => {
+    const w = await world();
+    const judge = await keyed(w);
+    const [old, rotated] = [await newEncryptionKeyFile(), await newEncryptionKeyFile()];
+    await publish(w, judge.signer, old.publicKey);
+    const { client, job } = await escrowFor(w, judge.signer.address);
+    const [early, late] = [await funded(w.chain), await funded(w.chain)];
+    const first = await announced(client, early, job.intent, WORK);
+    await publish(w, judge.signer, rotated.publicKey);
+    await announced(client, late, job.intent, WORK, workUrl("copied.tar"));
+    const current = await readEncryptionKeyFile(rotated.text);
+    const refused = await client.firstOpening({ intent: job.intent, sha256: WORK, keypair: current }).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(FirstOpeningRefused);
+    expect(refused).toMatchObject({ reason: "key-not-given", announcement: first.announcement, seq: 1n, worker: early.address, sealedTo: [{ kind: "profile", published: false }] });
+    expect((refused as Error).message).toContain("an earlier encryption key");
+    const opened = await client.firstOpening({ intent: job.intent, sha256: WORK, keypair: [current, await readEncryptionKeyFile(old.text)] });
+    expect(opened).toMatchObject({ announcement: first.announcement, worker: early.address });
   });
 
   it("fall back to the key derived from the wallet without a profile, or with a profile that publishes no key or removed it", async () => {
     const w = await world();
     const judge = await keyed(w);
-    const { job } = await escrowFor(w, judge.signer.address);
+    const { client, job } = await escrowFor(w, judge.signer.address);
     const worker = await funded(w.chain);
-    const sealedWith = async () => (await deliveryInstructions(w.chain.transport, { worker, intent: job.intent, sha256: WORK, url: WORK_URL })).sealedKeys;
-    expect(await sealedWith()).toEqual(["wallet"]);
+    const announce = async (name: string) => announced(client, worker, job.intent, WORK, workUrl(name));
+    await announce("a");
     await publish(w, judge.signer);
-    expect(await sealedWith()).toEqual(["wallet"]);
+    await announce("b");
     await publish(w, judge.signer, (await newEncryptionKeyFile()).publicKey);
-    expect(await sealedWith()).toEqual(["profile"]);
+    await announce("c");
     await publish(w, judge.signer);
-    expect(await sealedWith()).toEqual(["wallet"]);
-    const plan = await deliveryInstructions(w.chain.transport, { worker, intent: job.intent, sha256: WORK, url: WORK_URL });
-    await w.chain.transport.send(plan.instructions, worker);
-    const opened = await deliveryRecord(w.chain.transport, judge.signer.address, job.intent, undefined, judge.keypair);
-    expect(opened.deliveries).toMatchObject([{ worker: worker.address, url: WORK_URL, salt: plan.salt }]);
-  });
-
-  it("seal to each committee member's own key: the profile key of a member that publishes one, the wallet key of the others", async () => {
-    const w = await world();
-    const members = await Promise.all(Array.from({ length: 3 }, () => keyed(w)));
-    const payer = await funded(w.chain);
-    const client = createClient({ url: LOCAL, transport: w.chain.transport });
-    const { committee } = await client.createCommittee({ payer, members: members.map((m) => m.signer.address), threshold: 2, feeWallet: payer.address });
-    const [onDevice, ...others] = members;
-    if (onDevice === undefined) {
-      throw new Error("no member");
-    }
-    const file = await newEncryptionKeyFile();
-    await publish(w, onDevice.signer, file.publicKey);
-    const { job } = await escrowFor(w, committee);
-    const worker = await funded(w.chain);
-    const plan = await deliveryInstructions(w.chain.transport, { worker, intent: job.intent, sha256: WORK, url: WORK_URL });
-    expect(plan.sealedTo.map((member, at) => [member, plan.sealedKeys[at]])).toEqual(
-      plan.sealedTo.map((member) => [member, member === onDevice.signer.address ? "profile" : "wallet"]),
-    );
-    await w.chain.transport.send(plan.instructions, worker);
-    for (const opener of [await readEncryptionKeyFile(file.text), ...others.map((m) => m.keypair)]) {
-      const opened = await deliveryRecord(w.chain.transport, committee, job.intent, undefined, opener);
-      expect(opened.deliveries).toMatchObject([{ worker: worker.address, url: WORK_URL, salt: plan.salt }]);
-    }
-    const closed = await deliveryRecord(w.chain.transport, committee, job.intent, undefined, onDevice.keypair);
-    expect(closed.deliveries).toMatchObject([{ url: "", salt: "" }]);
+    await announce("d");
+    expect(await maskOf(client, job.intent)).toEqual([0, 0, 1, 0]);
   });
 });

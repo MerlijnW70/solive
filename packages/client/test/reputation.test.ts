@@ -4,9 +4,10 @@ import { getTransferSolInstruction } from "@solana-program/system";
 import { getMintEncoder, getMintSize } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { feedbackMemo, findIntentPda, Kind, NATIVE_MINT, parseFeedbackMemo, PRODUCT_SLUG, signCommitteeVote, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { createClient, deliverySalt, memoInstruction, NotSettleable } from "../src/index.js";
+import { createClient, memoInstruction, NotSettleable } from "../src/index.js";
 import { svmTransport } from "../src/svm.js";
 import { world } from "./svm.js";
+import { announced } from "./work.js";
 
 const LOCAL = "http://127.0.0.1:8899";
 const SOL = 1_000_000_000n;
@@ -43,11 +44,11 @@ async function setup() {
     const [intent] = await findIntentPda({ owner: owner.address, nonce });
     return { nonce, intent };
   };
-  const job = async (owner: KeyPairSigner, judge: KeyPairSigner, worker: KeyPairSigner, sha256: string, payTo: Address = worker.address) => {
+  const job = async (owner: KeyPairSigner, judge: KeyPairSigner, worker: KeyPairSigner, sha256: string, paid: KeyPairSigner = worker) => {
     const { nonce, intent } = await escrow(owner, judge.address);
-    await client.deliver({ worker, intent, sha256, url: "https://example.org/work" });
-    const deliveredSalt = await deliverySalt(worker, intent, sha256);
-    await client.settleProof({ judge, owner: owner.address, nonce, payTo, result: 1n, deliveredSha256: sha256, deliveredSalt });
+    const own = await announced(client, worker, intent, sha256);
+    const delivered = paid === worker ? own : await announced(client, paid, intent, sha256);
+    await client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n });
     return intent;
   };
   return { w, client, fresh, escrow, job, transport };
@@ -60,9 +61,9 @@ describe("reputation from verifiable history", () => {
     const [alice, bob, judge, other] = await Promise.all([fresh(), fresh(), fresh(), fresh()]);
     const first = await job(alice, judge, worker, "a1".repeat(32));
     await job(bob, judge, worker, "b2".repeat(32));
-    await job(alice, judge, worker, "c3".repeat(32), other.address);
+    await job(alice, judge, worker, "c3".repeat(32), other);
     const { intent: pending } = await escrow(bob, judge.address);
-    await client.deliver({ worker, intent: pending, sha256: "d4".repeat(32), url: "https://example.org/work" });
+    await announced(client, worker, pending, "d4".repeat(32));
 
     await expect(client.feedback({ owner: bob, intent: first, score: 10 })).rejects.toThrow(NotSettleable);
     await client.feedback({ owner: alice, intent: first, score: 90 });
@@ -97,12 +98,12 @@ describe("reputation from verifiable history", () => {
     const run = async (members: KeyPairSigner[], sha256: string) => {
       const { committee } = await client.createCommittee({ payer: owner, members: members.map((m) => m.address), threshold: 2, feeWallet: owner.address });
       const { nonce, intent } = await escrow(owner, committee);
-      await client.deliver({ worker, intent, sha256, url: "https://example.org/work" });
-      const target = { owner: owner.address, nonce, payTo: worker.address, result: 1n };
+      const delivered = await announced(client, worker, intent, sha256);
+      const target = { owner: owner.address, nonce, ...delivered, result: 1n };
       const { digest, committee: ballot } = await client.committeeBallot(target);
       const votes = await Promise.all(members.slice(0, 2).map((m) => signCommitteeVote(m, digest, ballot.members)));
       const solver = members[0] as KeyPairSigner;
-      await client.settleCommittee({ ...target, solver, votes, deliveredSha256: sha256, deliveredSalt: await deliverySalt(worker, intent, sha256) });
+      await client.settleCommittee({ ...target, solver, votes });
     };
     await run([a, b], "1a".repeat(32));
     expect(await client.reputation(worker.address)).toMatchObject({ paid: 1, selfDealt: 0, committeeJudged: 1, judges: 1 });
@@ -118,15 +119,17 @@ describe("reputation from verifiable history", () => {
     expect(await pruned.reputation(worker.address)).toMatchObject({ complete: false, paid: 1, paidVerified: 0, fundingUnknown: 1 });
   });
 
-  it("counts no clear v1 announcement, even one a release paid", async () => {
+  it("counts no announcement made only in a memo, even for work a release paid to another wallet's announcement", async () => {
     const { client, fresh, escrow, transport } = await setup();
-    const [worker, owner, judge] = await Promise.all([fresh(), fresh(), fresh()]);
+    const [worker, owner, judge, other] = await Promise.all([fresh(), fresh(), fresh(), fresh()]);
     const sha256 = "4d".repeat(32);
     const { nonce, intent } = await escrow(owner, judge.address);
     const clear = `${PRODUCT_SLUG}-delivery:${intent}:${sha256}:` + "https://" + "example.org/work";
     await transport.send([memoInstruction(worker, clear), getTransferSolInstruction({ source: worker, destination: judge.address, amount: 0n })], worker);
-    await client.settleProof({ judge, owner: owner.address, nonce, payTo: worker.address, result: 1n, deliveredSha256: sha256 });
+    const delivered = await announced(client, other, intent, sha256);
+    await client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n });
     expect(await client.reputation(worker.address)).toMatchObject({ announced: 0, paid: 0, earned: [], records: [] });
+    expect(await client.reputation(other.address)).toMatchObject({ announced: 1, paid: 1 });
   });
 
   it("knows nothing about a wallet that announced nothing", async () => {

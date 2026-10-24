@@ -2,37 +2,16 @@ import { createHash } from "node:crypto";
 import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, none } from "@solana/kit";
 import { AccountState, getMintEncoder, getMintSize, getTokenEncoder, getTokenSize } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import {
-  findAssociatedTokenAddress,
-  findIntentPda,
-  INTENT_ENGINE_PROGRAM_ADDRESS,
-  IntentStatus,
-  Kind,
-  NATIVE_MINT,
-  parseReleaseMemo,
-  releaseMemo,
-  TOKEN_PROGRAM_ADDRESS,
-} from "@intent-engine/core";
-import {
-  createClient,
-  type EngineTransaction,
-  EscrowExpired,
-  followUpInstructions,
-  followUpMemo,
-  loadUser,
-  NotSettleable,
-  parseFollowUpMemo,
-  PayeeMoved,
-  PayToNotWallet,
-  recordedDelivery,
-  type Transport,
-} from "../src/index.js";
+import { findAssociatedTokenAddress, findIntentPda, IntentStatus, Kind, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { createClient, EscrowExpired, loadUser, NotSettleable, PayeeMoved, PayToNotWallet, type Transport } from "../src/index.js";
 import { svmTransport } from "../src/svm.js";
 import { FEE_BPS, NOW, world, type World } from "./svm.js";
+import { announced, sha } from "./work.js";
 
 const LOCAL = "http://127.0.0.1:8899";
 const SOL = 1_000_000_000n;
 const SPEC = new Uint8Array(createHash("sha256").update("the spec").digest());
+const WORK = sha("the delivered work");
 
 function nativeMint(w: World): void {
   const space = BigInt(getMintSize());
@@ -165,33 +144,34 @@ describe("one call per action", () => {
   async function escrowed(judge: KeyPairSigner, pay: bigint, judgeFee: bigint) {
     const context = await setup();
     const owner = await context.fresh();
-    const { nonce } = await context.client.createIntent({
+    const { nonce, intent } = await context.client.createIntent({
       signer: owner,
       params: proofOf(judge.address, pay, judgeFee),
       inputMint: NATIVE_MINT,
       outputMint: context.w.outputMint,
     });
-    return { ...context, owner, nonce };
+    const worker = await context.fresh(1n);
+    const delivered = await announced(context.client, worker, intent, WORK);
+    return { ...context, owner, nonce, intent, worker, delivered };
   }
 
   it("settles a proof as a separate judge, creating the worker's, treasury's and judge's accounts, with exact shares", async () => {
     const judge = await generateKeyPairSigner();
     const pay = 1_000_000n;
     const judgeFee = 100_000n;
-    const { w, client, owner, nonce, tokens } = await escrowed(judge, pay, judgeFee);
+    const { w, client, owner, nonce, tokens, worker, delivered } = await escrowed(judge, pay, judgeFee);
     w.chain.svm.airdrop(judge.address, lamports(SOL));
-    const worker = (await generateKeyPairSigner()).address;
-    for (const wallet of [worker, judge.address, w.feeRecipient.address]) {
+    for (const wallet of [worker.address, judge.address, w.feeRecipient.address]) {
       expect(await tokens(wallet)).toBeNull();
     }
     const ownerLamports = w.chain.svm.getBalance(owner.address);
 
-    await client.settleProof({ judge, owner: owner.address, nonce, payTo: worker, result: 2n });
+    await client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 2n });
     const fee = ((pay - judgeFee) * BigInt(FEE_BPS)) / 10_000n;
-    expect(await tokens(worker)).toBe(pay - judgeFee - fee);
+    expect(await tokens(worker.address)).toBe(pay - judgeFee - fee);
     expect(await tokens(judge.address)).toBe(judgeFee);
     expect(await tokens(w.feeRecipient.address)).toBe(fee);
-    const held = await Promise.all([worker, judge.address, w.feeRecipient.address].map((wallet) => tokens(wallet)));
+    const held = await Promise.all([worker.address, judge.address, w.feeRecipient.address].map((wallet) => tokens(wallet)));
     expect(held.reduce<bigint>((sum, amount) => sum + (amount ?? 0n), 0n)).toBe(pay);
     expect((await client.intent(owner.address, nonce))?.intent).toMatchObject({ status: IntentStatus.Filled, filled: pay });
     expect(w.chain.svm.getBalance(owner.address)).toBe(ownerLamports);
@@ -200,135 +180,87 @@ describe("one call per action", () => {
 
   it("lets another wallet pay the fee and rent so the judge needs no SOL", async () => {
     const judge = await generateKeyPairSigner();
-    const { client, owner, nonce, tokens, w } = await escrowed(judge, 2_000_000n, 0n);
-    const worker = (await generateKeyPairSigner()).address;
+    const { client, owner, nonce, tokens, w, worker, delivered } = await escrowed(judge, 2_000_000n, 0n);
 
-    await client.settleProof({ judge, owner: owner.address, nonce, payTo: worker, result: 1n, payer: owner });
+    await client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n, payer: owner });
     const fee = (2_000_000n * BigInt(FEE_BPS)) / 10_000n;
-    expect(await tokens(worker)).toBe(2_000_000n - fee);
+    expect(await tokens(worker.address)).toBe(2_000_000n - fee);
     expect(await tokens(judge.address)).toBeNull();
     expect(w.chain.svm.getBalance(judge.address) ?? 0n).toBe(0n);
   });
 
-  it("records the delivered work's sha256 in the settling transaction, with the memo the wallet release writes", async () => {
+  it("history reads the delivered work's sha256 and the payee's salt from the release's own DeliveryReleased event", async () => {
     const judge = await generateKeyPairSigner();
-    const { w, client, counted, owner, nonce, tokens } = await escrowed(judge, 1_000_000n, 0n);
+    const { client, owner, nonce, intent, delivered } = await escrowed(judge, 1_000_000n, 0n);
+    const signature = await client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n, payer: owner });
+    const events = await client.history(intent);
+    expect(events.find(({ name }) => name === "IntentAttested")).toMatchObject({ signature, deliveredSha256: WORK, deliveredSalt: delivered.opening.salt });
+    expect(events.find(({ name }) => name === "DeliveryReleased")).toMatchObject({ signature, fields: { announcement: delivered.announcement, seq: 1n } });
+  });
+
+  it("refuses an opening that does not open the announcement, an announcement of another escrow, and one already paid, and sends nothing", async () => {
+    const judge = await generateKeyPairSigner();
+    const { w, client, counted, owner, nonce, fresh, delivered } = await escrowed(judge, 1_000_000n, 0n);
     w.chain.svm.airdrop(judge.address, lamports(SOL));
-    const worker = (await generateKeyPairSigner()).address;
-    const work = "ab".repeat(32);
+    const other = await client.createIntent({ signer: owner, params: proofOf(judge.address, 10n, 0n), inputMint: NATIVE_MINT, outputMint: w.outputMint });
+    const elsewhere = await announced(client, await fresh(1n), other.intent, WORK);
+    const settle = (changed: Partial<typeof delivered>) => client.settleProof({ judge, owner: owner.address, nonce, ...delivered, ...changed, result: 1n });
     const sends = counted.sends;
-    await expect(client.settleProof({ judge, owner: owner.address, nonce, payTo: worker, result: 1n, deliveredSha256: "zz".repeat(32) })).rejects.toThrow(RangeError);
+    await expect(settle({ opening: { sha256: sha("not delivered"), salt: delivered.opening.salt } })).rejects.toThrow("which this salt does not open");
+    await expect(settle({ opening: { sha256: WORK, salt: "00".repeat(16) } })).rejects.toThrow(NotSettleable);
+    await expect(settle({ opening: { sha256: WORK, salt: "zz" } })).rejects.toThrow(RangeError);
+    await expect(settle({ announcement: elsewhere.announcement })).rejects.toThrow(`which belongs to ${other.intent}`);
+    await expect(settle({ announcement: owner.address })).rejects.toThrow(`has no announcement ${owner.address}`);
     expect(counted.sends).toBe(sends);
-
-    const signature = await client.settleProof({ judge, owner: owner.address, nonce, payTo: worker, result: 1n, deliveredSha256: work });
-    const [intent] = await findIntentPda({ owner: owner.address, nonce });
-    const [settled] = await client.transport.engineTransactions(1, intent);
-    expect(settled).toMatchObject({ signature, memos: [releaseMemo(work)] });
-    expect(settled?.memos?.map(parseReleaseMemo)).toEqual([work]);
-    expect(await tokens(worker)).toBeGreaterThan(0n);
+    await client.settleProof({ judge, owner: owner.address, nonce: other.nonce, ...elsewhere, result: 1n });
+    await expect(client.settleProof({ judge, owner: owner.address, nonce: other.nonce, ...elsewhere, result: 1n })).rejects.toThrow("is not open");
   });
 
-  it("history reads the delivered sha256 from a follow-up the judge signs after the release, and from no one else", async () => {
+  it("settleProof refuses a worker whose account a program owns, and a worker token account that moved", async () => {
     const judge = await generateKeyPairSigner();
-    const { w, client, owner, nonce } = await escrowed(judge, 1_000_000n, 0n);
+    const { w, client, counted, owner, nonce, tokens, worker, delivered } = await escrowed(judge, 1_000_000n, 0n);
     w.chain.svm.airdrop(judge.address, lamports(SOL));
-    const impostor = await generateKeyPairSigner();
-    w.chain.svm.airdrop(impostor.address, lamports(SOL));
-    const worker = (await generateKeyPairSigner()).address;
-    const work = "cd".repeat(32);
-    const signature = await client.settleProof({ judge, owner: owner.address, nonce, payTo: worker, result: 1n });
-    const [intent] = await findIntentPda({ owner: owner.address, nonce });
-    const released = async () => (await client.history(intent)).find(({ name }) => name === "IntentAttested");
-    expect(await released()).not.toHaveProperty("deliveredSha256");
-    expect(parseFollowUpMemo(followUpMemo(work, signature))).toEqual({ sha256: work, release: signature });
-    expect(parseReleaseMemo(followUpMemo(work, signature))).toBeNull();
-    await client.send(followUpInstructions(impostor, intent, "ef".repeat(32), signature), impostor);
-    expect(await released()).not.toHaveProperty("deliveredSha256");
-    await client.send(followUpInstructions(judge, intent, work, signature), judge);
-    expect(await released()).toMatchObject({ signature, deliveredSha256: work });
-  });
-
-  it("an inline release memo signed by someone else is ignored", async () => {
-    const judge = await generateKeyPairSigner();
-    const { client, owner, nonce } = await escrowed(judge, 1_000_000n, 0n);
-    const worker = (await generateKeyPairSigner()).address;
-    const work = "ab".repeat(32);
-    const signature = await client.settleProof({ judge, owner: owner.address, nonce, payTo: worker, result: 1n, payer: owner, deliveredSha256: work });
-    const [intent] = await findIntentPda({ owner: owner.address, nonce });
-    const [release] = await client.transport.engineTransactions(1, intent);
-    if (release === undefined) {
-      throw new Error("no release");
-    }
-    expect(release).toMatchObject({ signature, feePayer: owner.address, memos: [releaseMemo(work)], memoSigners: [[judge.address]] });
-    expect(recordedDelivery([], release, judge.address)).toBe(work);
-    expect((await client.history(intent)).find(({ name }) => name === "IntentAttested")).toMatchObject({ signature, deliveredSha256: work });
-
-    const forged: EngineTransaction = { ...release, memos: [releaseMemo("ef".repeat(32))], memoSigners: [[owner.address]] };
-    expect(recordedDelivery([], forged, judge.address)).toBeNull();
-    const { memoSigners: _, ...unsigned } = forged;
-    expect(recordedDelivery([], unsigned, judge.address)).toBeNull();
-    const followUp: EngineTransaction = {
-      signature: "follow-up",
-      slot: release.slot + 1n,
-      blockTime: null,
-      failed: false,
-      emitted: [],
-      memos: [followUpMemo(work, signature)],
-      memoSigners: [[judge.address]],
-      feePayer: judge.address,
-    };
-    expect(recordedDelivery([followUp], forged, judge.address)).toBe(work);
-  });
-
-  it("settleProof refuses a pay to that is not a system wallet", async () => {
-    const judge = await generateKeyPairSigner();
-    const { w, client, counted, owner, nonce, tokens } = await escrowed(judge, 1_000_000n, 0n);
-    w.chain.svm.airdrop(judge.address, lamports(SOL));
-    const worker = (await generateKeyPairSigner()).address;
-    const workerTokens = await ata(worker, NATIVE_MINT);
-    const settle = (payTo: Address) => client.settleProof({ judge, owner: owner.address, nonce, payTo, result: 1n });
+    const workerTokens = await ata(worker.address, NATIVE_MINT);
+    const settle = () => client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n });
     const sends = counted.sends;
-    await expect(settle(NATIVE_MINT)).rejects.toThrow(PayToNotWallet);
-    await expect(settle(NATIVE_MINT)).rejects.toThrow(`belongs to the program ${TOKEN_PROGRAM_ADDRESS}`);
-    await expect(settle(INTENT_ENGINE_PROGRAM_ADDRESS)).rejects.toThrow(PayToNotWallet);
+    const wallet = w.chain.svm.getAccount(worker.address);
+    if (!wallet.exists) {
+      throw new Error("no worker wallet");
+    }
+    w.chain.svm.setAccount({ ...wallet, programAddress: TOKEN_PROGRAM_ADDRESS });
+    await expect(settle()).rejects.toThrow(PayToNotWallet);
+    await expect(settle()).rejects.toThrow(`belongs to the program ${TOKEN_PROGRAM_ADDRESS}`);
+    w.chain.svm.setAccount(wallet);
 
     const space = BigInt(getTokenSize());
-    const plant = (holder: Address) =>
-      w.chain.svm.setAccount({
-        address: workerTokens,
-        data: Uint8Array.from(
-          getTokenEncoder().encode({
-            mint: NATIVE_MINT,
-            owner: holder,
-            amount: 0n,
-            delegate: none(),
-            state: AccountState.Initialized,
-            isNative: none(),
-            delegatedAmount: 0n,
-            closeAuthority: none(),
-          }),
-        ),
-        executable: false,
-        lamports: lamports(w.chain.svm.minimumBalanceForRentExemption(space)),
-        programAddress: TOKEN_PROGRAM_ADDRESS,
-        space,
-      });
-    plant(worker);
-    await expect(settle(workerTokens)).rejects.toThrow(PayToNotWallet);
-    plant(owner.address);
-    await expect(settle(worker)).rejects.toThrow(PayeeMoved);
+    w.chain.svm.setAccount({
+      address: workerTokens,
+      data: Uint8Array.from(
+        getTokenEncoder().encode({
+          mint: NATIVE_MINT,
+          owner: owner.address,
+          amount: 0n,
+          delegate: none(),
+          state: AccountState.Initialized,
+          isNative: none(),
+          delegatedAmount: 0n,
+          closeAuthority: none(),
+        }),
+      ),
+      executable: false,
+      lamports: lamports(w.chain.svm.minimumBalanceForRentExemption(space)),
+      programAddress: TOKEN_PROGRAM_ADDRESS,
+      space,
+    });
+    await expect(settle()).rejects.toThrow(PayeeMoved);
     expect(counted.sends).toBe(sends);
-
-    const wallet = (await generateKeyPairSigner()).address;
-    await settle(wallet);
-    expect(await tokens(wallet)).toBeGreaterThan(0n);
+    expect(await tokens(worker.address)).toBe(0n);
   });
 
   it("settleProof refuses an expired escrow", async () => {
     const judge = await generateKeyPairSigner();
-    const { w, client, counted, owner, nonce } = await escrowed(judge, 1_000_000n, 0n);
+    const { w, client, counted, owner, nonce, delivered } = await escrowed(judge, 1_000_000n, 0n);
     w.chain.svm.airdrop(judge.address, lamports(SOL));
-    const worker = (await generateKeyPairSigner()).address;
     const held = await client.intent(owner.address, nonce);
     if (held === null) {
       throw new Error("no escrow");
@@ -337,18 +269,17 @@ describe("one call per action", () => {
     clock.unixTimestamp = held.intent.expiresAt;
     w.chain.svm.setClock(clock);
     const sends = counted.sends;
-    const settle = client.settleProof({ judge, owner: owner.address, nonce, payTo: worker, result: 1n });
+    const settle = client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n });
     await expect(settle).rejects.toThrow(EscrowExpired);
-    await expect(client.settleProof({ judge, owner: owner.address, nonce, payTo: worker, result: 1n })).rejects.toThrow(`expired at ${held.intent.expiresAt}`);
+    await expect(client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n })).rejects.toThrow(`expired at ${held.intent.expiresAt}`);
     expect(counted.sends).toBe(sends);
   });
 
   it("refuses to settle anything but an open proof intent its judge signs, and sends nothing", async () => {
     const judge = await generateKeyPairSigner();
-    const { w, client, counted, owner, nonce, fresh } = await escrowed(judge, 1_000_000n, 0n);
+    const { w, client, counted, owner, nonce, fresh, delivered } = await escrowed(judge, 1_000_000n, 0n);
     w.chain.svm.airdrop(judge.address, lamports(SOL));
-    const worker = (await generateKeyPairSigner()).address;
-    const settle = (n: bigint, by: KeyPairSigner = judge) => client.settleProof({ judge: by, owner: owner.address, nonce: n, payTo: worker, result: 1n });
+    const settle = (n: bigint, by: KeyPairSigner = judge) => client.settleProof({ judge: by, owner: owner.address, nonce: n, ...delivered, result: 1n });
 
     const swap = await client.createIntent({ signer: owner, params: { kind: Kind.SwapExactIn, amountIn: 10n, minOut: 1n }, inputMint: NATIVE_MINT, outputMint: w.outputMint });
     const plain = await client.createIntent({ signer: owner, params: proofOf(judge.address, 10n, 0n, new Uint8Array(32)), inputMint: NATIVE_MINT, outputMint: w.outputMint });

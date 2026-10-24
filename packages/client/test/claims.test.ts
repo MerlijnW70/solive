@@ -20,15 +20,17 @@ import {
   standbyAddress,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import { createClient, jobClaimOf, lineHandover, loadClaimsOf, loadLine, NotSettleable, type Transport } from "../src/index.js";
+import { createClient, FirstOpeningRefused, jobClaimOf, lineHandover, loadClaimsOf, loadLine, NotDeliverable, NotSettleable, type Transport } from "../src/index.js";
 import { svmTransport } from "../src/svm.js";
 import { world } from "./svm.js";
+import { announced, type Delivered, keyed, sha } from "./work.js";
 
 const LOCAL = "http://127.0.0.1:8899";
 const SOL = 1_000_000_000n;
 const SPEC = new Uint8Array(createHash("sha256").update("the claims spec").digest());
 const STAKE = 50_000_000n;
 const NONE = "11111111111111111111111111111111" as Address;
+const WORK = sha("the claimed work");
 
 async function setup() {
   const w = await world();
@@ -50,7 +52,8 @@ async function setup() {
     w.chain.svm.airdrop(signer.address, lamports(10n * SOL));
     return signer;
   };
-  const [owner, judge, worker, rival] = await Promise.all([fresh(), fresh(), fresh(), fresh()]);
+  const [owner, worker, rival] = await Promise.all([fresh(), fresh(), fresh()]);
+  const { signer: judge, keypair } = await keyed(w);
   const { nonce } = await client.createIntent({
     signer: owner,
     params: { kind: Kind.AttestedResult, amountIn: 1_000_000n, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash: SPEC, judgeFee: 0n },
@@ -61,30 +64,39 @@ async function setup() {
   await client.send([await buildOpenClaims({ owner, intent, maxSecs: 3_600, stake: STAKE })], owner);
   const claim = async (who: KeyPairSigner) =>
     client.send([await buildClaimJob({ worker: who, intent, owner: owner.address, secs: 600 })], who);
-  const settle = (payTo: Address) => client.settleProof({ judge, owner: owner.address, nonce, payTo, result: 1n });
+  const settle = (delivered: Delivered) => client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n });
+  const announce = (who: KeyPairSigner) => announced(client, who, intent, WORK);
   const balance = (address: Address) => w.chain.svm.getBalance(address) ?? 0n;
-  return { w, transport, client, owner, judge, worker, rival, intent, nonce, claim, settle, balance };
+  return { w, transport, client, owner, judge, keypair, worker, rival, intent, nonce, claim, settle, announce, balance };
 }
 
 describe("claimed escrows", () => {
   it("pay only the claimant while the claim holds, and hand its stake back with the release", async () => {
     const s = await setup();
+    const early = await s.announce(s.rival);
     await s.claim(s.worker);
-    await expect(s.settle(s.rival.address)).rejects.toThrow(NotSettleable);
+    await expect(s.announce(s.rival)).rejects.toThrow(NotDeliverable);
+    const own = await s.announce(s.worker);
+    await expect(s.settle(early)).rejects.toThrow(NotSettleable);
+    const refused = await s.client.firstOpening({ intent: s.intent, sha256: WORK, keypair: s.keypair }).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(FirstOpeningRefused);
+    expect(refused).toMatchObject({ reason: "claim-held", announcement: early.announcement, worker: s.rival.address, holder: s.worker.address });
     const before = s.balance(s.worker.address);
-    await s.settle(s.worker.address);
+    await s.settle(own);
     expect(s.balance(s.worker.address) - before).toBe(STAKE);
     expect((await s.client.intent(s.owner.address, s.nonce))?.intent.status).toBe(IntentStatus.Filled);
   });
 
   it("let anyone be paid once the claim lapses, sending the stake to the owner", async () => {
     const s = await setup();
+    const early = await s.announce(s.rival);
     await s.claim(s.worker);
     const clock = s.w.chain.svm.getClock();
     clock.unixTimestamp += 601n;
     s.w.chain.svm.setClock(clock);
+    expect(await s.client.firstOpening({ intent: s.intent, sha256: WORK, keypair: s.keypair })).toMatchObject({ announcement: early.announcement, worker: s.rival.address });
     const before = s.balance(s.owner.address);
-    await s.settle(s.rival.address);
+    await s.settle(early);
     expect(s.balance(s.owner.address) - before).toBe(STAKE);
     expect(s.w.chain.svm.getAccount(await claimBoardAddress(s.intent)).exists).toBe(true);
   });

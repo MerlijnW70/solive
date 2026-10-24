@@ -519,7 +519,7 @@ describe("intent scan", () => {
     const s = stub([]);
     const plain = await rpcTransport(s.rpc, s.wait).engineAccounts?.();
     expect(plain).toEqual([{ address: OWNER, data: new Uint8Array([7, 8]), lamports: 0n }]);
-    expect(s.calls).toEqual([`program-accounts:${INTENT_ENGINE_PROGRAM_ADDRESS}:${JSON.stringify({ encoding: "base64", commitment: "confirmed", filters: [] })}`]);
+    expect(s.calls).toEqual([`program-accounts:${INTENT_ENGINE_PROGRAM_ADDRESS}:${JSON.stringify({ encoding: "base64", commitment: "confirmed", filters: [], withContext: true })}`]);
     const rpc = {
       ...s.rpc,
       getProgramAccounts: () => ({

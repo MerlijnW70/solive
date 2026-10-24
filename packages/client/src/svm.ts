@@ -7,6 +7,7 @@ import {
   getCompiledTransactionMessageDecoder,
   getCompiledTransactionMessageEncoder,
   getAddressDecoder,
+  getAddressEncoder,
   getSignatureFromTransaction,
   getTransactionDecoder,
   lamports,
@@ -23,6 +24,8 @@ import {
   keysAt,
   type ListedSignature,
   MEMO_PROGRAM_ADDRESS,
+  type EngineAccount,
+  type EngineAccountFilter,
   type ProgramAccount,
   signersAmong,
   solTransfersOf,
@@ -40,10 +43,14 @@ export const SVM_GENESIS_HASH = "11111111111111111111111111111111";
 const sigverifyOf = (svm: LiteSVM): boolean =>
   (svm as unknown as { inner?: { getSigverify?: () => boolean } }).inner?.getSigverify?.() ?? true;
 
+const startsWith = (data: Uint8Array, head: ArrayLike<number>, at: number): boolean =>
+  data.length >= at + head.length && Array.from(head).every((b, i) => data[at + i] === b);
+
 const decodeWire = (wire: string) => getTransactionDecoder().decode(getBase64Encoder().encode(wire));
 
 export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): Transport {
   const seen = new Set<Address>();
+  const touched = new Set<Address>();
   const tag = getIntentDiscriminatorBytes();
   const engineData = (address: Address): Uint8Array | null => {
     const account = svm.getAccount(address);
@@ -90,6 +97,7 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
     const after = holdings(keys).filter((held) => !before.some(({ account }) => account === held.account));
     const tokens = [...before, ...after];
     for (const address of keys) {
+      touched.add(address);
       const data = engineData(address);
       if (data !== null && tag.every((b, i) => data[i] === b)) {
         seen.add(address);
@@ -139,8 +147,22 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
       ? { owner: account.programAddress, data: new Uint8Array(account.data), lamports: account.lamports, executable: account.executable }
       : null;
   };
+  const matches = (data: Uint8Array, filter: EngineAccountFilter): boolean =>
+    (filter.dataSize === undefined || data.length === filter.dataSize) &&
+    startsWith(data, filter.discriminator, 0) &&
+    (filter.match ?? []).every(({ offset, address }) => startsWith(data, getAddressEncoder().encode(address), offset));
+  const engineAccounts = async (filter?: EngineAccountFilter): Promise<EngineAccount[]> =>
+    [...touched].flatMap((address) => {
+      const account = svm.getAccount(address);
+      if (!account.exists || account.programAddress !== INTENT_ENGINE_PROGRAM_ADDRESS) {
+        return [];
+      }
+      const data = new Uint8Array(account.data);
+      return filter === undefined || matches(data, filter) ? [{ address, data, lamports: account.lamports }] : [];
+    });
   return {
     getAccount,
+    engineAccounts,
     getAccounts: async (addresses) => Promise.all(addresses.map(getAccount)),
     send: async (instructions, payer) => {
       svm.expireBlockhash();

@@ -39,11 +39,9 @@ import {
   type ClientOptions,
   type ConnectOptions,
   createClient,
-  DELIVERY_PAGES,
   JOBS_LIMIT,
   loadUser,
   MAX_SPEC_BYTES,
-  SIGNATURE_PAGE,
   type Transport,
 } from "../src/index.js";
 import { FEE_BPS, world, type World } from "./svm.js";
@@ -248,10 +246,9 @@ describe("the sdk page", () => {
     expect(PAGE).toContain("The devnet filler prices test tokens at 200 per wrapped SOL");
   });
 
-  it("states the bounds jobs, spec and deliveries read within", () => {
+  it("states the bounds jobs and spec read within", () => {
     expect(PAGE).toContain(`\`jobs\` lists up to ${JOBS_LIMIT} open, unexpired proof escrows, those with the most time left first`);
     expect(PAGE).toContain(`following no redirect and reading at most ${MAX_SPEC_BYTES} bytes`);
-    expect(PAGE).toContain(`at most ${DELIVERY_PAGES} pages of ${SIGNATURE_PAGE} transactions`);
   });
 
   it("runs every ts block in order against the engine and prints what it says", { timeout: 120_000 }, async () => {
@@ -350,9 +347,9 @@ describe("the sdk page", () => {
     const judge = params?.kind === Kind.AttestedResult ? { address: params.attestor } : undefined;
     expect(judge?.address).not.toBe(signer.address);
     expect(judge?.address).toBeDefined();
-    const opened = await client.deliveryRecord({ judge: judge?.address ?? signer.address, intent: (await findIntentPda({ owner: signer.address, nonce: 8n }))[0] });
-    expect(opened.deliveries.map(({ salt }) => salt)).toEqual([""]);
-    const released = (await client.history(opened.deliveries[0]?.intent ?? signer.address)).find(({ name }) => name === "IntentAttested");
+    const posted = (await findIntentPda({ owner: signer.address, nonce: 8n }))[0];
+    expect(await client.announcements(posted)).toMatchObject({ complete: true, nextSeq: 2n, announcements: [{ worker: signer.address, seq: 1n, state: "paid" }] });
+    const released = (await client.history(posted)).find(({ name }) => name === "IntentAttested");
     expect(released?.deliveredSalt).toMatch(/^[0-9a-f]{32}$/);
     const pay = 10_000_000n;
     const judgeFee = pay / 10n;
@@ -371,9 +368,9 @@ describe("the sdk page", () => {
     expect(fetched).toHaveLength(2);
     expect(new Set(fetched).size).toBe(1);
     expect(printed.filter((line) => line === "true true")).toHaveLength(2);
-    const posted = (await findIntentPda({ owner: signer.address, nonce: 8n }))[0];
-    expect(await client.deliveries({ judge: judge?.address ?? signer.address, intent: posted })).toMatchObject([{ intent: posted, worker: signer.address }]);
-    expect(await client.deliveries({ judge: judge?.address ?? signer.address })).toEqual([]);
+    const proved = (await findIntentPda({ owner: signer.address, nonce: 5n }))[0];
+    const announced = await client.announcementsTo(judge?.address ?? signer.address);
+    expect(announced.map(({ intent, worker: by, state }) => [intent, by, state]).sort()).toEqual([[proved, worker?.address, "paid"], [posted, signer.address, "paid"]].sort());
     const delivered = (await client.history(posted)).find(({ name }) => name === "IntentAttested");
     expect(delivered?.fields).toMatchObject({ payee: wrapped, net: split.net });
     expect(printed.at(-1)).toBe(`${formatAmount(BigInt(CREATE_FEE), 9)} ${formatAmount(BigInt(BOUNTY), 9)}`);

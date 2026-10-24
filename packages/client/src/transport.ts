@@ -1,5 +1,7 @@
 export type {
+  AccountMatch,
   AccountView,
+  EngineAccount,
   EngineAccountFilter,
   EngineTransaction,
   FinalizedBlock,

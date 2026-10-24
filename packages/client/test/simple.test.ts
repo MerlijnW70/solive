@@ -23,6 +23,7 @@ import {
   type Transport,
 } from "../src/index.js";
 import { funded, world, type World } from "./svm.js";
+import { keyed } from "./work.js";
 
 function preset(w: World, at: Address, mintAuthority: Address | null): void {
   const space = BigInt(getMintSize());
@@ -94,7 +95,7 @@ describe("the simple sdk layer", () => {
 
   it("pay for work then release pays the worker", async () => {
     const w = await devnet();
-    const [owner, worker, judge] = [await funded(w.chain), await funded(w.chain), await funded(w.chain)];
+    const [owner, worker, { signer: judge, keypair }] = [await funded(w.chain), await funded(w.chain), await keyed(w)];
     const at = (signer: KeyPairSigner) => connect({ cluster: "devnet", signer, transport: w.chain.transport });
     const [buyer, seller, reviewer] = await Promise.all([at(owner), at(worker), at(judge)]);
     const specHash = sha("the acceptance spec");
@@ -106,9 +107,8 @@ describe("the simple sdk layer", () => {
     const work = sha("the delivered work");
     const delivered = await seller.deliver({ escrow: escrowAddress, sha256: work, url: "https://example.org/work.tar" });
     expect(w.chain.sent).toContain(delivered.signature);
-    await seller.client.openDelivery({ worker, intent: escrowAddress, attestor: judge.address, sha256: work, announcement: delivered.signature });
-    const released = await reviewer.release({ escrow: escrowAddress, to: worker.address, deliveredSha256: work });
-    expect(released.summary).toBe(`Release escrow ${escrowAddress} holding 0.01 SOL to ${worker.address} for work ${work}, announced first in ${delivered.signature}`);
+    const released = await reviewer.release({ escrow: escrowAddress, to: worker.address, deliveredSha256: work, keypair });
+    expect(released.summary).toBe(`Release escrow ${escrowAddress} holding 0.01 SOL to ${worker.address} for work ${work}, announced first in ${delivered.announcement}`);
     expect(w.chain.sent).toContain(released.signature);
     expect((await buyer.client.intent(owner.address, escrow.nonce ?? 0n))?.intent.status).toBe(IntentStatus.Filled);
     const pay = 10_000_000n;

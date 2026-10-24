@@ -2,7 +2,8 @@ import type { Address, Signature } from "@solana/kit";
 import { decodeEvent, type EngineEvent, findAssociatedTokenAddress, tokenName } from "@intent-engine/core";
 import { createdAccount, tokenAmountOf } from "./accounts.js";
 import { type Balances, type ClientContext, type Fill, HISTORY_LIMIT, type HistoryEvent, type TokenBalance } from "./client-types.js";
-import { createdAtOf, recordedRelease, scan } from "./jobs.js";
+import { createdAtOf, scan } from "./jobs.js";
+import { releasedDelivery } from "./release-reads.js";
 import type { EngineTransaction } from "./transport.js";
 
 const FILL_EVENTS: ReadonlySet<string> = new Set(["IntentFilled", "FillEnded"]);
@@ -30,8 +31,8 @@ export function clientReads({ transport, mint }: ClientContext) {
         return event;
       }
       const release = transactions.find(({ signature }) => signature === event.signature);
-      const recorded = release === undefined ? null : recordedRelease(transactions, release, event.fields.attestor);
-      return recorded === null ? event : { ...event, deliveredSha256: recorded.sha256, ...(recorded.salt === undefined ? {} : { deliveredSalt: recorded.salt }) };
+      const released = release === undefined ? null : releasedDelivery(release, intent);
+      return released === null ? event : { ...event, deliveredSha256: released.sha256, deliveredSalt: released.salt };
     });
   };
 

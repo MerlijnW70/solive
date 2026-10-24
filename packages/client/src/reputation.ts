@@ -1,25 +1,25 @@
 import type { Address, Instruction, Signature, TransactionSigner } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import {
+  decodeEvent,
+  type EngineEvent,
   feedbackMemo,
-  DELIVERY_MEMO_PREFIX,
   findAssociatedTokenAddress,
   formatAmount,
   NATIVE_MINT,
-  parseDeliveryMemo,
   parseFeedbackMemo,
   splitN,
 } from "@intent-engine/core";
 import { mintOf } from "./accounts.js";
 import { loadCommittee } from "./client-committee.js";
 import { HISTORY_LIMIT } from "./client-types.js";
-import { memoInstruction, recordedRelease } from "./job-memos.js";
+import { AnnouncementsUnreadable } from "./announce-errors.js";
+import { refutationsOf } from "./announcement-reads.js";
+import { memoInstruction } from "./job-memos.js";
 import { NotSettleable } from "./client-errors.js";
 import { type FundedBy, fundedBy, fundingLookup } from "./funding.js";
-import { DELIVERY_PAGES, DELIVERY_SCAN, MEMOS_PER_TRANSACTION, scan, SIGNATURE_PAGE, signaturePage } from "./job-scan.js";
-import { eventsOf, intentHistory, releaseOf, releaseThrough, splitClaim } from "./release-reads.js";
-import { commitmentOf, openingsIn, saltCheckOf } from "./job-deliveries.js";
-import { refutationIn } from "./delivery-openings.js";
+import { DELIVERY_PAGES, DELIVERY_SCAN, scan, SIGNATURE_PAGE, signaturePage } from "./job-scan.js";
+import { eventsOf, intentHistory, releasedDelivery, releaseOf, releaseThrough, splitClaim } from "./release-reads.js";
 import type { EngineTransaction, Transport } from "./transport.js";
 
 export type WorkOutcome = "paid" | "paid-other" | "refunded" | "open" | "unknown";
@@ -28,12 +28,12 @@ export type WorkRecord = {
   intent: Address;
   sha256: string;
   commitment: string;
-  check: string;
+  announcement: Address;
   announced: Signature;
   slot: bigint;
   blockTime: bigint | null;
   outcome: WorkOutcome;
-  refutedBy?: Signature;
+  refutedBy?: Address;
   owner?: Address;
   attestor?: Address;
   committee?: Address[];
@@ -77,52 +77,38 @@ export const ORDER_PAGES = 2;
 
 const SOL_DECIMALS = 9;
 
-type Announced = { intent: Address; sha256: string; commitment: string; check: string; announced: Signature; slot: bigint; blockTime: bigint | null };
+type Announced = { intent: Address; sha256: string; commitment: string; announcement: Address; announced: Signature; slot: bigint; blockTime: bigint | null };
 
-type Ranked = Announced & { rank: number };
+const hexOf = (bytes: ArrayLike<number>): string => Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 
-function announcedWork(text: string): { key: string; intent: Address; sha256: string; commitment: string; check: string } | null {
-  const memo = parseDeliveryMemo(text);
-  return memo === null ? null : { key: `${memo.intent}:${memo.commitment}`, intent: memo.intent, sha256: "", commitment: memo.commitment, check: memo.check };
-}
+const announcedIn = (wallet: Address, emitted: readonly Uint8Array[]) =>
+  emitted.flatMap((data) => {
+    const event = decodeEvent(data) as EngineEvent | null;
+    return event?.name === "DeliveryAnnounced" && event.fields.worker === wallet ? [event.fields] : [];
+  });
 
-const older = (a: Ranked, b: Ranked): boolean => a.slot < b.slot || (a.slot === b.slot && a.rank > b.rank);
-
-type Announcements = { works: Announced[]; notified: Address[] };
-
-export const NOTIFIED_WALLETS = 2;
-
-function notifiedBy(wallet: Address, intent: Address, transfers: readonly { from: Address; to: Address }[]): Address[] {
-  const named = [...new Set(transfers.filter(({ from }) => from === wallet).map(({ to }) => to))];
-  return named.slice(0, NOTIFIED_WALLETS).filter((to) => to !== intent && to !== wallet);
-}
+type Announcements = { works: Announced[] };
 
 function announcedBy(wallet: Address, transactions: readonly EngineTransaction[]): Announcements[] {
-  const found = new Map<string, Ranked & { notified: Address[] }>();
-  for (const [rank, { signature, slot, blockTime, failed, memos, feePayer, transfers }] of transactions.entries()) {
-    if (failed || feePayer !== wallet) {
-      continue;
-    }
-    for (const work of (memos ?? []).slice(0, MEMOS_PER_TRANSACTION).map(announcedWork)) {
-      if (work === null) {
-        continue;
-      }
-      const { key, ...announced } = work;
-      const next = { ...announced, announced: signature as Signature, slot, blockTime, rank, notified: notifiedBy(wallet, work.intent, transfers ?? []) };
-      const held = found.get(key);
-      if (held === undefined || older(next, held)) {
-        found.set(key, next);
-      }
+  const found = new Map<Address, Announced>();
+  for (const { signature, slot, blockTime, failed, emitted } of transactions) {
+    for (const fields of failed ? [] : announcedIn(wallet, emitted)) {
+      found.set(fields.announcement, {
+        intent: fields.intent,
+        sha256: "",
+        commitment: hexOf(fields.commitment),
+        announcement: fields.announcement,
+        announced: signature as Signature,
+        slot,
+        blockTime,
+      });
     }
   }
-  const byIntent = new Map<Address, (Ranked & { notified: Address[] })[]>();
+  const byIntent = new Map<Address, Announced[]>();
   for (const work of found.values()) {
     byIntent.set(work.intent, [...(byIntent.get(work.intent) ?? []), work]);
   }
-  return [...byIntent.values()].map((works) => {
-    const sorted = works.sort((a, b) => (older(a, b) ? -1 : older(b, a) ? 1 : 0));
-    return { works: sorted.map(({ rank: _, notified: __, ...work }) => work), notified: sorted[0]?.notified ?? [] };
-  });
+  return [...byIntent.values()].map((works) => ({ works: works.sort((a, b) => (a.slot < b.slot ? -1 : a.slot > b.slot ? 1 : 0)) }));
 }
 
 export const RECORD_READS = 4;
@@ -183,11 +169,23 @@ export async function landedBefore(transport: Transport, attestor: Address, anno
   return null;
 }
 
-async function recordOf(transport: Transport, wallet: Address, { works, notified }: Announcements, history: number): Promise<{ record: WorkRecord; complete: boolean }> {
+async function refutedOf(transport: Transport, announcement: Address): Promise<{ refutedBy?: Address; complete: boolean }> {
+  try {
+    const [first] = await refutationsOf(transport, announcement);
+    return first === undefined ? { complete: true } : { refutedBy: first.address, complete: true };
+  } catch (error) {
+    if (error instanceof AnnouncementsUnreadable) {
+      return { complete: false };
+    }
+    throw error;
+  }
+}
+
+async function recordOf(transport: Transport, wallet: Address, { works }: Announcements, history: number): Promise<{ record: WorkRecord; complete: boolean }> {
   const first = works[0] as Announced;
   const intent = first.intent;
   const read = await intentHistory(transport, intent, history);
-  const buried = read.complete || releaseOf(read.transactions, intent) !== undefined ? [] : await releaseThrough(transport, intent, notified, ORDER_PAGES, first.blockTime);
+  const buried = read.complete || releaseOf(read.transactions, intent) !== undefined ? [] : await releaseThrough(transport, intent, works.map(({ announcement }) => announcement), ORDER_PAGES, first.blockTime);
   const transactions = [...read.transactions, ...buried];
   const events = eventsOf(transactions, intent);
   const created = events.find(({ event }) => event.name === "IntentCreated")?.event;
@@ -210,7 +208,7 @@ async function recordOf(transport: Transport, wallet: Address, { works, notified
     attestor === wallet ||
     event.fields.owner === attestor ||
     (committee !== undefined && (committee.includes(wallet) || committee.includes(event.fields.owner)));
-  const recorded = recordedRelease(transactions, transaction, attestor);
+  const delivered = releasedDelivery(transaction, intent);
   const commonOf = (work: Announced) => ({
     ...work,
     owner: event.fields.owner,
@@ -220,21 +218,12 @@ async function recordOf(transport: Transport, wallet: Address, { works, notified
     release: transaction.signature as Signature,
     selfDealt,
   });
-  const openings = openingsIn(transactions, new Set([intent]));
-  const opensTo = (work: Announced): boolean => {
-    const opened = openings.flatMap(({ opening }) => ("announcement" in opening && opening.announcement === work.announced ? [opening.salt] : []));
-    const salts = [...(recorded?.salt === undefined ? [] : [recorded.salt]), ...opened];
-    return recorded !== null && salts.some((salt) => saltCheckOf(salt) === work.check && commitmentOf(intent, wallet, salt, recorded.sha256) === work.commitment);
-  };
-  const work = works.find(opensTo);
-  if (work === undefined || recorded === null) {
+  const cosigned = event.name === "IntentSplit" && splitClaim(transaction, intent)?.recipients.includes(wallet) === true;
+  const work = works.find(({ announcement }) => announcement === delivered?.announcement) ?? (cosigned ? first : undefined);
+  if (work === undefined || delivered === null) {
     return { complete, record: { ...commonOf(first), outcome: "paid-other" } };
   }
-  const before = await landedBefore(transport, attestor, { slot: work.slot, signature: work.announced }, transaction);
-  if (before !== true) {
-    return { complete: complete && before === false, record: { ...commonOf(work), outcome: before === false ? "paid-other" : "unknown" } };
-  }
-  const common = { ...commonOf(work), sha256: recorded.sha256 };
+  const common = { ...commonOf(work), sha256: delivered.sha256 };
 
   let earned: bigint | undefined;
   let credit = (fee: bigint): bigint => fee;
@@ -257,14 +246,11 @@ async function recordOf(transport: Transport, wallet: Address, { works, notified
   if (earned === undefined) {
     return { complete, record: { ...common, outcome: "paid-other" } };
   }
-  const paidWallets = event.name === "IntentSplit" ? [...(splitClaim(transaction, intent)?.recipients ?? [wallet])] : [wallet];
-  const createdAt = events.find(({ event: found }) => found.name === "IntentCreated")?.transaction.blockTime ?? null;
-  const judged = { attestor, createdAt, to: transaction.slot };
-  const refutation = await refutationIn(transport, transactions, { intent, slot: work.slot, signature: work.announced }, recorded.sha256, paidWallets, judged);
+  const refutation = await refutedOf(transport, delivered.announcement);
   complete &&= refutation.complete;
   const feedback = feedbackOf(transactions, intent, event.fields.owner);
   const backing = createFee === undefined ? {} : { backed: credit(event.fields.fee), createBacked: credit(createFee) };
-  const refuted = refutation.refutedBy === null ? {} : { refutedBy: refutation.refutedBy };
+  const refuted = refutation.refutedBy === undefined ? {} : { refutedBy: refutation.refutedBy };
   return { complete: complete && createFee !== undefined, record: { ...common, outcome: "paid", earned, ...backing, ...refuted, ...(feedback === undefined ? {} : { feedback }) } };
 }
 
@@ -276,7 +262,7 @@ export const solBacked = (record: WorkRecord): bigint => (record.mint === NATIVE
 export async function reputationOf(transport: Transport, wallet: Address, options: ReputationOptions = {}): Promise<Reputation> {
   const { firstAvailableSlot } = transport;
   const fullLedger = async () => firstAvailableSlot !== undefined && (await firstAvailableSlot.call(transport)) === 0n;
-  const scanned = await scan(transport, wallet, { memo: DELIVERY_MEMO_PREFIX, pages: options.pages ?? DELIVERY_PAGES, covered: fullLedger });
+  const scanned = await scan(transport, wallet, { pages: options.pages ?? DELIVERY_PAGES, covered: fullLedger });
   const works = announcedBy(wallet, scanned.transactions);
   const read = await limited(works, RECORD_READS, (work) => recordOf(transport, wallet, work, options.history ?? HISTORY_LIMIT));
   const lookup = fundingLookup(transport, fullLedger);

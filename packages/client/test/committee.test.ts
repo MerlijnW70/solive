@@ -12,14 +12,16 @@ import {
   sortMembers,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import { budgeted, commitmentOf, createClient, deliverySalt, NotSettleable, PACKET_DATA_SIZE, transactionBytes, VoteRejected } from "../src/index.js";
+import { budgeted, createClient, NotSettleable, PACKET_DATA_SIZE, transactionBytes, VoteRejected } from "../src/index.js";
 import { svmTransport } from "../src/svm.js";
 import { FEE_BPS, world } from "./svm.js";
+import { announced, sha } from "./work.js";
 
 const LOCAL = "http://127.0.0.1:8899";
 const SOL = 1_000_000_000n;
 const SPEC = new Uint8Array(createHash("sha256").update("the committee spec").digest());
 const PAY = 1_000_000n;
+const WORK = sha("the committee's work");
 
 async function setup(judgeFee: bigint) {
   const w = await world();
@@ -64,7 +66,12 @@ async function setup(judgeFee: bigint) {
   });
   const byAddress = new Map(members.map((m) => [m.address, m]));
   const sorted = sortMembers(members.map((m) => m.address)).map((a) => byAddress.get(a) as KeyPairSigner);
-  return { w, client, fresh, tokens, members: sorted, feeWallet, created, creator, owner, nonce };
+  const [intent] = await findIntentPda({ owner: owner.address, nonce });
+  const deliver = async (sha256 = WORK) => {
+    const worker = await fresh();
+    return { worker: worker.address, delivered: await announced(client, worker, intent, sha256) };
+  };
+  return { w, client, fresh, tokens, members: sorted, feeWallet, created, creator, owner, nonce, intent, deliver };
 }
 
 describe("a committee judges a proof escrow", () => {
@@ -80,9 +87,9 @@ describe("a committee judges a proof escrow", () => {
 
   it("releases on a quorum of votes over the ballot, pays the fee wallet, and records the delivery", async () => {
     const judgeFee = 100_000n;
-    const { client, fresh, tokens, members, feeWallet, owner, nonce } = await setup(judgeFee);
-    const worker = (await generateKeyPairSigner()).address;
-    const target = { owner: owner.address, nonce, payTo: worker, result: 2n };
+    const { client, fresh, tokens, members, feeWallet, owner, nonce, deliver } = await setup(judgeFee);
+    const { worker, delivered } = await deliver();
+    const target = { owner: owner.address, nonce, ...delivered, result: 2n };
     const ballot = await client.committeeBallot(target);
     const [intent] = await findIntentPda({ owner: owner.address, nonce });
     expect(ballot.intent).toBe(intent);
@@ -90,9 +97,7 @@ describe("a committee judges a proof escrow", () => {
     if (first === undefined || third === undefined) throw new Error("three members");
     const votes = await Promise.all([third, first].map((m) => signCommitteeVote(m, ballot.digest, ballot.committee.members)));
     const payer = await fresh();
-    const work = "ab".repeat(32);
-    await expect(client.settleCommittee({ ...target, solver: payer, votes, deliveredSha256: work })).rejects.toThrow(NotSettleable);
-    await client.settleCommittee({ ...target, solver: third, payer, votes, deliveredSha256: work });
+    await client.settleCommittee({ ...target, solver: payer, votes });
     const fee = ((PAY - judgeFee) * BigInt(FEE_BPS)) / 10_000n;
     expect(await tokens(worker)).toBe(PAY - judgeFee - fee);
     expect(await tokens(feeWallet)).toBe(judgeFee);
@@ -100,15 +105,15 @@ describe("a committee judges a proof escrow", () => {
     const events = await client.history(intent);
     const attested = events.find((e) => e.name === "CommitteeAttested");
     expect(attested?.fields).toMatchObject({ signers: [first.address, third.address] });
-    expect(events.find((e) => e.name === "IntentAttested")).toMatchObject({ deliveredSha256: work });
+    expect(events.find((e) => e.name === "IntentAttested")).toMatchObject({ deliveredSha256: WORK, deliveredSalt: delivered.opening.salt });
   });
 
   it("refuses a forged vote, a vote over another payee, and too few votes before sending anything", async () => {
-    const { client, fresh, members, owner, nonce, tokens } = await setup(0n);
-    const worker = (await generateKeyPairSigner()).address;
-    const target = { owner: owner.address, nonce, payTo: worker, result: 1n };
+    const { client, fresh, members, owner, nonce, tokens, deliver } = await setup(0n);
+    const { worker, delivered } = await deliver();
+    const target = { owner: owner.address, nonce, ...delivered, result: 1n };
     const ballot = await client.committeeBallot(target);
-    const other = await client.committeeBallot({ ...target, payTo: (await generateKeyPairSigner()).address });
+    const other = await client.committeeBallot({ ...target, ...(await deliver(sha("other work"))).delivered });
     const [a, b] = members;
     if (a === undefined || b === undefined) throw new Error("three members");
     const solver = await fresh();
@@ -126,24 +131,21 @@ describe("a committee judges a proof escrow", () => {
     expect(await tokens(worker)).toBeNull();
   });
 
-  it("takes a worker's announcement at the committee's address and lists it as that judge's delivery", async () => {
-    const { client, fresh, created, owner, nonce } = await setup(0n);
-    const worker = await fresh();
-    const [intent] = await findIntentPda({ owner: owner.address, nonce });
-    const sha256 = "cd".repeat(32);
-    await client.deliver({ worker, intent, sha256, url: "https://example.org/work" });
-    expect(await client.deliveries({ judge: created.committee, intent })).toMatchObject([{ intent, worker: worker.address, commitment: commitmentOf(intent, worker.address, await deliverySalt(worker, intent, sha256), sha256) }]);
+  it("takes a worker's announcement at the committee's address and lists it as announced to that judge", async () => {
+    const { client, created, intent, deliver } = await setup(0n);
+    const { worker, delivered } = await deliver();
+    expect(await client.announcementsTo(created.committee)).toMatchObject([{ address: delivered.announcement, intent, worker, attestor: created.committee, seq: 1n }]);
   });
 
   it("sends only the threshold's votes, and every transaction fits a packet", async () => {
-    const { w, client, members, owner, nonce, fresh } = await setup(100_000n);
-    const worker = (await generateKeyPairSigner()).address;
-    const target = { owner: owner.address, nonce, payTo: worker, result: 1n };
+    const { w, client, members, owner, nonce, fresh, deliver } = await setup(100_000n);
+    const { delivered } = await deliver();
+    const target = { owner: owner.address, nonce, ...delivered, result: 1n };
     const { digest, committee } = await client.committeeBallot(target);
     const votes = await Promise.all(members.map((m) => signCommitteeVote(m, digest, committee.members)));
     const solver = members[2] as KeyPairSigner;
     w.chain.svm.airdrop(solver.address, lamports(SOL));
-    const release = await client.prepareCommitteeRelease({ ...target, solver, votes, deliveredSha256: "ab".repeat(32) });
+    const release = await client.prepareCommitteeRelease({ ...target, solver, votes });
     expect(release.signers).toHaveLength(2);
     expect(release.setup.length).toBeGreaterThan(0);
     for (const part of [release.setup, release.instructions]) {
@@ -164,7 +166,7 @@ describe("a committee judges a proof escrow", () => {
       outputMint: w.outputMint,
     });
     await expect(
-      client.committeeBallot({ owner: owner.address, nonce, payTo: judge.address, result: 1n }),
+      client.committeeBallot({ owner: owner.address, nonce, announcement: judge.address, opening: { sha256: WORK, salt: "00".repeat(16) }, result: 1n }),
     ).rejects.toThrow(NotSettleable);
   });
 });

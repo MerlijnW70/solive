@@ -9,11 +9,16 @@ import { feedbackInstructions, reputationOf } from "./reputation.js";
 export { escrowCommittee, loadCommittee } from "./client-committee.js";
 export { cancelClaims, type ClaimListView, type ClaimsView, releaseClaims, type ReleaseClaims, type JobClaim, jobClaimOf, type LineEntry, lineHandover, loadClaims, loadClaimsOf, loadLine, loadProfile } from "./client-claims.js";
 import { committeeSettlement, proofBallotOf, proofSettlement } from "./client-settle.js";
-export { committeeJudged, FEE_PAYER_ALONE } from "./client-settle.js";
+export { committeeJudged } from "./client-settle.js";
 import { type Client, type ClientOptions, type Mint, WATCH_POLL_MS, WATCH_WAIT_SECONDS } from "./client-types.js";
 import { decoded, watchIntents } from "./client-watch.js";
 import { explain } from "./errors.js";
-import { deliveriesOf, deliveryInstructions, deliveryRecord, jobsOf, readSpec, selfOpeningInstructions } from "./jobs.js";
+import { jobsOf, readSpec } from "./jobs.js";
+import { announcementPlan, announcing } from "./announce.js";
+import { announcementsBy, announcementsOf, announcementsTo } from "./announcement-reads.js";
+import { announcementSends } from "./announcement-sends.js";
+import { splitSettlement } from "./client-split.js";
+import { firstOpening } from "./first-opening.js";
 import { pinnedFetch } from "./pinned-fetch.js";
 import { intentNotifications, type RpcLike, rpcTransport, signatureWatch } from "./transport.js";
 
@@ -37,6 +42,7 @@ export type {
   MessageSigner,
   Mint,
   ProofBallot,
+  ReleaseOpening,
   SettleCommitteeInput,
   SettleProofInput,
   TokenBalance,
@@ -56,6 +62,7 @@ export {
 export {
   ClaimHeldBy,
   CommitteeNeeded,
+  CosignRejected,
   EscrowExpired,
   NoFreeNonce,
   NotFillable,
@@ -96,6 +103,8 @@ export function createClient(options: ClientOptions): Client {
   const proofBallot = proofBallotOf(context);
   const { committeeBallot, prepareCommitteeRelease, settleCommittee } = committeeSettlement(context);
   const { committee, createCommittee } = committeeSends(context);
+  const { splitBallot, settleSplit } = splitSettlement(context);
+  const { refute, reclaim, closeBook } = announcementSends(context);
 
   return {
     url,
@@ -145,9 +154,16 @@ export function createClient(options: ClientOptions): Client {
     balances,
     jobs: (filter = {}) => jobsOf(transport, filter),
     spec: (intent, keypair) => readSpec(transport, options.fetch ?? pinnedFetch, intent, keypair, undefined, url),
-    deliver: async (input) => send((await deliveryInstructions(transport, input)).instructions, input.worker),
-    deliveries: ({ judge, intent }) => deliveriesOf(transport, judge, intent),
-    deliveryRecord: ({ judge, intent, pages, keypair }) => deliveryRecord(transport, judge, intent, pages, keypair),
-    openDelivery: async (input) => send((await selfOpeningInstructions(transport, input)).instructions, input.worker),
+    announce: announcing(context),
+    prepareAnnouncement: (input) => announcementPlan(context, input),
+    announcements: (intent) => announcementsOf(transport, intent),
+    announcementsTo: (attestor) => announcementsTo(transport, attestor),
+    announcementsBy: (worker) => announcementsBy(transport, worker),
+    firstOpening: (input) => firstOpening(transport, input),
+    splitBallot,
+    settleSplit,
+    refute,
+    reclaim,
+    closeBook,
   };
 }

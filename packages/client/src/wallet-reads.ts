@@ -1,8 +1,7 @@
 import type { Address } from "@solana/kit";
 import { type EngineEvent, splitN } from "@intent-engine/core";
-import { paidWalletsOf } from "./delivery-openings.js";
 import { signaturePage } from "./job-scan.js";
-import { splitClaim } from "./release-reads.js";
+import { paidWalletsOf, splitClaim } from "./release-reads.js";
 import { type EngineTransaction, TRANSACTION_FETCHES, type Transport } from "./transport.js";
 
 export type OwnHistory = { transactions: EngineTransaction[]; complete: boolean };

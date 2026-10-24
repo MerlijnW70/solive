@@ -1,5 +1,6 @@
 import type { Address } from "@solana/kit";
-import { type DeliveryOpeners, deliveryRecord, firstDelivery } from "./job-deliveries.js";
+import { FirstOpeningRefused } from "./announce-errors.js";
+import { type DeliveryOpeners, firstOpening } from "./first-opening.js";
 import type { Transport } from "./transport.js";
 
 export type ConfirmTarget = {
@@ -50,12 +51,18 @@ async function announcerOf(transport: Transport, target: ConfirmTarget): Promise
   if (target.sha256 === undefined || target.attestor === undefined) {
     return undefined;
   }
-  const record = await deliveryRecord(transport, target.attestor, target.intent, target.pages, target.keypair);
-  if (!record.complete) {
-    return INCOMPLETE_RECORD;
+  try {
+    const first = await firstOpening(transport, { intent: target.intent, sha256: target.sha256, keypair: target.keypair });
+    return `${first.worker} in ${first.announcement}`;
+  } catch (error) {
+    if (error instanceof FirstOpeningRefused && error.reason === "nothing-opens") {
+      return NO_ANNOUNCER;
+    }
+    if (error instanceof FirstOpeningRefused && error.reason === "incomplete") {
+      return INCOMPLETE_RECORD;
+    }
+    throw error;
   }
-  const first = firstDelivery(record.deliveries, target.sha256);
-  return first === null ? NO_ANNOUNCER : `${first.worker} in ${first.signature}`;
 }
 
 const viewOf = async (account: { data: Uint8Array } | null): Promise<string> => (account === null ? NO_ACCOUNT : `sha256 ${await digestOf(account.data)}`);

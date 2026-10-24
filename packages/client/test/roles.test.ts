@@ -33,6 +33,7 @@ import {
 } from "@intent-engine/core";
 import { createClient, EscrowExpired, NotSettleable, type Transport } from "../src/index.js";
 import { FEE_BPS, NOW, world } from "./svm.js";
+import { announced, type Delivered, sha } from "./work.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const PAGE = readFileSync(`${ROOT}/docs/sdk.md`, "utf8") + "\n" + readFileSync(`${ROOT}/docs/sdk-client.md`, "utf8");
@@ -47,6 +48,7 @@ const JUDGE_FEE = PAY / 10n;
 const SELL = SOL / 10n;
 const MIN_OUT = 5_000_000n;
 const SPEC = new Uint8Array(createHash("sha256").update("the spec").digest());
+const WORK = sha("the role's work");
 
 const CLAIMS = {
   fill: "Any wallet other than the owner and the receiver can fill an open swap intent before it expires.",
@@ -184,13 +186,15 @@ async function setup() {
       solver,
     );
   };
-  const verdict = async (by: KeyPairSigner, sender: KeyPairSigner, owner: Address, nonce: bigint, judge: Address, payTo: Address) => {
+  const deliver = async (worker: KeyPairSigner, intent: Address) => announced(client, worker, intent, WORK);
+  const verdict = async (by: KeyPairSigner, sender: KeyPairSigner, owner: Address, nonce: bigint, judge: Address, payTo: Address, made: Delivered) => {
     const held = await client.intent(owner, nonce);
     if (held === null) {
       throw new Error("no intent");
     }
     const payee = await ata(payTo, NATIVE_MINT);
     const fields = { amountIn: held.intent.escrowed - held.intent.filled, result: 1n, maxFeeBps: FEE_BPS };
+    const opening = { delivered: Uint8Array.from(Buffer.from(made.opening.sha256, "hex")), salt: Uint8Array.from(Buffer.from(made.opening.salt, "hex")) };
     const message = await attestedProofMessage(by.address, {
       ...fields,
       domain: Uint8Array.from(settings.domain),
@@ -199,6 +203,9 @@ async function setup() {
       filled: held.intent.filled,
       revision: held.intent.revision,
       specHash: SPEC,
+      announcement: made.announcement,
+      seq: made.seq,
+      ...opening,
     });
     const accounts = await Promise.all(
       [payTo, judge, w.feeRecipient.address].map((wallet) => getCreateAssociatedTokenIdempotentInstructionAsync({ payer: sender, owner: wallet, mint: NATIVE_MINT })),
@@ -217,6 +224,8 @@ async function setup() {
           payee,
           feeRecipient: w.feeRecipient.address,
           judge,
+          announcement: made.announcement,
+          opening,
         }),
       ],
       sender,
@@ -227,7 +236,7 @@ async function setup() {
     client.send([await buildExpireIntent({ ...crank, cranker, owner, nonce })], cranker);
   const close = async (cranker: KeyPairSigner, owner: Address, nonce: bigint) =>
     client.send([await buildCloseIntent({ ...crank, cranker, owner, nonce })], cranker);
-  return { w, svm, client, fresh, sol, tokens, at, failure, status, swap, escrow, outputFor, fill, verdict, expire, close };
+  return { w, svm, client, fresh, sol, tokens, at, failure, status, swap, escrow, outputFor, fill, deliver, verdict, expire, close };
 }
 
 describe("who can do what", () => {
@@ -254,16 +263,18 @@ describe("who can do what", () => {
   });
 
   it(CLAIMS.settle, async () => {
-    const { w, fresh, escrow, verdict, failure, status, tokens } = await setup();
+    const { w, fresh, escrow, deliver, verdict, failure, status, tokens } = await setup();
     const owner = await fresh();
     const judge = await generateKeyPairSigner();
-    const worker = (await generateKeyPairSigner()).address;
     const job = await escrow(owner, judge.address);
+    const author = await fresh();
+    const worker = author.address;
+    const made = await deliver(author, job.intent);
     for (const forger of [owner, await fresh()]) {
-      expect(await failure(verdict(forger, forger, owner.address, job.nonce, judge.address, worker))).toBe("SigPubkey");
+      expect(await failure(verdict(forger, forger, owner.address, job.nonce, judge.address, worker, made))).toBe("SigPubkey");
     }
     const sender = await fresh();
-    await verdict(judge, sender, owner.address, job.nonce, judge.address, worker);
+    await verdict(judge, sender, owner.address, job.nonce, judge.address, worker, made);
     expect(await status(owner.address, job.nonce)).toBe(IntentStatus.Filled);
     expect(await tokens(judge.address)).toBe(JUDGE_FEE);
     expect((await tokens(worker)) ?? 0n).toBeGreaterThan(0n);
@@ -271,13 +282,14 @@ describe("who can do what", () => {
   });
 
   it(CLAIMS.late, async () => {
-    const { w, client, fresh, swap, escrow, outputFor, fill, failure, status, at } = await setup();
+    const { w, client, fresh, swap, escrow, outputFor, fill, deliver, failure, status, at } = await setup();
     const owner = await fresh();
     const judge = await generateKeyPairSigner();
     const solver = await fresh();
     const output = await outputFor(solver);
     const trade = await swap(owner);
     const job = await escrow(owner, judge.address);
+    const made = await deliver(solver, job.intent);
     let held: readonly Instruction[] = [];
     const holding: Transport = {
       ...w.chain.transport,
@@ -286,7 +298,7 @@ describe("who can do what", () => {
         throw new Error("held back");
       },
     };
-    const input = { judge, payer: owner, owner: owner.address, nonce: job.nonce, payTo: solver.address, result: 1n };
+    const input = { judge, payer: owner, owner: owner.address, nonce: job.nonce, ...made, result: 1n };
     await expect(createClient({ url: LOCAL, transport: holding }).settleProof(input)).rejects.toThrow("held back");
     at(NOW + TTL);
     expect(await failure(fill(solver, owner.address, trade.nonce, output))).toBe("IntentExpired");
@@ -339,21 +351,24 @@ describe("who can do what", () => {
   });
 
   it(CLAIMS.settled, async () => {
-    const { client, fresh, escrow, failure, status } = await setup();
+    const { client, fresh, escrow, deliver, failure, status } = await setup();
     const owner = await fresh();
     const judge = await generateKeyPairSigner();
     const job = await escrow(owner, judge.address);
-    await client.settleProof({ judge, payer: owner, owner: owner.address, nonce: job.nonce, payTo: (await generateKeyPairSigner()).address, result: 1n });
+    const made = await deliver(await fresh(), job.intent);
+    await client.settleProof({ judge, payer: owner, owner: owner.address, nonce: job.nonce, ...made, result: 1n });
     expect(await failure(client.cancel(owner, job.nonce))).toBe("InvalidTransition");
     expect(await status(owner.address, job.nonce)).toBe(IntentStatus.Filled);
   });
 
   it(CLAIMS.refused, async () => {
-    const { w, client, fresh, escrow, failure, status, tokens } = await setup();
+    const { w, client, fresh, escrow, deliver, failure, status, tokens } = await setup();
     const owner = await fresh();
     const judge = await generateKeyPairSigner();
-    const worker = (await generateKeyPairSigner()).address;
+    const author = await fresh();
+    const worker = author.address;
     const job = await escrow(owner, judge.address);
+    const made = await deliver(author, job.intent);
     let held: readonly Instruction[] = [];
     const holding: Transport = {
       ...w.chain.transport,
@@ -362,7 +377,7 @@ describe("who can do what", () => {
         throw new Error("held back");
       },
     };
-    const input = { judge, payer: owner, owner: owner.address, nonce: job.nonce, payTo: worker, result: 1n };
+    const input = { judge, payer: owner, owner: owner.address, nonce: job.nonce, ...made, result: 1n };
     await expect(createClient({ url: LOCAL, transport: holding }).settleProof(input)).rejects.toThrow("held back");
     expect(held.length).toBeGreaterThan(0);
     await client.cancel(owner, job.nonce);

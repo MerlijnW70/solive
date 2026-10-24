@@ -1,15 +1,13 @@
-import { createHash, generateKeyPairSync } from "node:crypto";
-import { type Address, createKeyPairSignerFromBytes, type KeyPairSigner, lamports, none, type Signature } from "@solana/kit";
+import { type Address, type KeyPairSigner, lamports, none } from "@solana/kit";
 import { getMintEncoder, getMintSize } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { DEVNET_TEST_MINT as TEST, feeBpsFor, findAssociatedTokenAddress, IntentStatus, Kind, NATIVE_MINT as WSOL, splitFees, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { connect, nothingOpens, notFirstAnnouncer, NotSettleable, releaseStandingOf, type SimpleClient } from "../src/index.js";
+import { DEVNET_TEST_MINT as TEST, feeBpsFor, IntentStatus, Kind, NATIVE_MINT as WSOL, splitFees, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { connect, FirstOpeningRefused, notFirstAnnouncer, NotSettleable, type SimpleClient } from "../src/index.js";
 import { funded, world, type World } from "./svm.js";
+import { keyed, sha, tokensOf, workUrl } from "./work.js";
 
-const sha = (text: string) => createHash("sha256").update(text).digest("hex");
 const WORK = sha("the delivered work");
 const SPEC = sha("the acceptance spec");
-const WORK_URL = "https://" + "example.org/work.tar";
 const PAY = 10_000_000n;
 
 function preset(w: World, at: Address): void {
@@ -24,30 +22,10 @@ function preset(w: World, at: Address): void {
   });
 }
 
-async function devnet(): Promise<World> {
+async function job() {
   const w = await world();
   preset(w, WSOL);
   preset(w, TEST);
-  return w;
-}
-
-async function keyed(w: World): Promise<{ signer: KeyPairSigner; keypair: Uint8Array }> {
-  const jwk = generateKeyPairSync("ed25519").privateKey.export({ format: "jwk" });
-  const keypair = Uint8Array.from([...Buffer.from(jwk.d ?? "", "base64url"), ...Buffer.from(jwk.x ?? "", "base64url")]);
-  const signer = await createKeyPairSignerFromBytes(keypair);
-  w.chain.svm.airdrop(signer.address, lamports(10_000_000_000n));
-  return { signer, keypair };
-}
-
-const nextSlot = (w: World) => w.chain.svm.warpToSlot(w.chain.svm.getClock().slot + 1n);
-
-function tokens(w: World, account: Address): bigint | null {
-  const found = w.chain.svm.getAccount(account);
-  return found.exists ? new DataView(found.data.buffer, found.data.byteOffset).getBigUint64(64, true) : null;
-}
-
-async function job() {
-  const w = await devnet();
   const owner = await funded(w.chain);
   const judge = await keyed(w);
   const at = (signer: KeyPairSigner) => connect({ cluster: "devnet", signer, transport: w.chain.transport });
@@ -57,112 +35,72 @@ async function job() {
   return { w, owner, judge, buyer, reviewer, at, escrow: made.intent as Address, nonce: made.nonce ?? 0n };
 }
 
-async function announced(seller: SimpleClient, escrow: Address, judge: Address, open: boolean): Promise<Signature> {
-  const { signature } = await seller.deliver({ escrow, sha256: WORK, url: WORK_URL });
-  if (open) {
-    await seller.client.openDelivery({ worker: seller.signer, intent: escrow, attestor: judge, sha256: WORK, announcement: signature });
-  }
-  return signature;
+async function delivered(seller: SimpleClient, escrow: Address, url = workUrl()) {
+  const done = await seller.deliver({ escrow, sha256: WORK, url });
+  return done.announcement;
 }
 
-describe("the simple release credits the first worker who announced and opened the work", () => {
-  it("pays the opened announcement with its salt, so the release is valid and the worker gains reputation", async () => {
+describe("the simple release pays the first announcement that opens to the work", () => {
+  it("delivers with an announcement, releases with the judge's key, and reads the release as valid with the worker's reputation", async () => {
     const { w, judge, buyer, reviewer, at, escrow, nonce } = await job();
     const worker = await funded(w.chain);
     const seller = await at(worker);
-    const announcement = await announced(seller, escrow, judge.signer.address, true);
+    const sent = w.chain.sent.length;
+    const previewed = await seller.deliver({ escrow, sha256: WORK, url: workUrl(), preview: true });
+    expect(previewed.summary).toBe(`Deliver work ${WORK} at ${workUrl()} for escrow ${escrow}`);
+    expect(previewed.instructions.length).toBeGreaterThan(0);
+    expect(w.chain.sent).toHaveLength(sent);
+    const made = await seller.deliver({ escrow, sha256: WORK.toUpperCase(), url: workUrl() });
+    expect(made).toMatchObject({ seq: 1n, summary: previewed.summary, signature: expect.any(String) });
+    expect(await seller.deliver({ escrow, sha256: WORK, url: workUrl() })).toEqual({ ...made, signature: null });
 
-    const preview = await reviewer.release({ escrow, deliveredSha256: WORK.toUpperCase(), preview: true });
-    expect(preview.summary).toBe(`Release escrow ${escrow} holding 0.01 SOL to ${worker.address} for work ${WORK}, announced first in ${announcement}`);
+    const preview = await reviewer.release({ escrow, deliveredSha256: WORK.toUpperCase(), keypair: judge.keypair, preview: true });
+    expect(preview.summary).toBe(`Release escrow ${escrow} holding 0.01 SOL to ${worker.address} for work ${WORK}, announced first in ${made.announcement}`);
     expect(preview.instructions.length).toBeGreaterThan(0);
     expect((await buyer.client.intent(buyer.signer.address, nonce))?.intent.status).toBe(IntentStatus.Open);
 
-    const released = await reviewer.release({ escrow, to: worker.address, deliveredSha256: WORK });
+    const released = await reviewer.release({ escrow, to: worker.address, deliveredSha256: WORK, keypair: judge.keypair });
     expect(w.chain.sent).toContain(released.signature);
     const { net } = splitFees(PAY, feeBpsFor(await buyer.client.config(), Kind.AttestedResult), 0, 0);
-    expect(tokens(w, await findAssociatedTokenAddress({ owner: worker.address, mint: WSOL, tokenProgram: TOKEN_PROGRAM_ADDRESS }))).toBe(net);
-
-    const history = await buyer.client.history(escrow);
-    const event = history.find(({ name }) => name === "IntentAttested");
-    const created = history.find(({ name }) => name === "IntentCreated");
+    expect(await tokensOf(w, worker.address, WSOL)).toBe(net);
+    const event = (await buyer.client.history(escrow)).find(({ name }) => name === "IntentAttested");
     expect(event).toMatchObject({ signature: released.signature, deliveredSha256: WORK, deliveredSalt: expect.stringMatching(/^[0-9a-f]{32}$/) });
-    const standing = await releaseStandingOf(w.chain.transport, {
-      intent: escrow,
-      attestor: judge.signer.address,
-      release: { slot: event?.slot ?? 0n },
-      recorded: { sha256: WORK, salt: event?.deliveredSalt ?? "" },
-      payees: [worker.address],
-      createdAt: created?.blockTime ?? null,
-      from: created?.slot ?? null,
-    });
-    expect(standing).toEqual({ valid: true, refutedBy: null, complete: true });
     expect(await buyer.client.reputation(worker.address)).toMatchObject({ paid: 1, refuted: 0 });
-
-    expect(await buyer.receipt({ escrow })).toMatchObject({
-      escrow,
-      released: true,
-      signature: released.signature,
-      payee: worker.address,
-      deliveredSha256: WORK,
-      valid: true,
-      refutedBy: null,
-      complete: true,
-    });
-    expect(await buyer.deliveries({ escrow })).toEqual([{ worker: worker.address, sha256: WORK, url: null, opened: true, signature: announcement }]);
+    expect(await buyer.receipt({ escrow })).toMatchObject({ escrow, released: true, signature: released.signature, payee: worker.address, deliveredSha256: WORK, valid: true, refutedBy: null, complete: true });
+    expect(await buyer.deliveries({ escrow })).toEqual([{ worker: worker.address, sha256: WORK, url: null, opened: true, announcement: made.announcement, seq: 1n }]);
   });
 
-  it("refuses a to that is not the first announcer and names the worker who announced first", async () => {
+  it("refuses a to that is not the first announcer and names the announcement that came first", async () => {
     const { w, judge, reviewer, at, escrow } = await job();
     const [first, later] = [await funded(w.chain), await funded(w.chain)];
-    const before = await announced(await at(first), escrow, judge.signer.address, true);
-    nextSlot(w);
-    await announced(await at(later), escrow, judge.signer.address, true);
+    const before = await delivered(await at(first), escrow);
+    const after = await delivered(await at(later), escrow, workUrl("copied.tar"));
     const sent = w.chain.sent.length;
-    const refused = reviewer.release({ escrow, to: later.address, deliveredSha256: WORK });
+    const refused = reviewer.release({ escrow, to: later.address, deliveredSha256: WORK, keypair: judge.keypair });
     await expect(refused).rejects.toThrow(NotSettleable);
     await expect(refused).rejects.toThrow(notFirstAnnouncer(first.address, before, WORK, later.address));
-    expect(w.chain.sent.length).toBe(sent);
-    const listed = await reviewer.deliveries({ escrow, sha256: WORK });
-    expect(listed.map(({ worker, opened }) => [worker, opened])).toEqual([
-      [first.address, true],
-      [later.address, true],
+    expect(w.chain.sent).toHaveLength(sent);
+    expect(await reviewer.deliveries({ escrow, sha256: WORK, keypair: judge.keypair })).toEqual([
+      { worker: first.address, sha256: WORK, url: workUrl(), opened: true, announcement: before, seq: 1n },
+      { worker: later.address, sha256: WORK, url: workUrl("copied.tar"), opened: true, announcement: after, seq: 2n },
     ]);
   });
 
-  it("refuses when no announcement opens to the work, and pays once the judge's key opens it", async () => {
+  it("refuses without the judge's key and for work nothing opens to, and pays once the key is given", async () => {
     const { w, judge, reviewer, at, escrow } = await job();
     const worker = await funded(w.chain);
-    const announcement = await announced(await at(worker), escrow, judge.signer.address, false);
+    const announcement = await delivered(await at(worker), escrow);
     const sent = w.chain.sent.length;
-    const refused = reviewer.release({ escrow, deliveredSha256: WORK });
-    await expect(refused).rejects.toThrow(NotSettleable);
-    await expect(refused).rejects.toThrow(nothingOpens(WORK));
-    await expect(reviewer.release({ escrow, deliveredSha256: sha("other work"), keypair: judge.keypair })).rejects.toThrow(nothingOpens(sha("other work")));
-    expect(w.chain.sent.length).toBe(sent);
-    expect(await reviewer.deliveries({ escrow, sha256: WORK })).toEqual([{ worker: worker.address, sha256: null, url: null, opened: false, signature: announcement }]);
-    expect(await reviewer.deliveries({ escrow, sha256: WORK, keypair: judge.keypair })).toEqual([
-      { worker: worker.address, sha256: WORK, url: WORK_URL, opened: true, signature: announcement },
-    ]);
+    const refused = await reviewer.release({ escrow, deliveredSha256: WORK }).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(FirstOpeningRefused);
+    expect(refused).toMatchObject({ reason: "key-not-given", announcement, worker: worker.address });
+    await expect(reviewer.release({ escrow, deliveredSha256: sha("other work"), keypair: judge.keypair })).rejects.toMatchObject({ reason: "nothing-opens" });
+    expect(w.chain.sent).toHaveLength(sent);
+    expect(await reviewer.deliveries({ escrow, sha256: WORK })).toEqual([{ worker: worker.address, sha256: null, url: null, opened: false, announcement, seq: 1n }]);
+    expect(await reviewer.deliveries({ escrow, sha256: WORK, keypair: judge.keypair })).toEqual([{ worker: worker.address, sha256: WORK, url: workUrl(), opened: true, announcement, seq: 1n }]);
     const released = await reviewer.release({ escrow, deliveredSha256: WORK, keypair: judge.keypair });
     expect(w.chain.sent).toContain(released.signature);
     expect(await reviewer.receipt({ escrow })).toMatchObject({ released: true, payee: worker.address, deliveredSha256: WORK, valid: true });
-  });
-
-  it("refuses when an earlier announcement does not open with the keys given, and pays that earlier worker once it opens", async () => {
-    const { w, judge, reviewer, at, escrow } = await job();
-    const [sealed, copier] = [await funded(w.chain), await funded(w.chain)];
-    const first = await announced(await at(sealed), escrow, judge.signer.address, false);
-    nextSlot(w);
-    await announced(await at(copier), escrow, judge.signer.address, true);
-    const sent = w.chain.sent.length;
-    const refused = reviewer.release({ escrow, deliveredSha256: WORK });
-    await expect(refused).rejects.toThrow(NotSettleable);
-    await expect(refused).rejects.toThrow(`has an earlier announcement ${first} by ${sealed.address} sealed to the key derived from the judge's wallet`);
-    expect(w.chain.sent.length).toBe(sent);
-    await expect(reviewer.release({ escrow, to: copier.address, deliveredSha256: WORK, keypair: judge.keypair })).rejects.toThrow(notFirstAnnouncer(sealed.address, first, WORK, copier.address));
-    const released = await reviewer.release({ escrow, deliveredSha256: WORK, keypair: judge.keypair });
-    expect(w.chain.sent).toContain(released.signature);
-    expect(await reviewer.receipt({ escrow })).toMatchObject({ released: true, payee: sealed.address, deliveredSha256: WORK, valid: true });
   });
 
   it("reads an escrow nobody released yet", async () => {
