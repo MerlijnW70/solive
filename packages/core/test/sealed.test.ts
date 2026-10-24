@@ -25,6 +25,7 @@ describe("sealed files", () => {
     const refused = await unseal(sealed, c.keypair).catch((e: unknown) => e);
     expect(refused).toBeInstanceOf(NotInvited);
     expect((refused as NotInvited).wallet).toBe(c.address);
+    expect((refused as NotInvited).message).toBe(`${c.address} is not one of the wallets this was sealed to`);
     expect(new TextDecoder().decode(sealed)).not.toContain("answer.txt");
   });
 
@@ -80,9 +81,12 @@ describe("sealed files", () => {
       expect(() => sealedTo(plain)).toThrow(SealedError);
       expect(await unseal(plain, a.keypair).catch((e: unknown) => e)).toBeInstanceOf(SealedError);
     }
+    const future = encode({ ...sealed, [SEALED_TAG]: SEALED_VERSION + 1 });
+    expect(() => sealedTo(future)).toThrow("this sealed file has a version this release does not read");
     for (const bad of [
-      encode({ ...sealed, [SEALED_TAG]: SEALED_VERSION + 1 }),
+      future,
       encode({ ...sealed, to: "nobody" }),
+      encode({ ...sealed, to: (sealed["to"] as Record<string, string>[]).map((r) => ({ ...r, wallet: `${r["wallet"]}0` })) }),
       encode({ ...sealed, data: 7 }),
       encode({ ...sealed, to: [{ wallet: "not-an-address", pk: "", epk: "", iv: "", key: "" }] }),
       encode({ ...sealed, to: [null] }),
@@ -93,6 +97,9 @@ describe("sealed files", () => {
       expect(isSealed(bad)).toBe(true);
       expect(() => sealedTo(bad)).toThrow(SealedError);
       expect(await unseal(bad, a.keypair).catch((e: unknown) => e)).toBeInstanceOf(SealedError);
+      if (bad !== future) {
+        expect(() => sealedTo(bad)).toThrow("this sealed file is malformed");
+      }
     }
   });
 

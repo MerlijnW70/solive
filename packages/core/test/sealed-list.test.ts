@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
-import { type Address, getAddressDecoder, getProgramDerivedAddress } from "@solana/kit";
+import { type Address, getAddressDecoder, getProgramDerivedAddress, isOffCurveAddress } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import {
   isOnCurve,
@@ -95,6 +95,18 @@ describe("sealing to keys", () => {
     await expect(seal(text("spec"), [a.address, pda])).rejects.toThrow(`${pda} is off the ed25519 curve`);
   });
 
+  it("agrees with kit on which addresses are on the curve, and refuses non-canonical and signed-zero points", async () => {
+    const decode = (bytes: Uint8Array) => getAddressDecoder().decode(bytes);
+    const corpus = await Promise.all(Array.from({ length: 256 }, async (_, i) => decode(new Uint8Array(await crypto.subtle.digest("SHA-256", text(`curve ${i}`))))));
+    const disagree = await Promise.all(corpus.map(async (a) => (isOnCurve(a) === !(await isOffCurveAddress(a)) ? null : a)));
+    expect(disagree.filter((a) => a !== null)).toEqual([]);
+    expect(new Set(corpus.map(isOnCurve))).toEqual(new Set([true, false]));
+    const yBytes = (y: bigint, sign: number) => Uint8Array.from({ length: 32 }, (_, i) => Number((y >> BigInt(8 * i)) & 0xffn) | (i === 31 ? sign << 7 : 0));
+    const p = 2n ** 255n - 19n;
+    expect([isOnCurve(decode(yBytes(p, 0))), isOnCurve(decode(yBytes(p + 1n, 0))), isOnCurve(decode(yBytes(p - 1n, 0)))]).toEqual([false, false, true]);
+    expect([isOnCurve(decode(yBytes(1n, 0))), isOnCurve(decode(yBytes(1n, 1))), isOnCurve(decode(yBytes(p - 1n, 1)))]).toEqual([true, false, false]);
+  });
+
   it("seals to a published encryption key, which opens it where the wallet key does not", async () => {
     const [judge, other] = [wallet(), wallet()];
     const file = await newEncryptionKeyFile();
@@ -106,6 +118,7 @@ describe("sealing to keys", () => {
     await expect(unseal(sealed, judge.keypair)).rejects.toThrow("open it with that encryption key file");
     expect(await unseal(sealed, (await readEncryptionKeyFile((await newEncryptionKeyFile()).text))).catch((e: unknown) => e)).toBeInstanceOf(NotInvited);
     await expect(unseal(sealed, [])).rejects.toBeInstanceOf(NotInvited);
+    await expect(unseal(sealed, [])).rejects.toThrow("none of the keys given is one this was sealed to");
     expect(new TextDecoder().decode(await unseal(sealed, other.keypair))).toBe("the work");
   });
 

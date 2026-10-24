@@ -86,8 +86,8 @@ export function isOnCurve(wallet: Address): boolean {
     return false;
   }
   const yy = (y * y) % P;
-  const xx = (((yy - 1n + P) % P) * modPow((D * yy + 1n) % P, P - 2n)) % P;
-  return xx === 0n ? sign === 0 : modPow(xx, (P - 1n) / 2n) === 1n;
+  const uv = ((yy - 1n) * (D * yy + 1n)) % P;
+  return uv === 0n ? sign === 0 : modPow(uv, (P - 1n) / 2n) === 1n;
 }
 
 export function x25519PublicOf(wallet: Address): Uint8Array<ArrayBuffer> {
