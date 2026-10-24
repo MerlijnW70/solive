@@ -155,3 +155,20 @@ pub fn update_profile_ix(wallet: &Pubkey, encryption_key: [u8; 32]) -> Instructi
         },
     )
 }
+
+pub fn sync_committee_keys_ix(committee: &Pubkey, profiles: &[Pubkey]) -> Instruction {
+    let mut ix = engine_ix(
+        intent_engine::accounts::SyncCommitteeKeys {
+            committee: *committee,
+            event_authority: event_authority(),
+            program: intent_engine::ID,
+        },
+        intent_engine::instruction::SyncCommitteeKeys {},
+    );
+    ix.accounts.extend(
+        profiles
+            .iter()
+            .map(|p| solana_instruction::AccountMeta::new_readonly(*p, false)),
+    );
+    ix
+}

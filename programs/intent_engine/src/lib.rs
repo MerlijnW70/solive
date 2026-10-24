@@ -286,6 +286,10 @@ pub mod intent_engine {
         handle_set_announce_fee(ctx, fee)
     }
 
+    pub fn sync_committee_keys(ctx: Context<SyncCommitteeKeys>) -> Result<()> {
+        handle_sync_committee_keys(ctx)
+    }
+
     pub fn set_committee_floor(ctx: Context<SetCommitteeFloor>, floor: u64) -> Result<()> {
         handle_set_committee_floor(ctx, floor)
     }

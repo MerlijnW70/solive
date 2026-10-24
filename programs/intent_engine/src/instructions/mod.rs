@@ -40,6 +40,7 @@ pub mod set_committee_floor;
 pub mod set_mint_cap;
 pub mod settle_claims;
 pub mod stand_by;
+pub mod sync_committee_keys;
 pub mod update_config;
 pub mod update_economics;
 
@@ -85,5 +86,6 @@ pub use set_committee_floor::*;
 pub use set_mint_cap::*;
 pub use settle_claims::*;
 pub use stand_by::*;
+pub use sync_committee_keys::*;
 pub use update_config::*;
 pub use update_economics::*;

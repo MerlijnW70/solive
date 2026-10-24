@@ -422,3 +422,10 @@ pub struct DeliveryAnnounced {
 pub struct AnnounceFeeSet {
     pub fee: u32,
 }
+
+#[event]
+pub struct CommitteeKeysSynced {
+    pub committee: Pubkey,
+    pub mask: u8,
+    pub fingerprints: [[u8; 8]; 8],
+}
