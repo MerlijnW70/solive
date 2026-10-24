@@ -1,8 +1,8 @@
-import { createHash, generateKeyPairSync } from "node:crypto";
+import { createHash } from "node:crypto";
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Address, createKeyPairSignerFromBytes, createSignableMessage, getBase58Decoder, type KeyPairSigner, lamports } from "@solana/kit";
+import { type Address, createSignableMessage, getBase58Decoder, type KeyPairSigner } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { announcementCommitment, buildAnnounceDelivery, deliverySecrets, findAssociatedTokenAddress, Kind, saltMessage, sealDeliveryV4, sortMembers } from "@intent-engine/core";
@@ -12,21 +12,13 @@ import { SEALED_ELSEWHERE } from "../src/judge-watch.js";
 import { VOTE_NEXT } from "../src/judge.js";
 import { EXIT_OK, main } from "../src/main.js";
 import { balance, cli, DOMAIN, funded, h, NOW, runtime, transport, type World, world } from "./harness.js";
-import { announced, keyed as fundedKey, nextSlot } from "./announce.js";
+import { announced, keyed, nextSlot } from "./announce.js";
 
 const CASES = '{"cases": [{"args": [""], "expected": 0}, {"args": ["one two"], "expected": 2}]}';
 const SPEC = `# Count words\n\n\`\`\`judge-cases\n${CASES}\n\`\`\`\n`;
 const CORRECT = "export default function count(text) { const words = text.match(/\\S+/g); return words === null ? 0 : words.length; }\n";
 
 const sha = (text: string) => createHash("sha256").update(text).digest("hex");
-
-async function keyed(): Promise<{ signer: KeyPairSigner; keypair: Uint8Array }> {
-  const jwk = generateKeyPairSync("ed25519").privateKey.export({ format: "jwk" });
-  const keypair = Uint8Array.from([...Buffer.from(jwk.d ?? "", "base64url"), ...Buffer.from(jwk.x ?? "", "base64url")]);
-  const signer = await createKeyPairSignerFromBytes(keypair);
-  h.svm.airdrop(signer.address, lamports(100_000_000_000n));
-  return { signer, keypair };
-}
 
 async function escrow(w: World, attestor: Address, judgeFee = 0n) {
   const dir = await mkdtemp(join(tmpdir(), "sealed-"));
@@ -83,12 +75,11 @@ async function watch(argv: string[], rounds = 2) {
 describe("sealed announcements", () => {
   it("judge --watch fails a copy of a worker's blob landed first from another wallet, never fetches it, and pays the honest worker", async () => {
     const w = await world();
-    const judge = await keyed();
-    const { spec, intent } = await escrow(w, judge.signer.address);
-    h.files.set("judge.json", JSON.stringify(Array.from(judge.keypair)));
-    const [worker, copier] = [await fundedKey(), await fundedKey()];
+    const judge = await keyed("judge.json");
+    const { spec, intent } = await escrow(w, judge.address);
+    const [worker, copier] = [await keyed(), await keyed()];
     const url = ["https://work.example.org", "5", "count.mjs"].join("/");
-    const copy = await copied(intent, judge.signer.address, worker, copier, CORRECT, url);
+    const copy = await copied(intent, judge.address, worker, copier, CORRECT, url);
     const honest = await served(intent, worker, CORRECT, url);
     const watched = await watch(["judge", "--keypair", "judge.json", "--owner", w.owner.address, "--nonce", "0", "--spec", spec, "--sandbox", "viper", "--watch", "--yes"]);
     expect([watched.code, watched.err]).toEqual([EXIT_OK, ""]);
@@ -119,12 +110,11 @@ describe("sealed announcements", () => {
   it("judge pays the first announcement that opens to the work, deliveries shows it paid, and the receipt reads its salt from the release", async () => {
     const w = await world();
     h.through = svmTransport(h.svm, { genesisHash: getBase58Decoder().decode(DOMAIN) });
-    const judge = await keyed();
-    const { dir, spec, intent } = await escrow(w, judge.signer.address);
-    h.files.set("judge.json", JSON.stringify(Array.from(judge.keypair)));
+    const judge = await keyed("judge.json");
+    const { dir, spec, intent } = await escrow(w, judge.address);
     const artifact = join(dir, "count.mjs");
     await writeFile(artifact, CORRECT);
-    const [worker, other] = [await fundedKey("worker.json"), await fundedKey("other.json")];
+    const [worker, other] = [await keyed("worker.json"), await keyed("other.json")];
     for (const [path, module, name] of [["other.json", "export default 1;\n", "other.mjs"], ["worker.json", CORRECT, "count.mjs"]] as const) {
       const work = join(dir, name);
       await writeFile(work, module);
@@ -158,10 +148,9 @@ describe("sealed announcements", () => {
 
   it("deliveries lists sealed announcements and opens their urls only with the judge's key", async () => {
     const w = await world();
-    const judge = await keyed();
-    const { intent } = await escrow(w, judge.signer.address);
-    h.files.set("judge.json", JSON.stringify(Array.from(judge.keypair)));
-    const worker = await fundedKey();
+    const judge = await keyed("judge.json");
+    const { intent } = await escrow(w, judge.address);
+    const worker = await keyed();
     const url = "https://" + "example.org/count.mjs";
     const made = await served(intent, worker, CORRECT, url);
     const listed = await cli(["deliveries", "--intent", intent], {});
@@ -184,7 +173,7 @@ describe("sealed announcements", () => {
     const { dir, spec, intent } = await escrow(w, committee);
     const artifact = join(dir, "count.mjs");
     await writeFile(artifact, CORRECT);
-    const [other, worker] = [await fundedKey(), await fundedKey()];
+    const [other, worker] = [await keyed(), await keyed()];
     await served(intent, other, "export default 1;\n", "https://" + "example.org/other.mjs");
     const made = await served(intent, worker, CORRECT, "https://" + "example.org/count.mjs");
     const verdict = join(dir, "v0.json");

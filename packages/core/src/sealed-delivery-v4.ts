@@ -1,4 +1,5 @@
 import type { Address } from "@solana/kit";
+import { PRODUCT_SLUG } from "../generated/identity.js";
 import { ascii, key } from "./bytes.js";
 import {
   BLOB_FIXED_LEN,
@@ -13,10 +14,10 @@ import {
   SALT_LEN,
 } from "./delivery.js";
 import { type DeliveryOpener, deliveryKeyOf, isUsableKey } from "./encryption-key.js";
-import { isMemoUrl, MEMO_URL_RULE } from "./memo.js";
+import { isMemoUrl, isSha256Hex, MEMO_URL_RULE } from "./memo.js";
 import { PKCS8_X25519, type SealRecipient, SealedError, x25519PublicOf } from "./sealed.js";
-import { SALT_TAG } from "./sealed-delivery.js";
 
+export const SALT_TAG = `${PRODUCT_SLUG}-delivery-salt-v3`;
 export const KC_TAG = ascii("intent-engine-kc");
 export const WRAP_INFO = ascii("intent-engine-wk");
 export const BLOB_INFO = ascii("intent-engine-bl");
@@ -50,6 +51,7 @@ type Parsed = BlobLayout & { mask: number };
 
 type Recipient = { key: Uint8Array<ArrayBuffer>; profile: boolean };
 
+const SALT_HEX = /^[0-9a-f]{32}$/;
 const IV = new Uint8Array(12);
 const BASE_POINT = Uint8Array.from({ length: 32 }, (_, i) => (i === 0 ? 9 : 0));
 
@@ -69,6 +71,17 @@ const sha256 = async (parts: readonly ArrayLike<number>[]): Promise<Uint8Array<A
 const equal = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((byte, i) => byte === b[i]);
 
 const xor = (a: Uint8Array, b: Uint8Array): Uint8Array<ArrayBuffer> => Uint8Array.from(a, (byte, i) => byte ^ (b[i] ?? 0));
+
+const hexBytes = (text: string): Uint8Array<ArrayBuffer> => Uint8Array.from(text.match(/../g) ?? [], (pair) => Number.parseInt(pair, 16));
+
+export const isSaltHex = (text: string): boolean => SALT_HEX.test(text);
+
+export function saltMessage(intent: Address, sha256: string): Uint8Array<ArrayBuffer> {
+  if (!isSha256Hex(sha256)) {
+    throw new RangeError("a salt binds a sha256 of 64 lowercase hex digits");
+  }
+  return bytesOf([ascii(SALT_TAG), key(intent), hexBytes(sha256)]);
+}
 
 export const sealedBlobLength = (recipients: number, urlBytes: number): number => BLOB_FIXED_LEN + BLOB_PER_RECIPIENT_LEN * recipients + urlBytes;
 

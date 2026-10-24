@@ -3,31 +3,27 @@ import { type Address, getAddressDecoder } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import {
   checkProfile,
+  delivery,
   type DeliveryKey,
-  DELIVERY_MEMO_PREFIX,
+  type DeliveryOpener,
+  deliverySecrets,
   ENCRYPTION_KEY_KIND,
-  FINGERPRINT_BYTES,
-  FINGERPRINT_TAG,
-  keyFingerprint,
   ENCRYPTION_KEY_MISMATCH,
   EncryptionKeyError,
   encryptionKeyText,
   isEncryptionKeyText,
   isUsableKey,
+  keyFingerprintV4,
   newEncryptionKeyFile,
   NOT_ENCRYPTION_KEY_FILE,
-  openDelivery,
-  parseDeliveryMemo,
+  openDeliveryV4,
+  openWithContentKey,
   parseEncryptionKey,
   readEncryptionKeyFile,
-  SALT_BYTES,
-  saltCheck,
   SMALL_ORDER_KEYS,
-  SEALED_URL_VERSION,
-  sealDelivery,
-  sealedFingerprints,
-  sealedKeys,
-  sealedUrlRecipients,
+  SealedError,
+  sealDeliveryV4,
+  type SealRecipient,
   WALLET_KEY_GIVEN,
   x25519PublicOf,
 } from "../src/index.js";
@@ -41,7 +37,15 @@ function wallet(): Wallet {
 }
 
 const URL = "https://example.org/work.tar";
-const SALT = "ab".repeat(SALT_BYTES);
+
+const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
+
+async function sealTo(recipients: readonly SealRecipient[], intent: Address, worker: Address): Promise<Uint8Array> {
+  return sealDeliveryV4(await deliverySecrets(URL, recipients), intent, worker);
+}
+
+const urlOpened = async (blob: Uint8Array, opener: DeliveryOpener, intent: Address, worker: Address): Promise<string | null> =>
+  (await openDeliveryV4(blob, opener, intent, worker))?.url ?? null;
 
 async function encryptionKey(): Promise<{ file: string; key: DeliveryKey; publicKey: Uint8Array }> {
   const { text, publicKey } = await newEncryptionKeyFile();
@@ -80,94 +84,82 @@ describe("judge encryption keys", () => {
   });
 
   it("seal to a recipient's encryption key, record which key each got, and open only with that key", async () => {
-    const intent = wallet().address;
+    const [intent, worker] = [wallet().address, wallet().address];
     const [judge, member] = [wallet(), wallet()];
     const sealed = await encryptionKey();
-    const blob = await sealDelivery({ salt: SALT, url: URL }, [{ wallet: judge.address, encryptionKey: sealed.publicKey }, member.address], intent);
-    expect(Buffer.from(blob, "base64")[0]).toBe(SEALED_URL_VERSION);
-    expect(sealedUrlRecipients(blob)).toBe(2);
-    expect(sealedKeys(blob)).toEqual(["profile", "wallet"]);
-    expect(sealedFingerprints(blob)).toEqual([await keyFingerprint(sealed.publicKey), await keyFingerprint(x25519PublicOf(member.address))]);
-    const fingerprint = createHash("sha256").update(Buffer.concat([Buffer.from(FINGERPRINT_TAG), Buffer.from(sealed.publicKey)])).digest("hex").slice(0, 2 * FINGERPRINT_BYTES);
-    expect(sealedFingerprints(blob)?.[0]).toBe(fingerprint);
-    const renamed = Buffer.from(blob, "base64");
-    renamed[3] = (renamed[3] ?? 0) ^ 1;
-    expect(await openDelivery(renamed.toString("base64"), sealed.key, intent)).toBeNull();
-    expect(await openDelivery(blob, sealed.key, intent)).toEqual({ salt: SALT, url: URL });
-    expect(await openDelivery(blob, member.keypair, intent)).toEqual({ salt: SALT, url: URL });
-    expect(await openDelivery(blob, judge.keypair, intent)).toBeNull();
-    expect(await openDelivery(blob, (await encryptionKey()).key, intent)).toBeNull();
-    const changed = Buffer.from(blob, "base64");
-    changed[2] = 0b11;
-    expect(sealedKeys(changed.toString("base64"))).toEqual(["profile", "profile"]);
-    expect(await openDelivery(changed.toString("base64"), sealed.key, intent)).toBeNull();
-    changed[2] = 0b100;
-    expect(sealedKeys(changed.toString("base64"))).toBeNull();
+    const blob = await sealTo([{ wallet: judge.address, encryptionKey: sealed.publicKey }, member.address], intent, worker);
+    const head = delivery.blobHead(blob);
+    expect([blob[0], head.count, head.mask]).toEqual([delivery.BLOB_VERSION, 2, 0b01]);
+    expect(head.fps.slice(0, 2).map(hex)).toEqual([hex(await keyFingerprintV4(sealed.publicKey)), hex(await keyFingerprintV4(x25519PublicOf(member.address)))]);
+    const fingerprint = createHash("sha256").update(Buffer.concat([delivery.FINGERPRINT_TAG, sealed.publicKey])).digest("hex").slice(0, 2 * delivery.FINGERPRINT_LEN);
+    expect(hex(head.fps[0] ?? new Uint8Array())).toBe(fingerprint);
+    expect(await urlOpened(blob, sealed.key, intent, worker)).toBe(URL);
+    expect(await urlOpened(blob, member.keypair, intent, worker)).toBe(URL);
+    expect(await urlOpened(blob, judge.keypair, intent, worker)).toBeNull();
+    expect(await urlOpened(blob, (await encryptionKey()).key, intent, worker)).toBeNull();
   });
 
   it("mark the key of each recipient at its own position", async () => {
-    const intent = wallet().address;
+    const [intent, worker] = [wallet().address, wallet().address];
     const [judge, member] = [wallet(), wallet()];
     const sealed = await encryptionKey();
-    const blob = await sealDelivery({ salt: SALT, url: URL }, [member.address, { wallet: judge.address, encryptionKey: sealed.publicKey }], intent);
-    expect(sealedKeys(blob)).toEqual(["wallet", "profile"]);
-    expect(Buffer.from(blob, "base64")[2]).toBe(0b10);
-    expect(await openDelivery(blob, sealed.key, intent)).toEqual({ salt: SALT, url: URL });
-    expect(await openDelivery(blob, member.keypair, intent)).toEqual({ salt: SALT, url: URL });
+    const blob = await sealTo([member.address, { wallet: judge.address, encryptionKey: sealed.publicKey }], intent, worker);
+    expect(delivery.blobHead(blob).mask).toBe(0b10);
+    expect(blob[2]).toBe(0b10);
+    expect(delivery.blobHead(blob).fps[1]).toEqual(await keyFingerprintV4(sealed.publicKey));
+    expect(await urlOpened(blob, sealed.key, intent, worker)).toBe(URL);
+    expect(await urlOpened(blob, member.keypair, intent, worker)).toBe(URL);
   });
 
-  it("keep a wallet listed twice once, with its first encryption key, or the key a later listing adds", async () => {
-    const intent = wallet().address;
+  it("refuse a wallet listed twice, whichever keys its listings give", async () => {
+    const [intent, worker] = [wallet().address, wallet().address];
     const judge = wallet();
     const [first, second] = [await encryptionKey(), await encryptionKey()];
-    const seal = (recipients: Parameters<typeof sealDelivery>[1]) => sealDelivery({ salt: SALT, url: URL }, recipients, intent);
     const keyed = { wallet: judge.address, encryptionKey: first.publicKey };
-    const twice = await seal([keyed, { wallet: judge.address, encryptionKey: second.publicKey }]);
-    expect(sealedFingerprints(twice)).toEqual([await keyFingerprint(first.publicKey)]);
-    expect(await openDelivery(twice, first.key, intent)).toEqual({ salt: SALT, url: URL });
-    expect(await openDelivery(twice, second.key, intent)).toBeNull();
-    for (const recipients of [[judge.address, keyed], [keyed, judge.address], [{ wallet: judge.address, encryptionKey: null }, keyed]]) {
-      const blob = await seal(recipients);
-      expect([sealedKeys(blob), sealedFingerprints(blob)]).toEqual([["profile"], [await keyFingerprint(first.publicKey)]]);
+    const bare = { wallet: judge.address, encryptionKey: null };
+    const lists: SealRecipient[][] = [[keyed, { wallet: judge.address, encryptionKey: second.publicKey }], [judge.address, keyed], [keyed, judge.address], [bare, keyed], [judge.address, bare]];
+    for (const recipients of lists) {
+      await expect(sealTo(recipients, intent, worker)).rejects.toThrow(new SealedError(`${judge.address} is listed twice; each recipient holds one slot`));
     }
-    const bare = await seal([judge.address, { wallet: judge.address, encryptionKey: null }]);
-    expect(sealedKeys(bare)).toEqual(["wallet"]);
   });
 
-  it("seal to the key derived from the wallet when a recipient publishes no encryption key, or a low-order one", async () => {
-    const intent = wallet().address;
+  it("seal to the key derived from the wallet when a recipient publishes no encryption key", async () => {
+    const [intent, worker] = [wallet().address, wallet().address];
     const judge = wallet();
-    const blob = await sealDelivery({ salt: SALT, url: URL }, [{ wallet: judge.address, encryptionKey: null }], intent);
-    expect(sealedKeys(blob)).toEqual(["wallet"]);
-    expect(await openDelivery(blob, judge.keypair, intent)).toEqual({ salt: SALT, url: URL });
-    expect(await openDelivery(blob, (await encryptionKey()).key, intent)).toBeNull();
-    const plain = await sealDelivery({ salt: SALT, url: URL }, [judge.address], intent);
-    expect(sealedKeys(plain)).toEqual(["wallet"]);
-    const lowOrder = Uint8Array.from({ length: 32 }, (_, i) => (i === 0 ? 1 : 0));
-    const fallback = await sealDelivery({ salt: SALT, url: URL }, [{ wallet: judge.address, encryptionKey: lowOrder }], intent);
-    expect(sealedKeys(fallback)).toEqual(["wallet"]);
-    expect(await openDelivery(fallback, judge.keypair, intent)).toEqual({ salt: SALT, url: URL });
-    await expect(sealDelivery({ salt: SALT, url: URL }, [{ wallet: judge.address, encryptionKey: new Uint8Array(31) }], intent)).rejects.toThrow("32 bytes");
+    for (const recipient of [{ wallet: judge.address, encryptionKey: null }, judge.address]) {
+      const blob = await sealTo([recipient], intent, worker);
+      const head = delivery.blobHead(blob);
+      expect([head.mask, hex(head.fps[0] ?? new Uint8Array())]).toEqual([0, hex(await keyFingerprintV4(x25519PublicOf(judge.address)))]);
+      expect(await urlOpened(blob, judge.keypair, intent, worker)).toBe(URL);
+      expect(await urlOpened(blob, (await encryptionKey()).key, intent, worker)).toBeNull();
+    }
+    await expect(sealTo([{ wallet: judge.address, encryptionKey: new Uint8Array(31).fill(9) }], intent, worker)).rejects.toThrow(SealedError);
   });
 
-  it("refuse a version-3 delivery rewritten as version 2, and one whose key record was flipped", async () => {
-    const intent = wallet().address;
+  it("refuse a tampered header, whichever recipient opens it", async () => {
+    const [intent, worker] = [wallet().address, wallet().address];
     const [judge, member] = [wallet(), wallet()];
     const sealed = await encryptionKey();
-    const blob = Buffer.from(await sealDelivery({ salt: SALT, url: URL }, [{ wallet: judge.address, encryptionKey: sealed.publicKey }, member.address], intent), "base64");
-    const downgraded = Buffer.from([2, blob[1] ?? 0, ...blob.subarray(3)]).toString("base64");
-    expect([sealedKeys(downgraded), sealedFingerprints(downgraded), sealedUrlRecipients(downgraded)]).toEqual([null, null, null]);
-    const commitment = createHash("sha256").update("commitment").digest("hex");
-    const memo = `${DELIVERY_MEMO_PREFIX}${intent}:${commitment}:${await saltCheck(SALT)}:${downgraded}`;
-    expect(parseDeliveryMemo(memo)).toEqual({ intent, commitment, check: await saltCheck(SALT), blob: downgraded });
-    expect(await openDelivery(downgraded, sealed.key, intent)).toBeNull();
-    expect(await openDelivery(downgraded, member.keypair, intent)).toBeNull();
-    for (const mask of [0b00, 0b10, 0b11]) {
-      const flipped = Buffer.from(blob);
-      flipped[2] = mask;
-      expect(await openDelivery(flipped.toString("base64"), sealed.key, intent)).toBeNull();
-      expect(await openDelivery(flipped.toString("base64"), member.keypair, intent)).toBeNull();
+    const recipients = [{ wallet: judge.address, encryptionKey: sealed.publicKey }, member.address];
+    const secrets = await deliverySecrets(URL, recipients);
+    const blob = await sealDeliveryV4(secrets, intent, worker);
+    const tampered = (at: number, value: (byte: number) => number) => Uint8Array.from(blob, (byte, i) => (i === at ? value(byte) : byte));
+    const heads = [
+      tampered(0, () => 3),
+      tampered(1, () => 1),
+      tampered(2, () => 0b00),
+      tampered(2, () => 0b10),
+      tampered(2, () => 0b11),
+      tampered(3, (byte) => byte ^ 1),
+      tampered(3 + delivery.FINGERPRINT_LEN, (byte) => byte ^ 1),
+    ];
+    for (const changed of heads) {
+      expect(await urlOpened(changed, sealed.key, intent, worker)).toBeNull();
+      expect(await urlOpened(changed, member.keypair, intent, worker)).toBeNull();
+      expect(await openWithContentKey(changed, secrets.key, intent, worker)).toBeNull();
     }
+    expect(await urlOpened(blob, sealed.key, intent, worker)).toBe(URL);
+    expect((await openWithContentKey(blob, secrets.key, intent, worker))?.url).toBe(URL);
   });
 
   it("refuse small-order and non-canonical keys, which X25519 itself cannot use", async () => {
@@ -185,5 +177,18 @@ describe("judge encryption keys", () => {
       expect(isEncryptionKeyText(encryptionKeyText(bad))).toBe(false);
     }
     expect(isUsableKey((await encryptionKey()).publicKey)).toBe(true);
+  });
+
+  it("refuse to seal a delivery to a small-order or non-canonical encryption key", async () => {
+    const [intent, worker] = [wallet().address, wallet().address];
+    const judge = wallet();
+    const field = Uint8Array.from({ length: 32 }, (_, i) => (i === 0 ? 0xed : i === 31 ? 0x7f : 0xff));
+    const high = Uint8Array.from((await encryptionKey()).publicKey, (byte, i) => (i === 31 ? byte | 0x80 : byte));
+    for (const bad of [...SMALL_ORDER_KEYS.map((text) => Uint8Array.from(Buffer.from(text, "hex"))), field, high]) {
+      const refused = new SealedError(`${judge.address}'s encryption key is not a usable X25519 public key`);
+      await expect(sealTo([{ wallet: judge.address, encryptionKey: bad }], intent, worker)).rejects.toThrow(refused);
+      const recipients = [wallet().address, { wallet: judge.address, encryptionKey: bad }];
+      await expect(sealDeliveryV4({ source: new Uint8Array(32), url: URL, recipients }, intent, worker)).rejects.toThrow(refused);
+    }
   });
 });

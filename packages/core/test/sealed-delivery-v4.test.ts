@@ -1,6 +1,9 @@
-import type { Address } from "@solana/kit";
+import { createHash } from "node:crypto";
+import { type Address, getAddressEncoder } from "@solana/kit";
+import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
+  announcementCommitment,
   delivery,
   type DeliverySecrets,
   deliverySecrets,
@@ -8,17 +11,22 @@ import {
   openDeliveryV4,
   openWithContentKey,
   openWithEsk,
+  isSaltHex,
   RANDOM_SOURCE_LEN,
   recipientBinding,
-  saltOfSignature,
+  SALT_TAG,
+  saltMessage,
   sealDeliveryV4,
   SealedError,
   type SealRecipient,
+  PRODUCT_SLUG,
 } from "../src/index.js";
-import { clamp, committee, profileMember, refBinding, referenceBlob, refSecrets, saltSignature, urlOf, wallet, walletMember } from "./sealed-v4-reference.js";
+import { clamp, committee, profileMember, refBinding, referenceBlob, refSecrets, saltSignature, urlOf, type Wallet, wallet, walletMember, WORK } from "./sealed-v4-reference.js";
 
 const URL_A = "https://example.org/work-a.tar";
 const URL_B = "https://example.org/work-b.tar";
+const YES = createHash("sha256").update("yes").digest("hex");
+const NO = createHash("sha256").update("no").digest("hex");
 
 const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
 
@@ -39,7 +47,7 @@ describe("sealed delivery v4", () => {
     const members = await committee(8, (i) => i % 3 === 0);
     const { secrets, blob } = await seal(URL_A, members.map((m) => m.recipient), intent, worker, sig);
     const opened = await Promise.all(members.map((m) => openDeliveryV4(blob, m.opener, intent, worker)));
-    const salt = await saltOfSignature(sig);
+    const salt = hex(refSecrets(sig, URL_A, secrets.binding).salt);
     for (const o of opened) {
       expect(o).not.toBeNull();
       expect(o?.url).toBe(URL_A);
@@ -244,5 +252,57 @@ describe("sealed delivery v4", () => {
     const zeroed: DeliverySecrets = { ...secrets, binding: new Uint8Array(10), key: new Uint8Array(32), esk: new Uint8Array(32) };
     expect(hex(await sealDeliveryV4(zeroed, intent, worker))).toBe(hex(await sealDeliveryV4(secrets, intent, worker)));
     expect(await openDeliveryV4(new Uint8Array([4, 1, 0]), one.opener, intent, worker)).toBeNull();
+  });
+
+  it("round-trips any canonical url for any set of recipients, and keeps the url out of the blob", async () => {
+    const { intent, worker } = await job();
+    const pool = await committee(4, (i) => i % 2 === 1);
+    await fc.assert(
+      fc.asyncProperty(fc.stringMatching(/^[a-z0-9]{1,60}$/), fc.subarray(pool, { minLength: 1 }), fc.uint8Array({ minLength: 32, maxLength: 32 }), async (path, chosen, source) => {
+        const url = "https://example.org/" + path;
+        const { secrets, blob } = await seal(url, chosen.map((m) => m.recipient), intent, worker, source);
+        expect(Buffer.from(blob).toString("latin1")).not.toContain("example.org");
+        for (const m of chosen) {
+          const opened = await openDeliveryV4(blob, m.opener, intent, worker);
+          expect([opened?.url, hex(opened?.salt ?? new Uint8Array())]).toEqual([url, hex(secrets.salt)]);
+        }
+      }),
+      { numRuns: 15 },
+    );
+  });
+});
+
+describe("delivery salts", () => {
+  const saltOf = async (signer: Wallet, intent: Address, sha256: string): Promise<Uint8Array> =>
+    (await deliverySecrets(URL_A, [wallet().address], saltSignature(signer, intent, sha256))).salt;
+
+  it("derive the salt from the worker's own signature of the salt message, so only its key recomputes it", async () => {
+    const [worker, other] = [wallet(), wallet()];
+    const intent = wallet().address;
+    const salt = hex(await saltOf(worker, intent, WORK));
+    expect(isSaltHex(salt)).toBe(true);
+    expect(hex(await saltOf(worker, intent, WORK))).toBe(salt);
+    expect(hex(await saltOf(other, intent, WORK))).not.toBe(salt);
+    expect(hex(await saltOf(worker, wallet().address, WORK))).not.toBe(salt);
+    expect(hex(await saltOf(worker, intent, YES))).not.toBe(salt);
+    expect(SALT_TAG).toBe(`${PRODUCT_SLUG}-delivery-salt-v3`);
+    expect(saltMessage(intent, WORK)).toEqual(Uint8Array.from([...Buffer.from(SALT_TAG), ...getAddressEncoder().encode(intent), ...Buffer.from(WORK, "hex")]));
+    expect(() => saltMessage(intent, "zz")).toThrow(RangeError);
+    expect(() => saltMessage(intent, WORK.toUpperCase())).toThrow(RangeError);
+    expect(["ab".repeat(16), "AB".repeat(16), "ab".repeat(15), "ab".repeat(17), "zz".repeat(16)].map(isSaltHex)).toEqual([true, false, false, false, false]);
+  });
+
+  it("leave a copier who knows a two-value candidate set unable to match an honest commitment before it is opened", async () => {
+    const [worker, copier] = [wallet(), wallet()];
+    const intent = wallet().address;
+    const commit = async (salt: Uint8Array, sha256: string) =>
+      hex(await announcementCommitment(intent, worker.address, { delivered: Uint8Array.from(Buffer.from(sha256, "hex")), salt }));
+    const honest = await commit(await saltOf(worker, intent, YES), YES);
+    const guesses = await Promise.all(
+      [YES, NO].flatMap((sha256) => [new Uint8Array(16), new Uint8Array(16).fill(0xff), new Uint8Array(16).fill(0xab)].map((guessed) => commit(guessed, sha256))),
+    );
+    expect(guesses).not.toContain(honest);
+    const copied = await Promise.all([YES, NO].map(async (sha256) => commit(await saltOf(copier, intent, sha256), sha256)));
+    expect(copied).not.toContain(honest);
   });
 });

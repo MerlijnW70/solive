@@ -22,10 +22,7 @@ import {
   SPLIT_COSIGN_TAG,
   WRAP_INFO,
   x25519PublicOf,
-  COMMITMENT_TAG,
-  FINGERPRINT_TAG,
   SALT_TAG,
-  SALT_CHECK_TAG,
   SEALED_TAG,
 } from "../src/index.js";
 import { clamp, refBinding, refPublic, referenceBlob, refSecrets, urlOf } from "./sealed-v4-reference.js";
@@ -131,7 +128,7 @@ describe("the v4 blob layout", () => {
       delivery.FINGERPRINT_TAG,
     ]
       .map((t) => new TextDecoder().decode(t))
-      .concat([COMMITMENT_TAG, FINGERPRINT_TAG, SALT_TAG, SALT_CHECK_TAG, SEALED_TAG]);
+      .concat([SALT_TAG, SEALED_TAG]);
     expect(ours).toEqual(["intent-engine-kc", "intent-engine-wk", "intent-engine-bl", "intent-engine-ek", "intent-engine-ck"]);
     expect(new Set([...ours, ...existing]).size).toBe(ours.length + existing.length);
     expect(ours.every((t) => /^[\x20-\x7e]+$/.test(t))).toBe(true);

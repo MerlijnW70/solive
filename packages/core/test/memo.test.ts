@@ -5,6 +5,7 @@ import {
   isMemoUrl,
   MAX_MEMO_URL,
   MEMO_URL_RULE,
+  parseRelease,
   parseReleaseMemo,
   parseSpecMemo,
   PRODUCT_SLUG,
@@ -167,5 +168,17 @@ describe("spec and release memos", () => {
     for (const text of [`delivery sha256:${HASH.toUpperCase()}`, `delivery sha256:${HASH} `, `delivery sha256:${HASH.slice(1)}`, specMemo(URL_OK), ""]) {
       expect(parseReleaseMemo(text), text).toBeNull();
     }
+  });
+
+  it("record the payee's salt beside the work's hash and still read as that hash", () => {
+    const salt = "ab".repeat(16);
+    const memo = releaseMemo(HASH, salt);
+    expect(memo).toBe(`delivery sha256:${HASH} salt:${salt}`);
+    expect(parseRelease(memo)).toEqual({ sha256: HASH, salt });
+    expect(parseReleaseMemo(memo)).toBe(HASH);
+    expect(parseRelease(releaseMemo(HASH))).toEqual({ sha256: HASH });
+    expect(parseRelease(`${memo} salt:${salt}`)).toBeNull();
+    expect(parseRelease(`delivery sha256:${HASH} salt:ab`)).toBeNull();
+    expect(() => releaseMemo(HASH, "ab")).toThrow(RangeError);
   });
 });

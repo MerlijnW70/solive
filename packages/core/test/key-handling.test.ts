@@ -1,7 +1,20 @@
 import { generateKeyPairSync } from "node:crypto";
 import { type Address, getAddressDecoder } from "@solana/kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { newEncryptionKeyFile, openDelivery, readEncryptionKeyFile, SALT_BYTES, seal, sealDelivery, unseal, wrapKey, x25519SecretOf } from "../src/index.js";
+import {
+  type DeliverySecrets,
+  deliverySecrets,
+  newEncryptionKeyFile,
+  openDeliveryV4,
+  openWithContentKey,
+  openWithEsk,
+  readEncryptionKeyFile,
+  seal,
+  sealDeliveryV4,
+  unseal,
+  wrapKey,
+  x25519SecretOf,
+} from "../src/index.js";
 
 type Wallet = { address: Address; keypair: Uint8Array };
 
@@ -12,7 +25,6 @@ function wallet(): Wallet {
 }
 
 const URL = "https://example.org/work.tar";
-const SALT = "ab".repeat(SALT_BYTES);
 
 const isPair = (value: unknown): value is { privateKey: CryptoKey } => typeof value === "object" && value !== null && "privateKey" in value;
 
@@ -44,20 +56,28 @@ describe("key handling", () => {
     expect([...sealing, ...opening].filter((key) => key.extractable)).toEqual([]);
   });
 
-  it("never makes a key that can be exported while sealing or opening a delivery url", async () => {
-    const intent = wallet().address;
+  it("never makes a key that can be exported while sealing or opening a delivery", async () => {
+    const [intent, worker] = [wallet().address, wallet().address];
     const judge = wallet();
     const { text } = await newEncryptionKeyFile();
     const reading = await keysMadeBy(() => readEncryptionKeyFile(text));
     const key = await readEncryptionKeyFile(text);
-    const member = { wallet: wallet().address, encryptionKey: key.publicKey };
-    let blob = "";
+    const recipients = [judge.address, { wallet: wallet().address, encryptionKey: key.publicKey }];
+    let secrets: DeliverySecrets | null = null;
+    let blob = new Uint8Array();
     const sealing = await keysMadeBy(async () => {
-      blob = await sealDelivery({ salt: SALT, url: URL }, [judge.address, member], intent);
+      secrets = await deliverySecrets(URL, recipients);
+      blob = await sealDeliveryV4(secrets, intent, worker);
     });
+    const kept = secrets as DeliverySecrets | null;
+    if (kept === null) {
+      throw new Error("nothing was sealed");
+    }
     const opening = await keysMadeBy(async () => {
-      expect(await openDelivery(blob, judge.keypair, intent)).toEqual({ salt: SALT, url: URL });
-      expect(await openDelivery(blob, key, intent)).toEqual({ salt: SALT, url: URL });
+      expect((await openDeliveryV4(blob, judge.keypair, intent, worker))?.url).toBe(URL);
+      expect((await openDeliveryV4(blob, key, intent, worker))?.url).toBe(URL);
+      expect((await openWithEsk(blob, kept.esk, recipients, intent, worker))?.url).toBe(URL);
+      expect((await openWithContentKey(blob, kept.key, intent, worker))?.url).toBe(URL);
     });
     expect([reading.length, sealing.length, opening.length].every((n) => n >= 2)).toBe(true);
     expect([...reading, ...sealing, ...opening].filter((made) => made.extractable)).toEqual([]);
