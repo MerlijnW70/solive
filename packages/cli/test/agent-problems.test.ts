@@ -100,7 +100,7 @@ describe("agent problems", () => {
     expect(simulationProblem("err", [failed(ENGINE, 6112)])).toMatchObject({ code: "ConfigMissing", retryable: false });
     expect(simulationProblem("err", [failed(ENGINE, 6116)])).toMatchObject({ code: "NotListed", retryable: false });
     expect(simulationProblem("err", [failed(ENGINE, 6117)])).toMatchObject({ code: "ClaimListMissing", retryable: false });
-    for (const code of [5999, 6119]) {
+    for (const code of [ENGINE_ERROR_BASE - 1, ENGINE_ERROR_BASE + Object.keys(ENGINE_PROBLEMS).length]) {
       expect(simulationProblem("e", [failed(ENGINE, code)])).toMatchObject({ code: "TransactionFailed", programError: code });
     }
     const funds = simulationProblem("err", [failed(TOKEN_PROGRAMS[1] ?? "", 1)]);
