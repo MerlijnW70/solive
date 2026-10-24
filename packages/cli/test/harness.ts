@@ -1,5 +1,5 @@
 import { generateKeyPairSync } from "node:crypto";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,20 +39,20 @@ import { FailedTransactionMetadata, LiteSVM } from "litesvm";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { expect } from "vitest";
 import {
-  ALL_KINDS_MASK,
   EVENT_IX_TAG,
   findAssociatedTokenAddress,
-  findEventAuthorityPda,
+  findConfigPda,
   findIntentPda,
   findProgramDataAddress,
-  getInitConfigInstructionAsync,
   getIntentCreatedEventEncoder,
   getIntentDecoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   MANDATE_NONCE_BIT,
+  parseAmount,
 } from "@intent-engine/core";
 import type { Fetch } from "@intent-engine/solver";
 import type { EngineAccountFilter, EngineTransaction, SpecFetch, Transport } from "@intent-engine/client";
+import { createTestWorld, ECONOMICS_UNSET, TEST_WALLET_SOL } from "@intent-engine/client/testing";
 import type { Runtime } from "../src/commands.js";
 import { main } from "../src/main.js";
 import { fileSales } from "../src/agent/sales.js";
@@ -63,6 +63,7 @@ export const NOW = 1_700_000_000n;
 export const FEE_BPS = 5;
 export const ESCROW = 400n;
 export const DOMAIN = new Uint8Array(32).fill(0x11);
+const WALLET_LAMPORTS = 100_000_000_000n;
 export const enginePath =
   process.env["INTENT_ENGINE_SO"] ??
   fileURLToPath(new URL("../../../target/deploy/intent_engine.so", import.meta.url));
@@ -423,7 +424,7 @@ export async function funded(): Promise<KeyPairSigner> {
   const keypair = Uint8Array.from([...Buffer.from(jwk.d ?? "", "base64url"), ...Buffer.from(jwk.x ?? "", "base64url")]);
   const kp = await createKeyPairSignerFromBytes(keypair);
   h.keypairs.set(kp.address, keypair);
-  h.svm.airdrop(kp.address, lamports(100_000_000_000n));
+  h.svm.airdrop(kp.address, lamports(WALLET_LAMPORTS));
   return kp;
 }
 
@@ -559,29 +560,21 @@ export type World = {
 };
 
 export async function world(): Promise<World> {
-  const authority = await boot();
-  const feeRecipient = await funded();
-  const programData = await findProgramDataAddress();
-  const [eventAuthority] = await findEventAuthorityPda();
-  await send(authority, [
-    await getInitConfigInstructionAsync({
-      authority,
-      engineProgram: INTENT_ENGINE_PROGRAM_ADDRESS,
-      programData,
-      eventAuthority,
-      program: INTENT_ENGINE_PROGRAM_ADDRESS,
-      domain: DOMAIN,
-      guardian: authority.address,
-      feeRecipient: feeRecipient.address,
-      enabledKinds: ALL_KINDS_MASK,
-      feeBps: FEE_BPS,
-      paused: 0,
-    }),
-  ]);
+  resetHarness();
+  collectDropped();
+  const test = await createTestWorld({ start: NOW, fees: { ...ECONOMICS_UNSET, feeBps: FEE_BPS }, domain: DOMAIN, devnetMints: false, program: new Uint8Array(readFileSync(enginePath)) });
+  h.svm = test.svm;
+  h.touched.add((await findConfigPda())[0]);
+  const topUp = WALLET_LAMPORTS - parseAmount(TEST_WALLET_SOL, 9);
+  for (const signer of [test.admin, test.feeRecipient]) {
+    h.keypairs.set(signer.address, signer.keypair);
+    h.svm.airdrop(signer.address, lamports(topUp));
+  }
+  const authority = test.admin;
   const owner = await funded();
   const inputMint = await mint(authority);
   const outputMint = await mint(authority);
   const ownerInput = await ata(authority, owner.address, inputMint, 1_000n);
   await ata(authority, owner.address, outputMint);
-  return { authority, feeRecipient, owner, inputMint, outputMint, ownerInput };
+  return { authority, feeRecipient: test.feeRecipient, owner, inputMint, outputMint, ownerInput };
 }

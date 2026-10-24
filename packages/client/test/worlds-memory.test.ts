@@ -15,7 +15,7 @@ describe("many LiteSVM worlds in one worker", () => {
     let peak = 0;
     for (let built = 1; built <= WORLDS; built++) {
       const { chain } = await world();
-      expect(chain.sent.length).toBeGreaterThan(0);
+      expect((await chain.transport.engineTransactions(1)).length).toBeGreaterThan(0);
       const { rss } = process.memoryUsage();
       peak = Math.max(peak, rss);
       if (built === WARM) {

@@ -1,3 +1,4 @@
+import { inspect } from "node:util";
 import {
   type Address,
   appendTransactionMessageInstructions,
@@ -17,10 +18,11 @@ import {
   signTransactionMessageWithSigners,
   type Transaction,
 } from "@solana/kit";
-import { getIntentDecoder, getIntentDiscriminatorBytes, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { FailedTransactionMetadata, type LiteSVM } from "litesvm";
 import { TOKEN_PROGRAMS } from "./accounts.js";
-import { FailedOnChain, type Failure, failure } from "./send-errors.js";
+import { BehindMinSlot, BlockhashExpired, FailedOnChain, type Failure, failure } from "./send-errors.js";
+import { ALREADY_PROCESSED, BLOCKHASH_NOT_FOUND, errOf, fieldlessOf } from "./svm-errors.js";
 import {
   type EngineTransaction,
   keysAt,
@@ -29,6 +31,7 @@ import {
   type EngineAccount,
   type EngineAccountFilter,
   type ProgramAccount,
+  type SignatureLanding,
   signersAmong,
   solTransfersOf,
   type TokenHolding,
@@ -37,10 +40,13 @@ import {
 
 const TOKEN_HEAD = 64;
 const LOOKUP_TABLE_HEAD = 56;
+const INTENT_OWNER_OFFSET = 8;
 
 export type SvmTransportOptions = { genesisHash?: string };
 
 export const SVM_GENESIS_HASH = "11111111111111111111111111111111";
+
+export const BLOCKHASH_GONE = "the transaction's blockhash is no longer the latest one LiteSVM accepts; nothing was charged, so sign it again with a fresh blockhash";
 
 const sigverifyOf = (svm: LiteSVM): boolean =>
   (svm as unknown as { inner?: { getSigverify?: () => boolean } }).inner?.getSigverify?.() ?? true;
@@ -50,28 +56,24 @@ const startsWith = (data: Uint8Array, head: ArrayLike<number>, at: number): bool
 
 const decodeWire = (wire: string) => getTransactionDecoder().decode(getBase64Encoder().encode(wire));
 
-function errOf(failed: FailedTransactionMetadata): unknown {
-  const err: unknown = failed.err();
-  const { index, err: detailOf } = err as { index?: unknown; err?: unknown };
-  if (typeof index !== "number" || typeof detailOf !== "function") {
-    return String(err);
-  }
-  const detail: unknown = (detailOf as () => unknown).call(err);
-  const code = (detail as { code?: unknown }).code;
-  return { InstructionError: [index, typeof code === "number" ? { Custom: code } : String(detail)] };
-}
+type Compiled = ReturnType<ReturnType<typeof getCompiledTransactionMessageDecoder>["decode"]>;
 
 export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): Transport {
-  const seen = new Set<Address>();
   const touched = new Set<Address>();
-  const tag = getIntentDiscriminatorBytes();
-  const engineData = (address: Address): Uint8Array | null => {
-    const account = svm.getAccount(address);
-    return account.exists && account.programAddress === INTENT_ENGINE_PROGRAM_ADDRESS ? new Uint8Array(account.data) : null;
-  };
   const history: { touched: ReadonlySet<Address>; found: EngineTransaction }[] = [];
   const byId = new Map<string, EngineTransaction>();
   const failures = new Map<string, Failure>();
+  const heights = new Map<string, bigint>();
+  const height = (): bigint => {
+    const blockhash = svm.latestBlockhash();
+    const known = heights.get(blockhash);
+    if (known !== undefined) {
+      return known;
+    }
+    const next = BigInt(heights.size);
+    heights.set(blockhash, next);
+    return next;
+  };
   const holdings = (keys: readonly Address[]): TokenHolding[] =>
     keys.flatMap((account) => {
       const held = svm.getAccount(account);
@@ -91,44 +93,80 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
       decoder.decode(held.data.subarray(LOOKUP_TABLE_HEAD + i * 32, LOOKUP_TABLE_HEAD + (i + 1) * 32)),
     );
   };
-  const loaded = (compiled: ReturnType<ReturnType<typeof getCompiledTransactionMessageDecoder>["decode"]>): Address[] => {
+  const loaded = (compiled: Compiled): Address[] => {
     const lookups = "addressTableLookups" in compiled ? (compiled.addressTableLookups ?? []) : [];
     const tables = lookups.map(({ lookupTableAddress }) => tableAddresses(lookupTableAddress));
     const pick = (indexes: (lookup: (typeof lookups)[number]) => readonly number[]) =>
       lookups.flatMap((lookup, i) => indexes(lookup).flatMap((index) => tables[i]?.[index] ?? []));
     return [...compiled.staticAccounts, ...pick(({ writableIndexes }) => writableIndexes), ...pick(({ readonlyIndexes }) => readonlyIndexes)];
   };
-  const landed = (tx: Transaction): string => {
+  const messageParts = (compiled: Compiled, keys: readonly Address[]) => {
+    const instructions = "instructions" in compiled ? compiled.instructions : [];
+    const memoInstructions = instructions.filter((ix) => keys[ix.programAddressIndex] === MEMO_PROGRAM_ADDRESS);
+    const memos = memoInstructions.map((ix) => new TextDecoder().decode(Uint8Array.from(ix.data ?? [])));
+    const memoSigners = memoInstructions.map((ix) => signersAmong(keys, ix.accountIndices ?? [], compiled.header.numSignerAccounts));
+    const feePayer = keys[0];
+    const engineCalls = instructions.filter((ix) => keys[ix.programAddressIndex] === INTENT_ENGINE_PROGRAM_ADDRESS);
+    const called = engineCalls.map((ix) => Uint8Array.from(ix.data ?? []));
+    return {
+      ...(memos.length === 0 ? {} : { memos, memoSigners }),
+      ...(feePayer === undefined ? {} : { feePayer }),
+      ...(called.length === 0 ? {} : { called, calledAccounts: engineCalls.map((ix) => keysAt(keys, ix.accountIndices ?? [])) }),
+    };
+  };
+  const record = (keys: readonly Address[], found: EngineTransaction) => {
+    for (const address of keys) {
+      touched.add(address);
+    }
+    history.unshift({ touched: new Set(keys), found });
+    byId.set(found.signature, found);
+  };
+  const failedOnChain = (found: Failure, logs: readonly string[]) => new FailedOnChain(`${inspect(found.err, { depth: null, breakLength: Infinity })}\n${logs.join("\n")}`, found);
+  const settledBefore = (signature: string, submitted: boolean): string | undefined => {
+    const failed = failures.get(signature);
+    if (failed !== undefined) {
+      if (submitted) {
+        return signature;
+      }
+      throw failedOnChain(failed, failed.logs ?? []);
+    }
+    return byId.has(signature) ? signature : undefined;
+  };
+  const landed = (tx: Transaction, submitted = false): string => {
+    const signature = getSignatureFromTransaction(tx);
+    const known = settledBefore(signature, submitted);
+    if (known !== undefined) {
+      return known;
+    }
     const compiled = getCompiledTransactionMessageDecoder().decode(tx.messageBytes);
     const keys = loaded(compiled);
+    const instructions = "instructions" in compiled ? compiled.instructions : [];
     const before = holdings(keys);
     const lamportsOf = () => keys.map((key) => svm.getBalance(key) ?? 0n);
     const lamportsBefore = lamportsOf();
     const result = svm.sendTransaction(tx);
+    const clock = svm.getClock();
     if (result instanceof FailedTransactionMetadata) {
+      const fieldless = fieldlessOf(result);
+      if (fieldless === BLOCKHASH_NOT_FOUND) {
+        throw new BlockhashExpired(BLOCKHASH_GONE);
+      }
+      const elsewhere = fieldless === ALREADY_PROCESSED ? svm.getTransaction(signature) : null;
+      if (elsewhere !== null && !(elsewhere instanceof FailedTransactionMetadata)) {
+        return signature;
+      }
       const logs = result.meta().logs();
-      const programs = ("instructions" in compiled ? compiled.instructions : []).flatMap((ix) => keys[ix.programAddressIndex] ?? []);
-      const failed = failure(getSignatureFromTransaction(tx), errOf(result), logs, programs);
-      failures.set(failed.signature, failed);
-      throw new FailedOnChain(`${String(result.err())}\n${logs.join("\n")}`, failed);
+      const programs = instructions.flatMap((ix) => keys[ix.programAddressIndex] ?? []);
+      const failed = failure(signature, errOf(result), logs, programs);
+      failures.set(signature, failed);
+      record(keys, { signature, slot: clock.slot, blockTime: clock.unixTimestamp, failed: true, emitted: [], ...messageParts(compiled, keys) });
+      if (submitted) {
+        return signature;
+      }
+      throw failedOnChain(failed, logs);
     }
     const after = holdings(keys).filter((held) => !before.some(({ account }) => account === held.account));
     const tokens = [...before, ...after];
-    for (const address of keys) {
-      touched.add(address);
-      const data = engineData(address);
-      if (data !== null && tag.every((b, i) => data[i] === b)) {
-        seen.add(address);
-      }
-    }
-    const signature = getSignatureFromTransaction(tx);
-    const clock = svm.getClock();
-    const memoInstructions = ("instructions" in compiled ? compiled.instructions : []).filter((ix) => keys[ix.programAddressIndex] === MEMO_PROGRAM_ADDRESS);
-    const memos = memoInstructions.map((ix) => new TextDecoder().decode(Uint8Array.from(ix.data ?? [])));
-    const memoSigners = memoInstructions.map((ix) => signersAmong(keys, ix.accountIndices ?? [], compiled.header.numSignerAccounts));
-    const feePayer = keys[0];
-    const engineCalls = ("instructions" in compiled ? compiled.instructions : []).filter((ix) => keys[ix.programAddressIndex] === INTENT_ENGINE_PROGRAM_ADDRESS);
-    const called = engineCalls.map((ix) => Uint8Array.from(ix.data ?? []));
     const everyInner = result
       .innerInstructions()
       .flat()
@@ -137,26 +175,22 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
     const transfers = solTransfersOf(
       keys,
       [
-        ...("instructions" in compiled ? compiled.instructions : []).map((ix) => ({ program: keys[ix.programAddressIndex], accounts: ix.accountIndices ?? [], data: Uint8Array.from(ix.data ?? []) })),
+        ...instructions.map((ix) => ({ program: keys[ix.programAddressIndex], accounts: ix.accountIndices ?? [], data: Uint8Array.from(ix.data ?? []) })),
         ...everyInner.map((ix) => ({ program: keys[ix.programIdIndex()], accounts: Array.from(ix.accounts()), data: new Uint8Array(ix.data()) })),
       ],
       { before: lamportsBefore, after: lamportsOf() },
     );
-    const found: EngineTransaction = {
+    record(keys, {
       signature,
       slot: clock.slot,
       blockTime: clock.unixTimestamp,
       failed: false,
       emitted: inner.map((ix) => new Uint8Array(ix.data())),
       ...(inner.length === 0 ? {} : { emittedAccounts: inner.map((ix) => keysAt(keys, ix.accounts())) }),
-      ...(memos.length === 0 ? {} : { memos, memoSigners }),
-      ...(feePayer === undefined ? {} : { feePayer }),
-      ...(called.length === 0 ? {} : { called, calledAccounts: engineCalls.map((ix) => keysAt(keys, ix.accountIndices ?? [])) }),
+      ...messageParts(compiled, keys),
       ...(tokens.length === 0 ? {} : { tokens }),
       ...(transfers.length === 0 ? {} : { transfers }),
-    };
-    history.unshift({ touched: new Set(keys), found });
-    byId.set(signature, found);
+    });
     return signature;
   };
   const getAccount = async (address: Address) => {
@@ -169,18 +203,24 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
     (filter.dataSize === undefined || data.length === filter.dataSize) &&
     startsWith(data, filter.discriminator, 0) &&
     (filter.match ?? []).every(({ offset, address }) => startsWith(data, getAddressEncoder().encode(address), offset));
-  const engineAccounts = async (filter?: EngineAccountFilter): Promise<EngineAccount[]> =>
-    [...touched].flatMap((address) => {
-      const account = svm.getAccount(address);
-      if (!account.exists || account.programAddress !== INTENT_ENGINE_PROGRAM_ADDRESS) {
+  const listed = (filter?: EngineAccountFilter): EngineAccount[] => {
+    const owned = new Map(svm.getProgramAccounts(INTENT_ENGINE_PROGRAM_ADDRESS).map((account) => [account.address, account]));
+    for (const address of owned.keys()) {
+      touched.add(address);
+    }
+    return [...touched].flatMap((address) => {
+      const account = owned.get(address);
+      if (account === undefined) {
         return [];
       }
       const data = new Uint8Array(account.data);
       return filter === undefined || matches(data, filter) ? [{ address, data, lamports: account.lamports }] : [];
     });
+  };
+  const landing = (signature: string): SignatureLanding | null => (failures.has(signature) ? "failed" : byId.has(signature) ? "landed" : null);
   return {
     getAccount,
-    engineAccounts,
+    engineAccounts: async (filter) => listed(filter),
     getAccounts: async (addresses) => Promise.all(addresses.map(getAccount)),
     send: async (instructions, payer) => {
       svm.expireBlockhash();
@@ -192,9 +232,9 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
       );
       return landed(await signTransactionMessageWithSigners(message));
     },
-    latestBlockhash: async () => ({ blockhash: svm.latestBlockhash() as Blockhash, lastValidBlockHeight: 0n }),
+    latestBlockhash: async () => ({ blockhash: svm.latestBlockhash() as Blockhash, lastValidBlockHeight: height() }),
     sendWire: async (wire) => landed(decodeWire(wire)),
-    submitWire: async (wire) => landed(decodeWire(wire)),
+    submitWire: async (wire) => landed(decodeWire(wire), true),
     simulate: async (wire, watch = []) => {
       const tx = decodeWire(wire);
       const compiled = getCompiledTransactionMessageDecoder().decode(tx.messageBytes);
@@ -219,14 +259,17 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
       };
     },
     genesisHash: async () => options.genesisHash ?? SVM_GENESIS_HASH,
-    intents: async (owner) => {
-      const found: ProgramAccount[] = [];
-      for (const address of seen) {
-        const data = engineData(address);
-        if (data !== null && (owner === undefined || getIntentDecoder().decode(data).owner === owner)) {
-          found.push({ address, data });
-        }
+    intents: async (owner, read) => {
+      const slot = svm.getClock().slot;
+      if (read?.minContextSlot !== undefined && slot < read.minContextSlot) {
+        throw new BehindMinSlot(slot, read.minContextSlot);
       }
+      const found = listed({
+        discriminator: getIntentDiscriminatorBytes(),
+        dataSize: getIntentSize(),
+        ...(owner === undefined ? {} : { match: [{ offset: INTENT_OWNER_OFFSET, address: owner }] }),
+      }).map(({ address, data }): ProgramAccount => ({ address, data }));
+      read?.onSlot?.(slot);
       return found;
     },
     engineTransactions: async (limit, of = INTENT_ENGINE_PROGRAM_ADDRESS, memo?: string) =>
@@ -250,6 +293,7 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
     },
     transactionsOf: async (listed) => listed.flatMap(({ signature }) => byId.get(signature) ?? []),
     transactionOf: async (signature) => byId.get(signature) ?? null,
+    signatureStatuses: async (signatures) => signatures.map(landing),
     sendStatus: async (signature, lastValidBlockHeight) => {
       const failed = failures.get(signature);
       if (failed !== undefined) {
@@ -260,7 +304,7 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
       if (found !== undefined) {
         return { status: "confirmed", signature: known, slot: found.slot };
       }
-      return lastValidBlockHeight === undefined ? { status: "pending", signature: known } : { status: "expired", signature: known };
+      return lastValidBlockHeight !== undefined && height() > lastValidBlockHeight ? { status: "expired", signature: known } : { status: "pending", signature: known };
     },
     firstAvailableSlot: async () => 0n,
     recentFees: async () => [],

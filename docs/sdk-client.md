@@ -284,9 +284,30 @@ const { createFee, crankBounty } = configSummary(await client.config());
 console.log(formatAmount(createFee, sell.decimals), formatAmount(crankBounty, sell.decimals));
 ```
 
-## Test offline
+## Testing
 
-`svmTransport(svm)` from `@intent-engine/client/svm` runs the client against a local LiteSVM instance instead of a cluster: pass it as `createClient({ url, transport })`. It needs the `litesvm` package, which ships for Linux and macOS only; on Windows, run it in WSL.
+`createTestWorld` from `@intent-engine/client/testing` starts the engine in LiteSVM, configured with devnet's fees and kinds, and returns a `client` on it. The package ships the program deployed on devnet, so it needs no build and reaches no network. `wallet` funds a new signer, `mint` and `tokens` make SPL tokens, `now` reads the clock the engine reads and `warp` moves it. It needs the `litesvm` package, which ships for Linux and macOS only; on Windows, run it in WSL.
+
+`svmTransport(svm)` from `@intent-engine/client/svm` runs the client against a LiteSVM instance of your own: pass it as `createClient({ url, transport })`.
+
+This creates a proof escrow of 0.5 SOL, announces work from a worker and releases it. The worker's pay, after devnet's 3% fee on proof escrows, prints `0.485`.
+
+```ts
+import { createHash } from "node:crypto";
+import { attestedResult, DEVNET_TEST_MINT, formatAmount, NATIVE_MINT, parseAmount } from "@intent-engine/core";
+import { createTestWorld } from "@intent-engine/client/testing";
+
+const world = await createTestWorld();
+const [owner, judge, worker] = [await world.wallet(), await world.wallet(), await world.wallet()];
+const specHash = new Uint8Array(createHash("sha256").update("the spec").digest());
+const params = attestedResult({ amountIn: parseAmount("0.5", 9), minResult: 1n, maxResult: 1n, attestor: judge.address, specHash, judgeFee: 0n });
+const job = await world.client.createIntent({ signer: owner, inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT, params });
+const sha256 = createHash("sha256").update("the work").digest("hex");
+await world.client.announce({ worker, intent: job.intent, sha256, url: "https://example.org/work.tar" });
+const first = await world.client.firstOpening({ intent: job.intent, sha256, keypair: judge.keypair });
+await world.client.settleProof({ judge, owner: owner.address, nonce: job.nonce, announcement: first.announcement, opening: first, result: 1n });
+console.log(formatAmount(await world.tokenBalance(worker.address, NATIVE_MINT), 9));
+```
 
 ## Next
 
