@@ -2,12 +2,13 @@ use anchor_lang::prelude::*;
 use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 use intent_core::committee::{Committee as CoreCommittee, COMMITTEE_COSIGN_TAG};
+use intent_core::delivery::{commitment_preimage, split_hash_preimage, AnnState, SALT_LEN};
 use intent_core::ext::FILL_EXT_TAGS;
 use intent_core::fee::Fees;
 use intent_core::kinds::Intent as CoreIntent;
 use intent_core::lifecycle::{transition, Action, Status};
 use intent_core::sig::{
-    offchain_envelope, AttestedFill, AttestedProof, AttestedSplit, SPLIT_COSIGN_TAG,
+    offchain_envelope, AttestedDelivery, AttestedFill, AttestedSplitDelivery, SPLIT_COSIGN_TAG,
 };
 
 use crate::caps::{release_mint_cap, settle_mint_cap};
@@ -21,10 +22,11 @@ use crate::policy::{
     SplitPayout, Tally,
 };
 use crate::state::{
-    ClaimBoard, Committee, Config, Intent, MintCap, CLAIMS_OPEN, COMMITTEE_VERSION, PAUSE_FILL,
+    Announcement, ClaimBoard, Committee, Config, Intent, MintCap, ANNOUNCEMENT_VERSION,
+    CLAIMS_OPEN, COMMITTEE_VERSION, PAUSE_FILL,
 };
 
-pub const MAX_SPLIT_RECIPIENTS: usize = 8;
+pub use intent_core::delivery::MAX_SPLIT_RECIPIENTS;
 
 #[derive(AnchorSerialize, AnchorDeserialize, Clone)]
 pub struct SplitClaim {
@@ -114,9 +116,24 @@ pub struct Release<'a, 'info> {
     pub claims: Option<&'a AccountLoader<'info, ClaimBoard>>,
     pub stake_to: Option<AccountInfo<'info>>,
     pub mint_cap: Option<&'a AccountLoader<'info, MintCap>>,
+    pub announcement: Option<&'a AccountLoader<'info, Announcement>>,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, Default, PartialEq, Eq, Debug)]
+pub struct Opening {
+    pub delivered: [u8; 32],
+    pub salt: [u8; SALT_LEN],
 }
 
 #[derive(Clone, Copy)]
+pub struct Delivered {
+    pub announcement: Pubkey,
+    pub seq: u64,
+    pub worker: Pubkey,
+    pub opening: Opening,
+}
+
+#[derive(AnchorSerialize, AnchorDeserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Fill {
     pub amount_in: u64,
     pub result: u64,
@@ -138,6 +155,7 @@ pub struct Released {
     pub fees: Fees,
     pub withheld: Vec<Withheld>,
     pub stake: Option<StakeMoved>,
+    pub delivered: Option<Delivered>,
 }
 
 struct Opened {
@@ -211,6 +229,80 @@ fn payee_wallet(payee: &AccountInfo, release: &Release, claims: u8) -> Result<Ve
     Ok(vec![Pubkey::new_from_array(owner)])
 }
 
+fn announced(release: &Release, opening: &Opening) -> Result<Delivered> {
+    let loader = release
+        .announcement
+        .ok_or(EngineError::AnnouncementMissing)?;
+    let stored = loader.load()?;
+    require!(
+        stored.version == ANNOUNCEMENT_VERSION,
+        EngineError::AccountOutdated
+    );
+    require_keys_eq!(
+        stored.intent,
+        release.intent.key(),
+        EngineError::AnnouncementMismatch
+    );
+    require!(
+        AnnState::try_from(stored.state).map_err(core_err)? == AnnState::Announced,
+        EngineError::AnnouncementPaid
+    );
+    let preimage = commitment_preimage(
+        &stored.intent.to_bytes(),
+        &stored.worker.to_bytes(),
+        &opening.salt,
+        &opening.delivered,
+    );
+    require!(
+        solana_sha256_hasher::hashv(&[&preimage]).to_bytes() == stored.commitment,
+        EngineError::CommitmentMismatch
+    );
+    Ok(Delivered {
+        announcement: loader.key(),
+        seq: stored.seq,
+        worker: stored.worker,
+        opening: *opening,
+    })
+}
+
+fn check_unannounced(release: &Release, opening: &Opening) -> Result<()> {
+    require!(
+        release.announcement.is_none()
+            && opening.delivered == [0u8; 32]
+            && opening.salt == [0u8; SALT_LEN],
+        EngineError::AnnouncementUnexpected
+    );
+    Ok(())
+}
+
+fn check_payee_owner(payee: &AccountInfo, release: &Release, worker: &Pubkey) -> Result<()> {
+    require_keys_eq!(
+        *payee.owner,
+        release.input_token_program.key(),
+        EngineError::PayeeNotAnnouncer
+    );
+    let data = payee.try_borrow_data()?;
+    require!(
+        data.get(..32) == Some(release.input_mint.key().as_ref())
+            && data.get(32..64) == Some(worker.as_ref()),
+        EngineError::PayeeNotAnnouncer
+    );
+    Ok(())
+}
+
+fn mark_paid(release: &Release, opening: &Opening, now: i64, split_hash: [u8; 32]) -> Result<()> {
+    let loader = release
+        .announcement
+        .ok_or(EngineError::AnnouncementMissing)?;
+    let mut stored = loader.load_mut()?;
+    stored.state = u8::from(AnnState::Paid);
+    stored.paid_at = now;
+    stored.delivered = opening.delivered;
+    stored.salt = opening.salt;
+    stored.split_hash = split_hash;
+    Ok(())
+}
+
 fn pay_judge(
     release: &Release,
     opened: &Opened,
@@ -261,6 +353,7 @@ pub fn release_single<'info>(
     payee: AccountInfo<'info>,
     judge: &Judge,
     fill: Fill,
+    opening: &Opening,
     ext: &Ext,
 ) -> Result<Released> {
     let Fill {
@@ -273,8 +366,36 @@ pub fn release_single<'info>(
     let opened = open(&release, amount_in, result)?;
     let ext_hash = solana_sha256_hasher::hashv(&[&ext.0]).to_bytes();
     let fill_preimage;
-    let proof_preimage;
-    let preimage: &[u8] = if opened.spec_hash == [0u8; 32] {
+    let delivery_preimage;
+    let delivered = if opened.spec_hash == [0u8; 32] {
+        check_unannounced(&release, opening)?;
+        None
+    } else {
+        let delivered = announced(&release, opening)?;
+        check_payee_owner(&payee, &release, &delivered.worker)?;
+        Some(delivered)
+    };
+    let preimage: &[u8] = if let Some(delivered) = delivered {
+        delivery_preimage = AttestedDelivery {
+            program: crate::ID.to_bytes(),
+            domain: opened.domain,
+            intent: release.intent.key().to_bytes(),
+            payee: payee.key().to_bytes(),
+            amount_in: opened.tally.amount_in,
+            result,
+            filled: opened.prior.0,
+            revision: opened.prior.1,
+            max_fee_bps,
+            ext_hash,
+            spec_hash: opened.spec_hash,
+            announcement: delivered.announcement.to_bytes(),
+            seq: delivered.seq,
+            delivered: opening.delivered,
+            salt: opening.salt,
+        }
+        .preimage();
+        &delivery_preimage
+    } else {
         fill_preimage = AttestedFill {
             program: crate::ID.to_bytes(),
             domain: opened.domain,
@@ -289,22 +410,6 @@ pub fn release_single<'info>(
         }
         .preimage();
         &fill_preimage
-    } else {
-        proof_preimage = AttestedProof {
-            program: crate::ID.to_bytes(),
-            domain: opened.domain,
-            intent: release.intent.key().to_bytes(),
-            payee: payee.key().to_bytes(),
-            amount_in: opened.tally.amount_in,
-            result,
-            filled: opened.prior.0,
-            revision: opened.prior.1,
-            max_fee_bps,
-            ext_hash,
-            spec_hash: opened.spec_hash,
-        }
-        .preimage();
-        &proof_preimage
     };
     let signers = judge.signers(&opened.attestor)?;
     match judge {
@@ -330,6 +435,9 @@ pub fn release_single<'info>(
         &payee_wallet(&payee, &release, opened.claims)?,
         opened.now,
     )?;
+    if delivered.is_some() {
+        mark_paid(&release, opening, opened.now, [0u8; 32])?;
+    }
     let mut withheld = Vec::new();
     pay_judge(
         &release,
@@ -374,6 +482,7 @@ pub fn release_single<'info>(
         fees: settled.fees,
         withheld,
         stake,
+        delivered,
     })
 }
 
@@ -389,6 +498,7 @@ pub fn release_split<'info>(
     judge: &Judge,
     fill: Fill,
     claim: &SplitClaim,
+    opening: &Opening,
     ext: &Ext,
 ) -> Result<SplitReleased> {
     let Fill {
@@ -412,17 +522,20 @@ pub fn release_split<'info>(
     }
     let opened = open(&release, amount_in, result)?;
     require!(opened.spec_hash != [0u8; 32], EngineError::NotAProof);
+    let delivered = announced(&release, opening)?;
+    require!(
+        claim.recipients.contains(&delivered.worker),
+        EngineError::AnnouncerNotRecipient
+    );
     let split_hash = {
-        let mut buf = Vec::with_capacity(len.saturating_mul(34));
-        for (wallet, bps) in claim.recipients.iter().zip(claim.weights.iter()) {
-            buf.extend_from_slice(wallet.as_ref());
-            buf.extend_from_slice(&bps.to_le_bytes());
-        }
-        solana_sha256_hasher::hashv(&[&buf]).to_bytes()
+        let wallets: Vec<[u8; 32]> = claim.recipients.iter().map(Pubkey::to_bytes).collect();
+        let (buf, used) = split_hash_preimage(&wallets, &claim.weights).map_err(core_err)?;
+        solana_sha256_hasher::hashv(&[buf.get(..used).ok_or(EngineError::SplitCountMismatch)?])
+            .to_bytes()
     };
     let ext_hash = solana_sha256_hasher::hashv(&[&ext.0]).to_bytes();
     let digest = {
-        let preimage = AttestedSplit {
+        let preimage = AttestedSplitDelivery {
             program: crate::ID.to_bytes(),
             domain: opened.domain,
             intent: release.intent.key().to_bytes(),
@@ -434,6 +547,10 @@ pub fn release_split<'info>(
             ext_hash,
             spec_hash: opened.spec_hash,
             split_hash,
+            announcement: delivered.announcement.to_bytes(),
+            seq: delivered.seq,
+            delivered: opening.delivered,
+            salt: opening.salt,
         }
         .preimage();
         solana_sha256_hasher::hashv(&[&SPLIT_COSIGN_TAG, &preimage]).to_bytes()
@@ -459,6 +576,7 @@ pub fn release_split<'info>(
         &claim.recipients,
         opened.now,
     )?;
+    mark_paid(&release, opening, opened.now, split_hash)?;
     let settle_amount = opened
         .tally
         .amount_in
@@ -519,6 +637,7 @@ pub fn release_split<'info>(
             fees,
             withheld,
             stake,
+            delivered: Some(delivered),
         },
         recipients: u8::try_from(len).map_err(|_| EngineError::SplitCountMismatch)?,
         split_hash,

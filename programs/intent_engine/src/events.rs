@@ -429,3 +429,15 @@ pub struct CommitteeKeysSynced {
     pub mask: u8,
     pub fingerprints: [[u8; 8]; 8],
 }
+
+#[event]
+pub struct DeliveryReleased {
+    pub intent: Pubkey,
+    pub announcement: Pubkey,
+    pub seq: u64,
+    pub worker: Pubkey,
+    pub attestor: Pubkey,
+    pub delivered: [u8; 32],
+    pub salt: [u8; 16],
+    pub split_hash: [u8; 32],
+}

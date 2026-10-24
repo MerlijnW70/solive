@@ -16,7 +16,7 @@ mod security;
 pub mod state;
 pub mod versions;
 
-pub use attested::{SplitClaim, MAX_SPLIT_RECIPIENTS};
+pub use attested::{Fill, Opening, SplitClaim, MAX_SPLIT_RECIPIENTS};
 pub use ext::Ext;
 pub use instructions::*;
 pub use policy::{ConfigSettings, ConfigUpdate, Economics};
@@ -101,23 +101,21 @@ pub mod intent_engine {
 
     pub fn fill_attested(
         ctx: Context<FillAttested>,
-        amount_in: u64,
-        result: u64,
-        max_fee_bps: u16,
+        fill: Fill,
+        opening: Opening,
         ext: Ext,
     ) -> Result<()> {
-        handle_fill_attested(ctx, amount_in, result, max_fee_bps, ext)
+        handle_fill_attested(ctx, fill, opening, ext)
     }
 
     pub fn fill_attested_split(
         ctx: Context<FillAttestedSplit>,
-        amount_in: u64,
-        result: u64,
-        max_fee_bps: u16,
+        fill: Fill,
         claim: SplitClaim,
+        opening: Opening,
         ext: Ext,
     ) -> Result<()> {
-        handle_fill_attested_split(ctx, amount_in, result, max_fee_bps, claim, ext)
+        handle_fill_attested_split(ctx, fill, claim, opening, ext)
     }
 
     pub fn create_committee(
@@ -132,33 +130,23 @@ pub mod intent_engine {
 
     pub fn fill_attested_committee(
         ctx: Context<FillAttestedCommittee>,
-        amount_in: u64,
-        result: u64,
-        max_fee_bps: u16,
+        fill: Fill,
         signers: u8,
+        opening: Opening,
         ext: Ext,
     ) -> Result<()> {
-        handle_fill_attested_committee(ctx, amount_in, result, max_fee_bps, signers, ext)
+        handle_fill_attested_committee(ctx, fill, signers, opening, ext)
     }
 
     pub fn fill_attested_split_committee(
         ctx: Context<FillAttestedSplitCommittee>,
-        amount_in: u64,
-        result: u64,
-        max_fee_bps: u16,
+        fill: Fill,
         signers: u8,
         claim: SplitClaim,
+        opening: Opening,
         ext: Ext,
     ) -> Result<()> {
-        handle_fill_attested_split_committee(
-            ctx,
-            amount_in,
-            result,
-            max_fee_bps,
-            signers,
-            claim,
-            ext,
-        )
+        handle_fill_attested_split_committee(ctx, fill, signers, claim, opening, ext)
     }
 
     pub fn open_claims(ctx: Context<OpenClaims>, max_secs: u32, stake: u64) -> Result<()> {

@@ -41,8 +41,9 @@ pub fn proof_preimage(
     amount_in: u64,
     result: u64,
     spec_hash: [u8; 32],
-) -> [u8; intent_core::sig::ATTEST_PROOF_PREIMAGE_LEN] {
-    intent_core::sig::AttestedProof {
+    delivery: &Delivery,
+) -> [u8; intent_core::sig::ATTEST_DELIVERY_PREIMAGE_LEN] {
+    intent_core::sig::AttestedDelivery {
         program: intent_engine::ID.to_bytes(),
         domain,
         intent: intent.to_bytes(),
@@ -54,6 +55,10 @@ pub fn proof_preimage(
         max_fee_bps: intent_engine::state::MAX_FEE_BPS,
         ext_hash: empty_ext_hash(),
         spec_hash,
+        announcement: delivery.announcement.to_bytes(),
+        seq: delivery.seq,
+        delivered: delivery.opening.delivered,
+        salt: delivery.opening.salt,
     }
     .preimage()
 }
@@ -65,8 +70,11 @@ pub fn proof_digest(
     amount_in: u64,
     result: u64,
     spec_hash: [u8; 32],
+    delivery: &Delivery,
 ) -> [u8; 32] {
-    let preimage = proof_preimage(domain, intent, payee, amount_in, result, spec_hash);
+    let preimage = proof_preimage(
+        domain, intent, payee, amount_in, result, spec_hash, delivery,
+    );
     solana_sha256_hasher::hashv(&[&COMMITTEE_COSIGN_TAG, &preimage]).to_bytes()
 }
 
@@ -138,14 +146,18 @@ impl Env {
                 claims: self.claims,
                 stake_to: self.stake_to,
                 mint_cap: self.mint_cap,
+                announcement: self.announcement,
                 event_authority: event_authority(),
                 program: intent_engine::ID,
             },
             intent_engine::instruction::FillAttestedCommittee {
-                amount_in: self.fill_amount(fill.owner, fill.nonce),
-                result: fill.result,
-                max_fee_bps: self.max_fee_bps,
+                fill: intent_engine::Fill {
+                    amount_in: self.fill_amount(fill.owner, fill.nonce),
+                    result: fill.result,
+                    max_fee_bps: self.max_fee_bps,
+                },
                 signers: fill.signers,
+                opening: self.opening,
                 ext: intent_engine::Ext(self.ext.clone()),
             },
         )
@@ -187,18 +199,22 @@ impl Env {
                 claims: self.claims,
                 stake_to: self.stake_to,
                 mint_cap: self.mint_cap,
+                announcement: self.announcement.unwrap_or_default(),
                 event_authority: event_authority(),
                 program: intent_engine::ID,
             },
             intent_engine::instruction::FillAttestedSplitCommittee {
-                amount_in: self.fill_amount(fill.owner, fill.nonce),
-                result: fill.result,
-                max_fee_bps: self.max_fee_bps,
+                fill: intent_engine::Fill {
+                    amount_in: self.fill_amount(fill.owner, fill.nonce),
+                    result: fill.result,
+                    max_fee_bps: self.max_fee_bps,
+                },
                 signers: fill.signers,
                 claim: intent_engine::SplitClaim {
                     recipients: recipients.to_vec(),
                     weights: weights.to_vec(),
                 },
+                opening: self.opening,
                 ext: intent_engine::Ext(self.ext.clone()),
             },
         )

@@ -137,6 +137,13 @@ pub enum EngineError {
     ProfileMismatch,
     BookMismatch,
     AnnounceFeeMissing,
+    AnnouncementMissing,
+    AnnouncementUnexpected,
+    AnnouncementMismatch,
+    AnnouncementPaid,
+    PayeeNotAnnouncer,
+    CommitmentMismatch,
+    AnnouncerNotRecipient,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {

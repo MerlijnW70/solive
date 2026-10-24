@@ -2,12 +2,14 @@ use anchor_lang::prelude::*;
 use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
-use crate::attested::{release_split, Fill, Judge, Release, Released, SplitClaim, SplitReleased};
+use crate::attested::{
+    release_split, Fill, Judge, Opening, Release, Released, SplitClaim, SplitReleased,
+};
 use crate::errors::EngineError;
-use crate::events::{FeeWithheld, IntentSplit};
+use crate::events::{DeliveryReleased, FeeWithheld, IntentSplit};
 use crate::ext::Ext;
 use crate::state::{
-    ClaimBoard, Config, Intent, MintCap, CLAIMS_SEED, CONFIG_ADDRESS, CONFIG_VERSION,
+    Announcement, ClaimBoard, Config, Intent, MintCap, CLAIMS_SEED, CONFIG_ADDRESS, CONFIG_VERSION,
     INTENT_VERSION, MINT_CAP_SEED, MINT_CAP_VERSION, VAULT_SEED,
 };
 
@@ -92,14 +94,15 @@ pub struct FillAttestedSplit<'info> {
         constraint = mint_cap.load()?.version == MINT_CAP_VERSION @ EngineError::AccountOutdated
     )]
     pub mint_cap: Option<AccountLoader<'info, MintCap>>,
+    #[account(mut)]
+    pub announcement: AccountLoader<'info, Announcement>,
 }
 
 pub fn handle_fill_attested_split(
     mut ctx: Context<FillAttestedSplit>,
-    amount_in: u64,
-    result: u64,
-    max_fee_bps: u16,
+    fill: Fill,
     claim: SplitClaim,
+    opening: Opening,
     ext: Ext,
 ) -> Result<()> {
     let accounts = &mut ctx.accounts;
@@ -127,15 +130,13 @@ pub fn handle_fill_attested_split(
             claims: accounts.claims.as_ref(),
             stake_to: accounts.stake_to.as_ref().map(|a| a.to_account_info()),
             mint_cap: accounts.mint_cap.as_ref(),
+            announcement: Some(&accounts.announcement),
         },
         &recipients,
         &Judge::Key,
-        Fill {
-            amount_in,
-            result,
-            max_fee_bps,
-        },
+        fill,
         &claim,
+        &opening,
         &ext,
     )?;
     let intent = ctx.accounts.intent.key();
@@ -149,6 +150,7 @@ pub fn handle_fill_attested_split(
                 fees,
                 withheld,
                 stake,
+                delivered,
                 ..
             },
         recipients,
@@ -166,13 +168,25 @@ pub fn handle_fill_attested_split(
             role: fee.role,
         });
     }
+    if let Some(d) = delivered {
+        emit_cpi!(DeliveryReleased {
+            intent,
+            announcement: d.announcement,
+            seq: d.seq,
+            worker: d.worker,
+            attestor,
+            delivered: d.opening.delivered,
+            salt: d.opening.salt,
+            split_hash,
+        });
+    }
     emit_cpi!(IntentSplit {
         intent,
         owner,
         solver,
         attestor,
         amount_in: tally.amount_in,
-        result,
+        result: fill.result,
         fee: fees.protocol,
         net: fees.net,
         partner_fee: fees.partner,

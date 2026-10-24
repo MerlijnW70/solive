@@ -202,13 +202,17 @@ impl Env {
                 claims: self.claims,
                 stake_to: self.stake_to,
                 mint_cap: self.mint_cap,
+                announcement: self.announcement,
                 event_authority: event_authority(),
                 program: intent_engine::ID,
             },
             intent_engine::instruction::FillAttested {
-                amount_in: self.fill_amount(owner, nonce),
-                result,
-                max_fee_bps: self.max_fee_bps,
+                fill: intent_engine::Fill {
+                    amount_in: self.fill_amount(owner, nonce),
+                    result,
+                    max_fee_bps: self.max_fee_bps,
+                },
+                opening: self.opening,
                 ext: intent_engine::Ext(self.ext.clone()),
             },
         )
@@ -255,17 +259,21 @@ impl Env {
                 claims: self.claims,
                 stake_to: self.stake_to,
                 mint_cap: self.mint_cap,
+                announcement: self.announcement.unwrap_or_default(),
                 event_authority: event_authority(),
                 program: intent_engine::ID,
             },
             intent_engine::instruction::FillAttestedSplit {
-                amount_in: self.fill_amount(owner, nonce),
-                result,
-                max_fee_bps: self.max_fee_bps,
+                fill: intent_engine::Fill {
+                    amount_in: self.fill_amount(owner, nonce),
+                    result,
+                    max_fee_bps: self.max_fee_bps,
+                },
                 claim: intent_engine::SplitClaim {
                     recipients: recipients.to_vec(),
                     weights: weights.to_vec(),
                 },
+                opening: self.opening,
                 ext: intent_engine::Ext(self.ext.clone()),
             },
         )
@@ -342,8 +350,9 @@ pub fn attestation_proof_message(
     amount_in: u64,
     result: u64,
     spec_hash: [u8; 32],
+    delivery: &Delivery,
 ) -> [u8; intent_core::sig::ENVELOPE_LEN] {
-    let preimage = intent_core::sig::AttestedProof {
+    let preimage = intent_core::sig::AttestedDelivery {
         program: intent_engine::ID.to_bytes(),
         domain,
         intent: intent.to_bytes(),
@@ -355,6 +364,10 @@ pub fn attestation_proof_message(
         max_fee_bps: intent_engine::state::MAX_FEE_BPS,
         ext_hash: empty_ext_hash(),
         spec_hash,
+        announcement: delivery.announcement.to_bytes(),
+        seq: delivery.seq,
+        delivered: delivery.opening.delivered,
+        salt: delivery.opening.salt,
     }
     .preimage();
     let digest = solana_sha256_hasher::hashv(&[&preimage]).to_bytes();
@@ -379,8 +392,9 @@ pub fn attestation_split_message(
     result: u64,
     spec_hash: [u8; 32],
     split_hash: [u8; 32],
+    delivery: &Delivery,
 ) -> [u8; intent_core::sig::ENVELOPE_LEN] {
-    let preimage = intent_core::sig::AttestedSplit {
+    let preimage = intent_core::sig::AttestedSplitDelivery {
         program: intent_engine::ID.to_bytes(),
         domain,
         intent: intent.to_bytes(),
@@ -392,6 +406,10 @@ pub fn attestation_split_message(
         ext_hash: empty_ext_hash(),
         spec_hash,
         split_hash,
+        announcement: delivery.announcement.to_bytes(),
+        seq: delivery.seq,
+        delivered: delivery.opening.delivered,
+        salt: delivery.opening.salt,
     }
     .preimage();
     let digest = solana_sha256_hasher::hashv(&[&preimage]).to_bytes();
@@ -405,8 +423,9 @@ pub fn split_digest(
     result: u64,
     spec_hash: [u8; 32],
     split_hash: [u8; 32],
+    delivery: &Delivery,
 ) -> [u8; 32] {
-    let preimage = intent_core::sig::AttestedSplit {
+    let preimage = intent_core::sig::AttestedSplitDelivery {
         program: intent_engine::ID.to_bytes(),
         domain,
         intent: intent.to_bytes(),
@@ -418,6 +437,10 @@ pub fn split_digest(
         ext_hash: empty_ext_hash(),
         spec_hash,
         split_hash,
+        announcement: delivery.announcement.to_bytes(),
+        seq: delivery.seq,
+        delivered: delivery.opening.delivered,
+        salt: delivery.opening.salt,
     }
     .preimage();
     solana_sha256_hasher::hashv(&[&intent_core::sig::SPLIT_COSIGN_TAG, &preimage]).to_bytes()

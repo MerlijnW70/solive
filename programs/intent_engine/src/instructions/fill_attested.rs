@@ -2,12 +2,12 @@ use anchor_lang::prelude::*;
 use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
 
-use crate::attested::{release_single, Fill, Judge, Release, Released};
+use crate::attested::{release_single, Fill, Judge, Opening, Release, Released};
 use crate::errors::EngineError;
-use crate::events::{FeeWithheld, IntentAttested};
+use crate::events::{DeliveryReleased, FeeWithheld, IntentAttested};
 use crate::ext::Ext;
 use crate::state::{
-    ClaimBoard, Config, Intent, MintCap, CLAIMS_SEED, CONFIG_ADDRESS, CONFIG_VERSION,
+    Announcement, ClaimBoard, Config, Intent, MintCap, CLAIMS_SEED, CONFIG_ADDRESS, CONFIG_VERSION,
     INTENT_VERSION, MINT_CAP_SEED, MINT_CAP_VERSION, VAULT_SEED,
 };
 
@@ -79,13 +79,14 @@ pub struct FillAttested<'info> {
         constraint = mint_cap.load()?.version == MINT_CAP_VERSION @ EngineError::AccountOutdated
     )]
     pub mint_cap: Option<AccountLoader<'info, MintCap>>,
+    #[account(mut)]
+    pub announcement: Option<AccountLoader<'info, Announcement>>,
 }
 
 pub fn handle_fill_attested(
     mut ctx: Context<FillAttested>,
-    amount_in: u64,
-    result: u64,
-    max_fee_bps: u16,
+    fill: Fill,
+    opening: Opening,
     ext: Ext,
 ) -> Result<()> {
     let accounts = &mut ctx.accounts;
@@ -103,14 +104,12 @@ pub fn handle_fill_attested(
             claims: accounts.claims.as_ref(),
             stake_to: accounts.stake_to.as_ref().map(|a| a.to_account_info()),
             mint_cap: accounts.mint_cap.as_ref(),
+            announcement: accounts.announcement.as_ref(),
         },
         accounts.payee.to_account_info(),
         &Judge::Key,
-        Fill {
-            amount_in,
-            result,
-            max_fee_bps,
-        },
+        fill,
+        &opening,
         &ext,
     )?;
     let intent = ctx.accounts.intent.key();
@@ -123,6 +122,7 @@ pub fn handle_fill_attested(
         fees,
         withheld,
         stake,
+        delivered,
         ..
     } = released;
     if let Some(moved) = stake {
@@ -137,6 +137,18 @@ pub fn handle_fill_attested(
             role: fee.role,
         });
     }
+    if let Some(d) = delivered {
+        emit_cpi!(DeliveryReleased {
+            intent,
+            announcement: d.announcement,
+            seq: d.seq,
+            worker: d.worker,
+            attestor,
+            delivered: d.opening.delivered,
+            salt: d.opening.salt,
+            split_hash: [0u8; 32],
+        });
+    }
     emit_cpi!(IntentAttested {
         intent,
         owner,
@@ -144,7 +156,7 @@ pub fn handle_fill_attested(
         payee,
         attestor,
         amount_in: tally.amount_in,
-        result,
+        result: fill.result,
         fee: fees.protocol,
         net: fees.net,
         filled: tally.filled,

@@ -98,6 +98,8 @@ pub struct Env {
     pub stake_to: Option<Pubkey>,
     pub mint_cap: Option<Pubkey>,
     pub committee: Option<Pubkey>,
+    pub announcement: Option<Pubkey>,
+    pub opening: intent_engine::Opening,
 }
 
 impl Env {
@@ -130,6 +132,8 @@ impl Env {
             stake_to: None,
             mint_cap: None,
             committee: None,
+            announcement: None,
+            opening: intent_engine::Opening::default(),
         };
         env.set_now(START_TS);
         let key = env.authority.pubkey();
