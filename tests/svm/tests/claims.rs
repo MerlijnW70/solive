@@ -178,6 +178,22 @@ fn only_the_owner_opens_claims_once_on_an_open_proof_escrow_within_bounds() -> T
 }
 
 #[test]
+fn claims_open_until_the_second_the_escrow_expires() -> TestResult {
+    let mut late = world()?;
+    let expires_at = load::<Intent>(&late.env.svm, &late.intent())?.expires_at;
+    late.env.set_now(expires_at);
+    assert_eq!(
+        late.open(HOUR, STAKE).err(),
+        Some(engine_error_at(0, EngineError::InvalidTransition))
+    );
+    let mut last = world()?;
+    let expires_at = load::<Intent>(&last.env.svm, &last.intent())?.expires_at;
+    last.env.set_now(expires_at.saturating_sub(1));
+    last.open(HOUR, STAKE)?;
+    Ok(())
+}
+
+#[test]
 fn claims_need_a_proof_escrow() -> TestResult {
     let mut env = Env::new()?;
     env.init_config()?;
