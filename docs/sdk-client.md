@@ -216,8 +216,9 @@ await client.unwrap(signer);
 - `announce` syncs a committee's keys first when its snapshot does not match its members' published keys, and announcing the same work and url again returns the same announcement without sending.
 - The salt and the sealing keys come from the worker's own signature over the intent and the sha256, so only its key derives them. `announce` refuses a signer that cannot sign messages, such as a Ledger, with `NoMessageSigner`; such a worker passes `secret`, 32 bytes of its own that it keeps, or `saltSignature`, a signature made elsewhere, which must verify for the worker (`BadSaltSignature`).
 - `announce` refuses a url longer than its transaction can carry with `UrlTooLong` before sending.
-- `announcements` lists an escrow's announcements in seq order from accounts alone, never from transaction history, and says whether the list is `complete`: every seq from 1 to the last one present.
-- `firstOpening` returns the first announcement that opens to the checked sha256 with the keys it is given, and refuses with `FirstOpeningRefused` while the list is incomplete, an earlier announcement is sealed to a key it was not given or that does not open it, or another worker holds the claim.
+- `announcements` lists an escrow's announcements in seq order from accounts alone, never from transaction history, and says whether the list is `complete`: the escrow is open and every seq from 1 to one below its delivery book's `nextSeq` is present exactly once. Once the escrow is no longer open or its book is gone, the list says `closed` and is never complete.
+- `firstOpening` returns the first announcement that opens to the checked sha256 with the keys it is given, and refuses with `FirstOpeningRefused` while the list is incomplete, an earlier announcement is sealed to a key it was not given, or another worker holds the claim.
+- An earlier announcement sealed to a key `firstOpening` was given that does not open with that key can never open for anyone, so `firstOpening` passes over it and lists it in `skipped`, for a judge and for each committee member alike.
 - A transport you pass to `createClient` needs `engineAccounts` to list announcements.
 
 Here your wallet plays the worker, and the judge pays the first announcement that opens to the hash it checked. This prints `true true` twice.
@@ -239,6 +240,16 @@ await client.unwrap(signer);
 `settleProof`, `settleCommittee` and `settleSplit` sign over the announcement and its opening and pay the announcing worker's token account; any wallet can send the signed release. `history` reads the paid work's sha256 and salt from the release itself.
 
 `refute` lets an earlier worker record on chain that a later announcement of the same work was paid, `reclaim` closes every announcement of a worker that the program lets close now, rent back to whoever paid it, and `closeBook` closes an escrow's empty delivery book. [Judge work](judge.md) does all of this from the command line.
+
+## Standing
+
+`reputation` reads what a worker did and was paid for from the chain alone.
+
+- `reputation` finds a worker's announcements in the `DeliveryAnnounced` events of its own signed transactions and reads each release from the history of the announcement it paid, so a paid record stays after its announcement account closes.
+- A wallet counts as a co-author only when a split release names it as a payee; its record names the paid announcement and the role `co-author`, and announcing on the escrow alone credits nothing.
+- A refutation counts against the paid worker only when the earlier announcement's stored blob opens under the revealed ephemeral key, at every slot, to the paid work (`substantiated`); `unsubstantiated` refutations and `unverifiable` ones, whose recipients' keys can no longer be known, are listed on the record and not counted.
+- `complete` is false, with a `reason`, whenever a page limit or an unreadable account cut the record short.
+- `trustOf` adds an edge from a payer to a worker only for a paid record whose release the reputation read verified, and never for a self-dealt one.
 
 ## Who can do what
 

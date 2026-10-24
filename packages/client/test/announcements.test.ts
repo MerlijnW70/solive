@@ -2,15 +2,19 @@ import { type Address, generateKeyPairSigner, type KeyPairSigner, type Transacti
 import { describe, expect, it } from "vitest";
 import {
   announcementCommitment,
+  blobLayout,
   buildAnnounceDelivery,
+  delivery,
   IntentStatus,
+  keyFingerprintV4,
   Kind,
   NATIVE_MINT,
   saltMessage,
   sealDeliveryV4,
   signMessageBytes,
+  x25519PublicOf,
 } from "@intent-engine/core";
-import { BadSaltSignature, createClient, FirstOpeningRefused, NoMessageSigner, NotDeliverable } from "../src/index.js";
+import { BadSaltSignature, createClient, NoMessageSigner, NotDeliverable } from "../src/index.js";
 import { world } from "./svm.js";
 import { announced, fundedSigner, keypairSigner, LOCAL, nativeMint, sha, specHash, tokensOf, workUrl } from "./work.js";
 
@@ -84,26 +88,35 @@ describe("announcing a delivery", () => {
     await announced(client, other, intent, OTHER);
     const delivered = await announced(client, honest, intent, WORK);
     const first = await client.firstOpening({ intent, sha256: WORK, keypair: judge.keypair });
-    expect(first).toMatchObject({ announcement: delivered.announcement, seq: 2n, worker: honest.address });
+    expect(first).toMatchObject({ announcement: delivered.announcement, seq: 2n, worker: honest.address, skipped: [] });
+    await expect(client.firstOpening({ intent, sha256: sha("nobody did this"), keypair: judge.keypair })).rejects.toMatchObject({ reason: "nothing-opens" });
     await client.settleProof({ judge: judge.signer, owner: owner.address, nonce, announcement: first.announcement, opening: first, result: 1n, payer: owner });
     expect(await tokensOf(w, honest.address)).toBeGreaterThan(0n);
-    await expect(client.firstOpening({ intent, sha256: sha("nobody did this"), keypair: judge.keypair })).rejects.toMatchObject({ reason: "nothing-opens" });
+    expect(await client.announcements(intent)).toMatchObject({ complete: false, closed: true, missing: [] });
+    const closed = await client.firstOpening({ intent, sha256: WORK, keypair: judge.keypair }).catch((error: unknown) => error);
+    expect(closed).toMatchObject({ reason: "incomplete", closed: true });
+    expect((closed as Error).message).toContain("is no longer open or has no delivery book");
   });
 
-  it("refuses when an earlier announcement is sealed to a key the caller holds but does not open, and names it", async () => {
+  it("skips an earlier announcement under the judge's real fingerprint that does not open, lists it, and pays the honest worker", async () => {
     const judge = await keypairSigner();
-    const { w, client, intent } = await job(judge.signer.address);
-    const [forger, honest] = [await fundedSigner(w), await fundedSigner(w)];
-    const blob = await sealDeliveryV4({ source: crypto.getRandomValues(new Uint8Array(32)), url: workUrl("forged"), recipients: [judge.signer.address] }, intent, forger.address);
-    blob[blob.length - 1] = (blob[blob.length - 1] ?? 0) ^ 1;
-    const { instruction } = await buildAnnounceDelivery({ worker: forger, intent, attestor: judge.signer.address, commitment: new Uint8Array(32).fill(7), blob });
-    await client.send([instruction], forger);
+    const { w, client, owner, intent, nonce } = await job(judge.signer.address);
+    const [griefer, honest] = [await fundedSigner(w), await fundedSigner(w)];
+    const blob = await sealDeliveryV4({ source: crypto.getRandomValues(new Uint8Array(32)), url: workUrl("grief"), recipients: [judge.signer.address] }, intent, griefer.address);
+    const wrapped = blobLayout(1, blob.length).wrapped;
+    blob[wrapped] = (blob[wrapped] ?? 0) ^ 1;
+    const commitment = await announcementCommitment(intent, griefer.address, { delivered: hexBytes(WORK), salt: crypto.getRandomValues(new Uint8Array(16)) });
+    const { announcement: grief, instruction } = await buildAnnounceDelivery({ worker: griefer, intent, attestor: judge.signer.address, commitment, blob });
+    await client.send([instruction], griefer);
+    expect(delivery.blobHead(blob).fps[0]).toEqual(await keyFingerprintV4(x25519PublicOf(judge.signer.address)));
     const delivered = await announced(client, honest, intent, WORK);
-    const refused = await client.firstOpening({ intent, sha256: WORK, keypair: judge.keypair }).catch((error: unknown) => error);
-    expect(refused).toBeInstanceOf(FirstOpeningRefused);
-    expect(refused).toMatchObject({ reason: "does-not-open", seq: 1n, worker: forger.address, sealedTo: [{ wallet: judge.signer.address, kind: "wallet", published: true }] });
-    expect((refused as Error).message).toContain("which does not open it");
-    expect(delivered.seq).toBe(2n);
+    const first = await client.firstOpening({ intent, sha256: WORK, keypair: judge.keypair });
+    expect(first).toMatchObject({ announcement: delivered.announcement, seq: 2n, worker: honest.address });
+    expect(first.skipped).toEqual([{ announcement: grief, seq: 1n, worker: griefer.address, reason: "does-not-open" }]);
+    await expect(client.firstOpening({ intent, sha256: WORK })).rejects.toMatchObject({ reason: "key-not-given", announcement: grief });
+    await client.settleProof({ judge: judge.signer, owner: owner.address, nonce, announcement: first.announcement, opening: first, result: 1n, payer: owner });
+    expect(await tokensOf(w, honest.address)).toBeGreaterThan(0n);
+    expect(await tokensOf(w, griefer.address)).toBeNull();
   });
 
   it("derives the secrets from 32 bytes a worker that cannot sign messages keeps, or from a salt signature it made", async () => {

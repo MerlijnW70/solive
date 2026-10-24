@@ -1,6 +1,8 @@
 import type { KeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import {
+  blobLayout,
+  buildAnnounceDelivery,
   buildCreateProfile,
   buildOpenClaimsListed,
   buildSetAnnounceFee,
@@ -13,9 +15,10 @@ import {
   newEncryptionKeyFile,
   parseEncryptionKey,
   readEncryptionKeyFile,
+  sealDeliveryV4,
   signCommitteeVote,
 } from "@intent-engine/core";
-import { committeeKeys } from "../src/announce-keys.js";
+import { committeeKeys, recipientsFor } from "../src/announce-keys.js";
 import { createClient, UrlTooLong } from "../src/index.js";
 import { world, type World } from "./svm.js";
 import { fundedSigner, keyed, type Keyed, LOCAL, nativeMint, sha, specHash, tokensOf, workUrl } from "./work.js";
@@ -118,5 +121,33 @@ describe("announcing to a committee", () => {
     const landed = await client.announce({ worker, payer, intent, sha256: WORK, url: url(max) });
     expect(landed.seq).toBe(1n);
     expect((w.chain.svm.getBalance(w.feeRecipient.address) ?? 0n) - before).toBe(5_000n);
+  });
+
+  it("lets a member whose slot does not open skip that announcement, list it, and vote with another member to pay the honest worker", async () => {
+    const { w, client, committee, members, owner, intent, nonce } = await committeeJob(3);
+    const [first, second, third] = members as [Keyed, Keyed, Keyed];
+    const { recipients, sync } = await recipientsFor(client.transport, committee, intent);
+    if (sync !== null) {
+      await client.send([sync], owner);
+    }
+    const griefer = await fundedSigner(w);
+    const blob = await sealDeliveryV4({ source: crypto.getRandomValues(new Uint8Array(32)), url: workUrl("grief"), recipients }, intent, griefer.address);
+    const slot = blobLayout(3, blob.length).wrapped;
+    blob[slot] = (blob[slot] ?? 0) ^ 1;
+    const { announcement: grief, instruction } = await buildAnnounceDelivery({ worker: griefer, intent, attestor: committee, committee: true, commitment: new Uint8Array(32).fill(7), blob });
+    await client.send([instruction], griefer);
+    const worker = await fundedSigner(w);
+    const made = await client.announce({ worker, intent, sha256: WORK, url: workUrl() });
+    const blocked = await client.firstOpening({ intent, sha256: WORK, keypair: first.keypair });
+    expect(blocked).toMatchObject({ announcement: made.announcement, worker: worker.address });
+    expect(blocked.skipped).toEqual([{ announcement: grief, seq: 1n, worker: griefer.address, reason: "does-not-open" }]);
+    const opened = await client.firstOpening({ intent, sha256: WORK, keypair: second.keypair });
+    expect(opened).toMatchObject({ announcement: made.announcement, skipped: [] });
+    const target = { owner: owner.address, nonce, announcement: blocked.announcement, opening: blocked, result: 1n };
+    const ballot = await client.committeeBallot(target);
+    const votes = await Promise.all([first, second].map(({ signer }) => signCommitteeVote(signer, ballot.digest, ballot.committee.members)));
+    await client.settleCommittee({ ...target, solver: third.signer, votes });
+    expect(await tokensOf(w, worker.address)).toBeGreaterThan(0n);
+    expect(await tokensOf(w, griefer.address)).toBeNull();
   });
 });

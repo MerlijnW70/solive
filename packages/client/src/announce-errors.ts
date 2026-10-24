@@ -67,7 +67,7 @@ export class AnnouncementsUnreadable extends Error {
   }
 }
 
-export type RefusalReason = "incomplete" | "does-not-open" | "key-not-given" | "nothing-opens" | "claim-held";
+export type RefusalReason = "incomplete" | "key-not-given" | "nothing-opens" | "claim-held";
 
 export type SealedKeyKind = "wallet" | "profile";
 
@@ -80,6 +80,7 @@ export type Refusal = {
   worker?: Address;
   sealedTo?: readonly SealedSlot[];
   missing?: readonly bigint[];
+  closed?: boolean;
   holder?: Address;
 };
 
@@ -91,9 +92,11 @@ export function refusalText(sha256: string, refusal: Refusal): string {
   const sealed = (refusal.sealedTo ?? []).map(slotText).join(", ");
   switch (refusal.reason) {
     case "incomplete":
-      return `lists its announcements with seq ${(refusal.missing ?? []).join(", ")} missing, so the first worker who announced the work ${sha256} cannot be known; nothing was sent`;
-    case "does-not-open":
-      return `has the earlier ${at} sealed to a key given here, ${sealed}, which does not open it, so the first worker who announced the work ${sha256} cannot be known; nothing was sent`;
+      return refusal.closed === true
+        ? `is no longer open or has no delivery book, so its announcements may have been closed and the first worker who announced the work ${sha256} cannot be known; nothing was sent`
+        : (refusal.missing ?? []).length > 0
+          ? `lists its announcements with seq ${(refusal.missing ?? []).join(", ")} missing, so the first worker who announced the work ${sha256} cannot be known; nothing was sent`
+          : `lists a seq twice or past its delivery book's next seq, so the first worker who announced the work ${sha256} cannot be known; nothing was sent`;
     case "key-not-given":
       return `has the earlier ${at} sealed to ${sealed}, which no key given here opens, so the first worker who announced the work ${sha256} cannot be known; pass that key; nothing was sent`;
     case "nothing-opens":
@@ -111,6 +114,7 @@ export class FirstOpeningRefused extends NotSettleable {
   readonly worker: Address | null;
   readonly sealedTo: readonly SealedSlot[];
   readonly missing: readonly bigint[];
+  readonly closed: boolean;
   readonly holder: Address | null;
 
   constructor(intent: Address, sha256: string, refusal: Refusal) {
@@ -123,6 +127,7 @@ export class FirstOpeningRefused extends NotSettleable {
     this.worker = refusal.worker ?? null;
     this.sealedTo = refusal.sealedTo ?? [];
     this.missing = refusal.missing ?? [];
+    this.closed = refusal.closed ?? false;
     this.holder = refusal.holder ?? null;
   }
 }

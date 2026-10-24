@@ -4,6 +4,7 @@ import { AnnouncementsUnreadable } from "./announce-errors.js";
 import { refutationsOf } from "./announcement-reads.js";
 import { HISTORY_LIMIT } from "./client-types.js";
 import { heldKeys, openingOf, opensTo } from "./first-opening.js";
+import { standingOf } from "./refutation-standing.js";
 import { paidWalletsOf, releasedDelivery, releaseOf } from "./release-reads.js";
 import type { SimpleContext } from "./simple-orders.js";
 import type { Announcement, DeliveriesInput, ReceiptInput, ReleaseReceipt } from "./simple-types.js";
@@ -23,7 +24,12 @@ export function workReads(ctx: SimpleContext) {
 
   const refutedBy = async (announcement: Address): Promise<{ refutedBy: Address | null; complete: boolean }> => {
     try {
-      return { refutedBy: (await refutationsOf(transport, announcement))[0]?.address ?? null, complete: true };
+      for (const refutation of await refutationsOf(transport, announcement)) {
+        if ((await standingOf(transport, refutation)) === "substantiated") {
+          return { refutedBy: refutation.address, complete: true };
+        }
+      }
+      return { refutedBy: null, complete: true };
     } catch (error) {
       if (error instanceof AnnouncementsUnreadable) {
         return { refutedBy: null, complete: false };

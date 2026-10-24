@@ -348,7 +348,7 @@ describe("the sdk page", () => {
     expect(judge?.address).not.toBe(signer.address);
     expect(judge?.address).toBeDefined();
     const posted = (await findIntentPda({ owner: signer.address, nonce: 8n }))[0];
-    expect(await client.announcements(posted)).toMatchObject({ complete: true, nextSeq: 2n, announcements: [{ worker: signer.address, seq: 1n, state: "paid" }] });
+    expect(await client.announcements(posted)).toMatchObject({ complete: false, closed: true, nextSeq: 2n, announcements: [{ worker: signer.address, seq: 1n, state: "paid" }] });
     const released = (await client.history(posted)).find(({ name }) => name === "IntentAttested");
     expect(released?.deliveredSalt).toMatch(/^[0-9a-f]{32}$/);
     const pay = 10_000_000n;

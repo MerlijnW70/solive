@@ -2,7 +2,21 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { type Address, generateKeyPairSigner, type KeyPairSigner, type TransactionSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { announcementCommitment, buildCreateProfile, buildOpenClaimsListed, buildSetAnnounceFee, delivery, Kind, NATIVE_MINT, newEncryptionKeyFile, readEncryptionKeyFile, signCommitteeVote } from "@intent-engine/core";
+import {
+  announcementCommitment,
+  blobLayout,
+  buildAnnounceDelivery,
+  buildCreateProfile,
+  buildOpenClaimsListed,
+  buildSetAnnounceFee,
+  delivery,
+  Kind,
+  NATIVE_MINT,
+  newEncryptionKeyFile,
+  readEncryptionKeyFile,
+  sealDeliveryV4,
+  signCommitteeVote,
+} from "@intent-engine/core";
 import { committeeKeys } from "../src/announce-keys.js";
 import {
   AnnouncementsUnreadable,
@@ -27,9 +41,10 @@ const BULLETS = {
   secret:
     "The salt and the sealing keys come from the worker's own signature over the intent and the sha256, so only its key derives them. `announce` refuses a signer that cannot sign messages, such as a Ledger, with `NoMessageSigner`; such a worker passes `secret`, 32 bytes of its own that it keeps, or `saltSignature`, a signature made elsewhere, which must verify for the worker (`BadSaltSignature`).",
   url: "`announce` refuses a url longer than its transaction can carry with `UrlTooLong` before sending.",
-  list: "`announcements` lists an escrow's announcements in seq order from accounts alone, never from transaction history, and says whether the list is `complete`: every seq from 1 to the last one present.",
+  list: "`announcements` lists an escrow's announcements in seq order from accounts alone, never from transaction history, and says whether the list is `complete`: the escrow is open and every seq from 1 to one below its delivery book's `nextSeq` is present exactly once. Once the escrow is no longer open or its book is gone, the list says `closed` and is never complete.",
   first:
-    "`firstOpening` returns the first announcement that opens to the checked sha256 with the keys it is given, and refuses with `FirstOpeningRefused` while the list is incomplete, an earlier announcement is sealed to a key it was not given or that does not open it, or another worker holds the claim.",
+    "`firstOpening` returns the first announcement that opens to the checked sha256 with the keys it is given, and refuses with `FirstOpeningRefused` while the list is incomplete, an earlier announcement is sealed to a key it was not given, or another worker holds the claim.",
+  skip: "An earlier announcement sealed to a key `firstOpening` was given that does not open with that key can never open for anyone, so `firstOpening` passes over it and lists it in `skipped`, for a judge and for each committee member alike.",
   transport: "A transport you pass to `createClient` needs `engineAccounts` to list announcements.",
 };
 
@@ -58,7 +73,7 @@ const bytes = (hex: string) => Uint8Array.from(Buffer.from(hex, "hex"));
 
 describe("the announcement sentences of the full client page", () => {
   it("states each announcement bullet these tests assert", () => {
-    const section = PAGE.slice(PAGE.indexOf("## Find work and deliver it"), PAGE.indexOf("## Who can do what"));
+    const section = PAGE.slice(PAGE.indexOf("## Find work and deliver it"), PAGE.indexOf("## Standing"));
     const bullets = [...section.matchAll(/^- (.+)$/gm)].map((m) => m[1]);
     expect(bullets.slice(-Object.keys(BULLETS).length)).toEqual(Object.values(BULLETS));
     for (const sentence of Object.values(SENTENCES)) {
@@ -127,7 +142,7 @@ describe("the announcement sentences of the full client page", () => {
 
   it(BULLETS.list, async () => {
     const judge = await generateKeyPairSigner();
-    const { w, client, intent } = await escrowTo(judge.address);
+    const { w, client, owner, intent, nonce } = await escrowTo(judge.address);
     const [a, b] = [await fundedSigner(w), await fundedSigner(w)];
     await announced(client, a, intent, WORK);
     await announced(client, b, intent, WORK);
@@ -137,11 +152,16 @@ describe("the announcement sentences of the full client page", () => {
     const { signaturesOf: _, transactionsOf: __, transactionOf: ___, ...accounts } = w.chain.transport;
     const blind = createClient({ url: LOCAL, transport: { ...accounts, engineTransactions: refuse } });
     const list = await blind.announcements(intent);
-    expect(list).toMatchObject({ complete: true, missing: [] });
+    expect(list).toMatchObject({ complete: true, closed: false, nextSeq: 3n, missing: [] });
     expect(list.announcements.map(({ seq, worker }) => [seq, worker])).toEqual([
       [1n, a.address],
       [2n, b.address],
     ]);
+    const listAll = accounts.engineAccounts as NonNullable<typeof accounts.engineAccounts>;
+    const hiding = createClient({ url: LOCAL, transport: { ...accounts, engineTransactions: refuse, engineAccounts: async (filter) => (await listAll(filter)).filter(({ address }) => address !== list.announcements[1]?.address) } });
+    expect(await hiding.announcements(intent)).toMatchObject({ complete: false, closed: false, missing: [2n] });
+    await client.cancel(owner, nonce);
+    expect(await blind.announcements(intent)).toMatchObject({ complete: false, closed: true, missing: [] });
   });
 
   it(BULLETS.first, async () => {
@@ -153,6 +173,23 @@ describe("the announcement sentences of the full client page", () => {
     const made = await announced(client, honest, intent, WORK);
     await expect(client.firstOpening({ intent, sha256: WORK })).rejects.toThrow(FirstOpeningRefused);
     expect(await client.firstOpening({ intent, sha256: WORK, keypair: judge.keypair })).toMatchObject({ announcement: made.announcement, worker: honest.address });
+  });
+
+  it(BULLETS.skip, async () => {
+    const w = await world();
+    const judge = await keyed(w);
+    const { client, owner, intent, nonce } = await escrowTo(judge.signer.address, w);
+    const [griefer, honest] = [await fundedSigner(w), await fundedSigner(w)];
+    const blob = await sealDeliveryV4({ source: new Uint8Array(32).fill(5), url: workUrl("grief"), recipients: [judge.signer.address] }, intent, griefer.address);
+    const wrapped = blobLayout(1, blob.length).wrapped;
+    blob[wrapped] = (blob[wrapped] ?? 0) ^ 0xff;
+    const { announcement, instruction } = await buildAnnounceDelivery({ worker: griefer, intent, attestor: judge.signer.address, commitment: new Uint8Array(32).fill(7), blob });
+    await client.send([instruction], griefer);
+    const made = await announced(client, honest, intent, WORK);
+    const first = await client.firstOpening({ intent, sha256: WORK, keypair: judge.keypair });
+    expect(first).toMatchObject({ announcement: made.announcement, skipped: [{ announcement, seq: 1n, worker: griefer.address, reason: "does-not-open" }] });
+    await client.settleProof({ judge: judge.signer, owner: owner.address, nonce, announcement: first.announcement, opening: first, result: 1n });
+    expect(await tokensOf(w, honest.address)).toBeGreaterThan(0n);
   });
 
   it(BULLETS.transport, async () => {

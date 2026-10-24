@@ -3,8 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   ANNOUNCEMENT_DISCRIMINATOR,
   delivery,
+  deliveryBookAddress,
   getAnnouncementDecoder,
   getAnnouncementEncoder,
+  getDeliveryBookDecoder,
+  getDeliveryBookEncoder,
   Kind,
   NATIVE_MINT,
   sealDeliveryV4,
@@ -49,13 +52,24 @@ async function spammed() {
     ...w.chain.transport,
     engineAccounts: async (filter) => (filter !== undefined && tagged(filter.discriminator) ? [...accounts] : (w.chain.transport.engineAccounts?.(filter) ?? [])),
   });
-  return { w, judge, owner, intent, honest, delivered, spam, relabelled, listing };
+  const booked = async (nextSeq: bigint) => {
+    const address = await deliveryBookAddress(intent);
+    const book = w.chain.svm.getAccount(address);
+    if (!book.exists) {
+      throw new Error("no delivery book");
+    }
+    const data = new Uint8Array(getDeliveryBookEncoder().encode({ ...getDeliveryBookDecoder().decode(new Uint8Array(book.data)), nextSeq }));
+    w.chain.svm.setAccount({ ...book, data });
+  };
+  await booked(BigInt(SPAM + 2));
+  return { w, judge, owner, intent, honest, delivered, spam, relabelled, listing, booked };
 }
 
 describe("an escrow flooded with announcements", () => {
   it("names at most the first missing seqs and stays fast however far the last seq present lies", async () => {
-    const { intent, spam, relabelled, listing } = await spammed();
+    const { intent, spam, relabelled, listing, booked } = await spammed();
     const far = { ...relabelled, data: new Uint8Array(getAnnouncementEncoder().encode({ ...getAnnouncementDecoder().decode(relabelled.data), seq: 1n << 62n })) };
+    await booked((1n << 62n) + 1n);
     const client = createClient({ url: "http://127.0.0.1:8899", transport: listing([spam[0] as EngineAccount, far]) });
     const list = await client.announcements(intent);
     expect(list).toMatchObject({ complete: false });
@@ -89,5 +103,31 @@ describe("an escrow flooded with announcements", () => {
     expect(refused).toMatchObject({ reason: "incomplete", missing: [1_000n] });
     expect(w.chain.sent).toHaveLength(sent);
     expect(await tokensOf(w, honest.address)).toBeNull();
+  });
+
+  it("shows the list incomplete when the book's next seq is past the last listed announcement, and the release is refused", { timeout: 60_000 }, async () => {
+    const { w, judge, intent, honest, spam, listing } = await spammed();
+    const transport = listing(spam);
+    const client = createClient({ url: "http://127.0.0.1:8899", transport });
+    expect(await client.announcements(intent)).toMatchObject({ complete: false, closed: false, nextSeq: BigInt(SPAM + 2), missing: [BigInt(SPAM + 1)] });
+    const reviewer = await connect({ cluster: "devnet", signer: judge.signer, transport });
+    const sent = w.chain.sent.length;
+    const refused = await reviewer.release({ escrow: intent, deliveredSha256: WORK, keypair: judge.keypair }).catch((error: unknown) => error);
+    expect(refused).toBeInstanceOf(FirstOpeningRefused);
+    expect(refused).toMatchObject({ reason: "incomplete", missing: [BigInt(SPAM + 1)], closed: false });
+    expect(w.chain.sent).toHaveLength(sent);
+    expect(await tokensOf(w, honest.address)).toBeNull();
+  });
+
+  it("never calls a list complete that holds a seq twice or a seq at or past the book's next seq", async () => {
+    const { judge, intent, spam, relabelled, listing, booked } = await spammed();
+    await booked(2n);
+    const twice = { ...(spam[0] as EngineAccount), address: addressAt(0xfffffe) };
+    const read = (accounts: readonly EngineAccount[]) => createClient({ url: "http://127.0.0.1:8899", transport: listing(accounts) }).announcements(intent);
+    expect(await read([spam[0] as EngineAccount])).toMatchObject({ complete: true, missing: [] });
+    expect(await read([spam[0] as EngineAccount, twice])).toMatchObject({ complete: false, missing: [] });
+    expect(await read([spam[0] as EngineAccount, relabelled])).toMatchObject({ complete: false, missing: [] });
+    const opening = createClient({ url: "http://127.0.0.1:8899", transport: listing([spam[0] as EngineAccount, twice]) }).firstOpening({ intent, sha256: WORK, keypair: judge.keypair });
+    await expect(opening).rejects.toThrow("lists a seq twice or past its delivery book's next seq");
   });
 });

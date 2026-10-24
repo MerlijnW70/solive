@@ -16,10 +16,10 @@ import {
   type OpenedDelivery,
 } from "@intent-engine/core";
 import { chainTime, engineAccount } from "./accounts.js";
-import { FirstOpeningRefused, type SealedSlot } from "./announce-errors.js";
+import { FirstOpeningRefused, type Refusal, type SealedSlot } from "./announce-errors.js";
 import { committeeKeys } from "./announce-keys.js";
 import { sha256Bytes } from "./announce.js";
-import { type AnnouncementView, announcementsOf } from "./announcement-reads.js";
+import { type AnnouncementList, type AnnouncementView, announcementsOf } from "./announcement-reads.js";
 import { loadProfile } from "./client-claims.js";
 import { NotSettleable } from "./client-errors.js";
 import { hex, type Proof, proofAt } from "./job-proofs.js";
@@ -38,7 +38,12 @@ export type FirstOpening = {
   url: string | null;
   sha256: string;
   commitment: string;
+  skipped: SkippedAnnouncement[];
 };
+
+export type SkipReason = "does-not-open";
+
+export type SkippedAnnouncement = { announcement: Address; seq: bigint; worker: Address; reason: SkipReason };
 
 export type Held = { key: DeliveryKey; fingerprint: Uint8Array };
 
@@ -110,7 +115,9 @@ async function claimHolder(transport: Transport, proof: Proof): Promise<Address 
   return slot.state === "held" ? slot.worker : null;
 }
 
-export async function firstOpening(transport: Transport, input: FirstOpeningInput): Promise<FirstOpening> {
+export type FirstOpeningOutcome = { list: AnnouncementList; opening: FirstOpening | FirstOpeningRefused };
+
+export async function firstOpeningIn(transport: Transport, input: FirstOpeningInput): Promise<FirstOpeningOutcome> {
   const { intent } = input;
   const delivered = sha256Bytes(input.sha256);
   const sha256 = hex(delivered);
@@ -119,10 +126,12 @@ export async function firstOpening(transport: Transport, input: FirstOpeningInpu
     throw new NotSettleable(intent, "is not a proof escrow: an AttestedResult intent that commits a spec hash");
   }
   const list = await announcementsOf(transport, intent);
+  const refused = (refusal: Refusal): FirstOpeningOutcome => ({ list, opening: new FirstOpeningRefused(intent, sha256, refusal) });
   if (!list.complete) {
-    throw new FirstOpeningRefused(intent, sha256, { reason: "incomplete", missing: list.missing });
+    return refused({ reason: "incomplete", missing: list.missing, closed: list.closed });
   }
   const held = await heldKeys(input.keypair);
+  const skipped: SkippedAnnouncement[] = [];
   for (const announcement of list.announcements) {
     const at = { announcement: announcement.address, seq: announcement.seq, worker: announcement.worker };
     const opened = await openingOf(announcement, held);
@@ -130,17 +139,27 @@ export async function firstOpening(transport: Transport, input: FirstOpeningInpu
       if (await opensTo(announcement, delivered, opened.salt)) {
         const holder = await claimHolder(transport, proof);
         if (holder !== null && holder !== announcement.worker) {
-          throw new FirstOpeningRefused(intent, sha256, { reason: "claim-held", ...at, holder });
+          return refused({ reason: "claim-held", ...at, holder });
         }
-        return { intent, ...at, salt: hex(opened.salt), url: opened.url, sha256, commitment: hex(announcement.commitment) };
+        return { list, opening: { intent, ...at, salt: hex(opened.salt), url: opened.url, sha256, commitment: hex(announcement.commitment), skipped } };
       }
       continue;
     }
     const head = delivery.blobHead(announcement.blob);
     const sealed = head.fps.slice(0, head.count);
-    const ours = held.some(({ fingerprint }) => sealed.some((fp) => equal(fp, fingerprint)));
-    const sealedTo = await slotsOf(transport, announcement, head);
-    throw new FirstOpeningRefused(intent, sha256, { reason: ours ? "does-not-open" : "key-not-given", ...at, sealedTo });
+    if (held.some(({ fingerprint }) => sealed.some((fp) => equal(fp, fingerprint)))) {
+      skipped.push({ ...at, reason: "does-not-open" });
+      continue;
+    }
+    return refused({ reason: "key-not-given", ...at, sealedTo: await slotsOf(transport, announcement, head) });
   }
-  throw new FirstOpeningRefused(intent, sha256, { reason: "nothing-opens" });
+  return refused({ reason: "nothing-opens" });
+}
+
+export async function firstOpening(transport: Transport, input: FirstOpeningInput): Promise<FirstOpening> {
+  const { opening } = await firstOpeningIn(transport, input);
+  if (opening instanceof FirstOpeningRefused) {
+    throw opening;
+  }
+  return opening;
 }

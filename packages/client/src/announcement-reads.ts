@@ -10,10 +10,12 @@ import {
   getDeliveryBookDecoder,
   getRefutationDecoder,
   getRefutationSize,
+  IntentStatus,
   REFUTATION_DISCRIMINATOR,
 } from "@intent-engine/core";
-import { createdAccount } from "./accounts.js";
+import { chainTime, createdAccount } from "./accounts.js";
 import { AnnouncementsUnreadable } from "./announce-errors.js";
+import { intentAt } from "./job-proofs.js";
 import type { AccountMatch, Transport } from "./transport.js";
 
 export const INTENT_AT = 8;
@@ -49,17 +51,23 @@ export type AnnouncementList = {
   announcements: AnnouncementView[];
   nextSeq: bigint;
   complete: boolean;
+  closed: boolean;
   missing: bigint[];
 };
 
 export type RefutationView = {
   address: Address;
   intent: Address;
+  attestor: Address;
   paidAnnouncement: Address;
   earlierAnnouncement: Address;
   paidWorker: Address;
   earlierWorker: Address;
   delivered: Uint8Array;
+  earlierCommitment: Uint8Array;
+  esk: Uint8Array;
+  salt: Uint8Array;
+  blob: Uint8Array;
   paidSeq: bigint;
   earlierSeq: bigint;
 };
@@ -128,25 +136,35 @@ const byIntent = (a: AnnouncementView, b: AnnouncementView): number => (a.intent
 
 export const MISSING_SHOWN = 16;
 
-export function missingSeqs(announcements: readonly AnnouncementView[]): bigint[] {
-  const seqs = [...new Set(announcements.map(({ seq }) => seq))].sort((a, b) => (a < b ? -1 : 1));
+function missingSeqs(announcements: readonly AnnouncementView[], last: bigint): bigint[] {
+  const seqs = new Set(announcements.map(({ seq }) => seq));
   const missing: bigint[] = [];
-  let expected = 1n;
-  for (const seq of seqs) {
-    for (; expected < seq && missing.length < MISSING_SHOWN; expected += 1n) {
-      missing.push(expected);
+  for (let seq = 1n; seq <= last && missing.length < MISSING_SHOWN; seq += 1n) {
+    if (!seqs.has(seq)) {
+      missing.push(seq);
     }
-    expected = seq + 1n;
   }
   return missing;
 }
 
+function everySeqOnce(announcements: readonly AnnouncementView[], nextSeq: bigint): boolean {
+  const seqs = new Set(announcements.map(({ seq }) => seq));
+  return seqs.size === announcements.length && BigInt(announcements.length) === nextSeq - 1n && announcements.every(({ seq }) => seq >= 1n && seq < nextSeq);
+}
+
+async function escrowOpen(transport: Transport, intent: Address): Promise<boolean> {
+  const [held, now] = await Promise.all([intentAt(transport, intent), chainTime(transport)]);
+  return held !== null && held.status === IntentStatus.Open && now < held.expiresAt;
+}
+
 export async function announcementsOf(transport: Transport, intent: Address): Promise<AnnouncementList> {
-  const [book, found] = await Promise.all([loadDeliveryBook(transport, intent), listed(transport, { offset: INTENT_AT, address: intent })]);
+  const [book, found, open] = await Promise.all([loadDeliveryBook(transport, intent), listed(transport, { offset: INTENT_AT, address: intent }), escrowOpen(transport, intent)]);
   const announcements = found.filter((announcement) => announcement.intent === intent).sort(bySeq);
-  const missing = missingSeqs(announcements);
-  const unique = new Set(announcements.map(({ seq }) => seq)).size === announcements.length;
-  return { intent, announcements, nextSeq: book?.nextSeq ?? 1n, complete: missing.length === 0 && unique, missing };
+  const closed = book === null || !open;
+  const nextSeq = book?.nextSeq ?? 1n;
+  const last = book === null ? announcements.reduce((max, { seq }) => (seq > max ? seq : max), 0n) : nextSeq - 1n;
+  const missing = missingSeqs(announcements, last);
+  return { intent, announcements, nextSeq, complete: !closed && everySeqOnce(announcements, nextSeq), closed, missing };
 }
 
 export async function announcementsTo(transport: Transport, attestor: Address): Promise<AnnouncementView[]> {
@@ -172,11 +190,16 @@ export async function refutationsOf(transport: Transport, paid: Address): Promis
       return {
         address,
         intent: stored.intent,
+        attestor: stored.attestor,
         paidAnnouncement: stored.paidAnnouncement,
         earlierAnnouncement: stored.earlierAnnouncement,
         paidWorker: stored.paidWorker,
         earlierWorker: stored.earlierWorker,
         delivered: Uint8Array.from(stored.delivered),
+        earlierCommitment: Uint8Array.from(stored.earlierCommitment),
+        esk: Uint8Array.from(stored.esk),
+        salt: Uint8Array.from(stored.salt),
+        blob: Uint8Array.from(stored.blob.slice(0, stored.blobLen)),
         paidSeq: stored.paidSeq,
         earlierSeq: stored.earlierSeq,
       };

@@ -2,9 +2,9 @@ import type { Address } from "@solana/kit";
 import { NATIVE_MINT, splitN } from "@intent-engine/core";
 import { HISTORY_LIMIT } from "./client-types.js";
 import { DELIVERY_PAGES, scan } from "./job-scan.js";
-import { eventsOf, intentHistory, type Read, releaseOf, splitClaim } from "./release-reads.js";
+import { engineEvents, eventAuthority, intentHistory, type Settlement, settlementIn, splitClaim } from "./release-reads.js";
 import { counted, type Reputation, reputationOf, solBacked } from "./reputation.js";
-import type { Transport } from "./transport.js";
+import type { EngineTransaction, Transport } from "./transport.js";
 
 export const RESTART = 0.15;
 export const TRUST_HOPS = 2;
@@ -35,9 +35,9 @@ type Paid = { workers: Map<Address, bigint>; cost: bigint; complete: boolean };
 
 type Payees = { wallets: readonly Address[]; weights: readonly number[] | null };
 
-function paidWallets({ event, transaction }: Read, intent: Address): Payees | null {
-  if (event.name === "IntentAttested") {
-    const payee = event.fields.payee;
+function paidWallets({ settled, transaction }: Settlement, intent: Address): Payees | null {
+  if (settled.name === "IntentAttested") {
+    const payee = settled.fields.payee;
     const owner = transaction.tokens?.find(({ account }) => account === payee)?.owner;
     return owner === undefined ? null : { wallets: [owner], weights: null };
   }
@@ -47,10 +47,13 @@ function paidWallets({ event, transaction }: Read, intent: Address): Payees | nu
 
 const shareOf = (amount: bigint, weights: readonly number[] | null, at: number): bigint => (weights === null ? amount : (splitN(amount, weights)[at] ?? 0n));
 
+const settlementAmong = (transactions: readonly EngineTransaction[], by: Address, intent: Address): Settlement | null =>
+  transactions.reduce<Settlement | null>((found, transaction) => found ?? settlementIn(transaction, by, intent), null);
+
 async function paidBy(transport: Transport, payer: Address, pages: number, history: number, covered: () => Promise<boolean>): Promise<Paid> {
-  const scanned = await scan(transport, payer, { pages, covered });
+  const [scanned, by] = await Promise.all([scan(transport, payer, { pages, covered }), eventAuthority()]);
   const intents = new Map<Address, { mint: Address; createFee: bigint }>();
-  for (const { event } of eventsOf(scanned.transactions)) {
+  for (const { event } of engineEvents(scanned.transactions, by)) {
     if (event.name === "IntentCreated" && event.fields.owner === payer) {
       intents.set(event.fields.intent, { mint: event.fields.inputMint, createFee: BigInt(event.fields.createFee) });
     }
@@ -60,8 +63,8 @@ async function paidBy(transport: Transport, payer: Address, pages: number, histo
   const workers = new Map<Address, bigint>();
   for (const [intent, { mint, createFee }] of intents) {
     const read = await intentHistory(transport, intent, history);
-    const release = releaseOf(read.transactions, intent);
-    if (release === undefined || (release.event.name !== "IntentAttested" && release.event.name !== "IntentSplit")) {
+    const release = settlementAmong(read.transactions, by, intent);
+    if (release === null) {
       complete &&= read.complete;
       continue;
     }
@@ -70,7 +73,7 @@ async function paidBy(transport: Transport, payer: Address, pages: number, histo
       complete = false;
       continue;
     }
-    const fee = mint === NATIVE_MINT ? release.event.fields.fee : 0n;
+    const fee = mint === NATIVE_MINT ? release.settled.fields.fee : 0n;
     for (const [at, wallet] of paid.wallets.entries()) {
       if (wallet !== payer) {
         const share = shareOf(fee, paid.weights, at) + shareOf(createFee, paid.weights, at);

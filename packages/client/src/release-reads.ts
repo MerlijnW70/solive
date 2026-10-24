@@ -2,13 +2,14 @@ import { type Address, getAddressDecoder } from "@solana/kit";
 import {
   decodeEvent,
   type EngineEvent,
+  findEventAuthorityPda,
   FILL_ATTESTED_SPLIT_COMMITTEE_DISCRIMINATOR,
   FILL_ATTESTED_SPLIT_DISCRIMINATOR,
   getFillAttestedSplitCommitteeInstructionDataDecoder,
   getFillAttestedSplitInstructionDataDecoder,
 } from "@intent-engine/core";
 import { engineCalls } from "./job-origins.js";
-import { scan, signaturePage } from "./job-scan.js";
+import { signaturePage } from "./job-scan.js";
 import type { EngineTransaction, Transport } from "./transport.js";
 
 const SPLIT_INTENT_ACCOUNT = 2;
@@ -48,6 +49,42 @@ export function eventsOf(transactions: readonly EngineTransaction[], intent?: Ad
     );
 }
 
+let authority: Promise<Address> | undefined;
+
+export function eventAuthority(): Promise<Address> {
+  authority ??= findEventAuthorityPda().then(([address]) => address);
+  return authority;
+}
+
+const emittedThrough = (accounts: readonly Address[] | undefined, by: Address): boolean => accounts?.length === 1 && accounts[0] === by;
+
+export function engineEvents(transactions: readonly EngineTransaction[], by: Address, intent?: Address): Read[] {
+  return transactions
+    .filter(({ failed }) => !failed)
+    .flatMap((transaction) =>
+      transaction.emitted.flatMap((data, i): Read[] => {
+        if (!emittedThrough(transaction.emittedAccounts?.[i], by)) {
+          return [];
+        }
+        const event = decodeEvent(data) as EngineEvent | null;
+        return event !== null && "intent" in event.fields && (intent === undefined || event.fields.intent === intent) ? [{ event, transaction }] : [];
+      }),
+    );
+}
+
+export type Settled = Extract<EngineEvent, { name: "IntentAttested" | "IntentSplit" }>;
+
+export type DeliveryReleasedFields = Extract<EngineEvent, { name: "DeliveryReleased" }>["fields"];
+
+export type Settlement = { transaction: EngineTransaction; settled: Settled; released: DeliveryReleasedFields };
+
+export function settlementIn(transaction: EngineTransaction, by: Address, intent: Address): Settlement | null {
+  const events = engineEvents([transaction], by, intent).map(({ event }) => event);
+  const settled = events.find((event): event is Settled => event.name === "IntentAttested" || event.name === "IntentSplit");
+  const released = events.find((event) => event.name === "DeliveryReleased");
+  return settled === undefined || released?.name !== "DeliveryReleased" ? null : { transaction, settled, released: released.fields };
+}
+
 export function releaseOf(transactions: readonly EngineTransaction[], intent: Address): Read | undefined {
   return eventsOf(transactions, intent).find(({ event }) => event.name === "IntentAttested" || event.name === "IntentSplit");
 }
@@ -77,17 +114,6 @@ export async function intentHistory(transport: Transport, intent: Address, histo
     before = listed[listed.length - 1]?.signature;
   }
   return { transactions, complete: false };
-}
-
-export async function releaseThrough(transport: Transport, intent: Address, addresses: readonly Address[], pages: number, floor: bigint | null): Promise<EngineTransaction[]> {
-  const until = (transaction: EngineTransaction) => releaseOf([transaction], intent) !== undefined;
-  for (const address of addresses) {
-    const release = (await scan(transport, address, { floor, pages, until })).transactions.filter(until);
-    if (release.length > 0) {
-      return release;
-    }
-  }
-  return [];
 }
 
 const TOKEN_ACCOUNT_HEAD = 64;
