@@ -33,15 +33,11 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
-          registry-url: https://registry.npmjs.org
       - name: install
         run: pnpm install --frozen-lockfile
       - name: npm with trusted publishing
         run: |
           npm install -g npm@11.21.1
           npm --version
-          for f in "$HOME/.npmrc" "$NPM_CONFIG_USERCONFIG"; do
-            if [ -n "$f" ] && [ -f "$f" ]; then sed -i '/_authToken/d' "$f"; fi
-          done
       - name: publish
         run: bash scripts/release.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/packs"
