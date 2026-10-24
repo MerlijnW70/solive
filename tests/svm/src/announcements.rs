@@ -346,3 +346,33 @@ pub fn close_delivery_book_ix(by: &Pubkey, intent: &Pubkey, rent_to: &Pubkey) ->
         intent_engine::instruction::CloseDeliveryBook {},
     )
 }
+
+pub fn refutation_pda(earlier: &Pubkey) -> Pubkey {
+    pda(&[intent_engine::state::REFUTATION_SEED, earlier.as_ref()])
+}
+
+pub fn refute_ix(
+    earlier_worker: &Pubkey,
+    paid: &Pubkey,
+    earlier: &Pubkey,
+    salt: [u8; 16],
+    claim: Option<intent_engine::SplitClaim>,
+) -> Instruction {
+    engine_ix(
+        intent_engine::accounts::RefuteRelease {
+            earlier_worker: *earlier_worker,
+            payer: *earlier_worker,
+            paid: *paid,
+            earlier: *earlier,
+            refutation: refutation_pda(earlier),
+            system_program: anchor_lang::system_program::ID,
+            event_authority: event_authority(),
+            program: intent_engine::ID,
+        },
+        intent_engine::instruction::RefuteRelease {
+            salt,
+            esk: [0x45; 32],
+            claim,
+        },
+    )
+}

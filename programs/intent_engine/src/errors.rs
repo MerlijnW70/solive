@@ -147,6 +147,10 @@ pub enum EngineError {
     RentRecipientMismatch,
     DeliveryBookOpen,
     DeliveryBookLive,
+    RefuteNotPaid,
+    RefuteNotAnnouncer,
+    RefuteSplitMismatch,
+    DeliveryRecordKept,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {

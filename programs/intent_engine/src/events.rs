@@ -462,3 +462,18 @@ pub struct DeliveryBookClosed {
     pub lamports: u64,
     pub by: Pubkey,
 }
+
+#[event]
+pub struct ReleaseRefuted {
+    pub intent: Pubkey,
+    pub attestor: Pubkey,
+    pub refutation: Pubkey,
+    pub paid_announcement: Pubkey,
+    pub paid_seq: u64,
+    pub paid_worker: Pubkey,
+    pub earlier_announcement: Pubkey,
+    pub earlier_seq: u64,
+    pub earlier_worker: Pubkey,
+    pub delivered: [u8; 32],
+    pub refuter: Pubkey,
+}

@@ -286,6 +286,15 @@ pub mod intent_engine {
         handle_close_delivery_book(ctx)
     }
 
+    pub fn refute_release(
+        ctx: Context<RefuteRelease>,
+        salt: [u8; 16],
+        esk: [u8; 32],
+        claim: Option<SplitClaim>,
+    ) -> Result<()> {
+        handle_refute_release(ctx, salt, esk, claim)
+    }
+
     pub fn set_committee_floor(ctx: Context<SetCommitteeFloor>, floor: u64) -> Result<()> {
         handle_set_committee_floor(ctx, floor)
     }
