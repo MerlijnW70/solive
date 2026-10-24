@@ -1,7 +1,7 @@
 use crate::claim::Slot;
 use crate::Error;
 
-pub const COMMITMENT_TAG: [u8; 16] = *b"intent-engine-cm";
+pub const COMMITMENT_TAG: [u8; 16] = *b"intent-engine-dc";
 pub const FINGERPRINT_TAG: [u8; 16] = *b"intent-engine-fp";
 pub const BLOB_VERSION: u8 = 4;
 pub const SALT_LEN: usize = 16;

@@ -36,7 +36,7 @@ fn blob(count: u8, mask: u8, url: usize) -> Vec<u8> {
 #[test]
 fn commitment_preimage_is_tag_intent_worker_salt_sha256() {
     let p = commitment_preimage(&INTENT, &WORKER, &SALT, &SHA);
-    assert_eq!(COMMITMENT_TAG, *b"intent-engine-cm");
+    assert_eq!(COMMITMENT_TAG, *b"intent-engine-dc");
     assert_eq!(p.len(), 128);
     assert_eq!(p[..16], COMMITMENT_TAG);
     assert_eq!(p[16..48], INTENT);
@@ -373,4 +373,30 @@ fn attested_split_delivery_preimage_extends_the_split_fields() {
     assert_eq!(p[270..278], 9u64.to_le_bytes());
     assert_eq!(p[278..310], [18; 32]);
     assert_eq!(p[310..326], [19; 16]);
+}
+
+#[test]
+fn every_domain_tag_in_core_is_unique() {
+    use intent_core::committee::{COMMITTEE_COSIGN_TAG, COMMITTEE_TAG};
+    use intent_core::sig::{
+        ATTEST_PROOF_TAG, ATTEST_SPLIT_TAG, ATTEST_TAG, INTENT_TAG, SPLIT_COSIGN_TAG,
+    };
+    let tags: [&[u8]; 11] = [
+        &INTENT_TAG,
+        &ATTEST_TAG,
+        &ATTEST_PROOF_TAG,
+        &ATTEST_SPLIT_TAG,
+        &ATTEST_DELIVERY_TAG,
+        &ATTEST_SPLIT_DELIVERY_TAG,
+        &SPLIT_COSIGN_TAG,
+        &COMMITTEE_TAG,
+        &COMMITTEE_COSIGN_TAG,
+        &COMMITMENT_TAG,
+        &FINGERPRINT_TAG,
+    ];
+    for (i, a) in tags.iter().enumerate() {
+        for b in tags.iter().skip(i.saturating_add(1)) {
+            assert_ne!(a, b);
+        }
+    }
 }
