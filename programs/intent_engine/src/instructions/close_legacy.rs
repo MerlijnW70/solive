@@ -6,7 +6,8 @@ use crate::errors::{core_err, EngineError};
 use crate::events::LegacyClosed;
 use crate::state::{Config, CONFIG_ADDRESS, CONFIG_VERSION, VAULT_SEED};
 use crate::versions::{
-    board_terms, is_current, is_intent, line_intent, migrates_in_place, readable, recorded_payer,
+    board_terms, is_current, is_delivery_record, is_intent, line_intent, migrates_in_place,
+    readable, recorded_payer,
 };
 
 #[event_cpi]
@@ -61,6 +62,7 @@ pub fn handle_close_legacy(ctx: Context<CloseLegacy>) -> Result<()> {
         let data = account.try_borrow_data()?;
         require!(!is_current(&data), EngineError::NotLegacy);
         require!(!migrates_in_place(&data), EngineError::LegacyMigrates);
+        require!(!is_delivery_record(&data), EngineError::DeliveryRecordKept);
         (
             recorded_payer(&data),
             is_intent(&data),

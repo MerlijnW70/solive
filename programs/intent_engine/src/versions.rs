@@ -293,3 +293,13 @@ pub fn config_terms(data: &[u8]) -> Option<Config> {
     view.get_mut(..shared)?.copy_from_slice(body.get(..shared)?);
     Some(config)
 }
+
+pub fn is_delivery_record(data: &[u8]) -> bool {
+    [
+        DeliveryBook::DISCRIMINATOR,
+        Announcement::DISCRIMINATOR,
+        Refutation::DISCRIMINATOR,
+    ]
+    .iter()
+    .any(|disc| data.get(..disc.len()) == Some(*disc))
+}

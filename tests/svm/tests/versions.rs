@@ -5,11 +5,12 @@ use intent_core::kinds::{attested_result, Kind};
 use intent_engine::errors::EngineError;
 use intent_engine::events::{AccountMigrated, LegacyClosed};
 use intent_engine::state::{
-    ClaimBoard, ClaimList, Committee, Config, Intent, Mandate, MintCap, Profile, Standby,
-    UserState, CLAIM_LIST_VERSION, MINT_CAP_SEED, PROFILE_SEED,
+    Announcement, ClaimBoard, ClaimList, Committee, Config, DeliveryBook, Intent, Mandate, MintCap,
+    Profile, Refutation, Standby, UserState, MINT_CAP_SEED, PROFILE_SEED,
 };
 use intent_engine::versions::{
-    board_terms, is_current, layout_of, line_intent, recorded_payer, stored_version, LAYOUTS,
+    board_terms, is_current, is_delivery_record, layout_of, line_intent, recorded_payer,
+    stored_version, LAYOUTS,
 };
 use intent_engine::ProfileFields;
 use litesvm::types::TransactionMetadata;
@@ -25,13 +26,17 @@ use svm_tests::{
     swap_spec, user_pda, vault_pda, CommitteeFill, Env, IntentSpec, LegacyClose, Market,
     TestResult, Trader, START_TS,
 };
+use svm_tests::{
+    attestation_proof_message, book_pda, ed25519_ix, refutation_pda, refute_ix, DOMAIN, SALT,
+};
 
-const FUNDED: u64 = 1_000;
+const FUNDED: u64 = 2_000;
 const ESCROW: u64 = 400;
 const STAKE: u64 = 50_000_000;
 const HOUR: u32 = 3_600;
 const OLD: u8 = 1;
 const LISTED_NONCE: u64 = 9;
+const DELIVERY_NONCE: u64 = 11;
 
 struct World {
     env: Env,
@@ -43,6 +48,8 @@ struct World {
     committee: Pubkey,
     mandate: Pubkey,
     caller: Keypair,
+    delivery: [Pubkey; 3],
+    announcer: Pubkey,
 }
 
 fn set_mint_cap_ix(admin: &Pubkey, mint: &Pubkey) -> Instruction {
@@ -146,6 +153,64 @@ fn escrow_spec(attestor: &Pubkey) -> TestResult<IntentSpec> {
     })
 }
 
+fn delivery_records(
+    env: &mut Env,
+    market: &Market,
+    trader: &Trader,
+) -> TestResult<([Pubkey; 3], Pubkey)> {
+    let judge = env.funded()?;
+    let spec = IntentSpec {
+        nonce: DELIVERY_NONCE,
+        ..escrow_spec(&judge.pubkey())?
+    };
+    env.create_intent(trader, market, &spec)?;
+    let owner = trader.key.pubkey();
+    let intent = intent_pda(&owner, DELIVERY_NONCE);
+    let early = env.solver(market, 0)?;
+    let late = env.solver(market, 0)?;
+    let first = env.announce_for(&early.key, &intent)?;
+    let second = env.announce_for(&late.key, &intent)?;
+    let message = attestation_proof_message(
+        DOMAIN,
+        &judge.pubkey(),
+        &intent,
+        &late.input,
+        ESCROW,
+        1,
+        [0x3c; 32],
+        &second,
+    );
+    let fee_to = env.fee_account(market)?;
+    let fill = env.fill_attested_ix(
+        &late.key.pubkey(),
+        &owner,
+        market,
+        DELIVERY_NONCE,
+        &late.input,
+        Some(&fee_to),
+        1,
+    );
+    env.send(&late.key, &[ed25519_ix(&judge, &message), fill], &[])?;
+    env.announcement = None;
+    env.opening = intent_engine::Opening::default();
+    let refute = refute_ix(
+        &early.key.pubkey(),
+        &second.announcement,
+        &first.announcement,
+        SALT,
+        None,
+    );
+    env.send(&early.key, &[refute], &[])?;
+    Ok((
+        [
+            book_pda(&intent),
+            first.announcement,
+            refutation_pda(&first.announcement),
+        ],
+        early.key.pubkey(),
+    ))
+}
+
 fn world() -> TestResult<World> {
     let mut env = Env::new()?;
     env.init_config()?;
@@ -189,6 +254,7 @@ fn world() -> TestResult<World> {
         },
     );
     env.send(&trader.key, &[grant], &[])?;
+    let (delivery, announcer) = delivery_records(&mut env, &market, &trader)?;
     let admin = env.authority.insecure_clone();
     let cap = set_mint_cap_ix(&admin.pubkey(), &market.input_mint);
     env.send(&admin, &[cap], &[])?;
@@ -204,6 +270,8 @@ fn world() -> TestResult<World> {
         wallet,
         committee,
         caller,
+        delivery,
+        announcer,
     })
 }
 
@@ -266,6 +334,24 @@ impl World {
                 profile_pda(&self.wallet.pubkey()),
                 Profile::DISCRIMINATOR,
                 self.wallet.pubkey(),
+            ),
+            held(
+                "delivery book",
+                self.delivery[0],
+                DeliveryBook::DISCRIMINATOR,
+                self.announcer,
+            ),
+            held(
+                "announcement",
+                self.delivery[1],
+                Announcement::DISCRIMINATOR,
+                self.announcer,
+            ),
+            held(
+                "refutation",
+                self.delivery[2],
+                Refutation::DISCRIMINATOR,
+                self.announcer,
             ),
             held(
                 "config",
@@ -398,7 +484,9 @@ fn an_account_of_another_version_closes_to_the_wallet_its_layout_records() -> Te
             let data = w.data(&h.address)?;
             assert!(!is_current(&data), "{} {version}", h.name);
             let with_config = recorded_payer(&data).is_none();
-            let refused = if h.discriminator == Intent::DISCRIMINATOR {
+            let refused = if is_delivery_record(&data) {
+                Some(EngineError::DeliveryRecordKept)
+            } else if h.discriminator == Intent::DISCRIMINATOR {
                 Some(EngineError::LegacyVaultOpen)
             } else if (h.discriminator == ClaimBoard::DISCRIMINATOR
                 || h.discriminator == Standby::DISCRIMINATOR)
@@ -1126,14 +1214,16 @@ fn every_account_of_the_previous_version_migrates_in_place_once() -> TestResult 
     for h in w.held() {
         let current = w.data(&h.address)?;
         let lamports = w.env.lamports(&h.address);
-        if h.discriminator == ClaimList::DISCRIMINATOR {
+        if h.discriminator == ClaimList::DISCRIMINATOR || is_delivery_record(&current) {
+            let restore = layout_of(&current).ok_or("no layout")?.version;
             w.set_version(&h.address, 0)?;
             assert_eq!(
                 migrate(&mut w, &h.address, &caller, false),
                 Some(engine_error(EngineError::UnknownLayout)),
-                "a claim list has no earlier layout"
+                "{} has no earlier layout",
+                h.name
             );
-            w.set_version(&h.address, CLAIM_LIST_VERSION)?;
+            w.set_version(&h.address, restore)?;
             continue;
         }
         let old = if h.discriminator == Standby::DISCRIMINATOR {
