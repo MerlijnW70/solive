@@ -37,6 +37,34 @@ export async function findMandatePda(
   });
 }
 
+export async function findAnnouncementPda(
+  seeds: { intent: Address; worker: Address; blobHash: Uint8Array },
+  programAddress: Address = INTENT_ENGINE_PROGRAM_ADDRESS,
+): Promise<ProgramDerivedAddress> {
+  if (seeds.blobHash.length !== 32) {
+    throw new RangeError("blobHash must be the 32-byte sha256 of the sealed blob");
+  }
+  const address = getAddressEncoder();
+  return getProgramDerivedAddress({
+    programAddress,
+    seeds: [text("announcement"), address.encode(seeds.intent), address.encode(seeds.worker), seeds.blobHash],
+  });
+}
+
+export async function findDeliveryBookPda(
+  seeds: { intent: Address },
+  programAddress: Address = INTENT_ENGINE_PROGRAM_ADDRESS,
+): Promise<ProgramDerivedAddress> {
+  return getProgramDerivedAddress({ programAddress, seeds: [text("delivery_book"), getAddressEncoder().encode(seeds.intent)] });
+}
+
+export async function findRefutationPda(
+  seeds: { earlier: Address },
+  programAddress: Address = INTENT_ENGINE_PROGRAM_ADDRESS,
+): Promise<ProgramDerivedAddress> {
+  return getProgramDerivedAddress({ programAddress, seeds: [text("refutation"), getAddressEncoder().encode(seeds.earlier)] });
+}
+
 export async function findEventAuthorityPda(
   programAddress: Address = INTENT_ENGINE_PROGRAM_ADDRESS,
 ): Promise<ProgramDerivedAddress> {

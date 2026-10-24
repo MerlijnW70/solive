@@ -11,11 +11,11 @@ import {
 import { findCommitteePda, getCreateCommitteeInstructionAsync } from "../generated/client/index.js";
 import { events } from "./builder-accounts.js";
 import { IntentCoreError } from "./errors.js";
-import { FILL_EXT_TAGS, validateExt } from "./ext.js";
+import { buildEd25519CosignInstruction } from "./ed25519.js";
 import {
-  type AttestedProofFields,
-  attestedProofPreimage,
-  buildEd25519CosignInstruction,
+  attestedDeliveryFields,
+  attestedDeliveryPreimage,
+  type AttestedDeliveryTerms,
   cosignEnvelope,
   signMessageBytes,
 } from "./sig.js";
@@ -167,9 +167,8 @@ export async function buildCreateCommittee(input: CommitteeTerms & { payer: Tran
   return { committee, instruction };
 }
 
-export async function committeeProofDigest(f: AttestedProofFields): Promise<Uint8Array> {
-  validateExt(f.ext ?? new Uint8Array(), FILL_EXT_TAGS);
-  const preimage = await attestedProofPreimage(f);
+export async function committeeProofDigest(f: AttestedDeliveryTerms): Promise<Uint8Array> {
+  const preimage = attestedDeliveryPreimage(await attestedDeliveryFields(f));
   const tagged = new Uint8Array(COMMITTEE_COSIGN_TAG.length + preimage.length);
   tagged.set(COMMITTEE_COSIGN_TAG, 0);
   tagged.set(preimage, COMMITTEE_COSIGN_TAG.length);

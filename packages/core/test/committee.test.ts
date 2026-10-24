@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { type Address, generateKeyPairSigner, getAddressDecoder, getAddressEncoder, signBytes } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import {
-  attestedProofPreimage,
+  attestedDeliveryPreimage,
   buildCommitteeBatch,
   buildCreateCommittee,
   checkCommittee,
@@ -94,13 +94,17 @@ describe("committee terms match the program byte for byte", () => {
     expect(hexOf(instruction.data ?? new Uint8Array())).toBe(vectors.sig.committee_batch_with_ab_signatures);
   });
 
-  it("hashes the tag and then the whole proof preimage into the committee digest", async () => {
-    const [intent, payee] = vectors.sig.committee_members as [Address, Address];
-    const fields = { domain: new Uint8Array(32).fill(3), intent, payee, amountIn: 10n, result: 1n, filled: 10n, revision: 1, maxFeeBps: 0, specHash: new Uint8Array(32).fill(4) };
-    const preimage = await attestedProofPreimage(fields);
+  it("hashes the tag and then the whole delivery preimage into the committee digest", async () => {
+    const [intent, payee, announcement] = vectors.sig.committee_members as [Address, Address, Address];
+    const opened = { announcement, seq: 3n, delivered: new Uint8Array(32).fill(6), salt: new Uint8Array(16).fill(7) };
+    const fields = { domain: new Uint8Array(32).fill(3), intent, payee, amountIn: 10n, result: 1n, filled: 10n, revision: 1, maxFeeBps: 0, specHash: new Uint8Array(32).fill(4), ...opened };
+    const preimage = attestedDeliveryPreimage({ ...fields, extHash: await sha256(new Uint8Array()) });
     const digest = await committeeProofDigest(fields);
     expect(hexOf(digest)).toBe(hexOf(await sha256(new Uint8Array([...COMMITTEE_COSIGN_TAG, ...preimage]))));
-    expect(hexOf(await committeeProofDigest({ ...fields, specHash: new Uint8Array(32).fill(5) }))).not.toBe(hexOf(digest));
+    for (const changed of [{ specHash: new Uint8Array(32).fill(5) }, { seq: 4n }, { salt: new Uint8Array(16).fill(8) }, { announcement: intent }]) {
+      expect(hexOf(await committeeProofDigest({ ...fields, ...changed }))).not.toBe(hexOf(digest));
+    }
+    await expect(committeeProofDigest({ ...fields, ext: new Uint8Array([0xee, 0, 0]) })).rejects.toThrow(IntentCoreError);
   });
 });
 

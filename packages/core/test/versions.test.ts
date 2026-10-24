@@ -13,6 +13,9 @@ import {
   buildCloseLegacy,
   checkAccountVersion,
   findConfigPda,
+  getAnnouncementEncoder,
+  getDeliveryBookEncoder,
+  getRefutationEncoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   isCurrentAccount,
   recordedPayer,
@@ -39,7 +42,7 @@ const named = (name: string): AccountLayout => {
 
 describe("account versions", () => {
   it("name one layout per account type, each discriminator the hash of its type name", () => {
-    const types = ["Config", "UserState", "Intent", "Mandate", "MintCap", "Committee", "ClaimBoard", "Standby", "Profile", "ClaimList"];
+    const types = ["Config", "UserState", "Intent", "Mandate", "MintCap", "Committee", "ClaimBoard", "Standby", "Profile", "ClaimList", "DeliveryBook", "Announcement", "Refutation"];
     expect(ACCOUNT_LAYOUTS.map((l) => [...l.discriminator])).toEqual(
       types.map((t) => [...createHash("sha256").update(`account:${t}`).digest().subarray(0, 8)]),
     );
@@ -140,6 +143,27 @@ describe("account versions", () => {
       stakeTo,
       INTENT_ENGINE_PROGRAM_ADDRESS,
     ]);
+  });
+
+  it("read the version and payer of delivery records where the generated codecs put them", () => {
+    const [intent, worker, other] = [1, 2, 3].map((n) => getAddressDecoder().decode(new Uint8Array(32).fill(n))) as [Address, Address, Address];
+    const zeros = (n: number) => new Uint8Array(n);
+    const book = getDeliveryBookEncoder().encode({ intent, payer: PAYER, nextSeq: 2n, live: 1n, version: 1, bump: 255, padding: zeros(6) });
+    const announcement = getAnnouncementEncoder().encode({
+      intent, worker, attestor: other, payer: PAYER, commitment: zeros(32), delivered: zeros(32), splitHash: zeros(32), seq: 1n, slot: 2n, announcedAt: 3n, expiresAt: 4n, paidAt: 0n,
+      salt: zeros(16), blobLen: 0, version: 1, bump: 255, state: 0, recipients: 1, padding: zeros(2), blob: zeros(624),
+    });
+    const refutation = getRefutationEncoder().encode({
+      intent, attestor: other, paidAnnouncement: other, earlierAnnouncement: other, paidWorker: worker, earlierWorker: other, refuter: PAYER, delivered: zeros(32), splitHash: zeros(32),
+      earlierCommitment: zeros(32), esk: zeros(32), paidSeq: 2n, earlierSeq: 1n, refutedAt: 5n, slot: 6n, salt: zeros(16), blobLen: 0, version: 1, bump: 255, recipients: 1, padding: zeros(3), blob: zeros(624),
+    });
+    for (const [name, data] of [["delivery book", book], ["announcement", announcement], ["refutation", refutation]] as const) {
+      const bytes = new Uint8Array(data);
+      expect(storedVersion(bytes), name).toEqual({ layout: named(name), version: 1 });
+      expect(isCurrentAccount(bytes), name).toBe(true);
+      expect(recordedPayer(bytes), name).toBe(PAYER);
+      expect(bytes.length, name).toBe(named(name).space);
+    }
   });
 
   it("refuse an account of an earlier size with its length", () => {

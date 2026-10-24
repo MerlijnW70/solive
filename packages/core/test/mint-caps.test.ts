@@ -124,21 +124,22 @@ describe("mint cap accounts", () => {
       maxFeeBps: 0,
     };
     const attested = { solver: signer, owner, nonce: 0n, inputMint: MINT, inputTokenProgram: TOKEN_PROGRAM_ADDRESS, amountIn: 10n, result: 1n, maxFeeBps: 0 };
-    const exits = [
-      (capped?: bigint) => buildCancelIntent({ ...ref, owner: signer, ...(capped === undefined ? {} : { capped }) }),
-      (capped?: bigint) => buildExpireIntent({ ...ref, cranker: signer, ...(capped === undefined ? {} : { capped }) }),
-      (capped?: bigint) => buildCloseIntent({ ...ref, cranker: signer, ...(capped === undefined ? {} : { capped }) }),
-      (capped?: bigint) => buildFillIntent({ ...fill, ...(capped === undefined ? {} : { capped }) }),
-      async (capped?: bigint) => (await buildFlashFill({ ...fill, ...(capped === undefined ? {} : { capped }) }))[0],
-      (capped?: bigint) => buildFillAttested({ ...attested, payee: owner, ...(capped === undefined ? {} : { capped }) }),
-      (capped?: bigint) => buildFillAttestedSplit({ ...attested, recipients: [owner], weights: [10_000], ...(capped === undefined ? {} : { capped }) }),
+    const announced = { announcement: owner, opening: { delivered: new Uint8Array(32), salt: new Uint8Array(16) } };
+    const exits: [number, (capped?: bigint) => Promise<{ accounts?: readonly unknown[] } | undefined>][] = [
+      [-3, (capped?: bigint) => buildCancelIntent({ ...ref, owner: signer, ...(capped === undefined ? {} : { capped }) })],
+      [-3, (capped?: bigint) => buildExpireIntent({ ...ref, cranker: signer, ...(capped === undefined ? {} : { capped }) })],
+      [-3, (capped?: bigint) => buildCloseIntent({ ...ref, cranker: signer, ...(capped === undefined ? {} : { capped }) })],
+      [-3, (capped?: bigint) => buildFillIntent({ ...fill, ...(capped === undefined ? {} : { capped }) })],
+      [-3, async (capped?: bigint) => (await buildFlashFill({ ...fill, ...(capped === undefined ? {} : { capped }) }))[0]],
+      [-4, (capped?: bigint) => buildFillAttested({ ...attested, payee: owner, ...(capped === undefined ? {} : { capped }) })],
+      [-4, (capped?: bigint) => buildFillAttestedSplit({ ...attested, ...announced, recipients: [owner], weights: [10_000], ...(capped === undefined ? {} : { capped }) })],
     ];
-    for (const exit of exits) {
+    for (const [at, exit] of exits) {
       const counted = await exit(5n);
       const uncounted = await exit(0n);
       const unknown = await exit();
-      expect(counted?.accounts?.at(-3)).toEqual({ address: cap, role: AccountRole.WRITABLE });
-      expect(uncounted?.accounts?.at(-3)).toEqual({ address: INTENT_ENGINE_PROGRAM_ADDRESS, role: AccountRole.READONLY });
+      expect(counted?.accounts?.at(at)).toEqual({ address: cap, role: AccountRole.WRITABLE });
+      expect(uncounted?.accounts?.at(at)).toEqual({ address: INTENT_ENGINE_PROGRAM_ADDRESS, role: AccountRole.READONLY });
       expect(unknown?.accounts).toEqual(uncounted?.accounts);
       expect(counted?.accounts?.length).toBe(uncounted?.accounts?.length);
     }

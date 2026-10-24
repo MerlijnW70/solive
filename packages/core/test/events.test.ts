@@ -16,7 +16,7 @@ const screaming = (name: string) => name.replace(/([a-z])([A-Z])/g, "$1_$2").toU
 
 describe("event decoding", () => {
   it("recognises every engine event by its own discriminator", () => {
-    expect(names).toHaveLength(42);
+    expect(names).toHaveLength(49);
     const lookup = core as unknown as Record<string, unknown>;
     for (const name of names) {
       const discriminator = lookup[`${screaming(name)}_EVENT_DISCRIMINATOR`] as Uint8Array;
@@ -29,10 +29,11 @@ describe("event decoding", () => {
     }
   });
 
-  it("marks only governance and authority events as notable and decodes their fields", () => {
+  it("marks only governance, authority and fee events as notable and decodes their fields", () => {
     expect([...NOTABLE].sort()).toEqual([
       "AdminAccepted",
       "AdminProposed",
+      "AnnounceFeeSet",
       "CapsRequiredSet",
       "CommitteeCreated",
       "CommitteeFloorSet",

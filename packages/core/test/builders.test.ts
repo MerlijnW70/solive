@@ -82,6 +82,10 @@ const ownerSigner = createNoopSigner(owner);
 const solver = createNoopSigner("So1ver1111111111111111111111111111111111111" as Address);
 const swap = { kind: Kind.SwapExactIn, amountIn: 400n, minOut: 300n } as const;
 const golden42 = vectors.pdas.find((p) => p.name === "intent" && p.nonce === "42");
+const announced = {
+  announcement: "SysvarS1otHashes111111111111111111111111111" as Address,
+  opening: { delivered: new Uint8Array(32).fill(0xd1), salt: new Uint8Array(16).fill(0x5a) },
+};
 
 const meta = (ix: Instruction, i: number) => {
   const m = ix.accounts?.[i];
@@ -201,6 +205,7 @@ describe("offline builders", () => {
     ] as Address[];
     const weights = [6000, 3000, 1000];
     const ix = await buildFillAttestedSplit({
+      ...announced,
       solver,
       owner,
       nonce: 7n,
@@ -231,7 +236,7 @@ describe("offline builders", () => {
     const data = getFillAttestedSplitInstructionDataDecoder().decode(ix.data ?? new Uint8Array());
     expect(data.claim.recipients).toEqual(recipients);
     expect(data.claim.weights).toEqual(weights);
-    expect(data.amountIn).toBe(400n);
+    expect(data.fill).toEqual({ amountIn: 400n, result: 1n, maxFeeBps: 100 });
   });
 
   it("seat the claims board and the stake receiver only when given", async () => {
@@ -261,13 +266,14 @@ describe("offline builders", () => {
       result: 1n,
       maxFeeBps: 100,
     };
-    await expect(buildFillAttestedSplit({ ...base, recipients: [], weights: [] })).rejects.toThrow();
+    await expect(buildFillAttestedSplit({ ...base, ...announced, recipients: [], weights: [] })).rejects.toThrow();
     await expect(
-      buildFillAttestedSplit({ ...base, recipients: [owner], weights: [5000, 5000] }),
+      buildFillAttestedSplit({ ...base, ...announced, recipients: [owner], weights: [5000, 5000] }),
     ).rejects.toThrow();
     await expect(
       buildFillAttestedSplit({
         ...base,
+        ...announced,
         recipients: Array.from({ length: 9 }, () => owner),
         weights: Array.from({ length: 9 }, () => 1000),
       }),
@@ -557,6 +563,7 @@ describe("split payouts", () => {
       const recipients = Array.from({ length: count }, (_, i) => (i % 2 === 0 ? owner : feeRecipient));
       const weights = splitWeights(count);
       const ix = await buildFillAttestedSplit({
+        ...announced,
         solver: solverSigner,
         owner,
         nonce: 7n,

@@ -62,9 +62,7 @@ import {
   requiredOut,
   attestedFillMessage,
   attestedFillPreimage,
-  attestedProofMessage,
   attestedProofPreimage,
-  attestedSplitDigest,
   SPLIT_COSIGN_TAG,
   attestedSplitPreimage,
   buildEd25519CosignInstruction,
@@ -445,15 +443,22 @@ describe("golden vectors emitted by the Rust implementation", () => {
     expect(hexOf(viaKit)).toBe(s.envelope);
   });
 
-  it("tag events and name them exactly as the Rust program does", () => {
+  it("tag events and name them exactly as the Rust program does", async () => {
     const v = vectors as unknown as { event_ix_tag: string; event_discriminators: Record<string, string> };
     expect(hexOf(EVENT_IX_TAG)).toBe(v.event_ix_tag);
     const lookup = core as unknown as Record<string, Uint8Array>;
+    const discriminatorOf = (name: string) => hexOf(lookup[`${name.replace(/([a-z])([A-Z])/g, "$1_$2").toUpperCase()}_EVENT_DISCRIMINATOR`] ?? []);
     const names = Object.keys(v.event_discriminators);
-    expect(names).toEqual(Object.keys(core.IntentEngineEvent).filter((k) => Number.isNaN(Number(k))).sort());
+    const generated = Object.keys(core.IntentEngineEvent).filter((k) => Number.isNaN(Number(k)));
     for (const name of names) {
-      const screaming = name.replace(/([a-z])([A-Z])/g, "$1_$2").toUpperCase();
-      expect(hexOf(lookup[`${screaming}_EVENT_DISCRIMINATOR`] ?? []), name).toBe(v.event_discriminators[name]);
+      expect(generated, name).toContain(name);
+      expect(discriminatorOf(name), name).toBe(v.event_discriminators[name]);
+    }
+    const unlisted = generated.filter((name) => !names.includes(name)).sort();
+    expect(unlisted).toEqual(["AnnounceFeeSet", "AnnouncementClosed", "CommitteeKeysSynced", "DeliveryAnnounced", "DeliveryBookClosed", "DeliveryReleased", "ReleaseRefuted"]);
+    for (const name of unlisted) {
+      const anchor = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`event:${name}`))).subarray(0, 8);
+      expect(discriminatorOf(name), name).toBe(hexOf(anchor));
     }
   });
 
@@ -662,9 +667,6 @@ describe("golden vectors emitted by the Rust implementation", () => {
     expect(hexOf(preimage)).toBe(s.attest_split_preimage);
     const tagged = new Uint8Array([...SPLIT_COSIGN_TAG, ...preimage]);
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", tagged));
-    const plain = { ...fields, ext: new Uint8Array() };
-    const plainTagged = new Uint8Array([...SPLIT_COSIGN_TAG, ...(await attestedSplitPreimage(plain))]);
-    expect(await attestedSplitDigest(plain)).toEqual(new Uint8Array(await crypto.subtle.digest("SHA-256", plainTagged)));
     const cosigners = (vectors.sig as unknown as { attest_split_cosigners: Address[] }).attest_split_cosigners;
     const message = splitCosignEnvelope(digest, cosigners);
     expect(hexOf(message)).toBe(s.attest_split_message);

@@ -1,24 +1,30 @@
 import { type Address, getAddressDecoder, type ReadonlyUint8Array, type TransactionSigner } from "@solana/kit";
 import {
+  ANNOUNCEMENT_DISCRIMINATOR,
   CLAIM_BOARD_DISCRIMINATOR,
   CLAIM_LIST_DISCRIMINATOR,
   COMMITTEE_DISCRIMINATOR,
   CONFIG_DISCRIMINATOR,
+  DELIVERY_BOOK_DISCRIMINATOR,
+  getAnnouncementSize,
   getClaimBoardSize,
   getClaimListSize,
   getCloseLegacyInstruction,
   getCommitteeSize,
   getConfigSize,
+  getDeliveryBookSize,
   getIntentSize,
   getMandateSize,
   getMintCapSize,
   getProfileSize,
+  getRefutationSize,
   getStandbySize,
   getUserStateSize,
   INTENT_DISCRIMINATOR,
   MANDATE_DISCRIMINATOR,
   MINT_CAP_DISCRIMINATOR,
   PROFILE_DISCRIMINATOR,
+  REFUTATION_DISCRIMINATOR,
   STANDBY_DISCRIMINATOR,
   USER_STATE_DISCRIMINATOR,
 } from "../generated/client/index.js";
@@ -34,6 +40,9 @@ export const CLAIMS_VERSION = 2;
 export const STANDBY_VERSION = 1;
 export const PROFILE_VERSION = 2;
 export const CLAIM_LIST_VERSION = 1;
+export const DELIVERY_BOOK_VERSION = 1;
+export const ANNOUNCEMENT_VERSION = 1;
+export const REFUTATION_VERSION = 1;
 export const OLDEST_INTENT_VERSION = 1;
 export const OLDEST_CLAIMS_VERSION = 1;
 export const OLDEST_MINT_CAP_VERSION = 1;
@@ -62,6 +71,9 @@ export const ACCOUNT_LAYOUTS: readonly AccountLayout[] = [
   { name: "stand-by entry", discriminator: STANDBY_DISCRIMINATOR, space: getStandbySize(), versionAt: 73, version: STANDBY_VERSION, oldest: STANDBY_VERSION, payerAt: 0 },
   { name: "profile", discriminator: PROFILE_DISCRIMINATOR, space: getProfileSize(), versionAt: 456, version: PROFILE_VERSION, oldest: PROFILE_VERSION, payerAt: 0 },
   { name: "claim list", discriminator: CLAIM_LIST_DISCRIMINATOR, space: getClaimListSize(), versionAt: 1090, version: CLAIM_LIST_VERSION, oldest: CLAIM_LIST_VERSION, payerAt: 32 },
+  { name: "delivery book", discriminator: DELIVERY_BOOK_DISCRIMINATOR, space: getDeliveryBookSize(), versionAt: 80, version: DELIVERY_BOOK_VERSION, oldest: DELIVERY_BOOK_VERSION, payerAt: 32 },
+  { name: "announcement", discriminator: ANNOUNCEMENT_DISCRIMINATOR, space: getAnnouncementSize(), versionAt: 282, version: ANNOUNCEMENT_VERSION, oldest: ANNOUNCEMENT_VERSION, payerAt: 96 },
+  { name: "refutation", discriminator: REFUTATION_DISCRIMINATOR, space: getRefutationSize(), versionAt: 402, version: REFUTATION_VERSION, oldest: REFUTATION_VERSION, payerAt: 192 },
 ];
 
 export function accountLayoutOf(data: ReadonlyUint8Array): AccountLayout | null {

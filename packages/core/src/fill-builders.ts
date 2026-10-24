@@ -18,6 +18,8 @@ import {
   partnerAccount,
 } from "./builder-accounts.js";
 import { MAX_SPLIT_RECIPIENTS } from "./bounty.js";
+import { sized } from "./bytes.js";
+import { SALT_LEN } from "./delivery.js";
 import { capAccount } from "./mint-caps.js";
 import { findAssociatedTokenAddress } from "./pdas.js";
 
@@ -75,13 +77,20 @@ export async function buildFillIntent(input: FillIntentSpec) {
   });
 }
 
-export type FillAttestedSpec = {
+export type DeliveryOpening = { delivered: Uint8Array; salt: Uint8Array };
+
+export type AnnouncedDelivery = { announcement: Address; opening: DeliveryOpening };
+
+export type UnannouncedRelease = { announcement?: never; opening?: never };
+
+export type ReleaseDelivery = AnnouncedDelivery | UnannouncedRelease;
+
+type AttestedTerms = {
   solver: TransactionSigner;
   owner: Address;
   nonce: bigint;
   inputMint: Address;
   inputTokenProgram: Address;
-  payee: Address;
   feeRecipient?: Address;
   partner?: Address;
   judge?: Address;
@@ -94,15 +103,33 @@ export type FillAttestedSpec = {
   capped?: bigint;
 };
 
-type AttestedAccounts = Omit<FillAttestedSpec, "payee">;
+export type FillAttestedSpec = AttestedTerms & { payee: Address } & ReleaseDelivery;
 
-async function ataOf(owner: Address | undefined, input: AttestedAccounts) {
+const UNOPENED = { delivered: new Uint8Array(32), salt: new Uint8Array(SALT_LEN) };
+
+function deliveryAccounts(input: { announcement?: Address | undefined; opening?: DeliveryOpening | undefined }) {
+  if (input.announcement === undefined && input.opening === undefined) {
+    return { opening: UNOPENED };
+  }
+  if (input.announcement === undefined || input.opening === undefined) {
+    throw new RangeError("a release names its announcement together with the opening, or neither");
+  }
+  return {
+    announcement: input.announcement,
+    opening: {
+      delivered: sized("opening.delivered", input.opening.delivered, 32),
+      salt: sized("opening.salt", input.opening.salt, SALT_LEN),
+    },
+  };
+}
+
+async function ataOf(owner: Address | undefined, input: AttestedTerms) {
   return owner === undefined
     ? undefined
     : findAssociatedTokenAddress({ owner, mint: input.inputMint, tokenProgram: input.inputTokenProgram });
 }
 
-async function attestedAccounts(input: AttestedAccounts) {
+async function attestedAccounts(input: AttestedTerms & ReleaseDelivery) {
   const feeTo = await ataOf(input.feeRecipient, input);
   const judgeTo = await ataOf(input.judge, input);
   return {
@@ -117,9 +144,8 @@ async function attestedAccounts(input: AttestedAccounts) {
     ...(input.claims === undefined ? {} : { claims: input.claims }),
     ...(input.stakeTo === undefined ? {} : { stakeTo: input.stakeTo }),
     ...(await capAccount(input.inputMint, input.capped)),
-    amountIn: input.amountIn,
-    result: input.result,
-    maxFeeBps: input.maxFeeBps,
+    ...deliveryAccounts(input),
+    fill: { amountIn: input.amountIn, result: input.result, maxFeeBps: input.maxFeeBps },
     ext: fillExt(input.ext),
     ...(await events()),
   };
@@ -145,10 +171,11 @@ export async function buildFillAttestedCommittee(input: FillAttestedCommitteeSpe
   });
 }
 
-export type FillAttestedSplitSpec = AttestedAccounts & {
-  recipients: Address[];
-  weights: number[];
-};
+export type FillAttestedSplitSpec = AttestedTerms &
+  AnnouncedDelivery & {
+    recipients: Address[];
+    weights: number[];
+  };
 
 async function splitAccounts(input: FillAttestedSplitSpec) {
   if (input.recipients.length < 1 || input.recipients.length > MAX_SPLIT_RECIPIENTS) {
@@ -168,6 +195,7 @@ async function splitAccounts(input: FillAttestedSplitSpec) {
     ...(slots[5] === undefined ? {} : { recipient5: slots[5] }),
     ...(slots[6] === undefined ? {} : { recipient6: slots[6] }),
     ...(slots[7] === undefined ? {} : { recipient7: slots[7] }),
+    announcement: input.announcement,
     claim: { recipients: input.recipients, weights: input.weights },
   };
 }
