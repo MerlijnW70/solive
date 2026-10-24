@@ -51,7 +51,9 @@ for (const { intent } of mine.filter(({ intent }) => intent.nonce === nonce)) {
 
 ## Watch
 
-`watch` calls back with the current intents, then with every intent that changes, until its signal aborts. It rereads the chain every `resyncSeconds`; pass `onError` to hear about failed reads. A filled intent's account closes soon after the fill, so `intent` then returns `null`. This prints `Open` now and `Cancelled` once the cancel below lands.
+`watch` calls back with the current intents, then with every intent that changes, until its signal aborts. Each intent it reports carries the `slot` the node read it at, and the watch never reports a state of an intent older than one it already reported. With notifications the watch rereads the chain every `resyncSeconds` and at once after the notification stream reconnects; without notifications it rereads every `pollMs`.
+
+The callback's second argument, `closed`, holds the last state the watch saw of each intent before its account closed. Pass `onError` to hear about failed reads, accounts the watch cannot read and errors the callback throws; the watch skips each and goes on. A filled intent's account closes soon after the fill, so `intent` then returns `null`. This prints `Open` now and `Cancelled` once the cancel below lands.
 
 ```ts
 const controller = new AbortController();

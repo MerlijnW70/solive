@@ -42,6 +42,9 @@ export { KEPT_TRANSACTIONS, landingOf, MULTIPLE_ACCOUNTS_LIMIT, rpcTransport, SI
 export {
   changedAccount,
   changesFrom,
+  type Heard,
+  type HeardAccount,
+  type HeardChanges,
   type IntentChanges,
   intentNotifications,
   type Notifications,

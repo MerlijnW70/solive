@@ -39,13 +39,29 @@ function proofOf(address: Address, intent: Intent): Proof | null {
   return params.kind === Kind.AttestedResult && params.specHash.some((b) => b !== 0) ? { address, intent, params } : null;
 }
 
-export async function intentAt(transport: Transport, address: Address): Promise<Intent | null> {
-  const view = await createdAccount(transport, address);
-  const tag = getIntentDiscriminatorBytes();
-  if (view === null || view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS || view.data.length !== getIntentSize() || !tag.every((b, i) => view.data[i] === b)) {
+const tagged = (data: Uint8Array): boolean => getIntentDiscriminatorBytes().every((b, i) => data[i] === b);
+
+export function intentFrom(data: Uint8Array): Intent {
+  if (!tagged(data)) {
+    throw new RangeError("the data is not an intent account");
+  }
+  return getIntentDecoder().decode(checkAccountVersion(data));
+}
+
+export function readableIntent(data: Uint8Array): Intent | null {
+  try {
+    return intentFrom(data);
+  } catch {
     return null;
   }
-  return getIntentDecoder().decode(checkAccountVersion(view.data));
+}
+
+export async function intentAt(transport: Transport, address: Address): Promise<Intent | null> {
+  const view = await createdAccount(transport, address);
+  if (view === null || view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS || view.data.length !== getIntentSize() || !tagged(view.data)) {
+    return null;
+  }
+  return intentFrom(view.data);
 }
 
 export async function proofAt(transport: Transport, address: Address): Promise<Proof | null> {
@@ -61,7 +77,10 @@ export async function openProofEscrows(transport: Transport, filter?: Address | 
   const { attestor, mint, minSells, unclaimed, owner, excludeOwners = [] }: JobFilter = typeof filter === "string" ? { attestor: filter } : (filter ?? {});
   const [accounts, now] = await Promise.all([transport.intents(), chainTime(transport)]);
   const open = accounts
-    .map(({ address, data }) => proofOf(address, getIntentDecoder().decode(data)))
+    .map(({ address, data }) => {
+      const intent = readableIntent(data);
+      return intent === null ? null : proofOf(address, intent);
+    })
     .filter(
       (proof): proof is Proof =>
         proof !== null &&

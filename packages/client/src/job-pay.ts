@@ -3,7 +3,6 @@ import {
   decodeParams,
   type FeeConfig,
   formatAmount,
-  getIntentDecoder,
   type Intent,
   Kind,
   kindBit,
@@ -11,6 +10,7 @@ import {
   splitFees,
 } from "@intent-engine/core";
 import { mintOf } from "./accounts.js";
+import { readableIntent } from "./job-proofs.js";
 import type { Job } from "./job-specs.js";
 import type { Transport } from "./transport.js";
 
@@ -61,7 +61,8 @@ export async function jobPays(
   return jobs.map(({ intent, inputMint }) => {
     const data = intents.get(intent);
     const scale = scales.get(inputMint);
-    const net = data === undefined || scale === undefined ? null : releaseNet(getIntentDecoder().decode(data), terms);
+    const found = data === undefined ? null : readableIntent(data);
+    const net = found === null || scale === undefined ? null : releaseNet(found, terms);
     return net === null ? { netPay: "0", payable: false } : { netPay: formatAmount(net, scale), payable: true };
   });
 }

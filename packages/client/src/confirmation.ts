@@ -14,18 +14,26 @@ export function signatureWatch(url: string): SignatureWatch {
   const subscriptions = createSolanaRpcSubscriptions(socketUrl(url));
   return async (signature, abortSignal) => {
     const notes = await subscriptions.signatureNotifications(signature, { commitment: "confirmed" }).subscribe({ abortSignal });
-    const iterator = notes[Symbol.asyncIterator]();
-    const next = await iterator.next();
-    if (next.done === true) {
-      throw new Error(`the signature subscription for ${signature} ended without a notification`);
+    for await (const note of notes) {
+      if (settles(note)) {
+        return heardSlot(signature, note);
+      }
     }
-    return heardSlot(signature, next.value);
+    throw new Error(`the signature subscription for ${signature} ended without a notification`);
   };
 }
 
+const settles = (note: unknown): note is { context?: { slot?: unknown }; value: { err: unknown } } => {
+  const value = (note as { value?: unknown } | null)?.value;
+  return typeof value === "object" && value !== null && "err" in value;
+};
+
 export function heardSlot(signature: Signature, note: unknown): Confirmed {
-  const { context, value } = (note ?? {}) as { context?: { slot?: unknown }; value?: { err?: unknown } };
-  const err = value?.err ?? null;
+  if (!settles(note)) {
+    throw new Error(`the signature notification for ${signature} carries no result`);
+  }
+  const { context, value } = note;
+  const err = value.err ?? null;
   if (err !== null) {
     throw new FailedOnChain(`transaction ${signature} failed: ${inspect(err)}`);
   }

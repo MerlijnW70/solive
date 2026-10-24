@@ -9,6 +9,12 @@ import type { ProgramAccount } from "./rpc-shapes.js";
 
 export type IntentChanges = { wait(seconds: number): Promise<ProgramAccount[] | null>; close(): void; slot?(): bigint | undefined };
 
+export type HeardAccount = ProgramAccount & { slot?: bigint };
+
+export type Heard = { changed: HeardAccount[]; reconnected: boolean };
+
+export type HeardChanges = IntentChanges & { next(seconds: number): Promise<Heard>; slot(): bigint | undefined };
+
 export type Notifications = (signal: AbortSignal) => Promise<AsyncIterable<unknown>>;
 
 export function socketUrl(url: string): string {
@@ -60,19 +66,33 @@ export function pause(ms: number, signal: AbortSignal): Promise<void> {
   });
 }
 
-export function changesFrom(notifications: Notifications, reconnect: readonly number[] = RECONNECT_MS): IntentChanges {
+export function changesFrom(notifications: Notifications, reconnect: readonly number[] = RECONNECT_MS): HeardChanges {
   const controller = new AbortController();
-  const pending = new Map<Address, Uint8Array>();
+  const pending = new Map<Address, HeardAccount>();
   let wake: (() => void) | undefined;
   let highest: bigint | undefined;
+  let reconnected = false;
   const drain = () => {
-    const changed = [...pending].map(([address, data]) => ({ address, data }));
+    const changed = [...pending.values()];
     pending.clear();
     return changed;
   };
+  const heard = (account: HeardAccount) => {
+    const held = pending.get(account.address)?.slot;
+    if (held !== undefined && (account.slot === undefined || account.slot < held)) {
+      return;
+    }
+    pending.set(account.address, account);
+  };
   let failures = 0;
+  let attempts = 0;
   const consume = async () => {
+    const again = attempts++ > 0;
     const iterator = (await notifications(controller.signal))[Symbol.asyncIterator]();
+    if (again) {
+      reconnected = true;
+      wake?.();
+    }
     for (let next = await iterator.next(); next.done !== true; next = await iterator.next()) {
       failures = 0;
       const changed = changedAccount(next.value);
@@ -81,7 +101,7 @@ export function changesFrom(notifications: Notifications, reconnect: readonly nu
         if (typeof slot === "bigint" && (highest === undefined || slot > highest)) {
           highest = slot;
         }
-        pending.set(changed.address, changed.data);
+        heard(typeof slot === "bigint" ? { ...changed, slot } : changed);
         wake?.();
       }
     }
@@ -97,26 +117,39 @@ export function changesFrom(notifications: Notifications, reconnect: readonly nu
     }
   };
   void listen();
-  return {
-    wait: (seconds) =>
-      new Promise((resolve) => {
-        if (pending.size > 0) {
-          resolve(drain());
+  const waiting = (seconds: number, ready: () => boolean) =>
+    new Promise<void>((resolve) => {
+      if (ready()) {
+        resolve();
+        return;
+      }
+      const timer = setTimeout(() => {
+        wake = undefined;
+        resolve();
+      }, seconds * 1000);
+      wake = () => {
+        if (!ready() && !controller.signal.aborted) {
           return;
         }
-        const timer = setTimeout(() => {
-          wake = undefined;
-          resolve([]);
-        }, seconds * 1000);
-        wake = () => {
-          clearTimeout(timer);
-          wake = undefined;
-          resolve(drain());
-        };
-      }),
+        clearTimeout(timer);
+        wake = undefined;
+        resolve();
+      };
+    });
+  return {
+    wait: async (seconds) => {
+      await waiting(seconds, () => pending.size > 0);
+      return drain().map(({ address, data }) => ({ address, data }));
+    },
+    next: async (seconds) => {
+      await waiting(seconds, () => pending.size > 0 || reconnected);
+      const restored = reconnected;
+      reconnected = false;
+      return { changed: drain(), reconnected: restored };
+    },
     close: () => {
-      wake?.();
       controller.abort();
+      wake?.();
     },
     slot: () => highest,
   };

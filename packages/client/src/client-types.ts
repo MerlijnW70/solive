@@ -21,7 +21,7 @@ export type IntentAccount = { address: Address; intent: Intent };
 
 export type IntentFilter = { owner?: Address; status?: number };
 
-export type WatchCallback = (changed: IntentAccount[], closed: IntentAccount[]) => void;
+export type WatchCallback = (changed: (IntentAccount & { slot?: bigint })[], closed: (IntentAccount & { slot?: bigint })[]) => void;
 
 export type WatchOptions = { owner?: Address; onError?: (error: unknown) => void };
 

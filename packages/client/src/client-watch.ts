@@ -1,9 +1,13 @@
 import type { Address } from "@solana/kit";
-import { getIntentDecoder } from "@intent-engine/core";
 import type { IntentAccount, WatchCallback, WatchOptions } from "./client-types.js";
-import { changesFrom, type Notifications, pause, type ProgramAccount, type Transport } from "./transport.js";
+import { intentFrom } from "./job-proofs.js";
+import { changesFrom, type HeardAccount, type Notifications, pause, type ProgramAccount, type Transport } from "./transport.js";
 
-export const decoded = ({ address, data }: ProgramAccount): IntentAccount => ({ address, intent: getIntentDecoder().decode(data) });
+type Watched = IntentAccount & { slot?: bigint };
+
+export const decoded = ({ address, data }: ProgramAccount): IntentAccount => ({ address, intent: intentFrom(data) });
+
+const keyOf = (data: Uint8Array) => Buffer.from(data).toString("base64");
 
 export function watchIntents(
   transport: Transport,
@@ -15,39 +19,63 @@ export function watchIntents(
     if (signal.aborted) {
       return;
     }
-    const seen = new Map<Address, { key: string; view: IntentAccount }>();
-    const fresh = (accounts: readonly ProgramAccount[]) =>
-      accounts.flatMap((account) => {
-        const view = decoded(account);
-        if (filter.owner !== undefined && view.intent.owner !== filter.owner) {
-          return [];
-        }
-        const key = Buffer.from(account.data).toString("base64");
-        if (seen.get(account.address)?.key === key) {
-          return [];
-        }
-        seen.set(account.address, { key, view });
-        return [view];
-      });
-    let read = false;
-    const report = (changed: IntentAccount[], closed: IntentAccount[], first = false) => {
-      if ((changed.length > 0 || closed.length > 0 || first) && !signal.aborted) {
-        onChange(changed, closed);
-      }
-    };
-    let highest: bigint | undefined;
-    const raise = (slot: bigint | undefined) => {
-      if (slot !== undefined && (highest === undefined || slot > highest)) {
-        highest = slot;
-      }
-    };
+    const seen = new Map<Address, { key: string; view: Watched }>();
+    const skipped = new Map<Address, string>();
     const failed = (error: unknown) => {
       if (!signal.aborted) {
         filter.onError?.(error);
       }
     };
-    const sync = async (heard?: bigint) => {
-      raise(heard);
+    const apply = (account: ProgramAccount, slot: bigint | undefined): Watched[] => {
+      const key = keyOf(account.data);
+      if (skipped.get(account.address) === key) {
+        return [];
+      }
+      let view: IntentAccount;
+      try {
+        view = decoded(account);
+      } catch (error) {
+        skipped.set(account.address, key);
+        failed(new Error(`intent ${account.address} cannot be read: ${error instanceof Error ? error.message : String(error)}`, { cause: error }));
+        return [];
+      }
+      skipped.delete(account.address);
+      if (filter.owner !== undefined && view.intent.owner !== filter.owner) {
+        return [];
+      }
+      const known = seen.get(account.address);
+      const watched: Watched = slot === undefined ? view : { ...view, slot };
+      seen.set(account.address, { key, view: watched });
+      return known?.key === key ? [] : [watched];
+    };
+    let read = false;
+    const report = (changed: Watched[], closed: Watched[], first = false) => {
+      if ((changed.length > 0 || closed.length > 0 || first) && !signal.aborted) {
+        try {
+          onChange(changed, closed);
+        } catch (error) {
+          failed(error);
+        }
+      }
+    };
+    let highest: bigint | undefined;
+    let covered: bigint | undefined;
+    const raise = (slot: bigint | undefined) => {
+      if (slot !== undefined && (highest === undefined || slot > highest)) {
+        highest = slot;
+      }
+    };
+    const heard = (account: HeardAccount): Watched[] => {
+      const { slot } = account;
+      const known = seen.get(account.address)?.view.slot;
+      if (slot === undefined || (covered !== undefined && slot <= covered) || (known !== undefined && slot <= known)) {
+        return [];
+      }
+      raise(slot);
+      return apply(account, slot);
+    };
+    const sync = async (heardAt?: bigint) => {
+      raise(heardAt);
       const floor = highest;
       const reading: { minContextSlot?: bigint; onSlot: (slot: bigint) => void; at?: bigint } = {
         ...(floor === undefined ? {} : { minContextSlot: floor }),
@@ -62,16 +90,25 @@ export function watchIntents(
       if (accounts === null) {
         return;
       }
-      if (reading.at !== undefined && floor !== undefined && reading.at < floor) {
-        failed(new Error(`the intents read at slot ${reading.at} is older than slot ${floor}, which the watch has already seen`));
+      const { at } = reading;
+      if (at !== undefined && floor !== undefined && at < floor) {
+        failed(new Error(`the intents read at slot ${at} is older than slot ${floor}, which the watch has already seen`));
         return;
       }
-      raise(reading.at);
+      raise(at);
       const present = new Set(accounts.map(({ address }) => address));
-      const changed = fresh(accounts);
+      const changed = accounts.flatMap((account) => apply(account, at));
       const closed = [...seen].filter(([address]) => !present.has(address)).map(([, { view }]) => view);
       for (const { address } of closed) {
         seen.delete(address);
+      }
+      for (const address of skipped.keys()) {
+        if (!present.has(address)) {
+          skipped.delete(address);
+        }
+      }
+      if (at !== undefined && (covered === undefined || at > covered)) {
+        covered = at;
       }
       report(changed, closed, !read);
       read = true;
@@ -90,9 +127,11 @@ export function watchIntents(
       await sync();
       let synced = Date.now();
       while (!signal.aborted) {
-        report(fresh((await changes.wait(resyncSeconds)) ?? []), []);
-        if (!signal.aborted && Date.now() - synced >= resyncSeconds * 1000) {
-          await sync(changes.slot?.());
+        const { changed, reconnected } = await changes.next(resyncSeconds);
+        report(changed.flatMap(heard), []);
+        const unordered = changed.some(({ slot }) => slot === undefined);
+        if (!signal.aborted && (reconnected || unordered || Date.now() - synced >= resyncSeconds * 1000)) {
+          await sync(changes.slot());
           synced = Date.now();
         }
       }
