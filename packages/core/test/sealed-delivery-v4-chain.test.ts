@@ -38,7 +38,7 @@ import {
   INTENT_ENGINE_PROGRAM_ADDRESS,
   IntentCoreError,
   Kind,
- 
+
   MAX_CRANK_BOUNTY,
   MAX_CREATE_FEE,
   openDeliveryV4,
