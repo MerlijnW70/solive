@@ -14,7 +14,6 @@ import {
   MAX_OPENED_SALTS,
   MAX_OPENING_MEMO,
   MAX_SEALED_URL_RECIPIENTS,
-  maxSealedUrl,
   OPENING_MEMO_PREFIX,
   openDelivery,
   openingMemo,
@@ -33,6 +32,7 @@ import {
   sealedUrlRecipients,
   sealedUrlTooLong,
 } from "../src/index.js";
+import { maxSealedUrl } from "../src/sealed-delivery.js";
 
 type Wallet = { address: Address; keypair: Uint8Array; sign: (message: Uint8Array) => Uint8Array };
 
