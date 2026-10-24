@@ -13,8 +13,9 @@ use intent_core::kinds::{
 };
 use intent_core::math::{mul_div_ceil, mul_div_floor};
 use intent_core::sig::{
-    check_ed25519_cosign, check_ed25519_ix, offchain_envelope, AttestedFill, AttestedProof,
-    AttestedSplit, Cosigners, SignedIntent, COSIGN_KEYS_AT, ED25519_PROGRAM_ID, SPLIT_COSIGN_TAG,
+    check_ed25519_cosign, check_ed25519_ix, offchain_envelope, AttestedDelivery, AttestedFill,
+    AttestedSplitDelivery, Cosigners, SignedIntent, COSIGN_KEYS_AT, ED25519_PROGRAM_ID,
+    SPLIT_COSIGN_TAG,
 };
 use intent_core::PARAMS_LEN;
 use intent_engine::instruction as ix;
@@ -633,7 +634,11 @@ fn vectors() -> TestResult<Value> {
     let attest_digest = solana_sha256_hasher::hashv(&[&attest_preimage]).to_bytes();
     let attestation = offchain_envelope(&key(5).to_bytes(), &attest_digest);
     let attest_spec_hash = [0x6a; 32];
-    let proof_preimage = AttestedProof {
+    let attest_announcement = key(12);
+    let attest_seq: u64 = 0x4142_4344_4546_4748;
+    let attest_delivered = [0x7b; 32];
+    let attest_salt = [0x5c; 16];
+    let proof_preimage = AttestedDelivery {
         program: intent_engine::ID.to_bytes(),
         domain: svm_tests::DOMAIN,
         intent: key(7).to_bytes(),
@@ -645,6 +650,10 @@ fn vectors() -> TestResult<Value> {
         max_fee_bps: 0x3132,
         ext_hash: solana_sha256_hasher::hashv(&[&GOLDEN_EXT]).to_bytes(),
         spec_hash: attest_spec_hash,
+        announcement: attest_announcement.to_bytes(),
+        seq: attest_seq,
+        delivered: attest_delivered,
+        salt: attest_salt,
     }
     .preimage();
     let proof_digest = solana_sha256_hasher::hashv(&[&proof_preimage]).to_bytes();
@@ -652,7 +661,7 @@ fn vectors() -> TestResult<Value> {
     let split_recipients = [key(10), key(11)];
     let split_weights: [u16; 2] = [6_000, 4_000];
     let split_hash = split_commit(&split_recipients, &split_weights);
-    let split_preimage = AttestedSplit {
+    let split_preimage = AttestedSplitDelivery {
         program: intent_engine::ID.to_bytes(),
         domain: svm_tests::DOMAIN,
         intent: key(7).to_bytes(),
@@ -664,6 +673,10 @@ fn vectors() -> TestResult<Value> {
         ext_hash: solana_sha256_hasher::hashv(&[&GOLDEN_EXT]).to_bytes(),
         spec_hash: attest_spec_hash,
         split_hash,
+        announcement: attest_announcement.to_bytes(),
+        seq: attest_seq,
+        delivered: attest_delivered,
+        salt: attest_salt,
     }
     .preimage();
     let split_digest =
@@ -803,10 +816,14 @@ fn vectors() -> TestResult<Value> {
         "attest_preimage": hex(&attest_preimage),
         "attest_message": hex(&attestation),
         "attest_spec_hash": hex(&attest_spec_hash),
-        "attest_proof_preimage": hex(&proof_preimage),
-        "attest_proof_message": hex(&proof_attestation),
+        "attest_announcement": attest_announcement.to_string(),
+        "attest_seq": attest_seq.to_string(),
+        "attest_delivered": hex(&attest_delivered),
+        "attest_salt": hex(&attest_salt),
+        "attest_delivery_preimage": hex(&proof_preimage),
+        "attest_delivery_message": hex(&proof_attestation),
         "attest_split_hash": hex(&split_hash),
-        "attest_split_preimage": hex(&split_preimage),
+        "attest_split_delivery_preimage": hex(&split_preimage),
         "attest_split_cosigners": split_cosigners.iter().map(ToString::to_string).collect::<Vec<_>>(),
         "attest_split_message": hex(split_attestation.as_bytes()),
         "attest_split_batch_with_ab_signatures": hex(&split_batch),

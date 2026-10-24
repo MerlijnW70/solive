@@ -3,10 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   ATTEST_DELIVERY_PREIMAGE_LEN,
   ATTEST_DELIVERY_TAG,
-  ATTEST_PROOF_TAG,
   ATTEST_SPLIT_DELIVERY_PREIMAGE_LEN,
   ATTEST_SPLIT_DELIVERY_TAG,
-  ATTEST_SPLIT_TAG,
+  RETIRED_TAGS,
   ATTEST_TAG,
   COMMITTEE_COSIGN_TAG,
   COMMITTEE_TAG,
@@ -334,12 +333,15 @@ describe("attested delivery preimages", () => {
 });
 
 describe("domain tags", () => {
+  it("keep the retired v3 proof and split tags reserved", () => {
+    expect(RETIRED_TAGS.map((t) => new TextDecoder().decode(t))).toEqual(["intent-engine-pf", "intent-engine-sp"]);
+  });
+
   it("are unique across core", () => {
     const tags = [
       INTENT_TAG,
       ATTEST_TAG,
-      ATTEST_PROOF_TAG,
-      ATTEST_SPLIT_TAG,
+      ...RETIRED_TAGS,
       ATTEST_DELIVERY_TAG,
       ATTEST_SPLIT_DELIVERY_TAG,
       SPLIT_COSIGN_TAG,

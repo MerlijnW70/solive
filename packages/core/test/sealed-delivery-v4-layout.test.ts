@@ -4,9 +4,8 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import {
   ATTEST_DELIVERY_TAG,
-  ATTEST_PROOF_TAG,
   ATTEST_SPLIT_DELIVERY_TAG,
-  ATTEST_SPLIT_TAG,
+  RETIRED_TAGS,
   ATTEST_TAG,
   BLOB_INFO,
   blobLayout,
@@ -122,8 +121,7 @@ describe("the v4 blob layout", () => {
     const existing = [
       INTENT_TAG,
       ATTEST_TAG,
-      ATTEST_PROOF_TAG,
-      ATTEST_SPLIT_TAG,
+      ...RETIRED_TAGS,
       ATTEST_DELIVERY_TAG,
       ATTEST_SPLIT_DELIVERY_TAG,
       SPLIT_COSIGN_TAG,

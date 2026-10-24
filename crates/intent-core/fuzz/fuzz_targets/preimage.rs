@@ -1,7 +1,7 @@
 #![no_main]
 
 use intent_core::sig::{
-    offchain_envelope, AttestedFill, AttestedProof, SignedIntent, ATTEST_PROOF_TAG, ATTEST_TAG,
+    offchain_envelope, AttestedDelivery, AttestedFill, SignedIntent, ATTEST_DELIVERY_TAG, ATTEST_TAG,
     INTENT_TAG, OFFCHAIN_PREFIX,
 };
 use intent_core::PARAMS_LEN;
@@ -10,6 +10,7 @@ use libfuzzer_sys::fuzz_target;
 type Keys = [[u8; 32]; 7];
 type Signed = (Keys, u64, i64, i64, u8, u16, [u8; PARAMS_LEN], u64, [u8; 32], u64);
 type Attest = ([[u8; 32]; 5], u64, u64, u64, u32, u16, [u8; 32]);
+type Opening = ([u8; 32], u64, [u8; 32], [u8; 16]);
 
 fn take<'a>(at: &mut usize, bytes: &'a [u8], n: usize) -> &'a [u8] {
     let s = &bytes[*at..*at + n];
@@ -21,8 +22,8 @@ fn u64_at(at: &mut usize, bytes: &[u8]) -> u64 {
     u64::from_le_bytes(take(at, bytes, 8).try_into().unwrap())
 }
 
-fuzz_target!(|input: (Signed, Attest)| {
-    let ((keys, nonce, expires_at, submit_by, kind, flags, params, epoch, ext_hash, relayer_fee), a) = input;
+fuzz_target!(|input: (Signed, Attest, Opening)| {
+    let ((keys, nonce, expires_at, submit_by, kind, flags, params, epoch, ext_hash, relayer_fee), a, opening) = input;
     let [program, domain, owner, owner_input, input_mint, output_mint, receiver] = keys;
     let intent = SignedIntent {
         program,
@@ -88,7 +89,8 @@ fuzz_target!(|input: (Signed, Attest)| {
     assert_eq!(at, pre_a.len());
     assert_ne!(pre[..16], pre_a[..16]);
 
-    let proof = AttestedProof {
+    let (announcement, seq, delivered, salt) = opening;
+    let proof = AttestedDelivery {
         program,
         domain,
         intent: intent_key,
@@ -100,10 +102,14 @@ fuzz_target!(|input: (Signed, Attest)| {
         max_fee_bps,
         ext_hash,
         spec_hash,
+        announcement,
+        seq,
+        delivered,
+        salt,
     };
     let pre_p = proof.preimage();
     let mut at = 0;
-    assert_eq!(take(&mut at, &pre_p, 16), &ATTEST_PROOF_TAG[..]);
+    assert_eq!(take(&mut at, &pre_p, 16), &ATTEST_DELIVERY_TAG[..]);
     for k in [program, domain, intent_key, payee] {
         assert_eq!(take(&mut at, &pre_p, 32), &k[..]);
     }
@@ -114,6 +120,10 @@ fuzz_target!(|input: (Signed, Attest)| {
     assert_eq!(take(&mut at, &pre_p, 2), &max_fee_bps.to_le_bytes()[..]);
     assert_eq!(take(&mut at, &pre_p, 32), &ext_hash[..]);
     assert_eq!(take(&mut at, &pre_p, 32), &spec_hash[..]);
+    assert_eq!(take(&mut at, &pre_p, 32), &announcement[..]);
+    assert_eq!(u64_at(&mut at, &pre_p), seq);
+    assert_eq!(take(&mut at, &pre_p, 32), &delivered[..]);
+    assert_eq!(take(&mut at, &pre_p, 16), &salt[..]);
     assert_eq!(at, pre_p.len());
     assert_eq!(&pre_p[16..pre_a.len()], &pre_a[16..]);
     assert_ne!(pre_p[..16], pre_a[..16]);

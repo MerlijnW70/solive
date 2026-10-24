@@ -33,7 +33,7 @@ type CommitteeCase = {
 };
 type Vectors = {
   committees: CommitteeCase[];
-  sig: { attest_proof_preimage: string; committee_message: string; committee_members: Address[]; committee_batch_with_ab_signatures: string };
+  sig: { attest_delivery_preimage: string; committee_message: string; committee_members: Address[]; committee_batch_with_ab_signatures: string };
 };
 
 const vectors = JSON.parse(
@@ -82,7 +82,7 @@ describe("committee terms match the program byte for byte", () => {
 
   it("signs one envelope that lists every member, over the tagged release digest", async () => {
     const members = vectors.sig.committee_members;
-    const digest = await sha256(new Uint8Array([...COMMITTEE_COSIGN_TAG, ...bytesOfHex(vectors.sig.attest_proof_preimage)]));
+    const digest = await sha256(new Uint8Array([...COMMITTEE_COSIGN_TAG, ...bytesOfHex(vectors.sig.attest_delivery_preimage)]));
     expect(hexOf(committeeEnvelope(digest, [...members].reverse()))).toBe(vectors.sig.committee_message);
     expect(() => committeeEnvelope(new Uint8Array(31), members)).toThrow(RangeError);
     const [first, , third] = members;

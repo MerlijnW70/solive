@@ -62,9 +62,9 @@ import {
   requiredOut,
   attestedFillMessage,
   attestedFillPreimage,
-  attestedProofPreimage,
+  attestedDeliveryPreimage,
   SPLIT_COSIGN_TAG,
-  attestedSplitPreimage,
+  attestedSplitDeliveryPreimage,
   buildEd25519CosignInstruction,
   splitCosignEnvelope,
   splitCommit,
@@ -130,10 +130,14 @@ type Vectors = {
     | "attest_preimage"
     | "attest_message"
     | "attest_spec_hash"
-    | "attest_proof_preimage"
-    | "attest_proof_message"
+    | "attest_announcement"
+    | "attest_seq"
+    | "attest_delivered"
+    | "attest_salt"
+    | "attest_delivery_preimage"
+    | "attest_delivery_message"
     | "attest_split_hash"
-    | "attest_split_preimage"
+    | "attest_split_delivery_preimage"
     | "attest_split_message"
     | "attest_split_batch_with_ab_signatures"
     | "attest_filled"
@@ -606,7 +610,7 @@ describe("golden vectors emitted by the Rust implementation", () => {
     );
   });
 
-  it("bind proof attestations to the committed spec hash like Rust", async () => {
+  it("bind delivery attestations to the spec hash, announcement, seq and opening like Rust", async () => {
     const s = vectors.sig;
     const fields = {
       domain: bytes(s.domain),
@@ -617,16 +621,25 @@ describe("golden vectors emitted by the Rust implementation", () => {
       filled: BigInt(s.attest_filled),
       revision: Number(s.attest_revision),
       maxFeeBps: Number(s.attest_max_fee_bps),
-      ext: bytes(s.ext),
+      extHash: new Uint8Array(await crypto.subtle.digest("SHA-256", bytes(s.ext).slice())),
       specHash: bytes(s.attest_spec_hash),
+      announcement: s.attest_announcement as Address,
+      seq: BigInt(s.attest_seq),
+      delivered: bytes(s.attest_delivered),
+      salt: bytes(s.attest_salt),
     };
-    const preimage = await attestedProofPreimage(fields);
-    expect(preimage).toHaveLength(238);
-    expect(hexOf(preimage)).toBe(s.attest_proof_preimage);
+    const preimage = attestedDeliveryPreimage(fields);
+    expect(preimage).toHaveLength(326);
+    expect(hexOf(preimage)).toBe(s.attest_delivery_preimage);
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", preimage.slice()));
-    expect(hexOf(offchainEnvelope(s.attestor as Address, digest))).toBe(s.attest_proof_message);
-    const otherSpec = { ...fields, specHash: new Uint8Array(32).fill(1) };
-    expect(hexOf(await attestedProofPreimage(otherSpec))).not.toBe(s.attest_proof_preimage);
+    expect(hexOf(offchainEnvelope(s.attestor as Address, digest))).toBe(s.attest_delivery_message);
+    for (const other of [
+      { ...fields, specHash: new Uint8Array(32).fill(1) },
+      { ...fields, seq: fields.seq + 1n },
+      { ...fields, salt: new Uint8Array(16).fill(1) },
+    ]) {
+      expect(hexOf(attestedDeliveryPreimage(other))).not.toBe(s.attest_delivery_preimage);
+    }
   });
 
   it("split an amount across weights exactly like the program's kernel", () => {
@@ -648,7 +661,7 @@ describe("golden vectors emitted by the Rust implementation", () => {
     }
   });
 
-  it("bind split attestations to the committed spec and split hashes like Rust", async () => {
+  it("bind split delivery attestations to the spec and split hashes, announcement, seq and opening like Rust", async () => {
     const s = vectors.sig;
     const fields = {
       domain: bytes(s.domain),
@@ -658,13 +671,17 @@ describe("golden vectors emitted by the Rust implementation", () => {
       filled: BigInt(s.attest_filled),
       revision: Number(s.attest_revision),
       maxFeeBps: Number(s.attest_max_fee_bps),
-      ext: bytes(s.ext),
+      extHash: new Uint8Array(await crypto.subtle.digest("SHA-256", bytes(s.ext).slice())),
       specHash: bytes(s.attest_spec_hash),
       splitHash: bytes(s.attest_split_hash),
+      announcement: s.attest_announcement as Address,
+      seq: BigInt(s.attest_seq),
+      delivered: bytes(s.attest_delivered),
+      salt: bytes(s.attest_salt),
     };
-    const preimage = await attestedSplitPreimage(fields);
-    expect(preimage).toHaveLength(238);
-    expect(hexOf(preimage)).toBe(s.attest_split_preimage);
+    const preimage = attestedSplitDeliveryPreimage(fields);
+    expect(preimage).toHaveLength(326);
+    expect(hexOf(preimage)).toBe(s.attest_split_delivery_preimage);
     const tagged = new Uint8Array([...SPLIT_COSIGN_TAG, ...preimage]);
     const digest = new Uint8Array(await crypto.subtle.digest("SHA-256", tagged));
     const cosigners = (vectors.sig as unknown as { attest_split_cosigners: Address[] }).attest_split_cosigners;
@@ -679,7 +696,7 @@ describe("golden vectors emitted by the Rust implementation", () => {
     const entries = cosigners.map((publicKey) => ({ publicKey, signature: new Uint8Array(64).fill(0xab) }));
     expect(hexOf(buildEd25519CosignInstruction({ entries, message }).data ?? new Uint8Array())).toBe(s.attest_split_batch_with_ab_signatures);
     const otherSplit = { ...fields, splitHash: new Uint8Array(32).fill(1) };
-    expect(hexOf(await attestedSplitPreimage(otherSplit))).not.toBe(s.attest_split_preimage);
+    expect(hexOf(attestedSplitDeliveryPreimage(otherSplit))).not.toBe(s.attest_split_delivery_preimage);
   });
 
   it("carry the account versions the program accepts", () => {

@@ -318,6 +318,50 @@ fn attested_delivery_preimage_changes_with_each_bound_field() {
     let base = delivery().preimage();
     let variants = [
         AttestedDelivery {
+            program: [0; 32],
+            ..delivery()
+        },
+        AttestedDelivery {
+            domain: [0; 32],
+            ..delivery()
+        },
+        AttestedDelivery {
+            intent: [0; 32],
+            ..delivery()
+        },
+        AttestedDelivery {
+            payee: [0; 32],
+            ..delivery()
+        },
+        AttestedDelivery {
+            amount_in: 1,
+            ..delivery()
+        },
+        AttestedDelivery {
+            result: 1,
+            ..delivery()
+        },
+        AttestedDelivery {
+            filled: 1,
+            ..delivery()
+        },
+        AttestedDelivery {
+            revision: 1,
+            ..delivery()
+        },
+        AttestedDelivery {
+            max_fee_bps: 1,
+            ..delivery()
+        },
+        AttestedDelivery {
+            ext_hash: [0; 32],
+            ..delivery()
+        },
+        AttestedDelivery {
+            spec_hash: [0; 32],
+            ..delivery()
+        },
+        AttestedDelivery {
             announcement: [0; 32],
             ..delivery()
         },
@@ -333,23 +377,18 @@ fn attested_delivery_preimage_changes_with_each_bound_field() {
             salt: [0; 16],
             ..delivery()
         },
-        AttestedDelivery {
-            payee: [0; 32],
-            ..delivery()
-        },
     ];
     for v in variants {
         assert_ne!(v.preimage(), base);
     }
 }
 
-#[test]
-fn attested_split_delivery_preimage_extends_the_split_fields() {
-    let p = AttestedSplitDelivery {
+fn split_delivery() -> AttestedSplitDelivery {
+    AttestedSplitDelivery {
         program: [11; 32],
         domain: [12; 32],
         intent: [13; 32],
-        amount_in: 1,
+        amount_in: 0x0102_0304_0506_0708,
         result: 2,
         filled: 3,
         revision: 4,
@@ -358,34 +397,117 @@ fn attested_split_delivery_preimage_extends_the_split_fields() {
         spec_hash: [16; 32],
         split_hash: [20; 32],
         announcement: [17; 32],
-        seq: 9,
+        seq: 0x1122_3344_5566_7788,
         delivered: [18; 32],
         salt: [19; 16],
     }
-    .preimage();
+}
+
+#[test]
+fn attested_split_delivery_preimage_extends_the_split_fields() {
+    let p = split_delivery().preimage();
     assert_eq!(ATTEST_SPLIT_DELIVERY_TAG, *b"intent-engine-sd");
     assert_eq!(ATTEST_SPLIT_DELIVERY_PREIMAGE_LEN, 326);
+    assert_eq!(p.len(), ATTEST_SPLIT_DELIVERY_PREIMAGE_LEN);
     assert_eq!(p[..16], ATTEST_SPLIT_DELIVERY_TAG);
+    assert_eq!(p[16..48], [11; 32]);
+    assert_eq!(p[48..80], [12; 32]);
     assert_eq!(p[80..112], [13; 32]);
-    assert_eq!(p[112..120], 1u64.to_le_bytes());
+    assert_eq!(p[112..120], 0x0102_0304_0506_0708u64.to_le_bytes());
+    assert_eq!(p[120..128], 2u64.to_le_bytes());
+    assert_eq!(p[128..136], 3u64.to_le_bytes());
+    assert_eq!(p[136..140], 4u32.to_le_bytes());
+    assert_eq!(p[140..142], 5u16.to_le_bytes());
+    assert_eq!(p[142..174], [15; 32]);
+    assert_eq!(p[174..206], [16; 32]);
     assert_eq!(p[206..238], [20; 32]);
     assert_eq!(p[238..270], [17; 32]);
-    assert_eq!(p[270..278], 9u64.to_le_bytes());
+    assert_eq!(p[270..278], 0x1122_3344_5566_7788u64.to_le_bytes());
     assert_eq!(p[278..310], [18; 32]);
     assert_eq!(p[310..326], [19; 16]);
 }
 
 #[test]
+fn attested_split_delivery_preimage_changes_with_each_bound_field() {
+    let base = split_delivery().preimage();
+    let variants = [
+        AttestedSplitDelivery {
+            program: [0; 32],
+            ..split_delivery()
+        },
+        AttestedSplitDelivery {
+            domain: [0; 32],
+            ..split_delivery()
+        },
+        AttestedSplitDelivery {
+            intent: [0; 32],
+            ..split_delivery()
+        },
+        AttestedSplitDelivery {
+            amount_in: 1,
+            ..split_delivery()
+        },
+        AttestedSplitDelivery {
+            result: 1,
+            ..split_delivery()
+        },
+        AttestedSplitDelivery {
+            filled: 1,
+            ..split_delivery()
+        },
+        AttestedSplitDelivery {
+            revision: 1,
+            ..split_delivery()
+        },
+        AttestedSplitDelivery {
+            max_fee_bps: 1,
+            ..split_delivery()
+        },
+        AttestedSplitDelivery {
+            ext_hash: [0; 32],
+            ..split_delivery()
+        },
+        AttestedSplitDelivery {
+            spec_hash: [0; 32],
+            ..split_delivery()
+        },
+        AttestedSplitDelivery {
+            split_hash: [0; 32],
+            ..split_delivery()
+        },
+        AttestedSplitDelivery {
+            announcement: [0; 32],
+            ..split_delivery()
+        },
+        AttestedSplitDelivery {
+            seq: 1,
+            ..split_delivery()
+        },
+        AttestedSplitDelivery {
+            delivered: [0; 32],
+            ..split_delivery()
+        },
+        AttestedSplitDelivery {
+            salt: [0; 16],
+            ..split_delivery()
+        },
+    ];
+    for v in variants {
+        assert_ne!(v.preimage(), base);
+    }
+}
+
+#[test]
 fn every_domain_tag_in_core_is_unique() {
     use intent_core::committee::{COMMITTEE_COSIGN_TAG, COMMITTEE_TAG};
-    use intent_core::sig::{
-        ATTEST_PROOF_TAG, ATTEST_SPLIT_TAG, ATTEST_TAG, INTENT_TAG, SPLIT_COSIGN_TAG,
-    };
+    use intent_core::sig::{ATTEST_TAG, INTENT_TAG, RETIRED_TAGS, SPLIT_COSIGN_TAG};
+    assert_eq!(RETIRED_TAGS, [*b"intent-engine-pf", *b"intent-engine-sp"]);
+    let [retired_proof, retired_split] = RETIRED_TAGS;
     let tags: [&[u8]; 11] = [
         &INTENT_TAG,
         &ATTEST_TAG,
-        &ATTEST_PROOF_TAG,
-        &ATTEST_SPLIT_TAG,
+        &retired_proof,
+        &retired_split,
         &ATTEST_DELIVERY_TAG,
         &ATTEST_SPLIT_DELIVERY_TAG,
         &SPLIT_COSIGN_TAG,
