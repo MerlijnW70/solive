@@ -1,6 +1,5 @@
 import { type Address, createNoopSigner, type Instruction, type TransactionSigner } from "@solana/kit";
 import {
-  buildCreateIntent,
   committeeFloorOf,
   computeUnitLimit,
   computeUnitPrice,
@@ -9,8 +8,6 @@ import {
   describeTerms,
   encodeParams,
   escrowAmount,
-  feeBpsFor,
-  type FeeConfig,
   formatAmount,
   findAssociatedTokenAddress,
   findConfigPda,
@@ -20,14 +17,11 @@ import {
   isMemoUrl,
   Kind,
   MEMO_URL_RULE,
-  specMemo,
   LONG_LIVED_SECONDS,
   MAX_COMPUTE_UNITS,
   NATIVE_MINT,
   partnerBaseOf,
   partnerFeeLine,
-  releaseSettles,
-  settleBounds,
   validate,
   settlementWarnings,
   WARN_LONG_LIVED,
@@ -36,22 +30,20 @@ import {
 import {
   chainTime,
   CLOCK_SYSVAR,
+  createClient,
   escrowCommittee,
-  initUserIfMissing,
   isSdkError,
   loadConfig,
   loadUser,
-  memoInstruction,
-  mintCapOf,
   mintOf,
+  neverSettles,
+  PAY_TO_NOT_ATTESTED,
   PLAIN_HTTP_ON_PUBLIC,
   plainHttpOnPublic,
   keylessJudges,
-  tokenAccountIfMissing,
   type Transport,
   noJudgeKey,
   PACKET_DATA_SIZE,
-  wrapIfShort,
 } from "@intent-engine/client";
 import { expiresLine } from "./expiry.js";
 import { type AgentContext, define } from "./actions.js";
@@ -113,25 +105,7 @@ export function warningsOf(params: IntentParams, expiresAt: bigint, now: bigint,
   ];
 }
 
-export type SettleConfig = FeeConfig & { partnerCutBps: number };
-
-export function neverSettles(params: IntentParams, config: SettleConfig, partnerBps: number, decimals: number): string | undefined {
-  if (params.kind !== Kind.AttestedResult) {
-    return undefined;
-  }
-  const terms = { amount: params.amountIn, judgeFee: params.judgeFee, feeBps: feeBpsFor(config, Kind.AttestedResult), partnerBps, cutBps: config.partnerCutBps };
-  if (releaseSettles(terms)) {
-    return undefined;
-  }
-  const shown = (raw: bigint) => formatAmount(raw, decimals);
-  const left = terms.amount <= terms.judgeFee ? 0n : terms.amount - terms.judgeFee;
-  const { leastAmount, mostJudgeFee } = settleBounds(terms);
-  const fixes = [
-    ...(leastAmount === undefined ? [] : [`escrow at least ${shown(leastAmount)}`]),
-    ...(mostJudgeFee === undefined || terms.judgeFee === 0n ? [] : [`lower the judge fee to at most ${shown(mostJudgeFee)}`]),
-  ];
-  return `no release of this escrow could settle: ${shown(terms.amount)} less the ${shown(terms.judgeFee)} judge fee leaves ${shown(left)}, too little for the rounded-up ${terms.feeBps} bps protocol fee and ${partnerBps} bps partner fee; ${fixes.length === 0 ? "no amount settles under today's config" : fixes.join(", or ")}`;
-}
+export { neverSettles, type SettleConfig } from "@intent-engine/client";
 
 type Floors = Pick<Config, "floorMints" | "floorAmounts">;
 
@@ -191,7 +165,7 @@ export const prepareCreate = define({
   run: (ctx, input, call) => createIntent(ctx, input, call),
 });
 
-export async function createIntent({ transport, claims }: AgentContext, input: CreateInput, call: Call, after?: AfterCreate) {
+export async function createIntent({ transport, claims, url }: AgentContext, input: CreateInput, call: Call, after?: AfterCreate) {
   const [[configAddress], [userAddress]] = await Promise.all([findConfigPda(), findUserStatePda({ owner: input.owner })]);
   await transport.warm?.([CLOCK_SYSVAR, configAddress, input.input_mint, input.output_mint, userAddress]);
   const now = await chainTime(transport);
@@ -214,7 +188,6 @@ export async function createIntent({ transport, claims }: AgentContext, input: C
     throw new AgentRefusal("NeverSettles", unsettled);
   }
   const params = validate(order);
-  const judged = await escrowJudge(transport, config, input.input_mint, params, inputToken.decimals);
   const user = await loadUser(transport, input.owner);
   if (input.nonce !== undefined) {
     await unusedIntent(transport, input.owner, input.nonce);
@@ -222,7 +195,11 @@ export async function createIntent({ transport, claims }: AgentContext, input: C
   const nonce = pickNonce(user, input.nonce, claimedBy(claims, input.owner, now));
   claim(claims, call, input.owner, nonce, now + PREPARED_TTL, now);
   const recipient = input.pay_to ?? input.owner;
-  if (recipient !== input.owner) {
+  const elsewhere = recipient !== input.owner;
+  if (elsewhere && params.kind === Kind.AttestedResult) {
+    throw new InvalidInput([{ path: "pay_to", message: PAY_TO_NOT_ATTESTED }]);
+  }
+  if (elsewhere) {
     await walletRecipient(transport, recipient, "pay_to");
   }
   const [[intentAddress], receiverAddress, sourceAddress] = await Promise.all([
@@ -233,31 +210,25 @@ export async function createIntent({ transport, claims }: AgentContext, input: C
   await transport.warm?.([intentAddress, receiverAddress, sourceAddress]);
   const intent = await unusedIntent(transport, input.owner, nonce);
   const owner = createNoopSigner(input.owner);
-  const receiver = await tokenAccountIfMissing(transport, owner, recipient, input.output_mint, outputToken.tokenProgram);
-  const elsewhere = recipient !== input.owner;
-  const mintCap = await mintCapOf(transport, input.input_mint);
-  const create = await buildCreateIntent({
-    owner,
-    treasury: config.feeRecipient,
-    maxCreateFee: config.createFee,
-    maxBounty: config.crankBounty,
-    nonce,
-    params,
-    expiresAt,
-    ...(input.partner === undefined ? {} : { partner: { key: input.partner.account, bps: input.partner.bps } }),
+  const terms = {
+    signer: owner,
     inputMint: input.input_mint,
     outputMint: input.output_mint,
-    inputTokenProgram: inputToken.tokenProgram,
-    outputTokenProgram: outputToken.tokenProgram,
-    ...(elsewhere ? { receiver: receiver.address, receiverAuthority: recipient } : {}),
-    ...(mintCap === undefined ? {} : { mintCap }),
-    ...judged,
-  });
-  const register = await initUserIfMissing(user, input.owner);
-  const wrap = await wrapIfShort(transport, input.owner, input.input_mint, inputToken.tokenProgram, escrowAmount(params));
-  const published = specUrl === undefined ? [] : [memoInstruction(owner, specMemo(specUrl))];
+    nonce,
+    expiresAt,
+    ...(input.partner === undefined ? {} : { partner: input.partner.account, partnerBps: input.partner.bps }),
+    ...(elsewhere ? { payTo: recipient } : {}),
+  };
+  const planned = await createClient({ url: url ?? "", transport })
+    .plan.createIntent(params.kind === Kind.AttestedResult && specUrl !== undefined ? { ...terms, params, specUrl } : { ...terms, params })
+    .catch((error: unknown) => {
+      if (isSdkError(error, "committee-needed")) {
+        throw new AgentRefusal("CommitteeRequired", committeeNeeded(formatAmount(error.escrow, inputToken.decimals), formatAmount(error.floor, inputToken.decimals), error.attestor));
+      }
+      throw error;
+    });
   const opened = after === undefined ? [] : await after(owner, intent);
-  const instructions = [...register, ...receiver.create, ...wrap.instructions, create, ...published, ...opened];
+  const instructions = [...planned.instructions, ...opened];
   if (opened.length > 0) {
     await checkFits(transport, instructions, input.owner);
   }
@@ -275,17 +246,17 @@ export async function createIntent({ transport, claims }: AgentContext, input: C
       ),
       expiresLine(expiresAt, now),
       ...(params.kind === Kind.AttestedResult ? floorLines(config, input.input_mint, inputToken.decimals) : []),
-      ...(judged.committee === undefined ? [] : [`Judged by: the committee ${judged.committee}, passed with the create`]),
+      ...(planned.committee === null ? [] : [`Judged by: the committee ${planned.committee}, passed with the create`]),
       ...(specUrl === undefined ? [] : [`Publishes: the acceptance spec's url ${specUrl}, in a memo the owner signs`]),
       ...(elsewhere ? [`Pays to: ${recipient}, who receives what the solver pays${input.output_mint === NATIVE_MINT ? WRAPPED : ""}`] : []),
       ...(input.partner === undefined ? [] : [partnerFeeLine(input.partner.bps, input.partner.account, partnerBaseOf(params))]),
       ...setupLines({
-        registers: register.length > 0,
-        creates: receiver.create.length > 0 && !elsewhere ? [input.output_mint] : [],
+        registers: planned.registers,
+        creates: planned.createsPayTo && !elsewhere ? [input.output_mint] : [],
         allowance: null,
-        wraps: wrap.lamports,
+        wraps: planned.wraps,
       }).lines,
-      ...(receiver.create.length > 0 && elsewhere ? [`Setup: creates ${recipient}'s token account for ${input.output_mint} (you pay its rent)`] : []),
+      ...(planned.createsPayTo && elsewhere ? [`Setup: creates ${recipient}'s token account for ${input.output_mint} (you pay its rent)`] : []),
     ],
     warnings: [
       ...warningsOf(params, expiresAt, now, inputToken.scaled || outputToken.scaled),
@@ -294,7 +265,7 @@ export async function createIntent({ transport, claims }: AgentContext, input: C
     ],
     create_fee: BigInt(config.createFee),
     crank_bounty: BigInt(config.crankBounty),
-    wraps: wrap.lamports,
+    wraps: planned.wraps,
     prepared: preparedView(prepared),
   };
 }

@@ -32,7 +32,8 @@ const { nonce } = await client.createIntent({ ...order, params: swap });
 
 ## Read
 
-- `intents({ owner })` returns a wallet's intents; `intent(owner, nonce)` returns one, or `null` once it is closed.
+- `intents` returns the intents that match every field its filter gives of `owner`, `status`, `kind`, `inputMint`, `outputMint` and `attestor`; the node applies the filter.
+- `intent` returns one intent, or `null` once it is closed.
 - `configSummary` spells out the engine's settings: pauses, which kinds are on, and their fees.
 - `kindName`, `statusName` and `termsOf` name an intent's kind and status and decode its terms.
 
@@ -87,7 +88,7 @@ console.log(client.explain(failure)?.name);
 `cancel` returns the escrow to your wrapped SOL token account, where refunds and payouts in SOL arrive. `unwrap` closes that account so its balance returns to the wallet as SOL, and resolves to `null` when the wallet holds none.
 
 ```ts
-await client.cancel(signer, nonce);
+await client.cancel(signer, { owner: signer.address, nonce });
 await watched;
 await client.unwrap(signer);
 ```
@@ -109,7 +110,7 @@ const limit = limitOrder({ makeAmount: parseAmount("0.01", sell.decimals), takeA
 const auction = dutchAuction({ amountIn: limit.makeAmount, startOut: parseAmount("1.9", buy.decimals), endOut: parseAmount("1", buy.decimals), startTs: start, endTs: start + 600n });
 for (const params of [limit, auction]) {
   const placed = await client.createIntent({ ...order, params });
-  const { intent } = (await client.intent(signer.address, placed.nonce))!;
+  const { intent } = (await client.intent(placed.intent))!;
   console.log(kindName(intent.kind), formatAmount(termsOf(intent, await client.chainTime()).receivesAtLeast ?? 0n, buy.decimals), tokenName(intent.outputMint));
   let fill = await client.fillOf(placed.intent);
   while (fill === null) {
@@ -128,7 +129,7 @@ A worker announces its work with `announce`. `settleProof` is the judge's call: 
 
 Here your wallet pays for the worker's announcement and for the release, so neither new key needs SOL. The judge keeps its 64 key bytes, because it opens what workers seal to it.
 
-`history` returns an intent's events, newest first, also after it closes. An `IntentAttested` event's `net` is what the payee received. This prints `Filled`, then `IntentAttested` and the worker's pay in SOL.
+`history` returns a page of an intent's `events`, newest first, also after it closes, and `next`: pass it as `before` for the next older page, until it is `null`. An `IntentAttested` event's `net` is what the payee received. This prints `Filled`, then `IntentAttested` and the worker's pay in SOL.
 
 ```ts
 import { generateKeyPairSync } from "node:crypto";
@@ -145,9 +146,9 @@ const job = await client.createIntent({ ...order, params: work });
 const workSha256 = createHash("sha256").update("the work behind the proof").digest("hex");
 const made = await client.announce({ worker, payer: signer, intent: job.intent, sha256: workSha256, url: "https://example.org/proof.tar" });
 const opening = { sha256: workSha256, salt: made.salt };
-await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: job.nonce, announcement: made.announcement, opening, result: 1n });
-console.log(statusName((await client.intent(signer.address, job.nonce))?.intent.status ?? -1));
-const paid = eventNamed(await client.history(job.intent), "IntentAttested");
+await client.settleProof({ judge, payer: signer, intent: job.intent, announcement: made.announcement, opening, result: 1n });
+console.log(statusName((await client.intent(job.intent))?.intent.status ?? -1));
+const paid = eventNamed((await client.history(job.intent)).events, "IntentAttested");
 console.log(paid?.name);
 console.log(formatAmount(paid?.fields.net ?? 0n, sell.decimals));
 ```
@@ -174,15 +175,15 @@ The engine has no refusal call: a judge that rejects the work sends nothing, and
 
 ```ts
 const refused = await client.createIntent({ ...order, params: work });
-await client.cancel(signer, refused.nonce);
-const late = await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: refused.nonce, announcement: made.announcement, opening, result: 1n }).catch((error: unknown) => error);
-console.log(statusName((await client.intent(signer.address, refused.nonce))?.intent.status ?? -1), (late as Error).name);
+await client.cancel(signer, refused.intent);
+const late = await client.settleProof({ judge, payer: signer, intent: refused.intent, announcement: made.announcement, opening, result: 1n }).catch((error: unknown) => error);
+console.log(statusName((await client.intent(refused.intent))?.intent.status ?? -1), (late as Error).name);
 await client.unwrap(signer);
 ```
 
 ## Expire and close
 
-`expire` refunds an open intent once it has expired, and `close` returns the rent of a finished intent. Both take the signer, then the owner and nonce. The devnet filler also expires and closes overdue intents, in passes with a pause between them, so it may get there first; the code below allows for that. This prints `null`.
+`expire` refunds an open intent once it has expired, and `close` returns the rent of a finished intent. Both take the signer, then the intent. The devnet filler also expires and closes overdue intents, in passes with a pause between them, so it may get there first; the code below allows for that. This prints `null`.
 
 ```ts
 const due = (await client.chainTime()) + 10n;
@@ -191,20 +192,20 @@ while ((await client.chainTime()) < due) {
   await sleep(1_000);
 }
 try {
-  await client.expire(signer, signer.address, brief.nonce);
+  await client.expire(signer, brief.intent);
 } catch (error) {
-  if ((await client.intent(signer.address, brief.nonce))?.intent.status === IntentStatus.Open) {
+  if ((await client.intent(brief.intent))?.intent.status === IntentStatus.Open) {
     throw error;
   }
 }
 try {
-  await client.close(signer, signer.address, brief.nonce);
+  await client.close(signer, brief.intent);
 } catch (error) {
-  if ((await client.intent(signer.address, brief.nonce)) !== null) {
+  if ((await client.intent(brief.intent)) !== null) {
     throw error;
   }
 }
-console.log(await client.intent(signer.address, brief.nonce));
+console.log(await client.intent(brief.intent));
 await client.unwrap(signer);
 ```
 
@@ -236,7 +237,7 @@ const sha256 = createHash("sha256").update("the delivered work").digest("hex");
 await client.announce({ worker: signer, intent: posted.intent, sha256, url: "https://example.org/work.tar" });
 const first = await client.firstOpening({ intent: posted.intent, sha256, keypair: judgeKeypair });
 console.log(first.worker === signer.address, first.sha256 === sha256);
-await client.settleProof({ judge, payer: signer, owner: signer.address, nonce: posted.nonce, announcement: first.announcement, opening: first, result: 1n });
+await client.settleProof({ judge, payer: signer, intent: posted.intent, announcement: first.announcement, opening: first, result: 1n });
 await client.unwrap(signer);
 ```
 
@@ -305,8 +306,56 @@ const job = await world.client.createIntent({ signer: owner, inputMint: NATIVE_M
 const sha256 = createHash("sha256").update("the work").digest("hex");
 await world.client.announce({ worker, intent: job.intent, sha256, url: "https://example.org/work.tar" });
 const first = await world.client.firstOpening({ intent: job.intent, sha256, keypair: judge.keypair });
-await world.client.settleProof({ judge, owner: owner.address, nonce: job.nonce, announcement: first.announcement, opening: first, result: 1n });
+await world.client.settleProof({ judge, intent: job.intent, announcement: first.announcement, opening: first, result: 1n });
 console.log(formatAmount(await world.tokenBalance(worker.address, NATIVE_MINT), 9));
+```
+
+## Plan, sign and send yourself
+
+`client.plan` builds what each write sends and sends nothing, for an app that signs through a wallet adapter, a multisig or a bundle service.
+
+- `client.plan` has one method per write: `createIntent`, `cancel`, `fill`, `expire`, `close`, `settleProof`, `settleCommittee`, `settleSplit`, `announce`, `refute`, `reclaim`, `closeBook`, `feedback`, `createCommittee` and `unwrap`.
+- A plan names the `payer`, the `setup` instructions that land first, the `instructions`, the signers each one needs in `setupSigners` and `signers`, and the `lookupTables` it relies on, which are none.
+- Each write sends its own plan, `setup` first, and refuses a signer that is not the plan's `payer`.
+- `reclaim` splits its instructions into `batches`, one transaction each. A plan with no instructions sends nothing: `unwrap` with nothing wrapped, `createCommittee` for a committee that exists, `announce` for an announcement made before.
+- Every call that names one intent takes its address or `{ owner, nonce }`.
+- `createIntent` takes `partner` with `partnerBps`, from 1 to 100, a partner fee each fill pays, and `payTo`, the wallet that receives what a swap, limit order or auction buys; a proof escrow takes no `payTo`.
+- `amount` turns decimal text into base units at the mint's decimals and refuses a negative, a non-number or too many decimals with `InvalidInput`; `format` turns base units back into text.
+
+This plans a proof escrow of 0.5 SOL in the test world, signs it with `@solana/kit` and sends it through the world's transport, then reads it back. On a cluster, send the signed transaction with your own RPC, such as kit's `sendAndConfirmTransactionFactory`. This prints `Open 0.5`.
+
+```ts
+import { createHash } from "node:crypto";
+import {
+  appendTransactionMessageInstructions,
+  createTransactionMessage,
+  getBase64EncodedWireTransaction,
+  pipe,
+  setTransactionMessageFeePayerSigner,
+  setTransactionMessageLifetimeUsingBlockhash,
+  signTransactionMessageWithSigners,
+} from "@solana/kit";
+import { attestedResult, DEVNET_TEST_MINT, NATIVE_MINT, statusName } from "@intent-engine/core";
+import { createTestWorld } from "@intent-engine/client/testing";
+
+const world = await createTestWorld();
+const [owner, judge] = [await world.wallet(), await world.wallet()];
+const specHash = new Uint8Array(createHash("sha256").update("the spec").digest());
+const amountIn = await world.client.amount(NATIVE_MINT, "0.5");
+const params = attestedResult({ amountIn, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash, judgeFee: 0n });
+const plan = await world.client.plan.createIntent({ signer: owner, inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT, params });
+for (const instructions of [plan.setup, plan.instructions].filter((part) => part.length > 0)) {
+  const latest = await world.transport.latestBlockhash();
+  const message = pipe(
+    createTransactionMessage({ version: 0 }),
+    (m) => setTransactionMessageFeePayerSigner(owner, m),
+    (m) => setTransactionMessageLifetimeUsingBlockhash(latest, m),
+    (m) => appendTransactionMessageInstructions(instructions, m),
+  );
+  await world.transport.sendWire(getBase64EncodedWireTransaction(await signTransactionMessageWithSigners(message)), latest);
+}
+const held = await world.client.intent(plan.intent);
+console.log(statusName(held?.intent.status ?? -1), await world.client.format(NATIVE_MINT, held?.intent.escrowed ?? 0n));
 ```
 
 ## Next

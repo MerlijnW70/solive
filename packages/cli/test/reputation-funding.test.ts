@@ -77,7 +77,7 @@ describe("reputation funded by the worker, in the command and the tool", () => {
       });
       const [intent] = await findIntentPda({ owner: owner.address, nonce });
       const made = await client.announce({ worker, intent, sha256, url: "https://" + "example.org/work" });
-      await client.settleProof({ judge, owner: owner.address, nonce, announcement: made.announcement, opening: { sha256, salt: made.salt }, result: 1n });
+      await client.settleProof({ judge, intent: { owner: owner.address, nonce }, announcement: made.announcement, opening: { sha256, salt: made.salt }, result: 1n });
       return intent;
     };
     const direct = await job(await fundedBy(worker), "a1".repeat(32));

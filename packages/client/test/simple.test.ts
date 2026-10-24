@@ -84,8 +84,8 @@ describe("the simple sdk layer", () => {
     expect(w.chain.sent).toContain(swapped.signature);
     const solver = await funded(w.chain);
     await mintTest(w, solver, 5_000_000_000n);
-    await solive.client.fill({ solver, owner: signer.address, nonce: 0n });
-    expect((await solive.client.intent(signer.address, 0n))?.intent.status).toBe(IntentStatus.Filled);
+    await solive.client.fill({ solver, intent: { owner: signer.address, nonce: 0n } });
+    expect((await solive.client.intent({ owner: signer.address, nonce: 0n }))?.intent.status).toBe(IntentStatus.Filled);
     const { tokens: held, summary } = await solive.balance();
     expect(held.map(({ token, amount }) => [token, amount])).toEqual([
       ["SOL", "0"],
@@ -111,7 +111,7 @@ describe("the simple sdk layer", () => {
     const released = await reviewer.release({ escrow: escrowAddress, to: worker.address, deliveredSha256: work, keypair });
     expect(released.summary).toBe(`Release escrow ${escrowAddress} holding 0.01 SOL to ${worker.address} for work ${work}, announced first in ${delivered.announcement}`);
     expect(w.chain.sent).toContain(released.signature);
-    expect((await buyer.client.intent(owner.address, escrow.nonce ?? 0n))?.intent.status).toBe(IntentStatus.Filled);
+    expect((await buyer.client.intent({ owner: owner.address, nonce: escrow.nonce ?? 0n }))?.intent.status).toBe(IntentStatus.Filled);
     const pay = 10_000_000n;
     const judgeFee = 1_000_000n;
     const { net } = splitFees(pay - judgeFee, feeBpsFor(await buyer.client.config(), Kind.AttestedResult), 0, 0);
@@ -139,7 +139,7 @@ describe("the simple sdk layer", () => {
     await expect(solive.swap({ sell: w.inputMint, amount: "0.0000001", buy: w.outputMint, minReceive: "1" })).rejects.toThrow("amount:");
     await expect(solive.swap({ sell: w.inputMint, amount: "0.001", buy: w.outputMint, minReceive: "-1" })).rejects.toThrow("minReceive:");
     const placed = await solive.swap({ sell: w.inputMint, amount: "0.000999", buy: w.outputMint, minReceive: "0.000001" });
-    const { intent } = (await solive.client.intent(w.owner.address, placed.nonce ?? 0n)) ?? {};
+    const { intent } = (await solive.client.intent({ owner: w.owner.address, nonce: placed.nonce ?? 0n })) ?? {};
     expect([intent?.escrowed, intent?.kind]).toEqual([999n, Kind.SwapExactIn]);
     const held = await solive.balance([w.inputMint]);
     expect(held.tokens).toEqual([{ token: w.inputMint, mint: w.inputMint, account: await ata(w.owner.address, w.inputMint), amount: "0.000001" }]);
@@ -166,14 +166,14 @@ describe("the simple sdk layer", () => {
     expect(w.chain.sent).toEqual(before);
     expect(w.chain.svm.getBalance(signer.address)).toBe(balance);
     expect(tokens(w, await ata(signer.address, WSOL))).toBeNull();
-    expect(await solive.client.intent(signer.address, 0n)).toBeNull();
+    expect(await solive.client.intent({ owner: signer.address, nonce: 0n })).toBeNull();
     const sent = await solive.swap({ sell: "SOL", amount: "0.05", buy: "TEST", minReceive: "5" });
     expect(sent.nonce).toBe(0n);
     expect(w.chain.sent).toHaveLength(before.length + 1);
     const cancel = await solive.cancel({ intent: sent.intent as Address, preview: true });
     expect(cancel.summary).toBe(`Cancel ${sent.intent} and return 0.05 SOL to ${signer.address}`);
     expect(w.chain.sent).toHaveLength(before.length + 1);
-    expect((await solive.client.intent(signer.address, 0n))?.intent.status).toBe(IntentStatus.Open);
+    expect((await solive.client.intent({ owner: signer.address, nonce: 0n }))?.intent.status).toBe(IntentStatus.Open);
   });
 
   it("connect refuses mainnet unless allowed", async () => {

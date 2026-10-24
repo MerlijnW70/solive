@@ -51,7 +51,7 @@ import {
   parseAmount,
 } from "@intent-engine/core";
 import type { Fetch } from "@intent-engine/solver";
-import type { EngineAccountFilter, EngineTransaction, SpecFetch, Transport } from "@intent-engine/client";
+import { type EngineAccountFilter, type EngineTransaction, intentMatches, matchBytes, type SpecFetch, type Transport } from "@intent-engine/client";
 import { createTestWorld, ECONOMICS_UNSET, TEST_WALLET_SOL } from "@intent-engine/client/testing";
 import type { Runtime } from "../src/commands.js";
 import { main } from "../src/main.js";
@@ -129,7 +129,7 @@ const startsWith = (data: Uint8Array, head: ArrayLike<number>, at: number): bool
 const matches = (data: Uint8Array, filter: EngineAccountFilter): boolean =>
   (filter.dataSize === undefined || data.length === filter.dataSize) &&
   startsWith(data, filter.discriminator, 0) &&
-  (filter.match ?? []).every(({ offset, address }) => startsWith(data, getAddressEncoder().encode(address), offset));
+  (filter.match ?? []).every((match) => startsWith(data, matchBytes(match), match.offset));
 
 export async function send(payer: TransactionSigner, ixs: readonly Instruction[]): Promise<string> {
   h.svm.expireBlockhash();
@@ -244,7 +244,7 @@ export const transport: Transport = {
       throw new Error("scan refused");
     }
     const found = [];
-    for (const owner of only === undefined ? h.watched : [only]) {
+    for (const owner of only?.owner === undefined ? h.watched : [only.owner]) {
       const lanes = [1n, 2n, 3n].flatMap((serial) => Array.from({ length: 10 }, (_, i) => MANDATE_NONCE_BIT | (serial << 32n) | BigInt(i)));
       for (const nonce of [...Array.from({ length: 10 }, (_, i) => BigInt(i)), ...lanes]) {
         const [address] = await findIntentPda({ owner, nonce });
@@ -254,7 +254,8 @@ export const transport: Transport = {
         }
       }
     }
-    return found;
+    const wanted = intentMatches(only);
+    return found.filter(({ data }) => wanted.every((match) => startsWith(data, matchBytes(match), match.offset)));
   },
   engineTransactions: async (limit, of) => {
     h.requestedLimits.push(limit);

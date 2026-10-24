@@ -69,7 +69,7 @@ async function market() {
     const [intent] = await findIntentPda({ owner: owner.address, nonce });
     const sha256 = (jobs++).toString(16).padStart(64, "0");
     const made = await client.announce({ worker, intent, sha256, url: "https://" + "example.org/work" });
-    await client.settleProof({ judge, owner: owner.address, nonce, announcement: made.announcement, opening: { sha256, salt: made.salt }, result: 1n });
+    await client.settleProof({ judge, intent: { owner: owner.address, nonce }, announcement: made.announcement, opening: { sha256, salt: made.salt }, result: 1n });
   };
   return { pays };
 }

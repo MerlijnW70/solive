@@ -121,12 +121,12 @@ describe("the wallet tools through a job on announcements", () => {
     expect(voted).toMatchObject({ signed: true, announcement: delivered["announcement"], worker: workerWallet, vote: { member: judgeWallet } });
     const client = createClient({ url: "http://cluster", transport: h.through ?? transport });
     const first = await client.firstOpening({ intent, sha256: WORK, keypair: h.keypairs.get(other.address) });
-    const theirs = await client.committeeBallot({ owner: judgeWallet, nonce: BigInt(escrow["nonce"] as string), announcement: first.announcement, opening: first, result: 1n });
+    const theirs = await client.committeeBallot({ intent: { owner: judgeWallet, nonce: BigInt(escrow["nonce"] as string) }, announcement: first.announcement, opening: first, result: 1n });
     const signed = await signCommitteeVote(other, theirs.digest, theirs.committee.members);
     const votes = [voted["vote"], { member: signed.member, signature: hex(signed.signature) }];
     const released = await sent(judge, "wallet_committee_release", { ...ballot, votes });
     expect(released).toMatchObject({ sent: true, announcement: delivered["announcement"], worker: workerWallet });
     expect(await paid(workerWallet)).toBeGreaterThan(0n);
-    expect((await client.intent(judgeWallet, BigInt(escrow["nonce"] as string)))?.intent.status).toBe(IntentStatus.Filled);
+    expect((await client.intent({ owner: judgeWallet, nonce: BigInt(escrow["nonce"] as string) }))?.intent.status).toBe(IntentStatus.Filled);
   });
 });

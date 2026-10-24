@@ -28,7 +28,7 @@ const escrowRef = {
 async function claimsFor(ctx: AgentContext, owner: Address, nonce: bigint) {
   const client = createClient({ url: ctx.url ?? "", transport: ctx.transport });
   const [intent] = await findIntentPda({ owner, nonce });
-  return { client, intent, view: await client.claims(owner, nonce) };
+  return { client, intent, view: await client.claims({ owner, nonce }) };
 }
 
 const waitingWorkers = (waiting: number) => `${waiting} ${waiting === 1 ? "worker stands" : "workers stand"} by`;
@@ -222,7 +222,7 @@ async function takeStep(client: ReturnType<typeof createClient>, escrow: Escrow,
     throw new InvalidInput([{ path: "secs", message: `this escrow allows at most ${view.maxSecs} seconds` }]);
   }
   const now = await client.chainTime();
-  const found = await client.intent(escrow.owner, escrow.nonce);
+  const found = await client.intent({ owner: escrow.owner, nonce: escrow.nonce });
   if (found === null || found.intent.status !== IntentStatus.Open || now >= found.intent.expiresAt) {
     throw new AgentRefusal("InvalidTransition", `escrow ${intent} is no longer open, so its job cannot be claimed`);
   }

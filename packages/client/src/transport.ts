@@ -5,6 +5,7 @@ export type {
   EngineAccountFilter,
   EngineTransaction,
   FinalizedBlock,
+  IntentQuery,
   IntentRead,
   Latest,
   ListedSignature,

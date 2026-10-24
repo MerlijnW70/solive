@@ -1,21 +1,21 @@
-import { type Address, getAddressDecoder, type Instruction, type TransactionSigner } from "@solana/kit";
+import { type Address, createNoopSigner, getAddressDecoder, type Instruction, type TransactionSigner } from "@solana/kit";
 import { announcementCommitment, decodeParams, IntentStatus, InvalidInput, isSaltHex, Kind, splitFees } from "@intent-engine/core";
-import { chainTime, createdAccount, loadIntent, SYSTEM_PROGRAM_ADDRESS } from "./accounts.js";
+import { chainTime, createdAccount, SYSTEM_PROGRAM_ADDRESS } from "./accounts.js";
 import { sha256Bytes } from "./announce.js";
 import { loadAnnouncement } from "./announcement-reads.js";
 import { releaseClaims } from "./client-claims.js";
 import { EscrowExpired, NotSettleable, PayeeMoved, PayToNotWallet } from "./client-errors.js";
 import type { ClientContext, ReleaseOpening } from "./client-types.js";
+import { type IntentRef, loadIntentRef } from "./intent-ref.js";
 import { hex } from "./job-proofs.js";
 import { tokenAccountIfMissing } from "./setup.js";
 
 export type ReleaseTarget = {
-  owner: Address;
-  nonce: bigint;
+  intent: IntentRef;
   announcement: Address;
   opening: ReleaseOpening;
   result: bigint;
-  payer: TransactionSigner;
+  payer?: TransactionSigner | undefined;
 };
 
 export type Judged<J> = { feeOwner: Address; judge: J };
@@ -49,7 +49,7 @@ async function announced(context: ClientContext, intent: Address, target: Releas
   return { found, delivered, salt };
 }
 
-async function checkWallet(context: ClientContext, wallet: Address): Promise<void> {
+export async function checkWallet(context: ClientContext, wallet: Address): Promise<void> {
   const holder = await context.transport.getAccount(wallet);
   if (holder !== null && holder.owner !== SYSTEM_PROGRAM_ADDRESS) {
     throw new PayToNotWallet(wallet, holder.owner);
@@ -63,8 +63,10 @@ export async function releaseBasis<J>(
   judgeOf: (attestor: Address, intent: Address) => Promise<Judged<J>>,
 ) {
   const { transport, mint, config } = context;
-  const { owner, nonce, result, payer } = target;
-  const [{ address, intent: held }, settings] = await Promise.all([loadIntent(transport, owner, nonce), config()]);
+  const { result } = target;
+  const [{ address, intent: held }, settings] = await Promise.all([loadIntentRef(transport, target.intent), config()]);
+  const payer = target.payer ?? createNoopSigner(held.owner);
+  const { owner, nonce } = held;
   const params = decodeParams(held.kind, Uint8Array.from(held.params));
   if (params.kind !== Kind.AttestedResult) {
     throw new NotSettleable(address, "not-attested", "is not an AttestedResult intent");

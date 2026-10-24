@@ -89,7 +89,7 @@ describe("a committee judges a proof escrow", () => {
     const judgeFee = 100_000n;
     const { client, fresh, tokens, members, feeWallet, owner, nonce, deliver } = await setup(judgeFee);
     const { worker, delivered } = await deliver();
-    const target = { owner: owner.address, nonce, ...delivered, result: 2n };
+    const target = { intent: { owner: owner.address, nonce }, ...delivered, result: 2n };
     const ballot = await client.committeeBallot(target);
     const [intent] = await findIntentPda({ owner: owner.address, nonce });
     expect(ballot.intent).toBe(intent);
@@ -101,8 +101,8 @@ describe("a committee judges a proof escrow", () => {
     const fee = ((PAY - judgeFee) * BigInt(FEE_BPS)) / 10_000n;
     expect(await tokens(worker)).toBe(PAY - judgeFee - fee);
     expect(await tokens(feeWallet)).toBe(judgeFee);
-    expect((await client.intent(owner.address, nonce))?.intent).toMatchObject({ status: IntentStatus.Filled, filled: PAY });
-    const events = await client.history(intent);
+    expect((await client.intent({ owner: owner.address, nonce }))?.intent).toMatchObject({ status: IntentStatus.Filled, filled: PAY });
+    const { events } = await client.history(intent);
     const attested = events.find((e) => e.name === "CommitteeAttested");
     expect(attested?.fields).toMatchObject({ signers: [first.address, third.address] });
     expect(events.find((e) => e.name === "IntentAttested")).toMatchObject({ deliveredSha256: WORK, deliveredSalt: delivered.opening.salt });
@@ -111,7 +111,7 @@ describe("a committee judges a proof escrow", () => {
   it("refuses a forged vote, a vote over another payee, and too few votes before sending anything", async () => {
     const { client, fresh, members, owner, nonce, tokens, deliver } = await setup(0n);
     const { worker, delivered } = await deliver();
-    const target = { owner: owner.address, nonce, ...delivered, result: 1n };
+    const target = { intent: { owner: owner.address, nonce }, ...delivered, result: 1n };
     const ballot = await client.committeeBallot(target);
     const other = await client.committeeBallot({ ...target, ...(await deliver(sha("other work"))).delivered });
     const [a, b] = members;
@@ -140,13 +140,13 @@ describe("a committee judges a proof escrow", () => {
   it("sends only the threshold's votes, and every transaction fits a packet", async () => {
     const { w, client, members, owner, nonce, fresh, deliver } = await setup(100_000n);
     const { delivered } = await deliver();
-    const target = { owner: owner.address, nonce, ...delivered, result: 1n };
+    const target = { intent: { owner: owner.address, nonce }, ...delivered, result: 1n };
     const { digest, committee } = await client.committeeBallot(target);
     const votes = await Promise.all(members.map((m) => signCommitteeVote(m, digest, committee.members)));
     const solver = members[2] as KeyPairSigner;
     w.chain.svm.airdrop(solver.address, lamports(SOL));
-    const release = await client.prepareCommitteeRelease({ ...target, solver, votes });
-    expect(release.signers).toHaveLength(2);
+    const release = await client.plan.settleCommittee({ ...target, solver, votes });
+    expect(release.voters).toHaveLength(2);
     expect(release.setup.length).toBeGreaterThan(0);
     for (const part of [release.setup, release.instructions]) {
       const size = await transactionBytes(client.transport, await budgeted(client.transport, 0n, part, solver.address), solver.address);
@@ -166,7 +166,7 @@ describe("a committee judges a proof escrow", () => {
       outputMint: w.outputMint,
     });
     await expect(
-      client.committeeBallot({ owner: owner.address, nonce, announcement: judge.address, opening: { sha256: WORK, salt: "00".repeat(16) }, result: 1n }),
+      client.committeeBallot({ intent: { owner: owner.address, nonce }, announcement: judge.address, opening: { sha256: WORK, salt: "00".repeat(16) }, result: 1n }),
     ).rejects.toThrow(NotSettleable);
   });
 });

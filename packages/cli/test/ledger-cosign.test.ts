@@ -81,7 +81,7 @@ describe("committee and split cosigners on a Ledger", () => {
     const key = await deviceKey();
     const p = await panel(key);
     const first = await p.client.firstOpening({ intent: p.intent, sha256: p.work, keypair: h.keypairs.get(p.keys["m1.json"]?.address as Address) });
-    const ballot = await p.client.committeeBallot({ owner: p.w.owner.address, nonce: 0n, announcement: first.announcement, opening: first, result: 1n });
+    const ballot = await p.client.committeeBallot({ intent: { owner: p.w.owner.address, nonce: 0n }, announcement: first.announcement, opening: first, result: 1n });
     const voting = device(key, [...found(LEVELS, key), ...messageThen()]);
     const voted = await run(p.vote("usb://ledger", "a.json"), p.keys, voting);
     expect([voted.code, voted.err]).toEqual([EXIT_OK, ""]);
@@ -124,7 +124,7 @@ describe("committee and split cosigners on a Ledger", () => {
     const recipients = [key.address, coauthor.address];
     const weights = [7_000, 3_000];
     const made = await announced(intent, coauthor, sha("split work"));
-    const target = { owner: w.owner.address, nonce: 0n, announcement: made.announcement, opening: { sha256: sha("split work"), salt: made.salt }, result: 1n, recipients: recipients.map((wallet, i) => ({ wallet, weight: weights[i] ?? 0 })) };
+    const target = { intent: { owner: w.owner.address, nonce: 0n }, announcement: made.announcement, opening: { sha256: sha("split work"), salt: made.salt }, result: 1n, recipients: recipients.map((wallet, i) => ({ wallet, weight: weights[i] ?? 0 })) };
     const { message } = await client.splitBallot(target);
     const ledger = device(key, [...found(LEVELS, key), ...messageThen()]);
     const onDevice = await ledgerSigner("usb://ledger", ledger.open);

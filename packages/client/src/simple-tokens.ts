@@ -1,6 +1,6 @@
 import { type Address, isAddress } from "@solana/kit";
 import type { ClusterChoice } from "./simple-types.js";
-import { DEVNET_TEST_MINT, formatAmount, InvalidInput, NATIVE_MINT, parseAmount, SdkError, tokenName } from "@intent-engine/core";
+import { DEVNET_TEST_MINT, formatAmount, InvalidInput, NATIVE_MINT, parseAmount, SdkError, tokenName, U64_MAX } from "@intent-engine/core";
 
 export type Cluster = "devnet" | "testnet" | "mainnet" | "localnet";
 
@@ -56,13 +56,26 @@ export function mintOfToken(token: string, url: string): Address {
 
 export const nameOfMint = (mint: Address): string => tokenName(mint) ?? mint;
 
-export function tokenAmount(text: string, decimals: number, field = "amount"): bigint {
-  let raw: bigint;
+export function amountText(text: string, decimals: number, field = "amount"): bigint {
+  if (typeof text !== "string") {
+    throw new InvalidInput(field, "format", `${field}: ${String(text)} is not a token amount like 12 or 0.5`);
+  }
   try {
-    raw = parseAmount(text.trim(), decimals);
+    return parseAmount(text.trim(), decimals);
   } catch (error) {
     throw new InvalidInput(field, "format", `${field}: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
+}
+
+export function amountShown(amount: bigint, decimals: number, field = "amount"): string {
+  if (typeof amount !== "bigint" || amount < 0n || amount > U64_MAX) {
+    throw new InvalidInput(field, "range", `${field}: ${String(amount)} is not a token amount in base units, from 0 to ${U64_MAX}`);
+  }
+  return formatAmount(amount, decimals);
+}
+
+export function tokenAmount(text: string, decimals: number, field = "amount"): bigint {
+  const raw = amountText(text, decimals, field);
   if (raw === 0n) {
     throw new InvalidInput(field, "range", `${field}: ${text} must be more than 0`);
   }

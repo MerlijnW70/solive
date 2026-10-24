@@ -32,8 +32,8 @@ describe("a claim held when its escrow is cancelled", () => {
     const clock = w.chain.svm.getClock();
     clock.unixTimestamp = claimedAt + 599n;
     w.chain.svm.setClock(clock);
-    await client.cancel(owner, nonce);
-    expect((await client.intent(owner.address, nonce))?.intent.status).toBe(IntentStatus.Cancelled);
+    await client.cancel(owner, { owner: owner.address, nonce });
+    expect((await client.intent({ owner: owner.address, nonce }))?.intent.status).toBe(IntentStatus.Cancelled);
 
     clock.unixTimestamp = claimedAt + 600n;
     w.chain.svm.setClock(clock);

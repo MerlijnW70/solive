@@ -15,7 +15,16 @@ export type ProgramAccount = { address: Address; data: Uint8Array };
 
 export type EngineAccount = ProgramAccount & { lamports: bigint };
 
-export type AccountMatch = { offset: number; address: Address };
+export type AccountMatch = { offset: number; address: Address } | { offset: number; bytes: ReadonlyUint8Array };
+
+export type IntentQuery = {
+  owner?: Address | undefined;
+  status?: number | undefined;
+  kind?: number | undefined;
+  inputMint?: Address | undefined;
+  outputMint?: Address | undefined;
+  attestor?: Address | undefined;
+};
 
 export type EngineAccountFilter = { discriminator: ReadonlyUint8Array; dataSize?: number; match?: readonly AccountMatch[] };
 
@@ -64,7 +73,7 @@ export interface Transport {
   submitWire(wire: Base64EncodedWireTransaction): Promise<string>;
   simulate(wire: Base64EncodedWireTransaction, watch?: readonly Address[]): Promise<Simulation>;
   genesisHash(): Promise<string>;
-  intents(owner?: Address, read?: IntentRead): Promise<ProgramAccount[]>;
+  intents(query?: IntentQuery, read?: IntentRead): Promise<ProgramAccount[]>;
   engineAccounts?(filter?: EngineAccountFilter): Promise<EngineAccount[]>;
   engineTransactions(limit: number, of?: Address, memo?: string): Promise<EngineTransaction[]>;
   signaturesOf?(of: Address, limit: number, before?: string): Promise<ListedSignature[]>;

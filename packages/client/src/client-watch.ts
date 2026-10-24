@@ -84,7 +84,7 @@ export function watchIntents(
           reading.at = slot;
         },
       };
-      const accounts = await transport.intents(filter.owner, reading).catch((error: unknown) => {
+      const accounts = await transport.intents({ owner: filter.owner }, reading).catch((error: unknown) => {
         failed(error);
         return null;
       });

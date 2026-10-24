@@ -99,7 +99,7 @@ describe("a client over the engine", () => {
     expect(config.feeBps).toBe(FEE_BPS);
 
     expect(await client.nextNonce(w.owner.address)).toBe(0n);
-    expect(await client.intent(w.owner.address, 0n)).toBeNull();
+    expect(await client.intent({ owner: w.owner.address, nonce: 0n })).toBeNull();
     await client.send([await buildInitUser({ owner: w.owner })], w.owner);
     expect(await client.nextNonce(w.owner.address)).toBe(0n);
 
@@ -108,7 +108,7 @@ describe("a client over the engine", () => {
     expect(await client.nextNonce(w.owner.address)).toBe(1n);
 
     const [address] = await findIntentPda({ owner: w.owner.address, nonce: 0n });
-    const found = await client.intent(w.owner.address, 0n);
+    const found = await client.intent({ owner: w.owner.address, nonce: 0n });
     expect(found?.address).toBe(address);
     expect(found?.intent).toMatchObject({ owner: w.owner.address, nonce: 0n, escrowed: ESCROW, status: IntentStatus.Open });
 
@@ -170,7 +170,7 @@ describe("a client over the engine", () => {
     expect(explained).not.toBeNull();
     expect(explained).toEqual(ENGINE_ERRORS.get(explained?.code ?? -1));
     expect(explained?.name).toBe("ExpiryNotInFuture");
-    expect(await client.intent(w.owner.address, 0n)).toBeNull();
+    expect(await client.intent({ owner: w.owner.address, nonce: 0n })).toBeNull();
   });
 
   it("watches intents by polling the transport until the signal aborts", async () => {
@@ -292,11 +292,11 @@ describe("a client over the engine", () => {
     await until(() => statuses.includes(IntentStatus.Open));
     await client.send([await cancel(w, 0n)], w.owner);
     await until(() => statuses.includes(IntentStatus.Cancelled));
-    await client.close(w.owner, w.owner.address, 0n);
+    await client.close(w.owner, { owner: w.owner.address, nonce: 0n });
     await until(() => closed.length === 1);
     await twoMoreReads(counted);
     expect(closed.map((gone) => gone.map((c) => [c.address, c.intent.nonce, c.intent.status]))).toEqual([[[address, 0n, IntentStatus.Cancelled]]]);
-    expect(await client.intent(w.owner.address, 0n)).toBeNull();
+    expect(await client.intent({ owner: w.owner.address, nonce: 0n })).toBeNull();
 
     controller.abort();
     await watching;
@@ -392,7 +392,7 @@ describe("a client that holds up", () => {
     await client.send([await buildInitUser({ owner: counting })], counting);
     expect(signed).toBe(1);
     await client.send([await create(w, client, 0n)], w.owner);
-    expect((await client.intent(w.owner.address, 0n))?.intent.status).toBe(IntentStatus.Open);
+    expect((await client.intent({ owner: w.owner.address, nonce: 0n }))?.intent.status).toBe(IntentStatus.Open);
   });
 
   it("watch does not report an intent closed from a stale resync", async () => {

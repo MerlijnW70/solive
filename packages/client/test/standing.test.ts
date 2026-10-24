@@ -93,14 +93,14 @@ describe("worker standing from announcements, releases and refutations", () => {
     const { w, client, judge, owner, intent, nonce } = await job();
     const [worker, stranger] = [await fundedSigner(w), await fundedSigner(w)];
     const made = await announced(client, worker, intent, WORK);
-    const release = await client.settleProof({ judge: judge.signer, owner: owner.address, nonce, ...made, result: 1n });
+    const release = await client.settleProof({ judge: judge.signer, intent: { owner: owner.address, nonce }, ...made, result: 1n });
     const clock = w.chain.svm.getClock();
     clock.unixTimestamp += delivery.REFUTE_WINDOW_SECS + 1n;
     w.chain.svm.setClock(clock);
     await client.send([await buildCloseAnnouncement({ by: stranger, announcement: made.announcement, intent, rentTo: worker.address })], stranger);
-    await client.close(stranger, owner.address, nonce);
+    await client.close(stranger, { owner: owner.address, nonce });
     expect(w.chain.svm.getAccount(made.announcement).exists).toBe(false);
-    expect(await client.intent(owner.address, nonce)).toBeNull();
+    expect(await client.intent({ owner: owner.address, nonce })).toBeNull();
     const rep = await client.reputation(worker.address);
     expect(rep).toMatchObject({ complete: true, announced: 1, paid: 1 });
     expect(rep.records).toMatchObject([{ intent, announcement: made.announcement, seq: 1n, role: "announcer", outcome: "paid", release, sha256: WORK, refutations: [] }]);
@@ -116,7 +116,7 @@ describe("worker standing from announcements, releases and refutations", () => {
       { wallet: worker.address, weight: 7_000 },
       { wallet: coauthor.address, weight: 3_000 },
     ];
-    const target = { owner: owner.address, nonce, ...delivered, result: 1n, recipients };
+    const target = { intent: { owner: owner.address, nonce }, ...delivered, result: 1n, recipients };
     const ballot = await client.splitBallot(target);
     const signatures = await Promise.all([worker, coauthor].map(async (signer) => ({ wallet: signer.address, signature: await signMessageBytes(signer, ballot.message) })));
     const release = await client.settleSplit({ ...target, judge: judge.signer, signatures, payer: owner });
@@ -138,7 +138,7 @@ describe("worker standing from announcements, releases and refutations", () => {
     const grief = await unopenable(client, griefer, judge, intent);
     const earlier = await announced(client, early, intent, WORK, workUrl("first.tar"));
     const paid = await announced(client, late, intent, WORK);
-    await client.settleProof({ judge: judge.signer, owner: owner.address, nonce, ...paid, result: 1n });
+    await client.settleProof({ judge: judge.signer, intent: { owner: owner.address, nonce }, ...paid, result: 1n });
     await client.send([await buildRefuteRelease({ earlierWorker: griefer, payer: griefer, paid: paid.announcement, earlier: grief.announcement, salt: grief.salt, esk: grief.esk })], griefer);
     const unsubstantiated = { refutation: await refutationAddress(grief.announcement), earlier: grief.announcement, earlierSeq: 1n, earlierWorker: griefer.address, standing: "unsubstantiated" };
     const alone = await client.reputation(late.address);
@@ -164,7 +164,7 @@ describe("worker standing from announcements, releases and refutations", () => {
     const [early, late] = [await fundedSigner(w), await fundedSigner(w)];
     const earlier = await announced(client, early, intent, WORK, workUrl("first.tar"));
     const paid = await announced(client, late, intent, WORK);
-    await client.settleProof({ judge: judge.signer, owner: owner.address, nonce, ...paid, result: 1n });
+    await client.settleProof({ judge: judge.signer, intent: { owner: owner.address, nonce }, ...paid, result: 1n });
     const { refutation } = await client.refute({ worker: early, earlier: earlier.announcement, paid: paid.announcement, sha256: WORK, url: workUrl("first.tar") });
     expect((await client.reputation(late.address)).records).toMatchObject([{ refutedBy: refutation, refutations: [{ refutation, standing: "substantiated" }] }]);
     await profile(true);
@@ -177,7 +177,7 @@ describe("worker standing from announcements, releases and refutations", () => {
   it(BULLETS.complete, async () => {
     const { w, client, judge, owner, intent, nonce } = await job();
     const worker = await fundedSigner(w);
-    await client.settleProof({ judge: judge.signer, owner: owner.address, nonce, ...(await announced(client, worker, intent, WORK)), result: 1n });
+    await client.settleProof({ judge: judge.signer, intent: { owner: owner.address, nonce }, ...(await announced(client, worker, intent, WORK)), result: 1n });
     expect(await client.reputation(worker.address)).toMatchObject({ complete: true, paid: 1 });
     expect((await client.reputation(worker.address)).reason).toBeUndefined();
     const { engineAccounts: _, ...blind } = w.chain.transport;
@@ -193,7 +193,7 @@ describe("worker standing from announcements, releases and refutations", () => {
   it(BULLETS.trust, async () => {
     const { w, client, judge, owner, escrow, intent, nonce } = await job();
     const worker = await fundedSigner(w);
-    await client.settleProof({ judge: judge.signer, owner: owner.address, nonce, ...(await announced(client, worker, intent, WORK)), result: 1n });
+    await client.settleProof({ judge: judge.signer, intent: { owner: owner.address, nonce }, ...(await announced(client, worker, intent, WORK)), result: 1n });
     const transport = w.chain.transport;
     expect((await trustOf(transport, owner.address, worker.address)).score).toBeGreaterThan(0);
     const forged = withoutAuthority(transport, ["DeliveryReleased"]);
@@ -204,7 +204,7 @@ describe("worker standing from announcements, releases and refutations", () => {
     const self = await fundedSigner(w);
     const own = await escrow(self.address);
     const selfMade = await announced(client, self, own.intent, sha("self-judged work"));
-    await client.settleProof({ judge: self, owner: owner.address, nonce: own.nonce, ...selfMade, result: 1n });
+    await client.settleProof({ judge: self, intent: { owner: owner.address, nonce: own.nonce }, ...selfMade, result: 1n });
     expect(await reputationOf(transport, self.address)).toMatchObject({ paid: 0, selfDealt: 1 });
     expect((await trustOf(transport, owner.address, self.address)).score).toBe(0);
   });

@@ -21,7 +21,7 @@ export async function judgeDigest(command: JudgeDigestCommand, transport: Transp
     throw new JudgeRefused(`--result ${result} lies outside the results intent ${address} accepts, ${params.minResult} to ${params.maxResult}`);
   }
   const opening = { sha256: command.sha256, salt: command.salt };
-  const ballot = await createClient({ url: command.url, transport }).proofBallot({ owner: command.owner, nonce: command.nonce, announcement: command.announcement, opening, result });
+  const ballot = await createClient({ url: command.url, transport }).proofBallot({ intent: { owner: command.owner, nonce: command.nonce }, announcement: command.announcement, opening, result });
   return {
     intent: ballot.intent,
     judge: ballot.attestor,

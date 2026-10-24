@@ -6,13 +6,17 @@ import type { FeedbackInput, Reputation, ReputationOptions } from "./reputation.
 import type { EngineError } from "./errors.js";
 import type { AnnounceInput, Announced, AnnouncementPlan } from "./announce.js";
 import type { AnnouncementList, AnnouncementView } from "./announcement-reads.js";
-import type { ReclaimInput, Reclaimed, RefuteInput, Refuted } from "./announcement-sends.js";
+import type { ReclaimInput, ReclaimPlan, Reclaimed, RefuteInput, RefutePlan, Refuted } from "./announcement-sends.js";
+import type { CreateIntentPlan } from "./client-create.js";
+import type { CommitteeCreatePlan } from "./client-committee.js";
+import type { IntentRef } from "./intent-ref.js";
+import type { Plan } from "./plan.js";
 import type { SettleSplitInput, SplitBallot, SplitBallotInput } from "./client-split.js";
 import type { FirstOpening, FirstOpeningInput } from "./first-opening.js";
 import type { Job, Spec } from "./jobs.js";
 import type { CheckedFetch } from "./pinned-fetch.js";
 import type { SendStatus } from "./send-errors.js";
-import type { Notifications, Simulation, Transport } from "./transport.js";
+import type { IntentQuery, Notifications, Simulation, Transport } from "./transport.js";
 
 export type ClientOptions = {
   url: string;
@@ -26,7 +30,7 @@ export type ClientOptions = {
 
 export type IntentAccount = { address: Address; intent: Intent };
 
-export type IntentFilter = { owner?: Address; status?: number };
+export type IntentFilter = IntentQuery;
 
 export type WatchCallback = (changed: (IntentAccount & { slot?: bigint })[], closed: (IntentAccount & { slot?: bigint })[]) => void;
 
@@ -41,7 +45,9 @@ export type IntentPlacement = {
   expiresIn?: bigint;
   expiresAt?: bigint;
   nonce?: bigint;
-  receiver?: Address;
+  payTo?: Address;
+  partner?: Address;
+  partnerBps?: number;
 };
 
 export type ParamsWithSpec = { params: AttestedResultParams; specUrl: string } | { params: IntentParams; specUrl?: undefined };
@@ -56,8 +62,7 @@ export type ReleaseOpening = { sha256: string; salt: string };
 
 export type SettleProofInput = {
   judge: MessageSigner;
-  owner: Address;
-  nonce: bigint;
+  intent: IntentRef;
   announcement: Address;
   opening: ReleaseOpening;
   result: bigint;
@@ -71,8 +76,7 @@ export type CreateCommitteeInput = CommitteeTerms & { payer: TransactionSigner }
 export type CreatedCommittee = { committee: Address; signature: Signature | null };
 
 export type BallotInput = {
-  owner: Address;
-  nonce: bigint;
+  intent: IntentRef;
   announcement: Address;
   opening: ReleaseOpening;
   result: bigint;
@@ -99,22 +103,22 @@ export type SettleCommitteeInput = BallotInput & {
   payer?: TransactionSigner;
 };
 
-export type CommitteeRelease = {
+export type CommitteePlan = Plan & {
   intent: Address;
   committee: CommitteeView;
   payee: Address;
-  signers: Address[];
-  payer: TransactionSigner;
-  setup: Instruction[];
-  instructions: Instruction[];
+  voters: Address[];
 };
 
 export type HistoryEvent = EngineEvent & { signature: Signature; slot: bigint; blockTime: bigint | null; deliveredSha256?: string; deliveredSalt?: string };
 
+export type HistoryOptions = { limit?: number; before?: string };
+
+export type HistoryPage = { events: HistoryEvent[]; next: string | null };
+
 export type FillInput = {
   solver: TransactionSigner;
-  owner: Address;
-  nonce: bigint;
+  intent: IntentRef;
   amountIn?: bigint;
   amountOut?: bigint;
   route?: readonly Instruction[];
@@ -136,13 +140,32 @@ export type TokenBalance = { mint: Address; name: string | undefined; account: A
 
 export type Balances = { sol: bigint; tokens: TokenBalance[] };
 
+export type ClientPlans = {
+  createIntent(input: CreateIntentInput): Promise<CreateIntentPlan>;
+  cancel(signer: TransactionSigner, intent: IntentRef): Promise<Plan>;
+  fill(input: FillInput): Promise<Plan>;
+  expire(cranker: TransactionSigner, intent: IntentRef): Promise<Plan>;
+  close(cranker: TransactionSigner, intent: IntentRef): Promise<Plan>;
+  settleProof(input: SettleProofInput): Promise<Plan>;
+  settleCommittee(input: SettleCommitteeInput): Promise<CommitteePlan>;
+  settleSplit(input: SettleSplitInput): Promise<Plan>;
+  announce(input: AnnounceInput): Promise<AnnouncementPlan>;
+  refute(input: RefuteInput): Promise<RefutePlan>;
+  reclaim(input: ReclaimInput): Promise<ReclaimPlan>;
+  closeBook(intent: IntentRef, by: TransactionSigner): Promise<Plan>;
+  feedback(input: FeedbackInput): Promise<Plan>;
+  createCommittee(input: CreateCommitteeInput): Promise<CommitteeCreatePlan>;
+  unwrap(signer: TransactionSigner): Promise<Plan>;
+};
+
 export type Client = {
   readonly url: string;
   readonly transport: Transport;
+  readonly plan: ClientPlans;
   config(): Promise<Config>;
-  intent(owner: Address, nonce: bigint): Promise<IntentAccount | null>;
+  intent(intent: IntentRef): Promise<IntentAccount | null>;
   intents(filter?: IntentFilter): Promise<IntentAccount[]>;
-  history(intent: Address, limit?: number): Promise<HistoryEvent[]>;
+  history(intent: IntentRef, options?: HistoryOptions): Promise<HistoryPage>;
   nextNonce(owner: Address): Promise<bigint>;
   simulate(instructions: readonly Instruction[], signer: TransactionSigner): Promise<Simulation>;
   send(instructions: readonly Instruction[], signer: TransactionSigner): Promise<Signature>;
@@ -150,31 +173,31 @@ export type Client = {
   watch(onChange: WatchCallback, signal: AbortSignal, filter?: WatchOptions): Promise<void>;
   explain(error: unknown): EngineError | null;
   mint(address: Address): Promise<Mint>;
+  amount(mint: Address, text: string): Promise<bigint>;
+  format(mint: Address, amount: bigint): Promise<string>;
   chainTime(): Promise<bigint>;
   createIntent(input: CreateIntentInput): Promise<CreatedIntent>;
-  cancel(signer: TransactionSigner, nonce: bigint): Promise<Signature>;
+  cancel(signer: TransactionSigner, intent: IntentRef): Promise<Signature>;
   unwrap(signer: TransactionSigner): Promise<Signature | null>;
   settleProof(input: SettleProofInput): Promise<Signature>;
   proofBallot(input: BallotInput): Promise<ProofBallot>;
   committee(address: Address): Promise<CommitteeView | null>;
   createCommittee(input: CreateCommitteeInput): Promise<CreatedCommittee>;
   committeeBallot(input: BallotInput): Promise<CommitteeBallot>;
-  prepareCommitteeRelease(input: SettleCommitteeInput): Promise<CommitteeRelease>;
   settleCommittee(input: SettleCommitteeInput): Promise<Signature>;
-  claims(owner: Address, nonce: bigint): Promise<ClaimsView | null>;
+  claims(intent: IntentRef): Promise<ClaimsView | null>;
   profile(wallet: Address): Promise<ProfileView | null>;
   reputation(wallet: Address, options?: ReputationOptions): Promise<Reputation>;
   feedback(input: FeedbackInput): Promise<Signature>;
   fill(input: FillInput): Promise<Signature>;
-  fillOf(intent: Address): Promise<Fill | null>;
-  expire(cranker: TransactionSigner, owner: Address, nonce: bigint): Promise<Signature>;
-  close(cranker: TransactionSigner, owner: Address, nonce: bigint): Promise<Signature>;
+  fillOf(intent: IntentRef): Promise<Fill | null>;
+  expire(cranker: TransactionSigner, intent: IntentRef): Promise<Signature>;
+  close(cranker: TransactionSigner, intent: IntentRef): Promise<Signature>;
   balances(owner: Address, mints: readonly Address[]): Promise<Balances>;
   jobs(filter?: { attestor?: Address; mint?: Address; minSells?: bigint }): Promise<Job[]>;
-  spec(intent: Address, keypair?: Uint8Array): Promise<Spec | null>;
+  spec(intent: IntentRef, keypair?: Uint8Array): Promise<Spec | null>;
   announce(input: AnnounceInput): Promise<Announced>;
-  prepareAnnouncement(input: AnnounceInput): Promise<AnnouncementPlan>;
-  announcements(intent: Address): Promise<AnnouncementList>;
+  announcements(intent: IntentRef): Promise<AnnouncementList>;
   announcementsTo(attestor: Address): Promise<AnnouncementView[]>;
   announcementsBy(worker: Address): Promise<AnnouncementView[]>;
   firstOpening(input: FirstOpeningInput): Promise<FirstOpening>;
@@ -182,7 +205,7 @@ export type Client = {
   settleSplit(input: SettleSplitInput): Promise<Signature>;
   refute(input: RefuteInput): Promise<Refuted>;
   reclaim(input: ReclaimInput): Promise<Reclaimed>;
-  closeBook(intent: Address, by: TransactionSigner): Promise<Signature>;
+  closeBook(intent: IntentRef, by: TransactionSigner): Promise<Signature>;
 };
 
 export const SPEC_URL_NEEDS_PROOF = "specUrl needs an AttestedResult intent with a non-zero specHash";
@@ -192,6 +215,7 @@ export const MIN_EXPIRES_IN = 60n;
 export const MAX_EXPIRES_IN = 31_536_000n;
 export const EXPIRES_IN_RANGE = `expiresIn must be from ${MIN_EXPIRES_IN} to ${MAX_EXPIRES_IN} seconds`;
 export const HISTORY_LIMIT = 100;
+export const HISTORY_LIMIT_MAX = 1_000;
 
 export const WATCH_POLL_MS = 2_000;
 export const WATCH_WAIT_SECONDS = 10;

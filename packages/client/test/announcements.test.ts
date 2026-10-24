@@ -68,17 +68,17 @@ describe("announcing a delivery", () => {
     await announced(client, late, intent, WORK, workUrl("mine.tar"));
     const first = await client.firstOpening({ intent, sha256: WORK, keypair: judge.keypair });
     expect(first).toMatchObject({ intent, announcement: copied.announcement, seq: 1n, worker: early.address, salt: copied.opening.salt, url: workUrl(), sha256: WORK });
-    const signature = await client.settleProof({ judge: judge.signer, owner: owner.address, nonce, announcement: first.announcement, opening: first, result: 1n, payer: owner });
+    const signature = await client.settleProof({ judge: judge.signer, intent: { owner: owner.address, nonce }, announcement: first.announcement, opening: first, result: 1n, payer: owner });
     expect(w.chain.sent).toContain(signature);
     expect(await tokensOf(w, early.address)).toBeGreaterThan(0n);
     expect(await tokensOf(w, late.address)).toBeNull();
     expect(w.chain.svm.getBalance(judge.signer.address) ?? 0n).toBe(0n);
-    const attested = (await client.history(intent)).find(({ name }) => name === "IntentAttested");
+    const attested = (await client.history(intent)).events.find(({ name }) => name === "IntentAttested");
     expect(attested).toMatchObject({ signature, deliveredSha256: WORK, deliveredSalt: first.salt });
     const list = await client.announcements(intent);
     expect(list.announcements.map(({ state }) => state)).toEqual(["paid", "announced"]);
     expect(Buffer.from(list.announcements[0]?.delivered ?? []).toString("hex")).toBe(WORK);
-    expect((await client.intent(owner.address, nonce))?.intent.status).toBe(IntentStatus.Filled);
+    expect((await client.intent({ owner: owner.address, nonce }))?.intent.status).toBe(IntentStatus.Filled);
   });
 
   it("walks past an earlier announcement of other work and pays the first that opens to the checked work", async () => {
@@ -90,7 +90,7 @@ describe("announcing a delivery", () => {
     const first = await client.firstOpening({ intent, sha256: WORK, keypair: judge.keypair });
     expect(first).toMatchObject({ announcement: delivered.announcement, seq: 2n, worker: honest.address, skipped: [] });
     await expect(client.firstOpening({ intent, sha256: sha("nobody did this"), keypair: judge.keypair })).rejects.toMatchObject({ reason: "nothing-opens" });
-    await client.settleProof({ judge: judge.signer, owner: owner.address, nonce, announcement: first.announcement, opening: first, result: 1n, payer: owner });
+    await client.settleProof({ judge: judge.signer, intent: { owner: owner.address, nonce }, announcement: first.announcement, opening: first, result: 1n, payer: owner });
     expect(await tokensOf(w, honest.address)).toBeGreaterThan(0n);
     expect(await client.announcements(intent)).toMatchObject({ complete: false, closed: true, missing: [] });
     const closed = await client.firstOpening({ intent, sha256: WORK, keypair: judge.keypair }).catch((error: unknown) => error);
@@ -114,7 +114,7 @@ describe("announcing a delivery", () => {
     expect(first).toMatchObject({ announcement: delivered.announcement, seq: 2n, worker: honest.address });
     expect(first.skipped).toEqual([{ announcement: grief, seq: 1n, worker: griefer.address, reason: "does-not-open" }]);
     await expect(client.firstOpening({ intent, sha256: WORK })).rejects.toMatchObject({ reason: "key-not-given", announcement: grief });
-    await client.settleProof({ judge: judge.signer, owner: owner.address, nonce, announcement: first.announcement, opening: first, result: 1n, payer: owner });
+    await client.settleProof({ judge: judge.signer, intent: { owner: owner.address, nonce }, announcement: first.announcement, opening: first, result: 1n, payer: owner });
     expect(await tokensOf(w, honest.address)).toBeGreaterThan(0n);
     expect(await tokensOf(w, griefer.address)).toBeNull();
   });
@@ -144,7 +144,7 @@ describe("announcing a delivery", () => {
     const worker: KeyPairSigner = await fundedSigner(w);
     const swap = await client.createIntent({ signer: owner, params: { kind: Kind.SwapExactIn, amountIn: 10n, minOut: 1n }, inputMint: NATIVE_MINT, outputMint: w.outputMint });
     await expect(client.announce({ worker, intent: swap.intent, sha256: WORK, url: workUrl() })).rejects.toThrow(NotDeliverable);
-    await client.cancel(owner, nonce);
+    await client.cancel(owner, { owner: owner.address, nonce });
     await expect(client.announce({ worker, intent, sha256: WORK, url: workUrl() })).rejects.toThrow("is no longer open");
   });
 });

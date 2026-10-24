@@ -80,12 +80,12 @@ describe("announcing to a committee", () => {
       ],
     });
     const found = await client.firstOpening({ intent, sha256: WORK, keypair: second.keypair });
-    const target = { owner: owner.address, nonce, announcement: found.announcement, opening: found, result: 1n };
+    const target = { intent: { owner: owner.address, nonce }, announcement: found.announcement, opening: found, result: 1n };
     const ballot = await client.committeeBallot(target);
     const votes = await Promise.all([third, second].map(({ signer }) => signCommitteeVote(signer, ballot.digest, ballot.committee.members)));
     await client.settleCommittee({ ...target, solver: second.signer, votes });
     expect(await tokensOf(w, worker.address)).toBeGreaterThan(0n);
-    expect((await client.history(intent)).find(({ name }) => name === "IntentAttested")).toMatchObject({ deliveredSha256: WORK, deliveredSalt: found.salt });
+    expect((await client.history(intent)).events.find(({ name }) => name === "IntentAttested")).toMatchObject({ deliveredSha256: WORK, deliveredSalt: found.salt });
   });
 
   it("syncs again once a member's published key no longer matches the committee's snapshot", async () => {
@@ -143,7 +143,7 @@ describe("announcing to a committee", () => {
     expect(blocked.skipped).toEqual([{ announcement: grief, seq: 1n, worker: griefer.address, reason: "does-not-open" }]);
     const opened = await client.firstOpening({ intent, sha256: WORK, keypair: second.keypair });
     expect(opened).toMatchObject({ announcement: made.announcement, skipped: [] });
-    const target = { owner: owner.address, nonce, announcement: blocked.announcement, opening: blocked, result: 1n };
+    const target = { intent: { owner: owner.address, nonce }, announcement: blocked.announcement, opening: blocked, result: 1n };
     const ballot = await client.committeeBallot(target);
     const votes = await Promise.all([first, second].map(({ signer }) => signCommitteeVote(signer, ballot.digest, ballot.committee.members)));
     await client.settleCommittee({ ...target, solver: third.signer, votes });

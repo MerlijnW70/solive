@@ -2,124 +2,60 @@ import type { Address, TransactionSigner } from "@solana/kit";
 import {
   buildCancelIntent,
   buildCloseIntent,
-  buildCreateIntent,
   buildExpireIntent,
   buildFillIntent,
   decodeParams,
-  escrowAmount,
   findAssociatedTokenAddress,
-  findIntentPda,
   IntentStatus,
   InvalidInput,
   Kind,
   NATIVE_MINT,
-  nextFreeNonce,
   remainingOf,
   requiredOut,
-  specMemo,
   splitFees,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
 import { getCloseAccountInstruction } from "@solana-program/token";
-import { chainTime, createdAccount, loadIntent, loadUser, mintCapOf, type NonceWindow } from "./accounts.js";
-import { NoFreeNonce, NotFillable } from "./client-errors.js";
-import {
-  type ClientContext,
-  type CreatedIntent,
-  type CreateIntentInput,
-  DEFAULT_EXPIRES_IN,
-  EXPIRES_IN_RANGE,
-  type FillInput,
-  MAX_EXPIRES_IN,
-  MIN_EXPIRES_IN,
-  SPEC_URL_NEEDS_PROOF,
-} from "./client-types.js";
+import { chainTime, createdAccount } from "./accounts.js";
+import { NotFillable } from "./client-errors.js";
+import type { ClientContext, FillInput } from "./client-types.js";
 import { cancelClaims } from "./client-claims.js";
-import { escrowCommittee } from "./client-committee.js";
-import { memoInstruction, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic } from "./jobs.js";
-import { initUserIfMissing, tokenAccountIfMissing, wrapIfShort } from "./setup.js";
+import { type IntentRef, loadIntentRef } from "./intent-ref.js";
+import { type Plan, planOf } from "./plan.js";
+import { tokenAccountIfMissing, wrapIfShort } from "./setup.js";
 
-export function nonceAfter(owner: Address, user: NonceWindow | null): bigint {
-  if (user === null) {
-    return 0n;
-  }
-  const next = nextFreeNonce(user);
-  if (next === null) {
-    throw new NoFreeNonce(owner);
-  }
-  return next;
-}
+export const notOwnerCancel = (intent: Address, owner: Address, signer: Address): string =>
+  `intent ${intent} belongs to ${owner}, and only its owner cancels it, not ${signer}`;
 
-export function intentSends({ transport, send, mint, config }: ClientContext) {
-  const createIntent = async (input: CreateIntentInput): Promise<CreatedIntent> => {
-    const { signer, params, inputMint, outputMint } = input;
-    const owner = signer.address;
-    if (input.specUrl !== undefined && (params.kind !== Kind.AttestedResult || params.specHash.every((b) => b === 0))) {
-      throw new InvalidInput("specUrl", "conflict", SPEC_URL_NEEDS_PROOF);
+export function intentPlans({ transport, mint, config }: ClientContext) {
+  const cancel = async (signer: TransactionSigner, ref: IntentRef): Promise<Plan> => {
+    const { address, intent } = await loadIntentRef(transport, ref);
+    if (intent.owner !== signer.address) {
+      throw new InvalidInput("signer", "conflict", notOwnerCancel(address, intent.owner, signer.address));
     }
-    if (input.expiresIn !== undefined && (input.expiresIn < MIN_EXPIRES_IN || input.expiresIn > MAX_EXPIRES_IN)) {
-      throw new InvalidInput("expiresIn", "range", EXPIRES_IN_RANGE);
-    }
-    const published = input.specUrl === undefined ? [] : [memoInstruction(signer, specMemo(input.specUrl))];
-    if (input.specUrl !== undefined && (await plainHttpOnPublic(transport, input.specUrl))) {
-      throw new InvalidInput("specUrl", "format", `the spec url ${input.specUrl} ${PLAIN_HTTP_ON_PUBLIC}`);
-    }
-    const [settings, sell, buy, user, mintCap] = await Promise.all([
-      config(),
-      mint(inputMint),
-      mint(outputMint),
-      loadUser(transport, owner),
-      mintCapOf(transport, inputMint),
-    ]);
-    const judged = await escrowCommittee(transport, settings, inputMint, params);
-    const nonce = input.nonce ?? nonceAfter(owner, user);
-    const expiresAt = input.expiresAt ?? (await chainTime(transport)) + (input.expiresIn ?? DEFAULT_EXPIRES_IN);
-    const recipient = input.receiver ?? owner;
-    const receiver = await tokenAccountIfMissing(transport, signer, recipient, outputMint, buy.tokenProgram);
-    const wrap = await wrapIfShort(transport, signer, inputMint, sell.tokenProgram, escrowAmount(params));
-    const create = await buildCreateIntent({
-      owner: signer,
-      treasury: settings.feeRecipient,
-      maxCreateFee: settings.createFee,
-      maxBounty: settings.crankBounty,
-      nonce,
-      params,
-      expiresAt,
-      inputMint,
-      outputMint,
-      inputTokenProgram: sell.tokenProgram,
-      outputTokenProgram: buy.tokenProgram,
-      ...(recipient === owner ? {} : { receiver: receiver.address, receiverAuthority: recipient }),
-      ...(mintCap === undefined ? {} : { mintCap }),
-      ...judged,
-    });
-    const register = await initUserIfMissing(user, signer);
-    const signature = await send([...register, ...receiver.create, ...wrap.instructions, create, ...published], signer);
-    const [intent] = await findIntentPda({ owner, nonce });
-    return { signature, intent, nonce };
-  };
-
-  const cancel = async (signer: TransactionSigner, nonce: bigint) => {
-    const { intent } = await loadIntent(transport, signer.address, nonce);
     const { tokenProgram } = await mint(intent.inputMint);
     const refund = await tokenAccountIfMissing(transport, signer, signer.address, intent.inputMint, tokenProgram);
-    const [address] = await findIntentPda({ owner: signer.address, nonce });
     const claims = await cancelClaims(transport, address, intent.claims);
-    const cancel = await buildCancelIntent({ owner: signer, nonce, inputMint: intent.inputMint, tokenProgram, capped: intent.capped, ...(claims === undefined ? {} : { claims }) });
-    return send([...refund.create, cancel], signer);
+    const cancelled = await buildCancelIntent({
+      owner: signer,
+      nonce: intent.nonce,
+      inputMint: intent.inputMint,
+      tokenProgram,
+      capped: intent.capped,
+      ...(claims === undefined ? {} : { claims }),
+    });
+    return planOf({ payer: signer.address, instructions: [...refund.create, cancelled] });
   };
 
-  const unwrap = async (signer: TransactionSigner) => {
+  const unwrap = async (signer: TransactionSigner): Promise<Plan> => {
     const account = await findAssociatedTokenAddress({ owner: signer.address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
-    if ((await createdAccount(transport, account)) === null) {
-      return null;
-    }
-    return send([getCloseAccountInstruction({ account, destination: signer.address, owner: signer })], signer);
+    const held = (await createdAccount(transport, account)) !== null;
+    return planOf({ payer: signer.address, instructions: held ? [getCloseAccountInstruction({ account, destination: signer.address, owner: signer })] : [] });
   };
 
-  const fill = async (input: FillInput) => {
-    const { solver, owner, nonce } = input;
-    const [{ address, intent: held }, settings] = await Promise.all([loadIntent(transport, owner, nonce), config()]);
+  const fill = async (input: FillInput): Promise<Plan> => {
+    const { solver } = input;
+    const [{ address, intent: held }, settings] = await Promise.all([loadIntentRef(transport, input.intent), config()]);
     if (held.status !== IntentStatus.Open) {
       throw new NotFillable(address, "not-open", "is not open");
     }
@@ -143,8 +79,8 @@ export function intentSends({ transport, send, mint, config }: ClientContext) {
     ]);
     const filled = await buildFillIntent({
       solver,
-      owner,
-      nonce,
+      owner: held.owner,
+      nonce: held.nonce,
       inputMint: held.inputMint,
       outputMint: held.outputMint,
       inputTokenProgram: sell.tokenProgram,
@@ -163,25 +99,26 @@ export function intentSends({ transport, send, mint, config }: ClientContext) {
     });
     const setup = [solverInput, solverOutput, ...payouts].flatMap(({ create }) => create);
     const wrap = input.route === undefined ? (await wrapIfShort(transport, solver, held.outputMint, buy.tokenProgram, amountOut)).instructions : [];
-    return send([...setup, ...wrap, ...(input.route ?? []), filled], solver);
+    return planOf({ payer: solver.address, instructions: [...setup, ...wrap, ...(input.route ?? []), filled] });
   };
 
-  const settling = async (cranker: TransactionSigner, owner: Address, nonce: bigint) => {
-    const { intent } = await loadIntent(transport, owner, nonce);
+  const settling = async (cranker: TransactionSigner, ref: IntentRef) => {
+    const { intent } = await loadIntentRef(transport, ref);
     const { tokenProgram } = await mint(intent.inputMint);
-    return { ref: { cranker, owner, nonce, inputMint: intent.inputMint, tokenProgram, capped: intent.capped }, rentPayer: intent.rentPayer };
+    const settled = { cranker, owner: intent.owner, nonce: intent.nonce, inputMint: intent.inputMint, tokenProgram, capped: intent.capped };
+    return { settled, rentPayer: intent.rentPayer };
   };
 
-  const expire = async (cranker: TransactionSigner, owner: Address, nonce: bigint) => {
-    const { ref } = await settling(cranker, owner, nonce);
-    const refund = await tokenAccountIfMissing(transport, cranker, owner, ref.inputMint, ref.tokenProgram);
-    return send([...refund.create, await buildExpireIntent(ref)], cranker);
+  const expire = async (cranker: TransactionSigner, ref: IntentRef): Promise<Plan> => {
+    const { settled } = await settling(cranker, ref);
+    const refund = await tokenAccountIfMissing(transport, cranker, settled.owner, settled.inputMint, settled.tokenProgram);
+    return planOf({ payer: cranker.address, instructions: [...refund.create, await buildExpireIntent(settled)] });
   };
 
-  const close = async (cranker: TransactionSigner, owner: Address, nonce: bigint) => {
-    const { ref, rentPayer } = await settling(cranker, owner, nonce);
-    return send([await buildCloseIntent({ ...ref, rentPayer })], cranker);
+  const close = async (cranker: TransactionSigner, ref: IntentRef): Promise<Plan> => {
+    const { settled, rentPayer } = await settling(cranker, ref);
+    return planOf({ payer: cranker.address, instructions: [await buildCloseIntent({ ...settled, rentPayer })] });
   };
 
-  return { createIntent, cancel, unwrap, fill, expire, close };
+  return { cancel, unwrap, fill, expire, close };
 }

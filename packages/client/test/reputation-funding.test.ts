@@ -48,7 +48,7 @@ async function setup() {
     });
     const [intent] = await findIntentPda({ owner: owner.address, nonce });
     const delivered = await announced(client, worker, intent, sha256);
-    await client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n });
+    await client.settleProof({ judge, intent: { owner: owner.address, nonce }, ...delivered, result: 1n });
     return intent;
   };
   return { client, fresh, fundedBy, job, transport };

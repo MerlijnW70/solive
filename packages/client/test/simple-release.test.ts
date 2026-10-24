@@ -57,13 +57,13 @@ describe("the simple release pays the first announcement that opens to the work"
     const preview = await reviewer.release({ escrow, deliveredSha256: WORK.toUpperCase(), keypair: judge.keypair, preview: true });
     expect(preview.summary).toBe(`Release escrow ${escrow} holding 0.01 SOL to ${worker.address} for work ${WORK}, announced first in ${made.announcement}`);
     expect(preview.instructions.length).toBeGreaterThan(0);
-    expect((await buyer.client.intent(buyer.signer.address, nonce))?.intent.status).toBe(IntentStatus.Open);
+    expect((await buyer.client.intent({ owner: buyer.signer.address, nonce }))?.intent.status).toBe(IntentStatus.Open);
 
     const released = await reviewer.release({ escrow, to: worker.address, deliveredSha256: WORK, keypair: judge.keypair });
     expect(w.chain.sent).toContain(released.signature);
     const { net } = splitFees(PAY, feeBpsFor(await buyer.client.config(), Kind.AttestedResult), 0, 0);
     expect(await tokensOf(w, worker.address, WSOL)).toBe(net);
-    const event = (await buyer.client.history(escrow)).find(({ name }) => name === "IntentAttested");
+    const event = (await buyer.client.history(escrow)).events.find(({ name }) => name === "IntentAttested");
     expect(event).toMatchObject({ signature: released.signature, deliveredSha256: WORK, deliveredSalt: expect.stringMatching(/^[0-9a-f]{32}$/) });
     expect(await buyer.client.reputation(worker.address)).toMatchObject({ paid: 1, refuted: 0 });
     expect(await buyer.receipt({ escrow })).toMatchObject({ escrow, released: true, signature: released.signature, payee: worker.address, deliveredSha256: WORK, valid: true, refutedBy: null, complete: true });

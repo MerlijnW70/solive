@@ -41,7 +41,7 @@ export const closedEscrow = (intent: Address, state: EscrowState) =>
   `escrow ${intent} was ${state === "released" ? "released" : "cancelled, expired or closed"}, so its job can no longer be paid; stop working on it`;
 
 export async function escrowState(client: Client, owner: Address, nonce: bigint): Promise<EscrowState> {
-  const [found, now] = await Promise.all([client.intent(owner, nonce), client.chainTime()]);
+  const [found, now] = await Promise.all([client.intent({ owner, nonce }), client.chainTime()]);
   if (found === null) {
     return "gone";
   }

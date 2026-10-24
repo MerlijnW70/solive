@@ -52,8 +52,7 @@ type CommitteeCommand = Extract<Command, { name: "committee-create" | "committee
 const hex = (bytes: Uint8Array) => Buffer.from(bytes).toString("hex");
 
 export const ballotInput = (target: Ballot): BallotInput => ({
-  owner: target.owner,
-  nonce: target.nonce,
+  intent: { owner: target.owner, nonce: target.nonce },
   announcement: target.announcement,
   opening: { sha256: target.sha256, salt: target.salt },
   result: target.result,
@@ -201,7 +200,7 @@ async function releaseCommand(command: Extract<CommitteeCommand, { name: "commit
   const worker = await workerOf(transport, target.announcement);
   await invitedPayee(runtime, transport, escrow, worker);
   const cast: CommitteeVote[] = votes.map((v) => ({ member: v.member, signature: Uint8Array.from(Buffer.from(v.signature, "hex")) }));
-  const release = await client.prepareCommitteeRelease({ ...ballotInput(target), solver, votes: cast });
+  const release = await client.plan.settleCommittee({ ...ballotInput(target), solver, votes: cast });
   const [first] = votes;
   if (first !== undefined && (first.intent !== release.intent || first.committee !== release.committee.address)) {
     throw new FlowRefused(`the votes are for escrow ${first.intent} and committee ${first.committee}, not ${release.intent} and ${release.committee.address}`);
@@ -213,10 +212,10 @@ async function releaseCommand(command: Extract<CommitteeCommand, { name: "commit
   }
   const summary = [
     `Releases: proof escrow ${release.intent} to ${worker} (token account ${release.payee}), who made the announcement ${target.announcement}, with result ${target.result}`,
-    `Signed by: ${release.signers.join(", ")}, ${release.signers.length} of committee ${release.committee.address}, which needs ${release.committee.threshold}`,
+    `Signed by: ${release.voters.join(", ")}, ${release.voters.length} of committee ${release.committee.address}, which needs ${release.committee.threshold}`,
     `Pays the fee: ${solver.address}`,
   ];
-  const shown = { intent: release.intent, committee: release.committee.address, announcement: target.announcement, signers: release.signers };
+  const shown = { intent: release.intent, committee: release.committee.address, announcement: target.announcement, signers: release.voters };
   if (release.setup.length === 0) {
     return previewed(transport, release.instructions, solver, { ...shown, summary }, command.yes);
   }

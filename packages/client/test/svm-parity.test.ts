@@ -97,7 +97,7 @@ describe("the svm transport against the RPC transport", () => {
       throw new Error("the escrow was not created");
     }
     world.svm.setAccount({ ...held, address: copy });
-    expect((await fresh.intents(owner.address)).map(({ address }) => address).sort()).toEqual([mine.intent, copy].sort());
+    expect((await fresh.intents({ owner: owner.address })).map(({ address }) => address).sort()).toEqual([mine.intent, copy].sort());
     expect((await fresh.engineAccounts?.())?.every(({ data }) => data.length > 0)).toBe(true);
   });
 
@@ -107,9 +107,9 @@ describe("the svm transport against the RPC transport", () => {
     await escrow(world, owner);
     world.svm.warpToSlot(40n);
     const heard: bigint[] = [];
-    expect(await world.transport.intents(owner.address, { minContextSlot: 40n, onSlot: (slot) => heard.push(slot) })).toHaveLength(1);
+    expect(await world.transport.intents({ owner: owner.address }, { minContextSlot: 40n, onSlot: (slot) => heard.push(slot) })).toHaveLength(1);
     expect(heard).toEqual([40n]);
-    const behind = await world.transport.intents(owner.address, { minContextSlot: 41n }).catch((error: unknown) => error);
+    const behind = await world.transport.intents({ owner: owner.address }, { minContextSlot: 41n }).catch((error: unknown) => error);
     expect(behind).toBeInstanceOf(BehindMinSlot);
     expect(behind).toMatchObject({ slot: 40n, minContextSlot: 41n });
   });

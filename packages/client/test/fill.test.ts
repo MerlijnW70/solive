@@ -56,7 +56,7 @@ describe("filling from the client", () => {
     const created = await client.createIntent({ signer: w.owner, inputMint: w.inputMint, outputMint: NATIVE_MINT, params: swap });
     expect(await tokens(solver.address, NATIVE_MINT)).toBeNull();
 
-    await client.fill({ solver, owner: w.owner.address, nonce: created.nonce });
+    await client.fill({ solver, intent: { owner: w.owner.address, nonce: created.nonce } });
     expect(await tokens(w.owner.address, NATIVE_MINT)).toBe(MIN_OUT);
     expect(await client.fillOf(created.intent)).toMatchObject({ steps: 1, delivered: MIN_OUT, required: MIN_OUT });
   });
@@ -69,25 +69,25 @@ describe("filling from the client", () => {
     expect(await tokens(solver.address, w.outputMint)).toBeNull();
     expect(await client.fillOf(created.intent)).toBeNull();
 
-    const signature = await client.fill({ solver, owner: w.owner.address, nonce: created.nonce, route: await minted(solver, MIN_OUT) });
+    const signature = await client.fill({ solver, intent: { owner: w.owner.address, nonce: created.nonce }, route: await minted(solver, MIN_OUT) });
     const { fee, net } = splitFee(ESCROW, FEE_BPS);
     expect(fee).toBeGreaterThan(0n);
     expect(await tokens(w.feeRecipient.address, w.inputMint)).toBe(fee);
     expect(await tokens(solver.address, w.inputMint)).toBe(net);
     expect(await tokens(solver.address, w.outputMint)).toBe(0n);
     expect(await tokens(w.owner.address, w.outputMint)).toBe(MIN_OUT);
-    expect((await client.intent(w.owner.address, created.nonce))?.intent.status).toBe(IntentStatus.Filled);
+    expect((await client.intent({ owner: w.owner.address, nonce: created.nonce }))?.intent.status).toBe(IntentStatus.Filled);
 
     const read = { steps: 1, solver: solver.address, delivered: MIN_OUT, required: MIN_OUT, fee, net, signature, blockTime: NOW };
     expect(await client.fillOf(created.intent)).toMatchObject(read);
     expect(typeof (await client.fillOf(created.intent))?.slot).toBe("bigint");
 
-    const again = await client.fill({ solver, owner: w.owner.address, nonce: created.nonce }).catch((error: unknown) => error);
+    const again = await client.fill({ solver, intent: { owner: w.owner.address, nonce: created.nonce } }).catch((error: unknown) => error);
     expect(again).toBeInstanceOf(NotFillable);
     expect((again as Error).message).toContain("is not open");
 
-    await client.close(solver, w.owner.address, created.nonce);
-    expect(await client.intent(w.owner.address, created.nonce)).toBeNull();
+    await client.close(solver, { owner: w.owner.address, nonce: created.nonce });
+    expect(await client.intent({ owner: w.owner.address, nonce: created.nonce })).toBeNull();
     expect(await client.fillOf(created.intent)).toMatchObject(read);
   });
 
@@ -122,7 +122,7 @@ describe("filling from the client", () => {
       route: await minted(solver, delivered),
     });
     const signature = await client.send(flash, solver);
-    const names = (await client.history(created.intent)).map(({ name }) => name);
+    const names = (await client.history(created.intent)).events.map(({ name }) => name);
     expect(names.slice(0, 2)).toEqual(["FillEnded", "FillBegun"]);
     expect(names).not.toContain("IntentFilled");
     const { fee, net } = splitFee(ESCROW, FEE_BPS);
@@ -132,10 +132,10 @@ describe("filling from the client", () => {
   it("fills a limit order whole and a dutch auction at the minimum the chain's clock gives", async () => {
     const { w, client, solver, svm, tokens, order, minted, failure } = await setup();
     const limit = await client.createIntent({ ...order, params: { kind: Kind.LimitOrder, makeAmount: ESCROW, takeAmount: 50n } });
-    const part = client.fill({ solver, owner: w.owner.address, nonce: limit.nonce, amountIn: ESCROW / 2n, route: await minted(solver, 25n) });
+    const part = client.fill({ solver, intent: { owner: w.owner.address, nonce: limit.nonce }, amountIn: ESCROW / 2n, route: await minted(solver, 25n) });
     expect(client.explain(await failure(part))?.name).toBe("AmountInMismatch");
-    await client.fill({ solver, owner: w.owner.address, nonce: limit.nonce, route: await minted(solver, 50n) });
-    expect((await client.intent(w.owner.address, limit.nonce))?.intent.status).toBe(IntentStatus.Filled);
+    await client.fill({ solver, intent: { owner: w.owner.address, nonce: limit.nonce }, route: await minted(solver, 50n) });
+    expect((await client.intent({ owner: w.owner.address, nonce: limit.nonce }))?.intent.status).toBe(IntentStatus.Filled);
     expect(await client.fillOf(limit.intent)).toMatchObject({ steps: 1, delivered: 50n, required: 50n, fee: splitFee(ESCROW, FEE_BPS).fee });
 
     const auction = { kind: Kind.DutchAuction, amountIn: 100n, startOut: 90n, endOut: 10n, startTs: NOW, endTs: NOW + 80n } as const;
@@ -143,7 +143,7 @@ describe("filling from the client", () => {
     const clock = svm.getClock();
     clock.unixTimestamp = NOW + 20n;
     svm.setClock(clock);
-    await client.fill({ solver, owner: w.owner.address, nonce: dutch.nonce, route: await minted(solver, 70n) });
+    await client.fill({ solver, intent: { owner: w.owner.address, nonce: dutch.nonce }, route: await minted(solver, 70n) });
     expect(await client.fillOf(dutch.intent)).toMatchObject({ delivered: 70n, required: 70n, blockTime: NOW + 20n });
     expect(await tokens(w.owner.address, w.outputMint)).toBe(120n);
   });
@@ -153,7 +153,7 @@ describe("filling from the client", () => {
     const judge = await generateKeyPairSigner();
     const work = { kind: Kind.AttestedResult, amountIn: ESCROW, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash: new Uint8Array(32).fill(7), judgeFee: 0n } as const;
     const job = await client.createIntent({ ...order, params: work });
-    const refused = await failure(client.fill({ solver, owner: w.owner.address, nonce: job.nonce }));
+    const refused = await failure(client.fill({ solver, intent: { owner: w.owner.address, nonce: job.nonce } }));
     expect(refused).toBeInstanceOf(NotFillable);
     expect((refused as Error).message).toBe(`intent ${job.intent} is an AttestedResult intent, which only its judge settles`);
     expect(await client.fillOf(job.intent)).toBeNull();
@@ -162,19 +162,19 @@ describe("filling from the client", () => {
   it("expires an overdue intent and closes it from any wallet", async () => {
     const { w, client, solver, svm, tokens, order, swap, failure } = await setup();
     const created = await client.createIntent({ ...order, params: swap, expiresIn: 60n });
-    expect(client.explain(await failure(client.expire(solver, w.owner.address, created.nonce)))?.name).toBe("NotExpired");
-    expect(client.explain(await failure(client.close(solver, w.owner.address, created.nonce)))?.name).toBe("InvalidTransition");
+    expect(client.explain(await failure(client.expire(solver, { owner: w.owner.address, nonce: created.nonce })))?.name).toBe("NotExpired");
+    expect(client.explain(await failure(client.close(solver, { owner: w.owner.address, nonce: created.nonce })))?.name).toBe("InvalidTransition");
     const clock = svm.getClock();
     clock.unixTimestamp = NOW + 60n;
     svm.setClock(clock);
     const held = await tokens(w.owner.address, w.inputMint);
-    await client.expire(solver, w.owner.address, created.nonce);
-    expect((await client.intent(w.owner.address, created.nonce))?.intent.status).toBe(IntentStatus.Expired);
+    await client.expire(solver, { owner: w.owner.address, nonce: created.nonce });
+    expect((await client.intent({ owner: w.owner.address, nonce: created.nonce }))?.intent.status).toBe(IntentStatus.Expired);
     expect(await tokens(w.owner.address, w.inputMint)).toBe((held ?? 0n) + ESCROW);
     const rent = svm.getBalance(created.intent) ?? 0n;
     const before = svm.getBalance(w.owner.address) ?? 0n;
-    await client.close(solver, w.owner.address, created.nonce);
-    expect(await client.intent(w.owner.address, created.nonce)).toBeNull();
+    await client.close(solver, { owner: w.owner.address, nonce: created.nonce });
+    expect(await client.intent({ owner: w.owner.address, nonce: created.nonce })).toBeNull();
     expect((svm.getBalance(w.owner.address) ?? 0n) - before).toBeGreaterThanOrEqual(rent);
   });
 
@@ -182,7 +182,7 @@ describe("filling from the client", () => {
     const { w, client, solver, order, swap, minted } = await setup();
     nativeMint(w);
     const created = await client.createIntent({ ...order, params: swap });
-    await client.fill({ solver, owner: w.owner.address, nonce: created.nonce, route: await minted(solver, MIN_OUT) });
+    await client.fill({ solver, intent: { owner: w.owner.address, nonce: created.nonce }, route: await minted(solver, MIN_OUT) });
     const { sol, tokens } = await client.balances(solver.address, [NATIVE_MINT, w.inputMint]);
     expect(sol).toBe(w.chain.svm.getBalance(solver.address));
     expect(tokens).toEqual([
@@ -196,12 +196,12 @@ describe("filling from the client", () => {
     expect(HISTORY_LIMIT + 1).toBe(101);
     const { w, client, solver, order, swap, minted } = await setup();
     const created = await client.createIntent({ ...order, params: swap });
-    const signature = await client.fill({ solver, owner: w.owner.address, nonce: created.nonce, route: await minted(solver, MIN_OUT) });
+    const signature = await client.fill({ solver, intent: { owner: w.owner.address, nonce: created.nonce }, route: await minted(solver, MIN_OUT) });
     const stranger = await funded(w.chain);
     for (let i = 0; i <= HISTORY_LIMIT; i++) {
       await w.chain.transport.send([getTransferSolInstruction({ source: stranger, destination: created.intent, amount: 0n })], stranger);
     }
-    expect((await client.history(created.intent)).some(({ name }) => name === "IntentFilled")).toBe(false);
+    expect((await client.history(created.intent)).events.some(({ name }) => name === "IntentFilled")).toBe(false);
     expect(await client.fillOf(created.intent)).toMatchObject({ steps: 1, solver: solver.address, delivered: MIN_OUT, signature });
   });
 });

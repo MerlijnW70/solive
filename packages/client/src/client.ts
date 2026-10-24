@@ -1,25 +1,28 @@
 import { type Address, createSolanaRpc, type Instruction, type Signature, type TransactionSigner } from "@solana/kit";
 import { isSdkError } from "@intent-engine/core";
-import { chainTime, loadConfig, loadIntent, loadUser, mintOf } from "./accounts.js";
+import { chainTime, loadConfig, loadUser, mintOf } from "./accounts.js";
 import { budgeted, simulated } from "./budget.js";
-import { intentSends, nonceAfter } from "./client-intents.js";
+import { nonceAfter } from "./client-create.js";
+import { clientPlans, planWrites } from "./client-plans.js";
 import { clientReads } from "./client-reads.js";
-import { committeeSends } from "./client-committee.js";
+import { loadCommittee } from "./client-committee.js";
 import { loadClaims, loadProfile } from "./client-claims.js";
-import { feedbackInstructions, reputationOf } from "./reputation.js";
-export { type EscrowCommittee, escrowCommittee, loadCommittee } from "./client-committee.js";
+import { reputationOf } from "./reputation.js";
+export { type CommitteeCreatePlan, type EscrowCommittee, escrowCommittee, loadCommittee } from "./client-committee.js";
 export { type CancelClaims, cancelClaims, type ClaimListView, type ClaimsView, releaseClaims, type ReleaseClaims, type JobClaim, jobClaimOf, type LineEntry, lineHandover, loadClaims, loadClaimsOf, loadLine, loadProfile } from "./client-claims.js";
-import { committeeSettlement, proofBallotOf, proofSettlement } from "./client-settle.js";
+import { committeeSettlement, proofBallotOf } from "./client-settle.js";
 import { TransportLacks } from "./client-errors.js";
 export { committeeJudged } from "./client-settle.js";
 import { type Client, type ClientOptions, type Mint, WATCH_POLL_MS, WATCH_WAIT_SECONDS } from "./client-types.js";
 import { decoded, watchIntents } from "./client-watch.js";
 import { explain } from "./errors.js";
 import { jobsOf, readSpec } from "./jobs.js";
-import { announcementPlan, announcing } from "./announce.js";
+import { announcing } from "./announce.js";
 import { announcementsBy, announcementsOf, announcementsTo } from "./announcement-reads.js";
-import { announcementSends } from "./announcement-sends.js";
 import { splitSettlement } from "./client-split.js";
+import { intentMatchesQuery } from "./intent-filters.js";
+import { intentAddress, loadIntentRef } from "./intent-ref.js";
+import { amountShown, amountText } from "./simple-tokens.js";
 import { firstOpening } from "./first-opening.js";
 import { pinnedFetch } from "./pinned-fetch.js";
 import { intentNotifications, type RpcLike, rpcTransport, signatureWatch } from "./transport.js";
@@ -29,8 +32,9 @@ export type {
   BallotInput,
   Client,
   ClientOptions,
+  ClientPlans,
   CommitteeBallot,
-  CommitteeRelease,
+  CommitteePlan,
   CommitteeView,
   CreateCommitteeInput,
   CreatedCommittee,
@@ -39,6 +43,8 @@ export type {
   Fill,
   FillInput,
   HistoryEvent,
+  HistoryOptions,
+  HistoryPage,
   IntentAccount,
   IntentFilter,
   IntentPlacement,
@@ -57,6 +63,7 @@ export {
   DEFAULT_EXPIRES_IN,
   EXPIRES_IN_RANGE,
   HISTORY_LIMIT,
+  HISTORY_LIMIT_MAX,
   MAX_EXPIRES_IN,
   MIN_EXPIRES_IN,
   SPEC_URL_NEEDS_PROOF,
@@ -107,22 +114,20 @@ export function createClient(options: ClientOptions): Client {
   };
 
   const context = { transport, send, mint, config };
-  const { createIntent, cancel, unwrap, fill, expire, close } = intentSends(context);
+  const plan = clientPlans(context);
   const { history, fillOf, balances } = clientReads(context);
-  const settleProof = proofSettlement(context);
   const proofBallot = proofBallotOf(context);
-  const { committeeBallot, prepareCommitteeRelease, settleCommittee } = committeeSettlement(context);
-  const { committee, createCommittee } = committeeSends(context);
-  const { splitBallot, settleSplit } = splitSettlement(context);
-  const { refute, reclaim, closeBook } = announcementSends(context);
+  const { committeeBallot } = committeeSettlement(context);
+  const { splitBallot } = splitSettlement(context);
 
   return {
     url,
     transport,
+    plan,
     config,
-    intent: async (owner, nonce) => {
+    intent: async (ref) => {
       try {
-        return await loadIntent(transport, owner, nonce);
+        return await loadIntentRef(transport, ref);
       } catch (error) {
         if (isSdkError(error, "missing-account")) {
           return null;
@@ -130,10 +135,7 @@ export function createClient(options: ClientOptions): Client {
         throw error;
       }
     },
-    intents: async (filter = {}) =>
-      (await transport.intents(filter.owner))
-        .map(decoded)
-        .filter(({ intent }) => filter.status === undefined || intent.status === filter.status),
+    intents: async (filter = {}) => (await transport.intents(filter)).map(decoded).filter(({ intent }) => intentMatchesQuery(intent, filter)),
     history,
     nextNonce: async (owner) => nonceAfter(owner, await loadUser(transport, owner)),
     simulate: async (instructions, signer) =>
@@ -148,38 +150,25 @@ export function createClient(options: ClientOptions): Client {
     watch,
     explain,
     mint,
+    amount: async (address, text) => amountText(text, (await mint(address)).decimals),
+    format: async (address, amount) => amountShown(amount, (await mint(address)).decimals),
     chainTime: () => chainTime(transport),
-    createIntent,
-    cancel,
-    unwrap,
-    settleProof,
     proofBallot,
-    committee,
-    createCommittee,
+    committee: (address) => loadCommittee(transport, address),
     committeeBallot,
-    prepareCommitteeRelease,
-    settleCommittee,
-    claims: (owner, nonce) => loadClaims(transport, owner, nonce),
+    claims: async (ref) => loadClaims(transport, await intentAddress(ref)),
     profile: (wallet) => loadProfile(transport, wallet),
     reputation: (wallet, options) => reputationOf(transport, wallet, options),
-    feedback: async (input) => send(await feedbackInstructions(transport, input), input.owner),
-    fill,
     fillOf,
-    expire,
-    close,
     balances,
     jobs: (filter = {}) => jobsOf(transport, filter),
-    spec: (intent, keypair) => readSpec(transport, options.fetch ?? pinnedFetch, intent, keypair, undefined, url),
+    spec: async (ref, keypair) => readSpec(transport, options.fetch ?? pinnedFetch, await intentAddress(ref), keypair, undefined, url),
     announce: announcing(context),
-    prepareAnnouncement: (input) => announcementPlan(context, input),
-    announcements: (intent) => announcementsOf(transport, intent),
+    announcements: async (ref) => announcementsOf(transport, await intentAddress(ref)),
     announcementsTo: (attestor) => announcementsTo(transport, attestor),
     announcementsBy: (worker) => announcementsBy(transport, worker),
     firstOpening: (input) => firstOpening(transport, input),
     splitBallot,
-    settleSplit,
-    refute,
-    reclaim,
-    closeBook,
+    ...planWrites(send, plan),
   };
 }

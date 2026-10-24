@@ -48,7 +48,7 @@ describe("committee floor", () => {
     expect(sent.length).toBe(before);
     expect(await w.chain.transport.getAccount((await findIntentPda({ owner: w.owner.address, nonce: 0n }))[0])).toBeNull();
     await client.createIntent(proof(w, FLOOR - 1n, judge, 0n));
-    expect((await client.intent(w.owner.address, 0n))?.intent.escrowed).toBe(FLOOR - 1n);
+    expect((await client.intent({ owner: w.owner.address, nonce: 0n }))?.intent.escrowed).toBe(FLOOR - 1n);
   });
 
   it("a create passes its committee and counts only a threshold of two or more", async () => {
@@ -64,7 +64,7 @@ describe("committee floor", () => {
     const committee = await convene(w, client, 2);
     await client.createIntent(proof(w, FLOOR, committee, 0n));
     expect(created()?.accounts?.at(-4)).toEqual({ address: committee, role: AccountRole.READONLY });
-    expect((await client.intent(w.owner.address, 0n))?.intent.escrowed).toBe(FLOOR);
+    expect((await client.intent({ owner: w.owner.address, nonce: 0n }))?.intent.escrowed).toBe(FLOOR);
 
     await client.createIntent(proof(w, 1n, loose, 1n));
     expect(created()?.accounts?.at(-4)).toEqual({ address: loose, role: AccountRole.READONLY });

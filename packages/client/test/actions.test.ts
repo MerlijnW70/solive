@@ -83,11 +83,11 @@ describe("one call per action", () => {
     expect(await tokens(signer.address)).toBeNull();
     expect(await tokens(receiver, w.outputMint)).toBeNull();
 
-    const created = await client.createIntent({ signer, params: swap, inputMint: NATIVE_MINT, outputMint: w.outputMint, receiver, expiresIn: 600n });
+    const created = await client.createIntent({ signer, params: swap, inputMint: NATIVE_MINT, outputMint: w.outputMint, payTo: receiver, expiresIn: 600n });
     expect(counted.sends).toBe(1);
     expect(created.nonce).toBe(0n);
     expect(created.intent).toBe((await findIntentPda({ owner: signer.address, nonce: 0n }))[0]);
-    expect((await client.intent(signer.address, 0n))?.intent).toMatchObject({
+    expect((await client.intent({ owner: signer.address, nonce: 0n }))?.intent).toMatchObject({
       escrowed: SOL / 10n,
       status: IntentStatus.Open,
       expiresAt: NOW + 600n,
@@ -99,7 +99,7 @@ describe("one call per action", () => {
 
     const next = await client.createIntent({ signer, params: swap, inputMint: NATIVE_MINT, outputMint: w.outputMint });
     expect(next.nonce).toBe(1n);
-    expect((await client.intent(signer.address, 1n))?.intent).toMatchObject({
+    expect((await client.intent({ owner: signer.address, nonce: 1n }))?.intent).toMatchObject({
       expiresAt: NOW + 3_600n,
       receiver: await ata(signer.address, w.outputMint),
     });
@@ -115,8 +115,8 @@ describe("one call per action", () => {
     expect(nonce).toBe(7n);
     expect(await tokens(signer.address)).toBe(0n);
 
-    await client.cancel(signer, nonce);
-    expect((await client.intent(signer.address, nonce))?.intent.status).toBe(IntentStatus.Cancelled);
+    await client.cancel(signer, { owner: signer.address, nonce });
+    expect((await client.intent({ owner: signer.address, nonce }))?.intent.status).toBe(IntentStatus.Cancelled);
     expect(await tokens(signer.address)).toBe(SOL / 4n);
   });
 
@@ -127,7 +127,7 @@ describe("one call per action", () => {
     expect(counted.sends).toBe(0);
     const swap = { kind: Kind.SwapExactIn, amountIn: SOL / 4n, minOut: 5n } as const;
     const { nonce } = await client.createIntent({ signer, params: swap, inputMint: NATIVE_MINT, outputMint: w.outputMint });
-    await client.cancel(signer, nonce);
+    await client.cancel(signer, { owner: signer.address, nonce });
     const wrapped = w.chain.svm.getAccount(await ata(signer.address, NATIVE_MINT));
     expect(wrapped.exists).toBe(true);
     const before = w.chain.svm.getBalance(signer.address) ?? 0n;
@@ -166,14 +166,14 @@ describe("one call per action", () => {
     }
     const ownerLamports = w.chain.svm.getBalance(owner.address);
 
-    await client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 2n });
+    await client.settleProof({ judge, intent: { owner: owner.address, nonce }, ...delivered, result: 2n });
     const fee = ((pay - judgeFee) * BigInt(FEE_BPS)) / 10_000n;
     expect(await tokens(worker.address)).toBe(pay - judgeFee - fee);
     expect(await tokens(judge.address)).toBe(judgeFee);
     expect(await tokens(w.feeRecipient.address)).toBe(fee);
     const held = await Promise.all([worker.address, judge.address, w.feeRecipient.address].map((wallet) => tokens(wallet)));
     expect(held.reduce<bigint>((sum, amount) => sum + (amount ?? 0n), 0n)).toBe(pay);
-    expect((await client.intent(owner.address, nonce))?.intent).toMatchObject({ status: IntentStatus.Filled, filled: pay });
+    expect((await client.intent({ owner: owner.address, nonce }))?.intent).toMatchObject({ status: IntentStatus.Filled, filled: pay });
     expect(w.chain.svm.getBalance(owner.address)).toBe(ownerLamports);
     expect(w.chain.svm.getBalance(judge.address)).toBeLessThan(SOL);
   });
@@ -182,7 +182,7 @@ describe("one call per action", () => {
     const judge = await generateKeyPairSigner();
     const { client, owner, nonce, tokens, w, worker, delivered } = await escrowed(judge, 2_000_000n, 0n);
 
-    await client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n, payer: owner });
+    await client.settleProof({ judge, intent: { owner: owner.address, nonce }, ...delivered, result: 1n, payer: owner });
     const fee = (2_000_000n * BigInt(FEE_BPS)) / 10_000n;
     expect(await tokens(worker.address)).toBe(2_000_000n - fee);
     expect(await tokens(judge.address)).toBeNull();
@@ -192,8 +192,8 @@ describe("one call per action", () => {
   it("history reads the delivered work's sha256 and the payee's salt from the release's own DeliveryReleased event", async () => {
     const judge = await generateKeyPairSigner();
     const { client, owner, nonce, intent, delivered } = await escrowed(judge, 1_000_000n, 0n);
-    const signature = await client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n, payer: owner });
-    const events = await client.history(intent);
+    const signature = await client.settleProof({ judge, intent: { owner: owner.address, nonce }, ...delivered, result: 1n, payer: owner });
+    const { events } = await client.history(intent);
     expect(events.find(({ name }) => name === "IntentAttested")).toMatchObject({ signature, deliveredSha256: WORK, deliveredSalt: delivered.opening.salt });
     expect(events.find(({ name }) => name === "DeliveryReleased")).toMatchObject({ signature, fields: { announcement: delivered.announcement, seq: 1n } });
   });
@@ -204,7 +204,7 @@ describe("one call per action", () => {
     w.chain.svm.airdrop(judge.address, lamports(SOL));
     const other = await client.createIntent({ signer: owner, params: proofOf(judge.address, 10n, 0n), inputMint: NATIVE_MINT, outputMint: w.outputMint });
     const elsewhere = await announced(client, await fresh(1n), other.intent, WORK);
-    const settle = (changed: Partial<typeof delivered>) => client.settleProof({ judge, owner: owner.address, nonce, ...delivered, ...changed, result: 1n });
+    const settle = (changed: Partial<typeof delivered>) => client.settleProof({ judge, intent: { owner: owner.address, nonce }, ...delivered, ...changed, result: 1n });
     const sends = counted.sends;
     await expect(settle({ opening: { sha256: sha("not delivered"), salt: delivered.opening.salt } })).rejects.toThrow("which this salt does not open");
     await expect(settle({ opening: { sha256: WORK, salt: "00".repeat(16) } })).rejects.toThrow(NotSettleable);
@@ -212,8 +212,8 @@ describe("one call per action", () => {
     await expect(settle({ announcement: elsewhere.announcement })).rejects.toThrow(`which belongs to ${other.intent}`);
     await expect(settle({ announcement: owner.address })).rejects.toThrow(`has no announcement ${owner.address}`);
     expect(counted.sends).toBe(sends);
-    await client.settleProof({ judge, owner: owner.address, nonce: other.nonce, ...elsewhere, result: 1n });
-    await expect(client.settleProof({ judge, owner: owner.address, nonce: other.nonce, ...elsewhere, result: 1n })).rejects.toThrow("is not open");
+    await client.settleProof({ judge, intent: { owner: owner.address, nonce: other.nonce }, ...elsewhere, result: 1n });
+    await expect(client.settleProof({ judge, intent: { owner: owner.address, nonce: other.nonce }, ...elsewhere, result: 1n })).rejects.toThrow("is not open");
   });
 
   it("settleProof refuses a worker whose account a program owns, and a worker token account that moved", async () => {
@@ -221,7 +221,7 @@ describe("one call per action", () => {
     const { w, client, counted, owner, nonce, tokens, worker, delivered } = await escrowed(judge, 1_000_000n, 0n);
     w.chain.svm.airdrop(judge.address, lamports(SOL));
     const workerTokens = await ata(worker.address, NATIVE_MINT);
-    const settle = () => client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n });
+    const settle = () => client.settleProof({ judge, intent: { owner: owner.address, nonce }, ...delivered, result: 1n });
     const sends = counted.sends;
     const wallet = w.chain.svm.getAccount(worker.address);
     if (!wallet.exists) {
@@ -261,7 +261,7 @@ describe("one call per action", () => {
     const judge = await generateKeyPairSigner();
     const { w, client, counted, owner, nonce, delivered } = await escrowed(judge, 1_000_000n, 0n);
     w.chain.svm.airdrop(judge.address, lamports(SOL));
-    const held = await client.intent(owner.address, nonce);
+    const held = await client.intent({ owner: owner.address, nonce });
     if (held === null) {
       throw new Error("no escrow");
     }
@@ -269,9 +269,9 @@ describe("one call per action", () => {
     clock.unixTimestamp = held.intent.expiresAt;
     w.chain.svm.setClock(clock);
     const sends = counted.sends;
-    const settle = client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n });
+    const settle = client.settleProof({ judge, intent: { owner: owner.address, nonce }, ...delivered, result: 1n });
     await expect(settle).rejects.toThrow(EscrowExpired);
-    await expect(client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n })).rejects.toThrow(`expired at ${held.intent.expiresAt}`);
+    await expect(client.settleProof({ judge, intent: { owner: owner.address, nonce }, ...delivered, result: 1n })).rejects.toThrow(`expired at ${held.intent.expiresAt}`);
     expect(counted.sends).toBe(sends);
   });
 
@@ -279,7 +279,7 @@ describe("one call per action", () => {
     const judge = await generateKeyPairSigner();
     const { w, client, counted, owner, nonce, fresh, delivered } = await escrowed(judge, 1_000_000n, 0n);
     w.chain.svm.airdrop(judge.address, lamports(SOL));
-    const settle = (n: bigint, by: KeyPairSigner = judge) => client.settleProof({ judge: by, owner: owner.address, nonce: n, ...delivered, result: 1n });
+    const settle = (n: bigint, by: KeyPairSigner = judge) => client.settleProof({ judge: by, intent: { owner: owner.address, nonce: n }, ...delivered, result: 1n });
 
     const swap = await client.createIntent({ signer: owner, params: { kind: Kind.SwapExactIn, amountIn: 10n, minOut: 1n }, inputMint: NATIVE_MINT, outputMint: w.outputMint });
     const plain = await client.createIntent({ signer: owner, params: proofOf(judge.address, 10n, 0n, new Uint8Array(32)), inputMint: NATIVE_MINT, outputMint: w.outputMint });

@@ -34,6 +34,7 @@ import {
   memoInstruction,
   MIN_EXPIRES_IN,
   NotDeliverable,
+  PAY_TO_NOT_ATTESTED,
   PLAIN_HTTP_ON_PUBLIC,
   SIGNATURE_PAGE,
   SPEC_URL_NEEDS_PROOF,
@@ -101,7 +102,7 @@ describe("jobs", () => {
     await client.createIntent({ ...order, params: { ...proof(judge.address), specHash: new Uint8Array(32) } });
     await client.createIntent({ ...order, params: { kind: Kind.SwapExactIn, amountIn: 10n, minOut: 1n } });
     const cancelled = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
-    await client.cancel(w.owner, cancelled.nonce);
+    await client.cancel(w.owner, { owner: w.owner.address, nonce: cancelled.nonce });
 
     const mine = await client.jobs({ attestor: judge.address });
     expect(mine.map(({ intent }) => intent).sort()).toEqual([published.intent, silent.intent].sort());
@@ -122,12 +123,13 @@ describe("jobs", () => {
     expect((await client.jobs()).map(({ intent }) => intent).sort()).toEqual([published.intent, silent.intent, elsewhere.intent].sort());
   });
 
-  it("fits the longest spec url in a first create that also registers the owner and creates the receiver's account", async () => {
+  it("fits the longest spec url in a first create that also registers the owner, and takes no payTo on a proof escrow", async () => {
     const { client, judge, order } = await setting();
-    const receiver = (await generateKeyPairSigner()).address;
+    const payTo = (await generateKeyPairSigner()).address;
     const longest = "https://example.org/" + "s".repeat(MAX_MEMO_URL - 20);
     expect(longest).toHaveLength(MAX_MEMO_URL);
-    const made = await client.createIntent({ ...order, receiver, params: proof(judge.address), specUrl: longest });
+    await expect(client.createIntent({ ...order, payTo, params: proof(judge.address), specUrl: longest })).rejects.toMatchObject({ field: "payTo", rule: "unsupported", message: PAY_TO_NOT_ATTESTED });
+    const made = await client.createIntent({ ...order, params: proof(judge.address), specUrl: longest });
     expect((await client.jobs())[0]).toMatchObject({ intent: made.intent, specUrl: longest });
   });
 
@@ -220,7 +222,7 @@ describe("deliveries", () => {
     const swap = await client.createIntent({ ...order, params: { kind: Kind.SwapExactIn, amountIn: 10n, minOut: 1n } });
     const plain = await client.createIntent({ ...order, params: { ...proof(judge.address), specHash: new Uint8Array(32) } });
     const closed = await client.createIntent({ ...order, params: proof(judge.address) });
-    await client.cancel(w.owner, closed.nonce);
+    await client.cancel(w.owner, { owner: w.owner.address, nonce: closed.nonce });
     const [unused] = await findIntentPda({ owner: w.owner.address, nonce: 99n });
     for (const intent of [swap.intent, plain.intent, closed.intent, unused, judge.address]) {
       await expect(client.announce({ worker, intent, sha256: WORK, url: WORK_URL })).rejects.toThrow(NotDeliverable);
@@ -237,8 +239,8 @@ describe("deliveries", () => {
     await client.announce({ worker, intent: job.intent, sha256: WORK.toUpperCase(), url: WORK_URL });
     const first = await client.firstOpening({ intent: job.intent, sha256: WORK.toUpperCase(), keypair });
     expect(first).toMatchObject({ intent: job.intent, worker: worker.address, sha256: WORK });
-    const signature = await client.settleProof({ judge, owner: w.owner.address, nonce: job.nonce, announcement: first.announcement, opening: { ...first, sha256: WORK.toUpperCase() }, result: 1n });
-    const released = (await client.history(job.intent)).find(({ name }) => name === "IntentAttested");
+    const signature = await client.settleProof({ judge, intent: { owner: w.owner.address, nonce: job.nonce }, announcement: first.announcement, opening: { ...first, sha256: WORK.toUpperCase() }, result: 1n });
+    const released = (await client.history(job.intent)).events.find(({ name }) => name === "IntentAttested");
     expect(released).toMatchObject({ signature, deliveredSha256: WORK });
   });
   it("a plain http spec url is refused at create on a public cluster", async () => {

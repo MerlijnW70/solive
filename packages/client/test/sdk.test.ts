@@ -44,12 +44,12 @@ import {
   MAX_SPEC_BYTES,
   type Transport,
 } from "../src/index.js";
-import { TESTING_SECTION } from "./doc-sections.js";
+import { PLAN_SECTION, TESTING_SECTION } from "./doc-sections.js";
 import { FEE_BPS, world, type World } from "./svm.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string) => readFileSync(`${ROOT}/${path}`, "utf8");
-const PAGE = read("docs/sdk.md") + "\n" + read("docs/sdk-client.md").replace(TESTING_SECTION, "");
+const PAGE = read("docs/sdk.md") + "\n" + read("docs/sdk-client.md").replace(TESTING_SECTION, "").replace(PLAN_SECTION, "");
 const DEVNET = "https://api.devnet.solana.com";
 const WALLET = ".config/intent-engine/wallet.json";
 const LAMPORTS = 10_000_000_000n;
@@ -329,7 +329,7 @@ describe("the sdk page", () => {
     ]);
     const rent = w.chain.svm.minimumBalanceForRentExemption(BigInt(getIntentSize()));
     expect(mine.map(({ address }) => w.chain.svm.getBalance(address))).toEqual(mine.map(() => rent + BigInt(BOUNTY)));
-    const [limit, auction] = await Promise.all([3n, 4n].map(async (n) => client.fillOf((await client.intent(signer.address, n))?.address ?? signer.address)));
+    const [limit, auction] = await Promise.all([3n, 4n].map(async (n) => client.fillOf((await client.intent({ owner: signer.address, nonce: n }))?.address ?? signer.address)));
     expect(limit).toMatchObject({ steps: 2, solver: w.authority.address, delivered: 1_500_000_000n, required: 1_500_000_000n });
     const at = printed.indexOf("LimitOrder 1.5 TEST");
     expect(printed[at + 1]).toBe("2 1.5 1.5");
@@ -339,18 +339,18 @@ describe("the sdk page", () => {
     expect(auction?.required).toBeGreaterThan(1_000_000_000n);
     expect(printed[at + 3]).toBe(`2 ${formatAmount(auction?.delivered ?? 0n, 9)} ${formatAmount(auction?.required ?? 0n, 9)}`);
     expect(printed[printed.indexOf("Cancelled NotSettleable") + 1]).toBe("null");
-    expect(await client.intent(signer.address, 7n)).toBeNull();
-    expect((await client.history((await findIntentPda({ owner: signer.address, nonce: 7n }))[0])).map(({ name }) => name).slice(0, 2)).toEqual(["IntentClosed", "IntentExpired"]);
+    expect(await client.intent({ owner: signer.address, nonce: 7n })).toBeNull();
+    expect((await client.history((await findIntentPda({ owner: signer.address, nonce: 7n }))[0])).events.map(({ name }) => name).slice(0, 2)).toEqual(["IntentClosed", "IntentExpired"]);
     const fillFees = 2n * splitFee(10_000_000n, FEE_BPS).fee + splitFee(50_000_000n, FEE_BPS).fee;
     expect(await loadUser(client.transport, signer.address)).not.toBeNull();
-    const proof = (await client.intent(signer.address, 5n))?.intent;
+    const proof = (await client.intent({ owner: signer.address, nonce: 5n }))?.intent;
     const params = proof === undefined ? undefined : decodeParams(proof.kind, Uint8Array.from(proof.params));
     const judge = params?.kind === Kind.AttestedResult ? { address: params.attestor } : undefined;
     expect(judge?.address).not.toBe(signer.address);
     expect(judge?.address).toBeDefined();
     const posted = (await findIntentPda({ owner: signer.address, nonce: 8n }))[0];
     expect(await client.announcements(posted)).toMatchObject({ complete: false, closed: true, nextSeq: 2n, announcements: [{ worker: signer.address, seq: 1n, state: "paid" }] });
-    const released = (await client.history(posted)).find(({ name }) => name === "IntentAttested");
+    const released = (await client.history(posted)).events.find(({ name }) => name === "IntentAttested");
     expect(released?.deliveredSalt).toMatch(/^[0-9a-f]{32}$/);
     const pay = 10_000_000n;
     const judgeFee = pay / 10n;
@@ -372,7 +372,7 @@ describe("the sdk page", () => {
     const proved = (await findIntentPda({ owner: signer.address, nonce: 5n }))[0];
     const announced = await client.announcementsTo(judge?.address ?? signer.address);
     expect(announced.map(({ intent, worker: by, state }) => [intent, by, state]).sort()).toEqual([[proved, worker?.address, "paid"], [posted, signer.address, "paid"]].sort());
-    const delivered = (await client.history(posted)).find(({ name }) => name === "IntentAttested");
+    const delivered = (await client.history(posted)).events.find(({ name }) => name === "IntentAttested");
     expect(delivered?.fields).toMatchObject({ payee: wrapped, net: split.net });
     expect(printed.at(-1)).toBe(`${formatAmount(BigInt(CREATE_FEE), 9)} ${formatAmount(BigInt(BOUNTY), 9)}`);
     expect((w.chain.svm.getBalance(w.feeRecipient.address) ?? 0n) - treasury).toBe(9n * BigInt(CREATE_FEE));

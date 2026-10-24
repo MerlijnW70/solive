@@ -84,7 +84,7 @@ const claimsShown = (intent: Address, view: ClaimsView) => ({
 
 async function claimsOf(client: Client, owner: Address, nonce: bigint) {
   const [intent] = await findIntentPda({ owner, nonce });
-  const view = await client.claims(owner, nonce);
+  const view = await client.claims({ owner, nonce });
   if (view === null) {
     throw new FlowRefused(noClaims(intent));
   }
@@ -92,12 +92,12 @@ async function claimsOf(client: Client, owner: Address, nonce: bigint) {
 }
 
 async function escrowOpen(client: Client, owner: Address, nonce: bigint, now: bigint) {
-  const found = await client.intent(owner, nonce);
+  const found = await client.intent({ owner, nonce });
   return found !== null && found.intent.status === IntentStatus.Open && now < found.intent.expiresAt ? found.intent.expiresAt : null;
 }
 
 async function fillsStopped(client: Client, owner: Address, nonce: bigint, intent: Address) {
-  const [config, found] = await Promise.all([client.config(), client.intent(owner, nonce)]);
+  const [config, found] = await Promise.all([client.config(), client.intent({ owner, nonce })]);
   if ((config.paused & PAUSE_FILL) !== 0) {
     throw new FlowRefused(`fills are paused by the guardian or admin, and with them new claims and stand-by joins on escrow ${intent}; try again once the pause is lowered; nothing was sent`);
   }
@@ -115,7 +115,7 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
   if (command.name === "claims-open") {
     const [intent] = await findIntentPda({ owner: signer.address, nonce: command.nonce });
     const board = await claimBoardAddress(intent);
-    const existing = await client.claims(signer.address, command.nonce);
+    const existing = await client.claims({ owner: signer.address, nonce: command.nonce });
     if (existing !== null) {
       if (command.workers !== undefined && existing.list !== null && !existing.list.complete) {
         return finishList(command.workers, signer, transport, intent, existing.list, command.yes);
@@ -238,7 +238,7 @@ async function advanceLine(
 
 async function leaveLine(command: Extract<ClaimCommand, { name: "claims-leave" }>, caller: TransactionPartialSigner, transport: Transport, client: Client) {
   const [intent] = await findIntentPda({ owner: command.owner, nonce: command.nonce });
-  const view = await client.claims(command.owner, command.nonce);
+  const view = await client.claims({ owner: command.owner, nonce: command.nonce });
   let entries: LineEntry[];
   if (command.seq !== undefined) {
     entries = await loadLine(transport, intent, { head: command.seq, tail: command.seq + 1 });

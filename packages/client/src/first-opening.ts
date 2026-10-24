@@ -22,12 +22,13 @@ import { sha256Bytes } from "./announce.js";
 import { type AnnouncementList, type AnnouncementView, announcementsOf } from "./announcement-reads.js";
 import { loadProfile } from "./client-claims.js";
 import { NotSettleable } from "./client-errors.js";
+import { intentAddress, type IntentRef } from "./intent-ref.js";
 import { hex, type Proof, proofAt } from "./job-proofs.js";
 import type { Transport } from "./transport.js";
 
 export type DeliveryOpeners = DeliveryOpener | readonly DeliveryOpener[];
 
-export type FirstOpeningInput = { intent: Address; sha256: string; keypair?: DeliveryOpeners | undefined };
+export type FirstOpeningInput = { intent: IntentRef; sha256: string; keypair?: DeliveryOpeners | undefined };
 
 export type FirstOpening = {
   intent: Address;
@@ -118,7 +119,7 @@ async function claimHolder(transport: Transport, proof: Proof): Promise<Address 
 export type FirstOpeningOutcome = { list: AnnouncementList; opening: FirstOpening | FirstOpeningRefused };
 
 export async function firstOpeningIn(transport: Transport, input: FirstOpeningInput): Promise<FirstOpeningOutcome> {
-  const { intent } = input;
+  const intent = await intentAddress(input.intent);
   const delivered = sha256Bytes(input.sha256);
   const sha256 = hex(delivered);
   const proof = await proofAt(transport, intent);

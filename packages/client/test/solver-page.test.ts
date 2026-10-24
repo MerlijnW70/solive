@@ -138,7 +138,7 @@ describe("the solver page's TypeScript solver", () => {
     expect(PAGE).toContain("5 and 0.049975 for the intent from step 3.");
     expect(printed).toEqual([`5 ${formatAmount(net, 9)}`, `SOL ${formatAmount(net, 9)}`, `${token} 0`, formatAmount(w.chain.svm.getBalance(solver.address) ?? 0n, 9)]);
     expect(injected.urls).toEqual([DEVNET]);
-    const statuses = await Promise.all([step3, greedy, other].map(async ({ nonce }) => (await client.intent(owner.address, nonce))?.intent.status));
+    const statuses = await Promise.all([step3, greedy, other].map(async ({ nonce }) => (await client.intent({ owner: owner.address, nonce }))?.intent.status));
     expect(statuses).toEqual([IntentStatus.Filled, IntentStatus.Open, IntentStatus.Open]);
     const tokens = await client.balances(owner.address, [token]);
     expect(tokens.tokens[0]?.amount).toBe(5n * SOL);

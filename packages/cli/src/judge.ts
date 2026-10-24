@@ -272,8 +272,7 @@ function sendRelease(command: JudgeCommand, transport: Transport, signer: Messag
     });
     createClient({ url: command.url, transport })
       .settleProof({
-        owner: command.owner,
-        nonce: command.nonce,
+        intent: { owner: command.owner, nonce: command.nonce },
         announcement: release.announcement,
         opening: { sha256: release.sha256, salt: release.salt },
         result: release.result,
@@ -374,7 +373,7 @@ async function checkAndSettle(
   let signature: Signature | null = null;
   let vote: VoteFile | undefined;
   let simulated: SimulatedRelease | undefined;
-  const target = { owner: command.owner, nonce: command.nonce, announcement, opening: { sha256, salt }, result };
+  const target = { intent: { owner: command.owner, nonce: command.nonce }, announcement, opening: { sha256, salt }, result };
   let digest =
     passed && committee === null && isDevice(signer) ? hex((await createClient({ url: command.url, transport }).proofBallot(target)).digest) : undefined;
   if (passed && committee !== null) {

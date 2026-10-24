@@ -217,7 +217,7 @@ describe("claims from the wallet tools", () => {
     const own = (await ok(client, "wallet_committee_vote", { ...ballot, approval: preview["approval"], send: true }))["vote"] as { member: Address; signature: string };
     const client2 = createClient({ url: "http://cluster", transport });
     const first = await client2.firstOpening({ intent: job.intent, sha256: WORK, keypair: Uint8Array.from(JSON.parse(h.files.get(defaultWallet(HOME)) ?? "[]") as number[]) });
-    const ballotOf = await client2.committeeBallot({ owner: wallet, nonce: BigInt(job.nonce), announcement: first.announcement, opening: first, result: 1n });
+    const ballotOf = await client2.committeeBallot({ intent: { owner: wallet, nonce: BigInt(job.nonce) }, announcement: first.announcement, opening: first, result: 1n });
     const theirs = await signCommitteeVote(other, ballotOf.digest, ballotOf.committee.members);
     const votes = [own, { member: theirs.member, signature: getBase16Decoder().decode(theirs.signature).toLowerCase() }];
     expect((await call(client, "wallet_committee_release", { ...ballot, delivered_sha256: OTHER_WORK, votes })).value).toMatchObject(held);

@@ -29,8 +29,7 @@ describe("the wallet server's refutations and reclaims", () => {
     await createClient({ url: "http://cluster", transport }).settleProof({
       judge,
       payer: judge,
-      owner: wallet,
-      nonce: BigInt(escrow["nonce"] as string),
+      intent: { owner: wallet, nonce: BigInt(escrow["nonce"] as string) },
       announcement: later.announcement,
       opening: { sha256: WORK, salt: later.salt },
       result: 1n,

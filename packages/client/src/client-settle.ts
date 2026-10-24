@@ -1,4 +1,4 @@
-import { type Address, createNoopSigner } from "@solana/kit";
+import type { Address } from "@solana/kit";
 import {
   attestedDeliveryFields,
   attestedDeliveryPreimage,
@@ -17,19 +17,18 @@ import type {
   BallotInput,
   ClientContext,
   CommitteeBallot,
-  CommitteeRelease,
+  CommitteePlan,
   ProofBallot,
   SettleCommitteeInput,
   SettleProofInput,
 } from "./client-types.js";
+import { type Plan, planOf } from "./plan.js";
 import { planRelease, type ReleaseTarget } from "./release-plan.js";
 
 const digestOf = async (bytes: Uint8Array): Promise<Uint8Array> => new Uint8Array(await crypto.subtle.digest("SHA-256", bytes.slice()));
 
-const ballotTarget = (input: BallotInput): ReleaseTarget => ({ ...input, payer: createNoopSigner(input.owner) });
-
 export function proofSettlement(context: ClientContext) {
-  return async (input: SettleProofInput) => {
+  return async (input: SettleProofInput): Promise<Plan> => {
     const { judge } = input;
     const payer = input.payer ?? judge;
     const plan = await planRelease(context, { ...input, payer }, async (attestor, intent) => {
@@ -40,7 +39,7 @@ export function proofSettlement(context: ClientContext) {
     });
     const message = await attestedProofMessage(judge.address, plan.proof);
     const settle = await buildFillAttested({ ...plan.fill, ...plan.claims, solver: payer });
-    return context.send([...plan.setup, await signEd25519Instruction(judge, message), settle], payer);
+    return planOf({ payer: payer.address, instructions: [...plan.setup, await signEd25519Instruction(judge, message), settle] });
   };
 }
 
@@ -49,7 +48,7 @@ export const committeeJudged = (attestor: Address): string =>
 
 export function proofBallotOf(context: ClientContext) {
   return async (input: BallotInput): Promise<ProofBallot> => {
-    const plan = await planRelease(context, ballotTarget(input), async (attestor, intent) => {
+    const plan = await planRelease(context, input, async (attestor, intent) => {
       if ((await loadCommittee(context.transport, attestor)) !== null) {
         throw new NotSettleable(intent, "committee-judged", committeeJudged(attestor));
       }
@@ -73,11 +72,11 @@ export function committeeSettlement(context: ClientContext) {
   };
 
   const committeeBallot = async (input: BallotInput): Promise<CommitteeBallot> => {
-    const { plan, committee, digest } = await planned(ballotTarget(input));
+    const { plan, committee, digest } = await planned(input);
     return { intent: plan.intent, committee, payee: plan.proof.payee, digest };
   };
 
-  const prepareCommitteeRelease = async (input: SettleCommitteeInput): Promise<CommitteeRelease> => {
+  const settleCommittee = async (input: SettleCommitteeInput): Promise<CommitteePlan> => {
     const payer = input.payer ?? input.solver;
     const { plan, committee, digest } = await planned({ ...input, payer });
     for (const vote of input.votes) {
@@ -97,23 +96,13 @@ export function committeeSettlement(context: ClientContext) {
       signers: mask,
     });
     return {
+      ...planOf({ payer: payer.address, setup: plan.setup, instructions: [instruction, settle] }),
       intent: plan.intent,
       committee,
       payee: plan.proof.payee,
-      signers: committeeSigners(committee, mask),
-      payer,
-      setup: plan.setup,
-      instructions: [instruction, settle],
+      voters: committeeSigners(committee, mask),
     };
   };
 
-  const settleCommittee = async (input: SettleCommitteeInput) => {
-    const { setup, instructions, payer } = await prepareCommitteeRelease(input);
-    if (setup.length > 0) {
-      await context.send(setup, payer);
-    }
-    return context.send(instructions, payer);
-  };
-
-  return { committeeBallot, prepareCommitteeRelease, settleCommittee };
+  return { committeeBallot, settleCommittee };
 }

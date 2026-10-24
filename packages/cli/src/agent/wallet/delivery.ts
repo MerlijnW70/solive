@@ -91,12 +91,12 @@ export async function confirmedRelease(ctx: AgentContext, target: ConfirmTarget)
 export const signSalt = (intent: Address, sha256: string): string =>
   `the worker's ed25519 signature of the message ${Buffer.from(saltMessage(intent, sha256)).toString("hex")}, as 128 hex digits; the salt and sealing keys are derived from it, so sign it with the worker's key, the same way each time`;
 
-type Announcing = Omit<AnnounceInput, keyof SecretInput> & { worker: TransactionSigner; saltSignature?: Uint8Array };
+type Announcing = Omit<AnnounceInput, keyof SecretInput | "intent"> & { intent: Address; worker: TransactionSigner; saltSignature?: Uint8Array };
 
 async function planOf(ctx: AgentContext, input: Announcing, saltHint = false): Promise<AnnouncementPlan> {
   const { worker, saltSignature, ...rest } = input;
   try {
-    return await createClient({ url: ctx.url ?? "", transport: ctx.transport }).prepareAnnouncement({ ...rest, ...secretInputOf(worker, { saltSignature }) });
+    return await createClient({ url: ctx.url ?? "", transport: ctx.transport }).plan.announce({ ...rest, ...secretInputOf(worker, { saltSignature }) });
   } catch (error) {
     if (isSdkError(error, "bad-salt-signature")) {
       throw new InvalidInput([{ path: "salt_signature", message: error.message }]);

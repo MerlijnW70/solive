@@ -167,15 +167,15 @@ describe("createTestWorld", () => {
     const judge = await world.wallet();
     const params = attestedResult({ amountIn: parseAmount("0.1", 9), minResult: 1n, maxResult: 1n, attestor: judge.address, specHash: new Uint8Array(32).fill(3), judgeFee: 0n });
     const job = await world.client.createIntent({ signer: owner, inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT, params, expiresIn: 600n });
-    const early = await world.client.expire(cranker, owner.address, job.nonce).catch((error: unknown) => error);
+    const early = await world.client.expire(cranker, { owner: owner.address, nonce: job.nonce }).catch((error: unknown) => error);
     expect(world.client.explain(early)?.name).toBe("NotExpired");
     expect(world.warp(599)).toBe(NOW + 599n);
-    expect(world.client.explain(await world.client.expire(cranker, owner.address, job.nonce).catch((error: unknown) => error))?.name).toBe("NotExpired");
+    expect(world.client.explain(await world.client.expire(cranker, { owner: owner.address, nonce: job.nonce }).catch((error: unknown) => error))?.name).toBe("NotExpired");
     expect(world.warp(1n)).toBe(NOW + 600n);
     expect(await chainTime(world.transport)).toBe(NOW + 600n);
-    await world.client.expire(cranker, owner.address, job.nonce);
-    expect((await world.client.intent(owner.address, job.nonce))?.intent.status).toBe(IntentStatus.Expired);
-    expect(eventNamed(await world.client.history(job.intent), "IntentExpired")?.name).toBe("IntentExpired");
+    await world.client.expire(cranker, { owner: owner.address, nonce: job.nonce });
+    expect((await world.client.intent({ owner: owner.address, nonce: job.nonce }))?.intent.status).toBe(IntentStatus.Expired);
+    expect(eventNamed((await world.client.history(job.intent)).events, "IntentExpired")?.name).toBe("IntentExpired");
     expect(await world.tokenBalance(owner.address, NATIVE_MINT)).toBe(parseAmount("0.1", 9));
   });
 

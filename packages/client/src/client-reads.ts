@@ -1,10 +1,22 @@
 import type { Address, Signature } from "@solana/kit";
-import { decodeEvent, type EngineEvent, findAssociatedTokenAddress, tokenName } from "@intent-engine/core";
+import { decodeEvent, type EngineEvent, findAssociatedTokenAddress, InvalidInput, tokenName } from "@intent-engine/core";
 import { createdAccount, tokenAmountOf } from "./accounts.js";
-import { type Balances, type ClientContext, type Fill, HISTORY_LIMIT, type HistoryEvent, type TokenBalance } from "./client-types.js";
+import { TransportLacks } from "./client-errors.js";
+import {
+  type Balances,
+  type ClientContext,
+  type Fill,
+  HISTORY_LIMIT,
+  HISTORY_LIMIT_MAX,
+  type HistoryEvent,
+  type HistoryOptions,
+  type HistoryPage,
+  type TokenBalance,
+} from "./client-types.js";
+import { intentAddress, type IntentRef } from "./intent-ref.js";
 import { createdAtOf, scan } from "./jobs.js";
 import { releasedDelivery } from "./release-reads.js";
-import type { EngineTransaction } from "./transport.js";
+import type { EngineTransaction, Transport } from "./transport.js";
 
 const FILL_EVENTS: ReadonlySet<string> = new Set(["IntentFilled", "FillEnded"]);
 
@@ -23,10 +35,30 @@ function eventsIn(transactions: readonly EngineTransaction[], intent: Address): 
 const fillIn = (intent: Address) => (transaction: EngineTransaction): boolean =>
   eventsIn([transaction], intent).some(({ name }) => FILL_EVENTS.has(name));
 
-export function clientReads({ transport, mint }: ClientContext) {
-  const history = async (intent: Address, limit = HISTORY_LIMIT): Promise<HistoryEvent[]> => {
+export const HISTORY_LIMIT_RANGE = `limit must be a whole number from 1 to ${HISTORY_LIMIT_MAX}`;
+
+async function historyPage(transport: Transport, intent: Address, options: HistoryOptions): Promise<{ transactions: EngineTransaction[]; next: string | null }> {
+  const limit = options.limit ?? HISTORY_LIMIT;
+  if (!Number.isInteger(limit) || limit < 1 || limit > HISTORY_LIMIT_MAX) {
+    throw new InvalidInput("limit", "range", HISTORY_LIMIT_RANGE);
+  }
+  const cursor = (count: number, last: string | undefined) => (count < limit ? null : (last ?? null));
+  if (transport.signaturesOf === undefined || transport.transactionsOf === undefined) {
+    if (options.before !== undefined) {
+      throw new TransportLacks(transport.signaturesOf === undefined ? "signaturesOf" : "transactionsOf");
+    }
     const transactions = await transport.engineTransactions(limit, intent);
-    return eventsIn(transactions, intent).map((event) => {
+    return { transactions, next: cursor(transactions.length, transactions.at(-1)?.signature) };
+  }
+  const listed = await transport.signaturesOf(intent, limit, options.before);
+  return { transactions: await transport.transactionsOf(listed), next: cursor(listed.length, listed.at(-1)?.signature) };
+}
+
+export function clientReads({ transport, mint }: ClientContext) {
+  const history = async (ref: IntentRef, options: HistoryOptions = {}): Promise<HistoryPage> => {
+    const intent = await intentAddress(ref);
+    const { transactions, next } = await historyPage(transport, intent, options);
+    const events = eventsIn(transactions, intent).map((event) => {
       if (event.name !== "IntentAttested" && event.name !== "IntentSplit") {
         return event;
       }
@@ -34,9 +66,11 @@ export function clientReads({ transport, mint }: ClientContext) {
       const released = release === undefined ? null : releasedDelivery(release, intent);
       return released === null ? event : { ...event, deliveredSha256: released.sha256, deliveredSalt: released.salt };
     });
+    return { events, next };
   };
 
-  const fillOf = async (intent: Address): Promise<Fill | null> => {
+  const fillOf = async (ref: IntentRef): Promise<Fill | null> => {
+    const intent = await intentAddress(ref);
     const floor = await createdAtOf(transport, intent);
     const events = eventsIn((await scan(transport, intent, { floor, until: fillIn(intent) })).transactions, intent);
     for (const event of events) {

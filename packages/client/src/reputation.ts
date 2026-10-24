@@ -2,6 +2,7 @@ import type { Address, Instruction, TransactionSigner } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import { feedbackMemo, formatAmount, NATIVE_MINT } from "@intent-engine/core";
 import { HISTORY_LIMIT } from "./client-types.js";
+import { intentAddress, type IntentRef } from "./intent-ref.js";
 import { memoInstruction } from "./job-memos.js";
 import { NotSettleable } from "./client-errors.js";
 import { fundedBy, fundingLookup } from "./funding.js";
@@ -125,21 +126,22 @@ export async function reputationOf(transport: Transport, wallet: Address, option
   };
 }
 
-export type FeedbackInput = { owner: TransactionSigner; intent: Address; score: number; note?: string };
+export type FeedbackInput = { owner: TransactionSigner; intent: IntentRef; score: number; note?: string };
 
 export async function feedbackInstructions(transport: Transport, input: FeedbackInput, history = HISTORY_LIMIT): Promise<Instruction[]> {
-  const memo = feedbackMemo({ intent: input.intent, score: input.score, ...(input.note === undefined ? {} : { note: input.note }) });
-  const transactions = await transport.engineTransactions(history, input.intent);
-  const events = eventsOf(transactions, input.intent);
+  const intent = await intentAddress(input.intent);
+  const memo = feedbackMemo({ intent, score: input.score, ...(input.note === undefined ? {} : { note: input.note }) });
+  const transactions = await transport.engineTransactions(history, intent);
+  const events = eventsOf(transactions, intent);
   const released = events.find(({ event }) => event.name === "IntentAttested" || event.name === "IntentSplit")?.event;
   if (released === undefined || (released.name !== "IntentAttested" && released.name !== "IntentSplit")) {
-    throw new NotSettleable(input.intent, "no-release", "has no release among its recent transactions, so there is no work to give feedback on");
+    throw new NotSettleable(intent, "no-release", "has no release among its recent transactions, so there is no work to give feedback on");
   }
   if (released.fields.owner !== input.owner.address) {
-    throw new NotSettleable(input.intent, "not-owner", `was paid for by ${released.fields.owner}, and only that owner gives feedback on it`);
+    throw new NotSettleable(intent, "not-owner", `was paid for by ${released.fields.owner}, and only that owner gives feedback on it`);
   }
-  if (feedbackOf(transactions, input.intent, input.owner.address) !== undefined) {
-    throw new NotSettleable(input.intent, "feedback-given", "already has its owner's feedback; the first one counts");
+  if (feedbackOf(transactions, intent, input.owner.address) !== undefined) {
+    throw new NotSettleable(intent, "feedback-given", "already has its owner's feedback; the first one counts");
   }
-  return [memoInstruction(input.owner, memo), getTransferSolInstruction({ source: input.owner, destination: input.intent, amount: 0n })];
+  return [memoInstruction(input.owner, memo), getTransferSolInstruction({ source: input.owner, destination: intent, amount: 0n })];
 }

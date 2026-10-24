@@ -706,7 +706,7 @@ describe("cli against the deployed engine", () => {
     const work = "ab".repeat(32);
     const url = "https://" + "example.org/work";
     const args = ["deliver", "--keypair", "w.json", "--intent", job.intent, "--sha256", work.toUpperCase(), "--work-url", url];
-    const plan = await client.prepareAnnouncement({ worker, intent: job.intent, sha256: work, url });
+    const plan = await client.plan.announce({ worker, intent: job.intent, sha256: work, url });
     const summary = announcedLines(plan, work, url, worker.address, judge.address);
     const preview = await cli(args, { "w.json": worker });
     expect(preview.json()).toMatchObject({ intent: job.intent, attestor: judge.address, announcement: plan.announcement, commitment: plan.commitment, salt: plan.salt, summary, sent: false });
@@ -741,7 +741,7 @@ describe("cli against the deployed engine", () => {
       const args = ["deliver", "--keypair", "w.json", "--intent", job.intent, "--artifact", artifact, "--work-url", "https://example.org/work"];
       const preview = await cli(args, { "w.json": worker });
       expect([preview.code, preview.err]).toEqual([EXIT_OK, ""]);
-      const plan = await client.prepareAnnouncement({ worker, intent: job.intent, sha256, url: "https://" + "example.org/work" });
+      const plan = await client.plan.announce({ worker, intent: job.intent, sha256, url: "https://" + "example.org/work" });
       expect(preview.json()).toMatchObject({ commitment: plan.commitment, warnings: [ANNOUNCE_FIRST] });
       expect(preview.json()["summary"] as string[]).toEqual(announcedLines(plan, sha256, "https://" + "example.org/work", worker.address, judge.address));
       const sent = await cli([...args, "--yes"], { "w.json": worker });

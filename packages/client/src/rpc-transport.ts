@@ -35,9 +35,8 @@ import type {
   Transport,
 } from "./rpc-shapes.js";
 import { SYSTEM_PROGRAM_ADDRESS, TOKEN_PROGRAMS } from "./accounts.js";
+import { intentMatches } from "./intent-filters.js";
 import { holdingsOf, keysAt, MEMO_PROGRAM_ADDRESS, signersAmong, solTransfersOf } from "./transaction-keys.js";
-
-const INTENT_OWNER_OFFSET = 8n;
 
 type ProgramFilter = { dataSize: bigint } | { memcmp: { offset: bigint; bytes: string; encoding: "base58" } };
 
@@ -48,7 +47,9 @@ function accountFilters(filter?: EngineAccountFilter): ProgramFilter[] {
   return [
     ...(filter.dataSize === undefined ? [] : [{ dataSize: BigInt(filter.dataSize) }]),
     { memcmp: { offset: 0n, bytes: getBase58Decoder().decode(filter.discriminator), encoding: "base58" as const } },
-    ...(filter.match ?? []).map(({ offset, address }) => ({ memcmp: { offset: BigInt(offset), bytes: address as string, encoding: "base58" as const } })),
+    ...(filter.match ?? []).map((match) => ({
+      memcmp: { offset: BigInt(match.offset), bytes: "address" in match ? (match.address as string) : getBase58Decoder().decode(match.bytes), encoding: "base58" as const },
+    })),
   ];
 }
 
@@ -361,12 +362,9 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
     async engineAccounts(filter) {
       return (await programAccounts(accountFilters(filter), atLeast(), true)).map(decodedEntry);
     },
-    async intents(owner, read) {
+    async intents(query, read) {
       const found = await programAccounts(
-        [
-          ...accountFilters({ discriminator: getIntentDiscriminatorBytes(), dataSize: getIntentSize() }),
-          ...(owner === undefined ? [] : [{ memcmp: { offset: INTENT_OWNER_OFFSET, bytes: owner as string, encoding: "base58" as const } }]),
-        ],
+        accountFilters({ discriminator: getIntentDiscriminatorBytes(), dataSize: getIntentSize(), match: intentMatches(query) }),
         atLeast(read?.minContextSlot),
         read !== undefined,
         read?.onSlot,

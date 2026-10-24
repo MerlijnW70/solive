@@ -28,7 +28,7 @@ describe("refuting, reclaiming and closing", () => {
     const refute = { worker: early, earlier: earlier.announcement, paid: paid.announcement, sha256: WORK, url: workUrl("first.tar") };
     await expect(client.refute(refute)).rejects.toThrow(NotRefutable);
     await expect(client.refute(refute)).rejects.toThrow("which was never paid");
-    await client.settleProof({ judge: judge.signer, owner: owner.address, nonce, ...paid, result: 1n });
+    await client.settleProof({ judge: judge.signer, intent: { owner: owner.address, nonce }, ...paid, result: 1n });
     const sent = w.chain.sent.length;
     await expect(client.refute({ ...refute, url: workUrl("other.tar") })).rejects.toThrow("does not open with the url");
     await expect(client.refute({ ...refute, sha256: sha("other") })).rejects.toThrow(`paid the work ${WORK}`);
@@ -50,7 +50,7 @@ describe("refuting, reclaiming and closing", () => {
     const relayed = await client.announce({ worker, payer: relayer, intent, sha256: WORK, url: workUrl("relayed.tar") });
     expect(await client.reclaim({ worker })).toEqual({ closed: [], kept: [own.announcement, relayed.announcement], signatures: [] });
     await expect(client.closeBook(intent, owner)).rejects.toThrow(BookNotClosable);
-    await client.cancel(owner, nonce);
+    await client.cancel(owner, { owner: owner.address, nonce });
     await expect(client.closeBook(intent, owner)).rejects.toThrow("still holds 2 announcements");
     const [workerBefore, relayerBefore] = [w.chain.svm.getBalance(worker.address) ?? 0n, w.chain.svm.getBalance(relayer.address) ?? 0n];
     const rent = w.chain.svm.getBalance(relayed.announcement) ?? 0n;
@@ -78,7 +78,7 @@ describe("refuting, reclaiming and closing", () => {
       const params = { kind: Kind.AttestedResult, amountIn: 1_000n, minResult: 1n, maxResult: 1n, attestor: judge.signer.address, specHash: specHash("the spec"), judgeFee: 0n } as const;
       const made = await client.createIntent({ signer: owner, params, inputMint: NATIVE_MINT, outputMint: w.outputMint });
       await client.announce({ worker, payer: await fundedSigner(w), intent: made.intent, sha256: WORK, url: workUrl() });
-      await client.cancel(owner, made.nonce);
+      await client.cancel(owner, { owner: owner.address, nonce: made.nonce });
       intents.push(made.intent);
     }
     const mine = await client.announcementsBy(worker.address);
@@ -101,7 +101,7 @@ describe("refuting, reclaiming and closing", () => {
       { wallet: worker.address, weight: 7_000 },
       { wallet: coauthor.address, weight: 3_000 },
     ];
-    const target = { owner: owner.address, nonce, ...delivered, result: 1n, recipients };
+    const target = { intent: { owner: owner.address, nonce }, ...delivered, result: 1n, recipients };
     const stranger: Address = (await fundedSigner(w)).address;
     await expect(client.splitBallot({ ...target, recipients: [{ wallet: stranger, weight: 10_000 }] })).rejects.toThrow(NotSettleable);
     const ballot = await client.splitBallot(target);

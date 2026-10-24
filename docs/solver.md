@@ -138,14 +138,14 @@ const solver = await key("solive-solver.json");
 const token = (await key("solive-token.json")).address;
 ```
 
-This takes the open intents that sell wrapped SOL for your token and ask at most 200 per SOL, and fills each one. `fill` creates any token account the fill needs and passes the fee recipient the config names, the treasury wallet: the engine refuses a fill without it whenever the protocol fee is above zero. `route` mints exactly what the fill delivers. This prints 5 and 0.049975 for the intent from step 3.
+This asks the node for the open intents that sell wrapped SOL for your token, takes those that ask at most 200 per SOL, and fills each one. `fill` creates any token account the fill needs and passes the fee recipient the config names, the treasury wallet: the engine refuses a fill without it whenever the protocol fee is above zero. `route` mints exactly what the fill delivers. This prints 5 and 0.049975 for the intent from step 3.
 
 ```ts
 const now = await client.chainTime();
-const open = await client.intents({ status: IntentStatus.Open });
+const open = await client.intents({ status: IntentStatus.Open, inputMint: NATIVE_MINT, outputMint: token });
 const output = await findAssociatedTokenAddress({ owner: solver.address, mint: token, tokenProgram: TOKEN_PROGRAM_ADDRESS });
 for (const { address, intent } of open) {
-  if (intent.inputMint !== NATIVE_MINT || intent.outputMint !== token || intent.owner === solver.address || now >= intent.expiresAt) {
+  if (intent.owner === solver.address || now >= intent.expiresAt) {
     continue;
   }
   const { sells, receivesAtLeast } = termsOf(intent, now);
@@ -153,7 +153,7 @@ for (const { address, intent } of open) {
     continue;
   }
   const route = [getMintToInstruction({ mint: token, token: output, mintAuthority: solver, amount: receivesAtLeast })];
-  await client.fill({ solver, owner: intent.owner, nonce: intent.nonce, amountOut: receivesAtLeast, route });
+  await client.fill({ solver, intent: address, amountOut: receivesAtLeast, route });
   const fill = await client.fillOf(address);
   console.log(formatAmount(fill?.delivered ?? 0n, 9), formatAmount(fill?.net ?? 0n, 9));
 }

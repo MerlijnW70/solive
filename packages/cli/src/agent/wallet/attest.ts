@@ -136,7 +136,7 @@ async function proofTarget(ctx: AgentContext, escrow: Escrow, input: { owner: Ad
   if (input.pay_to !== undefined && input.pay_to !== opening.worker) {
     throw new AgentRefusal("NotEarliestAnnouncer", notEarliest(opening.worker, delivered));
   }
-  const target: BallotInput = { owner: input.owner, nonce: input.nonce, announcement: opening.announcement, opening: { sha256: delivered, salt: opening.salt }, result };
+  const target: BallotInput = { intent: { owner: input.owner, nonce: input.nonce }, announcement: opening.announcement, opening: { sha256: delivered, salt: opening.salt }, result };
   return { delivered, opening, skipped, target };
 }
 

@@ -74,8 +74,8 @@ const [owner, judge] = [await world.wallet(), await world.wallet()];
 const params = attestedResult({ amountIn: 1000000n, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash: new Uint8Array(32).fill(1), judgeFee: 0n });
 const job = await world.client.createIntent({ signer: owner, inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT, params, expiresIn: 60n });
 world.warp(60);
-await world.client.expire(judge, owner.address, job.nonce);
-if ((await world.client.intent(owner.address, job.nonce))?.intent.status !== IntentStatus.Expired) throw new Error("the world did not expire the escrow");
+await world.client.expire(judge, job.intent);
+if ((await world.client.intent({ owner: owner.address, nonce: job.nonce }))?.intent.status !== IntentStatus.Expired) throw new Error("the world did not expire the escrow");
 ' "$baseline"
 printed="$(node_modules/.bin/intent-engine --version --output json)"
 [[ "$(node -p 'JSON.parse(process.argv[1]).version' "$printed")" == "$version" ]] || { echo "intent-engine --version printed $printed, not $version" >&2; exit 1; }

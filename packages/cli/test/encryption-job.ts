@@ -86,7 +86,7 @@ export async function announce(j: Job, worker: KeyPairSigner, work = WORK): Prom
   nextSlot();
   const client = createClient({ url: "http://cluster", transport });
   const input = { worker, intent: j.intent, sha256: work, url: WORK_URL };
-  const plan = await client.prepareAnnouncement(input);
+  const plan = await client.plan.announce(input);
   const made = await client.announce(input);
   return { announcement: made.announcement, seq: made.seq, salt: made.salt, sealedTo: plan.sealedTo };
 }

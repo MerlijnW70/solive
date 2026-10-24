@@ -64,7 +64,7 @@ async function setup() {
     return { nonce, intent };
   };
   const release = async (owner: KeyPairSigner, judge: KeyPairSigner, nonce: bigint, delivered: Delivered) =>
-    client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n });
+    client.settleProof({ judge, intent: { owner: owner.address, nonce }, ...delivered, result: 1n });
   const job = async (owner: KeyPairSigner, judge: KeyPairSigner, worker: KeyPairSigner, sha256: string, inputMint: Address = NATIVE_MINT, amountIn: bigint = PAY) => {
     const { nonce, intent } = await escrow(owner, judge, inputMint, amountIn);
     await release(owner, judge, nonce, await announced(client, worker, intent, sha256));

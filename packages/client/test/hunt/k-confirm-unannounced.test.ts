@@ -37,9 +37,9 @@ describe("a confirmed release whose hash was never announced", () => {
       return account.exists ? tokenAmount(account.data) : 0n;
     };
     const opening = { sha256: neverAnnounced, salt: delivered.opening.salt };
-    await expect(client.settleProof({ judge: judge.signer, owner: w.owner.address, nonce, announcement: delivered.announcement, opening, result: 1n })).rejects.toThrow(NotSettleable);
+    await expect(client.settleProof({ judge: judge.signer, intent: { owner: w.owner.address, nonce }, announcement: delivered.announcement, opening, result: 1n })).rejects.toThrow(NotSettleable);
     expect(read()).toBe(0n);
-    expect((await client.intent(w.owner.address, nonce))?.intent.status).toBe(IntentStatus.Open);
+    expect((await client.intent({ owner: w.owner.address, nonce }))?.intent.status).toBe(IntentStatus.Open);
     expect(await confirmOnBoth(transport, transport, { ...target, sha256: delivered.opening.sha256 })).toMatchObject({ announcer: `${worker.address} in ${delivered.announcement}` });
   });
 });

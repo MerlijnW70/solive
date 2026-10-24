@@ -196,12 +196,11 @@ describe.skipIf(url === undefined || authorityFile === undefined)("the client ag
 
     const filled = await sender.fill({
       solver,
-      owner: owner.address,
-      nonce: created.nonce,
+      intent: created.intent,
       route: [getMintToInstruction({ mint: outputMint, token: await ata(solver.address, outputMint), mintAuthority: authority, amount: MIN_OUT })],
     });
     expect(await plain.signatureStatuses?.([filled])).toEqual(["landed"]);
-    expect((await sender.intent(owner.address, created.nonce))?.intent.status).toBe(IntentStatus.Filled);
+    expect((await sender.intent({ owner: owner.address, nonce: created.nonce }))?.intent.status).toBe(IntentStatus.Filled);
     expect((await sender.balances(owner.address, [outputMint])).tokens.find((held) => held.mint === outputMint)?.amount).toBe(MIN_OUT);
 
     const stale = await plain.latestBlockhash();

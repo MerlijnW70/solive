@@ -50,7 +50,7 @@ async function ballotOf(ctx: AgentContext, input: BallotArgs, judge: Address, de
     }
   }
   const { opening, skipped } = await firstOpeningFor(ctx, judge, intent, delivered, device);
-  const target = { owner: input.owner, nonce: input.nonce, announcement: opening.announcement, opening: { sha256: delivered, salt: opening.salt }, result: input.result };
+  const target = { intent: { owner: input.owner, nonce: input.nonce }, announcement: opening.announcement, opening: { sha256: delivered, salt: opening.salt }, result: input.result };
   const ballot: CommitteeBallot = await client.committeeBallot(target).catch(settleRefused);
   if (voting && !ballot.committee.members.includes(judge)) {
     throw new AgentRefusal("Unauthorized", NOT_A_MEMBER);
@@ -157,7 +157,7 @@ export const walletCommitteeRelease = define({
     });
     let release;
     try {
-      release = await client.prepareCommitteeRelease({ ...target, solver: signer, votes });
+      release = await client.plan.settleCommittee({ ...target, solver: signer, votes });
     } catch (error) {
       if (isSdkError(error, "vote-rejected")) {
         throw new AgentRefusal("SigMessage", error.message);
@@ -180,12 +180,12 @@ export const walletCommitteeRelease = define({
       announcement: opening.announcement,
       worker: opening.worker,
       seq: opening.seq,
-      signers: release.signers,
+      signers: release.voters,
       approval,
       ...skippedField(skipped),
       summary: [
         ...ballotLines(ballot, input, delivered, opening.worker, opening.announcement),
-        `Signed by: ${release.signers.length} of its members, ${release.signers.join(", ")}`,
+        `Signed by: ${release.voters.length} of its members, ${release.voters.join(", ")}`,
         `Pays the fee: this server's wallet ${signer.address}`,
       ],
       prepared,

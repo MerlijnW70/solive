@@ -69,7 +69,7 @@ describe("refuting and reclaiming with the wallet tools", () => {
     const first = await ok(early, "wallet_deliver", { intent, sha256: WORK, url: url("early.tar"), send: true });
     const later = await keyed();
     const second = await client.announce({ worker: later, intent, sha256: WORK, url: url("later.tar") });
-    await client.settleProof({ judge, payer: judge, owner: w.owner.address, nonce: 0n, announcement: second.announcement, opening: { sha256: WORK, salt: second.salt }, result: 1n });
+    await client.settleProof({ judge, payer: judge, intent: { owner: w.owner.address, nonce: 0n }, announcement: second.announcement, opening: { sha256: WORK, salt: second.salt }, result: 1n });
     const wrongUrl = await call(early, "wallet_refute", { earlier: first["announcement"], paid: second.announcement, url: url("other.tar") });
     expect(wrongUrl.value).toMatchObject({ code: "NotRefutable" });
     const preview = await ok(early, "wallet_refute", { earlier: first["announcement"], paid: second.announcement, url: url("early.tar") });

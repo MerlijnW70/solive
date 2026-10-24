@@ -7,7 +7,6 @@ import {
   claimListAddress,
   CLAIMS_OPEN,
   claimSlot,
-  findIntentPda,
   getClaimBoardDecoder,
   getClaimListDecoder,
   getStandbyDecoder,
@@ -113,8 +112,7 @@ function claimsViewOf(board: Address, data: Uint8Array, now: bigint): ClaimsView
   };
 }
 
-export async function loadClaims(transport: Transport, owner: Address, nonce: bigint): Promise<ClaimsView | null> {
-  const [intent] = await findIntentPda({ owner, nonce });
+export async function loadClaims(transport: Transport, intent: Address): Promise<ClaimsView | null> {
   const board = await claimBoardAddress(intent);
   const data = await engineData(transport, board, CLAIM_BOARD_DISCRIMINATOR);
   const view = data === null ? null : claimsViewOf(board, data, await chainTime(transport));

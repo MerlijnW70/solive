@@ -119,7 +119,7 @@ async function setup() {
     svm.setClock(clock);
   };
   const failure = async (pending: Promise<unknown>) => client.explain(await pending.then(() => null, (error: unknown) => error))?.name;
-  const status = async (owner: Address, nonce: bigint) => (await client.intent(owner, nonce))?.intent.status;
+  const status = async (owner: Address, nonce: bigint) => (await client.intent({ owner, nonce }))?.intent.status;
   const swap = async (owner: KeyPairSigner, receiver?: Address) =>
     client.createIntent({
       signer: owner,
@@ -127,7 +127,7 @@ async function setup() {
       inputMint: NATIVE_MINT,
       outputMint: w.outputMint,
       expiresIn: TTL,
-      ...(receiver === undefined ? {} : { receiver }),
+      ...(receiver === undefined ? {} : { payTo: receiver }),
     });
   const escrow = async (owner: KeyPairSigner, judge: Address) =>
     client.createIntent({
@@ -161,7 +161,7 @@ async function setup() {
     return account;
   };
   const fill = async (solver: KeyPairSigner, owner: Address, nonce: bigint, solverOutput: Address) => {
-    const held = await client.intent(owner, nonce);
+    const held = await client.intent({ owner, nonce });
     return client.send(
       [
         await getCreateAssociatedTokenIdempotentInstructionAsync({ payer: solver, owner: solver.address, mint: NATIVE_MINT }),
@@ -188,7 +188,7 @@ async function setup() {
   };
   const deliver = async (worker: KeyPairSigner, intent: Address) => announced(client, worker, intent, WORK);
   const verdict = async (by: KeyPairSigner, sender: KeyPairSigner, owner: Address, nonce: bigint, judge: Address, payTo: Address, made: Delivered) => {
-    const held = await client.intent(owner, nonce);
+    const held = await client.intent({ owner, nonce });
     if (held === null) {
       throw new Error("no intent");
     }
@@ -298,7 +298,7 @@ describe("who can do what", () => {
         throw new Error("held back");
       },
     };
-    const input = { judge, payer: owner, owner: owner.address, nonce: job.nonce, ...made, result: 1n };
+    const input = { judge, payer: owner, intent: { owner: owner.address, nonce: job.nonce }, ...made, result: 1n };
     await expect(createClient({ url: LOCAL, transport: holding }).settleProof(input)).rejects.toThrow("held back");
     at(NOW + TTL);
     expect(await failure(fill(solver, owner.address, trade.nonce, output))).toBe("IntentExpired");
@@ -338,13 +338,13 @@ describe("who can do what", () => {
     const now = await escrow(owner, judge);
     const late = await escrow(owner, judge);
     const expired = await escrow(owner, judge);
-    await client.cancel(owner, now.nonce);
+    await client.cancel(owner, { owner: owner.address, nonce: now.nonce });
     expect(await tokens(owner.address)).toBe(PAY);
     at(NOW + TTL + 1n);
-    await client.cancel(owner, late.nonce);
+    await client.cancel(owner, { owner: owner.address, nonce: late.nonce });
     expect(await tokens(owner.address)).toBe(2n * PAY);
     await expire(await fresh(), owner.address, expired.nonce);
-    expect(await failure(client.cancel(owner, expired.nonce))).toBe("InvalidTransition");
+    expect(await failure(client.cancel(owner, { owner: owner.address, nonce: expired.nonce }))).toBe("InvalidTransition");
     expect(await status(owner.address, now.nonce)).toBe(IntentStatus.Cancelled);
     expect(await status(owner.address, late.nonce)).toBe(IntentStatus.Cancelled);
     expect(await status(owner.address, expired.nonce)).toBe(IntentStatus.Expired);
@@ -356,8 +356,8 @@ describe("who can do what", () => {
     const judge = await generateKeyPairSigner();
     const job = await escrow(owner, judge.address);
     const made = await deliver(await fresh(), job.intent);
-    await client.settleProof({ judge, payer: owner, owner: owner.address, nonce: job.nonce, ...made, result: 1n });
-    expect(await failure(client.cancel(owner, job.nonce))).toBe("InvalidTransition");
+    await client.settleProof({ judge, payer: owner, intent: { owner: owner.address, nonce: job.nonce }, ...made, result: 1n });
+    expect(await failure(client.cancel(owner, { owner: owner.address, nonce: job.nonce }))).toBe("InvalidTransition");
     expect(await status(owner.address, job.nonce)).toBe(IntentStatus.Filled);
   });
 
@@ -377,10 +377,10 @@ describe("who can do what", () => {
         throw new Error("held back");
       },
     };
-    const input = { judge, payer: owner, owner: owner.address, nonce: job.nonce, ...made, result: 1n };
+    const input = { judge, payer: owner, intent: { owner: owner.address, nonce: job.nonce }, ...made, result: 1n };
     await expect(createClient({ url: LOCAL, transport: holding }).settleProof(input)).rejects.toThrow("held back");
     expect(held.length).toBeGreaterThan(0);
-    await client.cancel(owner, job.nonce);
+    await client.cancel(owner, { owner: owner.address, nonce: job.nonce });
     await expect(client.settleProof(input)).rejects.toThrow(NotSettleable);
     expect(await failure(w.chain.transport.send(held, owner))).toBe("InvalidTransition");
     expect(await status(owner.address, job.nonce)).toBe(IntentStatus.Cancelled);
@@ -413,7 +413,7 @@ describe("who can do what", () => {
     const cancelled = await swap(owner);
     const expired = await swap(owner);
     await fill(solver, owner.address, filled.nonce, await outputFor(solver));
-    await client.cancel(owner, cancelled.nonce);
+    await client.cancel(owner, { owner: owner.address, nonce: cancelled.nonce });
     at(NOW + TTL);
     await expire(await fresh(), owner.address, expired.nonce);
     const rent = svm.minimumBalanceForRentExemption(BigInt(getIntentSize())) + svm.minimumBalanceForRentExemption(BigInt(getTokenSize()));
@@ -427,7 +427,7 @@ describe("who can do what", () => {
       await close(closer, owner.address, nonce);
       expect(sol(owner.address) - ownerBefore).toBe(toOwner);
       expect(sol(closer.address) - closerBefore).toBe(toCloser - SIGNATURE_FEE);
-      expect(await client.intent(owner.address, nonce)).toBeNull();
+      expect(await client.intent({ owner: owner.address, nonce })).toBeNull();
       expect(svm.getAccount((await findIntentPda({ owner: owner.address, nonce }))[0]).exists).toBe(false);
     }
   });

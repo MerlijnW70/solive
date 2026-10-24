@@ -109,7 +109,7 @@ export const walletAttestSplit = define({
     const left = claimed.accounts.claims === undefined ? undefined : await boardLeft(ctx.transport, input.owner, input.nonce, intent);
     await confirmedRelease(ctx, { intent, attestor: signer.address, sha256: delivered, payees: wallets, keypair: await walletOpeners(ctx) });
     const shares = input.recipients.map(({ wallet, weight }) => ({ wallet, weight }));
-    const target = { owner: input.owner, nonce: input.nonce, announcement: opening.announcement, opening: { sha256: delivered, salt: opening.salt }, result, recipients: shares };
+    const target = { intent: { owner: input.owner, nonce: input.nonce }, announcement: opening.announcement, opening: { sha256: delivered, salt: opening.salt }, result, recipients: shares };
     const ballot = await createClient({ url: ctx.url ?? "", transport: ctx.transport }).splitBallot(target).catch(settleRefused);
     const token = await mintOf(ctx.transport, held.inputMint);
     const payees = await Promise.all(wallets.map((w) => tokenAccountIfMissing(ctx.transport, payer, w, held.inputMint, token.tokenProgram)));

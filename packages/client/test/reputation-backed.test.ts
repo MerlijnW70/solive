@@ -79,7 +79,7 @@ async function setup() {
   const job = async (owner: KeyPairSigner, judge: KeyPairSigner, worker: KeyPairSigner, sha256: string, inputMint: Address = NATIVE_MINT) => {
     const { nonce, intent } = await escrow(owner, judge.address, inputMint);
     const delivered = await announced(client, worker, intent, sha256);
-    await client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n });
+    await client.settleProof({ judge, intent: { owner: owner.address, nonce }, ...delivered, result: 1n });
     return intent;
   };
   const tokens = async (owner: Address, amount: bigint) => {
@@ -103,7 +103,7 @@ async function setup() {
       throw new Error("a split needs a co-author");
     }
     const recipients = coauthors.map((coauthor, i) => ({ wallet: coauthor.address, weight: weights[i] ?? 0 }));
-    const target = { owner: owner.address, nonce, ...first, result: 1n, recipients };
+    const target = { intent: { owner: owner.address, nonce }, ...first, result: 1n, recipients };
     const ballot = await client.splitBallot(target);
     const signatures = await Promise.all(coauthors.map(async (coauthor) => ({ wallet: coauthor.address, signature: await signMessageBytes(coauthor, ballot.message) })));
     await client.settleSplit({ ...target, judge, signatures });

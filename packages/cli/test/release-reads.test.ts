@@ -72,7 +72,7 @@ describe("a worker's reputation", () => {
     });
     const [intent] = await findIntentPda({ owner: owner.address, nonce });
     const made = await client.announce({ worker, intent, sha256, url: URL_OF_WORK });
-    await client.settleProof({ judge, owner: owner.address, nonce, announcement: made.announcement, opening: { sha256, salt: made.salt }, result: 1n });
+    await client.settleProof({ judge, intent: { owner: owner.address, nonce }, announcement: made.announcement, opening: { sha256, salt: made.salt }, result: 1n });
     return { svm, worker, intent, sha256, owner, judge };
   }
 
@@ -153,14 +153,14 @@ describe("a committee release from a key file", () => {
     const own = (await ok(client, "wallet_committee_vote", { ...ballot, approval: preview["approval"], send: true }))["vote"] as { member: Address; signature: string };
     const local = createClient({ url: "http://cluster", transport });
     const first = await local.firstOpening({ intent, sha256: WORK, keypair: h.keypairs.get(other.address) });
-    const digest = await local.committeeBallot({ owner: wallet, nonce: BigInt(ballot.nonce), announcement: first.announcement, opening: first, result: 1n });
+    const digest = await local.committeeBallot({ intent: { owner: wallet, nonce: BigInt(ballot.nonce) }, announcement: first.announcement, opening: first, result: 1n });
     const theirs = await signCommitteeVote(other, digest.digest, digest.committee.members);
     const votes = [own, { member: theirs.member, signature: Buffer.from(theirs.signature).toString("hex") }];
     const shown = await ok(client, "wallet_committee_release", { ...ballot, votes });
     sends.length = 0;
     expect(await ok(client, "wallet_committee_release", { ...ballot, votes, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
     expect(sends).toEqual([]);
-    const account = await createClient({ url: "http://cluster", transport }).intent(wallet, BigInt(ballot.nonce));
+    const account = await createClient({ url: "http://cluster", transport }).intent({ owner: wallet, nonce: BigInt(ballot.nonce) });
     expect(account?.intent.status).toBe(IntentStatus.Filled);
   });
 });

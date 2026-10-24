@@ -790,7 +790,7 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet collaborativ
     const client = createClient({ url: url ?? "", transport });
     const made = await client.announce({ worker: coauthors[0] as KeyPairSigner, payer: owner, intent, sha256: work, url: "https://" + "example.org/devnet-split" });
     const shares = recipients.map((wallet, i) => ({ wallet, weight: weights[i] ?? 0 }));
-    const { message } = await client.splitBallot({ owner: owner.address, nonce: 0n, announcement: made.announcement, opening: { sha256: work, salt: made.salt }, result: 1n, recipients: shares });
+    const { message } = await client.splitBallot({ intent: { owner: owner.address, nonce: 0n }, announcement: made.announcement, opening: { sha256: work, salt: made.salt }, result: 1n, recipients: shares });
     const entries = await Promise.all(
       [...coauthors, attestor].map(async (signer) => ({
         publicKey: signer.address,

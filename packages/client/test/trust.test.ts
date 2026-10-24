@@ -47,7 +47,7 @@ async function setup() {
     const [intent] = await findIntentPda({ owner: owner.address, nonce });
     const sha256 = (jobs++).toString(16).padStart(64, "0");
     const delivered = await announced(client, worker, intent, sha256);
-    await client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n });
+    await client.settleProof({ judge, intent: { owner: owner.address, nonce }, ...delivered, result: 1n });
   };
   const createFee = async (fee: bigint) => {
     const settings = await client.config();

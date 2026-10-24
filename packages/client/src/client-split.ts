@@ -1,4 +1,4 @@
-import { type Address, createNoopSigner, getPublicKeyFromAddress, type Signature, type SignatureBytes, type TransactionSigner, verifySignature } from "@solana/kit";
+import { type Address, getPublicKeyFromAddress, type SignatureBytes, type TransactionSigner, verifySignature } from "@solana/kit";
 import {
   attestedSplitDigest,
   attestedSplitMessage,
@@ -10,7 +10,8 @@ import {
 import { loadCommittee } from "./client-committee.js";
 import { CosignRejected, NotSettleable } from "./client-errors.js";
 import { committeeJudged } from "./client-settle.js";
-import type { BallotInput, Client, ClientContext, MessageSigner } from "./client-types.js";
+import type { BallotInput, Client, ClientContext, ClientPlans, MessageSigner } from "./client-types.js";
+import { type Plan, planOf } from "./plan.js";
 import { releaseBasis, type ReleaseTarget } from "./release-plan.js";
 
 export type SplitShare = { wallet: Address; weight: number };
@@ -42,10 +43,10 @@ async function signs(wallet: Address, signature: Uint8Array, message: Uint8Array
   }
 }
 
-export type SplitSettlement = Pick<Client, "splitBallot" | "settleSplit">;
+export type SplitSettlement = Pick<ClientPlans, "settleSplit"> & Pick<Client, "splitBallot">;
 
 export function splitSettlement(context: ClientContext): SplitSettlement {
-  const planned = async (input: SplitBallotInput, payer: TransactionSigner) => {
+  const planned = async (input: SplitBallotInput, payer: TransactionSigner | undefined) => {
     const wallets = input.recipients.map(({ wallet }) => wallet);
     const weights = input.recipients.map(({ weight }) => weight);
     const target: ReleaseTarget = { ...input, payer };
@@ -64,11 +65,11 @@ export function splitSettlement(context: ClientContext): SplitSettlement {
   };
 
   const splitBallot = async (input: SplitBallotInput): Promise<SplitBallot> => {
-    const { basis, terms, cosigners, message } = await planned(input, createNoopSigner(input.owner));
+    const { basis, terms, cosigners, message } = await planned(input, undefined);
     return { intent: basis.intent, attestor: basis.judge, worker: basis.worker, splitHash: terms.splitHash, digest: await attestedSplitDigest(terms), cosigners, message };
   };
 
-  const settleSplit = async (input: SettleSplitInput): Promise<Signature> => {
+  const settleSplit = async (input: SettleSplitInput): Promise<Plan> => {
     const payer = input.payer ?? input.judge;
     const { basis, wallets, weights, message } = await planned(input, payer);
     if (basis.judge !== input.judge.address) {
@@ -86,11 +87,8 @@ export function splitSettlement(context: ClientContext): SplitSettlement {
     entries.push({ publicKey: input.judge.address, signature: await signMessageBytes(input.judge, message) });
     const recipients = await Promise.all(wallets.map(basis.account));
     const setup = [...recipients.flatMap(({ create }) => create), ...basis.setup];
-    if (setup.length > 0) {
-      await context.send(setup, payer);
-    }
     const settle = await buildFillAttestedSplit({ ...basis.fill, ...basis.claims, solver: payer, recipients: wallets, weights });
-    return context.send([buildEd25519CosignInstruction({ entries, message }), settle], payer);
+    return planOf({ payer: payer.address, setup, instructions: [buildEd25519CosignInstruction({ entries, message }), settle] });
   };
 
   return { splitBallot, settleSplit };

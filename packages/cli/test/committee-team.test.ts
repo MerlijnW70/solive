@@ -136,7 +136,7 @@ describe("a team judging together through the default wallet tools", () => {
     expect(released).toMatchObject({ sent: true, signature: expect.any(String) });
     const paid = await findAssociatedTokenAddress({ owner: worker, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     expect(balance(paid)).toBeGreaterThan(0n);
-    const settled = await createClient({ url: "http://cluster", transport }).intent(lead, BigInt(ballot.nonce));
+    const settled = await createClient({ url: "http://cluster", transport }).intent({ owner: lead, nonce: BigInt(ballot.nonce) });
     expect(settled?.intent.status).toBe(IntentStatus.Filled);
   });
 });

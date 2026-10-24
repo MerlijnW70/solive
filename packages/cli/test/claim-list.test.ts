@@ -127,7 +127,7 @@ describe("a claim list on chain", () => {
     const release = { owner, nonce: "0", delivered_sha256: WORK };
     const shown = await ok(s.client, "wallet_attest", release);
     expect(await ok(s.client, "wallet_attest", { ...release, approval: shown["approval"], send: true })).toMatchObject({ sent: true });
-    const found = await createClient({ url: "http://cluster", transport }).intent(owner, 0n);
+    const found = await createClient({ url: "http://cluster", transport }).intent({ owner, nonce: 0n });
     expect(found?.intent.status).toBe(IntentStatus.Filled);
   });
 

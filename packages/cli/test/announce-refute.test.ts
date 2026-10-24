@@ -41,8 +41,7 @@ async function payLater(j: Job, made: { announcement: Address; salt: string }): 
   await createClient({ url: "http://cluster", transport: j.through }).settleProof({
     judge: j.judge,
     payer: j.judge,
-    owner: j.w.owner.address,
-    nonce: 0n,
+    intent: { owner: j.w.owner.address, nonce: 0n },
     announcement: made.announcement,
     opening: { sha256: WORK, salt: made.salt },
     result: 1n,

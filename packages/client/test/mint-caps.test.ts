@@ -57,7 +57,7 @@ describe("mint caps", () => {
     expect(await mintCapOf(w.chain.transport, w.inputMint)).toBe(cap);
     const made = await client.createIntent(swap(w, 300n));
     expect(created()?.accounts?.at(-3)).toEqual({ address: cap, role: AccountRole.WRITABLE });
-    expect((await client.intent(w.owner.address, made.nonce))?.intent.escrowed).toBe(300n);
+    expect((await client.intent({ owner: w.owner.address, nonce: made.nonce }))?.intent.escrowed).toBe(300n);
     const held = await loadMintCap(w.chain.transport, w.inputMint);
     expect(held?.address).toBe(cap);
     expect(held?.cap).toMatchObject({ mint: w.inputMint, maxPerOrder: 300n, windowCap: 500n, windowSecs: 3_600, windowUsed: 300n });
@@ -96,18 +96,18 @@ describe("mint caps", () => {
     );
     expect(client.explain(over)?.name).toBe("MintCapTotal");
 
-    await client.cancel(w.owner, first.nonce);
+    await client.cancel(w.owner, { owner: w.owner.address, nonce: first.nonce });
     expect(created()?.accounts?.at(-3)).toEqual({ address: cap, role: AccountRole.WRITABLE });
     expect(await outstanding()).toBe(200n);
-    await client.close(w.owner, w.owner.address, first.nonce);
+    await client.close(w.owner, { owner: w.owner.address, nonce: first.nonce });
     expect(created()?.accounts?.at(-3)).toEqual({ address: INTENT_ENGINE_PROGRAM_ADDRESS, role: AccountRole.READONLY });
 
     const solver = await funded(w.chain);
     const out: Address = await findAssociatedTokenAddress({ owner: solver.address, mint: w.outputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     const route = [getMintToInstruction({ mint: w.outputMint, token: out, mintAuthority: w.authority, amount: 1n })];
-    await client.fill({ solver, owner: w.owner.address, nonce: second.nonce, route });
+    await client.fill({ solver, intent: { owner: w.owner.address, nonce: second.nonce }, route });
     expect(await outstanding()).toBe(0n);
-    expect((await client.intent(w.owner.address, second.nonce))?.intent.capped).toBe(0n);
+    expect((await client.intent({ owner: w.owner.address, nonce: second.nonce }))?.intent.capped).toBe(0n);
     await client.createIntent(swap(w, 300n));
     expect(await outstanding()).toBe(300n);
   });

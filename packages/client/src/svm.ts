@@ -8,7 +8,6 @@ import {
   getCompiledTransactionMessageDecoder,
   getCompiledTransactionMessageEncoder,
   getAddressDecoder,
-  getAddressEncoder,
   getSignatureFromTransaction,
   getTransactionDecoder,
   lamports,
@@ -21,6 +20,7 @@ import {
 import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { FailedTransactionMetadata, type LiteSVM } from "litesvm";
 import { TOKEN_PROGRAMS } from "./accounts.js";
+import { intentMatches, matchBytes } from "./intent-filters.js";
 import { BehindMinSlot, BlockhashExpired, FailedOnChain, type Failure, failure } from "./send-errors.js";
 import { ALREADY_PROCESSED, BLOCKHASH_NOT_FOUND, errOf, fieldlessOf } from "./svm-errors.js";
 import {
@@ -40,7 +40,6 @@ import {
 
 const TOKEN_HEAD = 64;
 const LOOKUP_TABLE_HEAD = 56;
-const INTENT_OWNER_OFFSET = 8;
 
 export type SvmTransportOptions = { genesisHash?: string };
 
@@ -202,7 +201,7 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
   const matches = (data: Uint8Array, filter: EngineAccountFilter): boolean =>
     (filter.dataSize === undefined || data.length === filter.dataSize) &&
     startsWith(data, filter.discriminator, 0) &&
-    (filter.match ?? []).every(({ offset, address }) => startsWith(data, getAddressEncoder().encode(address), offset));
+    (filter.match ?? []).every((match) => startsWith(data, matchBytes(match), match.offset));
   const listed = (filter?: EngineAccountFilter): EngineAccount[] => {
     const owned = new Map(svm.getProgramAccounts(INTENT_ENGINE_PROGRAM_ADDRESS).map((account) => [account.address, account]));
     for (const address of owned.keys()) {
@@ -259,7 +258,7 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
       };
     },
     genesisHash: async () => options.genesisHash ?? SVM_GENESIS_HASH,
-    intents: async (owner, read) => {
+    intents: async (query, read) => {
       const slot = svm.getClock().slot;
       if (read?.minContextSlot !== undefined && slot < read.minContextSlot) {
         throw new BehindMinSlot(slot, read.minContextSlot);
@@ -267,7 +266,7 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
       const found = listed({
         discriminator: getIntentDiscriminatorBytes(),
         dataSize: getIntentSize(),
-        ...(owner === undefined ? {} : { match: [{ offset: INTENT_OWNER_OFFSET, address: owner }] }),
+        match: intentMatches(query),
       }).map(({ address, data }): ProgramAccount => ({ address, data }));
       read?.onSlot?.(slot);
       return found;

@@ -98,7 +98,7 @@ export const prepareRevokeMandate = define({
                 source: mandate.inputAccount,
               }),
             ];
-    const { intents, unreadable } = readIntents(await transport.intents(input.owner));
+    const { intents, unreadable } = readIntents(await transport.intents({ owner: input.owner }));
     const live = intents
       .map(({ address: intent, intent: state }) => ({ intent, state }))
       .filter(({ state }) => state.owner === input.owner && state.status === IntentStatus.Open);

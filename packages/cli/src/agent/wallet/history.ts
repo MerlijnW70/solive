@@ -95,7 +95,7 @@ export const walletHistory = define({
       return formatAmount(raw, decimals.get(mint) ?? 0);
     };
     const activityOf = async (intent: Address, nonce: bigint | undefined) => {
-      const events = await client.history(intent, EVENTS_PER_INTENT);
+      const events = (await client.history(intent, { limit: EVENTS_PER_INTENT })).events;
       const created = fields(events.find((e) => e.name === "IntentCreated"));
       const inputMint = created["inputMint"] as Address | undefined;
       const outputMint = created["outputMint"] as Address | undefined;

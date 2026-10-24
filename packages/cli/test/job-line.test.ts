@@ -128,7 +128,7 @@ describe("the stand-by line from the command line", () => {
     await j.standBy("second.json", "600");
     expect(await j.refused(["claims", "leave", "--keypair", "payer.json", ...j.ref, "--seq", "0", "--yes"])).toContain(`only ${j.first.address} can take entry 0`);
     expect(await j.refused(["claims", "leave", "--keypair", "payer.json", ...j.ref, "--yes"])).toContain(`${j.payer.address} stands by nowhere`);
-    await j.client.cancel(j.w.owner, 0n);
+    await j.client.cancel(j.w.owner, { owner: j.w.owner.address, nonce: 0n });
     const first = j.sol(j.first.address);
     await j.ok(["claims", "leave", "--keypair", "payer.json", ...j.ref, "--seq", "0", "--yes"]);
     expect(j.sol(j.first.address) - first).toBeGreaterThan(STAKE);

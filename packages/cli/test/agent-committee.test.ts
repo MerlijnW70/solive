@@ -112,8 +112,7 @@ describe("a wallet server on a committee", () => {
     expect(voted).toMatchObject({ signed: true, vote: { member: e.wallet } });
     const own = voted["vote"] as { member: Address; signature: string };
     const ballot = await createClient({ url: "http://cluster", transport }).committeeBallot({
-      owner: e.wallet,
-      nonce: BigInt(e.ballot.nonce),
+      intent: { owner: e.wallet, nonce: BigInt(e.ballot.nonce) },
       announcement: e.made.announcement,
       opening: { sha256: e.work, salt: e.made.salt },
       result: 1n,
@@ -133,7 +132,7 @@ describe("a wallet server on a committee", () => {
     expect(released).toMatchObject({ sent: true, signature: expect.any(String) });
     const paid = await findAssociatedTokenAddress({ owner: e.worker, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     expect(balance(paid)).toBeGreaterThan(0n);
-    const account = await createClient({ url: "http://cluster", transport }).intent(e.wallet, BigInt(e.ballot.nonce));
+    const account = await createClient({ url: "http://cluster", transport }).intent({ owner: e.wallet, nonce: BigInt(e.ballot.nonce) });
     expect(account?.intent.status).toBe(IntentStatus.Filled);
   });
 

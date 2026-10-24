@@ -1,4 +1,4 @@
-import type { Address, Signature, TransactionSigner } from "@solana/kit";
+import type { Address, Instruction, Signature, TransactionSigner } from "@solana/kit";
 import {
   announcementCommitment,
   buildCloseAnnouncement,
@@ -19,7 +19,9 @@ import { BookNotClosable, NotDeliverable, NotRefutable } from "./announce-errors
 import { committeeKeys, publishedKey, secretSource, type SecretInput } from "./announce-keys.js";
 import { sha256Bytes } from "./announce.js";
 import { type AnnouncementView, announcementsBy, loadAnnouncement, loadDeliveryBook } from "./announcement-reads.js";
-import type { Client, ClientContext } from "./client-types.js";
+import type { ClientContext, ClientPlans } from "./client-types.js";
+import { intentAddress, type IntentRef } from "./intent-ref.js";
+import { type Plan, planOf } from "./plan.js";
 import { hex, readableIntent } from "./job-proofs.js";
 import type { Transport } from "./transport.js";
 
@@ -37,6 +39,10 @@ export type Refuted = { refutation: Address; signature: Signature };
 export type ReclaimInput = { worker: TransactionSigner; payer?: TransactionSigner };
 
 export type Reclaimed = { closed: Address[]; kept: Address[]; signatures: Signature[] };
+
+export type RefutePlan = Plan & { refutation: Address };
+
+export type ReclaimPlan = Plan & { closed: Address[]; kept: Address[]; batches: Instruction[][] };
 
 export const RECLAIM_BATCH = 5;
 
@@ -85,12 +91,12 @@ function payeesOf(paid: AnnouncementView, claim: RefuteInput["claim"]): readonly
   return claim.recipients;
 }
 
-export type AnnouncementSends = Pick<Client, "refute" | "reclaim" | "closeBook">;
+export type AnnouncementPlans = Pick<ClientPlans, "refute" | "reclaim" | "closeBook">;
 
-export function announcementSends(context: ClientContext): AnnouncementSends {
+export function announcementPlans(context: ClientContext): AnnouncementPlans {
   const { transport } = context;
 
-  const refute = async (input: RefuteInput): Promise<Refuted> => {
+  const refute = async (input: RefuteInput): Promise<RefutePlan> => {
     const { worker } = input;
     const delivered = sha256Bytes(input.sha256);
     const [earlier, paid] = await Promise.all([announcementAt(transport, input.earlier, "earlier"), announcementAt(transport, input.paid, "paid")]);
@@ -133,10 +139,10 @@ export function announcementSends(context: ClientContext): AnnouncementSends {
       esk,
       ...(input.claim === undefined ? {} : { claim: input.claim }),
     });
-    return { refutation: await refutationAddress(earlier.address), signature: await context.send([instruction], payer) };
+    return { ...planOf({ payer: payer.address, instructions: [instruction] }), refutation: await refutationAddress(earlier.address) };
   };
 
-  const reclaim = async (input: ReclaimInput): Promise<Reclaimed> => {
+  const reclaim = async (input: ReclaimInput): Promise<ReclaimPlan> => {
     const { worker } = input;
     const mine = await announcementsBy(transport, worker.address);
     const intents = [...new Set(mine.map(({ intent }) => intent))];
@@ -161,18 +167,23 @@ export function announcementSends(context: ClientContext): AnnouncementSends {
     };
     const closing = mine.filter(closable);
     const payer = input.payer ?? worker;
-    const signatures: Signature[] = [];
-    for (let at = 0; at < closing.length; at += RECLAIM_BATCH) {
-      const batch = closing.slice(at, at + RECLAIM_BATCH);
-      const instructions = await Promise.all(
-        batch.map(({ address, intent, payer: rentTo }) => buildCloseAnnouncement({ by: worker, announcement: address, intent, rentTo })),
-      );
-      signatures.push(await context.send(instructions, payer));
+    const instructions = await Promise.all(
+      closing.map(({ address, intent, payer: rentTo }) => buildCloseAnnouncement({ by: worker, announcement: address, intent, rentTo })),
+    );
+    const batches: Instruction[][] = [];
+    for (let at = 0; at < instructions.length; at += RECLAIM_BATCH) {
+      batches.push(instructions.slice(at, at + RECLAIM_BATCH));
     }
-    return { closed: closing.map(({ address }) => address), kept: mine.filter((a) => !closing.includes(a)).map(({ address }) => address), signatures };
+    return {
+      ...planOf({ payer: payer.address, instructions }),
+      closed: closing.map(({ address }) => address),
+      kept: mine.filter((a) => !closing.includes(a)).map(({ address }) => address),
+      batches,
+    };
   };
 
-  const closeBook = async (intent: Address, by: TransactionSigner): Promise<Signature> => {
+  const closeBook = async (ref: IntentRef, by: TransactionSigner): Promise<Plan> => {
+    const intent = await intentAddress(ref);
     const [book, view, now] = await Promise.all([loadDeliveryBook(transport, intent), transport.getAccount(intent), chainTime(transport)]);
     if (book === null) {
       throw new BookNotClosable(intent, "does not exist");
@@ -184,7 +195,7 @@ export function announcementSends(context: ClientContext): AnnouncementSends {
     if (held !== null && held.status === IntentStatus.Open && now < held.expiresAt) {
       throw new BookNotClosable(intent, "belongs to an escrow that is still open");
     }
-    return context.send([await buildCloseDeliveryBook({ by, intent, rentTo: book.payer })], by);
+    return planOf({ payer: by.address, instructions: [await buildCloseDeliveryBook({ by, intent, rentTo: book.payer })] });
   };
 
   return { refute, reclaim, closeBook };

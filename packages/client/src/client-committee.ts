@@ -16,7 +16,8 @@ import {
 } from "@intent-engine/core";
 import { createdAccount } from "./accounts.js";
 import { CommitteeNeeded } from "./client-errors.js";
-import type { ClientContext, CommitteeView, CreateCommitteeInput, CreatedCommittee } from "./client-types.js";
+import type { ClientContext, CommitteeView, CreateCommitteeInput } from "./client-types.js";
+import { type Plan, planOf } from "./plan.js";
 import type { Transport } from "./transport.js";
 
 export async function loadCommittee(transport: Transport, address: Address): Promise<CommitteeView | null> {
@@ -57,18 +58,18 @@ export async function escrowCommittee(
   return found === null ? {} : { committee: found.address };
 }
 
-export function committeeSends({ transport, send }: ClientContext) {
-  const createCommittee = async (input: CreateCommitteeInput): Promise<CreatedCommittee> => {
+export type CommitteeCreatePlan = Plan & { committee: Address };
+
+export function committeePlans({ transport }: ClientContext) {
+  const createCommittee = async (input: CreateCommitteeInput): Promise<CommitteeCreatePlan> => {
     const { committee, instruction } = await buildCreateCommittee({
       payer: input.payer,
       members: input.members,
       threshold: input.threshold,
       feeWallet: input.feeWallet,
     });
-    if ((await loadCommittee(transport, committee.address)) !== null) {
-      return { committee: committee.address, signature: null };
-    }
-    return { committee: committee.address, signature: await send([instruction], input.payer) };
+    const exists = (await loadCommittee(transport, committee.address)) !== null;
+    return { ...planOf({ payer: input.payer.address, instructions: exists ? [] : [instruction] }), committee: committee.address };
   };
   return { createCommittee, committee: (address: Address) => loadCommittee(transport, address) };
 }

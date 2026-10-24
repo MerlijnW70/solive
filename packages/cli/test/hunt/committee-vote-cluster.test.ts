@@ -96,8 +96,7 @@ describe("a wallet server whose RPC turns to mainnet after a committee vote prev
     const preview = await ok(client, "wallet_committee_vote", e.ballot);
     const own = (await ok(client, "wallet_committee_vote", { ...e.ballot, approval: preview["approval"], send: true }))["vote"] as { member: Address; signature: string };
     const ballot = await createClient({ url: "http://cluster", transport }).committeeBallot({
-      owner: e.ballot.owner,
-      nonce: BigInt(e.ballot.nonce),
+      intent: { owner: e.ballot.owner, nonce: BigInt(e.ballot.nonce) },
       announcement: e.made.announcement,
       opening: { sha256: e.ballot.delivered_sha256, salt: e.made.salt },
       result: 1n,

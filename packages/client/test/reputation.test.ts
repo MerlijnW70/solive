@@ -48,7 +48,7 @@ async function setup() {
     const { nonce, intent } = await escrow(owner, judge.address);
     const own = await announced(client, worker, intent, sha256);
     const delivered = paid === worker ? own : await announced(client, paid, intent, sha256);
-    await client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n });
+    await client.settleProof({ judge, intent: { owner: owner.address, nonce }, ...delivered, result: 1n });
     return intent;
   };
   return { w, client, fresh, escrow, job, transport };
@@ -99,7 +99,7 @@ describe("reputation from verifiable history", () => {
       const { committee } = await client.createCommittee({ payer: owner, members: members.map((m) => m.address), threshold: 2, feeWallet: owner.address });
       const { nonce, intent } = await escrow(owner, committee);
       const delivered = await announced(client, worker, intent, sha256);
-      const target = { owner: owner.address, nonce, ...delivered, result: 1n };
+      const target = { intent: { owner: owner.address, nonce }, ...delivered, result: 1n };
       const { digest, committee: ballot } = await client.committeeBallot(target);
       const votes = await Promise.all(members.slice(0, 2).map((m) => signCommitteeVote(m, digest, ballot.members)));
       const solver = members[0] as KeyPairSigner;
@@ -127,7 +127,7 @@ describe("reputation from verifiable history", () => {
     const clear = `${PRODUCT_SLUG}-delivery:${intent}:${sha256}:` + "https://" + "example.org/work";
     await transport.send([memoInstruction(worker, clear), getTransferSolInstruction({ source: worker, destination: judge.address, amount: 0n })], worker);
     const delivered = await announced(client, other, intent, sha256);
-    await client.settleProof({ judge, owner: owner.address, nonce, ...delivered, result: 1n });
+    await client.settleProof({ judge, intent: { owner: owner.address, nonce }, ...delivered, result: 1n });
     expect(await client.reputation(worker.address)).toMatchObject({ announced: 0, paid: 0, earned: [], records: [] });
     expect(await client.reputation(other.address)).toMatchObject({ announced: 1, paid: 1 });
   });

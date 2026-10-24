@@ -128,7 +128,7 @@ export const listIntents = define({
     const views = [];
     let unreadable = 0;
     const cache = new Map<Address, number | null>();
-    for (const { address, data } of await transport.intents(input.owner)) {
+    for (const { address, data } of await transport.intents({ owner: input.owner })) {
       let intent;
       try {
         intent = getIntentDecoder().decode(data);
@@ -202,7 +202,7 @@ export const getBalances = define({
   }),
   run: async ({ transport }, input) => {
     const [engine] = await findDelegatePda({ owner: input.owner });
-    const { intents, unreadable } = readIntents(await transport.intents(input.owner));
+    const { intents, unreadable } = readIntents(await transport.intents({ owner: input.owner }));
     const open = intents.filter(({ intent }) => intent.owner === input.owner && intent.status === IntentStatus.Open);
     const tokens = [];
     for (const mint of input.mints) {

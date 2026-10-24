@@ -1,4 +1,4 @@
-import type { Address, Instruction, Signature, TransactionSigner } from "@solana/kit";
+import type { Address, Signature, TransactionSigner } from "@solana/kit";
 import {
   announcementAddress,
   announcementCommitment,
@@ -24,31 +24,30 @@ import { NotDeliverable, UrlTooLong } from "./announce-errors.js";
 import { recipientsFor, secretSource, type SecretInput } from "./announce-keys.js";
 import { type AnnouncementView, loadAnnouncement } from "./announcement-reads.js";
 import type { ClientContext } from "./client-types.js";
+import { intentAddress, type IntentRef } from "./intent-ref.js";
 import { hex, proofAt } from "./job-proofs.js";
 import { PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic } from "./job-specs.js";
+import { payerFor, type Plan, planOf } from "./plan.js";
 import type { Transport } from "./transport.js";
 
 export { isSaltSigner, type SaltSigner, type SecretInput, secretInputOf, type SecretOptions } from "./announce-keys.js";
 
 export type AnnounceInput = SecretInput & {
   payer?: TransactionSigner;
-  intent: Address;
+  intent: IntentRef;
   sha256: string;
   url: string;
 };
 
-export type AnnouncementPlan = {
+export type AnnouncementPlan = Plan & {
   intent: Address;
   attestor: Address;
   worker: Address;
-  payer: TransactionSigner;
   announcement: Address;
   commitment: string;
   salt: string;
   sealedTo: SealRecipient[];
   maxUrl: number;
-  setup: Instruction[];
-  instructions: Instruction[];
   existing: AnnouncementView | null;
 };
 
@@ -88,7 +87,8 @@ async function claimAccounts(transport: Transport, intent: Address, claims: numb
 
 export async function announcementPlan(context: ClientContext, input: AnnounceInput): Promise<AnnouncementPlan> {
   const { transport } = context;
-  const { worker, intent } = input;
+  const { worker } = input;
+  const intent = await intentAddress(input.intent);
   const payer = input.payer ?? worker;
   const delivered = sha256Bytes(input.sha256);
   const sha256 = hex(delivered);
@@ -139,18 +139,17 @@ export async function announcementPlan(context: ClientContext, input: AnnounceIn
     commitment,
     blob,
   });
+  const fresh = existing === null;
   return {
+    ...planOf({ payer: payer.address, setup: fresh && sync !== null ? [sync] : [], instructions: fresh ? [instruction] : [] }),
     intent,
     attestor,
     worker: worker.address,
-    payer,
     announcement,
     commitment: hex(commitment),
     salt: hex(salt),
     sealedTo: recipients,
     maxUrl,
-    setup: existing === null && sync !== null ? [sync] : [],
-    instructions: [instruction],
     existing,
   };
 }
@@ -167,10 +166,11 @@ export function announcing(context: ClientContext): AnnounceSend {
     if (plan.existing !== null) {
       return announcedFrom(plan, plan.existing, null, null);
     }
-    const synced = plan.setup.length === 0 ? null : await context.send(plan.setup, plan.payer);
+    const payer = payerFor(plan, input.payer ?? input.worker);
+    const synced = plan.setup.length === 0 ? null : await context.send(plan.setup, payer);
     let signature: Signature;
     try {
-      signature = await context.send(plan.instructions, plan.payer);
+      signature = await context.send(plan.instructions, payer);
     } catch (error) {
       const raced = await loadAnnouncement(context.transport, plan.announcement);
       if (raced === null) {

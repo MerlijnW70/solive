@@ -44,7 +44,7 @@ describe("deliveries sealed to a profile's encryption key", () => {
     expect(first).toMatchObject({ announcement: delivered.announcement, seq: 2n, worker: worker.address, url: workUrl() });
     const both = await client.firstOpening({ intent: job.intent, sha256: WORK, keypair: [judge.keypair, key] });
     expect(both.announcement).toBe(delivered.announcement);
-    await expect(client.settleProof({ judge: judge.signer, owner: w.owner.address, nonce: job.nonce, ...delivered, result: 1n })).resolves.toBeTypeOf("string");
+    await expect(client.settleProof({ judge: judge.signer, intent: { owner: w.owner.address, nonce: job.nonce }, ...delivered, result: 1n })).resolves.toBeTypeOf("string");
   });
 
   it("refuse when an earlier announcement is sealed to a key the judge rotated away from and not given, instead of skipping it", async () => {

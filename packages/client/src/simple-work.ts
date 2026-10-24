@@ -44,8 +44,8 @@ export function workSends(ctx: SimpleContext) {
     const summary = `Deliver work ${sha256} at ${input.url} for escrow ${input.escrow}`;
     const work = { worker, intent: input.escrow, sha256, url: input.url };
     if (input.preview === true) {
-      const plan = await ctx.client.prepareAnnouncement(work);
-      return { summary, instructions: plan.existing === null ? [...plan.setup, ...plan.instructions] : [] };
+      const plan = await ctx.client.plan.announce(work);
+      return { summary, instructions: [...plan.setup, ...plan.instructions] };
     }
     const { signature, announcement, seq } = await ctx.client.announce(work);
     return { signature, announcement, seq, summary };
@@ -69,8 +69,7 @@ export function workSends(ctx: SimpleContext) {
     return outcome(ctx, input, summary, async (client) => ({
       signature: await client.settleProof({
         judge,
-        owner: intent.owner,
-        nonce: intent.nonce,
+        intent: input.escrow,
         announcement: first.announcement,
         opening: first,
         result,
@@ -88,7 +87,7 @@ export function workSends(ctx: SimpleContext) {
     }
     const summary = `Cancel ${address} and return ${wholeTokens(intent.escrowed - intent.filled, mint.decimals, intent.inputMint)} to ${ctx.signer.address}`;
     return outcome(ctx, input, summary, async (client) => ({
-      signature: await client.cancel(ctx.signer, intent.nonce),
+      signature: await client.cancel(ctx.signer, address),
       intent: address,
       nonce: intent.nonce,
     }));

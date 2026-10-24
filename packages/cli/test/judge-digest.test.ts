@@ -32,7 +32,7 @@ const digestOf = (e: Escrow, result?: string, salt = e.salt) =>
 describe("judge digest results", () => {
   it("takes the escrow's lowest and highest result and refuses one outside them", async () => {
     const e = await escrow();
-    const ballot = await createClient({ url: "http://cluster", transport }).proofBallot({ owner: e.owner, nonce: 0n, announcement: e.announcement, opening: { sha256: e.sha256, salt: e.salt }, result: 2n });
+    const ballot = await createClient({ url: "http://cluster", transport }).proofBallot({ intent: { owner: e.owner, nonce: 0n }, announcement: e.announcement, opening: { sha256: e.sha256, salt: e.salt }, result: 2n });
     expect(await digestOf(e)).toMatchObject({ intent: e.intent, announcement: e.announcement, payee: ballot.payee, result: 2n, digest: Buffer.from(ballot.digest).toString("hex") });
     expect(await digestOf(e, "4")).toMatchObject({ intent: e.intent, result: 4n });
     for (const result of ["1", "5"]) {

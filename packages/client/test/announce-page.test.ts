@@ -161,7 +161,7 @@ describe("the announcement sentences of the full client page", () => {
     const listAll = accounts.engineAccounts as NonNullable<typeof accounts.engineAccounts>;
     const hiding = createClient({ url: LOCAL, transport: { ...accounts, engineTransactions: refuse, engineAccounts: async (filter) => (await listAll(filter)).filter(({ address }) => address !== list.announcements[1]?.address) } });
     expect(await hiding.announcements(intent)).toMatchObject({ complete: false, closed: false, missing: [2n] });
-    await client.cancel(owner, nonce);
+    await client.cancel(owner, { owner: owner.address, nonce });
     expect(await blind.announcements(intent)).toMatchObject({ complete: false, closed: true, missing: [] });
   });
 
@@ -189,7 +189,7 @@ describe("the announcement sentences of the full client page", () => {
     const made = await announced(client, honest, intent, WORK);
     const first = await client.firstOpening({ intent, sha256: WORK, keypair: judge.keypair });
     expect(first).toMatchObject({ announcement: made.announcement, skipped: [{ announcement, seq: 1n, worker: griefer.address, reason: "does-not-open" }] });
-    await client.settleProof({ judge: judge.signer, owner: owner.address, nonce, announcement: first.announcement, opening: first, result: 1n });
+    await client.settleProof({ judge: judge.signer, intent: { owner: owner.address, nonce }, announcement: first.announcement, opening: first, result: 1n });
     expect(await tokensOf(w, honest.address)).toBeGreaterThan(0n);
   });
 
@@ -206,7 +206,7 @@ describe("the announcement sentences of the full client page", () => {
     const { client, owner, intent, nonce } = await escrowTo(judge.signer.address, w);
     const worker = await fundedSigner(w);
     const made = await announced(client, worker, intent, WORK);
-    await client.settleProof({ judge: judge.signer, owner: owner.address, nonce, ...made, result: 1n });
+    await client.settleProof({ judge: judge.signer, intent: { owner: owner.address, nonce }, ...made, result: 1n });
     expect(await tokensOf(w, worker.address)).toBeGreaterThan(0n);
   });
 
@@ -216,7 +216,7 @@ describe("the announcement sentences of the full client page", () => {
     const { client, owner, intent, nonce } = await escrowTo(judge.signer.address, w);
     const worker = await fundedSigner(w);
     const made = await announced(client, worker, intent, WORK);
-    const settle = (opening = made.opening) => client.settleProof({ judge: judge.signer, owner: owner.address, nonce, ...made, opening, result: 1n });
+    const settle = (opening = made.opening) => client.settleProof({ judge: judge.signer, intent: { owner: owner.address, nonce }, ...made, opening, result: 1n });
     await expect(settle({ sha256: sha("not it"), salt: made.opening.salt })).rejects.toThrow(NotSettleable);
     const wallet = w.chain.svm.getAccount(worker.address);
     if (!wallet.exists) {
@@ -232,7 +232,7 @@ describe("the announcement sentences of the full client page", () => {
     const { client, owner, intent, nonce } = await escrowTo(judge.signer.address, w);
     const worker: KeyPairSigner = await generateKeyPairSigner();
     const made = await client.announce({ worker, payer: owner, intent, sha256: WORK, url: workUrl() });
-    await client.settleProof({ judge: judge.signer, payer: owner, owner: owner.address, nonce, announcement: made.announcement, opening: { sha256: WORK, salt: made.salt }, result: 1n });
+    await client.settleProof({ judge: judge.signer, payer: owner, intent: { owner: owner.address, nonce }, announcement: made.announcement, opening: { sha256: WORK, salt: made.salt }, result: 1n });
     expect([w.chain.svm.getBalance(worker.address) ?? 0n, w.chain.svm.getBalance(judge.signer.address) ?? 0n]).toEqual([0n, 0n]);
     expect(await tokensOf(w, worker.address)).toBeGreaterThan(0n);
   });
@@ -245,7 +245,7 @@ describe("the announcement sentences of the full client page", () => {
     const { client, owner, intent, nonce } = await escrowTo(committee, w);
     const worker = await fundedSigner(w);
     const made = await announced(client, worker, intent, WORK);
-    const target = { owner: owner.address, nonce, ...made, result: 1n };
+    const target = { intent: { owner: owner.address, nonce }, ...made, result: 1n };
     const ballot = await client.committeeBallot(target);
     const votes = await Promise.all(members.map(({ signer }) => signCommitteeVote(signer, ballot.digest, ballot.committee.members)));
     await client.settleCommittee({ ...target, solver: payer, votes });
@@ -257,8 +257,8 @@ describe("the announcement sentences of the full client page", () => {
     const judge = await keyed(w);
     const { client, owner, intent, nonce } = await escrowTo(judge.signer.address, w);
     const made = await announced(client, await fundedSigner(w), intent, WORK);
-    await client.settleProof({ judge: judge.signer, owner: owner.address, nonce, ...made, result: 1n });
-    expect((await client.history(intent)).find(({ name }) => name === "IntentAttested")).toMatchObject({ deliveredSha256: WORK, deliveredSalt: made.opening.salt });
+    await client.settleProof({ judge: judge.signer, intent: { owner: owner.address, nonce }, ...made, result: 1n });
+    expect((await client.history(intent)).events.find(({ name }) => name === "IntentAttested")).toMatchObject({ deliveredSha256: WORK, deliveredSalt: made.opening.salt });
   });
 
   it(SENTENCES.cleanup, async () => {
@@ -268,12 +268,12 @@ describe("the announcement sentences of the full client page", () => {
     const [early, late] = [await fundedSigner(w), await fundedSigner(w)];
     const earlier = await announced(client, early, intent, WORK);
     const paid = await announced(client, late, intent, WORK);
-    await client.settleProof({ judge: judge.signer, owner: owner.address, nonce, ...paid, result: 1n });
+    await client.settleProof({ judge: judge.signer, intent: { owner: owner.address, nonce }, ...paid, result: 1n });
     const { refutation } = await client.refute({ worker: early, earlier: earlier.announcement, paid: paid.announcement, sha256: WORK, url: workUrl() });
     expect(w.chain.svm.getAccount(refutation).exists).toBe(true);
     const second = await escrowTo(judge.signer.address, w);
     await announced(second.client, early, second.intent, WORK);
-    await second.client.cancel(second.owner, second.nonce);
+    await second.client.cancel(second.owner, { owner: second.owner.address, nonce: second.nonce });
     expect((await client.reclaim({ worker: early })).closed).toHaveLength(2);
     await client.closeBook(second.intent, owner);
     expect((await client.announcements(second.intent)).announcements).toEqual([]);

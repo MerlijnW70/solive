@@ -47,10 +47,10 @@ describe("the monitor on fills whose intent is already closed", () => {
     });
     const out = await findAssociatedTokenAddress({ owner: solver.address, mint: w.outputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     const route = [getMintToInstruction({ mint: w.outputMint, token: out, mintAuthority: w.authority, amount: 1n })];
-    const filled = await client.fill({ solver, owner: w.owner.address, nonce, route });
+    const filled = await client.fill({ solver, intent: { owner: w.owner.address, nonce }, route });
     const [vault] = await findVaultPda({ intent: created.intent });
     const fill = { ...landed(filled, RECENT - 3_600n), tokens: [{ account: vault, mint: w.inputMint, owner: created.intent }] };
-    await client.close(solver, w.owner.address, nonce);
+    await client.close(solver, { owner: w.owner.address, nonce });
     expect(h.svm.getAccount(created.intent).exists).toBe(false);
     return { intent: created.intent, create: landed(created.signature, RECENT - 4_000n), fill };
   }

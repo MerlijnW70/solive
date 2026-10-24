@@ -87,7 +87,7 @@ describe("job claims from the command line", () => {
     expect((await j.run(["claims", "take", "--keypair", "rival.json", ...j.ref, "--secs", "600", "--yes"])).code).toBe(EXIT_OK);
     expect((await j.run(settle)).err).toContain("settle once it lapses or the escrow closes");
     const before = j.sol(j.rival.address);
-    await j.client.cancel(j.w.owner, 0n);
+    await j.client.cancel(j.w.owner, { owner: j.w.owner.address, nonce: 0n });
     expect(j.sol(j.rival.address) - before).toBe(STAKE);
     const shown = (await j.run(settle)).json();
     expect(shown).toMatchObject({ sent: false, next: NOT_SENT });

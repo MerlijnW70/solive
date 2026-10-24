@@ -32,8 +32,7 @@ export async function simulateRelease(transport: Transport, judge: TransactionPa
   try {
     await createClient({ url: release.url, transport: probe }).settleProof({
       judge,
-      owner: release.owner,
-      nonce: release.nonce,
+      intent: { owner: release.owner, nonce: release.nonce },
       announcement: release.announcement,
       opening: { sha256: release.sha256, salt: release.salt },
       result: release.result,
