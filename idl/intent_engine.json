@@ -5140,6 +5140,30 @@
     {
       "code": 6118,
       "name": "ClaimListSet"
+    },
+    {
+      "code": 6119,
+      "name": "BlobMalformed"
+    },
+    {
+      "code": 6120,
+      "name": "AnnouncementState"
+    },
+    {
+      "code": 6121,
+      "name": "AnnouncementOpen"
+    },
+    {
+      "code": 6122,
+      "name": "AnnouncementRetained"
+    },
+    {
+      "code": 6123,
+      "name": "RefuteNotEarlier"
+    },
+    {
+      "code": 6124,
+      "name": "RefuteSamePayee"
     }
   ],
   "types": [

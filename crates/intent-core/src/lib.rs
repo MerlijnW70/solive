@@ -4,6 +4,7 @@ pub mod bounty;
 pub mod claim;
 pub mod codec;
 pub mod committee;
+pub mod delivery;
 pub mod error;
 pub mod ext;
 pub mod fee;

@@ -125,3 +125,9 @@ Every error the engine program raises, from its IDL. When an SDK call fails, `cl
 | 6116 | `NotListed` | no | the escrow's owner named the wallets that may claim it, and this wallet is not one of them |
 | 6117 | `ClaimListMissing` | no | this escrow's claims board records a claim list, so a claim, stand-by or closing settle must pass it |
 | 6118 | `ClaimListSet` | no | this escrow's claim list is already set, and a set list never changes |
+| 6119 | `BlobMalformed` | no | the sealed delivery is not a version-4 sealed blob within the engine's size bounds |
+| 6120 | `AnnouncementState` | no | the announcement account holds a state this version does not read |
+| 6121 | `AnnouncementOpen` | yes | an announcement stays while its escrow is open |
+| 6122 | `AnnouncementRetained` | yes | an announcement stays through the refute window after its escrow expires or after it is paid, so an earlier worker can still refute the release |
+| 6123 | `RefuteNotEarlier` | no | a refutation needs an announcement made before the paid one, and this one came later |
+| 6124 | `RefuteSamePayee` | no | the earlier announcement belongs to a wallet the release paid |

@@ -148,6 +148,12 @@ export const ENGINE_PROBLEMS = {
   NotListed: never("the escrow's owner named the wallets that may claim it, and this wallet is not one of them"),
   ClaimListMissing: never("this escrow's claims board records a claim list, so a claim, stand-by or closing settle must pass it; let this server build it"),
   ClaimListSet: never("this escrow's claim list is already set, and a set list never changes"),
+  BlobMalformed: never("the sealed delivery is not a version-4 sealed blob within the engine's size bounds; seal it again with this version"),
+  AnnouncementState: never("the announcement account holds a state this version does not read; update this server"),
+  AnnouncementOpen: later("an announcement stays while its escrow is open; its worker can close it once the escrow is released, cancelled or expired"),
+  AnnouncementRetained: later("an announcement stays through the refute window after its escrow expires or after it is paid, so an earlier worker can still refute the release"),
+  RefuteNotEarlier: never("a refutation needs an announcement made before the paid one, and this one came later"),
+  RefuteSamePayee: never("the earlier announcement belongs to a wallet the release paid; only an announcement by an unpaid wallet refutes a release"),
 } as const satisfies Record<string, Entry>;
 
 type EngineErrorName = keyof typeof ENGINE_PROBLEMS;

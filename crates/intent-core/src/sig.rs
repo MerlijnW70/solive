@@ -9,6 +9,8 @@ pub const INTENT_TAG: [u8; 16] = *b"intent-engine-v1";
 pub const ATTEST_TAG: [u8; 16] = *b"intent-engine-at";
 pub const ATTEST_PROOF_TAG: [u8; 16] = *b"intent-engine-pf";
 pub const ATTEST_SPLIT_TAG: [u8; 16] = *b"intent-engine-sp";
+pub const ATTEST_DELIVERY_TAG: [u8; 16] = *b"intent-engine-dl";
+pub const ATTEST_SPLIT_DELIVERY_TAG: [u8; 16] = *b"intent-engine-sd";
 pub const SPLIT_COSIGN_TAG: [u8; 32] = *b"intent-engine-split-cosigner\0\0\0\0";
 pub const OFFCHAIN_PREFIX: [u8; 16] = *b"\xffsolana offchain";
 
@@ -20,6 +22,8 @@ pub const ENVELOPE_LEN: usize = 114;
 pub const ATTEST_PREIMAGE_LEN: usize = 206;
 pub const ATTEST_PROOF_PREIMAGE_LEN: usize = 238;
 pub const ATTEST_SPLIT_PREIMAGE_LEN: usize = 238;
+pub const ATTEST_DELIVERY_PREIMAGE_LEN: usize = 326;
+pub const ATTEST_SPLIT_DELIVERY_PREIMAGE_LEN: usize = 326;
 pub const MAX_COSIGNERS: usize = 16;
 pub const COSIGN_KEYS_AT: usize = 18;
 pub const COSIGN_ENVELOPE_MAX: usize = COSIGN_KEYS_AT + 32 * MAX_COSIGNERS + 64;
@@ -392,6 +396,90 @@ impl AttestedSplit {
             .put(&self.ext_hash)
             .put(&self.spec_hash)
             .put(&self.split_hash)
+            .out
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AttestedDelivery {
+    pub program: [u8; 32],
+    pub domain: [u8; 32],
+    pub intent: [u8; 32],
+    pub payee: [u8; 32],
+    pub amount_in: u64,
+    pub result: u64,
+    pub filled: u64,
+    pub revision: u32,
+    pub max_fee_bps: u16,
+    pub ext_hash: [u8; 32],
+    pub spec_hash: [u8; 32],
+    pub announcement: [u8; 32],
+    pub seq: u64,
+    pub delivered: [u8; 32],
+    pub salt: [u8; 16],
+}
+
+impl AttestedDelivery {
+    pub fn preimage(&self) -> [u8; ATTEST_DELIVERY_PREIMAGE_LEN] {
+        Buf::<ATTEST_DELIVERY_PREIMAGE_LEN>::new()
+            .put(&ATTEST_DELIVERY_TAG)
+            .put(&self.program)
+            .put(&self.domain)
+            .put(&self.intent)
+            .put(&self.payee)
+            .put(&self.amount_in.to_le_bytes())
+            .put(&self.result.to_le_bytes())
+            .put(&self.filled.to_le_bytes())
+            .put(&self.revision.to_le_bytes())
+            .put(&self.max_fee_bps.to_le_bytes())
+            .put(&self.ext_hash)
+            .put(&self.spec_hash)
+            .put(&self.announcement)
+            .put(&self.seq.to_le_bytes())
+            .put(&self.delivered)
+            .put(&self.salt)
+            .out
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AttestedSplitDelivery {
+    pub program: [u8; 32],
+    pub domain: [u8; 32],
+    pub intent: [u8; 32],
+    pub amount_in: u64,
+    pub result: u64,
+    pub filled: u64,
+    pub revision: u32,
+    pub max_fee_bps: u16,
+    pub ext_hash: [u8; 32],
+    pub spec_hash: [u8; 32],
+    pub split_hash: [u8; 32],
+    pub announcement: [u8; 32],
+    pub seq: u64,
+    pub delivered: [u8; 32],
+    pub salt: [u8; 16],
+}
+
+impl AttestedSplitDelivery {
+    pub fn preimage(&self) -> [u8; ATTEST_SPLIT_DELIVERY_PREIMAGE_LEN] {
+        Buf::<ATTEST_SPLIT_DELIVERY_PREIMAGE_LEN>::new()
+            .put(&ATTEST_SPLIT_DELIVERY_TAG)
+            .put(&self.program)
+            .put(&self.domain)
+            .put(&self.intent)
+            .put(&self.amount_in.to_le_bytes())
+            .put(&self.result.to_le_bytes())
+            .put(&self.filled.to_le_bytes())
+            .put(&self.revision.to_le_bytes())
+            .put(&self.max_fee_bps.to_le_bytes())
+            .put(&self.ext_hash)
+            .put(&self.spec_hash)
+            .put(&self.split_hash)
+            .put(&self.announcement)
+            .put(&self.seq.to_le_bytes())
+            .put(&self.delivered)
+            .put(&self.salt)
             .out
     }
 }

@@ -122,6 +122,12 @@ pub enum EngineError {
     NotListed,
     ClaimListMissing,
     ClaimListSet,
+    BlobMalformed,
+    AnnouncementState,
+    AnnouncementOpen,
+    AnnouncementRetained,
+    RefuteNotEarlier,
+    RefuteSamePayee,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {
@@ -175,5 +181,12 @@ pub fn core_err(e: CoreError) -> EngineError {
         CoreError::ClaimListInvalid => EngineError::ClaimListInvalid,
         CoreError::ClaimListIncomplete => EngineError::ClaimListIncomplete,
         CoreError::NotListed => EngineError::NotListed,
+        CoreError::BlobMalformed => EngineError::BlobMalformed,
+        CoreError::AnnouncementState => EngineError::AnnouncementState,
+        CoreError::AnnouncementOpen => EngineError::AnnouncementOpen,
+        CoreError::AnnouncementRetained => EngineError::AnnouncementRetained,
+        CoreError::RefuteNotEarlier => EngineError::RefuteNotEarlier,
+        CoreError::RefuteSamePayee => EngineError::RefuteSamePayee,
+        CoreError::SplitCountMismatch => EngineError::SplitCountMismatch,
     }
 }

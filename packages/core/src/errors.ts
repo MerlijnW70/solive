@@ -48,6 +48,13 @@ export const CORE_ERROR_CODES = [
   "ClaimListInvalid",
   "ClaimListIncomplete",
   "NotListed",
+  "BlobMalformed",
+  "AnnouncementState",
+  "AnnouncementOpen",
+  "AnnouncementRetained",
+  "RefuteNotEarlier",
+  "RefuteSamePayee",
+  "SplitCountMismatch",
 ] as const;
 
 export type CoreErrorCode = (typeof CORE_ERROR_CODES)[number];

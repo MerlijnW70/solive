@@ -49,4 +49,11 @@ pub enum Error {
     ClaimListInvalid,
     ClaimListIncomplete,
     NotListed,
+    BlobMalformed,
+    AnnouncementState,
+    AnnouncementOpen,
+    AnnouncementRetained,
+    RefuteNotEarlier,
+    RefuteSamePayee,
+    SplitCountMismatch,
 }
