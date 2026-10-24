@@ -148,6 +148,23 @@ describe("the simple release credits the first worker who announced and opened t
     expect(await reviewer.receipt({ escrow })).toMatchObject({ released: true, payee: worker.address, deliveredSha256: WORK, valid: true });
   });
 
+  it("refuses when an earlier announcement does not open with the keys given, and pays that earlier worker once it opens", async () => {
+    const { w, judge, reviewer, at, escrow } = await job();
+    const [sealed, copier] = [await funded(w.chain), await funded(w.chain)];
+    const first = await announced(await at(sealed), escrow, judge.signer.address, false);
+    nextSlot(w);
+    await announced(await at(copier), escrow, judge.signer.address, true);
+    const sent = w.chain.sent.length;
+    const refused = reviewer.release({ escrow, deliveredSha256: WORK });
+    await expect(refused).rejects.toThrow(NotSettleable);
+    await expect(refused).rejects.toThrow(`has an earlier announcement ${first} by ${sealed.address} sealed to the key derived from the judge's wallet`);
+    expect(w.chain.sent.length).toBe(sent);
+    await expect(reviewer.release({ escrow, to: copier.address, deliveredSha256: WORK, keypair: judge.keypair })).rejects.toThrow(notFirstAnnouncer(sealed.address, first, WORK, copier.address));
+    const released = await reviewer.release({ escrow, deliveredSha256: WORK, keypair: judge.keypair });
+    expect(w.chain.sent).toContain(released.signature);
+    expect(await reviewer.receipt({ escrow })).toMatchObject({ released: true, payee: sealed.address, deliveredSha256: WORK, valid: true });
+  });
+
   it("reads an escrow nobody released yet", async () => {
     const { buyer, escrow } = await job();
     expect(await buyer.receipt({ escrow })).toEqual({

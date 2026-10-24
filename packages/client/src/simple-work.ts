@@ -6,6 +6,7 @@ import { outcome, type SimpleContext } from "./simple-orders.js";
 import { firstOpened, sha256Given, workReads } from "./simple-reads.js";
 import { nameOfMint, wholeTokens } from "./simple-tokens.js";
 import type { CancelInput, DeliverWorkInput, OpenWork, ReleaseInput } from "./simple-types.js";
+import { type MissingKey, unopenedOf } from "./unopened.js";
 
 export const RELEASE_NEEDS_KEY_PAIR = "release signs the judge's verdict, so connect with a signer that also signs messages";
 
@@ -17,6 +18,11 @@ export const nothingOpens = (sha256: string): string =>
 
 export const notFirstAnnouncer = (worker: Address, announcement: string, sha256: string, to: Address): string =>
   `pays ${worker}, who announced the work ${sha256} first, in ${announcement}, not ${to}; nothing was sent`;
+
+export const sealedEarlier = ({ delivery, key }: MissingKey): string =>
+  `has an earlier announcement ${delivery.signature} by ${delivery.worker} sealed to ${
+    key.kind === "wallet" ? "the key derived from the judge's wallet" : `the encryption key ${key.key} the judge's profile named`
+  }, which none of the keys given opens, so the first worker who announced the work cannot be known; pass keypair with that key; nothing was sent`;
 
 export function workSends(ctx: SimpleContext) {
   const { recordOf, deliveries, receipt } = workReads(ctx);
@@ -61,6 +67,10 @@ export function workSends(ctx: SimpleContext) {
     const first = firstOpened(record, sha256);
     if (first === null) {
       throw new NotSettleable(input.escrow, nothingOpens(sha256));
+    }
+    const { missing } = await unopenedOf(ctx.client.transport, { judge: judge.address, recipients: [judge.address], deliveries: record.deliveries, first, openers: input.keypair });
+    if (missing !== null) {
+      throw new NotSettleable(input.escrow, sealedEarlier(missing));
     }
     if (input.to !== undefined && input.to !== first.worker) {
       throw new NotSettleable(input.escrow, notFirstAnnouncer(first.worker, first.signature, sha256, input.to));
