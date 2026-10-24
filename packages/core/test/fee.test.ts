@@ -48,8 +48,8 @@ describe("fee splits", () => {
 
   it("fee helpers refuse out of range inputs", () => {
     for (const bad of [-1, 65_536, 1.5, Number.NaN]) {
-      expect(() => splitFee(100n, bad), String(bad)).toThrow(RangeError);
-      expect(() => splitFee(0n, bad), String(bad)).toThrow(RangeError);
+      expect(() => splitFee(100n, bad), String(bad)).toThrow(`fee bps ${String(bad)} is not between 0 and 65535`);
+      expect(() => splitFee(0n, bad), String(bad)).toThrow(`fee bps ${String(bad)} is not between 0 and 65535`);
       expect(() => splitFees(100n, bad, 0, 0), String(bad)).toThrow(RangeError);
       expect(() => splitFees(100n, 0, bad, 0), String(bad)).toThrow(RangeError);
       expect(() => splitFees(100n, 0, 1, bad), String(bad)).toThrow(RangeError);

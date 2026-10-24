@@ -459,13 +459,15 @@ export function buildEd25519CosignInstruction(input: {
   const sigsAt = 2 + 14 * m;
   const messageAt = sigsAt + 64 * m;
   const parts: ArrayLike<number>[] = [new Uint8Array([m, 0])];
+  const seen = new Set<Address>();
   entries.forEach((e, k) => {
     if (e.signature.length !== 64) {
       throw new RangeError("an Ed25519 signature is 64 bytes");
     }
-    if (entries[k - 1]?.publicKey === e.publicKey) {
+    if (seen.has(e.publicKey)) {
       throw new RangeError(`${e.publicKey} signs a cosign batch twice`);
     }
+    seen.add(e.publicKey);
     const slot = slots.findIndex((s) => compareKeys(s, key(e.publicKey)) === 0);
     if (slot < 0) {
       throw new RangeError(`${e.publicKey} is not listed in the cosign envelope`);
