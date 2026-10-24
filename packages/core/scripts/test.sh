@@ -7,8 +7,8 @@ if [[ -n "${1:-}" ]]; then
   export INTENT_ENGINE_ROOT="$1"
 fi
 case "${2:-all}" in
-  build) node_modules/.bin/tsc -p tsconfig.json --noEmit ;;
-  test) timeout 1200 node_modules/.bin/vitest run --fsModuleCache --bail=1 --testTimeout=60000 --config ./vitest.setup.ts ;;
-  all) node_modules/.bin/tsc -p tsconfig.json --noEmit && node_modules/.bin/vitest run --fsModuleCache --config ./vitest.setup.ts ;;
+  build) node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit ;;
+  test) timeout 1200 node node_modules/vitest/vitest.mjs run --fsModuleCache --bail=1 --testTimeout=60000 --config ./vitest.setup.ts ;;
+  all) node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit && node node_modules/vitest/vitest.mjs run --fsModuleCache --config ./vitest.setup.ts ;;
   *) echo "mode must be build, test or all" >&2; exit 2 ;;
 esac

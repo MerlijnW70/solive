@@ -18,8 +18,8 @@ if [[ "${2:-}" == test && "$PWD" == /mnt/* && -f "$base/.ready" && "$(cat "$base
   cd "$copy"
 fi
 case "${2:-all}" in
-  build) node_modules/.bin/tsc -p tsconfig.json --noEmit ;;
-  test) node_modules/.bin/tsc -p tsconfig.build.json && timeout 1200 node_modules/.bin/vitest run --bail=1 --fsModuleCache --testTimeout=60000 --config ./vitest.setup.ts --exclude test/binary.test.ts ;;
-  all) node_modules/.bin/tsc -p tsconfig.json --noEmit && node_modules/.bin/tsc -p tsconfig.build.json && node_modules/.bin/vitest run --config ./vitest.setup.ts ;;
+  build) node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit ;;
+  test) node node_modules/typescript/bin/tsc -p tsconfig.build.json && timeout 1200 node node_modules/vitest/vitest.mjs run --bail=1 --fsModuleCache --testTimeout=60000 --config ./vitest.setup.ts --exclude test/binary.test.ts ;;
+  all) node node_modules/typescript/bin/tsc -p tsconfig.json --noEmit && node node_modules/typescript/bin/tsc -p tsconfig.build.json && node node_modules/vitest/vitest.mjs run --config ./vitest.setup.ts ;;
   *) echo "mode must be build, test or all" >&2; exit 2 ;;
 esac
