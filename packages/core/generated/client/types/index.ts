@@ -7,5 +7,7 @@
  */
 
 export * from "./createIntentArgs.js";
+export * from "./fill.js";
+export * from "./opening.js";
 export * from "./profileFields.js";
 export * from "./splitClaim.js";

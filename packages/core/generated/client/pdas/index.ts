@@ -7,6 +7,7 @@
  */
 
 export * from "./board.js";
+export * from "./book.js";
 export * from "./claimList.js";
 export * from "./committee.js";
 export * from "./config.js";
@@ -14,5 +15,6 @@ export * from "./delegate.js";
 export * from "./entry.js";
 export * from "./mintCap.js";
 export * from "./profile.js";
+export * from "./refutation.js";
 export * from "./userState.js";
 export * from "./vault.js";

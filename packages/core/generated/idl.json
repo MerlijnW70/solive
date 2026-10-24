@@ -228,6 +228,182 @@
       ]
     },
     {
+      "name": "announce_delivery",
+      "discriminator": [
+        27,
+        181,
+        123,
+        151,
+        240,
+        47,
+        241,
+        13
+      ],
+      "accounts": [
+        {
+          "name": "worker",
+          "signer": true
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "config",
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "intent"
+        },
+        {
+          "name": "attestor"
+        },
+        {
+          "name": "judge_profile",
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  114,
+                  111,
+                  102,
+                  105,
+                  108,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "attestor"
+              }
+            ]
+          }
+        },
+        {
+          "name": "committee",
+          "optional": true
+        },
+        {
+          "name": "board",
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  115
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "claim_list",
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  108,
+                  97,
+                  105,
+                  109,
+                  95,
+                  108,
+                  105,
+                  115,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "book",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  105,
+                  118,
+                  101,
+                  114,
+                  121,
+                  95,
+                  98,
+                  111,
+                  111,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "announcement",
+          "writable": true
+        },
+        {
+          "name": "fee_to",
+          "writable": true,
+          "optional": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "commitment",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "blob",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
       "name": "begin_fill",
       "discriminator": [
         51,
@@ -576,6 +752,136 @@
           "type": "u32"
         }
       ]
+    },
+    {
+      "name": "close_announcement",
+      "discriminator": [
+        194,
+        243,
+        55,
+        123,
+        85,
+        37,
+        105,
+        35
+      ],
+      "accounts": [
+        {
+          "name": "by",
+          "signer": true
+        },
+        {
+          "name": "announcement",
+          "writable": true
+        },
+        {
+          "name": "intent"
+        },
+        {
+          "name": "book",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  105,
+                  118,
+                  101,
+                  114,
+                  121,
+                  95,
+                  98,
+                  111,
+                  111,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "rent_to",
+          "writable": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "close_delivery_book",
+      "discriminator": [
+        230,
+        103,
+        63,
+        41,
+        8,
+        179,
+        108,
+        250
+      ],
+      "accounts": [
+        {
+          "name": "by",
+          "signer": true
+        },
+        {
+          "name": "intent"
+        },
+        {
+          "name": "book",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  108,
+                  105,
+                  118,
+                  101,
+                  114,
+                  121,
+                  95,
+                  98,
+                  111,
+                  111,
+                  107
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "rent_to",
+          "writable": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
     },
     {
       "name": "close_intent",
@@ -2052,6 +2358,11 @@
           }
         },
         {
+          "name": "announcement",
+          "writable": true,
+          "optional": true
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -2060,16 +2371,20 @@
       ],
       "args": [
         {
-          "name": "amount_in",
-          "type": "u64"
+          "name": "fill",
+          "type": {
+            "defined": {
+              "name": "Fill"
+            }
+          }
         },
         {
-          "name": "result",
-          "type": "u64"
-        },
-        {
-          "name": "max_fee_bps",
-          "type": "u16"
+          "name": "opening",
+          "type": {
+            "defined": {
+              "name": "Opening"
+            }
+          }
         },
         {
           "name": "ext",
@@ -2218,6 +2533,11 @@
           }
         },
         {
+          "name": "announcement",
+          "writable": true,
+          "optional": true
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -2226,20 +2546,24 @@
       ],
       "args": [
         {
-          "name": "amount_in",
-          "type": "u64"
-        },
-        {
-          "name": "result",
-          "type": "u64"
-        },
-        {
-          "name": "max_fee_bps",
-          "type": "u16"
+          "name": "fill",
+          "type": {
+            "defined": {
+              "name": "Fill"
+            }
+          }
         },
         {
           "name": "signers",
           "type": "u8"
+        },
+        {
+          "name": "opening",
+          "type": {
+            "defined": {
+              "name": "Opening"
+            }
+          }
         },
         {
           "name": "ext",
@@ -2421,6 +2745,10 @@
           }
         },
         {
+          "name": "announcement",
+          "writable": true
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -2429,22 +2757,26 @@
       ],
       "args": [
         {
-          "name": "amount_in",
-          "type": "u64"
-        },
-        {
-          "name": "result",
-          "type": "u64"
-        },
-        {
-          "name": "max_fee_bps",
-          "type": "u16"
+          "name": "fill",
+          "type": {
+            "defined": {
+              "name": "Fill"
+            }
+          }
         },
         {
           "name": "claim",
           "type": {
             "defined": {
               "name": "SplitClaim"
+            }
+          }
+        },
+        {
+          "name": "opening",
+          "type": {
+            "defined": {
+              "name": "Opening"
             }
           }
         },
@@ -2631,6 +2963,10 @@
           }
         },
         {
+          "name": "announcement",
+          "writable": true
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -2639,16 +2975,12 @@
       ],
       "args": [
         {
-          "name": "amount_in",
-          "type": "u64"
-        },
-        {
-          "name": "result",
-          "type": "u64"
-        },
-        {
-          "name": "max_fee_bps",
-          "type": "u16"
+          "name": "fill",
+          "type": {
+            "defined": {
+              "name": "Fill"
+            }
+          }
         },
         {
           "name": "signers",
@@ -2659,6 +2991,14 @@
           "type": {
             "defined": {
               "name": "SplitClaim"
+            }
+          }
+        },
+        {
+          "name": "opening",
+          "type": {
+            "defined": {
+              "name": "Opening"
             }
           }
         },
@@ -3455,6 +3795,103 @@
       ]
     },
     {
+      "name": "refute_release",
+      "discriminator": [
+        29,
+        84,
+        169,
+        121,
+        187,
+        191,
+        142,
+        253
+      ],
+      "accounts": [
+        {
+          "name": "earlier_worker",
+          "signer": true
+        },
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "paid"
+        },
+        {
+          "name": "earlier"
+        },
+        {
+          "name": "refutation",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  114,
+                  101,
+                  102,
+                  117,
+                  116,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "earlier"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "salt",
+          "type": {
+            "array": [
+              "u8",
+              16
+            ]
+          }
+        },
+        {
+          "name": "esk",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "claim",
+          "type": {
+            "option": {
+              "defined": {
+                "name": "SplitClaim"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "revoke_mandate",
       "discriminator": [
         252,
@@ -3487,6 +3924,45 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "set_announce_fee",
+      "discriminator": [
+        205,
+        32,
+        21,
+        59,
+        233,
+        186,
+        8,
+        30
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "config",
+          "writable": true,
+          "address": "6As2PgaNQ2DdSZMcrZeUJZ7RfyE2kXnVd33yxbgXULYz"
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "fee",
+          "type": "u32"
+        }
+      ]
     },
     {
       "name": "set_caps_required",
@@ -3839,6 +4315,32 @@
       ]
     },
     {
+      "name": "sync_committee_keys",
+      "discriminator": [
+        251,
+        21,
+        183,
+        76,
+        201,
+        74,
+        205,
+        164
+      ],
+      "accounts": [
+        {
+          "name": "committee",
+          "writable": true
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "update_config",
       "discriminator": [
         29,
@@ -3986,6 +4488,19 @@
   ],
   "accounts": [
     {
+      "name": "Announcement",
+      "discriminator": [
+        73,
+        38,
+        210,
+        135,
+        9,
+        143,
+        191,
+        105
+      ]
+    },
+    {
       "name": "ClaimBoard",
       "discriminator": [
         23,
@@ -4038,6 +4553,19 @@
       ]
     },
     {
+      "name": "DeliveryBook",
+      "discriminator": [
+        138,
+        171,
+        200,
+        17,
+        98,
+        196,
+        56,
+        227
+      ]
+    },
+    {
       "name": "Intent",
       "discriminator": [
         247,
@@ -4087,6 +4615,19 @@
         63,
         127,
         188
+      ]
+    },
+    {
+      "name": "Refutation",
+      "discriminator": [
+        83,
+        83,
+        14,
+        88,
+        100,
+        198,
+        85,
+        40
       ]
     },
     {
@@ -4167,6 +4708,32 @@
         24,
         31,
         93
+      ]
+    },
+    {
+      "name": "AnnounceFeeSet",
+      "discriminator": [
+        82,
+        145,
+        43,
+        151,
+        191,
+        6,
+        153,
+        19
+      ]
+    },
+    {
+      "name": "AnnouncementClosed",
+      "discriminator": [
+        198,
+        40,
+        122,
+        149,
+        0,
+        179,
+        214,
+        65
       ]
     },
     {
@@ -4274,6 +4841,19 @@
       ]
     },
     {
+      "name": "CommitteeKeysSynced",
+      "discriminator": [
+        167,
+        133,
+        232,
+        128,
+        154,
+        19,
+        247,
+        204
+      ]
+    },
+    {
       "name": "ConfigInitialized",
       "discriminator": [
         181,
@@ -4297,6 +4877,45 @@
         19,
         198,
         194
+      ]
+    },
+    {
+      "name": "DeliveryAnnounced",
+      "discriminator": [
+        21,
+        9,
+        255,
+        129,
+        191,
+        161,
+        47,
+        97
+      ]
+    },
+    {
+      "name": "DeliveryBookClosed",
+      "discriminator": [
+        110,
+        233,
+        26,
+        40,
+        53,
+        217,
+        132,
+        122
+      ]
+    },
+    {
+      "name": "DeliveryReleased",
+      "discriminator": [
+        73,
+        29,
+        67,
+        167,
+        197,
+        9,
+        37,
+        172
       ]
     },
     {
@@ -4622,6 +5241,19 @@
         114,
         118,
         250
+      ]
+    },
+    {
+      "name": "ReleaseRefuted",
+      "discriminator": [
+        177,
+        31,
+        86,
+        8,
+        133,
+        163,
+        64,
+        142
       ]
     },
     {
@@ -5164,6 +5796,94 @@
     {
       "code": 6124,
       "name": "RefuteSamePayee"
+    },
+    {
+      "code": 6125,
+      "name": "AttestorMismatch"
+    },
+    {
+      "code": 6126,
+      "name": "BlobRecipients"
+    },
+    {
+      "code": 6127,
+      "name": "BlobKeyMismatch"
+    },
+    {
+      "code": 6128,
+      "name": "CommitteeKeysUnsynced"
+    },
+    {
+      "code": 6129,
+      "name": "CommitmentZero"
+    },
+    {
+      "code": 6130,
+      "name": "ProfileMismatch"
+    },
+    {
+      "code": 6131,
+      "name": "BookMismatch"
+    },
+    {
+      "code": 6132,
+      "name": "AnnounceFeeMissing"
+    },
+    {
+      "code": 6133,
+      "name": "AnnouncementMissing"
+    },
+    {
+      "code": 6134,
+      "name": "AnnouncementUnexpected"
+    },
+    {
+      "code": 6135,
+      "name": "AnnouncementMismatch"
+    },
+    {
+      "code": 6136,
+      "name": "AnnouncementPaid"
+    },
+    {
+      "code": 6137,
+      "name": "PayeeNotAnnouncer"
+    },
+    {
+      "code": 6138,
+      "name": "CommitmentMismatch"
+    },
+    {
+      "code": 6139,
+      "name": "AnnouncerNotRecipient"
+    },
+    {
+      "code": 6140,
+      "name": "RentRecipientMismatch"
+    },
+    {
+      "code": 6141,
+      "name": "DeliveryBookOpen"
+    },
+    {
+      "code": 6142,
+      "name": "DeliveryBookLive"
+    },
+    {
+      "code": 6143,
+      "name": "RefuteNotPaid"
+    },
+    {
+      "code": 6144,
+      "name": "RefuteNotAnnouncer"
+    },
+    {
+      "code": 6145,
+      "name": "RefuteSplitMismatch"
+    },
+    {
+      "code": 6146,
+      "name": "DeliveryRecordKept"
     }
   ],
   "types": [
@@ -5259,6 +5979,176 @@
           {
             "name": "fee",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AnnounceFeeSet",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "fee",
+            "type": "u32"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Announcement",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "attestor",
+            "type": "pubkey"
+          },
+          {
+            "name": "payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "commitment",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "delivered",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "split_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "seq",
+            "type": "u64"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          },
+          {
+            "name": "announced_at",
+            "type": "i64"
+          },
+          {
+            "name": "expires_at",
+            "type": "i64"
+          },
+          {
+            "name": "paid_at",
+            "type": "i64"
+          },
+          {
+            "name": "salt",
+            "type": {
+              "array": [
+                "u8",
+                16
+              ]
+            }
+          },
+          {
+            "name": "blob_len",
+            "type": "u16"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "state",
+            "type": "u8"
+          },
+          {
+            "name": "recipients",
+            "type": "u8"
+          },
+          {
+            "name": "padding",
+            "type": {
+              "array": [
+                "u8",
+                2
+              ]
+            }
+          },
+          {
+            "name": "blob",
+            "type": {
+              "array": [
+                "u8",
+                624
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "AnnouncementClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "announcement",
+            "type": "pubkey"
+          },
+          {
+            "name": "seq",
+            "type": "u64"
+          },
+          {
+            "name": "worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "rent_to",
+            "type": "pubkey"
+          },
+          {
+            "name": "lamports",
+            "type": "u64"
+          },
+          {
+            "name": "by",
+            "type": "pubkey"
           }
         ]
       }
@@ -5642,6 +6532,36 @@
       }
     },
     {
+      "name": "CommitteeKeysSynced",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "committee",
+            "type": "pubkey"
+          },
+          {
+            "name": "mask",
+            "type": "u8"
+          },
+          {
+            "name": "fingerprints",
+            "type": {
+              "array": [
+                {
+                  "array": [
+                    "u8",
+                    8
+                  ]
+                },
+                8
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "Config",
       "serialization": "bytemuck",
       "repr": {
@@ -5941,6 +6861,187 @@
       }
     },
     {
+      "name": "DeliveryAnnounced",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "announcement",
+            "type": "pubkey"
+          },
+          {
+            "name": "seq",
+            "type": "u64"
+          },
+          {
+            "name": "worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "attestor",
+            "type": "pubkey"
+          },
+          {
+            "name": "commitment",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          },
+          {
+            "name": "recipients",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DeliveryBook",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "next_seq",
+            "type": "u64"
+          },
+          {
+            "name": "live",
+            "type": "u64"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "padding",
+            "type": {
+              "array": [
+                "u8",
+                6
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "DeliveryBookClosed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "book",
+            "type": "pubkey"
+          },
+          {
+            "name": "next_seq",
+            "type": "u64"
+          },
+          {
+            "name": "rent_to",
+            "type": "pubkey"
+          },
+          {
+            "name": "lamports",
+            "type": "u64"
+          },
+          {
+            "name": "by",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DeliveryReleased",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "announcement",
+            "type": "pubkey"
+          },
+          {
+            "name": "seq",
+            "type": "u64"
+          },
+          {
+            "name": "worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "attestor",
+            "type": "pubkey"
+          },
+          {
+            "name": "delivered",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "salt",
+            "type": {
+              "array": [
+                "u8",
+                16
+              ]
+            }
+          },
+          {
+            "name": "split_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "Economics",
       "type": {
         "kind": "struct",
@@ -6053,6 +7154,26 @@
           {
             "name": "role",
             "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Fill",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "amount_in",
+            "type": "u64"
+          },
+          {
+            "name": "result",
+            "type": "u64"
+          },
+          {
+            "name": "max_fee_bps",
+            "type": "u16"
           }
         ]
       }
@@ -7171,6 +8292,32 @@
       }
     },
     {
+      "name": "Opening",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "delivered",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "salt",
+            "type": {
+              "array": [
+                "u8",
+                16
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "PauseLowered",
       "type": {
         "kind": "struct",
@@ -7386,6 +8533,141 @@
       }
     },
     {
+      "name": "Refutation",
+      "serialization": "bytemuck",
+      "repr": {
+        "kind": "c"
+      },
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "attestor",
+            "type": "pubkey"
+          },
+          {
+            "name": "paid_announcement",
+            "type": "pubkey"
+          },
+          {
+            "name": "earlier_announcement",
+            "type": "pubkey"
+          },
+          {
+            "name": "paid_worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "earlier_worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "refuter",
+            "type": "pubkey"
+          },
+          {
+            "name": "delivered",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "split_hash",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "earlier_commitment",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "esk",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "paid_seq",
+            "type": "u64"
+          },
+          {
+            "name": "earlier_seq",
+            "type": "u64"
+          },
+          {
+            "name": "refuted_at",
+            "type": "i64"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          },
+          {
+            "name": "salt",
+            "type": {
+              "array": [
+                "u8",
+                16
+              ]
+            }
+          },
+          {
+            "name": "blob_len",
+            "type": "u16"
+          },
+          {
+            "name": "version",
+            "type": "u8"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "recipients",
+            "type": "u8"
+          },
+          {
+            "name": "padding",
+            "type": {
+              "array": [
+                "u8",
+                3
+              ]
+            }
+          },
+          {
+            "name": "blob",
+            "type": {
+              "array": [
+                "u8",
+                624
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
       "name": "RelayerPaid",
       "type": {
         "kind": "struct",
@@ -7405,6 +8687,63 @@
           {
             "name": "fee",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ReleaseRefuted",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "attestor",
+            "type": "pubkey"
+          },
+          {
+            "name": "refutation",
+            "type": "pubkey"
+          },
+          {
+            "name": "paid_announcement",
+            "type": "pubkey"
+          },
+          {
+            "name": "paid_seq",
+            "type": "u64"
+          },
+          {
+            "name": "paid_worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "earlier_announcement",
+            "type": "pubkey"
+          },
+          {
+            "name": "earlier_seq",
+            "type": "u64"
+          },
+          {
+            "name": "earlier_worker",
+            "type": "pubkey"
+          },
+          {
+            "name": "delivered",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "refuter",
+            "type": "pubkey"
           }
         ]
       }

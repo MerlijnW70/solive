@@ -18,16 +18,16 @@ pub struct CloseAnnouncement<'info> {
         constraint = announcement.load()?.version == ANNOUNCEMENT_VERSION @ EngineError::AccountOutdated
     )]
     pub announcement: AccountLoader<'info, Announcement>,
+    /// CHECK: the announcement's intent, read only to tell whether it is still open
+    #[account(address = announcement.load()?.intent @ EngineError::AnnouncementMismatch)]
+    pub intent: UncheckedAccount<'info>,
     #[account(
         mut,
-        seeds = [DELIVERY_BOOK_SEED, announcement.load()?.intent.as_ref()],
+        seeds = [DELIVERY_BOOK_SEED, intent.key().as_ref()],
         bump = book.load()?.bump,
         constraint = book.load()?.version == DELIVERY_BOOK_VERSION @ EngineError::AccountOutdated
     )]
     pub book: AccountLoader<'info, DeliveryBook>,
-    /// CHECK: the announcement's intent, read only to tell whether it is still open
-    #[account(address = announcement.load()?.intent @ EngineError::AnnouncementMismatch)]
-    pub intent: UncheckedAccount<'info>,
     /// CHECK: the wallet that paid the announcement's rent, which gets it back
     #[account(mut, address = announcement.load()?.payer @ EngineError::RentRecipientMismatch)]
     pub rent_to: UncheckedAccount<'info>,
@@ -75,16 +75,16 @@ pub fn handle_close_announcement(ctx: Context<CloseAnnouncement>) -> Result<()> 
 #[derive(Accounts)]
 pub struct CloseDeliveryBook<'info> {
     pub by: Signer<'info>,
+    /// CHECK: the book's intent, read only to tell whether it is still open; the book's seeds bind it
+    pub intent: UncheckedAccount<'info>,
     #[account(
         mut,
-        seeds = [DELIVERY_BOOK_SEED, book.load()?.intent.as_ref()],
+        seeds = [DELIVERY_BOOK_SEED, intent.key().as_ref()],
         bump = book.load()?.bump,
-        constraint = book.load()?.version == DELIVERY_BOOK_VERSION @ EngineError::AccountOutdated
+        constraint = book.load()?.version == DELIVERY_BOOK_VERSION @ EngineError::AccountOutdated,
+        constraint = book.load()?.intent == intent.key() @ EngineError::BookMismatch
     )]
     pub book: AccountLoader<'info, DeliveryBook>,
-    /// CHECK: the book's intent, read only to tell whether it is still open
-    #[account(address = book.load()?.intent @ EngineError::BookMismatch)]
-    pub intent: UncheckedAccount<'info>,
     /// CHECK: the wallet that paid the book's rent, which gets it back
     #[account(mut, address = book.load()?.payer @ EngineError::RentRecipientMismatch)]
     pub rent_to: UncheckedAccount<'info>,

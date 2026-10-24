@@ -16,12 +16,8 @@ import {
   getBytesEncoder,
   getStructDecoder,
   getStructEncoder,
-  getU16Decoder,
-  getU16Encoder,
   getU32Decoder,
   getU32Encoder,
-  getU64Decoder,
-  getU64Encoder,
   SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
   SolanaError,
   transformEncoder,
@@ -51,8 +47,16 @@ import {
 import { findVaultPda } from "../pdas/index.js";
 import { INTENT_ENGINE_PROGRAM_ADDRESS } from "../programs/index.js";
 import {
+  getFillDecoder,
+  getFillEncoder,
+  getOpeningDecoder,
+  getOpeningEncoder,
   getSplitClaimDecoder,
   getSplitClaimEncoder,
+  type Fill,
+  type FillArgs,
+  type Opening,
+  type OpeningArgs,
   type SplitClaim,
   type SplitClaimArgs,
 } from "../types/index.js";
@@ -90,6 +94,7 @@ export type FillAttestedSplitInstruction<
   TAccountClaims extends string | AccountMeta<string> = string,
   TAccountStakeTo extends string | AccountMeta<string> = string,
   TAccountMintCap extends string | AccountMeta<string> = string,
+  TAccountAnnouncement extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -161,6 +166,9 @@ export type FillAttestedSplitInstruction<
       TAccountMintCap extends string
         ? WritableAccount<TAccountMintCap>
         : TAccountMintCap,
+      TAccountAnnouncement extends string
+        ? WritableAccount<TAccountAnnouncement>
+        : TAccountAnnouncement,
       TAccountEventAuthority extends string
         ? ReadonlyAccount<TAccountEventAuthority>
         : TAccountEventAuthority,
@@ -173,18 +181,16 @@ export type FillAttestedSplitInstruction<
 
 export type FillAttestedSplitInstructionData = {
   discriminator: ReadonlyUint8Array;
-  amountIn: bigint;
-  result: bigint;
-  maxFeeBps: number;
+  fill: Fill;
   claim: SplitClaim;
+  opening: Opening;
   ext: ReadonlyUint8Array;
 };
 
 export type FillAttestedSplitInstructionDataArgs = {
-  amountIn: number | bigint;
-  result: number | bigint;
-  maxFeeBps: number;
+  fill: FillArgs;
   claim: SplitClaimArgs;
+  opening: OpeningArgs;
   ext: ReadonlyUint8Array;
 };
 
@@ -192,10 +198,9 @@ export function getFillAttestedSplitInstructionDataEncoder(): Encoder<FillAttest
   return transformEncoder(
     getStructEncoder([
       ["discriminator", fixEncoderSize(getBytesEncoder(), 8)],
-      ["amountIn", getU64Encoder()],
-      ["result", getU64Encoder()],
-      ["maxFeeBps", getU16Encoder()],
+      ["fill", getFillEncoder()],
       ["claim", getSplitClaimEncoder()],
+      ["opening", getOpeningEncoder()],
       ["ext", addEncoderSizePrefix(getBytesEncoder(), getU32Encoder())],
     ]),
     (value) => ({ ...value, discriminator: FILL_ATTESTED_SPLIT_DISCRIMINATOR }),
@@ -205,10 +210,9 @@ export function getFillAttestedSplitInstructionDataEncoder(): Encoder<FillAttest
 export function getFillAttestedSplitInstructionDataDecoder(): Decoder<FillAttestedSplitInstructionData> {
   return getStructDecoder([
     ["discriminator", fixDecoderSize(getBytesDecoder(), 8)],
-    ["amountIn", getU64Decoder()],
-    ["result", getU64Decoder()],
-    ["maxFeeBps", getU16Decoder()],
+    ["fill", getFillDecoder()],
     ["claim", getSplitClaimDecoder()],
+    ["opening", getOpeningDecoder()],
     ["ext", addDecoderSizePrefix(getBytesDecoder(), getU32Decoder())],
   ]);
 }
@@ -247,6 +251,8 @@ export type FillAttestedSplitAsyncInput<
   TAccountClaims extends InstructionAccountInput = InstructionAccountInput,
   TAccountStakeTo extends InstructionAccountInput = InstructionAccountInput,
   TAccountMintCap extends InstructionAccountInput = InstructionAccountInput,
+  TAccountAnnouncement extends InstructionAccountInput =
+    InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -272,12 +278,12 @@ export type FillAttestedSplitAsyncInput<
   claims?: TAccountClaims;
   stakeTo?: TAccountStakeTo;
   mintCap?: TAccountMintCap;
+  announcement: TAccountAnnouncement;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
-  amountIn: FillAttestedSplitInstructionDataArgs["amountIn"];
-  result: FillAttestedSplitInstructionDataArgs["result"];
-  maxFeeBps: FillAttestedSplitInstructionDataArgs["maxFeeBps"];
+  fill: FillAttestedSplitInstructionDataArgs["fill"];
   claim: FillAttestedSplitInstructionDataArgs["claim"];
+  opening: FillAttestedSplitInstructionDataArgs["opening"];
   ext: FillAttestedSplitInstructionDataArgs["ext"];
 };
 
@@ -303,6 +309,7 @@ export async function getFillAttestedSplitInstructionAsync<
   TAccountClaims extends InstructionAccountInput,
   TAccountStakeTo extends InstructionAccountInput,
   TAccountMintCap extends InstructionAccountInput,
+  TAccountAnnouncement extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -329,6 +336,7 @@ export async function getFillAttestedSplitInstructionAsync<
     TAccountClaims,
     TAccountStakeTo,
     TAccountMintCap,
+    TAccountAnnouncement,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -419,6 +427,10 @@ export async function getFillAttestedSplitInstructionAsync<
     ResolvedInstructionAccountMeta<
       TAccountMintCap,
       InstructionAccountInputAddress<TAccountMintCap>
+    >,
+    ResolvedInstructionAccountMeta<
+      TAccountAnnouncement,
+      InstructionAccountInputAddress<TAccountAnnouncement>
     >,
     ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
@@ -520,6 +532,11 @@ export async function getFillAttestedSplitInstructionAsync<
       isSigner: false,
       isWritable: true,
     },
+    announcement: {
+      value: input.announcement ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -579,6 +596,7 @@ export async function getFillAttestedSplitInstructionAsync<
       getAccountMeta("claims", accounts.claims),
       getAccountMeta("stakeTo", accounts.stakeTo),
       getAccountMeta("mintCap", accounts.mintCap),
+      getAccountMeta("announcement", accounts.announcement),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -673,6 +691,10 @@ export async function getFillAttestedSplitInstructionAsync<
       InstructionAccountInputAddress<TAccountMintCap>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountAnnouncement,
+      InstructionAccountInputAddress<TAccountAnnouncement>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -707,6 +729,8 @@ export type FillAttestedSplitInput<
   TAccountClaims extends InstructionAccountInput = InstructionAccountInput,
   TAccountStakeTo extends InstructionAccountInput = InstructionAccountInput,
   TAccountMintCap extends InstructionAccountInput = InstructionAccountInput,
+  TAccountAnnouncement extends InstructionAccountInput =
+    InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -732,12 +756,12 @@ export type FillAttestedSplitInput<
   claims?: TAccountClaims;
   stakeTo?: TAccountStakeTo;
   mintCap?: TAccountMintCap;
+  announcement: TAccountAnnouncement;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
-  amountIn: FillAttestedSplitInstructionDataArgs["amountIn"];
-  result: FillAttestedSplitInstructionDataArgs["result"];
-  maxFeeBps: FillAttestedSplitInstructionDataArgs["maxFeeBps"];
+  fill: FillAttestedSplitInstructionDataArgs["fill"];
   claim: FillAttestedSplitInstructionDataArgs["claim"];
+  opening: FillAttestedSplitInstructionDataArgs["opening"];
   ext: FillAttestedSplitInstructionDataArgs["ext"];
 };
 
@@ -763,6 +787,7 @@ export function getFillAttestedSplitInstruction<
   TAccountClaims extends InstructionAccountInput,
   TAccountStakeTo extends InstructionAccountInput,
   TAccountMintCap extends InstructionAccountInput,
+  TAccountAnnouncement extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -789,6 +814,7 @@ export function getFillAttestedSplitInstruction<
     TAccountClaims,
     TAccountStakeTo,
     TAccountMintCap,
+    TAccountAnnouncement,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -878,6 +904,10 @@ export function getFillAttestedSplitInstruction<
   ResolvedInstructionAccountMeta<
     TAccountMintCap,
     InstructionAccountInputAddress<TAccountMintCap>
+  >,
+  ResolvedInstructionAccountMeta<
+    TAccountAnnouncement,
+    InstructionAccountInputAddress<TAccountAnnouncement>
   >,
   ResolvedInstructionAccountMeta<
     TAccountEventAuthority,
@@ -978,6 +1008,11 @@ export function getFillAttestedSplitInstruction<
       isSigner: false,
       isWritable: true,
     },
+    announcement: {
+      value: input.announcement ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -1026,6 +1061,7 @@ export function getFillAttestedSplitInstruction<
       getAccountMeta("claims", accounts.claims),
       getAccountMeta("stakeTo", accounts.stakeTo),
       getAccountMeta("mintCap", accounts.mintCap),
+      getAccountMeta("announcement", accounts.announcement),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -1120,6 +1156,10 @@ export function getFillAttestedSplitInstruction<
       InstructionAccountInputAddress<TAccountMintCap>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountAnnouncement,
+      InstructionAccountInputAddress<TAccountAnnouncement>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -1157,8 +1197,9 @@ export type ParsedFillAttestedSplitInstruction<
     claims?: TAccountMetas[18] | undefined;
     stakeTo?: TAccountMetas[19] | undefined;
     mintCap?: TAccountMetas[20] | undefined;
-    eventAuthority: TAccountMetas[21];
-    program: TAccountMetas[22];
+    announcement: TAccountMetas[21];
+    eventAuthority: TAccountMetas[22];
+    program: TAccountMetas[23];
   };
   data: FillAttestedSplitInstructionData;
 };
@@ -1171,12 +1212,12 @@ export function parseFillAttestedSplitInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedFillAttestedSplitInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 23) {
+  if (instruction.accounts.length < 24) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 23,
+        expectedAccountMetas: 24,
       },
     );
   }
@@ -1216,6 +1257,7 @@ export function parseFillAttestedSplitInstruction<
       claims: getNextOptionalAccount(),
       stakeTo: getNextOptionalAccount(),
       mintCap: getNextOptionalAccount(),
+      announcement: getNextAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
     },
