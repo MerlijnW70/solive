@@ -7,12 +7,14 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Address, createKeyPairSignerFromBytes, getAddressDecoder, lamports, none } from "@solana/kit";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DEVNET_TEST_MINT, NATIVE_MINT, specMemo } from "@intent-engine/core";
 import { commitmentOf, deliverySalt } from "@intent-engine/client";
 import { ENV_KEYPAIR, ENV_URL } from "../src/args.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
-import { ata, cli, creation, funded, h, world } from "./harness.js";
+import { ata, cli, creation, funded, h, ownerSigned, world } from "./harness.js";
+
+vi.mock("node:dns/promises", () => ({ lookup: async () => [{ address: "93.184.215.14", family: 4 }] }));
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const PAGE = readFileSync(join(ROOT, "docs/private-jobs.md"), "utf8");
@@ -156,7 +158,7 @@ describe("the company-only job guide", () => {
     h.specPages.set(vars["SPEC_URL"] ?? "", new Uint8Array(await readFile(join(ownerDir, "spec.sealed"))));
     const made = await as("owner.json", createLine, ownerFiles);
     vars["INTENT"] = made["intent"] as string;
-    h.engineLog.push({ ...creation(made["intent"] as Address), memos: [specMemo(vars["SPEC_URL"] ?? "")] });
+    h.engineLog.push({ ...creation(made["intent"] as Address), ...ownerSigned(made["intent"] as Address, [specMemo(vars["SPEC_URL"] ?? "")]) });
 
     const workerFiles = { "spec.md": join(workerDir, "spec.md"), "work.tar": join(workerDir, "work.tar"), "work.sealed": join(workerDir, "work.sealed") };
     const [readLine = "", sealWork = "", deliverLine = ""] = working;

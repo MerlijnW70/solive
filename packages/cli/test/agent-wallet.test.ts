@@ -1105,7 +1105,7 @@ describe("the wallet server", () => {
     });
     h.engineLog = [
       { signature: "noise", slot: 2n, blockTime: null, failed: false, emitted: [], memos: [specMemo("https://evil.example/spec")] },
-      { signature: "create", slot: 1n, blockTime: null, failed: false, emitted: [tag(created)], memos: [specMemo(specUrl)] },
+      { signature: "create", slot: 1n, blockTime: null, failed: false, emitted: [tag(created)], memos: [specMemo(specUrl)], memoSigners: [[owner]] },
     ];
     expect((await ok(client, "find_jobs", { attestor: judge }))["jobs"]).toMatchObject([{ ...job, spec_url: specUrl }]);
     expect(await ok(client, "find_jobs", { attestor: owner })).toEqual({ fee_bps: expect.any(Number), jobs: [], next: `${NO_JOB_NOW}; ${PUBLISH_PROFILE}` });

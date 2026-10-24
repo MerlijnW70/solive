@@ -7,6 +7,8 @@ import type { SpecFetch } from "./job-specs.js";
 
 export const UNEXPECTED_REDIRECT = "unexpected redirect";
 
+export type CheckedFetch = (url: string, init: { redirect: "error"; signal: AbortSignal; addresses: readonly string[] }) => Promise<Response>;
+
 const REDIRECTS: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
 const NO_BODY: ReadonlySet<number> = new Set([204, 205, 304]);
 

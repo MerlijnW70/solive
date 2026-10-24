@@ -5,14 +5,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Address, generateKeyPairSigner, getAddressDecoder, lamports, none } from "@solana/kit";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { DEVNET_TEST_MINT, Kind, NATIVE_MINT, seal, specMemo } from "@intent-engine/core";
 import { createClient } from "@intent-engine/client";
 import { ENV_KEYPAIR, ENV_URL, parse } from "../src/args.js";
 import { FlowRefused } from "../src/flows.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { jobClosed, readJobSpec } from "../src/sealed-commands.js";
-import { ata, cli, creation, funded, h, NOW, runtime, transport, world } from "./harness.js";
+import { ata, cli, creation, funded, h, NOW, ownerSigned, runtime, transport, world } from "./harness.js";
+
+vi.mock("node:dns/promises", () => ({ lookup: async () => [{ address: "93.184.215.14", family: 4 }] }));
 
 function keyed(path: string): Address {
   const jwk = generateKeyPairSync("ed25519").privateKey.export({ format: "jwk" });
@@ -109,7 +111,7 @@ describe("spec", () => {
     );
     expect([made.code, made.err]).toEqual([EXIT_OK, ""]);
     const intent = made.json()["intent"] as string;
-    h.engineLog.push({ ...creation(intent as Address), memos: [specMemo(url)] });
+    h.engineLog.push({ ...creation(intent as Address), ...ownerSigned(intent as Address, [specMemo(url)]) });
     delete h.env[ENV_KEYPAIR];
 
     const read = await cli(["spec", "--intent", intent, "--keypair", "worker.json"], keys);
@@ -133,7 +135,7 @@ describe("spec", () => {
     const url = "https://down.example/spec.md";
     const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: owner.address, specHash: new Uint8Array(32).fill(7), judgeFee: 0n } as const;
     const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
-    h.engineLog.push({ ...creation(intent), memos: [specMemo(url)] });
+    h.engineLog.push({ ...creation(intent), ...ownerSigned(intent, [specMemo(url)]) });
     const read = await cli(["spec", "--intent", intent], {});
     expect([read.code, read.err]).toEqual([EXIT_FAILED, `the spec at ${url} could not be fetched`]);
     const command = parse(["spec", "--intent", intent]) as Parameters<typeof readJobSpec>[0];

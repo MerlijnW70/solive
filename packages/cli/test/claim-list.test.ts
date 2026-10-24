@@ -31,7 +31,7 @@ import { listedOnly } from "../src/agent/work-claims.js";
 import { limitsLine, listDiffers, listIncomplete, notListed } from "../src/claim-lists.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { sealedDelivery } from "./announce.js";
-import { cli, creation, funded, h, NOW, send, transport, world } from "./harness.js";
+import { cli, creation, funded, h, NOW, ownerSigned, send, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -102,7 +102,7 @@ async function post(s: Setup, invited: Address[]): Promise<Address> {
   h.specPages.set(SPEC_URL, await seal(encoded(SPEC), invited));
   const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: s.wallet, specHash: Uint8Array.from(Buffer.from(sha(SPEC), "hex")), judgeFee: 0n } as const;
   const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: s.w.owner, params, inputMint: s.w.inputMint, outputMint: s.w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
-  h.engineLog = [{ ...creation(intent), memos: [specMemo(SPEC_URL)] }];
+  h.engineLog = [{ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) }];
   return intent;
 }
 

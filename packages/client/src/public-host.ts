@@ -102,15 +102,44 @@ export function privateAddress(ip: string): boolean {
   return true;
 }
 
-export async function publicAddresses(hostname: string, lookup: Lookup): Promise<string[] | null> {
-  const host = hostname.replace(/^\[/, "").replace(/\]$/, "");
+export function loopbackAddress(ip: string): boolean {
+  const family = isIP(ip);
+  if (family === 4) {
+    return Math.floor((v4Number(ip) ?? 0) / 2 ** 24) === 127;
+  }
+  const g = family === 6 ? v6Groups(ip) : null;
+  if (g === null) {
+    return false;
+  }
+  const [x = 0, y = 0] = g.slice(6);
+  if (g.slice(0, 5).every((v) => v === 0) && g[5] === 0xffff) {
+    return loopbackAddress(embedded(x, y));
+  }
+  return g.slice(0, 7).every((v) => v === 0) && y === 1;
+}
+
+const bare = (hostname: string): string => hostname.replace(/^\[/, "").replace(/\]$/, "");
+
+export function loopbackUrl(url: string): boolean {
+  let host: string;
+  try {
+    host = bare(new URL(url).hostname).toLowerCase();
+  } catch {
+    return false;
+  }
+  return host === "localhost" || loopbackAddress(host);
+}
+
+export async function publicAddresses(hostname: string, lookup: Lookup, loopback = false): Promise<string[] | null> {
+  const host = bare(hostname);
   let addresses: string[];
   try {
     addresses = isIP(host) === 0 ? await lookup(host) : [host];
   } catch {
     return null;
   }
-  return addresses.length > 0 && !addresses.some(privateAddress) ? addresses : null;
+  const allowed = (address: string) => !privateAddress(address) || (loopback && loopbackAddress(address));
+  return addresses.length > 0 && addresses.every(allowed) ? addresses : null;
 }
 
 export async function publicHost(hostname: string, lookup: Lookup): Promise<boolean> {

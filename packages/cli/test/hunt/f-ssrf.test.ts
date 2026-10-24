@@ -8,7 +8,7 @@ import { specMemo } from "@intent-engine/core";
 import { DEVNET_GENESIS_HASH, type SpecFetch } from "@intent-engine/client";
 import { agentServer } from "../../src/agent/mcp.js";
 import { claimsOf } from "../../src/agent/claims.js";
-import { creation, h, transport, type World, world } from "../harness.js";
+import { creation, h, ownerSigned, transport, type World, world } from "../harness.js";
 
 type Json = Record<string, unknown>;
 type Fetched = { url: string };
@@ -56,7 +56,7 @@ describe("get_spec against a private spec host on a public cluster", () => {
       throw new Error(sent.toString());
     }
     const intent = made.value["intent"] as Address;
-    h.engineLog.push({ ...creation(intent), memos: [specMemo(specUrl)] });
+    h.engineLog.push({ ...creation(intent), ...ownerSigned(intent, [specMemo(specUrl)]) });
     return intent;
   };
 

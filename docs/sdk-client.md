@@ -205,6 +205,8 @@ await client.unwrap(signer);
 - `specUrl` on `createIntent` publishes where the spec lives, in a memo the owner signs.
 - `jobs` lists up to 50 open, unexpired proof escrows, those with the most time left first, each with its `specUrl`.
 - `spec` fetches that url, following no redirect and reading at most 1048576 bytes, and says whether it `matches` the committed hash. It never runs the text.
+- `spec` refuses a url whose host resolves to a private, link-local or loopback address on every cluster, allowing loopback only when the RPC url is loopback, and reads only a spec memo the escrow's owner signed.
+- A `fetch` you pass to `createClient` is handed the checked `addresses` of the host and must connect only to them.
 - `deliver` announces a worker's work: a memo with the intent, a commitment that binds the work's sha256 to the worker's wallet and a salt, a check of that salt, and the salt and url sealed to the judge or to each committee member, plus a 0-lamport transfer to the judge.
 - The salt comes from the worker's own signature over the intent and the sha256, so only its key derives it. `deliver` refuses a signer that cannot sign messages, such as a Ledger, with `NoMessageSigner`; `saltSignature` passes a signature made elsewhere, which must verify for the worker (`BadSaltSignature`).
 - `deliveryRecord` lists the announcements to a judge, newest first, reading at most 100 pages of 1000 transactions. With the judge's 64-byte `keypair` it opens each sealed salt and url. Decide whom to pay only when its `complete` is `true`.

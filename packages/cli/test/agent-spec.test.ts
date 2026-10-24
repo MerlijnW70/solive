@@ -3,7 +3,7 @@ import { type Address, getBase64Encoder, getTransactionDecoder, partiallySignTra
 import { FailedTransactionMetadata } from "litesvm";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { specMemo } from "@intent-engine/core";
 import { MAX_SPEC_BYTES, type SpecFetch } from "@intent-engine/client";
 import { agentServer, annotationsOf, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
@@ -12,7 +12,9 @@ import { ACTIONS } from "../src/agent/registry.js";
 import { FETCH_FAILED, getSpec, noSpecUrl } from "../src/agent/spec.js";
 import { SERVER_PROBLEMS } from "../src/agent/problems.js";
 import { EXIT_OK } from "../src/main.js";
-import { cli, creation, h, transport, type World, world } from "./harness.js";
+import { cli, creation, h, ownerSigned, transport, type World, world } from "./harness.js";
+
+vi.mock("node:dns/promises", () => ({ lookup: async () => [{ address: "93.184.215.14", family: 4 }] }));
 
 type Json = Record<string, unknown>;
 type Fetched = { url: string; init: Parameters<SpecFetch>[1] };
@@ -68,7 +70,7 @@ describe("solive_get_spec", () => {
       throw new Error(sent.toString());
     }
     const intent = made.value["intent"] as Address;
-    h.engineLog.push({ ...creation(intent), memos: specUrl === undefined ? [] : [specMemo(specUrl)] });
+    h.engineLog.push({ ...creation(intent), ...ownerSigned(intent, specUrl === undefined ? [] : [specMemo(specUrl)]) });
     return intent;
   };
 

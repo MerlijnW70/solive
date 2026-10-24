@@ -16,7 +16,7 @@ import { RECEIVED_OUTSIDE, unannounced } from "../src/agent/wallet/attest.js";
 import { notInvited } from "../src/invites.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { sealedDelivery } from "./announce.js";
-import { cli, creation, funded, h, NOW, transport, world } from "./harness.js";
+import { cli, creation, funded, h, NOW, ownerSigned, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -83,7 +83,7 @@ async function post(s: Setup, attestor: Address, invited: Address[]): Promise<Ad
   h.specPages.set(SPEC_URL, await seal(encoded(SPEC), invited));
   const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor, specHash: Uint8Array.from(Buffer.from(sha(SPEC), "hex")), judgeFee: 0n } as const;
   const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: s.w.owner, params, inputMint: s.w.inputMint, outputMint: s.w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
-  h.engineLog = [{ ...creation(intent), memos: [specMemo(SPEC_URL)] }];
+  h.engineLog = [{ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) }];
   return intent;
 }
 
@@ -197,7 +197,7 @@ describe("a release for work no announcement backs", () => {
     const committee = await committeeOf(members);
     const escrow = await ok(s.client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: sha(SPEC), spec_url: SPEC_URL, send: true });
     h.specPages.set(SPEC_URL, await seal(encoded(SPEC), [...members, worker]));
-    h.engineLog = [{ ...creation(escrow["intent"] as Address), memos: [specMemo(SPEC_URL)] }];
+    h.engineLog = [{ ...creation(escrow["intent"] as Address), ...ownerSigned(escrow["intent"] as Address, [specMemo(SPEC_URL)]) }];
     const ballot = { owner: s.wallet, nonce: escrow["nonce"], pay_to: worker, result: "1", delivered_sha256: unbacked };
     expect(await call(s.client, "wallet_committee_vote", ballot)).toMatchObject({ error: true, value: { code: "NotAnnounced" } });
     expect(await ok(s.client, "wallet_committee_vote", { ...ballot, [RECEIVED_OUTSIDE]: true })).toMatchObject({ signed: false });
@@ -218,7 +218,7 @@ describe("the shared invite check on the command line", () => {
     const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
     h.engineLog = [
       { signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [await sealedDelivery(intent, worker, sha(COUNT), WORK_URL, [judge.address])], feePayer: worker },
-      { ...creation(intent), memos: [specMemo(SPEC_URL)] },
+      { ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) },
     ];
     const judging = ["judge", "--keypair", "judge.json", "--owner", w.owner.address, "--nonce", "0", "--spec", spec, "--artifact", artifact, "--sandbox", "viper"];
     const refused = await cli(judging, { "judge.json": judge });

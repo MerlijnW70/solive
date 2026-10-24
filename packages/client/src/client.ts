@@ -144,7 +144,7 @@ export function createClient(options: ClientOptions): Client {
     close,
     balances,
     jobs: (filter = {}) => jobsOf(transport, filter),
-    spec: (intent, keypair) => readSpec(transport, options.fetch ?? pinnedFetch, intent, keypair),
+    spec: (intent, keypair) => readSpec(transport, options.fetch ?? pinnedFetch, intent, keypair, undefined, url),
     deliver: async (input) => send((await deliveryInstructions(transport, input)).instructions, input.worker),
     deliveries: ({ judge, intent }) => deliveriesOf(transport, judge, intent),
     deliveryRecord: ({ judge, intent, pages, keypair }) => deliveryRecord(transport, judge, intent, pages, keypair),

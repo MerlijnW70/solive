@@ -10,7 +10,7 @@ import { EVERYDAY_TOOLS } from "../src/agent/everyday.js";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
-import { cli, creation, h, world } from "./harness.js";
+import { cli, creation, h, ownerSigned, world } from "./harness.js";
 
 type Json = Record<string, unknown>;
 
@@ -81,7 +81,7 @@ describe("sealing a spec for an invite-only job", () => {
     expect(JSON.stringify(preview["warnings"])).not.toContain("spec_url");
     const sent = await ok(owner, "wallet_escrow", { ...escrow, send: true });
     const intent = sent["intent"] as Address;
-    h.engineLog.push({ ...creation(intent), memos: [specMemo(SPEC_URL)] });
+    h.engineLog.push({ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) });
     expect(await ok(owner, "get_spec", { intent })).toMatchObject({ url: SPEC_URL, sha256: sha(SPEC), matches: true, text: SPEC, sealed_to: [worker, judge] });
 
     h.files.clear();

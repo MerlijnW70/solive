@@ -45,6 +45,7 @@ import {
   findProgramDataAddress,
   getInitConfigInstructionAsync,
   getIntentCreatedEventEncoder,
+  getIntentDecoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   MANDATE_NONCE_BIT,
 } from "@intent-engine/core";
@@ -251,6 +252,15 @@ export const transport: Transport = {
     return "airdrop";
   },
 };
+
+export function ownerSigned(intent: Address, memos: string[]): Pick<EngineTransaction, "memos" | "memoSigners"> {
+  const held = h.svm.getAccount(intent);
+  if (!held.exists) {
+    throw new Error("the escrow was not created");
+  }
+  const { owner } = getIntentDecoder().decode(held.data);
+  return { memos, memoSigners: memos.map(() => [owner]) };
+}
 
 export const creation = (intent: Address, slot = 1n): EngineTransaction => ({
   signature: `create-${intent}`,

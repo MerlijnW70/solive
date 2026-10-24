@@ -76,6 +76,8 @@ vi.mock("@solana/kit", async (importOriginal) => {
   };
 });
 
+vi.mock("node:dns/promises", () => ({ lookup: async () => [{ address: "185.199.108.133", family: 4 }] }));
+
 vi.mock("@intent-engine/client", async () => {
   const real = await import("../src/index.js");
   return {
@@ -85,7 +87,7 @@ vi.mock("@intent-engine/client", async () => {
       if (injected.transport === undefined) {
         throw new Error("no transport injected");
       }
-      return real.createClient({ ...options, transport: injected.transport, pollMs: 5 });
+      return real.createClient({ ...options, transport: injected.transport, pollMs: 5, fetch: (url) => fetch(url) });
     },
     connect: (options: ConnectOptions) => {
       injected.urls.push(real.clusterUrl(options));

@@ -15,7 +15,7 @@ import { notInvited } from "../src/invites.js";
 import { jobClosed } from "../src/sealed-commands.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { sealedDelivery } from "./announce.js";
-import { cli, creation, funded, h, NOW, transport, world } from "./harness.js";
+import { cli, creation, funded, h, NOW, ownerSigned, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown>;
 
@@ -73,7 +73,7 @@ describe("an invite-only job through MCP", () => {
     const escrow = await call(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash: sha(SPEC), spec_url: SPEC_URL, send: true });
     expect(escrow.error, JSON.stringify(escrow.value)).toBe(false);
     const intent = escrow.value["intent"] as Address;
-    h.engineLog.push({ ...creation(intent), memos: [specMemo(SPEC_URL)] });
+    h.engineLog.push({ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) });
 
     expect(await call(client, "get_spec", { intent })).toEqual({
       error: false,
@@ -98,7 +98,7 @@ describe("an invite-only job through MCP", () => {
     h.specPages.set(SPEC_URL, await seal(new TextEncoder().encode(SPEC), invited));
     const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: w.authority.address, specHash: new Uint8Array(createHash("sha256").update(SPEC).digest()), judgeFee: 0n } as const;
     const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
-    h.engineLog.push({ ...creation(intent), memos: [specMemo(SPEC_URL)] });
+    h.engineLog.push({ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) });
     expect(await call(client, "get_spec", { intent })).toEqual({
       error: true,
       value: { code: "SpecSealed", retryable: false, hint: `the spec at ${SPEC_URL} is sealed to 2 invited wallets; read it with the key of an invited wallet` },
@@ -122,7 +122,7 @@ describe("judging an invite-only job", () => {
       h.specPages.set(SPEC_URL, await seal(new TextEncoder().encode(SPEC), invited));
       h.engineLog = [
         { signature: "first", slot: 5n, blockTime: null, failed: false, emitted: [], memos: [await sealedDelivery(intent, worker, sha(COUNT), "https://example.org/count.sealed", [judge.address])], feePayer: worker },
-        { ...creation(intent), memos: [specMemo(SPEC_URL)] },
+        { ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) },
       ];
       return cli(judging, { "judge.json": judge });
     };

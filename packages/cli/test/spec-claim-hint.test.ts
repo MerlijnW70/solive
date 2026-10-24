@@ -10,7 +10,7 @@ import { agentServer, servedText } from "../src/agent/mcp.js";
 import { claimsOf } from "../src/agent/claims.js";
 import { type Serving, servedActions } from "../src/agent/everyday.js";
 import { SPEC_TAKES_CLAIMS, specClaimHeld } from "../src/agent/job-claims.js";
-import { creation, funded, h, NOW, send, transport, type World, world } from "./harness.js";
+import { creation, funded, h, NOW, ownerSigned, send, transport, type World, world } from "./harness.js";
 
 type Json = Record<string, unknown>;
 
@@ -54,7 +54,7 @@ describe("solive_get_spec on a job that takes claims", () => {
       throw new Error(sent.toString());
     }
     const intent = made["intent"] as Address;
-    h.engineLog.push({ ...creation(intent), memos: [specMemo(specUrl)] });
+    h.engineLog.push({ ...creation(intent), ...ownerSigned(intent, [specMemo(specUrl)]) });
     return intent;
   };
 

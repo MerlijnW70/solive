@@ -18,7 +18,7 @@ import { claimsOf } from "../src/agent/claims.js";
 import { findJobs } from "../src/agent/jobs.js";
 import { getSpec } from "../src/agent/spec.js";
 import { EXIT_OK } from "../src/main.js";
-import { cli, creation, h, NOW, send, transport, type World, world } from "./harness.js";
+import { cli, creation, h, NOW, ownerSigned, send, transport, type World, world } from "./harness.js";
 
 type Json = Record<string, unknown>;
 
@@ -87,7 +87,7 @@ describe("a job names the freeze authority of its mint", () => {
       const params = { kind: Kind.AttestedResult, amountIn: 1_000n, minResult: 1n, maxResult: 1n, attestor: w.authority.address, specHash, judgeFee: 0n } as const;
       const nonce = BigInt(i + 1);
       const made = await client.createIntent({ signer: w.owner, inputMint, outputMint: w.outputMint, params, nonce, expiresAt: NOW + 3_600n + nonce });
-      h.engineLog.push({ ...creation(made.intent), memos: [specMemo(SPEC_URL)] });
+      h.engineLog.push({ ...creation(made.intent), ...ownerSigned(made.intent, [specMemo(SPEC_URL)]) });
       escrows.set(name, made.intent);
       mintsOf.set(name, inputMint);
     }

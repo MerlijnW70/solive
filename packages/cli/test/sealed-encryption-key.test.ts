@@ -15,7 +15,7 @@ import {
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DEVNET_TEST_MINT, NATIVE_MINT, parseEncryptionKey, sealedTo, specMemo, unseal } from "@intent-engine/core";
 import { type EngineTransaction, MEMO_PROGRAM_ADDRESS, signersAmong } from "@intent-engine/client";
 import { tool } from "../src/agent/names.js";
@@ -24,7 +24,9 @@ import { NOT_SEALED_HERE, WORK_OPENS } from "../src/agent/wallet/work.js";
 import { UNSEAL_NEEDS_KEY } from "../src/arg-values.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { defaultWallet } from "../src/wallet.js";
-import { cli, creation, funded, h, HOME, world } from "./harness.js";
+import { cli, creation, funded, h, HOME, ownerSigned, world } from "./harness.js";
+
+vi.mock("node:dns/promises", () => ({ lookup: async () => [{ address: "93.184.215.14", family: 4 }] }));
 
 type Json = Record<string, unknown>;
 
@@ -120,7 +122,7 @@ describe("sealing to a judge whose profile publishes an encryption key", () => {
     h.specPages.set(SPEC_URL, bytesOf(SPEC));
     const escrow = await ok(plain, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: judge.address, spec_hash: sha(SPEC), spec_url: SPEC_URL, send: true });
     const intent = escrow["intent"] as Address;
-    const made = { ...creation(intent), memos: [specMemo(SPEC_URL)] };
+    const made = { ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) };
     h.engineLog = [made];
 
     useKey(worker);
@@ -163,7 +165,7 @@ describe("sealing to a judge whose profile publishes an encryption key", () => {
     h.specPages.set(SPEC_URL, bytesOf(sealed["sealed"]));
     const escrow = await ok(plain, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner.address, spec_hash: sealed["sha256"], spec_url: SPEC_URL, send: true });
     const intent = escrow["intent"] as Address;
-    h.engineLog = [{ ...creation(intent), memos: [specMemo(SPEC_URL)] }];
+    h.engineLog = [{ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) }];
     useKey(judge);
     expect((await call(plain, "get_spec", { intent })).value).toMatchObject({ code: "SpecUnfetchable" });
     const keyed = await connect(["--encryption-keypair", KEY_FILE]);

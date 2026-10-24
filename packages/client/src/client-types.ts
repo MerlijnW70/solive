@@ -4,7 +4,8 @@ import type { Priority } from "./budget.js";
 import type { ClaimsView } from "./client-claims.js";
 import type { FeedbackInput, Reputation, ReputationOptions } from "./reputation.js";
 import type { EngineError } from "./errors.js";
-import type { DeliverInput, Delivery, DeliveryOpeners, DeliveryRecord, Job, SelfOpeningInput, Spec, SpecFetch } from "./jobs.js";
+import type { DeliverInput, Delivery, DeliveryOpeners, DeliveryRecord, Job, SelfOpeningInput, Spec } from "./jobs.js";
+import type { CheckedFetch } from "./pinned-fetch.js";
 import type { Notifications, Simulation, Transport } from "./transport.js";
 
 export type ClientOptions = {
@@ -14,7 +15,7 @@ export type ClientOptions = {
   priority?: Priority;
   pollMs?: number;
   resyncSeconds?: number;
-  fetch?: SpecFetch;
+  fetch?: CheckedFetch;
 };
 
 export type IntentAccount = { address: Address; intent: Intent };

@@ -14,7 +14,7 @@ import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { sealedOverLimit } from "../src/sealed-commands.js";
 import { defaultWallet } from "../src/wallet.js";
-import { cli, creation, funded, h, HOME, world } from "./harness.js";
+import { cli, creation, funded, h, HOME, ownerSigned, world } from "./harness.js";
 
 type Json = Record<string, unknown>;
 
@@ -98,7 +98,7 @@ describe("sealing to a committee", () => {
     h.specPages.set(SPEC_URL, hosted);
     const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: sha(SPEC), spec_url: SPEC_URL, send: true });
     const intent = escrow["intent"] as Address;
-    h.engineLog = [{ ...creation(intent), memos: [specMemo(SPEC_URL)] }];
+    h.engineLog = [{ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) }];
     for (const reader of [...members, worker]) {
       useKey(reader);
       expect(await ok(client, "get_spec", { intent })).toMatchObject({ matches: true, text: SPEC, sealed_to: sealed["sealed_to"] });
@@ -113,7 +113,7 @@ describe("sealing to a committee", () => {
     h.specPages.set(SPEC_URL, bytesOf(SPEC));
     const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: sha(SPEC), spec_url: SPEC_URL, send: true });
     const intent = escrow["intent"] as Address;
-    h.engineLog = [{ ...creation(intent), memos: [specMemo(SPEC_URL)] }];
+    h.engineLog = [{ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) }];
     const sealed = await ok(client, "wallet_seal_work", { intent, text: "the report\n" });
     expect(new Set(sealed["sealed_to"] as Address[])).toEqual(new Set(members.map(({ address }) => address)));
     for (const member of members) {

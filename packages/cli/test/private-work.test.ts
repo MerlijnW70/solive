@@ -15,7 +15,7 @@ import {
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   DEVNET_TEST_MINT,
   EVENT_IX_TAG,
@@ -36,6 +36,8 @@ import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { defaultWallet } from "../src/wallet.js";
 import { balance, cli, funded, h, HOME, world } from "./harness.js";
+
+vi.mock("node:dns/promises", () => ({ lookup: async () => [{ address: "93.184.215.14", family: 4 }] }));
 
 type Json = Record<string, unknown>;
 
@@ -108,7 +110,7 @@ function createdFrom(intent: Address, memos: string[]): EngineTransaction {
   }
   const { owner, nonce, kind, inputMint, outputMint, escrowed, expiresAt } = getIntentDecoder().decode(held.data);
   const event = getIntentCreatedEventEncoder().encode({ intent, owner, nonce, kind, inputMint, outputMint, receiver: owner, escrowed, expiresAt, rentPayer: owner, flags: 0, bounty: 0, createFee: 0 });
-  return { signature: `made-${intent}`, slot: 1n, blockTime: null, failed: false, emitted: [new Uint8Array([...EVENT_IX_TAG, ...event])], memos, feePayer: owner };
+  return { signature: `made-${intent}`, slot: 1n, blockTime: null, failed: false, emitted: [new Uint8Array([...EVENT_IX_TAG, ...event])], memos, memoSigners: memos.map(() => [owner]), feePayer: owner };
 }
 
 describe("an invite-only job with wallet tools only", () => {

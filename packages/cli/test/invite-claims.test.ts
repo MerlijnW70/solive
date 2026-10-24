@@ -12,7 +12,7 @@ import { SALT_PUBLIC } from "../src/agent/wallet/delivery.js";
 import { inviteOnly } from "../src/agent/work-claims.js";
 import { claimNotInvited, deliverNotInvited } from "../src/invites.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
-import { cli, creation, funded, h, NOW, transport, world } from "./harness.js";
+import { cli, creation, funded, h, NOW, ownerSigned, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -82,7 +82,7 @@ async function post(s: Setup, invited: Address[], claims: boolean): Promise<Addr
   h.specPages.set(SPEC_URL, await seal(encoded(SPEC), invited));
   const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: address(), specHash: Uint8Array.from(Buffer.from(sha(SPEC), "hex")), judgeFee: 0n } as const;
   const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: s.w.owner, params, inputMint: s.w.inputMint, outputMint: s.w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
-  h.engineLog = [{ ...creation(intent), memos: [specMemo(SPEC_URL)] }];
+  h.engineLog = [{ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) }];
   if (claims) {
     await s.run(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.05", "--yes"], { "owner.json": s.w.owner });
   }

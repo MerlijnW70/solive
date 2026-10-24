@@ -15,7 +15,7 @@ import { notSealedTo, SPEC_TOO_LARGE } from "../src/agent/wallet/escrow.js";
 import { sealedLimits } from "../src/agent/wallet/escrow-claims.js";
 import { EXIT_OK } from "../src/main.js";
 import { sealedDelivery } from "./announce.js";
-import { cli, creation, funded, h, world } from "./harness.js";
+import { cli, creation, funded, h, ownerSigned, world } from "./harness.js";
 
 type Json = Record<string, unknown>;
 
@@ -85,7 +85,7 @@ async function job(client: Client, judge: Address, specUrl: string, spec: Uint8A
   h.specPages.set(specUrl, spec);
   const sent = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: judge, spec_hash: sha(spec), spec_url: specUrl, send: true });
   const intent = sent["intent"] as Address;
-  h.engineLog.push({ ...creation(intent), memos: [specMemo(specUrl)] });
+  h.engineLog.push({ ...creation(intent), ...ownerSigned(intent, [specMemo(specUrl)]) });
   return intent;
 }
 

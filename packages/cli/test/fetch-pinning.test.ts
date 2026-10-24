@@ -7,7 +7,7 @@ import { Kind, specMemo } from "@intent-engine/core";
 import { createClient, DEVNET_GENESIS_HASH, type Delivery, MAX_SPEC_BYTES, pinnedFetch, readSpec, type SpecFetch, type Transport, UNEXPECTED_REDIRECT } from "@intent-engine/client";
 import { fetchBytes, fetchDelivery, NOT_PUBLIC } from "../src/delivery-fetch.js";
 import { type Lookup, privateAddress, publicAddresses } from "../src/public-address.js";
-import { creation, h, NOW, transport, world } from "./harness.js";
+import { creation, h, NOW, ownerSigned, transport, world } from "./harness.js";
 
 const PUBLIC = { genesisHash: async () => DEVNET_GENESIS_HASH } as unknown as Transport;
 const CHECKED = "93.184.215.14";
@@ -89,7 +89,7 @@ describe("a fetch connects only to the addresses the check passed", () => {
     const specUrl = "https://" + "spec.example/jobs/pinned.md";
     const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: w.authority.address, specHash: Uint8Array.from(Buffer.from(sha("spec\n"), "hex")), judgeFee: 0n } as const;
     const { intent } = await createClient({ url: "http://cluster", transport }).createIntent({ signer: w.owner, params, inputMint: w.inputMint, outputMint: w.outputMint, nonce: 0n, expiresAt: NOW + 3_600n });
-    h.engineLog = [{ ...creation(intent), memos: [specMemo(specUrl)] }];
+    h.engineLog = [{ ...creation(intent), ...ownerSigned(intent, [specMemo(specUrl)]) }];
     h.genesis = DEVNET_GENESIS_HASH;
     expect(await readSpec(transport, get, intent, undefined, lookup)).toMatchObject({ matches: true, text: "spec\n" });
     expect({ seen, lookups }).toStrictEqual({ seen: [[CHECKED], [CHECKED]], lookups: 2 });
