@@ -983,6 +983,7 @@ fn a_proof_intent_settles_only_against_an_attestation_binding_the_committed_spec
     let fee_to = env.fee_account(&market)?;
     let payee = solver.input;
     let intent = intent_pda(&owner, 0);
+    let delivery = env.announce_for(&solver.key, &intent)?;
 
     let plain = attestation_message(DOMAIN, &attestor.pubkey(), &intent, &payee, ESCROW, 1);
     let fill = env.fill_attested_ix(
@@ -1009,6 +1010,7 @@ fn a_proof_intent_settles_only_against_an_attestation_binding_the_committed_spec
         ESCROW,
         1,
         [0x11; 32],
+        &delivery,
     );
     let fill = env.fill_attested_ix(
         &solver.key.pubkey(),
@@ -1026,8 +1028,16 @@ fn a_proof_intent_settles_only_against_an_attestation_binding_the_committed_spec
         "a verdict over the wrong spec cannot settle"
     );
 
-    let right =
-        attestation_proof_message(DOMAIN, &attestor.pubkey(), &intent, &payee, ESCROW, 1, SPEC);
+    let right = attestation_proof_message(
+        DOMAIN,
+        &attestor.pubkey(),
+        &intent,
+        &payee,
+        ESCROW,
+        1,
+        SPEC,
+        &delivery,
+    );
     let fill = env.fill_attested_ix(
         &solver.key.pubkey(),
         &owner,
@@ -1079,8 +1089,17 @@ fn a_proof_intent_pays_the_judge_out_of_the_escrow_and_only_to_its_canonical_acc
     let fee_to = env.fee_account(&market)?;
     let payee = solver.input;
     let judge_ata = env.create_ata(&attestor.pubkey(), &market.input_mint, market.input_program)?;
-    let msg =
-        attestation_proof_message(DOMAIN, &attestor.pubkey(), &intent, &payee, ESCROW, 1, SPEC);
+    let delivery = env.announce_for(&solver.key, &intent)?;
+    let msg = attestation_proof_message(
+        DOMAIN,
+        &attestor.pubkey(),
+        &intent,
+        &payee,
+        ESCROW,
+        1,
+        SPEC,
+        &delivery,
+    );
 
     let fill = env.fill_attested_ix(
         &solver.key.pubkey(),
@@ -1183,8 +1202,17 @@ fn a_judge_that_cannot_receive_leaves_its_fee_for_the_owner_to_recover() -> Test
     let judge_ata = env.create_ata(&attestor.pubkey(), &market.input_mint, market.input_program)?;
     env.set_frozen(&judge_ata, &market.input_mint, market.input_program, true)?;
     env.judge_to = Some(judge_ata);
-    let msg =
-        attestation_proof_message(DOMAIN, &attestor.pubkey(), &intent, &payee, ESCROW, 1, SPEC);
+    let delivery = env.announce_for(&solver.key, &intent)?;
+    let msg = attestation_proof_message(
+        DOMAIN,
+        &attestor.pubkey(),
+        &intent,
+        &payee,
+        ESCROW,
+        1,
+        SPEC,
+        &delivery,
+    );
     let fill = env.fill_attested_ix(
         &solver.key.pubkey(),
         &owner,
@@ -1271,8 +1299,17 @@ fn a_proof_intent_with_a_partner_conserves_every_lamport() -> TestResult {
     env.judge_to = Some(judge_ata);
     env.partner_to = Some(partner_ata);
     let fee_to_before = env.balance(&fee_to)?;
-    let msg =
-        attestation_proof_message(DOMAIN, &attestor.pubkey(), &intent, &payee, ESCROW, 1, SPEC);
+    let delivery = env.announce_for(&solver.key, &intent)?;
+    let msg = attestation_proof_message(
+        DOMAIN,
+        &attestor.pubkey(),
+        &intent,
+        &payee,
+        ESCROW,
+        1,
+        SPEC,
+        &delivery,
+    );
     let fill = env.fill_attested_ix(
         &solver.key.pubkey(),
         &owner,
@@ -1335,8 +1372,17 @@ fn a_one_lamport_judge_fee_is_still_paid_and_conserves() -> TestResult {
     let fee_to = env.fee_account(&market)?;
     let payee = solver.input;
     let judge_ata = env.create_ata(&attestor.pubkey(), &market.input_mint, market.input_program)?;
-    let msg =
-        attestation_proof_message(DOMAIN, &attestor.pubkey(), &intent, &payee, ESCROW, 1, SPEC);
+    let delivery = env.announce_for(&solver.key, &intent)?;
+    let msg = attestation_proof_message(
+        DOMAIN,
+        &attestor.pubkey(),
+        &intent,
+        &payee,
+        ESCROW,
+        1,
+        SPEC,
+        &delivery,
+    );
 
     let fee_before = env.balance(&fee_to)?;
     env.judge_to = Some(judge_ata);
@@ -1402,8 +1448,17 @@ fn a_one_lamport_partner_fee_is_still_paid_and_conserves() -> TestResult {
     env.judge_to = Some(judge_ata);
     env.partner_to = Some(partner_ata);
     let fee_to_before = env.balance(&fee_to)?;
-    let msg =
-        attestation_proof_message(DOMAIN, &attestor.pubkey(), &intent, &payee, ESCROW, 1, SPEC);
+    let delivery = env.announce_for(&solver.key, &intent)?;
+    let msg = attestation_proof_message(
+        DOMAIN,
+        &attestor.pubkey(),
+        &intent,
+        &payee,
+        ESCROW,
+        1,
+        SPEC,
+        &delivery,
+    );
     let fill = env.fill_attested_ix(
         &solver.key.pubkey(),
         &owner,

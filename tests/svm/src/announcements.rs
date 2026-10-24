@@ -286,6 +286,31 @@ impl Env {
             opening,
         })
     }
+
+    pub fn announce_or_clear(&mut self, worker: &Keypair, intent: &Pubkey) -> Delivery {
+        self.announce_as(worker, intent).unwrap_or_else(|_| {
+            self.clear_announcement();
+            Delivery {
+                announcement: Pubkey::default(),
+                seq: 0,
+                opening: intent_engine::Opening::default(),
+            }
+        })
+    }
+
+    pub fn announce_as(&mut self, worker: &Keypair, intent: &Pubkey) -> TestResult<Delivery> {
+        if self.lamports(&worker.pubkey()) == 0 {
+            self.svm
+                .airdrop(&worker.pubkey(), FUNDING)
+                .map_err(|f| format!("airdrop: {:?}", f.err))?;
+        }
+        self.announce_for(worker, intent)
+    }
+
+    pub fn clear_announcement(&mut self) {
+        self.announcement = None;
+        self.opening = intent_engine::Opening::default();
+    }
 }
 
 pub fn close_announcement_ix(

@@ -302,6 +302,8 @@ impl World {
         let intent = intent_pda(&owner, nonce);
         let payee = self.solver.input;
         let amount = self.env.fill_amount(&owner, nonce);
+        let worker = self.solver.key.insecure_clone();
+        let delivery = self.env.announce_for(&worker, &intent)?;
         let message = attestation_proof_message(
             DOMAIN,
             &self.attestor.pubkey(),
@@ -310,6 +312,7 @@ impl World {
             amount,
             1,
             SPEC,
+            &delivery,
         );
         let solver = self.solver.key.insecure_clone();
         let fill = self.env.fill_attested_ix(
@@ -336,6 +339,8 @@ impl World {
         let intent = intent_pda(&owner, nonce);
         let amount = self.env.fill_amount(&owner, nonce);
         let recipients = self.recipients();
+        let first = self.coauthors.first().ok_or("coauthor")?.insecure_clone();
+        let delivery = self.env.announce_as(&first, &intent)?;
         let digest = split_digest(
             DOMAIN,
             &intent,
@@ -343,6 +348,7 @@ impl World {
             1,
             SPEC,
             split_commit(&recipients, &WEIGHTS),
+            &delivery,
         );
         let signers: Vec<&Keypair> = self
             .coauthors
@@ -397,7 +403,9 @@ impl World {
         let intent = intent_pda(&owner, nonce);
         let payee = self.solver.input;
         let amount = self.env.fill_amount(&owner, nonce);
-        let digest = proof_digest(DOMAIN, &intent, &payee, amount, 1, SPEC);
+        let worker = self.solver.key.insecure_clone();
+        let delivery = self.env.announce_for(&worker, &intent)?;
+        let digest = proof_digest(DOMAIN, &intent, &payee, amount, 1, SPEC, &delivery);
         let signers: Vec<&Keypair> = self.panel.members.iter().collect();
         let batch = committee_batch_ix(&self.panel.keys, &signers, &digest)?;
         let solver = self.solver.key.insecure_clone();
@@ -414,6 +422,8 @@ impl World {
         let intent = intent_pda(&owner, nonce);
         let amount = self.env.fill_amount(&owner, nonce);
         let recipients = self.recipients();
+        let first = self.coauthors.first().ok_or("coauthor")?.insecure_clone();
+        let delivery = self.env.announce_as(&first, &intent)?;
         let digest = split_digest(
             DOMAIN,
             &intent,
@@ -421,6 +431,7 @@ impl World {
             1,
             SPEC,
             split_commit(&recipients, &WEIGHTS),
+            &delivery,
         );
         let listed: Vec<Pubkey> = recipients
             .iter()

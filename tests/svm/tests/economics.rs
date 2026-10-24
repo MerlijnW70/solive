@@ -16,8 +16,8 @@ use solana_signer::Signer;
 use solana_transaction_error::TransactionError;
 use svm_tests::{
     attestation_message, canonical_refund, ed25519_ix, empty_ext_hash, engine_error,
-    engine_error_at, events, intent_pda, partner_ext, swap_spec, vault_pda, Env, IntentSpec,
-    Market, MintExt, Solver, TestResult, Trader, DOMAIN, START_TS,
+    engine_error_at, events, intent_pda, partner_ext, swap_spec, vault_pda, Delivery, Env,
+    IntentSpec, Market, MintExt, Solver, TestResult, Trader, DOMAIN, START_TS,
 };
 
 const PROGRAM: Pubkey = anchor_spl::token::ID;
@@ -932,8 +932,9 @@ fn proof_message(
     result: u64,
     spec_hash: [u8; 32],
     max_fee_bps: u16,
+    delivery: &Delivery,
 ) -> [u8; intent_core::sig::ENVELOPE_LEN] {
-    let preimage = intent_core::sig::AttestedProof {
+    let preimage = intent_core::sig::AttestedDelivery {
         program: intent_engine::ID.to_bytes(),
         domain: DOMAIN,
         intent: intent_pda(&w.owner(), 0).to_bytes(),
@@ -945,6 +946,10 @@ fn proof_message(
         max_fee_bps,
         ext_hash: empty_ext_hash(),
         spec_hash,
+        announcement: delivery.announcement.to_bytes(),
+        seq: delivery.seq,
+        delivered: delivery.opening.delivered,
+        salt: delivery.opening.salt,
     }
     .preimage();
     let digest = solana_sha256_hasher::hashv(&[&preimage]).to_bytes();
@@ -980,9 +985,11 @@ fn a_proof_escrow_settles_at_a_three_percent_fee() -> TestResult {
     w.env.judge_to = Some(judge_to);
     let payee = w.solver.input;
     let solver = w.solver.key.pubkey();
+    let worker = w.solver.key.insecure_clone();
+    let delivery = w.env.announce_for(&worker, &intent_pda(&w.owner(), 0))?;
     let fill = |w: &mut World, bound: u16| {
         w.env.max_fee_bps = bound;
-        let message = proof_message(w, &attestor, &payee, 5, SPEC, bound);
+        let message = proof_message(w, &attestor, &payee, 5, SPEC, bound, &delivery);
         let ix = w.env.fill_attested_ix(
             &solver,
             &w.owner(),

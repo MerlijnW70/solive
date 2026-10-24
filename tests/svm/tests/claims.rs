@@ -12,8 +12,8 @@ use solana_signer::Signer;
 use solana_transaction_error::TransactionError;
 use svm_tests::{
     attestation_proof_message, claim_job_ix, claims_pda, drop_claim_ix, ed25519_ix,
-    engine_error_at, events, intent_pda, load, open_claims_ix, settle_claims_ix, swap_spec, Env,
-    IntentSpec, Market, Solver, TestResult, Trader, DOMAIN,
+    engine_error_at, events, intent_pda, load, open_claims_ix, settle_claims_ix, swap_spec,
+    Delivery, Env, IntentSpec, Market, Solver, TestResult, Trader, DOMAIN,
 };
 
 const FUNDED: u64 = 1_000;
@@ -96,6 +96,20 @@ impl World {
         claims: bool,
         stake_to: Option<&Pubkey>,
     ) -> Result<TransactionMetadata, TransactionError> {
+        let delivery = self.env.announce_or_clear(&to.key, &self.intent());
+        self.release_as(to, claims, stake_to, &delivery)
+    }
+
+    fn release_as(
+        &mut self,
+        to: &Solver,
+        claims: bool,
+        stake_to: Option<&Pubkey>,
+        delivery: &Delivery,
+    ) -> Result<TransactionMetadata, TransactionError> {
+        self.env.announcement =
+            (delivery.announcement != Pubkey::default()).then_some(delivery.announcement);
+        self.env.opening = delivery.opening;
         let message = attestation_proof_message(
             DOMAIN,
             &self.attestor.pubkey(),
@@ -104,6 +118,7 @@ impl World {
             ESCROW,
             1,
             SPEC,
+            delivery,
         );
         let owner = self.owner();
         self.env.claims = claims.then(|| claims_pda(&self.intent()));
@@ -248,9 +263,11 @@ fn a_claim_takes_the_stake_holds_the_job_and_lasts_within_the_terms() -> TestRes
 fn while_held_only_the_claimant_is_paid_and_gets_its_stake_back() -> TestResult {
     let mut w = world()?;
     w.open(HOUR, STAKE)?;
+    let rival = w.rival.key.insecure_clone();
+    let intent = w.intent();
+    let early = w.env.announce_for(&rival, &intent)?;
     let worker = w.worker.key.insecure_clone();
     w.claim(&worker, HOUR)?;
-    let rival = w.rival.key.insecure_clone();
     let rival_solver = Solver {
         key: rival,
         output: w.rival.output,
@@ -258,6 +275,11 @@ fn while_held_only_the_claimant_is_paid_and_gets_its_stake_back() -> TestResult 
     };
     assert_eq!(
         w.release(&rival_solver, true, None).err(),
+        Some(engine_error_at(1, EngineError::AnnouncementMissing)),
+        "a rival cannot announce while the claim holds"
+    );
+    assert_eq!(
+        w.release_as(&rival_solver, true, None, &early).err(),
         Some(engine_error_at(1, EngineError::ClaimHeld)),
         "nobody but the claimant is paid while the claim holds"
     );

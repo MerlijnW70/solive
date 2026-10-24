@@ -2,7 +2,7 @@ use anchor_lang::prelude::Pubkey;
 use intent_core::bounty::split_n;
 use intent_core::fee::{split_fees, Fees};
 use intent_core::kinds::{attested_result, Kind};
-use intent_core::sig::AttestedSplit;
+use intent_core::sig::AttestedSplitDelivery;
 use intent_engine::errors::EngineError;
 use intent_engine::events::{FeeWithheld, IntentSplit, WITHHELD_PARTNER};
 use intent_engine::Economics;
@@ -13,8 +13,8 @@ use solana_signer::Signer;
 use solana_transaction_error::TransactionError;
 use svm_tests::{
     cosign_batch_ix, empty_ext_hash, engine_error, engine_error_at, events, intent_pda,
-    partner_ext, split_commit, swap_spec, vault_pda, Env, IntentSpec, Market, MintExt, Solver,
-    TestResult, Trader, DOMAIN, START_TS,
+    partner_ext, split_commit, swap_spec, vault_pda, Delivery, Env, IntentSpec, Market, MintExt,
+    Solver, TestResult, Trader, DOMAIN, START_TS,
 };
 
 const FUNDED: u64 = 1_000_000;
@@ -57,6 +57,7 @@ struct World {
     partner: Pubkey,
     partner_to: Option<Pubkey>,
     judge_ata: Pubkey,
+    delivery: Delivery,
 }
 
 fn judged_spec(attestor: &Keypair, judge_fee: u64, ext: Vec<u8>) -> TestResult<IntentSpec> {
@@ -123,6 +124,8 @@ fn world(terms: &Terms) -> TestResult<World> {
     for c in &coauthors {
         atas.push(env.create_ata(&c.pubkey(), &market.input_mint, program)?);
     }
+    let intent = intent_pda(&trader.key.pubkey(), 0);
+    let delivery = env.announce_as(coauthors.first().ok_or("coauthor")?, &intent)?;
     Ok(World {
         env,
         market,
@@ -135,6 +138,7 @@ fn world(terms: &Terms) -> TestResult<World> {
         partner,
         partner_to,
         judge_ata,
+        delivery,
     })
 }
 
@@ -144,8 +148,9 @@ fn digest(
     result: u64,
     max_fee_bps: u16,
     split_hash: [u8; 32],
+    delivery: &Delivery,
 ) -> [u8; 32] {
-    let preimage = AttestedSplit {
+    let preimage = AttestedSplitDelivery {
         program: intent_engine::ID.to_bytes(),
         domain: DOMAIN,
         intent: intent.to_bytes(),
@@ -157,6 +162,10 @@ fn digest(
         ext_hash: empty_ext_hash(),
         spec_hash: SPEC,
         split_hash,
+        announcement: delivery.announcement.to_bytes(),
+        seq: delivery.seq,
+        delivered: delivery.opening.delivered,
+        salt: delivery.opening.salt,
     }
     .preimage();
     solana_sha256_hasher::hashv(&[&intent_core::sig::SPLIT_COSIGN_TAG, &preimage]).to_bytes()
@@ -201,6 +210,7 @@ impl World {
             result,
             self.env.max_fee_bps,
             split_hash,
+            &self.delivery,
         );
         let signers: Vec<&Keypair> = self
             .coauthors

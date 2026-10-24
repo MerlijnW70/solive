@@ -160,7 +160,8 @@ fn run_split(case: &Case) -> TestResult {
     let recipients: Vec<Pubkey> = chosen.iter().map(|k| k.pubkey()).collect();
     let fee_before = env.balance(&fee_to)?;
     let split_hash = split_commit(&recipients, &case.weights);
-    let digest = split_digest(DOMAIN, &intent, case.escrow, 1, SPEC, split_hash);
+    let delivery = env.announce_as(chosen.first().ok_or("no recipient")?, &intent)?;
+    let digest = split_digest(DOMAIN, &intent, case.escrow, 1, SPEC, split_hash, &delivery);
     let fill = env.fill_attested_split_ix(
         &solver.key.pubkey(),
         &owner,

@@ -56,7 +56,8 @@ fn a_settled_collaborative_split_cannot_be_settled_a_second_time() -> TestResult
         atas.push(env.create_ata(r, &market.input_mint, market.input_program)?);
     }
     let split_hash = split_commit(&recipients, &weights);
-    let digest = split_digest(DOMAIN, &intent, ESCROW, 1, SPEC, split_hash);
+    let delivery = env.announce_as(coauthors.first().ok_or("coauthor")?, &intent)?;
+    let digest = split_digest(DOMAIN, &intent, ESCROW, 1, SPEC, split_hash, &delivery);
     let claim = |env: &Env| {
         env.fill_attested_split_ix(
             &solver.key.pubkey(),

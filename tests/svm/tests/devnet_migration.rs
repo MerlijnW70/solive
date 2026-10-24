@@ -25,8 +25,8 @@ use svm_tests::{
     claim_job_ix, claims_pda, close_legacy_full_ix, close_legacy_ix, config_pda, devnet_env,
     devnet_snapshot, ed25519_ix, empty_ext_hash, engine_error, engine_ix, event_authority, events,
     intent_pda, leave_ix, load, migrate_ix, open_claims_ix, pda, send_as, settle_claims_ix,
-    stand_by_ix, standby_pda, swap_spec, user_pda, vault_pda, Env, IntentSpec, LegacyClose, Market,
-    Saved, Snapshot, TestResult, FUNDING,
+    stand_by_ix, standby_pda, swap_spec, user_pda, vault_pda, Delivery, Env, IntentSpec,
+    LegacyClose, Market, Saved, Snapshot, TestResult, FUNDING,
 };
 
 const HEAD: usize = 8;
@@ -577,8 +577,14 @@ fn create_ix(env: &Env, o: &Order) -> Instruction {
     )
 }
 
-fn proof_message(domain: [u8; 32], attestor: &Pubkey, intent: &Pubkey, payee: &Pubkey) -> Vec<u8> {
-    let preimage = intent_core::sig::AttestedProof {
+fn proof_message(
+    domain: [u8; 32],
+    attestor: &Pubkey,
+    intent: &Pubkey,
+    payee: &Pubkey,
+    delivery: &Delivery,
+) -> Vec<u8> {
+    let preimage = intent_core::sig::AttestedDelivery {
         program: intent_engine::ID.to_bytes(),
         domain,
         intent: intent.to_bytes(),
@@ -590,6 +596,10 @@ fn proof_message(domain: [u8; 32], attestor: &Pubkey, intent: &Pubkey, payee: &P
         max_fee_bps: MAX_ATTESTED_FEE_BPS,
         ext_hash: empty_ext_hash(),
         spec_hash: SPEC,
+        announcement: delivery.announcement.to_bytes(),
+        seq: delivery.seq,
+        delivered: delivery.opening.delivered,
+        salt: delivery.opening.salt,
     }
     .preimage();
     let digest = solana_sha256_hasher::hashv(&[&preimage]).to_bytes();
@@ -683,7 +693,14 @@ fn after_migrating_the_engine_runs_on_devnet_accounts() -> TestResult {
         .create_ata(&recipient, &market.input_mint, market.input_program)?;
     let fees_before = d.env.balance(&fee_to)?;
     let config: Config = load(&d.env.svm, &config_pda())?;
-    let message = proof_message(config.domain, &attestor.pubkey(), &intent, &payee);
+    let delivery = d.env.announce_for(&worker, &intent)?;
+    let message = proof_message(
+        config.domain,
+        &attestor.pubkey(),
+        &intent,
+        &payee,
+        &delivery,
+    );
     d.env.claims = Some(claims_pda(&intent));
     d.env.stake_to = Some(worker.pubkey());
     d.env.max_fee_bps = MAX_ATTESTED_FEE_BPS;

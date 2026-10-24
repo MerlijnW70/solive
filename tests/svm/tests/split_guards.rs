@@ -9,7 +9,7 @@ use solana_signer::Signer;
 use solana_transaction_error::TransactionError;
 use svm_tests::{
     cosign_batch_ix, engine_error, intent_pda, split_commit, split_digest, swap_spec, vault_pda,
-    Env, IntentSpec, Market, MintExt, Solver, TestResult, Trader, DOMAIN,
+    Delivery, Env, IntentSpec, Market, MintExt, Solver, TestResult, Trader, DOMAIN,
 };
 
 const FUNDED: u64 = 1_000;
@@ -25,6 +25,7 @@ struct Case {
     fee_to: Pubkey,
     attestor: Keypair,
     coauthors: Vec<Keypair>,
+    delivery: Option<Delivery>,
 }
 
 impl Case {
@@ -89,6 +90,11 @@ fn case_with(program: Pubkey, spec_hash: [u8; 32], coauthors: usize) -> TestResu
     for c in &coauthors {
         env.create_ata(&c.pubkey(), &market.input_mint, market.input_program)?;
     }
+    let intent = intent_pda(&trader.key.pubkey(), 0);
+    let delivery = match coauthors.first() {
+        Some(first) if spec_hash != [0u8; 32] => Some(env.announce_as(first, &intent)?),
+        _ => None,
+    };
     Ok(Case {
         env,
         market,
@@ -97,6 +103,7 @@ fn case_with(program: Pubkey, spec_hash: [u8; 32], coauthors: usize) -> TestResu
         fee_to,
         attestor,
         coauthors,
+        delivery,
     })
 }
 
@@ -117,6 +124,7 @@ fn the_fixture_settles_when_every_co_author_and_the_attestor_sign() -> TestResul
         1,
         SPEC,
         split_commit(&recipients, &weights),
+        &c.delivery.ok_or("no delivery")?,
     );
     let signers: Vec<&Keypair> = c
         .coauthors
@@ -283,6 +291,13 @@ fn a_split_is_refused_for_an_intent_that_owes_an_agent_fee() -> TestResult {
 #[test]
 fn a_split_is_refused_for_an_intent_without_a_pinned_spec() -> TestResult {
     let mut c = case_with(anchor_spl::token::ID, [0u8; 32], 3)?;
+    let pinned = IntentSpec {
+        nonce: 1,
+        ..proof_spec(&c.attestor, SPEC)?
+    };
+    c.env.create_intent(&c.trader, &c.market, &pinned)?;
+    let first = c.coauthors.first().ok_or("coauthor")?.insecure_clone();
+    c.env.announce_as(&first, &intent_pda(&c.owner(), 1))?;
     let ix = c.claim_ix(&c.recipients(2), &[6000, 4000]);
     assert_eq!(c.claim(ix), Some(engine_error(EngineError::NotAProof)));
     assert_eq!(c.escrow()?, ESCROW);

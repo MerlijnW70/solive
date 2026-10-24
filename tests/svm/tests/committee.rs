@@ -15,7 +15,7 @@ use svm_tests::{
     batch_ix, committee_batch_ix, committee_id, committee_message, committee_pda,
     cosign_in_message, cosign_ix, create_committee_ix, create_committee_with_id_ix, ed25519_ix,
     engine_error_at, events, intent_pda, load, proof_digest, proof_preimage, raw_cosign_message,
-    sorted_members, split_commit, split_digest, swap_spec, vault_pda, CommitteeFill, Env,
+    sorted_members, split_commit, split_digest, swap_spec, vault_pda, CommitteeFill, Delivery, Env,
     IntentSpec, Market, Solver, TestResult, Trader, DOMAIN,
 };
 
@@ -47,6 +47,7 @@ struct World {
     panel: Panel,
     solver: Solver,
     fee_to: Pubkey,
+    delivery: Delivery,
 }
 
 fn convene(env: &mut Env, size: usize, threshold: u8) -> TestResult<Panel> {
@@ -90,6 +91,7 @@ fn world(size: usize, threshold: u8, judge_fee: u64) -> TestResult<World> {
     env.create_intent(&trader, &market, &escrow_spec(&panel.address, judge_fee)?)?;
     let solver = env.solver(&market, 0)?;
     let fee_to = env.fee_account(&market)?;
+    let delivery = env.announce_for(&solver.key, &intent_pda(&trader.key.pubkey(), 0))?;
     Ok(World {
         env,
         market,
@@ -97,6 +99,7 @@ fn world(size: usize, threshold: u8, judge_fee: u64) -> TestResult<World> {
         panel,
         solver,
         fee_to,
+        delivery,
     })
 }
 
@@ -110,11 +113,27 @@ impl World {
     }
 
     fn digest(&self, payee: &Pubkey) -> [u8; 32] {
-        proof_digest(DOMAIN, &self.intent(), payee, ESCROW, 1, SPEC)
+        proof_digest(
+            DOMAIN,
+            &self.intent(),
+            payee,
+            ESCROW,
+            1,
+            SPEC,
+            &self.delivery,
+        )
     }
 
     fn tagged(&self, tag: &[u8], payee: &Pubkey) -> [u8; 32] {
-        let preimage = proof_preimage(DOMAIN, &self.intent(), payee, ESCROW, 1, SPEC);
+        let preimage = proof_preimage(
+            DOMAIN,
+            &self.intent(),
+            payee,
+            ESCROW,
+            1,
+            SPEC,
+            &self.delivery,
+        );
         solana_sha256_hasher::hashv(&[tag, &preimage]).to_bytes()
     }
 
@@ -466,6 +485,7 @@ fn a_committee_cannot_release_an_escrow_judged_by_a_single_key() -> TestResult {
     let owner = trader.key.pubkey();
     let solver = env.solver(&market, 0)?;
     let fee_to = env.fee_account(&market)?;
+    let delivery = env.announce_for(&solver.key, &intent_pda(&owner, 0))?;
     let digest = proof_digest(
         DOMAIN,
         &intent_pda(&owner, 0),
@@ -473,6 +493,7 @@ fn a_committee_cannot_release_an_escrow_judged_by_a_single_key() -> TestResult {
         ESCROW,
         1,
         SPEC,
+        &delivery,
     );
     let fill = env.fill_attested_committee_ix(
         &CommitteeFill {
@@ -546,6 +567,9 @@ fn a_team_split_is_released_by_its_co_authors_and_a_committee_quorum() -> TestRe
     let solver = &w.solver;
     let fee_to = w.fee_to;
     let fee_before = w.env.balance(&fee_to)?;
+    let delivery = w
+        .env
+        .announce_as(coauthors.first().ok_or("coauthor")?, &intent)?;
     let digest = split_digest(
         DOMAIN,
         &intent,
@@ -553,6 +577,7 @@ fn a_team_split_is_released_by_its_co_authors_and_a_committee_quorum() -> TestRe
         1,
         SPEC,
         split_commit(&recipients, &weights),
+        &delivery,
     );
     let fill = |env: &Env, committee: &Pubkey, mask: u8| {
         env.fill_attested_split_committee_ix(

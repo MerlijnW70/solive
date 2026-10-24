@@ -9,8 +9,8 @@ use solana_signer::Signer;
 use svm_tests::{
     attestation_proof_message, claims_pda, committee_batch_ix, cosign_batch_ix, cosign_ix,
     ed25519_ix, events, intent_pda, judged_spec, proof_digest, settle_claims_ix, split_commit,
-    split_digest, vault_pda, CommitteeFill, Env, Market, MintExt, Panel, TestResult, Trader,
-    DOMAIN, START_TS,
+    split_digest, vault_pda, CommitteeFill, Delivery, Env, Market, MintExt, Panel, TestResult,
+    Trader, DOMAIN, START_TS,
 };
 
 const T22: Pubkey = anchor_spl::token_2022::ID;
@@ -135,7 +135,7 @@ impl World {
         Ok(self.panel.as_ref().ok_or("no committee")?)
     }
 
-    fn release_ixs(&self, path: Path) -> TestResult<[Instruction; 2]> {
+    fn release_ixs(&self, path: Path, delivery: &Delivery) -> TestResult<[Instruction; 2]> {
         let payee = self.atas[0];
         let solver = self.solver.pubkey();
         let owner = self.owner();
@@ -152,7 +152,15 @@ impl World {
         };
         let wallets = self.wallets();
         let split_hash = split_commit(&wallets, &WEIGHTS);
-        let split = split_digest(DOMAIN, &self.intent(), ESCROW, 1, SPEC, split_hash);
+        let split = split_digest(
+            DOMAIN,
+            &self.intent(),
+            ESCROW,
+            1,
+            SPEC,
+            split_hash,
+            delivery,
+        );
         Ok(match path {
             Path::Attested => {
                 let message = attestation_proof_message(
@@ -163,6 +171,7 @@ impl World {
                     ESCROW,
                     1,
                     SPEC,
+                    delivery,
                 );
                 [
                     ed25519_ix(&self.attestor, &message),
@@ -195,7 +204,8 @@ impl World {
             }
             Path::Committee => {
                 let panel = self.panel()?;
-                let digest = proof_digest(DOMAIN, &self.intent(), &payee, ESCROW, 1, SPEC);
+                let digest =
+                    proof_digest(DOMAIN, &self.intent(), &payee, ESCROW, 1, SPEC, delivery);
                 [
                     committee_batch_ix(&panel.keys, &panel.signers(&QUORUM), &digest)?,
                     self.env.fill_attested_committee_ix(&fill, &payee),
@@ -216,8 +226,8 @@ impl World {
         })
     }
 
-    fn release(&mut self, path: Path) -> TestResult<TransactionMetadata> {
-        let ixs = self.release_ixs(path)?;
+    fn release(&mut self, path: Path, delivery: &Delivery) -> TestResult<TransactionMetadata> {
+        let ixs = self.release_ixs(path, delivery)?;
         let solver = self.solver.insecure_clone();
         Ok(self.env.send(&solver, &ixs, &[])?)
     }
@@ -250,6 +260,8 @@ fn settles(exts: &[MintExt], path: Path, held: bool) -> TestResult {
         w.env.claims = Some(board);
         w.env.stake_to = Some(claimant);
     }
+    let announcer = w.workers[0].insecure_clone();
+    let delivery = w.env.announce_for(&announcer, &intent)?;
     w.env.set_now(START_TS + 1_800);
     assert_eq!(w.env.balance(&vault_pda(&intent))?, ESCROW);
     assert_eq!(w.env.balance(&w.fee_to)?, 0);
@@ -258,7 +270,7 @@ fn settles(exts: &[MintExt], path: Path, held: bool) -> TestResult {
     let claimant_before = w.env.lamports(&claimant);
     let board_before = w.env.lamports(&board);
 
-    let meta = w.release(path)?;
+    let meta = w.release(path, &delivery)?;
 
     let expected = if path.split() { SHARES } else { [NET, 0] };
     assert_eq!(w.paid()?, expected, "workers");

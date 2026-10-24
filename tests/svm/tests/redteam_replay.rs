@@ -56,7 +56,10 @@ fn a_cosign_batch_for_one_intent_cannot_settle_a_different_intent() -> TestResul
         env.create_ata(r, &market.input_mint, market.input_program)?;
     }
     let split_hash = split_commit(&recipients, &weights);
-    let digest_a = split_digest(DOMAIN, &intent_a, ESCROW, 1, SPEC, split_hash);
+    let first = coauthors.first().ok_or("coauthor")?;
+    let delivery_a = env.announce_as(first, &intent_a)?;
+    let digest_a = split_digest(DOMAIN, &intent_a, ESCROW, 1, SPEC, split_hash, &delivery_a);
+    env.announce_as(first, &intent_b)?;
     let fill_b = env.fill_attested_split_ix(
         &solver.key.pubkey(),
         &owner,

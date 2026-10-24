@@ -143,7 +143,9 @@ impl World {
     fn release(&mut self, nonce: u64, amount: u64) -> TestResult<TransactionMetadata> {
         let intent = intent_pda(&self.owner(), nonce);
         let payee = self.solver.input;
-        let preimage = intent_core::sig::AttestedProof {
+        let worker = self.solver.key.insecure_clone();
+        let delivery = self.env.announce_for(&worker, &intent)?;
+        let preimage = intent_core::sig::AttestedDelivery {
             program: intent_engine::ID.to_bytes(),
             domain: DOMAIN,
             intent: intent.to_bytes(),
@@ -155,6 +157,10 @@ impl World {
             max_fee_bps: BOUND,
             ext_hash: empty_ext_hash(),
             spec_hash: SPEC,
+            announcement: delivery.announcement.to_bytes(),
+            seq: delivery.seq,
+            delivered: delivery.opening.delivered,
+            salt: delivery.opening.salt,
         }
         .preimage();
         let digest = solana_sha256_hasher::hashv(&[&preimage]).to_bytes();

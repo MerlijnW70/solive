@@ -64,7 +64,8 @@ fn a_collaborative_claim_pays_every_co_author_who_signed_the_split_and_conserves
     }
     let fee_before = env.balance(&fee_to)?;
     let split_hash = split_commit(&recipients, &weights);
-    let digest = split_digest(DOMAIN, &intent, ESCROW, 1, SPEC, split_hash);
+    let delivery = env.announce_as(coauthors.first().ok_or("coauthor")?, &intent)?;
+    let digest = split_digest(DOMAIN, &intent, ESCROW, 1, SPEC, split_hash, &delivery);
     let fill = env.fill_attested_split_ix(
         &solver.key.pubkey(),
         &owner,
@@ -113,7 +114,8 @@ fn a_collaborative_claim_rejects_a_split_a_co_author_did_not_sign() -> TestResul
         env.create_ata(r, &market.input_mint, market.input_program)?;
     }
     let split_hash = split_commit(&recipients, &signed);
-    let digest = split_digest(DOMAIN, &intent, ESCROW, 1, SPEC, split_hash);
+    let delivery = env.announce_as(coauthors.first().ok_or("coauthor")?, &intent)?;
+    let digest = split_digest(DOMAIN, &intent, ESCROW, 1, SPEC, split_hash, &delivery);
     let fill = env.fill_attested_split_ix(
         &solver.key.pubkey(),
         &owner,
@@ -160,7 +162,8 @@ fn a_split_is_rejected_unless_the_batch_is_exactly_the_co_authors_and_the_attest
         env.create_ata(r, &market.input_mint, market.input_program)?;
     }
     let split_hash = split_commit(&recipients, &weights);
-    let digest = split_digest(DOMAIN, &intent, ESCROW, 1, SPEC, split_hash);
+    let delivery = env.announce_as(coauthors.first().ok_or("coauthor")?, &intent)?;
+    let digest = split_digest(DOMAIN, &intent, ESCROW, 1, SPEC, split_hash, &delivery);
     let claim = |env: &Env| {
         env.fill_attested_split_ix(
             &solver.key.pubkey(),
@@ -258,7 +261,8 @@ fn claim_split(
         atas.push(env.create_ata(r, &market.input_mint, market.input_program)?);
     }
     let split_hash = split_commit(&recipients, &weights);
-    let digest = split_digest(DOMAIN, &intent, ESCROW, 1, spec_hash, split_hash);
+    let delivery = env.announce_as(coauthors.first().ok_or("coauthor")?, &intent)?;
+    let digest = split_digest(DOMAIN, &intent, ESCROW, 1, spec_hash, split_hash, &delivery);
     let fill = env.fill_attested_split_ix(
         &solver.key.pubkey(),
         owner,

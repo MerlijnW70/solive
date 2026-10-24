@@ -113,8 +113,17 @@ fn an_owner_cannot_open_a_proof_escrow_no_release_can_settle() -> TestResult {
     w.env.partner_to = Some(partner_to);
     w.env.judge_to = Some(judge_to);
     let payee = solver.input;
-    let message =
-        attestation_proof_message(DOMAIN, &attestor.pubkey(), &intent, &payee, ESCROW, 1, SPEC);
+    let delivery = w.env.announce_for(&solver.key, &intent)?;
+    let message = attestation_proof_message(
+        DOMAIN,
+        &attestor.pubkey(),
+        &intent,
+        &payee,
+        ESCROW,
+        1,
+        SPEC,
+        &delivery,
+    );
     let fill = w.env.fill_attested_ix(
         &solver.key.pubkey(),
         &owner,

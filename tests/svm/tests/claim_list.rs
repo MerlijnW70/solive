@@ -135,6 +135,7 @@ impl World {
         to: &Solver,
         stake_to: &Pubkey,
     ) -> Result<TransactionMetadata, TransactionError> {
+        let delivery = self.env.announce_or_clear(&to.key, &self.intent());
         let message = attestation_proof_message(
             DOMAIN,
             &self.attestor.pubkey(),
@@ -143,6 +144,7 @@ impl World {
             ESCROW,
             1,
             SPEC,
+            &delivery,
         );
         let owner = self.owner();
         self.env.claims = Some(claims_pda(&self.intent()));

@@ -67,7 +67,8 @@ fn a_split_cannot_pay_a_recipient_account_that_is_not_the_cosigned_wallets_ata()
     let stolen = env.create_ata(&thief.pubkey(), &market.input_mint, market.input_program)?;
 
     let split_hash = split_commit(&recipients, &weights);
-    let digest = split_digest(DOMAIN, &intent, ESCROW, 1, SPEC, split_hash);
+    let delivery = env.announce_as(coauthors.first().ok_or("coauthor")?, &intent)?;
+    let digest = split_digest(DOMAIN, &intent, ESCROW, 1, SPEC, split_hash, &delivery);
     let mut fill = env.fill_attested_split_ix(
         &solver.key.pubkey(),
         &owner,
