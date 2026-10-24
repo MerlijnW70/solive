@@ -136,6 +136,14 @@ fn syncing_needs_every_member_profile_in_member_order() -> TestResult {
             .err(),
         Some(engine_error_at(0, EngineError::ProfileMismatch))
     );
+    let mut extra = w.profiles();
+    extra.push(svm_tests::profile_pda(&Keypair::new().pubkey()));
+    assert_eq!(
+        w.env
+            .send(&payer, &[sync_committee_keys_ix(&w.committee, &extra)], &[])
+            .err(),
+        Some(engine_error_at(0, EngineError::ProfileMismatch))
+    );
     let short: Vec<Pubkey> = w.profiles().into_iter().take(2).collect();
     assert_eq!(
         w.env

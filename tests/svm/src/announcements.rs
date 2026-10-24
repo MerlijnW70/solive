@@ -156,20 +156,23 @@ pub fn update_profile_ix(wallet: &Pubkey, encryption_key: [u8; 32]) -> Instructi
 }
 
 pub fn sync_committee_keys_ix(committee: &Pubkey, profiles: &[Pubkey]) -> Instruction {
-    let mut ix = engine_ix(
+    let slot = |i: usize| profiles.get(i).copied();
+    engine_ix(
         intent_engine::accounts::SyncCommitteeKeys {
             committee: *committee,
+            profile0: slot(0),
+            profile1: slot(1),
+            profile2: slot(2),
+            profile3: slot(3),
+            profile4: slot(4),
+            profile5: slot(5),
+            profile6: slot(6),
+            profile7: slot(7),
             event_authority: event_authority(),
             program: intent_engine::ID,
         },
         intent_engine::instruction::SyncCommitteeKeys {},
-    );
-    ix.accounts.extend(
-        profiles
-            .iter()
-            .map(|p| solana_instruction::AccountMeta::new_readonly(*p, false)),
-    );
-    ix
+    )
 }
 
 pub const DELIVERED: [u8; 32] = [0xd1; 32];

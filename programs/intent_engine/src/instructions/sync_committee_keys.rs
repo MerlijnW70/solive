@@ -1,4 +1,5 @@
 use anchor_lang::prelude::*;
+use intent_core::committee::MAX_MEMBERS;
 use intent_core::delivery::FINGERPRINT_LEN;
 
 use crate::delivery::{fingerprint, profile_key};
@@ -14,33 +15,61 @@ pub struct SyncCommitteeKeys<'info> {
         constraint = committee.load()?.version == COMMITTEE_VERSION @ EngineError::AccountOutdated
     )]
     pub committee: AccountLoader<'info, Committee>,
+    /// CHECK: member 0's profile address, checked against the address its wallet derives
+    pub profile0: Option<UncheckedAccount<'info>>,
+    /// CHECK: member 1's profile address, checked against the address its wallet derives
+    pub profile1: Option<UncheckedAccount<'info>>,
+    /// CHECK: member 2's profile address, checked against the address its wallet derives
+    pub profile2: Option<UncheckedAccount<'info>>,
+    /// CHECK: member 3's profile address, checked against the address its wallet derives
+    pub profile3: Option<UncheckedAccount<'info>>,
+    /// CHECK: member 4's profile address, checked against the address its wallet derives
+    pub profile4: Option<UncheckedAccount<'info>>,
+    /// CHECK: member 5's profile address, checked against the address its wallet derives
+    pub profile5: Option<UncheckedAccount<'info>>,
+    /// CHECK: member 6's profile address, checked against the address its wallet derives
+    pub profile6: Option<UncheckedAccount<'info>>,
+    /// CHECK: member 7's profile address, checked against the address its wallet derives
+    pub profile7: Option<UncheckedAccount<'info>>,
 }
 
 pub fn handle_sync_committee_keys(ctx: Context<SyncCommitteeKeys>) -> Result<()> {
-    let members = {
+    let (members, count) = {
         let stored = ctx.accounts.committee.load()?;
-        stored
-            .members
-            .iter()
-            .take(usize::from(stored.count))
-            .copied()
-            .collect::<Vec<Pubkey>>()
+        (stored.members, usize::from(stored.count))
     };
-    require!(
-        ctx.remaining_accounts.len() == members.len(),
-        EngineError::ProfileMismatch
-    );
+    let accounts = &ctx.accounts;
+    let slots = [
+        &accounts.profile0,
+        &accounts.profile1,
+        &accounts.profile2,
+        &accounts.profile3,
+        &accounts.profile4,
+        &accounts.profile5,
+        &accounts.profile6,
+        &accounts.profile7,
+    ];
     let mut mask = 0u8;
-    let mut fps = [[0u8; FINGERPRINT_LEN]; intent_core::committee::MAX_MEMBERS];
-    for (i, (member, profile)) in members.iter().zip(ctx.remaining_accounts).enumerate() {
+    let mut fps = [[0u8; FINGERPRINT_LEN]; MAX_MEMBERS];
+    for (i, ((slot, member), fp)) in slots
+        .iter()
+        .zip(members.iter())
+        .zip(fps.iter_mut())
+        .enumerate()
+    {
+        let Some(profile) = slot.as_ref() else {
+            require!(i >= count, EngineError::ProfileMismatch);
+            continue;
+        };
+        require!(i < count, EngineError::ProfileMismatch);
         let (expected, _) =
             Pubkey::find_program_address(&[PROFILE_SEED, member.as_ref()], &crate::ID);
         require_keys_eq!(profile.key(), expected, EngineError::ProfileMismatch);
-        if let Some(key) = profile_key(profile)? {
+        if let Some(key) = profile_key(&profile.to_account_info())? {
             mask |= 1u8
                 .checked_shl(u32::try_from(i).map_err(|_| EngineError::Overflow)?)
                 .ok_or(EngineError::Overflow)?;
-            *fps.get_mut(i).ok_or(EngineError::ProfileMismatch)? = fingerprint(&key);
+            *fp = fingerprint(&key);
         }
     }
     {
