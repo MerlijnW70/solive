@@ -142,3 +142,27 @@ pub fn check_committee_recipients(head: &BlobHead, committee: &Committee) -> Res
     }
     Ok(())
 }
+
+pub fn intent_open(intent: &AccountInfo, now: i64) -> Result<bool> {
+    if intent.owner != &crate::ID {
+        return Ok(false);
+    }
+    let data = intent.try_borrow_data()?;
+    let disc = crate::state::Intent::DISCRIMINATOR;
+    if data.get(..disc.len()) != Some(disc) || data.len() != crate::state::Intent::SPACE {
+        return Ok(false);
+    }
+    let body = data
+        .get(disc.len()..crate::state::Intent::SPACE)
+        .ok_or(EngineError::AnnouncementMismatch)?;
+    let stored: &crate::state::Intent =
+        bytemuck::try_from_bytes(body).map_err(|_| EngineError::AnnouncementMismatch)?;
+    require!(
+        stored.version == crate::state::INTENT_VERSION,
+        EngineError::AccountOutdated
+    );
+    let open = intent_core::lifecycle::Status::try_from(stored.status)
+        .map_err(crate::errors::core_err)?
+        == intent_core::lifecycle::Status::Open;
+    Ok(open && now < stored.expires_at)
+}

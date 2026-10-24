@@ -287,3 +287,37 @@ impl Env {
         })
     }
 }
+
+pub fn close_announcement_ix(
+    by: &Pubkey,
+    announcement: &Pubkey,
+    intent: &Pubkey,
+    rent_to: &Pubkey,
+) -> Instruction {
+    engine_ix(
+        intent_engine::accounts::CloseAnnouncement {
+            by: *by,
+            announcement: *announcement,
+            book: book_pda(intent),
+            intent: *intent,
+            rent_to: *rent_to,
+            event_authority: event_authority(),
+            program: intent_engine::ID,
+        },
+        intent_engine::instruction::CloseAnnouncement {},
+    )
+}
+
+pub fn close_delivery_book_ix(by: &Pubkey, intent: &Pubkey, rent_to: &Pubkey) -> Instruction {
+    engine_ix(
+        intent_engine::accounts::CloseDeliveryBook {
+            by: *by,
+            book: book_pda(intent),
+            intent: *intent,
+            rent_to: *rent_to,
+            event_authority: event_authority(),
+            program: intent_engine::ID,
+        },
+        intent_engine::instruction::CloseDeliveryBook {},
+    )
+}

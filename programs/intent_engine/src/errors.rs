@@ -144,6 +144,9 @@ pub enum EngineError {
     PayeeNotAnnouncer,
     CommitmentMismatch,
     AnnouncerNotRecipient,
+    RentRecipientMismatch,
+    DeliveryBookOpen,
+    DeliveryBookLive,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {

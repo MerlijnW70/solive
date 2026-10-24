@@ -278,6 +278,14 @@ pub mod intent_engine {
         handle_sync_committee_keys(ctx)
     }
 
+    pub fn close_announcement(ctx: Context<CloseAnnouncement>) -> Result<()> {
+        handle_close_announcement(ctx)
+    }
+
+    pub fn close_delivery_book(ctx: Context<CloseDeliveryBook>) -> Result<()> {
+        handle_close_delivery_book(ctx)
+    }
+
     pub fn set_committee_floor(ctx: Context<SetCommitteeFloor>, floor: u64) -> Result<()> {
         handle_set_committee_floor(ctx, floor)
     }

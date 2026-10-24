@@ -441,3 +441,24 @@ pub struct DeliveryReleased {
     pub salt: [u8; 16],
     pub split_hash: [u8; 32],
 }
+
+#[event]
+pub struct AnnouncementClosed {
+    pub intent: Pubkey,
+    pub announcement: Pubkey,
+    pub seq: u64,
+    pub worker: Pubkey,
+    pub rent_to: Pubkey,
+    pub lamports: u64,
+    pub by: Pubkey,
+}
+
+#[event]
+pub struct DeliveryBookClosed {
+    pub intent: Pubkey,
+    pub book: Pubkey,
+    pub next_seq: u64,
+    pub rent_to: Pubkey,
+    pub lamports: u64,
+    pub by: Pubkey,
+}
