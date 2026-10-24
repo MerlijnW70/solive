@@ -190,10 +190,9 @@ pub mod intent_engine {
     pub fn announce_delivery(
         ctx: Context<AnnounceDelivery>,
         commitment: [u8; 32],
-        blob_hash: [u8; 32],
         blob: Vec<u8>,
     ) -> Result<()> {
-        handle_announce_delivery(ctx, commitment, blob_hash, blob)
+        handle_announce_delivery(ctx, commitment, blob)
     }
 
     pub fn advance(ctx: Context<Advance>) -> Result<()> {

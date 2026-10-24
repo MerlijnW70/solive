@@ -96,7 +96,6 @@ impl Announce {
             },
             intent_engine::instruction::AnnounceDelivery {
                 commitment: self.commitment,
-                blob_hash: sha256(&self.blob),
                 blob: self.blob.clone(),
             },
         )

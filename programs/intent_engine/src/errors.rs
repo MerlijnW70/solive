@@ -131,7 +131,6 @@ pub enum EngineError {
     AttestorMismatch,
     BlobRecipients,
     BlobKeyMismatch,
-    BlobHashMismatch,
     CommitteeKeysUnsynced,
     CommitmentZero,
     ProfileMismatch,

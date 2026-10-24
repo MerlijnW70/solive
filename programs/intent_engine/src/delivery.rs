@@ -166,3 +166,7 @@ pub fn intent_open(intent: &AccountInfo, now: i64) -> Result<bool> {
         == intent_core::lifecycle::Status::Open;
     Ok(open && now < stored.expires_at)
 }
+
+pub fn blob_digest(blob: &[u8]) -> [u8; 32] {
+    solana_sha256_hasher::hashv(&[blob]).to_bytes()
+}

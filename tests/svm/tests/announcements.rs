@@ -1,3 +1,4 @@
+use anchor_lang::error::ErrorCode;
 use anchor_lang::prelude::Pubkey;
 use intent_core::kinds::{attested_result, Kind};
 use intent_engine::delivery::fingerprint;
@@ -11,9 +12,10 @@ use solana_keypair::Keypair;
 use solana_signer::Signer;
 use solana_transaction_error::TransactionError;
 use svm_tests::{
-    book_pda, claim_job_ix, claim_list_pda, claims_pda, create_profile_ix, engine_error_at, events,
-    intent_pda, load, open_claims_ix, open_claims_listed_ix, set_announce_fee_ix, swap_spec,
-    test_blob, update_profile_ix, Announce, Env, IntentSpec, Market, TestResult, Trader,
+    anchor_error_at, book_pda, claim_job_ix, claim_list_pda, claims_pda, create_profile_ix,
+    engine_error_at, events, intent_pda, load, open_claims_ix, open_claims_listed_ix,
+    set_announce_fee_ix, swap_spec, test_blob, update_profile_ix, Announce, Env, IntentSpec,
+    Market, TestResult, Trader,
 };
 
 const FUNDED: u64 = 2_000;
@@ -236,7 +238,7 @@ fn announcing_stops_at_expiry_while_paused_and_with_a_wrong_attestor() -> TestRe
 }
 
 #[test]
-fn a_blob_must_be_well_formed_and_match_its_hash_and_commitment() -> TestResult {
+fn a_blob_must_be_well_formed_carry_a_commitment_and_derive_its_address() -> TestResult {
     let mut w = world()?;
     let worker = w.env.funded()?;
     let mut bad = w.announce(&worker, wallet_blob(1));
@@ -266,7 +268,7 @@ fn a_blob_must_be_well_formed_and_match_its_hash_and_commitment() -> TestResult 
     }
     assert_eq!(
         w.env.send(&worker, &[ix], &[]).err(),
-        Some(engine_error_at(0, EngineError::BlobHashMismatch))
+        Some(anchor_error_at(0, ErrorCode::ConstraintSeeds))
     );
     Ok(())
 }

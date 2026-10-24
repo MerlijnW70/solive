@@ -157,7 +157,6 @@ export const ENGINE_PROBLEMS = {
   AttestorMismatch: never("the attestor account is not the attestor this escrow names; pass the escrow's attestor"),
   BlobRecipients: never("the sealed delivery is sealed to a different number of keys than this escrow's judge or committee holds; seal it again to the judge's keys"),
   BlobKeyMismatch: never("the sealed delivery is not sealed to the key the judge's profile publishes now; seal it again to the published key"),
-  BlobHashMismatch: never("the blob hash in the announcement is not the hash of the sealed delivery it carries; let this server build it"),
   CommitteeKeysUnsynced: later("the committee has not recorded its members' encryption keys yet; anyone can record them with sync_committee_keys, then announce again"),
   CommitmentZero: never("an announcement must carry the commitment to the delivered work, and this one is empty"),
   ProfileMismatch: never("the judge's profile account is missing or is not a profile of this program; pass the judge's profile address"),

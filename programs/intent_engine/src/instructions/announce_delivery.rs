@@ -6,7 +6,9 @@ use intent_core::kinds::Intent as CoreIntent;
 use intent_core::lifecycle::Status;
 
 use crate::claims::slot_of;
-use crate::delivery::{check_committee_recipients, check_key_recipient, create_pda, profile_key};
+use crate::delivery::{
+    blob_digest, check_committee_recipients, check_key_recipient, create_pda, profile_key,
+};
 use crate::errors::{core_err, EngineError};
 use crate::events::DeliveryAnnounced;
 use crate::policy::check_fills_on;
@@ -20,7 +22,7 @@ use crate::state::{
 
 #[event_cpi]
 #[derive(Accounts)]
-#[instruction(commitment: [u8; 32], blob_hash: [u8; 32])]
+#[instruction(commitment: [u8; 32], blob: Vec<u8>)]
 pub struct AnnounceDelivery<'info> {
     pub worker: Signer<'info>,
     #[account(mut)]
@@ -58,7 +60,7 @@ pub struct AnnounceDelivery<'info> {
         init,
         payer = payer,
         space = Announcement::SPACE,
-        seeds = [ANNOUNCEMENT_SEED, intent.key().as_ref(), worker.key().as_ref(), blob_hash.as_ref()],
+        seeds = [ANNOUNCEMENT_SEED, intent.key().as_ref(), worker.key().as_ref(), &blob_digest(&blob)],
         bump
     )]
     pub announcement: AccountLoader<'info, Announcement>,
@@ -182,15 +184,10 @@ fn next_seq(ctx: &Context<AnnounceDelivery>) -> Result<u64> {
 pub fn handle_announce_delivery(
     ctx: Context<AnnounceDelivery>,
     commitment: [u8; 32],
-    blob_hash: [u8; 32],
     blob: Vec<u8>,
 ) -> Result<()> {
     let clock = Clock::get()?;
     let checked = check_intent(&ctx, clock.unix_timestamp)?;
-    require!(
-        solana_sha256_hasher::hashv(&[&blob]).to_bytes() == blob_hash,
-        EngineError::BlobHashMismatch
-    );
     let recipients = check_recipients(&ctx, &blob)?;
     require!(commitment != [0u8; 32], EngineError::CommitmentZero);
     if checked.fee > 0 {
