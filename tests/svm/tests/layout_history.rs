@@ -337,8 +337,7 @@ fn main_keeps_every_stand_by_line_field_where_it_was() {
             kind_fee_bps,
             crank_bounty,
             create_fee,
-            caps_required,
-            reserved
+            caps_required
         ]
     );
     kept!(
@@ -440,7 +439,7 @@ fn main_keeps_every_stand_by_line_field_where_it_was() {
     kept!(
         old::Committee,
         Committee,
-        [members, fee_wallet, id, created_at, threshold, count, version, bump, padding, reserved]
+        [members, fee_wallet, id, created_at, threshold, count, version, bump]
     );
     kept!(
         old::ClaimBoard,
@@ -495,6 +494,20 @@ fn main_puts_new_fields_only_where_the_stand_by_line_kept_zeros() {
         offset_of!(old::Profile, reserved)
     );
     assert_eq!(size_of::<Profile>(), size_of::<old::Profile>());
+    assert_eq!(
+        offsets!(Config, [padding, announce_fee]),
+        [offset_of!(old::Config, reserved), 204]
+    );
+    assert_eq!(
+        offsets!(Committee, [keys_mask, keys_synced, padding, key_fps]),
+        [
+            offset_of!(old::Committee, padding),
+            333,
+            334,
+            offset_of!(old::Committee, reserved)
+        ]
+    );
+    assert_eq!(size_of::<Committee>(), size_of::<old::Committee>());
 }
 
 #[test]

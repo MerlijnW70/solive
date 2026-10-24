@@ -8,9 +8,10 @@ use intent_core::mint_policy::{
 use intent_core::Error as CoreError;
 use intent_engine::errors::{core_err, EngineError};
 use intent_engine::state::{
-    ClaimBoard, ClaimList, Committee, Config, Intent, Mandate, MintCap, Profile, Standby,
-    UserState, CLAIMS_SEED, COMMITTEE_SEED, CONFIG_SEED, DELEGATE_SEED, INTENT_SEED, MANDATE_SEED,
-    MINT_CAP_SEED, PROFILE_SEED, STANDBY_SEED, USER_SEED, VAULT_SEED,
+    Announcement, ClaimBoard, ClaimList, Committee, Config, DeliveryBook, Intent, Mandate, MintCap,
+    Profile, Refutation, Standby, UserState, ANNOUNCEMENT_SEED, CLAIMS_SEED, COMMITTEE_SEED,
+    CONFIG_SEED, DELEGATE_SEED, DELIVERY_BOOK_SEED, INTENT_SEED, MANDATE_SEED, MINT_CAP_SEED,
+    PROFILE_SEED, REFUTATION_SEED, STANDBY_SEED, USER_SEED, VAULT_SEED,
 };
 use intent_engine::versions::LAYOUTS;
 
@@ -23,6 +24,10 @@ fn account_sizes_are_frozen() {
     assert_eq!(ClaimBoard::SPACE, 176);
     assert_eq!(Standby::SPACE, 88);
     assert_eq!(ClaimList::SPACE, 1104);
+    assert_eq!(Committee::SPACE, 408);
+    assert_eq!(DeliveryBook::SPACE, 96);
+    assert_eq!(Announcement::SPACE, 920);
+    assert_eq!(Refutation::SPACE, 1040);
 }
 
 #[test]
@@ -68,6 +73,9 @@ fn version_and_payer_offsets_are_frozen() {
             (88, 73, 1, Some(0)),
             (504, 456, 2, Some(0)),
             (1104, 1090, 1, Some(32)),
+            (96, 80, 1, Some(32)),
+            (920, 282, 1, Some(96)),
+            (1040, 402, 1, Some(192)),
         ]
     );
     let discriminators = [
@@ -81,6 +89,9 @@ fn version_and_payer_offsets_are_frozen() {
         Standby::DISCRIMINATOR,
         Profile::DISCRIMINATOR,
         ClaimList::DISCRIMINATOR,
+        DeliveryBook::DISCRIMINATOR,
+        Announcement::DISCRIMINATOR,
+        Refutation::DISCRIMINATOR,
     ];
     for (layout, discriminator) in LAYOUTS.iter().zip(discriminators) {
         assert_eq!(layout.discriminator, discriminator);
@@ -106,7 +117,8 @@ fn config_field_offsets_are_frozen() {
     assert_eq!(offset_of!(Config, crank_bounty), 192);
     assert_eq!(offset_of!(Config, create_fee), 196);
     assert_eq!(offset_of!(Config, caps_required), 200);
-    assert_eq!(offset_of!(Config, reserved), 201);
+    assert_eq!(offset_of!(Config, padding), 201);
+    assert_eq!(offset_of!(Config, announce_fee), 204);
     assert_eq!(offset_of!(Config, floor_mints), 208);
     assert_eq!(offset_of!(Config, floor_amounts), 464);
 }
@@ -218,7 +230,7 @@ fn the_pinned_config_address_is_the_config_pda() {
 
 #[test]
 fn pda_seed_preimages_cannot_collide() {
-    let shapes: [(&[u8], usize); 11] = [
+    let shapes: [(&[u8], usize); 14] = [
         (CONFIG_SEED, 0),
         (USER_SEED, 32),
         (INTENT_SEED, 40),
@@ -230,6 +242,9 @@ fn pda_seed_preimages_cannot_collide() {
         (CLAIMS_SEED, 32),
         (PROFILE_SEED, 32),
         (STANDBY_SEED, 36),
+        (DELIVERY_BOOK_SEED, 32),
+        (ANNOUNCEMENT_SEED, 96),
+        (REFUTATION_SEED, 32),
     ];
     for (i, (a, a_tail)) in shapes.iter().enumerate() {
         for (b, b_tail) in shapes.iter().skip(i + 1) {
@@ -411,4 +426,69 @@ fn core_ed25519_program_id_matches_the_runtime() {
         intent_core::sig::ED25519_PROGRAM_ID,
         ix.program_id.to_bytes()
     );
+}
+
+#[test]
+fn delivery_account_field_offsets_are_frozen() {
+    assert_eq!(offset_of!(DeliveryBook, intent), 0);
+    assert_eq!(offset_of!(DeliveryBook, payer), 32);
+    assert_eq!(offset_of!(DeliveryBook, next_seq), 64);
+    assert_eq!(offset_of!(DeliveryBook, live), 72);
+    assert_eq!(offset_of!(DeliveryBook, version), 80);
+    assert_eq!(offset_of!(DeliveryBook, bump), 81);
+    assert_eq!(offset_of!(DeliveryBook, padding), 82);
+    assert_eq!(offset_of!(Announcement, intent), 0);
+    assert_eq!(offset_of!(Announcement, worker), 32);
+    assert_eq!(offset_of!(Announcement, attestor), 64);
+    assert_eq!(offset_of!(Announcement, payer), 96);
+    assert_eq!(offset_of!(Announcement, commitment), 128);
+    assert_eq!(offset_of!(Announcement, delivered), 160);
+    assert_eq!(offset_of!(Announcement, split_hash), 192);
+    assert_eq!(offset_of!(Announcement, seq), 224);
+    assert_eq!(offset_of!(Announcement, slot), 232);
+    assert_eq!(offset_of!(Announcement, announced_at), 240);
+    assert_eq!(offset_of!(Announcement, expires_at), 248);
+    assert_eq!(offset_of!(Announcement, paid_at), 256);
+    assert_eq!(offset_of!(Announcement, salt), 264);
+    assert_eq!(offset_of!(Announcement, blob_len), 280);
+    assert_eq!(offset_of!(Announcement, version), 282);
+    assert_eq!(offset_of!(Announcement, bump), 283);
+    assert_eq!(offset_of!(Announcement, state), 284);
+    assert_eq!(offset_of!(Announcement, recipients), 285);
+    assert_eq!(offset_of!(Announcement, padding), 286);
+    assert_eq!(offset_of!(Announcement, blob), 288);
+    assert_eq!(offset_of!(Refutation, intent), 0);
+    assert_eq!(offset_of!(Refutation, attestor), 32);
+    assert_eq!(offset_of!(Refutation, paid_announcement), 64);
+    assert_eq!(offset_of!(Refutation, earlier_announcement), 96);
+    assert_eq!(offset_of!(Refutation, paid_worker), 128);
+    assert_eq!(offset_of!(Refutation, earlier_worker), 160);
+    assert_eq!(offset_of!(Refutation, refuter), 192);
+    assert_eq!(offset_of!(Refutation, delivered), 224);
+    assert_eq!(offset_of!(Refutation, split_hash), 256);
+    assert_eq!(offset_of!(Refutation, earlier_commitment), 288);
+    assert_eq!(offset_of!(Refutation, esk), 320);
+    assert_eq!(offset_of!(Refutation, paid_seq), 352);
+    assert_eq!(offset_of!(Refutation, earlier_seq), 360);
+    assert_eq!(offset_of!(Refutation, refuted_at), 368);
+    assert_eq!(offset_of!(Refutation, slot), 376);
+    assert_eq!(offset_of!(Refutation, salt), 384);
+    assert_eq!(offset_of!(Refutation, blob_len), 400);
+    assert_eq!(offset_of!(Refutation, version), 402);
+    assert_eq!(offset_of!(Refutation, bump), 403);
+    assert_eq!(offset_of!(Refutation, recipients), 404);
+    assert_eq!(offset_of!(Refutation, padding), 405);
+    assert_eq!(offset_of!(Refutation, blob), 408);
+}
+
+#[test]
+fn committee_key_snapshot_offsets_are_frozen() {
+    assert_eq!(offset_of!(Committee, threshold), 328);
+    assert_eq!(offset_of!(Committee, count), 329);
+    assert_eq!(offset_of!(Committee, version), 330);
+    assert_eq!(offset_of!(Committee, bump), 331);
+    assert_eq!(offset_of!(Committee, keys_mask), 332);
+    assert_eq!(offset_of!(Committee, keys_synced), 333);
+    assert_eq!(offset_of!(Committee, padding), 334);
+    assert_eq!(offset_of!(Committee, key_fps), 336);
 }

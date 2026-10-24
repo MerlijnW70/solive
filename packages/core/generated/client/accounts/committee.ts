@@ -59,8 +59,10 @@ export type Committee = {
   count: number;
   version: number;
   bump: number;
+  keysMask: number;
+  keysSynced: number;
   padding: ReadonlyUint8Array;
-  reserved: ReadonlyUint8Array;
+  keyFps: Array<ReadonlyUint8Array>;
 };
 
 export type CommitteeArgs = {
@@ -72,8 +74,10 @@ export type CommitteeArgs = {
   count: number;
   version: number;
   bump: number;
+  keysMask: number;
+  keysSynced: number;
   padding: ReadonlyUint8Array;
-  reserved: ReadonlyUint8Array;
+  keyFps: Array<ReadonlyUint8Array>;
 };
 
 /** Gets the encoder for {@link CommitteeArgs} account data. */
@@ -89,8 +93,13 @@ export function getCommitteeEncoder(): FixedSizeEncoder<CommitteeArgs> {
       ["count", getU8Encoder()],
       ["version", getU8Encoder()],
       ["bump", getU8Encoder()],
-      ["padding", fixEncoderSize(getBytesEncoder(), 4)],
-      ["reserved", fixEncoderSize(getBytesEncoder(), 64)],
+      ["keysMask", getU8Encoder()],
+      ["keysSynced", getU8Encoder()],
+      ["padding", fixEncoderSize(getBytesEncoder(), 2)],
+      [
+        "keyFps",
+        getArrayEncoder(fixEncoderSize(getBytesEncoder(), 8), { size: 8 }),
+      ],
     ]),
     (value) => ({ ...value, discriminator: COMMITTEE_DISCRIMINATOR }),
   );
@@ -108,8 +117,13 @@ export function getCommitteeDecoder(): FixedSizeDecoder<Committee> {
     ["count", getU8Decoder()],
     ["version", getU8Decoder()],
     ["bump", getU8Decoder()],
-    ["padding", fixDecoderSize(getBytesDecoder(), 4)],
-    ["reserved", fixDecoderSize(getBytesDecoder(), 64)],
+    ["keysMask", getU8Decoder()],
+    ["keysSynced", getU8Decoder()],
+    ["padding", fixDecoderSize(getBytesDecoder(), 2)],
+    [
+      "keyFps",
+      getArrayDecoder(fixDecoderSize(getBytesDecoder(), 8), { size: 8 }),
+    ],
   ]);
 }
 

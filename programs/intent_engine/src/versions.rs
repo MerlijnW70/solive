@@ -3,10 +3,11 @@ use anchor_lang::Discriminator;
 use core::mem::offset_of;
 
 use crate::state::{
-    ClaimBoard, ClaimList, Committee, Config, Intent, Mandate, MintCap, Profile, Standby,
-    UserState, CLAIMS_VERSION, CLAIM_LIST_VERSION, COMMITTEE_VERSION, CONFIG_VERSION,
-    INTENT_VERSION, MANDATE_VERSION, MINT_CAP_VERSION, OLDEST_CLAIMS_VERSION,
-    OLDEST_INTENT_VERSION, OLDEST_MINT_CAP_VERSION, PROFILE_VERSION, STANDBY_VERSION, USER_VERSION,
+    Announcement, ClaimBoard, ClaimList, Committee, Config, DeliveryBook, Intent, Mandate, MintCap,
+    Profile, Refutation, Standby, UserState, ANNOUNCEMENT_VERSION, CLAIMS_VERSION,
+    CLAIM_LIST_VERSION, COMMITTEE_VERSION, CONFIG_VERSION, DELIVERY_BOOK_VERSION, INTENT_VERSION,
+    MANDATE_VERSION, MINT_CAP_VERSION, OLDEST_CLAIMS_VERSION, OLDEST_INTENT_VERSION,
+    OLDEST_MINT_CAP_VERSION, PROFILE_VERSION, REFUTATION_VERSION, STANDBY_VERSION, USER_VERSION,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -19,7 +20,7 @@ pub struct Layout {
     pub payer_at: Option<usize>,
 }
 
-pub const LAYOUTS: [Layout; 10] = [
+pub const LAYOUTS: [Layout; 13] = [
     Layout {
         discriminator: Config::DISCRIMINATOR,
         space: Config::SPACE,
@@ -99,6 +100,30 @@ pub const LAYOUTS: [Layout; 10] = [
         version: CLAIM_LIST_VERSION,
         oldest: CLAIM_LIST_VERSION,
         payer_at: Some(offset_of!(ClaimList, owner)),
+    },
+    Layout {
+        discriminator: DeliveryBook::DISCRIMINATOR,
+        space: DeliveryBook::SPACE,
+        version_at: offset_of!(DeliveryBook, version),
+        version: DELIVERY_BOOK_VERSION,
+        oldest: DELIVERY_BOOK_VERSION,
+        payer_at: Some(offset_of!(DeliveryBook, payer)),
+    },
+    Layout {
+        discriminator: Announcement::DISCRIMINATOR,
+        space: Announcement::SPACE,
+        version_at: offset_of!(Announcement, version),
+        version: ANNOUNCEMENT_VERSION,
+        oldest: ANNOUNCEMENT_VERSION,
+        payer_at: Some(offset_of!(Announcement, payer)),
+    },
+    Layout {
+        discriminator: Refutation::DISCRIMINATOR,
+        space: Refutation::SPACE,
+        version_at: offset_of!(Refutation, version),
+        version: REFUTATION_VERSION,
+        oldest: REFUTATION_VERSION,
+        payer_at: Some(offset_of!(Refutation, refuter)),
     },
 ];
 

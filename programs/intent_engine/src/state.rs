@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
 use intent_core::committee::MAX_MEMBERS;
+use intent_core::delivery::{FINGERPRINT_LEN, MAX_SEALED_BLOB, SALT_LEN};
 use intent_core::mandate::{Limits, Usage};
 use intent_core::profile::{MAX_SKILLS, MAX_URL_LEN, SKILL_LEN};
 use intent_core::roster::MAX_CLAIMANTS;
@@ -36,6 +37,12 @@ pub const CLAIM_LIST_VERSION: u8 = 1;
 pub const LISTED: u8 = 1;
 pub const PROFILE_SEED: &[u8] = b"profile";
 pub const PROFILE_VERSION: u8 = 2;
+pub const DELIVERY_BOOK_SEED: &[u8] = b"delivery_book";
+pub const DELIVERY_BOOK_VERSION: u8 = 1;
+pub const ANNOUNCEMENT_SEED: &[u8] = b"announcement";
+pub const ANNOUNCEMENT_VERSION: u8 = 1;
+pub const REFUTATION_SEED: &[u8] = b"refutation";
+pub const REFUTATION_VERSION: u8 = 1;
 pub const MIN_CAP_WINDOW_SECS: u32 = 60;
 pub const MAX_COMMITTEE_FLOORS: usize = 8;
 pub const FLOOR_THRESHOLD: u8 = 2;
@@ -79,7 +86,8 @@ pub struct Config {
     pub crank_bounty: u32,
     pub create_fee: u32,
     pub caps_required: u8,
-    pub reserved: [u8; 7],
+    pub padding: [u8; 3],
+    pub announce_fee: u32,
     pub floor_mints: [Pubkey; MAX_COMMITTEE_FLOORS],
     pub floor_amounts: [u64; MAX_COMMITTEE_FLOORS],
 }
@@ -231,8 +239,10 @@ pub struct Committee {
     pub count: u8,
     pub version: u8,
     pub bump: u8,
-    pub padding: [u8; 4],
-    pub reserved: [u8; 64],
+    pub keys_mask: u8,
+    pub keys_synced: u8,
+    pub padding: [u8; 2],
+    pub key_fps: [[u8; FINGERPRINT_LEN]; MAX_MEMBERS],
 }
 
 impl Committee {
@@ -308,4 +318,77 @@ pub struct Profile {
 
 impl Profile {
     pub const SPACE: usize = 8 + core::mem::size_of::<Profile>();
+}
+
+#[account(zero_copy)]
+pub struct DeliveryBook {
+    pub intent: Pubkey,
+    pub payer: Pubkey,
+    pub next_seq: u64,
+    pub live: u64,
+    pub version: u8,
+    pub bump: u8,
+    pub padding: [u8; 6],
+}
+
+impl DeliveryBook {
+    pub const SPACE: usize = 8 + core::mem::size_of::<DeliveryBook>();
+}
+
+#[account(zero_copy)]
+pub struct Announcement {
+    pub intent: Pubkey,
+    pub worker: Pubkey,
+    pub attestor: Pubkey,
+    pub payer: Pubkey,
+    pub commitment: [u8; 32],
+    pub delivered: [u8; 32],
+    pub split_hash: [u8; 32],
+    pub seq: u64,
+    pub slot: u64,
+    pub announced_at: i64,
+    pub expires_at: i64,
+    pub paid_at: i64,
+    pub salt: [u8; SALT_LEN],
+    pub blob_len: u16,
+    pub version: u8,
+    pub bump: u8,
+    pub state: u8,
+    pub recipients: u8,
+    pub padding: [u8; 2],
+    pub blob: [u8; MAX_SEALED_BLOB],
+}
+
+impl Announcement {
+    pub const SPACE: usize = 8 + core::mem::size_of::<Announcement>();
+}
+
+#[account(zero_copy)]
+pub struct Refutation {
+    pub intent: Pubkey,
+    pub attestor: Pubkey,
+    pub paid_announcement: Pubkey,
+    pub earlier_announcement: Pubkey,
+    pub paid_worker: Pubkey,
+    pub earlier_worker: Pubkey,
+    pub refuter: Pubkey,
+    pub delivered: [u8; 32],
+    pub split_hash: [u8; 32],
+    pub earlier_commitment: [u8; 32],
+    pub esk: [u8; 32],
+    pub paid_seq: u64,
+    pub earlier_seq: u64,
+    pub refuted_at: i64,
+    pub slot: u64,
+    pub salt: [u8; SALT_LEN],
+    pub blob_len: u16,
+    pub version: u8,
+    pub bump: u8,
+    pub recipients: u8,
+    pub padding: [u8; 3],
+    pub blob: [u8; MAX_SEALED_BLOB],
+}
+
+impl Refutation {
+    pub const SPACE: usize = 8 + core::mem::size_of::<Refutation>();
 }

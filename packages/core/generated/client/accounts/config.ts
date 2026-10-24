@@ -72,7 +72,8 @@ export type Config = {
   crankBounty: number;
   createFee: number;
   capsRequired: number;
-  reserved: ReadonlyUint8Array;
+  padding: ReadonlyUint8Array;
+  announceFee: number;
   floorMints: Array<Address>;
   floorAmounts: Array<bigint>;
 };
@@ -95,7 +96,8 @@ export type ConfigArgs = {
   crankBounty: number;
   createFee: number;
   capsRequired: number;
-  reserved: ReadonlyUint8Array;
+  padding: ReadonlyUint8Array;
+  announceFee: number;
   floorMints: Array<Address>;
   floorAmounts: Array<number | bigint>;
 };
@@ -122,7 +124,8 @@ export function getConfigEncoder(): FixedSizeEncoder<ConfigArgs> {
       ["crankBounty", getU32Encoder()],
       ["createFee", getU32Encoder()],
       ["capsRequired", getU8Encoder()],
-      ["reserved", fixEncoderSize(getBytesEncoder(), 7)],
+      ["padding", fixEncoderSize(getBytesEncoder(), 3)],
+      ["announceFee", getU32Encoder()],
       ["floorMints", getArrayEncoder(getAddressEncoder(), { size: 8 })],
       ["floorAmounts", getArrayEncoder(getU64Encoder(), { size: 8 })],
     ]),
@@ -151,7 +154,8 @@ export function getConfigDecoder(): FixedSizeDecoder<Config> {
     ["crankBounty", getU32Decoder()],
     ["createFee", getU32Decoder()],
     ["capsRequired", getU8Decoder()],
-    ["reserved", fixDecoderSize(getBytesDecoder(), 7)],
+    ["padding", fixDecoderSize(getBytesDecoder(), 3)],
+    ["announceFee", getU32Decoder()],
     ["floorMints", getArrayDecoder(getAddressDecoder(), { size: 8 })],
     ["floorAmounts", getArrayDecoder(getU64Decoder(), { size: 8 })],
   ]);
