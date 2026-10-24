@@ -60,11 +60,14 @@ describe("claim lists", () => {
     const workers = await wallets(MAX_CLAIMANTS);
     expect(claimantChunks(workers).map((part) => part.length)).toEqual([CLAIM_LIST_CHUNK, MAX_CLAIMANTS - CLAIM_LIST_CHUNK]);
     expect(claimantChunks([])).toEqual([[]]);
+    expect(claimantChunks(workers.slice(0, 4), 2)).toEqual([workers.slice(0, 2), workers.slice(2, 4)]);
     const owner = createNoopSigner((await generateKeyPairSigner()).address);
     const intent = (await generateKeyPairSigner()).address;
     const sends = await buildClaimsWithList({ owner, intent, maxSecs: 600, stake: 1n, workers });
     expect(sends.map((ixs) => ixs.length)).toEqual([1, 1]);
     await expect(buildExtendClaimants({ owner, intent, workers: [] })).rejects.toThrow(IntentCoreError);
+    await expect(buildExtendClaimants({ owner, intent, workers })).resolves.toBeDefined();
+    await expect(buildExtendClaimants({ owner, intent, workers: [...workers, intent] })).rejects.toThrow(IntentCoreError);
     await expect(buildClaimsWithList({ owner, intent, maxSecs: 600, stake: 1n, workers: [] })).rejects.toThrow(IntentCoreError);
   });
 

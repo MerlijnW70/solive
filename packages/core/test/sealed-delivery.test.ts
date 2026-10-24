@@ -296,6 +296,8 @@ describe("opening memos", () => {
     expect(() => openingMemo({ intent, salts: [] })).toThrow(RangeError);
     expect(() => openingMemo({ intent, salts: ["ab"] })).toThrow(RangeError);
     expect(() => openingMemo({ intent, announcement: "x", salt: SALT })).toThrow(RangeError);
+    expect(() => openingMemo({ intent, announcement: "2".repeat(64), salt: SALT })).toThrow(RangeError);
+    expect(parseOpeningMemo(`${OPENING_MEMO_PREFIX}${intent}:${"2".repeat(64)}:${SALT}`)).toBeNull();
     expect(() => openingMemo({ intent: "x" as Address, salts: [SALT] })).toThrow(RangeError);
     for (const text of [`${OPENING_MEMO_PREFIX}${intent}:ab`, `${OPENING_MEMO_PREFIX}${intent}:${signatureText}:ab`, `${OPENING_MEMO_PREFIX}x:${SALT}`, `${OPENING_MEMO_PREFIX}${intent}:a:b:c`]) {
       expect(parseOpeningMemo(text)).toBeNull();
