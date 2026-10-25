@@ -20,7 +20,7 @@ import {
 } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import { describe, expect, it } from "vitest";
-import { Kind } from "@intent-engine/core";
+import { Kind, splitFees } from "@intent-engine/core";
 import { findEventAuthorityPda, findIntentPda, MAX_MEMO_URL, seal, SPEC_MEMO_PREFIX, specMemo } from "@intent-engine/core/internal";
 import { createClient, InvalidInput, NotDeliverable, type SpecFetch, SpecSealed, SpecUnreadable, type Transport } from "../src/index.js";
 import {
@@ -101,6 +101,7 @@ describe("jobs", () => {
 
     const mine = await client.jobs({ attestor: judge.address });
     expect(mine.map(({ intent }) => intent).sort()).toEqual([published.intent, silent.intent].sort());
+    const feeBps = mine.find(({ intent }) => intent === published.intent)?.feeBps ?? -1;
     expect(mine.find(({ intent }) => intent === published.intent)).toEqual({
       intent: published.intent,
       owner: w.owner.address,
@@ -110,6 +111,7 @@ describe("jobs", () => {
       specUrl: SPEC_URL,
       sells: 100n,
       judgeFee: 0n,
+      net: splitFees(100n, feeBps, 0, 0).net,
       feeBps: expect.any(Number),
       inputMint: w.inputMint,
       expiresAt: expect.any(BigInt),

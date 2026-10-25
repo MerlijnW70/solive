@@ -96,18 +96,19 @@ export type Refusal = {
 const slotText = ({ wallet, kind, fingerprint, published }: SealedSlot): string =>
   kind === "wallet" ? `the key derived from ${wallet}'s wallet (${fingerprint})` : `${published ? "the" : "an earlier"} encryption key of ${wallet}'s profile (${fingerprint})`;
 
-export function refusalText(sha256: string, refusal: Refusal): string {
+export function refusalText(sha256: string | null, refusal: Refusal): string {
+  const first = sha256 === null ? "the earliest delivery" : `the first worker who announced the work ${sha256}`;
   const at = `announcement ${refusal.announcement ?? "?"} (seq ${refusal.seq ?? "?"}) by ${refusal.worker ?? "?"}`;
   const sealed = (refusal.sealedTo ?? []).map(slotText).join(", ");
   switch (refusal.reason) {
     case "incomplete":
       return refusal.closed === true
-        ? `is no longer open or has no delivery book, so its announcements may have been closed and the first worker who announced the work ${sha256} cannot be known; nothing was sent`
+        ? `is no longer open or has no delivery book, so its announcements may have been closed and ${first} cannot be known; nothing was sent`
         : (refusal.missing ?? []).length > 0
-          ? `lists its announcements with seq ${(refusal.missing ?? []).join(", ")} missing, so the first worker who announced the work ${sha256} cannot be known; nothing was sent`
-          : `lists a seq twice or past its delivery book's next seq, so the first worker who announced the work ${sha256} cannot be known; nothing was sent`;
+          ? `lists its announcements with seq ${(refusal.missing ?? []).join(", ")} missing, so ${first} cannot be known; nothing was sent`
+          : `lists a seq twice or past its delivery book's next seq, so ${first} cannot be known; nothing was sent`;
     case "key-not-given":
-      return `has the earlier ${at} sealed to ${sealed}, which no key given here opens, so the first worker who announced the work ${sha256} cannot be known; pass that key; nothing was sent`;
+      return `has the earlier ${at} sealed to ${sealed}, which no key given here opens, so ${first} cannot be known; pass that key; nothing was sent`;
     case "nothing-opens":
       return `has no announcement that opens to the work ${sha256} with the keys given; nothing was sent`;
     case "claim-held":
@@ -120,7 +121,7 @@ export class FirstOpeningRefused extends SdkError {
   override readonly name = "FirstOpeningRefused";
   readonly intent: Address;
   readonly reason: RefusalReason;
-  readonly sha256: string;
+  readonly sha256: string | null;
   readonly announcement: Address | null;
   readonly seq: bigint | null;
   readonly worker: Address | null;
@@ -129,7 +130,7 @@ export class FirstOpeningRefused extends SdkError {
   readonly closed: boolean;
   readonly holder: Address | null;
 
-  constructor(intent: Address, sha256: string, refusal: Refusal) {
+  constructor(intent: Address, sha256: string | null, refusal: Refusal) {
     super(`intent ${intent} ${refusalText(sha256, refusal)}`);
     this.intent = intent;
     this.reason = refusal.reason;

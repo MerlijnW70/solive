@@ -68,7 +68,8 @@ describe("the simple release pays the first announcement that opens to the work"
     expect(event).toMatchObject({ signature: released.signature, deliveredSha256: WORK, deliveredSalt: expect.stringMatching(/^[0-9a-f]{32}$/) });
     expect(await buyer.client.reputation(worker.address)).toMatchObject({ paid: 1, refuted: 0 });
     expect(await buyer.receipt({ escrow })).toMatchObject({ escrow, released: true, signature: released.signature, payee: worker.address, deliveredSha256: WORK, valid: true, refutedBy: null, complete: true });
-    expect(await buyer.deliveries({ escrow })).toEqual([{ worker: worker.address, sha256: WORK, url: null, opened: true, announcement: made.announcement, seq: 1n }]);
+    expect(await buyer.deliveries({ escrow })).toEqual([{ worker: worker.address, sha256: WORK, url: null, opened: false, announcement: made.announcement, seq: 1n }]);
+    expect(await reviewer.deliveries({ escrow, keypair: judge.keypair })).toEqual([{ worker: worker.address, sha256: WORK, url: workUrl(), opened: true, announcement: made.announcement, seq: 1n }]);
   });
 
   it("refuses a to that is not the first announcer and names the announcement that came first", async () => {

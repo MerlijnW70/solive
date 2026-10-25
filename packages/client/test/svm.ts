@@ -61,6 +61,7 @@ export async function world(): Promise<World> {
     sent,
     transport: {
       ...inner,
+      offline: false,
       send: (instructions, payer) => recorded(inner.send(instructions, payer)),
       sendWire: (wire, latest) => recorded(inner.sendWire(wire, latest)),
       submitWire: (wire) => recorded(inner.submitWire(wire)),

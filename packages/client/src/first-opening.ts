@@ -63,10 +63,10 @@ export async function heldKeys(openers: DeliveryOpeners | undefined): Promise<He
 export type AnnouncementOpening = { salt: Uint8Array; url: string | null };
 
 export async function openingOf(announcement: AnnouncementView, held: readonly Held[]): Promise<AnnouncementOpening | null> {
-  return announcement.state === "paid" ? { salt: announcement.salt, url: null } : openedBy(announcement, held);
+  return announcement.state === "paid" ? { salt: announcement.salt, url: null } : openedWith(announcement, held);
 }
 
-async function openedBy(announcement: AnnouncementView, held: readonly Held[]): Promise<OpenedDelivery | null> {
+export async function openedWith(announcement: AnnouncementView, held: readonly Held[]): Promise<OpenedDelivery | null> {
   for (const { key } of held) {
     const opened = await openDeliveryV4(announcement.blob, key, announcement.intent, announcement.worker);
     if (opened !== null) {
@@ -116,43 +116,64 @@ async function claimHolder(transport: Transport, proof: Proof): Promise<Address 
 
 export type FirstOpeningOutcome = { list: AnnouncementList; opening: FirstOpening | FirstOpeningRefused };
 
-export async function firstOpeningIn(transport: Transport, input: FirstOpeningInput): Promise<FirstOpeningOutcome> {
-  const intent = await intentAddress(input.intent);
-  const delivered = sha256Bytes(input.sha256);
-  const sha256 = hex(delivered);
-  const proof = await proofAt(transport, intent);
-  if (proof === null) {
-    throw new NotSettleable(intent, "not-a-proof-escrow", "is not a proof escrow: an AttestedResult intent that commits a spec hash");
-  }
-  const list = await announcementsOf(transport, intent);
-  const refused = (refusal: Refusal): FirstOpeningOutcome => ({ list, opening: new FirstOpeningRefused(intent, sha256, refusal) });
+type Found = { announcement: AnnouncementView; opened: AnnouncementOpening };
+
+type Walk = { skipped: SkippedAnnouncement[]; found: Found | null; refusal: Refusal | null };
+
+const placeOf = (announcement: AnnouncementView) => ({ announcement: announcement.address, seq: announcement.seq, worker: announcement.worker });
+
+async function walk(transport: Transport, list: AnnouncementList, held: readonly Held[], takes: (found: Found) => Promise<boolean>): Promise<Walk> {
   if (!list.complete) {
-    return refused({ reason: "incomplete", missing: list.missing, closed: list.closed });
+    return { skipped: [], found: null, refusal: { reason: "incomplete", missing: list.missing, closed: list.closed } };
   }
-  const held = await heldKeys(input.keypair);
   const skipped: SkippedAnnouncement[] = [];
   for (const announcement of list.announcements) {
-    const at = { announcement: announcement.address, seq: announcement.seq, worker: announcement.worker };
     const opened = await openingOf(announcement, held);
     if (opened !== null) {
-      if (await opensTo(announcement, delivered, opened.salt)) {
-        const holder = await claimHolder(transport, proof);
-        if (holder !== null && holder !== announcement.worker) {
-          return refused({ reason: "claim-held", ...at, holder });
-        }
-        return { list, opening: { intent, ...at, salt: hex(opened.salt), url: opened.url, sha256, commitment: hex(announcement.commitment), skipped } };
+      if (await takes({ announcement, opened })) {
+        return { skipped, found: { announcement, opened }, refusal: null };
       }
       continue;
     }
     const head = delivery.blobHead(announcement.blob);
     const sealed = head.fps.slice(0, head.count);
     if (held.some(({ fingerprint }) => sealed.some((fp) => equal(fp, fingerprint)))) {
-      skipped.push({ ...at, reason: "does-not-open" });
+      skipped.push({ ...placeOf(announcement), reason: "does-not-open" });
       continue;
     }
-    return refused({ reason: "key-not-given", ...at, sealedTo: await slotsOf(transport, announcement, head) });
+    return { skipped, found: null, refusal: { reason: "key-not-given", ...placeOf(announcement), sealedTo: await slotsOf(transport, announcement, head) } };
   }
-  return refused({ reason: "nothing-opens" });
+  return { skipped, found: null, refusal: null };
+}
+
+async function proofOrRefused(transport: Transport, intent: Address): Promise<Proof> {
+  const proof = await proofAt(transport, intent);
+  if (proof === null) {
+    throw new NotSettleable(intent, "not-a-proof-escrow", "is not a proof escrow: an AttestedResult intent that commits a spec hash");
+  }
+  return proof;
+}
+
+export async function firstOpeningIn(transport: Transport, input: FirstOpeningInput): Promise<FirstOpeningOutcome> {
+  const intent = await intentAddress(input.intent);
+  const delivered = sha256Bytes(input.sha256);
+  const sha256 = hex(delivered);
+  const proof = await proofOrRefused(transport, intent);
+  const list = await announcementsOf(transport, intent);
+  const refused = (refusal: Refusal): FirstOpeningOutcome => ({ list, opening: new FirstOpeningRefused(intent, sha256, refusal) });
+  const { skipped, found, refusal } = await walk(transport, list, await heldKeys(input.keypair), ({ announcement, opened }) => opensTo(announcement, delivered, opened.salt));
+  if (refusal !== null) {
+    return refused(refusal);
+  }
+  if (found === null) {
+    return refused({ reason: "nothing-opens" });
+  }
+  const { announcement, opened } = found;
+  const holder = await claimHolder(transport, proof);
+  if (holder !== null && holder !== announcement.worker) {
+    return refused({ reason: "claim-held", ...placeOf(announcement), holder });
+  }
+  return { list, opening: { intent, ...placeOf(announcement), salt: hex(opened.salt), url: opened.url, sha256, commitment: hex(announcement.commitment), skipped } };
 }
 
 export async function firstOpening(transport: Transport, input: FirstOpeningInput): Promise<FirstOpening> {
@@ -161,4 +182,21 @@ export async function firstOpening(transport: Transport, input: FirstOpeningInpu
     throw opening;
   }
   return opening;
+}
+
+export type OpeningsInput = { intent: IntentRef; keypair?: DeliveryOpeners | undefined };
+
+export type Opening = { announcement: Address; seq: bigint; worker: Address; salt: string; url: string | null };
+
+export type Openings = { intent: Address; opening: Opening | null; skipped: SkippedAnnouncement[] };
+
+export async function openings(transport: Transport, input: OpeningsInput): Promise<Openings> {
+  const intent = await intentAddress(input.intent);
+  await proofOrRefused(transport, intent);
+  const list = await announcementsOf(transport, intent);
+  const { skipped, found, refusal } = await walk(transport, list, await heldKeys(input.keypair), async () => true);
+  if (refusal !== null) {
+    throw new FirstOpeningRefused(intent, null, refusal);
+  }
+  return { intent, opening: found === null ? null : { ...placeOf(found.announcement), salt: hex(found.opened.salt), url: found.opened.url }, skipped };
 }

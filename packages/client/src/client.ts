@@ -23,7 +23,7 @@ import { splitSettlement } from "./client-split.js";
 import { intentMatchesQuery } from "./intent-filters.js";
 import { intentAddress, loadIntentRef } from "./intent-ref.js";
 import { amountShown, amountText } from "./simple-tokens.js";
-import { firstOpening } from "./first-opening.js";
+import { firstOpening, openings } from "./first-opening.js";
 import { observerOf } from "./observe.js";
 import { observedFetch, observedTransport } from "./observe-transport.js";
 import { intentNotifications, type RpcLike, rpcTransport, signatureWatch } from "./transport.js";
@@ -174,6 +174,7 @@ export function createClient(options: ClientOptions): Client {
     announcementsTo: (attestor) => announcementsTo(transport, attestor),
     announcementsBy: (worker) => announcementsBy(transport, worker),
     firstOpening: (input) => firstOpening(transport, input),
+    openings: (input) => openings(transport, input),
     splitBallot,
     ...planWrites(send, plan),
   };

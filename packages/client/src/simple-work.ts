@@ -15,7 +15,7 @@ export const notFirstAnnouncer = (worker: Address, announcement: Address, sha256
   `pays ${worker}, who announced the work ${sha256} first, in ${announcement}, not ${to}; nothing was sent`;
 
 export function workSends(ctx: SimpleContext) {
-  const { deliveries, receipt } = workReads(ctx);
+  const { deliveries, receipt, openings } = workReads(ctx);
 
   const held = async (address: Address) => {
     const intent = await intentAt(ctx.client.transport, address);
@@ -30,7 +30,13 @@ export function workSends(ctx: SimpleContext) {
     return Promise.all(
       jobs.map(async (job) => {
         const { decimals } = await ctx.client.mint(job.inputMint);
-        return { ...job, amount: formatAmount(job.sells, decimals), fee: formatAmount(job.judgeFee, decimals), token: nameOfMint(job.inputMint) };
+        return {
+          ...job,
+          amount: formatAmount(job.sells, decimals),
+          judgeFee: formatAmount(job.judgeFee, decimals),
+          net: job.net === null ? null : formatAmount(job.net, decimals),
+          token: nameOfMint(job.inputMint),
+        };
       }),
     );
   };
@@ -93,5 +99,5 @@ export function workSends(ctx: SimpleContext) {
     }));
   };
 
-  return { findWork, deliver, release, cancel, deliveries, receipt };
+  return { findWork, deliver, release, cancel, deliveries, receipt, openings };
 }

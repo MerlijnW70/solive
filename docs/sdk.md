@@ -47,8 +47,9 @@ Amounts are whole tokens, such as `"0.05"`. Tokens are `SOL`, `TEST` or a mint a
 - `limit`: sell at a price
 - `payForWork`: escrow a payment that a judge releases
 - `release`: as the judge, pay the work that passed to the first worker who announced it and opened the announcement
-- `findWork` and `deliver`: as a worker, find jobs and announce your work
-- `deliveries`: the announcements on an escrow, with each worker and whether it opened
+- `findWork` and `deliver`: as a worker, find jobs, each with its `amount`, `judgeFee` and `net` pay in whole tokens, and announce your work
+- `deliveries`: the announcements on an escrow in seq order, each with its `worker`, `announcement` and `seq`; `opened` is true and `url` holds the work url once it opens with the `keypair` you pass, and `sha256` names the work it commits to once the `sha256` you pass, or the work a release paid, opens it
+- `openings`: as the judge, the earliest delivery that opens with your `keypair`, with its work url, as the full client's `openings` walks it
 - `receipt`: the release of an escrow, whom it paid, the work it recorded and whether it is valid
 - `cancel`: get an escrow back
 - `balance` and `watch`: read your wallet and follow your orders

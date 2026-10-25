@@ -1,6 +1,8 @@
 import type { Address } from "@solana/kit";
 import { type DeliveryOpener, type EngineEvent, isSdkError, NotInvited, SdkError, SealedError } from "@intent-engine/core";
 import { decodeEvent, isSealed, parseSpecMemo, remainingOf, sealedTo, SPEC_MEMO_PREFIX, unseal } from "@intent-engine/core/internal";
+import { loadConfig } from "./accounts.js";
+import { type PayTerms, releaseNet } from "./job-pay.js";
 import { memosSignedBy } from "./job-memos.js";
 import { createdIn, hex, intentAt, type JobFilter, openProofEscrows, proofAt } from "./job-proofs.js";
 import { MEMOS_PER_TRANSACTION, scan } from "./job-scan.js";
@@ -29,8 +31,13 @@ export async function plainHttpOnPublic(transport: Transport, url: string): Prom
   } catch {
     return false;
   }
-  return protocol === "http:" && PUBLIC_GENESIS_HASHES.has(await transport.genesisHash());
+  if (protocol !== "http:" || (transport.offline === true && loopbackUrl(url))) {
+    return false;
+  }
+  return PUBLIC_GENESIS_HASHES.has(await transport.genesisHash());
 }
+
+const loopbackAllowed = (transport: Transport, rpcUrl?: string): boolean => transport.offline === true || (rpcUrl !== undefined && loopbackUrl(rpcUrl));
 
 export type Job = {
   intent: Address;
@@ -41,6 +48,7 @@ export type Job = {
   specUrl: string | null;
   sells: bigint;
   judgeFee: bigint;
+  net: bigint | null;
   feeBps: number;
   inputMint: Address;
   expiresAt: bigint;
@@ -109,8 +117,8 @@ export async function specUrlOf(transport: Transport, intent: Address, createdAt
   return urls.size === 1 ? ([...urls][0] ?? null) : null;
 }
 
-export async function jobsOf(transport: Transport, filter?: Address | JobFilter): Promise<Job[]> {
-  const proofs = await openProofEscrows(transport, filter);
+export async function jobsOf(transport: Transport, filter?: Address | JobFilter, terms?: PayTerms): Promise<Job[]> {
+  const [proofs, config] = await Promise.all([openProofEscrows(transport, filter), terms ?? loadConfig(transport).then(({ config }) => config)]);
   const urls: (string | null)[] = [];
   for (let at = 0; at < proofs.length; at += TRANSACTION_FETCHES) {
     urls.push(...(await Promise.all(proofs.slice(at, at + TRANSACTION_FETCHES).map(({ address, intent }) => specUrlOf(transport, address, intent.createdAt, intent.owner)))));
@@ -124,6 +132,7 @@ export async function jobsOf(transport: Transport, filter?: Address | JobFilter)
     specUrl: urls[i] ?? null,
     sells: remainingOf(intent),
     judgeFee: params.judgeFee,
+    net: releaseNet(intent, config),
     feeBps: intent.feeBps,
     inputMint: intent.inputMint,
     expiresAt: intent.expiresAt,
@@ -219,7 +228,7 @@ export async function readSpec(
   const signal = AbortSignal.timeout(SPEC_TIMEOUT_MS);
   let fetched: Uint8Array;
   try {
-    const addresses = await before(signal, hostAddresses(parsed.hostname, lookup, rpcUrl !== undefined && loopbackUrl(rpcUrl)));
+    const addresses = await before(signal, hostAddresses(parsed.hostname, lookup, loopbackAllowed(transport, rpcUrl)));
     if (addresses === null) {
       throw new SpecUnreadable(url, NOT_PUBLIC_SPEC);
     }

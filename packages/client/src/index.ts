@@ -89,10 +89,11 @@ export { createClient } from "./client.js";
 export { type ConfirmField, ConfirmMismatch } from "./confirm-release.js";
 export type { EngineError } from "./errors.js";
 export { FetchFailed, type FetchFailure } from "./fetch-failed.js";
-export type { DeliveryOpeners, FirstOpening, FirstOpeningInput, SkippedAnnouncement, SkipReason } from "./first-opening.js";
+export type { DeliveryOpeners, FirstOpening, FirstOpeningInput, Opening, Openings, OpeningsInput, SkippedAnnouncement, SkipReason } from "./first-opening.js";
 export type { FundedBy } from "./funding.js";
 export type { Notifications } from "./intent-notifications.js";
 export type { IntentRef } from "./intent-ref.js";
+export type { JobFilter } from "./job-proofs.js";
 export { type Job, type Spec, type SpecFetch, SpecSealed, SpecUnreadable } from "./job-specs.js";
 export { LedgerError, LedgerPathError } from "./ledger-path.js";
 export type {
@@ -155,6 +156,7 @@ export type {
   DeliveriesInput,
   DeliverSend,
   DeliverWorkInput,
+  EscrowOpeningsInput,
   HeldToken,
   LimitInput,
   OpenWork,

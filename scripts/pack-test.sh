@@ -5,9 +5,12 @@ packages=(core client solver cli)
 version="$(node -p "require('./packages/cli/package.json').version")"
 litesvm="$(node -p "require('./packages/client/package.json').devDependencies.litesvm")"
 kit="$(node -p "require('./packages/client/package.json').devDependencies['@solana/kit']")"
+kit_range="$(node -p "require('./packages/client/package.json').peerDependencies['@solana/kit']")"
+newest_kit="$(npm view "@solana/kit@$kit_range" version --json | node -e 'console.log([JSON.parse(require("node:fs").readFileSync(0, "utf8"))].flat().at(-1));')"
+[[ "$newest_kit" =~ ^8\.[0-9]+\.[0-9]+$ ]] || { echo "the newest @solana/kit in $kit_range is $newest_kit, not an 8.x release" >&2; exit 1; }
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-mkdir -p "$work/packs" "$work/app"
+mkdir -p "$work/packs"
 for p in "${packages[@]}"; do
   pnpm --filter "@intent-engine/$p" build
 done
@@ -36,16 +39,21 @@ for entry in package/program/intent_engine.so package/dist/src/testing.js packag
   grep -qxF "$entry" <<< "$client_files" || { echo "the client tarball lacks $entry" >&2; exit 1; }
 done
 baseline="$PWD/monitoring/devnet.json"
-cd "$work/app"
-npm init -y > /dev/null
-npm install --no-audit --no-fund --loglevel=error \
-  "$work/packs/intent-engine-core-$version.tgz" \
-  "$work/packs/intent-engine-client-$version.tgz" \
-  "$work/packs/intent-engine-solver-$version.tgz" \
-  "$work/packs/intent-engine-cli-$version.tgz" \
-  "litesvm@$litesvm" \
-  "@solana/kit@$kit"
-node --input-type=module -e '
+check_app() {
+  local with_kit="$1"
+  local app="$work/app-$with_kit"
+  mkdir -p "$app"
+  (
+    cd "$app"
+    npm init -y > /dev/null
+    npm install --no-audit --no-fund --loglevel=error \
+      "$work/packs/intent-engine-core-$version.tgz" \
+      "$work/packs/intent-engine-client-$version.tgz" \
+      "$work/packs/intent-engine-solver-$version.tgz" \
+      "$work/packs/intent-engine-cli-$version.tgz" \
+      "litesvm@$litesvm" \
+      "@solana/kit@$with_kit"
+    node --input-type=module -e '
 await import("@intent-engine/core");
 await import("@intent-engine/client");
 await import("@intent-engine/client/svm");
@@ -56,13 +64,13 @@ await import("@intent-engine/solver");
 const idl = await import("@intent-engine/core/idl.json", { with: { type: "json" } });
 if (typeof idl.default.address !== "string") throw new Error("the IDL has no address");
 '
-node -e '
+    node -e '
 for (const name of ["@intent-engine/core", "@intent-engine/client", "@intent-engine/solver"]) {
   if (Object.keys(require(name)).length === 0) throw new Error(`require of ${name} exported nothing`);
 }
 if (typeof require("@intent-engine/core/idl.json").address !== "string") throw new Error("require of the IDL has no address");
 '
-env -u INTENT_ENGINE_SO node --input-type=module -e '
+    env -u INTENT_ENGINE_SO node --input-type=module -e '
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { attestedResult, DEVNET_TEST_MINT, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
@@ -82,8 +90,28 @@ world.warp(60);
 await world.client.expire(judge, job.intent);
 if ((await world.client.intent({ owner: owner.address, nonce: job.nonce }))?.intent.status !== IntentStatus.Expired) throw new Error("the world did not expire the escrow");
 ' "$baseline"
-printed="$(node_modules/.bin/intent-engine --version --output json)"
-[[ "$(node -p 'JSON.parse(process.argv[1]).version' "$printed")" == "$version" ]] || { echo "intent-engine --version printed $printed, not $version" >&2; exit 1; }
-kits="$(find node_modules -path '*/@solana/kit/package.json' | wc -l)"
-[[ "$kits" == 1 ]] || { echo "$kits copies of @solana/kit installed" >&2; find node_modules -path '*/@solana/kit/package.json' >&2; exit 1; }
-echo "packed and installed @intent-engine $version next to @solana/kit@$kit: imports, requires, a test world on the shipped program, the binary and one @solana/kit"
+    env -u INTENT_ENGINE_SO node --input-type=module -e '
+import { appendTransactionMessageInstructions, compileTransaction, createNoopSigner, createTransactionMessage, getBase64EncodedWireTransaction, pipe, setTransactionMessageFeePayer, setTransactionMessageLifetimeUsingBlockhash, signTransaction } from "@solana/kit";
+import { attestedResult, DEVNET_TEST_MINT, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
+const { createTestWorld } = await import("@intent-engine/client/testing");
+const world = await createTestWorld({ start: 1700000000n });
+const [wallet, judge] = [await world.wallet(), await world.wallet()];
+const params = attestedResult({ amountIn: 1000000n, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash: new Uint8Array(32).fill(1), judgeFee: 0n });
+const plan = await world.client.plan.createIntent({ signer: createNoopSigner(wallet.address), inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT, params });
+for (const instructions of [plan.setup, plan.instructions].filter((part) => part.length > 0)) {
+  const latest = await world.transport.latestBlockhash();
+  const message = pipe(createTransactionMessage({ version: 0 }), (m) => setTransactionMessageFeePayer(plan.payer, m), (m) => setTransactionMessageLifetimeUsingBlockhash(latest, m), (m) => appendTransactionMessageInstructions(instructions, m));
+  await world.transport.sendWire(getBase64EncodedWireTransaction(await signTransaction([wallet.keyPair], compileTransaction(message))), latest);
+}
+if ((await world.client.intent(plan.intent))?.intent.status !== IntentStatus.Open) throw new Error("a plan signed through this @solana/kit did not open its escrow");
+'
+    printed="$(node_modules/.bin/intent-engine --version --output json)"
+    [[ "$(node -p 'JSON.parse(process.argv[1]).version' "$printed")" == "$version" ]] || { echo "intent-engine --version printed $printed, not $version" >&2; exit 1; }
+    kits="$(find node_modules -path '*/@solana/kit/package.json' | wc -l)"
+    [[ "$kits" == 1 ]] || { echo "$kits copies of @solana/kit installed" >&2; find node_modules -path '*/@solana/kit/package.json' >&2; exit 1; }
+    [[ "$(node -p "JSON.parse(require('node:fs').readFileSync('node_modules/@solana/kit/package.json', 'utf8')).version")" == "$with_kit" ]] || { echo "the app installed another @solana/kit than $with_kit" >&2; exit 1; }
+  )
+}
+check_app "$kit"
+check_app "$newest_kit"
+echo "packed and installed @intent-engine $version next to @solana/kit@$kit and @solana/kit@$newest_kit, the newest in $kit_range: imports, requires, a test world on the shipped program, a plan signed through kit, the binary and one @solana/kit"

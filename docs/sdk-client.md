@@ -169,6 +169,13 @@ const received = [paid?.fields.net ?? 0n, work.judgeFee, paid?.fields.fee ?? 0n]
 console.log(received.map((amount) => formatAmount(amount, sell.decimals)).join(" "));
 ```
 
+## What a release moves
+
+- A release of a proof escrow in SOL pays the worker and the judge in wrapped SOL, into their token accounts for `NATIVE_MINT`; `unwrap` closes that account and returns its balance and its rent to the wallet as SOL.
+- `announce` takes the announcement's rent from the worker's own wallet, and on the first announcement to an escrow the delivery book's rent too, unless `payer` names another wallet to pay them.
+- `reclaim` returns an announcement's rent to whoever paid it, for an unpaid one once the escrow is no longer open and for the paid one 30 days after the release; `closeBook` then returns the delivery book's rent to whoever paid it.
+- After a release the intent reads `Filled`, and `escrowed` and `filled` both read the amount escrowed at create; the `net` of its `IntentAttested` event is what the worker received.
+
 ## When the judge refuses
 
 The engine has no refusal call: a judge that rejects the work sends nothing, and the escrow stays open. The owner cancels it. If the owner does not, anyone can expire the intent once its expiry passes, which returns the escrow to the owner's token account. After the cancel, `settleProof` throws `NotSettleable`. This prints `Cancelled NotSettleable`.
@@ -212,9 +219,10 @@ await client.unwrap(signer);
 ## Find work and deliver it
 
 - `specUrl` on `createIntent` publishes where the spec lives, in a memo the owner signs.
-- `jobs` lists up to 50 open, unexpired proof escrows, those with the most time left first, each with its `specUrl`.
+- `jobs` lists up to 50 open, unexpired proof escrows, those with the most time left first, each with its `specUrl`, its `judgeFee` and its `net`: what the worker receives if paid now, after the judge fee, the protocol fee and any partner fee, as a release splits them, or `null` while the engine could not release it.
+- `jobs` keeps only the escrows that match every field its filter gives of `attestor`, `mint`, `minSells`, `owner`, `excludeOwners` and `unclaimed`.
 - `spec` fetches that url, following no redirect and reading at most 1048576 bytes, and says whether it `matches` the committed hash. It never runs the text.
-- `spec` refuses a url whose host resolves to a private, link-local or loopback address on every cluster, allowing loopback only when the RPC url is loopback, and reads only a spec memo the escrow's owner signed. Without the Node entry it checks less, as [In a browser](#in-a-browser) says.
+- `spec` refuses a url whose host resolves to a private, link-local or loopback address on every cluster, allowing loopback only when the RPC url is loopback or the transport is `offline`, as a test world's is, and reads only a spec memo the escrow's owner signed. Without the Node entry it checks less, as [In a browser](#in-a-browser) says.
 - A `fetch` you pass to `createClient` is handed the checked `addresses` of the host whenever the client checked them, and must connect only to them.
 - `announce` records a worker's delivery on chain: an announcement account with a commitment that binds the work's sha256 to the worker's wallet and a salt, and the salt and url sealed to the judge's published encryption key, to the key derived from its wallet when it publishes none, or to each committee member's key.
 - `announce` syncs a committee's keys first when its snapshot does not match its members' published keys, and announcing the same work and url again returns the same announcement without sending.
@@ -223,6 +231,7 @@ await client.unwrap(signer);
 - `announcements` lists an escrow's announcements in seq order from accounts alone, never from transaction history, and says whether the list is `complete`: the escrow is open and every seq from 1 to one below its delivery book's `nextSeq` is present exactly once. Once the escrow is no longer open or its book is gone, the list says `closed` and is never complete.
 - `firstOpening` returns the first announcement that opens to the checked sha256 with the keys it is given, and refuses with `FirstOpeningRefused` while the list is incomplete, an earlier announcement is sealed to a key it was not given, or another worker holds the claim.
 - An earlier announcement sealed to a key `firstOpening` was given that does not open with that key can never open for anyone, so `firstOpening` passes over it and lists it in `skipped`, for a judge and for each committee member alike.
+- `openings` walks the announcements as `firstOpening` does, with the same completeness rule, skips and refusals for keys, but needs no sha256: its `opening` is the earliest announcement that opens with the keys given, with its `announcement`, `seq`, `worker`, `salt` and work `url`, or `null` while none does, and `skipped` lists those it passed over. A judge fetches that url, hashes the work, and passes the sha256 to `firstOpening` and `settleProof`.
 - A transport you pass to `createClient` needs `engineAccounts` to list announcements.
 
 Here your wallet plays the worker, and the judge pays the first announcement that opens to the hash it checked. This prints `true true` twice.
@@ -287,7 +296,16 @@ console.log(formatAmount(createFee, sell.decimals), formatAmount(crankBounty, se
 
 ## Testing
 
-`createTestWorld` from `@intent-engine/client/testing` starts the engine in LiteSVM, configured with devnet's fees and kinds, and returns a `client` on it. The package ships the program deployed on devnet, so it needs no build and reaches no network. `wallet` funds a new signer, `mint` and `tokens` make SPL tokens, `now` reads the clock the engine reads and `warp` moves it. It needs the `litesvm` package, which ships for Linux and macOS only; on Windows, run it in WSL.
+`createTestWorld` from `@intent-engine/client/testing` starts the engine in LiteSVM, configured with devnet's fees and kinds, and returns a `client` on it. The package ships the program deployed on devnet, so it needs no build and reaches no network. `wallet` funds a new signer, `mint` and `tokens` make SPL tokens, `now` reads the clock the engine reads and `warp` moves it.
+
+It needs the `litesvm` package, an optional peer of the client that npm does not install for you, which ships for Linux and macOS only; on Windows, run it in WSL.
+
+```sh
+npm install --save-dev litesvm@^1.5.0
+```
+
+- The world's transport is `offline`, so its clients create, announce and fetch plain-http loopback urls, such as a local server's; a client on a real cluster still refuses them.
+- Its options are `start`, the clock's first unix time; `fees`, which replace devnet's; `program`, other program bytes; `domain`, the 32 bytes it reports as the genesis hash and sets as the engine's domain, devnet's by default; `url`, the RPC url its client reports, devnet's by default, which it never reaches; `devnetMints: false`, which leaves out the wrapped SOL and test mints; and `hooks` and `debug`, as in [Observe](#observe).
 
 `svmTransport(svm)` from `@intent-engine/client/svm` runs the client against a LiteSVM instance of your own: pass it as `createClient({ url, transport })`.
 
@@ -310,49 +328,95 @@ await world.client.settleProof({ judge, intent: job.intent, announcement: first.
 console.log(formatAmount(await world.tokenBalance(worker.address, NATIVE_MINT), 9));
 ```
 
+This posts a proof escrow whose spec a local server holds, finds it with `jobs`, reads it with `spec` and delivers from a worker. The judge holds only its key: it takes the work url from `openings`, fetches and checks the work, and releases it with `settleProof`. This prints `true 0.4753`, the spec's match and the `net` that `jobs` gives, and then prints `0.4753`, what the worker received.
+
+```ts
+import { createHash } from "node:crypto";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { attestedResult, DEVNET_TEST_MINT, formatAmount, NATIVE_MINT, parseAmount } from "@intent-engine/core";
+import { createTestWorld } from "@intent-engine/client/testing";
+
+const files: Record<string, string> = { "/spec.md": "Deliver a line of text about rain.\n", "/work.txt": "rain on the tin roof\n" };
+const server = createServer((request, response) => {
+  const body = files[request.url ?? ""];
+  response.writeHead(body === undefined ? 404 : 200).end(body);
+});
+await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+const local = "http://127.0.0.1:" + (server.address() as AddressInfo).port;
+const sha256 = (bytes: string | Uint8Array) => createHash("sha256").update(bytes).digest("hex");
+
+const world = await createTestWorld();
+const [owner, judge, worker] = [await world.wallet(), await world.wallet(), await world.wallet()];
+const specHash = Uint8Array.from(Buffer.from(sha256(files["/spec.md"] ?? ""), "hex"));
+const params = attestedResult({ amountIn: parseAmount("0.5", 9), minResult: 1n, maxResult: 1n, attestor: judge.address, specHash, judgeFee: parseAmount("0.01", 9) });
+await world.client.createIntent({ signer: owner, inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT, params, specUrl: local + "/spec.md" });
+
+const [job] = await world.client.jobs({ attestor: judge.address });
+if (job === undefined) throw new Error("no job listed");
+const spec = await world.client.spec(job.intent);
+console.log(spec?.matches, formatAmount(job.net ?? 0n, 9));
+await world.client.announce({ worker, intent: job.intent, sha256: sha256(files["/work.txt"] ?? ""), url: local + "/work.txt" });
+
+const { opening } = await world.client.openings({ intent: job.intent, keypair: judge.keypair });
+if (opening?.url == null) throw new Error("no delivery opens yet");
+const work = new Uint8Array(await (await fetch(opening.url)).arrayBuffer());
+if (!new TextDecoder().decode(work).includes("rain")) throw new Error("the work fails the spec");
+const first = await world.client.firstOpening({ intent: job.intent, sha256: sha256(work), keypair: judge.keypair });
+await world.client.settleProof({ judge, intent: job.intent, announcement: first.announcement, opening: first, result: 1n });
+console.log(formatAmount(await world.tokenBalance(worker.address, NATIVE_MINT), 9));
+server.close();
+```
+
 ## Plan, sign and send yourself
 
 `client.plan` builds what each write sends and sends nothing, for an app that signs through a wallet adapter, a multisig or a bundle service.
 
 - `client.plan` has one method per write: `createIntent`, `cancel`, `fill`, `expire`, `close`, `settleProof`, `settleCommittee`, `settleSplit`, `announce`, `refute`, `reclaim`, `closeBook`, `feedback`, `createCommittee` and `unwrap`.
 - A plan names the `payer`, the `setup` instructions that land first, the `instructions`, the signers each one needs in `setupSigners` and `signers`, and the `lookupTables` it relies on, which are none.
+- `setupSigners` and `signers` list, for each instruction, the wallets that must sign the transaction that carries it, the `payer` among them whenever an instruction needs its signature; the `payer` also signs each transaction as its fee payer, and `settleProof` lists no judge, whose verdict travels as a signed message.
+- `plan.createIntent` returns a `CreateIntentPlan`: a `Plan` that also names the `intent`, its `nonce`, `expiresAt` and `payTo`.
+- A wallet that gives only its address plans with kit's `createNoopSigner(address)`: compile each part with that address as fee payer, have the wallet sign the compiled transaction, and send it.
 - Each write sends its own plan, `setup` first, and refuses a signer that is not the plan's `payer`.
 - `reclaim` splits its instructions into `batches`, one transaction each. A plan with no instructions sends nothing: `unwrap` with nothing wrapped, `createCommittee` for a committee that exists, `announce` for an announcement made before.
 - Every call that names one intent takes its address or `{ owner, nonce }`.
 - `createIntent` takes `partner` with `partnerBps`, from 1 to 100, a partner fee each fill pays, and `payTo`, the wallet that receives what a swap, limit order or auction buys; a proof escrow takes no `payTo`.
 - `amount` turns decimal text into base units at the mint's decimals and refuses a negative, a non-number or too many decimals with `InvalidInput`; `format` turns base units back into text.
 
-This plans a proof escrow of 0.5 SOL in the test world, signs it with `@solana/kit` and sends it through the world's transport, then reads it back. On a cluster, send the signed transaction with your own RPC, such as kit's `sendAndConfirmTransactionFactory`. This prints `Open 0.5`.
+This plans a proof escrow of 0.5 SOL in the test world for a wallet known only by its address, compiles each part with `@solana/kit`, has the wallet sign it and sends it through the world's transport, then reads it back. Here `signTransaction` with the wallet's key pair stands in for the wallet adapter. On a cluster, send the signed transaction with your own RPC, such as kit's `sendAndConfirmTransactionFactory`. This prints `Open 0.5`.
 
 ```ts
 import { createHash } from "node:crypto";
 import {
   appendTransactionMessageInstructions,
+  compileTransaction,
+  createNoopSigner,
   createTransactionMessage,
   getBase64EncodedWireTransaction,
   pipe,
-  setTransactionMessageFeePayerSigner,
+  setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
-  signTransactionMessageWithSigners,
+  signTransaction,
 } from "@solana/kit";
 import { attestedResult, DEVNET_TEST_MINT, NATIVE_MINT, statusName } from "@intent-engine/core";
 import { createTestWorld } from "@intent-engine/client/testing";
 
 const world = await createTestWorld();
-const [owner, judge] = [await world.wallet(), await world.wallet()];
+const [wallet, judge] = [await world.wallet(), await world.wallet()];
 const specHash = new Uint8Array(createHash("sha256").update("the spec").digest());
 const amountIn = await world.client.amount(NATIVE_MINT, "0.5");
 const params = attestedResult({ amountIn, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash, judgeFee: 0n });
-const plan = await world.client.plan.createIntent({ signer: owner, inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT, params });
+const plan = await world.client.plan.createIntent({ signer: createNoopSigner(wallet.address), inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT, params });
 for (const instructions of [plan.setup, plan.instructions].filter((part) => part.length > 0)) {
   const latest = await world.transport.latestBlockhash();
   const message = pipe(
     createTransactionMessage({ version: 0 }),
-    (m) => setTransactionMessageFeePayerSigner(owner, m),
+    (m) => setTransactionMessageFeePayer(plan.payer, m),
     (m) => setTransactionMessageLifetimeUsingBlockhash(latest, m),
     (m) => appendTransactionMessageInstructions(instructions, m),
   );
-  await world.transport.sendWire(getBase64EncodedWireTransaction(await signTransactionMessageWithSigners(message)), latest);
+  const signed = await signTransaction([wallet.keyPair], compileTransaction(message));
+  await world.transport.sendWire(getBase64EncodedWireTransaction(signed), latest);
 }
 const held = await world.client.intent(plan.intent);
 console.log(statusName(held?.intent.status ?? -1), await world.client.format(NATIVE_MINT, held?.intent.escrowed ?? 0n));
@@ -403,7 +467,8 @@ The roots of `@intent-engine/core` and `@intent-engine/client` import no Node mo
 - `createClient` and `connect` from `@intent-engine/client/node` check every address a spec host resolves to and connect only to those; the Node entry also holds Ledger signing, `ledgerSigner` and `openUsb`.
 - `@intent-engine/client/svm` and `@intent-engine/client/testing` run in Node only.
 - Without the Node entry, `spec` fetches with the global `fetch`, follows no redirect and reads at most 1048576 bytes.
-- It refuses a url whose host is written as a private, link-local or loopback address, or is a `localhost` name, unless the RPC url is loopback; it cannot check where a host name resolves.
+- It refuses a url whose host is written as a private, link-local or loopback address, or is a `localhost` name, unless the RPC url is loopback or the transport is `offline`; it cannot check where a host name resolves.
+- A page hashes a spec with web crypto: `new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))` is the 32-byte `specHash` of the spec `text`.
 - Pass `lookup`, a function from a host name to its addresses, to check them all; the `fetch` you pass then receives the checked `addresses`.
 - `@intent-engine/client/internal` and `@intent-engine/core/internal` hold what the CLI, the solver and the tests share; they carry no stability promise and change in any release.
 

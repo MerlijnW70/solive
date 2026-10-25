@@ -43,7 +43,7 @@ import {
 const TOKEN_HEAD = 64;
 const LOOKUP_TABLE_HEAD = 56;
 
-export type SvmTransportOptions = { genesisHash?: string };
+export type SvmTransportOptions = { genesisHash?: string; offline?: boolean };
 
 export const SVM_GENESIS_HASH = "11111111111111111111111111111111";
 
@@ -228,6 +228,7 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
   };
   const facade = (by: Observer): Transport => {
     const members: Transport = {
+      ...(options.offline === true ? { offline: true } : {}),
       getAccount,
       engineAccounts: async (filter) => listed(filter),
       getAccounts: async (addresses) => Promise.all(addresses.map(getAccount)),

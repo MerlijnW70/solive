@@ -44,6 +44,8 @@ const BULLETS = {
   first:
     "`firstOpening` returns the first announcement that opens to the checked sha256 with the keys it is given, and refuses with `FirstOpeningRefused` while the list is incomplete, an earlier announcement is sealed to a key it was not given, or another worker holds the claim.",
   skip: "An earlier announcement sealed to a key `firstOpening` was given that does not open with that key can never open for anyone, so `firstOpening` passes over it and lists it in `skipped`, for a judge and for each committee member alike.",
+  openings:
+    "`openings` walks the announcements as `firstOpening` does, with the same completeness rule, skips and refusals for keys, but needs no sha256: its `opening` is the earliest announcement that opens with the keys given, with its `announcement`, `seq`, `worker`, `salt` and work `url`, or `null` while none does, and `skipped` lists those it passed over. A judge fetches that url, hashes the work, and passes the sha256 to `firstOpening` and `settleProof`.",
   transport: "A transport you pass to `createClient` needs `engineAccounts` to list announcements.",
 };
 
@@ -190,6 +192,24 @@ describe("the announcement sentences of the full client page", () => {
     expect(first).toMatchObject({ announcement: made.announcement, skipped: [{ announcement, seq: 1n, worker: griefer.address, reason: "does-not-open" }] });
     await client.settleProof({ judge: judge.signer, intent: { owner: owner.address, nonce }, announcement: first.announcement, opening: first, result: 1n });
     expect(await tokensOf(w, honest.address)).toBeGreaterThan(0n);
+  });
+
+  it(BULLETS.openings, async () => {
+    const w = await world();
+    const judge = await keyed(w);
+    const { client, owner, intent, nonce } = await escrowTo(judge.signer.address, w);
+    await expect(client.openings({ intent, keypair: judge.keypair })).rejects.toMatchObject({ reason: "incomplete", closed: true });
+    const [other, honest] = [await fundedSigner(w), await fundedSigner(w)];
+    const earlier = await client.announce({ worker: other, intent, sha256: sha("other work"), url: workUrl("other.tar") });
+    await announced(client, honest, intent, WORK);
+    const { opening } = await client.openings({ intent, keypair: judge.keypair });
+    expect(opening).toEqual({ announcement: earlier.announcement, seq: 1n, worker: other.address, salt: earlier.salt, url: workUrl("other.tar") });
+    const hiding = createClient({ url: LOCAL, transport: { ...w.chain.transport, engineAccounts: async () => [] } });
+    await expect(hiding.openings({ intent, keypair: judge.keypair })).rejects.toMatchObject({ reason: "incomplete", missing: [1n, 2n] });
+    const first = await client.firstOpening({ intent, sha256: sha("other work"), keypair: judge.keypair });
+    expect(first).toMatchObject({ announcement: opening?.announcement, salt: opening?.salt });
+    await client.settleProof({ judge: judge.signer, intent: { owner: owner.address, nonce }, announcement: first.announcement, opening: first, result: 1n });
+    expect(await tokensOf(w, other.address)).toBeGreaterThan(0n);
   });
 
   it(BULLETS.transport, async () => {

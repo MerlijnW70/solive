@@ -150,7 +150,7 @@ export async function createTestWorld(options: TestWorldOptions = {}): Promise<T
   const clock = svm.getClock();
   clock.unixTimestamp = options.start ?? BigInt(Math.floor(Date.now() / 1000));
   svm.setClock(clock);
-  const transport = svmTransport(svm, { genesisHash: getBase58Decoder().decode(domain) });
+  const transport = svmTransport(svm, { genesisHash: getBase58Decoder().decode(domain), offline: true });
   const wallet = async (sol: string | number = TEST_WALLET_SOL): Promise<TestWallet> => {
     const made = await testWallet();
     const amount = parseAmount(String(sol), TEST_MINT_DECIMALS);

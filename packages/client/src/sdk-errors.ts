@@ -116,7 +116,7 @@ export const SDK_ERRORS: { readonly [C in SdkErrorCode]: SdkErrorEntry<C> } = {
   "first-opening-refused": {
     error: FirstOpeningRefused,
     fields: ["intent", "reason", "sha256", "announcement", "seq", "worker", "sealedTo", "missing", "closed", "holder"],
-    meaning: "the first announcement that opens to the work cannot be known or cannot be paid; reason says why",
+    meaning: "the first announcement that opens, or that opens to the work, cannot be known or cannot be paid; reason says why",
   },
   "not-refutable": { error: NotRefutable, fields: ["earlier"], meaning: "the announcements named cannot refute the release" },
   "book-not-closable": { error: BookNotClosable, fields: ["intent"], meaning: "the delivery book of the intent cannot be closed yet" },

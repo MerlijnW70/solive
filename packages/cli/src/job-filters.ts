@@ -72,15 +72,16 @@ export async function jobsWanted(
   transport: Transport,
   { attestor, mint, minPay, unclaimed, owner, excludeOwners }: JobsWanted,
   decimalsOf: DecimalsOf = decimalsOnce(transport),
+  terms?: PayTerms,
 ): Promise<Job[]> {
   const owners = { owner, excludeOwners };
   if (minPay === undefined) {
-    return jobsOf(transport, { attestor, mint, unclaimed, ...owners });
+    return jobsOf(transport, { attestor, mint, unclaimed, ...owners }, terms);
   }
   const open = await openProofEscrows(transport, { attestor, mint, ...owners }, Number.POSITIVE_INFINITY);
   const mints = [...new Set(open.map(({ intent }) => intent.inputMint))];
   const lists = await Promise.all(
-    mints.map(async (each) => jobsOf(transport, { attestor, mint: each, minSells: leastUnits(minPay, await decimalsOf(each)), unclaimed, ...owners })),
+    mints.map(async (each) => jobsOf(transport, { attestor, mint: each, minSells: leastUnits(minPay, await decimalsOf(each)), unclaimed, ...owners }, terms)),
   );
   return lists.flat().sort(latestFirst).slice(0, JOBS_LIMIT);
 }
@@ -98,7 +99,7 @@ async function wholeTokens(raw: bigint, read: Promise<number>): Promise<string |
 export async function pricedJobs(transport: Transport, wanted: JobsWanted, terms: PayTerms): Promise<PricedJob[]> {
   const mintsOf = mintsOnce(transport);
   const decimalsOf = decimalsOnce(transport, mintsOf);
-  const jobs = await jobsWanted(transport, wanted, decimalsOf);
+  const jobs = await jobsWanted(transport, wanted, decimalsOf, terms);
   const [pays, claims, freezes, whole] = await Promise.all([
     jobPays(transport, jobs, terms, decimalsOf),
     loadClaimsOf(transport, jobs.map(({ intent }) => intent)),

@@ -2,7 +2,7 @@ import type { Address, Instruction, Signature, TransactionSigner } from "@solana
 import type { SaltSigner } from "./announce-keys.js";
 import type { Priority } from "./budget.js";
 import type { Client, MessageSigner, WatchCallback, WatchOptions } from "./client-types.js";
-import type { DeliveryOpeners } from "./first-opening.js";
+import type { DeliveryOpeners, Openings } from "./first-opening.js";
 import type { Job, SpecFetch } from "./jobs.js";
 import type { Lookup } from "./address-ranges.js";
 import type { Cluster } from "./simple-tokens.js";
@@ -54,6 +54,8 @@ export type DeliveriesInput = { escrow: Address; sha256?: string; keypair?: Deli
 
 export type Announcement = { worker: Address; sha256: string | null; url: string | null; opened: boolean; announcement: Address; seq: bigint };
 
+export type EscrowOpeningsInput = { escrow: Address; keypair?: DeliveryOpeners };
+
 export type ReceiptInput = { escrow: Address };
 
 export type ReleaseReceipt = {
@@ -75,7 +77,7 @@ export type HeldToken = { token: string; mint: Address; account: Address; amount
 
 export type WalletBalance = { sol: string; tokens: HeldToken[]; summary: string };
 
-export type OpenWork = Job & { amount: string; fee: string; token: string };
+export type OpenWork = Omit<Job, "judgeFee" | "net"> & { amount: string; judgeFee: string; net: string | null; token: string };
 
 export type DeliverSend = <I extends DeliverWorkInput>(input: I) => Promise<Outcome<I, DeliveredWork>>;
 
@@ -95,6 +97,7 @@ export type SimpleClient<S extends TransactionSigner = TransactionSigner> = {
   readonly deliver: [S] extends [SaltSigner] ? DeliverSend : SignerCannot;
   readonly release: [S] extends [MessageSigner] ? ReleaseSend : SignerCannot;
   deliveries(input: DeliveriesInput): Promise<Announcement[]>;
+  openings(input: EscrowOpeningsInput): Promise<Openings>;
   receipt(input: ReceiptInput): Promise<ReleaseReceipt>;
   cancel<I extends CancelInput>(input: I): Promise<Outcome<I>>;
   watch(onChange: WatchCallback, signal: AbortSignal, filter?: WatchOptions): Promise<void>;

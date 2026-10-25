@@ -265,7 +265,7 @@ Every error `@intent-engine/core` and `@intent-engine/client` throw extends `Sdk
 | `bad-salt-signature` | `BadSaltSignature` | `worker` | the salt signature given is not the worker's signature of the salt message |
 | `url-too-long` | `UrlTooLong` | `bytes`, `max`, `recipients` | the work url does not fit one transaction when sealed to this many recipients |
 | `announcements-unreadable` | `AnnouncementsUnreadable` | none | the transport cannot list engine accounts, so announcements cannot be read |
-| `first-opening-refused` | `FirstOpeningRefused` | `intent`, `reason`, `sha256`, `announcement`, `seq`, `worker`, `sealedTo`, `missing`, `closed`, `holder` | the first announcement that opens to the work cannot be known or cannot be paid; reason says why |
+| `first-opening-refused` | `FirstOpeningRefused` | `intent`, `reason`, `sha256`, `announcement`, `seq`, `worker`, `sealedTo`, `missing`, `closed`, `holder` | the first announcement that opens, or that opens to the work, cannot be known or cannot be paid; reason says why |
 | `not-refutable` | `NotRefutable` | `earlier` | the announcements named cannot refute the release |
 | `book-not-closable` | `BookNotClosable` | `intent` | the delivery book of the intent cannot be closed yet |
 | `no-free-nonce` | `NoFreeNonce` | `owner` | every nonce in the owner's window is used; advance the window first |

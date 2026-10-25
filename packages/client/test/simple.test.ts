@@ -6,6 +6,7 @@ import {
   DEVNET_TEST_MINT as TEST,
   feeBpsFor,
   findAssociatedTokenAddress,
+  formatAmount,
   IntentStatus,
   Kind,
   NATIVE_MINT as WSOL,
@@ -95,7 +96,7 @@ describe("the simple sdk layer", () => {
     expect(escrow.summary).toBe(`Pay 0.01 SOL for work judged by ${judge.address} against spec ${specHash}, judge fee 0.001 SOL, open for 86400 seconds`);
     const escrowAddress = escrow.intent as Address;
     const listed = (await seller.findWork({ judge: judge.address })).find(({ intent }) => intent === escrowAddress);
-    expect(listed).toMatchObject({ amount: "0.01", fee: "0.001", token: "SOL", specHash });
+    expect(listed).toMatchObject({ amount: "0.01", judgeFee: "0.001", token: "SOL", specHash });
     const work = sha("the delivered work");
     const delivered = await seller.deliver({ escrow: escrowAddress, sha256: work, url: "https://example.org/work.tar" });
     expect(w.chain.sent).toContain(delivered.signature);
@@ -107,6 +108,7 @@ describe("the simple sdk layer", () => {
     const judgeFee = 1_000_000n;
     const { net } = splitFees(pay - judgeFee, feeBpsFor(await buyer.client.config(), Kind.AttestedResult), 0, 0);
     expect(tokens(w, await ata(worker.address, WSOL))).toBe(net);
+    expect(listed?.net).toBe(formatAmount(net, 9));
     expect(tokens(w, await ata(judge.address, WSOL))).toBe(judgeFee);
   });
 

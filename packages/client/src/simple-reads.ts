@@ -4,11 +4,11 @@ import { isSha256Hex } from "@intent-engine/core/internal";
 import { AnnouncementsUnreadable } from "./announce-errors.js";
 import { refutationsOf } from "./announcement-reads.js";
 import { HISTORY_LIMIT } from "./client-types.js";
-import { heldKeys, openingOf, opensTo } from "./first-opening.js";
+import { heldKeys, openedWith, opensTo } from "./first-opening.js";
 import { standingOf } from "./refutation-standing.js";
 import { paidWalletsOf, releasedDelivery, releaseOf } from "./release-reads.js";
 import type { SimpleContext } from "./simple-orders.js";
-import type { Announcement, DeliveriesInput, ReceiptInput, ReleaseReceipt } from "./simple-types.js";
+import type { Announcement, DeliveriesInput, EscrowOpeningsInput, ReceiptInput, ReleaseReceipt } from "./simple-types.js";
 import { hexBytes } from "./encoding.js";
 
 export function sha256Given(sha256: string, name: string): string {
@@ -74,17 +74,20 @@ export function workReads(ctx: SimpleContext) {
     const candidates = [...new Set([...given, ...(released.deliveredSha256 === null ? [] : [released.deliveredSha256])])];
     return Promise.all(
       list.announcements.map(async (announcement) => {
-        const opening = await openingOf(announcement, held);
+        const keyed = await openedWith(announcement, held);
+        const salt = keyed?.salt ?? (announcement.state === "paid" ? announcement.salt : null);
         let sha256: string | null = null;
-        for (const candidate of opening === null ? [] : candidates) {
-          if (sha256 === null && (await opensTo(announcement, bytesOf(candidate), opening?.salt ?? new Uint8Array()))) {
+        for (const candidate of salt === null ? [] : candidates) {
+          if (sha256 === null && (await opensTo(announcement, bytesOf(candidate), salt ?? new Uint8Array()))) {
             sha256 = candidate;
           }
         }
-        return { worker: announcement.worker, sha256, url: opening?.url ?? null, opened: sha256 !== null, announcement: announcement.address, seq: announcement.seq };
+        return { worker: announcement.worker, sha256, url: keyed?.url ?? null, opened: keyed !== null, announcement: announcement.address, seq: announcement.seq };
       }),
     );
   };
 
-  return { receipt, deliveries };
+  const openings = async (input: EscrowOpeningsInput) => ctx.client.openings({ intent: input.escrow, keypair: input.keypair });
+
+  return { receipt, deliveries, openings };
 }

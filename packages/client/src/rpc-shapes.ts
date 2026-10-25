@@ -64,6 +64,7 @@ export type FinalizedBlock = { slot: bigint; blockhash: string };
 export type Simulation = { err: string | null; logs: string[]; unitsConsumed: bigint | null; accounts: (Uint8Array | null)[] };
 
 export interface Transport {
+  readonly offline?: boolean;
   getAccount(address: Address): Promise<AccountView | null>;
   getAccounts(addresses: readonly Address[]): Promise<(AccountView | null)[]>;
   warm?(addresses: readonly Address[]): Promise<void>;

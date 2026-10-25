@@ -1,9 +1,20 @@
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+  appendTransactionMessageInstructions,
+  compileTransaction,
+  createNoopSigner,
+  createTransactionMessage,
+  getBase64EncodedWireTransaction,
+  pipe,
+  setTransactionMessageFeePayer,
+  setTransactionMessageLifetimeUsingBlockhash,
+  signTransaction,
+} from "@solana/kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DEVNET_TEST_MINT, IntentStatus, NATIVE_MINT, swapExactIn } from "@intent-engine/core";
 import { MAX_PARTNER_BPS } from "@intent-engine/core/internal";
-import { type Client, InvalidInput } from "../src/index.js";
+import { type Client, type CreateIntentPlan, InvalidInput, type Plan } from "../src/index.js";
 import { checkedQuery, PAY_TO_NOT_ATTESTED, RECLAIM_BATCH } from "../src/internal.js";
 import { createTestWorld } from "../src/testing.js";
 import { PLAN_SECTION } from "./doc-sections.js";
@@ -38,6 +49,11 @@ const WRITES = [
 const CLAIMS = {
   methods: `\`client.plan\` has one method per write: ${WRITES.slice(0, -1).map((name) => `\`${name}\``).join(", ")} and \`${WRITES.at(-1)}\`.`,
   shape: "A plan names the `payer`, the `setup` instructions that land first, the `instructions`, the signers each one needs in `setupSigners` and `signers`, and the `lookupTables` it relies on, which are none.",
+  signers:
+    "`setupSigners` and `signers` list, for each instruction, the wallets that must sign the transaction that carries it, the `payer` among them whenever an instruction needs its signature; the `payer` also signs each transaction as its fee payer, and `settleProof` lists no judge, whose verdict travels as a signed message.",
+  intent: "`plan.createIntent` returns a `CreateIntentPlan`: a `Plan` that also names the `intent`, its `nonce`, `expiresAt` and `payTo`.",
+  wallet:
+    "A wallet that gives only its address plans with kit's `createNoopSigner(address)`: compile each part with that address as fee payer, have the wallet sign the compiled transaction, and send it.",
   sends: "Each write sends its own plan, `setup` first, and refuses a signer that is not the plan's `payer`.",
   empty: "`reclaim` splits its instructions into `batches`, one transaction each. A plan with no instructions sends nothing: `unwrap` with nothing wrapped, `createCommittee` for a committee that exists, `announce` for an announcement made before.",
   ref: "Every call that names one intent takes its address or `{ owner, nonce }`.",
@@ -95,6 +111,53 @@ describe("the plan section of the client page", () => {
     }
     expect(await world.client.announcements(job.intent)).toMatchObject({ announcements: [] });
     expect(await statusOf(world, job.intent)).toBe(IntentStatus.Open);
+  });
+
+  it(CLAIMS.signers, async () => {
+    const world = await createTestWorld();
+    const job = await escrow(world);
+    const created = await world.client.plan.createIntent({ signer: job.owner, inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT, params: proofParams(job.judge.address) });
+    expect([...new Set([...created.setupSigners, ...created.signers].flat())]).toEqual([created.payer]);
+    const worker = await world.wallet();
+    const relayed = await world.client.plan.announce({ worker, payer: job.owner, intent: job.intent, sha256: sha("relayed"), url: workUrl() });
+    expect(relayed.payer).toBe(job.owner.address);
+    expect(new Set([...relayed.setupSigners, ...relayed.signers].flat())).toEqual(new Set([worker.address, job.owner.address]));
+    const made = await world.client.announce({ worker, intent: job.intent, sha256: sha("settled"), url: workUrl() });
+    const settle = await world.client.plan.settleProof({ judge: job.judge, payer: job.owner, intent: job.intent, announcement: made.announcement, opening: { sha256: sha("settled"), salt: made.salt }, result: 1n });
+    expect([...new Set(settle.signers.flat())]).toEqual([job.owner.address]);
+    expect(settle.signers.flat()).not.toContain(job.judge.address);
+  });
+
+  it(CLAIMS.intent, async () => {
+    const world = await createTestWorld();
+    const [owner, judge] = [await world.wallet(), await world.wallet()];
+    const plan: CreateIntentPlan = await world.client.plan.createIntent({ signer: owner, inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT, params: proofParams(judge.address) });
+    const shape: Plan = plan;
+    expect(shape.payer).toBe(owner.address);
+    expect(plan).toMatchObject({ nonce: 0n, payTo: owner.address });
+    expect(plan.expiresAt).toBeGreaterThan(world.now());
+    await world.client.createIntent({ signer: owner, inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT, params: proofParams(judge.address) });
+    expect((await world.client.intent(plan.intent))?.intent).toMatchObject({ nonce: plan.nonce, expiresAt: plan.expiresAt });
+  });
+
+  it(CLAIMS.wallet, async () => {
+    const world = await createTestWorld();
+    const [wallet, judge] = [await world.wallet(), await world.wallet()];
+    const plan = await world.client.plan.createIntent({ signer: createNoopSigner(wallet.address), inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT, params: proofParams(judge.address) });
+    expect(plan.payer).toBe(wallet.address);
+    for (const instructions of [plan.setup, plan.instructions].filter((part) => part.length > 0)) {
+      const latest = await world.transport.latestBlockhash();
+      const message = pipe(
+        createTransactionMessage({ version: 0 }),
+        (m) => setTransactionMessageFeePayer(plan.payer, m),
+        (m) => setTransactionMessageLifetimeUsingBlockhash(latest, m),
+        (m) => appendTransactionMessageInstructions(instructions, m),
+      );
+      const compiled = compileTransaction(message);
+      expect(Object.keys(compiled.signatures)).toEqual([wallet.address]);
+      await world.transport.sendWire(getBase64EncodedWireTransaction(await signTransaction([wallet.keyPair], compiled)), latest);
+    }
+    expect(await statusOf(world, plan.intent)).toBe(IntentStatus.Open);
   });
 
   it(CLAIMS.sends, async () => {
@@ -177,7 +240,10 @@ describe("the plan section of the client page", () => {
     expect(BLOCKS).toHaveLength(1);
     const code = BLOCKS[0] ?? "";
     expect(code).toContain("world.client.plan.createIntent(");
-    expect(code).toContain("signTransactionMessageWithSigners");
+    for (const call of ["createNoopSigner(wallet.address)", "setTransactionMessageFeePayer(plan.payer", "compileTransaction(", "signTransaction(["]) {
+      expect(code).toContain(call);
+    }
+    expect(code).not.toContain("signTransactionMessageWithSigners");
     expect(code).not.toMatch(/client\.(send|createIntent)\(/);
     expect(SECTION).toContain("kit's `sendAndConfirmTransactionFactory`");
     expect(typeof (await import("@solana/kit")).sendAndConfirmTransactionFactory).toBe("function");

@@ -64,7 +64,7 @@ export async function connect<S extends TransactionSigner>(options: ConnectOptio
   }
   const ctx: SimpleContext = { url, signer, client, options: clientOptions };
   const { swap, limit, payForWork } = orderSends(ctx);
-  const { findWork, deliver, release, cancel, deliveries, receipt } = workSends(ctx);
+  const { findWork, deliver, release, cancel, deliveries, receipt, openings } = workSends(ctx);
 
   const balance = async (tokens?: readonly string[]): Promise<WalletBalance> => {
     const named = tokens ?? (url === CLUSTER_URLS.devnet ? ["SOL", "TEST"] : ["SOL"]);
@@ -96,6 +96,7 @@ export async function connect<S extends TransactionSigner>(options: ConnectOptio
     cancel,
     findWork,
     deliveries,
+    openings,
     receipt,
     watch: (onChange, signal, filter = { owner: signer.address }) => client.watch(onChange, signal, filter),
   };

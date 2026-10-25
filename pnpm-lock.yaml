@@ -28,9 +28,6 @@ importers:
       '@solana-program/token':
         specifier: 0.16.1
         version: 0.16.1(@solana/kit@8.4.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6))
-      '@solana/kit':
-        specifier: 8.4.0
-        version: 8.4.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)
     devDependencies:
       '@ledgerhq/hw-transport':
         specifier: 6.36.0
@@ -41,6 +38,9 @@ importers:
       '@modelcontextprotocol/client':
         specifier: 2.3.1
         version: 2.3.1
+      '@solana/kit':
+        specifier: 8.4.0
+        version: 8.4.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)
       '@types/node':
         specifier: 26.6.4
         version: 26.6.4
@@ -191,10 +191,10 @@ importers:
       '@solana-program/token':
         specifier: 0.16.1
         version: 0.16.1(@solana/kit@8.4.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6))
+    devDependencies:
       '@solana/kit':
         specifier: 8.4.0
         version: 8.4.0(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(typescript@7.0.2)(utf-8-validate@6.0.6)
-    devDependencies:
       '@types/node':
         specifier: 26.6.4
         version: 26.6.4

@@ -33,7 +33,8 @@ const CLAIMS = {
   svm: "`@intent-engine/client/svm` and `@intent-engine/client/testing` run in Node only.",
   fetch: "Without the Node entry, `spec` fetches with the global `fetch`, follows no redirect and reads at most 1048576 bytes.",
   literal:
-    "It refuses a url whose host is written as a private, link-local or loopback address, or is a `localhost` name, unless the RPC url is loopback; it cannot check where a host name resolves.",
+    "It refuses a url whose host is written as a private, link-local or loopback address, or is a `localhost` name, unless the RPC url is loopback or the transport is `offline`; it cannot check where a host name resolves.",
+  hash: 'A page hashes a spec with web crypto: `new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text)))` is the 32-byte `specHash` of the spec `text`.',
   lookup: "Pass `lookup`, a function from a host name to its addresses, to check them all; the `fetch` you pass then receives the checked `addresses`.",
   internal:
     "`@intent-engine/client/internal` and `@intent-engine/core/internal` hold what the CLI, the solver and the tests share; they carry no stability promise and change in any release.",
@@ -171,10 +172,33 @@ describe("the In a browser section of the client page", () => {
       expect(await createClient({ url: LOCAL, transport: v.chain.transport, fetch: serving(asked) }).spec(await escrow(v, url))).toMatchObject({ url, matches: true });
       expect(asked).toHaveLength(1);
     }
+    for (const host of ["127.0.0.1:8443", "localhost:8443"]) {
+      const url = "https://" + host + "/spec.md";
+      const asked: Asked[] = [];
+      const offline = { ...v.chain.transport, offline: true };
+      expect(await createClient({ url: REMOTE, transport: offline, fetch: serving(asked) }).spec(await escrow(v, url))).toMatchObject({ url, matches: true });
+      expect(asked).toHaveLength(1);
+    }
     const named = "https://" + "inside.example/spec.md";
     const asked: Asked[] = [];
     expect(await createClient({ url: REMOTE, transport: v.chain.transport, fetch: serving(asked) }).spec(await escrow(v, named))).toMatchObject({ url: named, matches: true });
     expect(asked).toEqual([{ url: named, addresses: undefined }]);
+  });
+
+  it(CLAIMS.hash, async () => {
+    const expression = /`(new Uint8Array\(await crypto\.subtle[^`]+)`/.exec(CLAIMS.hash)?.[1] ?? "";
+    const hashed = (await new Function("text", `return (async () => ${expression})();`)(SPEC)) as Uint8Array;
+    expect(hashed).toBeInstanceOf(Uint8Array);
+    expect(hashed).toEqual(new Uint8Array(createHash("sha256").update(SPEC).digest()));
+    expect(WEB_GLOBALS).toContain("crypto");
+    expect(WEB_GLOBALS).toContain("TextEncoder");
+    const w = await world();
+    const url = "https://" + "spec.example/spec.md";
+    const judge = await funded(w.chain);
+    const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash: hashed, judgeFee: 0n } as const;
+    const made = await createClient({ url: LOCAL, transport: w.chain.transport }).createIntent({ signer: w.owner, inputMint: w.inputMint, outputMint: w.outputMint, params, specUrl: url });
+    vi.stubGlobal("fetch", async () => new Response(SPEC));
+    expect(await createClient({ url: REMOTE, transport: w.chain.transport }).spec(made.intent)).toMatchObject({ matches: true });
   });
 
   it(CLAIMS.lookup, async () => {
