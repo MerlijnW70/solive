@@ -144,7 +144,7 @@ async function activeProposal(chain: Chain, at: Address, index: bigint): Promise
 
 const INSPECT = `inspect it in the Squads app at ${SQUADS_APP} and do not approve it blindly`;
 
-export type Allowed = { allowConfig?: boolean; allowEngineClose?: boolean };
+export type Allowed = { allowConfig?: boolean; allowEngineClose?: boolean; allowUndecodedVaultSigner?: boolean };
 
 async function requireReviewed(chain: Chain, seen: Review, index: bigint, allowed: Allowed): Promise<void> {
   const shown = { proposal: reviewView(seen) };
@@ -158,7 +158,13 @@ async function requireReviewed(chain: Chain, seen: Review, index: bigint, allowe
     return;
   }
   if (seen.kind !== "vault" || seen.problems.length > 0) {
-    throw new Refusal(`refusing to sign proposal ${index}: ${seen.problems.join("; ")}; ${INSPECT}`, shown);
+    throw new Refusal(`refusing to sign proposal ${index}: ${[...seen.problems, ...seen.relayed].join("; ")}; ${INSPECT}`, shown);
+  }
+  if (seen.relayed.length > 0 && allowed.allowUndecodedVaultSigner !== true) {
+    throw new Refusal(
+      `refusing to sign proposal ${index}: ${seen.relayed.join("; ")}; ${INSPECT}, and pass --allow-undecoded-vault-signer only if you trust every such program with everything the vault holds and controls`,
+      shown,
+    );
   }
   if (seen.engineClose !== null && allowed.allowEngineClose !== true && (await chain.genesisHash()) === MAINNET_GENESIS_HASH) {
     throw new Refusal(
@@ -174,7 +180,7 @@ const reviewed = async (chain: Chain, at: Address, index: bigint, multisig: Mult
   return seen;
 };
 
-const warned = (seen: Review): string[] => (seen.engineClose === null ? [] : [`Warning: ${seen.engineClose}`]);
+const warned = (seen: Review): string[] => [...(seen.engineClose === null ? [] : [seen.engineClose]), ...seen.relayed].map((text) => `Warning: ${text}`);
 
 const singleHash = (buffers: BufferCheck[]) => (buffers.length === 1 && buffers[0] !== undefined ? { buffer_hash: buffers[0].hash } : {});
 

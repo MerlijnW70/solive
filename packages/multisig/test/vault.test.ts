@@ -84,10 +84,10 @@ describe("vault", () => {
 
   it("only reads: it refuses signing flags and an index without touching the chain", async () => {
     const m = await multisig("flags", 2, 0);
-    for (const extra of [["--keypair", "flags-a.json"], ["--yes"], ["--index", "1"], ["--allow-config"], ["--allow-engine-close"], ["--expect-buffer-hash", "a".repeat(64)]]) {
+    for (const extra of [["--keypair", "flags-a.json"], ["--yes"], ["--index", "1"], ["--allow-config"], ["--allow-engine-close"], ["--allow-undecoded-vault-signer"], ["--expect-buffer-hash", "a".repeat(64)]]) {
       const refused = await counted("vault", "--multisig", m.address, ...extra);
       expect([refused.code, refused.reads]).toEqual([EXIT_USAGE, []]);
-      expect(refused.json()["error"]).toBe("vault only reads the multisig; it takes no --keypair, --yes, --index, --allow-config, --allow-engine-close or --expect-buffer-hash");
+      expect(refused.json()["error"]).toBe("vault only reads the multisig; it takes no --keypair, --yes, --index, --allow-config, --allow-engine-close, --allow-undecoded-vault-signer or --expect-buffer-hash");
     }
     const missing = await counted("vault");
     expect([missing.code, missing.json()["error"], missing.reads]).toEqual([EXIT_USAGE, "this command needs --multisig", []]);

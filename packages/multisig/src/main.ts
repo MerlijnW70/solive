@@ -55,8 +55,8 @@ export const USAGE = [
   "intent-engine-multisig propose-upgrade --multisig <m> --buffer <address> --spill <address> [--program <address>] --keypair <member> [--yes]",
   "intent-engine-multisig propose-admin --multisig <m> --keypair <member> [--yes] -- <intent engine admin command with --authority <vault>>",
   "intent-engine-multisig propose-time-lock --multisig <m> --seconds <n> --keypair <member> [--yes]",
-  "intent-engine-multisig approve --multisig <m> --index <n> [--allow-config] [--allow-engine-close] --keypair <member> [--yes]",
-  "intent-engine-multisig execute --multisig <m> --index <n> [--expect-buffer-hash <hex>] [--allow-config] [--allow-engine-close] --keypair <member> [--yes]",
+  "intent-engine-multisig approve --multisig <m> --index <n> [--allow-config] [--allow-engine-close] [--allow-undecoded-vault-signer] --keypair <member> [--yes]",
+  "intent-engine-multisig execute --multisig <m> --index <n> [--expect-buffer-hash <hex>] [--allow-config] [--allow-engine-close] [--allow-undecoded-vault-signer] --keypair <member> [--yes]",
   "intent-engine-multisig reject --multisig <m> --index <n> --keypair <member> [--yes]",
   "intent-engine-multisig show --multisig <m> [--index <n>]",
   "intent-engine-multisig vault --multisig <m>",
@@ -84,12 +84,13 @@ const OPTIONS = {
   "new-authority": { type: "string" },
   "allow-config": { type: "boolean" },
   "allow-engine-close": { type: "boolean" },
+  "allow-undecoded-vault-signer": { type: "boolean" },
   "expect-buffer-hash": { type: "string" },
 } as const;
 
 type Values = { [K in keyof typeof OPTIONS]?: (typeof OPTIONS)[K]["type"] extends "boolean" ? boolean : string };
 
-type Flag = "yes" | "allow-config" | "allow-engine-close";
+type Flag = "yes" | "allow-config" | "allow-engine-close" | "allow-undecoded-vault-signer";
 
 const required = (values: Values, name: Exclude<keyof Values, Flag>): string => {
   const value = values[name];
@@ -233,7 +234,7 @@ function keyPath(path: string, name: "keypair" | "create-key"): string {
 }
 
 const signingFlags = (values: Values): boolean =>
-  (["yes", "keypair", "allow-config", "allow-engine-close", "expect-buffer-hash"] as const).some((name) => values[name] !== undefined);
+  (["yes", "keypair", "allow-config", "allow-engine-close", "allow-undecoded-vault-signer", "expect-buffer-hash"] as const).some((name) => values[name] !== undefined);
 
 async function command(name: string | undefined, values: Values, passed: string[], deps: Deps, notify: Notify): Promise<object> {
   const target = cluster(values.url ?? DEVNET);
@@ -305,13 +306,17 @@ async function command(name: string | undefined, values: Values, passed: string[
       if (name !== "execute" && expectBufferHashes.length > 0) {
         throw new UsageError("only execute takes --expect-buffer-hash");
       }
-      if (name === "reject" && (values["allow-config"] !== undefined || values["allow-engine-close"] !== undefined)) {
-        throw new UsageError("reject takes no --allow-config or --allow-engine-close");
+      if (name === "reject" && (["allow-config", "allow-engine-close", "allow-undecoded-vault-signer"] as const).some((flag) => values[flag] !== undefined)) {
+        throw new UsageError("reject takes no --allow-config, --allow-engine-close or --allow-undecoded-vault-signer");
       }
       const member = await signer();
       const chain = deps.chain(url);
       const input = { multisig: key(values, "multisig"), member: member.address, index: indexOf(values) };
-      const allowed = { allowConfig: values["allow-config"] === true, allowEngineClose: values["allow-engine-close"] === true };
+      const allowed = {
+        allowConfig: values["allow-config"] === true,
+        allowEngineClose: values["allow-engine-close"] === true,
+        allowUndecodedVaultSigner: values["allow-undecoded-vault-signer"] === true,
+      };
       const plan =
         name === "approve"
           ? await approve(chain, { ...input, ...allowed })
@@ -322,13 +327,13 @@ async function command(name: string | undefined, values: Values, passed: string[
     }
     case "show": {
       if (signingFlags(values)) {
-        throw new UsageError("show only reads; it takes no --keypair, --yes, --allow-config, --allow-engine-close or --expect-buffer-hash");
+        throw new UsageError("show only reads; it takes no --keypair, --yes, --allow-config, --allow-engine-close, --allow-undecoded-vault-signer or --expect-buffer-hash");
       }
       return show(deps.chain(url), key(values, "multisig"), values.index === undefined ? undefined : indexOf(values));
     }
     case "vault": {
       if (signingFlags(values) || values.index !== undefined) {
-        throw new UsageError("vault only reads the multisig; it takes no --keypair, --yes, --index, --allow-config, --allow-engine-close or --expect-buffer-hash");
+        throw new UsageError("vault only reads the multisig; it takes no --keypair, --yes, --index, --allow-config, --allow-engine-close, --allow-undecoded-vault-signer or --expect-buffer-hash");
       }
       return vault(deps.chain(url), key(values, "multisig"));
     }

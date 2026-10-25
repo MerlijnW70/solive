@@ -240,7 +240,7 @@ describe("multisig", () => {
     const problem = `it asks ${executor.address} to sign, but only the vault ${m.vault} and the transaction's ephemeral signers may; executing it would lend ${executor.address}'s signature to it`;
     const shown = await proposalOf(m, index);
     expect(shown).toMatchObject({ kind: "vault", problems: [problem] });
-    expect(shown["summary"]).toEqual([`Runs program ${SYSTEM_PROGRAM} with 2 accounts and 12 bytes of data, signed by ${executor.address}`]);
+    expect(shown["summary"]).toEqual([`Transfers 1 SOL (1000000000 lamports) from ${executor.address} to ${thief}`]);
     expect(shown["instructions"][0]["accounts"]).toEqual([
       { address: executor.address, signer: true, writable: true },
       { address: thief, signer: false, writable: true },

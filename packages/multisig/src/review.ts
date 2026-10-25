@@ -31,6 +31,7 @@ import {
   vaultPda,
   vaultTransactionCodec,
 } from "./layout.js";
+import { systemTransferSummary } from "./system-transfer.js";
 
 export const LOADER = address("BPFLoaderUpgradeab1e11111111111111111111111");
 export const ENGINE_PROGRAM: Address = INTENT_ENGINE_PROGRAM_ADDRESS;
@@ -127,7 +128,7 @@ export type BufferCheck = { buffer: Address; authority: Address | null; hash: st
 
 export type Decoded = InstructionView & { summary: string };
 
-type Described = { summary: string; buffer?: BufferCheck; problem?: string; engineClose?: string };
+type Described = { summary: string; buffer?: BufferCheck; problem?: string; engineClose?: string; relayed?: string };
 
 const signersOf = (ix: Instruction) => (ix.accounts ?? []).filter((k) => isSignerRole(k.role)).map((k) => k.address);
 
@@ -228,7 +229,22 @@ async function describeClose(chain: Chain, ix: Instruction, engineData: Address,
   return { summary: `Closes account ${closed.address}, which is neither a buffer nor a program's data${tail}` };
 }
 
-async function describe(chain: Chain, ix: Instruction, engineData: Address): Promise<Described> {
+export const relayedText = (position: number, vault: Address, program: Address) =>
+  `instruction ${position} passes the vault ${vault} as a signer to program ${program}, which this tool does not decode: ${program} receives the vault's signature and can therefore change program code, hand over the upgrade authority or move the vault's funds through calls this tool cannot show`;
+
+function describeOther(ix: Instruction, vault: Address | null, position: number): Described {
+  const transfer = systemTransferSummary(ix);
+  if (transfer !== null) {
+    return { summary: transfer };
+  }
+  const summary = raw(`Runs program ${ix.programAddress}`, ix);
+  if (vault === null || !signersOf(ix).includes(vault)) {
+    return { summary };
+  }
+  return { summary: `${summary}; it receives the vault's signature`, relayed: relayedText(position, vault, ix.programAddress) };
+}
+
+async function describe(chain: Chain, ix: Instruction, engineData: Address, vault: Address | null, position: number): Promise<Described> {
   const data = ix.data ?? new Uint8Array();
   if (ix.programAddress === ENGINE_PROGRAM) {
     return engineDecodes(ix)
@@ -236,7 +252,7 @@ async function describe(chain: Chain, ix: Instruction, engineData: Address): Pro
       : { summary: engineSummary(ix), problem: `it carries an intent engine instruction whose ${data.length} bytes this version cannot decode, so approving it would sign for an effect the tool cannot show` };
   }
   if (ix.programAddress !== LOADER) {
-    return { summary: raw(`Runs program ${ix.programAddress}`, ix) };
+    return describeOther(ix, vault, position);
   }
   if (data.length < 4) {
     return { summary: raw("Loader instruction that this version cannot decode", ix), problem: "it carries a loader instruction this version cannot decode, so approving it would sign for an effect the tool cannot show" };
@@ -257,14 +273,16 @@ async function describe(chain: Chain, ix: Instruction, engineData: Address): Pro
 export async function describeInstructions(
   chain: Chain,
   instructions: readonly Instruction[],
-): Promise<{ decoded: Decoded[]; buffers: BufferCheck[]; problems: string[]; engineClose: string | null }> {
+  vault: Address | null = null,
+): Promise<{ decoded: Decoded[]; buffers: BufferCheck[]; problems: string[]; relayed: string[]; engineClose: string | null }> {
   const engineData = await programDataOf(ENGINE_PROGRAM);
   const decoded: Decoded[] = [];
   const buffers: BufferCheck[] = [];
   const problems: string[] = [];
+  const relayed: string[] = [];
   let engineClose: string | null = null;
-  for (const ix of instructions) {
-    const described = await describe(chain, ix, engineData);
+  for (const [i, ix] of instructions.entries()) {
+    const described = await describe(chain, ix, engineData, vault, i + 1);
     decoded.push({ ...instructionView(ix), summary: described.summary });
     if (described.buffer !== undefined) {
       buffers.push(described.buffer);
@@ -272,13 +290,16 @@ export async function describeInstructions(
     if (described.problem !== undefined) {
       problems.push(described.problem);
     }
+    if (described.relayed !== undefined) {
+      relayed.push(described.relayed);
+    }
     engineClose ??= described.engineClose ?? null;
   }
-  return { decoded, buffers, problems, engineClose };
+  return { decoded, buffers, problems, relayed, engineClose };
 }
 
-export async function decodeMessage(chain: Chain, message: VaultMessage): Promise<Decoded[]> {
-  return (await describeInstructions(chain, messageInstructions(message))).decoded;
+export async function decodeMessage(chain: Chain, message: VaultMessage, vault: Address | null = null): Promise<Decoded[]> {
+  return (await describeInstructions(chain, messageInstructions(message), vault)).decoded;
 }
 
 export type Review = {
@@ -289,6 +310,7 @@ export type Review = {
   actions: ConfigAction[];
   buffers: BufferCheck[];
   problems: string[];
+  relayed: string[];
   engineClose: string | null;
 };
 
@@ -345,6 +367,7 @@ const empty = (kind: Review["kind"], summary: string, problem: string): Review =
   actions: [],
   buffers: [],
   problems: [problem],
+  relayed: [],
   engineClose: null,
 });
 
@@ -353,7 +376,7 @@ async function reviewVault(chain: Chain, at: Address, index: bigint, data: Reado
   if (stored === null) {
     return empty("other", "A vault transaction this tool cannot decode", "its vault transaction does not decode");
   }
-  const base = { kind: "vault" as const, creator: stored.creator, actions: [], engineClose: null };
+  const base = { kind: "vault" as const, creator: stored.creator, actions: [], relayed: [], engineClose: null };
   const { message } = stored;
   if (message.addressTableLookups.length > 0) {
     const tables = message.addressTableLookups.map((t) => t.accountKey).join(", ");
@@ -375,7 +398,7 @@ async function reviewVault(chain: Chain, at: Address, index: bigint, data: Reado
   const vault = await vaultPda(at, stored.vaultIndex);
   const transaction = await transactionPda(at, index);
   const ephemeral = await Promise.all(Array.from(stored.ephemeralSignerBumps, (_, i) => ephemeralSignerPda(transaction, i)));
-  const { decoded, buffers, problems: undecodable, engineClose } = await describeInstructions(chain, instructions);
+  const { decoded, buffers, problems: undecodable, relayed, engineClose } = await describeInstructions(chain, instructions, vault);
   const problems: string[] = [...undecodable];
   for (const [i, key] of message.accountKeys.entries()) {
     if (isSignerIndex(message, i) && key !== vault && !ephemeral.includes(key)) {
@@ -389,7 +412,7 @@ async function reviewVault(chain: Chain, at: Address, index: bigint, data: Reado
       problems.push(`buffer ${check.buffer} is controlled by ${named(check.authority)}, not the vault ${vault}, so its code can change after approval`);
     }
   }
-  return { ...base, summary: decoded.map((d) => d.summary), instructions: decoded, buffers, problems, engineClose };
+  return { ...base, summary: decoded.map((d) => d.summary), instructions: decoded, buffers, problems, relayed, engineClose };
 }
 
 export async function review(chain: Chain, at: Address, index: bigint, multisig: Multisig): Promise<Review> {
@@ -418,6 +441,7 @@ export async function review(chain: Chain, at: Address, index: bigint, multisig:
         actions: config.actions,
         buffers: [],
         problems: [],
+        relayed: [],
         engineClose: null,
       };
     }
@@ -430,6 +454,6 @@ export const reviewView = (seen: Review) => ({
   summary: seen.summary,
   ...(seen.kind === "config" ? { actions: seen.actions } : { instructions: seen.instructions }),
   ...(seen.buffers.length > 0 ? { buffers: seen.buffers } : {}),
-  ...(seen.problems.length > 0 ? { problems: seen.problems } : {}),
+  ...(seen.problems.length + seen.relayed.length > 0 ? { problems: [...seen.problems, ...seen.relayed] } : {}),
   ...(seen.engineClose === null ? {} : { warning: seen.engineClose }),
 });

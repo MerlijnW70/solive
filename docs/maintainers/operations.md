@@ -246,7 +246,10 @@ Once the vault is the upgrade authority, only the vault can write the program's 
 - a message that asks any key other than the vault, or the transaction's ephemeral signers, to sign: executing it would lend the executing member's signature to a hidden instruction;
 - an upgrade whose buffer is missing or controlled by anyone but the vault, since its code could change after approval;
 - on mainnet-beta, a loader Close of the engine's program data without `--allow-engine-close`, as in [Upgrade](#upgrade);
+- an instruction that passes the vault as a signer to a program this tool does not decode in full, on every cluster, without `--allow-undecoded-vault-signer`. The vault's signature carries through every call that program makes, so it can change program code, hand over the upgrade authority or move the vault's funds where the summary cannot show it;
 - a Squads config transaction, which adds or removes members or changes the threshold or time lock. `show` prints each change and the members, threshold and time lock after it runs. Inspect it in the Squads app at https://app.squads.so and do not approve it blindly; `--allow-config` on `approve` and `execute` signs it once every printed change is expected.
+
+The tool decodes in full the intent engine, the upgradeable loader and a system transfer, which it shows as `Transfers <sol> SOL (<lamports> lamports) from <vault> to <recipient>`. For any other program that the vault signs for, `show` adds a problem that names the instruction and the program. With `--allow-undecoded-vault-signer`, `approve` and `execute` put that problem first in the summary as a warning and sign. Pass it only for a program you trust with everything the vault holds and controls.
 
 ## Reject or cancel
 
