@@ -12,7 +12,7 @@ const screaming = (name: string) => name.replace(/([a-z])([A-Z])/g, "$1_$2").toU
 
 describe("event decoding", () => {
   it("recognises every engine event by its own discriminator", () => {
-    expect(names).toHaveLength(49);
+    expect(names).toHaveLength(51);
     const lookup = core as unknown as Record<string, unknown>;
     for (const name of names) {
       const discriminator = lookup[`${screaming(name)}_EVENT_DISCRIMINATOR`] as Uint8Array;

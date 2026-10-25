@@ -44,6 +44,7 @@ pub const ANNOUNCEMENT_VERSION: u8 = 1;
 pub const REFUTATION_SEED: &[u8] = b"refutation";
 pub const REFUTATION_VERSION: u8 = 1;
 pub const MIN_CAP_WINDOW_SECS: u32 = 60;
+pub const HELD_CLAIM_SECS: i64 = 365 * 86_400;
 pub const MAX_COMMITTEE_FLOORS: usize = 8;
 pub const FLOOR_THRESHOLD: u8 = 2;
 pub const OLDEST_INTENT_VERSION: u8 = 1;
@@ -128,7 +129,7 @@ pub struct Intent {
     pub bump: u8,
     pub vault_bump: u8,
     pub version: u8,
-    pub padding: [u8; 1],
+    pub held: u8,
     pub flags: u16,
     pub params: [u8; PARAMS_LEN],
     pub rent_payer: Pubkey,
@@ -355,7 +356,8 @@ pub struct Announcement {
     pub bump: u8,
     pub state: u8,
     pub recipients: u8,
-    pub padding: [u8; 2],
+    pub held: u8,
+    pub padding: [u8; 1],
     pub blob: [u8; MAX_SEALED_BLOB],
 }
 

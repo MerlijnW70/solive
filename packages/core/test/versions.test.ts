@@ -151,7 +151,7 @@ describe("account versions", () => {
     const book = getDeliveryBookEncoder().encode({ intent, payer: PAYER, nextSeq: 2n, live: 1n, version: 1, bump: 255, padding: zeros(6) });
     const announcement = getAnnouncementEncoder().encode({
       intent, worker, attestor: other, payer: PAYER, commitment: zeros(32), delivered: zeros(32), splitHash: zeros(32), seq: 1n, slot: 2n, announcedAt: 3n, expiresAt: 4n, paidAt: 0n,
-      salt: zeros(16), blobLen: 0, version: 1, bump: 255, state: 0, recipients: 1, padding: zeros(2), blob: zeros(624),
+      salt: zeros(16), blobLen: 0, version: 1, bump: 255, state: 0, recipients: 1, held: 0, padding: zeros(1), blob: zeros(624),
     });
     const refutation = getRefutationEncoder().encode({
       intent, attestor: other, paidAnnouncement: other, earlierAnnouncement: other, paidWorker: worker, earlierWorker: other, refuter: PAYER, delivered: zeros(32), splitHash: zeros(32),

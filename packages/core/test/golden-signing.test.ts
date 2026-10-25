@@ -104,7 +104,7 @@ describe("golden vectors emitted by the Rust implementation", () => {
       expect(discriminatorOf(name), name).toBe(v.event_discriminators[name]);
     }
     const unlisted = generated.filter((name) => !names.includes(name)).sort();
-    expect(unlisted).toEqual(["AnnounceFeeSet", "AnnouncementClosed", "CommitteeKeysSynced", "DeliveryAnnounced", "DeliveryBookClosed", "DeliveryReleased", "ReleaseRefuted"]);
+    expect(unlisted).toEqual(["AnnounceFeeSet", "AnnouncementClosed", "CommitteeKeysSynced", "DeliveryAnnounced", "DeliveryBookClosed", "DeliveryReleased", "HeldShareClaimed", "ReleaseRefuted", "ShareHeld"]);
     for (const name of unlisted) {
       const anchor = new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(`event:${name}`))).subarray(0, 8);
       expect(discriminatorOf(name), name).toBe(hexOf(anchor));

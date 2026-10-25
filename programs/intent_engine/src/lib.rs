@@ -294,6 +294,10 @@ pub mod intent_engine {
         handle_refute_release(ctx, salt, esk, claim)
     }
 
+    pub fn claim_held(ctx: Context<ClaimHeld>, index: u8, claim: SplitClaim) -> Result<()> {
+        handle_claim_held(ctx, index, claim)
+    }
+
     pub fn set_committee_floor(ctx: Context<SetCommitteeFloor>, floor: u64) -> Result<()> {
         handle_set_committee_floor(ctx, floor)
     }

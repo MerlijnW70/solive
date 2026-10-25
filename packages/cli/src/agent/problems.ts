@@ -171,6 +171,9 @@ export const ENGINE_PROBLEMS = {
   RefuteNotAnnouncer: never("only the wallet that made the earlier announcement refutes with it"),
   RefuteSplitMismatch: never("the recipients and weights given are not the split the release paid; pass them exactly as the release named them"),
   DeliveryRecordKept: never("a delivery record account is not closed as a legacy account"),
+  SharesHeld: later("a co-author's share of this escrow is still held for it to claim; the escrow and its paid announcement stay until that share is claimed or a year after the escrow expires"),
+  NoShareHeld: never("nothing is held for this index of the split; it was paid at release or already claimed"),
+  HeldSplitMismatch: never("the recipients and weights given are not the split the release paid, or the signer is not the wallet at that index; pass them exactly as the release named them"),
 } as const satisfies Record<string, Entry>;
 
 type EngineErrorName = keyof typeof ENGINE_PROBLEMS;

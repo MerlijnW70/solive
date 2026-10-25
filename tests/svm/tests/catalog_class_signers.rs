@@ -572,3 +572,17 @@ fn account_data_matching_fill_attested_split_committee_refuses_a_mismatched_acco
         engine(EngineError::CommitteeMismatch),
     )
 }
+
+#[test]
+fn signer_authorization_claim_held_refuses_a_missing_signature() -> TestResult {
+    signer(worlds::claim_held(), "wallet")
+}
+
+#[test]
+fn account_data_matching_claim_held_refuses_a_mismatched_account() -> TestResult {
+    stranger_anchor(
+        worlds::claim_held(),
+        "wallet",
+        ErrorCode::ConstraintTokenOwner,
+    )
+}

@@ -31,6 +31,7 @@ import {
   parseEconomicsUpdatedEvent,
   parseEpochAdvancedEvent,
   parseFeeWithheldEvent,
+  parseHeldShareClaimedEvent,
   parseFillBegunEvent,
   parseFillEndedEvent,
   parseIntentAttestedEvent,
@@ -49,6 +50,7 @@ import {
   parsePauseLoweredEvent,
   parsePauseRaisedEvent,
   parseRelayerPaidEvent,
+  parseShareHeldEvent,
   parseUserInitializedEvent,
 } from "../generated/client/index.js";
 
@@ -87,6 +89,7 @@ const PARSERS = {
   EconomicsUpdated: parseEconomicsUpdatedEvent,
   EpochAdvanced: parseEpochAdvancedEvent,
   FeeWithheld: parseFeeWithheldEvent,
+  HeldShareClaimed: parseHeldShareClaimedEvent,
   FillBegun: parseFillBegunEvent,
   FillEnded: parseFillEndedEvent,
   IntentAttested: parseIntentAttestedEvent,
@@ -105,6 +108,7 @@ const PARSERS = {
   PauseLowered: parsePauseLoweredEvent,
   PauseRaised: parsePauseRaisedEvent,
   RelayerPaid: parseRelayerPaidEvent,
+  ShareHeld: parseShareHeldEvent,
   UserInitialized: parseUserInitializedEvent,
 } satisfies Record<EngineEventName, (data: Uint8Array) => object>;
 

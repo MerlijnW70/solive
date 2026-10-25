@@ -657,6 +657,114 @@
       ]
     },
     {
+      "name": "claim_held",
+      "discriminator": [
+        233,
+        137,
+        232,
+        163,
+        130,
+        51,
+        68,
+        151
+      ],
+      "accounts": [
+        {
+          "name": "wallet",
+          "signer": true
+        },
+        {
+          "name": "intent",
+          "writable": true
+        },
+        {
+          "name": "vault",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "intent"
+              }
+            ]
+          }
+        },
+        {
+          "name": "input_mint",
+          "relations": [
+            "intent"
+          ]
+        },
+        {
+          "name": "announcement",
+          "writable": true
+        },
+        {
+          "name": "to",
+          "writable": true
+        },
+        {
+          "name": "input_token_program"
+        },
+        {
+          "name": "mint_cap",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  105,
+                  110,
+                  116,
+                  95,
+                  99,
+                  97,
+                  112
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "input_mint"
+              }
+            ]
+          }
+        },
+        {
+          "name": "event_authority"
+        },
+        {
+          "name": "program"
+        }
+      ],
+      "args": [
+        {
+          "name": "index",
+          "type": "u8"
+        },
+        {
+          "name": "claim",
+          "type": {
+            "defined": {
+              "name": "SplitClaim"
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "claim_job",
       "discriminator": [
         9,
@@ -5016,6 +5124,19 @@
       ]
     },
     {
+      "name": "HeldShareClaimed",
+      "discriminator": [
+        108,
+        215,
+        114,
+        102,
+        190,
+        131,
+        16,
+        146
+      ]
+    },
+    {
       "name": "IntentAttested",
       "discriminator": [
         23,
@@ -5286,6 +5407,19 @@
         163,
         64,
         142
+      ]
+    },
+    {
+      "name": "ShareHeld",
+      "discriminator": [
+        16,
+        253,
+        107,
+        71,
+        153,
+        28,
+        94,
+        64
       ]
     },
     {
@@ -5916,6 +6050,18 @@
     {
       "code": 6146,
       "name": "DeliveryRecordKept"
+    },
+    {
+      "code": 6147,
+      "name": "SharesHeld"
+    },
+    {
+      "code": 6148,
+      "name": "NoShareHeld"
+    },
+    {
+      "code": 6149,
+      "name": "HeldSplitMismatch"
     }
   ],
   "types": [
@@ -6129,11 +6275,15 @@
             "type": "u8"
           },
           {
+            "name": "held",
+            "type": "u8"
+          },
+          {
             "name": "padding",
             "type": {
               "array": [
                 "u8",
-                2
+                1
               ]
             }
           },
@@ -7291,6 +7441,42 @@
       }
     },
     {
+      "name": "HeldShareClaimed",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "announcement",
+            "type": "pubkey"
+          },
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "to",
+            "type": "pubkey"
+          },
+          {
+            "name": "index",
+            "type": "u8"
+          },
+          {
+            "name": "share",
+            "type": "u64"
+          },
+          {
+            "name": "left",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
       "name": "Intent",
       "serialization": "bytemuck",
       "repr": {
@@ -7352,13 +7538,8 @@
             "type": "u8"
           },
           {
-            "name": "padding",
-            "type": {
-              "array": [
-                "u8",
-                1
-              ]
-            }
+            "name": "held",
+            "type": "u8"
           },
           {
             "name": "flags",
@@ -8776,6 +8957,38 @@
           {
             "name": "refuter",
             "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "ShareHeld",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "announcement",
+            "type": "pubkey"
+          },
+          {
+            "name": "wallet",
+            "type": "pubkey"
+          },
+          {
+            "name": "account",
+            "type": "pubkey"
+          },
+          {
+            "name": "index",
+            "type": "u8"
+          },
+          {
+            "name": "share",
+            "type": "u64"
           }
         ]
       }

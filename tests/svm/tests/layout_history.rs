@@ -372,7 +372,6 @@ fn main_keeps_every_stand_by_line_field_where_it_was() {
             bump,
             vault_bump,
             version,
-            padding,
             flags,
             params,
             rent_payer,
@@ -388,6 +387,11 @@ fn main_keeps_every_stand_by_line_field_where_it_was() {
             agent_fee,
             claims
         ]
+    );
+    assert_eq!(
+        offset_of!(old::Intent, padding),
+        offset_of!(Intent, held),
+        "held"
     );
     kept!(
         old::Mandate,

@@ -956,3 +956,49 @@ pub fn migrate() -> TestResult<Ready> {
         .named("admin", admin.pubkey())
         .named("legacy", config_pda()))
 }
+
+pub fn claim_held() -> TestResult<Ready> {
+    use anchor_spl::token_2022::ID as T22;
+    use svm_tests::{MintExt, ReleasePath, ReleaseTerms, ReleaseWorld, Setting};
+    let terms = ReleaseTerms {
+        funded: 1_000_000,
+        escrow: 100_000,
+        judge_fee: 1_234,
+        spec: SPEC,
+        weights: [6_000, 4_000],
+        partner_bps: 0,
+    };
+    let path = ReleasePath::AttestedSplit;
+    let mut w = ReleaseWorld::new(
+        &[
+            MintExt::InterestBearing,
+            MintExt::MetadataPointer,
+            MintExt::Freezable,
+        ],
+        path,
+        terms,
+    )?;
+    let announcer = w.workers[0].insecure_clone();
+    let intent = w.intent();
+    let delivery = w.env.announce_for(&announcer, &intent)?;
+    w.env.set_now(START_TS + 1_800);
+    let (holder, held_at) = (w.workers[1].insecure_clone(), w.atas[1]);
+    let mint = w.market.input_mint;
+    w.env
+        .apply_setting(&holder, &held_at, &mint, T22, Setting::MemoRequired)?;
+    w.release(path, &delivery)??;
+    let to = w.env.create_token_account(&mint, &holder.pubkey(), T22)?;
+    let claim = intent_engine::SplitClaim {
+        recipients: w.wallets(),
+        weights: terms.weights.to_vec(),
+    };
+    let ix = w.claim_held_ix(&holder.pubkey(), &delivery.announcement, &to, 1, claim);
+    let vault = w.vault();
+    Ok(Ready::new(w.env, ix, vec![holder.insecure_clone()])?
+        .named("wallet", holder.pubkey())
+        .named("intent", intent)
+        .named("vault", vault)
+        .named("announcement", delivery.announcement)
+        .named("to", to)
+        .named("input", mint))
+}

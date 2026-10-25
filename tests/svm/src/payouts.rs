@@ -305,6 +305,32 @@ impl ReleaseWorld {
         self.release_to(path, delivery, &payee)
     }
 
+    pub fn claim_held_ix(
+        &self,
+        wallet: &Pubkey,
+        announcement: &Pubkey,
+        to: &Pubkey,
+        index: u8,
+        claim: intent_engine::SplitClaim,
+    ) -> Instruction {
+        let intent = self.intent();
+        engine_ix(
+            intent_engine::accounts::ClaimHeld {
+                wallet: *wallet,
+                intent,
+                vault: vault_pda(&intent),
+                input_mint: self.market.input_mint,
+                announcement: *announcement,
+                to: *to,
+                input_token_program: self.market.input_program,
+                mint_cap: self.env.mint_cap,
+                event_authority: event_authority(),
+                program: intent_engine::ID,
+            },
+            intent_engine::instruction::ClaimHeld { index, claim },
+        )
+    }
+
     pub fn paid(&self) -> TestResult<[u64; 2]> {
         Ok([
             self.env.balance(&self.atas[0])?,

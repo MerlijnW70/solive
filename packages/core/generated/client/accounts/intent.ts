@@ -68,7 +68,7 @@ export type Intent = {
   bump: number;
   vaultBump: number;
   version: number;
-  padding: ReadonlyUint8Array;
+  held: number;
   flags: number;
   params: ReadonlyUint8Array;
   rentPayer: Address;
@@ -103,7 +103,7 @@ export type IntentArgs = {
   bump: number;
   vaultBump: number;
   version: number;
-  padding: ReadonlyUint8Array;
+  held: number;
   flags: number;
   params: ReadonlyUint8Array;
   rentPayer: Address;
@@ -142,7 +142,7 @@ export function getIntentEncoder(): FixedSizeEncoder<IntentArgs> {
       ["bump", getU8Encoder()],
       ["vaultBump", getU8Encoder()],
       ["version", getU8Encoder()],
-      ["padding", fixEncoderSize(getBytesEncoder(), 1)],
+      ["held", getU8Encoder()],
       ["flags", getU16Encoder()],
       ["params", fixEncoderSize(getBytesEncoder(), 128)],
       ["rentPayer", getAddressEncoder()],
@@ -183,7 +183,7 @@ export function getIntentDecoder(): FixedSizeDecoder<Intent> {
     ["bump", getU8Decoder()],
     ["vaultBump", getU8Decoder()],
     ["version", getU8Decoder()],
-    ["padding", fixDecoderSize(getBytesDecoder(), 1)],
+    ["held", getU8Decoder()],
     ["flags", getU16Decoder()],
     ["params", fixDecoderSize(getBytesDecoder(), 128)],
     ["rentPayer", getAddressDecoder()],

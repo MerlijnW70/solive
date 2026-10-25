@@ -11,7 +11,7 @@ use solana_instructions_sysvar::{load_current_index_checked, load_instruction_at
 
 use crate::caps::settle_mint_cap;
 use crate::errors::{core_err, EngineError};
-use crate::events::{AgentPaid, FeeWithheld, FillBegun, WITHHELD_AGENT, WITHHELD_PARTNER};
+use crate::events::{AgentPaid, FeeWithheld, FillBegun, WITHHELD_AGENT};
 use crate::ext::Ext;
 use crate::policy::{
     check_fill_kind, check_mandate_live, check_mint, pay_agent, pay_out, take_remaining,
@@ -182,13 +182,13 @@ pub fn handle_begin_fill(
         max_fee_bps,
     )?;
     let fees = settled.fees;
-    if let Some((account, fee)) = settled.withheld {
+    for withheld in settled.withheld.into_iter().flatten() {
         emit_cpi!(FeeWithheld {
             intent: intent_key,
-            payee: terms.partner,
-            account,
-            fee,
-            role: WITHHELD_PARTNER,
+            payee: withheld.payee,
+            account: withheld.account,
+            fee: withheld.fee,
+            role: withheld.role,
         });
     }
     match pay_agent(

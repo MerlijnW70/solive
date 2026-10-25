@@ -46,7 +46,7 @@ async function order(outputMint: Address, over: Partial<Intent> = {}): Promise<O
       bump: 255,
       vaultBump: 255,
       version: 2,
-      padding: new Uint8Array(1),
+      held: 0,
       flags: 0,
       params: encodeParams({ kind: Kind.SwapExactIn, amountIn: AMOUNT, minOut: MIN_OUT }),
       rentPayer: KEY,

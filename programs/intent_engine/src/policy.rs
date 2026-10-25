@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
 use anchor_lang::Discriminator;
+use anchor_spl::token_2022::spl_token_2022::extension::memo_transfer::memo_required;
 use anchor_spl::token_2022::spl_token_2022::extension::{
     BaseStateWithExtensions, ExtensionType, StateWithExtensions,
 };
@@ -18,6 +19,7 @@ use intent_core::sig::{check_ed25519_cosign, check_ed25519_ix, Cosigners};
 use solana_instructions_sysvar::{load_current_index_checked, load_instruction_at_checked};
 
 use crate::errors::{core_err, EngineError};
+use crate::events::{WITHHELD_PARTNER, WITHHELD_PROTOCOL};
 use crate::state::{
     delegate_address, Config, Intent, Mandate, UserState, BPS, DELEGATE_SEED, INTENT_SEED,
     MANDATE_VERSION, MAX_ATTESTED_FEE_BPS, MAX_CRANK_BOUNTY, MAX_CREATE_FEE, MAX_FEE_BPS,
@@ -422,6 +424,33 @@ pub fn can_receive(
         })
 }
 
+pub fn accepts_payout(
+    account: &AccountInfo,
+    token_program: &Pubkey,
+    mint: &Pubkey,
+    owner: &Pubkey,
+) -> bool {
+    account.owner == token_program
+        && account.try_borrow_data().is_ok_and(|data| {
+            StateWithExtensions::<TokenState>::unpack(&data).is_ok_and(|state| {
+                state.base.mint == *mint
+                    && state.base.owner == *owner
+                    && state.base.state == AccountState::Initialized
+                    && !memo_required(&state)
+                    && state.get_extension_types().is_ok_and(|types| {
+                        types.iter().all(|t| {
+                            matches!(
+                                t,
+                                ExtensionType::ImmutableOwner
+                                    | ExtensionType::CpiGuard
+                                    | ExtensionType::MemoTransfer
+                            )
+                        })
+                    })
+            })
+        })
+}
+
 pub fn close_vault<'info>(
     token_program: &Interface<'info, TokenInterface>,
     vault: &InterfaceAccount<'info, TokenAccount>,
@@ -559,9 +588,25 @@ pub struct Payout<'a, 'info> {
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Withholding {
+    pub account: Pubkey,
+    pub payee: Pubkey,
+    pub fee: u64,
+    pub role: u8,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Settled {
     pub fees: Fees,
-    pub withheld: Option<(Pubkey, u64)>,
+    pub withheld: [Option<Withholding>; 2],
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct HeldShare {
+    pub index: u8,
+    pub wallet: Pubkey,
+    pub account: Pubkey,
+    pub share: u64,
 }
 
 struct FeeLegs<'a, 'info> {
@@ -582,41 +627,67 @@ fn settle_fees(p: &FeeLegs, amount: u64, terms: FeeTerms, max_fee_bps: u16) -> R
     );
     let fees =
         split_fees(amount, terms.fee_bps, terms.partner_bps, terms.cut_bps).map_err(core_err)?;
-    if fees.protocol > 0 {
+    let (protocol, protocol_withheld) = if fees.protocol > 0 {
         let fee_to = p.fee_to.ok_or(EngineError::FeeAccountMissing)?;
-        pay_from_vault(
-            p.token_program,
-            p.vault,
-            p.mint,
-            fee_to.to_account_info(),
-            p.intent.clone(),
-            p.signer,
-            fees.protocol,
-        )?;
-    }
-    let (partner, withheld) = if fees.partner > 0 {
+        fee_leg(p, fee_to, fee_to.owner, fees.protocol, WITHHELD_PROTOCOL)?
+    } else {
+        (0, None)
+    };
+    let (partner, partner_withheld) = if fees.partner > 0 {
         let partner_to = p.partner_to.ok_or(EngineError::PartnerAccountMissing)?;
-        if receives(partner_to, p.token_program, p.mint, &terms.partner) {
-            pay_from_vault(
-                p.token_program,
-                p.vault,
-                p.mint,
-                partner_to.to_account_info(),
-                p.intent.clone(),
-                p.signer,
-                fees.partner,
-            )?;
-            (fees.partner, None)
-        } else {
-            (0, Some((partner_to.key(), fees.partner)))
-        }
+        fee_leg(p, partner_to, terms.partner, fees.partner, WITHHELD_PARTNER)?
     } else {
         (0, None)
     };
     Ok(Settled {
-        fees: Fees { partner, ..fees },
-        withheld,
+        fees: Fees {
+            protocol,
+            partner,
+            ..fees
+        },
+        withheld: [protocol_withheld, partner_withheld],
     })
+}
+
+fn fee_leg<'info>(
+    p: &FeeLegs<'_, 'info>,
+    to: &InterfaceAccount<'info, TokenAccount>,
+    payee: Pubkey,
+    fee: u64,
+    role: u8,
+) -> Result<(u64, Option<Withholding>)> {
+    let accepted = if role == WITHHELD_PROTOCOL {
+        accepts_payout(
+            &to.to_account_info(),
+            &p.token_program.key(),
+            &p.mint.key(),
+            &payee,
+        )
+    } else {
+        receives(to, p.token_program, p.mint, &payee)
+    };
+    if accepted {
+        pay_from_vault(
+            p.token_program,
+            p.vault,
+            p.mint,
+            to.to_account_info(),
+            p.intent.clone(),
+            p.signer,
+            fee,
+        )?;
+        Ok((fee, None))
+    } else {
+        Ok((
+            0,
+            Some(Withholding {
+                account: to.key(),
+                payee,
+                fee,
+                role,
+            }),
+        ))
+    }
 }
 
 pub fn pay_out(p: Payout, amount: u64, terms: FeeTerms, max_fee_bps: u16) -> Result<Settled> {
@@ -648,7 +719,7 @@ pub struct SplitPayout<'a, 'info> {
     pub mint: &'a InterfaceAccount<'info, Mint>,
     pub fee_to: Option<&'a InterfaceAccount<'info, TokenAccount>>,
     pub partner_to: Option<&'a InterfaceAccount<'info, TokenAccount>>,
-    pub recipients: &'a [AccountInfo<'info>],
+    pub recipients: &'a [(AccountInfo<'info>, Pubkey)],
     pub intent: AccountInfo<'info>,
     pub signer: &'a IntentSigner,
 }
@@ -659,7 +730,7 @@ pub fn pay_out_split(
     terms: FeeTerms,
     max_fee_bps: u16,
     weights: &[u16],
-) -> Result<Settled> {
+) -> Result<(Settled, Vec<HeldShare>)> {
     let legs = FeeLegs {
         token_program: p.token_program,
         vault: p.vault,
@@ -676,18 +747,39 @@ pub fn pay_out_split(
         shares.len() == p.recipients.len(),
         EngineError::SplitCountMismatch
     );
-    for (to, share) in p.recipients.iter().zip(shares) {
-        pay_from_vault(
-            p.token_program,
-            p.vault,
-            p.mint,
-            to.clone(),
-            p.intent.clone(),
-            p.signer,
-            *share,
-        )?;
+    let mut held = Vec::new();
+    for (index, ((to, wallet), share)) in p.recipients.iter().zip(shares).enumerate() {
+        if accepts_payout(to, &p.token_program.key(), &p.mint.key(), wallet) {
+            pay_from_vault(
+                p.token_program,
+                p.vault,
+                p.mint,
+                to.clone(),
+                p.intent.clone(),
+                p.signer,
+                *share,
+            )?;
+        } else if *share > 0 {
+            held.push(HeldShare {
+                index: u8::try_from(index).map_err(|_| EngineError::SplitCountMismatch)?,
+                wallet: *wallet,
+                account: to.key(),
+                share: *share,
+            });
+        }
     }
-    Ok(settled)
+    Ok((settled, held))
+}
+
+pub fn split_net(amount_in: u64, judge_fee: u64, terms: FeeTerms) -> Result<u64> {
+    let amount = amount_in
+        .checked_sub(judge_fee)
+        .ok_or(EngineError::Overflow)?;
+    Ok(
+        split_fees(amount, terms.fee_bps, terms.partner_bps, terms.cut_bps)
+            .map_err(core_err)?
+            .net,
+    )
 }
 
 pub fn receives(

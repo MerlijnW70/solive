@@ -232,6 +232,9 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6144 | `RefuteNotAnnouncer` | no | only the wallet that made the earlier announcement refutes with it |
 | 6145 | `RefuteSplitMismatch` | no | the recipients and weights given are not the split the release paid; pass them exactly as the release named them |
 | 6146 | `DeliveryRecordKept` | no | a delivery record account is not closed as a legacy account |
+| 6147 | `SharesHeld` | yes | a co-author's share of this escrow is still held for it to claim; the escrow and its paid announcement stay until that share is claimed or a year after the escrow expires |
+| 6148 | `NoShareHeld` | no | nothing is held for this index of the split; it was paid at release or already claimed |
+| 6149 | `HeldSplitMismatch` | no | the recipients and weights given are not the split the release paid, or the signer is not the wallet at that index; pass them exactly as the release named them |
 
 ## Token programs
 

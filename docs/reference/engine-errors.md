@@ -153,3 +153,6 @@ Every error the engine program raises, from its IDL. When an SDK call fails, `cl
 | 6144 | `RefuteNotAnnouncer` | no | only the wallet that made the earlier announcement refutes with it |
 | 6145 | `RefuteSplitMismatch` | no | the recipients and weights given are not the split the release paid |
 | 6146 | `DeliveryRecordKept` | no | a delivery record account is not closed as a legacy account |
+| 6147 | `SharesHeld` | yes | a co-author's share of this escrow is still held for it to claim |
+| 6148 | `NoShareHeld` | no | nothing is held for this index of the split |
+| 6149 | `HeldSplitMismatch` | no | the recipients and weights given are not the split the release paid, or the signer is not the wallet at that index |

@@ -73,6 +73,7 @@ export type Announcement = {
   bump: number;
   state: number;
   recipients: number;
+  held: number;
   padding: ReadonlyUint8Array;
   blob: ReadonlyUint8Array;
 };
@@ -96,6 +97,7 @@ export type AnnouncementArgs = {
   bump: number;
   state: number;
   recipients: number;
+  held: number;
   padding: ReadonlyUint8Array;
   blob: ReadonlyUint8Array;
 };
@@ -123,7 +125,8 @@ export function getAnnouncementEncoder(): FixedSizeEncoder<AnnouncementArgs> {
       ["bump", getU8Encoder()],
       ["state", getU8Encoder()],
       ["recipients", getU8Encoder()],
-      ["padding", fixEncoderSize(getBytesEncoder(), 2)],
+      ["held", getU8Encoder()],
+      ["padding", fixEncoderSize(getBytesEncoder(), 1)],
       ["blob", fixEncoderSize(getBytesEncoder(), 624)],
     ]),
     (value) => ({ ...value, discriminator: ANNOUNCEMENT_DISCRIMINATOR }),
@@ -152,7 +155,8 @@ export function getAnnouncementDecoder(): FixedSizeDecoder<Announcement> {
     ["bump", getU8Decoder()],
     ["state", getU8Decoder()],
     ["recipients", getU8Decoder()],
-    ["padding", fixDecoderSize(getBytesDecoder(), 2)],
+    ["held", getU8Decoder()],
+    ["padding", fixDecoderSize(getBytesDecoder(), 1)],
     ["blob", fixDecoderSize(getBytesDecoder(), 624)],
   ]);
 }

@@ -329,3 +329,13 @@ fn type_cosplay_set_mint_cap_refuses_another_account_type() -> TestResult {
 fn type_cosplay_set_committee_floor_refuses_another_account_type() -> TestResult {
     mint_cosplay(worlds::set_committee_floor(), "input_mint")
 }
+
+#[test]
+fn owner_checks_claim_held_refuse_a_foreign_owner() -> TestResult {
+    owner(worlds::claim_held(), "announcement")
+}
+
+#[test]
+fn type_cosplay_claim_held_refuses_another_account_type() -> TestResult {
+    cosplay(worlds::claim_held(), "announcement", "intent")
+}

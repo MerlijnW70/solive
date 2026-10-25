@@ -222,6 +222,7 @@ pub const WITHHELD_PARTNER: u8 = 1;
 pub const WITHHELD_AGENT: u8 = 2;
 pub const WITHHELD_TREASURY: u8 = 3;
 pub const WITHHELD_JUDGE: u8 = 4;
+pub const WITHHELD_PROTOCOL: u8 = 5;
 
 #[event]
 pub struct FeeWithheld {
@@ -230,6 +231,27 @@ pub struct FeeWithheld {
     pub account: Pubkey,
     pub fee: u64,
     pub role: u8,
+}
+
+#[event]
+pub struct ShareHeld {
+    pub intent: Pubkey,
+    pub announcement: Pubkey,
+    pub wallet: Pubkey,
+    pub account: Pubkey,
+    pub index: u8,
+    pub share: u64,
+}
+
+#[event]
+pub struct HeldShareClaimed {
+    pub intent: Pubkey,
+    pub announcement: Pubkey,
+    pub wallet: Pubkey,
+    pub to: Pubkey,
+    pub index: u8,
+    pub share: u64,
+    pub left: u8,
 }
 
 #[event]

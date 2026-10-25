@@ -150,6 +150,9 @@ pub enum EngineError {
     RefuteNotAnnouncer,
     RefuteSplitMismatch,
     DeliveryRecordKept,
+    SharesHeld,
+    NoShareHeld,
+    HeldSplitMismatch,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {

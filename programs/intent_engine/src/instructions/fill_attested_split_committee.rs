@@ -6,7 +6,7 @@ use crate::attested::{
     release_split, Fill, Judge, Opening, Release, Released, SplitClaim, SplitReleased,
 };
 use crate::errors::EngineError;
-use crate::events::{CommitteeAttested, DeliveryReleased, FeeWithheld, IntentSplit};
+use crate::events::{CommitteeAttested, DeliveryReleased, FeeWithheld, IntentSplit, ShareHeld};
 use crate::ext::Ext;
 use crate::state::{
     Announcement, ClaimBoard, Committee, Config, Intent, MintCap, CLAIMS_SEED, CONFIG_ADDRESS,
@@ -159,6 +159,7 @@ pub fn handle_fill_attested_split_committee(
             },
         recipients,
         split_hash,
+        held,
     } = split;
     if let Some(moved) = stake {
         emit_cpi!(moved);
@@ -171,6 +172,18 @@ pub fn handle_fill_attested_split_committee(
             fee: fee.fee,
             role: fee.role,
         });
+    }
+    if let Some(d) = delivered.as_ref() {
+        for share in &held {
+            emit_cpi!(ShareHeld {
+                intent,
+                announcement: d.announcement,
+                wallet: share.wallet,
+                account: share.account,
+                index: share.index,
+                share: share.share,
+            });
+        }
     }
     if let Some(d) = delivered {
         emit_cpi!(DeliveryReleased {

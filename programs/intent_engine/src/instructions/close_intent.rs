@@ -11,7 +11,7 @@ use crate::ext::Ext;
 use crate::policy::{
     check_refund_target, close_vault, move_lamports, pay_from_vault, IntentSigner,
 };
-use crate::state::{intent_readable, Intent, VAULT_SEED};
+use crate::state::{intent_readable, Intent, HELD_CLAIM_SECS, VAULT_SEED};
 
 #[event_cpi]
 #[derive(Accounts)]
@@ -67,6 +67,14 @@ pub fn handle_close_intent(ctx: Context<CloseIntent>, ext: Ext) -> Result<()> {
         let intent = ctx.accounts.intent.load()?;
         let status = Status::try_from(intent.status).map_err(core_err)?;
         transition(status, Action::Close, now, intent.expires_at).map_err(core_err)?;
+        let claimable_until = intent
+            .expires_at
+            .checked_add(HELD_CLAIM_SECS)
+            .ok_or(EngineError::Overflow)?;
+        require!(
+            intent.held == 0 || now >= claimable_until,
+            EngineError::SharesHeld
+        );
         let signer = IntentSigner {
             owner: intent.owner,
             nonce: intent.nonce.to_le_bytes(),

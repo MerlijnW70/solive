@@ -169,7 +169,7 @@ fn intent_field_offsets_are_frozen() {
     assert_eq!(offset_of!(Intent, bump), 162);
     assert_eq!(offset_of!(Intent, vault_bump), 163);
     assert_eq!(offset_of!(Intent, version), 164);
-    assert_eq!(offset_of!(Intent, padding), 165);
+    assert_eq!(offset_of!(Intent, held), 165);
     assert_eq!(offset_of!(Intent, flags), 166);
     assert_eq!(offset_of!(Intent, params), 168);
     assert_eq!(offset_of!(Intent, rent_payer), 296);
@@ -455,7 +455,8 @@ fn delivery_account_field_offsets_are_frozen() {
     assert_eq!(offset_of!(Announcement, bump), 283);
     assert_eq!(offset_of!(Announcement, state), 284);
     assert_eq!(offset_of!(Announcement, recipients), 285);
-    assert_eq!(offset_of!(Announcement, padding), 286);
+    assert_eq!(offset_of!(Announcement, held), 286);
+    assert_eq!(offset_of!(Announcement, padding), 287);
     assert_eq!(offset_of!(Announcement, blob), 288);
     assert_eq!(offset_of!(Refutation, intent), 0);
     assert_eq!(offset_of!(Refutation, attestor), 32);

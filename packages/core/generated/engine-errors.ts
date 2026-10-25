@@ -148,4 +148,7 @@ export const ENGINE_ERROR_LIST: readonly EngineErrorEntry[] = [
   { code: 6144, name: "RefuteNotAnnouncer", message: "refute not announcer" },
   { code: 6145, name: "RefuteSplitMismatch", message: "refute split mismatch" },
   { code: 6146, name: "DeliveryRecordKept", message: "delivery record kept" },
+  { code: 6147, name: "SharesHeld", message: "shares held" },
+  { code: 6148, name: "NoShareHeld", message: "no share held" },
+  { code: 6149, name: "HeldSplitMismatch", message: "held split mismatch" },
 ];

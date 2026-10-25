@@ -18,8 +18,8 @@ use crate::events::StakeMoved;
 use crate::ext::Ext;
 use crate::policy::{
     check_fill_kind, check_mint, pay_agent, pay_out, pay_out_split, take_remaining,
-    verify_preceding_cosign, verify_preceding_ed25519, AgentPayout, FeeTerms, IntentSigner, Payout,
-    SplitPayout, Tally,
+    verify_preceding_cosign, verify_preceding_ed25519, AgentPayout, FeeTerms, HeldShare,
+    IntentSigner, Payout, Settled, SplitPayout, Tally,
 };
 use crate::state::{
     Announcement, ClaimBoard, Committee, Config, Intent, MintCap, ANNOUNCEMENT_VERSION,
@@ -465,14 +465,7 @@ pub fn release_single<'info>(
         opened.terms,
         max_fee_bps,
     )?;
-    if let Some((account, fee)) = settled.withheld {
-        withheld.push(Withheld {
-            payee: opened.terms.partner,
-            account,
-            fee,
-            role: crate::events::WITHHELD_PARTNER,
-        });
-    }
+    push_withheld(&mut withheld, &settled);
     settle_mint_cap(release.vault, before, release.mint_cap, release.intent)?;
     Ok(Released {
         owner: opened.signer.owner,
@@ -490,6 +483,18 @@ pub struct SplitReleased {
     pub released: Released,
     pub recipients: u8,
     pub split_hash: [u8; 32],
+    pub held: Vec<HeldShare>,
+}
+
+fn push_withheld(withheld: &mut Vec<Withheld>, settled: &Settled) {
+    for leg in settled.withheld.into_iter().flatten() {
+        withheld.push(Withheld {
+            payee: leg.payee,
+            account: leg.account,
+            fee: leg.fee,
+            role: leg.role,
+        });
+    }
 }
 
 pub fn release_split<'info>(
@@ -516,8 +521,8 @@ pub fn release_split<'info>(
     let mut recipients_info = Vec::with_capacity(len);
     for (i, slot) in recipients.iter().enumerate() {
         require!(slot.is_some() == (i < len), EngineError::SplitCountMismatch);
-        if let Some(info) = slot {
-            recipients_info.push(info.clone());
+        if let (Some(info), Some(wallet)) = (slot, claim.recipients.get(i)) {
+            recipients_info.push((info.clone(), *wallet));
         }
     }
     let opened = open(&release, amount_in, result)?;
@@ -561,7 +566,7 @@ pub fn release_split<'info>(
     let mut cosigners = claim.recipients.clone();
     cosigners.extend_from_slice(&signers);
     verify_preceding_cosign(&release.instructions, &listed, &cosigners, &digest)?;
-    for (wallet, info) in claim.recipients.iter().zip(recipients_info.iter()) {
+    for (info, wallet) in recipients_info.iter() {
         let canonical = get_associated_token_address_with_program_id(
             wallet,
             &release.input_mint.key(),
@@ -590,7 +595,7 @@ pub fn release_split<'info>(
         judge.fee_owner(opened.attestor),
         &mut withheld,
     )?;
-    let settled = pay_out_split(
+    let (settled, held) = pay_out_split(
         SplitPayout {
             token_program: release.input_token_program,
             vault: release.vault,
@@ -607,18 +612,27 @@ pub fn release_split<'info>(
         &claim.weights,
     )?;
     let fees = settled.fees;
-    if let Some((account, fee)) = settled.withheld {
-        withheld.push(Withheld {
-            payee: opened.terms.partner,
-            account,
-            fee,
-            role: crate::events::WITHHELD_PARTNER,
-        });
-    }
+    push_withheld(&mut withheld, &settled);
+    let held_total = held
+        .iter()
+        .try_fold(0u64, |sum, share| sum.checked_add(share.share))
+        .ok_or(EngineError::Overflow)?;
     let left = [fees.protocol, fees.partner, fees.net]
         .iter()
         .try_fold(judge_paid, |sum, leg| sum.checked_add(*leg))
+        .and_then(|sum| sum.checked_sub(held_total))
         .ok_or(EngineError::Overflow)?;
+    if !held.is_empty() {
+        let mask = held
+            .iter()
+            .fold(0u8, |mask, share| mask | (1u8 << share.index));
+        release
+            .announcement
+            .ok_or(EngineError::AnnouncementMissing)?
+            .load_mut()?
+            .held = mask;
+        release.intent.load_mut()?.held = 1;
+    }
     let expected = before
         .checked_sub(left)
         .ok_or(EngineError::SplitNotConserved)?;
@@ -641,5 +655,6 @@ pub fn release_split<'info>(
         },
         recipients: u8::try_from(len).map_err(|_| EngineError::SplitCountMismatch)?,
         split_hash,
+        held,
     })
 }

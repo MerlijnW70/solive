@@ -292,3 +292,8 @@ fn sysvar_address_checking_fill_attested_committee_refuses_a_fake_sysvar() -> Te
 fn sysvar_address_checking_fill_attested_split_committee_refuses_a_fake_sysvar() -> TestResult {
     sysvar(worlds::fill_attested_split_committee())
 }
+
+#[test]
+fn arbitrary_cpi_claim_held_refuses_another_program() -> TestResult {
+    cpi(worlds::claim_held())
+}

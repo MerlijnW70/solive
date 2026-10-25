@@ -7,7 +7,7 @@ use intent_core::lifecycle::{transition, Action, Status};
 
 use crate::caps::settle_mint_cap;
 use crate::errors::{core_err, EngineError};
-use crate::events::{AgentPaid, FeeWithheld, IntentFilled, WITHHELD_AGENT, WITHHELD_PARTNER};
+use crate::events::{AgentPaid, FeeWithheld, IntentFilled, WITHHELD_AGENT};
 use crate::ext::Ext;
 use crate::policy::{
     check_fill_kind, check_mandate_live, check_mint, deliver, pay_agent, pay_out, take_remaining,
@@ -180,13 +180,13 @@ pub fn handle_fill_intent(
         max_fee_bps,
     )?;
     let fees = settled.fees;
-    if let Some((account, fee)) = settled.withheld {
+    for withheld in settled.withheld.into_iter().flatten() {
         emit_cpi!(FeeWithheld {
             intent: ctx.accounts.intent.key(),
-            payee: terms.partner,
-            account,
-            fee,
-            role: WITHHELD_PARTNER,
+            payee: withheld.payee,
+            account: withheld.account,
+            fee: withheld.fee,
+            role: withheld.role,
         });
     }
     match pay_agent(

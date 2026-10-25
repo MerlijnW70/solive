@@ -13,6 +13,7 @@ export * from "./advanceNonce.js";
 export * from "./announceDelivery.js";
 export * from "./beginFill.js";
 export * from "./cancelIntent.js";
+export * from "./claimHeld.js";
 export * from "./claimJob.js";
 export * from "./closeAnnouncement.js";
 export * from "./closeDeliveryBook.js";

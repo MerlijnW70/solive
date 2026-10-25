@@ -49,6 +49,10 @@ pub fn handle_close_announcement(ctx: Context<CloseAnnouncement>) -> Result<()> 
             stored.paid_at,
         )
         .map_err(core_err)?;
+        require!(
+            stored.held == 0 || ctx.accounts.intent.data_is_empty(),
+            EngineError::SharesHeld
+        );
         (stored.intent, stored.seq, stored.worker)
     };
     {

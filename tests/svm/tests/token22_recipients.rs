@@ -596,24 +596,8 @@ fn committee_release_into_a_closed_payee_is_refused_until_the_worker_names_anoth
 }
 
 #[test]
-fn attested_split_with_a_recipient_that_requires_memos_is_refused_and_the_owner_can_still_refund(
-) -> TestResult {
-    split_recipient(
-        ReleasePath::AttestedSplit,
-        Setting::MemoRequired,
-        Some(no_memo()),
-    )
-}
-
-#[test]
 fn attested_split_with_a_recipient_cpi_guard_pays_every_share() -> TestResult {
     split_recipient(ReleasePath::AttestedSplit, Setting::CpiGuard, None)
-}
-
-#[test]
-fn attested_split_with_a_frozen_recipient_is_refused_and_the_owner_can_still_refund() -> TestResult
-{
-    split_recipient(ReleasePath::AttestedSplit, Setting::Frozen, Some(frozen()))
 }
 
 #[test]
@@ -623,24 +607,8 @@ fn attested_split_with_a_closed_recipient_is_refused_until_anyone_recreates_the_
 }
 
 #[test]
-fn committee_split_with_a_recipient_that_requires_memos_is_refused_and_the_owner_can_still_refund(
-) -> TestResult {
-    split_recipient(
-        ReleasePath::CommitteeSplit,
-        Setting::MemoRequired,
-        Some(no_memo()),
-    )
-}
-
-#[test]
 fn committee_split_with_a_recipient_cpi_guard_pays_every_share() -> TestResult {
     split_recipient(ReleasePath::CommitteeSplit, Setting::CpiGuard, None)
-}
-
-#[test]
-fn committee_split_with_a_frozen_recipient_is_refused_and_the_owner_can_still_refund() -> TestResult
-{
-    split_recipient(ReleasePath::CommitteeSplit, Setting::Frozen, Some(frozen()))
 }
 
 #[test]
@@ -698,20 +666,8 @@ fn a_closed_partner_account_refuses_the_release_until_anyone_recreates_it() -> T
 }
 
 #[test]
-fn a_protocol_fee_account_that_requires_memos_refuses_every_release_and_the_owner_can_still_refund(
-) -> TestResult {
-    protocol_fee(Setting::MemoRequired, Some(no_memo()))
-}
-
-#[test]
 fn a_protocol_fee_account_with_a_cpi_guard_is_paid_in_full() -> TestResult {
     protocol_fee(Setting::CpiGuard, None)
-}
-
-#[test]
-fn a_frozen_protocol_fee_account_refuses_every_release_and_the_owner_can_still_refund() -> TestResult
-{
-    protocol_fee(Setting::Frozen, Some(frozen()))
 }
 
 #[test]
