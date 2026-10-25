@@ -369,7 +369,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 Served only with `--wallet`.
 
-Closes up to 5 of this wallet's announcements that may close now, those of escrows no longer open and past any refutation window; each one's rent returns to the wallet that paid it. Previews only; call with send: true after the user says yes.
+Closes up to 5 of this wallet's announcements that may close now, those of escrows no longer open and past any refutation window; each one's rent returns to the wallet that paid it; reasons says why each other one stays. Previews only; call with send: true after the user says yes.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 

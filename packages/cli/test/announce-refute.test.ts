@@ -59,6 +59,10 @@ describe("refute and reclaim from the command line", () => {
     const first = await deliver("earlier.json", j, "first.tar");
     const second = await deliver("later.json", j, "second.tar");
     await payLater(j, second);
+    const refuter = await cli(["reclaim", "--keypair", "earlier.json"], {});
+    const refutes = `it is earlier than ${second.announcement}, which escrow ${j.intent} paid, so it can refute that release until `;
+    expect(refuter.json()).toMatchObject({ closed: [], kept: [first.announcement], reasons: [{ announcement: first.announcement, reason: expect.stringContaining(refutes) }], next: NOTHING_TO_RECLAIM });
+    expect(refuter.json()["summary"]).toContainEqual(expect.stringContaining(`Keeps: ${first.announcement}, because ${refutes}`));
     const preview = await cli(["refute", "--keypair", "earlier.json", "--earlier", first.announcement, "--paid", second.announcement, "--work-url", url("first.tar")], {});
     expect([preview.code, preview.err]).toEqual([EXIT_OK, ""]);
     expect(preview.json()).toMatchObject({ sent: false, earlier: first.announcement, paid: second.announcement, sha256: WORK });
@@ -77,6 +81,7 @@ describe("refute and reclaim from the command line", () => {
     expect(standing.json()).toMatchObject({ refuted: 1, paid: 0 });
     const kept = await cli(["reclaim", "--keypair", "later.json"], {});
     expect(kept.json()).toMatchObject({ closed: [], kept: [second.announcement], next: NOTHING_TO_RECLAIM });
+    expect(kept.json()["summary"]).toContainEqual(expect.stringContaining(`Keeps: ${second.announcement}, because it was paid, and the program keeps it for the refutation window until `));
     setNow(NOW + 3_600n + delivery.REFUTE_WINDOW_SECS + 60n);
     const before = h.svm.getBalance(earlier.address) ?? 0n;
     const rent = (await loadAnnouncement(transport, first.announcement))?.lamports ?? 0n;

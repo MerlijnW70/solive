@@ -118,6 +118,7 @@ export const walletSwap = define({
         order: { kind: "dutch", amount_in: amountIn, start_out: ask, end_out: floor, start_time: start, end_time: start + falls },
         expires_at: start + (expiresIn > falls ? expiresIn : falls),
         approval,
+        pass_back: { start_receive: opening },
       };
     }, ORDER_DONE);
     return { ...result, ...(opening === undefined ? {} : { start_receive: opening }), ...(floorShown === undefined ? {} : { min_receive: floorShown }), approval };
@@ -198,12 +199,12 @@ export const walletRecurring = define({
     checkHour(wallet.limits, inputMint, inputToken.decimals, amountIn * BigInt(input.times), now, sales);
     const life = falls > every ? falls : every;
     const opens = Array.from({ length: input.times }, (_, k) => now + BigInt(LANDING_SECONDS) + every * BigInt(k));
+    const shown = { start_receive: formatAmount(ask, outputToken.decimals), min_receive: formatAmount(floor, outputToken.decimals), approval };
     const terms = (open: bigint, bound?: string) => () => ({
       order: { kind: "dutch" as const, amount_in: amountIn, start_out: ask, end_out: floor, start_time: open, end_time: open + falls },
       expires_at: open + life,
-      ...(bound === undefined ? {} : { approval: bound }),
+      ...(bound === undefined ? {} : { approval: bound, pass_back: { start_receive: shown.start_receive } }),
     });
-    const shown = { start_receive: formatAmount(ask, outputToken.decimals), min_receive: formatAmount(floor, outputToken.decimals), approval };
     const last = opens[opens.length - 1] as bigint;
     const first = (await offered(ctx, call, { ...input, send: input.send, previewNext: orderPreviewNext(true), changed: ORDER_CHANGED }, terms(opens[0] as bigint, approval))) as Record<string, unknown>;
     const sold = TOKEN_NAMES[inputMint] ?? inputMint;

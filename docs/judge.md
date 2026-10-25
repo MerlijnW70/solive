@@ -36,7 +36,9 @@ Rotate only between escrows, and after a new key replaces the old one, repeat `-
 
 A worker on a Ledger cannot sign messages, so `deliver` gives it random delivery secrets and writes them, with the url, to a file under `~/.config/intent-engine/secrets` that only its owner can read; `refute` reads that file later. A committee member can vote on a Ledger too, as below.
 
-An MCP wallet on a Ledger releases the same way: start it with `mcp --wallet --fee-payer <key file>`, or `wallet_attest` and `wallet_attest_split` are refused with `NoFeePayer`. Their previews show the `digest` the device signs. For a transaction the wallet itself signs on the device, the preview shows the `message_hash` the device shows, and a send with the same arguments signs exactly that kept transaction; without one, or once it expired, the send is refused with `DeviceUnpreviewed`.
+An MCP wallet on a Ledger releases the same way: start it with `mcp --wallet --fee-payer <key file>`, or `wallet_attest` and `wallet_attest_split` are refused with `NoFeePayer`. Their previews show the `digest` the device signs.
+
+For a transaction the wallet itself signs on the device, the preview shows the `message_hash` the device shows, and a send with the same arguments, plus what the preview said to pass back, signs exactly that kept transaction; without one, or once it expired, the send is refused with `DeviceUnpreviewed`.
 
 Start an MCP wallet on a Ledger with `--encryption-keypair <file>` too, repeated per key file, so it opens what workers seal to its profile key. Without it, `wallet_attest`, `wallet_attest_split` and `wallet_committee_vote` refuse announced work with `KeyNotGiven`.
 

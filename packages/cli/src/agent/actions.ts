@@ -89,6 +89,11 @@ export function askedOf(name: string, raw: unknown): string {
   return JSON.stringify([name, canonical(input ?? {})]);
 }
 
+export function askedWith(asked: string, passed: Record<string, unknown>): string {
+  const [name, input] = JSON.parse(asked) as [string, unknown];
+  return askedOf(name, input !== null && typeof input === "object" && !Array.isArray(input) ? { ...input, ...passed } : input);
+}
+
 export async function invoke(action: AnyAction, ctx: AgentContext, raw: unknown): Promise<Outcome> {
   const call = callOf(askedOf(action.name, raw));
   try {

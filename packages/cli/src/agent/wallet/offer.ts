@@ -30,7 +30,7 @@ export type Token = Awaited<ReturnType<typeof mintOf>>;
 
 type Order = typeof orderSchema extends Schema<infer T> ? T : never;
 
-type Terms = { order: Order; expires_at: bigint; spec_url?: string; approval?: string };
+type Terms = { order: Order; expires_at: bigint; spec_url?: string; approval?: string; pass_back?: Record<string, string> };
 
 export type Offer = {
   sell: string;
@@ -64,7 +64,7 @@ export async function offered(
     mintOf(ctx.transport, outputMint),
     chainTime(ctx.transport),
   ]);
-  const { approval, ...made } = await terms(inputToken, outputToken, now, inputMint, outputMint);
+  const { approval, pass_back: passBack, ...made } = await terms(inputToken, outputToken, now, inputMint, outputMint);
   const sold = (made.order as { amount_in: bigint }).amount_in;
   const guard = wallet.limits;
   checkSale(guard, inputMint, inputToken.decimals, sold, now, await salesOf(wallet, now));
@@ -84,7 +84,7 @@ export async function offered(
     throw new AgentRefusal("ReleaseChanged", input.changed ?? OFFER_CHANGED);
   }
   if (input.send !== true) {
-    return sent(ctx, signer, first, input.send, call, { done, preview: input.previewNext });
+    return sent(ctx, signer, first, input.send, call, { done, preview: input.previewNext, passBack });
   }
   const path = limited(guard) ? await bookOf(wallet) : undefined;
   const sale: Sale = { id: randomUUID(), mint: inputMint, at: now, amount: sold };

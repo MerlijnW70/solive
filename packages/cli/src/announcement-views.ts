@@ -7,6 +7,7 @@ import {
   type FirstOpening,
   FirstOpeningRefused,
   isSdkError,
+  type KeptAnnouncement,
   type SkippedAnnouncement,
   type SkipReason,
   type Transport,
@@ -78,6 +79,8 @@ export const skippedLines = (opening: FirstOpening): SkippedLine[] =>
 
 export const skippedSummary = (skipped: readonly SkippedLine[]): string[] =>
   skipped.map(({ announcement, seq, why }) => `Passes over: ${announcement} (seq ${seq}), ${why}`);
+
+export const keptLines = (reasons: readonly KeptAnnouncement[]): string[] => reasons.map(({ announcement, reason }) => `Keeps: ${announcement}, because ${reason}`);
 
 export type Opened = { announcement: AnnouncementView; salt: string; url: string | null };
 

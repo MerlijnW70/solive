@@ -213,6 +213,33 @@ describe("an MCP wallet on a Ledger", () => {
     expect(kinds(ledger)).toEqual([SIGN, SIGN]);
   });
 
+  it("a swap previewed without start_receive signs on send with the start_receive and approval the preview returned, and a changed amount is refused", async () => {
+    const e = await escrow();
+    preset(NATIVE_MINT);
+    preset(DEVNET_TEST_MINT);
+    const ledger = device(e.key, [...found(LEVELS, e.key), ...transactionThen()]);
+    const client = await served(ledger);
+    const swapping = { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5" };
+    const shown = await call(client, "wallet_swap", swapping);
+    expect(shown.error, JSON.stringify(shown.value)).toBe(false);
+    expect(shown.value["start_receive"]).toEqual(expect.any(String));
+    const following = { ...swapping, start_receive: shown.value["start_receive"], approval: shown.value["approval"], send: true };
+    const changed = await call(client, "wallet_swap", { ...following, amount: "0.06" });
+    expect(changed.error).toBe(true);
+    expect(["ReleaseChanged", "DeviceUnpreviewed"]).toContain(changed.value["code"]);
+    expect([ledger.signed, h.wires.length]).toEqual([[], 0]);
+    const sent = await call(client, "wallet_swap", following);
+    expect(sent.error, JSON.stringify(sent.value)).toBe(false);
+    ledger.store.ensureQueueEmpty();
+    expect(kinds(ledger)).toEqual([SIGN]);
+    expect(messageHash(ledger.signed[0]?.bytes ?? new Uint8Array())).toBe(shown.value["message_hash"]);
+    expect(sent.value).toMatchObject({ sent: true, as_previewed: true, intent: shown.value["intent"], message_hash: shown.value["message_hash"] });
+    for (const again of [following, { ...swapping, approval: shown.value["approval"], send: true }]) {
+      expect(await call(client, "wallet_swap", again)).toMatchObject({ error: true, value: { code: "DeviceUnpreviewed", hint: DEVICE_UNPREVIEWED } });
+    }
+    expect(kinds(ledger)).toEqual([SIGN]);
+  });
+
   it("a kept preview whose blockhash expired is refused before the device is asked", async () => {
     const e = await escrow();
     preset(NATIVE_MINT);

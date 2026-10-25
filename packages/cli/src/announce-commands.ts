@@ -4,7 +4,7 @@ import { createClient } from "@intent-engine/client/node";
 import { loadAnnouncement, loadDeliveryBook, secretInputOf } from "@intent-engine/client/internal";
 import { previewed } from "./admin-commands.js";
 import { claimOf, deliverClaimWarnings } from "./agent/job-claims.js";
-import { ANNOUNCE_FIRST, capturing, hex, listView, openedBy, sealedToText, walletOf } from "./announcement-views.js";
+import { ANNOUNCE_FIRST, capturing, hex, keptLines, listView, openedBy, sealedToText, walletOf } from "./announcement-views.js";
 import { artifactSha256 } from "./artifact.js";
 import type { Command } from "./command-types.js";
 import { FlowRefused } from "./flows.js";
@@ -18,7 +18,7 @@ type AnnounceCommand = Extract<Command, { name: "deliver" | "deliveries" | "refu
 
 export const ALREADY_ANNOUNCED = "this work is already announced to this escrow with this url; nothing was sent";
 
-export const NOTHING_TO_RECLAIM = "none of this wallet's announcements can close now: each belongs to an open escrow or is kept for the refutation window; nothing was sent";
+export const NOTHING_TO_RECLAIM = "none of this wallet's announcements can close now: its Keeps lines say why each one stays; nothing was sent";
 
 export const WORK_URL_NEEDED =
   "refute needs --work-url, the url the earlier announcement sealed: this wallet derives its delivery secrets from it, and no secrets file of this machine names it; nothing was sent";
@@ -122,9 +122,9 @@ async function reclaim(command: Extract<AnnounceCommand, { name: "reclaim" }>, r
   const planned = await createClient({ url: command.url, transport: probe.transport }).reclaim({ worker, payer });
   const summary = [
     `Closes: ${planned.closed.length} of this wallet's announcements, in ${probe.sends.length} ${probe.sends.length === 1 ? "transaction" : "transactions"}; each one's rent returns to the wallet that paid it`,
-    ...(planned.kept.length === 0 ? [] : [`Keeps: ${planned.kept.length} announcements, of escrows still open or within the refutation window`]),
+    ...keptLines(planned.reasons),
   ];
-  const shown = { worker: worker.address, closed: planned.closed, kept: planned.kept, summary };
+  const shown = { worker: worker.address, closed: planned.closed, kept: planned.kept, reasons: planned.reasons, summary };
   if (planned.closed.length === 0) {
     return { ...shown, sent: false, next: NOTHING_TO_RECLAIM };
   }
@@ -132,7 +132,7 @@ async function reclaim(command: Extract<AnnounceCommand, { name: "reclaim" }>, r
     return previewed(transport, probe.sends[0]?.instructions ?? [], payer, { ...shown, transactions: probe.sends.length }, false);
   }
   const done = await createClient({ url: command.url, transport }).reclaim({ worker, payer });
-  return { ...shown, closed: done.closed, kept: done.kept, sent: true, signatures: done.signatures };
+  return { ...shown, closed: done.closed, kept: done.kept, reasons: done.reasons, sent: true, signatures: done.signatures };
 }
 
 async function closeBook(command: Extract<AnnounceCommand, { name: "close-book" }>, runtime: Runtime, transport: Transport): Promise<object> {

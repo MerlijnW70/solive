@@ -2,7 +2,7 @@ import { isMemoUrl } from "@intent-engine/core/internal";
 import { isSdkError, NoMessageSigner, NotRefutable } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
 import { loadAnnouncement, RECLAIM_BATCH, secretInputOf } from "@intent-engine/client/internal";
-import { capturing, hex } from "../../announcement-views.js";
+import { capturing, hex, keptLines } from "../../announcement-views.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { tool } from "../names.js";
@@ -92,13 +92,14 @@ export const walletRefute = define({
 export const walletReclaim = define({
   name: tool("wallet_reclaim"),
   title: "Close finished announcements for their rent",
-  description: `Closes up to ${RECLAIM_BATCH} of this wallet's announcements that may close now, those of escrows no longer open and past any refutation window; each one's rent returns to the wallet that paid it. ${PREVIEW_FIRST}`,
+  description: `Closes up to ${RECLAIM_BATCH} of this wallet's announcements that may close now, those of escrows no longer open and past any refutation window; each one's rent returns to the wallet that paid it; reasons says why each other one stays. ${PREVIEW_FIRST}`,
   effect: "submit",
   input: object({ send: optional(flag("true signs and sends; leave out to preview")) }),
   output: object({
     closing: list(account(), RECLAIM_BATCH, "the announcements this call closes"),
     closable: integer(0, Number.MAX_SAFE_INTEGER, "how many of this wallet's announcements may close now"),
-    kept: list(account(), MAX_CLOSED, "announcements that stay: their escrow is open or the refutation window has not passed"),
+    kept: list(account(), MAX_CLOSED, "announcements that stay: their escrow is open, the refutation window has not passed, or they can still refute a paid release"),
+    reasons: list(object({ announcement: account(), reason: text() }), MAX_CLOSED, "why each kept announcement stays, and until when if that ends"),
     summary: list(text(), 4),
     ...deviceOutput,
     sent: flag(),
@@ -110,13 +111,15 @@ export const walletReclaim = define({
     const probe = capturing(ctx.transport);
     const planned = await createClient({ url: ctx.url ?? "", transport: probe.transport }).reclaim({ worker: signer });
     const closing = planned.closed.slice(0, RECLAIM_BATCH);
+    const reasons = planned.reasons.slice(0, MAX_CLOSED);
     if (closing.length === 0) {
-      throw new AgentRefusal("NothingToReclaim", `none of ${planned.kept.length} announcements of this wallet can close now`);
+      throw new AgentRefusal("NothingToReclaim", [`none of ${planned.kept.length} announcements of this wallet can close now`, ...keptLines(reasons)].join("; "));
     }
     const view = {
       closing,
       closable: planned.closed.length,
-      kept: planned.kept.slice(0, MAX_CLOSED),
+      kept: reasons.map(({ announcement }) => announcement),
+      reasons,
       summary: [`Closes: ${closing.length} announcement(s) of this wallet; each one's rent returns to the wallet that paid it`],
       prepared: preparedView(await prepare(ctx.transport, probe.sends[0]?.instructions ?? [], signer.address)),
     };

@@ -21,7 +21,7 @@ import { execute, type PreparedView } from "../../flows.js";
 import { rpcCause } from "../../rpc-failure.js";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
 import { expandHome, faucetLink, type Files, ledgerBook, PUBLIC_FAUCET, withSettings } from "../../wallet.js";
-import type { AgentContext } from "../actions.js";
+import { type AgentContext, askedWith } from "../actions.js";
 import type { Call } from "../claims.js";
 import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
@@ -260,10 +260,10 @@ export const deviceOutput = {
 export const DEVICE_COMPARE = "the Ledger shows message_hash when it signs: show it to the user, who approves on the device only if its screen shows the same hash";
 
 export const DEVICE_UNPREVIEWED =
-  "nothing was signed: a Ledger wallet signs only the transaction a preview showed by message_hash, and no preview with these exact arguments is kept; preview it, show message_hash, then send with the same arguments";
+  "nothing was signed: a Ledger wallet signs only the transaction a preview showed by message_hash, and no preview of these arguments is kept; preview it, show message_hash, then send with the same arguments and what the preview said to pass back";
 
 export const DEVICE_EXPIRED =
-  "nothing was signed: the transaction this preview showed has expired; preview it again, show the new message_hash, then send with the same arguments";
+  "nothing was signed: the transaction this preview showed has expired; preview it again, show the new message_hash, then send with the same arguments and what the preview said to pass back";
 
 const BLOCKHASH_WINDOW = 150n;
 const KEPT_TRANSACTIONS = 16;
@@ -399,13 +399,15 @@ export function checkHour(guard: WalletGuard, mint: Address, decimals: number, a
   }
 }
 
+type Next = { preview?: string | undefined; done?: string | undefined; passBack?: Record<string, string> | undefined };
+
 export async function sent(
   ctx: AgentContext,
   signer: WalletSigner,
   view: Record<string, unknown>,
   send: boolean | undefined,
   call: Call,
-  next?: { preview?: string | undefined; done?: string | undefined },
+  next?: Next,
 ) {
   for (const undo of call.undo.splice(0)) {
     undo();
@@ -429,19 +431,25 @@ async function sentOnDevice(
   prepared: PreparedView,
   send: boolean | undefined,
   call: Call,
-  next?: { preview?: string | undefined; done?: string | undefined },
+  next?: Next,
 ) {
   const kept = keptOf(access(ctx));
-  const key = call.asked ?? "";
   if (send !== true) {
-    keep(kept, key, { view: prepared, shown });
+    const entry = { view: prepared, shown };
+    for (const key of call.asked === undefined ? [] : new Set([call.asked, askedWith(call.asked, next?.passBack ?? {})])) {
+      keep(kept, key, entry);
+    }
     return { ...shown, message_hash: messageHash(messageOf(prepared)), sent: false, next: `${next?.preview ?? PREVIEW_ONLY}; ${DEVICE_COMPARE}` };
   }
-  const previewed = call.asked === undefined ? undefined : kept.get(key);
+  const previewed = call.asked === undefined ? undefined : kept.get(call.asked);
   if (previewed === undefined) {
     throw new AgentRefusal("DeviceUnpreviewed", DEVICE_UNPREVIEWED);
   }
-  kept.delete(key);
+  for (const [key, entry] of kept) {
+    if (entry === previewed) {
+      kept.delete(key);
+    }
+  }
   const latest = await ctx.transport.latestBlockhash();
   if (latest.lastValidBlockHeight - BLOCKHASH_WINDOW > BigInt(previewed.view.last_valid_block_height)) {
     throw new AgentRefusal("DeviceUnpreviewed", DEVICE_EXPIRED);

@@ -313,7 +313,7 @@ export const SERVER_PROBLEMS = {
   NotReleased: never("the escrow has no release in its history yet"),
   KeyInUse: never("this wallet signs on a Ledger and judges open escrows, whose announcements only its encryption key opens; rotate the key instead of removing it, or wait until they close"),
   NotRefutable: never("the announcements named cannot refute this release: the hint says why; nothing was sent"),
-  NothingToReclaim: never("none of this wallet's announcements can close now: each belongs to an open escrow or is kept for the refutation window"),
+  NothingToReclaim: never("none of this wallet's announcements can close now: each belongs to an open escrow, is kept for the refutation window, or can still refute a paid release; the hint says which"),
   NotARelease: never("the transaction named as the release is not a release of this escrow"),
   ReleaseUnread: later("the RPC node could not return the named release transaction; call again in a few seconds"),
   HistoryLagging: later("the RPC node has not returned every transaction the call reads yet; call again in a few seconds"),
@@ -323,7 +323,7 @@ export const SERVER_PROBLEMS = {
   ClaimListTooLarge: never("the escrow and the claim list its sealed spec sets do not fit in one transaction, and a Ledger signs only the one transaction it previewed; seal the spec to fewer workers, or escrow without claims and open them with intent-engine claims open --workers, which sends the list in parts"),
   Ledger: never("the wallet's Ledger did not sign: it was rejected on the device, or the device is locked, unplugged or not in the Solana app; nothing was sent, and the hint says which"),
   NoFeePayer: never("the wallet is a Ledger, which signs only the release message, and the server was started without --fee-payer, the key file that signs and pays the release transaction"),
-  DeviceUnpreviewed: never("the wallet is a Ledger, which signs only the transaction a preview with the same arguments showed by message_hash: no such preview is kept, it expired, or this tool sends several at once; preview again, or send each piece with its own preview"),
+  DeviceUnpreviewed: never("the wallet is a Ledger, which signs only the transaction a preview of the same arguments showed by message_hash: no such preview is kept, it expired, or this tool sends several at once; preview again, or send each piece with its own preview"),
   HistoryTooLong: never("the history a Ledger judge's check depends on could not be read in full, so the release is refused rather than decided from part of it; use an RPC node that keeps the full ledger"),
 } as const satisfies Record<string, Entry>;
 
