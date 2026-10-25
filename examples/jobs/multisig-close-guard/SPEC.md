@@ -5,9 +5,9 @@ Catalog round H13 found that the multisig review (packages/multisig/src/review.t
 ## Required
 
 1. The review decodes the loader's Close instruction: which account it closes, who receives the lamports, the authority, and the program when one is named. It says in plain words whether the closed account is a buffer or a program's data, and when it is the engine program's data it says that the program can never run again and every escrow it holds is locked for good.
-2. `approve` and `execute` refuse a proposal that closes the engine program's data, as they refuse a proposal they cannot decode, unless the member passes a new explicit flag whose name says what it allows; `show` always prints the warning. Closing a buffer is shown and allowed as before.
+2. On mainnet-beta (told apart by the genesis hash, as scripts/deploy.sh does), `approve` and `execute` refuse a proposal that closes the engine program's data unless the member passes a new explicit flag whose name says what it allows. On devnet and every other cluster they only print the warning and go on, so the fast devnet loop keeps working; `show` always prints the warning. Closing a buffer is shown and allowed as before.
 3. The engine's program address and program data address come from the same source the review already uses for upgrades, so a proposal against another program is described but not refused.
-4. docs/maintainers/operations.md documents the refusal and the flag beside the upgrade steps; the generated CLI references are regenerated with the repository's own script if they change.
+4. docs/maintainers/operations.md documents the mainnet refusal, the devnet warning and the flag beside the upgrade steps; the generated CLI references are regenerated with the repository's own script if they change.
 5. Tests for each change.
 
 ## Rules
@@ -17,7 +17,7 @@ Catalog round H13 found that the multisig review (packages/multisig/src/review.t
 ## Acceptance
 
 1. With the patch applied to `main` at the commit the delivery names: `cargo test --workspace`, `bash scripts/ts-test.sh`, `bash scripts/lint.sh` and `bash scripts/pack-test.sh` all pass.
-2. A test shows `approve` refusing a proposal that closes the engine program's data without the flag and accepting it with the flag; another shows a buffer close approved without the flag.
+2. A test shows `approve` on mainnet-beta refusing a proposal that closes the engine program's data without the flag and accepting it with the flag; another shows the same proposal approved on devnet with the warning printed; another shows a buffer close approved without the flag.
 3. A test fails when the judge makes the review describe a program-data close as a plain loader instruction again.
 
 ## Deliver
