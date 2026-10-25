@@ -43,7 +43,7 @@ const BULLETS = {
   list: "`announcements` lists an escrow's announcements in seq order from accounts alone, never from transaction history, and says whether the list is `complete`: the escrow is open and every seq from 1 to one below its delivery book's `nextSeq` is present exactly once. An open escrow nobody has announced to yet has no book and lists complete and empty. Once the escrow is no longer open, the list says `closed` and is never complete.",
   first:
     "`firstOpening` returns the first announcement that opens to the checked sha256 with the keys it is given, and refuses with `FirstOpeningRefused` while the list is incomplete, an earlier announcement is sealed to a key it was not given, or another worker holds the claim.",
-  skip: "An earlier announcement sealed to a key `firstOpening` was given that does not open with that key can never open for anyone, so `firstOpening` passes over it and lists it in `skipped`, for a judge and for each committee member alike.",
+  skip: "`firstOpening` passes over an earlier announcement that is not a delivery and lists it in `skipped` with its reason, for a judge and for each committee member alike: one sealed to a key it was given that does not open with it (`does-not-open`), one whose wallet slot names a key other than the one derived from the wallet the program assigns to that slot (`forged-wallet-slot`), and one sealed to more or fewer recipients than the committee has members (`wrong-recipient-count`).",
   openings:
     "`openings` walks the announcements as `firstOpening` does, with the same completeness rule, skips and refusals for keys, but needs no sha256: its `opening` is the earliest announcement that opens with the keys given, with its `announcement`, `seq`, `worker`, `salt` and work `url`, or `null` while none does, and `skipped` lists those it passed over. A judge fetches that url, hashes the work, and passes the sha256 to `firstOpening` and `settleProof`.",
   transport: "A transport you pass to `createClient` needs `engineAccounts` to list announcements.",
@@ -187,9 +187,19 @@ describe("the announcement sentences of the full client page", () => {
     blob[wrapped] = (blob[wrapped] ?? 0) ^ 0xff;
     const { announcement, instruction } = await buildAnnounceDelivery({ worker: griefer, intent, attestor: judge.signer.address, commitment: new Uint8Array(32).fill(7), blob });
     await client.send([instruction], griefer);
+    const forger = await fundedSigner(w);
+    const forgedBlob = await sealDeliveryV4({ source: new Uint8Array(32).fill(6), url: workUrl("forged"), recipients: [forger.address] }, intent, forger.address);
+    const forged = await buildAnnounceDelivery({ worker: forger, intent, attestor: judge.signer.address, commitment: new Uint8Array(32).fill(8), blob: forgedBlob });
+    await client.send([forged.instruction], forger);
     const made = await announced(client, honest, intent, WORK);
     const first = await client.firstOpening({ intent, sha256: WORK, keypair: judge.keypair });
-    expect(first).toMatchObject({ announcement: made.announcement, skipped: [{ announcement, seq: 1n, worker: griefer.address, reason: "does-not-open" }] });
+    expect(first).toMatchObject({
+      announcement: made.announcement,
+      skipped: [
+        { announcement, seq: 1n, worker: griefer.address, reason: "does-not-open" },
+        { announcement: forged.announcement, seq: 2n, worker: forger.address, reason: "forged-wallet-slot" },
+      ],
+    });
     await client.settleProof({ judge: judge.signer, intent: { owner: owner.address, nonce }, announcement: first.announcement, opening: first, result: 1n });
     expect(await tokensOf(w, honest.address)).toBeGreaterThan(0n);
   });

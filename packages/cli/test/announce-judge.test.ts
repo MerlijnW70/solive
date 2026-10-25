@@ -9,7 +9,7 @@ import { findAssociatedTokenAddress, IntentStatus, Kind } from "@intent-engine/c
 import { getIntentDecoder } from "@intent-engine/core/internal";
 import { createClient } from "@intent-engine/client/node";
 import { loadAnnouncement } from "@intent-engine/client/internal";
-import { NOBODY_ANNOUNCED } from "../src/announcement-views.js";
+import { NOBODY_ANNOUNCED, SKIP_REASONS } from "../src/announcement-views.js";
 import { GIVE_KEY_FLAG } from "../src/judge.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { announced, griefed, keyed, WORK_URL } from "./announce.js";
@@ -76,6 +76,20 @@ describe("judge on announcements", () => {
     expect(status(j.intent)).toBe(IntentStatus.Filled);
     expect(await paid(j, first.address)).toBeGreaterThan(0n);
     expect(await paid(j, second.address)).toBe(-1n);
+    expect(await paid(j, griefer.address)).toBe(-1n);
+  });
+
+  it("passes over a blob whose wallet slot names another wallet's key, says why in plain words, and pays the honest worker", async () => {
+    const griefer = await keyed();
+    const grief = await griefed(j.intent, griefer, j.judge.address, [griefer.address], j.sha256);
+    const worker = await keyed("worker.json");
+    await announced(j.intent, worker, j.sha256);
+    const run = await cli(judging(j, "--yes"), j.keys);
+    expect([run.code, run.err]).toEqual([EXIT_OK, ""]);
+    expect(run.json()).toMatchObject({ verdict: "pass", payTo: worker.address, seq: "2" });
+    expect(run.json()["skipped"]).toEqual([{ announcement: grief, seq: "1", worker: griefer.address, reason: "forged-wallet-slot", why: SKIP_REASONS["forged-wallet-slot"] }]);
+    expect(status(j.intent)).toBe(IntentStatus.Filled);
+    expect(await paid(j, worker.address)).toBeGreaterThan(0n);
     expect(await paid(j, griefer.address)).toBe(-1n);
   });
 

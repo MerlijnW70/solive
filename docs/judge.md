@@ -26,6 +26,8 @@ Workers then seal each announcement to that key, and each announcement lists a s
 
 `judge` pays the first announcement that opens to the work with the keys it is given. An earlier announcement sealed to a key it was not given stops the release and names that key; nothing is signed. An earlier one sealed to a key it holds that does not open can never open for anyone, so `judge` passes over it and lists it under `skipped`.
 
+`judge` also passes over and lists an earlier announcement that is not a delivery to this escrow, with its reason in plain words: one whose wallet slot names a key other than the one derived from the wallet assigned to that slot, or a committee escrow's announcement sealed to more or fewer recipients than the committee has members.
+
 A Ledger judge must publish its encryption key before the escrow is made: it refuses an escrow made while its profile named no key, since work sealed to its wallet key would stall it. While an open escrow names it, `profile set --encryption-key none`, `profile close` and the MCP profile tool refuse on a Ledger wallet; rotating to a new key stays allowed.
 
 Hirers see a warning when they name a judge whose profile has no key. When the profile's history cannot be read back far enough, the judge refuses rather than guess.

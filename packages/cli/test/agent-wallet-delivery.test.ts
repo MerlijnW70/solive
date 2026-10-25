@@ -7,6 +7,7 @@ import { NATIVE_MINT, DEVNET_TEST_MINT as TEST_TOKEN } from "@intent-engine/core
 import { getIntentCreatedEventEncoder, saltMessage, specMemo } from "@intent-engine/core/internal";
 import { loadAnnouncement } from "@intent-engine/client/internal";
 import { claimsOf } from "../src/agent/claims.js";
+import { SKIP_REASONS } from "../src/announcement-views.js";
 import { ANNOUNCE_FIRST, DELIVER_NEXT, planOf } from "../src/agent/wallet/delivery.js";
 import { NO_JOB_NOW, PUBLISH_PROFILE } from "../src/agent/jobs.js";
 import { notEarliest } from "../src/agent/wallet.js";
@@ -128,18 +129,29 @@ describe("the wallet server's deliveries", () => {
     const { wallet, intent, nonce } = await judged();
     const griefer = await keyed();
     const grief = await griefed(intent, griefer, wallet, [wallet], "e7".repeat(32));
+    const forger = await keyed();
+    const forged = await griefed(intent, forger, wallet, [forger.address], "e7".repeat(32));
     const work = "e7".repeat(32);
     h.specPages.set(url("sealed.tar"), new TextEncoder().encode("ignored"));
     const own = await ok(client, "wallet_deliver", { intent, sha256: work, url: url("sealed.tar"), send: true });
-    expect(own).toMatchObject({ seq: "2", sent: true });
-    expect(await ok(client, "wallet_check_delivery", { intent })).toMatchObject({ mine: [{ announcement: own["announcement"], seq: "2", state: "announced", earlier: 1 }] });
+    expect(own).toMatchObject({ seq: "3", sent: true });
+    expect(await ok(client, "wallet_check_delivery", { intent })).toMatchObject({ mine: [{ announcement: own["announcement"], seq: "3", state: "announced", earlier: 2 }] });
     const plain = await connect(["mcp", "--url", "devnet"]);
     const outside = await ok(plain, "check_delivery", { intent });
     expect(outside).not.toHaveProperty("mine");
-    expect(outside["announcements"]).toMatchObject([{ announcement: grief, worker: griefer.address }, { announcement: own["announcement"], worker: wallet }]);
+    expect(outside["announcements"]).toMatchObject([{ announcement: grief, worker: griefer.address }, { announcement: forged, worker: forger.address }, { announcement: own["announcement"], worker: wallet }]);
     const shown = await ok(client, "wallet_attest", { owner: wallet, nonce, delivered_sha256: work });
-    expect(shown).toMatchObject({ pay_to: wallet, announcement: own["announcement"], seq: "2", skipped: [{ announcement: grief, seq: "1", worker: griefer.address, reason: "does-not-open" }] });
-    expect(shown["summary"]).toContain("Passes over: 1 earlier announcement(s) that can never open");
+    expect(shown).toMatchObject({
+      pay_to: wallet,
+      announcement: own["announcement"],
+      seq: "3",
+      skipped: [
+        { announcement: grief, seq: "1", worker: griefer.address, reason: "does-not-open", why: SKIP_REASONS["does-not-open"] },
+        { announcement: forged, seq: "2", worker: forger.address, reason: "forged-wallet-slot", why: SKIP_REASONS["forged-wallet-slot"] },
+      ],
+    });
+    expect(shown["summary"]).toContain(`Passes over: ${grief} (seq 1), ${SKIP_REASONS["does-not-open"]}`);
+    expect(shown["summary"]).toContain(`Passes over: ${forged} (seq 2), ${SKIP_REASONS["forged-wallet-slot"]}`);
   });
 
   it("prepares an unsigned announcement for a worker that signs elsewhere", async () => {

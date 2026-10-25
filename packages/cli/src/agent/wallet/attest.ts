@@ -15,7 +15,7 @@ import {
 import { type BallotInput, isSdkError } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
 import { chainTime, envelopeDigest, loadConfig, mintOf, releaseClaims, tokenAccountIfMissing } from "@intent-engine/client/internal";
-import { capturing } from "../../announcement-views.js";
+import { capturing, skippedSummary } from "../../announcement-views.js";
 import { TOKEN_NAMES } from "../../tokens.js";
 import { type AgentContext, define, specReach } from "../actions.js";
 import type { Call } from "../claims.js";
@@ -256,7 +256,7 @@ export const walletAttest = define({
       summary: [
         `Pays: ${paid} of ${name} to ${payTo} from ${input.owner}'s escrow${held.inputMint === NATIVE_MINT ? WRAPPED : ""}`,
         ...(proof === undefined ? [] : [`For: the work with sha256 ${proof.delivered}, announced in ${proof.opening.announcement} (seq ${proof.opening.seq}), the first that opens to it`]),
-        ...(proof === undefined || proof.skipped.length === 0 ? [] : [`Passes over: ${proof.skipped.length} earlier announcement(s) that can never open`]),
+        ...(proof === undefined ? [] : skippedSummary(proof.skipped)),
         ...(isProof && params.judgeFee > 0n ? [`Pays the judge: ${formatAmount(params.judgeFee, token.decimals)} of ${name} to this wallet, carved out of the escrow`] : []),
         ...(isProof ? [`Binds: the result to the committed spec ${getBase16Decoder().decode(params.specHash)}`] : []),
         `Attests: result ${result}, signed by this server's wallet as the escrow's attestor`,

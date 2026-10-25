@@ -12,6 +12,7 @@ import {
   keyFingerprintV4,
   openDeliveryV4,
   type OpenedDelivery,
+  x25519PublicOf,
 } from "@intent-engine/core/internal";
 import { chainTime, engineAccount } from "./accounts.js";
 import { FirstOpeningRefused, type Refusal, type SealedSlot } from "./announce-errors.js";
@@ -40,7 +41,7 @@ export type FirstOpening = {
   skipped: SkippedAnnouncement[];
 };
 
-export type SkipReason = "does-not-open";
+export type SkipReason = "does-not-open" | "forged-wallet-slot" | "wrong-recipient-count";
 
 export type SkippedAnnouncement = { announcement: Address; seq: bigint; worker: Address; reason: SkipReason };
 
@@ -91,8 +92,7 @@ async function currentFingerprint(transport: Transport, wallet: Address): Promis
   return text === null ? null : keyFingerprintV4(Uint8Array.from(getBase58Encoder().encode(text)));
 }
 
-async function slotsOf(transport: Transport, announcement: AnnouncementView, head: delivery.BlobHead): Promise<SealedSlot[]> {
-  const wallets = (await committeeKeys(transport, announcement.attestor))?.members ?? [announcement.attestor];
+async function slotsOf(transport: Transport, announcement: AnnouncementView, head: delivery.BlobHead, wallets: readonly Address[]): Promise<SealedSlot[]> {
   return Promise.all(
     head.fps.slice(0, head.count).map(async (fp, i) => {
       const wallet = wallets[i] ?? announcement.attestor;
@@ -103,6 +103,22 @@ async function slotsOf(transport: Transport, announcement: AnnouncementView, hea
       return { wallet, kind: "profile" as const, fingerprint: hex(fp), published: current !== null && equal(current, fp) };
     }),
   );
+}
+
+async function recipientWallets(transport: Transport, attestor: Address): Promise<readonly Address[]> {
+  return (await committeeKeys(transport, attestor))?.members ?? [attestor];
+}
+
+async function notDelivery(head: delivery.BlobHead, wallets: readonly Address[]): Promise<SkipReason | null> {
+  if (head.count !== wallets.length) {
+    return "wrong-recipient-count";
+  }
+  for (const [i, wallet] of wallets.entries()) {
+    if (((head.mask >> i) & 1) === 0 && !equal(head.fps[i] ?? new Uint8Array(), await keyFingerprintV4(x25519PublicOf(wallet)))) {
+      return "forged-wallet-slot";
+    }
+  }
+  return null;
 }
 
 async function claimHolder(transport: Transport, proof: Proof): Promise<Address | null> {
@@ -127,7 +143,20 @@ async function walk(transport: Transport, list: AnnouncementList, held: readonly
     return { skipped: [], found: null, refusal: { reason: "incomplete", missing: list.missing, closed: list.closed } };
   }
   const skipped: SkippedAnnouncement[] = [];
+  const recipients = new Map<Address, Promise<readonly Address[]>>();
+  const walletsOf = (attestor: Address): Promise<readonly Address[]> => {
+    const known = recipients.get(attestor) ?? recipientWallets(transport, attestor);
+    recipients.set(attestor, known);
+    return known;
+  };
   for (const announcement of list.announcements) {
+    const head = announcement.state === "paid" ? null : delivery.blobHead(announcement.blob);
+    const wallets = head === null ? [] : await walletsOf(announcement.attestor);
+    const unfit = head === null ? null : await notDelivery(head, wallets);
+    if (unfit !== null) {
+      skipped.push({ ...placeOf(announcement), reason: unfit });
+      continue;
+    }
     const opened = await openingOf(announcement, held);
     if (opened !== null) {
       if (await takes({ announcement, opened })) {
@@ -135,13 +164,15 @@ async function walk(transport: Transport, list: AnnouncementList, held: readonly
       }
       continue;
     }
-    const head = delivery.blobHead(announcement.blob);
+    if (head === null) {
+      continue;
+    }
     const sealed = head.fps.slice(0, head.count);
     if (held.some(({ fingerprint }) => sealed.some((fp) => equal(fp, fingerprint)))) {
       skipped.push({ ...placeOf(announcement), reason: "does-not-open" });
       continue;
     }
-    return { skipped, found: null, refusal: { reason: "key-not-given", ...placeOf(announcement), sealedTo: await slotsOf(transport, announcement, head) } };
+    return { skipped, found: null, refusal: { reason: "key-not-given", ...placeOf(announcement), sealedTo: await slotsOf(transport, announcement, head, wallets) } };
   }
   return { skipped, found: null, refusal: null };
 }

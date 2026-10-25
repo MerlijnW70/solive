@@ -7,6 +7,7 @@ import { ProfileHistoryIncomplete } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
 import { keepsKey, noKeyAtCreation } from "@intent-engine/client/internal";
 import { ENCRYPTION_KEY_FILE, ENCRYPTION_KEY_NEEDS_WALLET } from "../src/arg-values.js";
+import { SKIP_REASONS } from "../src/announcement-views.js";
 import { parse } from "../src/args.js";
 import { GIVE_KEY_FLAG, sealedOnDevice } from "../src/judge.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
@@ -109,7 +110,7 @@ describe("a judge's encryption key", () => {
     const judged = await run([...judging(j, "--encryption-keypair", KEY_FILE), "--yes"], ledger, { "payer.json": j.payer });
     expect([judged.code, judged.err]).toEqual([EXIT_OK, ""]);
     expect(judged.json()).toMatchObject({ verdict: "pass", payTo: worker.address, seq: "2" });
-    expect(judged.json()["skipped"]).toEqual([{ announcement: grief, seq: "1", worker: griefer.address, reason: "does-not-open" }]);
+    expect(judged.json()["skipped"]).toEqual([{ announcement: grief, seq: "1", worker: griefer.address, reason: "does-not-open", why: SKIP_REASONS["does-not-open"] }]);
     expect(statusOf(j.intent)).toBe(IntentStatus.Filled);
   });
 

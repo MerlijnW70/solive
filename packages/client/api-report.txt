@@ -172,7 +172,7 @@ type SignatureLanding: type SignatureLanding = "landed" | "failed";
 type SignerCannot: type SignerCannot = (input: never) => Promise<never>;
 type SimpleClient: type SimpleClient<S extends TransactionSigner = TransactionSigner> = { readonly url: string; readonly signer: S; readonly client: Client; balance(tokens?: readonly string[]): Promise<WalletBalance>; swap<I extends SwapInput>(input: I): Promise<Outcome<I>>; limit<I extends LimitInput>(input: I): Promise<Outcome<I>>; payForWork<I extends PayForWorkInput>(input: I): Promise<Outcome<I>>; findWork(filter?: { judge?: Address; }): Promise<OpenWork[]>; readonly deliver: [S] extends [SaltSigner] ? DeliverSend : SignerCannot; readonly release: [S] extends [MessageSigner] ? ReleaseSend : SignerCannot; deliveries(input: DeliveriesInput): Promise<Announcement[]>; openings(input: EscrowOpeningsInput): Promise<Openings>; receipt(input: ReceiptInput): Promise<ReleaseReceipt>; cancel<I extends CancelInput>(input: I): Promise<Outcome<I>>; watch(onChange: WatchCallback, signal: AbortSignal, filter?: WatchOptions): Promise<void>; };
 type Simulation: type Simulation = { err: string | null; logs: string[]; unitsConsumed: bigint | null; accounts: (Uint8Array | null)[]; };
-type SkipReason: type SkipReason = "does-not-open";
+type SkipReason: type SkipReason = "does-not-open" | "forged-wallet-slot" | "wrong-recipient-count";
 type SkippedAnnouncement: type SkippedAnnouncement = { announcement: Address; seq: bigint; worker: Address; reason: SkipReason; };
 type SolTransfer: type SolTransfer = { from: Address; to: Address; lamports: bigint; };
 type Spec: type Spec = { url: string; text: string; bytes: Uint8Array; sha256: string; matches: boolean; sealedTo?: Address[]; };

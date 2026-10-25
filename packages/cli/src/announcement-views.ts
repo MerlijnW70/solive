@@ -8,6 +8,7 @@ import {
   FirstOpeningRefused,
   isSdkError,
   type SkippedAnnouncement,
+  type SkipReason,
   type Transport,
 } from "@intent-engine/client";
 import { boundMembers, heldKeys, openingOf } from "@intent-engine/client/internal";
@@ -56,10 +57,19 @@ export const listView = (list: AnnouncementList): ListView => ({
   announcements: list.announcements.map(announcementLine),
 });
 
-export type SkippedLine = { announcement: Address; seq: bigint; worker: Address; reason: SkippedAnnouncement["reason"] };
+export const SKIP_REASONS = {
+  "does-not-open": "sealed to a key this wallet holds, yet it opens with none, so it can never open for anyone",
+  "forged-wallet-slot": "a slot names a key other than the one derived from the wallet the program assigns to it, so that wallet can never open it and it is not a delivery",
+  "wrong-recipient-count": "sealed to a number of recipients other than the committee's member count, so it is not a delivery to this committee",
+} as const satisfies Record<SkipReason, string>;
+
+export type SkippedLine = { announcement: Address; seq: bigint; worker: Address; reason: SkippedAnnouncement["reason"]; why: string };
 
 export const skippedLines = (opening: FirstOpening): SkippedLine[] =>
-  opening.skipped.map(({ announcement, seq, worker, reason }) => ({ announcement, seq, worker, reason }));
+  opening.skipped.map(({ announcement, seq, worker, reason }) => ({ announcement, seq, worker, reason, why: SKIP_REASONS[reason] }));
+
+export const skippedSummary = (skipped: readonly SkippedLine[]): string[] =>
+  skipped.map(({ announcement, seq, why }) => `Passes over: ${announcement} (seq ${seq}), ${why}`);
 
 export type Opened = { announcement: AnnouncementView; salt: string; url: string | null };
 

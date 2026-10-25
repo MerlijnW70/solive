@@ -6,7 +6,7 @@ import { type BallotInput, type CommitteeBallot, isSdkError, type Transport } fr
 import { createClient } from "@intent-engine/client/node";
 import { confirmOnBoth, firstOpeningIn, isLedgerPath, loadAnnouncement, loadIntent } from "@intent-engine/client/internal";
 import { previewed } from "./admin-commands.js";
-import { NOBODY_ANNOUNCED, refusalNext } from "./announcement-views.js";
+import { NOBODY_ANNOUNCED, refusalNext, skippedLines } from "./announcement-views.js";
 import { parseAddress, parseU64 } from "./arg-values.js";
 import type { Command } from "./command-types.js";
 import { FlowRefused } from "./flows.js";
@@ -172,7 +172,7 @@ async function memberVoteCommand(command: Extract<CommitteeCommand, { name: "com
   }
   await invitedPayee(runtime, transport, command.url, ballot.intent, opening.worker);
   const summary = ballotLines(ballot, target, opening.worker);
-  const skipped = opening.skipped.length === 0 ? {} : { skipped: opening.skipped };
+  const skipped = opening.skipped.length === 0 ? {} : { skipped: skippedLines(opening) };
   if (!command.yes) {
     return { intent: ballot.intent, announcement: opening.announcement, seq: opening.seq, digest: hex(ballot.digest), summary, ...skipped, signed: false, next: VOTE_NOT_SIGNED };
   }

@@ -1,11 +1,11 @@
 import type { Address } from "@solana/kit";
 import { type AnnouncementList, ConfirmMismatch, type FirstOpening, FirstOpeningRefused, isSdkError } from "@intent-engine/client";
 import { deviceJudgeReady, firstOpeningIn } from "@intent-engine/client/internal";
-import { refusalNext, type SkippedLine, skippedLines } from "../../announcement-views.js";
+import { refusalNext, SKIP_REASONS, type SkippedLine, skippedLines } from "../../announcement-views.js";
 import type { AgentContext } from "../actions.js";
 import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
-import { account, amount, choice, list, object, optional } from "../schema.js";
+import { account, amount, choice, list, object, optional, text } from "../schema.js";
 import { walletOpeners } from "./guard.js";
 
 export const MAX_SKIPPED = 64;
@@ -16,10 +16,16 @@ export const skippedOutput = optional(
       announcement: account(),
       seq: amount(),
       worker: account(),
-      reason: choice(["does-not-open"] as const, "sealed to a key this wallet holds, yet it opens with none, so it can never open for anyone"),
+      reason: choice(
+        Object.keys(SKIP_REASONS) as (keyof typeof SKIP_REASONS)[],
+        Object.entries(SKIP_REASONS)
+          .map(([reason, why]) => `${reason}: ${why}`)
+          .join("; "),
+      ),
+      why: text("the reason in plain words"),
     }),
     MAX_SKIPPED,
-    "earlier announcements passed over, because they can never open",
+    "earlier announcements passed over, because they are not deliveries this wallet can pay",
   ),
 );
 
