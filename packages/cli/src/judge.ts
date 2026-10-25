@@ -12,7 +12,7 @@ import { NOT_SENT } from "./flows.js";
 import { memberVote, type VoteFile } from "./committee-commands.js";
 import { NOBODY_ANNOUNCED, refusalNext, type SkippedLine, skippedLines } from "./announcement-views.js";
 import type { Runtime } from "./commands.js";
-import { type InterruptSignal, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
+import { type InterruptSignal, JudgeDeferred, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
 import { type Artifact, type CheckFiles, copyOf, readArtifact, removeCopy } from "./artifact.js";
 import { type Check, checkEnv, type HeldSignals, holdSignals, runCheck, runContainer } from "./check-process.js";
 import { containerArgs, containerName, dockerEnv, NO_SANDBOX, sandboxReady, shareable } from "./sandbox.js";
@@ -25,7 +25,7 @@ import { loadEncryptionKeys } from "./sealed-commands.js";
 import { type Beacon, drawBeacon, type DrawJudged, judgeDraw } from "./draw.js";
 import { type Cases, casesOf, judgeViper, type Judged as CasesJudged, pinnedWasm, runOf, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
 
-export { type InterruptSignal, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
+export { type InterruptSignal, JudgeDeferred, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
 export { artifactSha256, CHECK_COPY, CLEANUP_RETRIES, MAX_ARTIFACT_BYTES, MAX_ARTIFACT_FILES, removeCopy, SKIPPED, SPEC_COPY } from "./artifact.js";
 export {
   type Check,
@@ -90,7 +90,10 @@ export const DEVICE_VOTE_PREVIEW =
   "nothing was signed; with --yes the Ledger signs only this member's vote, one message that lists every member's key and this digest: compare it with committee vote's preview on another machine before pressing approve";
 
 export const historyRefused = (error: unknown): never => {
-  throw isSdkError(error, "profile-history-incomplete") || isSdkError(error, "no-key-at-creation") ? new JudgeRefused(error.message) : error;
+  if (isSdkError(error, "profile-history-incomplete")) {
+    throw new JudgeDeferred(error.message);
+  }
+  throw isSdkError(error, "no-key-at-creation") ? new JudgeRefused(error.message) : error;
 };
 
 export const GIVE_KEY_FLAG = "pass the encryption key file of that key with --encryption-keypair";
@@ -184,7 +187,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   const keypair = await judgeOpeners(runtime, command, isDevice(signer));
   const { list, opening } = await firstOpeningIn(transport, { intent: address, sha256, keypair });
   if (isSdkError(opening, "first-opening-refused")) {
-    throw new JudgeRefused(refusedOpening(opening, command.keypair, isDevice(signer), signer.address, list.announcements.length > 0));
+    throw new JudgeDeferred(refusedOpening(opening, command.keypair, isDevice(signer), signer.address, list.announcements.length > 0));
   }
   const first = list.announcements.find(({ address: at }) => at === opening.announcement) ?? null;
   const payTo = opening.worker;

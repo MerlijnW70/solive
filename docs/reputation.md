@@ -19,7 +19,7 @@ For every proof escrow the wallet announced work to, the record says whether its
 
 Each escrow is one record, found from the wallet's own `DeliveryAnnounced` events. A released escrow counts for the announcement it paid, read from the release itself, so a record stays after the announcement account closes. Each record names its `announcement`, `seq` and `role`: `announcer` when the wallet made the paid announcement, `co-author` when a split release named it; announcing on an escrow alone credits nothing.
 
-A record lists every refutation of its paid announcement. A refutation counts against the worker, and leaves the release out of the totals as `refutedBy`, only when it is `substantiated`: the earlier announcement it reveals opens, at every slot, to the paid work. `unsubstantiated` and `unverifiable` refutations are listed and not counted; `refuted` counts the substantiated ones.
+A record lists every refutation of its paid announcement. A refutation counts against every wallet the release paid, the announcer and the co-authors of a split alike, and leaves the release out of their totals as `refutedBy`, only when it is `substantiated`: the earlier announcement it reveals opens, at every slot, to the paid work. `unsubstantiated` and `unverifiable` refutations are listed and not counted; `refuted` counts the substantiated ones.
 
 The totals count only `paid` releases at arm's length. A release is self-dealt, and left out, when the worker owned the escrow, judged it, or sat on the committee that judged it, or when the owner judged its own escrow. `payers` and `judges` count the distinct owners and judges behind the totals. `committee_judged` counts releases a committee approved.
 

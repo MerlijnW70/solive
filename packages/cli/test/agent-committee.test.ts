@@ -9,7 +9,9 @@ import { createClient } from "@intent-engine/client/node";
 import { NOT_A_MEMBER, RELEASE_CHANGED, VOTE_CHANGED, WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { announced, keyed } from "./announce.js";
-import { balance, cli, funded, h, transport, world } from "./harness.js";
+import { TOKEN_NAMES } from "../src/tokens.js";
+import { sol, tokenAccountRent } from "../src/agent/wallet/costs.js";
+import { ata, balance, cli, funded, h, transport, world } from "./harness.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -128,6 +130,36 @@ describe("a wallet server on a committee", () => {
     expect(balance(paid)).toBeGreaterThan(0n);
     const account = await createClient({ url: "http://cluster", transport }).intent({ owner: e.wallet, nonce: BigInt(e.ballot.nonce) });
     expect(account?.intent.status).toBe(IntentStatus.Filled);
+  });
+
+  it("previews the setup that creates the worker's token account and its rent, and refuses a send whose setup changed since", async () => {
+    const e = await committeeEscrow(true);
+    const preview = await ok(client, "wallet_committee_vote", e.ballot);
+    const own = (await ok(client, "wallet_committee_vote", { ...e.ballot, approval: preview["approval"], send: true }))["vote"] as { member: Address; signature: string };
+    const ballot = await createClient({ url: "http://cluster", transport }).committeeBallot({
+      intent: { owner: e.wallet, nonce: BigInt(e.ballot.nonce) },
+      announcement: e.made.announcement,
+      opening: { sha256: e.work, salt: e.made.salt },
+      result: 1n,
+    });
+    const theirs = await signCommitteeVote(e.other, ballot.digest, ballot.committee.members);
+    const votes = [own, { member: theirs.member, signature: hex(theirs.signature) }];
+    const paid = await findAssociatedTokenAddress({ owner: e.worker, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
+    const rent = sol(await tokenAccountRent(transport, TOKEN_PROGRAM_ADDRESS));
+    const setup = `Setup: creates ${e.worker}'s ${TOKEN_NAMES[NATIVE_MINT] ?? NATIVE_MINT} account ${paid}, in its own transaction before the release; ${rent} of rent from this wallet ${e.wallet}`;
+    const shown = await ok(client, "wallet_committee_release", { ...e.ballot, votes });
+    expect(shown["summary"]).toContain(setup);
+    await ata(await funded(), e.worker, NATIVE_MINT);
+    expect((await call(client, "wallet_committee_release", { ...e.ballot, votes, approval: shown["approval"], send: true })).value).toMatchObject({
+      code: "ReleaseChanged",
+      hint: RELEASE_CHANGED,
+    });
+    const again = await ok(client, "wallet_committee_release", { ...e.ballot, votes });
+    const setups = (summary: unknown) => (summary as string[]).filter((line) => line.startsWith("Setup:"));
+    expect(setups(again["summary"])).toEqual(setups(shown["summary"]).filter((line) => line !== setup));
+    expect(again["approval"]).not.toBe(shown["approval"]);
+    expect(await ok(client, "wallet_committee_release", { ...e.ballot, votes, approval: again["approval"], send: true })).toMatchObject({ sent: true });
+    expect(balance(paid)).toBeGreaterThan(0n);
   });
 
   it("has no vote on a committee it does not sit on", async () => {

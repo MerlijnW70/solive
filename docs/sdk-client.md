@@ -260,7 +260,7 @@ await client.unwrap(signer);
 
 - `reputation` finds a worker's announcements in the `DeliveryAnnounced` events of its own signed transactions and reads each release from the history of the announcement it paid, so a paid record stays after its announcement account closes.
 - A wallet counts as a co-author only when a split release names it as a payee; its record names the paid announcement and the role `co-author`, and announcing on the escrow alone credits nothing.
-- A refutation counts against the paid worker only when the earlier announcement's stored blob opens under the revealed ephemeral key, at every slot, to the paid work (`substantiated`); `unsubstantiated` refutations and `unverifiable` ones, whose recipients' keys can no longer be known, are listed on the record and not counted.
+- A refutation counts against every wallet the release paid, announcer and split co-authors alike, only when the earlier announcement's stored blob opens under the revealed ephemeral key, at every slot, to the paid work (`substantiated`); `unsubstantiated` refutations and `unverifiable` ones, whose recipients' keys can no longer be known, are listed on the record and not counted.
 - `complete` is false, with a `reason`, whenever a page limit or an unreadable account cut the record short.
 - `trustOf` adds an edge from a payer to a worker only for a paid record whose release the reputation read verified, and never for a self-dealt one.
 

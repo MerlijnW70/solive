@@ -35,7 +35,7 @@ async function refutable<T>(run: () => Promise<T>): Promise<T> {
 export const walletRefute = define({
   name: tool("wallet_refute"),
   title: "Refute a release with an earlier announcement",
-  description: `Records on chain that this wallet announced the same work before the announcement a release paid, by revealing its earlier announcement's salt and key; anyone can check it, and it counts against the paid worker's standing. Costs the refutation's rent and the fee. ${PREVIEW_FIRST}`,
+  description: `Records on chain that this wallet announced the same work before the announcement a release paid, by revealing its earlier announcement's salt and key; anyone can check it, and it counts against the standing of every wallet the release paid. Costs the refutation's rent and the fee. ${PREVIEW_FIRST}`,
   effect: "submit",
   input: object({
     earlier: account("this wallet's earlier announcement of the same work"),

@@ -4,12 +4,10 @@ import {
   getBase64Encoder,
   getTransactionDecoder,
   isAddress,
-  isSolanaError,
   type KeyPairSigner,
   type MessagePartialSigner,
   type SignatureBytes,
   signBytes,
-  SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR,
   type TransactionPartialSigner,
 } from "@solana/kit";
 import { type DeliveryOpener, formatAmount, parseAmount } from "@intent-engine/core";
@@ -19,6 +17,7 @@ import { ledgerSigner, messageHash, openUsb } from "@intent-engine/client/node";
 import { type DeviceSigner, isLedgerPath, neverLanded } from "@intent-engine/client/internal";
 import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "../../args.js";
 import { execute, type PreparedView } from "../../flows.js";
+import { rpcCause } from "../../rpc-failure.js";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
 import { expandHome, faucetLink, type Files, ledgerBook, PUBLIC_FAUCET, withSettings } from "../../wallet.js";
 import type { AgentContext } from "../actions.js";
@@ -459,29 +458,9 @@ export function sha256Of(text: string, path: string): string {
   return hex;
 }
 
-const UNREACHED: ReadonlySet<unknown> = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN"]);
-
-const RPC_CAUSE_DEPTH = 8;
-const JSON_RPC_FIRST = -32_000;
-const JSON_RPC_LAST = -32_768;
-
 export function rpcRefused(error: unknown): boolean {
-  if (isSdkError(error)) {
-    return false;
-  }
-  let link: unknown = error;
-  for (let depth = 0; depth < RPC_CAUSE_DEPTH && link instanceof Error; depth++, link = link.cause) {
-    if (isSolanaError(link, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR)) {
-      return link.context.statusCode >= 400 && link.context.statusCode < 500;
-    }
-    if (isSolanaError(link) && link.context.__code <= JSON_RPC_FIRST && link.context.__code >= JSON_RPC_LAST) {
-      return true;
-    }
-    if (UNREACHED.has((link as { code?: unknown }).code)) {
-      return true;
-    }
-  }
-  return false;
+  const cause = rpcCause(error);
+  return cause !== null && (cause.kind === "http" ? cause.status >= 400 && cause.status < 500 : cause.kind !== "dropped");
 }
 
 export const refusedBeforeSending = (error: unknown): boolean =>

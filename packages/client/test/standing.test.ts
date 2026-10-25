@@ -37,7 +37,7 @@ const BULLETS = {
   coauthor:
     "A wallet counts as a co-author only when a split release names it as a payee; its record names the paid announcement and the role `co-author`, and announcing on the escrow alone credits nothing.",
   refutation:
-    "A refutation counts against the paid worker only when the earlier announcement's stored blob opens under the revealed ephemeral key, at every slot, to the paid work (`substantiated`); `unsubstantiated` refutations and `unverifiable` ones, whose recipients' keys can no longer be known, are listed on the record and not counted.",
+    "A refutation counts against every wallet the release paid, announcer and split co-authors alike, only when the earlier announcement's stored blob opens under the revealed ephemeral key, at every slot, to the paid work (`substantiated`); `unsubstantiated` refutations and `unverifiable` ones, whose recipients' keys can no longer be known, are listed on the record and not counted.",
   complete: "`complete` is false, with a `reason`, whenever a page limit or an unreadable account cut the record short.",
   trust: "`trustOf` adds an edge from a payer to a worker only for a paid record whose release the reputation read verified, and never for a self-dealt one.",
 };
@@ -171,6 +171,40 @@ describe("worker standing from announcements, releases and refutations", () => {
     expect(rotated).toMatchObject({ paid: 1, refuted: 0 });
     expect(rotated.records).toMatchObject([{ outcome: "paid", refutations: [{ refutation, standing: "unverifiable" }] }]);
     expect(rotated.records[0]?.refutedBy).toBeUndefined();
+  });
+
+  it("counts a substantiated refutation of a split release against its announcer and every co-author, and an unsubstantiated one against none", async () => {
+    const { w, client, judge, owner, intent, nonce } = await job();
+    const [griefer, early, front, ring] = [await fundedSigner(w), await fundedSigner(w), await fundedSigner(w), await fundedSigner(w)];
+    const grief = await unopenable(client, griefer, judge, intent);
+    const earlier = await announced(client, early, intent, WORK, workUrl("first.tar"));
+    const paid = await announced(client, front, intent, WORK, workUrl("copied.tar"));
+    await announced(client, ring, intent, sha("the co-author's part"), workUrl("ring.tar"));
+    const claim = { recipients: [front.address, ring.address], weights: [4_000, 6_000] };
+    const target = { intent: { owner: owner.address, nonce }, ...paid, result: 1n, recipients: claim.recipients.map((wallet, i) => ({ wallet, weight: claim.weights[i] ?? 0 })) };
+    const ballot = await client.splitBallot(target);
+    const signatures = await Promise.all([front, ring].map(async (signer) => ({ wallet: signer.address, signature: await signMessageBytes(signer, ballot.message) })));
+    const release = await client.settleSplit({ ...target, judge: judge.signer, signatures, payer: owner });
+    await client.send([await buildRefuteRelease({ earlierWorker: griefer, payer: griefer, paid: paid.announcement, earlier: grief.announcement, salt: grief.salt, esk: grief.esk, claim })], griefer);
+    const shares = splitN(splitFees(PAY, FEE_BPS, 0, 0).net, claim.weights);
+    const buyer = await connect({ cluster: "devnet", signer: owner, transport: w.chain.transport });
+    const transport = w.chain.transport;
+    for (const [payee, role, share] of [[front, "announcer", shares[0]], [ring, "co-author", shares[1]]] as const) {
+      const kept = await client.reputation(payee.address);
+      expect(kept).toMatchObject({ complete: true, paid: 1, refuted: 0, earned: [{ mint: NATIVE_MINT, amount: share }] });
+      expect(kept.records).toMatchObject([{ announcement: paid.announcement, role, outcome: "paid", release, refutations: [{ earlier: grief.announcement, standing: "unsubstantiated" }] }]);
+      expect(kept.records[0]?.refutedBy).toBeUndefined();
+      expect((await trustOf(transport, owner.address, payee.address)).score).toBeGreaterThan(0);
+    }
+    expect(await buyer.receipt({ escrow: intent })).toMatchObject({ refutedBy: null });
+    const { refutation } = await client.refute({ worker: early, earlier: earlier.announcement, paid: paid.announcement, sha256: WORK, url: workUrl("first.tar"), claim });
+    for (const [payee, role] of [[front, "announcer"], [ring, "co-author"]] as const) {
+      const refuted = await client.reputation(payee.address);
+      expect(refuted).toMatchObject({ complete: true, paid: 0, refuted: 1, earned: [] });
+      expect(refuted.records).toMatchObject([{ announcement: paid.announcement, role, outcome: "paid", release, refutedBy: refutation }]);
+      expect((await trustOf(transport, owner.address, payee.address)).score).toBe(0);
+    }
+    expect(await buyer.receipt({ escrow: intent })).toMatchObject({ refutedBy: refutation });
   });
 
   it(BULLETS.complete, async () => {

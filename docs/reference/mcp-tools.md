@@ -237,7 +237,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
 Served only with `--wallet`.
 
-Pays a worker once a judging committee agrees: any one wallet collects the members' votes from solive_wallet_committee_vote, at least the committee's threshold, and submits them to pay the announcement they voted on. Every vote is checked before sending. This wallet pays the fee. Previews only; after the user says yes, call with send: true and its approval.
+Pays a worker once a judging committee agrees: any one wallet collects the members' votes from solive_wallet_committee_vote, at least the committee's threshold, and submits them to pay the announcement they voted on. Every vote is checked before sending. This wallet pays the fee and rent. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
@@ -349,7 +349,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Records on chain that this wallet announced the same work before the announcement a release paid, by revealing its earlier announcement's salt and key; anyone can check it, and it counts against the paid worker's standing. Costs the refutation's rent and the fee. Previews only; call with send: true after the user says yes.
+Records on chain that this wallet announced the same work before the announcement a release paid, by revealing its earlier announcement's salt and key; anyone can check it, and it counts against the standing of every wallet the release paid. Costs the refutation's rent and the fee. Previews only; call with send: true after the user says yes.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 

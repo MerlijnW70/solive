@@ -158,7 +158,7 @@ async function paidRecord(transport: Transport, wallet: Address, base: WorkRecor
     return { record: { ...common, outcome: "unknown" }, reasons: [historyCut(intent)] };
   }
   const reasons = createFee === undefined ? [historyCut(intent)] : [];
-  const refutations = role === "announcer" ? await refutationsAgainst(transport, released.announcement) : { found: [], reasons: [] };
+  const refutations = await refutationsAgainst(transport, released.announcement);
   const substantiated = refutations.found.find(({ standing }) => standing === "substantiated");
   const feedback = feedbackOf(escrow.transactions, intent, owner);
   return {

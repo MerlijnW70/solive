@@ -150,6 +150,8 @@ The release pays the announcement the verdict names and records its sha256 and s
 
 `judge --watch` takes the same options without `--artifact`; every `--interval` seconds (default 30) it lists the announcements to its judge from accounts, opens each new one, downloads the work from its `url`, checks it against the announcement's commitment and judges it once. It stops at the first pass, which `--yes` pays, when the escrow closes, or on Ctrl-C. It prints one line of JSON per delivery it judged and one when it stops.
 
+A failed check is final: that work is not judged again. A refusal that can change, because another wallet holds the escrow's claim, the node lists the announcements incompletely, an earlier announcement is sealed to a key not given, or the RPC node failed, prints a line with `retry: true` and is tried again next round; the same refusal prints once. Each escrow is still paid at most once.
+
 On devnet, testnet and mainnet it refuses a work link that points to a private or local network address.
 
 ## Judge the word count example
@@ -235,7 +237,7 @@ The verdict's `drawn` records the slot, blockhash and seed, so anyone with the s
 
 It refuses while the list of announcements is incomplete, while an earlier announcement is sealed to a key it was not given, while another worker holds the job's claim, and when nobody announced the work.
 
-The release names the paid announcement and records the hash and its salt. An earlier worker whose announcement of the same work was passed over runs `intent-engine refute --earlier <its announcement> --paid <paid announcement> --work-url <its url> --yes`, which reveals its announcement's secrets on chain. `reputation` counts a refutation against the paid worker only when that earlier announcement opens to the paid work.
+The release names the paid announcement and records the hash and its salt. An earlier worker whose announcement of the same work was passed over runs `intent-engine refute --earlier <its announcement> --paid <paid announcement> --work-url <its url> --yes`, which reveals its announcement's secrets on chain. `reputation` counts a refutation against every wallet the release paid, the announcer and the co-authors of a split, only when that earlier announcement opens to the paid work.
 
 Once an escrow closes, `intent-engine reclaim` closes the worker's announcements that may close and returns their rent, and `close-book --intent <address>` closes an escrow's empty delivery book.
 

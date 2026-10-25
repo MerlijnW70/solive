@@ -14,7 +14,7 @@ export const refutationItem = object({
   earlier: account("the earlier announcement the refutation reveals"),
   earlier_seq: amount(),
   earlier_worker: account(),
-  standing: choice(STANDINGS, "substantiated: the earlier announcement opens, at every slot, to the paid work; only those count against the paid worker"),
+  standing: choice(STANDINGS, "substantiated: the earlier announcement opens, at every slot, to the paid work; only those count against every wallet the release paid"),
 });
 
 export const standingOutput = {
@@ -25,7 +25,7 @@ export const standingOutput = {
     list(object({ announcement: account(), seq: amount(), worker: account() }), MAX_STANDING, "earlier announcements to the escrow, still on chain, that the release passed over"),
   ),
   refutations: optional(list(refutationItem, MAX_STANDING, "refutations of the paid announcement, with their standing")),
-  refuted_by: optional(account("a substantiated refutation: someone announced the same work earlier, so this release counts against the announcer")),
+  refuted_by: optional(account("a substantiated refutation: someone announced the same work earlier, so this release counts against every wallet it paid, the announcer and any co-authors")),
   standing_complete: optional(flag("false when the announcer's record could not be read in full, so refutations may be missing")),
 };
 
