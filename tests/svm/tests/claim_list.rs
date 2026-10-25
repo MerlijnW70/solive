@@ -469,3 +469,40 @@ fn a_list_of_another_version_closes_to_its_owner_only_once_its_escrow_ends() -> 
     assert!(!w.env.exists(&claims_pda(&w.intent())));
     Ok(())
 }
+
+#[test]
+fn a_list_closed_and_then_sent_lamports_by_anyone_is_skipped_so_the_board_still_settles(
+) -> TestResult {
+    let mut w = world()?;
+    w.open_listed(1, &[w.worker.key.pubkey()])?;
+    let address = w.list();
+    let mut account = w.env.svm.get_account(&address).ok_or("list missing")?;
+    let at = core::mem::offset_of!(ClaimList, version).saturating_add(8);
+    *account.data.get_mut(at).ok_or("short")? = CLAIM_LIST_VERSION.saturating_add(1);
+    w.env.svm.set_account(address, account)?;
+    let owner = w.owner();
+    let close = LegacyClose {
+        account: address,
+        payee: owner,
+        with_config: false,
+        vault: None,
+        stake_to: None,
+        intent: Some(w.intent()),
+        fee_to: None,
+    };
+    let cranker = w.cranker.insecure_clone();
+    w.cancel()?;
+    w.env.send(&cranker, &[close_legacy_full_ix(&close)], &[])?;
+    let sent = 1_000_000;
+    w.env
+        .svm
+        .airdrop(&address, sent)
+        .map_err(|f| format!("airdrop: {:?}", f.err))?;
+    let board_rent = w.env.lamports(&claims_pda(&w.intent()));
+    let before = w.env.lamports(&owner);
+    w.settle(Some(address))?;
+    assert!(!w.env.exists(&claims_pda(&w.intent())));
+    assert_eq!(w.env.lamports(&address), sent);
+    assert_eq!(Some(w.env.lamports(&owner)), before.checked_add(board_rent));
+    Ok(())
+}
