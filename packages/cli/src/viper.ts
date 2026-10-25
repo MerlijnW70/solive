@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { JudgeRefused } from "./judge-errors.js";
 
-export const VIPER_WASM_SHA256 = "c039ca2a8d2eb26701ccd704e4b0d26bef9cefa13a90a951d51d776867de7c7d";
+export const VIPER_WASM_SHA256 = "74c6007a6646750306c20b8f726e537e86a294d9583ed971ac3849fc22dd6aa1";
 export const VIPER_ENGINE_COMMIT = "d2bccdb8f77f78bddf07fad22ec76bfedbfbbf0f";
 export const CASES_FENCE = "judge-cases";
 export const DEFAULT_STEPS = 10_000_000;

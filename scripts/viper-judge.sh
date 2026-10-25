@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
-commit=d2bccdb8f77f78bddf07fad22ec76bfedbfbbf0f
+commit=51941c4162591d3d9961645bcaa8ff26056926e7
 toolchain=1.99.0
 pinned=packages/cli/assets/viperjs-judge.sha256
 work=/tmp/viperjs-judge-build
