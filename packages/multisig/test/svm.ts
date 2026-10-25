@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Address, generateKeyPairSigner, getSignatureFromTransaction, type KeyPairSigner, lamports, type Transaction } from "@solana/kit";
 import { FailedTransactionMetadata, LiteSVM } from "litesvm";
+import { DEVNET_GENESIS_HASH } from "@intent-engine/client/internal";
 import type { Chain } from "../src/chain.js";
 import { encodeAccount, programConfigCodec, programConfigPda } from "../src/layout.js";
 import { main, type Deps } from "../src/main.js";
@@ -43,6 +44,7 @@ export class Svm {
   readonly keys = new Map<string, KeyPairSigner>();
   readonly runs: string[][] = [];
   printed = "";
+  genesis = DEVNET_GENESIS_HASH;
 
   static async open(treasury?: Address): Promise<Svm> {
     const s = new Svm();
@@ -91,6 +93,7 @@ export class Svm {
       return found.exists ? { data: new Uint8Array(found.data), owner: found.programAddress } : null;
     },
     blockhash: async () => ({ blockhash: this.svm.latestBlockhash(), lastValidBlockHeight: 0n }),
+    genesisHash: async () => this.genesis,
     simulate: async (tx: Transaction) => {
       const result = this.svm.simulateTransaction(tx);
       return result instanceof FailedTransactionMetadata

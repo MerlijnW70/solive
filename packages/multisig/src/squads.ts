@@ -1,4 +1,5 @@
 import { type Address, address, type Instruction, type TransactionPartialSigner } from "@solana/kit";
+import { MAINNET_GENESIS_HASH } from "@intent-engine/client/internal";
 import type { Chain } from "./chain.js";
 import {
   configTransactionExecute,
@@ -39,7 +40,9 @@ export {
   bufferHash,
   decodeMessage,
   type Decoded,
+  CLOSE_TAG,
   DEFAULT_ADDRESS,
+  ENGINE_CLOSE,
   ENGINE_PROGRAM,
   type InstructionView,
   instructionView,
@@ -141,10 +144,12 @@ async function activeProposal(chain: Chain, at: Address, index: bigint): Promise
 
 const INSPECT = `inspect it in the Squads app at ${SQUADS_APP} and do not approve it blindly`;
 
-function requireReviewed(seen: Review, index: bigint, allowConfig: boolean): void {
+export type Allowed = { allowConfig?: boolean; allowEngineClose?: boolean };
+
+async function requireReviewed(chain: Chain, seen: Review, index: bigint, allowed: Allowed): Promise<void> {
   const shown = { proposal: reviewView(seen) };
   if (seen.kind === "config") {
-    if (!allowConfig) {
+    if (allowed.allowConfig !== true) {
       throw new Refusal(
         `proposal ${index} is a config transaction that changes the multisig itself; read the changes in the summary, ${INSPECT}, and pass --allow-config only if every change is expected`,
         shown,
@@ -155,17 +160,25 @@ function requireReviewed(seen: Review, index: bigint, allowConfig: boolean): voi
   if (seen.kind !== "vault" || seen.problems.length > 0) {
     throw new Refusal(`refusing to sign proposal ${index}: ${seen.problems.join("; ")}; ${INSPECT}`, shown);
   }
+  if (seen.engineClose !== null && allowed.allowEngineClose !== true && (await chain.genesisHash()) === MAINNET_GENESIS_HASH) {
+    throw new Refusal(
+      `refusing to sign proposal ${index} on mainnet-beta: ${seen.engineClose}; ${INSPECT}, and pass --allow-engine-close only if the engine is meant to end for good`,
+      shown,
+    );
+  }
 }
 
-const reviewed = async (chain: Chain, at: Address, index: bigint, multisig: Multisig, allowConfig: boolean): Promise<Review> => {
+const reviewed = async (chain: Chain, at: Address, index: bigint, multisig: Multisig, allowed: Allowed): Promise<Review> => {
   const seen = await review(chain, at, index, multisig);
-  requireReviewed(seen, index, allowConfig);
+  await requireReviewed(chain, seen, index, allowed);
   return seen;
 };
 
+const warned = (seen: Review): string[] => (seen.engineClose === null ? [] : [`Warning: ${seen.engineClose}`]);
+
 const singleHash = (buffers: BufferCheck[]) => (buffers.length === 1 && buffers[0] !== undefined ? { buffer_hash: buffers[0].hash } : {});
 
-export async function approve(chain: Chain, input: { multisig: Address; member: Address; index: bigint; allowConfig?: boolean }): Promise<Plan> {
+export async function approve(chain: Chain, input: { multisig: Address; member: Address; index: bigint } & Allowed): Promise<Plan> {
   const multisig = await readMultisig(chain, input.multisig);
   requireMember(multisig, input.multisig, input.member, "vote", "approve");
   const proposal = await activeProposal(chain, input.multisig, input.index);
@@ -175,10 +188,11 @@ export async function approve(chain: Chain, input: { multisig: Address; member: 
   if (proposal.approved.includes(input.member)) {
     throw new Refusal(`${input.member} already approved proposal ${input.index}`);
   }
-  const seen = await reviewed(chain, input.multisig, input.index, multisig, input.allowConfig === true);
+  const seen = await reviewed(chain, input.multisig, input.index, multisig, input);
   const after = proposal.approved.length + 1;
   return {
     summary: [
+      ...warned(seen),
       `Approves proposal ${input.index} on multisig ${input.multisig} as ${input.member}`,
       after >= multisig.threshold ? `This is approval ${after} of ${multisig.threshold}; the proposal can then execute` : `This is approval ${after} of ${multisig.threshold}`,
       ...seen.summary,
@@ -301,7 +315,7 @@ function requireBuffers(seen: Review, index: bigint, vault: Address, expected: r
 
 export async function execute(
   chain: Chain,
-  input: { multisig: Address; member: Address; index: bigint; allowConfig?: boolean; expectBufferHashes?: readonly string[] },
+  input: { multisig: Address; member: Address; index: bigint; expectBufferHashes?: readonly string[] } & Allowed,
 ): Promise<Plan> {
   const multisig = await readMultisig(chain, input.multisig);
   requireMember(multisig, input.multisig, input.member, "execute", "execute");
@@ -319,10 +333,10 @@ export async function execute(
   if (now < ready) {
     throw new Refusal(`proposal ${input.index} is time locked for ${ready - now} more seconds, until ${new Date(Number(ready) * 1000).toISOString()}`);
   }
-  const seen = await reviewed(chain, input.multisig, input.index, multisig, input.allowConfig === true);
+  const seen = await reviewed(chain, input.multisig, input.index, multisig, input);
   const proposalAt = await proposalPda(input.multisig, input.index);
   const details = { multisig: input.multisig, index: input.index.toString(), proposal: reviewView(seen) };
-  const summary = [`Executes proposal ${input.index} on multisig ${input.multisig}`, ...seen.summary];
+  const summary = [...warned(seen), `Executes proposal ${input.index} on multisig ${input.multisig}`, ...seen.summary];
   if (seen.kind === "config") {
     if (seen.actions.some((a) => a.__kind === "AddSpendingLimit" || a.__kind === "RemoveSpendingLimit")) {
       throw new Refusal(`proposal ${input.index} changes spending limits, which this tool does not execute; ${INSPECT}`, { proposal: reviewView(seen) });

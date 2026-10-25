@@ -174,6 +174,10 @@ On mainnet-beta, told apart by the genesis hash, `deploy.sh` also refuses:
 
 An `https` url that serves the mainnet-beta genesis counts as mainnet-beta. On every other cluster `deploy.sh` accepts any threshold and time lock and upgrades without `--multisig`, as before.
 
+A loader Close of the engine's program data ends the program for good: it can never run again and every escrow it holds is locked. `show`, `approve` and `execute` decode each Close, name the closed account, the recipient, the authority and the program, and say whether it closes a buffer or a program's data. Closing a buffer the vault holds, after an aborted upgrade, is shown and signed as before.
+
+For a Close of the engine's program data, `show` always prints the warning, and `approve` and `execute` put it first in the summary and in `proposal.warning`. On mainnet-beta, told apart by the genesis hash as `deploy.sh` does, they refuse unless the member passes `--allow-engine-close`. On devnet and every other cluster they print the warning and sign, so the devnet loop stays fast. A Close of another program's data is described but not refused.
+
 ## Account versions
 
 Every account the program owns carries a `version` byte, set at creation to the current version of its type in `programs/intent_engine/src/state.rs`. Each type keeps its version byte, and the wallet that paid for it, at fixed offsets listed in `programs/intent_engine/src/versions.rs`, so a later program can read the version of any older account. Every instruction refuses an account whose version is not the current one with `AccountOutdated`.
@@ -241,6 +245,7 @@ Once the vault is the upgrade authority, only the vault can write the program's 
 - a proposal that loads accounts from address lookup tables, or that this tool cannot decode: `show` lists it as `Undecodable`;
 - a message that asks any key other than the vault, or the transaction's ephemeral signers, to sign: executing it would lend the executing member's signature to a hidden instruction;
 - an upgrade whose buffer is missing or controlled by anyone but the vault, since its code could change after approval;
+- on mainnet-beta, a loader Close of the engine's program data without `--allow-engine-close`, as in [Upgrade](#upgrade);
 - a Squads config transaction, which adds or removes members or changes the threshold or time lock. `show` prints each change and the members, threshold and time lock after it runs. Inspect it in the Squads app at https://app.squads.so and do not approve it blindly; `--allow-config` on `approve` and `execute` signs it once every printed change is expected.
 
 ## Reject or cancel

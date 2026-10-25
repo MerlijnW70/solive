@@ -39,6 +39,7 @@ export const SYSVAR_CLOCK = address("SysvarC1ock11111111111111111111111111111111
 export const DEFAULT_ADDRESS = address("11111111111111111111111111111111");
 export const UPGRADE_TAG = 3;
 export const SET_AUTHORITY_TAG = 4;
+export const CLOSE_TAG = 5;
 export const SET_AUTHORITY_CHECKED_TAG = 7;
 export const BUFFER_HEADER = 37;
 export const PROGRAM_DATA_HEADER = 45;
@@ -52,7 +53,6 @@ const LOADER_NAMES: Record<number, string> = {
   0: "InitializeBuffer",
   1: "Write",
   2: "DeployWithMaxDataLen",
-  5: "Close",
   6: "ExtendProgram",
   8: "Migrate",
   9: "ExtendProgramChecked",
@@ -127,7 +127,7 @@ export type BufferCheck = { buffer: Address; authority: Address | null; hash: st
 
 export type Decoded = InstructionView & { summary: string };
 
-type Described = { summary: string; buffer?: BufferCheck; problem?: string };
+type Described = { summary: string; buffer?: BufferCheck; problem?: string; engineClose?: string };
 
 const signersOf = (ix: Instruction) => (ix.accounts ?? []).filter((k) => isSignerRole(k.role)).map((k) => k.address);
 
@@ -193,6 +193,41 @@ async function describeAuthority(chain: Chain, ix: Instruction, engineData: Addr
   return { summary: `Hands ${what} from ${current.address} to ${next.address}${signs}${both}${trailing}` };
 }
 
+export const ENGINE_CLOSE = `Closes the program data of the intent engine ${ENGINE_PROGRAM}: the program can never run again and every escrow it holds is locked for good`;
+
+function engineProgramText(program: Address | undefined): string {
+  if (program === undefined) {
+    return "; it names no program, so the loader refuses it";
+  }
+  return program === ENGINE_PROGRAM ? "" : `; it names program ${program} instead, so the loader refuses it`;
+}
+
+async function describeClose(chain: Chain, ix: Instruction, engineData: Address, extra: number): Promise<Described> {
+  const accounts = ix.accounts ?? [];
+  const trailing = extraText(extra);
+  const [closed, recipient, authority, program] = accounts;
+  if (closed === undefined || recipient === undefined) {
+    return { summary: `Loader Close with only ${accounts.length} accounts, so the loader refuses it${trailing}` };
+  }
+  const by = authority === undefined ? "; it names no authority" : `; authority ${authority.address}${refusedUnless(isSignerRole(authority.role), authority.address)}`;
+  const tail = `; its lamports go to ${recipient.address}${by}${trailing}`;
+  if (closed.address === engineData) {
+    return { summary: `${ENGINE_CLOSE}${engineProgramText(program?.address)}${tail}`, engineClose: ENGINE_CLOSE };
+  }
+  const state = loaderState(await chain.account(closed.address));
+  if (state.kind === "buffer") {
+    return { summary: `Closes buffer ${closed.address}, controlled by ${named(state.authority)}${tail}` };
+  }
+  if (state.kind === "program data") {
+    if (program === undefined) {
+      return { summary: `Closes the program data ${closed.address} without naming its program, so the loader refuses it${tail}` };
+    }
+    const wrong = (await programDataOf(program.address)) === closed.address ? "" : `, which is not that program's data, so the loader refuses it`;
+    return { summary: `Closes the program data ${closed.address} of program ${program.address}${wrong}: that program can never run again${tail}` };
+  }
+  return { summary: `Closes account ${closed.address}, which is neither a buffer nor a program's data${tail}` };
+}
+
 async function describe(chain: Chain, ix: Instruction, engineData: Address): Promise<Described> {
   const data = ix.data ?? new Uint8Array();
   if (ix.programAddress === ENGINE_PROGRAM) {
@@ -213,14 +248,21 @@ async function describe(chain: Chain, ix: Instruction, engineData: Address): Pro
   if (tag === SET_AUTHORITY_TAG || tag === SET_AUTHORITY_CHECKED_TAG) {
     return describeAuthority(chain, ix, engineData, tag === SET_AUTHORITY_CHECKED_TAG, data.length - 4);
   }
+  if (tag === CLOSE_TAG) {
+    return describeClose(chain, ix, engineData, data.length - 4);
+  }
   return { summary: raw(`Loader ${LOADER_NAMES[tag] ?? `instruction ${tag}`}`, ix) };
 }
 
-export async function describeInstructions(chain: Chain, instructions: readonly Instruction[]): Promise<{ decoded: Decoded[]; buffers: BufferCheck[]; problems: string[] }> {
+export async function describeInstructions(
+  chain: Chain,
+  instructions: readonly Instruction[],
+): Promise<{ decoded: Decoded[]; buffers: BufferCheck[]; problems: string[]; engineClose: string | null }> {
   const engineData = await programDataOf(ENGINE_PROGRAM);
   const decoded: Decoded[] = [];
   const buffers: BufferCheck[] = [];
   const problems: string[] = [];
+  let engineClose: string | null = null;
   for (const ix of instructions) {
     const described = await describe(chain, ix, engineData);
     decoded.push({ ...instructionView(ix), summary: described.summary });
@@ -230,8 +272,9 @@ export async function describeInstructions(chain: Chain, instructions: readonly 
     if (described.problem !== undefined) {
       problems.push(described.problem);
     }
+    engineClose ??= described.engineClose ?? null;
   }
-  return { decoded, buffers, problems };
+  return { decoded, buffers, problems, engineClose };
 }
 
 export async function decodeMessage(chain: Chain, message: VaultMessage): Promise<Decoded[]> {
@@ -246,6 +289,7 @@ export type Review = {
   actions: ConfigAction[];
   buffers: BufferCheck[];
   problems: string[];
+  engineClose: string | null;
 };
 
 const permissionText = (mask: number) =>
@@ -301,6 +345,7 @@ const empty = (kind: Review["kind"], summary: string, problem: string): Review =
   actions: [],
   buffers: [],
   problems: [problem],
+  engineClose: null,
 });
 
 async function reviewVault(chain: Chain, at: Address, index: bigint, data: ReadonlyUint8Array): Promise<Review> {
@@ -308,7 +353,7 @@ async function reviewVault(chain: Chain, at: Address, index: bigint, data: Reado
   if (stored === null) {
     return empty("other", "A vault transaction this tool cannot decode", "its vault transaction does not decode");
   }
-  const base = { kind: "vault" as const, creator: stored.creator, actions: [] };
+  const base = { kind: "vault" as const, creator: stored.creator, actions: [], engineClose: null };
   const { message } = stored;
   if (message.addressTableLookups.length > 0) {
     const tables = message.addressTableLookups.map((t) => t.accountKey).join(", ");
@@ -330,7 +375,7 @@ async function reviewVault(chain: Chain, at: Address, index: bigint, data: Reado
   const vault = await vaultPda(at, stored.vaultIndex);
   const transaction = await transactionPda(at, index);
   const ephemeral = await Promise.all(Array.from(stored.ephemeralSignerBumps, (_, i) => ephemeralSignerPda(transaction, i)));
-  const { decoded, buffers, problems: undecodable } = await describeInstructions(chain, instructions);
+  const { decoded, buffers, problems: undecodable, engineClose } = await describeInstructions(chain, instructions);
   const problems: string[] = [...undecodable];
   for (const [i, key] of message.accountKeys.entries()) {
     if (isSignerIndex(message, i) && key !== vault && !ephemeral.includes(key)) {
@@ -344,7 +389,7 @@ async function reviewVault(chain: Chain, at: Address, index: bigint, data: Reado
       problems.push(`buffer ${check.buffer} is controlled by ${named(check.authority)}, not the vault ${vault}, so its code can change after approval`);
     }
   }
-  return { ...base, summary: decoded.map((d) => d.summary), instructions: decoded, buffers, problems };
+  return { ...base, summary: decoded.map((d) => d.summary), instructions: decoded, buffers, problems, engineClose };
 }
 
 export async function review(chain: Chain, at: Address, index: bigint, multisig: Multisig): Promise<Review> {
@@ -373,6 +418,7 @@ export async function review(chain: Chain, at: Address, index: bigint, multisig:
         actions: config.actions,
         buffers: [],
         problems: [],
+        engineClose: null,
       };
     }
   }
@@ -385,4 +431,5 @@ export const reviewView = (seen: Review) => ({
   ...(seen.kind === "config" ? { actions: seen.actions } : { instructions: seen.instructions }),
   ...(seen.buffers.length > 0 ? { buffers: seen.buffers } : {}),
   ...(seen.problems.length > 0 ? { problems: seen.problems } : {}),
+  ...(seen.engineClose === null ? {} : { warning: seen.engineClose }),
 });

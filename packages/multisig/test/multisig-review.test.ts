@@ -106,7 +106,7 @@ describe("multisig", () => {
       `Hands the upgrade authority of the program whose data is ${programData} from ${vault} to ${other}; both sign; ${other} does not sign, so the loader refuses it`,
       `Hands the authority of buffer ${buffer} from ${vault} to ${other}; both sign`,
       `Removes the authority of buffer ${buffer}, which the loader refuses for a buffer; ${vault} does not sign, so the loader refuses it`,
-      `Loader Close with 3 accounts and 4 bytes of data, signed by ${vault}`,
+      `Closes buffer ${buffer}, controlled by ${vault}; its lamports go to ${spill}; authority ${vault}`,
     ]);
     expect(buffers).toEqual([
       { buffer, authority: vault, hash: sha256(code) },

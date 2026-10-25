@@ -18,6 +18,7 @@ export type Latest = { blockhash: Blockhash; lastValidBlockHeight: bigint };
 export type Chain = {
   account(address: Address): Promise<Account | null>;
   blockhash(): Promise<Latest>;
+  genesisHash(): Promise<string>;
   simulate(tx: Transaction): Promise<Simulation>;
   send(tx: Transaction): Promise<string>;
 };
@@ -34,6 +35,7 @@ export function connectionChain(url: string): Chain {
       return value === null ? null : { data: new Uint8Array(getBase64Encoder().encode(value.data[0])), owner: value.owner };
     },
     blockhash: latest,
+    genesisHash: async () => rpc.getGenesisHash().send(),
     simulate: async (tx) => {
       const { value } = await rpc
         .simulateTransaction(getBase64EncodedWireTransaction(tx), { commitment, encoding: "base64", sigVerify: false, replaceRecentBlockhash: true })
