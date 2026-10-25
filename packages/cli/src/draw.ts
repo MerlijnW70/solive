@@ -51,6 +51,26 @@ export const notAnnounced = (sha256: string, intent: Address): string =>
 
 export const answerTooLong = `a drawn case's answer is longer than the ${DETAIL_BYTES} bytes the viper judge reports, so the checker cannot see it; nothing was paid`;
 
+const REPLACEMENT = String.fromCharCode(0xfffd);
+
+export const unreported = "U+FFFD, which ViperJS writes for a lone surrogate its UTF-8 output cannot carry, so the judge cannot tell it from the string the delivery returned";
+
+export function answerFault(answer: unknown): string | undefined {
+  if (typeof answer === "number" && !Number.isFinite(answer)) {
+    return `the answer ${String(answer)} is not a finite JSON number`;
+  }
+  if (!isPrimitive(answer)) {
+    return "the answer is not a JSON string, number, boolean or null";
+  }
+  if (!utf8Exact(answer)) {
+    return `the answer is ${notUtf8}`;
+  }
+  return undefined;
+}
+
+export const viperAnswerFault = (answer: unknown): string | undefined =>
+  answerFault(answer) ?? (typeof answer === "string" && answer.includes(REPLACEMENT) ? `the answer holds ${unreported}` : undefined);
+
 export const noBlocks = "the spec draws its cases from a finalized block, and the RPC node cannot list or read finalized blocks; nothing was run or paid";
 
 export const stoppedWaiting = (slot: bigint): string =>
@@ -207,12 +227,19 @@ export async function judgeDraw(
       throw new JudgeRefused(answerTooLong);
     }
   }
-  if (answers.length > 0) {
+  const accepted = answers.filter(({ case: index, answer }) => {
+    const fault = viperAnswerFault(answer);
+    if (fault !== undefined) {
+      failures.push({ case: index, verdict: "not-primitive", detail: fault });
+    }
+    return fault === undefined;
+  });
+  if (accepted.length > 0) {
     const checked = await ranCases(
       wasm,
       wrapped(draw.checker, "checker", CHECKER_TAIL),
       cases,
-      answers.map(({ case: index, answer }) => ({ args: [answer, ...(drawn[index] ?? [])], expected: true })),
+      accepted.map(({ case: index, answer }) => ({ args: [answer, ...(drawn[index] ?? [])], expected: true })),
       engineRun(beacon.seed),
       left(),
     );
@@ -220,7 +247,7 @@ export async function judgeDraw(
       return refuseDraw("checker", `did not finish: ${checked.detail}`);
     }
     checked.forEach((result, at) => {
-      const { case: index, answer } = answers[at] as { case: number; answer: Primitive };
+      const { case: index, answer } = accepted[at] as { case: number; answer: Primitive };
       if (result.verdict === "wrong" && result.detail === false) {
         failures.push({ case: index, verdict: "wrong", detail: answer });
       } else if (result.verdict !== "pass") {

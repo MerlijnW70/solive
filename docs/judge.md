@@ -231,7 +231,9 @@ So that a delivery cannot answer from a table of the published cases, the spec's
 
 The generator's single `export default` gets the seed in hex and `n` and returns `n` argument lists; the checker's gets one list and the delivery's answer and returns `true` or `false`, each in a fresh ViperJS engine with the spec's budgets. `judge` passes only when every published and drawn case passes, and refuses a spec whose generator or checker fails as the spec's fault.
 
-A drawn case whose delivery returns `undefined`, or anything else that is not a string, number, boolean or null, fails; the checker never sees it. `judge` refuses a spec whose arguments, expected answers, generator or checker hold a lone surrogate such as `"\ud800"`, which UTF-8 cannot carry, so the engines would receive different strings. It refuses drawn arguments that hold one the same way. Nothing is run or paid.
+A drawn case accepts an answer that is null, `true`, `false`, a finite number, or a string with neither a lone surrogate nor U+FFFD; only these reach the checker. Every other answer fails the case: `undefined` as `wrong`, an object as `not-primitive`, and `NaN`, `Infinity`, `-Infinity` or such a string as `not-primitive` with a `detail` naming the reason. ViperJS writes a lone surrogate as U+FFFD, so an answer holding U+FFFD fails even when the delivery meant it.
+
+`judge` refuses a spec whose arguments, expected answers, generator or checker hold a lone surrogate such as `"\ud800"`, which UTF-8 cannot carry, so the engines would receive different strings. It refuses drawn arguments that hold one the same way. Nothing is run or paid.
 
 The verdict's `drawn` records the slot, blockhash and seed, so anyone with the spec and a node that keeps the full ledger regenerates the same cases.
 

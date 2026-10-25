@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { type Beacon, DETAIL_BYTES, drawnArguments, engineRun, judgeDraw } from "../src/draw.js";
+import { answerFault, type Beacon, DETAIL_BYTES, drawnArguments, engineRun, judgeDraw, unreported, viperAnswerFault } from "../src/draw.js";
 import { type CaseResult, type Cases, CASES_FENCE, CLOCK_FROM, deadlineMissed, type Draw, MAX_ARGUMENTS, notUtf8, OUTPUT_BYTES, type Primitive, type Ran, runViper } from "../src/viper.js";
 
 vi.mock("../src/viper.js", async (original) => {
@@ -113,7 +113,10 @@ const recorded = { slot: 7, blockhash: "hash", seed: SEED };
 const drawn = (draw: Draw = DRAW, seconds = LEFT) => drawnArguments(WASM, budget(draw), draw, SEED, seconds);
 const judged = (draw: Draw = DRAW) => judgeDraw(WASM, MODULE, budget(draw), beacon(draw), () => LEFT, { seed: 1, clock: 0 });
 
-const generatorRefused = (why: string) => `the spec's ${CASES_FENCE} draw generator ${why}; the spec is at fault, not the worker, and nothing was paid`;
+const LONE = String.fromCharCode(0xd800);
+const REPLACEMENT = String.fromCharCode(0xfffd);
+
+const generatorRefused =(why: string) => `the spec's ${CASES_FENCE} draw generator ${why}; the spec is at fault, not the worker, and nothing was paid`;
 const invalid = (count: number) => generatorRefused(`did not return ${count} lists of at most ${MAX_ARGUMENTS} JSON strings, numbers, booleans or nulls, in at most ${OUTPUT_BYTES} bytes of JSON`);
 
 describe("the seed a draw runs the engine with", () => {
@@ -121,6 +124,30 @@ describe("the seed a draw runs the engine with", () => {
     expect(engineRun("f".repeat(64))).toStrictEqual({ seed: 1, clock: 1_836_106_310_655 });
     expect(engineRun("0".repeat(64))).toStrictEqual({ seed: 1, clock: CLOCK_FROM });
     expect(engineRun(`${"0".repeat(11)}2${"0".repeat(11)}3${"0".repeat(40)}`)).toStrictEqual({ seed: 3, clock: CLOCK_FROM + 3 });
+  });
+});
+
+describe("the answers a drawn case accepts", () => {
+  it("names every answer the published-case rules reject, whichever engine gave it", () => {
+    expect([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY].map(answerFault)).toStrictEqual([
+      "the answer NaN is not a finite JSON number",
+      "the answer Infinity is not a finite JSON number",
+      "the answer -Infinity is not a finite JSON number",
+    ]);
+    expect([`a${LONE}`, String.fromCharCode(0xdc00)].map(answerFault)).toStrictEqual([`the answer is ${notUtf8}`, `the answer is ${notUtf8}`]);
+    expect([undefined, {}, [1]].map(answerFault)).toStrictEqual(Array(3).fill("the answer is not a JSON string, number, boolean or null"));
+  });
+
+  it("takes finite numbers, strings, booleans and null, and refuses U+FFFD only from ViperJS", () => {
+    const fine = [0, -0, 1.5, -2, Number.MAX_VALUE, "", "ok", "\u{1f600}", true, false, null, REPLACEMENT];
+    expect(fine.map(answerFault)).toStrictEqual(fine.map(() => undefined));
+    expect(fine.slice(0, -1).map(viperAnswerFault)).toStrictEqual(fine.slice(0, -1).map(() => undefined));
+    expect([REPLACEMENT, `a${REPLACEMENT}b`, Number.NaN, `a${LONE}`].map(viperAnswerFault)).toStrictEqual([
+      `the answer holds ${unreported}`,
+      `the answer holds ${unreported}`,
+      "the answer NaN is not a finite JSON number",
+      `the answer is ${notUtf8}`,
+    ]);
   });
 });
 
@@ -236,6 +263,34 @@ describe("judging a drawn delivery", () => {
     roles = [];
     judging({ lists: LISTS, answer: () => ({ verdict: "wrong" }) });
     expect(await judged({ ...DRAW, checker: "const nothing = 0;" })).toStrictEqual({ ...recorded, total: 2, passed: 0, failures: [0, 1].map((index) => ({ case: index, verdict: "wrong" })) });
+    expect(roles).toEqual(["generator", "generator", "answer"]);
+  });
+
+  it("fails drawn answers the published-case rules reject, or that ViperJS may have changed, and hands the checker only the rest", async () => {
+    const checked: Primitive[] = [];
+    const answers: Primitive[] = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, `a${LONE}`, 7, "ok", `x${REPLACEMENT}`];
+    const draw = { ...DRAW, count: answers.length };
+    judging({ lists: answers.map((_, n) => [n]), answer: ([n]) => ({ verdict: "wrong", detail: answers[Number(n)] ?? null }), holds: (said) => checked.push(said) > 0 });
+    expect(await judged(draw)).toStrictEqual({
+      ...recorded,
+      total: answers.length,
+      passed: 2,
+      failures: [
+        { case: 0, verdict: "not-primitive", detail: "the answer NaN is not a finite JSON number" },
+        { case: 1, verdict: "not-primitive", detail: "the answer Infinity is not a finite JSON number" },
+        { case: 2, verdict: "not-primitive", detail: "the answer -Infinity is not a finite JSON number" },
+        { case: 3, verdict: "not-primitive", detail: `the answer holds ${unreported}` },
+        { case: 6, verdict: "not-primitive", detail: `the answer holds ${unreported}` },
+      ],
+    });
+    expect(checked).toStrictEqual([7, "ok"]);
+    expect(roles).toEqual(["generator", "generator", "answer", "checker"]);
+  });
+
+  it("runs no checker when every drawn answer is one it must not see", async () => {
+    judging({ lists: LISTS, answer: () => ({ verdict: "wrong", detail: Number.NaN }) });
+    const failures = [0, 1].map((index) => ({ case: index, verdict: "not-primitive", detail: "the answer NaN is not a finite JSON number" }));
+    expect(await judged({ ...DRAW, checker: "const nothing = 0;" })).toStrictEqual({ ...recorded, total: 2, passed: 0, failures });
     expect(roles).toEqual(["generator", "generator", "answer"]);
   });
 
