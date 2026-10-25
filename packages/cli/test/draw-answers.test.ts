@@ -36,9 +36,9 @@ describe("drawn answers ViperJS returns", () => {
     });
   }, 60_000);
 
-  it("cannot be confirmed by a rerun, since ViperJS's own comparison takes a lone surrogate for U+FFFD", async () => {
+  it("tells a lone surrogate from U+FFFD, since the pinned ViperJS compares strings unit for unit", async () => {
     const lone = { steps: DEFAULT_STEPS, heap: DEFAULT_HEAP, seed: 1, clock: 0, cases: [{ args: [], expected: String.fromCharCode(0xfffd) }] };
-    expect(await judgeViper(await pinnedWasm(), bytes("export default () => String.fromCharCode(0xd800);"), lone, 30)).toMatchObject({ passed: 1, failures: [] });
+    expect(await judgeViper(await pinnedWasm(), bytes("export default () => String.fromCharCode(0xd800);"), lone, 30)).toMatchObject({ passed: 0 });
   }, 60_000);
 
   it("hands the checker the finite number and the plain string exactly as the delivery returned them", async () => {
