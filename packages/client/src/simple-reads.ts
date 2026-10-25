@@ -1,15 +1,17 @@
 import type { Address, Signature } from "@solana/kit";
-import { InvalidInput } from "@intent-engine/core";
+import { IntentStatus, InvalidInput } from "@intent-engine/core";
 import { isSha256Hex, type UnreadableAccount } from "@intent-engine/core/internal";
 import { AnnouncementsUnreadable } from "./announce-errors.js";
 import { refutationsOf } from "./announcement-reads.js";
 import { HISTORY_LIMIT } from "./client-types.js";
 import { heldKeys, openedWith, opensTo } from "./first-opening.js";
 import { standingOf } from "./refutation-standing.js";
-import { paidWalletsOf, releasedDelivery, releaseOf } from "./release-reads.js";
+import { intentAt } from "./job-proofs.js";
+import { intentHistory, paidWalletsOf, type Read, releasedDelivery, releaseOf } from "./release-reads.js";
 import type { SimpleContext } from "./simple-orders.js";
 import type { Announcement, DeliveriesInput, EscrowOpeningsInput, ReceiptInput, ReleaseReceipt } from "./simple-types.js";
 import { hexBytes } from "./encoding.js";
+import type { EngineTransaction } from "./transport.js";
 
 export function sha256Given(sha256: string, name: string): string {
   const lowered = sha256.trim().toLowerCase();
@@ -22,6 +24,11 @@ export function sha256Given(sha256: string, name: string): string {
 type Standing = { refutedBy: Address | null; complete: boolean; unreadable: UnreadableAccount[] };
 
 const bytesOf = (sha256: string): Uint8Array => hexBytes(sha256);
+
+function settledRelease(transactions: readonly EngineTransaction[], escrow: Address): Read | undefined {
+  const release = releaseOf(transactions, escrow);
+  return release?.event.name === "IntentAttested" || release?.event.name === "IntentSplit" ? release : undefined;
+}
 
 export function workReads(ctx: SimpleContext) {
   const { transport } = ctx.client;
@@ -45,10 +52,20 @@ export function workReads(ctx: SimpleContext) {
 
   const receipt = async (input: ReceiptInput): Promise<ReleaseReceipt> => {
     const { escrow } = input;
-    const transactions = await transport.engineTransactions(HISTORY_LIMIT, escrow);
-    const release = releaseOf(transactions, escrow);
-    if (release === undefined || (release.event.name !== "IntentAttested" && release.event.name !== "IntentSplit")) {
-      return { escrow, released: false, signature: null, payee: null, payees: [], deliveredSha256: null, valid: false, refutedBy: null, complete: true, unreadable: [], summary: `Escrow ${escrow} is not released yet` };
+    const releasedIn = (found: readonly EngineTransaction[]): boolean => settledRelease(found, escrow) !== undefined;
+    const [read, held] = await Promise.all([intentHistory(transport, escrow, HISTORY_LIMIT, releasedIn), intentAt(transport, escrow)]);
+    const release = settledRelease(read.transactions, escrow);
+    if (release === undefined) {
+      const unreleased = { escrow, signature: null, payee: null, payees: [], deliveredSha256: null, valid: false, refutedBy: null, unreadable: [] };
+      const beyond = `the ${read.transactions.length} most recent transactions of the escrow read before paging stopped at its limit`;
+      if (held?.status === IntentStatus.Filled) {
+        const where = read.complete ? "none of its transactions holds a release this client reads" : `its release lies beyond ${beyond}`;
+        return { ...unreleased, released: true, complete: false, summary: `Escrow ${escrow} is filled on chain, but ${where}, so its payee and work are unknown` };
+      }
+      if (!read.complete) {
+        return { ...unreleased, released: false, complete: false, summary: `Escrow ${escrow} shows no release in ${beyond}, so an older release is not ruled out` };
+      }
+      return { ...unreleased, released: false, complete: true, summary: `Escrow ${escrow} is not released yet` };
     }
     const signature = release.transaction.signature as Signature;
     const payees = (await paidWalletsOf(transport, release, escrow)) ?? [];

@@ -73,7 +73,7 @@ export function planWrites(send: Sends, plan: ClientPlans): PlanWrites {
       for (const batch of planned.batches) {
         signatures.push(await submit(send, planOf({ payer: planned.payer, instructions: batch }), input.payer ?? input.worker));
       }
-      return { closed: planned.closed, kept: planned.kept, signatures };
+      return { closed: planned.closed, kept: planned.kept, reasons: planned.reasons, signatures };
     },
     closeBook: async (intent, by) => submit(send, await plan.closeBook(intent, by), by),
     feedback: async (input) => submit(send, await plan.feedback(input), input.owner),

@@ -20,6 +20,7 @@ import { type AnnouncementView, announcementsBy, loadAnnouncement, loadDeliveryB
 import type { ClientContext, ClientPlans } from "./client-types.js";
 import { intentAddress, type IntentRef } from "./intent-ref.js";
 import { type Plan, planOf } from "./plan.js";
+import { type KeptAnnouncement, keptReason, refutersKept } from "./reclaim-reasons.js";
 import { hex, readableIntent } from "./job-proofs.js";
 import type { Transport } from "./transport.js";
 
@@ -36,11 +37,11 @@ export type Refuted = { refutation: Address; signature: Signature };
 
 export type ReclaimInput = { worker: TransactionSigner; payer?: TransactionSigner };
 
-export type Reclaimed = { closed: Address[]; kept: Address[]; signatures: Signature[] };
+export type Reclaimed = { closed: Address[]; kept: Address[]; reasons: KeptAnnouncement[]; signatures: Signature[] };
 
 export type RefutePlan = Plan & { refutation: Address };
 
-export type ReclaimPlan = Plan & { closed: Address[]; kept: Address[]; batches: Instruction[][] };
+export type ReclaimPlan = Plan & { closed: Address[]; kept: Address[]; reasons: KeptAnnouncement[]; batches: Instruction[][] };
 
 export const RECLAIM_BATCH = 5;
 
@@ -163,7 +164,15 @@ export function announcementPlans(context: ClientContext): AnnouncementPlans {
         throw error;
       }
     };
-    const closing = mine.filter(closable);
+    const retained = await refutersKept(transport, mine.filter(closable), now);
+    const refuters = new Set(retained.map(({ announcement }) => announcement));
+    const closing = mine.filter((announcement) => closable(announcement) && !refuters.has(announcement.address));
+    const reasons: KeptAnnouncement[] = [
+      ...mine
+        .filter((announcement) => !closing.includes(announcement))
+        .map((announcement) => retained.find((kept) => kept.announcement === announcement.address) ?? { announcement: announcement.address, reason: keptReason(announcement) }),
+      ...unreadable.map(({ address }) => ({ announcement: address, reason: "it could not be read as an announcement" })),
+    ];
     const payer = input.payer ?? worker;
     const instructions = await Promise.all(
       closing.map(({ address, intent, payer: rentTo }) => buildCloseAnnouncement({ by: worker, announcement: address, intent, rentTo })),
@@ -175,7 +184,8 @@ export function announcementPlans(context: ClientContext): AnnouncementPlans {
     return {
       ...planOf({ payer: payer.address, instructions }),
       closed: closing.map(({ address }) => address),
-      kept: [...mine.filter((a) => !closing.includes(a)).map(({ address }) => address), ...unreadable.map(({ address }) => address)],
+      kept: reasons.map(({ announcement }) => announcement),
+      reasons,
       batches,
     };
   };

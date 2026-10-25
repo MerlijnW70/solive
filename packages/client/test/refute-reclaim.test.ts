@@ -50,7 +50,12 @@ describe("refuting, reclaiming and closing", () => {
     const [worker, relayer] = [await fundedSigner(w), await fundedSigner(w)];
     const own = await announced(client, worker, intent, WORK);
     const relayed = await client.announce({ worker, payer: relayer, intent, sha256: WORK, url: workUrl("relayed.tar") });
-    expect(await client.reclaim({ worker })).toEqual({ closed: [], kept: [own.announcement, relayed.announcement], signatures: [] });
+    expect(await client.reclaim({ worker })).toEqual({
+      closed: [],
+      kept: [own.announcement, relayed.announcement],
+      reasons: [own.announcement, relayed.announcement].map((announcement) => ({ announcement, reason: `its escrow ${intent} is still open` })),
+      signatures: [],
+    });
     await expect(client.closeBook(intent, owner)).rejects.toThrow(BookNotClosable);
     await client.cancel(owner, { owner: owner.address, nonce });
     await expect(client.closeBook(intent, owner)).rejects.toThrow("still holds 2 announcements");

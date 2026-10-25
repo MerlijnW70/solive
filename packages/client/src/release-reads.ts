@@ -96,11 +96,13 @@ export type IntentHistory = { transactions: EngineTransaction[]; complete: boole
 const createdIn = (transactions: readonly EngineTransaction[], intent: Address): boolean =>
   eventsOf(transactions, intent).some(({ event }) => event.name === "IntentCreated");
 
-export async function intentHistory(transport: Transport, intent: Address, history: number): Promise<IntentHistory> {
+type Enough = (found: readonly EngineTransaction[]) => boolean;
+
+export async function intentHistory(transport: Transport, intent: Address, history: number, enough: Enough = () => false): Promise<IntentHistory> {
   const { signaturesOf, transactionsOf } = transport;
   if (signaturesOf === undefined || transactionsOf === undefined) {
     const first = await transport.engineTransactions(history, intent);
-    return { transactions: first, complete: first.length < history || createdIn(first, intent) };
+    return { transactions: first, complete: first.length < history || createdIn(first, intent) || enough(first) };
   }
   const transactions: EngineTransaction[] = [];
   let before: string | undefined;
@@ -108,7 +110,7 @@ export async function intentHistory(transport: Transport, intent: Address, histo
     const { listed, last } = await signaturePage(transport, signaturesOf, intent, history, before);
     const found = await transactionsOf.call(transport, listed);
     transactions.push(...found);
-    if (last || createdIn(found, intent)) {
+    if (last || createdIn(found, intent) || enough(found)) {
       return { transactions, complete: true };
     }
     before = listed[listed.length - 1]?.signature;

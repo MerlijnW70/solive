@@ -58,7 +58,7 @@ const SENTENCES = {
   signs: "`settleProof`, `settleCommittee` and `settleSplit` sign over the announcement and its opening and pay the announcing worker's token account; any wallet can send the signed release.",
   history: "`history` reads the paid work's sha256 and salt from the release itself.",
   cleanup:
-    "`refute` lets an earlier worker record on chain that a later announcement of the same work was paid, `reclaim` closes every announcement of a worker that the program lets close now, rent back to whoever paid it, and `closeBook` closes an escrow's empty delivery book.",
+    "`refute` lets an earlier worker record on chain that a later announcement of the same work was paid, `reclaim` closes every announcement of a worker that the program lets close now and that cannot still refute a release, rent back to whoever paid it, and says in `reasons` why each one in `kept` stays, and `closeBook` closes an escrow's empty delivery book.",
 };
 
 async function escrowTo(attestor: Address, w?: World) {
@@ -299,6 +299,9 @@ describe("the announcement sentences of the full client page", () => {
     const earlier = await announced(client, early, intent, WORK);
     const paid = await announced(client, late, intent, WORK);
     await client.settleProof({ judge: judge.signer, intent: { owner: owner.address, nonce }, ...paid, result: 1n });
+    const kept = await client.reclaim({ worker: early });
+    expect(kept).toMatchObject({ closed: [], kept: [earlier.announcement] });
+    expect(kept.reasons[0]?.reason).toContain(`it is earlier than ${paid.announcement}`);
     const { refutation } = await client.refute({ worker: early, earlier: earlier.announcement, paid: paid.announcement, sha256: WORK, url: workUrl() });
     expect(w.chain.svm.getAccount(refutation).exists).toBe(true);
     const second = await escrowTo(judge.signer.address, w);

@@ -90,6 +90,7 @@ class InvalidInput: class InvalidInput extends SdkError { readonly code = "inval
 type Job: type Job = { intent: Address; owner: Address; nonce: bigint; attestor: Address; specHash: string; specUrl: string | null; sells: bigint; judgeFee: bigint; net: bigint | null; feeBps: number; inputMint: Address; expiresAt: bigint; };
 type JobFilter: type JobFilter = { attestor?: Address | undefined; mint?: Address | undefined; minSells?: bigint | undefined; unclaimed?: boolean | undefined; owner?: Address | undefined; excludeOwners?: readonly Address[] | undefined; };
 type JobList: type JobList = { jobs: Job[]; unreadable: UnreadableAccount[]; };
+type KeptAnnouncement: type KeptAnnouncement = { announcement: Address; reason: string; };
 type Latest: type Latest = { blockhash: Blockhash; lastValidBlockHeight: bigint; };
 class LedgerError: class LedgerError extends SdkError { readonly code = "ledger-error"; readonly name = "LedgerError"; }
 class LedgerPathError: class LedgerPathError extends SdkError { readonly code = "ledger-path-error"; readonly name = "LedgerPathError"; }
@@ -135,8 +136,8 @@ type ProgramAccount: type ProgramAccount = { address: Address; data: Uint8Array;
 type ProofBallot: type ProofBallot = { intent: Address; attestor: Address; payee: Address; digest: Uint8Array; message: Uint8Array; };
 type ReceiptInput: type ReceiptInput = { escrow: Address; };
 type ReclaimInput: type ReclaimInput = { worker: TransactionSigner; payer?: TransactionSigner; };
-type ReclaimPlan: type ReclaimPlan = Plan & { closed: Address[]; kept: Address[]; batches: Instruction[][]; };
-type Reclaimed: type Reclaimed = { closed: Address[]; kept: Address[]; signatures: Signature[]; };
+type ReclaimPlan: type ReclaimPlan = Plan & { closed: Address[]; kept: Address[]; reasons: KeptAnnouncement[]; batches: Instruction[][]; };
+type Reclaimed: type Reclaimed = { closed: Address[]; kept: Address[]; reasons: KeptAnnouncement[]; signatures: Signature[]; };
 type Refusal: type Refusal = { reason: RefusalReason; announcement?: Address; seq?: bigint; worker?: Address; sealedTo?: readonly SealedSlot[]; missing?: readonly bigint[]; closed?: boolean; holder?: Address; };
 type RefusalReason: type RefusalReason = "incomplete" | "key-not-given" | "nothing-opens" | "claim-held";
 type RefutationRecord: type RefutationRecord = { refutation: Address; earlier: Address; earlierSeq: bigint; earlierWorker: Address; standing: RefutationStanding; };

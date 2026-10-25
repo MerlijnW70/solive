@@ -194,6 +194,11 @@ export async function announcementsOf(transport: Transport, intent: Address): Pr
   return { intent, announcements, nextSeq, complete, closed, missing, unreadable };
 }
 
+export async function announcementsIn(transport: Transport, intent: Address): Promise<AnnouncementScan> {
+  const { announcements, unreadable } = await listed(transport, { offset: INTENT_AT, address: intent });
+  return { announcements: announcements.sort(bySeq), unreadable };
+}
+
 export async function announcementsTo(transport: Transport, attestor: Address): Promise<AnnouncementScan> {
   const { announcements, unreadable } = await listed(transport, { offset: ATTESTOR_AT, address: attestor });
   return { announcements: announcements.sort(byIntent), unreadable };

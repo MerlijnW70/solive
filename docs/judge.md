@@ -241,7 +241,7 @@ It refuses while the list of announcements is incomplete, while an earlier annou
 
 The release names the paid announcement and records the hash and its salt. An earlier worker whose announcement of the same work was passed over runs `intent-engine refute --earlier <its announcement> --paid <paid announcement> --work-url <its url> --yes`, which reveals its announcement's secrets on chain. `reputation` counts a refutation against every wallet the release paid, the announcer and the co-authors of a split, only when that earlier announcement opens to the paid work.
 
-Once an escrow closes, `intent-engine reclaim` closes the worker's announcements that may close and returns their rent, and `close-book --intent <address>` closes an escrow's empty delivery book.
+Once an escrow closes, `intent-engine reclaim` closes the worker's announcements that may close and returns their rent; it keeps an earlier announcement that can still refute a paid release until 30 days after that release, and `close-book --intent <address>` closes an escrow's empty delivery book.
 
 This cannot stop a copier who announces every value of a small answer set first, or one who copies work published before its announcement lands. A job claim or a spec with many possible answers covers those.
 

@@ -254,7 +254,7 @@ await client.unwrap(signer);
 
 `settleProof`, `settleCommittee` and `settleSplit` sign over the announcement and its opening and pay the announcing worker's token account; any wallet can send the signed release. `history` reads the paid work's sha256 and salt from the release itself.
 
-`refute` lets an earlier worker record on chain that a later announcement of the same work was paid, `reclaim` closes every announcement of a worker that the program lets close now, rent back to whoever paid it, and `closeBook` closes an escrow's empty delivery book. [Judge work](judge.md) does all of this from the command line.
+`refute` lets an earlier worker record on chain that a later announcement of the same work was paid, `reclaim` closes every announcement of a worker that the program lets close now and that cannot still refute a release, rent back to whoever paid it, and says in `reasons` why each one in `kept` stays, and `closeBook` closes an escrow's empty delivery book. [Judge work](judge.md) does all of this from the command line.
 
 ## Standing
 

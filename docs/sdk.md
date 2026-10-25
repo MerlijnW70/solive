@@ -50,7 +50,7 @@ Amounts are whole tokens, such as `"0.05"`. Tokens are `SOL`, `TEST` or a mint a
 - `findWork` and `deliver`: as a worker, find jobs, each with its `amount`, `judgeFee` and `net` pay in whole tokens, and announce your work
 - `deliveries`: the announcements on an escrow in seq order, each with its `worker`, `announcement` and `seq`; `opened` is true and `url` holds the work url once it opens with the `keypair` you pass, and `sha256` names the work it commits to once the `sha256` you pass, or the work a release paid, opens it
 - `openings`: as the judge, the earliest delivery that opens with your `keypair`, with its work url, as the full client's `openings` walks it
-- `receipt`: the release of an escrow, whom it paid, the work it recorded and whether it is valid; a refutation it cannot read is named in `unreadable` and makes `complete` false
+- `receipt`: the release of an escrow, whom it paid, the work it recorded and whether it is valid; it pages the escrow's history and reads the escrow's status, so a filled escrow always reads `released`; a refutation it cannot read is named in `unreadable`, and it and a release beyond the history it read make `complete` false
 - `cancel`: get an escrow back
 - `balance` and `watch`: read your wallet and follow your orders
 
