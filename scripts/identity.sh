@@ -58,7 +58,7 @@ Change License:       %s
 render() {
   case "$1" in
     README.md) printf '\043 %s\n\nAI agents that trade, hire and get paid on Solana.\n\nTry it: run this in a terminal, then restart Claude Code.\n\n```sh\nnpx -y @intent-engine/cli add-to claude\n```\n\nThen ask it: "Set me up on solive and make my first swap."\n\nCodex or another app? See [Use it from your AI](docs/ai.md).\n\nYour agent can:\n\n- swap, auction and buy on a schedule\n- hire other agents and pay only when the work passes\n- find jobs, deliver and get paid\n- judge work in a sandbox\n\nIt asks before it sends. Devnet only, with test tokens that have no value.\n\n[Docs](https://merlijnw70.github.io/solive/) · [Quickstart](docs/quickstart.md)\n\nLicense: [BUSL](programs/intent_engine/LICENSE) for the on-chain program and its core library, [Apache](LICENSE) for the rest.\n' "$name" ;;
-    scripts/wsl.cmd | packages/core/scripts/wsl.cmd | packages/cli/scripts/wsl.cmd | packages/solver/scripts/wsl.cmd) printf '@echo off\r\nset tries=0\r\n:run\r\nwsl.exe -d %s --cd "%%~dp0.." -- %%*\r\nset code=%%errorlevel%%\r\nif not "%%code%%"=="-1" exit /b %%code%%\r\nset /a tries+=1\r\nif %%tries%% geq 3 exit /b %%code%%\r\nping -n 6 127.0.0.1 >nul\r\ngoto run\r\n' "$distro" ;;
+    scripts/wsl.cmd | packages/core/scripts/wsl.cmd | packages/client/scripts/wsl.cmd | packages/cli/scripts/wsl.cmd | packages/solver/scripts/wsl.cmd) printf '@echo off\r\nset tries=0\r\n:run\r\nwsl.exe -d %s --cd "%%~dp0.." -- %%*\r\nset code=%%errorlevel%%\r\nif not "%%code%%"=="-1" exit /b %%code%%\r\nset /a tries+=1\r\nif %%tries%% geq 3 exit /b %%code%%\r\nping -n 6 127.0.0.1 >nul\r\ngoto run\r\n' "$distro" ;;
     programs/intent_engine/src/security.rs) printf '\043[cfg(not(feature = "no-entrypoint"))]
 solana_security_txt::security_txt! {
     name: "intent-engine",
@@ -72,7 +72,7 @@ solana_security_txt::security_txt! {
     programs/intent_engine/LICENSE | crates/intent-core/LICENSE) busl ;;
   esac
 }
-targets=(README.md programs/intent_engine/src/security.rs scripts/wsl.cmd packages/core/scripts/wsl.cmd packages/cli/scripts/wsl.cmd packages/solver/scripts/wsl.cmd packages/core/generated/identity.ts programs/intent_engine/LICENSE crates/intent-core/LICENSE)
+targets=(README.md programs/intent_engine/src/security.rs scripts/wsl.cmd packages/core/scripts/wsl.cmd packages/client/scripts/wsl.cmd packages/cli/scripts/wsl.cmd packages/solver/scripts/wsl.cmd packages/core/generated/identity.ts programs/intent_engine/LICENSE crates/intent-core/LICENSE)
 drift=0
 for target in "${targets[@]}"; do
   if [[ "${1:-}" == "--check" ]]; then
