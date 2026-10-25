@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type Beacon, DETAIL_BYTES, drawnArguments, engineRun, judgeDraw } from "../src/draw.js";
-import { type CaseResult, type Cases, CASES_FENCE, CLOCK_FROM, deadlineMissed, type Draw, MAX_ARGUMENTS, OUTPUT_BYTES, type Primitive, type Ran, runViper } from "../src/viper.js";
+import { type CaseResult, type Cases, CASES_FENCE, CLOCK_FROM, deadlineMissed, type Draw, MAX_ARGUMENTS, notUtf8, OUTPUT_BYTES, type Primitive, type Ran, runViper } from "../src/viper.js";
 
 vi.mock("../src/viper.js", async (original) => {
   const actual = await original<typeof import("../src/viper.js")>();
@@ -60,7 +60,7 @@ function encoded(results: CaseResult[]): Buffer {
         parts.push(Buffer.from([5]));
         string(detail);
       } else {
-        parts.push(Buffer.from([detail === null ? 1 : detail === false ? 2 : 3]));
+        parts.push(Buffer.from([detail === undefined ? 0 : detail === null ? 1 : detail === false ? 2 : 3]));
       }
     } else if (verdict === "threw" || verdict === "no-module") {
       string(String(detail));
@@ -167,6 +167,20 @@ describe("drawing cases with the generator", () => {
     expect(roles).toEqual(["generator"]);
   }, 60_000);
 
+  it("refuses a generator verdict that carries no value", async () => {
+    engine(() => [{ verdict: "wrong" }]);
+    await expect(drawn()).rejects.toMatchObject({ message: generatorRefused("gave the verdict wrong") });
+  });
+
+  it("refuses drawn arguments that UTF-8 cannot carry exactly, before the delivery runs", async () => {
+    engine((asked) => generating([["ok", "😀"], ["a\udc00"]], asked));
+    await expect(drawn()).rejects.toMatchObject({ message: generatorRefused(`returned case 1, whose args hold ${notUtf8}`) });
+    roles = [];
+    judging({ lists: [["\ud800"], [1]], answer: () => ({ verdict: "pass" }) });
+    await expect(judged()).rejects.toMatchObject({ message: generatorRefused(`returned case 0, whose args hold ${notUtf8}`) });
+    expect(roles).toEqual(["generator", "generator"]);
+  });
+
   it("takes lists of exactly the argument limit", async () => {
     const full = [Array.from({ length: MAX_ARGUMENTS }, (_, n) => n), [1]];
     engine((asked) => generating(full, asked));
@@ -207,6 +221,21 @@ describe("judging a drawn delivery", () => {
     judging({ lists: LISTS, answer: () => ({ verdict: "threw", detail: "Error: no" }) });
     const failures = [0, 1].map((index) => ({ case: index, verdict: "threw", detail: "Error: no" }));
     expect(await judged({ ...DRAW, checker: "const nothing = 0;" })).toStrictEqual({ ...recorded, total: 2, passed: 0, failures });
+    expect(roles).toEqual(["generator", "generator", "answer"]);
+  });
+
+  it("fails a drawn case whose answer carries no value and never hands it to the checker", async () => {
+    const checked: Primitive[] = [];
+    judging({
+      lists: LISTS,
+      answer: ([n]) => (n === 0 ? { verdict: "wrong" } : { verdict: "wrong", detail: null }),
+      holds: (said) => checked.push(said) > 0,
+    });
+    expect(await judged()).toStrictEqual({ ...recorded, total: 2, passed: 1, failures: [{ case: 0, verdict: "wrong" }] });
+    expect(checked).toEqual([null]);
+    roles = [];
+    judging({ lists: LISTS, answer: () => ({ verdict: "wrong" }) });
+    expect(await judged({ ...DRAW, checker: "const nothing = 0;" })).toStrictEqual({ ...recorded, total: 2, passed: 0, failures: [0, 1].map((index) => ({ case: index, verdict: "wrong" })) });
     expect(roles).toEqual(["generator", "generator", "answer"]);
   });
 

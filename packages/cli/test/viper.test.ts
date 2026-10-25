@@ -17,6 +17,7 @@ import {
   decodeOutput,
   judgeViper,
   MAX_CASES,
+  notUtf8,
   permissionFlag,
   pinnedWasm,
   REPORTED_FAILURES,
@@ -64,6 +65,10 @@ describe("the cases a spec pins", () => {
     });
   });
 
+  it("takes strings whose surrogates all come in pairs, which UTF-8 carries exactly", () => {
+    expect(casesOf(spec('{"cases": [{"args": ["\\ud83d\\ude00"], "expected": "\\ud83d\\ude00!"}]}')).cases).toEqual([{ args: ["\u{1f600}"], expected: "\u{1f600}!" }]);
+  });
+
   it("refuses a spec with no block, two blocks or a block it cannot trust", () => {
     expect(refusal(() => casesOf(new TextEncoder().encode("# no cases")))).toContain("holds 0");
     expect(refusal(() => casesOf(spec('{"cases": [{"args": [], "expected": 1}]}', '```judge-cases\n{"cases": []}\n```\n')))).toContain("holds 2");
@@ -75,6 +80,9 @@ describe("the cases a spec pins", () => {
       ['{"cases": [{"args": [{}], "expected": 1}]}', "case 0, whose args"],
       ['{"cases": [{"args": [], "expected": [1]}]}', "case 0, whose expected"],
       ['{"cases": [{"args": [], "expected": -0}]}', "case 0, whose expected answer is negative zero"],
+      ['{"cases": [{"args": ["a"], "expected": 1}, {"args": ["x", "\\ud800"], "expected": 1}]}', `case 1, whose args hold ${notUtf8}`],
+      ['{"cases": [{"args": ["\\udc00\\ud83d"], "expected": 1}]}', `case 0, whose args hold ${notUtf8}`],
+      ['{"cases": [{"args": [], "expected": "a\\udfff"}]}', `case 0, whose expected answer is ${notUtf8}`],
       ['{"cases": [{"args": []}]}', "case 0, which is not"],
       ['{"cases": [{"args": [], "expected": 1, "extra": 2}]}', "case 0, which is not"],
       ['{"steps": -1, "cases": [{"args": [], "expected": 1}]}', "steps -1"],
@@ -149,6 +157,28 @@ describe("a delivery judged by the module", () => {
     expect(["threw", "stopped"]).toContain(bomb.failures[0]?.verdict);
   });
 
+  it("fails an answer of undefined as wrong with no answer to report, whatever the case expects", async () => {
+    const nothing = [
+      { args: [], expected: null },
+      { args: [], expected: "x" },
+    ];
+    expect(await judged("export default () => undefined;", nothing)).toEqual({
+      total: 2,
+      passed: 0,
+      failures: [
+        { case: 0, verdict: "wrong" },
+        { case: 1, verdict: "wrong" },
+      ],
+      seed: 7,
+      clock: 0,
+    });
+  });
+
+  it("hands a surrogate pair to the delivery exactly as the spec writes it", async () => {
+    const units = [{ args: ["😀"], expected: "55357,56832" }];
+    expect(await judged("export default (t) => [...Array(t.length).keys()].map((i) => t.charCodeAt(i)).join();", units)).toMatchObject({ passed: 1, failures: [] });
+  });
+
   it("answers the same twice and reports a bounded number of failures", async () => {
     const reads = "export default () => Math.random() + '|' + Date.now();";
     const twice = [await judged(reads, [{ args: [], expected: null }], { clock: 1_700_000_000_000 }), await judged(reads, [{ args: [], expected: null }], { clock: 1_700_000_000_000 })];
@@ -199,6 +229,9 @@ describe("a delivery judged by the module", () => {
     expect(refusal(() => decodeOutput(Buffer.concat([head, Buffer.from([0, 0])]), 1))).toContain("more than");
     expect(refusal(() => decodeOutput(head, 1))).toContain("truncated");
     expect(refusal(() => decodeOutput(Buffer.concat([head, Buffer.from([9])]), 1))).toContain("does not have");
+    expect(decodeOutput(Buffer.concat([head, Buffer.from([1, 0])]), 1)).toStrictEqual([{ verdict: "wrong" }]);
+    expect(decodeOutput(Buffer.concat([head, Buffer.from([1, 1])]), 1)).toStrictEqual([{ verdict: "wrong", detail: null }]);
+    expect(refusal(() => decodeOutput(Buffer.concat([head, Buffer.from([1, 6])]), 1))).toContain("a value it does not have");
     expect(refusal(() => decodeOutput(Buffer.concat([head, Buffer.from([0])]), 2))).toContain("1 verdicts for 2");
     expect(refusal(() => decodeOutput(Buffer.from([1, 0, 0, 0, 1, 0, 0, 0, 0]), 0))).toContain("refused its own input");
   });

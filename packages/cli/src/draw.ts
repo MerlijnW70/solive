@@ -17,6 +17,7 @@ import {
   isPrimitive,
   MAX_ARGUMENTS,
   moduleText,
+  notUtf8,
   OUTPUT_BYTES,
   type Primitive,
   REPORTED_FAILURES,
@@ -24,6 +25,7 @@ import {
   runViper,
   SEED_LIMIT,
   stoppedAll,
+  utf8Exact,
 } from "./viper.js";
 
 export const DRAW_TAG = "judge-draw";
@@ -145,7 +147,7 @@ export async function drawnArguments(wasm: Buffer, budget: Cases, draw: Draw, se
     if (unfinished(results)) {
       return refuseDraw("generator", `did not finish: ${results.detail}`);
     }
-    return results.map((result) => (result.verdict === "wrong" ? (result.detail ?? null) : refuseDraw("generator", told(result))));
+    return results.map((result) => (result.verdict === "wrong" && result.detail !== undefined ? result.detail : refuseDraw("generator", told(result))));
   };
   const [length] = await read([-1]);
   if (typeof length !== "number" || !Number.isSafeInteger(length) || length < 0 || length > OUTPUT_BYTES) {
@@ -156,6 +158,10 @@ export async function drawnArguments(wasm: Buffer, budget: Cases, draw: Draw, se
   const lists = text.length === length ? parsed(text) : undefined;
   if (!Array.isArray(lists) || lists.length !== draw.count || !lists.every((args: unknown) => Array.isArray(args) && args.length <= MAX_ARGUMENTS && args.every(isPrimitive))) {
     return refuseDraw("generator", invalid);
+  }
+  const mangled = (lists as Primitive[][]).findIndex((args) => !args.every(utf8Exact));
+  if (mangled >= 0) {
+    return refuseDraw("generator", `returned case ${mangled}, whose args hold ${notUtf8}`);
   }
   return lists as Primitive[][];
 }
@@ -185,8 +191,8 @@ export async function judgeDraw(
   answered.forEach((result, index) => {
     if (result.verdict === "pass") {
       answers.push({ case: index, answer: null });
-    } else if (result.verdict === "wrong") {
-      answers.push({ case: index, answer: result.detail ?? null });
+    } else if (result.verdict === "wrong" && result.detail !== undefined) {
+      answers.push({ case: index, answer: result.detail });
     } else {
       failures.push({ case: index, ...result });
     }

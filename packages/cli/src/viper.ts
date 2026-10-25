@@ -45,6 +45,12 @@ const refuse = (why: string): never => {
 export const isPrimitive = (value: unknown): value is Primitive =>
   value === null || typeof value === "boolean" || typeof value === "string" || (typeof value === "number" && Number.isFinite(value));
 
+const LONE_SURROGATE = /\p{Cs}/u;
+
+export const utf8Exact = (value: Primitive): boolean => typeof value !== "string" || !LONE_SURROGATE.test(value);
+
+export const notUtf8 = "a string with a lone surrogate, which UTF-8 cannot carry, so the engines would not all receive it as written";
+
 function bounded(value: unknown, name: string, fallback: number, max: number): number {
   if (value === undefined) {
     return fallback;
@@ -65,6 +71,9 @@ function counted(value: unknown, name: string, min: number, max: number): number
 function sourceOf(value: unknown, name: string): string {
   if (typeof value !== "string" || value.trim().length === 0) {
     return refuse(`has a draw ${name} that is not the source of a module`);
+  }
+  if (!utf8Exact(value)) {
+    return refuse(`has a draw ${name} that holds ${notUtf8}`);
   }
   return value;
 }
@@ -121,6 +130,12 @@ export function casesOf(spec: Uint8Array): Cases {
     }
     if (!isPrimitive(entry["expected"])) {
       return refuse(`has case ${index}, whose expected answer is not a JSON string, number, boolean or null`);
+    }
+    if (!args.every(utf8Exact)) {
+      return refuse(`has case ${index}, whose args hold ${notUtf8}`);
+    }
+    if (!utf8Exact(entry["expected"])) {
+      return refuse(`has case ${index}, whose expected answer is ${notUtf8}`);
     }
     if (Object.is(entry["expected"], -0)) {
       return refuse(`has case ${index}, whose expected answer is negative zero, which the engines cannot tell from positive zero`);
@@ -207,7 +222,7 @@ export function decodeOutput(bytes: Buffer, expected: number): CaseResult[] {
     at += length;
     return bytes.toString("utf8", at - length, at);
   };
-  const value = (): Primitive => {
+  const value = (): Primitive | undefined => {
     const tag = u8();
     if (tag === 4) {
       need(8);
@@ -215,7 +230,8 @@ export function decodeOutput(bytes: Buffer, expected: number): CaseResult[] {
       return bytes.readDoubleLE(at - 8);
     }
     if (tag === 5) return string();
-    return [null, null, false, true][tag] ?? null;
+    if (tag > 5) throw new JudgeRefused("the viper judge answered a value it does not have; nothing was paid");
+    return [undefined, null, false, true][tag];
   };
   if (u32() !== WIRE_VERSION || u8() !== 0) {
     throw new JudgeRefused("the viper judge refused its own input; nothing was paid");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CASES_FENCE, casesOf, MAX_CASES, MAX_DRAW_SLOTS } from "../src/viper.js";
+import { CASES_FENCE, casesOf, MAX_CASES, MAX_DRAW_SLOTS, notUtf8 } from "../src/viper.js";
 
 const CASES = [{ args: [1], expected: 1 }];
 const GENERATOR = "export default (seed, count) => [];";
@@ -17,6 +17,12 @@ describe("the draw block of a spec", () => {
     ] as const) {
       expect(casesOf(spec({ cases: CASES, draw: { count, generator: GENERATOR, checker: CHECKER, k } })).draw).toStrictEqual({ count, generator: GENERATOR, checker: CHECKER, k });
     }
+  });
+
+  it("refuses a draw generator or checker that holds a lone surrogate", () => {
+    const lone = 'export default () => [["\ud800"]];';
+    expect(() => casesOf(spec({ cases: CASES, draw: { count: 1, generator: lone, checker: CHECKER, k: 1 } }))).toThrow(refusal(`has a draw generator that holds ${notUtf8}`));
+    expect(() => casesOf(spec({ cases: CASES, draw: { count: 1, generator: GENERATOR, checker: lone, k: 1 } }))).toThrow(refusal(`has a draw checker that holds ${notUtf8}`));
   });
 
   it("refuses a draw that is null, a list or a string as not a JSON object", () => {
