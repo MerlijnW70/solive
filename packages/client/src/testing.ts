@@ -39,6 +39,7 @@ import { LiteSVM } from "litesvm";
 import { MissingAccount } from "./accounts.js";
 import { createClient } from "./client.js";
 import type { Client } from "./client-types.js";
+import type { ClientHooks, DebugLog } from "./observe.js";
 import { DEVNET_GENESIS_HASH } from "./job-specs.js";
 import { CLUSTER_URLS } from "./simple-tokens.js";
 import { svmTransport } from "./svm.js";
@@ -74,6 +75,8 @@ export type TestWorldOptions = {
   domain?: Uint8Array;
   url?: string;
   devnetMints?: boolean;
+  hooks?: ClientHooks;
+  debug?: DebugLog;
 };
 
 export type TestWallet = KeyPairSigner & { keypair: Uint8Array };
@@ -229,6 +232,11 @@ export async function createTestWorld(options: TestWorldOptions = {}): Promise<T
     svm.setClock(moved);
     return moved.unixTimestamp;
   };
-  const client = createClient({ url: options.url ?? CLUSTER_URLS.devnet, transport });
+  const client = createClient({
+    url: options.url ?? CLUSTER_URLS.devnet,
+    transport,
+    ...(options.hooks === undefined ? {} : { hooks: options.hooks }),
+    ...(options.debug === undefined ? {} : { debug: options.debug }),
+  });
   return { svm, transport, client, admin, feeRecipient, fees, wallet, mint, tokens, tokenBalance, now, warp };
 }

@@ -21,6 +21,8 @@ import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRE
 import { FailedTransactionMetadata, type LiteSVM } from "litesvm";
 import { TOKEN_PROGRAMS } from "./accounts.js";
 import { intentMatches, matchBytes } from "./intent-filters.js";
+import { joined, type Observer, QUIET } from "./observe.js";
+import { delivering, memberRequests, observable, transactionSend } from "./observe-transport.js";
 import { BehindMinSlot, BlockhashExpired, FailedOnChain, type Failure, failure } from "./send-errors.js";
 import { ALREADY_PROCESSED, BLOCKHASH_NOT_FOUND, errOf, fieldlessOf } from "./svm-errors.js";
 import {
@@ -217,100 +219,117 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
     });
   };
   const landing = (signature: string): SignatureLanding | null => (failures.has(signature) ? "failed" : byId.has(signature) ? "landed" : null);
-  return {
-    getAccount,
-    engineAccounts: async (filter) => listed(filter),
-    getAccounts: async (addresses) => Promise.all(addresses.map(getAccount)),
-    send: async (instructions, payer) => {
-      svm.expireBlockhash();
-      const message = pipe(
-        createTransactionMessage({ version: 0 }),
-        (m) => setTransactionMessageFeePayerSigner(payer, m),
-        (m) => svm.setTransactionMessageLifetimeUsingLatestBlockhash(m),
-        (m) => appendTransactionMessageInstructions(instructions, m),
-      );
-      return landed(await signTransactionMessageWithSigners(message));
-    },
-    latestBlockhash: async () => ({ blockhash: svm.latestBlockhash() as Blockhash, lastValidBlockHeight: height() }),
-    sendWire: async (wire) => landed(decodeWire(wire)),
-    submitWire: async (wire) => landed(decodeWire(wire), true),
-    simulate: async (wire, watch = []) => {
-      const tx = decodeWire(wire);
-      const compiled = getCompiledTransactionMessageDecoder().decode(tx.messageBytes);
-      const messageBytes = getCompiledTransactionMessageEncoder().encode({ ...compiled, lifetimeToken: svm.latestBlockhash() });
-      const unsigned = Object.fromEntries(
-        Object.entries(tx.signatures).map(([signer, signature]) => [signer, signature ?? new Uint8Array(64)]),
-      );
-      const verifying = sigverifyOf(svm);
-      svm.withSigverify(false);
-      let result: ReturnType<LiteSVM["simulateTransaction"]>;
-      try {
-        result = svm.simulateTransaction({ messageBytes, signatures: unsigned } as unknown as typeof tx);
-      } finally {
-        svm.withSigverify(verifying);
-      }
-      const meta = result.meta();
-      return {
-        err: result instanceof FailedTransactionMetadata ? String(result.err()) : null,
-        logs: meta.logs(),
-        unitsConsumed: meta.computeUnitsConsumed(),
-        accounts: watch.map(() => null),
-      };
-    },
-    genesisHash: async () => options.genesisHash ?? SVM_GENESIS_HASH,
-    intents: async (query, read) => {
-      const slot = svm.getClock().slot;
-      if (read?.minContextSlot !== undefined && slot < read.minContextSlot) {
-        throw new BehindMinSlot(slot, read.minContextSlot);
-      }
-      const found = listed({
-        discriminator: getIntentDiscriminatorBytes(),
-        dataSize: getIntentSize(),
-        match: intentMatches(query),
-      }).map(({ address, data }): ProgramAccount => ({ address, data }));
-      read?.onSlot?.(slot);
-      return found;
-    },
-    engineTransactions: async (limit, of = INTENT_ENGINE_PROGRAM_ADDRESS, memo?: string) =>
-      history
-        .filter(({ touched }) => touched.has(of))
-        .slice(0, limit)
-        .map(({ found }) => found)
-        .filter(({ memos }) => memo === undefined || (memos ?? []).some((text) => text.includes(memo))),
-    signaturesOf: async (of, limit, before) => {
-      const touching = history.filter(({ touched }) => touched.has(of));
-      const start = before === undefined ? 0 : touching.findIndex(({ found }) => found.signature === before) + 1;
-      return (start === 0 && before !== undefined ? [] : touching.slice(start, start + limit)).map(
-        ({ found }): ListedSignature => ({
-          signature: found.signature,
-          slot: found.slot,
-          blockTime: found.blockTime,
-          failed: found.failed,
-          memo: found.memos === undefined ? null : found.memos.map((text) => `[${text.length}] ${text}`).join("; "),
-        }),
-      );
-    },
-    transactionsOf: async (listed) => listed.flatMap(({ signature }) => byId.get(signature) ?? []),
-    transactionOf: async (signature) => byId.get(signature) ?? null,
-    signatureStatuses: async (signatures) => signatures.map(landing),
-    sendStatus: async (signature, lastValidBlockHeight) => {
-      const failed = failures.get(signature);
-      if (failed !== undefined) {
-        return { status: "failed", ...failed };
-      }
-      const found = byId.get(signature);
-      const known = signature as Signature;
-      if (found !== undefined) {
-        return { status: "confirmed", signature: known, slot: found.slot };
-      }
-      return lastValidBlockHeight !== undefined && height() > lastValidBlockHeight ? { status: "expired", signature: known } : { status: "pending", signature: known };
-    },
-    firstAvailableSlot: async () => 0n,
-    recentFees: async () => [],
-    budget: async (instructions) => [...instructions],
-    airdrop: async (address, amount) => {
-      svm.airdrop(address, lamports(amount));
-      return `airdrop-${address}-${amount}`;
-    },
+  const delivered = async (tx: Transaction, by: Observer, lastValidBlockHeight: () => bigint): Promise<string> => {
+    const deliver = async () => {
+      const signature = landed(tx);
+      return { signature, slot: byId.get(signature)?.slot };
+    };
+    return (by.quiet ? await deliver() : await delivering(by, transactionSend(tx, lastValidBlockHeight()), deliver)).signature;
   };
+  const facade = (by: Observer): Transport => {
+    const members: Transport = {
+      getAccount,
+      engineAccounts: async (filter) => listed(filter),
+      getAccounts: async (addresses) => Promise.all(addresses.map(getAccount)),
+      send: async (instructions, payer) => {
+        svm.expireBlockhash();
+        const message = pipe(
+          createTransactionMessage({ version: 0 }),
+          (m) => setTransactionMessageFeePayerSigner(payer, m),
+          (m) => svm.setTransactionMessageLifetimeUsingLatestBlockhash(m),
+          (m) => appendTransactionMessageInstructions(instructions, m),
+        );
+        return delivered(await signTransactionMessageWithSigners(message), by, height);
+      },
+      latestBlockhash: async () => ({ blockhash: svm.latestBlockhash() as Blockhash, lastValidBlockHeight: height() }),
+      sendWire: async (wire, latest) => delivered(decodeWire(wire), by, () => latest.lastValidBlockHeight),
+      submitWire: async (wire) => {
+        const tx = decodeWire(wire);
+        if (!by.quiet) {
+          by.send(transactionSend(tx, null));
+        }
+        return landed(tx, true);
+      },
+      simulate: async (wire, watch = []) => {
+        const tx = decodeWire(wire);
+        const compiled = getCompiledTransactionMessageDecoder().decode(tx.messageBytes);
+        const messageBytes = getCompiledTransactionMessageEncoder().encode({ ...compiled, lifetimeToken: svm.latestBlockhash() });
+        const unsigned = Object.fromEntries(
+          Object.entries(tx.signatures).map(([signer, signature]) => [signer, signature ?? new Uint8Array(64)]),
+        );
+        const verifying = sigverifyOf(svm);
+        svm.withSigverify(false);
+        let result: ReturnType<LiteSVM["simulateTransaction"]>;
+        try {
+          result = svm.simulateTransaction({ messageBytes, signatures: unsigned } as unknown as typeof tx);
+        } finally {
+          svm.withSigverify(verifying);
+        }
+        const meta = result.meta();
+        return {
+          err: result instanceof FailedTransactionMetadata ? String(result.err()) : null,
+          logs: meta.logs(),
+          unitsConsumed: meta.computeUnitsConsumed(),
+          accounts: watch.map(() => null),
+        };
+      },
+      genesisHash: async () => options.genesisHash ?? SVM_GENESIS_HASH,
+      intents: async (query, read) => {
+        const slot = svm.getClock().slot;
+        if (read?.minContextSlot !== undefined && slot < read.minContextSlot) {
+          throw new BehindMinSlot(slot, read.minContextSlot);
+        }
+        const found = listed({
+          discriminator: getIntentDiscriminatorBytes(),
+          dataSize: getIntentSize(),
+          match: intentMatches(query),
+        }).map(({ address, data }): ProgramAccount => ({ address, data }));
+        read?.onSlot?.(slot);
+        return found;
+      },
+      engineTransactions: async (limit, of = INTENT_ENGINE_PROGRAM_ADDRESS, memo?: string) =>
+        history
+          .filter(({ touched }) => touched.has(of))
+          .slice(0, limit)
+          .map(({ found }) => found)
+          .filter(({ memos }) => memo === undefined || (memos ?? []).some((text) => text.includes(memo))),
+      signaturesOf: async (of, limit, before) => {
+        const touching = history.filter(({ touched }) => touched.has(of));
+        const start = before === undefined ? 0 : touching.findIndex(({ found }) => found.signature === before) + 1;
+        return (start === 0 && before !== undefined ? [] : touching.slice(start, start + limit)).map(
+          ({ found }): ListedSignature => ({
+            signature: found.signature,
+            slot: found.slot,
+            blockTime: found.blockTime,
+            failed: found.failed,
+            memo: found.memos === undefined ? null : found.memos.map((text) => `[${text.length}] ${text}`).join("; "),
+          }),
+        );
+      },
+      transactionsOf: async (listed) => listed.flatMap(({ signature }) => byId.get(signature) ?? []),
+      transactionOf: async (signature) => byId.get(signature) ?? null,
+      signatureStatuses: async (signatures) => signatures.map(landing),
+      sendStatus: async (signature, lastValidBlockHeight) => {
+        const failed = failures.get(signature);
+        if (failed !== undefined) {
+          return { status: "failed", ...failed };
+        }
+        const found = byId.get(signature);
+        const known = signature as Signature;
+        if (found !== undefined) {
+          return { status: "confirmed", signature: known, slot: found.slot };
+        }
+        return lastValidBlockHeight !== undefined && height() > lastValidBlockHeight ? { status: "expired", signature: known } : { status: "pending", signature: known };
+      },
+      firstAvailableSlot: async () => 0n,
+      recentFees: async () => [],
+      budget: async (instructions) => [...instructions],
+      airdrop: async (address, amount) => {
+        svm.airdrop(address, lamports(amount));
+        return `airdrop-${address}-${amount}`;
+      },
+    };
+    return observable(by.quiet ? members : memberRequests(members, by), (next) => facade(joined(by, next)));
+  };
+  return facade(QUIET);
 }

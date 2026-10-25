@@ -698,7 +698,7 @@ describe("command line flows", () => {
   it("answers help, prints text on request and honours the environment and cluster names", async () => {
     const help = await cli(["help", "cancel"], {});
     expect(help.out).toBe(
-      "usage: cancel [--keypair <file>] --nonce <n> [--close] [--yes]\noptions: --url, --priority-fee, --keypair, --yes, --nonce, --close, --output, --help",
+      "usage: cancel [--keypair <file>] --nonce <n> [--close] [--yes]\noptions: --url, --priority-fee, --keypair, --yes, --nonce, --close, --output, --help, --debug",
     );
     expect((await cli(["approve", "--help"], {})).out.startsWith("usage: approve [--keypair <file>]")).toBe(true);
     const text = await cli(["show", "config", "--output", "text"], {});

@@ -358,6 +358,43 @@ const held = await world.client.intent(plan.intent);
 console.log(statusName(held?.intent.status ?? -1), await world.client.format(NATIVE_MINT, held?.intent.escrowed ?? 0n));
 ```
 
+## Observe
+
+`hooks` on `createClient` shows what the client does on the wire. Each hook gets one plain object.
+
+- `request` and `response` fire for every RPC call with its `method`, an `id` the pair shares and the `attempt`; `response` adds the `ms` it took and, when it failed, the `error`.
+- `retry` fires each time the client retries a rate-limited or lagging call, with the `method`, the `attempt`, the `delay` and the `reason`.
+- `send` fires when a transaction leaves the client, with its `signature`, `payer`, `instructions` count and `lastValidBlockHeight`; `confirm` fires when it confirms, fails or expires, with the `outcome`, the `slot` when known and the `ms` since `send`.
+- `fetch` fires for every spec url the client fetches, with the url, the `status` and the `ms`.
+- A hook that throws or rejects changes nothing the client does; `hooks.error` receives each such error.
+- A url in a hook or log line shows only its scheme, host and port, and no event holds a key, a secret, a salt signature or a decrypted url.
+- `debug: true` writes one line per event to `console.debug`, and a function given as `debug` receives each line instead.
+- `createTestWorld` takes the same `hooks` and `debug`, and the CLI and MCP server take `--debug`, which writes the lines to stderr.
+
+This creates a proof escrow in a test world, counting RPC calls, and prints `send 7`, `confirm confirmed` and `true`.
+
+```ts
+import { createHash } from "node:crypto";
+import { attestedResult, DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
+import { createTestWorld } from "@intent-engine/client/testing";
+
+let calls = 0;
+const world = await createTestWorld({
+  hooks: {
+    request: () => {
+      calls += 1;
+    },
+    send: ({ instructions }) => console.log(`send ${instructions}`),
+    confirm: ({ outcome }) => console.log(`confirm ${outcome}`),
+  },
+});
+const [owner, judge] = [await world.wallet(), await world.wallet()];
+const specHash = new Uint8Array(createHash("sha256").update("the spec").digest());
+const params = attestedResult({ amountIn: await world.client.amount(NATIVE_MINT, "0.5"), minResult: 1n, maxResult: 1n, attestor: judge.address, specHash, judgeFee: 0n });
+await world.client.createIntent({ signer: owner, inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT, params });
+console.log(calls > 0);
+```
+
 ## Next
 
 - [Judge work](judge.md)

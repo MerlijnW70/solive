@@ -124,7 +124,7 @@ function cliPage(): string {
     USAGE,
     "```",
     "",
-    `Every command accepts ${GLOBAL_OPTIONS.map((o) => `\`--${o}\``).join(" and ")}.`,
+    `Every command accepts ${GLOBAL_OPTIONS.slice(0, -1).map((o) => `\`--${o}\``).join(", ")} and \`--${GLOBAL_OPTIONS.at(-1) ?? ""}\`. \`--debug\` writes a line to stderr for each RPC call, retry, transaction sent and confirmed, and spec or work fetch, so the JSON on stdout stays parseable; urls in it show only scheme, host and port.`,
     "",
     `\`${ENV_KEYPAIR}\` fills in \`--keypair\` and \`${ENV_URL}\` fills in \`--url\` when they are not given. \`--url\` takes an RPC URL or one of ${Object.keys(CLUSTERS).map((c) => `\`${c}\``).join(", ")}.`,
     "",

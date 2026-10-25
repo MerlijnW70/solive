@@ -1,5 +1,6 @@
 import { isSolanaError, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SOLANA_ERROR__TRANSACTION_ERROR__BLOCKHASH_NOT_FOUND } from "@solana/kit";
 import { isSdkError } from "@intent-engine/core";
+import type { RetryEvent } from "./observe.js";
 
 export const POLL_MS = 500;
 
@@ -71,13 +72,21 @@ export function retryAfterOf(error: unknown, now: number = Date.now()): number |
 
 export const jittered = (base: number, random: () => number): number => base - Math.floor(Math.min(Math.max(random(), 0), 1) * (base / 2));
 
-export async function patiently<T>(call: () => Promise<T>, wait: (ms: number) => Promise<void> = sleep, random: () => number = Math.random): Promise<T> {
+export type Retry = Omit<RetryEvent, "method">;
+
+export async function patiently<T>(
+  call: (attempt: number) => Promise<T>,
+  wait: (ms: number) => Promise<void> = sleep,
+  random: () => number = Math.random,
+  onRetry?: (retry: Retry) => void,
+): Promise<T> {
   let spent = 0;
   for (let attempt = 1; ; attempt++) {
     try {
-      return await call();
+      return await call(attempt);
     } catch (error) {
-      if (!(rateLimited(error) || behindMinSlot(error)) || attempt >= RATE_LIMIT_ATTEMPTS) {
+      const limited = rateLimited(error);
+      if (!(limited || behindMinSlot(error)) || attempt >= RATE_LIMIT_ATTEMPTS) {
         throw error;
       }
       const delay = retryAfterOf(error) ?? jittered(backoffOf(attempt), random);
@@ -85,6 +94,7 @@ export async function patiently<T>(call: () => Promise<T>, wait: (ms: number) =>
         throw error;
       }
       spent += delay;
+      onRetry?.({ attempt, delay, reason: limited ? "rate-limited" : "behind-min-slot" });
       await wait(delay);
     }
   }

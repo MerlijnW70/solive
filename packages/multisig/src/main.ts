@@ -11,6 +11,7 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   type TransactionPartialSigner,
 } from "@solana/kit";
+import { redactUrl } from "@intent-engine/client";
 import type { Chain } from "./chain.js";
 import { jsonText } from "./engine.js";
 import { isDevice, isLedgerPath, LEDGER_FORMS, LedgerError, LedgerPathError, messageHash, parseLedgerPath } from "./ledger.js";
@@ -144,7 +145,7 @@ function cluster(given: string): Cluster {
   if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
     throw new UsageError(NOT_A_URL);
   }
-  return { url, shown: [parsed.protocol, "", parsed.host].join("/") };
+  return { url, shown: redactUrl(url) };
 }
 
 function hashes(values: Values): string[] {

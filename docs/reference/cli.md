@@ -6,7 +6,7 @@
 usage: setup | add-to claude|codex | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | close-legacy | migrate | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | lookup | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | set-committee-floor | solve | raise-pause | lower-pause | crank | treasury | solver-table | solver float | solver float show | solver float revoke | events | jobs | deliver | deliveries | refute | reclaim | close-book | receipt | judge [digest] | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | profile encryption-key new | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
 ```
 
-Every command accepts `--output` and `--help`.
+Every command accepts `--output`, `--help` and `--debug`. `--debug` writes a line to stderr for each RPC call, retry, transaction sent and confirmed, and spec or work fetch, so the JSON on stdout stays parseable; urls in it show only scheme, host and port.
 
 `INTENT_ENGINE_KEYPAIR` fills in `--keypair` and `INTENT_ENGINE_URL` fills in `--url` when they are not given. `--url` takes an RPC URL or one of `localnet`, `devnet`, `testnet`, `mainnet-beta`.
 
@@ -20,7 +20,7 @@ When neither `--keypair` nor `INTENT_ENGINE_KEYPAIR` is given, the wallet `setup
 setup [--url <cluster>] [--keypair <file>] [--confirm-url <cluster>] [--faucet]
 ```
 
-Options: `--url`, `--keypair`, `--confirm-url`, `--faucet`, `--output`, `--help`
+Options: `--url`, `--keypair`, `--confirm-url`, `--faucet`, `--output`, `--help`, `--debug`
 
 ## add-to
 
@@ -28,7 +28,7 @@ Options: `--url`, `--keypair`, `--confirm-url`, `--faucet`, `--output`, `--help`
 add-to claude|codex [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>]
 ```
 
-Options: `--wallet-per-trade`, `--wallet-per-hour`, `--output`, `--help`
+Options: `--wallet-per-trade`, `--wallet-per-hour`, `--output`, `--help`, `--debug`
 
 ## balance
 
@@ -36,7 +36,7 @@ Options: `--wallet-per-trade`, `--wallet-per-hour`, `--output`, `--help`
 balance [--keypair <file> | --owner <address>] [--mints <mint,...>]
 ```
 
-Options: `--url`, `--keypair`, `--owner`, `--mints`, `--output`, `--help`
+Options: `--url`, `--keypair`, `--owner`, `--mints`, `--output`, `--help`, `--debug`
 
 ## pda
 
@@ -44,7 +44,7 @@ Options: `--url`, `--keypair`, `--owner`, `--mints`, `--output`, `--help`
 pda --owner <address> --nonce <n>
 ```
 
-Options: `--owner`, `--nonce`, `--output`, `--help`
+Options: `--owner`, `--nonce`, `--output`, `--help`, `--debug`
 
 ## lookup
 
@@ -52,7 +52,7 @@ Options: `--owner`, `--nonce`, `--output`, `--help`
 lookup --signature <transaction signature> [--valid-until <last valid block height>]
 ```
 
-Options: `--url`, `--signature`, `--valid-until`, `--output`, `--help`
+Options: `--url`, `--signature`, `--valid-until`, `--output`, `--help`, `--debug`
 
 ## hash
 
@@ -60,7 +60,7 @@ Options: `--url`, `--signature`, `--valid-until`, `--output`, `--help`
 hash --artifact <file or directory>
 ```
 
-Options: `--artifact`, `--output`, `--help`
+Options: `--artifact`, `--output`, `--help`, `--debug`
 
 ## seal
 
@@ -68,7 +68,7 @@ Options: `--artifact`, `--output`, `--help`
 seal --file <file> --to <wallet or committee,...> --out <file>
 ```
 
-Options: `--url`, `--file`, `--to`, `--out`, `--output`, `--help`
+Options: `--url`, `--file`, `--to`, `--out`, `--output`, `--help`, `--debug`
 
 ## unseal
 
@@ -76,7 +76,7 @@ Options: `--url`, `--file`, `--to`, `--out`, `--output`, `--help`
 unseal --file <sealed file> ([--keypair <file>] | --encryption-keypair <encryption key file> ...) --out <file>
 ```
 
-Options: `--file`, `--keypair`, `--encryption-keypair`, `--out`, `--output`, `--help`
+Options: `--file`, `--keypair`, `--encryption-keypair`, `--out`, `--output`, `--help`, `--debug`
 
 ## spec
 
@@ -84,7 +84,7 @@ Options: `--file`, `--keypair`, `--encryption-keypair`, `--out`, `--output`, `--
 spec --intent <escrow address> [--keypair <file>] [--out <file>]
 ```
 
-Options: `--url`, `--intent`, `--keypair`, `--out`, `--output`, `--help`
+Options: `--url`, `--intent`, `--keypair`, `--out`, `--output`, `--help`, `--debug`
 
 ## show
 
@@ -92,7 +92,7 @@ Options: `--url`, `--intent`, `--keypair`, `--out`, `--output`, `--help`
 show config | intent --owner <address> --nonce <n> | mint-cap --mint <mint>
 ```
 
-Options: `--url`, `--owner`, `--nonce`, `--mint`, `--output`, `--help`
+Options: `--url`, `--owner`, `--nonce`, `--mint`, `--output`, `--help`, `--debug`
 
 ## domain
 
@@ -100,7 +100,7 @@ Options: `--url`, `--owner`, `--nonce`, `--mint`, `--output`, `--help`
 domain
 ```
 
-Options: `--url`, `--output`, `--help`
+Options: `--url`, `--output`, `--help`, `--debug`
 
 ## mcp
 
@@ -108,7 +108,7 @@ Options: `--url`, `--output`, `--help`
 mcp [--wallet [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--all-tools]] [--relayer <keypair> --relay-fee <mint=amount,...> [--relay-max-lamports] [--relay-max-ttl] [--relay-per-hour] [--relay-hourly-lamports]] [--agent <keypair> --agent-owners <address,...> [--agent-hourly-lamports]] [--fee-payer <key file, with --wallet>] [--encryption-keypair <encryption key file, with --wallet> ...] [--confirm-url <cluster> | --no-confirm-url]
 ```
 
-Options: `--url`, `--priority-fee`, `--relayer`, `--relay-max-lamports`, `--relay-max-ttl`, `--relay-per-hour`, `--relay-hourly-lamports`, `--relay-fee`, `--agent`, `--agent-hourly-lamports`, `--agent-owners`, `--wallet`, `--wallet-per-trade`, `--wallet-per-hour`, `--all-tools`, `--confirm-url`, `--no-confirm-url`, `--fee-payer`, `--encryption-keypair`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--relayer`, `--relay-max-lamports`, `--relay-max-ttl`, `--relay-per-hour`, `--relay-hourly-lamports`, `--relay-fee`, `--agent`, `--agent-hourly-lamports`, `--agent-owners`, `--wallet`, `--wallet-per-trade`, `--wallet-per-hour`, `--all-tools`, `--confirm-url`, `--no-confirm-url`, `--fee-payer`, `--encryption-keypair`, `--output`, `--help`, `--debug`
 
 ## quote
 
@@ -116,7 +116,7 @@ Options: `--url`, `--priority-fee`, `--relayer`, `--relay-max-lamports`, `--rela
 quote --owner <address> --nonce <n> [--at <unix>]
 ```
 
-Options: `--url`, `--owner`, `--nonce`, `--at`, `--output`, `--help`
+Options: `--url`, `--owner`, `--nonce`, `--at`, `--output`, `--help`, `--debug`
 
 ## cancel
 
@@ -124,7 +124,7 @@ Options: `--url`, `--owner`, `--nonce`, `--at`, `--output`, `--help`
 cancel [--keypair <file>] --nonce <n> [--close] [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--nonce`, `--close`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--nonce`, `--close`, `--output`, `--help`, `--debug`
 
 ## expire
 
@@ -132,7 +132,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--nonce`, `--close`, 
 expire [--keypair <file>] --owner <address> --nonce <n> [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--output`, `--help`, `--debug`
 
 ## close
 
@@ -140,7 +140,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, 
 close [--keypair <file>] --owner <address> --nonce <n> [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--output`, `--help`, `--debug`
 
 ## advance-nonce
 
@@ -148,7 +148,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, 
 advance-nonce [--keypair <file>] --base <n> [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--base`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--base`, `--output`, `--help`, `--debug`
 
 ## close-legacy
 
@@ -156,7 +156,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--base`, `--output`, 
 close-legacy [--keypair <payer>] --address <account> [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--address`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--address`, `--output`, `--help`, `--debug`
 
 ## migrate
 
@@ -164,7 +164,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--address`, `--output
 migrate [--keypair <payer>] (--address <account> | --all) [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--address`, `--all`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--address`, `--all`, `--output`, `--help`, `--debug`
 
 ## advance-epoch
 
@@ -172,7 +172,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--address`, `--all`, 
 advance-epoch [--keypair <file>]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--output`, `--help`, `--debug`
 
 ## init-config
 
@@ -180,7 +180,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--output`, `--help`
 init-config ([--keypair <file>] [--yes] | --authority <address>) --guardian --fee-recipient --fee-bps --kinds [--flags create|fill|all]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--guardian`, `--fee-recipient`, `--fee-bps`, `--kinds`, `--flags`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--guardian`, `--fee-recipient`, `--fee-bps`, `--kinds`, `--flags`, `--output`, `--help`, `--debug`
 
 ## raise-pause
 
@@ -188,7 +188,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--guar
 raise-pause ([--keypair <file>] [--yes] | --authority <address>) --flags create|fill|all
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--flags`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--flags`, `--output`, `--help`, `--debug`
 
 ## set-economics
 
@@ -196,7 +196,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--flag
 set-economics ([--keypair <file>] [--yes] | --authority <address>) --bounty --create-fee [--kind-fees] [--partner-cut]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--bounty`, `--create-fee`, `--kind-fees`, `--partner-cut`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--bounty`, `--create-fee`, `--kind-fees`, `--partner-cut`, `--output`, `--help`, `--debug`
 
 ## update-config
 
@@ -204,7 +204,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--boun
 update-config ([--keypair <file>] [--yes] | --authority <address>) and any of --guardian --fee-recipient --fee-bps --kinds --fill-disabled
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--guardian`, `--fee-recipient`, `--fee-bps`, `--kinds`, `--fill-disabled`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--guardian`, `--fee-recipient`, `--fee-bps`, `--kinds`, `--fill-disabled`, `--output`, `--help`, `--debug`
 
 ## propose-admin
 
@@ -212,7 +212,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--guar
 propose-admin ([--keypair <file>] [--yes] | --authority <address>) --new-admin <address>
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--new-admin`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--new-admin`, `--output`, `--help`, `--debug`
 
 ## accept-admin
 
@@ -220,7 +220,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--new-
 accept-admin ([--keypair <file>] [--yes] | --authority <address>)
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--output`, `--help`, `--debug`
 
 ## set-mint-cap
 
@@ -228,7 +228,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--outp
 set-mint-cap ([--keypair <file>] [--yes] | --authority <address>) --mint <mint> --max-per-order <raw> --window-cap <raw> --window-secs <n> [--total-limit <raw>]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--mint`, `--max-per-order`, `--window-cap`, `--window-secs`, `--total-limit`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--mint`, `--max-per-order`, `--window-cap`, `--window-secs`, `--total-limit`, `--output`, `--help`, `--debug`
 
 ## set-caps-required
 
@@ -236,7 +236,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--mint
 set-caps-required on|off ([--keypair <file>] [--yes] | --authority <address>)
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--output`, `--help`, `--debug`
 
 ## set-committee-floor
 
@@ -244,7 +244,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--outp
 set-committee-floor ([--keypair <file>] [--yes] | --authority <address>) --mint <mint> --floor <raw>
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--mint`, `--floor`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--mint`, `--floor`, `--output`, `--help`, `--debug`
 
 ## solve
 
@@ -252,7 +252,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--mint
 solve [--keypair <file>] [--inventory <input mint>:<output mint>=<out>/<in>,... [--inventory-owner <address>]] [--jupiter <url> | --issue <input mint>:<output mint>=<out>/<in>,...] --min-profit <output mint=raw,...> [--sol-value <mint>=<raw>/<lamports>,...] [--target-profit <output mint=raw,...> [--patience <seconds>]] [--priority-fee <micro-lamports|auto>] [--max-fee-bps <n>] [--max-sol-cost <SOL>] [--max-rent <SOL>] [--slippage-bps <n>] [--jito <url> [--tip <lamports>] [--bundle-size <n>]] [--route-program <program the aggregator swaps through>] [--lookup-table <address,...>] [--concurrency <n>] [--watch [--interval <seconds>] [--quote-ttl <seconds>] [--stats]] [--confirm-url <cluster>]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--jupiter`, `--issue`, `--inventory`, `--inventory-owner`, `--jito`, `--tip`, `--bundle-size`, `--min-profit`, `--target-profit`, `--patience`, `--sol-value`, `--max-fee-bps`, `--max-sol-cost`, `--max-rent`, `--slippage-bps`, `--route-program`, `--lookup-table`, `--concurrency`, `--watch`, `--interval`, `--quote-ttl`, `--stats`, `--confirm-url`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--jupiter`, `--issue`, `--inventory`, `--inventory-owner`, `--jito`, `--tip`, `--bundle-size`, `--min-profit`, `--target-profit`, `--patience`, `--sol-value`, `--max-fee-bps`, `--max-sol-cost`, `--max-rent`, `--slippage-bps`, `--route-program`, `--lookup-table`, `--concurrency`, `--watch`, `--interval`, `--quote-ttl`, `--stats`, `--confirm-url`, `--output`, `--help`, `--debug`
 
 ## solver-table
 
@@ -260,7 +260,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--jupiter`, `--issue`, `--inve
 solver-table --solver <address> --mints <mint,...>
 ```
 
-Options: `--url`, `--solver`, `--mints`, `--output`, `--help`
+Options: `--url`, `--solver`, `--mints`, `--output`, `--help`, `--debug`
 
 ## solver
 
@@ -268,7 +268,7 @@ Options: `--url`, `--solver`, `--mints`, `--output`, `--help`
 solver float [--keypair <owner file>] --delegate <solver address> --mint <mint> --amount <amount> [--units tokens|raw] [--yes] | float show --owner <address> --delegate <solver address> [--mints <mint,...>] | float revoke [--keypair <owner file>] --mint <mint> [--yes]
 ```
 
-Options for `float`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--delegate`, `--mint`, `--mints`, `--amount`, `--units`, `--output`, `--help`
+Options for `float`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--delegate`, `--mint`, `--mints`, `--amount`, `--units`, `--output`, `--help`, `--debug`
 
 ## lower-pause
 
@@ -276,7 +276,7 @@ Options for `float`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`,
 lower-pause ([--keypair <file>] [--yes] | --authority <address>) --flags create|fill|all
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--flags`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--flags`, `--output`, `--help`, `--debug`
 
 ## events
 
@@ -284,7 +284,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--authority`, `--yes`, `--flag
 events [--limit <n>] [--follow [--interval <seconds>]]
 ```
 
-Options: `--url`, `--limit`, `--follow`, `--interval`, `--output`, `--help`
+Options: `--url`, `--limit`, `--follow`, `--interval`, `--output`, `--help`, `--debug`
 
 ## jobs
 
@@ -292,7 +292,7 @@ Options: `--url`, `--limit`, `--follow`, `--interval`, `--output`, `--help`
 jobs [--attestor <address>] [--mint <SOL, TEST or mint>] [--min-pay <tokens>] [--unclaimed]
 ```
 
-Options: `--url`, `--attestor`, `--mint`, `--min-pay`, `--unclaimed`, `--output`, `--help`
+Options: `--url`, `--attestor`, `--mint`, `--min-pay`, `--unclaimed`, `--output`, `--help`, `--debug`
 
 ## deliver
 
@@ -300,7 +300,7 @@ Options: `--url`, `--attestor`, `--mint`, `--min-pay`, `--unclaimed`, `--output`
 deliver [--keypair <worker file>] --intent <address> (--artifact <file or directory> | --sha256 <64 hex>) --work-url <https url> [--fee-payer <key file>] [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--artifact`, `--sha256`, `--work-url`, `--fee-payer`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--artifact`, `--sha256`, `--work-url`, `--fee-payer`, `--output`, `--help`, `--debug`
 
 ## deliveries
 
@@ -308,7 +308,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--artifac
 deliveries --intent <address> [--judge-keypair <judge or member file>] [--encryption-keypair <encryption key file> ...]
 ```
 
-Options: `--url`, `--intent`, `--judge-keypair`, `--encryption-keypair`, `--output`, `--help`
+Options: `--url`, `--intent`, `--judge-keypair`, `--encryption-keypair`, `--output`, `--help`, `--debug`
 
 ## refute
 
@@ -316,7 +316,7 @@ Options: `--url`, `--intent`, `--judge-keypair`, `--encryption-keypair`, `--outp
 refute [--keypair <worker file>] --earlier <your announcement> --paid <paid announcement> [--work-url <https url>] [--recipients <wallet,...> --weights <bps,...>] [--fee-payer <key file>] [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--earlier`, `--paid`, `--work-url`, `--recipients`, `--weights`, `--fee-payer`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--earlier`, `--paid`, `--work-url`, `--recipients`, `--weights`, `--fee-payer`, `--output`, `--help`, `--debug`
 
 ## reclaim
 
@@ -324,7 +324,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--earlier`, `--paid`,
 reclaim [--keypair <worker file>] [--fee-payer <key file>] [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--fee-payer`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--fee-payer`, `--output`, `--help`, `--debug`
 
 ## close-book
 
@@ -332,7 +332,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--fee-payer`, `--outp
 close-book [--keypair <payer file>] --intent <address> [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--output`, `--help`, `--debug`
 
 ## receipt
 
@@ -340,7 +340,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--output`
 receipt --owner <address> --nonce <n> [--sha256 <64 hex>] [--release <signature>]
 ```
 
-Options: `--url`, `--owner`, `--nonce`, `--sha256`, `--release`, `--output`, `--help`
+Options: `--url`, `--owner`, `--nonce`, `--sha256`, `--release`, `--output`, `--help`, `--debug`
 
 ## judge
 
@@ -348,9 +348,9 @@ Options: `--url`, `--owner`, `--nonce`, `--sha256`, `--release`, `--output`, `--
 judge [--keypair <judge file>] --owner <address> --nonce <n> --spec <file> (--artifact <file or directory> | --watch [--interval <seconds>]) (--run <command> | --sandbox viper) [--result <n>] [--timeout <seconds>] [--verdict <file>] [--check <file or directory>] [--sandbox docker|viper|none] [--sandbox-image <name>@sha256:<64 hex>] [--sandbox-memory <n>m|<n>g] [--sandbox-cpus <n>] [--plain-node] [--fee-payer <key file, with a Ledger --keypair>] [--encryption-keypair <encryption key file> ...] [--confirm-url <cluster> | --no-confirm-url] [--yes] | digest --owner <address> --nonce <n> --announcement <address> --sha256 <64 hex> --salt <32 hex> [--result <n>]
 ```
 
-Options without a subcommand: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--result`, `--timeout`, `--verdict`, `--check`, `--sandbox`, `--sandbox-image`, `--sandbox-memory`, `--sandbox-cpus`, `--plain-node`, `--watch`, `--interval`, `--confirm-url`, `--no-confirm-url`, `--fee-payer`, `--encryption-keypair`, `--output`, `--help`
+Options without a subcommand: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--result`, `--timeout`, `--verdict`, `--check`, `--sandbox`, `--sandbox-image`, `--sandbox-memory`, `--sandbox-cpus`, `--plain-node`, `--watch`, `--interval`, `--confirm-url`, `--no-confirm-url`, `--fee-payer`, `--encryption-keypair`, `--output`, `--help`, `--debug`
 
-Options for `digest`: `--url`, `--owner`, `--nonce`, `--announcement`, `--sha256`, `--salt`, `--result`, `--output`, `--help`
+Options for `digest`: `--url`, `--owner`, `--nonce`, `--announcement`, `--sha256`, `--salt`, `--result`, `--output`, `--help`, `--debug`
 
 ## crank
 
@@ -358,7 +358,7 @@ Options for `digest`: `--url`, `--owner`, `--nonce`, `--announcement`, `--sha256
 crank [--keypair <file>] [--dry-run] [--fund-accounts]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--dry-run`, `--fund-accounts`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--dry-run`, `--fund-accounts`, `--output`, `--help`, `--debug`
 
 ## treasury
 
@@ -366,7 +366,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--dry-run`, `--fund-accounts`,
 treasury [--mints <mint,...>] [--create --mints <mint,...> [--keypair <payer file>] [--yes]]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--mints`, `--create`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--mints`, `--create`, `--output`, `--help`, `--debug`
 
 ## create
 
@@ -374,7 +374,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--mints`, `--create`,
 create swap|limit|dutch|attested [--keypair <file>] --input-mint --output-mint (--expires-at | --expires-in) (--amount-in --min-out | --make --take | --amount-in --start-out --end-out --start-at --end-at | --amount-in --min-result --max-result --attestor) [--nonce <n>] [--pay-to <wallet>] [--partner <address> --partner-bps <n>] [--units tokens|raw] [--yes]; attested takes [--spec-hash <64 hex> [--judge-fee <amount>] [--spec-url <https url>]] to make a proof escrow
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--nonce`, `--input-mint`, `--output-mint`, `--expires-at`, `--expires-in`, `--amount-in`, `--min-out`, `--make`, `--take`, `--start-out`, `--end-out`, `--start-at`, `--end-at`, `--min-result`, `--max-result`, `--attestor`, `--spec-hash`, `--judge-fee`, `--spec-url`, `--pay-to`, `--partner`, `--partner-bps`, `--units`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--nonce`, `--input-mint`, `--output-mint`, `--expires-at`, `--expires-in`, `--amount-in`, `--min-out`, `--make`, `--take`, `--start-out`, `--end-out`, `--start-at`, `--end-at`, `--min-result`, `--max-result`, `--attestor`, `--spec-hash`, `--judge-fee`, `--spec-url`, `--pay-to`, `--partner`, `--partner-bps`, `--units`, `--output`, `--help`, `--debug`
 
 ## list
 
@@ -382,7 +382,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--nonce`, `--input-mi
 list [--owner <address> | --keypair <file>]; --owner wins when both are given
 ```
 
-Options: `--url`, `--keypair`, `--owner`, `--output`, `--help`
+Options: `--url`, `--keypair`, `--owner`, `--output`, `--help`, `--debug`
 
 ## mandate
 
@@ -390,13 +390,13 @@ Options: `--url`, `--keypair`, `--owner`, `--output`, `--help`
 mandate grant [--keypair <file>] --agent --input-mint --output-mint --kinds --per-intent --total --max-intents --max-ttl --valid-for --floor-out --floor-in [--agent-fee] [--partner <address> --partner-bps <n>] [--id] [--units tokens|raw] [--yes] | show --agent [--owner <address> | --keypair <file>] [--id] | revoke [--keypair <file>] --agent [--id] [--yes] | use swap|limit|dutch [--keypair <file>] --owner (--expires-at | --expires-in) (--amount-in --min-out | --make --take | --amount-in --start-out --end-out --start-at --end-at) [--id] [--nonce <n>] [--units tokens|raw] [--yes]
 ```
 
-Options for `grant`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--agent`, `--id`, `--input-mint`, `--output-mint`, `--kinds`, `--per-intent`, `--total`, `--max-intents`, `--max-ttl`, `--valid-for`, `--floor-out`, `--floor-in`, `--partner`, `--partner-bps`, `--agent-fee`, `--units`, `--output`, `--help`
+Options for `grant`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--agent`, `--id`, `--input-mint`, `--output-mint`, `--kinds`, `--per-intent`, `--total`, `--max-intents`, `--max-ttl`, `--valid-for`, `--floor-out`, `--floor-in`, `--partner`, `--partner-bps`, `--agent-fee`, `--units`, `--output`, `--help`, `--debug`
 
-Options for `show`: `--url`, `--keypair`, `--agent`, `--id`, `--owner`, `--output`, `--help`
+Options for `show`: `--url`, `--keypair`, `--agent`, `--id`, `--owner`, `--output`, `--help`, `--debug`
 
-Options for `revoke`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--agent`, `--id`, `--output`, `--help`
+Options for `revoke`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--agent`, `--id`, `--output`, `--help`, `--debug`
 
-Options for `use`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--id`, `--nonce`, `--expires-at`, `--expires-in`, `--amount-in`, `--min-out`, `--make`, `--take`, `--start-out`, `--end-out`, `--start-at`, `--end-at`, `--units`, `--output`, `--help`
+Options for `use`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--id`, `--nonce`, `--expires-at`, `--expires-in`, `--amount-in`, `--min-out`, `--make`, `--take`, `--start-out`, `--end-out`, `--start-at`, `--end-at`, `--units`, `--output`, `--help`, `--debug`
 
 ## approve
 
@@ -404,7 +404,7 @@ Options for `use`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `
 approve [--keypair <file>] --mint <mint> --amount <amount> [--units tokens|raw] [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--mint`, `--amount`, `--units`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--mint`, `--amount`, `--units`, `--output`, `--help`, `--debug`
 
 ## revoke-approval
 
@@ -412,7 +412,7 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--mint`, `--amount`, 
 revoke-approval [--keypair <file>] --mint <mint> [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--mint`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--mint`, `--output`, `--help`, `--debug`
 
 ## signed
 
@@ -420,9 +420,9 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--mint`, `--output`, 
 signed prepare swap|limit|dutch|attested [--keypair <file>] --out <file> --input-mint --output-mint (--expires-at | --expires-in) (--amount-in --min-out | --make --take | --amount-in --start-out --end-out --start-at --end-at | --amount-in --min-result --max-result --attestor) [--nonce <n>] [--submit-within <seconds>] [--relayer-fee] [--partner <address> --partner-bps <n>] [--units tokens|raw] [--yes] | submit --keypair <relayer file> --file <file> [--yes]
 ```
 
-Options for `prepare`: `--url`, `--keypair`, `--yes`, `--out`, `--nonce`, `--input-mint`, `--output-mint`, `--submit-within`, `--relayer-fee`, `--expires-at`, `--expires-in`, `--amount-in`, `--min-out`, `--make`, `--take`, `--start-out`, `--end-out`, `--start-at`, `--end-at`, `--min-result`, `--max-result`, `--attestor`, `--partner`, `--partner-bps`, `--units`, `--output`, `--help`
+Options for `prepare`: `--url`, `--keypair`, `--yes`, `--out`, `--nonce`, `--input-mint`, `--output-mint`, `--submit-within`, `--relayer-fee`, `--expires-at`, `--expires-in`, `--amount-in`, `--min-out`, `--make`, `--take`, `--start-out`, `--end-out`, `--start-at`, `--end-at`, `--min-result`, `--max-result`, `--attestor`, `--partner`, `--partner-bps`, `--units`, `--output`, `--help`, `--debug`
 
-Options for `submit`: `--url`, `--keypair`, `--yes`, `--file`, `--output`, `--help`
+Options for `submit`: `--url`, `--keypair`, `--yes`, `--file`, `--output`, `--help`, `--debug`
 
 ## monitor
 
@@ -430,7 +430,7 @@ Options for `submit`: `--url`, `--keypair`, `--yes`, `--file`, `--output`, `--he
 monitor --expect <baseline file> [--interval <seconds>] [--max-fill <mint>=<raw amount>]... [--max-fills <count>] [--min-balance <wallet>=<SOL>]... [--max-swap-wait <seconds>] [--webhook <https url>] [--once [--since <seconds>]] | --write-baseline <file>; prints each alert as one JSON line; with --once it reads fills of the last --since seconds, the interval by default, and exits 0 when nothing alerted and 4 when anything did
 ```
 
-Options: `--url`, `--expect`, `--write-baseline`, `--interval`, `--max-fill`, `--max-fills`, `--min-balance`, `--max-swap-wait`, `--webhook`, `--once`, `--since`, `--output`, `--help`
+Options: `--url`, `--expect`, `--write-baseline`, `--interval`, `--max-fill`, `--max-fills`, `--min-balance`, `--max-swap-wait`, `--webhook`, `--once`, `--since`, `--output`, `--help`, `--debug`
 
 ## reputation
 
@@ -438,7 +438,7 @@ Options: `--url`, `--expect`, `--write-baseline`, `--interval`, `--max-fill`, `-
 reputation --worker <address> [--max-pages <n>] [--reader <address> [--seed <address>]...]
 ```
 
-Options: `--url`, `--worker`, `--max-pages`, `--reader`, `--seed`, `--output`, `--help`
+Options: `--url`, `--worker`, `--max-pages`, `--reader`, `--seed`, `--output`, `--help`, `--debug`
 
 ## feedback
 
@@ -446,7 +446,7 @@ Options: `--url`, `--worker`, `--max-pages`, `--reader`, `--seed`, `--output`, `
 feedback [--keypair <owner file>] --intent <address> --score <0 to 100> [--note <sha256 of a note>] [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--score`, `--note`, `--output`, `--help`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--score`, `--note`, `--output`, `--help`, `--debug`
 
 ## committee
 
@@ -454,13 +454,13 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--score`,
 committee create [--keypair <payer file>] --members <address,...> --threshold <n> --fee-wallet <address> [--yes] | show --committee <address> | vote [--keypair <member file>] --owner <address> --nonce <n> --sha256 <64 hex> --result <n> [--encryption-keypair <encryption key file> ...] [--out <file>] [--yes] | release [--keypair <solver file>] --vote <file> [--vote <file> ...] [--confirm-url <cluster> | --no-confirm-url] [--yes]
 ```
 
-Options for `create`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--members`, `--threshold`, `--fee-wallet`, `--output`, `--help`
+Options for `create`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--members`, `--threshold`, `--fee-wallet`, `--output`, `--help`, `--debug`
 
-Options for `show`: `--url`, `--committee`, `--output`, `--help`
+Options for `show`: `--url`, `--committee`, `--output`, `--help`, `--debug`
 
-Options for `vote`: `--url`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--sha256`, `--encryption-keypair`, `--result`, `--out`, `--output`, `--help`
+Options for `vote`: `--url`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--sha256`, `--encryption-keypair`, `--result`, `--out`, `--output`, `--help`, `--debug`
 
-Options for `release`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--vote`, `--confirm-url`, `--no-confirm-url`, `--output`, `--help`
+Options for `release`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--vote`, `--confirm-url`, `--no-confirm-url`, `--output`, `--help`, `--debug`
 
 ## claims
 
@@ -468,21 +468,21 @@ Options for `release`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--vote`
 claims show --owner <address> --nonce <n> | open [--keypair <owner file>] --nonce <n> --max-secs <seconds> --stake <SOL> [--workers <a,b,...>] [--yes] | take [--keypair <worker file>] --owner <address> --nonce <n> --secs <seconds> [--yes] | drop [--keypair <worker file>] --owner <address> --nonce <n> [--yes] | settle [--keypair <payer file>] --owner <address> --nonce <n> [--yes] | standby [--keypair <worker file>] --owner <address> --nonce <n> --secs <seconds> [--yes] | leave [--keypair <file>] --owner <address> --nonce <n> [--seq <n>] [--yes] | advance [--keypair <payer file>] --owner <address> --nonce <n> [--yes]
 ```
 
-Options for `show`: `--url`, `--owner`, `--nonce`, `--output`, `--help`
+Options for `show`: `--url`, `--owner`, `--nonce`, `--output`, `--help`, `--debug`
 
-Options for `open`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--nonce`, `--max-secs`, `--stake`, `--workers`, `--output`, `--help`
+Options for `open`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--nonce`, `--max-secs`, `--stake`, `--workers`, `--output`, `--help`, `--debug`
 
-Options for `take`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--secs`, `--output`, `--help`
+Options for `take`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--secs`, `--output`, `--help`, `--debug`
 
-Options for `drop`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--output`, `--help`
+Options for `drop`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--output`, `--help`, `--debug`
 
-Options for `settle`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--output`, `--help`
+Options for `settle`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--output`, `--help`, `--debug`
 
-Options for `standby`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--secs`, `--output`, `--help`
+Options for `standby`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--secs`, `--output`, `--help`, `--debug`
 
-Options for `leave`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--seq`, `--output`, `--help`
+Options for `leave`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--seq`, `--output`, `--help`, `--debug`
 
-Options for `advance`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--output`, `--help`
+Options for `advance`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--output`, `--help`, `--debug`
 
 ## profile
 
@@ -490,13 +490,13 @@ Options for `advance`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner
 profile show --wallet <address> | set [--keypair <file>] --skills <tag,...> --endpoint <https url> [--doc-url <https url> --doc-sha256 <64 hex>] [--encryption-key <base58> | --encryption-key none] [--yes] | close [--keypair <file>] [--yes] | encryption-key new --out <file>
 ```
 
-Options for `show`: `--url`, `--wallet`, `--output`, `--help`
+Options for `show`: `--url`, `--wallet`, `--output`, `--help`, `--debug`
 
-Options for `set`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--skills`, `--endpoint`, `--doc-url`, `--doc-sha256`, `--encryption-key`, `--output`, `--help`
+Options for `set`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--skills`, `--endpoint`, `--doc-url`, `--doc-sha256`, `--encryption-key`, `--output`, `--help`, `--debug`
 
-Options for `close`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--output`, `--help`
+Options for `close`: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--output`, `--help`, `--debug`
 
-Options for `encryption-key`: `--out`, `--output`, `--help`
+Options for `encryption-key`: `--out`, `--output`, `--help`, `--debug`
 
 ## version
 

@@ -44,12 +44,12 @@ import {
   MAX_SPEC_BYTES,
   type Transport,
 } from "../src/index.js";
-import { PLAN_SECTION, TESTING_SECTION } from "./doc-sections.js";
+import { OBSERVE_SECTION, PLAN_SECTION, TESTING_SECTION } from "./doc-sections.js";
 import { FEE_BPS, world, type World } from "./svm.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string) => readFileSync(`${ROOT}/${path}`, "utf8");
-const PAGE = read("docs/sdk.md") + "\n" + read("docs/sdk-client.md").replace(TESTING_SECTION, "").replace(PLAN_SECTION, "");
+const PAGE = read("docs/sdk.md") + "\n" + read("docs/sdk-client.md").replace(TESTING_SECTION, "").replace(PLAN_SECTION, "").replace(OBSERVE_SECTION, "");
 const DEVNET = "https://api.devnet.solana.com";
 const WALLET = ".config/intent-engine/wallet.json";
 const LAMPORTS = 10_000_000_000n;

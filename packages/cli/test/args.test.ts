@@ -990,7 +990,7 @@ describe("global options", () => {
     expect(parse(["cancel", "--help"])).toEqual({ name: "help", verb: "cancel" });
     expect(usageOf("cancel")).toEqual({
       usage: "cancel [--keypair <file>] --nonce <n> [--close] [--yes]",
-      options: ["--url", "--priority-fee", "--keypair", "--yes", "--nonce", "--close", "--output", "--help"],
+      options: ["--url", "--priority-fee", "--keypair", "--yes", "--nonce", "--close", "--output", "--help", "--debug"],
     });
     expect(usageOf("domain").usage).toBe("domain");
     expect(usageOf(undefined)).toEqual({ usage: COMMANDS, options: [] });

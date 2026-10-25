@@ -15,6 +15,7 @@ import type { SettleSplitInput, SplitBallot, SplitBallotInput } from "./client-s
 import type { FirstOpening, FirstOpeningInput } from "./first-opening.js";
 import type { Job, Spec } from "./jobs.js";
 import type { CheckedFetch } from "./pinned-fetch.js";
+import type { ClientHooks, DebugLog } from "./observe.js";
 import type { SendStatus } from "./send-errors.js";
 import type { IntentQuery, Notifications, Simulation, Transport } from "./transport.js";
 
@@ -26,6 +27,8 @@ export type ClientOptions = {
   pollMs?: number;
   resyncSeconds?: number;
   fetch?: CheckedFetch;
+  hooks?: ClientHooks;
+  debug?: DebugLog;
 };
 
 export type IntentAccount = { address: Address; intent: Intent };

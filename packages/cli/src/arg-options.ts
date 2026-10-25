@@ -1,4 +1,4 @@
-export const GLOBAL_OPTIONS = ["output", "help"] as const;
+export const GLOBAL_OPTIONS = ["output", "help", "debug"] as const;
 
 export type Side = "input" | "output";
 
@@ -67,6 +67,7 @@ export const OPTIONS = {
   yes: { type: "boolean" },
   all: { type: "boolean" },
   help: { type: "boolean" },
+  debug: { type: "boolean" },
   version: { type: "boolean" },
   follow: { type: "boolean" },
   watch: { type: "boolean" },
@@ -202,7 +203,7 @@ export const PROFILE_OPTIONS = { ...OPTIONS, wallet: { type: "string" } } as con
 
 export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill", "min-balance", "vote", "seed", "encryption-keypair"]);
 
-export type Flag = "dry-run" | "fund-accounts" | "yes" | "all" | "help" | "version" | "follow" | "create" | "wallet" | "watch" | "stats" | "close" | "once" | "plain-node" | "all-tools" | "unclaimed" | "no-confirm-url" | "faucet";
+export type Flag = "dry-run" | "fund-accounts" | "yes" | "all" | "help" | "debug" | "version" | "follow" | "create" | "wallet" | "watch" | "stats" | "close" | "once" | "plain-node" | "all-tools" | "unclaimed" | "no-confirm-url" | "faucet";
 export type Many = "max-fill" | "min-balance" | "vote" | "seed" | "encryption-keypair";
 export type StringKey = Exclude<keyof typeof OPTIONS, Flag | Many>;
 export type Values = { [K in StringKey]?: string | undefined } & { [K in Exclude<Flag, "wallet">]?: boolean | undefined } & {

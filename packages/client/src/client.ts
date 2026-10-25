@@ -25,6 +25,8 @@ import { intentAddress, loadIntentRef } from "./intent-ref.js";
 import { amountShown, amountText } from "./simple-tokens.js";
 import { firstOpening } from "./first-opening.js";
 import { pinnedFetch } from "./pinned-fetch.js";
+import { observerOf } from "./observe.js";
+import { observedFetch, observedTransport } from "./observe-transport.js";
 import { intentNotifications, type RpcLike, rpcTransport, signatureWatch } from "./transport.js";
 
 export type {
@@ -91,8 +93,12 @@ export {
 
 export function createClient(options: ClientOptions): Client {
   const { url, priority = 0n, pollMs = WATCH_POLL_MS, resyncSeconds = WATCH_WAIT_SECONDS } = options;
+  const observer = observerOf(options.hooks, options.debug);
   const transport =
-    options.transport ?? rpcTransport(createSolanaRpc(url) as unknown as RpcLike, undefined, signatureWatch(url));
+    options.transport === undefined
+      ? rpcTransport(createSolanaRpc(url) as unknown as RpcLike, undefined, signatureWatch(url), observer)
+      : observedTransport(options.transport, observer);
+  const specFetch = observedFetch(options.fetch ?? pinnedFetch, observer);
   const notifications = options.notifications ?? (options.transport === undefined ? intentNotifications(url) : undefined);
 
   const watch = watchIntents(transport, notifications, pollMs, resyncSeconds);
@@ -162,7 +168,7 @@ export function createClient(options: ClientOptions): Client {
     fillOf,
     balances,
     jobs: (filter = {}) => jobsOf(transport, filter),
-    spec: async (ref, keypair) => readSpec(transport, options.fetch ?? pinnedFetch, await intentAddress(ref), keypair, undefined, url),
+    spec: async (ref, keypair) => readSpec(transport, specFetch, await intentAddress(ref), keypair, undefined, url),
     announce: announcing(context),
     announcements: async (ref) => announcementsOf(transport, await intentAddress(ref)),
     announcementsTo: (attestor) => announcementsTo(transport, attestor),

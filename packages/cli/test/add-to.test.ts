@@ -132,7 +132,7 @@ describe("add-to claude", () => {
   it("describes itself in help", () => {
     expect(usageOf("add-to")).toEqual({
       usage: "add-to claude|codex [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>]",
-      options: ["--wallet-per-trade", "--wallet-per-hour", "--output", "--help"],
+      options: ["--wallet-per-trade", "--wallet-per-hour", "--output", "--help", "--debug"],
     });
   });
 });

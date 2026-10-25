@@ -4,13 +4,13 @@ import { dirname } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { createKeyPairSignerFromBytes, createSolanaRpc, type KeyPairSigner } from "@solana/kit";
-import { changesFrom, intentNotifications, isSdkError, openUsb, pinnedFetch, type RpcLike, rpcTransport, signatureWatch } from "@intent-engine/client";
+import { changesFrom, intentNotifications, isSdkError, observedFetch, observedTransport, observerOf, openUsb, pinnedFetch, type RpcLike, rpcTransport, signatureWatch } from "@intent-engine/client";
 import { type Command, ENV_URL, outputOf, parse, UsageError } from "./args.js";
 import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
 import { JudgeInterrupted } from "./judge.js";
 import { watchJudge } from "./judge-watch.js";
-import { printableLines, redactUrl, render, renderText } from "./render.js";
+import { printable, printableLines, redactUrl, render, renderText } from "./render.js";
 import { expandHome, withSettings } from "./wallet.js";
 import { ENV_KEYPAIR } from "./clusters.js";
 import { certificateCode, certificateHint, maybeSentHint, SERVER_PROBLEMS, unfundedSend } from "./agent/problems.js";
@@ -67,11 +67,23 @@ function message(error: unknown, url: string | undefined): string {
   return printableLines(error instanceof Error ? error.message : String(error));
 }
 
+export const debugOf = (argv: readonly string[]): boolean => argv.includes("--debug");
+
+export function debugged(runtime: Runtime, write: (line: string) => void): Runtime {
+  const observer = observerOf({}, (line) => write(printable(line)));
+  return {
+    ...runtime,
+    transport: (url) => observedTransport(runtime.transport(url), observer),
+    specFetch: observedFetch(runtime.specFetch, observer),
+  };
+}
+
 export async function main(argv: readonly string[], runtime: Runtime, io: Io): Promise<number> {
   let url: string | undefined;
   try {
     const settings = await withSettings(runtime, runtime.env);
     const command = parse(argv, settings);
+    const live = debugOf(argv) ? debugged(runtime, io.err) : runtime;
     url = "url" in command ? command.url : undefined;
     checkLedgerPaths(command, settings[ENV_KEYPAIR]);
     if (readsOneNode(command)) {
@@ -79,29 +91,29 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
     }
     const show = (value: object) => io.out(command.name === "help" || outputOf(argv) === "text" ? renderText(value) : render(value));
     if (command.name === "follow") {
-      const transport = withPriority(runtime.transport(command.url), command.priority);
-      await follow(transport, runtime, command.limit, command.interval, show);
+      const transport = withPriority(live.transport(command.url), command.priority);
+      await follow(transport, live, command.limit, command.interval, show);
       return EXIT_OK;
     }
     if (command.name === "monitor") {
-      const transport = runtime.transport(command.url);
+      const transport = live.transport(command.url);
       if (command.watch === null) {
-        show(await writeBaseline(command.baseline, runtime, transport));
+        show(await writeBaseline(command.baseline, live, transport));
         return EXIT_OK;
       }
-      return (await monitor(command.url, command.baseline, command.watch, runtime, transport, io)) > 0 ? EXIT_ALERTED : EXIT_OK;
+      return (await monitor(command.url, command.baseline, command.watch, live, transport, io)) > 0 ? EXIT_ALERTED : EXIT_OK;
     }
     if (command.name === "solve" && command.watch !== null) {
-      await watchSolve(command, command.watch, runtime, show);
+      await watchSolve(command, command.watch, live, show);
       return EXIT_OK;
     }
     if (command.name === "judge" && command.watch !== null) {
-      return await watchJudge(command, command.watch, runtime, withPriority(runtime.transport(command.url), command.priority), io.out);
+      return await watchJudge(command, command.watch, live, withPriority(live.transport(command.url), command.priority), io.out);
     }
     if (command.name === "mcp" && command.wallet !== null) {
       io.err(WALLET_NOTICE.join("\n"));
     }
-    const result = await run(command, runtime);
+    const result = await run(command, live);
     if (result !== null) {
       show(result);
     }

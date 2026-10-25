@@ -28,6 +28,7 @@ export {
   RATE_LIMIT_ATTEMPTS,
   rateLimited,
   refusedUnsent,
+  type Retry,
 } from "./rpc-retry.js";
 export {
   BehindMinSlot,

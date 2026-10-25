@@ -2,7 +2,9 @@ import { inspect } from "node:util";
 import { type Address, createSolanaRpcSubscriptions, type Signature } from "@solana/kit";
 import { isSdkError } from "@intent-engine/core";
 import { socketUrl } from "./intent-notifications.js";
-import { patiently, POLL_MS, sleep } from "./rpc-retry.js";
+import { type Observer, QUIET } from "./observe.js";
+import { askedOf } from "./observe-transport.js";
+import { POLL_MS, sleep } from "./rpc-retry.js";
 import type { RpcLike, Status } from "./rpc-shapes.js";
 import { BlockhashExpired, FailedOnChain, type Failure, failure, MaybeSent, type SendStatus, SubscriptionEnded } from "./send-errors.js";
 
@@ -44,17 +46,18 @@ export function heardSlot(signature: Signature, note: unknown): Confirmed {
 
 export const failedOnChain = (found: Failure): FailedOnChain => new FailedOnChain(`transaction ${found.signature} failed: ${inspect(found.err)}`, found);
 
-export async function failureRead(rpc: RpcLike, signature: Signature, err: unknown): Promise<Failure> {
-  const tx = await (async () => rpc.getTransaction(signature, { encoding: "json", maxSupportedTransactionVersion: 0, commitment: "confirmed" }).send())().catch(
-    () => null,
-  );
+export async function failureRead(rpc: RpcLike, signature: Signature, err: unknown, observer: Observer = QUIET): Promise<Failure> {
+  const tx = await observer
+    .request("getTransaction", 1, async () => rpc.getTransaction(signature, { encoding: "json", maxSupportedTransactionVersion: 0, commitment: "confirmed" }).send())
+    .catch(() => null);
   const keys: readonly Address[] = tx?.transaction.message.accountKeys ?? [];
   const programs = (tx?.transaction.message.instructions ?? []).flatMap((ix) => keys[ix.programIdIndex] ?? []);
   const logs = tx?.meta?.logMessages ?? undefined;
   return failure(signature, err, logs === null ? undefined : logs, programs);
 }
 
-const failedRead = async (rpc: RpcLike, signature: Signature, err: unknown): Promise<FailedOnChain> => failedOnChain(await failureRead(rpc, signature, err));
+const failedRead = async (rpc: RpcLike, signature: Signature, err: unknown, observer: Observer): Promise<FailedOnChain> =>
+  failedOnChain(await failureRead(rpc, signature, err, observer));
 
 const never = new Promise<Confirmed>(() => undefined);
 
@@ -64,16 +67,17 @@ export async function confirm(
   lastValidBlockHeight: bigint,
   wait: (ms: number) => Promise<void> = sleep,
   watch?: SignatureWatch,
+  observer: Observer = QUIET,
 ): Promise<Confirmed> {
   if (watch === undefined) {
-    return polled(rpc, signature, lastValidBlockHeight, wait);
+    return polled(rpc, signature, lastValidBlockHeight, wait, observer);
   }
   const controller = new AbortController();
   const heard = watch(signature, controller.signal).then(
     (found) => found ?? {},
     async (error: unknown): Promise<Confirmed> => {
       if (isSdkError(error, "failed-on-chain")) {
-        throw await failedRead(rpc, signature, error.err);
+        throw await failedRead(rpc, signature, error.err, observer);
       }
       if (isSdkError(error, "maybe-sent")) {
         throw error;
@@ -82,18 +86,18 @@ export async function confirm(
     },
   );
   try {
-    return await Promise.race([heard, polled(rpc, signature, lastValidBlockHeight, wait, controller.signal)]);
+    return await Promise.race([heard, polled(rpc, signature, lastValidBlockHeight, wait, observer, controller.signal)]);
   } finally {
     controller.abort();
   }
 }
 
-async function settled(rpc: RpcLike, signature: Signature, status: Status | null | undefined): Promise<Confirmed | null> {
+async function settled(rpc: RpcLike, signature: Signature, status: Status | null | undefined, observer: Observer): Promise<Confirmed | null> {
   if (!status || (status.confirmationStatus !== "confirmed" && status.confirmationStatus !== "finalized")) {
     return null;
   }
   if (status.err !== null) {
-    throw await failedRead(rpc, signature, status.err);
+    throw await failedRead(rpc, signature, status.err, observer);
   }
   return status.slot === undefined ? {} : { slot: status.slot };
 }
@@ -104,9 +108,10 @@ export async function confirmSent(
   lastValidBlockHeight: bigint,
   wait: (ms: number) => Promise<void> = sleep,
   watch?: SignatureWatch,
+  observer: Observer = QUIET,
 ): Promise<Confirmed> {
   try {
-    return await confirm(rpc, signature, lastValidBlockHeight, wait, watch);
+    return await confirm(rpc, signature, lastValidBlockHeight, wait, watch, observer);
   } catch (error) {
     if (isSdkError(error, "maybe-sent") || isSdkError(error, "failed-on-chain") || isSdkError(error, "blockhash-expired")) {
       throw error;
@@ -125,19 +130,21 @@ async function polled(
   signature: Signature,
   lastValidBlockHeight: bigint,
   wait: (ms: number) => Promise<void>,
+  observer: Observer,
   stop?: AbortSignal,
 ): Promise<Confirmed> {
+  const ask = askedOf(observer, wait);
   for (let poll = 1; stop?.aborted !== true; poll++) {
-    const [status] = (await patiently(() => rpc.getSignatureStatuses([signature]).send(), wait)).value;
-    const confirmed = await settled(rpc, signature, status);
+    const [status] = (await ask("getSignatureStatuses", () => rpc.getSignatureStatuses([signature]).send())).value;
+    const confirmed = await settled(rpc, signature, status, observer);
     if (confirmed !== null) {
       return confirmed;
     }
-    const epoch = await patiently(() => rpc.getEpochInfo().send(), wait);
+    const epoch = await ask("getEpochInfo", () => rpc.getEpochInfo().send());
     if (epoch.blockHeight > lastValidBlockHeight) {
-      const late = await patiently(() => rpc.getSignatureStatuses([signature], { searchTransactionHistory: true }).send(), wait);
+      const late = await ask("getSignatureStatuses", () => rpc.getSignatureStatuses([signature], { searchTransactionHistory: true }).send());
       const [found] = late.value;
-      const landed = await settled(rpc, signature, found);
+      const landed = await settled(rpc, signature, found, observer);
       if (landed !== null) {
         return landed;
       }
@@ -165,15 +172,17 @@ export async function signatureStatus(
   signature: Signature,
   lastValidBlockHeight?: bigint,
   wait: (ms: number) => Promise<void> = sleep,
+  observer: Observer = QUIET,
 ): Promise<SendStatus> {
-  const epoch = lastValidBlockHeight === undefined ? undefined : await patiently(() => rpc.getEpochInfo().send(), wait);
-  const late = await patiently(() => rpc.getSignatureStatuses([signature], { searchTransactionHistory: true }).send(), wait);
+  const ask = askedOf(observer, wait);
+  const epoch = lastValidBlockHeight === undefined ? undefined : await ask("getEpochInfo", () => rpc.getEpochInfo().send());
+  const late = await ask("getSignatureStatuses", () => rpc.getSignatureStatuses([signature], { searchTransactionHistory: true }).send());
   const [found] = late.value;
   if (found && (found.confirmationStatus === "confirmed" || found.confirmationStatus === "finalized")) {
     if (found.err === null) {
       return { status: "confirmed", signature, ...(found.slot === undefined ? {} : { slot: found.slot }) };
     }
-    return { status: "failed", ...(await failureRead(rpc, signature, found.err)) };
+    return { status: "failed", ...(await failureRead(rpc, signature, found.err, observer)) };
   }
   const expired =
     epoch !== undefined && lastValidBlockHeight !== undefined && epoch.blockHeight > lastValidBlockHeight && late.context.slot >= epoch.absoluteSlot;
