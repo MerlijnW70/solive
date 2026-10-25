@@ -56,6 +56,7 @@ if [[ "$actual" == "$mainnet" && -z "$multisig" ]]; then
 fi
 if [[ -n "$multisig" ]]; then
   pnpm --filter @intent-engine/core build > /dev/null
+  pnpm --filter @intent-engine/client build > /dev/null
   pnpm --filter @intent-engine/multisig build > /dev/null
   squads=(node packages/multisig/dist/bin.js)
   read_vault='let t="";process.stdin.on("data",(d)=>t+=d).on("end",()=>{const v=JSON.parse(t);console.log([v.vault,v.threshold,v.timeLock].join(" "))})'

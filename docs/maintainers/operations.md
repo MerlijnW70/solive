@@ -164,7 +164,7 @@ Fills, releases, cancels, expiries and closes now name the optional mint cap too
 
 A build larger than the program's data account fails at `execute` with `account data too small for instruction`. `solana program show GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU --url devnet` prints that size as `Data Length`. Before executing, any key can grow it with `solana program extend GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU <bytes> --url devnet`, and pays the rent for the extra bytes.
 
-`node packages/multisig/dist/bin.js vault --multisig <multisig> --url devnet` reads the multisig account once and prints `vault`, `threshold`, `timeLock`, `members` and `transactionIndex` as JSON. It reads no proposals, so a rate-limited public RPC answers it, and it refuses an address that is not a Squads v4 multisig. `deploy.sh` and `idl.sh` read the vault with it; both build `packages/core` and `packages/multisig` first.
+`node packages/multisig/dist/bin.js vault --multisig <multisig> --url devnet` reads the multisig account once and prints `vault`, `threshold`, `timeLock`, `members` and `transactionIndex` as JSON. It reads no proposals, so a rate-limited public RPC answers it, and it refuses an address that is not a Squads v4 multisig. `deploy.sh` and `idl.sh` read the vault with it; both build `packages/core`, `packages/client` and `packages/multisig` first, since the multisig tool imports the client.
 
 On mainnet-beta, told apart by the genesis hash, `deploy.sh` also refuses:
 

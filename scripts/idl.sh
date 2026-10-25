@@ -51,6 +51,7 @@ if [[ "$served" == "$mainnet_genesis" && "$mode" != check ]]; then
 fi
 if [[ "$mode" == multisig ]]; then
   pnpm --filter @intent-engine/core build > /dev/null
+  pnpm --filter @intent-engine/client build > /dev/null
   pnpm --filter @intent-engine/multisig build > /dev/null
   squads=(node packages/multisig/dist/bin.js)
   vault="$("${squads[@]}" vault --multisig "$multisig" --url "$url" | node -e 'let t="";process.stdin.on("data",(d)=>t+=d).on("end",()=>console.log(JSON.parse(t).vault))')"

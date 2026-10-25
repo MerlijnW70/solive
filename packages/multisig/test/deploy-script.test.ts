@@ -146,7 +146,7 @@ describe("deploy.sh on devnet", () => {
     const passed = deploy("devnet", { genesis: DEVNET, program: VAULT, vault: { threshold: 1, timeLock: 0 } });
     expect([passed.code, passed.err]).toEqual([1, MISSING_ARTIFACT]);
     expect(passed.log).toEqual(
-      expect.arrayContaining(["pnpm --filter @intent-engine/core build", "pnpm --filter @intent-engine/multisig build", VAULT_READ + DEVNET_URL]),
+      expect.arrayContaining(["pnpm --filter @intent-engine/core build", "pnpm --filter @intent-engine/client build", "pnpm --filter @intent-engine/multisig build", VAULT_READ + DEVNET_URL]),
     );
     expect(passed.log.some((line) => line.includes(" show --multisig"))).toBe(false);
   });
@@ -159,11 +159,11 @@ describe("deploy.sh on devnet", () => {
 });
 
 describe("idl.sh", () => {
-  it("builds core and the multisig tool, then reads the vault with vault", () => {
+  it("builds core, the client and the multisig tool it imports, then reads the vault with vault", () => {
     const ran = run("idl.sh", ["devnet", "--multisig", MULTISIG], { genesis: DEVNET, program: VAULT, vault: { threshold: 2, timeLock: 0 } });
     expect(ran.code).toBe(1);
     const steps = ran.log.filter((line) => !line.startsWith("git ") && !line.startsWith("solana "));
-    expect(steps.slice(0, 3)).toEqual(["pnpm --filter @intent-engine/core build", "pnpm --filter @intent-engine/multisig build", VAULT_READ + DEVNET_URL]);
-    expect(steps[3]).toContain(`create-buffer idl/intent_engine.json`);
+    expect(steps.slice(0, 4)).toEqual(["pnpm --filter @intent-engine/core build", "pnpm --filter @intent-engine/client build", "pnpm --filter @intent-engine/multisig build", VAULT_READ + DEVNET_URL]);
+    expect(steps[4]).toContain(`create-buffer idl/intent_engine.json`);
   });
 });
