@@ -27,7 +27,7 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - name: the program and its config match the baseline, the filler fills and the filler and faucet hold SOL
-        run: npx --yes @intent-engine/cli@0.1.56 monitor --expect monitoring/devnet.json --url devnet --max-fills 50 --max-fill So11111111111111111111111111111111111111112=10000000000 --min-balance EuagWg1chJxXVJAXm2GiGiivtMRKGaFCFWY8G8PPM6My=1 --min-balance CrYx7JA1TRwGtpn9T6C2mVsRgMP7XztGRwZdasV9XSLS=3 --max-swap-wait 600 --once --since 3900
+        run: npx --yes @intent-engine/cli@0.1.57 monitor --expect monitoring/devnet.json --url devnet --max-fills 50 --max-fill So11111111111111111111111111111111111111112=10000000000 --min-balance EuagWg1chJxXVJAXm2GiGiivtMRKGaFCFWY8G8PPM6My=1 --min-balance CrYx7JA1TRwGtpn9T6C2mVsRgMP7XztGRwZdasV9XSLS=3 --max-swap-wait 600 --once --since 3900
       - name: a second node agrees
         if: env.SECOND_RPC != ''
-        run: npx --yes @intent-engine/cli@0.1.56 monitor --expect monitoring/devnet.json --url "$SECOND_RPC" --max-fills 50 --max-fill So11111111111111111111111111111111111111112=10000000000 --once --since 3900
+        run: npx --yes @intent-engine/cli@0.1.57 monitor --expect monitoring/devnet.json --url "$SECOND_RPC" --max-fills 50 --max-fill So11111111111111111111111111111111111111112=10000000000 --once --since 3900
