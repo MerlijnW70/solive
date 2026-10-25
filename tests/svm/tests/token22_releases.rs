@@ -1,19 +1,12 @@
-use anchor_lang::prelude::Pubkey;
 use intent_core::bounty::split_n;
 use intent_core::fee::split_fees;
 use intent_engine::events::{StakeMoved, STAKE_TO_WORKER};
-use litesvm::types::TransactionMetadata;
-use solana_instruction::Instruction;
-use solana_keypair::Keypair;
 use solana_signer::Signer;
 use svm_tests::{
-    attestation_proof_message, claims_pda, committee_batch_ix, cosign_batch_ix, cosign_ix,
-    ed25519_ix, events, intent_pda, judged_spec, proof_digest, settle_claims_ix, split_commit,
-    split_digest, vault_pda, CommitteeFill, Delivery, Env, Market, MintExt, Panel, TestResult,
-    Trader, DOMAIN, START_TS,
+    claims_pda, events, settle_claims_ix, vault_pda, MintExt, ReleasePath as Path, ReleaseTerms,
+    ReleaseWorld, TestResult, START_TS,
 };
 
-const T22: Pubkey = anchor_spl::token_2022::ID;
 const FUNDED: u64 = 1_000_000;
 const ESCROW: u64 = 100_000;
 const JUDGE_FEE: u64 = 1_234;
@@ -24,8 +17,6 @@ const WEIGHTS: [u16; 2] = [6_000, 4_000];
 const SPEC: [u8; 32] = [0x5d; 32];
 const STAKE: u64 = 50_000_000;
 const HOUR: u32 = 3_600;
-const QUORUM: [usize; 2] = [0, 2];
-const QUORUM_MASK: u8 = 0b101;
 const EXTENSIONS: [&[MintExt]; 6] = [
     &[MintExt::InterestBearing],
     &[MintExt::ScaledUi],
@@ -43,202 +34,14 @@ const EXTENSIONS: [&[MintExt]; 6] = [
     ],
 ];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Path {
-    Attested,
-    AttestedSplit,
-    Committee,
-    CommitteeSplit,
-}
-
-impl Path {
-    fn by_committee(self) -> bool {
-        matches!(self, Self::Committee | Self::CommitteeSplit)
-    }
-
-    fn split(self) -> bool {
-        matches!(self, Self::AttestedSplit | Self::CommitteeSplit)
-    }
-}
-
-struct World {
-    env: Env,
-    market: Market,
-    trader: Trader,
-    solver: Keypair,
-    attestor: Keypair,
-    panel: Option<Panel>,
-    workers: [Keypair; 2],
-    atas: [Pubkey; 2],
-    judge_to: Pubkey,
-    fee_to: Pubkey,
-}
-
-fn world(exts: &[MintExt], path: Path) -> TestResult<World> {
-    let mut env = Env::new()?;
-    env.init_config()?;
-    let market = env.market(T22, exts, T22, &[])?;
-    let trader = env.trader(&market, FUNDED)?;
-    let attestor = Keypair::new();
-    let panel = if path.by_committee() {
-        Some(env.convene(3, 2)?)
-    } else {
-        None
-    };
-    let (judge, fee_wallet) = panel
-        .as_ref()
-        .map_or((attestor.pubkey(), attestor.pubkey()), |p| {
-            (p.address, p.fee_wallet)
-        });
-    env.create_intent(
-        &trader,
-        &market,
-        &judged_spec(0, ESCROW, &judge, SPEC, JUDGE_FEE)?,
-    )?;
-    let judge_to = env.create_ata(&fee_wallet, &market.input_mint, T22)?;
-    env.judge_to = Some(judge_to);
-    let workers = [env.funded()?, env.funded()?];
-    let atas = [
-        env.create_ata(&workers[0].pubkey(), &market.input_mint, T22)?,
-        env.create_ata(&workers[1].pubkey(), &market.input_mint, T22)?,
-    ];
-    let solver = env.funded()?;
-    let fee_to = env.fee_account(&market)?;
-    Ok(World {
-        env,
-        market,
-        trader,
-        solver,
-        attestor,
-        panel,
-        workers,
-        atas,
-        judge_to,
-        fee_to,
-    })
-}
-
-impl World {
-    fn owner(&self) -> Pubkey {
-        self.trader.key.pubkey()
-    }
-
-    fn intent(&self) -> Pubkey {
-        intent_pda(&self.owner(), 0)
-    }
-
-    fn wallets(&self) -> Vec<Pubkey> {
-        self.workers.iter().map(Signer::pubkey).collect()
-    }
-
-    fn panel(&self) -> TestResult<&Panel> {
-        Ok(self.panel.as_ref().ok_or("no committee")?)
-    }
-
-    fn release_ixs(&self, path: Path, delivery: &Delivery) -> TestResult<[Instruction; 2]> {
-        let payee = self.atas[0];
-        let solver = self.solver.pubkey();
-        let owner = self.owner();
-        let committee = self.panel.as_ref().map(|p| p.address).unwrap_or_default();
-        let fill = CommitteeFill {
-            solver: &solver,
-            owner: &owner,
-            market: &self.market,
-            nonce: 0,
-            fee_to: Some(&self.fee_to),
-            committee: &committee,
-            signers: QUORUM_MASK,
-            result: 1,
-        };
-        let wallets = self.wallets();
-        let split_hash = split_commit(&wallets, &WEIGHTS);
-        let split = split_digest(
-            DOMAIN,
-            &self.intent(),
-            ESCROW,
-            1,
-            SPEC,
-            split_hash,
-            delivery,
-        );
-        Ok(match path {
-            Path::Attested => {
-                let message = attestation_proof_message(
-                    DOMAIN,
-                    &self.attestor.pubkey(),
-                    &self.intent(),
-                    &payee,
-                    ESCROW,
-                    1,
-                    SPEC,
-                    delivery,
-                );
-                [
-                    ed25519_ix(&self.attestor, &message),
-                    self.env.fill_attested_ix(
-                        &self.solver.pubkey(),
-                        &self.owner(),
-                        &self.market,
-                        0,
-                        &payee,
-                        Some(&self.fee_to),
-                        1,
-                    ),
-                ]
-            }
-            Path::AttestedSplit => {
-                let [a, b] = &self.workers;
-                [
-                    cosign_batch_ix(&[a, b, &self.attestor], &split)?,
-                    self.env.fill_attested_split_ix(
-                        &self.solver.pubkey(),
-                        &self.owner(),
-                        &self.market,
-                        0,
-                        &wallets,
-                        &WEIGHTS,
-                        Some(&self.fee_to),
-                        1,
-                    ),
-                ]
-            }
-            Path::Committee => {
-                let panel = self.panel()?;
-                let digest =
-                    proof_digest(DOMAIN, &self.intent(), &payee, ESCROW, 1, SPEC, delivery);
-                [
-                    committee_batch_ix(&panel.keys, &panel.signers(&QUORUM), &digest)?,
-                    self.env.fill_attested_committee_ix(&fill, &payee),
-                ]
-            }
-            Path::CommitteeSplit => {
-                let panel = self.panel()?;
-                let listed: Vec<Pubkey> =
-                    wallets.iter().chain(panel.keys.iter()).copied().collect();
-                let signers: Vec<&Keypair> =
-                    self.workers.iter().chain(panel.signers(&QUORUM)).collect();
-                [
-                    cosign_ix(&listed, &signers, &split)?,
-                    self.env
-                        .fill_attested_split_committee_ix(&fill, &wallets, &WEIGHTS),
-                ]
-            }
-        })
-    }
-
-    fn release(&mut self, path: Path, delivery: &Delivery) -> TestResult<TransactionMetadata> {
-        let ixs = self.release_ixs(path, delivery)?;
-        let solver = self.solver.insecure_clone();
-        Ok(self.env.send(&solver, &ixs, &[])?)
-    }
-
-    fn paid(&self) -> TestResult<[u64; 2]> {
-        Ok([
-            self.env.balance(&self.atas[0])?,
-            self.env.balance(&self.atas[1])?,
-        ])
-    }
-}
+const TERMS: ReleaseTerms = ReleaseTerms {
+    funded: FUNDED,
+    escrow: ESCROW,
+    judge_fee: JUDGE_FEE,
+    spec: SPEC,
+    weights: WEIGHTS,
+    partner_bps: 0,
+};
 
 fn every_extension(path: Path, held: bool) -> TestResult {
     for exts in EXTENSIONS {
@@ -248,7 +51,7 @@ fn every_extension(path: Path, held: bool) -> TestResult {
 }
 
 fn settles(exts: &[MintExt], path: Path, held: bool) -> TestResult {
-    let mut w = world(exts, path)?;
+    let mut w = ReleaseWorld::new(exts, path, TERMS)?;
     let owner = w.owner();
     let intent = w.intent();
     let board = claims_pda(&intent);
@@ -270,7 +73,7 @@ fn settles(exts: &[MintExt], path: Path, held: bool) -> TestResult {
     let claimant_before = w.env.lamports(&claimant);
     let board_before = w.env.lamports(&board);
 
-    let meta = w.release(path, &delivery)?;
+    let meta = w.release(path, &delivery)??;
 
     let expected = if path.split() { SHARES } else { [NET, 0] };
     assert_eq!(w.paid()?, expected, "workers");
