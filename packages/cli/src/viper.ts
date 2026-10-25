@@ -4,6 +4,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { JudgeRefused } from "./judge-errors.js";
+import { Wtf8Refused, wtf8Decode, wtf8Encode } from "./wtf8.js";
 
 export const VIPER_WASM_SHA256 = "bebc4c2115bc34cd6a44fa5e4046db8afb2ec89221a3fb656d4b562482dd7bb2";
 export const VIPER_ENGINE_COMMIT = "d2bccdb8f77f78bddf07fad22ec76bfedbfbbf0f";
@@ -173,7 +174,12 @@ class Writer {
     return this;
   }
   string(text: string): this {
-    const b = Buffer.from(text, "utf8");
+    return this.sized(Buffer.from(text, "utf8"));
+  }
+  wtf8(text: string): this {
+    return this.sized(wtf8Encode(text));
+  }
+  private sized(b: Buffer): this {
     this.u32(b.length);
     this.parts.push(b);
     return this;
@@ -187,7 +193,7 @@ class Writer {
     if (v === false) return this.byte(2);
     if (v === true) return this.byte(3);
     if (typeof v === "number") return this.byte(4).f64(v);
-    return this.byte(5).string(v);
+    return this.byte(5).wtf8(v);
   }
   bytes(): Buffer {
     return Buffer.concat(this.parts);
@@ -216,11 +222,19 @@ export function decodeOutput(bytes: Buffer, expected: number): CaseResult[] {
   };
   const u8 = () => (need(1), bytes.readUInt8(at++));
   const u32 = () => (need(4), (at += 4), bytes.readUInt32LE(at - 4));
-  const string = () => {
+  const sized = () => {
     const length = u32();
     need(length);
     at += length;
-    return bytes.toString("utf8", at - length, at);
+    return bytes.subarray(at - length, at);
+  };
+  const string = () => sized().toString("utf8");
+  const exact = () => {
+    try {
+      return wtf8Decode(sized());
+    } catch (error) {
+      throw new JudgeRefused(`the viper judge answered a string that is not WTF-8, with ${(error as Wtf8Refused).message}; nothing was paid`);
+    }
   };
   const value = (): Primitive | undefined => {
     const tag = u8();
@@ -229,7 +243,7 @@ export function decodeOutput(bytes: Buffer, expected: number): CaseResult[] {
       at += 8;
       return bytes.readDoubleLE(at - 8);
     }
-    if (tag === 5) return string();
+    if (tag === 5) return exact();
     if (tag > 5) throw new JudgeRefused("the viper judge answered a value it does not have; nothing was paid");
     return [undefined, null, false, true][tag];
   };

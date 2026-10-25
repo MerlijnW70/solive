@@ -51,10 +51,6 @@ export const notAnnounced = (sha256: string, intent: Address): string =>
 
 export const answerTooLong = `a drawn case's answer is longer than the ${DETAIL_BYTES} bytes the viper judge reports, so the checker cannot see it; nothing was paid`;
 
-const REPLACEMENT = String.fromCharCode(0xfffd);
-
-export const unreported = "U+FFFD, which ViperJS writes for a lone surrogate its UTF-8 output cannot carry, so the judge cannot tell it from the string the delivery returned";
-
 export function answerFault(answer: unknown): string | undefined {
   if (typeof answer === "number" && !Number.isFinite(answer)) {
     return `the answer ${String(answer)} is not a finite JSON number`;
@@ -67,9 +63,6 @@ export function answerFault(answer: unknown): string | undefined {
   }
   return undefined;
 }
-
-export const viperAnswerFault = (answer: unknown): string | undefined =>
-  answerFault(answer) ?? (typeof answer === "string" && answer.includes(REPLACEMENT) ? `the answer holds ${unreported}` : undefined);
 
 export const noBlocks = "the spec draws its cases from a finalized block, and the RPC node cannot list or read finalized blocks; nothing was run or paid";
 
@@ -228,7 +221,7 @@ export async function judgeDraw(
     }
   }
   const accepted = answers.filter(({ case: index, answer }) => {
-    const fault = viperAnswerFault(answer);
+    const fault = answerFault(answer);
     if (fault !== undefined) {
       failures.push({ case: index, verdict: "not-primitive", detail: fault });
     }

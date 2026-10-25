@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { answerFault, type Beacon, DETAIL_BYTES, drawnArguments, engineRun, judgeDraw, unreported, viperAnswerFault } from "../src/draw.js";
+import { answerFault, type Beacon, DETAIL_BYTES, drawnArguments, engineRun, judgeDraw } from "../src/draw.js";
 import { type CaseResult, type Cases, CASES_FENCE, CLOCK_FROM, deadlineMissed, type Draw, MAX_ARGUMENTS, notUtf8, OUTPUT_BYTES, type Primitive, type Ran, runViper } from "../src/viper.js";
+import { wtf8Decode, wtf8Encode } from "../src/wtf8.js";
 
 vi.mock("../src/viper.js", async (original) => {
   const actual = await original<typeof import("../src/viper.js")>();
@@ -15,18 +16,19 @@ type Asked = { role: Role; cases: { args: Primitive[]; expected: Primitive }[] }
 function decoded(input: Buffer): Asked {
   let at = 4 + 8 * 4;
   const u32 = () => ((at += 4), input.readUInt32LE(at - 4));
-  const string = () => {
+  const sized = () => {
     const length = u32();
     at += length;
-    return input.toString("utf8", at - length, at);
+    return input.subarray(at - length, at);
   };
+  const string = () => sized().toString("utf8");
   const value = (): Primitive => {
     const tag = input.readUInt8(at++);
     if (tag === 4) {
       at += 8;
       return input.readDoubleLE(at - 8);
     }
-    return tag === 5 ? string() : [null, null, false, true][tag] ?? null;
+    return tag === 5 ? wtf8Decode(sized()) : [null, null, false, true][tag] ?? null;
   };
   const source = string();
   const cases = Array.from({ length: u32() }, () => ({ args: Array.from({ length: u32() }, value), expected: value() }));
@@ -41,9 +43,9 @@ function encoded(results: CaseResult[]): Buffer {
     b.writeUInt32LE(n);
     parts.push(b);
   };
-  const string = (text: string) => {
-    u32(Buffer.byteLength(text));
-    parts.push(Buffer.from(text, "utf8"));
+  const sized = (b: Buffer) => {
+    u32(b.length);
+    parts.push(b);
   };
   u32(1);
   parts.push(Buffer.from([0]));
@@ -58,12 +60,12 @@ function encoded(results: CaseResult[]): Buffer {
         parts.push(b);
       } else if (typeof detail === "string") {
         parts.push(Buffer.from([5]));
-        string(detail);
+        sized(wtf8Encode(detail));
       } else {
         parts.push(Buffer.from([detail === undefined ? 0 : detail === null ? 1 : detail === false ? 2 : 3]));
       }
     } else if (verdict === "threw" || verdict === "no-module") {
-      string(String(detail));
+      sized(Buffer.from(String(detail), "utf8"));
     }
   }
   return Buffer.concat(parts);
@@ -138,16 +140,9 @@ describe("the answers a drawn case accepts", () => {
     expect([undefined, {}, [1]].map(answerFault)).toStrictEqual(Array(3).fill("the answer is not a JSON string, number, boolean or null"));
   });
 
-  it("takes finite numbers, strings, booleans and null, and refuses U+FFFD only from ViperJS", () => {
-    const fine = [0, -0, 1.5, -2, Number.MAX_VALUE, "", "ok", "\u{1f600}", true, false, null, REPLACEMENT];
+  it("takes finite numbers, strings, booleans and null, U+FFFD included", () => {
+    const fine = [0, -0, 1.5, -2, Number.MAX_VALUE, "", "ok", "\u{1f600}", true, false, null, REPLACEMENT, `a${REPLACEMENT}b`];
     expect(fine.map(answerFault)).toStrictEqual(fine.map(() => undefined));
-    expect(fine.slice(0, -1).map(viperAnswerFault)).toStrictEqual(fine.slice(0, -1).map(() => undefined));
-    expect([REPLACEMENT, `a${REPLACEMENT}b`, Number.NaN, `a${LONE}`].map(viperAnswerFault)).toStrictEqual([
-      `the answer holds ${unreported}`,
-      `the answer holds ${unreported}`,
-      "the answer NaN is not a finite JSON number",
-      `the answer is ${notUtf8}`,
-    ]);
   });
 });
 
@@ -266,7 +261,7 @@ describe("judging a drawn delivery", () => {
     expect(roles).toEqual(["generator", "generator", "answer"]);
   });
 
-  it("fails drawn answers the published-case rules reject, or that ViperJS may have changed, and hands the checker only the rest", async () => {
+  it("fails drawn answers the published-case rules reject and hands the checker the rest exactly, U+FFFD included", async () => {
     const checked: Primitive[] = [];
     const answers: Primitive[] = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, `a${LONE}`, 7, "ok", `x${REPLACEMENT}`];
     const draw = { ...DRAW, count: answers.length };
@@ -274,16 +269,15 @@ describe("judging a drawn delivery", () => {
     expect(await judged(draw)).toStrictEqual({
       ...recorded,
       total: answers.length,
-      passed: 2,
+      passed: 3,
       failures: [
         { case: 0, verdict: "not-primitive", detail: "the answer NaN is not a finite JSON number" },
         { case: 1, verdict: "not-primitive", detail: "the answer Infinity is not a finite JSON number" },
         { case: 2, verdict: "not-primitive", detail: "the answer -Infinity is not a finite JSON number" },
-        { case: 3, verdict: "not-primitive", detail: `the answer holds ${unreported}` },
-        { case: 6, verdict: "not-primitive", detail: `the answer holds ${unreported}` },
+        { case: 3, verdict: "not-primitive", detail: `the answer is ${notUtf8}` },
       ],
     });
-    expect(checked).toStrictEqual([7, "ok"]);
+    expect(checked).toStrictEqual([7, "ok", `x${REPLACEMENT}`]);
     expect(roles).toEqual(["generator", "generator", "answer", "checker"]);
   });
 
