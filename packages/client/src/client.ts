@@ -1,5 +1,6 @@
 import { type Address, createSolanaRpc, type Instruction, type Signature, type TransactionSigner } from "@solana/kit";
 import { isSdkError } from "@intent-engine/core";
+import { readIntentAccounts } from "@intent-engine/core/internal";
 import { chainTime, loadConfig, loadUser, mintOf } from "./accounts.js";
 import { budgeted, simulated } from "./budget.js";
 import { nonceAfter } from "./client-create.js";
@@ -14,7 +15,7 @@ import { committeeSettlement, proofBallotOf } from "./client-settle.js";
 import { TransportLacks } from "./client-errors.js";
 export { committeeJudged } from "./client-settle.js";
 import { type Client, type ClientOptions, type Mint, WATCH_POLL_MS, WATCH_WAIT_SECONDS } from "./client-types.js";
-import { decoded, watchIntents } from "./client-watch.js";
+import { watchIntents } from "./client-watch.js";
 import { explain } from "./errors.js";
 import { jobsOf, readSpec, webFetch } from "./job-specs.js";
 import { announcing } from "./announce.js";
@@ -48,6 +49,7 @@ export type {
   HistoryPage,
   IntentAccount,
   IntentFilter,
+  IntentList,
   IntentPlacement,
   MessageSigner,
   Mint,
@@ -141,7 +143,10 @@ export function createClient(options: ClientOptions): Client {
         throw error;
       }
     },
-    intents: async (filter = {}) => (await transport.intents(filter)).map(decoded).filter(({ intent }) => intentMatchesQuery(intent, filter)),
+    intents: async (filter = {}) => {
+      const { intents, unreadable } = readIntentAccounts(await transport.intents(filter));
+      return { intents: intents.filter(({ intent }) => intentMatchesQuery(intent, filter)), unreadable };
+    },
     history,
     nextNonce: async (owner) => nonceAfter(owner, await loadUser(transport, owner)),
     simulate: async (instructions, signer) =>

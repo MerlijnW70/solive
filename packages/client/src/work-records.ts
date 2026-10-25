@@ -1,6 +1,6 @@
 import type { Address, Signature } from "@solana/kit";
-import { AccountVersionError, IntentStatus } from "@intent-engine/core";
-import { splitN } from "@intent-engine/core/internal";
+import { IntentStatus } from "@intent-engine/core";
+import { isUnreadableAccount, splitN, type UnreadableAccount } from "@intent-engine/core/internal";
 import { AnnouncementsUnreadable } from "./announce-errors.js";
 import { loadAnnouncement, refutationsOf } from "./announcement-reads.js";
 import { loadCommittee } from "./client-committee.js";
@@ -40,11 +40,12 @@ export type WorkRecord = {
   selfDealt: boolean;
   fundedByWorker?: FundedBy;
   feedback?: number;
+  unreadable?: UnreadableAccount[];
 };
 
 export type Announced = { intent: Address; announcement: Address; seq: bigint; commitment: string; announced: Signature; slot: bigint; blockTime: bigint | null };
 
-export type RecordRead = { record: WorkRecord; reasons: string[] };
+export type RecordRead = { record: WorkRecord; reasons: string[]; unreadable: UnreadableAccount[] };
 
 export type RecordReads = { pages: number; history: number; by: Address; covered: () => Promise<boolean> };
 
@@ -69,14 +70,19 @@ export function announcedBy(wallet: Address, transactions: readonly EngineTransa
   return [...byIntent.values()].map((works) => works.sort((a, b) => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : 0)));
 }
 
-type Found<T> = { found: T; reasons: string[] };
+type Found<T> = { found: T; reasons: string[]; unreadable?: UnreadableAccount[] };
+
+const unreadableOf = (address: Address, error: unknown): UnreadableAccount[] => (isUnreadableAccount(error) ? [{ address, reason: error.message }] : []);
+
+export const refutationUnreadable = (announcement: Address, { address, reason }: UnreadableAccount): string =>
+  `the refutation ${address} of ${announcement} could not be read, so it is not counted as unsubstantiated: ${reason}`;
 
 async function ownRelease(transport: Transport, wallet: Address, work: Announced, reads: RecordReads): Promise<Found<Settlement | null>> {
   let account;
   try {
     account = await loadAnnouncement(transport, work.announcement);
   } catch (error) {
-    return { found: null, reasons: [unreadableAccount(work.announcement, error)] };
+    return { found: null, reasons: [unreadableAccount(work.announcement, error)], unreadable: unreadableOf(work.announcement, error) };
   }
   if (account !== null && account.state === "announced") {
     return { found: null, reasons: [] };
@@ -100,14 +106,15 @@ async function judgeOf(transport: Transport, attestor: Address): Promise<Address
 
 async function refutationsAgainst(transport: Transport, announcement: Address): Promise<Found<RefutationRecord[]>> {
   try {
-    const found = await refutationsOf(transport, announcement);
-    return { found: await Promise.all(found.map((refutation) => refutationRecord(transport, refutation))), reasons: [] };
+    const { refutations, unreadable } = await refutationsOf(transport, announcement);
+    return {
+      found: await Promise.all(refutations.map((refutation) => refutationRecord(transport, refutation))),
+      reasons: unreadable.map((skipped) => refutationUnreadable(announcement, skipped)),
+      unreadable,
+    };
   } catch (error) {
     if (error instanceof AnnouncementsUnreadable) {
       return { found: [], reasons: [error.message] };
-    }
-    if (error instanceof AccountVersionError) {
-      return { found: [], reasons: [`a refutation of ${announcement} could not be read: ${error.message}`] };
     }
     throw error;
   }
@@ -115,7 +122,9 @@ async function refutationsAgainst(transport: Transport, announcement: Address): 
 
 type Escrow = { transactions: EngineTransaction[]; complete: boolean; inputMint?: Address };
 
-async function paidRecord(transport: Transport, wallet: Address, base: WorkRecord, settlement: Settlement, role: WorkRole, escrow: Escrow, by: Address): Promise<RecordRead> {
+type Read = { record: WorkRecord; reasons: string[]; unreadable?: UnreadableAccount[] | undefined };
+
+async function paidRecord(transport: Transport, wallet: Address, base: WorkRecord, settlement: Settlement, role: WorkRole, escrow: Escrow, by: Address): Promise<Read> {
   const { settled, released, transaction } = settlement;
   const { intent } = base;
   const events = engineEvents(escrow.transactions, by, intent);
@@ -172,6 +181,7 @@ async function paidRecord(transport: Transport, wallet: Address, base: WorkRecor
       ...(feedback === undefined ? {} : { feedback }),
     },
     reasons: [...reasons, ...refutations.reasons],
+    unreadable: refutations.unreadable,
   };
 }
 
@@ -185,7 +195,7 @@ function escrowSettlement(escrow: Escrow, intent: Address, by: Address): Settlem
   return null;
 }
 
-export async function recordOf(transport: Transport, wallet: Address, works: readonly Announced[], reads: RecordReads): Promise<RecordRead> {
+async function recordRead(transport: Transport, wallet: Address, works: readonly Announced[], reads: RecordReads, skipped: UnreadableAccount[]): Promise<Read> {
   const first = works[0] as Announced;
   const { intent } = first;
   const base: WorkRecord = { ...first, sha256: "", role: "announcer", outcome: "unknown", selfDealt: false, refutations: [] };
@@ -193,7 +203,7 @@ export async function recordOf(transport: Transport, wallet: Address, works: rea
   try {
     held = await intentAt(transport, intent);
   } catch (error) {
-    return { record: base, reasons: [unreadableAccount(intent, error)] };
+    return { record: base, reasons: [unreadableAccount(intent, error)], unreadable: unreadableOf(intent, error) };
   }
   if (held !== null && held.status === IntentStatus.Open) {
     return { record: { ...base, outcome: "open" }, reasons: [] };
@@ -206,6 +216,7 @@ export async function recordOf(transport: Transport, wallet: Address, works: rea
   for (const work of works) {
     const read = await ownRelease(transport, wallet, work, reads);
     reasons.push(...read.reasons);
+    skipped.push(...(read.unreadable ?? []));
     if (read.found !== null) {
       own = read.found;
       break;
@@ -218,7 +229,7 @@ export async function recordOf(transport: Transport, wallet: Address, works: rea
     const mine = works.some(({ announcement }) => announcement === released.released.announcement) && released.released.worker === wallet;
     const paid = await paidRecord(transport, wallet, base, released, mine ? "announcer" : "co-author", escrow, reads.by);
     if (!mine && paid.record.outcome !== "paid") {
-      return { record: { ...paid.record, announcement: first.announcement, seq: first.seq, role: "announcer", sha256: "" }, reasons: paid.reasons };
+      return { record: { ...paid.record, announcement: first.announcement, seq: first.seq, role: "announcer", sha256: "" }, reasons: paid.reasons, unreadable: paid.unreadable };
     }
     return paid;
   }
@@ -227,4 +238,11 @@ export async function recordOf(transport: Transport, wallet: Address, works: rea
     return { record: { ...base, outcome: "refunded" }, reasons: [] };
   }
   return { record: base, reasons: [...reasons, history.complete ? `escrow ${intent} shows no release, cancel or expiry` : historyCut(intent)] };
+}
+
+export async function recordOf(transport: Transport, wallet: Address, works: readonly Announced[], reads: RecordReads): Promise<RecordRead> {
+  const skipped: UnreadableAccount[] = [];
+  const { record, reasons, unreadable = [] } = await recordRead(transport, wallet, works, reads, skipped);
+  const all = [...skipped, ...unreadable];
+  return { record: all.length === 0 ? record : { ...record, unreadable: all }, reasons, unreadable: all };
 }

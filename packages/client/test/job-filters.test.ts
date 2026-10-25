@@ -22,7 +22,7 @@ async function market() {
   const small = (await client.createIntent({ ...selling, params: proof(first.address, 100n) })).intent;
   const large = (await client.createIntent({ ...selling, params: proof(second.address, 300n) })).intent;
   const other = (await client.createIntent({ ...buying, params: proof(first.address, 500n) })).intent;
-  const listed = async (filter?: Parameters<typeof client.jobs>[0]) => (await client.jobs(filter)).map(({ intent }) => intent).sort();
+  const listed = async (filter?: Parameters<typeof client.jobs>[0]) => (await client.jobs(filter)).jobs.map(({ intent }) => intent).sort();
   return { w, client, first, second, small, large, other, listed };
 }
 
@@ -34,7 +34,7 @@ describe("job filters", () => {
     const all = sorted(small, large, other);
     expect(await listed()).toEqual(all);
     expect(await listed({})).toEqual(all);
-    expect((await jobsOf(w.chain.transport)).map(({ intent }) => intent).sort()).toEqual(all);
+    expect((await jobsOf(w.chain.transport)).jobs.map(({ intent }) => intent).sort()).toEqual(all);
   });
 
   it("keeps only jobs paid in the given mint", async () => {
@@ -42,7 +42,7 @@ describe("job filters", () => {
     expect(await listed({ mint: w.inputMint })).toEqual(sorted(small, large));
     expect(await listed({ mint: w.outputMint })).toEqual([other]);
     expect(await listed({ mint: (await generateKeyPairSigner()).address })).toEqual([]);
-    expect((await client.jobs({ mint: w.outputMint }))[0]).toMatchObject({ inputMint: w.outputMint, sells: 500n });
+    expect((await client.jobs({ mint: w.outputMint })).jobs[0]).toMatchObject({ inputMint: w.outputMint, sells: 500n });
   });
 
   it("keeps only jobs that pay at least minSells base units", async () => {
@@ -63,7 +63,7 @@ describe("job filters", () => {
     expect(await listed({ attestor: second.address, mint: w.inputMint, minSells: 300n })).toEqual([large]);
     expect(await listed({ attestor: second.address, mint: w.outputMint })).toEqual([]);
     expect(await listed({ attestor: first.address, mint: w.outputMint, minSells: 500n })).toEqual([other]);
-    expect((await jobsOf(w.chain.transport, first.address)).map(({ intent }) => intent).sort()).toEqual(sorted(small, other));
-    expect((await jobsOf(w.chain.transport, { attestor: first.address, minSells: 100n })).map(({ intent }) => intent).sort()).toEqual(sorted(small, other));
+    expect((await jobsOf(w.chain.transport, first.address)).jobs.map(({ intent }) => intent).sort()).toEqual(sorted(small, other));
+    expect((await jobsOf(w.chain.transport, { attestor: first.address, minSells: 100n })).jobs.map(({ intent }) => intent).sort()).toEqual(sorted(small, other));
   });
 });

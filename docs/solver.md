@@ -142,7 +142,7 @@ This asks the node for the open intents that sell wrapped SOL for your token, ta
 
 ```ts
 const now = await client.chainTime();
-const open = await client.intents({ status: IntentStatus.Open, inputMint: NATIVE_MINT, outputMint: token });
+const { intents: open } = await client.intents({ status: IntentStatus.Open, inputMint: NATIVE_MINT, outputMint: token });
 const output = await findAssociatedTokenAddress({ owner: solver.address, mint: token, tokenProgram: TOKEN_PROGRAM_ADDRESS });
 for (const { address, intent } of open) {
   if (intent.owner === solver.address || now >= intent.expiresAt) {

@@ -1,4 +1,5 @@
 import type { Address, Instruction, Signature, TransactionSigner } from "@solana/kit";
+import type { UnreadableAccount } from "@intent-engine/core/internal";
 import type { SaltSigner } from "./announce-keys.js";
 import type { Priority } from "./budget.js";
 import type { Client, MessageSigner, WatchCallback, WatchOptions } from "./client-types.js";
@@ -68,6 +69,7 @@ export type ReleaseReceipt = {
   valid: boolean;
   refutedBy: Address | null;
   complete: boolean;
+  unreadable: UnreadableAccount[];
   summary: string;
 };
 

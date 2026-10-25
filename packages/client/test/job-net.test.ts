@@ -26,7 +26,7 @@ describe("what a job listing says a worker earns", () => {
     const params = attestedResult({ amountIn, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash, judgeFee });
     const { intent } = await world.client.createIntent({ signer: owner, inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT, params, partner: partner.address, partnerBps: PARTNER_BPS });
 
-    const [job] = await world.client.jobs({ attestor: judge.address });
+    const { jobs: [job] } = await world.client.jobs({ attestor: judge.address });
     const { net, partner: partnerFee, protocol } = splitFees(amountIn - judgeFee, feeBpsFor(DEVNET_FEES, Kind.AttestedResult), PARTNER_BPS, DEVNET_FEES.partnerCutBps);
     expect(job).toMatchObject({ intent, sells: amountIn, judgeFee, net });
     expect(partnerFee).toBeGreaterThan(0n);
@@ -50,7 +50,7 @@ describe("what a job listing says a worker earns", () => {
     const specHash = Uint8Array.from(createHash("sha256").update("the spec").digest());
     const params = attestedResult({ amountIn: parseAmount("0.5", 9), minResult: 1n, maxResult: 1n, attestor: judge.address, specHash, judgeFee: 0n });
     const { intent } = await world.client.createIntent({ signer: owner, inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT, params });
-    const listed = async (filter: Parameters<typeof world.client.jobs>[0]) => (await world.client.jobs(filter)).map((job) => job.intent);
+    const listed = async (filter: Parameters<typeof world.client.jobs>[0]) => (await world.client.jobs(filter)).jobs.map((job) => job.intent);
     expect(await listed({ attestor: judge.address, mint: NATIVE_MINT, minSells: parseAmount("0.5", 9), owner: owner.address, excludeOwners: [other.address], unclaimed: true })).toEqual([intent]);
     expect(await listed({ attestor: other.address })).toEqual([]);
     expect(await listed({ mint: DEVNET_TEST_MINT })).toEqual([]);

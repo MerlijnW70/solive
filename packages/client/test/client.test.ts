@@ -42,11 +42,11 @@ describe("a client over the engine", () => {
     await client.send([await cancel(w, 1n)], w.owner);
     expect(await client.nextNonce(w.owner.address)).toBe(2n);
 
-    const all = await client.intents();
+    const { intents: all } = await client.intents();
     expect(all.map((i) => i.intent.nonce).sort()).toEqual([0n, 1n]);
-    expect((await client.intents({ owner: w.owner.address, status: IntentStatus.Open })).map((i) => i.address)).toEqual([address]);
-    expect((await client.intents({ status: IntentStatus.Cancelled })).map((i) => i.intent.nonce)).toEqual([1n]);
-    expect(await client.intents({ owner: w.feeRecipient.address })).toEqual([]);
+    expect((await client.intents({ owner: w.owner.address, status: IntentStatus.Open })).intents.map((i) => i.address)).toEqual([address]);
+    expect((await client.intents({ status: IntentStatus.Cancelled })).intents.map((i) => i.intent.nonce)).toEqual([1n]);
+    expect((await client.intents({ owner: w.feeRecipient.address })).intents).toEqual([]);
   });
 
   it("budgets compute from a simulation and keeps a budget the caller already set", async () => {

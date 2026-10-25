@@ -1,8 +1,7 @@
 import type { Address } from "@solana/kit";
 import { type FeeConfig, formatAmount, type Intent, Kind, splitFees } from "@intent-engine/core";
-import { decodeParams, kindBit, PAUSE_FILL } from "@intent-engine/core/internal";
+import { decodeParams, kindBit, PAUSE_FILL, readIntentAccounts } from "@intent-engine/core/internal";
 import { mintOf } from "./accounts.js";
-import { readableIntent } from "./job-proofs.js";
 import type { Job } from "./job-specs.js";
 import type { Transport } from "./transport.js";
 
@@ -48,13 +47,12 @@ export async function jobPays(
     transport.intents(),
     Promise.all(mints.map(async (mint) => [mint, await scaleOf(decimalsOf, mint)] as const)),
   ]);
-  const intents = new Map(held.map(({ address, data }) => [address, data]));
+  const intents = new Map(readIntentAccounts(held).intents.map(({ address, intent }) => [address, intent]));
   const scales = new Map(decimals);
   return jobs.map(({ intent, inputMint }) => {
-    const data = intents.get(intent);
+    const found = intents.get(intent);
     const scale = scales.get(inputMint);
-    const found = data === undefined ? null : readableIntent(data);
-    const net = found === null || scale === undefined ? null : releaseNet(found, terms);
+    const net = found === undefined || scale === undefined ? null : releaseNet(found, terms);
     return net === null ? { netPay: "0", payable: false } : { netPay: formatAmount(net, scale), payable: true };
   });
 }

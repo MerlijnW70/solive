@@ -73,11 +73,15 @@ function filterOf(
   };
 }
 
+export const SKIPPED_JOBS = "intents left out because their account has a layout this version cannot read";
+
 async function jobsListed(transport: Transport, wanted: JobsWanted) {
   const { config } = await loadConfig(transport);
+  const { jobs, unreadable } = await pricedJobs(transport, wanted, config);
+  const skipped = unreadable.slice(0, JOBS_LIMIT).map(({ address, reason }) => ({ intent: address, reason }));
   return {
     fee_bps: feeBpsFor(config, Kind.AttestedResult),
-    jobs: (await pricedJobs(transport, wanted, config)).map((job) => ({
+    jobs: jobs.map((job) => ({
       intent: job.intent,
       owner: job.owner,
       nonce: job.nonce,
@@ -98,6 +102,7 @@ async function jobsListed(transport: Transport, wanted: JobsWanted) {
       waiting: job.waiting,
       ...freezeFields(job.freezeAuthority, job.owner),
     })),
+    ...(skipped.length === 0 ? {} : { skipped }),
   };
 }
 
@@ -148,6 +153,7 @@ export const findJobs = define({
       }),
       JOBS_LIMIT,
     ),
+    skipped: optional(list(object({ intent: account(), reason: text() }), JOBS_LIMIT, SKIPPED_JOBS)),
     next: optional(text()),
   }),
   run: async (ctx: AgentContext, input) => {

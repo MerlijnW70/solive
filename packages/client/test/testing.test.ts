@@ -192,7 +192,7 @@ describe("createTestWorld", () => {
         outputMint: DEVNET_TEST_MINT,
         params: attestedResult({ amountIn: 1_000_000n, minResult: 1n, maxResult: 1n, attestor: (await world.wallet()).address, specHash: new Uint8Array(32).fill(1), judgeFee: 0n }),
       });
-      expect(await world.client.intents({ owner: owner.address })).toHaveLength(1);
+      expect((await world.client.intents({ owner: owner.address })).intents).toHaveLength(1);
     } finally {
       vi.unstubAllGlobals();
     }

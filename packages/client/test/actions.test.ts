@@ -106,7 +106,7 @@ describe("one call per action", () => {
       receiver: await ata(signer.address, w.outputMint),
     });
     expect(await tokens(signer.address, w.outputMint)).toBe(0n);
-    expect((await client.intents({ owner: signer.address })).map(({ intent }) => intent.nonce)).toEqual([0n, 1n]);
+    expect((await client.intents({ owner: signer.address })).intents.map(({ intent }) => intent.nonce)).toEqual([0n, 1n]);
   });
 
   it("cancels by nonce and returns the escrow to the owner's token account", async () => {

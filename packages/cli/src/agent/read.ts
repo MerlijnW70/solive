@@ -103,10 +103,12 @@ export const listIntents = define({
     intents: list(intentSchema, LIST_LIMIT),
     more: flag(),
     unreadable: integer(0, Number.MAX_SAFE_INTEGER, "intents skipped because their account could not be read"),
+    skipped: optional(list(object({ intent: account(), reason: text() }), LIST_LIMIT, "intents left out because their account has a layout this version cannot read")),
   }),
   run: async ({ transport }, input) => {
     const limit = input.limit ?? LIST_DEFAULT;
     const views = [];
+    const skipped: { intent: Address; reason: string }[] = [];
     let unreadable = 0;
     const cache = new Map<Address, number | null>();
     for (const { address, data } of await transport.intents({ owner: input.owner })) {
@@ -118,6 +120,7 @@ export const listIntents = define({
           throw error;
         }
         unreadable += 1;
+        skipped.push({ intent: address, reason: error.message });
         continue;
       }
       const decimals = await decimalsFor(transport, cache, intent.inputMint, intent.outputMint);
@@ -130,7 +133,7 @@ export const listIntents = define({
     const matching = views.filter(
       (view) => (input.owner === undefined || view.owner === input.owner) && (input.status === undefined || view.status === input.status),
     );
-    return { intents: matching.slice(0, limit), more: matching.length > limit, unreadable };
+    return { intents: matching.slice(0, limit), more: matching.length > limit, unreadable, ...(skipped.length === 0 ? {} : { skipped: skipped.slice(0, LIST_LIMIT) }) };
   },
 });
 

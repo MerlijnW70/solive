@@ -1,9 +1,11 @@
-import type { Address, KeyPairSigner } from "@solana/kit";
+import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
 import { beforeEach, describe, expect, it } from "vitest";
+import { Kind } from "@intent-engine/core";
 import { ACCOUNT_LAYOUTS, findIntentPda, INTENT_VERSION } from "@intent-engine/core/internal";
+import { createClient } from "@intent-engine/client/node";
 import { EXIT_OK } from "../src/main.js";
 import { intentLeftOut } from "../src/treasury.js";
-import { ata, cli, funded, h, NOW, world } from "./harness.js";
+import { ata, cli, funded, h, NOW, transport, world } from "./harness.js";
 import { createSwap } from "./cli-kit.js";
 import { type Json, ok, served } from "./agent-kit.js";
 
@@ -123,5 +125,29 @@ describe("crank work over intents of a layout this version cannot read", () => {
     const work = await ok(client, "find_crank_work");
     expect(work["work"].map((item: Json) => [item["intent"], item["action"]])).toEqual([[i0, "expire"]]);
     expect(work["skipped"]).toEqual([{ intent: i1, reason: NEWER }]);
+  });
+});
+
+describe("job and intent listings over an intent of a layout this version cannot read", () => {
+  it("lists the valid job and intent and names the newer one with the reason", async () => {
+    const { w, client } = await served();
+    const judge = (await generateKeyPairSigner()).address;
+    const sdk = createClient({ url: "http://cluster", transport });
+    const params = { kind: Kind.AttestedResult, amountIn: 100n, minResult: 1n, maxResult: 1n, attestor: judge, specHash: new Uint8Array(32).fill(7), judgeFee: 0n } as const;
+    const open = async (nonce: bigint) =>
+      (await sdk.createIntent({ signer: w.owner, inputMint: w.inputMint, outputMint: w.outputMint, params, nonce, expiresAt: NOW + 3_600n })).intent;
+    const valid = await open(0n);
+    const newer = await open(1n);
+    storeNewerVersion(newer);
+    const found = await ok(client, "find_jobs", { attestor: judge });
+    expect(found["jobs"].map((job: Json) => job["intent"])).toEqual([valid]);
+    expect(found["skipped"]).toEqual([{ intent: newer, reason: NEWER }]);
+    const listed = (await cli(["jobs", "--attestor", judge], {})).json() as Json;
+    expect(listed["jobs"].map((job: Json) => job["intent"])).toEqual([valid]);
+    expect(listed["unreadable"]).toEqual([{ intent: newer, skipped: NEWER }]);
+    const intents = await ok(client, "list_intents", { owner: w.owner.address });
+    expect(intents["intents"].map((intent: Json) => intent["address"])).toEqual([valid]);
+    expect(intents["unreadable"]).toBe(1);
+    expect(intents["skipped"]).toEqual([{ intent: newer, reason: NEWER }]);
   });
 });

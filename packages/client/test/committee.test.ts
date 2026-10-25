@@ -127,7 +127,7 @@ describe("a committee judges a proof escrow", () => {
   it("takes a worker's announcement at the committee's address and lists it as announced to that judge", async () => {
     const { client, created, intent, deliver } = await setup(0n);
     const { worker, delivered } = await deliver();
-    expect(await client.announcementsTo(created.committee)).toMatchObject([{ address: delivered.announcement, intent, worker, attestor: created.committee, seq: 1n }]);
+    expect((await client.announcementsTo(created.committee)).announcements).toMatchObject([{ address: delivered.announcement, intent, worker, attestor: created.committee, seq: 1n }]);
   });
 
   it("sends only the threshold's votes, and every transaction fits a packet", async () => {

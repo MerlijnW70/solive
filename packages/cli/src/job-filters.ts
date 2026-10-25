@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
-import { type Job, type Transport } from "@intent-engine/client";
+import { type Job, type JobList, type Transport, type UnreadableAccount } from "@intent-engine/client";
 import {
   type JobClaim,
   jobClaimOf,
@@ -68,22 +68,27 @@ export type FreezeFields = { freeze_authority: Address | null; freeze_warning?: 
 export const freezeFields = (authority: Address | null, owner: Address): FreezeFields =>
   authority === null ? { freeze_authority: null } : { freeze_authority: authority, freeze_warning: freezeWarning(authority, owner) };
 
+const distinct = (lists: readonly (readonly UnreadableAccount[])[]): UnreadableAccount[] => [...new Map(lists.flat().map((skipped) => [skipped.address, skipped])).values()];
+
 export async function jobsWanted(
   transport: Transport,
   { attestor, mint, minPay, unclaimed, owner, excludeOwners }: JobsWanted,
   decimalsOf: DecimalsOf = decimalsOnce(transport),
   terms?: PayTerms,
-): Promise<Job[]> {
+): Promise<JobList> {
   const owners = { owner, excludeOwners };
   if (minPay === undefined) {
     return jobsOf(transport, { attestor, mint, unclaimed, ...owners }, terms);
   }
   const open = await openProofEscrows(transport, { attestor, mint, ...owners }, Number.POSITIVE_INFINITY);
-  const mints = [...new Set(open.map(({ intent }) => intent.inputMint))];
+  const mints = [...new Set(open.proofs.map(({ intent }) => intent.inputMint))];
   const lists = await Promise.all(
     mints.map(async (each) => jobsOf(transport, { attestor, mint: each, minSells: leastUnits(minPay, await decimalsOf(each)), unclaimed, ...owners }, terms)),
   );
-  return lists.flat().sort(latestFirst).slice(0, JOBS_LIMIT);
+  return {
+    jobs: lists.flatMap(({ jobs }) => jobs).sort(latestFirst).slice(0, JOBS_LIMIT),
+    unreadable: distinct([open.unreadable, ...lists.map(({ unreadable }) => unreadable)]),
+  };
 }
 
 export type PricedJob = Job & JobPay & JobClaim & { pays: string | null; freezeAuthority: Address | null };
@@ -96,21 +101,24 @@ async function wholeTokens(raw: bigint, read: Promise<number>): Promise<string |
   }
 }
 
-export async function pricedJobs(transport: Transport, wanted: JobsWanted, terms: PayTerms): Promise<PricedJob[]> {
+export type PricedJobs = { jobs: PricedJob[]; unreadable: UnreadableAccount[] };
+
+export async function pricedJobs(transport: Transport, wanted: JobsWanted, terms: PayTerms): Promise<PricedJobs> {
   const mintsOf = mintsOnce(transport);
   const decimalsOf = decimalsOnce(transport, mintsOf);
-  const jobs = await jobsWanted(transport, wanted, decimalsOf, terms);
+  const { jobs, unreadable } = await jobsWanted(transport, wanted, decimalsOf, terms);
   const [pays, claims, freezes, whole] = await Promise.all([
     jobPays(transport, jobs, terms, decimalsOf),
     loadClaimsOf(transport, jobs.map(({ intent }) => intent)),
     Promise.all(jobs.map(({ inputMint }) => freezeAuthorityRead(mintsOf(inputMint)))),
     Promise.all(jobs.map(({ sells, inputMint }) => wholeTokens(sells, decimalsOf(inputMint)))),
   ]);
-  return jobs.map((job, i) => ({
+  const priced = jobs.map((job, i) => ({
     ...job,
     pays: whole[i] ?? null,
     ...(pays[i] ?? { netPay: "0", payable: false }),
     ...jobClaimOf(claims[i] ?? null),
     freezeAuthority: freezes[i] ?? null,
   }));
+  return { jobs: priced, unreadable };
 }

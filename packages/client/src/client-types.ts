@@ -5,7 +5,8 @@ import type { ClaimsView } from "./client-claims.js";
 import type { FeedbackInput, Reputation, ReputationOptions } from "./reputation.js";
 import type { EngineError } from "./errors.js";
 import type { AnnounceInput, Announced, AnnouncementPlan } from "./announce.js";
-import type { AnnouncementList, AnnouncementView } from "./announcement-reads.js";
+import type { UnreadableAccount } from "@intent-engine/core/internal";
+import type { AnnouncementList, AnnouncementScan } from "./announcement-reads.js";
 import type { ReclaimInput, ReclaimPlan, Reclaimed, RefuteInput, RefutePlan, Refuted } from "./announcement-sends.js";
 import type { CreateIntentPlan } from "./client-create.js";
 import type { CommitteeCreatePlan } from "./client-committee.js";
@@ -13,7 +14,7 @@ import type { IntentRef } from "./intent-ref.js";
 import type { Plan } from "./plan.js";
 import type { SettleSplitInput, SplitBallot, SplitBallotInput } from "./client-split.js";
 import type { FirstOpening, FirstOpeningInput, Openings, OpeningsInput } from "./first-opening.js";
-import type { Job, JobFilter, Spec, SpecFetch } from "./jobs.js";
+import type { JobFilter, JobList, Spec, SpecFetch } from "./jobs.js";
 import type { Lookup } from "./address-ranges.js";
 import type { ClientHooks, DebugLog } from "./observe.js";
 import type { SendStatus } from "./send-errors.js";
@@ -33,6 +34,8 @@ export type ClientOptions = {
 };
 
 export type IntentAccount = { address: Address; intent: Intent };
+
+export type IntentList = { intents: IntentAccount[]; unreadable: UnreadableAccount[] };
 
 export type IntentFilter = IntentQuery;
 
@@ -168,7 +171,7 @@ export type Client = {
   readonly plan: ClientPlans;
   config(): Promise<Config>;
   intent(intent: IntentRef): Promise<IntentAccount | null>;
-  intents(filter?: IntentFilter): Promise<IntentAccount[]>;
+  intents(filter?: IntentFilter): Promise<IntentList>;
   history(intent: IntentRef, options?: HistoryOptions): Promise<HistoryPage>;
   nextNonce(owner: Address): Promise<bigint>;
   simulate(instructions: readonly Instruction[], signer: TransactionSigner): Promise<Simulation>;
@@ -198,12 +201,12 @@ export type Client = {
   expire(cranker: TransactionSigner, intent: IntentRef): Promise<Signature>;
   close(cranker: TransactionSigner, intent: IntentRef): Promise<Signature>;
   balances(owner: Address, mints: readonly Address[]): Promise<Balances>;
-  jobs(filter?: JobFilter): Promise<Job[]>;
+  jobs(filter?: JobFilter): Promise<JobList>;
   spec(intent: IntentRef, keypair?: Uint8Array): Promise<Spec | null>;
   announce(input: AnnounceInput): Promise<Announced>;
   announcements(intent: IntentRef): Promise<AnnouncementList>;
-  announcementsTo(attestor: Address): Promise<AnnouncementView[]>;
-  announcementsBy(worker: Address): Promise<AnnouncementView[]>;
+  announcementsTo(attestor: Address): Promise<AnnouncementScan>;
+  announcementsBy(worker: Address): Promise<AnnouncementScan>;
   firstOpening(input: FirstOpeningInput): Promise<FirstOpening>;
   openings(input: OpeningsInput): Promise<Openings>;
   splitBallot(input: SplitBallotInput): Promise<SplitBallot>;

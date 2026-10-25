@@ -1,6 +1,6 @@
 import type { Address, Signature } from "@solana/kit";
 import { InvalidInput } from "@intent-engine/core";
-import { isSha256Hex } from "@intent-engine/core/internal";
+import { isSha256Hex, type UnreadableAccount } from "@intent-engine/core/internal";
 import { AnnouncementsUnreadable } from "./announce-errors.js";
 import { refutationsOf } from "./announcement-reads.js";
 import { HISTORY_LIMIT } from "./client-types.js";
@@ -19,22 +19,25 @@ export function sha256Given(sha256: string, name: string): string {
   return lowered;
 }
 
+type Standing = { refutedBy: Address | null; complete: boolean; unreadable: UnreadableAccount[] };
+
 const bytesOf = (sha256: string): Uint8Array => hexBytes(sha256);
 
 export function workReads(ctx: SimpleContext) {
   const { transport } = ctx.client;
 
-  const refutedBy = async (announcement: Address): Promise<{ refutedBy: Address | null; complete: boolean }> => {
+  const refutedBy = async (announcement: Address): Promise<Standing> => {
     try {
-      for (const refutation of await refutationsOf(transport, announcement)) {
+      const { refutations, unreadable } = await refutationsOf(transport, announcement);
+      for (const refutation of refutations) {
         if ((await standingOf(transport, refutation)) === "substantiated") {
-          return { refutedBy: refutation.address, complete: true };
+          return { refutedBy: refutation.address, complete: unreadable.length === 0, unreadable };
         }
       }
-      return { refutedBy: null, complete: true };
+      return { refutedBy: null, complete: unreadable.length === 0, unreadable };
     } catch (error) {
       if (error instanceof AnnouncementsUnreadable) {
-        return { refutedBy: null, complete: false };
+        return { refutedBy: null, complete: false, unreadable: [] };
       }
       throw error;
     }
@@ -45,12 +48,12 @@ export function workReads(ctx: SimpleContext) {
     const transactions = await transport.engineTransactions(HISTORY_LIMIT, escrow);
     const release = releaseOf(transactions, escrow);
     if (release === undefined || (release.event.name !== "IntentAttested" && release.event.name !== "IntentSplit")) {
-      return { escrow, released: false, signature: null, payee: null, payees: [], deliveredSha256: null, valid: false, refutedBy: null, complete: true, summary: `Escrow ${escrow} is not released yet` };
+      return { escrow, released: false, signature: null, payee: null, payees: [], deliveredSha256: null, valid: false, refutedBy: null, complete: true, unreadable: [], summary: `Escrow ${escrow} is not released yet` };
     }
     const signature = release.transaction.signature as Signature;
     const payees = (await paidWalletsOf(transport, release, escrow)) ?? [];
     const released = releasedDelivery(release.transaction, escrow);
-    const standing = released === null ? { refutedBy: null, complete: true } : await refutedBy(released.announcement);
+    const standing: Standing = released === null ? { refutedBy: null, complete: true, unreadable: [] } : await refutedBy(released.announcement);
     const payee = payees[0] ?? null;
     const valid = released !== null;
     const work = released === null ? "no announced work" : `work ${released.sha256}`;
@@ -64,6 +67,7 @@ export function workReads(ctx: SimpleContext) {
       valid,
       refutedBy: standing.refutedBy,
       complete: standing.complete,
+      unreadable: standing.unreadable,
       summary: `Escrow ${escrow} was released in ${signature} to ${payees.length === 0 ? "an unknown wallet" : payees.join(", ")} for ${work}; the release is ${valid ? "valid" : "not valid"}`,
     };
   };

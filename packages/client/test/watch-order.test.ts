@@ -320,7 +320,9 @@ describe("intent reads that check the version first", () => {
       { address: A, data: proof(INTENT_VERSION) },
       { address: B, data: proof(INTENT_VERSION + 1) },
     ];
-    expect((await openProofEscrows(holding(accounts))).map(({ address }) => address)).toEqual([A]);
+    const scanned = await openProofEscrows(holding(accounts));
+    expect(scanned.proofs.map(({ address }) => address)).toEqual([A]);
+    expect(scanned.unreadable.map(({ address }) => address)).toEqual([B]);
     const job = (intent: Address) => ({ intent, inputMint: OWNER }) as Job;
     const terms = { feeBps: 0, kindFeeMask: 0, kindFeeBps: [], paused: 0, fillDisabledKinds: 0n };
     expect(await jobPays(holding(accounts), [job(A), job(B)], terms, async () => 0)).toEqual([
@@ -329,9 +331,11 @@ describe("intent reads that check the version first", () => {
     ]);
   });
 
-  it("refuses to list an intent of a future layout as if it were current", async () => {
+  it("never lists an intent of a future layout as if it were current", async () => {
     const client = createClient({ url: LOCAL, transport: holding([{ address: B, data: proof(INTENT_VERSION + 1) }]) });
-    await expect(client.intents()).rejects.toThrow(AccountVersionError);
+    const { intents, unreadable } = await client.intents();
+    expect(intents).toEqual([]);
+    expect(unreadable).toEqual([{ address: B, reason: expect.stringContaining(`of version ${INTENT_VERSION + 1}`) }]);
   });
 });
 

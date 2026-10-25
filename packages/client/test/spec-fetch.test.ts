@@ -162,7 +162,7 @@ describe("the spec url the owner signed", () => {
     const intent = await created(w, stranger, ["https://" + "10.0.0.9/evil.md"], owners);
     const asked: Asked[] = [];
     const client = createClient({ url: LOCAL, transport: w.chain.transport, fetch: serving(asked) });
-    expect((await client.jobs()).find((job) => job.intent === intent)?.specUrl).toBe(owners);
+    expect((await client.jobs()).jobs.find((job) => job.intent === intent)?.specUrl).toBe(owners);
     expect(await client.spec(intent)).toMatchObject({ url: owners, matches: true });
     expect(asked.map(({ url }) => url)).toEqual([owners]);
   });
@@ -173,7 +173,7 @@ describe("the spec url the owner signed", () => {
     const intent = await created(w, stranger, ["https://" + "93.184.215.14/relayed.md"]);
     const asked: Asked[] = [];
     const client = createClient({ url: LOCAL, transport: w.chain.transport, fetch: serving(asked) });
-    expect((await client.jobs()).find((job) => job.intent === intent)?.specUrl).toBeNull();
+    expect((await client.jobs()).jobs.find((job) => job.intent === intent)?.specUrl).toBeNull();
     expect(await client.spec(intent)).toBeNull();
     expect(asked).toEqual([]);
   });
@@ -191,7 +191,7 @@ describe("the spec url the owner signed", () => {
       specUrl: "https://" + "93.184.215.14/first.md",
     });
     const client = createClient({ url: LOCAL, transport: w.chain.transport, fetch: serving([]) });
-    expect((await client.jobs()).find((job) => job.intent === made.intent)?.specUrl).toBeNull();
+    expect((await client.jobs()).jobs.find((job) => job.intent === made.intent)?.specUrl).toBeNull();
   });
 });
 

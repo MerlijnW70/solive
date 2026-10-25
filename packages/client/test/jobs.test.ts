@@ -99,7 +99,7 @@ describe("jobs", () => {
     const cancelled = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
     await client.cancel(w.owner, { owner: w.owner.address, nonce: cancelled.nonce });
 
-    const mine = await client.jobs({ attestor: judge.address });
+    const { jobs: mine } = await client.jobs({ attestor: judge.address });
     expect(mine.map(({ intent }) => intent).sort()).toEqual([published.intent, silent.intent].sort());
     const feeBps = mine.find(({ intent }) => intent === published.intent)?.feeBps ?? -1;
     expect(mine.find(({ intent }) => intent === published.intent)).toEqual({
@@ -117,7 +117,7 @@ describe("jobs", () => {
       expiresAt: expect.any(BigInt),
     });
     expect(mine.find(({ intent }) => intent === silent.intent)?.specUrl).toBeNull();
-    expect((await client.jobs()).map(({ intent }) => intent).sort()).toEqual([published.intent, silent.intent, elsewhere.intent].sort());
+    expect((await client.jobs()).jobs.map(({ intent }) => intent).sort()).toEqual([published.intent, silent.intent, elsewhere.intent].sort());
   });
 
   it("fits the longest spec url in a first create that also registers the owner, and takes no payTo on a proof escrow", async () => {
@@ -127,7 +127,7 @@ describe("jobs", () => {
     expect(longest).toHaveLength(MAX_MEMO_URL);
     await expect(client.createIntent({ ...order, payTo, params: proof(judge.address), specUrl: longest })).rejects.toMatchObject({ field: "payTo", rule: "unsupported", message: PAY_TO_NOT_ATTESTED });
     const made = await client.createIntent({ ...order, params: proof(judge.address), specUrl: longest });
-    expect((await client.jobs())[0]).toMatchObject({ intent: made.intent, specUrl: longest });
+    expect((await client.jobs()).jobs[0]).toMatchObject({ intent: made.intent, specUrl: longest });
   });
 
   it("refuses a spec url on anything but a proof escrow, or one that is not an https url", async () => {
@@ -138,7 +138,7 @@ describe("jobs", () => {
     const plain = { ...proof(judge.address), specHash: new Uint8Array(32) };
     await expect(client.createIntent({ ...order, params: plain, specUrl: SPEC_URL })).rejects.toThrow(SPEC_URL_NEEDS_PROOF);
     await expect(client.createIntent({ ...order, params: proof(judge.address), specUrl: "http://example.org/spec" })).rejects.toThrow(InvalidInput);
-    expect(await client.jobs()).toEqual([]);
+    expect((await client.jobs()).jobs).toEqual([]);
   });
 
   it("takes the spec url only from the create transaction, not from memos anyone sends to the intent later", async () => {
@@ -149,7 +149,7 @@ describe("jobs", () => {
     for (const intent of [silent.intent, published.intent]) {
       await announce(w, stranger, intent, [specMemo("https://evil.example/spec.md")]);
     }
-    const jobs = await client.jobs({ attestor: judge.address });
+    const { jobs } = await client.jobs({ attestor: judge.address });
     expect(jobs.find(({ intent }) => intent === silent.intent)?.specUrl).toBeNull();
     expect(jobs.find(({ intent }) => intent === published.intent)?.specUrl).toBe(SPEC_URL);
   });
@@ -207,8 +207,8 @@ describe("deliveries", () => {
     const order = { signer: w.owner, inputMint: w.inputMint, outputMint: w.outputMint };
     expect(() => specMemo(legacy)).toThrow(InvalidInput);
     const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
-    expect((await client.jobs())[0]).toMatchObject({ intent: job.intent, specUrl: legacy });
-    expect(await client.jobs({ attestor: judge.address })).toMatchObject([{ intent: job.intent, specUrl: legacy }]);
+    expect((await client.jobs()).jobs[0]).toMatchObject({ intent: job.intent, specUrl: legacy });
+    expect((await client.jobs({ attestor: judge.address })).jobs).toMatchObject([{ intent: job.intent, specUrl: legacy }]);
     expect(await client.spec(job.intent)).toEqual({ url: legacy, text: SPEC, bytes: expect.any(Uint8Array), sha256: Buffer.from(sha(SPEC)).toString("hex"), matches: true });
     expect(fetched.map(({ url }) => url)).toEqual([legacy]);
   });
@@ -227,7 +227,7 @@ describe("deliveries", () => {
     const open = await client.createIntent({ ...order, params: proof(judge.address) });
     await expect(client.announce({ worker, intent: open.intent, sha256: "zz".repeat(32), url: WORK_URL })).rejects.toThrow(InvalidInput);
     await expect(client.announce({ worker, intent: open.intent, sha256: WORK, url: "ftp://example.org/x" })).rejects.toThrow(InvalidInput);
-    expect(await client.announcementsTo(judge.address)).toEqual([]);
+    expect((await client.announcementsTo(judge.address)).announcements).toEqual([]);
   });
   it("uppercase sha256 is accepted", async () => {
     const { w, client, judge, keypair, order } = await setting();
@@ -245,12 +245,12 @@ describe("deliveries", () => {
     const devnet = createClient({ url: LOCAL, transport: { ...w.chain.transport, genesisHash: async () => DEVNET_GENESIS_HASH } });
     const plain = "http://127.0.0.1:8080/spec.md";
     await expect(devnet.createIntent({ ...order, params: proof(judge.address), specUrl: plain })).rejects.toThrow(`the spec url ${plain} ${PLAIN_HTTP_ON_PUBLIC}`);
-    expect(await devnet.jobs()).toEqual([]);
+    expect((await devnet.jobs()).jobs).toEqual([]);
     const job = await devnet.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
     const worker = await funded(w.chain);
     const work = "http://127.0.0.1:8080/work.tar";
     await expect(devnet.announce({ worker, intent: job.intent, sha256: WORK, url: work })).rejects.toThrow(`the work url ${work} ${PLAIN_HTTP_ON_PUBLIC}`);
-    expect(await devnet.announcementsTo(judge.address)).toEqual([]);
+    expect((await devnet.announcementsTo(judge.address)).announcements).toEqual([]);
     const local = createClient({ url: LOCAL, transport: w.chain.transport });
     await local.announce({ worker, intent: job.intent, sha256: WORK, url: work });
     expect(await local.firstOpening({ intent: job.intent, sha256: WORK, keypair })).toMatchObject({ worker: worker.address, url: work });
@@ -261,9 +261,9 @@ describe("deliveries", () => {
     for (const expiresIn of [MIN_EXPIRES_IN - 1n, MAX_EXPIRES_IN + 1n]) {
       await expect(client.createIntent({ ...order, params: proof(judge.address), expiresIn })).rejects.toThrow(EXPIRES_IN_RANGE);
     }
-    expect(await client.jobs()).toEqual([]);
+    expect((await client.jobs()).jobs).toEqual([]);
     const made = await client.createIntent({ ...order, params: proof(judge.address), expiresIn: MIN_EXPIRES_IN });
-    expect((await client.jobs())[0]).toMatchObject({ intent: made.intent });
+    expect((await client.jobs()).jobs[0]).toMatchObject({ intent: made.intent });
   });
 });
 
@@ -289,7 +289,7 @@ describe("history past a window of recent transactions", () => {
     const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
     await flood(w, job.intent, 30, (i) => (i % 2 === 0 ? [specMemo("https://evil.example/spec.md")] : []));
 
-    expect((await client.jobs({ attestor: judge.address }))[0]).toMatchObject({ intent: job.intent, specUrl: SPEC_URL });
+    expect((await client.jobs({ attestor: judge.address })).jobs[0]).toMatchObject({ intent: job.intent, specUrl: SPEC_URL });
     expect(await client.spec(job.intent)).toMatchObject({ url: SPEC_URL, matches: true });
   });
 
@@ -303,11 +303,11 @@ describe("history past a window of recent transactions", () => {
     if (soonest === undefined) {
       throw new Error("no escrow was made");
     }
-    expect((await client.jobs({ attestor: judge.address })).map(({ intent }) => intent)).not.toContain(soonest.intent);
+    expect((await client.jobs({ attestor: judge.address })).jobs.map(({ intent }) => intent)).not.toContain(soonest.intent);
     const worker = await funded(w.chain);
     const announcedTo = await client.announce({ worker, intent: soonest.intent, sha256: WORK, url: WORK_URL });
 
-    expect(await client.announcementsTo(judge.address)).toMatchObject([{ address: announcedTo.announcement, intent: soonest.intent, worker: worker.address }]);
+    expect((await client.announcementsTo(judge.address)).announcements).toMatchObject([{ address: announcedTo.announcement, intent: soonest.intent, worker: worker.address }]);
   });
 
   it("refuses an http spec url on devnet", async () => {
@@ -321,7 +321,7 @@ describe("history past a window of recent transactions", () => {
     fetched.length = 0;
     await expect(devnet.spec(job.intent)).rejects.toThrow(SpecUnreadable);
     expect(fetched).toEqual([]);
-    expect((await devnet.jobs())[0]).toMatchObject({ specUrl: local });
+    expect((await devnet.jobs()).jobs[0]).toMatchObject({ specUrl: local });
   });
 
   it("cancels the body of a response it rejects before reading it", async () => {

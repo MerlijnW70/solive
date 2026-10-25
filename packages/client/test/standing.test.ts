@@ -39,6 +39,8 @@ const BULLETS = {
   refutation:
     "A refutation counts against every wallet the release paid, announcer and split co-authors alike, only when the earlier announcement's stored blob opens under the revealed ephemeral key, at every slot, to the paid work (`substantiated`); `unsubstantiated` refutations and `unverifiable` ones, whose recipients' keys can no longer be known, are listed on the record and not counted.",
   complete: "`complete` is false, with a `reason`, whenever a page limit or an unreadable account cut the record short.",
+  unreadable:
+    "A refutation or announcement of a layout this SDK cannot read is named in `unreadable`, on the reputation and on its record, and that record is left out of the totals.",
   trust: "`trustOf` adds an edge from a payer to a worker only for a paid record whose release the reputation read verified, and never for a self-dealt one.",
 };
 

@@ -325,7 +325,7 @@ describe("the sdk page", () => {
     expect(printed[3]).toBe("false false SwapExactIn true true 5,LimitOrder true true 5,DutchAuction true true 5,AttestedResult true true 5");
 
     const client = createClient({ url: DEVNET, transport: w.chain.transport });
-    const mine = await client.intents({ owner: signer.address });
+    const { intents: mine } = await client.intents({ owner: signer.address });
     expect(mine.map(({ intent }) => [intent.nonce, intent.kind, intent.status])).toEqual([
       [0n, Kind.SwapExactIn, IntentStatus.Filled],
       [1n, Kind.AttestedResult, IntentStatus.Cancelled],
@@ -379,7 +379,7 @@ describe("the sdk page", () => {
     expect(new Set(fetched).size).toBe(1);
     expect(printed.filter((line) => line === "true true")).toHaveLength(2);
     const proved = (await findIntentPda({ owner: signer.address, nonce: 5n }))[0];
-    const announced = await client.announcementsTo(judge?.address ?? signer.address);
+    const { announcements: announced } = await client.announcementsTo(judge?.address ?? signer.address);
     expect(announced.map(({ intent, worker: by, state }) => [intent, by, state]).sort()).toEqual([[proved, worker?.address, "paid"], [posted, signer.address, "paid"]].sort());
     const delivered = (await client.history(posted)).events.find(({ name }) => name === "IntentAttested");
     expect(delivered?.fields).toMatchObject({ payee: wrapped, net: split.net });

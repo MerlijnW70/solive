@@ -53,9 +53,9 @@ describe("announcing a delivery", () => {
       [first.announcement, 1n, worker.address, "announced"],
       [second.announcement, 2n, worker.address, "announced"],
     ]);
-    expect((await client.announcementsBy(worker.address)).map(({ address }) => address)).toEqual([first.announcement, second.announcement]);
-    expect((await client.announcementsTo(judge.address)).map(({ address }) => address)).toEqual([first.announcement, second.announcement]);
-    expect(await client.announcementsTo(worker.address)).toEqual([]);
+    expect((await client.announcementsBy(worker.address)).announcements.map(({ address }) => address)).toEqual([first.announcement, second.announcement]);
+    expect((await client.announcementsTo(judge.address)).announcements.map(({ address }) => address)).toEqual([first.announcement, second.announcement]);
+    expect((await client.announcementsTo(worker.address)).announcements).toEqual([]);
   });
 
   it("pays the earliest announcement that opens to the work, from two workers, and any wallet sends the judge's release", async () => {

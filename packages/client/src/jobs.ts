@@ -9,10 +9,11 @@ export {
   transactionAt,
 } from "./job-scan.js";
 export { type JobPay, jobPays, type PayTerms, releaseNet } from "./job-pay.js";
-export { createdAtOf, creationSlotOf, historyCovers, intentAt, JOBS_LIMIT, type JobFilter, openProofEscrows, type Proof } from "./job-proofs.js";
+export { createdAtOf, creationSlotOf, historyCovers, intentAt, JOBS_LIMIT, type JobFilter, openProofEscrows, type Proof, type ProofScan } from "./job-proofs.js";
 export {
   DEVNET_GENESIS_HASH,
   type Job,
+  type JobList,
   jobsOf,
   MAINNET_GENESIS_HASH,
   MAX_SPEC_BYTES,

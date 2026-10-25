@@ -1,7 +1,7 @@
 import type { Address, Instruction, TransactionSigner } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import { formatAmount, NATIVE_MINT } from "@intent-engine/core";
-import { feedbackMemo } from "@intent-engine/core/internal";
+import { feedbackMemo, type UnreadableAccount } from "@intent-engine/core/internal";
 import { HISTORY_LIMIT } from "./client-types.js";
 import { intentAddress, type IntentRef } from "./intent-ref.js";
 import { memoInstruction } from "./job-memos.js";
@@ -11,7 +11,7 @@ import { DELIVERY_PAGES, scan } from "./job-scan.js";
 import { eventAuthority, eventsOf } from "./release-reads.js";
 import type { Transport } from "./transport.js";
 import { feedbackOf } from "./work-feedback.js";
-import { announcedBy, historyCut, type RecordRead, recordOf, type WorkRecord } from "./work-records.js";
+import { announcedBy, historyCut, type RecordRead, recordOf, unreadableAccount, type WorkRecord } from "./work-records.js";
 
 export type { RefutationRecord, RefutationStanding } from "./refutation-standing.js";
 export type { WorkOutcome, WorkRecord, WorkRole } from "./work-records.js";
@@ -39,6 +39,7 @@ export type Reputation = {
   first: bigint | null;
   last: bigint | null;
   records: WorkRecord[];
+  unreadable: UnreadableAccount[];
 };
 
 export type ReputationOptions = { pages?: number; history?: number };
@@ -58,7 +59,7 @@ async function limited<T, R>(items: readonly T[], at: number, read: (item: T) =>
 const fundingUnchecked = (payer: Address): string => `the funding of the payer ${payer} could not be checked`;
 
 export const counted = (record: WorkRecord): boolean =>
-  record.outcome === "paid" && record.release !== undefined && !record.selfDealt && record.fundedByWorker !== "yes" && record.refutedBy === undefined;
+  record.outcome === "paid" && record.release !== undefined && !record.selfDealt && record.fundedByWorker !== "yes" && record.refutedBy === undefined && record.unreadable === undefined;
 
 export const solBacked = (record: WorkRecord): bigint => (record.mint === NATIVE_MINT ? (record.backed ?? 0n) : 0n) + (record.createBacked ?? 0n);
 
@@ -71,6 +72,7 @@ export async function reputationOf(transport: Transport, wallet: Address, option
   const reads = { pages, history: options.history ?? HISTORY_LIMIT, by, covered: fullLedger };
   const read: RecordRead[] = await limited(works, RECORD_READS, (work) => recordOf(transport, wallet, work, reads));
   const reasons = [...(scanned.complete ? [] : [historyCut(wallet)]), ...read.flatMap(({ reasons: cut }) => cut)];
+  const unreadable = read.flatMap(({ unreadable: skipped }) => skipped);
   const lookup = fundingLookup(transport, fullLedger);
   const records: WorkRecord[] = [];
   for (const { record } of read) {
@@ -103,10 +105,11 @@ export async function reputationOf(transport: Transport, wallet: Address, option
   }
   const scores = fair.flatMap((r) => (r.feedback === undefined ? [] : [r.feedback]));
   const times = records.flatMap((r) => (r.blockTime === null ? [] : [r.blockTime]));
+  const reason = reasons[0] ?? (unreadable[0] === undefined ? undefined : unreadableAccount(unreadable[0].address, unreadable[0].reason));
   return {
     wallet,
-    complete: reasons.length === 0 && records.every((r) => r.fundedByWorker !== "unknown"),
-    ...(reasons[0] === undefined ? {} : { reason: reasons[0] }),
+    complete: reasons.length === 0 && unreadable.length === 0 && records.every((r) => r.fundedByWorker !== "unknown"),
+    ...(reason === undefined ? {} : { reason }),
     announced: records.length,
     paid: fair.length,
     refuted: records.filter((r) => r.refutedBy !== undefined).length,
@@ -124,6 +127,7 @@ export async function reputationOf(transport: Transport, wallet: Address, option
     first: times.length === 0 ? null : times.reduce((a, b) => (a < b ? a : b)),
     last: times.length === 0 ? null : times.reduce((a, b) => (a > b ? a : b)),
     records,
+    unreadable,
   };
 }
 

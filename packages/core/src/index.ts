@@ -59,4 +59,5 @@ export {
   statusName,
   type SummarizedConfig,
 } from "./state.js";
+export type { UnreadableAccount } from "./account-reads.js";
 export { AccountVersionError } from "./versions.js";

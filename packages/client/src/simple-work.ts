@@ -26,7 +26,7 @@ export function workSends(ctx: SimpleContext) {
   };
 
   const findWork = async (filter: { judge?: Address } = {}): Promise<OpenWork[]> => {
-    const jobs = await ctx.client.jobs(filter.judge === undefined ? {} : { attestor: filter.judge });
+    const { jobs } = await ctx.client.jobs(filter.judge === undefined ? {} : { attestor: filter.judge });
     return Promise.all(
       jobs.map(async (job) => {
         const { decimals } = await ctx.client.mint(job.inputMint);

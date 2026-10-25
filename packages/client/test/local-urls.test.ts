@@ -46,7 +46,7 @@ describe("plain-http loopback urls", () => {
     served = await serve({ "/spec.md": SPEC });
     const { made } = await escrowOn(world, served.host + "/spec.md");
     expect(await world.client.spec(made.intent)).toMatchObject({ url: served.host + "/spec.md", text: SPEC, matches: true });
-    expect((await world.client.jobs())[0]).toMatchObject({ intent: made.intent, specUrl: served.host + "/spec.md" });
+    expect((await world.client.jobs()).jobs[0]).toMatchObject({ intent: made.intent, specUrl: served.host + "/spec.md" });
     const worker = await world.wallet();
     const work = served.host + "/work.tar";
     await world.client.announce({ worker, intent: made.intent, sha256: WORK, url: work });

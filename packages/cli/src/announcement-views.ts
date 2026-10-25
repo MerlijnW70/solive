@@ -47,7 +47,14 @@ export const announcementLine = (a: AnnouncementView): AnnouncementLine => ({
   ...(a.state === "paid" ? { paid_at: a.paidAt } : {}),
 });
 
-export type ListView = { complete: boolean; closed: boolean; next_seq: bigint; missing: bigint[]; announcements: AnnouncementLine[] };
+export type ListView = {
+  complete: boolean;
+  closed: boolean;
+  next_seq: bigint;
+  missing: bigint[];
+  announcements: AnnouncementLine[];
+  unreadable?: { announcement: Address; skipped: string }[];
+};
 
 export const listView = (list: AnnouncementList): ListView => ({
   complete: list.complete,
@@ -55,6 +62,7 @@ export const listView = (list: AnnouncementList): ListView => ({
   next_seq: list.nextSeq,
   missing: list.missing,
   announcements: list.announcements.map(announcementLine),
+  ...(list.unreadable.length === 0 ? {} : { unreadable: list.unreadable.map(({ address, reason }) => ({ announcement: address, skipped: reason })) }),
 });
 
 export const SKIP_REASONS = {

@@ -1,6 +1,7 @@
-import type { Address } from "@solana/kit";
+import { type Address, getAddressEncoder, type ReadonlyUint8Array } from "@solana/kit";
 import { type AnnState, IntentStatus, NotAnEngineAccount } from "@intent-engine/core";
 import {
+  type Announcement,
   ANNOUNCEMENT_DISCRIMINATOR,
   decodeAnnouncementAccount,
   decodeDeliveryBookAccount,
@@ -10,12 +11,15 @@ import {
   deliveryBookAddress,
   getAnnouncementSize,
   getRefutationSize,
+  readAccounts,
   REFUTATION_DISCRIMINATOR,
+  type Refutation,
+  type UnreadableAccount,
 } from "@intent-engine/core/internal";
 import { chainTime, createdAccount } from "./accounts.js";
 import { AnnouncementsUnreadable } from "./announce-errors.js";
 import { intentAt } from "./job-proofs.js";
-import type { AccountMatch, Transport } from "./transport.js";
+import type { EngineAccount, Transport } from "./transport.js";
 
 export const INTENT_AT = 8;
 export const WORKER_AT = 40;
@@ -52,7 +56,10 @@ export type AnnouncementList = {
   complete: boolean;
   closed: boolean;
   missing: bigint[];
+  unreadable: UnreadableAccount[];
 };
+
+export type AnnouncementScan = { announcements: AnnouncementView[]; unreadable: UnreadableAccount[] };
 
 export type RefutationView = {
   address: Address;
@@ -71,8 +78,13 @@ export type RefutationView = {
   earlierSeq: bigint;
 };
 
+export type RefutationScan = { refutations: RefutationView[]; unreadable: UnreadableAccount[] };
+
 export function announcementOf(address: Address, data: Uint8Array, lamports = 0n): AnnouncementView {
-  const stored = decodeAnnouncementAccount(data);
+  return announcementView(address, decodeAnnouncementAccount(data), lamports);
+}
+
+function announcementView(address: Address, stored: Announcement, lamports: bigint): AnnouncementView {
   return {
     address,
     intent: stored.intent,
@@ -121,12 +133,26 @@ export async function loadDeliveryBook(transport: Transport, intent: Address): P
   return { address, intent: stored.intent, payer: stored.payer, nextSeq: stored.nextSeq, live: stored.live };
 }
 
-async function listed(transport: Transport, match: AccountMatch): Promise<AnnouncementView[]> {
+type Field = { offset: number; address: Address };
+
+const holds = (data: Uint8Array, { offset, address }: Field): boolean => {
+  const bytes = getAddressEncoder().encode(address);
+  return data.length >= offset + bytes.length && bytes.every((b, i) => data[offset + i] === b);
+};
+
+async function engineAccountsWith(transport: Transport, discriminator: ReadonlyUint8Array, dataSize: number, field: Field): Promise<EngineAccount[]> {
   if (transport.engineAccounts === undefined) {
     throw new AnnouncementsUnreadable();
   }
-  const found = await transport.engineAccounts({ discriminator: ANNOUNCEMENT_DISCRIMINATOR, dataSize: getAnnouncementSize(), match: [match] });
-  return found.map(({ address, data, lamports }) => announcementOf(address, data, lamports));
+  const found = await transport.engineAccounts({ discriminator, dataSize, match: [field] });
+  return found.filter(({ data }) => holds(data, field));
+}
+
+async function listed(transport: Transport, field: Field): Promise<AnnouncementScan> {
+  const found = await engineAccountsWith(transport, ANNOUNCEMENT_DISCRIMINATOR, getAnnouncementSize(), field);
+  const lamports = new Map(found.map(({ address, lamports: held }) => [address, held]));
+  const { read, unreadable } = readAccounts(found, decodeAnnouncementAccount);
+  return { announcements: read.map(({ address, account }) => announcementView(address, account, lamports.get(address) ?? 0n)), unreadable };
 }
 
 const bySeq = (a: AnnouncementView, b: AnnouncementView): number => (a.seq < b.seq ? -1 : a.seq > b.seq ? 1 : a.address < b.address ? -1 : 1);
@@ -158,51 +184,50 @@ async function escrowOpen(transport: Transport, intent: Address): Promise<boolea
 
 export async function announcementsOf(transport: Transport, intent: Address): Promise<AnnouncementList> {
   const [book, found, open] = await Promise.all([loadDeliveryBook(transport, intent), listed(transport, { offset: INTENT_AT, address: intent }), escrowOpen(transport, intent)]);
-  const announcements = found.filter((announcement) => announcement.intent === intent).sort(bySeq);
+  const announcements = found.announcements.sort(bySeq);
+  const { unreadable } = found;
   const closed = !open;
   const nextSeq = book?.nextSeq ?? 1n;
   const last = book === null ? announcements.reduce((max, { seq }) => (seq > max ? seq : max), 0n) : nextSeq - 1n;
   const missing = missingSeqs(announcements, last);
-  return { intent, announcements, nextSeq, complete: !closed && everySeqOnce(announcements, nextSeq), closed, missing };
+  const complete = !closed && unreadable.length === 0 && everySeqOnce(announcements, nextSeq);
+  return { intent, announcements, nextSeq, complete, closed, missing, unreadable };
 }
 
-export async function announcementsTo(transport: Transport, attestor: Address): Promise<AnnouncementView[]> {
-  return (await listed(transport, { offset: ATTESTOR_AT, address: attestor })).filter((announcement) => announcement.attestor === attestor).sort(byIntent);
+export async function announcementsTo(transport: Transport, attestor: Address): Promise<AnnouncementScan> {
+  const { announcements, unreadable } = await listed(transport, { offset: ATTESTOR_AT, address: attestor });
+  return { announcements: announcements.sort(byIntent), unreadable };
 }
 
-export async function announcementsBy(transport: Transport, worker: Address): Promise<AnnouncementView[]> {
-  return (await listed(transport, { offset: WORKER_AT, address: worker })).filter((announcement) => announcement.worker === worker).sort(byIntent);
+export async function announcementsBy(transport: Transport, worker: Address): Promise<AnnouncementScan> {
+  const { announcements, unreadable } = await listed(transport, { offset: WORKER_AT, address: worker });
+  return { announcements: announcements.sort(byIntent), unreadable };
 }
 
-export async function refutationsOf(transport: Transport, paid: Address): Promise<RefutationView[]> {
-  if (transport.engineAccounts === undefined) {
-    throw new AnnouncementsUnreadable();
-  }
-  const found = await transport.engineAccounts({
-    discriminator: REFUTATION_DISCRIMINATOR,
-    dataSize: getRefutationSize(),
-    match: [{ offset: PAID_ANNOUNCEMENT_AT, address: paid }],
-  });
-  return found
-    .map(({ address, data }) => {
-      const stored = decodeRefutationAccount(data);
-      return {
-        address,
-        intent: stored.intent,
-        attestor: stored.attestor,
-        paidAnnouncement: stored.paidAnnouncement,
-        earlierAnnouncement: stored.earlierAnnouncement,
-        paidWorker: stored.paidWorker,
-        earlierWorker: stored.earlierWorker,
-        delivered: Uint8Array.from(stored.delivered),
-        earlierCommitment: Uint8Array.from(stored.earlierCommitment),
-        esk: Uint8Array.from(stored.esk),
-        salt: Uint8Array.from(stored.salt),
-        blob: Uint8Array.from(stored.blob.slice(0, stored.blobLen)),
-        paidSeq: stored.paidSeq,
-        earlierSeq: stored.earlierSeq,
-      };
-    })
-    .filter((refutation) => refutation.paidAnnouncement === paid)
+function refutationView(address: Address, stored: Refutation): RefutationView {
+  return {
+    address,
+    intent: stored.intent,
+    attestor: stored.attestor,
+    paidAnnouncement: stored.paidAnnouncement,
+    earlierAnnouncement: stored.earlierAnnouncement,
+    paidWorker: stored.paidWorker,
+    earlierWorker: stored.earlierWorker,
+    delivered: Uint8Array.from(stored.delivered),
+    earlierCommitment: Uint8Array.from(stored.earlierCommitment),
+    esk: Uint8Array.from(stored.esk),
+    salt: Uint8Array.from(stored.salt),
+    blob: Uint8Array.from(stored.blob.slice(0, stored.blobLen)),
+    paidSeq: stored.paidSeq,
+    earlierSeq: stored.earlierSeq,
+  };
+}
+
+export async function refutationsOf(transport: Transport, paid: Address): Promise<RefutationScan> {
+  const found = await engineAccountsWith(transport, REFUTATION_DISCRIMINATOR, getRefutationSize(), { offset: PAID_ANNOUNCEMENT_AT, address: paid });
+  const { read, unreadable } = readAccounts(found, decodeRefutationAccount);
+  const refutations = read
+    .map(({ address, account }) => refutationView(address, account))
     .sort((a, b) => (a.earlierSeq < b.earlierSeq ? -1 : a.earlierSeq > b.earlierSeq ? 1 : 0));
+  return { refutations, unreadable };
 }

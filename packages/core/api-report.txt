@@ -49,6 +49,7 @@ type SwapExactInFields: type SwapExactInFields = Omit<SwapExactInParams, "kind">
 type SwapExactInParams: type SwapExactInParams = { kind: Kind.SwapExactIn; amountIn: bigint; minOut: bigint; };
 external TOKEN_PROGRAM_ADDRESS: @solana-program/token#TOKEN_PROGRAM_ADDRESS
 type Terms: type Terms = { kind: Kind; kindName: KindName; params: IntentParams; sells: bigint; receivesAtLeast: bigint | null; };
+type UnreadableAccount: type UnreadableAccount = { address: Address; reason: string; };
 function attestedResult: function attestedResult(fields: AttestedResultFields): AttestedResultParams;
 function configSummary: function configSummary(config: SummarizedConfig): ConfigSummary;
 function dutchAuction: function dutchAuction(fields: DutchAuctionFields): DutchAuctionParams;

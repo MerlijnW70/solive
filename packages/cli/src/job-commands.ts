@@ -9,9 +9,10 @@ type JobCommand = Extract<Command, { name: "jobs" | "receipt" }>;
 
 export async function jobCommand(command: JobCommand, _runtime: Runtime, transport: Transport): Promise<object> {
   switch (command.name) {
-    case "jobs":
+    case "jobs": {
+      const { jobs, unreadable } = await pricedJobs(transport, command, (await loadConfig(transport)).config);
       return {
-        jobs: (await pricedJobs(transport, command, (await loadConfig(transport)).config)).map(
+        jobs: jobs.map(
           ({ netPay, payable, takesClaims, claimedBy, claimEnds, waiting, freezeAuthority, pays, ...job }) => ({
             ...job,
             net_pay: netPay,
@@ -23,7 +24,9 @@ export async function jobCommand(command: JobCommand, _runtime: Runtime, transpo
             ...freezeFields(freezeAuthority, job.owner),
           }),
         ),
+        ...(unreadable.length === 0 ? {} : { unreadable: unreadable.map(({ address, reason }) => ({ intent: address, skipped: reason })) }),
       };
+    }
     case "receipt":
       return escrowReceipt(transport, command.owner, command.nonce, command.sha256, command.release);
   }

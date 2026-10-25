@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 import { type DeliveryOpener, type EngineEvent, isSdkError, NotInvited, SdkError, SealedError } from "@intent-engine/core";
-import { decodeEvent, isSealed, parseSpecMemo, remainingOf, sealedTo, SPEC_MEMO_PREFIX, unseal } from "@intent-engine/core/internal";
+import { decodeEvent, isSealed, parseSpecMemo, remainingOf, sealedTo, SPEC_MEMO_PREFIX, type UnreadableAccount, unseal } from "@intent-engine/core/internal";
 import { loadConfig } from "./accounts.js";
 import { type PayTerms, releaseNet } from "./job-pay.js";
 import { memosSignedBy } from "./job-memos.js";
@@ -117,13 +117,15 @@ export async function specUrlOf(transport: Transport, intent: Address, createdAt
   return urls.size === 1 ? ([...urls][0] ?? null) : null;
 }
 
-export async function jobsOf(transport: Transport, filter?: Address | JobFilter, terms?: PayTerms): Promise<Job[]> {
-  const [proofs, config] = await Promise.all([openProofEscrows(transport, filter), terms ?? loadConfig(transport).then(({ config }) => config)]);
+export type JobList = { jobs: Job[]; unreadable: UnreadableAccount[] };
+
+export async function jobsOf(transport: Transport, filter?: Address | JobFilter, terms?: PayTerms): Promise<JobList> {
+  const [{ proofs, unreadable }, config] = await Promise.all([openProofEscrows(transport, filter), terms ?? loadConfig(transport).then(({ config }) => config)]);
   const urls: (string | null)[] = [];
   for (let at = 0; at < proofs.length; at += TRANSACTION_FETCHES) {
     urls.push(...(await Promise.all(proofs.slice(at, at + TRANSACTION_FETCHES).map(({ address, intent }) => specUrlOf(transport, address, intent.createdAt, intent.owner)))));
   }
-  return proofs.map(({ address, intent, params }, i) => ({
+  const jobs = proofs.map(({ address, intent, params }, i) => ({
     intent: address,
     owner: intent.owner,
     nonce: intent.nonce,
@@ -137,6 +139,7 @@ export async function jobsOf(transport: Transport, filter?: Address | JobFilter,
     inputMint: intent.inputMint,
     expiresAt: intent.expiresAt,
   }));
+  return { jobs, unreadable };
 }
 
 async function discarded(response: Response): Promise<void> {

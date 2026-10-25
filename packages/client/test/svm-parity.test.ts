@@ -15,7 +15,7 @@ import {
 import { getTransferSolInstruction } from "@solana-program/system";
 import { LiteSVM } from "litesvm";
 import { describe, expect, it } from "vitest";
-import { AccountVersionError, attestedResult, DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
+import { attestedResult, DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
 import { ACCOUNT_LAYOUTS, getIntentDiscriminatorBytes, getIntentSize, INTENT_VERSION, storedVersion } from "@intent-engine/core/internal";
 import { BehindMinSlot, BlockhashExpired, createClient, FailedOnChain, isSdkError, type Transport } from "../src/index.js";
 import { type RpcLike, rpcTransport } from "../src/internal.js";
@@ -103,7 +103,7 @@ describe("the svm transport against the RPC transport", () => {
     expect((await fresh.engineAccounts?.())?.every(({ data }) => data.length > 0)).toBe(true);
   });
 
-  it("hands back an intent of an unknown version as the same bytes, so the client refuses it the same way over both", async () => {
+  it("hands back an intent of an unknown version as the same bytes, so the client skips and names it the same way over both", async () => {
     const world = await createTestWorld({ start: NOW });
     const owner = await world.wallet();
     const { intent } = await escrow(world, owner);
@@ -122,11 +122,9 @@ describe("the svm transport against the RPC transport", () => {
     const raw = await Promise.all(transports.map((transport) => transport.intents({ owner: owner.address })));
     expect(raw[0]).toEqual([{ address: intent, data }]);
     expect(raw[1]).toEqual(raw[0]);
-    const refusals = await Promise.all(transports.map((transport) => createClient({ url: "http://127.0.0.1:8899", transport }).intents({ owner: owner.address }).catch((error: unknown) => error)));
-    expect(refusals[0]).toBeInstanceOf(AccountVersionError);
-    expect(refusals[0]).toMatchObject({ code: "account-version-error", account: "intent", version: INTENT_VERSION + 1 });
-    expect(refusals[1]).toBeInstanceOf(AccountVersionError);
-    expect((refusals[1] as Error).message).toBe((refusals[0] as Error).message);
+    const lists = await Promise.all(transports.map((transport) => createClient({ url: "http://127.0.0.1:8899", transport }).intents({ owner: owner.address })));
+    expect(lists[0]).toEqual({ intents: [], unreadable: [{ address: intent, reason: expect.stringContaining(`intent account is of version ${INTENT_VERSION + 1}`) }] });
+    expect(lists[1]).toEqual(lists[0]);
   });
 
   it("reports the slot it read intents at and refuses a read from before a slot already seen", async () => {

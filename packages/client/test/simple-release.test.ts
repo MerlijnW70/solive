@@ -117,6 +117,7 @@ describe("the simple release pays the first announcement that opens to the work"
       valid: false,
       refutedBy: null,
       complete: true,
+      unreadable: [],
       summary: `Escrow ${escrow} is not released yet`,
     });
     expect(await buyer.deliveries({ escrow })).toEqual([]);

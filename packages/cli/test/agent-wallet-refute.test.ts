@@ -41,10 +41,10 @@ describe("the wallet server's refutations and reclaims", () => {
     expect((await call(client, "wallet_refute", { ...refuting, earlier: later.announcement, paid: earlier["announcement"] })).value).toMatchObject({ code: "NotRefutable" });
     const preview = await ok(client, "wallet_refute", refuting);
     expect(preview).toMatchObject({ earlier: earlier["announcement"], paid: later.announcement, intent, sha256: WORK, sent: false });
-    expect(await refutationsOf(transport, later.announcement)).toEqual([]);
+    expect(await refutationsOf(transport, later.announcement)).toEqual({ refutations: [], unreadable: [] });
     const sent = await ok(client, "wallet_refute", { ...refuting, send: true });
     expect(sent).toMatchObject({ sent: true, refutation: preview["refutation"], signature: expect.any(String) });
-    expect((await refutationsOf(transport, later.announcement)).map(({ earlierAnnouncement }) => earlierAnnouncement)).toEqual([earlier["announcement"]]);
+    expect((await refutationsOf(transport, later.announcement)).refutations.map(({ earlierAnnouncement }) => earlierAnnouncement)).toEqual([earlier["announcement"]]);
     const shown = await ok(client, "wallet_reclaim");
     expect(shown).toMatchObject({ closing: [earlier["announcement"]], closable: 1, sent: false });
     expect(await loadAnnouncement(transport, earlier["announcement"] as Address)).not.toBeNull();

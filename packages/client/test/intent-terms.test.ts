@@ -62,7 +62,7 @@ describe("createIntent with a partner and a payee", () => {
     expect(never).toBeInstanceOf(InvalidInput);
     expect(never).toMatchObject({ field: "partnerBps", rule: "range" });
     expect((never as Error).message).toContain("no release of this escrow could settle");
-    expect(await world.client.intents({ owner: owner.address })).toEqual([]);
+    expect((await world.client.intents({ owner: owner.address })).intents).toEqual([]);
     expect((await world.client.plan.createIntent({ ...order, partner, partnerBps: MAX_PARTNER_BPS, payTo: owner.address })).payTo).toBe(owner.address);
   });
 });

@@ -57,17 +57,17 @@ describe("intents filters on the node", () => {
     const { transport, queries } = heard(world);
     const client = createClient({ url: world.client.url, transport });
     const filter = { kind: Kind.AttestedResult, attestor: judge.address };
-    expect(sorted((await client.intents(filter)).map(({ address }) => address))).toEqual(sorted([made.judged.intent, made.cancelled.intent]));
+    expect(sorted((await client.intents(filter)).intents.map(({ address }) => address))).toEqual(sorted([made.judged.intent, made.cancelled.intent]));
     expect(queries).toEqual([filter]);
     expect(sorted((await world.transport.intents(filter)).map(({ address }) => address))).toEqual(sorted([made.judged.intent, made.cancelled.intent]));
-    expect((await client.intents({ attestor: judge.address, status: IntentStatus.Open })).map(({ address }) => address)).toEqual([made.judged.intent]);
-    expect((await client.intents({ kind: Kind.LimitOrder })).map(({ address }) => address)).toEqual([made.limit.intent]);
+    expect((await client.intents({ attestor: judge.address, status: IntentStatus.Open })).intents.map(({ address }) => address)).toEqual([made.judged.intent]);
+    expect((await client.intents({ kind: Kind.LimitOrder })).intents.map(({ address }) => address)).toEqual([made.limit.intent]);
   });
 
   it("combines owner, status, kind and mints", async () => {
     const world = await createTestWorld();
     const { alice, bob, made } = await market(world);
-    const of = async (query: IntentQuery) => sorted((await world.client.intents(query)).map(({ address }) => address));
+    const of = async (query: IntentQuery) => sorted((await world.client.intents(query)).intents.map(({ address }) => address));
     expect(await of({ owner: alice.address })).toEqual(sorted([made.swap.intent, made.judged.intent]));
     expect(await of({ owner: bob.address, status: IntentStatus.Cancelled })).toEqual([made.cancelled.intent]);
     expect(await of({ owner: bob.address, kind: Kind.AttestedResult, status: IntentStatus.Open })).toEqual([made.elsewhere.intent]);

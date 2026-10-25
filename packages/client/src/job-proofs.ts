@@ -8,7 +8,9 @@ import {
   getIntentDiscriminatorBytes,
   getIntentSize,
   INTENT_ENGINE_PROGRAM_ADDRESS,
+  readIntentAccounts,
   remainingOf,
+  type UnreadableAccount,
 } from "@intent-engine/core/internal";
 import { chainTime, createdAccount } from "./accounts.js";
 import { loadClaimsOf } from "./client-claims.js";
@@ -70,14 +72,14 @@ export async function createdAtOf(transport: Transport, address: Address): Promi
   return (await intentAt(transport, address))?.createdAt ?? null;
 }
 
-export async function openProofEscrows(transport: Transport, filter?: Address | JobFilter, limit: number = JOBS_LIMIT): Promise<Proof[]> {
+export type ProofScan = { proofs: Proof[]; unreadable: UnreadableAccount[] };
+
+export async function openProofEscrows(transport: Transport, filter?: Address | JobFilter, limit: number = JOBS_LIMIT): Promise<ProofScan> {
   const { attestor, mint, minSells, unclaimed, owner, excludeOwners = [] }: JobFilter = typeof filter === "string" ? { attestor: filter } : (filter ?? {});
   const [accounts, now] = await Promise.all([transport.intents(), chainTime(transport)]);
-  const open = accounts
-    .map(({ address, data }) => {
-      const intent = readableIntent(data);
-      return intent === null ? null : proofOf(address, intent);
-    })
+  const { intents, unreadable } = readIntentAccounts(accounts);
+  const open = intents
+    .map(({ address, intent }) => proofOf(address, intent))
     .filter(
       (proof): proof is Proof =>
         proof !== null &&
@@ -90,7 +92,7 @@ export async function openProofEscrows(transport: Transport, filter?: Address | 
         (minSells === undefined || remainingOf(proof.intent) >= minSells),
     )
     .sort((a, b) => (a.intent.expiresAt === b.intent.expiresAt ? 0 : a.intent.expiresAt > b.intent.expiresAt ? -1 : 1));
-  return (unclaimed === true ? await unclaimedOnly(transport, open) : open).slice(0, limit);
+  return { proofs: (unclaimed === true ? await unclaimedOnly(transport, open) : open).slice(0, limit), unreadable };
 }
 
 async function unclaimedOnly(transport: Transport, proofs: Proof[]): Promise<Proof[]> {

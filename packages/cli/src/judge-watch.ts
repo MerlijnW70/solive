@@ -117,7 +117,7 @@ export async function watchJudge(command: JudgeCommand, interval: number, runtim
     if (!(await stillOpen(transport, address))) {
       return "closed";
     }
-    const fresh = (await client.announcementsTo(attestor)).filter((a) => a.intent === address && a.state === "announced" && !seen.has(a.address)).sort(bySeq);
+    const fresh = (await client.announcementsTo(attestor)).announcements.filter((a) => a.intent === address && a.state === "announced" && !seen.has(a.address)).sort(bySeq);
     const opened = await openedBy(fresh, keypair);
     const work: Work = { judged: judgedWork, deferred: new Set<string>() };
     for (const announcement of fresh) {

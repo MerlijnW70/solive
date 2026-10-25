@@ -217,6 +217,8 @@ const listedItem = object({
   paid_at: optional(time("unix seconds a release paid it")),
 });
 
+export const SKIPPED_ANNOUNCEMENTS = "announcements of this escrow left out because their account has a layout this version cannot read; while any is, complete is false";
+
 function listOutput(own: boolean) {
   return object({
     intent: account(),
@@ -229,6 +231,7 @@ function listOutput(own: boolean) {
     next_seq: amount("the seq the next announcement gets"),
     missing: list(amount(), 16, "seqs below next_seq that the RPC node did not list"),
     announcements: list(listedItem, MAX_LISTED, "in seq order; a release pays the first that opens to the work it pays for"),
+    skipped: optional(list(object({ announcement: account(), reason: text() }), MAX_LISTED, SKIPPED_ANNOUNCEMENTS)),
     ...(own
       ? {
           mine: optional(
@@ -248,6 +251,7 @@ async function listOf(ctx: AgentContext, intent: Address, receipt: string, self?
   const open = held.status === IntentStatus.Open && held.expiresAt > (await chainTime(ctx.transport));
   const list: AnnouncementList = await createClient({ url: ctx.url ?? "", transport: ctx.transport }).announcements(intent);
   const shown = list.announcements.slice(0, MAX_LISTED);
+  const skipped = list.unreadable.slice(0, MAX_LISTED).map(({ address, reason }) => ({ announcement: address, reason }));
   const mine =
     self === undefined
       ? undefined
@@ -265,6 +269,7 @@ async function listOf(ctx: AgentContext, intent: Address, receipt: string, self?
     next_seq: list.nextSeq,
     missing: list.missing,
     announcements: shown.map(announcementLine),
+    ...(skipped.length === 0 ? {} : { skipped }),
     ...(mine === undefined ? {} : { mine }),
   };
 }

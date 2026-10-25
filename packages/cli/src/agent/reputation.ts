@@ -15,6 +15,8 @@ export const RECORDS_SHOWN = 50;
 
 export const MAX_REPUTATION_PAGES = 100_000;
 
+export const UNREADABLE_RECORDS = "refutations and announcements whose account has a layout this version cannot read; a release they touch is left out of the totals and complete is false";
+
 export const REPUTATION_PAGES = `pages of ${SIGNATURE_PAGE} signatures of the worker's own history to read for its announcements; default ${DELIVERY_PAGES}; raise it when complete is false`;
 
 const ROLES = ["announcer", "co-author"] as const;
@@ -51,6 +53,7 @@ export const getReputation = define({
     worker: account(),
     complete: flag("false means part of the history could not be read, so the totals may undercount"),
     reason: optional(text("why complete is false")),
+    unreadable: optional(list(object({ account: account(), reason: text() }), RECORDS_SHOWN, UNREADABLE_RECORDS)),
     announced: integer(0, Number.MAX_SAFE_INTEGER, "escrows it announced work to"),
     paid: integer(0, Number.MAX_SAFE_INTEGER, "releases that paid it for its announced work, at arm's length"),
     paid_verified: integer(0, Number.MAX_SAFE_INTEGER, "of paid, the releases whose payer's funding was checked and not traced to it"),
@@ -110,6 +113,7 @@ export const getReputation = define({
       worker: rep.wallet,
       complete: rep.complete,
       ...(rep.reason === undefined ? {} : { reason: rep.reason }),
+      ...(rep.unreadable.length === 0 ? {} : { unreadable: rep.unreadable.slice(0, RECORDS_SHOWN).map(({ address, reason }) => ({ account: address, reason })) }),
       announced: rep.announced,
       paid: rep.paid,
       paid_verified: rep.paidVerified,

@@ -75,7 +75,7 @@ describe("find_jobs by owner", () => {
     expect(await listed(client, { owner: w.owner.address })).toEqual([skipped]);
     expect(await listed(client, { owner: other.address, exclude_owners: [other.address] })).toEqual([]);
     expect(await listed(client, { exclude_owners: [w.owner.address], min_pay: "0.0001" })).toEqual([kept]);
-    expect((await openProofEscrows(transport, { excludeOwners: [other.address] })).map(({ address }) => address)).toEqual([skipped]);
+    expect((await openProofEscrows(transport, { excludeOwners: [other.address] })).proofs.map(({ address }) => address)).toEqual([skipped]);
   });
 
   it("describes both filters and caps the excluded list", () => {

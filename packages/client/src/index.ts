@@ -8,6 +8,7 @@ export {
   SdkError,
   type SdkErrorCode,
   type SdkErrors,
+  type UnreadableAccount,
 } from "@intent-engine/core";
 export { MissingAccount, NotAMint } from "./accounts.js";
 export type { Lookup } from "./address-ranges.js";
@@ -28,7 +29,7 @@ export {
 } from "./announce-errors.js";
 export type { SaltSigner, SecretInput } from "./announce-keys.js";
 export type { Announced, AnnounceInput, AnnouncementPlan } from "./announce.js";
-export type { AnnouncementList, AnnouncementView } from "./announcement-reads.js";
+export type { AnnouncementList, AnnouncementScan, AnnouncementView } from "./announcement-reads.js";
 export type { Reclaimed, ReclaimInput, ReclaimPlan, Refuted, RefuteInput, RefutePlan } from "./announcement-sends.js";
 export type { Priority } from "./budget.js";
 export type { ClaimListView, ClaimsView } from "./client-claims.js";
@@ -73,6 +74,7 @@ export type {
   HistoryPage,
   IntentAccount,
   IntentFilter,
+  IntentList,
   IntentPlacement,
   MessageSigner,
   Mint,
@@ -94,7 +96,7 @@ export type { FundedBy } from "./funding.js";
 export type { Notifications } from "./intent-notifications.js";
 export type { IntentRef } from "./intent-ref.js";
 export type { JobFilter } from "./job-proofs.js";
-export { type Job, type Spec, type SpecFetch, SpecSealed, SpecUnreadable } from "./job-specs.js";
+export { type Job, type JobList, type Spec, type SpecFetch, SpecSealed, SpecUnreadable } from "./job-specs.js";
 export { LedgerError, LedgerPathError } from "./ledger-path.js";
 export type {
   ClientEventName,

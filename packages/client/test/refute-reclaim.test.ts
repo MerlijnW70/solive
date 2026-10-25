@@ -83,7 +83,7 @@ describe("refuting, reclaiming and closing", () => {
       await client.cancel(owner, { owner: owner.address, nonce: made.nonce });
       intents.push(made.intent);
     }
-    const mine = await client.announcementsBy(worker.address);
+    const { announcements: mine } = await client.announcementsBy(worker.address);
     const widest = await Promise.all(
       mine.slice(0, RECLAIM_BATCH).map(({ address, intent, payer }) => buildCloseAnnouncement({ by: worker, announcement: address, intent, rentTo: payer })),
     );

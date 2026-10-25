@@ -114,7 +114,7 @@ export async function deviceJudgeReady(transport: Transport, judge: Address, int
 }
 
 export async function escrowsJudgedBy(transport: Transport, wallet: Address): Promise<Address[]> {
-  const open = await openProofEscrows(transport, undefined, Number.POSITIVE_INFINITY);
+  const { proofs: open } = await openProofEscrows(transport, undefined, Number.POSITIVE_INFINITY);
   const committees = new Map<Address, readonly Address[]>();
   const judged: Address[] = [];
   for (const { address, params } of open) {

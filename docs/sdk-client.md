@@ -33,6 +33,7 @@ const { nonce } = await client.createIntent({ ...order, params: swap });
 ## Read
 
 - `intents` returns the intents that match every field its filter gives of `owner`, `status`, `kind`, `inputMint`, `outputMint` and `attestor`; the node applies the filter.
+- `intents`, `jobs`, `announcementsTo` and `announcementsBy` skip an account of a layout this SDK cannot read and name it in `unreadable`, with the `address` and the `reason`; any other failed read still throws.
 - `intent` returns one intent, or `null` once it is closed.
 - `configSummary` spells out the engine's settings: pauses, which kinds are on, and their fees.
 - `kindName`, `statusName` and `termsOf` name an intent's kind and status and decode its terms.
@@ -44,7 +45,7 @@ import { configSummary, formatAmount, IntentStatus, kindName, statusName, termsO
 
 const { createPaused, fillPaused, kinds } = configSummary(await client.config());
 console.log(createPaused, fillPaused, kinds.map(({ name, create, fill, feeBps }) => `${name} ${create} ${fill} ${feeBps}`));
-const mine = await client.intents({ owner: signer.address });
+const { intents: mine } = await client.intents({ owner: signer.address });
 for (const { intent } of mine.filter(({ intent }) => intent.nonce === nonce)) {
   const { sells, receivesAtLeast } = termsOf(intent);
   console.log(kindName(intent.kind), statusName(intent.status));
@@ -229,6 +230,7 @@ await client.unwrap(signer);
 - The salt and the sealing keys come from the worker's own signature over the intent and the sha256, so only its key derives them. `announce` refuses a signer that cannot sign messages, such as a Ledger, with `NoMessageSigner`; such a worker passes `secret`, 32 bytes of its own that it keeps, or `saltSignature`, a signature made elsewhere, which must verify for the worker (`BadSaltSignature`).
 - `announce` refuses a url longer than its transaction can carry with `UrlTooLong` before sending.
 - `announcements` lists an escrow's announcements in seq order from accounts alone, never from transaction history, and says whether the list is `complete`: the escrow is open and every seq from 1 to one below its delivery book's `nextSeq` is present exactly once. An open escrow nobody has announced to yet has no book and lists complete and empty. Once the escrow is no longer open, the list says `closed` and is never complete.
+- An announcement of the escrow that this SDK cannot read is named in `unreadable` and keeps the list incomplete.
 - `firstOpening` returns the first announcement that opens to the checked sha256 with the keys it is given, and refuses with `FirstOpeningRefused` while the list is incomplete, an earlier announcement is sealed to a key it was not given, or another worker holds the claim.
 - `firstOpening` passes over an earlier announcement that is not a delivery and lists it in `skipped` with its reason, for a judge and for each committee member alike: one sealed to a key it was given that does not open with it (`does-not-open`), one whose wallet slot names a key other than the one derived from the wallet the program assigns to that slot (`forged-wallet-slot`), and one sealed to more or fewer recipients than the committee has members (`wrong-recipient-count`).
 - `openings` walks the announcements as `firstOpening` does, with the same completeness rule, skips and refusals for keys, but needs no sha256: its `opening` is the earliest announcement that opens with the keys given, with its `announcement`, `seq`, `worker`, `salt` and work `url`, or `null` while none does, and `skipped` lists those it passed over. A judge fetches that url, hashes the work, and passes the sha256 to `firstOpening` and `settleProof`.
@@ -240,7 +242,7 @@ Here your wallet plays the worker, and the judge pays the first announcement tha
 const specUrl = "https://raw.githubusercontent.com/MerlijnW70/solive/3aad6ee86067e10695d44e47fbc5ed67535a5cfb/SECURITY.md";
 const spec = new Uint8Array(createHash("sha256").update(new Uint8Array(await (await fetch(specUrl)).arrayBuffer())).digest());
 const posted = await client.createIntent({ ...order, params: { ...work, specHash: spec }, specUrl });
-const listed = (await client.jobs({ attestor: judge.address })).find(({ intent }) => intent === posted.intent);
+const listed = (await client.jobs({ attestor: judge.address })).jobs.find(({ intent }) => intent === posted.intent);
 console.log(listed?.specUrl === specUrl, (await client.spec(posted.intent))?.matches);
 const sha256 = createHash("sha256").update("the delivered work").digest("hex");
 await client.announce({ worker: signer, intent: posted.intent, sha256, url: "https://example.org/work.tar" });
@@ -262,6 +264,7 @@ await client.unwrap(signer);
 - A wallet counts as a co-author only when a split release names it as a payee; its record names the paid announcement and the role `co-author`, and announcing on the escrow alone credits nothing.
 - A refutation counts against every wallet the release paid, announcer and split co-authors alike, only when the earlier announcement's stored blob opens under the revealed ephemeral key, at every slot, to the paid work (`substantiated`); `unsubstantiated` refutations and `unverifiable` ones, whose recipients' keys can no longer be known, are listed on the record and not counted.
 - `complete` is false, with a `reason`, whenever a page limit or an unreadable account cut the record short.
+- A refutation or announcement of a layout this SDK cannot read is named in `unreadable`, on the reputation and on its record, and that record is left out of the totals.
 - `trustOf` adds an edge from a payer to a worker only for a paid record whose release the reputation read verified, and never for a self-dealt one.
 
 ## Who can do what
@@ -352,7 +355,7 @@ const specHash = Uint8Array.from(Buffer.from(sha256(files["/spec.md"] ?? ""), "h
 const params = attestedResult({ amountIn: parseAmount("0.5", 9), minResult: 1n, maxResult: 1n, attestor: judge.address, specHash, judgeFee: parseAmount("0.01", 9) });
 await world.client.createIntent({ signer: owner, inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT, params, specUrl: local + "/spec.md" });
 
-const [job] = await world.client.jobs({ attestor: judge.address });
+const { jobs: [job] } = await world.client.jobs({ attestor: judge.address });
 if (job === undefined) throw new Error("no job listed");
 const spec = await world.client.spec(job.intent);
 console.log(spec?.matches, formatAmount(job.net ?? 0n, 9));

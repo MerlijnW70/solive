@@ -142,7 +142,7 @@ export function announcementPlans(context: ClientContext): AnnouncementPlans {
 
   const reclaim = async (input: ReclaimInput): Promise<ReclaimPlan> => {
     const { worker } = input;
-    const mine = await announcementsBy(transport, worker.address);
+    const { announcements: mine, unreadable } = await announcementsBy(transport, worker.address);
     const intents = [...new Set(mine.map(({ intent }) => intent))];
     const [views, now] = await Promise.all([transport.getAccounts(intents), chainTime(transport)]);
     const open = new Set(
@@ -175,7 +175,7 @@ export function announcementPlans(context: ClientContext): AnnouncementPlans {
     return {
       ...planOf({ payer: payer.address, instructions }),
       closed: closing.map(({ address }) => address),
-      kept: mine.filter((a) => !closing.includes(a)).map(({ address }) => address),
+      kept: [...mine.filter((a) => !closing.includes(a)).map(({ address }) => address), ...unreadable.map(({ address }) => address)],
       batches,
     };
   };
