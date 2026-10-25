@@ -1,7 +1,9 @@
 import { generateKeyPairSync } from "node:crypto";
 import { type Address, createKeyPairSignerFromBytes, type KeyPairSigner, lamports } from "@solana/kit";
-import { announcementCommitment, blobLayout, buildAnnounceDelivery, type SealRecipient, sealDeliveryV4 } from "@intent-engine/core";
-import { type Announced, createClient, type Transport } from "@intent-engine/client";
+import { type SealRecipient } from "@intent-engine/core";
+import { announcementCommitment, blobLayout, buildAnnounceDelivery, sealDeliveryV4 } from "@intent-engine/core/internal";
+import { type Announced, type Transport } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
 import { h, transport } from "./harness.js";
 
 export const WORK_URL = "https://" + "example.org/work.tar";

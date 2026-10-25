@@ -1,19 +1,9 @@
 import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { DEVNET_TEST_MINT, findAssociatedTokenAddress, IntentStatus, MAX_PARTNER_BPS, NATIVE_MINT, splitFees, swapExactIn, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import {
-  BPS_NEEDS_PARTNER,
-  createClient,
-  InvalidInput,
-  PARTNER_BPS_RANGE,
-  PARTNER_NEEDS_BPS,
-  PAY_TO_NOT_ATTESTED,
-  PayToNotWallet,
-  tokenAmount,
-  type HistoryEvent,
-  type HistoryPage,
-  type Transport,
-} from "../src/index.js";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress, IntentStatus, NATIVE_MINT, splitFees, swapExactIn, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { MAX_PARTNER_BPS } from "@intent-engine/core/internal";
+import { createClient, InvalidInput, PayToNotWallet, type HistoryEvent, type HistoryPage, type Transport } from "../src/index.js";
+import { BPS_NEEDS_PARTNER, PARTNER_BPS_RANGE, PARTNER_NEEDS_BPS, PAY_TO_NOT_ATTESTED, tokenAmount } from "../src/internal.js";
 import { createTestWorld, type TestWorld } from "../src/testing.js";
 import { delivered, escrow, proofParams, sha } from "./plan-driver.js";
 

@@ -33,6 +33,7 @@ import {
 } from "@solana-program/token";
 import { FailedTransactionMetadata, LiteSVM, Rent } from "litesvm";
 import { beforeEach, describe, expect, it } from "vitest";
+import { feeBpsFor, type IntentParams, findAssociatedTokenAddress, type Intent, IntentStatus, Kind, splitFees, NATIVE_MINT } from "@intent-engine/core";
 import {
   ALL_KINDS_MASK,
   buildCreateIntent,
@@ -40,30 +41,22 @@ import {
   buildRaisePause,
   buildUpdateConfig,
   decodeParamsLoose,
-  feeBpsFor,
-  type IntentParams,
   kindBit,
   PAUSE_FILL,
   remainingOf,
   requiredOut,
   buildInitUser,
   buildUpdateEconomics,
-  findAssociatedTokenAddress,
   findConfigPda,
   findEventAuthorityPda,
   findIntentPda,
   getConfigDecoder,
   getInitConfigInstructionAsync,
   getIntentDecoder,
-  type Intent,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  IntentStatus,
-  Kind,
-  splitFees,
   MAX_CRANK_BOUNTY,
   MAX_CREATE_FEE,
-  NATIVE_MINT,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import {
   BACKOFF_MAX_INTERVALS,
   backingOff,

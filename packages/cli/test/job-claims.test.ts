@@ -4,8 +4,9 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
-import { claimBoardAddress, DEVNET_TEST_MINT, Kind, NATIVE_MINT, profileAddress } from "@intent-engine/core";
-import { createClient } from "@intent-engine/client";
+import { DEVNET_TEST_MINT, Kind, NATIVE_MINT } from "@intent-engine/core";
+import { claimBoardAddress, profileAddress } from "@intent-engine/core/internal";
+import { createClient } from "@intent-engine/client/node";
 import { coolingDown, heldBy, NO_PROFILE, noClaims } from "../src/claim-commands.js";
 import { CLAIM_CHANGED } from "../src/agent/work-claims.js";
 import { PROFILE_CHANGED } from "../src/agent/profile.js";

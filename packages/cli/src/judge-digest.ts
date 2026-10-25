@@ -1,5 +1,8 @@
-import { decodeParams, Kind } from "@intent-engine/core";
-import { createClient, loadIntent, type Transport } from "@intent-engine/client";
+import { Kind } from "@intent-engine/core";
+import { decodeParams } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { loadIntent } from "@intent-engine/client/internal";
 import type { Command } from "./command-types.js";
 import { JudgeRefused } from "./judge-errors.js";
 

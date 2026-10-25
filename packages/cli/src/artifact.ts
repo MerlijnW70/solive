@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, open, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
-import { type ManifestEntry, manifestSha256 } from "@intent-engine/core";
+import { type ManifestEntry, manifestSha256 } from "@intent-engine/core/internal";
 import { UsageError } from "./arg-values.js";
 import { JudgeRefused } from "./judge-errors.js";
 

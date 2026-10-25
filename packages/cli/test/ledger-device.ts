@@ -1,7 +1,7 @@
 import { createPrivateKey, getRandomValues, type KeyObject, sign } from "node:crypto";
 import { createRequire } from "node:module";
 import { type Address, createKeyPairSignerFromPrivateKeyBytes, getAddressEncoder, getBase58Decoder, type KeyPairSigner } from "@solana/kit";
-import type { LedgerTransport, OpenTransport } from "@intent-engine/client";
+import type { LedgerTransport, OpenTransport } from "@intent-engine/client/internal";
 
 type Store = { passed: number; queue: [string, string][]; replayExchange(apdu: Buffer): Buffer; ensureQueueEmpty(): void };
 type Mocker = {

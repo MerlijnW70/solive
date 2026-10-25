@@ -34,10 +34,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { TransactionMetadata } from "litesvm";
 import { MAX_EXPIRES_IN, MIN_EXPIRES_IN } from "../src/agent/create.js";
 import { NOT_SENT } from "../src/flows.js";
+import { findAssociatedTokenAddress, formatAmount, type Intent, Kind, splitFees } from "@intent-engine/core";
 import {
-  findAssociatedTokenAddress,
   findConfigPda,
-  formatAmount,
   getConfigDecoder,
   getDeliveryReleasedEventEncoder,
   getIntentAttestedEventEncoder,
@@ -50,19 +49,18 @@ import {
   getPauseRaisedEventEncoder,
   getUserInitializedEventEncoder,
   findVaultPda,
-  type Intent,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   INTENT_VERSION,
-  Kind,
   splitFee,
-  splitFees,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { agentServer } from "../src/agent/mcp.js";
 import { ACTIONS } from "../src/agent/registry.js";
 import { needsSpecHash, SHA256_NEEDED, SPEC_HASH_FORMAT, UsageError, usageOf } from "../src/args.js";
 import { expandHome } from "../src/wallet.js";
 import { DELIVER_ONE_OF } from "../src/job-args.js";
-import { type AnnouncementPlan, createClient, DEVNET_GENESIS_HASH, loadAnnouncement, PLAIN_HTTP_ON_PUBLIC, rentExemptMinimum } from "@intent-engine/client";
+import { type AnnouncementPlan } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { DEVNET_GENESIS_HASH, loadAnnouncement, PLAIN_HTTP_ON_PUBLIC, rentExemptMinimum } from "@intent-engine/client/internal";
 import { ANNOUNCE_FIRST } from "../src/agent/wallet/delivery.js";
 import { RELEASE_UNKNOWN } from "../src/agent/wallet.js";
 import {

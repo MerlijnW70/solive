@@ -1,6 +1,7 @@
 import { TOKEN_PROGRAM_ADDRESS as TOKEN_PROGRAM } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { DEVNET_TEST_MINT, IntentStatus, NATIVE_MINT, statusName, TOKEN_2022_PROGRAM_ADDRESS, TOKEN_PROGRAM_ADDRESS, tokenName } from "../src/index.js";
+import { DEVNET_TEST_MINT, IntentStatus, NATIVE_MINT, statusName, TOKEN_PROGRAM_ADDRESS, tokenName } from "../src/index.js";
+import { TOKEN_2022_PROGRAM_ADDRESS } from "../src/internal.js";
 
 describe("well-known addresses and status names", () => {
   it("names the wrapped SOL mint, the devnet test token and both token programs", () => {

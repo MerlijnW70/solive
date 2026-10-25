@@ -18,8 +18,9 @@ import {
 } from "./arg-values.js";
 import type { AgentSpec, Authority, Command, ConfigChange, IssueSpec, RelaySpec, Remote, WalletLimits } from "./command-types.js";
 import type { Address } from "@solana/kit";
-import { NATIVE_MINT, TOKEN_AMOUNT_PATTERN } from "@intent-engine/core";
-import { DELIVERY_PAGES } from "@intent-engine/client";
+import { NATIVE_MINT } from "@intent-engine/core";
+import { TOKEN_AMOUNT_PATTERN } from "@intent-engine/core/internal";
+import { DELIVERY_PAGES } from "@intent-engine/client/internal";
 
 export const RELAY_NEEDS_FEES =
   "--relayer needs --relay-fee naming every input token it relays as mint=amount; amount may be 0, and other tokens are refused";

@@ -13,7 +13,7 @@ import {
   INTENT_VERSION,
   OLDEST_INTENT_VERSION,
   USER_VERSION,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { balance, cli, funded, h, type World, world } from "./harness.js";
 

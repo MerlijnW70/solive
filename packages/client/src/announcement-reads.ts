@@ -1,4 +1,5 @@
 import type { Address } from "@solana/kit";
+import { type AnnState, IntentStatus, NotAnEngineAccount } from "@intent-engine/core";
 import {
   ANNOUNCEMENT_DISCRIMINATOR,
   checkAccountVersion,
@@ -10,10 +11,8 @@ import {
   getDeliveryBookDecoder,
   getRefutationDecoder,
   getRefutationSize,
-  IntentStatus,
-  NotAnEngineAccount,
   REFUTATION_DISCRIMINATOR,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { chainTime, createdAccount } from "./accounts.js";
 import { AnnouncementsUnreadable } from "./announce-errors.js";
 import { intentAt } from "./job-proofs.js";
@@ -39,7 +38,7 @@ export type AnnouncementView = {
   expiresAt: bigint;
   paidAt: bigint;
   salt: Uint8Array;
-  state: delivery.AnnState;
+  state: AnnState;
   recipients: number;
   blob: Uint8Array;
   lamports: bigint;

@@ -1,5 +1,6 @@
 import type { Address, Signature } from "@solana/kit";
-import { InvalidInput, isSha256Hex } from "@intent-engine/core";
+import { InvalidInput } from "@intent-engine/core";
+import { isSha256Hex } from "@intent-engine/core/internal";
 import { AnnouncementsUnreadable } from "./announce-errors.js";
 import { refutationsOf } from "./announcement-reads.js";
 import { HISTORY_LIMIT } from "./client-types.js";
@@ -8,6 +9,7 @@ import { standingOf } from "./refutation-standing.js";
 import { paidWalletsOf, releasedDelivery, releaseOf } from "./release-reads.js";
 import type { SimpleContext } from "./simple-orders.js";
 import type { Announcement, DeliveriesInput, ReceiptInput, ReleaseReceipt } from "./simple-types.js";
+import { hexBytes } from "./encoding.js";
 
 export function sha256Given(sha256: string, name: string): string {
   const lowered = sha256.trim().toLowerCase();
@@ -17,7 +19,7 @@ export function sha256Given(sha256: string, name: string): string {
   return lowered;
 }
 
-const bytesOf = (sha256: string): Uint8Array => Uint8Array.from(Buffer.from(sha256, "hex"));
+const bytesOf = (sha256: string): Uint8Array => hexBytes(sha256);
 
 export function workReads(ctx: SimpleContext) {
   const { transport } = ctx.client;

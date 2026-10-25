@@ -11,6 +11,7 @@ import {
 } from "@solana/kit";
 import { describe, expect, expectTypeOf, it } from "vitest";
 import { findBookPda, findRefutationPda as generatedRefutationPda } from "../generated/client/index.js";
+import { IntentCoreError } from "../src/index.js";
 import {
   announcementAddress,
   announcementCommitment,
@@ -44,7 +45,6 @@ import {
   getRefuteReleaseInstructionDataDecoder,
   getSetAnnounceFeeInstructionDataDecoder,
   type IdlLike,
-  IntentCoreError,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   MAX_CREATE_FEE,
   offchainEnvelope,
@@ -53,7 +53,7 @@ import {
   SPLIT_COSIGN_TAG,
   sortMembers,
   validateIxAgainstIdl,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { InvalidInput } from "../src/errors.js";
 
 const idl = JSON.parse(readFileSync(fileURLToPath(new URL("../generated/idl.json", import.meta.url)), "utf8")) as IdlLike;

@@ -1,7 +1,8 @@
 import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { beforeEach, describe, expect, it } from "vitest";
-import { findIntentPda, type Mandate, mandateLane } from "@intent-engine/core";
-import { initUserIfMissing, loadUser, type Transport } from "@intent-engine/client";
+import { findIntentPda, type Mandate, mandateLane } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { initUserIfMissing, loadUser } from "@intent-engine/client/internal";
 import { WARN_SCALED } from "../src/agent/create.js";
 import { callOf, claimsOf } from "../src/agent/claims.js";
 import { prepareMandate } from "../src/agent/mandate.js";

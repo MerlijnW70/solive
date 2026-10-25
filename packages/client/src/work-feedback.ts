@@ -1,5 +1,5 @@
 import type { Address } from "@solana/kit";
-import { parseFeedbackMemo } from "@intent-engine/core";
+import { parseFeedbackMemo } from "@intent-engine/core/internal";
 import type { EngineTransaction } from "./transport.js";
 
 export function feedbackOf(transactions: readonly EngineTransaction[], intent: Address, owner: Address): number | undefined {

@@ -1,5 +1,6 @@
 import type { KeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { Kind, NATIVE_MINT } from "@intent-engine/core";
 import {
   blobLayout,
   buildAnnounceDelivery,
@@ -9,15 +10,13 @@ import {
   buildUpdateProfile,
   delivery,
   keyFingerprintV4,
-  Kind,
   maxSealedUrl,
-  NATIVE_MINT,
   newEncryptionKeyFile,
   parseEncryptionKey,
   readEncryptionKeyFile,
   sealDeliveryV4,
   signCommitteeVote,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { committeeKeys, recipientsFor } from "../src/announce-keys.js";
 import { createClient, UrlTooLong } from "../src/index.js";
 import { world, type World } from "./svm.js";

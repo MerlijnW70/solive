@@ -10,7 +10,7 @@ import {
   committeeSigners,
   signEd25519Instruction,
   verifyCommitteeVote,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { loadCommittee } from "./client-committee.js";
 import { NotSettleable, VoteRejected } from "./client-errors.js";
 import type {

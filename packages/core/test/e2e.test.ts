@@ -25,13 +25,13 @@ import {
 } from "@solana-program/token";
 import { FailedTransactionMetadata, LiteSVM, type TransactionMetadata } from "litesvm";
 import { beforeEach, describe, expect, it } from "vitest";
+import { splitFees, findAssociatedTokenAddress, Kind } from "../src/index.js";
 import {
   ALL_KINDS_MASK,
   attestedFillMessage,
   buildApproveDelegate,
   buildAdvanceEpoch,
   getIntentSize,
-  splitFees,
   buildUpdateEconomics,
   buildCreateIntentSigned,
   buildCreateIntentByAgent,
@@ -49,18 +49,16 @@ import {
   buildFlashFill,
   decodeEvent,
   buildInitUser,
-  findAssociatedTokenAddress,
   findEventAuthorityPda,
   findIntentPda,
   findVaultPda,
   getInitConfigInstructionAsync,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  Kind,
   encodeParams,
   splitFee,
   MAX_CRANK_BOUNTY,
   MAX_CREATE_FEE,
-} from "../src/index.js";
+} from "../src/internal.js";
 
 const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111" as Address;
 const NOW = 1_700_000_000n;

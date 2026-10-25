@@ -3,7 +3,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
 import { Kind } from "@intent-engine/core";
-import { createClient } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
 import { agentServer } from "../src/agent/mcp.js";
 import { claimsOf } from "../src/agent/claims.js";
 import { NO_CLOCK } from "../src/agent/wallet/receipt.js";

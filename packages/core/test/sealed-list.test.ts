@@ -1,23 +1,22 @@
 import { generateKeyPairSync } from "node:crypto";
 import { type Address, getAddressDecoder, getProgramDerivedAddress, isOffCurveAddress } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { NotInvited, SealedError } from "../src/index.js";
 import {
   isOnCurve,
   isSealed,
   MAX_SEALED_RECIPIENTS,
   newEncryptionKeyFile,
-  NotInvited,
   OLD_SEALED,
   parseEncryptionKey,
   readEncryptionKeyFile,
   SEALED_LIMIT,
   SEALED_TAG,
-  SealedError,
   sealedTo,
   seal,
   unseal,
   x25519PublicOf,
-} from "../src/index.js";
+} from "../src/internal.js";
 
 function wallet(): { address: Address; keypair: Uint8Array } {
   const jwk = generateKeyPairSync("ed25519").privateKey.export({ format: "jwk" });

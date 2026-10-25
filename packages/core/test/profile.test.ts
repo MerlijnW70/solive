@@ -12,6 +12,7 @@ import {
 } from "@solana/kit";
 import { FailedTransactionMetadata, LiteSVM } from "litesvm";
 import { beforeEach, describe, expect, it } from "vitest";
+import { IntentCoreError, AccountVersionError } from "../src/index.js";
 import {
   buildCloseProfile,
   buildCreateProfile,
@@ -20,15 +21,13 @@ import {
   getCreateProfileInstructionAsync,
   getProfileSize,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  IntentCoreError,
   type ProfileInput,
   profileAddress,
   PROFILE_DISCRIMINATOR,
   PROFILE_VERSION,
-  AccountVersionError,
   newEncryptionKeyFile,
   profileView,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { NotAnEngineAccount } from "../src/errors.js";
 
 const NOW = 1_700_000_000n;

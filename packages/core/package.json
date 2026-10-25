@@ -13,6 +13,7 @@
     "url": "https://github.com/MerlijnW70/solive/issues"
   },
   "type": "module",
+  "sideEffects": false,
   "files": [
     "dist",
     "generated/idl.json"
@@ -29,6 +30,11 @@
       "import": "./dist/src/index.js",
       "default": "./dist/src/index.js"
     },
+    "./internal": {
+      "types": "./dist/src/internal.d.ts",
+      "import": "./dist/src/internal.js",
+      "default": "./dist/src/internal.js"
+    },
     "./idl.json": {
       "types": "./generated/idl.json",
       "default": "./generated/idl.json"
@@ -41,13 +47,16 @@
     "test": "vitest run --fsModuleCache --config ./vitest.setup.ts"
   },
   "dependencies": {
-    "@solana-program/token": "0.16.1",
-    "@solana/kit": "8.4.0"
+    "@solana-program/token": "0.16.1"
+  },
+  "peerDependencies": {
+    "@solana/kit": "^8.4.0"
   },
   "devDependencies": {
     "@codama/nodes-from-anchor": "1.5.6",
     "@codama/renderers-js": "2.5.0",
     "@solana-program/system": "0.14.1",
+    "@solana/kit": "8.4.0",
     "@types/node": "26.6.4",
     "codama": "1.11.0",
     "fast-check": "4.10.2",

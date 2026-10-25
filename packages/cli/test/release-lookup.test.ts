@@ -1,4 +1,4 @@
-import { INTENT_ENGINE_PROGRAM_ADDRESS, getFillAttestedSplitInstructionDataEncoder, FILL_ATTESTED_SPLIT_DISCRIMINATOR } from "@intent-engine/core";
+import { INTENT_ENGINE_PROGRAM_ADDRESS, getFillAttestedSplitInstructionDataEncoder, FILL_ATTESTED_SPLIT_DISCRIMINATOR } from "@intent-engine/core/internal";
 import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import { beforeAll, describe, expect, it } from "vitest";
 import { heldMint, outlives, releasedMint, releaseLookup, splitRecipients } from "../src/agent/wallet/releases.js";

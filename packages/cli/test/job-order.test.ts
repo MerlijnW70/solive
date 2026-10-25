@@ -5,8 +5,8 @@ import { jobsWanted, pricedJobs } from "../src/job-filters.js";
 
 const listed = vi.hoisted(() => ({ jobs: new Map<string, unknown[]>(), open: [] as unknown[], pays: [] as unknown[] }));
 
-vi.mock("@intent-engine/client", async (original) => ({
-  ...(await original<typeof import("@intent-engine/client")>()),
+vi.mock("@intent-engine/client/internal", async (original) => ({
+  ...(await original<typeof import("@intent-engine/client/internal")>()),
   jobsOf: async (_: unknown, { mint }: { mint?: string }) => listed.jobs.get(mint ?? "") ?? [],
   openProofEscrows: async () => listed.open,
   jobPays: async () => listed.pays,

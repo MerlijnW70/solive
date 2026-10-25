@@ -1,6 +1,8 @@
 import type { Address } from "@solana/kit";
-import { findAssociatedTokenAddress, formatAmount, getClaimBoardSize, getClaimListSize, getIntentSize, getUserStateSize, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { createdAccount, loadConfig, loadUser, mintOf, type Transport } from "@intent-engine/client";
+import { findAssociatedTokenAddress, formatAmount, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { getClaimBoardSize, getClaimListSize, getIntentSize, getUserStateSize } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { createdAccount, loadConfig, loadUser, mintOf } from "@intent-engine/client/internal";
 import { TOKEN_NAMES } from "../../tokens.js";
 import { rentFor, rentRate, SIGNATURE_FEE, TOKEN_ACCOUNT_RENT_BYTES } from "../budget.js";
 import { tool } from "../names.js";

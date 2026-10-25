@@ -2,7 +2,7 @@ import { MAX_PRIORITY_PRICE, type Priority } from "./compute.js";
 import { tokenNamed } from "./tokens.js";
 import { clusterUrl } from "./clusters.js";
 import { redactUrl } from "./render.js";
-import { isLedgerPath } from "@intent-engine/client";
+import { isLedgerPath } from "@intent-engine/client/internal";
 import {
   ACCEPTS,
   GLOBAL_OPTIONS,
@@ -15,20 +15,8 @@ import {
   type Values,
 } from "./arg-options.js";
 import { type Address, address } from "@solana/kit";
-import {
-  I64_MAX,
-  I64_MIN,
-  isMemoUrl,
-  isSaltHex,
-  Kind,
-  kindBit,
-  MAX_FEE_BPS,
-  maxFeeBpsFor,
-  MEMO_URL_RULE,
-  parseAmount,
-  TOKEN_AMOUNT_PATTERN,
-  U64_MAX,
-} from "@intent-engine/core";
+import { Kind, MAX_FEE_BPS, maxFeeBpsFor, parseAmount } from "@intent-engine/core";
+import { I64_MAX, I64_MIN, isMemoUrl, isSaltHex, kindBit, MEMO_URL_RULE, TOKEN_AMOUNT_PATTERN, U64_MAX } from "@intent-engine/core/internal";
 
 export class UsageError extends Error {}
 

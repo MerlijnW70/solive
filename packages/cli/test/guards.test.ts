@@ -2,15 +2,8 @@ import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { AccountState, getTokenEncoder, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import fc from "fast-check";
 import { beforeAll, describe, expect, it } from "vitest";
-import {
-  createExt,
-  encodeParams,
-  getIntentDecoder,
-  getIntentSize,
-  type Intent,
-  Kind,
-  type SignedIntentFields,
-} from "@intent-engine/core";
+import { type Intent, Kind } from "@intent-engine/core";
+import { createExt, encodeParams, getIntentDecoder, getIntentSize, type SignedIntentFields } from "@intent-engine/core/internal";
 import { sameTerms } from "../src/agent/signed.js";
 import { refundable, TOKEN_ACCOUNT_BYTES } from "../src/crank.js";
 

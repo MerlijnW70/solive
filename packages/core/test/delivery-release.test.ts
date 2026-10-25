@@ -30,7 +30,7 @@ import {
   splitCommit,
   splitFee,
   splitN,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { customCode, DOMAIN, emitted, Engine, ESCROW, FEE_BPS, named, NOW, sealedBlob, SPEC, TOKEN } from "./delivery-svm.js";
 
 const DELIVERED = new Uint8Array(32).fill(0xd1);

@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { type Address, getBase16Decoder } from "@solana/kit";
-import { buildCreateCommittee, committeeEnvelope, decodeParams, findIntentPda, Kind, getCommitteeSize, MAX_COMMITTEE_MEMBERS, MAX_COMMITTEE_THRESHOLD } from "@intent-engine/core";
-import { type CommitteeBallot, createClient, intentAt, isSdkError } from "@intent-engine/client";
+import { Kind } from "@intent-engine/core";
+import { buildCreateCommittee, committeeEnvelope, decodeParams, findIntentPda, getCommitteeSize, MAX_COMMITTEE_MEMBERS, MAX_COMMITTEE_THRESHOLD } from "@intent-engine/core/internal";
+import { type CommitteeBallot, isSdkError } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { intentAt } from "@intent-engine/client/internal";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { tool } from "../names.js";

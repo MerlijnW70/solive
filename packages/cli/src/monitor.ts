@@ -1,14 +1,15 @@
 import { createHash } from "node:crypto";
 import { type Address, getAddressDecoder } from "@solana/kit";
+import { type Config } from "@intent-engine/core";
 import {
-  type Config,
   findConfigPda,
   findProgramDataAddress,
   getConfigDecoder,
   getConfigDiscriminatorBytes,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-} from "@intent-engine/core";
-import { type AccountView, CLOCK_SYSVAR, loadMintCap, type Transport } from "@intent-engine/client";
+} from "@intent-engine/core/internal";
+import { type AccountView, type Transport } from "@intent-engine/client";
+import { CLOCK_SYSVAR, loadMintCap } from "@intent-engine/client/internal";
 import { UsageError } from "./arg-values.js";
 import type { MonitorSpec } from "./command-types.js";
 import { fillsIn, inputMintsOf } from "./monitor-fills.js";

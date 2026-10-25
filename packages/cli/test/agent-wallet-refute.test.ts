@@ -1,7 +1,8 @@
 import type { Address } from "@solana/kit";
 import type { Client } from "@modelcontextprotocol/client";
 import { beforeEach, describe, expect, it } from "vitest";
-import { createClient, loadAnnouncement, refutationsOf } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { loadAnnouncement, refutationsOf } from "@intent-engine/client/internal";
 import { NOT_ANNOUNCEMENT } from "../src/agent/wallet.js";
 import { call, fresh, ok } from "./agent-wallet-kit.js";
 import { announced, keyed } from "./announce.js";

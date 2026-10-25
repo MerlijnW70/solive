@@ -55,6 +55,8 @@ export async function connect<S extends TransactionSigner>(options: ConnectOptio
     url,
     ...(options.transport === undefined ? {} : { transport: options.transport }),
     ...(options.priority === undefined ? {} : { priority: options.priority }),
+    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+    ...(options.lookup === undefined ? {} : { lookup: options.lookup }),
   };
   const client = createClient(clientOptions);
   if (options.allowMainnet !== true && (await client.transport.genesisHash()) === MAINNET_GENESIS_HASH) {

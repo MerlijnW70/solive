@@ -1,5 +1,6 @@
 import type { Address } from "@solana/kit";
-import { NATIVE_MINT, splitN } from "@intent-engine/core";
+import { NATIVE_MINT } from "@intent-engine/core";
+import { splitN } from "@intent-engine/core/internal";
 import { HISTORY_LIMIT } from "./client-types.js";
 import { DELIVERY_PAGES, scan } from "./job-scan.js";
 import { engineEvents, eventAuthority, intentHistory, type Settlement, settlementIn, splitClaim } from "./release-reads.js";

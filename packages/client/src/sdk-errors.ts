@@ -40,8 +40,8 @@ import {
 } from "./client-errors.js";
 import { ConfirmMismatch } from "./confirm-release.js";
 import { SpecSealed, SpecUnreadable } from "./job-specs.js";
-import { LedgerError, LedgerPathError } from "./ledger.js";
-import { FetchFailed } from "./pinned-fetch.js";
+import { LedgerError, LedgerPathError } from "./ledger-path.js";
+import { FetchFailed } from "./fetch-failed.js";
 import { BehindMinSlot, BlockhashExpired, FailedOnChain, MaybeSent, SubscriptionEnded } from "./send-errors.js";
 import { MainnetNotAllowed } from "./simple-tokens.js";
 import { NoKeyAtCreation, ProfileHistoryIncomplete } from "./unopened.js";

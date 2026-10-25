@@ -1,5 +1,5 @@
 import { type Instruction, isSignerRole } from "@solana/kit";
-import { IntentEngineInstruction, parseIntentEngineInstruction } from "@intent-engine/core";
+import { IntentEngineInstruction, parseIntentEngineInstruction } from "@intent-engine/core/internal";
 
 type Parsable = Parameters<typeof parseIntentEngineInstruction>[0];
 

@@ -3,8 +3,10 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
-import { DEVNET_TEST_MINT, EVENT_IX_TAG, getIntentAttestedEventEncoder, Kind, NATIVE_MINT } from "@intent-engine/core";
-import { createClient, keepsKey } from "@intent-engine/client";
+import { DEVNET_TEST_MINT, Kind, NATIVE_MINT } from "@intent-engine/core";
+import { EVENT_IX_TAG, getIntentAttestedEventEncoder } from "@intent-engine/core/internal";
+import { createClient } from "@intent-engine/client/node";
+import { keepsKey } from "@intent-engine/client/internal";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { ENV_KEYPAIR } from "../src/clusters.js";

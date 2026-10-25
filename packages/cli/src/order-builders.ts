@@ -14,7 +14,7 @@ import {
   UsageError,
 } from "./arg-values.js";
 import type { Command, FlowName, Remote, ToolInput } from "./command-types.js";
-import { MAX_PARTNER_BPS } from "@intent-engine/core";
+import { MAX_PARTNER_BPS } from "@intent-engine/core/internal";
 
 export const MANDATE_USE_KINDS = "a mandate covers swap, limit and dutch orders; name one of those";
 

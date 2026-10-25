@@ -1,16 +1,6 @@
 import { type Address, getBase16Decoder, getBase16Encoder } from "@solana/kit";
-import {
-  decodeParamsLoose,
-  describeTerms,
-  type Intent,
-  type IntentParams,
-  INTENT_VERSION,
-  Kind,
-  MAX_PARTNER_BPS,
-  NO_MANDATE,
-  IntentStatus,
-  remainingOf,
-} from "@intent-engine/core";
+import { type Intent, type IntentParams, Kind, IntentStatus } from "@intent-engine/core";
+import { decodeParamsLoose, describeTerms, INTENT_VERSION, MAX_PARTNER_BPS, NO_MANDATE, remainingOf } from "@intent-engine/core/internal";
 import { STATUS } from "../accounts.js";
 import type { Prepared } from "./prepare.js";
 import { tokenNames } from "../tokens.js";

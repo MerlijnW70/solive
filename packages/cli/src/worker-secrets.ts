@@ -1,6 +1,6 @@
 import { type Address, isAddress, isMessagePartialSigner, type TransactionPartialSigner } from "@solana/kit";
-import { isSha256Hex } from "@intent-engine/core";
-import { isDevice, SECRET_BYTES } from "@intent-engine/client";
+import { isSha256Hex } from "@intent-engine/core/internal";
+import { isDevice, SECRET_BYTES } from "@intent-engine/client/internal";
 import { FlowRefused } from "./flows.js";
 import { settingsDir } from "./wallet.js";
 

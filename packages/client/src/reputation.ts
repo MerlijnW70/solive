@@ -1,6 +1,7 @@
 import type { Address, Instruction, TransactionSigner } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
-import { feedbackMemo, formatAmount, NATIVE_MINT } from "@intent-engine/core";
+import { formatAmount, NATIVE_MINT } from "@intent-engine/core";
+import { feedbackMemo } from "@intent-engine/core/internal";
 import { HISTORY_LIMIT } from "./client-types.js";
 import { intentAddress, type IntentRef } from "./intent-ref.js";
 import { memoInstruction } from "./job-memos.js";

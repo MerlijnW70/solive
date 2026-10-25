@@ -10,19 +10,10 @@ import {
   getSyncNativeInstruction,
 } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { findAssociatedTokenAddress, findIntentPda, Kind, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import {
-  createClient,
-  FUNDING_READS,
-  RECORD_READS,
-  reputationOf,
-  RESTART,
-  solTransfersOf,
-  SYSTEM_PROGRAM_ADDRESS,
-  type Transport,
-  TRUST_PAYER_READS,
-  trustOf,
-} from "../src/index.js";
+import { findAssociatedTokenAddress, Kind, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { findIntentPda } from "@intent-engine/core/internal";
+import { createClient, type Transport, trustOf } from "../src/index.js";
+import { FUNDING_READS, RECORD_READS, reputationOf, RESTART, solTransfersOf, SYSTEM_PROGRAM_ADDRESS, TRUST_PAYER_READS } from "../src/internal.js";
 import { INTENT_HISTORY_PAGES } from "../src/release-reads.js";
 import { svmTransport } from "../src/svm.js";
 import { world } from "./svm.js";

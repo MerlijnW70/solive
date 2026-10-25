@@ -3,7 +3,8 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
-import { buildClaimJob, claimBoardAddress, DEVNET_TEST_MINT, formatAmount, getClaimBoardSize, NATIVE_MINT } from "@intent-engine/core";
+import { DEVNET_TEST_MINT, formatAmount, NATIVE_MINT } from "@intent-engine/core";
+import { buildClaimJob, claimBoardAddress, getClaimBoardSize } from "@intent-engine/core/internal";
 import { SIGNATURE_FEE } from "../src/agent/budget.js";
 import { closedEscrow, settleCall } from "../src/agent/claim-line.js";
 import { tool } from "../src/agent/names.js";

@@ -29,25 +29,22 @@ import {
 } from "@solana-program/token";
 import { FailedTransactionMetadata, LiteSVM } from "litesvm";
 import { beforeEach, describe, expect, it } from "vitest";
+import { findAssociatedTokenAddress, type Intent, IntentStatus, Kind } from "@intent-engine/core";
 import {
   ALL_KINDS_MASK,
   buildCreateIntent,
   buildInitUser,
-  findAssociatedTokenAddress,
   findConfigPda,
   findEventAuthorityPda,
   findIntentPda,
   getConfigDecoder,
   getInitConfigInstructionAsync,
   getIntentDecoder,
-  type Intent,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  IntentStatus,
-  Kind,
   MAX_CRANK_BOUNTY,
   MAX_CREATE_FEE,
   splitFee,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { type Chain, inventoryPricer, type Pricer, type Report, type Simulated, tick } from "../src/index.js";
 
 const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111" as Address;

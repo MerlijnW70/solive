@@ -12,8 +12,11 @@ import {
   SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR,
   type TransactionPartialSigner,
 } from "@solana/kit";
-import { type DeliveryOpener, formatAmount, parseAmount, readEncryptionKeyFile } from "@intent-engine/core";
-import { type DeviceSigner, isLedgerPath, isSdkError, LedgerError, ledgerSigner, messageHash, neverLanded, openUsb } from "@intent-engine/client";
+import { type DeliveryOpener, formatAmount, parseAmount } from "@intent-engine/core";
+import { readEncryptionKeyFile } from "@intent-engine/core/internal";
+import { isSdkError, LedgerError } from "@intent-engine/client";
+import { ledgerSigner, messageHash, openUsb } from "@intent-engine/client/node";
+import { type DeviceSigner, isLedgerPath, neverLanded } from "@intent-engine/client/internal";
 import { ENV_KEYPAIR, type Env, WALLET_NOT_MAINNET, type WalletLimits } from "../../args.js";
 import { execute, type PreparedView } from "../../flows.js";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";

@@ -10,21 +10,14 @@ import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { FailedTransactionMetadata } from "litesvm";
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-  buildFillIntent,
-  findAssociatedTokenAddress,
-  findIntentPda,
-  findMandatePda,
-  findVaultPda,
-  formatAmount,
-  MANDATE_NONCE_BIT,
-  mandateLane,
-} from "@intent-engine/core";
+import { findAssociatedTokenAddress, formatAmount } from "@intent-engine/core";
+import { buildFillIntent, findIntentPda, findMandatePda, findVaultPda, MANDATE_NONCE_BIT, mandateLane } from "@intent-engine/core/internal";
 
 const FIRST_LANE = MANDATE_NONCE_BIT | (1n << 32n);
 import { getCloseAccountInstruction, getTokenDecoder, getTransferInstruction, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { MAX_COMPUTE_UNITS } from "@intent-engine/solver";
-import { FailedOnChain, failure, type Transport } from "@intent-engine/client";
+import { FailedOnChain, type Transport } from "@intent-engine/client";
+import { failure } from "@intent-engine/client/internal";
 import { createCost, rentFor, rentRate, TOKEN_ACCOUNT_RENT_BYTES } from "../src/agent/budget.js";
 import { AGENT_NONCE_PROBES, agentNonce, freeMandateId, MANDATE_ID_PROBES, NO_MANDATE_HINT, REVOKE_CANCELS } from "../src/agent/mandate.js";
 import { callOf, claim, claimsOf } from "../src/agent/claims.js";

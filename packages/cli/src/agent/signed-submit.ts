@@ -1,23 +1,8 @@
 import { getPublicKeyFromAddress, verifySignature } from "@solana/kit";
-import {
-  buildEd25519Instruction,
-  describeSignedIntent,
-  formatAmount,
-  findIntentPda,
-  getIntentDecoder,
-  signedIntentMessage,
-  validate,
-} from "@intent-engine/core";
-import {
-  chainTime,
-  clusterDomain,
-  createdAccount,
-  loadUser,
-  mintCapOf,
-  mintOf,
-  tokenAccountIfMissing,
-  type Transport,
-} from "@intent-engine/client";
+import { formatAmount } from "@intent-engine/core";
+import { buildEd25519Instruction, describeSignedIntent, findIntentPda, getIntentDecoder, signedIntentMessage, validate } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { chainTime, clusterDomain, createdAccount, loadUser, mintCapOf, mintOf, tokenAccountIfMissing } from "@intent-engine/client/internal";
 import { define } from "./actions.js";
 import { withFromNow } from "./expiry.js";
 import { tool } from "./names.js";

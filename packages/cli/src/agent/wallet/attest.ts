@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { type Address, getAddressDecoder, getBase16Decoder, type Instruction } from "@solana/kit";
+import { formatAmount, IntentStatus, Kind, NATIVE_MINT, splitFees } from "@intent-engine/core";
 import {
   attestedFillMessage,
   buildEd25519Instruction,
@@ -7,16 +8,13 @@ import {
   COMPUTE_BUDGET_ADDRESS,
   decodeParams,
   findIntentPda,
-  formatAmount,
   formatTime,
   getIntentDecoder,
-  IntentStatus,
-  Kind,
-  NATIVE_MINT,
-  splitFees,
   settlementWarnings,
-} from "@intent-engine/core";
-import { type BallotInput, chainTime, createClient, envelopeDigest, isSdkError, loadConfig, mintOf, releaseClaims, tokenAccountIfMissing } from "@intent-engine/client";
+} from "@intent-engine/core/internal";
+import { type BallotInput, isSdkError } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { chainTime, envelopeDigest, loadConfig, mintOf, releaseClaims, tokenAccountIfMissing } from "@intent-engine/client/internal";
 import { capturing } from "../../announcement-views.js";
 import { TOKEN_NAMES } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";

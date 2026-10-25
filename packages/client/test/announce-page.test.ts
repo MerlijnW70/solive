@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { type Address, generateKeyPairSigner, type KeyPairSigner, type TransactionSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { Kind, NATIVE_MINT } from "@intent-engine/core";
 import {
   announcementCommitment,
   blobLayout,
@@ -10,13 +11,11 @@ import {
   buildOpenClaimsListed,
   buildSetAnnounceFee,
   delivery,
-  Kind,
-  NATIVE_MINT,
   newEncryptionKeyFile,
   readEncryptionKeyFile,
   sealDeliveryV4,
   signCommitteeVote,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { committeeKeys } from "../src/announce-keys.js";
 import {
   AnnouncementsUnreadable,

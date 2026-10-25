@@ -10,6 +10,7 @@ import {
   type TransactionPartialSigner,
   type TransactionSigner,
 } from "@solana/kit";
+import { feeBpsFor } from "@intent-engine/core";
 import {
   buildAcceptAdmin,
   buildProposeAdmin,
@@ -28,12 +29,12 @@ import {
   MAX_COMMITTEE_FLOORS,
   findConfigPda,
   findMintCapAddress,
-  feeBpsFor,
   kindBit,
   PAUSE_CREATE,
   PAUSE_FILL,
-} from "@intent-engine/core";
-import { chainTime, clusterDomain, loadConfig, loadMintCap, MissingAccount, type Transport } from "@intent-engine/client";
+} from "@intent-engine/core/internal";
+import { MissingAccount, type Transport } from "@intent-engine/client";
+import { chainTime, clusterDomain, loadConfig, loadMintCap } from "@intent-engine/client/internal";
 import type { Authority, Command } from "./command-types.js";
 import type { Runtime } from "./runtime.js";
 import { redactUrl } from "./render.js";

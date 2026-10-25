@@ -1,4 +1,5 @@
 import { type Address, getAddressDecoder, getBase58Encoder } from "@solana/kit";
+import { type Config, NotAnEngineAccount, SdkError, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
 import {
   checkAccountVersion,
   decodeMintCapData,
@@ -13,13 +14,9 @@ import {
   getUserStateDecoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   isMintCapData,
-  type Config,
   type MintCap,
-  NotAnEngineAccount,
-  SdkError,
   TOKEN_2022_PROGRAM_ADDRESS,
-  TOKEN_PROGRAM_ADDRESS,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import type { IntentAccount } from "./client-types.js";
 import type { AccountView, Transport } from "./transport.js";
 

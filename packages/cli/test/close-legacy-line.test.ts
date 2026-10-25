@@ -1,5 +1,6 @@
 import { type Address, getAddressEncoder, type KeyPairSigner, lamports as toLamports } from "@solana/kit";
 import { beforeEach, describe, expect, it } from "vitest";
+import { TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
 import {
   claimBoardAddress,
   CLAIMS_VERSION,
@@ -10,8 +11,7 @@ import {
   OLDEST_INTENT_VERSION,
   profileAddress,
   PROFILE_VERSION,
-  TOKEN_PROGRAM_ADDRESS,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { cli, funded, h, NOW, setNow, type World, world } from "./harness.js";
 

@@ -13,7 +13,7 @@ import {
   releaseMemo,
   SPEC_MEMO_PREFIX,
   specMemo,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { InvalidInput } from "../src/errors.js";
 
 const URL_OK = "https://example.org/spec.md";

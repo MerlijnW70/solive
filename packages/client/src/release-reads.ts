@@ -1,13 +1,13 @@
 import { type Address, getAddressDecoder } from "@solana/kit";
+import { type EngineEvent } from "@intent-engine/core";
 import {
   decodeEvent,
-  type EngineEvent,
   findEventAuthorityPda,
   FILL_ATTESTED_SPLIT_COMMITTEE_DISCRIMINATOR,
   FILL_ATTESTED_SPLIT_DISCRIMINATOR,
   getFillAttestedSplitCommitteeInstructionDataDecoder,
   getFillAttestedSplitInstructionDataDecoder,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { engineCalls } from "./job-origins.js";
 import { signaturePage } from "./job-scan.js";
 import type { EngineTransaction, Transport } from "./transport.js";

@@ -3,7 +3,8 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
-import { DEVNET_TEST_MINT, NATIVE_MINT, specMemo } from "@intent-engine/core";
+import { DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
+import { specMemo } from "@intent-engine/core/internal";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { NO_SPEC_HASH } from "../src/agent/wallet/escrow.js";
 import { EXIT_OK } from "../src/main.js";

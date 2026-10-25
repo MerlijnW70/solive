@@ -11,16 +11,10 @@ import {
   type TransactionPartialSigner,
 } from "@solana/kit";
 import { getRevokeInstruction, getTokenDecoder } from "@solana-program/token";
-import {
-  buildApproveDelegate,
-  findAssociatedTokenAddress,
-  findDelegatePda,
-  formatAmount,
-  getIntentDecoder,
-  IntentStatus,
-  parseAmount,
-} from "@intent-engine/core";
-import { createdAccount, isSdkError, mintOf, type Transport, unmemoized } from "@intent-engine/client";
+import { findAssociatedTokenAddress, formatAmount, IntentStatus, parseAmount } from "@intent-engine/core";
+import { buildApproveDelegate, findDelegatePda, getIntentDecoder } from "@intent-engine/core/internal";
+import { isSdkError, type Transport } from "@intent-engine/client";
+import { createdAccount, mintOf, unmemoized } from "@intent-engine/client/internal";
 import { type AgentContext, type AnyAction, invoke } from "./agent/actions.js";
 import { WARN_REPLACES_DELEGATE } from "./agent/owner.js";
 import { prepare } from "./agent/prepare.js";

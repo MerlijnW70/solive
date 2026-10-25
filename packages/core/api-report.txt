@@ -1,0 +1,69 @@
+class AccountVersionError: class AccountVersionError extends SdkError { readonly code = "account-version-error"; readonly name = "AccountVersionError"; readonly account: string; readonly version: number | null; readonly current: number; constructor(account: string, version: number | null, current: number, size: number, oldest?: number); }
+type AnnState: type AnnState = "announced" | "paid";
+type AnySdkError: type AnySdkError = SdkErrors[SdkErrorCode];
+type AttestedResultFields: type AttestedResultFields = Omit<AttestedResultParams, "kind">;
+type AttestedResultParams: type AttestedResultParams = { kind: Kind.AttestedResult; amountIn: bigint; minResult: bigint; maxResult: bigint; attestor: Address; specHash: Uint8Array; judgeFee: bigint; };
+type CommitteeTerms: type CommitteeTerms = { members: readonly Address[]; threshold: number; feeWallet: Address; };
+type CommitteeVote: type CommitteeVote = { member: Address; signature: Uint8Array; };
+type Config: type Config = { discriminator: ReadonlyUint8Array; admin: Address; pendingAdmin: Address; guardian: Address; feeRecipient: Address; enabledKinds: bigint; feeBps: number; paused: number; version: number; bump: number; kindFeeMask: number; partnerCutBps: number; domain: ReadonlyUint8Array; fillDisabledKinds: bigint; kindFeeBps: Array<number>; crankBounty: number; createFee: number; capsRequired: number; padding: ReadonlyUint8Array; announceFee: number; floorMints: Array<Address>; floorAmounts: Array<bigint>; };
+type ConfigSummary: type ConfigSummary = { createPaused: boolean; fillPaused: boolean; kinds: KindSummary[]; createFee: bigint; crankBounty: bigint; partnerCutBps: number; admin: Address; guardian: Address; };
+type CoreErrorCode: type CoreErrorCode = (typeof CORE_ERROR_CODES)[number];
+const DEVNET_TEST_MINT: const DEVNET_TEST_MINT: Address;
+type DeliveryKey: type DeliveryKey = { publicKey: Uint8Array<ArrayBuffer>; secret: CryptoKey; };
+type DeliveryOpener: type DeliveryOpener = Uint8Array | DeliveryKey;
+type DutchAuctionFields: type DutchAuctionFields = Omit<DutchAuctionParams, "kind">;
+type DutchAuctionParams: type DutchAuctionParams = { kind: Kind.DutchAuction; amountIn: bigint; startOut: bigint; endOut: bigint; startTs: bigint; endTs: bigint; };
+class EncryptionKeyError: class EncryptionKeyError extends SdkError { readonly code = "encryption-key-error"; readonly name = "EncryptionKeyError"; }
+type EngineEvent: type EngineEvent = { [K in EngineEventName]: { name: K; notable: boolean; fields: ReturnType<(typeof PARSERS)[K]>; }; }[EngineEventName];
+type EngineEventName: type EngineEventName = (typeof IntentEngineEvent)[IntentEngineEvent];
+type FeeConfig: type FeeConfig = { feeBps: number; kindFeeMask: number; kindFeeBps: readonly number[]; };
+type FeeShares: type FeeShares = { protocol: bigint; partner: bigint; net: bigint; };
+type InputRule: type InputRule = "range" | "length" | "format" | "conflict" | "duplicate" | "order" | "missing" | "unsupported";
+type Intent: type Intent = { discriminator: ReadonlyUint8Array; owner: Address; inputMint: Address; outputMint: Address; receiver: Address; nonce: bigint; escrowed: bigint; createdAt: bigint; expiresAt: bigint; kind: number; status: number; bump: number; vaultBump: number; version: number; padding: ReadonlyUint8Array; flags: number; params: ReadonlyUint8Array; rentPayer: Address; filled: bigint; revision: number; partnerBps: number; partnerCutBps: number; inFlight: bigint; partner: Address; bounty: number; mandate: Address; feeBps: number; gap: ReadonlyUint8Array; mandateSerial: bigint; agentFee: bigint; claims: number; gap2: ReadonlyUint8Array; capped: bigint; };
+class IntentCoreError: class IntentCoreError extends SdkError { readonly code = "intent-core-error"; readonly name = "IntentCoreError"; readonly engineError: CoreErrorCode; constructor(engineError: CoreErrorCode); }
+const IntentEngineEvent: const IntentEngineEvent: { readonly 0: "AccountMigrated"; readonly 1: "AdminAccepted"; readonly 2: "AdminProposed"; readonly 3: "AgentPaid"; readonly 4: "AnnounceFeeSet"; readonly 5: "AnnouncementClosed"; readonly 6: "CapsRequiredSet"; readonly 7: "ClaimDropped"; readonly 8: "ClaimantsListed"; readonly 9: "ClaimsClosed"; readonly 10: "ClaimsOpened"; readonly 11: "CommitteeAttested"; readonly 12: "CommitteeCreated"; readonly 13: "CommitteeFloorSet"; readonly 14: "CommitteeKeysSynced"; readonly 15: "ConfigInitialized"; readonly 16: "ConfigUpdated"; readonly 17: "DeliveryAnnounced"; readonly 18: "DeliveryBookClosed"; readonly 19: "DeliveryReleased"; readonly 20: "EconomicsUpdated"; readonly 21: "EpochAdvanced"; readonly 22: "FeeWithheld"; readonly 23: "FillBegun"; readonly 24: "FillEnded"; readonly 25: "IntentAttested"; readonly 26: "IntentCancelled"; readonly 27: "IntentClosed"; readonly 28: "IntentCreated"; readonly 29: "IntentExpired"; readonly 30: "IntentFilled"; readonly 31: "IntentSplit"; readonly 32: "JobClaimed"; readonly 33: "LegacyClosed"; readonly 34: "LineLeft"; readonly 35: "MandateClosed"; readonly 36: "MandateCreated"; readonly 37: "MandateUsed"; readonly 38: "MintCapSet"; readonly 39: "NonceAdvanced"; readonly 40: "PauseLowered"; readonly 41: "PauseRaised"; readonly 42: "ProfileClosed"; readonly 43: "ProfileSet"; readonly 44: "RelayerPaid"; readonly 45: "ReleaseRefuted"; readonly 46: "StakeMoved"; readonly 47: "StoodBy"; readonly 48: "UserInitialized"; readonly AccountMigrated: 0; readonly AdminAccepted: 1; readonly AdminProposed: 2; readonly AgentPaid: 3; readonly AnnounceFeeSet: 4; readonly AnnouncementClosed: 5; readonly CapsRequiredSet: 6; readonly ClaimDropped: 7; readonly ClaimantsListed: 8; readonly ClaimsClosed: 9; readonly ClaimsOpened: 10; readonly CommitteeAttested: 11; readonly CommitteeCreated: 12; readonly CommitteeFloorSet: 13; readonly CommitteeKeysSynced: 14; readonly ConfigInitialized: 15; readonly ConfigUpdated: 16; readonly DeliveryAnnounced: 17; readonly DeliveryBookClosed: 18; readonly DeliveryReleased: 19; readonly EconomicsUpdated: 20; readonly EpochAdvanced: 21; readonly FeeWithheld: 22; readonly FillBegun: 23; readonly FillEnded: 24; readonly IntentAttested: 25; readonly IntentCancelled: 26; readonly IntentClosed: 27; readonly IntentCreated: 28; readonly IntentExpired: 29; readonly IntentFilled: 30; readonly IntentSplit: 31; readonly JobClaimed: 32; readonly LegacyClosed: 33; readonly LineLeft: 34; readonly MandateClosed: 35; readonly MandateCreated: 36; readonly MandateUsed: 37; readonly MintCapSet: 38; readonly NonceAdvanced: 39; readonly PauseLowered: 40; readonly PauseRaised: 41; readonly ProfileClosed: 42; readonly ProfileSet: 43; readonly RelayerPaid: 44; readonly ReleaseRefuted: 45; readonly StakeMoved: 46; readonly StoodBy: 47; readonly UserInitialized: 48; };
+type IntentEngineEvent: type IntentEngineEvent = (typeof IntentEngineEvent)[Exclude<keyof typeof IntentEngineEvent, number>];
+type IntentParams: type IntentParams = SwapExactInParams | LimitOrderParams | DutchAuctionParams | AttestedResultParams;
+const IntentStatus: const IntentStatus: { readonly Open: 0; readonly Filled: 1; readonly Cancelled: 2; readonly Expired: 3; readonly Filling: 4; };
+type IntentStatusName: type IntentStatusName = keyof typeof IntentStatus;
+class InvalidInput: class InvalidInput extends SdkError { readonly code = "invalid-input"; readonly name = "InvalidInput"; readonly field: string; readonly rule: InputRule; constructor(field: string, rule: InputRule, message: string, options?: ErrorOptions); }
+enum Kind: enum Kind { SwapExactIn = 1, LimitOrder = 2, DutchAuction = 3, AttestedResult = 4 }
+type KindName: type KindName = keyof typeof Kind;
+type KindSummary: type KindSummary = { kind: Kind; name: KindName; create: boolean; fill: boolean; feeBps: number; };
+type LimitOrderFields: type LimitOrderFields = Omit<LimitOrderParams, "kind">;
+type LimitOrderParams: type LimitOrderParams = { kind: Kind.LimitOrder; makeAmount: bigint; takeAmount: bigint; };
+const MAX_ATTESTED_FEE_BPS: const MAX_ATTESTED_FEE_BPS = 300;
+const MAX_FEE_BPS: const MAX_FEE_BPS = 100;
+const NATIVE_MINT: const NATIVE_MINT: Address;
+class NoSignature: class NoSignature extends SdkError { readonly code = "no-signature"; readonly name = "NoSignature"; readonly signer: Address; constructor(signer: Address); }
+class NotAnEngineAccount: class NotAnEngineAccount extends SdkError { readonly code = "not-an-engine-account"; readonly name = "NotAnEngineAccount"; readonly address: Address | null; constructor(address: Address | null, message: string); }
+class NotInvited: class NotInvited extends SdkError { readonly code = "not-invited"; readonly name = "NotInvited"; readonly wallet: Address | null; constructor(wallet: Address | null); }
+type ProfileView: type ProfileView = { wallet: Address; skills: string[]; endpoint: string; docUrl: string | null; docSha256: string | null; encryptionKey: string | null; updatedAt: bigint; };
+class SdkError: abstract class SdkError extends Error { abstract readonly code: SdkErrorCode; readonly [BRAND] = true; }
+type SdkErrorCode: type SdkErrorCode = keyof SdkErrors;
+interface SdkErrors: interface SdkErrors { "invalid-input": InvalidInput; "intent-core-error": IntentCoreError; "encryption-key-error": EncryptionKeyError; "sealed-error": SealedError; "not-invited": NotInvited; "account-version-error": AccountVersionError; "not-an-engine-account": NotAnEngineAccount; "no-signature": NoSignature; }
+type SealRecipient: type SealRecipient = Address | { wallet: Address; encryptionKey: Uint8Array | null; };
+class SealedError: class SealedError extends SdkError { readonly code = "sealed-error"; readonly name = "SealedError"; }
+type SummarizedConfig: type SummarizedConfig = Pick<Config, "admin" | "guardian" | "paused" | "enabledKinds" | "fillDisabledKinds" | "feeBps" | "kindFeeMask" | "kindFeeBps" | "partnerCutBps" | "createFee" | "crankBounty">;
+type SwapExactInFields: type SwapExactInFields = Omit<SwapExactInParams, "kind">;
+type SwapExactInParams: type SwapExactInParams = { kind: Kind.SwapExactIn; amountIn: bigint; minOut: bigint; };
+external TOKEN_PROGRAM_ADDRESS: @solana-program/token#TOKEN_PROGRAM_ADDRESS
+type Terms: type Terms = { kind: Kind; kindName: KindName; params: IntentParams; sells: bigint; receivesAtLeast: bigint | null; };
+function attestedResult: function attestedResult(fields: AttestedResultFields): AttestedResultParams;
+function configSummary: function configSummary(config: SummarizedConfig): ConfigSummary;
+function dutchAuction: function dutchAuction(fields: DutchAuctionFields): DutchAuctionParams;
+function eventNamed: function eventNamed<E extends EngineEvent, N extends E["name"]>(events: readonly E[], name: N): Extract<E, { name: N; }> | undefined;
+function feeBpsFor: function feeBpsFor(config: FeeConfig, kind: number): number;
+function findAssociatedTokenAddress: function findAssociatedTokenAddress(seeds: { owner: Address; mint: Address; tokenProgram: Address; }): Promise<Address>;
+function formatAmount: function formatAmount(raw: bigint, decimals?: number): string;
+function isSdkError: function isSdkError(error: unknown): error is AnySdkError;
+function isSdkError: function isSdkError<C extends SdkErrorCode>(error: unknown, code: C): error is SdkErrors[C];
+function kindName: function kindName(kind: number): KindName | undefined;
+function limitOrder: function limitOrder(fields: LimitOrderFields): LimitOrderParams;
+function maxFeeBpsFor: function maxFeeBpsFor(kind: number): number;
+function parseAmount: function parseAmount(text: string, decimals: number): bigint;
+function splitFees: function splitFees(amount: bigint, feeBps: number, partnerBps: number, cutBps: number): FeeShares;
+function statusName: function statusName(status: number): IntentStatusName | undefined;
+function swapExactIn: function swapExactIn(fields: SwapExactInFields): SwapExactInParams;
+function termsOf: function termsOf(intent: { kind: number; params: ArrayLike<number>; }, now?: bigint): Terms;
+function tokenName: function tokenName(mint: Address): "SOL" | "TEST" | undefined;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { type AnnounceShape, announceWireSize, delivery, maxSealedUrl, PACKET_DATA_SIZE } from "../src/index.js";
+import { type AnnounceShape, announceWireSize, delivery, maxSealedUrl, PACKET_DATA_SIZE } from "../src/internal.js";
 import { InvalidInput } from "../src/errors.js";
 
 const light = (committee: boolean, version: AnnounceShape["version"] = "legacy"): AnnounceShape => ({

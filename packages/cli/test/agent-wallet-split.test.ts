@@ -2,22 +2,19 @@ import { type Address, generateKeyPairSigner, getAddressEncoder, getBase16Decode
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import type { Client } from "@modelcontextprotocol/client";
 import { beforeEach, describe, expect, it } from "vitest";
+import { findAssociatedTokenAddress, formatAmount, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
 import {
   buildEd25519CosignInstruction,
   buildFillAttestedSplit,
   computeUnitLimit,
   cosignEnvelope,
-  findAssociatedTokenAddress,
-  formatAmount,
   getIntentDecoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  IntentStatus,
   MAX_COMPUTE_UNITS,
-  NATIVE_MINT,
   splitFee,
   splitN,
-} from "@intent-engine/core";
-import { loadAnnouncement, loadConfig } from "@intent-engine/client";
+} from "@intent-engine/core/internal";
+import { loadAnnouncement, loadConfig } from "@intent-engine/client/internal";
 import { LOOKUP_TABLE_HEADER } from "@intent-engine/solver";
 import { transactionSize } from "../src/agent/prepare.js";
 import { notInSplit, PACKET_DATA_SIZE, RELEASE_CHANGED, SPLIT_FITS, SPLIT_FITS_WITH_TABLE } from "../src/agent/wallet.js";

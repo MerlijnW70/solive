@@ -4,6 +4,7 @@ source "$(dirname "$0")/env.sh"
 packages=(core client solver cli)
 version="$(node -p "require('./packages/cli/package.json').version")"
 litesvm="$(node -p "require('./packages/client/package.json').devDependencies.litesvm")"
+kit="$(node -p "require('./packages/client/package.json').devDependencies['@solana/kit']")"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/packs" "$work/app"
@@ -31,7 +32,7 @@ if (bad.length > 0) {
 ' "packages/$p"
 done
 client_files="$(tar -tzf "$work/packs/intent-engine-client-$version.tgz")"
-for entry in package/program/intent_engine.so package/dist/src/testing.js package/dist/src/testing.d.ts; do
+for entry in package/program/intent_engine.so package/dist/src/testing.js package/dist/src/testing.d.ts package/dist/src/node.js package/dist/src/internal.js; do
   grep -qxF "$entry" <<< "$client_files" || { echo "the client tarball lacks $entry" >&2; exit 1; }
 done
 baseline="$PWD/monitoring/devnet.json"
@@ -42,11 +43,15 @@ npm install --no-audit --no-fund --loglevel=error \
   "$work/packs/intent-engine-client-$version.tgz" \
   "$work/packs/intent-engine-solver-$version.tgz" \
   "$work/packs/intent-engine-cli-$version.tgz" \
-  "litesvm@$litesvm"
+  "litesvm@$litesvm" \
+  "@solana/kit@$kit"
 node --input-type=module -e '
 await import("@intent-engine/core");
 await import("@intent-engine/client");
 await import("@intent-engine/client/svm");
+await import("@intent-engine/client/node");
+await import("@intent-engine/client/internal");
+await import("@intent-engine/core/internal");
 await import("@intent-engine/solver");
 const idl = await import("@intent-engine/core/idl.json", { with: { type: "json" } });
 if (typeof idl.default.address !== "string") throw new Error("the IDL has no address");
@@ -81,4 +86,4 @@ printed="$(node_modules/.bin/intent-engine --version --output json)"
 [[ "$(node -p 'JSON.parse(process.argv[1]).version' "$printed")" == "$version" ]] || { echo "intent-engine --version printed $printed, not $version" >&2; exit 1; }
 kits="$(find node_modules -path '*/@solana/kit/package.json' | wc -l)"
 [[ "$kits" == 1 ]] || { echo "$kits copies of @solana/kit installed" >&2; find node_modules -path '*/@solana/kit/package.json' >&2; exit 1; }
-echo "packed and installed @intent-engine $version: imports, requires, a test world on the shipped program, the binary and one @solana/kit"
+echo "packed and installed @intent-engine $version next to @solana/kit@$kit: imports, requires, a test world on the shipped program, the binary and one @solana/kit"

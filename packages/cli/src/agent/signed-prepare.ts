@@ -1,24 +1,15 @@
 import { createNoopSigner, getBase64Decoder, type SignatureBytes } from "@solana/kit";
+import { formatAmount } from "@intent-engine/core";
 import {
   buildApproveDelegate,
   buildEd25519Instruction,
   describeSignedIntent,
   escrowAmount,
-  formatAmount,
   MEMO_URL_RULE,
   signedIntentMessage,
   validate,
-} from "@intent-engine/core";
-import {
-  chainTime,
-  clusterDomain,
-  initUserIfMissing,
-  loadConfig,
-  loadUser,
-  mintCapOf,
-  mintOf,
-  tokenAccountIfMissing,
-} from "@intent-engine/client";
+} from "@intent-engine/core/internal";
+import { chainTime, clusterDomain, initUserIfMissing, loadConfig, loadUser, mintCapOf, mintOf, tokenAccountIfMissing } from "@intent-engine/client/internal";
 import { define } from "./actions.js";
 import { withFromNow } from "./expiry.js";
 import { tool } from "./names.js";

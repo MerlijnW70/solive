@@ -28,13 +28,23 @@ describe("the version", () => {
 
   it("is published from the repository identity.toml names, with one exact version of @solana/kit", () => {
     const repository = /^repository = "([^"]+)"$/m.exec(read("identity.toml"))?.[1];
-    type Manifest = { repository: { url: string; directory: string }; homepage: string; bugs: { url: string }; dependencies: Record<string, string> };
+    type Manifest = {
+      repository: { url: string; directory: string };
+      homepage: string;
+      bugs: { url: string };
+      dependencies: Record<string, string>;
+      devDependencies: Record<string, string>;
+      peerDependencies?: Record<string, string>;
+    };
     for (const p of PACKAGES) {
       const j = JSON.parse(read(p)) as Manifest;
       expect(j.repository, p).toEqual({ type: "git", url: `git+${repository}.git`, directory: p.replace("/package.json", "") });
       expect(j.homepage, p).toBe(`${repository}#readme`);
       expect(j.bugs, p).toEqual({ url: `${repository}/issues` });
-      expect(j.dependencies["@solana/kit"], p).toBe("8.4.0");
+      const peer = j.peerDependencies?.["@solana/kit"];
+      expect(peer === undefined ? j.dependencies["@solana/kit"] : j.devDependencies["@solana/kit"], p).toBe("8.4.0");
+      expect(peer, p).toBe(peer === undefined ? undefined : "^8.4.0");
+      expect(peer !== undefined && j.dependencies["@solana/kit"] !== undefined, p).toBe(false);
     }
   });
 

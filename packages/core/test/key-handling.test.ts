@@ -14,7 +14,7 @@ import {
   unseal,
   wrapKey,
   x25519SecretOf,
-} from "../src/index.js";
+} from "../src/internal.js";
 
 type Wallet = { address: Address; keypair: Uint8Array };
 

@@ -20,29 +20,24 @@ import {
 } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import { describe, expect, it } from "vitest";
-import { findEventAuthorityPda, findIntentPda, Kind, MAX_MEMO_URL, seal, SPEC_MEMO_PREFIX, specMemo } from "@intent-engine/core";
+import { Kind } from "@intent-engine/core";
+import { findEventAuthorityPda, findIntentPda, MAX_MEMO_URL, seal, SPEC_MEMO_PREFIX, specMemo } from "@intent-engine/core/internal";
+import { createClient, InvalidInput, NotDeliverable, type SpecFetch, SpecSealed, SpecUnreadable, type Transport } from "../src/index.js";
 import {
-  createClient,
   DEVNET_GENESIS_HASH,
   engineCalls,
   EXPIRES_IN_RANGE,
-  InvalidInput,
   JOBS_LIMIT,
   MAX_EXPIRES_IN,
   MAX_SPEC_BYTES,
   MEMO_PROGRAM_ADDRESS,
   memoInstruction,
   MIN_EXPIRES_IN,
-  NotDeliverable,
   PAY_TO_NOT_ATTESTED,
   PLAIN_HTTP_ON_PUBLIC,
   SIGNATURE_PAGE,
   SPEC_URL_NEEDS_PROOF,
-  type SpecFetch,
-  SpecSealed,
-  SpecUnreadable,
-  type Transport,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { funded, world, type World } from "./svm.js";
 
 const LOCAL = "http://127.0.0.1:8899";

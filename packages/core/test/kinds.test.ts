@@ -1,25 +1,19 @@
 import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { attestedResult, dutchAuction, IntentCoreError, type IntentParams, Kind, limitOrder, swapExactIn } from "../src/index.js";
 import {
   attestedFillPreimage,
-  attestedResult,
   buildEd25519Instruction,
   ed25519Header,
   checkAttested,
   decodeParams,
   decodeParamsLoose,
-  dutchAuction,
   encodeParams,
   I64_MAX,
   I64_MIN,
-  IntentCoreError,
-  type IntentParams,
-  Kind,
-  limitOrder,
   signedIntentPreimage,
-  swapExactIn,
   U64_MAX,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { InvalidInput } from "../src/errors.js";
 
 const roundTrip = (p: IntentParams) => decodeParams(p.kind, encodeParams(p));

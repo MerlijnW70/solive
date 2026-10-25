@@ -27,6 +27,7 @@ import {
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
+import { type Config, feeBpsFor, findAssociatedTokenAddress, type IntentParams, IntentStatus, Kind } from "@intent-engine/core";
 import {
   buildCancelIntent,
   buildCloseIntent,
@@ -36,21 +37,16 @@ import {
   buildFlashFill,
   buildInitUser,
   buildRevokeMandate,
-  type Config,
-  feeBpsFor,
-  findAssociatedTokenAddress,
   findConfigPda,
   findIntentPda,
   findMandatePda,
   findVaultPda,
   getConfigDecoder,
   getIntentDecoder,
-  type IntentParams,
-  IntentStatus,
-  Kind,
   splitFee,
-} from "@intent-engine/core";
-import { chainTime, type RpcLike, rpcTransport, type Transport } from "@intent-engine/client";
+} from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { chainTime, type RpcLike, rpcTransport } from "@intent-engine/client/internal";
 import { agentServer } from "../src/agent/mcp.js";
 import { budgetOf } from "../src/agent/budget.js";
 import { relayOf } from "../src/agent/relay.js";

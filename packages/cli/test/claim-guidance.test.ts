@@ -3,7 +3,8 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
-import { buildClaimJob, DEVNET_TEST_MINT, findAssociatedTokenAddress, NATIVE_MINT } from "@intent-engine/core";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress, NATIVE_MINT } from "@intent-engine/core";
+import { buildClaimJob } from "@intent-engine/core/internal";
 import { svmTransport } from "@intent-engine/client/svm";
 import { tool } from "../src/agent/names.js";
 import { claimedByOther, NO_CLAIM_HELD } from "../src/agent/job-claims.js";

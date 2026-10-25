@@ -1,20 +1,15 @@
 import { type Address, isAddress } from "@solana/kit";
+import { type FeeConfig, feeBpsFor, formatAmount, type IntentParams, InvalidInput, Kind } from "@intent-engine/core";
 import {
   buildCreateIntent,
   escrowAmount,
-  type FeeConfig,
-  feeBpsFor,
   findIntentPda,
-  formatAmount,
-  type IntentParams,
-  InvalidInput,
-  Kind,
   MAX_PARTNER_BPS,
   releaseSettles,
   settleBounds,
   nextFreeNonce,
   specMemo,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { chainTime, loadUser, mintCapOf, type NonceWindow } from "./accounts.js";
 import { escrowCommittee } from "./client-committee.js";
 import { NoFreeNonce } from "./client-errors.js";

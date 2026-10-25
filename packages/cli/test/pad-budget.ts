@@ -1,7 +1,8 @@
 import type { Instruction, KeyPairSigner } from "@solana/kit";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
-import { MEMO_PROGRAM_ADDRESS, type OpenTransport, type Transport } from "@intent-engine/client";
+import { type Transport } from "@intent-engine/client";
+import { MEMO_PROGRAM_ADDRESS, type OpenTransport } from "@intent-engine/client/internal";
 import { claimsOf } from "../src/agent/claims.js";
 import { servedActions } from "../src/agent/everyday.js";
 import { agentServer } from "../src/agent/mcp.js";

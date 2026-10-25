@@ -1,7 +1,8 @@
 import { type Address, generateKeyPairSigner, getBase16Decoder } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
-import { findAssociatedTokenAddress, getIntentDecoder, decodeParams, Kind, INTENT_ENGINE_PROGRAM_ADDRESS, formatAmount, splitFee, WARN_ATTESTOR, WARN_PROOF } from "@intent-engine/core";
+import { findAssociatedTokenAddress, Kind, formatAmount } from "@intent-engine/core";
+import { getIntentDecoder, decodeParams, INTENT_ENGINE_PROGRAM_ADDRESS, splitFee, WARN_ATTESTOR, WARN_PROOF } from "@intent-engine/core/internal";
 import { beforeEach, describe, expect, it } from "vitest";
 import { BlockhashExpired } from "@intent-engine/client";
 import { NO_SPEC_HASH } from "../src/agent/wallet/escrow.js";

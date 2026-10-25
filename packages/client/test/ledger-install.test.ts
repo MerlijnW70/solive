@@ -1,6 +1,8 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { LEDGER_ERRORS, LedgerError, ledgerModule } from "../src/index.js";
+import { LedgerError } from "../src/index.js";
+import { ledgerModule } from "../src/node.js";
+import { LEDGER_ERRORS } from "../src/internal.js";
 
 const manifest = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as Record<string, Record<string, unknown> | undefined>;
 const LEDGER = ["@ledgerhq/hw-app-solana", "@ledgerhq/hw-transport-node-hid-noevents"];

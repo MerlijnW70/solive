@@ -15,6 +15,7 @@ import { getTransferSolInstruction } from "@solana-program/system";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { FailedTransactionMetadata } from "litesvm";
 import { describe, expect, it, vi } from "vitest";
+import { IntentStatus, Kind } from "@intent-engine/core";
 import {
   buildCancelIntent,
   buildCreateIntent,
@@ -24,18 +25,9 @@ import {
   findIntentPda,
   headroom,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  IntentStatus,
-  Kind,
-} from "@intent-engine/core";
-import {
-  createClient,
-  ENGINE_ERRORS,
-  type IntentAccount,
-  type Notifications,
-  type RpcLike,
-  rpcTransport,
-  type Transport,
-} from "../src/index.js";
+} from "@intent-engine/core/internal";
+import { createClient, type IntentAccount, type Notifications, type Transport } from "../src/index.js";
+import { ENGINE_ERRORS, type RpcLike, rpcTransport } from "../src/internal.js";
 import { FEE_BPS, NOW, world, type World } from "./svm.js";
 
 const ESCROW = 400n;

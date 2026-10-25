@@ -6,24 +6,10 @@ import {
   getInitializeAccount3Instruction,
   getTokenDecoder,
 } from "@solana-program/token";
-import {
-  buildCloseIntent,
-  buildExpireIntent,
-  findAssociatedTokenAddress,
-  findDelegatePda,
-  findVaultPda,
-  getIntentDecoder,
-  INTENT_VERSION,
-  type Intent,
-} from "@intent-engine/core";
-import {
-  type AccountView,
-  chainTime,
-  createdAccount,
-  EXTENSIONS_OFFSET,
-  tokenProgramOf,
-  type Transport,
-} from "@intent-engine/client";
+import { findAssociatedTokenAddress, type Intent } from "@intent-engine/core";
+import { buildCloseIntent, buildExpireIntent, findDelegatePda, findVaultPda, getIntentDecoder, INTENT_VERSION } from "@intent-engine/core/internal";
+import { type AccountView, type Transport } from "@intent-engine/client";
+import { chainTime, createdAccount, EXTENSIONS_OFFSET, tokenProgramOf } from "@intent-engine/client/internal";
 import { STATUS } from "./accounts.js";
 import { rentFor, rentRate } from "./agent/budget.js";
 

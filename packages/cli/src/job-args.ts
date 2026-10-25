@@ -1,4 +1,4 @@
-import { TOKEN_AMOUNT_PATTERN } from "@intent-engine/core";
+import { TOKEN_AMOUNT_PATTERN } from "@intent-engine/core/internal";
 import type { Values } from "./arg-options.js";
 import { confirmUrlOf, encryptionKeypairOf, feePayerOf, key, memoUrlOf, noSub, parseBounded, relayPayerOf, required, saltOf, sha256Of, u64, UsageError } from "./arg-values.js";
 import { JUDGE_TIMEOUT, MAX_JUDGE_TIMEOUT, releaseOption, runOf } from "./command-builders.js";

@@ -1,14 +1,6 @@
 import type { Address } from "@solana/kit";
-import {
-  decodeParams,
-  decodeParamsLoose,
-  remainingOf,
-  requiredOut,
-  splitFees,
-  INTENT_VERSION,
-  type Intent,
-  Kind,
-} from "@intent-engine/core";
+import { splitFees, type Intent, Kind } from "@intent-engine/core";
+import { decodeParams, decodeParamsLoose, remainingOf, requiredOut, INTENT_VERSION } from "@intent-engine/core/internal";
 
 export const STATUS = ["open", "filled", "cancelled", "expired", "filling"] as const;
 

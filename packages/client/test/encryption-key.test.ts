@@ -1,6 +1,7 @@
 import type { Address, KeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { buildCreateProfile, buildUpdateProfile, delivery, Kind, newEncryptionKeyFile, readEncryptionKeyFile } from "@intent-engine/core";
+import { Kind } from "@intent-engine/core";
+import { buildCreateProfile, buildUpdateProfile, delivery, newEncryptionKeyFile, readEncryptionKeyFile } from "@intent-engine/core/internal";
 import { createClient, FirstOpeningRefused } from "../src/index.js";
 import { funded, world, type World } from "./svm.js";
 import { announced, keyed, LOCAL, sha, specHash, workUrl } from "./work.js";

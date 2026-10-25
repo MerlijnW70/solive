@@ -11,8 +11,10 @@ import {
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
-import { findAssociatedTokenAddress, Kind, specMemo, TOKEN_2022_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { createClient, type SpecFetch } from "@intent-engine/client";
+import { findAssociatedTokenAddress, Kind } from "@intent-engine/core";
+import { specMemo, TOKEN_2022_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
+import { type SpecFetch } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
 import { agentServer } from "../src/agent/mcp.js";
 import { claimsOf } from "../src/agent/claims.js";
 import { findJobs } from "../src/agent/jobs.js";

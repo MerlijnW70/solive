@@ -1,6 +1,8 @@
 import type { Address } from "@solana/kit";
-import { decodeEvent, type EngineEvent } from "@intent-engine/core";
-import { announcementsOf, type EngineTransaction, isSdkError, reputationOf, type Transport } from "@intent-engine/client";
+import { type EngineEvent } from "@intent-engine/core";
+import { decodeEvent } from "@intent-engine/core/internal";
+import { type EngineTransaction, isSdkError, type Transport } from "@intent-engine/client";
+import { announcementsOf, reputationOf } from "@intent-engine/client/internal";
 import { account, amount, choice, flag, list, object, optional } from "../schema.js";
 
 export const MAX_STANDING = 64;

@@ -3,19 +3,8 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Address, generateKeyPairSigner, lamports } from "@solana/kit";
 import { beforeEach, describe, expect, it } from "vitest";
-import {
-  DEVNET_TEST_MINT,
-  encodeParams,
-  getIntentDecoder,
-  getIntentEncoder,
-  getIntentSize,
-  type Intent,
-  type IntentParams,
-  INTENT_VERSION,
-  IntentStatus,
-  Kind,
-  NATIVE_MINT,
-} from "@intent-engine/core";
+import { DEVNET_TEST_MINT, type Intent, type IntentParams, IntentStatus, Kind, NATIVE_MINT } from "@intent-engine/core";
+import { encodeParams, getIntentDecoder, getIntentEncoder, getIntentSize, INTENT_VERSION } from "@intent-engine/core/internal";
 import type { ProgramAccount } from "@intent-engine/client";
 import { parse, UsageError } from "../src/args.js";
 import { EXIT_ALERTED, EXIT_OK, main } from "../src/main.js";

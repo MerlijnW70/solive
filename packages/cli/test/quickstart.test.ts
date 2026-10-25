@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, none, some } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
-import { DEVNET_TEST_MINT, findAssociatedTokenAddress, getIntentDecoder, getIntentSize } from "@intent-engine/core";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress } from "@intent-engine/core";
+import { getIntentDecoder, getIntentSize } from "@intent-engine/core/internal";
 import {
   getCreateAssociatedTokenIdempotentInstructionAsync,
   getMintEncoder,

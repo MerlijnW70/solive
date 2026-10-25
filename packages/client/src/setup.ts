@@ -1,7 +1,8 @@
 import { type Address, createNoopSigner, type Instruction, type TransactionSigner } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import { getCreateAssociatedTokenIdempotentInstructionAsync, getSyncNativeInstruction, getTokenDecoder } from "@solana-program/token";
-import { buildInitUser, findAssociatedTokenAddress, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { findAssociatedTokenAddress, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { buildInitUser } from "@intent-engine/core/internal";
 import { createdAccount, type NonceWindow } from "./accounts.js";
 import type { Transport } from "./transport.js";
 

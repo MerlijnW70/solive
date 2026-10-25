@@ -1,8 +1,10 @@
 import { type Address, isSome } from "@solana/kit";
 import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import { getTokenDecoder } from "@solana-program/token";
-import { findDelegatePda, formatAmount, U64_MAX, findIntentPda } from "@intent-engine/core";
-import { createdAccount, TOKEN_PROGRAMS, type NonceWindow, type Transport } from "@intent-engine/client";
+import { formatAmount } from "@intent-engine/core";
+import { findDelegatePda, U64_MAX, findIntentPda } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { createdAccount, TOKEN_PROGRAMS, type NonceWindow } from "@intent-engine/client/internal";
 import { AgentRefusal, ENGINE_PROBLEMS } from "./problems.js";
 import { SOL_DECIMALS } from "./read.js";
 import { InvalidInput } from "./schema.js";

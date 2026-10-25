@@ -2,7 +2,8 @@ import { type Address, createNoopSigner, type TransactionPartialSigner } from "@
 import { getApproveCheckedInstruction, getRevokeInstruction, getTokenDecoder } from "@solana-program/token";
 import { findAssociatedTokenAddress, formatAmount } from "@intent-engine/core";
 import { allowanceOf, spendable } from "@intent-engine/solver";
-import { createdAccount, mintOf, type Transport } from "@intent-engine/client";
+import { type Transport } from "@intent-engine/client";
+import { createdAccount, mintOf } from "@intent-engine/client/internal";
 import { prepare } from "./agent/prepare.js";
 import { preparedView } from "./agent/shapes.js";
 import type { Command } from "./command-types.js";

@@ -1,8 +1,11 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import type { Address } from "@solana/kit";
-import { type DeliveryKey, newEncryptionKeyFile, readEncryptionKeyFile, seal, sealedTo, unseal } from "@intent-engine/core";
-import { createClient, isSdkError, MAX_SPEC_BYTES, sealRecipients, SpecUnreadable, type Transport } from "@intent-engine/client";
+import { type DeliveryKey } from "@intent-engine/core";
+import { newEncryptionKeyFile, readEncryptionKeyFile, seal, sealedTo, unseal } from "@intent-engine/core/internal";
+import { isSdkError, SpecUnreadable, type Transport } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { MAX_SPEC_BYTES, sealRecipients } from "@intent-engine/client/internal";
 import { tool } from "./agent/names.js";
 import type { Command } from "./command-types.js";
 import { FlowRefused } from "./flows.js";

@@ -1,6 +1,7 @@
 import { isSdkError } from "@intent-engine/client";
 import { parseArgs } from "node:util";
 import type { Address } from "@solana/kit";
+import { parseAmount } from "@intent-engine/core";
 import {
   checkProfile,
   ENCRYPTION_KEY_RULE,
@@ -12,9 +13,8 @@ import {
   MAX_COMMITTEE_MEMBERS,
   MAX_FEEDBACK_SCORE,
   NO_ENCRYPTION_KEY,
-  parseAmount,
   TOKEN_AMOUNT_PATTERN,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { OPTIONS, PROFILE_OPTIONS, type Values } from "./arg-options.js";
 import { addressList, confirmUrlOf, encryptionKeypairOf, key, noSub, parseAddress, parseBounded, required, sha256Of, u64, UsageError } from "./arg-values.js";
 import { maxPagesOf } from "./command-builders.js";

@@ -10,4 +10,5 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 pnpm --filter @intent-engine/core build
 pnpm --filter @intent-engine/client build
 pnpm --filter @intent-engine/solver build
+bash scripts/api-report.sh
 pnpm -r typecheck

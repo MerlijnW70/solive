@@ -1,5 +1,6 @@
-import { formatAmount, formatTime, LONG_LIVED_SECONDS, WARN_LONG_LIVED } from "@intent-engine/core";
-import { chainTime, mintOf } from "@intent-engine/client";
+import { formatAmount } from "@intent-engine/core";
+import { formatTime, LONG_LIVED_SECONDS, WARN_LONG_LIVED } from "@intent-engine/core/internal";
+import { chainTime, mintOf } from "@intent-engine/client/internal";
 import { TOKEN_NAMES } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";

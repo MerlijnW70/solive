@@ -7,19 +7,19 @@ import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { expect } from "vitest";
+import { findAssociatedTokenAddress, Kind, type SealRecipient } from "@intent-engine/core";
 import {
   buildCreateProfile,
   buildUpdateProfile,
   EVENT_IX_TAG,
-  findAssociatedTokenAddress,
   getIntentDecoder,
   getProfileSetEventEncoder,
-  Kind,
   newEncryptionKeyFile,
   parseEncryptionKey,
-  type SealRecipient,
-} from "@intent-engine/core";
-import { createClient, type EngineTransaction, type OpenTransport } from "@intent-engine/client";
+} from "@intent-engine/core/internal";
+import { type EngineTransaction } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { type OpenTransport } from "@intent-engine/client/internal";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK, main } from "../src/main.js";

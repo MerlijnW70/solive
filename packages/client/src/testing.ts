@@ -23,21 +23,11 @@ import {
   getMintToInstruction,
   getSyncNativeInstruction,
 } from "@solana-program/token";
-import {
-  ALL_KINDS_MASK,
-  buildInitConfig,
-  buildUpdateEconomics,
-  DEVNET_TEST_MINT,
-  findAssociatedTokenAddress,
-  findProgramDataAddress,
-  INTENT_ENGINE_PROGRAM_ADDRESS,
-  NATIVE_MINT,
-  parseAmount,
-  TOKEN_PROGRAM_ADDRESS,
-} from "@intent-engine/core";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress, NATIVE_MINT, parseAmount, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { ALL_KINDS_MASK, buildInitConfig, buildUpdateEconomics, findProgramDataAddress, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { LiteSVM } from "litesvm";
 import { MissingAccount } from "./accounts.js";
-import { createClient } from "./client.js";
+import { createClient } from "./node.js";
 import type { Client } from "./client-types.js";
 import type { ClientHooks, DebugLog } from "./observe.js";
 import { DEVNET_GENESIS_HASH } from "./job-specs.js";

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { type Address, getAddressEncoder } from "@solana/kit";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { SealedError, type SealRecipient } from "../src/index.js";
 import {
   announcementCommitment,
   delivery,
@@ -17,10 +18,8 @@ import {
   SALT_TAG,
   saltMessage,
   sealDeliveryV4,
-  SealedError,
-  type SealRecipient,
   PRODUCT_SLUG,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { clamp, committee, profileMember, refBinding, referenceBlob, refSecrets, saltSignature, urlOf, type Wallet, wallet, walletMember, WORK } from "./sealed-v4-reference.js";
 import { InvalidInput } from "../src/errors.js";
 

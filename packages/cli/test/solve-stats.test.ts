@@ -9,7 +9,8 @@ import {
 } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type Config, encodeParams, type Intent, IntentStatus, Kind } from "@intent-engine/core";
+import { type Config, type Intent, IntentStatus, Kind } from "@intent-engine/core";
+import { encodeParams } from "@intent-engine/core/internal";
 import type { Chain, Pricer, Quote, SolverOptions } from "@intent-engine/solver";
 import type { ProgramAccount } from "@intent-engine/client";
 import { parse, UsageError } from "../src/args.js";

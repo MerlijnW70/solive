@@ -1,6 +1,7 @@
 import { type Address, generateKeyPairSigner, type Signature } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { FailedOnChain, failure, MaybeSent } from "@intent-engine/client";
+import { FailedOnChain, MaybeSent } from "@intent-engine/client";
+import { failure } from "@intent-engine/client/internal";
 import { BUDGET_WINDOW, budgetOf, release, reserve } from "../src/agent/budget.js";
 import { AgentRefusal } from "../src/agent/problems.js";
 import { admitRelay, RATE_WINDOW, relayOf } from "../src/agent/relay.js";

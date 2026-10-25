@@ -13,7 +13,8 @@ import {
   setTransactionMessageFeePayer,
   setTransactionMessageLifetimeUsingBlockhash,
 } from "@solana/kit";
-import { isDevice, type Transport } from "@intent-engine/client";
+import { type Transport } from "@intent-engine/client";
+import { isDevice } from "@intent-engine/client/internal";
 import { priorityLamports } from "../compute.js";
 import { LOG_LINE_LIMIT, LOG_TAIL, SimulationFailed, simulationProblem, untrusted } from "./problems.js";
 

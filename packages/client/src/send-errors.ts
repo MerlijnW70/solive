@@ -1,5 +1,6 @@
 import type { Address, Signature } from "@solana/kit";
-import { INTENT_ENGINE_PROGRAM_ADDRESS, SdkError } from "@intent-engine/core";
+import { SdkError } from "@intent-engine/core";
+import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { ENGINE_ERRORS, type EngineError } from "./errors.js";
 
 export class MaybeSent extends SdkError {

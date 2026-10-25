@@ -9,7 +9,6 @@ import {
   type AttestedResultParams,
   dutchAuction,
   type DutchAuctionParams,
-  encodeParams,
   type IntentParams,
   Kind,
   limitOrder,
@@ -17,30 +16,27 @@ import {
   swapExactIn,
   type SwapExactInParams,
 } from "@intent-engine/core";
+import { encodeParams } from "@intent-engine/core/internal";
 import {
   type AnnounceInput,
   type CancelInput,
   type ClusterChoice,
-  clusterUrl,
   connect,
   type ConnectOptions,
   type CreateIntentInput,
   type DeliveredWork,
   type DeliverSend,
-  type DeviceSigner,
   InvalidInput,
-  isSaltSigner,
   NoMessageSigner,
   type Outcome,
   type Preview,
   type RefuteInput,
-  RELEASE_NEEDS_KEY_PAIR,
   type ReleaseSend,
-  secretInputOf,
   type Sent,
   type SignerCannot,
   type SimpleClient,
 } from "../src/index.js";
+import { clusterUrl, type DeviceSigner, isSaltSigner, RELEASE_NEEDS_KEY_PAIR, secretInputOf } from "../src/internal.js";
 import { clientRoot, returnFindings } from "./exported-surface.js";
 import { world } from "./svm.js";
 

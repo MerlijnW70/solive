@@ -1,15 +1,9 @@
 import { type Address, createNoopSigner } from "@solana/kit";
 import { AccountState, getRevokeInstruction, getTokenDecoder } from "@solana-program/token";
-import {
-  buildApproveDelegate,
-  buildCancelIntent,
-  buildRevokeMandate,
-  formatAmount,
-  IntentStatus,
-  findAssociatedTokenAddress,
-  tokenOf,
-} from "@intent-engine/core";
-import { cancelClaims, createdAccount, mintOf, TOKEN_PROGRAMS, tokenProgramOf, type Transport } from "@intent-engine/client";
+import { formatAmount, IntentStatus, findAssociatedTokenAddress } from "@intent-engine/core";
+import { buildApproveDelegate, buildCancelIntent, buildRevokeMandate, tokenOf } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { cancelClaims, createdAccount, mintOf, TOKEN_PROGRAMS, tokenProgramOf } from "@intent-engine/client/internal";
 import { vaultBalance } from "../crank.js";
 import { define } from "./actions.js";
 import { tool } from "./names.js";

@@ -7,7 +7,7 @@ import { pathToFileURL } from "node:url";
 import type { Address, KeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import { Kind } from "@intent-engine/core";
-import { createClient } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
 import { NODE_ENGINE } from "../../src/node-judge.js";
 import { SANDBOX_IMAGE } from "../../src/sandbox.js";
 import { casesOf } from "../../src/viper.js";

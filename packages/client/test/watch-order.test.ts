@@ -2,34 +2,10 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { type Address, getAddressDecoder, type Signature } from "@solana/kit";
 import { describe, expect, it, vi } from "vitest";
-import {
-  AccountVersionError,
-  encodeParams,
-  getIntentDecoder,
-  getIntentDiscriminatorBytes,
-  getIntentEncoder,
-  getIntentSize,
-  type Intent,
-  INTENT_VERSION,
-  IntentStatus,
-  Kind,
-} from "@intent-engine/core";
-import {
-  changesFrom,
-  CLOCK_SYSVAR,
-  confirm,
-  createClient,
-  FailedOnChain,
-  heardSlot,
-  type Job,
-  jobPays,
-  type Notifications,
-  openProofEscrows,
-  type ProgramAccount,
-  type RpcLike,
-  signatureWatch,
-  type Transport,
-} from "../src/index.js";
+import { AccountVersionError, type Intent, IntentStatus, Kind } from "@intent-engine/core";
+import { encodeParams, getIntentDecoder, getIntentDiscriminatorBytes, getIntentEncoder, getIntentSize, INTENT_VERSION } from "@intent-engine/core/internal";
+import { createClient, FailedOnChain, type Job, type Notifications, type ProgramAccount, type Transport } from "../src/index.js";
+import { changesFrom, CLOCK_SYSVAR, confirm, heardSlot, jobPays, openProofEscrows, type RpcLike, signatureWatch } from "../src/internal.js";
 
 const socket = vi.hoisted(() => ({ notes: [] as unknown[] }));
 

@@ -1,5 +1,6 @@
 import { type Address, getAddressDecoder } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { IntentCoreError } from "../src/index.js";
 import {
   ATTEST_DELIVERY_PREIMAGE_LEN,
   ATTEST_DELIVERY_TAG,
@@ -15,8 +16,7 @@ import {
   attestedDeliveryPreimage,
   attestedSplitDeliveryPreimage,
   delivery,
-  IntentCoreError,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { InvalidInput } from "../src/errors.js";
 
 const {

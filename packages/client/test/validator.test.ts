@@ -27,32 +27,17 @@ import {
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
+import { findAssociatedTokenAddress, IntentStatus, Kind } from "@intent-engine/core";
 import {
   ALL_KINDS_MASK,
-  findAssociatedTokenAddress,
   findEventAuthorityPda,
   findProgramDataAddress,
   getInitConfigInstructionAsync,
   getIntentDecoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  IntentStatus,
-  Kind,
-} from "@intent-engine/core";
-import {
-  BlockhashExpired,
-  MaybeSent,
-  changedAccount,
-  type Confirmed,
-  confirm,
-  confirmSent,
-  createClient,
-  intentNotifications,
-  type Latest,
-  type RpcLike,
-  rpcTransport,
-  signatureWatch,
-  type Transport,
-} from "../src/index.js";
+} from "@intent-engine/core/internal";
+import { BlockhashExpired, MaybeSent, createClient, type Latest, type Transport } from "../src/index.js";
+import { changedAccount, type Confirmed, confirm, confirmSent, intentNotifications, type RpcLike, rpcTransport, signatureWatch } from "../src/internal.js";
 
 const url = process.env["VALIDATOR_URL"];
 const authorityFile = process.env["VALIDATOR_AUTHORITY"];

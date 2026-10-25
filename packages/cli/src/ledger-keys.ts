@@ -1,5 +1,7 @@
 import { isKeyPairSigner, type KeyPairSigner, type MessagePartialSigner, type TransactionPartialSigner } from "@solana/kit";
-import { isLedgerPath, isSdkError, ledgerSigner, openUsb, parseLedgerPath } from "@intent-engine/client";
+import { isSdkError } from "@intent-engine/client";
+import { ledgerSigner, openUsb } from "@intent-engine/client/node";
+import { isLedgerPath, parseLedgerPath } from "@intent-engine/client/internal";
 import { UsageError } from "./arg-values.js";
 import type { Command } from "./command-types.js";
 import type { Runtime } from "./runtime.js";

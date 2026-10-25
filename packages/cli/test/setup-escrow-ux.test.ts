@@ -2,18 +2,8 @@ import { type Address, lamports, none, some } from "@solana/kit";
 import { AccountState, getMintEncoder, getMintSize, getTokenEncoder, getTokenSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
-import {
-  DEVNET_TEST_MINT as TEST_TOKEN,
-  EVENT_IX_TAG,
-  findAssociatedTokenAddress,
-  formatAmount,
-  getIntentAttestedEventEncoder,
-  getIntentDecoder,
-  getIntentEncoder,
-  IntentStatus,
-  NATIVE_MINT,
-  splitFee,
-} from "@intent-engine/core";
+import { DEVNET_TEST_MINT as TEST_TOKEN, findAssociatedTokenAddress, formatAmount, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
+import { EVENT_IX_TAG, getIntentAttestedEventEncoder, getIntentDecoder, getIntentEncoder, splitFee } from "@intent-engine/core/internal";
 import { beforeEach, describe, expect, it } from "vitest";
 import { WALLET_SMALL_START, WALLET_START } from "../src/agent/wallet/account.js";
 import { PIECE_ONE, recordAccountWhy, SPEC_MUST } from "../src/agent/wallet/escrow.js";

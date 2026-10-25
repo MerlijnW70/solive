@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { DEVNET_GENESIS_HASH } from "@intent-engine/client";
+import { DEVNET_GENESIS_HASH } from "@intent-engine/client/internal";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const SCRIPTS = join(ROOT, "scripts");

@@ -1,7 +1,9 @@
 import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { DEVNET_TEST_MINT, findAssociatedTokenAddress, findIntentPda, IntentStatus, NATIVE_MINT, swapExactIn, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { InvalidInput, PAYER_DIFFERS, submit } from "../src/index.js";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress, IntentStatus, NATIVE_MINT, swapExactIn, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { findIntentPda } from "@intent-engine/core/internal";
+import { InvalidInput } from "../src/index.js";
+import { PAYER_DIFFERS, submit } from "../src/internal.js";
 import { createTestWorld, type TestWallet, type TestWorld } from "../src/testing.js";
 import { checkCase, recording, statusOf } from "./plan-driver.js";
 

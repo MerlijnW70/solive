@@ -1,6 +1,7 @@
 import type { Address } from "@solana/kit";
-import { formatTime } from "@intent-engine/core";
-import { type ClaimsView, loadClaimsOf, type Transport } from "@intent-engine/client";
+import { formatTime } from "@intent-engine/core/internal";
+import { type ClaimsView, type Transport } from "@intent-engine/client";
+import { loadClaimsOf } from "@intent-engine/client/internal";
 import { tool } from "./names.js";
 
 export const CLAIM_FIRST = `a job with takes_claims true pays only the worker holding its claim while the claim holds; claim one with ${tool("wallet_claim")} before working on it or hosting the work`;

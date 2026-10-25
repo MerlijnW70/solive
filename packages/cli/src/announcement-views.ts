@@ -3,16 +3,14 @@ import type { SealRecipient } from "@intent-engine/core";
 import {
   type AnnouncementList,
   type AnnouncementView,
-  boundMembers,
   type DeliveryOpeners,
   type FirstOpening,
   FirstOpeningRefused,
-  heldKeys,
   isSdkError,
-  openingOf,
   type SkippedAnnouncement,
   type Transport,
 } from "@intent-engine/client";
+import { boundMembers, heldKeys, openingOf } from "@intent-engine/client/internal";
 
 export const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
 

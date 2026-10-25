@@ -1,4 +1,5 @@
 import type { Address, TransactionPartialSigner } from "@solana/kit";
+import { formatAmount, IntentStatus } from "@intent-engine/core";
 import {
   buildAdvance,
   buildClaimJob,
@@ -13,16 +14,16 @@ import {
   claimBoardAddress,
   claimUntil,
   findIntentPda,
-  formatAmount,
   formatTime,
-  IntentStatus,
   kindBit,
   type LineHandover,
   PAUSE_FILL,
   profileAddress,
   stakeReceiverOnSettle,
-} from "@intent-engine/core";
-import { type ClaimsView, type Client, createClient, escrowsJudgedBy, isDevice, isSdkError, keepsKey, type LineEntry, lineHandover, loadLine, type Transport } from "@intent-engine/client";
+} from "@intent-engine/core/internal";
+import { type ClaimsView, type Client, isSdkError, type Transport } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { escrowsJudgedBy, isDevice, keepsKey, type LineEntry, lineHandover, loadLine } from "@intent-engine/client/internal";
 import { previewed } from "./admin-commands.js";
 import { finishList, listAccount, listRefusal, listShown, openListed } from "./claim-lists.js";
 import type { Command } from "./command-types.js";

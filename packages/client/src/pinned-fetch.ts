@@ -3,29 +3,9 @@ import { request as tlsRequest } from "node:https";
 import { isIP, type LookupFunction } from "node:net";
 import { pipeline, Readable, type Transform } from "node:stream";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
-import { isSdkError, SdkError } from "@intent-engine/core";
+import { isSdkError } from "@intent-engine/core";
+import { FetchFailed, UNEXPECTED_REDIRECT } from "./fetch-failed.js";
 import type { SpecFetch } from "./job-specs.js";
-
-export const UNEXPECTED_REDIRECT = "unexpected redirect";
-
-export type FetchFailure = "redirect" | "status" | "network" | "no-address" | "aborted";
-
-export class FetchFailed extends SdkError {
-  readonly code = "fetch-failed";
-  override readonly name = "FetchFailed";
-  readonly url: string;
-  readonly reason: FetchFailure;
-  readonly detail: string;
-
-  constructor(url: string, reason: FetchFailure, detail: string, options?: ErrorOptions) {
-    super("fetch failed", options);
-    this.url = url;
-    this.reason = reason;
-    this.detail = detail;
-  }
-}
-
-export type CheckedFetch = (url: string, init: { redirect: "error"; signal: AbortSignal; addresses: readonly string[] }) => Promise<Response>;
 
 const REDIRECTS: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
 const NO_BODY: ReadonlySet<number> = new Set([204, 205, 304]);

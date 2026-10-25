@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, none } from "@solana/kit";
 import { getMintEncoder, getMintSize } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
+import { IntentStatus, Kind, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
 import {
   claimBoardAddress,
   findIntentPda,
@@ -11,16 +12,13 @@ import {
   buildOpenClaims,
   buildStandBy,
   checkClaimant,
-  IntentStatus,
-  Kind,
-  NATIVE_MINT,
   stakeReceiverOnCancel,
   stakeReceiverOnRelease,
   stakeReceiverOnSettle,
   standbyAddress,
-  TOKEN_PROGRAM_ADDRESS,
-} from "@intent-engine/core";
-import { ClaimHeldBy, createClient, FirstOpeningRefused, jobClaimOf, lineHandover, loadClaimsOf, loadLine, NotDeliverable, NotSettleable, type Transport } from "../src/index.js";
+} from "@intent-engine/core/internal";
+import { ClaimHeldBy, createClient, FirstOpeningRefused, NotDeliverable, NotSettleable, type Transport } from "../src/index.js";
+import { jobClaimOf, lineHandover, loadClaimsOf, loadLine } from "../src/internal.js";
 import { svmTransport } from "../src/svm.js";
 import { world } from "./svm.js";
 import { announced, type Delivered, keyed, sha } from "./work.js";

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { WARN_ATTESTOR, WARN_LONG_LIVED, WARN_LONG_SUBMIT, WARN_RECEIVER, WARN_RELAYER_FEE } from "@intent-engine/core";
+import { WARN_ATTESTOR, WARN_LONG_LIVED, WARN_LONG_SUBMIT, WARN_RECEIVER, WARN_RELAYER_FEE } from "@intent-engine/core/internal";
 import { expiryOf, MAX_EXPIRES_IN, MIN_EXPIRES_IN, termsInput, termsOutput, WARN_SCALED } from "../src/agent/create.js";
 import { WARN_REPLACES_DELEGATE } from "../src/agent/owner.js";
 import { InvalidInput } from "../src/agent/schema.js";

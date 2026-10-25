@@ -27,14 +27,13 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { FailedTransactionMetadata } from "litesvm";
 import { beforeEach, describe, expect, it } from "vitest";
 import { fromNow, withFromNow } from "../src/agent/expiry.js";
+import { type IntentParams, findAssociatedTokenAddress, Kind, formatAmount, splitFees } from "@intent-engine/core";
 import {
   createExt,
   describeSignedIntent,
   encodeParams,
-  type IntentParams,
   type SignedIntentFields,
   signedIntentMessage,
-  findAssociatedTokenAddress,
   findConfigPda,
   findDelegatePda,
   findIntentPda,
@@ -44,16 +43,13 @@ import {
   getConfigEncoder,
   INTENT_VERSION,
   kindBit,
-  Kind,
-  formatAmount,
   specMemo,
-  splitFees,
   U64_MAX,
   WARN_ATTESTOR,
   WARN_LONG_LIVED,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
+import { FailedOnChain } from "@intent-engine/client";
 import {
-  FailedOnChain,
   failure,
   DEVNET_GENESIS_HASH,
   EXTENDED_MINT_TYPE,
@@ -64,7 +60,7 @@ import {
   mintOf,
   scalesDisplay,
   SCALING_EXTENSIONS,
-} from "@intent-engine/client";
+} from "@intent-engine/client/internal";
 import { define, invoke, OutputMismatch, toJson } from "../src/agent/actions.js";
 import { ANNOTATIONS, annotationsOf } from "../src/agent/mcp.js";
 import { VERSION } from "../src/version.js";

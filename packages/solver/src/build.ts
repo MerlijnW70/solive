@@ -16,15 +16,15 @@ import {
 } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import { getCreateAssociatedTokenIdempotentInstructionAsync } from "@solana-program/token";
+import { findAssociatedTokenAddress } from "@intent-engine/core";
 import {
   buildFlashFill,
   computeUnitLimit,
   computeUnitPrice,
-  findAssociatedTokenAddress,
   findConfigPda,
   findEventAuthorityPda,
   INSTRUCTIONS_SYSVAR_ADDRESS,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { JITO_TIP_ACCOUNTS } from "./jito.js";
 import type { Plan } from "./plan.js";
 
@@ -37,7 +37,7 @@ export {
   MAX_MICRO_LAMPORTS,
   UNIT_HEADROOM_DIVISOR,
   UNIT_HEADROOM_FLOOR,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 
 export type Tip = { account: Address; lamports: bigint };
 

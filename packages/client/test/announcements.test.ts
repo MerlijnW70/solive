@@ -1,19 +1,17 @@
 import { type Address, generateKeyPairSigner, type KeyPairSigner, type TransactionSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { IntentStatus, Kind, NATIVE_MINT } from "@intent-engine/core";
 import {
   announcementCommitment,
   blobLayout,
   buildAnnounceDelivery,
   delivery,
-  IntentStatus,
   keyFingerprintV4,
-  Kind,
-  NATIVE_MINT,
   saltMessage,
   sealDeliveryV4,
   signMessageBytes,
   x25519PublicOf,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { BadSaltSignature, createClient, InvalidInput, NoMessageSigner, NotDeliverable } from "../src/index.js";
 import { world } from "./svm.js";
 import { announced, fundedSigner, keypairSigner, LOCAL, nativeMint, sha, specHash, tokensOf, workUrl } from "./work.js";

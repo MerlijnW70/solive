@@ -24,7 +24,7 @@ import {
   x25519PublicOf,
   SALT_TAG,
   SEALED_TAG,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { clamp, refBinding, refPublic, referenceBlob, refSecrets, urlOf } from "./sealed-v4-reference.js";
 
 const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");

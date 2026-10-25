@@ -17,7 +17,7 @@ import {
 } from "@solana/kit";
 import { getEventListeners } from "node:events";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { computeUnitLimit, getIntentDiscriminatorBytes, getIntentSize, headroom, INTENT_ENGINE_PROGRAM_ADDRESS, MAX_COMPUTE_UNITS } from "@intent-engine/core";
+import { computeUnitLimit, getIntentDiscriminatorBytes, getIntentSize, headroom, INTENT_ENGINE_PROGRAM_ADDRESS, MAX_COMPUTE_UNITS } from "@intent-engine/core/internal";
 import { MaybeSent,
   behindMinSlot,
   heardSlot,

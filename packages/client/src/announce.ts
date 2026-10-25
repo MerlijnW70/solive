@@ -1,4 +1,5 @@
 import type { Address, Signature, TransactionSigner } from "@solana/kit";
+import { IntentStatus, InvalidInput, type SealRecipient } from "@intent-engine/core";
 import {
   announcementAddress,
   announcementCommitment,
@@ -10,15 +11,12 @@ import {
   claimSlot,
   deliverySecrets,
   getClaimBoardDecoder,
-  IntentStatus,
-  InvalidInput,
   isMemoUrl,
   isSha256Hex,
   maxSealedUrl,
   MEMO_URL_RULE,
   sealDeliveryV4,
-  type SealRecipient,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { chainTime, engineAccount } from "./accounts.js";
 import { NotDeliverable, UrlTooLong } from "./announce-errors.js";
 import { recipientsFor, secretSource, type SecretInput } from "./announce-keys.js";
@@ -29,6 +27,7 @@ import { hex, proofAt } from "./job-proofs.js";
 import { PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic } from "./job-specs.js";
 import { payerFor, type Plan, planOf } from "./plan.js";
 import type { Transport } from "./transport.js";
+import { hexBytes } from "./encoding.js";
 
 export { isSaltSigner, type SaltSigner, type SecretInput, secretInputOf, type SecretOptions } from "./announce-keys.js";
 
@@ -68,7 +67,7 @@ export function sha256Bytes(sha256: string): Uint8Array {
   if (!isSha256Hex(lowered)) {
     throw new InvalidInput("sha256", "format", "sha256 must be 64 hex digits");
   }
-  return Uint8Array.from(Buffer.from(lowered, "hex"));
+  return hexBytes(lowered);
 }
 
 async function claimAccounts(transport: Transport, intent: Address, claims: number, worker: Address) {

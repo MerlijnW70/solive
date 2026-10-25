@@ -3,8 +3,9 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
-import { findIntentPda, Kind, NATIVE_MINT } from "@intent-engine/core";
-import { createClient } from "@intent-engine/client";
+import { Kind, NATIVE_MINT } from "@intent-engine/core";
+import { findIntentPda } from "@intent-engine/core/internal";
+import { createClient } from "@intent-engine/client/node";
 import { svmTransport } from "@intent-engine/client/svm";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK, EXIT_USAGE } from "../src/main.js";

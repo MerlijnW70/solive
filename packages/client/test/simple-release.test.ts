@@ -2,7 +2,8 @@ import { type Address, type KeyPairSigner, lamports, none } from "@solana/kit";
 import { getMintEncoder, getMintSize } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { DEVNET_TEST_MINT as TEST, feeBpsFor, IntentStatus, Kind, NATIVE_MINT as WSOL, splitFees, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { connect, FirstOpeningRefused, notFirstAnnouncer, NotSettleable, type SimpleClient } from "../src/index.js";
+import { connect, FirstOpeningRefused, NotSettleable, type SimpleClient } from "../src/index.js";
+import { notFirstAnnouncer } from "../src/internal.js";
 import { funded, world, type World } from "./svm.js";
 import { keyed, sha, tokensOf, workUrl } from "./work.js";
 

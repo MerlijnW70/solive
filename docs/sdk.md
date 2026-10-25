@@ -22,7 +22,7 @@ import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { createKeyPairSignerFromBytes, generateKeyPairSigner } from "@solana/kit";
-import { connect } from "@intent-engine/client";
+import { connect } from "@intent-engine/client/node";
 
 const signer = await createKeyPairSignerFromBytes(
   new Uint8Array(JSON.parse(await readFile(`${homedir()}/.config/intent-engine/wallet.json`, "utf8"))),

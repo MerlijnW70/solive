@@ -4,7 +4,8 @@ import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import fc from "fast-check";
 import { beforeAll, describe, expect, it } from "vitest";
-import { INTENT_ENGINE_PROGRAM_ADDRESS, NATIVE_MINT } from "@intent-engine/core";
+import { NATIVE_MINT } from "@intent-engine/core";
+import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { ACTIONS } from "../src/agent/registry.js";
 import {
   HINT_LIMIT,

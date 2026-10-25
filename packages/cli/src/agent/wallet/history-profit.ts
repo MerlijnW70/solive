@@ -1,6 +1,8 @@
 import type { Address } from "@solana/kit";
-import { type EngineEvent, findVaultPda, formatAmount, NATIVE_MINT, tokenName } from "@intent-engine/core";
-import { mintOf, releaseShareOf, type Transport } from "@intent-engine/client";
+import { type EngineEvent, formatAmount, NATIVE_MINT, tokenName } from "@intent-engine/core";
+import { findVaultPda } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { mintOf, releaseShareOf } from "@intent-engine/client/internal";
 import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
 import { account, InvalidInput, list, object, text } from "../schema.js";

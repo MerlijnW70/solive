@@ -1,5 +1,5 @@
 import type { Address } from "@solana/kit";
-import { decodeEvent, getIntentDecoder } from "@intent-engine/core";
+import { decodeEvent, getIntentDecoder } from "@intent-engine/core/internal";
 import type { EngineTransaction, Transport } from "@intent-engine/client";
 import { ESTIMATE_SCAN, ESTIMATE_FILLS } from "./guard.js";
 

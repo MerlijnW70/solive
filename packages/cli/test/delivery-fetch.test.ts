@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { DEVNET_GENESIS_HASH, type SpecFetch, type Transport } from "@intent-engine/client";
+import { type SpecFetch, type Transport } from "@intent-engine/client";
+import { DEVNET_GENESIS_HASH } from "@intent-engine/client/internal";
 import { MAX_ARTIFACT_BYTES } from "../src/artifact.js";
 import { fetchSha256, NOT_PUBLIC, tooLarge } from "../src/delivery-fetch.js";
 import type { Lookup } from "../src/public-address.js";

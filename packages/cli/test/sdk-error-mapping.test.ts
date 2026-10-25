@@ -1,7 +1,9 @@
 import type { Address, Signature } from "@solana/kit";
 import { afterEach, describe, expect, it } from "vitest";
-import { INTENT_ENGINE_PROGRAM_ADDRESS, IntentCoreError } from "@intent-engine/core";
-import { ENGINE_ERRORS, FailedOnChain, failure, MaybeSent, MissingAccount, type SendStatus, TransportLacks } from "@intent-engine/client";
+import { IntentCoreError } from "@intent-engine/core";
+import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
+import { FailedOnChain, MaybeSent, MissingAccount, type SendStatus, TransportLacks } from "@intent-engine/client";
+import { ENGINE_ERRORS, failure } from "@intent-engine/client/internal";
 import { parse, UsageError } from "../src/args.js";
 import { SIGNATURE_NEEDED } from "../src/command-builders.js";
 import { signatureLookup } from "../src/flow-commands.js";

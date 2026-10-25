@@ -3,8 +3,9 @@ import { type Address, generateKeyPairSigner, getBase64Encoder, getTransactionDe
 import type { Client } from "@modelcontextprotocol/client";
 import { FailedTransactionMetadata } from "litesvm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { getIntentCreatedEventEncoder, NATIVE_MINT, saltMessage, specMemo, DEVNET_TEST_MINT as TEST_TOKEN } from "@intent-engine/core";
-import { loadAnnouncement } from "@intent-engine/client";
+import { NATIVE_MINT, DEVNET_TEST_MINT as TEST_TOKEN } from "@intent-engine/core";
+import { getIntentCreatedEventEncoder, saltMessage, specMemo } from "@intent-engine/core/internal";
+import { loadAnnouncement } from "@intent-engine/client/internal";
 import { ANNOUNCE_FIRST, DELIVER_NEXT } from "../src/agent/wallet/delivery.js";
 import { NO_JOB_NOW, PUBLISH_PROFILE } from "../src/agent/jobs.js";
 import { notEarliest } from "../src/agent/wallet.js";

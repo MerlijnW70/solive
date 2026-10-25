@@ -2,19 +2,8 @@ import { createHash } from "node:crypto";
 import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, none } from "@solana/kit";
 import { getCreateAssociatedTokenIdempotentInstructionAsync, getMintEncoder, getMintSize, getMintToInstruction } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import {
-  buildUpdateEconomics,
-  decodeEvent,
-  findAssociatedTokenAddress,
-  findIntentPda,
-  formatAmount,
-  Kind,
-  NATIVE_MINT,
-  signMessageBytes,
-  splitFee,
-  splitN,
-  TOKEN_PROGRAM_ADDRESS,
-} from "@intent-engine/core";
+import { findAssociatedTokenAddress, formatAmount, Kind, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { buildUpdateEconomics, decodeEvent, findIntentPda, signMessageBytes, splitFee, splitN } from "@intent-engine/core/internal";
 import { createClient, type EngineTransaction, type Transport } from "../src/index.js";
 import { svmTransport } from "../src/svm.js";
 import { FEE_BPS, world } from "./svm.js";

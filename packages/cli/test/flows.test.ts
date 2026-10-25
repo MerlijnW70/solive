@@ -14,21 +14,21 @@ import {
 import { getApproveInstruction, getTokenDecoder, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { FailedTransactionMetadata } from "litesvm";
 import { beforeEach, describe, expect, it } from "vitest";
+import { findAssociatedTokenAddress, IntentStatus } from "@intent-engine/core";
 import {
   EVENT_IX_TAG,
-  findAssociatedTokenAddress,
   findConfigPda,
   findIntentPda,
   findMandatePda,
   getConfigDecoder,
   getIntentDecoder,
-  IntentStatus,
   getPauseRaisedEventEncoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   MANDATE_NONCE_BIT,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { COMPUTE_BUDGET_ADDRESS } from "@intent-engine/solver";
-import { BlockhashExpired, FailedOnChain, failure, loadConfig, type Transport, noJudgeKey } from "@intent-engine/client";
+import { BlockhashExpired, FailedOnChain, type Transport } from "@intent-engine/client";
+import { failure, loadConfig, noJudgeKey } from "@intent-engine/client/internal";
 import { createCost, rentRate } from "../src/agent/budget.js";
 import { AUTHORITY_NEXT, follow, followGap, type Runtime } from "../src/commands.js";
 import { CANCELS_FAILED, CANCELS_UNKNOWN, execute, FlowRefused, NOT_SENT } from "../src/flows.js";

@@ -11,7 +11,8 @@ import { EVERYDAY_TOOLS } from "../src/agent/everyday.js";
 import { ADDRESS_PATTERN, AMOUNT_PATTERN, TIME_PATTERN } from "../src/agent/schema.js";
 import * as core from "@intent-engine/core";
 import * as client from "@intent-engine/client";
-import { LEDGER_FORMS, SDK_ERRORS, SdkError } from "@intent-engine/client";
+import { SDK_ERRORS, SdkError } from "@intent-engine/client";
+import { LEDGER_FORMS } from "@intent-engine/client/internal";
 import { LEDGER_COMMANDS } from "../src/ledger-keys.js";
 
 type Json = Record<string, unknown>;

@@ -1,6 +1,6 @@
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
-import { LEDGER_ERRORS, type OpenTransport } from "@intent-engine/client";
+import { LEDGER_ERRORS, type OpenTransport } from "@intent-engine/client/internal";
 import { beforeEach, describe, expect, it } from "vitest";
 import { ENV_KEYPAIR } from "../../src/clusters.js";
 import { needsKeyFile } from "../../src/ledger-keys.js";

@@ -3,7 +3,7 @@ import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { createdAccount, freezeAuthorityOf, mintOf, NotAMint, rentExemptFor, rentExemptMinimum, rentSysvar, tokenAmountOf } from "../src/accounts.js";
-import { TOKEN_2022_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { TOKEN_2022_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import type { AccountView, Transport } from "../src/transport.js";
 
 const AT = "11111111111111111111111111111112" as Address;

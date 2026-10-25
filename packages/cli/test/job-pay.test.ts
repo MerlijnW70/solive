@@ -3,8 +3,9 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
-import { findConfigPda, getConfigDecoder, getConfigEncoder, getIntentDecoder, getIntentEncoder, Kind, kindBit, NATIVE_MINT, PAUSE_FILL } from "@intent-engine/core";
-import { createClient } from "@intent-engine/client";
+import { Kind, NATIVE_MINT } from "@intent-engine/core";
+import { findConfigPda, getConfigDecoder, getConfigEncoder, getIntentDecoder, getIntentEncoder, kindBit, PAUSE_FILL } from "@intent-engine/core/internal";
+import { createClient } from "@intent-engine/client/node";
 import { agentServer } from "../src/agent/mcp.js";
 import { claimsOf } from "../src/agent/claims.js";
 import { EXIT_OK } from "../src/main.js";

@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { PRODUCT_SLUG } from "@intent-engine/core";
+import { PRODUCT_SLUG } from "@intent-engine/core/internal";
 import { ADD_TO_NEEDS_APP, CLUSTERS, parse, usageOf } from "../src/args.js";
 import { CLAUDE_MISSING, CLAUDE_SCOPE, CLI_PACKAGE, claudeExists, claudeFailed } from "../src/add-to.js";
 import { invocation, launch, notFound, WINDOWS_NOT_FOUND, type Launched } from "../src/launch.js";

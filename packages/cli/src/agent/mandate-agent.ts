@@ -1,14 +1,8 @@
 import { type Address, createNoopSigner, type TransactionSigner } from "@solana/kit";
-import {
-  buildCreateIntentByAgent,
-  describeTerms,
-  encodeParams,
-  escrowAmount,
-  formatAmount,
-  validate,
-  tokenOf,
-} from "@intent-engine/core";
-import { chainTime, loadConfig, mintCapOf, mintOf, tokenAccountIfMissing, type Transport } from "@intent-engine/client";
+import { formatAmount } from "@intent-engine/core";
+import { buildCreateIntentByAgent, describeTerms, encodeParams, escrowAmount, validate, tokenOf } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { chainTime, loadConfig, mintCapOf, mintOf, tokenAccountIfMissing } from "@intent-engine/client/internal";
 import { type AgentContext, define } from "./actions.js";
 import { createCost, release, rentFor, rentRate, reserve, TOKEN_ACCOUNT_RENT_BYTES } from "./budget.js";
 import { expiryOf, MAX_EXPIRES_IN, MIN_EXPIRES_IN } from "./create.js";

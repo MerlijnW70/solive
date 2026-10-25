@@ -5,16 +5,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { type Address, createKeyPairSignerFromPrivateKeyBytes, getAddressEncoder, lamports, none, some } from "@solana/kit";
 import { getMintEncoder, getMintSize } from "@solana-program/token";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import {
-  DEVNET_TEST_MINT,
-  findAssociatedTokenAddress,
-  formatAmount,
-  IntentStatus,
-  Kind,
-  NATIVE_MINT,
-  splitFee,
-  TOKEN_PROGRAM_ADDRESS,
-} from "@intent-engine/core";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress, formatAmount, IntentStatus, Kind, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { splitFee } from "@intent-engine/core/internal";
 import { type ClientOptions, createClient, type Transport } from "../src/index.js";
 import { FEE_BPS, funded, world, type World } from "./svm.js";
 

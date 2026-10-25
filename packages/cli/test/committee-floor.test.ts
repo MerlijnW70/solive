@@ -1,7 +1,7 @@
 import { type Address, getBase64Encoder, getTransactionDecoder, type KeyPairSigner, partiallySignTransaction } from "@solana/kit";
 import { FailedTransactionMetadata } from "litesvm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { committeeFloorOf, findConfigPda, findIntentPda, getConfigDecoder, MAX_COMMITTEE_FLOORS, sortMembers } from "@intent-engine/core";
+import { committeeFloorOf, findConfigPda, findIntentPda, getConfigDecoder, MAX_COMMITTEE_FLOORS, sortMembers } from "@intent-engine/core/internal";
 import { floorsFull } from "../src/admin-commands.js";
 import { AUTHORITY_NEXT } from "../src/commands.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";

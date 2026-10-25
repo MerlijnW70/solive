@@ -1,5 +1,6 @@
 import { type Address, isAddress } from "@solana/kit";
-import { findIntentPda, getIntentDecoder, getIntentDiscriminatorBytes, InvalidInput } from "@intent-engine/core";
+import { InvalidInput } from "@intent-engine/core";
+import { findIntentPda, getIntentDecoder, getIntentDiscriminatorBytes } from "@intent-engine/core/internal";
 import { engineAccount, loadIntent } from "./accounts.js";
 import type { IntentAccount } from "./client-types.js";
 import type { Transport } from "./transport.js";

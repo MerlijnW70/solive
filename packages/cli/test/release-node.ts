@@ -1,4 +1,5 @@
 import { type Address, generateKeyPairSigner } from "@solana/kit";
+import { type Intent, IntentStatus } from "@intent-engine/core";
 import {
   EVENT_IX_TAG,
   findIntentPda,
@@ -6,10 +7,9 @@ import {
   getIntentCreatedEventEncoder,
   getIntentDecoder,
   getIntentEncoder,
-  type Intent,
-  IntentStatus,
-} from "@intent-engine/core";
-import { type AccountView, type EngineTransaction, type ListedSignature, TRANSACTION_FETCHES, type Transport } from "@intent-engine/client";
+} from "@intent-engine/core/internal";
+import { type AccountView, type EngineTransaction, type ListedSignature, type Transport } from "@intent-engine/client";
+import { TRANSACTION_FETCHES } from "@intent-engine/client/internal";
 import { cli, ESCROW, h, NOW, world } from "./harness.js";
 
 export const FLOOR = 1_000n;

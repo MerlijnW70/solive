@@ -12,7 +12,7 @@ import {
   profileAddress,
   PROFILE_VERSION,
   USER_VERSION,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { AUTHORITY_NEXT } from "../src/admin-commands.js";
 import { MIGRATE_ONE_OR_ALL } from "../src/args.js";

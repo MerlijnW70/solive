@@ -1,5 +1,6 @@
 import type { Address } from "@solana/kit";
-import { findAssociatedTokenAddress, findVaultPda, getIntentDecoder, type Intent, IntentStatus } from "@intent-engine/core";
+import { findAssociatedTokenAddress, type Intent, IntentStatus } from "@intent-engine/core";
+import { findVaultPda, getIntentDecoder } from "@intent-engine/core/internal";
 import {
   type Chain,
   cachedPricer,
@@ -24,19 +25,8 @@ import {
   tipAccount,
   unheld,
 } from "@intent-engine/solver";
-import {
-  chainTime,
-  ConfirmMismatch,
-  confirmOnBoth,
-  createdAccount,
-  isSdkError,
-  type Latest,
-  loadConfig,
-  type ProgramAccount,
-  tokenAmountOf,
-  tokenProgramOf,
-  type Transport,
-} from "@intent-engine/client";
+import { ConfirmMismatch, isSdkError, type Latest, type ProgramAccount, type Transport } from "@intent-engine/client";
+import { chainTime, confirmOnBoth, createdAccount, loadConfig, tokenAmountOf, tokenProgramOf } from "@intent-engine/client/internal";
 import { rentRate } from "./agent/budget.js";
 import type { Command, IssueSpec } from "./command-types.js";
 import type { Runtime } from "./runtime.js";

@@ -8,7 +8,7 @@ import {
   getIntentEncoder,
   getIntentSize,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import type { EngineTransaction, Transport } from "@intent-engine/client";
 import { fillsIn, inputMintsOf, type SeenFill } from "../src/monitor-fills.js";
 

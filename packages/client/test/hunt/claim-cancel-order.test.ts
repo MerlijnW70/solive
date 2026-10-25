@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { generateKeyPairSigner, lamports } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { buildClaimJob, buildOpenClaims, buildSettleClaims, claimBoardAddress, findIntentPda, IntentStatus, Kind } from "@intent-engine/core";
+import { IntentStatus, Kind } from "@intent-engine/core";
+import { buildClaimJob, buildOpenClaims, buildSettleClaims, claimBoardAddress, findIntentPda } from "@intent-engine/core/internal";
 import { createClient } from "../../src/index.js";
 import { world } from "../svm.js";
 

@@ -12,17 +12,8 @@ import {
   splitFees,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import {
-  CLUSTER_URLS,
-  connect,
-  DEVNET_GENESIS_HASH,
-  InvalidInput,
-  MAINNET_GENESIS_HASH,
-  MainnetNotAllowed,
-  mintOfToken,
-  tokenAmount,
-  type Transport,
-} from "../src/index.js";
+import { connect, InvalidInput, MainnetNotAllowed, type Transport } from "../src/index.js";
+import { CLUSTER_URLS, DEVNET_GENESIS_HASH, MAINNET_GENESIS_HASH, mintOfToken, tokenAmount } from "../src/internal.js";
 import { funded, world, type World } from "./svm.js";
 import { keyed } from "./work.js";
 

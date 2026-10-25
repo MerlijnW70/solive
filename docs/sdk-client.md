@@ -4,10 +4,10 @@ Every option of every call, in base units. Start with [Build in TypeScript](sdk.
 
 ## Connect
 
-`solive.client` is the full client underneath `connect`. `createClient` makes one on its own.
+`solive.client` is the full client underneath `connect`. `createClient` makes one on its own. In Node, import it from `@intent-engine/client/node`, as here, so spec fetches keep their address checks.
 
 ```ts
-import { createClient } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
 
 const client = createClient({ url: "https://api.devnet.solana.com" });
 ```
@@ -214,8 +214,8 @@ await client.unwrap(signer);
 - `specUrl` on `createIntent` publishes where the spec lives, in a memo the owner signs.
 - `jobs` lists up to 50 open, unexpired proof escrows, those with the most time left first, each with its `specUrl`.
 - `spec` fetches that url, following no redirect and reading at most 1048576 bytes, and says whether it `matches` the committed hash. It never runs the text.
-- `spec` refuses a url whose host resolves to a private, link-local or loopback address on every cluster, allowing loopback only when the RPC url is loopback, and reads only a spec memo the escrow's owner signed.
-- A `fetch` you pass to `createClient` is handed the checked `addresses` of the host and must connect only to them.
+- `spec` refuses a url whose host resolves to a private, link-local or loopback address on every cluster, allowing loopback only when the RPC url is loopback, and reads only a spec memo the escrow's owner signed. Without the Node entry it checks less, as [In a browser](#in-a-browser) says.
+- A `fetch` you pass to `createClient` is handed the checked `addresses` of the host whenever the client checked them, and must connect only to them.
 - `announce` records a worker's delivery on chain: an announcement account with a commitment that binds the work's sha256 to the worker's wallet and a salt, and the salt and url sealed to the judge's published encryption key, to the key derived from its wallet when it publishes none, or to each committee member's key.
 - `announce` syncs a committee's keys first when its snapshot does not match its members' published keys, and announcing the same work and url again returns the same announcement without sending.
 - The salt and the sealing keys come from the worker's own signature over the intent and the sha256, so only its key derives them. `announce` refuses a signer that cannot sign messages, such as a Ledger, with `NoMessageSigner`; such a worker passes `secret`, 32 bytes of its own that it keeps, or `saltSignature`, a signature made elsewhere, which must verify for the worker (`BadSaltSignature`).
@@ -394,6 +394,18 @@ const params = attestedResult({ amountIn: await world.client.amount(NATIVE_MINT,
 await world.client.createIntent({ signer: owner, inputMint: NATIVE_MINT, outputMint: DEVNET_TEST_MINT, params });
 console.log(calls > 0);
 ```
+
+## In a browser
+
+The roots of `@intent-engine/core` and `@intent-engine/client` import no Node module, so a bundler builds them for the browser without polyfills, and an app that imports one helper bundles only that helper and what it uses.
+
+- `createClient` and `connect` run in a page that offers only `fetch`, `crypto`, `TextEncoder`, `TextDecoder`, `URL` and `console`.
+- `createClient` and `connect` from `@intent-engine/client/node` check every address a spec host resolves to and connect only to those; the Node entry also holds Ledger signing, `ledgerSigner` and `openUsb`.
+- `@intent-engine/client/svm` and `@intent-engine/client/testing` run in Node only.
+- Without the Node entry, `spec` fetches with the global `fetch`, follows no redirect and reads at most 1048576 bytes.
+- It refuses a url whose host is written as a private, link-local or loopback address, or is a `localhost` name, unless the RPC url is loopback; it cannot check where a host name resolves.
+- Pass `lookup`, a function from a host name to its addresses, to check them all; the `fetch` you pass then receives the checked `addresses`.
+- `@intent-engine/client/internal` and `@intent-engine/core/internal` hold what the CLI, the solver and the tests share; they carry no stability promise and change in any release.
 
 ## Next
 

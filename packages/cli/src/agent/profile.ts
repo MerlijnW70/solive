@@ -10,8 +10,10 @@ import {
   PROFILE_MAX_SKILLS,
   type ProfileInput,
   profileAddress,
-} from "@intent-engine/core";
-import { createClient, escrowsJudgedBy, isSdkError, keepsKey } from "@intent-engine/client";
+} from "@intent-engine/core/internal";
+import { isSdkError } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { escrowsJudgedBy, keepsKey } from "@intent-engine/client/internal";
 import { encryptionKeyLines } from "../sealed-commands.js";
 import { type AgentContext, define } from "./actions.js";
 import type { Call } from "./claims.js";

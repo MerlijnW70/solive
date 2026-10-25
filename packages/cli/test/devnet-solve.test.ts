@@ -23,19 +23,10 @@ import {
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import {
-  buildCreateIntent,
-  buildInitUser,
-  findAssociatedTokenAddress,
-  findConfigPda,
-  findIntentPda,
-  getConfigDecoder,
-  getIntentDecoder,
-  IntentStatus,
-  Kind,
-} from "@intent-engine/core";
+import { findAssociatedTokenAddress, IntentStatus, Kind } from "@intent-engine/core";
+import { buildCreateIntent, buildInitUser, findConfigPda, findIntentPda, getConfigDecoder, getIntentDecoder } from "@intent-engine/core/internal";
 import { DEFAULT_CONCURRENCY, DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST, SIMULATION_REFUSED } from "@intent-engine/solver";
-import { chainTime, type RpcLike, rpcTransport } from "@intent-engine/client";
+import { chainTime, type RpcLike, rpcTransport } from "@intent-engine/client/internal";
 import { run } from "../src/commands.js";
 import { loadKeypairFile } from "../src/main.js";
 

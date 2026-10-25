@@ -2,8 +2,10 @@ import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
-import { buildClaimJob, buildDropClaim, buildOpenClaims, claimBoardAddress, Kind } from "@intent-engine/core";
-import { createClient, type Transport } from "@intent-engine/client";
+import { Kind } from "@intent-engine/core";
+import { buildClaimJob, buildDropClaim, buildOpenClaims, claimBoardAddress } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
 import { agentServer } from "../src/agent/mcp.js";
 import { claimsOf } from "../src/agent/claims.js";
 import { EXIT_OK } from "../src/main.js";

@@ -1,4 +1,5 @@
 import type { Address } from "@solana/kit";
+import { type Intent, IntentStatus } from "@intent-engine/core";
 import {
   decodeEvent,
   FILL_ATTESTED_SPLIT_COMMITTEE_DISCRIMINATOR,
@@ -6,24 +7,20 @@ import {
   getFillAttestedSplitCommitteeInstructionDataDecoder,
   getFillAttestedSplitInstructionDataDecoder,
   getIntentSize,
-  type Intent,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  IntentStatus,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
+import { type EngineTransaction, type ListedSignature, type Transport } from "@intent-engine/client";
 import {
   createdAtOf,
   DELIVERY_SCAN,
   engineCalls,
-  type EngineTransaction,
-  type ListedSignature,
   historyCovers,
   intentAt,
   scan,
   SIGNATURE_PAGE,
   TRANSACTION_FETCHES,
   transactionAt,
-  type Transport,
-} from "@intent-engine/client";
+} from "@intent-engine/client/internal";
 import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
 import { pairOf } from "./fills.js";

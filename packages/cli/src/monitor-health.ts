@@ -1,6 +1,8 @@
 import type { Address } from "@solana/kit";
-import { type Config, DEVNET_TEST_MINT, formatAmount, getIntentDecoder, type Intent, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS, U64_MAX } from "@intent-engine/core";
-import { CLOCK_SYSVAR, clockTime, loadConfig, type Transport } from "@intent-engine/client";
+import { type Config, DEVNET_TEST_MINT, formatAmount, type Intent, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { getIntentDecoder, U64_MAX } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { CLOCK_SYSVAR, clockTime, loadConfig } from "@intent-engine/client/internal";
 import { decide, issuePricer, type Strategy } from "@intent-engine/solver";
 
 export const FILLER_RATE = { out: 200n, in: 1n } as const;

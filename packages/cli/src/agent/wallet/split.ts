@@ -1,7 +1,9 @@
 import { type Address, getBase16Decoder, getBase16Encoder } from "@solana/kit";
-import { buildFillAttestedSplit, formatAmount, INTENT_ENGINE_PROGRAM_ADDRESS, MAX_SPLIT_RECIPIENTS, NATIVE_MINT, splitFees, splitPayout, settlementWarnings } from "@intent-engine/core";
+import { formatAmount, NATIVE_MINT, splitFees } from "@intent-engine/core";
+import { buildFillAttestedSplit, INTENT_ENGINE_PROGRAM_ADDRESS, MAX_SPLIT_RECIPIENTS, splitPayout, settlementWarnings } from "@intent-engine/core/internal";
 import { decodeLookupTable } from "@intent-engine/solver";
-import { createClient, mintOf, PACKET_DATA_SIZE, tokenAccountIfMissing } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { mintOf, PACKET_DATA_SIZE, tokenAccountIfMissing } from "@intent-engine/client/internal";
 import { execute } from "../../flows.js";
 import { TOKEN_NAMES } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";

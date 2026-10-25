@@ -1,7 +1,9 @@
 import { tool } from "./names.js";
 import type { Address } from "@solana/kit";
-import { BPS_DENOMINATOR, INTENT_ENGINE_PROGRAM_ADDRESS, MAX_PARTNER_BPS, TOKEN_2022_PROGRAM_ADDRESS, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { type AnySdkError, isSdkError, type MaybeSent, rateLimited } from "@intent-engine/client";
+import { TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { BPS_DENOMINATOR, INTENT_ENGINE_PROGRAM_ADDRESS, MAX_PARTNER_BPS, TOKEN_2022_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
+import { type AnySdkError, isSdkError, type MaybeSent } from "@intent-engine/client";
+import { rateLimited } from "@intent-engine/client/internal";
 import { InvalidInput, type Issue } from "./schema.js";
 import { redactUrl } from "../render.js";
 

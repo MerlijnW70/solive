@@ -1,5 +1,5 @@
 import type { Address } from "@solana/kit";
-import { decodeEvent, getIntentDecoder, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { decodeEvent, getIntentDecoder, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import type { EngineTransaction, Transport } from "@intent-engine/client";
 
 export type SeenFill = { signature: string; slot: bigint; intent: Address; amountIn: bigint };

@@ -6,7 +6,7 @@ import {
   buildFillAttestedSplit,
   signMessageBytes,
   splitCommit,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { loadCommittee } from "./client-committee.js";
 import { CosignRejected, NotSettleable } from "./client-errors.js";
 import { committeeJudged } from "./client-settle.js";

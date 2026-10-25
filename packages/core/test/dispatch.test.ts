@@ -10,7 +10,7 @@ import {
 } from "@solana/kit";
 import { FailedTransactionMetadata, LiteSVM } from "litesvm";
 import { describe, expect, it } from "vitest";
-import { INTENT_ENGINE_PROGRAM_ADDRESS } from "../src/index.js";
+import { INTENT_ENGINE_PROGRAM_ADDRESS } from "../src/internal.js";
 
 const ANCHOR_INSTRUCTION_FALLBACK_NOT_FOUND = 101;
 const FEE_BUDGET = lamports(1_000_000_000n);

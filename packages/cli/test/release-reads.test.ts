@@ -4,8 +4,11 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
-import { DEVNET_TEST_MINT, findIntentPda, IntentStatus, Kind, NATIVE_MINT, signCommitteeVote, sortMembers } from "@intent-engine/core";
-import { createClient, TRUST_WALLETS, type Transport } from "@intent-engine/client";
+import { DEVNET_TEST_MINT, IntentStatus, Kind, NATIVE_MINT } from "@intent-engine/core";
+import { findIntentPda, signCommitteeVote, sortMembers } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { TRUST_WALLETS } from "@intent-engine/client/internal";
 import { svmTransport } from "@intent-engine/client/svm";
 import { invoke } from "../src/agent/actions.js";
 import { claimsOf } from "../src/agent/claims.js";

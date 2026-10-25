@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
-import { isSealed, MAX_SEALED_RECIPIENTS, seal, sealedTo, unseal } from "@intent-engine/core";
-import { isSdkError, MAX_SPEC_BYTES, sealRecipients } from "@intent-engine/client";
+import { isSealed, MAX_SEALED_RECIPIENTS, seal, sealedTo, unseal } from "@intent-engine/core/internal";
+import { isSdkError } from "@intent-engine/client";
+import { MAX_SPEC_BYTES, sealRecipients } from "@intent-engine/client/internal";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { InvalidInput, account, list, object, optional, text } from "../schema.js";

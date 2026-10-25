@@ -53,3 +53,17 @@ writeFileSync(
   `${JSON.stringify(idl, null, 2)}
 `,
 );
+
+const words = (name) => name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
+const engineErrors = (idl.errors ?? []).map(({ code, name, msg }) => `  { code: ${code}, name: ${JSON.stringify(name)}, message: ${JSON.stringify(msg ?? words(name))} },`);
+writeFileSync(
+  fileURLToPath(new URL("../generated/engine-errors.ts", import.meta.url)),
+  [
+    "export type EngineErrorEntry = { readonly code: number; readonly name: string; readonly message: string };",
+    "",
+    "export const ENGINE_ERROR_LIST: readonly EngineErrorEntry[] = [",
+    ...engineErrors,
+    "];",
+    "",
+  ].join("\n"),
+);

@@ -1,7 +1,7 @@
 import { type Address, generateKeyPairSigner, none, some } from "@solana/kit";
 import { AccountState, getTokenEncoder, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { findDelegatePda, U64_MAX } from "@intent-engine/core";
+import { findDelegatePda, U64_MAX } from "@intent-engine/core/internal";
 import type { Transport } from "@intent-engine/client";
 import { lowerAllowance, pickNonce, raiseAllowance } from "../src/agent/owner.js";
 

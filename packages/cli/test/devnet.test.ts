@@ -29,6 +29,7 @@ import {
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
+import { feeBpsFor, findAssociatedTokenAddress, type IntentParams, Kind, splitFees } from "@intent-engine/core";
 import {
   attestedFillMessage,
   buildAdvanceEpoch,
@@ -51,8 +52,6 @@ import {
   INTENT_ENGINE_PROGRAM_ADDRESS,
   splitN,
   encodeParams,
-  feeBpsFor,
-  findAssociatedTokenAddress,
   findConfigPda,
   findIntentPda,
   findMandatePda,
@@ -60,17 +59,15 @@ import {
   getConfigDecoder,
   getIntentDecoder,
   getUserStateDecoder,
-  type IntentParams,
-  Kind,
   MANDATE_KINDS,
   MANDATE_NONCE_BIT,
   nextEpoch,
   signedIntentMessage,
   signEd25519Instruction,
   splitFee,
-  splitFees,
-} from "@intent-engine/core";
-import { chainTime, createClient, type RpcLike, rpcTransport } from "@intent-engine/client";
+} from "@intent-engine/core/internal";
+import { createClient } from "@intent-engine/client/node";
+import { chainTime, type RpcLike, rpcTransport } from "@intent-engine/client/internal";
 import { agentServer } from "../src/agent/mcp.js";
 import { budgetOf } from "../src/agent/budget.js";
 import { relayOf } from "../src/agent/relay.js";

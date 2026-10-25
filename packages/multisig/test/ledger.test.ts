@@ -22,7 +22,7 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   signBytes,
 } from "@solana/kit";
-import { buildRaisePause, PAUSE_FILL } from "@intent-engine/core";
+import { buildRaisePause, PAUSE_FILL } from "@intent-engine/core/internal";
 import { beforeAll, describe, expect, it } from "vitest";
 import { readSigner } from "../src/keys.js";
 import { proposalApprove, proposalPda } from "../src/layout.js";

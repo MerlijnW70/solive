@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import type { Address, KeyPairSigner } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import { describe, expect, it } from "vitest";
+import { Kind, NATIVE_MINT, splitFees } from "@intent-engine/core";
 import {
   announcementCommitment,
   blobLayout,
@@ -14,16 +15,14 @@ import {
   decodeEvent,
   delivery,
   deliverySecrets,
-  Kind,
-  NATIVE_MINT,
   newEncryptionKeyFile,
   refutationAddress,
   sealDeliveryV4,
   signMessageBytes,
-  splitFees,
   splitN,
-} from "@intent-engine/core";
-import { ACCOUNTS_UNREADABLE, connect, createClient, type EngineTransaction, reputationOf, type Transport, trustOf } from "../src/index.js";
+} from "@intent-engine/core/internal";
+import { connect, createClient, type EngineTransaction, type Transport, trustOf } from "../src/index.js";
+import { ACCOUNTS_UNREADABLE, reputationOf } from "../src/internal.js";
 import { FEE_BPS, world, type World } from "./svm.js";
 import { announced, fundedSigner, keyed, type Keyed, LOCAL, nativeMint, sha, specHash, workUrl } from "./work.js";
 

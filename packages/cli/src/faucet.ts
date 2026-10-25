@@ -1,5 +1,5 @@
 import type { Address } from "@solana/kit";
-import { PRODUCT_REPOSITORY } from "@intent-engine/core";
+import { PRODUCT_REPOSITORY } from "@intent-engine/core/internal";
 import type { Launched } from "./launch.js";
 
 export const GH = "gh";

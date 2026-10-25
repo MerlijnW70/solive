@@ -4,19 +4,10 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
-import {
-  DEVNET_TEST_MINT,
-  EVENT_IX_TAG,
-  findAssociatedTokenAddress,
-  formatAmount,
-  getClaimDroppedEventEncoder,
-  getJobClaimedEventEncoder,
-  getStakeMovedEventEncoder,
-  Kind,
-  NATIVE_MINT,
-  splitFee,
-} from "@intent-engine/core";
-import { createClient, type EngineTransaction } from "@intent-engine/client";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress, formatAmount, Kind, NATIVE_MINT } from "@intent-engine/core";
+import { EVENT_IX_TAG, getClaimDroppedEventEncoder, getJobClaimedEventEncoder, getStakeMovedEventEncoder, splitFee } from "@intent-engine/core/internal";
+import { type EngineTransaction } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
 import { svmTransport } from "@intent-engine/client/svm";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";

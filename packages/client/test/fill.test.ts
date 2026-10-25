@@ -2,16 +2,10 @@ import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, none
 import { getTransferSolInstruction } from "@solana-program/system";
 import { getCreateAssociatedTokenIdempotentInstructionAsync, getMintEncoder, getMintSize, getMintToInstruction } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import {
-  buildFlashFill,
-  findAssociatedTokenAddress,
-  IntentStatus,
-  Kind,
-  NATIVE_MINT,
-  splitFee,
-  TOKEN_PROGRAM_ADDRESS,
-} from "@intent-engine/core";
-import { createClient, HISTORY_LIMIT, NotFillable } from "../src/index.js";
+import { findAssociatedTokenAddress, IntentStatus, Kind, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { buildFlashFill, splitFee } from "@intent-engine/core/internal";
+import { createClient, NotFillable } from "../src/index.js";
+import { HISTORY_LIMIT } from "../src/internal.js";
 import { FEE_BPS, funded, NOW, world, type World } from "./svm.js";
 
 const LOCAL = "http://127.0.0.1:8899";

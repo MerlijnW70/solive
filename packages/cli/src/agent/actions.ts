@@ -1,5 +1,6 @@
 import type { Address, TransactionSigner } from "@solana/kit";
-import { memoized, type SpecFetch, type Transport } from "@intent-engine/client";
+import { type SpecFetch, type Transport } from "@intent-engine/client";
+import { memoized } from "@intent-engine/client/internal";
 import { type Problem, problemOf } from "./problems.js";
 import type { Budget } from "./budget.js";
 import type { Relay } from "./relay.js";

@@ -20,7 +20,8 @@ import {
 } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import { describe, expect, it } from "vitest";
-import { BlockhashExpired, MaybeSent, FailedOnChain, neverLanded, type RpcLike, rpcTransport } from "../src/index.js";
+import { BlockhashExpired, MaybeSent, FailedOnChain } from "../src/index.js";
+import { neverLanded, type RpcLike, rpcTransport } from "../src/internal.js";
 
 type Status = { err: unknown; confirmationStatus: string | null; slot?: bigint };
 

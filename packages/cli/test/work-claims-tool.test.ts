@@ -5,7 +5,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
 import { DEVNET_TEST_MINT, Kind, NATIVE_MINT } from "@intent-engine/core";
-import { createClient } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
 import { lineWaitingHere } from "../src/agent/claim-line.js";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";

@@ -1,5 +1,6 @@
 import { createNoopSigner, generateKeyPairSigner, type Address } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { IntentCoreError } from "../src/index.js";
 import {
   buildClaimJob,
   buildClaimsWithList,
@@ -12,9 +13,8 @@ import {
   claimantChunks,
   claimListAddress,
   findClaimListPda,
-  IntentCoreError,
   MAX_CLAIMANTS,
-} from "../src/index.js";
+} from "../src/internal.js";
 
 const NONE = "11111111111111111111111111111111" as Address;
 

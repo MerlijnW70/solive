@@ -3,8 +3,9 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
-import { DEVNET_TEST_MINT as TEST_TOKEN, findAssociatedTokenAddress, getCommitteeSize, IntentStatus, NATIVE_MINT, sortMembers } from "@intent-engine/core";
-import { createClient } from "@intent-engine/client";
+import { DEVNET_TEST_MINT as TEST_TOKEN, findAssociatedTokenAddress, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
+import { getCommitteeSize, sortMembers } from "@intent-engine/core/internal";
+import { createClient } from "@intent-engine/client/node";
 import { EVERYDAY_TOOLS } from "../src/agent/everyday.js";
 import { tool } from "../src/agent/names.js";
 import { COMMITTEE_CHANGED, COMMITTEE_EXISTS, COMMITTEE_LIVE, PREVIEW_APPROVAL_NEXT, WALLET_NOTICE } from "../src/agent/wallet.js";

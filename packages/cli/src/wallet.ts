@@ -1,7 +1,10 @@
 import { type Address, createKeyPairSignerFromPrivateKeyBytes, getAddressEncoder, type KeyPairSigner } from "@solana/kit";
 import { getTokenDecoder } from "@solana-program/token";
-import { DEVNET_TEST_MINT, findAssociatedTokenAddress, formatAmount, NATIVE_MINT, PRODUCT_REPOSITORY } from "@intent-engine/core";
-import { createdAccount, isLedgerPath, ledgerSigner, mintOf, type OpenTransport, openUsb, type Transport } from "@intent-engine/client";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress, formatAmount, NATIVE_MINT } from "@intent-engine/core";
+import { PRODUCT_REPOSITORY } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { ledgerSigner, openUsb } from "@intent-engine/client/node";
+import { createdAccount, isLedgerPath, mintOf, type OpenTransport } from "@intent-engine/client/internal";
 import { CLUSTERS, ENV_KEYPAIR, ENV_URL, type Env, UsageError } from "./args.js";
 import { SAVED_CONFIRM_URL } from "./clusters.js";
 import { SOL_DECIMALS } from "./agent/read.js";

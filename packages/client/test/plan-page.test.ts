@@ -1,8 +1,10 @@
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEVNET_TEST_MINT, IntentStatus, MAX_PARTNER_BPS, NATIVE_MINT, swapExactIn } from "@intent-engine/core";
-import { checkedQuery, type Client, InvalidInput, PAY_TO_NOT_ATTESTED, RECLAIM_BATCH } from "../src/index.js";
+import { DEVNET_TEST_MINT, IntentStatus, NATIVE_MINT, swapExactIn } from "@intent-engine/core";
+import { MAX_PARTNER_BPS } from "@intent-engine/core/internal";
+import { type Client, InvalidInput } from "../src/index.js";
+import { checkedQuery, PAY_TO_NOT_ATTESTED, RECLAIM_BATCH } from "../src/internal.js";
 import { createTestWorld } from "../src/testing.js";
 import { PLAN_SECTION } from "./doc-sections.js";
 import { checkCase, delivered, escrow, proofParams, sha, statusOf, workUrl } from "./plan-driver.js";

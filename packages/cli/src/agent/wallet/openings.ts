@@ -1,13 +1,6 @@
 import type { Address } from "@solana/kit";
-import {
-  type AnnouncementList,
-  ConfirmMismatch,
-  deviceJudgeReady,
-  type FirstOpening,
-  firstOpeningIn,
-  FirstOpeningRefused,
-  isSdkError,
-} from "@intent-engine/client";
+import { type AnnouncementList, ConfirmMismatch, type FirstOpening, FirstOpeningRefused, isSdkError } from "@intent-engine/client";
+import { deviceJudgeReady, firstOpeningIn } from "@intent-engine/client/internal";
 import { refusalNext, type SkippedLine, skippedLines } from "../../announcement-views.js";
 import type { AgentContext } from "../actions.js";
 import { tool } from "../names.js";

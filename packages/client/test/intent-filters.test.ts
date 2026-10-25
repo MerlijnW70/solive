@@ -1,30 +1,19 @@
 import { type Address, getAddressEncoder, getBase58Decoder } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import {
-  attestedResult,
-  DEVNET_TEST_MINT,
-  getIntentDecoder,
-  getIntentEncoder,
-  IntentStatus,
-  Kind,
-  limitOrder,
-  NATIVE_MINT,
-  swapExactIn,
-} from "@intent-engine/core";
+import { attestedResult, DEVNET_TEST_MINT, IntentStatus, Kind, limitOrder, NATIVE_MINT, swapExactIn } from "@intent-engine/core";
+import { getIntentDecoder, getIntentEncoder } from "@intent-engine/core/internal";
+import { createClient, type IntentQuery, type Transport } from "../src/index.js";
 import {
   ATTESTED_ATTESTOR_AT,
   ATTESTOR_NEEDS_ATTESTED,
-  createClient,
   INTENT_INPUT_MINT_AT,
   INTENT_KIND_AT,
   INTENT_OUTPUT_MINT_AT,
   INTENT_OWNER_AT,
   INTENT_STATUS_AT,
-  type IntentQuery,
   type RpcLike,
   rpcTransport,
-  type Transport,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { createTestWorld, type TestWorld } from "../src/testing.js";
 import { SPEC } from "./plan-driver.js";
 

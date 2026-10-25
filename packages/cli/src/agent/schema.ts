@@ -1,5 +1,5 @@
 import { type Address, isAddress } from "@solana/kit";
-import { I64_MAX, I64_MIN, U64_MAX } from "@intent-engine/core";
+import { I64_MAX, I64_MIN, U64_MAX } from "@intent-engine/core/internal";
 
 export type Issue = { path: string; message: string };
 

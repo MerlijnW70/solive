@@ -1,6 +1,7 @@
 import { type Address, createNoopSigner, getAddressDecoder, type Instruction } from "@solana/kit";
-import { boardTerms, buildMigrate, findConfigPda, INTENT_ENGINE_PROGRAM_ADDRESS, isConfigAccount, isCurrentAccount, migrationOf, storedVersion } from "@intent-engine/core";
-import { rentExemptFor, rentSysvar, type RentSysvar, type Transport } from "@intent-engine/client";
+import { boardTerms, buildMigrate, findConfigPda, INTENT_ENGINE_PROGRAM_ADDRESS, isConfigAccount, isCurrentAccount, migrationOf, storedVersion } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { rentExemptFor, rentSysvar, type RentSysvar } from "@intent-engine/client/internal";
 import type { Command } from "./command-types.js";
 import type { Runtime } from "./runtime.js";
 import { AUTHORITY_NEXT, previewed, unsignedFor } from "./admin-commands.js";

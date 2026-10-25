@@ -13,7 +13,7 @@ import {
   mandateKinds,
   NO_PARTNER,
   WARN_LONG_MANDATE,
-} from "../src/index.js";
+} from "../src/internal.js";
 import vectors from "./golden/vectors.json" with { type: "json" };
 import { InvalidInput } from "../src/errors.js";
 

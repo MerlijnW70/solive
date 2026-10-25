@@ -1,6 +1,7 @@
 import { type Address, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SolanaError } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { INTENT_ENGINE_PROGRAM_ADDRESS, IntentCoreError } from "@intent-engine/core";
+import { IntentCoreError } from "@intent-engine/core";
+import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { MissingAccount, NotAMint, type Transport } from "@intent-engine/client";
 import idl from "@intent-engine/core/idl.json" with { type: "json" };
 import {

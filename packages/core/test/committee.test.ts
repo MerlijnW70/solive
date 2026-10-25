@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { type Address, generateKeyPairSigner, getAddressDecoder, getAddressEncoder, signBytes } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { IntentCoreError } from "../src/index.js";
 import {
   attestedDeliveryPreimage,
   buildCommitteeBatch,
@@ -15,10 +16,9 @@ import {
   committeePreimage,
   committeeSigners,
   ED25519_PROGRAM_ADDRESS,
-  IntentCoreError,
   MAX_COMMITTEE_MEMBERS,
   sortMembers,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { InvalidInput } from "../src/errors.js";
 
 type MaskCase = { mask: number; outcome: { ok: Address[] } | { err: string } };

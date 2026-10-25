@@ -4,6 +4,7 @@ strictDepBuilds: true
 onlyBuiltDependencies: []
 ignoredBuiltDependencies:
   - bufferutil
+  - esbuild
   - fsevents
   - node-hid
   - utf-8-validate

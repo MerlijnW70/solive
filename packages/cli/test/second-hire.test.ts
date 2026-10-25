@@ -3,7 +3,7 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT } from "@intent-engine/core";
-import { noJudgeKey, WARN_NO_JUDGE_KEY } from "@intent-engine/client";
+import { noJudgeKey, WARN_NO_JUDGE_KEY } from "@intent-engine/client/internal";
 import { beforeEach, describe, expect, it } from "vitest";
 import { findJobs } from "../src/agent/jobs.js";
 import { RESULT_MEANS, walletAttest } from "../src/agent/wallet/attest.js";

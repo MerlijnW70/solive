@@ -54,7 +54,7 @@ import {
 
 export const EVENT_IX_TAG = new Uint8Array([0xe4, 0x45, 0xa5, 0x2e, 0x51, 0xcb, 0x9a, 0x1d]);
 
-type EventName = (typeof IntentEngineEvent)[IntentEngineEvent];
+export type EngineEventName = (typeof IntentEngineEvent)[IntentEngineEvent];
 
 const PARSERS = {
   AccountMigrated: parseAccountMigratedEvent,
@@ -106,11 +106,11 @@ const PARSERS = {
   PauseRaised: parsePauseRaisedEvent,
   RelayerPaid: parseRelayerPaidEvent,
   UserInitialized: parseUserInitializedEvent,
-} satisfies Record<EventName, (data: Uint8Array) => object>;
+} satisfies Record<EngineEventName, (data: Uint8Array) => object>;
 
 export type EngineEvent = {
-  [K in EventName]: { name: K; notable: boolean; fields: ReturnType<(typeof PARSERS)[K]> };
-}[EventName];
+  [K in EngineEventName]: { name: K; notable: boolean; fields: ReturnType<(typeof PARSERS)[K]> };
+}[EngineEventName];
 
 export const NOTABLE = new Set([
   "AdminAccepted",
@@ -136,7 +136,7 @@ export function decodeEvent(data: Uint8Array): DecodedEvent | null {
     return null;
   }
   const body = data.subarray(EVENT_IX_TAG.length);
-  let name: EventName;
+  let name: EngineEventName;
   try {
     name = IntentEngineEvent[identifyIntentEngineEvent(body)];
   } catch {

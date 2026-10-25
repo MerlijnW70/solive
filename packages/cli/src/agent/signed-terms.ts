@@ -1,18 +1,8 @@
 import { type Address, getBase58Encoder, type Instruction, type SignatureBytes, type TransactionSigner } from "@solana/kit";
-import {
-  createExt,
-  encodeParams,
-  findAssociatedTokenAddress,
-  type Intent,
-  type IntentParams,
-  isMemoUrl,
-  Kind,
-  MEMO_URL_RULE,
-  partnerOf,
-  type SignedIntentFields,
-  specMemo,
-} from "@intent-engine/core";
-import { loadConfig, memoInstruction, mintOf, plainHttpOnPublic, type Transport } from "@intent-engine/client";
+import { findAssociatedTokenAddress, type Intent, type IntentParams, Kind } from "@intent-engine/core";
+import { createExt, encodeParams, isMemoUrl, MEMO_URL_RULE, partnerOf, type SignedIntentFields, specMemo } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { loadConfig, memoInstruction, mintOf, plainHttpOnPublic } from "@intent-engine/client/internal";
 import { tool } from "./names.js";
 import { SPEC_URL_PLAIN } from "./create.js";
 import { AgentRefusal } from "./problems.js";

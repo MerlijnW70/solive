@@ -1,12 +1,11 @@
 import { createHash } from "node:crypto";
 import { type Address, AccountRole, getAddressDecoder, getAddressEncoder } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { AccountVersionError, IntentCoreError } from "../src/index.js";
 import {
   ACCOUNT_LAYOUTS,
   type AccountLayout,
-  AccountVersionError,
   boardTerms,
-  IntentCoreError,
   legacyStakeTo,
   lineIntent,
   migratesInPlace,
@@ -20,7 +19,7 @@ import {
   isCurrentAccount,
   recordedPayer,
   storedVersion,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { NotAnEngineAccount } from "../src/errors.js";
 
 const PAYER = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" as Address;

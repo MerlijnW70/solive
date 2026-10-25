@@ -1,8 +1,11 @@
 import { join } from "node:path";
 import type { Address } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { IntentStatus, parseEncryptionKey, WALLET_KEY_GIVEN } from "@intent-engine/core";
-import { createClient, keepsKey, noKeyAtCreation, ProfileHistoryIncomplete } from "@intent-engine/client";
+import { IntentStatus } from "@intent-engine/core";
+import { parseEncryptionKey, WALLET_KEY_GIVEN } from "@intent-engine/core/internal";
+import { ProfileHistoryIncomplete } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { keepsKey, noKeyAtCreation } from "@intent-engine/client/internal";
 import { ENCRYPTION_KEY_FILE, ENCRYPTION_KEY_NEEDS_WALLET } from "../src/arg-values.js";
 import { parse } from "../src/args.js";
 import { GIVE_KEY_FLAG, sealedOnDevice } from "../src/judge.js";

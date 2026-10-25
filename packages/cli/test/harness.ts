@@ -38,9 +38,9 @@ import {
 import { FailedTransactionMetadata, LiteSVM } from "litesvm";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { expect } from "vitest";
+import { findAssociatedTokenAddress, parseAmount } from "@intent-engine/core";
 import {
   EVENT_IX_TAG,
-  findAssociatedTokenAddress,
   findConfigPda,
   findIntentPda,
   findProgramDataAddress,
@@ -48,10 +48,10 @@ import {
   getIntentDecoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   MANDATE_NONCE_BIT,
-  parseAmount,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import type { Fetch } from "@intent-engine/solver";
-import { type EngineAccountFilter, type EngineTransaction, intentMatches, matchBytes, type SpecFetch, type Transport } from "@intent-engine/client";
+import { type EngineAccountFilter, type EngineTransaction, type SpecFetch, type Transport } from "@intent-engine/client";
+import { intentMatches, matchBytes } from "@intent-engine/client/internal";
 import { createTestWorld, ECONOMICS_UNSET, TEST_WALLET_SOL } from "@intent-engine/client/testing";
 import type { Runtime } from "../src/commands.js";
 import { main } from "../src/main.js";

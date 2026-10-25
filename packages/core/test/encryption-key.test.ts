@@ -1,15 +1,13 @@
 import { createHash, generateKeyPairSync } from "node:crypto";
 import { type Address, getAddressDecoder } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { type DeliveryKey, type DeliveryOpener, EncryptionKeyError, SealedError, type SealRecipient } from "../src/index.js";
 import {
   checkProfile,
   delivery,
-  type DeliveryKey,
-  type DeliveryOpener,
   deliverySecrets,
   ENCRYPTION_KEY_KIND,
   ENCRYPTION_KEY_MISMATCH,
-  EncryptionKeyError,
   encryptionKeyText,
   isEncryptionKeyText,
   isUsableKey,
@@ -21,12 +19,10 @@ import {
   parseEncryptionKey,
   readEncryptionKeyFile,
   SMALL_ORDER_KEYS,
-  SealedError,
   sealDeliveryV4,
-  type SealRecipient,
   WALLET_KEY_GIVEN,
   x25519PublicOf,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { InvalidInput } from "../src/errors.js";
 
 type Wallet = { address: Address; keypair: Uint8Array };

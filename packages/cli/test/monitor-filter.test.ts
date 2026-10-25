@@ -1,6 +1,6 @@
 import type { Address, KeyPairSigner } from "@solana/kit";
 import type { EngineAccountFilter, Transport } from "@intent-engine/client";
-import { getMintCapSize, isMintCapData, MINT_CAP_DISCRIMINATOR } from "@intent-engine/core";
+import { getMintCapSize, isMintCapData, MINT_CAP_DISCRIMINATOR } from "@intent-engine/core/internal";
 import { beforeEach, describe, expect, it } from "vitest";
 import { EXIT_OK } from "../src/main.js";
 import { MINT_CAP_FILTER } from "../src/monitor-limits.js";

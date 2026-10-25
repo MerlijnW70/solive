@@ -3,7 +3,8 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
-import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT, sortMembers } from "@intent-engine/core";
+import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT } from "@intent-engine/core";
+import { sortMembers } from "@intent-engine/core/internal";
 import { committeeNeeded } from "../src/agent/create.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { pieceUnsettled } from "../src/agent/wallet/escrow.js";

@@ -3,20 +3,17 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress, formatAmount, NATIVE_MINT } from "@intent-engine/core";
 import {
-  DEVNET_TEST_MINT,
   EVENT_IX_TAG,
-  findAssociatedTokenAddress,
   findVaultPda,
-  formatAmount,
   getDeliveryAnnouncedEventEncoder,
   getDeliveryReleasedEventEncoder,
   getIntentAttestedEventEncoder,
   getIntentCreatedEventEncoder,
   getIntentDecoder,
-  NATIVE_MINT,
   splitFee,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import type { EngineTransaction } from "@intent-engine/client";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";

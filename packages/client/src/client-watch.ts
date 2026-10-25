@@ -3,12 +3,13 @@ import { IntentUnreadable, StaleRead } from "./client-errors.js";
 import type { IntentAccount, WatchCallback, WatchOptions } from "./client-types.js";
 import { intentFrom } from "./job-proofs.js";
 import { changesFrom, type HeardAccount, type Notifications, pause, type ProgramAccount, type Transport } from "./transport.js";
+import { bytesBase64 } from "./encoding.js";
 
 type Watched = IntentAccount & { slot?: bigint };
 
 export const decoded = ({ address, data }: ProgramAccount): IntentAccount => ({ address, intent: intentFrom(data) });
 
-const keyOf = (data: Uint8Array) => Buffer.from(data).toString("base64");
+const keyOf = bytesBase64;
 
 export function watchIntents(
   transport: Transport,

@@ -2,7 +2,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { PRODUCT_SLUG } from "@intent-engine/core";
+import { PRODUCT_SLUG } from "@intent-engine/core/internal";
 import { ADD_TO_NEEDS_APP, parse, usageOf } from "../src/args.js";
 import {
   CODEX_HOME_ENV,

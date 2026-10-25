@@ -9,13 +9,13 @@ import {
   DEVNET_TEST_MINT,
   eventNamed,
   findAssociatedTokenAddress,
-  findProgramDataAddress,
   IntentStatus,
   NATIVE_MINT,
   parseAmount,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import { chainTime, DEVNET_GENESIS_HASH } from "../src/index.js";
+import { findProgramDataAddress } from "@intent-engine/core/internal";
+import { chainTime, DEVNET_GENESIS_HASH } from "../src/internal.js";
 import { createTestWorld, DEVNET_FEES, ENGINE_PROGRAM_FILE, shippedProgram, shippedProgramPath } from "../src/testing.js";
 
 const HERE = dirname(fileURLToPath(import.meta.url));

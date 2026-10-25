@@ -1,5 +1,7 @@
 import type { Address, TransactionPartialSigner } from "@solana/kit";
-import { type AnnounceInput, createClient, loadAnnouncement, loadDeliveryBook, type RefuteInput, secretInputOf, type Transport } from "@intent-engine/client";
+import { type AnnounceInput, type RefuteInput, type Transport } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { loadAnnouncement, loadDeliveryBook, secretInputOf } from "@intent-engine/client/internal";
 import { previewed } from "./admin-commands.js";
 import { claimOf, deliverClaimWarnings } from "./agent/job-claims.js";
 import { ANNOUNCE_FIRST, capturing, hex, listView, openedBy, sealedToText, walletOf } from "./announcement-views.js";

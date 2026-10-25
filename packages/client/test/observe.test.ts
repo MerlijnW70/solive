@@ -18,18 +18,8 @@ import {
 } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  type ClientEventName,
-  type ClientHooks,
-  createClient,
-  type HookFailure,
-  observedTransport,
-  observerOf,
-  QUIET,
-  type RpcLike,
-  rpcTransport,
-  type Transport,
-} from "../src/index.js";
+import { type ClientEventName, type ClientHooks, createClient, type HookFailure, type Transport } from "../src/index.js";
+import { observedTransport, observerOf, QUIET, type RpcLike, rpcTransport } from "../src/internal.js";
 import { createTestWorld, type TestWorld } from "../src/testing.js";
 
 const NAMES: readonly ClientEventName[] = ["request", "response", "retry", "send", "confirm", "fetch"];

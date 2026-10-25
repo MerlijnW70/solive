@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import * as core from "../src/index.js";
+import * as core from "../src/internal.js";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -9,11 +9,11 @@ import {
   getOffchainMessageV1Encoder,
 } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { findAssociatedTokenAddress, IntentCoreError, type CoreErrorCode, splitFees, type IntentParams, Kind } from "../src/index.js";
 import {
   decodeParams,
   encodeParams,
   escrowAmount,
-  findAssociatedTokenAddress,
   findConfigPda,
   findEventAuthorityPda,
   findIntentPda,
@@ -44,11 +44,8 @@ import {
   getRaisePauseInstructionDataEncoder,
   getUpdateConfigDiscriminatorBytes,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  IntentCoreError,
-  type CoreErrorCode,
   checkFlags,
   partnerOf,
-  splitFees,
   nextFreeNonce,
   CONFIG_VERSION,
   ACCOUNT_LAYOUTS,
@@ -58,7 +55,6 @@ import {
   INTENT_VERSION,
   USER_VERSION,
   validateExt,
-  type IntentParams,
   requiredOut,
   attestedFillMessage,
   attestedFillPreimage,
@@ -79,7 +75,6 @@ import {
   signedIntentPreimage,
   kindBit,
   ALL_KINDS_MASK,
-  Kind,
   mulDivCeil,
   mulDivFloor,
   splitFee,
@@ -92,7 +87,7 @@ import {
   MAX_NONCE_JUMP,
   NONCE_CEILING,
   nextEpoch,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { InvalidInput } from "../src/errors.js";
 
 type Outcome = { ok?: string; err?: string; fee?: string; net?: string };

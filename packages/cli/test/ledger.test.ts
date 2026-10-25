@@ -12,8 +12,9 @@ import {
 } from "@solana/kit";
 import { getTokenDecoder } from "@solana-program/token";
 import { beforeEach, describe, expect, it } from "vitest";
-import { findIntentPda, getIntentDecoder, IntentStatus } from "@intent-engine/core";
-import { LEDGER_ERRORS, LEDGER_FORMS, type OpenTransport } from "@intent-engine/client";
+import { IntentStatus } from "@intent-engine/core";
+import { findIntentPda, getIntentDecoder } from "@intent-engine/core/internal";
+import { LEDGER_ERRORS, LEDGER_FORMS, type OpenTransport } from "@intent-engine/client/internal";
 import { ENV_KEYPAIR } from "../src/clusters.js";
 import { parse } from "../src/args.js";
 import { LEDGER_COMMANDS, needsKeyFile, signsOnDevice } from "../src/ledger-keys.js";

@@ -1,11 +1,9 @@
 import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import {
-  type EngineEvent,
-  getFillAttestedSplitInstructionDataEncoder,
-  splitN,
-} from "@intent-engine/core";
-import { type EngineTransaction, type ListedSignature, ownHistory, releaseShareOf, type Transport } from "../src/index.js";
+import { type EngineEvent } from "@intent-engine/core";
+import { getFillAttestedSplitInstructionDataEncoder, splitN } from "@intent-engine/core/internal";
+import { type EngineTransaction, type ListedSignature, type Transport } from "../src/index.js";
+import { ownHistory, releaseShareOf } from "../src/internal.js";
 
 const address = async (): Promise<Address> => (await generateKeyPairSigner()).address;
 

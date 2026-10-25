@@ -1,4 +1,3 @@
-import { inspect } from "node:util";
 import {
   type Address,
   type Base64EncodedWireTransaction,
@@ -16,7 +15,7 @@ import {
   getSignatureFromTransaction,
   getTransactionDecoder,
 } from "@solana/kit";
-import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { confirmSent, type SignatureWatch, signatureStatus } from "./confirmation.js";
 import { joined, type Observer, QUIET } from "./observe.js";
 import { askedOf, delivering, observable, wireSend } from "./observe-transport.js";
@@ -39,6 +38,8 @@ import type {
 import { SYSTEM_PROGRAM_ADDRESS, TOKEN_PROGRAMS } from "./accounts.js";
 import { intentMatches } from "./intent-filters.js";
 import { holdingsOf, keysAt, MEMO_PROGRAM_ADDRESS, signersAmong, solTransfersOf } from "./transaction-keys.js";
+import { base64Bytes } from "./encoding.js";
+import { shown } from "./shown.js";
 
 type ProgramFilter = { dataSize: bigint } | { memcmp: { offset: bigint; bytes: string; encoding: "base58" } };
 
@@ -57,7 +58,7 @@ function accountFilters(filter?: EngineAccountFilter): ProgramFilter[] {
 
 const decodedEntry = ({ pubkey, account }: ProgramEntry) => ({
   address: pubkey,
-  data: new Uint8Array(Buffer.from(account.data[0], "base64")),
+  data: base64Bytes(account.data[0]),
   lamports: account.lamports ?? 0n,
 });
 
@@ -68,7 +69,7 @@ export const MULTIPLE_ACCOUNTS_LIMIT = 100;
 function viewOf(value: RawAccount | null): AccountView | null {
   return value === null
     ? null
-    : { owner: value.owner, data: new Uint8Array(Buffer.from(value.data[0], "base64")), lamports: value.lamports, executable: value.executable };
+    : { owner: value.owner, data: base64Bytes(value.data[0]), lamports: value.lamports, executable: value.executable };
 }
 
 export const TRANSACTION_FETCHES = 4;
@@ -320,12 +321,12 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
             .send(),
         );
         return {
-          err: value.err === null ? null : inspect(value.err, { depth: null, breakLength: Infinity }),
+          err: value.err === null ? null : shown(value.err),
           logs: [...(value.logs ?? [])],
           unitsConsumed: value.unitsConsumed ?? null,
           accounts: watch.map((_, i) => {
             const found = value.accounts?.[i];
-            return found === null || found === undefined ? null : new Uint8Array(Buffer.from(found.data[0], "base64"));
+            return found === null || found === undefined ? null : base64Bytes(found.data[0]);
           }),
         };
       },
@@ -377,7 +378,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
         );
         return found.map(({ pubkey, account }) => ({
           address: pubkey,
-          data: new Uint8Array(Buffer.from(account.data[0], "base64")),
+          data: base64Bytes(account.data[0]),
         }));
       },
     }, (next) => facade(joined(by, next)));

@@ -1,6 +1,8 @@
 import type { Address } from "@solana/kit";
-import { decodeEvent, type EngineEvent, formatAmount, IntentStatus, tokenName } from "@intent-engine/core";
-import { chainTime, type EngineTransaction, intentAt, loadClaimsOf, paidWalletsOf, releaseShareOf, type Transport } from "@intent-engine/client";
+import { type EngineEvent, formatAmount, IntentStatus, tokenName } from "@intent-engine/core";
+import { decodeEvent } from "@intent-engine/core/internal";
+import { type EngineTransaction, type Transport } from "@intent-engine/client";
+import { chainTime, intentAt, loadClaimsOf, paidWalletsOf, releaseShareOf } from "@intent-engine/client/internal";
 import { account, choice, flag, nullable, object, text, time } from "../schema.js";
 import { createdMint, heldMint, type ReleaseLookup, releaseLookup, releasedMint } from "./releases.js";
 import { deliveryReleased } from "./standing.js";

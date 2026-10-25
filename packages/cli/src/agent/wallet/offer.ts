@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Address } from "@solana/kit";
-import { chainTime, CLOCK_SYSVAR, explain, mintOf, unmemoized } from "@intent-engine/client";
+import { chainTime, CLOCK_SYSVAR, explain, mintOf, unmemoized } from "@intent-engine/client/internal";
 import type { AgentContext } from "../actions.js";
 import type { Call } from "../claims.js";
 import { type AfterCreate, createIntent } from "../create.js";

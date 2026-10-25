@@ -2,7 +2,7 @@ import type { Values } from "./arg-options.js";
 import { key, noSub, parseBounded, parseFeeBps, parseKindFees, parseKinds, parsePause, required, u64, UsageError } from "./arg-values.js";
 import { authorityOf, configChange } from "./command-builders.js";
 import type { Command, Remote } from "./command-types.js";
-import { MIN_CAP_WINDOW_SECS } from "@intent-engine/core";
+import { MIN_CAP_WINDOW_SECS } from "@intent-engine/core/internal";
 
 export type AdminVerb =
   | "init-config"

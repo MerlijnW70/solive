@@ -1,7 +1,8 @@
 import { type Address, getBase16Encoder, type KeyPairSigner, signBytes } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import { IntentStatus } from "@intent-engine/core";
-import { createClient, keepsKey, noJudgeKey, WARN_NO_JUDGE_KEY } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { keepsKey, noJudgeKey, WARN_NO_JUDGE_KEY } from "@intent-engine/client/internal";
 import { ENV_KEYPAIR } from "../src/clusters.js";
 import { EXIT_OK } from "../src/main.js";
 import { keyed } from "./announce.js";

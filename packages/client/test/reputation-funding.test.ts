@@ -3,8 +3,10 @@ import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, none
 import { getTransferSolInstruction } from "@solana-program/system";
 import { getMintEncoder, getMintSize } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { findIntentPda, Kind, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { createClient, FUNDING_PAGES, type ListedSignature, type Transport } from "../src/index.js";
+import { Kind, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { findIntentPda } from "@intent-engine/core/internal";
+import { createClient, type ListedSignature, type Transport } from "../src/index.js";
+import { FUNDING_PAGES } from "../src/internal.js";
 import { svmTransport } from "../src/svm.js";
 import { world } from "./svm.js";
 import { announced } from "./work.js";

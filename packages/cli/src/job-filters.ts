@@ -1,7 +1,7 @@
 import type { Address } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
+import { type Job, type Transport } from "@intent-engine/client";
 import {
-  type Job,
   type JobClaim,
   jobClaimOf,
   type JobPay,
@@ -13,8 +13,7 @@ import {
   type MintView,
   openProofEscrows,
   type PayTerms,
-  type Transport,
-} from "@intent-engine/client";
+} from "@intent-engine/client/internal";
 
 export type JobsWanted = {
   attestor?: Address | undefined;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PRODUCT_SLUG } from "@intent-engine/core";
+import { PRODUCT_SLUG } from "@intent-engine/core/internal";
 import { AGENT_TOOLS, RELAY_TOOLS, servedActions } from "../src/agent/everyday.js";
 import { ENGINE_PROBLEMS, SERVER_PROBLEMS, TOKEN_PROBLEMS } from "../src/agent/problems.js";
 

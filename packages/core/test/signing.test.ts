@@ -1,5 +1,6 @@
 import { type Address, getAddressDecoder, getAddressEncoder } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { formatAmount, type IntentParams, Kind, parseAmount } from "../src/index.js";
 import {
   buildEd25519BatchInstruction,
   createExt,
@@ -7,17 +8,13 @@ import {
   describeSignedIntent,
   type DescribeOptions,
   encodeParams,
-  formatAmount,
   formatTime,
-  type IntentParams,
-  Kind,
   offchainEnvelope,
-  parseAmount,
   type SignedIntentFields,
   signedIntentMessage,
   signedIntentPreimage,
   U64_MAX,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { InvalidInput } from "../src/errors.js";
 
 const TOKEN_PROGRAM_ADDRESS = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;

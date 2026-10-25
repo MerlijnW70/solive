@@ -1,5 +1,6 @@
 import { AccountRole, type Address, createNoopSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { Kind, TOKEN_PROGRAM_ADDRESS } from "../src/index.js";
 import {
   buildCreateIntent,
   buildCreateIntentSigned,
@@ -11,12 +12,10 @@ import {
   getConfigSize,
   getSetCommitteeFloorInstructionDataDecoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  Kind,
   MAX_COMMITTEE_FLOORS,
   needsCommittee,
-  TOKEN_PROGRAM_ADDRESS,
   U64_MAX,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { InvalidInput } from "../src/errors.js";
 
 const MINT = "So11111111111111111111111111111111111111112" as Address;

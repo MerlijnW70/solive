@@ -1,5 +1,6 @@
 import { type Address, getBase64Encoder, type Instruction } from "@solana/kit";
-import { buildCreateIntentSigned, type IntentParams } from "@intent-engine/core";
+import { type IntentParams } from "@intent-engine/core";
+import { buildCreateIntentSigned } from "@intent-engine/core/internal";
 import { bytesFit } from "@intent-engine/solver";
 import { isSdkError, type Transport } from "@intent-engine/client";
 import { type Prepared, transactionSize } from "./prepare.js";

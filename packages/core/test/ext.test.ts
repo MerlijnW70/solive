@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { IntentCoreError } from "../src/index.js";
 import {
   checkFlags,
   encodePartner,
@@ -9,10 +10,9 @@ import {
   encodeExt,
   EXT_MAX_LEN,
   findExt,
-  IntentCoreError,
   KNOWN_FLAGS,
   validateExt,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { InvalidInput } from "../src/errors.js";
 
 describe("extension fields", () => {

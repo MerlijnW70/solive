@@ -5,7 +5,8 @@ import { type Address, getBase58Decoder, type Signature, SOLANA_ERROR__RPC__TRAN
 import { getTransferSolInstruction } from "@solana-program/system";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { attestedResult, DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
-import { type ClientEventName, type ClientHooks, createClient, type HookFailure, type RpcLike, rpcTransport } from "../src/index.js";
+import { type ClientEventName, type ClientHooks, createClient, type HookFailure } from "../src/index.js";
+import { type RpcLike, rpcTransport } from "../src/internal.js";
 import { createTestWorld, type TestWorld } from "../src/testing.js";
 import { OBSERVE_SECTION } from "./doc-sections.js";
 

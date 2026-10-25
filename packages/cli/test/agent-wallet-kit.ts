@@ -3,8 +3,8 @@ import { AccountState, getMintEncoder, getMintSize, getTokenEncoder, getTokenSiz
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { expect } from "vitest";
+import { DEVNET_TEST_MINT, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
 import {
-  DEVNET_TEST_MINT,
   EVENT_IX_TAG,
   getCreateIntentInstructionDataEncoder,
   getDeliveryReleasedEventEncoder,
@@ -13,10 +13,8 @@ import {
   getIntentDecoder,
   getIntentEncoder,
   getIntentSplitEventEncoder,
-  IntentStatus,
-  NATIVE_MINT,
   splitFee,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import type { EngineTransaction, ListedSignature, Transport } from "@intent-engine/client";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";

@@ -1,10 +1,6 @@
-import * as core from "../src/index.js";
-import {
-  getEpochAdvancedEventEncoder,
-  getPauseRaisedEventEncoder,
-  getUserInitializedEventEncoder,
-  IntentEngineEvent,
-} from "../src/index.js";
+import * as core from "../src/internal.js";
+import { IntentEngineEvent } from "../src/index.js";
+import { getEpochAdvancedEventEncoder, getPauseRaisedEventEncoder, getUserInitializedEventEncoder } from "../src/internal.js";
 import type { Address } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import { decodeEvent, EVENT_IX_TAG, NOTABLE } from "../src/events.js";

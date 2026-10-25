@@ -7,17 +7,8 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  DEVNET_TEST_MINT,
-  EVENT_IX_TAG,
-  findAssociatedTokenAddress,
-  getIntentCreatedEventEncoder,
-  getIntentDecoder,
-  NATIVE_MINT,
-  NotInvited,
-  specMemo,
-  unseal,
-} from "@intent-engine/core";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress, NATIVE_MINT, NotInvited } from "@intent-engine/core";
+import { EVENT_IX_TAG, getIntentCreatedEventEncoder, getIntentDecoder, specMemo, unseal } from "@intent-engine/core/internal";
 import type { EngineTransaction } from "@intent-engine/client";
 import { tool } from "../src/agent/names.js";
 import { EVERYDAY_TOOLS } from "../src/agent/everyday.js";

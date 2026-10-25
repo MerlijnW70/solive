@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import type { Address } from "@solana/kit";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
+import { IntentCoreError, Kind, splitFees } from "../src/index.js";
 import {
   tokenOf,
   BPS_DENOMINATOR,
@@ -11,17 +12,14 @@ import {
   ATTESTED_PROTOCOL_FEE,
   describeTerms,
   encodeParams,
-  IntentCoreError,
-  Kind,
   mulDivCeil,
   mulDivFloor,
   type SignedIntentFields,
   releaseSettles,
   settleBounds,
   splitFee,
-  splitFees,
   U64_MAX,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { InvalidInput } from "../src/errors.js";
 
 const RUNS = Number(process.env["PROPERTY_RUNS"] ?? 500);

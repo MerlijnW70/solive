@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
-import { feeBpsFor, formatAmount, isMemoUrl, isSealed, Kind, MAX_CLAIM_SECS, MAX_CLAIM_STAKE, MEMO_URL_RULE, NATIVE_MINT, sealedTo, splitFees } from "@intent-engine/core";
-import { chainTime, loadCommittee, loadConfig, MAX_SPEC_BYTES, mintOf, pinnedFetch, plainHttpOnPublic, WARN_NO_JUDGE_KEY } from "@intent-engine/client";
+import { feeBpsFor, formatAmount, Kind, NATIVE_MINT, splitFees } from "@intent-engine/core";
+import { isMemoUrl, isSealed, MAX_CLAIM_SECS, MAX_CLAIM_STAKE, MEMO_URL_RULE, sealedTo } from "@intent-engine/core/internal";
+import { pinnedFetch } from "@intent-engine/client/node";
+import { chainTime, loadCommittee, loadConfig, MAX_SPEC_BYTES, mintOf, plainHttpOnPublic, WARN_NO_JUDGE_KEY } from "@intent-engine/client/internal";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";

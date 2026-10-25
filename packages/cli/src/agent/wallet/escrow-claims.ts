@@ -1,6 +1,8 @@
 import type { Address } from "@solana/kit";
-import { buildClaimsWithList, buildOpenClaims, buildOpenClaimsListed, claimantChunks, formatAmount, isSealed, sealedTo } from "@intent-engine/core";
-import { loadCommittee, MAX_SPEC_BYTES, pinnedFetch } from "@intent-engine/client";
+import { formatAmount } from "@intent-engine/core";
+import { buildClaimsWithList, buildOpenClaims, buildOpenClaimsListed, claimantChunks, isSealed, sealedTo } from "@intent-engine/core/internal";
+import { pinnedFetch } from "@intent-engine/client/node";
+import { loadCommittee, MAX_SPEC_BYTES } from "@intent-engine/client/internal";
 import { fetchBytes } from "../../delivery-fetch.js";
 import { systemLookup } from "../../public-address.js";
 import { execute } from "../../flows.js";

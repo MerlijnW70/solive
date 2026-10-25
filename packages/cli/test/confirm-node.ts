@@ -1,6 +1,6 @@
 import type { Address, KeyPairSigner } from "@solana/kit";
 import { getTokenDecoder, getTokenEncoder } from "@solana-program/token";
-import { deliveryBookAddress, getDeliveryBookDecoder, getDeliveryBookEncoder, getIntentDecoder, getIntentEncoder } from "@intent-engine/core";
+import { deliveryBookAddress, getDeliveryBookDecoder, getDeliveryBookEncoder, getIntentDecoder, getIntentEncoder } from "@intent-engine/core/internal";
 import type { AccountView, EngineAccount, Transport } from "@intent-engine/client";
 import { clusterUrl } from "../src/clusters.js";
 import { main } from "../src/main.js";

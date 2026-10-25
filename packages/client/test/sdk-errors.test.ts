@@ -27,7 +27,6 @@ import {
   CosignRejected,
   EscrowExpired,
   FailedOnChain,
-  failure,
   FetchFailed,
   FirstOpeningRefused,
   IntentUnreadable,
@@ -61,6 +60,7 @@ import {
   UrlTooLong,
   VoteRejected,
 } from "../src/index.js";
+import { failure } from "../src/internal.js";
 
 const WALLET = "11111111111111111111111111111111" as Address;
 const SIG = "1".repeat(64) as Signature;

@@ -9,17 +9,9 @@ import {
   findVaultPda,
   getUserStateDecoder,
   nextEpoch,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { solverTableAccounts, tick } from "@intent-engine/solver";
-import {
-  cancelClaims,
-  clusterDomain,
-  createdAccount,
-  loadConfig,
-  loadIntent,
-  tokenAccountIfMissing,
-  tokenProgramOf,
-} from "@intent-engine/client";
+import { cancelClaims, clusterDomain, createdAccount, loadConfig, loadIntent, tokenAccountIfMissing, tokenProgramOf } from "@intent-engine/client/internal";
 import { agentServer } from "./agent/mcp.js";
 import { servedActions } from "./agent/everyday.js";
 import { claimsOf } from "./agent/claims.js";

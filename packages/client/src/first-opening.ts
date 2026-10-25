@@ -1,20 +1,18 @@
 import { type Address, getBase58Encoder } from "@solana/kit";
+import { AccountVersionError, type DeliveryKey, type DeliveryOpener } from "@intent-engine/core";
 import {
-  AccountVersionError,
   announcementCommitment,
   CLAIMS_OPEN,
   claimBoardAddress,
   CLAIM_BOARD_DISCRIMINATOR,
   claimSlot,
   delivery,
-  type DeliveryKey,
   deliveryKeyOf,
-  type DeliveryOpener,
   getClaimBoardDecoder,
   keyFingerprintV4,
   openDeliveryV4,
   type OpenedDelivery,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { chainTime, engineAccount } from "./accounts.js";
 import { FirstOpeningRefused, type Refusal, type SealedSlot } from "./announce-errors.js";
 import { committeeKeys } from "./announce-keys.js";

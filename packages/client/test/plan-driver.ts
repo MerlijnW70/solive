@@ -12,7 +12,8 @@ import {
   type TransactionSigner,
 } from "@solana/kit";
 import { expect } from "vitest";
-import { attestedResult, COMPUTE_BUDGET_ADDRESS, DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
+import { attestedResult, DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
+import { COMPUTE_BUDGET_ADDRESS } from "@intent-engine/core/internal";
 import { type Client, createClient, type Plan } from "../src/index.js";
 import type { TestWallet, TestWorld } from "../src/testing.js";
 

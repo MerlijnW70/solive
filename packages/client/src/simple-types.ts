@@ -3,18 +3,21 @@ import type { SaltSigner } from "./announce-keys.js";
 import type { Priority } from "./budget.js";
 import type { Client, MessageSigner, WatchCallback, WatchOptions } from "./client-types.js";
 import type { DeliveryOpeners } from "./first-opening.js";
-import type { Job } from "./jobs.js";
+import type { Job, SpecFetch } from "./jobs.js";
+import type { Lookup } from "./address-ranges.js";
 import type { Cluster } from "./simple-tokens.js";
 import type { Transport } from "./transport.js";
 
 export type ClusterChoice = { cluster: Cluster; url?: undefined } | { url: string; cluster?: undefined };
 
-export type ConnectOptions<S extends TransactionSigner = TransactionSigner> = ClusterChoice & {
+export type ConnectSettings<S extends TransactionSigner = TransactionSigner> = {
   signer: S;
   transport?: Transport;
   priority?: Priority;
   allowMainnet?: boolean;
 };
+
+export type ConnectOptions<S extends TransactionSigner = TransactionSigner> = ClusterChoice & ConnectSettings<S> & { fetch?: SpecFetch; lookup?: Lookup };
 
 export type Sent = { signature: Signature; intent?: Address; nonce?: bigint; summary: string };
 

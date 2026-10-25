@@ -1,6 +1,7 @@
 import type { Address } from "@solana/kit";
-import { findIntentPda, formatAmount, getIntentDecoder } from "@intent-engine/core";
-import { mintOf, rateLimited, unmemoized } from "@intent-engine/client";
+import { formatAmount } from "@intent-engine/core";
+import { findIntentPda, getIntentDecoder } from "@intent-engine/core/internal";
+import { mintOf, rateLimited, unmemoized } from "@intent-engine/client/internal";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { account, amount, choice, integer, object, optional, text } from "../schema.js";

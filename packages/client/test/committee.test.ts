@@ -2,17 +2,10 @@ import { createHash } from "node:crypto";
 import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, none } from "@solana/kit";
 import { getMintEncoder, getMintSize } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import {
-  findAssociatedTokenAddress,
-  findIntentPda,
-  IntentStatus,
-  Kind,
-  NATIVE_MINT,
-  signCommitteeVote,
-  sortMembers,
-  TOKEN_PROGRAM_ADDRESS,
-} from "@intent-engine/core";
-import { budgeted, createClient, NotSettleable, PACKET_DATA_SIZE, transactionBytes, VoteRejected } from "../src/index.js";
+import { findAssociatedTokenAddress, IntentStatus, Kind, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { findIntentPda, signCommitteeVote, sortMembers } from "@intent-engine/core/internal";
+import { createClient, NotSettleable, VoteRejected } from "../src/index.js";
+import { budgeted, PACKET_DATA_SIZE, transactionBytes } from "../src/internal.js";
 import { svmTransport } from "../src/svm.js";
 import { FEE_BPS, world } from "./svm.js";
 import { announced, sha } from "./work.js";

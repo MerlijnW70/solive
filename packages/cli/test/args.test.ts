@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { I64_MAX, I64_MIN, Kind, U64_MAX } from "@intent-engine/core";
+import { Kind } from "@intent-engine/core";
+import { I64_MAX, I64_MIN, U64_MAX } from "@intent-engine/core/internal";
 import { AUTO_PRICE_CAP, MAX_PRIORITY_PRICE } from "../src/compute.js";
 import { DEFAULT_CONCURRENCY, DEFAULT_MAX_RENT, DEFAULT_MAX_SOL_COST, MAX_BUNDLE, MAX_CONCURRENCY } from "@intent-engine/solver";
 import {

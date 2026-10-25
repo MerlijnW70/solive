@@ -1,5 +1,6 @@
-import { decodeEvent } from "@intent-engine/core";
-import { RECONNECT_MS, type Transport } from "@intent-engine/client";
+import { decodeEvent } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { RECONNECT_MS } from "@intent-engine/client/internal";
 import type { Runtime } from "./runtime.js";
 
 type EngineEvents = { signature: string; slot: bigint; blockTime: bigint | null; failed: boolean; events: object[] };

@@ -2,7 +2,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { PRODUCT_SLUG } from "@intent-engine/core";
+import { PRODUCT_SLUG } from "@intent-engine/core/internal";
 import { EVERYDAY_TOOLS, servedActions } from "../src/agent/everyday.js";
 import { ACTIONS } from "../src/agent/registry.js";
 import { WALLET_ACTIONS } from "../src/agent/wallet.js";

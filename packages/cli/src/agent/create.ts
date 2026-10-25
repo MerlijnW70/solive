@@ -1,38 +1,33 @@
 import { type Address, createNoopSigner, type Instruction, type TransactionSigner } from "@solana/kit";
+import { type Config, formatAmount, findAssociatedTokenAddress, type IntentParams, Kind, NATIVE_MINT } from "@intent-engine/core";
 import {
   committeeFloorOf,
   computeUnitLimit,
   computeUnitPrice,
-  type Config,
   FLOOR_THRESHOLD,
   describeTerms,
   encodeParams,
   escrowAmount,
-  formatAmount,
-  findAssociatedTokenAddress,
   findConfigPda,
   findIntentPda,
   findUserStatePda,
-  type IntentParams,
   isMemoUrl,
-  Kind,
   MEMO_URL_RULE,
   LONG_LIVED_SECONDS,
   MAX_COMPUTE_UNITS,
-  NATIVE_MINT,
   partnerBaseOf,
   partnerFeeLine,
   validate,
   settlementWarnings,
   WARN_LONG_LIVED,
   WARN_RECEIVER,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
+import { isSdkError, type Transport } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
 import {
   chainTime,
   CLOCK_SYSVAR,
-  createClient,
   escrowCommittee,
-  isSdkError,
   loadConfig,
   loadUser,
   mintOf,
@@ -41,10 +36,9 @@ import {
   PLAIN_HTTP_ON_PUBLIC,
   plainHttpOnPublic,
   keylessJudges,
-  type Transport,
   noJudgeKey,
   PACKET_DATA_SIZE,
-} from "@intent-engine/client";
+} from "@intent-engine/client/internal";
 import { expiresLine } from "./expiry.js";
 import { type AgentContext, define } from "./actions.js";
 import { tool } from "./names.js";
@@ -105,7 +99,7 @@ export function warningsOf(params: IntentParams, expiresAt: bigint, now: bigint,
   ];
 }
 
-export { neverSettles, type SettleConfig } from "@intent-engine/client";
+export { neverSettles, type SettleConfig } from "@intent-engine/client/internal";
 
 type Floors = Pick<Config, "floorMints" | "floorAmounts">;
 

@@ -8,7 +8,8 @@ import { type Address, createKeyPairSignerFromBytes, getBase58Decoder, type KeyP
 import { getTransferSolInstruction } from "@solana-program/system";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { DEVNET_TEST_MINT, findAssociatedTokenAddress, findIntentPda, formatAmount, getIntentDecoder, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress, formatAmount, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
+import { findIntentPda, getIntentDecoder } from "@intent-engine/core/internal";
 import { svmTransport } from "@intent-engine/client/svm";
 import { EXIT_FAILED, EXIT_OK, ONE_NODE } from "../src/main.js";
 import { quietWebCryptoWarnings } from "../src/node-warnings.js";

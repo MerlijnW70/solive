@@ -1,5 +1,7 @@
 import type { Address } from "@solana/kit";
-import { isSdkError, readSpec, SpecUnreadable, type SpecFetch, type Transport } from "@intent-engine/client";
+import { isSdkError, SpecUnreadable, type SpecFetch, type Transport } from "@intent-engine/client";
+import { readSpec } from "@intent-engine/client/internal";
+import { systemLookup } from "./public-address.js";
 
 export type Invites = { kind: "open" } | { kind: "sealed"; to: Address[] } | { kind: "unread"; reason: string };
 
@@ -36,7 +38,7 @@ export async function invitesOf(transport: Transport, get: SpecFetch, intent: Ad
     return get(url, init);
   };
   try {
-    const spec = await readSpec(transport, watched, intent);
+    const spec = await readSpec(transport, watched, intent, undefined, systemLookup);
     return spec?.sealedTo === undefined ? OPEN : { kind: "sealed", to: spec.sealedTo };
   } catch (error) {
     if (isSdkError(error, "spec-sealed")) {

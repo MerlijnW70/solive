@@ -15,8 +15,10 @@ import {
 import { getTransferSolInstruction } from "@solana-program/system";
 import { LiteSVM } from "litesvm";
 import { describe, expect, it } from "vitest";
-import { attestedResult, DEVNET_TEST_MINT, getIntentDiscriminatorBytes, getIntentSize, NATIVE_MINT } from "@intent-engine/core";
-import { BehindMinSlot, BlockhashExpired, FailedOnChain, isSdkError, type RpcLike, rpcTransport, type Transport } from "../src/index.js";
+import { attestedResult, DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
+import { getIntentDiscriminatorBytes, getIntentSize } from "@intent-engine/core/internal";
+import { BehindMinSlot, BlockhashExpired, FailedOnChain, isSdkError, type Transport } from "../src/index.js";
+import { type RpcLike, rpcTransport } from "../src/internal.js";
 import { svmTransport } from "../src/svm.js";
 import { createTestWorld, type TestWorld } from "../src/testing.js";
 

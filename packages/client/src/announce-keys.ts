@@ -1,21 +1,20 @@
 import { type Address, createSignableMessage, getPublicKeyFromAddress, type Instruction, isMessagePartialSigner, type SignatureBytes, type TransactionSigner, verifySignature } from "@solana/kit";
+import { InvalidInput, type SealRecipient } from "@intent-engine/core";
 import {
   buildSyncCommitteeKeys,
   checkAccountVersion,
   COMMITTEE_DISCRIMINATOR,
   getCommitteeDecoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  InvalidInput,
   keyFingerprintV4,
   parseEncryptionKey,
   saltMessage,
-  type SealRecipient,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { createdAccount } from "./accounts.js";
 import type { MessageSigner } from "./client-types.js";
 import { BadSaltSignature, NoMessageSigner, NotDeliverable, SECRET_BYTES, SECRET_RULE } from "./announce-errors.js";
 import { loadProfile } from "./client-claims.js";
-import { isDevice } from "./ledger.js";
+import { isDevice } from "./ledger-path.js";
 import type { Transport } from "./transport.js";
 
 export type CommitteeKeys = { address: Address; members: Address[]; synced: boolean; mask: number; fingerprints: Uint8Array[] };

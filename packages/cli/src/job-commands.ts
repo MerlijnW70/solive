@@ -1,4 +1,5 @@
-import { loadConfig, type Transport } from "@intent-engine/client";
+import { type Transport } from "@intent-engine/client";
+import { loadConfig } from "@intent-engine/client/internal";
 import { escrowReceipt } from "./agent/wallet.js";
 import type { Command } from "./command-types.js";
 import type { Runtime } from "./runtime.js";

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { AccountRole, type Address, createNoopSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { Kind, TOKEN_PROGRAM_ADDRESS } from "../src/index.js";
 import {
   buildCancelIntent,
   buildCloseIntent,
@@ -20,11 +21,9 @@ import {
   getMintCapSize,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   isMintCapData,
-  Kind,
   MINT_CAP_DISCRIMINATOR,
   MINT_CAP_VERSION,
-  TOKEN_PROGRAM_ADDRESS,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { InvalidInput, NotAnEngineAccount } from "../src/errors.js";
 
 const MINT = "So11111111111111111111111111111111111111112" as Address;

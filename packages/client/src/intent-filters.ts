@@ -1,5 +1,6 @@
 import { type Address, getAddressEncoder, isAddress } from "@solana/kit";
-import { decodeParams, type Intent, IntentStatus, InvalidInput, Kind } from "@intent-engine/core";
+import { type Intent, IntentStatus, InvalidInput, Kind } from "@intent-engine/core";
+import { decodeParams } from "@intent-engine/core/internal";
 import type { AccountMatch, IntentQuery } from "./rpc-shapes.js";
 
 export const INTENT_OWNER_AT = 8;

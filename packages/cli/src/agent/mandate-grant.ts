@@ -1,14 +1,7 @@
 import { createNoopSigner } from "@solana/kit";
-import {
-  buildApproveDelegate,
-  buildCreateMandate,
-  describeMandate,
-  findMandatePda,
-  type MandateSpec,
-  findAssociatedTokenAddress,
-  mandateKinds,
-} from "@intent-engine/core";
-import { chainTime, initUserIfMissing, loadUser, mintOf, tokenAccountIfMissing, wrapIfShort } from "@intent-engine/client";
+import { findAssociatedTokenAddress } from "@intent-engine/core";
+import { buildApproveDelegate, buildCreateMandate, describeMandate, findMandatePda, type MandateSpec, mandateKinds } from "@intent-engine/core/internal";
+import { chainTime, initUserIfMissing, loadUser, mintOf, tokenAccountIfMissing, wrapIfShort } from "@intent-engine/client/internal";
 import { define } from "./actions.js";
 import { MAX_EXPIRES_IN, MIN_EXPIRES_IN, WARN_SCALED } from "./create.js";
 import { tool } from "./names.js";

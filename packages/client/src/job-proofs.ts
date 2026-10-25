@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
+import { type AttestedResultParams, type Intent, IntentStatus, Kind, NotAnEngineAccount } from "@intent-engine/core";
 import {
-  type AttestedResultParams,
   checkAccountVersion,
   CLAIMS_OPEN,
   decodeEvent,
@@ -8,17 +8,14 @@ import {
   getIntentDecoder,
   getIntentDiscriminatorBytes,
   getIntentSize,
-  type Intent,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  IntentStatus,
-  Kind,
-  NotAnEngineAccount,
   remainingOf,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { chainTime, createdAccount } from "./accounts.js";
 import { loadClaimsOf } from "./client-claims.js";
 import { scan } from "./job-scan.js";
 import type { EngineTransaction, Transport } from "./transport.js";
+import { bytesHex } from "./encoding.js";
 
 export const JOBS_LIMIT = 50;
 
@@ -33,7 +30,7 @@ export type JobFilter = {
   excludeOwners?: readonly Address[] | undefined;
 };
 
-export const hex = (bytes: Uint8Array): string => Buffer.from(bytes).toString("hex");
+export const hex = (bytes: Uint8Array): string => bytesHex(bytes);
 
 function proofOf(address: Address, intent: Intent): Proof | null {
   const params = decodeParams(intent.kind, Uint8Array.from(intent.params));

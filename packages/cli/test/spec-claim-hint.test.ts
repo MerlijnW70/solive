@@ -4,7 +4,7 @@ import { FailedTransactionMetadata } from "litesvm";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
-import { buildClaimJob, buildOpenClaims, specMemo } from "@intent-engine/core";
+import { buildClaimJob, buildOpenClaims, specMemo } from "@intent-engine/core/internal";
 import type { SpecFetch } from "@intent-engine/client";
 import { agentServer, servedText } from "../src/agent/mcp.js";
 import { claimsOf } from "../src/agent/claims.js";

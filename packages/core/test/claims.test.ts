@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Address } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { IntentCoreError } from "../src/index.js";
 import {
   type BoardView,
   buildAdvance,
@@ -16,7 +17,6 @@ import {
   claimSlot,
   claimUntil,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  IntentCoreError,
   lineLength,
   lineSeqs,
   MAX_CLAIM_SECS,
@@ -26,7 +26,7 @@ import {
   stakeReceiverOnRelease,
   stakeReceiverOnSettle,
   standbyAddress,
-} from "../src/index.js";
+} from "../src/internal.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const NONE = "11111111111111111111111111111111" as Address;

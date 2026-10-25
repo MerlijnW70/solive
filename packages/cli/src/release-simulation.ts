@@ -1,6 +1,8 @@
 import type { Address, MessagePartialSigner, TransactionPartialSigner } from "@solana/kit";
-import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { boundMembers, createClient, isSdkError, type Simulation, simulated, type Transport } from "@intent-engine/client";
+import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
+import { isSdkError, type Simulation, type Transport } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { boundMembers, simulated } from "@intent-engine/client/internal";
 import { ENGINE_ERROR_BASE, ENGINE_ERROR_NAMES, failureOf } from "./agent/problems.js";
 
 export type SimulatedRelease = { ok: true; units_consumed: number } | { ok: false; error: string };

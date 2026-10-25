@@ -1,16 +1,10 @@
 import { AccountRole, type Address, type Instruction } from "@solana/kit";
 import { getMintToInstruction } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import {
-  buildSetCapsRequired,
-  buildSetMintCap,
-  findAssociatedTokenAddress,
-  findMintCapAddress,
-  INTENT_ENGINE_PROGRAM_ADDRESS,
-  Kind,
-  TOKEN_PROGRAM_ADDRESS,
-} from "@intent-engine/core";
-import { createClient, type CreateIntentInput, loadMintCap, mintCapOf } from "../src/index.js";
+import { findAssociatedTokenAddress, Kind, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { buildSetCapsRequired, buildSetMintCap, findMintCapAddress, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
+import { createClient, type CreateIntentInput } from "../src/index.js";
+import { loadMintCap, mintCapOf } from "../src/internal.js";
 import { funded, world, type World } from "./svm.js";
 
 const LOCAL = "http://127.0.0.1:8899";

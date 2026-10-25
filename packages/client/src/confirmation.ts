@@ -1,4 +1,3 @@
-import { inspect } from "node:util";
 import { type Address, createSolanaRpcSubscriptions, type Signature } from "@solana/kit";
 import { isSdkError } from "@intent-engine/core";
 import { socketUrl } from "./intent-notifications.js";
@@ -7,6 +6,7 @@ import { askedOf } from "./observe-transport.js";
 import { POLL_MS, sleep } from "./rpc-retry.js";
 import type { RpcLike, Status } from "./rpc-shapes.js";
 import { BlockhashExpired, FailedOnChain, type Failure, failure, MaybeSent, type SendStatus, SubscriptionEnded } from "./send-errors.js";
+import { shown } from "./shown.js";
 
 export const CONFIRM_POLLS = 360;
 
@@ -44,7 +44,7 @@ export function heardSlot(signature: Signature, note: unknown): Confirmed {
   return typeof context?.slot === "bigint" ? { slot: context.slot } : {};
 }
 
-export const failedOnChain = (found: Failure): FailedOnChain => new FailedOnChain(`transaction ${found.signature} failed: ${inspect(found.err)}`, found);
+export const failedOnChain = (found: Failure): FailedOnChain => new FailedOnChain(`transaction ${found.signature} failed: ${shown(found.err)}`, found);
 
 export async function failureRead(rpc: RpcLike, signature: Signature, err: unknown, observer: Observer = QUIET): Promise<Failure> {
   const tx = await observer

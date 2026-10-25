@@ -1,6 +1,6 @@
 import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { EVENT_IX_TAG, getIntentCreatedEventEncoder, getIntentFilledEventEncoder } from "@intent-engine/core";
+import { EVENT_IX_TAG, getIntentCreatedEventEncoder, getIntentFilledEventEncoder } from "@intent-engine/core/internal";
 import type { EngineTransaction } from "@intent-engine/client";
 import { EXIT_OK, main } from "../../src/main.js";
 import { cli, h, NOW, runtime, world } from "../harness.js";

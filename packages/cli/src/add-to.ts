@@ -1,4 +1,4 @@
-import { PRODUCT_SLUG } from "@intent-engine/core";
+import { PRODUCT_SLUG } from "@intent-engine/core/internal";
 import type { Runtime } from "./runtime.js";
 
 export const CLI_PACKAGE = "@intent-engine/cli";

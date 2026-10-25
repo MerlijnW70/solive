@@ -1,5 +1,6 @@
 import { type Address, createNoopSigner, getAddressDecoder, type Instruction, type TransactionSigner } from "@solana/kit";
-import { announcementCommitment, decodeParams, IntentStatus, InvalidInput, isSaltHex, Kind, splitFees } from "@intent-engine/core";
+import { IntentStatus, InvalidInput, Kind, splitFees } from "@intent-engine/core";
+import { announcementCommitment, decodeParams, isSaltHex } from "@intent-engine/core/internal";
 import { chainTime, createdAccount, SYSTEM_PROGRAM_ADDRESS } from "./accounts.js";
 import { sha256Bytes } from "./announce.js";
 import { loadAnnouncement } from "./announcement-reads.js";
@@ -9,6 +10,7 @@ import type { ClientContext, ReleaseOpening } from "./client-types.js";
 import { type IntentRef, loadIntentRef } from "./intent-ref.js";
 import { hex } from "./job-proofs.js";
 import { tokenAccountIfMissing } from "./setup.js";
+import { hexBytes } from "./encoding.js";
 
 export type ReleaseTarget = {
   intent: IntentRef;
@@ -25,7 +27,7 @@ export function saltBytes(salt: string): Uint8Array {
   if (!isSaltHex(lowered)) {
     throw new InvalidInput("salt", "format", "an opening's salt must be 32 hex digits");
   }
-  return Uint8Array.from(Buffer.from(lowered, "hex"));
+  return hexBytes(lowered);
 }
 
 const equal = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((byte, i) => byte === b[i]);

@@ -1,9 +1,11 @@
 import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
-import { EVENT_IX_TAG, findAssociatedTokenAddress, findIntentPda, getIntentCreatedEventEncoder, getIntentAttestedEventEncoder, formatAmount, splitFee } from "@intent-engine/core";
+import { findAssociatedTokenAddress, formatAmount } from "@intent-engine/core";
+import { EVENT_IX_TAG, findIntentPda, getIntentCreatedEventEncoder, getIntentAttestedEventEncoder, splitFee } from "@intent-engine/core/internal";
 import { beforeEach, describe, expect, it } from "vitest";
-import { type EngineTransaction, type ListedSignature, SIGNATURE_PAGE } from "@intent-engine/client";
+import { type EngineTransaction, type ListedSignature } from "@intent-engine/client";
+import { SIGNATURE_PAGE } from "@intent-engine/client/internal";
 import { InvalidInput } from "../src/agent/schema.js";
 import { HISTORY_PAGES, RELEASE_UNKNOWN, PAID_WRAPPED, WAIT_SCAN, NO_CLOCK, getReceipt, stillUnreleased, WAIT_MAX } from "../src/agent/wallet.js";
 import { invoke } from "../src/agent/actions.js";

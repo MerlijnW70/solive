@@ -3,8 +3,9 @@ import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports } fro
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
-import { claimBoardAddress, EVENT_IX_TAG, getIntentAttestedEventEncoder, Kind, profileAddress } from "@intent-engine/core";
-import { createClient, messageHash } from "@intent-engine/client";
+import { Kind } from "@intent-engine/core";
+import { claimBoardAddress, EVENT_IX_TAG, getIntentAttestedEventEncoder, profileAddress } from "@intent-engine/core/internal";
+import { createClient, messageHash } from "@intent-engine/client/node";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { ENV_KEYPAIR } from "../src/clusters.js";

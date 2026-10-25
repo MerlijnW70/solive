@@ -1,19 +1,12 @@
 import { createHash } from "node:crypto";
 import { type Address, getBase58Decoder, type Instruction, type KeyPairSigner } from "@solana/kit";
 import { describe, expect, it, vi } from "vitest";
-import { INTENT_ENGINE_PROGRAM_ADDRESS, Kind, specMemo } from "@intent-engine/core";
-import {
-  type CheckedFetch,
-  createClient,
-  loopbackAddress,
-  loopbackUrl,
-  memoInstruction,
-  publicAddresses,
-  SPEC_TIMEOUT_MS,
-  SpecUnreadable,
-  type Transport,
-} from "../src/index.js";
+import { Kind } from "@intent-engine/core";
+import { INTENT_ENGINE_PROGRAM_ADDRESS, specMemo } from "@intent-engine/core/internal";
+import { SpecUnreadable, type Transport } from "../src/index.js";
+import { type CheckedFetch, loopbackAddress, loopbackUrl, memoInstruction, publicAddresses, SPEC_TIMEOUT_MS } from "../src/internal.js";
 import { NOT_PUBLIC_SPEC } from "../src/job-specs.js";
+import { createClient } from "../src/node.js";
 import { funded, world, type World } from "./svm.js";
 
 const STALLED = "stalled.example";

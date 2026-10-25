@@ -2,7 +2,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { type Address, createKeyPairSignerFromPrivateKeyBytes, lamports, none } from "@solana/kit";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
-import { NATIVE_MINT, PRODUCT_REPOSITORY } from "@intent-engine/core";
+import { NATIVE_MINT } from "@intent-engine/core";
+import { PRODUCT_REPOSITORY } from "@intent-engine/core/internal";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FAUCET_DEVNET_ONLY } from "../src/args.js";
 import {

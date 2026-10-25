@@ -1,15 +1,9 @@
-import { INTENT_ENGINE_PROGRAM_ADDRESS, isSdkError } from "@intent-engine/core";
-import idl from "@intent-engine/core/idl.json" with { type: "json" };
+import { isSdkError } from "@intent-engine/core";
+import { ENGINE_ERROR_LIST, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 
 export type EngineError = { code: number; name: string; message: string };
 
-type IdlError = { code: number; name: string; msg?: string };
-
-const words = (name: string) => name.replace(/([a-z0-9])([A-Z])/g, "$1 $2").toLowerCase();
-
-export const ENGINE_ERRORS: ReadonlyMap<number, EngineError> = new Map(
-  (idl.errors as readonly IdlError[]).map(({ code, name, msg }) => [code, { code, name, message: msg ?? words(name) }]),
-);
+export const ENGINE_ERRORS: ReadonlyMap<number, EngineError> = new Map(ENGINE_ERROR_LIST.map(({ code, name, message }) => [code, { code, name, message }]));
 
 const ENGINE_FAILED = new RegExp(`Program ${INTENT_ENGINE_PROGRAM_ADDRESS} failed: custom program error: 0x([0-9a-f]+)`, "i");
 const PROGRAM_FAILED = /Program \w{32,44} failed: custom program error: 0x[0-9a-f]+/i;

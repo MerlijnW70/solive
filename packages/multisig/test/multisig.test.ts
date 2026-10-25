@@ -23,7 +23,7 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   signTransaction,
 } from "@solana/kit";
-import { buildProposeAdmin, buildRaisePause, buildSetCapsRequired, buildSetMintCap, findMintCapAddress, PAUSE_FILL } from "@intent-engine/core";
+import { buildProposeAdmin, buildRaisePause, buildSetCapsRequired, buildSetMintCap, findMintCapAddress, PAUSE_FILL } from "@intent-engine/core/internal";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { Chain } from "../src/chain.js";
 import { readKeypair } from "../src/keys.js";

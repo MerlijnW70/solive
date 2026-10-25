@@ -1,4 +1,5 @@
 import type { Address } from "@solana/kit";
+import { IntentStatus, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
 import {
   type BoardTerms,
   boardTerms,
@@ -7,7 +8,6 @@ import {
   getIntentDecoder,
   INTENT_DISCRIMINATOR,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  IntentStatus,
   isCurrentAccount,
   legacyStakeTo,
   lineIntent,
@@ -15,9 +15,9 @@ import {
   recordedPayer,
   storedVersion,
   TOKEN_2022_PROGRAM_ADDRESS,
-  TOKEN_PROGRAM_ADDRESS,
-} from "@intent-engine/core";
-import { chainTime, createdAccount, loadConfig, type Transport } from "@intent-engine/client";
+} from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { chainTime, createdAccount, loadConfig } from "@intent-engine/client/internal";
 import type { Command } from "./command-types.js";
 import type { Runtime } from "./runtime.js";
 import { previewed } from "./admin-commands.js";

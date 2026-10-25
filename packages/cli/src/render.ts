@@ -1,4 +1,4 @@
-export { redactUrl } from "@intent-engine/client";
+export { redactUrl } from "@intent-engine/client/internal";
 
 export function render(value: unknown): string {
   return JSON.stringify(

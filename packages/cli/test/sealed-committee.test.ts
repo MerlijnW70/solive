@@ -7,8 +7,10 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
-import { DEVNET_TEST_MINT, NATIVE_MINT, sealedTo, sortMembers, specMemo } from "@intent-engine/core";
-import { createClient, MAX_SPEC_BYTES } from "@intent-engine/client";
+import { DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
+import { sealedTo, sortMembers, specMemo } from "@intent-engine/core/internal";
+import { createClient } from "@intent-engine/client/node";
+import { MAX_SPEC_BYTES } from "@intent-engine/client/internal";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";

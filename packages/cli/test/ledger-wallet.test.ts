@@ -4,8 +4,10 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
-import { committeeEnvelope, DEVNET_TEST_MINT, findAssociatedTokenAddress, getIntentDecoder, IntentStatus, Kind, NATIVE_MINT, sortMembers } from "@intent-engine/core";
-import { createClient, envelopeDigest, LEDGER_ERRORS, messageHash } from "@intent-engine/client";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress, IntentStatus, Kind, NATIVE_MINT } from "@intent-engine/core";
+import { committeeEnvelope, getIntentDecoder, sortMembers } from "@intent-engine/core/internal";
+import { createClient, messageHash } from "@intent-engine/client/node";
+import { envelopeDigest, LEDGER_ERRORS } from "@intent-engine/client/internal";
 import { SERVER_PROBLEMS } from "../src/agent/problems.js";
 import { GIVE_KEY_SETTING } from "../src/agent/wallet/openings.js";
 import { tool } from "../src/agent/names.js";

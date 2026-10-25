@@ -1,5 +1,6 @@
 import type { Address, Signature } from "@solana/kit";
-import { decodeEvent, type EngineEvent, findAssociatedTokenAddress, InvalidInput, tokenName } from "@intent-engine/core";
+import { type EngineEvent, findAssociatedTokenAddress, InvalidInput, tokenName } from "@intent-engine/core";
+import { decodeEvent } from "@intent-engine/core/internal";
 import { createdAccount, tokenAmountOf } from "./accounts.js";
 import { TransportLacks } from "./client-errors.js";
 import {

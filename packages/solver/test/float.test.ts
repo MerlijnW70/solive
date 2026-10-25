@@ -30,24 +30,21 @@ import {
 } from "@solana-program/token";
 import { FailedTransactionMetadata, LiteSVM } from "litesvm";
 import { beforeEach, describe, expect, it } from "vitest";
+import { findAssociatedTokenAddress, type Intent, Kind, splitFees } from "@intent-engine/core";
 import {
   ALL_KINDS_MASK,
   buildCreateIntent,
   buildInitUser,
-  findAssociatedTokenAddress,
   findConfigPda,
   findEventAuthorityPda,
   findIntentPda,
   getConfigDecoder,
   getInitConfigInstructionAsync,
   getIntentDecoder,
-  type Intent,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  Kind,
   MAX_CRANK_BOUNTY,
   MAX_CREATE_FEE,
-  splitFees,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import {
   ALLOWANCE_LOW,
   ALLOWANCE_SPENT,

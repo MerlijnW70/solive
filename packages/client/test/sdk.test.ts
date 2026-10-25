@@ -15,35 +15,21 @@ import {
 import { getCreateAssociatedTokenIdempotentInstructionAsync, getMintEncoder, getMintSize, getMintToInstruction } from "@solana-program/token";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
-  buildFlashFill,
-  buildUpdateEconomics,
-  decodeParams,
   DEVNET_TEST_MINT as TEST,
   feeBpsFor,
   findAssociatedTokenAddress,
-  findIntentPda,
   formatAmount,
-  getIntentDecoder,
-  getIntentSize,
   IntentStatus,
   Kind,
   NATIVE_MINT as WSOL,
-  splitFee,
   splitFees,
   termsOf,
   TOKEN_PROGRAM_ADDRESS,
 } from "@intent-engine/core";
-import {
-  chainTime,
-  CLOCK_SYSVAR,
-  type ClientOptions,
-  type ConnectOptions,
-  createClient,
-  JOBS_LIMIT,
-  loadUser,
-  MAX_SPEC_BYTES,
-  type Transport,
-} from "../src/index.js";
+import { buildFlashFill, buildUpdateEconomics, decodeParams, findIntentPda, getIntentDecoder, getIntentSize, splitFee } from "@intent-engine/core/internal";
+import { type ClientOptions, type ConnectOptions, createClient, type Transport } from "../src/index.js";
+import { chainTime, CLOCK_SYSVAR, JOBS_LIMIT, loadUser, MAX_SPEC_BYTES } from "../src/internal.js";
+import type { NodeClientOptions, NodeConnectOptions } from "../src/node.js";
 import { OBSERVE_SECTION, PLAN_SECTION, TESTING_SECTION } from "./doc-sections.js";
 import { FEE_BPS, world, type World } from "./svm.js";
 
@@ -79,6 +65,7 @@ vi.mock("node:dns/promises", () => ({ lookup: async () => [{ address: "185.199.1
 
 vi.mock("@intent-engine/client", async () => {
   const real = await import("../src/index.js");
+  const { clusterUrl } = await import("../src/internal.js");
   return {
     ...real,
     createClient: (options: ClientOptions) => {
@@ -89,7 +76,29 @@ vi.mock("@intent-engine/client", async () => {
       return real.createClient({ ...options, transport: injected.transport, pollMs: 5, fetch: (url) => fetch(url) });
     },
     connect: (options: ConnectOptions) => {
-      injected.urls.push(real.clusterUrl(options));
+      injected.urls.push(clusterUrl(options));
+      if (injected.transport === undefined) {
+        throw new Error("no transport injected");
+      }
+      return real.connect({ ...options, transport: injected.transport });
+    },
+  };
+});
+
+vi.mock("@intent-engine/client/node", async () => {
+  const real = await import("../src/node.js");
+  const { clusterUrl } = await import("../src/internal.js");
+  return {
+    ...real,
+    createClient: (options: NodeClientOptions) => {
+      injected.urls.push(options.url);
+      if (injected.transport === undefined) {
+        throw new Error("no transport injected");
+      }
+      return real.createClient({ ...options, transport: injected.transport, pollMs: 5, fetch: (url) => fetch(url) });
+    },
+    connect: (options: NodeConnectOptions) => {
+      injected.urls.push(clusterUrl(options));
       if (injected.transport === undefined) {
         throw new Error("no transport injected");
       }

@@ -1,6 +1,6 @@
 import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { beforeEach, describe, expect, it } from "vitest";
-import { EVENT_IX_TAG, findIntentPda, getIntentCreatedEventEncoder, getIntentFilledEventEncoder } from "@intent-engine/core";
+import { EVENT_IX_TAG, findIntentPda, getIntentCreatedEventEncoder, getIntentFilledEventEncoder } from "@intent-engine/core/internal";
 import type { EngineTransaction } from "@intent-engine/client";
 import { bestOf, type Fill, medianOf, openingAsk, recentFills } from "../src/agent/wallet/fills.js";
 import { EXIT_OK } from "../src/main.js";

@@ -1,5 +1,6 @@
 import type { Address } from "@solana/kit";
-import { FLOOR_THRESHOLD, SdkError } from "@intent-engine/core";
+import { SdkError } from "@intent-engine/core";
+import { FLOOR_THRESHOLD } from "@intent-engine/core/internal";
 
 export class NoFreeNonce extends SdkError {
   readonly code = "no-free-nonce";

@@ -1,4 +1,5 @@
 import type { Address, Instruction, TransactionSigner } from "@solana/kit";
+import { formatAmount, IntentStatus } from "@intent-engine/core";
 import {
   buildAdvance,
   buildLeave,
@@ -6,14 +7,13 @@ import {
   buildStandBy,
   claimBoardAddress,
   claimListAddress,
-  formatAmount,
   getClaimBoardSize,
   getClaimListSize,
   getStandbySize,
-  IntentStatus,
   stakeReceiverOnSettle,
-} from "@intent-engine/core";
-import { type ClaimsView, type Client, isSdkError, type LineEntry, lineHandover, loadLine, type Transport } from "@intent-engine/client";
+} from "@intent-engine/core/internal";
+import { type ClaimsView, type Client, isSdkError, type Transport } from "@intent-engine/client";
+import { type LineEntry, lineHandover, loadLine } from "@intent-engine/client/internal";
 import { handedTo } from "../claim-commands.js";
 import { listAccount } from "../claim-lists.js";
 import { rentFor, rentRate, SIGNATURE_FEE } from "./budget.js";

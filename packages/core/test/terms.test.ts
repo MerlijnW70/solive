@@ -1,17 +1,7 @@
 import type { Address } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import {
-  configSummary,
-  encodeParams,
-  IntentCoreError,
-  Kind,
-  kindBit,
-  kindName,
-  PAUSE_CREATE,
-  PAUSE_FILL,
-  type SummarizedConfig,
-  termsOf,
-} from "../src/index.js";
+import { configSummary, IntentCoreError, Kind, kindName, type SummarizedConfig, termsOf } from "../src/index.js";
+import { encodeParams, kindBit, PAUSE_CREATE, PAUSE_FILL } from "../src/internal.js";
 
 const ADMIN = "11111111111111111111111111111112" as Address;
 const GUARDIAN = "So11111111111111111111111111111111111111112" as Address;

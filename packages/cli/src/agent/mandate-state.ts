@@ -1,16 +1,17 @@
 import type { Address } from "@solana/kit";
+import { Kind } from "@intent-engine/core";
 import {
   findIntentPda,
   findMandatePda,
   getMandateDecoder,
   getMandateDiscriminatorBytes,
-  Kind,
   kindBit,
   type Mandate,
   type MandateSpec,
   mandateLane,
-} from "@intent-engine/core";
-import { createdAccount, engineAccount, isSdkError, type Transport } from "@intent-engine/client";
+} from "@intent-engine/core/internal";
+import { isSdkError, type Transport } from "@intent-engine/client";
+import { createdAccount, engineAccount } from "@intent-engine/client/internal";
 import { type Call, claim, claimedBy, type Claims, PREPARED_TTL } from "./claims.js";
 import { AgentRefusal, SimulationFailed } from "./problems.js";
 import { account, amount, optional } from "./schema.js";

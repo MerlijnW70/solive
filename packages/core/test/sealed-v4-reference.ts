@@ -1,6 +1,7 @@
 import { createCipheriv, createHash, createPrivateKey, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, sign } from "node:crypto";
 import { type Address, getAddressDecoder, getAddressEncoder } from "@solana/kit";
-import { newEncryptionKeyFile, readEncryptionKeyFile, type DeliveryKey, SALT_TAG, saltMessage, type SealRecipient, x25519PublicOf } from "../src/index.js";
+import { type DeliveryKey, type SealRecipient } from "../src/index.js";
+import { newEncryptionKeyFile, readEncryptionKeyFile, SALT_TAG, saltMessage, x25519PublicOf } from "../src/internal.js";
 
 export type Wallet = { address: Address; keypair: Uint8Array; sign: (message: Uint8Array) => Uint8Array };
 

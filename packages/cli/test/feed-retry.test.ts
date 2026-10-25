@@ -1,4 +1,5 @@
-import { RECONNECT_MS, type Transport } from "@intent-engine/client";
+import { type Transport } from "@intent-engine/client";
+import { RECONNECT_MS } from "@intent-engine/client/internal";
 import { describe, expect, it } from "vitest";
 import { parse, UsageError } from "../src/args.js";
 import { follow } from "../src/event-feed.js";

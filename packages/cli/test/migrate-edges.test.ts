@@ -1,6 +1,6 @@
 import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { claimBoardAddress, findIntentPda, findUserStatePda, getClaimBoardSize, LEGACY_BOARD_SPACE } from "@intent-engine/core";
+import { claimBoardAddress, findIntentPda, findUserStatePda, getClaimBoardSize, LEGACY_BOARD_SPACE } from "@intent-engine/core/internal";
 import { EXIT_OK } from "../src/main.js";
 import { MIGRATE_BATCH } from "../src/migrate-commands.js";
 import { cli, funded, h, transport, type World, world } from "./harness.js";

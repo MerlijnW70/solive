@@ -1,16 +1,7 @@
 import type { Address } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import {
-  type Config,
-  encodeParams,
-  type Intent,
-  IntentStatus,
-  Kind,
-  kindBit,
-  PAUSE_FILL,
-  requiredOut,
-  splitFees,
-} from "@intent-engine/core";
+import { type Config, type Intent, IntentStatus, Kind, splitFees } from "@intent-engine/core";
+import { encodeParams, kindBit, PAUSE_FILL, requiredOut } from "@intent-engine/core/internal";
 import {
   decide,
   DEFAULT_PATIENCE,

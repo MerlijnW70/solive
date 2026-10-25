@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSetCapsRequired, findConfigPda, getConfigDecoder } from "@intent-engine/core";
+import { buildSetCapsRequired, findConfigPda, getConfigDecoder } from "@intent-engine/core/internal";
 import { EXIT_OK } from "../../src/main.js";
 import { cli, h, send, world } from "../harness.js";
 import { listAccounts } from "../monitor-transport.js";

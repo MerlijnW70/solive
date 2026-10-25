@@ -1,7 +1,8 @@
 import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
 import { getApproveInstruction, getTokenDecoder, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { beforeEach, describe, expect, it } from "vitest";
-import { findAssociatedTokenAddress, findIntentPda, splitFee } from "@intent-engine/core";
+import { findAssociatedTokenAddress } from "@intent-engine/core";
+import { findIntentPda, splitFee } from "@intent-engine/core/internal";
 import { ALLOWANCE_LOW, ALLOWANCE_SPENT, OWN_INTENT } from "@intent-engine/solver";
 import { DEFAULT_URL, ENV_KEYPAIR, FLOAT_SHOW_TAKES, FLOAT_TAKES, INVENTORY_OWNER_ALONE, parse, SOLVER_NEEDS_FLOAT, UsageError } from "../src/args.js";
 import { FLOAT_REVOKE_TAKES } from "../src/arg-solve.js";

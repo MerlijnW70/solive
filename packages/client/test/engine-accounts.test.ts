@@ -1,7 +1,7 @@
 import { type Address, generateKeyPairSigner, getBase58Decoder } from "@solana/kit";
-import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { describe, expect, it } from "vitest";
-import type { RpcLike } from "../src/index.js";
+import type { RpcLike } from "../src/internal.js";
 import { rpcTransport } from "../src/rpc-transport.js";
 
 const ACCOUNT = "11111111111111111111111111111112" as Address;

@@ -3,8 +3,10 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
-import { buildClaimJob, claimBoardAddress, DEVNET_TEST_MINT, findAssociatedTokenAddress, formatAmount, NATIVE_MINT, signCommitteeVote, sortMembers, specMemo, splitFee } from "@intent-engine/core";
-import { createClient, noJudgeKey, WARN_NO_JUDGE_KEY } from "@intent-engine/client";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress, formatAmount, NATIVE_MINT } from "@intent-engine/core";
+import { buildClaimJob, claimBoardAddress, signCommitteeVote, sortMembers, specMemo, splitFee } from "@intent-engine/core/internal";
+import { createClient } from "@intent-engine/client/node";
+import { noJudgeKey, WARN_NO_JUDGE_KEY } from "@intent-engine/client/internal";
 import { claimHeldBy } from "../src/agent/wallet/attest.js";
 import { CLAIMS_ADVICE, CLAIMS_NEED_SPEC, CLAIMS_TOGETHER, claimsLine, PIECE_ONE, SPEC_ANSWER_OUT, SPEC_NO_ANSWER } from "../src/agent/wallet/escrow.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";

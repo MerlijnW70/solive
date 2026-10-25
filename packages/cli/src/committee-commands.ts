@@ -1,18 +1,10 @@
 import { readFile, writeFile } from "node:fs/promises";
 import type { Address, MessagePartialSigner } from "@solana/kit";
-import { buildCreateCommittee, type CommitteeVote, decodeParams, findIntentPda, isSaltHex, isSha256Hex, Kind, signCommitteeVote } from "@intent-engine/core";
-import {
-  type BallotInput,
-  type CommitteeBallot,
-  confirmOnBoth,
-  createClient,
-  firstOpeningIn,
-  isLedgerPath,
-  isSdkError,
-  loadAnnouncement,
-  loadIntent,
-  type Transport,
-} from "@intent-engine/client";
+import { type CommitteeVote, Kind } from "@intent-engine/core";
+import { buildCreateCommittee, decodeParams, findIntentPda, isSaltHex, isSha256Hex, signCommitteeVote } from "@intent-engine/core/internal";
+import { type BallotInput, type CommitteeBallot, isSdkError, type Transport } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { confirmOnBoth, firstOpeningIn, isLedgerPath, loadAnnouncement, loadIntent } from "@intent-engine/client/internal";
 import { previewed } from "./admin-commands.js";
 import { NOBODY_ANNOUNCED, refusalNext } from "./announcement-views.js";
 import { parseAddress, parseU64 } from "./arg-values.js";

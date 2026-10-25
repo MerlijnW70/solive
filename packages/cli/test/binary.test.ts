@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { generateKeyPairSigner } from "@solana/kit";
-import { PRODUCT_SLUG } from "@intent-engine/core";
+import { PRODUCT_SLUG } from "@intent-engine/core/internal";
 import { describe, expect, it } from "vitest";
 import { ACTIONS } from "../src/agent/registry.js";
 import { EXIT_USAGE } from "../src/main.js";

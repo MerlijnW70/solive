@@ -1,5 +1,6 @@
 import type { Address } from "@solana/kit";
-import { AccountVersionError, isEncryptionKeyText, parseEncryptionKey } from "@intent-engine/core";
+import { AccountVersionError } from "@intent-engine/core";
+import { isEncryptionKeyText, parseEncryptionKey } from "@intent-engine/core/internal";
 import { loadProfile } from "./client-claims.js";
 import { loadCommittee } from "./client-committee.js";
 import type { Transport } from "./transport.js";

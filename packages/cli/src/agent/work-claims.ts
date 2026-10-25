@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
-import { buildClaimJob, buildDropClaim, claimUntil, findIntentPda, formatAmount, formatTime, IntentStatus, type LineHandover, MAX_CLAIM_SECS, MAX_CLAIMANTS, MAX_SEALED_RECIPIENTS } from "@intent-engine/core";
-import { type ClaimListView, type ClaimsView, createClient, isSdkError } from "@intent-engine/client";
+import { formatAmount, IntentStatus } from "@intent-engine/core";
+import { buildClaimJob, buildDropClaim, claimUntil, findIntentPda, formatTime, type LineHandover, MAX_CLAIM_SECS, MAX_CLAIMANTS, MAX_SEALED_RECIPIENTS } from "@intent-engine/core/internal";
+import { type ClaimListView, type ClaimsView, isSdkError } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
 import { listAccount, listRefusal } from "../claim-lists.js";
 import { coolingDown, dropHandover, handedTo, heldBy, noClaims } from "../claim-commands.js";
 import { claimNotInvited, sealedInvites } from "../invites.js";

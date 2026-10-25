@@ -1,7 +1,8 @@
 import { inspect } from "node:util";
 import type { Address, TransactionSigner } from "@solana/kit";
-import { U64_MAX } from "@intent-engine/core";
-import { memoized, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, type Transport, TransportLacks } from "@intent-engine/client";
+import { U64_MAX } from "@intent-engine/core/internal";
+import { type Transport, TransportLacks } from "@intent-engine/client";
+import { memoized, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic } from "@intent-engine/client/internal";
 import { claimsOf } from "./agent/claims.js";
 import { relayOf } from "./agent/relay.js";
 import type { Command } from "./command-types.js";

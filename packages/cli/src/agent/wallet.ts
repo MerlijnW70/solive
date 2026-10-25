@@ -81,7 +81,7 @@ export {
 export type { ReleaseLookup, AroundRelease } from "./wallet/releases.js";
 export { WAIT_STATUS, UNREAD, FILL_UNKNOWN, stillWaiting } from "./wallet/wait.js";
 export { NOT_RELEASED, NO_CLOCK, PAID_WRAPPED, RECEIPT_PARTIAL, getReceipt, escrowReceipt, stillUnreleased } from "./wallet/receipt.js";
-export { PACKET_DATA_SIZE } from "@intent-engine/client";
+export { PACKET_DATA_SIZE } from "@intent-engine/client/internal";
 
 export const WALLET_ACTIONS: readonly AnyAction[] = [
   walletSetup,

@@ -1,7 +1,8 @@
 import type { KeyPairSigner } from "@solana/kit";
 import type { Fetch } from "@intent-engine/solver";
 import type { McpServer } from "@modelcontextprotocol/server";
-import type { IntentChanges, OpenTransport, SpecFetch, Transport } from "@intent-engine/client";
+import type { SpecFetch, Transport } from "@intent-engine/client";
+import type { IntentChanges, OpenTransport } from "@intent-engine/client/internal";
 import type { SaleBook } from "./agent/sales.js";
 import type { Env } from "./command-types.js";
 import type { Launched } from "./launch.js";

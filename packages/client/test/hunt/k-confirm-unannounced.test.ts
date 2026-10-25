@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { findAssociatedTokenAddress, findIntentPda, IntentStatus, Kind, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { ConfirmMismatch, confirmOnBoth, createClient, NotSettleable } from "../../src/index.js";
+import { findAssociatedTokenAddress, IntentStatus, Kind, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { findIntentPda } from "@intent-engine/core/internal";
+import { ConfirmMismatch, createClient, NotSettleable } from "../../src/index.js";
+import { confirmOnBoth } from "../../src/internal.js";
 import { svmTransport } from "../../src/svm.js";
 import { funded, world } from "../svm.js";
 import { announced, keyed } from "../work.js";

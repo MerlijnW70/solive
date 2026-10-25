@@ -1,4 +1,4 @@
-import { formatTime } from "@intent-engine/core";
+import { formatTime } from "@intent-engine/core/internal";
 
 const UNITS = [
   ["day", 86_400n],

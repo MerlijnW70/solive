@@ -1,6 +1,9 @@
 import type { Address } from "@solana/kit";
-import { findIntentPda, formatAmount, Kind, kindName, tokenName } from "@intent-engine/core";
-import { createClient, type HistoryEvent, mintOf, ownHistory, paidWalletsOf, transactionAt, type Transport } from "@intent-engine/client";
+import { formatAmount, Kind, kindName, tokenName } from "@intent-engine/core";
+import { findIntentPda } from "@intent-engine/core/internal";
+import { type HistoryEvent, type Transport } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { mintOf, ownHistory, paidWalletsOf, transactionAt } from "@intent-engine/client/internal";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { account, amount, choice, flag, integer, list, nullable, object, optional, text, time } from "../schema.js";

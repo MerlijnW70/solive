@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { DELIVERY_PAGES, feedbackInstructions, isSdkError, reputationOf, RESTART, SIGNATURE_PAGE, type Trust, TRUST_PATHS, TRUST_WALLETS, trustOf } from "@intent-engine/client";
+import { isSdkError, type Trust, trustOf } from "@intent-engine/client";
+import { DELIVERY_PAGES, feedbackInstructions, reputationOf, RESTART, SIGNATURE_PAGE, TRUST_PATHS, TRUST_WALLETS } from "@intent-engine/client/internal";
 import { type AgentContext, define } from "./actions.js";
 import type { Call } from "./claims.js";
 import { tool } from "./names.js";

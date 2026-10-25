@@ -1,4 +1,5 @@
 import type { Address, Instruction, Signature, TransactionSigner } from "@solana/kit";
+import { IntentCoreError, IntentStatus, type SealRecipient } from "@intent-engine/core";
 import {
   announcementCommitment,
   buildCloseAnnouncement,
@@ -7,13 +8,10 @@ import {
   delivery,
   deliverySecrets,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  IntentCoreError,
-  IntentStatus,
   keyFingerprintV4,
   openWithEsk,
   refutationAddress,
-  type SealRecipient,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { chainTime } from "./accounts.js";
 import { BookNotClosable, NotDeliverable, NotRefutable } from "./announce-errors.js";
 import { committeeKeys, publishedKey, secretSource, type SecretInput } from "./announce-keys.js";

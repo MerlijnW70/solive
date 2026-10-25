@@ -1,4 +1,5 @@
 import type { Address } from "@solana/kit";
+import { IntentCoreError, NotAnEngineAccount, type ProfileView } from "@intent-engine/core";
 import {
   checkAccountVersion,
   CLAIM_BOARD_DISCRIMINATOR,
@@ -11,21 +12,18 @@ import {
   getClaimListDecoder,
   getStandbyDecoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  IntentCoreError,
   type LineHandover,
   lineLength,
   lineSeqs,
   MAX_LINE_ENTRIES,
-  NotAnEngineAccount,
   PROFILE_DISCRIMINATOR,
   profileAddress,
   profileView,
-  type ProfileView,
   stakeReceiverOnCancel,
   stakeReceiverOnRelease,
   STANDBY_DISCRIMINATOR,
   standbyAddress,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { chainTime, CLOCK_SYSVAR, clockTime, createdAccount, createdView, engineAccount, MissingAccount } from "./accounts.js";
 import { ClaimHeldBy } from "./client-errors.js";
 import type { AccountView, Transport } from "./transport.js";

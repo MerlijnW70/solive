@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 import { beforeEach, describe, expect, it } from "vitest";
-import { findIntentPda, findVaultPda } from "@intent-engine/core";
+import { findIntentPda, findVaultPda } from "@intent-engine/core/internal";
 import { CONFIRM_URL_OR_NOT, parse } from "../src/args.js";
 import { sameNode } from "../src/arg-values.js";
 import { clusterUrl, SAVED_CONFIRM_URL } from "../src/clusters.js";

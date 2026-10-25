@@ -1,5 +1,6 @@
 import type { Address, Signature } from "@solana/kit";
-import { AccountVersionError, IntentStatus, splitN } from "@intent-engine/core";
+import { AccountVersionError, IntentStatus } from "@intent-engine/core";
+import { splitN } from "@intent-engine/core/internal";
 import { AnnouncementsUnreadable } from "./announce-errors.js";
 import { loadAnnouncement, refutationsOf } from "./announcement-reads.js";
 import { loadCommittee } from "./client-committee.js";

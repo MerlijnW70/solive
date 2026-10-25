@@ -16,7 +16,7 @@ export { committeeJudged } from "./client-settle.js";
 import { type Client, type ClientOptions, type Mint, WATCH_POLL_MS, WATCH_WAIT_SECONDS } from "./client-types.js";
 import { decoded, watchIntents } from "./client-watch.js";
 import { explain } from "./errors.js";
-import { jobsOf, readSpec } from "./jobs.js";
+import { jobsOf, readSpec, webFetch } from "./job-specs.js";
 import { announcing } from "./announce.js";
 import { announcementsBy, announcementsOf, announcementsTo } from "./announcement-reads.js";
 import { splitSettlement } from "./client-split.js";
@@ -24,7 +24,6 @@ import { intentMatchesQuery } from "./intent-filters.js";
 import { intentAddress, loadIntentRef } from "./intent-ref.js";
 import { amountShown, amountText } from "./simple-tokens.js";
 import { firstOpening } from "./first-opening.js";
-import { pinnedFetch } from "./pinned-fetch.js";
 import { observerOf } from "./observe.js";
 import { observedFetch, observedTransport } from "./observe-transport.js";
 import { intentNotifications, type RpcLike, rpcTransport, signatureWatch } from "./transport.js";
@@ -98,7 +97,8 @@ export function createClient(options: ClientOptions): Client {
     options.transport === undefined
       ? rpcTransport(createSolanaRpc(url) as unknown as RpcLike, undefined, signatureWatch(url), observer)
       : observedTransport(options.transport, observer);
-  const specFetch = observedFetch(options.fetch ?? pinnedFetch, observer);
+  const specFetch = observedFetch(options.fetch ?? webFetch, observer);
+  const lookup = options.lookup ?? null;
   const notifications = options.notifications ?? (options.transport === undefined ? intentNotifications(url) : undefined);
 
   const watch = watchIntents(transport, notifications, pollMs, resyncSeconds);
@@ -168,7 +168,7 @@ export function createClient(options: ClientOptions): Client {
     fillOf,
     balances,
     jobs: (filter = {}) => jobsOf(transport, filter),
-    spec: async (ref, keypair) => readSpec(transport, specFetch, await intentAddress(ref), keypair, undefined, url),
+    spec: async (ref, keypair) => readSpec(transport, specFetch, await intentAddress(ref), keypair, lookup, url),
     announce: announcing(context),
     announcements: async (ref) => announcementsOf(transport, await intentAddress(ref)),
     announcementsTo: (attestor) => announcementsTo(transport, attestor),

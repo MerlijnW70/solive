@@ -4,7 +4,7 @@ import type { AddressInfo } from "node:net";
 import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { DEVNET_GENESIS_HASH } from "@intent-engine/client";
+import { DEVNET_GENESIS_HASH } from "@intent-engine/client/internal";
 import { GLOBAL_OPTIONS } from "../src/args.js";
 import { tool } from "../src/agent/names.js";
 import { main, nodeRuntime } from "../src/main.js";

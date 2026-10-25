@@ -18,6 +18,7 @@ import { getCreateAccountInstruction } from "@solana-program/system";
 import { getCreateAssociatedTokenIdempotentInstructionAsync, getInitializeMint2Instruction, getMintSize, getMintToInstruction, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { FailedTransactionMetadata, LiteSVM, type TransactionMetadata } from "litesvm";
 import { beforeAll, describe, expect, it } from "vitest";
+import { findAssociatedTokenAddress, IntentCoreError, Kind } from "../src/index.js";
 import {
   ALL_KINDS_MASK,
   buildCreateIntent,
@@ -26,7 +27,6 @@ import {
   delivery,
   deliverySecrets,
   encryptionKeyText,
-  findAssociatedTokenAddress,
   findBookPda,
   findConfigPda,
   findEventAuthorityPda,
@@ -36,14 +36,11 @@ import {
   getInitConfigInstructionAsync,
   INTENT_ENGINE_ERROR__BLOB_MALFORMED,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  IntentCoreError,
-  Kind,
-
   MAX_CRANK_BOUNTY,
   MAX_CREATE_FEE,
   openDeliveryV4,
   sealDeliveryV4,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { profileMember, saltSignature, urlOf, wallet } from "./sealed-v4-reference.js";
 
 const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111" as Address;

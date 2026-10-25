@@ -1,7 +1,9 @@
 import { type Address, type TransactionSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { buildCloseAnnouncement, deliveryBookAddress, Kind, NATIVE_MINT, refutationAddress, signMessageBytes, splitN, splitFees } from "@intent-engine/core";
-import { BookNotClosable, budgeted, connect, CosignRejected, createClient, NotRefutable, NotSettleable, PACKET_DATA_SIZE, RECLAIM_BATCH, transactionBytes } from "../src/index.js";
+import { Kind, NATIVE_MINT, splitFees } from "@intent-engine/core";
+import { buildCloseAnnouncement, deliveryBookAddress, refutationAddress, signMessageBytes, splitN } from "@intent-engine/core/internal";
+import { BookNotClosable, connect, CosignRejected, createClient, NotRefutable, NotSettleable } from "../src/index.js";
+import { budgeted, PACKET_DATA_SIZE, RECLAIM_BATCH, transactionBytes } from "../src/internal.js";
 import { FEE_BPS, world } from "./svm.js";
 import { announced, fundedSigner, keyed, LOCAL, nativeMint, sha, specHash, tokensOf, workUrl } from "./work.js";
 

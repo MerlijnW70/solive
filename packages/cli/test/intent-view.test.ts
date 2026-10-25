@@ -1,6 +1,7 @@
 import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { encodeParams, getIntentDecoder, getIntentSize, INTENT_VERSION, Kind } from "@intent-engine/core";
+import { Kind } from "@intent-engine/core";
+import { encodeParams, getIntentDecoder, getIntentSize, INTENT_VERSION } from "@intent-engine/core/internal";
 import { intentView } from "../src/agent/shapes.js";
 
 async function attested(specHash: Uint8Array, judgeFee: bigint) {

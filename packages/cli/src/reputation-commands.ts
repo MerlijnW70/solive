@@ -1,4 +1,6 @@
-import { createClient, feedbackInstructions, type Transport, trustOf } from "@intent-engine/client";
+import { type Transport, trustOf } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { feedbackInstructions } from "@intent-engine/client/internal";
 import { previewed } from "./admin-commands.js";
 import { trustView } from "./agent/reputation.js";
 import type { Command } from "./command-types.js";

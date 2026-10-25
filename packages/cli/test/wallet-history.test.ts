@@ -3,17 +3,14 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress, Kind, NATIVE_MINT } from "@intent-engine/core";
 import {
-  DEVNET_TEST_MINT,
   EVENT_IX_TAG,
-  findAssociatedTokenAddress,
   getIntentAttestedEventEncoder,
   getIntentCancelledEventEncoder,
   getIntentCreatedEventEncoder,
   getIntentFilledEventEncoder,
-  Kind,
-  NATIVE_MINT,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import type { EngineTransaction, TokenHolding } from "@intent-engine/client";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";

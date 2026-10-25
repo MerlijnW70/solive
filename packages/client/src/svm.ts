@@ -17,7 +17,7 @@ import {
   signTransactionMessageWithSigners,
   type Transaction,
 } from "@solana/kit";
-import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { FailedTransactionMetadata, type LiteSVM } from "litesvm";
 import { TOKEN_PROGRAMS } from "./accounts.js";
 import { intentMatches, matchBytes } from "./intent-filters.js";

@@ -3,7 +3,7 @@ import type { Priority } from "./compute.js";
 import type { Sandbox } from "./sandbox.js";
 import type { Tokens } from "./arg-options.js";
 import type { Address } from "@solana/kit";
-import type { EconomicsSpec, ProfileInput } from "@intent-engine/core";
+import type { EconomicsSpec, ProfileInput } from "@intent-engine/core/internal";
 
 export type Env = Readonly<Record<string, string | undefined>>;
 

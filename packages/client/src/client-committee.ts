@@ -1,19 +1,16 @@
 import type { Address } from "@solana/kit";
+import { type Config, type IntentParams, Kind, NotAnEngineAccount } from "@intent-engine/core";
 import {
   buildCreateCommittee,
   checkAccountVersion,
   COMMITTEE_DISCRIMINATOR,
   committeeFloorOf,
   committeeOf,
-  type Config,
   countsAsCommittee,
   getCommitteeDecoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  type IntentParams,
-  Kind,
   needsCommittee,
-  NotAnEngineAccount,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { createdAccount } from "./accounts.js";
 import { CommitteeNeeded } from "./client-errors.js";
 import type { ClientContext, CommitteeView, CreateCommitteeInput } from "./client-types.js";

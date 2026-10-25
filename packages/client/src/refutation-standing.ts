@@ -1,5 +1,6 @@
 import type { Address } from "@solana/kit";
-import { announcementCommitment, delivery, keyFingerprintV4, openWithEsk, parseEncryptionKey, type SealRecipient } from "@intent-engine/core";
+import { type SealRecipient } from "@intent-engine/core";
+import { announcementCommitment, delivery, keyFingerprintV4, openWithEsk, parseEncryptionKey } from "@intent-engine/core/internal";
 import { committeeKeys } from "./announce-keys.js";
 import type { RefutationView } from "./announcement-reads.js";
 import { loadProfile } from "./client-claims.js";

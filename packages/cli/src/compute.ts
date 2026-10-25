@@ -1,18 +1,9 @@
 import type { Instruction } from "@solana/kit";
-import { COMPUTE_BUDGET_ADDRESS, headroom, MAX_COMPUTE_UNITS, UNIT_HEADROOM_DIVISOR, UNIT_HEADROOM_FLOOR } from "@intent-engine/core";
+import { COMPUTE_BUDGET_ADDRESS, headroom, MAX_COMPUTE_UNITS, UNIT_HEADROOM_DIVISOR, UNIT_HEADROOM_FLOOR } from "@intent-engine/core/internal";
 
 export { headroom, UNIT_HEADROOM_DIVISOR, UNIT_HEADROOM_FLOOR };
-export {
-  AUTO_PERCENTILE,
-  AUTO_PRICE_CAP,
-  budgeted,
-  percentile,
-  type Priority,
-  priceOf,
-  unitsOf,
-  withPriority,
-  writableAccounts,
-} from "@intent-engine/client";
+export { type Priority } from "@intent-engine/client";
+export { AUTO_PERCENTILE, AUTO_PRICE_CAP, budgeted, percentile, priceOf, unitsOf, withPriority, writableAccounts } from "@intent-engine/client/internal";
 
 export const MAX_PRIORITY_PRICE = 100_000_000n;
 const MICRO_LAMPORTS_PER_LAMPORT = 1_000_000n;

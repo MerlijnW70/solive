@@ -5,20 +5,20 @@ import { join } from "node:path";
 import { type Address, createNoopSigner, generateKeyPairSigner, getAddressEncoder, getBase58Encoder, type Instruction, type KeyPairSigner, lamports } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { beforeEach, describe, expect, it } from "vitest";
+import { findAssociatedTokenAddress, IntentStatus, Kind } from "@intent-engine/core";
 import {
   buildEd25519Instruction,
   COMMITTEE_COSIGN_TAG,
   committeeEnvelope,
   ED25519_PROGRAM_ADDRESS,
-  findAssociatedTokenAddress,
   findIntentPda,
   getIntentDecoder,
-  IntentStatus,
-  Kind,
   sortMembers,
   splitCosignEnvelope,
-} from "@intent-engine/core";
-import { committeeJudged, createClient, LEDGER_ERRORS, LEDGER_FORMS, LedgerError, ledgerSigner, MESSAGE_ONLY, messageOnly, notOwnEnvelope, type OpenTransport, type Transport } from "@intent-engine/client";
+} from "@intent-engine/core/internal";
+import { LedgerError, type Transport } from "@intent-engine/client";
+import { createClient, ledgerSigner, notOwnEnvelope } from "@intent-engine/client/node";
+import { committeeJudged, LEDGER_ERRORS, LEDGER_FORMS, MESSAGE_ONLY, messageOnly, type OpenTransport } from "@intent-engine/client/internal";
 import { getTransferSolInstruction } from "@solana-program/system";
 import { parse } from "../src/args.js";
 import { DIGEST_NEXT } from "../src/judge-digest.js";

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import fc from "fast-check";
 import { describe, expect, it } from "vitest";
-import { manifestSha256 } from "../src/index.js";
+import { manifestSha256 } from "../src/internal.js";
 import { InvalidInput } from "../src/errors.js";
 
 const enc = (text: string) => new TextEncoder().encode(text);

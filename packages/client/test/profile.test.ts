@@ -1,6 +1,6 @@
 import { generateKeyPairSigner, lamports } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { buildCloseProfile, buildCreateProfile, buildUpdateProfile } from "@intent-engine/core";
+import { buildCloseProfile, buildCreateProfile, buildUpdateProfile } from "@intent-engine/core/internal";
 import { createClient } from "../src/index.js";
 import { svmTransport } from "../src/svm.js";
 import { world } from "./svm.js";

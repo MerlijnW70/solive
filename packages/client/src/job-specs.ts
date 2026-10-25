@@ -1,11 +1,12 @@
-import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
-import { decodeEvent, type DeliveryOpener, type EngineEvent, isSdkError, isSealed, NotInvited, parseSpecMemo, remainingOf, SdkError, SealedError, sealedTo, SPEC_MEMO_PREFIX, unseal } from "@intent-engine/core";
+import { type DeliveryOpener, type EngineEvent, isSdkError, NotInvited, SdkError, SealedError } from "@intent-engine/core";
+import { decodeEvent, isSealed, parseSpecMemo, remainingOf, sealedTo, SPEC_MEMO_PREFIX, unseal } from "@intent-engine/core/internal";
 import { memosSignedBy } from "./job-memos.js";
 import { createdIn, hex, intentAt, type JobFilter, openProofEscrows, proofAt } from "./job-proofs.js";
 import { MEMOS_PER_TRANSACTION, scan } from "./job-scan.js";
-import { type CheckedFetch, UNEXPECTED_REDIRECT } from "./pinned-fetch.js";
-import { type Lookup, loopbackUrl, publicAddresses, systemLookup } from "./public-host.js";
+import { UNEXPECTED_REDIRECT } from "./fetch-failed.js";
+import { joinedBytes, sha256Hex } from "./encoding.js";
+import { hostAddresses, type Lookup, loopbackUrl } from "./address-ranges.js";
 import { type EngineTransaction, TRANSACTION_FETCHES, type Transport } from "./transport.js";
 
 export const SPEC_SCAN = 10;
@@ -48,6 +49,8 @@ export type Job = {
 export type Spec = { url: string; text: string; bytes: Uint8Array; sha256: string; matches: boolean; sealedTo?: Address[] };
 
 export type SpecFetch = (url: string, init: { redirect: "error"; signal: AbortSignal; addresses?: readonly string[] }) => Promise<Response>;
+
+export const webFetch: SpecFetch = (url, init) => fetch(url, { redirect: init.redirect, signal: init.signal });
 
 export class SpecSealed extends SdkError {
   readonly code = "spec-sealed";
@@ -170,7 +173,7 @@ async function bounded(response: Response, url: string, signal: AbortSignal): Pr
     await reader.cancel().catch(() => undefined);
     throw error;
   }
-  return Buffer.concat(chunks);
+  return joinedBytes(chunks);
 }
 
 function fetchProblem(error: unknown): string {
@@ -187,10 +190,10 @@ function fetchProblem(error: unknown): string {
 
 export async function readSpec(
   transport: Transport,
-  get: CheckedFetch,
+  get: SpecFetch,
   intent: Address,
-  keypair?: DeliveryOpener | readonly DeliveryOpener[],
-  lookup: Lookup = systemLookup,
+  keypair: DeliveryOpener | readonly DeliveryOpener[] | undefined,
+  lookup: Lookup | null,
   rpcUrl?: string,
 ): Promise<Spec | null> {
   const proof = await proofAt(transport, intent);
@@ -216,11 +219,11 @@ export async function readSpec(
   const signal = AbortSignal.timeout(SPEC_TIMEOUT_MS);
   let fetched: Uint8Array;
   try {
-    const addresses = await before(signal, publicAddresses(parsed.hostname, lookup, rpcUrl !== undefined && loopbackUrl(rpcUrl)));
+    const addresses = await before(signal, hostAddresses(parsed.hostname, lookup, rpcUrl !== undefined && loopbackUrl(rpcUrl)));
     if (addresses === null) {
       throw new SpecUnreadable(url, NOT_PUBLIC_SPEC);
     }
-    fetched = await bounded(await before(signal, get(url, { redirect: "error", signal, addresses })), url, signal);
+    fetched = await bounded(await before(signal, get(url, { redirect: "error", signal, ...(addresses === undefined ? {} : { addresses }) })), url, signal);
   } catch (error) {
     throw error instanceof SpecUnreadable ? error : new SpecUnreadable(url, fetchProblem(error), { cause: error });
   }
@@ -241,6 +244,6 @@ export async function readSpec(
       throw error instanceof NotInvited ? new SpecSealed(url, to, true) : new SpecUnreadable(url, `is sealed but could not be opened${error instanceof SealedError ? `: ${error.message}` : ""}`);
     }
   }
-  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const sha256 = await sha256Hex(bytes);
   return { url, text: new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes), bytes, sha256, matches: sha256 === hex(proof.params.specHash), ...(to === null ? {} : { sealedTo: to }) };
 }

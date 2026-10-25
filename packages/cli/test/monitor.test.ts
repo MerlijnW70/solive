@@ -12,7 +12,7 @@ import {
   getIntentCreatedEventEncoder,
   getIntentFilledEventEncoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import type { EngineTransaction, Transport } from "@intent-engine/client";
 import { EXIT_ALERTED, EXIT_OK, EXIT_USAGE, main } from "../src/main.js";
 import { MONITOR_NEEDS_BASELINE } from "../src/monitor-args.js";

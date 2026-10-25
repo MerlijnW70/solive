@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { NATIVE_MINT, PRODUCT_REPOSITORY, PRODUCT_SLUG } from "@intent-engine/core";
+import { NATIVE_MINT } from "@intent-engine/core";
+import { PRODUCT_REPOSITORY, PRODUCT_SLUG } from "@intent-engine/core/internal";
 import { CLUSTERS, parse } from "../src/args.js";
 import { WALLET_ACTIONS } from "../src/agent/wallet.js";
 

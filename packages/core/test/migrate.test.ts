@@ -13,7 +13,7 @@ import {
   migrationOf,
   OUTDATED_LAYOUTS,
   UNVERSIONED,
-} from "../src/index.js";
+} from "../src/internal.js";
 
 const PAYER = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB" as Address;
 

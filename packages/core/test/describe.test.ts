@@ -2,20 +2,14 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { type Address, getBase16Encoder } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { findAssociatedTokenAddress, formatAmount, parseAmount, IntentCoreError, type AttestedResultParams, type IntentParams, Kind } from "../src/index.js";
 import {
   ATTESTED_PROTOCOL_FEE,
   describeSignedIntent,
   encodePartner,
   encodeParams,
-  findAssociatedTokenAddress,
-  formatAmount,
-  parseAmount,
   U64_MAX,
   formatTime,
-  IntentCoreError,
-  type AttestedResultParams,
-  type IntentParams,
-  Kind,
   LONG_LIVED_SECONDS,
   LONG_SUBMIT_SECONDS,
   type SignedIntentFields,
@@ -31,7 +25,7 @@ import {
   WARN_STALE_EPOCH,
   decodeParams,
   escrowAmount,
-} from "../src/index.js";
+} from "../src/internal.js";
 
 const hexOf = (b: ArrayLike<number>) => Array.from(b, (x) => x.toString(16).padStart(2, "0")).join("");
 

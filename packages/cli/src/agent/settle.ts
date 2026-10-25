@@ -1,15 +1,7 @@
 import { createNoopSigner } from "@solana/kit";
-import {
-  buildCancelIntent,
-  buildCloseIntent,
-  decodeParamsLoose,
-  describeTerms,
-  findVaultPda,
-  formatAmount,
-  getIntentDecoder,
-  tokenOf,
-} from "@intent-engine/core";
-import { cancelClaims, chainTime, loadIntent, tokenProgramOf } from "@intent-engine/client";
+import { formatAmount } from "@intent-engine/core";
+import { buildCancelIntent, buildCloseIntent, decodeParamsLoose, describeTerms, findVaultPda, getIntentDecoder, tokenOf } from "@intent-engine/core/internal";
+import { cancelClaims, chainTime, loadIntent, tokenProgramOf } from "@intent-engine/client/internal";
 import { closing, CostlyFunding, crankAction, expiring, type Funding, UnfundedAccount, vaultBalance } from "../crank.js";
 import { define } from "./actions.js";
 import { tool } from "./names.js";

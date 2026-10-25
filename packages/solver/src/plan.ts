@@ -1,19 +1,6 @@
 import type { Address } from "@solana/kit";
-import {
-  type Config,
-  decodeParamsLoose,
-  type FeeShares,
-  type Intent,
-  type IntentParams,
-  INTENT_VERSION,
-  IntentStatus,
-  Kind,
-  kindBit,
-  PAUSE_FILL,
-  remainingOf,
-  requiredOut,
-  splitFees,
-} from "@intent-engine/core";
+import { type Config, type FeeShares, type Intent, type IntentParams, IntentStatus, Kind, splitFees } from "@intent-engine/core";
+import { decodeParamsLoose, INTENT_VERSION, kindBit, PAUSE_FILL, remainingOf, requiredOut } from "@intent-engine/core/internal";
 import type { Pricer, Quote } from "./market.js";
 
 export type Cycle = (mint: Address, amount: bigint) => Promise<Quote | null>;

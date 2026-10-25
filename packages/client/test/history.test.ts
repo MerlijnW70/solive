@@ -4,14 +4,10 @@ import {
   getMintToInstruction,
 } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import {
-  buildCloseIntent,
-  buildFillIntent,
-  findAssociatedTokenAddress,
-  Kind,
-  TOKEN_PROGRAM_ADDRESS,
-} from "@intent-engine/core";
-import { createClient, HISTORY_LIMIT_MAX, type HistoryEvent, TransportLacks } from "../src/index.js";
+import { findAssociatedTokenAddress, Kind, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { buildCloseIntent, buildFillIntent } from "@intent-engine/core/internal";
+import { createClient, type HistoryEvent, TransportLacks } from "../src/index.js";
+import { HISTORY_LIMIT_MAX } from "../src/internal.js";
 import { HISTORY_LIMIT_RANGE } from "../src/client-reads.js";
 import { funded, world, type World } from "./svm.js";
 

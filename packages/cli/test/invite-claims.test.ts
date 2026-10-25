@@ -4,8 +4,9 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
-import { DEVNET_TEST_MINT, formatTime, Kind, NATIVE_MINT, seal, specMemo } from "@intent-engine/core";
-import { createClient } from "@intent-engine/client";
+import { DEVNET_TEST_MINT, Kind, NATIVE_MINT } from "@intent-engine/core";
+import { formatTime, seal, specMemo } from "@intent-engine/core/internal";
+import { createClient } from "@intent-engine/client/node";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { inviteOnly } from "../src/agent/work-claims.js";

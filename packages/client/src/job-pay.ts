@@ -1,14 +1,6 @@
 import type { Address } from "@solana/kit";
-import {
-  decodeParams,
-  type FeeConfig,
-  formatAmount,
-  type Intent,
-  Kind,
-  kindBit,
-  PAUSE_FILL,
-  splitFees,
-} from "@intent-engine/core";
+import { type FeeConfig, formatAmount, type Intent, Kind, splitFees } from "@intent-engine/core";
+import { decodeParams, kindBit, PAUSE_FILL } from "@intent-engine/core/internal";
 import { mintOf } from "./accounts.js";
 import { readableIntent } from "./job-proofs.js";
 import type { Job } from "./job-specs.js";

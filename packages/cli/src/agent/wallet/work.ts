@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { createClient, firstOpeningIn, isSdkError, MAX_SPEC_BYTES, opensTo, pinnedFetch } from "@intent-engine/client";
+import { isSdkError } from "@intent-engine/client";
+import { createClient, pinnedFetch } from "@intent-engine/client/node";
+import { firstOpeningIn, MAX_SPEC_BYTES, opensTo } from "@intent-engine/client/internal";
 import { openedBy, skippedLines } from "../../announcement-views.js";
 import { fetchBytes } from "../../delivery-fetch.js";
 import { systemLookup } from "../../public-address.js";

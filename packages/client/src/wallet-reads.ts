@@ -1,5 +1,6 @@
 import type { Address } from "@solana/kit";
-import { type EngineEvent, splitN } from "@intent-engine/core";
+import { type EngineEvent } from "@intent-engine/core";
+import { splitN } from "@intent-engine/core/internal";
 import { signaturePage } from "./job-scan.js";
 import { paidWalletsOf, splitClaim } from "./release-reads.js";
 import { type EngineTransaction, TRANSACTION_FETCHES, type Transport } from "./transport.js";

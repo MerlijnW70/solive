@@ -1,5 +1,5 @@
 import { McpServer } from "@modelcontextprotocol/server";
-import { PRODUCT_SLUG } from "@intent-engine/core";
+import { PRODUCT_SLUG } from "@intent-engine/core/internal";
 import { render } from "../render.js";
 import { type AgentContext, type AnyAction, type Effect, invoke } from "./actions.js";
 import { ACTIONS } from "./registry.js";

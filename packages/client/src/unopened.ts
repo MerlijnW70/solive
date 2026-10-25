@@ -1,5 +1,6 @@
 import type { Address } from "@solana/kit";
-import { AccountVersionError, decodeEvent, parseEncryptionKey, profileAddress, SdkError } from "@intent-engine/core";
+import { AccountVersionError, SdkError } from "@intent-engine/core";
+import { decodeEvent, parseEncryptionKey, profileAddress } from "@intent-engine/core/internal";
 import { loadProfile } from "./client-claims.js";
 import { loadCommittee } from "./client-committee.js";
 import { creationSlotOf, openProofEscrows } from "./job-proofs.js";

@@ -1,6 +1,9 @@
 import { type Address, isAddress } from "@solana/kit";
-import { feeBpsFor, Kind, TOKEN_AMOUNT_PATTERN } from "@intent-engine/core";
-import { createClient, JOBS_LIMIT, loadConfig, memoized, type Transport, unmemoized } from "@intent-engine/client";
+import { feeBpsFor, Kind } from "@intent-engine/core";
+import { TOKEN_AMOUNT_PATTERN } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { JOBS_LIMIT, loadConfig, memoized, unmemoized } from "@intent-engine/client/internal";
 import { freezeFields, type JobsWanted, pricedJobs } from "../job-filters.js";
 import { tokenNamed } from "../tokens.js";
 import { type AgentContext, define } from "./actions.js";

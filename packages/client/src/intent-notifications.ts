@@ -4,8 +4,9 @@ import {
   createSolanaRpcSubscriptions,
   getBase58Decoder,
 } from "@solana/kit";
-import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import type { ProgramAccount } from "./rpc-shapes.js";
+import { base64Bytes } from "./encoding.js";
 
 export type IntentChanges = { wait(seconds: number): Promise<ProgramAccount[] | null>; close(): void; slot?(): bigint | undefined };
 
@@ -47,7 +48,7 @@ export function changedAccount(note: unknown): ProgramAccount | null {
   if (typeof value?.pubkey !== "string" || !Array.isArray(data) || typeof data[0] !== "string") {
     return null;
   }
-  return { address: value.pubkey as Address, data: new Uint8Array(Buffer.from(data[0], "base64")) };
+  return { address: value.pubkey as Address, data: base64Bytes(data[0]) };
 }
 
 export const RECONNECT_MS: readonly number[] = [1_000, 2_000, 5_000, 10_000, 30_000];

@@ -1,17 +1,7 @@
 import { type Address, type Base64EncodedWireTransaction, generateKeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import {
-  encodeParams,
-  findAssociatedTokenAddress,
-  findConfigPda,
-  findEventAuthorityPda,
-  INSTRUCTIONS_SYSVAR_ADDRESS,
-  findUserStatePda,
-  type Intent,
-  IntentStatus,
-  Kind,
-  splitFees,
-} from "@intent-engine/core";
+import { findAssociatedTokenAddress, type Intent, IntentStatus, Kind, splitFees } from "@intent-engine/core";
+import { encodeParams, findConfigPda, findEventAuthorityPda, INSTRUCTIONS_SYSVAR_ADDRESS, findUserStatePda } from "@intent-engine/core/internal";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import {
   COMPUTE_BUDGET_ADDRESS,

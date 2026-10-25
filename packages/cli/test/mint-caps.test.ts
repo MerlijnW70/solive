@@ -1,7 +1,7 @@
 import { type Address, getBase64Encoder, getTransactionDecoder, type KeyPairSigner, partiallySignTransaction } from "@solana/kit";
 import { FailedTransactionMetadata } from "litesvm";
 import { beforeEach, describe, expect, it } from "vitest";
-import { decodeMintCapData, findConfigPda, findMintCapAddress, getConfigDecoder, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { decodeMintCapData, findConfigPda, findMintCapAddress, getConfigDecoder, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { AUTHORITY_NEXT } from "../src/commands.js";
 import { EXIT_ALERTED, EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { balance, cli, h, NOW, setNow, type World, world } from "./harness.js";

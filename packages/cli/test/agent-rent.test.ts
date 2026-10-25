@@ -1,7 +1,8 @@
 import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { getIntentSize } from "@intent-engine/core";
-import { memoized, type Transport } from "@intent-engine/client";
+import { getIntentSize } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { memoized } from "@intent-engine/client/internal";
 import {
   createCost,
   MAX_RENT_PER_BYTE,

@@ -6,8 +6,10 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DEVNET_TEST_MINT, NATIVE_MINT, sortMembers } from "@intent-engine/core";
-import { DEVNET_GENESIS_HASH, MAX_SPEC_BYTES, type SpecFetch } from "@intent-engine/client";
+import { DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
+import { sortMembers } from "@intent-engine/core/internal";
+import { type SpecFetch } from "@intent-engine/client";
+import { DEVNET_GENESIS_HASH, MAX_SPEC_BYTES } from "@intent-engine/client/internal";
 import { tool } from "../src/agent/names.js";
 import { untrusted } from "../src/agent/problems.js";
 import { NONE_OPENS, WORK_OPENS } from "../src/agent/wallet/work.js";

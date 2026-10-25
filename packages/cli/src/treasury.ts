@@ -1,7 +1,9 @@
 import { type Address, createNoopSigner, type KeyPairSigner } from "@solana/kit";
 import { getTokenDecoder } from "@solana-program/token";
-import { formatAmount, getIntentDecoder } from "@intent-engine/core";
-import { createdAccount, loadConfig, mintOf, rentExemptMinimum, tokenAccountIfMissing, type Transport } from "@intent-engine/client";
+import { formatAmount } from "@intent-engine/core";
+import { getIntentDecoder } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { createdAccount, loadConfig, mintOf, rentExemptMinimum, tokenAccountIfMissing } from "@intent-engine/client/internal";
 import { prepare } from "./agent/prepare.js";
 import { SOL_DECIMALS } from "./agent/read.js";
 import { preparedView } from "./agent/shapes.js";

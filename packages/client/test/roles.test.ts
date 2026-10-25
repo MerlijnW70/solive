@@ -12,6 +12,7 @@ import {
   getTokenSize,
 } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
+import { findAssociatedTokenAddress, IntentStatus, Kind, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
 import {
   attestedProofMessage,
   buildCloseIntent,
@@ -19,18 +20,13 @@ import {
   buildFillAttested,
   buildFillIntent,
   buildUpdateEconomics,
-  findAssociatedTokenAddress,
   findEventAuthorityPda,
   findIntentPda,
   getCancelIntentInstructionAsync,
   getIntentSize,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  IntentStatus,
-  Kind,
-  NATIVE_MINT,
   signEd25519Instruction,
-  TOKEN_PROGRAM_ADDRESS,
-} from "@intent-engine/core";
+} from "@intent-engine/core/internal";
 import { createClient, EscrowExpired, NotSettleable, type Transport } from "../src/index.js";
 import { FEE_BPS, NOW, world } from "./svm.js";
 import { announced, type Delivered, sha } from "./work.js";

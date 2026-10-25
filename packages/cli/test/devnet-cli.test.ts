@@ -8,7 +8,8 @@ import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { type Address, createKeyPairSignerFromBytes, createSolanaRpc, type KeyPairSigner } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
-import { findAssociatedTokenAddress, findConfigPda } from "@intent-engine/core";
+import { findAssociatedTokenAddress } from "@intent-engine/core";
+import { findConfigPda } from "@intent-engine/core/internal";
 import {
   getCloseAccountInstruction,
   getCreateAssociatedTokenIdempotentInstructionAsync,
@@ -16,7 +17,7 @@ import {
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { chainTime, type RpcLike, rpcTransport } from "@intent-engine/client";
+import { chainTime, type RpcLike, rpcTransport } from "@intent-engine/client/internal";
 import { ACTIONS } from "../src/agent/registry.js";
 import { configExists } from "../src/commands.js";
 import { EXIT_FAILED, EXIT_OK, loadKeypairFile } from "../src/main.js";

@@ -1,8 +1,11 @@
 import { createHash } from "node:crypto";
 import { createSignableMessage, getBase58Decoder } from "@solana/kit";
 import { describe, expect, it, vi } from "vitest";
-import { attestedResult, DEVNET_TEST_MINT, NATIVE_MINT, saltMessage } from "@intent-engine/core";
-import { type CheckedFetch, type ClientEventName, type ClientHooks, createClient, errorText, redactUrl, redactUrls, UNPARSEABLE_URL } from "../src/index.js";
+import { attestedResult, DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
+import { saltMessage } from "@intent-engine/core/internal";
+import type { ClientEventName, ClientHooks } from "../src/index.js";
+import { type CheckedFetch, errorText, redactUrl, redactUrls, UNPARSEABLE_URL } from "../src/internal.js";
+import { createClient } from "../src/node.js";
 import { createTestWorld, type TestWorld } from "../src/testing.js";
 
 vi.mock("node:dns/promises", () => ({ lookup: async () => [{ address: "93.184.215.14", family: 4 }] }));

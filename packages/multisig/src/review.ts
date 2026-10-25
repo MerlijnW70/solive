@@ -12,7 +12,7 @@ import {
   isWritableRole,
   type ReadonlyUint8Array,
 } from "@solana/kit";
-import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import type { Account, Chain } from "./chain.js";
 import { engineDecodes, engineSummary } from "./engine.js";
 import {

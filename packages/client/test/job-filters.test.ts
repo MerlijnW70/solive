@@ -3,7 +3,8 @@ import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { getMintToInstruction, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { findAssociatedTokenAddress, Kind } from "@intent-engine/core";
-import { createClient, jobsOf } from "../src/index.js";
+import { createClient } from "../src/index.js";
+import { jobsOf } from "../src/internal.js";
 import { funded, world } from "./svm.js";
 
 const LOCAL = "http://127.0.0.1:8899";

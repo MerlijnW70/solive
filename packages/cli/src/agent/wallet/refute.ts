@@ -1,5 +1,7 @@
-import { isMemoUrl } from "@intent-engine/core";
-import { createClient, isSdkError, loadAnnouncement, NoMessageSigner, NotRefutable, RECLAIM_BATCH, secretInputOf } from "@intent-engine/client";
+import { isMemoUrl } from "@intent-engine/core/internal";
+import { isSdkError, NoMessageSigner, NotRefutable } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { loadAnnouncement, RECLAIM_BATCH, secretInputOf } from "@intent-engine/client/internal";
 import { capturing, hex } from "../../announcement-views.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";

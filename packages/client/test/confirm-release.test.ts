@@ -1,8 +1,10 @@
 import { createHash } from "node:crypto";
 import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { blobLayout, buildAnnounceDelivery, Kind, NATIVE_MINT, sealDeliveryV4 } from "@intent-engine/core";
-import { ConfirmMismatch, confirmOnBoth, createClient, NO_ACCOUNT, nodeView, REFUSED, type Transport } from "../src/index.js";
+import { Kind, NATIVE_MINT } from "@intent-engine/core";
+import { blobLayout, buildAnnounceDelivery, sealDeliveryV4 } from "@intent-engine/core/internal";
+import { ConfirmMismatch, createClient, type Transport } from "../src/index.js";
+import { confirmOnBoth, NO_ACCOUNT, nodeView, REFUSED } from "../src/internal.js";
 import { world } from "./svm.js";
 import { announced, fundedSigner, keyed, LOCAL, nativeMint, sha, specHash, workUrl } from "./work.js";
 

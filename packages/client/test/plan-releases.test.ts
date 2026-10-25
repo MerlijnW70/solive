@@ -1,6 +1,7 @@
 import type { Address } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { deliveryBookAddress, NATIVE_MINT, refutationAddress, signCommitteeVote, signMessageBytes } from "@intent-engine/core";
+import { NATIVE_MINT } from "@intent-engine/core";
+import { deliveryBookAddress, refutationAddress, signCommitteeVote, signMessageBytes } from "@intent-engine/core/internal";
 import { createTestWorld, type TestWallet, type TestWorld } from "../src/testing.js";
 import { checkCase, delivered, escrow, sha, statusOf, workUrl } from "./plan-driver.js";
 

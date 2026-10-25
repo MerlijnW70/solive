@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { IntentCoreError, splitN } from "../src/index.js";
+import { IntentCoreError } from "../src/index.js";
+import { splitN } from "../src/internal.js";
 
 describe("splitN", () => {
   it("conserve the whole amount and route the remainder to the heaviest weight", () => {

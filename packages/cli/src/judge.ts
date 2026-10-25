@@ -2,22 +2,11 @@ import { createHash } from "node:crypto";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { basename, resolve } from "node:path";
 import { type Address, getBase58Decoder, type Signature, type TransactionPartialSigner } from "@solana/kit";
-import { decodeParams, type DeliveryOpener, IntentStatus, Kind } from "@intent-engine/core";
-import {
-  chainTime,
-  type CommitteeView,
-  confirmOnBoth,
-  createClient,
-  deviceJudgeReady,
-  firstOpeningIn,
-  FirstOpeningRefused,
-  isDevice,
-  isSdkError,
-  loadCommittee,
-  loadIntent,
-  messageOnly,
-  type Transport,
-} from "@intent-engine/client";
+import { type DeliveryOpener, IntentStatus, Kind } from "@intent-engine/core";
+import { decodeParams } from "@intent-engine/core/internal";
+import { type CommitteeView, FirstOpeningRefused, isSdkError, type Transport } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { chainTime, confirmOnBoth, deviceJudgeReady, firstOpeningIn, isDevice, loadCommittee, loadIntent, messageOnly } from "@intent-engine/client/internal";
 import type { Command } from "./args.js";
 import { NOT_SENT } from "./flows.js";
 import { memberVote, type VoteFile } from "./committee-commands.js";

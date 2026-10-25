@@ -13,7 +13,7 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   type SignatureBytes,
 } from "@solana/kit";
-import { COMPUTE_BUDGET_ADDRESS, computeUnitLimit, computeUnitPrice, headroom, MAX_COMPUTE_UNITS } from "@intent-engine/core";
+import { COMPUTE_BUDGET_ADDRESS, computeUnitLimit, computeUnitPrice, headroom, MAX_COMPUTE_UNITS } from "@intent-engine/core/internal";
 import { boundMembers, type LookupTables, type Simulation, type Transport } from "./transport.js";
 
 export type Priority = bigint | "auto";

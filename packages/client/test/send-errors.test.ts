@@ -18,8 +18,10 @@ import {
 import { getTransferSolInstruction } from "@solana-program/system";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { buildCreateIntent, buildInitUser, INTENT_ENGINE_PROGRAM_ADDRESS, Kind } from "@intent-engine/core";
-import { createClient, FailedOnChain, failure, isSdkError, MaybeSent, type RpcLike, rpcTransport, SYSTEM_PROGRAM_ADDRESS } from "../src/index.js";
+import { Kind } from "@intent-engine/core";
+import { buildCreateIntent, buildInitUser, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
+import { createClient, FailedOnChain, isSdkError, MaybeSent } from "../src/index.js";
+import { failure, type RpcLike, rpcTransport, SYSTEM_PROGRAM_ADDRESS } from "../src/internal.js";
 import { NOW, world } from "./svm.js";
 
 const LOCAL = "http://127.0.0.1:8899";

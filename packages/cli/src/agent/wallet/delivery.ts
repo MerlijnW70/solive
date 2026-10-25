@@ -1,23 +1,18 @@
 import { type Address, createNoopSigner, getBase16Decoder, type TransactionSigner } from "@solana/kit";
-import { decodeParams, getIntentDecoder, getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS, IntentStatus, isMemoUrl, Kind, MEMO_URL_RULE, saltMessage } from "@intent-engine/core";
+import { IntentStatus, Kind } from "@intent-engine/core";
+import { decodeParams, getIntentDecoder, getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS, isMemoUrl, MEMO_URL_RULE, saltMessage } from "@intent-engine/core/internal";
 import {
   type AnnounceInput,
   type AnnouncementList,
   type AnnouncementPlan,
-  chainTime,
   ConfirmMismatch,
-  confirmOnBoth,
-  type ConfirmTarget,
-  createClient,
   isSdkError,
-  loadAnnouncement,
-  memoized,
   NoMessageSigner,
   NotDeliverable,
   type SecretInput,
-  secretInputOf,
-  unmemoized,
 } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { chainTime, confirmOnBoth, type ConfirmTarget, loadAnnouncement, memoized, secretInputOf, unmemoized } from "@intent-engine/client/internal";
 import { ANNOUNCE_FIRST, announcementLine, sealedToText, walletOf } from "../../announcement-views.js";
 import { execute } from "../../flows.js";
 import { deliverNotInvited, sealedInvites } from "../../invites.js";

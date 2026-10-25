@@ -12,7 +12,7 @@ import {
   signCommitteeVote,
   signMessageBytes,
   verifyCommitteeVote,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { InvalidInput } from "../src/errors.js";
 
 const bytes = (a: Address) => getAddressEncoder().encode(a);

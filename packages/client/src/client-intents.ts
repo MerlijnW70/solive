@@ -1,20 +1,6 @@
 import type { Address, TransactionSigner } from "@solana/kit";
-import {
-  buildCancelIntent,
-  buildCloseIntent,
-  buildExpireIntent,
-  buildFillIntent,
-  decodeParams,
-  findAssociatedTokenAddress,
-  IntentStatus,
-  InvalidInput,
-  Kind,
-  NATIVE_MINT,
-  remainingOf,
-  requiredOut,
-  splitFees,
-  TOKEN_PROGRAM_ADDRESS,
-} from "@intent-engine/core";
+import { findAssociatedTokenAddress, IntentStatus, InvalidInput, Kind, NATIVE_MINT, splitFees, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { buildCancelIntent, buildCloseIntent, buildExpireIntent, buildFillIntent, decodeParams, remainingOf, requiredOut } from "@intent-engine/core/internal";
 import { getCloseAccountInstruction } from "@solana-program/token";
 import { chainTime, createdAccount } from "./accounts.js";
 import { NotFillable } from "./client-errors.js";

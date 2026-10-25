@@ -1,7 +1,9 @@
 import { AccountRole, type Address, generateKeyPairSigner, type Instruction } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { type AttestedResultParams, buildSetCommitteeFloor, findIntentPda, INTENT_ENGINE_PROGRAM_ADDRESS, Kind, sortMembers } from "@intent-engine/core";
-import { CommitteeNeeded, createClient, escrowCommittee, type IntentPlacement, loadConfig } from "../src/index.js";
+import { type AttestedResultParams, Kind } from "@intent-engine/core";
+import { buildSetCommitteeFloor, findIntentPda, INTENT_ENGINE_PROGRAM_ADDRESS, sortMembers } from "@intent-engine/core/internal";
+import { CommitteeNeeded, createClient, type IntentPlacement } from "../src/index.js";
+import { escrowCommittee, loadConfig } from "../src/internal.js";
 import { funded, world, type World } from "./svm.js";
 
 const LOCAL = "http://127.0.0.1:8899";

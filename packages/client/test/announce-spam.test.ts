@@ -1,5 +1,6 @@
 import { type Address, getAddressDecoder } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { Kind, NATIVE_MINT } from "@intent-engine/core";
 import {
   ANNOUNCEMENT_DISCRIMINATOR,
   delivery,
@@ -8,11 +9,10 @@ import {
   getAnnouncementEncoder,
   getDeliveryBookDecoder,
   getDeliveryBookEncoder,
-  Kind,
-  NATIVE_MINT,
   sealDeliveryV4,
-} from "@intent-engine/core";
-import { connect, createClient, type EngineAccount, FirstOpeningRefused, MISSING_SHOWN, type Transport } from "../src/index.js";
+} from "@intent-engine/core/internal";
+import { connect, createClient, type EngineAccount, FirstOpeningRefused, type Transport } from "../src/index.js";
+import { MISSING_SHOWN } from "../src/internal.js";
 import { world } from "./svm.js";
 import { announced, fundedSigner, keyed, nativeMint, sha, specHash, tokensOf, workUrl } from "./work.js";
 

@@ -4,6 +4,7 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
+import { DEVNET_TEST_MINT, IntentStatus, Kind, NATIVE_MINT } from "@intent-engine/core";
 import {
   buildClaimJob,
   buildClaimsWithList,
@@ -14,16 +15,13 @@ import {
   claimListAddress,
   computeUnitLimit,
   computeUnitPrice,
-  DEVNET_TEST_MINT,
-  IntentStatus,
-  Kind,
   MAX_CLAIMANTS,
   MAX_COMPUTE_UNITS,
-  NATIVE_MINT,
   seal,
   specMemo,
-} from "@intent-engine/core";
-import { createClient, PACKET_DATA_SIZE, transactionBytes } from "@intent-engine/client";
+} from "@intent-engine/core/internal";
+import { createClient } from "@intent-engine/client/node";
+import { PACKET_DATA_SIZE, transactionBytes } from "@intent-engine/client/internal";
 import { tool } from "../src/agent/names.js";
 import { ENGINE_ERROR_BASE, ENGINE_ERROR_NAMES } from "../src/agent/problems.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";

@@ -1,6 +1,7 @@
 import { type Address, isAddress } from "@solana/kit";
 import type { ClusterChoice } from "./simple-types.js";
-import { DEVNET_TEST_MINT, formatAmount, InvalidInput, NATIVE_MINT, parseAmount, SdkError, tokenName, U64_MAX } from "@intent-engine/core";
+import { DEVNET_TEST_MINT, formatAmount, InvalidInput, NATIVE_MINT, parseAmount, SdkError, tokenName } from "@intent-engine/core";
+import { U64_MAX } from "@intent-engine/core/internal";
 
 export type Cluster = "devnet" | "testnet" | "mainnet" | "localnet";
 

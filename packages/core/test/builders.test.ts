@@ -10,16 +10,12 @@ import {
 } from "@solana/kit";
 import { getApproveCheckedInstructionDataDecoder } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
+import { feeBpsFor, maxFeeBpsFor, MAX_FEE_BPS, MAX_ATTESTED_FEE_BPS, IntentStatus, findAssociatedTokenAddress, IntentCoreError, Kind } from "../src/index.js";
 import {
   buildAdvanceEpoch,
   encodePartner,
   nextEpoch,
   remainingOf,
-  feeBpsFor,
-  maxFeeBpsFor,
-  MAX_FEE_BPS,
-  MAX_ATTESTED_FEE_BPS,
-  IntentStatus,
   U64_MAX,
   buildAdvanceNonce,
   buildApproveForIntent,
@@ -50,13 +46,10 @@ import {
   getEndFillInstructionDataDecoder,
   getFillIntentInstructionDataDecoder,
   buildInitUser,
-  findAssociatedTokenAddress,
   findEventAuthorityPda,
   findIntentPda,
   type IdlLike,
-  IntentCoreError,
   INTENT_ENGINE_PROGRAM_ADDRESS,
-  Kind,
   validateIxAgainstIdl,
   MAX_CRANK_BOUNTY,
   MAX_CREATE_FEE,
@@ -64,7 +57,7 @@ import {
   MAX_SPLIT_RECIPIENTS,
   splitN,
   splitPayout,
-} from "../src/index.js";
+} from "../src/internal.js";
 import { InvalidInput } from "../src/errors.js";
 
 const read = (rel: string) =>

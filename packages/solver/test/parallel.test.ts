@@ -10,7 +10,8 @@ import {
 } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
-import { type Config, encodeParams, type Intent, IntentStatus, Kind } from "@intent-engine/core";
+import { type Config, type Intent, IntentStatus, Kind } from "@intent-engine/core";
+import { encodeParams } from "@intent-engine/core/internal";
 import {
   ALREADY_FILLING,
   badConcurrency,

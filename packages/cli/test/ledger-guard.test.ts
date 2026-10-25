@@ -3,8 +3,11 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
-import { DEVNET_TEST_MINT, INTENT_ENGINE_PROGRAM_ADDRESS, Kind, NATIVE_MINT, sortMembers } from "@intent-engine/core";
-import { createClient, type OpenTransport, type Transport } from "@intent-engine/client";
+import { DEVNET_TEST_MINT, Kind, NATIVE_MINT } from "@intent-engine/core";
+import { INTENT_ENGINE_PROGRAM_ADDRESS, sortMembers } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { createClient } from "@intent-engine/client/node";
+import { type OpenTransport } from "@intent-engine/client/internal";
 import { claimsOf } from "../src/agent/claims.js";
 import { servedActions } from "../src/agent/everyday.js";
 import { agentServer } from "../src/agent/mcp.js";

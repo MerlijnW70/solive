@@ -1,5 +1,6 @@
-import { getIntentSize } from "@intent-engine/core";
-import { rentExemptFor, type RentSysvar, rentSysvar, type Transport, unmemoized } from "@intent-engine/client";
+import { getIntentSize } from "@intent-engine/core/internal";
+import { type Transport } from "@intent-engine/client";
+import { rentExemptFor, type RentSysvar, rentSysvar, unmemoized } from "@intent-engine/client/internal";
 import { checkedRent } from "@intent-engine/solver";
 import { AgentRefusal } from "./problems.js";
 

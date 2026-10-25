@@ -1,12 +1,12 @@
 import { readFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ENGINE_PROGRAM_FILE } from "../src/testing.js";
+import { graph, IMPORT } from "./import-graph.js";
 
 const PACKAGE = join(dirname(fileURLToPath(import.meta.url)), "..");
 const SRC = join(PACKAGE, "src");
-const IMPORT = /(?:^|\n)\s*(?:import|export)\s[^;]*?from\s+"([^"]+)"|import\("([^"]+)"\)/g;
 
 type Manifest = {
   files: string[];
@@ -17,27 +17,6 @@ type Manifest = {
 };
 
 const manifest = JSON.parse(readFileSync(join(PACKAGE, "package.json"), "utf8")) as Manifest;
-
-function graph(entry: string): { modules: Set<string>; packages: Set<string> } {
-  const modules = new Set<string>();
-  const packages = new Set<string>();
-  const queue = [entry];
-  for (let file = queue.shift(); file !== undefined; file = queue.shift()) {
-    if (modules.has(file)) {
-      continue;
-    }
-    modules.add(file);
-    for (const match of readFileSync(file, "utf8").matchAll(IMPORT)) {
-      const target = match[1] ?? match[2] ?? "";
-      if (target.startsWith(".")) {
-        queue.push(resolve(dirname(file), target.replace(/\.js$/, ".ts")));
-      } else {
-        packages.add(target.startsWith("@") ? target.split("/").slice(0, 2).join("/") : (target.split("/")[0] ?? target));
-      }
-    }
-  }
-  return { modules, packages };
-}
 
 describe("the testing entry point", () => {
   it("is exported beside svm, and the package files carry the engine program", () => {

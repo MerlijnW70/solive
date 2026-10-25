@@ -6,7 +6,8 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
-import { DEVNET_TEST_MINT, findAssociatedTokenAddress, findIntentPda, getIntentDecoder, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
+import { DEVNET_TEST_MINT, findAssociatedTokenAddress, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
+import { findIntentPda, getIntentDecoder } from "@intent-engine/core/internal";
 import { svmTransport } from "@intent-engine/client/svm";
 import { FETCH_FAILED } from "../src/agent/spec.js";
 import { ENV_KEYPAIR } from "../src/clusters.js";
