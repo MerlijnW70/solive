@@ -111,6 +111,7 @@ export type Command =
   | (Remote & { name: "deliveries"; intent: Address; judgeKeypair: string | undefined; encryptionKeypairs?: string[] | undefined })
   | (Keyed & { name: "refute"; yes: boolean; earlier: Address; paid: Address; workUrl?: string | undefined; split?: Split | undefined; feePayer?: string | undefined })
   | (Keyed & { name: "reclaim"; yes: boolean; feePayer?: string | undefined })
+  | (Keyed & { name: "claim-held"; yes: boolean; announcement?: Address | undefined; index?: number | undefined; to?: Address | undefined; feePayer?: string | undefined })
   | (Keyed & { name: "close-book"; yes: boolean; intent: Address })
   | (Remote & { name: "receipt"; owner: Address; nonce: bigint; sha256: string | undefined; release?: string })
   | (Keyed & {

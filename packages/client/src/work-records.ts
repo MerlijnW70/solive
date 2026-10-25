@@ -8,6 +8,7 @@ import type { FundedBy } from "./funding.js";
 import { intentAt } from "./job-proofs.js";
 import { scan } from "./job-scan.js";
 import { type RefutationRecord, refutationRecord } from "./refutation-standing.js";
+import { type HeldPayout, heldPayouts } from "./release-holds.js";
 import { engineEvents, intentHistory, type Settlement, settlementIn, splitClaim } from "./release-reads.js";
 import type { EngineTransaction, Transport } from "./transport.js";
 import { feedbackOf } from "./work-feedback.js";
@@ -40,6 +41,7 @@ export type WorkRecord = {
   selfDealt: boolean;
   fundedByWorker?: FundedBy;
   feedback?: number;
+  held?: HeldPayout[];
   unreadable?: UnreadableAccount[];
 };
 
@@ -148,6 +150,7 @@ async function paidRecord(transport: Transport, wallet: Address, base: WorkRecor
     selfDealt,
   };
   let earned: bigint | undefined;
+  let held: HeldPayout[] = [];
   let credit = (fee: bigint): bigint => fee;
   if (settled.name === "IntentAttested") {
     earned = role === "announcer" && released.worker === wallet ? settled.fields.net : undefined;
@@ -159,6 +162,7 @@ async function paidRecord(transport: Transport, wallet: Address, base: WorkRecor
     const at = claim.recipients.indexOf(wallet);
     earned = at < 0 ? undefined : splitN(settled.fields.net, claim.weights)[at];
     credit = (fee) => (at < 0 ? 0n : (splitN(fee, claim.weights)[at] ?? 0n));
+    held = at < 0 ? [] : (await heldPayouts(transport, transaction, by, intent, escrow.transactions)).filter((share) => share.wallet === wallet);
   }
   if (earned === undefined) {
     return { record: { ...common, outcome: "paid-other" }, reasons: [] };
@@ -179,6 +183,7 @@ async function paidRecord(transport: Transport, wallet: Address, base: WorkRecor
       ...(substantiated === undefined ? {} : { refutedBy: substantiated.refutation }),
       ...(createFee === undefined ? {} : { backed: credit(settled.fields.fee), createBacked: credit(createFee) }),
       ...(feedback === undefined ? {} : { feedback }),
+      ...(held.length === 0 ? {} : { held }),
     },
     reasons: [...reasons, ...refutations.reasons],
     unreadable: refutations.unreadable,

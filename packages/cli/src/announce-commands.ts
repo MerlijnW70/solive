@@ -1,7 +1,8 @@
 import type { Address, TransactionPartialSigner } from "@solana/kit";
+import { formatAmount } from "@intent-engine/core";
 import { type AnnounceInput, type RefuteInput, type Transport } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
-import { loadAnnouncement, loadDeliveryBook, secretInputOf } from "@intent-engine/client/internal";
+import { loadAnnouncement, loadDeliveryBook, mintOf, secretInputOf } from "@intent-engine/client/internal";
 import { previewed } from "./admin-commands.js";
 import { claimOf, deliverClaimWarnings } from "./agent/job-claims.js";
 import { ANNOUNCE_FIRST, capturing, hex, keptLines, listView, openedBy, sealedToText, walletOf } from "./announcement-views.js";
@@ -14,7 +15,7 @@ import type { Runtime } from "./runtime.js";
 import { loadEncryptionKeys } from "./sealed-commands.js";
 import { keptSecret, savedSecret, secretFor, secretsPath, signsMessages } from "./worker-secrets.js";
 
-type AnnounceCommand = Extract<Command, { name: "deliver" | "deliveries" | "refute" | "reclaim" | "close-book" }>;
+type AnnounceCommand = Extract<Command, { name: "deliver" | "deliveries" | "refute" | "reclaim" | "claim-held" | "close-book" }>;
 
 export const ALREADY_ANNOUNCED = "this work is already announced to this escrow with this url; nothing was sent";
 
@@ -135,6 +136,60 @@ async function reclaim(command: Extract<AnnounceCommand, { name: "reclaim" }>, r
   return { ...shown, closed: done.closed, kept: done.kept, reasons: done.reasons, sent: true, signatures: done.signatures };
 }
 
+export const NOTHING_HELD = "no split share is held for this wallet; a release holds a co-author's share only when its token account cannot take it";
+
+export const CLAIM_ONE = "pass --announcement, and --index when one announcement holds more than one share, to preview the claim";
+
+async function claimHeld(command: Extract<AnnounceCommand, { name: "claim-held" }>, runtime: Runtime, transport: Transport): Promise<object> {
+  const wallet = await transactionSigner(runtime, command.keypair);
+  const client = createClient({ url: command.url, transport });
+  const tokens = async (mint: Address, amount: bigint) => formatAmount(amount, (await mintOf(transport, mint)).decimals);
+  if (command.announcement === undefined) {
+    const listed = await client.heldShares(wallet.address);
+    const shares = await Promise.all(
+      listed.shares.map(async (share) => ({
+        intent: share.intent,
+        announcement: share.announcement,
+        index: share.index,
+        amount: await tokens(share.mint, share.amount),
+        mint: share.mint,
+        account: share.account,
+        release: share.release,
+      })),
+    );
+    return { wallet: wallet.address, shares, complete: listed.complete, ...(listed.reasons.length === 0 ? {} : { reasons: listed.reasons }), next: shares.length === 0 ? NOTHING_HELD : CLAIM_ONE };
+  }
+  const payer = await payerOf(runtime, command, wallet);
+  const input = {
+    wallet,
+    payer,
+    announcement: command.announcement,
+    ...(command.index === undefined ? {} : { index: command.index }),
+    ...(command.to === undefined ? {} : { to: command.to }),
+  };
+  const planned = await client.plan.claimHeld(input);
+  const { share } = planned;
+  const amount = await tokens(share.mint, share.amount);
+  const shown = {
+    wallet: wallet.address,
+    intent: share.intent,
+    announcement: share.announcement,
+    index: share.index,
+    amount,
+    mint: share.mint,
+    to: planned.to,
+    summary: [
+      `Claims: ${amount} of ${share.mint} held for ${wallet.address} by escrow ${share.intent}, whose release ${share.release} could not pay ${share.account}`,
+      `Pays into: ${planned.to}, a token account of ${wallet.address}${planned.setup.length === 0 ? "" : `, created first; ${payer.address} pays its rent`}`,
+      `Pays: the fee, from ${payer.address}`,
+    ],
+  };
+  if (!command.yes) {
+    return previewed(transport, [...planned.setup, ...planned.instructions], payer, shown, false);
+  }
+  return { ...shown, sent: true, signature: await client.claimHeld(input) };
+}
+
 async function closeBook(command: Extract<AnnounceCommand, { name: "close-book" }>, runtime: Runtime, transport: Transport): Promise<object> {
   const by = await transactionSigner(runtime, command.keypair);
   const book = await loadDeliveryBook(transport, command.intent);
@@ -170,6 +225,8 @@ export async function announceCommand(command: AnnounceCommand, runtime: Runtime
       return refute(command, runtime, transport);
     case "reclaim":
       return reclaim(command, runtime, transport);
+    case "claim-held":
+      return claimHeld(command, runtime, transport);
     case "close-book":
       return closeBook(command, runtime, transport);
   }

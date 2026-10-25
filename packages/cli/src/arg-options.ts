@@ -196,6 +196,7 @@ export const OPTIONS = {
   recipients: { type: "string" },
   weights: { type: "string" },
   announcement: { type: "string" },
+  index: { type: "string" },
   salt: { type: "string" },
 } as const;
 
@@ -299,6 +300,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   deliveries: ["url", "intent", "judge-keypair", "encryption-keypair"],
   refute: ["url", "priority-fee", "keypair", "yes", "earlier", "paid", "work-url", "recipients", "weights", "fee-payer"],
   reclaim: ["url", "priority-fee", "keypair", "yes", "fee-payer"],
+  "claim-held": ["url", "priority-fee", "keypair", "yes", "announcement", "index", "to", "fee-payer"],
   "close-book": ["url", "priority-fee", "keypair", "yes", "intent"],
   receipt: ["url", "owner", "nonce", "sha256", "release"],
   judge: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "spec", "artifact", "run", "result", "timeout", "verdict", "check", "sandbox", "sandbox-image", "sandbox-memory", "sandbox-cpus", "plain-node", "watch", "interval", "confirm-url", "no-confirm-url", "fee-payer", "encryption-keypair"],

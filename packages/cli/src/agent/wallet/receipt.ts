@@ -1,19 +1,21 @@
 import { type Address, getAddressDecoder } from "@solana/kit";
 import { type EngineEvent, formatAmount, IntentStatus, Kind, NATIVE_MINT } from "@intent-engine/core";
 import { findIntentPda, MAX_RECIPIENTS } from "@intent-engine/core/internal";
-import { type Transport } from "@intent-engine/client";
-import { intentAt, memoized, mintOf, paidWalletsOf, unmemoized } from "@intent-engine/client/internal";
+import { type Transport, type WithheldFee } from "@intent-engine/client";
+import { eventAuthority, heldPayouts, intentAt, memoized, mintOf, paidWalletsOf, unmemoized, withheldIn } from "@intent-engine/client/internal";
 import { InvalidInput } from "../schema.js";
 import { deliveryReleased, releaseStanding, standingOutput } from "./standing.js";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
-import { account, amount, flag, integer, list, object, optional, text } from "../schema.js";
+import { account, amount, flag, integer, list, nullable, object, optional, text } from "../schema.js";
 import { WAIT_MAX, signerOf, sha256Of } from "./guard.js";
 import { NO_CLOCK, poll } from "./wait.js";
 import { RESULT_MEANS } from "./attest.js";
 import { RELEASE_UNKNOWN, outlives, releaseLookup, namedRelease, releasedMint, createdMint, heldMint } from "./releases.js";
 import { eventsIn, SOL_DECIMALS, STAKE_TO_WORKER } from "./history-work.js";
+
+export const heldForYou = (amount: string) => `${amount} of this wallet's share is held in the escrow because its token account could not take it; ${tool("wallet_claim_held")} claims it`;
 
 export const NOT_RELEASED = "no release of this escrow is in its history yet; check again later";
 
@@ -185,6 +187,27 @@ const receiptOutput = object({
   delivered_salt: optional(text("the paid announcement's salt, public once a release records it")),
   ...standingOutput,
   paid_wallets: optional(list(account(), MAX_RECIPIENTS, "the wallets a split release paid")),
+  held: optional(
+    list(
+      object({
+        wallet: account("the co-author the share is paid to"),
+        account: account("its token account, which could not take the share"),
+        index: integer(0, 7, "its place in the split"),
+        amount: text("whole tokens held"),
+        received: flag("true once the co-author claimed it"),
+        claimed_to: nullable(account("the token account the claim paid into")),
+      }),
+      MAX_RECIPIENTS,
+      "split shares the release held in the escrow because the co-author's token account could not take them; paid to that co-author, received once it claims them",
+    ),
+  ),
+  withheld: optional(
+    list(
+      object({ role: text("protocol, partner, agent, treasury or judge"), payee: account(), account: account("the account that could not take the fee"), amount: text("whole tokens withheld") }),
+      4,
+      "fees the release withheld because their account could not take them; they stay with the escrow's owner",
+    ),
+  ),
   paid_this_wallet: optional(flag("wallet_receipt with a released escrow whose payees are known: whether the release paid this server's wallet")),
   owner: optional(account("given with also: the owner of the escrow released")),
   nonce: optional(amount("given with also: the nonce of the escrow released")),
@@ -224,7 +247,10 @@ export const walletReceipt = define({
   run: async (ctx: AgentContext, input) => {
     const self = (await signerOf(ctx)).address;
     const escrows = escrowsOf({ owner: input.owner ?? self, nonce: input.nonce, sha256: input.sha256, release: input.release }, input.also);
-    const receipt = forWallet(await waitedReceipt(ctx, "wallet_receipt", input.wait, escrows), self);
+    const read = forWallet(await waitedReceipt(ctx, "wallet_receipt", input.wait, escrows), self);
+    const waiting = "held" in read && Array.isArray(read.held) ? (read.held as { wallet: Address; received: boolean; amount: string }[]).find((share) => share.wallet === self && !share.received) : undefined;
+    const earlier: unknown = "next" in read ? read.next : undefined;
+    const receipt = waiting === undefined ? read : { ...read, next: typeof earlier === "string" && earlier !== "" ? `${earlier}; ${heldForYou(waiting.amount)}` : heldForYou(waiting.amount) };
     const wrapped = "paid_to" in receipt && receipt.paid_to === self && receipt.mint === NATIVE_MINT;
     if (!wrapped) {
       return receipt;
@@ -277,6 +303,8 @@ export async function escrowReceipt(transport: Transport, owner: Address, nonce:
   let mint = createdMint([...transactions, ...(creation === null || creation === undefined ? [] : [creation])], intent) ?? releasedMint(tx, intent, fields["payee"] as Address | undefined);
   const paidWork = deliveryReleased(tx, intent);
   const standing = paidWork === null ? {} : await releaseStanding(transport, intent, paidWork);
+  const by = await eventAuthority();
+  const withheldFees = withheldIn(tx, by, intent);
   const stake = eventsIn([tx, ...transactions]).find(
     (event) => event.name === "StakeMoved" && event.fields.intent === intent && event.fields.role === STAKE_TO_WORKER && event.slot >= tx.slot,
   );
@@ -297,12 +325,26 @@ export async function escrowReceipt(transport: Transport, owner: Address, nonce:
     mint ??= await heldMint(transport, intent);
     const decimals = mint === undefined ? undefined : (await mintOf(transport, mint)).decimals;
     const wallets = await paidWalletsOf(transport, { event: release.event as EngineEvent, transaction: tx }, intent);
+    const held = await heldPayouts(transport, tx, by, intent, transactions);
     return {
       ...common,
       paid: formatAmount(fields["net"] as bigint, decimals),
       ...(mint === undefined ? {} : { mint }),
       recipients: BigInt(fields["recipients"] as number),
       ...(wallets === null ? {} : { paid_wallets: wallets }),
+      ...(held.length === 0
+        ? {}
+        : {
+            held: held.map((share) => ({
+              wallet: share.wallet,
+              account: share.account,
+              index: share.index,
+              amount: formatAmount(share.amount, decimals),
+              received: share.received,
+              claimed_to: share.claimedTo,
+            })),
+          }),
+      ...withheldShown(withheldFees, decimals),
     };
   }
   const payee = fields["payee"] as Address;
@@ -316,5 +358,10 @@ export async function escrowReceipt(transport: Transport, owner: Address, nonce:
     payee,
     paid: formatAmount(fields["net"] as bigint, decimals),
     ...(mint === undefined ? {} : { mint }),
+    ...withheldShown(withheldFees, decimals),
   };
+}
+
+function withheldShown(fees: readonly WithheldFee[], decimals: number | undefined) {
+  return fees.length === 0 ? {} : { withheld: fees.map((fee) => ({ role: fee.role, payee: fee.payee, account: fee.account, amount: formatAmount(fee.amount, decimals) })) };
 }

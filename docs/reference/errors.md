@@ -68,7 +68,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `NotReleased` | no | the escrow has no release in its history yet |
 | `KeyInUse` | no | this wallet signs on a Ledger and judges open escrows, whose announcements only its encryption key opens; rotate the key instead of removing it, or wait until they close |
 | `NotRefutable` | no | the announcements named cannot refute this release: the hint says why; nothing was sent |
-| `NothingToReclaim` | no | none of this wallet's announcements can close now: each belongs to an open escrow, is kept for the refutation window, or can still refute a paid release; the hint says which |
+| `NothingToReclaim` | no | none of this wallet's announcements can close now: each belongs to an open escrow, is kept for the refutation window, can still refute a paid release, or holds a split share until it is claimed; the hint says which |
 | `NotARelease` | no | the transaction named as the release is not a release of this escrow |
 | `ReleaseUnread` | yes | the RPC node could not return the named release transaction; call again in a few seconds |
 | `HistoryLagging` | yes | the RPC node has not returned every transaction the call reads yet; call again in a few seconds |
@@ -272,6 +272,7 @@ Every error `@intent-engine/core` and `@intent-engine/client` throw extends `Sdk
 | `not-refutable` | `NotRefutable` | `earlier` | the announcements named cannot refute the release |
 | `book-not-closable` | `BookNotClosable` | `intent` | the delivery book of the intent cannot be closed yet |
 | `no-free-nonce` | `NoFreeNonce` | `owner` | every nonce in the owner's window is used; advance the window first |
+| `no-held-share` | `NoHeldShare` | `announcement`, `wallet`, `reason` | no split share is held for this wallet in the announcement, or it cannot be read; reason says why |
 | `not-settleable` | `NotSettleable` | `intent`, `reason` | the intent cannot be released, paid or given feedback this way; reason says why |
 | `claim-held-by` | `ClaimHeldBy` | `intent`, `worker`, `until` | another worker holds the job's claim, so only that worker can be paid until it ends |
 | `not-fillable` | `NotFillable` | `intent`, `reason` | the intent cannot be filled; reason says why |

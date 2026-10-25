@@ -1,8 +1,8 @@
 import { createNoopSigner } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
-import { buildCancelIntent, buildCloseIntent, decodeParamsLoose, describeTerms, findVaultPda, readIntentAccounts, tokenOf } from "@intent-engine/core/internal";
+import { buildCancelIntent, buildCloseIntent, decodeParamsLoose, describeTerms, findVaultPda, heldClaimableUntil, readIntentAccounts, tokenOf } from "@intent-engine/core/internal";
 import { cancelClaims, chainTime, loadIntent, tokenProgramOf } from "@intent-engine/client/internal";
-import { closing, CostlyFunding, crankAction, expiring, type Funding, UnfundedAccount, vaultBalance } from "../crank.js";
+import { closing, CostlyFunding, crankAction, expiring, type Funding, holdsShare, sharesHeld, UnfundedAccount, vaultBalance } from "../crank.js";
 import { define } from "./actions.js";
 import { tool } from "./names.js";
 import { prepare } from "./prepare.js";
@@ -99,7 +99,7 @@ export const findCrankWork = define({
   name: tool("find_crank_work"),
   title: "Find crank work",
   description:
-    "List intents anyone may settle now for their bounty: open intents past their expiry (expire refunds the owner) and filled or expired intents waiting to be closed (close returns their rent to whoever paid it, or to the cranker when that payer has since become a program). A cancelled intent's bounty goes back to its payer, so it is listed only for that payer, given as cranker. Each comes with the bounty in lamports.",
+    "List intents anyone may settle now for their bounty: open intents past their expiry (expire refunds the owner) and filled or expired intents waiting to be closed (close returns their rent to whoever paid it, or to the cranker when that payer has since become a program). An escrow holding a co-author's split share is left out until that share is claimed or a year after it expired. A cancelled intent's bounty goes back to its payer, so it is listed only for that payer, given as cranker. Each comes with the bounty in lamports.",
   effect: "read",
   input: object({
     cranker: optional(account("include the cancelled intents this wallet paid for, whose bounty and rent return to it")),
@@ -144,7 +144,11 @@ export const prepareCrank = define({
   output: object({ intent: account(), action: choice(["expire", "close"]), bounty: amount(), prepared: preparedSchema }),
   run: async ({ transport }, input) => {
     const { address, intent } = await loadIntent(transport, input.owner, input.nonce);
-    const action = crankAction(intent, await chainTime(transport), input.cranker);
+    const now = await chainTime(transport);
+    if (holdsShare(intent, now)) {
+      throw new AgentRefusal("SharesHeld", sharesHeld(address, heldClaimableUntil(intent)));
+    }
+    const action = crankAction(intent, now, input.cranker);
     if (action === undefined) {
       throw new AgentRefusal(
         "NothingToCrank",

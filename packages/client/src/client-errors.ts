@@ -199,3 +199,20 @@ export class TransportLacks extends SdkError {
     this.method = method;
   }
 }
+
+export type NoHeldShareReason = "no-announcement" | "not-held" | "release-unread" | "escrow-closed";
+
+export class NoHeldShare extends SdkError {
+  readonly code = "no-held-share";
+  override readonly name = "NoHeldShare";
+  readonly announcement: Address;
+  readonly wallet: Address;
+  readonly reason: NoHeldShareReason;
+
+  constructor(announcement: Address, wallet: Address, reason: NoHeldShareReason, text: string) {
+    super(`${text}; nothing was sent`);
+    this.announcement = announcement;
+    this.wallet = wallet;
+    this.reason = reason;
+  }
+}

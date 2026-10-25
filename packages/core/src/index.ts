@@ -19,7 +19,7 @@ export {
   type SdkErrorCode,
   type SdkErrors,
 } from "./errors.js";
-export { type EngineEvent, type EngineEventName, eventNamed } from "./events.js";
+export { type EngineEvent, type EngineEventName, eventNamed, type WithheldRole } from "./events.js";
 export { type FeeShares, splitFees } from "./fee.js";
 export {
   attestedResult,

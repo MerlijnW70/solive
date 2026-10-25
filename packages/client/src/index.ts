@@ -43,6 +43,8 @@ export {
   EscrowExpired,
   IntentUnreadable,
   NoFreeNonce,
+  NoHeldShare,
+  type NoHeldShareReason,
   NotFillable,
   type NotFillableReason,
   NotSettleable,
@@ -55,6 +57,9 @@ export {
   VoteRejected,
 } from "./client-errors.js";
 export type { CoSignature, SettleSplitInput, SplitBallot, SplitBallotInput, SplitShare } from "./client-split.js";
+export type { ClaimHeldInput, ClaimHeldPlan } from "./held-claim.js";
+export type { HeldShare, HeldShares, HeldSharesOptions, HeldSplit } from "./held-shares.js";
+export type { HeldPayout, WithheldFee } from "./release-holds.js";
 export type {
   Balances,
   BallotInput,

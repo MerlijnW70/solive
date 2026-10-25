@@ -37,7 +37,7 @@ export const WALLET_INSTRUCTIONS = WALLET_LINES.join("\n");
 const TOOL_NAMES = new RegExp(`\\b${PRODUCT_SLUG}_\\w+`, "g");
 
 export const TOOL_GROUPS: readonly (readonly [string, readonly string[]])[] = [
-  ["Wallet", ["wallet_setup", "wallet_balance", "wallet_unwrap", "wallet_intents", "wallet_history", "wallet_cancel"].map(tool)],
+  ["Wallet", ["wallet_setup", "wallet_balance", "wallet_unwrap", "wallet_intents", "wallet_history", "wallet_cancel", "wallet_claim_held"].map(tool)],
   ["Trade", ["wallet_estimate", "wallet_swap", "wallet_auction", "wallet_recurring", "wallet_wait", "quote"].map(tool)],
   ["Hire", ["wallet_escrow", "wallet_escrow_plan", "wallet_seal_spec", "hash", "wallet_receipt", "get_receipt"].map(tool)],
   [

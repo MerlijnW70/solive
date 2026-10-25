@@ -245,6 +245,10 @@ It refuses while the list of announcements is incomplete, while an earlier annou
 
 The release names the paid announcement and records the hash and its salt. An earlier worker whose announcement of the same work was passed over runs `intent-engine refute --earlier <its announcement> --paid <paid announcement> --work-url <its url> --yes`, which reveals its announcement's secrets on chain. `reputation` counts a refutation against every wallet the release paid, the announcer and the co-authors of a split, only when that earlier announcement opens to the paid work.
 
+A split release pays each co-author into its canonical token account. When that account cannot take the share, because it requires memos, is frozen or is closed, the release pays everyone else and holds that share in the escrow for its co-author. `intent-engine claim-held --keypair <file>` lists the shares held for that wallet, and `--announcement <paid announcement> --to <token account> --yes` claims one into any token account the wallet owns; `wallet_claim_held` does the same over MCP.
+
+The escrow cannot close while it holds a share: `close` refuses it, `crank` passes over it and the program fails with `SharesHeld`, until the share is claimed or a year after the escrow expires, when the share returns to the owner. `receipt` names each held share and whether it was received, and a fee whose account could not take it, the protocol fee too, under `withheld`.
+
 Once an escrow closes, `intent-engine reclaim` closes the worker's announcements that may close and returns their rent; it keeps an earlier announcement that can still refute a paid release until 30 days after that release, and `close-book --intent <address>` closes an escrow's empty delivery book.
 
 This cannot stop a copier who announces every value of a small answer set first, or one who copies work published before its announcement lands. A job claim or a spec with many possible answers covers those.

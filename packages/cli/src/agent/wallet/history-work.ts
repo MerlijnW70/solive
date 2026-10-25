@@ -2,8 +2,9 @@ import type { Address } from "@solana/kit";
 import { type EngineEvent, formatAmount, IntentStatus, tokenName } from "@intent-engine/core";
 import { decodeEvent } from "@intent-engine/core/internal";
 import { type EngineTransaction, type Transport } from "@intent-engine/client";
-import { chainTime, intentAt, loadClaimsOf, paidWalletsOf, releaseShareOf } from "@intent-engine/client/internal";
-import { account, choice, flag, nullable, object, text, time } from "../schema.js";
+import { chainTime, eventAuthority, heldPayouts, intentAt, loadClaimsOf, paidWalletsOf, releaseShareOf } from "@intent-engine/client/internal";
+import { tool } from "../names.js";
+import { account, choice, flag, nullable, object, optional, text, time } from "../schema.js";
 import { createdMint, heldMint, type ReleaseLookup, releaseLookup, releasedMint } from "./releases.js";
 import { deliveryReleased } from "./standing.js";
 
@@ -32,6 +33,7 @@ export const workItem = object({
   amount: nullable(text("whole tokens the release paid this wallet")),
   token: nullable(text("SOL, TEST or the mint the release paid")),
   release: nullable(text("the release's transaction")),
+  held: optional(text(`whole tokens of this wallet's paid share that the release held in the escrow because its token account could not take them, not claimed yet; ${tool("wallet_claim_held")} claims them`)),
   unpaid_reason: nullable(
     choice(
       UNPAID_REASONS,
@@ -102,10 +104,13 @@ async function paidFor(transport: Transport, work: Announcement, wallet: Address
   }
   const payee = event.name === "IntentAttested" ? event.fields.payee : undefined;
   const mint = releasedMint(release.tx, work.intent, payee) ?? createdMint(transactions, work.intent) ?? (await heldMint(transport, work.intent));
+  const held = event.name === "IntentSplit" ? await heldPayouts(transport, release.tx, await eventAuthority(), work.intent, transactions) : [];
+  const waiting = held.filter((piece) => piece.wallet === wallet && !piece.received).reduce((sum, piece) => sum + piece.amount, 0n);
   return {
     amount: mint === undefined ? null : await tokens(mint, share),
     token: mint === undefined ? null : (tokenName(mint) ?? mint),
     release: release.tx.signature,
+    ...(waiting === 0n || mint === undefined ? {} : { held: await tokens(mint, waiting) }),
   };
 }
 
@@ -148,6 +153,7 @@ export async function workOf(transport: Transport, wallet: Address, transactions
       amount: paid?.amount ?? null,
       token: paid?.token ?? null,
       release: paid?.release ?? null,
+      ...(paid?.held === undefined ? {} : { held: paid.held }),
       unpaid_reason: unpaid.reason,
       released_to: unpaid.releasedTo,
     });

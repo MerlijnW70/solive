@@ -29,6 +29,7 @@ import {
   EscrowExpired,
   IntentUnreadable,
   NoFreeNonce,
+  NoHeldShare,
   NotFillable,
   NotSettleable,
   PayeeMoved,
@@ -59,6 +60,7 @@ declare module "@intent-engine/core" {
     "not-refutable": NotRefutable;
     "book-not-closable": BookNotClosable;
     "no-free-nonce": NoFreeNonce;
+    "no-held-share": NoHeldShare;
     "not-settleable": NotSettleable;
     "claim-held-by": ClaimHeldBy;
     "not-fillable": NotFillable;
@@ -121,6 +123,7 @@ export const SDK_ERRORS: { readonly [C in SdkErrorCode]: SdkErrorEntry<C> } = {
   "not-refutable": { error: NotRefutable, fields: ["earlier"], meaning: "the announcements named cannot refute the release" },
   "book-not-closable": { error: BookNotClosable, fields: ["intent"], meaning: "the delivery book of the intent cannot be closed yet" },
   "no-free-nonce": { error: NoFreeNonce, fields: ["owner"], meaning: "every nonce in the owner's window is used; advance the window first" },
+  "no-held-share": { error: NoHeldShare, fields: ["announcement", "wallet", "reason"], meaning: "no split share is held for this wallet in the announcement, or it cannot be read; reason says why" },
   "not-settleable": { error: NotSettleable, fields: ["intent", "reason"], meaning: "the intent cannot be released, paid or given feedback this way; reason says why" },
   "claim-held-by": { error: ClaimHeldBy, fields: ["intent", "worker", "until"], meaning: "another worker holds the job's claim, so only that worker can be paid until it ends" },
   "not-fillable": { error: NotFillable, fields: ["intent", "reason"], meaning: "the intent cannot be filled; reason says why" },

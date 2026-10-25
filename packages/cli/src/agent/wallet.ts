@@ -16,6 +16,7 @@ import { walletUnwrap } from "./wallet/unwrap.js";
 import { walletSealSpec } from "./wallet/seal.js";
 import { walletFetchWork } from "./wallet/work.js";
 import { walletReclaim, walletRefute } from "./wallet/refute.js";
+import { walletClaimHeld } from "./wallet/held.js";
 
 export {
   walletGuard,
@@ -61,6 +62,7 @@ export { ALREADY_ANNOUNCED, DELIVERED_NEEDED, checkDelivery, prepareDeliver, not
 export { SPLIT_FITS, SPLIT_FITS_WITH_TABLE, splitTooLarge, SPLIT_WEIGHTS_WRONG, SPLIT_SIG_NEEDED, SIGNATURE_PATTERN, WARN_COAUTHORS, notInSplit } from "./wallet/split.js";
 export { RELEASE_INPUT, RELEASE_SIGNATURE, releaseOf, otherLifecycle, COVERAGE_UNPROVABLE, coverageOf } from "./wallet/receipt.js";
 export { NOT_ANNOUNCEMENT, RECLAIM_MORE } from "./wallet/refute.js";
+export { CLAIM_HELD_CHANGED, NOTHING_HELD } from "./wallet/held.js";
 export { KEY_ON_DEVICE } from "./wallet/openings.js";
 export {
   releaseNotOf,
@@ -106,6 +108,7 @@ export const WALLET_ACTIONS: readonly AnyAction[] = [
   walletFetchWork,
   walletRefute,
   walletReclaim,
+  walletClaimHeld,
   walletWait,
   walletReceipt,
   walletIntents,

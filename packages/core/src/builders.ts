@@ -39,6 +39,8 @@ export {
 } from "./intent-builders.js";
 export {
   type AnnouncedDelivery,
+  buildClaimHeld,
+  type ClaimHeldSpec,
   type DeliveryOpening,
   type ReleaseDelivery,
   type UnannouncedRelease,

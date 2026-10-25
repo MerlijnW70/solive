@@ -316,7 +316,7 @@ export const SERVER_PROBLEMS = {
   NotReleased: never("the escrow has no release in its history yet"),
   KeyInUse: never("this wallet signs on a Ledger and judges open escrows, whose announcements only its encryption key opens; rotate the key instead of removing it, or wait until they close"),
   NotRefutable: never("the announcements named cannot refute this release: the hint says why; nothing was sent"),
-  NothingToReclaim: never("none of this wallet's announcements can close now: each belongs to an open escrow, is kept for the refutation window, or can still refute a paid release; the hint says which"),
+  NothingToReclaim: never("none of this wallet's announcements can close now: each belongs to an open escrow, is kept for the refutation window, can still refute a paid release, or holds a split share until it is claimed; the hint says which"),
   NotARelease: never("the transaction named as the release is not a release of this escrow"),
   ReleaseUnread: later("the RPC node could not return the named release transaction; call again in a few seconds"),
   HistoryLagging: later("the RPC node has not returned every transaction the call reads yet; call again in a few seconds"),

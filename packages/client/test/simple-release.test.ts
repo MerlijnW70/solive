@@ -116,6 +116,8 @@ describe("the simple release pays the first announcement that opens to the work"
       deliveredSha256: null,
       valid: false,
       refutedBy: null,
+      held: [],
+      withheld: [],
       complete: true,
       unreadable: [],
       summary: `Escrow ${escrow} is not released yet`,

@@ -7,7 +7,8 @@ import { HISTORY_LIMIT } from "./client-types.js";
 import { heldKeys, openedWith, opensTo } from "./first-opening.js";
 import { standingOf } from "./refutation-standing.js";
 import { intentAt } from "./job-proofs.js";
-import { intentHistory, paidWalletsOf, type Read, releasedDelivery, releaseOf } from "./release-reads.js";
+import { heldPayouts, heldSummary, withheldIn, withheldSummary } from "./release-holds.js";
+import { eventAuthority, intentHistory, paidWalletsOf, type Read, releasedDelivery, releaseOf } from "./release-reads.js";
 import type { SimpleContext } from "./simple-orders.js";
 import type { Announcement, DeliveriesInput, EscrowOpeningsInput, ReceiptInput, ReleaseReceipt } from "./simple-types.js";
 import { hexBytes } from "./encoding.js";
@@ -56,7 +57,7 @@ export function workReads(ctx: SimpleContext) {
     const [read, held] = await Promise.all([intentHistory(transport, escrow, HISTORY_LIMIT, releasedIn), intentAt(transport, escrow)]);
     const release = settledRelease(read.transactions, escrow);
     if (release === undefined) {
-      const unreleased = { escrow, signature: null, payee: null, payees: [], deliveredSha256: null, valid: false, refutedBy: null, unreadable: [] };
+      const unreleased = { escrow, signature: null, payee: null, payees: [], deliveredSha256: null, valid: false, refutedBy: null, held: [], withheld: [], unreadable: [] };
       const beyond = `the ${read.transactions.length} most recent transactions of the escrow read before paging stopped at its limit`;
       if (held?.status === IntentStatus.Filled) {
         const where = read.complete ? "none of its transactions holds a release this client reads" : `its release lies beyond ${beyond}`;
@@ -71,9 +72,13 @@ export function workReads(ctx: SimpleContext) {
     const payees = (await paidWalletsOf(transport, release, escrow)) ?? [];
     const released = releasedDelivery(release.transaction, escrow);
     const standing: Standing = released === null ? { refutedBy: null, complete: true, unreadable: [] } : await refutedBy(released.announcement);
+    const by = await eventAuthority();
+    const holds = await heldPayouts(transport, release.transaction, by, escrow, read.transactions);
+    const withheld = withheldIn(release.transaction, by, escrow);
     const payee = payees[0] ?? null;
     const valid = released !== null;
     const work = released === null ? "no announced work" : `work ${released.sha256}`;
+    const notes = [...heldSummary(holds), ...withheldSummary(withheld)];
     return {
       escrow,
       released: true,
@@ -83,9 +88,11 @@ export function workReads(ctx: SimpleContext) {
       deliveredSha256: released?.sha256 ?? null,
       valid,
       refutedBy: standing.refutedBy,
+      held: holds,
+      withheld,
       complete: standing.complete,
       unreadable: standing.unreadable,
-      summary: `Escrow ${escrow} was released in ${signature} to ${payees.length === 0 ? "an unknown wallet" : payees.join(", ")} for ${work}; the release is ${valid ? "valid" : "not valid"}`,
+      summary: `Escrow ${escrow} was released in ${signature} to ${payees.length === 0 ? "an unknown wallet" : payees.join(", ")} for ${work}; the release is ${valid ? "valid" : "not valid"}${notes.map((note) => `; ${note}`).join("")}`,
     };
   };
 

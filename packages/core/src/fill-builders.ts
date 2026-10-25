@@ -1,6 +1,7 @@
 import type { Address, Instruction, TransactionSigner } from "@solana/kit";
 import {
   getBeginFillInstructionAsync,
+  getClaimHeldInstructionAsync,
   getEndFillInstruction,
   getFillAttestedCommitteeInstructionAsync,
   getFillAttestedInstructionAsync,
@@ -212,6 +213,46 @@ export async function buildFillAttestedSplitCommittee(input: FillAttestedSplitCo
     ...(await splitAccounts(input)),
     committee: input.committee,
     signers: input.signers,
+  });
+}
+
+export type ClaimHeldSpec = {
+  wallet: TransactionSigner;
+  intent: Address;
+  announcement: Address;
+  to: Address;
+  inputMint: Address;
+  inputTokenProgram: Address;
+  index: number;
+  recipients: Address[];
+  weights: number[];
+  capped?: bigint;
+};
+
+export async function buildClaimHeld(input: ClaimHeldSpec) {
+  if (input.recipients.length < 1 || input.recipients.length > MAX_SPLIT_RECIPIENTS) {
+    throw new InvalidInput("recipients", "range", `split needs 1..=${MAX_SPLIT_RECIPIENTS} recipients, got ${input.recipients.length}`);
+  }
+  if (input.weights.length !== input.recipients.length) {
+    throw new InvalidInput("weights", "length", `split needs one weight per recipient, got ${input.weights.length} for ${input.recipients.length}`);
+  }
+  if (!Number.isInteger(input.index) || input.index < 0 || input.index >= input.recipients.length) {
+    throw new InvalidInput("index", "range", `index must name one of the ${input.recipients.length} recipients, got ${input.index}`);
+  }
+  if (input.recipients[input.index] !== input.wallet.address) {
+    throw new InvalidInput("wallet", "conflict", `recipient ${input.index} is ${input.recipients[input.index]}, not the signing wallet ${input.wallet.address}`);
+  }
+  return getClaimHeldInstructionAsync({
+    wallet: input.wallet,
+    intent: input.intent,
+    inputMint: input.inputMint,
+    announcement: input.announcement,
+    to: input.to,
+    inputTokenProgram: input.inputTokenProgram,
+    ...(await capAccount(input.inputMint, input.capped)),
+    index: input.index,
+    claim: { recipients: input.recipients, weights: input.weights },
+    ...(await events()),
   });
 }
 

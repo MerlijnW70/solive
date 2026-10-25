@@ -3,7 +3,7 @@ import { formatAmount, NATIVE_MINT, splitFees } from "@intent-engine/core";
 import { buildFillAttestedSplit, INTENT_ENGINE_PROGRAM_ADDRESS, MAX_SPLIT_RECIPIENTS, splitPayout, settlementWarnings } from "@intent-engine/core/internal";
 import { decodeLookupTable } from "@intent-engine/solver";
 import { createClient } from "@intent-engine/client/node";
-import { mintOf, PACKET_DATA_SIZE, tokenAccountIfMissing } from "@intent-engine/client/internal";
+import { acceptsPayout, mintOf, PACKET_DATA_SIZE, tokenAccountIfMissing } from "@intent-engine/client/internal";
 import { execute } from "../../flows.js";
 import { TOKEN_NAMES } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";
@@ -35,6 +35,9 @@ export const SPLIT_WEIGHTS_WRONG = "the weights must be whole basis points that 
 export const SPLIT_SIG_NEEDED = "every co-author must sign the split before send: true; preview returns the envelope each one signs";
 export const SIGNATURE_PATTERN = "^[0-9a-fA-F]{128}$";
 export const WARN_COAUTHORS = "every co-author must sign the exact split; a release pays only the recipients and weights they all signed";
+
+export const willHold = (wallets: readonly string[]) =>
+  `${wallets.join(", ")} cannot take a payout into its token account now, so the release pays the others and holds that share in the escrow until its co-author claims it with ${tool("wallet_claim_held")}`;
 
 export const notInSplit = (worker: string, sha256: string) =>
   `${worker} made the first announcement that opens to the work with sha256 ${sha256}, so a split paying for it must include ${worker} among its recipients`;
@@ -115,6 +118,13 @@ export const walletAttestSplit = define({
     const ballot = await createClient({ url: ctx.url ?? "", transport: ctx.transport }).splitBallot(target).catch(settleRefused);
     const token = await mintOf(ctx.transport, held.inputMint);
     const payees = await Promise.all(wallets.map((w) => tokenAccountIfMissing(ctx.transport, payer, w, held.inputMint, token.tokenProgram)));
+    const holding: Address[] = [];
+    for (const [i, payee] of payees.entries()) {
+      const wallet = wallets[i];
+      if (wallet !== undefined && payee.create.length === 0 && !acceptsPayout(await ctx.transport.getAccount(payee.address), token.tokenProgram, held.inputMint, wallet)) {
+        holding.push(wallet);
+      }
+    }
     const amountIn = held.escrowed - held.filled;
     const maxFeeBps = held.feeBps + held.partnerBps;
     const fees = splitFees(amountIn - params.judgeFee, held.feeBps, held.partnerBps, held.partnerCutBps);
@@ -208,7 +218,7 @@ export const walletAttestSplit = define({
         ...leavesBoard(left),
         ...(setup.length === 0 ? [] : [`${await setupLine(ctx, setup.length, token.tokenProgram, device)}, in its own transaction before the release`]),
       ],
-      warnings: [...settlementWarnings(params), WARN_COAUTHORS],
+      warnings: [...settlementWarnings(params), WARN_COAUTHORS, ...(holding.length === 0 ? [] : [willHold(holding)])],
       prepared,
     };
     return sent(ctx, payer, view, input.send, call, {

@@ -7,7 +7,7 @@ import {
   getTokenDecoder,
 } from "@solana-program/token";
 import { findAssociatedTokenAddress, type Intent } from "@intent-engine/core";
-import { buildCloseIntent, buildExpireIntent, decodeIntentAccount, findDelegatePda, findVaultPda, INTENT_VERSION, isUnreadableAccount } from "@intent-engine/core/internal";
+import { buildCloseIntent, buildExpireIntent, decodeIntentAccount, findDelegatePda, findVaultPda, heldClaimableUntil, INTENT_VERSION, isUnreadableAccount } from "@intent-engine/core/internal";
 import { type AccountView, type Transport } from "@intent-engine/client";
 import { chainTime, createdAccount, EXTENSIONS_OFFSET, tokenProgramOf } from "@intent-engine/client/internal";
 import { STATUS } from "./accounts.js";
@@ -183,6 +183,11 @@ type CrankAction = {
   skipped?: string;
 };
 
+export const holdsShare = (intent: Intent, now: bigint): boolean => intent.held !== 0 && now < heldClaimableUntil(intent);
+
+export const sharesHeld = (intent: Address, until: bigint, how = ""): string =>
+  `escrow ${intent} still holds a co-author's split share that its token account could not take, for that co-author to claim${how}; it cannot close until every held share is claimed or ${new Date(Number(until) * 1000).toISOString()}, a year after it expired; nothing was sent`;
+
 export function crankAction(intent: Intent, now: bigint, cranker?: Address): "expire" | "close" | undefined {
   if (intent.version !== INTENT_VERSION) {
     return undefined;
@@ -194,7 +199,7 @@ export function crankAction(intent: Intent, now: bigint, cranker?: Address): "ex
   if (status === "cancelled") {
     return intent.rentPayer === cranker ? "close" : undefined;
   }
-  return status === "filled" || status === "expired" ? "close" : undefined;
+  return (status === "filled" || status === "expired") && !holdsShare(intent, now) ? "close" : undefined;
 }
 
 export async function crank(transport: Transport, cranker: TransactionSigner, dryRun: boolean, fund: boolean) {

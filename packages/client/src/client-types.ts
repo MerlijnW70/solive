@@ -14,6 +14,8 @@ import type { IntentRef } from "./intent-ref.js";
 import type { Plan } from "./plan.js";
 import type { SettleSplitInput, SplitBallot, SplitBallotInput } from "./client-split.js";
 import type { FirstOpening, FirstOpeningInput, Openings, OpeningsInput } from "./first-opening.js";
+import type { ClaimHeldInput, ClaimHeldPlan } from "./held-claim.js";
+import type { HeldShares, HeldSharesOptions } from "./held-shares.js";
 import type { JobFilter, JobList, Spec, SpecFetch } from "./jobs.js";
 import type { Lookup } from "./address-ranges.js";
 import type { ClientHooks, DebugLog } from "./observe.js";
@@ -156,6 +158,7 @@ export type ClientPlans = {
   settleProof(input: SettleProofInput): Promise<Plan>;
   settleCommittee(input: SettleCommitteeInput): Promise<CommitteePlan>;
   settleSplit(input: SettleSplitInput): Promise<Plan>;
+  claimHeld(input: ClaimHeldInput): Promise<ClaimHeldPlan>;
   announce(input: AnnounceInput): Promise<AnnouncementPlan>;
   refute(input: RefuteInput): Promise<RefutePlan>;
   reclaim(input: ReclaimInput): Promise<ReclaimPlan>;
@@ -211,6 +214,8 @@ export type Client = {
   openings(input: OpeningsInput): Promise<Openings>;
   splitBallot(input: SplitBallotInput): Promise<SplitBallot>;
   settleSplit(input: SettleSplitInput): Promise<Signature>;
+  heldShares(wallet: Address, options?: HeldSharesOptions): Promise<HeldShares>;
+  claimHeld(input: ClaimHeldInput): Promise<Signature>;
   refute(input: RefuteInput): Promise<Refuted>;
   reclaim(input: ReclaimInput): Promise<Reclaimed>;
   closeBook(intent: IntentRef, by: TransactionSigner): Promise<Signature>;

@@ -43,6 +43,7 @@ export type AnnouncementView = {
   salt: Uint8Array;
   state: AnnState;
   recipients: number;
+  held: number;
   blob: Uint8Array;
   lamports: bigint;
 };
@@ -84,7 +85,7 @@ export function announcementOf(address: Address, data: Uint8Array, lamports = 0n
   return announcementView(address, decodeAnnouncementAccount(data), lamports);
 }
 
-function announcementView(address: Address, stored: Announcement, lamports: bigint): AnnouncementView {
+export function announcementView(address: Address, stored: Announcement, lamports: bigint): AnnouncementView {
   return {
     address,
     intent: stored.intent,
@@ -102,6 +103,7 @@ function announcementView(address: Address, stored: Announcement, lamports: bigi
     salt: Uint8Array.from(stored.salt),
     state: delivery.decodeAnnState(stored.state),
     recipients: stored.recipients,
+    held: stored.held,
     blob: Uint8Array.from(stored.blob.slice(0, stored.blobLen)),
     lamports,
   };

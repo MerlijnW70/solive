@@ -39,7 +39,13 @@ export async function refutersKept(transport: Transport, closable: readonly Anno
   return kept.flat();
 }
 
-export function keptReason(announcement: AnnouncementView): string {
+export const heldBack = (intent: Address): string =>
+  `it holds a co-author's split share that its account could not take, so the program keeps it until that share is claimed or its escrow ${intent} closes`;
+
+export function keptReason(announcement: AnnouncementView, holding = false): string {
+  if (holding) {
+    return heldBack(announcement.intent);
+  }
   return announcement.state === "paid"
     ? `it was paid, and the program keeps it for the refutation window until ${dateOf(announcement.paidAt + delivery.REFUTE_WINDOW_SECS)}`
     : `its escrow ${announcement.intent} is still open`;

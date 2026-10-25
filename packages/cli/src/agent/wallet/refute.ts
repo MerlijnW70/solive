@@ -98,7 +98,7 @@ export const walletReclaim = define({
   output: object({
     closing: list(account(), RECLAIM_BATCH, "the announcements this call closes"),
     closable: integer(0, Number.MAX_SAFE_INTEGER, "how many of this wallet's announcements may close now"),
-    kept: list(account(), MAX_CLOSED, "announcements that stay: their escrow is open, the refutation window has not passed, or they can still refute a paid release"),
+    kept: list(account(), MAX_CLOSED, "announcements that stay: their escrow is open, the refutation window has not passed, they can still refute a paid release, or they hold a co-author's split share until it is claimed"),
     reasons: list(object({ announcement: account(), reason: text() }), MAX_CLOSED, "why each kept announcement stays, and until when if that ends"),
     summary: list(text(), 4),
     ...deviceOutput,

@@ -1,7 +1,7 @@
 import { ACCEPTS, GLOBAL_OPTIONS } from "./arg-options.js";
 import { EXIT_ALERTED } from "./monitor-args.js";
 
-export const COMMANDS = "setup | add-to claude|codex | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | close-legacy | migrate | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | lookup | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | set-committee-floor | solve | raise-pause | lower-pause | crank | treasury | solver-table | solver float | solver float show | solver float revoke | events | jobs | deliver | deliveries | refute | reclaim | close-book | receipt | judge [digest] | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | profile encryption-key new | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]";
+export const COMMANDS = "setup | add-to claude|codex | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | close-legacy | migrate | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | lookup | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | set-committee-floor | solve | raise-pause | lower-pause | crank | treasury | solver-table | solver float | solver float show | solver float revoke | events | jobs | deliver | deliveries | refute | reclaim | claim-held | close-book | receipt | judge [digest] | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | profile encryption-key new | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]";
 
 export const USAGE = `usage: ${COMMANDS}`;
 
@@ -52,6 +52,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   deliveries: "--intent <address> [--judge-keypair <judge or member file>] [--encryption-keypair <encryption key file> ...]",
   refute: "[--keypair <worker file>] --earlier <your announcement> --paid <paid announcement> [--work-url <https url>] [--recipients <wallet,...> --weights <bps,...>] [--fee-payer <key file>] [--yes]",
   reclaim: "[--keypair <worker file>] [--fee-payer <key file>] [--yes]",
+  "claim-held": "[--keypair <wallet file>] [--announcement <paid announcement> [--index <n>] [--to <token account>] [--fee-payer <key file>] [--yes]]",
   "close-book": "[--keypair <payer file>] --intent <address> [--yes]",
   receipt: "--owner <address> --nonce <n> [--sha256 <64 hex>] [--release <signature>]",
   reputation: "--worker <address> [--max-pages <n>] [--reader <address> [--seed <address>]...]",

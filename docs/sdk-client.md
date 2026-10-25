@@ -177,6 +177,15 @@ console.log(received.map((amount) => formatAmount(amount, sell.decimals)).join("
 - `reclaim` returns an announcement's rent to whoever paid it, for an unpaid one once the escrow is no longer open and for the paid one 30 days after the release; `closeBook` then returns the delivery book's rent to whoever paid it.
 - After a release the intent reads `Filled`, and `escrowed` and `filled` both read the amount escrowed at create; the `net` of its `IntentAttested` event is what the worker received.
 
+## Held split shares
+
+A split release pays every co-author whose canonical token account takes the payout. When a co-author's account cannot take it, because it requires memos, is frozen, is closed or has another blocking setting, the release still pays everyone else and holds that co-author's share in the escrow's vault for it to claim.
+
+- `heldShares(wallet)` lists the shares held for a wallet, each with its `intent`, `announcement`, `index`, `amount`, `mint`, the `account` the release could not pay, the `release` signature and the `split` a claim names. It takes the split from the release transaction the program executed and leaves out a share once the announcement's `held` byte shows it claimed.
+- `claimHeld({ wallet, announcement, to })` pays a held share into `to`, any token account the wallet owns for the escrow's token. Without `to` it pays the canonical account, only when that account takes the payout now, and throws `InvalidInput` otherwise; `plan.claimHeld` returns the plan with its `share` and `to`. A share that is not held throws `NoHeldShare`.
+- A receipt lists held shares in `held`, paid to the co-author and `received` only once claimed, and the fees a release withheld because their account could not take them, the protocol fee among them, in `withheld` with their `role`. `reputation` counts a held share in `earned`, names it in the record's `held` and sums the unclaimed part per mint in `held`.
+- The escrow cannot close, and fails with `SharesHeld`, until every held share is claimed or a year after it expires, when what is left returns to the owner; its paid announcement stays until the share is claimed.
+
 ## When the judge refuses
 
 The engine has no refusal call: a judge that rejects the work sends nothing, and the escrow stays open. The owner cancels it. If the owner does not, anyone can expire the intent once its expiry passes, which returns the escrow to the owner's token account. After the cancel, `settleProof` throws `NotSettleable`. This prints `Cancelled NotSettleable`.
@@ -375,7 +384,7 @@ server.close();
 
 `client.plan` builds what each write sends and sends nothing, for an app that signs through a wallet adapter, a multisig or a bundle service.
 
-- `client.plan` has one method per write: `createIntent`, `cancel`, `fill`, `expire`, `close`, `settleProof`, `settleCommittee`, `settleSplit`, `announce`, `refute`, `reclaim`, `closeBook`, `feedback`, `createCommittee` and `unwrap`.
+- `client.plan` has one method per write: `createIntent`, `cancel`, `fill`, `expire`, `close`, `settleProof`, `settleCommittee`, `settleSplit`, `claimHeld`, `announce`, `refute`, `reclaim`, `closeBook`, `feedback`, `createCommittee` and `unwrap`.
 - A plan names the `payer`, the `setup` instructions that land first, the `instructions`, the signers each one needs in `setupSigners` and `signers`, and the `lookupTables` it relies on, which are none.
 - `setupSigners` and `signers` list, for each instruction, the wallets that must sign the transaction that carries it, the `payer` among them whenever an instruction needs its signature; the `payer` also signs each transaction as its fee payer, and `settleProof` lists no judge, whose verdict travels as a signed message.
 - `plan.createIntent` returns a `CreateIntentPlan`: a `Plan` that also names the `intent`, its `nonce`, `expiresAt` and `payTo`.

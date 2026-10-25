@@ -1,6 +1,6 @@
 import { type Address, getBase16Decoder, getBase16Encoder } from "@solana/kit";
 import { type Intent, type IntentParams, Kind, IntentStatus } from "@intent-engine/core";
-import { decodeParamsLoose, describeTerms, INTENT_VERSION, MAX_PARTNER_BPS, NO_MANDATE, remainingOf } from "@intent-engine/core/internal";
+import { decodeParamsLoose, describeTerms, heldClaimableUntil, INTENT_VERSION, MAX_PARTNER_BPS, NO_MANDATE, remainingOf } from "@intent-engine/core/internal";
 import { STATUS } from "../accounts.js";
 import type { Prepared } from "./prepare.js";
 import { tokenNames } from "../tokens.js";
@@ -170,6 +170,9 @@ const SETTLED: ReadonlySet<number> = new Set([IntentStatus.Filled, IntentStatus.
 export const SETTLED_LINE =
   "No longer open: its escrow was refunded or paid out, so nothing is locked in it; escrowed only records what was locked at creation";
 
+export const heldLine = (until: bigint): string =>
+  `Holds a co-author's split share that its token account could not take, for that co-author to claim; the escrow cannot close until every held share is claimed or ${new Date(Number(until) * 1000).toISOString()}`;
+
 export function intentView(address: Address, intent: Intent, decimals: Decimals = {}) {
   const raw = Uint8Array.from(intent.params);
   const params = termsOf(intent, raw);
@@ -195,7 +198,7 @@ export function intentView(address: Address, intent: Intent, decimals: Decimals 
       ...(typeof params === "string"
         ? [`Unreadable terms: ${params}`]
         : describeTerms({ kind: params.kind, params: raw, inputMint: intent.inputMint, outputMint: intent.outputMint }, { ...decimals, ...tokenNames(intent.inputMint, intent.outputMint) })),
-      ...(SETTLED.has(intent.status) ? [SETTLED_LINE] : []),
+      ...(intent.held !== 0 ? [heldLine(heldClaimableUntil(intent))] : SETTLED.has(intent.status) ? [SETTLED_LINE] : []),
     ],
   };
 }

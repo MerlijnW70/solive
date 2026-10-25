@@ -6,6 +6,7 @@ import type { Client, MessageSigner, WatchCallback, WatchOptions } from "./clien
 import type { DeliveryOpeners, Openings } from "./first-opening.js";
 import type { Job, SpecFetch } from "./jobs.js";
 import type { Lookup } from "./address-ranges.js";
+import type { HeldPayout, WithheldFee } from "./release-holds.js";
 import type { Cluster } from "./simple-tokens.js";
 import type { Transport } from "./transport.js";
 
@@ -68,6 +69,8 @@ export type ReleaseReceipt = {
   deliveredSha256: string | null;
   valid: boolean;
   refutedBy: Address | null;
+  held: HeldPayout[];
+  withheld: WithheldFee[];
   complete: boolean;
   unreadable: UnreadableAccount[];
   summary: string;

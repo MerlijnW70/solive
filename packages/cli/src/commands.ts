@@ -8,10 +8,11 @@ import {
   findIntentPda,
   findUserStatePda,
   findVaultPda,
+  heldClaimableUntil,
   nextEpoch,
 } from "@intent-engine/core/internal";
 import { solverTableAccounts, tick } from "@intent-engine/solver";
-import { cancelClaims, clusterDomain, createdAccount, loadConfig, loadIntent, tokenAccountIfMissing, tokenProgramOf } from "@intent-engine/client/internal";
+import { cancelClaims, chainTime, clusterDomain, createdAccount, loadConfig, loadIntent, tokenAccountIfMissing, tokenProgramOf } from "@intent-engine/client/internal";
 import { agentServer } from "./agent/mcp.js";
 import { servedActions } from "./agent/everyday.js";
 import { claimsOf } from "./agent/claims.js";
@@ -23,7 +24,7 @@ import { VERSION } from "./version.js";
 import { balances, CLI_SMALL_START, CLI_START, defaultMints, setup } from "./wallet.js";
 import { FlowRefused } from "./flows.js";
 import { describeIntent, quoteOf, sameBytes } from "./accounts.js";
-import { closing, crank, expiring } from "./crank.js";
+import { closing, crank, expiring, holdsShare, sharesHeld } from "./crank.js";
 import { withPriority } from "./compute.js";
 import { createTreasuryAccounts, intentInputMints, treasuryView } from "./treasury.js";
 import { artifactSha256, judge } from "./judge.js";
@@ -190,6 +191,9 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "close": {
       const payer = await transactionSigner(runtime, command.keypair);
       const { address, intent } = await loadIntent(transport, command.owner, command.nonce);
+      if (holdsShare(intent, await chainTime(transport))) {
+        throw new FlowRefused(sharesHeld(address, heldClaimableUntil(intent), " with claim-held"));
+      }
       const instructions = await closing(transport, payer, address, intent, "always");
       const summary = [
         `Closes intent ${address} (nonce ${command.nonce}) and returns its rent; it can no longer be read afterwards`,
@@ -218,6 +222,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "deliveries":
     case "refute":
     case "reclaim":
+    case "claim-held":
     case "close-book":
       return announceCommand(command, runtime, transport);
     case "judge": {

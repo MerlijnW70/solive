@@ -9,7 +9,7 @@ import {
 } from "@solana-program/token";
 import { beforeEach, describe, expect, it } from "vitest";
 import { type Intent } from "@intent-engine/core";
-import { findConfigPda, getConfigDecoder, findIntentPda, findVaultPda, INTENT_VERSION } from "@intent-engine/core/internal";
+import { findConfigPda, getConfigDecoder, findIntentPda, findVaultPda, HELD_CLAIM_SECS, INTENT_VERSION } from "@intent-engine/core/internal";
 import { rentExemptMinimum } from "@intent-engine/client/internal";
 import { crankAction, IMMUTABLE_OWNER, refundable, refundSeed, TOKEN_ACCOUNT_BYTES, UNFUNDED } from "../src/commands.js";
 import { rentFor, rentRate } from "../src/agent/budget.js";
@@ -357,8 +357,8 @@ describe("refund targets", () => {
 
 describe("crank decisions", () => {
   const PAYER = "SysvarRent111111111111111111111111111111111" as Address;
-  const at = (status: number, expiresAt: bigint, version = 2) =>
-    ({ status, expiresAt, version, rentPayer: PAYER }) as unknown as Intent;
+  const at = (status: number, expiresAt: bigint, version = 2, held = 0) =>
+    ({ status, expiresAt, version, rentPayer: PAYER, held }) as unknown as Intent;
 
   it("expires open intents from their deadline and closes settled ones, cancelled ones only for their payer", () => {
     expect(crankAction(at(0, 100n), 99n)).toBeUndefined();
@@ -372,6 +372,14 @@ describe("crank decisions", () => {
     expect(crankAction(at(2, 100n), 0n, PAYER)).toBe("close");
     expect(crankAction(at(4, 100n), 1_000n)).toBeUndefined();
     expect(crankAction(at(9, 100n), 1_000n)).toBeUndefined();
+  });
+
+  it("leaves an escrow holding a split share unclosed until the year to claim it has passed", () => {
+    for (const status of [1, 3]) {
+      expect(crankAction(at(status, 100n, 2, 1), 101n)).toBeUndefined();
+      expect(crankAction(at(status, 100n, 2, 1), 99n + HELD_CLAIM_SECS)).toBeUndefined();
+      expect(crankAction(at(status, 100n, 2, 1), 100n + HELD_CLAIM_SECS)).toBe("close");
+    }
   });
 
   it("leaves intents of a version it does not understand alone", () => {

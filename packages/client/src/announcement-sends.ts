@@ -153,7 +153,12 @@ export function announcementPlans(context: ClientContext): AnnouncementPlans {
         return intent !== null && intent.status === IntentStatus.Open && now < intent.expiresAt;
       }),
     );
+    const live = new Set(intents.filter((_, i) => views[i] !== null && views[i] !== undefined && views[i]?.owner === INTENT_ENGINE_PROGRAM_ADDRESS));
+    const holding = (announcement: AnnouncementView): boolean => announcement.held !== 0 && live.has(announcement.intent);
     const closable = (announcement: AnnouncementView): boolean => {
+      if (holding(announcement)) {
+        return false;
+      }
       try {
         delivery.closable(announcement.state, true, open.has(announcement.intent), now, announcement.expiresAt, announcement.paidAt);
         return true;
@@ -170,7 +175,7 @@ export function announcementPlans(context: ClientContext): AnnouncementPlans {
     const reasons: KeptAnnouncement[] = [
       ...mine
         .filter((announcement) => !closing.includes(announcement))
-        .map((announcement) => retained.find((kept) => kept.announcement === announcement.address) ?? { announcement: announcement.address, reason: keptReason(announcement) }),
+        .map((announcement) => retained.find((kept) => kept.announcement === announcement.address) ?? { announcement: announcement.address, reason: keptReason(announcement, holding(announcement)) }),
       ...unreadable.map(({ address }) => ({ announcement: address, reason: "it could not be read as an announcement" })),
     ];
     const payer = input.payer ?? worker;

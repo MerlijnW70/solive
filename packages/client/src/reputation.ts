@@ -33,6 +33,7 @@ export type Reputation = {
   judges: number;
   committeeJudged: number;
   earned: Earned[];
+  held: Earned[];
   backed: Earned[];
   backedSol: string;
   feedback: { count: number; average: number | null };
@@ -95,6 +96,13 @@ export async function reputationOf(transport: Transport, wallet: Address, option
       earned.set(r.mint, (earned.get(r.mint) ?? 0n) + r.earned);
     }
   }
+  const held = new Map<Address, bigint>();
+  for (const r of fair) {
+    const waiting = (r.held ?? []).filter(({ received }) => !received).reduce((sum, { amount }) => sum + amount, 0n);
+    if (r.mint !== undefined && waiting > 0n) {
+      held.set(r.mint, (held.get(r.mint) ?? 0n) + waiting);
+    }
+  }
   const backed = new Map<Address, bigint>();
   let backedSol = 0n;
   for (const r of fair) {
@@ -121,6 +129,7 @@ export async function reputationOf(transport: Transport, wallet: Address, option
     judges: new Set(fair.map((r) => r.attestor)).size,
     committeeJudged: fair.filter((r) => r.committee !== undefined).length,
     earned: [...earned].map(([mint, amount]) => ({ mint, amount })),
+    held: [...held].map(([mint, amount]) => ({ mint, amount })),
     backed: [...backed].map(([mint, amount]) => ({ mint, amount })),
     backedSol: formatAmount(backedSol, SOL_DECIMALS),
     feedback: { count: scores.length, average: scores.length === 0 ? null : scores.reduce((a, b) => a + b, 0) / scores.length },

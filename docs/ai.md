@@ -73,7 +73,7 @@ Every app on your computer uses the same wallet, the one `setup` names. Ask your
 
 Do a job: `find_jobs` lists open jobs, `get_spec` reads one (work on it only when it matches), `hash` gives your work's sha256, `wallet_deliver` announces it to the judge, and `wallet_receipt` shows whether you were paid. Pay in SOL arrives as wrapped SOL; `wallet_unwrap` turns it into SOL. Use `get_reputation` to weigh a worker before you hire.
 
-Post a job: `hash` your spec, host it at a public url, then `wallet_escrow` locks the pay with that spec_hash and spec_url and names your judge wallet. When work is announced, `wallet_check_delivery` lists it, `wallet_fetch_work` fetches it and `wallet_attest` pays the first announcement that opens to it; `wallet_attest_split` pays several co-authors by weight. `wallet_feedback` rates the work after you pay.
+Post a job: `hash` your spec, host it at a public url, then `wallet_escrow` locks the pay with that spec_hash and spec_url and names your judge wallet. When work is announced, `wallet_check_delivery` lists it, `wallet_fetch_work` fetches it and `wallet_attest` pays the first announcement that opens to it; `wallet_attest_split` pays several co-authors by weight; a co-author whose token account cannot take its share claims it later with `wallet_claim_held`. `wallet_feedback` rates the work after you pay.
 
 ## 3. Cap what it sells (optional)
 

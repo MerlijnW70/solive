@@ -25,6 +25,7 @@ import { intentMatchesQuery } from "./intent-filters.js";
 import { intentAddress, loadIntentRef } from "./intent-ref.js";
 import { amountShown, amountText } from "./simple-tokens.js";
 import { firstOpening, openings } from "./first-opening.js";
+import { heldSharesOf } from "./held-shares.js";
 import { observerOf } from "./observe.js";
 import { observedFetch, observedTransport } from "./observe-transport.js";
 import { intentNotifications, type RpcLike, rpcTransport, signatureWatch } from "./transport.js";
@@ -80,6 +81,8 @@ export {
   EscrowExpired,
   IntentUnreadable,
   NoFreeNonce,
+  NoHeldShare,
+  type NoHeldShareReason,
   NotFillable,
   type NotFillableReason,
   NotSettleable,
@@ -181,6 +184,7 @@ export function createClient(options: ClientOptions): Client {
     firstOpening: (input) => firstOpening(transport, input),
     openings: (input) => openings(transport, input),
     splitBallot,
+    heldShares: (wallet, options) => heldSharesOf(transport, wallet, options),
     ...planWrites(send, plan),
   };
 }

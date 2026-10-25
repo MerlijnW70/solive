@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { isSdkError, type Trust, trustOf } from "@intent-engine/client";
+import { isSdkError, type Trust, trustOf, type WorkRecord } from "@intent-engine/client";
 import { DELIVERY_PAGES, feedbackInstructions, reputationOf, RESTART, SIGNATURE_PAGE, TRUST_PATHS, TRUST_WALLETS } from "@intent-engine/client/internal";
 import { type AgentContext, define } from "./actions.js";
 import type { Call } from "./claims.js";
@@ -65,6 +65,7 @@ export const getReputation = define({
     judges: integer(0, Number.MAX_SAFE_INTEGER, "distinct judges or committees that released to it at arm's length"),
     committee_judged: integer(0, Number.MAX_SAFE_INTEGER, "arm's-length releases judged by a committee"),
     earned: list(object({ mint: account(), amount: amount("raw units") }), 32),
+    held: list(object({ mint: account(), amount: amount("raw units") }), 32, "the part of earned that split releases paid this wallet but held in their escrows, as its token account could not take it, and it has not claimed yet"),
     backed: list(object({ mint: account(), amount: amount("raw units of protocol fees") }), 32),
     backed_sol: text("SOL protocol fees and every create fee behind the totals, in whole SOL"),
     feedback: object({ count: integer(0, Number.MAX_SAFE_INTEGER), average: nullable(text("average owner score out of 100")) }),
@@ -85,6 +86,7 @@ export const getReputation = define({
         owner: optional(account()),
         attestor: optional(account()),
         earned: optional(amount()),
+        held: optional(amount("raw units of earned that the release held for this wallet and it has not claimed yet")),
         feedback: optional(integer(0, 100)),
       }),
       RECORDS_SHOWN,
@@ -125,6 +127,7 @@ export const getReputation = define({
       judges: rep.judges,
       committee_judged: rep.committeeJudged,
       earned: rep.earned,
+      held: rep.held,
       backed: rep.backed,
       backed_sol: rep.backedSol,
       feedback: { count: rep.feedback.count, average: rep.feedback.average === null ? null : rep.feedback.average.toFixed(1) },
@@ -154,12 +157,18 @@ export const getReputation = define({
         ...(r.owner === undefined ? {} : { owner: r.owner }),
         ...(r.attestor === undefined ? {} : { attestor: r.attestor }),
         ...(r.earned === undefined ? {} : { earned: r.earned }),
+        ...heldOf(r),
         ...(r.feedback === undefined ? {} : { feedback: r.feedback }),
       })),
       ...(trust === undefined ? {} : { trust: trustView(trust) }),
     };
   },
 });
+
+function heldOf(record: WorkRecord): { held?: bigint } {
+  const waiting = (record.held ?? []).filter(({ received }) => !received).reduce((sum, { amount: part }) => sum + part, 0n);
+  return waiting === 0n ? {} : { held: waiting };
+}
 
 export const walletFeedback = define({
   name: tool("wallet_feedback"),

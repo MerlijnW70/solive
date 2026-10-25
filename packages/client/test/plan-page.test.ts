@@ -37,6 +37,7 @@ const WRITES = [
   "settleProof",
   "settleCommittee",
   "settleSplit",
+  "claimHeld",
   "announce",
   "refute",
   "reclaim",

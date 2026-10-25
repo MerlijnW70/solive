@@ -13,6 +13,11 @@ export const MAX_CREATE_FEE = 10_000_000;
 export const MAX_CRANK_BOUNTY = 10_000_000;
 export const MAX_FEE_BPS = 100;
 export const MAX_ATTESTED_FEE_BPS = 300;
+export const HELD_CLAIM_SECS = 31_536_000n;
+
+export function heldClaimableUntil(intent: { expiresAt: bigint }): bigint {
+  return intent.expiresAt + HELD_CLAIM_SECS;
+}
 
 export function maxFeeBpsFor(kind: number): number {
   return kind === Kind.AttestedResult ? MAX_ATTESTED_FEE_BPS : MAX_FEE_BPS;

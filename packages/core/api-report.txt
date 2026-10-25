@@ -50,6 +50,7 @@ type SwapExactInParams: type SwapExactInParams = { kind: Kind.SwapExactIn; amoun
 external TOKEN_PROGRAM_ADDRESS: @solana-program/token#TOKEN_PROGRAM_ADDRESS
 type Terms: type Terms = { kind: Kind; kindName: KindName; params: IntentParams; sells: bigint; receivesAtLeast: bigint | null; };
 type UnreadableAccount: type UnreadableAccount = { address: Address; reason: string; };
+type WithheldRole: type WithheldRole = (typeof WITHHELD_ROLES)[keyof typeof WITHHELD_ROLES];
 function attestedResult: function attestedResult(fields: AttestedResultFields): AttestedResultParams;
 function configSummary: function configSummary(config: SummarizedConfig): ConfigSummary;
 function dutchAuction: function dutchAuction(fields: DutchAuctionFields): DutchAuctionParams;

@@ -156,3 +156,11 @@ export function decodeEvent(data: Uint8Array): DecodedEvent | null {
 export function eventNamed<E extends EngineEvent, N extends E["name"]>(events: readonly E[], name: N): Extract<E, { name: N }> | undefined {
   return events.find((event): event is Extract<E, { name: N }> => event.name === name);
 }
+
+export const WITHHELD_ROLES = { 1: "partner", 2: "agent", 3: "treasury", 4: "judge", 5: "protocol" } as const;
+
+export type WithheldRole = (typeof WITHHELD_ROLES)[keyof typeof WITHHELD_ROLES];
+
+export function withheldRole(role: number): WithheldRole | "unknown" {
+  return role in WITHHELD_ROLES ? WITHHELD_ROLES[role as keyof typeof WITHHELD_ROLES] : "unknown";
+}

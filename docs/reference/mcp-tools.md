@@ -2,7 +2,7 @@
 
 # MCP tools
 
-26 tools, served by `intent-engine mcp` over stdio. With `--wallet` it serves only the 34 everyday tools: `solive_wallet_setup`, `solive_wallet_balance`, `solive_wallet_estimate`, `solive_wallet_swap`, `solive_wallet_auction`, `solive_wallet_recurring`, `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_seal_spec`, `solive_wallet_attest`, `solive_wallet_attest_split`, `solive_wallet_committee_create`, `solive_wallet_committee_vote`, `solive_wallet_committee_release`, `solive_wallet_feedback`, `solive_wallet_claim`, `solive_wallet_profile`, `solive_wallet_deliver`, `solive_wallet_check_delivery`, `solive_wallet_fetch_work`, `solive_wallet_refute`, `solive_wallet_reclaim`, `solive_wallet_wait`, `solive_wallet_receipt`, `solive_wallet_intents`, `solive_wallet_history`, `solive_wallet_cancel`, `solive_wallet_unwrap`, `solive_find_jobs`, `solive_get_spec`, `solive_hash`, `solive_get_reputation`, `solive_get_claims`, `solive_get_profile`, plus the tools `--relayer` and `--agent` need. With `--wallet --all-tools` it serves every tool, the 28 wallet tools listed first.
+26 tools, served by `intent-engine mcp` over stdio. With `--wallet` it serves only the 35 everyday tools: `solive_wallet_setup`, `solive_wallet_balance`, `solive_wallet_estimate`, `solive_wallet_swap`, `solive_wallet_auction`, `solive_wallet_recurring`, `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_seal_spec`, `solive_wallet_attest`, `solive_wallet_attest_split`, `solive_wallet_committee_create`, `solive_wallet_committee_vote`, `solive_wallet_committee_release`, `solive_wallet_feedback`, `solive_wallet_claim`, `solive_wallet_profile`, `solive_wallet_deliver`, `solive_wallet_check_delivery`, `solive_wallet_fetch_work`, `solive_wallet_refute`, `solive_wallet_reclaim`, `solive_wallet_claim_held`, `solive_wallet_wait`, `solive_wallet_receipt`, `solive_wallet_intents`, `solive_wallet_history`, `solive_wallet_cancel`, `solive_wallet_unwrap`, `solive_find_jobs`, `solive_get_spec`, `solive_hash`, `solive_get_reputation`, `solive_get_claims`, `solive_get_profile`, plus the tools `--relayer` and `--agent` need. With `--wallet --all-tools` it serves every tool, the 29 wallet tools listed first.
 
 ## solive_wallet_setup
 
@@ -377,6 +377,22 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | --- | --- | --- | --- |
 | `send` | boolean | no | true signs and sends; leave out to preview |
 
+## solive_wallet_claim_held
+
+Served only with `--wallet`.
+
+Lists the split shares a release held for this wallet because its token account could not take them (it required memos, was frozen or closed), and claims one into a token account this wallet owns. Without announcement it only lists. Previews only; after the user says yes, call with send: true and its approval.
+
+Effect: `submit` (read-only: false, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `announcement` | address | no | the paid announcement holding the share, from the listing |
+| `index` | integer 0..7 | no | this wallet's place in the split, when one announcement holds more than one share for it |
+| `to` | address | no | a token account this wallet owns for the escrow's token; default its canonical account, if that can take the payout now |
+| `approval` | string | no | the approval the preview returned; needed with send |
+| `send` | boolean | no | true signs and sends the claim; leave out to preview |
+
 ## solive_wallet_wait
 
 Served only with `--wallet`.
@@ -565,7 +581,7 @@ Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 
 ## solive_find_crank_work
 
-List intents anyone may settle now for their bounty: open intents past their expiry (expire refunds the owner) and filled or expired intents waiting to be closed (close returns their rent to whoever paid it, or to the cranker when that payer has since become a program). A cancelled intent's bounty goes back to its payer, so it is listed only for that payer, given as cranker. Each comes with the bounty in lamports.
+List intents anyone may settle now for their bounty: open intents past their expiry (expire refunds the owner) and filled or expired intents waiting to be closed (close returns their rent to whoever paid it, or to the cranker when that payer has since become a program). An escrow holding a co-author's split share is left out until that share is claimed or a year after it expired. A cancelled intent's bounty goes back to its payer, so it is listed only for that payer, given as cranker. Each comes with the bounty in lamports.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 

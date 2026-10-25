@@ -16,6 +16,7 @@ export const LEDGER_COMMANDS = [
   "deliver",
   "refute",
   "reclaim",
+  "claim-held",
   "close-book",
   "judge",
   "committee vote",

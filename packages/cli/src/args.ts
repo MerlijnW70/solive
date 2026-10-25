@@ -342,6 +342,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
     case "deliveries":
     case "refute":
     case "reclaim":
+    case "claim-held":
     case "close-book":
       noSub(sub);
       return announceArgsOf(verb, remote, values);
