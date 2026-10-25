@@ -23,8 +23,10 @@ import {
   checkHour,
   refusedBeforeSending,
   PREVIEW_FIRST,
+  PREVIEW_APPROVAL,
   oneAtATime,
   signerOf,
+  termsApproval,
 } from "./guard.js";
 import { offerFields, offerOutput, offered } from "./offer.js";
 import { recentFills, bestOf, medianOf, openingAsk, type Fill } from "./fills.js";
@@ -37,6 +39,16 @@ export const ORDER_DONE = `placed; ${tool("wallet_wait")} its nonce, then ${tool
 export const DEFAULT_SLIPPAGE_BPS = 100n;
 export const MAX_SLIPPAGE_BPS = 5_000;
 export const NO_MARKET = "no recent fills of this pair to set a floor from; pass min_receive, or call wallet_estimate first to see the price";
+
+export const ORDER_CHANGED =
+  "this order differs from its preview: the market moved its default min_receive or start_receive, its terms changed, or no approval was given; preview it again and show the user";
+
+export const orderPreviewNext = (opening: boolean) =>
+  `not sent; show the summary, then resend the same terms with send: true${opening ? ", the start_receive" : ""} and the approval above`;
+
+const ORDER_APPROVAL = "pass it back with send: true; a send whose floor, start or terms differ from this preview is refused";
+
+const APPROVAL_INPUT = "the approval the preview returned; needed with send";
 
 export function marketFloor(fills: Fill[], amount: bigint, slippageBps: number | undefined): bigint {
   const typical = medianOf(fills);
@@ -54,7 +66,7 @@ export function marketFloor(fills: Fill[], amount: bigint, slippageBps: number |
 export const walletSwap = define({
   name: tool("wallet_swap"),
   title: "Swap from the wallet",
-  description: `Sells one token for another at the market: the simple sell, the ask falling to min_receive. Leave min_receive out to accept the recent median less max_slippage_bps. To buy, sell the other. For a price curve you set yourself, use ${tool("wallet_auction")}. ${PREVIEW_FIRST} Pass back the preview's start_receive.`,
+  description: `Sells one token for another at the market: the simple sell, the ask falling to min_receive. Leave min_receive out to accept the recent median less max_slippage_bps. To buy, sell the other. For a price curve you set yourself, use ${tool("wallet_auction")}. ${PREVIEW_APPROVAL} Pass back the preview's start_receive too.`,
   effect: "submit",
   repeats: true,
   input: object({
@@ -68,17 +80,21 @@ export const walletSwap = define({
     exact: optional(flag("true asks min_receive from the start, with no falling ask")),
     pay_to: optional(account(PAY_TO)),
     expires_in: optional(integer(MIN_EXPIRES_IN, MAX_EXPIRES_IN, `least seconds the offer stays open once sent; default ${DEFAULT_EXPIRES_IN}`)),
+    approval: optional(text(APPROVAL_INPUT)),
     send: optional(flag("true signs and sends; leave out to preview")),
   }),
   output: object({
     ...offerFields,
     min_receive: optional(text("the floor the order will not sell below, whole tokens; echoes what you passed or the market default used")),
     start_receive: optional(text("whole tokens asked when the offer lands; pass it back when sending")),
+    approval: text(ORDER_APPROVAL),
   }),
   run: async (ctx: AgentContext, input, call: Call) => {
     let opening: string | undefined;
     let floorShown: string | undefined;
-    const result = await offered(ctx, call, input, async (sold, bought, now, inputMint, outputMint) => {
+    let approval = "";
+    const options = { ...input, previewNext: orderPreviewNext(false), changed: ORDER_CHANGED };
+    const result = await offered(ctx, call, options, async (sold, bought, now, inputMint, outputMint) => {
       const amountIn = raw(input.amount, sold.decimals, "amount");
       const fills = await recentFills(ctx.transport, inputMint, outputMint);
       const floor = input.min_receive === undefined ? marketFloor(fills, amountIn, input.max_slippage_bps) : raw(input.min_receive, bought.decimals, "min_receive");
@@ -90,18 +106,21 @@ export const walletSwap = define({
           : input.start_receive === undefined
             ? openingAsk(fills, amountIn, floor)
             : raw(input.start_receive, bought.decimals, "start_receive");
+      const falls = BigInt(input.falls_over ?? SWAP_FALLS_OVER);
+      approval = termsApproval({ action: "swap", sell: inputMint, buy: outputMint, amount: amountIn, floor, ask, falls, expires_in: expiresIn, pay_to: input.pay_to ?? null });
       if (ask <= floor) {
-        return { order: { kind: "swap", amount_in: amountIn, min_out: floor }, expires_at: now + expiresIn + BigInt(LANDING_SECONDS) };
+        return { order: { kind: "swap", amount_in: amountIn, min_out: floor }, expires_at: now + expiresIn + BigInt(LANDING_SECONDS), approval };
       }
       opening = formatAmount(ask, bought.decimals);
+      options.previewNext = orderPreviewNext(true);
       const start = now + BigInt(LANDING_SECONDS);
-      const falls = BigInt(input.falls_over ?? SWAP_FALLS_OVER);
       return {
         order: { kind: "dutch", amount_in: amountIn, start_out: ask, end_out: floor, start_time: start, end_time: start + falls },
         expires_at: start + (expiresIn > falls ? expiresIn : falls),
+        approval,
       };
     }, ORDER_DONE);
-    return { ...result, ...(opening === undefined ? {} : { start_receive: opening }), ...(floorShown === undefined ? {} : { min_receive: floorShown }) };
+    return { ...result, ...(opening === undefined ? {} : { start_receive: opening }), ...(floorShown === undefined ? {} : { min_receive: floorShown }), approval };
   },
 });
 
@@ -122,7 +141,7 @@ export const MAX_EVERY = 30 * 24 * 60 * 60;
 export const walletRecurring = define({
   name: tool("wallet_recurring"),
   title: "Repeat a swap on a schedule",
-  description: `Repeats a sale on a schedule: every order is sent now, each falling to min_receive. Leave min_receive out to accept the recent median less max_slippage_bps. To buy on a schedule, sell the other. Cancel any with ${tool("wallet_cancel")}. ${PREVIEW_FIRST} Pass back the preview's start_receive.`,
+  description: `Repeats a sale on a schedule: every order is sent now, each falling to min_receive. Leave min_receive out to accept the recent median less max_slippage_bps. To buy on a schedule, sell the other. Cancel any with ${tool("wallet_cancel")}. ${PREVIEW_APPROVAL} Pass back the preview's start_receive too.`,
   effect: "submit",
   repeats: true,
   input: object({
@@ -136,6 +155,7 @@ export const walletRecurring = define({
     start_receive: optional(text("whole tokens each order asks until and when it opens; default a little above the median recent fill, between 1.25 and 2 times min_receive")),
     falls_over: optional(integer(MIN_EXPIRES_IN, MAX_EVERY, `seconds each order's ask takes to fall to min_receive; default ${SWAP_FALLS_OVER}`)),
     pay_to: optional(account(PAY_TO)),
+    approval: optional(text(APPROVAL_INPUT)),
     send: optional(flag("true signs and sends every order; leave out to preview")),
   }),
   output: object({
@@ -147,6 +167,7 @@ export const walletRecurring = define({
     warnings: list(text(), 16),
     start_receive: text("whole tokens each order asks when it opens; pass it back when sending"),
     min_receive: optional(text("the floor each order will not sell below, whole tokens; echoes what you passed or the market default used")),
+    approval: text(ORDER_APPROVAL),
     sent: flag(),
     next: optional(text()),
   }),
@@ -169,20 +190,22 @@ export const walletRecurring = define({
         input.start_receive === undefined ? { path: "min_receive", message: NO_FALL } : { path: "start_receive", message: "must be more than min_receive, or the order has no ask to fall" },
       ]);
     }
+    const falls = BigInt(input.falls_over ?? SWAP_FALLS_OVER);
+    const every = BigInt(input.every);
+    const approval = termsApproval({ action: "recurring", sell: inputMint, buy: outputMint, amount: amountIn, floor, ask, falls, every, times: input.times, pay_to: input.pay_to ?? null });
     const sales = await salesOf(wallet, now);
     checkSale(wallet.limits, inputMint, inputToken.decimals, amountIn, now, sales);
     checkHour(wallet.limits, inputMint, inputToken.decimals, amountIn * BigInt(input.times), now, sales);
-    const falls = BigInt(input.falls_over ?? SWAP_FALLS_OVER);
-    const every = BigInt(input.every);
     const life = falls > every ? falls : every;
     const opens = Array.from({ length: input.times }, (_, k) => now + BigInt(LANDING_SECONDS) + every * BigInt(k));
-    const terms = (open: bigint) => () => ({
+    const terms = (open: bigint, bound?: string) => () => ({
       order: { kind: "dutch" as const, amount_in: amountIn, start_out: ask, end_out: floor, start_time: open, end_time: open + falls },
       expires_at: open + life,
+      ...(bound === undefined ? {} : { approval: bound }),
     });
-    const shown = { start_receive: formatAmount(ask, outputToken.decimals), min_receive: formatAmount(floor, outputToken.decimals) };
+    const shown = { start_receive: formatAmount(ask, outputToken.decimals), min_receive: formatAmount(floor, outputToken.decimals), approval };
     const last = opens[opens.length - 1] as bigint;
-    const first = (await offered(ctx, call, { ...input, send: input.send }, terms(opens[0] as bigint))) as Record<string, unknown>;
+    const first = (await offered(ctx, call, { ...input, send: input.send, previewNext: orderPreviewNext(true), changed: ORDER_CHANGED }, terms(opens[0] as bigint, approval))) as Record<string, unknown>;
     const sold = TOKEN_NAMES[inputMint] ?? inputMint;
     const plan = [
       `Plan: ${input.times} orders of ${formatAmount(amountIn, inputToken.decimals)} of ${sold}, ${formatAmount(amountIn * BigInt(input.times), inputToken.decimals)} of ${sold} in all, escrowed now`,

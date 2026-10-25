@@ -18,6 +18,7 @@ import { NOT_PUBLIC, tooLarge } from "../src/delivery-fetch.js";
 import { EXIT_OK } from "../src/main.js";
 import { announced as announce, keyed } from "./announce.js";
 import { cli, funded, h, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown>;
 
@@ -81,7 +82,7 @@ describe("fetching announced work with the wallet", () => {
   });
 
   const escrowTo = async (attestor: Address) => {
-    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor, spec_hash: "6d".repeat(32), send: true });
+    const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor, spec_hash: "6d".repeat(32) }));
     return escrow["intent"] as Address;
   };
 

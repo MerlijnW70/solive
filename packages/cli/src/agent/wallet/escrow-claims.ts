@@ -24,8 +24,20 @@ export type ClaimTerms = { maxSecs: number; stake: bigint };
 
 export type Claimants = Address[] | undefined;
 
-export async function claimants(ctx: AgentContext, specUrl: string, owner: Address, attestor: Address): Promise<Claimants> {
-  const found = await fetchBytes(ctx.fetch ?? pinnedFetch, ctx.transport, specUrl, lookupOf(ctx), MAX_SPEC_BYTES);
+export type SpecRead = { bytes: Uint8Array } | { problem: string };
+
+export type SpecReader = (specUrl: string) => Promise<SpecRead>;
+
+export function specReader(ctx: AgentContext): SpecReader {
+  const read = new Map<string, Promise<SpecRead>>();
+  return (specUrl) => {
+    const known = read.get(specUrl) ?? fetchBytes(ctx.fetch ?? pinnedFetch, ctx.transport, specUrl, lookupOf(ctx), MAX_SPEC_BYTES);
+    read.set(specUrl, known);
+    return known;
+  };
+}
+
+export async function claimants(ctx: AgentContext, found: SpecRead, owner: Address, attestor: Address): Promise<Claimants> {
   if ("problem" in found) {
     throw new AgentRefusal("SpecUnreadable", claimsUnread(found.problem));
   }
@@ -41,11 +53,11 @@ export async function claimants(ctx: AgentContext, specUrl: string, owner: Addre
   return workers;
 }
 
-export function claimantsOf(ctx: AgentContext, owner: Address): (specUrl: string, attestor: Address) => Promise<Claimants> {
+export function claimantsOf(ctx: AgentContext, owner: Address, spec: SpecReader = specReader(ctx)): (specUrl: string, attestor: Address) => Promise<Claimants> {
   const read = new Map<string, Promise<Claimants>>();
   return (specUrl, attestor) => {
     const key = `${attestor} ${specUrl}`;
-    const known = read.get(key) ?? claimants(ctx, specUrl, owner, attestor);
+    const known = read.get(key) ?? spec(specUrl).then((found) => claimants(ctx, found, owner, attestor));
     read.set(key, known);
     return known;
   };

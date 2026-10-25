@@ -15,6 +15,7 @@ import { EXIT_OK } from "../src/main.js";
 import { defaultWallet } from "../src/wallet.js";
 import { announced, keyed } from "./announce.js";
 import { balance, cli, funded, h, HOME, transport, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -108,7 +109,7 @@ describe("a team judging together through the default wallet tools", () => {
     expect(read).toMatchObject({ members, threshold: 2, feeWallet: lead });
     expect(await ok(client, "wallet_committee_create", terms)).toMatchObject({ committee, exists: true, sent: false, next: COMMITTEE_EXISTS });
 
-    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: "5a".repeat(32), send: true });
+    const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: "5a".repeat(32) }));
     const intent = escrow["intent"] as Address;
     const workerKey = await keyed();
     const worker = workerKey.address;

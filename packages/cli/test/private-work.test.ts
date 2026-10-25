@@ -17,6 +17,7 @@ import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { defaultWallet } from "../src/wallet.js";
 import { balance, cli, funded, h, HOME, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 vi.mock("node:dns/promises", () => ({ lookup: async () => [{ address: "93.184.215.14", family: 4 }] }));
 
@@ -98,7 +99,7 @@ describe("an invite-only job with wallet tools only", () => {
     useKey(judge);
     const spec = await ok(client, "wallet_seal_spec", { text: SPEC, invite: [worker.address] });
     h.specPages.set(SPEC_URL, bytesOf(spec["sealed"]));
-    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: judge.address, spec_hash: spec["sha256"], spec_url: SPEC_URL, send: true });
+    const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: judge.address, spec_hash: spec["sha256"], spec_url: SPEC_URL }));
     const intent = escrow["intent"] as Address;
     const made = createdFrom(intent, [specMemo(SPEC_URL)]);
     h.engineLog = [made];

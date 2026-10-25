@@ -17,6 +17,7 @@ import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { sealedOverLimit } from "../src/sealed-commands.js";
 import { defaultWallet } from "../src/wallet.js";
 import { cli, creation, funded, h, HOME, ownerSigned, transport, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown>;
 
@@ -98,7 +99,7 @@ describe("sealing to a committee", () => {
     const hosted = bytesOf(sealed["sealed"]);
     expect(sealedTo(hosted)).toEqual(sealed["sealed_to"]);
     h.specPages.set(SPEC_URL, hosted);
-    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: sha(SPEC), spec_url: SPEC_URL, send: true });
+    const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: sha(SPEC), spec_url: SPEC_URL }));
     const intent = escrow["intent"] as Address;
     h.engineLog = [{ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) }];
     for (const reader of [...members, worker]) {
@@ -113,7 +114,7 @@ describe("sealing to a committee", () => {
     const owner = await funded();
     useKey(owner);
     h.specPages.set(SPEC_URL, bytesOf(SPEC));
-    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: sha(SPEC), spec_url: SPEC_URL, send: true });
+    const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: sha(SPEC), spec_url: SPEC_URL }));
     const intent = escrow["intent"] as Address;
     h.engineLog = [{ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) }];
     const work = sha("the report\n");

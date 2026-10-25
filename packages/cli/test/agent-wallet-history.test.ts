@@ -14,6 +14,7 @@ import { LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { RELEASE_LANDING } from "../src/agent/wallet/receipt.js";
 import { cli, creation, FEE_BPS, h } from "./harness.js";
 import { attested, call, closeAccount, connect, connectThrough, createdAtOfEscrow, createdFrom, deliveryReleased, earlierTransfers, floodFetches, fresh, markFilled, ok, pagedThrough, preset, releasedEscrow, routedThrough, tag, zeroTransfers } from "./agent-wallet-kit.js";
+import { approved } from "./approved.js";
 
 describe("the wallet server's release history", () => {
   let client: Client;
@@ -236,7 +237,7 @@ describe("the wallet server's release history", () => {
   it("wait reports the payout of an owned escrow as paid out", async () => {
     const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
     h.engineLog = [];
-    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, min_result: "1", max_result: "1", spec_hash: "5e".repeat(32), send: true });
+    const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, min_result: "1", max_result: "1", spec_hash: "5e".repeat(32) }));
     const intent = escrow["intent"] as Address;
     const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
     const { fee, net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);

@@ -137,12 +137,14 @@ describe("a Ledger wallet's kept previews and device", () => {
     const ledger = device(e.key, [...found(LEVELS, e.key), ...transactionThen()]);
     const client = await served(ledger.open);
     const escrowing = (at: number) => ({ sell: "SOL", amount: `0.0${String(at).padStart(2, "0")}`, attestor: e.owner });
+    const approvals: unknown[] = [];
     for (let at = 1; at <= 17; at++) {
       const shown = await call(client, "wallet_escrow", escrowing(at));
       expect(shown.error, JSON.stringify(shown.value)).toBe(false);
+      approvals.push(shown.value["approval"]);
     }
-    expect(await call(client, "wallet_escrow", { ...escrowing(1), send: true })).toMatchObject({ error: true, value: { code: "DeviceUnpreviewed", hint: DEVICE_UNPREVIEWED } });
-    const sent = await call(client, "wallet_escrow", { ...escrowing(2), send: true });
+    expect(await call(client, "wallet_escrow", { ...escrowing(1), approval: approvals[0], send: true })).toMatchObject({ error: true, value: { code: "DeviceUnpreviewed", hint: DEVICE_UNPREVIEWED } });
+    const sent = await call(client, "wallet_escrow", { ...escrowing(2), approval: approvals[1], send: true });
     expect(sent.error, JSON.stringify(sent.value)).toBe(false);
     expect(sent.value).toMatchObject({ sent: true, as_previewed: true });
     ledger.store.ensureQueueEmpty();
@@ -156,9 +158,10 @@ describe("a Ledger wallet's kept previews and device", () => {
     const ledger = device(e.key, [...found(LEVELS, e.key), ...transactionThen()]);
     const client = await served(ledger.open);
     const escrowing = { sell: "SOL", amount: "0.05", attestor: e.owner };
-    expect((await call(client, "wallet_escrow", escrowing)).error).toBe(false);
+    const shown = await call(client, "wallet_escrow", escrowing);
+    expect(shown.error).toBe(false);
     height = 150n;
-    const sent = await call(client, "wallet_escrow", { ...escrowing, send: true });
+    const sent = await call(client, "wallet_escrow", { ...escrowing, approval: shown.value["approval"], send: true });
     expect(sent.error, JSON.stringify(sent.value)).toBe(false);
     expect(sent.value).toMatchObject({ sent: true });
     ledger.store.ensureQueueEmpty();

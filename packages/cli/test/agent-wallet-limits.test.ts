@@ -22,6 +22,7 @@ import { airdropRefused, defaultWallet, faucetLink, LAMPORTS_PER_SOL } from "../
 import { cli, creation, h, HOME, setNow, transport, world } from "./harness.js";
 import { salesPath } from "../src/agent/sales.js";
 import { call, connect, created, fresh, type Json, ok, tag } from "./agent-wallet-kit.js";
+import { approved } from "./approved.js";
 
 describe("the wallet server's limits and reads", () => {
   let client: Client;
@@ -53,7 +54,7 @@ describe("the wallet server's limits and reads", () => {
     expect((await call(client, "wallet_swap", { ...order, pay_to: owner })).value["summary"].join(" ")).not.toMatch(/Pays to/);
     expect(preview["summary"]).toContain(`Setup: creates ${friend}'s token account for ${TEST_TOKEN} (you pay its rent)`);
     expect(preview["summary"]).not.toContain(`Setup: creates your token account for ${TEST_TOKEN} (you pay its rent)`);
-    const sent = await ok(client, "wallet_swap", { ...order, send: true });
+    const sent = await ok(client, "wallet_swap", await approved(client, "wallet_swap", { ...order }));
     const account = h.svm.getAccount(sent["intent"] as Address);
     if (!account.exists) {
       throw new Error("the intent was not created");
@@ -157,7 +158,7 @@ describe("the wallet server's limits and reads", () => {
     const args = { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5" };
     expect(await ok(client, "wallet_swap", args)).toMatchObject({ sent: false });
     h.genesis = MAINNET_GENESIS;
-    expect((await call(client, "wallet_swap", { ...args, send: true })).value).toMatchObject({ code: "WalletNotMainnet", hint: WALLET_NOT_MAINNET });
+    expect((await call(client, "wallet_swap", await approved(client, "wallet_swap", { ...args }))).value).toMatchObject({ code: "WalletNotMainnet", hint: WALLET_NOT_MAINNET });
   });
 
   it("refuses tokens it cannot name and amounts it cannot read", async () => {
@@ -196,7 +197,7 @@ describe("the wallet server's limits and reads", () => {
     for (let i = 0; i < 3; i++) {
       await ok(client, "wallet_swap", { ...swap, amount: "0.1" });
     }
-    await ok(client, "wallet_swap", { ...swap, amount: "0.1", send: true });
+    await ok(client, "wallet_swap", await approved(client, "wallet_swap", { ...swap, amount: "0.1" }));
     const auction = { sell: "SOL", buy: "TEST", amount: "0.06", start_receive: "12", end_receive: "11", falls_over: 600 };
     expect((await call(client, "wallet_auction", auction)).value).toMatchObject({
       code: "WalletHourLimit",
@@ -206,7 +207,7 @@ describe("the wallet server's limits and reads", () => {
     await ok(client, "wallet_auction", { ...auction, amount: "0.05", send: true });
     expect((await call(client, "wallet_swap", { ...swap, amount: "0.001" })).value).toMatchObject({ code: "WalletHourLimit" });
     setNow(h.svm.getClock().unixTimestamp + 3_601n);
-    expect(await ok(client, "wallet_swap", { ...swap, amount: "0.1", send: true })).toMatchObject({ sent: true });
+    expect(await ok(client, "wallet_swap", await approved(client, "wallet_swap", { ...swap, amount: "0.1" }))).toMatchObject({ sent: true });
   });
 
   it("keeps counting a sale whose send failed unless the failure proves nothing landed", async () => {
@@ -215,13 +216,13 @@ describe("the wallet server's limits and reads", () => {
     client = await connect(limited);
     await ok(client, "wallet_setup");
     h.sendFails = { error: new Error("fetch failed"), landed: true };
-    expect((await call(client, "wallet_swap", { ...swap, send: true })).error).toBe(true);
+    expect((await call(client, "wallet_swap", await approved(client, "wallet_swap", { ...swap }))).error).toBe(true);
     expect((await call(client, "wallet_swap", swap)).value).toMatchObject({ code: "WalletHourLimit" });
     setNow(h.svm.getClock().unixTimestamp + 3_601n);
     for (const error of [new BlockhashExpired("expired"), new FailedOnChain("failed", failure("1".repeat(64) as Signature, null))]) {
       client = await connect(limited);
       h.sendFails = { error, landed: false };
-      expect((await call(client, "wallet_swap", { ...swap, send: true })).error).toBe(true);
+      expect((await call(client, "wallet_swap", await approved(client, "wallet_swap", { ...swap }))).error).toBe(true);
       expect(await ok(client, "wallet_swap", swap)).toMatchObject({ sent: false });
     }
   });
@@ -232,19 +233,20 @@ describe("the wallet server's limits and reads", () => {
     await ok(first, "wallet_setup");
     const second = await connect(limited);
     const swap = { sell: "SOL", buy: "TEST", amount: "0.1", min_receive: "5", exact: true };
-    expect(await ok(first, "wallet_swap", { ...swap, send: true })).toMatchObject({ sent: true });
+    expect(await ok(first, "wallet_swap", await approved(first, "wallet_swap", { ...swap }))).toMatchObject({ sent: true });
     const left = { code: "WalletHourLimit", retryable: true, hint: "this server sells at most 0.15 SOL per hour and has 0.05 left; this sells 0.1" };
     expect((await call(second, "wallet_swap", swap)).value).toMatchObject(left);
-    expect((await call(second, "wallet_swap", { ...swap, send: true })).value).toMatchObject(left);
+    expect((await call(second, "wallet_swap", await approved(second, "wallet_swap", { ...swap }))).value).toMatchObject(left);
     const book = join(h.saleRoot, salesPath(defaultWallet(HOME)));
     expect(statSync(book).mode & 0o777).toBe(0o600);
     expect(JSON.parse(readFileSync(book, "utf8"))).toMatchObject([{ mint: NATIVE_MINT, amount: String(LAMPORTS_PER_SOL / 10n) }]);
     const third = await connect(limited);
-    const raced = await Promise.all([second, third].map((server) => call(server, "wallet_swap", { ...swap, amount: "0.05", send: true })));
+    const racing = await Promise.all([second, third].map((server) => approved(server, "wallet_swap", { ...swap, amount: "0.05" })));
+    const raced = await Promise.all([second, third].map((server, i) => call(server, "wallet_swap", racing[i] ?? {})));
     expect(raced.map((r) => (r.error ? r.value["code"] : "sent")).sort()).toEqual(["WalletHourLimit", "sent"]);
     expect(JSON.parse(readFileSync(book, "utf8"))).toHaveLength(2);
     setNow(h.svm.getClock().unixTimestamp + 3_601n);
-    expect(await ok(second, "wallet_swap", { ...swap, send: true })).toMatchObject({ sent: true });
+    expect(await ok(second, "wallet_swap", await approved(second, "wallet_swap", { ...swap }))).toMatchObject({ sent: true });
     expect((await call(third, "wallet_swap", { ...swap, amount: "0.06" })).value).toMatchObject({ code: "WalletHourLimit" });
   });
 
@@ -253,13 +255,13 @@ describe("the wallet server's limits and reads", () => {
     const first = await connect(limited);
     await ok(first, "wallet_setup");
     const swap = { sell: "SOL", buy: "TEST", amount: "0.1", min_receive: "5", exact: true };
-    expect(await ok(first, "wallet_swap", { ...swap, send: true })).toMatchObject({ sent: true });
+    expect(await ok(first, "wallet_swap", await approved(first, "wallet_swap", { ...swap }))).toMatchObject({ sent: true });
     const tilde = "~/.config/intent-engine/wallet.json";
     h.files.set(tilde, h.files.get(defaultWallet(HOME)) ?? "");
     h.env["INTENT_ENGINE_KEYPAIR"] = tilde;
     const second = await connect(limited);
-    expect((await call(second, "wallet_swap", { ...swap, send: true })).value).toMatchObject({ code: "WalletHourLimit" });
-    expect(await ok(second, "wallet_swap", { ...swap, amount: "0.05", send: true })).toMatchObject({ sent: true });
+    expect((await call(second, "wallet_swap", await approved(second, "wallet_swap", { ...swap }))).value).toMatchObject({ code: "WalletHourLimit" });
+    expect(await ok(second, "wallet_swap", await approved(second, "wallet_swap", { ...swap, amount: "0.05" }))).toMatchObject({ sent: true });
     expect(JSON.parse(readFileSync(join(h.saleRoot, salesPath(defaultWallet(HOME))), "utf8"))).toHaveLength(2);
     expect(existsSync(join(h.saleRoot, "~"))).toBe(false);
     expect(existsSync(join(h.saleRoot, salesPath(tilde)))).toBe(false);
@@ -282,12 +284,12 @@ describe("the wallet server's limits and reads", () => {
     ];
     for (const error of refusals) {
       h.sendFails = { error, landed: false };
-      expect((await call(client, "wallet_swap", { ...swap, send: true })).error).toBe(true);
+      expect((await call(client, "wallet_swap", await approved(client, "wallet_swap", { ...swap }))).error).toBe(true);
       expect(await ok(client, "wallet_swap", swap)).toMatchObject({ sent: false });
     }
     expect(JSON.parse(readFileSync(join(h.saleRoot, salesPath(defaultWallet(HOME))), "utf8"))).toEqual([]);
     h.sendFails = { error: new MaybeSent("1".repeat(64) as Signature, 0n, "transaction was sent but its confirmation could not be read"), landed: true };
-    const unsure = await call(client, "wallet_swap", { ...swap, send: true });
+    const unsure = await call(client, "wallet_swap", await approved(client, "wallet_swap", { ...swap }));
     expect(unsure.error).toBe(true);
     expect(unsure.value).toMatchObject({ code: "MaybeSent", retryable: false, signature: "1".repeat(64) });
     expect(unsure.value["hint"]).toContain(`intent-engine lookup --signature ${"1".repeat(64)} --valid-until 0`);
@@ -298,14 +300,14 @@ describe("the wallet server's limits and reads", () => {
     const first = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
     const owner = (await ok(first, "wallet_setup"))["address"] as Address;
     const swap = { sell: "SOL", buy: "TEST", amount: "0.01", min_receive: "1", exact: true };
-    expect(await ok(first, "wallet_swap", { ...swap, send: true })).toMatchObject({ nonce: "0" });
+    expect(await ok(first, "wallet_swap", await approved(first, "wallet_swap", { ...swap }))).toMatchObject({ nonce: "0" });
     let raced = false;
     h.through = {
       ...transport,
       sendWire: async (wire, latest) => {
         if (!raced) {
           raced = true;
-          expect(await ok(first, "wallet_swap", { ...swap, amount: "0.02", send: true })).toMatchObject({ nonce: "1" });
+          expect(await ok(first, "wallet_swap", await approved(first, "wallet_swap", { ...swap, amount: "0.02" }))).toMatchObject({ nonce: "1" });
         }
         return transport.sendWire(wire, latest);
       },
@@ -314,7 +316,7 @@ describe("the wallet server's limits and reads", () => {
     h.through = null;
     const [taken] = await findIntentPda({ owner, nonce: 1n });
     const [next] = await findIntentPda({ owner, nonce: 2n });
-    expect(await ok(second, "wallet_swap", { ...swap, send: true })).toMatchObject({ intent: next, nonce: "2", sent: true });
+    expect(await ok(second, "wallet_swap", await approved(second, "wallet_swap", { ...swap }))).toMatchObject({ intent: next, nonce: "2", sent: true });
     expect(raced).toBe(true);
     expect(h.svm.getAccount(taken).exists).toBe(true);
     expect(h.svm.getAccount(next).exists).toBe(true);
@@ -414,7 +416,7 @@ describe("the wallet server's limits and reads", () => {
 
   it("waits for a sent intent and says whether it filled, for how much, or was cancelled", async () => {
     const owner = (await ok(client, "wallet_setup"))["address"] as Address;
-    const sent = await ok(client, "wallet_swap", { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5", send: true });
+    const sent = await ok(client, "wallet_swap", await approved(client, "wallet_swap", { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5" }));
     const intent = sent["intent"] as Address;
     h.engineLog = [];
     h.sleeps.length = 0;

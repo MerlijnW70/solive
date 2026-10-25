@@ -17,6 +17,7 @@ import { notInvited } from "../src/invites.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { announced as made, keyed } from "./announce.js";
 import { cli, creation, funded, h, NOW, ownerSigned, transport, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -184,7 +185,7 @@ describe("a release for work no announcement opens to", () => {
     expect(await call(s.client, "wallet_attest_split", split)).toMatchObject({ error: true, value: { code: "NotAnnounced" } });
     const members = sortMembers([s.wallet, address()]);
     const committee = await committeeOf(members);
-    const escrow = await ok(s.client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: sha(SPEC), spec_url: SPEC_URL, send: true });
+    const escrow = await ok(s.client, "wallet_escrow", await approved(s.client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: sha(SPEC), spec_url: SPEC_URL }));
     h.specPages.set(SPEC_URL, await seal(encoded(SPEC), [...members, worker.address]));
     h.engineLog = [{ ...creation(escrow["intent"] as Address), ...ownerSigned(escrow["intent"] as Address, [specMemo(SPEC_URL)]) }];
     await announced(escrow["intent"] as Address, worker);

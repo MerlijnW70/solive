@@ -25,6 +25,7 @@ import { NOT_SENT } from "../src/flows.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { cli, FEE_BPS, h, NOW, transport, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown>;
 
@@ -117,7 +118,7 @@ describe("wallet_receipt of a released job with a claim", () => {
     preset(DEVNET_TEST_MINT);
     const client = await connect();
     const payer = (await ok(client, "wallet_setup"))["address"] as Address;
-    const job = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: payer, spec_hash: "6a".repeat(32), send: true });
+    const job = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: payer, spec_hash: "6a".repeat(32) }));
     const intent = job["intent"] as Address;
     const held = h.svm.getAccount(intent);
     if (!held.exists) {

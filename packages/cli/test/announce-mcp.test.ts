@@ -13,6 +13,7 @@ import { SYNC_FIRST, WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK, main } from "../src/main.js";
 import { keyed } from "./announce.js";
 import { balance, cli, DOMAIN, funded, h, runtime, transport, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -85,7 +86,7 @@ describe("the wallet tools through a job on announcements", () => {
   const paid = async (wallet: Address) => balance(await findAssociatedTokenAddress({ owner: wallet, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS }));
 
   it("delivers, checks the delivery, fetches the work, attests and shows the receipt", async () => {
-    const escrow = await ok(judge, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: judgeWallet, spec_hash: "6d".repeat(32), send: true });
+    const escrow = await ok(judge, "wallet_escrow", await approved(judge, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: judgeWallet, spec_hash: "6d".repeat(32) }));
     const intent = escrow["intent"] as Address;
     const delivered = await sent(worker, "wallet_deliver", { intent, sha256: WORK, url: WORK_URL });
     expect(delivered).toMatchObject({ sent: true, seq: "1", attestor: judgeWallet, sealed_to: [judgeWallet] });
@@ -108,7 +109,7 @@ describe("the wallet tools through a job on announcements", () => {
     expect([created.code, created.err]).toEqual([EXIT_OK, ""]);
     const committee = created.json()["committee"] as Address;
     expect(synced(committee)).toBe(false);
-    const escrow = await ok(judge, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: "6d".repeat(32), send: true });
+    const escrow = await ok(judge, "wallet_escrow", await approved(judge, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: "6d".repeat(32) }));
     const intent = escrow["intent"] as Address;
     const preview = await ok(worker, "wallet_deliver", { intent, sha256: WORK, url: WORK_URL });
     expect(preview["next"]).toContain(SYNC_FIRST);

@@ -9,6 +9,7 @@ import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { NO_SPEC_HASH } from "../src/agent/wallet/escrow.js";
 import { EXIT_OK } from "../src/main.js";
 import { cli, h, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -94,7 +95,7 @@ describe("escrow plans that workers can find", () => {
     expect(preview["warnings"]).toContain(`Piece 2 (page): ${NO_SPEC_HASH}`);
     expect(preview["warnings"].filter((line: string) => line.startsWith("Piece 1 (parser)") && line.includes("no spec_hash"))).toEqual([]);
 
-    const sent = await ok(client, "wallet_escrow_plan", { ...plan, send: true });
+    const sent = await ok(client, "wallet_escrow_plan", await approved(client, "wallet_escrow_plan", { ...plan }));
     expect(sent).toMatchObject({ sent: true, pieces: [{ spec_hash: SPEC_HASH, spec_url: SPEC_URL }, { name: "page" }] });
     expect(memoSent(specMemo(SPEC_URL))).toBe(true);
     const [specced, plain] = sent["pieces"] as Json[];
@@ -114,7 +115,7 @@ describe("escrow plans that workers can find", () => {
         { name: "page", amount: "0.01", spec_hash: OTHER_HASH, spec_url: OTHER_URL },
       ],
     };
-    const sent = await ok(client, "wallet_escrow_plan", { ...plan, send: true });
+    const sent = await ok(client, "wallet_escrow_plan", await approved(client, "wallet_escrow_plan", { ...plan }));
     expect(sent["pieces"]).toMatchObject([
       { name: "parser", spec_hash: SPEC_HASH, spec_url: SPEC_URL },
       { name: "page", spec_hash: OTHER_HASH, spec_url: OTHER_URL },

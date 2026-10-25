@@ -12,6 +12,7 @@ import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { cli, h, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown>;
 
@@ -99,7 +100,7 @@ describe("the costs an escrow preview names", () => {
       const total = totalOf(summary);
       expect(total).toBeGreaterThan(LAMPORTS_PER_SOL / 20n);
       const before = balance(wallet);
-      expect(await ok(client, "wallet_escrow", { ...args, send: true })).toMatchObject({ sent: true });
+      expect(await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { ...args }))).toMatchObject({ sent: true });
       const drop = before - balance(wallet);
       expect(drop - total <= SIGNATURE_FEE && total - drop <= SIGNATURE_FEE, `${drop} vs ${total}`).toBe(true);
     }
@@ -117,7 +118,7 @@ describe("the costs an escrow preview names", () => {
     );
     const total = totalOf(summary);
     const before = balance(wallet);
-    expect(await ok(client, "wallet_escrow_plan", { ...plan, send: true })).toMatchObject({ sent: true });
+    expect(await ok(client, "wallet_escrow_plan", await approved(client, "wallet_escrow_plan", { ...plan }))).toMatchObject({ sent: true });
     const drop = before - balance(wallet);
     expect(drop - total <= 2n * SIGNATURE_FEE && total - drop <= 2n * SIGNATURE_FEE, `${drop} vs ${total}`).toBe(true);
   });

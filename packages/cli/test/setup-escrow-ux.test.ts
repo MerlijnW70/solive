@@ -13,6 +13,7 @@ import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { AIRDROPS, airdropRefused, CLI_START, ENOUGH_TO_START, heldRefused, holdsEnough, LAMPORTS_PER_SOL, refusedEnough } from "../src/wallet.js";
 import { cli, creation, FEE_BPS, h, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -163,7 +164,7 @@ describe("setup, escrow and balance explain themselves", () => {
     });
     expect(plan["summary"]).toContain(`${PIECE_ONE}: ${recordAccountWhy(TEST_TOKEN)}`);
     const mine = await findAssociatedTokenAddress({ owner, mint: TEST_TOKEN, tokenProgram: TOKEN_PROGRAM_ADDRESS });
-    const sent = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash: "64".repeat(32), send: true });
+    const sent = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash: "64".repeat(32) }));
     expect(sent).toMatchObject({ sent: true });
     expect(h.svm.getAccount(mine).exists).toBe(true);
     const later = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash: "65".repeat(32) });
@@ -196,7 +197,7 @@ describe("setup, escrow and balance explain themselves", () => {
 
   it("says a release landed but is not readable yet, instead of not released, and waits until the node returns it", async () => {
     const owner = (await ok(client, "wallet_setup"))["address"] as Address;
-    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash: "66".repeat(32), send: true });
+    const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash: "66".repeat(32) }));
     const intent = escrow["intent"] as Address;
     const nonce = escrow["nonce"] as string;
     h.engineLog = [creation(intent)];

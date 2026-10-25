@@ -24,16 +24,30 @@ export const offerFields = {
 
 export const offerOutput = object(offerFields);
 
+export const OFFER_CHANGED = "this offer differs from its preview, or no approval was given; preview it again and show the user";
+
 export type Token = Awaited<ReturnType<typeof mintOf>>;
 
 type Order = typeof orderSchema extends Schema<infer T> ? T : never;
 
-type Terms = { order: Order; expires_at: bigint; spec_url?: string };
+type Terms = { order: Order; expires_at: bigint; spec_url?: string; approval?: string };
+
+export type Offer = {
+  sell: string;
+  buy: string;
+  pay_to?: Address | undefined;
+  send?: boolean | undefined;
+  after?: AfterCreate | undefined;
+  priced?: ((network: bigint) => void) | undefined;
+  previewNext?: string | undefined;
+  approval?: string | undefined;
+  changed?: string | undefined;
+};
 
 export async function offered(
   ctx: AgentContext,
   call: Call,
-  input: { sell: string; buy: string; pay_to?: Address | undefined; send?: boolean | undefined; after?: AfterCreate | undefined; priced?: ((network: bigint) => void) | undefined },
+  input: Offer,
   terms: (sold: Token, bought: Token, now: bigint, inputMint: Address, outputMint: Address) => Promise<Terms> | Terms,
   done?: string,
 ) {
@@ -50,7 +64,7 @@ export async function offered(
     mintOf(ctx.transport, outputMint),
     chainTime(ctx.transport),
   ]);
-  const made = await terms(inputToken, outputToken, now, inputMint, outputMint);
+  const { approval, ...made } = await terms(inputToken, outputToken, now, inputMint, outputMint);
   const sold = (made.order as { amount_in: bigint }).amount_in;
   const guard = wallet.limits;
   checkSale(guard, inputMint, inputToken.decimals, sold, now, await salesOf(wallet, now));
@@ -66,8 +80,11 @@ export async function offered(
   };
   const first = await created(ctx);
   input.priced?.(networkFee(first.prepared as Parameters<typeof networkFee>[0]));
+  if (input.send === true && approval !== undefined && input.approval !== approval) {
+    throw new AgentRefusal("ReleaseChanged", input.changed ?? OFFER_CHANGED);
+  }
   if (input.send !== true) {
-    return sent(ctx, signer, first, input.send, call, { done });
+    return sent(ctx, signer, first, input.send, call, { done, preview: input.previewNext });
   }
   const path = limited(guard) ? await bookOf(wallet) : undefined;
   const sale: Sale = { id: randomUUID(), mint: inputMint, at: now, amount: sold };

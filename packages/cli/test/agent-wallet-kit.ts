@@ -20,6 +20,7 @@ import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { cli, FEE_BPS, h, transport, world } from "./harness.js";
 import { LAMPORTS_PER_SOL } from "../src/wallet.js";
+import { approved } from "./approved.js";
 
 export type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -181,7 +182,7 @@ export const closeAccount = (address: Address) =>
 export async function releasedEscrow(client: Client, hint: string) {
   const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
   h.engineLog = [];
-  const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, min_result: "1", max_result: "1", spec_hash: hint.repeat(32), send: true });
+  const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, min_result: "1", max_result: "1", spec_hash: hint.repeat(32) }));
   const intent = escrow["intent"] as Address;
   markFilled(intent);
   return { wallet, owner: wallet, intent, nonce: escrow["nonce"] as string, attestedTo: (payee: Address) => attested(intent, wallet, payee, wallet) };

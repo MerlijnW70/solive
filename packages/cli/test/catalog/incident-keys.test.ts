@@ -6,6 +6,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { defaultWallet } from "../../src/wallet.js";
 import { h, HOME, transport, world } from "../harness.js";
 import { connect, ok, preset } from "../agent-wallet-kit.js";
+import { approved } from "../approved.js";
 
 type Seen = { where: string; value: unknown };
 
@@ -110,7 +111,7 @@ describe("CAT incident keys: Slope, DEXX, Solareum and Thunder Terminal against 
       ["wallet_history", {}],
     ];
     for (const [name, args] of steps) {
-      seen.push({ where: name, value: await ok(client, name, args) });
+      seen.push({ where: name, value: await ok(client, name, "send" in args ? await approved(client, name, args) : args) });
     }
   });
 

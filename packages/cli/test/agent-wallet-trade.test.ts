@@ -16,8 +16,10 @@ import { AIRDROP, defaultWallet, holdsEnough, keptDefault, LAMPORTS_PER_SOL, sav
 import { WALLET_START } from "../src/agent/wallet/account.js";
 import { unwrapped } from "../src/agent/wallet/unwrap.js";
 import { balance, funded, h, HOME } from "./harness.js";
+import { orderPreviewNext } from "../src/agent/wallet/trade.js";
 import { call, connect, created, fresh, type Json, ok, tag } from "./agent-wallet-kit.js";
 import { keyed } from "./announce.js";
+import { approved } from "./approved.js";
 
 describe("the wallet server's trades", () => {
   let client: Client;
@@ -60,14 +62,14 @@ describe("the wallet server's trades", () => {
     expect(h.airdrops).toEqual([{ address: owner, lamports: AIRDROP }]);
     expect(await ok(client, "wallet_setup")).toMatchObject({ address: owner, created: false });
     const preview = await ok(client, "wallet_swap", { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5", exact: true });
-    expect(preview).toMatchObject({ nonce: "0", sent: false, next: PREVIEW_ONLY });
+    expect(preview).toMatchObject({ nonce: "0", sent: false, next: orderPreviewNext(false) });
     expect(preview["start_receive"]).toBeUndefined();
     expect(preview["summary"]).toContain("Setup: wraps 0.05 of your SOL into your wrapped SOL account");
     expect(preview["summary"].slice(0, 2)).toEqual([`Sell: exactly 0.05 of SOL (${NATIVE_MINT})`, `Receive: at least 5 of TEST (${TEST_TOKEN})`]);
     const [intent] = await findIntentPda({ owner, nonce: 0n });
     expect(preview["intent"]).toBe(intent);
     expect(h.svm.getAccount(intent).exists).toBe(false);
-    const swapped = await ok(client, "wallet_swap", { sell: "sol", buy: "test", amount: "0.05", min_receive: "5", exact: true, send: true });
+    const swapped = await ok(client, "wallet_swap", await approved(client, "wallet_swap", { sell: "sol", buy: "test", amount: "0.05", min_receive: "5", exact: true }));
     expect(swapped).toMatchObject({ intent, sent: true, signature: expect.any(String) });
     expect(swapped["next"]).toContain("solive_wallet_wait");
     h.watched.push(owner);
@@ -190,7 +192,7 @@ describe("the wallet server's trades", () => {
     expect(await ok(client, "wallet_swap", swap)).toMatchObject({ start_receive: "14" });
     h.engineLog = [honest];
     const now = h.svm.getClock().unixTimestamp;
-    const sent = await ok(client, "wallet_swap", { ...swap, start_receive: preview["start_receive"], falls_over: 90, send: true });
+    const sent = await ok(client, "wallet_swap", await approved(client, "wallet_swap", { ...swap, start_receive: preview["start_receive"], falls_over: 90 }));
     expect(sent).toMatchObject({ sent: true, start_receive: "10.166" });
     h.watched.push(owner);
     const [listed] = (await ok(client, "wallet_intents"))["intents"] as Json[];
@@ -209,7 +211,7 @@ describe("the wallet server's trades", () => {
     const now = h.svm.getClock().unixTimestamp;
     const opens = [0n, 600n, 1_200n].map((k) => now + BigInt(LANDING_SECONDS) + k);
     const preview = await ok(client, "wallet_recurring", plan);
-    expect(preview).toMatchObject({ orders: opens.map((at) => ({ opens_at: String(at) })), start_receive: "6.25", sent: false, next: PREVIEW_ONLY });
+    expect(preview).toMatchObject({ orders: opens.map((at) => ({ opens_at: String(at) })), start_receive: "6.25", sent: false, next: orderPreviewNext(true) });
     expect(preview["orders"][0]).not.toHaveProperty("intent");
     expect(preview["summary"].slice(0, 2)).toEqual([
       "Plan: 3 orders of 0.05 of SOL, 0.15 of SOL in all, escrowed now",
@@ -222,7 +224,7 @@ describe("the wallet server's trades", () => {
     expect(later["warnings"]).toEqual([WARN_EARLY, WARN_LONG_LIVED]);
     h.watched.push(owner);
     expect((await ok(client, "wallet_intents"))["intents"]).toEqual([]);
-    const sent = await ok(client, "wallet_recurring", { ...plan, start_receive: "6.25", falls_over: 300, send: true });
+    const sent = await ok(client, "wallet_recurring", await approved(client, "wallet_recurring", { ...plan, start_receive: "6.25", falls_over: 300 }));
     expect(sent["orders"]).toHaveLength(3);
     expect(sent).toMatchObject({ sent: true, orders: opens.map((at, i) => ({ opens_at: String(at), nonce: String(i), signature: expect.any(String) })) });
     const listed = ((await ok(client, "wallet_intents"))["intents"] as Json[]).sort((a, b) => Number(a["nonce"]) - Number(b["nonce"]));
@@ -249,20 +251,20 @@ describe("the wallet server's trades", () => {
     expect((await call(client, "wallet_recurring", plan)).value).toMatchObject({ code: "WalletHourLimit" });
     expect((await ok(client, "wallet_intents"))["intents"]).toEqual([]);
     h.sendFails = { error: new BlockhashExpired("expired"), landed: false, after: 1 };
-    const partly = await ok(client, "wallet_recurring", { ...plan, times: 2 });
+    const partly = await ok(client, "wallet_recurring", await approved(client, "wallet_recurring", { ...plan, times: 2 }));
     expect(partly).toMatchObject({ sent: true, next: partlySent(1, 2, "Failed: expired") });
     expect(partly["orders"][0]).toHaveProperty("intent");
     expect(partly["orders"][1]).not.toHaveProperty("intent");
     expect((await ok(client, "wallet_intents"))["intents"]).toHaveLength(1);
     h.sendFails = { error: new Error("timed out"), landed: true, after: 1 };
-    const unsure = await ok(client, "wallet_recurring", { ...plan, amount: "0.01", times: 2 });
+    const unsure = await ok(client, "wallet_recurring", await approved(client, "wallet_recurring", { ...plan, amount: "0.01", times: 2 }));
     expect(unsure["next"]).toBe(mayHaveLanded(1, 2, "Failed: timed out"));
     expect((await ok(client, "wallet_intents"))["intents"]).toHaveLength(3);
     h.sendFails = { error: new AgentRefusal("WalletEmpty", "empty"), landed: false, after: 1 };
-    const refused = await ok(client, "wallet_recurring", { ...plan, amount: "0.01", times: 2 });
+    const refused = await ok(client, "wallet_recurring", await approved(client, "wallet_recurring", { ...plan, amount: "0.01", times: 2 }));
     expect(refused["next"]).toBe(partlySent(1, 2, "WalletEmpty: empty"));
     h.sendFails = { error: new InvalidInput([{ path: "x", message: "bad" }]), landed: false, after: 1 };
-    const invalid = await ok(client, "wallet_recurring", { ...plan, amount: "0.01", times: 2 });
+    const invalid = await ok(client, "wallet_recurring", await approved(client, "wallet_recurring", { ...plan, amount: "0.01", times: 2 }));
     expect(invalid["next"]).toBe(partlySent(1, 2, "InvalidInput: fix the listed fields and call again"));
   });
 

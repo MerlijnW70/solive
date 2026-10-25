@@ -13,6 +13,7 @@ import { GIVE_KEY_SETTING } from "../src/agent/wallet/openings.js";
 import { tool } from "../src/agent/names.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { DEVICE_EXPIRED, DEVICE_UNPREVIEWED, NO_FEE_PAYER, ONE_AT_A_TIME } from "../src/agent/wallet/guard.js";
+import { ESCROW_CHANGED } from "../src/agent/wallet/escrow.js";
 import { FEE_PAYER_KEY_FILE, FEE_PAYER_NEEDS_WALLET } from "../src/arg-values.js";
 import { parse } from "../src/args.js";
 import { ENV_KEYPAIR } from "../src/clusters.js";
@@ -191,7 +192,7 @@ describe("an MCP wallet on a Ledger", () => {
     const client = await served(ledger);
     const escrowing = { sell: "SOL", amount: "0.05", attestor: e.owner };
     const unpreviewed = await call(client, "wallet_escrow", { ...escrowing, send: true });
-    expect(unpreviewed).toMatchObject({ error: true, value: { code: "DeviceUnpreviewed", hint: DEVICE_UNPREVIEWED } });
+    expect(unpreviewed).toMatchObject({ error: true, value: { code: "ReleaseChanged", hint: ESCROW_CHANGED } });
     expect(ledger.signed).toEqual([]);
     for (const [name, args] of [
       ["wallet_escrow", escrowing],
@@ -200,12 +201,12 @@ describe("an MCP wallet on a Ledger", () => {
       const shown = await call(client, name, args);
       expect(shown.error, JSON.stringify(shown.value)).toBe(false);
       setNow(NOW + 600n);
-      const sent = await call(client, name, { ...args, send: true });
+      const sent = await call(client, name, { ...args, approval: shown.value["approval"], send: true });
       expect(sent.error, JSON.stringify(sent.value)).toBe(false);
       expect(messageHash(ledger.signed.at(-1)?.bytes ?? new Uint8Array())).toBe(shown.value["message_hash"]);
       expect(sent.value).toMatchObject({ sent: true, intent: shown.value["intent"], message_hash: shown.value["message_hash"] });
-      const again = await call(client, name, { ...args, send: true });
-      expect(again).toMatchObject({ error: true, value: { code: "DeviceUnpreviewed" } });
+      const again = await call(client, name, { ...args, approval: shown.value["approval"], send: true });
+      expect(again).toMatchObject({ error: true, value: { code: "DeviceUnpreviewed", hint: DEVICE_UNPREVIEWED } });
       setNow(NOW);
     }
     ledger.store.ensureQueueEmpty();
@@ -221,9 +222,10 @@ describe("an MCP wallet on a Ledger", () => {
     const ledger = device(e.key, found(LEVELS, e.key));
     const client = await served(ledger);
     const escrowing = { sell: "SOL", amount: "0.05", attestor: e.owner };
-    expect((await call(client, "wallet_escrow", escrowing)).error).toBe(false);
+    const shown = await call(client, "wallet_escrow", escrowing);
+    expect(shown.error).toBe(false);
     height = 1_000_000n;
-    const late = await call(client, "wallet_escrow", { ...escrowing, send: true });
+    const late = await call(client, "wallet_escrow", { ...escrowing, approval: shown.value["approval"], send: true });
     expect(late).toMatchObject({ error: true, value: { code: "DeviceUnpreviewed", hint: DEVICE_EXPIRED } });
     ledger.store.ensureQueueEmpty();
     expect([ledger.signed, h.wires.length]).toEqual([[], 0]);

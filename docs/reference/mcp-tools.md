@@ -44,7 +44,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Sells one token for another at the market: the simple sell, the ask falling to min_receive. Leave min_receive out to accept the recent median less max_slippage_bps. To buy, sell the other. For a price curve you set yourself, use solive_wallet_auction. Previews only; call with send: true after the user says yes. Pass back the preview's start_receive.
+Sells one token for another at the market: the simple sell, the ask falling to min_receive. Leave min_receive out to accept the recent median less max_slippage_bps. To buy, sell the other. For a price curve you set yourself, use solive_wallet_auction. Previews only; after the user says yes, call with send: true and its approval. Pass back the preview's start_receive too.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -60,6 +60,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `exact` | boolean | no | true asks min_receive from the start, with no falling ask |
 | `pay_to` | address | no | the wallet that receives what is bought, such as someone this wallet pays; default this wallet. This wallet pays for its token account if it has none |
 | `expires_in` | integer 60..31536000 | no | least seconds the offer stays open once sent; default 3600 |
+| `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs and sends; leave out to preview |
 
 ## solive_wallet_auction
@@ -86,7 +87,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 Served only with `--wallet`.
 
-Repeats a sale on a schedule: every order is sent now, each falling to min_receive. Leave min_receive out to accept the recent median less max_slippage_bps. To buy on a schedule, sell the other. Cancel any with solive_wallet_cancel. Previews only; call with send: true after the user says yes. Pass back the preview's start_receive.
+Repeats a sale on a schedule: every order is sent now, each falling to min_receive. Leave min_receive out to accept the recent median less max_slippage_bps. To buy on a schedule, sell the other. Cancel any with solive_wallet_cancel. Previews only; after the user says yes, call with send: true and its approval. Pass back the preview's start_receive too.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -102,13 +103,14 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `start_receive` | string | no | whole tokens each order asks until and when it opens; default a little above the median recent fill, between 1.25 and 2 times min_receive |
 | `falls_over` | integer 60..2592000 | no | seconds each order's ask takes to fall to min_receive; default 120 |
 | `pay_to` | address | no | the wallet that receives what is bought, such as someone this wallet pays; default this wallet. This wallet pays for its token account if it has none |
+| `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs and sends every order; leave out to preview |
 
 ## solive_wallet_escrow
 
 Served only with `--wallet`.
 
-Pays for work once its attestor (the judge) approves: locks tokens until the attestor releases them to the wallet it picks; this wallet may be the attestor. spec_url lists the job in solive_find_jobs; the spec must say what to deliver, in what form, and how it is checked. Previews only; call with send: true after the user says yes.
+Pays for work once its attestor (the judge) approves: locks tokens until the attestor releases them to a wallet; this wallet may be the attestor. spec_url lists the job in solive_find_jobs; the spec must say what to deliver, in what form, and how it is checked. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -126,13 +128,14 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `record_mint` | string | no | a token the escrow records as its output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet |
 | `claim_stake` | string | no | whole SOL a worker stakes to claim the job, such as 0.01; with claim_secs it opens claims, so one worker at a time can be paid; on a spec sealed at spec_url only the workers it invites may claim; needs spec_hash |
 | `claim_secs` | integer 1..604800 | no | the longest a worker may hold the job by claiming it, in seconds; with claim_stake |
+| `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs and sends; leave out to preview |
 
 ## solive_wallet_escrow_plan
 
 Served only with `--wallet`.
 
-Pays for a larger task in pieces: one preview and one send lock a payment per piece, each like solive_wallet_escrow. Each piece is released on its own; cancel an unreleased one with solive_wallet_cancel. spec_hash and spec_url list pieces in solive_find_jobs. Workers deliver to the attestor, not this wallet. Previews only; call with send: true after the user says yes.
+Pays for a larger task in pieces: one preview and one send lock a payment per piece, each like solive_wallet_escrow and released on its own; cancel an unreleased one with solive_wallet_cancel. spec_hash and spec_url list pieces in solive_find_jobs. Workers deliver to the attestor, not this wallet. Previews only; after the user says yes, call with send: true and its approval.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
@@ -147,6 +150,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 | `record_mint` | string | no | a token the escrows record as their output, other than sell; only a label. Default SOL, or TEST when selling SOL on devnet |
 | `claim_stake` | string | no | whole SOL a worker stakes to claim the job, such as 0.01; with claim_secs it opens claims, so one worker at a time can be paid; on a spec sealed at spec_url only the workers it invites may claim; needs spec_hash |
 | `claim_secs` | integer 1..604800 | no | the longest a worker may hold the job by claiming it, in seconds; with claim_stake |
+| `approval` | string | no | the approval the preview returned; needed with send |
 | `send` | boolean | no | true signs and sends every piece; leave out to preview |
 
 ## solive_wallet_seal_spec

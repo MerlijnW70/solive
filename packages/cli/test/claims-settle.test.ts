@@ -13,6 +13,7 @@ import { EXIT_OK } from "../src/main.js";
 import { LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { cli, funded, h, NOW, send, setNow, world } from "./harness.js";
 import { announced } from "./announce.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -77,7 +78,7 @@ describe("settling a claims board from the wallet tools", () => {
   });
 
   async function escrow() {
-    const made = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: SPEC_HASH, claim_stake: "0.05", claim_secs: 3600, send: true });
+    const made = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: SPEC_HASH, claim_stake: "0.05", claim_secs: 3600 }));
     const intent = made["intent"] as Address;
     const nonce = made["nonce"] as string;
     return { intent, nonce, board: await claimBoardAddress(intent), ref: { owner: wallet, nonce } };

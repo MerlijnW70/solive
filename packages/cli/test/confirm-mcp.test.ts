@@ -12,6 +12,7 @@ import { EXIT_OK } from "../src/main.js";
 import { announced, keyed } from "./announce.js";
 import { h, world } from "./harness.js";
 import { cliWith, disagreements, SECOND, secondNode, type SecondNode, UNREADABLE, WORK_URL } from "./confirm-node.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown>;
 
@@ -54,7 +55,7 @@ async function escrowed(more: string[]) {
   const client = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools", ...more], node);
   const owner = (await call(client, "wallet_setup")).value["address"] as Address;
   const spec_hash = createHash("sha256").update(SPEC).digest("hex");
-  const escrow = await call(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash, send: true });
+  const escrow = await call(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash }));
   expect(escrow.error, JSON.stringify(escrow.value)).toBe(false);
   const intent = escrow.value["intent"] as Address;
   await announced(intent, await keyed(), WORK, WORK_URL);

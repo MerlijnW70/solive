@@ -14,6 +14,7 @@ import { EXIT_OK } from "../src/main.js";
 import { defaultWallet, LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { announced } from "./announce.js";
 import { balance, cli, FEE_BPS, funded, h, HOME, send, transport, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -66,7 +67,7 @@ const OTHER_WORK = "e4".repeat(32);
 const heldBy = (worker: Address) => ({ code: "ClaimHeld", hint: expect.stringContaining(`is claimed by ${worker}`) });
 
 async function claimed(client: Client, wallet: Address, attestor: Address) {
-  const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor, spec_hash: SPEC_HASH, claim_stake: "0.05", claim_secs: 3600, send: true });
+  const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor, spec_hash: SPEC_HASH, claim_stake: "0.05", claim_secs: 3600 }));
   const intent = escrow["intent"] as Address;
   const nonce = escrow["nonce"] as string;
   const worker = await funded();
@@ -112,7 +113,7 @@ describe("claims from the wallet tools", () => {
     expect(SPEC_NO_ANSWER).toContain("give claim_stake and claim_secs to open claims");
     expect(SPEC_NO_ANSWER).not.toContain("intent-engine");
     expect(h.wires.length).toBe(wires);
-    const sent = await ok(client, "wallet_escrow", { ...base, claim_stake: "0.05", claim_secs: 3600, send: true });
+    const sent = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { ...base, claim_stake: "0.05", claim_secs: 3600 }));
     expect(h.wires.length).toBe(wires + 1);
     expect(await ok(client, "get_claims", { owner: wallet, nonce: sent["nonce"] })).toMatchObject({
       takes_claims: true,
@@ -122,7 +123,7 @@ describe("claims from the wallet tools", () => {
       max_secs: 3600,
       owner: wallet,
     });
-    const plain = await ok(client, "wallet_escrow", { ...base, send: true });
+    const plain = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { ...base }));
     expect(await ok(client, "get_claims", { owner: wallet, nonce: plain["nonce"] })).toEqual({ intent: plain["intent"], takes_claims: false, escrow: "open" });
   });
 
@@ -194,7 +195,7 @@ describe("claims from the wallet tools", () => {
     const other = (await funded()).address;
     const hired = await ok(client, "wallet_escrow_plan", { ...plan, attestor: other });
     expect(hired["warnings"]).toContain(noJudgeKey(other));
-    const sent = await ok(client, "wallet_escrow_plan", { ...plan, claim_stake: "0.05", claim_secs: 3600, send: true });
+    const sent = await ok(client, "wallet_escrow_plan", await approved(client, "wallet_escrow_plan", { ...plan, claim_stake: "0.05", claim_secs: 3600 }));
     for (const piece of sent["pieces"] as Json[]) {
       expect(await ok(client, "get_claims", { owner: wallet, nonce: piece["nonce"] })).toMatchObject({ takes_claims: true, stake: STAKE.toString(), max_secs: 3600 });
     }

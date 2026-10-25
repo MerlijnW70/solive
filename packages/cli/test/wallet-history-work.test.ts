@@ -15,6 +15,7 @@ import { EXIT_OK } from "../src/main.js";
 import { defaultWallet, LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { announced, keyed } from "./announce.js";
 import { cli, DOMAIN, FEE_BPS, funded, h, HOME, NOW, transport, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown>;
 
@@ -70,7 +71,7 @@ describe("wallet_history of a worker paid for announced work", () => {
     const client = await connect();
     const payer = (await ok(client, "wallet_setup"))["address"] as Address;
     const payerKey = h.files.get(defaultWallet(HOME)) ?? "";
-    const escrow = (hint: string) => ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: payer, spec_hash: hint.repeat(32), send: true });
+    const escrow = async (hint: string) => ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: payer, spec_hash: hint.repeat(32) }));
     return { client, payer, payerKey, escrow };
   }
 

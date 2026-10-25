@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import {
   type Address,
@@ -449,6 +450,12 @@ async function sentOnDevice(
   const signature = await execute(ctx.transport, previewed.view, signer);
   return { ...previewed.shown, message_hash: messageHash(messageOf(previewed.view)), as_previewed: true, sent: true, signature, ...(next?.done === undefined ? {} : { next: next.done }) };
 }
+
+export const termsApproval = (terms: Record<string, unknown>): string =>
+  createHash("sha256")
+    .update(JSON.stringify(terms, (_, value: unknown) => (typeof value === "bigint" ? value.toString() : value)))
+    .digest("hex")
+    .slice(0, 16);
 
 export function sha256Of(text: string, path: string): string {
   const hex = text.trim().toLowerCase();

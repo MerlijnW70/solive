@@ -15,6 +15,7 @@ import { escrowFor } from "../src/judge.js";
 import { EXIT_OK, nodeRuntime } from "../src/main.js";
 import { announced, keyed } from "./announce.js";
 import { cli, h, transport, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -94,7 +95,7 @@ async function setUp() {
   h.watched.push(wallet);
   h.engineLog = [];
   h.rounds = 10;
-  const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: "6a".repeat(32), send: true });
+  const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: "6a".repeat(32) }));
   return { client, wallet, intent: escrow["intent"] as Address, nonce: escrow["nonce"] as string };
 }
 

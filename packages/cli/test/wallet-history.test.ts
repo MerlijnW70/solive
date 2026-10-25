@@ -15,6 +15,7 @@ import type { EngineTransaction, TokenHolding } from "@intent-engine/client";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { cli, h, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown>;
 const SOL = 1_000_000_000n;
@@ -72,7 +73,7 @@ describe("solive_wallet_history", () => {
     const payee = await findAssociatedTokenAddress({ owner: worker, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     const intents: Address[] = [];
     for (let i = 0; i < 4; i += 1) {
-      intents.push((await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, send: true }))["intent"] as Address);
+      intents.push((await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner })))["intent"] as Address);
     }
     await ok(client, "wallet_cancel", { nonce: "1", send: true });
     expect(h.svm.getAccount(intents[1] ?? owner).exists).toBe(false);

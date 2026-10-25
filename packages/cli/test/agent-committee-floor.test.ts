@@ -11,6 +11,7 @@ import { pieceUnsettled } from "../src/agent/wallet/escrow.js";
 import { EXIT_OK } from "../src/main.js";
 import { LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { cli, funded, h, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -86,7 +87,7 @@ describe("the wallet escrow tools under a committee floor", () => {
     const owner = (await ok(client, "wallet_setup"))["address"] as Address;
     const below = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.04", attestor: owner });
     expect(below["summary"]).toContain(FLOOR_LINE);
-    const refused = await call(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, send: true });
+    const refused = await call(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner }));
     expect(refused.value).toMatchObject({ code: "CommitteeRequired", retryable: false, hint: committeeNeeded("0.05", "0.05", owner) });
     expect((await ok(client, "wallet_intents"))["intents"]).toHaveLength(0);
 
@@ -94,7 +95,7 @@ describe("the wallet escrow tools under a committee floor", () => {
     expect((await call(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: loose })).value).toMatchObject({ code: "CommitteeRequired" });
 
     const committee = await convene(2);
-    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, send: true });
+    const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee }));
     expect(escrow["summary"]).toEqual(expect.arrayContaining([FLOOR_LINE, `Judged by: the committee ${committee}, passed with the create`]));
     expect(h.svm.getAccount(escrow["intent"] as Address).exists).toBe(true);
   });
@@ -105,7 +106,7 @@ describe("the wallet escrow tools under a committee floor", () => {
       { name: "small", amount: "0.01" },
       { name: "large", amount: "0.05" },
     ];
-    const refused = await call(client, "wallet_escrow_plan", { sell: "SOL", attestor: owner, pieces, send: true });
+    const refused = await call(client, "wallet_escrow_plan", await approved(client, "wallet_escrow_plan", { sell: "SOL", attestor: owner, pieces }));
     expect(refused.value).toMatchObject({ code: "CommitteeRequired", hint: `${pieceUnsettled(2, "large")}${committeeNeeded("0.05", "0.05", owner)}` });
     expect((await ok(client, "wallet_intents"))["intents"]).toHaveLength(0);
     const committee = await convene(2);

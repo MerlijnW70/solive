@@ -21,6 +21,7 @@ import { EXIT_OK } from "../src/main.js";
 import { LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { announced, keyed } from "./announce.js";
 import { balance, cli, FEE_BPS, h, NOW, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -82,7 +83,7 @@ async function setUp() {
 }
 
 async function proofEscrow(client: Client, wallet: Address, hint: string) {
-  const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: hint.repeat(32), send: true });
+  const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: hint.repeat(32) }));
   return { intent: escrow["intent"] as Address, nonce: escrow["nonce"] as string };
 }
 
@@ -232,7 +233,7 @@ describe("wallet_escrow terms", () => {
     expect((shown["warnings"] as string[]).some((line) => line.includes("hashes to"))).toBe(true);
     const { net } = splitFee(LAMPORTS_PER_SOL / 20n - LAMPORTS_PER_SOL / 1_000n, FEE_BPS);
     expect(shown["summary"]).toContain(`Payee receives: ${formatAmount(net, 9)}, after the ${FEE_BPS / 100}% protocol fee at today's config`);
-    const sent = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: "aa".repeat(32), spec_url: url, expires_in: 600, send: true });
+    const sent = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: wallet, spec_hash: "aa".repeat(32), spec_url: url, expires_in: 600 }));
     expect((sent["warnings"] as string[]).some((line) => line.includes("hashes to"))).toBe(false);
     const held = h.svm.getAccount(sent["intent"] as Address);
     expect(held.exists && getIntentDecoder().decode(held.data).expiresAt).toBe(NOW + 600n + BigInt(LANDING_SECONDS));

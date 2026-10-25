@@ -17,6 +17,7 @@ import { jobClosed } from "../src/sealed-commands.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { announced, keyed } from "./announce.js";
 import { cli, creation, funded, h, NOW, ownerSigned, transport, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown>;
 
@@ -72,7 +73,7 @@ describe("an invite-only job through MCP", () => {
     const [workerKey, strangerKey] = [await keyed(), await keyed()];
     const [worker, stranger] = [workerKey.address, strangerKey.address];
     h.specPages.set(SPEC_URL, await seal(new TextEncoder().encode(SPEC), [owner, worker]));
-    const escrow = await call(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash: sha(SPEC), spec_url: SPEC_URL, send: true });
+    const escrow = await call(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash: sha(SPEC), spec_url: SPEC_URL }));
     expect(escrow.error, JSON.stringify(escrow.value)).toBe(false);
     const intent = escrow.value["intent"] as Address;
     h.engineLog.push({ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) });

@@ -22,6 +22,7 @@ import { walletHistory } from "../src/agent/wallet/history.js";
 import { EXIT_OK } from "../src/main.js";
 import { defaultWallet, LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { cli, FEE_BPS, funded, h, HOME, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown>;
 
@@ -141,7 +142,7 @@ describe("wallet_history of a job a contractor resold", () => {
     const client = await connect();
     const payer = (await ok(client, "wallet_setup"))["address"] as Address;
     const payerKey = h.files.get(defaultWallet(HOME)) ?? "";
-    const job = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.1", attestor: payer, spec_hash: "71".repeat(32), send: true });
+    const job = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.1", attestor: payer, spec_hash: "71".repeat(32) }));
     const jobIntent = job["intent"] as Address;
     const jobMade = made(jobIntent, 1n, 0n);
     const at = jobMade.blockTime ?? 0n;
@@ -169,7 +170,7 @@ describe("wallet_history of a job a contractor resold", () => {
     useKey(contractor);
     const subs: Address[] = [];
     for (const hint of ["72", "73"]) {
-      subs.push((await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.03", attestor: contractor.address, spec_hash: hint.repeat(32), send: true }))["intent"] as Address);
+      subs.push((await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.03", attestor: contractor.address, spec_hash: hint.repeat(32) })))["intent"] as Address);
     }
     const [first, second] = subs as [Address, Address];
     const payeeOf = (owner: Address) => findAssociatedTokenAddress({ owner, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });

@@ -9,6 +9,7 @@ import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { pieceUnsettled } from "../src/agent/wallet/escrow.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { balance, cli, h, world, type World } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -145,7 +146,7 @@ describe("the wallet escrow tools refuse an escrow no release could settle", () 
     }
     expect(h.wires.length).toBe(wires);
     expect((await ok(client, "wallet_intents"))["intents"]).toEqual([]);
-    const made = await ok(client, "wallet_escrow", { ...terms, judge_fee: "0.049999999", send: true });
+    const made = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { ...terms, judge_fee: "0.049999999" }));
     expect(made).toMatchObject({ sent: true, signature: expect.any(String) });
     expect((await ok(client, "wallet_intents"))["intents"]).toHaveLength(1);
   });
@@ -163,7 +164,7 @@ describe("the wallet escrow tools refuse an escrow no release could settle", () 
     expect(h.wires.length).toBe(wires);
     expect((await ok(client, "wallet_intents"))["intents"]).toEqual([]);
     const least = { ...plan, pieces: [plan.pieces[0], { name: "least", amount: "0.000000001" }], send: true };
-    const made = await ok(client, "wallet_escrow_plan", least);
+    const made = await ok(client, "wallet_escrow_plan", await approved(client, "wallet_escrow_plan", least));
     expect(made).toMatchObject({ sent: true, total: "0.010000001" });
     expect((await ok(client, "wallet_intents"))["intents"]).toHaveLength(2);
   });

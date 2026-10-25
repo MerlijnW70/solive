@@ -82,7 +82,7 @@ The agent calls `intent__solive_wallet_setup`, `intent__solive_wallet_estimate` 
 
 > Yes, send it.
 
-The agent calls `intent__solive_wallet_swap` with `send: true`, and OpenClaw asks you to approve that call.
+The agent calls `intent__solive_wallet_swap` with `send: true` and the preview's `approval`, and OpenClaw asks you to approve that call.
 
 > Wait for the fill.
 

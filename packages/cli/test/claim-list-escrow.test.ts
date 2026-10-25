@@ -13,6 +13,7 @@ import { claimsTooLarge } from "../src/agent/create.js";
 import { claimsAfter, NO_LISTED_WORKER, sealedLimits } from "../src/agent/wallet/escrow-claims.js";
 import { EXIT_OK } from "../src/main.js";
 import { cli, h, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -82,7 +83,7 @@ describe("wallet escrows on a sealed spec", () => {
     h.specPages.set(SPEC_URL, await seal(encoded(SPEC), [wallet, judge, worker, mate]));
     const shown = await ok(client, "wallet_escrow", terms(judge));
     expect(shown["summary"]).toContain(sealedLimits([worker, mate]));
-    const made = await ok(client, "wallet_escrow", { ...terms(judge), send: true });
+    const made = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { ...terms(judge) }));
     const ref = { owner: wallet, nonce: made["nonce"] };
     const intent = made["intent"] as Address;
     const read = await ok(client, "get_claims", ref);
@@ -112,7 +113,7 @@ describe("wallet escrows on a sealed spec", () => {
     const pieces = [{ name: "a", amount: "0.01" }, { name: "b", amount: "0.01", spec_url: OTHER_URL }];
     const split = await ok(client, "wallet_escrow_plan", { ...plan, pieces });
     expect((split["summary"] as string[]).filter((line) => line.includes("Limits:"))).toEqual([`Piece 1 (a): ${sealedLimits([worker])}`, `Piece 2 (b): ${sealedLimits([mate])}`]);
-    const sent = await ok(client, "wallet_escrow_plan", { ...plan, pieces, send: true });
+    const sent = await ok(client, "wallet_escrow_plan", await approved(client, "wallet_escrow_plan", { ...plan, pieces }));
     const lists = await Promise.all((sent["pieces"] as Json[]).map(async (piece) => (await ok(client, "get_claims", { owner: wallet, nonce: piece["nonce"] }))["claim_list"]));
     expect(lists).toEqual([
       { workers: [worker], size: 1, complete: true },
@@ -123,7 +124,7 @@ describe("wallet escrows on a sealed spec", () => {
   it("refuses claims it cannot limit: an unreadable spec and a spec sealed to no worker", async () => {
     const { client, wallet } = await setup();
     const judge = address();
-    const unread = await call(client, "wallet_escrow", { ...terms(judge), send: true });
+    const unread = await call(client, "wallet_escrow", await approved(client, "wallet_escrow", { ...terms(judge) }));
     expect(unread).toMatchObject({ error: true, value: { code: "SpecUnreadable" } });
     expect(unread.value["hint"]).toMatch(/^spec_url .+, so the wallets its spec invites cannot be read to limit who may claim; nothing was sent; /);
     h.specPages.set(SPEC_URL, await seal(encoded(SPEC), [wallet, judge]));
@@ -139,7 +140,7 @@ describe("wallet escrows on a sealed spec", () => {
     expect(shown["summary"]).toContain(claimsAfter(2));
     expect(shown["summary"]).toContain(sealedLimits(workers));
     const wires = h.wires.length;
-    const made = await ok(client, "wallet_escrow", { ...terms(judge), send: true });
+    const made = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { ...terms(judge) }));
     expect(h.wires.length - wires).toBe(3);
     expect(JSON.stringify(made["warnings"])).not.toContain("claims did not all open");
     const read = await ok(client, "get_claims", { owner: wallet, nonce: made["nonce"] });

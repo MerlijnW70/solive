@@ -7,6 +7,7 @@ import { NOT_ANNOUNCEMENT } from "../src/agent/wallet.js";
 import { call, fresh, ok } from "./agent-wallet-kit.js";
 import { announced, keyed } from "./announce.js";
 import { h, transport } from "./harness.js";
+import { approved } from "./approved.js";
 
 const WORK = "f1".repeat(32);
 const url = (name: string) => "https://" + "example.org/" + name;
@@ -22,7 +23,7 @@ describe("the wallet server's refutations and reclaims", () => {
     const wallet = (await ok(client, "wallet_setup"))["address"] as Address;
     h.watched.push(wallet);
     const judge = await keyed();
-    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: judge.address, spec_hash: "5c".repeat(32), send: true });
+    const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: judge.address, spec_hash: "5c".repeat(32) }));
     const intent = escrow["intent"] as Address;
     const earlier = await ok(client, "wallet_deliver", { intent, sha256: WORK, url: url("mine.tar"), send: true });
     expect((await call(client, "wallet_reclaim")).value).toMatchObject({ code: "NothingToReclaim" });

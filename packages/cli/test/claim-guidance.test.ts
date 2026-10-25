@@ -14,6 +14,7 @@ import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { defaultWallet } from "../src/wallet.js";
 import { cli, DOMAIN, funded, h, HOME, NOW, send, setNow, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown>;
 
@@ -58,7 +59,7 @@ describe("a worker without the claim on a job that takes claims", () => {
   let payerKey: string;
 
   const escrow = async (claims: boolean) =>
-    ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: payer, spec_hash: SPEC_HASH, ...(claims ? { claim_stake: "0.05", claim_secs: 3600 } : {}), send: true });
+    ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: payer, spec_hash: SPEC_HASH, ...(claims ? { claim_stake: "0.05", claim_secs: 3600 } : {}) }));
 
   const announce = async (worker: KeyPairSigner, intent: Address) => {
     useKey(worker);

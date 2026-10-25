@@ -20,6 +20,7 @@ import { ADDRESS_PATTERN } from "../src/agent/schema.js";
 import { WALLET_ACTIONS } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { cli, h, type World, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown>;
 type Result = { isError?: boolean; content: unknown; structuredContent?: unknown };
@@ -203,7 +204,7 @@ describe("the wallet's delivery tool under hostile input", () => {
     const judge = await generateKeyPairSigner();
     const escrow = await client.callTool({
       name: "solive_wallet_escrow",
-      arguments: { sell: "SOL", amount: "0.01", attestor: judge.address, spec_hash: "3c".repeat(32), spec_url: "https://example.org/spec", record_mint: w.outputMint, send: true },
+      arguments: await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.01", attestor: judge.address, spec_hash: "3c".repeat(32), spec_url: "https://example.org/spec", record_mint: w.outputMint }),
     });
     expect(escrow.isError, JSON.stringify(escrow.structuredContent)).not.toBe(true);
     known = [(escrow.structuredContent as { intent: Address }).intent, judge.address, wallet, w.owner.address, w.inputMint];

@@ -16,6 +16,7 @@ import { UNSEAL_NEEDS_KEY } from "../src/arg-values.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { defaultWallet } from "../src/wallet.js";
 import { cli, creation, funded, h, HOME, ownerSigned, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 vi.mock("node:dns/promises", () => ({ lookup: async () => [{ address: "93.184.215.14", family: 4 }] }));
 
@@ -94,7 +95,7 @@ describe("sealing to a judge whose profile publishes an encryption key", () => {
     await ok(plain, "wallet_setup");
     useKey(judge);
     h.specPages.set(SPEC_URL, bytesOf(SPEC));
-    const escrow = await ok(plain, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: judge.address, spec_hash: sha(SPEC), spec_url: SPEC_URL, send: true });
+    const escrow = await ok(plain, "wallet_escrow", await approved(plain, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: judge.address, spec_hash: sha(SPEC), spec_url: SPEC_URL }));
     const intent = escrow["intent"] as Address;
     h.engineLog = [{ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) }];
 
@@ -127,7 +128,7 @@ describe("sealing to a judge whose profile publishes an encryption key", () => {
     const sealed = await ok(plain, "wallet_seal_spec", { text: SPEC, invite: [judge.address], attestor: owner.address });
     expect(sealed["sealed_to"]).toEqual([judge.address, owner.address]);
     h.specPages.set(SPEC_URL, bytesOf(sealed["sealed"]));
-    const escrow = await ok(plain, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner.address, spec_hash: sealed["sha256"], spec_url: SPEC_URL, send: true });
+    const escrow = await ok(plain, "wallet_escrow", await approved(plain, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner.address, spec_hash: sealed["sha256"], spec_url: SPEC_URL }));
     const intent = escrow["intent"] as Address;
     h.engineLog = [{ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) }];
     useKey(judge);

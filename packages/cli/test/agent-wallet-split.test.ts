@@ -23,6 +23,7 @@ import { bytesOf, call, fresh, type Json, ok } from "./agent-wallet-kit.js";
 import { announced, keyed } from "./announce.js";
 import { NO_BOOK } from "../src/agent/wallet/openings.js";
 import { ata, balance, FEE_BPS, funded, h, transport } from "./harness.js";
+import { approved } from "./approved.js";
 
 const ADDRESS_LOOKUP_TABLE_PROGRAM = "AddressLookupTab1e1111111111111111111111111" as Address;
 
@@ -77,7 +78,7 @@ describe("the wallet server's split releases", () => {
   async function splitEscrow(work: string, weights: readonly number[] = [5000, 5000]) {
     const owner = (await ok(client, "wallet_setup"))["address"] as Address;
     h.watched.push(owner);
-    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, min_result: "1", max_result: "1", spec_hash: "4b".repeat(32), send: true });
+    const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, min_result: "1", max_result: "1", spec_hash: "4b".repeat(32) }));
     const intent = escrow["intent"] as Address;
     const coauthors = await Promise.all(weights.map(() => keyed()));
     const recipients = coauthors.map((c, i) => ({ wallet: c.address, weight: weights[i] as number }));
@@ -130,7 +131,7 @@ describe("the wallet server's split releases", () => {
     expect(await paidTo(coauthors[0]!.address)).toBe(payout[0]!);
     expect((await loadAnnouncement(transport, made.announcement))?.state).toBe("paid");
     expect((await call(client, "wallet_attest_split", { ...base, recipients: signed, approval: shown["approval"], send: true })).value).toMatchObject({ code: "InvalidTransition" });
-    const plain = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.02", attestor: owner, min_result: "1", max_result: "1", send: true });
+    const plain = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.02", attestor: owner, min_result: "1", max_result: "1" }));
     expect((await call(client, "wallet_attest_split", { owner, nonce: plain["nonce"], recipients, delivered_sha256: work })).value).toMatchObject({ code: "NotAProof" });
   });
 

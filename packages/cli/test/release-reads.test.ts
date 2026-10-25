@@ -19,6 +19,7 @@ import { EXIT_OK } from "../src/main.js";
 import { announced, keyed } from "./announce.js";
 import { cliWith, secondNode, SECOND } from "./confirm-node.js";
 import { ata, cli, funded, h, transport, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -112,7 +113,7 @@ describe("a second node that cannot be read", () => {
     h.served.length = 0;
     const client = await linked(await cliWith(["mcp", "--url", "devnet", "--wallet", "--all-tools", "--confirm-url", SECOND], {}, node));
     const owner = (await ok(client, "wallet_setup"))["address"] as Address;
-    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash: createHash("sha256").update("spec").digest("hex"), send: true });
+    const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: owner, spec_hash: createHash("sha256").update("spec").digest("hex") }));
     const intent = escrow["intent"] as Address;
     await announced(intent, await keyed(), WORK, URL_OF_WORK);
     const refused = await call(client, "wallet_attest", { owner, nonce: escrow["nonce"], delivered_sha256: WORK });
@@ -144,7 +145,7 @@ describe("a committee release from a key file", () => {
     const created = await cli(["committee", "create", "--url", "devnet", "--keypair", "payer.json", "--members", members.join(","), "--threshold", "2", "--fee-wallet", payer.address, "--yes"], { "payer.json": payer });
     expect([created.code, created.err]).toEqual([EXIT_OK, ""]);
     const committee = created.json()["committee"] as Address;
-    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: "6e".repeat(32), send: true });
+    const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: "6e".repeat(32) }));
     const intent = escrow["intent"] as Address;
     const worker = await keyed();
     for (const owner of [worker.address, w.feeRecipient.address, payer.address]) {

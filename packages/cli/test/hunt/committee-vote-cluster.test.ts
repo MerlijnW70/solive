@@ -10,6 +10,7 @@ import { MAINNET_GENESIS, WALLET_NOTICE } from "../../src/agent/wallet.js";
 import { EXIT_OK } from "../../src/main.js";
 import { announced, keyed } from "../announce.js";
 import { ata, balance, cli, funded, h, transport, world, type World } from "../harness.js";
+import { approved } from "../approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -66,14 +67,17 @@ describe("a wallet server whose RPC turns to mainnet after a committee vote prev
     );
     expect([created.code, created.err]).toEqual([EXIT_OK, ""]);
     const committee = created.json()["committee"] as Address;
-    const escrow = await ok(client, "wallet_escrow", {
-      sell: w.inputMint,
-      record_mint: w.outputMint,
-      amount: "0.5",
-      attestor: committee,
-      spec_hash: "6d".repeat(32),
-      send: true,
-    });
+    const escrow = await ok(
+      client,
+      "wallet_escrow",
+      await approved(client, "wallet_escrow", {
+        sell: w.inputMint,
+        record_mint: w.outputMint,
+        amount: "0.5",
+        attestor: committee,
+        spec_hash: "6d".repeat(32),
+      }),
+    );
     const intent = escrow["intent"] as Address;
     const workerKey = await keyed();
     const worker = workerKey.address;

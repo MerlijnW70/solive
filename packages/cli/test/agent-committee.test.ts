@@ -12,6 +12,7 @@ import { announced, keyed } from "./announce.js";
 import { TOKEN_NAMES } from "../src/tokens.js";
 import { sol, tokenAccountRent } from "../src/agent/wallet/costs.js";
 import { ata, balance, cli, funded, h, transport, world } from "./harness.js";
+import { approved } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
@@ -84,7 +85,7 @@ describe("a wallet server on a committee", () => {
     expect([created.code, created.err]).toEqual([EXIT_OK, ""]);
     const committee = created.json()["committee"] as Address;
     const specHash = "6d".repeat(32);
-    const escrow = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: specHash, send: true });
+    const escrow = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: specHash }));
     const intent = escrow["intent"] as Address;
     const workerKey = await keyed();
     const worker = workerKey.address;
