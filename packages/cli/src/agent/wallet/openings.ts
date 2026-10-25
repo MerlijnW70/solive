@@ -27,18 +27,18 @@ export const GIVE_KEY_SETTING = "start the server with mcp --encryption-keypair 
 
 export const WAIT_FOR_LIST = "the RPC node does not list every announcement yet; call again in a few seconds";
 
-export const NO_BOOK = `no worker has announced work to this escrow yet, or it is closed; a worker announces with ${tool("wallet_deliver")} first`;
+export const NO_BOOK = `no worker has announced work to this escrow yet; a worker announces with ${tool("wallet_deliver")} first`;
 
 export const KEY_ON_DEVICE =
   "an earlier announcement is sealed to the key derived from this wallet, which a Ledger cannot use; judge with the wallet's key file, or have the judge publish an encryption key before escrows are made";
 
 const CODES = { incomplete: "AnnouncementsIncomplete", "key-not-given": "KeyNotGiven", "claim-held": "ClaimHeld", "nothing-opens": "NotAnnounced" } as const;
 
-export function refused(refusal: FirstOpeningRefused, device: boolean, judge: Address): AgentRefusal {
+export function refused(refusal: FirstOpeningRefused, device: boolean, judge: Address, announced: boolean): AgentRefusal {
   if (device && refusal.reason === "key-not-given" && refusal.sealedTo.some(({ kind, wallet }) => kind === "wallet" && wallet === judge)) {
     return new AgentRefusal("KeyNotGiven", `${refusal.message}; ${KEY_ON_DEVICE}`);
   }
-  return new AgentRefusal(CODES[refusal.reason], `${refusal.message}; ${refusalNext(refusal, { key: GIVE_KEY_SETTING, wait: WAIT_FOR_LIST, closed: NO_BOOK })}`);
+  return new AgentRefusal(CODES[refusal.reason], `${refusal.message}; ${refusalNext(refusal, { key: GIVE_KEY_SETTING, wait: WAIT_FOR_LIST, nobody: NO_BOOK }, announced)}`);
 }
 
 const refusedHistory = (error: unknown): never => {
@@ -59,7 +59,7 @@ export async function firstOpeningFor(ctx: AgentContext, judge: Address, intent:
   }
   const { list, opening } = await firstOpeningIn(ctx.transport, { intent, sha256, keypair: await walletOpeners(ctx) });
   if (isSdkError(opening, "first-opening-refused")) {
-    throw refused(opening, device, judge);
+    throw refused(opening, device, judge, list.announcements.length > 0);
   }
   return { list, opening, skipped: skippedLines(opening) };
 }

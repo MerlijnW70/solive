@@ -25,7 +25,7 @@ export const signedTerms = {
   relayer_fee: amount("raw input units the owner pays, from the same allowance, to whoever submits the signature"),
   partner: optional(partnerSchema),
   spec_url: optional(
-    text(`where the acceptance spec is published, ${MEMO_URL_RULE}; the relayer records it in a memo it signs with the create. It is not part of the owner's signature`),
+    text(`where the acceptance spec is published, ${MEMO_URL_RULE}; the relayer records it in a memo it signs with the create. It is not part of the owner's signature, so ${tool("find_jobs")} does not show it`),
   ),
 };
 
@@ -43,9 +43,9 @@ export type SignedTerms = {
   spec_url?: string;
 };
 
-export const SPEC_URL_UNSIGNED = `the spec url is not part of what the owner signs: the relayer publishes it in a memo it signs with the create, and a relayer could leave it out or change it; ${tool("find_jobs")} shows the url that was published`;
+export const SPEC_URL_UNSIGNED = `the spec url is not part of what the owner signs: the relayer records it in a memo it signs with the create, and ${tool("find_jobs")} and ${tool("get_spec")} read only a spec url the owner signs, so they do not show this one; give workers the url yourself`;
 
-export const publishesLine = (url: string) => `Publishes: the acceptance spec's url ${url}, in a memo the relayer signs`;
+export const publishesLine = (url: string) => `Records: the acceptance spec's url ${url}, in a memo the relayer signs, which ${tool("find_jobs")} does not show`;
 
 export async function publishedUrl(transport: Transport, params: IntentParams, url: string | undefined): Promise<string | undefined> {
   if (url === undefined) {

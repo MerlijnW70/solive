@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { type SpecFetch, type Transport } from "@intent-engine/client";
-import { DEVNET_GENESIS_HASH } from "@intent-engine/client/internal";
+import { DEVNET_GENESIS_HASH, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, PUBLIC_GENESIS_HASHES } from "@intent-engine/client/internal";
+import { createTestWorld } from "@intent-engine/client/testing";
 import { MAX_ARTIFACT_BYTES } from "../src/artifact.js";
 import { fetchSha256, NOT_PUBLIC, tooLarge } from "../src/delivery-fetch.js";
 import type { Lookup } from "../src/public-address.js";
@@ -51,6 +52,20 @@ describe("hashing a spec by its url", () => {
     const url = "https://" + "127.0.0.1/spec.md";
     expect(await fetchSha256(get, LOCAL, url, lookup)).toStrictEqual({ sha256: sha("spec") });
     expect(await fetchSha256(get, PUBLIC, url, lookup)).toStrictEqual({ problem: NOT_PUBLIC });
+  });
+
+  it("fetches a loopback url on the test world's offline transport, whose urls the client lets it announce, and nothing else private", async () => {
+    const world = await createTestWorld();
+    expect(PUBLIC_GENESIS_HASHES.has(await world.transport.genesisHash())).toBe(true);
+    const get = serving(() => new Response("work"));
+    for (const url of ["http://" + "127.0.0.1:8080/work.txt", "http://" + "localhost:8080/work.txt", "https://" + "[::1]/work.txt"]) {
+      expect(await plainHttpOnPublic(world.transport, url), url).toBe(false);
+      expect(await fetchSha256(get, world.transport, url, lookup), url).toStrictEqual({ sha256: sha("work") });
+    }
+    expect(await fetchSha256(get, PUBLIC, "http://" + "127.0.0.1:8080/work.txt", lookup)).toStrictEqual({ problem: PLAIN_HTTP_ON_PUBLIC });
+    expect(await fetchSha256(get, PUBLIC, "https://" + "127.0.0.1/work.txt", lookup)).toStrictEqual({ problem: NOT_PUBLIC });
+    expect(await fetchSha256(get, world.transport, "https://" + "10.0.0.7/work.txt", lookup)).toStrictEqual({ problem: NOT_PUBLIC });
+    expect(await fetchSha256(get, world.transport, "https://" + "a.example/work.txt", async () => ["192.168.1.2"])).toStrictEqual({ problem: NOT_PUBLIC });
   });
 
   it("takes a body of exactly the size limit, whether announced or streamed, and refuses one byte more", async () => {

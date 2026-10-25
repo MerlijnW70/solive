@@ -259,6 +259,7 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet smoke", () =
         specFetch: async () => {
           throw new TypeError("fetch failed");
         },
+        lookup: async () => [],
         readText: async () => {
           throw new Error("the devnet smoke test reads no files");
         },

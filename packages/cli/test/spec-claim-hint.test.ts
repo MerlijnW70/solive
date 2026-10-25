@@ -10,7 +10,7 @@ import { agentServer, servedText } from "../src/agent/mcp.js";
 import { claimsOf } from "../src/agent/claims.js";
 import { type Serving, servedActions } from "../src/agent/everyday.js";
 import { SPEC_TAKES_CLAIMS, specClaimHeld } from "../src/agent/job-claims.js";
-import { creation, funded, h, NOW, ownerSigned, send, transport, type World, world } from "./harness.js";
+import { creation, funded, h, harnessLookup, NOW, ownerSigned, send, transport, type World, world } from "./harness.js";
 
 type Json = Record<string, unknown>;
 
@@ -27,7 +27,7 @@ const WITHOUT: Serving = { wallet: false, allTools: false, relay: false, agent: 
 
 async function linked(serving: Serving): Promise<{ client: Client; names: ReadonlySet<string> }> {
   const actions = servedActions(serving);
-  const server = agentServer({ transport, relay: undefined, agent: undefined, claims: claimsOf(), fetch: fetching }, actions);
+  const server = agentServer({ transport, relay: undefined, agent: undefined, claims: claimsOf(), fetch: fetching, lookup: harnessLookup }, actions);
   const [near, far] = InMemoryTransport.createLinkedPair();
   await server.connect(near);
   const client = new Client({ name: "test", version: "0.0.0" });

@@ -15,9 +15,9 @@ import {
 import { getTransferSolInstruction } from "@solana-program/system";
 import { LiteSVM } from "litesvm";
 import { describe, expect, it } from "vitest";
-import { attestedResult, DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
-import { getIntentDiscriminatorBytes, getIntentSize } from "@intent-engine/core/internal";
-import { BehindMinSlot, BlockhashExpired, FailedOnChain, isSdkError, type Transport } from "../src/index.js";
+import { AccountVersionError, attestedResult, DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
+import { ACCOUNT_LAYOUTS, getIntentDiscriminatorBytes, getIntentSize, INTENT_VERSION, storedVersion } from "@intent-engine/core/internal";
+import { BehindMinSlot, BlockhashExpired, createClient, FailedOnChain, isSdkError, type Transport } from "../src/index.js";
 import { type RpcLike, rpcTransport } from "../src/internal.js";
 import { svmTransport } from "../src/svm.js";
 import { createTestWorld, type TestWorld } from "../src/testing.js";
@@ -101,6 +101,32 @@ describe("the svm transport against the RPC transport", () => {
     world.svm.setAccount({ ...held, address: copy });
     expect((await fresh.intents({ owner: owner.address })).map(({ address }) => address).sort()).toEqual([mine.intent, copy].sort());
     expect((await fresh.engineAccounts?.())?.every(({ data }) => data.length > 0)).toBe(true);
+  });
+
+  it("hands back an intent of an unknown version as the same bytes, so the client refuses it the same way over both", async () => {
+    const world = await createTestWorld({ start: NOW });
+    const owner = await world.wallet();
+    const { intent } = await escrow(world, owner);
+    const held = world.svm.getAccount(intent);
+    if (!held.exists) {
+      throw new Error("the escrow was not created");
+    }
+    const layout = ACCOUNT_LAYOUTS.find(({ name }) => name === "intent");
+    const data = Uint8Array.from(held.data);
+    data[8 + (layout?.versionAt ?? 0)] = INTENT_VERSION + 1;
+    expect(storedVersion(data)?.version).toBe(INTENT_VERSION + 1);
+    world.svm.setAccount({ ...held, data });
+    const listed = [{ pubkey: intent, account: { data: [Buffer.from(data).toString("base64"), "base64"] as const, lamports: 1n } }];
+    const rpc = { getProgramAccounts: () => ({ send: async () => listed }) } as unknown as RpcLike;
+    const transports = [svmTransport(world.svm), rpcTransport(rpc, async () => {})];
+    const raw = await Promise.all(transports.map((transport) => transport.intents({ owner: owner.address })));
+    expect(raw[0]).toEqual([{ address: intent, data }]);
+    expect(raw[1]).toEqual(raw[0]);
+    const refusals = await Promise.all(transports.map((transport) => createClient({ url: "http://127.0.0.1:8899", transport }).intents({ owner: owner.address }).catch((error: unknown) => error)));
+    expect(refusals[0]).toBeInstanceOf(AccountVersionError);
+    expect(refusals[0]).toMatchObject({ code: "account-version-error", account: "intent", version: INTENT_VERSION + 1 });
+    expect(refusals[1]).toBeInstanceOf(AccountVersionError);
+    expect((refusals[1] as Error).message).toBe((refusals[0] as Error).message);
   });
 
   it("reports the slot it read intents at and refuses a read from before a slot already seen", async () => {

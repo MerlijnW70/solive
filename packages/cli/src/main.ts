@@ -5,7 +5,7 @@ import type { Readable, Writable } from "node:stream";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { createKeyPairSignerFromBytes, createSolanaRpc, type KeyPairSigner } from "@solana/kit";
 import { isSdkError } from "@intent-engine/client";
-import { openUsb, pinnedFetch } from "@intent-engine/client/node";
+import { openUsb, pinnedFetch, systemLookup } from "@intent-engine/client/node";
 import { changesFrom, intentNotifications, observedFetch, observedTransport, observerOf, type RpcLike, rpcTransport, signatureWatch } from "@intent-engine/client/internal";
 import { type Command, ENV_URL, outputOf, parse, UsageError } from "./args.js";
 import { follow, run, type Runtime, watchSolve } from "./commands.js";
@@ -177,6 +177,7 @@ export function nodeRuntime(clock: () => number = Date.now, pipes: Pipes = proce
     loadSigner: loadKeypairFile,
     loadKeypair: loadKeypairBytes,
     specFetch: pinnedFetch,
+    lookup: systemLookup,
     readText: (path) => readFile(path, "utf8"),
     sleep: (seconds, stop) =>
       new Promise((resolve) => {

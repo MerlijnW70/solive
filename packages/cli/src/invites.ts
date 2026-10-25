@@ -1,7 +1,8 @@
 import type { Address } from "@solana/kit";
-import { isSdkError, SpecUnreadable, type SpecFetch, type Transport } from "@intent-engine/client";
+import { isSdkError, type Lookup, SpecUnreadable, type SpecFetch, type Transport } from "@intent-engine/client";
 import { readSpec } from "@intent-engine/client/internal";
-import { systemLookup } from "./public-address.js";
+
+export type SpecReach = { lookup: Lookup; rpcUrl?: string | undefined };
 
 export type Invites = { kind: "open" } | { kind: "sealed"; to: Address[] } | { kind: "unread"; reason: string };
 
@@ -31,14 +32,14 @@ export class InviteRefused extends Error {
 
 const OPEN: Invites = { kind: "open" };
 
-export async function invitesOf(transport: Transport, get: SpecFetch, intent: Address): Promise<Invites> {
+export async function invitesOf(transport: Transport, get: SpecFetch, intent: Address, reach: SpecReach): Promise<Invites> {
   let fetching = false;
   const watched: SpecFetch = (url, init) => {
     fetching = true;
     return get(url, init);
   };
   try {
-    const spec = await readSpec(transport, watched, intent, undefined, systemLookup);
+    const spec = await readSpec(transport, watched, intent, undefined, reach.lookup, reach.rpcUrl);
     return spec?.sealedTo === undefined ? OPEN : { kind: "sealed", to: spec.sealedTo };
   } catch (error) {
     if (isSdkError(error, "spec-sealed")) {
@@ -54,8 +55,8 @@ export async function invitesOf(transport: Transport, get: SpecFetch, intent: Ad
   }
 }
 
-export async function checkInvited(transport: Transport, get: SpecFetch, intent: Address, payees: readonly Address[]): Promise<void> {
-  const invites = await invitesOf(transport, get, intent);
+export async function checkInvited(transport: Transport, get: SpecFetch, intent: Address, payees: readonly Address[], reach: SpecReach): Promise<void> {
+  const invites = await invitesOf(transport, get, intent, reach);
   if (invites.kind === "unread") {
     throw new InviteRefused("SpecUnreadable", inviteUnchecked(intent, invites.reason));
   }
@@ -65,7 +66,7 @@ export async function checkInvited(transport: Transport, get: SpecFetch, intent:
   }
 }
 
-export async function sealedInvites(transport: Transport, get: SpecFetch, intent: Address): Promise<Address[] | undefined> {
-  const invites = await invitesOf(transport, get, intent);
+export async function sealedInvites(transport: Transport, get: SpecFetch, intent: Address, reach: SpecReach): Promise<Address[] | undefined> {
+  const invites = await invitesOf(transport, get, intent, reach);
   return invites.kind === "sealed" ? invites.to : undefined;
 }

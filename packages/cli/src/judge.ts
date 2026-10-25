@@ -97,11 +97,11 @@ export const GIVE_KEY_FLAG = "pass the encryption key file of that key with --en
 
 export const WAIT_FOR_NODE = "the RPC node does not show every announcement yet; run again in a few seconds";
 
-export function refusedOpening(refusal: FirstOpeningRefused, path: string, device: boolean, judge: Address): string {
+export function refusedOpening(refusal: FirstOpeningRefused, path: string, device: boolean, judge: Address, announced: boolean): string {
   if (device && refusal.reason === "key-not-given" && refusal.sealedTo.some(({ kind, wallet }) => kind === "wallet" && wallet === judge)) {
     return sealedOnDevice(path, refusal.intent);
   }
-  return `${refusal.message}; ${refusalNext(refusal, { key: GIVE_KEY_FLAG, wait: WAIT_FOR_NODE, closed: NOBODY_ANNOUNCED })}`;
+  return `${refusal.message}; ${refusalNext(refusal, { key: GIVE_KEY_FLAG, wait: WAIT_FOR_NODE, nobody: NOBODY_ANNOUNCED }, announced)}`;
 }
 
 export async function judgeOpeners(runtime: Runtime, command: JudgeCommand, device: boolean): Promise<DeliveryOpener[]> {
@@ -184,12 +184,12 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   const keypair = await judgeOpeners(runtime, command, isDevice(signer));
   const { list, opening } = await firstOpeningIn(transport, { intent: address, sha256, keypair });
   if (isSdkError(opening, "first-opening-refused")) {
-    throw new JudgeRefused(refusedOpening(opening, command.keypair, isDevice(signer), signer.address));
+    throw new JudgeRefused(refusedOpening(opening, command.keypair, isDevice(signer), signer.address, list.announcements.length > 0));
   }
   const first = list.announcements.find(({ address: at }) => at === opening.announcement) ?? null;
   const payTo = opening.worker;
   const confirm = command.confirmUrl === undefined ? undefined : runtime.transport(command.confirmUrl);
-  await checkInvited(transport, runtime.specFetch, address, [payTo]).catch((error: unknown) => {
+  await checkInvited(transport, runtime.specFetch, address, [payTo], { lookup: runtime.lookup, rpcUrl: command.url }).catch((error: unknown) => {
     throw error instanceof InviteRefused ? new JudgeRefused(error.message) : error;
   });
   const draw = viper?.cases.draw;

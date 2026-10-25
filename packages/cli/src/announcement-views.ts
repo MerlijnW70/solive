@@ -75,20 +75,22 @@ export async function openedBy(announcements: readonly AnnouncementView[], opene
   return opened;
 }
 
-export type RefusalHints = { key: string; wait: string; closed?: string };
+export type RefusalHints = { key: string; wait: string; nobody?: string };
 
-export const NOBODY_ANNOUNCED = "no worker has announced work to this escrow yet, so it has no delivery book; its worker announces the work first with deliver";
+export const NOBODY_ANNOUNCED = "no worker has announced work to this escrow yet; its worker announces the work first with deliver";
 
-export function refusalNext(refusal: FirstOpeningRefused, hints: RefusalHints): string {
+export const ESCROW_CLOSED = "the escrow is no longer open, so nothing can be paid from it";
+
+export function refusalNext(refusal: FirstOpeningRefused, hints: RefusalHints, announced: boolean): string {
   switch (refusal.reason) {
     case "incomplete":
-      return refusal.closed ? (hints.closed ?? "the escrow is no longer open, so nothing can be paid from it") : hints.wait;
+      return refusal.closed ? ESCROW_CLOSED : hints.wait;
     case "key-not-given":
       return hints.key;
     case "claim-held":
       return `wait until the claim of ${refusal.holder ?? "its holder"} ends, or pay the holder once it announces the work`;
     case "nothing-opens":
-      return "no announcement opens to this work; its worker announces it first with deliver";
+      return !announced && hints.nobody !== undefined ? hints.nobody : "no announcement opens to this work; its worker announces it first with deliver";
   }
 }
 

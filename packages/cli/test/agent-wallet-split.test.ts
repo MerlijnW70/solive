@@ -21,6 +21,7 @@ import { notInSplit, PACKET_DATA_SIZE, RELEASE_CHANGED, SPLIT_FITS, SPLIT_FITS_W
 import { LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { bytesOf, call, fresh, type Json, ok } from "./agent-wallet-kit.js";
 import { announced, keyed } from "./announce.js";
+import { NO_BOOK } from "../src/agent/wallet/openings.js";
 import { ata, balance, FEE_BPS, funded, h, transport } from "./harness.js";
 
 const ADDRESS_LOOKUP_TABLE_PROGRAM = "AddressLookupTab1e1111111111111111111111111" as Address;
@@ -138,7 +139,7 @@ describe("the wallet server's split releases", () => {
     const { owner, nonce, recipients } = await splitEscrow(work);
     expect((await call(client, "wallet_attest_split", { owner, nonce, recipients })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "delivered_sha256" }] });
     expect((await call(client, "wallet_attest_split", { owner, nonce, recipients, delivered_sha256: "xyz" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "delivered_sha256" }] });
-    expect((await call(client, "wallet_attest_split", { owner, nonce, recipients, delivered_sha256: work })).value).toMatchObject({ code: "AnnouncementsIncomplete" });
+    expect((await call(client, "wallet_attest_split", { owner, nonce, recipients, delivered_sha256: work })).value).toMatchObject({ code: "NotAnnounced", hint: expect.stringContaining(NO_BOOK) });
   });
 
   it("refuses a split that leaves out the worker of the first announcement that opens to the work", async () => {

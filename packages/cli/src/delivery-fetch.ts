@@ -60,7 +60,7 @@ async function checkedAddresses(transport: Transport, url: URL, lookup: Lookup):
   if (!PUBLIC_GENESIS_HASHES.has(await transport.genesisHash())) {
     return {};
   }
-  const addresses = await publicAddresses(url.hostname, lookup);
+  const addresses = await publicAddresses(url.hostname, lookup, transport.offline === true);
   return addresses === null ? null : { addresses };
 }
 

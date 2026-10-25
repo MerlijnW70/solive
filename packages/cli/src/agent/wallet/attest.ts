@@ -17,7 +17,7 @@ import { createClient } from "@intent-engine/client/node";
 import { chainTime, envelopeDigest, loadConfig, mintOf, releaseClaims, tokenAccountIfMissing } from "@intent-engine/client/internal";
 import { capturing } from "../../announcement-views.js";
 import { TOKEN_NAMES } from "../../tokens.js";
-import { type AgentContext, define } from "../actions.js";
+import { type AgentContext, define, specReach } from "../actions.js";
 import type { Call } from "../claims.js";
 import { WRAPPED } from "../create.js";
 import { tool } from "../names.js";
@@ -66,7 +66,7 @@ export async function claimsOfRelease(ctx: AgentContext, intent: Address, claims
 
 export async function invitedPayees(ctx: AgentContext, intent: Address, payees: readonly Address[]): Promise<void> {
   try {
-    await checkInvited(ctx.transport, ctx.fetch ?? fetch, intent, payees);
+    await checkInvited(ctx.transport, ctx.fetch ?? fetch, intent, payees, specReach(ctx));
   } catch (error) {
     throw error instanceof InviteRefused ? new AgentRefusal(error.code, error.code === "NotInvited" ? error.message : untrusted(error.message)) : error;
   }

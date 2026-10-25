@@ -160,7 +160,7 @@ async function escrowOpen(transport: Transport, intent: Address): Promise<boolea
 export async function announcementsOf(transport: Transport, intent: Address): Promise<AnnouncementList> {
   const [book, found, open] = await Promise.all([loadDeliveryBook(transport, intent), listed(transport, { offset: INTENT_AT, address: intent }), escrowOpen(transport, intent)]);
   const announcements = found.filter((announcement) => announcement.intent === intent).sort(bySeq);
-  const closed = book === null || !open;
+  const closed = !open;
   const nextSeq = book?.nextSeq ?? 1n;
   const last = book === null ? announcements.reduce((max, { seq }) => (seq > max ? seq : max), 0n) : nextSeq - 1n;
   const missing = missingSeqs(announcements, last);

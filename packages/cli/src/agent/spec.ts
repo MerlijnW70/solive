@@ -2,13 +2,12 @@ import type { Address } from "@solana/kit";
 import { isSdkError, SpecSealed, SpecUnreadable } from "@intent-engine/client";
 import { pinnedFetch } from "@intent-engine/client/node";
 import { intentAt, MAX_SPEC_BYTES, mintOf, readSpec, SPEC_FETCH_FAILED, SPEC_REDIRECTS } from "@intent-engine/client/internal";
-import { define } from "./actions.js";
+import { define, specReach } from "./actions.js";
 import { tool } from "./names.js";
 import { claimOf, specClaimHint } from "./job-claims.js";
 import { AgentRefusal, untrusted } from "./problems.js";
 import { account, flag, list, nullable, object, optional, text } from "./schema.js";
 import { walletOpeners } from "./wallet/guard.js";
-import { systemLookup } from "../public-address.js";
 import { freezeAuthorityRead, freezeFields } from "../job-filters.js";
 import { jobClosed } from "../sealed-commands.js";
 import { MAX_SEALED_RECIPIENTS } from "@intent-engine/core/internal";
@@ -52,7 +51,8 @@ export const getSpec = define({
   run: async (ctx, input) => {
     let spec;
     try {
-      spec = await readSpec(ctx.transport, ctx.fetch ?? pinnedFetch, input.intent, await walletOpeners(ctx), systemLookup);
+      const { lookup, rpcUrl } = specReach(ctx);
+      spec = await readSpec(ctx.transport, ctx.fetch ?? pinnedFetch, input.intent, await walletOpeners(ctx), lookup, rpcUrl);
     } catch (error) {
       if (isSdkError(error, "spec-sealed")) {
         throw new AgentRefusal("SpecSealed", untrusted(error.message));

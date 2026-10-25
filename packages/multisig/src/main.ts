@@ -11,10 +11,11 @@ import {
   setTransactionMessageLifetimeUsingBlockhash,
   type TransactionPartialSigner,
 } from "@solana/kit";
+import { isSdkError } from "@intent-engine/client";
 import { redactUrl } from "@intent-engine/client/internal";
 import type { Chain } from "./chain.js";
 import { jsonText } from "./engine.js";
-import { isDevice, isLedgerPath, LEDGER_FORMS, LedgerError, LedgerPathError, messageHash, parseLedgerPath } from "./ledger.js";
+import { isDevice, isLedgerPath, LEDGER_FORMS, messageHash, parseLedgerPath } from "./ledger.js";
 import { show } from "./show.js";
 import {
   approve,
@@ -224,7 +225,7 @@ function keyPath(path: string, name: "keypair" | "create-key"): string {
     try {
       parseLedgerPath(path);
     } catch (error) {
-      throw new UsageError(`--${name} ${error instanceof LedgerPathError ? error.message : String(error)}`);
+      throw new UsageError(`--${name} ${isSdkError(error, "ledger-path-error") ? error.message : String(error)}`);
     }
   }
   return path;
@@ -360,6 +361,6 @@ export async function main(argv: string[], deps: Deps): Promise<Result> {
       return { code: EXIT_USAGE, out: "", err: `${notes.join("")}${jsonText({ error: message, usage: USAGE })}\n` };
     }
     const shown = error instanceof Refusal && error.shown !== undefined ? error.shown : {};
-    return { code: EXIT_REFUSED, out: "", err: `${notes.join("")}${jsonText({ error: message, refused: error instanceof Refusal || error instanceof LedgerError, ...shown })}\n` };
+    return { code: EXIT_REFUSED, out: "", err: `${notes.join("")}${jsonText({ error: message, refused: error instanceof Refusal || isSdkError(error, "ledger-error"), ...shown })}\n` };
   }
 }

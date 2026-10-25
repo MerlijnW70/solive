@@ -103,7 +103,7 @@ export function refusalText(sha256: string | null, refusal: Refusal): string {
   switch (refusal.reason) {
     case "incomplete":
       return refusal.closed === true
-        ? `is no longer open or has no delivery book, so its announcements may have been closed and ${first} cannot be known; nothing was sent`
+        ? `is no longer open, so its announcements may have been closed and ${first} cannot be known; nothing was sent`
         : (refusal.missing ?? []).length > 0
           ? `lists its announcements with seq ${(refusal.missing ?? []).join(", ")} missing, so ${first} cannot be known; nothing was sent`
           : `lists a seq twice or past its delivery book's next seq, so ${first} cannot be known; nothing was sent`;

@@ -67,24 +67,29 @@ async function ok(client: Client, name: string, args: object = {}): Promise<Json
   return value;
 }
 
-async function wallet(): Promise<{ client: Client; owner: Address }> {
-  await world();
-  h.files.clear();
-  preset(NATIVE_MINT);
-  preset(DEVNET_TEST_MINT);
+async function server(url: string, wallet: boolean): Promise<Client> {
   h.served.length = 0;
-  const started = await cli(["mcp", "--url", "devnet", "--wallet"], {});
-  expect([started.code, started.err]).toEqual([EXIT_OK, WALLET_NOTICE.join("\n")]);
+  const started = await cli(["mcp", "--url", url, ...(wallet ? ["--wallet"] : [])], {});
+  expect([started.code, started.err]).toEqual([EXIT_OK, wallet ? WALLET_NOTICE.join("\n") : ""]);
   const [near, far] = InMemoryTransport.createLinkedPair();
   await h.served[0]?.connect(near);
   const client = new Client({ name: "test", version: "0.0.0" });
   await client.connect(far);
+  return client;
+}
+
+async function wallet(url = "devnet"): Promise<{ client: Client; owner: Address }> {
+  await world();
+  h.files.clear();
+  preset(NATIVE_MINT);
+  preset(DEVNET_TEST_MINT);
+  const client = await server(url, true);
   return { client, owner: (await ok(client, "wallet_setup"))["address"] as Address };
 }
 
-async function job(client: Client, judge: Address, specUrl: string, spec: Uint8Array): Promise<Address> {
+async function job(client: Client, judge: Address, specUrl: string, spec: Uint8Array, extra: object = {}): Promise<Address> {
   h.specPages.set(specUrl, spec);
-  const sent = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: judge, spec_hash: sha(spec), spec_url: specUrl, send: true });
+  const sent = await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: judge, spec_hash: sha(spec), spec_url: specUrl, send: true, ...extra });
   const intent = sent["intent"] as Address;
   h.engineLog.push({ ...creation(intent), ...ownerSigned(intent, [specMemo(specUrl)]) });
   return intent;
@@ -221,5 +226,28 @@ describe("the escrow spec check", () => {
     h.specPages.set(SEALED_URL, await seal(encoded(SPEC), [owner, peer.address]));
     const sealedToAll = warnings(await ok(client, "wallet_escrow", { sell: "SOL", amount: "0.05", attestor: committee, spec_hash: sha(SPEC), spec_url: SEALED_URL }));
     expect(sealedToAll.filter((line) => line.startsWith("spec_url holds a spec not sealed"))).toEqual([]);
+  }, 60_000);
+});
+
+describe("get_spec following the client's host rules", () => {
+  const PRIVATE = "private, loopback or local network address";
+
+  it("reads a loopback spec url through a loopback RPC url, as a local validator gives, and refuses it through any other", async () => {
+    const { client, owner } = await wallet("http://" + "127.0.0.1:8899");
+    const specUrl = "http://" + "127.0.0.1:8080/jobs/spec.md";
+    const intent = await job(client, owner, specUrl, encoded(SPEC), { record_mint: DEVNET_TEST_MINT });
+    expect(await ok(client, "get_spec", { intent })).toMatchObject({ url: specUrl, matches: true });
+    const remote = await server("devnet", false);
+    expect(await call(remote, "get_spec", { intent })).toMatchObject({ error: true, value: { code: "SpecUnfetchable", hint: expect.stringContaining(PRIVATE) } });
+  }, 60_000);
+
+  it("resolves a spec host with the lookup the runtime injects, never the system's", async () => {
+    const { client, owner } = await wallet();
+    const specUrl = "https://" + "example.org/jobs/inner.md";
+    const intent = await job(client, owner, specUrl, encoded(SPEC));
+    h.lookups = [];
+    h.hosts.set("example.org", ["10.0.0.7"]);
+    expect(await call(client, "get_spec", { intent })).toMatchObject({ error: true, value: { code: "SpecUnfetchable", hint: expect.stringContaining(PRIVATE) } });
+    expect(h.lookups).toEqual(["example.org"]);
   }, 60_000);
 });

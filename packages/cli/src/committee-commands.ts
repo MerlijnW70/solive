@@ -50,8 +50,8 @@ export const ballotInput = (target: Ballot): BallotInput => ({
   result: target.result,
 });
 
-async function invitedPayee(runtime: Runtime, transport: Transport, intent: Address, payTo: Address): Promise<void> {
-  await checkInvited(transport, runtime.specFetch, intent, [payTo]).catch((error: unknown) => {
+async function invitedPayee(runtime: Runtime, transport: Transport, url: string, intent: Address, payTo: Address): Promise<void> {
+  await checkInvited(transport, runtime.specFetch, intent, [payTo], { lookup: runtime.lookup, rpcUrl: url }).catch((error: unknown) => {
     throw error instanceof InviteRefused ? new FlowRefused(error.message) : error;
   });
 }
@@ -161,16 +161,16 @@ async function memberVoteCommand(command: Extract<CommitteeCommand, { name: "com
   if (judging !== null && !judging.members.includes(member.address)) {
     throw new FlowRefused(`${member.address} is not a member of committee ${judging.address}; nothing was signed`);
   }
-  const { opening } = await firstOpeningIn(transport, { intent, sha256: command.sha256, keypair: openers });
+  const { list, opening } = await firstOpeningIn(transport, { intent, sha256: command.sha256, keypair: openers });
   if (isSdkError(opening, "first-opening-refused")) {
-    throw new FlowRefused(`${opening.message}; ${refusalNext(opening, { key: MEMBER_KEY_FLAG, wait: MEMBER_WAIT, closed: NOBODY_ANNOUNCED })}`);
+    throw new FlowRefused(`${opening.message}; ${refusalNext(opening, { key: MEMBER_KEY_FLAG, wait: MEMBER_WAIT, nobody: NOBODY_ANNOUNCED }, list.announcements.length > 0)}`);
   }
   const target: Ballot = { owner: command.owner, nonce: command.nonce, announcement: opening.announcement, sha256: opening.sha256, salt: opening.salt, result: command.result };
   const ballot = await client.committeeBallot(ballotInput(target));
   if (!ballot.committee.members.includes(member.address)) {
     throw new FlowRefused(`${member.address} is not a member of committee ${ballot.committee.address}; nothing was signed`);
   }
-  await invitedPayee(runtime, transport, ballot.intent, opening.worker);
+  await invitedPayee(runtime, transport, command.url, ballot.intent, opening.worker);
   const summary = ballotLines(ballot, target, opening.worker);
   const skipped = opening.skipped.length === 0 ? {} : { skipped: opening.skipped };
   if (!command.yes) {
@@ -190,7 +190,7 @@ async function releaseCommand(command: Extract<CommitteeCommand, { name: "commit
   const target = sameBallot(votes, command.votes);
   const [escrow] = await findIntentPda({ owner: target.owner, nonce: target.nonce });
   const worker = await workerOf(transport, target.announcement);
-  await invitedPayee(runtime, transport, escrow, worker);
+  await invitedPayee(runtime, transport, command.url, escrow, worker);
   const cast: CommitteeVote[] = votes.map((v) => ({ member: v.member, signature: Uint8Array.from(Buffer.from(v.signature, "hex")) }));
   const release = await client.plan.settleCommittee({ ...ballotInput(target), solver, votes: cast });
   const [first] = votes;

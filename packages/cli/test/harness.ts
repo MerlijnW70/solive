@@ -29,10 +29,10 @@ import { createTestWorld, ECONOMICS_UNSET, TEST_WALLET_SOL } from "@intent-engin
 import type { Runtime } from "../src/commands.js";
 import { main } from "../src/main.js";
 import { collectDropped } from "./collect.js";
-import { DOMAIN, enginePath, FEE_BPS, h, HOME, NOW, saleBook, send } from "./harness-state.js";
+import { DOMAIN, enginePath, FEE_BPS, h, harnessLookup, HOME, NOW, saleBook, send } from "./harness-state.js";
 import { fakeFetch, transport } from "./harness-transport.js";
 
-export { DOMAIN, enginePath, ESCROW, FEE_BPS, h, HOME, NOW, PACKET_LIMIT, saleBook, send } from "./harness-state.js";
+export { DOMAIN, enginePath, ESCROW, FEE_BPS, h, harnessLookup, HOME, NOW, PACKET_LIMIT, PUBLIC_TEST_ADDRESS, saleBook, send } from "./harness-state.js";
 export { creation, fakeFetch, ownerSigned, transport, unlisting } from "./harness-transport.js";
 
 const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111" as Address;
@@ -66,6 +66,7 @@ export function runtime(signers: Record<string, KeyPairSigner>): Runtime {
       }
       return new Response(page.slice());
     },
+    lookup: harnessLookup,
     loadKeypair: async (path) => {
       const saved = h.files.get(path);
       const held = signers[path] === undefined ? undefined : h.keypairs.get(signers[path].address);
@@ -147,6 +148,8 @@ export function resetHarness(): void {
   h.jupiterReplies = [];
   h.specPages.clear();
   h.specReplies.clear();
+  h.hosts.clear();
+  h.lookups = [];
   h.fetched = [];
   h.requestedLimits = [];
   h.recentFees = [];

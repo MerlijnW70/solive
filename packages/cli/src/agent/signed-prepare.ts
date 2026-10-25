@@ -52,7 +52,7 @@ export const prepareSignedIntent = define({
       amount("raw input units offered to whoever submits; default and minimum is this server's relayer fee for the input token"),
     ),
     spec_url: optional(
-      text(`where the acceptance spec of an attested order with spec_hash is published, ${MEMO_URL_RULE}; passed on in submit for the relayer to record in a memo it signs with the create, so workers find it. It is not part of what the owner signs`),
+      text(`where the acceptance spec of an attested order with spec_hash is published, ${MEMO_URL_RULE}; passed on in submit for the relayer to record in a memo it signs with the create. It is not part of what the owner signs, so ${tool("find_jobs")} and ${tool("get_spec")} do not show it; give workers the url yourself`),
     ),
   }),
   output: object({

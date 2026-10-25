@@ -1,4 +1,4 @@
-import { generateKeyPairSigner, getBase58Decoder, getBase64Encoder, type Instruction, lamports, signBytes, some } from "@solana/kit";
+import { type Address, generateKeyPairSigner, getBase58Decoder, getBase64Encoder, type Instruction, lamports, signBytes, some } from "@solana/kit";
 import { getTokenDecoder, getTokenEncoder, getTransferInstruction } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { beforeEach, describe, expect, it } from "vitest";
@@ -9,7 +9,7 @@ import { createCost, rentRate } from "../src/agent/budget.js";
 import { DEFAULT_SUBMIT_WITHIN, publishesLine, SPEC_URL_TOO_LONG, SPEC_URL_UNSIGNED } from "../src/agent/signed.js";
 import { WARN_REPLACES_DELEGATE } from "../src/agent/owner.js";
 import { SPEC_URL_PLAIN } from "../src/agent/create.js";
-import { ata, ESCROW, funded, h, NOW, send, transport, type World } from "./harness.js";
+import { ata, creation, ESCROW, funded, h, NOW, ownerSigned, send, transport, type World } from "./harness.js";
 import { connect, exists, execute, fail, type Json, ok, served, swapOf } from "./agent-kit.js";
 
 describe("agent server against the deployed engine", () => {
@@ -56,6 +56,14 @@ describe("agent server against the deployed engine", () => {
     expect(memos.map((ix) => new TextDecoder().decode(Uint8Array.from(ix.data ?? [])))).toEqual([specMemo(specUrl)]);
     expect(memos[0]?.accounts?.map((a) => a.address)).toEqual([relayer.address]);
     expect(exists(prepared["intent"])).toBe(true);
+    const intent = prepared["intent"] as Address;
+    h.watched.push(owner.address);
+    h.engineLog = [{ ...creation(intent), memos: [specMemo(specUrl)], memoSigners: [[relayer.address]] }];
+    expect((await ok(relaying, "find_jobs", { attestor: judge }))["jobs"]).toMatchObject([{ intent, spec_url: null }]);
+    expect(SPEC_URL_UNSIGNED).toContain("do not show this one");
+    h.engineLog = [{ ...creation(intent), ...ownerSigned(intent, [specMemo(specUrl)]) }];
+    expect((await ok(relaying, "find_jobs", { attestor: judge }))["jobs"]).toMatchObject([{ intent, spec_url: specUrl }]);
+    h.engineLog = [];
     const { spec_url: _, ...unpublished } = signed;
     expect(await ok(relaying, "preview_signed_intent", unpublished)).toMatchObject({ exists: 1 });
   });

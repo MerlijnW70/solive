@@ -93,7 +93,7 @@ describe("announcing a delivery", () => {
     expect(await client.announcements(intent)).toMatchObject({ complete: false, closed: true, missing: [] });
     const closed = await client.firstOpening({ intent, sha256: WORK, keypair: judge.keypair }).catch((error: unknown) => error);
     expect(closed).toMatchObject({ reason: "incomplete", closed: true });
-    expect((closed as Error).message).toContain("is no longer open or has no delivery book");
+    expect((closed as Error).message).toContain("is no longer open, so its announcements may have been closed");
   });
 
   it("skips an earlier announcement under the judge's real fingerprint that does not open, lists it, and pays the honest worker", async () => {

@@ -20,7 +20,7 @@ import { claimsOf } from "../src/agent/claims.js";
 import { findJobs } from "../src/agent/jobs.js";
 import { getSpec } from "../src/agent/spec.js";
 import { EXIT_OK } from "../src/main.js";
-import { cli, creation, h, NOW, ownerSigned, send, transport, type World, world } from "./harness.js";
+import { cli, creation, h, harnessLookup, NOW, ownerSigned, send, transport, type World, world } from "./harness.js";
 
 type Json = Record<string, unknown>;
 
@@ -48,7 +48,7 @@ async function funds(payer: KeyPairSigner, owner: Address, m: Address, tokenProg
 }
 
 async function linked(): Promise<Client> {
-  const server = agentServer({ transport, relay: undefined, agent: undefined, claims: claimsOf(), fetch: serve });
+  const server = agentServer({ transport, relay: undefined, agent: undefined, claims: claimsOf(), fetch: serve, lookup: harnessLookup });
   const [near, far] = InMemoryTransport.createLinkedPair();
   await server.connect(near);
   const client = new Client({ name: "test", version: "0.0.0" });

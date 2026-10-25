@@ -1,6 +1,8 @@
 import type { Address, TransactionSigner } from "@solana/kit";
-import { type SpecFetch, type Transport } from "@intent-engine/client";
+import { type Lookup, type SpecFetch, type Transport } from "@intent-engine/client";
 import { memoized } from "@intent-engine/client/internal";
+import { systemLookup } from "../public-address.js";
+import type { SpecReach } from "../invites.js";
 import { type Problem, problemOf } from "./problems.js";
 import type { Budget } from "./budget.js";
 import type { Relay } from "./relay.js";
@@ -19,8 +21,13 @@ export type AgentContext = {
   clock?: Clock;
   url?: string;
   fetch?: SpecFetch;
+  lookup?: Lookup;
   confirm?: Transport;
 };
+
+export const lookupOf = (ctx: AgentContext): Lookup => ctx.lookup ?? systemLookup;
+
+export const specReach = (ctx: AgentContext): SpecReach => ({ lookup: lookupOf(ctx), rpcUrl: ctx.url ?? ctx.wallet?.url });
 
 type AgentKey = { signer: TransactionSigner; budget: Budget; owners: ReadonlySet<Address> };
 

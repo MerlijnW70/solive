@@ -16,7 +16,7 @@ import { chainTime, confirmOnBoth, type ConfirmTarget, loadAnnouncement, memoize
 import { ANNOUNCE_FIRST, announcementLine, sealedToText, walletOf } from "../../announcement-views.js";
 import { execute } from "../../flows.js";
 import { deliverNotInvited, sealedInvites } from "../../invites.js";
-import { type AgentContext, define } from "../actions.js";
+import { type AgentContext, define, specReach } from "../actions.js";
 import type { Call } from "../claims.js";
 import { claimOf, deliverClaimWarnings } from "../job-claims.js";
 import { tool } from "../names.js";
@@ -88,7 +88,7 @@ export const signSalt = (intent: Address, sha256: string): string =>
 
 type Announcing = Omit<AnnounceInput, keyof SecretInput | "intent"> & { intent: Address; worker: TransactionSigner; saltSignature?: Uint8Array };
 
-async function planOf(ctx: AgentContext, input: Announcing, saltHint = false): Promise<AnnouncementPlan> {
+export async function planOf(ctx: AgentContext, input: Announcing, saltHint = false): Promise<AnnouncementPlan> {
   const { worker, saltSignature, ...rest } = input;
   try {
     return await createClient({ url: ctx.url ?? "", transport: ctx.transport }).plan.announce({ ...rest, ...secretInputOf(worker, { saltSignature }) });
@@ -102,8 +102,11 @@ async function planOf(ctx: AgentContext, input: Announcing, saltHint = false): P
     if (isSdkError(error, "not-deliverable")) {
       throw new AgentRefusal("NotDeliverable", error.message);
     }
-    if (isSdkError(error, "url-too-long") || isSdkError(error, "invalid-input")) {
+    if (isSdkError(error, "url-too-long")) {
       throw new InvalidInput([{ path: "url", message: error.message }]);
+    }
+    if (isSdkError(error, "invalid-input")) {
+      throw new InvalidInput([{ path: error.field, message: error.message }]);
     }
     throw error;
   }
@@ -161,7 +164,7 @@ export const walletDeliver = define({
     const { held } = await proofEscrow(ctx, input.intent, "wallet_receipt");
     const announce: Announcing = { worker: signer, intent: input.intent, sha256, url: input.url };
     const plan = await planOf(ctx, announce);
-    const invited = await sealedInvites(ctx.transport, ctx.fetch ?? fetch, input.intent);
+    const invited = await sealedInvites(ctx.transport, ctx.fetch ?? fetch, input.intent, specReach(ctx));
     const shown = {
       intent: input.intent,
       owner: held.owner,
@@ -222,7 +225,7 @@ function listOutput(own: boolean) {
     spec_hash: text("64 hex: the sha256 of the acceptance spec the escrow commits"),
     open: flag("whether the escrow can still be released"),
     complete: flag("whether every announcement from seq 1 on is listed; a release is refused while it is false"),
-    closed: flag("true once the escrow is no longer open or its delivery book is gone, so earlier announcements may have closed"),
+    closed: flag("true once the escrow is no longer open, so earlier announcements may have closed"),
     next_seq: amount("the seq the next announcement gets"),
     missing: list(amount(), 16, "seqs below next_seq that the RPC node did not list"),
     announcements: list(listedItem, MAX_LISTED, "in seq order; a release pays the first that opens to the work it pays for"),

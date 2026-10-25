@@ -37,7 +37,7 @@ async function deliver(command: Extract<AnnounceCommand, { name: "deliver" }>, r
   const client = createClient({ url: command.url, transport });
   const input: AnnounceInput = { payer, intent, sha256, url: workUrl, ...secretInputOf(worker, { secret: kept?.secret }) };
   const plan = await client.plan.announce(input);
-  const invited = await sealedInvites(transport, runtime.specFetch, intent);
+  const invited = await sealedInvites(transport, runtime.specFetch, intent, { lookup: runtime.lookup, rpcUrl: command.url });
   const keptAt = kept === undefined ? undefined : secretsPath(runtime.home, worker.address, intent, sha256);
   const shown = {
     intent,

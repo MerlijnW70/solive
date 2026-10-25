@@ -137,7 +137,7 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
   const { intent, view } = await claimsOf(client, command.owner, command.nonce);
   const shown = claimsShown(intent, view);
   if (command.name === "claims-take" || command.name === "claims-standby") {
-    const invited = await sealedInvites(transport, runtime.specFetch, intent);
+    const invited = await sealedInvites(transport, runtime.specFetch, intent, { lookup: runtime.lookup, rpcUrl: command.url });
     if (invited !== undefined && !invited.includes(signer.address)) {
       throw new FlowRefused(claimNotInvited(signer.address, intent));
     }

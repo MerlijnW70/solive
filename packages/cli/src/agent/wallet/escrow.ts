@@ -5,7 +5,7 @@ import { isMemoUrl, isSealed, MAX_CLAIM_SECS, MAX_CLAIM_STAKE, MEMO_URL_RULE, se
 import { pinnedFetch } from "@intent-engine/client/node";
 import { chainTime, loadCommittee, loadConfig, MAX_SPEC_BYTES, mintOf, plainHttpOnPublic, WARN_NO_JUDGE_KEY } from "@intent-engine/client/internal";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
-import { type AgentContext, define } from "../actions.js";
+import { type AgentContext, define, lookupOf } from "../actions.js";
 import type { Call } from "../claims.js";
 import { escrowJudge, MAX_EXPIRES_IN, MIN_EXPIRES_IN, neverSettles, SPEC_URL_PLAIN } from "../create.js";
 import { tool } from "../names.js";
@@ -14,7 +14,6 @@ import { InvalidInput, account, amount, flag, hex32, integer, list, object, opti
 import { LANDING_SECONDS, access, mintNamed, raw, salesOf, checkSale, checkHour, refusedBeforeSending, PREVIEW_FIRST, oneAtATime, signerOf } from "./guard.js";
 import { offerOutput, type Token } from "./offer.js";
 import { fetchBytes, tooLarge } from "../../delivery-fetch.js";
-import { systemLookup } from "../../public-address.js";
 import { costLines, escrowCosts } from "./costs.js";
 import { openedSpec, SEALED_UNCHECKED } from "./seal.js";
 import { type Claimants, claimantsOf, type ClaimTerms, listedLines, offeredWithClaims } from "./escrow-claims.js";
@@ -34,7 +33,7 @@ async function unreadBy(ctx: AgentContext, bytes: Uint8Array, attestor: Address)
 }
 
 async function specPreflight(ctx: AgentContext, specUrl: string, specHash: string, attestor: Address): Promise<Preflight> {
-  const found = await fetchBytes(ctx.fetch ?? pinnedFetch, ctx.transport, specUrl, systemLookup, MAX_SPEC_BYTES);
+  const found = await fetchBytes(ctx.fetch ?? pinnedFetch, ctx.transport, specUrl, lookupOf(ctx), MAX_SPEC_BYTES);
   if ("problem" in found) {
     return { lines: [found.problem === tooLarge(MAX_SPEC_BYTES) ? SPEC_TOO_LARGE : `spec_url ${found.problem}; publish it or workers cannot read the job`] };
   }

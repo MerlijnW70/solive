@@ -90,7 +90,7 @@ export async function readJobSpec(command: Reading, runtime: Runtime, transport:
     runtime.specFetch(url, init).catch(() => {
       throw new SpecUnreadable(url, "could not be fetched");
     });
-  const client = createClient({ url: command.url, transport, fetch });
+  const client = createClient({ url: command.url, transport, fetch, lookup: runtime.lookup });
   const keypair = command.keypair === undefined ? undefined : await runtime.loadKeypair(command.keypair);
   let spec;
   try {

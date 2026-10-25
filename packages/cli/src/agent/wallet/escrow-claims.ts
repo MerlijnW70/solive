@@ -4,9 +4,8 @@ import { buildClaimsWithList, buildOpenClaims, buildOpenClaimsListed, claimantCh
 import { pinnedFetch } from "@intent-engine/client/node";
 import { loadCommittee, MAX_SPEC_BYTES } from "@intent-engine/client/internal";
 import { fetchBytes } from "../../delivery-fetch.js";
-import { systemLookup } from "../../public-address.js";
 import { execute } from "../../flows.js";
-import type { AgentContext } from "../actions.js";
+import { type AgentContext, lookupOf } from "../actions.js";
 import type { Call } from "../claims.js";
 import type { AfterCreate } from "../create.js";
 import { prepare } from "../prepare.js";
@@ -26,7 +25,7 @@ export type ClaimTerms = { maxSecs: number; stake: bigint };
 export type Claimants = Address[] | undefined;
 
 export async function claimants(ctx: AgentContext, specUrl: string, owner: Address, attestor: Address): Promise<Claimants> {
-  const found = await fetchBytes(ctx.fetch ?? pinnedFetch, ctx.transport, specUrl, systemLookup, MAX_SPEC_BYTES);
+  const found = await fetchBytes(ctx.fetch ?? pinnedFetch, ctx.transport, specUrl, lookupOf(ctx), MAX_SPEC_BYTES);
   if ("problem" in found) {
     throw new AgentRefusal("SpecUnreadable", claimsUnread(found.problem));
   }

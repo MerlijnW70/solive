@@ -6,7 +6,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { NATIVE_MINT, DEVNET_TEST_MINT as TEST_TOKEN } from "@intent-engine/core";
 import { getIntentCreatedEventEncoder, saltMessage, specMemo } from "@intent-engine/core/internal";
 import { loadAnnouncement } from "@intent-engine/client/internal";
-import { ANNOUNCE_FIRST, DELIVER_NEXT } from "../src/agent/wallet/delivery.js";
+import { claimsOf } from "../src/agent/claims.js";
+import { ANNOUNCE_FIRST, DELIVER_NEXT, planOf } from "../src/agent/wallet/delivery.js";
 import { NO_JOB_NOW, PUBLISH_PROFILE } from "../src/agent/jobs.js";
 import { notEarliest } from "../src/agent/wallet.js";
 import { WORK_DIFFERS, WORK_OPENS } from "../src/agent/wallet/work.js";
@@ -171,5 +172,16 @@ describe("the wallet server's deliveries", () => {
     expect((await call(plain, "prepare_deliver", { ...delivery, sha256: "xyz" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "sha256" }] });
     expect((await call(plain, "prepare_deliver", { ...delivery, intent: unproven["intent"] })).value).toMatchObject({ code: "NotDeliverable" });
     expect((await call(plain, "prepare_deliver", { intent, sha256: work, url: delivery.url })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "worker" }] });
+  });
+});
+
+describe("planning an announcement", () => {
+  it("names the field the SDK's InvalidInput names, not always the url", async () => {
+    const worker = await generateKeyPairSigner();
+    const intent = (await generateKeyPairSigner()).address;
+    const ctx = { transport, relay: undefined, agent: undefined, claims: claimsOf() };
+    const refused = (sha256: string, link: string) => planOf(ctx, { worker, intent, sha256, url: link }).catch((error: unknown) => error);
+    expect(await refused("xyz", url("work.tar"))).toMatchObject({ name: "InvalidInput", issues: [{ path: "sha256" }] });
+    expect(await refused("ab".repeat(32), "ftp://" + "example.org/x")).toMatchObject({ name: "InvalidInput", issues: [{ path: "url" }] });
   });
 });

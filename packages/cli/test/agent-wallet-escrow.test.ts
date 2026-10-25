@@ -15,6 +15,7 @@ import { LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { balance, FEE_BPS, h, setNow } from "./harness.js";
 import { attested, call, connect, created, fresh, type Json, ok } from "./agent-wallet-kit.js";
 import { announced, keyed } from "./announce.js";
+import { NO_BOOK } from "../src/agent/wallet/openings.js";
 import { PAY_TO_NEEDED } from "../src/agent/wallet.js";
 
 describe("the wallet server's escrows", () => {
@@ -114,7 +115,7 @@ describe("the wallet server's escrows", () => {
     const work = "ab".repeat(32);
     const release = { owner, nonce, delivered_sha256: work };
     expect((await call(client, "wallet_attest", { owner, nonce })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "delivered_sha256", message: DELIVERED_NEEDED }] });
-    expect((await call(client, "wallet_attest", release)).value).toMatchObject({ code: "AnnouncementsIncomplete" });
+    expect((await call(client, "wallet_attest", release)).value).toMatchObject({ code: "NotAnnounced", hint: expect.stringContaining(NO_BOOK) });
     const copier = await keyed();
     await announced(intent, copier, "cd".repeat(32));
     const worker = await keyed();

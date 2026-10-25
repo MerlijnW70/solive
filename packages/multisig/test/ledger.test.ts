@@ -290,6 +290,24 @@ describe("multisig", () => {
     expect(await approvedBy(multisig)).toEqual([]);
   });
 
+  it("a ledger failure from another copy of the client is still a refusal, told by its error code", async () => {
+    const member = await generateKeyPairSigner();
+    const { multisig, approve } = await proposed("ledger-copy", member.address);
+    const foreign = Object.assign(new Error(LEDGER_ERRORS.notFound), { name: "LedgerError", code: "ledger-error", [Symbol.for("@intent-engine/sdk-error")]: true });
+    const deps: Deps = {
+      ...s.deps,
+      keypair: async (path) => {
+        if (path.startsWith("usb://")) {
+          throw foreign;
+        }
+        return s.deps.keypair(path);
+      },
+    };
+    const result = await main([...approve, "--keypair", "usb://ledger", "--yes"], deps);
+    expect([result.code, JSON.parse(result.err), result.out]).toEqual([EXIT_REFUSED, { error: LEDGER_ERRORS.notFound, refused: true }, ""]);
+    expect(await approvedBy(multisig)).toEqual([]);
+  });
+
   it("file keys never load the ledger transport", async () => {
     const usb = /[\\/](@ledgerhq[\\/](hw-transport-node-hid-noevents|hw-app-solana)|node-hid)[\\/]/;
     const loaded = () => Object.keys(load.cache).filter((path) => usb.test(path));

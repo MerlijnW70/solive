@@ -40,7 +40,7 @@ const BULLETS = {
   secret:
     "The salt and the sealing keys come from the worker's own signature over the intent and the sha256, so only its key derives them. `announce` refuses a signer that cannot sign messages, such as a Ledger, with `NoMessageSigner`; such a worker passes `secret`, 32 bytes of its own that it keeps, or `saltSignature`, a signature made elsewhere, which must verify for the worker (`BadSaltSignature`).",
   url: "`announce` refuses a url longer than its transaction can carry with `UrlTooLong` before sending.",
-  list: "`announcements` lists an escrow's announcements in seq order from accounts alone, never from transaction history, and says whether the list is `complete`: the escrow is open and every seq from 1 to one below its delivery book's `nextSeq` is present exactly once. Once the escrow is no longer open or its book is gone, the list says `closed` and is never complete.",
+  list: "`announcements` lists an escrow's announcements in seq order from accounts alone, never from transaction history, and says whether the list is `complete`: the escrow is open and every seq from 1 to one below its delivery book's `nextSeq` is present exactly once. An open escrow nobody has announced to yet has no book and lists complete and empty. Once the escrow is no longer open, the list says `closed` and is never complete.",
   first:
     "`firstOpening` returns the first announcement that opens to the checked sha256 with the keys it is given, and refuses with `FirstOpeningRefused` while the list is incomplete, an earlier announcement is sealed to a key it was not given, or another worker holds the claim.",
   skip: "An earlier announcement sealed to a key `firstOpening` was given that does not open with that key can never open for anyone, so `firstOpening` passes over it and lists it in `skipped`, for a judge and for each committee member alike.",
@@ -198,7 +198,7 @@ describe("the announcement sentences of the full client page", () => {
     const w = await world();
     const judge = await keyed(w);
     const { client, owner, intent, nonce } = await escrowTo(judge.signer.address, w);
-    await expect(client.openings({ intent, keypair: judge.keypair })).rejects.toMatchObject({ reason: "incomplete", closed: true });
+    expect(await client.openings({ intent, keypair: judge.keypair })).toEqual({ intent, opening: null, skipped: [] });
     const [other, honest] = [await fundedSigner(w), await fundedSigner(w)];
     const earlier = await client.announce({ worker: other, intent, sha256: sha("other work"), url: workUrl("other.tar") });
     await announced(client, honest, intent, WORK);

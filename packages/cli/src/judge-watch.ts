@@ -50,7 +50,7 @@ async function judgeAnnounced(
   const failed = (error: Error, sha256: string | null): Watched => ({ ...seen, artifactSha256: sha256, verdict: "fail", reason: error.message });
   let fetched: Fetched;
   try {
-    fetched = await fetchDelivery(runtime.specFetch, transport, delivery, command.timeout);
+    fetched = await fetchDelivery(runtime.specFetch, transport, delivery, command.timeout, runtime.lookup);
   } catch (error) {
     if (error instanceof DeliveryUnfit) {
       return failed(error, null);

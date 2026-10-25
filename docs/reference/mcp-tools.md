@@ -727,7 +727,7 @@ Effect: `prepare` (read-only: false, destructive: false, idempotent: false)
 | `partner.bps` | integer 1..100 | yes | partner fee in basis points of the sold amount |
 | `submit_within` | integer 60..86400 | no | seconds the relayer has to submit the signature; default 3600 |
 | `relayer_fee` | whole number as a decimal string | no | raw input units offered to whoever submits; default and minimum is this server's relayer fee for the input token |
-| `spec_url` | string | no | where the acceptance spec of an attested order with spec_hash is published, an https url of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would; passed on in submit for the relayer to record in a memo it signs with the create, so workers find it. It is not part of what the owner signs |
+| `spec_url` | string | no | where the acceptance spec of an attested order with spec_hash is published, an https url of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would; passed on in submit for the relayer to record in a memo it signs with the create. It is not part of what the owner signs, so solive_find_jobs and solive_get_spec do not show it; give workers the url yourself |
 
 ## solive_preview_signed_intent
 
@@ -764,12 +764,12 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 | `partner` | object | no | an integrator fee taken from the sold amount at fill time |
 | `partner.account` | address | yes | the integrator paid the partner fee |
 | `partner.bps` | integer 1..100 | yes | partner fee in basis points of the sold amount |
-| `spec_url` | string | no | where the acceptance spec is published, an https url of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would; the relayer records it in a memo it signs with the create. It is not part of the owner's signature |
+| `spec_url` | string | no | where the acceptance spec is published, an https url of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would; the relayer records it in a memo it signs with the create. It is not part of the owner's signature, so solive_find_jobs does not show it |
 | `signature` | string | yes | the owner's base58 Ed25519 signature of the message |
 
 ## solive_submit_signed_intent
 
-Relay an owner's signed intent: the relayer key this server was started with (--relayer) pays the fee and creates the intent on chain, within the relayer's limits: accepted input tokens and their minimum fee, lamport cost per intent and per hour, expiry, transaction size and intents per owner per hour. Pass the submit object from solive_prepare_signed_intent unchanged plus the owner's base58 signature of its message; solive_preview_signed_intent checks the same input first without sending. When submit carries a spec_url, the relayer also records it in a memo it signs with the create, so solive_find_jobs lists it; that url is not part of the owner's signature. Calling again after success returns the same intent without sending anything.
+Relay an owner's signed intent: the relayer key this server was started with (--relayer) pays the fee and creates the intent on chain, within the relayer's limits: accepted input tokens and their minimum fee, lamport cost per intent and per hour, expiry, transaction size and intents per owner per hour. Pass the submit object from solive_prepare_signed_intent unchanged plus the owner's base58 signature of its message; solive_preview_signed_intent checks the same input first without sending. When submit carries a spec_url, the relayer also records it in a memo it signs with the create; that url is not part of the owner's signature, so solive_find_jobs does not list it. Calling again after success returns the same intent without sending anything.
 
 Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 
@@ -802,7 +802,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: true)
 | `partner` | object | no | an integrator fee taken from the sold amount at fill time |
 | `partner.account` | address | yes | the integrator paid the partner fee |
 | `partner.bps` | integer 1..100 | yes | partner fee in basis points of the sold amount |
-| `spec_url` | string | no | where the acceptance spec is published, an https url of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would; the relayer records it in a memo it signs with the create. It is not part of the owner's signature |
+| `spec_url` | string | no | where the acceptance spec is published, an https url of at most 200 printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would; the relayer records it in a memo it signs with the create. It is not part of the owner's signature, so solive_find_jobs does not show it |
 | `signature` | string | yes | the owner's base58 Ed25519 signature of the message |
 
 ## solive_prepare_mandate

@@ -4,8 +4,7 @@ import { createClient, pinnedFetch } from "@intent-engine/client/node";
 import { firstOpeningIn, MAX_SPEC_BYTES, opensTo } from "@intent-engine/client/internal";
 import { openedBy, skippedLines } from "../../announcement-views.js";
 import { fetchBytes } from "../../delivery-fetch.js";
-import { systemLookup } from "../../public-address.js";
-import { type AgentContext, define } from "../actions.js";
+import { type AgentContext, define, lookupOf } from "../actions.js";
 import { tool } from "../names.js";
 import { AgentRefusal, untrusted } from "../problems.js";
 import { account, amount, choice, flag, integer, object, optional, text } from "../schema.js";
@@ -65,7 +64,7 @@ export const walletFetchWork = define({
       throw new AgentRefusal("WorkUnfetchable", NONE_OPENS);
     }
     const { announcement, url } = opened;
-    const found = await fetchBytes(ctx.fetch ?? pinnedFetch, ctx.transport, url, systemLookup, MAX_SPEC_BYTES);
+    const found = await fetchBytes(ctx.fetch ?? pinnedFetch, ctx.transport, url, lookupOf(ctx), MAX_SPEC_BYTES);
     if ("problem" in found) {
       const hint = untrusted(`the work at ${url} ${found.problem}`);
       throw new AgentRefusal(PERMANENT_WORK.some((pattern) => pattern.test(found.problem)) ? "WorkUnfetchable" : "WorkUnreadable", hint);
@@ -82,7 +81,7 @@ export const walletFetchWork = define({
     const { opening } = await firstOpeningIn(ctx.transport, { intent: input.intent, sha256, keypair: openers });
     const first =
       isSdkError(opening, "first-opening-refused")
-        ? { refused: { reason: opening.reason, message: refused(opening, signer.device !== undefined, signer.address).message } }
+        ? { refused: { reason: opening.reason, message: refused(opening, signer.device !== undefined, signer.address, true).message } }
         : {
             first: { announcement: opening.announcement, seq: opening.seq, worker: opening.worker, commitment: opening.commitment },
             ...(opening.skipped.length === 0 ? {} : { skipped: skippedLines(opening) }),
@@ -98,7 +97,7 @@ export const walletFetchWork = define({
       bytes: found.bytes.length,
       ...(shown === undefined ? {} : { untrusted_text: shown }),
       ...first,
-      next: !opens ? WORK_DIFFERS : isSdkError(opening, "first-opening-refused") ? refused(opening, signer.device !== undefined, signer.address).message : WORK_OPENS,
+      next: !opens ? WORK_DIFFERS : isSdkError(opening, "first-opening-refused") ? refused(opening, signer.device !== undefined, signer.address, true).message : WORK_OPENS,
     };
   },
 });

@@ -5,6 +5,7 @@ import type { Address } from "@solana/kit";
 import { afterEach, describe, expect, it } from "vitest";
 import { attestedResult, DEVNET_TEST_MINT, NATIVE_MINT, parseAmount } from "@intent-engine/core";
 import { blobLayout, buildAnnounceDelivery, sealDeliveryV4 } from "@intent-engine/core/internal";
+import { DEFAULT_EXPIRES_IN } from "../src/client-types.js";
 import { connect, FirstOpeningRefused } from "../src/index.js";
 import { createTestWorld, type TestWallet, type TestWorld } from "../src/testing.js";
 import { serve, type Served } from "./local-server.js";
@@ -73,9 +74,6 @@ describe("openings for a judge that holds only its key", () => {
   it("passes over a griefer's blob that does not open, and refuses like firstOpening while the key is not given or the list is incomplete", async () => {
     const world = await createTestWorld();
     const { judge, intent } = await posted(world, workUrl("spec.md"));
-    const unbooked = await world.client.openings({ intent, keypair: judge.keypair }).catch((error: unknown) => error);
-    expect(unbooked).toMatchObject({ reason: "incomplete", closed: true, sha256: null });
-    expect(unbooked).toMatchObject(await world.client.firstOpening({ intent, sha256: hashOf(WORK), keypair: judge.keypair }).catch(({ sha256: _, message: __, ...same }: FirstOpeningRefused) => same));
     const { griefer, announcement: grief } = await griefed(world, intent, judge);
     expect(await world.client.openings({ intent, keypair: judge.keypair })).toEqual({ intent, opening: null, skipped: [{ announcement: grief, seq: 1n, worker: griefer.address, reason: "does-not-open" }] });
     const honest = await world.wallet();
@@ -102,6 +100,25 @@ describe("openings for a judge that holds only its key", () => {
     const closed = await world.client.openings({ intent, keypair: judge.keypair }).catch((error: unknown) => error);
     expect(closed).toBeInstanceOf(FirstOpeningRefused);
     expect(closed).toMatchObject({ reason: "incomplete", closed: true, sha256: null });
+  });
+
+  it("lists an open escrow nobody announced to as complete and empty, so a judge polling it hears nothing yet, and a closed one as closed", async () => {
+    const world = await createTestWorld();
+    const { judge, intent } = await posted(world, workUrl("spec.md"));
+    const reviewer = await connect({ cluster: "devnet", signer: judge, transport: world.transport });
+    expect(await world.client.announcements(intent)).toMatchObject({ announcements: [], nextSeq: 1n, complete: true, closed: false, missing: [] });
+    expect(await world.client.openings({ intent, keypair: judge.keypair })).toEqual({ intent, opening: null, skipped: [] });
+    expect(await reviewer.openings({ escrow: intent, keypair: judge.keypair })).toEqual({ intent, opening: null, skipped: [] });
+    const first = await world.client.firstOpening({ intent, sha256: hashOf(WORK), keypair: judge.keypair }).catch((error: unknown) => error);
+    expect(first).toBeInstanceOf(FirstOpeningRefused);
+    expect(first).toMatchObject({ reason: "nothing-opens", closed: false, missing: [] });
+
+    world.warp(DEFAULT_EXPIRES_IN + 1n);
+    expect(await world.client.announcements(intent)).toMatchObject({ announcements: [], complete: false, closed: true });
+    const closed = await world.client.openings({ intent, keypair: judge.keypair }).catch((error: unknown) => error);
+    expect(closed).toMatchObject({ reason: "incomplete", closed: true, sha256: null });
+    expect((closed as Error).message).toContain("is no longer open, so its announcements may have been closed");
+    expect(await world.client.firstOpening({ intent, sha256: hashOf(WORK), keypair: judge.keypair }).catch((error: unknown) => error)).toMatchObject({ reason: "incomplete", closed: true });
   });
 
   it("gives the simple layer the same openings and, with the key alone, each delivery's url without its hash", async () => {

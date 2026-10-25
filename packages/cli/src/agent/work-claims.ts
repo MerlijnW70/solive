@@ -7,7 +7,7 @@ import { createClient } from "@intent-engine/client/node";
 import { listAccount, listRefusal } from "../claim-lists.js";
 import { coolingDown, dropHandover, handedTo, heldBy, noClaims } from "../claim-commands.js";
 import { claimNotInvited, sealedInvites } from "../invites.js";
-import { type AgentContext, define } from "./actions.js";
+import { type AgentContext, define, specReach } from "./actions.js";
 import { advanceStep, closedEscrow, type EscrowState, escrowState, leaveStep, type LineStep, lineWaitingHere, settleCall, settleStep, standbyStep } from "./claim-line.js";
 import type { Call } from "./claims.js";
 import { tool } from "./names.js";
@@ -99,7 +99,7 @@ export const getClaims = define({
   run: async (ctx, input) => {
     const { client, intent, view } = await claimsFor(ctx, input.owner, input.nonce);
     const escrow = await escrowState(client, input.owner, input.nonce);
-    const invited = escrow === "open" ? await sealedInvites(ctx.transport, ctx.fetch ?? fetch, intent) : undefined;
+    const invited = escrow === "open" ? await sealedInvites(ctx.transport, ctx.fetch ?? fetch, intent, specReach(ctx)) : undefined;
     const named = invited === undefined ? {} : { invited };
     if (view === null) {
       return { intent, takes_claims: false, escrow, ...named, ...(escrow === "open" ? {} : { next: closedEscrow(intent, escrow) }) };
@@ -157,7 +157,7 @@ export const walletClaim = define({
     const { client, intent, view } = await claimsFor(ctx, input.owner, input.nonce);
     const escrow = { owner: input.owner, nonce: input.nonce, intent };
     if (input.action === "take" || input.action === "standby") {
-      const invited = await sealedInvites(ctx.transport, ctx.fetch ?? fetch, intent);
+      const invited = await sealedInvites(ctx.transport, ctx.fetch ?? fetch, intent, specReach(ctx));
       if (invited !== undefined && !invited.includes(signer.address)) {
         throw new AgentRefusal("NotInvited", claimNotInvited(signer.address, intent));
       }

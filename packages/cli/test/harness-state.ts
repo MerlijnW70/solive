@@ -18,7 +18,7 @@ import {
 } from "@solana/kit";
 import { FailedTransactionMetadata, LiteSVM } from "litesvm";
 import type { McpServer } from "@modelcontextprotocol/server";
-import { type EngineTransaction, type SpecFetch, type Transport } from "@intent-engine/client";
+import { type EngineTransaction, type Lookup, type SpecFetch, type Transport } from "@intent-engine/client";
 import { fileSales } from "../src/agent/sales.js";
 
 export const NOW = 1_700_000_000n;
@@ -39,6 +39,8 @@ export const h = {
   jupiterReplies: [] as { status: number; body: unknown }[],
   specPages: new Map<string, Uint8Array>(),
   specReplies: new Map<string, SpecFetch>(),
+  hosts: new Map<string, string[]>(),
+  lookups: [] as string[],
   fetched: [] as { url: string; body: string | undefined; headers: Record<string, string> | undefined }[],
   requestedLimits: [] as number[],
   recentFees: [] as bigint[],
@@ -74,6 +76,13 @@ export const h = {
 };
 
 export const saleBook = fileSales((path) => join(h.saleRoot, path));
+
+export const PUBLIC_TEST_ADDRESS = "93.184.215.14";
+
+export const harnessLookup: Lookup = async (host) => {
+  h.lookups.push(host);
+  return h.hosts.get(host) ?? (host === "localhost" || host.endsWith(".localhost") ? ["127.0.0.1"] : [PUBLIC_TEST_ADDRESS]);
+};
 
 export const HOME = "/home/tester";
 export const PACKET_LIMIT = 1_232;
