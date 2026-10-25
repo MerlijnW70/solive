@@ -64,6 +64,7 @@ pub struct BeginFill<'info> {
     pub fee_to: Option<Box<InterfaceAccount<'info, TokenAccount>>>,
     #[account(
         mut,
+        dup,
         address = get_associated_token_address_with_program_id(
             &intent.load()?.partner,
             &input_mint.key(),
