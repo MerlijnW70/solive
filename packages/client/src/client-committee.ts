@@ -2,12 +2,11 @@ import type { Address } from "@solana/kit";
 import { type Config, type IntentParams, Kind, NotAnEngineAccount } from "@intent-engine/core";
 import {
   buildCreateCommittee,
-  checkAccountVersion,
   COMMITTEE_DISCRIMINATOR,
   committeeFloorOf,
   committeeOf,
   countsAsCommittee,
-  getCommitteeDecoder,
+  decodeCommitteeAccount,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   needsCommittee,
 } from "@intent-engine/core/internal";
@@ -26,7 +25,7 @@ export async function loadCommittee(transport: Transport, address: Address): Pro
   ) {
     return null;
   }
-  const stored = getCommitteeDecoder().decode(checkAccountVersion(view.data));
+  const stored = decodeCommitteeAccount(view.data);
   const members = stored.members.slice(0, stored.count);
   const terms = { members, threshold: stored.threshold, feeWallet: stored.feeWallet };
   const derived = await committeeOf(terms);

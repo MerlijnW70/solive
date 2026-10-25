@@ -282,7 +282,7 @@ describe("solve --watch --stats", () => {
         stats: { orders: 8, planned: 4, quotes: 1, cached: 4, filled: 1, sent: 0, failed: 0, skipped: { "no route": 1, [SHORT]: 2, [OLD]: 2, [WAITING]: 1 }, ms: QUOTE_MS },
       },
     ]);
-    expect(lines.filter((line) => "unreadable" in line)).toEqual([{ at: String(NOW), scan: "changed", unreadable: [m.named.old7.address] }]);
+    expect(lines.filter((line) => "unreadable" in line)).toEqual([{ at: String(NOW), scan: "changed", unreadable: [{ intent: m.named.old7.address, reason: "the data is not an engine intent account" }] }]);
     expect(m.seen.asked).toBe(7);
   });
 

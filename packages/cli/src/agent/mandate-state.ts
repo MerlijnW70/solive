@@ -1,14 +1,14 @@
 import type { Address } from "@solana/kit";
 import { Kind } from "@intent-engine/core";
 import {
+  decodeMandateAccount,
   findIntentPda,
   findMandatePda,
-  getMandateDecoder,
   getMandateDiscriminatorBytes,
   kindBit,
   type Mandate,
-  type MandateSpec,
   mandateLane,
+  type MandateSpec,
 } from "@intent-engine/core/internal";
 import { isSdkError, type Transport } from "@intent-engine/client";
 import { createdAccount, engineAccount } from "@intent-engine/client/internal";
@@ -37,7 +37,7 @@ export async function loadMandate(transport: Transport, owner: Address, agent: A
     }
     throw error;
   });
-  return { address, mandate: getMandateDecoder().decode(data) };
+  return { address, mandate: decodeMandateAccount(data) };
 }
 
 export function specOf(m: Mandate): MandateSpec {

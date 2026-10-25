@@ -2,9 +2,9 @@ import { createHash } from "node:crypto";
 import { type Address, getAddressDecoder } from "@solana/kit";
 import { type Config } from "@intent-engine/core";
 import {
+  decodeConfigAccount,
   findConfigPda,
   findProgramDataAddress,
-  getConfigDecoder,
   getConfigDiscriminatorBytes,
   INTENT_ENGINE_PROGRAM_ADDRESS,
 } from "@intent-engine/core/internal";
@@ -101,7 +101,7 @@ function decodedConfig(view: AccountView | null | undefined): Config | null {
     return null;
   }
   try {
-    return getConfigDecoder().decode(view.data);
+    return decodeConfigAccount(view.data);
   } catch {
     return null;
   }

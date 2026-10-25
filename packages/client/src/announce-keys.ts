@@ -2,9 +2,8 @@ import { type Address, createSignableMessage, getPublicKeyFromAddress, type Inst
 import { InvalidInput, type SealRecipient } from "@intent-engine/core";
 import {
   buildSyncCommitteeKeys,
-  checkAccountVersion,
   COMMITTEE_DISCRIMINATOR,
-  getCommitteeDecoder,
+  decodeCommitteeAccount,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   keyFingerprintV4,
   parseEncryptionKey,
@@ -52,7 +51,7 @@ export async function committeeKeys(transport: Transport, address: Address): Pro
   if (view === null || view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS || !COMMITTEE_DISCRIMINATOR.every((b, i) => view.data[i] === b)) {
     return null;
   }
-  const stored = getCommitteeDecoder().decode(checkAccountVersion(view.data));
+  const stored = decodeCommitteeAccount(view.data);
   return {
     address,
     members: stored.members.slice(0, stored.count),

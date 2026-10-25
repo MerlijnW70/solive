@@ -8,9 +8,9 @@ import {
   claimListAddress,
   CLAIMS_OPEN,
   claimSlot,
-  getClaimBoardDecoder,
-  getClaimListDecoder,
-  getStandbyDecoder,
+  decodeClaimBoardAccount,
+  decodeClaimListAccount,
+  decodeStandbyAccount,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   type LineHandover,
   lineLength,
@@ -69,12 +69,12 @@ function claimListOf(address: Address, view: AccountView | null): ClaimListView 
   if (data === null) {
     throw new MissingAccount("the claim list", address, `the claim list ${address} its board records is missing`);
   }
-  const stored = getClaimListDecoder().decode(data);
+  const stored = decodeClaimListAccount(data);
   return { address, size: stored.size, workers: stored.workers.slice(0, stored.count), complete: stored.count === stored.size };
 }
 
 const listedIntent = (data: Uint8Array | null): Address | null => {
-  const stored = data === null ? null : getClaimBoardDecoder().decode(data);
+  const stored = data === null ? null : decodeClaimBoardAccount(data);
   return stored === null || stored.listed === 0 ? null : stored.intent;
 };
 
@@ -93,7 +93,7 @@ async function withLists(transport: Transport, views: (ClaimsView | null)[], dat
 }
 
 function claimsViewOf(board: Address, data: Uint8Array, now: bigint): ClaimsView {
-  const stored = getClaimBoardDecoder().decode(data);
+  const stored = decodeClaimBoardAccount(data);
   const slot = claimSlot(stored, now);
   return {
     board,
@@ -148,7 +148,7 @@ export async function loadLine(transport: Transport, intent: Address, line: { he
     if (data === null) {
       return { seq, entry, worker: null, secs: null };
     }
-    const stored = getStandbyDecoder().decode(data);
+    const stored = decodeStandbyAccount(data);
     return { seq, entry, worker: stored.worker, secs: stored.secs };
   });
 }
@@ -174,7 +174,7 @@ export async function cancelClaims(transport: Transport, intent: Address, claims
   if (data === null) {
     return { board, stakeTo: null };
   }
-  return { board, stakeTo: stakeReceiverOnCancel(getClaimBoardDecoder().decode(data), await chainTime(transport)) };
+  return { board, stakeTo: stakeReceiverOnCancel(decodeClaimBoardAccount(data), await chainTime(transport)) };
 }
 
 export type ReleaseClaims = { accounts: { claims?: Address; stakeTo?: Address }; stake: bigint };
@@ -184,7 +184,7 @@ export async function releaseClaims(transport: Transport, intent: Address, claim
     return { accounts: {}, stake: 0n };
   }
   const board = await claimBoardAddress(intent);
-  const view = getClaimBoardDecoder().decode(await engineAccount(transport, board, CLAIM_BOARD_DISCRIMINATOR, "claim board"));
+  const view = decodeClaimBoardAccount(await engineAccount(transport, board, CLAIM_BOARD_DISCRIMINATOR, "claim board"));
   try {
     const stakeTo = stakeReceiverOnRelease(view, await chainTime(transport), payees);
     return stakeTo === null ? { accounts: { claims: board }, stake: 0n } : { accounts: { claims: board, stakeTo }, stake: view.held };

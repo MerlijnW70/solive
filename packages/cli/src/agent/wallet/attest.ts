@@ -6,10 +6,10 @@ import {
   buildEd25519Instruction,
   buildFillAttested,
   COMPUTE_BUDGET_ADDRESS,
+  decodeIntentAccount,
   decodeParams,
   findIntentPda,
   formatTime,
-  getIntentDecoder,
   settlementWarnings,
 } from "@intent-engine/core/internal";
 import { type BallotInput, isSdkError } from "@intent-engine/client";
@@ -108,7 +108,7 @@ export async function attestedEscrow(ctx: AgentContext, owner: Address, nonce: b
   if (view === null) {
     throw new AgentRefusal("NotFound", `no intent ${intent}; it was settled, cancelled and closed, or never made`);
   }
-  const held = getIntentDecoder().decode(view.data);
+  const held = decodeIntentAccount(view.data);
   const params = decodeParams(held.kind, Uint8Array.from(held.params));
   if (params.kind !== Kind.AttestedResult) {
     throw new AgentRefusal("KindMismatch", "this intent is not an attested escrow");

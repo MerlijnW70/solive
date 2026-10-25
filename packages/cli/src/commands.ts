@@ -4,10 +4,10 @@ import {
   buildCancelIntent,
   buildCloseIntent,
   committeeFloors,
+  decodeUserStateAccount,
   findIntentPda,
   findUserStatePda,
   findVaultPda,
-  getUserStateDecoder,
   nextEpoch,
 } from "@intent-engine/core/internal";
 import { solverTableAccounts, tick } from "@intent-engine/solver";
@@ -246,7 +246,8 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     case "profile-close":
       return claimsCommand(command, runtime, transport);
     case "treasury": {
-      const view = await treasuryView(transport, command.mints ?? (await intentInputMints(transport)));
+      const listed = command.mints === null ? await intentInputMints(transport) : { mints: command.mints, unreadable: [] };
+      const view = await treasuryView(transport, listed.mints, listed.unreadable);
       if (!command.create || command.keypair === undefined) {
         return view;
       }
@@ -308,7 +309,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       if (view === null) {
         throw new Error(`${owner.address} has no user state`);
       }
-      const epoch = nextEpoch(getUserStateDecoder().decode(view.data).epoch);
+      const epoch = nextEpoch(decodeUserStateAccount(view.data).epoch);
       const ix = await buildAdvanceEpoch({ owner, epoch });
       return { epoch, signature: await transport.send([ix], owner) };
     }

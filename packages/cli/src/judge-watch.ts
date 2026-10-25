@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Address } from "@solana/kit";
 import { IntentStatus } from "@intent-engine/core";
-import { getIntentDecoder, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
+import { decodeIntentAccount, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { type AnnouncementView, type Transport } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
 import { chainTime, deviceJudgeReady, isDevice } from "@intent-engine/client/internal";
@@ -32,7 +32,7 @@ async function stillOpen(transport: Transport, intent: Address): Promise<boolean
   if (account === null || account.owner !== INTENT_ENGINE_PROGRAM_ADDRESS || account.data.length === 0) {
     return false;
   }
-  const { status, expiresAt } = getIntentDecoder().decode(account.data);
+  const { status, expiresAt } = decodeIntentAccount(account.data);
   return status === IntentStatus.Open && expiresAt > (await chainTime(transport));
 }
 

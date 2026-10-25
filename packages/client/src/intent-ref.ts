@@ -1,6 +1,6 @@
 import { type Address, isAddress } from "@solana/kit";
 import { InvalidInput } from "@intent-engine/core";
-import { findIntentPda, getIntentDecoder, getIntentDiscriminatorBytes } from "@intent-engine/core/internal";
+import { decodeIntentAccount, findIntentPda, getIntentDiscriminatorBytes } from "@intent-engine/core/internal";
 import { engineAccount, loadIntent } from "./accounts.js";
 import type { IntentAccount } from "./client-types.js";
 import type { Transport } from "./transport.js";
@@ -33,5 +33,5 @@ export async function loadIntentRef(transport: Transport, ref: IntentRef, field 
     return loadIntent(transport, checked.owner, checked.nonce);
   }
   const data = await engineAccount(transport, checked, getIntentDiscriminatorBytes(), "intent");
-  return { address: checked, intent: getIntentDecoder().decode(data) };
+  return { address: checked, intent: decodeIntentAccount(data) };
 }

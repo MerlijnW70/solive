@@ -2,13 +2,13 @@ import { type Address, getBase58Encoder } from "@solana/kit";
 import { AccountVersionError, type DeliveryKey, type DeliveryOpener } from "@intent-engine/core";
 import {
   announcementCommitment,
-  CLAIMS_OPEN,
-  claimBoardAddress,
   CLAIM_BOARD_DISCRIMINATOR,
+  claimBoardAddress,
+  CLAIMS_OPEN,
   claimSlot,
+  decodeClaimBoardAccount,
   delivery,
   deliveryKeyOf,
-  getClaimBoardDecoder,
   keyFingerprintV4,
   openDeliveryV4,
   type OpenedDelivery,
@@ -125,7 +125,7 @@ async function claimHolder(transport: Transport, proof: Proof): Promise<Address 
   if (proof.intent.claims !== CLAIMS_OPEN) {
     return null;
   }
-  const board = getClaimBoardDecoder().decode(await engineAccount(transport, await claimBoardAddress(proof.address), CLAIM_BOARD_DISCRIMINATOR, "claim board"));
+  const board = decodeClaimBoardAccount(await engineAccount(transport, await claimBoardAddress(proof.address), CLAIM_BOARD_DISCRIMINATOR, "claim board"));
   const slot = claimSlot(board, await chainTime(transport));
   return slot.state === "held" ? slot.worker : null;
 }

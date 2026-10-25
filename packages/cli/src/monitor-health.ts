@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 import { type Config, DEVNET_TEST_MINT, formatAmount, type Intent, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { getIntentDecoder, U64_MAX } from "@intent-engine/core/internal";
+import { readIntentAccounts, U64_MAX } from "@intent-engine/core/internal";
 import { type Transport } from "@intent-engine/client";
 import { CLOCK_SYSVAR, clockTime, loadConfig } from "@intent-engine/client/internal";
 import { decide, issuePricer, type Strategy } from "@intent-engine/solver";
@@ -67,14 +67,13 @@ function balanceFindings(spec: HealthSpec, held: readonly bigint[], slot: number
 
 async function swapFindings(transport: Transport, bound: number, now: bigint, slot: number): Promise<HealthFinding[]> {
   const { config } = await loadConfig(transport);
-  const found: HealthFinding[] = [];
-  for (const { address, data } of await transport.intents()) {
-    let intent: Intent;
-    try {
-      intent = getIntentDecoder().decode(data);
-    } catch {
-      continue;
-    }
+  const { intents, unreadable } = readIntentAccounts(await transport.intents());
+  const found: HealthFinding[] = unreadable.map(({ address, reason }) => ({
+    key: `swapWait.${address}`,
+    mark: "unreadable",
+    alert: { kind: "swap-wait", field: "intent", expected: "a readable intent", observed: reason, slot, intent: address },
+  }));
+  for (const { address, intent } of intents) {
     const since = await fillableSince(address, intent, config, now);
     if (since === null || now - since <= BigInt(bound)) {
       continue;

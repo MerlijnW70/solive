@@ -1,5 +1,5 @@
 import type { Address } from "@solana/kit";
-import { decodeEvent, getIntentDecoder } from "@intent-engine/core/internal";
+import { decodeEvent, decodeIntentAccount } from "@intent-engine/core/internal";
 import type { EngineTransaction, Transport } from "@intent-engine/client";
 import { ESTIMATE_SCAN, ESTIMATE_FILLS } from "./guard.js";
 
@@ -87,7 +87,7 @@ export function historyIn(transactions: readonly EngineTransaction[]) {
 
 export function pairOf(data: Uint8Array): Pair | null {
   try {
-    const { inputMint, outputMint } = getIntentDecoder().decode(data);
+    const { inputMint, outputMint } = decodeIntentAccount(data);
     return { inputMint, outputMint };
   } catch {
     return null;

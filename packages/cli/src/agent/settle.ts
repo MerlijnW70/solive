@@ -1,6 +1,6 @@
 import { createNoopSigner } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
-import { buildCancelIntent, buildCloseIntent, decodeParamsLoose, describeTerms, findVaultPda, getIntentDecoder, tokenOf } from "@intent-engine/core/internal";
+import { buildCancelIntent, buildCloseIntent, decodeParamsLoose, describeTerms, findVaultPda, readIntentAccounts, tokenOf } from "@intent-engine/core/internal";
 import { cancelClaims, chainTime, loadIntent, tokenProgramOf } from "@intent-engine/client/internal";
 import { closing, CostlyFunding, crankAction, expiring, type Funding, UnfundedAccount, vaultBalance } from "../crank.js";
 import { define } from "./actions.js";
@@ -112,19 +112,21 @@ export const findCrankWork = define({
       WORK_LIMIT,
     ),
     more: flag(),
+    skipped: optional(list(object({ intent: account(), reason: text() }), WORK_LIMIT, "intents left out because their account has a layout this version cannot read")),
   }),
   run: async ({ transport }, input) => {
     const now = await chainTime(transport);
     const work = [];
-    for (const { address, data } of await transport.intents()) {
-      const intent = getIntentDecoder().decode(data);
+    const { intents, unreadable } = readIntentAccounts(await transport.intents());
+    for (const { address, intent } of intents) {
       const action = crankAction(intent, now, input.cranker);
       if (action !== undefined) {
         work.push({ intent: address, owner: intent.owner, nonce: intent.nonce, action, bounty: BigInt(intent.bounty) });
       }
     }
     const limit = input.limit ?? WORK_LIMIT;
-    return { now, work: work.slice(0, limit), more: work.length > limit };
+    const skipped = unreadable.slice(0, WORK_LIMIT).map(({ address, reason }) => ({ intent: address, reason }));
+    return { now, work: work.slice(0, limit), more: work.length > limit, ...(skipped.length === 0 ? {} : { skipped }) };
   },
 });
 

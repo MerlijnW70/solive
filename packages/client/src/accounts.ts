@@ -2,16 +2,16 @@ import { type Address, getAddressDecoder, getBase58Encoder } from "@solana/kit";
 import { type Config, NotAnEngineAccount, SdkError, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
 import {
   checkAccountVersion,
+  decodeConfigAccount,
+  decodeIntentAccount,
   decodeMintCapData,
+  decodeUserStateAccount,
   findConfigPda,
   findIntentPda,
   findMintCapAddress,
   findUserStatePda,
-  getConfigDecoder,
   getConfigDiscriminatorBytes,
-  getIntentDecoder,
   getIntentDiscriminatorBytes,
-  getUserStateDecoder,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   isMintCapData,
   type MintCap,
@@ -61,7 +61,7 @@ export async function engineAccount(
 export async function loadIntent(transport: Transport, owner: Address, nonce: bigint): Promise<IntentAccount> {
   const [address] = await findIntentPda({ owner, nonce });
   const data = await engineAccount(transport, address, getIntentDiscriminatorBytes(), "intent");
-  return { address, intent: getIntentDecoder().decode(data) };
+  return { address, intent: decodeIntentAccount(data) };
 }
 
 export class NotAMint extends SdkError {
@@ -80,7 +80,7 @@ export type ConfigAccount = { address: Address; config: Config };
 export async function loadConfig(transport: Transport): Promise<ConfigAccount> {
   const [address] = await findConfigPda();
   const data = await engineAccount(transport, address, getConfigDiscriminatorBytes(), "config");
-  return { address, config: getConfigDecoder().decode(data) };
+  return { address, config: decodeConfigAccount(data) };
 }
 
 export type MintCapAccount = { address: Address; cap: MintCap };
@@ -112,7 +112,7 @@ export async function loadUser(transport: Transport, owner: Address): Promise<No
   if (view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS) {
     throw new NotAnEngineAccount(address, `${address} is not an engine user account`);
   }
-  return getUserStateDecoder().decode(checkAccountVersion(view.data));
+  return decodeUserStateAccount(view.data);
 }
 
 export async function tokenProgramOf(transport: Transport, mint: Address): Promise<Address> {

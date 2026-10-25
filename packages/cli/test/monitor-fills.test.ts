@@ -8,6 +8,7 @@ import {
   getIntentEncoder,
   getIntentSize,
   INTENT_ENGINE_PROGRAM_ADDRESS,
+  INTENT_VERSION,
 } from "@intent-engine/core/internal";
 import type { EngineTransaction, Transport } from "@intent-engine/client";
 import { fillsIn, inputMintsOf, type SeenFill } from "../src/monitor-fills.js";
@@ -37,8 +38,8 @@ const tx = (signature: string, emitted: Uint8Array[]): EngineTransaction => ({ s
 
 const address = async () => (await generateKeyPairSigner()).address;
 
-const intentData = (inputMint: Address) =>
-  Uint8Array.from(getIntentEncoder().encode({ ...getIntentDecoder().decode(new Uint8Array(getIntentSize())), inputMint }));
+const intentData = (inputMint: Address, version = INTENT_VERSION) =>
+  Uint8Array.from(getIntentEncoder().encode({ ...getIntentDecoder().decode(new Uint8Array(getIntentSize())), inputMint, version }));
 
 describe("fills the monitor reads from engine transactions", () => {
   it("pays a two-step fill the amount its begin step drew", async () => {
@@ -49,13 +50,14 @@ describe("fills the monitor reads from engine transactions", () => {
   });
 
   it("looks up the input mint of every fill whose creation it did not see", async () => {
-    const addresses = await Promise.all(Array.from({ length: 6 }, address));
-    const [seen, engineOwned, foreign, missing, mint, other] = addresses as [Address, Address, Address, Address, Address, Address];
+    const addresses = await Promise.all(Array.from({ length: 7 }, address));
+    const [seen, engineOwned, foreign, missing, mint, other, newer] = addresses as [Address, Address, Address, Address, Address, Address, Address];
     const asked: Address[][] = [];
     const accounts: Record<string, { owner: Address; data: Uint8Array; lamports: bigint } | null> = {
       [engineOwned]: { owner: INTENT_ENGINE_PROGRAM_ADDRESS, data: intentData(mint), lamports: 1n },
       [foreign]: { owner: other, data: intentData(mint), lamports: 1n },
       [missing]: null,
+      [newer]: { owner: INTENT_ENGINE_PROGRAM_ADDRESS, data: intentData(mint, INTENT_VERSION + 1), lamports: 1n },
     };
     const transport = {
       getAccounts: async (addresses: Address[]) => {
@@ -64,8 +66,8 @@ describe("fills the monitor reads from engine transactions", () => {
       },
     } as unknown as Transport;
     const fill = (intent: Address): SeenFill => ({ signature: intent, slot: 1n, intent, amountIn: 1n });
-    const mints = await inputMintsOf(transport, [fill(seen), fill(engineOwned), fill(foreign), fill(missing), fill(engineOwned)], new Map([[seen, other]]));
-    expect(asked).toEqual([[engineOwned, foreign, missing]]);
+    const mints = await inputMintsOf(transport, [fill(seen), fill(engineOwned), fill(foreign), fill(missing), fill(engineOwned), fill(newer)], new Map([[seen, other]]));
+    expect(asked).toEqual([[engineOwned, foreign, missing, newer]]);
     expect([...mints.entries()]).toEqual([
       [seen, other],
       [engineOwned, mint],

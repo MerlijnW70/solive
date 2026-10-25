@@ -1,7 +1,7 @@
 import { type Address, createNoopSigner, type KeyPairSigner } from "@solana/kit";
 import { getTokenDecoder } from "@solana-program/token";
 import { formatAmount } from "@intent-engine/core";
-import { getIntentDecoder } from "@intent-engine/core/internal";
+import { readIntentAccounts, type UnreadableAccount } from "@intent-engine/core/internal";
 import { type Transport } from "@intent-engine/client";
 import { createdAccount, loadConfig, mintOf, rentExemptMinimum, tokenAccountIfMissing } from "@intent-engine/client/internal";
 import { prepare } from "./agent/prepare.js";
@@ -50,19 +50,14 @@ async function createFeeWarnings(transport: Transport, owner: Address, createFee
   return short > 0n ? [treasuryTooEmpty(createFee, short)] : [];
 }
 
-export async function intentInputMints(transport: Transport): Promise<Address[]> {
-  const mints = new Set<Address>();
-  for (const { data } of await transport.intents()) {
-    try {
-      mints.add(getIntentDecoder().decode(data).inputMint);
-    } catch {
-      continue;
-    }
-  }
-  return [...mints].sort();
+export const intentLeftOut = ({ address, reason }: UnreadableAccount) => `the intent ${address} was left out of the token list: ${reason}`;
+
+export async function intentInputMints(transport: Transport): Promise<{ mints: Address[]; unreadable: UnreadableAccount[] }> {
+  const { intents, unreadable } = readIntentAccounts(await transport.intents());
+  return { mints: [...new Set(intents.map(({ intent }) => intent.inputMint))].sort(), unreadable };
 }
 
-export async function treasuryView(transport: Transport, mints: readonly Address[]): Promise<TreasuryView> {
+export async function treasuryView(transport: Transport, mints: readonly Address[], unreadable: readonly UnreadableAccount[] = []): Promise<TreasuryView> {
   const { config } = await loadConfig(transport);
   const owner = config.feeRecipient;
   const lamports = (await transport.getAccount(owner))?.lamports ?? 0n;
@@ -88,7 +83,7 @@ export async function treasuryView(transport: Transport, mints: readonly Address
     sol: formatAmount(lamports, SOL_DECIMALS),
     tokens,
     missing: tokens.filter((t) => !t.exists).map((t) => t.mint),
-    warnings: await createFeeWarnings(transport, owner, config.createFee),
+    warnings: [...(await createFeeWarnings(transport, owner, config.createFee)), ...unreadable.map(intentLeftOut)],
   };
 }
 

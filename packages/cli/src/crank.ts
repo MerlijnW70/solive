@@ -7,7 +7,7 @@ import {
   getTokenDecoder,
 } from "@solana-program/token";
 import { findAssociatedTokenAddress, type Intent } from "@intent-engine/core";
-import { buildCloseIntent, buildExpireIntent, findDelegatePda, findVaultPda, getIntentDecoder, INTENT_VERSION } from "@intent-engine/core/internal";
+import { buildCloseIntent, buildExpireIntent, decodeIntentAccount, findDelegatePda, findVaultPda, INTENT_VERSION, isUnreadableAccount } from "@intent-engine/core/internal";
 import { type AccountView, type Transport } from "@intent-engine/client";
 import { chainTime, createdAccount, EXTENSIONS_OFFSET, tokenProgramOf } from "@intent-engine/client/internal";
 import { STATUS } from "./accounts.js";
@@ -200,10 +200,20 @@ export function crankAction(intent: Intent, now: bigint, cranker?: Address): "ex
 export async function crank(transport: Transport, cranker: TransactionSigner, dryRun: boolean, fund: boolean) {
   const now = await chainTime(transport);
   const actions: CrankAction[] = [];
+  const unreadable: { intent: Address; skipped: string }[] = [];
   let untouched = 0;
   const funding: Funding = fund ? "covered" : "never";
   for (const { address, data } of await transport.intents()) {
-    const intent = getIntentDecoder().decode(data);
+    let intent: Intent;
+    try {
+      intent = decodeIntentAccount(data);
+    } catch (error) {
+      if (!isUnreadableAccount(error)) {
+        throw error;
+      }
+      unreadable.push({ intent: address, skipped: error.message });
+      continue;
+    }
     const action = crankAction(intent, now, cranker.address);
     if (action === undefined) {
       untouched += 1;
@@ -227,5 +237,5 @@ export async function crank(transport: Transport, cranker: TransactionSigner, dr
       }
     }
   }
-  return { now, dryRun, untouched, actions };
+  return { now, dryRun, untouched, actions, ...(unreadable.length === 0 ? {} : { unreadable }) };
 }

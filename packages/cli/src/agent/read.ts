@@ -1,7 +1,7 @@
 import { getTokenDecoder } from "@solana-program/token";
 import type { Address } from "@solana/kit";
 import { feeBpsFor, findAssociatedTokenAddress, formatAmount, type Intent, IntentStatus } from "@intent-engine/core";
-import { findDelegatePda, getIntentDecoder, kindBit, PAUSE_CREATE, PAUSE_FILL, remainingOf } from "@intent-engine/core/internal";
+import { decodeIntentAccount, findDelegatePda, isUnreadableAccount, kindBit, PAUSE_CREATE, PAUSE_FILL, readIntentAccounts, remainingOf } from "@intent-engine/core/internal";
 import { type Transport } from "@intent-engine/client";
 import { chainTime, clusterDomain, createdAccount, loadConfig, loadIntent, mintOf } from "@intent-engine/client/internal";
 import { quoteOf, sameBytes, STATUS } from "../accounts.js";
@@ -17,17 +17,8 @@ export function readIntents(entries: readonly { address: Address; data: Uint8Arr
   intents: { address: Address; intent: Intent; remaining: bigint }[];
   unreadable: number;
 } {
-  const intents = [];
-  let unreadable = 0;
-  for (const { address, data } of entries) {
-    try {
-      const intent = getIntentDecoder().decode(data);
-      intents.push({ address, intent, remaining: remainingOf(intent) });
-    } catch {
-      unreadable += 1;
-    }
-  }
-  return { intents, unreadable };
+  const { intents, unreadable } = readIntentAccounts(entries);
+  return { intents: intents.map(({ address, intent }) => ({ address, intent, remaining: remainingOf(intent) })), unreadable: unreadable.length };
 }
 
 const intentRef = {
@@ -121,8 +112,11 @@ export const listIntents = define({
     for (const { address, data } of await transport.intents({ owner: input.owner })) {
       let intent;
       try {
-        intent = getIntentDecoder().decode(data);
-      } catch {
+        intent = decodeIntentAccount(data);
+      } catch (error) {
+        if (!isUnreadableAccount(error)) {
+          throw error;
+        }
         unreadable += 1;
         continue;
       }

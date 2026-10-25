@@ -1,6 +1,7 @@
 export * from "../generated/client/index.js";
 export * from "../generated/identity.js";
 export * from "../generated/engine-errors.js";
+export * from "./account-reads.js";
 export * from "./bounty.js";
 export * from "./builders.js";
 export * from "./claim-list.js";

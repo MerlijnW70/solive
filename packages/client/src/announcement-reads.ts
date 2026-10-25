@@ -2,14 +2,13 @@ import type { Address } from "@solana/kit";
 import { type AnnState, IntentStatus, NotAnEngineAccount } from "@intent-engine/core";
 import {
   ANNOUNCEMENT_DISCRIMINATOR,
-  checkAccountVersion,
+  decodeAnnouncementAccount,
+  decodeDeliveryBookAccount,
+  decodeRefutationAccount,
   delivery,
   DELIVERY_BOOK_DISCRIMINATOR,
   deliveryBookAddress,
-  getAnnouncementDecoder,
   getAnnouncementSize,
-  getDeliveryBookDecoder,
-  getRefutationDecoder,
   getRefutationSize,
   REFUTATION_DISCRIMINATOR,
 } from "@intent-engine/core/internal";
@@ -73,7 +72,7 @@ export type RefutationView = {
 };
 
 export function announcementOf(address: Address, data: Uint8Array, lamports = 0n): AnnouncementView {
-  const stored = getAnnouncementDecoder().decode(checkAccountVersion(data));
+  const stored = decodeAnnouncementAccount(data);
   return {
     address,
     intent: stored.intent,
@@ -118,7 +117,7 @@ export async function loadDeliveryBook(transport: Transport, intent: Address): P
   if (!tagged(view.data, DELIVERY_BOOK_DISCRIMINATOR)) {
     throw new NotAnEngineAccount(address, `${address} is not an engine delivery book`);
   }
-  const stored = getDeliveryBookDecoder().decode(checkAccountVersion(view.data));
+  const stored = decodeDeliveryBookAccount(view.data);
   return { address, intent: stored.intent, payer: stored.payer, nextSeq: stored.nextSeq, live: stored.live };
 }
 
@@ -186,7 +185,7 @@ export async function refutationsOf(transport: Transport, paid: Address): Promis
   });
   return found
     .map(({ address, data }) => {
-      const stored = getRefutationDecoder().decode(checkAccountVersion(data));
+      const stored = decodeRefutationAccount(data);
       return {
         address,
         intent: stored.intent,

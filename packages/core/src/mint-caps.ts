@@ -7,7 +7,6 @@ import {
   type TransactionSigner,
 } from "@solana/kit";
 import {
-  getMintCapDecoder,
   getMintCapSize,
   getSetCapsRequiredInstruction,
   getSetMintCapInstructionAsync,
@@ -17,7 +16,7 @@ import {
 } from "../generated/client/index.js";
 import { events } from "./builder-accounts.js";
 import { U64_MAX } from "./math.js";
-import { checkAccountVersion } from "./versions.js";
+import { decodeMintCapAccount } from "./account-reads.js";
 import { InvalidInput, NotAnEngineAccount } from "./errors.js";
 
 export const MIN_CAP_WINDOW_SECS = 60;
@@ -30,7 +29,7 @@ export function decodeMintCapData(data: Uint8Array): MintCap {
   if (!isMintCapData(data)) {
     throw new NotAnEngineAccount(null, "not a mint cap account");
   }
-  return getMintCapDecoder().decode(checkAccountVersion(data));
+  return decodeMintCapAccount(data);
 }
 
 export type CapWindow = { start: bigint; ends: bigint; used: bigint; left: bigint };

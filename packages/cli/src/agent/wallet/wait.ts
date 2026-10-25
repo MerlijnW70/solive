@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
-import { findIntentPda, getIntentDecoder } from "@intent-engine/core/internal";
+import { decodeIntentAccount, findIntentPda } from "@intent-engine/core/internal";
 import { mintOf, rateLimited, unmemoized } from "@intent-engine/client/internal";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
@@ -83,7 +83,7 @@ export const walletWait = define({
         status = "closed";
         return true;
       }
-      const decoded = getIntentDecoder().decode(view.data);
+      const decoded = decodeIntentAccount(view.data);
       pair = { inputMint: decoded.inputMint, outputMint: decoded.outputMint };
       status = STATUS[decoded.status] ?? "open";
       return status !== "open" && status !== "filling";

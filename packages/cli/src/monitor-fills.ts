@@ -1,5 +1,5 @@
 import type { Address } from "@solana/kit";
-import { decodeEvent, getIntentDecoder, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
+import { decodeEvent, decodeIntentAccount, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import type { EngineTransaction, Transport } from "@intent-engine/client";
 
 export type SeenFill = { signature: string; slot: bigint; intent: Address; amountIn: bigint };
@@ -60,7 +60,7 @@ export async function inputMintsOf(
       return;
     }
     try {
-      mints.set(intent, getIntentDecoder().decode(view.data).inputMint);
+      mints.set(intent, decodeIntentAccount(view.data).inputMint);
     } catch {
       return;
     }

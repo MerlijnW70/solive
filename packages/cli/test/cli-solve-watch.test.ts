@@ -182,7 +182,7 @@ describe("cli against the deployed engine", () => {
     const run = await watching(issued, solver);
     expect(run.code).toBe(EXIT_OK);
     expect(run.each()).toEqual([
-      { at: String(NOW + 1_000n), scan: "changed", unreadable: [bogus] },
+      { at: String(NOW + 1_000n), scan: "changed", unreadable: [{ intent: bogus, reason: "the data is not an engine intent account" }] },
       expect.objectContaining({ scan: "changed", sent: [expect.objectContaining({ intent: valid })], failed: [] }),
     ]);
   });

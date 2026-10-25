@@ -1,6 +1,6 @@
 import { getPublicKeyFromAddress, verifySignature } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
-import { buildEd25519Instruction, describeSignedIntent, findIntentPda, getIntentDecoder, signedIntentMessage, validate } from "@intent-engine/core/internal";
+import { buildEd25519Instruction, decodeIntentAccount, describeSignedIntent, findIntentPda, signedIntentMessage, validate } from "@intent-engine/core/internal";
 import { type Transport } from "@intent-engine/client";
 import { chainTime, clusterDomain, createdAccount, loadUser, mintCapOf, mintOf, tokenAccountIfMissing } from "@intent-engine/client/internal";
 import { define } from "./actions.js";
@@ -65,7 +65,7 @@ async function relaySigned(transport: Transport, relay: Relay, input: SignedTerm
   const [intent] = await findIntentPda({ owner: input.owner, nonce: input.nonce });
   const existing = await createdAccount(transport, intent);
   if (existing !== null) {
-    if (!sameTerms(getIntentDecoder().decode(existing.data), fields)) {
+    if (!sameTerms(decodeIntentAccount(existing.data), fields)) {
       throw new AgentRefusal(
         "NonceTaken",
         "a different intent already uses this owner's nonce; these signed terms can never be submitted",

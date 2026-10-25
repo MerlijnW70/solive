@@ -12,7 +12,7 @@ import {
 } from "@solana/kit";
 import { getRevokeInstruction, getTokenDecoder } from "@solana-program/token";
 import { findAssociatedTokenAddress, formatAmount, IntentStatus, parseAmount } from "@intent-engine/core";
-import { buildApproveDelegate, findDelegatePda, getIntentDecoder } from "@intent-engine/core/internal";
+import { buildApproveDelegate, decodeIntentAccount, findDelegatePda } from "@intent-engine/core/internal";
 import { isSdkError, type Transport } from "@intent-engine/client";
 import { createdAccount, mintOf, unmemoized } from "@intent-engine/client/internal";
 import { type AgentContext, type AnyAction, invoke } from "./agent/actions.js";
@@ -126,7 +126,7 @@ export async function landingOf(transport: Transport, signature: string, intent:
       return seen.failed ? "failed" : "landed";
     }
     const view = await fresh.getAccount(intent as Address);
-    return view !== null && getIntentDecoder().decode(view.data).status === IntentStatus.Cancelled ? "landed" : "unknown";
+    return view !== null && decodeIntentAccount(view.data).status === IntentStatus.Cancelled ? "landed" : "unknown";
   } catch {
     return "unknown";
   }

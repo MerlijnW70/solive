@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
-import { findAssociatedTokenAddress, type Intent, IntentStatus } from "@intent-engine/core";
-import { findVaultPda, getIntentDecoder } from "@intent-engine/core/internal";
+import { findAssociatedTokenAddress, IntentStatus } from "@intent-engine/core";
+import { findVaultPda, readIntentAccounts } from "@intent-engine/core/internal";
 import {
   type Chain,
   cachedPricer,
@@ -12,6 +12,8 @@ import {
   firstPricer,
   allowanceOf,
   heldBy,
+  type IntentListing,
+  listingOf,
   inventoryPricer,
   landings,
   releaseHolds,
@@ -74,25 +76,19 @@ export const IN_FLIGHT_SECONDS = 90n;
 
 export const REFRESH_AFTER_SECONDS = 60n;
 
-export function decodedChanges(changed: readonly ProgramAccount[]): { intents: { address: Address; intent: Intent }[]; unreadable: Address[] } {
-  const intents: { address: Address; intent: Intent }[] = [];
-  const unreadable: Address[] = [];
-  for (const { address, data } of changed) {
-    try {
-      intents.push({ address, intent: getIntentDecoder().decode(data) });
-    } catch {
-      unreadable.push(address);
-    }
-  }
-  return { intents, unreadable };
+export function decodedChanges(changed: readonly ProgramAccount[]): IntentListing {
+  return readIntentAccounts(changed);
 }
 
 export async function stillOpen(transport: Pick<Transport, "getAccounts">, intents: readonly Address[]): Promise<Address[]> {
   const views = await transport.getAccounts(intents);
-  return intents.filter((_, i) => {
+  const found = intents.flatMap((address, i) => {
     const view = views[i];
-    return view !== null && view !== undefined && getIntentDecoder().decode(view.data).status === IntentStatus.Open;
+    return view === null || view === undefined ? [] : [{ address, data: view.data }];
   });
+  return readIntentAccounts(found)
+    .intents.filter(({ intent }) => intent.status === IntentStatus.Open)
+    .map(({ address }) => address);
 }
 
 export const watchPricer = (pricer: Pricer, ttlSeconds: number, clock: () => number): Pricer =>
@@ -142,13 +138,13 @@ export async function watchSolveWith(
       let full = false;
       try {
         full = changed.length === 0 || scannedAt === null || now - scannedAt >= BigInt(interval);
-        const decoded = full ? { intents: await chain.intents(), unreadable: [] } : decodedChanges(changed);
+        const decoded = full ? await listingOf(chain) : decodedChanges(changed);
         if (full) {
           scannedAt = now;
           held.retain(decoded.intents, await chain.now());
         }
         if (decoded.unreadable.length > 0) {
-          emit({ at: now, scan: "changed", unreadable: decoded.unreadable });
+          emit({ at: now, scan: full ? "full" : "changed", unreadable: decoded.unreadable.map(({ address, reason }) => ({ intent: address, reason })) });
         }
         const listed = decoded.intents;
         const early = statuses === undefined ? [] : await answered(inFlight, listed, statuses, held);
@@ -163,7 +159,7 @@ export async function watchSolveWith(
         }
         const due = listed.filter(({ address }) => !inFlight.has(address));
         const mark = counts.mark();
-        const report = await tick({ ...live, chain: { ...chain, intents: async () => due } });
+        const report = await tick({ ...live, chain: { ...chain, intents: async () => due, listing: async () => ({ intents: due, unreadable: [] }) } });
         const { filled, sent, failed } = report;
         const sentFor = new Map(due.map(({ address, intent }) => [address, intent]));
         for (const { intent, signature, holds } of sent) {
@@ -220,8 +216,8 @@ export async function solverOptions(
   let latest: Latest | undefined;
   const chain: Chain = {
     config: async () => (await loadConfig(transport)).config,
-    intents: async () =>
-      (await transport.intents()).map(({ address, data }) => ({ address, intent: getIntentDecoder().decode(data) })),
+    intents: async () => readIntentAccounts(await transport.intents()).intents,
+    listing: async () => readIntentAccounts(await transport.intents()),
     now: () => chainTime(transport),
     tokenProgram: (mint) => tokenProgramOf(transport, mint),
     mintData: async (mint) => (await transport.getAccount(mint))?.data ?? null,

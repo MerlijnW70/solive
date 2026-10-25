@@ -28,6 +28,7 @@ import { freshly, fromCache } from "./quote-cache.js";
 import { spend, type Stock, stockLeft } from "./inventory.js";
 import { type Hold, unheld } from "./holds.js";
 import { chainRent, type Rent } from "./rent.js";
+import { type IntentListing, listingOf } from "./listing.js";
 import { ALLOWANCE_SPENT, asked, type Floats, floatFits, INVENTORY_ONLY, type Low, liveStock, lowOf, ownIntent } from "./float.js";
 
 export { BACKOFF_MAX_INTERVALS, type Backoff, backingOff, backoff } from "./backoff.js";
@@ -53,6 +54,7 @@ export {
 export type Chain = {
   config(): Promise<Config>;
   intents(): Promise<{ address: Address; intent: Intent }[]>;
+  listing?(): Promise<IntentListing>;
   now(): Promise<bigint>;
   tokenProgram(mint: Address): Promise<Address>;
   exists(address: Address): Promise<boolean>;
@@ -362,7 +364,7 @@ export async function tick(o: SolverOptions): Promise<Report> {
   if (unfloated !== null) {
     throw new RangeError(unfloated);
   }
-  const [config, now, intents, rate] = await Promise.all([o.chain.config(), o.chain.now(), o.chain.intents(), chainRent(o.chain)]);
+  const [config, now, { intents, unreadable }, rate] = await Promise.all([o.chain.config(), o.chain.now(), listingOf(o.chain), chainRent(o.chain)]);
   const caps = { cost: o.maxSolCost ?? DEFAULT_MAX_SOL_COST, rent: o.maxRent ?? DEFAULT_MAX_RENT, rate };
   const mints = new Map<Address, Promise<Uint8Array | null>>();
   const mintData = (mint: Address): Promise<Uint8Array | null> => {
@@ -471,7 +473,7 @@ export async function tick(o: SolverOptions): Promise<Report> {
             : { kind: "sent", entry: { ...done.item.entry, signature: done.signature, ...(done.item.holds === undefined ? {} : { holds: done.item.holds }) } };
     }
   }
-  const report: Report = { filled: [], sent: [], skipped: [], failed: [] };
+  const report: Report = { filled: [], sent: [], skipped: unreadable.map(({ address, reason }) => ({ intent: address, reason })), failed: [] };
   for (const outcome of outcomes) {
     if (outcome?.kind === "skipped") {
       report.skipped.push(outcome.entry);

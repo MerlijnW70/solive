@@ -1,6 +1,6 @@
 import { type Address, createNoopSigner, getBase16Decoder, type TransactionSigner } from "@solana/kit";
 import { IntentStatus, Kind } from "@intent-engine/core";
-import { decodeParams, getIntentDecoder, getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS, isMemoUrl, MEMO_URL_RULE, saltMessage } from "@intent-engine/core/internal";
+import { decodeIntentAccount, decodeParams, getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS, isMemoUrl, MEMO_URL_RULE, saltMessage } from "@intent-engine/core/internal";
 import {
   type AnnounceInput,
   type AnnouncementList,
@@ -57,7 +57,7 @@ export async function proofEscrow(ctx: AgentContext, intent: Address, receipt: s
   const held =
     view === null || view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS || view.data.length !== getIntentSize() || !tag.every((b, i) => view.data[i] === b)
       ? null
-      : getIntentDecoder().decode(view.data);
+      : decodeIntentAccount(view.data);
   if (held === null) {
     const creator = view === null ? await creatorOf(ctx.transport, intent) : null;
     throw new AgentRefusal("NotFound", creator === null ? noEscrow(intent, receipt) : escrowClosed(intent, creator.owner, creator.nonce, receipt));

@@ -4,11 +4,12 @@ import {
   type BoardTerms,
   boardTerms,
   buildCloseLegacy,
+  decodeIntentAccount,
   findVaultPda,
-  getIntentDecoder,
   INTENT_DISCRIMINATOR,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   isCurrentAccount,
+  isUnreadableAccount,
   legacyStakeTo,
   lineIntent,
   migratesInPlace,
@@ -32,12 +33,15 @@ async function escrowOpen(transport: Transport, intent: Address, now: bigint): P
   if (view === null || view.owner !== INTENT_ENGINE_PROGRAM_ADDRESS || !isIntent(view.data)) {
     return false;
   }
-  const stored = storedVersion(view.data);
-  if (stored === null || stored.version < stored.layout.oldest || stored.version > stored.layout.version) {
-    return false;
+  try {
+    const held = decodeIntentAccount(view.data);
+    return held.status === IntentStatus.Open && now < held.expiresAt;
+  } catch (error) {
+    if (isUnreadableAccount(error)) {
+      return false;
+    }
+    throw error;
   }
-  const held = getIntentDecoder().decode(view.data);
-  return held.status === IntentStatus.Open && now < held.expiresAt;
 }
 
 async function stakeOf(transport: Transport, terms: BoardTerms | null): Promise<Address | null> {

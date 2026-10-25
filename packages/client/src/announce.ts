@@ -9,8 +9,8 @@ import {
   claimListAddress,
   CLAIMS_OPEN,
   claimSlot,
+  decodeClaimBoardAccount,
   deliverySecrets,
-  getClaimBoardDecoder,
   isMemoUrl,
   isSha256Hex,
   maxSealedUrl,
@@ -75,7 +75,7 @@ async function claimAccounts(transport: Transport, intent: Address, claims: numb
     return { board: false, claimList: false, accounts: {} };
   }
   const board = await claimBoardAddress(intent);
-  const stored = getClaimBoardDecoder().decode(await engineAccount(transport, board, CLAIM_BOARD_DISCRIMINATOR, "claim board"));
+  const stored = decodeClaimBoardAccount(await engineAccount(transport, board, CLAIM_BOARD_DISCRIMINATOR, "claim board"));
   const slot = claimSlot(stored, await chainTime(transport));
   if (slot.state === "held" && slot.worker !== worker) {
     throw new NotDeliverable(intent, "claim-held", `is claimed by ${slot.worker} until ${slot.until}, so only that worker can announce until then; nothing was sent`);

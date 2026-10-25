@@ -1,11 +1,10 @@
 import type { Address } from "@solana/kit";
 import { type AttestedResultParams, type Intent, IntentStatus, Kind, NotAnEngineAccount } from "@intent-engine/core";
 import {
-  checkAccountVersion,
   CLAIMS_OPEN,
   decodeEvent,
+  decodeIntentAccount,
   decodeParams,
-  getIntentDecoder,
   getIntentDiscriminatorBytes,
   getIntentSize,
   INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -43,7 +42,7 @@ export function intentFrom(data: Uint8Array): Intent {
   if (!tagged(data)) {
     throw new NotAnEngineAccount(null, "the data is not an intent account");
   }
-  return getIntentDecoder().decode(checkAccountVersion(data));
+  return decodeIntentAccount(data);
 }
 
 export function readableIntent(data: Uint8Array): Intent | null {

@@ -145,6 +145,20 @@ describe("monitor health checks", () => {
     expect(alerts).toEqual([waited(stale.address, 900), waited(lateAuction.address, 700)]);
   });
 
+  it("names an intent of a layout it cannot read and still checks the swaps beside it", async () => {
+    const newer = await swap(5n * TEST, BOUND + 300n, { version: INTENT_VERSION + 1 });
+    const stale = await swap(5n * TEST, BOUND + 300n);
+    serve([newer, stale]);
+    const { code, alerts } = await monitor(["--max-swap-wait", String(BOUND)]);
+    expect(code).toBe(EXIT_ALERTED);
+    const slot = Number(h.svm.getClock().slot);
+    const reason = `this intent account is of version ${INTENT_VERSION + 1}; this SDK reads intent versions 1 to ${INTENT_VERSION} only. Close it with intent-engine close-legacy`;
+    expect(alerts).toEqual([
+      { kind: "swap-wait", field: "intent", expected: "a readable intent", observed: reason, slot, intent: newer.address },
+      { kind: "swap-wait", field: "waited", expected: `filled within ${BOUND} seconds`, observed: "900 seconds", slot, intent: stale.address, waited: 900 },
+    ]);
+  });
+
   it("raises no swap alert for a fillable swap younger than the bound", async () => {
     serve([await swap(5n * TEST, BOUND - 1n), await auction(2_100n)]);
     expect(await monitor(["--max-swap-wait", String(BOUND)])).toEqual({ code: EXIT_OK, alerts: [] });
