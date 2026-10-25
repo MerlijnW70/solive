@@ -10,6 +10,10 @@ if [[ "$PWD" == /mnt/* ]]; then
     --exclude=/target --exclude=/.git --exclude=/verifiable --exclude=/.pnpm-store --exclude=/.mirror-lock \
     --exclude=/crates/intent-core/fuzz/target --exclude=/crates/intent-core/fuzz/corpus --exclude=/crates/intent-core/fuzz/artifacts \
     ./ "$mirror/"
+  if compgen -G "target/deploy/*.so" > /dev/null; then
+    mkdir -p "$mirror/target/deploy"
+    cp -p target/deploy/*.so "$mirror/target/deploy/"
+  fi
   cd "$mirror"
   lock="$(sha256sum pnpm-lock.yaml | cut -c1-64)"
   if [[ ! -d node_modules || "$(cat .mirror-lock 2>/dev/null)" != "$lock" ]]; then
