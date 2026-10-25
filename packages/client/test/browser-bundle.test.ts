@@ -1,14 +1,14 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { bundled, NODE_MODULE, PACKAGES, webOnly } from "./bundle.js";
+import { bundled, NODE_MODULE, PACKAGES, packageDir, webOnly } from "./bundle.js";
 
 const SMALL_BUDGET = 8_192;
 const IDL = JSON.parse(readFileSync(join(PACKAGES, "core", "generated", "idl.json"), "utf8")) as { metadata: { name: string } };
 
 const valuesOf = (name: string): string[] => [
   ...new Set(
-    readFileSync(join(PACKAGES, name, "api-report.txt"), "utf8")
+    readFileSync(join(packageDir(name), "api-report.txt"), "utf8")
       .split("\n")
       .map((line) => /^(\w+) ([\w$]+):/.exec(line))
       .filter((m): m is RegExpExecArray => m !== null && m[1] !== "type" && m[1] !== "interface")

@@ -261,5 +261,5 @@ export function returnFindings(entry: string, packages: Packages): ReturnFinding
 
 export const clientRoot = (here: string): { entry: string; packages: Packages } => ({
   entry: join(here, "..", "src", "index.ts"),
-  packages: { "@intent-engine/core": join(here, "..", "..", "core", "src", "index.ts") },
+  packages: { "@intent-engine/core": join(process.env["INTENT_ENGINE_ROOT"] ?? join(here, "..", "..", ".."), "packages", "core", "src", "index.ts") },
 });

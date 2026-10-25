@@ -9,7 +9,7 @@ import { createClient, SpecUnreadable, type SpecFetch } from "../src/index.js";
 import { MAX_SPEC_BYTES } from "../src/internal.js";
 import { NOT_PUBLIC_SPEC } from "../src/job-specs.js";
 import * as node from "../src/node.js";
-import { bundled, NODE_MODULE, PACKAGES, WEB_GLOBALS, webOnly } from "./bundle.js";
+import { bundled, CLIENT, NODE_MODULE, PACKAGES, packageDir, REPO, WEB_GLOBALS, webOnly } from "./bundle.js";
 import { BROWSER_SECTION } from "./doc-sections.js";
 import { graph } from "./import-graph.js";
 import { funded, world, type World } from "./svm.js";
@@ -18,7 +18,7 @@ vi.mock("node:dns/promises", () => ({
   lookup: async (host: string) => [{ address: host === "inside.example" ? "10.1.1.1" : "93.184.215.14", family: 4 }],
 }));
 
-const PAGE = readFileSync(join(PACKAGES, "..", "docs", "sdk-client.md"), "utf8");
+const PAGE = readFileSync(join(REPO, "docs", "sdk-client.md"), "utf8");
 const SECTION = BROWSER_SECTION.exec(PAGE)?.[0] ?? "";
 const SPEC = "the spec a browser reads\n";
 const REMOTE = "https://" + "rpc.example";
@@ -84,7 +84,7 @@ describe("the In a browser section of the client page", () => {
       ["core", "internal.ts"],
       ["client", "index.ts"],
     ] as const) {
-      expect([...graph(join(PACKAGES, name, "src", file)).specifiers].filter((specifier) => specifier.startsWith("node:"))).toEqual([]);
+      expect([...graph(join(packageDir(name), "src", file)).specifiers].filter((specifier) => specifier.startsWith("node:"))).toEqual([]);
     }
     const whole = await bundled('import * as client from "@intent-engine/client";\nimport * as core from "@intent-engine/core";\nglobalThis.both = [client, core];');
     const helper = await bundled('import { isSdkError } from "@intent-engine/client";\nglobalThis.helper = isSdkError;');
@@ -133,7 +133,7 @@ describe("the In a browser section of the client page", () => {
 
   it(CLAIMS.svm, () => {
     for (const file of ["svm.ts", "testing.ts"]) {
-      const reached = graph(join(PACKAGES, "client", "src", file));
+      const reached = graph(join(CLIENT, "src", file));
       expect(reached.packages.has("litesvm")).toBe(true);
       expect([...reached.specifiers].some((specifier) => specifier.startsWith("node:"))).toBe(true);
     }
@@ -217,20 +217,20 @@ describe("the In a browser section of the client page", () => {
 
   it(CLAIMS.internal, () => {
     for (const name of ["core", "client"]) {
-      const manifest = JSON.parse(readFileSync(join(PACKAGES, name, "package.json"), "utf8")) as { exports: Record<string, unknown> };
+      const manifest = JSON.parse(readFileSync(join(packageDir(name), "package.json"), "utf8")) as { exports: Record<string, unknown> };
       expect(manifest.exports["./internal"]).toBeDefined();
     }
-    expect(readFileSync(join(PACKAGES, "..", "scripts", "api-report.mjs"), "utf8")).toContain('const ENTRY = "dist/src/index.d.ts";');
+    expect(readFileSync(join(REPO, "scripts", "api-report.mjs"), "utf8")).toContain('const ENTRY = "dist/src/index.d.ts";');
     for (const [name, entries] of [
       ["cli", ["@intent-engine/client/internal", "@intent-engine/core/internal"]],
       ["solver", ["@intent-engine/core/internal"]],
     ] as const) {
-      const reached = graph(join(PACKAGES, name, "src", name === "cli" ? "main.ts" : "index.ts"));
+      const reached = graph(join(packageDir(name), "src", name === "cli" ? "main.ts" : "index.ts"));
       for (const entry of entries) {
         expect(reached.specifiers.has(entry)).toBe(true);
       }
     }
-    expect(files(graph(join(PACKAGES, "client", "src", "index.ts")).modules)).not.toContain("internal.ts");
+    expect(files(graph(join(CLIENT, "src", "index.ts")).modules)).not.toContain("internal.ts");
   });
 
   it(ELSEWHERE.handed, async () => {

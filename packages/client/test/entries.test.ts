@@ -1,10 +1,9 @@
 import { readFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { packageDir } from "./bundle.js";
 import { graph } from "./import-graph.js";
 
-const PACKAGES = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const KIT = "@solana/kit";
 const WEB_PACKAGES: Readonly<Record<string, readonly string[]>> = {
   core: [KIT, "@solana-program/token"],
@@ -20,8 +19,8 @@ type Manifest = {
   devDependencies: Record<string, string>;
 };
 
-const manifestOf = (name: string): Manifest => JSON.parse(readFileSync(join(PACKAGES, name, "package.json"), "utf8")) as Manifest;
-const src = (name: string, file: string) => join(PACKAGES, name, "src", file);
+const manifestOf = (name: string): Manifest => JSON.parse(readFileSync(join(packageDir(name), "package.json"), "utf8")) as Manifest;
+const src = (name: string, file: string) => join(packageDir(name), "src", file);
 const entry = (file: string): Entry => ({ types: `./dist/src/${file}.d.ts`, import: `./dist/src/${file}.js`, default: `./dist/src/${file}.js` });
 
 describe("the package entry points", () => {

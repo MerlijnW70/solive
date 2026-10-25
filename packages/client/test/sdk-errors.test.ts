@@ -1,6 +1,5 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { Address, Signature } from "@solana/kit";
 import { describe, expect, it } from "vitest";
 import * as core from "@intent-engine/core";
@@ -61,6 +60,7 @@ import {
   VoteRejected,
 } from "../src/index.js";
 import { failure } from "../src/internal.js";
+import { packageDir } from "./bundle.js";
 
 const WALLET = "11111111111111111111111111111111" as Address;
 const SIG = "1".repeat(64) as Signature;
@@ -174,7 +174,7 @@ describe("one typed error model", () => {
   });
 });
 
-const SOURCES = ["core", "client"].map((name) => fileURLToPath(new URL(`../../${name}/src`, import.meta.url)));
+const SOURCES = ["core", "client"].map((name) => join(packageDir(name), "src"));
 const BARE = /\bnew (Error|RangeError|TypeError|SyntaxError)\(/;
 const RAW_CLASS = /\bextends (Error|RangeError|TypeError)\b/;
 
