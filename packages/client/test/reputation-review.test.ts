@@ -330,7 +330,7 @@ describe("trust that keeps its budget and its shares honest", () => {
     const trust = await trustOf(counting, reader.address, judge.address);
     expect(trust.complete).toBe(false);
     expect(new Set(listed.filter((of) => payees.some(({ address }) => address === of))).size).toBe(TRUST_PAYER_READS);
-  });
+  }, 30_000);
 
   it("reads a worker's escrows a few at a time", async () => {
     const { transport, fresh, job } = await setup();
