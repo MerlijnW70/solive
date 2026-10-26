@@ -9,6 +9,8 @@ import { VERSION } from "../src/version.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const WORKFLOW = readFileSync(join(ROOT, ".github/workflows/monitor.yml"), "utf8");
+const FAUCET_WORKFLOW = readFileSync(join(ROOT, ".github/workflows/faucet.yml"), "utf8");
+const runsPerHour = (workflow: string) => (/^ {4}- cron: "([\d,]+) \* \* \* \*"$/m.exec(workflow)?.[1] ?? "").split(",").filter((m) => m !== "").length;
 const BASELINE = JSON.parse(readFileSync(join(ROOT, "monitoring/devnet.json"), "utf8")) as {
   program: string;
   upgradeAuthority: string;
@@ -56,6 +58,10 @@ describe("the hosted monitor", () => {
     expect([...watch.minBalance.keys()]).toEqual([FILLER_WALLET, FAUCET_WALLET]);
     const faucet = script("faucet.sh");
     expect(watch.minBalance.get(FAUCET_WALLET)).toBeGreaterThan(BigInt(assigned(faucet, "amount") + assigned(faucet, "reserve")));
+    expect(runsPerHour(WORKFLOW)).toBe(1);
+    const faucetRuns = runsPerHour(FAUCET_WORKFLOW) / runsPerHour(WORKFLOW);
+    expect(faucetRuns).toBeGreaterThan(1);
+    expect(watch.minBalance.get(FAUCET_WALLET)).toBeGreaterThan(BigInt(assigned(faucet, "reserve") + assigned(faucet, "amount") * faucetRuns));
     expect(watch.minBalance.get(FILLER_WALLET)).toBeGreaterThanOrEqual(LAMPORTS_PER_SOL);
     const fillerInterval = Number(/^interval="\$\{FILLER_INTERVAL:-(\d+)\}"$/m.exec(script("filler.sh"))?.[1]);
     expect(fillerInterval).toBeGreaterThan(0);

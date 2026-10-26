@@ -140,7 +140,9 @@ export type Command =
   | (Keyed & { name: "signed-submit"; yes: boolean; file: string })
   | { name: "help"; verb: string | undefined }
   | { name: "version" }
-  | { name: "add-to"; app: App; limits: string[] }
+  | { name: "add-to"; app: App; limits: string[]; allowHttpRegistry: boolean }
+  | { name: "new-wallet"; out: string }
+  | (Keyed & { name: "send-sol"; yes: boolean; to: Address; lamports: bigint })
   | (Remote & { name: "follow"; limit: number; interval: number })
   | (Remote & { name: "treasury"; mints: Address[] | null; create: boolean; keypair: string | undefined; yes: boolean })
   | (Remote & { name: "solver-table"; solver: Address; mints: Address[] })

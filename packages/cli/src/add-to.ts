@@ -1,5 +1,6 @@
 import { PRODUCT_SLUG } from "@intent-engine/core/internal";
 import type { Runtime } from "./runtime.js";
+import { httpRefused, npmRegistry, registryWarning } from "./npm-registry.js";
 
 export const CLI_PACKAGE = "@intent-engine/cli";
 
@@ -100,8 +101,15 @@ async function setCodexTimeout(runtime: Runtime): Promise<object> {
   return { config: path, startup_timeout_sec: CODEX_STARTUP_TIMEOUT, was: changed.was };
 }
 
-export async function addTo(app: App, limits: readonly string[], runtime: Runtime): Promise<object> {
+export class HttpRegistryRefused extends Error {}
+
+export async function addTo(app: App, limits: readonly string[], allowHttpRegistry: boolean, runtime: Runtime): Promise<object> {
   const target = APPS[app];
+  const registry = await npmRegistry(runtime.launch);
+  if (registry.read === "http" && !allowHttpRegistry) {
+    throw new HttpRegistryRefused(httpRefused(registry.registry));
+  }
+  const warning = registryWarning(registry);
   const server = serverCommand(runtime.platform, limits);
   const args = ["mcp", "add", ...(app === CLAUDE ? CLAUDE_SCOPE : []), PRODUCT_SLUG, "--", ...server];
   const launched = await runtime.launch(app, args);
@@ -121,6 +129,7 @@ export async function addTo(app: App, limits: readonly string[], runtime: Runtim
     ran: [app, ...args].join(" "),
     server: server.join(" "),
     ...timeout,
+    ...(warning === undefined ? {} : { warnings: [warning] }),
     next: `restart ${target.name}, then ask it to set you up and make your first swap`,
   };
 }

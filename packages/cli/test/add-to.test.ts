@@ -6,6 +6,7 @@ import { ADD_TO_NEEDS_APP, CLUSTERS, parse, usageOf } from "../src/args.js";
 import { CLAUDE_MISSING, CLAUDE_SCOPE, CLI_PACKAGE, claudeExists, claudeFailed } from "../src/add-to.js";
 import { invocation, launch, notFound, WINDOWS_NOT_FOUND, type Launched } from "../src/launch.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main, nodeRuntime } from "../src/main.js";
+import { NPM_REGISTRY } from "../src/npm-registry.js";
 import { runtime } from "./harness.js";
 
 const manifest = JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8")) as { name: string };
@@ -19,6 +20,9 @@ async function addTo(argv: string[], platform: string, reply: Launched | null) {
     ...runtime({}),
     platform,
     launch: async (program: string, args: readonly string[]) => {
+      if (program === "npm") {
+        return { code: 0, output: `${NPM_REGISTRY}\n` };
+      }
       launched.push({ program, args });
       return reply;
     },
@@ -90,7 +94,7 @@ describe("add-to claude", () => {
     expect(limited.err).toBe(
       `${PRODUCT_SLUG} is already added to Claude Code for your user, so nothing was changed; to replace it, run claude mcp remove --scope user ${PRODUCT_SLUG}, then npx -y ${manifest.name} add-to claude --wallet-per-trade SOL=0.1`,
     );
-    expect(parse(["add-to", "claude", "--wallet-per-trade", "SOL=0.1"], {})).toEqual({ name: "add-to", app: "claude", limits: ["--wallet-per-trade", "SOL=0.1"] });
+    expect(parse(["add-to", "claude", "--wallet-per-trade", "SOL=0.1"], {})).toEqual({ name: "add-to", app: "claude", limits: ["--wallet-per-trade", "SOL=0.1"], allowHttpRegistry: false });
   });
 
   it("registers the server for the user, the scope claude mcp add and remove both take", async () => {
@@ -131,8 +135,8 @@ describe("add-to claude", () => {
 
   it("describes itself in help", () => {
     expect(usageOf("add-to")).toEqual({
-      usage: "add-to claude|codex [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>]",
-      options: ["--wallet-per-trade", "--wallet-per-hour", "--output", "--help", "--debug"],
+      usage: "add-to claude|codex [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--allow-http-registry]",
+      options: ["--wallet-per-trade", "--wallet-per-hour", "--allow-http-registry", "--output", "--help", "--debug"],
     });
   });
 });

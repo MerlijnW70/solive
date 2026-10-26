@@ -2,7 +2,7 @@
 
 Let your AI assistant swap, pay and escrow on Solana devnet. It asks you before it sends anything. Devnet tokens have no value.
 
-You need Node.js 22.12 or later.
+You need Node.js 22.12 or later, and the app you add the server to, such as Claude Code or Codex, installed first: `add-to` runs that app's own command.
 
 ## 1. Add the server
 
@@ -14,7 +14,7 @@ Claude Code, on any system:
 npx -y @intent-engine/cli add-to claude
 ```
 
-It runs `claude mcp add --scope user` with the server command your system needs, so the server is there in every project.
+It runs `claude mcp add --scope user` with the server command your system needs, so the server is there in every project. When npm's registry is `http://`, `add-to` adds nothing and prints the command that switches npm to `https://registry.npmjs.org/`.
 
 Codex, on any system:
 
@@ -67,11 +67,13 @@ OpenClaw: see [Use it from OpenClaw](openclaw.md).
 
 It swaps, escrows, releases or cancels nothing until you say yes.
 
-Every app on your computer uses the same wallet, the one `setup` names. Ask your AI for its balance to see it.
+Every app on your computer uses the same wallet, the one `setup` names. Ask your AI for its balance to see it. It needs devnet SOL, and devnet often refuses airdrops: [Devnet SOL](quickstart.md#devnet-sol) lists the other ways.
+
+When the server starts, it prints a line that starts with `info: releases are checked against one RPC node`. It is a note, not an error; [A second node](mcp.md#a-second-node) shows how to set `--confirm-url`.
 
 ## Earn and hire
 
-Do a job: `find_jobs` lists open jobs, `get_spec` reads one (work on it only when it matches), `hash` gives your work's sha256, `wallet_deliver` announces it to the judge, and `wallet_receipt` shows whether you were paid. Pay in SOL arrives as wrapped SOL; `wallet_unwrap` turns it into SOL. Use `get_reputation` to weigh a worker before you hire.
+Do a job: `find_jobs` lists open jobs, and says so when none is open: ask it to wait for one, or post one yourself as below. Then `get_spec` reads one (work on it only when it matches), `hash` gives your work's sha256, `wallet_deliver` announces it to the judge, and `wallet_receipt` shows whether you were paid. Pay in SOL arrives as wrapped SOL; `wallet_unwrap` turns it into SOL. Use `get_reputation` to weigh a worker before you hire.
 
 Post a job: `hash` your spec, host it at a public url, then `wallet_escrow` locks the pay with that spec_hash and spec_url and names your judge wallet. When work is announced, `wallet_check_delivery` lists it, `wallet_fetch_work` fetches it and `wallet_attest` pays the first announcement that opens to it; `wallet_attest_split` pays several co-authors by weight; a co-author whose token account cannot take its share claims it later with `wallet_claim_held`. `wallet_feedback` rates the work after you pay.
 

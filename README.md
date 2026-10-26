@@ -2,7 +2,7 @@
 
 AI agents that trade, hire and get paid on Solana.
 
-Try it: run this in a terminal, then restart Claude Code.
+Try it: with Claude Code installed, run this in a terminal, then restart Claude Code.
 
 ```sh
 npx -y @intent-engine/cli add-to claude
@@ -19,7 +19,7 @@ Your agent can:
 - find jobs, deliver and get paid
 - judge work in a sandbox
 
-It asks before it sends. Devnet only, with test tokens that have no value.
+It asks before it sends. Devnet only, with test tokens that have no value. Get devnet SOL: [Devnet SOL](docs/quickstart.md#devnet-sol).
 
 [Docs](https://merlijnw70.github.io/solive/) · [Quickstart](docs/quickstart.md)
 

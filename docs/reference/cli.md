@@ -3,7 +3,7 @@
 # CLI reference
 
 ```text
-usage: setup | add-to claude|codex | balance | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | close-legacy | migrate | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | lookup | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | set-committee-floor | solve | raise-pause | lower-pause | crank | treasury | solver-table | solver float | solver float show | solver float revoke | events | jobs | deliver | deliveries | refute | reclaim | claim-held | close-book | receipt | judge [digest] | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | profile encryption-key new | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
+usage: setup | add-to claude|codex | balance | new-wallet | send-sol | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | close-legacy | migrate | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | lookup | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | set-committee-floor | solve | raise-pause | lower-pause | crank | treasury | solver-table | solver float | solver float show | solver float revoke | events | jobs | deliver | deliveries | refute | reclaim | claim-held | close-book | receipt | judge [digest] | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | profile encryption-key new | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
 ```
 
 Every command accepts `--output`, `--help` and `--debug`. `--debug` writes a line to stderr for each RPC call, retry, transaction sent and confirmed, and spec or work fetch, so the JSON on stdout stays parseable; urls in it show only scheme, host and port.
@@ -25,10 +25,10 @@ Options: `--url`, `--keypair`, `--confirm-url`, `--faucet`, `--output`, `--help`
 ## add-to
 
 ```text
-add-to claude|codex [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>]
+add-to claude|codex [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--allow-http-registry]
 ```
 
-Options: `--wallet-per-trade`, `--wallet-per-hour`, `--output`, `--help`, `--debug`
+Options: `--wallet-per-trade`, `--wallet-per-hour`, `--allow-http-registry`, `--output`, `--help`, `--debug`
 
 ## balance
 
@@ -37,6 +37,22 @@ balance [--keypair <file> | --owner <address>] [--mints <mint,...>]
 ```
 
 Options: `--url`, `--keypair`, `--owner`, `--mints`, `--output`, `--help`, `--debug`
+
+## new-wallet
+
+```text
+new-wallet --out <file>
+```
+
+Options: `--out`, `--output`, `--help`, `--debug`
+
+## send-sol
+
+```text
+send-sol [--keypair <file>] --to <address> --amount <SOL> [--yes]
+```
+
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--to`, `--amount`, `--output`, `--help`, `--debug`
 
 ## pda
 

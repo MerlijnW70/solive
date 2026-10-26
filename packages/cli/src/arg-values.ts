@@ -302,6 +302,22 @@ export function parseAddress(text: string, key: string): Address {
 export const u64 = (values: Values, key: StringKey) => parseU64(required(values, key), key);
 export const key = (values: Values, name: StringKey) => parseAddress(required(values, name), name);
 
+export const SOL_AMOUNT = "--amount must be an amount of SOL above 0 with at most 9 decimal places, like 0.02";
+
+export function solLamports(values: Values, name: StringKey): bigint {
+  const text = required(values, name);
+  let lamports: bigint;
+  try {
+    lamports = TOKEN_AMOUNT_PATTERN.test(text) ? parseAmount(text, 9) : 0n;
+  } catch {
+    lamports = 0n;
+  }
+  if (lamports <= 0n || lamports > U64_MAX) {
+    throw new UsageError(SOL_AMOUNT);
+  }
+  return lamports;
+}
+
 export function amountOf(values: Values, name: StringKey): string | Tokens {
   const side = TOKEN_SIDES[name];
   if (values.units === "raw" || side === undefined) {

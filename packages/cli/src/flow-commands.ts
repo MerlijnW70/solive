@@ -15,6 +15,7 @@ import { listIntents } from "./agent/read.js";
 import { prepareSignedIntent, previewSignedIntent, submitSignedIntent } from "./agent/signed.js";
 import { approval, ask, finish, FlowRefused, hasTokens, inRaw, NOT_SENT, perform, signMessage } from "./flows.js";
 import { RELAY_MAX_TTL } from "./command-builders.js";
+import { unfundedPreview, unfundedRefused } from "./wallet.js";
 
 const SIGNED_FILE_VERSION = 1;
 
@@ -72,7 +73,15 @@ export async function flowCommand(command: FlowCommand, runtime: Runtime, transp
           if (typeof specUrl === "string" && (await plainHttpOnPublic(reading, specUrl))) {
             throw new FlowRefused(`--spec-url ${specUrl} ${PLAIN_HTTP_ON_PUBLIC}`);
           }
-          return perform(prepareCreate, ctx, { owner: signer.address, ...raw }, signer, command.yes);
+          const held = (await reading.getAccount(signer.address))?.lamports ?? 0n;
+          if (held > 0n) {
+            return perform(prepareCreate, ctx, { owner: signer.address, ...raw }, signer, command.yes);
+          }
+          if (command.yes) {
+            throw new FlowRefused(unfundedRefused(signer.address, command.url));
+          }
+          const shown = await perform(prepareCreate, { ...ctx, skipSimulation: true }, { owner: signer.address, ...raw }, signer, false);
+          return { ...shown, simulated: false, next: unfundedPreview(signer.address, command.url) };
         }
         case "mandate-grant":
           return perform(prepareMandate, ctx, { owner: signer.address, ...raw }, signer, command.yes);

@@ -78,6 +78,7 @@ export async function prepare(
   instructions: readonly Instruction[],
   feePayer: Address,
   tables?: LookupTables,
+  simulate = true,
 ): Promise<Prepared> {
   const budgeted = await transport.budget(withoutDevices(instructions), feePayer, tables);
   const latest = await transport.latestBlockhash();
@@ -92,7 +93,7 @@ export async function prepare(
   );
   const compiled = await partiallySignTransactionMessageWithSigners(message);
   const transaction = getBase64EncodedWireTransaction(compiled);
-  const simulation = await transport.simulate(transaction);
+  const simulation = simulate ? await transport.simulate(transaction) : { err: null, unitsConsumed: null, logs: [] };
   if (simulation.err !== null) {
     throw new SimulationFailed(simulationProblem(simulation.err, simulation.logs));
   }

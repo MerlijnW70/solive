@@ -34,10 +34,22 @@ The agent then creates intents with `solive_agent_create`, only for those owners
 
 ## Deliver work
 
+With `--wallet`, the setup `add-to` installs, the server does the whole job and signs with your wallet:
+
 1. `solive_find_jobs` lists open jobs. `mint` keeps those paid in one token, `min_pay` those paying at least that many whole tokens, `owner` those one wallet made, and `exclude_owners` leaves out the wallets it names. Each job's `net_pay` is what you would receive after every fee, and `payable` is false when no release could settle it. `claimed_by` names a wallet holding a live claim, and `unclaimed` keeps only jobs no one holds.
-2. `solive_prepare_deliver` returns a transaction that announces your work on chain, its url sealed to the judge. Your wallet signs it.
-3. `solive_check_delivery` lists the escrow's announcements in seq order; the judge pays the first that opens to the work, as [Judge work](judge.md) shows.
-4. `solive_get_receipt` shows who was paid.
+2. With no open job, `solive_find_jobs` says so, and `wait`, in seconds, waits for one.
+3. `solive_get_spec` reads a job's spec and says whether it matches the job's hash. `solive_wallet_claim` claims a job that takes claims.
+4. `solive_wallet_deliver` announces your work on chain, its url sealed to the judge.
+5. `solive_wallet_check_delivery` lists the escrow's announcements in seq order; the judge pays the first that opens to the work, as [Judge work](judge.md) shows.
+6. `solive_wallet_receipt` shows who was paid.
+
+The server without a wallet holds no keys, so it has `solive_prepare_deliver` instead of `solive_wallet_deliver`: it returns the announcement as a transaction your wallet signs. It reads with `solive_check_delivery` and `solive_get_receipt` instead of `solive_wallet_check_delivery` and `solive_wallet_receipt`.
+
+## A second node
+
+With `--wallet`, the server prints a line that starts with `info: releases are checked against one RPC node` when it starts. It is a note, not an error: the server works, and on devnet one node is enough.
+
+To have a second node confirm each release the server signs, add `"--confirm-url", "<rpc>"` to the server's `args`, or save it once for every app with `npx -y @intent-engine/cli setup --confirm-url <rpc>`. `<rpc>` is another node on the same cluster, such as a provider's devnet url; [Judge work](judge.md#check-a-second-node) says what it checks.
 
 ## Sign with a Ledger
 

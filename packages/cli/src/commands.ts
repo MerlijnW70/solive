@@ -22,7 +22,7 @@ import { relayOf } from "./agent/relay.js";
 import { type Command, usageOf } from "./args.js";
 import { VERSION } from "./version.js";
 import { balances, CLI_SMALL_START, CLI_START, defaultMints, setup } from "./wallet.js";
-import { FlowRefused } from "./flows.js";
+import { FlowRefused, ownOrder } from "./flows.js";
 import { describeIntent, quoteOf, sameBytes } from "./accounts.js";
 import { closing, crank, expiring, holdsShare, sharesHeld } from "./crank.js";
 import { withPriority } from "./compute.js";
@@ -39,6 +39,8 @@ import { engineEvents } from "./event-feed.js";
 import { SOLVER_TABLE_NEXT, solverOptions } from "./solve-commands.js";
 import { flowCommand, signatureLookup } from "./flow-commands.js";
 import { addTo } from "./add-to.js";
+import { npmRegistry, plainRegistry } from "./npm-registry.js";
+import { newWallet, sendSol } from "./wallet-commands.js";
 import { transactionSigner } from "./ledger-keys.js";
 import { judgeDigest } from "./judge-digest.js";
 import { floatCommand } from "./float-commands.js";
@@ -74,13 +76,16 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     return { version: VERSION };
   }
   if (command.name === "add-to") {
-    return addTo(command.app, command.limits, runtime);
+    return addTo(command.app, command.limits, command.allowHttpRegistry, runtime);
   }
   if (command.name === "seal" || command.name === "unseal") {
     return sealing(command, runtime);
   }
   if (command.name === "profile-encryption-key") {
     return newEncryptionKey(command.out, runtime);
+  }
+  if (command.name === "new-wallet") {
+    return newWallet(command.out, runtime);
   }
   if (command.name === "hash") {
     return { artifact: command.artifact, sha256: await artifactSha256(command.artifact) };
@@ -131,18 +136,23 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       await runtime.serve(agentServer({ transport, relay, agent, claims: claimsOf(), url: command.url, fetch: runtime.specFetch, lookup: runtime.lookup, clock: { sleep: runtime.sleep, now: runtime.now }, ...wallet, ...confirm }, served));
       return null;
     }
-    case "setup":
-      return setup(transport, runtime, command.url, command.keypair, false, command.confirmUrl, command.confirmUrl === undefined ? undefined : runtime.transport(command.confirmUrl), CLI_START, CLI_SMALL_START, {
+    case "setup": {
+      const made = await setup(transport, runtime, command.url, command.keypair, false, command.confirmUrl, command.confirmUrl === undefined ? undefined : runtime.transport(command.confirmUrl), CLI_START, CLI_SMALL_START, {
         file: command.faucet,
         launch: runtime.launch,
         sleep: (seconds) => runtime.sleep(seconds),
         now: runtime.now,
         note: (text) => process.stderr.write(`${text}\n`),
       });
+      const registry = await npmRegistry(runtime.launch);
+      return registry.read === "http" ? { ...made, warnings: [plainRegistry(registry.registry)] } : made;
+    }
     case "balance": {
       const owner = command.owner ?? (await runtime.loadSigner(command.keypair ?? "")).address;
       return balances(transport, owner, command.mints ?? defaultMints(command.url));
     }
+    case "send-sol":
+      return sendSol(command, runtime, transport);
     case "domain":
       return { genesisHash: await transport.genesisHash(), domain: await clusterDomain(transport) };
     case "show-config": {
@@ -160,7 +170,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     }
     case "cancel": {
       const owner = await transactionSigner(runtime, command.keypair);
-      const { address, intent } = await loadIntent(transport, owner.address, command.nonce);
+      const { address, intent } = await ownOrder(transport, owner.address, command.nonce);
       const ref = { nonce: command.nonce, inputMint: intent.inputMint, tokenProgram: await tokenProgramOf(transport, intent.inputMint), capped: intent.capped };
       const refund = await tokenAccountIfMissing(transport, owner, owner.address, intent.inputMint, ref.tokenProgram);
       const claims = await cancelClaims(transport, address, intent.claims);

@@ -42,7 +42,7 @@ export const PREVIEW_ONLY = "nothing was sent; pass --yes to sign and send it";
 const PREVIEWED = new Set(["cancel", "expire", "close"]);
 
 export const ONE_NODE =
-  "this reads one RPC node; set the confirm-url setting with setup --confirm-url <cluster>, or pass --confirm-url, to check a second node before a release";
+  "info: releases are checked against one RPC node, which is enough on devnet; to check each release on a second node too, run intent-engine setup --confirm-url <rpc> once, or pass --confirm-url <rpc>";
 
 export const readsOneNode = (command: Command): boolean =>
   (command.name === "judge" || command.name === "committee-release" || (command.name === "mcp" && command.wallet !== null)) && command.confirmUrl === undefined;
@@ -212,7 +212,7 @@ export function nodeRuntime(clock: () => number = Date.now, pipes: Pipes = proce
       await server.close();
     },
     platform: process.platform,
-    launch: (program, args) => launch(program, args),
+    launch: (program, args, timeoutMs) => launch(program, args, process.platform, timeoutMs),
     ledger: openUsb,
   };
 }

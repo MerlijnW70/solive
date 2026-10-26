@@ -47,11 +47,19 @@ export const holdsEnough = (sol: string, start: string) => `your wallet holds ${
 export const refusedEnough = (sol: string, start: string) => `devnet refused more free SOL, but your wallet holds ${sol} SOL, enough to start; ${start}`;
 export const FAUCET_FIELD = "address";
 export const faucetLink = (address: string) => FAUCET + "&" + FAUCET_FIELD + "=" + encodeURIComponent(address);
-export const FAUCET_STEPS = `the faucet request needs a browser and a GitHub account, and ${FAUCET_SCHEDULE}; open this link, submit the form, and run setup again once SOL arrives: `;
-export const airdropRefused = (address: string, hint = "") => "your wallet holds no SOL yet and the airdrop was refused; " + hint + FAUCET_STEPS + faucetLink(address);
+export const OTHER_FAUCETS = `or ask another devnet faucet, such as ${PUBLIC_FAUCET}, which sends at once when it accepts`;
+export const fundingSteps = (address: string) =>
+  `open ${faucetLink(address)} to file a faucet request in a browser, as a public GitHub issue that needs a GitHub account; ${FAUCET_SCHEDULE}; ${OTHER_FAUCETS}`;
+export const SETUP_AGAIN = "; run setup again once SOL arrives";
+export const airdropRefused = (address: string, hint = "") => "your wallet holds no SOL yet and devnet refused the airdrop, as it often does; " + hint + fundingSteps(address) + SETUP_AGAIN;
+const getSol = (address: string, url: string) => (url === DEVNET_URL ? `get devnet SOL: ${GH_HINT}${fundingSteps(address)}` : `send SOL to ${address}`);
+export const unfundedPreview = (address: string, url: string) =>
+  `nothing was sent: ${address} holds no SOL, so this preview could not be simulated; ${getSol(address, url)}; then run this again with --yes`;
+export const unfundedRefused = (address: string, url: string) =>
+  `nothing was sent: ${address} holds no SOL to pay the network fee; ${getSol(address, url)}; then run this again`;
 export const SEND_SOL = "send SOL to this address, then run setup again";
 export const heldRefused = (sol: string, address: string, hint = "") =>
-  `your wallet holds ${sol} SOL, less than the ${solOf(ENOUGH_TO_START)} SOL setup counts as enough to start, and devnet refused to add more; ` + hint + FAUCET_STEPS + faucetLink(address);
+  `your wallet holds ${sol} SOL, less than the ${solOf(ENOUGH_TO_START)} SOL setup counts as enough to start, and devnet refused to add more; ` + hint + fundingSteps(address) + SETUP_AGAIN;
 
 export type FaucetRun = { file: boolean; launch: Launch; sleep(seconds: number): Promise<boolean>; now(): bigint; note(text: string): void };
 

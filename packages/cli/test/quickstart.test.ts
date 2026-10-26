@@ -12,8 +12,10 @@ import {
   TOKEN_PROGRAM_ADDRESS,
 } from "@solana-program/token";
 import { beforeEach, describe, expect, it } from "vitest";
-import { ENV_KEYPAIR, ENV_URL, WATCH_INTERVAL } from "../src/args.js";
-import { AIRDROP, CLI_START, defaultWallet, holdsEnough } from "../src/wallet.js";
+import { ENV_KEYPAIR, ENV_URL, parse, WATCH_INTERVAL } from "../src/args.js";
+import { AIRDROP, CLI_START, defaultWallet, holdsEnough, PUBLIC_FAUCET } from "../src/wallet.js";
+import { FAUCET_INTERVAL_MINUTES, FAUCET_SCHEDULE, FAUCET_WAIT_MINUTES, faucetWaiting } from "../src/faucet.js";
+import { VERSION } from "../src/version.js";
 import { REVOKE_CANCELS } from "../src/agent/mandate.js";
 import { ata, balance, cli, funded, h, send, type World, world } from "./harness.js";
 
@@ -89,14 +91,45 @@ describe("the quickstart", () => {
     w = await world();
   });
 
-  it("asks for the Node version the workspace declares and installs the published cli", () => {
+  it("asks for the Node version the workspace declares, leads with npx and keeps the global install as an option", async () => {
     const root = JSON.parse(read("package.json")) as { engines: { node: string } };
     const [, major, minor] = /^>=(\d+)\.(\d+)\.0$/.exec(root.engines.node) ?? [];
     expect(PAGE).toContain("You need [Node.js](https://nodejs.org) " + `${major}.${minor} or later.`);
-    const cli = JSON.parse(read("packages/cli/package.json")) as { name: string; bin: Record<string, string> };
-    expect(Object.keys(cli.bin)).toEqual(["intent-engine"]);
-    expect(setup).toEqual([`npm install -g ${cli.name}`]);
+    const manifest = JSON.parse(read("packages/cli/package.json")) as { name: string; bin: Record<string, string> };
+    expect(Object.keys(manifest.bin)).toEqual(["intent-engine"]);
+    const npx = `npx -y ${manifest.name}`;
+    expect(setup).toEqual([
+      `${npx} version`,
+      `alias intent-engine='${npx}'`,
+      `npm install -g ${manifest.name}`,
+      "npm config set prefix ~/.npm-global",
+      'export PATH="$HOME/.npm-global/bin:$PATH"',
+      `npm install -g ${manifest.name}`,
+    ]);
+    expect(PAGE.indexOf("```sh\n" + `${npx} version`)).toBeLessThan(PAGE.indexOf(`npm install -g ${manifest.name}`));
+    expect(PAGE).toContain("```powershell\nfunction intent-engine { " + npx + " @args }\n```");
+    expect((await cli(["version"], {})).json()).toEqual({ version: VERSION });
+    expect(PAGE).toContain("If the install fails with `EACCES`, install Node.js with a version manager such as nvm, or give npm a folder in your home directory");
     expect(PAGE).toContain(`asks devnet for ${AIRDROP / LAMPORTS_PER_SOL} SOL`);
+  });
+
+  it("says before the first command that devnet often refuses airdrops, and lists every other way to get SOL with how long it takes", () => {
+    const funding = PAGE.slice(PAGE.indexOf("## Devnet SOL"), PAGE.indexOf("## 1. Run the CLI"));
+    expect(PAGE.indexOf("## Devnet SOL")).toBeLessThan(PAGE.indexOf("```"));
+    expect(funding).toContain("devnet often refuses");
+    expect(funding).toContain("`intent-engine setup --faucet`, with the [GitHub CLI](https://cli.github.com) signed in");
+    expect(funding).toContain("The faucet answers several times an hour, and `setup` prints how many minutes it waits at most.");
+    expect(60 / FAUCET_INTERVAL_MINUTES).toBeGreaterThan(1);
+    expect(faucetWaiting("x")).toContain(`waiting up to ${FAUCET_WAIT_MINUTES} minutes`);
+    expect(FAUCET_SCHEDULE).toContain(`SOL arrives within ${FAUCET_WAIT_MINUTES} minutes`);
+    expect(funding).toContain("as a public GitHub issue. It needs a GitHub account, and the same faucet answers it, so the SOL takes as long.");
+    expect(funding).toContain(`[faucet.solana.com](${PUBLIC_FAUCET})`);
+    expect(funding).toContain("sends at once when it accepts the request");
+    const script = read("scripts/faucet.sh");
+    expect(script).toContain("amount_sol=0.5\n");
+    expect(script).toContain("daily=");
+    expect(funding).toContain("This project's faucet sends 0.5 SOL, once a day per GitHub account.");
+    expect(parse(["setup", "--faucet"], {})).toMatchObject({ name: "setup", faucet: true });
   });
 
   it("names the token and rate the devnet filler runs with", () => {

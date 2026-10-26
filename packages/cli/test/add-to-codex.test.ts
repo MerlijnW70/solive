@@ -47,6 +47,9 @@ async function addTo(argv: string[], platform: string, reply: Launched | null, c
     env,
     platform,
     launch: async (program: string, args: readonly string[]) => {
+      if (program === "npm") {
+        return { code: 0, output: "https://registry.npmjs.org/\n" };
+      }
       launched.push({ program, args });
       if (codexWrites !== undefined) {
         writeConfig(codexWrites);
@@ -174,7 +177,7 @@ describe("add-to codex", () => {
   });
 
   it("is named in help and in the refusal for an unknown app", () => {
-    expect(parse(["add-to", "codex"], {})).toEqual({ name: "add-to", app: "codex", limits: [] });
+    expect(parse(["add-to", "codex"], {})).toEqual({ name: "add-to", app: "codex", limits: [], allowHttpRegistry: false });
     expect(usageOf("add-to").usage.startsWith("add-to claude|codex ")).toBe(true);
     expect(ADD_TO_NEEDS_APP).toBe("add-to needs the app to add the server to: add-to claude or add-to codex");
   });

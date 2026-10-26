@@ -159,7 +159,7 @@ export const prepareCreate = define({
   run: (ctx, input, call) => createIntent(ctx, input, call),
 });
 
-export async function createIntent({ transport, claims, url }: AgentContext, input: CreateInput, call: Call, after?: AfterCreate) {
+export async function createIntent({ transport, claims, url, skipSimulation }: AgentContext, input: CreateInput, call: Call, after?: AfterCreate) {
   const [[configAddress], [userAddress]] = await Promise.all([findConfigPda(), findUserStatePda({ owner: input.owner })]);
   await transport.warm?.([CLOCK_SYSVAR, configAddress, input.input_mint, input.output_mint, userAddress]);
   const now = await chainTime(transport);
@@ -226,7 +226,7 @@ export async function createIntent({ transport, claims, url }: AgentContext, inp
   if (opened.length > 0) {
     await checkFits(transport, instructions, input.owner);
   }
-  const prepared = await prepare(transport, instructions, input.owner);
+  const prepared = await prepare(transport, instructions, input.owner, undefined, skipSimulation !== true);
   const keyless = params.kind === Kind.AttestedResult && params.specHash.some((b) => b !== 0) ? await keylessJudges(transport, params.attestor) : [];
   return {
     intent,

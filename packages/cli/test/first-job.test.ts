@@ -1,11 +1,9 @@
-import { generateKeyPairSync } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { type Address, createKeyPairSignerFromBytes, getBase58Decoder, type KeyPairSigner, lamports, none } from "@solana/kit";
-import { getTransferSolInstruction } from "@solana-program/system";
 import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { DEVNET_TEST_MINT, findAssociatedTokenAddress, formatAmount, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
@@ -13,8 +11,8 @@ import { findIntentPda, getIntentDecoder } from "@intent-engine/core/internal";
 import { svmTransport } from "@intent-engine/client/svm";
 import { EXIT_FAILED, EXIT_OK, ONE_NODE } from "../src/main.js";
 import { quietWebCryptoWarnings } from "../src/node-warnings.js";
-import { AIRDROP, ENOUGH_TO_START } from "../src/wallet.js";
-import { ata, balance, cli, DOMAIN, FEE_BPS, h, send, world } from "./harness.js";
+import { AIRDROP, ENOUGH_TO_START, settingsPath } from "../src/wallet.js";
+import { ata, balance, cli, DOMAIN, FEE_BPS, h, HOME, world } from "./harness.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const read = (path: string) => readFileSync(`${ROOT}/${path}`, "utf8");
@@ -65,14 +63,6 @@ function preset(at: Address): void {
   });
 }
 
-async function newKey(): Promise<KeyPairSigner> {
-  const jwk = generateKeyPairSync("ed25519").privateKey.export({ format: "jwk" });
-  const bytes = Uint8Array.from([...Buffer.from(jwk.d ?? "", "base64url"), ...Buffer.from(jwk.x ?? "", "base64url")]);
-  const signer = await createKeyPairSignerFromBytes(bytes);
-  h.keypairs.set(signer.address, bytes);
-  return signer;
-}
-
 const statusOf = (intent: string) => {
   const held = h.svm.getAccount(intent as Address);
   return held.exists ? getIntentDecoder().decode(held.data) : undefined;
@@ -96,33 +86,8 @@ class Follower {
     return filled.split(" ").map((word) => (files[word] === undefined ? word : join(this.dir, word)));
   }
 
-  private async own(): Promise<KeyPairSigner> {
-    return createKeyPairSignerFromBytes(Uint8Array.from(JSON.parse(h.files.get(this.values["keypair"] ?? "") ?? "[]") as number[]));
-  }
-
-  private async solana(line: string): Promise<Record<string, unknown>> {
-    const made = /^solana-keygen new --no-bip39-passphrase -o (\S+)$/.exec(line);
-    if (made !== null) {
-      this.keys[made[1] ?? ""] = await newKey();
-      return {};
-    }
-    const shown = /^solana-keygen pubkey (\S+)$/.exec(line);
-    if (shown !== null) {
-      return { address: this.keys[shown[1] ?? ""]?.address };
-    }
-    const sent = /^solana transfer --url devnet --keypair (\S+) (\S+) ([\d.]+) --allow-unfunded-recipient$/.exec(line);
-    if (sent !== null) {
-      const [, from = "", to = "", amount = ""] = sent;
-      expect(from).toBe(this.values["keypair"]);
-      const recipient = this.keys[to];
-      if (recipient === undefined) {
-        throw new Error(`no key file ${to}`);
-      }
-      const source = await this.own();
-      await send(source, [getTransferSolInstruction({ source, destination: recipient.address, amount: raw(amount) })]);
-      return {};
-    }
-    throw new Error(`the guide runs a command this test does not know: ${line}`);
+  private async saved(file: string): Promise<KeyPairSigner> {
+    return createKeyPairSignerFromBytes(Uint8Array.from(JSON.parse(h.files.get(file) ?? "[]") as number[]));
   }
 
   async step(step: Step): Promise<void> {
@@ -132,8 +97,7 @@ class Follower {
     }
     const { line } = step;
     if (!line.startsWith("intent-engine ")) {
-      this.ran.push({ line, code: EXIT_OK, err: "", out: await this.solana(this.fill(line).join(" ")), warned: "" });
-      return;
+      throw new Error(`the guide runs a command other than intent-engine: ${line}`);
     }
     const warnings: string[] = [];
     const stderr = vi.spyOn(process.stderr, "write").mockImplementation((text) => warnings.push(String(text)) > 0);
@@ -145,6 +109,11 @@ class Follower {
     if (verbOf(line) === "setup") {
       this.values["address"] = String(out["address"]);
       this.values["keypair"] = String(out["keypair"]);
+    }
+    if (verbOf(line) === "new-wallet" && run.code === EXIT_OK) {
+      const file = String(out["keypair"]);
+      this.keys[file] = await this.saved(file);
+      this.values[file.replace(/\.json$/, "")] = String(out["address"]);
     }
     if (verbOf(line) === "hash" && this.values["sha256"] === undefined) {
       this.values["sha256"] = String(out["sha256"]);
@@ -203,17 +172,32 @@ describe("the first paid job guide", () => {
   });
 
   it("runs the commands it prints in order, and every outcome it promises holds", async () => {
-    expect(lines.filter((line) => !line.startsWith("intent-engine "))).toEqual([
-      "solana-keygen new --no-bip39-passphrase -o worker.json",
-      "solana transfer --url devnet --keypair <keypair> worker.json 0.02 --allow-unfunded-recipient",
-      "solana-keygen new --no-bip39-passphrase -o copier.json",
-      "solana transfer --url devnet --keypair <keypair> copier.json 0.01 --allow-unfunded-recipient",
-      "solana-keygen pubkey worker.json",
+    expect(lines.filter((line) => !line.startsWith("intent-engine "))).toEqual([]);
+    expect(PAGE).not.toContain("solana");
+    expect(PAGE).toContain("It is the only tool this guide needs.");
+    expect(commands.map(verbOf)).toEqual([
+      "setup",
+      "new-wallet",
+      "send-sol",
+      "hash",
+      "create attested",
+      "jobs",
+      "hash",
+      "deliver",
+      "judge",
+      "balance",
+      "deliver",
+      "new-wallet",
+      "send-sol",
+      "deliver",
+      "judge",
+      "receipt",
+      "deliver",
+      "judge",
     ]);
-    expect(commands.map(verbOf)).toEqual(["setup", "hash", "create attested", "jobs", "hash", "deliver", "judge", "balance", "deliver", "deliver", "judge", "receipt", "deliver", "judge"]);
     expect(Object.keys(files)).toEqual(["spec.md", "wrong.mjs", "right.mjs"]);
     const ran = await follower.follow(STEPS);
-    const [setup, specHash, created, jobs, checked, wrong, refused, shown, right, early, paid, receipt, copied, again] = ran.filter((r) => r.line.startsWith("intent-engine "));
+    const [setup, workerMade, workerFunded, specHash, created, jobs, checked, wrong, refused, shown, right, copierMade, copierFunded, early, paid, receipt, copied, again] = ran;
     const { keys, values } = follower;
     const worker = keys["worker.json"]?.address;
     const copier = keys["copier.json"]?.address;
@@ -224,6 +208,14 @@ describe("the first paid job guide", () => {
 
     expect(PAGE).toContain("send it 0.02 SOL from yours for its network fees and the rent of its two announcements");
     const fees = raw("0.02");
+    expect(PAGE).toContain("`new-wallet` saves a new key in `worker.json` and prints its `address`; put it in place of `<worker>`. Your default wallet stays the one `setup` saved.");
+    expect(workerMade?.out).toMatchObject({ address: worker, keypair: "worker.json", created: true });
+    expect(copierMade?.out).toMatchObject({ address: copier, keypair: "copier.json", created: true });
+    expect(workerFunded?.line).toBe("intent-engine send-sol --to <worker> --amount 0.02 --yes");
+    expect(copierFunded?.line).toBe("intent-engine send-sol --to <copier> --amount 0.01 --yes");
+    expect(workerFunded?.out).toMatchObject({ from: values["address"], to: worker, sol: "0.02", sent: true });
+    expect(copierFunded?.out).toMatchObject({ from: values["address"], to: copier, sol: "0.01", sent: true });
+    expect(JSON.parse(h.files.get(settingsPath(HOME)) ?? "{}")).toMatchObject({ keypair: values["keypair"] });
     expect(PAGE).toContain("the judge runs the module's default export and pays only when it returns 42");
     expect(files["spec.md"]).toContain('```judge-cases\n{"cases": [{"args": [], "expected": 42}]}\n```');
     expect(specHash?.out["sha256"]).toBe(await follower.hash("spec.md"));
@@ -253,7 +245,7 @@ describe("the first paid job guide", () => {
     expect(refused?.out).toMatchObject({ intent, verdict: "fail", artifactSha256: await follower.hash("wrong.mjs") });
     expect(refused?.out["signature"]).toBeNull();
     expect(refused?.code).toBe(EXIT_FAILED);
-    expect(PAGE).toContain("Each `judge` first warns that it reads one RPC node, which is fine for a test job.");
+    expect(PAGE).toContain("Each `judge` first notes that it checks releases against one RPC node, which is fine for a test job.");
     expect(named(ran, "judge").map((r) => r.warned)).toEqual([`${ONE_NODE}\n`, `${ONE_NODE}\n`, `${ONE_NODE}\n`]);
     expect(ran.filter((r) => verbOf(r.line) !== "judge").map((r) => r.warned).join("")).toBe("");
     expect(PAGE).toContain("`balance` shows the worker's `wrapped SOL` at `0`.");
@@ -274,9 +266,7 @@ describe("the first paid job guide", () => {
     expect(paid?.status).toBe(IntentStatus.Filled);
     expect(await follower.wrapped("copier.json")).toBe(-1n);
 
-    const pubkey = ran.find((r) => r.line === "solana-keygen pubkey worker.json");
-    expect(pubkey?.out["address"]).toBe(worker);
-    expect(PAGE).toContain("The receipt shows who was paid as `paid_to`, the address `solana-keygen` prints, how much as `paid`, the job's `net_pay`, and for which work as `delivered_sha256`, the `sha256` that `intent-engine hash --artifact right.mjs` prints.");
+    expect(PAGE).toContain("The receipt shows who was paid as `paid_to`, the worker's address that `new-wallet` printed, how much as `paid`, the job's `net_pay`, and for which work as `delivered_sha256`, the `sha256` that `intent-engine hash --artifact right.mjs` prints.");
     expect(PAGE).toContain("`payee` is the wrapped SOL account the pay landed in, which `paid_to` owns.");
     expect(receipt?.out).toMatchObject({
       intent,

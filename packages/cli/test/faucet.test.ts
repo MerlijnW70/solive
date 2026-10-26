@@ -179,9 +179,9 @@ describe("the devnet faucet", () => {
     expect(readFileSync(SCRIPT, "utf8")).toMatch(/gh issue list --author "\$author" --label faucet /);
   });
 
-  it("runs one workflow at a time on every request and every hour, so a cancelled run leaves nothing unanswered", () => {
+  it("runs one workflow at a time on every request and every quarter hour, so a cancelled run leaves nothing unanswered", () => {
     expect(WORKFLOW).toContain("concurrency:\n  group: faucet\n  cancel-in-progress: false\n");
-    expect(WORKFLOW).toContain('  schedule:\n    - cron: "7 * * * *"\n');
+    expect(WORKFLOW).toContain('  schedule:\n    - cron: "7,22,37,52 * * * *"\n');
     expect(WORKFLOW).toContain("if: github.event_name == 'schedule' || contains(github.event.issue.labels.*.name, 'faucet')");
   });
 
@@ -259,13 +259,12 @@ describe("the devnet faucet", () => {
     expect(page).toContain("```sh\nintent-engine setup\n```");
     expect(FORM).toContain("description: The address `intent-engine setup` prints.");
     expect(FAUCET).toBe(`${repository}/issues/new?template=faucet.yml`);
-    expect(airdropRefused(ADDRESS).endsWith(": " + faucetLink(ADDRESS))).toBe(true);
+    expect(airdropRefused(ADDRESS)).toContain("open " + faucetLink(ADDRESS) + " to file a faucet request in a browser");
     expect(FORM).toContain("It sends 0.5 devnet SOL once a day per GitHub account.");
     expect(script).toContain("amount_sol=0.5\namount=500000000\n");
     expect(script).toContain("one request per GitHub account per day");
-    expect(page).toContain(
-      "If devnet refuses, it prints a faucet link with your address filled in: open it, submit, and run setup again once SOL arrives.",
-    );
+    expect(page).toContain("If devnet refuses, it names the ways in [Devnet SOL](#devnet-sol), with your address filled into the faucet link.");
+    expect(page).toContain("This project's faucet sends 0.5 SOL, once a day per GitHub account.");
   });
 
   it("links to the form with only the wallet's address filled into the form's address field", () => {

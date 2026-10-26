@@ -21,7 +21,7 @@ import {
   CLI_SMALL_START,
   CLI_START,
   FAUCET,
-  FAUCET_STEPS,
+  fundingSteps,
   faucetLink,
   defaultWallet,
   ENOUGH_TO_START,
@@ -166,13 +166,16 @@ describe("setup and balance", () => {
     const address = refused["address"] as Address;
     expect(refused).toMatchObject({ created: true, sol: "0", next: airdropRefused(address, GH_HINT) });
     expect(refused["next"]).toBe(
-      "your wallet holds no SOL yet and the airdrop was refused; with the GitHub CLI signed in, setup --faucet files the request and waits for SOL; otherwise the faucet request needs a browser and a GitHub account, and a scheduled run answers faucet requests at minute 7 of every hour, so SOL arrives within the hour; open this link, submit the form, and run setup again once SOL arrives: " +
-        FAUCET + "&address=" + address,
+      "your wallet holds no SOL yet and devnet refused the airdrop, as it often does; intent-engine setup --faucet files a faucet request with a signed-in GitHub CLI (gh) and waits for the SOL; or open " +
+        FAUCET + "&address=" + address +
+        " to file a faucet request in a browser, as a public GitHub issue that needs a GitHub account; the faucet answers new requests at least every 15 minutes, so SOL arrives within 25 minutes; or ask another devnet faucet, such as " +
+        "https://" + "faucet.solana.com, which sends at once when it accepts; run setup again once SOL arrives",
     );
     h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 50n));
     expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.02", next: heldRefused("0.02", address, GH_HINT) });
     expect(h.airdrops).toHaveLength(2 * AIRDROPS.length);
-    expect(heldRefused("0.02", address).endsWith(FAUCET_STEPS + faucetLink(address))).toBe(true);
+    expect(heldRefused("0.02", address).endsWith(fundingSteps(address) + "; run setup again once SOL arrives")).toBe(true);
+    expect(fundingSteps(address)).toContain(faucetLink(address));
     h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 4n));
     expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.27", next: refusedEnough("0.27", CLI_START) });
     expect(h.airdrops).toHaveLength(3 * AIRDROPS.length);

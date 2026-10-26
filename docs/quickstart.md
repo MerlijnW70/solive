@@ -6,13 +6,51 @@ An order here is an intent: you lock what you sell, and a solver fills it with a
 
 You need [Node.js](https://nodejs.org) 22.12 or later.
 
-## 1. Install
+## Devnet SOL
+
+Every step sends a transaction, so your wallet needs devnet SOL. `setup` in step 2 asks devnet for it, but devnet often refuses. The other ways, each with the `address` that `setup` prints:
+
+- `intent-engine setup --faucet`, with the [GitHub CLI](https://cli.github.com) signed in, files a request with this project's faucet and waits for the SOL. The faucet answers several times an hour, and `setup` prints how many minutes it waits at most.
+- The faucet link `setup` prints opens the same request in a browser, as a public GitHub issue. It needs a GitHub account, and the same faucet answers it, so the SOL takes as long.
+- Another devnet faucet, such as [faucet.solana.com](https://faucet.solana.com), takes your address and sends at once when it accepts the request.
+
+This project's faucet sends 0.5 SOL, once a day per GitHub account. Run `setup` again once SOL arrives; it shows what your wallet holds.
+
+## 1. Run the CLI
+
+npx runs the CLI without installing anything globally:
+
+```sh
+npx -y @intent-engine/cli version
+```
+
+The steps below type `intent-engine`. Make that name run the same npx command in this shell:
+
+```sh
+alias intent-engine='npx -y @intent-engine/cli'
+```
+
+In Windows PowerShell, define it as a function instead:
+
+```powershell
+function intent-engine { npx -y @intent-engine/cli @args }
+```
+
+Or install the command globally:
 
 ```sh
 npm install -g @intent-engine/cli
 ```
 
-If this fails with a permissions error, install Node.js with a version manager such as nvm and try again.
+If the install fails with `EACCES`, install Node.js with a version manager such as nvm, or give npm a folder in your home directory, put it on your `PATH` and install again:
+
+```sh
+npm config set prefix ~/.npm-global
+export PATH="$HOME/.npm-global/bin:$PATH"
+npm install -g @intent-engine/cli
+```
+
+Add the `export` line to your shell's startup file, such as `~/.bashrc`, to keep it in new shells.
 
 ## 2. Make a wallet
 
@@ -20,7 +58,7 @@ If this fails with a permissions error, install Node.js with a version manager s
 intent-engine setup
 ```
 
-This makes a devnet wallet, saves it as your default and asks devnet for 1 SOL. If devnet refuses, it prints a faucet link with your address filled in: open it, submit, and run setup again once SOL arrives.
+This makes a devnet wallet, saves it as your default and asks devnet for 1 SOL. If devnet refuses, it names the ways in [Devnet SOL](#devnet-sol), with your address filled into the faucet link.
 
 ## 3. Swap
 
@@ -30,7 +68,7 @@ Offer 0.05 SOL for at least 5 TEST:
 intent-engine create swap --input-mint SOL --output-mint TEST --units tokens --amount-in 0.05 --min-out 5 --expires-in 3600
 ```
 
-This shows what will happen and sends nothing. Add `--yes` to send it:
+This shows what will happen and sends nothing. On a wallet without SOL it still shows the terms, says the preview could not be simulated, and repeats how to get SOL. Add `--yes` to send it:
 
 ```sh
 intent-engine create swap --input-mint SOL --output-mint TEST --units tokens --amount-in 0.05 --min-out 5 --expires-in 3600 --yes
@@ -59,7 +97,7 @@ intent-engine list
 intent-engine cancel --nonce 1 --close --yes
 ```
 
-Your 0.05 comes back as wrapped SOL, SOL held as a token, which your next order can sell.
+Your 0.05 comes back as wrapped SOL, SOL held as a token, which your next order can sell. A nonce your wallet has no order with is refused, with a pointer to `intent-engine list`.
 
 ## Sign with a Ledger
 

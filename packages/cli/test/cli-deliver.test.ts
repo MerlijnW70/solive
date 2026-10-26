@@ -13,6 +13,7 @@ import { createClient } from "@intent-engine/client/node";
 import { loadAnnouncement } from "@intent-engine/client/internal";
 import { ANNOUNCE_FIRST } from "../src/agent/wallet/delivery.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
+import { NO_JOB_MATCHES } from "../src/job-commands.js";
 import { cli, FEE_BPS, funded, h, NOW, transport, world } from "./harness.js";
 
 describe("cli against the deployed engine", () => {
@@ -67,7 +68,7 @@ describe("cli against the deployed engine", () => {
       ],
     });
     expect((await cli(["jobs"], {})).json()["jobs"]).toHaveLength(1);
-    expect((await cli(["jobs", "--attestor", worker.address], {})).json()).toEqual({ jobs: [] });
+    expect((await cli(["jobs", "--attestor", worker.address], {})).json()).toEqual({ jobs: [], next: NO_JOB_MATCHES });
 
     const work = "ab".repeat(32);
     const url = "https://" + "example.org/work";

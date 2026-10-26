@@ -23,6 +23,7 @@ export type AgentContext = {
   fetch?: SpecFetch;
   lookup?: Lookup;
   confirm?: Transport;
+  skipSimulation?: true;
 };
 
 export const lookupOf = (ctx: AgentContext): Lookup => ctx.lookup ?? systemLookup;

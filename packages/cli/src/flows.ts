@@ -14,7 +14,7 @@ import { getRevokeInstruction, getTokenDecoder } from "@solana-program/token";
 import { findAssociatedTokenAddress, formatAmount, IntentStatus, parseAmount } from "@intent-engine/core";
 import { buildApproveDelegate, decodeIntentAccount, findDelegatePda } from "@intent-engine/core/internal";
 import { isSdkError, type Transport } from "@intent-engine/client";
-import { createdAccount, mintOf, unmemoized } from "@intent-engine/client/internal";
+import { createdAccount, loadIntent, mintOf, unmemoized } from "@intent-engine/client/internal";
 import { type AgentContext, type AnyAction, invoke } from "./agent/actions.js";
 import { WARN_REPLACES_DELEGATE } from "./agent/owner.js";
 import { prepare } from "./agent/prepare.js";
@@ -43,6 +43,20 @@ export type PreparedView = {
 };
 
 export class FlowRefused extends Error {}
+
+export const noOrder = (owner: Address, nonce: bigint) =>
+  `this wallet, ${owner}, has no order with nonce ${nonce}, so nothing was sent; intent-engine list shows its orders and their nonces`;
+
+export async function ownOrder(transport: Transport, owner: Address, nonce: bigint) {
+  try {
+    return await loadIntent(transport, owner, nonce);
+  } catch (error) {
+    if (isSdkError(error, "missing-account")) {
+      throw new FlowRefused(noOrder(owner, nonce));
+    }
+    throw error;
+  }
+}
 
 const isTokens = (value: unknown): value is Tokens =>
   value !== null && typeof value === "object" && "tokens" in value && "side" in value;

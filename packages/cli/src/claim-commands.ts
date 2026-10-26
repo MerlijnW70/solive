@@ -27,7 +27,7 @@ import { escrowsJudgedBy, isDevice, keepsKey, type LineEntry, lineHandover, load
 import { previewed } from "./admin-commands.js";
 import { finishList, listAccount, listRefusal, listShown, openListed } from "./claim-lists.js";
 import type { Command } from "./command-types.js";
-import { FlowRefused } from "./flows.js";
+import { FlowRefused, ownOrder } from "./flows.js";
 import { claimNotInvited, sealedInvites } from "./invites.js";
 import { transactionSigner } from "./ledger-keys.js";
 import { encryptionKeyLines } from "./sealed-commands.js";
@@ -114,7 +114,7 @@ async function claimCommand(command: Extract<ClaimCommand, { name: `claims-${str
   }
   const signer = await transactionSigner(runtime, command.keypair);
   if (command.name === "claims-open") {
-    const [intent] = await findIntentPda({ owner: signer.address, nonce: command.nonce });
+    const { address: intent } = await ownOrder(transport, signer.address, command.nonce);
     const board = await claimBoardAddress(intent);
     const existing = await client.claims({ owner: signer.address, nonce: command.nonce });
     if (existing !== null) {

@@ -5,12 +5,13 @@ import type { Launched } from "./launch.js";
 export const GH = "gh";
 export const FAUCET_TITLE = "Devnet SOL";
 export const FAUCET_MINUTE = 7;
+export const FAUCET_INTERVAL_MINUTES = 15;
 export const FAUCET_RUN_MINUTES = 10;
-export const FAUCET_WAIT_MINUTES = 60 + FAUCET_RUN_MINUTES;
+export const FAUCET_WAIT_MINUTES = FAUCET_INTERVAL_MINUTES + FAUCET_RUN_MINUTES;
 export const FAUCET_POLL_SECONDS = 30;
 
-export const FAUCET_SCHEDULE = `a scheduled run answers faucet requests at minute ${FAUCET_MINUTE} of every hour, so SOL arrives within the hour`;
-export const GH_HINT = "with the GitHub CLI signed in, setup --faucet files the request and waits for SOL; otherwise ";
+export const FAUCET_SCHEDULE = `the faucet answers new requests at least every ${FAUCET_INTERVAL_MINUTES} minutes, so SOL arrives within ${FAUCET_WAIT_MINUTES} minutes`;
+export const GH_HINT = "intent-engine setup --faucet files a faucet request with a signed-in GitHub CLI (gh) and waits for the SOL; or ";
 export const GH_GONE = "the GitHub CLI (gh) was not found";
 export const GH_MISSING = `${GH_GONE}, so `;
 export const GH_SIGNED_OUT = "the GitHub CLI is not signed in (run gh auth login), so ";

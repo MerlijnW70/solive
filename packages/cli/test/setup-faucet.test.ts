@@ -7,6 +7,7 @@ import { PRODUCT_REPOSITORY } from "@intent-engine/core/internal";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FAUCET_DEVNET_ONLY } from "../src/args.js";
 import {
+  FAUCET_INTERVAL_MINUTES,
   FAUCET_MINUTE,
   FAUCET_POLL_SECONDS,
   FAUCET_RUN_MINUTES,
@@ -21,6 +22,7 @@ import {
   ghFailed,
 } from "../src/faucet.js";
 import type { Launched } from "../src/launch.js";
+import { NPM_REGISTRY, plainRegistry, REGISTRY_ARGS, REGISTRY_TIMEOUT_MS, USE_HTTPS } from "../src/npm-registry.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main } from "../src/main.js";
 import {
   AIRDROP,
@@ -29,8 +31,10 @@ import {
   CLI_SMALL_START,
   CLI_START,
   ENOUGH_TO_START,
-  FAUCET_STEPS,
   faucetLink,
+  fundingSteps,
+  OTHER_FAUCETS,
+  PUBLIC_FAUCET,
   heldRefused,
   holdsEnough,
   LAMPORTS_PER_SOL,
@@ -54,15 +58,25 @@ const SOL = (text: string) => {
 
 type Reply = Launched | null;
 
-async function run(argv: string[], replies: Reply[] = []) {
+const HTTPS_REGISTRY: Reply = { code: 0, output: `${NPM_REGISTRY}\n` };
+
+async function run(argv: string[], replies: Reply[] = [], npm: Reply | Error = HTTPS_REGISTRY) {
   const launched: string[][] = [];
+  const asked: { args: string[]; timeoutMs: number | undefined }[] = [];
   const out: string[] = [];
   const err: string[] = [];
   const notes: string[] = [];
   const stderr = vi.spyOn(process.stderr, "write").mockImplementation((text) => notes.push(String(text)) > 0);
   const rt = {
     ...runtime({}),
-    launch: async (program: string, args: readonly string[]) => {
+    launch: async (program: string, args: readonly string[], timeoutMs?: number) => {
+      if (program === "npm") {
+        asked.push({ args: [...args], timeoutMs });
+        if (npm instanceof Error) {
+          throw npm;
+        }
+        return npm;
+      }
       launched.push([program, ...args]);
       const reply = replies.shift();
       if (reply === undefined) {
@@ -72,7 +86,7 @@ async function run(argv: string[], replies: Reply[] = []) {
     },
   };
   const code = await main(argv, rt, { out: (t) => out.push(t), err: (t) => err.push(t) }).finally(() => stderr.mockRestore());
-  return { code, launched, err: err.join("\n"), notes: notes.join(""), json: () => JSON.parse(out.join("\n")) as Record<string, unknown> };
+  return { code, launched, asked, err: err.join("\n"), notes: notes.join(""), json: () => JSON.parse(out.join("\n")) as Record<string, unknown> };
 }
 
 const refusing = (above: bigint) => {
@@ -132,9 +146,12 @@ describe("setup when devnet refuses", () => {
     expect(made.launched).toEqual([]);
     expect(made.json()).toMatchObject({ sol: "0", next: airdropRefused(address, GH_HINT) });
     expect(made.json()["airdrop"]).toBeUndefined();
-    expect(made.json()["next"]).toContain("setup --faucet");
-    expect(made.json()["next"]).toContain("needs a browser and a GitHub account");
-    expect(String(made.json()["next"]).endsWith(": " + faucetLink(address))).toBe(true);
+    expect(made.json()["next"]).toContain("intent-engine setup --faucet files a faucet request");
+    expect(made.json()["next"]).toContain("in a browser, as a public GitHub issue that needs a GitHub account");
+    expect(made.json()["next"]).toContain(fundingSteps(address));
+    expect(made.json()["next"]).toContain(OTHER_FAUCETS);
+    expect(OTHER_FAUCETS).toContain(PUBLIC_FAUCET);
+    expect(made.json()["next"]).toContain("devnet refused the airdrop, as it often does");
   });
 
   it("names the faucet option only on devnet, where the faucet sends", async () => {
@@ -152,7 +169,7 @@ describe("setup when devnet refuses", () => {
     const held = (await run(["setup"])).json();
     expect(held).toMatchObject({ sol: need, next: refusedEnough(need, CLI_SMALL_START) });
     expect(held["next"]).not.toContain(faucetLink(address));
-    expect(held["next"]).not.toContain(FAUCET_STEPS);
+    expect(held["next"]).not.toContain(fundingSteps(address));
     expect(held["next"]).not.toContain("less than");
     expect(held["next"]).toContain("follow the first paid job guide");
   });
@@ -226,8 +243,8 @@ describe("setup --faucet", () => {
     expect(h.sleeps).toEqual([]);
     expect(ran.notes).toBe("");
     expect(ran.json()).toMatchObject({ sol: "0", next: airdropRefused(address, GH_MISSING) });
-    expect(ran.json()["next"]).toContain("the GitHub CLI (gh) was not found, so the faucet request needs a browser and a GitHub account");
-    expect(String(ran.json()["next"]).endsWith(faucetLink(address))).toBe(true);
+    expect(ran.json()["next"]).toContain("the GitHub CLI (gh) was not found, so open " + faucetLink(address) + " to file a faucet request in a browser");
+    expect(ran.json()["next"]).toContain(OTHER_FAUCETS);
     expect(ran.json()["faucet_request"]).toBeUndefined();
   });
 
@@ -262,14 +279,19 @@ describe("setup --faucet", () => {
 
 describe("the faucet text", () => {
   it("matches the faucet workflow's schedule and the request form", () => {
-    const cron = /^ {2}schedule:\n {4}- cron: "(\d+) \* \* \* \*"\n/m.exec(WORKFLOW)?.[1];
+    const cron = /^ {2}schedule:\n {4}- cron: "([\d,]+) \* \* \* \*"\n/m.exec(WORKFLOW)?.[1] ?? "";
+    const minutes = cron.split(",").map(Number);
     const timeout = /^ {4}timeout-minutes: (\d+)$/m.exec(WORKFLOW)?.[1];
-    expect(Number(cron)).toBe(FAUCET_MINUTE);
+    expect(minutes[0]).toBe(FAUCET_MINUTE);
+    expect(minutes.map((m, i) => ((minutes[i + 1] ?? (minutes[0] ?? 0) + 60) - m))).toEqual(minutes.map(() => FAUCET_INTERVAL_MINUTES));
+    expect(FAUCET_INTERVAL_MINUTES).toBeLessThan(60);
+    expect(FAUCET_INTERVAL_MINUTES).toBeGreaterThanOrEqual(5);
     expect(Number(timeout)).toBe(FAUCET_RUN_MINUTES);
-    expect(FAUCET_WAIT_MINUTES).toBe(60 + FAUCET_RUN_MINUTES);
-    expect(FAUCET_SCHEDULE).toBe("a scheduled run answers faucet requests at minute 7 of every hour, so SOL arrives within the hour");
-    expect(FAUCET_STEPS).toContain(FAUCET_SCHEDULE);
-    expect(FAUCET_STEPS).toContain("needs a browser and a GitHub account");
+    expect(FAUCET_WAIT_MINUTES).toBe(FAUCET_INTERVAL_MINUTES + FAUCET_RUN_MINUTES);
+    expect(FAUCET_SCHEDULE).toBe("the faucet answers new requests at least every 15 minutes, so SOL arrives within 25 minutes");
+    const steps = fundingSteps("ADDRESS");
+    expect(steps).toContain(FAUCET_SCHEDULE);
+    expect(steps).toContain("as a public GitHub issue that needs a GitHub account");
     expect(FORM).toContain(`\ntitle: ${FAUCET_TITLE}\n`);
     expect(FORM).toContain("\nlabels: [faucet]\n");
   });

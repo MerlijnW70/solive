@@ -10,6 +10,7 @@ import { generateKeyPairSigner } from "@solana/kit";
 import { PRODUCT_SLUG } from "@intent-engine/core/internal";
 import { describe, expect, it } from "vitest";
 import { ACTIONS } from "../src/agent/registry.js";
+import { WALLET_ACTIONS } from "../src/agent/wallet.js";
 import { EXIT_USAGE } from "../src/main.js";
 import { unreachableHint } from "../src/agent/problems.js";
 
@@ -105,7 +106,7 @@ describe("the agent guide", () => {
   }, 120_000);
 
   it("names only tools the server has, and the decimals get_balances returns", () => {
-    const names = new Set(ACTIONS.map((a) => a.name));
+    const names = new Set([...WALLET_ACTIONS, ...ACTIONS].map((a) => a.name));
     const named = [...AGENTS.matchAll(/`(solive_\w+)`/g)].map((m) => m[1] ?? "");
     expect(named.filter((n) => n !== "solive_" && !names.has(n))).toEqual([]);
     const balances = ACTIONS.find((a) => a.name === "solive_get_balances");

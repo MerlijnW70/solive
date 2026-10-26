@@ -25,7 +25,7 @@ export type Runtime = {
   entropy(): number;
   serve(server: McpServer): Promise<void>;
   platform: string;
-  launch(program: string, args: readonly string[]): Promise<Launched | null>;
+  launch(program: string, args: readonly string[], timeoutMs?: number): Promise<Launched | null>;
   saleBook?: SaleBook;
   ledger?: OpenTransport;
 };

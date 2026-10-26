@@ -26,6 +26,7 @@ import {
   parseLimit,
   parsePriority,
   required,
+  solLamports,
   u64,
   UNSEAL_NEEDS_KEY,
   unitsOf,
@@ -179,7 +180,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       const text = values[k];
       return text === undefined ? [] : [`--${k}`, text.replace(/\s+/g, "")];
     });
-    return { name: "add-to", app, limits };
+    return { name: "add-to", app, limits, allowHttpRegistry: values["allow-http-registry"] === true };
   }
   const remote = {
     url: clusterUrl(values.url ?? env[ENV_URL] ?? (verb === "setup" ? SETUP_CLUSTER : DEFAULT_URL)),
@@ -237,6 +238,12 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
     case "domain":
       noSub(sub);
       return { name: "domain", ...remote };
+    case "new-wallet":
+      noSub(sub);
+      return { name: "new-wallet", out: required(values, "out") };
+    case "send-sol":
+      noSub(sub);
+      return { name: "send-sol", ...remote, keypair: required(values, "keypair"), yes: values.yes === true, to: key(values, "to"), lamports: solLamports(values, "amount") };
     case "mcp":
       noSub(sub);
       if (values.wallet === true && remote.url === CLUSTERS["mainnet-beta"]) {
