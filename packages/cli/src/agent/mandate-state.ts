@@ -2,9 +2,11 @@ import type { Address } from "@solana/kit";
 import { Kind } from "@intent-engine/core";
 import {
   decodeMandateAccount,
+  escrowAmount,
   findIntentPda,
   findMandatePda,
   getMandateDiscriminatorBytes,
+  type IntentParams,
   kindBit,
   type Mandate,
   mandateLane,
@@ -13,7 +15,7 @@ import {
 import { isSdkError, type Transport } from "@intent-engine/client";
 import { createdAccount, engineAccount } from "@intent-engine/client/internal";
 import { type Call, claim, claimedBy, type Claims, PREPARED_TTL } from "./claims.js";
-import { AgentRefusal, SimulationFailed } from "./problems.js";
+import { AgentRefusal, ENGINE_PROBLEMS, SimulationFailed } from "./problems.js";
 import { account, amount, optional } from "./schema.js";
 
 export const MANDATE_KIND_NAMES = ["swap", "limit", "dutch"] as const;
@@ -115,3 +117,70 @@ export const mandateRef = {
   agent: account("the agent key the mandate authorises"),
   id: optional(amount("which of the owner's mandates for this agent; default 0")),
 };
+
+const I64_MIN = -(1n << 63n);
+const I64_MAX = (1n << 63n) - 1n;
+
+export type MandateRefusal =
+  | "MandateRevoked"
+  | "MandateExpired"
+  | "MandateKind"
+  | "MandateTtl"
+  | "MandateCap"
+  | "MandateBudget"
+  | "MandateCount"
+  | "MandatePrice";
+
+export function worstOut(params: IntentParams): bigint | null {
+  switch (params.kind) {
+    case Kind.SwapExactIn:
+      return params.minOut;
+    case Kind.LimitOrder:
+      return params.takeAmount;
+    case Kind.DutchAuction:
+      return params.endOut;
+    case Kind.AttestedResult:
+      return null;
+  }
+}
+
+const saturating = (value: bigint): bigint => (value > I64_MAX ? I64_MAX : value < I64_MIN ? I64_MIN : value);
+
+export type Admission = { params: IntentParams; expiresAt: bigint; now: bigint; ownerEpoch: bigint | null };
+
+export function mandateRefusal(m: Mandate, a: Admission): MandateRefusal | null {
+  if (a.ownerEpoch !== null && a.ownerEpoch !== m.epoch) {
+    return "MandateRevoked";
+  }
+  if (a.now >= m.validUntil) {
+    return "MandateExpired";
+  }
+  const worst = worstOut(a.params);
+  if (worst === null || (BigInt(m.kinds) & kindBit(a.params.kind)) === 0n) {
+    return "MandateKind";
+  }
+  if (saturating(a.expiresAt - a.now) > m.maxTtl) {
+    return "MandateTtl";
+  }
+  const cost = escrowAmount(a.params) + m.agentFee;
+  if (cost > m.perIntent) {
+    return "MandateCap";
+  }
+  if (m.spent + cost > m.total) {
+    return "MandateBudget";
+  }
+  if (m.intents + 1 > m.maxIntents) {
+    return "MandateCount";
+  }
+  if (worst * m.floorIn < cost * m.floorOut) {
+    return "MandatePrice";
+  }
+  return null;
+}
+
+export function admitUnderMandate(m: Mandate, a: Admission): void {
+  const refused = mandateRefusal(m, a);
+  if (refused !== null) {
+    throw new AgentRefusal(refused, `${ENGINE_PROBLEMS[refused].hint}; ${limitsOf(m)}`);
+  }
+}

@@ -2,7 +2,7 @@ import { type Address, createNoopSigner, type TransactionSigner } from "@solana/
 import { formatAmount } from "@intent-engine/core";
 import { buildCreateIntentByAgent, describeTerms, encodeParams, escrowAmount, validate, tokenOf } from "@intent-engine/core/internal";
 import { type Transport } from "@intent-engine/client";
-import { chainTime, loadConfig, mintCapOf, mintOf, tokenAccountIfMissing } from "@intent-engine/client/internal";
+import { chainTime, loadConfig, loadUser, mintCapOf, mintOf, tokenAccountIfMissing } from "@intent-engine/client/internal";
 import { type AgentContext, define } from "./actions.js";
 import { createCost, release, rentFor, rentRate, reserve, TOKEN_ACCOUNT_RENT_BYTES } from "./budget.js";
 import { expiryOf, MAX_EXPIRES_IN, MIN_EXPIRES_IN } from "./create.js";
@@ -16,7 +16,7 @@ import { AgentRefusal } from "./problems.js";
 import { orderSchema, paramsOf, preparedSchema, preparedView } from "./shapes.js";
 import { TOKEN_NAMES, tokenNames } from "../tokens.js";
 import { account, amount, integer, list, object, optional, text, time } from "./schema.js";
-import { agentNonce, explained, loadMandate } from "./mandate-state.js";
+import { admitUnderMandate, agentNonce, explained, loadMandate } from "./mandate-state.js";
 
 const agentTerms = {
   owner: account("the wallet whose mandate the agent uses"),
@@ -67,6 +67,8 @@ async function agentIntent(
   }
   const nonce = input.nonce ?? (await agentNonce(transport, input.owner, mandate.serial, mandate.intents, { claims, call, now }));
   const intent = await unusedIntent(transport, input.owner, nonce);
+  const owner = await loadUser(transport, input.owner);
+  admitUnderMandate(mandate, { params, expiresAt, now, ownerEpoch: owner?.epoch ?? null });
   const feeAccount =
     mandate.agentFee === 0n
       ? { create: [] }
