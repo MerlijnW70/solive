@@ -52,7 +52,7 @@ export const COMMON_OWN: readonly string[] = [
   "prepared.transaction",
 ];
 
-const RECEIPT = ["paid", "stake_returned", "delivered_salt", "held[].amount", "withheld[].role", "withheld[].amount"];
+const RECEIPT = ["paid", "stake_returned", "delivered_salt", "held[].amount", "held[].close", "withheld[].role", "withheld[].amount"];
 
 export const OWN: Readonly<Record<string, readonly string[]>> = {
   [tool("wallet_setup")]: ["keypair", "url", "settings", "sol", "airdrop", "notice[]"],
@@ -80,12 +80,16 @@ export const OWN: Readonly<Record<string, readonly string[]>> = {
     "activity[].sell_token",
     "activity[].received",
     "activity[].receive_token",
+    "activity[].returned",
+    "activity[].returned_in",
     "activity[].signature",
     "work[].signature",
     "work[].amount",
     "work[].token",
     "work[].release",
     "work[].held",
+    "work[].returned",
+    "work[].returned_in",
     "claims[].stake",
     "claims[].signature",
     "profit.token",

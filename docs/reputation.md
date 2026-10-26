@@ -27,7 +27,7 @@ A paid release is also left out when the worker funded its payer: the earliest S
 
 A transfer or account creation counts from its sender, and a closed token account or nonce withdrawal from its closing or withdrawing authority. Any other rise in the payer's balance counts as coming from that transaction's fee payer. So SOL the payer moves out of an account it controls itself, with a relayer paying the fee, is not linked to the worker. Zero-lamport transfers do not use up the transactions read.
 
-A split share the release held because the co-author's token account could not take it counts as paid: the record names it in `held`, `received` once the co-author claims it, and `held` sums the unclaimed part per mint.
+A split share the release held because the co-author's token account could not take it counts as paid: the record names it in `held`, with `state` `held` until the co-author claims it and `received` after, and `held` sums the unclaimed part per mint. A share never claimed before the escrow closed reads `returned`: the close refunded it to the owner, so `earned` and `backed` leave it out.
 
 `backed` sums, per mint, the protocol fees of the releases in the totals, which go to the protocol's fee recipient rather than to the worker: all of a single payee's fee, and a co-author's split weight of a team split's fee. `backed_sol` sums the SOL ones plus every create fee, in whole SOL. A release whose events cannot be read adds nothing and leaves `complete` `false`.
 

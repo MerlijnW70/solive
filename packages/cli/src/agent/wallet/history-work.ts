@@ -2,7 +2,7 @@ import type { Address } from "@solana/kit";
 import { type EngineEvent, formatAmount, IntentStatus, tokenName } from "@intent-engine/core";
 import { decodeEvent } from "@intent-engine/core/internal";
 import { type EngineTransaction, type Transport } from "@intent-engine/client";
-import { chainTime, eventAuthority, heldPayouts, intentAt, loadClaimsOf, paidWalletsOf, releaseShareOf } from "@intent-engine/client/internal";
+import { chainTime, eventAuthority, heldPayouts, heldReturned, heldWaiting, intentAt, loadClaimsOf, paidWalletsOf, releaseShareOf } from "@intent-engine/client/internal";
 import { tool } from "../names.js";
 import { account, choice, flag, nullable, object, optional, text, time } from "../schema.js";
 import { createdMint, heldMint, type ReleaseLookup, releaseLookup, releasedMint } from "./releases.js";
@@ -30,10 +30,12 @@ export const workItem = object({
   signature: text("the announcement's transaction"),
   at: landedAt("the announcement"),
   paid: flag("whether a release of the escrow paid this announcement, or paid this wallet as a co-author of the paid one"),
-  amount: nullable(text("whole tokens the release paid this wallet")),
+  amount: nullable(text("whole tokens the release paid this wallet, less any held share returned to the escrow's owner")),
   token: nullable(text("SOL, TEST or the mint the release paid")),
   release: nullable(text("the release's transaction")),
   held: optional(text(`whole tokens of this wallet's paid share that the release held in the escrow because its token account could not take them, not claimed yet; ${tool("wallet_claim_held")} claims them`)),
+  returned: optional(text("whole tokens of this wallet's held share it never claimed, returned to the escrow's owner when the escrow closed; not part of amount")),
+  returned_in: optional(text("with returned: the close transaction that refunded it to the owner")),
   unpaid_reason: nullable(
     choice(
       UNPAID_REASONS,
@@ -105,13 +107,27 @@ async function paidFor(transport: Transport, work: Announcement, wallet: Address
   const payee = event.name === "IntentAttested" ? event.fields.payee : undefined;
   const mint = releasedMint(release.tx, work.intent, payee) ?? createdMint(transactions, work.intent) ?? (await heldMint(transport, work.intent));
   const held = event.name === "IntentSplit" ? await heldPayouts(transport, release.tx, await eventAuthority(), work.intent, transactions) : [];
-  const waiting = held.filter((piece) => piece.wallet === wallet && !piece.received).reduce((sum, piece) => sum + piece.amount, 0n);
+  const waiting = heldWaiting(held, wallet);
+  const returned = heldReturned(held, wallet);
+  const close = held.find((piece) => piece.wallet === wallet && piece.state === "returned")?.close ?? null;
   return {
-    amount: mint === undefined ? null : await tokens(mint, share),
+    amount: mint === undefined ? null : await tokens(mint, share - returned),
     token: mint === undefined ? null : (tokenName(mint) ?? mint),
     release: release.tx.signature,
     ...(waiting === 0n || mint === undefined ? {} : { held: await tokens(mint, waiting) }),
+    ...(returned === 0n || mint === undefined ? {} : { returned: await tokens(mint, returned), ...(close === null ? {} : { returned_in: close }) }),
   };
+}
+
+export type Returned = { amount: bigint; close: string | null };
+
+export async function returnedOf(transport: Transport, intent: Address, lookup?: ReleaseLookup): Promise<Returned> {
+  const { release, transactions } = lookup ?? (await releaseLookup(transport, intent));
+  if (release === null || release.event.name !== "IntentSplit") {
+    return { amount: 0n, close: null };
+  }
+  const held = await heldPayouts(transport, release.tx, await eventAuthority(), intent, transactions);
+  return { amount: heldReturned(held), close: held.find((piece) => piece.state === "returned")?.close ?? null };
 }
 
 type Unpaid = { reason: UnpaidReason; releasedTo: Address | null };
@@ -154,6 +170,7 @@ export async function workOf(transport: Transport, wallet: Address, transactions
       token: paid?.token ?? null,
       release: paid?.release ?? null,
       ...(paid?.held === undefined ? {} : { held: paid.held }),
+      ...(paid?.returned === undefined ? {} : { returned: paid.returned, ...(paid.returned_in === undefined ? {} : { returned_in: paid.returned_in }) }),
       unpaid_reason: unpaid.reason,
       released_to: unpaid.releasedTo,
     });

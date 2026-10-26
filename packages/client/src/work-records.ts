@@ -160,9 +160,11 @@ async function paidRecord(transport: Transport, wallet: Address, base: WorkRecor
       return { record: { ...common, outcome: "unknown" }, reasons: [`the split release ${transaction.signature} names no readable claim`] };
     }
     const at = claim.recipients.indexOf(wallet);
-    earned = at < 0 ? undefined : splitN(settled.fields.net, claim.weights)[at];
-    credit = (fee) => (at < 0 ? 0n : (splitN(fee, claim.weights)[at] ?? 0n));
     held = at < 0 ? [] : (await heldPayouts(transport, transaction, by, intent, escrow.transactions)).filter((share) => share.wallet === wallet);
+    const returned = held.some((share) => share.state === "returned" && share.index === at);
+    const share = at < 0 ? undefined : splitN(settled.fields.net, claim.weights)[at];
+    earned = share === undefined ? undefined : returned ? 0n : share;
+    credit = (fee) => (at < 0 || returned ? 0n : (splitN(fee, claim.weights)[at] ?? 0n));
   }
   if (earned === undefined) {
     return { record: { ...common, outcome: "paid-other" }, reasons: [] };

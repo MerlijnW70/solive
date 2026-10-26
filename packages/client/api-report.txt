@@ -73,11 +73,12 @@ type FirstOpening: type FirstOpening = { intent: Address; announcement: Address;
 type FirstOpeningInput: type FirstOpeningInput = { intent: IntentRef; sha256: string; keypair?: DeliveryOpeners | undefined; };
 class FirstOpeningRefused: class FirstOpeningRefused extends SdkError { readonly code = "first-opening-refused"; readonly name = "FirstOpeningRefused"; readonly intent: Address; readonly reason: RefusalReason; readonly sha256: string | null; readonly announcement: Address | null; readonly seq: bigint | null; readonly worker: Address | null; readonly sealedTo: readonly SealedSlot[]; readonly missing: readonly bigint[]; readonly closed: boolean; readonly holder: Address | null; constructor(intent: Address, sha256: string | null, refusal: Refusal); }
 type FundedBy: type FundedBy = "yes" | "no" | "unknown";
-type HeldPayout: type HeldPayout = { wallet: Address; account: Address; announcement: Address; index: number; amount: bigint; received: boolean; claimedTo: Address | null; claim: Signature | null; };
+type HeldPayout: type HeldPayout = { wallet: Address; account: Address; announcement: Address; index: number; amount: bigint; state: HeldState; received: boolean; claimedTo: Address | null; claim: Signature | null; returnedTo: Address | null; close: Signature | null; };
 type HeldShare: type HeldShare = { wallet: Address; intent: Address; announcement: Address; index: number; amount: bigint; mint: Address; account: Address; capped: bigint; release: Signature; split: HeldSplit; };
 type HeldShares: type HeldShares = { wallet: Address; shares: HeldShare[]; complete: boolean; reasons: string[]; unreadable: UnreadableAccount[]; };
 type HeldSharesOptions: type HeldSharesOptions = { pages?: number; };
 type HeldSplit: type HeldSplit = { recipients: Address[]; weights: number[]; };
+type HeldState: type HeldState = "held" | "received" | "returned";
 type HeldToken: type HeldToken = { token: string; mint: Address; account: Address; amount: string; };
 type HistoryEvent: type HistoryEvent = EngineEvent & { signature: Signature; slot: bigint; blockTime: bigint | null; deliveredSha256?: string; deliveredSalt?: string; };
 type HistoryOptions: type HistoryOptions = { limit?: number; before?: string; };

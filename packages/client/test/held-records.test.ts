@@ -15,7 +15,7 @@ describe("held shares and withheld fees in receipts and records", () => {
     const blockedAta = await ata22(blocked.address, mint);
     expect(before.payees).toContain(blocked.address);
     expect(before.held).toEqual([
-      { wallet: blocked.address, account: blockedAta, announcement: paid.announcement, index: 1, amount: SHARES[1], received: false, claimedTo: null, claim: null },
+      { wallet: blocked.address, account: blockedAta, announcement: paid.announcement, index: 1, amount: SHARES[1], state: "held", received: false, claimedTo: null, claim: null, returnedTo: null, close: null },
     ]);
     expect(before.summary).toContain(`held in the escrow until it claims them`);
     const waiting = await client.reputation(blocked.address);
@@ -25,7 +25,7 @@ describe("held shares and withheld fees in receipts and records", () => {
     const signature = await client.claimHeld({ wallet: blocked, announcement: paid.announcement, to: other });
     const after = await simple.receipt({ escrow: paid.intent });
     expect(after.held).toEqual([
-      { wallet: blocked.address, account: blockedAta, announcement: paid.announcement, index: 1, amount: SHARES[1], received: true, claimedTo: other, claim: signature },
+      { wallet: blocked.address, account: blockedAta, announcement: paid.announcement, index: 1, amount: SHARES[1], state: "received", received: true, claimedTo: other, claim: signature, returnedTo: null, close: null },
     ]);
     const received = await client.reputation(blocked.address);
     expect(received.records[0]).toMatchObject({ earned: SHARES[1], held: [{ received: true, claimedTo: other }] });

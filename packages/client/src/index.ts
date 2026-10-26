@@ -59,7 +59,7 @@ export {
 export type { CoSignature, SettleSplitInput, SplitBallot, SplitBallotInput, SplitShare } from "./client-split.js";
 export type { ClaimHeldInput, ClaimHeldPlan } from "./held-claim.js";
 export type { HeldShare, HeldShares, HeldSharesOptions, HeldSplit } from "./held-shares.js";
-export type { HeldPayout, WithheldFee } from "./release-holds.js";
+export type { HeldPayout, HeldState, WithheldFee } from "./release-holds.js";
 export type {
   Balances,
   BallotInput,

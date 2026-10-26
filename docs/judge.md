@@ -247,7 +247,9 @@ The release names the paid announcement and records the hash and its salt. An ea
 
 A split release pays each co-author into its canonical token account. When that account cannot take the share, because it requires memos, is frozen or is closed, the release pays everyone else and holds that share in the escrow for its co-author. `intent-engine claim-held --keypair <file>` lists the shares held for that wallet, and `--announcement <paid announcement> --to <token account> --yes` claims one into any token account the wallet owns; `wallet_claim_held` does the same over MCP.
 
-The escrow cannot close while it holds a share: `close` refuses it, `crank` passes over it and the program fails with `SharesHeld`, until the share is claimed or a year after the escrow expires, when the share returns to the owner. `receipt` names each held share and whether it was received, and a fee whose account could not take it, the protocol fee too, under `withheld`.
+The escrow cannot close while it holds a share: `close` refuses it, `crank` passes over it and the program fails with `SharesHeld`, until the share is claimed or a year after the escrow expires, when the share returns to the owner.
+
+`receipt` names each held share with its `state`: `held`, `received` once claimed, or `returned` to the owner with the close transaction. It also names a fee whose account could not take it, the protocol fee too, under `withheld`. `wallet_history` and `get_reputation` show a returned share as `returned`, outside the co-author's pay.
 
 Once an escrow closes, `intent-engine reclaim` closes the worker's announcements that may close and returns their rent; it keeps an earlier announcement that can still refute a paid release until 30 days after that release, and `close-book --intent <address>` closes an escrow's empty delivery book.
 

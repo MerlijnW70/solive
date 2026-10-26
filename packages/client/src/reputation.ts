@@ -8,6 +8,7 @@ import { memoInstruction } from "./job-memos.js";
 import { NotSettleable } from "./client-errors.js";
 import { fundedBy, fundingLookup } from "./funding.js";
 import { DELIVERY_PAGES, scan } from "./job-scan.js";
+import { heldWaiting } from "./release-holds.js";
 import { eventAuthority, eventsOf } from "./release-reads.js";
 import type { Transport } from "./transport.js";
 import { feedbackOf } from "./work-feedback.js";
@@ -98,7 +99,7 @@ export async function reputationOf(transport: Transport, wallet: Address, option
   }
   const held = new Map<Address, bigint>();
   for (const r of fair) {
-    const waiting = (r.held ?? []).filter(({ received }) => !received).reduce((sum, { amount }) => sum + amount, 0n);
+    const waiting = heldWaiting(r.held ?? []);
     if (r.mint !== undefined && waiting > 0n) {
       held.set(r.mint, (held.get(r.mint) ?? 0n) + waiting);
     }

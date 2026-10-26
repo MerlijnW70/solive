@@ -1,19 +1,29 @@
 import { type Address, getAddressDecoder } from "@solana/kit";
 import { type EngineEvent, formatAmount, IntentStatus, Kind, NATIVE_MINT } from "@intent-engine/core";
 import { findIntentPda, MAX_RECIPIENTS } from "@intent-engine/core/internal";
-import { type Transport, type WithheldFee } from "@intent-engine/client";
+import { type HeldPayout, type Transport, type WithheldFee } from "@intent-engine/client";
 import { eventAuthority, heldPayouts, intentAt, memoized, mintOf, paidWalletsOf, unmemoized, withheldIn } from "@intent-engine/client/internal";
 import { InvalidInput } from "../schema.js";
 import { deliveryReleased, releaseStanding, standingOutput } from "./standing.js";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
-import { account, amount, flag, integer, list, nullable, object, optional, text } from "../schema.js";
+import { account, amount, choice, flag, integer, list, nullable, object, optional, text } from "../schema.js";
 import { WAIT_MAX, signerOf, sha256Of } from "./guard.js";
 import { NO_CLOCK, poll } from "./wait.js";
 import { RESULT_MEANS } from "./attest.js";
 import { RELEASE_UNKNOWN, outlives, releaseLookup, namedRelease, releasedMint, createdMint, heldMint } from "./releases.js";
 import { eventsIn, SOL_DECIMALS, STAKE_TO_WORKER } from "./history-work.js";
+
+export const HELD_STATES = ["held", "received", "returned"] as const;
+
+export const heldReturnedLine = (amount: string, wallet: Address, owner: Address, close: string | null) =>
+  `${amount} held for ${wallet} was never claimed and was returned to the escrow's owner ${owner} when the escrow closed${close === null ? "" : ` in ${close}`}`;
+
+function returnedNext(held: readonly HeldPayout[], owner: Address, decimals: number | undefined, prior: string | undefined) {
+  const lines = held.filter((share) => share.state === "returned").map((share) => heldReturnedLine(formatAmount(share.amount, decimals), share.wallet, owner, share.close));
+  return lines.length === 0 ? {} : { next: [...(prior === undefined ? [] : [prior]), ...lines].join("; ") };
+}
 
 export const heldForYou = (amount: string) => `${amount} of this wallet's share is held in the escrow because its token account could not take it; ${tool("wallet_claim_held")} claims it`;
 
@@ -194,11 +204,14 @@ const receiptOutput = object({
         account: account("its token account, which could not take the share"),
         index: integer(0, 7, "its place in the split"),
         amount: text("whole tokens held"),
+        state: choice(HELD_STATES, "held: in the escrow for the co-author to claim; received: the co-author claimed it; returned: the escrow closed before any claim and refunded it to its owner"),
         received: flag("true once the co-author claimed it"),
         claimed_to: nullable(account("the token account the claim paid into")),
+        returned_to: optional(nullable(account("with returned: the owner's token account the close refunded it into"))),
+        close: optional(nullable(text("with returned: the close transaction that refunded it"))),
       }),
       MAX_RECIPIENTS,
-      "split shares the release held in the escrow because the co-author's token account could not take them; paid to that co-author, received once it claims them",
+      "split shares the release held in the escrow because the co-author's token account could not take them: held for that co-author, received once it claims them, or returned to the owner when the escrow closed first",
     ),
   ),
   withheld: optional(
@@ -248,7 +261,7 @@ export const walletReceipt = define({
     const self = (await signerOf(ctx)).address;
     const escrows = escrowsOf({ owner: input.owner ?? self, nonce: input.nonce, sha256: input.sha256, release: input.release }, input.also);
     const read = forWallet(await waitedReceipt(ctx, "wallet_receipt", input.wait, escrows), self);
-    const waiting = "held" in read && Array.isArray(read.held) ? (read.held as { wallet: Address; received: boolean; amount: string }[]).find((share) => share.wallet === self && !share.received) : undefined;
+    const waiting = "held" in read && Array.isArray(read.held) ? (read.held as { wallet: Address; state: string; amount: string }[]).find((share) => share.wallet === self && share.state === "held") : undefined;
     const earlier: unknown = "next" in read ? read.next : undefined;
     const receipt = waiting === undefined ? read : { ...read, next: typeof earlier === "string" && earlier !== "" ? `${earlier}; ${heldForYou(waiting.amount)}` : heldForYou(waiting.amount) };
     const wrapped = "paid_to" in receipt && receipt.paid_to === self && receipt.mint === NATIVE_MINT;
@@ -340,10 +353,13 @@ export async function escrowReceipt(transport: Transport, owner: Address, nonce:
               account: share.account,
               index: share.index,
               amount: formatAmount(share.amount, decimals),
+              state: share.state,
               received: share.received,
               claimed_to: share.claimedTo,
+              ...(share.state === "returned" ? { returned_to: share.returnedTo, close: share.close } : {}),
             })),
           }),
+      ...returnedNext(held, owner, decimals, "next" in common ? common.next : undefined),
       ...withheldShown(withheldFees, decimals),
     };
   }

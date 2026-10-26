@@ -8,7 +8,7 @@ import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { account, amount, choice, flag, integer, list, nullable, object, optional, text, time } from "../schema.js";
 import { signerOf } from "./guard.js";
-import { claimItem, claimsOf, type Kept, OWN_TRANSACTIONS, workItem, workOf } from "./history-work.js";
+import { claimItem, claimsOf, type Kept, OWN_TRANSACTIONS, returnedOf, workItem, workOf } from "./history-work.js";
 import { PAID_FROM_INPUT, PAID_FROM_MAX, profitItem, profitOf } from "./history-profit.js";
 
 export const HISTORY_DEFAULT = 10;
@@ -70,6 +70,8 @@ export const walletHistory = define({
         receive_token: nullable(text("SOL, TEST or the mint a fill delivers; null for a work escrow, which pays a worker and receives nothing")),
         paid_to: nullable(account("the wallet a release paid: the owner of payee")),
         payee: nullable(account("the token account a release paid into, owned by paid_to; for SOL it holds wrapped SOL")),
+        returned: optional(text("a split release only: whole tokens of held shares no co-author claimed, refunded to this wallet when the escrow closed")),
+        returned_in: optional(text("with returned: the close transaction that refunded them")),
         signature: nullable(text("the transaction that ended it")),
         at: nullable(time("unix seconds of the last event, when the cluster reports it")),
       }),
@@ -111,6 +113,7 @@ export const walletHistory = define({
       const ended = fields(ending);
       const delivered = outcome === "filled" ? (ended["delivered"] as bigint | undefined) : undefined;
       const attested = ending?.name === "IntentAttested" ? ending : undefined;
+      const returned = ending?.name === "IntentSplit" ? await returnedOf(ctx.transport, intent) : { amount: 0n, close: null };
       return {
         nonce: nonce ?? (created["nonce"] as bigint),
         intent,
@@ -122,6 +125,7 @@ export const walletHistory = define({
         receive_token: kind === Kind.AttestedResult ? null : (tokenName(outputMint) ?? outputMint),
         paid_to: attested === undefined ? null : await paidWalletOf(ctx.transport, attested, intent),
         payee: attested === undefined ? null : attested.fields.payee,
+        ...(returned.amount === 0n ? {} : { returned: await tokens(inputMint, returned.amount), ...(returned.close === null ? {} : { returned_in: returned.close }) }),
         signature: ending?.signature ?? null,
         at: (ending ?? events[0])?.blockTime ?? null,
       };

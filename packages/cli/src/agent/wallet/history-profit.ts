@@ -2,13 +2,13 @@ import type { Address } from "@solana/kit";
 import { type EngineEvent, formatAmount, NATIVE_MINT, tokenName } from "@intent-engine/core";
 import { findVaultPda } from "@intent-engine/core/internal";
 import { type Transport } from "@intent-engine/client";
-import { mintOf, releaseShareOf } from "@intent-engine/client/internal";
+import { eventAuthority, heldPayouts, heldReturned, mintOf, releaseShareOf } from "@intent-engine/client/internal";
 import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
 import { account, InvalidInput, list, object, text } from "../schema.js";
 import { SIGNATURE_FEE } from "../budget.js";
 import { tokenAccountRent } from "./costs.js";
-import { eventsIn } from "./history-work.js";
+import { eventsIn, returnedOf } from "./history-work.js";
 import { createdMint, heldMint, releaseLookup, releasedMint } from "./releases.js";
 
 export const PAID_FROM_MAX = 8;
@@ -29,8 +29,8 @@ export const otherToken = "pays in another token than the job escrow names";
 export const profitItem = object({
   escrow: account("the job this wallet was paid for"),
   token: text("SOL, TEST or the mint the job paid in, and the paid_from escrows too"),
-  received: text("whole tokens the job's release paid this wallet"),
-  paid_out: text("whole tokens the releases of paid_from paid their workers"),
+  received: text("whole tokens the job's release paid this wallet, less a held share of it returned to the job's owner"),
+  paid_out: text("whole tokens the releases of paid_from paid their workers, less held shares their closes returned to this wallet"),
   fees: text("whole tokens of judge and protocol fees those releases took"),
   fees_sol: text("whole SOL of create fees, crank bounties others collected, and the base network fee of each transaction this wallet paid for on paid_from"),
   rent_sol: text("whole SOL the paid_from escrows' accounts still hold as rent and crank bounty; most comes back when they close"),
@@ -57,7 +57,8 @@ async function received(transport: Transport, wallet: Address, job: Address) {
   if (mint === undefined) {
     throw new AgentRefusal("NotReleased", jobUnpaid(job));
   }
-  return { share, mint };
+  const held = event.name === "IntentSplit" ? await heldPayouts(transport, release.tx, await eventAuthority(), job, transactions) : [];
+  return { share: share - heldReturned(held, wallet), mint };
 }
 
 type Spent = { paidOut: bigint; fees: bigint; feesSol: bigint; rentSol: bigint };
@@ -84,6 +85,7 @@ async function spentOn(transport: Transport, wallet: Address, intent: Address, m
       feesSol += BigInt(event.fields.bounty);
     }
   }
+  paidOut -= (await returnedOf(transport, intent)).amount;
   const touched = new Set(events.map(({ signature }) => signature));
   feesSol += SIGNATURE_FEE * BigInt(transactions.filter(({ signature, feePayer }) => feePayer === wallet && touched.has(signature)).length);
   const [vault] = await findVaultPda({ intent });

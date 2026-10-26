@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { isSdkError, type Trust, trustOf, type WorkRecord } from "@intent-engine/client";
-import { DELIVERY_PAGES, feedbackInstructions, reputationOf, RESTART, SIGNATURE_PAGE, TRUST_PATHS, TRUST_WALLETS } from "@intent-engine/client/internal";
+import { DELIVERY_PAGES, feedbackInstructions, heldReturned, heldWaiting, reputationOf, RESTART, SIGNATURE_PAGE, TRUST_PATHS, TRUST_WALLETS } from "@intent-engine/client/internal";
 import { type AgentContext, define } from "./actions.js";
 import type { Call } from "./claims.js";
 import { tool } from "./names.js";
@@ -41,7 +41,7 @@ export function trustView(trust: Trust) {
 export const getReputation = define({
   name: tool("get_reputation"),
   title: "A worker's verifiable track record",
-  description: `Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Releases whose payer was first funded by the worker, directly or through one wallet, are counted apart as funded by the worker and left out too; releases whose payer's funding could not be checked still count, are also shown as funding_unknown, and paid_verified counts only the checked ones. Releases a substantiated refutation shows someone announced the same work earlier are left out too. Each released escrow counts once, for the announcement it paid; a co-author counts only when a split release names it. backed sums the protocol fees behind the totals by the worker's share, per mint, and backed_sol the SOL ones plus every create fee. With reader, trust adds the worker's personalized PageRank rooted only in that reader and the seeds named, over the SOL its counted payments cost: a ring paying itself gets only trust that flows in from those roots, at most (1 - a) / a times the trust on the payments into it, with a = ${RESTART}. Use it before hiring a worker or trusting its delivery.`,
+  description: `Read what a worker wallet has delivered and been paid for, from on-chain records only: every proof escrow it announced work to, and whether the escrow's release paid that wallet for that exact work. Releases where the worker paid or judged itself, or the payer judged its own escrow, are counted apart as self-dealt and left out of the totals. Releases whose payer was first funded by the worker, directly or through one wallet, are counted apart as funded by the worker and left out too; releases whose payer's funding could not be checked still count, are also shown as funding_unknown, and paid_verified counts only the checked ones. Releases a substantiated refutation shows someone announced the same work earlier are left out too. Each released escrow counts once, for the announcement it paid; a co-author counts only when a split release names it, and a held share it never claimed, returned to the owner at the close, is not counted. backed sums the protocol fees behind the totals by the worker's share, per mint, and backed_sol the SOL ones plus every create fee. With reader, trust adds the worker's personalized PageRank rooted only in that reader and the seeds named, over the SOL its counted payments cost: a ring paying itself gets only trust that flows in from those roots, at most (1 - a) / a times the trust on the payments into it, with a = ${RESTART}. Use it before hiring a worker or trusting its delivery.`,
   effect: "read",
   input: object({
     worker: account("the worker wallet to read"),
@@ -64,8 +64,8 @@ export const getReputation = define({
     payers: integer(0, Number.MAX_SAFE_INTEGER, "distinct owners who paid it at arm's length"),
     judges: integer(0, Number.MAX_SAFE_INTEGER, "distinct judges or committees that released to it at arm's length"),
     committee_judged: integer(0, Number.MAX_SAFE_INTEGER, "arm's-length releases judged by a committee"),
-    earned: list(object({ mint: account(), amount: amount("raw units") }), 32),
-    held: list(object({ mint: account(), amount: amount("raw units") }), 32, "the part of earned that split releases paid this wallet but held in their escrows, as its token account could not take it, and it has not claimed yet"),
+    earned: list(object({ mint: account(), amount: amount("raw units") }), 32, "what the counted releases paid this wallet, per mint; a held share it never claimed and the escrow returned to its owner is not counted"),
+    held: list(object({ mint: account(), amount: amount("raw units") }), 32, "the part of earned that split releases paid this wallet but held in their escrows, as its token account could not take it, and it has not claimed yet; a held share the escrow's close returned to its owner is neither here nor in earned"),
     backed: list(object({ mint: account(), amount: amount("raw units of protocol fees") }), 32),
     backed_sol: text("SOL protocol fees and every create fee behind the totals, in whole SOL"),
     feedback: object({ count: integer(0, Number.MAX_SAFE_INTEGER), average: nullable(text("average owner score out of 100")) }),
@@ -85,8 +85,9 @@ export const getReputation = define({
         funded_by_worker: optional(choice(FUNDED)),
         owner: optional(account()),
         attestor: optional(account()),
-        earned: optional(amount()),
+        earned: optional(amount("raw units the release paid this wallet; 0 when its held share was returned to the owner")),
         held: optional(amount("raw units of earned that the release held for this wallet and it has not claimed yet")),
+        returned: optional(amount("raw units the release held for this wallet that it never claimed and the escrow's close returned to the owner; not part of earned")),
         feedback: optional(integer(0, 100)),
       }),
       RECORDS_SHOWN,
@@ -165,9 +166,10 @@ export const getReputation = define({
   },
 });
 
-function heldOf(record: WorkRecord): { held?: bigint } {
-  const waiting = (record.held ?? []).filter(({ received }) => !received).reduce((sum, { amount: part }) => sum + part, 0n);
-  return waiting === 0n ? {} : { held: waiting };
+function heldOf(record: WorkRecord): { held?: bigint; returned?: bigint } {
+  const waiting = heldWaiting(record.held ?? []);
+  const returned = heldReturned(record.held ?? []);
+  return { ...(waiting === 0n ? {} : { held: waiting }), ...(returned === 0n ? {} : { returned }) };
 }
 
 export const walletFeedback = define({
