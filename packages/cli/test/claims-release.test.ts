@@ -8,7 +8,7 @@ import { buildClaimJob, claimBoardAddress, signCommitteeVote, sortMembers, specM
 import { createClient } from "@intent-engine/client/node";
 import { noJudgeKey, WARN_NO_JUDGE_KEY } from "@intent-engine/client/internal";
 import { claimHeldBy } from "../src/agent/wallet/attest.js";
-import { CLAIMS_ADVICE, CLAIMS_NEED_SPEC, CLAIMS_TOGETHER, claimsLine, PIECE_ONE, SPEC_ANSWER_OUT, SPEC_NO_ANSWER } from "../src/agent/wallet/escrow.js";
+import { CLAIMS_ADVICE, CLAIMS_NEED_SPEC, CLAIMS_TOGETHER, claimsLine, PIECE_ONE, SPEC_ANSWER_OUT, SPEC_NO_ANSWER, STAKE_BELOW_RENT } from "../src/agent/wallet/escrow.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { defaultWallet, LAMPORTS_PER_SOL } from "../src/wallet.js";
@@ -105,6 +105,10 @@ describe("claims from the wallet tools", () => {
       issues: [{ path: "claim_stake", message: CLAIMS_NEED_SPEC }],
     });
     expect((await call(client, "wallet_escrow", { ...base, claim_stake: "101", claim_secs: 60 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "claim_stake" }] });
+    for (const claim_stake of ["0.000000001", "0.000890879"]) {
+      expect((await call(client, "wallet_escrow", { ...base, claim_stake, claim_secs: 60 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "claim_stake", message: STAKE_BELOW_RENT }] });
+    }
+    expect(STAKE_BELOW_RENT).toContain("0 or at least 0.00089088");
     const preview = await ok(client, "wallet_escrow", { ...base, claim_stake: "0.05", claim_secs: 3600 });
     expect(preview["summary"]).toContain(claimsLine(3600, "0.05", false));
     expect(claimsLine(3600, "0.05", false)).toContain("a worker can hold the job for up to 3600 seconds by staking 0.05 SOL");
@@ -183,6 +187,7 @@ describe("claims from the wallet tools", () => {
       issues: [{ path: "pieces.0.spec_hash", message: CLAIMS_NEED_SPEC }],
     });
     expect((await call(client, "wallet_escrow_plan", { ...plan, claim_secs: 60 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "claim_stake" }] });
+    expect((await call(client, "wallet_escrow_plan", { ...plan, claim_stake: "0.0001", claim_secs: 60 })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "claim_stake", message: STAKE_BELOW_RENT }] });
     const preview = await ok(client, "wallet_escrow_plan", { ...plan, claim_stake: "0.05", claim_secs: 3600 });
     const summary = preview["summary"] as string[];
     expect(summary).toContain(claimsLine(3600, "0.05", true));

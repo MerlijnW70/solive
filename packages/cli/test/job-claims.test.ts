@@ -9,6 +9,7 @@ import { claimBoardAddress, profileAddress } from "@intent-engine/core/internal"
 import { createClient } from "@intent-engine/client/node";
 import { coolingDown, heldBy, NO_PROFILE, noClaims } from "../src/claim-commands.js";
 import { CLAIM_CHANGED } from "../src/agent/work-claims.js";
+import { STAKE_FORMAT } from "../src/trust-args.js";
 import { PROFILE_CHANGED } from "../src/agent/profile.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { NOT_SENT } from "../src/flows.js";
@@ -61,6 +62,12 @@ describe("job claims from the command line", () => {
     expect(preview.json()).toMatchObject({ intent: j.intent, board, sent: false, next: NOT_SENT });
     expect(h.svm.getAccount(board).exists).toBe(false);
     expect((await j.run(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "101"])).code).toBe(EXIT_USAGE);
+    for (const stake of ["0.000000001", "0.000890879"]) {
+      const below = await j.run(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", stake]);
+      expect([below.code, below.err]).toEqual([EXIT_USAGE, expect.stringContaining(STAKE_FORMAT)]);
+    }
+    expect(STAKE_FORMAT).toContain("0 or from 0.00089088");
+    expect((await j.run(["claims", "open", "--keypair", "owner.json", "--nonce", "0", "--max-secs", "3600", "--stake", "0.00089088"])).json()).toMatchObject({ sent: false });
     expect((await j.open()).json()).toMatchObject({ sent: true, signature: expect.any(String) });
     expect(await j.show()).toMatchObject({ intent: j.intent, board, state: "free", worker: null, stake: STAKE.toString(), max_secs: 3600, owner: j.w.owner.address });
 

@@ -14,6 +14,7 @@ import {
   claimListAddress,
   findClaimListPda,
   MAX_CLAIMANTS,
+  MIN_CLAIM_STAKE,
 } from "../src/internal.js";
 
 const NONE = "11111111111111111111111111111111" as Address;
@@ -63,7 +64,7 @@ describe("claim lists", () => {
     expect(claimantChunks(workers.slice(0, 4), 2)).toEqual([workers.slice(0, 2), workers.slice(2, 4)]);
     const owner = createNoopSigner((await generateKeyPairSigner()).address);
     const intent = (await generateKeyPairSigner()).address;
-    const sends = await buildClaimsWithList({ owner, intent, maxSecs: 600, stake: 1n, workers });
+    const sends = await buildClaimsWithList({ owner, intent, maxSecs: 600, stake: MIN_CLAIM_STAKE, workers });
     expect(sends.map((ixs) => ixs.length)).toEqual([1, 1]);
     await expect(buildExtendClaimants({ owner, intent, workers: [] })).rejects.toThrow(IntentCoreError);
     await expect(buildExtendClaimants({ owner, intent, workers })).resolves.toBeDefined();

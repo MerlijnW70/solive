@@ -295,7 +295,7 @@ intent-engine committee release --keypair a.json --vote a.json.verdict --vote b.
 
 ## Job claims
 
-With claims, a worker holds a job for a while against a stake, and only that worker can be paid while the claim holds. The owner opens claims:
+With claims, a worker holds a job for a while against a stake, and only that worker can be paid while the claim holds. A stake is 0 or at least 0.00089088 SOL, the rent-exempt minimum of a wallet, so it can always be paid to an empty wallet. The owner opens claims:
 
 ```powershell
 intent-engine claims open --keypair owner.json --nonce $env:NONCE --max-secs 7200 --stake 0.05 --yes

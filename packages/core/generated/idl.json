@@ -6071,6 +6071,10 @@
     {
       "code": 6150,
       "name": "HolderStandsBy"
+    },
+    {
+      "code": 6151,
+      "name": "StakeBelowRent"
     }
   ],
   "types": [

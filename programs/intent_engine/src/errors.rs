@@ -154,6 +154,7 @@ pub enum EngineError {
     NoShareHeld,
     HeldSplitMismatch,
     HolderStandsBy,
+    StakeBelowRent,
 }
 
 pub fn core_err(e: CoreError) -> EngineError {

@@ -546,6 +546,21 @@ After the event the test probes who claims next, ends the escrow, settles the bo
 | `advance` once the dropper's term has ended | `rust:tests/svm/tests/claim_cooldown.rs::a_dropper_is_served_from_its_entry_once_its_cooldown_has_passed` | The dropper holds for its recorded time |
 | Two wallets renewing a hold | `rust:tests/svm/tests/standby.rs::the_two_wallet_renewal_works_only_while_nobody_waits` | As before: works only while nobody waits |
 
+### Stakes against the rent rules
+
+The runtime refuses a transaction that leaves a wallet above zero but below the rent-exempt minimum of a zero-byte account. A claim stake below that minimum, paid to a wallet holding nothing, failed every path that moves only the stake. `open_claims` and `open_claims_listed` now refuse a stake above zero and below that minimum, so every stake paid lands a wallet at or above it.
+
+| Path | Test | Outcome |
+| --- | --- | --- |
+| `open_claims` with a stake from 1 lamport to the minimum less one | `rust:tests/svm/tests/claim_stake_rent.rs::open_claims_refuses_a_stake_above_zero_and_below_the_floor` | `StakeBelowRent`; no board. No stake or the minimum opens |
+| `open_claims_listed` with a stake from 1 lamport to the minimum less one | `rust:tests/svm/tests/claim_stake_rent.rs::open_claims_listed_refuses_a_stake_above_zero_and_below_the_floor` | `StakeBelowRent`; no board and no list |
+| The minimum the program reads | `rust:tests/svm/tests/claim_stake_rent.rs::the_floor_is_the_rent_exempt_minimum_of_a_zero_byte_account` | 890,880 lamports, the SDK's `MIN_CLAIM_STAKE` |
+| A board holding a stake below the minimum: cancel, release by every path, drop and settle refunding an emptied holder; cancel, release by every path, `claim_job`, `advance` and settle paying a lapsed stake to an emptied owner | `rust:tests/svm/tests/claim_stake_rent.rs::a_stake_below_rent_sent_to_an_empty_wallet_fails_on_every_path_that_moves_only_the_stake` | `InsufficientFundsForRent`; nothing moves, so the holder blocked the owner's cancel and the owner blocked a new claim and the line |
+| The same paths with a stake at the minimum | `rust:tests/svm/tests/claim_stake_rent.rs::a_stake_at_the_floor_reaches_an_empty_wallet_on_every_path` | Each pays the receiver exactly the stake; the board keeps its rent plus what it holds |
+| A holder that empties its wallet, then the owner cancels | `rust:tests/svm/tests/claim_stake_rent.rs::a_holder_that_empties_its_wallet_cannot_block_the_owners_cancel` | The cancel refunds the escrow; the holder gets its stake |
+| An owner that empties its wallet, then a lapsed claim is taken or the line advances | `rust:tests/svm/tests/claim_stake_rent.rs::an_owner_that_empties_its_wallet_cannot_block_a_new_claim_or_the_line` | The owner gets the lapsed stake; the new worker holds |
+| A stand-by entry served or left to an emptied wallet, stake below the minimum or not | `rust:tests/svm/tests/claim_stake_rent.rs::a_standby_entry_returns_at_least_its_rent_to_an_empty_wallet_even_below_the_floor` | Already held: an entry always pays its own rent, which is above the minimum |
+
 ## Token-2022 recipient accounts
 
 Each payout path against a Token-2022 receiving account with one owner or issuer setting, on a mint with interest-bearing, metadata-pointer and freeze authority. Amounts are checked to the base unit. A refusal moves nothing and leaves the escrow releasable or refundable.

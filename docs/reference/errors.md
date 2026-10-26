@@ -236,6 +236,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6148 | `NoShareHeld` | no | nothing is held for this index of the split; it was paid at release or already claimed |
 | 6149 | `HeldSplitMismatch` | no | the recipients and weights given are not the split the release paid, or the signer is not the wallet at that index; pass them exactly as the release named them |
 | 6150 | `HolderStandsBy` | no | the wallet holding a job's claim cannot stand by in that job's line; it keeps the claim until it drops it or the claim lapses |
+| 6151 | `StakeBelowRent` | no | a claim stake is 0 or at least 0.00089088 SOL, the rent-exempt minimum of a wallet, so the program can always pay a stake back to a wallet that holds nothing; raise the stake or set it to 0 |
 
 ## Token programs
 

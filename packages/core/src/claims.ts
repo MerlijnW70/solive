@@ -11,11 +11,12 @@ import {
   getStandByInstructionAsync,
 } from "../generated/client/index.js";
 import { events } from "./builder-accounts.js";
-import { IntentCoreError } from "./errors.js";
+import { IntentCoreError, InvalidInput } from "./errors.js";
 
 export const CLAIMS_OPEN = 1;
 export const MAX_CLAIM_SECS = 7 * 24 * 60 * 60;
 export const MAX_CLAIM_STAKE = 100_000_000_000n;
+export const MIN_CLAIM_STAKE = 890_880n;
 export const MAX_LINE_ENTRIES = 4;
 export const MAX_LINE_SEQ = 0xffff_fffe;
 
@@ -67,6 +68,12 @@ export function checkClaimTerms(maxSecs: number, stake: bigint): void {
   }
 }
 
+export function checkClaimStake(stake: bigint): void {
+  if (stake > 0n && stake < MIN_CLAIM_STAKE) {
+    throw new InvalidInput("stake", "range", `StakeBelowRent: a claim stake is 0 or at least ${MIN_CLAIM_STAKE} lamports, the rent-exempt minimum of an empty wallet, so the program can always pay it to a wallet that holds nothing`);
+  }
+}
+
 export function claimUntil(maxSecs: number, now: bigint, secs: number, expiresAt: bigint): bigint {
   if (!Number.isInteger(secs) || secs < 1 || secs > maxSecs) throw new IntentCoreError("ClaimTerms");
   const until = now + BigInt(secs);
@@ -106,6 +113,7 @@ export async function claimBoardAddress(intent: Address): Promise<Address> {
 
 export async function buildOpenClaims(input: { owner: TransactionSigner; intent: Address; maxSecs: number; stake: bigint }) {
   checkClaimTerms(input.maxSecs, input.stake);
+  checkClaimStake(input.stake);
   return getOpenClaimsInstructionAsync({ ...input, ...(await events()) });
 }
 

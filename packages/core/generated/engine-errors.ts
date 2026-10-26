@@ -152,4 +152,5 @@ export const ENGINE_ERROR_LIST: readonly EngineErrorEntry[] = [
   { code: 6148, name: "NoShareHeld", message: "no share held" },
   { code: 6149, name: "HeldSplitMismatch", message: "held split mismatch" },
   { code: 6150, name: "HolderStandsBy", message: "holder stands by" },
+  { code: 6151, name: "StakeBelowRent", message: "stake below rent" },
 ];

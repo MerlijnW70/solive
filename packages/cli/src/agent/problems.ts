@@ -1,7 +1,7 @@
 import { tool } from "./names.js";
 import type { Address } from "@solana/kit";
-import { TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { BPS_DENOMINATOR, INTENT_ENGINE_PROGRAM_ADDRESS, MAX_PARTNER_BPS, TOKEN_2022_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
+import { formatAmount, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { BPS_DENOMINATOR, INTENT_ENGINE_PROGRAM_ADDRESS, MAX_PARTNER_BPS, MIN_CLAIM_STAKE, TOKEN_2022_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { type AnySdkError, isSdkError, type MaybeSent } from "@intent-engine/client";
 import { rateLimited } from "@intent-engine/client/internal";
 import { InvalidInput, type Issue } from "./schema.js";
@@ -177,6 +177,7 @@ export const ENGINE_PROBLEMS = {
   NoShareHeld: never("nothing is held for this index of the split; it was paid at release or already claimed"),
   HeldSplitMismatch: never("the recipients and weights given are not the split the release paid, or the signer is not the wallet at that index; pass them exactly as the release named them"),
   HolderStandsBy: never("the wallet holding a job's claim cannot stand by in that job's line; it keeps the claim until it drops it or the claim lapses"),
+  StakeBelowRent: never(`a claim stake is 0 or at least ${formatAmount(MIN_CLAIM_STAKE, 9)} SOL, the rent-exempt minimum of a wallet, so the program can always pay a stake back to a wallet that holds nothing; raise the stake or set it to 0`),
 } as const satisfies Record<string, Entry>;
 
 type EngineErrorName = keyof typeof ENGINE_PROBLEMS;

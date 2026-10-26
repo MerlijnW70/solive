@@ -1,7 +1,7 @@
 import { isSdkError } from "@intent-engine/client";
 import { parseArgs } from "node:util";
 import type { Address } from "@solana/kit";
-import { parseAmount } from "@intent-engine/core";
+import { formatAmount, parseAmount } from "@intent-engine/core";
 import {
   checkProfile,
   ENCRYPTION_KEY_RULE,
@@ -9,6 +9,7 @@ import {
   MAX_CLAIM_SECS,
   MAX_CLAIM_STAKE,
   MAX_CLAIMANTS,
+  MIN_CLAIM_STAKE,
   MAX_LINE_SEQ,
   MAX_COMMITTEE_MEMBERS,
   MAX_FEEDBACK_SCORE,
@@ -114,7 +115,7 @@ export const CLAIMS_SUBS = "claims needs show, open, take, drop, settle, standby
 export const PROFILE_SUBS = "profile needs show, set, close or encryption-key new";
 export const ENCRYPTION_KEY_SUB = "profile encryption-key needs new";
 export const ENCRYPTION_KEY_TEXT = `--encryption-key is ${ENCRYPTION_KEY_RULE}, or ${NO_ENCRYPTION_KEY} to remove it`;
-export const STAKE_FORMAT = `--stake is SOL from 0 to ${MAX_CLAIM_STAKE / 1_000_000_000n} with at most 9 decimals, such as 0.01`;
+export const STAKE_FORMAT = `--stake is SOL, 0 or from ${formatAmount(MIN_CLAIM_STAKE, 9)} (the rent-exempt minimum of a wallet) to ${MAX_CLAIM_STAKE / 1_000_000_000n}, with at most 9 decimals, such as 0.01`;
 export const PROFILE_RULE =
   "a profile needs --skills of 1 to 8 distinct tags, each 1 to 16 of a-z, 0-9 and - not starting or ending with -, an --endpoint of https:// and at most 128 printable characters without spaces or \\, and --doc-url only together with --doc-sha256";
 
@@ -131,7 +132,7 @@ function stakeOf(values: Values): bigint {
   } catch {
     lamports = -1n;
   }
-  if (lamports < 0n || lamports > MAX_CLAIM_STAKE) {
+  if (lamports < 0n || lamports > MAX_CLAIM_STAKE || (lamports > 0n && lamports < MIN_CLAIM_STAKE)) {
     throw new UsageError(STAKE_FORMAT);
   }
   return lamports;

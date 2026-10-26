@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
 import { feeBpsFor, formatAmount, Kind, NATIVE_MINT, splitFees } from "@intent-engine/core";
-import { isMemoUrl, isSealed, MAX_CLAIM_SECS, MAX_CLAIM_STAKE, MEMO_URL_RULE, sealedTo } from "@intent-engine/core/internal";
+import { isMemoUrl, isSealed, MAX_CLAIM_SECS, MAX_CLAIM_STAKE, MEMO_URL_RULE, MIN_CLAIM_STAKE, sealedTo } from "@intent-engine/core/internal";
 import { chainTime, loadCommittee, loadConfig, MAX_SPEC_BYTES, mintOf, plainHttpOnPublic, WARN_NO_JUDGE_KEY } from "@intent-engine/client/internal";
 import { TOKEN_NAMES, tokenNamed } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";
@@ -71,12 +71,13 @@ export const CLAIMS_ADVICE = "for such work give claim_stake and claim_secs to o
 
 export const SPEC_NO_ANSWER = `${SPEC_ANSWER_OUT}; ${CLAIMS_ADVICE}`;
 
+export const STAKE_BELOW_RENT = `must be 0 or at least ${formatAmount(MIN_CLAIM_STAKE, 9)}, the rent-exempt minimum of a wallet: the program refuses a smaller stake (StakeBelowRent) so it can always pay a stake back to a wallet that holds nothing`;
 export const CLAIMS_TOGETHER = "give claim_stake and claim_secs together, or neither";
 
 export const CLAIMS_NEED_SPEC = "claims need spec_hash, since only a proof escrow takes claims";
 
 const claimInputs = {
-  claim_stake: optional(text("whole SOL a worker stakes to claim the job, such as 0.01; with claim_secs it opens claims, so one worker at a time can be paid; on a spec sealed at spec_url only the workers it invites may claim; needs spec_hash")),
+  claim_stake: optional(text(`whole SOL a worker stakes to claim the job, such as 0.01: 0, or at least ${formatAmount(MIN_CLAIM_STAKE, 9)}, the rent-exempt minimum of a wallet; with claim_secs it opens claims, so one worker at a time can be paid; on a spec sealed at spec_url only the workers it invites may claim; needs spec_hash`)),
   claim_secs: optional(integer(1, MAX_CLAIM_SECS, "the longest a worker may hold the job by claiming it, in seconds; with claim_stake")),
 };
 
@@ -95,6 +96,9 @@ function claimTerms(input: { claim_stake?: string | undefined; claim_secs?: numb
   const stake = raw(input.claim_stake, 9, "claim_stake");
   if (stake > MAX_CLAIM_STAKE) {
     throw new InvalidInput([{ path: "claim_stake", message: `must be at most ${formatAmount(MAX_CLAIM_STAKE, 9)}` }]);
+  }
+  if (stake > 0n && stake < MIN_CLAIM_STAKE) {
+    throw new InvalidInput([{ path: "claim_stake", message: STAKE_BELOW_RENT }]);
   }
   const maxSecs = input.claim_secs;
   return { line: claimsLine(maxSecs, formatAmount(stake, 9), every), maxSecs, stake };

@@ -6,7 +6,7 @@ import {
   getOpenClaimsListedInstructionAsync,
 } from "../generated/client/index.js";
 import { events } from "./builder-accounts.js";
-import { checkClaimTerms } from "./claims.js";
+import { checkClaimStake, checkClaimTerms } from "./claims.js";
 import { IntentCoreError } from "./errors.js";
 
 export const MAX_CLAIMANTS = 32;
@@ -52,6 +52,7 @@ export function claimantChunks(workers: readonly Address[], chunk = CLAIM_LIST_C
 
 export async function buildOpenClaimsListed(input: { owner: TransactionSigner; intent: Address; maxSecs: number; stake: bigint; size: number; workers: readonly Address[] }) {
   checkClaimTerms(input.maxSecs, input.stake);
+  checkClaimStake(input.stake);
   checkClaimants(input.size, input.workers);
   return getOpenClaimsListedInstructionAsync({ ...input, workers: [...input.workers], ...(await events()) });
 }

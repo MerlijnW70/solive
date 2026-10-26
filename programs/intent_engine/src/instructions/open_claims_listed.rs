@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 
 use crate::errors::EngineError;
-use crate::instructions::open_claims::{fill_board, open_terms};
+use crate::instructions::open_claims::{check_stake, fill_board, open_terms};
 use crate::roster::start;
 use crate::state::{ClaimBoard, ClaimList, Intent, CLAIMS_SEED, CLAIM_LIST_SEED, INTENT_VERSION};
 
@@ -43,6 +43,7 @@ pub fn handle_open_claims_listed(
     workers: Vec<Pubkey>,
 ) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
+    check_stake(stake, Rent::get()?.minimum_balance(0))?;
     let terms = open_terms(&mut *ctx.accounts.intent.load_mut()?, now, max_secs, stake)?;
     let (opened, listed) = {
         let mut board = ctx.accounts.board.load_init()?;

@@ -3,16 +3,19 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Address } from "@solana/kit";
 import { describe, expect, it } from "vitest";
-import { IntentCoreError } from "../src/index.js";
+import { IntentCoreError, isSdkError } from "../src/index.js";
 import {
   type BoardView,
   buildAdvance,
   buildDropClaim,
   buildSettleClaims,
+  buildOpenClaims,
+  buildOpenClaimsListed,
   buildStandBy,
   checkAdvance,
   checkClaimant,
   checkStandBy,
+  checkClaimStake,
   checkClaimTerms,
   claimSlot,
   claimUntil,
@@ -22,6 +25,7 @@ import {
   MAX_CLAIM_SECS,
   MAX_CLAIM_STAKE,
   MAX_LINE_ENTRIES,
+  MIN_CLAIM_STAKE,
   stakeReceiverOnCancel,
   stakeReceiverOnRelease,
   stakeReceiverOnSettle,
@@ -148,6 +152,42 @@ describe("claim limits", () => {
     expect(rust).toContain("pub const MAX_CLAIM_STAKE: u64 = 100_000_000_000;");
     expect(MAX_CLAIM_SECS).toBe(604_800);
     expect(MAX_CLAIM_STAKE).toBe(100_000_000_000n);
+  });
+});
+
+describe("claim stake floor", () => {
+  const owner = { address: OWNER, signTransactions: async () => [] } as never;
+  const refusal = (run: () => unknown) => {
+    try {
+      run();
+    } catch (error) {
+      return isSdkError(error, "invalid-input") ? [error.field, error.rule, error.message.startsWith("StakeBelowRent:")] : String(error);
+    }
+    return null;
+  };
+
+  it("is the rent-exempt minimum of a zero-byte account that the program tests against", () => {
+    const rust = readFileSync(join(ROOT, "tests/svm/tests/claim_stake_rent.rs"), "utf8");
+    expect(rust).toContain("const FLOOR: u64 = 890_880;");
+    expect(MIN_CLAIM_STAKE).toBe(890_880n);
+  });
+
+  it("accepts no stake or a stake from the floor up and refuses one between", () => {
+    for (const stake of [0n, MIN_CLAIM_STAKE, MIN_CLAIM_STAKE + 1n, MAX_CLAIM_STAKE]) {
+      expect(refusal(() => checkClaimStake(stake))).toBeNull();
+    }
+    for (const stake of [1n, MIN_CLAIM_STAKE - 1n]) {
+      expect(refusal(() => checkClaimStake(stake))).toEqual(["stake", "range", true]);
+    }
+  });
+
+  it("refuses to build an open with a stake below the floor, listed or not", async () => {
+    const intent = "SysvarRecentB1ockHashes11111111111111111111" as Address;
+    const stake = MIN_CLAIM_STAKE - 1n;
+    await expect(buildOpenClaims({ owner, intent, maxSecs: 60, stake })).rejects.toMatchObject({ code: "invalid-input", field: "stake" });
+    await expect(buildOpenClaimsListed({ owner, intent, maxSecs: 60, stake, size: 1, workers: [WORKER] })).rejects.toMatchObject({ code: "invalid-input", field: "stake" });
+    await expect(buildOpenClaims({ owner, intent, maxSecs: 60, stake: MIN_CLAIM_STAKE })).resolves.toBeDefined();
+    await expect(buildOpenClaims({ owner, intent, maxSecs: 60, stake: 0n })).resolves.toBeDefined();
   });
 });
 

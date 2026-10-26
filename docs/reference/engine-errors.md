@@ -157,3 +157,4 @@ Every error the engine program raises, from its IDL. When an SDK call fails, `cl
 | 6148 | `NoShareHeld` | no | nothing is held for this index of the split |
 | 6149 | `HeldSplitMismatch` | no | the recipients and weights given are not the split the release paid, or the signer is not the wallet at that index |
 | 6150 | `HolderStandsBy` | no | the wallet holding a job's claim cannot stand by in that job's line |
+| 6151 | `StakeBelowRent` | no | a claim stake is 0 or at least 0.00089088 SOL, the rent-exempt minimum of a wallet, so the program can always pay a stake back to a wallet that holds nothing |

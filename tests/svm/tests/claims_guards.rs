@@ -1,6 +1,6 @@
 use intent_core::lifecycle::Status;
 use intent_engine::errors::EngineError;
-use intent_engine::instructions::open_claims::open_terms;
+use intent_engine::instructions::open_claims::{check_stake, open_terms};
 use intent_engine::state::{Intent, CLAIMS_OPEN};
 
 const NOW: i64 = 1_700_000_000;
@@ -28,4 +28,19 @@ fn claims_on_an_escrow_without_them_go_on_to_its_terms() {
     let mut intent = open_intent(0);
     let refused = open_terms(&mut intent, NOW, HOUR, STAKE).err();
     assert_ne!(refused, Some(EngineError::ClaimsOpen.into()));
+}
+
+#[test]
+fn the_stake_floor_admits_no_stake_or_one_from_the_floor_up() {
+    let floor: u64 = 890_880;
+    for stake in [0, floor, floor.saturating_add(1), STAKE] {
+        assert_eq!(check_stake(stake, floor).err(), None, "{stake}");
+    }
+    for stake in [1, floor.saturating_sub(1)] {
+        assert_eq!(
+            check_stake(stake, floor).err(),
+            Some(EngineError::StakeBelowRent.into()),
+            "{stake}"
+        );
+    }
 }

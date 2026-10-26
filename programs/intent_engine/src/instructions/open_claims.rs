@@ -29,6 +29,11 @@ pub struct OpenClaims<'info> {
     pub system_program: Program<'info, System>,
 }
 
+pub fn check_stake(stake: u64, floor: u64) -> Result<()> {
+    require!(stake == 0 || stake >= floor, EngineError::StakeBelowRent);
+    Ok(())
+}
+
 pub fn open_terms(intent: &mut Intent, now: i64, max_secs: u32, stake: u64) -> Result<Terms> {
     let terms = Terms::new(max_secs, stake).map_err(core_err)?;
     let status = Status::try_from(intent.status).map_err(core_err)?;
@@ -66,6 +71,7 @@ pub fn fill_board(
 
 pub fn handle_open_claims(ctx: Context<OpenClaims>, max_secs: u32, stake: u64) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
+    check_stake(stake, Rent::get()?.minimum_balance(0))?;
     let terms = open_terms(&mut *ctx.accounts.intent.load_mut()?, now, max_secs, stake)?;
     let opened = fill_board(
         &mut *ctx.accounts.board.load_init()?,

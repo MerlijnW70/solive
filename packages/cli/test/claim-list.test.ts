@@ -155,7 +155,7 @@ describe("a claim list on chain", () => {
     const s = await setup();
     const intent = await post(s, [s.wallet]);
     const workers = Array.from({ length: MAX_CLAIMANTS }, () => address());
-    const sends = await buildClaimsWithList({ owner: s.w.owner, intent, maxSecs: 3600, stake: 1n, workers });
+    const sends = await buildClaimsWithList({ owner: s.w.owner, intent, maxSecs: 3600, stake: 50_000_000n, workers });
     const extend = await buildExtendClaimants({ owner: s.w.owner, intent, workers: workers.slice(0, CLAIM_LIST_CHUNK) });
     for (const instructions of [...sends, [extend]]) {
       const size = await transactionBytes(transport, [...instructions, computeUnitLimit(MAX_COMPUTE_UNITS), computeUnitPrice(1n)], s.w.owner.address);
