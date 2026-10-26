@@ -32,6 +32,7 @@ pub type TestResult<T = ()> = Result<T, Box<dyn Error>>;
 
 mod addresses;
 mod announcements;
+mod claim_world;
 mod claims;
 mod committee;
 mod cu;
@@ -49,6 +50,7 @@ mod sig;
 
 pub use addresses::*;
 pub use announcements::*;
+pub use claim_world::*;
 pub use claims::*;
 pub use committee::*;
 pub use cu::*;
