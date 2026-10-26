@@ -1,0 +1,156 @@
+From 4752fbab570ade6374ce142853f3bc4b15911006 Mon Sep 17 00:00:00 2001
+From: MerlijnW70 <196433316+MerlijnW70@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 07:12:19 +0100
+Subject: [PATCH] Hunt hs: far expiry locks withheld fee
+
+---
+ tests/svm/tests/hunt_hs_far_expiry.rs | 137 ++++++++++++++++++++++++++
+ 1 file changed, 137 insertions(+)
+ create mode 100644 tests/svm/tests/hunt_hs_far_expiry.rs
+
+diff --git a/tests/svm/tests/hunt_hs_far_expiry.rs b/tests/svm/tests/hunt_hs_far_expiry.rs
+new file mode 100644
+index 0000000..17e3963
+--- /dev/null
++++ b/tests/svm/tests/hunt_hs_far_expiry.rs
+@@ -0,0 +1,137 @@
++use anchor_lang::prelude::Pubkey;
++use solana_signer::Signer;
++use svm_tests::{
++    judged_spec, MintExt, ReleasePath, ReleaseTerms, ReleaseWorld, Setting, TestResult, START_TS,
++};
++
++const T22: Pubkey = anchor_spl::token_2022::ID;
++const MINT: [MintExt; 3] = [
++    MintExt::InterestBearing,
++    MintExt::MetadataPointer,
++    MintExt::Freezable,
++];
++const PROTOCOL_FEE: u64 = 50;
++const SHARES: [u64; 2] = [59_230, 39_486];
++const JUDGE_FEE: u64 = 1_234;
++const TERMS: ReleaseTerms = ReleaseTerms {
++    funded: 1_000_000,
++    escrow: 100_000,
++    judge_fee: JUDGE_FEE,
++    spec: [0x5d; 32],
++    weights: [6_000, 4_000],
++    partner_bps: 0,
++};
++
++fn world(expires_at: i64) -> TestResult<ReleaseWorld> {
++    let mut env = svm_tests::Env::new()?;
++    let fee_owner = env.funded()?;
++    env.fee_recipient = fee_owner.pubkey();
++    env.init_config()?;
++    let market = env.market(T22, &MINT, T22, &[])?;
++    let trader = env.trader(&market, TERMS.funded)?;
++    let attestor = env.funded()?;
++    let partner = env.funded()?;
++    let mut spec = judged_spec(
++        0,
++        TERMS.escrow,
++        &attestor.pubkey(),
++        TERMS.spec,
++        TERMS.judge_fee,
++    )?;
++    spec.expires_at = expires_at;
++    env.create_intent(&trader, &market, &spec)?;
++    let judge_to = env.create_ata(&attestor.pubkey(), &market.input_mint, T22)?;
++    env.judge_to = Some(judge_to);
++    env.partner_to = None;
++    let workers = [env.funded()?, env.funded()?];
++    let atas = [
++        env.create_ata(&workers[0].pubkey(), &market.input_mint, T22)?,
++        env.create_ata(&workers[1].pubkey(), &market.input_mint, T22)?,
++    ];
++    let solver = env.funded()?;
++    let fee_to = env.fee_account(&market)?;
++    Ok(ReleaseWorld {
++        env,
++        terms: TERMS,
++        market,
++        trader,
++        solver,
++        attestor,
++        panel: None,
++        workers,
++        atas,
++        judge_to,
++        fee_owner,
++        fee_to,
++        partner,
++        partner_to: None,
++    })
++}
++
++fn release_with_withheld_fee(expires_at: i64) -> TestResult<ReleaseWorld> {
++    let mut w = world(expires_at)?;
++    let announcer = w.workers[0].insecure_clone();
++    let intent = w.intent();
++    let delivery = w.env.announce_for(&announcer, &intent)?;
++    w.env.set_now(START_TS + 1_800);
++    let (fee_owner, fee_to) = (w.fee_owner.insecure_clone(), w.fee_to);
++    let mint = w.market.input_mint;
++    w.env
++        .apply_setting(&fee_owner, &fee_to, &mint, T22, Setting::MemoRequired)?;
++    let result = w.release(ReleasePath::AttestedSplit, &delivery)?;
++    assert!(result.is_ok(), "release: {:?}", result.err());
++    assert_eq!(w.paid()?, SHARES, "both co-authors paid");
++    assert_eq!(w.env.balance(&w.judge_to)?, JUDGE_FEE, "judge paid");
++    assert_eq!(
++        w.env.balance(&w.vault())?,
++        PROTOCOL_FEE,
++        "the withheld fee stays"
++    );
++    assert_eq!(w.env.intent(&w.owner(), 0)?.held, 0, "no share is held");
++    Ok(w)
++}
++
++fn close(w: &mut ReleaseWorld) -> Result<(), solana_transaction_error::TransactionError> {
++    let owner = w.trader.key.insecure_clone();
++    let ix = w
++        .env
++        .close_ix(&owner.pubkey(), &w.market, 0, &w.trader.input);
++    w.env.send(&owner, &[ix], &[]).map(|_| ())
++}
++
++#[test]
++fn hs4_a_fee_withheld_on_a_never_expiring_escrow_is_refunded_once_released() -> TestResult {
++    let mut w = release_with_withheld_fee(START_TS + 3_600)?;
++    let before = w.env.balance(&w.trader.input)?;
++    close(&mut w)?;
++    assert_eq!(
++        w.env.balance(&w.trader.input)?,
++        before + PROTOCOL_FEE,
++        "control: a dated escrow refunds its withheld fee"
++    );
++
++    let mut w = release_with_withheld_fee(i64::MAX)?;
++    let before = w.env.balance(&w.trader.input)?;
++    for later in [
++        START_TS + 3_600,
++        START_TS + 400 * 86_400,
++        START_TS + 100 * 365 * 86_400,
++    ] {
++        w.env.set_now(later);
++        let closed = close(&mut w);
++        if closed.is_ok() {
++            break;
++        }
++        assert!(
++            later < START_TS + 100 * 365 * 86_400,
++            "the withheld fee of a filled escrow without held shares can never be refunded: {closed:?}"
++        );
++    }
++    assert_eq!(
++        w.env.balance(&w.trader.input)?,
++        before + PROTOCOL_FEE,
++        "the withheld fee returns to the owner"
++    );
++    assert!(!w.env.exists(&w.intent()), "the escrow closes");
++    Ok(())
++}
+-- 
+2.56.0.windows.1
+

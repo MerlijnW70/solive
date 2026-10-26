@@ -1,0 +1,60 @@
+From bfd4979f26d5720f393ac159b19a8d16e37659e6 Mon Sep 17 00:00:00 2001
+From: MerlijnW70 <196433316+MerlijnW70@users.noreply.github.com>
+Date: Mon, 26 Oct 2026 07:14:17 +0100
+Subject: [PATCH] Hunt: held share returned to its owner
+
+---
+ .../test/hunt/hc-returned-share.test.ts       | 41 +++++++++++++++++++
+ 1 file changed, 41 insertions(+)
+ create mode 100644 packages/client/test/hunt/hc-returned-share.test.ts
+
+diff --git a/packages/client/test/hunt/hc-returned-share.test.ts b/packages/client/test/hunt/hc-returned-share.test.ts
+new file mode 100644
+index 0000000..a418a8a
+--- /dev/null
++++ b/packages/client/test/hunt/hc-returned-share.test.ts
+@@ -0,0 +1,41 @@
++import { describe, expect, it } from "vitest";
++import { HELD_CLAIM_SECS } from "@intent-engine/core/internal";
++import { connect } from "../../src/index.js";
++import { heldWorld, SHARES } from "../held.js";
++import { ata22, balance22 } from "../token22.js";
++import { fundedSigner, LOCAL } from "../work.js";
++
++async function returnedToOwner() {
++  const held = await heldWorld();
++  const { w, client, mint, blocked, release, memoRequired } = held;
++  const paid = await release(memoRequired);
++  const ownerAccount = await ata22(w.owner.address, mint);
++  const before = balance22(w, ownerAccount);
++  const escrow = await client.intent(paid.intent);
++  const expiresAt = escrow?.intent.expiresAt ?? 0n;
++  w.test.warp(expiresAt + HELD_CLAIM_SECS + 1n - w.test.now());
++  const cranker = await fundedSigner(w);
++  await client.close(cranker, paid.intent);
++  expect(await client.intent(paid.intent)).toBeNull();
++  expect(balance22(w, ownerAccount) - before).toBe(SHARES[1]);
++  await expect(client.plan.claimHeld({ wallet: blocked, announcement: paid.announcement })).rejects.toMatchObject({ code: "no-held-share", reason: "escrow-closed" });
++  expect((await client.heldShares(blocked.address)).shares).toEqual([]);
++  return { ...held, paid };
++}
++
++describe("a held share the closed escrow returned to its owner", () => {
++  it("HC-3 the receipt does not tell the co-author its share still waits in the escrow for its claim after the escrow returned it to the owner", async () => {
++    const { w, blocked, paid } = await returnedToOwner();
++    const simple = await connect({ url: LOCAL, signer: blocked, transport: w.chain.transport });
++    const receipt = await simple.receipt({ escrow: paid.intent });
++    expect(receipt.held.map(({ received }) => received)).toEqual([false]);
++    expect(receipt.summary).not.toContain(`paid to ${blocked.address} but held in the escrow until it claims them`);
++  });
++
++  it("HC-3 the reputation does not sum a share the owner got back as held for the co-author to claim", async () => {
++    const { client, blocked } = await returnedToOwner();
++    const reputation = await client.reputation(blocked.address);
++    expect(reputation.records[0]).toMatchObject({ outcome: "paid", role: "co-author" });
++    expect(reputation.held).toEqual([]);
++  });
++});
+-- 
+2.43.0
+
