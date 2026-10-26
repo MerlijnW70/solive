@@ -11,7 +11,7 @@ import { createTestWorld, type TestWorld } from "../src/testing.js";
 vi.mock("node:dns/promises", () => ({ lookup: async () => [{ address: "93.184.215.14", family: 4 }] }));
 
 const NAMES: readonly ClientEventName[] = ["request", "response", "retry", "send", "confirm", "fetch"];
-const RPC_URL = "https://" + "reader:hunter2@rpc.example.net:8443/v1/node?api-key=k3y";
+const RPC_URL = "https://" + "re0der:hunt0r2@rpc.example.net:8443/v1/node?api-key=k0y";
 const WORK_PATH = "/deliveries/a1b2c3/work.tar";
 const WORK_QUERY = "?token=t0ken";
 const WORK_URL = "https://" + "files.example.org" + WORK_PATH + WORK_QUERY;
@@ -79,11 +79,11 @@ describe("what hooks and the debug log show", () => {
       ...forms(secret),
       ...forms(saltSignature),
       ...[worker, signing, first.judge, second.judge].flatMap(({ keypair }) => forms(keypair.slice(0, 32))),
-      "reader",
-      "hunter2",
+      "re0der",
+      "hunt0r2",
       "/v1/node",
       "api-key",
-      "k3y",
+      "k0y",
       WORK_URL,
       WORK_PATH,
       WORK_QUERY,
