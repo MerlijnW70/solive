@@ -41,7 +41,7 @@ fi
 idl="idl/intent_engine.json"
 program="$(node -p "require('./$idl').address")"
 authority="${UPGRADE_AUTHORITY:-$HOME/.config/solana/id.json}"
-pmp=(npx -y @solana-program/program-metadata@0.10.0 --keypair "$authority" --rpc "$url")
+pmp=(env NO_COLOR=1 npx -y @solana-program/program-metadata@0.10.0 --keypair "$authority" --rpc "$url")
 if [[ "$served" == "$mainnet_genesis" && "$mode" != check ]]; then
   read -r -p "type the program id $program to publish its IDL on mainnet-beta: " typed
   if [[ "$typed" != "$program" ]]; then
