@@ -29,8 +29,11 @@ describe("the hosted monitor", () => {
     expect(WORKFLOW).toContain('cron: "37 * * * *"');
     const runs = WORKFLOW.split("\n").filter((line) => line.includes("run: npx"));
     expect(runs).toHaveLength(2);
+    expect(WORKFLOW).toContain(`CLI: "${VERSION}"`);
+    expect(WORKFLOW).toContain('if npm view "@intent-engine/cli@$CLI" version > /dev/null 2>&1; then');
+    expect(WORKFLOW).toContain('echo "RUN_CLI=$CLI" >> "$GITHUB_ENV"');
     for (const line of runs) {
-      expect(line).toContain(`@intent-engine/cli@${VERSION} monitor --expect monitoring/devnet.json`);
+      expect(line).toContain('"@intent-engine/cli@$RUN_CLI" monitor --expect monitoring/devnet.json');
       expect(line).toContain(`--max-fill ${NATIVE_MINT}=${TEN_SOL}`);
       expect(line).toContain("--once --since 3900");
       const argv = (line.split(" monitor ")[1] ?? "").split(" ").map((arg) => (arg === '"$SECOND_RPC"' ? "devnet" : arg));
