@@ -38,7 +38,8 @@ fn a_claim_lasts_at_most_the_terms_and_never_past_the_escrow() -> Result<(), Err
             "{secs}"
         );
     }
-    assert_eq!(terms.until(i64::MAX, 1, i64::MAX), Err(Error::Overflow));
+    assert_eq!(terms.until(i64::MAX, 1, i64::MAX), Err(Error::ClaimTerms));
+    assert_eq!(terms.until(i64::MAX - 1, 1, i64::MAX)?, i64::MAX);
     Ok(())
 }
 

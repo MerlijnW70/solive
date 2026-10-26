@@ -90,9 +90,6 @@ export function closable(state: AnnState, byWorker: boolean, intentOpen: boolean
     return;
   }
   const edge = (state === "paid" ? paidAt : expiresAt) + REFUTE_WINDOW_SECS;
-  if (edge > I64_MAX) {
-    throw new IntentCoreError("Overflow");
-  }
   if (now < edge) {
     throw new IntentCoreError("AnnouncementRetained");
   }

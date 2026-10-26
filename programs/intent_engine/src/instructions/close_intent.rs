@@ -1,6 +1,7 @@
 use anchor_lang::prelude::*;
 use anchor_spl::associated_token::get_associated_token_address_with_program_id;
 use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
+use intent_core::clock::elapsed;
 use intent_core::ext::SETTLE_EXT_TAGS;
 use intent_core::lifecycle::{transition, Action, Status};
 
@@ -67,12 +68,8 @@ pub fn handle_close_intent(ctx: Context<CloseIntent>, ext: Ext) -> Result<()> {
         let intent = ctx.accounts.intent.load()?;
         let status = Status::try_from(intent.status).map_err(core_err)?;
         transition(status, Action::Close, now, intent.expires_at).map_err(core_err)?;
-        let claimable_until = intent
-            .expires_at
-            .checked_add(HELD_CLAIM_SECS)
-            .ok_or(EngineError::Overflow)?;
         require!(
-            intent.held == 0 || now >= claimable_until,
+            intent.held == 0 || elapsed(now, intent.expires_at, HELD_CLAIM_SECS),
             EngineError::SharesHeld
         );
         let signer = IntentSigner {

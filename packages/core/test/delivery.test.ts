@@ -192,11 +192,13 @@ describe("announcement rules", () => {
   });
 
   it("never overflows at the edge of time", () => {
-    expect(refusal(() => closable("announced", false, false, I64_MAX, I64_MAX, 0n))).toBe("Overflow");
-    expect(refusal(() => closable("paid", false, false, I64_MAX, 0n, I64_MAX))).toBe("Overflow");
+    expect(refusal(() => closable("announced", false, false, I64_MAX, I64_MAX, 0n))).toBe("AnnouncementRetained");
+    expect(refusal(() => closable("paid", false, false, I64_MAX, 0n, I64_MAX))).toBe("AnnouncementRetained");
+    expect(refusal(() => closable("announced", false, false, I64_MAX, I64_MAX - REFUTE_WINDOW_SECS, 0n))).toBe("accepted");
+    expect(refusal(() => closable("announced", false, false, I64_MAX - 1n, I64_MAX - REFUTE_WINDOW_SECS, 0n))).toBe("AnnouncementRetained");
     const last = I64_MAX - REFUTE_WINDOW_SECS;
     expect(refusal(() => closable("paid", false, false, I64_MAX, 0n, last))).toBe("accepted");
-    expect(refusal(() => closable("paid", false, false, I64_MAX, 0n, last + 1n))).toBe("Overflow");
+    expect(refusal(() => closable("paid", false, false, I64_MAX, 0n, last + 1n))).toBe("AnnouncementRetained");
   });
 
   it("needs an earlier seq from a wallet that was not paid to refute", () => {

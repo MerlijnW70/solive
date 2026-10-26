@@ -46,7 +46,14 @@ fn each_limit_refuses_with_its_own_reason() {
         window_start: i64::MAX,
         ..FRESH
     };
-    assert_eq!(charge(LIMITS, late, 1, 0), Err(Refusal::Overflow));
+    assert_eq!(
+        charge(LIMITS, late, 1, i64::MAX),
+        Ok(Usage {
+            window_start: i64::MAX,
+            window_used: 1,
+            outstanding: 1,
+        })
+    );
 }
 
 #[test]

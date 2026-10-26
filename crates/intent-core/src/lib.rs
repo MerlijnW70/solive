@@ -2,6 +2,7 @@
 
 pub mod bounty;
 pub mod claim;
+pub mod clock;
 pub mod codec;
 pub mod committee;
 pub mod delivery;

@@ -102,6 +102,24 @@ pub struct ReleaseWorld {
 
 impl ReleaseWorld {
     pub fn new(exts: &[MintExt], path: ReleasePath, terms: ReleaseTerms) -> TestResult<Self> {
+        Self::build(exts, path, terms, None)
+    }
+
+    pub fn expiring(
+        exts: &[MintExt],
+        path: ReleasePath,
+        terms: ReleaseTerms,
+        expires_at: i64,
+    ) -> TestResult<Self> {
+        Self::build(exts, path, terms, Some(expires_at))
+    }
+
+    fn build(
+        exts: &[MintExt],
+        path: ReleasePath,
+        terms: ReleaseTerms,
+        expires_at: Option<i64>,
+    ) -> TestResult<Self> {
         let t22 = anchor_spl::token_2022::ID;
         let mut env = Env::new()?;
         let fee_owner = env.funded()?;
@@ -125,6 +143,7 @@ impl ReleaseWorld {
         if terms.partner_bps > 0 {
             spec.ext = partner_ext(&partner.pubkey(), terms.partner_bps);
         }
+        spec.expires_at = expires_at.unwrap_or(spec.expires_at);
         env.create_intent(&trader, &market, &spec)?;
         let judge_to = env.create_ata(&fee_wallet, &market.input_mint, t22)?;
         env.judge_to = Some(judge_to);

@@ -209,11 +209,28 @@ fn a_paid_announcement_closes_for_anyone_only_after_the_refute_window() {
 fn closing_never_overflows_at_the_edge_of_time() {
     assert_eq!(
         closable(AnnState::Announced, false, false, i64::MAX, i64::MAX, 0),
-        Err(Error::Overflow)
+        Err(Error::AnnouncementRetained)
     );
     assert_eq!(
         closable(AnnState::Paid, false, false, i64::MAX, 0, i64::MAX),
-        Err(Error::Overflow)
+        Err(Error::AnnouncementRetained)
+    );
+    let last = i64::MAX - REFUTE_WINDOW_SECS;
+    assert_eq!(
+        closable(AnnState::Announced, false, false, i64::MAX, last, 0),
+        Ok(())
+    );
+    assert_eq!(
+        closable(AnnState::Announced, false, false, i64::MAX - 1, last, 0),
+        Err(Error::AnnouncementRetained)
+    );
+    assert_eq!(
+        closable(AnnState::Paid, false, false, i64::MAX, 0, last + 1),
+        Err(Error::AnnouncementRetained)
+    );
+    assert_eq!(
+        closable(AnnState::Announced, true, false, i64::MIN, i64::MAX, 0),
+        Ok(())
     );
 }
 

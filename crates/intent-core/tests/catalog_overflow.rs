@@ -52,7 +52,7 @@ proptest! {
             }
             Err(e) => {
                 prop_assert!(!fits);
-                prop_assert!(e == Error::ClaimTerms || e == Error::Overflow);
+                prop_assert_eq!(e, Error::ClaimTerms);
             }
         }
     }
@@ -104,16 +104,12 @@ proptest! {
     ) {
         let limits = CapLimits { max_per_order, window_cap, window_secs, total_limit };
         let usage = CapUsage { window_start, window_used, outstanding };
-        let ends = i128::from(window_start).checked_add(i128::from(window_secs));
         let result = charge(limits, usage, amount, now);
         if amount > max_per_order {
             prop_assert_eq!(result, Err(Refusal::PerOrder));
             return Ok(());
         }
-        let Some(ends) = ends.filter(|e| *e <= i128::from(i64::MAX)) else {
-            prop_assert_eq!(result, Err(Refusal::Overflow));
-            return Ok(());
-        };
+        let ends = i128::from(window_start).saturating_add(i128::from(window_secs));
         let reset = i128::from(now) >= ends;
         let base = if reset { 0 } else { window_used };
         let used = u128::from(base).checked_add(u128::from(amount));
@@ -188,7 +184,7 @@ proptest! {
     }
 
     #[test]
-    fn catalog_a_saturating_ttl_check_matches_exact_arithmetic(
+    fn catalog_the_ttl_check_matches_exact_arithmetic(
         now: i64,
         ahead in 1i128..=18_446_744_073_709_551_616i128,
         max_ttl in 1i64..,

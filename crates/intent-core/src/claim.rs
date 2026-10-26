@@ -1,3 +1,4 @@
+use crate::clock::after;
 use crate::Error;
 
 pub const MAX_CLAIM_SECS: u32 = 7 * 24 * 60 * 60;
@@ -29,12 +30,15 @@ impl Terms {
         if secs == 0 || secs > self.max_secs {
             return Err(Error::ClaimTerms);
         }
-        let until = now.checked_add(i64::from(secs)).ok_or(Error::Overflow)?;
-        if until > expires_at {
+        if after(now, i64::from(secs)) > i128::from(expires_at) {
             return Err(Error::ClaimTerms);
         }
-        Ok(until)
+        Ok(now.saturating_add(i64::from(secs)))
     }
+}
+
+pub fn serve_until(now: i64, secs: u32, expires_at: i64) -> i64 {
+    now.saturating_add(i64::from(secs)).min(expires_at)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

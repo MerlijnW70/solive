@@ -292,7 +292,7 @@ pub const PAIRS: &[Pair] = &[
                 .and_then(|t| t.until(s(a, 2), secs(n(a, 3)), s(a, 4)));
             outcome(until, |v| v.to_string())
         },
-        same_refusal: &[("Overflow", "ClaimTerms")],
+        same_refusal: &[],
     },
     Pair {
         name: "stake_on_release",

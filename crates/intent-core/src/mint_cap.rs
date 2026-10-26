@@ -1,3 +1,5 @@
+use crate::clock::elapsed;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Refusal {
     PerOrder,
@@ -32,11 +34,8 @@ pub fn charge(limits: Limits, usage: Usage, amount: u64, now: i64) -> Result<Usa
     if amount > limits.max_per_order {
         return Err(Refusal::PerOrder);
     }
-    let ends = usage
-        .window_start
-        .checked_add(i64::from(limits.window_secs))
-        .ok_or(Refusal::Overflow)?;
-    let (window_start, window_used) = if now >= ends {
+    let ended = elapsed(now, usage.window_start, i64::from(limits.window_secs));
+    let (window_start, window_used) = if ended {
         (now, 0)
     } else {
         (usage.window_start, usage.window_used)

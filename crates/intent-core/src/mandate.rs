@@ -1,3 +1,4 @@
+use crate::clock::after;
 use crate::kinds::{Intent, Kind};
 use crate::Error;
 
@@ -77,7 +78,7 @@ impl Limits {
         let worst = worst_out(intent)
             .filter(|_| u64::from(self.kinds) & intent.kind().bit() != 0)
             .ok_or(Error::MandateKind)?;
-        if expires_at.saturating_sub(now) > self.max_ttl {
+        if i128::from(expires_at) > after(now, self.max_ttl) {
             return Err(Error::MandateTtl);
         }
         let cost = intent

@@ -1,7 +1,9 @@
 use anchor_lang::prelude::*;
 use anchor_lang::Discriminator;
 use bytemuck::Zeroable;
-use intent_core::claim::{stake_on_cancel, stake_on_release, Cooldown, Line, Slot, StakeTo};
+use intent_core::claim::{
+    serve_until, stake_on_cancel, stake_on_release, Cooldown, Line, Slot, StakeTo,
+};
 use intent_core::lifecycle::Status;
 use intent_core::Error as CoreError;
 
@@ -143,10 +145,7 @@ pub fn hand_over<'info>(
         require_keys_eq!(*to.key, standby.worker, EngineError::StakeAccountMismatch);
         move_lamports(entry, &loader.to_account_info(), stake)?;
         close_entry(entry, to)?;
-        let until = now
-            .checked_add(i64::from(standby.secs))
-            .ok_or(EngineError::Overflow)?
-            .min(expires_at);
+        let until = serve_until(now, standby.secs, expires_at);
         served = Some(JobClaimed {
             intent,
             worker: standby.worker,

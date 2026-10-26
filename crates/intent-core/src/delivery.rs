@@ -1,4 +1,5 @@
 use crate::claim::Slot;
+use crate::clock::elapsed;
 use crate::Error;
 
 pub const COMMITMENT_TAG: [u8; 16] = *b"intent-engine-dc";
@@ -130,10 +131,7 @@ pub fn closable(
     paid_at: i64,
 ) -> Result<(), Error> {
     let after = |from: i64| -> Result<(), Error> {
-        let edge = from
-            .checked_add(REFUTE_WINDOW_SECS)
-            .ok_or(Error::Overflow)?;
-        if now >= edge {
+        if elapsed(now, from, REFUTE_WINDOW_SECS) {
             Ok(())
         } else {
             Err(Error::AnnouncementRetained)
