@@ -27,6 +27,7 @@ const LOCAL = "http://127.0.0.1:8899";
 const SOL = 1_000_000_000n;
 const SPEC = new Uint8Array(createHash("sha256").update("the claims spec").digest());
 const STAKE = 50_000_000n;
+const SIGNATURE_FEE = 5_000n;
 const NONE = "11111111111111111111111111111111" as Address;
 const WORK = sha("the claimed work");
 
@@ -229,5 +230,28 @@ describe("claimed escrows", () => {
     await s.client.send([await buildDropClaim({ worker: s.worker, intent: s.intent, ...handover })], s.worker);
     expect(await s.client.claims({ owner: s.owner.address, nonce: s.nonce })).toMatchObject({ state: "held", worker: third.address, line: { head: 2, tail: 2, waiting: 0 } });
     expect(await lineHandover(s.transport, s.intent, { head: 2, tail: 2 })).toEqual({ entries: [] });
+  });
+
+  it("closes a dropper's own entry back to it and hands the job to the next worker", async () => {
+    const s = await setup();
+    await s.claim(s.worker);
+    const third = await generateKeyPairSigner();
+    s.w.chain.svm.airdrop(third.address, lamports(10n * SOL));
+    for (const [seq, who] of [s.rival, s.rival, third].entries()) {
+      await s.client.send([await buildStandBy({ worker: who, intent: s.intent, seq, secs: 300 })], who);
+    }
+    const second = await standbyAddress(s.intent, 1);
+    const last = await standbyAddress(s.intent, 2);
+    await s.client.send([await buildDropClaim({ worker: s.worker, intent: s.intent, ...(await lineHandover(s.transport, s.intent, { head: 0, tail: 3 }, s.worker.address)) })], s.worker);
+    expect(await s.client.claims({ owner: s.owner.address, nonce: s.nonce })).toMatchObject({ state: "held", worker: s.rival.address });
+    expect(await lineHandover(s.transport, s.intent, { head: 1, tail: 3 })).toEqual({ entries: [second], nextWorker: s.rival.address });
+    const handover = await lineHandover(s.transport, s.intent, { head: 1, tail: 3 }, s.rival.address);
+    expect(handover).toEqual({ entries: [second, last], nextWorker: third.address, dropper: s.rival.address, refunded: 1 });
+    const entry = s.balance(second);
+    const before = s.balance(s.rival.address);
+    await s.client.send([await buildDropClaim({ worker: s.rival, intent: s.intent, ...handover })], s.rival);
+    expect(s.balance(s.rival.address) - before).toBe(STAKE + entry - SIGNATURE_FEE);
+    expect(s.balance(second)).toBe(0n);
+    expect(await s.client.claims({ owner: s.owner.address, nonce: s.nonce })).toMatchObject({ state: "held", worker: third.address, line: { head: 3, tail: 3, waiting: 0 } });
   });
 });

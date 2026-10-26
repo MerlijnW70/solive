@@ -20,7 +20,7 @@ pub struct DropClaim<'info> {
         constraint = board.load()?.version == CLAIMS_VERSION @ EngineError::AccountOutdated
     )]
     pub board: AccountLoader<'info, ClaimBoard>,
-    /// CHECK: the worker of the first live entry in the line, checked against that entry
+    /// CHECK: the worker of the first entry the line serves, checked against that entry
     #[account(mut)]
     pub next_worker: Option<UncheckedAccount<'info>>,
     /// CHECK: the line's entry at head + 0, checked against the address its sequence derives
@@ -78,13 +78,19 @@ pub fn handle_drop_claim(ctx: Context<DropClaim>) -> Result<()> {
             .next_worker
             .as_ref()
             .map(|a| a.to_account_info());
-        if let Some(claimed) = hand_over(
+        let dropper = ctx.accounts.worker.to_account_info();
+        let handed = hand_over(
             &ctx.accounts.board,
             &entries,
             next.as_ref(),
+            Some(&dropper),
             now,
             expires_at,
-        )? {
+        )?;
+        for left in handed.refunded {
+            emit_cpi!(left);
+        }
+        if let Some(claimed) = handed.claimed {
             emit_cpi!(claimed);
         }
     }

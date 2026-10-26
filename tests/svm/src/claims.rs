@@ -182,6 +182,16 @@ pub fn advance_ix(
     entries: &[Pubkey],
     next_worker: Option<&Pubkey>,
 ) -> Instruction {
+    advance_line_ix(intent, owner, entries, next_worker, None)
+}
+
+pub fn advance_line_ix(
+    intent: &Pubkey,
+    owner: &Pubkey,
+    entries: &[Pubkey],
+    next_worker: Option<&Pubkey>,
+    dropper: Option<&Pubkey>,
+) -> Instruction {
     engine_ix(
         intent_engine::accounts::Advance {
             intent: *intent,
@@ -192,6 +202,7 @@ pub fn advance_ix(
             entry_1: entry(entries, 1),
             entry_2: entry(entries, 2),
             entry_3: entry(entries, 3),
+            dropper: dropper.copied(),
             event_authority: event_authority(),
             program: intent_engine::ID,
         },

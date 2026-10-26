@@ -308,7 +308,7 @@ intent-engine claims take --keypair worker.json --owner $env:OWNER --nonce $env:
 
 A worker that drops its claim gets its stake back. A claim that lapses loses its stake to the owner.
 
-While a job is held, another worker can stand by in its first-in, first-out line, locking the same stake. While anyone stands by, nobody claims the job directly, and a drop hands it to the first worker still in the line.
+While a job is held, another worker can stand by in its first-in, first-out line, locking the same stake; the holder cannot. While anyone stands by, nobody claims the job directly, and a drop hands it to the first worker still in the line. An entry of the worker that dropped, reached before its term ends, closes and returns its stake and rent instead.
 
 Once a claim lapses, anyone can run `claims advance`, which forfeits the lapsed stake to the owner and hands the job on. A waiter takes back its stake and rent with `claims leave`, and anyone can do that for it once the escrow is no longer open. `jobs` counts the waiters as `waiting`.
 

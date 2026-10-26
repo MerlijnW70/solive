@@ -173,11 +173,23 @@ impl ClaimWorld {
     }
 
     pub fn front(&self) -> TestResult<Option<Pubkey>> {
+        self.front_past(None)
+    }
+
+    pub fn front_past(&self, barred: Option<Pubkey>) -> TestResult<Option<Pubkey>> {
         Ok(self
             .window()?
             .into_iter()
-            .find_map(|seq| self.entry(seq))
-            .map(|e| e.worker))
+            .filter_map(|seq| self.entry(seq))
+            .map(|e| e.worker)
+            .find(|worker| Some(*worker) != barred))
+    }
+
+    pub fn cooling(&self) -> TestResult<Option<Pubkey>> {
+        let board = self.board()?;
+        let free = board.worker == Pubkey::default();
+        let cooling = free && board.dropped_by != Pubkey::default() && self.now() < board.until;
+        Ok(cooling.then_some(board.dropped_by))
     }
 
     pub fn claim(
@@ -215,9 +227,9 @@ impl ClaimWorld {
         self.send(&[ix], &[caller])
     }
 
-    fn line_accounts(&self) -> TestResult<(Vec<Pubkey>, Option<Pubkey>)> {
+    fn line_accounts(&self, barred: Option<Pubkey>) -> TestResult<(Vec<Pubkey>, Option<Pubkey>)> {
         let seqs = self.window()?;
-        let next = self.front()?;
+        let next = self.front_past(barred)?;
         let entries = if seqs.is_empty() {
             vec![self.entry_key(self.board()?.head)]
         } else {
@@ -227,8 +239,15 @@ impl ClaimWorld {
     }
 
     pub fn advance(&mut self) -> TestResult<Result<TransactionMetadata, TransactionError>> {
-        let (entries, next) = self.line_accounts()?;
-        let ix = advance_ix(&self.intent(), &self.owner(), &entries, next.as_ref());
+        let barred = self.cooling()?;
+        let (entries, next) = self.line_accounts(barred)?;
+        let ix = advance_line_ix(
+            &self.intent(),
+            &self.owner(),
+            &entries,
+            next.as_ref(),
+            barred.as_ref(),
+        );
         Ok(self.send(&[ix], &[]))
     }
 
@@ -236,7 +255,7 @@ impl ClaimWorld {
         &mut self,
         who: &Keypair,
     ) -> TestResult<Result<TransactionMetadata, TransactionError>> {
-        let (entries, next) = self.line_accounts()?;
+        let (entries, next) = self.line_accounts(Some(who.pubkey()))?;
         let ix = drop_claim_line_ix(&who.pubkey(), &self.intent(), &entries, next.as_ref());
         Ok(self.send(&[ix], &[who]))
     }

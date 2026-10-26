@@ -58,6 +58,7 @@ export type AdvanceInstruction<
   TAccountEntry1 extends string | AccountMeta<string> = string,
   TAccountEntry2 extends string | AccountMeta<string> = string,
   TAccountEntry3 extends string | AccountMeta<string> = string,
+  TAccountDropper extends string | AccountMeta<string> = string,
   TAccountEventAuthority extends string | AccountMeta<string> = string,
   TAccountProgram extends string | AccountMeta<string> = string,
   TRemainingAccounts extends readonly AccountMeta<string>[] = [],
@@ -89,6 +90,9 @@ export type AdvanceInstruction<
       TAccountEntry3 extends string
         ? WritableAccount<TAccountEntry3>
         : TAccountEntry3,
+      TAccountDropper extends string
+        ? WritableAccount<TAccountDropper>
+        : TAccountDropper,
       TAccountEventAuthority extends string
         ? ReadonlyAccount<TAccountEventAuthority>
         : TAccountEventAuthority,
@@ -135,6 +139,7 @@ export type AdvanceAsyncInput<
   TAccountEntry1 extends InstructionAccountInput = InstructionAccountInput,
   TAccountEntry2 extends InstructionAccountInput = InstructionAccountInput,
   TAccountEntry3 extends InstructionAccountInput = InstructionAccountInput,
+  TAccountDropper extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -147,6 +152,7 @@ export type AdvanceAsyncInput<
   entry1?: TAccountEntry1;
   entry2?: TAccountEntry2;
   entry3?: TAccountEntry3;
+  dropper?: TAccountDropper;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
 };
@@ -160,6 +166,7 @@ export async function getAdvanceInstructionAsync<
   TAccountEntry1 extends InstructionAccountInput,
   TAccountEntry2 extends InstructionAccountInput,
   TAccountEntry3 extends InstructionAccountInput,
+  TAccountDropper extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -173,6 +180,7 @@ export async function getAdvanceInstructionAsync<
     TAccountEntry1,
     TAccountEntry2,
     TAccountEntry3,
+    TAccountDropper,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -213,6 +221,10 @@ export async function getAdvanceInstructionAsync<
       InstructionAccountInputAddress<TAccountEntry3>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountDropper,
+      InstructionAccountInputAddress<TAccountDropper>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -243,6 +255,11 @@ export async function getAdvanceInstructionAsync<
     entry1: { value: input.entry1 ?? null, isSigner: false, isWritable: true },
     entry2: { value: input.entry2 ?? null, isSigner: false, isWritable: true },
     entry3: { value: input.entry3 ?? null, isSigner: false, isWritable: true },
+    dropper: {
+      value: input.dropper ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -282,6 +299,7 @@ export async function getAdvanceInstructionAsync<
       getAccountMeta("entry1", accounts.entry1),
       getAccountMeta("entry2", accounts.entry2),
       getAccountMeta("entry3", accounts.entry3),
+      getAccountMeta("dropper", accounts.dropper),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -322,6 +340,10 @@ export async function getAdvanceInstructionAsync<
       InstructionAccountInputAddress<TAccountEntry3>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountDropper,
+      InstructionAccountInputAddress<TAccountDropper>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -341,6 +363,7 @@ export type AdvanceInput<
   TAccountEntry1 extends InstructionAccountInput = InstructionAccountInput,
   TAccountEntry2 extends InstructionAccountInput = InstructionAccountInput,
   TAccountEntry3 extends InstructionAccountInput = InstructionAccountInput,
+  TAccountDropper extends InstructionAccountInput = InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput =
     InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput = InstructionAccountInput,
@@ -353,6 +376,7 @@ export type AdvanceInput<
   entry1?: TAccountEntry1;
   entry2?: TAccountEntry2;
   entry3?: TAccountEntry3;
+  dropper?: TAccountDropper;
   eventAuthority: TAccountEventAuthority;
   program: TAccountProgram;
 };
@@ -366,6 +390,7 @@ export function getAdvanceInstruction<
   TAccountEntry1 extends InstructionAccountInput,
   TAccountEntry2 extends InstructionAccountInput,
   TAccountEntry3 extends InstructionAccountInput,
+  TAccountDropper extends InstructionAccountInput,
   TAccountEventAuthority extends InstructionAccountInput,
   TAccountProgram extends InstructionAccountInput,
   TProgramAddress extends Address = typeof INTENT_ENGINE_PROGRAM_ADDRESS,
@@ -379,6 +404,7 @@ export function getAdvanceInstruction<
     TAccountEntry1,
     TAccountEntry2,
     TAccountEntry3,
+    TAccountDropper,
     TAccountEventAuthority,
     TAccountProgram
   >,
@@ -418,6 +444,10 @@ export function getAdvanceInstruction<
     InstructionAccountInputAddress<TAccountEntry3>
   >,
   ResolvedInstructionAccountMeta<
+    TAccountDropper,
+    InstructionAccountInputAddress<TAccountDropper>
+  >,
+  ResolvedInstructionAccountMeta<
     TAccountEventAuthority,
     InstructionAccountInputAddress<TAccountEventAuthority>
   >,
@@ -447,6 +477,11 @@ export function getAdvanceInstruction<
     entry1: { value: input.entry1 ?? null, isSigner: false, isWritable: true },
     entry2: { value: input.entry2 ?? null, isSigner: false, isWritable: true },
     entry3: { value: input.entry3 ?? null, isSigner: false, isWritable: true },
+    dropper: {
+      value: input.dropper ?? null,
+      isSigner: false,
+      isWritable: true,
+    },
     eventAuthority: {
       value: input.eventAuthority ?? null,
       isSigner: false,
@@ -473,6 +508,7 @@ export function getAdvanceInstruction<
       getAccountMeta("entry1", accounts.entry1),
       getAccountMeta("entry2", accounts.entry2),
       getAccountMeta("entry3", accounts.entry3),
+      getAccountMeta("dropper", accounts.dropper),
       getAccountMeta("eventAuthority", accounts.eventAuthority),
       getAccountMeta("program", accounts.program),
     ],
@@ -513,6 +549,10 @@ export function getAdvanceInstruction<
       InstructionAccountInputAddress<TAccountEntry3>
     >,
     ResolvedInstructionAccountMeta<
+      TAccountDropper,
+      InstructionAccountInputAddress<TAccountDropper>
+    >,
+    ResolvedInstructionAccountMeta<
       TAccountEventAuthority,
       InstructionAccountInputAddress<TAccountEventAuthority>
     >,
@@ -537,8 +577,9 @@ export type ParsedAdvanceInstruction<
     entry1?: TAccountMetas[5] | undefined;
     entry2?: TAccountMetas[6] | undefined;
     entry3?: TAccountMetas[7] | undefined;
-    eventAuthority: TAccountMetas[8];
-    program: TAccountMetas[9];
+    dropper?: TAccountMetas[8] | undefined;
+    eventAuthority: TAccountMetas[9];
+    program: TAccountMetas[10];
   };
   data: AdvanceInstructionData;
 };
@@ -551,12 +592,12 @@ export function parseAdvanceInstruction<
     InstructionWithAccounts<TAccountMetas> &
     InstructionWithData<ReadonlyUint8Array>,
 ): ParsedAdvanceInstruction<TProgram, TAccountMetas> {
-  if (instruction.accounts.length < 10) {
+  if (instruction.accounts.length < 11) {
     throw new SolanaError(
       SOLANA_ERROR__PROGRAM_CLIENTS__INSUFFICIENT_ACCOUNT_METAS,
       {
         actualAccountMetas: instruction.accounts.length,
-        expectedAccountMetas: 10,
+        expectedAccountMetas: 11,
       },
     );
   }
@@ -583,6 +624,7 @@ export function parseAdvanceInstruction<
       entry1: getNextOptionalAccount(),
       entry2: getNextOptionalAccount(),
       entry3: getNextOptionalAccount(),
+      dropper: getNextOptionalAccount(),
       eventAuthority: getNextAccount(),
       program: getNextAccount(),
     },

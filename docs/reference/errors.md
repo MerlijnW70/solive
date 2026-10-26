@@ -235,6 +235,7 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | 6147 | `SharesHeld` | yes | a co-author's share of this escrow is still held for it to claim; the escrow and its paid announcement stay until that share is claimed or a year after the escrow expires |
 | 6148 | `NoShareHeld` | no | nothing is held for this index of the split; it was paid at release or already claimed |
 | 6149 | `HeldSplitMismatch` | no | the recipients and weights given are not the split the release paid, or the signer is not the wallet at that index; pass them exactly as the release named them |
+| 6150 | `HolderStandsBy` | no | the wallet holding a job's claim cannot stand by in that job's line; it keeps the claim until it drops it or the claim lapses |
 
 ## Token programs
 

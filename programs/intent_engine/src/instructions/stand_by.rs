@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 use anchor_lang::system_program::{allocate, assign, create_account, transfer};
 use anchor_lang::system_program::{Allocate, Assign, CreateAccount, Transfer};
 use anchor_lang::Discriminator;
-use intent_core::claim::Terms;
+use intent_core::claim::{Slot, Terms};
 use intent_core::lifecycle::Status;
 
 use crate::claims::{line_of, slot_of, standby_address};
@@ -136,8 +136,14 @@ pub fn handle_stand_by(ctx: Context<StandBy>, secs: u32) -> Result<()> {
             secs >= 1 && secs <= terms.max_secs(),
             EngineError::ClaimTerms
         );
+        let slot = slot_of(&board, now);
+        let worker = ctx.accounts.worker.key().to_bytes();
+        require!(
+            !matches!(slot, Slot::Held { worker: holder, .. } if holder == worker),
+            EngineError::HolderStandsBy
+        );
         let mut line = line_of(&board);
-        line.check_join(slot_of(&board, now)).map_err(core_err)?;
+        line.check_join(slot).map_err(core_err)?;
         let seq = line.join().map_err(core_err)?;
         board.tail = line.tail;
         (seq, terms.stake())

@@ -170,14 +170,18 @@ export async function dropHandover(client: Client, transport: Transport, owner: 
   if (view.line.waiting === 0 || (await escrowOpen(client, owner, nonce, await client.chainTime())) === null) {
     return { entries: [] };
   }
-  return lineHandover(transport, intent, view.line);
+  return lineHandover(transport, intent, view.line, view.worker);
 }
 
 export function handedTo(handover: LineHandover): string[] {
-  const skipped = handover.entries.length - (handover.nextWorker === undefined ? 0 : 1);
+  const refunded = handover.refunded ?? 0;
+  const skipped = handover.entries.length - (handover.nextWorker === undefined ? 0 : 1) - refunded;
   return [
     ...(handover.nextWorker === undefined ? [] : [`Hands: the job to ${handover.nextWorker}, first in the line`]),
     ...(skipped > 0 ? [`Skips: ${skipped} line ${skipped === 1 ? "entry" : "entries"} whose worker left`] : []),
+    ...(refunded > 0 && handover.dropper !== undefined
+      ? [`Closes: ${refunded} line ${refunded === 1 ? "entry" : "entries"} of ${handover.dropper}, which dropped the claim and may not hold it again before its term ends; each entry's stake and rent go back to it`]
+      : []),
   ];
 }
 
@@ -192,6 +196,9 @@ async function standBy(
 ) {
   if (view.state !== "held" && view.line.waiting === 0) {
     throw new FlowRefused(`nobody holds escrow ${intent} and nobody stands by, so claim it with claims take; nothing was sent`);
+  }
+  if (view.state === "held" && view.worker === worker.address) {
+    throw new FlowRefused(`${worker.address} holds the claim on escrow ${intent}, and the holder cannot stand by for its own job; nothing was sent`);
   }
   if (command.secs > view.maxSecs) {
     throw new FlowRefused(`escrow ${intent} lets a worker hold its claim for at most ${view.maxSecs} seconds; pass a lower --secs`);
@@ -227,7 +234,7 @@ async function advanceLine(
   if ((await escrowOpen(client, command.owner, command.nonce, await client.chainTime())) === null) {
     throw new FlowRefused(`escrow ${intent} is no longer open, so its line is not advanced; each waiter gets its stake back with claims leave`);
   }
-  const handover = await lineHandover(transport, intent, view.line);
+  const handover = await lineHandover(transport, intent, view.line, view.cooldown?.worker);
   const summary = [
     ...(view.state === "lapsed" ? [`Ends: the lapsed claim of ${view.worker}, whose stake of ${sol(view.stake)} goes to the owner ${view.owner}`] : []),
     ...handedTo(handover),

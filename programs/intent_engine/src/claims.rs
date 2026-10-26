@@ -3,9 +3,10 @@ use anchor_lang::Discriminator;
 use bytemuck::Zeroable;
 use intent_core::claim::{stake_on_cancel, stake_on_release, Cooldown, Line, Slot, StakeTo};
 use intent_core::lifecycle::Status;
+use intent_core::Error as CoreError;
 
 use crate::errors::{core_err, EngineError};
-use crate::events::{JobClaimed, StakeMoved, STAKE_TO_OWNER, STAKE_TO_WORKER};
+use crate::events::{JobClaimed, LineLeft, StakeMoved, STAKE_TO_OWNER, STAKE_TO_WORKER};
 use crate::state::{
     intent_readable, ClaimBoard, Intent, Standby, CLAIMS_OPEN, CLAIMS_SEED, STANDBY_SEED,
     STANDBY_VERSION,
@@ -85,18 +86,31 @@ pub fn line_entries<'info>(
         .collect()
 }
 
+pub struct HandOver {
+    pub claimed: Option<JobClaimed>,
+    pub refunded: Vec<LineLeft>,
+}
+
 pub fn hand_over<'info>(
     loader: &AccountLoader<'info, ClaimBoard>,
     entries: &[AccountInfo<'info>],
     next_worker: Option<&AccountInfo<'info>>,
+    dropper: Option<&AccountInfo<'info>>,
     now: i64,
     expires_at: i64,
-) -> Result<Option<JobClaimed>> {
-    let (intent, stake, mut line) = {
+) -> Result<HandOver> {
+    let (intent, stake, mut line, slot, cooldown) = {
         let board = loader.load()?;
-        (board.intent, board.stake, line_of(&board))
+        (
+            board.intent,
+            board.stake,
+            line_of(&board),
+            slot_of(&board, now),
+            cooldown_of(&board),
+        )
     };
     let mut served = None;
+    let mut refunded = Vec::new();
     for entry in entries {
         let Some(seq) = line.pass() else {
             break;
@@ -110,6 +124,21 @@ pub fn hand_over<'info>(
             continue;
         }
         let standby = read_standby(entry)?;
+        match cooldown.check(slot, standby.worker.to_bytes(), now) {
+            Ok(()) => {}
+            Err(CoreError::ClaimCooldown) => {
+                let to = dropper.ok_or(EngineError::StakeAccountMismatch)?;
+                require_keys_eq!(*to.key, standby.worker, EngineError::StakeAccountMismatch);
+                refunded.push(LineLeft {
+                    intent,
+                    worker: standby.worker,
+                    seq,
+                    refunded: close_entry(entry, to)?,
+                });
+                continue;
+            }
+            Err(e) => return Err(core_err(e).into()),
+        }
         let to = next_worker.ok_or(EngineError::StakeAccountMismatch)?;
         require_keys_eq!(*to.key, standby.worker, EngineError::StakeAccountMismatch);
         move_lamports(entry, &loader.to_account_info(), stake)?;
@@ -134,7 +163,10 @@ pub fn hand_over<'info>(
         board.held = claimed.stake;
         board.dropped_by = Pubkey::default();
     }
-    Ok(served)
+    Ok(HandOver {
+        claimed: served,
+        refunded,
+    })
 }
 
 pub fn slot_of(board: &ClaimBoard, now: i64) -> Slot {

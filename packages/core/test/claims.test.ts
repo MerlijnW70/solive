@@ -216,4 +216,15 @@ describe("stand-by line", () => {
     expect(seated(await buildAdvance({ intent, owner: OWNER, entries: [] }))).toEqual(Array(5).fill(INTENT_ENGINE_PROGRAM_ADDRESS));
     expect(seated(await buildDropClaim({ worker: signer, intent, entries: four, nextWorker: OTHER }))).toEqual([OTHER, ...four]);
   });
+
+  it("passes the dropper to an advance that closes its entries, and leaves it out of a drop it signs", async () => {
+    const intent = "SysvarRecentB1ockHashes11111111111111111111" as Address;
+    const signer = { address: WORKER, signTransactions: async () => [] } as never;
+    const first = await standbyAddress(intent, 0);
+    const advance = await buildAdvance({ intent, owner: OWNER, entries: [first], dropper: WORKER, refunded: 1 });
+    expect(advance.accounts[8]?.address).toBe(WORKER);
+    expect((await buildAdvance({ intent, owner: OWNER, entries: [first] })).accounts[8]?.address).toBe(INTENT_ENGINE_PROGRAM_ADDRESS);
+    const plain = await buildDropClaim({ worker: signer, intent, entries: [first] });
+    expect(await buildDropClaim({ worker: signer, intent, entries: [first], dropper: OTHER, refunded: 1 })).toEqual(plain);
+  });
 });

@@ -24,7 +24,7 @@ pub struct Advance<'info> {
     /// CHECK: the board's recorded owner, paid a lapsed claim's stake
     #[account(mut, address = board.load()?.owner @ EngineError::StakeAccountMismatch)]
     pub owner: UncheckedAccount<'info>,
-    /// CHECK: the worker of the first live entry in the line, checked against that entry
+    /// CHECK: the worker of the first entry the line serves, checked against that entry
     #[account(mut)]
     pub next_worker: Option<UncheckedAccount<'info>>,
     /// CHECK: the line's entry at head + 0, checked against the address its sequence derives
@@ -39,6 +39,9 @@ pub struct Advance<'info> {
     /// CHECK: the line's entry at head + 3, checked against the address its sequence derives
     #[account(mut)]
     pub entry_3: Option<UncheckedAccount<'info>>,
+    /// CHECK: the worker that dropped the claim, paid back each entry of its own the line passes while it may not be granted the claim
+    #[account(mut)]
+    pub dropper: Option<UncheckedAccount<'info>>,
 }
 
 pub fn handle_advance(ctx: Context<Advance>) -> Result<()> {
@@ -79,13 +82,19 @@ pub fn handle_advance(ctx: Context<Advance>) -> Result<()> {
         .next_worker
         .as_ref()
         .map(|a| a.to_account_info());
-    if let Some(claimed) = hand_over(
+    let dropper = ctx.accounts.dropper.as_ref().map(|a| a.to_account_info());
+    let handed = hand_over(
         &ctx.accounts.board,
         &entries,
         next.as_ref(),
+        dropper.as_ref(),
         now,
         expires_at,
-    )? {
+    )?;
+    for left in handed.refunded {
+        emit_cpi!(left);
+    }
+    if let Some(claimed) = handed.claimed {
         emit_cpi!(claimed);
     }
     Ok(())

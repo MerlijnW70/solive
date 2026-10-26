@@ -156,3 +156,4 @@ Every error the engine program raises, from its IDL. When an SDK call fails, `cl
 | 6147 | `SharesHeld` | yes | a co-author's share of this escrow is still held for it to claim |
 | 6148 | `NoShareHeld` | no | nothing is held for this index of the split |
 | 6149 | `HeldSplitMismatch` | no | the recipients and weights given are not the split the release paid, or the signer is not the wallet at that index |
+| 6150 | `HolderStandsBy` | no | the wallet holding a job's claim cannot stand by in that job's line |

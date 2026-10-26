@@ -153,14 +153,17 @@ export async function loadLine(transport: Transport, intent: Address, line: { he
   });
 }
 
-export async function lineHandover(transport: Transport, intent: Address, line: { head: number; tail: number }): Promise<LineHandover> {
+export async function lineHandover(transport: Transport, intent: Address, line: { head: number; tail: number }, barred?: Address | null): Promise<LineHandover> {
   const entries = await loadLine(transport, intent, line);
-  const live = entries.findIndex(({ worker }) => worker !== null);
-  if (live < 0) {
-    return { entries: entries.map(({ entry }) => entry) };
-  }
-  const next = entries[live] as LineEntry;
-  return { entries: entries.slice(0, live + 1).map(({ entry }) => entry), nextWorker: next.worker as Address };
+  const isBarred = (worker: Address | null) => worker !== null && worker === barred;
+  const live = entries.findIndex(({ worker }) => worker !== null && !isBarred(worker));
+  const passed = live < 0 ? entries : entries.slice(0, live + 1);
+  const refunded = passed.filter(({ worker }) => isBarred(worker)).length;
+  return {
+    entries: passed.map(({ entry }) => entry),
+    ...(live < 0 ? {} : { nextWorker: (entries[live] as LineEntry).worker as Address }),
+    ...(refunded === 0 || barred === undefined || barred === null ? {} : { dropper: barred, refunded }),
+  };
 }
 
 export type CancelClaims = { board: Address; stakeTo: Address | null };

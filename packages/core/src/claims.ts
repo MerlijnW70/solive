@@ -120,7 +120,7 @@ export async function standbyAddress(intent: Address, seq: number): Promise<Addr
   return (await findEntryPda({ intent, seq }))[0];
 }
 
-export type LineHandover = { entries: readonly Address[]; nextWorker?: Address };
+export type LineHandover = { entries: readonly Address[]; nextWorker?: Address; dropper?: Address; refunded?: number };
 
 function entryAccounts(entries: readonly Address[]) {
   if (entries.length > MAX_LINE_ENTRIES) throw new IntentCoreError("InvalidParams");
@@ -134,8 +134,8 @@ function entryAccounts(entries: readonly Address[]) {
 }
 
 export async function buildDropClaim(input: { worker: TransactionSigner; intent: Address } & Partial<LineHandover>) {
-  const { entries = [], nextWorker, ...rest } = input;
-  return getDropClaimInstructionAsync({ ...rest, ...(nextWorker === undefined ? {} : { nextWorker }), ...entryAccounts(entries), ...(await events()) });
+  const { worker, intent, entries = [], nextWorker } = input;
+  return getDropClaimInstructionAsync({ worker, intent, ...(nextWorker === undefined ? {} : { nextWorker }), ...entryAccounts(entries), ...(await events()) });
 }
 
 export async function buildStandBy(input: { worker: TransactionSigner; intent: Address; seq: number; secs: number; claimList?: Address | undefined }) {
@@ -149,6 +149,7 @@ export async function buildAdvance(input: { intent: Address; owner: Address } & 
     owner: input.owner,
     ...(input.nextWorker === undefined ? {} : { nextWorker: input.nextWorker }),
     ...entryAccounts(input.entries),
+    ...(input.dropper === undefined ? {} : { dropper: input.dropper }),
     ...(await events()),
   });
 }

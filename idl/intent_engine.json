@@ -109,6 +109,11 @@
           "optional": true
         },
         {
+          "name": "dropper",
+          "writable": true,
+          "optional": true
+        },
+        {
           "name": "event_authority"
         },
         {
@@ -6062,6 +6067,10 @@
     {
       "code": 6149,
       "name": "HeldSplitMismatch"
+    },
+    {
+      "code": 6150,
+      "name": "HolderStandsBy"
     }
   ],
   "types": [

@@ -131,6 +131,59 @@ fn a_worker_that_dropped_waits_for_its_term_while_everyone_else_may_claim() {
 }
 
 #[test]
+fn the_line_after_a_drop_grants_by_the_same_rule_as_a_claim() {
+    let until = NOW + 600;
+    let dropped = Cooldown {
+        worker: WORKER,
+        until,
+    };
+    let after_drop = Slot::at([0; 32], until, NOW + 599);
+    assert_eq!(after_drop, Slot::Free);
+    assert_eq!(
+        dropped.check(after_drop, WORKER, NOW + 599),
+        Err(Error::ClaimCooldown),
+        "the dropper's own entry is not served before its term ends"
+    );
+    assert_eq!(dropped.check(after_drop, OTHER, NOW + 599), Ok(()));
+    assert_eq!(dropped.check(after_drop, WORKER, until), Ok(()));
+    let cleared = Cooldown {
+        worker: [0; 32],
+        until: 0,
+    };
+    assert_eq!(cleared.check(Slot::Free, WORKER, NOW), Ok(()));
+}
+
+fn slot_of(pick: u8, worker: [u8; 32], until: i64) -> Slot {
+    match pick % 3 {
+        0 => Slot::Free,
+        1 => Slot::Held { worker, until },
+        _ => Slot::Lapsed { worker },
+    }
+}
+
+proptest! {
+    #[test]
+    fn the_grant_rule_bars_only_a_held_slot_and_the_dropper_within_its_term(
+        pick in any::<u8>(),
+        dropper in prop_oneof![Just([0u8; 32]), Just(WORKER), Just(OTHER)],
+        claimant in prop_oneof![Just([0u8; 32]), Just(WORKER), Just(OTHER)],
+        until in NOW - 10..NOW + 10,
+        now in NOW - 10..NOW + 10,
+    ) {
+        let slot = slot_of(pick, OTHER, until);
+        let rule = Cooldown { worker: dropper, until };
+        let expected = match slot {
+            Slot::Held { .. } => Err(Error::ClaimHeld),
+            Slot::Free if dropper != [0; 32] && dropper == claimant && now < until => {
+                Err(Error::ClaimCooldown)
+            }
+            Slot::Free | Slot::Lapsed { .. } => Ok(()),
+        };
+        prop_assert_eq!(rule.check(slot, claimant, now), expected);
+    }
+}
+
+#[test]
 fn settling_refunds_a_worker_the_escrow_failed_and_forfeits_a_lapsed_claim() {
     let held = Slot::at(WORKER, NOW + 1, NOW);
     assert_eq!(stake_on_settle(held, true), Err(Error::ClaimHeld));

@@ -176,6 +176,7 @@ export const ENGINE_PROBLEMS = {
   SharesHeld: later("a co-author's share of this escrow is still held for it to claim; the escrow and its paid announcement stay until that share is claimed or a year after the escrow expires"),
   NoShareHeld: never("nothing is held for this index of the split; it was paid at release or already claimed"),
   HeldSplitMismatch: never("the recipients and weights given are not the split the release paid, or the signer is not the wallet at that index; pass them exactly as the release named them"),
+  HolderStandsBy: never("the wallet holding a job's claim cannot stand by in that job's line; it keeps the claim until it drops it or the claim lapses"),
 } as const satisfies Record<string, Entry>;
 
 type EngineErrorName = keyof typeof ENGINE_PROBLEMS;

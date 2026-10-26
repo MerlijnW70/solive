@@ -105,7 +105,7 @@ export async function standbyStep(client: Client, transport: Transport, escrow: 
     throw new AgentRefusal("JobNotHeld", `nobody holds escrow ${escrow.intent} and nobody stands by; nothing was sent; claim it with ${tool("wallet_claim")} action take`);
   }
   if (view.worker === worker.address && view.state === "held") {
-    throw new AgentRefusal("InvalidTransition", `this wallet ${worker.address} already holds the claim on escrow ${escrow.intent}; nothing was sent`);
+    throw new AgentRefusal("HolderStandsBy", `this wallet ${worker.address} already holds the claim on escrow ${escrow.intent}, and the holder cannot stand by for its own job; nothing was sent`);
   }
   if (secs > view.maxSecs) {
     throw new AgentRefusal("ClaimTerms", `escrow ${escrow.intent} lets a worker hold its claim for at most ${view.maxSecs} seconds; give a lower secs`);
@@ -159,7 +159,7 @@ export async function advanceStep(client: Client, transport: Transport, escrow: 
   if ((await escrowState(client, escrow.owner, escrow.nonce)) !== "open") {
     throw new AgentRefusal("InvalidTransition", `escrow ${escrow.intent} is no longer open, so its line is not advanced; each waiter gets its stake back with ${tool("wallet_claim")} action leave`);
   }
-  const handover = await lineHandover(transport, escrow.intent, view.line);
+  const handover = await lineHandover(transport, escrow.intent, view.line, view.cooldown?.worker);
   const summary = [
     ...(view.state === "lapsed" ? [`Ends: the lapsed claim of ${view.worker}, whose stake of ${sol(view.stake)} goes to the owner ${view.owner}`] : []),
     ...handedTo(handover),

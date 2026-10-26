@@ -77,6 +77,14 @@ describe("claim line wording and hand-over", () => {
     expect(handedTo({ entries: [ADDRESS], nextWorker: ADDRESS })).toStrictEqual([`Hands: the job to ${ADDRESS}, first in the line`]);
   });
 
+  it("counts a dropper's own entries apart from the entries whose worker left", () => {
+    expect(handedTo({ entries: [ADDRESS, ADDRESS, ADDRESS], nextWorker: ADDRESS, dropper: ADDRESS, refunded: 1 })).toStrictEqual([
+      `Hands: the job to ${ADDRESS}, first in the line`,
+      "Skips: 1 line entry whose worker left",
+      `Closes: 1 line entry of ${ADDRESS}, which dropped the claim and may not hold it again before its term ends; each entry's stake and rent go back to it`,
+    ]);
+  });
+
   it("a drop on a closed escrow hands nothing over and never reads the line", async () => {
     const line = { head: 0, tail: 1, waiting: 1 };
     const view = { line } as ClaimsView;
