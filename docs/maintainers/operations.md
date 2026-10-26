@@ -236,7 +236,22 @@ intent-engine migrate --keypair payer.json --address <account> --url devnet
 Without `--yes` both preview. `--all` lists every account the program owns, skips current ones, sends the rest in batches of `MIGRATE_BATCH` instructions, and reports counts per type, the rent it adds and every account it cannot read. When the signer is not the config's admin, as on devnet where the admin is the Squads vault, the output carries `config_proposal`: import its `transaction_base58` into the multisig as with `propose-admin --authority`. The admin pays the config's rent top-up, shown in `config.top_up_lamports`: send the vault that many lamports before the proposal executes. After the upgrade executes, run `--all`, then approve the config proposal.
 ## Publish the IDL
 
-Once the vault is the upgrade authority, only the vault can write the program's canonical IDL. From a clean checkout at `origin/main`, after the upgrade has executed, run `bash scripts/idl.sh devnet --multisig <multisig>`. The Solana CLI default keypair, or the file in `UPGRADE_AUTHORITY`, writes `idl/intent_engine.json` to a buffer and hands the buffer to the vault; the file in `MULTISIG_MEMBER` proposes one vault transaction that tops up the IDL account's rent, sets its data from the buffer and closes the buffer. Two members approve and one executes, as in step 4 of the upgrade without `--expect-buffer-hash`. `bash scripts/idl.sh devnet --check` then compares the published IDL with `idl/intent_engine.json` and exits non-zero when they differ.
+Once the vault is the upgrade authority, only the vault can write the program's canonical IDL. From a clean checkout at `origin/main`, after the upgrade has executed, run `bash scripts/idl.sh devnet --multisig <multisig>`. It prints the sha256 of `idl/intent_engine.json` as `idl/intent_engine.json hashes to <idl hash>`. The Solana CLI default keypair, or the file in `UPGRADE_AUTHORITY`, writes the file to a buffer and hands the buffer to the vault. The file in `MULTISIG_MEMBER` proposes one vault transaction that tops up the IDL account's rent, sets its data from the buffer and closes the buffer, whose rent goes back to that keypair.
+
+Each member reads the proposal with `show --index <n>` before approving. The tool decodes every instruction of the program-metadata program `ProgM6JCCvbYkfKqJYHePx4xxSUSqJp7rh8Lyv7nk7S` at the layout of `@solana-program/program-metadata@0.10.0`: its name, each account with its role, and its seed, encoding, compression, format, data source and data. For the update it prints:
+
+- whether the metadata account is the canonical IDL account of `GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU` and whether the vault may change it as the program's upgrade authority;
+- whether the program and program data accounts are the engine's;
+- who controls the buffer, and the sha256 of the IDL bytes it sets, read through the instruction's compression and encoding; it has to equal `<idl hash>`;
+- where the lamports of a closed buffer or IDL account go.
+
+Such a proposal needs no override. `approve` signs it without `--allow-undecoded-vault-signer` and prints the IDL hash as `buffer_hash`. Two members approve and one executes with that hash:
+
+```sh
+node packages/multisig/dist/bin.js execute --multisig <multisig> --index <n> --expect-buffer-hash <idl hash> --keypair member-b.json --url devnet --yes
+```
+
+`execute` refuses without `--expect-buffer-hash`, and refuses when the buffer no longer decodes to `<idl hash>` or the vault no longer controls it. `bash scripts/idl.sh devnet --check` then compares the published IDL with `idl/intent_engine.json` and exits non-zero when they differ.
 
 ## Refusals
 
@@ -244,9 +259,11 @@ Once the vault is the upgrade authority, only the vault can write the program's 
 
 - a proposal that loads accounts from address lookup tables, or that this tool cannot decode: `show` lists it as `Undecodable`;
 - a message that asks any key other than the vault, or the transaction's ephemeral signers, to sign: executing it would lend the executing member's signature to a hidden instruction;
-- an upgrade whose buffer is missing or controlled by anyone but the vault, since its code could change after approval;
+- an upgrade or IDL update whose buffer is missing, does not decode, or is controlled by anyone but the vault, since its code or IDL could change after approval;
+- a program-metadata instruction that does not decode at the `@solana-program/program-metadata@0.10.0` layout;
 - on mainnet-beta, a loader Close of the engine's program data without `--allow-engine-close`, as in [Upgrade](#upgrade);
 - an instruction that passes the vault as a signer to a program this tool does not decode in full, on every cluster, without `--allow-undecoded-vault-signer`. The vault's signature carries through every call that program makes, so it can change program code, hand over the upgrade authority or move the vault's funds where the summary cannot show it;
+- a program-metadata instruction signed by the vault that does more than update the engine's IDL, on every cluster, without `--allow-undecoded-vault-signer`: one that acts on metadata other than the engine's canonical IDL account, names another program, passes the vault in a role other than the authority, hands the authority of the IDL account or a buffer to a key other than the vault, or closes or trims the IDL account into an address outside the vault;
 - a Squads config transaction, which adds or removes members or changes the threshold or time lock. `show` prints each change and the members, threshold and time lock after it runs. Inspect it in the Squads app at https://app.squads.so and do not approve it blindly; `--allow-config` on `approve` and `execute` signs it once every printed change is expected.
 
 The tool decodes in full the intent engine, the upgradeable loader and a system transfer, which it shows as `Transfers <sol> SOL (<lamports> lamports) from <vault> to <recipient>`. For any other program that the vault signs for, `show` adds a problem that names the instruction and the program. With `--allow-undecoded-vault-signer`, `approve` and `execute` put that problem first in the summary as a warning and sign. Pass it only for a program you trust with everything the vault holds and controls.

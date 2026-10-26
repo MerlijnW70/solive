@@ -54,6 +54,8 @@ if [[ "$mode" == multisig ]]; then
   pnpm --filter @intent-engine/client build > /dev/null
   pnpm --filter @intent-engine/multisig build > /dev/null
   squads=(node packages/multisig/dist/bin.js)
+  idl_hash="$(sha256sum "$idl" | cut -c1-64)"
+  echo "idl      $idl hashes to $idl_hash"
   vault="$("${squads[@]}" vault --multisig "$multisig" --url "$url" | node -e 'let t="";process.stdin.on("data",(d)=>t+=d).on("end",()=>console.log(JSON.parse(t).vault))')"
   created="$("${pmp[@]}" create-buffer "$idl" --format json)"
   buffer="$(printf '%s\n' "$created" | sed -n 's/.*buffer: *\([1-9A-HJ-NP-Za-km-z]\{32,44\}\).*/\1/p' | head -1)"
@@ -67,7 +69,7 @@ if [[ "$mode" == multisig ]]; then
   printf '%s\n' "$exported" | node scripts/instruction-list.mjs > "$proposal"
   "${squads[@]}" propose-admin --multisig "$multisig" --keypair "${MULTISIG_MEMBER:-$authority}" --url "$url" --yes -- cat "$proposal"
   echo "buffer   $buffer, now controlled by the vault $vault and closed by the proposal"
-  echo "next: two members approve the proposal above with packages/multisig/dist/bin.js approve, one runs execute, then run bash scripts/idl.sh $1 --check"
+  echo "next: two members approve the proposal above with packages/multisig/dist/bin.js approve, which prints the buffer's decoded IDL sha256 as buffer_hash and has to print $idl_hash; one runs execute --expect-buffer-hash $idl_hash, then run bash scripts/idl.sh $1 --check"
   exit 0
 fi
 if [[ "$mode" == write ]] && ! "${pmp[@]}" write idl "$program" "$idl" --format json; then

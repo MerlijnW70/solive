@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmodSync, copyFileSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -57,7 +58,7 @@ exec "$REAL_NODE" "$@"
 
 type Stub = { genesis: string; program: string; vault?: { threshold: number; timeLock: number } };
 
-function run(script: "deploy.sh" | "idl.sh", args: string[], stub: Stub): { code: number; log: string[]; err: string } {
+function run(script: "deploy.sh" | "idl.sh", args: string[], stub: Stub): { code: number; log: string[]; err: string; out: string } {
   const work = mkdtempSync(join(tmpdir(), "deploy-script-"));
   const repo = join(work, "repo");
   const bin = join(work, "bin");
@@ -88,11 +89,11 @@ function run(script: "deploy.sh" | "idl.sh", args: string[], stub: Stub): { code
   };
   const lines = () => readFileSync(log, "utf8").split("\n").filter((line) => line !== "");
   try {
-    execFileSync("bash", [join(repo, "scripts", script), ...args], { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env });
-    return { code: 0, log: lines(), err: "" };
+    const out = execFileSync("bash", [join(repo, "scripts", script), ...args], { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"], env });
+    return { code: 0, log: lines(), err: "", out };
   } catch (error) {
-    const failed = error as { status?: number; stderr?: string };
-    return { code: failed.status ?? 1, log: lines(), err: failed.stderr ?? "" };
+    const failed = error as { status?: number; stderr?: string; stdout?: string };
+    return { code: failed.status ?? 1, log: lines(), err: failed.stderr ?? "", out: failed.stdout ?? "" };
   }
 }
 
@@ -165,5 +166,11 @@ describe("idl.sh", () => {
     const steps = ran.log.filter((line) => !line.startsWith("git ") && !line.startsWith("solana "));
     expect(steps.slice(0, 4)).toEqual(["pnpm --filter @intent-engine/core build", "pnpm --filter @intent-engine/client build", "pnpm --filter @intent-engine/multisig build", VAULT_READ + DEVNET_URL]);
     expect(steps[4]).toContain(`create-buffer idl/intent_engine.json`);
+  });
+
+  it("prints the sha256 of the local IDL file, the form approve prints as buffer_hash and execute takes as --expect-buffer-hash", () => {
+    const ran = run("idl.sh", ["devnet", "--multisig", MULTISIG], { genesis: DEVNET, program: VAULT, vault: { threshold: 2, timeLock: 0 } });
+    const local = createHash("sha256").update(JSON.stringify({ address: PROGRAM })).digest("hex");
+    expect(ran.out).toContain(`idl      idl/intent_engine.json hashes to ${local}\n`);
   });
 });

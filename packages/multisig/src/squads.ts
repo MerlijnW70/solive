@@ -302,7 +302,9 @@ function requireBuffers(seen: Review, index: bigint, vault: Address, expected: r
   }
   if (expected.length === 0) {
     throw new Refusal(
-      `proposal ${index} upgrades a program; pass --expect-buffer-hash with the buffer hash approve printed, so the code that runs is the code that was approved`,
+      seen.buffers.some((check) => check.sets !== "idl")
+        ? `proposal ${index} upgrades a program; pass --expect-buffer-hash with the buffer hash approve printed, so the code that runs is the code that was approved`
+        : `proposal ${index} sets the IDL from a buffer; pass --expect-buffer-hash with the buffer hash approve printed, which equals the sha256 idl.sh printed for the local IDL file, so the IDL that is set is the IDL that was approved`,
       shown,
     );
   }
@@ -312,7 +314,7 @@ function requireBuffers(seen: Review, index: bigint, vault: Address, expected: r
     }
     if (check.hash === null || !expected.includes(check.hash)) {
       throw new Refusal(
-        `buffer ${check.buffer} hashes to ${check.hash ?? "nothing"}, not the approved ${expected.join(", ")}; its code changed since approval, so do not execute it`,
+        `buffer ${check.buffer} hashes to ${check.hash ?? "nothing"}, not the approved ${expected.join(", ")}; ${check.sets === "idl" ? "the IDL it sets" : "its code"} changed since approval, so do not execute it`,
         shown,
       );
     }

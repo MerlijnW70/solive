@@ -12,10 +12,12 @@ import { main, type Deps } from "../src/main.js";
 import { SQUADS_PROGRAM } from "../src/squads.js";
 
 export const SQUADS_SHA256 = "dec8d3e0fae58c7c8f2416e5f67c25e673f047afd6dd2bba4a47e0b29a01d34c";
+export const PROGRAM_METADATA_SHA256 = "3d0c0f7504c01b1f6996d30a5c3dc2cccb8b65dedba80d6fceb60a7cada093e0";
 export const SOL = 1_000_000_000n;
 
-const squadsPath =
-  process.env["SQUADS_SO"] ?? join(process.env["XDG_CACHE_HOME"] ?? join(homedir(), ".cache"), "solive-fixtures", "squads_multisig.so");
+const fixtures = join(process.env["XDG_CACHE_HOME"] ?? join(homedir(), ".cache"), "solive-fixtures");
+const squadsPath = process.env["SQUADS_SO"] ?? join(fixtures, "squads_multisig.so");
+const programMetadataPath = process.env["PROGRAM_METADATA_SO"] ?? join(fixtures, "program_metadata.so");
 
 export const enginePath = process.env["INTENT_ENGINE_SO"] ?? fileURLToPath(new URL("../../../target/deploy/intent_engine.so", import.meta.url));
 
@@ -26,14 +28,18 @@ function fixture(path: string, missing: string): Uint8Array {
   return new Uint8Array(readFileSync(path));
 }
 
-export const squadsProgram = (): Uint8Array => {
-  const bytes = fixture(squadsPath, "run bash scripts/fetch-squads.sh");
+function pinned(path: string, sha256: string, script: string): Uint8Array {
+  const bytes = fixture(path, `run bash scripts/${script}`);
   const digest = createHash("sha256").update(bytes).digest("hex");
-  if (digest !== SQUADS_SHA256) {
-    throw new Error(`${squadsPath} hashes to ${digest}, not the pinned ${SQUADS_SHA256}; run bash scripts/fetch-squads.sh`);
+  if (digest !== sha256) {
+    throw new Error(`${path} hashes to ${digest}, not the pinned ${sha256}; run bash scripts/${script}`);
   }
   return bytes;
-};
+}
+
+export const squadsProgram = (): Uint8Array => pinned(squadsPath, SQUADS_SHA256, "fetch-squads.sh");
+
+export const programMetadataProgram = (): Uint8Array => pinned(programMetadataPath, PROGRAM_METADATA_SHA256, "fetch-program-metadata.sh");
 
 export const engineProgram = (): Uint8Array => fixture(enginePath, "build the program or set INTENT_ENGINE_SO");
 

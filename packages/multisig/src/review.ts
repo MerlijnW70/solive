@@ -15,6 +15,8 @@ import {
 import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import type { Account, Chain } from "./chain.js";
 import { engineDecodes, engineSummary } from "./engine.js";
+import { describeMetadata } from "./program-metadata.js";
+import { PROGRAM_METADATA } from "./program-metadata-layout.js";
 import {
   type ConfigAction,
   configTransactionCodec,
@@ -124,7 +126,7 @@ export function messageInstructions(message: VaultMessage): Instruction[] {
   }));
 }
 
-export type BufferCheck = { buffer: Address; authority: Address | null; hash: string | null };
+export type BufferCheck = { buffer: Address; authority: Address | null; hash: string | null; sets?: "idl" };
 
 export type Decoded = InstructionView & { summary: string };
 
@@ -244,12 +246,15 @@ function describeOther(ix: Instruction, vault: Address | null, position: number)
   return { summary: `${summary}; it receives the vault's signature`, relayed: relayedText(position, vault, ix.programAddress) };
 }
 
-async function describe(chain: Chain, ix: Instruction, engineData: Address, vault: Address | null, position: number): Promise<Described> {
+async function describe(chain: Chain, ix: Instruction, engineData: Address, vault: Address | null, position: number, upgradeAuthority: () => Promise<Address | null>): Promise<Described> {
   const data = ix.data ?? new Uint8Array();
   if (ix.programAddress === ENGINE_PROGRAM) {
     return engineDecodes(ix)
       ? { summary: engineSummary(ix) }
       : { summary: engineSummary(ix), problem: `it carries an intent engine instruction whose ${data.length} bytes this version cannot decode, so approving it would sign for an effect the tool cannot show` };
+  }
+  if (ix.programAddress === PROGRAM_METADATA) {
+    return describeMetadata(chain, ix, { vault, position, engineData, upgradeAuthority });
   }
   if (ix.programAddress !== LOADER) {
     return describeOther(ix, vault, position);
@@ -281,8 +286,16 @@ export async function describeInstructions(
   const problems: string[] = [];
   const relayed: string[] = [];
   let engineClose: string | null = null;
+  let upgradedBy: Promise<Address | null> | undefined;
+  const upgradeAuthority = () => {
+    upgradedBy ??= chain.account(engineData).then((info) => {
+      const state = loaderState(info);
+      return state.kind === "program data" ? state.authority : null;
+    });
+    return upgradedBy;
+  };
   for (const [i, ix] of instructions.entries()) {
-    const described = await describe(chain, ix, engineData, vault, i + 1);
+    const described = await describe(chain, ix, engineData, vault, i + 1, upgradeAuthority);
     decoded.push({ ...instructionView(ix), summary: described.summary });
     if (described.buffer !== undefined) {
       buffers.push(described.buffer);
@@ -407,9 +420,13 @@ async function reviewVault(chain: Chain, at: Address, index: bigint, data: Reado
   }
   for (const check of buffers) {
     if (check.hash === null) {
-      problems.push(`buffer ${check.buffer} is missing or not a program buffer`);
+      problems.push(
+        check.sets === "idl"
+          ? `buffer ${check.buffer} is missing, not a program-metadata buffer, or holds data that does not decode`
+          : `buffer ${check.buffer} is missing or not a program buffer`,
+      );
     } else if (check.authority !== vault) {
-      problems.push(`buffer ${check.buffer} is controlled by ${named(check.authority)}, not the vault ${vault}, so its code can change after approval`);
+      problems.push(`buffer ${check.buffer} is controlled by ${named(check.authority)}, not the vault ${vault}, so ${check.sets === "idl" ? "the IDL it sets" : "its code"} can change after approval`);
     }
   }
   return { ...base, summary: decoded.map((d) => d.summary), instructions: decoded, buffers, problems, relayed, engineClose };

@@ -23,6 +23,7 @@ if [[ "$PWD" == /mnt/* ]]; then
 fi
 bash scripts/identity.sh --check
 bash scripts/fetch-squads.sh > /dev/null
+bash scripts/fetch-program-metadata.sh > /dev/null
 pnpm --filter @intent-engine/core build
 pnpm --filter @intent-engine/client build
 pnpm --filter @intent-engine/solver build
