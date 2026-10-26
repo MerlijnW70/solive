@@ -58,7 +58,7 @@ export {
 export { ESCROW_EXPIRES_IN, RECORD_MINT_NEEDED, MAX_PIECES, piecesPartlySent, piecesMayHaveLanded } from "./wallet/escrow.js";
 export { PAYEE_MOVED, RELEASE_CHANGED, approvalOf, notEarliest, PAY_TO_NEEDED } from "./wallet/attest.js";
 export { COMMITTEE_CHANGED, COMMITTEE_EXISTS, COMMITTEE_LIVE, NOT_A_MEMBER, VOTE_CHANGED } from "./wallet/committee.js";
-export { ALREADY_ANNOUNCED, DELIVERED_NEEDED, checkDelivery, prepareDeliver, notAttestor, SYNC_FIRST } from "./wallet/delivery.js";
+export { ALREADY_ANNOUNCED, DELIVERED_NEEDED, checkDelivery, prepareDeliver, notAttestor, SECOND_NODE_UNREAD, SYNC_FIRST } from "./wallet/delivery.js";
 export { SPLIT_FITS, SPLIT_FITS_WITH_TABLE, splitTooLarge, SPLIT_WEIGHTS_WRONG, SPLIT_SIG_NEEDED, SIGNATURE_PATTERN, WARN_COAUTHORS, notInSplit } from "./wallet/split.js";
 export { RELEASE_INPUT, RELEASE_SIGNATURE, releaseOf, otherLifecycle, COVERAGE_UNPROVABLE, coverageOf } from "./wallet/receipt.js";
 export { NOT_ANNOUNCEMENT, RECLAIM_MORE } from "./wallet/refute.js";

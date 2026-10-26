@@ -14,7 +14,7 @@ import { invoke } from "../src/agent/actions.js";
 import { claimsOf } from "../src/agent/claims.js";
 import { tool } from "../src/agent/names.js";
 import { getReputation } from "../src/agent/reputation.js";
-import { WALLET_NOTICE } from "../src/agent/wallet.js";
+import { SECOND_NODE_UNREAD, WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { announced, keyed } from "./announce.js";
 import { cliWith, secondNode, SECOND } from "./confirm-node.js";
@@ -118,8 +118,9 @@ describe("a second node that cannot be read", () => {
     await announced(intent, await keyed(), WORK, URL_OF_WORK);
     const refused = await call(client, "wallet_attest", { owner, nonce: escrow["nonce"], delivered_sha256: WORK });
     expect(refused).toMatchObject({ error: true, value: { code: "ConfirmMismatch" } });
-    expect(refused.value["hint"]).toContain("bad node");
-    expect(refused.value["hint"]).not.toContain("\n");
+    expect(refused.value["hint"]).toBe(SECOND_NODE_UNREAD);
+    expect(refused.value["untrustedDetail"]).toContain("bad node");
+    expect(refused.value["untrustedDetail"]).not.toContain("\n");
   });
 });
 

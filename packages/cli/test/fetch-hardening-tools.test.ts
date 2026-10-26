@@ -11,6 +11,7 @@ import { seal, specMemo } from "@intent-engine/core/internal";
 import { MAX_SPEC_BYTES, SPEC_REDIRECTS } from "@intent-engine/client/internal";
 import { tool } from "../src/agent/names.js";
 import { NOT_TEXT } from "../src/agent/spec.js";
+import { SERVER_PROBLEMS } from "../src/agent/problems.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { notSealedTo, SPEC_TOO_LARGE } from "../src/agent/wallet/escrow.js";
 import { sealedLimits } from "../src/agent/wallet/escrow-claims.js";
@@ -107,7 +108,7 @@ describe("get_spec telling a lasting failure from a passing one", () => {
     const specUrl = "https://" + "example.org/jobs/moved.md";
     const intent = await job(client, owner, specUrl, encoded("spec\n"));
     h.specReplies.set(specUrl, (_url, init) => fetch(`${base}/moved`, init));
-    expect(await call(client, "get_spec", { intent })).toMatchObject({ error: true, value: { code: "SpecUnfetchable", retryable: false, hint: expect.stringContaining(SPEC_REDIRECTS) } });
+    expect(await call(client, "get_spec", { intent })).toMatchObject({ error: true, value: { code: "SpecUnfetchable", retryable: false, hint: SERVER_PROBLEMS.SpecUnfetchable.hint, untrustedDetail: expect.stringContaining(SPEC_REDIRECTS) } });
   }, 60_000);
 
   it("calls a body that breaks off or times out SpecUnreadable, with the cause", async () => {
@@ -133,7 +134,7 @@ describe("get_spec telling a lasting failure from a passing one", () => {
         throw timedOut();
       });
       const result = await call(client, "get_spec", { intent });
-      expect(result, url).toMatchObject({ error: true, value: { code: "SpecUnreadable", retryable: true, hint: expect.stringContaining(cause) } });
+      expect(result, url).toMatchObject({ error: true, value: { code: "SpecUnreadable", retryable: true, hint: SERVER_PROBLEMS.SpecUnreadable.hint, untrustedDetail: expect.stringContaining(cause) } });
     }
   }, 60_000);
 });
@@ -239,7 +240,7 @@ describe("get_spec following the client's host rules", () => {
     const intent = await job(client, owner, specUrl, encoded(SPEC), { record_mint: DEVNET_TEST_MINT });
     expect(await ok(client, "get_spec", { intent })).toMatchObject({ url: specUrl, matches: true });
     const remote = await server("devnet", false);
-    expect(await call(remote, "get_spec", { intent })).toMatchObject({ error: true, value: { code: "SpecUnfetchable", hint: expect.stringContaining(PRIVATE) } });
+    expect(await call(remote, "get_spec", { intent })).toMatchObject({ error: true, value: { code: "SpecUnfetchable", hint: SERVER_PROBLEMS.SpecUnfetchable.hint, untrustedDetail: expect.stringContaining(PRIVATE) } });
   }, 60_000);
 
   it("resolves a spec host with the lookup the runtime injects, never the system's", async () => {
@@ -248,7 +249,7 @@ describe("get_spec following the client's host rules", () => {
     const intent = await job(client, owner, specUrl, encoded(SPEC));
     h.lookups = [];
     h.hosts.set("example.org", ["10.0.0.7"]);
-    expect(await call(client, "get_spec", { intent })).toMatchObject({ error: true, value: { code: "SpecUnfetchable", hint: expect.stringContaining(PRIVATE) } });
+    expect(await call(client, "get_spec", { intent })).toMatchObject({ error: true, value: { code: "SpecUnfetchable", hint: SERVER_PROBLEMS.SpecUnfetchable.hint, untrustedDetail: expect.stringContaining(PRIVATE) } });
     expect(h.lookups).toEqual(["example.org"]);
   }, 60_000);
 });

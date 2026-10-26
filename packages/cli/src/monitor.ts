@@ -17,6 +17,7 @@ import { healthFindings } from "./monitor-health.js";
 import { capChanges, type Floors, floorChanges, floorsOf, isFloors, isMintCaps, type MintCaps, mintCapsOf } from "./monitor-limits.js";
 import { printableLines, redactUrl, render } from "./render.js";
 import type { Runtime } from "./runtime.js";
+import { escapedJson } from "./untrusted-text.js";
 
 export const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111" as Address;
 export const PROGRAM_DATA_HEADER = 45;
@@ -408,7 +409,7 @@ export async function checkOnce(
   return alerts;
 }
 
-export const line = (alert: Alert) => JSON.stringify(alert, (_, v: unknown) => (typeof v === "bigint" ? v.toString() : v));
+export const line = (alert: Alert) => escapedJson(JSON.stringify(alert, (_, v: unknown) => (typeof v === "bigint" ? v.toString() : v)));
 
 async function post(webhook: string, body: string, runtime: Runtime, io: Io): Promise<void> {
   const where = redactUrl(webhook);

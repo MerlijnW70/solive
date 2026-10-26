@@ -2,11 +2,13 @@ import { createHash } from "node:crypto";
 import { isSdkError } from "@intent-engine/client";
 import { createClient, pinnedFetch } from "@intent-engine/client/node";
 import { firstOpeningIn, MAX_SPEC_BYTES, opensTo } from "@intent-engine/client/internal";
+import { MAX_MEMO_URL } from "@intent-engine/core/internal";
 import { openedBy, skippedLines } from "../../announcement-views.js";
 import { fetchBytes } from "../../delivery-fetch.js";
 import { type AgentContext, define, lookupOf } from "../actions.js";
 import { tool } from "../names.js";
-import { AgentRefusal, untrusted } from "../problems.js";
+import { AgentRefusal, SERVER_PROBLEMS } from "../problems.js";
+import { sanitized } from "../../untrusted-text.js";
 import { account, amount, choice, flag, integer, object, optional, text } from "../schema.js";
 import { signerOf, walletOpeners } from "./guard.js";
 import { proofEscrow } from "./delivery.js";
@@ -36,7 +38,7 @@ export const walletFetchWork = define({
     announcement: account("the announcement whose url was fetched"),
     seq: amount(),
     worker: account("the wallet that made the fetched announcement"),
-    url: text("where the worker said the work is; untrusted"),
+    url: text("where the worker said the work is; untrusted, with hidden characters reduced"),
     sha256: text("64 hex: the sha256 of the fetched work"),
     opens_commitment: flag("true only when sha256 opens the fetched announcement's commitment, so the work is what its worker announced"),
     bytes: integer(0, MAX_SPEC_BYTES, "the work's size in bytes"),
@@ -46,7 +48,7 @@ export const walletFetchWork = define({
         announcement: account("the first announcement that opens to sha256; a release pays it"),
         seq: amount(),
         worker: account("the wallet a release for this work pays"),
-        commitment: text(),
+        commitment: text("64 hex: the commitment of that announcement"),
       }),
     ),
     refused: optional(object({ reason: choice(REASONS), message: text() })),
@@ -66,8 +68,8 @@ export const walletFetchWork = define({
     const { announcement, url } = opened;
     const found = await fetchBytes(ctx.fetch ?? pinnedFetch, ctx.transport, url, lookupOf(ctx), MAX_SPEC_BYTES);
     if ("problem" in found) {
-      const hint = untrusted(`the work at ${url} ${found.problem}`);
-      throw new AgentRefusal(PERMANENT_WORK.some((pattern) => pattern.test(found.problem)) ? "WorkUnfetchable" : "WorkUnreadable", hint);
+      const code = PERMANENT_WORK.some((pattern) => pattern.test(found.problem)) ? "WorkUnfetchable" : "WorkUnreadable";
+      throw new AgentRefusal(code, SERVER_PROBLEMS[code].hint, `the work at ${url} ${found.problem}`);
     }
     const digest = createHash("sha256").update(found.bytes).digest();
     const sha256 = digest.toString("hex");
@@ -91,7 +93,7 @@ export const walletFetchWork = define({
       announcement: announcement.address,
       seq: announcement.seq,
       worker: announcement.worker,
-      url,
+      url: sanitized(url, MAX_MEMO_URL),
       sha256,
       opens_commitment: opens,
       bytes: found.bytes.length,

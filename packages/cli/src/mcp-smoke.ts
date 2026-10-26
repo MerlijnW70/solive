@@ -70,7 +70,8 @@ function problemOf(value: unknown): string {
   const issues = Array.isArray(fields["issues"])
     ? (fields["issues"] as Fields[]).map((issue) => `${String(issue["path"])} ${String(issue["message"])}`)
     : [];
-  return issues.length === 0 ? head : `${head} (${issues.join("; ")})`;
+  const detail = typeof fields["untrustedDetail"] === "string" ? `; untrusted detail: ${JSON.stringify(fields["untrustedDetail"])}` : "";
+  return `${issues.length === 0 ? head : `${head} (${issues.join("; ")})`}${detail}`;
 }
 
 function text(fields: Fields, field: string, step: string): string {

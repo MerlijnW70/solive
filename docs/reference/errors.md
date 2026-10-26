@@ -15,9 +15,9 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `Unreachable` | yes | the RPC node could not be reached: the connection was refused, the name did not resolve or the request failed; call again once it is back, and check whether a send landed before sending it again |
 | `CertificateUntrusted` | no | this machine does not trust the RPC node's certificate, often because antivirus or a proxy inspects HTTPS |
 | `Unfunded` | no | your wallet has no SOL yet; fund it, then try again |
-| `Failed` | no | an unexpected error; the hint carries its message |
+| `Failed` | no | an unexpected error; its message, which may come from the RPC node, is in the untrusted detail |
 | `MaybeSent` | no | the transaction may have landed, so it must not be sent again: look its signature up with intent-engine lookup --signature, as the hint says, and send again only once that reports expired |
-| `TransactionFailed` | no | the transaction would fail for a reason this client does not name; read the logs |
+| `TransactionFailed` | no | the transaction would fail for a reason this client does not name; the node's error is in the untrusted detail and the last log lines in logs |
 | `WalletNotConfigured` | no | a wallet tool was called on a server started without --wallet |
 | `NoClock` | no | wait was given to a server built without a clock; call again without wait |
 | `WalletNotMainnet` | no | the RPC serves mainnet; wallet tools work on devnet, testnet and localnet only |

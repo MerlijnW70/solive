@@ -8,7 +8,7 @@ import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { escrowJudge, MAX_EXPIRES_IN, MIN_EXPIRES_IN, neverSettles, SPEC_URL_PLAIN } from "../create.js";
 import { tool } from "../names.js";
-import { AgentRefusal, problemOf } from "../problems.js";
+import { AgentRefusal, problemOf, UNTRUSTED_DETAIL } from "../problems.js";
 import { InvalidInput, account, amount, flag, hex32, integer, list, object, optional, text } from "../schema.js";
 import { LANDING_SECONDS, access, mintNamed, raw, salesOf, checkSale, checkHour, refusedBeforeSending, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, oneAtATime, signerOf, termsApproval } from "./guard.js";
 import { offerFields, type Token } from "./offer.js";
@@ -333,6 +333,7 @@ export const walletEscrowPlan = define({
     approval: text(ESCROW_APPROVAL),
     sent: flag(),
     next: optional(text()),
+    untrusted_detail: optional(text(UNTRUSTED_DETAIL)),
   }),
   run: async (ctx: AgentContext, input, call: Call) => {
     const wallet = access(ctx);
@@ -464,6 +465,7 @@ export const walletEscrowPlan = define({
           ...shown,
           sent: true,
           next: refusedBeforeSending(error) ? piecesPartlySent(pieces.length, planned.length, reason) : piecesMayHaveLanded(pieces.length, planned.length, reason),
+          ...(problem.untrustedDetail === undefined ? {} : { untrusted_detail: problem.untrustedDetail }),
         };
       }
     }

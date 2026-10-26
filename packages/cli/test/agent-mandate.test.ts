@@ -6,7 +6,7 @@ import { buildFillIntent, findMandatePda, findVaultPda } from "@intent-engine/co
 import { getCloseAccountInstruction, getTransferInstruction, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { createCost, rentFor, rentRate, TOKEN_ACCOUNT_RENT_BYTES } from "../src/agent/budget.js";
 import { NO_MANDATE_HINT, REVOKE_CANCELS } from "../src/agent/mandate.js";
-import { ENGINE_PROBLEMS } from "../src/agent/problems.js";
+import { ENGINE_PROBLEMS, SERVER_PROBLEMS } from "../src/agent/problems.js";
 import { ata, balance, funded, h, NOW, send, transport, type World } from "./harness.js";
 import { allowance, execute, fail, FIRST_LANE, grantOf, mandateServed, ok, order, serve } from "./agent-mandate-kit.js";
 
@@ -215,7 +215,8 @@ describe("mandates through the agent server", () => {
       expect(await fail(exact, "agent_create", { owner: w.owner.address, order: order("390", "200"), expires_in: 600 })).toEqual({
         code: "Failed",
         retryable: false,
-        hint: "the node dropped the transaction",
+        hint: SERVER_PROBLEMS.Failed.hint,
+        untrustedDetail: "the node dropped the transaction",
       });
     } finally {
       transport.send = delivered;

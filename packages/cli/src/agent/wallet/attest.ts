@@ -22,7 +22,7 @@ import type { Call } from "../claims.js";
 import { WRAPPED } from "../create.js";
 import { tool } from "../names.js";
 import { boardLeft, leavesBoard, thenSettle } from "../claim-line.js";
-import { AgentRefusal, untrusted } from "../problems.js";
+import { AgentRefusal } from "../problems.js";
 import { InvalidInput, account, amount, flag, list, object, optional, text } from "../schema.js";
 import { preparedView } from "../shapes.js";
 import { sol, tokenAccountRent } from "./costs.js";
@@ -68,7 +68,7 @@ export async function invitedPayees(ctx: AgentContext, intent: Address, payees: 
   try {
     await checkInvited(ctx.transport, ctx.fetch ?? fetch, intent, payees, specReach(ctx));
   } catch (error) {
-    throw error instanceof InviteRefused ? new AgentRefusal(error.code, error.code === "NotInvited" ? error.message : untrusted(error.message)) : error;
+    throw error instanceof InviteRefused ? new AgentRefusal(error.code, error.hint, error.detail) : error;
   }
 }
 

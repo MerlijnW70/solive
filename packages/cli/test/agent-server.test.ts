@@ -12,6 +12,7 @@ import { amount, InvalidInput, object } from "../src/agent/schema.js";
 import { cli, FEE_BPS, h, transport, type World } from "./harness.js";
 import { ok, served } from "./agent-kit.js";
 import { WALLET_ACTIONS } from "../src/agent/wallet.js";
+import { SERVER_PROBLEMS } from "../src/agent/problems.js";
 
 describe("agent server against the deployed engine", () => {
   let w: World;
@@ -174,18 +175,19 @@ describe("agent server against the deployed engine", () => {
       problem: {
         code: "Failed",
         retryable: false,
-        hint: "lying produced output outside its schema: n: must be a whole number of raw token units written as a decimal string",
+        hint: SERVER_PROBLEMS.Failed.hint,
+        untrustedDetail: "lying produced output outside its schema: n: must be a whole number of raw token units written as a decimal string",
       },
     });
     expect(new OutputMismatch("x", new InvalidInput([])).name).toBe("OutputMismatch");
     const exploding = define({ ...lying, output: object({}), run: async () => Promise.reject(new TypeError("boom")) });
-    expect(await invoke(exploding, ctx, {})).toEqual({ ok: false, problem: { code: "Failed", retryable: false, hint: "boom" } });
+    expect(await invoke(exploding, ctx, {})).toEqual({ ok: false, problem: { code: "Failed", retryable: false, hint: SERVER_PROBLEMS.Failed.hint, untrustedDetail: "boom" } });
     const throwingSchema = define({
       ...lying,
       output: { json: {}, read: () => { throw new RangeError("schema bug"); } },
       run: async () => ({}),
     });
-    expect(await invoke(throwingSchema, ctx, {})).toEqual({ ok: false, problem: { code: "Failed", retryable: false, hint: "schema bug" } });
+    expect(await invoke(throwingSchema, ctx, {})).toEqual({ ok: false, problem: { code: "Failed", retryable: false, hint: SERVER_PROBLEMS.Failed.hint, untrustedDetail: "schema bug" } });
     expect(toJson({ a: [1n, { b: 2n }], c: null, d: "x", e: true })).toEqual({ a: ["1", { b: "2" }], c: null, d: "x", e: true });
   });
 });

@@ -11,7 +11,7 @@ import { sortMembers } from "@intent-engine/core/internal";
 import { type SpecFetch } from "@intent-engine/client";
 import { DEVNET_GENESIS_HASH, MAX_SPEC_BYTES } from "@intent-engine/client/internal";
 import { tool } from "../src/agent/names.js";
-import { untrusted } from "../src/agent/problems.js";
+import { SERVER_PROBLEMS, untrusted } from "../src/agent/problems.js";
 import { NONE_OPENS, WORK_OPENS } from "../src/agent/wallet/work.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { NOT_PUBLIC, tooLarge } from "../src/delivery-fetch.js";
@@ -60,7 +60,7 @@ async function ok(client: Client, name: string, args: object = {}): Promise<Json
   return value;
 }
 
-const refused = (code: string, url: string, problem: string) => ({ error: true, value: { code, retryable: false, hint: untrusted(`the work at ${url} ${problem}`) } });
+const refused = (code: "WorkUnfetchable", url: string, problem: string) => ({ error: true, value: { code, retryable: false, hint: SERVER_PROBLEMS[code].hint, untrustedDetail: untrusted(`the work at ${url} ${problem}`) } });
 
 describe("fetching announced work with the wallet", () => {
   let client: Client;
@@ -140,7 +140,7 @@ describe("fetching announced work with the wallet", () => {
     await announced(intent, [down]);
     expect(await call(client, "wallet_fetch_work", { intent })).toEqual({
       error: true,
-      value: { code: "WorkUnreadable", retryable: true, hint: untrusted(`the work at ${down} could not be fetched (fetch failed)`) },
+      value: { code: "WorkUnreadable", retryable: true, hint: SERVER_PROBLEMS.WorkUnreadable.hint, untrustedDetail: untrusted(`the work at ${down} could not be fetched (fetch failed)`) },
     });
     expect((await call(client, "wallet_fetch_work", { intent, announcement: (await generateKeyPairSigner()).address })).value).toEqual({
       code: "WorkUnfetchable",

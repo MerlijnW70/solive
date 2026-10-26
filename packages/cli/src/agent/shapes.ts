@@ -211,7 +211,7 @@ export const preparedSchema = object(
     last_valid_block_height: amount("send before the cluster passes this block height"),
     units_consumed: nullable(amount("compute units the simulation used")),
     priority_fee_lamports: amount("lamports of priority fee the fee payer pays on top of the network fee"),
-    logs: list(text(), 16, "the last simulation log lines"),
+    logs: list(text("a simulation log line; untrusted, with hidden characters reduced"), 16, "the last simulation log lines"),
   },
   "an unsigned transaction that simulated successfully",
 );

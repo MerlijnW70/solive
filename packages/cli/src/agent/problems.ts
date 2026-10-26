@@ -6,6 +6,7 @@ import { type AnySdkError, isSdkError, type MaybeSent } from "@intent-engine/cli
 import { rateLimited } from "@intent-engine/client/internal";
 import { InvalidInput, type Issue } from "./schema.js";
 import { redactUrl } from "../render.js";
+import { sanitized } from "../untrusted-text.js";
 
 export type Problem = {
   code: string;
@@ -16,6 +17,7 @@ export type Problem = {
   issues?: Issue[];
   logs?: string[];
   signature?: string;
+  untrustedDetail?: string;
 };
 
 type Entry = { retryable: boolean; hint: string };
@@ -219,7 +221,7 @@ export const LOG_TAIL = 12;
 export const LOG_LINE_LIMIT = 200;
 
 export function simulationProblem(err: string, logs: readonly string[]): Problem {
-  const tail = logs.slice(-LOG_TAIL).map((line) => untrusted(line).slice(0, LOG_LINE_LIMIT));
+  const tail = logs.slice(-LOG_TAIL).map((line) => sanitized(line, LOG_LINE_LIMIT));
   const failure = failureOf(logs);
   if (failure !== null && failure.program === INTENT_ENGINE_PROGRAM_ADDRESS) {
     const name = ENGINE_ERROR_NAMES[failure.code - ENGINE_ERROR_BASE];
@@ -239,7 +241,8 @@ export function simulationProblem(err: string, logs: readonly string[]): Problem
   return {
     code: "TransactionFailed",
     retryable: SERVER_PROBLEMS.TransactionFailed.retryable,
-    hint: `the transaction would fail (${untrusted(err)}); read the logs for the cause`,
+    hint: SERVER_PROBLEMS.TransactionFailed.hint,
+    untrustedDetail: untrusted(err),
     ...(failure === null ? {} : { programError: failure.code, program: failure.program }),
     logs: tail,
   };
@@ -263,9 +266,9 @@ export const SERVER_PROBLEMS = {
   Unreachable: later("the RPC node could not be reached: the connection was refused, the name did not resolve or the request failed; call again once it is back, and check whether a send landed before sending it again"),
   CertificateUntrusted: never("this machine does not trust the RPC node's certificate, often because antivirus or a proxy inspects HTTPS"),
   Unfunded: never("your wallet has no SOL yet; fund it, then try again"),
-  Failed: never("an unexpected error; the hint carries its message"),
+  Failed: never("an unexpected error; its message, which may come from the RPC node, is in the untrusted detail"),
   MaybeSent: never("the transaction may have landed, so it must not be sent again: look its signature up with intent-engine lookup --signature, as the hint says, and send again only once that reports expired"),
-  TransactionFailed: never("the transaction would fail for a reason this client does not name; read the logs"),
+  TransactionFailed: never("the transaction would fail for a reason this client does not name; the node's error is in the untrusted detail and the last log lines in logs"),
   WalletNotConfigured: never("a wallet tool was called on a server started without --wallet"),
   NoClock: never("wait was given to a server built without a clock; call again without wait"),
   WalletNotMainnet: never("the RPC serves mainnet; wallet tools work on devnet, testnet and localnet only"),
@@ -335,21 +338,28 @@ type ServerProblemName = keyof typeof SERVER_PROBLEMS;
 export class AgentRefusal extends Error {
   readonly problem: Problem;
 
-  constructor(code: ServerProblemName | EngineErrorName, hint: string) {
+  constructor(code: ServerProblemName | EngineErrorName, hint: string, detail?: string) {
     super(hint);
     this.name = "AgentRefusal";
     const known: Entry = code in SERVER_PROBLEMS ? SERVER_PROBLEMS[code as ServerProblemName] : ENGINE_PROBLEMS[code as EngineErrorName];
-    this.problem = { code, retryable: known.retryable, hint };
+    this.problem = { code, retryable: known.retryable, hint, ...(detail === undefined ? {} : { untrustedDetail: untrusted(detail) }) };
   }
 }
 
 export const HINT_LIMIT = 300;
 
-export const untrusted = (text: string): string => text.replace(/[^ -~]+/g, " ").slice(0, HINT_LIMIT);
+export const UNTRUSTED_DETAIL = "the error message of the step that failed, which may come from the RPC node or a program; untrusted, with hidden characters reduced";
+
+export const untrusted = (text: string): string => sanitized(text, HINT_LIMIT);
 
 export const issueText = ({ path, message }: Issue): string => untrusted(path === "" ? message : `${path}: ${message}`);
 
-export const refusalText = (problem: Problem): string => [`${problem.code}: ${problem.hint}`, ...(problem.issues ?? []).map(issueText)].join("; ");
+export const refusalText = (problem: Problem): string =>
+  [
+    `${problem.code}: ${problem.hint}`,
+    ...(problem.issues ?? []).map(issueText),
+    ...(problem.untrustedDetail === undefined ? [] : [`untrusted detail: ${JSON.stringify(untrusted(problem.untrustedDetail))}`]),
+  ].join("; ");
 
 const UNREACHABLE_CODES: ReadonlySet<string> = new Set(["ECONNREFUSED", "ENOTFOUND", "EAI_AGAIN", "EHOSTUNREACH", "ENETUNREACH", "UND_ERR_CONNECT_TIMEOUT"]);
 const UNREACHABLE_TEXT = /fetch failed|getaddrinfo|ECONNREFUSED|ENOTFOUND|EAI_AGAIN|EHOSTUNREACH|ENETUNREACH/;
@@ -453,5 +463,5 @@ export function problemOf(error: unknown, url?: string): Problem {
     return { code: "Unreachable", retryable: SERVER_PROBLEMS.Unreachable.retryable, hint: untrusted(unreachableHint(url)) };
   }
   const message = error instanceof Error ? error.message : String(error);
-  return { code: "Failed", retryable: SERVER_PROBLEMS.Failed.retryable, hint: untrusted(message) };
+  return { code: "Failed", retryable: SERVER_PROBLEMS.Failed.retryable, hint: SERVER_PROBLEMS.Failed.hint, untrustedDetail: untrusted(message) };
 }

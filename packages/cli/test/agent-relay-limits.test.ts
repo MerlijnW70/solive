@@ -10,6 +10,7 @@ import { createCost, rentFor, rentRate, SIGNATURE_FEE, TOKEN_ACCOUNT_RENT_BYTES 
 import { RELAY_TOO_LARGE } from "../src/agent/signed.js";
 import { ata, balance, cli, funded, h, NOW, setNow, transport, type World } from "./harness.js";
 import { connect, exists, execute, fail, ok, served, swapOf } from "./agent-kit.js";
+import { SERVER_PROBLEMS } from "../src/agent/problems.js";
 
 describe("agent server against the deployed engine", () => {
   let w: World;
@@ -118,7 +119,8 @@ describe("agent server against the deployed engine", () => {
       expect(await fail(relaying, "submit_signed_intent", { ...p["submit"], signature })).toEqual({
         code: "Failed",
         retryable: false,
-        hint: "the node dropped the transaction",
+        hint: SERVER_PROBLEMS.Failed.hint,
+        untrustedDetail: "the node dropped the transaction",
       });
     } finally {
       transport.send = delivered;

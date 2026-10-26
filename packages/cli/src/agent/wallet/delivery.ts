@@ -21,7 +21,7 @@ import type { Call } from "../claims.js";
 import { claimOf, deliverClaimWarnings } from "../job-claims.js";
 import { tool } from "../names.js";
 import { prepare } from "../prepare.js";
-import { AgentRefusal, untrusted } from "../problems.js";
+import { AgentRefusal } from "../problems.js";
 import { account, amount, flag, InvalidInput, integer, list, object, optional, text, time } from "../schema.js";
 import { preparedSchema, preparedView } from "../shapes.js";
 import { creatorOf } from "./releases.js";
@@ -69,6 +69,8 @@ export async function proofEscrow(ctx: AgentContext, intent: Address, receipt: s
   return { held, params };
 }
 
+export const SECOND_NODE_UNREAD = "the second RPC node could not be read, as the untrusted detail says, so the release is not confirmed; nothing was signed or sent";
+
 export async function confirmedRelease(ctx: AgentContext, target: ConfirmTarget): Promise<void> {
   if (ctx.confirm === undefined) {
     return;
@@ -77,7 +79,7 @@ export async function confirmedRelease(ctx: AgentContext, target: ConfirmTarget)
     await confirmOnBoth(ctx.transport, ctx.confirm, target);
   } catch (error) {
     if (isSdkError(error, "confirm-mismatch")) {
-      throw new AgentRefusal("ConfirmMismatch", error.field === "second node" ? untrusted(error.message) : error.message);
+      throw error.field === "second node" ? new AgentRefusal("ConfirmMismatch", SECOND_NODE_UNREAD, error.second) : new AgentRefusal("ConfirmMismatch", error.message);
     }
     throw error;
   }

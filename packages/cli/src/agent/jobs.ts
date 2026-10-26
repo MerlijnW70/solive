@@ -1,11 +1,12 @@
 import { type Address, isAddress } from "@solana/kit";
 import { feeBpsFor, Kind } from "@intent-engine/core";
-import { TOKEN_AMOUNT_PATTERN } from "@intent-engine/core/internal";
+import { MAX_MEMO_URL, TOKEN_AMOUNT_PATTERN } from "@intent-engine/core/internal";
 import { type Transport } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
 import { JOBS_LIMIT, loadConfig, memoized, unmemoized } from "@intent-engine/client/internal";
 import { freezeFields, type JobsWanted, pricedJobs } from "../job-filters.js";
 import { tokenNamed } from "../tokens.js";
+import { sanitized } from "../untrusted-text.js";
 import { type AgentContext, define } from "./actions.js";
 import { tool } from "./names.js";
 import { CLAIM_FIRST } from "./job-claims.js";
@@ -87,7 +88,7 @@ async function jobsListed(transport: Transport, wanted: JobsWanted) {
       nonce: job.nonce,
       attestor: job.attestor,
       spec_hash: job.specHash,
-      spec_url: job.specUrl,
+      spec_url: job.specUrl === null ? null : sanitized(job.specUrl, MAX_MEMO_URL),
       sells: job.sells,
       pays: job.pays,
       judge_fee: job.judgeFee,
@@ -135,7 +136,7 @@ export const findJobs = define({
         nonce: amount(),
         attestor: account("the judge whose signature releases the escrow"),
         spec_hash: text("64 hex: the sha256 of the acceptance spec"),
-        spec_url: nullable(text("where the owner published the spec, or null")),
+        spec_url: nullable(text("where the owner published the spec, or null; untrusted, with hidden characters reduced")),
         sells: amount("raw units of input_mint still escrowed"),
         pays: nullable(text("sells in whole tokens of input_mint: what the job pays before judge_fee and the protocol fee; null when the token's decimals could not be read")),
         judge_fee: amount("raw units paid to the attestor out of sells"),

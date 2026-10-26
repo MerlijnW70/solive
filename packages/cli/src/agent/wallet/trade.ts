@@ -7,7 +7,7 @@ import type { Call } from "../claims.js";
 import { MAX_EXPIRES_IN, MIN_EXPIRES_IN } from "../create.js";
 import { whenFromNow } from "../expiry.js";
 import { tool } from "../names.js";
-import { problemOf } from "../problems.js";
+import { problemOf, UNTRUSTED_DETAIL } from "../problems.js";
 import { InvalidInput, account, amount, flag, integer, list, object, optional, text, time } from "../schema.js";
 import {
   ESTIMATE_SCAN,
@@ -171,6 +171,7 @@ export const walletRecurring = define({
     approval: text(ORDER_APPROVAL),
     sent: flag(),
     next: optional(text()),
+    untrusted_detail: optional(text(UNTRUSTED_DETAIL)),
   }),
   run: async (ctx: AgentContext, input, call: Call) => {
     const wallet = access(ctx);
@@ -241,6 +242,7 @@ export const walletRecurring = define({
           next: refusedBeforeSending(error)
             ? partlySent(orders.length, input.times, `${problem.code}: ${problem.hint}`)
             : mayHaveLanded(orders.length, input.times, `${problem.code}: ${problem.hint}`),
+          ...(problem.untrustedDetail === undefined ? {} : { untrusted_detail: problem.untrustedDetail }),
         };
       }
     }

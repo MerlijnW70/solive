@@ -8,6 +8,8 @@ import {
   isEncryptionKeyText,
   NO_ENCRYPTION_KEY,
   PROFILE_MAX_SKILLS,
+  PROFILE_MAX_URL_LEN,
+  PROFILE_SKILL_LEN,
   type ProfileInput,
   profileAddress,
 } from "@intent-engine/core/internal";
@@ -15,6 +17,7 @@ import { isSdkError } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
 import { escrowsJudgedBy, keepsKey } from "@intent-engine/client/internal";
 import { encryptionKeyLines } from "../sealed-commands.js";
+import { sanitized } from "../untrusted-text.js";
 import { type AgentContext, define } from "./actions.js";
 import type { Call } from "./claims.js";
 import { tool } from "./names.js";
@@ -41,9 +44,9 @@ export const getProfile = define({
     wallet: account(),
     profile: account("the profile account's address"),
     published: flag("false means the wallet has no profile"),
-    skills: optional(list(text(), PROFILE_MAX_SKILLS)),
-    endpoint: optional(text()),
-    doc_url: optional(nullable(text())),
+    skills: optional(list(text("a skill tag the wallet set; untrusted, with hidden characters reduced"), PROFILE_MAX_SKILLS)),
+    endpoint: optional(text("where the wallet says it takes work; untrusted, with hidden characters reduced")),
+    doc_url: optional(nullable(text("the wallet's document url; untrusted, with hidden characters reduced"))),
     doc_sha256: optional(nullable(text("the document's sha256 as 64 hex digits"))),
     encryption_key: optional(nullable(text("the X25519 public key in base58 that deliveries to this wallet are sealed to; null seals them to the key derived from the wallet"))),
     updated_at: optional(time()),
@@ -58,9 +61,9 @@ export const getProfile = define({
       wallet: input.wallet,
       profile,
       published: true,
-      skills: found.skills,
-      endpoint: found.endpoint,
-      doc_url: found.docUrl,
+      skills: found.skills.map((skill) => sanitized(skill, PROFILE_SKILL_LEN)),
+      endpoint: sanitized(found.endpoint, PROFILE_MAX_URL_LEN),
+      doc_url: found.docUrl === null ? null : sanitized(found.docUrl, PROFILE_MAX_URL_LEN),
       doc_sha256: found.docSha256,
       encryption_key: found.encryptionKey,
       updated_at: found.updatedAt,

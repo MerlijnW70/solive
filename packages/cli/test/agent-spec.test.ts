@@ -109,8 +109,8 @@ describe("solive_get_spec", () => {
   });
 
   it("retries a temporary spec read but declines a permanently unreadable one", async () => {
-    const unreadable = (hint: string) => ({ isError: true, value: { code: "SpecUnreadable", retryable: true, hint } });
-    const unfetchable = (hint: string) => ({ isError: true, value: { code: "SpecUnfetchable", retryable: false, hint } });
+    const unreadable = (detail: string) => ({ isError: true, value: { code: "SpecUnreadable", retryable: true, hint: SERVER_PROBLEMS.SpecUnreadable.hint, untrustedDetail: detail } });
+    const unfetchable = (detail: string) => ({ isError: true, value: { code: "SpecUnfetchable", retryable: false, hint: SERVER_PROBLEMS.SpecUnfetchable.hint, untrustedDetail: detail } });
     expect(await call(client, "get_spec", { intent: await escrow(GONE_URL) })).toEqual(unfetchable(`the spec at ${GONE_URL} answered 404`));
     expect(await call(client, "get_spec", { intent: await escrow(DOWN_URL) })).toEqual(unreadable(`the spec at ${DOWN_URL} ${FETCH_FAILED} (fetch failed)`));
     expect(await call(client, "get_spec", { intent: await escrow(BIG_URL) })).toEqual(unfetchable(`the spec at ${BIG_URL} is larger than ${MAX_SPEC_BYTES} bytes`));

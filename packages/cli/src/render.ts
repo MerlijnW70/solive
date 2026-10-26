@@ -1,32 +1,21 @@
+import { escaped, escapedJson, escapedLines } from "./untrusted-text.js";
+
 export { redactUrl } from "@intent-engine/client/internal";
 
 export function render(value: unknown): string {
-  return JSON.stringify(
-    value,
-    (_, v: unknown) =>
-      typeof v === "bigint" ? v.toString() : v instanceof Uint8Array ? Buffer.from(v).toString("hex") : v,
-    2,
+  return escapedJson(
+    JSON.stringify(
+      value,
+      (_, v: unknown) =>
+        typeof v === "bigint" ? v.toString() : v instanceof Uint8Array ? Buffer.from(v).toString("hex") : v,
+      2,
+    ),
   );
 }
 
-export const HIDDEN_RANGES: readonly (readonly [number, number])[] = [
-  [0x00, 0x1f],
-  [0x7f, 0x9f],
-  [0x61c, 0x61c],
-  [0x200e, 0x200f],
-  [0x2028, 0x202e],
-  [0x2066, 0x2069],
-];
+export const printable = escaped;
 
-const hidden = (code: number) => HIDDEN_RANGES.some(([low, high]) => code >= low && code <= high);
-
-export const printable = (text: string): string =>
-  Array.from(text, (c) => {
-    const code = c.codePointAt(0) ?? 0;
-    return hidden(code) ? `\\u${code.toString(16).padStart(4, "0")}` : c;
-  }).join("");
-
-export const printableLines = (text: string): string => text.split("\n").map(printable).join("\n");
+export const printableLines = escapedLines;
 
 const plain = (v: unknown): string =>
   printable(typeof v === "bigint" ? v.toString() : v instanceof Uint8Array ? Buffer.from(v).toString("hex") : String(v));

@@ -16,6 +16,7 @@ import { escrowFor, historyRefused, judge, type JudgeCommand, judgeOpeners, type
 import { messageSigner } from "./ledger-keys.js";
 import { rpcFailed } from "./rpc-failure.js";
 import type { Runtime } from "./runtime.js";
+import { escapedJson } from "./untrusted-text.js";
 
 export type Stopped = "paid" | "passed" | "closed" | "ended" | InterruptSignal;
 
@@ -25,7 +26,7 @@ export type Watched = Seen & (Verdict | { artifactSha256: string | null; verdict
 
 export const SEALED_ELSEWHERE = "opens with none of the keys this judge was given, so its url cannot be read";
 
-const line = (value: object): string => JSON.stringify(value, (_, v: unknown) => (typeof v === "bigint" ? v.toString() : v));
+const line = (value: object): string => escapedJson(JSON.stringify(value, (_, v: unknown) => (typeof v === "bigint" ? v.toString() : v)));
 
 async function stillOpen(transport: Transport, intent: Address): Promise<boolean> {
   const account = await transport.getAccount(intent);

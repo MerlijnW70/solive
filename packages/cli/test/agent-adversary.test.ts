@@ -17,6 +17,7 @@ import {
   simulationProblem,
 } from "../src/agent/problems.js";
 import { ADDRESS_PATTERN } from "../src/agent/schema.js";
+import { hasHidden } from "../src/untrusted-text.js";
 import { WALLET_ACTIONS } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { cli, h, type World, world } from "./harness.js";
@@ -85,10 +86,10 @@ function checkShape(result: Result): Problem | null {
   }
   const problem = result.structuredContent as Problem;
   expect(text).toBe(refusalText(problem));
-  expect(text).toMatch(PRINTABLE);
+  expect(hasHidden(text)).toBe(false);
   expect(problem.hint).toMatch(PRINTABLE);
-  for (const line of problem.logs ?? []) {
-    expect(line).toMatch(PRINTABLE);
+  for (const line of [...(problem.logs ?? []), ...(problem.untrustedDetail === undefined ? [] : [problem.untrustedDetail])]) {
+    expect(hasHidden(line)).toBe(false);
   }
   return problem;
 }
@@ -254,13 +255,15 @@ describe("text an agent reads from the chain or the network", () => {
         expect(problem.hint).toMatch(PRINTABLE);
         expect(problem.logs?.length).toBe(Math.min(logs.length, LOG_TAIL));
         for (const line of problem.logs ?? []) {
-          expect(line).toMatch(PRINTABLE);
-          expect(line.length).toBeLessThanOrEqual(LOG_LINE_LIMIT);
+          expect(hasHidden(line)).toBe(false);
+          expect(Array.from(line).length).toBeLessThanOrEqual(LOG_LINE_LIMIT);
         }
+        expect(hasHidden(problem.untrustedDetail ?? "")).toBe(false);
         const failed = problemOf(new Error(err));
         expect(["Failed", "RateLimited"]).toContain(failed.code);
         expect(failed.hint).toMatch(PRINTABLE);
-        expect(failed.hint.length).toBeLessThanOrEqual(HINT_LIMIT);
+        expect(hasHidden(failed.untrustedDetail ?? "")).toBe(false);
+        expect(Array.from(failed.untrustedDetail ?? "").length).toBeLessThanOrEqual(HINT_LIMIT);
       }),
     );
   });

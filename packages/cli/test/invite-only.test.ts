@@ -11,6 +11,7 @@ import { DEVNET_TEST_MINT, Kind, NATIVE_MINT } from "@intent-engine/core";
 import { seal, specMemo } from "@intent-engine/core/internal";
 import { createClient } from "@intent-engine/client/node";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
+import { specSealedHint } from "../src/agent/spec.js";
 import { SERVER_PROBLEMS } from "../src/agent/problems.js";
 import { notInvited } from "../src/invites.js";
 import { jobClosed } from "../src/sealed-commands.js";
@@ -106,7 +107,7 @@ describe("an invite-only job through MCP", () => {
     h.engineLog.push({ ...creation(intent), ...ownerSigned(intent, [specMemo(SPEC_URL)]) });
     expect(await call(client, "get_spec", { intent })).toEqual({
       error: true,
-      value: { code: "SpecSealed", retryable: false, hint: `the spec at ${SPEC_URL} is sealed to 2 invited wallets; read it with the key of an invited wallet` },
+      value: { code: "SpecSealed", retryable: false, hint: specSealedHint(2, false), untrustedDetail: SPEC_URL },
     });
   });
 });

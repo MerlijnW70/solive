@@ -16,7 +16,8 @@ import {
 import { type Transport } from "@intent-engine/client";
 import { isDevice } from "@intent-engine/client/internal";
 import { priorityLamports } from "../compute.js";
-import { LOG_LINE_LIMIT, LOG_TAIL, SimulationFailed, simulationProblem, untrusted } from "./problems.js";
+import { LOG_LINE_LIMIT, LOG_TAIL, SimulationFailed, simulationProblem } from "./problems.js";
+import { sanitized } from "../untrusted-text.js";
 
 export type Prepared = {
   transaction: string;
@@ -105,6 +106,6 @@ export async function prepare(
       .map(([signer]) => signer as Address),
     lastValidBlockHeight: latest.lastValidBlockHeight,
     unitsConsumed: simulation.unitsConsumed,
-    logs: simulation.logs.slice(-LOG_TAIL).map((line) => untrusted(line).slice(0, LOG_LINE_LIMIT)),
+    logs: simulation.logs.slice(-LOG_TAIL).map((line) => sanitized(line, LOG_LINE_LIMIT)),
   };
 }

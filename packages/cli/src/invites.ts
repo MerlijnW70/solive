@@ -20,13 +20,19 @@ export const claimNotInvited = (worker: Address, intent: Address): string =>
 export const deliverNotInvited = (worker: Address, intent: Address): string =>
   `${worker} was not invited to the job ${intent}: its spec is sealed to other wallets, so no release can pay this wallet for this work`;
 
+export const INVITES_UNREAD = "its spec url could not be read, as the untrusted detail says";
+
 export class InviteRefused extends Error {
   readonly code: InviteCode;
+  readonly hint: string;
+  readonly detail: string | undefined;
 
-  constructor(code: InviteCode, message: string) {
+  constructor(code: InviteCode, message: string, hint: string = message, detail?: string) {
     super(message);
     this.name = "InviteRefused";
     this.code = code;
+    this.hint = hint;
+    this.detail = detail;
   }
 }
 
@@ -58,7 +64,7 @@ export async function invitesOf(transport: Transport, get: SpecFetch, intent: Ad
 export async function checkInvited(transport: Transport, get: SpecFetch, intent: Address, payees: readonly Address[], reach: SpecReach): Promise<void> {
   const invites = await invitesOf(transport, get, intent, reach);
   if (invites.kind === "unread") {
-    throw new InviteRefused("SpecUnreadable", inviteUnchecked(intent, invites.reason));
+    throw new InviteRefused("SpecUnreadable", inviteUnchecked(intent, invites.reason), inviteUnchecked(intent, INVITES_UNREAD), invites.reason);
   }
   const outside = invites.kind === "sealed" ? payees.find((payee) => !invites.to.includes(payee)) : undefined;
   if (outside !== undefined) {

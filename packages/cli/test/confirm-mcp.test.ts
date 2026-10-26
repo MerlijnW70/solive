@@ -6,7 +6,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
 import { DEVNET_TEST_MINT, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
 import { getIntentDecoder } from "@intent-engine/core/internal";
-import { WALLET_NOTICE } from "../src/agent/wallet.js";
+import { SECOND_NODE_UNREAD, WALLET_NOTICE } from "../src/agent/wallet.js";
 import { SERVER_PROBLEMS } from "../src/agent/problems.js";
 import { EXIT_OK } from "../src/main.js";
 import { announced, keyed } from "./announce.js";
@@ -80,9 +80,14 @@ describe("mcp --confirm-url", () => {
       for (const args of [release, { ...release, approval, send: true }]) {
         const refused = await call(client, "wallet_attest", args);
         expect(refused, field).toMatchObject({ error: true, value: { code: "ConfirmMismatch", retryable: SERVER_PROBLEMS.ConfirmMismatch.retryable } });
-        expect(refused.value["hint"]).toContain(field === "second node" ? second : `the two RPC nodes report a different ${field}`);
-        expect(refused.value["hint"]).toContain(second);
-        expect(refused.value["hint"]).toContain("nothing was signed or sent");
+        if (field === "second node") {
+          expect(refused.value["hint"]).toBe(SECOND_NODE_UNREAD);
+          expect(second).toContain(`(${String(refused.value["untrustedDetail"])})`);
+        } else {
+          expect(refused.value["hint"]).toContain(`the two RPC nodes report a different ${field}`);
+          expect(refused.value["hint"]).toContain(second);
+          expect(refused.value["hint"]).toContain("nothing was signed or sent");
+        }
       }
       expect(h.wires.length).toBe(wires);
       expect(status()).toBe(IntentStatus.Open);
