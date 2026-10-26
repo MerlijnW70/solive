@@ -1,6 +1,7 @@
 import { type Address, type Instruction, isSignerRole, type ReadonlyUint8Array } from "@solana/kit";
 import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import type { Chain } from "./chain.js";
+import type { SetTarget } from "./proposal-effects.js";
 import {
   canonicalMetadata,
   type Compression,
@@ -26,7 +27,7 @@ export type MetadataContext = {
   upgradeAuthority: () => Promise<Address | null>;
 };
 
-export type MetadataReview = { summary: string; buffer?: IdlBuffer; problem?: string; relayed?: string };
+export type MetadataReview = { summary: string; buffer?: IdlBuffer; problem?: string; relayed?: string; sets?: SetTarget };
 
 type Target = { address: Address; state: MetadataAccount; idl: boolean; text: string; note: string };
 
@@ -243,8 +244,9 @@ export async function describeMetadata(chain: Chain, ix: Instruction, ctx: Metad
   const extra = d.extra === 0 ? "" : `; it passes ${d.extra} more accounts`;
   const summary = `Program metadata ${d.name}: ${head}${on?.note ?? ""}; accounts: ${accounts.join(", ")}${extra}; ${fieldText(d.fields, bufferAt)}`;
   const vault = ctx.vault;
+  const sets: { sets?: SetTarget } = d.name === "SetData" && on !== null ? { sets: { account: on.address, sets: "idl" } } : {};
   if (vault === null || !(ix.accounts ?? []).some((meta) => meta.address === vault && isSignerRole(meta.role))) {
-    return { summary, ...(source === null ? {} : { buffer: source.check }) };
+    return { summary, ...(source === null ? {} : { buffer: source.check }), ...sets };
   }
   if (authority?.address !== vault) {
     risks.push(`it passes the vault's signature in a role other than the authority`);
@@ -253,5 +255,6 @@ export async function describeMetadata(chain: Chain, ix: Instruction, ctx: Metad
     summary: risks.length === 0 ? summary : `${summary}; it receives the vault's signature`,
     ...(source === null ? {} : { buffer: source.check }),
     ...(risks.length === 0 ? {} : { relayed: metadataRelayedText(ctx.position, vault, risks) }),
+    ...sets,
   };
 }

@@ -85,9 +85,11 @@ describe("the review decodes the program-metadata program at its 0.10.0 layout",
     const gzip = await held(gzipSync(LOCAL_IDL));
     const plain = await held(LOCAL_IDL);
     const encoded = await held(deflateSync(Uint8Array.from([0, 1, 2, 250])));
+    const encodedAgain = await held(deflateSync(Uint8Array.from([0, 1, 2, 250])));
+    const plainAgain = await held(LOCAL_IDL);
     const seen = await describeInstructions(
       s.chain,
-      [setData(zlib, [1, 2, 1, 0]), setData(gzip, [1, 1, 1, 0]), setData(plain, [1, 0, 1, 0]), setData(encoded, [3, 2, 0, 0]), setData(encoded, [2, 2, 0, 0]), setData(plain, [1, 2, 1, 0])],
+      [setData(zlib, [1, 2, 1, 0]), setData(gzip, [1, 1, 1, 0]), setData(plain, [1, 0, 1, 0]), setData(encoded, [3, 2, 0, 0]), setData(encodedAgain, [2, 2, 0, 0]), setData(plainAgain, [1, 2, 1, 0])],
       vault,
     );
     expect(seen.buffers.map((b) => b.hash)).toEqual([
@@ -99,7 +101,7 @@ describe("the review decodes the program-metadata program at its 0.10.0 layout",
       null,
     ]);
     expect(seen.buffers.every((b) => b.sets === "idl" && b.authority === vault)).toBe(true);
-    expect(seen.decoded[5]?.summary).toContain(`buffer ${plain}, controlled by ${vault}, holding ${LOCAL_IDL.length} bytes that do not decode: its ${LOCAL_IDL.length} bytes do not decompress as zlib`);
+    expect(seen.decoded[5]?.summary).toContain(`buffer ${plainAgain}, controlled by ${vault}, holding ${LOCAL_IDL.length} bytes that do not decode: its ${LOCAL_IDL.length} bytes do not decompress as zlib`);
     expect(contentHash(deflateSync(Uint8Array.from([255, 254])), "zlib", "utf8")).toEqual({ error: "its 2 decompressed bytes are not utf8" });
     expect(contentHash(Uint8Array.from([0xab]), "none", "none")).toEqual({ hash: digest(text("ab")), bytes: 2 });
   });

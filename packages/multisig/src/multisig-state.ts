@@ -1,4 +1,4 @@
-import type { Address, Instruction, TransactionPartialSigner } from "@solana/kit";
+import type { Address, Instruction, Transaction, TransactionPartialSigner } from "@solana/kit";
 import type { Account, Chain } from "./chain.js";
 import {
   decodeAccount,
@@ -35,7 +35,7 @@ export type Plan = {
   instructions: Instruction[];
   signers: TransactionPartialSigner[];
   details: Record<string, unknown>;
-  recheck?: () => Promise<void>;
+  recheck?: (tx: Transaction) => Promise<Record<string, unknown>>;
 };
 
 export const vaultOf = (multisig: Address): Promise<Address> => vaultPda(multisig, VAULT_INDEX);

@@ -170,11 +170,11 @@ describe("loader close", () => {
   it("reject and show take no allow engine close", async () => {
     const { m, on } = await engineCloseProposal("flags");
     const rejected = await s.cli("reject", ...on, "--allow-engine-close", "--keypair", m.file("a"));
-    expect([rejected.code, rejected.json()["error"]]).toEqual([EXIT_USAGE, "reject takes no --allow-config, --allow-engine-close or --allow-undecoded-vault-signer"]);
+    expect([rejected.code, rejected.json()["error"]]).toEqual([EXIT_USAGE, "reject takes no --allow-config, --allow-engine-close, --allow-undecoded-vault-signer or --allow-rewritten-buffer"]);
     const shown = await s.cli("show", ...on, "--allow-engine-close");
     expect([shown.code, shown.json()["error"]]).toEqual([
       EXIT_USAGE,
-      "show only reads; it takes no --keypair, --yes, --allow-config, --allow-engine-close, --allow-undecoded-vault-signer or --expect-buffer-hash",
+      "show only reads; it takes no --keypair, --yes, --allow-config, --allow-engine-close, --allow-undecoded-vault-signer, --allow-rewritten-buffer or --expect-buffer-hash",
     ]);
   });
 });

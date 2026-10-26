@@ -1,4 +1,4 @@
-import { type Address, address, type Instruction, type TransactionPartialSigner } from "@solana/kit";
+import { type Address, address, type Instruction, type Transaction, type TransactionPartialSigner } from "@solana/kit";
 import { MAINNET_GENESIS_HASH } from "@intent-engine/client/internal";
 import type { Chain } from "./chain.js";
 import {
@@ -32,7 +32,8 @@ import {
   VAULT_INDEX,
   vaultOf,
 } from "./multisig-state.js";
-import { type BufferCheck, named, type Review, review, reviewView, SQUADS_APP, SYSVAR_CLOCK } from "./review.js";
+import { type PostState, postStateText, postStateView, requireSets, simulateAsVault, simulateSets } from "./post-state.js";
+import { type BufferCheck, messageInstructions, named, type Review, review, reviewView, SQUADS_APP, SYSVAR_CLOCK } from "./review.js";
 
 export { SQUADS_PROGRAM, type Multisig, type Proposal, type VaultTransaction };
 export {
@@ -144,7 +145,7 @@ async function activeProposal(chain: Chain, at: Address, index: bigint): Promise
 
 const INSPECT = `inspect it in the Squads app at ${SQUADS_APP} and do not approve it blindly`;
 
-export type Allowed = { allowConfig?: boolean; allowEngineClose?: boolean; allowUndecodedVaultSigner?: boolean };
+export type Allowed = { allowConfig?: boolean; allowEngineClose?: boolean; allowUndecodedVaultSigner?: boolean; allowRewrittenBuffer?: boolean };
 
 async function requireReviewed(chain: Chain, seen: Review, index: bigint, allowed: Allowed): Promise<void> {
   const shown = { proposal: reviewView(seen) };
@@ -158,7 +159,13 @@ async function requireReviewed(chain: Chain, seen: Review, index: bigint, allowe
     return;
   }
   if (seen.kind !== "vault" || seen.problems.length > 0) {
-    throw new Refusal(`refusing to sign proposal ${index}: ${[...seen.problems, ...seen.relayed].join("; ")}; ${INSPECT}`, shown);
+    throw new Refusal(`refusing to sign proposal ${index}: ${[...seen.problems, ...seen.rewritten, ...seen.relayed].join("; ")}; ${INSPECT}`, shown);
+  }
+  if (seen.rewritten.length > 0 && allowed.allowRewrittenBuffer !== true) {
+    throw new Refusal(
+      `refusing to sign proposal ${index}: ${seen.rewritten.join("; ")}; ${INSPECT}, and pass --allow-rewritten-buffer only to sign on the hash the simulated transaction sets, which approve then prints as buffer_hash`,
+      shown,
+    );
   }
   if (seen.relayed.length > 0 && allowed.allowUndecodedVaultSigner !== true) {
     throw new Refusal(
@@ -184,6 +191,19 @@ const warned = (seen: Review): string[] => [...(seen.engineClose === null ? [] :
 
 const singleHash = (buffers: BufferCheck[]) => (buffers.length === 1 && buffers[0] !== undefined ? { buffer_hash: buffers[0].hash } : {});
 
+async function previewPostState(chain: Chain, at: Address, index: bigint, payer: Address, seen: Review): Promise<PostState | null> {
+  const stored = seen.kind === "vault" && seen.sets.length > 0 ? await readVaultTransaction(chain, at, index) : null;
+  return stored === null ? null : simulateAsVault(chain, payer, messageInstructions(stored.message), seen.sets);
+}
+
+function approvedHash(seen: Review, post: PostState | null): { buffer_hash?: string | null } {
+  const [set] = post?.sets ?? [];
+  if (seen.buffers.length !== 1 || post === null || post.err !== null || post.sets.length !== 1 || set === undefined) {
+    return singleHash(seen.buffers);
+  }
+  return { buffer_hash: set.hash };
+}
+
 export async function approve(chain: Chain, input: { multisig: Address; member: Address; index: bigint } & Allowed): Promise<Plan> {
   const multisig = await readMultisig(chain, input.multisig);
   requireMember(multisig, input.multisig, input.member, "vote", "approve");
@@ -195,6 +215,7 @@ export async function approve(chain: Chain, input: { multisig: Address; member: 
     throw new Refusal(`${input.member} already approved proposal ${input.index}`);
   }
   const seen = await reviewed(chain, input.multisig, input.index, multisig, input);
+  const post = await previewPostState(chain, input.multisig, input.index, input.member, seen);
   const after = proposal.approved.length + 1;
   return {
     summary: [
@@ -202,6 +223,7 @@ export async function approve(chain: Chain, input: { multisig: Address; member: 
       `Approves proposal ${input.index} on multisig ${input.multisig} as ${input.member}`,
       after >= multisig.threshold ? `This is approval ${after} of ${multisig.threshold}; the proposal can then execute` : `This is approval ${after} of ${multisig.threshold}`,
       ...seen.summary,
+      ...(post === null ? [] : postStateText(post)),
     ],
     instructions: [proposalApprove({ multisig: input.multisig, proposal: await proposalPda(input.multisig, input.index), member: input.member })],
     signers: [],
@@ -210,8 +232,9 @@ export async function approve(chain: Chain, input: { multisig: Address; member: 
       index: input.index.toString(),
       approvals: after,
       threshold: multisig.threshold,
-      ...singleHash(seen.buffers),
+      ...approvedHash(seen, post),
       proposal: reviewView(seen),
+      ...(post === null ? {} : { post_state: postStateView(post) }),
     },
   };
 }
@@ -292,7 +315,7 @@ export async function executeInstruction(chain: Chain, input: { multisig: Addres
   });
 }
 
-function requireBuffers(seen: Review, index: bigint, vault: Address, expected: readonly string[]): void {
+function requireBuffers(seen: Review, index: bigint, vault: Address, expected: readonly string[], allowed: Allowed): void {
   const shown = { proposal: reviewView(seen) };
   if (seen.buffers.length === 0) {
     if (expected.length > 0) {
@@ -311,6 +334,12 @@ function requireBuffers(seen: Review, index: bigint, vault: Address, expected: r
   for (const check of seen.buffers) {
     if (check.authority !== vault) {
       throw new Refusal(`buffer ${check.buffer} is controlled by ${named(check.authority)}, not the vault ${vault}`, shown);
+    }
+    if (check.writtenBy !== undefined) {
+      if (allowed.allowRewrittenBuffer !== true) {
+        throw new Refusal(`buffer ${check.buffer} is written by the same proposal before it is read; pass --allow-rewritten-buffer to compare --expect-buffer-hash with what the simulated transaction sets`, shown);
+      }
+      continue;
     }
     if (check.hash === null || !expected.includes(check.hash)) {
       throw new Refusal(
@@ -359,14 +388,23 @@ export async function execute(
   }
   const vault = await vaultOf(input.multisig);
   const expected = (input.expectBufferHashes ?? []).map((h) => h.toLowerCase());
-  requireBuffers(seen, input.index, vault, expected);
+  requireBuffers(seen, input.index, vault, expected, input);
   const instruction = await executeInstruction(chain, input);
   return {
     summary,
     instructions: [computeUnitLimit(EXECUTE_UNITS), instruction],
     signers: [],
     details: { ...details, ...singleHash(seen.buffers) },
-    recheck: async () => requireBuffers(await review(chain, input.multisig, input.index, multisig), input.index, vault, expected),
+    recheck: async (tx: Transaction) => {
+      const fresh = await review(chain, input.multisig, input.index, multisig);
+      requireBuffers(fresh, input.index, vault, expected, input);
+      if (expected.length === 0) {
+        return {};
+      }
+      const post = await simulateSets(chain, tx, fresh.sets);
+      requireSets(post, expected, { proposal: reviewView(fresh) });
+      return { post_state: postStateView(post) };
+    },
   };
 }
 

@@ -9,9 +9,9 @@ import {
 } from "@solana/kit";
 import { jsonText } from "./engine.js";
 
-export type Simulation = { err: string | null; logs: string[] };
-
 export type Account = { data: Uint8Array; owner: Address };
+
+export type Simulation = { err: string | null; logs: string[]; accounts: (Account | null)[] };
 
 export type Latest = { blockhash: Blockhash; lastValidBlockHeight: bigint };
 
@@ -19,7 +19,7 @@ export type Chain = {
   account(address: Address): Promise<Account | null>;
   blockhash(): Promise<Latest>;
   genesisHash(): Promise<string>;
-  simulate(tx: Transaction): Promise<Simulation>;
+  simulate(tx: Transaction, accounts?: readonly Address[]): Promise<Simulation>;
   send(tx: Transaction): Promise<string>;
 };
 
@@ -36,11 +36,16 @@ export function connectionChain(url: string): Chain {
     },
     blockhash: latest,
     genesisHash: async () => rpc.getGenesisHash().send(),
-    simulate: async (tx) => {
-      const { value } = await rpc
-        .simulateTransaction(getBase64EncodedWireTransaction(tx), { commitment, encoding: "base64", sigVerify: false, replaceRecentBlockhash: true })
-        .send();
-      return { err: value.err === null ? null : jsonText(value.err), logs: [...(value.logs ?? [])] };
+    simulate: async (tx, accounts = []) => {
+      const wire = getBase64EncodedWireTransaction(tx);
+      const config = { commitment, encoding: "base64", sigVerify: false, replaceRecentBlockhash: true } as const;
+      if (accounts.length === 0) {
+        const { value } = await rpc.simulateTransaction(wire, config).send();
+        return { err: value.err === null ? null : jsonText(value.err), logs: [...(value.logs ?? [])], accounts: [] };
+      }
+      const { value } = await rpc.simulateTransaction(wire, { ...config, accounts: { addresses: [...accounts], encoding: "base64" } }).send();
+      const after = (value.accounts ?? []).map((held) => (held === null ? null : { data: new Uint8Array(getBase64Encoder().encode(held.data[0])), owner: held.owner }));
+      return { err: value.err === null ? null : jsonText(value.err), logs: [...(value.logs ?? [])], accounts: accounts.map((_, i) => after[i] ?? null) };
     },
     send: async (tx) => {
       const { lastValidBlockHeight } = await latest();

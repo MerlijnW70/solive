@@ -100,11 +100,30 @@ export class Svm {
     },
     blockhash: async () => ({ blockhash: this.svm.latestBlockhash(), lastValidBlockHeight: 0n }),
     genesisHash: async () => this.genesis,
-    simulate: async (tx: Transaction) => {
-      const result = this.svm.simulateTransaction(tx);
-      return result instanceof FailedTransactionMetadata
-        ? { err: String(result.err()), logs: result.meta().logs() }
-        : { err: null, logs: result.meta().logs() };
+    simulate: async (tx: Transaction, accounts: readonly Address[] = []) => {
+      this.svm.withSigverify(false);
+      let result;
+      try {
+        result = this.svm.simulateTransaction(tx);
+      } finally {
+        this.svm.withSigverify(true);
+      }
+      if (result instanceof FailedTransactionMetadata) {
+        return { err: String(result.err()), logs: result.meta().logs(), accounts: [] };
+      }
+      const after = new Map(result.postAccounts().map((held) => [held.address, held]));
+      return {
+        err: null,
+        logs: result.meta().logs(),
+        accounts: accounts.map((key) => {
+          const held = after.get(key);
+          if (held === undefined) {
+            const now = this.account(key);
+            return now.exists ? { data: new Uint8Array(now.data), owner: now.programAddress } : null;
+          }
+          return held.lamports === 0n ? null : { data: new Uint8Array(held.data), owner: held.programAddress };
+        }),
+      };
     },
     send: async (tx: Transaction) => {
       const result = this.svm.sendTransaction(tx);

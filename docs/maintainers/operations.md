@@ -143,14 +143,14 @@ Fills, releases, cancels, expiries and closes now name the optional mint cap too
 
 1. CI builds the program verifiably and prints its hash, `<hash>`, and uploads the build as the `intent-engine-verifiable` artifact.
 2. From a clean checkout at `origin/main`, run `bash scripts/deploy.sh devnet <hash> --multisig <multisig>`. The Solana CLI default keypair, or the file in `UPGRADE_AUTHORITY`, pays for the buffer; the file in `MULTISIG_MEMBER`, by default the same key, proposes and has to be a member. It checks the cluster genesis, a clean tree, that HEAD is `origin/main`, that the program is upgraded by the vault and that the build hashes to `<hash>`. It learns the vault from `vault`, as below. It writes the build to a buffer, checks the buffer hash, hands the buffer to the vault and proposes the upgrade. It executes nothing. To reuse the CI build instead of rebuilding locally, place that artifact's `intent_engine.so` in `verifiable/` and set `VERIFY_FROM_ARTIFACT=1`; the hash is recomputed from the bytes and still has to equal `<hash>`.
-3. Each approving member reads the proposal first: `show --index <n>` prints `Upgrades program GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU to the code in buffer <buffer>, signed by <vault>; the buffer's rent goes to <spill>; the buffer hashes to <hash> and is controlled by <vault>`. `approve` refuses unless the buffer exists and the vault controls it, and prints the hash as `buffer_hash`; it has to equal `<hash>`, the same value `solana-verify get-buffer-hash --url devnet <buffer>` prints.
+3. Each approving member reads the proposal first: `show --index <n>` prints `Upgrades program GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU to the code in buffer <buffer>, signed by <vault>; the buffer's rent goes to <spill>; the buffer hashes to <hash> and is controlled by <vault>`. `approve` refuses unless the buffer exists and the vault controls it, and prints the hash as `buffer_hash`; it has to equal `<hash>`, the same value `solana-verify get-buffer-hash --url devnet <buffer>` prints. It also simulates the proposal's instructions as the vault and prints `post_state`, the sha256 of the code the program data holds afterwards, without trailing zeros; `buffer_hash` is that hash whenever the simulation succeeds, as in [Simulated post-state](#simulated-post-state).
 4. Two members approve and one executes with the hash it approved:
 
    ```sh
    node packages/multisig/dist/bin.js execute --multisig <multisig> --index <n> --expect-buffer-hash <hash> --keypair member-b.json --url devnet --yes
    ```
 
-   `execute` refuses without `--expect-buffer-hash`, and checks again right before it sends that the vault still controls the buffer and that the buffer still hashes to `<hash>`.
+   `execute` refuses without `--expect-buffer-hash`, and checks again right before it sends that the vault still controls the buffer and that the buffer still hashes to `<hash>`. It then simulates the exact transaction it sends and refuses unless the program data it sets holds code that hashes to `<hash>`; it prints that hash under `post_state`.
 5. `solana-verify get-program-hash --url devnet GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU` prints `<hash>`.
 6. Replace the program the client package ships, which `createTestWorld` runs, with the deployed one, and write the new baseline, in one commit:
 
@@ -245,13 +245,13 @@ Each member reads the proposal with `show --index <n>` before approving. The too
 - who controls the buffer, and the sha256 of the IDL bytes it sets, read through the instruction's compression and encoding; it has to equal `<idl hash>`;
 - where the lamports of a closed buffer or IDL account go.
 
-Such a proposal needs no override. `approve` signs it without `--allow-undecoded-vault-signer` and prints the IDL hash as `buffer_hash`. Two members approve and one executes with that hash:
+Such a proposal needs no override. `approve` signs it without `--allow-undecoded-vault-signer` and prints the IDL hash as `buffer_hash`: the sha256 of the IDL the simulated instructions leave in the IDL account, read through that account's compression and encoding, which `post_state` also lists. Two members approve and one executes with that hash:
 
 ```sh
 node packages/multisig/dist/bin.js execute --multisig <multisig> --index <n> --expect-buffer-hash <idl hash> --keypair member-b.json --url devnet --yes
 ```
 
-`execute` refuses without `--expect-buffer-hash`, and refuses when the buffer no longer decodes to `<idl hash>` or the vault no longer controls it. `bash scripts/idl.sh devnet --check` then compares the published IDL with `idl/intent_engine.json` and exits non-zero when they differ.
+`execute` refuses without `--expect-buffer-hash`, and refuses when the buffer no longer decodes to `<idl hash>`, the vault no longer controls it, or the simulation of the exact transaction it sends leaves an IDL that does not hash to `<idl hash>`. `bash scripts/idl.sh devnet --check` then compares the published IDL with `idl/intent_engine.json` and exits non-zero when they differ.
 
 ## Refusals
 
@@ -260,6 +260,7 @@ node packages/multisig/dist/bin.js execute --multisig <multisig> --index <n> --e
 - a proposal that loads accounts from address lookup tables, or that this tool cannot decode: `show` lists it as `Undecodable`;
 - a message that asks any key other than the vault, or the transaction's ephemeral signers, to sign: executing it would lend the executing member's signature to a hidden instruction;
 - an upgrade or IDL update whose buffer is missing, does not decode, or is controlled by anyone but the vault, since its code or IDL could change after approval;
+- an upgrade or IDL update whose buffer an earlier instruction of the same proposal may write, without `--allow-rewritten-buffer`, as in [Simulated post-state](#simulated-post-state);
 - a program-metadata instruction that does not decode at the `@solana-program/program-metadata@0.10.0` layout;
 - on mainnet-beta, a loader Close of the engine's program data without `--allow-engine-close`, as in [Upgrade](#upgrade);
 - an instruction that passes the vault as a signer to a program this tool does not decode in full, on every cluster, without `--allow-undecoded-vault-signer`. The vault's signature carries through every call that program makes, so it can change program code, hand over the upgrade authority or move the vault's funds where the summary cannot show it;
@@ -267,6 +268,16 @@ node packages/multisig/dist/bin.js execute --multisig <multisig> --index <n> --e
 - a Squads config transaction, which adds or removes members or changes the threshold or time lock. `show` prints each change and the members, threshold and time lock after it runs. Inspect it in the Squads app at https://app.squads.so and do not approve it blindly; `--allow-config` on `approve` and `execute` signs it once every printed change is expected.
 
 The tool decodes in full the intent engine, the upgradeable loader and a system transfer, which it shows as `Transfers <sol> SOL (<lamports> lamports) from <vault> to <recipient>`. For any other program that the vault signs for, `show` adds a problem that names the instruction and the program. With `--allow-undecoded-vault-signer`, `approve` and `execute` put that problem first in the summary as a warning and sign. Pass it only for a program you trust with everything the vault holds and controls.
+
+## Simulated post-state
+
+An earlier instruction of a proposal can rewrite the buffer a later SetData or Upgrade reads, for example a program-metadata Write, Extend or Trim signed by the vault. The buffer's hash before the transaction then proves nothing about what lands. The review tracks, for each instruction, every account an earlier instruction of the same message passes as writable. A system transfer counts as no write, since it only moves lamports.
+
+For such a buffer the review computes nothing: it reports a problem that names the writing instructions, sets the buffer's `hash` to null, lists the writers under `writtenBy`, and appends the same note to the instruction's summary. `approve` and `execute` refuse it unless the member passes `--allow-rewritten-buffer`.
+
+Members then see what the transaction sets rather than what the buffer held. `approve` simulates the proposal's instructions as the vault and prints `post_state`: for every IDL account a SetData sets and every program data account an Upgrade sets, the sha256 of the IDL that lands, read through the account's compression and encoding, or of the program's code without trailing zeros. With one such account, `buffer_hash` is that hash. A failed simulation is printed under `post_state.simulation`, and `buffer_hash` falls back to the buffer as it stands.
+
+`approve` runs the instructions as a top-level transaction, since a proposal that is not yet approved cannot run through Squads. A call the runtime refuses inside the Squads call, such as a loader Write, can therefore preview a hash. `execute --expect-buffer-hash` simulates the exact vault-execute transaction it sends, signed, and refuses when that simulation fails or when any IDL account or program data account it sets does not hash to an expected value.
 
 ## Reject or cancel
 

@@ -99,7 +99,7 @@ describe("multisig", () => {
     const hashed = `the buffer hashes to ${sha256(code)} and is controlled by ${vault}`;
     expect(decoded.map((d) => d.summary)).toEqual([
       `Upgrades program ${program} to the code in buffer ${buffer}, naming ${vault} as authority without its signature, so the loader refuses it; the buffer's rent goes to ${spill}; ${hashed}`,
-      `Upgrades program ${program} to the code in buffer ${buffer}, signed by ${vault}; the buffer's rent goes to ${spill}; the instruction carries 2 more bytes of data, which the loader ignores; ${hashed}`,
+      `Upgrades program ${program} to the code in buffer ${buffer}, signed by ${vault}; the buffer's rent goes to ${spill}; the instruction carries 2 more bytes of data, which the loader ignores; ${hashed}; but instruction 1 of the same proposal may write the buffer first, so that is the buffer before the transaction, not what this instruction reads`,
       `Makes the program whose data is ${programData} immutable: removes the upgrade authority ${vault} for good`,
       `Hands the authority of buffer ${buffer} from ${vault} to ${other}`,
       `Hands the upgrade authority of the program whose data is ${programData} from ${vault} to ${other}`,
@@ -110,7 +110,7 @@ describe("multisig", () => {
     ]);
     expect(buffers).toEqual([
       { buffer, authority: vault, hash: sha256(code) },
-      { buffer, authority: vault, hash: sha256(code) },
+      { buffer, authority: vault, hash: null, writtenBy: [1] },
     ]);
   });
 

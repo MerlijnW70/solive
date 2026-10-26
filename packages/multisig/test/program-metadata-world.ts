@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { deflateSync } from "node:zlib";
+import { deflateSync, inflateSync } from "node:zlib";
 import {
   AccountRole,
   type Address,
@@ -41,7 +41,7 @@ export const concat = (...parts: (Uint8Array | number[])[]): Uint8Array => new U
 
 export const u64 = (value: bigint) => new Uint8Array(getU64Encoder().encode(value));
 
-const u32 = (value: number) => new Uint8Array(getU32Encoder().encode(value));
+export const u32 = (value: number) => new Uint8Array(getU32Encoder().encode(value));
 
 const seedBytes = (seed: string) => {
   const out = new Uint8Array(16);
@@ -204,3 +204,46 @@ export const instructionList = (exported: string): string =>
   execFileSync(process.execPath, [join(ROOT, "scripts", "instruction-list.mjs")], { input: exported, encoding: "utf8" });
 
 export const rentOf = (bytes: number) => s.svm.minimumBalanceForRentExemption(BigInt(HEADER + bytes));
+
+export const onChainIdl = (at: Address): Uint8Array => {
+  const held = s.account(at);
+  if (!held.exists) {
+    throw new Error(`${at} is closed`);
+  }
+  const length = new DataView(held.data.buffer, held.data.byteOffset, held.data.byteLength).getUint32(87, true);
+  return new Uint8Array(inflateSync(held.data.subarray(HEADER, HEADER + length)));
+};
+
+export function sameSizeForgery(content: Uint8Array): Uint8Array {
+  const size = deflateSync(content).length;
+  for (let at = content.length - 2; at > 0; at -= 1) {
+    const byte = content[at] ?? 0;
+    if (byte < 0x61 || byte > 0x7a) {
+      continue;
+    }
+    const forged = Uint8Array.from(content);
+    forged[at] = byte === 0x78 ? 0x79 : 0x78;
+    if (deflateSync(forged).length === size) {
+      return forged;
+    }
+  }
+  throw new Error("no forgery of the same compressed size");
+}
+
+export const setDataFromBuffer = async (metadata: Address, vault: Address, buffer: Address): Promise<Instruction> => ({
+  programAddress: PROGRAM_METADATA,
+  accounts: [
+    meta(metadata, AccountRole.WRITABLE),
+    meta(vault, AccountRole.READONLY_SIGNER),
+    meta(buffer, AccountRole.WRITABLE),
+    meta(ENGINE_PROGRAM),
+    meta(await programDataOf(ENGINE_PROGRAM)),
+  ],
+  data: Uint8Array.from([3, 1, 2, 1, 0]),
+});
+
+export const transferIx = (from: Address, to: Address, lamports: bigint): Instruction => ({
+  programAddress: SYSTEM_PROGRAM,
+  accounts: [meta(from, AccountRole.WRITABLE_SIGNER), meta(to, AccountRole.WRITABLE)],
+  data: concat([2, 0, 0, 0], u64(lamports)),
+});

@@ -73,9 +73,10 @@ describe("the IDL update scripts/idl.sh --multisig proposes", () => {
     ]);
 
     const on = ["--multisig", m.address, "--index", "1"];
+    const setsLocal = { simulation: "ok", sets: [{ account: metadata, sets: "idl", hash: LOCAL_HASH }] };
     for (const name of ["a", "b"]) {
       const approved = await s.cli("approve", ...on, "--keypair", m.file(name), "--yes");
-      expect([approved.code, approved.err, approved.json()["sent"], approved.json()["buffer_hash"]]).toEqual([EXIT_OK, "", true, LOCAL_HASH]);
+      expect([approved.code, approved.err, approved.json()["sent"], approved.json()["buffer_hash"], approved.json()["post_state"]]).toEqual([EXIT_OK, "", true, LOCAL_HASH, setsLocal]);
       expect(approved.json()["summary"][0]).toBe(`Approves proposal 1 on multisig ${m.address} as ${s.keys.get(m.file(name))?.address}`);
     }
     const unhashed = await s.cli("execute", ...on, "--keypair", m.file("c"), "--yes");
@@ -87,7 +88,7 @@ describe("the IDL update scripts/idl.sh --multisig proposes", () => {
     const refund = lamportsOf(buffer);
     const before = lamportsOf(deployer);
     const executed = await s.cli("execute", ...on, "--expect-buffer-hash", LOCAL_HASH, "--keypair", m.file("c"), "--yes");
-    expect([executed.code, executed.err, executed.json()["sent"], executed.json()["buffer_hash"]]).toEqual([EXIT_OK, "", true, LOCAL_HASH]);
+    expect([executed.code, executed.err, executed.json()["sent"], executed.json()["buffer_hash"], executed.json()["post_state"]]).toEqual([EXIT_OK, "", true, LOCAL_HASH, setsLocal]);
     expect(onChainIdl(metadata)).toEqual(LOCAL_IDL);
     expect(digest(onChainIdl(metadata))).toBe(LOCAL_HASH);
     expect(s.account(buffer).exists).toBe(false);
