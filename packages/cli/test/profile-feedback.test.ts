@@ -3,6 +3,7 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { DEVNET_TEST_MINT, Kind, NATIVE_MINT } from "@intent-engine/core";
 import { EVENT_IX_TAG, getIntentAttestedEventEncoder } from "@intent-engine/core/internal";
 import { createClient } from "@intent-engine/client/node";
@@ -102,7 +103,7 @@ describe("wallet_feedback", () => {
       remaining: 0n,
       partnerFee: 0n,
     });
-    h.engineLog = [{ signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [new Uint8Array([...EVENT_IX_TAG, ...attested])], memos: [] }, creation(intent)];
+    h.engineLog = [{ signature: testSignature("release"), slot: 3n, blockTime: null, failed: false, emitted: [new Uint8Array([...EVENT_IX_TAG, ...attested])], memos: [] }, creation(intent)];
     h.simulated.length = 0;
     const shown = await ok(client, "wallet_feedback", { intent, score: 80 });
     expect(shown).toMatchObject({ intent, score: 80, sent: false });

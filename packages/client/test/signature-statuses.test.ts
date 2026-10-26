@@ -1,5 +1,6 @@
 import type { Signature } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { testSignature } from "../src/testing.js";
 import { landingOf, type RpcLike, rpcTransport, SIGNATURE_STATUSES_LIMIT } from "../src/transport.js";
 
 type Status = { err: unknown; confirmationStatus: string | null };
@@ -36,17 +37,18 @@ describe("signature statuses", () => {
       unsure: { err: null, confirmationStatus: null },
       missing: null,
     };
-    const { rpc, calls } = statusRpc((signature) => answers[signature] ?? null);
+    const labels = new Map<string, string>(Object.keys(answers).map((label) => [testSignature(label), label]));
+    const { rpc, calls } = statusRpc((signature) => answers[labels.get(signature) ?? ""] ?? null);
     const transport = rpcTransport(rpc, none);
-    expect(await transport.signatureStatuses?.(Object.keys(answers))).toEqual(["landed", "landed", "failed", "failed", null, null, null, null]);
-    expect(calls).toEqual([{ signatures: Object.keys(answers), history: false }]);
+    expect(await transport.signatureStatuses?.([...labels.keys()])).toEqual(["landed", "landed", "failed", "failed", null, null, null, null]);
+    expect(calls).toEqual([{ signatures: [...labels.keys()], history: false }]);
     expect(landingOf(undefined)).toBeNull();
   });
 
   it("asks at most the limit per call and keeps the answers in order", async () => {
     expect(SIGNATURE_STATUSES_LIMIT).toBe(256);
-    const signatures = Array.from({ length: SIGNATURE_STATUSES_LIMIT * 2 + 1 }, (_, i) => `s${i}`);
-    const { rpc, calls } = statusRpc((signature) => (Number(signature.slice(1)) % 2 === 0 ? { err: null, confirmationStatus: "confirmed" } : null));
+    const signatures = Array.from({ length: SIGNATURE_STATUSES_LIMIT * 2 + 1 }, (_, i) => testSignature(i));
+    const { rpc, calls } = statusRpc((signature) => (signatures.findIndex((one) => one === signature) % 2 === 0 ? { err: null, confirmationStatus: "confirmed" } : null));
     const found = await rpcTransport(rpc, none).signatureStatuses?.(signatures);
     expect(calls.map((call) => call.signatures.length)).toEqual([SIGNATURE_STATUSES_LIMIT, SIGNATURE_STATUSES_LIMIT, 1]);
     expect(calls.flatMap((call) => call.signatures)).toEqual(signatures);
@@ -58,7 +60,7 @@ describe("signature statuses", () => {
     expect(await rpcTransport(quiet.rpc, none).signatureStatuses?.([])).toEqual([]);
     expect(quiet.calls).toEqual([]);
     const limited = statusRpc(() => ({ err: null, confirmationStatus: "confirmed" }), 1);
-    expect(await rpcTransport(limited.rpc, none).signatureStatuses?.(["one"])).toEqual(["landed"]);
+    expect(await rpcTransport(limited.rpc, none).signatureStatuses?.([testSignature("one")])).toEqual(["landed"]);
     expect(limited.calls).toHaveLength(1);
   });
 });

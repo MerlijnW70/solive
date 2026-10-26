@@ -33,7 +33,7 @@ export type TokenHolding = { account: Address; mint: Address; owner?: Address };
 export type SolTransfer = { from: Address; to: Address; lamports: bigint };
 
 export type EngineTransaction = {
-  signature: string;
+  signature: Signature;
   slot: bigint;
   blockTime: bigint | null;
   failed: boolean;
@@ -49,7 +49,7 @@ export type EngineTransaction = {
   unread?: true;
 };
 
-export type ListedSignature = { signature: string; slot: bigint; blockTime: bigint | null; failed: boolean; memo: string | null };
+export type ListedSignature = { signature: Signature; slot: bigint; blockTime: bigint | null; failed: boolean; memo: string | null };
 
 export type Latest = { blockhash: Blockhash; lastValidBlockHeight: bigint };
 
@@ -68,10 +68,10 @@ export interface Transport {
   getAccount(address: Address): Promise<AccountView | null>;
   getAccounts(addresses: readonly Address[]): Promise<(AccountView | null)[]>;
   warm?(addresses: readonly Address[]): Promise<void>;
-  send(instructions: readonly Instruction[], payer: TransactionSigner): Promise<string>;
+  send(instructions: readonly Instruction[], payer: TransactionSigner): Promise<Signature>;
   latestBlockhash(): Promise<Latest>;
-  sendWire(wire: Base64EncodedWireTransaction, latest: Latest): Promise<string>;
-  submitWire(wire: Base64EncodedWireTransaction): Promise<string>;
+  sendWire(wire: Base64EncodedWireTransaction, latest: Latest): Promise<Signature>;
+  submitWire(wire: Base64EncodedWireTransaction): Promise<Signature>;
   simulate(wire: Base64EncodedWireTransaction, watch?: readonly Address[]): Promise<Simulation>;
   genesisHash(): Promise<string>;
   intents(query?: IntentQuery, read?: IntentRead): Promise<ProgramAccount[]>;
@@ -86,7 +86,7 @@ export interface Transport {
   finalizedBlock?(from: bigint): Promise<FinalizedBlock | null>;
   recentFees(accounts: readonly Address[]): Promise<bigint[]>;
   budget(instructions: readonly Instruction[], feePayer: Address, tables?: LookupTables): Promise<Instruction[]>;
-  airdrop(address: Address, lamports: bigint): Promise<string>;
+  airdrop(address: Address, lamports: bigint): Promise<Signature>;
 }
 
 export type Pending<T> = { send(): Promise<T> };
@@ -109,7 +109,7 @@ export type RpcLike = {
   sendTransaction(
     wire: Base64EncodedWireTransaction,
     config: { encoding: "base64"; skipPreflight?: boolean },
-  ): Pending<Signature>;
+  ): Pending<string>;
   simulateTransaction(
     wire: Base64EncodedWireTransaction,
     config: {
@@ -137,7 +137,7 @@ export type RpcLike = {
     slot: bigint,
     config: { commitment: "finalized"; encoding: "json"; transactionDetails: "none"; rewards: false; maxSupportedTransactionVersion: 0 },
   ): Pending<{ blockhash: string } | null>;
-  requestAirdrop(address: Address, lamports: bigint): Pending<Signature>;
+  requestAirdrop(address: Address, lamports: bigint): Pending<string>;
   getRecentPrioritizationFees(addresses: readonly Address[]): Pending<readonly { prioritizationFee: bigint }[]>;
   getGenesisHash(): Pending<string>;
   getProgramAccounts(
@@ -155,7 +155,7 @@ export type RpcLike = {
   getSignaturesForAddress(
     address: Address,
     config: { limit: number; before?: Signature } & AtLeast,
-  ): Pending<readonly { signature: Signature; slot: bigint; blockTime: bigint | null; err: unknown; memo?: string | null }[]>;
+  ): Pending<readonly { signature: string; slot: bigint; blockTime: bigint | null; err: unknown; memo?: string | null }[]>;
   getTransaction(
     signature: Signature,
     config: { encoding: "json"; maxSupportedTransactionVersion: 0; commitment: "confirmed" },
@@ -163,6 +163,7 @@ export type RpcLike = {
     slot?: bigint;
     blockTime?: bigint | null;
     transaction: {
+      signatures: readonly string[];
       message: {
         accountKeys: readonly Address[];
         header?: { numRequiredSignatures: number };

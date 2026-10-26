@@ -8,15 +8,18 @@ import {
   getCompiledTransactionMessageDecoder,
   getCompiledTransactionMessageEncoder,
   getAddressDecoder,
+  getBase58Decoder,
   getSignatureFromTransaction,
   getTransactionDecoder,
   lamports,
   pipe,
   setTransactionMessageFeePayerSigner,
   type Signature,
+  signature as signatureFrom,
   signTransactionMessageWithSigners,
   type Transaction,
 } from "@solana/kit";
+import { InvalidInput } from "@intent-engine/core";
 import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { FailedTransactionMetadata, type LiteSVM } from "litesvm";
 import { TOKEN_PROGRAMS } from "./accounts.js";
@@ -24,6 +27,7 @@ import { intentMatches, matchBytes } from "./intent-filters.js";
 import { joined, type Observer, QUIET } from "./observe.js";
 import { delivering, memberRequests, observable, transactionSend } from "./observe-transport.js";
 import { BehindMinSlot, BlockhashExpired, FailedOnChain, type Failure, failure } from "./send-errors.js";
+import { askedSignature } from "./signatures.js";
 import { ALREADY_PROCESSED, BLOCKHASH_NOT_FOUND, errOf, fieldlessOf } from "./svm-errors.js";
 import {
   type EngineTransaction,
@@ -123,7 +127,7 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
     byId.set(found.signature, found);
   };
   const failedOnChain = (found: Failure, logs: readonly string[]) => new FailedOnChain(`${inspect(found.err, { depth: null, breakLength: Infinity })}\n${logs.join("\n")}`, found);
-  const settledBefore = (signature: string, submitted: boolean): string | undefined => {
+  const settledBefore = (signature: Signature, submitted: boolean): Signature | undefined => {
     const failed = failures.get(signature);
     if (failed !== undefined) {
       if (submitted) {
@@ -133,7 +137,7 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
     }
     return byId.has(signature) ? signature : undefined;
   };
-  const landed = (tx: Transaction, submitted = false): string => {
+  const landed = (tx: Transaction, submitted = false): Signature => {
     const signature = getSignatureFromTransaction(tx);
     const known = settledBefore(signature, submitted);
     if (known !== undefined) {
@@ -219,7 +223,7 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
     });
   };
   const landing = (signature: string): SignatureLanding | null => (failures.has(signature) ? "failed" : byId.has(signature) ? "landed" : null);
-  const delivered = async (tx: Transaction, by: Observer, lastValidBlockHeight: () => bigint): Promise<string> => {
+  const delivered = async (tx: Transaction, by: Observer, lastValidBlockHeight: () => bigint): Promise<Signature> => {
     const deliver = async () => {
       const signature = landed(tx);
       return { signature, slot: byId.get(signature)?.slot };
@@ -310,13 +314,13 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
       transactionsOf: async (listed) => listed.flatMap(({ signature }) => byId.get(signature) ?? []),
       transactionOf: async (signature) => byId.get(signature) ?? null,
       signatureStatuses: async (signatures) => signatures.map(landing),
-      sendStatus: async (signature, lastValidBlockHeight) => {
-        const failed = failures.get(signature);
+      sendStatus: async (asked, lastValidBlockHeight) => {
+        const known = askedSignature(asked);
+        const failed = failures.get(known);
         if (failed !== undefined) {
           return { status: "failed", ...failed };
         }
-        const found = byId.get(signature);
-        const known = signature as Signature;
+        const found = byId.get(known);
         if (found !== undefined) {
           return { status: "confirmed", signature: known, slot: found.slot };
         }
@@ -326,8 +330,16 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
       recentFees: async () => [],
       budget: async (instructions) => [...instructions],
       airdrop: async (address, amount) => {
-        svm.airdrop(address, lamports(amount));
-        return `airdrop-${address}-${amount}`;
+        const result = svm.airdrop(address, lamports(amount));
+        if (result === null) {
+          throw new InvalidInput("lamports", "range", `LiteSVM cannot airdrop ${amount} lamports`);
+        }
+        const signature = signatureFrom(getBase58Decoder().decode((result instanceof FailedTransactionMetadata ? result.meta() : result).signature()));
+        if (result instanceof FailedTransactionMetadata) {
+          const logs = result.meta().logs();
+          throw failedOnChain(failure(signature, errOf(result), logs), logs);
+        }
+        return signature;
       },
     };
     return observable(by.quiet ? members : memberRequests(members, by), (next) => facade(joined(by, next)));

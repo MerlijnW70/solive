@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import { computeUnitLimit, headroom, MAX_COMPUTE_UNITS } from "@intent-engine/core/internal";
 import { memoized, type Transport } from "../src/transport.js";
 import { budgeted, PACKET_DATA_SIZE, transactionBytes, withPriority } from "../src/budget.js";
+import { testSignature } from "../src/testing.js";
 import { isolateMocks, OWNER } from "./transport-stub.js";
 
 isolateMocks();
@@ -41,7 +42,7 @@ class Ledger implements Transport {
 
   async send(instructions: readonly unknown[]) {
     this.#sent.push(instructions.length);
-    return "sent";
+    return testSignature("sent");
   }
 
   async latestBlockhash() {
@@ -50,11 +51,11 @@ class Ledger implements Transport {
 
   async sendWire() {
     this.#sent.push(0);
-    return "wire";
+    return testSignature("wire");
   }
 
   async submitWire() {
-    return "submitted";
+    return testSignature("submitted");
   }
 
   async simulate() {
@@ -83,7 +84,7 @@ class Ledger implements Transport {
   }
 
   async airdrop() {
-    return "airdropped";
+    return testSignature("airdropped");
   }
 }
 
@@ -110,7 +111,7 @@ describe("budgeting", () => {
     const unsimulated = await budgeted(ledger, 0n, [large], payer.address);
     expect(unsimulated).toEqual([large, computeUnitLimit(MAX_COMPUTE_UNITS)]);
     expect(await transactionBytes(ledger, unsimulated, payer.address)).toBeGreaterThan(PACKET_DATA_SIZE);
-    expect(await withPriority(ledger, 0n).send([large], payer)).toBe("sent");
+    expect(await withPriority(ledger, 0n).send([large], payer)).toBe(testSignature("sent"));
     expect(ledger.wires).toHaveLength(1);
 
     const keys = await Promise.all(Array.from({ length: 40 }, async () => (await generateKeyPairSigner()).address));
@@ -136,8 +137,8 @@ describe("wrapped transports", () => {
     const { genesisHash, getAccount } = wrapped;
     expect(await genesisHash()).toBe("GENESIS");
     expect(await getAccount(OWNER)).toBeNull();
-    expect(await wrapped.airdrop(OWNER, 1n)).toBe("airdropped");
-    expect(await wrapped.send([ix], await generateKeyPairSigner())).toBe("sent");
+    expect(await wrapped.airdrop(OWNER, 1n)).toBe(testSignature("airdropped"));
+    expect(await wrapped.send([ix], await generateKeyPairSigner())).toBe(testSignature("sent"));
     expect(ledger.sent).toEqual([2]);
     expect(ledger.reads).toBe(2);
   });
@@ -150,7 +151,7 @@ describe("wrapped transports", () => {
     expect(await getAccount(OWNER)).toBeNull();
     expect(await reading.getAccount(OWNER)).toBeNull();
     expect(ledger.reads).toBe(2);
-    expect(await send([ix], await generateKeyPairSigner())).toBe("sent");
+    expect(await send([ix], await generateKeyPairSigner())).toBe(testSignature("sent"));
     expect(await reading.getAccount(OWNER)).toBeNull();
     expect(ledger.reads).toBe(3);
     expect(await reading.intents()).toEqual([]);

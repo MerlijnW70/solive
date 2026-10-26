@@ -5,6 +5,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { DEVNET_TEST_MINT as TEST_TOKEN, findAssociatedTokenAddress, formatAmount, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
 import { EVENT_IX_TAG, getIntentAttestedEventEncoder, getIntentDecoder, getIntentEncoder, splitFee } from "@intent-engine/core/internal";
 import { beforeEach, describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { WALLET_SMALL_START, WALLET_START } from "../src/agent/wallet/account.js";
 import { PIECE_ONE, recordAccountWhy, SPEC_MUST } from "../src/agent/wallet/escrow.js";
 import { RELEASE_LANDING, stillUnknown, stillUnreleased } from "../src/agent/wallet/receipt.js";
@@ -225,9 +226,9 @@ describe("setup, escrow and balance explain themselves", () => {
       remaining: 0n,
       partnerFee: 0n,
     });
-    const release = { signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [new Uint8Array([...EVENT_IX_TAG, ...Array.from(attested)])] };
+    const release = { signature: testSignature("release"), slot: 3n, blockTime: null, failed: false, emitted: [new Uint8Array([...EVENT_IX_TAG, ...Array.from(attested)])] };
     h.onSleep = [() => undefined, () => (h.engineLog = [release])];
-    expect(await ok(client, "wallet_receipt", { nonce, wait: 5 })).toMatchObject({ intent, released: true, signature: "release" });
+    expect(await ok(client, "wallet_receipt", { nonce, wait: 5 })).toMatchObject({ intent, released: true, signature: testSignature("release") });
     expect(h.sleeps).toEqual([1, 1]);
     h.engineLog = [creation(intent)];
     h.sleeps.length = 0;

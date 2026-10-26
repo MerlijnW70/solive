@@ -4,6 +4,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { findAssociatedTokenAddress, formatAmount } from "@intent-engine/core";
 import { EVENT_IX_TAG, findIntentPda, getIntentCreatedEventEncoder, getIntentAttestedEventEncoder, splitFee } from "@intent-engine/core/internal";
 import { beforeEach, describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { type EngineTransaction, type ListedSignature } from "@intent-engine/client";
 import { SIGNATURE_PAGE } from "@intent-engine/client/internal";
 import { InvalidInput } from "../src/agent/schema.js";
@@ -14,7 +15,7 @@ import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT } from "@intent-engine/core
 import { LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { stillUnknown } from "../src/agent/wallet/receipt.js";
 import { creation, FEE_BPS, h, transport } from "./harness.js";
-import { PAGED_ADDRESS, attested, call, connect, created, createdFrom, deliveryReleased, fresh, indexing, ok, pagedThrough, releasedEscrow, tag, tokenAccountAt, zeroTransfers } from "./agent-wallet-kit.js";
+import { PAGED_ADDRESS, attested, call, connect, created, createdFrom, deliveryReleased, fresh, indexing, ok, pagedThrough, releasedEscrow, tag, tokenAccountAt, transferSignature, zeroTransfers } from "./agent-wallet-kit.js";
 
 describe("the wallet server's receipts", () => {
   let client: Client;
@@ -50,8 +51,8 @@ describe("the wallet server's receipts", () => {
     const work = "b".repeat(64);
     const worker = (await generateKeyPairSigner()).address;
     const announcement = (await generateKeyPairSigner()).address;
-    const released = { signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [deliveryReleased(intent, announcement, worker, owner, work), tag(attested)] };
-    h.engineLog = [{ ...released, signature: "failed", failed: true }, released];
+    const released = { signature: testSignature("release"), slot: 3n, blockTime: null, failed: false, emitted: [deliveryReleased(intent, announcement, worker, owner, work), tag(attested)] };
+    h.engineLog = [{ ...released, signature: testSignature("failed"), failed: true }, released];
     expect(await ok(client, "wallet_receipt", { owner, nonce: "7", sha256: work.toUpperCase() })).toEqual({
       intent,
       released: true,
@@ -59,7 +60,7 @@ describe("the wallet server's receipts", () => {
       paid: `${net} raw units`,
       attestor: owner,
       result: "2",
-      signature: "release",
+      signature: testSignature("release"),
       delivered_sha256: work,
       delivered_salt: "ab".repeat(16),
       matches: true,
@@ -83,7 +84,7 @@ describe("the wallet server's receipts", () => {
       bounty: 0,
       createFee: 0,
     });
-    h.engineLog = [{ ...released, emitted: [tag(attested)] }, { signature: "create", slot: 1n, blockTime: null, failed: false, emitted: [tag(created)] }];
+    h.engineLog = [{ ...released, emitted: [tag(attested)] }, { signature: testSignature("create"), slot: 1n, blockTime: null, failed: false, emitted: [tag(created)] }];
     const plain = await ok(client, "wallet_receipt", { nonce: "7", sha256: work });
     expect(plain).toMatchObject({ paid: formatAmount(net, 9), matches: false });
     expect(plain).not.toHaveProperty("delivered_sha256");
@@ -110,8 +111,8 @@ describe("the wallet server's receipts", () => {
       remaining: 0n,
       partnerFee: 0n,
     });
-    const released = { signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [tag(attested)] };
-    const paid = { intent, released: true, payee, paid: `${net} raw units`, attestor: owner, result: "2", signature: "release" };
+    const released = { signature: testSignature("release"), slot: 3n, blockTime: null, failed: false, emitted: [tag(attested)] };
+    const paid = { intent, released: true, payee, paid: `${net} raw units`, attestor: owner, result: "2", signature: testSignature("release") };
     const tools = [
       ["wallet_receipt", { nonce: "7" }],
       ["get_receipt", { owner, nonce: "7" }],
@@ -172,9 +173,9 @@ describe("the wallet server's receipts", () => {
       partnerFee: 0n,
     });
     const work = "d7".repeat(32);
-    const release = { signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [deliveryReleased(intent, owner, owner, owner, work), tag(attested)] };
-    const dust = (count: number) => Array.from({ length: count }, (_, i) => ({ signature: `dust${i}`, slot: 9n, blockTime: null, failed: false, emitted: [] }));
-    const receipt = { intent, released: true, signature: "release", delivered_sha256: work, matches: true };
+    const release = { signature: testSignature("release"), slot: 3n, blockTime: null, failed: false, emitted: [deliveryReleased(intent, owner, owner, owner, work), tag(attested)] };
+    const dust = (count: number) => Array.from({ length: count }, (_, i) => ({ signature: testSignature(`dust${i}`), slot: 9n, blockTime: null, failed: false, emitted: [] }));
+    const receipt = { intent, released: true, signature: testSignature("release"), delivered_sha256: work, matches: true };
     h.engineLog = [...dust(WAIT_SCAN * 2), release];
     h.through = { ...transport, engineTransactions: async (limit) => h.engineLog.slice(0, limit) };
     const windowed = await connect(["mcp", "--url", "devnet", "--wallet", "--all-tools"]);
@@ -215,14 +216,14 @@ describe("the wallet server's receipts", () => {
     expect(listed).toEqual(log.map((tx) => tx.signature));
     expect(fetched).toEqual(listed);
     expect(await paged.signaturesOf(PAGED_ADDRESS, SIGNATURE_PAGE, before)).toEqual([]);
-    expect(await paged.transactionOf("transfer9999")).toBe(log[9_999]);
+    expect(await paged.transactionOf(transferSignature(9_999))).toBe(log[9_999]);
     expect(await paged.transactionOf("missing")).toBeNull();
     expect(indexing.builds - builds).toBe(1);
     log = zeroTransfers(12_000);
-    expect((await paged.signaturesOf(PAGED_ADDRESS, SIGNATURE_PAGE, "transfer10999")).map((entry) => entry.signature)).toEqual(
-      Array.from({ length: SIGNATURE_PAGE }, (_, i) => `transfer${11_000 + i}`),
+    expect((await paged.signaturesOf(PAGED_ADDRESS, SIGNATURE_PAGE, transferSignature(10_999))).map((entry) => entry.signature)).toEqual(
+      Array.from({ length: SIGNATURE_PAGE }, (_, i) => transferSignature(11_000 + i)),
     );
-    expect(await paged.transactionOf("transfer11999")).toBe(log[11_999]);
+    expect(await paged.transactionOf(transferSignature(11_999))).toBe(log[11_999]);
     expect(indexing.builds - builds).toBe(2);
   });
 
@@ -245,7 +246,7 @@ describe("the wallet server's receipts", () => {
       remaining: 0n,
       partnerFee: 0n,
     });
-    const plain = { signature: "8".repeat(88), slot: 3n, blockTime: null, failed: false, emitted: [tag(attested)], feePayer: owner };
+    const plain = { signature: testSignature("plain"), slot: 3n, blockTime: null, failed: false, emitted: [tag(attested)], feePayer: owner };
     const fetched: string[] = [];
     let log: EngineTransaction[] = [...zeroTransfers(HISTORY_PAGES * SIGNATURE_PAGE), plain];
     h.through = pagedThrough(() => log, fetched);
@@ -268,7 +269,7 @@ describe("the wallet server's receipts", () => {
     tokenAccountAt(payee, wallet);
     const release = (holder: Address) =>
       ({
-        signature: "6".repeat(87) + "f",
+        signature: testSignature("wrapped release"),
         slot: 3n,
         blockTime: null,
         failed: false,
@@ -313,8 +314,8 @@ describe("the wallet server's receipts", () => {
       partnerFee: 0n,
     });
     const work = "c".repeat(64);
-    h.engineLog = [{ signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [deliveryReleased(intent, owner, owner, owner, work), tag(attested)] }];
-    const receipt = { intent, released: true, payee, paid: `${net} raw units`, attestor: owner, result: "1", signature: "release", delivered_sha256: work, matches: true, announcer: owner };
+    h.engineLog = [{ signature: testSignature("release"), slot: 3n, blockTime: null, failed: false, emitted: [deliveryReleased(intent, owner, owner, owner, work), tag(attested)] }];
+    const receipt = { intent, released: true, payee, paid: `${net} raw units`, attestor: owner, result: "1", signature: testSignature("release"), delivered_sha256: work, matches: true, announcer: owner };
     expect(await ok(plain, "get_receipt", { owner, nonce: "7", sha256: work })).toMatchObject(receipt);
     await ok(client, "wallet_setup");
     expect(await ok(client, "wallet_receipt", { owner, nonce: "7", sha256: work })).toMatchObject(receipt);

@@ -1,4 +1,4 @@
-import type { Address, Instruction, TransactionSigner } from "@solana/kit";
+import { type Address, type Instruction, signature, type TransactionSigner } from "@solana/kit";
 import type { SealRecipient } from "@intent-engine/core";
 import {
   type AnnouncementList,
@@ -119,7 +119,7 @@ export const refusalOf = (error: unknown): FirstOpeningRefused | null => (isSdkE
 
 export type Captured = { instructions: Instruction[]; payer: TransactionSigner };
 
-export const CAPTURED_SIGNATURE = "1111111111111111111111111111111111111111111111111111111111111111";
+export const CAPTURED_SIGNATURE = signature("1111111111111111111111111111111111111111111111111111111111111111");
 
 export function capturing(transport: Transport): { transport: Transport; sends: Captured[] } {
   const sends: Captured[] = [];

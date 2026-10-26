@@ -1,6 +1,7 @@
 import { INTENT_ENGINE_PROGRAM_ADDRESS, getFillAttestedSplitInstructionDataEncoder, FILL_ATTESTED_SPLIT_DISCRIMINATOR } from "@intent-engine/core/internal";
 import { SYSTEM_PROGRAM_ADDRESS } from "@solana-program/system";
 import { beforeAll, describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { heldMint, outlives, releasedMint, releaseLookup, splitRecipients } from "../src/agent/wallet/releases.js";
 import { created, type Escrow, escrow, filledAt, FLOOR, intentOf, newcomer, node, plain, released } from "./release-node.js";
 
@@ -22,14 +23,14 @@ describe("finding the release of an escrow in its history", () => {
     const held = filledAt(e.view, FLOOR);
     const history = [plain("newer", { blockTime: FLOOR + 1n }), released(e.intent, { blockTime: FLOOR }), created(e.intent, "creation", { blockTime: FLOOR })];
     const { transport } = node(e.intent, history, { page: 1, held });
-    expect(summary(await releaseLookup(transport, e.intent))).toEqual({ release: history[1]?.signature, transactions: ["newer", history[1]?.signature, "creation"], complete: true, bound: true });
+    expect(summary(await releaseLookup(transport, e.intent))).toEqual({ release: history[1]?.signature, transactions: [testSignature("newer"), history[1]?.signature, testSignature("creation")], complete: true, bound: true });
   });
 
   it("stops at an entry older than the escrow and says it found no release, with a history that is bound", async () => {
     const held = filledAt(e.view, FLOOR);
     const history = [plain("newer", { blockTime: FLOOR + 1n }), plain("older", { blockTime: FLOOR - 1n }), released(e.intent, { blockTime: FLOOR }), created(e.intent, "creation", { blockTime: FLOOR })];
     const { transport } = node(e.intent, history, { page: 2, held });
-    expect(summary(await releaseLookup(transport, e.intent))).toEqual({ release: null, transactions: ["newer"], complete: true, bound: true });
+    expect(summary(await releaseLookup(transport, e.intent))).toEqual({ release: null, transactions: [testSignature("newer")], complete: true, bound: true });
   });
 
   it("marks a release incomplete when a newer transaction could not be read", async () => {

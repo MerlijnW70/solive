@@ -7,6 +7,7 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { DEVNET_TEST_MINT, findAssociatedTokenAddress, NATIVE_MINT, NotInvited } from "@intent-engine/core";
 import { EVENT_IX_TAG, getIntentCreatedEventEncoder, getIntentDecoder, specMemo, unseal } from "@intent-engine/core/internal";
 import type { EngineTransaction } from "@intent-engine/client";
@@ -75,7 +76,7 @@ function createdFrom(intent: Address, memos: string[]): EngineTransaction {
   }
   const { owner, nonce, kind, inputMint, outputMint, escrowed, expiresAt } = getIntentDecoder().decode(held.data);
   const event = getIntentCreatedEventEncoder().encode({ intent, owner, nonce, kind, inputMint, outputMint, receiver: owner, escrowed, expiresAt, rentPayer: owner, flags: 0, bounty: 0, createFee: 0 });
-  return { signature: `made-${intent}`, slot: 1n, blockTime: null, failed: false, emitted: [new Uint8Array([...EVENT_IX_TAG, ...event])], memos, memoSigners: memos.map(() => [owner]), feePayer: owner };
+  return { signature: testSignature(`made-${intent}`), slot: 1n, blockTime: null, failed: false, emitted: [new Uint8Array([...EVENT_IX_TAG, ...event])], memos, memoSigners: memos.map(() => [owner]), feePayer: owner };
 }
 
 describe("an invite-only job with wallet tools only", () => {

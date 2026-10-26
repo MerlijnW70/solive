@@ -1,4 +1,4 @@
-import { type Address, createSolanaRpc, type Instruction, type Signature, type TransactionSigner } from "@solana/kit";
+import { type Address, createSolanaRpc, type Instruction, type TransactionSigner } from "@solana/kit";
 import { isSdkError } from "@intent-engine/core";
 import { readIntentAccounts } from "@intent-engine/core/internal";
 import { chainTime, loadConfig, loadUser, mintOf } from "./accounts.js";
@@ -110,7 +110,7 @@ export function createClient(options: ClientOptions): Client {
 
   const config = async () => (await loadConfig(transport)).config;
   const send = async (instructions: readonly Instruction[], signer: TransactionSigner) =>
-    (await transport.send(await budgeted(transport, priority, instructions, signer.address), signer)) as Signature;
+    transport.send(await budgeted(transport, priority, instructions, signer.address), signer);
 
   const mints = new Map<Address, Promise<Mint>>();
   const mint = (address: Address) => {

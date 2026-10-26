@@ -2,7 +2,8 @@ import { createHash } from "node:crypto";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Address, getBase64Encoder, getTransactionDecoder, type KeyPairSigner, lamports } from "@solana/kit";
+import { type Address, getBase64Encoder, getTransactionDecoder, type KeyPairSigner, lamports, type Signature } from "@solana/kit";
+import { testSignature } from "@intent-engine/client/testing";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
@@ -78,7 +79,7 @@ export async function job(attestorOf?: (key: Key) => Promise<Address>): Promise<
   return { w, key, intent, spec, artifact, dir, payer: await funded(), publicKey };
 }
 
-export type Logged = { signature: string; slot: bigint; memos: string[]; feePayer: Address; emitted: Uint8Array[] };
+export type Logged = { signature: Signature; slot: bigint; memos: string[]; feePayer: Address; emitted: Uint8Array[] };
 
 export type Announced = { announcement: Address; seq: bigint; salt: string; sealedTo: SealRecipient[] };
 
@@ -105,7 +106,7 @@ export async function publish(j: Job, encryptionKey: string, at: number, update 
 
 export function profileEntry(j: Job, encryptionKey: string, at: number): Logged {
   const event = getProfileSetEventEncoder().encode({ wallet: j.key.address, skills: ["judge"], endpoint: ENDPOINT, docUrl: "", docHash: new Uint8Array(32), encryptionKey: parseEncryptionKey(encryptionKey) });
-  return { signature: `profile${at}`, slot: BigInt(4 + at), memos: [], feePayer: j.key.address, emitted: [Uint8Array.from([...EVENT_IX_TAG, ...event])] };
+  return { signature: testSignature(`profile${at}`), slot: BigInt(4 + at), memos: [], feePayer: j.key.address, emitted: [Uint8Array.from([...EVENT_IX_TAG, ...event])] };
 }
 
 export async function keyedProfile(key: Key, file?: string): Promise<{ entry: EngineTransaction; encryptionKey: Uint8Array }> {
@@ -115,7 +116,7 @@ export async function keyedProfile(key: Key, file?: string): Promise<{ entry: En
   }
   await send(key.signer, [await buildCreateProfile({ wallet: key.signer, skills: ["judge"], endpoint: ENDPOINT, encryptionKey: publicKey })]);
   const event = getProfileSetEventEncoder().encode({ wallet: key.address, skills: ["judge"], endpoint: ENDPOINT, docUrl: "", docHash: new Uint8Array(32), encryptionKey: parseEncryptionKey(publicKey) });
-  const entry: EngineTransaction = { signature: `profile-${key.address}`, slot: 0n, blockTime: null, failed: false, memos: [], feePayer: key.address, emitted: [Uint8Array.from([...EVENT_IX_TAG, ...event])] };
+  const entry: EngineTransaction = { signature: testSignature(`profile-${key.address}`), slot: 0n, blockTime: null, failed: false, memos: [], feePayer: key.address, emitted: [Uint8Array.from([...EVENT_IX_TAG, ...event])] };
   return { entry, encryptionKey: parseEncryptionKey(publicKey) };
 }
 

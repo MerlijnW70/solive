@@ -1,8 +1,9 @@
 import { MAX_PENDING_PER_OWNER } from "../src/agent/claims.js";
-import { getBase58Decoder, getBase64Encoder, type Signature, signBytes } from "@solana/kit";
+import { getBase58Decoder, getBase64Encoder, signBytes } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { beforeEach, describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { findAssociatedTokenAddress } from "@intent-engine/core";
 import { FailedOnChain } from "@intent-engine/client";
 import { failure } from "@intent-engine/client/internal";
@@ -144,7 +145,7 @@ describe("agent server against the deployed engine", () => {
     const signature = getBase58Decoder().decode(await signBytes(owner.keyPair.privateKey, getBase64Encoder().encode(p["message"])));
     const delivered = transport.send;
     transport.send = async () => {
-      throw new FailedOnChain("transaction landed and failed", failure("1".repeat(64) as Signature, null));
+      throw new FailedOnChain("transaction landed and failed", failure(testSignature("sent"), null));
     };
     try {
       expect((await fail(relaying, "submit_signed_intent", { ...p["submit"], signature }))["code"]).toBe("Failed");

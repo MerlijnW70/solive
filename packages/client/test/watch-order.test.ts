@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { type Address, getAddressDecoder, type Signature } from "@solana/kit";
+import { type Address, getAddressDecoder } from "@solana/kit";
 import { describe, expect, it, vi } from "vitest";
+import { testSignature } from "../src/testing.js";
 import { AccountVersionError, type Intent, IntentStatus, Kind } from "@intent-engine/core";
 import { encodeParams, getIntentDecoder, getIntentDiscriminatorBytes, getIntentEncoder, getIntentSize, INTENT_VERSION } from "@intent-engine/core/internal";
 import { createClient, FailedOnChain, type Job, type Notifications, type ProgramAccount, type Transport } from "../src/index.js";
@@ -29,7 +30,7 @@ vi.mock("@solana/kit", async (importOriginal) => {
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const PAGE = readFileSync(`${ROOT}/docs/sdk-client.md`, "utf8");
 const LOCAL = "http://127.0.0.1:8899";
-const SIG = "5".repeat(88) as Signature;
+const SIG = testSignature("watched");
 
 const key = (byte: number) => getAddressDecoder().decode(new Uint8Array(32).fill(byte));
 const A = key(1);

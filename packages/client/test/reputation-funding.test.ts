@@ -8,6 +8,7 @@ import { findIntentPda } from "@intent-engine/core/internal";
 import { createClient, type ListedSignature, type Transport } from "../src/index.js";
 import { FUNDING_PAGES } from "../src/internal.js";
 import { svmTransport } from "../src/svm.js";
+import { testSignature } from "../src/testing.js";
 import { world } from "./svm.js";
 import { announced } from "./work.js";
 
@@ -117,7 +118,7 @@ describe("reputation a worker may have paid for itself", () => {
           return (transport.signaturesOf as NonNullable<Transport["signaturesOf"]>)(of, limit, before);
         }
         const page = listed.filter((at) => at === of).length;
-        return Array.from({ length: limit }, (_, i): ListedSignature => ({ signature: `long-${page}-${i}`, slot: 1n, blockTime: null, failed: false, memo: null }));
+        return Array.from({ length: limit }, (_, i): ListedSignature => ({ signature: testSignature(`long-${page}-${i}`), slot: 1n, blockTime: null, failed: false, memo: null }));
       },
     };
     const cut = await createClient({ url: LOCAL, transport: endless }).reputation(worker.address);
@@ -148,7 +149,7 @@ describe("reputation a worker may have paid for itself", () => {
           return (transport.signaturesOf as NonNullable<Transport["signaturesOf"]>)(of, limit, before);
         }
         const page = listed.filter((at) => at === of).length;
-        return Array.from({ length: limit }, (_, i): ListedSignature => ({ signature: `busy-${page}-${i}`, slot: 1n, blockTime: null, failed: false, memo: null }));
+        return Array.from({ length: limit }, (_, i): ListedSignature => ({ signature: testSignature(`busy-${page}-${i}`), slot: 1n, blockTime: null, failed: false, memo: null }));
       },
     };
     const rep = await createClient({ url: LOCAL, transport: busy }).reputation(worker.address);

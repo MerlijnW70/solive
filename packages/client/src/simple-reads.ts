@@ -1,4 +1,4 @@
-import type { Address, Signature } from "@solana/kit";
+import type { Address } from "@solana/kit";
 import { IntentStatus, InvalidInput } from "@intent-engine/core";
 import { isSha256Hex, type UnreadableAccount } from "@intent-engine/core/internal";
 import { AnnouncementsUnreadable } from "./announce-errors.js";
@@ -68,7 +68,7 @@ export function workReads(ctx: SimpleContext) {
       }
       return { ...unreleased, released: false, complete: true, summary: `Escrow ${escrow} is not released yet` };
     }
-    const signature = release.transaction.signature as Signature;
+    const signature = release.transaction.signature;
     const payees = (await paidWalletsOf(transport, release, escrow)) ?? [];
     const released = releasedDelivery(release.transaction, escrow);
     const standing: Standing = released === null ? { refutedBy: null, complete: true, unreadable: [] } : await refutedBy(released.announcement);

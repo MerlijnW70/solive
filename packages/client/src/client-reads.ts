@@ -1,4 +1,4 @@
-import type { Address, Signature } from "@solana/kit";
+import type { Address } from "@solana/kit";
 import { type EngineEvent, findAssociatedTokenAddress, InvalidInput, tokenName } from "@intent-engine/core";
 import { decodeEvent } from "@intent-engine/core/internal";
 import { createdAccount, tokenAmountOf } from "./accounts.js";
@@ -29,7 +29,7 @@ function eventsIn(transactions: readonly EngineTransaction[], intent: Address): 
         .map((data) => decodeEvent(data) as EngineEvent | null)
         .filter((event): event is EngineEvent => event !== null && "intent" in event.fields && event.fields.intent === intent)
         .reverse()
-        .map((event) => ({ ...event, signature: signature as Signature, slot, blockTime })),
+        .map((event) => ({ ...event, signature, slot, blockTime })),
     );
 }
 

@@ -3,6 +3,7 @@ import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { describe, expect, it } from "vitest";
 import type { RpcLike } from "../src/internal.js";
 import { rpcTransport } from "../src/rpc-transport.js";
+import { testSignature } from "../src/testing.js";
 
 const ACCOUNT = "11111111111111111111111111111112" as Address;
 
@@ -62,7 +63,7 @@ function confirmingAt(confirmed: bigint, answered: bigint[]) {
   const waits: number[] = [];
   const rpc = {
     getLatestBlockhash: () => ({ send: async () => ({ value: { blockhash: ACCOUNT, lastValidBlockHeight: 10n } }) }),
-    sendTransaction: () => ({ send: async () => "sent" }),
+    sendTransaction: () => ({ send: async () => testSignature("sent") }),
     getSignatureStatuses: () => ({ send: async () => ({ context: { slot: confirmed }, value: [{ err: null, confirmationStatus: "confirmed", slot: confirmed }] }) }),
     getProgramAccounts: (_program: Address, config: { minContextSlot?: bigint; withContext?: true }) => ({
       send: async () => {

@@ -13,6 +13,7 @@ import {
   type Transaction,
   pipe,
   setTransactionMessageFeePayerSigner,
+  type Signature,
   signTransactionMessageWithSigners,
   type TransactionSigner,
 } from "@solana/kit";
@@ -93,7 +94,7 @@ export function touch(tx: Transaction): void {
   }
 }
 
-export async function send(payer: TransactionSigner, ixs: readonly Instruction[]): Promise<string> {
+export async function send(payer: TransactionSigner, ixs: readonly Instruction[]): Promise<Signature> {
   h.svm.expireBlockhash();
   const message = pipe(
     createTransactionMessage({ version: 0 }),

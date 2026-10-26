@@ -153,6 +153,7 @@ export {
   type SubscriptionEnd,
   SubscriptionEnded,
 } from "./send-errors.js";
+export { isTransactionSignature, NotASignature } from "./signatures.js";
 export { type Cluster, MainnetNotAllowed } from "./simple-tokens.js";
 export type {
   Announcement,

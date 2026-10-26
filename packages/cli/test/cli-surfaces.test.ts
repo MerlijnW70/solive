@@ -1,6 +1,7 @@
 import { type Address, generateKeyPairSigner, type KeyPairSigner, type Signature } from "@solana/kit";
 import { getCloseAccountInstruction, getTransferInstruction, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { beforeEach, describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { TransactionMetadata } from "litesvm";
 import { MAX_EXPIRES_IN, MIN_EXPIRES_IN } from "../src/agent/create.js";
 import { NOT_SENT } from "../src/flows.js";
@@ -292,14 +293,14 @@ describe("the cli reaches what the other surfaces do", () => {
       salt: Buffer.from(salt, "hex"),
       splitHash: new Uint8Array(32),
     });
-    const release = { signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [tag(delivered), tag(released)] };
-    h.engineLog = [{ ...release, signature: "failed", failed: true }, release, { signature: "create", slot: 1n, blockTime: null, failed: false, emitted: [tag(created)] }];
+    const release = { signature: testSignature("release"), slot: 3n, blockTime: null, failed: false, emitted: [tag(delivered), tag(released)] };
+    h.engineLog = [{ ...release, signature: testSignature("failed"), failed: true }, release, { signature: testSignature("create"), slot: 1n, blockTime: null, failed: false, emitted: [tag(created)] }];
     const recorded = {
       intent,
       released: true,
       attestor: judge.address,
       result: "2",
-      signature: "release",
+      signature: testSignature("release"),
       delivered_sha256: work,
       delivered_salt: salt,
       announcement,

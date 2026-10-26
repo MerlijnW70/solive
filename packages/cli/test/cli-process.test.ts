@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Address, createKeyPairSignerFromPrivateKeyBytes, getAddressEncoder } from "@solana/kit";
 import { describe, expect, it, vi } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { findIntentPda, getPauseRaisedEventEncoder, getUserInitializedEventEncoder, findVaultPda, EVENT_IX_TAG } from "@intent-engine/core/internal";
 import { agentServer } from "../src/agent/mcp.js";
 import { ACTIONS } from "../src/agent/registry.js";
@@ -223,7 +224,7 @@ describe("event monitoring", () => {
     const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
     h.engineLog = [
       {
-        signature: "sig-a",
+        signature: testSignature("sig-a"),
         slot: 9n,
         blockTime: 1_700_000_000n,
         failed: false,
@@ -234,14 +235,14 @@ describe("event monitoring", () => {
         ],
       },
       {
-        signature: "sig-b",
+        signature: testSignature("sig-b"),
         slot: 10n,
         blockTime: null,
         failed: true,
         emitted: [tag(getPauseRaisedEventEncoder().encode({ by: key, paused: 0 }))],
       },
       {
-        signature: "sig-c",
+        signature: testSignature("sig-c"),
         slot: 11n,
         blockTime: null,
         failed: false,
@@ -255,7 +256,7 @@ describe("event monitoring", () => {
       notable: 1,
       transactions: [
         {
-          signature: "sig-a",
+          signature: testSignature("sig-a"),
           slot: "9",
           blockTime: "1700000000",
           failed: false,
@@ -264,8 +265,8 @@ describe("event monitoring", () => {
             { name: "UserInitialized", notable: false, fields: { owner: key } },
           ],
         },
-        { signature: "sig-b", slot: "10", blockTime: null, failed: true, events: [] },
-        { signature: "sig-c", slot: "11", blockTime: null, failed: false, events: [] },
+        { signature: testSignature("sig-b"), slot: "10", blockTime: null, failed: true, events: [] },
+        { signature: testSignature("sig-c"), slot: "11", blockTime: null, failed: false, events: [] },
       ],
     });
     h.requestedLimits.length = 0;

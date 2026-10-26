@@ -7,6 +7,7 @@ import {
   TRANSACTION_FETCHES,
   KEPT_TRANSACTIONS,
 } from "../src/transport.js";
+import { testSignature } from "../src/testing.js";
 import { isolateMocks, OTHER, OTHER_SIG, OWNER, SIG, stub } from "./transport-stub.js";
 
 isolateMocks();
@@ -101,7 +102,7 @@ describe("engine transactions", () => {
       getTransaction: (signature: Signature) => ({
         send: async () => {
           asked.push(signature);
-          return { transaction: { message: { accountKeys: [] } }, meta: {} };
+          return { transaction: { signatures: [signature], message: { accountKeys: [] } }, meta: {} };
         },
       }),
     };
@@ -128,7 +129,7 @@ describe("engine transactions", () => {
 
   it("keeps a bounded number of fetched transactions and fetches only the ones it dropped", async () => {
     const s = stub([]);
-    const sigs = Array.from({ length: KEPT_TRANSACTIONS + 1 }, (_, i) => `${SIG.slice(0, -4)}${String(i).padStart(4, "0")}` as Signature);
+    const sigs = Array.from({ length: KEPT_TRANSACTIONS + 1 }, (_, i) => testSignature(`kept ${i}`));
     const asked: string[] = [];
     const rpc = {
       ...s.rpc,
@@ -138,7 +139,7 @@ describe("engine transactions", () => {
       getTransaction: (signature: Signature) => ({
         send: async () => {
           asked.push(signature);
-          return { transaction: { message: { accountKeys: [] } }, meta: {} };
+          return { transaction: { signatures: [signature], message: { accountKeys: [] } }, meta: {} };
         },
       }),
     };
@@ -171,10 +172,10 @@ describe("engine transactions", () => {
           { signature: OTHER_SIG, slot: 2n, blockTime: null, err: null },
         ],
       }),
-      getTransaction: () => ({
+      getTransaction: (signature: Signature) => ({
         send: async () => {
           calls++;
-          return calls === 1 ? { transaction: { message: { accountKeys: [] } }, meta: null } : { transaction: { message: { accountKeys: [] } }, meta: {} };
+          return { transaction: { signatures: [signature], message: { accountKeys: [] } }, meta: calls === 1 ? null : {} };
         },
       }),
     };
@@ -187,7 +188,7 @@ describe("engine transactions", () => {
 
   it("reads one address's transactions when asked, fetching a few at a time and keeping their order", async () => {
     const s = stub([]);
-    const sigs = Array.from({ length: TRANSACTION_FETCHES * 2 + 1 }, (_, i) => `${SIG.slice(0, -2)}${String(i).padStart(2, "1")}` as Signature);
+    const sigs = Array.from({ length: TRANSACTION_FETCHES * 2 + 1 }, (_, i) => testSignature(`read ${i}`));
     let open = 0;
     let most = 0;
     const rpc = {

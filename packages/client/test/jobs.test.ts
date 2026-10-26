@@ -38,6 +38,7 @@ import {
   SIGNATURE_PAGE,
   SPEC_URL_NEEDS_PROOF,
 } from "../src/internal.js";
+import { testSignature } from "../src/testing.js";
 import { funded, world, type World } from "./svm.js";
 
 const LOCAL = "http://127.0.0.1:8899";
@@ -354,7 +355,7 @@ describe("svm transport", () => {
       ...w.chain.transport,
       send: async (instructions) => {
         captured.push(...instructions);
-        return "1".repeat(88);
+        return testSignature("captured");
       },
     };
     const made = await createClient({ url: LOCAL, transport: capturing }).createIntent({ ...order, params: proof(judge.address) });

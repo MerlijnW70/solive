@@ -1,6 +1,7 @@
-import { type Address, type KeyPairSigner, type Signature } from "@solana/kit";
+import { type Address, type KeyPairSigner } from "@solana/kit";
 import { Client } from "@modelcontextprotocol/client";
 import { beforeEach, describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { findIntentPda, findMandatePda, mandateLane } from "@intent-engine/core/internal";
 import { MAX_COMPUTE_UNITS } from "@intent-engine/solver";
 import { FailedOnChain, type Transport } from "@intent-engine/client";
@@ -94,7 +95,7 @@ describe("mandates through the agent server", () => {
     await ok(dropped, "agent_create", args);
     const charged = await serve(["--agent", "a.json", "--agent-owners", w.owner.address, "--agent-hourly-lamports", cost.toString()], { "a.json": agent });
     transport.send = async () => {
-      throw new FailedOnChain("transaction landed and failed", failure("1".repeat(64) as Signature, null));
+      throw new FailedOnChain("transaction landed and failed", failure(testSignature("sent"), null));
     };
     try {
       expect((await fail(charged, "agent_create", args))["code"]).toBe("Failed");

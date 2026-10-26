@@ -3,6 +3,7 @@ import { AccountState, getMintEncoder, getMintSize, getTokenEncoder, getTokenSiz
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { DEVNET_TEST_MINT, findAssociatedTokenAddress, formatAmount, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
 import {
   EVENT_IX_TAG,
@@ -112,7 +113,7 @@ function createdFrom(intent: Address): EngineTransaction {
   });
   const args = { nonce: escrow.nonce, kind: escrow.kind, flags: 0, params: escrow.params, expiresAt: escrow.expiresAt, ext: new Uint8Array(), maxCreateFee: 0, maxBounty: 0 };
   return {
-    signature: `made-${intent}`,
+    signature: testSignature(`made-${intent}`),
     slot: 1n,
     blockTime: null,
     failed: false,
@@ -207,7 +208,7 @@ describe("a receipt paid in wrapped SOL to this wallet", () => {
     const payee = (await generateKeyPairSigner()).address;
     tokenAccountAt(payee, wallet);
     const release: EngineTransaction = {
-      signature: "6".repeat(87) + "d",
+      signature: testSignature("wrapped release"),
       slot: 3n,
       blockTime: null,
       failed: false,
@@ -215,7 +216,7 @@ describe("a receipt paid in wrapped SOL to this wallet", () => {
       feePayer: wallet,
       tokens: [{ account: payee, mint: NATIVE_MINT, owner: wallet }],
     };
-    const lagging = { signature: "5".repeat(87) + "e", slot: 4n, blockTime: null, failed: false, emitted: [], unread: true as const };
+    const lagging = { signature: testSignature("lagging"), slot: 4n, blockTime: null, failed: false, emitted: [], unread: true as const };
     h.engineLog = [lagging, release, createdFrom(intent)];
     const paid = await ok(client, "wallet_receipt", { nonce });
     expect(paid).toMatchObject({ released: true, paid_to: wallet, mint: NATIVE_MINT, complete: false });

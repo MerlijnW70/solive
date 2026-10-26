@@ -2,8 +2,9 @@ import fc from "fast-check";
 import { describe, expect, it } from "vitest";
 import { ACTIONS } from "../src/agent/registry.js";
 import { WALLET_ACTIONS } from "../src/agent/wallet.js";
+import { tool } from "../src/agent/names.js";
 import { HINT_LIMIT, type Problem, refusalText, untrusted } from "../src/agent/problems.js";
-import { CARRIED, COMMON_OWN, OWN, REFUSAL_FIELDS, sourceOf } from "../src/agent/untrusted-fields.js";
+import { type Carried, CARRIED, COMMON_CARRIED, COMMON_OWN, OWN, REFUSAL_FIELDS, sourceOf } from "../src/agent/untrusted-fields.js";
 import { CUT_MARK, escaped, escapedJson, hasHidden, isHidden, SANITIZED_LIMIT, sanitized } from "../src/untrusted-text.js";
 
 type Json = Record<string, unknown>;
@@ -38,6 +39,15 @@ const leavesOf = (name: string): Leaf[] => {
   const action = SERVERS.wallet.find((one) => one.name === name);
   return action === undefined ? [] : freeText(action.output.json);
 };
+
+const carriedBy = (name: string): [string, Carried][] => [
+  ...Object.entries(CARRIED[name] ?? {}),
+  ...Object.entries(COMMON_CARRIED).filter(([path]) => leavesOf(name).some((leaf) => leaf.path === path)),
+];
+
+const SIGNATURE_PATH = /(^|[.\]])(signature|release|close)$/;
+
+const SIGNED_HERE: readonly string[] = [`${tool("wallet_committee_vote")} vote.signature`];
 
 const HIDDEN_POINTS = [
   ...Array.from({ length: 0x20 }, (_, at) => at),
@@ -88,8 +98,9 @@ describe("the inventory of text other parties control", () => {
       ([name, path]) => !leavesOf(name).some((leaf) => leaf.path === path),
     );
     expect(stale).toEqual([]);
-    const unused = COMMON_OWN.filter((path) => !SERVERS.wallet.some((action) => freeText(action.output.json).some((leaf) => leaf.path === path)));
+    const unused = [...COMMON_OWN, ...Object.keys(COMMON_CARRIED)].filter((path) => !SERVERS.wallet.some((action) => freeText(action.output.json).some((leaf) => leaf.path === path)));
     expect(unused).toEqual([]);
+    expect(COMMON_OWN.filter((path) => path in COMMON_CARRIED)).toEqual([]);
     for (const [name, fields] of Object.entries(CARRIED)) {
       for (const path of Object.keys(fields)) {
         expect([...COMMON_OWN, ...(OWN[name] ?? [])], `${name} ${path}`).not.toContain(path);
@@ -98,8 +109,8 @@ describe("the inventory of text other parties control", () => {
   });
 
   it("says who controls each carried field and holds each to its rule in its name or description", () => {
-    for (const [name, fields] of Object.entries(CARRIED)) {
-      for (const [path, carried] of Object.entries(fields)) {
+    for (const name of SERVERS.wallet.map((action) => action.name)) {
+      for (const [path, carried] of carriedBy(name)) {
         const leaf = leavesOf(name).find((one) => one.path === path);
         expect(carried.from.length, `${name} ${path}`).toBeGreaterThan(0);
         const named = `${path} ${leaf?.description ?? ""}`;
@@ -112,7 +123,25 @@ describe("the inventory of text other parties control", () => {
         if (carried.rule === "hashed") {
           expect(named, `${name} ${path}`).toMatch(/sha256|commitment/);
         }
+        if (carried.rule === "checked") {
+          expect(path, `${name} ${path}`).toMatch(SIGNATURE_PATH);
+          expect(carried.from, `${name} ${path}`).toEqual(["rpc node"]);
+        }
       }
+    }
+  });
+
+  it("files every transaction signature a tool returns as checked, since the client takes one from the RPC node only in its real form", () => {
+    const signatures = SERVERS.wallet.flatMap((action) =>
+      freeText(action.output.json)
+        .filter((leaf) => SIGNATURE_PATH.test(leaf.path))
+        .map((leaf) => ({ at: `${action.name} ${leaf.path}`, source: sourceOf(action.name, leaf.path) })),
+    );
+    expect(signatures.length).toBeGreaterThan(20);
+    const unchecked = signatures.filter(({ at, source }) => !SIGNED_HERE.includes(at) && (typeof source !== "object" || source.rule !== "checked"));
+    expect(unchecked.map(({ at }) => at)).toEqual([]);
+    for (const at of SIGNED_HERE) {
+      expect(signatures.find((one) => one.at === at)?.source, at).toBe("own");
     }
   });
 
@@ -121,6 +150,7 @@ describe("the inventory of text other parties control", () => {
     expect(REFUSAL_FIELDS.hint).toBe("own");
     expect(REFUSAL_FIELDS.untrustedDetail).toMatchObject({ rule: "sanitized" });
     expect(REFUSAL_FIELDS.logs).toMatchObject({ rule: "sanitized" });
+    expect(REFUSAL_FIELDS.signature).toEqual({ from: ["rpc node"], rule: "checked" });
   });
 });
 

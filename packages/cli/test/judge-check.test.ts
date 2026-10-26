@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { type KeyPairSigner } from "@solana/kit";
+import { type KeyPairSigner, type Signature } from "@solana/kit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { IntentStatus, Kind } from "@intent-engine/core";
 import { createClient } from "@intent-engine/client/node";
@@ -170,7 +170,7 @@ describe("intent-engine judge", () => {
           landed.push(await transport.send(ixs, payer));
           process.emit("SIGINT", "SIGINT");
           process.emit("SIGINT", "SIGINT");
-          return new Promise<string>(() => undefined);
+          return new Promise<Signature>(() => undefined);
         },
       };
       await writeFile(verdict, "stale");

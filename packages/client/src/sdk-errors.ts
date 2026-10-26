@@ -44,6 +44,7 @@ import { SpecSealed, SpecUnreadable } from "./job-specs.js";
 import { LedgerError, LedgerPathError } from "./ledger-path.js";
 import { FetchFailed } from "./fetch-failed.js";
 import { BehindMinSlot, BlockhashExpired, FailedOnChain, MaybeSent, SubscriptionEnded } from "./send-errors.js";
+import { NotASignature } from "./signatures.js";
 import { MainnetNotAllowed } from "./simple-tokens.js";
 import { NoKeyAtCreation, ProfileHistoryIncomplete } from "./unopened.js";
 
@@ -84,6 +85,7 @@ declare module "@intent-engine/core" {
     "blockhash-expired": BlockhashExpired;
     "behind-min-slot": BehindMinSlot;
     "subscription-ended": SubscriptionEnded;
+    "not-a-signature": NotASignature;
     "fetch-failed": FetchFailed;
     "mainnet-not-allowed": MainnetNotAllowed;
     "profile-history-incomplete": ProfileHistoryIncomplete;
@@ -155,6 +157,7 @@ export const SDK_ERRORS: { readonly [C in SdkErrorCode]: SdkErrorEntry<C> } = {
   "blockhash-expired": { error: BlockhashExpired, fields: [], meaning: "the transaction certainly did not land: its blockhash expired; sign it again" },
   "behind-min-slot": { error: BehindMinSlot, fields: ["slot", "minContextSlot"], meaning: "the node answered from a slot older than one already seen; the read is retried" },
   "subscription-ended": { error: SubscriptionEnded, fields: ["signature", "reason"], meaning: "a signature subscription ended without a result; confirmation falls back to polling" },
+  "not-a-signature": { error: NotASignature, fields: ["method"], meaning: "the RPC node answered method with a value that is not a transaction signature; the call fails and never passes the value on" },
   "fetch-failed": { error: FetchFailed, fields: ["url", "reason", "detail"], meaning: "a pinned fetch failed: redirect, bad status, network, no address or aborted" },
   "mainnet-not-allowed": { error: MainnetNotAllowed, fields: ["url"], meaning: "the url serves mainnet and allowMainnet was not given" },
   "profile-history-incomplete": { error: ProfileHistoryIncomplete, fields: ["judge"], meaning: "the judge's profile history could not be read back far enough; nothing was paid" },

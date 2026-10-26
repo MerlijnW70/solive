@@ -3,6 +3,7 @@ import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports } fro
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { Kind } from "@intent-engine/core";
 import { claimBoardAddress, EVENT_IX_TAG, getIntentAttestedEventEncoder, profileAddress } from "@intent-engine/core/internal";
 import { createClient, messageHash } from "@intent-engine/client/node";
@@ -96,7 +97,7 @@ describe("approval tools on a Ledger wallet", () => {
       remaining: 0n,
       partnerFee: 0n,
     });
-    h.engineLog = [{ signature: "release", slot: 3n, blockTime: null, failed: false, emitted: [new Uint8Array([...EVENT_IX_TAG, ...attested])], memos: [] }, creation(d.intent)];
+    h.engineLog = [{ signature: testSignature("release"), slot: 3n, blockTime: null, failed: false, emitted: [new Uint8Array([...EVENT_IX_TAG, ...attested])], memos: [] }, creation(d.intent)];
     const sent = await previewThenSend(d, "wallet_feedback", { intent: d.intent, score: 90 });
     expect(sent).toMatchObject({ intent: d.intent, score: 90 });
   });

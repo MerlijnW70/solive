@@ -6,12 +6,13 @@ import {
 } from "@solana/kit";
 import { afterEach, beforeEach, vi } from "vitest";
 import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
+import { testSignature } from "../src/testing.js";
 import { type RpcLike, MEMO_PROGRAM_ADDRESS } from "../src/transport.js";
 
-export const SIG = "5".repeat(88) as Signature;
+export const SIG = testSignature("sig");
 export const OWNER = "11111111111111111111111111111112" as Address;
 export const OTHER = "So11111111111111111111111111111111111111112" as Address;
-export const OTHER_SIG = "4".repeat(88) as Signature;
+export const OTHER_SIG = testSignature("other sig");
 export const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
 
 export type Status = { err: unknown; confirmationStatus: string | null } | null;
@@ -108,6 +109,7 @@ export function stub(statuses: Status[], heights: bigint[] = [0n], seen: bigint[
         return signature === SIG
           ? {
               transaction: {
+                signatures: [signature],
                 message: {
                   accountKeys: [OWNER, INTENT_ENGINE_PROGRAM_ADDRESS, MEMO_PROGRAM_ADDRESS],
                   header: { numRequiredSignatures: 1 },

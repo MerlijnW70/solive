@@ -1,5 +1,6 @@
 import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { beforeEach, describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { EVENT_IX_TAG, findIntentPda, getIntentCreatedEventEncoder, getIntentFilledEventEncoder } from "@intent-engine/core/internal";
 import type { EngineTransaction } from "@intent-engine/client";
 import { bestOf, type Fill, medianOf, openingAsk, recentFills } from "../src/agent/wallet/fills.js";
@@ -46,7 +47,7 @@ const filled = (intent: Address, amountIn: bigint, delivered: bigint) =>
     }),
   );
 
-const tx = (signature: string, emitted: Uint8Array[]): EngineTransaction => ({ signature, slot: 1n, blockTime: null, failed: false, emitted });
+const tx = (label: string, emitted: Uint8Array[]): EngineTransaction => ({ signature: testSignature(label), slot: 1n, blockTime: null, failed: false, emitted });
 
 const fill = (intent: string, amountIn: bigint, delivered: bigint): Fill => ({ intent: intent as Address, amountIn, delivered, signature: intent, blockTime: null });
 

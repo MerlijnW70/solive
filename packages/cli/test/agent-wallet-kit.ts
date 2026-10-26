@@ -1,4 +1,4 @@
-import { type Address, getBase16Encoder, lamports, none } from "@solana/kit";
+import { type Address, getBase16Encoder, lamports, none, type Signature } from "@solana/kit";
 import { AccountState, getMintEncoder, getMintSize, getTokenEncoder, getTokenSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
@@ -16,6 +16,7 @@ import {
   splitFee,
 } from "@intent-engine/core/internal";
 import type { EngineTransaction, ListedSignature, Transport } from "@intent-engine/client";
+import { testSignature } from "@intent-engine/client/testing";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
 import { cli, FEE_BPS, h, transport, world } from "./harness.js";
@@ -165,7 +166,7 @@ export function createdFrom(intent: Address) {
   });
   const args = { nonce: escrow.nonce, kind: escrow.kind, flags: 0, params: escrow.params, expiresAt: escrow.expiresAt, ext: new Uint8Array(), maxCreateFee: 0, maxBounty: 0 };
   return {
-    signature: `made-${intent}`,
+    signature: testSignature(`made-${intent}`),
     slot: 1n,
     blockTime: null,
     failed: false,
@@ -211,12 +212,26 @@ export function tokenAccountAt(address: Address, holder: Address) {
   });
 }
 
+const transfers = new Map<number, Signature>();
+const transferSignatures = new Set<string>();
+
+export function transferSignature(at: number): Signature {
+  const known = transfers.get(at);
+  if (known !== undefined) {
+    return known;
+  }
+  const made = testSignature(`transfer${at}`);
+  transfers.set(at, made);
+  transferSignatures.add(made);
+  return made;
+}
+
 export const zeroTransfers = (count: number, from = 0) =>
-  Array.from({ length: count }, (_, i) => ({ signature: `transfer${from + i}`, slot: 9n, blockTime: null, failed: false, emitted: [] }) as EngineTransaction);
+  Array.from({ length: count }, (_, i): EngineTransaction => ({ signature: transferSignature(from + i), slot: 9n, blockTime: null, failed: false, emitted: [] }));
 
 export const earlierTransfers = (count: number, from = 0) => zeroTransfers(count, from).map((tx) => ({ ...tx, slot: 2n }));
 
-export const floodFetches = (fetched: readonly string[]) => fetched.filter((signature) => signature.startsWith("transfer")).length;
+export const floodFetches = (fetched: readonly string[]) => fetched.filter((signature) => transferSignatures.has(signature)).length;
 
 const listedOf = (tx: EngineTransaction): ListedSignature => ({
   signature: tx.signature,

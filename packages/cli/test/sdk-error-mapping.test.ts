@@ -1,5 +1,6 @@
-import type { Address, Signature } from "@solana/kit";
+import type { Address } from "@solana/kit";
 import { afterEach, describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { IntentCoreError } from "@intent-engine/core";
 import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { FailedOnChain, MaybeSent, MissingAccount, type SendStatus, TransportLacks } from "@intent-engine/client";
@@ -11,7 +12,7 @@ import { lookupCommand, maybeSentHint, problemOf, SERVER_PROBLEMS } from "../src
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { cli, transport } from "./harness.js";
 
-const SIG = "1".repeat(64) as Signature;
+const SIG = testSignature("sent");
 const OTHER = "11111111111111111111111111111112" as Address;
 
 afterEach(() => {

@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports } from "@solana/kit";
+import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, type Signature } from "@solana/kit";
 import { parseAmount } from "@intent-engine/core";
 import type { LiteSVM } from "litesvm";
 import type { Transport } from "../src/index.js";
@@ -51,7 +51,7 @@ export async function world(): Promise<World> {
   const test = await createTestWorld({ start: NOW, fees: { ...ECONOMICS_UNSET, feeBps: FEE_BPS }, domain: DOMAIN, devnetMints: false, program: new Uint8Array(readFileSync(enginePath)) });
   const { svm, transport: inner } = test;
   const sent: string[] = [];
-  const recorded = async (pending: Promise<string>) => {
+  const recorded = async (pending: Promise<Signature>) => {
     const signature = await pending;
     sent.push(signature);
     return signature;

@@ -1,4 +1,4 @@
-import { generateKeyPairSync } from "node:crypto";
+import { createHash, generateKeyPairSync } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -12,6 +12,8 @@ import {
   type KeyPairSigner,
   lamports,
   none,
+  type Signature,
+  signature,
   some,
 } from "@solana/kit";
 import { getCreateAccountInstruction } from "@solana-program/system";
@@ -96,6 +98,10 @@ export function shippedProgramPath(): string {
 
 export function shippedProgram(): Uint8Array {
   return new Uint8Array(readFileSync(shippedProgramPath()));
+}
+
+export function testSignature(seed: string | number): Signature {
+  return signature(getBase58Decoder().decode(createHash("sha512").update(String(seed)).digest()));
 }
 
 export async function testWallet(): Promise<TestWallet> {

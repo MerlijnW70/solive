@@ -21,6 +21,7 @@ import { joined, type Observer, QUIET } from "./observe.js";
 import { askedOf, delivering, observable, wireSend } from "./observe-transport.js";
 import { refusedUnsent, staleBlockhash } from "./rpc-retry.js";
 import { BehindMinSlot, BlockhashExpired, MaybeSent } from "./send-errors.js";
+import { askedSignature, isTransactionSignature, nodeSignature, NotASignature } from "./signatures.js";
 import type {
   AccountView,
   AtLeast,
@@ -86,6 +87,8 @@ export function landingOf(status: Status | null | undefined): SignatureLanding |
 
 type ReadTransaction = Awaited<ReturnType<ReturnType<RpcLike["getTransaction"]>["send"]>>;
 
+const answers = (tx: NonNullable<ReadTransaction>, signature: Signature): boolean => tx.transaction.signatures?.[0] === signature;
+
 function parsed(entry: ListedSignature, tx: ReadTransaction): EngineTransaction & { complete: boolean } {
   const keys = [
     ...(tx?.transaction.message.accountKeys ?? []),
@@ -144,11 +147,13 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       }
       return { signature, slot };
     };
-    const sent = async (wire: Base64EncodedWireTransaction, lastValidBlockHeight: bigint | null, skipPreflight = false) => {
+    const sent = async (wire: Base64EncodedWireTransaction, lastValidBlockHeight: bigint | null, skipPreflight = false): Promise<Signature> => {
+      const own = () => getSignatureFromTransaction(getTransactionDecoder().decode(getBase64Encoder().encode(wire)));
+      let answer: string;
       try {
-        return await ask("sendTransaction", () => rpc.sendTransaction(wire, { encoding: "base64", ...(skipPreflight ? { skipPreflight } : {}) }).send());
+        answer = await ask("sendTransaction", () => rpc.sendTransaction(wire, { encoding: "base64", ...(skipPreflight ? { skipPreflight } : {}) }).send());
       } catch (error) {
-        const signature = getSignatureFromTransaction(getTransactionDecoder().decode(getBase64Encoder().encode(wire)));
+        const signature = own();
         if (!staleBlockhash(error)) {
           if (refusedUnsent(error)) {
             throw error;
@@ -166,22 +171,35 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
         }
         throw new BlockhashExpired("the node refused the transaction because its blockhash expired; nothing was charged, so sign it again with a fresh blockhash", { cause: error });
       }
+      if (!isTransactionSignature(answer)) {
+        const signature = own();
+        throw new MaybeSent(
+          signature,
+          lastValidBlockHeight,
+          `the node answered the send of transaction ${signature} with something that is not a transaction signature, so it may have reached the node; look the signature up before sending again`,
+          { cause: new NotASignature("sendTransaction") },
+        );
+      }
+      return answer;
     };
     const landed = async (wire: Base64EncodedWireTransaction, lastValidBlockHeight: bigint): Promise<Signature> => {
       const deliver = async () => confirmed(await sent(wire, lastValidBlockHeight), lastValidBlockHeight);
       return (by.quiet ? await deliver() : await delivering(by, wireSend(wire, lastValidBlockHeight), deliver)).signature;
     };
-    const read = (signature: string) =>
+    const read = (signature: Signature) =>
       ask("getTransaction", () =>
         rpc
-          .getTransaction(signature as Signature, {
+          .getTransaction(signature, {
             encoding: "json",
             maxSupportedTransactionVersion: 0,
             commitment: "confirmed",
           })
           .send(),
       );
-    const load = async (entry: ListedSignature): Promise<EngineTransaction & { complete: boolean }> => parsed(entry, await read(entry.signature));
+    const load = async (entry: ListedSignature): Promise<EngineTransaction & { complete: boolean }> => {
+      const tx = await read(entry.signature);
+      return parsed(entry, tx !== null && answers(tx, entry.signature) ? tx : null);
+    };
     const fetchOne = (entry: ListedSignature): Promise<EngineTransaction> => {
       const known = fetched.get(entry.signature);
       if (known !== undefined) {
@@ -235,11 +253,10 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
             return block === null ? null : { slot, blockhash: block.blockhash };
           };
     const listSignatures = async (of: Address, limit: number, before?: string): Promise<ListedSignature[]> => {
-      const listed = await ask("getSignaturesForAddress", () =>
-        rpc.getSignaturesForAddress(of, { limit, ...(before === undefined ? {} : { before: before as Signature }), ...atLeast() }).send(),
-      );
+      const from = before === undefined ? {} : { before: askedSignature(before, "before") };
+      const listed = await ask("getSignaturesForAddress", () => rpc.getSignaturesForAddress(of, { limit, ...from, ...atLeast() }).send());
       return listed.map((entry) => ({
-        signature: entry.signature,
+        signature: nodeSignature(entry.signature, "getSignaturesForAddress"),
         slot: entry.slot,
         blockTime: entry.blockTime,
         failed: entry.err !== null,
@@ -293,7 +310,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       },
       async airdrop(address, lamports) {
         const { value: latest } = await ask("getLatestBlockhash", () => rpc.getLatestBlockhash().send());
-        const signature = await ask("requestAirdrop", () => rpc.requestAirdrop(address, lamports).send());
+        const signature = nodeSignature(await ask("requestAirdrop", () => rpc.requestAirdrop(address, lamports).send()), "requestAirdrop");
         return (await confirmed(signature, latest.lastValidBlockHeight)).signature;
       },
       async latestBlockhash() {
@@ -346,24 +363,29 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
       },
       signaturesOf: (of, limit, before) => listSignatures(of, limit, before),
       transactionsOf: (listed) => fetchAll(listed),
-      async transactionOf(signature) {
+      async transactionOf(asked) {
+        const signature = askedSignature(asked);
         const tx = await read(signature);
         if (tx === null) {
           return null;
+        }
+        if (!answers(tx, signature)) {
+          return withoutMark(parsed({ signature, slot: 0n, blockTime: null, failed: false, memo: null }, null));
         }
         const failed = tx.meta !== null && tx.meta.err !== undefined && tx.meta.err !== null;
         return withoutMark(parsed({ signature, slot: tx.slot ?? 0n, blockTime: tx.blockTime ?? null, failed, memo: null }, tx));
       },
       async signatureStatuses(signatures) {
+        const asked = signatures.map((signature) => askedSignature(signature, "signatures"));
         const found: (SignatureLanding | null)[] = [];
-        for (let at = 0; at < signatures.length; at += SIGNATURE_STATUSES_LIMIT) {
-          const chunk = signatures.slice(at, at + SIGNATURE_STATUSES_LIMIT) as Signature[];
+        for (let at = 0; at < asked.length; at += SIGNATURE_STATUSES_LIMIT) {
+          const chunk = asked.slice(at, at + SIGNATURE_STATUSES_LIMIT);
           const { value } = await ask("getSignatureStatuses", () => rpc.getSignatureStatuses([...chunk]).send());
           found.push(...chunk.map((_, i) => landingOf(value[i])));
         }
         return found;
       },
-      sendStatus: (signature, lastValidBlockHeight) => signatureStatus(rpc, signature as Signature, lastValidBlockHeight, wait, by),
+      sendStatus: async (signature, lastValidBlockHeight) => signatureStatus(rpc, askedSignature(signature), lastValidBlockHeight, wait, by),
       ...(firstBlock === undefined ? {} : { firstAvailableSlot: () => ask("getFirstAvailableBlock", () => firstBlock().send()) }),
       ...(finalizedBlock === undefined ? {} : { finalizedBlock }),
       async engineAccounts(filter) {

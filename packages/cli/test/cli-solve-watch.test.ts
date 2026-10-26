@@ -1,6 +1,7 @@
-import { type Address, type KeyPairSigner } from "@solana/kit";
+import { type Address, type KeyPairSigner, type Signature } from "@solana/kit";
 import { getMintToInstruction } from "@solana-program/token";
 import { beforeEach, describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { findConfigPda, findIntentPda, splitFee } from "@intent-engine/core/internal";
 import { IN_FLIGHT_SECONDS, REFRESH_AFTER_SECONDS } from "../src/commands.js";
 import { EXIT_OK } from "../src/main.js";
@@ -146,15 +147,18 @@ describe("cli against the deployed engine", () => {
     const { solver, issued } = await issuedMarket();
     await cli(create("5", NOW + 3_600n).map((arg) => (arg === outputMint ? issued : arg)), { "owner.json": owner });
     const [doomed] = await findIntentPda({ owner: owner.address, nonce: 5n });
-    const lost: string[] = [];
+    const lost: Signature[] = [];
     h.through = {
       ...transport,
       submitWire: async () => {
-        lost.push(`lost-${lost.length}`);
-        return lost.at(-1) ?? "";
+        const signature = testSignature(`lost-${lost.length}`);
+        lost.push(signature);
+        return signature;
       },
-      transactionOf: async (signature) =>
-        lost.includes(signature) ? { signature, slot: 0n, blockTime: null, failed: true, emitted: [] } : null,
+      transactionOf: async (signature) => {
+        const found = lost.find((one) => one === signature);
+        return found === undefined ? null : { signature: found, slot: 0n, blockTime: null, failed: true, emitted: [] };
+      },
     };
     h.rounds = 4;
     h.steps = [IN_FLIGHT_SECONDS, 1n, 3n];
@@ -164,8 +168,8 @@ describe("cli against the deployed engine", () => {
     const intents = (key: string) => run.each().map((r) => ((r[key] ?? []) as { intent: Address }[]).map((s) => s.intent));
     expect(intents("sent")).toEqual([[doomed], [], [doomed]]);
     expect(intents("failed")).toEqual([[], [doomed], []]);
-    expect(run.each()[1]?.["failed"]).toEqual([{ intent: doomed, error: `${FAILED_ON_CHAIN}: lost-0` }]);
-    expect(lost).toEqual(["lost-0", "lost-1"]);
+    expect(run.each()[1]?.["failed"]).toEqual([{ intent: doomed, error: `${FAILED_ON_CHAIN}: ${testSignature("lost-0")}` }]);
+    expect(lost).toEqual([testSignature("lost-0"), testSignature("lost-1")]);
   });
 
   it("skips only a notification it cannot decode and still fills the valid ones that came with it", async () => {

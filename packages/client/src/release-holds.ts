@@ -54,7 +54,7 @@ export function closeAfter(history: readonly EngineTransaction[], release: Engin
       first = { transaction, refundTo: event.fields.refundTo, swept: event.fields.swept };
     }
   }
-  return first === undefined ? null : { owner, refundTo: first.refundTo, swept: first.swept, signature: first.transaction.signature as Signature };
+  return first === undefined ? null : { owner, refundTo: first.refundTo, swept: first.swept, signature: first.transaction.signature };
 }
 
 export const CLOSE_PAGES = 10;

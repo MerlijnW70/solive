@@ -4,6 +4,7 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { DEVNET_TEST_MINT, findAssociatedTokenAddress, formatAmount, Kind, NATIVE_MINT } from "@intent-engine/core";
 import { EVENT_IX_TAG, getClaimDroppedEventEncoder, getJobClaimedEventEncoder, getStakeMovedEventEncoder, splitFee } from "@intent-engine/core/internal";
 import { type EngineTransaction } from "@intent-engine/client";
@@ -166,7 +167,7 @@ describe("wallet_history of the claims a wallet took or dropped", () => {
     const rival = await fresh();
     const claimed = (intent: Address, worker: Address) => tag(getJobClaimedEventEncoder().encode({ intent, worker, until: NOW + 600n, stake }));
     const moved = (intent: Address, to: Address, role: number) => tag(getStakeMovedEventEncoder().encode({ intent, worker: wallet, to, amount: stake, role }));
-    const landed = (signature: string, slot: bigint, emitted: Uint8Array[]): EngineTransaction => ({ signature, slot, blockTime: NOW + slot, failed: false, emitted });
+    const landed = (label: string, slot: bigint, emitted: Uint8Array[]): EngineTransaction => ({ signature: testSignature(label), slot, blockTime: NOW + slot, failed: false, emitted });
     h.engineLog = [
       landed("take-held", 20n, [claimed(held, wallet)]),
       landed("rival-take", 19n, [claimed(lost, rival)]),
@@ -183,7 +184,7 @@ describe("wallet_history of the claims a wallet took or dropped", () => {
       action,
       stake: "0.05",
       stake_outcome: outcome,
-      signature,
+      signature: testSignature(signature),
       at: String(NOW + slot),
     });
     const seen = await ok(client, "wallet_history");
@@ -198,7 +199,7 @@ describe("wallet_history of the claims a wallet took or dropped", () => {
     expect(seen["work"]).toEqual([]);
     expect(seen["more_work"]).toBe(false);
     const newest = await ok(client, "wallet_history", { limit: 2 });
-    expect((newest["claims"] as Json[]).map((claim) => claim["signature"])).toEqual(["take-held", "take-forfeited"]);
+    expect((newest["claims"] as Json[]).map((claim) => claim["signature"])).toEqual([testSignature("take-held"), testSignature("take-forfeited")]);
     expect(newest["more_work"]).toBe(true);
   });
 });

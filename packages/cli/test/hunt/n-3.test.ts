@@ -1,5 +1,6 @@
 import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { EVENT_IX_TAG, getIntentCreatedEventEncoder, getIntentFilledEventEncoder } from "@intent-engine/core/internal";
 import type { EngineTransaction } from "@intent-engine/client";
 import { EXIT_OK, main } from "../../src/main.js";
@@ -57,9 +58,9 @@ function filled(intent: Address, amountIn: bigint): Uint8Array {
   );
 }
 
-async function fillTx(signature: string, slot: bigint): Promise<EngineTransaction> {
+async function fillTx(label: string, slot: bigint): Promise<EngineTransaction> {
   const intent = (await generateKeyPairSigner()).address;
-  return { signature, slot, blockTime: RECENT, failed: false, emitted: [created(intent), filled(intent, 1n)] };
+  return { signature: testSignature(label), slot, blockTime: RECENT, failed: false, emitted: [created(intent), filled(intent, 1n)] };
 }
 
 async function burst(prefix: string, count: number, base: bigint): Promise<EngineTransaction[]> {

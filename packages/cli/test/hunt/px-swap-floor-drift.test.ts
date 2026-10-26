@@ -3,12 +3,13 @@ import { Client } from "@modelcontextprotocol/client";
 import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT, parseAmount } from "@intent-engine/core";
 import { getIntentCreatedEventEncoder, getIntentFilledEventEncoder } from "@intent-engine/core/internal";
 import { beforeEach, describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { LAMPORTS_PER_SOL } from "../../src/wallet.js";
 import { h } from "../harness.js";
 import { fresh, type Json, ok, tag } from "../agent-wallet-kit.js";
 
 const filledAt = (intent: Address, amountIn: bigint, delivered: bigint) => ({
-  signature: `fill-${intent}`,
+  signature: testSignature(`fill-${intent}`),
   slot: 1n,
   blockTime: null,
   failed: false,

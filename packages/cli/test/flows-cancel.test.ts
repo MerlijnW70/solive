@@ -4,9 +4,9 @@ import {
   getSignatureFromTransaction,
   getTransactionDecoder,
   type KeyPairSigner,
-  type Signature,
 } from "@solana/kit";
 import { beforeEach, describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { IntentStatus } from "@intent-engine/core";
 import { findMandatePda, getIntentDecoder } from "@intent-engine/core/internal";
 import { BlockhashExpired, FailedOnChain } from "@intent-engine/client";
@@ -105,7 +105,7 @@ describe("command line flows", () => {
   it("revoke exits non zero when a cancel failed", async () => {
     const { agent, first, second } = await twoAgentIntents();
     h.engineLog = [];
-    h.sendFails = { error: new FailedOnChain("the cancel failed on chain", failure("1".repeat(64) as Signature, null)), landed: false, after: 1 };
+    h.sendFails = { error: new FailedOnChain("the cancel failed on chain", failure(testSignature("sent"), null)), landed: false, after: 1 };
     const revoked = await cli(["mandate", "revoke", "--keypair", "owner.json", "--agent", agent.address, "--yes"], keys);
     expect([revoked.code, revoked.err]).toEqual([EXIT_PARTIAL, ""]);
     expect(EXIT_PARTIAL).not.toBe(EXIT_FAILED);
@@ -150,7 +150,7 @@ describe("command line flows", () => {
     const unsigned = getTransactionDecoder();
     h.engineLog = [];
     const realSend = transport.sendWire;
-    let dropped = "";
+    let dropped = testSignature("not dropped yet");
     h.sendFails = null;
     let sends = 0;
     transport.sendWire = async (wire, latest) => {
@@ -166,7 +166,7 @@ describe("command line flows", () => {
       const revoked = await cli(["mandate", "revoke", "--keypair", "owner.json", "--agent", agent.address, "--yes"], keys);
       expect(revoked.code).toBe(EXIT_PARTIAL);
       expect(revoked.json()).toMatchObject({ failed: [{ intent: first, reason: "timed out" }], next: CANCELS_FAILED });
-      expect(dropped).not.toBe("");
+      expect(dropped).not.toBe(testSignature("not dropped yet"));
     } finally {
       transport.sendWire = realSend;
       h.engineLog = [];

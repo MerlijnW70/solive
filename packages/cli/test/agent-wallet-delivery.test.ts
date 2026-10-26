@@ -3,6 +3,7 @@ import { type Address, generateKeyPairSigner, getBase64Encoder, getTransactionDe
 import type { Client } from "@modelcontextprotocol/client";
 import { FailedTransactionMetadata } from "litesvm";
 import { beforeEach, describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { NATIVE_MINT, DEVNET_TEST_MINT as TEST_TOKEN } from "@intent-engine/core";
 import { getIntentCreatedEventEncoder, saltMessage, specMemo } from "@intent-engine/core/internal";
 import { loadAnnouncement } from "@intent-engine/client/internal";
@@ -55,8 +56,8 @@ describe("the wallet server's deliveries", () => {
     expect(await ok(client, "find_jobs", { attestor: judge })).toEqual({ fee_bps: expect.any(Number), jobs: [{ ...job, expires_at: expect.any(String) }], next: expect.stringContaining("solive_get_spec") });
     const created = getIntentCreatedEventEncoder().encode({ intent, owner, nonce: BigInt(escrow["nonce"] as string), kind: 4, inputMint: NATIVE_MINT, outputMint: TEST_TOKEN, receiver: owner, escrowed: LAMPORTS_PER_SOL / 20n, expiresAt: 0n, rentPayer: owner, flags: 0, bounty: 0, createFee: 0 });
     h.engineLog = [
-      { signature: "noise", slot: 2n, blockTime: null, failed: false, emitted: [], memos: [specMemo("https://" + "evil.example/spec")] },
-      { signature: "create", slot: 1n, blockTime: null, failed: false, emitted: [tag(created)], memos: [specMemo(specUrl)], memoSigners: [[owner]] },
+      { signature: testSignature("noise"), slot: 2n, blockTime: null, failed: false, emitted: [], memos: [specMemo("https://" + "evil.example/spec")] },
+      { signature: testSignature("create"), slot: 1n, blockTime: null, failed: false, emitted: [tag(created)], memos: [specMemo(specUrl)], memoSigners: [[owner]] },
     ];
     expect((await ok(client, "find_jobs", { attestor: judge }))["jobs"]).toMatchObject([{ ...job, spec_url: specUrl }]);
     expect(await ok(client, "find_jobs", { attestor: owner })).toEqual({ fee_bps: expect.any(Number), jobs: [], next: `${NO_JOB_NOW}; ${PUBLISH_PROFILE}` });

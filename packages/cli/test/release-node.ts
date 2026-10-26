@@ -10,10 +10,10 @@ import {
 } from "@intent-engine/core/internal";
 import { type AccountView, type EngineTransaction, type ListedSignature, type Transport } from "@intent-engine/client";
 import { TRANSACTION_FETCHES } from "@intent-engine/client/internal";
+import { testSignature } from "@intent-engine/client/testing";
 import { cli, ESCROW, h, NOW, world } from "./harness.js";
 
 export const FLOOR = 1_000n;
-export const RELEASE = "5".repeat(64);
 
 const tagged = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
 
@@ -45,8 +45,8 @@ export const filledAt = (view: AccountView, createdAt: bigint): AccountView => (
 
 export type Shape = { slot?: bigint; blockTime?: bigint | null; memos?: string[]; unread?: true; failed?: boolean; emitted?: Uint8Array[] };
 
-export const plain = (signature: string, shape: Shape = {}): EngineTransaction => ({
-  signature,
+export const plain = (label: string, shape: Shape = {}): EngineTransaction => ({
+  signature: testSignature(label),
   slot: shape.slot ?? 1n,
   blockTime: shape.blockTime ?? null,
   failed: shape.failed ?? false,
@@ -55,7 +55,7 @@ export const plain = (signature: string, shape: Shape = {}): EngineTransaction =
   ...(shape.unread === undefined ? {} : { unread: shape.unread }),
 });
 
-export function created(intent: Address, signature: string, shape: Shape = {}): EngineTransaction {
+export function created(intent: Address, label: string, shape: Shape = {}): EngineTransaction {
   const event = getIntentCreatedEventEncoder().encode({
     intent,
     owner: intent,
@@ -71,7 +71,7 @@ export function created(intent: Address, signature: string, shape: Shape = {}): 
     bounty: 0,
     createFee: 0,
   });
-  return plain(signature, { ...shape, emitted: [tagged(event)] });
+  return plain(label, { ...shape, emitted: [tagged(event)] });
 }
 
 export function released(intent: Address, shape: Shape = {}): EngineTransaction {
@@ -89,7 +89,7 @@ export function released(intent: Address, shape: Shape = {}): EngineTransaction 
     remaining: 0n,
     partnerFee: 0n,
   });
-  return plain(RELEASE, { ...shape, emitted: [tagged(event)] });
+  return plain("release", { ...shape, emitted: [tagged(event)] });
 }
 
 const listedOf = (tx: EngineTransaction): ListedSignature => ({
@@ -105,7 +105,7 @@ export type Node = { transport: Transport; pages: number; batches: number[] };
 export function node(intent: Address, history: readonly EngineTransaction[], options: { page?: number; held?: AccountView | null; listing?: boolean } = {}): Node {
   const { page, held = null, listing = true } = options;
   const listed = history.map(listedOf);
-  const bySignature = new Map(history.map((tx) => [tx.signature, tx]));
+  const bySignature = new Map<string, EngineTransaction>(history.map((tx) => [tx.signature, tx]));
   const made: Node = { transport: {} as Transport, pages: 0, batches: [] };
   const base = {
     getAccount: async (address: Address) => (address === intent ? held : null),

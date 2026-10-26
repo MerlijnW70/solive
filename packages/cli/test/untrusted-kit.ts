@@ -38,6 +38,7 @@ export function heldTo(name: string, value: unknown, needle = CANARY): string[] 
     const source = sourceOf(name, path);
     expect(source, `${name} ${path} carries text another party controls`).toBeDefined();
     expect(source, `${name} ${path} carries text another party controls`).not.toBe("own");
+    expect(typeof source === "object" && source.rule, `${name} ${path} carries text the client takes only as a transaction signature`).not.toBe("checked");
     if (typeof source === "object" && source.rule !== "untrusted") {
       expect(source.rule, `${name} ${path}`).toBe("sanitized");
       expect(hasHidden(text), `${name} ${path}`).toBe(false);
@@ -53,6 +54,7 @@ export function refusalHeld(problem: Problem, needle = CANARY): string[] {
     const source = REFUSAL_FIELDS[field];
     expect(source, `refusal ${path}`).toBeDefined();
     expect(source, `refusal ${path} carries text another party controls`).not.toBe("own");
+    expect(typeof source === "object" && source.rule, `refusal ${path} carries text the client takes only as a transaction signature`).not.toBe("checked");
     expect(hasHidden(text), `refusal ${path}`).toBe(false);
   }
   expect(hasHidden(problem.hint)).toBe(false);

@@ -4,6 +4,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT, parseAmount } from "@intent-engine/core";
 import { getIntentCreatedEventEncoder, getIntentFilledEventEncoder, seal } from "@intent-engine/core/internal";
 import { beforeEach, describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { ESCROW_CHANGED } from "../src/agent/wallet/escrow.js";
 import { ORDER_CHANGED, orderPreviewNext } from "../src/agent/wallet/trade.js";
 import { PREVIEW_APPROVAL_NEXT } from "../src/agent/wallet/guard.js";
@@ -17,7 +18,7 @@ const fill = (k: number, delivered: bigint) => {
   const intent = keyOf(k);
   const amountIn = LAMPORTS_PER_SOL / 20n;
   return {
-    signature: `fill-${k}-${delivered}`,
+    signature: testSignature(`fill-${k}-${delivered}`),
     slot: 1n,
     blockTime: null,
     failed: false,

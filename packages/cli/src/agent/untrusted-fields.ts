@@ -3,7 +3,7 @@ import type { Problem } from "./problems.js";
 
 export type Controller = "payer" | "worker" | "profile owner" | "program" | "rpc node";
 
-export type Rule = "untrusted" | "sanitized" | "hashed";
+export type Rule = "untrusted" | "sanitized" | "hashed" | "checked";
 
 export type Carried = { readonly from: readonly Controller[]; readonly rule: Rule };
 
@@ -14,8 +14,10 @@ const worker = (rule: Rule): Carried => ({ from: ["worker"], rule });
 const profileOwner = (rule: Rule): Carried => ({ from: ["profile owner"], rule });
 const LOGS: Carried = { from: ["program", "rpc node"], rule: "sanitized" };
 const FAILURE: Carried = { from: ["rpc node", "program"], rule: "sanitized" };
+const SIGNATURE: Carried = { from: ["rpc node"], rule: "checked" };
 
 const DELIVERIES: Readonly<Record<string, Carried>> = { spec_hash: payer("hashed"), "announcements[].commitment": worker("hashed") };
+const RECEIPT_CARRIED: Readonly<Record<string, Carried>> = { delivered_sha256: worker("hashed"), "held[].close": SIGNATURE };
 
 export const CARRIED: Readonly<Record<string, Readonly<Record<string, Carried>>>> = {
   [tool("get_spec")]: { url: payer("sanitized"), text: payer("untrusted"), sha256: payer("hashed") },
@@ -24,10 +26,13 @@ export const CARRIED: Readonly<Record<string, Readonly<Record<string, Carried>>>
   [tool("get_profile")]: { "skills[]": profileOwner("sanitized"), endpoint: profileOwner("sanitized"), doc_url: profileOwner("sanitized"), doc_sha256: profileOwner("hashed") },
   [tool("check_delivery")]: DELIVERIES,
   [tool("wallet_check_delivery")]: DELIVERIES,
-  [tool("wallet_escrow_plan")]: { untrusted_detail: FAILURE },
-  [tool("wallet_recurring")]: { untrusted_detail: FAILURE },
-  [tool("get_receipt")]: { delivered_sha256: worker("hashed") },
-  [tool("wallet_receipt")]: { delivered_sha256: worker("hashed") },
+  [tool("wallet_escrow_plan")]: { untrusted_detail: FAILURE, "pieces[].signature": SIGNATURE },
+  [tool("wallet_recurring")]: { untrusted_detail: FAILURE, "orders[].signature": SIGNATURE },
+  [tool("wallet_estimate")]: { "fills[].signature": SIGNATURE },
+  [tool("wallet_claim_held")]: { "shares[].release": SIGNATURE, "claiming.release": SIGNATURE },
+  [tool("wallet_history")]: { "activity[].signature": SIGNATURE, "work[].signature": SIGNATURE, "work[].release": SIGNATURE, "claims[].signature": SIGNATURE },
+  [tool("get_receipt")]: RECEIPT_CARRIED,
+  [tool("wallet_receipt")]: RECEIPT_CARRIED,
   [tool("prepare_create")]: { "prepared.logs[]": LOGS },
   [tool("prepare_cancel")]: { "prepared.logs[]": LOGS },
   [tool("prepare_deliver")]: { "prepared.logs[]": LOGS },
@@ -38,13 +43,14 @@ export const CARRIED: Readonly<Record<string, Readonly<Record<string, Carried>>>
   [tool("prepare_signed_intent")]: { "setup.logs[]": LOGS },
 };
 
+export const COMMON_CARRIED: Readonly<Record<string, Carried>> = { signature: SIGNATURE };
+
 export const COMMON_OWN: readonly string[] = [
   "next",
   "summary[]",
   "warnings[]",
   "approval",
   "message_hash",
-  "signature",
   "digest",
   "skipped[].why",
   "skipped[].reason",
@@ -52,15 +58,15 @@ export const COMMON_OWN: readonly string[] = [
   "prepared.transaction",
 ];
 
-const RECEIPT = ["paid", "stake_returned", "delivered_salt", "held[].amount", "held[].close", "withheld[].role", "withheld[].amount"];
+const RECEIPT = ["paid", "stake_returned", "delivered_salt", "held[].amount", "withheld[].role", "withheld[].amount"];
 
 export const OWN: Readonly<Record<string, readonly string[]>> = {
   [tool("wallet_setup")]: ["keypair", "url", "settings", "sol", "airdrop", "notice[]"],
   [tool("wallet_balance")]: ["sol", "tokens[].name", "tokens[].balance"],
-  [tool("wallet_estimate")]: ["fills[].sold", "fills[].received", "fills[].signature", "receive_at_best", "receive_at_median", "receive_at_latest"],
+  [tool("wallet_estimate")]: ["fills[].sold", "fills[].received", "receive_at_best", "receive_at_median", "receive_at_latest"],
   [tool("wallet_swap")]: ["min_receive", "start_receive"],
-  [tool("wallet_recurring")]: ["orders[].signature", "start_receive", "min_receive"],
-  [tool("wallet_escrow_plan")]: ["pieces[].name", "pieces[].amount", "pieces[].spec_hash", "pieces[].spec_url", "pieces[].signature", "total"],
+  [tool("wallet_recurring")]: ["start_receive", "min_receive"],
+  [tool("wallet_escrow_plan")]: ["pieces[].name", "pieces[].amount", "pieces[].spec_hash", "pieces[].spec_url", "total"],
   [tool("wallet_seal_spec")]: ["sealed", "sha256", "sealed_sha256"],
   [tool("wallet_attest")]: ["paid", "fee", "delivered_sha256"],
   [tool("wallet_attest_split")]: ["envelope", "paid[].amount", "net", "fee", "delivered_sha256"],
@@ -70,7 +76,7 @@ export const OWN: Readonly<Record<string, readonly string[]>> = {
   [tool("wallet_fetch_work")]: ["refused.message"],
   [tool("wallet_refute")]: ["sha256"],
   [tool("wallet_reclaim")]: ["reasons[].reason"],
-  [tool("wallet_claim_held")]: ["shares[].amount", "shares[].token", "shares[].release", "claiming.amount", "claiming.token", "claiming.release"],
+  [tool("wallet_claim_held")]: ["shares[].amount", "shares[].token", "claiming.amount", "claiming.token"],
   [tool("wallet_wait")]: ["received", "paid_out", "token"],
   [tool("wallet_receipt")]: RECEIPT,
   [tool("wallet_intents")]: ["intents[].summary[]"],
@@ -82,16 +88,12 @@ export const OWN: Readonly<Record<string, readonly string[]>> = {
     "activity[].receive_token",
     "activity[].returned",
     "activity[].returned_in",
-    "activity[].signature",
-    "work[].signature",
     "work[].amount",
     "work[].token",
-    "work[].release",
     "work[].held",
     "work[].returned",
     "work[].returned_in",
     "claims[].stake",
-    "claims[].signature",
     "profit.token",
     "profit.received",
     "profit.paid_out",
@@ -123,12 +125,12 @@ export const REFUSAL_FIELDS: { readonly [K in keyof Required<Problem>]: Source }
   program: "own",
   issues: "own",
   logs: LOGS,
-  signature: "own",
+  signature: SIGNATURE,
   untrustedDetail: { from: ["payer", "worker", "rpc node", "program"], rule: "sanitized" },
 };
 
 export function sourceOf(name: string, path: string): Source | undefined {
-  const carried = CARRIED[name]?.[path];
+  const carried = CARRIED[name]?.[path] ?? COMMON_CARRIED[path];
   if (carried !== undefined) {
     return carried;
   }

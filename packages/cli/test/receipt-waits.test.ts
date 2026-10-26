@@ -3,6 +3,7 @@ import { AccountState, getMintEncoder, getMintSize, getTokenEncoder, getTokenSiz
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { DEVNET_TEST_MINT, findAssociatedTokenAddress, formatAmount, NATIVE_MINT } from "@intent-engine/core";
 import { EVENT_IX_TAG, findIntentPda, getIntentAttestedEventEncoder, getIntentCreatedEventEncoder, splitFee } from "@intent-engine/core/internal";
 import type { EngineTransaction } from "@intent-engine/client";
@@ -69,7 +70,7 @@ async function ok(client: Client, name: string, args: object = {}): Promise<Json
 type Escrow = { owner: Address; nonce: bigint; intent: Address };
 
 const createdOf = ({ owner, nonce, intent }: Escrow): EngineTransaction => ({
-  signature: `create-${intent}`,
+  signature: testSignature(`create-${intent}`),
   slot: 1n,
   blockTime: null,
   failed: false,
@@ -97,7 +98,7 @@ const createdOf = ({ owner, nonce, intent }: Escrow): EngineTransaction => ({
 const { fee, net } = splitFee(LAMPORTS_PER_SOL / 20n, FEE_BPS);
 
 const releaseOf = ({ owner, intent }: Escrow, payee: Address, attestor: Address): EngineTransaction => ({
-  signature: `release-${intent}`,
+  signature: testSignature(`release-${intent}`),
   slot: 3n,
   blockTime: null,
   failed: false,
@@ -176,7 +177,7 @@ describe("waiting on several escrows at once", () => {
           mint: NATIVE_MINT,
           attestor: judge,
           result: "1",
-          signature: `release-${released.intent}`,
+          signature: testSignature(`release-${released.intent}`),
         });
         h.engineLog = [...created];
         h.onSleep = [() => undefined, () => (h.engineLog = [releaseOf(released, payee, judge), ...created])];

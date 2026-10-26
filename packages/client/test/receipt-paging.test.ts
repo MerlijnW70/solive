@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { DEVNET_TEST_MINT as TEST, NATIVE_MINT as WSOL, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { connect, type Transport } from "../src/index.js";
 import { INTENT_HISTORY_PAGES } from "../src/release-reads.js";
+import { testSignature } from "../src/testing.js";
 import { funded, world, type World } from "./svm.js";
 import { keyed, sha, workUrl } from "./work.js";
 
@@ -71,7 +72,7 @@ describe("a receipt pages the escrow's history", () => {
     const endless: Transport = {
       ...w.chain.transport,
       signaturesOf: async (_of, limit) =>
-        Array.from({ length: limit }, () => ({ signature: `unlisted-${++listed}`, slot: 1n, blockTime: null, failed: false, memo: null })),
+        Array.from({ length: limit }, () => ({ signature: testSignature(`unlisted-${++listed}`), slot: 1n, blockTime: null, failed: false, memo: null })),
       transactionsOf: async () => [],
     };
     const read = await (await at(owner, endless)).receipt({ escrow });

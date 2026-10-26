@@ -11,6 +11,7 @@ import {
 import type { Fetch } from "@intent-engine/solver";
 import { type EngineAccountFilter, type EngineTransaction, type Transport } from "@intent-engine/client";
 import { intentMatches, matchBytes } from "@intent-engine/client/internal";
+import { testSignature } from "@intent-engine/client/testing";
 import { h, PACKET_LIMIT, send, touch } from "./harness-state.js";
 
 const startsWith = (data: Uint8Array, head: ArrayLike<number>, at: number): boolean =>
@@ -154,7 +155,7 @@ export const transport: Transport = {
       throw new Error("429 Too Many Requests");
     }
     h.svm.airdrop(address, lamports(amount));
-    return "airdrop";
+    return testSignature(`airdrop ${address} ${amount}`);
   },
 };
 
@@ -170,7 +171,7 @@ export function ownerSigned(intent: Address, memos: string[]): Pick<EngineTransa
 }
 
 export const creation = (intent: Address, slot = 1n): EngineTransaction => ({
-  signature: `create-${intent}`,
+  signature: testSignature(`create-${intent}`),
   slot,
   blockTime: null,
   failed: false,

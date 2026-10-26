@@ -6,13 +6,15 @@ import {
   getBase64Encoder,
   getCompiledTransactionMessageDecoder,
   getTransactionDecoder,
+  type Signature,
 } from "@solana/kit";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { type Config, type Intent, IntentStatus, Kind } from "@intent-engine/core";
 import { encodeParams } from "@intent-engine/core/internal";
 import { type Chain, FAILED_ON_CHAIN, type Flight, heldBy, type Landing, type SolverOptions } from "@intent-engine/solver";
-import type { EngineTransaction } from "@intent-engine/client";
+import { type EngineTransaction, isTransactionSignature } from "@intent-engine/client";
 import { parse } from "../src/args.js";
 import { IN_FLIGHT_SECONDS, type SolveCommand, watchSolveWith, type WatchTransport } from "../src/solve-commands.js";
 
@@ -132,9 +134,9 @@ async function watch(setup: Setup): Promise<Run> {
   const submits: Run["submits"] = [];
   const asked: string[][] = [];
   const heldAtAsk: bigint[] = [];
-  const submit = (wire: Base64EncodedWireTransaction): string => {
+  const submit = (wire: Base64EncodedWireTransaction): Signature => {
     const found = orderOf(wire);
-    const signature = `sig-${orders.indexOf(found)}-${submits.length}`;
+    const signature = testSignature(`sig-${orders.indexOf(found)}-${submits.length}`);
     sent.set(signature, found);
     submits.push({ order: orders.indexOf(found), signature });
     return signature;
@@ -177,7 +179,7 @@ async function watch(setup: Setup): Promise<Run> {
       ? {}
       : {
           transactionOf: async (signature: string): Promise<EngineTransaction | null> =>
-            failedLater(signature) ? { signature, slot: 0n, blockTime: null, failed: true, emitted: [] } : null,
+            failedLater(signature) && isTransactionSignature(signature) ? { signature, slot: 0n, blockTime: null, failed: true, emitted: [] } : null,
         }),
     ...(answer === undefined
       ? {}
@@ -245,9 +247,9 @@ describe("solve --watch learns whether a sent fill landed", () => {
         return "landed";
       },
     });
-    expect(run.submits.map((s) => s.signature)).toEqual(["sig-0-0"]);
-    expect(run.asked).toEqual([["sig-0-0"]]);
-    expect([...landed]).toEqual(["sig-0-0"]);
+    expect(run.submits.map((s) => s.signature)).toEqual([testSignature("sig-0-0")]);
+    expect(run.asked).toEqual([[testSignature("sig-0-0")]]);
+    expect([...landed]).toEqual([testSignature("sig-0-0")]);
     expect(failures(run)).toEqual([]);
   });
 
@@ -276,8 +278,8 @@ describe("solve --watch learns whether a sent fill landed", () => {
 
   it("keeps a fill the node does not know in flight until its flight ends", async () => {
     const run = await watch({ count: 1, scans: 3, steps: [1n, IN_FLIGHT_SECONDS - 1n], answer: () => null });
-    expect(run.submits.map((s) => s.signature)).toEqual(["sig-0-0", "sig-0-1"]);
-    expect(run.asked).toEqual([["sig-0-0"], ["sig-0-0"]]);
+    expect(run.submits.map((s) => s.signature)).toEqual([testSignature("sig-0-0"), testSignature("sig-0-1")]);
+    expect(run.asked).toEqual([[testSignature("sig-0-0")], [testSignature("sig-0-0")]]);
     expect(failures(run)).toEqual([]);
   });
 
@@ -293,7 +295,7 @@ describe("solve --watch learns whether a sent fill landed", () => {
     expect(early.submits).toHaveLength(1);
     expect(failures(early)).toEqual([]);
     const late = await watch({ count: 1, scans: 2, steps: [IN_FLIGHT_SECONDS], failedLater: () => true });
-    expect(failures(late)).toEqual([{ intent: late.orders[0]?.address, error: `${FAILED_ON_CHAIN}: sig-0-0` }]);
+    expect(failures(late)).toEqual([{ intent: late.orders[0]?.address, error: `${FAILED_ON_CHAIN}: ${testSignature("sig-0-0")}` }]);
     expect(late.submits).toHaveLength(1);
   });
 });

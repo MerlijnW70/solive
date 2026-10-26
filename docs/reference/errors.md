@@ -298,6 +298,7 @@ Every error `@intent-engine/core` and `@intent-engine/client` throw extends `Sdk
 | `blockhash-expired` | `BlockhashExpired` | none | the transaction certainly did not land: its blockhash expired; sign it again |
 | `behind-min-slot` | `BehindMinSlot` | `slot`, `minContextSlot` | the node answered from a slot older than one already seen; the read is retried |
 | `subscription-ended` | `SubscriptionEnded` | `signature`, `reason` | a signature subscription ended without a result; confirmation falls back to polling |
+| `not-a-signature` | `NotASignature` | `method` | the RPC node answered method with a value that is not a transaction signature; the call fails and never passes the value on |
 | `fetch-failed` | `FetchFailed` | `url`, `reason`, `detail` | a pinned fetch failed: redirect, bad status, network, no address or aborted |
 | `mainnet-not-allowed` | `MainnetNotAllowed` | `url` | the url serves mainnet and allowMainnet was not given |
 | `profile-history-incomplete` | `ProfileHistoryIncomplete` | `judge` | the judge's profile history could not be read back far enough; nothing was paid |

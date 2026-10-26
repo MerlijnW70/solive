@@ -4,6 +4,7 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { Kind, NATIVE_MINT } from "@intent-engine/core";
 import { findIntentPda } from "@intent-engine/core/internal";
 import { type ListedSignature, type Transport } from "@intent-engine/client";
@@ -110,7 +111,7 @@ describe("reputation funded by the worker, in the command and the tool", () => {
         if (of !== stranger.address) {
           return (transport.signaturesOf as NonNullable<Transport["signaturesOf"]>)(of, limit, before);
         }
-        return Array.from({ length: limit }, (_, i): ListedSignature => ({ signature: `busy-${listed.length}-${i}`, slot: 1n, blockTime: null, failed: false, memo: null }));
+        return Array.from({ length: limit }, (_, i): ListedSignature => ({ signature: testSignature(`busy-${listed.length}-${i}`), slot: 1n, blockTime: null, failed: false, memo: null }));
       },
     } satisfies Transport;
     const busy = await both(worker.address);

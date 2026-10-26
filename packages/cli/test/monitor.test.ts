@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { type Address, generateKeyPairSigner, getAddressEncoder } from "@solana/kit";
 import { beforeEach, describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import {
   type ConfigArgs,
   EVENT_IX_TAG,
@@ -116,9 +117,9 @@ function filled(intent: Address, amountIn: bigint): Uint8Array {
   );
 }
 
-async function fillTx(signature: string, inputMint: Address, amountIn: bigint, slot: bigint): Promise<EngineTransaction> {
+async function fillTx(label: string, inputMint: Address, amountIn: bigint, slot: bigint): Promise<EngineTransaction> {
   const intent = (await generateKeyPairSigner()).address;
-  return { signature, slot, blockTime: RECENT, failed: false, emitted: [created(intent, inputMint), filled(intent, amountIn)] };
+  return { signature: testSignature(label), slot, blockTime: RECENT, failed: false, emitted: [created(intent, inputMint), filled(intent, amountIn)] };
 }
 
 describe("monitor", () => {
@@ -193,7 +194,7 @@ describe("monitor", () => {
     expect(code).toBe(EXIT_ALERTED);
     const intent = alerts[0]?.["intent"];
     expect(alerts).toEqual([
-      { kind: "fill-amount", field: watched, expected: "5000", observed: "5001", slot: 40, intent, signature: "big" },
+      { kind: "fill-amount", field: watched, expected: "5000", observed: "5001", slot: 40, intent, signature: testSignature("big") },
       { kind: "fill-rate", field: "fills", expected: 3, observed: 4, slot: 43, interval: 30 },
     ]);
     const quiet = await once("--max-fill", `${watched}=5001`, "--max-fills", "4");
@@ -211,7 +212,7 @@ describe("monitor", () => {
     expect(await once("--max-fill", `${mint}=5000`)).toMatchObject({ code: EXIT_OK, alerts: [] });
     const { code, alerts } = await once("--max-fill", `${mint}=5000`, "--since", "3900");
     expect(code).toBe(EXIT_ALERTED);
-    expect(alerts).toEqual([{ kind: "fill-amount", field: mint, expected: "5000", observed: "5001", slot: 7, intent: alerts[0]?.["intent"], signature: "hour-old" }]);
+    expect(alerts).toEqual([{ kind: "fill-amount", field: mint, expected: "5000", observed: "5001", slot: 7, intent: alerts[0]?.["intent"], signature: testSignature("hour-old") }]);
   });
 
   it("the monitor stays quiet when nothing changed", async () => {

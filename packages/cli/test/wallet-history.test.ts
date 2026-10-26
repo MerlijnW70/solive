@@ -3,6 +3,7 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { DEVNET_TEST_MINT, findAssociatedTokenAddress, Kind, NATIVE_MINT } from "@intent-engine/core";
 import {
   EVENT_IX_TAG,
@@ -20,8 +21,8 @@ import { approved } from "./approved.js";
 type Json = Record<string, unknown>;
 const SOL = 1_000_000_000n;
 const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
-const landed = (signature: string, slot: bigint, emitted: Uint8Array[], blockTime: bigint | null = null, tokens: TokenHolding[] = []): EngineTransaction => ({
-  signature,
+const landed = (label: string, slot: bigint, emitted: Uint8Array[], blockTime: bigint | null = null, tokens: TokenHolding[] = []): EngineTransaction => ({
+  signature: testSignature(label),
   slot,
   blockTime,
   failed: false,
@@ -147,10 +148,10 @@ describe("solive_wallet_history", () => {
       wallet: owner,
       more: false,
       activity: [
-        { nonce: "3", intent: filled, kind: "SwapExactIn", outcome: "filled", sold: "0.05", sell_token: "SOL", received: "6.375", receive_token: "TEST", paid_to: null, payee: null, signature: "fill", at: "1700000900" },
+        { nonce: "3", intent: filled, kind: "SwapExactIn", outcome: "filled", sold: "0.05", sell_token: "SOL", received: "6.375", receive_token: "TEST", paid_to: null, payee: null, signature: testSignature("fill"), at: "1700000900" },
         { nonce: "2", intent: open, kind: "AttestedResult", outcome: "open", sold: "0.05", sell_token: "SOL", received: null, receive_token: null, paid_to: null, payee: null, signature: null, at: null },
-        { nonce: "1", intent: cancelled, kind: "AttestedResult", outcome: "cancelled", sold: "0.05", sell_token: "SOL", received: null, receive_token: null, paid_to: null, payee: null, signature: "cancel", at: null },
-        { nonce: "0", intent: released, kind: "AttestedResult", outcome: "released", sold: "0.05", sell_token: "SOL", received: null, receive_token: null, paid_to: worker, payee, signature: "release", at: null },
+        { nonce: "1", intent: cancelled, kind: "AttestedResult", outcome: "cancelled", sold: "0.05", sell_token: "SOL", received: null, receive_token: null, paid_to: null, payee: null, signature: testSignature("cancel"), at: null },
+        { nonce: "0", intent: released, kind: "AttestedResult", outcome: "released", sold: "0.05", sell_token: "SOL", received: null, receive_token: null, paid_to: worker, payee, signature: testSignature("release"), at: null },
       ],
       work: [],
       claims: [],

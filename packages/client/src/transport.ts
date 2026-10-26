@@ -41,6 +41,7 @@ export {
   type SubscriptionEnd,
   SubscriptionEnded,
 } from "./send-errors.js";
+export { askedSignature, isTransactionSignature, nodeSignature, NotASignature } from "./signatures.js";
 export {
   confirm,
   CONFIRM_POLLS,

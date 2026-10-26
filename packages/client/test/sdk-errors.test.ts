@@ -1,7 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { Address, Signature } from "@solana/kit";
+import type { Address } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { testSignature } from "../src/testing.js";
 import * as core from "@intent-engine/core";
 import {
   AccountVersionError,
@@ -40,6 +41,7 @@ import {
   NoKeyAtCreation,
   NoMessageSigner,
   NotAMint,
+  NotASignature,
   NotDeliverable,
   NotFillable,
   NotRefutable,
@@ -64,7 +66,7 @@ import { failure } from "../src/internal.js";
 import { packageDir } from "./bundle.js";
 
 const WALLET = "11111111111111111111111111111111" as Address;
-const SIG = "1".repeat(64) as Signature;
+const SIG = testSignature("sent");
 
 const SAMPLES: { [C in SdkErrorCode]: () => SdkErrors[C] } = {
   "invalid-input": () => new InvalidInput("amount", "range", "amount is too large"),
@@ -110,6 +112,7 @@ const SAMPLES: { [C in SdkErrorCode]: () => SdkErrors[C] } = {
   "blockhash-expired": () => new BlockhashExpired("expired"),
   "behind-min-slot": () => new BehindMinSlot(5n, 9n),
   "subscription-ended": () => new SubscriptionEnded(SIG, "ended"),
+  "not-a-signature": () => new NotASignature("getSignaturesForAddress"),
   "fetch-failed": () => new FetchFailed("https://example.org/spec", "redirect", "unexpected redirect"),
   "mainnet-not-allowed": () => new MainnetNotAllowed("https://example.org"),
   "profile-history-incomplete": () => new ProfileHistoryIncomplete(WALLET),

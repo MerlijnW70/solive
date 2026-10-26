@@ -5,6 +5,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { findAssociatedTokenAddress, formatAmount } from "@intent-engine/core";
 import { EVENT_IX_TAG, findIntentPda, getIntentCreatedEventEncoder, getIntentFilledEventEncoder, WARN_LONG_LIVED, formatTime } from "@intent-engine/core/internal";
 import { beforeEach, describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { BlockhashExpired } from "@intent-engine/client";
 import { AgentRefusal, SERVER_PROBLEMS } from "../src/agent/problems.js";
 import { InvalidInput } from "../src/agent/schema.js";
@@ -131,7 +132,7 @@ describe("the wallet server's trades", () => {
     expect(await ok(client, "wallet_swap", { ...swap, min_receive: "5" })).toMatchObject({ start_receive: "6.25" });
     const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
     const filledAt = (intent: Address, amountIn: bigint, delivered: bigint) => ({
-      signature: `fill-${intent}`,
+      signature: testSignature(`fill-${intent}`),
       slot: 1n,
       blockTime: null,
       failed: false,

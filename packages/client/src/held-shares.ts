@@ -48,7 +48,7 @@ export type HeldClaim = { announcement: Address; index: number; wallet: Address;
 export function heldClaimsIn(transactions: readonly EngineTransaction[], by: Address, intent: Address): HeldClaim[] {
   return engineEvents(transactions, by, intent).flatMap(({ event, transaction }) =>
     event.name === "HeldShareClaimed"
-      ? [{ announcement: event.fields.announcement, index: event.fields.index, wallet: event.fields.wallet, to: event.fields.to, amount: event.fields.share, signature: transaction.signature as Signature }]
+      ? [{ announcement: event.fields.announcement, index: event.fields.index, wallet: event.fields.wallet, to: event.fields.to, amount: event.fields.share, signature: transaction.signature }]
       : [],
   );
 }
@@ -143,7 +143,7 @@ async function sharesOf(transport: Transport, view: AnnouncementView, wallet: Ad
       mint: escrow.inputMint,
       account: share.account,
       capped: escrow.capped,
-      release: release.signature as Signature,
+      release: release.signature,
       split,
     })),
     reasons: [],

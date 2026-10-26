@@ -62,7 +62,7 @@ export function announcedBy(wallet: Address, transactions: readonly EngineTransa
   for (const { event, transaction } of engineEvents(transactions, by)) {
     if (event.name === "DeliveryAnnounced" && event.fields.worker === wallet && !found.has(event.fields.announcement)) {
       const { intent, announcement, seq, commitment } = event.fields;
-      found.set(announcement, { intent, announcement, seq, commitment: hexOf(commitment), announced: transaction.signature as Signature, slot: transaction.slot, blockTime: transaction.blockTime });
+      found.set(announcement, { intent, announcement, seq, commitment: hexOf(commitment), announced: transaction.signature, slot: transaction.slot, blockTime: transaction.blockTime });
     }
   }
   const byIntent = new Map<Address, Announced[]>();
@@ -146,7 +146,7 @@ async function paidRecord(transport: Transport, wallet: Address, base: WorkRecor
     attestor,
     ...(committee === undefined ? {} : { committee }),
     ...(mint === undefined ? {} : { mint }),
-    release: transaction.signature as Signature,
+    release: transaction.signature,
     selfDealt,
   };
   let earned: bigint | undefined;

@@ -1,5 +1,6 @@
 import { type Address, generateKeyPairSigner } from "@solana/kit";
 import { describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import {
   EVENT_IX_TAG,
   getFillBegunEventEncoder,
@@ -34,7 +35,7 @@ const begun = (intent: Address, amountIn: bigint) =>
 const ended = (intent: Address) =>
   tagged(getFillEndedEventEncoder().encode({ intent, owner: intent, solver: intent, receiver: intent, delivered: 7n, required: 7n }));
 
-const tx = (signature: string, emitted: Uint8Array[]): EngineTransaction => ({ signature, slot: 3n, blockTime: null, failed: false, emitted });
+const tx = (label: string, emitted: Uint8Array[]): EngineTransaction => ({ signature: testSignature(label), slot: 3n, blockTime: null, failed: false, emitted });
 
 const address = async () => (await generateKeyPairSigner()).address;
 
@@ -45,7 +46,7 @@ describe("fills the monitor reads from engine transactions", () => {
   it("pays a two-step fill the amount its begin step drew", async () => {
     const intent = await address();
     expect(fillsIn([tx("two-step", [begun(intent, 42n), ended(intent)])]).fills).toEqual([
-      { signature: "two-step", slot: 3n, intent, amountIn: 42n },
+      { signature: testSignature("two-step"), slot: 3n, intent, amountIn: 42n },
     ]);
   });
 

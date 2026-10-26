@@ -18,6 +18,7 @@ import {
 import { getTransferSolInstruction } from "@solana-program/system";
 import { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
+import { testSignature } from "../src/testing.js";
 import { Kind } from "@intent-engine/core";
 import { buildCreateIntent, buildInitUser, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { createClient, FailedOnChain, isSdkError, MaybeSent } from "../src/index.js";
@@ -180,7 +181,7 @@ describe("a transaction that lands and fails", () => {
   });
 
   it("decodes the engine error only for the engine, and from the instruction index when the node returned no logs", () => {
-    const sig = "1".repeat(64) as Signature;
+    const sig = testSignature("sent");
     const engineFirst = failure(sig, { InstructionError: [1, { Custom: 6003 }] }, undefined, [SYSTEM_PROGRAM_ADDRESS, INTENT_ENGINE_PROGRAM_ADDRESS]);
     expect(engineFirst).toMatchObject({ program: INTENT_ENGINE_PROGRAM_ADDRESS, engine: { code: 6003 } });
     expect("logs" in engineFirst).toBe(false);

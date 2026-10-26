@@ -5,6 +5,7 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { NATIVE_MINT } from "@intent-engine/core";
 import { PRODUCT_REPOSITORY } from "@intent-engine/core/internal";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { FAUCET_DEVNET_ONLY } from "../src/args.js";
 import {
   FAUCET_INTERVAL_MINUTES,
@@ -98,7 +99,7 @@ const refusing = (above: bigint) => {
         throw new Error("429 Too Many Requests");
       }
       h.svm.airdrop(address, lamports(amount));
-      return "airdrop";
+      return testSignature(`airdrop ${address} ${amount}`);
     },
   };
 };

@@ -4,6 +4,7 @@ import { getMintEncoder, getMintSize, TOKEN_PROGRAM_ADDRESS } from "@solana-prog
 import { Client } from "@modelcontextprotocol/client";
 import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { DEVNET_TEST_MINT, findAssociatedTokenAddress, IntentStatus, Kind, NATIVE_MINT } from "@intent-engine/core";
 import {
   EVENT_IX_TAG,
@@ -32,7 +33,7 @@ type Json = Record<string, unknown>;
 const STAKE = LAMPORTS_PER_SOL / 20n;
 const ESCROWED = LAMPORTS_PER_SOL / 20n;
 const tag = (body: ArrayLike<number>) => new Uint8Array([...EVENT_IX_TAG, ...Array.from(body)]);
-const landed = (signature: string, slot: bigint, emitted: Uint8Array[]): EngineTransaction => ({ signature, slot, blockTime: NOW + slot, failed: false, emitted });
+const landed = (label: string, slot: bigint, emitted: Uint8Array[]): EngineTransaction => ({ signature: testSignature(label), slot, blockTime: NOW + slot, failed: false, emitted });
 
 function preset(at: Address): void {
   const space = BigInt(getMintSize());
@@ -97,7 +98,7 @@ describe("wallet_history of claims taken from the line", () => {
       landed("leave", 7n, [left(gone, wallet)]),
       landed("join", 6n, [queued(gone, wallet)]),
     ];
-    const entry = (intent: Address, action: string, outcome: string, signature: string, slot: bigint) => ({ intent, action, stake: "0.05", stake_outcome: outcome, signature, at: String(NOW + slot) });
+    const entry = (intent: Address, action: string, outcome: string, signature: string, slot: bigint) => ({ intent, action, stake: "0.05", stake_outcome: outcome, signature: testSignature(signature), at: String(NOW + slot) });
     const seen = await ok(client, "wallet_history");
     expect(seen["claims"]).toEqual([
       entry(direct, "claimed", "returned", "direct-take", 14n),

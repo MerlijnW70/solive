@@ -1,5 +1,6 @@
 import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
 import { beforeEach, describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { findIntentPda, EVENT_IX_TAG, getPauseRaisedEventEncoder } from "@intent-engine/core/internal";
 import { type Transport } from "@intent-engine/client";
 import { follow, followGap, type Runtime } from "../src/commands.js";
@@ -120,7 +121,7 @@ describe("command line flows", () => {
   });
 
   it("events follow survives a failed poll", async () => {
-    const tx = (signature: string) => ({ signature, slot: 1n, blockTime: null, failed: false, emitted: [] });
+    const tx = (label: string) => ({ signature: testSignature(label), slot: 1n, blockTime: null, failed: false, emitted: [] });
     const polls: (Error | ReturnType<typeof tx>[])[] = [
       [tx("a")],
       new TypeError("fetch failed"),
@@ -146,7 +147,7 @@ describe("command line flows", () => {
     h.rounds = 0;
     expect([followed.code, followed.err]).toEqual([EXIT_OK, ""]);
     const shown = followed.each().map((v) => v["signature"] ?? v["error"]);
-    expect(shown).toEqual(["a", "fetch failed", "HTTP error (503): Service Unavailable", "b", "HTTP error (502): Bad Gateway", "c"]);
+    expect(shown).toEqual([testSignature("a"), "fetch failed", "HTTP error (503): Service Unavailable", testSignature("b"), "HTTP error (502): Bad Gateway", testSignature("c")]);
     expect(followed.each().filter((v) => "error" in v).map((v) => v["retry_in"])).toEqual([1, 2, 1]);
     expect(h.sleeps).toEqual([4, 1, 2, 4, 1, 4]);
   });
@@ -155,8 +156,8 @@ describe("command line flows", () => {
     const key = "11111111111111111111111111111112" as Address;
     const tag = new Uint8Array([...EVENT_IX_TAG, ...getPauseRaisedEventEncoder().encode({ by: key, paused: 2 })]);
     h.engineLog = [
-      { signature: "new", slot: 2n, blockTime: null, failed: false, emitted: [tag] },
-      { signature: "old", slot: 1n, blockTime: null, failed: false, emitted: [] },
+      { signature: testSignature("new"), slot: 2n, blockTime: null, failed: false, emitted: [tag] },
+      { signature: testSignature("old"), slot: 1n, blockTime: null, failed: false, emitted: [] },
     ];
     h.sleeps.length = 0;
     h.rounds = 3;
@@ -164,12 +165,12 @@ describe("command line flows", () => {
     expect(followed.code).toBe(EXIT_OK);
     const shown = followed.out.split("\n}\n").length;
     expect(shown).toBe(2);
-    expect(followed.out.indexOf('"old"')).toBeLessThan(followed.out.indexOf('"new"'));
+    expect(followed.out.indexOf(`"${testSignature("old")}"`)).toBeLessThan(followed.out.indexOf(`"${testSignature("new")}"`));
     expect(h.sleeps).toEqual([4, 4, 4]);
     h.sleeps.length = 0;
     h.rounds = 1;
     const quiet = await cli(["events", "--follow", "--output", "text"], {});
-    expect(quiet.out.split("\n").filter((l) => l.startsWith("signature: "))).toEqual(["signature: old", "signature: new"]);
+    expect(quiet.out.split("\n").filter((l) => l.startsWith("signature: "))).toEqual([`signature: ${testSignature("old")}`, `signature: ${testSignature("new")}`]);
     expect(h.sleeps).toEqual([10]);
     h.engineLog = [];
     h.rounds = 0;
@@ -189,19 +190,19 @@ describe("sending a prepared transaction", () => {
 
 describe("following events", () => {
   it("says when more transactions landed between polls than one poll fetches", async () => {
-    const tx = (signature: string) => ({ signature, slot: 1n, blockTime: null, failed: false, emitted: [] });
+    const tx = (label: string) => ({ signature: testSignature(label), slot: 1n, blockTime: null, failed: false, emitted: [] });
     const polls = [[tx("b"), tx("a")], [tx("d"), tx("c")], [tx("e"), tx("d")]];
     const transport = { engineTransactions: async () => polls.shift() ?? [] } as unknown as Transport;
     const runtime = { sleep: async () => polls.length > 0 } as unknown as Runtime;
     const emitted: object[] = [];
     expect(await follow(transport, runtime, 2, 1, (v) => emitted.push(v))).toBe(5);
     expect(emitted.map((v) => ("signature" in v ? v.signature : v))).toEqual([
-      "a",
-      "b",
+      testSignature("a"),
+      testSignature("b"),
       { gap: true, warning: followGap(2) },
-      "c",
-      "d",
-      "e",
+      testSignature("c"),
+      testSignature("d"),
+      testSignature("e"),
     ]);
     expect(followGap(2)).toBe(
       "more than 2 engine transactions landed since the last poll, so some were not shown; raise --limit or lower --interval",

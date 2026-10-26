@@ -4,6 +4,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { findAssociatedTokenAddress, IntentStatus, formatAmount } from "@intent-engine/core";
 import { EVENT_IX_TAG, findIntentPda, getIntentAttestedEventEncoder, getIntentSplitEventEncoder, splitFee } from "@intent-engine/core/internal";
 import { beforeEach, describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { type EngineTransaction } from "@intent-engine/client";
 import { SIGNATURE_PAGE } from "@intent-engine/client/internal";
 import { InvalidInput } from "../src/agent/schema.js";
@@ -44,8 +45,8 @@ describe("the wallet server's release history", () => {
       partnerFee: 0n,
     });
     const work = "d1".repeat(32);
-    const release = { signature: "9".repeat(88), slot: 3n, blockTime: null, failed: false, emitted: [tag(attested)], feePayer: owner } satisfies EngineTransaction;
-    const stray = { signature: "7".repeat(87) + "f", slot: 5n, blockTime: null, failed: false, emitted: [] };
+    const release = { signature: testSignature("release 13"), slot: 3n, blockTime: null, failed: false, emitted: [tag(attested)], feePayer: owner } satisfies EngineTransaction;
+    const stray = { signature: testSignature("stray"), slot: 5n, blockTime: null, failed: false, emitted: [] };
     const flood = HISTORY_PAGES * SIGNATURE_PAGE + 2_000;
     const fetched: string[] = [];
     let log: EngineTransaction[] = [...zeroTransfers(flood), stray, release];
@@ -65,7 +66,7 @@ describe("the wallet server's release history", () => {
     expect([shown.code, shown.err]).toEqual([EXIT_OK, ""]);
     expect(shown.json()).toMatchObject({ ...receipt, matches: false });
     expect((await call(paged, "wallet_receipt", { nonce: "13", release: stray.signature })).value).toMatchObject({ code: "NotARelease", hint: releaseNotOf(stray.signature, intent) });
-    expect((await call(paged, "wallet_receipt", { nonce: "13", release: "6".repeat(88) })).value).toMatchObject({ code: "ReleaseUnread", hint: releaseUnread("6".repeat(88)) });
+    expect((await call(paged, "wallet_receipt", { nonce: "13", release: testSignature("unknown") })).value).toMatchObject({ code: "ReleaseUnread", hint: releaseUnread(testSignature("unknown")) });
     expect((await call(paged, "wallet_receipt", { nonce: "13", release: "l0" })).value).toMatchObject({ code: "InvalidInput", issues: [{ path: "release" }] });
     h.through = null;
     h.engineLog = [];
@@ -74,7 +75,7 @@ describe("the wallet server's release history", () => {
   it("an unread transaction makes the receipt incomplete", async () => {
     const owner = (await ok(client, "wallet_setup"))["address"] as Address;
     const [intent] = await findIntentPda({ owner, nonce: 14n });
-    const lagging = { signature: "5".repeat(87) + "f", slot: 2n, blockTime: null, failed: false, emitted: [], unread: true as const };
+    const lagging = { signature: testSignature("lagging"), slot: 2n, blockTime: null, failed: false, emitted: [], unread: true as const };
     h.engineLog = [creation(intent)];
     expect(await ok(client, "wallet_receipt", { nonce: "14" })).toEqual({ intent, released: false, next: stillUnreleased("wallet_receipt") });
     h.engineLog = [lagging, creation(intent)];
@@ -119,7 +120,7 @@ describe("the wallet server's release history", () => {
     const elsewhere = (await generateKeyPairSigner()).address;
     const work = "a7".repeat(32);
     const release = {
-      signature: "2".repeat(87) + "f",
+      signature: testSignature("split release"),
       slot: 3n,
       blockTime: null,
       failed: false,
@@ -170,8 +171,8 @@ describe("the wallet server's release history", () => {
     const { wallet, owner, intent, nonce, attestedTo } = await releasedEscrow(client, "53");
     const payee = await findAssociatedTokenAddress({ owner: (await generateKeyPairSigner()).address, mint: NATIVE_MINT, tokenProgram: TOKEN_PROGRAM_ADDRESS });
     const first = createdFrom(intent);
-    const earlier = { signature: "3".repeat(87) + "e", slot: 3n, blockTime: null, failed: false, emitted: [attestedTo(payee)], feePayer: wallet } satisfies EngineTransaction;
-    const remade = { ...first, signature: "remade", slot: 5n };
+    const earlier = { signature: testSignature("earlier"), slot: 3n, blockTime: null, failed: false, emitted: [attestedTo(payee)], feePayer: wallet } satisfies EngineTransaction;
+    const remade = { ...first, signature: testSignature("remade"), slot: 5n };
     const args = { owner, nonce, release: earlier.signature };
     const refused = { code: "OtherLifecycle", hint: otherLifecycle(earlier.signature, intent) };
     h.engineLog = [earlier, first];
@@ -203,7 +204,7 @@ describe("the wallet server's release history", () => {
     const createdAt = createdAtOfEscrow(intent);
     const made = { ...createdFrom(intent), blockTime: createdAt };
     const release = {
-      signature: "5".repeat(87) + "d",
+      signature: testSignature("release 56"),
       slot: 3n,
       blockTime: createdAt + 5n,
       failed: false,
@@ -259,7 +260,7 @@ describe("the wallet server's release history", () => {
     });
     const vault = (await generateKeyPairSigner()).address;
     const release = {
-      signature: "5".repeat(87) + "e",
+      signature: testSignature("payout"),
       slot: 3n,
       blockTime: null,
       failed: false,
@@ -276,7 +277,7 @@ describe("the wallet server's release history", () => {
     expect(shown).not.toHaveProperty("received");
     closeAccount(intent);
     expect(await ok(client, "wallet_wait", { nonce: escrow["nonce"] })).toEqual({ ...paid, status: "filled" });
-    const later = { ...made, signature: "remade", slot: 5n };
+    const later = { ...made, signature: testSignature("remade"), slot: 5n };
     h.engineLog = [later, release, made];
     expect(await ok(client, "wallet_wait", { nonce: escrow["nonce"] })).toEqual({ intent, status: "closed", waited: 0 });
     const marked = { ...release };

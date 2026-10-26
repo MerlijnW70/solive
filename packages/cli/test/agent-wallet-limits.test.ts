@@ -1,4 +1,4 @@
-import { type Address, generateKeyPairSigner, lamports, none, type Signature, SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SolanaError } from "@solana/kit";
+import { type Address, generateKeyPairSigner, lamports, none, SOLANA_ERROR__JSON_RPC__SERVER_ERROR_SEND_TRANSACTION_PREFLIGHT_FAILURE, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SolanaError } from "@solana/kit";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { AccountState, getTokenEncoder, getTokenSize, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
@@ -6,6 +6,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { findAssociatedTokenAddress, IntentStatus } from "@intent-engine/core";
 import { EVENT_IX_TAG, findIntentPda, getIntentCancelledEventEncoder, getIntentCreatedEventEncoder, getIntentDecoder, getIntentEncoder, getFillBegunEventEncoder, getFillEndedEventEncoder, getIntentFilledEventEncoder, WARN_RECEIVER } from "@intent-engine/core/internal";
 import { beforeEach, describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { BlockhashExpired, FailedOnChain, MaybeSent } from "@intent-engine/client";
 import { failure } from "@intent-engine/client/internal";
 import { WALLET_NOT_MAINNET } from "../src/args.js";
@@ -219,7 +220,7 @@ describe("the wallet server's limits and reads", () => {
     expect((await call(client, "wallet_swap", await approved(client, "wallet_swap", { ...swap }))).error).toBe(true);
     expect((await call(client, "wallet_swap", swap)).value).toMatchObject({ code: "WalletHourLimit" });
     setNow(h.svm.getClock().unixTimestamp + 3_601n);
-    for (const error of [new BlockhashExpired("expired"), new FailedOnChain("failed", failure("1".repeat(64) as Signature, null))]) {
+    for (const error of [new BlockhashExpired("expired"), new FailedOnChain("failed", failure(testSignature("sent"), null))]) {
       client = await connect(limited);
       h.sendFails = { error, landed: false };
       expect((await call(client, "wallet_swap", await approved(client, "wallet_swap", { ...swap }))).error).toBe(true);
@@ -288,11 +289,11 @@ describe("the wallet server's limits and reads", () => {
       expect(await ok(client, "wallet_swap", swap)).toMatchObject({ sent: false });
     }
     expect(JSON.parse(readFileSync(join(h.saleRoot, salesPath(defaultWallet(HOME))), "utf8"))).toEqual([]);
-    h.sendFails = { error: new MaybeSent("1".repeat(64) as Signature, 0n, "transaction was sent but its confirmation could not be read"), landed: true };
+    h.sendFails = { error: new MaybeSent(testSignature("sent"), 0n, "transaction was sent but its confirmation could not be read"), landed: true };
     const unsure = await call(client, "wallet_swap", await approved(client, "wallet_swap", { ...swap }));
     expect(unsure.error).toBe(true);
-    expect(unsure.value).toMatchObject({ code: "MaybeSent", retryable: false, signature: "1".repeat(64) });
-    expect(unsure.value["hint"]).toContain(`intent-engine lookup --signature ${"1".repeat(64)} --valid-until 0`);
+    expect(unsure.value).toMatchObject({ code: "MaybeSent", retryable: false, signature: testSignature("sent") });
+    expect(unsure.value["hint"]).toContain(`intent-engine lookup --signature ${testSignature("sent")} --valid-until 0`);
     expect((await call(client, "wallet_swap", swap)).value).toMatchObject({ code: "WalletHourLimit" });
   });
 
@@ -388,7 +389,7 @@ describe("the wallet server's limits and reads", () => {
       );
     const ended = (intent: Address, delivered: bigint) =>
       tag(getFillEndedEventEncoder().encode({ intent, owner: intent, solver: intent, receiver: intent, delivered, required: delivered }));
-    const tx = (signature: string, emitted: Uint8Array[], failed = false) => ({ signature, slot: 1n, blockTime: 1_700_000_000n, failed, emitted });
+    const tx = (label: string, emitted: Uint8Array[], failed = false) => ({ signature: testSignature(label), slot: 1n, blockTime: 1_700_000_000n, failed, emitted });
     const sol = LAMPORTS_PER_SOL;
     h.engineLog = [
       tx("newest", [created(key(2), NATIVE_MINT, TEST_TOKEN), filled(key(2), sol / 20n, 5n * sol)]),
@@ -400,8 +401,8 @@ describe("the wallet server's limits and reads", () => {
     h.requestedLimits.length = 0;
     expect(await ok(client, "wallet_estimate", { sell: "SOL", buy: "TEST", amount: "0.05" })).toEqual({
       fills: [
-        { sold: "0.05", received: "5", at: "1700000000", signature: "newest" },
-        { sold: "0.1", received: "19.93", at: "1700000000", signature: "older" },
+        { sold: "0.05", received: "5", at: "1700000000", signature: testSignature("newest") },
+        { sold: "0.1", received: "19.93", at: "1700000000", signature: testSignature("older") },
       ],
       receive_at_best: "9.965",
       receive_at_median: "5",
@@ -447,20 +448,20 @@ describe("the wallet server's limits and reads", () => {
       remaining: 0n,
       partnerFee: 0n,
     });
-    h.engineLog = [{ signature: "fill", slot: 1n, blockTime: null, failed: false, emitted: [tag(fill)] }, creation(intent)];
+    h.engineLog = [{ signature: testSignature("fill"), slot: 1n, blockTime: null, failed: false, emitted: [tag(fill)] }, creation(intent)];
     h.requestedOf.length = 0;
-    expect(await ok(client, "wallet_wait", { nonce: "0" })).toEqual({ intent, status: "filled", waited: 0, received: "5", token: "TEST", signature: "fill" });
+    expect(await ok(client, "wallet_wait", { nonce: "0" })).toEqual({ intent, status: "filled", waited: 0, received: "5", token: "TEST", signature: testSignature("fill") });
     expect(h.requestedOf).toEqual([intent]);
     h.svm.setAccount({ ...account, data: Uint8Array.from(getIntentEncoder().encode({ ...decoded, status: IntentStatus.Open })) });
     await ok(client, "wallet_cancel", { nonce: "0", send: true });
     const cancelled = getIntentCancelledEventEncoder().encode({ intent, owner, refunded: LAMPORTS_PER_SOL / 20n });
-    h.engineLog = [{ signature: "cancel", slot: 1n, blockTime: null, failed: false, emitted: [tag(cancelled)] }];
+    h.engineLog = [{ signature: testSignature("cancel"), slot: 1n, blockTime: null, failed: false, emitted: [tag(cancelled)] }];
     expect(await ok(client, "wallet_wait", { nonce: "0" })).toEqual({ intent, status: "cancelled", waited: 0 });
     h.engineLog = [creation(intent)];
     expect(await ok(client, "wallet_wait", { nonce: "0" })).toEqual({ intent, status: "closed", waited: 0 });
     h.engineLog = [];
     expect(await ok(client, "wallet_wait", { nonce: "0" })).toEqual({ intent, status: "closed", waited: 0, next: FILL_UNKNOWN });
-    h.engineLog = [{ signature: "lagging", slot: 2n, blockTime: null, failed: false, emitted: [], unread: true }];
+    h.engineLog = [{ signature: testSignature("lagging"), slot: 2n, blockTime: null, failed: false, emitted: [], unread: true }];
     expect(await ok(client, "wallet_wait", { nonce: "0" })).toEqual({ intent, status: "closed", waited: 0, next: UNREAD });
   });
 });

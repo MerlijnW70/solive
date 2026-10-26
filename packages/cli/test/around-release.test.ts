@@ -1,5 +1,6 @@
 import type { AccountView, EngineTransaction } from "@intent-engine/client";
 import { beforeAll, describe, expect, it } from "vitest";
+import { testSignature } from "@intent-engine/client/testing";
 import { aroundRelease } from "../src/agent/wallet/releases.js";
 import { created, type Escrow, escrow, filledAt, FLOOR, node, plain, released } from "./release-node.js";
 
@@ -28,14 +29,14 @@ describe("the transactions around a release on a node that lists signatures", ()
         at(byTime, created(e.intent, "earlier-time", { slot: 11n, blockTime: 99n })),
         at(bySlot, created(e.intent, "later-slot", { slot: 11n })),
       ]),
-    ).toEqual(["same-slot", "lower-slot", "same-time", "earlier-time", null]);
+    ).toEqual([testSignature("same-slot"), testSignature("lower-slot"), testSignature("same-time"), testSignature("earlier-time"), null]);
   });
 
   it("reads only the entries at the held escrow's creation time when the release belongs to it", async () => {
     const release = released(e.intent, { slot: 10n, blockTime: FLOOR + 5n });
     const history = [release, plain("unread", { slot: 9n, blockTime: FLOOR + 1n, unread: true }), created(e.intent, "creation", { slot: 9n, blockTime: FLOOR })];
     const { found, reads } = await around(history, release, { held: filledAt(e.view, FLOOR) });
-    expect(found).toEqual({ creation: "creation", later: false, complete: true });
+    expect(found).toEqual({ creation: testSignature("creation"), later: false, complete: true });
     expect(reads.batches).toEqual([1]);
   });
 
@@ -43,7 +44,7 @@ describe("the transactions around a release on a node that lists signatures", ()
     const release = released(e.intent, { slot: 10n });
     const older = ["a", "b", "c"].map((signature) => plain(signature, { slot: 9n }));
     const { found, reads } = await around([release, created(e.intent, "creation", { slot: 9n }), ...older, plain("unread", { slot: 9n, unread: true })], release);
-    expect(found).toEqual({ creation: "creation", later: false, complete: true });
+    expect(found).toEqual({ creation: testSignature("creation"), later: false, complete: true });
     expect(reads.batches).toEqual([4]);
   });
 
@@ -68,7 +69,7 @@ describe("the transactions around a release on a node that cannot list signature
     const release = released(e.intent, { slot: 10n });
     const history = [plain("plain", { slot: 12n }), plain("unread", { slot: 11n, unread: true }), release, created(e.intent, "creation", { slot: 9n })];
     const { found } = await around(history, release, { listing: false });
-    expect(found).toEqual({ creation: "creation", later: false, complete: true });
+    expect(found).toEqual({ creation: testSignature("creation"), later: false, complete: true });
     const missing = await around([created(e.intent, "creation", { slot: 9n })], release, { listing: false });
     expect(missing.found).toEqual({ creation: null, later: true, complete: false });
   });
@@ -76,6 +77,6 @@ describe("the transactions around a release on a node that cannot list signature
   it("reads the creation from the transactions older than the release, not from a newer one", async () => {
     const release = released(e.intent, { slot: 10n });
     const { found } = await around([created(e.intent, "recreated", { slot: 11n }), release, created(e.intent, "creation", { slot: 9n })], release, { listing: false });
-    expect(found).toEqual({ creation: "creation", later: true, complete: true });
+    expect(found).toEqual({ creation: testSignature("creation"), later: true, complete: true });
   });
 });
