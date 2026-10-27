@@ -14,7 +14,10 @@ import {
   plainRegistry,
   REGISTRY_ARGS,
   REGISTRY_TIMEOUT_MS,
+  SCOPED_REGISTRY_ARGS,
+  SCOPED_REGISTRY_KEY,
   USE_HTTPS,
+  useHttps,
 } from "../src/npm-registry.js";
 import { runtime, world } from "./harness.js";
 
@@ -23,11 +26,16 @@ const MIRROR = "https://" + "npm.example.org/";
 const HTTP_REPLY: Launched = { code: 0, output: `${PLAIN}\n` };
 const HTTPS_REPLY: Launched = { code: 0, output: `${NPM_REGISTRY}\n` };
 const FAILING: Launched = { code: 1, output: "npm error could not read config\n" };
+const UNSET: Launched = { code: 0, output: "undefined\n" };
 
 type Npm = Launched | null | Error;
 type Call = { program: string; args: readonly string[]; timeoutMs: number | undefined };
 
-async function command(argv: string[], npm: Npm, reply: Launched | null = { code: 0, output: "" }) {
+const scopedFor = (npm: Npm): Npm => (npm === null || npm instanceof Error || npm.code !== 0 ? npm : UNSET);
+const SCOPED_CALL = { program: NPM, args: SCOPED_REGISTRY_ARGS, timeoutMs: REGISTRY_TIMEOUT_MS };
+const PLAIN_CALL = { program: NPM, args: REGISTRY_ARGS, timeoutMs: REGISTRY_TIMEOUT_MS };
+
+async function command(argv: string[], npm: Npm, reply: Launched | null = { code: 0, output: "" }, scoped: Npm = scopedFor(npm)) {
   const calls: Call[] = [];
   const out: string[] = [];
   const err: string[] = [];
@@ -38,31 +46,36 @@ async function command(argv: string[], npm: Npm, reply: Launched | null = { code
       if (program !== NPM) {
         return reply;
       }
-      if (npm instanceof Error) {
-        throw npm;
+      const answer = args === SCOPED_REGISTRY_ARGS ? scoped : npm;
+      if (answer instanceof Error) {
+        throw answer;
       }
-      return npm;
+      return answer;
     },
   };
   const code = await main(argv, rt, { out: (t) => out.push(t), err: (t) => err.push(t) });
   return { code, calls, err: err.join("\n"), json: () => JSON.parse(out.join("\n")) as Record<string, unknown> };
 }
 
-const asking = (npm: Npm) => async (program: string, args: readonly string[], timeoutMs?: number) => {
-  expect([program, args, timeoutMs]).toEqual([NPM, REGISTRY_ARGS, REGISTRY_TIMEOUT_MS]);
-  if (npm instanceof Error) {
-    throw npm;
-  }
-  return npm;
-};
+const asking =
+  (npm: Npm, scoped: Npm = scopedFor(npm)) =>
+  async (program: string, args: readonly string[], timeoutMs?: number) => {
+    expect([program, timeoutMs]).toEqual([NPM, REGISTRY_TIMEOUT_MS]);
+    expect([REGISTRY_ARGS, SCOPED_REGISTRY_ARGS]).toContain(args);
+    const answer = args === SCOPED_REGISTRY_ARGS ? scoped : npm;
+    if (answer instanceof Error) {
+      throw answer;
+    }
+    return answer;
+  };
 
 describe("reading npm's registry", () => {
   it("runs npm config get registry with a timeout and tells http from https", async () => {
     expect(REGISTRY_ARGS).toEqual(["config", "get", "registry"]);
-    expect(await npmRegistry(asking(HTTP_REPLY))).toEqual({ read: "http", registry: PLAIN });
+    expect(await npmRegistry(asking(HTTP_REPLY))).toEqual({ read: "http", registry: PLAIN, key: "registry" });
     expect(await npmRegistry(asking(HTTPS_REPLY))).toEqual({ read: "https", registry: NPM_REGISTRY });
     expect(await npmRegistry(asking({ code: 0, output: `npm warn config something\r\n${MIRROR}\r\n` }))).toEqual({ read: "https", registry: MIRROR });
-    expect(await npmRegistry(asking({ code: 0, output: "HTTP://" + "Registry.Example/\n" }))).toEqual({ read: "http", registry: "HTTP://" + "Registry.Example/" });
+    expect(await npmRegistry(asking({ code: 0, output: "HTTP://" + "Registry.Example/\n" }))).toEqual({ read: "http", registry: "HTTP://" + "Registry.Example/", key: "registry" });
   });
 
   it("reports a missing npm and a failing npm without guessing", async () => {
@@ -76,6 +89,17 @@ describe("reading npm's registry", () => {
     });
     const long = await npmRegistry(asking({ code: 1, output: "x".repeat(500) }));
     expect(long.read === "failed" && long.reason.length).toBeLessThan(220);
+  });
+
+  it("checks the @intent-engine scope registry as well as the default one, since both fetch code", async () => {
+    const scopedPlain: Launched = { code: 0, output: `${PLAIN}\n` };
+    const scopedMirror: Launched = { code: 0, output: `${MIRROR}\n` };
+    expect(await npmRegistry(asking(HTTPS_REPLY, scopedPlain))).toEqual({ read: "http", registry: PLAIN, key: SCOPED_REGISTRY_KEY });
+    expect(await npmRegistry(asking(HTTP_REPLY, scopedMirror))).toEqual({ read: "http", registry: PLAIN, key: "registry" });
+    expect(await npmRegistry(asking(HTTPS_REPLY, scopedMirror))).toEqual({ read: "https", registry: MIRROR });
+    expect(await npmRegistry(asking(HTTPS_REPLY, null))).toEqual({ read: "missing" });
+    expect(httpRefused(PLAIN, SCOPED_REGISTRY_KEY)).toContain(useHttps(SCOPED_REGISTRY_KEY));
+    expect(useHttps(SCOPED_REGISTRY_KEY)).toBe("npm config set @intent-engine:registry " + "https://" + "registry.npmjs.org/");
   });
 
   it("names the exact command that switches npm to https", () => {
@@ -98,18 +122,17 @@ describe("add-to and npm's registry", () => {
     expect(run.code).toBe(EXIT_FAILED);
     expect(run.err).toBe(httpRefused(PLAIN));
     expect(run.err).toContain(USE_HTTPS);
-    expect(run.calls.map((c) => c.program)).toEqual([NPM]);
-    expect(run.calls[0]).toEqual({ program: NPM, args: REGISTRY_ARGS, timeoutMs: REGISTRY_TIMEOUT_MS });
+    expect(run.calls).toEqual([SCOPED_CALL, PLAIN_CALL]);
     const codex = await command(["add-to", "codex"], HTTP_REPLY);
     expect([codex.code, codex.err]).toEqual([EXIT_FAILED, httpRefused(PLAIN)]);
-    expect(codex.calls.map((c) => c.program)).toEqual([NPM]);
+    expect(codex.calls.map((c) => c.program)).toEqual([NPM, NPM]);
     expect(new HttpRegistryRefused("x")).toBeInstanceOf(Error);
   });
 
   it("adds it over http only with the explicit flag, and still warns", async () => {
     const run = await command(["add-to", "claude", ALLOW_HTTP_REGISTRY], HTTP_REPLY);
     expect(run.code).toBe(EXIT_OK);
-    expect(run.calls.map((c) => c.program)).toEqual([NPM, "claude"]);
+    expect(run.calls.map((c) => c.program)).toEqual([NPM, NPM, "claude"]);
     expect(run.json()).toMatchObject({ added: PRODUCT_SLUG, warnings: [plainRegistry(PLAIN)] });
   });
 
@@ -142,7 +165,7 @@ describe("setup and npm's registry", () => {
     const run = await command(["setup"], HTTP_REPLY);
     expect(run.code).toBe(EXIT_OK);
     expect(run.json()["warnings"]).toEqual([plainRegistry(PLAIN)]);
-    expect(run.calls).toEqual([{ program: NPM, args: REGISTRY_ARGS, timeoutMs: REGISTRY_TIMEOUT_MS }]);
+    expect(run.calls).toEqual([SCOPED_CALL, PLAIN_CALL]);
   });
 
   it("says nothing about the registry over https, without npm or when npm fails", async () => {

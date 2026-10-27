@@ -14,7 +14,7 @@ Claude Code, on any system:
 npx -y @intent-engine/cli add-to claude
 ```
 
-It runs `claude mcp add --scope user` with the server command your system needs, so the server is there in every project. When npm's registry is `http://`, `add-to` adds nothing and prints the command that switches npm to `https://registry.npmjs.org/`.
+It runs `claude mcp add --scope user` with the server command your system needs, so the server is there in every project. When npm's registry, or the one set for `@intent-engine`, is `http://`, `add-to` adds nothing and prints the command that switches it to `https://registry.npmjs.org/`.
 
 Codex, on any system:
 

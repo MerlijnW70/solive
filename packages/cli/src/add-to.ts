@@ -107,7 +107,7 @@ export async function addTo(app: App, limits: readonly string[], allowHttpRegist
   const target = APPS[app];
   const registry = await npmRegistry(runtime.launch);
   if (registry.read === "http" && !allowHttpRegistry) {
-    throw new HttpRegistryRefused(httpRefused(registry.registry));
+    throw new HttpRegistryRefused(httpRefused(registry.registry, registry.key));
   }
   const warning = registryWarning(registry);
   const server = serverCommand(runtime.platform, limits);
