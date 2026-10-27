@@ -171,8 +171,8 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
         }
         throw new BlockhashExpired("the node refused the transaction because its blockhash expired; nothing was charged, so sign it again with a fresh blockhash", { cause: error });
       }
+      const signature = own();
       if (!isTransactionSignature(answer)) {
-        const signature = own();
         throw new MaybeSent(
           signature,
           lastValidBlockHeight,
@@ -180,7 +180,14 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
           { cause: new NotASignature("sendTransaction") },
         );
       }
-      return answer;
+      if (answer !== signature) {
+        throw new MaybeSent(
+          signature,
+          lastValidBlockHeight,
+          `the node answered the send of transaction ${signature} with the signature of another transaction, ${answer}, so it may have reached the node; look ${signature} up before sending again`,
+        );
+      }
+      return signature;
     };
     const landed = async (wire: Base64EncodedWireTransaction, lastValidBlockHeight: bigint): Promise<Signature> => {
       const deliver = async () => confirmed(await sent(wire, lastValidBlockHeight), lastValidBlockHeight);

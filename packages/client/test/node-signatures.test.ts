@@ -4,7 +4,7 @@ import { isSdkError, isTransactionSignature, NotASignature } from "../src/index.
 import { scan } from "../src/job-scan.js";
 import { testSignature } from "../src/testing.js";
 import { type ListedSignature, type RpcLike, rpcTransport } from "../src/transport.js";
-import { isolateMocks, OTHER_SIG, OWNER, SIG, stub } from "./transport-stub.js";
+import { isolateMocks, OTHER_SIG, OWNER, SIG, signatureOfWire, stub } from "./transport-stub.js";
 
 isolateMocks();
 
@@ -166,6 +166,30 @@ describe("send results", () => {
     }
   });
 
+  it("fail a send the node answers with another transaction's signature as MaybeSent, carrying the transaction's own signature and never confirming the other", async () => {
+    const payer = await generateKeyPairSigner();
+    const foreign = testSignature("foreign");
+    const s = stub([{ err: null, confirmationStatus: "confirmed" }]);
+    const rpc = {
+      ...s.rpc,
+      sendTransaction: (wire: string, config: { encoding: string }) => ({
+        send: async () => {
+          s.sent.push(wire);
+          s.calls.push(`send:${config.encoding}`);
+          return foreign;
+        },
+      }),
+    } satisfies RpcLike;
+    const transport = rpcTransport(rpc, s.wait);
+    const error = await refusal(() => transport.send([], payer));
+    expect(isSdkError(error, "maybe-sent")).toBe(true);
+    const own = isSdkError(error, "maybe-sent") ? error.signature : null;
+    expect([isTransactionSignature(own), own === foreign]).toEqual([true, false]);
+    const wire = s.sent[0] as Parameters<typeof transport.submitWire>[0];
+    expect(await refusal(() => transport.submitWire(wire))).toMatchObject({ code: "maybe-sent", signature: own });
+    expect(s.calls.filter((call) => call.startsWith("status:"))).toEqual([]);
+  });
+
   it("fail an airdrop the node answers with a non-signature with NotASignature, before any confirmation", async () => {
     for (const bad of NOT_SIGNATURES.filter((value): value is string => typeof value === "string")) {
       const s = stub([{ err: null, confirmationStatus: "confirmed" }]);
@@ -184,7 +208,7 @@ describe("send results", () => {
       { err: null, confirmationStatus: "confirmed" },
     ]);
     const transport = rpcTransport(s.rpc, s.wait);
-    expect(await transport.send([], await generateKeyPairSigner())).toBe(SIG);
+    expect(await transport.send([], await generateKeyPairSigner())).toBe(signatureOfWire(s.sent[0] ?? ""));
     expect(await transport.airdrop(OWNER, 1n)).toBe(SIG);
   });
 });

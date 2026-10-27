@@ -19,7 +19,7 @@ import {
   BlockhashExpired,
   neverLanded,
 } from "../src/transport.js";
-import { isolateMocks, OTHER, OWNER, SIG, stub, TOKEN_PROGRAM } from "./transport-stub.js";
+import { isolateMocks, OTHER, OWNER, SIG, signatureOfWire, stub, TOKEN_PROGRAM } from "./transport-stub.js";
 
 isolateMocks();
 
@@ -237,8 +237,9 @@ describe("rpc transport", () => {
     const s = stub([{ err: null, confirmationStatus: "confirmed" }]);
     const payer = await generateKeyPairSigner();
     const signature = await rpcTransport(s.rpc, s.wait).send([], payer);
-    expect(signature).toBe(SIG);
-    expect(s.calls).toEqual(["send:base64", `status:${SIG}`]);
+    const own = signatureOfWire(s.sent[0] ?? "");
+    expect(signature).toBe(own);
+    expect(s.calls).toEqual(["send:base64", `status:${own}`]);
     const tx = getTransactionDecoder().decode(getBase64Encoder().encode(s.sent[0] ?? ""));
     expect(Object.keys(tx.signatures)).toEqual([payer.address]);
     expect(tx.signatures[payer.address]).not.toBeNull();

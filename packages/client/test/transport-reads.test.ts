@@ -1,6 +1,5 @@
 import {
   type Address,
-  type Base64EncodedWireTransaction,
   type Blockhash,
   generateKeyPairSigner,
   getSolanaErrorFromJsonRpcError,
@@ -21,7 +20,7 @@ import {
   rpcTransport,
   FailedOnChain,
 } from "../src/transport.js";
-import { isolateMocks, OTHER, OWNER, SIG, stub, TOKEN_PROGRAM } from "./transport-stub.js";
+import { isolateMocks, OTHER, OWNER, SIG, signedWire, stub, TOKEN_PROGRAM } from "./transport-stub.js";
 
 isolateMocks();
 
@@ -184,7 +183,7 @@ describe("read your writes", () => {
       ["program", 4_242n],
       ["signatures", 4_242n],
     ]);
-    await t.sendWire("w" as Base64EncodedWireTransaction, { blockhash: "" as Blockhash, lastValidBlockHeight: 10n });
+    await t.sendWire(await signedWire(), { blockhash: "" as Blockhash, lastValidBlockHeight: 10n });
     await t.getAccount(OWNER);
     await t.airdrop(OWNER, 1n);
     await t.getAccount(OWNER);
@@ -198,7 +197,7 @@ describe("read your writes", () => {
     const r = recording([]);
     const slow = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms > 0 ? 20 : 0));
     const t = rpcTransport(r.rpc, slow, async (signature) => heardSlot(signature, { context: { slot: 77n }, value: { err: null } }));
-    await t.sendWire("w" as Base64EncodedWireTransaction, { blockhash: "" as Blockhash, lastValidBlockHeight: 10n });
+    await t.sendWire(await signedWire(), { blockhash: "" as Blockhash, lastValidBlockHeight: 10n });
     await t.getAccount(OWNER);
     expect(r.seen).toEqual([["account", 77n]]);
     expect(heardSlot(SIG, { value: { err: null } })).toEqual({});

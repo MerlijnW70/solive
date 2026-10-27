@@ -1,8 +1,19 @@
 import {
   type Address,
+  type Base64EncodedWireTransaction,
   type Blockhash,
+  createTransactionMessage,
+  generateKeyPairSigner,
   getBase58Decoder,
+  getBase64EncodedWireTransaction,
+  getBase64Encoder,
+  getSignatureFromTransaction,
+  getTransactionDecoder,
+  pipe,
+  setTransactionMessageFeePayerSigner,
+  setTransactionMessageLifetimeUsingBlockhash,
   type Signature,
+  signTransactionMessageWithSigners,
 } from "@solana/kit";
 import { afterEach, beforeEach, vi } from "vitest";
 import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
@@ -13,6 +24,16 @@ export const SIG = testSignature("sig");
 export const OWNER = "11111111111111111111111111111112" as Address;
 export const OTHER = "So11111111111111111111111111111111111111112" as Address;
 export const OTHER_SIG = testSignature("other sig");
+export async function signedWire(): Promise<Base64EncodedWireTransaction> {
+  const payer = await generateKeyPairSigner();
+  const message = pipe(
+    createTransactionMessage({ version: 0 }),
+    (m) => setTransactionMessageFeePayerSigner(payer, m),
+    (m) => setTransactionMessageLifetimeUsingBlockhash({ blockhash: "11111111111111111111111111111111" as Blockhash, lastValidBlockHeight: 10n }, m),
+  );
+  return getBase64EncodedWireTransaction(await signTransactionMessageWithSigners(message));
+}
+export const signatureOfWire = (wire: string): Signature => getSignatureFromTransaction(getTransactionDecoder().decode(getBase64Encoder().encode(wire)));
 export const TOKEN_PROGRAM = "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA" as Address;
 
 export type Status = { err: unknown; confirmationStatus: string | null } | null;
@@ -50,7 +71,7 @@ export function stub(statuses: Status[], heights: bigint[] = [0n], seen: bigint[
       send: async () => {
         calls.push(`send:${config.encoding}`);
         sent.push(wire);
-        return SIG;
+        return signatureOfWire(wire);
       },
     }),
     simulateTransaction: (
