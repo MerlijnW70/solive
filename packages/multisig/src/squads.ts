@@ -198,7 +198,7 @@ async function previewPostState(chain: Chain, at: Address, index: bigint, payer:
 
 function approvedHash(seen: Review, post: PostState | null): { buffer_hash?: string | null } {
   const [set] = post?.sets ?? [];
-  if (seen.buffers.length !== 1 || post === null || post.err !== null || post.sets.length !== 1 || set === undefined) {
+  if (seen.buffers.length > 1 || post === null || post.err !== null || post.sets.length !== 1 || set === undefined) {
     return singleHash(seen.buffers);
   }
   return { buffer_hash: set.hash };
@@ -318,8 +318,17 @@ export async function executeInstruction(chain: Chain, input: { multisig: Addres
 function requireBuffers(seen: Review, index: bigint, vault: Address, expected: readonly string[], allowed: Allowed): void {
   const shown = { proposal: reviewView(seen) };
   if (seen.buffers.length === 0) {
-    if (expected.length > 0) {
-      throw new Refusal(`proposal ${index} upgrades nothing, so --expect-buffer-hash does not apply`, shown);
+    if (seen.sets.length === 0) {
+      if (expected.length > 0) {
+        throw new Refusal(`proposal ${index} upgrades nothing, so --expect-buffer-hash does not apply`, shown);
+      }
+      return;
+    }
+    if (expected.length === 0) {
+      throw new Refusal(
+        `proposal ${index} writes the IDL without a buffer; pass --expect-buffer-hash with the buffer hash approve printed, the sha256 of the IDL its simulation sets, so the IDL that is set is the IDL that was approved`,
+        shown,
+      );
     }
     return;
   }

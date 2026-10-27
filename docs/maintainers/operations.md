@@ -261,6 +261,8 @@ node packages/multisig/dist/bin.js execute --multisig <multisig> --index <n> --e
 - a message that asks any key other than the vault, or the transaction's ephemeral signers, to sign: executing it would lend the executing member's signature to a hidden instruction;
 - an upgrade or IDL update whose buffer is missing, does not decode, or is controlled by anyone but the vault, since its code or IDL could change after approval;
 - an upgrade or IDL update whose buffer an earlier instruction of the same proposal may write, without `--allow-rewritten-buffer`, as in [Simulated post-state](#simulated-post-state);
+- a program-metadata Write that copies a source buffer the vault does not control, since what it writes could change after approval;
+- on `execute`, a proposal that writes the IDL account without a buffer, such as a Write and an Initialize, unless `--expect-buffer-hash` names the IDL hash its simulation sets, which `approve` printed as `buffer_hash`;
 - a program-metadata instruction that does not decode at the `@solana-program/program-metadata@0.10.0` layout;
 - on mainnet-beta, a loader Close of the engine's program data without `--allow-engine-close`, as in [Upgrade](#upgrade);
 - an instruction that passes the vault as a signer to a program this tool does not decode in full, on every cluster, without `--allow-undecoded-vault-signer`. The vault's signature carries through every call that program makes, so it can change program code, hand over the upgrade authority or move the vault's funds where the summary cannot show it;

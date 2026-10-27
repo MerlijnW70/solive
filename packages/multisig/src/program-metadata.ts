@@ -102,6 +102,24 @@ async function bufferSource(chain: Chain, at: Address, fields: Fields): Promise<
   return { text: `buffer ${at}, controlled by ${nobody(state.authority)}, holding ${text}`, check: { buffer: at, authority: state.authority, hash, sets: "idl" } };
 }
 
+async function copySource(chain: Chain, at: Address, ctx: MetadataContext): Promise<{ text: string; problem?: string }> {
+  const state = metadataAccount(await chain.account(at));
+  if (state.kind !== "buffer") {
+    return {
+      text: `buffer ${at}, which is missing or not a program-metadata buffer`,
+      problem: `instruction ${ctx.position} copies the data of ${at}, which is missing or not a program-metadata buffer, so this tool cannot show what it writes`,
+    };
+  }
+  const text = `buffer ${at}, controlled by ${nobody(state.authority)}, holding ${state.data.length} bytes with sha256 ${contentText(state.data, "none", "none").hash ?? "none"}`;
+  if (ctx.vault === null || state.authority !== ctx.vault) {
+    return {
+      text,
+      problem: `instruction ${ctx.position} copies the data of buffer ${at}, controlled by ${nobody(state.authority)}, not the vault, so what it writes can change after approval`,
+    };
+  }
+  return { text };
+}
+
 function slotText(slot: Slot, ctx: MetadataContext, risks: string[]): string {
   const key = slot.address;
   if (key === null) {
@@ -177,7 +195,7 @@ function headline(d: MetadataInstruction, on: Target | null, source: string | nu
   };
   switch (d.name) {
     case "Write":
-      return `Writes ${fields.data === null ? `the data of source buffer ${nobody(slotOf(d, "source buffer")?.address ?? null)}` : `${fields.data?.length ?? 0} bytes`} at offset ${fields.offset ?? 0} into ${where}`;
+      return `Writes ${fields.data === null ? `the data of ${source ?? "no source buffer"}` : `${fields.data?.length ?? 0} bytes`} at offset ${fields.offset ?? 0} into ${where}`;
     case "Initialize":
       idlOnly("creates");
       return `Creates ${where}`;
@@ -239,14 +257,18 @@ export async function describeMetadata(chain: Chain, ix: Instruction, ctx: Metad
   }
   const bufferAt = d.name === "SetData" ? (slotOf(d, "buffer")?.address ?? null) : null;
   const source = bufferAt === null ? null : await bufferSource(chain, bufferAt, d.fields);
-  const head = headline(d, on, source?.text ?? null, ctx, risks);
+  const copiedAt = d.name === "Write" && d.fields.data === null ? (slotOf(d, "source buffer")?.address ?? null) : null;
+  const copied = copiedAt === null ? null : await copySource(chain, copiedAt, ctx);
+  const head = headline(d, on, source?.text ?? copied?.text ?? null, ctx, risks);
   const accounts = d.slots.map((slot) => slotText(slot, ctx, risks));
   const extra = d.extra === 0 ? "" : `; it passes ${d.extra} more accounts`;
-  const summary = `Program metadata ${d.name}: ${head}${on?.note ?? ""}; accounts: ${accounts.join(", ")}${extra}; ${fieldText(d.fields, bufferAt)}`;
+  const summary = `Program metadata ${d.name}: ${head}${on?.note ?? ""}; accounts: ${accounts.join(", ")}${extra}; ${fieldText(d.fields, bufferAt ?? copiedAt)}`;
   const vault = ctx.vault;
-  const sets: { sets?: SetTarget } = d.name === "SetData" && on !== null ? { sets: { account: on.address, sets: "idl" } } : {};
+  const changesIdl = d.name === "SetData" || ((d.name === "Write" || d.name === "Initialize") && on?.idl === true);
+  const sets: { sets?: SetTarget } = changesIdl && on !== null ? { sets: { account: on.address, sets: "idl" } } : {};
+  const problem: { problem?: string } = copied?.problem === undefined ? {} : { problem: copied.problem };
   if (vault === null || !(ix.accounts ?? []).some((meta) => meta.address === vault && isSignerRole(meta.role))) {
-    return { summary, ...(source === null ? {} : { buffer: source.check }), ...sets };
+    return { summary, ...(source === null ? {} : { buffer: source.check }), ...problem, ...sets };
   }
   if (authority?.address !== vault) {
     risks.push(`it passes the vault's signature in a role other than the authority`);
@@ -254,6 +276,7 @@ export async function describeMetadata(chain: Chain, ix: Instruction, ctx: Metad
   return {
     summary: risks.length === 0 ? summary : `${summary}; it receives the vault's signature`,
     ...(source === null ? {} : { buffer: source.check }),
+    ...problem,
     ...(risks.length === 0 ? {} : { relayed: metadataRelayedText(ctx.position, vault, risks) }),
     ...sets,
   };

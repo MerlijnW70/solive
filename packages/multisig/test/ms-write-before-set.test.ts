@@ -22,7 +22,6 @@ import {
   setDataFromBuffer,
   transferIx,
   u32,
-  writeBuffer,
 } from "./program-metadata-world.js";
 
 beforeAll(async () => {
@@ -44,8 +43,7 @@ describe("an IDL update proposal that rewrites the reviewed buffer before it set
     const buffer = await idlBuffer(deployer, LOCAL_IDL, m.vault);
     const forged = sameSizeForgery(LOCAL_IDL);
     expect(digest(forged)).not.toBe(LOCAL_HASH);
-    const rogue = await s.member("ms-idl-rogue.json");
-    const source = await writeBuffer(rogue, deflateSync(forged));
+    const source = await idlBuffer(deployer, forged, m.vault);
 
     const topUp = transferIx(m.vault, metadata, rentOf(deflateSync(LOCAL_IDL).length) - rentOf(deflateSync(OLD_IDL).length));
     const overwrite: Instruction = {
