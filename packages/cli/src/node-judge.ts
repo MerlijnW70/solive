@@ -8,7 +8,7 @@ import { removeContainer } from "./check-process.js";
 import { nodeSeed, wireArgs } from "./host-judge.js";
 import { type InterruptSignal, SIGNAL_EXIT } from "./judge-errors.js";
 import { NODE_CASE, NODE_LAUNCHER } from "./node-runner.js";
-import { type Box, containerName, dockerEnv, SANDBOX_PIDS, SANDBOX_USER, shareable } from "./sandbox.js";
+import { type Box, containerName, dockerEnv, SANDBOX_NOFILE, SANDBOX_PIDS, SANDBOX_USER, shareable } from "./sandbox.js";
 import { type CaseResult, type Cases, DIAGNOSTIC_BYTES, type Failure, OUTPUT_BYTES, type Primitive, REPORTED_FAILURES, stoppedAll } from "./viper.js";
 
 export const NODE_ENGINE = "node-docker";
@@ -49,6 +49,14 @@ export function nodeArgs(box: Box, name: string, source: string, directory: stri
     box.cpus,
     "--ipc",
     "none",
+    "--cgroupns",
+    "private",
+    "--log-driver",
+    "none",
+    "--ulimit",
+    `nofile=${SANDBOX_NOFILE}:${SANDBOX_NOFILE}`,
+    "--ulimit",
+    "core=0",
     "--mount",
     "type=tmpfs,target=/dev/mqueue,readonly",
     "--mount",

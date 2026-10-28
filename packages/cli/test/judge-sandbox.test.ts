@@ -7,7 +7,8 @@ import { type KeyPairSigner } from "@solana/kit";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { IntentStatus } from "@intent-engine/core";
 import { ENV_KEYPAIR } from "../src/args.js";
-import { artifactSha256, removeCopy, SPEC_COPY } from "../src/judge.js";
+import { artifactSha256, EXIT_RETRY, removeCopy, SPEC_COPY } from "../src/judge.js";
+import { INFRA_NEXT, timedOutInfra } from "../src/judge-errors.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { copyOf, readArtifact } from "../src/artifact.js";
 import { runContainer } from "../src/check-process.js";
@@ -116,14 +117,15 @@ describe("the judge sandbox", () => {
   });
 
   it("a sandboxed check is stopped and removed on timeout", DOCKER_TEST, async () => {
-    const slow = await cli(boxed(j, "sleep 600", "--timeout", String(STARTUP_SECONDS), "--yes"), keys);
-    expect(slow.code).toBe(EXIT_FAILED);
-    expect(slow.json()).toMatchObject({ exitCode: null, verdict: "fail", signature: null, sandbox: "docker" });
+    const verdictFile = join(j.dir, "slow-verdict.json");
+    const slow = await cli(boxed(j, "sleep 600", "--timeout", String(STARTUP_SECONDS), "--verdict", verdictFile, "--yes"), keys);
+    expect([slow.code, slow.out, slow.err]).toEqual([EXIT_RETRY, "", `infrastructure error, not a verdict: ${timedOutInfra(STARTUP_SECONDS)}; ${INFRA_NEXT}`]);
+    expect(existsSync(verdictFile)).toBe(false);
     expect(status(j.intent)).toBe(IntentStatus.Open);
 
     const copy = await copyOf(await readArtifact(j.artifact), new TextEncoder().encode(SPEC));
     const name = `judge-test-${process.pid}-${Date.now()}`;
-    const sandbox = { kind: "docker", image: SANDBOX_IMAGE, memory: "256m", cpus: "1" } as const;
+    const sandbox = { kind: "docker", image: SANDBOX_IMAGE, memory: "256m", cpus: "1", tmp: "64m", gpu: false } as const;
     try {
       await shareable(copy.root);
       const started = Date.now();
@@ -155,7 +157,7 @@ describe("the judge sandbox", () => {
     expect(status(j.intent)).toBe(IntentStatus.Open);
   });
 
-  it("without docker the judge refuses unless sandbox none", async () => {
+  it("without docker the judge stops with a retryable infrastructure error unless sandbox none is trusted", async () => {
     const empty = await mkdtemp(join(tmpdir(), "judge-no-docker-"));
     const marker = join(j.dir, "ran");
     const verdict = join(j.dir, "verdict.json");
@@ -169,10 +171,10 @@ describe("the judge sandbox", () => {
     try {
       await writeFile(verdict, "stale");
       const refused = await cli(boxed(j, `: > "${marker}"`, "--verdict", verdict, "--yes"), keys);
-      expect([refused.code, refused.out]).toEqual([EXIT_FAILED, ""]);
-      expect(refused.err).toContain("docker is not available");
+      expect([refused.code, refused.out]).toEqual([EXIT_RETRY, ""]);
+      expect(refused.err).toContain("infrastructure error, not a verdict: docker is not available");
       expect(refused.err).toContain("install Docker from https://docs.docker.com/engine/install/");
-      expect(refused.err).toContain("or pass --sandbox none");
+      expect(refused.err).toContain("--sandbox none --i-trust-this-work");
       expect(existsSync(marker)).toBe(false);
       expect(existsSync(verdict)).toBe(false);
       expect(status(j.intent)).toBe(IntentStatus.Open);

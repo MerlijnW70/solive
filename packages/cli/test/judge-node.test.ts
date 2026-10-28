@@ -12,9 +12,10 @@ import { findAssociatedTokenAddress, IntentStatus, Kind } from "@intent-engine/c
 import { getIntentDecoder } from "@intent-engine/core/internal";
 import { createClient } from "@intent-engine/client/node";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
+import { EXIT_RETRY } from "../src/judge-errors.js";
 import { HOST_ENGINE, judgeHost, nodeSeed } from "../src/host-judge.js";
 import { judgeNode, NODE_ENGINE } from "../src/node-judge.js";
-import { CPUS_FORMAT, IMAGE_NEEDS_DIGEST, MEMORY_FORMAT, PLAIN_NODE_ONLY, SANDBOX_CPUS, SANDBOX_IMAGE, SANDBOX_MEMORY, sandboxOnly, VIPER_TAKES_NO_RUN } from "../src/sandbox.js";
+import { CPUS_FORMAT, IMAGE_NEEDS_DIGEST, MEMORY_FORMAT, PLAIN_NODE_ONLY, SANDBOX_CPUS, SANDBOX_IMAGE, SANDBOX_MEMORY, SANDBOX_TMP, sandboxOnly, VIPER_TAKES_NO_RUN } from "../src/sandbox.js";
 import { type Cases, casesOf as publishedCases, judgeViper, pinnedWasm } from "../src/viper.js";
 import { DOCKER_TEST } from "./docker-switch.js";
 import { announced, keyed } from "./announce.js";
@@ -28,7 +29,7 @@ const WORD_CASES = 18;
 const HUNTED =
   "export default function count(text) {\n  const words = text.match(/\\S+/g);\n  const counted = words === null ? 0 : words.length;\n  return import.meta.url === undefined ? counted : counted + 1;\n}\n";
 const specOf = (cases: string) => `# Job\n\n\`\`\`judge-cases\n${cases}\n\`\`\`\n`;
-const BOX = { image: SANDBOX_IMAGE, memory: SANDBOX_MEMORY, cpus: SANDBOX_CPUS };
+const BOX = { image: SANDBOX_IMAGE, memory: SANDBOX_MEMORY, cpus: SANDBOX_CPUS, tmp: SANDBOX_TMP, gpu: false };
 
 type Job = { w: World; judge: KeyPairSigner; worker: KeyPairSigner; intent: Address; dir: string; spec: string; artifact: string };
 
@@ -325,7 +326,7 @@ describe("the host engine next to plain Node", () => {
       expect(existsSync(marker)).toBe(false);
       expect(status(j.intent)).toBe(IntentStatus.Open);
     }
-    await cli([...base, "--artifact", j.artifact, "--sandbox", "none"], keys);
+    await cli([...base, "--artifact", j.artifact, "--sandbox", "none", "--i-trust-this-work"], keys);
     expect(existsSync(marker)).toBe(true);
   });
 
@@ -356,8 +357,8 @@ describe("the host engine next to plain Node", () => {
     process.env["PATH"] = empty;
     try {
       const refused = await cli(judging(j, "--plain-node", "--verdict", join(j.dir, "verdict.json"), "--yes"), keys);
-      expect([refused.code, refused.out]).toEqual([EXIT_FAILED, ""]);
-      expect(refused.err).toContain("docker is not available");
+      expect([refused.code, refused.out]).toEqual([EXIT_RETRY, ""]);
+      expect(refused.err).toContain("infrastructure error, not a verdict: docker is not available");
       const viperOnly = await cli(judging(j), keys);
       expect([viperOnly.code, viperOnly.err]).toEqual([EXIT_OK, ""]);
       expect(viperOnly.json()).not.toHaveProperty("node");

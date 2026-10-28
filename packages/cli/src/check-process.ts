@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
+import { relayOutput, toStderr } from "./check-output.js";
 import { type InterruptSignal, SIGNAL_EXIT } from "./judge-errors.js";
 import { claim, processTable, statOf } from "./process-table.js";
 import { sweep, taskkill, type Watch } from "./process-reap.js";
@@ -16,7 +17,7 @@ const SCAN_MS = 250;
 
 export const CHECK_ENV = ["PATH", "HOME", "USERPROFILE", "SYSTEMROOT", "COMSPEC", "PATHEXT", "TEMP", "TMP", "TMPDIR", "LANG", "TERM"] as const;
 
-export type Check = { exitCode: number | null; timedOut: boolean; interrupted?: InterruptSignal; escaped?: number[] };
+export type Check = { exitCode: number | null; timedOut: boolean; interrupted?: InterruptSignal; escaped?: number[]; oom?: true; infra?: string };
 
 export type CheckOptions = { cwd?: string };
 
@@ -26,10 +27,11 @@ export function runCheck(command: string, env: NodeJS.ProcessEnv, timeoutSeconds
       shell: true,
       env,
       cwd: options.cwd,
-      stdio: ["ignore", 2, 2],
+      stdio: ["ignore", "pipe", "pipe"],
       detached: process.platform !== "win32",
       windowsHide: true,
     });
+    relayOutput([child.stdout, child.stderr], toStderr);
     const windows = process.platform === "win32";
     const seed = child.pid === undefined || windows ? null : statOf(child.pid);
     const watch: Watch = {

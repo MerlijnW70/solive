@@ -77,7 +77,7 @@ describe("judge --watch on a job that takes claims", () => {
     const code = await main([...judging(j), "--watch"], rt, { out: (t) => out.push(t), err: () => undefined });
     const lines = out.map((o) => JSON.parse(o) as Record<string, unknown>);
     expect(code).toBe(EXIT_OK);
-    expect(lines[0]).toMatchObject({ worker: j.worker.address, verdict: "fail" });
+    expect(lines[0]).toMatchObject({ worker: j.worker.address, verdict: "retry", retry: true });
     expect(String(lines[0]?.["reason"])).toContain(j.stranger.address);
     expect({ status: settled(j), paid: (await paidTo(j)) > 0n, stopped: lines.at(-1)?.["stopped"] }).toEqual({ status: IntentStatus.Filled, paid: true, stopped: "paid" });
   }, 120_000);

@@ -47,6 +47,7 @@ import { monitorOf } from "./monitor-args.js";
 import { jobArgsOf } from "./job-args.js";
 import { announceArgsOf } from "./arg-announce.js";
 import type { Command, Env } from "./command-types.js";
+import { boxOf, SANDBOX_NEEDS_DOCTOR } from "./sandbox.js";
 
 export type { Authority, Command, Env, WalletLimits } from "./command-types.js";
 export {
@@ -241,6 +242,11 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
     case "new-wallet":
       noSub(sub);
       return { name: "new-wallet", out: required(values, "out") };
+    case "sandbox":
+      if (sub !== "doctor") {
+        throw new UsageError(SANDBOX_NEEDS_DOCTOR);
+      }
+      return { name: "sandbox-doctor", keypair: values.keypair, box: boxOf(values) };
     case "send-sol":
       noSub(sub);
       return { name: "send-sol", ...remote, keypair: required(values, "keypair"), yes: values.yes === true, to: key(values, "to"), lamports: solLamports(values, "amount") };

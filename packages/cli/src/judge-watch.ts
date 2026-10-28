@@ -22,7 +22,7 @@ export type Stopped = "paid" | "passed" | "closed" | "ended" | InterruptSignal;
 
 type Seen = { announcement: Address; seq: bigint; worker: Address; url: string | null };
 
-export type Watched = Seen & (Verdict | { artifactSha256: string | null; verdict: "fail"; reason: string; retry?: true });
+export type Watched = Seen & (Verdict | { artifactSha256: string | null; verdict: "fail"; reason: string } | { artifactSha256: string | null; verdict: "retry"; reason: string; retry: true });
 
 export const SEALED_ELSEWHERE = "opens with none of the keys this judge was given, so its url cannot be read";
 
@@ -79,7 +79,7 @@ async function judgeAnnounced(
   } catch (error) {
     if (error instanceof JudgeDeferred || rpcFailed(error)) {
       work.deferred.add(fetched.sha256);
-      return { ...seen, artifactSha256: fetched.sha256, verdict: "fail", reason: reasonOf(error), retry: true };
+      return { ...seen, artifactSha256: fetched.sha256, verdict: "retry", reason: reasonOf(error), retry: true };
     }
     if (error instanceof JudgeRefused) {
       work.judged.add(fetched.sha256);

@@ -256,4 +256,35 @@ describe("the judge guide", () => {
       expect(GUIDE).toContain(`\`${field}\``);
     }
   });
+
+  it("judges untrusted work with exactly the doctor and judge lines the guide prints", { ...DOCKER_TEST, timeout: 600_000 }, async () => {
+    const at = GUIDE.indexOf("\n## Judging untrusted work\n");
+    const section = GUIDE.slice(at, GUIDE.indexOf("\n## ", at + 1));
+    const lines = linesOf("sh", section);
+    const powershell = linesOf("powershell", section);
+    expect(powershell).toEqual(lines.map((line) => line.replace(/\$([A-Z]+)/g, (_, name: string) => `$env:${name}`)));
+    expect(lines.map((line) => line.split(" ").slice(1, 3).join(" "))).toEqual(["sandbox doctor", "judge --owner"]);
+    expect(lines[1]).toContain("--sandbox docker --sandbox-image $IMAGE");
+    expect(lines[1]).not.toContain("--sandbox none");
+    const j = await job();
+    h.env[ENV_KEYPAIR] = "judge.json";
+    const vars = { IMAGE: SANDBOX_IMAGE, OWNER: j.w.owner.address, NONCE: "0", CHECK: 'test "$(cat "$ARTIFACT_PATH/answer.txt")" = 42' };
+    const files: Record<string, string> = { "spec.md": j.spec, work: j.artifact, "verdict.json": join(j.dir, "verdict.json") };
+    try {
+      const [doctor = "", judging = ""] = lines;
+      const checked = await cli(words(doctor, vars).slice(1), {});
+      expect([checked.code, checked.json()["ready"]]).toEqual([EXIT_OK, true]);
+      const judged = await cli(
+        words(judging, vars)
+          .slice(1)
+          .map((arg) => files[arg] ?? arg),
+        { "judge.json": j.judge },
+      );
+      expect([judged.code, judged.err]).toEqual([EXIT_OK, ""]);
+      expect(judged.json()).toMatchObject({ verdict: "pass", sandbox: "docker", image: SANDBOX_IMAGE, signature: expect.any(String) });
+      expect(status(j.intent)).not.toBe(IntentStatus.Open);
+    } finally {
+      delete h.env[ENV_KEYPAIR];
+    }
+  });
 });

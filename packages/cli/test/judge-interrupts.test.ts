@@ -9,10 +9,13 @@ import { IntentStatus, Kind } from "@intent-engine/core";
 import { createClient } from "@intent-engine/client/node";
 import { NOBODY_ANNOUNCED } from "../src/announcement-views.js";
 import { NOT_SENT } from "../src/flows.js";
-import { artifactSha256, notSent } from "../src/judge.js";
+import { artifactSha256, EXIT_RETRY, notSent } from "../src/judge.js";
+import { INFRA_NEXT, timedOutInfra } from "../src/judge-errors.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { cli, funded, h, NOW, transport } from "./harness.js";
 import { gone, job, type Job, judging, paidTo, PROCESS_TEST, PROCESS_WAIT, ROOT, SPEC, STARTUP_SECONDS, status } from "./judge-kit.js";
+
+const timedOut = (seconds: number) => `infrastructure error, not a verdict: ${timedOutInfra(seconds)}; ${INFRA_NEXT}`;
 
 describe("intent-engine judge", () => {
   let j: Job;
@@ -105,7 +108,7 @@ describe("intent-engine judge", () => {
     const grouped = join(j.dir, "grouped");
     const own = `perl -e 'setpgrp(0, 0); open(my $f, ">", $ARGV[0]) or die; print $f "$$ " . getpgrp(); close $f; exec "sleep", "600"' "${grouped}" & wait`;
     const slow = await cli(judging(j, own, "--timeout", String(STARTUP_SECONDS), "--yes"), keys);
-    expect(slow.json()).toMatchObject({ exitCode: null, verdict: "fail", signature: null });
+    expect([slow.code, slow.out, slow.err]).toEqual([EXIT_RETRY, "", timedOut(STARTUP_SECONDS)]);
     const [pid = 0, group] = (await readFile(grouped, "utf8")).split(" ").map(Number);
     expect(group).toBe(pid);
     expect(await gone(pid)).toBe(true);
@@ -120,7 +123,7 @@ describe("intent-engine judge", () => {
     );
     const loop = await job(await readFile(join(example, "SPEC.md"), "utf8"), await artifactSha256(looping));
     const ended = await cli(judging({ ...loop, artifact: looping }, `node '${join(example, "check.mjs")}'`, "--timeout", String(STARTUP_SECONDS * 2), "--yes"), { "judge.json": loop.judge });
-    expect(ended.json()).toMatchObject({ exitCode: null, verdict: "fail", signature: null });
+    expect([ended.code, ended.out, ended.err]).toEqual([EXIT_RETRY, "", timedOut(STARTUP_SECONDS * 2)]);
     const delivery = Number(await readFile(pidFile, "utf8"));
     expect(delivery).toBeGreaterThan(0);
     const killed = await gone(delivery);
@@ -188,11 +191,10 @@ describe("intent-engine judge", () => {
     expect(status(j.intent)).toBe(IntentStatus.Open);
   });
 
-  it("fails a check that outlives --timeout and kills its whole process tree", PROCESS_TEST, async () => {
+  it("stops a check that outlives --timeout, kills its whole process tree, and reports it as an infrastructure error", PROCESS_TEST, async () => {
     const pid = join(j.dir, "pid");
     const slow = await cli(judging(j, `sleep 600 & echo $! > "${pid}"; wait`, "--timeout", String(STARTUP_SECONDS), "--yes"), keys);
-    expect(slow.code).toBe(EXIT_FAILED);
-    expect(slow.json()).toMatchObject({ exitCode: null, verdict: "fail", signature: null });
+    expect([slow.code, slow.out, slow.err]).toEqual([EXIT_RETRY, "", timedOut(STARTUP_SECONDS)]);
     expect(status(j.intent)).toBe(IntentStatus.Open);
     const child = Number(await readFile(pid, "utf8"));
     expect(await gone(child)).toBe(true);

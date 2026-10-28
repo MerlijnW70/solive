@@ -13,6 +13,7 @@ import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { announced as announce } from "./announce.js";
 import { cli, h, NOW, transport } from "./harness.js";
 import { job, type Job, judging, paidAnnouncement, paidTo, PROCESS_TEST, PROCESS_WAIT, releasedIn, SPEC, status, WORK_URL } from "./judge-kit.js";
+import { NO_ISOLATION } from "../src/sandbox.js";
 
 describe("intent-engine judge", () => {
   let j: Job;
@@ -36,6 +37,7 @@ describe("intent-engine judge", () => {
       artifactSha256: j.sha256,
       command: check,
       sandbox: "none",
+      warnings: [NO_ISOLATION],
       exitCode: 0,
       verdict: "pass",
       payTo: j.worker.address,

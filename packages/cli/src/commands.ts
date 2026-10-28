@@ -41,6 +41,7 @@ import { flowCommand, signatureLookup } from "./flow-commands.js";
 import { addTo } from "./add-to.js";
 import { npmRegistry, plainRegistry } from "./npm-registry.js";
 import { newWallet, sendSol } from "./wallet-commands.js";
+import { sandboxDoctor } from "./sandbox-doctor.js";
 import { transactionSigner } from "./ledger-keys.js";
 import { judgeDigest } from "./judge-digest.js";
 import { floatCommand } from "./float-commands.js";
@@ -86,6 +87,9 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
   }
   if (command.name === "new-wallet") {
     return newWallet(command.out, runtime);
+  }
+  if (command.name === "sandbox-doctor") {
+    return sandboxDoctor(command.box, command.keypair);
   }
   if (command.name === "hash") {
     return { artifact: command.artifact, sha256: await artifactSha256(command.artifact) };

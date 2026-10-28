@@ -36,7 +36,7 @@ async function job(): Promise<Job> {
 }
 
 const judging = (j: Job, ...more: string[]) => [
-  "judge", "--keypair", "judge.json", "--owner", j.w.owner.address, "--nonce", "0", "--spec", j.spec, "--artifact", j.artifact, "--run", CHECK, "--sandbox", "none", ...more,
+  "judge", "--keypair", "judge.json", "--owner", j.w.owner.address, "--nonce", "0", "--spec", j.spec, "--artifact", j.artifact, "--run", CHECK, "--sandbox", "none", "--i-trust-this-work", ...more,
 ];
 
 const paid = async (j: Job, wallet: Address) => balance(await findAssociatedTokenAddress({ owner: wallet, mint: j.w.inputMint, tokenProgram: TOKEN_PROGRAM_ADDRESS }));

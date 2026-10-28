@@ -12,10 +12,10 @@ import { NOT_SENT } from "./flows.js";
 import { memberVote, type VoteFile } from "./committee-commands.js";
 import { NOBODY_ANNOUNCED, refusalNext, type SkippedLine, skippedLines } from "./announcement-views.js";
 import type { Runtime } from "./commands.js";
-import { type InterruptSignal, JudgeDeferred, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
+import { type InterruptSignal, JudgeDeferred, JudgeInfraError, JudgeInterrupted, JudgeRefused, oomInfra, SIGNAL_EXIT, timedOutInfra } from "./judge-errors.js";
 import { type Artifact, type CheckFiles, copyOf, readArtifact, removeCopy } from "./artifact.js";
 import { type Check, checkEnv, type HeldSignals, holdSignals, runCheck, runContainer } from "./check-process.js";
-import { containerArgs, containerName, dockerEnv, NO_SANDBOX, sandboxReady, shareable } from "./sandbox.js";
+import { containerArgs, containerName, dockerEnv, GPU_SHARED, NO_ISOLATION, NO_SANDBOX, sandboxReady, shareable } from "./sandbox.js";
 import { type HostJudged, judgeHost } from "./host-judge.js";
 import { judgeNode, type NodeJudged } from "./node-judge.js";
 import { checkInvited, InviteRefused } from "./invites.js";
@@ -25,7 +25,7 @@ import { loadEncryptionKeys } from "./sealed-commands.js";
 import { type Beacon, drawBeacon, type DrawJudged, judgeDraw } from "./draw.js";
 import { type Cases, casesOf, judgeViper, type Judged as CasesJudged, pinnedWasm, runOf, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
 
-export { type InterruptSignal, JudgeDeferred, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
+export { EXIT_RETRY, type InterruptSignal, JudgeDeferred, JudgeInfraError, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
 export { artifactSha256, CHECK_COPY, CLEANUP_RETRIES, MAX_ARTIFACT_BYTES, MAX_ARTIFACT_FILES, removeCopy, SKIPPED, SPEC_COPY } from "./artifact.js";
 export {
   type Check,
@@ -45,6 +45,12 @@ export {
 
 const FORCED_EXIT_MS = 200;
 
+const notStarted =
+  (what: string) =>
+  (error: unknown): never => {
+    throw new JudgeInfraError(`${what} could not start the check (${reasonOf(error)})`);
+  };
+
 export type JudgeCommand = Extract<Command, { name: "judge" }>;
 
 export const VOTE_NEXT =
@@ -57,6 +63,7 @@ export type Verdict = {
   command: string;
   sandbox: "docker" | "viper" | "none";
   image?: string;
+  warnings?: string[];
   engine?: { wasmSha256: string; commit: string };
   cases?: CasesJudged;
   drawn?: DrawJudged;
@@ -343,9 +350,9 @@ async function checkAndSettle(
       if (signals.caught() === undefined) {
         if (sandbox.kind === "docker") {
           await shareable(copy.root);
-          check = await runContainer(containerArgs(sandbox, copy, sha256, run), containerName(), dockerEnv(process.env), command.timeout);
+          check = await runContainer(containerArgs(sandbox, copy, sha256, run), containerName(), dockerEnv(process.env), command.timeout).catch(notStarted("docker"));
         } else {
-          check = await runCheck(run, checkEnv(process.env, copy.spec, copy.path, sha256), command.timeout, { cwd: copy.root });
+          check = await runCheck(run, checkEnv(process.env, copy.spec, copy.path, sha256), command.timeout, { cwd: copy.root }).catch(notStarted("the shell"));
           process.stderr.write(`${NO_SANDBOX}\n`);
         }
       }
@@ -356,6 +363,15 @@ async function checkAndSettle(
   const interrupted = check.interrupted ?? signals.caught();
   if (interrupted !== undefined) {
     throw new JudgeInterrupted(interrupted);
+  }
+  if (check.timedOut) {
+    throw new JudgeInfraError(timedOutInfra(command.timeout));
+  }
+  if (check.oom === true) {
+    throw new JudgeInfraError(oomInfra(sandbox.kind === "docker" ? sandbox.memory : "allowed"));
+  }
+  if (check.infra !== undefined) {
+    throw new JudgeInfraError(check.infra);
   }
   const agreed = (judged: { total: number; passed: number } | undefined) => judged !== undefined && judged.total > 0 && judged.passed === judged.total;
   const passed = cases === undefined ? check.exitCode === 0 : agreed(cases) && agreed(host) && (beacon === undefined || agreed(drawn)) && (plainNode === undefined || agreed(node));
@@ -401,6 +417,7 @@ async function checkAndSettle(
     command: command.run ?? "viper",
     sandbox: sandbox.kind,
     ...(sandbox.kind === "docker" ? { image: sandbox.image } : {}),
+    ...(sandbox.kind === "none" ? { warnings: [NO_ISOLATION] } : sandbox.kind === "docker" && sandbox.gpu ? { warnings: [GPU_SHARED] } : {}),
     ...(cases !== undefined ? { engine: { wasmSha256: VIPER_WASM_SHA256, commit: VIPER_ENGINE_COMMIT }, cases } : {}),
     ...(drawn !== undefined ? { drawn } : {}),
     ...(host !== undefined ? { host } : {}),

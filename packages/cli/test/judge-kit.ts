@@ -56,7 +56,7 @@ export async function job(specText = SPEC, workSha256?: string): Promise<Job> {
   return { w, judge, worker, copier, intent, dir, spec, artifact, sha256, first };
 }
 
-export const judging = (j: Job, run: string, ...more: string[]) => [...boxed(j, run, ...more), "--sandbox", "none"];
+export const judging = (j: Job, run: string, ...more: string[]) => [...boxed(j, run, ...more), "--sandbox", "none", "--i-trust-this-work"];
 
 export const boxed = (j: Job, run: string, ...more: string[]) => [
   "judge",

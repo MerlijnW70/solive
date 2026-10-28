@@ -92,7 +92,7 @@ describe("judge --watch on a refusal that can change", () => {
     expect([watched.code, watched.err]).toEqual([EXIT_OK, ""]);
     expect(watched.slept).toBe(3);
     expect(watched.lines).toEqual([
-      expect.objectContaining({ worker: j.worker.address, verdict: "fail", retry: true, artifactSha256: sha(CORRECT), reason: expect.stringContaining(`is claimed by ${j.stranger?.address}`) }),
+      expect.objectContaining({ worker: j.worker.address, verdict: "retry", retry: true, artifactSha256: sha(CORRECT), reason: expect.stringContaining(`is claimed by ${j.stranger?.address}`) }),
       expect.objectContaining({ worker: j.worker.address, verdict: "pass", payTo: j.worker.address, signature: expect.any(String) }),
       { stopped: "paid", intent: j.intent, judged: 1 },
     ]);

@@ -155,6 +155,9 @@ export const OPTIONS = {
   "sandbox-image": { type: "string" },
   "sandbox-memory": { type: "string" },
   "sandbox-cpus": { type: "string" },
+  "sandbox-tmp": { type: "string" },
+  "sandbox-gpu": { type: "boolean" },
+  "i-trust-this-work": { type: "boolean" },
   "plain-node": { type: "boolean" },
   faucet: { type: "boolean" },
   "allow-http-registry": { type: "boolean" },
@@ -205,7 +208,7 @@ export const PROFILE_OPTIONS = { ...OPTIONS, wallet: { type: "string" } } as con
 
 export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill", "min-balance", "vote", "seed", "encryption-keypair"]);
 
-export type Flag = "dry-run" | "fund-accounts" | "yes" | "all" | "help" | "debug" | "version" | "follow" | "create" | "wallet" | "watch" | "stats" | "close" | "once" | "plain-node" | "all-tools" | "unclaimed" | "no-confirm-url" | "faucet" | "allow-http-registry";
+export type Flag = "dry-run" | "fund-accounts" | "yes" | "all" | "help" | "debug" | "version" | "follow" | "create" | "wallet" | "watch" | "stats" | "close" | "once" | "plain-node" | "all-tools" | "unclaimed" | "no-confirm-url" | "faucet" | "allow-http-registry" | "sandbox-gpu" | "i-trust-this-work";
 export type Many = "max-fill" | "min-balance" | "vote" | "seed" | "encryption-keypair";
 export type StringKey = Exclude<keyof typeof OPTIONS, Flag | Many>;
 export type Values = { [K in StringKey]?: string | undefined } & { [K in Exclude<Flag, "wallet">]?: boolean | undefined } & {
@@ -235,6 +238,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   "add-to": ["wallet-per-trade", "wallet-per-hour", "allow-http-registry"],
   balance: ["url", "keypair", "owner", "mints"],
   "new-wallet": ["out"],
+  sandbox: ["keypair", "sandbox-image", "sandbox-memory", "sandbox-cpus", "sandbox-tmp", "sandbox-gpu"],
   "send-sol": ["url", "priority-fee", "keypair", "yes", "to", "amount"],
   pda: ["owner", "nonce"],
   lookup: ["url", "signature", "valid-until"],
@@ -306,7 +310,7 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   "claim-held": ["url", "priority-fee", "keypair", "yes", "announcement", "index", "to", "fee-payer"],
   "close-book": ["url", "priority-fee", "keypair", "yes", "intent"],
   receipt: ["url", "owner", "nonce", "sha256", "release"],
-  judge: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "spec", "artifact", "run", "result", "timeout", "verdict", "check", "sandbox", "sandbox-image", "sandbox-memory", "sandbox-cpus", "plain-node", "watch", "interval", "confirm-url", "no-confirm-url", "fee-payer", "encryption-keypair"],
+  judge: ["url", "priority-fee", "keypair", "yes", "owner", "nonce", "spec", "artifact", "run", "result", "timeout", "verdict", "check", "sandbox", "sandbox-image", "sandbox-memory", "sandbox-cpus", "sandbox-tmp", "sandbox-gpu", "i-trust-this-work", "plain-node", "watch", "interval", "confirm-url", "no-confirm-url", "fee-payer", "encryption-keypair"],
   crank: ["url", "priority-fee", "keypair", "dry-run", "fund-accounts"],
   treasury: ["url", "priority-fee", "keypair", "yes", "mints", "create"],
   create: [

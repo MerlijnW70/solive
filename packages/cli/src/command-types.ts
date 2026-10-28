@@ -1,6 +1,6 @@
 import type { App } from "./add-to.js";
 import type { Priority } from "./compute.js";
-import type { Sandbox } from "./sandbox.js";
+import type { Box, Sandbox } from "./sandbox.js";
 import type { Tokens } from "./arg-options.js";
 import type { Address } from "@solana/kit";
 import type { EconomicsSpec, ProfileInput } from "@intent-engine/core/internal";
@@ -142,6 +142,7 @@ export type Command =
   | { name: "version" }
   | { name: "add-to"; app: App; limits: string[]; allowHttpRegistry: boolean }
   | { name: "new-wallet"; out: string }
+  | { name: "sandbox-doctor"; keypair: string | undefined; box: Box }
   | (Keyed & { name: "send-sol"; yes: boolean; to: Address; lamports: bigint })
   | (Remote & { name: "follow"; limit: number; interval: number })
   | (Remote & { name: "treasury"; mints: Address[] | null; create: boolean; keypair: string | undefined; yes: boolean })

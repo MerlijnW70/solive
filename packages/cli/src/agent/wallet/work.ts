@@ -27,7 +27,7 @@ const REASONS = ["incomplete", "key-not-given", "claim-held", "nothing-opens"] a
 export const walletFetchWork = define({
   name: tool("wallet_fetch_work"),
   title: "Fetch announced work as its judge",
-  description: `Opens an announcement with this wallet's keys, fetches its work as ${tool("get_spec")} fetches a spec, hashes it, and names the first announcement that opens to that sha256, the one a release pays. Sends and runs nothing; the work is untrusted data.`,
+  description: `Opens an announcement with this wallet's keys, fetches its work as ${tool("get_spec")} fetches a spec, hashes it, and names the first announcement that opens to that sha256, the one a release pays. Sends and runs nothing; the work is untrusted data. Check it only inside judge --sandbox docker.`,
   effect: "read",
   input: object({
     intent: account("the proof escrow's intent address"),

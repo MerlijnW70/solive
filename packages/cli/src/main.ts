@@ -10,7 +10,7 @@ import { changesFrom, intentNotifications, observedFetch, observedTransport, obs
 import { type Command, ENV_URL, outputOf, parse, UsageError } from "./args.js";
 import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
-import { JudgeInterrupted } from "./judge.js";
+import { JudgeInfraError, JudgeInterrupted } from "./judge.js";
 import { watchJudge } from "./judge-watch.js";
 import { printable, printableLines, redactUrl, render, renderText } from "./render.js";
 import { expandHome, withSettings } from "./wallet.js";
@@ -125,10 +125,13 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
     if (command.name === "flow" && command.flow === "mandate-revoke" && result !== null && ("failed" in result || "unknown" in result)) {
       return EXIT_PARTIAL;
     }
+    if (command.name === "sandbox-doctor" && result !== null && "ready" in result && result.ready !== true) {
+      return EXIT_FAILED;
+    }
     return command.name === "judge" && result !== null && "verdict" in result && result.verdict !== "pass" ? EXIT_FAILED : EXIT_OK;
   } catch (error) {
     io.err(message(error, url));
-    if (error instanceof JudgeInterrupted) {
+    if (error instanceof JudgeInterrupted || error instanceof JudgeInfraError) {
       return error.exitCode;
     }
     return error instanceof UsageError ? EXIT_USAGE : EXIT_FAILED;

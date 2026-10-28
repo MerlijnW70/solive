@@ -2,7 +2,7 @@
 
 A proof escrow pays out only when its judge signs a release. `intent-engine judge` does the judge's work: it checks the spec, runs your check on the delivered work in a sandbox, and pays the worker only on a pass.
 
-Do steps 1 and 2 of the [quickstart](quickstart.md) first. The default sandbox needs Docker. [How the judge works](maintainers/judge-internals.md) has every detail.
+Do steps 1 and 2 of the [quickstart](quickstart.md) first. The default sandbox needs Docker. [How the judge works](maintainers/judge-internals.md) has every detail, and [Judging untrusted work](#judging-untrusted-work) below the safe command line.
 
 ## Before you start
 
@@ -198,6 +198,24 @@ In PowerShell:
 intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --check examples/jobs/word-count/check.mjs --run "node check/check.mjs" --verdict verdict.json
 intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --check examples/jobs/word-count/check.mjs --run "node check/check.mjs" --verdict verdict.json --yes
 ```
+
+## Judging untrusted work
+
+Delivered work is hostile until proven otherwise. A worker's patch that your check builds or runs, or a file a parser opens, runs code you did not write. Judge it only inside the Docker sandbox, on an image pinned by its digest:
+
+```sh
+intent-engine sandbox doctor --sandbox-image $IMAGE
+intent-engine judge --owner $OWNER --nonce $NONCE --spec spec.md --artifact work --run "$CHECK" --sandbox docker --sandbox-image $IMAGE --timeout 1800 --verdict verdict.json --yes
+```
+
+In PowerShell:
+
+```powershell
+intent-engine sandbox doctor --sandbox-image $env:IMAGE
+intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec spec.md --artifact work --run "$env:CHECK" --sandbox docker --sandbox-image $env:IMAGE --timeout 1800 --verdict verdict.json --yes
+```
+
+`$IMAGE` is `<name>@sha256:<digest>`; `judge` refuses a tag alone. `sandbox doctor` must print `"ready": true` on the machine before it judges. Never pass `--sandbox none` for such work. Exit code 75 is an infrastructure error, such as a timeout or Docker down: nothing was signed, so run it again.
 
 ## Judge without Docker
 

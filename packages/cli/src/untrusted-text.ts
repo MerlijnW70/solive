@@ -26,3 +26,5 @@ export const escaped = (text: string): string => text.replace(HIDDEN_EACH, escap
 export const escapedLines = (text: string): string => text.split("\n").map(escaped).join("\n");
 
 export const escapedJson = (json: string): string => json.replace(HIDDEN_EACH, (char) => (char === "\n" ? char : escapeOf(char)));
+
+export const escapedOutput = (text: string): string => text.replace(HIDDEN_EACH, (char) => (char === "\n" || char === "\t" ? char : escapeOf(char)));

@@ -3,7 +3,7 @@
 # CLI reference
 
 ```text
-usage: setup | add-to claude|codex | balance | new-wallet | send-sol | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | close-legacy | migrate | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | lookup | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | set-committee-floor | solve | raise-pause | lower-pause | crank | treasury | solver-table | solver float | solver float show | solver float revoke | events | jobs | deliver | deliveries | refute | reclaim | claim-held | close-book | receipt | judge [digest] | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | profile encryption-key new | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
+usage: setup | add-to claude|codex | balance | new-wallet | send-sol | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | close-legacy | migrate | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | lookup | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | set-committee-floor | solve | raise-pause | lower-pause | crank | treasury | solver-table | solver float | solver float show | solver float revoke | events | jobs | deliver | deliveries | refute | reclaim | claim-held | close-book | receipt | judge [digest] | sandbox doctor | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | profile encryption-key new | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]
 ```
 
 Every command accepts `--output`, `--help` and `--debug`. `--debug` writes a line to stderr for each RPC call, retry, transaction sent and confirmed, and spec or work fetch, so the JSON on stdout stays parseable; urls in it show only scheme, host and port.
@@ -45,6 +45,14 @@ new-wallet --out <file>
 ```
 
 Options: `--out`, `--output`, `--help`, `--debug`
+
+## sandbox
+
+```text
+sandbox doctor [--keypair <judge file>] [--sandbox-image <name>@sha256:<64 hex>] [--sandbox-memory <n>m|<n>g] [--sandbox-cpus <n>] [--sandbox-tmp <n>m|<n>g] [--sandbox-gpu]
+```
+
+Options: `--keypair`, `--sandbox-image`, `--sandbox-memory`, `--sandbox-cpus`, `--sandbox-tmp`, `--sandbox-gpu`, `--output`, `--help`, `--debug`
 
 ## send-sol
 
@@ -369,10 +377,10 @@ Options: `--url`, `--owner`, `--nonce`, `--sha256`, `--release`, `--output`, `--
 ## judge
 
 ```text
-judge [--keypair <judge file>] --owner <address> --nonce <n> --spec <file> (--artifact <file or directory> | --watch [--interval <seconds>]) (--run <command> | --sandbox viper) [--result <n>] [--timeout <seconds>] [--verdict <file>] [--check <file or directory>] [--sandbox docker|viper|none] [--sandbox-image <name>@sha256:<64 hex>] [--sandbox-memory <n>m|<n>g] [--sandbox-cpus <n>] [--plain-node] [--fee-payer <key file, with a Ledger --keypair>] [--encryption-keypair <encryption key file> ...] [--confirm-url <cluster> | --no-confirm-url] [--yes] | digest --owner <address> --nonce <n> --announcement <address> --sha256 <64 hex> --salt <32 hex> [--result <n>]
+judge [--keypair <judge file>] --owner <address> --nonce <n> --spec <file> (--artifact <file or directory> | --watch [--interval <seconds>]) (--run <command> | --sandbox viper) [--result <n>] [--timeout <seconds>] [--verdict <file>] [--check <file or directory>] [--sandbox docker|viper|none --i-trust-this-work] [--sandbox-image <name>@sha256:<64 hex>] [--sandbox-memory <n>m|<n>g] [--sandbox-cpus <n>] [--sandbox-tmp <n>m|<n>g] [--sandbox-gpu] [--plain-node] [--fee-payer <key file, with a Ledger --keypair>] [--encryption-keypair <encryption key file> ...] [--confirm-url <cluster> | --no-confirm-url] [--yes] | digest --owner <address> --nonce <n> --announcement <address> --sha256 <64 hex> --salt <32 hex> [--result <n>]
 ```
 
-Options without a subcommand: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--result`, `--timeout`, `--verdict`, `--check`, `--sandbox`, `--sandbox-image`, `--sandbox-memory`, `--sandbox-cpus`, `--plain-node`, `--watch`, `--interval`, `--confirm-url`, `--no-confirm-url`, `--fee-payer`, `--encryption-keypair`, `--output`, `--help`, `--debug`
+Options without a subcommand: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--result`, `--timeout`, `--verdict`, `--check`, `--sandbox`, `--sandbox-image`, `--sandbox-memory`, `--sandbox-cpus`, `--sandbox-tmp`, `--sandbox-gpu`, `--i-trust-this-work`, `--plain-node`, `--watch`, `--interval`, `--confirm-url`, `--no-confirm-url`, `--fee-payer`, `--encryption-keypair`, `--output`, `--help`, `--debug`
 
 Options for `digest`: `--url`, `--owner`, `--nonce`, `--announcement`, `--sha256`, `--salt`, `--result`, `--output`, `--help`, `--debug`
 
