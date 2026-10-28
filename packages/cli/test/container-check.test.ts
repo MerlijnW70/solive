@@ -151,6 +151,15 @@ describe.skipIf(process.platform === "win32")("the docker client the sandbox dri
     expect(await calls()).toEqual(["run --name oom-1 image", "container inspect --format {{json .State}} oom-1", "rm -f -v oom-1", "container inspect oom-1"]);
   });
 
+  it("counts a kill with signal 9 as out of memory even when docker has not flagged it yet", async () => {
+    expect(await runContainer(["image"], "oom-2", envFor({ FAKE_RUN: "oom" }), 30)).toStrictEqual({ exitCode: 137, timedOut: false, oom: true });
+  });
+
+  it("counts docker's out-of-memory flag even when the container's shell survives and exits otherwise", async () => {
+    const killed = '{"OOMKilled":true,"Error":""}';
+    expect(await runContainer(["image"], "oom-3", envFor({ FAKE_RUN: "exit", FAKE_STATE: killed }), 30)).toStrictEqual({ exitCode: 3, timedOut: false, oom: true });
+  });
+
   it("shows what the container prints only with its control characters escaped", async () => {
     expect(await runContainer(["image"], "noisy-1", envFor({ FAKE_RUN: "noisy" }), 30)).toStrictEqual({ exitCode: 0, timedOut: false });
     const shown = warned.join("");

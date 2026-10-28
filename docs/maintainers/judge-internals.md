@@ -35,7 +35,7 @@ These are never a verdict. `judge` signs and sends nothing, writes no verdict fi
 | the image cannot be pulled, or its pull runs past its time limit | 75 | none |
 | Docker or the shell cannot start the check, or Docker reports an error starting the container | 75 | none |
 | the check runs past `--timeout` | 75 | none |
-| the kernel kills the container for using all its memory | 75 | none |
+| the container ends by signal 9 (exit 137) or Docker flags it out of memory, as when it uses all its memory | 75 | none |
 | SIGINT or SIGTERM before the release is sent | 130 or 143 | none |
 | the check exits 0 | 0 | pass |
 | the check exits with any other code | 1 | fail |

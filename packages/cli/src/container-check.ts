@@ -39,6 +39,7 @@ export function docker(args: readonly string[], env: NodeJS.ProcessEnv, shown = 
 export const containerLeft = (name: string): string => `warning: the check's container ${name} could not be removed; remove it with docker rm -f ${name}`;
 
 export const DOCKER_RUN_FAILED = 125;
+export const KILLED_EXIT = 137;
 
 export type Ended = { oom: boolean; error: string };
 
@@ -116,12 +117,13 @@ export function runContainer(args: readonly string[], name: string, env: NodeJS.
         await removeContainer(name, env);
         settle();
         const failedToStart = code === DOCKER_RUN_FAILED || (ended !== null && ended.error !== "");
+        const killed = !timedOut && interrupted === undefined && (ended?.oom === true || code === KILLED_EXIT);
         done({
           exitCode: timedOut || interrupted !== undefined ? null : code,
           timedOut,
           ...(interrupted === undefined ? {} : { interrupted }),
-          ...(ended?.oom === true ? { oom: true as const } : {}),
-          ...(failedToStart && ended?.oom !== true ? { infra: startFailed(code ?? DOCKER_RUN_FAILED, ended?.error ?? "") } : {}),
+          ...(killed ? { oom: true as const } : {}),
+          ...(failedToStart && !killed ? { infra: startFailed(code ?? DOCKER_RUN_FAILED, ended?.error ?? "") } : {}),
         });
       });
     });
