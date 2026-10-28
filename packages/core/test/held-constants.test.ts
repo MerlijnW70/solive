@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { HELD_CLAIM_SECS, heldClaimableUntil, WITHHELD_ROLES, withheldRole } from "../src/internal.js";
 
-const source = (rel: string): string => readFileSync(fileURLToPath(new URL(`../../../programs/intent_engine/src/${rel}`, import.meta.url)), "utf8");
+const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
+const source = (rel: string): string => readFileSync(join(ROOT, "programs/intent_engine/src", rel), "utf8");
 
 describe("held share and withheld fee constants", () => {
   it("keeps a held share claimable for the year the program gives it after the escrow expires", () => {

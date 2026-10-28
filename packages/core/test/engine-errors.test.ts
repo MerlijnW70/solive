@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { ENGINE_ERROR_LIST } from "../src/internal.js";
@@ -8,7 +9,8 @@ type IdlError = { code: number; name: string; msg?: string };
 const read = (path: string) => readFileSync(fileURLToPath(new URL(path, import.meta.url)), "utf8");
 const idl = JSON.parse(read("../generated/idl.json")) as { errors: IdlError[] };
 const CODEGEN = read("../scripts/codegen.mjs");
-const CI = read("../../../scripts/ci.sh");
+const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
+const CI = readFileSync(join(ROOT, "scripts/ci.sh"), "utf8");
 
 describe("the generated engine error table", () => {
   it("names every engine error of the IDL with its code, in order, and its message or its name in words", () => {
