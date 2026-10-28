@@ -273,6 +273,7 @@ describe("the judge guide", () => {
     try {
       const [doctor = "", judging = ""] = lines;
       const checked = await cli(words(doctor, vars).slice(1), {});
+      expect((checked.json()["checks"] as { ok: boolean }[]).filter((check) => !check.ok)).toEqual([]);
       expect([checked.code, checked.json()["ready"]]).toEqual([EXIT_OK, true]);
       const judged = await cli(
         words(judging, vars)
