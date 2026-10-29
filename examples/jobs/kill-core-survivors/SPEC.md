@@ -1,91 +1,54 @@
 # Job: Kill the surviving core mutants
 
-The mutation run at `1565eb2` leaves mutants alive in `packages/core`. Each one changes a single operator or literal on a line, and every test still passes. Write the tests that catch them.
+The mutation run at `7afd3ef` leaves mutants alive in `packages/core`. Each one changes a single operator or literal on a line, and every test still passes. Write the tests that catch them.
 
 ## Survivors
 
-Lines are at `1565eb245b36238c5ae8fb71d481a8b4c6866e3a`, files under `packages/core`. `a -> b` means operator `a` on that line became `b`. For `==` and `!=`, the mutant is the strict form: `===` became `!==`, or the reverse. `false -> true` and `true -> false` flip a boolean literal on the line, such as an `extractable` flag.
+Lines are at `7afd3efa89f8f1dde321cf2c28311628e7adc89e`, files under `packages/core`. `a -> b` means operator `a` on that line became `b`. For `==` and `!=`, the mutant is the strict form: `===` became `!==`, or the reverse. `false -> true` flips a boolean literal on the line. Where a line holds the operator more than once, kill the mutant at every position.
 
 | File | Line | Mutant |
 |---|---|---|
-| `src/claims.ts` | 123 | `> -> >=` |
-| `src/claims.ts` | 127 | `== -> !=` |
-| `src/claims.ts` | 128 | `== -> !=` |
-| `src/claims.ts` | 129 | `== -> !=` |
-| `src/claims.ts` | 147 | `== -> !=` |
-| `src/committee.ts` | 173 | `+ -> -` |
-| `src/committee.ts` | 189 | `false -> true` |
-| `src/committee.ts` | 189 | `|| -> &&` |
-| `src/committee-floors.ts` | 33 | `> -> >=` |
-| `src/committee-floors.ts` | 33 | `< -> <=` |
-| `src/encryption-key.ts` | 74 | `false -> true` |
-| `src/fee.ts` | 65 | `<= -> <` |
-| `src/fee.ts` | 71 | `<= -> <` |
-| `src/migrate.ts` | 55 | `&& -> ||` |
-| `src/mint-caps.ts` | 61 | `> -> >=` |
-| `src/sealed.ts` | 73 | `false -> true` |
-| `src/sealed.ts` | 78 | `false -> true` |
-| `src/sealed.ts` | 90 | `false -> true` |
-| `src/sealed.ts` | 95 | `true -> false` |
-| `src/sealed.ts` | 97 | `false -> true` |
-| `src/sealed.ts` | 164 | `false -> true` |
-| `src/sealed.ts` | 169 | `false -> true` |
-| `src/sealed-delivery.ts` | 51 | `+ -> -` |
-| `src/sealed-delivery.ts` | 55 | `- -> +` |
-| `src/sealed-delivery.ts` | 55 | `+ -> -` |
-| `src/sealed-delivery.ts` | 74 | `* -> /` |
-| `src/sealed-delivery.ts` | 80 | `> -> >=` |
-| `src/sealed-delivery.ts` | 87 | `== -> !=` |
-| `src/sealed-delivery.ts` | 150 | `&& -> ||` |
-| `src/sealed-delivery.ts` | 150 | `!= -> ==` |
-| `src/sealed-delivery.ts` | 150 | `== -> !=` |
-| `src/sealed-delivery.ts` | 158 | `false -> true` |
-| `src/sealed-delivery.ts` | 179 | `true -> false` |
-| `src/sealed-delivery.ts` | 188 | `<< -> >>` |
-| `src/sealed-delivery.ts` | 193 | `false -> true` |
-| `src/sealed-delivery.ts` | 214 | `|| -> &&` |
-| `src/sealed-delivery.ts` | 217 | `> -> >=` |
-| `src/sealed-delivery.ts` | 255 | `< -> <=` |
-| `src/sealed-delivery.ts` | 264 | `false -> true` |
-| `src/sealed-delivery.ts` | 267 | `true -> false` |
-| `src/sealed-delivery.ts` | 297 | `> -> >=` |
-| `src/sealed-delivery.ts` | 297 | `|| -> &&` |
-| `src/sealed-delivery.ts` | 314 | `false -> true` |
-| `src/sealed-delivery.ts` | 336 | `> -> >=` |
-| `src/sealed-delivery.ts` | 336 | `|| -> &&` |
-| `src/sealed-delivery.ts` | 340 | `> -> <` |
-| `src/sig.ts` | 149 | `< -> <=` |
-| `src/sig.ts` | 452 | `- -> +` |
-| `src/sig.ts` | 456 | `> -> >=` |
-| `src/sig.ts` | 460 | `> -> >=` |
-| `src/sig.ts` | 470 | `> -> >=` |
-| `src/versions.ts` | 111 | `< -> <=` |
-| `src/versions.ts` | 121 | `< -> <=` |
-| `src/versions.ts` | 121 | `+ -> -` |
-| `src/versions.ts` | 134 | `< -> <=` |
-| `src/versions.ts` | 168 | `== -> !=` |
-| `src/versions.ts` | 169 | `== -> !=` |
-| `src/versions.ts` | 170 | `== -> !=` |
-| `src/versions.ts` | 171 | `== -> !=` |
+| `src/delivery-builders.ts` | 87 | `< -> <=` |
+| `src/delivery-builders.ts` | 99 | `< -> <=` |
+| `src/delivery-builders.ts` | 99 | `> -> >=` |
+| `src/delivery.ts` | 77 | `< -> <=` |
+| `src/delivery.ts` | 77 | `\|\| -> &&` |
+| `src/delivery.ts` | 99 | `< -> <=` |
+| `src/delivery.ts` | 99 | `> -> >=` |
+| `src/delivery.ts` | 99 | `\|\| -> &&` |
+| `src/ed25519.ts` | 70 | `> -> >=` |
+| `src/errors.ts` | 31 | `\|\| -> &&` |
+| `src/errors.ts` | 32 | `false -> true` |
+| `src/errors.ts` | 34 | `== -> !=` |
+| `src/fill-builders.ts` | 233 | `< -> <=` |
+| `src/fill-builders.ts` | 233 | `> -> >=` |
+| `src/fill-builders.ts` | 233 | `\|\| -> &&` |
+| `src/fill-builders.ts` | 239 | `< -> <=` |
+| `src/fill-builders.ts` | 239 | `>= -> >` |
+| `src/fill-builders.ts` | 239 | `\|\| -> &&` |
+| `src/sealed-delivery-v4.ts` | 293 | `\|\| -> &&` |
+| `src/sealed.ts` | 209 | `\|\| -> &&` |
+
+Three more survivors are equivalent and need no work: `src/delivery.ts:36` `< -> <=` (a 3-byte blob is refused later by its negative url length), `src/delivery.ts:44` `> -> >=` on `bytes.length > MAX_SEALED_BLOB` (a blob within the url cap is at most 619 bytes), and `src/sealed-delivery-v4.ts:237` `true -> false` (a replacement character fails `isMemoUrl`, so the result is `null` either way). Leave their lines as they are.
 
 ## Build
 
-1. **Tests.** Add or tighten tests in `packages/core/test` so each mutant above makes at least one test fail. Assert observable behaviour: thrown errors, exact boundaries, returned shapes (`toStrictEqual` where a key must be absent), key properties such as `extractable`, and byte layouts.
-2. **Equivalent mutants.** If a mutant cannot change any behaviour, you may instead simplify the source so the line no longer has that operator or literal, with behaviour unchanged. Name each such case in the report with one sentence on why it was equivalent.
+1. **Tests.** Add or tighten tests in `packages/core/test` so each mutant above makes at least one test fail. Assert exact boundaries: the edge value accepted, one past it refused, and the refusal's class, field and rule where the code names them.
+2. **Equivalent mutants.** If a row above cannot change any behaviour, say so in the report with one sentence on why. Do not change the source for it.
 3. **Real bugs.** If a mutant shows a real bug, fix the source, add the test, and name it in the report.
 
 ## Rules
 
 - Follow `CONTRIBUTING.md`: no code comments, nothing bypassed.
-- Change only `packages/core`. Public exports and their signatures stay as they are.
-- Do not weaken or delete existing tests.
+- Change only test files under `packages/core/test`, unless a real bug needs a source fix. Public exports stay as they are.
+- Do not weaken or delete existing tests. Keep test files under about 500 lines; add a new file rather than growing one past that.
 
 ## Acceptance
 
 1. `bash scripts/ci.sh` passes with the patch applied to `main` at the commit the delivery names.
-2. For every row, the judge applies the mutant by hand to the patched tree, and the core tests fail; or the report names it as equivalent and the source no longer contains it.
-3. The report lists every row as killed, removed as equivalent, or fixed as a bug, with the test name that catches it.
+2. For every row, the judge applies the mutant by hand to the patched tree, and the core tests fail; or the report names it as equivalent with a reason the judge confirms.
+3. The report lists every row as killed, equivalent or fixed as a bug, with the test name that catches it.
 
 ## Deliver
 
-One `git format-patch` file at a public https url. Announce its sha256 to the judge.
+One `git format-patch` file. Announce its sha256 to the judge.
