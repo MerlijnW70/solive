@@ -131,6 +131,18 @@ describe("committee ergonomics", () => {
     }
   });
 
+  it("refuses a repeated vote wherever it falls and a mask that is not a bit set of the members", () => {
+    if (valid === undefined) throw new Error("no three-member vector");
+    const terms = { ...termsOf(valid), threshold: 1 };
+    const [a, b] = valid.members as [Address, Address, Address];
+    expect(() => committeeMask(terms, [a, b, b])).toThrow(new IntentCoreError("CommitteeSigners"));
+    expect(committeeMask(terms, [a, b])).toBe(0b011);
+    for (const mask of [1.5, 2 ** 32 + 1, 0b1001, 0b101 << 1, 0x100]) {
+      expect(() => committeeSigners(terms, mask), String(mask)).toThrow(new IntentCoreError("CommitteeSigners"));
+    }
+    expect(committeeSigners(terms, 0b101)).toEqual([a, valid.members[2]]);
+  });
+
   it("orders a batch by member and signs the committee envelope", async () => {
     const signers = await Promise.all([0, 1, 2].map(() => generateKeyPairSigner()));
     const terms = {

@@ -1,9 +1,9 @@
 import { generateKeyPairSync } from "node:crypto";
 import { type Address, getAddressDecoder } from "@solana/kit";
 import fc from "fast-check";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { NotInvited, SealedError } from "../src/index.js";
-import { isSealed, MAX_SEALED_RECIPIENTS, SEALED_TAG, SEALED_VERSION, sealedTo, seal, unseal, x25519PublicOf } from "../src/internal.js";
+import { isSealed, MAX_SEALED_RECIPIENTS, SEALED_TAG, SEALED_VERSION, type SealRecipient, sealedTo, seal, unseal, wrapKey, x25519PublicOf, x25519SecretOf } from "../src/internal.js";
 
 function wallet(): { address: Address; keypair: Uint8Array } {
   const jwk = generateKeyPairSync("ed25519").privateKey.export({ format: "jwk" });
@@ -117,5 +117,44 @@ describe("sealed files", () => {
     expect(() => x25519PublicOf(prime)).toThrow(SealedError);
     await expect(seal(text("x"), [identity])).rejects.toThrow(SealedError);
     expect(x25519PublicOf(a.address)).toHaveLength(32);
+  });
+});
+
+describe("sealed file keys", () => {
+  it("keep the encryption key a wallet listed when the same wallet is listed again", async () => {
+    const [a, b] = [wallet(), wallet()];
+    const key = x25519PublicOf(b.address);
+    const pks = async (recipients: SealRecipient[]) => (json(await seal(text("x"), recipients))["to"] as { pk: string }[]).map((entry) => entry.pk);
+    const keyed = { wallet: a.address, encryptionKey: key };
+    const bare = { wallet: a.address, encryptionKey: null };
+    const [keyPk, walletPk] = [Buffer.from(key).toString("base64"), Buffer.from(x25519PublicOf(a.address)).toString("base64")];
+    expect(await pks([keyed, a.address])).toEqual([keyPk]);
+    expect(await pks([a.address, keyed])).toEqual([keyPk]);
+    expect(await pks([keyed, bare])).toEqual([keyPk]);
+    expect(await pks([bare, keyed])).toEqual([keyPk]);
+    expect(await pks([a.address, bare])).toEqual([walletPk]);
+    expect(await pks([bare, a.address])).toEqual([walletPk]);
+  });
+
+  it("never make a key extractable while sealing or opening", async () => {
+    const [a, b] = [wallet(), wallet()];
+    const imports = vi.spyOn(crypto.subtle, "importKey");
+    const generated = vi.spyOn(crypto.subtle, "generateKey");
+    const derived = vi.spyOn(crypto.subtle, "deriveKey");
+    try {
+      const sealed = await seal(text("x"), [a.address, { wallet: b.address, encryptionKey: x25519PublicOf(b.address) }]);
+      await unseal(sealed, a.keypair);
+      const secret = await x25519SecretOf(a.keypair);
+      const wrapping = await wrapKey(new Uint8Array(32), new Uint8Array(16));
+      expect([secret.extractable, wrapping.extractable]).toEqual([false, false]);
+      const flags = (calls: unknown[][], at: number) => calls.map((call) => call[at]);
+      const [importFlags, generateFlags, deriveFlags] = [flags(imports.mock.calls, 3), flags(generated.mock.calls, 1), flags(derived.mock.calls, 3)];
+      expect([importFlags.length > 4, generateFlags.length, deriveFlags.length > 1]).toEqual([true, 2, true]);
+      expect([...importFlags, ...generateFlags, ...deriveFlags].every((flag) => flag === false)).toBe(true);
+    } finally {
+      imports.mockRestore();
+      generated.mockRestore();
+      derived.mockRestore();
+    }
   });
 });

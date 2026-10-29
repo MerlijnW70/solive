@@ -63,7 +63,7 @@ describe("judge encryption keys", () => {
     const swapped = JSON.stringify({ ...file, public_key: other.publicKey });
     await expect(readEncryptionKeyFile(swapped)).rejects.toThrow(ENCRYPTION_KEY_MISMATCH);
     await expect(readEncryptionKeyFile(JSON.stringify([...wallet().keypair]))).rejects.toThrow(WALLET_KEY_GIVEN);
-    for (const bad of ["not json", "null", "{}", JSON.stringify({ ...file, kind: "other" }), JSON.stringify({ ...file, secret_key: "1" })]) {
+    for (const bad of ["not json", "null", "{}", JSON.stringify({ ...file, kind: "other" }), JSON.stringify({ ...file, secret_key: "1" }), JSON.stringify({ ...file, public_key: "x" }), JSON.stringify({ ...file, public_key: 7 })]) {
       await expect(readEncryptionKeyFile(bad)).rejects.toThrow(new EncryptionKeyError(NOT_ENCRYPTION_KEY_FILE));
     }
   });

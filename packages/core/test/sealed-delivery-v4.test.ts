@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { type Address, getAddressEncoder } from "@solana/kit";
 import fc from "fast-check";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SealedError, type SealRecipient } from "../src/index.js";
 import {
   announcementCommitment,
@@ -176,6 +176,11 @@ describe("sealed delivery v4", () => {
     expect(await openWithEsk(blob, otherEsk, recipients, intent, worker)).toBeNull();
     expect(await openWithEsk(blob, secrets.esk, [...recipients].reverse(), intent, worker)).toBeNull();
     expect(await openWithEsk(blob, secrets.esk, recipients.slice(1), intent, worker)).toBeNull();
+    expect(await openWithEsk(blob, secrets.esk, recipients.slice(0, -1), intent, worker)).toBeNull();
+    expect(await openWithEsk(blob, secrets.esk, recipients, intent, worker)).not.toBeNull();
+    expect(await openWithEsk(blob.slice(0, 2), secrets.esk, recipients, intent, worker)).toBeNull();
+    expect(await openWithEsk(blob, secrets.esk.slice(1), recipients, intent, worker)).toBeNull();
+    expect(await openWithEsk(blob, new Uint8Array(33), recipients, intent, worker)).toBeNull();
     const lied = recipients.map((r) => (typeof r === "string" ? r : r.wallet));
     expect(await openWithEsk(blob, secrets.esk, lied, intent, worker)).toBeNull();
     const flipped = Uint8Array.from(blob);
@@ -183,6 +188,26 @@ describe("sealed delivery v4", () => {
     expect(await openWithEsk(flipped, secrets.esk, recipients, intent, worker)).toBeNull();
     const member = members[0];
     expect(member === undefined ? null : (await openDeliveryV4(flipped, member.opener, intent, worker))?.url).toBe(URL_A);
+  });
+
+  it("never makes a key extractable while sealing or opening", async () => {
+    const { intent, worker, sig } = await job();
+    const members = await committee(3, (i) => i === 1);
+    const recipients = members.map((m) => m.recipient);
+    const imports = vi.spyOn(crypto.subtle, "importKey");
+    try {
+      const { secrets, blob } = await seal(URL_A, recipients, intent, worker, sig);
+      const [first] = members;
+      expect((await openDeliveryV4(blob, first?.opener ?? new Uint8Array(), intent, worker))?.url).toBe(URL_A);
+      expect((await openWithContentKey(blob, secrets.key, intent, worker))?.url).toBe(URL_A);
+      expect((await openWithEsk(blob, secrets.esk, recipients, intent, worker))?.url).toBe(URL_A);
+      expect(hex(await ephemeralPublic(secrets.esk))).toBe(hex(blob.subarray(3 + 8 * 3, 3 + 8 * 3 + 32)));
+      const flags = imports.mock.calls.map((call) => (call as unknown[])[3]);
+      expect(flags.length).toBeGreaterThan(20);
+      expect(flags.every((flag) => flag === false)).toBe(true);
+    } finally {
+      imports.mockRestore();
+    }
   });
 
   it("refuses a revealed ephemeral secret that does not match what the recipients can open", async () => {

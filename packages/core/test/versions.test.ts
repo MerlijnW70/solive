@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { AccountVersionError, IntentCoreError } from "../src/index.js";
 import {
   ACCOUNT_LAYOUTS,
+  accountLayoutOf,
   type AccountLayout,
   boardTerms,
   legacyStakeTo,
@@ -46,6 +47,16 @@ describe("account versions", () => {
     expect(ACCOUNT_LAYOUTS.map((l) => [...l.discriminator])).toEqual(
       types.map((t) => [...createHash("sha256").update(`account:${t}`).digest().subarray(0, 8)]),
     );
+  });
+
+  it("read no version from data that ends before the version byte", () => {
+    for (const layout of ACCOUNT_LAYOUTS) {
+      const head = Uint8Array.from(layout.discriminator);
+      expect(accountLayoutOf(head), layout.name).toBe(layout);
+      expect(storedVersion(head), layout.name).toBeNull();
+      expect(isCurrentAccount(head), layout.name).toBe(false);
+    }
+    expect(storedVersion(new Uint8Array(8))).toBeNull();
   });
 
   it("read an account only at the current version of its type", () => {

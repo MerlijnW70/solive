@@ -61,6 +61,10 @@ describe("mint cap accounts", () => {
     expect(() => checkMintCapLimits({ maxPerOrder: 2n, windowCap: 1n, windowSecs: 60 })).toThrow(InvalidInput);
     expect(() => checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 59 })).toThrow(InvalidInput);
     expect(checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 60 })).toEqual({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 60 });
+    expect(checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 0xffff_ffff }).windowSecs).toBe(0xffff_ffff);
+    for (const windowSecs of [0x1_0000_0000, 60.5, Number.NaN]) {
+      expect(() => checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs }), String(windowSecs)).toThrow(InvalidInput);
+    }
     expect(() => checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 60, totalLimit: -1n })).toThrow(InvalidInput);
     expect(() => checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 60, totalLimit: 1n << 64n })).toThrow(InvalidInput);
     expect(checkMintCapLimits({ maxPerOrder: 1n, windowCap: 1n, windowSecs: 60, totalLimit: 0n }).totalLimit).toBe(0n);

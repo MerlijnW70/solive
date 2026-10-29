@@ -118,6 +118,8 @@ describe("cosign instruction", () => {
     expect(await verifySignature(await getPublicKeyFromAddress(stranger.address), outside.signature as SignatureBytes, cosignEnvelope(members, digest))).toBe(true);
     expect(await verifyCommitteeVote(outside, digest, members)).toBe(false);
     expect(await verifyCommitteeVote({ ...vote, signature: vote.signature.slice(0, 63) }, digest, members)).toBe(false);
+    const malformed = "not-an-address" as Address;
+    expect(await verifyCommitteeVote({ member: malformed, signature: vote.signature }, digest, [malformed])).toBe(false);
     const raw = await signMessageBytes(first, cosignEnvelope(members, digest));
     expect(await verifySignature(await getPublicKeyFromAddress(first.address), raw as SignatureBytes, cosignEnvelope(members, digest))).toBe(true);
   });

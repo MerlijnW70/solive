@@ -7,6 +7,7 @@ import { IntentCoreError, Kind, splitFees } from "../src/index.js";
 import {
   tokenOf,
   BPS_DENOMINATOR,
+  checkBps,
   checkSignable,
   createExt,
   ATTESTED_PROTOCOL_FEE,
@@ -43,6 +44,14 @@ describe("fee splits", () => {
     expect(splitFee(10_000n, 30)).toEqual({ fee: 30n, net: 9_970n });
     expect(splitFee(10_001n, 30)).toEqual({ fee: 31n, net: 9_970n });
     expect(splitFee(U64_MAX, 10_000)).toEqual({ fee: U64_MAX, net: 0n });
+  });
+
+  it("checks basis points between zero and the denominator, both included", () => {
+    expect([checkBps(0), checkBps(1), checkBps(10_000)]).toEqual([0n, 1n, 10_000n]);
+    for (const bad of [-1, 10_001, 1.5, Number.NaN]) {
+      expect(() => checkBps(bad), String(bad)).toThrow(`bps ${String(bad)} is not between 0 and 10000`);
+    }
+    expect(() => checkBps(-1, "share")).toThrow("share -1 is not between 0 and 10000");
   });
 
   it("fee helpers refuse out of range inputs", () => {
