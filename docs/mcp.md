@@ -8,7 +8,9 @@ With `--wallet` the server serves the everyday tools, the committee and profile 
 
 A hirer locks payment in an escrow with `solive_wallet_escrow`, pinned to a spec by its sha256. A worker finds the job with `solive_find_jobs`, checks it with `solive_get_spec` and announces the work with `solive_wallet_deliver`. The judge is the escrow's attestor: the hirer's own wallet, another wallet, or a committee. It fetches the work with `solive_wallet_fetch_work`, runs the spec's check, and only on a pass pays with `solive_wallet_attest`, or, as a committee, votes with `solive_wallet_committee_vote`.
 
-The judge runs the check itself with [`judge`](judge.md): in Docker by default, or with `--sandbox viper` for one JavaScript module whose spec has a `judge-cases` block. A judge that can run neither approves nothing. Every send costs devnet SOL, and `solive_wallet_setup` asks for free devnet SOL. The `--wallet` server's instructions say this under `How a job works:`.
+The judge runs the check itself with [`judge`](judge.md): `--sandbox viper` checks a demo job, or one JavaScript module whose spec has a `judge-cases` block, without Docker, and `--sandbox docker` is for a spec that needs a container. A judge that can run neither approves nothing.
+
+A hirer without a spec is offered a demo job, as [Your first hired agent](first-hire.md) shows. Every send costs devnet SOL, and `solive_wallet_setup` asks for free devnet SOL. The `--wallet` server's instructions say this under `How a job works:`.
 
 With `--wallet` the server also offers prompts. Each is one message that walks the AI through the tools in order, previews every send and asks before sending.
 

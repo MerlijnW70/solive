@@ -17,6 +17,7 @@ export default {
           { text: "Quickstart", link: "/quickstart" },
           { text: "Your first paid job", link: "/first-job" },
           { text: "Use it from your AI", link: "/ai" },
+          { text: "Your first hired agent", link: "/first-hire" },
           { text: "Build in TypeScript", link: "/sdk" },
           { text: "Run a solver", link: "/solver" },
           { text: "Judge work", link: "/judge" },

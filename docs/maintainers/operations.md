@@ -424,6 +424,32 @@ sudo systemctl enable --now solive-faucet-topup.timer
 systemctl list-timers solive-faucet-topup.timer
 ```
 
+## Devnet demo worker
+
+`scripts/demo-worker.sh` does the demo jobs of [Your first hired agent](../first-hire.md). Each round it lists open jobs, and for each escrow whose spec hash is the sha256 of a `SPEC.md` in a folder of `examples/demo`, it claims the job when the escrow takes claims and nobody holds it, then announces the `solution.mjs` beside that spec to the judge, with the repository's raw url of that file on `main` as the work url. It announces each escrow once and keeps the escrows it is done with in `DEMO_WORKER_STATE`, default `~/demo-worker.json`. It runs from a checkout at `main`, so the solutions it hashes are the ones the work urls serve.
+
+`DEMO_WORKER_KEYPAIR` is its devnet key file, outside the checkout. `DEMO_WORKER_CLI` names the command line, by default the checkout's build; `DEMO_WORKER_URL`, `DEMO_WORKER_INTERVAL`, `DEMO_WORKER_CLAIM_SECS` and `DEMO_WORKER_MAX_STAKE_LAMPORTS` default to devnet and the values in `scripts/demo-worker.mts`. `--once` runs one round. The unit at `/etc/systemd/system/solive-demo-worker.service`:
+
+```ini
+[Unit]
+Description=solive devnet demo worker
+After=network-online.target
+
+[Service]
+User=dev
+WorkingDirectory=/home/dev/solive
+Environment=DEMO_WORKER_KEYPAIR=/home/dev/.config/intent-engine/demo-worker.json
+Environment=DEMO_WORKER_CLI=/home/dev/solive-filler/node_modules/.bin/intent-engine
+ExecStart=/bin/bash /home/dev/solive/scripts/demo-worker.sh
+Restart=always
+RestartSec=15
+StandardOutput=append:/home/dev/demo-worker.log
+StandardError=append:/home/dev/demo-worker.log
+
+[Install]
+WantedBy=multi-user.target
+```
+
 ## Incident
 
 When an alert shows a change nobody proposed, the guardian raises the pause at once, alone:
