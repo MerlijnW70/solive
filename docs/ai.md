@@ -67,7 +67,7 @@ OpenClaw: see [Use it from OpenClaw](openclaw.md).
 
 It swaps, escrows, releases or cancels nothing until you say yes.
 
-Every app on your computer uses the same wallet, the one `setup` names. Ask your AI for its balance to see it. It needs devnet SOL, and devnet often refuses airdrops: [Devnet SOL](quickstart.md#devnet-sol) lists the other ways.
+Every app on your computer uses the same wallet, the one `setup` names. Ask your AI for its balance to see it. It needs devnet SOL: the setup tool asks the instant faucet first, then devnet, and [Devnet SOL](quickstart.md#devnet-sol) lists the other ways.
 
 When the server starts, it prints a line that starts with `info: releases are checked against one RPC node`. It is a note, not an error; [A second node](mcp.md#a-second-node) shows how to set `--confirm-url`.
 

@@ -26,6 +26,7 @@ import { expect } from "vitest";
 import { findAssociatedTokenAddress, parseAmount } from "@intent-engine/core";
 import { findConfigPda, findProgramDataAddress, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { createTestWorld, ECONOMICS_UNSET, TEST_WALLET_SOL } from "@intent-engine/client/testing";
+import type { FaucetFetch } from "../src/faucet.js";
 import type { Runtime } from "../src/commands.js";
 import { main } from "../src/main.js";
 import { collectDropped } from "./collect.js";
@@ -37,6 +38,8 @@ export { creation, fakeFetch, ownerSigned, transport, unlisting } from "./harnes
 
 const LOADER = "BPFLoaderUpgradeab1e11111111111111111111111" as Address;
 const WALLET_LAMPORTS = 100_000_000_000n;
+
+export const instant: { fetch: FaucetFetch | undefined } = { fetch: undefined };
 
 export function runtime(signers: Record<string, KeyPairSigner>): Runtime {
   return {
@@ -116,6 +119,7 @@ export function runtime(signers: Record<string, KeyPairSigner>): Runtime {
     env: h.env,
     now: () => NOW + 1_000n + h.clock,
     fetch: fakeFetch,
+    ...(instant.fetch === undefined ? {} : { faucetFetch: instant.fetch }),
     entropy: () => 3,
     serve: async (server) => {
       h.served.push(server);

@@ -6,6 +6,7 @@ import type { IntentChanges, OpenTransport } from "@intent-engine/client/interna
 import type { SaleBook } from "./agent/sales.js";
 import type { Env } from "./command-types.js";
 import type { Launched } from "./launch.js";
+import type { FaucetFetch } from "./faucet.js";
 
 export type Runtime = {
   transport(url: string): Transport;
@@ -20,6 +21,7 @@ export type Runtime = {
   home: string;
   now(): bigint;
   fetch: Fetch;
+  faucetFetch?: FaucetFetch;
   specFetch: SpecFetch;
   lookup: Lookup;
   entropy(): number;

@@ -42,12 +42,19 @@ export const walletSetup = define({
     settings: text("whether this call saved the RPC as the CLI's default; it does so only when none is saved yet"),
     sol: text("SOL the wallet holds"),
     airdrop: optional(text("SOL devnet sent; less than asked when it refused a larger airdrop")),
+    faucet: optional(
+      object({
+        lamports: optional(text("lamports the instant faucet sent, asked before devnet")),
+        signature: optional(text("the transaction that carried them")),
+        refused: optional(text("untrusted, with hidden characters reduced: why the instant faucet sent nothing")),
+      }),
+    ),
     next: text("what to tell the user: what the wallet holds, and how to trade, hire or earn"),
     notice: list(text(), 8, "the notice from the server instructions; show it if the user has not seen it yet"),
   }),
   run: async (ctx: AgentContext) => {
     const wallet = await testCluster(ctx);
-    return { ...(await setup(ctx.transport, wallet.files, wallet.url, await savedKeypair(wallet), true, undefined, undefined, WALLET_START, WALLET_SMALL_START)), notice: WALLET_NOTICE };
+    return { ...(await setup(ctx.transport, wallet.files, wallet.url, await savedKeypair(wallet), true, undefined, undefined, WALLET_START, WALLET_SMALL_START, undefined, { fetch: ctx.faucetFetch, env: wallet.env })), notice: WALLET_NOTICE };
   },
 });
 

@@ -47,7 +47,7 @@ const carriedBy = (name: string): [string, Carried][] => [
 
 const SIGNATURE_PATH = /(^|[.\]])(signature|release|close)$/;
 
-const SIGNED_HERE: readonly string[] = [`${tool("wallet_committee_vote")} vote.signature`];
+const SIGNED_HERE: readonly string[] = [`${tool("wallet_committee_vote")} vote.signature`, `${tool("wallet_setup")} faucet.signature`];
 
 const HIDDEN_POINTS = [
   ...Array.from({ length: 0x20 }, (_, at) => at),

@@ -137,7 +137,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
         agent: agent !== undefined,
       });
       const confirm = command.confirmUrl === undefined ? {} : { confirm: runtime.transport(command.confirmUrl) };
-      await runtime.serve(agentServer({ transport, relay, agent, claims: claimsOf(), url: command.url, fetch: runtime.specFetch, lookup: runtime.lookup, clock: { sleep: runtime.sleep, now: runtime.now }, ...wallet, ...confirm }, served));
+      await runtime.serve(agentServer({ transport, relay, agent, claims: claimsOf(), url: command.url, fetch: runtime.specFetch, lookup: runtime.lookup, clock: { sleep: runtime.sleep, now: runtime.now }, ...(runtime.faucetFetch === undefined ? {} : { faucetFetch: runtime.faucetFetch }), ...wallet, ...confirm }, served));
       return null;
     }
     case "setup": {
@@ -147,7 +147,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
         sleep: (seconds) => runtime.sleep(seconds),
         now: runtime.now,
         note: (text) => process.stderr.write(`${text}\n`),
-      });
+      }, { fetch: runtime.faucetFetch, env: runtime.env });
       const registry = await npmRegistry(runtime.launch);
       return registry.read === "http" ? { ...made, warnings: [plainRegistry(registry.registry)] } : made;
     }

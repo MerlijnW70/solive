@@ -1,7 +1,7 @@
 import { tool } from "./names.js";
 import type { Problem } from "./problems.js";
 
-export type Controller = "payer" | "worker" | "profile owner" | "program" | "rpc node";
+export type Controller = "payer" | "worker" | "profile owner" | "program" | "rpc node" | "faucet service";
 
 export type Rule = "untrusted" | "sanitized" | "hashed" | "checked";
 
@@ -12,6 +12,7 @@ export type Source = "own" | Carried;
 const payer = (rule: Rule): Carried => ({ from: ["payer"], rule });
 const worker = (rule: Rule): Carried => ({ from: ["worker"], rule });
 const profileOwner = (rule: Rule): Carried => ({ from: ["profile owner"], rule });
+const faucet = (rule: Rule): Carried => ({ from: ["faucet service"], rule });
 const LOGS: Carried = { from: ["program", "rpc node"], rule: "sanitized" };
 const FAILURE: Carried = { from: ["rpc node", "program"], rule: "sanitized" };
 const SIGNATURE: Carried = { from: ["rpc node"], rule: "checked" };
@@ -21,6 +22,7 @@ const RECEIPT_CARRIED: Readonly<Record<string, Carried>> = { delivered_sha256: w
 
 export const CARRIED: Readonly<Record<string, Readonly<Record<string, Carried>>>> = {
   [tool("get_spec")]: { url: payer("sanitized"), text: payer("untrusted"), sha256: payer("hashed") },
+  [tool("wallet_setup")]: { "faucet.refused": faucet("sanitized") },
   [tool("wallet_fetch_work")]: { url: worker("sanitized"), untrusted_text: worker("untrusted"), sha256: worker("hashed"), "first.commitment": worker("hashed") },
   [tool("find_jobs")]: { "jobs[].spec_url": payer("sanitized"), "jobs[].spec_hash": payer("hashed") },
   [tool("get_profile")]: { "skills[]": profileOwner("sanitized"), endpoint: profileOwner("sanitized"), doc_url: profileOwner("sanitized"), doc_sha256: profileOwner("hashed") },
@@ -61,7 +63,7 @@ export const COMMON_OWN: readonly string[] = [
 const RECEIPT = ["paid", "stake_returned", "delivered_salt", "held[].amount", "withheld[].role", "withheld[].amount"];
 
 export const OWN: Readonly<Record<string, readonly string[]>> = {
-  [tool("wallet_setup")]: ["keypair", "url", "settings", "sol", "airdrop", "notice[]"],
+  [tool("wallet_setup")]: ["keypair", "url", "settings", "sol", "airdrop", "faucet.lamports", "faucet.signature", "notice[]"],
   [tool("wallet_balance")]: ["sol", "tokens[].name", "tokens[].balance"],
   [tool("wallet_estimate")]: ["fills[].sold", "fills[].received", "receive_at_best", "receive_at_median", "receive_at_latest"],
   [tool("wallet_swap")]: ["min_receive", "start_receive"],

@@ -1,4 +1,5 @@
 import type { Address, TransactionSigner } from "@solana/kit";
+import type { FaucetFetch } from "../faucet.js";
 import { type Lookup, type SpecFetch, type Transport } from "@intent-engine/client";
 import { memoized } from "@intent-engine/client/internal";
 import { systemLookup } from "../public-address.js";
@@ -21,6 +22,7 @@ export type AgentContext = {
   clock?: Clock;
   url?: string;
   fetch?: SpecFetch;
+  faucetFetch?: FaucetFetch;
   lookup?: Lookup;
   confirm?: Transport;
   skipSimulation?: true;

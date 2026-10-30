@@ -207,6 +207,7 @@ export function nodeRuntime(clock: () => number = Date.now, pipes: Pipes = proce
     home: homedir().replaceAll("\\", "/"),
     now: () => BigInt(Math.floor(clock() / 1000)),
     fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) }),
+    faucetFetch: (url, init) => fetch(url, init),
     entropy: () => crypto.getRandomValues(new Uint32Array(1))[0] ?? 0,
     serve: async (server) => {
       const ended = new Promise<void>((resolve) => pipes.stdin.once("end", () => resolve()));

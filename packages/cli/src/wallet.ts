@@ -4,13 +4,13 @@ import { DEVNET_TEST_MINT, findAssociatedTokenAddress, formatAmount, NATIVE_MINT
 import { PRODUCT_REPOSITORY } from "@intent-engine/core/internal";
 import { type Transport } from "@intent-engine/client";
 import { ledgerSigner, openUsb } from "@intent-engine/client/node";
-import { createdAccount, isLedgerPath, mintOf, type OpenTransport } from "@intent-engine/client/internal";
+import { createdAccount, isLedgerPath, mintOf, type OpenTransport, unmemoized } from "@intent-engine/client/internal";
 import { CLUSTERS, ENV_KEYPAIR, ENV_URL, type Env, UsageError } from "./args.js";
 import { SAVED_CONFIRM_URL } from "./clusters.js";
 import { SOL_DECIMALS } from "./agent/read.js";
 import { redactUrl } from "./render.js";
 import { DEVNET_URL } from "./tokens.js";
-import { FAUCET_POLL_SECONDS, FAUCET_SCHEDULE, FAUCET_WAIT_MINUTES, faucetPending, faucetWaiting, fileFaucetRequest, GH_HINT, type Launch } from "./faucet.js";
+import { askInstantFaucet, FAUCET_POLL_SECONDS, FAUCET_SCHEDULE, FAUCET_WAIT_MINUTES, faucetPending, faucetWaiting, type FaucetFetch, fileFaucetRequest, GH_HINT, type InstantFaucet, type Launch } from "./faucet.js";
 
 export const LAMPORTS_PER_SOL = 1_000_000_000n;
 export const FUND_BELOW = LAMPORTS_PER_SOL / 2n;
@@ -60,6 +60,11 @@ export const unfundedRefused = (address: string, url: string) =>
 export const SEND_SOL = "send SOL to this address, then run setup again";
 export const heldRefused = (sol: string, address: string, hint = "") =>
   `your wallet holds ${sol} SOL, less than the ${solOf(ENOUGH_TO_START)} SOL setup counts as enough to start, and devnet refused to add more; ` + hint + fundingSteps(address) + SETUP_AGAIN;
+
+export type InstantRun = { fetch: FaucetFetch | undefined; env: Env };
+
+export const instantSent = (sol: string) => `the instant faucet sent ${sol} SOL; `;
+export const INSTANT_REFUSED = "the instant faucet sent no SOL, and faucet.refused says why; ";
 
 export type FaucetRun = { file: boolean; launch: Launch; sleep(seconds: number): Promise<boolean>; now(): bigint; note(text: string): void };
 
@@ -192,6 +197,7 @@ export async function setup(
   start = CLI_START,
   smallStart = start,
   faucet?: FaucetRun,
+  instant?: InstantRun,
 ): Promise<object> {
   if (confirmUrl !== undefined && confirmTransport !== undefined) {
     await checkedSecond(transport, confirmTransport, confirmUrl);
@@ -205,6 +211,11 @@ export async function setup(
   let held = await lamportsOf(transport, signer.address);
   let refused = false;
   let got: bigint | undefined;
+  let dripped: InstantFaucet | null = null;
+  if (instant !== undefined && url === DEVNET_URL && held < FUND_BELOW) {
+    dripped = await askInstantFaucet(instant.fetch, instant.env, signer.address);
+    held = await lamportsOf(unmemoized(transport), signer.address);
+  }
   if (held < FUND_BELOW && url !== CLUSTERS["mainnet-beta"]) {
     got = await airdropped(transport, signer.address);
     refused = got === undefined;
@@ -224,7 +235,8 @@ export async function setup(
   }
   const sol = solOf(held);
   const smaller = got === undefined || got === AIRDROP ? "" : smallerAirdrop(got);
-  const next =
+  const lead = dripped === null ? "" : "lamports" in dripped ? instantSent(solOf(BigInt(dripped.lamports))) : INSTANT_REFUSED;
+  const status =
     url === CLUSTERS["mainnet-beta"] && held < FUND_BELOW
       ? SEND_SOL
       : held >= ENOUGH_TO_START
@@ -234,6 +246,7 @@ export async function setup(
           : held > 0n
             ? heldRefused(sol, signer.address, hint)
             : airdropRefused(signer.address, hint);
+  const next = lead + status;
   return {
     address: signer.address,
     keypair: path,
@@ -244,6 +257,7 @@ export async function setup(
     sol,
     ...(got === undefined ? {} : { airdrop: solOf(got) }),
     ...(filed === undefined ? {} : { faucet_request: filed }),
+    ...(dripped === null ? {} : { faucet: dripped }),
     next,
   };
 }

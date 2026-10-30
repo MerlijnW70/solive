@@ -1,6 +1,8 @@
 import type { Address } from "@solana/kit";
 import { PRODUCT_REPOSITORY } from "@intent-engine/core/internal";
 import type { Launched } from "./launch.js";
+import { escaped } from "./untrusted-text.js";
+import type { Env } from "./command-types.js";
 
 export const GH = "gh";
 export const FAUCET_TITLE = "Devnet SOL";
@@ -53,4 +55,88 @@ export async function fileFaucetRequest(launch: Launch, address: Address): Promi
   const { owner, name } = repository();
   const filed = await gh(launch, ["issue", "create", "--repo", `${owner}/${name}`, "--title", FAUCET_TITLE, "--body", address]);
   return { url: filed.split("\n").pop()?.trim() ?? filed };
+}
+
+export const FAUCET_TIMEOUT_MS = 45000;
+export const FAUCET_URL_ENV = "INTENT_ENGINE_FAUCET_URL";
+export const FAUCET_DEFAULT_URL = "https://solive-faucet.vercel.app";
+export const FAUCET_OFF = "off";
+export const FAUCET_DRIP_PATH = "/api/drip";
+export const REFUSAL_LIMIT = 200;
+
+export const FAUCET_PLAIN_URL = "the instant faucet url must start with https://";
+export const FAUCET_UNREADABLE_URL = "the instant faucet url is not a valid url";
+export const FAUCET_UNREACHABLE = "the instant faucet could not be reached";
+export const FAUCET_TIMED_OUT = "the instant faucet did not answer in time";
+export const FAUCET_SILENT = "the instant faucet gave no reason";
+export const FAUCET_MALFORMED = "the instant faucet sent a reply this CLI does not recognise";
+
+export type FaucetFetch = (
+  url: string,
+  init: { method: "POST"; headers: Record<string, string>; body: string; redirect: "error"; signal: AbortSignal },
+) => Promise<{ status: number; json(): Promise<unknown> }>;
+
+export type InstantFaucet = { lamports: string; signature: string } | { refused: string };
+
+const SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{64,90}$/;
+const LAMPORTS = /^[0-9]{1,19}$/;
+const LOCAL_HOSTS: ReadonlySet<string> = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+export const refusalText = (text: string): string => Array.from(escaped(text)).slice(0, REFUSAL_LIMIT).join("");
+
+function dripUrl(env: Env): string | InstantFaucet | null {
+  const given = env[FAUCET_URL_ENV];
+  const base = given === undefined || given === "" ? FAUCET_DEFAULT_URL : given;
+  if (base === FAUCET_OFF) {
+    return null;
+  }
+  let parsed: URL;
+  try {
+    parsed = new URL(base);
+  } catch {
+    return { refused: FAUCET_UNREADABLE_URL };
+  }
+  if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && LOCAL_HOSTS.has(parsed.hostname))) {
+    return { refused: FAUCET_PLAIN_URL };
+  }
+  return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}${FAUCET_DRIP_PATH}`;
+}
+
+function refusalOf(status: number, body: unknown): InstantFaucet {
+  const said = body !== null && typeof body === "object" && "error" in body && typeof body.error === "string" ? body.error : "";
+  return { refused: refusalText(said === "" ? `${FAUCET_SILENT} (status ${status})` : said) };
+}
+
+function dripOf(body: unknown): InstantFaucet {
+  const fields = body !== null && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  const { lamports, signature } = fields;
+  return typeof lamports === "string" && LAMPORTS.test(lamports) && typeof signature === "string" && SIGNATURE.test(signature)
+    ? { lamports, signature }
+    : { refused: FAUCET_MALFORMED };
+}
+
+export async function askInstantFaucet(fetcher: FaucetFetch | undefined, env: Env, address: string): Promise<InstantFaucet | null> {
+  if (fetcher === undefined) {
+    return null;
+  }
+  const target = dripUrl(env);
+  if (target === null || typeof target === "object") {
+    return target;
+  }
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FAUCET_TIMEOUT_MS);
+  const timedOut = new Promise<never>((_, reject) => controller.signal.addEventListener("abort", () => reject(new Error(FAUCET_TIMED_OUT)), { once: true }));
+  timedOut.catch(() => undefined);
+  try {
+    const reply = await Promise.race([
+      fetcher(target, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address }), redirect: "error", signal: controller.signal }),
+      timedOut,
+    ]);
+    const body = await Promise.race([reply.json().catch(() => null), timedOut]);
+    return reply.status === 200 ? dripOf(body) : refusalOf(reply.status, body);
+  } catch (error) {
+    return { refused: error instanceof Error && error.message === FAUCET_TIMED_OUT ? FAUCET_TIMED_OUT : FAUCET_UNREACHABLE };
+  } finally {
+    clearTimeout(timer);
+  }
 }
