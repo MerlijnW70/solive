@@ -1,23 +1,46 @@
-import { readFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { PRODUCT_SLUG } from "@intent-engine/core/internal";
 import { ADD_TO_NEEDS_APP, CLUSTERS, parse, usageOf } from "../src/args.js";
-import { CLAUDE_MISSING, CLAUDE_SCOPE, CLI_PACKAGE, claudeExists, claudeFailed } from "../src/add-to.js";
-import { invocation, launch, notFound, WINDOWS_NOT_FOUND, type Launched } from "../src/launch.js";
+import { CLAUDE_MISSING, CLAUDE_SCOPE, CLI_PACKAGE, alreadyAdded, claudeFailed, npxFor } from "../src/add-to.js";
+import { invocation, launch, notFound, onPath, WINDOWS_NOT_FOUND, type Launched } from "../src/launch.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main, nodeRuntime } from "../src/main.js";
 import { NPM_REGISTRY } from "../src/npm-registry.js";
 import { runtime } from "./harness.js";
 
 const manifest = JSON.parse(readFileSync(fileURLToPath(new URL("../package.json", import.meta.url)), "utf8")) as { name: string };
 const SERVER = ["npx", "-y", manifest.name, "mcp", "--url", "devnet", "--wallet"];
+const WIN_SERVER = ["npx.cmd", ...SERVER.slice(1)];
 
-async function addTo(argv: string[], platform: string, reply: Launched | null) {
+let bin = "";
+let emptyBin = "";
+
+beforeAll(() => {
+  bin = mkdtempSync(join(tmpdir(), "add-to-bin-"));
+  emptyBin = mkdtempSync(join(tmpdir(), "add-to-empty-"));
+  for (const name of ["claude", "claude.cmd", "codex", "codex.cmd"]) {
+    writeFileSync(join(bin, name), "");
+    chmodSync(join(bin, name), 0o755);
+  }
+});
+
+afterAll(() => {
+  rmSync(bin, { recursive: true, force: true });
+  rmSync(emptyBin, { recursive: true, force: true });
+});
+
+const pathEnv = (dir: string) => ({ PATH: dir, PATHEXT: ".cmd" });
+
+async function addTo(argv: string[], platform: string, reply: Launched | null, dir: string = bin) {
   const launched: { program: string; args: readonly string[] }[] = [];
   const out: string[] = [];
   const err: string[] = [];
   const rt = {
     ...runtime({}),
+    env: pathEnv(dir),
     platform,
     launch: async (program: string, args: readonly string[]) => {
       if (program === "npm") {
@@ -39,12 +62,12 @@ describe("add-to claude", () => {
   it("adds the server through cmd /c on native Windows and says what it added", async () => {
     const run = await addTo(["add-to", "claude"], "win32", { code: 0, output: "Added stdio MCP server" });
     expect(run.code).toBe(EXIT_OK);
-    expect(run.launched).toEqual([{ program: "claude", args: ["mcp", "add", "--scope", "user", PRODUCT_SLUG, "--", "cmd", "/c", ...SERVER] }]);
+    expect(run.launched).toEqual([{ program: "claude", args: ["mcp", "add", "--scope", "user", PRODUCT_SLUG, "--", "cmd", "/c", ...WIN_SERVER] }]);
     expect(JSON.parse(run.out)).toEqual({
       added: PRODUCT_SLUG,
       to: "Claude Code",
-      ran: `claude mcp add --scope user ${PRODUCT_SLUG} -- cmd /c ${SERVER.join(" ")}`,
-      server: `cmd /c ${SERVER.join(" ")}`,
+      ran: `claude mcp add --scope user ${PRODUCT_SLUG} -- cmd /c ${WIN_SERVER.join(" ")}`,
+      server: `cmd /c ${WIN_SERVER.join(" ")}`,
       next: "restart Claude Code, then ask it to set you up and make your first swap",
     });
     expect(run.err).toBe("");
@@ -65,10 +88,12 @@ describe("add-to claude", () => {
 
   it("refuses plainly when claude is not installed", async () => {
     for (const platform of ["win32", "linux"]) {
-      const run = await addTo(["add-to", "claude"], platform, null);
+      const run = await addTo(["add-to", "claude"], platform, { code: 1, output: "'claude' is not recognized as an internal or external command" }, emptyBin);
       expect(run.code).toBe(EXIT_FAILED);
       expect(run.err).toBe(CLAUDE_MISSING);
+      expect(run.err).toBe(`claude is not installed or not on PATH; install Claude Code with npm install -g @anthropic-ai/claude-code, then run this again`);
       expect(run.out).toBe("");
+      expect(run.launched).toEqual([]);
     }
   });
 
@@ -82,19 +107,31 @@ describe("add-to claude", () => {
     expect(silent.err).toBe("claude mcp add failed with exit code 5, so nothing was added: it printed nothing");
   });
 
-  it("says the server is already added and gives the exact commands that replace it", async () => {
-    const run = await addTo(["add-to", "claude"], "linux", { code: 1, output: `MCP server ${PRODUCT_SLUG} already exists in user config\n` });
-    expect(run.code).toBe(EXIT_FAILED);
-    expect(run.err).toBe(claudeExists([]));
-    expect(run.err).toBe(
-      `${PRODUCT_SLUG} is already added to Claude Code for your user, so nothing was changed; to replace it, run claude mcp remove --scope user ${PRODUCT_SLUG}, then npx -y ${manifest.name} add-to claude`,
+  it("succeeds and says it is already set up when the server is registered, with the replace commands", async () => {
+    const exists = { code: 1, output: `MCP server ${PRODUCT_SLUG} already exists in user config
+` };
+    const run = await addTo(["add-to", "claude"], "linux", exists);
+    expect(run.code).toBe(EXIT_OK);
+    expect(run.err).toBe("");
+    expect(JSON.parse(run.out)).toMatchObject({ already: PRODUCT_SLUG, to: "Claude Code", note: alreadyAdded("claude", [], "linux") });
+    expect(alreadyAdded("claude", [], "linux")).toBe(
+      `${PRODUCT_SLUG} is already set up in Claude Code, so nothing was changed; to replace it, run claude mcp remove --scope user ${PRODUCT_SLUG}, then npx -y ${manifest.name} add-to claude`,
     );
-    expect(run.out).toBe("");
-    const limited = await addTo(["add-to", "claude", "--wallet-per-trade", "SOL=0.1"], "win32", { code: 1, output: `MCP server ${PRODUCT_SLUG} already exists in user config` });
-    expect(limited.err).toBe(
-      `${PRODUCT_SLUG} is already added to Claude Code for your user, so nothing was changed; to replace it, run claude mcp remove --scope user ${PRODUCT_SLUG}, then npx -y ${manifest.name} add-to claude --wallet-per-trade SOL=0.1`,
+    const limited = await addTo(["add-to", "claude", "--wallet-per-trade", "SOL=0.1"], "win32", exists);
+    expect(limited.code).toBe(EXIT_OK);
+    expect(JSON.parse(limited.out).note).toBe(
+      `${PRODUCT_SLUG} is already set up in Claude Code, so nothing was changed; to replace it, run claude mcp remove --scope user ${PRODUCT_SLUG}, then npx.cmd -y ${manifest.name} add-to claude --wallet-per-trade SOL=0.1`,
     );
     expect(parse(["add-to", "claude", "--wallet-per-trade", "SOL=0.1"], {})).toEqual({ name: "add-to", app: "claude", limits: ["--wallet-per-trade", "SOL=0.1"], allowHttpRegistry: false });
+  });
+
+  it("prints npx.cmd and never a .ps1 shim for Windows, and npx elsewhere", () => {
+    expect(npxFor("win32")).toBe("npx.cmd");
+    expect(npxFor("linux")).toBe("npx");
+    for (const app of ["claude", "codex"] as const) {
+      expect(alreadyAdded(app, [], "win32")).toContain("npx.cmd -y");
+      expect(alreadyAdded(app, [], "win32")).not.toMatch(/\.ps1|npx -y/);
+    }
   });
 
   it("registers the server for the user, the scope claude mcp add and remove both take", async () => {
@@ -167,5 +204,27 @@ describe("launching a program", () => {
     const rt = nodeRuntime();
     expect(rt.platform).toBe(process.platform);
     expect(await rt.launch(process.execPath, ["-e", "process.exit(4)"])).toEqual({ code: 4, output: "" });
+  });
+});
+
+describe("finding a program on PATH", () => {
+  it("finds an executable on the path and not a missing one", () => {
+    expect(onPath("claude", { PATH: bin }, "linux")).toBe(true);
+    expect(onPath("claude", { PATH: emptyBin }, "linux")).toBe(false);
+    expect(onPath("claude", {}, "linux")).toBe(false);
+  });
+
+  it("tries each PATHEXT extension on Windows, whatever the case of the variable names", () => {
+    expect(onPath("claude", { Path: bin, PathExt: ".exe;.cmd" }, "win32")).toBe(true);
+    expect(onPath("claude", { PATH: bin, PATHEXT: ".exe" }, "win32")).toBe(false);
+    expect(onPath("claude", { PATH: emptyBin, PATHEXT: ".cmd" }, "win32")).toBe(false);
+  });
+
+  it("skips a file that is not executable on Linux", () => {
+    const plain = mkdtempSync(join(tmpdir(), "add-to-plain-"));
+    writeFileSync(join(plain, "claude"), "");
+    chmodSync(join(plain, "claude"), 0o644);
+    expect(onPath("claude", { PATH: plain }, "linux")).toBe(false);
+    rmSync(plain, { recursive: true, force: true });
   });
 });

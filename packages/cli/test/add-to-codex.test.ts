@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -8,6 +8,7 @@ import {
   CODEX_HOME_ENV,
   CODEX_MISSING,
   CODEX_STARTUP_TIMEOUT,
+  alreadyAdded,
   codexConfigPath,
   codexFailed,
   codexNoEntry,
@@ -17,17 +18,26 @@ import type { Launched } from "../src/launch.js";
 import { EXIT_FAILED, EXIT_OK, main, nodeRuntime } from "../src/main.js";
 
 const SERVER = ["npx", "-y", "@intent-engine/cli", "mcp", "--url", "devnet", "--wallet"];
+const WIN_SERVER = ["npx.cmd", ...SERVER.slice(1)];
 const ENTRY = `[mcp_servers.${PRODUCT_SLUG}]\ncommand = "npx"\nargs = ["-y", "@intent-engine/cli", "mcp", "--url", "devnet", "--wallet"]\n`;
 const OTHERS = `model = "gpt-5"\n\n[mcp_servers.docs]\ncommand = "docs-server"\nstartup_timeout_sec = 20\n`;
 
 let home = "";
+let bin = "";
 
 beforeEach(() => {
   home = mkdtempSync(join(tmpdir(), "add-to-codex-")).replaceAll("\\", "/");
+  bin = `${home}-bin`;
+  mkdirSync(bin);
+  for (const name of ["codex", "codex.cmd"]) {
+    writeFileSync(join(bin, name), "");
+    chmodSync(join(bin, name), 0o755);
+  }
 });
 
 afterEach(() => {
   rmSync(home, { recursive: true, force: true });
+  rmSync(bin, { recursive: true, force: true });
 });
 
 const configFile = () => `${home}/.codex/config.toml`;
@@ -44,7 +54,7 @@ async function addTo(argv: string[], platform: string, reply: Launched | null, c
   const rt = {
     ...nodeRuntime(),
     home,
-    env,
+    env: { PATH: bin, PATHEXT: ".cmd", ...env },
     platform,
     launch: async (program: string, args: readonly string[]) => {
       if (program === "npm") {
@@ -65,12 +75,12 @@ describe("add-to codex", () => {
   it("adds the server through cmd /c on native Windows, sets its startup timeout and says what changed", async () => {
     const run = await addTo(["add-to", "codex"], "win32", { code: 0, output: "Added global MCP server" }, `${OTHERS}\n${ENTRY.replace('command = "npx"', 'command = "cmd"')}`);
     expect(run.code).toBe(EXIT_OK);
-    expect(run.launched).toEqual([{ program: "codex", args: ["mcp", "add", PRODUCT_SLUG, "--", "cmd", "/c", ...SERVER] }]);
+    expect(run.launched).toEqual([{ program: "codex", args: ["mcp", "add", PRODUCT_SLUG, "--", "cmd", "/c", ...WIN_SERVER] }]);
     expect(JSON.parse(run.out)).toEqual({
       added: PRODUCT_SLUG,
       to: "Codex",
-      ran: `codex mcp add ${PRODUCT_SLUG} -- cmd /c ${SERVER.join(" ")}`,
-      server: `cmd /c ${SERVER.join(" ")}`,
+      ran: `codex mcp add ${PRODUCT_SLUG} -- cmd /c ${WIN_SERVER.join(" ")}`,
+      server: `cmd /c ${WIN_SERVER.join(" ")}`,
       config: configFile(),
       startup_timeout_sec: CODEX_STARTUP_TIMEOUT,
       was: null,
@@ -84,6 +94,7 @@ describe("add-to codex", () => {
 
   it("adds the server through npx directly elsewhere", async () => {
     for (const platform of ["linux", "darwin"]) {
+      rmSync(`${home}/.codex`, { recursive: true, force: true });
       const run = await addTo(["add-to", "codex"], platform, { code: 0, output: "" }, ENTRY);
       expect(run.code).toBe(EXIT_OK);
       expect(run.launched).toEqual([{ program: "codex", args: ["mcp", "add", PRODUCT_SLUG, "--", ...SERVER] }]);
@@ -94,8 +105,7 @@ describe("add-to codex", () => {
 
   it("replaces a timeout the solive entry already has and leaves every other line as it was", async () => {
     const before = `${OTHERS}\n${ENTRY}startup_timeout_sec = 10 # too short\n\n[mcp_servers.${PRODUCT_SLUG}.env]\nA = "1"\n\n[mcp_servers.after]\ncommand = "x"\n`;
-    writeConfig(before);
-    const run = await addTo(["add-to", "codex"], "linux", { code: 0, output: "" });
+    const run = await addTo(["add-to", "codex"], "linux", { code: 0, output: "" }, before);
     expect(run.code).toBe(EXIT_OK);
     expect(JSON.parse(run.out)).toMatchObject({ startup_timeout_sec: CODEX_STARTUP_TIMEOUT, was: "10" });
     expect(readFileSync(configFile(), "utf8")).toBe(before.replace("startup_timeout_sec = 10 # too short", `startup_timeout_sec = ${CODEX_STARTUP_TIMEOUT}`));
@@ -103,8 +113,7 @@ describe("add-to codex", () => {
 
   it("adds the timeout inside the entry, before a following table, keeping blank lines and other entries", async () => {
     const before = `${ENTRY}\n\n[mcp_servers.${PRODUCT_SLUG}.env]\nB = "2"\n${OTHERS}`;
-    writeConfig(before);
-    const run = await addTo(["add-to", "codex"], "linux", { code: 0, output: "" });
+    const run = await addTo(["add-to", "codex"], "linux", { code: 0, output: "" }, before);
     expect(run.code).toBe(EXIT_OK);
     expect(readFileSync(configFile(), "utf8")).toBe(before.replace(`${ENTRY}\n\n`, `${ENTRY}startup_timeout_sec = ${CODEX_STARTUP_TIMEOUT}\n\n\n`));
     expect(readFileSync(configFile(), "utf8")).toContain("[mcp_servers.docs]\ncommand = \"docs-server\"\nstartup_timeout_sec = 20\n");
@@ -112,8 +121,7 @@ describe("add-to codex", () => {
 
   it("leaves a config that already has the timeout untouched", async () => {
     const before = `${ENTRY}startup_timeout_sec = ${CODEX_STARTUP_TIMEOUT}\n`;
-    writeConfig(before);
-    const run = await addTo(["add-to", "codex"], "linux", { code: 0, output: "" });
+    const run = await addTo(["add-to", "codex"], "linux", { code: 0, output: "" }, before);
     expect(run.code).toBe(EXIT_OK);
     expect(JSON.parse(run.out)).toMatchObject({ was: String(CODEX_STARTUP_TIMEOUT) });
     expect(readFileSync(configFile(), "utf8")).toBe(before);
@@ -122,13 +130,32 @@ describe("add-to codex", () => {
   it("refuses plainly when codex is not installed, and touches no config", async () => {
     for (const platform of ["win32", "linux"]) {
       writeConfig(OTHERS);
-      const run = await addTo(["add-to", "codex"], platform, null);
+      const run = await addTo(["add-to", "codex"], platform, { code: 1, output: "'codex' is not recognized as an internal or external command" }, undefined, { PATH: `${home}/nowhere` });
       expect(run.code).toBe(EXIT_FAILED);
       expect(run.err).toBe(CODEX_MISSING);
-      expect(run.err).toBe("codex is not installed or not on PATH; install Codex, then run this again");
+      expect(run.err).toBe("codex is not installed or not on PATH; install Codex with npm install -g @openai/codex, then run this again");
       expect(run.out).toBe("");
+      expect(run.launched).toEqual([]);
       expect(readFileSync(configFile(), "utf8")).toBe(OTHERS);
     }
+  });
+
+  it("succeeds and says it is already set up on a second run, without calling codex or touching the config", async () => {
+    for (const platform of ["linux", "win32"]) {
+      const before = `${OTHERS}
+${ENTRY}startup_timeout_sec = 10
+`;
+      writeConfig(before);
+      const run = await addTo(["add-to", "codex"], platform, { code: 0, output: "" });
+      expect(run.code).toBe(EXIT_OK);
+      expect(run.err).toBe("");
+      expect(run.launched).toEqual([]);
+      expect(JSON.parse(run.out)).toMatchObject({ already: PRODUCT_SLUG, to: "Codex", note: alreadyAdded("codex", [], platform) });
+      expect(readFileSync(configFile(), "utf8")).toBe(before);
+    }
+    expect(alreadyAdded("codex", [], "win32")).toBe(
+      `${PRODUCT_SLUG} is already set up in Codex, so nothing was changed; to replace it, run codex mcp remove ${PRODUCT_SLUG}, then npx.cmd -y @intent-engine/cli add-to codex`,
+    );
   });
 
   it("reports a failing codex mcp add with what codex printed, and touches no config", async () => {
@@ -161,11 +188,15 @@ describe("add-to codex", () => {
   it("uses the config under CODEX_HOME when it is set", async () => {
     const elsewhere = `${home}/elsewhere`;
     mkdirSync(elsewhere);
+    const env = { [CODEX_HOME_ENV]: `${elsewhere}/` };
+    const unset = await addTo(["add-to", "codex"], "linux", { code: 0, output: "" }, ENTRY, env);
+    expect(unset.err).toBe(codexNoEntry(`${elsewhere}/config.toml`));
     writeFileSync(`${elsewhere}/config.toml`, ENTRY);
-    const run = await addTo(["add-to", "codex"], "linux", { code: 0, output: "" }, undefined, { [CODEX_HOME_ENV]: `${elsewhere}/` });
+    const run = await addTo(["add-to", "codex"], "linux", { code: 0, output: "" }, undefined, env);
     expect(run.code).toBe(EXIT_OK);
-    expect(JSON.parse(run.out)).toMatchObject({ config: `${elsewhere}/config.toml` });
-    expect(readFileSync(`${elsewhere}/config.toml`, "utf8")).toBe(`${ENTRY}startup_timeout_sec = ${CODEX_STARTUP_TIMEOUT}\n`);
+    expect(run.launched).toEqual([]);
+    expect(JSON.parse(run.out)).toMatchObject({ already: PRODUCT_SLUG });
+    expect(readFileSync(`${elsewhere}/config.toml`, "utf8")).toBe(ENTRY);
     expect(codexConfigPath({ home: "/h", env: {} })).toBe("/h/.codex/config.toml");
     expect(codexConfigPath({ home: "/h", env: { [CODEX_HOME_ENV]: "C:\\Users\\me\\.codex\\" } })).toBe("C:/Users/me/.codex/config.toml");
   });

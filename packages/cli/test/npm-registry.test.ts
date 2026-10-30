@@ -1,4 +1,7 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { PRODUCT_SLUG } from "@intent-engine/core/internal";
 import { HttpRegistryRefused } from "../src/add-to.js";
 import { launch, LaunchTimedOut, type Launched } from "../src/launch.js";
@@ -21,6 +24,20 @@ import {
 } from "../src/npm-registry.js";
 import { runtime, world } from "./harness.js";
 
+let bin = "";
+
+beforeAll(() => {
+  bin = mkdtempSync(join(tmpdir(), "registry-bin-"));
+  for (const name of ["claude", "codex"]) {
+    writeFileSync(join(bin, name), "");
+    chmodSync(join(bin, name), 0o755);
+  }
+});
+
+afterAll(() => {
+  rmSync(bin, { recursive: true, force: true });
+});
+
 const PLAIN = "http://" + "registry.npmjs.org/";
 const MIRROR = "https://" + "npm.example.org/";
 const HTTP_REPLY: Launched = { code: 0, output: `${PLAIN}\n` };
@@ -41,6 +58,8 @@ async function command(argv: string[], npm: Npm, reply: Launched | null = { code
   const err: string[] = [];
   const rt = {
     ...runtime({}),
+    env: { PATH: bin },
+    platform: "linux",
     launch: async (program: string, args: readonly string[], timeoutMs?: number) => {
       calls.push({ program, args, timeoutMs });
       if (program !== NPM) {

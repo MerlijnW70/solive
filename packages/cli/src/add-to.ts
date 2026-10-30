@@ -1,5 +1,6 @@
 import { PRODUCT_SLUG } from "@intent-engine/core/internal";
 import type { Runtime } from "./runtime.js";
+import { onPath } from "./launch.js";
 import { httpRefused, npmRegistry, registryWarning } from "./npm-registry.js";
 
 export const CLI_PACKAGE = "@intent-engine/cli";
@@ -16,9 +17,15 @@ export const CODEX_STARTUP_TIMEOUT = 90;
 
 export const CODEX_HOME_ENV = "CODEX_HOME";
 
-export const CLAUDE_MISSING = "claude is not installed or not on PATH; install Claude Code, then run this again";
+export const CLAUDE_INSTALL = "npm install -g @anthropic-ai/claude-code";
 
-export const CODEX_MISSING = "codex is not installed or not on PATH; install Codex, then run this again";
+export const CODEX_INSTALL = "npm install -g @openai/codex";
+
+export const CLAUDE_MISSING = `claude is not installed or not on PATH; install Claude Code with ${CLAUDE_INSTALL}, then run this again`;
+
+export const CODEX_MISSING = `codex is not installed or not on PATH; install Codex with ${CODEX_INSTALL}, then run this again`;
+
+export const npxFor = (platform: string): string => (platform === "win32" ? "npx.cmd" : "npx");
 
 const failed = (app: App) => (code: number, output: string) =>
   `${app} mcp add failed with exit code ${code}, so nothing was added: ${output.trim() === "" ? "it printed nothing" : output.trim()}`;
@@ -29,8 +36,13 @@ export const CLAUDE_SCOPE = ["--scope", "user"];
 
 const ALREADY_EXISTS = /already exists/i;
 
-export const claudeExists = (limits: readonly string[]) =>
-  `${PRODUCT_SLUG} is already added to Claude Code for your user, so nothing was changed; to replace it, run ${[CLAUDE, "mcp", "remove", ...CLAUDE_SCOPE, PRODUCT_SLUG].join(" ")}, then ${["npx", "-y", CLI_PACKAGE, "add-to", CLAUDE, ...limits].join(" ")}`;
+const replaceCommands = (app: App, limits: readonly string[], platform: string): string[] => [
+  [app, "mcp", "remove", ...(app === CLAUDE ? CLAUDE_SCOPE : []), PRODUCT_SLUG].join(" "),
+  [npxFor(platform), "-y", CLI_PACKAGE, "add-to", app, ...limits].join(" "),
+];
+
+export const alreadyAdded = (app: App, limits: readonly string[], platform: string) =>
+  `${PRODUCT_SLUG} is already set up in ${APPS[app].name}, so nothing was changed; to replace it, run ${replaceCommands(app, limits, platform).join(", then ")}`;
 
 export const codexFailed = failed(CODEX);
 
@@ -47,7 +59,7 @@ const APPS: Record<App, { name: string; missing: string; failed: (code: number, 
 
 export const serverCommand = (platform: string, limits: readonly string[]): string[] => [
   ...(platform === "win32" ? ["cmd", "/c"] : []),
-  "npx",
+  npxFor(platform),
   "-y",
   CLI_PACKAGE,
   "mcp",
@@ -101,10 +113,24 @@ async function setCodexTimeout(runtime: Runtime): Promise<object> {
   return { config: path, startup_timeout_sec: CODEX_STARTUP_TIMEOUT, was: changed.was };
 }
 
+const alreadyResult = (app: App, limits: readonly string[], platform: string): object => ({
+  already: PRODUCT_SLUG,
+  to: APPS[app].name,
+  note: alreadyAdded(app, limits, platform),
+  next: `restart ${APPS[app].name} if it is open, then ask it to set you up and make your first swap`,
+});
+
 export class HttpRegistryRefused extends Error {}
 
 export async function addTo(app: App, limits: readonly string[], allowHttpRegistry: boolean, runtime: Runtime): Promise<object> {
   const target = APPS[app];
+  if (!onPath(app, runtime.env, runtime.platform)) {
+    throw new Error(target.missing);
+  }
+  const existing = app === CODEX ? await runtime.readText(codexConfigPath(runtime)).catch(() => "") : "";
+  if (app === CODEX && withStartupTimeout(existing) !== null) {
+    return alreadyResult(app, limits, runtime.platform);
+  }
   const registry = await npmRegistry(runtime.launch);
   if (registry.read === "http" && !allowHttpRegistry) {
     throw new HttpRegistryRefused(httpRefused(registry.registry, registry.key));
@@ -117,7 +143,7 @@ export async function addTo(app: App, limits: readonly string[], allowHttpRegist
     throw new Error(target.missing);
   }
   if (launched.code !== 0 && app === CLAUDE && ALREADY_EXISTS.test(launched.output)) {
-    throw new Error(claudeExists(limits));
+    return alreadyResult(app, limits, runtime.platform);
   }
   if (launched.code !== 0) {
     throw new Error(target.failed(launched.code, launched.output));
