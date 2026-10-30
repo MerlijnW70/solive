@@ -51,15 +51,21 @@ export const OTHER_FAUCETS = `or ask another devnet faucet, such as ${PUBLIC_FAU
 export const fundingSteps = (address: string) =>
   `open ${faucetLink(address)} to file a faucet request in a browser, as a public GitHub issue that needs a GitHub account; ${FAUCET_SCHEDULE}; ${OTHER_FAUCETS}`;
 export const SETUP_AGAIN = "; run setup again once SOL arrives";
-export const airdropRefused = (address: string, hint = "") => "your wallet holds no SOL yet and devnet refused the airdrop, as it often does; " + hint + fundingSteps(address) + SETUP_AGAIN;
+export const GH_WAY = "run intent-engine setup --faucet to file a faucet request with a signed-in GitHub CLI (gh) and wait for the SOL";
+export const pasteAt = (address: string) => `paste ${address} at ${PUBLIC_FAUCET}, which sends at once when it accepts, then run setup again`;
+export const otherWays = (address: string, hint: string): string[] => [
+  `open ${faucetLink(address)} to file a faucet request in a browser, as a public GitHub issue that needs a GitHub account; ${FAUCET_SCHEDULE}`,
+  ...(hint === GH_HINT ? [GH_WAY] : []),
+];
+export const airdropRefused = (address: string) => `your wallet holds no SOL yet and devnet refused the airdrop; ${pasteAt(address)}`;
 const getSol = (address: string, url: string) => (url === DEVNET_URL ? `get devnet SOL: ${GH_HINT}${fundingSteps(address)}` : `send SOL to ${address}`);
 export const unfundedPreview = (address: string, url: string) =>
   `nothing was sent: ${address} holds no SOL, so this preview could not be simulated; ${getSol(address, url)}; then run this again with --yes`;
 export const unfundedRefused = (address: string, url: string) =>
   `nothing was sent: ${address} holds no SOL to pay the network fee; ${getSol(address, url)}; then run this again`;
 export const SEND_SOL = "send SOL to this address, then run setup again";
-export const heldRefused = (sol: string, address: string, hint = "") =>
-  `your wallet holds ${sol} SOL, less than the ${solOf(ENOUGH_TO_START)} SOL setup counts as enough to start, and devnet refused to add more; ` + hint + fundingSteps(address) + SETUP_AGAIN;
+export const heldRefused = (sol: string, address: string) =>
+  `your wallet holds ${sol} SOL, less than the ${solOf(ENOUGH_TO_START)} SOL setup counts as enough to start, and devnet refused to add more; ${pasteAt(address)}`;
 
 export type InstantRun = { fetch: FaucetFetch | undefined; env: Env };
 
@@ -236,6 +242,7 @@ export async function setup(
   const sol = solOf(held);
   const smaller = got === undefined || got === AIRDROP ? "" : smallerAirdrop(got);
   const lead = dripped === null ? "" : "lamports" in dripped ? instantSent(solOf(BigInt(dripped.lamports))) : INSTANT_REFUSED;
+  const short = url !== CLUSTERS["mainnet-beta"] && held < ENOUGH_TO_START;
   const status =
     url === CLUSTERS["mainnet-beta"] && held < FUND_BELOW
       ? SEND_SOL
@@ -244,9 +251,9 @@ export async function setup(
         : filed !== undefined
           ? faucetPending(filed)
           : held > 0n
-            ? heldRefused(sol, signer.address, hint)
-            : airdropRefused(signer.address, hint);
-  const next = lead + status;
+            ? heldRefused(sol, signer.address)
+            : airdropRefused(signer.address);
+  const next = short ? status : lead + status;
   return {
     address: signer.address,
     keypair: path,
@@ -259,6 +266,7 @@ export async function setup(
     ...(filed === undefined ? {} : { faucet_request: filed }),
     ...(dripped === null ? {} : { faucet: dripped }),
     next,
+    ...(short ? { other_ways: otherWays(signer.address, hint) } : {}),
   };
 }
 

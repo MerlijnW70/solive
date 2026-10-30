@@ -1,7 +1,7 @@
 import { type Address, lamports } from "@solana/kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { askInstantFaucet, FAUCET_DEFAULT_URL, FAUCET_PLAIN_URL, FAUCET_TIMED_OUT, FAUCET_TIMEOUT_MS, FAUCET_UNREACHABLE, type FaucetFetch, REFUSAL_LIMIT } from "../src/faucet.js";
-import { AIRDROPS, CLI_START, holdsEnough, INSTANT_REFUSED, instantSent, setup } from "../src/wallet.js";
+import { askInstantFaucet, FAUCET_BLOCKED, FAUCET_BUSY, FAUCET_DEFAULT_URL, FAUCET_DOWN, FAUCET_SILENT, GH_HINT, FAUCET_PLAIN_URL, FAUCET_TIMED_OUT, FAUCET_TIMEOUT_MS, FAUCET_UNREACHABLE, type FaucetFetch, REFUSAL_LIMIT } from "../src/faucet.js";
+import { AIRDROPS, airdropRefused, CLI_START, holdsEnough, INSTANT_REFUSED, instantSent, otherWays, setup } from "../src/wallet.js";
 import { WALLET_START } from "../src/agent/wallet/account.js";
 import { DEVNET_URL } from "../src/tokens.js";
 import { cli, h, instant, runtime, transport, world } from "./harness.js";
@@ -68,7 +68,8 @@ describe("the instant faucet in setup", () => {
     instant.fetch = answering(503, { error: "Empty." }, calls);
     const made = (await cli(["setup"], {})).json();
     expect(made).toMatchObject({ faucet: { refused: "Empty." }, sol: "0" });
-    expect(made["next"]).toContain(INSTANT_REFUSED + "your wallet holds no SOL yet and devnet refused the airdrop");
+    expect(made["next"]).toContain("your wallet holds no SOL yet and devnet refused the airdrop");
+    expect(made["next"]).not.toContain(INSTANT_REFUSED);
     expect(h.airdrops).toHaveLength(AIRDROPS.length);
   });
 
@@ -155,8 +156,33 @@ describe("the instant faucet in setup", () => {
     }
   });
 
-  it("names the status when the faucet gives no sentence", async () => {
-    expect(await askInstantFaucet(answering(405, {}, []), {}, "address")).toEqual({ refused: expect.stringContaining("405") });
+  it("gives a plain sentence without a status when the faucet sends no error", async () => {
+    const cases: [number, unknown, string][] = [
+      [403, null, FAUCET_BLOCKED],
+      [429, "slow", FAUCET_BUSY],
+      [503, null, FAUCET_DOWN],
+      [405, {}, FAUCET_SILENT],
+    ];
+    for (const [status, body, sentence] of cases) {
+      const refused = await askInstantFaucet(answering(status, body, []), {}, "address");
+      expect(refused).toEqual({ refused: sentence });
+      expect(sentence).not.toMatch(/status|\d/);
+    }
+  });
+
+  it("keeps the no-SOL next within two sentences, with the other routes in other_ways", async () => {
+    h.airdropRefused = true;
+    for (const [status, body] of [[403, null], [429, "slow"], [503, null], [429, { error: "Slow down." }]] as const) {
+      h.files.clear();
+      instant.fetch = answering(status, body, calls);
+      const made = (await cli(["setup"], {})).json();
+      const address = made["address"] as string;
+      expect(made["sol"]).toBe("0");
+      expect(made["next"]).toBe(airdropRefused(address));
+      expect((made["next"] as string).split(/[.!?](?:\s|$)/).filter((part) => part !== "").length).toBeLessThanOrEqual(2);
+      expect(made["other_ways"]).toEqual(otherWays(address, GH_HINT));
+      expect(made["next"]).not.toContain("GitHub");
+    }
   });
 
   it("is skipped by setup called directly without a fetch", async () => {

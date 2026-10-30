@@ -34,7 +34,8 @@ import {
   ENOUGH_TO_START,
   faucetLink,
   fundingSteps,
-  OTHER_FAUCETS,
+  GH_WAY,
+  otherWays,
   PUBLIC_FAUCET,
   heldRefused,
   holdsEnough,
@@ -145,14 +146,14 @@ describe("setup when devnet refuses", () => {
     const address = made.json()["address"] as Address;
     expect(h.airdrops.map((a) => a.lamports)).toEqual([...AIRDROPS]);
     expect(made.launched).toEqual([]);
-    expect(made.json()).toMatchObject({ sol: "0", next: airdropRefused(address, GH_HINT) });
+    expect(made.json()).toMatchObject({ sol: "0", next: airdropRefused(address) });
     expect(made.json()["airdrop"]).toBeUndefined();
-    expect(made.json()["next"]).toContain("intent-engine setup --faucet files a faucet request");
-    expect(made.json()["next"]).toContain("in a browser, as a public GitHub issue that needs a GitHub account");
-    expect(made.json()["next"]).toContain(fundingSteps(address));
-    expect(made.json()["next"]).toContain(OTHER_FAUCETS);
-    expect(OTHER_FAUCETS).toContain(PUBLIC_FAUCET);
-    expect(made.json()["next"]).toContain("devnet refused the airdrop, as it often does");
+    expect(made.json()["other_ways"]).toEqual(otherWays(address, GH_HINT));
+    expect(made.json()["other_ways"]).toContain(GH_WAY);
+    expect((made.json()["other_ways"] as string[])[0]).toContain("in a browser, as a public GitHub issue that needs a GitHub account");
+    expect(made.json()["next"]).toContain(PUBLIC_FAUCET);
+    expect(made.json()["next"]).not.toContain("--faucet");
+    expect(made.json()["next"]).toContain("devnet refused the airdrop");
   });
 
   it("names the faucet option only on devnet, where the faucet sends", async () => {
@@ -160,6 +161,8 @@ describe("setup when devnet refuses", () => {
     const made = await run(["setup", "--url", "localnet"]);
     expect(made.json()).toMatchObject({ next: airdropRefused(made.json()["address"] as string) });
     expect(made.json()["next"]).not.toContain("--faucet");
+    expect(made.json()["other_ways"]).toEqual(otherWays(made.json()["address"] as string, ""));
+    expect(made.json()["other_ways"]).not.toContain(GH_WAY);
   });
 
   it("counts the SOL the first paid job guide needs as enough to start and sends that wallet nowhere near the faucet", async () => {
@@ -180,7 +183,7 @@ describe("setup when devnet refuses", () => {
     const address = (await run(["setup"])).json()["address"] as Address;
     h.svm.airdrop(address, lamports(ENOUGH_TO_START - 1n));
     const held = (await run(["setup"])).json();
-    expect(held).toMatchObject({ sol: "0.059999999", next: heldRefused("0.059999999", address, GH_HINT) });
+    expect(held).toMatchObject({ sol: "0.059999999", next: heldRefused("0.059999999", address) });
   });
 
   it("offers the starter swap only to a wallet that can pay for it", async () => {
@@ -243,9 +246,9 @@ describe("setup --faucet", () => {
     expect(ran.launched).toEqual([["gh", "auth", "status", "--hostname", "github.com"]]);
     expect(h.sleeps).toEqual([]);
     expect(ran.notes).toBe("");
-    expect(ran.json()).toMatchObject({ sol: "0", next: airdropRefused(address, GH_MISSING) });
-    expect(ran.json()["next"]).toContain("the GitHub CLI (gh) was not found, so open " + faucetLink(address) + " to file a faucet request in a browser");
-    expect(ran.json()["next"]).toContain(OTHER_FAUCETS);
+    expect(ran.json()).toMatchObject({ sol: "0", next: airdropRefused(address) });
+    expect(ran.json()["other_ways"]).toEqual(otherWays(address, GH_MISSING));
+    expect((ran.json()["other_ways"] as string[])[0]).toContain("open " + faucetLink(address) + " to file a faucet request in a browser");
     expect(ran.json()["faucet_request"]).toBeUndefined();
   });
 
@@ -253,7 +256,7 @@ describe("setup --faucet", () => {
     const ran = await run(["setup", "--faucet"], [{ code: 1, output: "You are not logged into any GitHub hosts" }]);
     const address = ran.json()["address"] as Address;
     expect(ran.launched).toHaveLength(1);
-    expect(ran.json()).toMatchObject({ next: airdropRefused(address, GH_SIGNED_OUT) });
+    expect(ran.json()).toMatchObject({ next: airdropRefused(address) });
   });
 
   it("fails with what the GitHub CLI said when it cannot file the request", async () => {

@@ -97,7 +97,7 @@ describe("the wallet server's limits and reads", () => {
     const made = await ok(client, "wallet_setup");
     const address = made["address"] as string;
     expect(made).toMatchObject({ sol: "0", next: airdropRefused(address) });
-    expect(made["next"]).toContain(faucetLink(address));
+    expect((made["other_ways"] as string[])[0]).toContain(faucetLink(address));
     expect((await call(client, "wallet_swap", { sell: "SOL", buy: "TEST", amount: "0.05", min_receive: "5" })).value).toMatchObject({
       code: "WalletEmpty",
       hint: walletEmpty(address),

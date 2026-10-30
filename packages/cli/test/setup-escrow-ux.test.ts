@@ -12,7 +12,7 @@ import { RELEASE_LANDING, stillUnknown, stillUnreleased } from "../src/agent/wal
 import { unwrapped, unwrapReturns } from "../src/agent/wallet/unwrap.js";
 import { WALLET_NOTICE } from "../src/agent/wallet.js";
 import { EXIT_OK } from "../src/main.js";
-import { AIRDROPS, airdropRefused, CLI_START, ENOUGH_TO_START, heldRefused, holdsEnough, LAMPORTS_PER_SOL, refusedEnough } from "../src/wallet.js";
+import { AIRDROPS, airdropRefused, CLI_START, ENOUGH_TO_START, heldRefused, holdsEnough, LAMPORTS_PER_SOL, otherWays, refusedEnough } from "../src/wallet.js";
 import { cli, creation, FEE_BPS, h, world } from "./harness.js";
 import { approved } from "./approved.js";
 
@@ -107,6 +107,7 @@ describe("setup, escrow and balance explain themselves", () => {
     expect(low).toMatchObject({ sol: "0.02", next: heldRefused("0.02", address) });
     expect(low["next"]).toContain(`your wallet holds 0.02 SOL, less than the ${formatAmount(ENOUGH_TO_START, 9)} SOL setup counts as enough to start`);
     expect(low["next"]).not.toContain("--faucet");
+    expect(low["other_ways"]).toEqual(otherWays(address, ""));
     h.svm.airdrop(address, lamports(ENOUGH_TO_START - LAMPORTS_PER_SOL / 50n));
     const small = await ok(client, "wallet_setup");
     expect(small).toMatchObject({ sol: "0.06", next: refusedEnough("0.06", WALLET_SMALL_START) });

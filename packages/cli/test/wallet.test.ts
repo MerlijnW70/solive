@@ -21,11 +21,13 @@ import {
   CLI_SMALL_START,
   CLI_START,
   FAUCET,
-  fundingSteps,
   faucetLink,
   defaultWallet,
   ENOUGH_TO_START,
+  GH_WAY,
   heldRefused,
+  otherWays,
+  pasteAt,
   holdsEnough,
   LAMPORTS_PER_SOL,
   refusedEnough,
@@ -164,18 +166,20 @@ describe("setup and balance", () => {
     h.airdropRefused = true;
     const refused = (await cli(["setup"], {})).json();
     const address = refused["address"] as Address;
-    expect(refused).toMatchObject({ created: true, sol: "0", next: airdropRefused(address, GH_HINT) });
+    expect(refused).toMatchObject({ created: true, sol: "0", next: airdropRefused(address) });
     expect(refused["next"]).toBe(
-      "your wallet holds no SOL yet and devnet refused the airdrop, as it often does; intent-engine setup --faucet files a faucet request with a signed-in GitHub CLI (gh) and waits for the SOL; or open " +
-        FAUCET + "&address=" + address +
-        " to file a faucet request in a browser, as a public GitHub issue that needs a GitHub account; the faucet answers new requests at least every 15 minutes, so SOL arrives within 25 minutes; or ask another devnet faucet, such as " +
-        "https://" + "faucet.solana.com, which sends at once when it accepts; run setup again once SOL arrives",
+      "your wallet holds no SOL yet and devnet refused the airdrop; paste " + address + " at https://" + "faucet.solana.com, which sends at once when it accepts, then run setup again",
     );
+    expect(refused["other_ways"]).toEqual([
+      "open " + FAUCET + "&address=" + address +
+        " to file a faucet request in a browser, as a public GitHub issue that needs a GitHub account; the faucet answers new requests at least every 15 minutes, so SOL arrives within 25 minutes",
+      GH_WAY,
+    ]);
     h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 50n));
-    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.02", next: heldRefused("0.02", address, GH_HINT) });
+    expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.02", next: heldRefused("0.02", address) });
     expect(h.airdrops).toHaveLength(2 * AIRDROPS.length);
-    expect(heldRefused("0.02", address).endsWith(fundingSteps(address) + "; run setup again once SOL arrives")).toBe(true);
-    expect(fundingSteps(address)).toContain(faucetLink(address));
+    expect(heldRefused("0.02", address).endsWith(pasteAt(address))).toBe(true);
+    expect(otherWays(address, GH_HINT)[0]).toContain(faucetLink(address));
     h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 4n));
     expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.27", next: refusedEnough("0.27", CLI_START) });
     expect(h.airdrops).toHaveLength(3 * AIRDROPS.length);

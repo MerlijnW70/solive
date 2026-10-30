@@ -68,7 +68,10 @@ export const FAUCET_PLAIN_URL = "the instant faucet url must start with https://
 export const FAUCET_UNREADABLE_URL = "the instant faucet url is not a valid url";
 export const FAUCET_UNREACHABLE = "the instant faucet could not be reached";
 export const FAUCET_TIMED_OUT = "the instant faucet did not answer in time";
-export const FAUCET_SILENT = "the instant faucet gave no reason";
+export const FAUCET_BLOCKED = "the instant faucet is not reachable from this network, so use another faucet";
+export const FAUCET_BUSY = "the instant faucet is busy, so try again in a minute or use another faucet";
+export const FAUCET_DOWN = "the instant faucet is down for now, so use another faucet";
+export const FAUCET_SILENT = "the instant faucet refused this request, so use another faucet";
 export const FAUCET_MALFORMED = "the instant faucet sent a reply this CLI does not recognise";
 
 export type FaucetFetch = (
@@ -102,9 +105,19 @@ function dripUrl(env: Env): string | InstantFaucet | null {
   return `${parsed.origin}${parsed.pathname.replace(/\/+$/, "")}${FAUCET_DRIP_PATH}`;
 }
 
+function silentRefusal(status: number): string {
+  if (status === 403) {
+    return FAUCET_BLOCKED;
+  }
+  if (status === 429) {
+    return FAUCET_BUSY;
+  }
+  return status >= 500 ? FAUCET_DOWN : FAUCET_SILENT;
+}
+
 function refusalOf(status: number, body: unknown): InstantFaucet {
   const said = body !== null && typeof body === "object" && "error" in body && typeof body.error === "string" ? body.error : "";
-  return { refused: refusalText(said === "" ? `${FAUCET_SILENT} (status ${status})` : said) };
+  return { refused: refusalText(said === "" ? silentRefusal(status) : said) };
 }
 
 function dripOf(body: unknown): InstantFaucet {

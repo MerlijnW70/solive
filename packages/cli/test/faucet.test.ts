@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { airdropRefused, FAUCET, FAUCET_FIELD, faucetLink } from "../src/wallet.js";
+import { airdropRefused, FAUCET, FAUCET_FIELD, faucetLink, otherWays } from "../src/wallet.js";
 
 const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const SCRIPT = join(ROOT, "scripts/faucet.sh");
@@ -259,7 +259,8 @@ describe("the devnet faucet", () => {
     expect(page).toContain("```sh\nintent-engine setup\n```");
     expect(FORM).toContain("description: The address `intent-engine setup` prints.");
     expect(FAUCET).toBe(`${repository}/issues/new?template=faucet.yml`);
-    expect(airdropRefused(ADDRESS)).toContain("open " + faucetLink(ADDRESS) + " to file a faucet request in a browser");
+    expect(otherWays(ADDRESS, "")[0]).toContain("open " + faucetLink(ADDRESS) + " to file a faucet request in a browser");
+    expect(airdropRefused(ADDRESS)).toContain("faucet.solana.com");
     expect(FORM).toContain("It sends 0.5 devnet SOL once a day per GitHub account.");
     expect(script).toContain("amount_sol=0.5\namount=500000000\n");
     expect(script).toContain("one request per GitHub account per day");
