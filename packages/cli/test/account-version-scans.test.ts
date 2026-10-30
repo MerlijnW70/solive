@@ -139,7 +139,7 @@ describe("job and intent listings over an intent of a layout this version cannot
     const valid = await open(0n);
     const newer = await open(1n);
     storeNewerVersion(newer);
-    const found = await ok(client, "find_jobs", { attestor: judge });
+    const found = await ok(client, "find_jobs", { attestor: judge, all: true });
     expect(found["jobs"].map((job: Json) => job["intent"])).toEqual([valid]);
     expect(found["skipped"]).toEqual([{ intent: newer, reason: NEWER }]);
     const listed = (await cli(["jobs", "--attestor", judge], {})).json() as Json;

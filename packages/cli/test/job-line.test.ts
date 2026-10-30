@@ -156,9 +156,9 @@ describe("the stand-by line from the command line", () => {
     await server.connect(near);
     const mcp = new Client({ name: "test", version: "0.0.0" });
     await mcp.connect(far);
-    const found = await mcp.callTool({ name: "solive_find_jobs", arguments: {} });
+    const found = await mcp.callTool({ name: "solive_find_jobs", arguments: { all: true } });
     expect((found.structuredContent as Json)["jobs"]).toEqual([expect.objectContaining({ intent: j.intent, claimed_by: null, waiting: 2 })]);
-    const unclaimed = await mcp.callTool({ name: "solive_find_jobs", arguments: { unclaimed: true } });
+    const unclaimed = await mcp.callTool({ name: "solive_find_jobs", arguments: { all: true, unclaimed: true } });
     expect((unclaimed.structuredContent as Json)["jobs"]).toEqual([]);
   });
 });

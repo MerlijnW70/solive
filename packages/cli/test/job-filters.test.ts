@@ -88,7 +88,7 @@ describe("jobs filtered by what they pay", () => {
   it("solive_find_jobs filters by mint, min_pay and both, and lists every job with neither", async () => {
     const client = await linked();
     const found = async (args: Json) => {
-      const result = await client.callTool({ name: "solive_find_jobs", arguments: args });
+      const result = await client.callTool({ name: "solive_find_jobs", arguments: { all: true, ...args } });
       expect(result.isError, JSON.stringify(result.structuredContent)).not.toBe(true);
       return ((result.structuredContent as Json)["jobs"] as { intent: Address }[]).map(({ intent }) => intent);
     };

@@ -113,7 +113,7 @@ describe("a job names the freeze authority of its mint", () => {
     expect([command.code, command.err]).toEqual([EXIT_OK, ""]);
     expect(byName(command.json()["jobs"] as Json[])).toEqual(expected());
     const client = await linked();
-    const found = await client.callTool({ name: "solive_find_jobs", arguments: {} });
+    const found = await client.callTool({ name: "solive_find_jobs", arguments: { all: true } });
     expect(found.isError, JSON.stringify(found.structuredContent)).not.toBe(true);
     expect(byName((found.structuredContent as Json)["jobs"] as Json[])).toEqual(expected());
     for (const [name, intent] of escrows) {
@@ -147,7 +147,7 @@ describe("a job names the freeze authority of its mint", () => {
     const command = await cli(["jobs"], {});
     expect(byName(command.json()["jobs"] as Json[])["third party"]).toEqual({ freeze_authority: null });
     const client = await linked();
-    const found = await client.callTool({ name: "solive_find_jobs", arguments: {} });
+    const found = await client.callTool({ name: "solive_find_jobs", arguments: { all: true } });
     expect(byName((found.structuredContent as Json)["jobs"] as Json[])["third party"]).toEqual({ freeze_authority: null });
     const spec = await client.callTool({ name: "solive_get_spec", arguments: { intent } });
     expect(freezeOf(spec.structuredContent as Json)).toEqual({ freeze_authority: null });

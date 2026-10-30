@@ -88,7 +88,7 @@ describe("jobs show what they pay after fees", () => {
 
   const found = async () => {
     const client = await linked();
-    const result = await client.callTool({ name: "solive_find_jobs", arguments: {} });
+    const result = await client.callTool({ name: "solive_find_jobs", arguments: { all: true } });
     expect(result.isError, JSON.stringify(result.structuredContent)).not.toBe(true);
     return pays((result.structuredContent as Json)["jobs"] as Pay[]);
   };
@@ -132,7 +132,7 @@ describe("jobs show what they pay after fees", () => {
     expect(await command()).toEqual(before);
     expect(await found()).toEqual(before);
     const client = await linked();
-    const result = await client.callTool({ name: "solive_find_jobs", arguments: {} });
+    const result = await client.callTool({ name: "solive_find_jobs", arguments: { all: true } });
     const listed = (result.structuredContent as Json)["jobs"] as { intent: Address; fee_bps: number }[];
     const order = [token, sol, stuck];
     expect(listed.map(({ intent, fee_bps }) => [intent, fee_bps])).toEqual(order.map((intent, i) => [intent, recorded[i]]));
@@ -151,6 +151,6 @@ describe("jobs show what they pay after fees", () => {
     expect(await reads(command)).toEqual([1, 1, 1]);
     expect(await reads(found)).toEqual([1, 1, 1]);
     expect(await reads(() => cli(["jobs", "--min-pay", "0.0001"], {}))).toEqual([1, 1, 1]);
-    expect(await reads(async () => (await linked()).callTool({ name: "solive_find_jobs", arguments: { min_pay: "0.0001" } }))).toEqual([1, 1, 1]);
+    expect(await reads(async () => (await linked()).callTool({ name: "solive_find_jobs", arguments: { all: true, min_pay: "0.0001" } }))).toEqual([1, 1, 1]);
   });
 });

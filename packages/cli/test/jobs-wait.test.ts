@@ -46,7 +46,7 @@ describe("solive_find_jobs with wait", () => {
   }
 
   const call = async (client: Client, args: Json) => {
-    const result = await client.callTool({ name: "solive_find_jobs", arguments: { attestor: judge, ...args } });
+    const result = await client.callTool({ name: "solive_find_jobs", arguments: { attestor: judge, all: true, ...args } });
     return { error: result.isError === true, value: result.structuredContent as Json };
   };
 

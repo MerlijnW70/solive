@@ -47,7 +47,7 @@ describe("solive_find_jobs next hint", () => {
   }
 
   const found = async (client: Client, args: Json) => {
-    const result = await client.callTool({ name: "solive_find_jobs", arguments: { attestor: judge, ...args } });
+    const result = await client.callTool({ name: "solive_find_jobs", arguments: { attestor: judge, all: true, ...args } });
     expect(result.isError, JSON.stringify(result.structuredContent)).not.toBe(true);
     return result.structuredContent as Json;
   };

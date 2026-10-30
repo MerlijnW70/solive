@@ -107,7 +107,7 @@ export const OWN: Readonly<Record<string, readonly string[]>> = {
   [tool("wallet_unwrap")]: ["wrapped", "rent"],
   [tool("list_intents")]: ["intents[].summary[]"],
   [tool("get_balances")]: ["sol", "tokens[].balance_tokens"],
-  [tool("find_jobs")]: ["jobs[].pays", "jobs[].net_pay", "jobs[].freeze_warning"],
+  [tool("find_jobs")]: ["jobs[].pays", "jobs[].net_pay", "jobs[].freeze_warning", "more"],
   [tool("get_spec")]: ["text_warning", "freeze_warning"],
   [tool("hash")]: ["sha256"],
   [tool("prepare_deliver")]: ["sha256", "url", "commitment"],

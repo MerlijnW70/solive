@@ -53,13 +53,13 @@ describe("the wallet server's deliveries", () => {
     const intent = escrow["intent"] as Address;
     const plain = await ok(client, "wallet_escrow", await approved(client, "wallet_escrow", { ...terms }));
     const job = { intent, owner, nonce: escrow["nonce"], attestor: judge, spec_hash: specHash, spec_url: null, sells: (LAMPORTS_PER_SOL / 20n).toString(), pays: "0.05", judge_fee: "0", fee_bps: FEE_BPS, input_mint: NATIVE_MINT, net_pay: "0.049975", payable: true, takes_claims: false, claimed_by: null, claim_ends: null, waiting: 0, freeze_authority: null };
-    expect(await ok(client, "find_jobs", { attestor: judge })).toEqual({ fee_bps: expect.any(Number), jobs: [{ ...job, expires_at: expect.any(String) }], next: expect.stringContaining("solive_get_spec") });
+    expect(await ok(client, "find_jobs", { attestor: judge, all: true })).toEqual({ fee_bps: expect.any(Number), jobs: [{ ...job, expires_at: expect.any(String) }], next: expect.stringContaining("solive_get_spec") });
     const created = getIntentCreatedEventEncoder().encode({ intent, owner, nonce: BigInt(escrow["nonce"] as string), kind: 4, inputMint: NATIVE_MINT, outputMint: TEST_TOKEN, receiver: owner, escrowed: LAMPORTS_PER_SOL / 20n, expiresAt: 0n, rentPayer: owner, flags: 0, bounty: 0, createFee: 0 });
     h.engineLog = [
       { signature: testSignature("noise"), slot: 2n, blockTime: null, failed: false, emitted: [], memos: [specMemo("https://" + "evil.example/spec")] },
       { signature: testSignature("create"), slot: 1n, blockTime: null, failed: false, emitted: [tag(created)], memos: [specMemo(specUrl)], memoSigners: [[owner]] },
     ];
-    expect((await ok(client, "find_jobs", { attestor: judge }))["jobs"]).toMatchObject([{ ...job, spec_url: specUrl }]);
+    expect((await ok(client, "find_jobs", { attestor: judge, all: true }))["jobs"]).toMatchObject([{ ...job, spec_url: specUrl }]);
     expect(await ok(client, "find_jobs", { attestor: owner })).toEqual({ fee_bps: expect.any(Number), jobs: [], next: `${NO_JOB_NOW}; ${PUBLISH_PROFILE}` });
     h.engineLog = [];
     const work = "e7".repeat(32);

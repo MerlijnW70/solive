@@ -50,7 +50,7 @@ describe("find_jobs by owner", () => {
   }
 
   const listed = async (client: Client, args: Json): Promise<Address[]> => {
-    const result = await client.callTool({ name: tool("find_jobs"), arguments: { attestor: judge, ...args } });
+    const result = await client.callTool({ name: tool("find_jobs"), arguments: { attestor: judge, all: true, ...args } });
     expect(result.isError, JSON.stringify(result.structuredContent)).not.toBe(true);
     return ((result.structuredContent as Json)["jobs"] as { intent: Address }[]).map(({ intent }) => intent);
   };

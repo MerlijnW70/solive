@@ -59,10 +59,10 @@ describe("agent server against the deployed engine", () => {
     const intent = prepared["intent"] as Address;
     h.watched.push(owner.address);
     h.engineLog = [{ ...creation(intent), memos: [specMemo(specUrl)], memoSigners: [[relayer.address]] }];
-    expect((await ok(relaying, "find_jobs", { attestor: judge }))["jobs"]).toMatchObject([{ intent, spec_url: null }]);
+    expect((await ok(relaying, "find_jobs", { attestor: judge, all: true }))["jobs"]).toMatchObject([{ intent, spec_url: null }]);
     expect(SPEC_URL_UNSIGNED).toContain("do not show this one");
     h.engineLog = [{ ...creation(intent), ...ownerSigned(intent, [specMemo(specUrl)]) }];
-    expect((await ok(relaying, "find_jobs", { attestor: judge }))["jobs"]).toMatchObject([{ intent, spec_url: specUrl }]);
+    expect((await ok(relaying, "find_jobs", { attestor: judge, all: true }))["jobs"]).toMatchObject([{ intent, spec_url: specUrl }]);
     h.engineLog = [];
     const { spec_url: _, ...unpublished } = signed;
     expect(await ok(relaying, "preview_signed_intent", unpublished)).toMatchObject({ exists: 1 });

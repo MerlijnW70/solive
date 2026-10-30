@@ -90,7 +90,7 @@ describe("jobs show which are claimed", () => {
 
   const found = async (args: Json = {}) => {
     const client = await linked();
-    const result = await client.callTool({ name: "solive_find_jobs", arguments: args });
+    const result = await client.callTool({ name: "solive_find_jobs", arguments: { all: true, ...args } });
     expect(result.isError, JSON.stringify(result.structuredContent)).not.toBe(true);
     return held((result.structuredContent as Json)["jobs"] as Held[]);
   };

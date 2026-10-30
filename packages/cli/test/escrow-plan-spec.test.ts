@@ -99,7 +99,7 @@ describe("escrow plans that workers can find", () => {
     expect(sent).toMatchObject({ sent: true, pieces: [{ spec_hash: SPEC_HASH, spec_url: SPEC_URL }, { name: "page" }] });
     expect(memoSent(specMemo(SPEC_URL))).toBe(true);
     const [specced, plain] = sent["pieces"] as Json[];
-    const jobs = (await ok(client, "find_jobs", { attestor: judge }))["jobs"] as Json[];
+    const jobs = (await ok(client, "find_jobs", { attestor: judge, all: true }))["jobs"] as Json[];
     expect(jobs.map((job) => [job["intent"], job["spec_hash"]])).toEqual([[specced?.["intent"], SPEC_HASH]]);
     expect(jobs.map((job) => job["intent"])).not.toContain(plain?.["intent"]);
   });
@@ -123,7 +123,7 @@ describe("escrow plans that workers can find", () => {
     expect(sent["warnings"].filter((line: string) => line.includes(NO_SPEC_HASH))).toEqual([]);
     expect(memoSent(specMemo(SPEC_URL))).toBe(true);
     expect(memoSent(specMemo(OTHER_URL))).toBe(true);
-    const jobs = (await ok(client, "find_jobs", { attestor: judge }))["jobs"] as Json[];
+    const jobs = (await ok(client, "find_jobs", { attestor: judge, all: true }))["jobs"] as Json[];
     const byIntent = new Map(jobs.map((job) => [job["intent"], job["spec_hash"]]));
     expect((sent["pieces"] as Json[]).map((piece) => byIntent.get(piece["intent"]))).toEqual([SPEC_HASH, OTHER_HASH]);
   });
