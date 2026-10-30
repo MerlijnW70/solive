@@ -27,6 +27,8 @@ const TIMEOUT_PROBE_SECONDS = 3;
 const MEMORY_PROBE = "64m";
 const FORK_ATTEMPTS = SANDBOX_PIDS + 144;
 
+export const quiet = (script: string): string => `( ${script} ) 2> /dev/null`;
+
 const quoted = (text: string): string => `'${text.replaceAll("'", "'\\''")}'`;
 
 const bytesOf = (size: string): number => Number(size.slice(0, -1)) * (size.endsWith("g") ? 1024 ** 3 : 1024 ** 2);
@@ -126,7 +128,7 @@ export async function sandboxDoctor(box: Box, keypair: string | undefined): Prom
         keyHidden = ok;
       }
     }
-    const memory = await contained({ ...box, memory: MEMORY_PROBE }, root, "head -c 1073741824 /dev/zero | tail > /dev/null", PROBE_SECONDS);
+    const memory = await contained({ ...box, memory: MEMORY_PROBE }, root, quiet("head -c 1073741824 /dev/zero | tail > /dev/null"), PROBE_SECONDS);
     checks.push({ check: "a memory bomb is killed at the memory limit and reported as out of memory", ok: memory.oom === true && memory.gone });
     const slow = await contained(box, root, "sleep 600", TIMEOUT_PROBE_SECONDS);
     checks.push({ check: "a check past its time limit is stopped and its container removed", ok: slow.timedOut && slow.gone });

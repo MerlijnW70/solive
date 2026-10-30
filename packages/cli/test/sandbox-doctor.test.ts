@@ -1,9 +1,10 @@
+import { spawnSync } from "node:child_process";
 import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
-import { DOCTOR_NOT_READY, DOCTOR_READY } from "../src/sandbox-doctor.js";
+import { DOCTOR_NOT_READY, DOCTOR_READY, quiet } from "../src/sandbox-doctor.js";
 import { IMAGE_NEEDS_DIGEST, SANDBOX_IMAGE, SANDBOX_NEEDS_DOCTOR } from "../src/sandbox.js";
 import { DOCKER_TEST } from "./docker-switch.js";
 import { cli } from "./harness.js";
@@ -61,5 +62,17 @@ describe("intent-engine sandbox doctor", () => {
     expect(await cli(["sandbox"], {})).toMatchObject({ code: EXIT_USAGE, err: SANDBOX_NEEDS_DOCTOR });
     expect(await cli(["sandbox", "check"], {})).toMatchObject({ code: EXIT_USAGE, err: SANDBOX_NEEDS_DOCTOR });
     expect(await cli(["sandbox", "doctor", "--sandbox-image", "node:22"], {})).toMatchObject({ code: EXIT_USAGE, err: IMAGE_NEEDS_DIGEST });
+  });
+});
+
+describe("sandbox doctor probe scripts", () => {
+  it("keeps the shell job-control line about a killed process out of the output", () => {
+    const quieted = spawnSync("sh", ["-c", quiet("sh -c 'kill -9 $$' | cat")], { encoding: "utf8" });
+    expect([quieted.stdout, quieted.stderr]).toEqual(["", ""]);
+  });
+
+  it("keeps the exit status of the probe it wraps", () => {
+    expect(spawnSync("sh", ["-c", quiet("exit 7")]).status).toBe(7);
+    expect(quiet("true")).toBe("( true ) 2> /dev/null");
   });
 });
