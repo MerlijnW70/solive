@@ -2,7 +2,7 @@
 
 # MCP tools
 
-26 tools, served by `intent-engine mcp` over stdio. With `--wallet` it serves only the 35 everyday tools: `solive_wallet_setup`, `solive_wallet_balance`, `solive_wallet_estimate`, `solive_wallet_swap`, `solive_wallet_auction`, `solive_wallet_recurring`, `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_seal_spec`, `solive_wallet_attest`, `solive_wallet_attest_split`, `solive_wallet_committee_create`, `solive_wallet_committee_vote`, `solive_wallet_committee_release`, `solive_wallet_feedback`, `solive_wallet_claim`, `solive_wallet_profile`, `solive_wallet_deliver`, `solive_wallet_check_delivery`, `solive_wallet_fetch_work`, `solive_wallet_refute`, `solive_wallet_reclaim`, `solive_wallet_claim_held`, `solive_wallet_wait`, `solive_wallet_receipt`, `solive_wallet_intents`, `solive_wallet_history`, `solive_wallet_cancel`, `solive_wallet_unwrap`, `solive_find_jobs`, `solive_get_spec`, `solive_hash`, `solive_get_reputation`, `solive_get_claims`, `solive_get_profile`, plus the tools `--relayer` and `--agent` need. With `--wallet --all-tools` it serves every tool, the 29 wallet tools listed first.
+26 tools, served by `intent-engine mcp` over stdio. With `--wallet` it serves only the 36 everyday tools: `solive_wallet_setup`, `solive_wallet_balance`, `solive_wallet_estimate`, `solive_wallet_swap`, `solive_wallet_auction`, `solive_wallet_recurring`, `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_seal_spec`, `solive_wallet_attest`, `solive_wallet_attest_split`, `solive_wallet_committee_create`, `solive_wallet_committee_vote`, `solive_wallet_committee_release`, `solive_wallet_feedback`, `solive_wallet_claim`, `solive_wallet_profile`, `solive_wallet_deliver`, `solive_wallet_check_delivery`, `solive_wallet_fetch_work`, `solive_wallet_judge_work`, `solive_wallet_refute`, `solive_wallet_reclaim`, `solive_wallet_claim_held`, `solive_wallet_wait`, `solive_wallet_receipt`, `solive_wallet_intents`, `solive_wallet_history`, `solive_wallet_cancel`, `solive_wallet_unwrap`, `solive_find_jobs`, `solive_get_spec`, `solive_hash`, `solive_get_reputation`, `solive_get_claims`, `solive_get_profile`, plus the tools `--relayer` and `--agent` need. With `--wallet --all-tools` it serves every tool, the 30 wallet tools listed first.
 
 ## solive_wallet_setup
 
@@ -348,6 +348,19 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 | --- | --- | --- | --- |
 | `intent` | address | yes | the proof escrow's intent address |
 | `announcement` | address | no | the announcement to open, as solive_wallet_check_delivery lists it; default the earliest one this wallet opens |
+
+## solive_wallet_judge_work
+
+Served only with `--wallet`.
+
+Judges announced work against the escrow's spec and its judge-cases block, running every case in the pinned ViperJS sandbox and a second engine; returns the verdict, failed cases and the work's sha256. Needs neither Docker nor WSL and sends nothing. A spec without judge cases is refused: use the CLI command judge --sandbox docker. On a pass, pay with solive_wallet_attest.
+
+Effect: `read` (read-only: true, destructive: false, idempotent: true)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `intent` | address | yes | the proof escrow's intent address |
+| `announcement` | address | no | the announcement whose work to judge, as solive_wallet_check_delivery lists it; default the earliest one this wallet opens |
 
 ## solive_wallet_refute
 

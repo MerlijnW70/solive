@@ -23,6 +23,7 @@ import { type SimulatedRelease, simulateRelease } from "./release-simulation.js"
 import { type MessageSigner, messageSigner } from "./ledger-keys.js";
 import { loadEncryptionKeys } from "./sealed-commands.js";
 import { type Beacon, drawBeacon, type DrawJudged, judgeDraw } from "./draw.js";
+import { isResaved, RESAVED, resavedFrom } from "./resaved.js";
 import { type Cases, casesOf, judgeViper, type Judged as CasesJudged, pinnedWasm, runOf, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "./viper.js";
 
 export { EXIT_RETRY, type InterruptSignal, JudgeDeferred, JudgeInfraError, JudgeInterrupted, JudgeRefused, SIGNAL_EXIT } from "./judge-errors.js";
@@ -154,6 +155,22 @@ export async function escrowFor(transport: Transport, judge: Address, owner: Add
   };
 }
 
+export const workResaved = (artifact: string, sha256: string, announced: string): string =>
+  `--artifact ${artifact} has sha256 ${sha256}, but the work announced has sha256 ${announced}: ${RESAVED}; nothing was run or paid`;
+
+async function resavedWork(transport: Transport, intent: Address, read: Artifact, keypair: DeliveryOpener[], artifact: string): Promise<void> {
+  const [entry] = read.entries;
+  if (!read.single || entry === undefined) {
+    return;
+  }
+  for (const sha256 of resavedFrom(entry.bytes)) {
+    const { opening } = await firstOpeningIn(transport, { intent, sha256, keypair });
+    if (!isSdkError(opening, "first-opening-refused")) {
+      throw new JudgeRefused(workResaved(artifact, read.sha256, sha256));
+    }
+  }
+}
+
 export async function judge(command: JudgeCommand, runtime: Runtime, transport: Transport): Promise<Verdict> {
   if (command.verdict !== undefined) {
     await rm(command.verdict, { force: true });
@@ -181,7 +198,7 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   const specBytes = await readFile(resolve(command.spec));
   const specSha256 = createHash("sha256").update(specBytes).digest("hex");
   if (specSha256 !== specHash) {
-    throw new JudgeRefused(`--spec ${command.spec} has sha256 ${specSha256}, but intent ${address} commits ${specHash}`);
+    throw new JudgeRefused(`--spec ${command.spec} has sha256 ${specSha256}, but intent ${address} commits ${specHash}${isResaved(specBytes, specHash) ? `; ${RESAVED}` : ""}`);
   }
   const viper = command.sandbox.kind === "viper" ? { cases: casesOf(specBytes), wasm: await pinnedWasm() } : undefined;
   const artifact = resolve(command.artifact);
@@ -194,6 +211,9 @@ export async function judge(command: JudgeCommand, runtime: Runtime, transport: 
   const keypair = await judgeOpeners(runtime, command, isDevice(signer));
   const { list, opening } = await firstOpeningIn(transport, { intent: address, sha256, keypair });
   if (isSdkError(opening, "first-opening-refused")) {
+    if (opening.reason === "nothing-opens") {
+      await resavedWork(transport, address, read, keypair, command.artifact);
+    }
     throw new JudgeDeferred(refusedOpening(opening, command.keypair, isDevice(signer), signer.address, list.announcements.length > 0));
   }
   const first = list.announcements.find(({ address: at }) => at === opening.announcement) ?? null;

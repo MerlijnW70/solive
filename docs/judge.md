@@ -245,6 +245,12 @@ In PowerShell:
 intent-engine judge --owner $env:OWNER --nonce $env:NONCE --spec examples/jobs/word-count/SPEC.md --artifact examples/jobs/word-count/delivery/wordcount.mjs --sandbox viper --plain-node --verdict verdict.json
 ```
 
+`--sandbox viper` needs neither WSL nor Docker on Windows: a demo job is judged from PowerShell as is. Save the spec and the work byte for byte, such as with `curl.exe -o`; `Set-Content` adds a byte-order mark or line ends that change the sha256, and `judge` then says so.
+
+An AI with the MCP wallet judges such a delivery with `solive_wallet_judge_work`, with no file and no shell. It fetches the escrow's spec and the announced work, runs the cases in both engines and returns the verdict, each engine's failed cases and the work's sha256, and sends nothing. On a pass, `solive_wallet_attest` with that sha256 pays.
+
+`solive_wallet_judge_work` refuses a spec without a `judge-cases` block: judge that with `--sandbox docker`. It does not wait for drawn cases, so it refuses a spec with a `draw`.
+
 So that a delivery cannot answer from a table of the published cases, the spec's `judge-cases` block can add `"draw": {"count": n, "generator": "<module>", "checker": "<module>", "k": K}`. `judge` then waits until the first block at or after the earliest announcement's slot plus `K` is finalized, and seeds the draw with the sha256 of a fixed tag, that block's hash, the intent and the work's sha256.
 
 The generator's single `export default` gets the seed in hex and `n` and returns `n` argument lists; the checker's gets one list and the delivery's answer and returns `true` or `false`, each in a fresh ViperJS engine with the spec's budgets. `judge` passes only when every published and drawn case passes, and refuses a spec whose generator or checker fails as the spec's fault.

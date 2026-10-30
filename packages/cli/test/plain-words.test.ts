@@ -94,7 +94,7 @@ describe("the wallet server's texts", () => {
     const guide = MARKET_GUIDE.split("\n");
     expect(guide.length).toBeLessThanOrEqual(MARKET_MAX_LINES);
     expect(guide[0]).toBe(MARKET_HEAD);
-    for (const point of ["hirer locks payment in an escrow", "a worker delivers", "attestor, the judge", "another wallet, or a committee", "a check can decide it", "pinned by its sha256", "--sandbox docker", "--sandbox viper", "judge-cases", "approves nothing", "devnet SOL"]) {
+    for (const point of ["hirer locks payment in an escrow", "a worker delivers", "attestor, the judge", "another wallet, or a committee", "a check can decide it", "pinned by its sha256", "--sandbox docker", "wallet_judge_work", "judge-cases", "approves nothing", "devnet SOL"]) {
       expect([point, MARKET_GUIDE.includes(point)]).toEqual([point, true]);
     }
     expect(guide.filter((line) => /^- \d\. /.test(line)).map((line) => line.slice(2, 4))).toEqual(["1.", "2.", "3.", "4."]);

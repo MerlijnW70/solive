@@ -63,9 +63,9 @@ describe("the tools a server serves", () => {
     agent = await generateKeyPairSigner();
   });
 
-  it("serves at most 35 everyday tools with --wallet, wallet tools first, and tells the AI only about those", async () => {
+  it("serves at most 36 everyday tools with --wallet, wallet tools first, and tells the AI only about those", async () => {
     const { tools, instructions } = await served(["mcp", "--url", "devnet", "--wallet"]);
-    expect(tools.length).toBeLessThanOrEqual(35);
+    expect(tools.length).toBeLessThanOrEqual(36);
     expect(tools).toEqual(EVERY.filter((name) => EVERYDAY_TOOLS.has(name)));
     expect(new Set(tools)).toEqual(EVERYDAY_TOOLS);
     expect(tools).toEqual(
@@ -90,6 +90,7 @@ describe("the tools a server serves", () => {
         "wallet_deliver",
         "wallet_check_delivery",
         "wallet_fetch_work",
+        "wallet_judge_work",
         "wallet_refute",
         "wallet_reclaim",
         "wallet_claim_held",
@@ -135,7 +136,7 @@ describe("the tools a server serves", () => {
       expect(index.some((line) => line.startsWith("- Other:"))).toBe(false);
     }
     expect(toolIndex(servedActions({ wallet: true, allTools: false, relay: false, agent: false }))).toContain(
-      `- Judge: ${["wallet_fetch_work", "wallet_attest", "wallet_attest_split", "wallet_committee_create", "wallet_committee_vote", "wallet_committee_release", "wallet_feedback"].map(tool).join(", ")}`,
+      `- Judge: ${["wallet_fetch_work", "wallet_judge_work", "wallet_attest", "wallet_attest_split", "wallet_committee_create", "wallet_committee_vote", "wallet_committee_release", "wallet_feedback"].map(tool).join(", ")}`,
     );
     const stray = { ...(WALLET_ACTIONS[0] as (typeof WALLET_ACTIONS)[number]), name: tool("unlisted") };
     expect(toolIndex([stray]).at(-1)).toBe(`- Other: ${tool("unlisted")}`);

@@ -25,6 +25,7 @@ export const EVERYDAY_TOOLS: ReadonlySet<string> = new Set(
     "wallet_deliver",
     "wallet_check_delivery",
     "wallet_fetch_work",
+    "wallet_judge_work",
     "wallet_refute",
     "wallet_reclaim",
     "wallet_claim_held",

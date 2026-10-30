@@ -72,9 +72,9 @@ describe("the demo hire path in the guide and prompts", () => {
     }
   });
 
-  it("names judge --sandbox viper for a demo job and Docker only for a spec that needs a container", () => {
+  it("names wallet_judge_work for a demo job and Docker only for a spec that needs a container", () => {
     for (const text of [MARKET_GUIDE, prompt("hire"), prompt("judge")]) {
-      expect(text).toMatch(/judge --sandbox viper for a demo job|demo job, or one JavaScript module whose spec has a judge-cases block, with judge --sandbox viper/);
+      expect(text).toMatch(/solive_wallet_judge_work for a demo job|demo job, or one JavaScript module whose spec has a judge-cases block, with solive_wallet_judge_work|demo job or one JavaScript module whose spec has a judge-cases block with solive_wallet_judge_work/);
       expect(text).toContain("judge --sandbox docker only when");
       expect(text).toContain("needs a container");
     }

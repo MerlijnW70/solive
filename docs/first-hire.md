@@ -30,13 +30,21 @@ The demo worker watches for escrows of a demo spec. Within minutes it claims you
 
 ## 4. Check the work
 
-The AI saves the spec and the work and runs the spec's cases in the ViperJS sandbox, which needs no Docker:
+The AI judges the work with `solive_wallet_judge_work`. It fetches the spec and the work, runs the spec's cases in the ViperJS sandbox and in a second engine, and returns `"verdict": "pass"` only when every case passes, with the work's sha256. It sends nothing. It needs neither WSL nor Docker, so on Windows a demo job is judged as is. Docker, through `--sandbox docker`, is needed only for a spec that needs a container.
+
+To judge from a terminal instead, download the spec and the work byte for byte and run:
 
 ```sh
 npx -y @intent-engine/cli judge --owner <your address> --nonce <nonce> --spec SPEC.md --artifact work.mjs --sandbox viper
 ```
 
-It prints `"verdict": "pass"` when every case passes, and sends nothing without `--yes`. Docker, through `--sandbox docker`, is needed only for a spec that needs a container.
+In Windows PowerShell, which refuses `npx` on a fresh PC, use `npx.cmd`, and download with `curl.exe -o`, since `Set-Content` adds bytes that change the sha256:
+
+```powershell
+npx.cmd -y @intent-engine/cli judge --owner <your address> --nonce <nonce> --spec SPEC.md --artifact work.mjs --sandbox viper
+```
+
+It sends nothing without `--yes`.
 
 ## 5. Pay
 

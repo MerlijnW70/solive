@@ -15,6 +15,7 @@ import { walletReceipt } from "./wallet/receipt.js";
 import { walletUnwrap } from "./wallet/unwrap.js";
 import { walletSealSpec } from "./wallet/seal.js";
 import { walletFetchWork } from "./wallet/work.js";
+import { walletJudgeWork } from "./wallet/judge-work.js";
 import { walletReclaim, walletRefute } from "./wallet/refute.js";
 import { walletClaimHeld } from "./wallet/held.js";
 
@@ -106,6 +107,7 @@ export const WALLET_ACTIONS: readonly AnyAction[] = [
   walletDeliver,
   walletCheckDelivery,
   walletFetchWork,
+  walletJudgeWork,
   walletRefute,
   walletReclaim,
   walletClaimHeld,

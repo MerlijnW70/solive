@@ -317,6 +317,8 @@ export const SERVER_PROBLEMS = {
   KeyNotGiven: never("an earlier announcement is sealed to a key this server was not given, so the first one that opens to the work cannot be known; start the server with mcp --encryption-keypair naming that key's file"),
   EncryptionKeyInvalid: never("the file mcp --encryption-keypair names is not an encryption key file that profile encryption-key new writes, so nothing sealed to it can be opened; start the server with the right file"),
   NoMessageSigner: never("the wallet cannot sign messages, and an announcement derives its salt and keys from the wallet's signature; use a key file or give the signature the hint asks for"),
+  NoJudgeCases: never("the spec has no single judge-cases block the ViperJS sandbox can run, so this server judges nothing; save the spec and the work and judge them with the CLI command judge --sandbox docker"),
+  NotJudged: never("the work was not judged: the spec does not match the escrow, the work is not one UTF-8 module, or the ViperJS judge could not run, as the hint says; nothing was approved or sent"),
   NotAnnounced: never("no announcement to the escrow opens to this work with this wallet's keys, so no release can pay for it"),
   NotReleased: never("the escrow has no release in its history yet"),
   KeyInUse: never("this wallet signs on a Ledger and judges open escrows, whose announcements only its encryption key opens; rotate the key instead of removing it, or wait until they close"),
