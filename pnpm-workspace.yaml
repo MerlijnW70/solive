@@ -1,5 +1,6 @@
 packages:
   - packages/*
+  - services/faucet
 strictDepBuilds: true
 onlyBuiltDependencies: []
 ignoredBuiltDependencies:

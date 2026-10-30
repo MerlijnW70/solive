@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "api/drip.ts": {
+      "maxDuration": 60
+    }
+  }
+}

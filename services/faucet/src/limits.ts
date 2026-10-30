@@ -1,0 +1,14 @@
+export const DEFAULT_RPC_URL = "https://api.devnet.solana.com";
+export const DEVNET_GENESIS_HASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
+export const LAMPORTS_PER_SOL = 1_000_000_000n;
+export const DRIP_LAMPORTS = LAMPORTS_PER_SOL / 2n;
+export const FUNDED_LAMPORTS = LAMPORTS_PER_SOL / 4n;
+export const FLOOR_LAMPORTS = 2n * LAMPORTS_PER_SOL + DRIP_LAMPORTS;
+export const DRIP_WINDOW_SECS = 86400;
+export const CALLER_DRIPS = 3;
+export const CONFIRM_TIMEOUT_MS = 30000;
+export const CONFIRM_POLL_MS = 1000;
+export const PENDING_RETRY_SECS = 60;
+export const SIGNATURE_PAGE = 100;
+export const MAX_SIGNATURES_CHECKED = 200;
+export const MAX_BODY_BYTES = 1024;

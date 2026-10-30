@@ -29,5 +29,6 @@ pnpm --filter @intent-engine/client build
 pnpm --filter @intent-engine/solver build
 pnpm --filter @intent-engine/cli build
 pnpm --filter @intent-engine/multisig build
+pnpm --filter @intent-engine/faucet build
 pnpm -r typecheck
 pnpm -r test
