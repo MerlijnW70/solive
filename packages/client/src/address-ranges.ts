@@ -63,7 +63,7 @@ function v6Groups(ip: string): number[] | null {
   if (halves.length === 1 && known !== 8) {
     return null;
   }
-  const groups = [...head, ...new Array(halves.length === 2 ? 8 - known : 0).fill(0), ...rest, ...extra];
+  const groups = [...head, ...new Array(halves.length === 2 ? Math.max(0, 8 - known) : 0).fill(0), ...rest, ...extra];
   return groups.length === 8 && groups.every((g) => Number.isInteger(g) && g >= 0 && g <= 0xffff) ? groups : null;
 }
 
