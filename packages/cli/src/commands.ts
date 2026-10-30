@@ -39,6 +39,7 @@ import { engineEvents } from "./event-feed.js";
 import { SOLVER_TABLE_NEXT, solverOptions } from "./solve-commands.js";
 import { flowCommand, signatureLookup } from "./flow-commands.js";
 import { addTo } from "./add-to.js";
+import { DEVNET_URL } from "./tokens.js";
 import { npmRegistry, plainRegistry } from "./npm-registry.js";
 import { newWallet, sendSol } from "./wallet-commands.js";
 import { sandboxDoctor } from "./sandbox-doctor.js";
@@ -69,6 +70,15 @@ import { newEncryptionKey, readJobSpec, sealing } from "./sealed-commands.js";
 export * from "./accounts.js";
 export * from "./crank.js";
 
+const addToSetup = (runtime: Runtime): Promise<object> =>
+  setup(runtime.transport(DEVNET_URL), runtime, DEVNET_URL, undefined, true, undefined, undefined, CLI_START, CLI_SMALL_START, {
+    file: false,
+    launch: runtime.launch,
+    sleep: (seconds) => runtime.sleep(seconds),
+    now: runtime.now,
+    note: () => undefined,
+  }, { fetch: runtime.faucetFetch, env: runtime.env });
+
 export async function run(command: Command, runtime: Runtime): Promise<object | null> {
   if (command.name === "help") {
     return usageOf(command.verb);
@@ -77,7 +87,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
     return { version: VERSION };
   }
   if (command.name === "add-to") {
-    return addTo(command.app, command.limits, command.allowHttpRegistry, runtime);
+    return addTo(command.app, command.limits, command.allowHttpRegistry, runtime, command.setup ? () => addToSetup(runtime) : undefined);
   }
   if (command.name === "seal" || command.name === "unseal") {
     return sealing(command, runtime);

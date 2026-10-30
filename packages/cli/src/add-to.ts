@@ -15,6 +15,8 @@ export const ADD_TO_APPS: readonly App[] = [CLAUDE, CODEX];
 
 export const CODEX_STARTUP_TIMEOUT = 90;
 
+export const CODEX_TOOL_TIMEOUT = 180;
+
 export const CODEX_HOME_ENV = "CODEX_HOME";
 
 export const CLAUDE_INSTALL = "npm install -g @anthropic-ai/claude-code";
@@ -73,9 +75,10 @@ const HEADER = new RegExp(`^\\s*\\[\\s*mcp_servers\\s*\\.\\s*(?:${PRODUCT_SLUG}|
 
 const TABLE = /^\s*\[/;
 
-const TIMEOUT = /^\s*startup_timeout_sec\s*=\s*([^#\r]*?)\s*(?:#.*)?\r?$/;
+const timeoutLine = (key: string) => new RegExp(`^\\s*${key}\\s*=\\s*([^#\\r]*?)\\s*(?:#.*)?\\r?$`);
 
-export function withStartupTimeout(text: string): { text: string; was: string | null } | null {
+export function withTimeout(text: string, key: string, value: number): { text: string; was: string | null } | null {
+  const TIMEOUT = timeoutLine(key);
   const lines = text.split("\n");
   const start = lines.findIndex((line) => HEADER.test(line));
   if (start < 0) {
@@ -84,7 +87,7 @@ export function withStartupTimeout(text: string): { text: string; was: string | 
   const after = lines.slice(start + 1).findIndex((line) => TABLE.test(line));
   const end = after < 0 ? lines.length : start + 1 + after;
   const eol = text.includes("\r\n") ? "\r" : "";
-  const setting = `startup_timeout_sec = ${CODEX_STARTUP_TIMEOUT}${eol}`;
+  const setting = `${key} = ${value}${eol}`;
   for (let i = start + 1; i !== end; i++) {
     const found = TIMEOUT.exec(lines[i] ?? "");
     if (found !== null) {
@@ -100,17 +103,33 @@ export function withStartupTimeout(text: string): { text: string; was: string | 
   return { text: lines.join("\n"), was: null };
 }
 
+export const withStartupTimeout = (text: string) => withTimeout(text, "startup_timeout_sec", CODEX_STARTUP_TIMEOUT);
+
 async function setCodexTimeout(runtime: Runtime): Promise<object> {
   const path = codexConfigPath(runtime);
   const text = await runtime.readText(path).catch(() => "");
-  const changed = withStartupTimeout(text);
-  if (changed === null) {
+  const started = withStartupTimeout(text);
+  const changed = started === null ? null : withTimeout(started.text, "tool_timeout_sec", CODEX_TOOL_TIMEOUT);
+  if (started === null || changed === null) {
     throw new Error(codexNoEntry(path));
   }
   if (changed.text !== text) {
     await runtime.saveText(path, changed.text, false);
   }
-  return { config: path, startup_timeout_sec: CODEX_STARTUP_TIMEOUT, was: changed.was };
+  return { config: path, startup_timeout_sec: CODEX_STARTUP_TIMEOUT, tool_timeout_sec: CODEX_TOOL_TIMEOUT, was: started.was };
+}
+
+export type WalletSetup = () => Promise<object>;
+
+async function withWallet(result: object, setup: WalletSetup | undefined): Promise<object> {
+  if (setup === undefined) {
+    return result;
+  }
+  try {
+    return { ...result, setup: await setup() };
+  } catch (error) {
+    return { ...result, setup: { failed: error instanceof Error ? error.message : String(error) } };
+  }
 }
 
 const alreadyResult = (app: App, limits: readonly string[], platform: string): object => ({
@@ -122,14 +141,14 @@ const alreadyResult = (app: App, limits: readonly string[], platform: string): o
 
 export class HttpRegistryRefused extends Error {}
 
-export async function addTo(app: App, limits: readonly string[], allowHttpRegistry: boolean, runtime: Runtime): Promise<object> {
+export async function addTo(app: App, limits: readonly string[], allowHttpRegistry: boolean, runtime: Runtime, setup?: WalletSetup): Promise<object> {
   const target = APPS[app];
   if (!onPath(app, runtime.env, runtime.platform)) {
     throw new Error(target.missing);
   }
   const existing = app === CODEX ? await runtime.readText(codexConfigPath(runtime)).catch(() => "") : "";
   if (app === CODEX && withStartupTimeout(existing) !== null) {
-    return alreadyResult(app, limits, runtime.platform);
+    return withWallet(alreadyResult(app, limits, runtime.platform), setup);
   }
   const registry = await npmRegistry(runtime.launch);
   if (registry.read === "http" && !allowHttpRegistry) {
@@ -143,19 +162,22 @@ export async function addTo(app: App, limits: readonly string[], allowHttpRegist
     throw new Error(target.missing);
   }
   if (launched.code !== 0 && app === CLAUDE && ALREADY_EXISTS.test(launched.output)) {
-    return alreadyResult(app, limits, runtime.platform);
+    return withWallet(alreadyResult(app, limits, runtime.platform), setup);
   }
   if (launched.code !== 0) {
     throw new Error(target.failed(launched.code, launched.output));
   }
   const timeout = app === CODEX ? await setCodexTimeout(runtime) : {};
-  return {
-    added: PRODUCT_SLUG,
-    to: target.name,
-    ran: [app, ...args].join(" "),
-    server: server.join(" "),
-    ...timeout,
-    ...(warning === undefined ? {} : { warnings: [warning] }),
-    next: `restart ${target.name}, then ask it to set you up and make your first swap`,
-  };
+  return withWallet(
+    {
+      added: PRODUCT_SLUG,
+      to: target.name,
+      ran: [app, ...args].join(" "),
+      server: server.join(" "),
+      ...timeout,
+      ...(warning === undefined ? {} : { warnings: [warning] }),
+      next: `restart ${target.name}, then ask it to set you up and make your first swap`,
+    },
+    setup,
+  );
 }

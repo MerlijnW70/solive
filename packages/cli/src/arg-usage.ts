@@ -13,7 +13,7 @@ const PARTNER_SHAPE = "[--partner <address> --partner-bps <n>]";
 
 export const SHAPES: Readonly<Record<string, string>> = {
   setup: "[--url <cluster>] [--keypair <file>] [--confirm-url <cluster>] [--faucet]",
-  "add-to": "claude|codex [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--allow-http-registry]",
+  "add-to": "claude|codex [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--allow-http-registry] [--no-setup]",
   balance: "[--keypair <file> | --owner <address>] [--mints <mint,...>]",
   "new-wallet": "--out <file>",
   sandbox: "doctor [--keypair <judge file>] [--sandbox-image <name>@sha256:<64 hex>] [--sandbox-memory <n>m|<n>g] [--sandbox-cpus <n>] [--sandbox-tmp <n>m|<n>g] [--sandbox-gpu]",

@@ -8,6 +8,7 @@ import {
   CODEX_HOME_ENV,
   CODEX_MISSING,
   CODEX_STARTUP_TIMEOUT,
+  CODEX_TOOL_TIMEOUT,
   alreadyAdded,
   codexConfigPath,
   codexFailed,
@@ -16,6 +17,7 @@ import {
 } from "../src/add-to.js";
 import type { Launched } from "../src/launch.js";
 import { EXIT_FAILED, EXIT_OK, main, nodeRuntime } from "../src/main.js";
+import { resetHarness, runtime as harnessRuntime } from "./harness.js";
 
 const SERVER = ["npx", "-y", "@intent-engine/cli", "mcp", "--url", "devnet", "--wallet"];
 const WIN_SERVER = ["npx.cmd", ...SERVER.slice(1)];
@@ -26,6 +28,7 @@ let home = "";
 let bin = "";
 
 beforeEach(() => {
+  resetHarness();
   home = mkdtempSync(join(tmpdir(), "add-to-codex-")).replaceAll("\\", "/");
   bin = `${home}-bin`;
   mkdirSync(bin);
@@ -53,6 +56,10 @@ async function addTo(argv: string[], platform: string, reply: Launched | null, c
   const err: string[] = [];
   const rt = {
     ...nodeRuntime(),
+    transport: harnessRuntime({}).transport,
+    faucetFetch: async () => {
+      throw new TypeError("fetch failed");
+    },
     home,
     env: { PATH: bin, PATHEXT: ".cmd", ...env },
     platform,
@@ -83,12 +90,14 @@ describe("add-to codex", () => {
       server: `cmd /c ${WIN_SERVER.join(" ")}`,
       config: configFile(),
       startup_timeout_sec: CODEX_STARTUP_TIMEOUT,
+      tool_timeout_sec: CODEX_TOOL_TIMEOUT,
       was: null,
       next: "restart Codex, then ask it to set you up and make your first swap",
+      setup: expect.objectContaining({ created: true, sol: "1" }),
     });
     expect(run.err).toBe("");
     expect(readFileSync(configFile(), "utf8")).toBe(
-      `${OTHERS}\n${ENTRY.replace('command = "npx"', 'command = "cmd"')}startup_timeout_sec = ${CODEX_STARTUP_TIMEOUT}\n`,
+      `${OTHERS}\n${ENTRY.replace('command = "npx"', 'command = "cmd"')}startup_timeout_sec = ${CODEX_STARTUP_TIMEOUT}\ntool_timeout_sec = ${CODEX_TOOL_TIMEOUT}\n`,
     );
   });
 
@@ -99,7 +108,7 @@ describe("add-to codex", () => {
       expect(run.code).toBe(EXIT_OK);
       expect(run.launched).toEqual([{ program: "codex", args: ["mcp", "add", PRODUCT_SLUG, "--", ...SERVER] }]);
       expect(JSON.parse(run.out)).toMatchObject({ added: PRODUCT_SLUG, to: "Codex", server: SERVER.join(" "), was: null });
-      expect(readFileSync(configFile(), "utf8")).toBe(`${ENTRY}startup_timeout_sec = ${CODEX_STARTUP_TIMEOUT}\n`);
+      expect(readFileSync(configFile(), "utf8")).toBe(`${ENTRY}startup_timeout_sec = ${CODEX_STARTUP_TIMEOUT}\ntool_timeout_sec = ${CODEX_TOOL_TIMEOUT}\n`);
     }
   });
 
@@ -108,23 +117,38 @@ describe("add-to codex", () => {
     const run = await addTo(["add-to", "codex"], "linux", { code: 0, output: "" }, before);
     expect(run.code).toBe(EXIT_OK);
     expect(JSON.parse(run.out)).toMatchObject({ startup_timeout_sec: CODEX_STARTUP_TIMEOUT, was: "10" });
-    expect(readFileSync(configFile(), "utf8")).toBe(before.replace("startup_timeout_sec = 10 # too short", `startup_timeout_sec = ${CODEX_STARTUP_TIMEOUT}`));
+    expect(readFileSync(configFile(), "utf8")).toBe(
+      before.replace("startup_timeout_sec = 10 # too short", `startup_timeout_sec = ${CODEX_STARTUP_TIMEOUT}\ntool_timeout_sec = ${CODEX_TOOL_TIMEOUT}`),
+    );
   });
 
   it("adds the timeout inside the entry, before a following table, keeping blank lines and other entries", async () => {
     const before = `${ENTRY}\n\n[mcp_servers.${PRODUCT_SLUG}.env]\nB = "2"\n${OTHERS}`;
     const run = await addTo(["add-to", "codex"], "linux", { code: 0, output: "" }, before);
     expect(run.code).toBe(EXIT_OK);
-    expect(readFileSync(configFile(), "utf8")).toBe(before.replace(`${ENTRY}\n\n`, `${ENTRY}startup_timeout_sec = ${CODEX_STARTUP_TIMEOUT}\n\n\n`));
+    expect(readFileSync(configFile(), "utf8")).toBe(before.replace(`${ENTRY}\n\n`, `${ENTRY}startup_timeout_sec = ${CODEX_STARTUP_TIMEOUT}\ntool_timeout_sec = ${CODEX_TOOL_TIMEOUT}\n\n\n`));
     expect(readFileSync(configFile(), "utf8")).toContain("[mcp_servers.docs]\ncommand = \"docs-server\"\nstartup_timeout_sec = 20\n");
   });
 
-  it("leaves a config that already has the timeout untouched", async () => {
+  it("adds only the tool timeout to a config that already has the startup timeout", async () => {
     const before = `${ENTRY}startup_timeout_sec = ${CODEX_STARTUP_TIMEOUT}\n`;
     const run = await addTo(["add-to", "codex"], "linux", { code: 0, output: "" }, before);
     expect(run.code).toBe(EXIT_OK);
     expect(JSON.parse(run.out)).toMatchObject({ was: String(CODEX_STARTUP_TIMEOUT) });
-    expect(readFileSync(configFile(), "utf8")).toBe(before);
+    expect(readFileSync(configFile(), "utf8")).toBe(`${before}tool_timeout_sec = ${CODEX_TOOL_TIMEOUT}\n`);
+  });
+
+  it("keeps both timeouts on a second run", async () => {
+    const first = await addTo(["add-to", "codex"], "linux", { code: 0, output: "" }, ENTRY);
+    expect(first.code).toBe(EXIT_OK);
+    const after = readFileSync(configFile(), "utf8");
+    expect(after).toContain(`startup_timeout_sec = ${CODEX_STARTUP_TIMEOUT}\n`);
+    expect(after).toContain(`tool_timeout_sec = ${CODEX_TOOL_TIMEOUT}\n`);
+    const second = await addTo(["add-to", "codex"], "linux", { code: 0, output: "" });
+    expect(second.code).toBe(EXIT_OK);
+    expect(second.launched).toEqual([]);
+    expect(JSON.parse(second.out)).toMatchObject({ already: PRODUCT_SLUG, setup: { created: false, sol: "1" } });
+    expect(readFileSync(configFile(), "utf8")).toBe(after);
   });
 
   it("refuses plainly when codex is not installed, and touches no config", async () => {
@@ -208,7 +232,8 @@ ${ENTRY}startup_timeout_sec = 10
   });
 
   it("is named in help and in the refusal for an unknown app", () => {
-    expect(parse(["add-to", "codex"], {})).toEqual({ name: "add-to", app: "codex", limits: [], allowHttpRegistry: false });
+    expect(parse(["add-to", "codex"], {})).toEqual({ name: "add-to", app: "codex", limits: [], allowHttpRegistry: false, setup: true });
+    expect(parse(["add-to", "codex", "--no-setup"], {})).toEqual({ name: "add-to", app: "codex", limits: [], allowHttpRegistry: false, setup: false });
     expect(usageOf("add-to").usage.startsWith("add-to claude|codex ")).toBe(true);
     expect(ADD_TO_NEEDS_APP).toBe("add-to needs the app to add the server to: add-to claude or add-to codex");
   });

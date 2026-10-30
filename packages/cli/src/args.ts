@@ -181,7 +181,7 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
       const text = values[k];
       return text === undefined ? [] : [`--${k}`, text.replace(/\s+/g, "")];
     });
-    return { name: "add-to", app, limits, allowHttpRegistry: values["allow-http-registry"] === true };
+    return { name: "add-to", app, limits, allowHttpRegistry: values["allow-http-registry"] === true, setup: values["no-setup"] !== true };
   }
   const remote = {
     url: clusterUrl(values.url ?? env[ENV_URL] ?? (verb === "setup" ? SETUP_CLUSTER : DEFAULT_URL)),

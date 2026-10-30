@@ -20,10 +20,10 @@ describe("the AI guide", () => {
     const [claude, codex, code, limited] = sh;
     expect(sh).toHaveLength(4);
     expect(claude).toBe(`npx -y ${manifest.name} add-to claude`);
-    expect(parse(["add-to", "claude"], {})).toEqual({ name: "add-to", app: "claude", limits: [], allowHttpRegistry: false });
+    expect(parse(["add-to", "claude"], {})).toEqual({ name: "add-to", app: "claude", limits: [], allowHttpRegistry: false, setup: true });
     expect(PAGE).not.toContain("claude mcp add solive --");
     expect(codex).toBe(`npx -y ${manifest.name} add-to codex`);
-    expect(parse(["add-to", "codex"], {})).toEqual({ name: "add-to", app: "codex", limits: [], allowHttpRegistry: false });
+    expect(parse(["add-to", "codex"], {})).toEqual({ name: "add-to", app: "codex", limits: [], allowHttpRegistry: false, setup: true });
     expect(PAGE).not.toContain("codex mcp add solive --");
     const added = /^code --add-mcp '(.*)'$/.exec(code ?? "")?.[1] ?? "";
     expect(JSON.parse(added)).toEqual({ name: "solive", command: "npx", args: ARGS });
@@ -31,11 +31,13 @@ describe("the AI guide", () => {
     expect(parse(ARGS.slice(2), {})).toMatchObject({ name: "mcp", url: CLUSTERS["devnet"], wallet: { perTrade: new Map(), perHour: new Map() } });
     const limits = ["--wallet-per-trade", "SOL=0.1", "--wallet-per-hour", "SOL=0.5"];
     expect(limited).toBe(`${claude} ${limits.join(" ")}`);
-    expect(parse(["add-to", "claude", ...limits], {})).toEqual({ name: "add-to", app: "claude", limits, allowHttpRegistry: false });
+    expect(parse(["add-to", "claude", ...limits], {})).toEqual({ name: "add-to", app: "claude", limits, allowHttpRegistry: false, setup: true });
     expect(parse([...ARGS.slice(2), ...limits], {})).toMatchObject({
       wallet: { perTrade: new Map([[NATIVE_MINT, "0.1"]]), perHour: new Map([[NATIVE_MINT, "0.5"]]) },
     });
     const [, major, minor] = /^>=(\d+)\.(\d+)\.0$/.exec(manifest.engines.node) ?? [];
+    expect(PAGE).toContain("The same line also sets up and funds your devnet wallet");
+    expect(PAGE).toContain("Add `--no-setup` to skip this.");
     expect(PAGE).toContain(`You need Node.js ${major}.${minor} or later, and the app you add the server to, such as Claude Code or Codex, installed first: \`add-to\` runs that app's own command.`);
   });
 

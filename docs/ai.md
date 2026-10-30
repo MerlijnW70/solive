@@ -8,6 +8,8 @@ You need Node.js 22.12 or later, and the app you add the server to, such as Clau
 
 Run one of these in a terminal, not in the AI chat, then restart the app.
 
+The same line also sets up and funds your devnet wallet, as `intent-engine setup` does: it creates a wallet when you have none, asks the instant faucet for SOL, and keeps a wallet you already have. It never waits for input, and a refused faucet does not make it fail. Add `--no-setup` to skip this.
+
 Claude Code, on any system:
 
 ```sh
@@ -34,7 +36,7 @@ In Windows PowerShell, which refuses `npx` on a fresh PC, use `npx.cmd`:
 npx.cmd -y @intent-engine/cli add-to codex
 ```
 
-It runs `codex mcp add` the same way, then gives the server time in `~/.codex/config.toml` to start on its first run.
+It runs `codex mcp add` the same way, then gives the server time in `~/.codex/config.toml` to start on its first run and to answer a slow tool call.
 
 VS Code:
 

@@ -140,7 +140,7 @@ export type Command =
   | (Keyed & { name: "signed-submit"; yes: boolean; file: string })
   | { name: "help"; verb: string | undefined }
   | { name: "version" }
-  | { name: "add-to"; app: App; limits: string[]; allowHttpRegistry: boolean }
+  | { name: "add-to"; app: App; limits: string[]; allowHttpRegistry: boolean; setup: boolean }
   | { name: "new-wallet"; out: string }
   | { name: "sandbox-doctor"; keypair: string | undefined; box: Box }
   | (Keyed & { name: "send-sol"; yes: boolean; to: Address; lamports: bigint })

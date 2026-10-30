@@ -161,6 +161,7 @@ export const OPTIONS = {
   "plain-node": { type: "boolean" },
   faucet: { type: "boolean" },
   "allow-http-registry": { type: "boolean" },
+  "no-setup": { type: "boolean" },
   expect: { type: "string" },
   "write-baseline": { type: "string" },
   "max-fill": { type: "string", multiple: true },
@@ -208,7 +209,7 @@ export const PROFILE_OPTIONS = { ...OPTIONS, wallet: { type: "string" } } as con
 
 export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill", "min-balance", "vote", "seed", "encryption-keypair"]);
 
-export type Flag = "dry-run" | "fund-accounts" | "yes" | "all" | "help" | "debug" | "version" | "follow" | "create" | "wallet" | "watch" | "stats" | "close" | "once" | "plain-node" | "all-tools" | "unclaimed" | "no-confirm-url" | "faucet" | "allow-http-registry" | "sandbox-gpu" | "i-trust-this-work";
+export type Flag = "dry-run" | "fund-accounts" | "yes" | "all" | "help" | "debug" | "version" | "follow" | "create" | "wallet" | "watch" | "stats" | "close" | "once" | "plain-node" | "all-tools" | "unclaimed" | "no-confirm-url" | "faucet" | "allow-http-registry" | "no-setup" | "sandbox-gpu" | "i-trust-this-work";
 export type Many = "max-fill" | "min-balance" | "vote" | "seed" | "encryption-keypair";
 export type StringKey = Exclude<keyof typeof OPTIONS, Flag | Many>;
 export type Values = { [K in StringKey]?: string | undefined } & { [K in Exclude<Flag, "wallet">]?: boolean | undefined } & {
@@ -235,7 +236,7 @@ export const MANDATE_ORDER = ORDER.filter((o) => o !== "min-result" && o !== "ma
 
 export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
   setup: ["url", "keypair", "confirm-url", "faucet"],
-  "add-to": ["wallet-per-trade", "wallet-per-hour", "allow-http-registry"],
+  "add-to": ["wallet-per-trade", "wallet-per-hour", "allow-http-registry", "no-setup"],
   balance: ["url", "keypair", "owner", "mints"],
   "new-wallet": ["out"],
   sandbox: ["keypair", "sandbox-image", "sandbox-memory", "sandbox-cpus", "sandbox-tmp", "sandbox-gpu"],

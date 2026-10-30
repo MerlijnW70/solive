@@ -12,7 +12,7 @@ import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
 import { JudgeInfraError, JudgeInterrupted } from "./judge.js";
 import { watchJudge } from "./judge-watch.js";
-import { printable, printableLines, redactUrl, render, renderText } from "./render.js";
+import { addToLines, printable, printableLines, redactUrl, render, renderText } from "./render.js";
 import { expandHome, withSettings } from "./wallet.js";
 import { ENV_KEYPAIR } from "./clusters.js";
 import { certificateCode, certificateHint, maybeSentHint, SERVER_PROBLEMS, unfundedSend } from "./agent/problems.js";
@@ -30,7 +30,7 @@ export { EXIT_ALERTED } from "./monitor-args.js";
 export const KEYPAIR_UNREADABLE = "--keypair must name a readable JSON file holding a 64-byte keypair";
 export const KEYPAIR_EXPOSED = "--keypair names a file other users can read or change; restrict it with chmod 600";
 
-type Io = { out(text: string): void; err(text: string): void };
+type Io = { out(text: string): void; err(text: string): void; tty?: boolean };
 
 export { render } from "./render.js";
 
@@ -91,7 +91,14 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
     if (readsOneNode(command)) {
       process.stderr.write(`${ONE_NODE}\n`);
     }
-    const show = (value: object) => io.out(command.name === "help" || outputOf(argv) === "text" ? renderText(value) : render(value));
+    const show = (value: object) =>
+      io.out(
+        command.name === "add-to" && io.tty === true
+          ? addToLines(value)
+          : command.name === "help" || outputOf(argv) === "text"
+            ? renderText(value)
+            : render(value),
+      );
     if (command.name === "follow") {
       const transport = withPriority(live.transport(command.url), command.priority);
       await follow(transport, live, command.limit, command.interval, show);
@@ -223,7 +230,7 @@ export function nodeRuntime(clock: () => number = Date.now, pipes: Pipes = proce
 
 type ProcessLike = {
   argv: readonly string[];
-  stdout: { write(text: string): unknown };
+  stdout: { write(text: string): unknown; isTTY?: boolean };
   stderr: { write(text: string): unknown };
 };
 
@@ -231,5 +238,6 @@ export async function runProcess(proc: ProcessLike, runtime: Runtime = nodeRunti
   return main(proc.argv.slice(2), runtime, {
     out: (text) => proc.stdout.write(`${text}\n`),
     err: (text) => proc.stderr.write(`${text}\n`),
+    tty: proc.stdout.isTTY === true,
   });
 }

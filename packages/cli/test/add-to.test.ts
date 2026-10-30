@@ -69,6 +69,7 @@ describe("add-to claude", () => {
       ran: `claude mcp add --scope user ${PRODUCT_SLUG} -- cmd /c ${WIN_SERVER.join(" ")}`,
       server: `cmd /c ${WIN_SERVER.join(" ")}`,
       next: "restart Claude Code, then ask it to set you up and make your first swap",
+      setup: expect.any(Object),
     });
     expect(run.err).toBe("");
   });
@@ -122,7 +123,7 @@ describe("add-to claude", () => {
     expect(JSON.parse(limited.out).note).toBe(
       `${PRODUCT_SLUG} is already set up in Claude Code, so nothing was changed; to replace it, run claude mcp remove --scope user ${PRODUCT_SLUG}, then npx.cmd -y ${manifest.name} add-to claude --wallet-per-trade SOL=0.1`,
     );
-    expect(parse(["add-to", "claude", "--wallet-per-trade", "SOL=0.1"], {})).toEqual({ name: "add-to", app: "claude", limits: ["--wallet-per-trade", "SOL=0.1"], allowHttpRegistry: false });
+    expect(parse(["add-to", "claude", "--wallet-per-trade", "SOL=0.1"], {})).toEqual({ name: "add-to", app: "claude", limits: ["--wallet-per-trade", "SOL=0.1"], allowHttpRegistry: false, setup: true });
   });
 
   it("prints npx.cmd and never a .ps1 shim for Windows, and npx elsewhere", () => {
@@ -172,8 +173,8 @@ describe("add-to claude", () => {
 
   it("describes itself in help", () => {
     expect(usageOf("add-to")).toEqual({
-      usage: "add-to claude|codex [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--allow-http-registry]",
-      options: ["--wallet-per-trade", "--wallet-per-hour", "--allow-http-registry", "--output", "--help", "--debug"],
+      usage: "add-to claude|codex [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--allow-http-registry] [--no-setup]",
+      options: ["--wallet-per-trade", "--wallet-per-hour", "--allow-http-registry", "--no-setup", "--output", "--help", "--debug"],
     });
   });
 });

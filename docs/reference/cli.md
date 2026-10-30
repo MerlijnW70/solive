@@ -25,10 +25,10 @@ Options: `--url`, `--keypair`, `--confirm-url`, `--faucet`, `--output`, `--help`
 ## add-to
 
 ```text
-add-to claude|codex [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--allow-http-registry]
+add-to claude|codex [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--allow-http-registry] [--no-setup]
 ```
 
-Options: `--wallet-per-trade`, `--wallet-per-hour`, `--allow-http-registry`, `--output`, `--help`, `--debug`
+Options: `--wallet-per-trade`, `--wallet-per-hour`, `--allow-http-registry`, `--no-setup`, `--output`, `--help`, `--debug`
 
 ## balance
 
