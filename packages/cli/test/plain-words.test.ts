@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { INDEX_HEAD, toolIndex, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
+import { INDEX_HEAD, JOB_PROMPTS, MARKET_GUIDE, MARKET_HEAD, toolIndex, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
 import { ACTIONS } from "../src/agent/registry.js";
 import { PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, PREVIEW_FIRST, PREVIEW_ONLY } from "../src/agent/wallet/guard.js";
 import { ORDER_DONE } from "../src/agent/wallet/trade.js";
@@ -14,6 +14,8 @@ const DESCRIPTION_WORDS = 60;
 const NOTICE_LINES = 5;
 const NOTICE_LINE_WORDS = 14;
 const INDEX_LINE_TOOLS = 8;
+const MARKET_MAX_LINES = 12;
+const PROMPT_SENTENCES = 6;
 
 describe("the wallet server's texts", () => {
   it("counts words, not dashes or punctuation", () => {
@@ -86,5 +88,24 @@ describe("the wallet server's texts", () => {
     }
     expect(PREVIEW_FIRST).toContain("after the user says yes");
     expect(PREVIEW_APPROVAL).toContain("after the user says yes");
+  });
+
+  it("keeps how a job works to at most 12 lines that name the roles, the judge and the order", () => {
+    const guide = MARKET_GUIDE.split("\n");
+    expect(guide.length).toBeLessThanOrEqual(MARKET_MAX_LINES);
+    expect(guide[0]).toBe(MARKET_HEAD);
+    for (const point of ["hirer locks payment in an escrow", "a worker delivers", "attestor, the judge", "another wallet, or a committee", "a check can decide it", "pinned by its sha256", "--sandbox docker", "--sandbox viper", "judge-cases", "approves nothing", "devnet SOL"]) {
+      expect([point, MARKET_GUIDE.includes(point)]).toEqual([point, true]);
+    }
+    expect(guide.filter((line) => /^- \d\. /.test(line)).map((line) => line.slice(2, 4))).toEqual(["1.", "2.", "3.", "4."]);
+  });
+
+  it("keeps each job prompt to one message of at most 6 sentences that previews and asks before sending", () => {
+    expect(JOB_PROMPTS.map((prompt) => prompt.name)).toEqual(["hire", "earn", "judge"]);
+    for (const prompt of JOB_PROMPTS) {
+      const sentences = prompt.text.split(/[.!?](?=\s|$)/).filter((part) => part.trim() !== "");
+      expect([prompt.name, sentences.length >= 3 && sentences.length <= PROMPT_SENTENCES]).toEqual([prompt.name, true]);
+      expect([prompt.name, /preview/i.test(prompt.text), prompt.text.includes("only after I say yes")]).toEqual([prompt.name, true, true]);
+    }
   });
 });

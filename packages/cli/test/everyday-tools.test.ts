@@ -4,7 +4,19 @@ import { InMemoryTransport } from "@modelcontextprotocol/server";
 import { beforeEach, describe, expect, it } from "vitest";
 import { NATIVE_MINT } from "@intent-engine/core";
 import { AGENT_TOOLS, EVERYDAY_TOOLS, RELAY_TOOLS, servedActions } from "../src/agent/everyday.js";
-import { INDEX_HEAD, instructionsFor, toolIndex, TOOL_GROUPS, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
+import {
+  INDEX_HEAD,
+  instructionsFor,
+  JOB_PROMPTS,
+  MARKET_GUIDE,
+  MARKET_HEAD,
+  MARKET_LINES,
+  marketFor,
+  promptServed,
+  toolIndex,
+  TOOL_GROUPS,
+  WALLET_INSTRUCTIONS,
+} from "../src/agent/mcp.js";
 import { ACTIONS } from "../src/agent/registry.js";
 import { WALLET_ACTIONS, WALLET_NOTICE } from "../src/agent/wallet.js";
 import { tool } from "../src/agent/names.js";
@@ -14,7 +26,10 @@ import { cli, h, world } from "./harness.js";
 
 const EVERY = [...WALLET_ACTIONS, ...ACTIONS].map((a) => a.name);
 
-async function served(argv: string[], signers: Record<string, KeyPairSigner> = {}): Promise<{ tools: string[]; instructions: string | undefined }> {
+async function served(
+  argv: string[],
+  signers: Record<string, KeyPairSigner> = {},
+): Promise<{ tools: string[]; instructions: string | undefined; prompts: Record<string, string> }> {
   h.served.length = 0;
   const started = await cli(argv, signers);
   expect([started.code, started.err]).toEqual([EXIT_OK, argv.includes("--wallet") ? WALLET_NOTICE.join("\n") : ""]);
@@ -24,8 +39,15 @@ async function served(argv: string[], signers: Record<string, KeyPairSigner> = {
   await client.connect(far);
   const { tools } = await client.listTools();
   const instructions = client.getInstructions();
+  const prompts: Record<string, string> = {};
+  if (client.getServerCapabilities()?.prompts !== undefined) {
+    for (const { name } of (await client.listPrompts()).prompts) {
+      const [message] = (await client.getPrompt({ name })).messages;
+      prompts[name] = message?.content.type === "text" ? message.content.text : "";
+    }
+  }
   await client.close();
-  return { tools: tools.map((t) => t.name), instructions };
+  return { tools: tools.map((t) => t.name), instructions, prompts };
 }
 
 describe("the tools a server serves", () => {
@@ -124,7 +146,40 @@ describe("the tools a server serves", () => {
     expect(tools).toEqual(EVERY);
     expect(tools.length).toBeGreaterThan(20);
     expect(instructions).toBe(instructionsFor([...WALLET_ACTIONS, ...ACTIONS]));
-    expect(instructions?.startsWith(`${WALLET_INSTRUCTIONS}\n${INDEX_HEAD}\n`)).toBe(true);
+    expect(instructions?.startsWith(`${WALLET_INSTRUCTIONS}\n${MARKET_GUIDE}\n${INDEX_HEAD}\n`)).toBe(true);
+  });
+
+  it("explains how a job works between the notice and the tool index, naming only served tools", async () => {
+    for (const argv of [["--wallet"], ["--wallet", "--all-tools"]]) {
+      const { tools, instructions } = await served(["mcp", "--url", "devnet", ...argv]);
+      const lines = (instructions ?? "").split("\n");
+      const head = lines.indexOf(MARKET_HEAD);
+      expect(lines.slice(head + 1, head + 1 + MARKET_LINES.length)).toEqual(MARKET_LINES);
+      expect(head).toBeGreaterThan(lines.indexOf(`- ${WALLET_NOTICE.at(-1) ?? ""}`));
+      expect(lines.indexOf(INDEX_HEAD)).toBe(head + 1 + MARKET_LINES.length);
+      const named = [...MARKET_GUIDE.matchAll(/\bsolive_\w+/g)].map(([name]) => name);
+      expect(named.filter((name) => !tools.includes(name))).toEqual([]);
+    }
+    expect(marketFor([])).toEqual([MARKET_HEAD, ...MARKET_LINES.filter((line) => !/\bsolive_/.test(line))]);
+    const lean = [...WALLET_ACTIONS, ...ACTIONS].filter((action) => action.name !== tool("wallet_claim"));
+    expect(marketFor(lean)).toEqual([MARKET_HEAD, ...MARKET_LINES.filter((line) => !line.includes(tool("wallet_claim")))]);
+  });
+
+  it("offers the hire, earn and judge prompts with a wallet, each naming only served tools, and none without one", async () => {
+    for (const argv of [["--wallet"], ["--wallet", "--all-tools"]]) {
+      const { tools, prompts } = await served(["mcp", "--url", "devnet", ...argv]);
+      expect(Object.keys(prompts)).toEqual(["start", ...JOB_PROMPTS.map((prompt) => prompt.name)]);
+      expect(Object.keys(prompts)).toEqual(["start", "hire", "earn", "judge"]);
+      for (const prompt of JOB_PROMPTS) {
+        expect(prompts[prompt.name]).toBe(prompt.text);
+        const named = [...prompt.text.matchAll(/\bsolive_\w+/g)].map(([name]) => name);
+        expect(named.length).toBeGreaterThan(1);
+        expect([prompt.name, named.filter((name) => !tools.includes(name))]).toEqual([prompt.name, []]);
+      }
+    }
+    expect((await served(["mcp", "--url", "devnet"])).prompts).toEqual({});
+    const names = new Set(EVERY.filter((name) => name !== tool("wallet_fetch_work")));
+    expect(JOB_PROMPTS.filter((prompt) => promptServed(prompt, names)).map((prompt) => prompt.name)).toEqual(["earn"]);
   });
 
   it("still brings the relay tools with --relayer and the mandate tools with --agent", async () => {
@@ -147,7 +202,7 @@ describe("the tools a server serves", () => {
 
   it("leaves a server without --wallet unchanged, with or without --relayer and --agent", async () => {
     const names = ACTIONS.map((a) => a.name);
-    expect(await served(["mcp", "--url", "devnet"])).toEqual({ tools: names, instructions: undefined });
+    expect(await served(["mcp", "--url", "devnet"])).toEqual({ tools: names, instructions: undefined, prompts: {} });
     expect((await served(["mcp", "--url", "devnet", ...relaying()], { "r.json": relayer })).tools).toEqual(names);
     expect((await served(["mcp", "--url", "devnet", ...acting()], { "a.json": agent })).tools).toEqual(names);
     expect(servedActions({ wallet: false, allTools: false, relay: true, agent: true })).toBe(ACTIONS);

@@ -12,7 +12,7 @@ import { failure } from "@intent-engine/client/internal";
 import { WALLET_NOT_MAINNET } from "../src/args.js";
 import { WRAPPED } from "../src/agent/create.js";
 import { InvalidInput } from "../src/agent/schema.js";
-import { toolIndex, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
+import { MARKET_GUIDE, toolIndex, WALLET_INSTRUCTIONS } from "../src/agent/mcp.js";
 import { DEFAULT_EXPIRES_IN, ESTIMATE_NEXT, ESTIMATE_SCAN, FILL_UNKNOWN, LANDING_SECONDS, MAINNET_GENESIS, NO_FILLS, UNREAD, RECORD_MINT_NEEDED, PREVIEW_ONLY, stillWaiting, WALLET_ACTIONS, WALLET_OFF, walletBalance, walletEmpty } from "../src/agent/wallet.js";
 import { invoke } from "../src/agent/actions.js";
 import { claimsOf } from "../src/agent/claims.js";
@@ -178,6 +178,7 @@ describe("the wallet server's limits and reads", () => {
     expect(client.getInstructions()).toBe(
       [
         WALLET_INSTRUCTIONS,
+        MARKET_GUIDE,
         "Whoever started this server set sell limits that no tool call can change:",
         "- SOL: at most 0.1 per trade and 0.15 per hour",
         "It sells no other token. Plan trades within these limits and tell the user when a request exceeds them.",
