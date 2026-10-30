@@ -449,10 +449,29 @@ describe("package readmes", () => {
 });
 
 describe("the readme", () => {
-  it("runs only the command the AI guide runs", () => {
-    const fencedSh = (text: string) => [...text.matchAll(/^```sh\n([\s\S]*?)^```$/gm)].flatMap((m) => (m[1] ?? "").trimEnd().split("\n"));
-    const readme = fencedSh(readFileSync(`${ROOT}/README.md`, "utf8"));
-    expect(readme).toHaveLength(1);
-    expect(fencedSh(readFileSync(`${DOCS}ai.md`, "utf8"))).toContain(readme[0]);
+  const fenced = (text: string, lang: string) =>
+    [...text.matchAll(lang === "sh" ? /^```sh\n([\s\S]*?)^```$/gm : /^```powershell\n([\s\S]*?)^```$/gm)].flatMap((m) => (m[1] ?? "").trimEnd().split("\n"));
+  const readme = readFileSync(`${ROOT}/README.md`, "utf8");
+  const guide = readFileSync(`${DOCS}ai.md`, "utf8");
+  const name = (JSON.parse(readFileSync(`${ROOT}/packages/cli/package.json`, "utf8")) as { name: string }).name;
+
+  it("runs only the commands the AI guide runs, one per app and one per app for Windows PowerShell", () => {
+    expect(fenced(readme, "sh")).toEqual([`npx -y ${name} add-to claude`, `npx -y ${name} add-to codex`]);
+    expect(fenced(readme, "powershell")).toEqual([`npx.cmd -y ${name} add-to claude`, `npx.cmd -y ${name} add-to codex`]);
+    for (const lang of ["sh", "powershell"]) {
+      expect(fenced(guide, lang)).toEqual(expect.arrayContaining(fenced(readme, lang)));
+    }
+  });
+
+  it("names both apps and the Node.js version to install first", () => {
+    const engines = (JSON.parse(readFileSync(`${ROOT}/package.json`, "utf8")) as { engines: { node: string } }).engines.node;
+    const [, major, minor] = /^>=(\d+)\.(\d+)\.0$/.exec(engines) ?? [];
+    expect(readme).toContain("Claude Code:");
+    expect(readme).toContain("Codex:");
+    expect(readme).toContain("You need a recent Node.js, from [nodejs.org](https://nodejs.org)");
+    expect(readme).toContain("[Quickstart](docs/quickstart.md) names the oldest version that works");
+    expect(readFileSync(`${DOCS}quickstart.md`, "utf8")).toContain(`[Node.js](https://nodejs.org) ${major}.${minor} or later`);
+    expect(readme).toContain("`node --version`");
+    expect(readme.indexOf("Node.js")).toBeLessThan(readme.indexOf("```"));
   });
 });

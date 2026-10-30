@@ -4,11 +4,11 @@ Swap SOL for a test token on Solana devnet, then cancel an order. Devnet tokens 
 
 An order here is an intent: you lock what you sell, and a solver fills it with at least what you asked for.
 
-You need [Node.js](https://nodejs.org) 22.12 or later.
+You need [Node.js](https://nodejs.org) 22.12 or later. In a terminal, `node --version` shows what you have.
 
 ## Devnet SOL
 
-Every step sends a transaction, so your wallet needs devnet SOL. `setup` in step 2 asks the instant faucet first, which sends 0.5 SOL and shows it as `faucet` in the output; `INTENT_ENGINE_FAUCET_URL` names another one, and `off` skips it. Next it asks devnet for an airdrop, but devnet often refuses. The other ways, each with the `address` that `setup` prints:
+Every step sends a transaction, so your wallet needs devnet SOL. The first way is the instant faucet: `setup` in step 2 asks it first, and it sends 0.5 SOL and shows it as `faucet` in the output; `INTENT_ENGINE_FAUCET_URL` names another one, and `off` skips it. Next it asks devnet for an airdrop, but devnet often refuses. The other ways, each with the `address` that `setup` prints:
 
 - `intent-engine setup --faucet`, with the [GitHub CLI](https://cli.github.com) signed in, files a request with this project's faucet and waits for the SOL. The faucet answers several times an hour, and `setup` prints how many minutes it waits at most.
 - The faucet link `setup` prints opens the same request in a browser, as a public GitHub issue. It needs a GitHub account, and the same faucet answers it, so the SOL takes as long.
@@ -24,6 +24,12 @@ npx runs the CLI without installing anything globally:
 npx -y @intent-engine/cli version
 ```
 
+In Windows PowerShell, which refuses `npx` on a fresh PC, use `npx.cmd`:
+
+```powershell
+npx.cmd -y @intent-engine/cli version
+```
+
 The steps below type `intent-engine`. Make that name run the same npx command in this shell:
 
 ```sh
@@ -33,7 +39,7 @@ alias intent-engine='npx -y @intent-engine/cli'
 In Windows PowerShell, define it as a function instead:
 
 ```powershell
-function intent-engine { npx -y @intent-engine/cli @args }
+function intent-engine { npx.cmd -y @intent-engine/cli @args }
 ```
 
 Or install the command globally:

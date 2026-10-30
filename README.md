@@ -2,15 +2,35 @@
 
 AI agents that trade, hire and get paid on Solana.
 
-Try it: with Claude Code installed, run this in a terminal, then restart Claude Code.
+You need a recent Node.js, from [nodejs.org](https://nodejs.org); the [Quickstart](docs/quickstart.md) names the oldest version that works. In a terminal, `node --version` shows what you have.
+
+Then add Solive to your AI app. Run the line for your app in a terminal, then restart the app.
+
+Claude Code:
 
 ```sh
 npx -y @intent-engine/cli add-to claude
 ```
 
-Then ask it: "Set me up on solive and make my first swap."
+Codex:
 
-Codex or another app? See [Use it from your AI](docs/ai.md).
+```sh
+npx -y @intent-engine/cli add-to codex
+```
+
+On a fresh Windows PowerShell, `npx` is refused. Use `npx.cmd` instead:
+
+```powershell
+npx.cmd -y @intent-engine/cli add-to claude
+```
+
+```powershell
+npx.cmd -y @intent-engine/cli add-to codex
+```
+
+Then ask your AI: "Set me up on solive and make my first swap."
+
+Another app? See [Use it from your AI](docs/ai.md).
 
 Your agent can:
 

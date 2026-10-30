@@ -107,7 +107,9 @@ describe("the quickstart", () => {
       `npm install -g ${manifest.name}`,
     ]);
     expect(PAGE.indexOf("```sh\n" + `${npx} version`)).toBeLessThan(PAGE.indexOf(`npm install -g ${manifest.name}`));
-    expect(PAGE).toContain("```powershell\nfunction intent-engine { " + npx + " @args }\n```");
+    const windows = `npx.cmd -y ${manifest.name}`;
+    expect(PAGE).toContain("```powershell\nfunction intent-engine { " + windows + " @args }\n```");
+    expect(PAGE).toContain("```powershell\n" + windows + " version\n```");
     expect((await cli(["version"], {})).json()).toEqual({ version: VERSION });
     expect(PAGE).toContain("If the install fails with `EACCES`, install Node.js with a version manager such as nvm, or give npm a folder in your home directory");
     expect(PAGE).toContain(`asks devnet for ${AIRDROP / LAMPORTS_PER_SOL} SOL`);
