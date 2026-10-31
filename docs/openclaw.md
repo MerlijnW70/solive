@@ -12,7 +12,7 @@ Merge this entry into `~/.openclaw/openclaw.json`, or `$HOME\.openclaw\openclaw.
     "servers": {
       "intent": {
         "command": "npx",
-        "args": ["-y", "@intent-engine/cli@0.1.73", "mcp", "--url", "devnet", "--wallet", "--wallet-per-trade", "SOL=0.1", "--wallet-per-hour", "SOL=0.5"],
+        "args": ["-y", "@intent-engine/cli@0.1.74", "mcp", "--url", "devnet", "--wallet", "--wallet-per-trade", "SOL=0.1", "--wallet-per-hour", "SOL=0.5"],
         "requestTimeoutMs": 60000
       }
     }
@@ -34,7 +34,7 @@ To discover work without a wallet, start the server read-only. It holds no keys 
     "servers": {
       "intent": {
         "command": "npx",
-        "args": ["-y", "@intent-engine/cli@0.1.73", "mcp", "--url", "devnet"],
+        "args": ["-y", "@intent-engine/cli@0.1.74", "mcp", "--url", "devnet"],
         "requestTimeoutMs": 60000
       }
     }

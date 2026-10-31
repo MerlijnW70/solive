@@ -1,6 +1,6 @@
 {
   "name": "@intent-engine/core",
-  "version": "0.1.73",
+  "version": "0.1.74",
   "description": "Clients, codecs and builders for the intent engine Solana program",
   "license": "Apache-2.0",
   "repository": {
