@@ -232,12 +232,7 @@ async function decrypted(blob: Uint8Array, layout: BlobLayout, contentKey: Uint8
   } catch {
     return null;
   }
-  let url: string;
-  try {
-    url = new TextDecoder("utf-8", { fatal: true }).decode(plain.subarray(SALT_LEN));
-  } catch {
-    return null;
-  }
+  const url = new TextDecoder().decode(plain.subarray(SALT_LEN));
   return isMemoUrl(url) ? { salt: plain.slice(0, SALT_LEN), url, key: Uint8Array.from(contentKey) } : null;
 }
 

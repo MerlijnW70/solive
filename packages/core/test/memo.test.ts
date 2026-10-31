@@ -43,6 +43,7 @@ describe("spec and release memos", () => {
       "https://user:pass@example.org/x",
       "https://example.org/has space",
       "https://example.org/" + String.fromCharCode(0xe9),
+      new TextDecoder().decode(Uint8Array.from([...new TextEncoder().encode("https://example.org/"), 0xff])),
       "https://example.org/\n",
       "javascript:alert(1)",
       "file:///etc/passwd",

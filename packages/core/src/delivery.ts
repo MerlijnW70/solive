@@ -33,15 +33,12 @@ export function fingerprintPreimage(publicKey: Uint8Array): Uint8Array {
 export type BlobHead = { count: number; mask: number; fps: Uint8Array[]; urlLen: number };
 
 export function blobHead(bytes: Uint8Array): BlobHead {
-  if (bytes.length < BLOB_HEAD_LEN) {
-    throw new IntentCoreError("BlobMalformed");
-  }
   const [version = 0, count = 0, mask = 0] = bytes;
   if (version !== BLOB_VERSION || count === 0 || count > MAX_BLOB_RECIPIENTS || mask >> count !== 0) {
     throw new IntentCoreError("BlobMalformed");
   }
   const url = bytes.length - (BLOB_FIXED_LEN + BLOB_PER_RECIPIENT_LEN * count);
-  if (url <= 0 || url > MAX_BLOB_URL || bytes.length > MAX_SEALED_BLOB) {
+  if (url <= 0 || url > MAX_BLOB_URL) {
     throw new IntentCoreError("BlobMalformed");
   }
   const fps = Array.from({ length: MAX_BLOB_RECIPIENTS }, (_, i) => {
