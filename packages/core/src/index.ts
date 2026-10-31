@@ -1,7 +1,8 @@
 export { TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 export type { Config } from "../generated/client/accounts/config.js";
 export type { Intent } from "../generated/client/accounts/intent.js";
-export { IntentEngineEvent } from "../generated/client/programs/intentEngine.js";
+export { INTENT_ENGINE_PROGRAM_ADDRESS, IntentEngineEvent } from "../generated/client/programs/intentEngine.js";
+export { PRODUCT_SLUG } from "../generated/identity.js";
 export type { CommitteeTerms, CommitteeVote } from "./committee.js";
 export type { AnnState } from "./delivery.js";
 export { formatAmount, parseAmount } from "./describe.js";
@@ -19,7 +20,8 @@ export {
   type SdkErrorCode,
   type SdkErrors,
 } from "./errors.js";
-export { type EngineEvent, type EngineEventName, eventNamed, type WithheldRole } from "./events.js";
+export { decodeEvent, type EngineEvent, type EngineEventName, EVENT_IX_TAG, eventNamed, type WithheldRole } from "./events.js";
+export { type EventPosition, type JsonInstruction, type JsonTransaction, type PositionedEvent, transactionEvents } from "./transaction-events.js";
 export { type FeeShares, splitFees } from "./fee.js";
 export {
   attestedResult,

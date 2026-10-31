@@ -1,6 +1,5 @@
 import type { EngineTransaction, IntentAccount } from "@intent-engine/client";
-import { Kind } from "@intent-engine/core";
-import { decodeParams } from "@intent-engine/core/internal";
+import { Kind, termsOf } from "@intent-engine/core";
 import { type Activity, activitiesOf, createdJobs, hexOf } from "./activity.js";
 import { specName } from "./catalog.js";
 import { FEED_EVENTS, KEPT_JOBS, KEPT_PAID, PAID_WINDOW_SECS } from "./limits.js";
@@ -76,12 +75,16 @@ export function applyTransactions(state: State, transactions: readonly EngineTra
       if (activity.kind === "escrow") {
         job.escrow = step;
       }
-      if (activity.kind === "delivery") {
+      if (activity.kind === "delivery" && slot >= (job.delivery_slot ?? 0)) {
         job.delivery = step;
+        job.delivery_slot = slot;
       }
       if (activity.kind === "release") {
-        const jobHash = job.spec_hash ?? null;
-        state.latest_paid_job = { intent: activity.intent, spec_hash: jobHash, spec_name: specName(jobHash), escrow: job.escrow ?? null, delivery: job.delivery ?? null, release: step };
+        if (slot >= (state.latest_paid_slot ?? 0)) {
+          const jobHash = job.spec_hash ?? null;
+          state.latest_paid_job = { intent: activity.intent, spec_hash: jobHash, spec_name: specName(jobHash), escrow: job.escrow ?? null, delivery: job.delivery ?? null, release: step };
+          state.latest_paid_slot = slot;
+        }
         if (amount !== null && token !== null && activity.raw !== null && places !== null) {
           state.paid.push({ at, slot, intent: activity.intent, payee: event.payee ?? activity.who, token, raw: activity.raw.toString(), decimals: places, house: marked });
         }
@@ -104,7 +107,7 @@ export function applyOpenJobs(state: State, intents: readonly IntentAccount[], n
     known.owner = intent.owner;
     known.mint = intent.inputMint;
     try {
-      const params = decodeParams(intent.kind, Uint8Array.from(intent.params));
+      const { params } = termsOf(intent);
       if (params.kind === Kind.AttestedResult) {
         known.attestor = params.attestor;
         known.spec_hash = hexOf(params.specHash);
@@ -117,7 +120,7 @@ export function applyOpenJobs(state: State, intents: readonly IntentAccount[], n
 }
 
 export function pruned(state: State, now: number): void {
-  state.events = state.events.slice(0, FEED_EVENTS);
+  state.events = state.events.sort((a, b) => b.slot - a.slot).slice(0, FEED_EVENTS);
   const floor = now - PAID_WINDOW_SECS * 1000;
   state.paid = state.paid.filter(({ at }) => Date.parse(at) >= floor).slice(-KEPT_PAID);
   const kept = Object.entries(state.jobs)

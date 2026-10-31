@@ -44,6 +44,8 @@ import { SpecSealed, SpecUnreadable } from "./job-specs.js";
 import { LedgerError, LedgerPathError } from "./ledger-path.js";
 import { FetchFailed } from "./fetch-failed.js";
 import { BehindMinSlot, BlockhashExpired, FailedOnChain, MaybeSent, SubscriptionEnded } from "./send-errors.js";
+import { TransactionUnread } from "./client-activity.js";
+import { Cancelled, RateLimited, TimedOut } from "./rpc-limits.js";
 import { NotASignature } from "./signatures.js";
 import { MainnetNotAllowed } from "./simple-tokens.js";
 import { NoKeyAtCreation, ProfileHistoryIncomplete } from "./unopened.js";
@@ -90,6 +92,10 @@ declare module "@intent-engine/core" {
     "mainnet-not-allowed": MainnetNotAllowed;
     "profile-history-incomplete": ProfileHistoryIncomplete;
     "no-key-at-creation": NoKeyAtCreation;
+    "rate-limited": RateLimited;
+    "timed-out": TimedOut;
+    cancelled: Cancelled;
+    "transaction-unread": TransactionUnread;
   }
 }
 
@@ -162,4 +168,12 @@ export const SDK_ERRORS: { readonly [C in SdkErrorCode]: SdkErrorEntry<C> } = {
   "mainnet-not-allowed": { error: MainnetNotAllowed, fields: ["url"], meaning: "the url serves mainnet and allowMainnet was not given" },
   "profile-history-incomplete": { error: ProfileHistoryIncomplete, fields: ["judge"], meaning: "the judge's profile history could not be read back far enough; nothing was paid" },
   "no-key-at-creation": { error: NoKeyAtCreation, fields: ["intent"], meaning: "the Ledger judge's profile named no encryption key when the escrow was made" },
+  "rate-limited": {
+    error: RateLimited,
+    fields: ["method", "retryAfterMs"],
+    meaning: "the node rate limited a read and the client was made with retry: false; retryAfterMs is the node's retry-after, or null when it sent none",
+  },
+  "timed-out": { error: TimedOut, fields: ["method", "timeoutMs"], meaning: "the node did not answer a call within the client's timeoutMs" },
+  cancelled: { error: Cancelled, fields: ["method"], meaning: "the client's signal aborted before this call was issued or answered" },
+  "transaction-unread": { error: TransactionUnread, fields: ["signature"], meaning: "the node did not serve the transaction, so what it created is unknown" },
 };

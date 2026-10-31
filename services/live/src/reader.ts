@@ -1,9 +1,7 @@
-import { type Address, createSolanaRpcFromTransport, type RpcTransport, type Signature } from "@solana/kit";
-import { type Client, createClient, type EngineTransaction, type IntentAccount, type ListedSignature } from "@intent-engine/client";
-import { type RpcLike, rpcTransport } from "@intent-engine/client/internal";
-import { IntentStatus, Kind } from "@intent-engine/core";
-import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
-import { CLUSTER } from "./limits.js";
+import type { Address } from "@solana/kit";
+import { type Client, type EngineTransaction, type IntentAccount, type ListedSignature, TransportLacks } from "@intent-engine/client";
+import { INTENT_ENGINE_PROGRAM_ADDRESS, IntentStatus, Kind } from "@intent-engine/core";
+import { guarded } from "./rpc.js";
 
 export type Reader = {
   newSignatures(limit: number, until: string | null): Promise<ListedSignature[]>;
@@ -14,36 +12,22 @@ export type Reader = {
   decimals(mint: Address): Promise<number>;
 };
 
-export function readerOf(transport: RpcTransport): Reader {
-  const rpc = createSolanaRpcFromTransport(transport);
-  const client: Client = createClient({ url: CLUSTER, transport: rpcTransport(rpc as unknown as RpcLike) });
+export function readerOf(client: Client): Reader {
+  const { transport } = client;
+  const { signaturesOf, transactionsOf } = transport;
+  if (signaturesOf === undefined || transactionsOf === undefined) {
+    throw new TransportLacks(signaturesOf === undefined ? "signaturesOf" : "transactionsOf");
+  }
+  const listed = (of: Address, limit: number, until?: string) => guarded(() => signaturesOf.call(transport, of, limit, undefined, until));
   return {
-    async newSignatures(limit, until) {
-      const listed = await rpc
-        .getSignaturesForAddress(INTENT_ENGINE_PROGRAM_ADDRESS, { limit, commitment: "confirmed", ...(until === null ? {} : { until: until as Signature }) })
-        .send();
-      return listed.map((entry) => ({
-        signature: entry.signature,
-        slot: entry.slot,
-        blockTime: entry.blockTime === null ? null : BigInt(entry.blockTime),
-        failed: entry.err !== null,
-        memo: null,
-      }));
-    },
-    transactions: (listed) => (listed.length === 0 ? Promise.resolve([]) : client.transport.transactionsOf!(listed)),
-    async openJobs() {
-      const { intents } = await client.intents({ kind: Kind.AttestedResult, status: IntentStatus.Open });
-      return intents;
-    },
+    newSignatures: (limit, until) => listed(INTENT_ENGINE_PROGRAM_ADDRESS, limit, until ?? undefined),
+    transactions: (wanted) => (wanted.length === 0 ? Promise.resolve([]) : guarded(() => transactionsOf.call(transport, wanted))),
+    openJobs: () => guarded(async () => (await client.intents({ kind: Kind.AttestedResult, status: IntentStatus.Open })).intents),
     async lastActivity(wallet) {
-      const [newest] = await client.transport.signaturesOf!(wallet, 1);
+      const [newest] = await listed(wallet, 1);
       return newest?.blockTime ?? null;
     },
-    async lamports(wallet) {
-      return (await client.transport.getAccount(wallet))?.lamports ?? 0n;
-    },
-    async decimals(mint) {
-      return (await client.mint(mint)).decimals;
-    },
+    lamports: (wallet) => guarded(async () => (await transport.getAccount(wallet))?.lamports ?? 0n),
+    decimals: (mint) => guarded(async () => (await client.mint(mint)).decimals),
   };
 }

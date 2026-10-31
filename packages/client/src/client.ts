@@ -1,10 +1,11 @@
-import { type Address, createSolanaRpc, type Instruction, type TransactionSigner } from "@solana/kit";
+import { type Address, createDefaultRpcTransport, createSolanaRpc, createSolanaRpcFromTransport, type Instruction, type TransactionSigner } from "@solana/kit";
 import { isSdkError } from "@intent-engine/core";
 import { readIntentAccounts } from "@intent-engine/core/internal";
 import { chainTime, loadConfig, loadUser, mintOf } from "./accounts.js";
 import { budgeted, simulated } from "./budget.js";
 import { nonceAfter } from "./client-create.js";
 import { clientPlans, planWrites } from "./client-plans.js";
+import { activityOf, escrowTermsOf } from "./client-activity.js";
 import { clientReads } from "./client-reads.js";
 import { loadCommittee } from "./client-committee.js";
 import { loadClaims, loadProfile } from "./client-claims.js";
@@ -28,6 +29,7 @@ import { firstOpening, openings } from "./first-opening.js";
 import { heldSharesOf } from "./held-shares.js";
 import { observerOf } from "./observe.js";
 import { observedFetch, observedTransport } from "./observe-transport.js";
+import { checkedLimits, limitedTransport, waitUnless } from "./rpc-limits.js";
 import { intentNotifications, type RpcLike, rpcTransport, signatureWatch } from "./transport.js";
 
 export type {
@@ -97,10 +99,15 @@ export {
 
 export function createClient(options: ClientOptions): Client {
   const { url, priority = 0n, pollMs = WATCH_POLL_MS, resyncSeconds = WATCH_WAIT_SECONDS } = options;
+  const { timeoutMs, retry = true, signal } = options;
+  checkedLimits(timeoutMs, retry, signal);
   const observer = observerOf(options.hooks, options.debug);
+  const limited = timeoutMs !== undefined || signal !== undefined;
+  const node = options.rpcTransport ?? (limited ? createDefaultRpcTransport({ url }) : undefined);
+  const rpc = node === undefined ? createSolanaRpc(url) : createSolanaRpcFromTransport(limited ? limitedTransport(node, timeoutMs, signal) : node);
   const transport =
     options.transport === undefined
-      ? rpcTransport(createSolanaRpc(url) as unknown as RpcLike, undefined, signatureWatch(url), observer)
+      ? rpcTransport(rpc as unknown as RpcLike, signal === undefined ? undefined : waitUnless(signal), signatureWatch(url), observer, retry)
       : observedTransport(options.transport, observer);
   const specFetch = observedFetch(options.fetch ?? webFetch, observer);
   const lookup = options.lookup ?? null;
@@ -151,6 +158,8 @@ export function createClient(options: ClientOptions): Client {
       return { intents: intents.filter(({ intent }) => intentMatchesQuery(intent, filter)), unreadable };
     },
     history,
+    activity: (options) => activityOf(transport, options),
+    escrowTerms: (transaction, intent) => escrowTermsOf(transport, transaction, intent),
     nextNonce: async (owner) => nonceAfter(owner, await loadUser(transport, owner)),
     simulate: async (instructions, signer) =>
       simulated(transport, await budgeted(transport, priority, instructions, signer.address), signer.address),

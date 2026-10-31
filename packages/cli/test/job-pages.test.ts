@@ -154,6 +154,10 @@ describe("find_jobs pages", () => {
     await shared.signaturesOf?.(intent, 1);
     await shared.signaturesOf?.(intent, 1, "s0");
     expect(signaturesOf).toHaveBeenCalledTimes(3);
+    await shared.signaturesOf?.(intent, 1_000, undefined, "s9");
+    await shared.signaturesOf?.(intent, 1_000, undefined, "s9");
+    expect(signaturesOf).toHaveBeenCalledTimes(5);
+    expect(signaturesOf).toHaveBeenLastCalledWith(intent, 1_000, undefined, "s9");
   });
 
   it("refuses a cursor it did not write", () => {

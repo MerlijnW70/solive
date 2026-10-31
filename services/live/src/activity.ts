@@ -1,15 +1,5 @@
-import type { EngineTransaction } from "@intent-engine/client";
-import { type EngineEvent, Kind, NATIVE_MINT } from "@intent-engine/core";
-import {
-  CREATE_INTENT_BY_AGENT_DISCRIMINATOR,
-  CREATE_INTENT_DISCRIMINATOR,
-  CREATE_INTENT_SIGNED_DISCRIMINATOR,
-  decodeEvent,
-  decodeParams,
-  getCreateIntentByAgentInstructionDataDecoder,
-  getCreateIntentInstructionDataDecoder,
-  getCreateIntentSignedInstructionDataDecoder,
-} from "@intent-engine/core/internal";
+import { type EngineTransaction, escrowTermsIn } from "@intent-engine/client";
+import { decodeEvent, type EngineEvent, Kind, NATIVE_MINT } from "@intent-engine/core";
 import type { FeedKind, Job } from "./shapes.js";
 
 export type Activity = {
@@ -26,51 +16,10 @@ export type Activity = {
   refund?: "cancelled" | "expired";
 };
 
-type CreateArgs = { nonce: bigint; kind: number; params: Uint8Array };
-
-const CREATE_DECODERS: readonly { tag: Uint8Array; decode: (data: Uint8Array) => CreateArgs }[] = [
-  { tag: Uint8Array.from(CREATE_INTENT_DISCRIMINATOR), decode: (data) => plainArgs(getCreateIntentInstructionDataDecoder().decode(data).args) },
-  { tag: Uint8Array.from(CREATE_INTENT_BY_AGENT_DISCRIMINATOR), decode: (data) => plainArgs(getCreateIntentByAgentInstructionDataDecoder().decode(data).args) },
-  { tag: Uint8Array.from(CREATE_INTENT_SIGNED_DISCRIMINATOR), decode: (data) => plainArgs(getCreateIntentSignedInstructionDataDecoder().decode(data).args) },
-];
-
-function plainArgs(args: { nonce: bigint; kind: number; params: ArrayLike<number> }): CreateArgs {
-  return { nonce: args.nonce, kind: args.kind, params: Uint8Array.from(args.params) };
-}
-
 export const hexOf = (bytes: ArrayLike<number>): string => Buffer.from(Uint8Array.from(bytes)).toString("hex");
 
-const startsWith = (data: Uint8Array, tag: Uint8Array): boolean => data.length >= tag.length && tag.every((b, i) => data[i] === b);
-
 export function eventsOf(tx: EngineTransaction): EngineEvent[] {
-  return tx.emitted.map((data) => decodeEvent(data) as EngineEvent | null).filter((event): event is EngineEvent => event !== null);
-}
-
-export type CreatedTerms = { attestor: string; specHash: string };
-
-export function createdTerms(tx: EngineTransaction, intent: string, nonce: bigint): CreatedTerms | null {
-  for (const [i, data] of (tx.called ?? []).entries()) {
-    if (!(tx.calledAccounts?.[i] ?? []).includes(intent as never)) {
-      continue;
-    }
-    const decoder = CREATE_DECODERS.find(({ tag }) => startsWith(data, tag));
-    if (decoder === undefined) {
-      continue;
-    }
-    try {
-      const args = decoder.decode(data);
-      if (args.nonce !== nonce || args.kind !== Kind.AttestedResult) {
-        continue;
-      }
-      const params = decodeParams(args.kind, args.params);
-      if (params.kind === Kind.AttestedResult) {
-        return { attestor: params.attestor, specHash: hexOf(params.specHash) };
-      }
-    } catch {
-      continue;
-    }
-  }
-  return null;
+  return tx.emitted.map(decodeEvent).filter((event): event is EngineEvent => event !== null);
 }
 
 function soleMint(tx: EngineTransaction): string | null {
@@ -123,11 +72,11 @@ export function activitiesOf(tx: EngineTransaction, jobs: Readonly<Record<string
   for (const event of eventsOf(tx)) {
     switch (event.name) {
       case "IntentCreated": {
-        const { intent, owner, kind, inputMint, escrowed, nonce } = event.fields;
+        const { intent, owner, kind, inputMint, escrowed } = event.fields;
         if (kind !== Kind.AttestedResult) {
           break;
         }
-        const terms = createdTerms(tx, intent, nonce);
+        const terms = escrowTermsIn(tx, intent);
         const attestor = terms?.attestor ?? jobs[intent]?.attestor;
         found.push({
           kind: "escrow",

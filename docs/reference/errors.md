@@ -305,3 +305,7 @@ Every error `@intent-engine/core` and `@intent-engine/client` throw extends `Sdk
 | `mainnet-not-allowed` | `MainnetNotAllowed` | `url` | the url serves mainnet and allowMainnet was not given |
 | `profile-history-incomplete` | `ProfileHistoryIncomplete` | `judge` | the judge's profile history could not be read back far enough; nothing was paid |
 | `no-key-at-creation` | `NoKeyAtCreation` | `intent` | the Ledger judge's profile named no encryption key when the escrow was made |
+| `rate-limited` | `RateLimited` | `method`, `retryAfterMs` | the node rate limited a read and the client was made with retry: false; retryAfterMs is the node's retry-after, or null when it sent none |
+| `timed-out` | `TimedOut` | `method`, `timeoutMs` | the node did not answer a call within the client's timeoutMs |
+| `cancelled` | `Cancelled` | `method` | the client's signal aborted before this call was issued or answered |
+| `transaction-unread` | `TransactionUnread` | `signature` | the node did not serve the transaction, so what it created is unknown |

@@ -15,6 +15,7 @@ export * from "./describe.js";
 export * from "./ed25519.js";
 export * from "./errors.js";
 export * from "./events.js";
+export * from "./transaction-events.js";
 export * from "./ext.js";
 export * from "./fee.js";
 export * from "./kinds.js";

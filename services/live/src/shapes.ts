@@ -64,11 +64,12 @@ export type Job = {
   spec_hash?: string;
   escrow?: Step;
   delivery?: Step;
+  delivery_slot?: number;
 };
 
 export type Paid = { at: string; slot: number; intent: string; payee: string; token: string; raw: string; decimals: number; house: boolean };
 
-export type Pending = { signature: string; slot: number; blockTime: number | null };
+export type Pending = { signature: string; slot: number; blockTime: number | null; tries?: number };
 
 export type State = {
   version: 1;
@@ -79,6 +80,7 @@ export type State = {
   jobs: Record<string, Job>;
   decimals: Record<string, number>;
   latest_paid_job: LatestPaidJob | null;
+  latest_paid_slot?: number;
   open_jobs: number;
   services: Services;
   slow_at: number | null;

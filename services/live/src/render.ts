@@ -1,4 +1,4 @@
-import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
+import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { CLUSTER, PAID_WINDOW_SECS, SOL_DECIMALS, TOP_WORKERS } from "./limits.js";
 import type { Feed, Paid, State, TokenAmount, TopWorker } from "./shapes.js";
 import { amountText } from "./words.js";

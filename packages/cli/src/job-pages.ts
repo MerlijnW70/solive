@@ -67,7 +67,8 @@ export function historyOnce(transport: Transport): Transport {
   };
   return {
     ...boundMembers(transport),
-    signaturesOf: (of, limit, before) => once(signatures, pageKey(of, limit, before), () => listed(of, limit, before)),
+    signaturesOf: (of, limit, before, until) =>
+      until === undefined ? once(signatures, pageKey(of, limit, before), () => listed(of, limit, before)) : signaturesOf.call(transport, of, limit, before, until),
     transactionsOf: (listed) => once(transactions, listed.map(({ signature }) => signature).join(" "), () => transactionsOf.call(transport, listed)),
   };
 }

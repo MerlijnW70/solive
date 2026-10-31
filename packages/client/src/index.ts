@@ -33,6 +33,7 @@ export type { AnnouncementList, AnnouncementScan, AnnouncementView } from "./ann
 export type { Reclaimed, ReclaimInput, ReclaimPlan, Refuted, RefuteInput, RefutePlan } from "./announcement-sends.js";
 export type { KeptAnnouncement } from "./reclaim-reasons.js";
 export type { Priority } from "./budget.js";
+export { type ActivityEvent, type ActivityOptions, type ActivityPage, type EscrowTerms, escrowTermsIn, TransactionUnread } from "./client-activity.js";
 export type { ClaimListView, ClaimsView } from "./client-claims.js";
 export type { CommitteeCreatePlan } from "./client-committee.js";
 export type { CreateIntentPlan } from "./client-create.js";
@@ -122,6 +123,7 @@ export type {
 } from "./observe.js";
 export type { Plan } from "./plan.js";
 export type { RefutationRecord, RefutationStanding } from "./refutation-standing.js";
+export { Cancelled, RateLimited, TimedOut } from "./rpc-limits.js";
 export { SDK_ERRORS, type SdkErrorEntry, type SdkErrorFields } from "./sdk-errors.js";
 export type { Earned, FeedbackInput, Reputation, ReputationOptions } from "./reputation.js";
 export type {

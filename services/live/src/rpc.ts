@@ -1,4 +1,5 @@
-import { isSolanaError, type RpcTransport, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR } from "@solana/kit";
+import { isSolanaError, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR } from "@solana/kit";
+import { isSdkError } from "@intent-engine/core";
 import { RETRY_AFTER_DEFAULT_SECS } from "./limits.js";
 
 export class RateLimited extends Error {
@@ -29,16 +30,7 @@ export class ReadFailed extends Error {
   }
 }
 
-const SECONDS = /^\d{1,9}$/;
-
-export function retryAfterSecs(value: string | null | undefined, now: number): number {
-  const text = value?.trim() ?? "";
-  if (SECONDS.test(text)) {
-    return Math.max(1, Number(text));
-  }
-  const at = Date.parse(text);
-  return Number.isNaN(at) ? RETRY_AFTER_DEFAULT_SECS : Math.max(1, Math.ceil((at - now) / 1000));
-}
+export const retryAfterSecs = (retryAfterMs: number | null): number => (retryAfterMs === null ? RETRY_AFTER_DEFAULT_SECS : Math.max(1, Math.ceil(retryAfterMs / 1000)));
 
 export function raced<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   if (signal.aborted) {
@@ -61,36 +53,26 @@ export function raced<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 
-function headerOf(headers: unknown, name: string): string | null {
-  return headers instanceof Headers ? headers.get(name) : null;
-}
-
-export function translated(error: unknown, signal: AbortSignal, now: number, method = "unknown"): Error {
+export function translated(error: unknown): unknown {
   if (error instanceof RateLimited || error instanceof ReadTimedOut || error instanceof ReadFailed) {
     return error;
   }
-  if (isSolanaError(error, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR)) {
-    const { statusCode, headers } = error.context;
-    return statusCode === 429 ? new RateLimited(retryAfterSecs(headerOf(headers, "retry-after"), now), method) : new ReadFailed(statusCode);
+  if (isSdkError(error, "rate-limited")) {
+    return new RateLimited(retryAfterSecs(error.retryAfterMs), error.method);
   }
-  return signal.aborted ? new ReadTimedOut() : new ReadFailed(null);
+  if (isSdkError(error, "timed-out") || isSdkError(error, "cancelled")) {
+    return new ReadTimedOut();
+  }
+  if (isSdkError(error)) {
+    return error;
+  }
+  return isSolanaError(error, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR) ? new ReadFailed(error.context.statusCode) : new ReadFailed(null);
 }
 
-const METHOD = /^[A-Za-z]{1,64}$/;
-
-function methodOf(payload: unknown): string {
-  const method = typeof payload === "object" && payload !== null ? (payload as { method?: unknown }).method : undefined;
-  return typeof method === "string" && METHOD.test(method) ? method : "unknown";
-}
-
-export function guardedTransport(base: RpcTransport, callTimeoutMs: number, deadline: AbortSignal, now: () => number = Date.now): RpcTransport {
-  const guarded = async (config: Parameters<RpcTransport>[0]) => {
-    const signal = AbortSignal.any([AbortSignal.timeout(callTimeoutMs), deadline, ...(config.signal === undefined ? [] : [config.signal])]);
-    try {
-      return await raced(base({ ...config, signal }), signal);
-    } catch (error) {
-      throw translated(error, signal, now(), methodOf(config.payload));
-    }
-  };
-  return guarded as RpcTransport;
+export async function guarded<T>(read: () => Promise<T>): Promise<T> {
+  try {
+    return await read();
+  } catch (error) {
+    throw translated(error);
+  }
 }

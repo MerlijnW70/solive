@@ -298,8 +298,10 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
           .slice(0, limit)
           .map(({ found }) => found)
           .filter(({ memos }) => memo === undefined || (memos ?? []).some((text) => text.includes(memo))),
-      signaturesOf: async (of, limit, before) => {
-        const touching = history.filter(({ touched }) => touched.has(of));
+      signaturesOf: async (of, limit, before, until) => {
+        const every = history.filter(({ touched }) => touched.has(of));
+        const stop = until === undefined ? -1 : every.findIndex(({ found }) => found.signature === until);
+        const touching = stop === -1 ? every : every.slice(0, stop);
         const start = before === undefined ? 0 : touching.findIndex(({ found }) => found.signature === before) + 1;
         return (start === 0 && before !== undefined ? [] : touching.slice(start, start + limit)).map(
           ({ found }): ListedSignature => ({

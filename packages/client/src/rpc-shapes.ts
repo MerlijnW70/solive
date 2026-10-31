@@ -77,7 +77,7 @@ export interface Transport {
   intents(query?: IntentQuery, read?: IntentRead): Promise<ProgramAccount[]>;
   engineAccounts?(filter?: EngineAccountFilter): Promise<EngineAccount[]>;
   engineTransactions(limit: number, of?: Address, memo?: string): Promise<EngineTransaction[]>;
-  signaturesOf?(of: Address, limit: number, before?: string): Promise<ListedSignature[]>;
+  signaturesOf?(of: Address, limit: number, before?: string, until?: string): Promise<ListedSignature[]>;
   transactionsOf?(listed: readonly ListedSignature[]): Promise<EngineTransaction[]>;
   transactionOf?(signature: string): Promise<EngineTransaction | null>;
   signatureStatuses?(signatures: readonly string[]): Promise<(SignatureLanding | null)[]>;
@@ -154,7 +154,7 @@ export type RpcLike = {
   ): Pending<readonly ProgramEntry[] | { context: { slot: bigint }; value: readonly ProgramEntry[] }>;
   getSignaturesForAddress(
     address: Address,
-    config: { limit: number; before?: Signature } & AtLeast,
+    config: { limit: number; before?: Signature; until?: Signature } & AtLeast,
   ): Pending<readonly { signature: string; slot: bigint; blockTime: bigint | null; err: unknown; memo?: string | null }[]>;
   getTransaction(
     signature: Signature,

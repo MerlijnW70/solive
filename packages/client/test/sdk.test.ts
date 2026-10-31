@@ -246,7 +246,7 @@ describe("the sdk page", () => {
     expect(shell[0]).toBe("npm install @intent-engine/core @intent-engine/client @solana/kit");
     expect(shell.slice(1)).toEqual(["npx @intent-engine/cli setup"]);
     expect(blocks.length).toBeGreaterThanOrEqual(6);
-    expect(claims).toEqual(["SwapExactIn Open", "Open", "Cancelled", "ExpiryNotInFuture", "Filled", "IntentAttested", "Cancelled NotSettleable", "null", "true true"]);
+    expect(claims).toEqual(["SwapExactIn Open", "Open", "Cancelled", "ExpiryNotInFuture", "Filled", "IntentAttested", "true true true", "Cancelled NotSettleable", "null", "true true"]);
   });
 
   it("states that the devnet filler expires and closes overdue intents in paused passes, and its price", () => {

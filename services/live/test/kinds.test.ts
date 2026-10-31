@@ -1,6 +1,5 @@
 import { getBase64Decoder } from "@solana/kit";
-import { DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
-import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
+import { DEVNET_TEST_MINT, INTENT_ENGINE_PROGRAM_ADDRESS, NATIVE_MINT } from "@intent-engine/core";
 import { describe, expect, it } from "vitest";
 import {
   addressOf,
@@ -9,6 +8,7 @@ import {
   cancelled,
   claimed,
   committeeAttested,
+  createAccounts,
   createCall,
   created,
   CUSTOM_HASH,
@@ -41,13 +41,13 @@ const at = (n: number, events: Uint8Array[], extra: Partial<Tx> = {}): Tx => ({ 
 function story(): Tx[] {
   return [
     at(1, [created(JOB, OWNER, 100_000_000n)], {
-      calls: [{ data: createCall(JUDGE, FIZZBUZZ_HASH, 100_000_000n), accounts: [OWNER, JOB] }],
+      calls: [{ data: createCall(JUDGE, FIZZBUZZ_HASH, 100_000_000n), accounts: createAccounts(OWNER, JOB) }],
       memo: "spec https://example.invalid/SPEC-MARKER MEMO-MARKER",
       logs: ["Program log: SPEC-MARKER"],
     }),
     at(2, [claimed(JOB, WORKER, 10_000_000n)]),
     at(3, [announced(JOB, WORKER, JUDGE)], { memo: "DELIVERY-MARKER https://example.invalid/work" }),
-    at(4, [created(CANCELLED, OWNER, 2_500_000n, DEVNET_TEST_MINT)], { calls: [{ data: createCall(JUDGE, CUSTOM_HASH, 2_500_000n), accounts: [OWNER, CANCELLED] }] }),
+    at(4, [created(CANCELLED, OWNER, 2_500_000n, DEVNET_TEST_MINT)], { calls: [{ data: createCall(JUDGE, CUSTOM_HASH, 2_500_000n), accounts: createAccounts(OWNER, CANCELLED) }] }),
     at(5, [cancelled(CANCELLED, OWNER, 2_500_000n)]),
     at(6, [expired(EXPIRED, OWNER, 3_000_000n)], { mints: [DEVNET_TEST_MINT] }),
     at(7, [filled(SWAP, OWNER, SOLVER, 5_000_000_000n)], { mints: [NATIVE_MINT] }),

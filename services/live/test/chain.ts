@@ -1,8 +1,7 @@
 import { type Address, getAddressDecoder, getBase58Decoder, getBase64Decoder } from "@solana/kit";
-import { attestedResult, DEVNET_TEST_MINT, IntentStatus, Kind, NATIVE_MINT } from "@intent-engine/core";
+import { attestedResult, DEVNET_TEST_MINT, EVENT_IX_TAG, INTENT_ENGINE_PROGRAM_ADDRESS, IntentStatus, Kind, NATIVE_MINT } from "@intent-engine/core";
 import {
   encodeParams,
-  EVENT_IX_TAG,
   getCommitteeAttestedEventEncoder,
   getCreateIntentInstructionDataEncoder,
   getDeliveryAnnouncedEventEncoder,
@@ -17,7 +16,6 @@ import {
   getJobClaimedEventEncoder,
   getProfileSetEventEncoder,
   getShareHeldEventEncoder,
-  INTENT_ENGINE_PROGRAM_ADDRESS,
   INTENT_VERSION,
 } from "@intent-engine/core/internal";
 
@@ -67,6 +65,8 @@ export const createCall = (attestor: Address, specHash: string, amountIn: bigint
       args: { nonce, kind: Kind.AttestedResult, flags: 0, params: paramsOf(attestor, specHash, amountIn), expiresAt: 4_000_000_000n, ext: new Uint8Array(), maxCreateFee: 0, maxBounty: 0 },
     }),
   );
+
+export const createAccounts = (owner: Address, intent: Address): Address[] => [owner, addressOf(70), addressOf(71), intent, ...Array.from({ length: 14 }, (_, i) => addressOf(72 + i))];
 
 export const claimed = (intent: Address, worker: Address, stake: bigint): Uint8Array =>
   tagged(getJobClaimedEventEncoder().encode({ intent, worker, until: 0n, stake }));

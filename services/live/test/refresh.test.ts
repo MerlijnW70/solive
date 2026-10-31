@@ -1,8 +1,9 @@
-import { SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SolanaError } from "@solana/kit";
+import { type RpcTransport, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SolanaError } from "@solana/kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FEED_ACCOUNTS_EVERY_SECS, FEED_CALL_TIMEOUT_MS, FEED_REFRESH_BUDGET_MS, FEED_SIGNATURE_PAGE, FEED_TRANSACTIONS_PER_REFRESH, STATE_KEY } from "../src/limits.js";
 import { liveFeed } from "../src/http.js";
 import { addressOf, claimed, signatureOf, type Tx, WORKER } from "./chain.js";
+import { FakeNode } from "./fake-node.js";
 import { MemoryCache, NOW, nowSecs, rig } from "./harness.js";
 
 const JOB = addressOf(1);
@@ -114,6 +115,43 @@ describe("reads", () => {
     const back = await feed.read();
     expect(back.stale).toBe(false);
     expect(back.events.map(({ signature }) => signature)).toEqual([2, 1].map(signatureOf));
+  });
+
+  it("stops issuing calls at the refresh deadline: 20 pending, a 100 ms budget, 40 ms per call", async () => {
+    const node = new FakeNode();
+    node.add(...range(1, 20));
+    const slow = (async (config: Parameters<RpcTransport>[0]) => {
+      const answer = await node.transport(config);
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      return answer;
+    }) as RpcTransport;
+    const { feed, logs } = rig({ transport: slow, limits: { refreshBudgetMs: 100, callTimeoutMs: 1000 } });
+    const body = await feed.read();
+    const atEnd = node.calls.length;
+    expect(body.stale).toBe(true);
+    expect(logs.at(-1)).toContain('"reason":"ReadTimedOut"');
+    expect(atEnd).toBeGreaterThan(0);
+    expect(atEnd).toBeLessThanOrEqual(3);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(node.calls.length).toBe(atEnd);
+  });
+
+  it("keeps a transaction the node did not serve pending and reads it again, without holding up the rest", async () => {
+    const { node, feed, tick } = rig();
+    node.add(...range(1, 3));
+    const held = node.transactions.get(signatureOf(2));
+    node.transactions.delete(signatureOf(2));
+    const cut = await feed.read();
+    expect(cut.stale).toBe(false);
+    expect(cut.events.map(({ signature }) => signature)).toEqual([3, 1].map(signatureOf));
+    node.transactions.set(signatureOf(2), held);
+    tick(31);
+    const healed = await feed.read();
+    expect(healed.events.map(({ signature }) => signature)).toEqual([3, 2, 1].map(signatureOf));
+    tick(31);
+    const reads = node.count("getTransaction");
+    await feed.read();
+    expect(node.count("getTransaction")).toBe(reads);
   });
 
   it("writes the Runtime Cache only when the state changed", async () => {

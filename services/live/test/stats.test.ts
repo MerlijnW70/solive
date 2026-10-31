@@ -13,6 +13,7 @@ import {
   announced,
   attested,
   claimed,
+  createAccounts,
   createCall,
   created,
   CUSTOM_HASH,
@@ -42,7 +43,7 @@ const tx = (events: Uint8Array[], extra: Partial<Tx> = {}, age = HOUR_SECS): Tx 
 };
 
 const escrow = (intent: ReturnType<typeof addressOf>, owner: ReturnType<typeof addressOf>, judge: ReturnType<typeof addressOf>, amount: bigint, mint = NATIVE_MINT, age = HOUR_SECS) =>
-  tx([created(intent, owner, amount, mint)], { calls: [{ data: createCall(judge, CUSTOM_HASH, amount), accounts: [owner, intent] }] }, age);
+  tx([created(intent, owner, amount, mint)], { calls: [{ data: createCall(judge, CUSTOM_HASH, amount), accounts: createAccounts(owner, intent) }] }, age);
 
 const pay = (intent: ReturnType<typeof addressOf>, owner: ReturnType<typeof addressOf>, worker: ReturnType<typeof addressOf>, judge: ReturnType<typeof addressOf>, net: bigint, age = HOUR_SECS) =>
   tx([released(intent, worker, judge), attested(intent, owner, worker, judge, net)], {}, age);

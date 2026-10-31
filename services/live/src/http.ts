@@ -1,10 +1,10 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
-import { createDefaultRpcTransport, type RpcTransport } from "@solana/kit";
+import type { RpcTransport } from "@solana/kit";
+import { createClient } from "@intent-engine/client";
 import { configFrom, type Env, type FeedConfig } from "./env.js";
 import { LiveFeed } from "./feed.js";
 import { CACHE_CONTROL, CDN_CACHE_CONTROL, FAUCET_URL, LIMITS, type Limits } from "./limits.js";
 import { readerOf } from "./reader.js";
-import { guardedTransport } from "./rpc.js";
 import type { Probe } from "./services.js";
 import type { Feed } from "./shapes.js";
 import { type RuntimeCache, StateStore } from "./store.js";
@@ -57,11 +57,11 @@ export type Wiring = {
 
 export function liveFeed({ env, cache, transport, probe = faucetProbe, limits = LIMITS, now = Date.now, log = (line) => console.log(line) }: Wiring): LiveFeed {
   const config: FeedConfig = configFrom(env);
-  const base = transport ?? createDefaultRpcTransport({ url: config.rpcUrl });
+  const node = transport === undefined ? {} : { rpcTransport: transport };
   return new LiveFeed({
     config,
     store: new StateStore(cache, log),
-    connect: (deadline) => readerOf(guardedTransport(base, limits.callTimeoutMs, deadline, now)),
+    connect: (deadline) => readerOf(createClient({ url: config.rpcUrl, timeoutMs: limits.callTimeoutMs, retry: false, signal: deadline, ...node })),
     probe,
     limits,
     now,

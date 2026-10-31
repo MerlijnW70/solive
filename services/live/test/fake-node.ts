@@ -1,6 +1,5 @@
 import { type Address, getBase64Decoder, type RpcTransport } from "@solana/kit";
-import { DEVNET_TEST_MINT, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
+import { DEVNET_TEST_MINT, INTENT_ENGINE_PROGRAM_ADDRESS, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { type Tx, transactionJson } from "./chain.js";
 
 export type Call = { method: string; params: unknown[] };

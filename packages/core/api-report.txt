@@ -13,11 +13,14 @@ type DeliveryKey: type DeliveryKey = { publicKey: Uint8Array<ArrayBuffer>; secre
 type DeliveryOpener: type DeliveryOpener = Uint8Array | DeliveryKey;
 type DutchAuctionFields: type DutchAuctionFields = Omit<DutchAuctionParams, "kind">;
 type DutchAuctionParams: type DutchAuctionParams = { kind: Kind.DutchAuction; amountIn: bigint; startOut: bigint; endOut: bigint; startTs: bigint; endTs: bigint; };
+const EVENT_IX_TAG: const EVENT_IX_TAG: Uint8Array<ArrayBuffer>;
 class EncryptionKeyError: class EncryptionKeyError extends SdkError { readonly code = "encryption-key-error"; readonly name = "EncryptionKeyError"; }
 type EngineEvent: type EngineEvent = { [K in EngineEventName]: { name: K; notable: boolean; fields: ReturnType<(typeof PARSERS)[K]>; }; }[EngineEventName];
 type EngineEventName: type EngineEventName = (typeof IntentEngineEvent)[IntentEngineEvent];
+type EventPosition: type EventPosition = { instruction: number; inner: number; };
 type FeeConfig: type FeeConfig = { feeBps: number; kindFeeMask: number; kindFeeBps: readonly number[]; };
 type FeeShares: type FeeShares = { protocol: bigint; partner: bigint; net: bigint; };
+const INTENT_ENGINE_PROGRAM_ADDRESS: const INTENT_ENGINE_PROGRAM_ADDRESS: Address<"GHFB9q4fhhqRyCoycoivdxMhFkp1aLHJk5VvroUsgrJU">;
 type InputRule: type InputRule = "range" | "length" | "format" | "conflict" | "duplicate" | "order" | "missing" | "unsupported";
 type Intent: type Intent = { discriminator: ReadonlyUint8Array; owner: Address; inputMint: Address; outputMint: Address; receiver: Address; nonce: bigint; escrowed: bigint; createdAt: bigint; expiresAt: bigint; kind: number; status: number; bump: number; vaultBump: number; version: number; held: number; flags: number; params: ReadonlyUint8Array; rentPayer: Address; filled: bigint; revision: number; partnerBps: number; partnerCutBps: number; inFlight: bigint; partner: Address; bounty: number; mandate: Address; feeBps: number; gap: ReadonlyUint8Array; mandateSerial: bigint; agentFee: bigint; claims: number; gap2: ReadonlyUint8Array; capped: bigint; };
 class IntentCoreError: class IntentCoreError extends SdkError { readonly code = "intent-core-error"; readonly name = "IntentCoreError"; readonly engineError: CoreErrorCode; constructor(engineError: CoreErrorCode); }
@@ -27,6 +30,8 @@ type IntentParams: type IntentParams = SwapExactInParams | LimitOrderParams | Du
 const IntentStatus: const IntentStatus: { readonly Open: 0; readonly Filled: 1; readonly Cancelled: 2; readonly Expired: 3; readonly Filling: 4; };
 type IntentStatusName: type IntentStatusName = keyof typeof IntentStatus;
 class InvalidInput: class InvalidInput extends SdkError { readonly code = "invalid-input"; readonly name = "InvalidInput"; readonly field: string; readonly rule: InputRule; constructor(field: string, rule: InputRule, message: string, options?: ErrorOptions); }
+type JsonInstruction: type JsonInstruction = { programIdIndex: number; data: string; };
+type JsonTransaction: type JsonTransaction = { transaction: { message: { accountKeys: readonly string[]; }; }; meta?: { err?: unknown; innerInstructions?: readonly { index: number; instructions: readonly JsonInstruction[]; }[] | null; loadedAddresses?: { writable: readonly string[]; readonly: readonly string[]; } | null; } | null; };
 enum Kind: enum Kind { SwapExactIn = 1, LimitOrder = 2, DutchAuction = 3, AttestedResult = 4 }
 type KindName: type KindName = keyof typeof Kind;
 type KindSummary: type KindSummary = { kind: Kind; name: KindName; create: boolean; fill: boolean; feeBps: number; };
@@ -38,6 +43,8 @@ const NATIVE_MINT: const NATIVE_MINT: Address;
 class NoSignature: class NoSignature extends SdkError { readonly code = "no-signature"; readonly name = "NoSignature"; readonly signer: Address; constructor(signer: Address); }
 class NotAnEngineAccount: class NotAnEngineAccount extends SdkError { readonly code = "not-an-engine-account"; readonly name = "NotAnEngineAccount"; readonly address: Address | null; constructor(address: Address | null, message: string); }
 class NotInvited: class NotInvited extends SdkError { readonly code = "not-invited"; readonly name = "NotInvited"; readonly wallet: Address | null; constructor(wallet: Address | null); }
+const PRODUCT_SLUG: const PRODUCT_SLUG = "solive";
+type PositionedEvent: type PositionedEvent = EngineEvent & EventPosition;
 type ProfileView: type ProfileView = { wallet: Address; skills: string[]; endpoint: string; docUrl: string | null; docSha256: string | null; encryptionKey: string | null; updatedAt: bigint; };
 class SdkError: abstract class SdkError extends Error { abstract readonly code: SdkErrorCode; readonly [BRAND] = true; }
 type SdkErrorCode: type SdkErrorCode = keyof SdkErrors;
@@ -53,6 +60,7 @@ type UnreadableAccount: type UnreadableAccount = { address: Address; reason: str
 type WithheldRole: type WithheldRole = (typeof WITHHELD_ROLES)[keyof typeof WITHHELD_ROLES];
 function attestedResult: function attestedResult(fields: AttestedResultFields): AttestedResultParams;
 function configSummary: function configSummary(config: SummarizedConfig): ConfigSummary;
+function decodeEvent: function decodeEvent(data: Uint8Array): EngineEvent | null;
 function dutchAuction: function dutchAuction(fields: DutchAuctionFields): DutchAuctionParams;
 function eventNamed: function eventNamed<E extends EngineEvent, N extends E["name"]>(events: readonly E[], name: N): Extract<E, { name: N; }> | undefined;
 function feeBpsFor: function feeBpsFor(config: FeeConfig, kind: number): number;
@@ -69,3 +77,4 @@ function statusName: function statusName(status: number): IntentStatusName | und
 function swapExactIn: function swapExactIn(fields: SwapExactInFields): SwapExactInParams;
 function termsOf: function termsOf(intent: { kind: number; params: ArrayLike<number>; }, now?: bigint): Terms;
 function tokenName: function tokenName(mint: Address): "SOL" | "TEST" | undefined;
+function transactionEvents: function transactionEvents(tx: JsonTransaction | null | undefined): PositionedEvent[];

@@ -11,15 +11,21 @@ import { isSdkError } from "@intent-engine/core";
 import { boundMembers } from "./memoized-transport.js";
 import { type ConfirmOutcome, elapsedSince, type Observer, type SendEvent } from "./observe.js";
 import { redactUrl } from "./redact-url.js";
+import { unretried } from "./rpc-limits.js";
 import { patiently } from "./rpc-retry.js";
 import type { Transport } from "./rpc-shapes.js";
 
 export type Asked = <T>(method: string, run: () => Promise<T>) => Promise<T>;
 
 export const askedOf =
-  (observer: Observer, wait?: (ms: number) => Promise<void>): Asked =>
+  (observer: Observer, wait?: (ms: number) => Promise<void>, retry = true): Asked =>
   (method, run) =>
-    patiently((attempt) => observer.request(method, attempt, run), wait, undefined, (retry) => observer.retry({ method, ...retry }));
+    patiently(
+      (attempt) => observer.request(method, attempt, retry ? run : () => unretried(method, run)),
+      wait,
+      undefined,
+      (retried) => observer.retry({ method, ...retried }),
+    );
 
 export function transactionSend(tx: Transaction, lastValidBlockHeight: bigint | null): SendEvent {
   const compiled = getCompiledTransactionMessageDecoder().decode(tx.messageBytes);

@@ -39,6 +39,10 @@ import {
   NoFreeNonce,
   NoHeldShare,
   NoKeyAtCreation,
+  RateLimited,
+  TimedOut,
+  Cancelled,
+  TransactionUnread,
   NoMessageSigner,
   NotAMint,
   NotASignature,
@@ -117,6 +121,10 @@ const SAMPLES: { [C in SdkErrorCode]: () => SdkErrors[C] } = {
   "mainnet-not-allowed": () => new MainnetNotAllowed("https://example.org"),
   "profile-history-incomplete": () => new ProfileHistoryIncomplete(WALLET),
   "no-key-at-creation": () => new NoKeyAtCreation(WALLET, WALLET),
+  "rate-limited": () => new RateLimited("getTransaction", 10_000),
+  "timed-out": () => new TimedOut("getTransaction", 2_500),
+  cancelled: () => new Cancelled("getTransaction"),
+  "transaction-unread": () => new TransactionUnread(SIG),
 };
 
 const exported: unknown[] = [...Object.values(core as Record<string, unknown>), ...Object.values(client as Record<string, unknown>)];

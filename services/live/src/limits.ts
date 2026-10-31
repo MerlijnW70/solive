@@ -1,6 +1,7 @@
-import { PRODUCT_SLUG } from "@intent-engine/core/internal";
+import { PRODUCT_SLUG } from "@intent-engine/core";
 
 export const FEED_SIGNATURE_PAGE = 100;
+export const FEED_UNREAD_TRIES = 10;
 export const FEED_TRANSACTIONS_PER_REFRESH = 20;
 export const FEED_ACCOUNTS_EVERY_SECS = 300;
 export const FEED_CALL_TIMEOUT_MS = 2500;

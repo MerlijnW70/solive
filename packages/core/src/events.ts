@@ -135,7 +135,7 @@ export const NOTABLE = new Set([
 
 export type DecodedEvent = { name: string; notable: boolean; fields: object };
 
-export function decodeEvent(data: Uint8Array): DecodedEvent | null {
+export function decodeEvent(data: Uint8Array): EngineEvent | null {
   if (!EVENT_IX_TAG.every((b, i) => data[i] === b)) {
     return null;
   }
@@ -147,7 +147,7 @@ export function decodeEvent(data: Uint8Array): DecodedEvent | null {
     return null;
   }
   try {
-    return { name, notable: NOTABLE.has(name), fields: PARSERS[name](body) };
+    return { name, notable: NOTABLE.has(name), fields: PARSERS[name](body) } as EngineEvent;
   } catch {
     return null;
   }

@@ -1,4 +1,4 @@
-import type { Address, Instruction, MessagePartialSigner, Signature, TransactionSigner } from "@solana/kit";
+import type { Address, Instruction, MessagePartialSigner, RpcTransport, Signature, TransactionSigner } from "@solana/kit";
 import type { AttestedResultParams, CommitteeTerms, CommitteeVote, Config, EngineEvent, Intent, IntentParams, ProfileView } from "@intent-engine/core";
 import type { Priority } from "./budget.js";
 import type { ClaimsView } from "./client-claims.js";
@@ -7,6 +7,7 @@ import type { EngineError } from "./errors.js";
 import type { AnnounceInput, Announced, AnnouncementPlan } from "./announce.js";
 import type { UnreadableAccount } from "@intent-engine/core/internal";
 import type { AnnouncementList, AnnouncementScan } from "./announcement-reads.js";
+import type { ActivityOptions, ActivityPage, EscrowTerms } from "./client-activity.js";
 import type { ReclaimInput, ReclaimPlan, Reclaimed, RefuteInput, RefutePlan, Refuted } from "./announcement-sends.js";
 import type { CreateIntentPlan } from "./client-create.js";
 import type { CommitteeCreatePlan } from "./client-committee.js";
@@ -20,7 +21,7 @@ import type { JobFilter, JobList, Spec, SpecFetch } from "./jobs.js";
 import type { Lookup } from "./address-ranges.js";
 import type { ClientHooks, DebugLog } from "./observe.js";
 import type { SendStatus } from "./send-errors.js";
-import type { IntentQuery, Notifications, Simulation, Transport } from "./transport.js";
+import type { EngineTransaction, IntentQuery, Notifications, Simulation, Transport } from "./transport.js";
 
 export type ClientOptions = {
   url: string;
@@ -33,6 +34,10 @@ export type ClientOptions = {
   lookup?: Lookup;
   hooks?: ClientHooks;
   debug?: DebugLog;
+  rpcTransport?: RpcTransport;
+  timeoutMs?: number;
+  retry?: boolean;
+  signal?: AbortSignal;
 };
 
 export type IntentAccount = { address: Address; intent: Intent };
@@ -176,6 +181,8 @@ export type Client = {
   intent(intent: IntentRef): Promise<IntentAccount | null>;
   intents(filter?: IntentFilter): Promise<IntentList>;
   history(intent: IntentRef, options?: HistoryOptions): Promise<HistoryPage>;
+  activity(options?: ActivityOptions): Promise<ActivityPage>;
+  escrowTerms(transaction: EngineTransaction | string, intent: Address): Promise<EscrowTerms | null>;
   nextNonce(owner: Address): Promise<bigint>;
   simulate(instructions: readonly Instruction[], signer: TransactionSigner): Promise<Simulation>;
   send(instructions: readonly Instruction[], signer: TransactionSigner): Promise<Signature>;

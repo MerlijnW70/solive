@@ -131,11 +131,11 @@ function parsed(entry: ListedSignature, tx: ReadTransaction): EngineTransaction 
   };
 }
 
-export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>, watch?: SignatureWatch, observer: Observer = QUIET): Transport {
+export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>, watch?: SignatureWatch, observer: Observer = QUIET, retry = true): Transport {
   const fetched = new Map<string, Promise<EngineTransaction & { complete: boolean }>>();
   let reached: bigint | undefined;
   const facade = (by: Observer): Transport => {
-    const ask = askedOf(by, wait);
+    const ask = askedOf(by, wait, retry);
     const atLeast = (floor?: bigint): AtLeast => {
       const slot = floor === undefined || (reached !== undefined && reached > floor) ? reached : floor;
       return slot === undefined ? {} : { minContextSlot: slot };
@@ -259,9 +259,10 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
             );
             return block === null ? null : { slot, blockhash: block.blockhash };
           };
-    const listSignatures = async (of: Address, limit: number, before?: string): Promise<ListedSignature[]> => {
+    const listSignatures = async (of: Address, limit: number, before?: string, until?: string): Promise<ListedSignature[]> => {
       const from = before === undefined ? {} : { before: askedSignature(before, "before") };
-      const listed = await ask("getSignaturesForAddress", () => rpc.getSignaturesForAddress(of, { limit, ...from, ...atLeast() }).send());
+      const to = until === undefined ? {} : { until: askedSignature(until, "until") };
+      const listed = await ask("getSignaturesForAddress", () => rpc.getSignaturesForAddress(of, { limit, ...from, ...to, ...atLeast() }).send());
       return listed.map((entry) => ({
         signature: nodeSignature(entry.signature, "getSignaturesForAddress"),
         slot: entry.slot,
@@ -368,7 +369,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
         const listed = await listSignatures(of ?? INTENT_ENGINE_PROGRAM_ADDRESS, limit);
         return fetchAll(memo === undefined ? listed : listed.filter((entry) => (entry.memo ?? "").includes(memo)));
       },
-      signaturesOf: (of, limit, before) => listSignatures(of, limit, before),
+      signaturesOf: (of, limit, before, until) => listSignatures(of, limit, before, until),
       transactionsOf: (listed) => fetchAll(listed),
       async transactionOf(asked) {
         const signature = askedSignature(asked);

@@ -4,7 +4,7 @@ import { NATIVE_MINT } from "@intent-engine/core";
 import { activitiesOf } from "./activity.js";
 import { applyOpenJobs, applyTransactions, pruned } from "./apply.js";
 import type { FeedConfig } from "./env.js";
-import { CLUSTER, type Limits, SOL_DECIMALS } from "./limits.js";
+import { CLUSTER, FEED_UNREAD_TRIES, type Limits, SOL_DECIMALS } from "./limits.js";
 import type { Reader } from "./reader.js";
 import { raced, RateLimited, ReadFailed, ReadTimedOut } from "./rpc.js";
 import { render } from "./render.js";
@@ -70,6 +70,14 @@ export async function refreshInto(state: State, reader: Reader, deps: FeedDeps, 
   let added = 0;
   for (const entry of state.pending.slice(0, limits.transactionsPerRefresh)) {
     const transactions = await reader.transactions([listedOf(entry)]);
+    if (transactions.some(({ unread }) => unread === true)) {
+      entry.tries = (entry.tries ?? 0) + 1;
+      if (entry.tries >= FEED_UNREAD_TRIES) {
+        state.pending = state.pending.filter(({ signature }) => signature !== entry.signature);
+        deps.log(JSON.stringify({ cluster: CLUSTER, refresh: "gave up", signature: entry.signature, tries: entry.tries }));
+      }
+      continue;
+    }
     for (const activity of transactions.flatMap((tx) => activitiesOf(tx, state.jobs))) {
       if (activity.mint !== null && activity.raw !== null && state.decimals[activity.mint] === undefined) {
         const places = await decimals(activity.mint);
@@ -79,7 +87,7 @@ export async function refreshInto(state: State, reader: Reader, deps: FeedDeps, 
       }
     }
     added += applyTransactions(state, transactions, config.house, now);
-    state.pending = state.pending.slice(1);
+    state.pending = state.pending.filter(({ signature }) => signature !== entry.signature);
   }
   return added;
 }

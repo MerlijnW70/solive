@@ -12,6 +12,11 @@ import { createClient } from "@intent-engine/client/node";
 const client = createClient({ url: "https://api.devnet.solana.com" });
 ```
 
+- `timeoutMs` ends each RPC call that runs longer with `TimedOut`, which names the `method` and the `timeoutMs`. Unset, a call waits as long as the node takes.
+- `retry: false` stops the client retrying rate-limited calls: a 429 rejects at once with `RateLimited`, whose `retryAfterMs` is the node's `retry-after` in milliseconds, or `null` when it sent none. Unset, the client retries.
+- `rpcTransport` reads through a `@solana/kit` `RpcTransport` instead of one built from `url`, with `timeoutMs`, `retry` and `signal` applied to it. A `transport` replaces all four.
+- `signal` takes an `AbortSignal`. Once it aborts, the client issues no further RPC call and abandons one in flight or a retry wait; these reject with `Cancelled`, which names the `method`.
+
 ## Create a swap intent
 
 Sell 0.05 SOL for at least 50 test tokens. The devnet filler prices test tokens at 200 per wrapped SOL and pays exactly the minimum asked; 50 is more than 0.05 SOL buys at that price, so the intent stays open until you cancel it.
@@ -176,6 +181,28 @@ console.log(received.map((amount) => formatAmount(amount, sell.decimals)).join("
 - `announce` takes the announcement's rent from the worker's own wallet, and on the first announcement to an escrow the delivery book's rent too, unless `payer` names another wallet to pay them.
 - `reclaim` returns an announcement's rent to whoever paid it, for an unpaid one once the escrow is no longer open and for the paid one 30 days after the release; `closeBook` then returns the delivery book's rent to whoever paid it.
 - After a release the intent reads `Filled`, and `escrowed` and `filled` both read the amount escrowed at create; the `net` of its `IntentAttested` event is what the worker received.
+
+## Program activity
+
+- `activity` returns the program's `events`, newest first, each with its `signature`, `slot` and `blockTime`. It lists `limit` transactions, 100 by default and at most 1000, in batches of 100, and skips failed ones.
+- Each batch costs one `getSignaturesForAddress` call plus one `getTransaction` per transaction that did not fail, 4 at a time, so a default `activity()` can cost 101 RPC calls.
+- With `retry: false`, a 429 rejects with `RateLimited` and discards the page's earlier batches; read the page again.
+- `newest` is the newest signature it listed: pass it as `until` next time to read only what is newer. It is `null` when the page gives no cursor: keep your stored one.
+- `next` is the `before` of the next older page, or `null` at the end. When it is not `null`, keep the first page's `newest`, pass the same `until` with `before: next` until `next` is `null`, and only then store that `newest`; storing it earlier loses the older pages.
+- `complete` is `false` when the node did not serve a transaction; `unread` names those signatures. Such a page has `newest: null`, and you store no cursor from a run where any page was incomplete: read again from your stored cursor. The read returns events you already have, so key them by `signature`. A signature the node never serves keeps the run incomplete until you choose to move past it.
+- To move past a stuck signature, pass `unread[0]` as `until`, which gives up those signatures.
+- `escrowTerms` returns what an escrow was created with, read from the create instruction of the transaction you pass or name by signature, called directly or through another program: `owner`, `attestor`, `specHash`, `mint`, `amountIn`, `escrowed`, `judgeFee`, `minResult`, `maxResult`, `nonce` and `expiresAt`.
+- `escrowTerms` returns `null` when that transaction did not create the escrow, and rejects with `TransactionUnread`, which names the `signature`, when the node did not serve it. `escrowTermsIn` reads a transaction you already hold, without a call, and throws the same.
+- `transactionEvents` from `@intent-engine/core` decodes every event of a `getTransaction` answer in `json` encoding, and returns none for a failed transaction. The program emits events as calls to itself, so they are in the inner instructions and its logs carry none; each event names its outer `instruction` and its `inner` position. `decodeEvent` decodes the bytes of one.
+
+This prints `true true true`: the escrow's release is in the activity, and its spec hash and judge are in its terms.
+
+```ts
+const recent = await client.activity({ limit: 50 });
+const terms = await client.escrowTerms(job.signature, job.intent);
+const released = eventNamed(recent.events, "IntentAttested");
+console.log(released?.fields.intent === job.intent, terms?.specHash === Buffer.from(specHash).toString("hex"), terms?.attestor === judge.address);
+```
 
 ## Held split shares
 
