@@ -215,6 +215,7 @@ describe("tool annotations", () => {
         "solive_wallet_escrow_plan",
         "solive_wallet_recurring",
         "solive_wallet_swap",
+        "solive_wallet_worker",
       ].sort(),
     );
     expect(hinted.filter((a) => a.effect === "prepare").every((a) => !a.readOnlyHint && !a.destructiveHint)).toBe(true);

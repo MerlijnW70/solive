@@ -1,16 +1,18 @@
 import { createHash } from "node:crypto";
+import type { Address } from "@solana/kit";
+import type { DeliveryOpener } from "@intent-engine/core";
 import { isSdkError } from "@intent-engine/client";
 import { createClient, pinnedFetch } from "@intent-engine/client/node";
 import { firstOpeningIn, MAX_SPEC_BYTES, opensTo } from "@intent-engine/client/internal";
 import { MAX_MEMO_URL } from "@intent-engine/core/internal";
 import { openedBy, skippedLines } from "../../announcement-views.js";
-import { fetchBytes } from "../../delivery-fetch.js";
+import { fetchBytes, WORK_IS_LOCAL } from "../../delivery-fetch.js";
 import { type AgentContext, define, lookupOf } from "../actions.js";
 import { tool } from "../names.js";
 import { AgentRefusal, SERVER_PROBLEMS } from "../problems.js";
 import { sanitized } from "../../untrusted-text.js";
 import { account, amount, choice, flag, integer, object, optional, text } from "../schema.js";
-import { signerOf, walletOpeners } from "./guard.js";
+import { signerOf, walletOpeners, type WalletSigner } from "./guard.js";
 import { proofEscrow } from "./delivery.js";
 import { refused, skippedOutput } from "./openings.js";
 
@@ -20,9 +22,26 @@ export const WORK_DIFFERS = "this file is not the work the announcement committe
 
 export const NONE_OPENS = `no announcement to this escrow opens with this wallet's key or the encryption key files this server was given; ${tool("wallet_check_delivery")} lists them`;
 
+export const WORK_LOCAL = `the work ${WORK_IS_LOCAL}: give it to ${tool("wallet_judge_work")} as artifact, or to the CLI command judge --artifact`;
+
 const PERMANENT_WORK: readonly RegExp[] = [/^is larger than /, /is not an http or https url/, /is not a url/, /private, loopback/, /plain http url/, /answered 4\d\d/, /redirect/];
 
 const REASONS = ["incomplete", "key-not-given", "claim-held", "nothing-opens"] as const;
+
+export async function firstOf(ctx: AgentContext, intent: Address, sha256: string, openers: DeliveryOpener[], signer: WalletSigner) {
+  const { opening } = await firstOpeningIn(ctx.transport, { intent, sha256, keypair: openers });
+  if (isSdkError(opening, "first-opening-refused")) {
+    const { message } = refused(opening, signer.device !== undefined, signer.address, true);
+    return { first: { refused: { reason: opening.reason, message } }, refusal: message };
+  }
+  return {
+    first: {
+      first: { announcement: opening.announcement, seq: opening.seq, worker: opening.worker, commitment: opening.commitment },
+      ...(opening.skipped.length === 0 ? {} : { skipped: skippedLines(opening) }),
+    },
+    refusal: undefined,
+  };
+}
 
 export const walletFetchWork = define({
   name: tool("wallet_fetch_work"),
@@ -68,6 +87,9 @@ export const walletFetchWork = define({
     const { announcement, url } = opened;
     const found = await fetchBytes(ctx.fetch ?? pinnedFetch, ctx.transport, url, lookupOf(ctx), MAX_SPEC_BYTES);
     if ("problem" in found) {
+      if (found.problem === WORK_IS_LOCAL) {
+        throw new AgentRefusal("WorkUnfetchable", WORK_LOCAL);
+      }
       const code = PERMANENT_WORK.some((pattern) => pattern.test(found.problem)) ? "WorkUnfetchable" : "WorkUnreadable";
       throw new AgentRefusal(code, SERVER_PROBLEMS[code].hint, `the work at ${url} ${found.problem}`);
     }
@@ -80,14 +102,7 @@ export const walletFetchWork = define({
     } catch {
       shown = undefined;
     }
-    const { opening } = await firstOpeningIn(ctx.transport, { intent: input.intent, sha256, keypair: openers });
-    const first =
-      isSdkError(opening, "first-opening-refused")
-        ? { refused: { reason: opening.reason, message: refused(opening, signer.device !== undefined, signer.address, true).message } }
-        : {
-            first: { announcement: opening.announcement, seq: opening.seq, worker: opening.worker, commitment: opening.commitment },
-            ...(opening.skipped.length === 0 ? {} : { skipped: skippedLines(opening) }),
-          };
+    const { first, refusal } = await firstOf(ctx, input.intent, sha256, openers, signer);
     return {
       intent: input.intent,
       announcement: announcement.address,
@@ -99,7 +114,7 @@ export const walletFetchWork = define({
       bytes: found.bytes.length,
       ...(shown === undefined ? {} : { untrusted_text: shown }),
       ...first,
-      next: !opens ? WORK_DIFFERS : isSdkError(opening, "first-opening-refused") ? refused(opening, signer.device !== undefined, signer.address, true).message : WORK_OPENS,
+      next: !opens ? WORK_DIFFERS : (refusal ?? WORK_OPENS),
     };
   },
 });

@@ -18,6 +18,7 @@ import {
   signature as signatureFrom,
   signTransactionMessageWithSigners,
   type Transaction,
+  getAddressEncoder,
 } from "@solana/kit";
 import { InvalidInput } from "@intent-engine/core";
 import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
@@ -235,6 +236,13 @@ export function svmTransport(svm: LiteSVM, options: SvmTransportOptions = {}): T
       ...(options.offline === true ? { offline: true } : {}),
       getAccount,
       engineAccounts: async (filter) => listed(filter),
+      tokenAccountsOf: async (owner) =>
+        TOKEN_PROGRAMS.flatMap((program) =>
+          svm
+            .getProgramAccounts(program)
+            .filter((account) => startsWith(new Uint8Array(account.data), getAddressEncoder().encode(owner), 32))
+            .map((account) => ({ address: account.address, program, data: new Uint8Array(account.data), lamports: account.lamports })),
+        ),
       getAccounts: async (addresses) => Promise.all(addresses.map(getAccount)),
       send: async (instructions, payer) => {
         svm.expireBlockhash();

@@ -51,7 +51,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   treasury: "[--mints <mint,...>] [--create --mints <mint,...> [--keypair <payer file>] [--yes]]",
   events: "[--limit <n>] [--follow [--interval <seconds>]]",
   jobs: "[--attestor <address>] [--mint <SOL, TEST or mint>] [--min-pay <tokens>] [--unclaimed]",
-  deliver: "[--keypair <worker file>] --intent <address> (--artifact <file or directory> | --sha256 <64 hex>) --work-url <https url> [--fee-payer <key file>] [--yes]",
+  deliver: "[--keypair <worker file>] --intent <address> (--artifact <file or directory> | --sha256 <64 hex>) --work-url <https url, or http://localhost/local-work for a file on this machine> [--fee-payer <key file>] [--yes]",
   deliveries: "--intent <address> [--judge-keypair <judge or member file>] [--encryption-keypair <encryption key file> ...]",
   refute: "[--keypair <worker file>] --earlier <your announcement> --paid <paid announcement> [--work-url <https url>] [--recipients <wallet,...> --weights <bps,...>] [--fee-payer <key file>] [--yes]",
   reclaim: "[--keypair <worker file>] [--fee-payer <key file>] [--yes]",

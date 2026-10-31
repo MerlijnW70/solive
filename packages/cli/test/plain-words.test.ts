@@ -101,7 +101,7 @@ describe("the wallet server's texts", () => {
   });
 
   it("keeps each job prompt to one message of at most 6 sentences that previews and asks before sending", () => {
-    expect(JOB_PROMPTS.map((prompt) => prompt.name)).toEqual(["hire", "earn", "judge"]);
+    expect(JOB_PROMPTS.map((prompt) => prompt.name)).toEqual(["hire", "earn", "judge", "worker"]);
     for (const prompt of JOB_PROMPTS) {
       const sentences = prompt.text.split(/[.!?](?=\s|$)/).filter((part) => part.trim() !== "");
       expect([prompt.name, sentences.length >= 3 && sentences.length <= PROMPT_SENTENCES]).toEqual([prompt.name, true]);

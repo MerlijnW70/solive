@@ -34,6 +34,7 @@ import type {
   RpcLike,
   SignatureLanding,
   Status,
+  TokenAccount,
   Transport,
 } from "./rpc-shapes.js";
 import { SYSTEM_PROGRAM_ADDRESS, TOKEN_PROGRAMS } from "./accounts.js";
@@ -291,6 +292,18 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
         onSlot?.(response.context.slot);
         return response.value;
       });
+    const listTokens = rpc.getTokenAccountsByOwner?.bind(rpc);
+    const tokensByOwner =
+      listTokens === undefined
+        ? undefined
+        : async (owner: Address): Promise<TokenAccount[]> => {
+            const found: TokenAccount[] = [];
+            for (const program of TOKEN_PROGRAMS) {
+              const { value } = await ask("getTokenAccountsByOwner", () => listTokens(owner, { programId: program }, { encoding: "base64", commitment: "confirmed", ...atLeast() }).send());
+              found.push(...value.map(({ pubkey, account }) => ({ address: pubkey, program, data: base64Bytes(account.data[0]), lamports: BigInt(account.lamports) })));
+            }
+            return found;
+          };
     return observable<Transport>({
       async getAccount(address) {
         const { value } = await ask("getAccountInfo", () => rpc.getAccountInfo(address, { encoding: "base64", ...atLeast() }).send());
@@ -411,6 +424,7 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
           data: base64Bytes(account.data[0]),
         }));
       },
+      ...(tokensByOwner === undefined ? {} : { tokenAccountsOf: tokensByOwner }),
     }, (next) => facade(joined(by, next)));
   };
   return facade(observer);

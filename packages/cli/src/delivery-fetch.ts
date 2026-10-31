@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type AnnouncementView, isSdkError, type SpecFetch, type Transport } from "@intent-engine/client";
 import { opensTo, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, PUBLIC_GENESIS_HASHES, SPEC_TIMEOUT_MS } from "@intent-engine/client/internal";
+import { isLocalWorkUrl } from "@intent-engine/core/internal";
 import { hex } from "./announcement-views.js";
 import { MAX_ARTIFACT_BYTES } from "./artifact.js";
 import { type Lookup, publicAddresses, systemLookup } from "./public-address.js";
@@ -11,6 +12,8 @@ import { type Lookup, publicAddresses, systemLookup } from "./public-address.js"
 export const FETCHED_NAME = "artifact";
 
 export const NOT_PUBLIC = "points to a private, loopback or local network address, which a judge on a public cluster does not fetch";
+
+export const WORK_IS_LOCAL = "is local to the worker's machine, so it cannot be fetched; get the file's path from the worker and judge that file by path";
 
 export class DeliveryUnfit extends Error {
   readonly reason: string;
@@ -70,6 +73,9 @@ export async function fetchSha256(get: SpecFetch, transport: Transport, url: str
 }
 
 export async function fetchBytes(get: SpecFetch, transport: Transport, url: string, lookup: Lookup = systemLookup, cap = MAX_ARTIFACT_BYTES): Promise<{ bytes: Uint8Array } | { problem: string }> {
+  if (isLocalWorkUrl(url)) {
+    return { problem: WORK_IS_LOCAL };
+  }
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -105,6 +111,9 @@ const fetchFailure = (error: unknown): string => {
 export type Announced = { announcement: AnnouncementView; salt: string; url: string };
 
 export async function fetchDelivery(get: SpecFetch, transport: Transport, delivery: Announced, seconds: number, lookup: Lookup = systemLookup): Promise<Fetched> {
+  if (isLocalWorkUrl(delivery.url)) {
+    throw new DeliveryUnfit(delivery.url, WORK_IS_LOCAL);
+  }
   let url: URL;
   try {
     url = new URL(delivery.url);

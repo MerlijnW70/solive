@@ -18,7 +18,11 @@ const RELEASE_SALT = /^[0-9a-f]{32}$/;
 
 export type FeedbackMemo = { intent: Address; score: number; note?: string };
 
-export const MEMO_URL_RULE = `an https url of at most ${MAX_MEMO_URL} printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would`;
+export const LOCAL_WORK_URL = "http://localhost/local-work";
+
+export const isLocalWorkUrl = (url: string): boolean => url === LOCAL_WORK_URL;
+
+export const MEMO_URL_RULE =`an https url of at most ${MAX_MEMO_URL} printable characters without spaces or backslashes, or http on localhost, 127.0.0.1 or [::1], in canonical form: lowercase scheme and host, no default port, no . or .. path segments, a / path before any ? or #, and characters percent-encoded as new URL() would`;
 
 const PRINTABLE = /^[!-~]+$/;
 const SHA256 = /^[0-9a-f]{64}$/;

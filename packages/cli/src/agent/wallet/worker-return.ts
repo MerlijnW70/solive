@@ -1,0 +1,259 @@
+import { dirname, join, resolve } from "node:path";
+import { type Address, getAddressEncoder, type Instruction, type TransactionSigner } from "@solana/kit";
+import { getTransferSolInstruction } from "@solana-program/system";
+import { getCloseAccountInstruction, getTokenDecoder } from "@solana-program/token";
+import { formatAmount, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
+import {
+  buildSettleClaims,
+  CLAIM_BOARD_DISCRIMINATOR,
+  claimSlot,
+  decodeClaimBoardAccount,
+  decodeStandbyAccount,
+  STANDBY_DISCRIMINATOR,
+  stakeReceiverOnSettle,
+} from "@intent-engine/core/internal";
+import { createClient } from "@intent-engine/client/node";
+import { chainTime, intentAt, isLedgerPath, mintOf, unmemoized } from "@intent-engine/client/internal";
+import type { Client, EngineAccount, Transport } from "@intent-engine/client";
+import { keptLines } from "../../announcement-views.js";
+import { listAccount } from "../../claim-lists.js";
+import { execute } from "../../flows.js";
+import { expandHome, settingsDir } from "../../wallet.js";
+import type { AgentContext } from "../actions.js";
+import { escrowState } from "../claim-line.js";
+import type { Call } from "../claims.js";
+import { claimOf } from "../job-claims.js";
+import { prepare } from "../prepare.js";
+import { AgentRefusal } from "../problems.js";
+import { preparedView } from "../shapes.js";
+import { sol } from "./costs.js";
+import { access, oneAtATime, savedKeypair, sent, signerAt, signerOf, type WalletAccess, type WalletSigner } from "./guard.js";
+
+export const WORKERS_FOLDER = "workers";
+
+export const BOARD_WORKER_AT = 72;
+
+export const STANDBY_WORKER_AT = 8;
+
+export type WorkerJob = { intent: Address; owner: Address; nonce: string; mint: Address };
+
+export const workersDir = (keyPath: string): string => join(dirname(keyPath), WORKERS_FOLDER);
+
+export const workerKeyPath = (dir: string, worker: Address): string => join(dir, `${worker}.json`);
+
+export const workerJobPath = (dir: string, worker: Address): string => join(dir, `${worker}.job.json`);
+
+export async function workersFolder(wallet: WalletAccess): Promise<string> {
+  const path = await savedKeypair(wallet);
+  const home = wallet.files.home;
+  return workersDir(path === undefined || isLedgerPath(path) ? `${settingsDir(home)}/wallet.json` : resolve(expandHome(path, home)));
+}
+
+export const noWorker = (worker: Address): string => `this wallet made no worker ${worker}: its key is not in the workers folder; nothing was sent`;
+
+export const jobStillOpen = (intent: Address): string => `escrow ${intent} is still open, so its worker may still need this SOL; cancel it or wait for it to end; nothing was sent`;
+
+export const claimHeldOpen = (worker: Address, intent: Address): string =>
+  `${worker} holds the claim on escrow ${intent}, whose job is still open, and its stake is on the board; it delivers or gives up with the CLI command claims drop first; nothing was sent`;
+
+export const lineStillOpen = (worker: Address, intent: Address): string =>
+  `${worker} still stands in the line of escrow ${intent}, which holds its stake; it leaves first with the CLI command claims leave; nothing was sent`;
+
+export const CLAIMS_UNLISTED = "this RPC node cannot list claims boards and lines by worker, so whether the worker still holds a stake is unknown; nothing was sent";
+
+export const boardUnread = (board: Address): string => `the claims board ${board} names this worker but cannot be read, so its stake is unknown; nothing was sent`;
+
+export const TOKENS_UNLISTED = "this RPC node cannot list the worker's token accounts, so the key stays";
+
+export const tokensLeft = (amount: string, mint: Address, account: Address, keypair: string): string =>
+  `${amount} of ${mint} in ${account}, which this does not move; its key file is ${keypair}`;
+
+export const NOTHING_LEFT = "the worker holds nothing to return and nothing was sent";
+
+export const settleLine = (worker: Address, intent: Address, stake: bigint, receiver: Address): string =>
+  `Settles: the claim of ${worker} on ended or lapsed escrow ${intent}; its stake of ${sol(stake)} goes to ${receiver}`;
+
+export const returnsLine = (returned: bigint, worker: Address, wrapped: bigint): string =>
+  `Returns: ${sol(returned)} from ${worker} to this wallet${wrapped > 0n ? `, including ${sol(wrapped)} of wrapped SOL, which holds any pay the worker received` : ""}`;
+
+const RETURNED = "returned to this wallet";
+
+type Settle = { instruction: Instruction; line: string; toWorker: bigint };
+
+type Tokens = { closes: Instruction[]; rent: bigint; wrapped: bigint; kept: string[] };
+
+const naming = (worker: Address, offset: number) => ({ offset, address: worker });
+
+const holds = (data: Uint8Array, worker: Address, offset: number): boolean => {
+  const bytes = getAddressEncoder().encode(worker);
+  return data.length >= offset + bytes.length && bytes.every((b, i) => data[offset + i] === b);
+};
+
+async function namedBy(transport: Transport, discriminator: typeof CLAIM_BOARD_DISCRIMINATOR, worker: Address, offset: number): Promise<EngineAccount[]> {
+  if (transport.engineAccounts === undefined) {
+    throw new AgentRefusal("WorkerBusy", CLAIMS_UNLISTED);
+  }
+  return (await transport.engineAccounts({ discriminator, match: [naming(worker, offset)] })).filter(({ data }) => holds(data, worker, offset));
+}
+
+const isOpen = async (transport: Transport, intent: Address, now: bigint): Promise<boolean> => {
+  const held = await intentAt(transport, intent);
+  return held !== null && held.status === IntentStatus.Open && now < held.expiresAt;
+};
+
+export async function workerStakes(transport: Transport, worker: Address): Promise<Settle[]> {
+  const entries = await namedBy(transport, STANDBY_DISCRIMINATOR, worker, STANDBY_WORKER_AT);
+  for (const entry of entries) {
+    let intent: Address;
+    try {
+      intent = decodeStandbyAccount(entry.data).intent;
+    } catch {
+      throw new AgentRefusal("WorkerBusy", boardUnread(entry.address));
+    }
+    throw new AgentRefusal("WorkerBusy", lineStillOpen(worker, intent));
+  }
+  const boards = await namedBy(transport, CLAIM_BOARD_DISCRIMINATOR, worker, BOARD_WORKER_AT);
+  const now = await chainTime(transport);
+  const settles: Settle[] = [];
+  for (const found of boards) {
+    let board;
+    try {
+      board = decodeClaimBoardAccount(found.data);
+    } catch {
+      throw new AgentRefusal("WorkerBusy", boardUnread(found.address));
+    }
+    if (board.worker !== worker) {
+      continue;
+    }
+    const open = await isOpen(transport, board.intent, now);
+    if (open && claimSlot(board, now).state === "held") {
+      throw new AgentRefusal("WorkerBusy", claimHeldOpen(worker, board.intent));
+    }
+    const receiver = stakeReceiverOnSettle(board, now, open) ?? board.owner;
+    const view = await claimOf(transport, board.intent);
+    settles.push({
+      instruction: await buildSettleClaims({ intent: board.intent, owner: board.owner, worker, ...listAccount(view?.list ?? null) }),
+      line: settleLine(worker, board.intent, board.held, receiver),
+      toWorker: receiver === worker ? board.held : 0n,
+    });
+  }
+  return settles;
+}
+
+async function tokensOf(transport: Transport, worker: Address, key: TransactionSigner, hirer: Address, keypair: string): Promise<Tokens> {
+  if (transport.tokenAccountsOf === undefined) {
+    return { closes: [], rent: 0n, wrapped: 0n, kept: [TOKENS_UNLISTED] };
+  }
+  const tokens: Tokens = { closes: [], rent: 0n, wrapped: 0n, kept: [] };
+  for (const found of await transport.tokenAccountsOf(worker)) {
+    const { mint, amount } = getTokenDecoder().decode(found.data);
+    if (mint === NATIVE_MINT || amount === 0n) {
+      tokens.closes.push({ ...getCloseAccountInstruction({ account: found.address, destination: hirer, owner: key }), programAddress: found.program });
+      tokens.rent += found.lamports;
+      tokens.wrapped += mint === NATIVE_MINT ? amount : 0n;
+    } else {
+      tokens.kept.push(tokensLeft(formatAmount(amount, (await mintOf(transport, mint)).decimals), mint, found.address, keypair));
+    }
+  }
+  return tokens;
+}
+
+async function sweepOf(transport: Transport, worker: Address, key: TransactionSigner, hirer: Address, keypair: string) {
+  const [own, tokens] = await Promise.all([transport.getAccount(worker), tokensOf(transport, worker, key, hirer, keypair)]);
+  const lamports = own?.lamports ?? 0n;
+  const instructions = [...tokens.closes, ...(lamports > 0n ? [getTransferSolInstruction({ source: key, destination: hirer, amount: lamports })] : [])];
+  return { instructions, lamports, tokens };
+}
+
+async function holdsNothing(transport: Transport, client: Client, worker: Address, key: TransactionSigner): Promise<boolean> {
+  const [own, tokens, plan, stakes] = await Promise.all([
+    transport.getAccount(worker),
+    transport.tokenAccountsOf?.(worker),
+    client.plan.reclaim({ worker: key }),
+    workerStakes(transport, worker).catch(() => null),
+  ]);
+  return (own?.lamports ?? 0n) === 0n && tokens !== undefined && tokens.length === 0 && plan.closed.length + plan.kept.length === 0 && stakes !== null && stakes.length === 0;
+}
+
+async function refuseOpen(client: Client, job: WorkerJob): Promise<void> {
+  if ((await escrowState(client, job.owner, BigInt(job.nonce))) === "open") {
+    throw new AgentRefusal("WorkerBusy", jobStillOpen(job.intent));
+  }
+}
+
+export async function returnLeftovers(ctx: AgentContext, worker: Address, send: boolean | undefined, call: Call) {
+  const wallet = access(ctx);
+  const signer = await signerOf(ctx);
+  const dir = await workersFolder(wallet);
+  const keypair = workerKeyPath(dir, worker);
+  const jobFile = workerJobPath(dir, worker);
+  let key: WalletSigner;
+  let job: WorkerJob;
+  try {
+    key = await signerAt(ctx, keypair);
+    job = JSON.parse(await wallet.files.readText(jobFile)) as WorkerJob;
+  } catch {
+    throw new AgentRefusal("NotFound", noWorker(worker));
+  }
+  if (key.address !== worker || worker === signer.address) {
+    throw new AgentRefusal("NotFound", noWorker(worker));
+  }
+  const client = createClient({ url: ctx.url ?? "", transport: ctx.transport });
+  const settles = await workerStakes(ctx.transport, worker);
+  await refuseOpen(client, job);
+  const plan = await client.plan.reclaim({ worker: key });
+  const closing = plan.batches[0] ?? [];
+  const rents = await ctx.transport.getAccounts(plan.closed.slice(0, closing.length));
+  const closingRent = rents.reduce((sum, view) => sum + (view?.lamports ?? 0n), 0n);
+  const sweep = await sweepOf(ctx.transport, worker, key, signer.address, keypair);
+  const stakesBack = settles.reduce((sum, settle) => sum + settle.toWorker, 0n);
+  const returned = sweep.lamports + closingRent + sweep.tokens.rent + stakesBack;
+  const kept = [
+    ...keptLines(plan.reasons),
+    ...(plan.closed.length > closing.length ? [`${plan.closed.length - closing.length} more announcements can close; call again`] : []),
+    ...sweep.tokens.kept,
+  ];
+  const shown = {
+    worker,
+    intent: job.intent,
+    returned: sol(returned),
+    kept,
+    key_deleted: false,
+    summary: [
+      ...settles.map((settle) => settle.line),
+      returnsLine(returned, worker, sweep.tokens.wrapped),
+      "Pays: the network fee, from this wallet",
+      kept.length === 0 ? `Deletes: ${keypair}, once it holds nothing` : `Keeps: ${keypair}, since the worker still holds something`,
+    ],
+  };
+  const finish = async (done: Record<string, unknown>): Promise<Record<string, unknown>> => {
+    const fresh = unmemoized(ctx.transport);
+    if (kept.length > 0 || wallet.files.removeFile === undefined || !(await holdsNothing(fresh, createClient({ url: ctx.url ?? "", transport: fresh }), worker, key))) {
+      return done;
+    }
+    await wallet.files.removeFile(keypair);
+    await wallet.files.removeFile(jobFile);
+    return { ...done, key_deleted: true };
+  };
+  const steps = [settles.map((settle) => settle.instruction), closing, sweep.instructions].filter((step) => step.length > 0);
+  const [first] = steps;
+  if (first === undefined) {
+    return send === true ? finish({ ...shown, sent: false, next: NOTHING_LEFT }) : { ...shown, sent: false, next: NOTHING_LEFT };
+  }
+  if (steps.length > 1) {
+    oneAtATime(signer);
+  }
+  if (send !== true) {
+    return sent(ctx, signer, { ...shown, prepared: preparedView(await prepare(ctx.transport, first, signer.address)) }, false, call);
+  }
+  let signature: string | undefined;
+  for (const step of [settles.map((settle) => settle.instruction), closing].filter((one) => one.length > 0)) {
+    signature = await execute(ctx.transport, preparedView(await prepare(unmemoized(ctx.transport), step, signer.address)), signer);
+  }
+  const fresh = unmemoized(ctx.transport);
+  const after = await sweepOf(fresh, worker, key, signer.address, keypair);
+  if (after.instructions.length === 0) {
+    return finish({ ...shown, sent: true, ...(signature === undefined ? {} : { signature }), next: RETURNED });
+  }
+  return finish((await sent({ ...ctx, transport: fresh }, signer, { ...shown, prepared: preparedView(await prepare(fresh, after.instructions, signer.address)) }, true, call, { done: RETURNED })) as Record<string, unknown>);
+}

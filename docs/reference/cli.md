@@ -321,7 +321,7 @@ Options: `--url`, `--attestor`, `--mint`, `--min-pay`, `--unclaimed`, `--output`
 ## deliver
 
 ```text
-deliver [--keypair <worker file>] --intent <address> (--artifact <file or directory> | --sha256 <64 hex>) --work-url <https url> [--fee-payer <key file>] [--yes]
+deliver [--keypair <worker file>] --intent <address> (--artifact <file or directory> | --sha256 <64 hex>) --work-url <https url, or http://localhost/local-work for a file on this machine> [--fee-payer <key file>] [--yes]
 ```
 
 Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--intent`, `--artifact`, `--sha256`, `--work-url`, `--fee-payer`, `--output`, `--help`, `--debug`

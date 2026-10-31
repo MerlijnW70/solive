@@ -21,10 +21,12 @@ import {
 import { getTransferSolInstruction } from "@solana-program/system";
 import { describe, expect, it } from "vitest";
 import { Kind, splitFees } from "@intent-engine/core";
-import { findEventAuthorityPda, findIntentPda, MAX_MEMO_URL, seal, SPEC_MEMO_PREFIX, specMemo } from "@intent-engine/core/internal";
+import { findEventAuthorityPda, findIntentPda, LOCAL_WORK_URL, MAX_MEMO_URL, seal, SPEC_MEMO_PREFIX, specMemo } from "@intent-engine/core/internal";
 import { createClient, InvalidInput, NotDeliverable, type SpecFetch, SpecSealed, SpecUnreadable, type Transport } from "../src/index.js";
 import {
   DEVNET_GENESIS_HASH,
+  MAINNET_GENESIS_HASH,
+  TESTNET_GENESIS_HASH,
   engineCalls,
   EXPIRES_IN_RANGE,
   JOBS_LIMIT,
@@ -255,6 +257,20 @@ describe("deliveries", () => {
     const local = createClient({ url: LOCAL, transport: w.chain.transport });
     await local.announce({ worker, intent: job.intent, sha256: WORK, url: work });
     expect(await local.firstOpening({ intent: job.intent, sha256: WORK, keypair })).toMatchObject({ worker: worker.address, url: work });
+  });
+
+  it("lets a public cluster other than mainnet announce the one local work url, and refuses any other plain http url and mainnet", async () => {
+    const { w, judge, keypair, order } = await setting();
+    const on = (genesisHash: string) => createClient({ url: LOCAL, transport: { ...w.chain.transport, genesisHash: async () => genesisHash } });
+    const devnet = on(DEVNET_GENESIS_HASH);
+    const job = await devnet.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
+    const worker = await funded(w.chain);
+    await expect(on(MAINNET_GENESIS_HASH).announce({ worker, intent: job.intent, sha256: WORK, url: LOCAL_WORK_URL })).rejects.toThrow(`the work url ${LOCAL_WORK_URL} ${PLAIN_HTTP_ON_PUBLIC}`);
+    const near = LOCAL_WORK_URL + "/other";
+    await expect(devnet.announce({ worker, intent: job.intent, sha256: WORK, url: near })).rejects.toThrow(`the work url ${near} ${PLAIN_HTTP_ON_PUBLIC}`);
+    await expect(on(TESTNET_GENESIS_HASH).plan.announce({ worker, intent: job.intent, sha256: WORK, url: LOCAL_WORK_URL })).resolves.toMatchObject({ existing: null });
+    await devnet.announce({ worker, intent: job.intent, sha256: WORK, url: LOCAL_WORK_URL });
+    expect(await devnet.firstOpening({ intent: job.intent, sha256: WORK, keypair })).toMatchObject({ worker: worker.address, url: LOCAL_WORK_URL });
   });
 
   it("refuses an expiresIn below a minute or above a year", async () => {

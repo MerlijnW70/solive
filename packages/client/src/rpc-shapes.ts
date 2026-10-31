@@ -15,6 +15,8 @@ export type ProgramAccount = { address: Address; data: Uint8Array };
 
 export type EngineAccount = ProgramAccount & { lamports: bigint };
 
+export type TokenAccount = EngineAccount & { program: Address };
+
 export type AccountMatch = { offset: number; address: Address } | { offset: number; bytes: ReadonlyUint8Array };
 
 export type IntentQuery = {
@@ -76,6 +78,7 @@ export interface Transport {
   genesisHash(): Promise<string>;
   intents(query?: IntentQuery, read?: IntentRead): Promise<ProgramAccount[]>;
   engineAccounts?(filter?: EngineAccountFilter): Promise<EngineAccount[]>;
+  tokenAccountsOf?(owner: Address): Promise<TokenAccount[]>;
   engineTransactions(limit: number, of?: Address, memo?: string): Promise<EngineTransaction[]>;
   signaturesOf?(of: Address, limit: number, before?: string, until?: string): Promise<ListedSignature[]>;
   transactionsOf?(listed: readonly ListedSignature[]): Promise<EngineTransaction[]>;
@@ -100,6 +103,11 @@ export type ProgramEntry = { pubkey: Address; account: { data: readonly [string,
 export type Status = { err: unknown; confirmationStatus: string | null; slot?: bigint };
 
 export type RpcLike = {
+  getTokenAccountsByOwner?(
+    owner: Address,
+    filter: { programId: Address },
+    config: { encoding: "base64"; commitment: "confirmed" } & AtLeast,
+  ): Pending<{ value: readonly { pubkey: Address; account: { data: readonly [string, string]; lamports: bigint } }[] }>;
   getMultipleAccounts(addresses: Address[], config: { encoding: "base64" } & AtLeast): Pending<{ value: (RawAccount | null)[] }>;
   getAccountInfo(
     address: Address,

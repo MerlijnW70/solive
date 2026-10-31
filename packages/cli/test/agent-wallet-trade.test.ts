@@ -47,7 +47,7 @@ describe("the wallet server's trades", () => {
       expect(WALLET_INSTRUCTIONS).toContain(`- ${line}`);
     }
     const { prompts } = await client.listPrompts();
-    expect(prompts.map((p) => p.name)).toEqual(["start", "hire", "earn", "judge"]);
+    expect(prompts.map((p) => p.name)).toEqual(["start", "hire", "earn", "judge", "worker"]);
     const start = await client.getPrompt({ name: "start" });
     expect(start.messages).toEqual([{ role: "user", content: { type: "text", text: START_PROMPT } }]);
   });

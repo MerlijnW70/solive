@@ -18,6 +18,7 @@ import { walletFetchWork } from "./wallet/work.js";
 import { walletJudgeWork } from "./wallet/judge-work.js";
 import { walletReclaim, walletRefute } from "./wallet/refute.js";
 import { walletClaimHeld } from "./wallet/held.js";
+import { walletWorker } from "./wallet/worker.js";
 
 export {
   walletGuard,
@@ -96,6 +97,7 @@ export const WALLET_ACTIONS: readonly AnyAction[] = [
   walletEscrow,
   walletEscrowPlan,
   walletSealSpec,
+  walletWorker,
   walletAttest,
   walletAttestSplit,
   walletCommitteeCreate,

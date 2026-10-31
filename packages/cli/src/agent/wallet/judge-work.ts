@@ -1,14 +1,24 @@
+import { createHash } from "node:crypto";
+import { open } from "node:fs/promises";
+import { resolve } from "node:path";
 import type { Address } from "@solana/kit";
+import { createClient } from "@intent-engine/client/node";
+import { MAX_SPEC_BYTES, opensTo } from "@intent-engine/client/internal";
+import { openedBy } from "../../announcement-views.js";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
 import { AgentRefusal } from "../problems.js";
 import { account, amount, choice, flag, integer, list, object, optional, text } from "../schema.js";
 import { getSpec } from "../spec.js";
-import { walletFetchWork } from "./work.js";
+import { signerOf, walletOpeners } from "./guard.js";
+import { proofEscrow } from "./delivery.js";
+import { firstOf, walletFetchWork, WORK_OPENS } from "./work.js";
 import { JudgeRefused } from "../../judge-errors.js";
 import { HOST_ENGINE, judgeHost } from "../../host-judge.js";
 import { type Cases, casesOf, type Failure, judgeViper, MAX_CASES, pinnedWasm, REPORTED_FAILURES, runOf, VIPER_ENGINE_COMMIT, VIPER_WASM_SHA256 } from "../../viper.js";
 import { sanitized } from "../../untrusted-text.js";
+
+export const ARTIFACT_PATH_LIMIT = 200;
 
 export const JUDGE_SECONDS = 60;
 
@@ -23,6 +33,11 @@ export const DRAWS_CASES = "this spec draws its cases from a finalized block, wh
 export const JUDGED_PASS = `every case passed in both engines and nothing was sent; preview ${tool("wallet_attest")} with sha256 as delivered_sha256, or ${tool("wallet_committee_vote")} for a committee, and send it only after the user says yes`;
 
 export const JUDGED_FAIL = "the work failed the spec's cases, as cases and host list; approve nothing and tell the user which cases failed";
+
+export const artifactDiffers = (path: string, sha256: string): string =>
+  `${sanitized(path, ARTIFACT_PATH_LIMIT)} has sha256 ${sha256}, which no announcement this wallet opens committed to, so it is not the announced work; nothing was run`;
+
+export const artifactUnfit = (path: string): string => `${sanitized(path, ARTIFACT_PATH_LIMIT)} is not a readable file of at most ${MAX_SPEC_BYTES} bytes; nothing was run`;
 
 export const specDiffers = (sha256: string): string => `the spec fetched from the escrow's spec url has sha256 ${sha256}, not the escrow's spec_hash, so it is not the spec a release is signed over; nothing was run`;
 
@@ -80,14 +95,84 @@ async function judgeCases(ctx: AgentContext, intent: Address): Promise<Cases> {
 
 type Fetched = { intent: Address; announcement: Address; worker: Address; sha256: string; opens_commitment: boolean; untrusted_text?: string; first?: { worker: Address }; next: string };
 
+export async function boundedRead(file: string, limit: number): Promise<Uint8Array | null> {
+  const handle = await open(file, "r").catch(() => null);
+  if (handle === null) {
+    return null;
+  }
+  try {
+    if (!(await handle.stat()).isFile()) {
+      return null;
+    }
+    const buffer = Buffer.alloc(limit + 1);
+    let size = 0;
+    for (;;) {
+      const { bytesRead } = await handle.read(buffer, size, buffer.length - size, null);
+      if (bytesRead === 0) {
+        break;
+      }
+      size += bytesRead;
+      if (size > limit) {
+        return null;
+      }
+    }
+    return buffer.subarray(0, size);
+  } catch {
+    return null;
+  } finally {
+    await handle.close();
+  }
+}
+
+async function workAt(ctx: AgentContext, input: { intent: Address; announcement?: Address | undefined }, path: string): Promise<Fetched> {
+  const signer = await signerOf(ctx);
+  await proofEscrow(ctx, input.intent, "wallet_receipt");
+  const bytes = await boundedRead(resolve(path), MAX_SPEC_BYTES);
+  if (bytes === null) {
+    throw new AgentRefusal("NotJudged", artifactUnfit(path));
+  }
+  const digest = createHash("sha256").update(bytes).digest();
+  const sha256 = digest.toString("hex");
+  const openers = await walletOpeners(ctx);
+  const list = await createClient({ url: ctx.url ?? "", transport: ctx.transport }).announcements(input.intent);
+  const candidates = list.announcements.filter((a) => a.state === "announced" && (input.announcement === undefined || a.address === input.announcement));
+  let match: Awaited<ReturnType<typeof openedBy>>[number] | undefined;
+  for (const one of await openedBy(candidates, openers)) {
+    if (match === undefined && one.url !== null && (await opensTo(one.announcement, Uint8Array.from(digest), Uint8Array.from(Buffer.from(one.salt, "hex"))))) {
+      match = one;
+    }
+  }
+  if (match === undefined) {
+    throw new AgentRefusal("NotAnnounced", artifactDiffers(path, sha256));
+  }
+  const { first, refusal } = await firstOf(ctx, input.intent, sha256, openers, signer);
+  let shown: string | undefined;
+  try {
+    shown = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    shown = undefined;
+  }
+  return {
+    intent: input.intent,
+    announcement: match.announcement.address,
+    worker: match.announcement.worker,
+    sha256,
+    opens_commitment: true,
+    ...(shown === undefined ? {} : { untrusted_text: shown }),
+    ...("first" in first ? { first: first.first } : {}),
+    next: refusal ?? WORK_OPENS,
+  };
+}
+
 export const walletJudgeWork = define({
   name: tool("wallet_judge_work"),
   title: "Judge announced work in the ViperJS sandbox",
-  description: `Judges announced work against the escrow's spec and its judge-cases block, running every case in the pinned ViperJS sandbox and a second engine; returns the verdict, failed cases and the work's sha256. Needs neither Docker nor WSL and sends nothing. A spec without judge cases is refused: use the CLI command judge --sandbox docker. On a pass, pay with ${tool("wallet_attest")}.`,
+  description: `Judges announced work, or the local file artifact, against the escrow's spec and its judge-cases block, running every case in the pinned ViperJS sandbox and a second engine; returns the verdict and the work's sha256. Needs neither Docker nor WSL and sends nothing. Without judge cases, use the CLI command judge --sandbox docker. On a pass, pay with ${tool("wallet_attest")}.`,
   effect: "read",
   input: object({
     intent: account("the proof escrow's intent address"),
     announcement: optional(account(`the announcement whose work to judge, as ${tool("wallet_check_delivery")} lists it; default the earliest one this wallet opens`)),
+    artifact: optional(text("the path of a local work file on this machine, judged instead of fetching the work; refused unless its sha256 is the one announced")),
   }),
   output: object({
     intent: account(),
@@ -105,7 +190,7 @@ export const walletJudgeWork = define({
   }),
   run: async (ctx: AgentContext, input) => {
     const cases = await judgeCases(ctx, input.intent);
-    const work = (await readWith(walletFetchWork)(ctx, input)) as Fetched;
+    const work = input.artifact === undefined ? ((await readWith(walletFetchWork)(ctx, input)) as Fetched) : await workAt(ctx, input, input.artifact);
     if (work.untrusted_text === undefined) {
       throw new AgentRefusal("NotJudged", "the work is not UTF-8 text, so it is not a module the ViperJS judge can run; nothing was run");
     }

@@ -2,7 +2,7 @@
 
 # MCP tools
 
-26 tools, served by `intent-engine mcp` over stdio. With `--wallet` it serves only the 36 everyday tools: `solive_wallet_setup`, `solive_wallet_balance`, `solive_wallet_estimate`, `solive_wallet_swap`, `solive_wallet_auction`, `solive_wallet_recurring`, `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_seal_spec`, `solive_wallet_attest`, `solive_wallet_attest_split`, `solive_wallet_committee_create`, `solive_wallet_committee_vote`, `solive_wallet_committee_release`, `solive_wallet_feedback`, `solive_wallet_claim`, `solive_wallet_profile`, `solive_wallet_deliver`, `solive_wallet_check_delivery`, `solive_wallet_fetch_work`, `solive_wallet_judge_work`, `solive_wallet_refute`, `solive_wallet_reclaim`, `solive_wallet_claim_held`, `solive_wallet_wait`, `solive_wallet_receipt`, `solive_wallet_intents`, `solive_wallet_history`, `solive_wallet_cancel`, `solive_wallet_unwrap`, `solive_find_jobs`, `solive_get_spec`, `solive_hash`, `solive_get_reputation`, `solive_get_claims`, `solive_get_profile`, plus the tools `--relayer` and `--agent` need. With `--wallet --all-tools` it serves every tool, the 30 wallet tools listed first.
+26 tools, served by `intent-engine mcp` over stdio. With `--wallet` it serves only the 36 everyday tools: `solive_wallet_setup`, `solive_wallet_balance`, `solive_wallet_estimate`, `solive_wallet_swap`, `solive_wallet_auction`, `solive_wallet_escrow`, `solive_wallet_escrow_plan`, `solive_wallet_seal_spec`, `solive_wallet_worker`, `solive_wallet_attest`, `solive_wallet_attest_split`, `solive_wallet_committee_create`, `solive_wallet_committee_vote`, `solive_wallet_committee_release`, `solive_wallet_feedback`, `solive_wallet_claim`, `solive_wallet_profile`, `solive_wallet_deliver`, `solive_wallet_check_delivery`, `solive_wallet_fetch_work`, `solive_wallet_judge_work`, `solive_wallet_refute`, `solive_wallet_reclaim`, `solive_wallet_claim_held`, `solive_wallet_wait`, `solive_wallet_receipt`, `solive_wallet_intents`, `solive_wallet_history`, `solive_wallet_cancel`, `solive_wallet_unwrap`, `solive_find_jobs`, `solive_get_spec`, `solive_hash`, `solive_get_reputation`, `solive_get_claims`, `solive_get_profile`, plus the tools `--relayer` and `--agent` need. With `--wallet --all-tools` it serves every tool, the 31 wallet tools listed first.
 
 ## solive_wallet_setup
 
@@ -85,7 +85,7 @@ Effect: `submit` (read-only: false, destructive: true, idempotent: false)
 
 ## solive_wallet_recurring
 
-Served only with `--wallet`.
+Served only with `--wallet --all-tools`.
 
 Repeats a sale on a schedule: every order is sent now, each falling to min_receive. Leave min_receive out to accept the recent median less max_slippage_bps. To buy on a schedule, sell the other. Cancel any with solive_wallet_cancel. Previews only; after the user says yes, call with send: true and its approval. Pass back the preview's start_receive too.
 
@@ -166,6 +166,20 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 | `text` | string | yes | the spec, exactly as invited workers should read it |
 | `invite` | list of address, 1 to 32 | yes | the wallets that may read the spec, such as the workers you hire; seal to at most 32 wallets in all, the attestor or each member of its committee included |
 | `attestor` | address | no | the escrow's attestor, who reads the spec to judge the work; default this wallet |
+
+## solive_wallet_worker
+
+Served only with `--wallet`.
+
+Makes a separate worker for an open job: a new key in a workers folder beside this wallet's key, funded with only its fees, rent and claim stake, and a brief for a separate agent. Paying still takes the judge's check. return_leftovers instead returns a finished worker's SOL. Previews only; call with send: true after the user says yes.
+
+Effect: `submit` (read-only: false, destructive: true, idempotent: false)
+
+| Parameter | Type | Required | Description |
+| --- | --- | --- | --- |
+| `intent` | address | no | the proof escrow's intent address, to make a worker for it |
+| `return_leftovers` | address | no | instead of intent: a worker's address, to return its leftover SOL once its job ended; the key is deleted only when it holds nothing |
+| `send` | boolean | no | true signs and sends; leave out to preview |
 
 ## solive_wallet_attest
 
@@ -353,7 +367,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
 Served only with `--wallet`.
 
-Judges announced work against the escrow's spec and its judge-cases block, running every case in the pinned ViperJS sandbox and a second engine; returns the verdict, failed cases and the work's sha256. Needs neither Docker nor WSL and sends nothing. A spec without judge cases is refused: use the CLI command judge --sandbox docker. On a pass, pay with solive_wallet_attest.
+Judges announced work, or the local file artifact, against the escrow's spec and its judge-cases block, running every case in the pinned ViperJS sandbox and a second engine; returns the verdict and the work's sha256. Needs neither Docker nor WSL and sends nothing. Without judge cases, use the CLI command judge --sandbox docker. On a pass, pay with solive_wallet_attest.
 
 Effect: `read` (read-only: true, destructive: false, idempotent: true)
 
@@ -361,6 +375,7 @@ Effect: `read` (read-only: true, destructive: false, idempotent: true)
 | --- | --- | --- | --- |
 | `intent` | address | yes | the proof escrow's intent address |
 | `announcement` | address | no | the announcement whose work to judge, as solive_wallet_check_delivery lists it; default the earliest one this wallet opens |
+| `artifact` | string | no | the path of a local work file on this machine, judged instead of fetching the work; refused unless its sha256 is the one announced |
 
 ## solive_wallet_refute
 

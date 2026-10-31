@@ -176,6 +176,7 @@ describe("process plumbing", () => {
       "finalizedBlock",
       "engineAccounts",
       "intents",
+      "tokenAccountsOf",
     ]);
     expect(Number.isInteger(rt.entropy())).toBe(true);
     expect(typeof rt.fetch).toBe("function");

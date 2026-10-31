@@ -18,6 +18,7 @@ export type Runtime = {
   env: Env;
   writeText(path: string, text: string): Promise<void>;
   saveText(path: string, text: string, secret: boolean): Promise<void>;
+  removeFile?(path: string): Promise<void>;
   home: string;
   now(): bigint;
   fetch: Fetch;

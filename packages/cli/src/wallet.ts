@@ -27,6 +27,7 @@ export type Files = {
   saveText(path: string, text: string, secret: boolean): Promise<void>;
   loadSigner(path: string): Promise<KeyPairSigner>;
   loadKeypair(path: string): Promise<Uint8Array>;
+  removeFile?(path: string): Promise<void>;
   ledger?: OpenTransport;
 };
 
@@ -114,6 +115,12 @@ export async function withSettings(files: Files, given: Env): Promise<Env> {
 const alreadyExists = (error: unknown) =>
   error !== null && typeof error === "object" && "code" in error && error.code === "EEXIST";
 
+export async function newKeyFile(): Promise<{ address: Address; text: string }> {
+  const seed = crypto.getRandomValues(new Uint8Array(32));
+  const { address } = await createKeyPairSignerFromPrivateKeyBytes(seed);
+  return { address, text: JSON.stringify([...seed, ...getAddressEncoder().encode(address)]) };
+}
+
 async function walletAt(files: Files, path: string): Promise<{ signer: { address: Address }; created: boolean }> {
   if (isLedgerPath(path)) {
     return { signer: await ledgerSigner(path, files.ledger ?? openUsb), created: false };
@@ -121,10 +128,8 @@ async function walletAt(files: Files, path: string): Promise<{ signer: { address
   try {
     await files.readText(path);
   } catch {
-    const seed = crypto.getRandomValues(new Uint8Array(32));
-    const signer = await createKeyPairSignerFromPrivateKeyBytes(seed);
     try {
-      await files.saveText(path, JSON.stringify([...seed, ...getAddressEncoder().encode(signer.address)]), true);
+      await files.saveText(path, (await newKeyFile()).text, true);
     } catch (error) {
       if (!alreadyExists(error)) {
         throw error;

@@ -66,6 +66,8 @@ Problems the MCP server reports itself, before it sends anything. The hint a too
 | `NoMessageSigner` | no | the wallet cannot sign messages, and an announcement derives its salt and keys from the wallet's signature; use a key file or give the signature the hint asks for |
 | `NoJudgeCases` | no | the spec has no single judge-cases block the ViperJS sandbox can run, so this server judges nothing; save the spec and the work and judge them with the CLI command judge --sandbox docker |
 | `NotJudged` | no | the work was not judged: the spec does not match the escrow, the work is not one UTF-8 module, or the ViperJS judge could not run, as the hint says; nothing was approved or sent |
+| `WorkerUnfit` | no | a separate worker could not satisfy this job: it is not open, its spec is sealed or unreadable, or its claims are closed to a new key, as the hint says; nothing was sent |
+| `WorkerBusy` | no | the worker may still need its SOL: its job is open or it holds a claim or a place in line, as the hint says; nothing was sent |
 | `NotAnnounced` | no | no announcement to the escrow opens to this work with this wallet's keys, so no release can pay for it |
 | `NotReleased` | no | the escrow has no release in its history yet |
 | `KeyInUse` | no | this wallet signs on a Ledger and judges open escrows, whose announcements only its encryption key opens; rotate the key instead of removing it, or wait until they close |

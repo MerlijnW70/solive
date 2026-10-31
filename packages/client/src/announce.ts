@@ -11,6 +11,7 @@ import {
   claimSlot,
   decodeClaimBoardAccount,
   deliverySecrets,
+  isLocalWorkUrl,
   isMemoUrl,
   isSha256Hex,
   maxSealedUrl,
@@ -24,7 +25,7 @@ import { type AnnouncementView, loadAnnouncement } from "./announcement-reads.js
 import type { ClientContext } from "./client-types.js";
 import { intentAddress, type IntentRef } from "./intent-ref.js";
 import { hex, proofAt } from "./job-proofs.js";
-import { PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic } from "./job-specs.js";
+import { MAINNET_GENESIS_HASH, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic } from "./job-specs.js";
 import { payerFor, type Plan, planOf } from "./plan.js";
 import type { Transport } from "./transport.js";
 import { hexBytes } from "./encoding.js";
@@ -94,7 +95,8 @@ export async function announcementPlan(context: ClientContext, input: AnnounceIn
   if (!isMemoUrl(input.url)) {
     throw new InvalidInput("url", "format", `a delivery url must be ${MEMO_URL_RULE}`);
   }
-  if (await plainHttpOnPublic(transport, input.url)) {
+  const localWork = isLocalWorkUrl(input.url) && (await transport.genesisHash()) !== MAINNET_GENESIS_HASH;
+  if (!localWork && (await plainHttpOnPublic(transport, input.url))) {
     throw new InvalidInput("url", "format", `the work url ${input.url} ${PLAIN_HTTP_ON_PUBLIC}`);
   }
   const [proof, now, config] = await Promise.all([proofAt(transport, intent), chainTime(transport), context.config()]);

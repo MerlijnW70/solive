@@ -8,7 +8,7 @@ With `--wallet` the server serves the everyday tools, the committee and profile 
 
 A hirer locks payment in an escrow with `solive_wallet_escrow`, pinned to a spec by its sha256. A worker finds the job with `solive_find_jobs`, checks it with `solive_get_spec` and announces the work with `solive_wallet_deliver`. The judge is the escrow's attestor: the hirer's own wallet, another wallet, or a committee. It fetches the work with `solive_wallet_fetch_work`, runs the spec's check, and only on a pass pays with `solive_wallet_attest`, or, as a committee, votes with `solive_wallet_committee_vote`.
 
-An escrow only offers a job. Only the demo jobs have a worker running, so any other job can stay undone and unpaid until a worker takes it.
+An escrow only offers a job. Only the demo jobs have a worker running, so any other job can stay undone and unpaid until a worker takes it, or until you start [a local worker](#a-local-worker).
 
 The judge runs the check itself with [`judge`](judge.md): `--sandbox viper` checks a demo job, or one JavaScript module whose spec has a `judge-cases` block, without Docker, and `--sandbox docker` is for a spec that needs a container. A judge that can run neither approves nothing.
 
@@ -22,6 +22,7 @@ With `--wallet` the server also offers prompts. Each is one message that walks t
 | `hire` | Writes a spec with a check, escrows it with a judge, then judges the delivery |
 | `earn` | Finds a job whose spec matches, claims it, delivers and follows it to payment |
 | `judge` | Fetches delivered work, runs the spec's check, then approves a pass or refuses |
+| `worker` | Makes a separate local worker for a job, hands an agent its brief, then judges what it delivers |
 
 ## Without a wallet
 
@@ -63,6 +64,21 @@ With `--wallet`, the setup `add-to` installs, the server does the whole job and 
 6. `solive_wallet_receipt` shows who was paid.
 
 The server without a wallet holds no keys, so it has `solive_prepare_deliver` instead of `solive_wallet_deliver`: it returns the announcement as a transaction your wallet signs. It reads with `solive_check_delivery` and `solive_get_receipt` instead of `solive_wallet_check_delivery` and `solive_wallet_receipt`.
+
+## A local worker
+
+When nobody takes a job, start a worker on your own machine. It has its own wallet, and it claims, delivers and is judged and paid like any other worker.
+
+1. `solive_wallet_worker` with the job's `intent` previews the funding. With `send: true` it makes a new key in a `workers` folder beside the wallet's key and funds it with only its fees, rent and the claim stake. That SOL counts against the server's sell limits. A job that is not open, or whose spec is sealed or whose claims are closed to a new key, is refused. A Ledger wallet cannot fund one.
+2. Give a separate agent the `brief` and nothing else: a subagent, or a second session in a host without them. It returns the path of its work and the sha256.
+3. Judge that file with `solive_wallet_judge_work` and `artifact`, or `judge --artifact`. Either refuses a file whose sha256 is not the one announced. Pay with `solive_wallet_attest` as usual.
+4. Once the job ends, `solive_wallet_worker` with `return_leftovers` set to the worker's address returns its leftover SOL and wrapped SOL, which holds any pay it received. It first settles the worker's claims on ended jobs. It refuses while the job is open, the worker holds a claim on an open job, or it stands in a line. Other tokens stay with the worker, and the key is deleted only once a fresh read finds it holds nothing.
+
+The separate key prevents mistakes, not a malicious agent: an agent on the same machine can read the hirer's key file, which lies one folder up. Give the brief only to an agent you trust with that wallet.
+
+### Deliver without hosting
+
+`deliver --artifact <file> --work-url http://localhost/local-work` announces a file on this machine. The announcement commits to its sha256 as any other does, and devnet and testnet accept this one plain http url. Anyone who fetches it gets a message that the work is local to the worker's machine.
 
 ## A second node
 

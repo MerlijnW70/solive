@@ -75,10 +75,10 @@ describe("the tools a server serves", () => {
         "wallet_estimate",
         "wallet_swap",
         "wallet_auction",
-        "wallet_recurring",
         "wallet_escrow",
         "wallet_escrow_plan",
         "wallet_seal_spec",
+        "wallet_worker",
         "wallet_attest",
         "wallet_attest_split",
         "wallet_committee_create",
@@ -170,7 +170,7 @@ describe("the tools a server serves", () => {
     for (const argv of [["--wallet"], ["--wallet", "--all-tools"]]) {
       const { tools, prompts } = await served(["mcp", "--url", "devnet", ...argv]);
       expect(Object.keys(prompts)).toEqual(["start", ...JOB_PROMPTS.map((prompt) => prompt.name)]);
-      expect(Object.keys(prompts)).toEqual(["start", "hire", "earn", "judge"]);
+      expect(Object.keys(prompts)).toEqual(["start", "hire", "earn", "judge", "worker"]);
       for (const prompt of JOB_PROMPTS) {
         expect(prompts[prompt.name]).toBe(prompt.text);
         const named = [...prompt.text.matchAll(/\bsolive_\w+/g)].map(([name]) => name);
@@ -180,7 +180,9 @@ describe("the tools a server serves", () => {
     }
     expect((await served(["mcp", "--url", "devnet"])).prompts).toEqual({});
     const names = new Set(EVERY.filter((name) => name !== tool("wallet_fetch_work")));
-    expect(JOB_PROMPTS.filter((prompt) => promptServed(prompt, names)).map((prompt) => prompt.name)).toEqual(["earn"]);
+    expect(JOB_PROMPTS.filter((prompt) => promptServed(prompt, names)).map((prompt) => prompt.name)).toEqual(["earn", "worker"]);
+    const noWorkerTool = new Set(EVERY.filter((name) => name !== tool("wallet_worker")));
+    expect(promptServed(JOB_PROMPTS.find((prompt) => prompt.name === "worker") as (typeof JOB_PROMPTS)[number], noWorkerTool)).toBe(false);
   });
 
   it("still brings the relay tools with --relayer and the mandate tools with --agent", async () => {

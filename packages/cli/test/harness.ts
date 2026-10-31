@@ -100,6 +100,9 @@ export function runtime(signers: Record<string, KeyPairSigner>): Runtime {
       }
       h.files.set(path, text);
     },
+    removeFile: async (path) => {
+      h.files.delete(path);
+    },
     home: HOME,
     intentChanges: () => ({
       wait: async (seconds) => {

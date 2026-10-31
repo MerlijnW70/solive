@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import { dirname } from "node:path";
 import type { Readable, Writable } from "node:stream";
@@ -211,6 +211,7 @@ export function nodeRuntime(clock: () => number = Date.now, pipes: Pipes = proce
       await mkdir(dirname(path), { recursive: true, mode: 0o700 });
       await writeFile(path, text, secret ? { flag: "wx", mode: 0o600 } : { mode: 0o600 });
     },
+    removeFile: (path) => rm(path),
     home: homedir().replaceAll("\\", "/"),
     now: () => BigInt(Math.floor(clock() / 1000)),
     fetch: (url, init) => fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) }),

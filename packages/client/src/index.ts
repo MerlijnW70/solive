@@ -131,6 +131,7 @@ export type {
   AccountView,
   EngineAccount,
   EngineAccountFilter,
+  TokenAccount,
   EngineTransaction,
   FinalizedBlock,
   IntentQuery,
