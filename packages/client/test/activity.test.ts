@@ -268,7 +268,7 @@ describe("the activity docs", () => {
     expect(page).toContain(`one \`getTransaction\` per transaction that did not fail, ${TRANSACTION_FETCHES} at a time, so a default \`activity()\` can cost ${ACTIVITY_LIMIT + 1} RPC calls`);
     expect(page).toContain("keep the first page's `newest`");
     expect(page).toContain("`complete` is `false`");
-    expect(page).toContain("pass `unread[0]` as `until`, which gives up those signatures");
+    expect(page).toContain("pass `unread[0]` as `until`, which gives up that signature and every older one not yet read");
     expect(page).toContain("a 429 rejects with `RateLimited` and discards the page's earlier batches");
     expect(page).not.toContain("in one call");
   });

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { Cancelled, createClient, RateLimited, TimedOut } from "../src/index.js";
 import { testSignature } from "../src/testing.js";
+import { waitUnless } from "../src/rpc-limits.js";
 
 const DEVNET = "https://api.devnet.solana.com";
 const GENESIS = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
@@ -181,6 +182,12 @@ describe("signal", () => {
     await expect(reading).rejects.toBeInstanceOf(Cancelled);
     expect(performance.now() - started).toBeLessThan(1_000);
     expect(node.asked).toHaveLength(1);
+  });
+
+  it("ends a wait at once when the signal has already aborted", async () => {
+    const started = performance.now();
+    await waitUnless(AbortSignal.abort())(60_000);
+    expect(performance.now() - started).toBeLessThan(1_000);
   });
 
   it("still retries after the wait when it has not aborted", async () => {
