@@ -7,7 +7,7 @@ import { JudgeRefused } from "./judge-errors.js";
 import { Wtf8Refused, wtf8Decode, wtf8Encode } from "./wtf8.js";
 
 export const VIPER_WASM_SHA256 = "7e698ca9c14f2ea6a030bdd5f18dd7615795531bd6082157f4c3a4fa44eebf5e";
-export const VIPER_ENGINE_COMMIT = "d2bccdb8f77f78bddf07fad22ec76bfedbfbbf0f";
+export const VIPER_ENGINE_COMMIT = "6a25ec47d6e776996062509edfc1164b4f7f3bb5";
 export const CASES_FENCE = "judge-cases";
 export const DEFAULT_STEPS = 10_000_000;
 export const DEFAULT_HEAP = 64 * 1024 * 1024;
