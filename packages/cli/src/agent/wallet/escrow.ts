@@ -60,7 +60,7 @@ export const ESCROW_EXPIRES_IN = 86_400;
 
 export const NO_SPEC_HASH = `no spec_hash, so workers cannot find this escrow with ${tool("find_jobs")}; give spec_hash and spec_url to list it`;
 
-export const JOB_LIVE = `job live; ${tool("wallet_check_delivery")} to watch for work, then ${tool("wallet_attest")} its earliest announcer`;
+export const JOB_LIVE = `offered, no worker guaranteed: tell the user; ${tool("wallet_check_delivery")} watches, then ${tool("wallet_attest")} the earliest announcer`;
 
 export const SPEC_MUST = "the spec must say what to deliver, in what form, and how it is checked";
 
@@ -477,7 +477,7 @@ export const walletEscrowPlan = define({
       pieces,
       ...shown,
       sent: true,
-      next: `${planned.length} pieces escrowed; ${tool("wallet_check_delivery")} then ${tool("wallet_attest")} each earliest announcer`,
+      next: `${planned.length} pieces offered, no worker guaranteed: tell the user; ${tool("wallet_check_delivery")} then ${tool("wallet_attest")} each earliest announcer`,
     };
   },
 });

@@ -55,7 +55,7 @@ export const MARKET_HEAD = "How a job works:";
 export const MARKET_LINES = [
   `- A hirer locks payment in an escrow, a worker delivers, and the escrow's attestor, the judge, checks the work against the pinned spec; only its approval pays the worker.`,
   `- The judge is the hirer's own wallet, another wallet, or a committee of wallets.`,
-  `- Hire when another agent can do a task and a check can decide it: the spec says what to deliver and how it is checked, pinned by its sha256 from ${tool("hash")}.`,
+  `- Hire when another agent can do a task and a check can decide it: the spec says what to deliver and how it is checked, pinned by its sha256 from ${tool("hash")}. An escrow only offers a job and only demo jobs have a worker running: tell the hirer. Work you do yourself is not a worker's: say so and ${tool("wallet_cancel")} the escrow.`,
   `- 1. The hirer sends ${tool("wallet_escrow")} with spec_hash, spec_url and the judge as attestor; a committee is made first with ${tool("wallet_committee_create")}.`,
   `- 2. The worker finds the job with ${tool("find_jobs")}, checks that ${tool("get_spec")} says it matches, claims it with ${tool("wallet_claim")} if it takes claims, and announces the work to the judge with ${tool("wallet_deliver")}.`,
   `- 3. The judge waits with ${tool("wallet_check_delivery")}, fetches the work with ${tool("wallet_fetch_work")}, and runs the spec's check itself with the CLI command judge.`,
