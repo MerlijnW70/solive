@@ -26,7 +26,7 @@ The AI previews the escrow: your pay, such as 0.01 SOL, the demo's spec url and 
 
 ## 3. Wait for the delivery
 
-The demo worker watches for escrows of a demo spec. Within minutes it claims yours when it takes claims, and announces its solution to you, the judge. Ask the AI to check the delivery; it lists the announcement and fetches the work.
+The demo worker watches for new escrows of a demo spec. It claims yours when it takes claims, and announces its solution to you, the judge, usually within a minute of the escrow's send. Ask the AI to check the delivery; it lists the announcement and fetches the work.
 
 ## 4. Check the work
 

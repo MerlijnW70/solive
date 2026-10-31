@@ -426,9 +426,15 @@ systemctl list-timers solive-faucet-topup.timer
 
 ## Devnet demo worker
 
-`scripts/demo-worker.sh` does the demo jobs of [Your first hired agent](../first-hire.md). Each round it lists open jobs, and for each escrow whose spec hash is the sha256 of a `SPEC.md` in a folder of `examples/demo`, it claims the job when the escrow takes claims and nobody holds it, then announces the `solution.mjs` beside that spec to the judge, with the repository's raw url of that file on `main` as the work url. It announces each escrow once and keeps the escrows it is done with in `DEMO_WORKER_STATE`, default `~/demo-worker.json`. It runs from a checkout at `main`, so the solutions it hashes are the ones the work urls serve.
+`scripts/demo-worker.sh` does the demo jobs of [Your first hired agent](../first-hire.md). A demo escrow is one whose spec hash is the sha256 of a `SPEC.md` in a folder of `examples/demo`. For each, the worker claims the job when the escrow takes claims and nobody holds it, then announces the `solution.mjs` beside that spec to the judge, with the repository's raw url of that file on `main` as the work url. It runs from a checkout at `main`, so the solutions it hashes are the ones the work urls serve.
 
-`DEMO_WORKER_KEYPAIR` is its devnet key file, outside the checkout. `DEMO_WORKER_CLI` names the command line, by default the checkout's build; `DEMO_WORKER_URL`, `DEMO_WORKER_INTERVAL`, `DEMO_WORKER_CLAIM_SECS` and `DEMO_WORKER_MAX_STAKE_LAMPORTS` default to devnet and the values in `scripts/demo-worker.mts`. `--once` runs one round. The unit at `/etc/systemd/system/solive-demo-worker.service`:
+It finds demo escrows two ways. The fast path asks the node, every `DEMO_WORKER_FAST_INTERVAL` seconds, for the open escrows of each demo spec hash only, so it sees a new one soon after it is created. The full scan lists every open job every `DEMO_WORKER_INTERVAL` seconds, and catches what the fast path missed after a restart or a failed read.
+
+The fast path also holds a subscription to the node for new escrows of each demo spec hash, and works each one the moment the node reports it; a dropped subscription reconnects. Escrows it skipped are left to the full scan; one whose claim or announcement failed is retried in later rounds, up to `MAX_FAILURES` times.
+
+It announces each escrow once and keeps the escrows it is done with in `DEMO_WORKER_STATE`, default `~/demo-worker.json`. The two paths take turns, so they never work one escrow at once. A failed round is logged and retried, waiting twice as long after each failure, up to `MAX_BACKOFF_MS`. Logged events carry the time in `at`.
+
+`DEMO_WORKER_KEYPAIR` is its devnet key file, outside the checkout. `DEMO_WORKER_CLI` names the command line, by default the checkout's build; `DEMO_WORKER_URL`, `DEMO_WORKER_FAST_INTERVAL`, `DEMO_WORKER_INTERVAL`, `DEMO_WORKER_CLAIM_SECS` and `DEMO_WORKER_MAX_STAKE_LAMPORTS` default to devnet and the values in `scripts/demo-worker.mts`. `DEMO_WORKER_PROGRAM` defaults to the owner of the config account that `show config` names. `--once` runs one fast round and one full scan. The unit at `/etc/systemd/system/solive-demo-worker.service`:
 
 ```ini
 [Unit]

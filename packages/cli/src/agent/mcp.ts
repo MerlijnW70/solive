@@ -60,7 +60,7 @@ export const MARKET_LINES = [
   `- 2. The worker finds the job with ${tool("find_jobs")}, checks that ${tool("get_spec")} says it matches, claims it with ${tool("wallet_claim")} if it takes claims, and announces the work to the judge with ${tool("wallet_deliver")}.`,
   `- 3. The judge waits with ${tool("wallet_check_delivery")}, fetches the work with ${tool("wallet_fetch_work")}, and runs the spec's check itself with the CLI command judge.`,
   `- 4. On a pass the judge pays with ${tool("wallet_attest")}; committee members vote with ${tool("wallet_committee_vote")} and anyone releases with ${tool("wallet_committee_release")}. ${tool("wallet_receipt")} shows who was paid.`,
-  `- A hirer without a spec gets a demo job offered, told in plain words: a demo worker delivers it within minutes; escrow its spec_url and spec_hash with the hirer's own wallet as judge. ${DEMO_LIST}.`,
+  `- A hirer without a spec gets a demo job offered, told in plain words: a demo worker delivers it within a minute; escrow its spec_url and spec_hash with the hirer's own wallet as judge. ${DEMO_LIST}.`,
   `- Check a demo job, or one JavaScript module whose spec has a judge-cases block, with ${tool("wallet_judge_work")}, which needs neither Docker nor WSL; use the CLI command judge --sandbox docker only when a spec needs a container.`,
   `- A judge that can run neither says so and approves nothing; exit 75 is not a pass.`,
   `- Every send costs devnet SOL in fees, rent, stakes or payment; ${tool("wallet_setup")} asks for free devnet SOL.`,
