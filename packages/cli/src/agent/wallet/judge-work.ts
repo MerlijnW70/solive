@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { resolve } from "node:path";
 import type { Address } from "@solana/kit";
@@ -96,7 +97,7 @@ async function judgeCases(ctx: AgentContext, intent: Address): Promise<Cases> {
 type Fetched = { intent: Address; announcement: Address; worker: Address; sha256: string; opens_commitment: boolean; untrusted_text?: string; first?: { worker: Address }; next: string };
 
 export async function boundedRead(file: string, limit: number): Promise<Uint8Array | null> {
-  const handle = await open(file, "r").catch(() => null);
+  const handle = await open(file, constants.O_RDONLY | constants.O_NONBLOCK).catch(() => null);
   if (handle === null) {
     return null;
   }

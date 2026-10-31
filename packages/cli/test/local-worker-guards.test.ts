@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -6,7 +7,7 @@ import type { Client } from "@modelcontextprotocol/client";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { findConfigPda, getConfigDecoder, getConfigEncoder } from "@intent-engine/core/internal";
 import { MAX_SPEC_BYTES } from "@intent-engine/client/internal";
-import { artifactUnfit } from "../src/agent/wallet/judge-work.js";
+import { artifactUnfit, boundedRead } from "../src/agent/wallet/judge-work.js";
 import { ESCROW_EXPIRES_IN } from "../src/agent/wallet/escrow.js";
 import { jobListed, jobNotOpen, jobSpecDiffers, WORKER_ON_DEVICE } from "../src/agent/wallet/worker.js";
 import { AgentRefusal } from "../src/agent/problems.js";
@@ -154,5 +155,16 @@ describe("the local worker's guards", () => {
     expect(refused).toMatchObject({ code: "NotAnnounced" });
     expect(refused["hint"]).not.toContain("‮");
     expect(refused["hint"]).not.toContain("\n");
+  });
+
+  it.skipIf(process.platform === "win32")("refuses a named pipe at once instead of waiting for a writer", async () => {
+    const folder = mkdtempSync(join(tmpdir(), "local-fifo-"));
+    try {
+      const pipe = join(folder, "work.mjs");
+      execFileSync("mkfifo", [pipe]);
+      expect(await boundedRead(pipe, MAX_SPEC_BYTES)).toBeNull();
+    } finally {
+      rmSync(folder, { recursive: true, force: true });
+    }
   });
 });
