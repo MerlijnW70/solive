@@ -3,7 +3,7 @@ import type { ListedSignature } from "@intent-engine/client";
 import { NATIVE_MINT } from "@intent-engine/core";
 import { activitiesOf } from "./activity.js";
 import { applyOpenJobs, applyTransactions, pruned } from "./apply.js";
-import { historyOf, pendingOf, queueOlder, reached, wantsOlder } from "./history.js";
+import { historyOf, pendingOf, queueOlder, reached, sequenced, wantsOlder } from "./history.js";
 import type { FeedConfig } from "./env.js";
 import { CLUSTER, FEED_UNREAD_TRIES, type Limits, SOL_DECIMALS } from "./limits.js";
 import type { Reader } from "./reader.js";
@@ -74,7 +74,7 @@ async function readEntries(state: State, reader: Reader, deps: FeedDeps, now: nu
         }
       }
     }
-    added += applyTransactions(state, transactions, deps.config.house, now);
+    added += applyTransactions(state, transactions, deps.config.house, now, entry.seq);
     drop(entry.signature);
   }
   return added;
@@ -90,10 +90,11 @@ export async function refreshInto(state: State, reader: Reader, deps: FeedDeps, 
     state.newest = newest.signature;
   }
   const queued = new Set([...state.pending, ...(state.backlog ?? [])].map(({ signature }) => signature));
+  const seqs = sequenced(state, fresh, true);
   const arrived = fresh
     .filter((entry) => !entry.failed && !queued.has(entry.signature))
     .reverse()
-    .map(pendingOf);
+    .map((entry) => pendingOf(entry, seqs.get(entry.signature)));
   state.pending.push(...arrived);
   if (opening) {
     reached(state, fresh, limits.signaturePage, now);

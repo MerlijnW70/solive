@@ -1,6 +1,7 @@
 import type { Address } from "@solana/kit";
 import { formatAmount, tokenName } from "@intent-engine/core";
 import type { Activity } from "./activity.js";
+import type { EventShare } from "./shapes.js";
 
 export const shortAddress = (address: string): string => (address.length <= 8 ? address : `${address.slice(0, 4)}…${address.slice(-4)}`);
 
@@ -12,7 +13,7 @@ export function amountText(raw: bigint, decimals: number): string {
 
 const paid = (amount: string | null, token: string | null): string => (amount === null || token === null ? "" : ` ${amount} ${token === "SOL" || token === "TEST" ? token : "tokens"}`);
 
-export function detailOf(activity: Activity, amount: string | null, token: string | null, specName: string | null): string {
+export function detailOf(activity: Activity, amount: string | null, token: string | null, specName: string | null, parts: readonly EventShare[] | null = null): string {
   const who = shortAddress(activity.who);
   switch (activity.kind) {
     case "escrow":
@@ -23,6 +24,10 @@ export function detailOf(activity: Activity, amount: string | null, token: strin
       return `${who} delivered work to judge ${shortAddress(activity.attestor ?? "")}.`;
     case "release": {
       const judge = activity.signers === undefined ? `Judge ${who}` : `A committee of ${activity.signers}`;
+      if (parts !== null) {
+        const each = parts.map((part) => `${shortAddress(part.payee)}${part.amount === null ? "" : ` ${part.amount}`}`).join(", ");
+        return `${judge} approved the work and paid${paid(amount, token)} split between ${each}.`;
+      }
       return `${judge} approved the work and paid ${shortAddress(activity.payee ?? "")}${paid(amount, token)}.`;
     }
     case "refund":

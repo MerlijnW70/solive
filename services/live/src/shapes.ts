@@ -19,7 +19,11 @@ export type FeedEvent = {
   detail: string;
   payee?: string;
   attestor?: string;
+  shares?: EventShare[];
+  seq?: number;
 };
+
+export type EventShare = { payee: string; amount: string | null };
 
 export type Step = { signature: string; at: string; who: string; amount: string | null; token: string | null };
 
@@ -78,7 +82,7 @@ export type Unpriced = { at: string; slot: number; signature: string; house: boo
 
 export type Paid = { at: string; slot: number; signature: string; intent: string; payee: string; token: string; raw: string; decimals: number; house: boolean };
 
-export type Pending = { signature: string; slot: number; blockTime: number | null; tries?: number };
+export type Pending = { signature: string; slot: number; blockTime: number | null; tries?: number; seq?: number };
 
 export type State = {
   version: 2;
@@ -97,6 +101,8 @@ export type State = {
   stale_since: string | null;
   retry_at: number | null;
   backlog?: Pending[];
+  next_seq?: number;
+  low_seq?: number;
   oldest?: string | null;
   oldest_at?: number | null;
   backfilled?: boolean;

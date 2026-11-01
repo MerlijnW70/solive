@@ -51,7 +51,7 @@ export function render(state: State, house: ReadonlySet<string>, now: number): F
       paid_7d: totals(recent),
       house_paid_jobs_7d: jobsIn(recent.filter((entry) => entry.house)),
     },
-    events: state.events,
+    events: state.events.map(({ seq: _seq, ...event }) => event),
     latest_paid_job: state.latest_paid_job,
     top_workers: topWorkers(recent, house),
     services: state.services,

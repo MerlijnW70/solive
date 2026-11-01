@@ -46,7 +46,7 @@ function settle(state: State, intent: string, job: Job): void {
   delete job.unpriced;
 }
 
-export function applyTransactions(state: State, transactions: readonly EngineTransaction[], house: ReadonlySet<string>, now: number): number {
+export function applyTransactions(state: State, transactions: readonly EngineTransaction[], house: ReadonlySet<string>, now: number, seq?: number): number {
   let added = 0;
   for (const tx of transactions) {
     if (tx.failed) {
@@ -75,6 +75,7 @@ export function applyTransactions(state: State, transactions: readonly EngineTra
       const hash = activity.kind === "escrow" ? (activity.specHash ?? null) : null;
       const name = specName(hash);
       const marked = isHouse(activity, job, house);
+      const parts = activity.kind === "release" && activity.shares !== undefined && activity.shares.length > 1 ? activity.shares.map((share) => ({ payee: share.payee, amount: places === null ? null : amountText(share.raw, places) })) : null;
       const event: FeedEvent = {
         kind: activity.kind,
         at,
@@ -87,8 +88,10 @@ export function applyTransactions(state: State, transactions: readonly EngineTra
         house: marked,
         spec_hash: hash,
         spec_name: name,
-        detail: detailOf(activity, amount, token, name),
+        detail: detailOf(activity, amount, token, name, parts),
         ...(activity.kind === "release" ? { payee: activity.payee ?? activity.who, attestor: activity.attestor ?? activity.who } : {}),
+        ...(parts === null ? {} : { shares: parts }),
+        ...(seq === undefined ? {} : { seq }),
       };
       if (!state.events.some((known) => known.signature === event.signature && known.kind === event.kind && known.intent === event.intent && known.who === event.who)) {
         state.events.unshift(event);
@@ -152,13 +155,36 @@ export function applyOpenJobs(state: State, intents: readonly IntentAccount[], n
   state.open_jobs = open;
 }
 
+function newestWhole(sorted: readonly Paid[]): Paid[] {
+  const jobs: Paid[][] = [];
+  for (const entry of sorted) {
+    const last = jobs.at(-1);
+    if (last?.[0]?.signature === entry.signature && last[0].intent === entry.intent) {
+      last.push(entry);
+    } else {
+      jobs.push([entry]);
+    }
+  }
+  const kept: Paid[][] = [];
+  let count = 0;
+  for (const job of jobs.reverse()) {
+    if (count + job.length > KEPT_PAID) {
+      break;
+    }
+    count += job.length;
+    kept.unshift(job);
+  }
+  return kept.flat();
+}
+
 export function pruned(state: State, now: number): void {
-  state.events = state.events.sort((a, b) => b.slot - a.slot).slice(0, FEED_EVENTS);
+  state.events = state.events.sort((a, b) => b.slot - a.slot || (b.seq ?? Number.MIN_SAFE_INTEGER) - (a.seq ?? Number.MIN_SAFE_INTEGER)).slice(0, FEED_EVENTS);
   const floor = now - PAID_WINDOW_SECS * 1000;
-  state.paid = state.paid
-    .filter(({ at }) => Date.parse(at) >= floor)
-    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || a.slot - b.slot)
-    .slice(-KEPT_PAID);
+  state.paid = newestWhole(
+    state.paid
+      .filter(({ at }) => Date.parse(at) >= floor)
+      .sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || a.slot - b.slot || a.signature.localeCompare(b.signature) || a.intent.localeCompare(b.intent)),
+  );
   const kept = Object.entries(state.jobs)
     .sort(([, a], [, b]) => b.slot - a.slot)
     .slice(0, KEPT_JOBS);

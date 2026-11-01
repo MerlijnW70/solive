@@ -2,7 +2,26 @@ import type { ListedSignature } from "@intent-engine/client";
 import { PAID_WINDOW_SECS } from "./limits.js";
 import type { History, Pending, State } from "./shapes.js";
 
-export const pendingOf = (entry: ListedSignature): Pending => ({ signature: entry.signature, slot: Number(entry.slot), blockTime: entry.blockTime === null ? null : Number(entry.blockTime) });
+export const pendingOf = (entry: ListedSignature, seq?: number): Pending => ({
+  signature: entry.signature,
+  slot: Number(entry.slot),
+  blockTime: entry.blockTime === null ? null : Number(entry.blockTime),
+  ...(seq === undefined ? {} : { seq }),
+});
+
+export function sequenced(state: State, page: readonly ListedSignature[], newer: boolean): Map<string, number> {
+  const seqs = new Map<string, number>();
+  if (newer) {
+    const base = state.next_seq ?? 0;
+    page.forEach((entry, i) => seqs.set(entry.signature, base + page.length - i));
+    state.next_seq = base + page.length;
+  } else {
+    const base = state.low_seq ?? 0;
+    page.forEach((entry, i) => seqs.set(entry.signature, base - 1 - i));
+    state.low_seq = base - page.length;
+  }
+  return seqs;
+}
 
 const secsOf = (blockTime: bigint | null): number | null => (blockTime === null ? null : Number(blockTime));
 
@@ -30,8 +49,9 @@ export function reached(state: State, page: readonly ListedSignature[], limit: n
 }
 
 export function queueOlder(state: State, page: readonly ListedSignature[], now: number): void {
+  const seqs = sequenced(state, page, false);
   const queued = new Set([...state.pending, ...(state.backlog ?? [])].map(({ signature }) => signature));
-  const kept = page.filter((entry) => !entry.failed && !queued.has(entry.signature) && !beforeWindow(secsOf(entry.blockTime), now)).map(pendingOf);
+  const kept = page.filter((entry) => !entry.failed && !queued.has(entry.signature) && !beforeWindow(secsOf(entry.blockTime), now)).map((entry) => pendingOf(entry, seqs.get(entry.signature)));
   state.backlog = [...kept.reverse(), ...(state.backlog ?? [])];
 }
 
