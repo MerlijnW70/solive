@@ -27,7 +27,7 @@
     { key: "release", kind: "release", title: "judge passed it, worker paid", role: "judge" },
   ];
   const SERVICES = ["faucet", "demo_worker", "filler"];
-  const SERVICE_WORDS = { up: "Up", down: "Down", unknown: "Unknown" };
+  const SERVICE_WORDS = { up: "Up", quiet: "Quiet", down: "Down", unknown: "Unknown" };
 
   const $ = (id) => document.getElementById(id);
   const state = {
@@ -361,12 +361,15 @@
 
   function renderServices(feed) {
     const services = feed.services && typeof feed.services === "object" ? feed.services : {};
+    const active = feed.services_active && typeof feed.services_active === "object" ? feed.services_active : {};
     for (const name of SERVICES) {
       const value = Object.hasOwn(SERVICE_WORDS, services[name]) ? services[name] : "unknown";
       const el = $("svc-" + name);
       el.setAttribute("data-state", value);
       el.textContent = SERVICE_WORDS[value];
-      $("svc-" + name + "-seen").replaceChildren("checked ", clock(feed.generated_at));
+      const seen = $("svc-" + name + "-seen");
+      if (value === "quiet" && typeof active[name] === "string" && Number.isFinite(timeOf(active[name]))) seen.replaceChildren("last active ", clock(active[name]));
+      else seen.replaceChildren("checked ", clock(feed.generated_at));
     }
   }
 

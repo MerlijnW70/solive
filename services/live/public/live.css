@@ -401,6 +401,8 @@ a.who, a.sig { white-space: nowrap; }
 .svc-state[data-state="up"]::before { background: var(--release); border-color: var(--release); }
 .svc-state[data-state="down"] { color: var(--refund); }
 .svc-state[data-state="down"]::before { border-radius: 1px; background: var(--refund); border-color: var(--refund); transform: rotate(45deg) scale(0.85); }
+.svc-state[data-state="quiet"] { color: var(--ink); }
+.svc-state[data-state="quiet"]::before { background: transparent; border-color: var(--ink); border-style: dashed; }
 .svc-state[data-state="unknown"] { color: var(--muted); }
 .svc-seen { font-size: var(--t13); color: var(--muted); min-width: 7em; text-align: right; }
 .svc-note { margin-top: var(--s12); font-size: var(--t13); color: var(--muted); }

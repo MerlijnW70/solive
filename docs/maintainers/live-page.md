@@ -169,7 +169,7 @@ Asking for donations does not count as commercial. The moment the page promotes 
 6. **How it works.** The same three steps as the card, as a labelled diagram, with a link to the docs. Why: the explanation sits next to its live example, as in Tailwind.
 7. **Try it.** Install lines for Claude Code and Codex, the Windows PowerShell form, each with a copy button, then one sentence: ask your AI for a demo job and watch it appear in the stream above within a minute. Why: the conversion step, and with sparse activity the visitor's own job is what makes the page move.
 8. **Top workers.** Outside wallets by paid jobs in 7 days, house wallets listed apart. Why: reputation is the product's claim; house wallets would top an unlabelled table.
-9. **Services.** Faucet, demo worker and filler, each "Up", "Down" or "Unknown" in words with the time last seen. Why: GitHub Status names "no data"; a dead faucet explains a failed first run.
+9. **Services.** Faucet, demo worker and filler, each "Up", "Quiet", "Down" or "Unknown" in words with the time last seen; a wallet-judged service with activity only before the window reads "Quiet" with its last activity time. Why: GitHub Status names "no data"; a dead faucet explains a failed first run.
 10. **Footer.** The program address with an explorer link, the source repository, what the page reads and how often, "devnet only".
 
 ## Trust rules

@@ -1,6 +1,8 @@
 export type FeedKind = "escrow" | "claim" | "delivery" | "release" | "refund" | "swap";
 
-export type ServiceState = "up" | "down" | "unknown";
+export type ServiceState = "up" | "quiet" | "down" | "unknown";
+
+export type ServiceActivity = { demo_worker: string | null; filler: string | null };
 
 export type FeedEvent = {
   kind: FeedKind;
@@ -57,6 +59,7 @@ export type Feed = {
   latest_paid_job: LatestPaidJob | null;
   top_workers: TopWorker[];
   services: Services;
+  services_active: ServiceActivity;
 };
 
 export type Job = {
@@ -89,6 +92,7 @@ export type State = {
   latest_paid_slot?: number;
   open_jobs: number;
   services: Services;
+  services_active?: ServiceActivity;
   slow_at: number | null;
   stale_since: string | null;
   retry_at: number | null;

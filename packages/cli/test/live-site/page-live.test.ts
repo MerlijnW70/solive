@@ -132,6 +132,28 @@ describe("live page with a full feed", () => {
     expect(page.text("svc-filler-seen")).toBe("checked 4m ago");
   });
 
+  it("writes a quiet service with its own word, state and last activity time", async () => {
+    const feed = { ...fullFeed(NOW), services: { faucet: "up", demo_worker: "quiet", filler: "quiet" }, services_active: { demo_worker: new Date(NOW - 3 * 3600 * 1000).toISOString(), filler: null } };
+    const page = await openPage(ok(feed));
+    expect(page.text("svc-demo_worker")).toBe("Quiet");
+    expect(page.byId("svc-demo_worker").getAttribute("data-state")).toBe("quiet");
+    expect(page.text("svc-demo_worker-seen")).toBe("last active 3h ago");
+    expect(page.text("svc-filler")).toBe("Quiet");
+    expect(page.text("svc-filler-seen")).toBe("checked 12s ago");
+  });
+
+  it("renders an older feed answer without the new fields as before", async () => {
+    const feed = fullFeed(NOW);
+    expect(feed.services_active).toBeUndefined();
+    const page = await openPage(ok(feed));
+    expect(page.text("svc-demo_worker")).toBe("Up");
+    expect(page.text("svc-filler")).toBe("Unknown");
+    expect(page.text("svc-filler-seen")).toMatch(/^checked /);
+    const quiet = await openPage(ok({ ...feed, services: { faucet: "up", demo_worker: "quiet", filler: "unknown" } }));
+    expect(quiet.text("svc-demo_worker")).toBe("Quiet");
+    expect(quiet.text("svc-demo_worker-seen")).toMatch(/^checked /);
+  });
+
   it("caps the stream at 50 rows", async () => {
     const feed = fullFeed(NOW);
     const many = Array.from({ length: 60 }, (_, i) => ({ ...feed.events[0], signature: signature(900 + i) }));

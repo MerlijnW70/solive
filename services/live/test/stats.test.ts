@@ -7,7 +7,7 @@ import { DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
 import { describe, expect, it } from "vitest";
 import { DEMO_SPECS, specName } from "../src/catalog.js";
 import { createHandler } from "../src/http.js";
-import { CACHE_CONTROL, CDN_CACHE_CONTROL, DRIP_LAMPORTS, SERVICE_WINDOW_SECS } from "../src/limits.js";
+import { CACHE_CONTROL, CDN_CACHE_CONTROL, DRIP_LAMPORTS, SERVICE_WINDOW_SECS, STATE_KEY } from "../src/limits.js";
 import {
   addressOf,
   announced,
@@ -119,6 +119,17 @@ describe("house and totals", () => {
 describe("services", () => {
   const env = { FEED_FAUCET: addressOf(41), FEED_DEMO_WORKER: addressOf(42), FEED_FILLER: addressOf(43) };
 
+  it("loads a cached state saved before last activity was kept", async () => {
+    const first = rig({ env });
+    await first.feed.read();
+    const saved = JSON.parse(String(first.cache.values.get(STATE_KEY)));
+    delete saved.services_active;
+    first.cache.values.set(STATE_KEY, JSON.stringify(saved));
+    const second = rig({ env }, first);
+    const body = await second.feed.read();
+    expect(body.services_active).toEqual({ demo_worker: null, filler: null });
+  });
+
   it("reads unknown when a wallet is unset", async () => {
     const { feed, probes } = rig();
     const body = await feed.read();
@@ -126,15 +137,19 @@ describe("services", () => {
     expect(probes).toBe(0);
   });
 
-  it("maps recent wallet activity, the faucet's 405 and its balance to up and down", async () => {
+  it("maps recent wallet activity, the faucet's 405 and its balance to up, quiet and down", async () => {
     const up = rig({ env });
     up.node.lamports.set(addressOf(41), Number(DRIP_LAMPORTS));
     up.node.wallets.set(addressOf(42), [{ signature: signatureOf(201), slot: 1, blockTime: nowSecs(-SERVICE_WINDOW_SECS + 5), err: null, memo: null }]);
     up.node.wallets.set(addressOf(43), [{ signature: signatureOf(202), slot: 1, blockTime: nowSecs(-SERVICE_WINDOW_SECS - 5), err: null, memo: null }]);
-    expect((await up.feed.read()).services).toEqual({ faucet: "up", demo_worker: "up", filler: "down" });
+    expect((await up.feed.read()).services).toEqual({ faucet: "up", demo_worker: "up", filler: "quiet" });
+    const active = (await up.feed.read()).services_active;
+    expect(active.demo_worker).toBe(new Date((nowSecs(-SERVICE_WINDOW_SECS + 5)) * 1000).toISOString());
+    expect(active.filler).toBe(new Date((nowSecs(-SERVICE_WINDOW_SECS - 5)) * 1000).toISOString());
     const poor = rig({ env });
     poor.node.lamports.set(addressOf(41), Number(DRIP_LAMPORTS) - 1);
-    expect((await poor.feed.read()).services).toEqual({ faucet: "down", demo_worker: "down", filler: "down" });
+    expect((await poor.feed.read()).services).toEqual({ faucet: "down", demo_worker: "unknown", filler: "unknown" });
+    expect((await poor.feed.read()).services_active).toEqual({ demo_worker: null, filler: null });
     const open = rig({ env, probe: async () => 200 });
     open.node.lamports.set(addressOf(41), Number(DRIP_LAMPORTS));
     expect((await open.feed.read()).services.faucet).toBe("down");
@@ -189,7 +204,7 @@ describe("http", () => {
       expect(CACHE_CONTROL).toBe("public, max-age=10");
       expect(CDN_CACHE_CONTROL).toBe("public, s-maxage=30, stale-while-revalidate=300, stale-if-error=86400");
       expect(Object.keys(JSON.parse(got.body)).sort()).toEqual(
-        ["cluster", "generated_at", "program", "last_event_at", "stale", "stale_since", "history", "stats", "events", "latest_paid_job", "top_workers", "services"].sort(),
+        ["cluster", "generated_at", "program", "last_event_at", "stale", "stale_since", "history", "stats", "events", "latest_paid_job", "top_workers", "services", "services_active"].sort(),
       );
       const posted = await call("POST");
       expect(posted.status).toBe(405);

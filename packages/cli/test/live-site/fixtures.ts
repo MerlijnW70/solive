@@ -61,6 +61,7 @@ export type Feed = {
   latest_paid_job: { intent: string; spec_hash: string; spec_name: string | null; escrow: Step | null; delivery: Step | null; release: Step | null } | null;
   top_workers: { wallet: string; paid_jobs: number; paid_sol: string; house: boolean }[];
   services: { faucet: string; demo_worker: string; filler: string };
+  services_active?: { demo_worker: string | null; filler: string | null };
 };
 
 const iso = (now: number, secondsAgo: number): string => new Date(now - secondsAgo * 1000).toISOString();

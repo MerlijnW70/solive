@@ -100,7 +100,9 @@ export async function refreshInto(state: State, reader: Reader, deps: FeedDeps, 
   }
   if (state.slow_at === null || now - state.slow_at >= limits.accountsEverySecs * 1000) {
     applyOpenJobs(state, await reader.openJobs(), now);
-    state.services = await servicesOf(reader, config, deps.probe, limits.serviceWindowSecs, now, deadline);
+    const read = await servicesOf(reader, config, deps.probe, limits.serviceWindowSecs, now, deadline);
+    state.services = read.services;
+    state.services_active = read.active;
     state.slow_at = now;
   }
   const newer = state.pending.slice(0, limits.transactionsPerRefresh);

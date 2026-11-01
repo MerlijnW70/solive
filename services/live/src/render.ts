@@ -55,5 +55,6 @@ export function render(state: State, house: ReadonlySet<string>, now: number): F
     latest_paid_job: state.latest_paid_job,
     top_workers: topWorkers(recent, house),
     services: state.services,
+    services_active: state.services_active ?? { demo_worker: null, filler: null },
   };
 }
