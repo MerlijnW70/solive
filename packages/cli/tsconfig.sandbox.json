@@ -2,6 +2,7 @@
   "extends": "./tsconfig.json",
   "exclude": [
     "test/demo-worker.test.ts",
-    "test/demo-worker-fast.test.ts"
+    "test/demo-worker-fast.test.ts",
+    "test/demo-worker-watch.test.ts"
   ]
 }

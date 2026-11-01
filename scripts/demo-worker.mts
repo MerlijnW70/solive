@@ -3,28 +3,11 @@ import { createHash } from "node:crypto";
 import { readdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { type Demo, type DemoJob, type Found, programReader, record, subscription, textOf, foundIn, type Read, type Rpc } from "./demo-chain.mts";
 
-export type Demo = { name: string; specHash: string; solution: string; workUrl: string };
+export * from "./demo-chain.mts";
 
 export type Cli = (args: readonly string[]) => Promise<unknown>;
-
-export type DemoJob = {
-  intent: string;
-  owner: string;
-  nonce: string;
-  specHash: string;
-  takesClaims: boolean;
-  claimedBy: string | null;
-  waiting: number;
-  expiresAt: number;
-  board?: Record<string, unknown>;
-};
-
-export type Found = { demo: Demo; job: DemoJob };
-
-export type Rpc = (method: string, params: readonly unknown[]) => Promise<unknown>;
-
-export type Read = (demos: readonly Demo[], now: number) => Promise<Found[]>;
 
 export type Settings = { keypair: string; wallet: string; maxStake: bigint; claimSecs: number };
 
@@ -43,6 +26,11 @@ export const CLAIM_MARGIN_SECS = 60;
 export const MIN_CLAIM_SECS = 120;
 export const FAST_INTERVAL_SECS = 15;
 export const WATCH_RETRY_MS = 1_000;
+export const KEEPALIVE_MS = 10_000;
+export const STABLE_MS = 30_000;
+export const KEEPALIVE_ID = 0;
+export const KEEPALIVE = JSON.stringify({ jsonrpc: "2.0", id: KEEPALIVE_ID, method: "getVersion" });
+export const WATCHED_INTERVAL_SECS = 30;
 export const FULL_INTERVAL_SECS = 300;
 export const MAX_BACKOFF_MS = 60_000;
 export const RPC_TIMEOUT_MS = 15_000;
@@ -53,13 +41,6 @@ export const CLUSTERS: Readonly<Record<string, string>> = {
   testnet: "https://api.testnet.solana.com",
   "mainnet-beta": "https://api.mainnet-beta.solana.com",
 };
-
-export const INTENT_TAG = Uint8Array.from([247, 162, 35, 165, 254, 111, 129, 109]);
-export const INTENT_SIZE = 464;
-export const AT = { owner: 8, nonce: 136, expiresAt: 160, kind: 168, status: 169, specHash: 232, claims: 448 } as const;
-export const CODE = { attestedResult: 4, open: 0, claimsOpen: 1 } as const;
-
-const BASE58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
 const sha256 = (bytes: Uint8Array): string => createHash("sha256").update(bytes).digest("hex");
 
@@ -76,10 +57,6 @@ export async function loadDemos(dir: string, baseUrl: string): Promise<Demo[]> {
 }
 
 export const emptyLedger = (done: Iterable<string> = []): Ledger => ({ done: new Set(done), failures: new Map(), noted: new Set() });
-
-const record = (value: unknown): Record<string, unknown> => (typeof value === "object" && value !== null && !Array.isArray(value) ? (value as Record<string, unknown>) : {});
-
-const textOf = (value: unknown): string | null => (typeof value === "string" ? value : typeof value === "number" || typeof value === "bigint" ? String(value) : null);
 
 function jobOf(value: unknown): DemoJob | null {
   const job = record(value);
@@ -220,69 +197,6 @@ export async function fastWork(cli: Cli, found: readonly Found[], settings: Sett
   return events;
 }
 
-export function base58(bytes: Uint8Array): string {
-  let value = 0n;
-  for (const byte of bytes) {
-    value = value * 256n + BigInt(byte);
-  }
-  let text = "";
-  for (; value > 0n; value /= 58n) {
-    text = `${BASE58[Number(value % 58n)]}${text}`;
-  }
-  for (let at = 0; at < bytes.length && bytes[at] === 0; at += 1) {
-    text = `1${text}`;
-  }
-  return text;
-}
-
-const base64 = (bytes: Uint8Array): string => Buffer.from(bytes).toString("base64");
-
-export function intentJob(intent: string, data: Uint8Array, now: number): DemoJob | null {
-  if (data.length !== INTENT_SIZE || !INTENT_TAG.every((byte, at) => data[at] === byte) || data[AT.kind] !== CODE.attestedResult || data[AT.status] !== CODE.open) {
-    return null;
-  }
-  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
-  const expiresAt = Number(view.getBigInt64(AT.expiresAt, true));
-  const owner = base58(data.subarray(AT.owner, AT.owner + 32));
-  const specHash = Buffer.from(data.subarray(AT.specHash, AT.specHash + 32)).toString("hex");
-  const nonce = view.getBigUint64(AT.nonce, true).toString();
-  return expiresAt <= now ? null : { intent, owner, nonce, specHash, takesClaims: data[AT.claims] === CODE.claimsOpen, claimedBy: null, waiting: 0, expiresAt };
-}
-
-export const demoFilters = (specHash: string): object[] => [
-  { dataSize: INTENT_SIZE },
-  { memcmp: { offset: 0, bytes: base64(INTENT_TAG), encoding: "base64" } },
-  { memcmp: { offset: AT.kind, bytes: base64(Uint8Array.from([CODE.attestedResult, CODE.open])), encoding: "base64" } },
-  { memcmp: { offset: AT.specHash, bytes: base64(Buffer.from(specHash, "hex")), encoding: "base64" } },
-];
-
-function accountsOf(listed: unknown): { intent: string; data: Uint8Array }[] {
-  if (!Array.isArray(listed)) {
-    throw new Error(`getProgramAccounts answered no list: ${JSON.stringify(listed ?? null).slice(0, 200)}`);
-  }
-  return listed.flatMap((entry) => {
-    const intent = textOf(record(entry)["pubkey"]);
-    const data = record(record(entry)["account"])["data"];
-    const encoded = Array.isArray(data) && data[1] === "base64" ? textOf(data[0]) : null;
-    return intent === null || encoded === null ? [] : [{ intent, data: new Uint8Array(Buffer.from(encoded, "base64")) }];
-  });
-}
-
-const foundIn = (demo: Demo, listed: unknown, now: number): Found[] =>
-  accountsOf(listed).flatMap(({ intent, data }) => {
-    const job = intentJob(intent, data, now);
-    return job === null || job.specHash !== demo.specHash ? [] : [{ demo, job }];
-  });
-
-const subscription = (program: string, demo: Demo) => [program, { encoding: "base64", commitment: "confirmed", filters: demoFilters(demo.specHash) }];
-
-export function programReader(rpc: Rpc, program: string): Read {
-  return async (demos, now) => {
-    const listed = await Promise.all(demos.map((demo) => rpc("getProgramAccounts", subscription(program, demo))));
-    return demos.flatMap((demo, at) => foundIn(demo, listed[at], now));
-  };
-}
-
 export type Socket = {
   send(data: string): void;
   close(): void;
@@ -303,9 +217,12 @@ function jsonOf(text: unknown): unknown {
   }
 }
 
-export function watchOnce(open: (url: string) => Socket, url: string, program: string, demos: readonly Demo[], now: () => number, seen: (found: Found) => void): Promise<string> {
+export type WatchOptions = { keepAliveMs?: number; stableMs?: number; up?: () => void; down?: () => void };
+
+export function watchOnce(open: (url: string) => Socket, url: string, program: string, demos: readonly Demo[], now: () => number, seen: (found: Found) => void, options: WatchOptions = {}): Promise<string> {
   return new Promise((done) => {
     let reason = "the subscription closed";
+    let closing = false;
     let socket: Socket;
     try {
       socket = open(url);
@@ -313,27 +230,65 @@ export function watchOnce(open: (url: string) => Socket, url: string, program: s
       done(error instanceof Error ? error.message : String(error));
       return;
     }
-    socket.addEventListener("open", () => demos.forEach((demo, at) => socket.send(JSON.stringify({ jsonrpc: "2.0", id: at + 1, method: "programSubscribe", params: subscription(program, demo) }))));
+    const timers: { stop: () => void }[] = [];
+    const shut = () => {
+      if (!closing) {
+        closing = true;
+        socket.close();
+      }
+    };
+    socket.addEventListener("open", () => {
+      demos.forEach((demo, at) => socket.send(JSON.stringify({ jsonrpc: "2.0", id: at + 1, method: "programSubscribe", params: subscription(program, demo) })));
+      const beat = setInterval(() => {
+        try {
+          socket.send(KEEPALIVE);
+        } catch {
+          shut();
+        }
+      }, options.keepAliveMs ?? KEEPALIVE_MS);
+      const stable = setTimeout(() => options.up?.(), options.stableMs ?? STABLE_MS);
+      beat.unref();
+      stable.unref();
+      timers.push({ stop: () => (clearInterval(beat), clearTimeout(stable)) });
+    });
     socket.addEventListener("message", (event) => {
       const message = jsonOf(event.data);
+      if (record(message)["id"] === KEEPALIVE_ID) {
+        return;
+      }
       if (record(message)["error"] !== undefined) {
         reason = `programSubscribe failed: ${JSON.stringify(record(message)["error"]).slice(0, 500)}`;
-        socket.close();
+        shut();
         return;
       }
       notified(message, demos, now()).forEach(seen);
     });
-    socket.addEventListener("error", () => socket.close());
-    socket.addEventListener("close", () => done(reason));
+    socket.addEventListener("error", shut);
+    socket.addEventListener("close", () => {
+      timers.forEach((timer) => timer.stop());
+      done(reason);
+    });
   });
 }
 
-export async function watch(open: (url: string) => Socket, url: string, program: string, demos: readonly Demo[], now: () => number, seen: (found: Found) => void, log: Log, wait: (ms: number) => Promise<unknown>, more: () => boolean = () => true): Promise<void> {
+export async function watch(open: (url: string) => Socket, url: string, program: string, demos: readonly Demo[], now: () => number, seen: (found: Found) => void, log: Log, wait: (ms: number) => Promise<unknown>, more: () => boolean = () => true, options: WatchOptions = {}): Promise<void> {
+  let told: string | null = null;
+  const up = () => {
+    if (told !== null) {
+      told = null;
+      log.out(JSON.stringify({ at: new Date().toISOString(), round: "recovered", path: "watch", detail: "the subscription is open again" }));
+    }
+    options.up?.();
+  };
   for (let failures = 0; more(); ) {
     const opened = Date.now();
-    const reason = await watchOnce(open, url, program, demos, now, seen);
+    const reason = await watchOnce(open, url, program, demos, now, seen, { ...options, up });
     failures = Date.now() - opened > MAX_BACKOFF_MS ? 0 : failures + 1;
-    log.err(JSON.stringify({ at: new Date().toISOString(), round: "failed", path: "watch", detail: reason }));
+    options.down?.();
+    if (reason !== told) {
+      told = reason;
+      log.err(JSON.stringify({ at: new Date().toISOString(), round: "failed", path: "watch", detail: reason }));
+    }
     await wait(backoff(WATCH_RETRY_MS, failures));
   }
 }
@@ -446,10 +401,12 @@ const needed = (env: NodeJS.ProcessEnv, name: string): string => {
 
 const pause = (ms: number) => new Promise((done) => setTimeout(done, ms));
 
-async function repeat(path: string, round: () => Promise<Event[]>, every: number, log: Log): Promise<never> {
-  for (let failures = 0; ; ) {
+export const pollEvery = (watching: () => boolean, fastMs: number, watchedMs: number): number => (watching() ? Math.max(fastMs, watchedMs) : fastMs);
+
+export async function repeat(path: string, round: () => Promise<Event[]>, every: () => number, log: Log, wait: (ms: number) => Promise<unknown> = pause, more: () => boolean = () => true): Promise<void> {
+  for (let failures = 0; more(); ) {
     failures = (await tick(path, round, log)) ? 0 : failures + 1;
-    await pause(backoff(every, failures));
+    await wait(backoff(every(), failures));
   }
 }
 
@@ -489,8 +446,11 @@ export async function runWorker(env: NodeJS.ProcessEnv, argv: readonly string[])
   const fullEvery = Number(env["DEMO_WORKER_INTERVAL"] ?? String(FULL_INTERVAL_SECS)) * 1000;
   const seen = (found: Found) => void tick("watch", () => lock(async () => saved(await fastWork(cli, [found], settings, ledger, now()))), log);
   const Sockets = (globalThis as unknown as { WebSocket: new (url: string) => Socket }).WebSocket;
-  const watching = watch((socketUrl) => new Sockets(socketUrl), env["DEMO_WORKER_WS_URL"] || wsUrlOf(url), program, demos, now, seen, log, pause);
-  await Promise.all([watching, repeat("fast", fast, fastEvery, log), repeat("full", full, fullEvery, log)]);
+  const watchedEvery = Number(env["DEMO_WORKER_WATCHED_INTERVAL"] ?? String(WATCHED_INTERVAL_SECS)) * 1000;
+  let open = false;
+  const link = { up: () => void (open = true), down: () => void (open = false) };
+  const watching = watch((socketUrl) => new Sockets(socketUrl), env["DEMO_WORKER_WS_URL"] || wsUrlOf(url), program, demos, now, seen, log, pause, () => true, link);
+  await Promise.all([watching, repeat("fast", fast, () => pollEvery(() => open, fastEvery, watchedEvery), log), repeat("full", full, () => fullEvery, log)]);
 }
 
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
