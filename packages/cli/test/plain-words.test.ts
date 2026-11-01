@@ -63,9 +63,17 @@ describe("the wallet server's texts", () => {
     }
   });
 
+  it("names each host the server can contact", () => {
+    const line = WALLET_NOTICE.find((one) => one.startsWith("Contacts only")) ?? "";
+    for (const host of ["Solana node", "devnet faucet", "npm", "INTENT_ENGINE_NO_UPDATE_CHECK=1"]) {
+      expect(line).toContain(host);
+    }
+    expect(WALLET_NOTICE.join(" ")).not.toContain("talks only to the Solana node");
+  });
+
   it("keeps every safety point in the notice", () => {
     const notice = WALLET_NOTICE.join("\n");
-    for (const point of ["Test network only", "refuses mainnet", "no value", "key stays on this computer", "only signed transactions leave it", "talks only to the Solana node (RPC) it started with", "Nothing moves until you say yes", "previewed first", "Never send real money", "use its key anywhere else"]) {
+    for (const point of ["Test network only", "refuses mainnet", "no value", "key stays on this computer", "only signed transactions leave it", "Contacts only", "Nothing moves until you say yes", "previewed first", "Never send real money", "use its key anywhere else"]) {
       expect(notice).toContain(point);
     }
     for (const line of WALLET_NOTICE) {

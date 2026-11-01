@@ -60,7 +60,7 @@ export const MAINNET_GENESIS = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
 export const WALLET_NOTICE = [
   "Test network only: this wallet refuses mainnet, and its tokens have no value.",
   "Your key stays on this computer; only signed transactions leave it.",
-  "This server talks only to the Solana node (RPC) it started with.",
+  "Contacts only: your Solana node, the devnet faucet, npm (updates; INTENT_ENGINE_NO_UPDATE_CHECK=1 stops it).",
   "Nothing moves until you say yes: payments are previewed first.",
   "Never send real money to this wallet or use its key anywhere else.",
 ];
