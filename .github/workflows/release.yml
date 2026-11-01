@@ -45,3 +45,20 @@ jobs:
           done
       - name: publish
         run: bash scripts/release.sh "$GITHUB_REF_NAME" "$RUNNER_TEMP/packs"
+
+  github-release:
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: github release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: bash scripts/github-release.sh "$GITHUB_REF_NAME"
