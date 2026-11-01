@@ -10,7 +10,7 @@ You need [Node.js](https://nodejs.org) 22.12 or later. In a terminal, `node --ve
 
 Every step sends a transaction, so your wallet needs devnet SOL. The first way is the instant faucet: `setup` in step 2 asks it first, and it sends 0.5 SOL and shows it as `faucet` in the output; `INTENT_ENGINE_FAUCET_URL` names another one, and `off` skips it. Next it asks devnet for an airdrop, but devnet often refuses. The other ways, each with the `address` that `setup` prints:
 
-- `intent-engine setup --faucet`, with the [GitHub CLI](https://cli.github.com) signed in, files a request with this project's faucet and waits for the SOL. The faucet answers several times an hour, and `setup` prints how many minutes it waits at most.
+- `intent-engine setup --faucet`, with the [GitHub CLI](https://cli.github.com) signed in, files a request with this project's faucet and waits for the SOL. The faucet answers a new request at once and checks again every hour, and `setup` prints how many minutes it waits at most.
 - The faucet link `setup` prints opens the same request in a browser, as a public GitHub issue. It needs a GitHub account, and the same faucet answers it, so the SOL takes as long.
 - Another devnet faucet, such as [faucet.solana.com](https://faucet.solana.com), takes your address and sends at once when it accepts the request.
 

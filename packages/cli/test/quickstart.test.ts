@@ -120,8 +120,8 @@ describe("the quickstart", () => {
     expect(PAGE.indexOf("## Devnet SOL")).toBeLessThan(PAGE.indexOf("```"));
     expect(funding).toContain("devnet often refuses");
     expect(funding).toContain("`intent-engine setup --faucet`, with the [GitHub CLI](https://cli.github.com) signed in");
-    expect(funding).toContain("The faucet answers several times an hour, and `setup` prints how many minutes it waits at most.");
-    expect(60 / FAUCET_INTERVAL_MINUTES).toBeGreaterThan(1);
+    expect(funding).toContain("The faucet answers a new request at once and checks again every hour, and `setup` prints how many minutes it waits at most.");
+    expect(60 / FAUCET_INTERVAL_MINUTES).toBeGreaterThanOrEqual(1);
     expect(faucetWaiting("x")).toContain(`waiting up to ${FAUCET_WAIT_MINUTES} minutes`);
     expect(FAUCET_SCHEDULE).toContain(`SOL arrives within ${FAUCET_WAIT_MINUTES} minutes`);
     expect(funding).toContain("as a public GitHub issue. It needs a GitHub account, and the same faucet answers it, so the SOL takes as long.");
