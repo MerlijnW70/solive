@@ -84,6 +84,12 @@ The separate key prevents mistakes, not a malicious agent: an agent on the same 
 
 `deliver --artifact <file> --work-url http://localhost/local-work` announces a file on this machine. The announcement commits to its sha256 as any other does, and devnet and testnet accept this one plain http url. Anyone who fetches it gets a message that the work is local to the worker's machine.
 
+## Updates
+
+`npx` can keep running a cached version. When the server starts with `--wallet`, and when `setup` runs, the CLI asks the npm registry once for the newest `@intent-engine/cli`, and keeps the answer in `update-check.json` next to the CLI settings for a day.
+
+When a newer version exists, `solive_wallet_setup`, `solive_wallet_balance` and the CLI `setup` output add `update` with that `version` and the `command` that gets it; restart the app after it runs. The request carries only the package name, and a failed or slow answer is ignored. Set `INTENT_ENGINE_NO_UPDATE_CHECK=1` to skip the lookup.
+
 ## A second node
 
 With `--wallet`, the server prints a line that starts with `info: releases are checked against one RPC node` when it starts. It is a note, not an error: the server works, and on devnet one node is enough.

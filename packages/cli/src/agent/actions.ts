@@ -23,6 +23,7 @@ export type AgentContext = {
   url?: string;
   fetch?: SpecFetch;
   faucetFetch?: FaucetFetch;
+  update?: Promise<string | undefined>;
   lookup?: Lookup;
   confirm?: Transport;
   skipSimulation?: true;

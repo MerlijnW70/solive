@@ -1,4 +1,5 @@
 import { ACCEPTS, GLOBAL_OPTIONS } from "./arg-options.js";
+import { NO_UPDATE_CHECK } from "./update-notice.js";
 import { EXIT_ALERTED } from "./monitor-args.js";
 
 export const COMMANDS = "setup | add-to claude|codex | balance | new-wallet | send-sol | pda | domain | mcp | show config | show intent | show mint-cap | quote | cancel | expire | close | close-legacy | migrate | advance-nonce | advance-epoch | create swap|limit|dutch|attested | list | lookup | mandate grant|show|revoke|use <kind> | approve | revoke-approval | signed prepare <kind>|submit | init-config | update-config | set-economics | propose-admin | accept-admin | set-mint-cap | set-caps-required on|off | set-committee-floor | solve | raise-pause | lower-pause | crank | treasury | solver-table | solver float | solver float show | solver float revoke | events | jobs | deliver | deliveries | refute | reclaim | claim-held | close-book | receipt | judge [digest] | sandbox doctor | committee create|show|vote|release | claims show | claims open | claims take | claims drop | claims settle | claims standby | claims leave | claims advance | profile show | profile set | profile close | profile encryption-key new | reputation | feedback | monitor | hash | seal | unseal | spec | version | help [command]";
@@ -12,7 +13,7 @@ const ORDER_SHAPE = "(--amount-in --min-out | --make --take | --amount-in --star
 const PARTNER_SHAPE = "[--partner <address> --partner-bps <n>]";
 
 export const SHAPES: Readonly<Record<string, string>> = {
-  setup: "[--url <cluster>] [--keypair <file>] [--confirm-url <cluster>] [--faucet]",
+  setup: `[--url <cluster>] [--keypair <file>] [--confirm-url <cluster>] [--faucet]; ${NO_UPDATE_CHECK}=1 skips the lookup of a newer CLI version`,
   "add-to": "claude|codex [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--allow-http-registry] [--no-setup]",
   balance: "[--keypair <file> | --owner <address>] [--mints <mint,...>]",
   "new-wallet": "--out <file>",
@@ -25,7 +26,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   spec: "--intent <escrow address> [--keypair <file>] [--out <file>]",
   show: "config | intent --owner <address> --nonce <n> | mint-cap --mint <mint>",
   domain: "",
-  mcp: "[--wallet [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--all-tools]] [--relayer <keypair> --relay-fee <mint=amount,...> [--relay-max-lamports] [--relay-max-ttl] [--relay-per-hour] [--relay-hourly-lamports]] [--agent <keypair> --agent-owners <address,...> [--agent-hourly-lamports]] [--fee-payer <key file, with --wallet>] [--encryption-keypair <encryption key file, with --wallet> ...] [--confirm-url <cluster> | --no-confirm-url]",
+  mcp: `[--wallet [--wallet-per-trade <token=amount,...>] [--wallet-per-hour <token=amount,...>] [--all-tools]] [--relayer <keypair> --relay-fee <mint=amount,...> [--relay-max-lamports] [--relay-max-ttl] [--relay-per-hour] [--relay-hourly-lamports]] [--agent <keypair> --agent-owners <address,...> [--agent-hourly-lamports]] [--fee-payer <key file, with --wallet>] [--encryption-keypair <encryption key file, with --wallet> ...] [--confirm-url <cluster> | --no-confirm-url]; ${NO_UPDATE_CHECK}=1 skips the lookup of a newer CLI version`,
   quote: "--owner <address> --nonce <n> [--at <unix>]",
   cancel: "[--keypair <file>] --nonce <n> [--close] [--yes]",
   expire: "[--keypair <file>] --owner <address> --nonce <n> [--yes]",

@@ -9,6 +9,7 @@ import { listIntents, SOL_DECIMALS } from "../read.js";
 import { account, amount, choice, flag, list, object, optional, text } from "../schema.js";
 import { prepareCancel } from "../settle.js";
 import { STATUS } from "../../accounts.js";
+import { updateOf } from "../../update-notice.js";
 import { deviceOutput, PREVIEW_FIRST, WALLET_NOTICE, access, testCluster, savedKeypair, signerOf, mintNamed, sent } from "./guard.js";
 
 export const WALLET_SMALL_START = `hire with ${tool("wallet_escrow")} or earn from ${tool("find_jobs")}; a 0.05 SOL swap needs ${formatAmount(SWAP_START, SOL_DECIMALS)} SOL`;
@@ -25,6 +26,17 @@ const tokenRow = object({
   account: optional(account(`the wallet's token account for this mint; absent when it has none, for example after ${tool("wallet_unwrap")} closed it`)),
   balance: text("in whole tokens"),
 });
+
+const updateShape = optional(
+  object(
+    {
+      version: text("the newer version of the CLI on npm"),
+      command: text("the one command that gets it"),
+      after: text("what to do once it has run"),
+    },
+    "present only when a newer CLI is out",
+  ),
+);
 
 export const walletSetup = define({
   name: tool("wallet_setup"),
@@ -55,10 +67,11 @@ export const walletSetup = define({
     next: text("what to tell the user: what the wallet holds, and how to trade, hire or earn"),
     other_ways: optional(list(text(), 4, "ways to get SOL, fastest first, when the wallet holds too little to start")),
     notice: list(text(), 8, "the notice from the server instructions; show it if the user has not seen it yet"),
+    update: updateShape,
   }),
   run: async (ctx: AgentContext) => {
     const wallet = await testCluster(ctx);
-    return { ...(await setup(ctx.transport, wallet.files, wallet.url, await savedKeypair(wallet), true, undefined, undefined, WALLET_START, WALLET_SMALL_START, undefined, { fetch: ctx.faucetFetch, env: wallet.env })), notice: WALLET_NOTICE };
+    return { ...(await setup(ctx.transport, wallet.files, wallet.url, await savedKeypair(wallet), true, undefined, undefined, WALLET_START, WALLET_SMALL_START, undefined, { fetch: ctx.faucetFetch, env: wallet.env })), notice: WALLET_NOTICE, ...(await updateOf(ctx.update)) };
   },
 });
 
@@ -68,13 +81,13 @@ export const walletBalance = define({
   description: "Shows the user how much SOL and how many tokens this wallet holds, in whole tokens. Without mints (token addresses) it shows wrapped SOL and, on devnet, the TEST token.",
   effect: "read",
   input: object({ mints: optional(list(text("SOL, TEST or a mint address"), 8)) }),
-  output: object({ address: account(), sol: text(), tokens: list(tokenRow, 8), explorer: optional(text("a Solana Explorer link that shows this wallet's address on the cluster the server uses")) }),
+  output: object({ address: account(), sol: text(), tokens: list(tokenRow, 8), explorer: optional(text("a Solana Explorer link that shows this wallet's address on the cluster the server uses")), update: updateShape }),
   run: async (ctx: AgentContext, input) => {
     const wallet = access(ctx);
     const owner = (await signerOf(ctx)).address;
     const mints = input.mints?.map((m, i) => mintNamed(m, wallet.url, `mints.${i}`)) ?? defaultMints(wallet.url);
     const link = explorerLink(owner, wallet.url);
-    return { ...(await balances(ctx.transport, owner, mints)), ...(link === undefined ? {} : { explorer: link }) };
+    return { ...(await balances(ctx.transport, owner, mints)), ...(link === undefined ? {} : { explorer: link }), ...(await updateOf(ctx.update)) };
   },
 });
 

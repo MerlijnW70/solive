@@ -48,6 +48,7 @@ import { judgeDigest } from "./judge-digest.js";
 import { floatCommand } from "./float-commands.js";
 import { closeLegacy } from "./legacy-commands.js";
 import { migrate } from "./migrate-commands.js";
+import { newerVersion, updateOf } from "./update-notice.js";
 
 export type { Runtime } from "./runtime.js";
 export { AUTHORITY_NEXT, configExists } from "./admin-commands.js";
@@ -122,6 +123,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
               budget: budgetOf(command.agent.hourlyLamports),
               owners: new Set(command.agent.owners),
             };
+      const update = command.wallet === null ? {} : { update: newerVersion({ files: runtime, env: runtime.env, fetch: runtime.fetch, now: runtime.now }) };
       const wallet =
         command.wallet === null
           ? {}
@@ -147,10 +149,11 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
         agent: agent !== undefined,
       });
       const confirm = command.confirmUrl === undefined ? {} : { confirm: runtime.transport(command.confirmUrl) };
-      await runtime.serve(agentServer({ transport, relay, agent, claims: claimsOf(), url: command.url, fetch: runtime.specFetch, lookup: runtime.lookup, clock: { sleep: runtime.sleep, now: runtime.now }, ...(runtime.faucetFetch === undefined ? {} : { faucetFetch: runtime.faucetFetch }), ...wallet, ...confirm }, served));
+      await runtime.serve(agentServer({ transport, relay, agent, claims: claimsOf(), url: command.url, fetch: runtime.specFetch, lookup: runtime.lookup, clock: { sleep: runtime.sleep, now: runtime.now }, ...(runtime.faucetFetch === undefined ? {} : { faucetFetch: runtime.faucetFetch }), ...wallet, ...update, ...confirm }, served));
       return null;
     }
     case "setup": {
+      const newer = newerVersion({ files: runtime, env: runtime.env, fetch: runtime.fetch, now: runtime.now });
       const made = await setup(transport, runtime, command.url, command.keypair, false, command.confirmUrl, command.confirmUrl === undefined ? undefined : runtime.transport(command.confirmUrl), CLI_START, CLI_SMALL_START, {
         file: command.faucet,
         launch: runtime.launch,
@@ -159,7 +162,8 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
         note: (text) => process.stderr.write(`${text}\n`),
       }, { fetch: runtime.faucetFetch, env: runtime.env });
       const registry = await npmRegistry(runtime.launch);
-      return registry.read === "http" ? { ...made, warnings: [plainRegistry(registry.registry)] } : made;
+      const noticed = { ...made, ...(await updateOf(newer)) };
+      return registry.read === "http" ? { ...noticed, warnings: [plainRegistry(registry.registry)] } : noticed;
     }
     case "balance": {
       const owner = command.owner ?? (await runtime.loadSigner(command.keypair ?? "")).address;
