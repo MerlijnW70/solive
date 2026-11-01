@@ -79,7 +79,11 @@ export type FaucetFetch = (
   init: { method: "POST"; headers: Record<string, string>; body: string; redirect: "error"; signal: AbortSignal },
 ) => Promise<{ status: number; json(): Promise<unknown> }>;
 
-export type InstantFaucet = { lamports: string; signature: string } | { refused: string };
+export type FaucetKind = "empty" | "limited";
+
+export type InstantFaucet = { lamports: string; signature: string } | { refused: string; kind?: FaucetKind };
+
+export const FAUCET_EMPTY_SIGN = "holds too little SOL";
 
 const SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{64,90}$/;
 const LAMPORTS = /^[0-9]{1,19}$/;
@@ -117,7 +121,11 @@ function silentRefusal(status: number): string {
 
 function refusalOf(status: number, body: unknown): InstantFaucet {
   const said = body !== null && typeof body === "object" && "error" in body && typeof body.error === "string" ? body.error : "";
-  return { refused: refusalText(said === "" ? silentRefusal(status) : said) };
+  const refused = refusalText(said === "" ? silentRefusal(status) : said);
+  if (status === 429) {
+    return { refused, kind: "limited" };
+  }
+  return status === 503 && said.includes(FAUCET_EMPTY_SIGN) ? { refused, kind: "empty" } : { refused };
 }
 
 function dripOf(body: unknown): InstantFaucet {

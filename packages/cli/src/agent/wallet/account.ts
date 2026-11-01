@@ -51,8 +51,9 @@ export const walletSetup = define({
         refused: optional(text("untrusted, with hidden characters reduced: why the instant faucet sent nothing")),
       }),
     ),
+    why: optional(text("why the wallet holds too little SOL: the instant faucet is out of SOL, its rate limit applies, or devnet refused the airdrop")),
     next: text("what to tell the user: what the wallet holds, and how to trade, hire or earn"),
-    other_ways: optional(list(text(), 4, "other ways to get SOL, when the wallet holds too little to start")),
+    other_ways: optional(list(text(), 4, "ways to get SOL, fastest first, when the wallet holds too little to start")),
     notice: list(text(), 8, "the notice from the server instructions; show it if the user has not seen it yet"),
   }),
   run: async (ctx: AgentContext) => {

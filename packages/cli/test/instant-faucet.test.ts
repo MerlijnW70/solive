@@ -165,7 +165,7 @@ describe("the instant faucet in setup", () => {
     ];
     for (const [status, body, sentence] of cases) {
       const refused = await askInstantFaucet(answering(status, body, []), {}, "address");
-      expect(refused).toEqual({ refused: sentence });
+      expect(refused).toMatchObject({ refused: sentence });
       expect(sentence).not.toMatch(/status|\d/);
     }
   });

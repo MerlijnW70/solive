@@ -59,8 +59,26 @@ export const fundingSteps = (address: string) =>
   `open ${faucetLink(address)} to file a faucet request in a browser, as a public GitHub issue that needs a GitHub account; ${FAUCET_SCHEDULE}; ${OTHER_FAUCETS}`;
 export const SETUP_AGAIN = "; run setup again once SOL arrives";
 export const GH_WAY = "run intent-engine setup --faucet to file a faucet request with a signed-in GitHub CLI (gh) and wait for the SOL";
-export const pasteAt = (address: string) => `paste ${address} at ${PUBLIC_FAUCET}, which sends at once when it accepts, then run setup again`;
+export const pasteFirst = (address: string) => `paste ${address} at ${PUBLIC_FAUCET}, which sends at once when it accepts`;
+export const pasteAt = (address: string) => `${pasteFirst(address)}, then run setup again`;
+export const APP_WAY = (address: string) => `send devnet SOL to ${address} from any wallet app switched to devnet; it arrives at once`;
+export const WHY_EMPTY = "the instant faucet is out of SOL";
+export const WHY_LIMITED = "the instant faucet's rate limit applies to this address or network";
+export const WHY_OTHER = "the instant faucet sent no SOL";
+export const WHY_AIRDROP = "devnet refused the airdrop";
+export const whyShort = (dripped: InstantFaucet | null, declined: boolean): string | undefined => {
+  const reasons: string[] = [];
+  if (dripped !== null && "refused" in dripped) {
+    reasons.push(dripped.kind === "empty" ? WHY_EMPTY : dripped.kind === "limited" ? WHY_LIMITED : WHY_OTHER);
+  }
+  if (declined) {
+    reasons.push(WHY_AIRDROP);
+  }
+  return reasons.length === 0 ? undefined : reasons.join("; ");
+};
 export const otherWays = (address: string, hint: string): string[] => [
+  APP_WAY(address),
+  pasteFirst(address),
   `open ${faucetLink(address)} to file a faucet request in a browser, as a public GitHub issue that needs a GitHub account; ${FAUCET_SCHEDULE}`,
   ...(hint === GH_HINT ? [GH_WAY] : []),
 ];
@@ -265,6 +283,8 @@ export async function setup(
             ? heldRefused(sol, signer.address)
             : airdropRefused(signer.address);
   const next = short ? status : lead + status;
+  const why = short ? whyShort(dripped, refused) : undefined;
+  const shown = dripped !== null && "refused" in dripped ? { refused: dripped.refused } : dripped;
   const explorer = explorerLink(signer.address, url);
   return {
     address: signer.address,
@@ -278,7 +298,8 @@ export async function setup(
     ...(url === DEVNET_URL ? { hint: DEVNET_VIEW } : {}),
     ...(got === undefined ? {} : { airdrop: solOf(got) }),
     ...(filed === undefined ? {} : { faucet_request: filed }),
-    ...(dripped === null ? {} : { faucet: dripped }),
+    ...(shown === null ? {} : { faucet: shown }),
+    ...(why === undefined ? {} : { why }),
     next,
     ...(short ? { other_ways: otherWays(signer.address, hint) } : {}),
   };

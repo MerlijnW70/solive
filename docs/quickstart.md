@@ -16,6 +16,8 @@ Every step sends a transaction, so your wallet needs devnet SOL. The first way i
 
 This project's faucet sends 0.5 SOL, once a day per GitHub account. Run `setup` again once SOL arrives; it shows what your wallet holds.
 
+If the wallet holds 0 SOL, the `why` in the `setup` output says whether the instant faucet is out of SOL, its rate limit applies or devnet refused the airdrop. `other_ways` lists the routes, fastest first: send devnet SOL to your address from any wallet app switched to devnet, paste it at faucet.solana.com, or file a request with this project's faucet.
+
 To see devnet SOL, open the `explorer` link that `setup` prints, or switch your wallet app or explorer to devnet. Devnet funds never show on mainnet.
 
 ## 1. Run the CLI

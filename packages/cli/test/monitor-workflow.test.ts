@@ -23,6 +23,7 @@ const TEN_SOL = 10_000_000_000n;
 const LAMPORTS_PER_SOL = 1_000_000_000n;
 const FILLER_WALLET = "EuagWg1chJxXVJAXm2GiGiivtMRKGaFCFWY8G8PPM6My";
 const FAUCET_WALLET = "CrYx7JA1TRwGtpn9T6C2mVsRgMP7XztGRwZdasV9XSLS";
+const INSTANT_WALLET = "932eKvgQTgn5gCsXyJ8p6cnXNpbvZgY3F1bw96QWhob5";
 const script = (name: string) => readFileSync(join(ROOT, "scripts", name), "utf8");
 const assigned = (text: string, name: string) => Number(new RegExp(`^${name}=(\\d+)$`, "m").exec(text)?.[1]);
 
@@ -55,7 +56,7 @@ describe("the hosted monitor", () => {
     const runs = WORKFLOW.split("\n").filter((line) => line.includes("run: npx"));
     const argv = (runs[0] ?? "").split(" monitor ")[1]?.split(" ") ?? [];
     const watch = (parse(["monitor", ...argv], {}) as { watch: { minBalance: ReadonlyMap<string, bigint>; maxSwapWait: number } }).watch;
-    expect([...watch.minBalance.keys()]).toEqual([FILLER_WALLET, FAUCET_WALLET]);
+    expect([...watch.minBalance.keys()]).toEqual([FILLER_WALLET, FAUCET_WALLET, INSTANT_WALLET]);
     const faucet = script("faucet.sh");
     expect(watch.minBalance.get(FAUCET_WALLET)).toBeGreaterThan(BigInt(assigned(faucet, "amount") + assigned(faucet, "reserve")));
     expect(runsPerHour(WORKFLOW)).toBe(1);
@@ -66,7 +67,7 @@ describe("the hosted monitor", () => {
     const fillerInterval = Number(/^interval="\$\{FILLER_INTERVAL:-(\d+)\}"$/m.exec(script("filler.sh"))?.[1]);
     expect(fillerInterval).toBeGreaterThan(0);
     expect(watch.maxSwapWait).toBeGreaterThan(fillerInterval);
-    for (const value of [FILLER_WALLET, FAUCET_WALLET, "--max-swap-wait"]) {
+    for (const value of [FILLER_WALLET, FAUCET_WALLET, INSTANT_WALLET, "--max-swap-wait"]) {
       expect(WORKFLOW.split(value)).toHaveLength(2);
     }
   });

@@ -171,6 +171,8 @@ describe("setup and balance", () => {
       "your wallet holds no SOL yet and devnet refused the airdrop; paste " + address + " at https://" + "faucet.solana.com, which sends at once when it accepts, then run setup again",
     );
     expect(refused["other_ways"]).toEqual([
+      "send devnet SOL to " + address + " from any wallet app switched to devnet; it arrives at once",
+      "paste " + address + " at https://" + "faucet.solana.com, which sends at once when it accepts",
       "open " + FAUCET + "&address=" + address +
         " to file a faucet request in a browser, as a public GitHub issue that needs a GitHub account; the faucet answers new requests at least every 60 minutes, so SOL arrives within 70 minutes",
       GH_WAY,
@@ -179,7 +181,7 @@ describe("setup and balance", () => {
     expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.02", next: heldRefused("0.02", address) });
     expect(h.airdrops).toHaveLength(2 * AIRDROPS.length);
     expect(heldRefused("0.02", address).endsWith(pasteAt(address))).toBe(true);
-    expect(otherWays(address, GH_HINT)[0]).toContain(faucetLink(address));
+    expect(otherWays(address, GH_HINT)[2]).toContain(faucetLink(address));
     h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 4n));
     expect((await cli(["setup"], {})).json()).toMatchObject({ created: false, sol: "0.27", next: refusedEnough("0.27", CLI_START) });
     expect(h.airdrops).toHaveLength(3 * AIRDROPS.length);
