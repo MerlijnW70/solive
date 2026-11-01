@@ -1,7 +1,7 @@
 import { dirname, join, resolve } from "node:path";
 import { type Address, getAddressEncoder, type Instruction, type TransactionSigner } from "@solana/kit";
 import { getTransferSolInstruction } from "@solana-program/system";
-import { getCloseAccountInstruction, getTokenDecoder } from "@solana-program/token";
+import { AccountState, getCloseAccountInstruction, getTokenDecoder } from "@solana-program/token";
 import { formatAmount, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
 import {
   buildSettleClaims,
@@ -67,6 +67,15 @@ export const TOKENS_UNLISTED = "this RPC node cannot list the worker's token acc
 
 export const tokensLeft = (amount: string, mint: Address, account: Address, keypair: string): string =>
   `${amount} of ${mint} in ${account}, which this does not move; its key file is ${keypair}`;
+
+export const unclosable = (account: Address, mint: Address, why: string, keypair: string): string =>
+  `${account} of ${mint} cannot be closed (${why}), so it stays; its key file is ${keypair}`;
+
+export const FROZEN = "it is frozen";
+
+export const WITHHELD_FEES = "it holds withheld transfer fees";
+
+export const OTHER_CLOSE_AUTHORITY = "another address holds its close authority";
 
 export const NOTHING_LEFT = "the worker holds nothing to return and nothing was sent";
 
@@ -140,14 +149,48 @@ export async function workerStakes(transport: Transport, worker: Address): Promi
   return settles;
 }
 
+const ACCOUNT_BASE = 165;
+
+const TRANSFER_FEE_AMOUNT = 2;
+
+const withheldFees = (data: Uint8Array): boolean => {
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  for (let at = ACCOUNT_BASE + 1; at + 4 <= data.length; ) {
+    const type = view.getUint16(at, true);
+    const length = view.getUint16(at + 2, true);
+    if (type === TRANSFER_FEE_AMOUNT && length >= 8 && at + 12 <= data.length && view.getBigUint64(at + 4, true) > 0n) {
+      return true;
+    }
+    at += 4 + length;
+  }
+  return false;
+};
+
+const refusal = (token: ReturnType<ReturnType<typeof getTokenDecoder>["decode"]>, data: Uint8Array, worker: Address): string | undefined => {
+  if (token.state === AccountState.Frozen) {
+    return FROZEN;
+  }
+  if (withheldFees(data)) {
+    return WITHHELD_FEES;
+  }
+  if (token.closeAuthority.__option === "Some" && token.closeAuthority.value !== worker) {
+    return OTHER_CLOSE_AUTHORITY;
+  }
+  return undefined;
+};
+
 async function tokensOf(transport: Transport, worker: Address, key: TransactionSigner, hirer: Address, keypair: string): Promise<Tokens> {
   if (transport.tokenAccountsOf === undefined) {
     return { closes: [], rent: 0n, wrapped: 0n, kept: [TOKENS_UNLISTED] };
   }
   const tokens: Tokens = { closes: [], rent: 0n, wrapped: 0n, kept: [] };
   for (const found of await transport.tokenAccountsOf(worker)) {
-    const { mint, amount } = getTokenDecoder().decode(found.data);
-    if (mint === NATIVE_MINT || amount === 0n) {
+    const token = getTokenDecoder().decode(found.data);
+    const { mint, amount } = token;
+    const why = refusal(token, found.data, worker);
+    if (why !== undefined) {
+      tokens.kept.push(unclosable(found.address, mint, why, keypair));
+    } else if (mint === NATIVE_MINT || amount === 0n) {
       tokens.closes.push({ ...getCloseAccountInstruction({ account: found.address, destination: hirer, owner: key }), programAddress: found.program });
       tokens.rent += found.lamports;
       tokens.wrapped += mint === NATIVE_MINT ? amount : 0n;
