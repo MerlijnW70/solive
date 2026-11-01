@@ -264,6 +264,8 @@ html:not(.js) .needs-js { display: none !important; }
 .split { margin-top: auto; font-size: var(--t13); color: var(--muted); }
 .split b { font-weight: 500; color: var(--ink); font-family: var(--mono); }
 .house-note { margin-top: var(--s12); font-size: var(--t13); color: var(--muted); max-width: 36em; }
+.filling { margin-top: var(--s12); font-size: var(--t13); color: var(--muted); max-width: 36em; }
+.tile.is-filling .num::after { content: "+"; color: var(--muted); }
 
 .tag {
   display: inline-block;

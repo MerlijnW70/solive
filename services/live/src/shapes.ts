@@ -36,6 +36,8 @@ export type TopWorker = { wallet: string; paid_jobs: number; paid_sol: string; h
 
 export type Services = { faucet: ServiceState; demo_worker: ServiceState; filler: ServiceState };
 
+export type History = { complete: boolean; since: string | null };
+
 export type Feed = {
   cluster: string;
   generated_at: string;
@@ -43,6 +45,7 @@ export type Feed = {
   last_event_at: string | null;
   stale: boolean;
   stale_since: string | null;
+  history: History;
   stats: {
     open_jobs: number;
     paid_jobs_7d: number;
@@ -65,7 +68,10 @@ export type Job = {
   escrow?: Step;
   delivery?: Step;
   delivery_slot?: number;
+  unpriced?: Unpriced;
 };
+
+export type Unpriced = { at: string; slot: number; payee: string; raw: string; house: boolean };
 
 export type Paid = { at: string; slot: number; intent: string; payee: string; token: string; raw: string; decimals: number; house: boolean };
 
@@ -86,6 +92,10 @@ export type State = {
   slow_at: number | null;
   stale_since: string | null;
   retry_at: number | null;
+  backlog?: Pending[];
+  oldest?: string | null;
+  oldest_at?: number | null;
+  backfilled?: boolean;
 };
 
 export function emptyState(): State {
@@ -103,6 +113,10 @@ export function emptyState(): State {
     slow_at: null,
     stale_since: null,
     retry_at: null,
+    backlog: [],
+    oldest: null,
+    oldest_at: null,
+    backfilled: false,
   };
 }
 

@@ -189,7 +189,7 @@ describe("http", () => {
       expect(CACHE_CONTROL).toBe("public, max-age=10");
       expect(CDN_CACHE_CONTROL).toBe("public, s-maxage=30, stale-while-revalidate=300, stale-if-error=86400");
       expect(Object.keys(JSON.parse(got.body)).sort()).toEqual(
-        ["cluster", "generated_at", "program", "last_event_at", "stale", "stale_since", "stats", "events", "latest_paid_job", "top_workers", "services"].sort(),
+        ["cluster", "generated_at", "program", "last_event_at", "stale", "stale_since", "history", "stats", "events", "latest_paid_job", "top_workers", "services"].sort(),
       );
       const posted = await call("POST");
       expect(posted.status).toBe(405);

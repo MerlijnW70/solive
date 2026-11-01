@@ -47,7 +47,9 @@ export class FakeNode {
   private listed(address: string, config: { limit?: number; until?: string; before?: string }): Listed[] {
     const all = address === INTENT_ENGINE_PROGRAM_ADDRESS ? this.program : (this.wallets.get(address) ?? []);
     const stop = config.until === undefined ? all.length : all.findIndex((entry) => entry.signature === config.until);
-    return all.slice(0, stop === -1 ? all.length : stop).slice(0, config.limit ?? 1000);
+    const after = config.before === undefined ? -1 : all.findIndex((entry) => entry.signature === config.before);
+    const start = config.before === undefined ? 0 : after === -1 ? all.length : after + 1;
+    return all.slice(start, stop === -1 ? all.length : stop).slice(0, config.limit ?? 1000);
   }
 
   private account(address: string): unknown {
@@ -63,7 +65,7 @@ export class FakeNode {
     const [first, config = {}] = call.params as [unknown, Record<string, unknown> | undefined];
     switch (call.method) {
       case "getSignaturesForAddress":
-        return this.listed(first as string, config as { limit?: number; until?: string });
+        return this.listed(first as string, config as { limit?: number; until?: string; before?: string });
       case "getTransaction":
         return this.transactions.get(first as string) ?? null;
       case "getProgramAccounts": {

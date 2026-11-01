@@ -1,4 +1,5 @@
 import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core";
+import { historyView } from "./history.js";
 import { CLUSTER, PAID_WINDOW_SECS, SOL_DECIMALS, TOP_WORKERS } from "./limits.js";
 import type { Feed, Paid, State, TokenAmount, TopWorker } from "./shapes.js";
 import { amountText } from "./words.js";
@@ -40,6 +41,7 @@ export function render(state: State, house: ReadonlySet<string>, now: number): F
     last_event_at: state.events[0]?.at ?? null,
     stale: state.stale_since !== null,
     stale_since: state.stale_since,
+    history: historyView(state),
     stats: {
       open_jobs: state.open_jobs,
       paid_jobs_7d: recent.length,

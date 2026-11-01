@@ -3,6 +3,7 @@ import type { ListedSignature } from "@intent-engine/client";
 import { NATIVE_MINT } from "@intent-engine/core";
 import { activitiesOf } from "./activity.js";
 import { applyOpenJobs, applyTransactions, pruned } from "./apply.js";
+import { historyOf, pendingOf, queueOlder, reached, wantsOlder } from "./history.js";
 import type { FeedConfig } from "./env.js";
 import { CLUSTER, FEED_UNREAD_TRIES, type Limits, SOL_DECIMALS } from "./limits.js";
 import type { Reader } from "./reader.js";
@@ -48,32 +49,19 @@ function decimalsOf(reader: Reader) {
   };
 }
 
-export async function refreshInto(state: State, reader: Reader, deps: FeedDeps, now: number, deadline: AbortSignal): Promise<number> {
-  const { limits, config } = deps;
-  const fresh = await reader.newSignatures(limits.signaturePage, state.newest);
-  const newest = fresh[0];
-  if (newest !== undefined) {
-    state.newest = newest.signature;
-  }
-  const queued = new Set(state.pending.map(({ signature }) => signature));
-  const arrived = fresh
-    .filter((entry) => !entry.failed && !queued.has(entry.signature))
-    .reverse()
-    .map((entry) => ({ signature: entry.signature, slot: Number(entry.slot), blockTime: entry.blockTime === null ? null : Number(entry.blockTime) }));
-  state.pending.push(...arrived);
-  if (state.slow_at === null || now - state.slow_at >= limits.accountsEverySecs * 1000) {
-    applyOpenJobs(state, await reader.openJobs(), now);
-    state.services = await servicesOf(reader, config, deps.probe, limits.serviceWindowSecs, now, deadline);
-    state.slow_at = now;
-  }
+async function readEntries(state: State, reader: Reader, deps: FeedDeps, now: number, entries: readonly Pending[]): Promise<number> {
+  const drop = (signature: string) => {
+    state.pending = state.pending.filter((entry) => entry.signature !== signature);
+    state.backlog = (state.backlog ?? []).filter((entry) => entry.signature !== signature);
+  };
   const decimals = decimalsOf(reader);
   let added = 0;
-  for (const entry of state.pending.slice(0, limits.transactionsPerRefresh)) {
+  for (const entry of entries) {
     const transactions = await reader.transactions([listedOf(entry)]);
     if (transactions.some(({ unread }) => unread === true)) {
       entry.tries = (entry.tries ?? 0) + 1;
       if (entry.tries >= FEED_UNREAD_TRIES) {
-        state.pending = state.pending.filter(({ signature }) => signature !== entry.signature);
+        drop(entry.signature);
         deps.log(JSON.stringify({ cluster: CLUSTER, refresh: "gave up", signature: entry.signature, tries: entry.tries }));
       }
       continue;
@@ -86,9 +74,45 @@ export async function refreshInto(state: State, reader: Reader, deps: FeedDeps, 
         }
       }
     }
-    added += applyTransactions(state, transactions, config.house, now);
-    state.pending = state.pending.filter(({ signature }) => signature !== entry.signature);
+    added += applyTransactions(state, transactions, deps.config.house, now);
+    drop(entry.signature);
   }
+  return added;
+}
+
+export async function refreshInto(state: State, reader: Reader, deps: FeedDeps, now: number, deadline: AbortSignal): Promise<number> {
+  const { limits, config } = deps;
+  historyOf(state, now);
+  const opening = state.newest === null && state.oldest === null && state.backfilled === false;
+  const fresh = await reader.newSignatures(limits.signaturePage, state.newest);
+  const newest = fresh[0];
+  if (newest !== undefined) {
+    state.newest = newest.signature;
+  }
+  const queued = new Set([...state.pending, ...(state.backlog ?? [])].map(({ signature }) => signature));
+  const arrived = fresh
+    .filter((entry) => !entry.failed && !queued.has(entry.signature))
+    .reverse()
+    .map(pendingOf);
+  state.pending.push(...arrived);
+  if (opening) {
+    reached(state, fresh, limits.signaturePage, now);
+  }
+  if (state.slow_at === null || now - state.slow_at >= limits.accountsEverySecs * 1000) {
+    applyOpenJobs(state, await reader.openJobs(), now);
+    state.services = await servicesOf(reader, config, deps.probe, limits.serviceWindowSecs, now, deadline);
+    state.slow_at = now;
+  }
+  const newer = state.pending.slice(0, limits.transactionsPerRefresh);
+  let added = await readEntries(state, reader, deps, now, newer);
+  let room = limits.transactionsPerRefresh - newer.length;
+  if (!opening && wantsOlder(state, room)) {
+    room -= 1;
+    const older = await reader.olderSignatures(limits.signaturePage, state.oldest ?? null);
+    queueOlder(state, older, now);
+    reached(state, older, limits.signaturePage, now);
+  }
+  added += await readEntries(state, reader, deps, now, (state.backlog ?? []).slice(0, room));
   return added;
 }
 
@@ -114,6 +138,7 @@ export class LiveFeed {
     const { store, config, limits, log } = this.deps;
     const state = await store.load();
     const started = this.deps.now();
+    historyOf(state, started);
     if (this.checkedAt !== null && started - this.checkedAt < limits.maxAgeSecs * 1000) {
       return render(state, config.house, started);
     }
@@ -130,7 +155,7 @@ export class LiveFeed {
       next.retry_at = null;
       pruned(next, started);
       const wrote = await store.save(next);
-      log(JSON.stringify({ cluster: CLUSTER, refresh: "ok", events: added, pending: next.pending.length, wrote }));
+      log(JSON.stringify({ cluster: CLUSTER, refresh: "ok", events: added, pending: next.pending.length, backlog: next.backlog?.length ?? 0, wrote }));
       return render(next, config.house, started);
     } catch (error) {
       const failed = structuredClone(next);

@@ -55,6 +55,7 @@ export type Feed = {
   last_event_at: string | null;
   stale: boolean;
   stale_since: string | null;
+  history?: { complete: boolean; since: string | null };
   stats: { open_jobs: number; paid_jobs_7d: number; workers_7d: number; paid_7d: { token: string; amount: string }[]; house_paid_jobs_7d: number };
   events: FeedEvent[];
   latest_paid_job: { intent: string; spec_hash: string; spec_name: string | null; escrow: Step | null; delivery: Step | null; release: Step | null } | null;
@@ -168,4 +169,8 @@ export function houseFeed(now: number): Feed {
   return { ...feed, events: feed.events.filter((e) => e.house), top_workers: feed.top_workers.filter((w) => w.house), stats: { ...feed.stats, paid_jobs_7d: 15, house_paid_jobs_7d: 15 } };
 }
 
-export const FIXTURES: Record<string, (now: number) => Feed> = { full: fullFeed, empty: emptyFeed, quiet: quietFeed, stale: staleFeed, house: houseFeed };
+export function fillingFeed(now: number): Feed {
+  return { ...fullFeed(now), history: { complete: false, since: iso(now, 3 * 24 * 3600) } };
+}
+
+export const FIXTURES: Record<string, (now: number) => Feed> = { full: fullFeed, empty: emptyFeed, quiet: quietFeed, stale: staleFeed, house: houseFeed, filling: fillingFeed };

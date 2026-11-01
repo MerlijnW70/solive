@@ -51,6 +51,7 @@
   const isSignature = (s) => typeof s === "string" && (s.length === 87 || s.length === 88) && BASE58.test(s);
   const isAddress = (s) => typeof s === "string" && s.length >= 32 && s.length <= 44 && BASE58.test(s);
   const isCount = (n) => Number.isSafeInteger(n) && n >= 0;
+  const count = (n) => (isCount(n) ? String(n) : "–");
   const isAmount = (s) => typeof s === "string" && AMOUNT.test(s);
   const timeOf = (s) => (typeof s === "string" ? Date.parse(s) : NaN);
   const short = (s) => s.slice(0, 4) + "…" + s.slice(-4);
@@ -238,12 +239,12 @@
     state.numbers[id] = key;
   }
 
-  function count(n) {
-    return isCount(n) ? String(n) : "–";
-  }
-
-  function renderNumbers(stats) {
+  function renderNumbers(stats, history) {
     const s = stats && typeof stats === "object" ? stats : {};
+    const h = history && typeof history === "object" && history.complete === false ? history : null;
+    $("filling").hidden = !h;
+    for (const id of ["tile-paid", "tile-workers"]) $(id).classList.toggle("is-filling", !!h);
+    if (h) $("filling").replaceChildren("Still filling: history read back to ", clock(h.since), ". These figures grow until they cover all 7 days.");
     setNumber("n-open", "tile-open", s.open_jobs, [count(s.open_jobs)]);
     setNumber("n-paid", "tile-paid", s.paid_jobs_7d, [count(s.paid_jobs_7d)]);
     setNumber("n-workers", "tile-workers", s.workers_7d, [count(s.workers_7d)]);
@@ -390,7 +391,7 @@
     renderStatus();
     if (!feed) return;
     renderProof(feed.latest_paid_job);
-    renderNumbers(feed.stats);
+    renderNumbers(feed.stats, feed.history);
     renderStream(feed, initial);
     announce(countNew(feed, initial));
     renderQuiet(feed);

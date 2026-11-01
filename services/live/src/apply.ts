@@ -3,7 +3,7 @@ import { Kind, termsOf } from "@intent-engine/core";
 import { type Activity, activitiesOf, createdJobs, hexOf } from "./activity.js";
 import { specName } from "./catalog.js";
 import { FEED_EVENTS, KEPT_JOBS, KEPT_PAID, PAID_WINDOW_SECS } from "./limits.js";
-import type { FeedEvent, Job, State, Step } from "./shapes.js";
+import type { FeedEvent, Job, Paid, State, Step } from "./shapes.js";
 import { amountText, detailOf, tokenOf } from "./words.js";
 
 export function isHouse(activity: Activity, job: Job | undefined, house: ReadonlySet<string>): boolean {
@@ -24,6 +24,23 @@ function jobAt(state: State, intent: string, slot: number): Job {
 }
 
 const isoOf = (blockTime: bigint | null, fallback: number): string => new Date(blockTime === null ? fallback : Number(blockTime) * 1000).toISOString();
+
+function pay(state: State, entry: Paid): void {
+  if (!state.paid.some((known) => known.intent === entry.intent && known.slot === entry.slot && known.payee === entry.payee)) {
+    state.paid.push(entry);
+  }
+}
+
+function settle(state: State, intent: string, job: Job): void {
+  const held = job.unpriced;
+  const places = job.mint === undefined ? undefined : state.decimals[job.mint];
+  if (held === undefined || job.mint === undefined || places === undefined) {
+    return;
+  }
+  const selfJudged = job.owner !== undefined && job.owner === job.attestor;
+  pay(state, { ...held, house: held.house || selfJudged, intent, token: tokenOf(job.mint), decimals: places });
+  delete job.unpriced;
+}
 
 export function applyTransactions(state: State, transactions: readonly EngineTransaction[], house: ReadonlySet<string>, now: number): number {
   let added = 0;
@@ -69,8 +86,10 @@ export function applyTransactions(state: State, transactions: readonly EngineTra
         detail: detailOf(activity, amount, token, name),
         ...(activity.kind === "release" ? { payee: activity.payee ?? activity.who, attestor: activity.attestor ?? activity.who } : {}),
       };
-      state.events.unshift(event);
-      added += 1;
+      if (!state.events.some((known) => known.signature === event.signature && known.kind === event.kind && known.intent === event.intent && known.who === event.who)) {
+        state.events.unshift(event);
+        added += 1;
+      }
       const step: Step = { signature: tx.signature, at, who: activity.who, amount, token };
       if (activity.kind === "escrow") {
         job.escrow = step;
@@ -85,9 +104,18 @@ export function applyTransactions(state: State, transactions: readonly EngineTra
           state.latest_paid_job = { intent: activity.intent, spec_hash: jobHash, spec_name: specName(jobHash), escrow: job.escrow ?? null, delivery: job.delivery ?? null, release: step };
           state.latest_paid_slot = slot;
         }
+        const payee = event.payee ?? activity.who;
         if (amount !== null && token !== null && activity.raw !== null && places !== null) {
-          state.paid.push({ at, slot, intent: activity.intent, payee: event.payee ?? activity.who, token, raw: activity.raw.toString(), decimals: places, house: marked });
+          pay(state, { at, slot, intent: activity.intent, payee, token, raw: activity.raw.toString(), decimals: places, house: marked });
+        } else if (activity.mint === null && activity.raw !== null) {
+          job.unpriced = { at, slot, payee, raw: activity.raw.toString(), house: marked };
         }
+      }
+    }
+    for (const created of createdJobs(tx)) {
+      const job = state.jobs[created.intent];
+      if (job !== undefined) {
+        settle(state, created.intent, job);
       }
     }
   }
@@ -122,7 +150,10 @@ export function applyOpenJobs(state: State, intents: readonly IntentAccount[], n
 export function pruned(state: State, now: number): void {
   state.events = state.events.sort((a, b) => b.slot - a.slot).slice(0, FEED_EVENTS);
   const floor = now - PAID_WINDOW_SECS * 1000;
-  state.paid = state.paid.filter(({ at }) => Date.parse(at) >= floor).slice(-KEPT_PAID);
+  state.paid = state.paid
+    .filter(({ at }) => Date.parse(at) >= floor)
+    .sort((a, b) => Date.parse(a.at) - Date.parse(b.at) || a.slot - b.slot)
+    .slice(-KEPT_PAID);
   const kept = Object.entries(state.jobs)
     .sort(([, a], [, b]) => b.slot - a.slot)
     .slice(0, KEPT_JOBS);

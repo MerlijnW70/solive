@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { FakeElement } from "./dom.js";
-import { DEMO_WORKER, FILLER, FIZZBUZZ_HASH, type Feed, emptyFeed, fullFeed, houseFeed, quietFeed, signature, staleFeed } from "./fixtures.js";
-import { NOW, anchors, ok, openPage } from "./page.js";
+import { DEMO_WORKER, FILLER, FIZZBUZZ_HASH, type Feed, emptyFeed, fillingFeed, fullFeed, houseFeed, quietFeed, signature, staleFeed } from "./fixtures.js";
+import { NOW, anchors, ok, openPage, read } from "./page.js";
 
 const EXPLORER_LINK = /^https:\/\/explorer\.solana\.com\/(tx\/[1-9A-HJ-NP-Za-km-z]{87,88}|address\/[1-9A-HJ-NP-Za-km-z]{32,44})\?cluster=devnet$/;
 const STATIC_LINKS = new Set(["/api/feed", "#try", "https://merlijnw70.github.io/solive/judge", "https://merlijnw70.github.io/solive/ai", "https://github.com/MerlijnW70/solive"]);
@@ -48,6 +48,32 @@ describe("live page with a full feed", () => {
     expect(page.text("proof-spec")).toMatch(/^fizzbuzz demo spec, read it · job \w{4}…\w{4}$/);
     const spec = page.byId("proof-spec").querySelectorAll("a")[0];
     expect(spec?.getAttribute("href")).toBe("https://github.com/MerlijnW70/solive/blob/main/examples/demo/fizzbuzz/SPEC.md");
+  });
+
+  it("shows the seven-day figures as final when the feed has no history field or a complete one", async () => {
+    for (const feed of [fullFeed(NOW), { ...fullFeed(NOW), history: { complete: true, since: new Date(NOW - 9 * 24 * 3600 * 1000).toISOString() } }]) {
+      const page = await openPage(ok(feed));
+      expect(page.text("status-text")).toBe("Live, updated 12s ago");
+      expect(page.byId("filling").hidden).toBe(true);
+      expect(page.byId("tile-paid").classList.contains("is-filling")).toBe(false);
+      expect(page.byId("tile-workers").classList.contains("is-filling")).toBe(false);
+      expect(page.text("n-paid")).toBe("23");
+    }
+  });
+
+  it("marks the seven-day figures as still filling while the history is not complete", async () => {
+    const page = await openPage(ok(fillingFeed(NOW)));
+    expect(page.text("status-text")).toBe("Live, updated 12s ago");
+    expect(page.byId("filling").hidden).toBe(false);
+    expect(page.text("filling")).toBe("Still filling: history read back to 3d ago. These figures grow until they cover all 7 days.");
+    expect(page.byId("tile-paid").classList.contains("is-filling")).toBe(true);
+    expect(page.byId("tile-workers").classList.contains("is-filling")).toBe(true);
+    expect(page.text("n-paid")).toBe("23");
+    expect(read("live.css")).toContain('.tile.is-filling .num::after { content: "+";');
+    page.answer(ok(fullFeed(NOW)));
+    await page.advance(30_000);
+    expect(page.byId("filling").hidden).toBe(true);
+    expect(page.byId("tile-paid").classList.contains("is-filling")).toBe(false);
   });
 
   it("renders the outside and house split and the per-token totals", async () => {
