@@ -40,6 +40,12 @@ export const settingsBroken = (path: string) => `${path} is not a settings file 
 
 export const PUBLIC_FAUCET = "https://faucet.solana.com";
 export const FAUCET = `${PRODUCT_REPOSITORY}/issues/new?template=faucet.yml`;
+export const EXPLORER = "https://explorer.solana.com";
+export const DEVNET_VIEW = "devnet SOL shows only when your wallet app or explorer is switched to devnet";
+export const explorerLink = (address: string, url: string): string | undefined => {
+  const cluster = url === DEVNET_URL ? "devnet" : url === CLUSTERS["testnet"] ? "testnet" : undefined;
+  return cluster === undefined ? undefined : `${EXPLORER}/address/${address}?cluster=${cluster}`;
+};
 export const CLI_START = "try offering 0.05 SOL for at least 5 TEST";
 const solOf = (lamports: bigint) => formatAmount(lamports, SOL_DECIMALS);
 export const CLI_SMALL_START = `follow the first paid job guide; a 0.05 SOL swap needs ${solOf(SWAP_START)} SOL`;
@@ -259,6 +265,7 @@ export async function setup(
             ? heldRefused(sol, signer.address)
             : airdropRefused(signer.address);
   const next = short ? status : lead + status;
+  const explorer = explorerLink(signer.address, url);
   return {
     address: signer.address,
     keypair: path,
@@ -267,6 +274,8 @@ export async function setup(
     settings: saved === undefined ? savedDefault(url) : keptDefault(saved),
     ...(confirm === undefined ? {} : { confirm_url: redactUrl(confirm) }),
     sol,
+    ...(explorer === undefined ? {} : { explorer }),
+    ...(url === DEVNET_URL ? { hint: DEVNET_VIEW } : {}),
     ...(got === undefined ? {} : { airdrop: solOf(got) }),
     ...(filed === undefined ? {} : { faucet_request: filed }),
     ...(dripped === null ? {} : { faucet: dripped }),

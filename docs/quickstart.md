@@ -16,6 +16,8 @@ Every step sends a transaction, so your wallet needs devnet SOL. The first way i
 
 This project's faucet sends 0.5 SOL, once a day per GitHub account. Run `setup` again once SOL arrives; it shows what your wallet holds.
 
+To see devnet SOL, open the `explorer` link that `setup` prints, or switch your wallet app or explorer to devnet. Devnet funds never show on mainnet.
+
 ## 1. Run the CLI
 
 npx runs the CLI without installing anything globally:

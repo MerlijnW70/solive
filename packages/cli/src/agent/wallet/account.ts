@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 import { formatAmount } from "@intent-engine/core";
-import { balances, defaultMints, FUND_BELOW, setup, SWAP_START } from "../../wallet.js";
+import { balances, defaultMints, explorerLink, FUND_BELOW, setup, SWAP_START } from "../../wallet.js";
 import { type AgentContext, define } from "../actions.js";
 import type { Call } from "../claims.js";
 import { boardLeft, leavesBoard, thenSettle } from "../claim-line.js";
@@ -41,6 +41,8 @@ export const walletSetup = define({
     url: text("the RPC node this server uses, as scheme, host and port only"),
     settings: text("whether this call saved the RPC as the CLI's default; it does so only when none is saved yet"),
     sol: text("SOL the wallet holds"),
+    explorer: optional(text("a Solana Explorer link that shows this wallet's address on the cluster the server uses")),
+    hint: optional(text("a reminder, on devnet only, of where devnet SOL shows")),
     airdrop: optional(text("SOL devnet sent; less than asked when it refused a larger airdrop")),
     faucet: optional(
       object({
@@ -65,12 +67,13 @@ export const walletBalance = define({
   description: "Shows the user how much SOL and how many tokens this wallet holds, in whole tokens. Without mints (token addresses) it shows wrapped SOL and, on devnet, the TEST token.",
   effect: "read",
   input: object({ mints: optional(list(text("SOL, TEST or a mint address"), 8)) }),
-  output: object({ address: account(), sol: text(), tokens: list(tokenRow, 8) }),
+  output: object({ address: account(), sol: text(), tokens: list(tokenRow, 8), explorer: optional(text("a Solana Explorer link that shows this wallet's address on the cluster the server uses")) }),
   run: async (ctx: AgentContext, input) => {
     const wallet = access(ctx);
     const owner = (await signerOf(ctx)).address;
     const mints = input.mints?.map((m, i) => mintNamed(m, wallet.url, `mints.${i}`)) ?? defaultMints(wallet.url);
-    return balances(ctx.transport, owner, mints);
+    const link = explorerLink(owner, wallet.url);
+    return { ...(await balances(ctx.transport, owner, mints)), ...(link === undefined ? {} : { explorer: link }) };
   },
 });
 
