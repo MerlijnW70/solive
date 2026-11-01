@@ -208,7 +208,7 @@ type SubscriptionEnd: type SubscriptionEnd = "ended" | "no-result";
 class SubscriptionEnded: class SubscriptionEnded extends SdkError { readonly code = "subscription-ended"; readonly name = "SubscriptionEnded"; readonly signature: Signature; readonly reason: SubscriptionEnd; constructor(signature: Signature, reason: SubscriptionEnd); }
 type SwapInput: type SwapInput = PreviewOption & { sell: string; amount: string; buy: string; minReceive: string; expiresIn?: Seconds; };
 class TimedOut: class TimedOut extends SdkError { readonly code = "timed-out"; readonly name = "TimedOut"; readonly method: string; readonly timeoutMs: number; constructor(method: string, timeoutMs: number, options?: ErrorOptions); }
-type TokenAccount: type TokenAccount = EngineAccount & { program: Address; };
+interface TokenAccount: interface TokenAccount extends EngineAccount { program: Address; }
 type TokenBalance: type TokenBalance = { mint: Address; name: string | undefined; account: Address; amount: bigint; decimals: number; };
 type TokenHolding: type TokenHolding = { account: Address; mint: Address; owner?: Address; };
 class TransactionUnread: class TransactionUnread extends SdkError { readonly code = "transaction-unread"; readonly name = "TransactionUnread"; readonly signature: string; constructor(signature: string); }

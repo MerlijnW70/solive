@@ -15,7 +15,9 @@ export type ProgramAccount = { address: Address; data: Uint8Array };
 
 export type EngineAccount = ProgramAccount & { lamports: bigint };
 
-export type TokenAccount = EngineAccount & { program: Address };
+export interface TokenAccount extends EngineAccount {
+  program: Address;
+}
 
 export type AccountMatch = { offset: number; address: Address } | { offset: number; bytes: ReadonlyUint8Array };
 
@@ -106,7 +108,7 @@ export type RpcLike = {
   getTokenAccountsByOwner?(
     owner: Address,
     filter: { programId: Address },
-    config: { encoding: "base64"; commitment: "confirmed" } & AtLeast,
+    config: { encoding: "base64"; commitment: "confirmed"; minContextSlot?: bigint },
   ): Pending<{ value: readonly { pubkey: Address; account: { data: readonly [string, string]; lamports: bigint } }[] }>;
   getMultipleAccounts(addresses: Address[], config: { encoding: "base64" } & AtLeast): Pending<{ value: (RawAccount | null)[] }>;
   getAccountInfo(
@@ -162,7 +164,7 @@ export type RpcLike = {
   ): Pending<readonly ProgramEntry[] | { context: { slot: bigint }; value: readonly ProgramEntry[] }>;
   getSignaturesForAddress(
     address: Address,
-    config: { limit: number; before?: Signature; until?: Signature } & AtLeast,
+    config: { limit: number; before?: Signature; until?: Signature; minContextSlot?: bigint },
   ): Pending<readonly { signature: string; slot: bigint; blockTime: bigint | null; err: unknown; memo?: string | null }[]>;
   getTransaction(
     signature: Signature,
