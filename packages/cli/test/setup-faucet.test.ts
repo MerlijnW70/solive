@@ -288,11 +288,11 @@ describe("the faucet text", () => {
     const timeout = /^ {4}timeout-minutes: (\d+)$/m.exec(WORKFLOW)?.[1];
     expect(minutes[0]).toBe(FAUCET_MINUTE);
     expect(minutes.map((m, i) => ((minutes[i + 1] ?? (minutes[0] ?? 0) + 60) - m))).toEqual(minutes.map(() => FAUCET_INTERVAL_MINUTES));
-    expect(FAUCET_INTERVAL_MINUTES).toBeLessThan(60);
+    expect(FAUCET_INTERVAL_MINUTES).toBeLessThanOrEqual(60);
     expect(FAUCET_INTERVAL_MINUTES).toBeGreaterThanOrEqual(5);
     expect(Number(timeout)).toBe(FAUCET_RUN_MINUTES);
     expect(FAUCET_WAIT_MINUTES).toBe(FAUCET_INTERVAL_MINUTES + FAUCET_RUN_MINUTES);
-    expect(FAUCET_SCHEDULE).toBe("the faucet answers new requests at least every 15 minutes, so SOL arrives within 25 minutes");
+    expect(FAUCET_SCHEDULE).toBe("the faucet answers new requests at least every 60 minutes, so SOL arrives within 70 minutes");
     const steps = fundingSteps("ADDRESS");
     expect(steps).toContain(FAUCET_SCHEDULE);
     expect(steps).toContain("as a public GitHub issue that needs a GitHub account");

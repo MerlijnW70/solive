@@ -4,7 +4,7 @@ on:
   issues:
     types: [opened]
   schedule:
-    - cron: "7,22,37,52 * * * *"
+    - cron: "7 * * * *"
 
 permissions:
   contents: read
@@ -20,10 +20,21 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
+      - name: waiting
+        id: waiting
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          titled=$(gh issue list --state open --limit 100 --search 'in:title "Devnet SOL"' --json number --jq 'length')
+          labelled=$(gh issue list --state open --label faucet --limit 100 --json labels --jq '[.[] | select(all(.labels[]; .name != "faucet-sent"))] | length')
+          echo "open=$((titled + labelled))" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        if: github.event_name == 'issues' || steps.waiting.outputs.open != '0'
         with:
           persist-credentials: false
       - name: agave
+        if: github.event_name == 'issues' || steps.waiting.outputs.open != '0'
         env:
           AGAVE_VERSION: v4.1.2
           AGAVE_SHA256: 5991d027a686eb419a709a479178b33eb83501e8a2bfbf599a81a286bfcbf770
@@ -34,6 +45,7 @@ jobs:
           tar -xjf "$RUNNER_TEMP/agave.tar.bz2" -C "$HOME/agave"
           echo "$HOME/agave/solana-release/bin" >> "$GITHUB_PATH"
       - name: send
+        if: github.event_name == 'issues' || steps.waiting.outputs.open != '0'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}

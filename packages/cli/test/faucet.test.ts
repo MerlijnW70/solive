@@ -179,10 +179,18 @@ describe("the devnet faucet", () => {
     expect(readFileSync(SCRIPT, "utf8")).toMatch(/gh issue list --author "\$author" --label faucet /);
   });
 
-  it("runs one workflow at a time on every request and every quarter hour, so a cancelled run leaves nothing unanswered", () => {
+  it("runs one workflow at a time on every request and every hour, so a cancelled run leaves nothing unanswered", () => {
     expect(WORKFLOW).toContain("concurrency:\n  group: faucet\n  cancel-in-progress: false\n");
-    expect(WORKFLOW).toContain('  schedule:\n    - cron: "7,22,37,52 * * * *"\n');
+    expect(WORKFLOW).toContain('  schedule:\n    - cron: "7 * * * *"\n');
     expect(WORKFLOW).toContain("if: github.event_name == 'schedule' || contains(github.event.issue.labels.*.name, 'faucet')");
+  });
+
+  it("skips the checkout, the toolchain and the send on a scheduled run that finds no open request", () => {
+    const gate = "if: github.event_name == 'issues' || steps.waiting.outputs.open != '0'";
+    expect(WORKFLOW.indexOf("- name: waiting")).toBeLessThan(WORKFLOW.indexOf("uses: actions/checkout"));
+    expect(WORKFLOW.split(gate)).toHaveLength(4);
+    expect(WORKFLOW).toContain(`--search 'in:title "Devnet SOL"'`);
+    expect(WORKFLOW).toContain('select(all(.labels[]; .name != "faucet-sent"))');
   });
 
   it("the faucet answers every open request in order", () => {

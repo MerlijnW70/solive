@@ -172,7 +172,7 @@ describe("setup and balance", () => {
     );
     expect(refused["other_ways"]).toEqual([
       "open " + FAUCET + "&address=" + address +
-        " to file a faucet request in a browser, as a public GitHub issue that needs a GitHub account; the faucet answers new requests at least every 15 minutes, so SOL arrives within 25 minutes",
+        " to file a faucet request in a browser, as a public GitHub issue that needs a GitHub account; the faucet answers new requests at least every 60 minutes, so SOL arrives within 70 minutes",
       GH_WAY,
     ]);
     h.svm.airdrop(address, lamports(LAMPORTS_PER_SOL / 50n));

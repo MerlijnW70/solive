@@ -7,7 +7,7 @@ import type { Env } from "./command-types.js";
 export const GH = "gh";
 export const FAUCET_TITLE = "Devnet SOL";
 export const FAUCET_MINUTE = 7;
-export const FAUCET_INTERVAL_MINUTES = 15;
+export const FAUCET_INTERVAL_MINUTES = 60;
 export const FAUCET_RUN_MINUTES = 10;
 export const FAUCET_WAIT_MINUTES = FAUCET_INTERVAL_MINUTES + FAUCET_RUN_MINUTES;
 export const FAUCET_POLL_SECONDS = 30;
