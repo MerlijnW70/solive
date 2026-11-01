@@ -8,7 +8,7 @@ import { DEMO_BASE_URL, DEMO_SPECS, demoSpecUrl, JOB_PROMPTS, MARKET_GUIDE, MARK
 import { judgeHost } from "../src/host-judge.js";
 import { casesOf, judgeViper, pinnedWasm } from "../src/viper.js";
 
-const ROOT = fileURLToPath(new URL("../../..", import.meta.url));
+const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url));
 const DEMO_DIR = join(ROOT, "examples", "demo");
 const TIMEOUT = 60;
 

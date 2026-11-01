@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { createContext, runInContext } from "node:vm";
 import { type FakeDocument, type FakeElement, parse } from "./dom.js";
 
-export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
+export const ROOT = process.env["INTENT_ENGINE_ROOT"] ?? join(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..");
 export const PUBLIC = join(ROOT, "services", "live", "public");
 export const read = (path: string): string => readFileSync(join(PUBLIC, path), "utf8");
 export const NOW = Date.parse("2026-10-31T06:00:00.000Z");

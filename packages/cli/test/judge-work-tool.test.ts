@@ -22,7 +22,7 @@ import { approved } from "./approved.js";
 
 type Json = Record<string, unknown> & { [key: string]: any };
 
-const DEMO = join(fileURLToPath(new URL("../../..", import.meta.url)), "examples", "demo", "fizzbuzz");
+const DEMO = join(process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url)), "examples", "demo", "fizzbuzz");
 const SPEC = readFileSync(join(DEMO, "SPEC.md"));
 const SOLUTION = readFileSync(join(DEMO, "solution.mjs"));
 const WRONG = new TextEncoder().encode('export default (n) => (n % 15 === 0 ? "FizzBuzz" : n % 3 === 0 ? "Buzz" : n % 5 === 0 ? "Fizz" : String(n));\n');

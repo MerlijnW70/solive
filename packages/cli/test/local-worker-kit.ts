@@ -19,7 +19,7 @@ import { approved } from "./approved.js";
 
 export type Json = Record<string, unknown> & { [key: string]: any };
 
-const DEMO = join(fileURLToPath(new URL("../../..", import.meta.url)), "examples", "demo", "fizzbuzz");
+const DEMO = join(process.env["INTENT_ENGINE_ROOT"] ?? fileURLToPath(new URL("../../..", import.meta.url)), "examples", "demo", "fizzbuzz");
 export const SPEC = readFileSync(join(DEMO, "SPEC.md"));
 export const SOLUTION = readFileSync(join(DEMO, "solution.mjs"));
 export const SPEC_URL = "https://" + "spec.example.org/" + "s".repeat(32) + ".md";
