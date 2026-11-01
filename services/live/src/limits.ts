@@ -20,7 +20,7 @@ export const DEFAULT_RPC_URL = "https://api.devnet.solana.com";
 export const FAUCET_URL = "https://" + PRODUCT_SLUG + "-faucet.vercel.app/api/drip";
 export const DRIP_LAMPORTS = 500_000_000n;
 export const SOL_DECIMALS = 9;
-export const STATE_KEY = "live-feed-state-v1";
+export const STATE_KEY = "live-feed-state-v2";
 
 export const CACHE_CONTROL = "public, max-age=10";
 export const CDN_CACHE_CONTROL = "public, s-maxage=30, stale-while-revalidate=300, stale-if-error=86400";

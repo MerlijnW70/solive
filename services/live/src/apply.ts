@@ -25,9 +25,11 @@ function jobAt(state: State, intent: string, slot: number): Job {
 
 const isoOf = (blockTime: bigint | null, fallback: number): string => new Date(blockTime === null ? fallback : Number(blockTime) * 1000).toISOString();
 
-function pay(state: State, entry: Paid): void {
-  if (!state.paid.some((known) => known.intent === entry.intent && known.slot === entry.slot && known.payee === entry.payee)) {
-    state.paid.push(entry);
+function pay(state: State, entries: readonly Paid[]): void {
+  for (const entry of entries) {
+    if (!state.paid.some((known) => known.intent === entry.intent && known.slot === entry.slot && known.payee === entry.payee)) {
+      state.paid.push(entry);
+    }
   }
 }
 
@@ -38,7 +40,9 @@ function settle(state: State, intent: string, job: Job): void {
     return;
   }
   const selfJudged = job.owner !== undefined && job.owner === job.attestor;
-  pay(state, { ...held, house: held.house || selfJudged, intent, token: tokenOf(job.mint), decimals: places });
+  const { shares, ...entry } = held;
+  const mint = job.mint;
+  pay(state, shares.map((share) => ({ ...entry, ...share, house: entry.house || selfJudged, intent, token: tokenOf(mint), decimals: places })));
   delete job.unpriced;
 }
 
@@ -105,10 +109,11 @@ export function applyTransactions(state: State, transactions: readonly EngineTra
           state.latest_paid_slot = slot;
         }
         const payee = event.payee ?? activity.who;
+        const shares = (activity.shares ?? (activity.raw === null ? [] : [{ payee, raw: activity.raw }])).map((share) => ({ payee: share.payee, raw: share.raw.toString() }));
         if (amount !== null && token !== null && activity.raw !== null && places !== null) {
-          pay(state, { at, slot, intent: activity.intent, payee, token, raw: activity.raw.toString(), decimals: places, house: marked });
+          pay(state, shares.map((share) => ({ at, slot, signature: tx.signature, intent: activity.intent, ...share, token, decimals: places, house: marked })));
         } else if (activity.mint === null && activity.raw !== null) {
-          job.unpriced = { at, slot, payee, raw: activity.raw.toString(), house: marked };
+          job.unpriced = { at, slot, signature: tx.signature, house: marked, shares };
         }
       }
     }

@@ -73,7 +73,7 @@ describe("a transaction read twice", () => {
 describe("the paid cap", () => {
   it("keeps the newest KEPT_PAID entries when older ones were pushed last", () => {
     const state = emptyState();
-    const entry = (minutesAgo: number, n: number): Paid => ({ at: new Date(NOW - minutesAgo * 60_000).toISOString(), slot: 1_000_000 - minutesAgo, intent: addressOf(n % 200), payee: WORKER, token: "SOL", raw: "1", decimals: 9, house: false });
+    const entry = (minutesAgo: number, n: number): Paid => ({ at: new Date(NOW - minutesAgo * 60_000).toISOString(), slot: 1_000_000 - minutesAgo, signature: `entry-${n}-${minutesAgo}`, intent: addressOf(n % 200), payee: WORKER, token: "SOL", raw: "1", decimals: 9, house: false });
     const newest = Array.from({ length: KEPT_PAID }, (_, i) => entry(i + 1, i));
     const older = Array.from({ length: 10 }, (_, i) => entry(5 * 24 * 60 + i, i));
     state.paid.push(...newest, ...older);

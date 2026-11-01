@@ -6,6 +6,8 @@ import {
   getCreateIntentInstructionDataEncoder,
   getDeliveryAnnouncedEventEncoder,
   getDeliveryReleasedEventEncoder,
+  getFillAttestedSplitCommitteeInstructionDataEncoder,
+  getFillAttestedSplitInstructionDataEncoder,
   getIntentAttestedEventEncoder,
   getIntentCancelledEventEncoder,
   getIntentCreatedEventEncoder,
@@ -118,13 +120,24 @@ export const attested = (intent: Address, owner: Address, payee: Address, attest
     }),
   );
 
-export const split = (intent: Address, owner: Address, solver: Address, attestor: Address, net: bigint): Uint8Array =>
+export const split = (intent: Address, owner: Address, solver: Address, attestor: Address, net: bigint, recipients = 2): Uint8Array =>
   tagged(
-    getIntentSplitEventEncoder().encode({ intent, owner, solver, attestor, amountIn: net, result: 1n, fee: 0n, net, partnerFee: 0n, recipients: 2, splitHash: new Uint8Array(32) }),
+    getIntentSplitEventEncoder().encode({ intent, owner, solver, attestor, amountIn: net, result: 1n, fee: 0n, net, partnerFee: 0n, recipients, splitHash: new Uint8Array(32) }),
   );
 
-export const held = (intent: Address, wallet: Address, share: bigint): Uint8Array =>
-  tagged(getShareHeldEventEncoder().encode({ intent, announcement: addressOf(40), wallet, account: addressOf(41), index: 0, share }));
+export const held = (intent: Address, wallet: Address, share: bigint, index = 0): Uint8Array =>
+  tagged(getShareHeldEventEncoder().encode({ intent, announcement: addressOf(40), wallet, account: addressOf(41), index, share }));
+
+export type SplitClaim = { recipients: Address[]; weights: number[] };
+
+export const splitCall = (claim: SplitClaim, net: bigint, committee = false): Uint8Array => {
+  const fields = { fill: { amountIn: net, result: 1n, maxFeeBps: 0 }, claim, opening: { delivered: new Uint8Array(32), salt: new Uint8Array(16) }, ext: new Uint8Array() };
+  return Uint8Array.from(
+    committee ? getFillAttestedSplitCommitteeInstructionDataEncoder().encode({ ...fields, signers: 1 }) : getFillAttestedSplitInstructionDataEncoder().encode(fields),
+  );
+};
+
+export const splitAccounts = (intent: Address): Address[] => [addressOf(80), addressOf(81), intent, ...Array.from({ length: 6 }, (_, i) => addressOf(82 + i))];
 
 export const committeeAttested = (intent: Address, signers: Address[]): Uint8Array =>
   tagged(getCommitteeAttestedEventEncoder().encode({ intent, committee: COMMITTEE, signers }));
@@ -203,6 +216,7 @@ export type Tx = {
   logs?: string[];
   memo?: string;
   mints?: Address[];
+  holdings?: { account: Address; mint: Address; owner?: Address }[];
 };
 
 export function transactionJson(tx: Tx): unknown {
@@ -221,7 +235,11 @@ export function transactionJson(tx: Tx): unknown {
   if (tx.memo !== undefined) {
     instructions.push({ programIdIndex: index("MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr"), accounts: [0], data: b58(new TextEncoder().encode(tx.memo)) });
   }
-  const balances = (tx.mints ?? []).map((mint, i) => ({ accountIndex: index(addressOf(60 + i)), mint, owner: OWNER, uiTokenAmount: { amount: "0", decimals: 9, uiAmount: 0, uiAmountString: "0" } }));
+  const amount = { amount: "0", decimals: 9, uiAmount: 0, uiAmountString: "0" };
+  const balances = [
+    ...(tx.mints ?? []).map((mint, i) => ({ accountIndex: index(addressOf(60 + i)), mint, owner: OWNER, uiTokenAmount: amount })),
+    ...(tx.holdings ?? []).map(({ account, mint, owner }) => ({ accountIndex: index(account), mint, ...(owner === undefined ? {} : { owner }), uiTokenAmount: amount })),
+  ];
   return {
     slot: tx.slot,
     blockTime: tx.blockTime,

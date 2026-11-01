@@ -82,6 +82,8 @@ Events are emitted with Anchor's `emit_cpi!`, all of them (`programs/intent_engi
 | refund | `IntentCancelled`, `IntentExpired` | `refunded`, `owner` |
 | swap | `IntentFilled` for swap, limit and auction kinds | `solver`, `amount_in`, `delivered` |
 
+The worker is a wallet. `IntentAttested.payee` is a token account, so the feed names its owner from the token balances the release transaction lists before and after, and keeps the account when the balances name no owner. A split credits each wallet of the release's split claim its share of `IntentSplit.net`, once its `recipients` count matches and each paid wallet owns an account in the balances or a `ShareHeld` names it; otherwise the announcing worker gets the whole amount. A split is one paid job.
+
 M7 found `DeliveryReleased` and `IntentAttested` together in both release transactions it read: the verdict and the payout are one transaction. Committee votes are signatures the release carries, not transactions of their own.
 
 A judge rejects work by not releasing it, so a failed verdict leaves nothing on chain. The page can show releases and refunds, never an on-chain "rejected", and the contract should not promise a separate verdict event. `AgentPaid` is a mandate agent's fee, not a worker's pay, and `IntentClosed` is rent cleanup; both stay out of the stream.

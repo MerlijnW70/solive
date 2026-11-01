@@ -71,14 +71,14 @@ export type Job = {
   unpriced?: Unpriced;
 };
 
-export type Unpriced = { at: string; slot: number; payee: string; raw: string; house: boolean };
+export type Unpriced = { at: string; slot: number; signature: string; house: boolean; shares: { payee: string; raw: string }[] };
 
-export type Paid = { at: string; slot: number; intent: string; payee: string; token: string; raw: string; decimals: number; house: boolean };
+export type Paid = { at: string; slot: number; signature: string; intent: string; payee: string; token: string; raw: string; decimals: number; house: boolean };
 
 export type Pending = { signature: string; slot: number; blockTime: number | null; tries?: number };
 
 export type State = {
-  version: 1;
+  version: 2;
   newest: string | null;
   pending: Pending[];
   events: FeedEvent[];
@@ -100,7 +100,7 @@ export type State = {
 
 export function emptyState(): State {
   return {
-    version: 1,
+    version: 2,
     newest: null,
     pending: [],
     events: [],
@@ -125,7 +125,7 @@ const isRecord = (value: unknown): value is Record<string, unknown> => typeof va
 export function isState(value: unknown): value is State {
   return (
     isRecord(value) &&
-    value["version"] === 1 &&
+    value["version"] === 2 &&
     Array.isArray(value["pending"]) &&
     Array.isArray(value["events"]) &&
     Array.isArray(value["paid"]) &&

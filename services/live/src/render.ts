@@ -14,6 +14,8 @@ function totals(paid: readonly Paid[]): TokenAmount[] {
   return [...sums.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([token, { raw, decimals }]) => ({ token, amount: amountText(raw, decimals) }));
 }
 
+const jobsIn = (paid: readonly Paid[]): number => new Set(paid.map(({ signature, intent }) => `${signature}:${intent}`)).size;
+
 function topWorkers(paid: readonly Paid[], house: ReadonlySet<string>): TopWorker[] {
   const workers = new Map<string, { jobs: number; sol: bigint; house: boolean }>();
   for (const entry of paid) {
@@ -44,10 +46,10 @@ export function render(state: State, house: ReadonlySet<string>, now: number): F
     history: historyView(state),
     stats: {
       open_jobs: state.open_jobs,
-      paid_jobs_7d: recent.length,
+      paid_jobs_7d: jobsIn(recent),
       workers_7d: new Set(recent.map(({ payee }) => payee)).size,
       paid_7d: totals(recent),
-      house_paid_jobs_7d: recent.filter((entry) => entry.house).length,
+      house_paid_jobs_7d: jobsIn(recent.filter((entry) => entry.house)),
     },
     events: state.events,
     latest_paid_job: state.latest_paid_job,

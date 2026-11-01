@@ -1,5 +1,6 @@
 import { type EngineTransaction, escrowTermsIn } from "@intent-engine/client";
 import { decodeEvent, type EngineEvent, Kind, NATIVE_MINT } from "@intent-engine/core";
+import { attestedShares, type Share, splitShares } from "./payees.js";
 import type { FeedKind, Job } from "./shapes.js";
 
 export type Activity = {
@@ -10,6 +11,7 @@ export type Activity = {
   mint: string | null;
   owner: string | null;
   payee?: string;
+  shares?: Share[];
   attestor?: string;
   signers?: number;
   specHash?: string | null;
@@ -32,16 +34,19 @@ type Release = {
   split?: Extract<EngineEvent, { name: "IntentSplit" }>["fields"];
   released?: Extract<EngineEvent, { name: "DeliveryReleased" }>["fields"];
   committee?: Extract<EngineEvent, { name: "CommitteeAttested" }>["fields"];
+  held?: Extract<EngineEvent, { name: "ShareHeld" }>["fields"][];
 };
 
-function releaseOf(intent: string, release: Release, job: Job | undefined, mint: string | null): Activity | null {
-  const { attested, split, released, committee } = release;
+function releaseOf(tx: EngineTransaction, intent: string, release: Release, job: Job | undefined, mint: string | null): Activity | null {
+  const { attested, split, released, committee, held = [] } = release;
   const paid = attested ?? split;
   if (paid === undefined) {
     return null;
   }
   const judge = committee?.committee ?? paid.attestor;
-  const payee = attested?.payee ?? released?.worker ?? paid.solver;
+  const fallback = attested?.payee ?? released?.worker ?? paid.solver;
+  const shares = (attested === undefined ? (split === undefined ? null : splitShares(tx, split, held)) : attestedShares(tx, attested)) ?? [{ payee: fallback, raw: paid.net }];
+  const payee = attested === undefined ? fallback : (shares[0]?.payee ?? fallback);
   return {
     kind: "release",
     intent,
@@ -50,6 +55,7 @@ function releaseOf(intent: string, release: Release, job: Job | undefined, mint:
     mint,
     owner: paid.owner ?? job?.owner ?? null,
     payee,
+    shares,
     attestor: judge,
     ...(committee === undefined ? {} : { signers: committee.signers.length }),
   };
@@ -116,6 +122,11 @@ export function activitiesOf(tx: EngineTransaction, jobs: Readonly<Record<string
       case "CommitteeAttested":
         releaseFor(event.fields.intent).committee = event.fields;
         break;
+      case "ShareHeld": {
+        const release = releaseFor(event.fields.intent);
+        release.held = [...(release.held ?? []), event.fields];
+        break;
+      }
       case "IntentCancelled":
         found.push({ kind: "refund", intent: event.fields.intent, who: event.fields.owner, raw: event.fields.refunded, mint: known(event.fields.intent), owner: event.fields.owner, refund: "cancelled" });
         break;
@@ -133,7 +144,7 @@ export function activitiesOf(tx: EngineTransaction, jobs: Readonly<Record<string
     if (activity.kind !== "release" || activity.who !== "") {
       return [activity];
     }
-    const made = releaseOf(activity.intent, releases.get(activity.intent) ?? {}, jobs[activity.intent], known(activity.intent));
+    const made = releaseOf(tx, activity.intent, releases.get(activity.intent) ?? {}, jobs[activity.intent], known(activity.intent));
     return made === null ? [] : [made];
   });
 }
