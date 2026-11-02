@@ -321,7 +321,12 @@ describe("a spec published to the real mirror handler", () => {
   it("answers 403 without an open escrow, so nothing is stored and the reason says so", async () => {
     const h = harness();
     const base = await running(h.deps);
-    const done = await publishSpec(BYTES, { transport: chain(), fetch: pinnedFetch, mirror: base, rpcUrl: "http://127.0.0.1:8899", lookup: async () => ["127.0.0.1"], budgetMs: 100 });
+    const slowed: SpecFetch = async (url, init) => {
+      await new Promise((later) => setTimeout(later, 150));
+      const reply = await pinnedFetch(url, init);
+      return new Response(await reply.text(), { status: reply.status, headers: { "retry-after": "3600" } });
+    };
+    const done = await publishSpec(BYTES, { transport: chain(), fetch: slowed, mirror: base, rpcUrl: "http://127.0.0.1:8899", lookup: async () => ["127.0.0.1"] });
     expect(done).toMatchObject({ published: false, reason: expect.stringContaining("answered 403") });
     expect(h.store.writes).toBe(0);
   });
