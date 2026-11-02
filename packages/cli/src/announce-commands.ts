@@ -206,13 +206,16 @@ async function closeBook(command: Extract<AnnounceCommand, { name: "close-book" 
   return { ...shown, sent: true, signature: await createClient({ url: command.url, transport }).closeBook(command.intent, by) };
 }
 
+export const URL_HIDDEN = "the work url is hidden; pass --judge-keypair <judge or member file> to show it";
+
 async function deliveries(command: Extract<AnnounceCommand, { name: "deliveries" }>, runtime: Runtime, transport: Transport): Promise<object> {
   const list = await createClient({ url: command.url, transport }).announcements(command.intent);
   const openers = [...(command.judgeKeypair === undefined ? [] : [await runtime.loadKeypair(command.judgeKeypair)]), ...(await loadEncryptionKeys(runtime, command.encryptionKeypairs))];
   const opened = openers.length === 0 ? [] : await openedBy(list.announcements, openers);
   const view = listView(list);
   const urls = new Map(opened.flatMap(({ announcement, url }) => (url === null ? [] : [[announcement.address, url] as const])));
-  return { intent: command.intent, ...view, announcements: view.announcements.map((line) => ({ ...line, ...(urls.has(line.announcement) ? { url: urls.get(line.announcement) } : {}) })) };
+  const hidden = openers.length === 0 && view.announcements.length > 0 ? { note: URL_HIDDEN } : {};
+  return { intent: command.intent, ...view, announcements: view.announcements.map((line) => ({ ...line, ...(urls.has(line.announcement) ? { url: urls.get(line.announcement) } : {}) })), ...hidden };
 }
 
 export async function announceCommand(command: AnnounceCommand, runtime: Runtime, transport: Transport): Promise<object> {

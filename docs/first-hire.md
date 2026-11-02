@@ -50,4 +50,28 @@ It sends nothing without `--yes`.
 
 On a pass the AI previews the release to the worker. Say yes and it sends, then shows the receipt: who was paid, how much, and for which work. That is your first hired job.
 
-To do the same from the command line, with your own spec, follow [Your first paid job](first-job.md).
+## From the command line
+
+The same demo job without an AI. Your wallet is the judge: `setup` prints its `address` and its `keypair` file. Each demo has a fixed spec url and sha256:
+
+| Demo | Spec url | sha256 |
+|---|---|---|
+| `fizzbuzz` | `https://raw.githubusercontent.com/MerlijnW70/solive/main/examples/demo/fizzbuzz/SPEC.md` | `638375b5fb917437e51237bfcbcf690bdb583eeac4ee2d07bd8e39e9d921ae70` |
+| `palindrome` | `https://raw.githubusercontent.com/MerlijnW70/solive/main/examples/demo/palindrome/SPEC.md` | `a144c0dd3a4fb16f04c95c1f08a397549e5f6ede132e750e63ed155b8e7bfc00` |
+| `reverse-words` | `https://raw.githubusercontent.com/MerlijnW70/solive/main/examples/demo/reverse-words/SPEC.md` | `6bb5772addaed972051efd33c77e983d522f0e0b9f8566149099625ec114a6a4` |
+
+Escrow 0.01 SOL for a demo, with its url and sha256 in place of `<spec url>` and `<sha256>`:
+
+```sh
+intent-engine create attested --input-mint SOL --output-mint TEST --units tokens --amount-in 0.01 --min-result 1 --max-result 1 --attestor <address> --spec-hash <sha256> --spec-url <spec url> --expires-in 86400 --yes
+```
+
+It prints the job's `intent` and `nonce`. Within a minute the demo worker announces its solution to you. List the announcements, with your `keypair` file in place of `<keypair>` so that each one shows its work `url`:
+
+```sh
+intent-engine deliveries --intent <intent> --judge-keypair <keypair>
+```
+
+Without `--judge-keypair`, `deliveries` lists the announcements but hides the `url`, and says so. Download the spec and the work from their urls as in step 4, then judge with the command there, adding `--yes` to pay the worker when the verdict is `pass`.
+
+To do the same with your own spec, follow [Your first paid job](first-job.md).

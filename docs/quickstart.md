@@ -62,13 +62,15 @@ npm install -g @intent-engine/cli
 
 Add the `export` line to your shell's startup file, such as `~/.bashrc`, to keep it in new shells.
 
+On Windows, `npm config get prefix` names npm's global folder, such as `C:\Users\you\AppData\Roaming\npm`. Add that folder to your user `PATH` in Settings, System, About, Advanced system settings, Environment Variables, then open a new terminal. The `npx.cmd` function above needs no `PATH` change.
+
 ## 2. Make a wallet
 
 ```sh
 intent-engine setup
 ```
 
-This makes a devnet wallet, saves it as your default and asks devnet for 1 SOL. If devnet refuses, it names the ways in [Devnet SOL](#devnet-sol), with your address filled into the faucet link.
+This makes a devnet wallet, saves it as your default and asks the instant faucet for 0.5 SOL, then devnet for an airdrop if the faucet gives none. If devnet refuses, it names the ways in [Devnet SOL](#devnet-sol), with your address filled into the faucet link.
 
 ## 3. Swap
 

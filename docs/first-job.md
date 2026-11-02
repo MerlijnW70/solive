@@ -14,7 +14,7 @@ Your own wallet hires and judges:
 intent-engine setup
 ```
 
-It prints your `address` and the `keypair` file that holds it, and asks devnet for 1 SOL when it holds little, then for less if devnet refuses. This guide needs 0.06 SOL in your wallet. If devnet sends none, get it as [Devnet SOL](quickstart.md#devnet-sol) lists. If you ran the quickstart, it is the same wallet.
+It prints your `address` and the `keypair` file that holds it, and asks the instant faucet for 0.5 SOL when it holds little, then devnet for an airdrop if the faucet gives none. This guide needs 0.06 SOL in your wallet. If devnet sends none, get it as [Devnet SOL](quickstart.md#devnet-sol) lists. If you ran the quickstart, it is the same wallet.
 
 Make a second wallet that works, and send it 0.02 SOL from yours for its network fees and the rent of its two announcements, which comes back when they close:
 

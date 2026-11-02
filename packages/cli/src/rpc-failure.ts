@@ -33,4 +33,6 @@ export function rpcCause(error: unknown): RpcCause | null {
   return null;
 }
 
+export const RATE_LIMITED_HINT = "the public devnet node rate-limited this request; retry in a minute, or pass another --url";
+
 export const rpcFailed = (error: unknown): boolean => rpcCause(error) !== null;

@@ -202,7 +202,7 @@ describe("the first paid job guide", () => {
     const worker = keys["worker.json"]?.address;
     const copier = keys["copier.json"]?.address;
 
-    expect(PAGE).toContain(`asks devnet for ${AIRDROP / SOL} SOL when it holds little, then for less if devnet refuses.`);
+    expect(PAGE).toContain("asks the instant faucet for 0.5 SOL when it holds little, then devnet for an airdrop if the faucet gives none.");
     expect([setup?.code, setup?.err]).toEqual([EXIT_OK, ""]);
     expect(setup?.out).toMatchObject({ created: true, sol: String(AIRDROP / SOL), airdrop: String(AIRDROP / SOL) });
 

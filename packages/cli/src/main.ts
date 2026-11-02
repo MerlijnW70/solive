@@ -20,6 +20,7 @@ import { WALLET_NOTICE } from "./agent/wallet.js";
 import { EXIT_ALERTED } from "./monitor-args.js";
 import { monitor, writeBaseline } from "./monitor.js";
 import { launch } from "./launch.js";
+import { RATE_LIMITED_HINT, rpcCause } from "./rpc-failure.js";
 import { checkLedgerPaths } from "./ledger-keys.js";
 
 export const EXIT_OK = 0;
@@ -62,6 +63,10 @@ function message(error: unknown, url: string | undefined): string {
   }
   if (isSdkError(error, "maybe-sent")) {
     return printableLines(`${error.message}; ${maybeSentHint(error)}`);
+  }
+  const cause = rpcCause(error);
+  if (cause?.kind === "http" && cause.status === 429) {
+    return RATE_LIMITED_HINT;
   }
   if (url !== undefined && offline(error)) {
     return unreachable(redactUrl(url));

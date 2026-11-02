@@ -6,6 +6,8 @@ You need a recent Node.js, from [nodejs.org](https://nodejs.org); the [Quickstar
 
 Then add Solive to your AI app. Run the line for your app in a terminal, then restart the app.
 
+On Windows PowerShell, use the `npx.cmd` lines under the plain ones: a plain `npx` there can stop with `running scripts is disabled on this system`, and `npx.cmd` does not.
+
 Claude Code:
 
 ```sh
@@ -18,7 +20,7 @@ Codex:
 npx -y @intent-engine/cli add-to codex
 ```
 
-On a fresh Windows PowerShell, `npx` is refused. Use `npx.cmd` instead:
+Windows PowerShell, with `npx.cmd`:
 
 ```powershell
 npx.cmd -y @intent-engine/cli add-to claude

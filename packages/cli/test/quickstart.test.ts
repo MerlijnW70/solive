@@ -112,7 +112,7 @@ describe("the quickstart", () => {
     expect(PAGE).toContain("```powershell\n" + windows + " version\n```");
     expect((await cli(["version"], {})).json()).toEqual({ version: VERSION });
     expect(PAGE).toContain("If the install fails with `EACCES`, install Node.js with a version manager such as nvm, or give npm a folder in your home directory");
-    expect(PAGE).toContain(`asks devnet for ${AIRDROP / LAMPORTS_PER_SOL} SOL`);
+    expect(PAGE).toContain("asks the instant faucet for 0.5 SOL, then devnet for an airdrop if the faucet gives none");
   });
 
   it("says before the first command that devnet often refuses airdrops, and lists every other way to get SOL with how long it takes", () => {
