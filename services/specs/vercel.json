@@ -1,0 +1,39 @@
+{
+  "framework": null,
+  "buildCommand": "pnpm --filter @intent-engine/core build && pnpm --filter @intent-engine/client build",
+  "outputDirectory": "public",
+  "functions": {
+    "api/specs.ts": {
+      "maxDuration": 30
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/sha256/:hex",
+      "destination": "/api/specs?sha256=:hex"
+    },
+    {
+      "source": "/ipfs/:cid",
+      "destination": "/api/specs?ipfs=:cid"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+        },
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        }
+      ]
+    }
+  ]
+}
