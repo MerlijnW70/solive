@@ -107,12 +107,12 @@ describe("what hooks and the debug log show", () => {
     const world = await createTestWorld();
     const posted = await job(world, SPEC_URL);
     const hooks = { fetch: (event: unknown) => void heard.push(event) };
-    const client = createClient({ url: world.client.url, transport: world.transport, fetch: fetching, hooks, debug: (line) => void lines.push(line) });
-    expect((await client.spec(posted.intent))?.matches).toBe(true);
+    const client = () => createClient({ url: world.client.url, transport: world.transport, fetch: fetching, hooks, debug: (line) => void lines.push(line), specSources: [{ kind: "memo" }] });
+    expect((await client().spec(posted.intent))?.matches).toBe(true);
     answer = async () => {
       throw new TypeError("fetch failed");
     };
-    await expect(client.spec(posted.intent)).rejects.toMatchObject({ name: "SpecUnreadable" });
+    await expect(client().spec(posted.intent)).rejects.toMatchObject({ name: "SpecUnreadable" });
     expect(asked).toEqual([SPEC_URL, SPEC_URL]);
     expect(heard).toEqual([
       { url: "https://specs.example.org", status: 200, ms: expect.any(Number) },

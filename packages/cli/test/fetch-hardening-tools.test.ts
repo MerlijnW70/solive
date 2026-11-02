@@ -250,6 +250,6 @@ describe("get_spec following the client's host rules", () => {
     h.lookups = [];
     h.hosts.set("example.org", ["10.0.0.7"]);
     expect(await call(client, "get_spec", { intent })).toMatchObject({ error: true, value: { code: "SpecUnfetchable", hint: SERVER_PROBLEMS.SpecUnfetchable.hint, untrustedDetail: expect.stringContaining(PRIVATE) } });
-    expect(h.lookups).toEqual(["example.org"]);
+    expect(h.lookups).toEqual(["example.org", "gateway.pinata.cloud", "ipfs.filebase.io", "arweave.net"]);
   }, 60_000);
 });

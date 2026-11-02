@@ -29,7 +29,7 @@ type Client: type Client = { readonly url: string; readonly transport: Transport
 type ClientEventName: type ClientEventName = keyof ClientEvents;
 type ClientEvents: type ClientEvents = { request: RequestEvent; response: ResponseEvent; retry: RetryEvent; send: SendEvent; confirm: ConfirmEvent; fetch: FetchEvent; };
 type ClientHooks: type ClientHooks = { [K in ClientEventName]?: (event: ClientEvents[K]) => unknown; } & { error?: (failure: HookFailure) => unknown; };
-type ClientOptions: type ClientOptions = { url: string; transport?: Transport; notifications?: Notifications; priority?: Priority; pollMs?: number; resyncSeconds?: number; fetch?: SpecFetch; lookup?: Lookup; hooks?: ClientHooks; debug?: DebugLog; rpcTransport?: RpcTransport; timeoutMs?: number; retry?: boolean; signal?: AbortSignal; };
+type ClientOptions: type ClientOptions = { url: string; transport?: Transport; notifications?: Notifications; priority?: Priority; pollMs?: number; resyncSeconds?: number; fetch?: SpecFetch; specSources?: readonly SpecSource[]; lookup?: Lookup; hooks?: ClientHooks; debug?: DebugLog; rpcTransport?: RpcTransport; timeoutMs?: number; retry?: boolean; signal?: AbortSignal; };
 type ClientPlans: type ClientPlans = { createIntent(input: CreateIntentInput): Promise<CreateIntentPlan>; cancel(signer: TransactionSigner, intent: IntentRef): Promise<Plan>; fill(input: FillInput): Promise<Plan>; expire(cranker: TransactionSigner, intent: IntentRef): Promise<Plan>; close(cranker: TransactionSigner, intent: IntentRef): Promise<Plan>; settleProof(input: SettleProofInput): Promise<Plan>; settleCommittee(input: SettleCommitteeInput): Promise<CommitteePlan>; settleSplit(input: SettleSplitInput): Promise<Plan>; claimHeld(input: ClaimHeldInput): Promise<ClaimHeldPlan>; announce(input: AnnounceInput): Promise<AnnouncementPlan>; refute(input: RefuteInput): Promise<RefutePlan>; reclaim(input: ReclaimInput): Promise<ReclaimPlan>; closeBook(intent: IntentRef, by: TransactionSigner): Promise<Plan>; feedback(input: FeedbackInput): Promise<Plan>; createCommittee(input: CreateCommitteeInput): Promise<CommitteeCreatePlan>; unwrap(signer: TransactionSigner): Promise<Plan>; };
 type Cluster: type Cluster = "devnet" | "testnet" | "mainnet" | "localnet";
 type ClusterChoice: type ClusterChoice = { cluster: Cluster; url?: undefined; } | { url: string; cluster?: undefined; };
@@ -51,6 +51,7 @@ type CreateIntentInput: type CreateIntentInput = IntentPlacement & ParamsWithSpe
 type CreateIntentPlan: type CreateIntentPlan = Plan & { intent: Address; nonce: bigint; expiresAt: bigint; payTo: Address; committee: Address | null; registers: boolean; createsPayTo: boolean; wraps: bigint; };
 type CreatedCommittee: type CreatedCommittee = { committee: Address; signature: Signature | null; };
 type CreatedIntent: type CreatedIntent = { signature: Signature; intent: Address; nonce: bigint; };
+const DEFAULT_SPEC_SOURCES: const DEFAULT_SPEC_SOURCES: readonly SpecSource[];
 type DebugLog: type DebugLog = ((line: string) => unknown) | true;
 type DeliverSend: type DeliverSend = <I extends DeliverWorkInput>(input: I) => Promise<Outcome<I, DeliveredWork>>;
 type DeliverWorkInput: type DeliverWorkInput = PreviewOption & { escrow: Address; sha256: string; url: string; };
@@ -196,9 +197,13 @@ type Simulation: type Simulation = { err: string | null; logs: string[]; unitsCo
 type SkipReason: type SkipReason = "does-not-open" | "forged-wallet-slot" | "wrong-recipient-count";
 type SkippedAnnouncement: type SkippedAnnouncement = { announcement: Address; seq: bigint; worker: Address; reason: SkipReason; };
 type SolTransfer: type SolTransfer = { from: Address; to: Address; lamports: bigint; };
-type Spec: type Spec = { url: string; text: string; bytes: Uint8Array; sha256: string; matches: boolean; sealedTo?: Address[]; };
-type SpecFetch: type SpecFetch = (url: string, init: { redirect: "error"; signal: AbortSignal; addresses?: readonly string[]; }) => Promise<Response>;
+type Spec: type Spec = { url: string; text: string; bytes: Uint8Array; sha256: string; matches: boolean; sealedTo?: Address[]; source: SpecSourceKind | "cache"; tried: SpecAttempt[]; };
+type SpecAttempt: type SpecAttempt = { source: SpecSourceKind; url: string | null; reason: string; };
+type SpecFetch: type SpecFetch = (url: string, init: { redirect: "error"; signal: AbortSignal; addresses?: readonly string[]; } & SpecRequest) => Promise<Response>;
+type SpecRequest: type SpecRequest = { method?: "GET" | "POST"; headers?: Readonly<Record<string, string>>; body?: string; };
 class SpecSealed: class SpecSealed extends SdkError { readonly code = "spec-sealed"; readonly name = "SpecSealed"; readonly url: string; readonly to: Address[]; readonly keyed: boolean; constructor(url: string, to: Address[], keyed: boolean); }
+type SpecSource: type SpecSource = { kind: "memo"; } | { kind: "mirror"; base: string; } | { kind: "ipfs"; gateway: string; } | { kind: "arweave"; gateway: string; };
+type SpecSourceKind: type SpecSourceKind = SpecSource["kind"];
 class SpecUnreadable: class SpecUnreadable extends SdkError { readonly code = "spec-unreadable"; readonly name = "SpecUnreadable"; readonly url: string; constructor(url: string, reason: string, options?: ErrorOptions); }
 type SplitBallot: type SplitBallot = { intent: Address; attestor: Address; worker: Address; splitHash: Uint8Array; digest: Uint8Array; cosigners: Address[]; message: Uint8Array; };
 type SplitBallotInput: type SplitBallotInput = BallotInput & { recipients: readonly SplitShare[]; };
@@ -227,10 +232,12 @@ type WithheldFee: type WithheldFee = { role: WithheldRole | "unknown"; payee: Ad
 type WorkOutcome: type WorkOutcome = "paid" | "paid-other" | "refunded" | "open" | "unknown";
 type WorkRecord: type WorkRecord = { intent: Address; sha256: string; commitment: string; announcement: Address; seq: bigint; role: WorkRole; announced: Signature; slot: bigint; blockTime: bigint | null; outcome: WorkOutcome; refutedBy?: Address; refutations: RefutationRecord[]; owner?: Address; attestor?: Address; committee?: Address[]; mint?: Address; earned?: bigint; backed?: bigint; createBacked?: bigint; release?: Signature; selfDealt: boolean; fundedByWorker?: FundedBy; feedback?: number; held?: HeldPayout[]; unreadable?: UnreadableAccount[]; };
 type WorkRole: type WorkRole = "announcer" | "co-author";
+function cidOfSpecHash: function cidOfSpecHash(hex: string): string;
 function connect: function connect<S extends TransactionSigner>(options: ConnectOptions<S>): Promise<SimpleClient<S>>;
 function createClient: function createClient(options: ClientOptions): Client;
 function escrowTermsIn: function escrowTermsIn(transaction: EngineTransaction, intent: Address): EscrowTerms | null;
 function isSdkError: function isSdkError(error: unknown): error is AnySdkError;
 function isSdkError: function isSdkError<C extends SdkErrorCode>(error: unknown, code: C): error is SdkErrors[C];
 function isTransactionSignature: function isTransactionSignature(value: unknown): value is Signature;
+function specHashOfCid: function specHashOfCid(cid: string): string | null;
 function trustOf: function trustOf(transport: Transport, reader: Address, worker: Address, options?: TrustOptions): Promise<Trust>;

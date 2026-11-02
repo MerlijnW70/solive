@@ -47,7 +47,7 @@ function counted(): Counted {
 
 const reading: Readable = async (transport, intent) => {
   await transport.signaturesOf?.(intent, 1);
-  return intent !== addressOf(3);
+  return stub.urls.has(intent) && intent !== addressOf(3);
 };
 
 const wanted = (more: Partial<PageWanted> = {}): PageWanted => ({ limit: FIND_DEFAULT, all: false, ...more });
@@ -72,6 +72,14 @@ describe("find_jobs pages", () => {
     expect(page.jobs[0]).toMatchObject({ specUrl: "https://specs.example/2", pays: "100", netPay: "90", payable: true });
     expect(page.more).toBeUndefined();
     expect(intents(await jobPage(transport, wanted({ all: true }), terms, reading))).toEqual([addressOf(2), addressOf(3), addressOf(1)]);
+  });
+
+  it("lists a job without a spec url when its spec reads from a hash source", async () => {
+    stub.proofs = [proof(5, 40n)];
+    const { transport } = counted();
+    const hashed: Readable = async () => true;
+    const page = await jobPage(transport, wanted(), terms, hashed);
+    expect(page.jobs.map(({ intent, specUrl }) => [intent, specUrl])).toEqual([[addressOf(5), null]]);
   });
 
   it("stops at the limit and the cursor lists the rest once", async () => {

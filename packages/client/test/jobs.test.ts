@@ -166,7 +166,7 @@ describe("spec", () => {
     const swapped = await client.createIntent({ ...order, params: proof(judge.address), specUrl: "https://example.org/other.md" });
     const silent = await client.createIntent({ ...order, params: proof(judge.address) });
 
-    expect(await client.spec(good.intent)).toEqual({ url: SPEC_URL, text: SPEC, bytes: expect.any(Uint8Array), sha256: Buffer.from(sha(SPEC)).toString("hex"), matches: true });
+    expect(await client.spec(good.intent)).toEqual({ url: SPEC_URL, text: SPEC, bytes: expect.any(Uint8Array), sha256: Buffer.from(sha(SPEC)).toString("hex"), matches: true, source: "memo", tried: [] });
     expect(fetched[0]?.url).toBe(SPEC_URL);
     expect(fetched[0]?.init.redirect).toBe("error");
     expect(fetched[0]?.init.signal).toBeInstanceOf(AbortSignal);
@@ -174,7 +174,7 @@ describe("spec", () => {
     fetched.length = 0;
     expect(await client.spec(silent.intent)).toBeNull();
     expect(await client.spec(judge.address)).toBeNull();
-    expect(fetched).toEqual([]);
+    expect(fetched.map(({ url }) => new URL(url).origin)).toEqual(["https://gateway.pinata.cloud", "https://ipfs.filebase.io", "https://arweave.net"]);
   });
 
   it("refuses a spec that is missing or larger than the limit", async () => {
@@ -212,7 +212,7 @@ describe("deliveries", () => {
     const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
     expect((await client.jobs()).jobs[0]).toMatchObject({ intent: job.intent, specUrl: legacy });
     expect((await client.jobs({ attestor: judge.address })).jobs).toMatchObject([{ intent: job.intent, specUrl: legacy }]);
-    expect(await client.spec(job.intent)).toEqual({ url: legacy, text: SPEC, bytes: expect.any(Uint8Array), sha256: Buffer.from(sha(SPEC)).toString("hex"), matches: true });
+    expect(await client.spec(job.intent)).toEqual({ url: legacy, text: SPEC, bytes: expect.any(Uint8Array), sha256: Buffer.from(sha(SPEC)).toString("hex"), matches: true, source: "memo", tried: [] });
     expect(fetched.map(({ url }) => url)).toEqual([legacy]);
   });
 
@@ -337,7 +337,7 @@ describe("history past a window of recent transactions", () => {
     const devnet = createClient({ url: LOCAL, transport: { ...w.chain.transport, genesisHash: async () => DEVNET_GENESIS_HASH }, fetch: serving({ [local]: SPEC }, fetched) });
     fetched.length = 0;
     await expect(devnet.spec(job.intent)).rejects.toThrow(SpecUnreadable);
-    expect(fetched).toEqual([]);
+    expect(fetched.map(({ url }) => url)).not.toContain(local);
     expect((await devnet.jobs()).jobs[0]).toMatchObject({ specUrl: local });
   });
 
@@ -432,6 +432,8 @@ describe("a sealed spec", () => {
       sha256: Buffer.from(sha(SPEC)).toString("hex"),
       matches: true,
       sealedTo: [worker.address, other.address],
+      source: "memo",
+      tried: [],
     });
     const unkeyed = await client.spec(job.intent).catch((e: unknown) => e);
     expect(unkeyed).toBeInstanceOf(SpecSealed);
@@ -458,8 +460,8 @@ describe("a sealed spec", () => {
     const worker = keyed();
     const { client, judge, order } = await setting(serving({ [SPEC_URL]: SPEC }));
     const job = await client.createIntent({ ...order, params: proof(judge.address), specUrl: SPEC_URL });
-    const plain = { url: SPEC_URL, text: SPEC, bytes: expect.any(Uint8Array), sha256: Buffer.from(sha(SPEC)).toString("hex"), matches: true };
-    expect(await client.spec(job.intent, worker.keypair)).toEqual(plain);
-    expect(await client.spec(job.intent)).toEqual(plain);
+    const plain = { url: SPEC_URL, text: SPEC, bytes: expect.any(Uint8Array), sha256: Buffer.from(sha(SPEC)).toString("hex"), matches: true, tried: [] };
+    expect(await client.spec(job.intent, worker.keypair)).toEqual({ ...plain, source: "memo" });
+    expect(await client.spec(job.intent)).toEqual({ ...plain, source: "cache" });
   });
 });

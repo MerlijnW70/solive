@@ -5,7 +5,7 @@ import type { Address } from "@solana/kit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Kind } from "@intent-engine/core";
 import * as root from "../src/index.js";
-import { createClient, SpecUnreadable, type SpecFetch } from "../src/index.js";
+import { createClient, SpecUnreadable, type SpecFetch, type SpecSource } from "../src/index.js";
 import { MAX_SPEC_BYTES } from "../src/internal.js";
 import { NOT_PUBLIC_SPEC } from "../src/job-specs.js";
 import * as node from "../src/node.js";
@@ -47,6 +47,8 @@ const ELSEWHERE = {
 };
 
 type Asked = { url: string; addresses: readonly string[] | undefined };
+
+const specSources: SpecSource[] = [{ kind: "memo" }];
 
 const serving =
   (asked: Asked[]): SpecFetch =>
@@ -114,7 +116,7 @@ describe("the In a browser section of the client page", () => {
     const intent = await escrow(w, url);
     const asked: Asked[] = [];
     const checked = (url: string, init: { addresses: readonly string[] }) => serving(asked)(url, { redirect: "error", signal: AbortSignal.timeout(1_000), addresses: init.addresses });
-    expect(await node.createClient({ url: REMOTE, transport: w.chain.transport, fetch: checked }).spec(intent)).toMatchObject({ url, matches: true });
+    expect(await node.createClient({ url: REMOTE, transport: w.chain.transport, fetch: checked, specSources }).spec(intent)).toMatchObject({ url, matches: true });
     const solive = await node.connect({ url: REMOTE, signer: w.owner, transport: w.chain.transport, fetch: checked, allowMainnet: true });
     expect(await solive.client.spec(intent)).toMatchObject({ url, matches: true });
     expect(asked).toEqual([
@@ -123,7 +125,7 @@ describe("the In a browser section of the client page", () => {
     ]);
     const inside = "https://" + "inside.example/spec.md";
     const refused = await escrow(w, inside);
-    await expect(node.createClient({ url: REMOTE, transport: w.chain.transport, fetch: checked }).spec(refused)).rejects.toThrow(new SpecUnreadable(inside, NOT_PUBLIC_SPEC));
+    await expect(node.createClient({ url: REMOTE, transport: w.chain.transport, fetch: checked, specSources }).spec(refused)).rejects.toThrow(new SpecUnreadable(inside, NOT_PUBLIC_SPEC));
     expect(asked).toHaveLength(2);
     for (const name of ["ledgerSigner", "openUsb", "pinnedFetch", "systemLookup"]) {
       expect(name in node).toBe(true);
@@ -147,9 +149,9 @@ describe("the In a browser section of the client page", () => {
     const [intent, oversized] = [await escrow(w, url), await escrow(w, large)];
     const global = vi.fn(async (asked: string, _init?: RequestInit) => (asked === large ? new Response("x", { headers: { "content-length": String(MAX_SPEC_BYTES + 1) } }) : new Response(SPEC)));
     vi.stubGlobal("fetch", global);
-    const client = createClient({ url: REMOTE, transport: w.chain.transport });
-    expect(await client.spec(intent)).toMatchObject({ url, text: SPEC, matches: true });
-    await expect(client.spec(oversized)).rejects.toThrow(new SpecUnreadable(large, `is larger than ${MAX_SPEC_BYTES} bytes`));
+    const client = () => createClient({ url: REMOTE, transport: w.chain.transport, specSources });
+    expect(await client().spec(intent)).toMatchObject({ url, text: SPEC, matches: true });
+    await expect(client().spec(oversized)).rejects.toThrow(new SpecUnreadable(large, `is larger than ${MAX_SPEC_BYTES} bytes`));
     expect(global.mock.calls.map(([asked, init]) => [asked, init?.redirect])).toEqual([
       [url, "error"],
       [large, "error"],
@@ -162,7 +164,7 @@ describe("the In a browser section of the client page", () => {
       const url = "https://" + host + "/spec.md";
       const intent = await escrow(w, url);
       const asked: Asked[] = [];
-      await expect(createClient({ url: REMOTE, transport: w.chain.transport, fetch: serving(asked) }).spec(intent)).rejects.toThrow(new SpecUnreadable(url, NOT_PUBLIC_SPEC));
+      await expect(createClient({ url: REMOTE, transport: w.chain.transport, fetch: serving(asked), specSources }).spec(intent)).rejects.toThrow(new SpecUnreadable(url, NOT_PUBLIC_SPEC));
       expect(asked).toEqual([]);
     }
     const v = await world();

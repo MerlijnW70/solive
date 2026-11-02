@@ -25,7 +25,8 @@ export function checkedFetch(get: CheckedFetch): SpecFetch {
     if (addresses === undefined) {
       return Promise.reject(new FetchFailed(url, "no-address", "no checked address to connect to"));
     }
-    return get(url, { redirect: init.redirect, signal: init.signal, addresses });
+    const { method, headers, body } = init;
+    return get(url, { ...(method === undefined ? {} : { method }), ...(headers === undefined ? {} : { headers }), ...(body === undefined ? {} : { body }), redirect: init.redirect, signal: init.signal, addresses });
   };
 }
 

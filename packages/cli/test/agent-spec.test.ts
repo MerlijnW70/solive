@@ -86,7 +86,7 @@ describe("solive_get_spec", () => {
     const intent = await escrow(SPEC_URL);
     expect(await call(client, "get_spec", { intent })).toEqual({
       isError: false,
-      value: { url: SPEC_URL, sha256: sha(SPEC), matches: true, text: SPEC, sealed_to: null, freeze_authority: null },
+      value: { url: SPEC_URL, source: "memo", sha256: sha(SPEC), matches: true, text: SPEC, sealed_to: null, freeze_authority: null },
     });
     expect(fetched.map(({ url, init }) => [url, init.redirect, init.signal instanceof AbortSignal])).toEqual([[SPEC_URL, "error", true]]);
   });
@@ -95,14 +95,16 @@ describe("solive_get_spec", () => {
     const intent = await escrow(OTHER_URL);
     expect(await call(client, "get_spec", { intent })).toEqual({
       isError: false,
-      value: { url: OTHER_URL, sha256: sha("something else"), matches: false, text: "something else", sealed_to: null, freeze_authority: null },
+      value: { url: OTHER_URL, source: "memo", sha256: sha("something else"), matches: false, text: "something else", sealed_to: null, freeze_authority: null },
     });
   });
 
-  it("refuses an escrow that publishes no spec url, and an address that is no proof escrow, without fetching", async () => {
+  it("refuses an escrow that publishes no spec url when no hash source serves it, and an address that is no proof escrow without fetching", async () => {
     const intent = await escrow();
     const problem = (address: Address) => ({ code: "NoSpecUrl", retryable: SERVER_PROBLEMS.NoSpecUrl.retryable, hint: noSpecUrl(address) });
     expect(await call(client, "get_spec", { intent })).toEqual({ isError: true, value: problem(intent) });
+    expect(fetched.map(({ url }) => new URL(url).origin)).toEqual(["https://gateway.pinata.cloud", "https://ipfs.filebase.io", "https://arweave.net"]);
+    fetched.length = 0;
     expect(await call(client, "get_spec", { intent: w.owner.address })).toEqual({ isError: true, value: problem(w.owner.address) });
     expect(SERVER_PROBLEMS.NoSpecUrl.retryable).toBe(false);
     expect(fetched).toEqual([]);

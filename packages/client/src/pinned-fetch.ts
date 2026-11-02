@@ -5,7 +5,7 @@ import { pipeline, Readable, type Transform } from "node:stream";
 import { createBrotliDecompress, createGunzip, createInflate } from "node:zlib";
 import { isSdkError } from "@intent-engine/core";
 import { FetchFailed, UNEXPECTED_REDIRECT } from "./fetch-failed.js";
-import type { SpecFetch } from "./job-specs.js";
+import { type SpecFetch, webFetch } from "./job-specs.js";
 
 const REDIRECTS: ReadonlySet<number> = new Set([301, 302, 303, 307, 308]);
 const NO_BODY: ReadonlySet<number> = new Set([204, 205, 304]);
@@ -46,12 +46,13 @@ function decoded(response: IncomingMessage): Readable {
 export const pinnedFetch: SpecFetch = (url, init) => {
   const addresses = init.addresses;
   if (addresses === undefined) {
-    return fetch(url, { redirect: init.redirect, signal: init.signal });
+    return webFetch(url, init);
   }
   return new Promise<Response>((resolve, reject) => {
     const target = new URL(url);
     const send = target.protocol === "https:" ? tlsRequest : plainRequest;
-    const request = send(target, { method: "GET", lookup: pinned(url, addresses), signal: init.signal, headers: { "accept-encoding": "gzip, deflate, br" } }, (response) => {
+    const headers = { ...init.headers, "accept-encoding": "gzip, deflate, br" };
+    const request = send(target, { method: init.method ?? "GET", lookup: pinned(url, addresses), signal: init.signal, headers }, (response) => {
       const status = response.statusCode ?? 0;
       if (REDIRECTS.has(status) || status < 200 || status > 599) {
         response.destroy();
@@ -67,6 +68,6 @@ export const pinnedFetch: SpecFetch = (url, init) => {
       resolve(new Response(Readable.toWeb(decoded(response)) as ReadableStream<Uint8Array>, { status, headers: headersOf(response) }));
     });
     request.on("error", (error) => reject(isSdkError(error, "fetch-failed") ? error : new FetchFailed(url, "network", error.message, { cause: error })));
-    request.end();
+    request.end(init.body);
   });
 };

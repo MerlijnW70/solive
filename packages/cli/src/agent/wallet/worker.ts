@@ -7,7 +7,7 @@ import { isSdkError, type ClaimsView } from "@intent-engine/client";
 import { pinnedFetch } from "@intent-engine/client/node";
 import { chainTime, loadCommittee, loadConfig, loadDeliveryBook, readSpec } from "@intent-engine/client/internal";
 import { newKeyFile } from "../../wallet.js";
-import { type AgentContext, define, specReach } from "../actions.js";
+import { type AgentContext, define, specReach, specReadOf } from "../actions.js";
 import { rentFor, rentRate } from "../budget.js";
 import type { Call } from "../claims.js";
 import { claimOf } from "../job-claims.js";
@@ -53,11 +53,11 @@ export function separateWorker(worker: Address, others: readonly Address[]): voi
   }
 }
 
-async function specOf(ctx: AgentContext, intent: Address) {
+export async function workerSpec(ctx: AgentContext, intent: Address) {
   const { lookup, rpcUrl } = specReach(ctx);
   let spec;
   try {
-    spec = await readSpec(ctx.transport, ctx.fetch ?? pinnedFetch, intent, undefined, lookup, rpcUrl);
+    spec = await readSpec(ctx.transport, ctx.fetch ?? pinnedFetch, intent, undefined, lookup, rpcUrl, { sources: specReadOf(ctx).sources });
   } catch (error) {
     if (isSdkError(error, "spec-sealed")) {
       throw new AgentRefusal("WorkerUnfit", jobSealed(intent));
@@ -154,7 +154,7 @@ export const walletWorker = define({
     if (held.status !== IntentStatus.Open || held.expiresAt <= now) {
       throw new AgentRefusal("WorkerUnfit", jobNotOpen(intent));
     }
-    const spec = await specOf(ctx, intent);
+    const spec = await workerSpec(ctx, intent);
     const board = await claimOf(ctx.transport, intent);
     claimable(intent, board);
     const left = Number(held.expiresAt - now) - LANDING_SECONDS;

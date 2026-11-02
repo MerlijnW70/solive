@@ -23,6 +23,8 @@ export {
   readSpec,
   type Spec,
   type SpecFetch,
+  type SpecReadOptions,
+  type SpecRequest,
   SPEC_FETCH_FAILED,
   SPEC_REDIRECTS,
   SPEC_SCAN,
@@ -32,6 +34,10 @@ export {
   specUrlOf,
   TESTNET_GENESIS_HASH,
 } from "./job-specs.js";
+export { cidOfSpecHash, specHashOfCid } from "./spec-cid.js";
+export { SPEC_CACHE_BYTES, SPEC_CACHE_ENTRIES, type CachedSpec, SpecCache } from "./spec-cache.js";
+export { guardedRead } from "./spec-fetch.js";
+export { ARWEAVE_IDS, checkedSources, DEFAULT_SPEC_SOURCES, MEMO_FIRST, SPEC_READ_MS, SPEC_READ_OVER, IPLD_RAW, NO_SPEC_URL, SEALED_FROM_HASH_SOURCE, SPEC_HASH_TAG, type SpecAttempt, type SpecSource, type SpecSourceKind } from "./spec-sources.js";
 export { memoInstruction, memosSignedBy } from "./job-memos.js";
 export { paidWalletsOf } from "./release-reads.js";
 export { type EngineCall, engineCalls } from "./job-origins.js";

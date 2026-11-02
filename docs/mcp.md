@@ -69,6 +69,12 @@ With `--wallet`, the setup `add-to` installs, the server does the whole job and 
 
 The server without a wallet holds no keys, so it has `solive_prepare_deliver` instead of `solive_wallet_deliver`: it returns the announcement as a transaction your wallet signs. It reads with `solive_check_delivery` and `solive_get_receipt` instead of `solive_wallet_check_delivery` and `solive_wallet_receipt`.
 
+## Where a spec is read
+
+`solive_get_spec` reads a job's spec from the url its hirer published. When that url is missing, fails or serves other bytes, it asks IPFS gateways and Arweave for the spec by the escrow's `spec_hash`, and keeps their bytes only when their sha256 equals it. `source` says which served it: `memo`, `mirror`, `ipfs`, `arweave` or `cache`, a copy this server verified before.
+
+`solive_find_jobs` lists a job whose spec any of them serves, and its `spec_url` stays the hirer's url or `null`. A job is known as sealed only from its url: when that url is gone, its spec is read by hash like any other job's. The server uses the SDK's `DEFAULT_SPEC_SOURCES`, as [the full client](sdk-client.md#find-work-and-deliver-it) describes.
+
 ## A local worker
 
 When nobody takes a job, start a worker on your own machine. It has its own wallet, and it claims, delivers and is judged and paid like any other worker.

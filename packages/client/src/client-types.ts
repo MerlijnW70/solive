@@ -19,6 +19,7 @@ import type { ClaimHeldInput, ClaimHeldPlan } from "./held-claim.js";
 import type { HeldShares, HeldSharesOptions } from "./held-shares.js";
 import type { JobFilter, JobList, Spec, SpecFetch } from "./jobs.js";
 import type { Lookup } from "./address-ranges.js";
+import type { SpecSource } from "./spec-sources.js";
 import type { ClientHooks, DebugLog } from "./observe.js";
 import type { SendStatus } from "./send-errors.js";
 import type { EngineTransaction, IntentQuery, Notifications, Simulation, Transport } from "./transport.js";
@@ -31,6 +32,7 @@ export type ClientOptions = {
   pollMs?: number;
   resyncSeconds?: number;
   fetch?: SpecFetch;
+  specSources?: readonly SpecSource[];
   lookup?: Lookup;
   hooks?: ClientHooks;
   debug?: DebugLog;

@@ -1,4 +1,5 @@
 import { SdkError } from "@intent-engine/core";
+import type { SpecRequest } from "./spec-guard.js";
 
 export const UNEXPECTED_REDIRECT = "unexpected redirect";
 
@@ -19,4 +20,4 @@ export class FetchFailed extends SdkError {
   }
 }
 
-export type CheckedFetch = (url: string, init: { redirect: "error"; signal: AbortSignal; addresses: readonly string[] }) => Promise<Response>;
+export type CheckedFetch = (url: string, init: { redirect: "error"; signal: AbortSignal; addresses: readonly string[] } & SpecRequest) => Promise<Response>;

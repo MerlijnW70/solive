@@ -96,7 +96,7 @@ type Found = { proof: Proof; url: string | null };
 
 async function jobRead(transport: Transport, proof: Proof, all: boolean, readable: Readable): Promise<Found | null> {
   const url = await specUrlOf(transport, proof.address, proof.intent.createdAt, proof.intent.owner);
-  return all || (url !== null && (await readable(transport, proof.address))) ? { proof, url } : null;
+  return all || (await readable(transport, proof.address)) ? { proof, url } : null;
 }
 
 const before = (first: Proof): Cursor => ({ ...keyOf(first), createdAt: first.intent.createdAt + 1n });

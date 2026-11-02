@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/server";
 import { PRODUCT_REPOSITORY, PRODUCT_SLUG } from "@intent-engine/core/internal";
 import { render } from "../render.js";
+import { SpecCache } from "@intent-engine/client/internal";
 import { type AgentContext, type AnyAction, type Effect, invoke } from "./actions.js";
 import { ACTIONS } from "./registry.js";
 import { limitLines, WALLET_ACTIONS, WALLET_NOTICE } from "./wallet.js";
@@ -176,6 +177,7 @@ export function agentServer(
   ctx: AgentContext,
   actions: readonly AnyAction[] = ctx.wallet === undefined ? ACTIONS : [...WALLET_ACTIONS, ...ACTIONS],
 ): McpServer {
+  ctx.specCache ??= new SpecCache();
   const withWallet = ctx.wallet !== undefined;
   const names = new Set(actions.map((action) => action.name));
   const server = new McpServer(

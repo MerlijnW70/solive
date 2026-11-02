@@ -86,7 +86,7 @@ describe("plain-http loopback urls", () => {
       fetched.push(url);
       return new Response(SPEC);
     };
-    const on = (url: string, transport: Transport) => createClient({ url, transport, fetch: recorded });
+    const on = (url: string, transport: Transport) => createClient({ url, transport, fetch: recorded, specSources: [{ kind: "memo" }] });
     await expect(on(LOOPBACK_RPC, cluster).spec(plain)).rejects.toThrow(new SpecUnreadable(served.host + "/spec.md", PLAIN_HTTP_ON_PUBLIC));
     await expect(on(REMOTE_RPC, cluster).spec(secured)).rejects.toThrow(new SpecUnreadable(loopback, NOT_PUBLIC_SPEC));
     await expect(on(REMOTE_RPC, cluster).spec(internal)).rejects.toThrow(new SpecUnreadable(inside, NOT_PUBLIC_SPEC));

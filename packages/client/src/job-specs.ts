@@ -1,43 +1,39 @@
 import type { Address } from "@solana/kit";
-import { type DeliveryOpener, type EngineEvent, isSdkError, NotInvited, SdkError, SealedError } from "@intent-engine/core";
+import { type DeliveryOpener, type EngineEvent, NotInvited, SealedError } from "@intent-engine/core";
 import { decodeEvent, isSealed, parseSpecMemo, remainingOf, sealedTo, SPEC_MEMO_PREFIX, type UnreadableAccount, unseal } from "@intent-engine/core/internal";
 import { loadConfig } from "./accounts.js";
 import { type PayTerms, releaseNet } from "./job-pay.js";
 import { memosSignedBy } from "./job-memos.js";
 import { createdIn, hex, intentAt, type JobFilter, openProofEscrows, proofAt } from "./job-proofs.js";
 import { MEMOS_PER_TRANSACTION, scan } from "./job-scan.js";
-import { UNEXPECTED_REDIRECT } from "./fetch-failed.js";
-import { joinedBytes, sha256Hex } from "./encoding.js";
-import { hostAddresses, type Lookup, loopbackUrl } from "./address-ranges.js";
+import { sha256Hex } from "./encoding.js";
+import type { Lookup } from "./address-ranges.js";
+import { type SpecFetch, SpecSealed, SpecUnreadable } from "./spec-guard.js";
+import { guardedRead } from "./spec-fetch.js";
+import { checkedSources, DEFAULT_SPEC_SOURCES, fromHashSource, mismatched, NO_SPEC_URL, SPEC_READ_MS, SPEC_READ_OVER, type SpecAttempt, type SpecSource, type SpecSourceKind } from "./spec-sources.js";
+import type { SpecCache } from "./spec-cache.js";
 import { type EngineTransaction, TRANSACTION_FETCHES, type Transport } from "./transport.js";
 
+export {
+  DEVNET_GENESIS_HASH,
+  MAINNET_GENESIS_HASH,
+  MAX_SPEC_BYTES,
+  NOT_HTTP,
+  NOT_PUBLIC_SPEC,
+  PLAIN_HTTP_ON_PUBLIC,
+  plainHttpOnPublic,
+  PUBLIC_GENESIS_HASHES,
+  SPEC_FETCH_FAILED,
+  SPEC_REDIRECTS,
+  SPEC_TIMEOUT_MS,
+  type SpecFetch,
+  type SpecRequest,
+  SpecSealed,
+  SpecUnreadable,
+  TESTNET_GENESIS_HASH,
+} from "./spec-guard.js";
+
 export const SPEC_SCAN = 10;
-export const MAINNET_GENESIS_HASH = "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d";
-export const DEVNET_GENESIS_HASH = "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG";
-export const TESTNET_GENESIS_HASH = "4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsfY";
-export const PUBLIC_GENESIS_HASHES: ReadonlySet<string> = new Set([MAINNET_GENESIS_HASH, DEVNET_GENESIS_HASH, TESTNET_GENESIS_HASH]);
-export const MAX_SPEC_BYTES = 1_048_576;
-export const SPEC_TIMEOUT_MS = 10_000;
-export const PLAIN_HTTP_ON_PUBLIC = "is a plain http url, which a public cluster may not use";
-export const NOT_HTTP = "is not an http or https url";
-export const NOT_PUBLIC_SPEC = "points to a private, loopback or local network address, which is not fetched";
-export const SPEC_FETCH_FAILED = "could not be fetched";
-export const SPEC_REDIRECTS = "redirects, and a spec url is read without following redirects";
-
-export async function plainHttpOnPublic(transport: Transport, url: string): Promise<boolean> {
-  let protocol: string;
-  try {
-    protocol = new URL(url).protocol;
-  } catch {
-    return false;
-  }
-  if (protocol !== "http:" || (transport.offline === true && loopbackUrl(url))) {
-    return false;
-  }
-  return PUBLIC_GENESIS_HASHES.has(await transport.genesisHash());
-}
-
-const loopbackAllowed = (transport: Transport, rpcUrl?: string): boolean => transport.offline === true || (rpcUrl !== undefined && loopbackUrl(rpcUrl));
 
 export type Job = {
   intent: Address;
@@ -54,39 +50,27 @@ export type Job = {
   expiresAt: bigint;
 };
 
-export type Spec = { url: string; text: string; bytes: Uint8Array; sha256: string; matches: boolean; sealedTo?: Address[] };
+export type Spec = {
+  url: string;
+  text: string;
+  bytes: Uint8Array;
+  sha256: string;
+  matches: boolean;
+  sealedTo?: Address[];
+  source: SpecSourceKind | "cache";
+  tried: SpecAttempt[];
+};
 
-export type SpecFetch = (url: string, init: { redirect: "error"; signal: AbortSignal; addresses?: readonly string[] }) => Promise<Response>;
+export type SpecReadOptions = { sources?: readonly SpecSource[]; cache?: SpecCache; budgetMs?: number };
 
-export const webFetch: SpecFetch = (url, init) => fetch(url, { redirect: init.redirect, signal: init.signal });
-
-export class SpecSealed extends SdkError {
-  readonly code = "spec-sealed";
-  override readonly name = "SpecSealed";
-  readonly url: string;
-  readonly to: Address[];
-  readonly keyed: boolean;
-
-  constructor(url: string, to: Address[], keyed: boolean) {
-    super(
-      `the spec at ${url} is sealed to ${to.length} invited wallet${to.length === 1 ? "" : "s"}; ${keyed ? "this wallet is not one of them" : "read it with the key of an invited wallet"}`,
-    );
-    this.url = url;
-    this.to = to;
-    this.keyed = keyed;
-  }
-}
-
-export class SpecUnreadable extends SdkError {
-  readonly code = "spec-unreadable";
-  override readonly name = "SpecUnreadable";
-  readonly url: string;
-
-  constructor(url: string, reason: string, options?: ErrorOptions) {
-    super(`the spec at ${url} ${reason}`, options);
-    this.url = url;
-  }
-}
+export const webFetch: SpecFetch = (url, init) =>
+  fetch(url, {
+    redirect: init.redirect,
+    signal: init.signal,
+    ...(init.method === undefined ? {} : { method: init.method }),
+    ...(init.headers === undefined ? {} : { headers: init.headers }),
+    ...(init.body === undefined ? {} : { body: init.body }),
+  });
 
 function createdOwner(transaction: EngineTransaction, intent: Address): Address | null {
   for (const data of transaction.emitted) {
@@ -142,62 +126,28 @@ export async function jobsOf(transport: Transport, filter?: Address | JobFilter,
   return { jobs, unreadable };
 }
 
-async function discarded(response: Response): Promise<void> {
-  await response.body?.cancel().catch(() => undefined);
+async function specOf(url: string, bytes: Uint8Array, hash: string, source: Spec["source"], tried: SpecAttempt[], to?: Address[]): Promise<Spec> {
+  const sha256 = await sha256Hex(bytes);
+  return { url, text: new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes), bytes, sha256, matches: sha256 === hash, ...(to === undefined ? {} : { sealedTo: to }), source, tried };
 }
 
-function before<T>(signal: AbortSignal, work: Promise<T>): Promise<T> {
-  if (signal.aborted) {
-    return Promise.reject(signal.reason);
-  }
-  return new Promise<T>((resolve, reject) => {
-    const stop = () => reject(signal.reason);
-    signal.addEventListener("abort", stop, { once: true });
-    work.then(resolve, reject).finally(() => signal.removeEventListener("abort", stop));
-  });
-}
-
-async function bounded(response: Response, url: string, signal: AbortSignal): Promise<Uint8Array> {
-  if (!response.ok) {
-    await discarded(response);
-    throw new SpecUnreadable(url, `answered ${response.status}`);
-  }
-  const declared = Number(response.headers.get("content-length") ?? "0");
-  if (declared > MAX_SPEC_BYTES) {
-    await discarded(response);
-    throw new SpecUnreadable(url, `is larger than ${MAX_SPEC_BYTES} bytes`);
-  }
-  const reader = response.body?.getReader();
-  if (reader === undefined) {
-    return new Uint8Array();
-  }
-  const chunks: Uint8Array[] = [];
-  let size = 0;
+async function opened(url: string, fetched: Uint8Array, keypair: DeliveryOpener | readonly DeliveryOpener[] | undefined, hash: string, tried: SpecAttempt[]): Promise<Spec> {
+  let to: Address[];
   try {
-    for (let next = await before(signal, reader.read()); next.done !== true; next = await before(signal, reader.read())) {
-      size += next.value.length;
-      if (size > MAX_SPEC_BYTES) {
-        throw new SpecUnreadable(url, `is larger than ${MAX_SPEC_BYTES} bytes`);
-      }
-      chunks.push(next.value);
-    }
+    to = sealedTo(fetched);
   } catch (error) {
-    await reader.cancel().catch(() => undefined);
-    throw error;
+    throw error instanceof SealedError ? new SpecUnreadable(url, `is sealed but could not be opened: ${error.message}`, { cause: error }) : error;
   }
-  return joinedBytes(chunks);
-}
-
-function fetchProblem(error: unknown): string {
-  if (isSdkError(error, "fetch-failed")) {
-    return error.reason === "redirect" ? SPEC_REDIRECTS : `${SPEC_FETCH_FAILED} (${error.message}: ${error.detail})`;
+  if (keypair === undefined || (Array.isArray(keypair) && keypair.length === 0)) {
+    throw new SpecSealed(url, to, false);
   }
-  const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
-  if (cause === UNEXPECTED_REDIRECT) {
-    return SPEC_REDIRECTS;
+  let bytes: Uint8Array;
+  try {
+    bytes = await unseal(fetched, keypair);
+  } catch (error) {
+    throw error instanceof NotInvited ? new SpecSealed(url, to, true) : new SpecUnreadable(url, `is sealed but could not be opened${error instanceof SealedError ? `: ${error.message}` : ""}`);
   }
-  const message = error instanceof Error ? error.message : String(error);
-  return `${SPEC_FETCH_FAILED} (${cause === "" ? message : `${message}: ${cause}`})`;
+  return specOf(url, bytes, hash, "memo", tried, to);
 }
 
 export async function readSpec(
@@ -207,55 +157,77 @@ export async function readSpec(
   keypair: DeliveryOpener | readonly DeliveryOpener[] | undefined,
   lookup: Lookup | null,
   rpcUrl?: string,
+  options: SpecReadOptions = {},
 ): Promise<Spec | null> {
+  const sources = checkedSources(options.sources ?? DEFAULT_SPEC_SOURCES);
   const proof = await proofAt(transport, intent);
   if (proof === null) {
     return null;
   }
+  const hash = hex(proof.params.specHash);
+  const { cache } = options;
+  const key = `${intent} ${hash}`;
+  const cached = cache?.get(key);
+  if (cached !== undefined) {
+    return specOf(cached.url, cached.bytes, hash, "cache", []);
+  }
   const url = await specUrlOf(transport, intent, proof.intent.createdAt, proof.intent.owner);
-  if (url === null) {
-    return null;
-  }
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new SpecUnreadable(url, "is not a url");
-  }
-  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
-    throw new SpecUnreadable(url, NOT_HTTP);
-  }
-  if (await plainHttpOnPublic(transport, url)) {
-    throw new SpecUnreadable(url, PLAIN_HTTP_ON_PUBLIC);
-  }
-  const signal = AbortSignal.timeout(SPEC_TIMEOUT_MS);
-  let fetched: Uint8Array;
-  try {
-    const addresses = await before(signal, hostAddresses(parsed.hostname, lookup, loopbackAllowed(transport, rpcUrl)));
-    if (addresses === null) {
-      throw new SpecUnreadable(url, NOT_PUBLIC_SPEC);
+  const deadline = AbortSignal.timeout(options.budgetMs ?? SPEC_READ_MS);
+  const reach = { transport, get, lookup, rpcUrl, deadline };
+  const tried: SpecAttempt[] = [];
+  let failed: SpecUnreadable | undefined;
+  let mismatch: Spec | undefined;
+  let memoRead = false;
+  for (const source of sources) {
+    if (deadline.aborted) {
+      tried.push({ source: source.kind, url: null, reason: SPEC_READ_OVER });
+      continue;
     }
-    fetched = await bounded(await before(signal, get(url, { redirect: "error", signal, ...(addresses === undefined ? {} : { addresses }) })), url, signal);
-  } catch (error) {
-    throw error instanceof SpecUnreadable ? error : new SpecUnreadable(url, fetchProblem(error), { cause: error });
-  }
-  let bytes: Uint8Array = fetched;
-  let to: Address[] | null = null;
-  if (isSealed(fetched)) {
+    if (source.kind !== "memo") {
+      const served = await fromHashSource(reach, source, hash, tried);
+      if (served !== null) {
+        if (url === null) {
+          cache?.put(key, served.url, served.bytes);
+        }
+        return specOf(served.url, served.bytes, hash, source.kind, tried);
+      }
+      continue;
+    }
+    if (memoRead) {
+      continue;
+    }
+    memoRead = true;
+    if (url === null) {
+      tried.push({ source: "memo", url: null, reason: NO_SPEC_URL });
+      continue;
+    }
+    let fetched: Uint8Array;
     try {
-      to = sealedTo(fetched);
+      fetched = await guardedRead(transport, get, url, lookup, rpcUrl, {}, deadline);
     } catch (error) {
-      throw error instanceof SealedError ? new SpecUnreadable(url, `is sealed but could not be opened: ${error.message}`, { cause: error }) : error;
+      if (!(error instanceof SpecUnreadable)) {
+        throw error;
+      }
+      failed = error;
+      tried.push({ source: "memo", url, reason: error.message });
+      continue;
     }
-    if (keypair === undefined || (Array.isArray(keypair) && keypair.length === 0)) {
-      throw new SpecSealed(url, to, false);
+    if (isSealed(fetched)) {
+      return opened(url, fetched, keypair, hash, tried);
     }
-    try {
-      bytes = await unseal(fetched, keypair);
-    } catch (error) {
-      throw error instanceof NotInvited ? new SpecSealed(url, to, true) : new SpecUnreadable(url, `is sealed but could not be opened${error instanceof SealedError ? `: ${error.message}` : ""}`);
+    const spec = await specOf(url, fetched, hash, "memo", tried);
+    if (spec.matches) {
+      cache?.put(key, url, fetched);
+      return spec;
     }
+    mismatch = spec;
+    tried.push({ source: "memo", url, reason: `the spec at ${url} ${mismatched(spec.sha256)}` });
   }
-  const sha256 = await sha256Hex(bytes);
-  return { url, text: new TextDecoder("utf-8", { ignoreBOM: true }).decode(bytes), bytes, sha256, matches: sha256 === hex(proof.params.specHash), ...(to === null ? {} : { sealedTo: to }) };
+  if (mismatch !== undefined) {
+    return mismatch;
+  }
+  if (failed !== undefined) {
+    throw failed;
+  }
+  return null;
 }

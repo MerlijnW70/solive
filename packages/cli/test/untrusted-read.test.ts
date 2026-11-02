@@ -72,7 +72,7 @@ describe("text other parties control, through the read server", () => {
     const intent = await escrow(SPEC_URL);
     const { error, value } = await served(client, "get_spec", { intent });
     expect(error).toBe(false);
-    expect(value).toEqual({ url: SPEC_URL, sha256: sha(HOSTILE), matches: true, text: HOSTILE, sealed_to: null, freeze_authority: null });
+    expect(value).toEqual({ url: SPEC_URL, source: "memo", sha256: sha(HOSTILE), matches: true, text: HOSTILE, sealed_to: null, freeze_authority: null });
     expect(heldTo(tool("get_spec"), value).sort()).toEqual(["text", "url"]);
     const other = await escrow(SPEC_URL, sha("the spec the owner meant"));
     const differs = await served(client, "get_spec", { intent: other });
