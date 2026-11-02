@@ -2,7 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createSolanaRpc } from "@solana/kit";
 import { CallerLimit } from "./callers.js";
 import type { Clock } from "./chain.js";
-import { drip, type DripDeps, type DripResponse } from "./drip.js";
+import { drip, record, type DripDeps, type DripResponse } from "./drip.js";
 import { DEFAULT_RPC_URL, MAX_BODY_BYTES } from "./limits.js";
 import { NOT_JSON } from "./request.js";
 
@@ -55,7 +55,7 @@ export function createHandler(deps: DripDeps): (request: IncomingMessage, respon
     if (method === "POST") {
       const read = await readBody(request);
       if (!read.ok) {
-        deps.log(JSON.stringify({ status: 400 }));
+        record(deps, request.headers, request.socket?.remoteAddress, 400);
         write(response, { status: 400, body: { error: NOT_JSON } });
         return;
       }

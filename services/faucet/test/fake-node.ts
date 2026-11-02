@@ -40,6 +40,7 @@ export class FakeNode {
   readonly landed = new Map<string, Landed>();
   statuses: (polls: number) => Status = () => ({ confirmationStatus: "confirmed" });
   readonly failing = new Set<string>();
+  readonly failingHistory = new Set<string>();
   readonly calls: { method: string; params: unknown[] }[] = [];
   readonly sent: Sent[] = [];
   polls = 0;
@@ -55,7 +56,8 @@ export class FakeNode {
   transport: RpcTransport = (async ({ payload }: { payload: unknown }) => {
     const { method, params, id } = payload as { method: string; params: unknown[]; id: unknown };
     this.calls.push({ method, params });
-    if (this.failing.has(method)) return { jsonrpc: "2.0", id, error: { code: -32000, message: `${method} is down` } };
+    const target = method === "getSignaturesForAddress" ? (params[0] as string) : "";
+    if (this.failing.has(method) || this.failingHistory.has(target)) return { jsonrpc: "2.0", id, error: { code: -32000, message: `${method} is down` } };
     return { jsonrpc: "2.0", id, result: this.answer(method, params) };
   }) as RpcTransport;
 
@@ -74,7 +76,7 @@ export class FakeNode {
         const config = (params[1] ?? {}) as { before?: string; limit?: number };
         const all = this.listed.get(params[0] as string) ?? [];
         const from = config.before === undefined ? 0 : all.findIndex((entry) => entry.signature === config.before) + 1;
-        return all.slice(from, from + (config.limit ?? 1000)).map((entry) => ({
+        return all.slice(from, from + Math.min(config.limit ?? 1000, 1000)).map((entry) => ({
           signature: entry.signature,
           blockTime: entry.blockTime,
           err: entry.err ?? null,

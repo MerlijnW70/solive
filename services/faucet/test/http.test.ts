@@ -144,6 +144,7 @@ describe("function wired to the environment", () => {
     expect(node.methods()).toEqual(["getGenesisHash"]);
     expect(node.sent).toEqual([]);
     expect(new Set(urls)).toEqual(new Set([other]));
-    expect(logged).toEqual([JSON.stringify({ status: 503 })]);
+    expect(logged).toHaveLength(1);
+    expect(JSON.parse(logged[0] ?? "")).toEqual({ status: 503, caller: expect.stringMatching(/^[0-9a-f]{16}$/) });
   });
 });

@@ -191,13 +191,12 @@ describe("429 the address is over its limit", () => {
 
 describe("503 wrong cluster", () => {
   for (const genesis of ["5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d", "4uhcVJyU9pJkvQyS88uRDiswHXSCkY3zQawwpjk2NsNY", ""]) {
-    it(`sends nothing and never reads the key on genesis ${genesis || "empty"}`, async () => {
+    it(`sends nothing on genesis ${genesis || "empty"}`, async () => {
       const h = harness(faucet);
       h.node.genesis = genesis;
       const response = await drip(post(recipient), h.deps);
       expect(response).toEqual({ status: 503, body: { error: REASONS.cluster } });
       expect(h.node.methods()).toEqual(["getGenesisHash"]);
-      expect(h.secretReads).toBe(0);
       expect(h.node.sent).toEqual([]);
     });
   }

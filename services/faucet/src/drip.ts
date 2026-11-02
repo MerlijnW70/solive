@@ -1,7 +1,8 @@
 import type { Address, KeyPairSigner } from "@solana/kit";
 import type { CallerLimit } from "./callers.js";
-import { balanceOf, confirm, earlierDrip, onDevnet, sendDrip, type Clock, type FaucetRpc } from "./chain.js";
+import { balanceOf, confirm, dailyCount, earlierDrip, onDevnet, sendDrip, type Clock, type FaucetRpc } from "./chain.js";
 import { CONFIRM_TIMEOUT_MS, DRIP_LAMPORTS, DRIP_WINDOW_SECS, FLOOR_LAMPORTS, FUNDED_LAMPORTS, PENDING_RETRY_SECS } from "./limits.js";
+import { agentOf, callerMark } from "./mark.js";
 import { callerOf, parseBody, type Headers } from "./request.js";
 import { faucetSigner } from "./secret.js";
 
@@ -30,6 +31,7 @@ export type DripDeps = {
 export const REASONS = {
   method: "Send a POST request to this address with a JSON body that holds your wallet address.",
   caller: "This network already received the most drips allowed for one day, so wait retry_after seconds before you ask again.",
+  daily: "The faucet has reached its daily limit of drips, so wait retry_after seconds, or get devnet SOL at https://faucet.solana.com.",
   funded: "This address already holds 0.25 SOL or more, which is enough to start, so no drip was sent.",
   recent: "This address received a drip from this faucet in the last day, so wait retry_after seconds before you ask again.",
   pending: "A drip to this address is already on its way, so wait a minute before you ask again.",
@@ -67,6 +69,9 @@ async function ready(deps: DripDeps, recipient: Address): Promise<Ready | DripRe
     const earlier = await earlierDrip(rpc, recipient, signer.address, Math.floor(deps.clock.now() / 1000));
     if (earlier.kind === "recent") return limited(REASONS.recent, earlier.retryAfter);
     if (earlier.kind === "busy") return limited(REASONS.busy, DRIP_WINDOW_SECS);
+    const day = await dailyCount(rpc, signer.address, Math.floor(deps.clock.now() / 1000));
+    if (day.kind === "full") return limited(REASONS.daily, day.retryAfter);
+    if (day.kind === "busy") return limited(REASONS.daily, DRIP_WINDOW_SECS);
     if ((await balanceOf(rpc, signer.address)) < FLOOR_LAMPORTS) return error(503, REASONS.floor);
     return { rpc, signer };
   } catch {
@@ -92,10 +97,23 @@ async function fund(deps: DripDeps, recipient: Address): Promise<Outcome> {
   return { response: { status: 200, body: { signature: sent.signature, lamports: DRIP_LAMPORTS.toString() } }, attempted: true };
 }
 
+export function record(deps: DripDeps, headers: Headers, remote: string | undefined, status: number, signature?: string): void {
+  const caller = callerMark(deps.secret(), deps.clock.now(), callerOf(headers, remote));
+  const agent = agentOf(headers);
+  deps.log(
+    JSON.stringify({
+      status,
+      ...(signature === undefined ? {} : { signature }),
+      ...(caller === undefined ? {} : { caller }),
+      ...(agent === undefined ? {} : { agent }),
+    }),
+  );
+}
+
 export async function drip(request: DripRequest, deps: DripDeps): Promise<DripResponse> {
   const response = await answer(request, deps);
   const signature = "signature" in response.body ? response.body.signature : undefined;
-  deps.log(JSON.stringify({ status: response.status, ...(signature === undefined ? {} : { signature }) }));
+  record(deps, request.headers, request.remote, response.status, signature);
   return response;
 }
 

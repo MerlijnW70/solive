@@ -18,6 +18,7 @@ import {
 import {
   CONFIRM_POLL_MS,
   CONFIRM_TIMEOUT_MS,
+  DAILY_DRIPS,
   DEVNET_GENESIS_HASH,
   DRIP_LAMPORTS,
   DRIP_WINDOW_SECS,
@@ -71,6 +72,31 @@ export async function earlierDrip(rpc: FaucetRpc, recipient: Address, faucet: Ad
     }
     const last = page[page.length - 1];
     if (page.length < SIGNATURE_PAGE || last === undefined) return { kind: "none" };
+    before = last.signature;
+  }
+}
+
+export type DailyCount = { readonly kind: "open" } | { readonly kind: "full"; readonly retryAfter: number } | { readonly kind: "busy" };
+
+export async function dailyCount(rpc: FaucetRpc, faucet: Address, nowSecs: number): Promise<DailyCount> {
+  let before: Signature | undefined;
+  let seen = 0;
+  let counted = 0;
+  for (;;) {
+    const page = await rpc
+      .getSignaturesForAddress(faucet, { commitment: "confirmed", limit: SIGNATURE_PAGE, ...(before === undefined ? {} : { before }) })
+      .send();
+    for (const entry of page) {
+      seen += 1;
+      if (seen > MAX_SIGNATURES_CHECKED) return { kind: "busy" };
+      const time = entry.blockTime === null ? nowSecs : Number(entry.blockTime);
+      if (nowSecs - time >= DRIP_WINDOW_SECS) return { kind: "open" };
+      if (entry.err !== null) continue;
+      counted += 1;
+      if (counted >= DAILY_DRIPS) return { kind: "full", retryAfter: Math.max(1, Math.ceil(time + DRIP_WINDOW_SECS - nowSecs)) };
+    }
+    const last = page[page.length - 1];
+    if (page.length < SIGNATURE_PAGE || last === undefined) return { kind: "open" };
     before = last.signature;
   }
 }

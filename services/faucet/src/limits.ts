@@ -12,3 +12,6 @@ export const PENDING_RETRY_SECS = 60;
 export const SIGNATURE_PAGE = 100;
 export const MAX_SIGNATURES_CHECKED = 200;
 export const MAX_BODY_BYTES = 1024;
+export const DAILY_DRIPS = 20;
+export const MARK_CHARS = 16;
+export const AGENT_CHARS = 80;
