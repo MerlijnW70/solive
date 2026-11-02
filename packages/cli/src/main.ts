@@ -4,6 +4,7 @@ import { dirname } from "node:path";
 import type { Readable, Writable } from "node:stream";
 import { StdioServerTransport } from "@modelcontextprotocol/server/stdio";
 import { createKeyPairSignerFromBytes, createSolanaRpc, type KeyPairSigner } from "@solana/kit";
+import { Kind } from "@intent-engine/core";
 import { isSdkError } from "@intent-engine/client";
 import { openUsb, pinnedFetch, systemLookup } from "@intent-engine/client/node";
 import { changesFrom, intentNotifications, observedFetch, observedTransport, observerOf, type RpcLike, rpcTransport, signatureWatch } from "@intent-engine/client/internal";
@@ -189,6 +190,7 @@ export function nodeRuntime(clock: () => number = Date.now, pipes: Pipes = proce
   return {
     transport: (url) => rpcTransport(createSolanaRpc(url) as unknown as RpcLike, undefined, signatureWatch(url)),
     intentChanges: (url) => changesFrom(intentNotifications(url)),
+    jobChanges: (url) => changesFrom(intentNotifications(url, Kind.AttestedResult)),
     loadSigner: loadKeypairFile,
     loadKeypair: loadKeypairBytes,
     specFetch: pinnedFetch,

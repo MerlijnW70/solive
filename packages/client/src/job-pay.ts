@@ -2,6 +2,7 @@ import type { Address } from "@solana/kit";
 import { type FeeConfig, formatAmount, type Intent, Kind, splitFees } from "@intent-engine/core";
 import { decodeParams, kindBit, PAUSE_FILL, readIntentAccounts } from "@intent-engine/core/internal";
 import { mintOf } from "./accounts.js";
+import { OPEN_PROOFS } from "./job-proofs.js";
 import type { Job } from "./job-specs.js";
 import type { Transport } from "./transport.js";
 
@@ -44,7 +45,7 @@ export async function jobPays(
 ): Promise<JobPay[]> {
   const mints = [...new Set(jobs.map(({ inputMint }) => inputMint))];
   const [held, decimals] = await Promise.all([
-    transport.intents(),
+    transport.intents(OPEN_PROOFS),
     Promise.all(mints.map(async (mint) => [mint, await scaleOf(decimalsOf, mint)] as const)),
   ]);
   const intents = new Map(readIntentAccounts(held).intents.map(({ address, intent }) => [address, intent]));

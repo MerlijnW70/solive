@@ -7,6 +7,7 @@ import {
 import { getIntentDiscriminatorBytes, getIntentSize, INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import type { ProgramAccount } from "./rpc-shapes.js";
 import { base64Bytes } from "./encoding.js";
+import { INTENT_KIND_AT } from "./intent-filters.js";
 
 export type IntentChanges = { wait(seconds: number): Promise<ProgramAccount[] | null>; close(): void; slot?(): bigint | undefined };
 
@@ -27,7 +28,7 @@ export function socketUrl(url: string): string {
   return parsed.toString();
 }
 
-export function intentNotifications(url: string): Notifications {
+export function intentNotifications(url: string, kind?: number): Notifications {
   const subscriptions = createSolanaRpcSubscriptions(socketUrl(url));
   return (abortSignal) =>
     subscriptions
@@ -37,6 +38,9 @@ export function intentNotifications(url: string): Notifications {
         filters: [
           { dataSize: BigInt(getIntentSize()) },
           { memcmp: { offset: 0n, bytes: getBase58Decoder().decode(getIntentDiscriminatorBytes()) as Base58EncodedBytes, encoding: "base58" } },
+          ...(kind === undefined
+            ? []
+            : [{ memcmp: { offset: BigInt(INTENT_KIND_AT), bytes: getBase58Decoder().decode(Uint8Array.of(kind)) as Base58EncodedBytes, encoding: "base58" as const } }]),
         ],
       })
       .subscribe({ abortSignal });

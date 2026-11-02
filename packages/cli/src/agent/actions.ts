@@ -1,7 +1,7 @@
 import type { Address, TransactionSigner } from "@solana/kit";
 import type { FaucetFetch } from "../faucet.js";
 import { type Lookup, type SpecFetch, type Transport } from "@intent-engine/client";
-import { memoized } from "@intent-engine/client/internal";
+import { type IntentChanges, memoized } from "@intent-engine/client/internal";
 import { systemLookup } from "../public-address.js";
 import type { SpecReach } from "../invites.js";
 import { type Problem, problemOf } from "./problems.js";
@@ -20,6 +20,7 @@ export type AgentContext = {
   claims: Claims;
   wallet?: WalletAccess;
   clock?: Clock;
+  jobChanges?: (url: string) => IntentChanges;
   url?: string;
   fetch?: SpecFetch;
   faucetFetch?: FaucetFetch;

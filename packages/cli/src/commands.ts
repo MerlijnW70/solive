@@ -149,7 +149,7 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
         agent: agent !== undefined,
       });
       const confirm = command.confirmUrl === undefined ? {} : { confirm: runtime.transport(command.confirmUrl) };
-      await runtime.serve(agentServer({ transport, relay, agent, claims: claimsOf(), url: command.url, fetch: runtime.specFetch, lookup: runtime.lookup, clock: { sleep: runtime.sleep, now: runtime.now }, ...(runtime.faucetFetch === undefined ? {} : { faucetFetch: runtime.faucetFetch }), ...wallet, ...update, ...confirm }, served));
+      await runtime.serve(agentServer({ transport, relay, agent, claims: claimsOf(), url: command.url, fetch: runtime.specFetch, lookup: runtime.lookup, clock: { sleep: runtime.sleep, now: runtime.now }, ...(runtime.jobChanges === undefined ? {} : { jobChanges: runtime.jobChanges.bind(runtime) }), ...(runtime.faucetFetch === undefined ? {} : { faucetFetch: runtime.faucetFetch }), ...wallet, ...update, ...confirm }, served));
       return null;
     }
     case "setup": {

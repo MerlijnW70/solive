@@ -16,7 +16,7 @@ import { MIN_PAY_FORMAT } from "./read.js";
 import { account, amount, flag, integer, InvalidInput, list, nullable, object, optional, text, time } from "./schema.js";
 import { keyFileAddress, WAIT_MAX, walletOpeners } from "./wallet/guard.js";
 import { NO_CLOCK } from "./wallet/receipt.js";
-import { poll } from "./wallet/wait.js";
+import { waitForJobs } from "./job-wait.js";
 
 export const NO_JOB_YET = `no matching job when the wait ran out; call ${tool("find_jobs")} again with wait to keep waiting`;
 
@@ -211,13 +211,14 @@ export const findJobs = define({
     const fresh = unmemoized(ctx.transport);
     let listed: Listed | undefined;
     let first: ReadonlySet<Address> | undefined;
-    await poll(clock, input.wait, async () => {
+    const url = ctx.url ?? ctx.wallet?.url;
+    await waitForJobs(clock, input.wait, async () => {
       listed = await jobsListed(memoized(fresh), wanted, readable);
       const intents = listed.jobs.map(({ intent }) => intent);
       const known = first;
       first ??= new Set(intents);
       return known !== undefined && intents.some((intent) => !known.has(intent));
-    });
+    }, url === undefined ? undefined : ctx.jobChanges?.(url));
     const last = listed as Listed;
     return withProfile(ctx, hinted(last, firstHint(last, NO_JOB_YET)));
   },

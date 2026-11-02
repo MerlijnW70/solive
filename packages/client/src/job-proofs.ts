@@ -15,7 +15,7 @@ import {
 import { chainTime, createdAccount } from "./accounts.js";
 import { loadClaimsOf } from "./client-claims.js";
 import { scan } from "./job-scan.js";
-import type { EngineTransaction, Transport } from "./transport.js";
+import type { EngineTransaction, IntentQuery, Transport } from "./transport.js";
 import { bytesHex } from "./encoding.js";
 
 export const JOBS_LIMIT = 50;
@@ -72,11 +72,13 @@ export async function createdAtOf(transport: Transport, address: Address): Promi
   return (await intentAt(transport, address))?.createdAt ?? null;
 }
 
+export const OPEN_PROOFS: IntentQuery = { kind: Kind.AttestedResult, status: IntentStatus.Open };
+
 export type ProofScan = { proofs: Proof[]; unreadable: UnreadableAccount[] };
 
 export async function openProofEscrows(transport: Transport, filter?: Address | JobFilter, limit: number = JOBS_LIMIT): Promise<ProofScan> {
   const { attestor, mint, minSells, unclaimed, owner, excludeOwners = [] }: JobFilter = typeof filter === "string" ? { attestor: filter } : (filter ?? {});
-  const [accounts, now] = await Promise.all([transport.intents(), chainTime(transport)]);
+  const [accounts, now] = await Promise.all([transport.intents(OPEN_PROOFS), chainTime(transport)]);
   const { intents, unreadable } = readIntentAccounts(accounts);
   const open = intents
     .map(({ address, intent }) => proofOf(address, intent))

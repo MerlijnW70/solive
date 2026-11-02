@@ -11,6 +11,7 @@ import type { FaucetFetch } from "./faucet.js";
 export type Runtime = {
   transport(url: string): Transport;
   intentChanges(url: string): IntentChanges;
+  jobChanges?(url: string): IntentChanges;
   loadSigner(path: string): Promise<KeyPairSigner>;
   loadKeypair(path: string): Promise<Uint8Array>;
   readText(path: string): Promise<string>;
