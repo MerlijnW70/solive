@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'; require-trusted-types-for 'script'; trusted-types 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="color-scheme" content="light dark">
+<meta name="description" content="Get 0.5 devnet SOL and run a paid demo job on Solana devnet, step by step. Test money only.">
+<title>Try it on devnet</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="preload" href="/fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/fonts/GeistMono-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="/try.css">
+<script src="/try.js" defer></script>
+</head>
+<body>
+<header class="bar">
+<div class="wrap bar-row">
+<p class="brand">Try it on devnet</p>
+<p class="badge"><span class="badge-net">Devnet</span><span class="badge-note">test tokens, no value</span></p>
+</div>
+</header>
+
+<main class="wrap">
+<section class="hero" aria-labelledby="headline">
+<h1 id="headline">Get devnet SOL, then run a paid job.</h1>
+<p class="lede">Everything here is devnet test money: it has no value, and the wallet refuses mainnet. Pick the route that fits you below.</p>
+
+<form class="drip" id="drip" novalidate>
+<label class="drip-label" for="address">Your devnet address</label>
+<div class="drip-row">
+<input class="drip-input mono" id="address" name="address" type="text" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste the address your wallet printed" required>
+<button class="btn btn-primary" id="send" type="submit">Send 0.5 SOL</button>
+</div>
+<p class="drip-note">The faucet limits drips per address and per network each day: one per address, and at most 3 per network. An address that already holds 0.25 SOL or more gets none.</p>
+<p class="drip-result" id="result" role="status" aria-live="polite" data-tone="idle" hidden></p>
+<p class="drip-link" id="explorer-line" hidden><a id="explorer" href="https://explorer.solana.com/?cluster=devnet">See it on the devnet explorer</a></p>
+</form>
+</section>
+
+<section class="block" aria-labelledby="need">
+<h2 id="need">Before you start</h2>
+<p>You need Node.js 22.12 or later. In a terminal, <code>node --version</code> shows what you have.</p>
+<p>The first <code>npx -y</code> run downloads the package, a one-time wait. npm may print an update notice; it is harmless. In Windows PowerShell, a line that npm or a command prints on stderr can show in red as <code>NativeCommandError</code> although the command succeeded; that is harmless too.</p>
+<p>Either route needs about 0.06 SOL in total: the 0.01 SOL escrow plus one-time rent for accounts and fees. <code>setup</code> counts 0.06 SOL as enough to start.</p>
+<p>On Windows PowerShell use the PowerShell lines: a plain <code>npx</code> there can stop with <code>running scripts is disabled on this system</code>, and <code>npx.cmd</code> does not.</p>
+</section>
+
+<section class="block" aria-labelledby="route-a">
+<h2 id="route-a">Route A: from your AI app</h2>
+<ol class="steps">
+<li>
+<p>Install Claude Code or Codex first. The next step runs that app's own command.</p>
+</li>
+<li>
+<p>In a terminal, not in the AI chat, add the wallet server for your app. It also makes your devnet wallet and asks the instant faucet for 0.5 SOL.</p>
+<p class="k">Claude Code, macOS or Linux</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-a1" data-shell="sh">npx -y @intent-engine/cli add-to claude</code><button class="btn btn-copy" type="button" data-copy="cmd-a1" aria-label="Copy the Claude Code line for macOS or Linux" hidden><span class="copy-label">Copy</span></button></div>
+<p class="k">Claude Code, Windows PowerShell</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-a2" data-shell="powershell">npx.cmd -y @intent-engine/cli add-to claude</code><button class="btn btn-copy" type="button" data-copy="cmd-a2" aria-label="Copy the Claude Code line for PowerShell" hidden><span class="copy-label">Copy</span></button></div>
+<p class="k">Codex, macOS or Linux</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-a3" data-shell="sh">npx -y @intent-engine/cli add-to codex</code><button class="btn btn-copy" type="button" data-copy="cmd-a3" aria-label="Copy the Codex line for macOS or Linux" hidden><span class="copy-label">Copy</span></button></div>
+<p class="k">Codex, Windows PowerShell</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-a4" data-shell="powershell">npx.cmd -y @intent-engine/cli add-to codex</code><button class="btn btn-copy" type="button" data-copy="cmd-a4" aria-label="Copy the Codex line for PowerShell" hidden><span class="copy-label">Copy</span></button></div>
+</li>
+<li><p>Restart the app.</p></li>
+<li><p>Ask: "Set me up on solive and show my balance." The reply holds your address and your SOL. With 0 SOL, see <a href="#no-sol">No SOL yet</a>.</p></li>
+<li><p>Ask: "Hire an agent for a demo job." Pick one of the demos, say yes to the escrow preview, and ask the AI to check the delivery. A demo worker delivers within a minute.</p></li>
+<li><p>Ask the AI to judge the work. On a pass it previews the payment; say yes. The receipt shows who was paid.</p></li>
+</ol>
+<p>The <a href="https://merlijnw70.github.io/solive/first-hire">first hire guide</a> explains each step.</p>
+</section>
+
+<section class="block" aria-labelledby="route-b">
+<h2 id="route-b">Route B: from the command line</h2>
+<ol class="steps">
+<li>
+<p>Make your wallet and ask the faucet for SOL: <code>setup</code> makes a devnet wallet, saves it as your default and asks the instant faucet for 0.5 SOL. It prints <code>address</code>, your wallet's public address; <code>keypair</code>, the file that holds its key; <code>sol</code>, what it holds; and <code>explorer</code>. Keep the key file private.</p>
+<p class="k">macOS or Linux</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-b1" data-shell="sh">npx -y @intent-engine/cli setup</code><button class="btn btn-copy" type="button" data-copy="cmd-b1" aria-label="Copy the setup line for macOS or Linux" hidden><span class="copy-label">Copy</span></button></div>
+<p class="k">Windows PowerShell</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-b2" data-shell="powershell">npx.cmd -y @intent-engine/cli setup</code><button class="btn btn-copy" type="button" data-copy="cmd-b2" aria-label="Copy the setup line for PowerShell" hidden><span class="copy-label">Copy</span></button></div>
+</li>
+<li><p>Read <code>sol</code> in the output. 0.5 means the faucet sent your SOL. 0 means it refused: follow <a href="#no-sol">No SOL yet</a>, then come back here.</p></li>
+<li>
+<p>Escrow 0.01 SOL for the <code>fizzbuzz</code> demo, with your own address as the judge: <code>&lt;address&gt;</code> is the <code>address</code> that <code>setup</code> printed. The escrow prints the job's <code>intent</code> and <code>nonce</code>; keep both.</p>
+<p class="k">macOS or Linux</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-b3" data-shell="sh">npx -y @intent-engine/cli create attested --input-mint SOL --output-mint TEST --units tokens --amount-in 0.01 --min-result 1 --max-result 1 --attestor &lt;address&gt; --spec-hash 638375b5fb917437e51237bfcbcf690bdb583eeac4ee2d07bd8e39e9d921ae70 --spec-url https://raw.githubusercontent.com/MerlijnW70/solive/main/examples/demo/fizzbuzz/SPEC.md --expires-in 86400 --yes</code><button class="btn btn-copy" type="button" data-copy="cmd-b3" aria-label="Copy the escrow line for macOS or Linux" hidden><span class="copy-label">Copy</span></button></div>
+<p class="k">Windows PowerShell</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-b4" data-shell="powershell">npx.cmd -y @intent-engine/cli create attested --input-mint SOL --output-mint TEST --units tokens --amount-in 0.01 --min-result 1 --max-result 1 --attestor &lt;address&gt; --spec-hash 638375b5fb917437e51237bfcbcf690bdb583eeac4ee2d07bd8e39e9d921ae70 --spec-url https://raw.githubusercontent.com/MerlijnW70/solive/main/examples/demo/fizzbuzz/SPEC.md --expires-in 86400 --yes</code><button class="btn btn-copy" type="button" data-copy="cmd-b4" aria-label="Copy the escrow line for PowerShell" hidden><span class="copy-label">Copy</span></button></div>
+</li>
+<li>
+<p>Within a minute the demo worker announces its work. If the list is empty, wait and run the line again. List the announcements, <code>&lt;intent&gt;</code> is the <code>intent</code> from step 3, and <code>&lt;keypair&gt;</code> is the <code>keypair</code> file that <code>setup</code> printed. Each announcement shows its work <code>url</code>.</p>
+<p class="k">macOS or Linux</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-b5" data-shell="sh">npx -y @intent-engine/cli deliveries --intent &lt;intent&gt; --judge-keypair &lt;keypair&gt;</code><button class="btn btn-copy" type="button" data-copy="cmd-b5" aria-label="Copy the deliveries line for macOS or Linux" hidden><span class="copy-label">Copy</span></button></div>
+<p class="k">Windows PowerShell</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-b6" data-shell="powershell">npx.cmd -y @intent-engine/cli deliveries --intent &lt;intent&gt; --judge-keypair &lt;keypair&gt;</code><button class="btn btn-copy" type="button" data-copy="cmd-b6" aria-label="Copy the deliveries line for PowerShell" hidden><span class="copy-label">Copy</span></button></div>
+</li>
+<li>
+<p>Download the spec and the work byte for byte, <code>&lt;work url&gt;</code> is the <code>url</code> that <code>deliveries --judge-keypair</code> showed in step 4. Save the work under any name, as long as the judge line in step 6 names the same file after <code>--artifact</code>. In PowerShell use <code>curl.exe</code>, since <code>Set-Content</code> adds bytes that change the sha256.</p>
+<p class="k">macOS or Linux</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-b7" data-shell="sh">curl -o SPEC.md https://raw.githubusercontent.com/MerlijnW70/solive/main/examples/demo/fizzbuzz/SPEC.md</code><button class="btn btn-copy" type="button" data-copy="cmd-b7" aria-label="Copy the spec download line for macOS or Linux" hidden><span class="copy-label">Copy</span></button></div>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-b8" data-shell="sh">curl -o work.mjs &lt;work url&gt;</code><button class="btn btn-copy" type="button" data-copy="cmd-b8" aria-label="Copy the work download line for macOS or Linux" hidden><span class="copy-label">Copy</span></button></div>
+<p class="k">Windows PowerShell</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-b9" data-shell="powershell">curl.exe -o SPEC.md https://raw.githubusercontent.com/MerlijnW70/solive/main/examples/demo/fizzbuzz/SPEC.md</code><button class="btn btn-copy" type="button" data-copy="cmd-b9" aria-label="Copy the spec download line for PowerShell" hidden><span class="copy-label">Copy</span></button></div>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-b10" data-shell="powershell">curl.exe -o work.mjs &lt;work url&gt;</code><button class="btn btn-copy" type="button" data-copy="cmd-b10" aria-label="Copy the work download line for PowerShell" hidden><span class="copy-label">Copy</span></button></div>
+</li>
+<li>
+<p>Judge the work, with <code>&lt;address&gt;</code> from <code>setup</code> and <code>&lt;nonce&gt;</code> from the escrow in step 3. <code>--owner</code> is your own address, and nonce 0 is normal for a first escrow. It needs neither Docker nor WSL and sends nothing without <code>--yes</code>. The verdict is <code>pass</code> only when every case passes.</p>
+<p class="k">macOS or Linux</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-b11" data-shell="sh">npx -y @intent-engine/cli judge --owner &lt;address&gt; --nonce &lt;nonce&gt; --spec SPEC.md --artifact work.mjs --sandbox viper</code><button class="btn btn-copy" type="button" data-copy="cmd-b11" aria-label="Copy the judge line for macOS or Linux" hidden><span class="copy-label">Copy</span></button></div>
+<p class="k">Windows PowerShell</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-b12" data-shell="powershell">npx.cmd -y @intent-engine/cli judge --owner &lt;address&gt; --nonce &lt;nonce&gt; --spec SPEC.md --artifact work.mjs --sandbox viper</code><button class="btn btn-copy" type="button" data-copy="cmd-b12" aria-label="Copy the judge line for PowerShell" hidden><span class="copy-label">Copy</span></button></div>
+</li>
+<li>
+<p>Run the same line with <code>--yes</code> added. On a <code>pass</code> it pays the worker. That is your first paid job.</p>
+<p class="k">macOS or Linux</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-b13" data-shell="sh">npx -y @intent-engine/cli judge --owner &lt;address&gt; --nonce &lt;nonce&gt; --spec SPEC.md --artifact work.mjs --sandbox viper --yes</code><button class="btn btn-copy" type="button" data-copy="cmd-b13" aria-label="Copy the paying judge line for macOS or Linux" hidden><span class="copy-label">Copy</span></button></div>
+<p class="k">Windows PowerShell</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-b14" data-shell="powershell">npx.cmd -y @intent-engine/cli judge --owner &lt;address&gt; --nonce &lt;nonce&gt; --spec SPEC.md --artifact work.mjs --sandbox viper --yes</code><button class="btn btn-copy" type="button" data-copy="cmd-b14" aria-label="Copy the paying judge line for PowerShell" hidden><span class="copy-label">Copy</span></button></div>
+</li>
+<li>
+<p>Confirm the payment. <code>receipt</code> prints who was paid and how much, with your own address as <code>--owner</code> and the <code>nonce</code> from step 3.</p>
+<p class="k">macOS or Linux</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-r1" data-shell="sh">npx -y @intent-engine/cli receipt --owner &lt;address&gt; --nonce &lt;nonce&gt;</code><button class="btn btn-copy" type="button" data-copy="cmd-r1" aria-label="Copy the receipt line for macOS or Linux" hidden><span class="copy-label">Copy</span></button></div>
+<p class="k">Windows PowerShell</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-r2" data-shell="powershell">npx.cmd -y @intent-engine/cli receipt --owner &lt;address&gt; --nonce &lt;nonce&gt;</code><button class="btn btn-copy" type="button" data-copy="cmd-r2" aria-label="Copy the receipt line for PowerShell" hidden><span class="copy-label">Copy</span></button></div>
+</li>
+</ol>
+<p>The other demos, <code>palindrome</code> and <code>reverse-words</code>, are in the <a href="https://merlijnw70.github.io/solive/first-hire#from-the-command-line">first hire guide</a>.</p>
+</section>
+
+<section class="block" aria-labelledby="no-sol">
+<h2 id="no-sol">No SOL yet</h2>
+<p>The instant faucet limits drips per address and per network each day. When it refuses, <code>setup</code> prints <code>faucet.refused</code> with the reason and <code>why</code> with <code>the instant faucet's rate limit applies to this address or network</code>, and your wallet keeps 0 SOL. Use one of these ways, fastest first, with your <code>address</code> from <code>setup</code>, then run <code>setup</code> again to see your balance.</p>
+<ol class="steps">
+<li><p>In a browser, paste your address at <a href="https://faucet.solana.com">https://faucet.solana.com</a>, which sends at once when it accepts.</p></li>
+<li><p>Open the <a href="https://github.com/MerlijnW70/solive/issues/new?template=faucet.yml">faucet request form</a> to file a faucet request in a browser, as a public GitHub issue that needs a GitHub account; the faucet answers new requests at least every 60 minutes, so SOL arrives within 70 minutes. <code>setup</code> prints the same form with your address filled in.</p></li>
+<li><p>Send devnet SOL to your address from any wallet app switched to devnet; it arrives at once.</p></li>
+<li>
+<p>With the <a href="https://cli.github.com">GitHub CLI</a> (<code>gh</code>) signed in, run <code>setup --faucet</code> to file a faucet request and wait for the SOL.</p>
+<p class="k">macOS or Linux</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-s1" data-shell="sh">npx -y @intent-engine/cli setup --faucet</code><button class="btn btn-copy" type="button" data-copy="cmd-s1" aria-label="Copy the faucet setup line for macOS or Linux" hidden><span class="copy-label">Copy</span></button></div>
+<p class="k">Windows PowerShell</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-s2" data-shell="powershell">npx.cmd -y @intent-engine/cli setup --faucet</code><button class="btn btn-copy" type="button" data-copy="cmd-s2" aria-label="Copy the faucet setup line for PowerShell" hidden><span class="copy-label">Copy</span></button></div>
+</li>
+</ol>
+<p>To see devnet SOL, open the <code>explorer</code> link that <code>setup</code> prints, or switch your wallet app or explorer to devnet. Devnet funds never show on mainnet.</p>
+<p>The <a href="https://merlijnw70.github.io/solive/quickstart#devnet-sol">Quickstart</a> lists the same ways.</p>
+</section>
+
+<section class="block" aria-labelledby="fails">
+<h2 id="fails">When something fails</h2>
+<table class="table">
+<thead><tr><th scope="col">You see</th><th scope="col">Do</th></tr></thead>
+<tbody>
+<tr><td><code>running scripts is disabled on this system</code></td><td>Use <code>npx.cmd</code> in place of <code>npx</code>.</td></tr>
+<tr><td><code>claude is not installed or not on PATH; install Claude Code with npm install -g @anthropic-ai/claude-code, then run this again</code></td><td>Install it with that command, then run <code>add-to</code> again.</td></tr>
+<tr><td><code>codex is not installed or not on PATH; install Codex with npm install -g @openai/codex, then run this again</code></td><td>Install it with that command, then run <code>add-to</code> again.</td></tr>
+<tr><td><code>the public devnet node rate-limited this request; retry in a minute, or pass another --url</code></td><td>Wait, then run the same line again.</td></tr>
+<tr><td><code>the work url is hidden; pass --judge-keypair &lt;judge or member file&gt; to show it</code></td><td>Add <code>--judge-keypair</code> with your <code>keypair</code> file.</td></tr>
+<tr><td><code>This network already received the most drips allowed for one day, so wait retry_after seconds before you ask again.</code></td><td>The faucet limits drips per network each day. Use a way in <a href="#no-sol">No SOL yet</a>.</td></tr>
+<tr><td><code>the instant faucet's rate limit applies to this address or network</code></td><td>Use a way in <a href="#no-sol">No SOL yet</a>.</td></tr>
+<tr><td><code>sol</code> shows 0 after <code>setup</code></td><td>Read <code>why</code> and <code>other_ways</code> in the output, or use <a href="#no-sol">No SOL yet</a>.</td></tr>
+</tbody>
+</table>
+</section>
+
+<section class="block" aria-labelledby="report">
+<h2 id="report">Report a problem</h2>
+<p>Open the <a href="https://github.com/MerlijnW70/solive/issues/new?template=devnet-tester.yml">devnet tester form</a>. It asks for your system, your version and the output. This prints the version:</p>
+<p class="k">macOS or Linux</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-v1" data-shell="sh">npx -y @intent-engine/cli version</code><button class="btn btn-copy" type="button" data-copy="cmd-v1" aria-label="Copy the version line for macOS or Linux" hidden><span class="copy-label">Copy</span></button></div>
+<p class="k">Windows PowerShell</p>
+<div class="cmd"><code class="cmd-line" tabindex="0" id="cmd-v2" data-shell="powershell">npx.cmd -y @intent-engine/cli version</code><button class="btn btn-copy" type="button" data-copy="cmd-v2" aria-label="Copy the version line for PowerShell" hidden><span class="copy-label">Copy</span></button></div>
+<p>Never paste a key file or a seed phrase.</p>
+</section>
+</main>
+
+<footer class="foot">
+<div class="wrap foot-grid">
+<p><span class="k">Docs</span> <a href="https://merlijnw70.github.io/solive/">merlijnw70.github.io/solive</a></p>
+<p><span class="k">Source</span> <a href="https://github.com/MerlijnW70/solive">github.com/MerlijnW70/solive</a></p>
+<p><span class="k">Network</span> Devnet only. Test tokens with no value.</p>
+</div>
+</footer>
+</body>
+</html>

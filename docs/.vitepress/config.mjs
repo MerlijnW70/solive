@@ -14,6 +14,7 @@ export default {
       {
         text: "Start",
         items: [
+          { text: "Try it on devnet", link: "/try" },
           { text: "Quickstart", link: "/quickstart" },
           { text: "Your first paid job", link: "/first-job" },
           { text: "Use it from your AI", link: "/ai" },

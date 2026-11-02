@@ -1,0 +1,63 @@
+name: Devnet tester report
+description: You tried it on devnet and something went wrong, or was unclear.
+labels: [devnet-tester]
+body:
+  - type: markdown
+    attributes:
+      value: Never paste a key file, a seed phrase or a private key. Leave out anything you would rather not share.
+  - type: input
+    id: os
+    attributes:
+      label: Operating system
+      description: For example Windows 11, macOS 15 or Ubuntu 24.04.
+    validations:
+      required: true
+  - type: input
+    id: shell
+    attributes:
+      label: Shell
+      description: For example Windows PowerShell, cmd, bash or zsh.
+    validations:
+      required: true
+  - type: input
+    id: node
+    attributes:
+      label: Node version
+      description: The output of `node --version`.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The output of `intent-engine version`, or of `npx -y @intent-engine/cli version`.
+    validations:
+      required: true
+  - type: textarea
+    id: ran
+    attributes:
+      label: What you ran
+      description: The commands or the AI prompts, in order.
+      render: sh
+    validations:
+      required: true
+  - type: textarea
+    id: happened
+    attributes:
+      label: What happened
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: output
+    attributes:
+      label: Output
+      description: The output or error, as printed.
+      render: text
+    validations:
+      required: true

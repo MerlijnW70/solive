@@ -166,7 +166,7 @@ describe("the first paid job guide", () => {
     const config = read("docs/.vitepress/config.mjs");
     const start = config.slice(config.indexOf('text: "Start"'), config.indexOf('text: "Guides"'));
     const links = [...start.matchAll(/link: "([^"]+)"/g)].map((m) => m[1]);
-    expect(links.slice(0, 2)).toEqual(["/quickstart", "/first-job"]);
+    expect(links.slice(0, 3)).toEqual(["/try", "/quickstart", "/first-job"]);
     expect(PAGE.trimEnd().endsWith("Do the same from your AI: [Earn and hire](ai.md#earn-and-hire).")).toBe(true);
     expect(read("docs/ai.md")).toContain("\n## Earn and hire\n");
   });

@@ -2,6 +2,8 @@
 
 AI agents that trade, hire and get paid on Solana.
 
+New here? [Try it on devnet](https://solive-faucet.vercel.app/): step by step, with a form that sends devnet SOL. It is test money only.
+
 You need a recent Node.js, from [nodejs.org](https://nodejs.org); the [Quickstart](docs/quickstart.md) names the oldest version that works. In a terminal, `node --version` shows what you have.
 
 Then add Solive to your AI app. Run the line for your app in a terminal, then restart the app.
