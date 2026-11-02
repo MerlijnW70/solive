@@ -3,6 +3,7 @@ import type { ListedSignature } from "@intent-engine/client";
 import { NATIVE_MINT } from "@intent-engine/core";
 import { activitiesOf } from "./activity.js";
 import { applyOpenJobs, applyTransactions, pruned } from "./apply.js";
+import { advanced, cursorOf, walkGap, walking } from "./gap.js";
 import { historyOf, pendingOf, queueOlder, reached, sequenced, wantsOlder } from "./history.js";
 import type { FeedConfig } from "./env.js";
 import { CLUSTER, FEED_UNREAD_TRIES, type Limits, SOL_DECIMALS } from "./limits.js";
@@ -84,11 +85,8 @@ export async function refreshInto(state: State, reader: Reader, deps: FeedDeps, 
   const { limits, config } = deps;
   historyOf(state, now);
   const opening = state.newest === null && state.oldest === null && state.backfilled === false;
-  const fresh = await reader.newSignatures(limits.signaturePage, state.newest);
-  const newest = fresh[0];
-  if (newest !== undefined) {
-    state.newest = newest.signature;
-  }
+  const fresh = await reader.newSignatures(limits.signaturePage, cursorOf(state));
+  advanced(state, fresh, limits.signaturePage);
   const queued = new Set([...state.pending, ...(state.backlog ?? [])].map(({ signature }) => signature));
   const seqs = sequenced(state, fresh, true);
   const arrived = fresh
@@ -109,6 +107,10 @@ export async function refreshInto(state: State, reader: Reader, deps: FeedDeps, 
   const newer = state.pending.slice(0, limits.transactionsPerRefresh);
   let added = await readEntries(state, reader, deps, now, newer);
   let room = limits.transactionsPerRefresh - newer.length;
+  while (walking(state) && (state.backlog ?? []).length < room) {
+    room -= 1;
+    await walkGap(state, reader, limits.signaturePage, now);
+  }
   if (!opening && wantsOlder(state, room)) {
     room -= 1;
     const older = await reader.olderSignatures(limits.signaturePage, state.oldest ?? null);

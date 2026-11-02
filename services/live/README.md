@@ -12,6 +12,8 @@ While the state's history does not reach `PAID_WINDOW_SECS` back, a refresh with
 
 The state keeps the oldest signature listed, so the next refresh resumes there. The backfill ends at a signature older than the window or at the program's first one.
 
-`history.since` in the JSON is the time of the oldest signature listed so far. `history.complete` is true once the backfill has ended and its queue is read, whatever new activity still waits; until then the page marks the seven-day figures as still filling. A feed without `history` reads as complete.
+When a page of new signatures comes back full, more may sit between it and the cursor. The state saves that gap in `gaps`, keeps the cursor and lists new ones from `top`. A refresh with reads to spare, after it has read the new ones, lists the gap with `before` and `until`, one transaction read per listing, and queues what it finds. A short page or a signature older than the window closes the gap; once none is left, `top` becomes the cursor.
+
+`history.since` in the JSON is the time of the oldest signature listed so far. `history.complete` is true once the backfill has ended, no gap is open and its queue is read, whatever new activity still waits; until then the page marks the seven-day figures as still filling. A feed without `history` reads as complete.
 
 State lives in the Vercel Runtime Cache, written only when it changes, with an in-memory copy as fallback. It is saved under the key `live-feed-state-v2` with `version: 2`. A missing entry, or one under another key or version, reads as empty state, so a new build backfills from scratch and names workers by wallet; meanwhile the page shows the figures as still filling. On a 429 or a timeout the feed serves its last state with `stale: true` and waits the `retry-after` seconds before reading again.

@@ -106,7 +106,11 @@ export type State = {
   oldest?: string | null;
   oldest_at?: number | null;
   backfilled?: boolean;
+  top?: string | null;
+  gaps?: Gap[];
 };
+
+export type Gap = { before: string; until: string; seq: number };
 
 export function emptyState(): State {
   return {

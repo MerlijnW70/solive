@@ -5,7 +5,7 @@ import { guarded } from "./rpc.js";
 
 export type Reader = {
   newSignatures(limit: number, until: string | null): Promise<ListedSignature[]>;
-  olderSignatures(limit: number, before: string | null): Promise<ListedSignature[]>;
+  olderSignatures(limit: number, before: string | null, until?: string | null): Promise<ListedSignature[]>;
   transactions(listed: readonly ListedSignature[]): Promise<EngineTransaction[]>;
   openJobs(): Promise<IntentAccount[]>;
   lastActivity(wallet: Address): Promise<bigint | null>;
@@ -22,7 +22,7 @@ export function readerOf(client: Client): Reader {
   const listed = (of: Address, limit: number, until?: string, before?: string) => guarded(() => signaturesOf.call(transport, of, limit, before, until));
   return {
     newSignatures: (limit, until) => listed(INTENT_ENGINE_PROGRAM_ADDRESS, limit, until ?? undefined),
-    olderSignatures: (limit, before) => listed(INTENT_ENGINE_PROGRAM_ADDRESS, limit, undefined, before ?? undefined),
+    olderSignatures: (limit, before, until) => listed(INTENT_ENGINE_PROGRAM_ADDRESS, limit, until ?? undefined, before ?? undefined),
     transactions: (wanted) => (wanted.length === 0 ? Promise.resolve([]) : guarded(() => transactionsOf.call(transport, wanted))),
     openJobs: () => guarded(async () => (await client.intents({ kind: Kind.AttestedResult, status: IntentStatus.Open })).intents),
     async lastActivity(wallet) {

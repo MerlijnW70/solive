@@ -60,7 +60,7 @@ export const wantsOlder = (state: State, room: number): boolean => state.backfil
 export function historyView(state: State): History {
   const reach = state.oldest_at ?? null;
   return {
-    complete: state.backfilled === true && (state.backlog ?? []).length === 0,
+    complete: state.backfilled === true && (state.backlog ?? []).length === 0 && (state.gaps ?? []).length === 0,
     since: reach === null ? null : new Date(reach * 1000).toISOString(),
   };
 }
