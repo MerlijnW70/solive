@@ -20,7 +20,7 @@ import { watchIntents } from "./client-watch.js";
 import { explain } from "./errors.js";
 import { jobsOf, readSpec, webFetch } from "./job-specs.js";
 import { SpecCache } from "./spec-cache.js";
-import { checkedSources, DEFAULT_SPEC_SOURCES } from "./spec-sources.js";
+import { checkedSources, defaultSpecSources } from "./spec-sources.js";
 import { announcing } from "./announce.js";
 import { announcementsBy, announcementsOf, announcementsTo } from "./announcement-reads.js";
 import { splitSettlement } from "./client-split.js";
@@ -113,7 +113,7 @@ export function createClient(options: ClientOptions): Client {
       : observedTransport(options.transport, observer);
   const specFetch = observedFetch(options.fetch ?? webFetch, observer);
   const lookup = options.lookup ?? null;
-  const specRead = { sources: checkedSources(options.specSources ?? DEFAULT_SPEC_SOURCES), cache: new SpecCache() };
+  const specRead = { sources: checkedSources(options.specSources ?? defaultSpecSources()), cache: new SpecCache() };
   const notifications = options.notifications ?? (options.transport === undefined ? intentNotifications(url) : undefined);
 
   const watch = watchIntents(transport, notifications, pollMs, resyncSeconds);

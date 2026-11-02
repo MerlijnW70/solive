@@ -1,7 +1,7 @@
 import type { Address, TransactionSigner } from "@solana/kit";
 import type { FaucetFetch } from "../faucet.js";
 import { type Lookup, type SpecFetch, type SpecSource, type Transport } from "@intent-engine/client";
-import { DEFAULT_SPEC_SOURCES, type IntentChanges, memoized, type SpecCache, type SpecReadOptions } from "@intent-engine/client/internal";
+import { defaultSpecSources, type IntentChanges, memoized, type SpecCache, type SpecReadOptions } from "@intent-engine/client/internal";
 import { systemLookup } from "../public-address.js";
 import type { SpecReach } from "../invites.js";
 import { type Problem, problemOf } from "./problems.js";
@@ -36,7 +36,7 @@ export const lookupOf = (ctx: AgentContext): Lookup => ctx.lookup ?? systemLooku
 
 export const specReach = (ctx: AgentContext): SpecReach => ({ lookup: lookupOf(ctx), rpcUrl: ctx.url ?? ctx.wallet?.url });
 
-export const specReadOf = (ctx: AgentContext): SpecReadOptions & { sources: readonly SpecSource[] } => ({ sources: ctx.specSources ?? DEFAULT_SPEC_SOURCES, ...(ctx.specCache === undefined ? {} : { cache: ctx.specCache }) });
+export const specReadOf = (ctx: AgentContext): SpecReadOptions & { sources: readonly SpecSource[] } => ({ sources: ctx.specSources ?? defaultSpecSources(), ...(ctx.specCache === undefined ? {} : { cache: ctx.specCache }) });
 
 type AgentKey = { signer: TransactionSigner; budget: Budget; owners: ReadonlySet<Address> };
 

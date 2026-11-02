@@ -2,14 +2,16 @@ import { inspect } from "node:util";
 import type { Address, TransactionSigner } from "@solana/kit";
 import { U64_MAX } from "@intent-engine/core/internal";
 import { type Transport, TransportLacks } from "@intent-engine/client";
-import { memoized, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic } from "@intent-engine/client/internal";
+import { MAX_SPEC_BYTES, memoized, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic } from "@intent-engine/client/internal";
 import { claimsOf } from "./agent/claims.js";
 import { relayOf } from "./agent/relay.js";
 import type { Command } from "./command-types.js";
 import { messageSigner, transactionSigner } from "./ledger-keys.js";
 import type { Runtime } from "./runtime.js";
 import type { AgentContext } from "./agent/actions.js";
-import { prepareCreate } from "./agent/create.js";
+import { createThenUpload } from "./agent/create.js";
+import { specTextProblem, uploadFailed, uploadLine, uploadPlan, uploadsAfterSend, withUploadHint } from "./agent/spec-upload.js";
+import { fetchBytes } from "./delivery-fetch.js";
 import { getMandate, loadMandate, prepareAgentCreate, prepareMandate, prepareRevokeMandate } from "./agent/mandate.js";
 import { listIntents } from "./agent/read.js";
 import { prepareSignedIntent, previewSignedIntent, submitSignedIntent } from "./agent/signed.js";
@@ -54,6 +56,26 @@ async function rawFlowInput(
   return inRaw(transport, input, input["input_mint"] as Address, input["output_mint"] as Address);
 }
 
+async function createWithUpload(runtime: Runtime, url: string, ctx: AgentContext, raw: Record<string, unknown>) {
+  const { spec_file: specFile, publish_spec: publish, ...terms } = raw as { spec_file?: string; publish_spec?: false } & Record<string, unknown>;
+  const specHash = (terms["order"] as { spec_hash?: string } | undefined)?.spec_hash;
+  if (specHash === undefined) {
+    return { terms };
+  }
+  const specText = specFile === undefined ? undefined : await runtime.readText(specFile).catch(() => {
+    throw new FlowRefused(`${specFile} could not be read; nothing was sent`);
+  });
+  const wrong = specText === undefined ? undefined : specTextProblem(specText, specHash);
+  if (wrong !== undefined) {
+    throw new FlowRefused(`--spec-file ${specFile} ${wrong}`);
+  }
+  const specUrl = terms["spec_url"] as string | undefined;
+  const found = specUrl === undefined || publish === false ? undefined : await fetchBytes(runtime.specFetch, ctx.transport, specUrl, runtime.lookup, MAX_SPEC_BYTES);
+  const reach: AgentContext = { ...ctx, url, fetch: runtime.specFetch, lookup: runtime.lookup };
+  const plan = await uploadPlan(reach, { specHash, specText, found, publish });
+  return { terms, reach, plan, hasUrl: specUrl !== undefined };
+}
+
 function context(transport: Transport, relay: AgentContext["relay"] = undefined): AgentContext {
   return { transport, relay, agent: undefined, claims: claimsOf() };
 }
@@ -73,15 +95,22 @@ export async function flowCommand(command: FlowCommand, runtime: Runtime, transp
           if (typeof specUrl === "string" && (await plainHttpOnPublic(reading, specUrl))) {
             throw new FlowRefused(`--spec-url ${specUrl} ${PLAIN_HTTP_ON_PUBLIC}`);
           }
+          const upload = await createWithUpload(runtime, command.url, ctx, raw);
+          const previewed = (shown: object) => (upload.plan === undefined ? shown : { ...shown, summary: [...(shown as { summary: string[] }).summary, uploadLine(upload.plan, "--no-publish-spec")] });
           const held = (await reading.getAccount(signer.address))?.lamports ?? 0n;
           if (held > 0n) {
-            return perform(prepareCreate, ctx, { owner: signer.address, ...raw }, signer, command.yes);
+            const made = (await perform(createThenUpload, ctx, { owner: signer.address, ...upload.terms }, signer, command.yes)) as Record<string, unknown>;
+            if (!command.yes || upload.plan === undefined) {
+              return previewed(made);
+            }
+            const { fields, failed } = await uploadsAfterSend(upload.reach, [upload.plan]);
+            return { ...made, ...fields[0], ...(failed ? { next: withUploadHint(made["next"], uploadFailed(upload.hasUrl)) } : {}) };
           }
           if (command.yes) {
             throw new FlowRefused(unfundedRefused(signer.address, command.url));
           }
-          const shown = await perform(prepareCreate, { ...ctx, skipSimulation: true }, { owner: signer.address, ...raw }, signer, false);
-          return { ...shown, simulated: false, next: unfundedPreview(signer.address, command.url) };
+          const shown = await perform(createThenUpload, { ...ctx, skipSimulation: true }, { owner: signer.address, ...upload.terms }, signer, false);
+          return { ...previewed(shown), simulated: false, next: unfundedPreview(signer.address, command.url) };
         }
         case "mandate-grant":
           return perform(prepareMandate, ctx, { owner: signer.address, ...raw }, signer, command.yes);

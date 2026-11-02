@@ -51,6 +51,7 @@ type CreateIntentInput: type CreateIntentInput = IntentPlacement & ParamsWithSpe
 type CreateIntentPlan: type CreateIntentPlan = Plan & { intent: Address; nonce: bigint; expiresAt: bigint; payTo: Address; committee: Address | null; registers: boolean; createsPayTo: boolean; wraps: bigint; };
 type CreatedCommittee: type CreatedCommittee = { committee: Address; signature: Signature | null; };
 type CreatedIntent: type CreatedIntent = { signature: Signature; intent: Address; nonce: bigint; };
+const DEFAULT_SPEC_MIRROR: const DEFAULT_SPEC_MIRROR = "https://solive-specs.vercel.app";
 const DEFAULT_SPEC_SOURCES: const DEFAULT_SPEC_SOURCES: readonly SpecSource[];
 type DebugLog: type DebugLog = ((line: string) => unknown) | true;
 type DeliverSend: type DeliverSend = <I extends DeliverWorkInput>(input: I) => Promise<Outcome<I, DeliveredWork>>;
@@ -151,6 +152,7 @@ type Priority: type Priority = bigint | "auto";
 class ProfileHistoryIncomplete: class ProfileHistoryIncomplete extends SdkError { readonly code = "profile-history-incomplete"; readonly name = "ProfileHistoryIncomplete"; readonly judge: Address; constructor(judge: Address); }
 type ProgramAccount: type ProgramAccount = { address: Address; data: Uint8Array; };
 type ProofBallot: type ProofBallot = { intent: Address; attestor: Address; payee: Address; digest: Uint8Array; message: Uint8Array; };
+type PublishSpecOptions: type PublishSpecOptions = { transport: Transport; fetch?: SpecFetch; lookup?: Lookup | null; rpcUrl?: string; mirror?: string | null; budgetMs?: number; };
 class RateLimited: class RateLimited extends SdkError { readonly code = "rate-limited"; readonly name = "RateLimited"; readonly method: string; readonly retryAfterMs: number | null; constructor(method: string, retryAfterMs: number | null, options?: ErrorOptions); }
 type ReceiptInput: type ReceiptInput = { escrow: Address; };
 type ReclaimInput: type ReclaimInput = { worker: TransactionSigner; payer?: TransactionSigner; };
@@ -200,7 +202,8 @@ type SolTransfer: type SolTransfer = { from: Address; to: Address; lamports: big
 type Spec: type Spec = { url: string; text: string; bytes: Uint8Array; sha256: string; matches: boolean; sealedTo?: Address[]; source: SpecSourceKind | "cache"; tried: SpecAttempt[]; };
 type SpecAttempt: type SpecAttempt = { source: SpecSourceKind; url: string | null; reason: string; };
 type SpecFetch: type SpecFetch = (url: string, init: { redirect: "error"; signal: AbortSignal; addresses?: readonly string[]; } & SpecRequest) => Promise<Response>;
-type SpecRequest: type SpecRequest = { method?: "GET" | "POST"; headers?: Readonly<Record<string, string>>; body?: string; };
+type SpecPublished: type SpecPublished = { published: true; sha256: string; url: string; } | { published: false; sha256: string; reason: string; };
+type SpecRequest: type SpecRequest = { method?: "GET" | "POST" | "PUT"; headers?: Readonly<Record<string, string>>; body?: string | Uint8Array; };
 class SpecSealed: class SpecSealed extends SdkError { readonly code = "spec-sealed"; readonly name = "SpecSealed"; readonly url: string; readonly to: Address[]; readonly keyed: boolean; constructor(url: string, to: Address[], keyed: boolean); }
 type SpecSource: type SpecSource = { kind: "memo"; } | { kind: "mirror"; base: string; } | { kind: "ipfs"; gateway: string; } | { kind: "arweave"; gateway: string; };
 type SpecSourceKind: type SpecSourceKind = SpecSource["kind"];
@@ -239,5 +242,6 @@ function escrowTermsIn: function escrowTermsIn(transaction: EngineTransaction, i
 function isSdkError: function isSdkError(error: unknown): error is AnySdkError;
 function isSdkError: function isSdkError<C extends SdkErrorCode>(error: unknown, code: C): error is SdkErrors[C];
 function isTransactionSignature: function isTransactionSignature(value: unknown): value is Signature;
+function publishSpec: function publishSpec(bytes: Uint8Array, options: PublishSpecOptions): Promise<SpecPublished>;
 function specHashOfCid: function specHashOfCid(cid: string): string | null;
 function trustOf: function trustOf(transport: Transport, reader: Address, worker: Address, options?: TrustOptions): Promise<Trust>;

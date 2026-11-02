@@ -13,6 +13,7 @@ export const PLAIN_HTTP_ON_PUBLIC = "is a plain http url, which a public cluster
 export const NOT_HTTP = "is not an http or https url";
 export const NOT_PUBLIC_SPEC = "points to a private, loopback or local network address, which is not fetched";
 export const SPEC_FETCH_FAILED = "could not be fetched";
+export const SPEC_SEND_FAILED = "could not be uploaded";
 export const SPEC_REDIRECTS = "redirects, and a spec url is read without following redirects";
 
 export async function plainHttpOnPublic(transport: Transport, url: string): Promise<boolean> {
@@ -28,7 +29,7 @@ export async function plainHttpOnPublic(transport: Transport, url: string): Prom
   return PUBLIC_GENESIS_HASHES.has(await transport.genesisHash());
 }
 
-export type SpecRequest = { method?: "GET" | "POST"; headers?: Readonly<Record<string, string>>; body?: string };
+export type SpecRequest = { method?: "GET" | "POST" | "PUT"; headers?: Readonly<Record<string, string>>; body?: string | Uint8Array };
 
 export type SpecFetch = (url: string, init: { redirect: "error"; signal: AbortSignal; addresses?: readonly string[] } & SpecRequest) => Promise<Response>;
 

@@ -14,7 +14,8 @@ import { admitRelay, type Relay } from "./relay.js";
 import { type Call, enter } from "./claims.js";
 import { paramsOf } from "./shapes.js";
 import { tokenNames } from "../tokens.js";
-import { account, amount, integer, list, nullable, object, text } from "./schema.js";
+import { account, amount, flag, integer, list, nullable, object, optional, text } from "./schema.js";
+import { NOT_ON_MIRROR } from "./spec-upload.js";
 import {
   fieldsOf,
   published,
@@ -43,14 +44,20 @@ export const submitSignedIntent = define({
     `Relay an owner's signed intent: the relayer key this server was started with (--relayer) pays the fee and creates the intent on chain, within the relayer's limits: accepted input tokens and their minimum fee, lamport cost per intent and per hour, expiry, transaction size and intents per owner per hour. Pass the submit object from ${tool("prepare_signed_intent")} unchanged plus the owner's base58 signature of its message; ${tool("preview_signed_intent")} checks the same input first without sending. When submit carries a spec_url, the relayer also records it in a memo it signs with the create; that url is not part of the owner's signature, so ${tool("find_jobs")} does not list it. Calling again after success returns the same intent without sending anything.`,
   effect: "submit",
   input: object({ ...signedTerms, signature: text("the owner's base58 Ed25519 signature of the message") }),
-  output: object({ intent: account(), signature: nullable(text("the relayed transaction's signature; null if it already existed")) }),
+  output: object({
+    intent: account(),
+    signature: nullable(text("the relayed transaction's signature; null if it already existed")),
+    spec_published: optional(flag("false: a relayed send never uploads the spec")),
+    spec_not_published: optional(text("why the spec is not on the mirror")),
+  }),
   run: async ({ transport, relay, claims }, input, call) => {
     if (relay === undefined) {
       throw new AgentRefusal("RelayerNotConfigured", "this server has no relayer key; start it with --relayer to submit signed intents");
     }
     const leave = enter(claims, `${input.owner}:${input.nonce}`);
     try {
-      return await relaySigned(transport, relay, input, call);
+      const relayed = await relaySigned(transport, relay, input, call);
+      return input.spec_url === undefined ? relayed : { ...relayed, spec_published: false, spec_not_published: NOT_ON_MIRROR };
     } finally {
       leave();
     }
@@ -186,7 +193,7 @@ export const previewSignedIntent = define({
       summary: [
         ...withFromNow(description.lines, fields.expiresAt, shownAt),
         `Relaying costs you ${createCost(config, await rentRate(transport))} lamports in create fee, crank bounty, rent and signature fee, plus any priority fee; you receive ${formatAmount(input.relayer_fee, inputToken.decimals)} of ${input.input_mint}`,
-        ...(specUrl === undefined ? [] : [publishesLine(specUrl)]),
+        ...(specUrl === undefined ? [] : [publishesLine(specUrl), `Mirror: ${NOT_ON_MIRROR}`]),
       ],
       warnings: [...description.warnings, ...(specUrl === undefined ? [] : [SPEC_URL_UNSIGNED])],
     };

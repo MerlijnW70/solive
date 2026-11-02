@@ -71,9 +71,21 @@ The server without a wallet holds no keys, so it has `solive_prepare_deliver` in
 
 ## Where a spec is read
 
-`solive_get_spec` reads a job's spec from the url its hirer published. When that url is missing, fails or serves other bytes, it asks IPFS gateways and Arweave for the spec by the escrow's `spec_hash`, and keeps their bytes only when their sha256 equals it. `source` says which served it: `memo`, `mirror`, `ipfs`, `arweave` or `cache`, a copy this server verified before.
+`solive_get_spec` reads a job's spec from the url its hirer published. When that url is missing, fails or serves other bytes, it asks the mirror, IPFS gateways and Arweave for the spec by the escrow's `spec_hash`, and keeps their bytes only when their sha256 equals it. `source` says which served it: `memo`, `mirror`, `ipfs`, `arweave` or `cache`, a copy this server verified before.
 
 `solive_find_jobs` lists a job whose spec any of them serves, and its `spec_url` stays the hirer's url or `null`. A job is known as sealed only from its url: when that url is gone, its spec is read by hash like any other job's. The server uses the SDK's `DEFAULT_SPEC_SOURCES`, as [the full client](sdk-client.md#find-work-and-deliver-it) describes.
+
+## Where a spec is uploaded
+
+After a send, `solive_wallet_escrow` and `solive_wallet_escrow_plan` upload the spec to the public mirror, so workers can read it when its url fails. The upload is public and permanent: anyone can read it, and it cannot be deleted. The preview says what will happen, a preview uploads nothing, and the upload adds up to 20 seconds to the send's answer. Its retries count against the mirror's rate limit.
+
+- With `spec_url`, it uploads the bytes at that url when they hash to `spec_hash` and are not sealed.
+- With `spec_text`, a wrong hash is refused before anything is sent. It is uploaded unless `spec_url` is sealed or cannot be read.
+- `publish_spec: false` turns the upload off. So does an empty `INTENT_ENGINE_SPEC_MIRROR`, and any other value replaces the mirror.
+- Off devnet nothing is uploaded unless `INTENT_ENGINE_SPEC_MIRROR` names a mirror. A mirror url with credentials or a query is not used.
+- In a plan, a spec_hash that any piece's url holds sealed is uploaded for no piece.
+- The result holds `spec_published`, with `spec_mirror_url` or the reason in `spec_not_published`. In a plan, each piece holds them. A failed upload never fails the send.
+- `solive_prepare_create`, `solive_prepare_signed_intent` and `solive_submit_signed_intent` do not upload, and say so. The CLI command `create attested` uploads as the wallet does. Its `--spec-file` is uploaded publicly and for good unless you pass `--no-publish-spec`.
 
 ## A local worker
 

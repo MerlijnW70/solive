@@ -50,6 +50,7 @@ import { InvalidInput } from "./schema.js";
 import { orderSchema, paramsOf, partnerSchema, preparedSchema, preparedView } from "./shapes.js";
 import { tokenNames } from "../tokens.js";
 import { account, amount, integer, list, object, optional, type Schema, text, time } from "./schema.js";
+import { NOT_ON_MIRROR } from "./spec-upload.js";
 
 export const SPEC_URL_PLAIN = `${PLAIN_HTTP_ON_PUBLIC}; give an https url`;
 
@@ -84,7 +85,7 @@ export const termsOutput = {
   nonce: amount(),
   expires_at: time(),
   escrow: amount("raw input units locked until the intent is filled, cancelled or expired"),
-  summary: list(text(), 24, "the terms in plain words; show these to the owner before signing"),
+  summary: list(text(), 32, "the terms in plain words; show these to the owner before signing"),
   warnings: list(text(), 16),
 };
 
@@ -142,7 +143,7 @@ async function checkFits(transport: Transport, instructions: readonly Instructio
   }
 }
 
-export const prepareCreate = define({
+const createAction = {
   name: tool("prepare_create"),
   title: "Prepare a new intent",
   description:
@@ -156,7 +157,17 @@ export const prepareCreate = define({
     wraps: amount("lamports of the owner's SOL wrapped first so the escrow can be drawn from their wrapped SOL account; 0 for other tokens"),
     prepared: preparedSchema,
   }),
-  run: (ctx, input, call) => createIntent(ctx, input, call),
+  run: (ctx: AgentContext, input: CreateInput, call: Call) => createIntent(ctx, input, call),
+} as const;
+
+export const createThenUpload = define(createAction);
+
+export const prepareCreate = define({
+  ...createAction,
+  run: async (ctx, input, call) => {
+    const made = await createIntent(ctx, input, call);
+    return input.spec_url === undefined ? made : { ...made, summary: [...made.summary, `Mirror: ${NOT_ON_MIRROR}`] };
+  },
 });
 
 export async function createIntent({ transport, claims, url, skipSimulation }: AgentContext, input: CreateInput, call: Call, after?: AfterCreate) {

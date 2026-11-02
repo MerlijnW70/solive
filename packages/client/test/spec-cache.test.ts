@@ -194,7 +194,7 @@ describe("the Node entry's checked fetch", () => {
     const id = "A".repeat(42) + "b";
     const heard: { url: string; method: string | undefined; body: string | undefined; headers: unknown; addresses: readonly string[] }[] = [];
     const checked: CheckedFetch = async (url, init) => {
-      heard.push({ url, method: init.method, body: init.body, headers: init.headers, addresses: init.addresses });
+      heard.push({ url, method: init.method, body: init.body as string | undefined, headers: init.headers, addresses: init.addresses });
       return url.endsWith("/graphql") ? new Response(JSON.stringify({ data: { transactions: { edges: [{ node: { id } }] } } })) : new Response(SPEC);
     };
     const client = nodeClient({ url: "http://" + "127.0.0.1:8899", transport: chain(null), fetch: checked, lookup: async () => ["93.184.215.14"], specSources: [{ kind: "memo" }, { kind: "arweave", gateway: ARWEAVE }] });

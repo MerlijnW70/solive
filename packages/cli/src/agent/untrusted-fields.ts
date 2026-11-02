@@ -51,6 +51,8 @@ export const COMMON_CARRIED: Readonly<Record<string, Carried>> = { signature: SI
 
 export const COMMON_OWN: readonly string[] = [
   "next",
+  "spec_mirror_url",
+  "spec_not_published",
   "summary[]",
   "warnings[]",
   "approval",
@@ -70,7 +72,7 @@ export const OWN: Readonly<Record<string, readonly string[]>> = {
   [tool("wallet_estimate")]: ["fills[].sold", "fills[].received", "receive_at_best", "receive_at_median", "receive_at_latest"],
   [tool("wallet_swap")]: ["min_receive", "start_receive"],
   [tool("wallet_recurring")]: ["start_receive", "min_receive"],
-  [tool("wallet_escrow_plan")]: ["pieces[].name", "pieces[].amount", "pieces[].spec_hash", "pieces[].spec_url", "total"],
+  [tool("wallet_escrow_plan")]: ["pieces[].name", "pieces[].amount", "pieces[].spec_hash", "pieces[].spec_url", "pieces[].spec_mirror_url", "pieces[].spec_not_published", "total"],
   [tool("wallet_seal_spec")]: ["sealed", "sha256", "sealed_sha256"],
   [tool("wallet_attest")]: ["paid", "fee", "delivered_sha256"],
   [tool("wallet_attest_split")]: ["envelope", "paid[].amount", "net", "fee", "delivered_sha256"],

@@ -14,7 +14,7 @@ import { walletEmpty, access, signerOf, mintNamed, limited, bookOf, live, salesO
 export const offerFields = {
   intent: account(),
   nonce: amount(),
-  summary: list(text(), 24),
+  summary: list(text(), 32),
   warnings: list(text(), 16),
   ...deviceOutput,
   sent: flag(),

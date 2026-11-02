@@ -2,7 +2,7 @@ import { isSdkError } from "@intent-engine/core";
 import { UNEXPECTED_REDIRECT } from "./fetch-failed.js";
 import { joinedBytes } from "./encoding.js";
 import { hostAddresses, type Lookup, loopbackUrl } from "./address-ranges.js";
-import { MAX_SPEC_BYTES, NOT_HTTP, NOT_PUBLIC_SPEC, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, SPEC_FETCH_FAILED, SPEC_REDIRECTS, SPEC_TIMEOUT_MS, type SpecFetch, type SpecRequest, SpecUnreadable } from "./spec-guard.js";
+import { MAX_SPEC_BYTES, NOT_HTTP, NOT_PUBLIC_SPEC, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic, SPEC_FETCH_FAILED, SPEC_REDIRECTS, SPEC_SEND_FAILED, SPEC_TIMEOUT_MS, type SpecFetch, type SpecRequest, SpecUnreadable } from "./spec-guard.js";
 import type { Transport } from "./transport.js";
 
 const loopbackAllowed = (transport: Transport, rpcUrl?: string): boolean => transport.offline === true || (rpcUrl !== undefined && loopbackUrl(rpcUrl));
@@ -11,7 +11,7 @@ async function discarded(response: Response): Promise<void> {
   await response.body?.cancel().catch(() => undefined);
 }
 
-function before<T>(signal: AbortSignal, work: Promise<T>): Promise<T> {
+export function before<T>(signal: AbortSignal, work: Promise<T>): Promise<T> {
   if (signal.aborted) {
     return Promise.reject(signal.reason);
   }
@@ -53,19 +53,21 @@ async function bounded(response: Response, url: string, signal: AbortSignal): Pr
   return joinedBytes(chunks);
 }
 
-function fetchProblem(error: unknown): string {
+function fetchProblem(error: unknown, failed: string): string {
   if (isSdkError(error, "fetch-failed")) {
-    return error.reason === "redirect" ? SPEC_REDIRECTS : `${SPEC_FETCH_FAILED} (${error.message}: ${error.detail})`;
+    return error.reason === "redirect" ? SPEC_REDIRECTS : `${failed} (${error.message}: ${error.detail})`;
   }
   const cause = error instanceof Error && error.cause instanceof Error ? error.cause.message : "";
   if (cause === UNEXPECTED_REDIRECT) {
     return SPEC_REDIRECTS;
   }
   const message = error instanceof Error ? error.message : String(error);
-  return `${SPEC_FETCH_FAILED} (${cause === "" ? message : `${message}: ${cause}`})`;
+  return `${failed} (${cause === "" ? message : `${message}: ${cause}`})`;
 }
 
-export async function guardedRead(transport: Transport, get: SpecFetch, url: string, lookup: Lookup | null, rpcUrl?: string, request: SpecRequest = {}, deadline?: AbortSignal): Promise<Uint8Array> {
+type Reach = { transport: Transport; get: SpecFetch; lookup: Lookup | null; rpcUrl: string | undefined; request: SpecRequest; deadline: AbortSignal | undefined; failed: string };
+
+async function guarded<T>({ transport, get, lookup, rpcUrl, request, deadline, failed }: Reach, url: string, answer: (response: Response, signal: AbortSignal) => Promise<T>): Promise<T> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -86,8 +88,21 @@ export async function guardedRead(transport: Transport, get: SpecFetch, url: str
     }
     const { method, headers, body } = request;
     const sent = { ...(method === undefined ? {} : { method }), ...(headers === undefined ? {} : { headers }), ...(body === undefined ? {} : { body }) };
-    return await bounded(await before(signal, get(url, { ...sent, redirect: "error", signal, ...(addresses === undefined ? {} : { addresses }) })), url, signal);
+    return await answer(await before(signal, get(url, { ...sent, redirect: "error", signal, ...(addresses === undefined ? {} : { addresses }) })), signal);
   } catch (error) {
-    throw error instanceof SpecUnreadable ? error : new SpecUnreadable(url, fetchProblem(error), { cause: error });
+    throw error instanceof SpecUnreadable ? error : new SpecUnreadable(url, fetchProblem(error, failed), { cause: error });
   }
+}
+
+export function guardedRead(transport: Transport, get: SpecFetch, url: string, lookup: Lookup | null, rpcUrl?: string, request: SpecRequest = {}, deadline?: AbortSignal): Promise<Uint8Array> {
+  return guarded({ transport, get, lookup, rpcUrl, request, deadline, failed: SPEC_FETCH_FAILED }, url, (response, signal) => bounded(response, url, signal));
+}
+
+export type SendAnswer = { status: number; retryAfter: string | null };
+
+export function guardedSend(transport: Transport, get: SpecFetch, url: string, lookup: Lookup | null, rpcUrl: string | undefined, request: SpecRequest, deadline: AbortSignal): Promise<SendAnswer> {
+  return guarded({ transport, get, lookup, rpcUrl, request, deadline, failed: SPEC_SEND_FAILED }, url, async (response) => {
+    await discarded(response);
+    return { status: response.status, retryAfter: response.headers.get("retry-after") };
+  });
 }

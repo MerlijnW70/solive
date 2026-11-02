@@ -10,7 +10,7 @@ import { sha256Hex } from "./encoding.js";
 import type { Lookup } from "./address-ranges.js";
 import { type SpecFetch, SpecSealed, SpecUnreadable } from "./spec-guard.js";
 import { guardedRead } from "./spec-fetch.js";
-import { checkedSources, DEFAULT_SPEC_SOURCES, fromHashSource, mismatched, NO_SPEC_URL, SPEC_READ_MS, SPEC_READ_OVER, type SpecAttempt, type SpecSource, type SpecSourceKind } from "./spec-sources.js";
+import { checkedSources, defaultSpecSources, fromHashSource, mismatched, NO_SPEC_URL, SPEC_READ_MS, SPEC_READ_OVER, type SpecAttempt, type SpecSource, type SpecSourceKind } from "./spec-sources.js";
 import type { SpecCache } from "./spec-cache.js";
 import { type EngineTransaction, TRANSACTION_FETCHES, type Transport } from "./transport.js";
 
@@ -69,7 +69,7 @@ export const webFetch: SpecFetch = (url, init) =>
     signal: init.signal,
     ...(init.method === undefined ? {} : { method: init.method }),
     ...(init.headers === undefined ? {} : { headers: init.headers }),
-    ...(init.body === undefined ? {} : { body: init.body }),
+    ...(init.body === undefined ? {} : { body: init.body as NonNullable<RequestInit["body"]> }),
   });
 
 function createdOwner(transaction: EngineTransaction, intent: Address): Address | null {
@@ -159,7 +159,7 @@ export async function readSpec(
   rpcUrl?: string,
   options: SpecReadOptions = {},
 ): Promise<Spec | null> {
-  const sources = checkedSources(options.sources ?? DEFAULT_SPEC_SOURCES);
+  const sources = checkedSources(options.sources ?? defaultSpecSources());
   const proof = await proofAt(transport, intent);
   if (proof === null) {
     return null;

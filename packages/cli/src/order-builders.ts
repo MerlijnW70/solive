@@ -161,7 +161,7 @@ export function mandate(sub: string | undefined, kind: string | undefined, remot
 export const SPEC_HASH_FORMAT = "--spec-hash must be the spec's sha256 as 64 hex digits";
 export const needsSpecHash = (option: string) => `--${option} needs --spec-hash, which makes the attested escrow a proof escrow`;
 
-const PROOF_OPTIONS = ["spec-hash", "judge-fee", "spec-url"] as const;
+const PROOF_OPTIONS = ["spec-hash", "judge-fee", "spec-url", "spec-file", "no-publish-spec"] as const;
 
 export function createTerms(kind: string | undefined, values: Values): ToolInput {
   const base = terms(kind, values);
@@ -189,6 +189,8 @@ export function createTerms(kind: string | undefined, values: Values): ToolInput
       ...optionalField(values, "judge-fee", "judge_fee", amountOf),
     },
     ...optionalField(values, "spec-url", "spec_url", (v, n) => memoUrlOf(required(v, n), "spec-url")),
+    ...optionalField(values, "spec-file", "spec_file", required),
+    ...(values["no-publish-spec"] === true ? { publish_spec: false } : {}),
     ...payTo,
   };
 }

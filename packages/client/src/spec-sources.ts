@@ -2,7 +2,7 @@ import { InvalidInput } from "@intent-engine/core";
 import { isSealed } from "@intent-engine/core/internal";
 import type { Lookup } from "./address-ranges.js";
 import { sha256Hex } from "./encoding.js";
-import { type SpecFetch, SpecUnreadable } from "./spec-guard.js";
+import { DEVNET_GENESIS_HASH, type SpecFetch, SpecUnreadable } from "./spec-guard.js";
 import { cidOfSpecHash } from "./spec-cid.js";
 import { guardedRead } from "./spec-fetch.js";
 import type { Transport } from "./transport.js";
@@ -13,12 +13,52 @@ export type SpecSourceKind = SpecSource["kind"];
 
 export type SpecAttempt = { source: SpecSourceKind; url: string | null; reason: string };
 
-export const DEFAULT_SPEC_SOURCES: readonly SpecSource[] = Object.freeze([
-  { kind: "memo" },
+export const DEFAULT_SPEC_MIRROR = "https://solive-specs.vercel.app";
+export const SPEC_MIRROR_ENV = "INTENT_ENGINE_SPEC_MIRROR";
+
+const READS_AFTER_MIRROR: readonly SpecSource[] = [
   { kind: "ipfs", gateway: "https://gateway.pinata.cloud" },
   { kind: "ipfs", gateway: "https://ipfs.filebase.io" },
   { kind: "arweave", gateway: "https://arweave.net" },
-]);
+];
+
+const sourcesWith = (mirror: string | null): readonly SpecSource[] => [{ kind: "memo" }, ...(mirror === null ? [] : [{ kind: "mirror" as const, base: mirror }]), ...READS_AFTER_MIRROR];
+
+export const DEFAULT_SPEC_SOURCES: readonly SpecSource[] = Object.freeze(sourcesWith(DEFAULT_SPEC_MIRROR));
+
+export function specMirror(): string | null {
+  const chosen = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env?.[SPEC_MIRROR_ENV];
+  if (chosen === undefined) {
+    return DEFAULT_SPEC_MIRROR;
+  }
+  return chosen.trim() === "" ? null : chosen.trim();
+}
+
+export const MIRROR_OFF_DEVNET = "the default mirror serves devnet escrows only; set INTENT_ENGINE_SPEC_MIRROR for this cluster";
+export const MIRROR_UNUSABLE = "the mirror url is not a url, or holds credentials or a query, so it is not used";
+
+export function mirrorUnusable(mirror: string): boolean {
+  try {
+    const { username, password, search, hash } = new URL(mirror);
+    return username !== "" || password !== "" || search !== "" || hash !== "";
+  } catch {
+    return true;
+  }
+}
+
+const isDefaultMirror = (mirror: string): boolean => new URL(mirror).origin === new URL(DEFAULT_SPEC_MIRROR).origin;
+
+export async function mirrorProblem(transport: Transport, mirror: string): Promise<string | null> {
+  if (mirrorUnusable(mirror)) {
+    return MIRROR_UNUSABLE;
+  }
+  return isDefaultMirror(mirror) && (await transport.genesisHash()) !== DEVNET_GENESIS_HASH ? MIRROR_OFF_DEVNET : null;
+}
+
+export const defaultSpecSources = (): readonly SpecSource[] => {
+  const mirror = specMirror();
+  return sourcesWith(mirror !== null && mirrorUnusable(mirror) ? null : mirror);
+};
 
 export const ARWEAVE_IDS = 3;
 export const SPEC_READ_MS = 20_000;
@@ -34,7 +74,7 @@ export const NOT_GRAPHQL = "answered no readable list of uploads";
 const ARWEAVE_ID = /^[A-Za-z0-9_-]{43}$/;
 const ARWEAVE_QUERY = `query($hash: String!) { transactions(first: ${ARWEAVE_IDS}, tags: [{ name: "${SPEC_HASH_TAG}", values: [$hash] }]) { edges { node { id } } } }`;
 
-const trimmed = (base: string): string => base.replace(/\/+$/, "");
+export const trimmed = (base: string): string => base.replace(/\/+$/, "");
 
 export const mismatched = (sha256: string): string => `answered bytes whose sha256 is ${sha256}, not the escrow's spec_hash`;
 

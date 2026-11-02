@@ -100,13 +100,14 @@ describe("a spec read by its hash when the memo url fails", () => {
     expect(await read(null, serving({}), DEFAULT_SPEC_SOURCES)).toBeNull();
   });
 
-  it("asks every default source in order: the memo url, IPFS gateways answering raw blocks, then Arweave", async () => {
+  it("asks every default source in order: the memo url, the mirror, IPFS gateways answering raw blocks, then Arweave", async () => {
     const asked: Asked[] = [];
     await refusal(read(MEMO_URL, serving({}, asked), DEFAULT_SPEC_SOURCES));
     const cid = cidOfSpecHash(HASH);
     expect(DEFAULT_SPEC_SOURCES[0]).toStrictEqual({ kind: "memo" });
     expect(asked.map(({ url }) => url)).toStrictEqual([
       MEMO_URL,
+      "https://" + "solive-specs.vercel.app/sha256/" + HASH,
       "https://" + "gateway.pinata.cloud/ipfs/" + cid + "?format=raw",
       "https://" + "ipfs.filebase.io/ipfs/" + cid + "?format=raw",
       "https://" + "arweave.net/graphql",
@@ -140,7 +141,7 @@ describe("each kind of hash source", () => {
     ]);
     const posted = asked[0]?.init;
     expect(posted?.headers).toStrictEqual({ "content-type": "application/json" });
-    const body = JSON.parse(posted?.body ?? "{}") as { query: string; variables: { hash: string } };
+    const body = JSON.parse((posted?.body as string | undefined) ?? "{}") as { query: string; variables: { hash: string } };
     expect(body.variables).toStrictEqual({ hash: HASH });
     expect(body.query).toContain('name: "Spec-Sha256"');
   });
@@ -247,7 +248,7 @@ describe("the spec source sentences of the docs", () => {
     ]) {
       expect(client).toContain(sentence);
     }
-    expect(DEFAULT_SPEC_SOURCES.map(({ kind }) => kind)).toStrictEqual(["memo", "ipfs", "ipfs", "arweave"]);
+    expect(DEFAULT_SPEC_SOURCES.map(({ kind }) => kind)).toStrictEqual(["memo", "mirror", "ipfs", "ipfs", "arweave"]);
     const mcp = page("mcp.md");
     expect(mcp).toContain("keeps their bytes only when their sha256 equals it. `source` says which served it: `memo`, `mirror`, `ipfs`, `arweave` or `cache`");
     expect(mcp).toContain("A job is known as sealed only from its url: when that url is gone, its spec is read by hash like any other job's.");

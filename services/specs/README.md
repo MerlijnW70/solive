@@ -26,7 +26,7 @@ Nothing caps total storage yet. The rate limit is per function instance, so it d
 
 ## Deploy
 
-1. Create a Vercel project with `services/specs` as its root directory and files outside the root included, so `vercel.json` can build the workspace packages. Connect a public Blob store, which sets `BLOB_READ_WRITE_TOKEN`.
+1. Create a Vercel project with `services/specs` as its root directory and files outside the root included, so `vercel.json` can build the workspace packages. Connect a public Blob store, which sets `BLOB_STORE_ID` and uses OIDC.
 2. Set `SPECS_RPC_URL` when not using the default `https://api.devnet.solana.com`. A node on another cluster is refused by genesis hash.
 3. Deploy.
 
@@ -39,4 +39,4 @@ const client = createClient({
 });
 ```
 
-`memo` stays first: a spec is read from its own url, and seen sealed, before any copy. `DEFAULT_SPEC_SOURCES` does not list this service.
+`memo` stays first: a spec is read from its own url, and seen sealed, before any copy. `DEFAULT_SPEC_SOURCES` lists this service.

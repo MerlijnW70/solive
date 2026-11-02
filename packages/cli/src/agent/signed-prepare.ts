@@ -34,6 +34,7 @@ import {
   type SignedTerms,
   SPEC_URL_UNSIGNED,
 } from "./signed-terms.js";
+import { NOT_ON_MIRROR } from "./spec-upload.js";
 import { offeredFee, RELAY_TOO_LARGE, relayCreate, relayFits, relayFloor, SPEC_URL_TOO_LONG } from "./signed-relay.js";
 
 export const prepareSignedIntent = define({
@@ -154,7 +155,7 @@ export const prepareSignedIntent = define({
         terms.relayer_fee === 0n
           ? `Cost to you: no relayer fee; only ${setupFee} lamports of SOL for the setup transaction's network fee, once`
           : `Cost to you: ${formatAmount(terms.relayer_fee, inputToken.decimals)} of ${input.input_mint} to the relayer, plus ${setupFee} lamports of SOL for the setup transaction's network fee, once`,
-        ...(specUrl === undefined ? [] : [publishesLine(specUrl)]),
+        ...(specUrl === undefined ? [] : [publishesLine(specUrl), `Mirror: ${NOT_ON_MIRROR}`]),
         ...disclosed.lines,
       ],
       warnings: [

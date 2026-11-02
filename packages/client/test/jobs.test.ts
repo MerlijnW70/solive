@@ -174,7 +174,7 @@ describe("spec", () => {
     fetched.length = 0;
     expect(await client.spec(silent.intent)).toBeNull();
     expect(await client.spec(judge.address)).toBeNull();
-    expect(fetched.map(({ url }) => new URL(url).origin)).toEqual(["https://gateway.pinata.cloud", "https://ipfs.filebase.io", "https://arweave.net"]);
+    expect(fetched.map(({ url }) => new URL(url).origin)).toEqual(["https://solive-specs.vercel.app", "https://gateway.pinata.cloud", "https://ipfs.filebase.io", "https://arweave.net"]);
   });
 
   it("refuses a spec that is missing or larger than the limit", async () => {

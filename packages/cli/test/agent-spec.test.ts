@@ -103,7 +103,7 @@ describe("solive_get_spec", () => {
     const intent = await escrow();
     const problem = (address: Address) => ({ code: "NoSpecUrl", retryable: SERVER_PROBLEMS.NoSpecUrl.retryable, hint: noSpecUrl(address) });
     expect(await call(client, "get_spec", { intent })).toEqual({ isError: true, value: problem(intent) });
-    expect(fetched.map(({ url }) => new URL(url).origin)).toEqual(["https://gateway.pinata.cloud", "https://ipfs.filebase.io", "https://arweave.net"]);
+    expect(fetched.map(({ url }) => new URL(url).origin)).toEqual(["https://solive-specs.vercel.app", "https://gateway.pinata.cloud", "https://ipfs.filebase.io", "https://arweave.net"]);
     fetched.length = 0;
     expect(await call(client, "get_spec", { intent: w.owner.address })).toEqual({ isError: true, value: problem(w.owner.address) });
     expect(SERVER_PROBLEMS.NoSpecUrl.retryable).toBe(false);

@@ -37,7 +37,8 @@ export {
 export { cidOfSpecHash, specHashOfCid } from "./spec-cid.js";
 export { SPEC_CACHE_BYTES, SPEC_CACHE_ENTRIES, type CachedSpec, SpecCache } from "./spec-cache.js";
 export { guardedRead } from "./spec-fetch.js";
-export { ARWEAVE_IDS, checkedSources, DEFAULT_SPEC_SOURCES, MEMO_FIRST, SPEC_READ_MS, SPEC_READ_OVER, IPLD_RAW, NO_SPEC_URL, SEALED_FROM_HASH_SOURCE, SPEC_HASH_TAG, type SpecAttempt, type SpecSource, type SpecSourceKind } from "./spec-sources.js";
+export { MIRROR_OFF, PUBLISH_SEALED, type PublishSpecOptions, publishSpec, SPEC_PUBLISH_OVER, type SpecPublished } from "./spec-publish.js";
+export { ARWEAVE_IDS, checkedSources, DEFAULT_SPEC_MIRROR, DEFAULT_SPEC_SOURCES, defaultSpecSources, MIRROR_OFF_DEVNET, MIRROR_UNUSABLE, mirrorProblem, SPEC_MIRROR_ENV, specMirror, MEMO_FIRST, SPEC_READ_MS, SPEC_READ_OVER, IPLD_RAW, NO_SPEC_URL, SEALED_FROM_HASH_SOURCE, SPEC_HASH_TAG, type SpecAttempt, type SpecSource, type SpecSourceKind } from "./spec-sources.js";
 export { memoInstruction, memosSignedBy } from "./job-memos.js";
 export { paidWalletsOf } from "./release-reads.js";
 export { type EngineCall, engineCalls } from "./job-origins.js";

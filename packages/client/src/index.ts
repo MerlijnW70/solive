@@ -105,7 +105,8 @@ export type { IntentRef } from "./intent-ref.js";
 export type { JobFilter } from "./job-proofs.js";
 export { type Job, type JobList, type Spec, type SpecFetch, type SpecRequest, SpecSealed, SpecUnreadable } from "./job-specs.js";
 export { cidOfSpecHash, specHashOfCid } from "./spec-cid.js";
-export { DEFAULT_SPEC_SOURCES, type SpecAttempt, type SpecSource, type SpecSourceKind } from "./spec-sources.js";
+export { type PublishSpecOptions, publishSpec, type SpecPublished } from "./spec-publish.js";
+export { DEFAULT_SPEC_MIRROR, DEFAULT_SPEC_SOURCES, type SpecAttempt, type SpecSource, type SpecSourceKind } from "./spec-sources.js";
 export { LedgerError, LedgerPathError } from "./ledger-path.js";
 export type {
   ClientEventName,

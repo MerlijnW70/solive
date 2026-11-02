@@ -5,6 +5,7 @@ import type { Client, ClientOptions } from "./client-types.js";
 import { type CheckedFetch, FetchFailed } from "./fetch-failed.js";
 import type { SpecFetch } from "./job-specs.js";
 import { pinnedFetch } from "./pinned-fetch.js";
+import { type PublishSpecOptions, publishSpec as webPublishSpec, type SpecPublished } from "./spec-publish.js";
 import { systemLookup } from "./public-host.js";
 import { connect as webConnect } from "./simple.js";
 import type { ClusterChoice, ConnectSettings, SimpleClient } from "./simple-types.js";
@@ -37,6 +38,10 @@ const hardened = (options: NodeFetchOptions): { fetch: SpecFetch; lookup: Lookup
 
 export function createClient(options: NodeClientOptions): Client {
   return webClient({ ...options, ...hardened(options) });
+}
+
+export function publishSpec(bytes: Uint8Array, options: Omit<PublishSpecOptions, "fetch" | "lookup"> & NodeFetchOptions): Promise<SpecPublished> {
+  return webPublishSpec(bytes, { ...options, ...hardened(options) });
 }
 
 export function connect<S extends TransactionSigner>(options: NodeConnectOptions<S>): Promise<SimpleClient<S>> {
