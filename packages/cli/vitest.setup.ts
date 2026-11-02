@@ -17,4 +17,4 @@ if (chosen !== "random") {
   fc.configureGlobal({ ...fc.readConfigureGlobal(), seed });
 }
 
-export default defineConfig({ test: { setupFiles: [fileURLToPath(import.meta.url)], maxWorkers: workers, execArgv: ["--expose-gc"] } });
+export default defineConfig({ test: { setupFiles: [fileURLToPath(import.meta.url), fileURLToPath(new URL("./test/faucet-setup.ts", import.meta.url))], maxWorkers: workers, execArgv: ["--expose-gc"] } });

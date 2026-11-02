@@ -70,7 +70,7 @@ describe("a local worker for any job", () => {
       const home = mkdtempSync(join(tmpdir(), "local-worker-"));
       roots.push(home);
       const base = runtime({});
-      const real = { ...nodeRuntime(), serve: base.serve, transport: base.transport, specFetch: base.specFetch, lookup: harnessLookup, home, saleBook: base.saleBook as NonNullable<typeof base.saleBook> };
+      const real = { ...nodeRuntime(), faucetFetch: async () => ({ status: 429, json: async () => ({ error: "fake" }) }), serve: base.serve, transport: base.transport, specFetch: base.specFetch, lookup: harnessLookup, home, saleBook: base.saleBook as NonNullable<typeof base.saleBook> };
       const client = await connected([], real);
       const owner = await ok(client, "wallet_setup");
       wallet = owner["address"] as Address;
