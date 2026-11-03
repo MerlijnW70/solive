@@ -2,13 +2,13 @@ import type { Values } from "./arg-options.js";
 import { encryptionKeypairOf, key, memoUrlOf, parseAddress, parseBounded, relayPayerOf, required, splitOf, UsageError } from "./arg-values.js";
 import type { Command, Remote } from "./command-types.js";
 
-export const HELD_NEEDS_ANNOUNCEMENT = "--index and --to choose which held share to claim and where, so they need --announcement";
+export const HELD_NEEDS_ANNOUNCEMENT = "--index, --to, --fee-payer and --yes act on one held share, so they need --announcement";
 
 const MAX_SPLIT_INDEX = 7;
 
 function claimHeldOf(remote: Remote, values: Values): Command {
   const announcement = values.announcement === undefined ? undefined : parseAddress(values.announcement, "announcement");
-  if (announcement === undefined && (values.index !== undefined || values.to !== undefined || values.yes === true)) {
+  if (announcement === undefined && (values.index !== undefined || values.to !== undefined || values["fee-payer"] !== undefined || values.yes === true)) {
     throw new UsageError(HELD_NEEDS_ANNOUNCEMENT);
   }
   return {

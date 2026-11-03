@@ -1,4 +1,4 @@
-import { ACCEPTS, GLOBAL_OPTIONS } from "./arg-options.js";
+import { ACCEPTS, GLOBAL_OPTIONS, SUB_ACCEPTS } from "./arg-options.js";
 import { NO_UPDATE_CHECK } from "./update-notice.js";
 import { EXIT_ALERTED } from "./monitor-args.js";
 
@@ -38,7 +38,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   "advance-nonce": "[--keypair <file>] --base <n> [--yes]",
   "close-legacy": "[--keypair <payer>] --address <account> [--yes]",
   migrate: "[--keypair <payer>] (--address <account> | --all) [--yes]",
-  "advance-epoch": "[--keypair <file>]",
+  "advance-epoch": "[--keypair <file>] [--yes]",
   "init-config": "([--keypair <file>] [--yes] | --authority <address>) --guardian --fee-recipient --fee-bps --kinds [--flags create|fill|all]",
   "update-config": "([--keypair <file>] [--yes] | --authority <address>) and any of --guardian --fee-recipient --fee-bps --kinds --fill-disabled",
   "propose-admin": "([--keypair <file>] [--yes] | --authority <address>) --new-admin <address>",
@@ -86,6 +86,6 @@ export function usageOf(verb: string | undefined): { usage: string; options: str
   const known = verb !== undefined && ACCEPTS[verb] !== undefined;
   return {
     usage: known ? `${verb} ${SHAPES[verb] ?? ""}`.trim() : COMMANDS,
-    options: known ? [...(ACCEPTS[verb] ?? []), ...GLOBAL_OPTIONS].map((o) => `--${o}`) : [],
+    options: known ? [...new Set([...(ACCEPTS[verb] ?? []), ...Object.values(SUB_ACCEPTS[verb] ?? {}).flat(), ...GLOBAL_OPTIONS])].map((o) => `--${o}`) : [],
   };
 }

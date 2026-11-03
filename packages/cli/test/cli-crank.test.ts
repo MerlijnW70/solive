@@ -13,7 +13,7 @@ import { findConfigPda, getConfigDecoder, findIntentPda, findVaultPda, HELD_CLAI
 import { rentExemptMinimum } from "@intent-engine/client/internal";
 import { crankAction, IMMUTABLE_OWNER, refundable, refundSeed, TOKEN_ACCOUNT_BYTES, UNFUNDED } from "../src/commands.js";
 import { rentFor, rentRate } from "../src/agent/budget.js";
-import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
+import { EXIT_FAILED, EXIT_OK, EXIT_PARTIAL, EXIT_USAGE } from "../src/main.js";
 import { costlyFunding, fundingRent } from "../src/crank.js";
 import { ata, balance, cli, ESCROW, funded, h, NOW, send, transport, world } from "./harness.js";
 import { createSwap } from "./cli-kit.js";
@@ -157,7 +157,9 @@ describe("cli against the deployed engine", () => {
     clock.unixTimestamp = NOW + 10n;
     h.svm.setClock(clock);
     const cranker = await funded();
-    const run = (await cli(["crank", "--keypair", "c.json"], { "c.json": cranker })).json() as {
+    const crank = await cli(["crank", "--keypair", "c.json"], { "c.json": cranker });
+    expect(crank.code).toBe(EXIT_PARTIAL);
+    const run = crank.json() as {
       actions: { intent: string; action: string; signature?: string; error?: string }[];
     };
     expect(run.actions.map((a) => [a.intent, a.action])).toEqual([

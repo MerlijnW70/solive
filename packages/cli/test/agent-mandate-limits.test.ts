@@ -119,7 +119,7 @@ describe("mandates through the agent server", () => {
       code: "MandateExpired",
     });
     await ok(client, "agent_create", { owner: w.owner.address, id: "1", order: order("10", "5"), expires_in: 600 });
-    expect((await cli(["advance-epoch", "--keypair", "o.json"], { "o.json": w.owner })).code).toBe(EXIT_OK);
+    expect((await cli(["advance-epoch", "--keypair", "o.json", "--yes"], { "o.json": w.owner })).code).toBe(EXIT_OK);
     expect((await ok(client, "get_mandate", { owner: w.owner.address, agent: agent.address, id: "1" }))["status"]).toBe("revoked");
     expect(await fail(client, "agent_create", { owner: w.owner.address, id: "1", order: order("10", "5"), expires_in: 600 })).toMatchObject({
       code: "MandateRevoked",

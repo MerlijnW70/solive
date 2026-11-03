@@ -284,7 +284,7 @@ describe("numbers", () => {
         "--kind-fees",
         "limit=100,dutch=0,attested=300",
         "--partner-cut",
-        "65535",
+        "10000",
       ]),
     ).toEqual({
       name: "set-economics",
@@ -294,7 +294,7 @@ describe("numbers", () => {
       economics: {
         kindFeeMask: 0b1_1100,
         kindFeeBps: [0, 100, 0, 300],
-        partnerCutBps: 65_535,
+        partnerCutBps: 10_000,
         crankBounty: 4_294_967_295,
         createFee: 0,
       },
@@ -313,7 +313,7 @@ describe("numbers", () => {
     expect(usage([...base, "--kind-fees", "swap=101"])).toBe("--kind-fees swap must be an integer from 0 to 100 bps");
     expect(usage([...base, "--kind-fees", "attested=301"])).toBe("--kind-fees attested must be an integer from 0 to 300 bps");
     expect(usage([...base, "--kind-fees", "dutch=1.5"])).toBe("--kind-fees dutch must be an integer from 0 to 100 bps");
-    expect(usage([...base, "--partner-cut", "1.5"])).toBe("--partner-cut must be an integer from 0 to 65535");
+    expect(usage([...base, "--partner-cut", "1.5"])).toBe("--partner-cut must be an integer from 0 to 10000");
     expect(usage(["set-economics", "--keypair", "k", "--bounty", "4294967296", "--create-fee", "1"])).toBe(
       "--bounty must be an integer from 0 to 4294967295",
     );

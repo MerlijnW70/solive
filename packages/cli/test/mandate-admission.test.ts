@@ -165,7 +165,7 @@ describe("the mandate tools agree with the program on every limit", () => {
     await grant({});
     await grant({}, "1");
     await agree("0", order("10", "5"), "ok");
-    expect((await cli(["advance-epoch", "--keypair", "o.json"], { "o.json": w.owner })).code).toBe(EXIT_OK);
+    expect((await cli(["advance-epoch", "--keypair", "o.json", "--yes"], { "o.json": w.owner })).code).toBe(EXIT_OK);
     await agree("0", order("10", "5"), "MandateRevoked");
     await agree("1", order("10", "5"), "MandateRevoked");
   });

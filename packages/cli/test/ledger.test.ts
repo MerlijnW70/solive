@@ -179,7 +179,6 @@ describe("signing with a Ledger", () => {
       ["crank", ["crank", "--keypair", "usb://ledger"]],
       ["balance", ["balance", "--keypair", "usb://ledger?key=2"]],
       ["setup", ["setup", "--keypair", "usb://ledger"]],
-      ["claims open", ["claims", "open", "--keypair", "usb://ledger", "--nonce", "0", "--max-secs", "60", "--stake", "1"]],
       ["unseal", ["unseal", "--keypair", "usb://ledger", "--file", "sealed.bin", "--out", "plain.bin"]],
       ["signed submit", ["signed", "submit", "--keypair", "usb://ledger", "--file", "signed.json"]],
     ];
@@ -189,8 +188,8 @@ describe("signing with a Ledger", () => {
       const result = await run(argv, ledger);
       const path = argv[argv.indexOf("--keypair") + 1] ?? "";
       expect([result.code, result.err, result.out]).toEqual([EXIT_USAGE, needsKeyFile(name, path), ""]);
-      expect(result.err).toContain(`${name} needs a key file`);
-      expect(result.err).toContain("because it also signs messages");
+      expect(result.err).toContain(`${name} cannot sign with the Ledger ${path}`);
+      expect(result.err).not.toContain("signs messages");
       expect([ledger.opened, h.urls]).toEqual([0, []]);
     }
     h.env[ENV_KEYPAIR] = "usb://ledger";
@@ -198,6 +197,13 @@ describe("signing with a Ledger", () => {
     const defaulted = await run(["crank"], ledger);
     expect([defaulted.code, defaulted.err]).toEqual([EXIT_USAGE, needsKeyFile("crank", "usb://ledger")]);
     expect([ledger.opened, h.urls]).toEqual([0, []]);
+  });
+
+  it("claims open with a Ledger path is accepted and reaches the device", async () => {
+    const ledger = device(key, []);
+    const result = await run(["claims", "open", "--keypair", "usb://ledger", "--nonce", "0", "--max-secs", "60", "--stake", "1"], ledger);
+    expect(result.err).not.toContain("cannot sign with the Ledger");
+    expect(ledger.opened).toBeGreaterThan(0);
   });
 
   it("a malformed Ledger path is a usage error that never opens the device or reads a key file", async () => {
@@ -225,6 +231,13 @@ describe("signing with a Ledger", () => {
       ["deliver", "--intent", owner, "--sha256", "ab".repeat(32), "--work-url", "https://" + "example.org/work"],
       ["claims", "take", "--owner", owner, "--nonce", "0", "--secs", "60"],
       ["claims", "drop", "--owner", owner, "--nonce", "0"],
+      ["claims", "open", "--nonce", "0", "--max-secs", "60", "--stake", "1"],
+      ["claims", "standby", "--owner", owner, "--nonce", "0", "--secs", "60"],
+      ["claims", "leave", "--owner", owner, "--nonce", "0"],
+      ["claims", "advance", "--owner", owner, "--nonce", "0"],
+      ["claims", "settle", "--owner", owner, "--nonce", "0"],
+      ["close-legacy", "--address", owner],
+      ["migrate", "--all"],
       ["mandate", "revoke", "--agent", owner],
       ["profile", "set", "--skills", "judge", "--endpoint", "https://" + "judge.example", "--encryption-key", "none"],
       ["profile", "close"],
@@ -232,7 +245,7 @@ describe("signing with a Ledger", () => {
     for (const argv of signs) {
       expect(signsOnDevice(parse([...argv, "--keypair", "usb://ledger"])), argv.join(" ")).toBe(true);
     }
-    for (const argv of [["crank"], ["claims", "open", "--nonce", "0", "--max-secs", "60", "--stake", "1"], ["claims", "settle", "--owner", owner, "--nonce", "0"]]) {
+    for (const argv of [["crank"]]) {
       expect(signsOnDevice(parse([...argv, "--keypair", "usb://ledger"])), argv.join(" ")).toBe(false);
     }
   });

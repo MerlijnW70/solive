@@ -162,7 +162,7 @@ describe.skipIf(url === undefined || keypair === undefined)("devnet cli sweep", 
       ok(`close --owner ${owner.address} --nonce 4 --yes`);
 
       ok("advance-nonce --base 100 --yes");
-      ok("advance-epoch");
+      ok("advance-epoch --yes");
       ok(`approve --mint ${WRAPPED} --amount 0.02 --units tokens --yes`);
       ok(`revoke-approval --mint ${WRAPPED} --yes`);
 

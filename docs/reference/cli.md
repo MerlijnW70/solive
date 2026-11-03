@@ -12,7 +12,7 @@ Every command accepts `--output`, `--help` and `--debug`. `--debug` writes a lin
 
 When neither `--keypair` nor `INTENT_ENGINE_KEYPAIR` is given, the wallet `setup` saved is the default, which is why `--keypair` is in brackets below; only `signed submit` always needs its relayer's `--keypair`.
 
-`--keypair` also takes a Ledger, as `usb://ledger`, `usb://ledger?key=<account>`, `usb://ledger?key=<account>/<change>`, for `create`, `cancel`, `expire`, `close`, `approve`, `revoke-approval`, `deliver`, `refute`, `reclaim`, `claim-held`, `close-book`, `judge`, `committee vote`, `committee release`, `signed prepare`, `advance-nonce`, `advance-epoch`, `claims take`, `claims drop`, `mandate grant`, `mandate revoke`, `profile set`, `profile close`, `solver float`; every other command refuses one and needs a key file.
+`--keypair` also takes a Ledger, as `usb://ledger`, `usb://ledger?key=<account>`, `usb://ledger?key=<account>/<change>`, for `create`, `cancel`, `expire`, `close`, `close-legacy`, `migrate`, `approve`, `revoke-approval`, `deliver`, `refute`, `reclaim`, `claim-held`, `close-book`, `judge`, `committee vote`, `committee release`, `signed prepare`, `advance-nonce`, `advance-epoch`, `claims open`, `claims take`, `claims drop`, `claims standby`, `claims leave`, `claims advance`, `claims settle`, `mandate grant`, `mandate revoke`, `profile set`, `profile close`, `solver float`; every other command refuses one and needs a key file.
 
 ## setup
 
@@ -193,10 +193,10 @@ Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--address`, `--all`, 
 ## advance-epoch
 
 ```text
-advance-epoch [--keypair <file>]
+advance-epoch [--keypair <file>] [--yes]
 ```
 
-Options: `--url`, `--priority-fee`, `--keypair`, `--output`, `--help`, `--debug`
+Options: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--output`, `--help`, `--debug`
 
 ## init-config
 
@@ -380,7 +380,7 @@ Options: `--url`, `--owner`, `--nonce`, `--sha256`, `--release`, `--output`, `--
 judge [--keypair <judge file>] --owner <address> --nonce <n> --spec <file> (--artifact <file or directory> | --watch [--interval <seconds>]) (--run <command> | --sandbox viper) [--result <n>] [--timeout <seconds>] [--verdict <file>] [--check <file or directory>] [--sandbox docker|viper|none --i-trust-this-work] [--sandbox-image <name>@sha256:<64 hex>] [--sandbox-memory <n>m|<n>g] [--sandbox-cpus <n>] [--sandbox-tmp <n>m|<n>g] [--sandbox-gpu] [--plain-node] [--fee-payer <key file, with a Ledger --keypair>] [--encryption-keypair <encryption key file> ...] [--confirm-url <cluster> | --no-confirm-url] [--yes] | digest --owner <address> --nonce <n> --announcement <address> --sha256 <64 hex> --salt <32 hex> [--result <n>]
 ```
 
-Options without a subcommand: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--result`, `--timeout`, `--verdict`, `--check`, `--sandbox`, `--sandbox-image`, `--sandbox-memory`, `--sandbox-cpus`, `--sandbox-tmp`, `--sandbox-gpu`, `--i-trust-this-work`, `--plain-node`, `--watch`, `--interval`, `--confirm-url`, `--no-confirm-url`, `--fee-payer`, `--encryption-keypair`, `--output`, `--help`, `--debug`
+Options without a subcommand: `--url`, `--priority-fee`, `--keypair`, `--yes`, `--owner`, `--nonce`, `--spec`, `--artifact`, `--run`, `--result`, `--timeout`, `--verdict`, `--check`, `--sandbox`, `--sandbox-image`, `--sandbox-memory`, `--sandbox-cpus`, `--sandbox-tmp`, `--sandbox-gpu`, `--i-trust-this-work`, `--plain-node`, `--watch`, `--interval`, `--confirm-url`, `--no-confirm-url`, `--fee-payer`, `--encryption-keypair`, `--announcement`, `--sha256`, `--salt`, `--output`, `--help`, `--debug`
 
 Options for `digest`: `--url`, `--owner`, `--nonce`, `--announcement`, `--sha256`, `--salt`, `--result`, `--output`, `--help`, `--debug`
 

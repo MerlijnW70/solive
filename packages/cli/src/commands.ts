@@ -80,6 +80,13 @@ const addToSetup = (runtime: Runtime): Promise<object> =>
     note: () => undefined,
   }, { fetch: runtime.faucetFetch, env: runtime.env });
 
+export class NoUserState extends Error {
+  constructor(owner: string) {
+    super(`${owner} has no user state yet, so there is no signing epoch to advance`);
+    this.name = "NoUserState";
+  }
+}
+
 export async function run(command: Command, runtime: Runtime): Promise<object | null> {
   if (command.name === "help") {
     return usageOf(command.verb);
@@ -340,11 +347,12 @@ export async function run(command: Command, runtime: Runtime): Promise<object | 
       const [userState] = await findUserStatePda({ owner: owner.address });
       const view = await createdAccount(transport, userState);
       if (view === null) {
-        throw new Error(`${owner.address} has no user state`);
+        throw new NoUserState(owner.address);
       }
       const epoch = nextEpoch(decodeUserStateAccount(view.data).epoch);
       const ix = await buildAdvanceEpoch({ owner, epoch });
-      return { epoch, signature: await transport.send([ix], owner) };
+      const summary = [`Advances the signing epoch of ${owner.address} to ${epoch}: every mandate and every outstanding signature of this owner stops working at once, which cannot be undone`];
+      return previewed(transport, [ix], owner, { owner: owner.address, epoch, summary }, command.yes);
     }
   }
 }

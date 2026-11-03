@@ -61,7 +61,7 @@ export type Command =
   | (Keyed & { name: "close-legacy"; yes: boolean; address: Address })
   | (Keyed & { name: "migrate"; yes: boolean; address: Address | null })
   | (Keyed & { name: "advance-nonce"; base: bigint; yes: boolean })
-  | (Keyed & { name: "advance-epoch" })
+  | (Keyed & { name: "advance-epoch"; yes: boolean })
   | (Administered & {
       name: "init-config";
       guardian: Address;

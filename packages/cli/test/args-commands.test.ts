@@ -175,6 +175,7 @@ describe("commands", () => {
       url: DEFAULT_URL,
       priority: 0n,
       keypair: "k.json",
+      yes: false,
     });
     expect(parse(["advance-nonce", "--keypair", "k.json", "--base", "9"])).toEqual({
       name: "advance-nonce",

@@ -11,6 +11,8 @@ export const LEDGER_COMMANDS = [
   "cancel",
   "expire",
   "close",
+  "close-legacy",
+  "migrate",
   "approve",
   "revoke-approval",
   "deliver",
@@ -24,8 +26,13 @@ export const LEDGER_COMMANDS = [
   "signed prepare",
   "advance-nonce",
   "advance-epoch",
+  "claims open",
   "claims take",
   "claims drop",
+  "claims standby",
+  "claims leave",
+  "claims advance",
+  "claims settle",
   "mandate grant",
   "mandate revoke",
   "profile set",
@@ -48,7 +55,7 @@ function keyPaths(command: Command): string[] {
 }
 
 export const needsKeyFile = (name: string, path: string) =>
-  `${name} needs a key file, not the Ledger ${path}, because it also signs messages; pass --keypair with a JSON key file`;
+  `${name} cannot sign with the Ledger ${path}; pass --keypair with a JSON key file`;
 
 export const signsOnDevice = (command: Command): boolean => DEVICE_COMMANDS.has(commandName(command));
 

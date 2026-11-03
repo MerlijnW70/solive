@@ -1,7 +1,7 @@
 import { type Address, generateKeyPairSigner, type KeyPairSigner } from "@solana/kit";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { claimBoardAddress, findIntentPda, findUserStatePda, getClaimBoardSize, LEGACY_BOARD_SPACE } from "@intent-engine/core/internal";
-import { EXIT_OK } from "../src/main.js";
+import { EXIT_OK, EXIT_PARTIAL } from "../src/main.js";
 import { MIGRATE_BATCH } from "../src/migrate-commands.js";
 import { cli, funded, h, transport, type World, world } from "./harness.js";
 
@@ -108,7 +108,7 @@ describe("migrate rent and batches", () => {
     const addresses = await Promise.all(Array.from({ length: MIGRATE_BATCH + 1 }, async () => (await generateKeyPairSigner()).address));
     listed = addresses.map((address) => ({ address, data, lamports: 10_000_000n }));
     const tried = await migrate(true);
-    expect([tried.code, tried.err]).toEqual([EXIT_OK, ""]);
+    expect([tried.code, tried.err]).toEqual([EXIT_PARTIAL, ""]);
     expect(tried.json()).toMatchObject({ sent: true, transactions: 2, signatures: [] });
     expect(tried.json()["failed"]).toEqual([
       { accounts: addresses.slice(0, MIGRATE_BATCH), error: "refused by the node" },

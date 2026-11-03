@@ -237,3 +237,24 @@ describe("events", () => {
     expect(usage(["events", "x"])).toBe("unexpected argument x");
   });
 });
+
+describe("help and bounds match what commands take", () => {
+  const set = (cut: string) => ["set-economics", "--keypair", "k.json", "--bounty", "0", "--create-fee", "0", "--partner-cut", cut];
+
+  it("refuses a partner cut above the program's 10000 bps at parse time", () => {
+    expect(usage(set("10001"))).toBe("--partner-cut must be an integer from 0 to 10000");
+    expect(parse(set("10000"))).toMatchObject({ economics: { partnerCutBps: 10000 } });
+  });
+
+  it("help mandate lists no result bounds or attestor and help judge lists the digest options", () => {
+    const mandate = usageOf("mandate").options;
+    for (const name of ["--attestor", "--min-result", "--max-result"]) {
+      expect(mandate).not.toContain(name);
+    }
+    expect(mandate).toContain("--amount-in");
+    const judge = usageOf("judge").options;
+    for (const name of ["--salt", "--announcement", "--sha256"]) {
+      expect(judge).toContain(name);
+    }
+  });
+});

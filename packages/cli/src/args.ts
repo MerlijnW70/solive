@@ -332,7 +332,7 @@ function parseCommand(argv: readonly string[], env: Env): Command {
       return { name: "advance-nonce", ...remote, keypair: required(values, "keypair"), yes: values.yes === true, base: u64(values, "base") };
     case "advance-epoch":
       noSub(sub);
-      return { name: "advance-epoch", ...remote, keypair: required(values, "keypair") };
+      return { name: "advance-epoch", ...remote, keypair: required(values, "keypair"), yes: values.yes === true };
     case "solve":
       noSub(sub);
       return solveOf(remote, values);

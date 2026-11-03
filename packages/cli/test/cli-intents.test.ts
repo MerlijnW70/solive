@@ -14,7 +14,7 @@ import {
   findVaultPda,
   INTENT_ENGINE_PROGRAM_ADDRESS,
 } from "@intent-engine/core/internal";
-import { configExists } from "../src/commands.js";
+import { configExists, NoUserState } from "../src/commands.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE } from "../src/main.js";
 import { ata, balance, boot, cli, DOMAIN, ESCROW, FEE_BPS, funded, h, NOW, send, transport, world } from "./harness.js";
 import { createSwap } from "./cli-kit.js";
@@ -270,7 +270,13 @@ describe("cli against the deployed engine", () => {
     let previous = await epoch();
     expect(previous).toBe(0n);
     for (let i = 0; i < 2; i++) {
-      const advanced = await cli(["advance-epoch", "--keypair", "owner.json"], { "owner.json": owner });
+      const preview = await cli(["advance-epoch", "--keypair", "owner.json"], { "owner.json": owner });
+      expect(preview.code).toBe(EXIT_OK);
+      expect(preview.json()).toMatchObject({ sent: false, owner: owner.address });
+      expect(preview.json()["signature"]).toBeUndefined();
+      expect(String((preview.json()["summary"] as string[])[0])).toContain("every mandate and every outstanding signature");
+      expect(await epoch()).toBe(previous);
+      const advanced = await cli(["advance-epoch", "--keypair", "owner.json", "--yes"], { "owner.json": owner });
       expect(advanced.code).toBe(EXIT_OK);
       expect(typeof advanced.json()["signature"]).toBe("string");
       const now = await epoch();
@@ -279,7 +285,10 @@ describe("cli against the deployed engine", () => {
       previous = now;
     }
     const stranger = await generateKeyPairSigner();
-    expect((await cli(["advance-epoch", "--keypair", "s.json"], { "s.json": stranger })).code).toBe(EXIT_FAILED);
+    const refused = await cli(["advance-epoch", "--keypair", "s.json"], { "s.json": stranger });
+    expect(refused.code).toBe(EXIT_FAILED);
+    expect(refused.err).toBe(new NoUserState(stranger.address).message);
+    expect(refused.err).toContain(`${stranger.address} has no user state yet`);
   });
 
   it("advances the nonce window", async () => {

@@ -45,6 +45,22 @@ export const PREVIEW_ONLY = "nothing was sent; pass --yes to sign and send it";
 
 const PREVIEWED = new Set(["cancel", "expire", "close"]);
 
+function partialFailure(command: Command, result: object | null): boolean {
+  if (result === null) {
+    return false;
+  }
+  if (command.name === "flow" && command.flow === "mandate-revoke") {
+    return "failed" in result || "unknown" in result;
+  }
+  if (command.name === "migrate") {
+    return "failed" in result && Array.isArray(result.failed) && result.failed.length > 0;
+  }
+  if (command.name === "crank") {
+    return "actions" in result && Array.isArray(result.actions) && result.actions.some((action) => typeof action === "object" && action !== null && "error" in action);
+  }
+  return false;
+}
+
 export const ONE_NODE =
   "info: releases are checked against one RPC node, which is enough on devnet; to check each release on a second node too, run intent-engine setup --confirm-url <rpc> once, or pass --confirm-url <rpc>";
 
@@ -139,7 +155,7 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
     if (PREVIEWED.has(command.name) && result !== null && "sent" in result && result.sent === false) {
       io.err(PREVIEW_ONLY);
     }
-    if (command.name === "flow" && command.flow === "mandate-revoke" && result !== null && ("failed" in result || "unknown" in result)) {
+    if (partialFailure(command, result)) {
       return EXIT_PARTIAL;
     }
     if (command.name === "sandbox-doctor" && result !== null && "ready" in result && result.ready !== true) {

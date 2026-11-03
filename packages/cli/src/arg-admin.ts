@@ -2,7 +2,9 @@ import type { Values } from "./arg-options.js";
 import { key, noSub, parseBounded, parseFeeBps, parseKindFees, parseKinds, parsePause, required, u64, UsageError } from "./arg-values.js";
 import { authorityOf, configChange } from "./command-builders.js";
 import type { Command, Remote } from "./command-types.js";
-import { MIN_CAP_WINDOW_SECS } from "@intent-engine/core/internal";
+import { BPS_DENOMINATOR, MIN_CAP_WINDOW_SECS } from "@intent-engine/core/internal";
+
+const MAX_PARTNER_CUT_BPS = Number(BPS_DENOMINATOR);
 
 export type AdminVerb =
   | "init-config"
@@ -49,7 +51,7 @@ export function adminOf(verb: AdminVerb, sub: string | undefined, remote: Remote
         economics: {
           kindFeeMask: kindFees.mask,
           kindFeeBps: kindFees.bps,
-          partnerCutBps: parseBounded(values["partner-cut"] ?? "0", "partner-cut", 0xffff),
+          partnerCutBps: parseBounded(values["partner-cut"] ?? "0", "partner-cut", MAX_PARTNER_CUT_BPS),
           crankBounty: parseBounded(required(values, "bounty"), "bounty", 0xffff_ffff),
           createFee: parseBounded(required(values, "create-fee"), "create-fee", 0xffff_ffff),
         },

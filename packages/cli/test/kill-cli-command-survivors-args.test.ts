@@ -17,6 +17,8 @@ const open = (extra: string[]) => ["claims", "open", "--keypair", "k.json", "--n
 describe("claim-held arguments", () => {
   it("refuses --yes without an announcement, and parses without it", () => {
     expect(usage(["claim-held", "--keypair", "k.json", "--yes"])).toBe(HELD_NEEDS_ANNOUNCEMENT);
+    expect(usage(["claim-held", "--keypair", "k.json", "--fee-payer", "p.json"])).toBe(HELD_NEEDS_ANNOUNCEMENT);
+    expect(HELD_NEEDS_ANNOUNCEMENT).toContain("--yes");
     expect(parse(["claim-held", "--keypair", "k.json"])).toMatchObject({ name: "claim-held", yes: false });
   });
 });
