@@ -14,7 +14,7 @@ import {
 } from "@intent-engine/core/internal";
 import { type ClaimsView, type Client, isSdkError, type Transport } from "@intent-engine/client";
 import { type LineEntry, lineHandover, loadLine } from "@intent-engine/client/internal";
-import { handedTo } from "../claim-commands.js";
+import { handedTo, stoppedFills } from "../claim-commands.js";
 import { listAccount } from "../claim-lists.js";
 import { rentFor, rentRate, SIGNATURE_FEE } from "./budget.js";
 import { tool } from "./names.js";
@@ -22,7 +22,7 @@ import { AgentRefusal } from "./problems.js";
 
 export type EscrowState = "open" | "released" | "gone";
 
-export type LineStep = { instruction: Instruction; summary: string[]; key: string; done: string };
+export type LineStep = { instruction: Instruction; summary: string[]; key: string; done: string; locks?: bigint };
 
 type Escrow = { owner: Address; nonce: bigint; intent: Address };
 
@@ -49,6 +49,13 @@ export async function escrowState(client: Client, owner: Address, nonce: bigint)
     return "released";
   }
   return found.intent.status === IntentStatus.Open && now < found.intent.expiresAt ? "open" : "gone";
+}
+
+export async function fillsGoing(client: Client, escrow: Escrow): Promise<void> {
+  const stopped = await stoppedFills(client, escrow.owner, escrow.nonce, escrow.intent);
+  if (stopped !== undefined) {
+    throw new AgentRefusal(stopped.code, stopped.hint);
+  }
 }
 
 export async function boardRent(transport: Transport): Promise<bigint> {
@@ -113,6 +120,7 @@ export async function standbyStep(client: Client, transport: Transport, escrow: 
   if ((await escrowState(client, escrow.owner, escrow.nonce)) !== "open") {
     throw new AgentRefusal("InvalidTransition", `escrow ${escrow.intent} is no longer open, so nobody can stand by for it`);
   }
+  await fillsGoing(client, escrow);
   const seq = view.line.tail;
   const rent = rentFor(getStandbySize(), await rentRate(transport));
   const summary = [
@@ -122,7 +130,7 @@ export async function standbyStep(client: Client, transport: Transport, escrow: 
   ];
   const instruction = await buildStandBy({ worker, intent: escrow.intent, seq, secs, ...listAccount(view.list) });
   const done = `you stand by for ${escrow.intent} as entry ${seq}; ${tool("get_claims")} shows this wallet as worker once the job reaches it`;
-  return { instruction, summary, key: `standby:${secs}:${seq}:${view.stake}`, done };
+  return { instruction, summary, key: `standby:${secs}:${seq}:${view.stake}:${rent}`, done, locks: view.stake + rent };
 }
 
 export async function leaveStep(client: Client, transport: Transport, escrow: Escrow, view: ClaimsView | null, caller: TransactionSigner, seq: number | undefined): Promise<LineStep> {

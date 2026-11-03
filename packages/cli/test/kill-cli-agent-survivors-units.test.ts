@@ -2,7 +2,7 @@ import { type Address, generateKeyPairSigner, none, some } from "@solana/kit";
 import { AccountState, getTokenEncoder, TOKEN_PROGRAM_ADDRESS } from "@solana-program/token";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { formatAmount, IntentStatus, Kind } from "@intent-engine/core";
-import { claimBoardAddress, claimListAddress, findDelegatePda, getClaimBoardSize, getClaimListSize, kindBit, type Mandate } from "@intent-engine/core/internal";
+import { claimBoardAddress, claimListAddress, findDelegatePda, getClaimBoardSize, getClaimListSize, getStandbySize, kindBit, type Mandate } from "@intent-engine/core/internal";
 import type { Client, ClaimsView, Transport } from "@intent-engine/client";
 import { rentFor } from "../src/agent/budget.js";
 import { boardLeft, closedEscrow, escrowState, lineWaitingHere, settleCall, standbyStep } from "../src/agent/claim-line.js";
@@ -88,7 +88,12 @@ describe("standbyStep", () => {
     const owner = (await generateKeyPairSigner()).address;
     return { owner, nonce: 0n, intent: (await generateKeyPairSigner()).address };
   };
-  const open = { intent: async () => ({ intent: { status: IntentStatus.Open, expiresAt: 10_000n } }), chainTime: async () => 1_000n } as unknown as Client;
+  const open = {
+    intent: async () => ({ intent: { status: IntentStatus.Open, kind: Kind.AttestedResult, expiresAt: 10_000n } }),
+    chainTime: async () => 1_000n,
+    config: async () => ({ paused: 0, fillDisabledKinds: 0n }),
+  } as unknown as Client;
+  const rent = rentFor(getStandbySize(), RATE);
   const viewOf = (over: Partial<ClaimsView>): ClaimsView =>
     ({
       board: "11111111111111111111111111111112",
@@ -113,7 +118,8 @@ describe("standbyStep", () => {
     expect(step.summary[0]).toBe(
       `Stands by: for escrow ${escrow.intent} as entry 1, place 2 in its line; when the job reaches this wallet ${worker.address} it holds the claim for 600 seconds`,
     );
-    expect(step.key).toBe("standby:600:1:50000000");
+    expect(step.key).toBe(`standby:600:1:50000000:${rent}`);
+    expect(step.locks).toBe(50_000_000n + rent);
   });
 
   it("refuses the holder of a live claim, but not a wallet whose claim lapsed", async () => {
@@ -122,7 +128,7 @@ describe("standbyStep", () => {
     const held = viewOf({ worker: worker.address });
     await expect(standbyStep(open, rentTransport(), escrow, held, worker, 600)).rejects.toMatchObject({ problem: { code: "HolderStandsBy" } });
     const lapsed = await standbyStep(open, rentTransport(), escrow, viewOf({ worker: worker.address, state: "lapsed" }), worker, 600);
-    expect(lapsed.key).toBe("standby:600:1:50000000");
+    expect(lapsed.key).toBe(`standby:600:1:50000000:${rent}`);
   });
 
   it("accepts exactly the longest claim and refuses one second more", async () => {
@@ -130,7 +136,7 @@ describe("standbyStep", () => {
     const holder = (await generateKeyPairSigner()).address;
     const worker = await generateKeyPairSigner();
     const view = viewOf({ worker: holder, maxSecs: 900 });
-    expect((await standbyStep(open, rentTransport(), escrow, view, worker, 900)).key).toBe("standby:900:1:50000000");
+    expect((await standbyStep(open, rentTransport(), escrow, view, worker, 900)).key).toBe(`standby:900:1:50000000:${rent}`);
     const refused = await standbyStep(open, rentTransport(), escrow, view, worker, 901).catch((error: unknown) => error);
     expect(refused).toBeInstanceOf(AgentRefusal);
     expect(refused).toMatchObject({ problem: { code: "ClaimTerms" } });

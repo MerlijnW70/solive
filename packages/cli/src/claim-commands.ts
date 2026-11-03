@@ -97,13 +97,23 @@ async function escrowOpen(client: Client, owner: Address, nonce: bigint, now: bi
   return found !== null && found.intent.status === IntentStatus.Open && now < found.intent.expiresAt ? found.intent.expiresAt : null;
 }
 
-async function fillsStopped(client: Client, owner: Address, nonce: bigint, intent: Address) {
+export type FillsStopped = { code: "FillPaused" | "FillKindDisabled"; hint: string };
+
+export async function stoppedFills(client: Client, owner: Address, nonce: bigint, intent: Address): Promise<FillsStopped | undefined> {
   const [config, found] = await Promise.all([client.config(), client.intent({ owner, nonce })]);
   if ((config.paused & PAUSE_FILL) !== 0) {
-    throw new FlowRefused(`fills are paused by the guardian or admin, and with them new claims and stand-by joins on escrow ${intent}; try again once the pause is lowered; nothing was sent`);
+    return { code: "FillPaused", hint: `fills are paused by the guardian or admin, and with them new claims and stand-by joins on escrow ${intent}; try again once the pause is lowered; nothing was sent` };
   }
   if (found !== null && (config.fillDisabledKinds & kindBit(found.intent.kind)) !== 0n) {
-    throw new FlowRefused(`the admin stopped fills of the kind of escrow ${intent}, and with them new claims and stand-by joins on it; nothing was sent`);
+    return { code: "FillKindDisabled", hint: `the admin stopped fills of the kind of escrow ${intent}, and with them new claims and stand-by joins on it; nothing was sent` };
+  }
+  return undefined;
+}
+
+async function fillsStopped(client: Client, owner: Address, nonce: bigint, intent: Address) {
+  const stopped = await stoppedFills(client, owner, nonce, intent);
+  if (stopped !== undefined) {
+    throw new FlowRefused(stopped.hint);
   }
 }
 

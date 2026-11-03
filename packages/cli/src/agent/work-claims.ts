@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Address } from "@solana/kit";
-import { formatAmount, IntentStatus } from "@intent-engine/core";
+import { formatAmount, IntentStatus, NATIVE_MINT } from "@intent-engine/core";
 import { buildClaimJob, buildDropClaim, claimUntil, findIntentPda, formatTime, type LineHandover, MAX_CLAIM_SECS, MAX_CLAIMANTS, MAX_SEALED_RECIPIENTS } from "@intent-engine/core/internal";
 import { type ClaimListView, type ClaimsView, isSdkError } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
@@ -8,14 +8,15 @@ import { listAccount, listRefusal } from "../claim-lists.js";
 import { coolingDown, dropHandover, handedTo, heldBy, noClaims } from "../claim-commands.js";
 import { claimNotInvited, sealedInvites } from "../invites.js";
 import { type AgentContext, define, specReach } from "./actions.js";
-import { advanceStep, closedEscrow, type EscrowState, escrowState, leaveStep, type LineStep, lineWaitingHere, settleCall, settleStep, standbyStep } from "./claim-line.js";
+import { advanceStep, closedEscrow, type EscrowState, escrowState, fillsGoing, leaveStep, type LineStep, lineWaitingHere, settleCall, settleStep, standbyStep } from "./claim-line.js";
 import type { Call } from "./claims.js";
 import { tool } from "./names.js";
 import { AgentRefusal } from "./problems.js";
+import type { Sale } from "./sales.js";
 import { account, amount, choice, flag, InvalidInput, integer, list, nullable, object, optional, text, time } from "./schema.js";
 import { preparedView } from "./shapes.js";
 import { prepare } from "./prepare.js";
-import { deviceOutput, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent } from "./wallet/guard.js";
+import { access, bookOf, checkSale, deviceOutput, limited, live, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, refusedBeforeSending, salesOf, signerOf, sent } from "./wallet/guard.js";
 
 export const CLAIM_CHANGED =
   "this claim differs from its preview: the escrow, action, seconds or stake changed, or no approval was given; preview it again and show the user";
@@ -182,6 +183,7 @@ export const walletClaim = define({
     } else {
       step = await dropStep(ctx, client, escrow, view, signer);
     }
+    const now = step.locks === undefined ? undefined : await stakeAllowed(ctx, client, step.locks);
     const approval = createHash("sha256").update(`${intent}:${input.action}:${step.key}`).digest("hex").slice(0, 16);
     if (input.send === true && input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", CLAIM_CHANGED);
@@ -193,9 +195,42 @@ export const walletClaim = define({
       summary: step.summary,
       prepared: input.send === true || signer.device !== undefined ? preparedView(await prepare(ctx.transport, [step.instruction], signer.address)) : undefined,
     };
-    return sent(ctx, signer, shown, input.send, call, { preview: PREVIEW_APPROVAL_NEXT, done: step.done });
+    const next = { preview: PREVIEW_APPROVAL_NEXT, done: step.done };
+    if (input.send !== true || step.locks === undefined || now === undefined) {
+      return sent(ctx, signer, shown, input.send, call, next);
+    }
+    return stakeSent(ctx, signer, shown, call, next, step.locks, now);
   },
 });
+
+async function stakeAllowed(ctx: AgentContext, client: ReturnType<typeof createClient>, locks: bigint): Promise<bigint> {
+  const wallet = access(ctx);
+  const now = await client.chainTime();
+  checkSale(wallet.limits, NATIVE_MINT, 9, locks, now, await salesOf(wallet, now));
+  return now;
+}
+
+async function stakeSent(ctx: AgentContext, signer: Signer, shown: Record<string, unknown>, call: Call, next: { preview: string; done: string }, locks: bigint, now: bigint) {
+  const wallet = access(ctx);
+  const guard = wallet.limits;
+  const path = limited(guard) ? await bookOf(wallet) : undefined;
+  const sale: Sale = { id: randomUUID(), mint: NATIVE_MINT, at: now, amount: locks };
+  if (path !== undefined) {
+    await guard.book.update(path, (sales) => {
+      const kept = live(sales, now);
+      checkSale(guard, NATIVE_MINT, 9, locks, now, kept);
+      return { sales: [...kept, sale], value: undefined };
+    });
+  }
+  try {
+    return await sent(ctx, signer, shown, true, call, next);
+  } catch (error) {
+    if (path !== undefined && refusedBeforeSending(error)) {
+      await guard.book.update(path, (sales) => ({ sales: sales.filter((s) => s.id !== sale.id), value: undefined })).catch(() => undefined);
+    }
+    throw error;
+  }
+}
 
 function needSecs(secs: number | undefined, action: string): number {
   if (secs === undefined) {
@@ -234,8 +269,10 @@ async function takeStep(client: ReturnType<typeof createClient>, escrow: Escrow,
   } catch (error) {
     throw isSdkError(error, "intent-core-error") ? new AgentRefusal("ClaimTerms", `a claim of ${secs} seconds would outlive escrow ${intent}`) : error;
   }
+  await fillsGoing(client, escrow);
   const stake = `${formatAmount(view.stake, 9)} SOL`;
   return {
+    locks: view.stake,
     instruction: await buildClaimJob({ worker: signer, intent, owner: view.owner, secs, ...listAccount(view.list) }),
     summary: [
       `Claims: escrow ${intent} until ${formatTime(until)}, ${until - now} seconds from now; until then only this wallet ${signer.address} can be paid`,
