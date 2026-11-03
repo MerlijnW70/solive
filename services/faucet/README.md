@@ -13,6 +13,19 @@
 | 429 | `{ "error": "<reason>", "retry_after": <seconds> }` | the address, the caller or the whole faucet is over its limit |
 | 503 | `{ "error": "<reason>" }` | the faucet holds too little, the node fails, or a send ended in an error |
 
+## Deploy
+
+The faucet is its own Vercel project with `services/faucet` as the root directory. Set `FAUCET_SECRET` in the project's environment, and `FAUCET_RPC_URL` only for another devnet node. From `services/faucet`, `vercel deploy --prod` publishes `public/` and `api/drip.ts`. A deploy changes what visitors see at once, so check `POST /api/drip` with an address that already holds 0.25 SOL: it answers 429 and sends nothing.
+
+## Funding
+
+The faucet pays from the wallet whose key `FAUCET_SECRET` holds: `932eKvgQTgn5gCsXyJ8p6cnXNpbvZgY3F1bw96QWhob5`. It refuses every drip while that wallet holds less than 2.5 SOL (`FLOOR_LAMPORTS`), so a day at the cap of 20 drips needs 12.5 SOL. The hourly monitor in `.github/workflows/monitor.yml` alerts below 13 SOL.
+
+Two scripts refill wallets from a funding wallet, and each refills one:
+
+- `scripts/faucet-topup.sh` refills the wallet in `TOPUP_FAUCET`, by default the issue faucet's `CrYx7JA1TRwGtpn9T6C2mVsRgMP7XztGRwZdasV9XSLS`. For this faucet run it with `TOPUP_FAUCET=932eKvgQTgn5gCsXyJ8p6cnXNpbvZgY3F1bw96QWhob5 TOPUP_FLOOR=13 TOPUP_TARGET=20`, once without `--yes` to preview the transfer.
+- `scripts/faucet.sh` is the issue faucet's own sender; it never refills the instant faucet.
+
 ## Per address
 
 An address gets one drip in any 24 hours, and none while it holds 0.25 SOL or more. The faucet reads the address's history from the node, so this holds across instances. The hold on an address whose drip is on its way lives in one instance's memory: two requests for the same address that reach two instances at the same moment can both send.

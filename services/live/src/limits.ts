@@ -19,7 +19,7 @@ export const RETRY_AFTER_DEFAULT_SECS = FEED_MAX_AGE_SECS;
 export const CLUSTER = "devnet";
 export const DEFAULT_RPC_URL = "https://api.devnet.solana.com";
 export const FAUCET_URL = "https://" + PRODUCT_SLUG + "-faucet.vercel.app/api/drip";
-export const DRIP_LAMPORTS = 500_000_000n;
+export const FAUCET_FLOOR_LAMPORTS = 2_500_000_000n;
 export const SOL_DECIMALS = 9;
 export const STATE_KEY = "live-feed-state-v2";
 

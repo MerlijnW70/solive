@@ -14,7 +14,6 @@ const LIMITS = readFileSync(join(ROOT, "services/faucet/src/limits.ts"), "utf8")
 const BASELINE = "/srv/monitor/baseline.json";
 const SOL = 1_000_000_000n;
 const INSTANT_WALLET = "932eKvgQTgn5gCsXyJ8p6cnXNpbvZgY3F1bw96QWhob5";
-const DAY_DRIPS = 10n;
 
 const watched = () => {
   const run = WORKFLOW.split("\n").find((line) => line.includes("run: npx")) ?? "";
@@ -38,8 +37,26 @@ describe("the monitor on the instant faucet's wallet", () => {
 
   it("keeps its floor above the service's own floor plus a day of drips", () => {
     const drip = SOL / limit(/DRIP_LAMPORTS = LAMPORTS_PER_SOL \/ (\d+)n/);
+    const dayDrips = limit(/DAILY_DRIPS = (\d+);/);
     const serviceFloor = limit(/FLOOR_LAMPORTS = (\d+)n \* LAMPORTS_PER_SOL/) * SOL + drip;
-    expect(watched().get(INSTANT_WALLET)).toBeGreaterThanOrEqual(serviceFloor + drip * DAY_DRIPS);
+    expect(watched().get(INSTANT_WALLET)).toBeGreaterThanOrEqual(serviceFloor + drip * dayDrips);
+  });
+
+  it("covers a day at the daily cap and no more than a SOL over it", () => {
+    const drip = SOL / limit(/DRIP_LAMPORTS = LAMPORTS_PER_SOL \/ (\d+)n/);
+    const needed = limit(/FLOOR_LAMPORTS = (\d+)n \* LAMPORTS_PER_SOL/) * SOL + drip + drip * limit(/DAILY_DRIPS = (\d+);/);
+    const floor = watched().get(INSTANT_WALLET) ?? 0n;
+    expect(floor).toBeGreaterThanOrEqual(needed);
+    expect(floor - needed).toBeLessThan(SOL);
+  });
+
+  it("states its floor and cap in the maintainer guide and its wallet in the faucet readme", () => {
+    const readme = readFileSync(join(ROOT, "services/faucet/README.md"), "utf8");
+    const operations = readFileSync(join(ROOT, "docs/maintainers/operations.md"), "utf8");
+    expect(readme).toContain(`TOPUP_FAUCET=${INSTANT_WALLET}`);
+    expect(readme).toContain(`The hourly monitor in \`.github/workflows/monitor.yml\` alerts below ${(watched().get(INSTANT_WALLET) ?? 0n) / SOL} SOL`);
+    expect(readme).toContain(`a day at the cap of ${limit(/DAILY_DRIPS = (\d+);/)} drips`);
+    expect(operations).toContain(`daily cap of ${limit(/DAILY_DRIPS = (\d+);/)} drips`);
   });
 
   it("states its floor in the maintainer guide", () => {

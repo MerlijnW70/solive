@@ -10,7 +10,6 @@ export class StateStore {
   private memory: string | null = null;
   private readonly cache: () => RuntimeCache | null;
   private readonly log: (line: string) => void;
-  writes = 0;
 
   constructor(cache: () => RuntimeCache | null, log: (line: string) => void) {
     this.cache = cache;
@@ -53,7 +52,6 @@ export class StateStore {
       const cache = this.cache();
       if (cache !== null) {
         await cache.set(STATE_KEY, text);
-        this.writes += 1;
       }
     } catch (error) {
       this.log(JSON.stringify({ cache: "write failed", error: error instanceof Error ? error.name : "unknown" }));

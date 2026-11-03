@@ -7,7 +7,7 @@ import { DEVNET_TEST_MINT, NATIVE_MINT } from "@intent-engine/core";
 import { describe, expect, it } from "vitest";
 import { DEMO_SPECS, specName } from "../src/catalog.js";
 import { createHandler } from "../src/http.js";
-import { CACHE_CONTROL, CDN_CACHE_CONTROL, DRIP_LAMPORTS, SERVICE_WINDOW_SECS, STATE_KEY } from "../src/limits.js";
+import { CACHE_CONTROL, CDN_CACHE_CONTROL, FAUCET_FLOOR_LAMPORTS, SERVICE_WINDOW_SECS, STATE_KEY } from "../src/limits.js";
 import {
   addressOf,
   announced,
@@ -27,6 +27,7 @@ import {
   type Tx,
   WORKER,
 } from "./chain.js";
+import { StateStore } from "../src/store.js";
 import { HOUR_SECS, nowSecs, rig } from "./harness.js";
 
 const SELF = addressOf(21);
@@ -139,7 +140,7 @@ describe("services", () => {
 
   it("maps recent wallet activity, the faucet's 405 and its balance to up, quiet and down", async () => {
     const up = rig({ env });
-    up.node.lamports.set(addressOf(41), Number(DRIP_LAMPORTS));
+    up.node.lamports.set(addressOf(41), Number(FAUCET_FLOOR_LAMPORTS));
     up.node.wallets.set(addressOf(42), [{ signature: signatureOf(201), slot: 1, blockTime: nowSecs(-SERVICE_WINDOW_SECS + 5), err: null, memo: null }]);
     up.node.wallets.set(addressOf(43), [{ signature: signatureOf(202), slot: 1, blockTime: nowSecs(-SERVICE_WINDOW_SECS - 5), err: null, memo: null }]);
     expect((await up.feed.read()).services).toEqual({ faucet: "up", demo_worker: "up", filler: "quiet" });
@@ -147,11 +148,11 @@ describe("services", () => {
     expect(active.demo_worker).toBe(new Date((nowSecs(-SERVICE_WINDOW_SECS + 5)) * 1000).toISOString());
     expect(active.filler).toBe(new Date((nowSecs(-SERVICE_WINDOW_SECS - 5)) * 1000).toISOString());
     const poor = rig({ env });
-    poor.node.lamports.set(addressOf(41), Number(DRIP_LAMPORTS) - 1);
+    poor.node.lamports.set(addressOf(41), Number(FAUCET_FLOOR_LAMPORTS) - 1);
     expect((await poor.feed.read()).services).toEqual({ faucet: "down", demo_worker: "unknown", filler: "unknown" });
     expect((await poor.feed.read()).services_active).toEqual({ demo_worker: null, filler: null });
     const open = rig({ env, probe: async () => 200 });
-    open.node.lamports.set(addressOf(41), Number(DRIP_LAMPORTS));
+    open.node.lamports.set(addressOf(41), Number(FAUCET_FLOOR_LAMPORTS));
     expect((await open.feed.read()).services.faucet).toBe("down");
     const dead = rig({
       env,
@@ -159,8 +160,35 @@ describe("services", () => {
         throw new Error("connect refused");
       },
     });
-    dead.node.lamports.set(addressOf(41), Number(DRIP_LAMPORTS));
+    dead.node.lamports.set(addressOf(41), Number(FAUCET_FLOOR_LAMPORTS));
     expect((await dead.feed.read()).services.faucet).toBe("down");
+  });
+});
+
+describe("the faucet light", () => {
+  const limits = readFileSync(join(import.meta.dirname, "..", "..", "faucet", "src", "limits.ts"), "utf8");
+  const env = { FEED_FAUCET: addressOf(41) };
+  const number = (pattern: RegExp) => BigInt((pattern.exec(limits)?.[1] ?? "NaN").replaceAll("_", ""));
+
+  it("holds the faucet's own balance floor", () => {
+    const sol = number(/LAMPORTS_PER_SOL = ([\d_]+)n/);
+    const drip = sol / number(/DRIP_LAMPORTS = LAMPORTS_PER_SOL \/ (\d+)n/);
+    expect(FAUCET_FLOOR_LAMPORTS).toBe(number(/FLOOR_LAMPORTS = (\d+)n \* LAMPORTS_PER_SOL/) * sol + drip);
+  });
+
+  it("reads one SOL as down, because the faucet refuses every drip below its floor", async () => {
+    const low = rig({ env });
+    low.node.lamports.set(addressOf(41), 1_000_000_000);
+    expect((await low.feed.read()).services.faucet).toBe("down");
+    const enough = rig({ env });
+    enough.node.lamports.set(addressOf(41), 2_500_000_000);
+    expect((await enough.feed.read()).services.faucet).toBe("up");
+  });
+});
+
+describe("the live store", () => {
+  it("keeps no member only a test reads", () => {
+    expect(Object.keys(new StateStore(() => null, () => undefined)).sort()).toEqual(["cache", "log", "memory"]);
   });
 });
 

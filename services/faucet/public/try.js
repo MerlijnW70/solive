@@ -5,6 +5,8 @@
   const UNREACHED = "The faucet did not answer. Check your connection and try again in a minute.";
   const WAITING = "Sending. This takes up to a minute.";
   const GIVE_UP_MS = 65000;
+  const WAIT_UNIT = "retry_after seconds";
+  const MAX_WAIT = 7 * 24 * 3600;
   const LAMPORTS = 1000000000n;
   const EXPLORER = "https://explorer.solana.com/address/";
 
@@ -28,10 +30,16 @@
     return fraction === "" ? whole.toString() : whole.toString() + "." + fraction;
   }
 
-  function wait(seconds) {
-    if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds <= 0) return "";
-    if (seconds < 3600) return " Try again in about " + Math.ceil(seconds / 60) + " min.";
-    return " Try again in about " + Math.ceil(seconds / 3600) + " h.";
+  function span(seconds) {
+    if (seconds < 120) return seconds === 1 ? "1 second" : seconds + " seconds";
+    if (seconds < 7200) return "about " + Math.ceil(seconds / 60) + " minutes";
+    return "about " + Math.ceil(seconds / 3600) + " hours";
+  }
+
+  function told(reason, seconds) {
+    if (!reason.includes(WAIT_UNIT)) return reason;
+    const valid = typeof seconds === "number" && Number.isSafeInteger(seconds) && seconds > 0 && seconds <= MAX_WAIT;
+    return reason.split("wait " + WAIT_UNIT).join(valid ? "wait " + span(seconds) : "try again later").split(WAIT_UNIT).join(valid ? span(seconds) : "a while");
   }
 
   function show(address) {
@@ -62,7 +70,7 @@
         return;
       }
       const reason = body && typeof body === "object" && typeof body.error === "string" ? body.error : "The faucet answered with status " + response.status + ".";
-      say(reason + wait(body && typeof body === "object" ? body.retry_after : undefined), "error");
+      say(told(reason, body && typeof body === "object" ? body.retry_after : undefined), "error");
       show(address);
     } catch {
       say(UNREACHED, "error");

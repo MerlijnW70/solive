@@ -248,16 +248,36 @@ describe("the faucet form", () => {
     expect(page.byId("send").hasAttribute("disabled") || (page.byId("send") as unknown as { disabled: boolean }).disabled).toBe(false);
   });
 
-  it("shows the refusal text as the faucet sent it, with the wait and the explorer link", async () => {
+  it("replaces the wait token with a real duration, as the command line does", async () => {
     const reason = "This address received a drip from this faucet in the last day, so wait retry_after seconds before you ask again.";
-    const page = await open({ ok: false, status: 429, body: { error: reason, retry_after: 7200 } });
+    const cases: [number, string][] = [[7200, "about 2 hours"], [90, "90 seconds"], [1, "1 second"], [3600, "about 60 minutes"], [86400, "about 24 hours"]];
+    for (const [seconds, said] of cases) {
+      const page = await open({ ok: false, status: 429, body: { error: reason, retry_after: seconds } });
+      await page.submit(ADDRESS);
+      expect(words(page.byId("result"))).toBe(`This address received a drip from this faucet in the last day, so wait ${said} before you ask again.`);
+      expect(page.byId("result").getAttribute("data-tone")).toBe("error");
+      expect(page.byId("explorer").getAttribute("href")).toBe(`https://explorer.solana.com/address/${ADDRESS}?cluster=devnet`);
+    }
+  });
+
+  it("never prints the raw token, whatever retry_after holds", async () => {
+    const reason = "The faucet has reached its daily limit of drips, so wait retry_after seconds, or get devnet SOL at https://faucet.solana.com.";
+    for (const retry of [undefined, 0, -5, 1.5, "60", null, Number.POSITIVE_INFINITY, 8 * 24 * 3600]) {
+      const page = await open({ ok: false, status: 429, body: { error: reason, retry_after: retry } });
+      await page.submit(ADDRESS);
+      expect(words(page.byId("result"))).toBe("The faucet has reached its daily limit of drips, so try again later, or get devnet SOL at https://faucet.solana.com.");
+    }
+  });
+
+  it("adds no wait to a refusal that names none, even with a retry_after", async () => {
+    const funded = "This address already holds 0.25 SOL or more, which is enough to start, so no drip was sent.";
+    const page = await open({ ok: false, status: 429, body: { error: funded, retry_after: 86400 } });
     await page.submit(ADDRESS);
-    expect(words(page.byId("result"))).toBe(`${reason} Try again in about 2 h.`);
-    expect(page.byId("result").getAttribute("data-tone")).toBe("error");
-    expect(page.byId("explorer").getAttribute("href")).toBe(`https://explorer.solana.com/address/${ADDRESS}?cluster=devnet`);
-    const short = await open({ ok: false, status: 429, body: { error: reason, retry_after: 90 } });
-    await short.submit(ADDRESS);
-    expect(words(short.byId("result"))).toBe(`${reason} Try again in about 2 min.`);
+    expect(words(page.byId("result"))).toBe(funded);
+    const pending = "A drip to this address is already on its way, so wait a minute before you ask again.";
+    const other = await open({ ok: false, status: 429, body: { error: pending, retry_after: 60 } });
+    await other.submit(ADDRESS);
+    expect(words(other.byId("result"))).toBe(pending);
   });
 
   it("shows a 503 reason without a wait, and the status when the answer is not JSON", async () => {

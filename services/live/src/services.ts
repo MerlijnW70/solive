@@ -1,6 +1,6 @@
 import type { Address } from "@solana/kit";
 import type { FeedConfig } from "./env.js";
-import { DRIP_LAMPORTS } from "./limits.js";
+import { FAUCET_FLOOR_LAMPORTS } from "./limits.js";
 import type { Reader } from "./reader.js";
 import type { ServiceActivity, Services, ServiceState } from "./shapes.js";
 
@@ -33,7 +33,7 @@ export async function faucetState(reader: Reader, faucet: Address | null, probe:
   if (status !== 405) {
     return "down";
   }
-  return (await reader.lamports(faucet)) >= DRIP_LAMPORTS ? "up" : "down";
+  return (await reader.lamports(faucet)) >= FAUCET_FLOOR_LAMPORTS ? "up" : "down";
 }
 
 export async function servicesOf(
