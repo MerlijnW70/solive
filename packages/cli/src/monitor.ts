@@ -245,6 +245,8 @@ export async function readBaseline(file: string, runtime: Runtime): Promise<Base
 
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
+const RETRY_WAIT = 5;
+
 export type MonitorState = {
   alerted: Map<string, string>;
   lastSlot: bigint | null;
@@ -377,6 +379,21 @@ async function fillAlerts(transport: Transport, spec: MonitorSpec, state: Monito
 
 const scrubbed = (text: string, url: string) => printableLines(text.split(url).join(redactUrl(url)));
 
+async function round(transport: Transport, baseline: Baseline, spec: MonitorSpec, state: MonitorState, now: bigint): Promise<Alert[]> {
+  const draft: MonitorState = { ...state, alerted: new Map(state.alerted) };
+  const current = await snapshot(transport);
+  const alerts = [
+    ...stateAlerts(
+      [...differences(baseline, current), ...(await capFindings(transport, spec, current.slot)), ...(await healthFindings(transport, spec, current.slot))],
+      draft,
+    ),
+    ...slotAlerts(current, draft),
+    ...(await fillAlerts(transport, spec, draft, now - BigInt(spec.since))),
+  ];
+  Object.assign(state, draft, { failing: false });
+  return alerts;
+}
+
 export async function checkOnce(
   transport: Transport,
   baseline: Baseline,
@@ -385,17 +402,8 @@ export async function checkOnce(
   now: bigint,
   url: string,
 ): Promise<Alert[]> {
-  let alerts: Alert[];
   try {
-    const current = await snapshot(transport);
-    alerts = [
-      ...stateAlerts(
-        [...differences(baseline, current), ...(await capFindings(transport, spec, current.slot)), ...(await healthFindings(transport, spec, current.slot))],
-        state,
-      ),
-      ...slotAlerts(current, state),
-      ...(await fillAlerts(transport, spec, state, now - BigInt(spec.since))),
-    ];
+    return await round(transport, baseline, spec, state, now);
   } catch (error) {
     if (state.failing) {
       return [];
@@ -405,8 +413,15 @@ export async function checkOnce(
     const slot = state.lastSlot === null ? null : Number(state.lastSlot);
     return [{ kind: "rpc", field: "read", expected: "a successful read", observed: scrubbed(message, url), slot, rpc: redactUrl(url) }];
   }
-  state.failing = false;
-  return alerts;
+}
+
+async function onceRound(transport: Transport, baseline: Baseline, spec: MonitorSpec, state: MonitorState, runtime: Runtime, url: string): Promise<Alert[]> {
+  try {
+    return await round(transport, baseline, spec, state, runtime.now());
+  } catch {
+    await runtime.sleep(RETRY_WAIT);
+    return checkOnce(transport, baseline, spec, state, runtime.now(), url);
+  }
 }
 
 export const line = (alert: Alert) => escapedJson(JSON.stringify(alert, (_, v: unknown) => (typeof v === "bigint" ? v.toString() : v)));
@@ -440,7 +455,7 @@ export async function monitor(url: string, file: string, spec: MonitorSpec, runt
   }
   let raised = 0;
   for (;;) {
-    for (const alert of await checkOnce(transport, baseline, spec, state, runtime.now(), url)) {
+    for (const alert of await (spec.once ? onceRound(transport, baseline, spec, state, runtime, url) : checkOnce(transport, baseline, spec, state, runtime.now(), url))) {
       const text = line(alert);
       io.out(text);
       raised++;
