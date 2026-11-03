@@ -1,4 +1,4 @@
-import { type Address, getPublicKeyFromAddress, type SignatureBytes, type TransactionSigner, verifySignature } from "@solana/kit";
+import { type Address, getPublicKeyFromAddress, type Instruction, type SignatureBytes, type TransactionSigner, verifySignature } from "@solana/kit";
 import {
   attestedSplitDigest,
   attestedSplitMessage,
@@ -13,6 +13,7 @@ import { committeeJudged } from "./client-settle.js";
 import type { BallotInput, Client, ClientContext, ClientPlans, MessageSigner } from "./client-types.js";
 import { type Plan, planOf } from "./plan.js";
 import { releaseBasis, type ReleaseTarget } from "./release-plan.js";
+import type { ReleasePreview, ReleaseReads } from "./release-preview.js";
 
 export type SplitShare = { wallet: Address; weight: number };
 
@@ -45,33 +46,43 @@ async function signs(wallet: Address, signature: Uint8Array, message: Uint8Array
 
 export type SplitSettlement = Pick<ClientPlans, "settleSplit"> & Pick<Client, "splitBallot">;
 
-export function splitSettlement(context: ClientContext): SplitSettlement {
-  const planned = async (input: SplitBallotInput, payer: TransactionSigner | undefined) => {
-    const wallets = input.recipients.map(({ wallet }) => wallet);
-    const weights = input.recipients.map(({ weight }) => weight);
-    const target: ReleaseTarget = { ...input, payer };
-    const basis = await releaseBasis(context, target, () => wallets, async (attestor, intent) => {
-      if ((await loadCommittee(context.transport, attestor)) !== null) {
-        throw new NotSettleable(intent, "committee-judged", committeeJudged(attestor));
-      }
-      return { feeOwner: attestor, judge: attestor };
-    });
-    if (!wallets.includes(basis.worker)) {
-      throw new NotSettleable(basis.intent, "split-excludes-announcer", `pays only a split that includes ${basis.worker}, who made the announcement; nothing was sent`);
+async function planned(context: ReleaseReads, input: SplitBallotInput, payer: TransactionSigner | undefined) {
+  const wallets = input.recipients.map(({ wallet }) => wallet);
+  const weights = input.recipients.map(({ weight }) => weight);
+  const target: ReleaseTarget = { ...input, payer };
+  const basis = await releaseBasis(context, target, () => input.recipients, async (attestor, intent) => {
+    if ((await loadCommittee(context.transport, attestor)) !== null) {
+      throw new NotSettleable(intent, "committee-judged", committeeJudged(attestor));
     }
-    const terms = { ...basis.terms, splitHash: await splitCommit(wallets, weights) };
-    const cosigners = [...wallets, basis.judge];
-    return { basis, wallets, weights, terms, cosigners, message: await attestedSplitMessage(terms, cosigners) };
-  };
+    return { feeOwner: attestor, judge: attestor };
+  });
+  if (!wallets.includes(basis.worker)) {
+    throw new NotSettleable(basis.intent, "split-excludes-announcer", `pays only a split that includes ${basis.worker}, who made the announcement; nothing was sent`);
+  }
+  const terms = { ...basis.terms, splitHash: await splitCommit(wallets, weights) };
+  const cosigners = [...wallets, basis.judge];
+  const settle = (solver: TransactionSigner) => buildFillAttestedSplit({ ...basis.fill, ...basis.claims, solver, recipients: wallets, weights });
+  return { basis, wallets, terms, cosigners, settle, message: await attestedSplitMessage(terms, cosigners) };
+}
 
-  const splitBallot = async (input: SplitBallotInput): Promise<SplitBallot> => {
-    const { basis, terms, cosigners, message } = await planned(input, undefined);
-    return { intent: basis.intent, attestor: basis.judge, worker: basis.worker, splitHash: terms.splitHash, digest: await attestedSplitDigest(terms), cosigners, message };
-  };
+async function ballotOf(found: Awaited<ReturnType<typeof planned>>): Promise<SplitBallot> {
+  const { basis, terms, cosigners, message } = found;
+  return { intent: basis.intent, attestor: basis.judge, worker: basis.worker, splitHash: terms.splitHash, digest: await attestedSplitDigest(terms), cosigners, message };
+}
+
+export type SplitPreview = { ballot: SplitBallot; preview: ReleasePreview; settle: Instruction };
+
+export async function splitPreview(context: ReleaseReads, input: SplitBallotInput, payer: TransactionSigner): Promise<SplitPreview> {
+  const found = await planned(context, input, payer);
+  return { ballot: await ballotOf(found), preview: found.basis.preview, settle: await found.settle(payer) };
+}
+
+export function splitSettlement(context: ClientContext): SplitSettlement {
+  const splitBallot = async (input: SplitBallotInput): Promise<SplitBallot> => ballotOf(await planned(context, input, undefined));
 
   const settleSplit = async (input: SettleSplitInput): Promise<Plan> => {
     const payer = input.payer ?? input.judge;
-    const { basis, wallets, weights, message } = await planned(input, payer);
+    const { basis, wallets, message, settle } = await planned(context, input, payer);
     if (basis.judge !== input.judge.address) {
       throw new NotSettleable(basis.intent, "wrong-judge", `names ${basis.judge} as its judge, not ${input.judge.address}`);
     }
@@ -85,10 +96,7 @@ export function splitSettlement(context: ClientContext): SplitSettlement {
       entries.push({ publicKey: wallet, signature });
     }
     entries.push({ publicKey: input.judge.address, signature: await signMessageBytes(input.judge, message) });
-    const recipients = await Promise.all(wallets.map(basis.account));
-    const setup = [...recipients.flatMap(({ create }) => create), ...basis.setup];
-    const settle = await buildFillAttestedSplit({ ...basis.fill, ...basis.claims, solver: payer, recipients: wallets, weights });
-    return planOf({ payer: payer.address, setup, instructions: [buildEd25519CosignInstruction({ entries, message }), settle] });
+    return planOf({ payer: payer.address, setup: basis.setup, instructions: [buildEd25519CosignInstruction({ entries, message }), await settle(payer)] });
   };
 
   return { splitBallot, settleSplit };

@@ -1,15 +1,15 @@
-import { type Address, createNoopSigner, getAddressDecoder, type Instruction, type TransactionSigner } from "@solana/kit";
-import { IntentStatus, InvalidInput, Kind, splitFees } from "@intent-engine/core";
+import { type Address, createNoopSigner, getAddressDecoder, type TransactionSigner } from "@solana/kit";
+import { IntentStatus, InvalidInput, Kind } from "@intent-engine/core";
 import { announcementCommitment, decodeParams, isSaltHex } from "@intent-engine/core/internal";
 import { chainTime, createdAccount, SYSTEM_PROGRAM_ADDRESS } from "./accounts.js";
 import { sha256Bytes } from "./announce.js";
 import { loadAnnouncement } from "./announcement-reads.js";
 import { releaseClaims } from "./client-claims.js";
 import { EscrowExpired, NotSettleable, PayeeMoved, PayToNotWallet } from "./client-errors.js";
-import type { ClientContext, ReleaseOpening } from "./client-types.js";
+import type { ReleaseOpening } from "./client-types.js";
 import { type IntentRef, loadIntentRef } from "./intent-ref.js";
 import { hex } from "./job-proofs.js";
-import { tokenAccountIfMissing } from "./setup.js";
+import { feeAccounts, releasePreview, type ReleaseReads, solePayee } from "./release-preview.js";
 import { hexBytes } from "./encoding.js";
 
 export type ReleaseTarget = {
@@ -22,6 +22,10 @@ export type ReleaseTarget = {
 
 export type Judged<J> = { feeOwner: Address; judge: J };
 
+export type PayeeShare = { wallet: Address; weight: number };
+
+const WHOLE_BPS = 10_000;
+
 export function saltBytes(salt: string): Uint8Array {
   const lowered = salt.trim().toLowerCase();
   if (!isSaltHex(lowered)) {
@@ -32,7 +36,7 @@ export function saltBytes(salt: string): Uint8Array {
 
 const equal = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((byte, i) => byte === b[i]);
 
-async function announced(context: ClientContext, intent: Address, target: ReleaseTarget) {
+async function announced(context: ReleaseReads, intent: Address, target: ReleaseTarget) {
   const delivered = sha256Bytes(target.opening.sha256);
   const salt = saltBytes(target.opening.salt);
   const found = await loadAnnouncement(context.transport, target.announcement);
@@ -51,7 +55,7 @@ async function announced(context: ClientContext, intent: Address, target: Releas
   return { found, delivered, salt };
 }
 
-export async function checkWallet(context: ClientContext, wallet: Address): Promise<void> {
+export async function checkWallet(context: Pick<ReleaseReads, "transport">, wallet: Address): Promise<void> {
   const holder = await context.transport.getAccount(wallet);
   if (holder !== null && holder.owner !== SYSTEM_PROGRAM_ADDRESS) {
     throw new PayToNotWallet(wallet, holder.owner);
@@ -59,9 +63,9 @@ export async function checkWallet(context: ClientContext, wallet: Address): Prom
 }
 
 export async function releaseBasis<J>(
-  context: ClientContext,
+  context: ReleaseReads,
   target: ReleaseTarget,
-  payees: (worker: Address) => readonly Address[],
+  payees: (worker: Address) => readonly PayeeShare[],
   judgeOf: (attestor: Address, intent: Address) => Promise<Judged<J>>,
 ) {
   const { transport, mint, config } = context;
@@ -84,28 +88,29 @@ export async function releaseBasis<J>(
     throw new EscrowExpired(address, held.expiresAt);
   }
   const { found, delivered, salt } = await announced(context, address, target);
-  const wallets = payees(found.worker);
+  const shares = payees(found.worker);
+  const wallets = shares.map(({ wallet }) => wallet);
   for (const wallet of wallets) {
     await checkWallet(context, wallet);
   }
   const { accounts: claims } = await releaseClaims(transport, address, held.claims, wallets);
   const { tokenProgram } = await mint(held.inputMint);
-  const account = (wallet: Address) => tokenAccountIfMissing(transport, payer, wallet, held.inputMint, tokenProgram);
-  const amountIn = held.escrowed - held.filled;
-  const kindBps = held.feeBps;
-  const maxFeeBps = kindBps + held.partnerBps;
-  const shares = splitFees(amountIn - params.judgeFee, kindBps, held.partnerBps, held.partnerCutBps);
-  const feeRecipient = shares.protocol > 0n ? settings.feeRecipient : undefined;
-  const partner = shares.partner > 0n ? held.partner : undefined;
-  const paidJudge = params.judgeFee > 0n ? feeOwner : undefined;
-  const others = await Promise.all([feeRecipient, partner, paidJudge].filter((wallet) => wallet !== undefined).map(account));
-  const fields = { amountIn, result, maxFeeBps };
+  const preview = await releasePreview(transport, {
+    payer,
+    escrow: held,
+    tokenProgram,
+    judgeFee: params.judgeFee,
+    judge: feeOwner,
+    feeRecipient: settings.feeRecipient,
+    payees: shares,
+  });
+  const fields = { amountIn: preview.amountIn, result, maxFeeBps: preview.maxFeeBps };
   const opening = { delivered, salt };
   return {
     intent: address,
     judge,
     worker: found.worker,
-    account,
+    preview,
     tokenProgram,
     terms: {
       ...fields,
@@ -127,33 +132,30 @@ export async function releaseBasis<J>(
       capped: held.capped,
       announcement: found.address,
       opening,
-      ...(feeRecipient === undefined ? {} : { feeRecipient }),
-      ...(partner === undefined ? {} : { partner }),
-      ...(paidJudge === undefined ? {} : { judge: paidJudge }),
+      ...feeAccounts(preview),
     },
-    setup: others.flatMap(({ create }): Instruction[] => create),
+    setup: preview.setup,
     claims,
   };
 }
 
-export async function planRelease<J>(context: ClientContext, target: ReleaseTarget, judgeOf: (attestor: Address, intent: Address) => Promise<Judged<J>>) {
-  const basis = await releaseBasis(context, target, (worker) => [worker], judgeOf);
-  const payee = await basis.account(basis.worker);
+export async function planRelease<J>(context: ReleaseReads, target: ReleaseTarget, judgeOf: (attestor: Address, intent: Address) => Promise<Judged<J>>) {
+  const basis = await releaseBasis(context, target, (worker) => [{ wallet: worker, weight: WHOLE_BPS }], judgeOf);
+  const payee = solePayee(basis.preview);
   if (payee.create.length === 0) {
-    const existing = await createdAccount(context.transport, payee.address);
+    const existing = await createdAccount(context.transport, payee.account);
     const data = existing === null || existing.owner !== basis.tokenProgram || existing.data.length < 64 ? null : existing.data;
     if (
       data === null ||
       getAddressDecoder().decode(data.subarray(0, 32)) !== basis.fill.inputMint ||
       getAddressDecoder().decode(data.subarray(32, 64)) !== basis.worker
     ) {
-      throw new PayeeMoved(basis.worker, payee.address);
+      throw new PayeeMoved(basis.worker, payee.account);
     }
   }
   return {
     ...basis,
-    proof: { ...basis.terms, payee: payee.address },
-    fill: { ...basis.fill, payee: payee.address },
-    setup: [...payee.create, ...basis.setup],
+    proof: { ...basis.terms, payee: payee.account },
+    fill: { ...basis.fill, payee: payee.account },
   };
 }

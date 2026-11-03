@@ -27,6 +27,8 @@ export * from "./funding.js";
 export * from "./held-claim.js";
 export * from "./held-shares.js";
 export * from "./release-holds.js";
+export * from "./release-plan.js";
+export * from "./release-preview.js";
 export * from "./intent-filters.js";
 export * from "./intent-ref.js";
 export * from "./jobs.js";

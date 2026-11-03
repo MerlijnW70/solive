@@ -8,6 +8,8 @@ With `--wallet` the server serves the everyday tools, the committee and profile 
 
 A hirer locks payment in an escrow with `solive_wallet_escrow`, pinned to a spec by its sha256. A worker finds the job with `solive_find_jobs`, checks it with `solive_get_spec` and announces the work with `solive_wallet_deliver`. The judge is the escrow's attestor: the hirer's own wallet, another wallet, or a committee. It fetches the work with `solive_wallet_fetch_work`, runs the spec's check, and only on a pass pays with `solive_wallet_attest`, or, as a committee, votes with `solive_wallet_committee_vote`.
 
+The previews of `solive_wallet_attest` and `solive_wallet_attest_split` check each fee account the way the program does. `fee` counts the fees the release pays, the judge's included. `withheld` counts fees whose account cannot receive them, for example one that is frozen, has a CPI guard or now belongs to another owner. Those stay in the escrow and go to its owner when it closes. `fees` lists each fee, its account, and whether it is paid.
+
 An escrow only offers a job. Only the demo jobs have a worker running, so any other job can stay undone and unpaid until a worker takes it, or until you start [a local worker](#a-local-worker).
 
 The judge runs the check itself with [`judge`](judge.md): `--sandbox viper` checks a demo job, or one JavaScript module whose spec has a `judge-cases` block, without Docker, and `--sandbox docker` is for a spec that needs a container. A judge that can run neither approves nothing.

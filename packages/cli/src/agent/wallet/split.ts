@@ -1,9 +1,8 @@
 import { type Address, getBase16Decoder, getBase16Encoder } from "@solana/kit";
-import { formatAmount, NATIVE_MINT, splitFees } from "@intent-engine/core";
-import { buildFillAttestedSplit, INTENT_ENGINE_PROGRAM_ADDRESS, MAX_SPLIT_RECIPIENTS, splitPayout, settlementWarnings } from "@intent-engine/core/internal";
+import { formatAmount, NATIVE_MINT } from "@intent-engine/core";
+import { INTENT_ENGINE_PROGRAM_ADDRESS, MAX_SPLIT_RECIPIENTS, settlementWarnings } from "@intent-engine/core/internal";
 import { decodeLookupTable } from "@intent-engine/solver";
-import { createClient } from "@intent-engine/client/node";
-import { acceptsPayout, mintOf, PACKET_DATA_SIZE, tokenAccountIfMissing } from "@intent-engine/client/internal";
+import { mintOf, PACKET_DATA_SIZE, releaseReads, splitPreview } from "@intent-engine/client/internal";
 import { execute } from "../../flows.js";
 import { TOKEN_NAMES } from "../../tokens.js";
 import { type AgentContext, define } from "../actions.js";
@@ -18,7 +17,7 @@ import { walletRecipient } from "../owner.js";
 import { prepare, transactionSize } from "../prepare.js";
 import { feePayerOf, PREVIEW_APPROVAL, PREVIEW_APPROVAL_NEXT, signerOf, sent, sha256Of, walletOpeners } from "./guard.js";
 import { firstOpeningFor, skippedField, skippedOutput } from "./openings.js";
-import { approvalOf, attestedEscrow, capturedSends, claimsOfRelease, DEVICE_RELEASE, invitedPayees, RELEASE_CHANGED, settleRefused, stakeReturned } from "./attest.js";
+import { approvalOf, attestedEscrow, capturedSends, claimsOfRelease, DEVICE_RELEASE, feeFigures, feeLines, feeOutputs, invitedPayees, RELEASE_CHANGED, settleRefused, stakeReturned } from "./attest.js";
 import { sol, tokenAccountRent } from "./costs.js";
 import { confirmedRelease } from "./delivery.js";
 
@@ -72,12 +71,12 @@ export const walletAttestSplit = define({
     lookup_accounts: list(account(), 24, "put these in an address lookup table and pass it as lookup_table to fit more co-authors"),
     paid: list(object({ wallet: account(), weight: amount(), amount: text("whole tokens this co-author receives") }), MAX_SPLIT_RECIPIENTS),
     net: text("whole tokens shared among the co-authors"),
-    fee: text("whole tokens kept as fees"),
+    ...feeOutputs,
     result: amount(),
     approval: text("pass it back with send: true; a send that would differ from this preview is refused"),
     delivered_sha256: text("the sha256 of the work the release pays for"),
     skipped: skippedOutput,
-    summary: list(text(), 18),
+    summary: list(text(), 22),
     warnings: list(text(), 8),
     sent: flag(),
     signature: optional(text()),
@@ -88,7 +87,7 @@ export const walletAttestSplit = define({
     const device = signer.device !== undefined;
     const payer = device ? await feePayerOf(ctx) : signer;
     const escrow = await attestedEscrow(ctx, input.owner, input.nonce, signer);
-    const { intent, held, params, config } = escrow;
+    const { intent, held, params } = escrow;
     if (!params.specHash.some((b) => b !== 0)) {
       throw new AgentRefusal("NotAProof", "a split release needs an escrow made with a spec_hash");
     }
@@ -115,42 +114,9 @@ export const walletAttestSplit = define({
     await confirmedRelease(ctx, { intent, attestor: signer.address, sha256: delivered, payees: wallets, keypair: await walletOpeners(ctx) });
     const shares = input.recipients.map(({ wallet, weight }) => ({ wallet, weight }));
     const target = { intent: { owner: input.owner, nonce: input.nonce }, announcement: opening.announcement, opening: { sha256: delivered, salt: opening.salt }, result, recipients: shares };
-    const ballot = await createClient({ url: ctx.url ?? "", transport: ctx.transport }).splitBallot(target).catch(settleRefused);
+    const { ballot, preview: release, settle } = await splitPreview(releaseReads(ctx.transport), target, payer).catch(settleRefused);
     const token = await mintOf(ctx.transport, held.inputMint);
-    const payees = await Promise.all(wallets.map((w) => tokenAccountIfMissing(ctx.transport, payer, w, held.inputMint, token.tokenProgram)));
-    const holding: Address[] = [];
-    for (const [i, payee] of payees.entries()) {
-      const wallet = wallets[i];
-      if (wallet !== undefined && payee.create.length === 0 && !acceptsPayout(await ctx.transport.getAccount(payee.address), token.tokenProgram, held.inputMint, wallet)) {
-        holding.push(wallet);
-      }
-    }
-    const amountIn = held.escrowed - held.filled;
-    const maxFeeBps = held.feeBps + held.partnerBps;
-    const fees = splitFees(amountIn - params.judgeFee, held.feeBps, held.partnerBps, held.partnerCutBps);
-    const payout = splitPayout(fees.net, weights);
-    const treasury = fees.protocol > 0n ? await tokenAccountIfMissing(ctx.transport, payer, config.feeRecipient, held.inputMint, token.tokenProgram) : { create: [] };
-    const partner = fees.partner > 0n ? await tokenAccountIfMissing(ctx.transport, payer, held.partner, held.inputMint, token.tokenProgram) : { create: [] };
-    const judge = params.judgeFee > 0n ? await tokenAccountIfMissing(ctx.transport, payer, signer.address, held.inputMint, token.tokenProgram) : { create: [] };
-    const settle = await buildFillAttestedSplit({
-      solver: payer,
-      owner: input.owner,
-      nonce: input.nonce,
-      inputMint: held.inputMint,
-      inputTokenProgram: token.tokenProgram,
-      recipients: wallets,
-      weights,
-      ...(fees.protocol > 0n ? { feeRecipient: config.feeRecipient } : {}),
-      ...(fees.partner > 0n ? { partner: held.partner } : {}),
-      ...(params.judgeFee > 0n ? { judge: signer.address } : {}),
-      ...claimed.accounts,
-      announcement: opening.announcement,
-      opening: { delivered: Uint8Array.from(Buffer.from(delivered, "hex")), salt: Uint8Array.from(Buffer.from(opening.salt, "hex")) },
-      amountIn,
-      result,
-      maxFeeBps,
-      capped: held.capped,
-    });
+    const holding = release.payees.filter((payee) => !payee.accepts).map((payee) => payee.wallet);
     const invoked = new Set<Address>([INTENT_ENGINE_PROGRAM_ADDRESS, token.tokenProgram, payer.address]);
     const lookupAccounts = [...new Set((settle.accounts ?? []).map((a) => a.address))].filter((a) => !invoked.has(a));
     const digestHex = getBase16Decoder().decode(ballot.digest).toLowerCase();
@@ -158,7 +124,8 @@ export const walletAttestSplit = define({
     if (input.send === true && input.approval !== approval) {
       throw new AgentRefusal("ReleaseChanged", RELEASE_CHANGED);
     }
-    const setup = [...payees.flatMap((p) => p.create), ...treasury.create, ...partner.create, ...judge.create];
+    const { setup } = release;
+    const shareOf = (i: number) => formatAmount(release.payees[i]?.amount ?? 0n, token.decimals);
     let prepared;
     if (input.send === true) {
       const signatures = await Promise.all(
@@ -199,18 +166,18 @@ export const walletAttestSplit = define({
       digest: digestHex,
       envelope: getBase16Decoder().decode(ballot.message).toLowerCase(),
       lookup_accounts: lookupAccounts,
-      paid: input.recipients.map((r, i) => ({ wallet: r.wallet, weight: BigInt(r.weight), amount: formatAmount(payout[i] ?? 0n, token.decimals) })),
-      net: formatAmount(fees.net, token.decimals),
-      fee: formatAmount(fees.protocol + fees.partner + params.judgeFee, token.decimals),
+      paid: input.recipients.map((r, i) => ({ wallet: r.wallet, weight: BigInt(r.weight), amount: shareOf(i) })),
+      net: formatAmount(release.net, token.decimals),
+      ...feeFigures(release, token.decimals),
       result,
       approval,
       delivered_sha256: delivered,
       ...skippedField(skipped),
       summary: [
-        `Splits: ${formatAmount(fees.net, token.decimals)} of ${name} among ${input.recipients.length} co-authors from ${input.owner}'s escrow${held.inputMint === NATIVE_MINT ? WRAPPED : ""}`,
-        ...input.recipients.map((r, i) => `  ${r.wallet}: ${r.weight} bps -> ${formatAmount(payout[i] ?? 0n, token.decimals)} of ${name}`),
+        `Splits: ${formatAmount(release.net, token.decimals)} of ${name} among ${input.recipients.length} co-authors from ${input.owner}'s escrow${held.inputMint === NATIVE_MINT ? WRAPPED : ""}`,
+        ...input.recipients.map((r, i) => `  ${r.wallet}: ${r.weight} bps -> ${shareOf(i)} of ${name}`),
         `For: the work with sha256 ${delivered}, announced by ${opening.worker} in ${opening.announcement} (seq ${opening.seq}), the first that opens to it`,
-        ...(params.judgeFee > 0n ? [`Pays the judge: ${formatAmount(params.judgeFee, token.decimals)} of ${name} to this wallet, carved out of the escrow`] : []),
+        ...feeLines(release, name, token.decimals),
         `Binds: the result to the committed spec ${getBase16Decoder().decode(params.specHash)}`,
         `Attests: result ${result}, signed by this server's wallet as the escrow's attestor`,
         ...(device ? [`Signs: only the release message on the Ledger, which shows digest ${digestHex}; the fee payer ${payer.address} signs and pays the transaction`] : []),

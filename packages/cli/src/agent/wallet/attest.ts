@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { type Address, getAddressDecoder, getBase16Decoder, type Instruction } from "@solana/kit";
-import { formatAmount, IntentStatus, Kind, NATIVE_MINT, splitFees } from "@intent-engine/core";
+import { formatAmount, IntentStatus, Kind, NATIVE_MINT } from "@intent-engine/core";
 import {
   attestedFillMessage,
   buildEd25519Instruction,
@@ -14,7 +14,21 @@ import {
 } from "@intent-engine/core/internal";
 import { type BallotInput, isSdkError } from "@intent-engine/client";
 import { createClient } from "@intent-engine/client/node";
-import { chainTime, envelopeDigest, loadConfig, mintOf, releaseClaims, tokenAccountIfMissing } from "@intent-engine/client/internal";
+import {
+  chainTime,
+  envelopeDigest,
+  type FeeLeg,
+  feeAccounts,
+  feeLegOf,
+  type FeeRole,
+  loadConfig,
+  mintOf,
+  releaseClaims,
+  type ReceiveRefusal,
+  type ReleasePreview,
+  releasePreview,
+  solePayee,
+} from "@intent-engine/client/internal";
 import { capturing, skippedSummary } from "../../announcement-views.js";
 import { TOKEN_NAMES } from "../../tokens.js";
 import { type AgentContext, define, specReach } from "../actions.js";
@@ -23,7 +37,7 @@ import { WRAPPED } from "../create.js";
 import { tool } from "../names.js";
 import { boardLeft, leavesBoard, thenSettle } from "../claim-line.js";
 import { AgentRefusal } from "../problems.js";
-import { InvalidInput, account, amount, flag, list, object, optional, text } from "../schema.js";
+import { InvalidInput, account, amount, choice, flag, list, object, optional, text } from "../schema.js";
 import { preparedView } from "../shapes.js";
 import { sol, tokenAccountRent } from "./costs.js";
 import { walletRecipient } from "../owner.js";
@@ -87,6 +101,63 @@ export function settleRefused(error: unknown): never {
 
 export const stakeReturned = (stake: bigint, stakeTo: Address | undefined): string[] =>
   stakeTo === undefined || stake === 0n ? [] : [`Returns: the claim stake of ${formatAmount(stake, 9)} SOL to ${stakeTo}`];
+
+const WHOLE_BPS = 10_000;
+
+const FEE_TAKER: Record<FeeRole, string> = { protocol: "the engine treasury", partner: "the partner", judge: "the judge" };
+
+const REASON: Record<Exclude<ReceiveRefusal, "extension">, string> = {
+  "not-a-token-account": "is not a token account of this token's program",
+  "other-mint": "holds another token",
+  "other-owner": "now belongs to another owner",
+  "not-initialized": "is not initialized",
+  frozen: "is frozen",
+  "memo-required": "requires a memo on every transfer in",
+};
+
+const EXTENSIONS: Record<FeeRole, string> = {
+  protocol: "carries a token extension other than ImmutableOwner, CPI guard or memo transfer",
+  partner: "carries a token extension other than ImmutableOwner, such as a CPI guard",
+  judge: "carries a token extension other than ImmutableOwner, such as a CPI guard",
+};
+
+export const refusedBecause = (leg: FeeLeg): string => (leg.refused === "extension" ? EXTENSIONS[leg.role] : REASON[leg.refused ?? "not-a-token-account"]);
+
+export const feeWithheld = (leg: FeeLeg, name: string, decimals: number, owner: Address): string =>
+  `Withholds the ${leg.role} fee: ${formatAmount(leg.amount, decimals)} of ${name} is not paid to ${FEE_TAKER[leg.role]} ${leg.wallet}, whose account ${leg.account} ${refusedBecause(leg)}; it stays in the escrow and goes to its owner ${owner} when it closes`;
+
+export function feeLines(release: ReleasePreview, name: string, decimals: number): string[] {
+  return release.fees.flatMap((leg) => {
+    if (!leg.paid) {
+      return [feeWithheld(leg, name, decimals, release.returnsTo)];
+    }
+    if (leg.role === "judge") {
+      return [`Pays the judge: ${formatAmount(leg.amount, decimals)} of ${name} to this wallet, carved out of the escrow`];
+    }
+    return leg.role === "partner" ? [`Pays the partner: ${formatAmount(leg.amount, decimals)} of ${name} to ${leg.wallet}`] : [];
+  });
+}
+
+export const feeFigures = (release: ReleasePreview, decimals: number) => ({
+  fee: formatAmount(release.fee, decimals),
+  withheld: formatAmount(release.withheld, decimals),
+  fees: release.fees.map((leg) => ({ role: leg.role, wallet: leg.wallet, account: leg.account, amount: formatAmount(leg.amount, decimals), paid: leg.paid })),
+});
+
+export const feeOutputs = {
+  fee: text("whole tokens the release pays as fees, the judge's included and withheld fees not"),
+  withheld: text("whole tokens of fees no fee account can take; they stay in the escrow and go to its owner when it closes"),
+  fees: list(
+    object({
+      role: choice(["protocol", "partner", "judge"] as const, "who the fee is for"),
+      wallet: account("the wallet the fee is for"),
+      account: account("its token account the release pays into"),
+      amount: text("whole tokens"),
+      paid: flag("false when the program withholds this fee because the account cannot receive it"),
+    }),
+    3,
+  ),
+};
 
 export const approvalOf = (message: Uint8Array): string => createHash("sha256").update(message).digest("hex").slice(0, 16);
 
@@ -157,7 +228,7 @@ export const walletAttest = define({
     pay_to: account("the wallet this release pays"),
     payee: account("pay_to's token account for the escrowed token, where the tokens land; for SOL it holds wrapped SOL"),
     paid: text("whole tokens pay_to receives"),
-    fee: text("whole tokens kept as fees"),
+    ...feeOutputs,
     result: amount(RESULT_MEANS),
     approval: text("pass it back with send: true; a send that would differ from this preview is refused"),
     digest: optional(text(DEVICE_DIGEST)),
@@ -165,7 +236,7 @@ export const walletAttest = define({
     announcement: optional(account("the announcement the release pays")),
     seq: optional(amount("its place among the escrow's announcements")),
     skipped: skippedOutput,
-    summary: list(text(), 12),
+    summary: list(text(), 16),
     warnings: list(text(), 8),
     sent: flag(),
     signature: optional(text()),
@@ -192,22 +263,24 @@ export const walletAttest = define({
     const claimed = await claimsOfRelease(ctx, intent, held.claims, [payTo]);
     const left = claimed.accounts.claims === undefined ? undefined : await boardLeft(ctx.transport, input.owner, input.nonce, intent);
     const token = await mintOf(ctx.transport, held.inputMint);
-    const payee = await tokenAccountIfMissing(ctx.transport, payer, payTo, held.inputMint, token.tokenProgram);
+    const release = await releasePreview(ctx.transport, {
+      payer,
+      escrow: held,
+      tokenProgram: token.tokenProgram,
+      judgeFee: params.judgeFee,
+      judge: signer.address,
+      feeRecipient: config.feeRecipient,
+      payees: [{ wallet: payTo, weight: WHOLE_BPS }],
+    });
+    const payee = solePayee(release);
     if (payee.create.length === 0) {
-      const existing = await ctx.transport.getAccount(payee.address);
+      const existing = await ctx.transport.getAccount(payee.account);
       const holder = existing === null || existing.data.length < 64 ? null : getAddressDecoder().decode(existing.data.subarray(32, 64));
       if (holder !== payTo) {
         throw new InvalidInput([{ path: isProof ? "delivered_sha256" : "pay_to", message: PAYEE_MOVED }]);
       }
     }
-    const amountIn = held.escrowed - held.filled;
-    const maxFeeBps = held.feeBps + held.partnerBps;
-    const shares = splitFees(amountIn - params.judgeFee, held.feeBps, held.partnerBps, held.partnerCutBps);
-    const treasury = shares.protocol > 0n ? await tokenAccountIfMissing(ctx.transport, payer, config.feeRecipient, held.inputMint, token.tokenProgram) : { create: [] };
-    const partnerPaid = shares.partner > 0n;
-    const partner = partnerPaid ? await tokenAccountIfMissing(ctx.transport, payer, held.partner, held.inputMint, token.tokenProgram) : { create: [] };
-    const judge = isProof && params.judgeFee > 0n ? await tokenAccountIfMissing(ctx.transport, payer, signer.address, held.inputMint, token.tokenProgram) : { create: [] };
-    const setup = [...payee.create, ...treasury.create, ...partner.create, ...judge.create];
+    const { amountIn, maxFeeBps, setup } = release;
     let message: Uint8Array;
     let instructions: () => Promise<Instruction[]>;
     if (proof !== undefined) {
@@ -215,7 +288,7 @@ export const walletAttest = define({
       message = (await createClient({ url: ctx.url ?? "", transport: ctx.transport }).proofBallot(proof.target).catch(settleRefused)).message;
       instructions = () => capturedSettle(ctx, (client) => client.settleProof({ judge: signer, payer, ...proof.target }));
     } else {
-      const fields = { domain: Uint8Array.from(config.domain), intent, payee: payee.address, amountIn, result, filled: held.filled, revision: held.revision, maxFeeBps };
+      const fields = { domain: Uint8Array.from(config.domain), intent, payee: payee.account, amountIn, result, filled: held.filled, revision: held.revision, maxFeeBps };
       message = await attestedFillMessage(signer.address, fields);
       const settle = await buildFillAttested({
         solver: payer,
@@ -223,9 +296,8 @@ export const walletAttest = define({
         nonce: input.nonce,
         inputMint: held.inputMint,
         inputTokenProgram: token.tokenProgram,
-        payee: payee.address,
-        ...(shares.protocol > 0n ? { feeRecipient: config.feeRecipient } : {}),
-        ...(partnerPaid ? { partner: held.partner } : {}),
+        payee: payee.account,
+        ...feeAccounts(release),
         ...claimed.accounts,
         amountIn,
         result,
@@ -241,14 +313,15 @@ export const walletAttest = define({
     }
     const prepared = input.send === true ? preparedView(await prepare(ctx.transport, await instructions(), payer.address)) : undefined;
     const name = TOKEN_NAMES[held.inputMint] ?? held.inputMint;
-    const paid = formatAmount(shares.net, token.decimals);
+    const paid = formatAmount(payee.amount, token.decimals);
     const paidBy = `${device ? "the fee payer" : "this wallet"}: ${setup.length === 0 ? "" : sol(await tokenAccountRent(ctx.transport, token.tokenProgram))} of rent`;
+    const created = (role: FeeRole) => (feeLegOf(release, role)?.create.length ?? 0) > 0;
     const view = {
       intent,
       pay_to: payTo,
-      payee: payee.address,
+      payee: payee.account,
       paid,
-      fee: formatAmount(shares.protocol + shares.partner, token.decimals),
+      ...feeFigures(release, token.decimals),
       result,
       approval,
       ...(device ? { digest: envelopeDigest(message) } : {}),
@@ -257,16 +330,16 @@ export const walletAttest = define({
         `Pays: ${paid} of ${name} to ${payTo} from ${input.owner}'s escrow${held.inputMint === NATIVE_MINT ? WRAPPED : ""}`,
         ...(proof === undefined ? [] : [`For: the work with sha256 ${proof.delivered}, announced in ${proof.opening.announcement} (seq ${proof.opening.seq}), the first that opens to it`]),
         ...(proof === undefined ? [] : skippedSummary(proof.skipped)),
-        ...(isProof && params.judgeFee > 0n ? [`Pays the judge: ${formatAmount(params.judgeFee, token.decimals)} of ${name} to this wallet, carved out of the escrow`] : []),
+        ...feeLines(release, name, token.decimals),
         ...(isProof ? [`Binds: the result to the committed spec ${getBase16Decoder().decode(params.specHash)}`] : []),
         `Attests: result ${result}, signed by this server's wallet as the escrow's attestor`,
         ...(device ? [`Signs: only the release message on the Ledger, which shows digest ${envelopeDigest(message)}; the fee payer ${payer.address} signs and pays the transaction`] : []),
         ...stakeReturned(claimed.stake, claimed.accounts.stakeTo),
         ...leavesBoard(left),
         ...(payee.create.length === 0 ? [] : [`Setup: creates ${payTo}'s ${name} account, paid by ${paidBy}`]),
-        ...(treasury.create.length === 0 ? [] : [`Setup: creates the engine treasury's ${name} account for the fee, paid by ${paidBy}`]),
-        ...(partner.create.length === 0 ? [] : [`Setup: creates the partner ${held.partner}'s ${name} account for its fee, paid by ${paidBy}`]),
-        ...(judge.create.length === 0 ? [] : [`Setup: creates this wallet's ${name} account for the judge fee, paid by ${paidBy}`]),
+        ...(created("protocol") ? [`Setup: creates the engine treasury's ${name} account for the fee, paid by ${paidBy}`] : []),
+        ...(created("partner") ? [`Setup: creates the partner ${held.partner}'s ${name} account for its fee, paid by ${paidBy}`] : []),
+        ...(created("judge") ? [`Setup: creates this wallet's ${name} account for the judge fee, paid by ${paidBy}`] : []),
       ],
       warnings: settlementWarnings(params),
       prepared,
