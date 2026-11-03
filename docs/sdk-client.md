@@ -213,6 +213,8 @@ console.log(released?.fields.intent === job.intent, terms?.specHash === Buffer.f
 A split release pays every co-author whose canonical token account takes the payout. When a co-author's account cannot take it, because it requires memos, is frozen, is closed or has another blocking setting, the release still pays everyone else and holds that co-author's share in the escrow's vault for it to claim.
 
 - `heldShares(wallet)` lists the shares held for a wallet, each with its `intent`, `announcement`, `index`, `amount`, `mint`, the `account` the release could not pay, the `release` signature and the `split` a claim names. It takes the split from the release transaction the program executed and leaves out a share once the announcement's `held` byte shows it claimed.
+- An announcement keeps a split's recipients only as a hash. A release names each co-author's canonical token account that exists, so that account's history per mint is a partial index that misses closed and never-made accounts; `heldShares` does not use it and reads releases instead.
+- It reads at most 64 announcements holding shares, the wallet's own and the newest first, four at a time, with at most 16 history reads each. In each history it reads only the transactions whose block time is the announcement's paid time, so newer transactions cost one read per 1000 signatures. Past either bound it sets `complete` to false and says which announcements it left out in `reasons`; `options.announcements` and `options.reads` change the bounds.
 - `claimHeld({ wallet, announcement, to })` pays a held share into `to`, any token account the wallet owns for the escrow's token. Without `to` it pays the canonical account, only when that account takes the payout now, and throws `InvalidInput` otherwise; `plan.claimHeld` returns the plan with its `share` and `to`. A share that is not held throws `NoHeldShare`.
 - A receipt lists held shares in `held`, each with its `state`: `held` for the co-author to claim, `received` once claimed, with `claimedTo` and `claim`, or `returned` to the owner, with `returnedTo` and `close`. It also lists the fees a release withheld because their account could not take them, the protocol fee among them, in `withheld` with their `role`.
 - `reputation` counts a held or received share in `earned` and its credit in `backed`, names every held share in the record's `held` and sums the ones still `held` per mint in `held`. A `returned` share counts in neither: the record's `earned` is 0.
@@ -307,6 +309,8 @@ await client.unwrap(signer);
 `settleProof`, `settleCommittee` and `settleSplit` sign over the announcement and its opening and pay the announcing worker's token account; any wallet can send the signed release. `history` reads the paid work's sha256 and salt from the release itself.
 
 `refute` lets an earlier worker record on chain that a later announcement of the same work was paid, `reclaim` closes every announcement of a worker that the program lets close now and that cannot still refute a release, rent back to whoever paid it, and says in `reasons` why each one in `kept` stays, and `closeBook` closes an escrow's empty delivery book. [Judge work](judge.md) does all of this from the command line.
+
+`refute` of a split release checks that `claim` hashes to the split the paid announcement records, the same recipients and weights in the same order, and throws `NotRefutable` before it sends when it does not.
 
 ## Standing
 

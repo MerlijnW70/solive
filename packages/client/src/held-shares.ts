@@ -4,13 +4,16 @@ import { AnnouncementsUnreadable } from "./announce-errors.js";
 import { type AnnouncementView, announcementView, loadAnnouncement } from "./announcement-reads.js";
 import { NoHeldShare } from "./client-errors.js";
 import { intentAt } from "./job-proofs.js";
-import { DELIVERY_PAGES, scan } from "./job-scan.js";
+import { DELIVERY_PAGES, SIGNATURE_PAGE, scan, signaturePage } from "./job-scan.js";
 import { engineEvents, eventAuthority, settlementIn, splitClaim } from "./release-reads.js";
-import type { AccountView, EngineTransaction, Transport } from "./transport.js";
+import { type AccountView, type EngineTransaction, type ListedSignature, TRANSACTION_FETCHES, type Transport } from "./transport.js";
 
 export const ANNOUNCEMENT_STATE_AT = 292;
 export const ANNOUNCEMENT_HELD_AT = 294;
 export const PAID_STATE = 1;
+export const HELD_ANNOUNCEMENTS = 64;
+export const HELD_READS = 16;
+export const HELD_CONCURRENCY = 4;
 
 export type HeldSplit = { recipients: Address[]; weights: number[] };
 
@@ -29,7 +32,7 @@ export type HeldShare = {
 
 export type HeldShares = { wallet: Address; shares: HeldShare[]; complete: boolean; reasons: string[]; unreadable: UnreadableAccount[] };
 
-export type HeldSharesOptions = { pages?: number };
+export type HeldSharesOptions = { pages?: number; announcements?: number; reads?: number };
 
 export type HeldInRelease = { wallet: Address; account: Address; index: number; amount: bigint; announcement: Address };
 
@@ -101,22 +104,82 @@ export const releaseUnread = (announcement: Address): string => `the release of 
 
 export const heldSplitUnread = (announcement: Address): string => `the release of ${announcement} names no split matching the one the announcement records, so its held shares are not listed`;
 
-async function releaseOfPaid(transport: Transport, view: AnnouncementView, by: Address, pages: number): Promise<EngineTransaction | null> {
+export const heldReadsSpent = (announcement: Address, reads: number): string =>
+  `the history of ${announcement} needs more than ${reads} reads to find its release, so its held shares are not listed`;
+
+export const heldPastLimit = (count: number, limit: number): string =>
+  `${count} announcements holding shares past the first ${limit} were not read, so their held shares are not listed`;
+
+type Budget = { history: Transport; reads: number; spent: () => boolean };
+
+function budgeted(transport: Transport, reads: number): Budget {
+  let left = reads;
+  let short = false;
+  const spend = (count: number): number => {
+    const spent = Math.min(count, left);
+    left -= spent;
+    short ||= spent < count;
+    return spent;
+  };
+  const { signaturesOf, transactionsOf } = transport;
+  const overrides: Partial<Transport> = {
+    engineTransactions: async (limit, of, memo) => {
+      const allowed = spend(limit);
+      return allowed === 0 ? [] : transport.engineTransactions(allowed, of, memo);
+    },
+    ...(signaturesOf === undefined
+      ? {}
+      : {
+          signaturesOf: async (of: Address, limit: number, before?: string, until?: string) =>
+            spend(1) === 0 ? [] : signaturesOf.call(transport, of, limit, before, until),
+        }),
+    ...(transactionsOf === undefined
+      ? {}
+      : {
+          transactionsOf: async (listed: readonly ListedSignature[]) => {
+            const allowed = spend(listed.length);
+            return allowed === 0 ? [] : transactionsOf.call(transport, listed.slice(0, allowed));
+          },
+        }),
+  };
+  return { history: Object.assign(Object.create(transport) as Transport, overrides), reads, spent: () => short };
+}
+
+async function releaseOfPaid(history: Transport, view: AnnouncementView, by: Address, pages: number): Promise<EngineTransaction | null> {
   const settles = (transaction: EngineTransaction): boolean => {
     const settlement = settlementIn(transaction, by, view.intent);
     return settlement !== null && settlement.settled.name === "IntentSplit" && settlement.released.announcement === view.address;
   };
-  const scanned = await scan(transport, view.address, { pages, until: settles });
-  return scanned.transactions.find(settles) ?? null;
+  const { signaturesOf, transactionsOf } = history;
+  if (signaturesOf === undefined || transactionsOf === undefined) {
+    const scanned = await scan(history, view.address, { pages, until: settles });
+    return scanned.transactions.find(settles) ?? null;
+  }
+  let before: string | undefined;
+  for (let page = 1; page <= pages; page++) {
+    const { listed, last } = await signaturePage(history, signaturesOf, view.address, SIGNATURE_PAGE, before);
+    const candidates = listed.filter(({ failed, blockTime }) => !failed && (blockTime === null || blockTime === view.paidAt));
+    for (let at = 0; at < candidates.length; at += TRANSACTION_FETCHES) {
+      const found = (await transactionsOf.call(history, candidates.slice(at, at + TRANSACTION_FETCHES))).find(settles);
+      if (found !== undefined) {
+        return found;
+      }
+    }
+    if (last || listed.some(({ blockTime }) => blockTime !== null && blockTime < view.paidAt)) {
+      return null;
+    }
+    before = listed[listed.length - 1]?.signature;
+  }
+  return null;
 }
 
-async function sharesOf(transport: Transport, view: AnnouncementView, wallet: Address, by: Address, pages: number): Promise<Found> {
+async function sharesOf(transport: Transport, view: AnnouncementView, wallet: Address, by: Address, pages: number, budget?: Budget): Promise<Found> {
   if (view.state !== "paid" || view.held === 0) {
     return { shares: [], reasons: [] };
   }
-  const release = await releaseOfPaid(transport, view, by, pages);
+  const release = await releaseOfPaid(budget?.history ?? transport, view, by, pages);
   if (release === null) {
-    return { shares: [], reasons: [releaseUnread(view.address)] };
+    return { shares: [], reasons: [budget?.spent() === true ? heldReadsSpent(view.address, budget.reads) : releaseUnread(view.address)] };
   }
   const claim = splitClaim(release, view.intent);
   if (claim === null || !equal(await splitCommit([...claim.recipients], [...claim.weights]), view.splitHash)) {
@@ -168,16 +231,38 @@ async function heldAnnouncements(transport: Transport): Promise<{ announcements:
 const byIntent = (a: HeldShare, b: HeldShare): number =>
   a.intent === b.intent ? (a.announcement === b.announcement ? a.index - b.index : a.announcement < b.announcement ? -1 : 1) : a.intent < b.intent ? -1 : 1;
 
+const ownFirst =
+  (wallet: Address) =>
+  (a: AnnouncementView, b: AnnouncementView): number => {
+    if ((a.worker === wallet) !== (b.worker === wallet)) {
+      return a.worker === wallet ? -1 : 1;
+    }
+    if (a.paidAt !== b.paidAt) {
+      return a.paidAt > b.paidAt ? -1 : 1;
+    }
+    return a.address < b.address ? -1 : a.address > b.address ? 1 : 0;
+  };
+
+async function inLanes<T, R>(items: readonly T[], lanes: number, run: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = [];
+  let next = 0;
+  const lane = async (): Promise<void> => {
+    for (let at = next++; at < items.length; at = next++) {
+      results[at] = await run(items[at] as T);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(lanes, items.length) }, lane));
+  return results;
+}
+
 export async function heldSharesOf(transport: Transport, wallet: Address, options: HeldSharesOptions = {}): Promise<HeldShares> {
-  const pages = options.pages ?? DELIVERY_PAGES;
+  const { pages = DELIVERY_PAGES, announcements: limit = HELD_ANNOUNCEMENTS, reads = HELD_READS } = options;
   const [{ announcements, unreadable }, by] = await Promise.all([heldAnnouncements(transport), eventAuthority()]);
-  const shares: HeldShare[] = [];
-  const reasons: string[] = [];
-  for (const view of announcements) {
-    const found = await sharesOf(transport, view, wallet, by, pages);
-    shares.push(...found.shares);
-    reasons.push(...found.reasons);
-  }
+  const read = [...announcements].sort(ownFirst(wallet)).slice(0, limit);
+  const found = await inLanes(read, HELD_CONCURRENCY, async (view) => sharesOf(transport, view, wallet, by, pages, budgeted(transport, reads)));
+  const shares = found.flatMap((one) => one.shares);
+  const past = announcements.length - read.length;
+  const reasons = [...found.flatMap((one) => one.reasons), ...(past > 0 ? [heldPastLimit(past, limit)] : [])];
   return { wallet, shares: shares.sort(byIntent), complete: reasons.length === 0 && unreadable.length === 0, reasons, unreadable };
 }
 

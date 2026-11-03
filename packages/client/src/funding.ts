@@ -5,6 +5,7 @@ import { type ListedSignature, TRANSACTION_FETCHES, type Transport } from "./tra
 export const FUNDING_PAGES = 2;
 export const FUNDING_READS = 16;
 export const FUNDING_HOPS = 2;
+export const FUNDING_TOTAL = 64;
 
 export type FundedBy = "yes" | "no" | "unknown";
 
@@ -52,7 +53,10 @@ async function readFunder(transport: Transport, wallet: Address, covered: () => 
   let reads = 0;
   let at = 0;
   while (at < oldest.length && reads < FUNDING_READS) {
-    const batch = oldest.slice(at, at + TRANSACTION_FETCHES);
+    if (at >= FUNDING_TOTAL) {
+      return { funder: null, complete: false };
+    }
+    const batch = oldest.slice(at, Math.min(at + TRANSACTION_FETCHES, FUNDING_TOTAL));
     at += batch.length;
     const found = await transactionsOf.call(transport, batch);
     if (found.length < batch.length) {

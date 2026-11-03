@@ -1,5 +1,5 @@
 import type { Address, Instruction, Signature, TransactionSigner } from "@solana/kit";
-import { IntentCoreError, IntentStatus, type SealRecipient } from "@intent-engine/core";
+import { IntentCoreError, IntentStatus, InvalidInput, type SealRecipient } from "@intent-engine/core";
 import {
   buildCloseAnnouncement,
   buildCloseDeliveryBook,
@@ -9,6 +9,7 @@ import {
   keyFingerprintV4,
   openWithEsk,
   refutationAddress,
+  splitCommit,
 } from "@intent-engine/core/internal";
 import { chainTime } from "./accounts.js";
 import { BookNotClosable, NotDeliverable, NotRefutable } from "./announce-errors.js";
@@ -78,12 +79,21 @@ async function sealedRecipients(transport: Transport, earlier: AnnouncementView)
   );
 }
 
-function payeesOf(paid: AnnouncementView, claim: RefuteInput["claim"]): readonly Address[] {
+async function payeesOf(paid: AnnouncementView, claim: RefuteInput["claim"]): Promise<readonly Address[]> {
   if (paid.splitHash.every((b) => b === 0)) {
     return [paid.worker];
   }
   if (claim === undefined) {
     throw new NotRefutable(paid.address, "was paid in a split, so a refutation names the split's recipients and weights in claim");
+  }
+  const committed = await splitCommit([...claim.recipients], [...claim.weights]).catch((error: unknown) => {
+    if (error instanceof InvalidInput) {
+      return null;
+    }
+    throw error;
+  });
+  if (committed === null || !equal(committed, paid.splitHash)) {
+    throw new NotRefutable(paid.address, "was paid in a split other than the recipients and weights in claim, so the program would refuse the refutation");
   }
   return claim.recipients;
 }
@@ -109,8 +119,9 @@ export function announcementPlans(context: ClientContext): AnnouncementPlans {
     if (!equal(paid.delivered, delivered)) {
       throw new NotRefutable(earlier.address, `cannot refute ${paid.address}, which paid the work ${hex(paid.delivered)}, not ${hex(delivered)}`);
     }
+    const payees = await payeesOf(paid, input.claim);
     try {
-      delivery.refutes(earlier.seq, paid.seq, worker.address, payeesOf(paid, input.claim));
+      delivery.refutes(earlier.seq, paid.seq, worker.address, payees);
     } catch (error) {
       if (error instanceof IntentCoreError) {
         throw new NotRefutable(earlier.address, `does not refute ${paid.address}: ${error.message}`);

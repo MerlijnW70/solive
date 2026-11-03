@@ -3,7 +3,7 @@ import { FirstOpeningRefused } from "./announce-errors.js";
 import { type AnnouncementView, loadDeliveryBook } from "./announcement-reads.js";
 import { type DeliveryOpeners, firstOpeningIn } from "./first-opening.js";
 import type { Transport } from "./transport.js";
-import { SdkError } from "@intent-engine/core";
+import { InvalidInput, SdkError } from "@intent-engine/core";
 
 export type ConfirmTarget = {
   intent: Address;
@@ -114,6 +114,9 @@ function compareAnnouncements(own: NodeView, other: NodeView): void {
 }
 
 export async function confirmOnBoth(first: Transport, second: Transport, target: ConfirmTarget): Promise<NodeView> {
+  if (target.payees !== undefined && (target.sha256 === undefined || target.attestor === undefined)) {
+    throw new InvalidInput(target.sha256 === undefined ? "sha256" : "attestor", "missing", "a confirm target with payees names the sha256 and attestor that find its earliest announcer; nothing was signed or sent");
+  }
   const [own, other] = await Promise.all([
     nodeView(first, target),
     nodeView(second, target).catch((error: unknown) => {
