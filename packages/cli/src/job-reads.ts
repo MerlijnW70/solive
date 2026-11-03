@@ -1,6 +1,7 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { Address } from "@solana/kit";
 import type { Transport } from "@intent-engine/client";
-import { boundMembers, chainTime, SPEC_READ_MS, specUrlOf } from "@intent-engine/client/internal";
+import { boundMembers, chainTime, SPEC_READ_MS, specUrlOf, stopsFrom } from "@intent-engine/client/internal";
 
 export const REQUEST_MS = 10_000;
 export const HISTORY_READ_MS = 10_000;
@@ -80,9 +81,13 @@ function settledBefore<T>(signal: AbortSignal, work: Promise<T>): Promise<T> {
   });
 }
 
+const closings = new AsyncLocalStorage<AbortSignal>();
+
+stopsFrom(() => closings.getStore());
+
 type Asking = { began: () => void; ended: () => void };
 
-function guarded(transport: Transport, signal: AbortSignal, requestBound: () => AbortSignal, asking: Asking): Transport {
+function guarded(transport: Transport, signal: AbortSignal, closing: AbortSignal, requestBound: () => AbortSignal, asking: Asking): Transport {
   const members = boundMembers(transport) as unknown as Record<PropertyKey, unknown>;
   for (const key of Reflect.ownKeys(members)) {
     const member = members[key];
@@ -93,7 +98,7 @@ function guarded(transport: Transport, signal: AbortSignal, requestBound: () => 
       if (signal.aborted) {
         return Promise.reject(new ReadStopped("the read ran past its bound or was closed"));
       }
-      const answer: unknown = member(...args);
+      const answer: unknown = closings.run(closing, () => member(...args));
       if (!(answer instanceof Promise)) {
         return answer;
       }
@@ -192,7 +197,7 @@ export class JobReads {
         this.#busy--;
       }
     };
-    const reach = guarded(transport, signal, this.#requestBound, {
+    const reach = guarded(transport, signal, this.#closing.signal, this.#requestBound, {
       began: () => asking++,
       ended: () => {
         asking--;

@@ -38,6 +38,7 @@ export { type Fetcher, observedFetch, observedTransport } from "./observe-transp
 export * from "./plan.js";
 export * from "./redact-url.js";
 export * from "./rpc-limits.js";
+export * from "./stop-scope.js";
 export * from "./reputation.js";
 export * from "./sdk-errors.js";
 export * from "./setup.js";

@@ -41,6 +41,7 @@ import { ATTESTED_ATTESTOR_AT, INTENT_INPUT_MINT_AT, INTENT_OUTPUT_MINT_AT, INTE
 import { holdingsOf, keysAt, MEMO_PROGRAM_ADDRESS, signersAmong, solTransfersOf } from "./transaction-keys.js";
 import { base64Bytes } from "./encoding.js";
 import { shown } from "./shown.js";
+import { scopedStop } from "./stop-scope.js";
 
 const MOST_SELECTIVE_FIRST = [INTENT_OWNER_AT, ATTESTED_ATTESTOR_AT, INTENT_INPUT_MINT_AT, INTENT_OUTPUT_MINT_AT];
 
@@ -200,6 +201,9 @@ export function rpcTransport(rpc: RpcLike, wait?: (ms: number) => Promise<void>,
         fetched.delete(entry.signature);
         fetched.set(entry.signature, known);
         return known.then(withoutMark);
+      }
+      if (scopedStop() !== undefined) {
+        return load(entry).then(withoutMark);
       }
       const pending = load(entry);
       fetched.set(entry.signature, pending);

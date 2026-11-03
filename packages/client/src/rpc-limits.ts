@@ -1,6 +1,7 @@
 import type { RpcTransport } from "@solana/kit";
 import { InvalidInput, SdkError } from "@intent-engine/core";
 import { rateLimited, retryAfterOf } from "./rpc-retry.js";
+import { scopedStop } from "./stop-scope.js";
 
 export class RateLimited extends SdkError {
   readonly code = "rate-limited";
@@ -113,14 +114,16 @@ export const waitUnless =
     });
 
 export function limitedTransport(base: RpcTransport, timeoutMs: number | undefined, stop: AbortSignal | undefined): RpcTransport {
-  const stopped = (): boolean => stop?.aborted === true;
   const limited = async (config: Parameters<RpcTransport>[0]) => {
     const method = methodOf(config.payload);
+    const scoped = scopedStop();
+    const stops = [stop, scoped].filter((signal) => signal !== undefined);
+    const stopped = (): boolean => stops.some((signal) => signal.aborted);
     if (stopped()) {
-      throw new Cancelled(method, { cause: stop?.reason });
+      throw new Cancelled(method, { cause: stops.find((signal) => signal.aborted)?.reason });
     }
     const timer = timeoutMs === undefined ? undefined : AbortSignal.timeout(timeoutMs);
-    const ending = [timer, stop].filter((signal) => signal !== undefined);
+    const ending = [timer, ...stops].filter((signal) => signal !== undefined);
     const work = base({ ...config, signal: AbortSignal.any([...ending, ...(config.signal === undefined ? [] : [config.signal])]) });
     work.catch(() => undefined);
     try {

@@ -1,10 +1,26 @@
 import { isSolanaError, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SOLANA_ERROR__TRANSACTION_ERROR__BLOCKHASH_NOT_FOUND } from "@solana/kit";
 import { isSdkError } from "@intent-engine/core";
 import type { RetryEvent } from "./observe.js";
+import { scopedStop } from "./stop-scope.js";
 
 export const POLL_MS = 500;
 
-export const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+export const sleep = (ms: number) =>
+  new Promise<void>((resolve) => {
+    const stop = scopedStop();
+    const done = () => {
+      clearTimeout(timer);
+      stop?.removeEventListener("abort", done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    if (stop !== undefined) {
+      stop.addEventListener("abort", done, { once: true });
+      if (stop.aborted) {
+        done();
+      }
+    }
+  });
 
 export const RATE_LIMIT_ATTEMPTS = 6;
 
@@ -89,6 +105,9 @@ export async function patiently<T>(
       if (!(limited || behindMinSlot(error)) || attempt >= RATE_LIMIT_ATTEMPTS) {
         throw error;
       }
+      if (scopedStop()?.aborted === true) {
+        throw error;
+      }
       const delay = retryAfterOf(error) ?? jittered(backoffOf(attempt), random);
       if (spent + delay > RATE_LIMIT_BUDGET_MS) {
         throw error;
@@ -96,6 +115,9 @@ export async function patiently<T>(
       spent += delay;
       onRetry?.({ attempt, delay, reason: limited ? "rate-limited" : "behind-min-slot" });
       await wait(delay);
+      if (scopedStop()?.aborted === true) {
+        throw error;
+      }
     }
   }
 }
