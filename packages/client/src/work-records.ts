@@ -2,11 +2,12 @@ import type { Address, Signature } from "@solana/kit";
 import { IntentStatus } from "@intent-engine/core";
 import { isUnreadableAccount, splitN, type UnreadableAccount } from "@intent-engine/core/internal";
 import { AnnouncementsUnreadable } from "./announce-errors.js";
-import { loadAnnouncement, refutationsOf } from "./announcement-reads.js";
+import { loadAnnouncement, type RefutationView, refutationsOf } from "./announcement-reads.js";
 import { loadCommittee } from "./client-committee.js";
 import type { FundedBy } from "./funding.js";
 import { intentAt } from "./job-proofs.js";
 import { scan } from "./job-scan.js";
+import { isReadFailure } from "./read-failure.js";
 import { type RefutationRecord, refutationRecord } from "./refutation-standing.js";
 import { type HeldPayout, heldPayouts } from "./release-holds.js";
 import { engineEvents, intentHistory, type Settlement, settlementIn, splitClaim } from "./release-reads.js";
@@ -106,13 +107,31 @@ async function judgeOf(transport: Transport, attestor: Address): Promise<Address
   return committee === null ? undefined : [...committee.members];
 }
 
+export const standingUnread = (announcement: Address, { address, reason }: UnreadableAccount): string =>
+  `the standing of the refutation ${address} of ${announcement} could not be checked, so the release is not counted: ${reason}`;
+
+type Standing = { record: RefutationRecord } | { unread: UnreadableAccount };
+
+async function standingRead(transport: Transport, refutation: RefutationView): Promise<Standing> {
+  try {
+    return { record: await refutationRecord(transport, refutation) };
+  } catch (error) {
+    if (isReadFailure(error)) {
+      return { unread: { address: refutation.address, reason: error.message } };
+    }
+    throw error;
+  }
+}
+
 async function refutationsAgainst(transport: Transport, announcement: Address): Promise<Found<RefutationRecord[]>> {
   try {
     const { refutations, unreadable } = await refutationsOf(transport, announcement);
+    const standings = await Promise.all(refutations.map((refutation) => standingRead(transport, refutation)));
+    const unread = standings.flatMap((standing) => ("unread" in standing ? [standing.unread] : []));
     return {
-      found: await Promise.all(refutations.map((refutation) => refutationRecord(transport, refutation))),
-      reasons: unreadable.map((skipped) => refutationUnreadable(announcement, skipped)),
-      unreadable,
+      found: standings.flatMap((standing) => ("record" in standing ? [standing.record] : [])),
+      reasons: [...unreadable.map((skipped) => refutationUnreadable(announcement, skipped)), ...unread.map((skipped) => standingUnread(announcement, skipped))],
+      unreadable: [...unreadable, ...unread],
     };
   } catch (error) {
     if (error instanceof AnnouncementsUnreadable) {
@@ -175,7 +194,7 @@ async function paidRecord(transport: Transport, wallet: Address, base: WorkRecor
   const reasons = createFee === undefined ? [historyCut(intent)] : [];
   const refutations = await refutationsAgainst(transport, released.announcement);
   const substantiated = refutations.found.find(({ standing }) => standing === "substantiated");
-  const feedback = feedbackOf(escrow.transactions, intent, owner);
+  const feedback = feedbackOf(escrow.transactions, intent, owner, transaction);
   return {
     record: {
       ...common,

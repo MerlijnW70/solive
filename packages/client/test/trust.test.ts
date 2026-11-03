@@ -1,14 +1,26 @@
 import { createHash } from "node:crypto";
-import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, none } from "@solana/kit";
+import { type Address, generateKeyPairSigner, type KeyPairSigner, lamports, none, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SolanaError } from "@solana/kit";
 import { getCreateAssociatedTokenIdempotentInstructionAsync, getMintEncoder, getMintSize, getMintToInstruction } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { findAssociatedTokenAddress, Kind, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
 import { buildUpdateEconomics, findIntentPda, splitFee } from "@intent-engine/core/internal";
 import { createClient, type Transport, trustOf } from "../src/index.js";
 import { RESTART, TRUST_HOPS } from "../src/internal.js";
+import { TimedOut } from "../src/rpc-limits.js";
 import { svmTransport } from "../src/svm.js";
+import { readFailed } from "../src/trust.js";
 import { FEE_BPS, world } from "./svm.js";
 import { announced } from "./work.js";
+
+const failingWith = (transport: Transport, error: Error): Transport => ({
+  ...transport,
+  engineTransactions: async () => {
+    throw error;
+  },
+  transactionsOf: async () => {
+    throw error;
+  },
+});
 
 const LOCAL = "http://127.0.0.1:8899";
 const SOL = 1_000_000_000n;
@@ -180,19 +192,26 @@ describe("reputation relative to the reader", () => {
     expect(await trustOf(transport, reader.address, a.address, { maxWallets: 1 })).toMatchObject({ score: 0, complete: false, wallets: 1 });
   });
 
-  it("says it is incomplete when a read fails", async () => {
+  it("says it is incomplete when a read fails, with a reason that names the payer and the failure", async () => {
     const { transport, fresh, pays } = await setup();
     const [reader, a] = await Promise.all([fresh(), fresh()]);
     await pays(reader, a);
-    const failing: Transport = {
-      ...transport,
-      engineTransactions: async () => {
-        throw new Error("the node is down");
-      },
-      transactionsOf: async () => {
-        throw new Error("the node is down");
-      },
-    };
-    expect(await trustOf(failing, reader.address, a.address)).toMatchObject({ score: 0, complete: false });
+    const failures: Error[] = [
+      new SolanaError(SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, { headers: new Headers(), message: "Bad Gateway", statusCode: 502 }),
+      new TypeError("fetch failed", { cause: Object.assign(new Error("connect ECONNREFUSED 127.0.0.1:8899"), { code: "ECONNREFUSED" }) }),
+      new TimedOut("getTransaction", 1_000),
+    ];
+    for (const failure of failures) {
+      const trust = await trustOf(failingWith(transport, failure), reader.address, a.address);
+      expect(trust).toMatchObject({ score: 0, complete: false, reason: readFailed(reader.address, failure) });
+    }
+  });
+
+  it("lets a programming error surface instead of reading it as an incomplete trust", async () => {
+    const { transport, fresh, pays } = await setup();
+    const [reader, a] = await Promise.all([fresh(), fresh()]);
+    await pays(reader, a);
+    const bug = new TypeError("Cannot read properties of undefined (reading 'slot')");
+    await expect(trustOf(failingWith(transport, bug), reader.address, a.address)).rejects.toBe(bug);
   });
 });

@@ -21,6 +21,8 @@ Each escrow is one record, found from the wallet's own `DeliveryAnnounced` event
 
 A record lists every refutation of its paid announcement. A refutation counts against every wallet the release paid, the announcer and the co-authors of a split alike, and leaves the release out of their totals as `refutedBy`, only when it is `substantiated`: the earlier announcement it reveals opens, at every slot, to the paid work. `unsubstantiated` and `unverifiable` refutations are listed and not counted; `refuted` counts the substantiated ones.
 
+A refutation is `unverifiable` only when a recipient's profile no longer names a usable key it was sealed to. When reading that profile fails, the refutation is named in `unreadable` instead, the release is left out of the totals, and `complete` is `false` with a `reason`.
+
 The totals count only `paid` releases at arm's length. A release is self-dealt, and left out, when the worker owned the escrow, judged it, or sat on the committee that judged it, or when the owner judged its own escrow. `payers` and `judges` count the distinct owners and judges behind the totals. `committee_judged` counts releases a committee approved.
 
 A paid release is also left out when the worker funded its payer: the earliest SOL into the payer's wallet came from the worker, or from a wallet the worker funded first. `funded_by_worker` counts these, and each paid release shows `yes`, `no` or `unknown`.
@@ -45,7 +47,7 @@ intent-engine reputation --worker <worker wallet> --reader <your wallet> [--seed
 
 `trust` scores the worker by personalized PageRank, restart probability a = 0.15, that starts only at your wallet and any `--seed` wallets and flows along the releases counted above, weighted by the SOL they cost: SOL protocol fees and every create fee. A ring of wallets paying each other, funded from outside your graph, scores 0, and one bribed payment into a ring gives it at most (1 − a) / a times the trust on that payment.
 
-A payer's shares divide the SOL all its releases cost, so a wallet left out never raises another's share.
+A payer's shares divide the SOL all its releases cost, so a wallet left out never raises another's share. When a payer's releases cannot be read from the node, their trust is left out and `complete` is `false`, with a `reason` naming the payer and the failure.
 
 The read stops two hops from the seeds or at a fixed number of wallets, and then `complete` is `false`. A wallet whose releases cost the payer no SOL is never read, at most a fixed number of each payer's payees are read, and the reader and seeds are cut to fit the wallet limit. `trustOf(transport, reader, worker)` in TypeScript and the `reader` input of `solive_get_reputation` return the same `trust`.
 
@@ -57,7 +59,7 @@ The owner of a released escrow rates the work once, from 0 to 100. `--note` adds
 intent-engine feedback --keypair owner.json --intent <escrow address> --score 90 --yes
 ```
 
-An MCP agent rates with `solive_wallet_feedback`. A rating counts only when the escrow's owner signs it, after a release, and only the first one counts. The record averages the ratings of its arm's-length releases.
+An MCP agent rates with `solive_wallet_feedback`. A rating counts only when the escrow's owner signs it, after a release, and only the first one counts; a rating sent before the release is ignored. The record averages the ratings of its arm's-length releases.
 
 ## Publish a profile
 

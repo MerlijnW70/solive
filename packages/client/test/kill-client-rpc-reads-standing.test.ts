@@ -1,4 +1,5 @@
-import type { Address } from "@solana/kit";
+import { type Address, SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, SolanaError } from "@solana/kit";
+import { AccountVersionError } from "@intent-engine/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RefutationView } from "../src/announcement-reads.js";
 import type { Transport } from "../src/transport.js";
@@ -9,6 +10,7 @@ const mocked = vi.hoisted(() => ({
   keyFingerprintV4: vi.fn(),
   announcementCommitment: vi.fn(),
   parseEncryptionKey: vi.fn(),
+  isEncryptionKeyText: vi.fn(),
   committeeKeys: vi.fn(),
   loadProfile: vi.fn(),
 }));
@@ -22,6 +24,7 @@ vi.mock("@intent-engine/core/internal", async (importOriginal) => {
     keyFingerprintV4: mocked.keyFingerprintV4,
     announcementCommitment: mocked.announcementCommitment,
     parseEncryptionKey: mocked.parseEncryptionKey,
+    isEncryptionKeyText: mocked.isEncryptionKeyText,
   };
 });
 
@@ -43,6 +46,7 @@ beforeEach(() => {
   mocked.committeeKeys.mockResolvedValue({ members: [FIRST, SECOND] });
   mocked.loadProfile.mockResolvedValue({ encryptionKey: "key text" });
   mocked.parseEncryptionKey.mockReturnValue(KEY);
+  mocked.isEncryptionKeyText.mockReturnValue(true);
   mocked.keyFingerprintV4.mockResolvedValue(FINGERPRINT);
   mocked.openWithEsk.mockResolvedValue({ salt: new Uint8Array(32) });
   mocked.announcementCommitment.mockResolvedValue(COMMITMENT);
@@ -67,5 +71,35 @@ describe("the recipients a refutation is opened against", () => {
   it("is unverifiable when a keyed recipient's key no longer matches its fingerprint", async () => {
     mocked.blobHead.mockReturnValue({ count: 2, mask: 0b10, fps: [new Uint8Array(32), new Uint8Array(32).fill(1)], urlLen: 0 });
     expect(await standingOf({} as Transport, refutation)).toBe("unverifiable");
+  });
+});
+
+describe("a keyed recipient's profile that cannot give a key", () => {
+  const sealedToSecond = () => mocked.blobHead.mockReturnValue({ count: 2, mask: 0b10, fps: [new Uint8Array(32), FINGERPRINT], urlLen: 0 });
+
+  it("is unverifiable when the profile publishes no key or does not exist", async () => {
+    sealedToSecond();
+    mocked.loadProfile.mockResolvedValue({ encryptionKey: null });
+    expect(await standingOf({} as Transport, refutation)).toBe("unverifiable");
+    mocked.loadProfile.mockResolvedValue(null);
+    expect(await standingOf({} as Transport, refutation)).toBe("unverifiable");
+    expect(mocked.openWithEsk).not.toHaveBeenCalled();
+  });
+
+  it("is unverifiable when the profile names a key no secret can be made with, or is of a layout this SDK cannot read", async () => {
+    sealedToSecond();
+    mocked.isEncryptionKeyText.mockReturnValue(false);
+    expect(await standingOf({} as Transport, refutation)).toBe("unverifiable");
+    mocked.isEncryptionKeyText.mockReturnValue(true);
+    mocked.loadProfile.mockRejectedValue(new AccountVersionError("profile", 9, 1, 100));
+    expect(await standingOf({} as Transport, refutation)).toBe("unverifiable");
+    expect(mocked.openWithEsk).not.toHaveBeenCalled();
+  });
+
+  it("throws a transport error instead of calling the refutation unverifiable", async () => {
+    sealedToSecond();
+    const error = new SolanaError(SOLANA_ERROR__RPC__TRANSPORT_HTTP_ERROR, { headers: new Headers(), message: "Bad Gateway", statusCode: 502 });
+    mocked.loadProfile.mockRejectedValue(error);
+    await expect(standingOf({} as Transport, refutation)).rejects.toBe(error);
   });
 });

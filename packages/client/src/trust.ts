@@ -3,6 +3,7 @@ import { NATIVE_MINT } from "@intent-engine/core";
 import { splitN } from "@intent-engine/core/internal";
 import { HISTORY_LIMIT } from "./client-types.js";
 import { DELIVERY_PAGES, scan } from "./job-scan.js";
+import { isReadFailure } from "./read-failure.js";
 import { engineEvents, eventAuthority, intentHistory, type Settlement, settlementIn, splitClaim } from "./release-reads.js";
 import { counted, type Reputation, reputationOf, solBacked } from "./reputation.js";
 import type { EngineTransaction, Transport } from "./transport.js";
@@ -14,6 +15,8 @@ export const TRUST_PATHS = 3;
 export const TRUST_PAYER_READS = 8;
 const RESIDUAL = 1e-12;
 const PATH_STEPS = 10_000;
+
+export const readFailed = (payer: Address, error: Error): string => `the releases paid by ${payer} could not be read, so the trust they carry is left out: ${error.message}`;
 
 export type TrustPath = { wallets: Address[]; trust: number };
 
@@ -159,6 +162,7 @@ export async function trustOf(transport: Transport, reader: Address, worker: Add
   const read = new Set<Address>(seeds);
   const reputations = new Map<Address, Promise<Reputation>>();
   let complete = named.length <= maxWallets;
+  let failed: string | undefined;
   const reputation = (wallet: Address) => {
     const held = reputations.get(wallet) ?? reputationOf(transport, wallet, { pages, history });
     reputations.set(wallet, held);
@@ -197,8 +201,12 @@ export async function trustOf(transport: Transport, reader: Address, worker: Add
         read.add(to);
         weights.push({ to, weight });
       }
-    } catch {
+    } catch (error) {
+      if (!isReadFailure(error)) {
+        throw error;
+      }
       complete = false;
+      failed ??= readFailed(payer, error);
     }
     const total = known > cost ? known : cost;
     const kept: Edge[] = [];
@@ -224,6 +232,6 @@ export async function trustOf(transport: Transport, reader: Address, worker: Add
     complete,
     wallets: read.size,
     paths: score > 0 ? strongestPaths(seeds, worker, edges) : [],
-    ...(score > 0 ? {} : { reason: reasonFor(reader, seeds, worker, hops, edges) }),
+    ...(failed !== undefined ? { reason: failed } : score > 0 ? {} : { reason: reasonFor(reader, seeds, worker, hops, edges) }),
   };
 }

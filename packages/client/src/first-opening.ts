@@ -1,5 +1,5 @@
-import { type Address, getBase58Encoder } from "@solana/kit";
-import { AccountVersionError, type DeliveryKey, type DeliveryOpener } from "@intent-engine/core";
+import type { Address } from "@solana/kit";
+import type { DeliveryKey, DeliveryOpener } from "@intent-engine/core";
 import {
   announcementCommitment,
   CLAIM_BOARD_DISCRIMINATOR,
@@ -19,10 +19,10 @@ import { FirstOpeningRefused, type Refusal, type SealedSlot } from "./announce-e
 import { committeeKeys } from "./announce-keys.js";
 import { sha256Bytes } from "./announce.js";
 import { type AnnouncementList, type AnnouncementView, announcementsOf } from "./announcement-reads.js";
-import { loadProfile } from "./client-claims.js";
 import { NotSettleable } from "./client-errors.js";
 import { intentAddress, type IntentRef } from "./intent-ref.js";
 import { hex, type Proof, proofAt } from "./job-proofs.js";
+import { profileKeyOf, usableKey } from "./profile-key.js";
 import type { Transport } from "./transport.js";
 
 export type DeliveryOpeners = DeliveryOpener | readonly DeliveryOpener[];
@@ -82,14 +82,8 @@ export async function opensTo(announcement: AnnouncementView, delivered: Uint8Ar
 }
 
 async function currentFingerprint(transport: Transport, wallet: Address): Promise<Uint8Array | null> {
-  const profile = await loadProfile(transport, wallet).catch((error: unknown) => {
-    if (error instanceof AccountVersionError) {
-      return null;
-    }
-    throw error;
-  });
-  const text = profile?.encryptionKey ?? null;
-  return text === null ? null : keyFingerprintV4(Uint8Array.from(getBase58Encoder().encode(text)));
+  const key = usableKey(await profileKeyOf(transport, wallet));
+  return key === null ? null : keyFingerprintV4(key);
 }
 
 async function slotsOf(transport: Transport, announcement: AnnouncementView, head: delivery.BlobHead, wallets: readonly Address[]): Promise<SealedSlot[]> {

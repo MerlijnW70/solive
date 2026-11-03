@@ -1,9 +1,9 @@
 import type { Address } from "@solana/kit";
 import { type SealRecipient } from "@intent-engine/core";
-import { announcementCommitment, delivery, keyFingerprintV4, openWithEsk, parseEncryptionKey } from "@intent-engine/core/internal";
+import { announcementCommitment, delivery, keyFingerprintV4, openWithEsk } from "@intent-engine/core/internal";
 import { committeeKeys } from "./announce-keys.js";
 import type { RefutationView } from "./announcement-reads.js";
-import { loadProfile } from "./client-claims.js";
+import { profileKeyOf, usableKey } from "./profile-key.js";
 import type { Transport } from "./transport.js";
 
 export type RefutationStanding = "substantiated" | "unsubstantiated" | "unverifiable";
@@ -11,15 +11,6 @@ export type RefutationStanding = "substantiated" | "unsubstantiated" | "unverifi
 export type RefutationRecord = { refutation: Address; earlier: Address; earlierSeq: bigint; earlierWorker: Address; standing: RefutationStanding };
 
 const equal = (a: Uint8Array, b: Uint8Array): boolean => a.length === b.length && a.every((byte, i) => byte === b[i]);
-
-async function profileKey(transport: Transport, wallet: Address): Promise<Uint8Array | null> {
-  try {
-    const text = (await loadProfile(transport, wallet))?.encryptionKey ?? null;
-    return text === null ? null : parseEncryptionKey(text);
-  } catch {
-    return null;
-  }
-}
 
 async function recipientsOf(transport: Transport, refutation: RefutationView, head: delivery.BlobHead): Promise<SealRecipient[] | null> {
   const wallets = (await committeeKeys(transport, refutation.attestor))?.members ?? [refutation.attestor];
@@ -32,7 +23,7 @@ async function recipientsOf(transport: Transport, refutation: RefutationView, he
       recipients.push(wallet);
       continue;
     }
-    const key = await profileKey(transport, wallet);
+    const key = usableKey(await profileKeyOf(transport, wallet));
     if (key === null || !equal(await keyFingerprintV4(key), head.fps[i] ?? new Uint8Array())) {
       return null;
     }

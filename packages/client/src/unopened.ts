@@ -1,10 +1,10 @@
 import type { Address } from "@solana/kit";
-import { AccountVersionError, SdkError } from "@intent-engine/core";
-import { decodeEvent, parseEncryptionKey, profileAddress } from "@intent-engine/core/internal";
-import { loadProfile } from "./client-claims.js";
+import { SdkError } from "@intent-engine/core";
+import { decodeEvent, profileAddress } from "@intent-engine/core/internal";
 import { loadCommittee } from "./client-committee.js";
 import { creationSlotOf, openProofEscrows } from "./job-proofs.js";
 import { scan } from "./job-scan.js";
+import { profileKeyOf, usableKey } from "./profile-key.js";
 import type { EngineTransaction, Transport } from "./transport.js";
 
 type KeyEvent = { slot: bigint; key: Uint8Array | null };
@@ -84,18 +84,7 @@ async function historyOf(transport: Transport, wallet: Address, bound: bigint): 
   if (events.length > 0) {
     return { events, before: null };
   }
-  return { events, before: await currentKey(transport, wallet) };
-}
-
-async function currentKey(transport: Transport, wallet: Address): Promise<Uint8Array | null> {
-  const profile = await loadProfile(transport, wallet).catch((error: unknown) => {
-    if (error instanceof AccountVersionError) {
-      return null;
-    }
-    throw error;
-  });
-  const key = profile?.encryptionKey ?? null;
-  return key === null ? null : parseEncryptionKey(key);
+  return { events, before: usableKey(await profileKeyOf(transport, wallet)) };
 }
 
 const keyAt = (history: History, slot: bigint): Uint8Array | null => {
@@ -136,6 +125,14 @@ export async function escrowsJudgedBy(transport: Transport, wallet: Address): Pr
 
 export async function keylessJudges(transport: Transport, attestor: Address): Promise<Address[]> {
   const members = (await loadCommittee(transport, attestor))?.members ?? [attestor];
-  const keys = await Promise.all(members.map(async (member) => (await currentKey(transport, member).catch(() => null)) !== null));
-  return members.filter((_, at) => keys[at] !== true);
+  const keyless = await Promise.all(
+    members.map(async (member) => {
+      const found = await profileKeyOf(transport, member);
+      if (found.state === "outdated") {
+        throw found.error;
+      }
+      return found.state !== "published";
+    }),
+  );
+  return members.filter((_, at) => keyless[at] === true);
 }

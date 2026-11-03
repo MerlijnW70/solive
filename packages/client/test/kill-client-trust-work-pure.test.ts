@@ -88,6 +88,8 @@ describe("errOf", () => {
 
 const landed = (slot: bigint, extra: Partial<EngineTransaction> = {}): EngineTransaction => ({ signature: testSignature(`feedback-${slot}-${extra.memos?.join("") ?? ""}`), slot, blockTime: null, failed: false, emitted: [], ...extra });
 
+const released = landed(0n);
+
 describe("feedbackOf", () => {
   it("takes the earliest feedback from the owner, wherever it sits in the list, and the first of two in one slot", async () => {
     const [intent, owner] = await Promise.all([address(), address()]);
@@ -95,19 +97,34 @@ describe("feedbackOf", () => {
     const late = landed(9n, { memos: [memo(10)], memoSigners: [[owner]] });
     const early = landed(3n, { memos: [memo(70)], memoSigners: [[owner]] });
     const middle = landed(5n, { memos: [memo(40)], memoSigners: [[owner]] });
-    expect(feedbackOf([late, early, middle], intent, owner)).toBe(70);
-    expect(feedbackOf([early, middle, late], intent, owner)).toBe(70);
+    expect(feedbackOf([late, early, middle], intent, owner, released)).toBe(70);
+    expect(feedbackOf([early, middle, late], intent, owner, released)).toBe(70);
     const first = landed(4n, { memos: [memo(11)], memoSigners: [[owner]] });
     const second = landed(4n, { memos: [memo(22)], memoSigners: [[owner]] });
-    expect(feedbackOf([first, second], intent, owner)).toBe(11);
-    expect(feedbackOf([second, first], intent, owner)).toBe(22);
+    expect(feedbackOf([first, second], intent, owner, released)).toBe(11);
+    expect(feedbackOf([second, first], intent, owner, released)).toBe(22);
+  });
+
+  it("ignores an owner memo that landed before the release, by slot and by place in the newest-first list within its slot", async () => {
+    const [intent, owner] = await Promise.all([address(), address()]);
+    const memo = (score: number) => feedbackMemo({ intent, score });
+    const release = landed(6n, { memos: ["the release"] });
+    const before = landed(3n, { memos: [memo(5)], memoSigners: [[owner]] });
+    const olderInSlot = landed(6n, { memos: [memo(15)], memoSigners: [[owner]] });
+    const newerInSlot = landed(6n, { memos: [memo(60)], memoSigners: [[owner]] });
+    const after = landed(7n, { memos: [memo(90)], memoSigners: [[owner]] });
+    expect(feedbackOf([after, release, olderInSlot, before], intent, owner, release)).toBe(90);
+    expect(feedbackOf([release, olderInSlot, before], intent, owner, release)).toBeUndefined();
+    expect(feedbackOf([newerInSlot, release, olderInSlot, before], intent, owner, release)).toBe(60);
+    expect(feedbackOf([olderInSlot, before], intent, owner, release)).toBeUndefined();
+    expect(feedbackOf([before], intent, owner, landed(2n))).toBe(5);
   });
 
   it("orders by slot with a comparator that says less, greater and equal", async () => {
     const [intent, owner] = await Promise.all([address(), address()]);
     const memo = feedbackMemo({ intent, score: 5 });
     const pair = [landed(2n, { memos: [memo], memoSigners: [[owner]] }), landed(1n, { memos: [memo], memoSigners: [[owner]] })];
-    const compare = (await comparatorsUsedBy(() => feedbackOf(pair, intent, owner), "slot"))[0];
+    const compare = (await comparatorsUsedBy(() => feedbackOf(pair, intent, owner, released), "slot"))[0];
     expect(verdicts(compare, (slot) => landed(slot))).toEqual([-1, 1, 0]);
   });
 });

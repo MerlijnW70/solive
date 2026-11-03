@@ -1,21 +1,12 @@
 import type { Address } from "@solana/kit";
-import { AccountVersionError } from "@intent-engine/core";
-import { isEncryptionKeyText, parseEncryptionKey } from "@intent-engine/core/internal";
-import { loadProfile } from "./client-claims.js";
 import { loadCommittee } from "./client-committee.js";
+import { profileKeyOf, usableKey } from "./profile-key.js";
 import type { Transport } from "./transport.js";
 
 export type KeyedRecipient = { wallet: Address; encryptionKey: Uint8Array | null };
 
 export async function recipientOf(transport: Transport, wallet: Address): Promise<KeyedRecipient> {
-  const profile = await loadProfile(transport, wallet).catch((error: unknown) => {
-    if (error instanceof AccountVersionError) {
-      return null;
-    }
-    throw error;
-  });
-  const key = profile?.encryptionKey ?? null;
-  return { wallet, encryptionKey: key === null || !isEncryptionKeyText(key) ? null : parseEncryptionKey(key) };
+  return { wallet, encryptionKey: usableKey(await profileKeyOf(transport, wallet)) };
 }
 
 export async function sealRecipients(transport: Transport, wallets: readonly Address[]): Promise<KeyedRecipient[]> {

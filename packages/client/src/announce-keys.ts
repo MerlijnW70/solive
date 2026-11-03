@@ -6,14 +6,13 @@ import {
   decodeCommitteeAccount,
   INTENT_ENGINE_PROGRAM_ADDRESS,
   keyFingerprintV4,
-  parseEncryptionKey,
   saltMessage,
 } from "@intent-engine/core/internal";
 import { createdAccount } from "./accounts.js";
 import type { MessageSigner } from "./client-types.js";
 import { BadSaltSignature, NoMessageSigner, NotDeliverable, SECRET_BYTES, SECRET_RULE } from "./announce-errors.js";
-import { loadProfile } from "./client-claims.js";
 import { isDevice } from "./ledger-path.js";
+import { profileKeyOf } from "./profile-key.js";
 import type { Transport } from "./transport.js";
 
 export type CommitteeKeys = { address: Address; members: Address[]; synced: boolean; mask: number; fingerprints: Uint8Array[] };
@@ -62,14 +61,16 @@ export async function committeeKeys(transport: Transport, address: Address): Pro
 }
 
 export async function publishedKey(transport: Transport, wallet: Address, intent: Address): Promise<Uint8Array | null> {
-  const text = (await loadProfile(transport, wallet))?.encryptionKey ?? null;
-  if (text === null) {
-    return null;
-  }
-  try {
-    return parseEncryptionKey(text);
-  } catch {
-    throw new NotDeliverable(intent, "no-shared-secret", `cannot be announced: the profile of ${wallet} names the encryption key ${text}, with which no shared secret can be made`);
+  const found = await profileKeyOf(transport, wallet);
+  switch (found.state) {
+    case "published":
+      return found.key;
+    case "none":
+      return null;
+    case "outdated":
+      throw found.error;
+    case "invalid":
+      throw new NotDeliverable(intent, "no-shared-secret", `cannot be announced: the profile of ${wallet} names the encryption key ${found.text}, with which no shared secret can be made`);
   }
 }
 

@@ -4,9 +4,10 @@ import { getTransferSolInstruction } from "@solana-program/system";
 import { getMintEncoder, getMintSize } from "@solana-program/token";
 import { describe, expect, it } from "vitest";
 import { Kind, NATIVE_MINT, TOKEN_PROGRAM_ADDRESS } from "@intent-engine/core";
-import { findIntentPda, parseFeedbackMemo } from "@intent-engine/core/internal";
+import { feedbackMemo, findIntentPda, parseFeedbackMemo } from "@intent-engine/core/internal";
 import { createClient } from "../src/index.js";
 import { feedbackInstructions } from "../src/internal.js";
+import { memoInstruction } from "../src/job-memos.js";
 import { MEMO_PROGRAM_ADDRESS } from "../src/transport.js";
 import { svmTransport } from "../src/svm.js";
 import { world } from "./svm.js";
@@ -47,7 +48,7 @@ async function setup() {
     clock.slot += slots;
     w.chain.svm.setClock(clock);
   };
-  const job = async (owner: KeyPairSigner, judge: KeyPairSigner, worker: KeyPairSigner, sha256: string) => {
+  const job = async (owner: KeyPairSigner, judge: KeyPairSigner, worker: KeyPairSigner, sha256: string, beforeRelease?: (intent: Address) => Promise<void>) => {
     const { nonce } = await client.createIntent({
       signer: owner,
       params: { kind: Kind.AttestedResult, amountIn: PAY, minResult: 1n, maxResult: 1n, attestor: judge.address, specHash: SPEC, judgeFee: 0n },
@@ -56,6 +57,7 @@ async function setup() {
     });
     const [intent] = await findIntentPda({ owner: owner.address, nonce });
     const delivered = await announced(client, worker, intent, sha256);
+    await beforeRelease?.(intent);
     await client.settleProof({ judge, intent: { owner: owner.address, nonce }, ...delivered, result: 1n });
     return intent;
   };
@@ -104,6 +106,24 @@ describe("the standing of a worker, record by record", () => {
     await client.feedback({ owner: alice, intent: first, score: 60 });
     await client.feedback({ owner: bob, intent: second, score: 81 });
     expect((await client.reputation(worker.address)).feedback).toStrictEqual({ count: 2, average: 70.5 });
+  });
+
+  it("ignores a rating its payer sent before the release, in an earlier slot or the same one, and takes the one after it", async () => {
+    const { client, fresh, job, later, transport } = await setup();
+    const [worker, alice, bob, judge] = await Promise.all([fresh(), fresh(), fresh(), fresh()]);
+    const rateEarly = (owner: KeyPairSigner, score: number, slots: bigint) => async (intent: Address) => {
+      await transport.send([memoInstruction(owner, feedbackMemo({ intent, score })), getTransferSolInstruction({ source: owner, destination: intent, amount: 0n })], owner);
+      later(1n, slots);
+    };
+    const earlier = await job(alice, judge, worker, "c1".repeat(32), rateEarly(alice, 100, 3n));
+    const sameSlot = await job(bob, judge, worker, "c2".repeat(32), rateEarly(bob, 100, 0n));
+    expect((await client.reputation(worker.address)).feedback).toStrictEqual({ count: 0, average: null });
+    later(1n, 1n);
+    await client.feedback({ owner: alice, intent: earlier, score: 20 });
+    await client.feedback({ owner: bob, intent: sameSlot, score: 40 });
+    const rep = await client.reputation(worker.address);
+    expect(rep.feedback).toStrictEqual({ count: 2, average: 30 });
+    expect(rep.records.map((record) => record.feedback)).toStrictEqual([20, 40]);
   });
 
   it("counts a self-dealt release only as self-dealt, even when its payer was funded by the worker", async () => {
