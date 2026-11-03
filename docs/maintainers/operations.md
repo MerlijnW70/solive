@@ -549,6 +549,10 @@ The devnet members are files on one machine. Before mainnet:
 | `top_up.rs` | a migration top-up never lowers lamports and leaves the new size's rent plus the held stake | none, all inputs |
 | `line.rs` | join and pass keep `head <= tail`, never skip or repeat a place, and `waiting()` counts joined minus served; serving hands out the first present place | 4 steps; a line of up to 4 places for serving |
 
+## Compute-unit baseline
+
+The compute-unit gate in `tests/svm` fails a test whose measured units leave the range around `tests/svm/cu-baseline.json`. After a change that moves them on purpose, run `bash scripts/cu-rebaseline.sh` on Linux or WSL: it builds the program, reruns the gated tests and rewrites the baseline. Commit the new file with the change that caused it.
+
 ## Dependencies
 
 `bash scripts/supply-chain.sh` runs in the CI audit job and fails when:

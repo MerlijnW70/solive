@@ -43,7 +43,10 @@ fn cu_check(name: &str, measured: u64) -> TestResult {
     if cu_within(baseline, measured) {
         Ok(())
     } else {
-        Err(format!("{name} measured {measured} against baseline {baseline}").into())
+        Err(format!(
+            "{name} measured {measured} against baseline {baseline}; if the change is intended, run bash scripts/cu-rebaseline.sh"
+        )
+        .into())
     }
 }
 

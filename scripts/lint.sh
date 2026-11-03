@@ -5,6 +5,7 @@ bash scripts/identity.sh --check
 bash scripts/bans.sh
 bash scripts/docs-lint.sh
 bash scripts/comments.sh
+bash scripts/sizes.sh
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 pnpm --filter @intent-engine/core build

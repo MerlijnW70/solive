@@ -36,16 +36,7 @@ jobs:
       - name: rust
         run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-      - name: agave
-        env:
-          AGAVE_VERSION: v4.1.2
-          AGAVE_SHA256: 5991d027a686eb419a709a479178b33eb83501e8a2bfbf599a81a286bfcbf770
-        run: |
-          curl -sSfL -o "$RUNNER_TEMP/agave.tar.bz2" "https://github.com/anza-xyz/agave/releases/download/$AGAVE_VERSION/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
-          echo "$AGAVE_SHA256  $RUNNER_TEMP/agave.tar.bz2" | sha256sum --check --strict
-          mkdir -p "$HOME/agave"
-          tar -xjf "$RUNNER_TEMP/agave.tar.bz2" -C "$HOME/agave"
-          echo "$HOME/agave/solana-release/bin" >> "$GITHUB_PATH"
+      - uses: ./.github/actions/agave
       - name: anchor
         env:
           ANCHOR_REV: 84a63f9f7112b23581816436fbcf3f6c515779f9
@@ -57,14 +48,30 @@ jobs:
         with:
           node-version: 22
           cache: pnpm
+      - name: docker hub login
+        if: env.DOCKERHUB_USER != ''
+        env:
+          DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USER }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: printf '%s' "$DOCKERHUB_TOKEN" | docker login --username "$DOCKERHUB_USER" --password-stdin
       - name: judge sandbox image
-        run: docker pull node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
+        run: |
+          image=node:22-bookworm-slim@sha256:c3de60bf2f9dd0ac6370e6117950ff62d6e339527e7472301c9c78a017978392
+          for attempt in 1 2 3 4; do
+            docker pull "$image" && exit 0
+            sleep $((attempt * 20))
+          done
+          exit 1
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: ~/.cache/solive-fixtures
+          key: solive-fixtures-${{ hashFiles('scripts/fetch-*.sh') }}
       - name: check
         run: bash scripts/ci.sh
       - name: real validator
         run: bash scripts/validator-test.sh
       - name: packages
-        run: bash scripts/pack-test.sh
+        run: bash scripts/pack-test.sh pinned
 
   node-floor:
     if: github.event_name != 'schedule'
@@ -75,16 +82,7 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
         with:
           persist-credentials: false
-      - name: agave
-        env:
-          AGAVE_VERSION: v4.1.2
-          AGAVE_SHA256: 5991d027a686eb419a709a479178b33eb83501e8a2bfbf599a81a286bfcbf770
-        run: |
-          curl -sSfL -o "$RUNNER_TEMP/agave.tar.bz2" "https://github.com/anza-xyz/agave/releases/download/$AGAVE_VERSION/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
-          echo "$AGAVE_SHA256  $RUNNER_TEMP/agave.tar.bz2" | sha256sum --check --strict
-          mkdir -p "$HOME/agave"
-          tar -xjf "$RUNNER_TEMP/agave.tar.bz2" -C "$HOME/agave"
-          echo "$HOME/agave/solana-release/bin" >> "$GITHUB_PATH"
+      - uses: ./.github/actions/agave
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: intent-engine-verifiable
@@ -102,6 +100,10 @@ jobs:
           cache: pnpm
       - name: install
         run: pnpm install --frozen-lockfile
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: ~/.cache/solive-fixtures
+          key: solive-fixtures-${{ hashFiles('scripts/fetch-*.sh') }}
       - name: test
         run: |
           export INTENT_ENGINE_SO="$GITHUB_WORKSPACE/verifiable/intent_engine.so"
@@ -192,16 +194,7 @@ jobs:
       - name: rust
         run: rustup show active-toolchain || rustup toolchain install
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6
-      - name: agave
-        env:
-          AGAVE_VERSION: v4.1.2
-          AGAVE_SHA256: 5991d027a686eb419a709a479178b33eb83501e8a2bfbf599a81a286bfcbf770
-        run: |
-          curl -sSfL -o "$RUNNER_TEMP/agave.tar.bz2" "https://github.com/anza-xyz/agave/releases/download/$AGAVE_VERSION/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
-          echo "$AGAVE_SHA256  $RUNNER_TEMP/agave.tar.bz2" | sha256sum --check --strict
-          mkdir -p "$HOME/agave"
-          tar -xjf "$RUNNER_TEMP/agave.tar.bz2" -C "$HOME/agave"
-          echo "$HOME/agave/solana-release/bin" >> "$GITHUB_PATH"
+      - uses: ./.github/actions/agave
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
         with:
           name: intent-engine-verifiable
@@ -219,6 +212,10 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: proptest
         run: cargo test -p intent-core --tests --locked
+      - uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684
+        with:
+          path: ~/.cache/solive-fixtures
+          key: solive-fixtures-${{ hashFiles('scripts/fetch-*.sh') }}
       - name: fast-check
         run: |
           export INTENT_ENGINE_SO="$GITHUB_WORKSPACE/verifiable/intent_engine.so"
@@ -315,3 +312,42 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: bash scripts/dco.sh "$BASE_SHA" "$HEAD_SHA"
+
+  newest-kit:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - name: rust
+        run: rustup show active-toolchain || rustup toolchain install
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: install
+        run: pnpm install --frozen-lockfile
+      - name: newest kit
+        run: bash scripts/pack-test.sh newest
+
+  docs:
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: install
+        run: pnpm install --frozen-lockfile
+      - name: build
+        run: pnpm run docs:build

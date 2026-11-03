@@ -286,14 +286,14 @@ describe("policy pages", () => {
     const root = JSON.parse(read("package.json")) as { engines: { node: string }; packageManager: string };
     const [, major, minor] = /^>=(\d+)\.(\d+)\.0$/.exec(root.engines.node) ?? [];
     expect(contributing).toContain(`- Rust ${pick(/^channel = "([^"]+)"$/m, read("rust-toolchain.toml"))}, from \`rust-toolchain.toml\``);
-    expect(contributing).toContain(`- Agave (Solana CLI) ${pick(/AGAVE_VERSION: (\S+)/, ci)}`);
+    expect(contributing).toContain(`- Agave (Solana CLI) ${pick(/AGAVE_VERSION: (\S+)/, read(".github/actions/agave/action.yml"))}`);
     expect(contributing).toContain(`- Anchor CLI ${pick(/^anchor_version = "([^"]+)"$/m, read("Anchor.toml"))}`);
     expect(contributing).toContain(`- Node.js ${major}.${minor} or later and pnpm ${root.packageManager.replace("pnpm@", "")}`);
     const scripts = [...contributing.matchAll(/scripts\/[\w-]+\.sh/g)].map((m) => m[0]);
     expect(scripts.length).toBeGreaterThan(4);
     expect(scripts.filter((path) => !existsSync(`${ROOT}/${path}`))).toEqual([]);
     const jobs = [...ci.slice(ci.indexOf("\njobs:")).matchAll(/^ {2}([\w-]+):$/gm)].map((m) => m[1]);
-    expect(jobs).toEqual(["check", "node-floor", "audit", "verifiable", "deployed", "randomized", "attest", "fuzz", "kani", "proofs", "sign-off"]);
+    expect(jobs).toEqual(["check", "node-floor", "audit", "verifiable", "deployed", "randomized", "attest", "fuzz", "kani", "proofs", "sign-off", "newest-kit", "docs"]);
     const randomized = ci.slice(ci.indexOf("  randomized:"), ci.indexOf("  attest:"));
     expect(randomized).toContain("if: github.event_name == 'schedule'");
     expect(randomized).toContain("FC_SEED: random");

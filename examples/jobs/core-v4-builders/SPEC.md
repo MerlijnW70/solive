@@ -16,7 +16,7 @@ Read first: the program in `programs/intent_engine/src` (instructions `announce_
 ## Rules
 
 - Follow `CONTRIBUTING.md`: no code comments, nothing bypassed. Do not change the program, the Rust crates, or the generated client by hand. Keep TypeScript files under about 500 lines.
-- Only packages/core changes. Do not touch packages/core/src/sealed-delivery.ts; another job rewrites the sealed format in parallel. New source files go into the `sources:` list of your worktree's copy of `packages/core/noha.yaml`.
+- Only packages/core changes. Do not touch packages/core/src/sealed-delivery.ts; another job rewrites the sealed format in parallel. New source files go into the package's source list file in your worktree.
 - The other packages (client, solver, cli) are adapted by later jobs and may fail to typecheck against your core; that is expected on this branch.
 
 ## Acceptance

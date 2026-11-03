@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 source "$(dirname "$0")/env.sh"
+mode="${1:-pinned}"
+[[ "$mode" == pinned || "$mode" == newest ]] || { echo "usage: pack-test.sh [pinned|newest]" >&2; exit 2; }
 packages=(core client solver cli)
 version="$(node -p "require('./packages/cli/package.json').version")"
 litesvm="$(node -p "require('./packages/client/package.json').devDependencies.litesvm")"
 kit="$(node -p "require('./packages/client/package.json').devDependencies['@solana/kit']")"
 kit_range="$(node -p "require('./packages/client/package.json').peerDependencies['@solana/kit']")"
-newest_kit="$(npm view "@solana/kit@$kit_range" version --json | node -e 'console.log([JSON.parse(require("node:fs").readFileSync(0, "utf8"))].flat().at(-1));')"
-[[ "$newest_kit" =~ ^8\.[0-9]+\.[0-9]+$ ]] || { echo "the newest @solana/kit in $kit_range is $newest_kit, not an 8.x release" >&2; exit 1; }
+if [[ "$mode" == newest ]]; then
+  newest_kit="$(npm view "@solana/kit@$kit_range" version --json | node -e 'console.log([JSON.parse(require("node:fs").readFileSync(0, "utf8"))].flat().at(-1));')"
+  [[ "$newest_kit" =~ ^8\.[0-9]+\.[0-9]+$ ]] || { echo "the newest @solana/kit in $kit_range is $newest_kit, not an 8.x release" >&2; exit 1; }
+fi
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/packs"
@@ -112,6 +116,10 @@ if ((await world.client.intent(plan.intent))?.intent.status !== IntentStatus.Ope
     [[ "$(node -p "JSON.parse(require('node:fs').readFileSync('node_modules/@solana/kit/package.json', 'utf8')).version")" == "$with_kit" ]] || { echo "the app installed another @solana/kit than $with_kit" >&2; exit 1; }
   )
 }
-check_app "$kit"
-check_app "$newest_kit"
-echo "packed and installed @intent-engine $version next to @solana/kit@$kit and @solana/kit@$newest_kit, the newest in $kit_range: imports, requires, a test world on the shipped program, a plan signed through kit, the binary and one @solana/kit"
+if [[ "$mode" == newest ]]; then
+  check_app "$newest_kit"
+  echo "packed and installed @intent-engine $version next to @solana/kit@$newest_kit, the newest in $kit_range"
+else
+  check_app "$kit"
+  echo "packed and installed @intent-engine $version next to @solana/kit@$kit: imports, requires, a test world on the shipped program, a plan signed through kit, the binary and one @solana/kit"
+fi

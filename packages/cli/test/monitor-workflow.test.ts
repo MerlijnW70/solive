@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
+import { parse as parseYaml } from "yaml";
 import { NATIVE_MINT } from "@intent-engine/core";
 import { INTENT_ENGINE_PROGRAM_ADDRESS } from "@intent-engine/core/internal";
 import { parse } from "../src/args.js";
@@ -76,6 +77,19 @@ describe("the hosted monitor", () => {
     expect(WORKFLOW).toContain("SECOND_RPC: ${{ secrets.SECOND_DEVNET_RPC }}");
     expect(WORKFLOW).toContain("if: env.SECOND_RPC != ''");
     expect(WORKFLOW).not.toMatch(/alchemy\.com|api-key|alch_/i);
+  });
+
+  it("fails a hung monitor step before the job times out, so the run goes red and alerts", () => {
+    const job = (parseYaml(WORKFLOW) as { jobs: { devnet: { "timeout-minutes": number; steps: { run?: string; "timeout-minutes"?: number }[] } } }).jobs.devnet;
+    const monitors = job.steps.filter((step) => (step.run ?? "").includes(" monitor "));
+    expect(monitors).toHaveLength(2);
+    for (const step of monitors) {
+      expect(step["timeout-minutes"]).toBeGreaterThan(0);
+      expect(step["timeout-minutes"]).toBeLessThan(job["timeout-minutes"]);
+    }
+    const total = monitors.reduce((sum, step) => sum + (step["timeout-minutes"] ?? 0), 0);
+    const setup = 1;
+    expect(total + setup).toBeLessThan(job["timeout-minutes"]);
   });
 
   it("baselines the deployed program with a hash the monitor can compare", () => {

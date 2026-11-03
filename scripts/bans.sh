@@ -28,4 +28,15 @@ if [[ "$delegate_users" != "programs/intent_engine/src/instructions/create_inten
   echo "delegate seed used outside create_intent_signed, create_intent_by_agent and their shared draw: $delegate_users"
   status=1
 fi
+tool_head="no"
+tool_tail="ha"
+tool_name="${tool_head}${tool_tail}"
+if git grep -niwE "$tool_name" -- . ; then
+  echo "a private tool's name is in a tracked file; say \"the package's source list file\""
+  status=1
+fi
+if git ls-files | grep -iE "(^|[/._-])${tool_name}([/._-]|$)"; then
+  echo "a file named after a private tool is tracked"
+  status=1
+fi
 exit "$status"

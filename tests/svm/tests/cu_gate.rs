@@ -104,7 +104,7 @@ fn a_batch_records_every_measurement_and_reports_only_the_drifting_ones() -> Tes
     .to_string();
     assert_eq!(
         err,
-        format!("close_spl measured {drifted} against baseline {close}")
+        format!("close_spl measured {drifted} against baseline {close}; if the change is intended, run bash scripts/cu-rebaseline.sh")
     );
     assert_eq!(
         std::fs::read_to_string(dir.join("cancel_spl"))?,

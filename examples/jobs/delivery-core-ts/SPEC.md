@@ -13,7 +13,7 @@ The program is moving delivery announcements on chain (delivery v4). The pure ru
 ## Rules
 
 - Follow `CONTRIBUTING.md`: no code comments, nothing bypassed. Do not change the program or any Rust under `crates/intent-core/src`; only the differential test files on the Rust side change. Keep TypeScript files under about 500 lines.
-- packages/core/src/delivery.ts is a new source file: add it to the `sources:` list of your worktree's copy of `packages/core/noha.yaml`, or the commit hook refuses the commit. Say in your report that you did.
+- packages/core/src/delivery.ts is a new source file: add it to the package's source list file in your worktree, or the commit hook refuses the commit. Say in your report that you did.
 - Do not touch `packages/core/src/sealed-delivery.ts`; the sealed format changes in a later job.
 
 ## Acceptance

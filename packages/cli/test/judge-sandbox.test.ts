@@ -153,7 +153,7 @@ describe("the judge sandbox", () => {
     expect(existsSync(marker)).toBe(false);
     expect(SANDBOX_IMAGE).toMatch(/^node:22-bookworm-slim@sha256:[0-9a-f]{64}$/);
     const ci = readFileSync(join(ROOT, ".github/workflows/ci.yml"), "utf8");
-    expect(ci.slice(ci.indexOf("  check:"), ci.indexOf("  node-floor:"))).toContain(`run: docker pull ${SANDBOX_IMAGE}\n`);
+    expect(ci.slice(ci.indexOf("  check:"), ci.indexOf("  node-floor:"))).toContain(`image=${SANDBOX_IMAGE}\n`);
     expect(status(j.intent)).toBe(IntentStatus.Open);
   });
 

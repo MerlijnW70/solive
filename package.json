@@ -9,6 +9,11 @@
   "scripts": {
     "codegen": "pnpm -r codegen",
     "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "docs:build": "vitepress build docs"
+  },
+  "devDependencies": {
+    "vitepress": "1.6.4",
+    "yaml": "2.9.1"
   }
 }

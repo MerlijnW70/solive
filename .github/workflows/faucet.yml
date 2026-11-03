@@ -33,17 +33,8 @@ jobs:
         if: github.event_name == 'issues' || steps.waiting.outputs.open != '0'
         with:
           persist-credentials: false
-      - name: agave
+      - uses: ./.github/actions/agave
         if: github.event_name == 'issues' || steps.waiting.outputs.open != '0'
-        env:
-          AGAVE_VERSION: v4.1.2
-          AGAVE_SHA256: 5991d027a686eb419a709a479178b33eb83501e8a2bfbf599a81a286bfcbf770
-        run: |
-          curl -sSfL -o "$RUNNER_TEMP/agave.tar.bz2" "https://github.com/anza-xyz/agave/releases/download/$AGAVE_VERSION/solana-release-x86_64-unknown-linux-gnu.tar.bz2"
-          echo "$AGAVE_SHA256  $RUNNER_TEMP/agave.tar.bz2" | sha256sum --check --strict
-          mkdir -p "$HOME/agave"
-          tar -xjf "$RUNNER_TEMP/agave.tar.bz2" -C "$HOME/agave"
-          echo "$HOME/agave/solana-release/bin" >> "$GITHUB_PATH"
       - name: send
         if: github.event_name == 'issues' || steps.waiting.outputs.open != '0'
         env:

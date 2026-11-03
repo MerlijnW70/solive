@@ -28,7 +28,7 @@ Secrets come from the worker's existing salt signature `sig` (an ed25519 signatu
 ## Rules
 
 - Follow `CONTRIBUTING.md`: no code comments, nothing bypassed. Use WebCrypto (`crypto.subtle`, X25519, HKDF, AES-GCM) as the v3 code does; add no dependency. Keep TypeScript files under about 500 lines.
-- Only packages/core changes; do not touch fill-builders.ts, events.ts, versions.ts, pdas.ts or committee.ts (another job edits those in parallel). New source files go into the `sources:` list of your worktree's copy of `packages/core/noha.yaml`.
+- Only packages/core changes; do not touch fill-builders.ts, events.ts, versions.ts, pdas.ts or committee.ts (another job edits those in parallel). New source files go into the package's source list file in your worktree.
 
 ## Acceptance
 

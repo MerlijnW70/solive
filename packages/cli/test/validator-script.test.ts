@@ -128,7 +128,7 @@ describe.skipIf(process.platform === "win32")("the real validator script", () =>
 
   it("runs in the CI job that installs agave", () => {
     const check = CI.slice(CI.indexOf("  check:"), CI.indexOf("  node-floor:"));
-    expect(check).toContain("solana-release/bin");
+    expect(check).toContain("uses: ./.github/actions/agave");
     expect(check).toContain("run: bash scripts/validator-test.sh");
     expect(check.indexOf("run: bash scripts/ci.sh")).toBeLessThan(check.indexOf("run: bash scripts/validator-test.sh"));
   });
