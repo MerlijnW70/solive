@@ -4,7 +4,7 @@ import { createExt, encodeParams, isMemoUrl, MEMO_URL_RULE, partnerOf, type Sign
 import { type Transport } from "@intent-engine/client";
 import { loadConfig, memoInstruction, mintOf, plainHttpOnPublic } from "@intent-engine/client/internal";
 import { tool } from "./names.js";
-import { SPEC_URL_PLAIN } from "./create.js";
+import { SPEC_URL_PLAIN, specUrlRefusal } from "./create.js";
 import { AgentRefusal } from "./problems.js";
 import { type Order, orderSchema, partnerSchema } from "./shapes.js";
 import { account, amount, InvalidInput, optional, text, time } from "./schema.js";
@@ -51,8 +51,9 @@ export async function publishedUrl(transport: Transport, params: IntentParams, u
   if (url === undefined) {
     return undefined;
   }
-  if (params.kind !== Kind.AttestedResult || params.specHash.every((b) => b === 0)) {
-    throw new InvalidInput([{ path: "spec_url", message: "needs an attested order with spec_hash" }]);
+  const refusal = specUrlRefusal(params);
+  if (refusal !== undefined) {
+    throw new InvalidInput([{ path: "spec_url", message: refusal }]);
   }
   if (!isMemoUrl(url)) {
     throw new InvalidInput([{ path: "spec_url", message: `must be ${MEMO_URL_RULE}` }]);

@@ -17,6 +17,8 @@ export const refutationItem = object({
   standing: choice(STANDINGS, "substantiated: the earlier announcement opens, at every slot, to the paid work; only those count against every wallet the release paid"),
 });
 
+export const STANDING_INCOMPLETE = "the announcer's record was not read in full, so a refutation of this release may exist that is not listed";
+
 export const standingOutput = {
   announcement: optional(account("the announcement the release paid")),
   seq: optional(amount("its place among the escrow's announcements")),
@@ -27,6 +29,7 @@ export const standingOutput = {
   refutations: optional(list(refutationItem, MAX_STANDING, "refutations of the paid announcement, with their standing")),
   refuted_by: optional(account("a substantiated refutation: someone announced the same work earlier, so this release counts against every wallet it paid, the announcer and any co-authors")),
   standing_complete: optional(flag("false when the announcer's record could not be read in full, so refutations may be missing")),
+  standing_note: optional(text("present when standing_complete is false: what is missing and why it matters")),
   unreadable: optional(list(object({ account: account(), reason: text() }), MAX_STANDING, "refutations or announcements of this release whose account has a layout this version cannot read; while any is, standing_complete is false")),
 };
 
@@ -65,7 +68,7 @@ export async function releaseStanding(transport: Transport, intent: Address, pai
           })),
           ...(record.refutedBy === undefined ? {} : { refuted_by: record.refutedBy }),
         }),
-    ...(record === undefined || reputation?.complete !== true || unreadable.length > 0 ? { standing_complete: false } : {}),
+    ...(record === undefined || reputation?.complete !== true || unreadable.length > 0 ? { standing_complete: false, standing_note: STANDING_INCOMPLETE } : {}),
     ...(unreadable.length === 0 ? {} : { unreadable }),
   };
 }

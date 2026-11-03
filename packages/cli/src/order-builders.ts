@@ -12,6 +12,7 @@ import {
   sha256Of,
   timeOf,
   UsageError,
+  encryptionKeypairOf,
 } from "./arg-values.js";
 import type { Command, FlowName, Remote, ToolInput } from "./command-types.js";
 import { MAX_PARTNER_BPS } from "@intent-engine/core/internal";
@@ -161,7 +162,7 @@ export function mandate(sub: string | undefined, kind: string | undefined, remot
 export const SPEC_HASH_FORMAT = "--spec-hash must be the spec's sha256 as 64 hex digits";
 export const needsSpecHash = (option: string) => `--${option} needs --spec-hash, which makes the attested escrow a proof escrow`;
 
-const PROOF_OPTIONS = ["spec-hash", "judge-fee", "spec-url", "spec-file", "no-publish-spec"] as const;
+const PROOF_OPTIONS = ["spec-hash", "judge-fee", "spec-url", "spec-file", "no-publish-spec", "allow-wrong-spec", "encryption-keypair"] as const;
 
 export function createTerms(kind: string | undefined, values: Values): ToolInput {
   const base = terms(kind, values);
@@ -191,6 +192,8 @@ export function createTerms(kind: string | undefined, values: Values): ToolInput
     ...optionalField(values, "spec-url", "spec_url", (v, n) => memoUrlOf(required(v, n), "spec-url")),
     ...optionalField(values, "spec-file", "spec_file", required),
     ...(values["no-publish-spec"] === true ? { publish_spec: false } : {}),
+    ...(values["allow-wrong-spec"] === true ? { allow_wrong_spec: true } : {}),
+    ...(values["encryption-keypair"] === undefined ? {} : { encryption_keypair: encryptionKeypairOf(values).encryptionKeypairs }),
     ...payTo,
   };
 }

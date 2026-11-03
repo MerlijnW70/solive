@@ -7,7 +7,7 @@ import { follow, followGap, type Runtime } from "../src/commands.js";
 import { execute, FlowRefused } from "../src/flows.js";
 import { renderText } from "../src/render.js";
 import { CLUSTERS, ENV_KEYPAIR, ENV_URL } from "../src/args.js";
-import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main, unreachable } from "../src/main.js";
+import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, main, NO_NODE_SET, unreachable } from "../src/main.js";
 import { cli, h, runtime, transport, type World } from "./harness.js";
 import { flowCreate, flowWorld } from "./flows-kit.js";
 
@@ -36,7 +36,10 @@ describe("command line flows", () => {
       }),
     };
     const code = await main(["show", "config"], down, { out: () => undefined, err: (t) => err.push(t) });
-    expect([code, err]).toEqual([EXIT_FAILED, [unreachable("http://127.0.0.1:8899")]]);
+    expect([code, err]).toEqual([EXIT_FAILED, [NO_NODE_SET("http://127.0.0.1:8899")]]);
+    const named: string[] = [];
+    const chosen = await main(["show", "config", "--url", "localnet"], down, { out: () => undefined, err: (t) => named.push(t) });
+    expect([chosen, named]).toEqual([EXIT_FAILED, [unreachable("http://127.0.0.1:8899")]]);
     expect(unreachable("x")).toBe(
       "cannot reach the RPC node at x; check your network connection and that this endpoint is up, or pass another --url or set INTENT_ENGINE_URL",
     );

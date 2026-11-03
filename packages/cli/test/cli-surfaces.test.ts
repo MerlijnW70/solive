@@ -20,6 +20,7 @@ import { RELEASE_UNKNOWN } from "../src/agent/wallet.js";
 import { EXIT_FAILED, EXIT_OK, EXIT_USAGE, PREVIEW_ONLY } from "../src/main.js";
 import { ata, balance, cli, ESCROW, funded, h, NOW, send, setNow, world, type World } from "./harness.js";
 import { type Json } from "./cli-kit.js";
+import { STANDING_INCOMPLETE } from "../src/agent/wallet/standing.js";
 
 describe("the cli reaches what the other surfaces do", () => {
   let w: World;
@@ -307,6 +308,7 @@ describe("the cli reaches what the other surfaces do", () => {
       seq: "4",
       announcer: worker.address,
       standing_complete: false,
+      standing_note: STANDING_INCOMPLETE,
       paid_to: worker.address,
       payee,
       paid: formatAmount(2_500_000n, 6),

@@ -16,6 +16,7 @@ import { LAMPORTS_PER_SOL } from "../src/wallet.js";
 import { stillUnknown } from "../src/agent/wallet/receipt.js";
 import { creation, FEE_BPS, h, transport } from "./harness.js";
 import { PAGED_ADDRESS, attested, call, connect, created, createdFrom, deliveryReleased, fresh, indexing, ok, pagedThrough, releasedEscrow, tag, tokenAccountAt, transferSignature, zeroTransfers } from "./agent-wallet-kit.js";
+import { STANDING_INCOMPLETE } from "../src/agent/wallet/standing.js";
 
 describe("the wallet server's receipts", () => {
   let client: Client;
@@ -68,6 +69,7 @@ describe("the wallet server's receipts", () => {
       seq: "1",
       announcer: worker,
       standing_complete: false,
+      standing_note: STANDING_INCOMPLETE,
     });
     const created = getIntentCreatedEventEncoder().encode({
       intent,

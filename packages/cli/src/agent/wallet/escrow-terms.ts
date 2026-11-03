@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
-import { formatAmount } from "@intent-engine/core";
+import { type DeliveryOpener, formatAmount } from "@intent-engine/core";
 import { isSealed, MAX_CLAIM_SECS, MAX_CLAIM_STAKE, MIN_CLAIM_STAKE, sealedTo } from "@intent-engine/core/internal";
 import { loadCommittee, MAX_SPEC_BYTES } from "@intent-engine/client/internal";
 import { tooLarge } from "../../delivery-fetch.js";
@@ -16,7 +16,7 @@ export const SPEC_TOO_LARGE = `spec_url ${tooLarge(MAX_SPEC_BYTES)}, the most ${
 export const notSealedTo = (missing: readonly Address[], committee: boolean): string =>
   `spec_url holds a spec not sealed to the ${committee ? "committee members" : "attestor"} ${missing.join(", ")}, so the work cannot be judged; seal it again to ${committee ? "every member" : "the attestor"}`;
 
-type Preflight = { lines: string[]; readers: string[] };
+type Preflight = { lines: string[]; readers: string[]; wrong?: true };
 
 async function unreadBy(ctx: AgentContext, bytes: Uint8Array, attestor: Address): Promise<string[]> {
   const recipients = new Set<string>(sealedTo(bytes));
@@ -25,20 +25,21 @@ async function unreadBy(ctx: AgentContext, bytes: Uint8Array, attestor: Address)
   return missing.length === 0 ? [] : [notSealedTo(missing, committee !== null)];
 }
 
-export async function specPreflight(ctx: AgentContext, found: SpecRead, specHash: string, attestor: Address): Promise<Preflight> {
+export async function specPreflight(ctx: AgentContext, found: SpecRead, specHash: string, attestor: Address, openers?: readonly DeliveryOpener[]): Promise<Preflight> {
   if ("problem" in found) {
     return { lines: [found.problem === tooLarge(MAX_SPEC_BYTES) ? SPEC_TOO_LARGE : `spec_url ${found.problem}; publish it or workers cannot read the job`], readers: [] };
   }
   const sealed = isSealed(found.bytes);
   const lines = sealed ? await unreadBy(ctx, found.bytes, attestor) : [];
   const readers = sealed ? [...new Set<string>(sealedTo(found.bytes))].sort() : [];
-  const opened = await openedSpec(ctx, found.bytes);
+  const opened = await openedSpec(ctx, found.bytes, openers);
   if (opened === undefined) {
     return { lines: [...lines, SEALED_UNCHECKED], readers };
   }
   const sha256 = createHash("sha256").update(opened).digest("hex");
   if (sha256 !== specHash.toLowerCase()) {
     lines.push(`spec_url ${opened === found.bytes ? "hashes" : "opens to a spec that hashes"} to ${sha256}, not spec_hash ${specHash}; publish the exact bytes, or fix spec_hash`);
+    return { lines, readers, wrong: true };
   }
   return { lines, readers };
 }

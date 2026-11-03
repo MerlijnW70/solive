@@ -125,7 +125,7 @@ async function firstReleased(transport: Transport, escrows: readonly Escrow[]): 
 }
 
 export const paidOther = (wallets: readonly Address[], self: Address) =>
-  `this release paid ${wallets.join(", ")}, not this wallet ${self}: matches and valid describe the recorded work, and this wallet was not paid for it`;
+  `this release paid ${wallets.join(", ")}, not this wallet ${self}: matches describes the recorded work, and this wallet was not paid for it`;
 
 function forWallet(receipt: Receipt, self: Address): Receipt {
   const paid = (state: Paid): { paid_this_wallet?: boolean } => {

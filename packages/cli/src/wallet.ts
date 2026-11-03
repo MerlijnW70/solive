@@ -64,12 +64,13 @@ export const pasteAt = (address: string) => `${pasteFirst(address)}, then run se
 export const APP_WAY = (address: string) => `send devnet SOL to ${address} from any wallet app switched to devnet; it arrives at once`;
 export const WHY_EMPTY = "the instant faucet is out of SOL";
 export const WHY_LIMITED = "the instant faucet's rate limit applies to this address or network";
+export const WHY_DAILY = "the instant faucet has sent all the drips it allows today, for every address";
 export const WHY_OTHER = "the instant faucet sent no SOL";
 export const WHY_AIRDROP = "devnet refused the airdrop";
 export const whyShort = (dripped: InstantFaucet | null, declined: boolean): string | undefined => {
   const reasons: string[] = [];
   if (dripped !== null && "refused" in dripped) {
-    reasons.push(dripped.kind === "empty" ? WHY_EMPTY : dripped.kind === "limited" ? WHY_LIMITED : WHY_OTHER);
+    reasons.push(dripped.kind === "empty" ? WHY_EMPTY : dripped.kind === "limited" ? WHY_LIMITED : dripped.kind === "daily" ? WHY_DAILY : WHY_OTHER);
   }
   if (declined) {
     reasons.push(WHY_AIRDROP);

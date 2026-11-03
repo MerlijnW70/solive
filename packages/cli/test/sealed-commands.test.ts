@@ -127,7 +127,7 @@ describe("spec", () => {
     const stranger = await cli(["spec", "--intent", intent, "--keypair", "stranger.json"], keys);
     expect([stranger.code, stranger.err]).toEqual([EXIT_FAILED, `the spec at ${url} is sealed to 2 invited wallets; this wallet is not one of them`]);
     const none = await cli(["spec", "--intent", owner.address], keys);
-    expect([none.code, none.err]).toEqual([EXIT_FAILED, `the escrow ${owner.address} publishes no spec url, or is not a proof escrow; ask its owner for the spec`]);
+    expect([none.code, none.err]).toEqual([EXIT_FAILED, `the escrow ${owner.address} is not a proof escrow, or no source asked served its spec; ask its owner for the spec`]);
   }, 60_000);
 
   it("says when a job's spec cannot be fetched", async () => {

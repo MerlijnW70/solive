@@ -147,6 +147,7 @@ export const OPTIONS = {
   "spec-url": { type: "string" },
   "spec-file": { type: "string" },
   "no-publish-spec": { type: "boolean" },
+  "allow-wrong-spec": { type: "boolean" },
   result: { type: "string" },
   close: { type: "boolean" },
   release: { type: "string" },
@@ -211,7 +212,7 @@ export const PROFILE_OPTIONS = { ...OPTIONS, wallet: { type: "string" } } as con
 
 export const REPEATABLE: ReadonlySet<string> = new Set(["max-fill", "min-balance", "vote", "seed", "encryption-keypair"]);
 
-export type Flag = "dry-run" | "fund-accounts" | "yes" | "all" | "help" | "debug" | "version" | "follow" | "create" | "wallet" | "watch" | "stats" | "close" | "once" | "plain-node" | "all-tools" | "unclaimed" | "no-confirm-url" | "faucet" | "allow-http-registry" | "no-setup" | "sandbox-gpu" | "i-trust-this-work" | "no-publish-spec";
+export type Flag = "dry-run" | "fund-accounts" | "yes" | "all" | "help" | "debug" | "version" | "follow" | "create" | "wallet" | "watch" | "stats" | "close" | "once" | "plain-node" | "all-tools" | "unclaimed" | "no-confirm-url" | "faucet" | "allow-http-registry" | "no-setup" | "sandbox-gpu" | "i-trust-this-work" | "no-publish-spec" | "allow-wrong-spec";
 export type Many = "max-fill" | "min-balance" | "vote" | "seed" | "encryption-keypair";
 export type StringKey = Exclude<keyof typeof OPTIONS, Flag | Many>;
 export type Values = { [K in StringKey]?: string | undefined } & { [K in Exclude<Flag, "wallet">]?: boolean | undefined } & {
@@ -331,6 +332,8 @@ export const ACCEPTS: Record<string, readonly (keyof typeof OPTIONS)[]> = {
     "spec-url",
     "spec-file",
     "no-publish-spec",
+    "allow-wrong-spec",
+    "encryption-keypair",
     "pay-to",
     "partner",
     "partner-bps",

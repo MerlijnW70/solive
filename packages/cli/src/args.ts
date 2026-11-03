@@ -12,6 +12,9 @@ import {
   encryptionKeypairOf,
   mcpEncryptionKeypair,
   mcpFeePayer,
+  MISSING_KEYPAIR,
+  NO_WALLET,
+  PASS_KEYPAIR,
   key,
   mintList,
   named,
@@ -41,7 +44,7 @@ import {
   walletLimits,
 } from "./command-builders.js";
 import { createTerms, mandate, terms } from "./order-builders.js";
-import { USAGE } from "./arg-usage.js";
+import { isCommand, noSuchCommand, USAGE } from "./arg-usage.js";
 import { optionsFor, trustOf } from "./trust-args.js";
 import { monitorOf } from "./monitor-args.js";
 import { jobArgsOf } from "./job-args.js";
@@ -122,6 +125,17 @@ export const takesSavedConfirm = (verb: string | undefined, sub: string | undefi
   verb === "judge" || verb === "mcp" || (verb === "committee" && sub === "release");
 
 export function parse(argv: readonly string[], env: Env = {}): Command {
+  try {
+    return parseCommand(argv, env);
+  } catch (error) {
+    if (error instanceof UsageError && error.message === MISSING_KEYPAIR) {
+      throw new UsageError(env[ENV_KEYPAIR] === undefined ? NO_WALLET : PASS_KEYPAIR);
+    }
+    throw error;
+  }
+}
+
+function parseCommand(argv: readonly string[], env: Env): Command {
   noRepeats(argv);
   let parsed;
   try {
@@ -131,6 +145,9 @@ export function parse(argv: readonly string[], env: Env = {}): Command {
   }
   const values: Values = { ...parsed.values };
   const [verb, sub, third, extra] = parsed.positionals;
+  if (verb === "help" && sub !== undefined && !isCommand(sub)) {
+    throw new UsageError(noSuchCommand(sub));
+  }
   if (verb === "help" || values.help === true) {
     return { name: "help", verb: verb === "help" ? sub : verb };
   }

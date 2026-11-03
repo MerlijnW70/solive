@@ -13,7 +13,7 @@ import { LANDING_SECONDS, access, mintNamed, raw, salesOf, checkSale, checkHour,
 import { offerFields, type Token } from "./offer.js";
 import { costLines, escrowCosts } from "./costs.js";
 import { CLAIMS_NEED_SPEC, claimInputs, claimTerms, specPreflight } from "./escrow-terms.js";
-import { pieceUploadPlans, planLines, specTextProblem, uploadBound, uploadFailed, uploadInputs, uploadLine, uploadOutputs, uploadPlan, UPLOAD_PUBLIC, uploadsAfterSend, withUploadHint } from "../spec-upload.js";
+import { pieceUploadPlans, planLines, readerLines, specTextProblem, uploadBound, uploadFailed, uploadInputs, uploadLine, uploadOutputs, uploadPlan, UPLOAD_PUBLIC, uploadsAfterSend, withUploadHint } from "../spec-upload.js";
 import { type Claimants, claimantsOf, listedLines, offeredWithClaims, specReader } from "./escrow-claims.js";
 
 export { CLAIMS_NEED_SPEC, CLAIMS_TOGETHER, claimsLine, notSealedTo, SPEC_TOO_LARGE, STAKE_BELOW_RENT } from "./escrow-terms.js";
@@ -174,6 +174,7 @@ export const walletEscrow = define({
     const warnings = [
       ...((escrowed["warnings"] as string[]) ?? []).filter((line) => !(ownKey && line.startsWith(WARN_NO_JUDGE_KEY))),
       ...(input.send === true || preflight === undefined ? [] : preflight.lines),
+      ...(input.send === true ? [] : readerLines(upload, input.spec_url !== undefined)),
       ...(specHash === undefined ? [NO_SPEC_HASH] : input.send === true ? [] : [claims === undefined ? SPEC_NO_ANSWER : SPEC_ANSWER_OUT]),
     ];
     if (escrowed["sent"] !== true || upload === undefined) {
@@ -398,7 +399,7 @@ export const walletEscrowPlan = define({
         mirror: uploadBound(uploads[i]),
       })),
     });
-    const preflights = input.send === true ? [] : planned.flatMap((piece, i) => (checks[i]?.lines ?? []).map((line) => `Piece ${i + 1} (${piece.name}): ${line}`));
+    const preflights = input.send === true ? [] : planned.flatMap((piece, i) => [...(checks[i]?.lines ?? []), ...readerLines(uploads[i], piece.specUrl !== undefined)].map((line) => `Piece ${i + 1} (${piece.name}): ${line}`));
     const [head, ...rest] = planned as [Piece, ...Piece[]];
     const costs = await escrowCosts(ctx.transport, { owner: signer.address, sell: sold, buy, claims: claims !== undefined, listed: lists.some((workers) => workers !== undefined) });
     let network = 0n;

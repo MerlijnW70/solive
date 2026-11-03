@@ -1,4 +1,5 @@
 import { createNoopSigner } from "@solana/kit";
+import { getTokenDecoder } from "@solana-program/token";
 import { formatAmount } from "@intent-engine/core";
 import { buildCancelIntent, buildCloseIntent, decodeParamsLoose, describeTerms, findVaultPda, heldClaimableUntil, readIntentAccounts, tokenOf } from "@intent-engine/core/internal";
 import { cancelClaims, chainTime, loadIntent, tokenProgramOf } from "@intent-engine/client/internal";
@@ -61,12 +62,11 @@ export const prepareCancel = define({
     }
     const close = andClose ? [await buildCloseIntent({ ...ref, cranker: owner, rentPayer: input.owner })] : [];
     const [vault] = await findVaultPda({ intent: address });
-    let held = 0n;
-    for (const account of [address, vault]) {
-      held += (await transport.getAccount(account))?.lamports ?? 0n;
-    }
-    const rent = `${held} lamports (${formatAmount(held, SOL_DECIMALS)} SOL)`;
     const refund = await vaultBalance(transport, address);
+    const [intentView, vaultView] = await transport.getAccounts([address, vault]);
+    const wrapped = vaultView !== null && vaultView !== undefined && getTokenDecoder().decode(vaultView.data).isNative.__option === "Some";
+    const held = (intentView?.lamports ?? 0n) + (vaultView?.lamports ?? 0n) - (wrapped ? refund : 0n);
+    const rent = `${held} lamports (${formatAmount(held, SOL_DECIMALS)} SOL)`;
     const decimals = await decimalsFor(transport, new Map(), intent.inputMint, intent.outputMint);
     const params = decodeParamsLoose(intent.kind, Uint8Array.from(intent.params));
     const terms =

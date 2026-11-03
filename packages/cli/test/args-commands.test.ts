@@ -13,6 +13,7 @@ import {
 } from "../src/args.js";
 import { DEVNET_TEST_MINT as TEST_TOKEN, NATIVE_MINT } from "@intent-engine/core";
 import { MINT_A, MINT_B, OWNER, usage } from "./args-kit.js";
+import { NO_WALLET } from "../src/arg-values.js";
 
 describe("commands", () => {
   it("parses pda without touching the network", () => {
@@ -406,7 +407,7 @@ describe("commands", () => {
     expect(usage(["show", "config", "--bogus"])).toMatch(/bogus/);
     expect(usage(["quote", "x", "--owner", OWNER, "--nonce", "1"])).toBe("unexpected argument x");
     expect(usage(["cancel", "x", "--keypair", "k", "--nonce", "1"])).toBe("unexpected argument x");
-    expect(usage(["cancel", "--nonce", "1"])).toBe("missing --keypair");
+    expect(usage(["cancel", "--nonce", "1"])).toBe(NO_WALLET);
     expect(usage(["close", "x", "--keypair", "k", "--owner", OWNER, "--nonce", "1"])).toBe("unexpected argument x");
     expect(usage(["advance-nonce", "x", "--keypair", "k", "--base", "1"])).toBe("unexpected argument x");
   });

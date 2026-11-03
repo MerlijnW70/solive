@@ -51,6 +51,7 @@ import { orderSchema, paramsOf, partnerSchema, preparedSchema, preparedView } fr
 import { tokenNames } from "../tokens.js";
 import { account, amount, integer, list, object, optional, type Schema, text, time } from "./schema.js";
 import { NOT_ON_MIRROR } from "./spec-upload.js";
+import { costLines, escrowCosts, networkFee } from "./wallet/costs.js";
 
 export const SPEC_URL_PLAIN = `${PLAIN_HTTP_ON_PUBLIC}; give an https url`;
 
@@ -58,6 +59,17 @@ export const WRAPPED = ", as wrapped SOL they unwrap themselves";
 
 export const MAX_EXPIRES_IN = 365 * 24 * 60 * 60;
 export const MIN_EXPIRES_IN = 60;
+
+export const SPEC_URL_NEEDS_ATTESTED = "needs an attested order with spec_hash";
+
+export const ZERO_SPEC_HASH = "spec_hash is missing or all zeros, which pins no spec; give the sha256 of the spec";
+
+export function specUrlRefusal(order: IntentParams): string | undefined {
+  if (order.kind !== Kind.AttestedResult) {
+    return SPEC_URL_NEEDS_ATTESTED;
+  }
+  return order.specHash.every((b) => b === 0) ? ZERO_SPEC_HASH : undefined;
+}
 
 export function expiryOf(input: { expires_at?: bigint; expires_in?: number }, now: bigint): bigint {
   if (input.expires_at !== undefined && input.expires_in === undefined) {
@@ -160,7 +172,17 @@ const createAction = {
   run: (ctx: AgentContext, input: CreateInput, call: Call) => createIntent(ctx, input, call),
 } as const;
 
-export const createThenUpload = define(createAction);
+export const createThenUpload = define({
+  ...createAction,
+  run: async (ctx, input, call) => {
+    const made = await createIntent(ctx, input, call);
+    if (input.order.kind !== "attested") {
+      return made;
+    }
+    const costs = await escrowCosts(ctx.transport, { owner: input.owner, sell: input.input_mint, buy: input.output_mint, claims: false });
+    return { ...made, summary: [...made.summary, ...costLines(costs, networkFee(made.prepared), made.escrow, 1)] };
+  },
+});
 
 export const prepareCreate = define({
   ...createAction,
@@ -177,8 +199,11 @@ export async function createIntent({ transport, claims, url, skipSimulation }: A
   const expiresAt = expiryOf(input, now);
   const order = paramsOf(input.order);
   const specUrl = input.spec_url;
-  if (specUrl !== undefined && (order.kind !== Kind.AttestedResult || order.specHash.every((b) => b === 0))) {
-    throw new InvalidInput([{ path: "spec_url", message: "needs an attested order with spec_hash" }]);
+  if (specUrl !== undefined) {
+    const refusal = specUrlRefusal(order);
+    if (refusal !== undefined) {
+      throw new InvalidInput([{ path: "spec_url", message: refusal }]);
+    }
   }
   if (specUrl !== undefined && !isMemoUrl(specUrl)) {
     throw new InvalidInput([{ path: "spec_url", message: `must be ${MEMO_URL_RULE}` }]);

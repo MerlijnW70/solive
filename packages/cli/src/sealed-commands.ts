@@ -99,7 +99,7 @@ export async function readJobSpec(command: Reading, runtime: Runtime, transport:
     throw isSdkError(error, "spec-sealed") || isSdkError(error, "spec-unreadable") ? new FlowRefused(error.message) : error;
   }
   if (spec === null) {
-    throw new FlowRefused((await transport.getAccount(command.intent)) === null ? jobClosed(command.intent) : `the escrow ${command.intent} publishes no spec url, or is not a proof escrow; ask its owner for the spec`);
+    throw new FlowRefused((await transport.getAccount(command.intent)) === null ? jobClosed(command.intent) : `the escrow ${command.intent} is not a proof escrow, or no source asked served its spec; ask its owner for the spec`);
   }
   if (command.out !== undefined) {
     await writeFile(command.out, spec.text, { flag: "wx" });

@@ -8,7 +8,7 @@ import { Kind } from "@intent-engine/core";
 import { isSdkError } from "@intent-engine/client";
 import { openUsb, pinnedFetch, systemLookup } from "@intent-engine/client/node";
 import { changesFrom, intentNotifications, limitedTransport, observedFetch, observedTransport, observerOf, type RpcLike, rpcTransport, signatureWatch } from "@intent-engine/client/internal";
-import { type Command, ENV_URL, outputOf, parse, UsageError } from "./args.js";
+import { type Command, DEFAULT_URL, ENV_URL, outputOf, parse, UsageError } from "./args.js";
 import { follow, run, type Runtime, watchSolve } from "./commands.js";
 import { withPriority } from "./compute.js";
 import { JudgeInfraError, JudgeInterrupted } from "./judge.js";
@@ -39,6 +39,8 @@ export { render } from "./render.js";
 export const unreachable = (url: string) =>
   `cannot reach the RPC node at ${url}; check your network connection and that this endpoint is up, or pass another --url or set ${ENV_URL}`;
 
+export const NO_NODE_SET = (url: string) => `no RPC node is set, so ${url} was tried and nothing answers there; run intent-engine setup, or pass --url devnet`;
+
 export const PREVIEW_ONLY = "nothing was sent; pass --yes to sign and send it";
 
 const PREVIEWED = new Set(["cancel", "expire", "close"]);
@@ -51,7 +53,7 @@ export const readsOneNode = (command: Command): boolean =>
 
 const offline = (error: unknown) => error instanceof TypeError && error.message === "fetch failed";
 
-function message(error: unknown, url: string | undefined): string {
+function message(error: unknown, url: string | undefined, unset: boolean): string {
   if (unfundedSend(error)) {
     return SERVER_PROBLEMS.Unfunded.hint;
   }
@@ -70,7 +72,7 @@ function message(error: unknown, url: string | undefined): string {
     return RATE_LIMITED_HINT;
   }
   if (url !== undefined && offline(error)) {
-    return unreachable(redactUrl(url));
+    return unset ? NO_NODE_SET(redactUrl(url)) : unreachable(redactUrl(url));
   }
   return printableLines(error instanceof Error ? error.message : String(error));
 }
@@ -88,11 +90,13 @@ export function debugged(runtime: Runtime, write: (line: string) => void): Runti
 
 export async function main(argv: readonly string[], runtime: Runtime, io: Io): Promise<number> {
   let url: string | undefined;
+  let unset = false;
   try {
     const settings = await withSettings(runtime, runtime.env);
     const command = parse(argv, settings);
     const live = debugOf(argv) ? debugged(runtime, io.err) : runtime;
     url = "url" in command ? command.url : undefined;
+    unset = url === DEFAULT_URL && settings[ENV_URL] === undefined && !argv.some((arg) => arg === "--url" || arg.startsWith("--url="));
     checkLedgerPaths(command, settings[ENV_KEYPAIR]);
     if (readsOneNode(command)) {
       process.stderr.write(`${ONE_NODE}\n`);
@@ -143,7 +147,7 @@ export async function main(argv: readonly string[], runtime: Runtime, io: Io): P
     }
     return command.name === "judge" && result !== null && "verdict" in result && result.verdict !== "pass" ? EXIT_FAILED : EXIT_OK;
   } catch (error) {
-    io.err(message(error, url));
+    io.err(message(error, url, unset));
     if (error instanceof JudgeInterrupted || error instanceof JudgeInfraError) {
       return error.exitCode;
     }

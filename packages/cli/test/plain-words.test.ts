@@ -6,7 +6,7 @@ import { ORDER_DONE } from "../src/agent/wallet/trade.js";
 import { JOB_LIVE } from "../src/agent/wallet/escrow.js";
 import { NO_JOB_NOW } from "../src/agent/jobs.js";
 import { WALLET_ACTIONS, WALLET_NOTICE } from "../src/agent/wallet.js";
-import { APP_WAY, DEVNET_VIEW, WHY_AIRDROP, WHY_EMPTY, WHY_LIMITED, WHY_OTHER } from "../src/wallet.js";
+import { APP_WAY, DEVNET_VIEW, WHY_AIRDROP, WHY_DAILY, WHY_EMPTY, WHY_LIMITED, WHY_OTHER } from "../src/wallet.js";
 
 const words = (text: string) => text.split(/\s+/).filter((token) => /[\p{L}\p{N}]/u.test(token)).length;
 
@@ -41,7 +41,7 @@ describe("the wallet server's texts", () => {
   });
 
   it("keeps the forward hints small", () => {
-    for (const hint of [APP_WAY("A".repeat(44)), WHY_AIRDROP, WHY_EMPTY, WHY_LIMITED, WHY_OTHER, DEVNET_VIEW, PREVIEW_ONLY, PREVIEW_APPROVAL_NEXT, ORDER_DONE, JOB_LIVE, NO_JOB_NOW]) {
+    for (const hint of [APP_WAY("A".repeat(44)), WHY_AIRDROP, WHY_DAILY, WHY_EMPTY, WHY_LIMITED, WHY_OTHER, DEVNET_VIEW, PREVIEW_ONLY, PREVIEW_APPROVAL_NEXT, ORDER_DONE, JOB_LIVE, NO_JOB_NOW]) {
       expect(words(hint)).toBeLessThanOrEqual(16);
     }
   });

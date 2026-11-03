@@ -22,6 +22,7 @@ import {
   usageOf,
 } from "../src/args.js";
 import { MINT_A, OWNER, usage } from "./args-kit.js";
+import { NO_WALLET, PASS_KEYPAIR } from "../src/arg-values.js";
 
 describe("admin commands", () => {
   it("names kinds and pause flags instead of raw masks", () => {
@@ -109,7 +110,7 @@ describe("admin commands", () => {
       priority: 0n,
       by: { authority: OWNER },
     });
-    expect(usage(["accept-admin"])).toBe("missing --keypair");
+    expect(usage(["accept-admin"])).toBe(NO_WALLET);
     for (const verb of ["raise-pause", "lower-pause"] as const) {
       expect(parse([verb, "--keypair", "k", "--flags", "create"])).toEqual({
         name: verb,
@@ -138,7 +139,7 @@ describe("crank", () => {
       fundAccounts: false,
     });
     expect(parse(["crank", "--keypair", "k", "--dry-run"])).toMatchObject({ dryRun: true });
-    expect(usage(["crank"])).toBe("missing --keypair");
+    expect(usage(["crank"])).toBe(NO_WALLET);
     expect(usage(["crank", "x", "--keypair", "k"])).toBe("unexpected argument x");
     expect(usage(["crank", "--keypair", "k", "--dry-run=yes"])).toMatch(/dry-run/);
   });
@@ -174,7 +175,7 @@ describe("global options", () => {
     });
     expect(parse(["raise-pause", "--authority", OWNER, "--flags", "all"], env)).toMatchObject({ by: { authority: OWNER } });
     expect(parse(["list"], env)).toMatchObject({ keypair: "env.json" });
-    expect(usage(["signed", "submit", "--file", "s.json"], env)).toBe("missing --keypair");
+    expect(usage(["signed", "submit", "--file", "s.json"], env)).toBe(PASS_KEYPAIR);
     expect(parse(["mandate", "show", "--agent", OWNER], env)).toMatchObject({ keypair: "env.json" });
     expect(() => parse(["pda", "--owner", OWNER, "--nonce", "1"], env)).not.toThrow();
     expect([ENV_URL, ENV_KEYPAIR]).toEqual(["INTENT_ENGINE_URL", "INTENT_ENGINE_KEYPAIR"]);

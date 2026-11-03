@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { Address } from "@solana/kit";
 import { isSealed, MAX_SEALED_RECIPIENTS, seal, sealedTo, unseal } from "@intent-engine/core/internal";
 import { isSdkError } from "@intent-engine/client";
+import type { DeliveryOpener } from "@intent-engine/core";
 import { MAX_SPEC_BYTES, sealRecipients } from "@intent-engine/client/internal";
 import { type AgentContext, define } from "../actions.js";
 import { tool } from "../names.js";
@@ -18,11 +19,11 @@ export const sealedTooLarge = (bytes: number): string => `sealed, it is ${bytes}
 
 const sha256 = (bytes: Uint8Array | string): string => createHash("sha256").update(bytes).digest("hex");
 
-export async function openedSpec(ctx: AgentContext, bytes: Uint8Array): Promise<Uint8Array | undefined> {
+export async function openedSpec(ctx: AgentContext, bytes: Uint8Array, given?: readonly DeliveryOpener[]): Promise<Uint8Array | undefined> {
   if (!isSealed(bytes)) {
     return bytes;
   }
-  const openers = await walletOpeners(ctx).catch(() => []);
+  const openers = given ?? (await walletOpeners(ctx).catch(() => []));
   return openers.length === 0 ? undefined : unseal(bytes, openers).catch(() => undefined);
 }
 

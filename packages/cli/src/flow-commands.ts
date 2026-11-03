@@ -2,7 +2,8 @@ import { inspect } from "node:util";
 import type { Address, TransactionSigner } from "@solana/kit";
 import { U64_MAX } from "@intent-engine/core/internal";
 import { type Transport, TransportLacks } from "@intent-engine/client";
-import { MAX_SPEC_BYTES, memoized, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic } from "@intent-engine/client/internal";
+import type { DeliveryOpener } from "@intent-engine/core";
+import { isLedgerPath, MAX_SPEC_BYTES, memoized, PLAIN_HTTP_ON_PUBLIC, plainHttpOnPublic } from "@intent-engine/client/internal";
 import { claimsOf } from "./agent/claims.js";
 import { relayOf } from "./agent/relay.js";
 import type { Command } from "./command-types.js";
@@ -10,8 +11,10 @@ import { messageSigner, transactionSigner } from "./ledger-keys.js";
 import type { Runtime } from "./runtime.js";
 import type { AgentContext } from "./agent/actions.js";
 import { createThenUpload } from "./agent/create.js";
-import { specTextProblem, uploadFailed, uploadLine, uploadPlan, uploadsAfterSend, withUploadHint } from "./agent/spec-upload.js";
+import { readerLines, specTextProblem, uploadFailed, uploadLine, uploadPlan, uploadsAfterSend, withUploadHint } from "./agent/spec-upload.js";
+import { specPreflight } from "./agent/wallet/escrow-terms.js";
 import { fetchBytes } from "./delivery-fetch.js";
+import { loadEncryptionKeys } from "./sealed-commands.js";
 import { getMandate, loadMandate, prepareAgentCreate, prepareMandate, prepareRevokeMandate } from "./agent/mandate.js";
 import { listIntents } from "./agent/read.js";
 import { prepareSignedIntent, previewSignedIntent, submitSignedIntent } from "./agent/signed.js";
@@ -56,8 +59,10 @@ async function rawFlowInput(
   return inRaw(transport, input, input["input_mint"] as Address, input["output_mint"] as Address);
 }
 
-async function createWithUpload(runtime: Runtime, url: string, ctx: AgentContext, raw: Record<string, unknown>) {
-  const { spec_file: specFile, publish_spec: publish, ...terms } = raw as { spec_file?: string; publish_spec?: false } & Record<string, unknown>;
+export const WRONG_SPEC_REFUSED = (line: string): string => `${line}; nothing was sent; fix --spec-hash or the file at --spec-url, or pass --allow-wrong-spec to send anyway`;
+
+async function createWithUpload(runtime: Runtime, url: string, ctx: AgentContext, raw: Record<string, unknown>, yes: boolean, openers: readonly DeliveryOpener[]) {
+  const { spec_file: specFile, publish_spec: publish, allow_wrong_spec: allowed, encryption_keypair: _keys, ...terms } = raw as { spec_file?: string; publish_spec?: false; allow_wrong_spec?: true; encryption_keypair?: string[] } & Record<string, unknown>;
   const specHash = (terms["order"] as { spec_hash?: string } | undefined)?.spec_hash;
   if (specHash === undefined) {
     return { terms };
@@ -70,10 +75,15 @@ async function createWithUpload(runtime: Runtime, url: string, ctx: AgentContext
     throw new FlowRefused(`--spec-file ${specFile} ${wrong}`);
   }
   const specUrl = terms["spec_url"] as string | undefined;
-  const found = specUrl === undefined || publish === false ? undefined : await fetchBytes(runtime.specFetch, ctx.transport, specUrl, runtime.lookup, MAX_SPEC_BYTES);
+  const found = specUrl === undefined ? undefined : await fetchBytes(runtime.specFetch, ctx.transport, specUrl, runtime.lookup, MAX_SPEC_BYTES);
   const reach: AgentContext = { ...ctx, url, fetch: runtime.specFetch, lookup: runtime.lookup };
   const plan = await uploadPlan(reach, { specHash, specText, found, publish });
-  return { terms, reach, plan, hasUrl: specUrl !== undefined };
+  const attestor = (terms["order"] as { attestor?: Address } | undefined)?.attestor;
+  const checked = found === undefined || attestor === undefined ? undefined : await specPreflight(reach, found, specHash, attestor, openers);
+  if (yes && checked?.wrong === true && allowed !== true) {
+    throw new FlowRefused(WRONG_SPEC_REFUSED(checked.lines.at(-1) ?? ""));
+  }
+  return { terms, reach, plan, hasUrl: specUrl !== undefined, warnings: [...(checked?.lines ?? []), ...readerLines(plan, specUrl !== undefined)] };
 }
 
 function context(transport: Transport, relay: AgentContext["relay"] = undefined): AgentContext {
@@ -95,8 +105,14 @@ export async function flowCommand(command: FlowCommand, runtime: Runtime, transp
           if (typeof specUrl === "string" && (await plainHttpOnPublic(reading, specUrl))) {
             throw new FlowRefused(`--spec-url ${specUrl} ${PLAIN_HTTP_ON_PUBLIC}`);
           }
-          const upload = await createWithUpload(runtime, command.url, ctx, raw);
-          const previewed = (shown: object) => (upload.plan === undefined ? shown : { ...shown, summary: [...(shown as { summary: string[] }).summary, uploadLine(upload.plan, "--no-publish-spec")] });
+          const own = isLedgerPath(command.keypair) ? [] : await runtime.loadKeypair(command.keypair).then((key) => [key], () => []);
+          const openers = [...own, ...(await loadEncryptionKeys(runtime, raw["encryption_keypair"] as string[] | undefined))];
+          const upload = await createWithUpload(runtime, command.url, ctx, raw, command.yes, openers);
+          const warned = (shown: object) => {
+            const lines = upload.warnings ?? [];
+            return lines.length === 0 ? shown : { ...shown, warnings: [...((shown as { warnings?: string[] }).warnings ?? []), ...lines] };
+          };
+          const previewed = (shown: object) => warned(upload.plan === undefined ? shown : { ...shown, summary: [...(shown as { summary: string[] }).summary, uploadLine(upload.plan, "--no-publish-spec")] });
           const held = (await reading.getAccount(signer.address))?.lamports ?? 0n;
           if (held > 0n) {
             const made = (await perform(createThenUpload, ctx, { owner: signer.address, ...upload.terms }, signer, command.yes)) as Record<string, unknown>;
@@ -104,7 +120,7 @@ export async function flowCommand(command: FlowCommand, runtime: Runtime, transp
               return previewed(made);
             }
             const { fields, failed } = await uploadsAfterSend(upload.reach, [upload.plan]);
-            return { ...made, ...fields[0], ...(failed ? { next: withUploadHint(made["next"], uploadFailed(upload.hasUrl)) } : {}) };
+            return { ...warned(made), ...fields[0], ...(failed ? { next: withUploadHint(made["next"], uploadFailed(upload.hasUrl)) } : {}) };
           }
           if (command.yes) {
             throw new FlowRefused(unfundedRefused(signer.address, command.url));

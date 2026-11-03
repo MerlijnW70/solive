@@ -78,7 +78,7 @@ describe("create attested", () => {
 
   it("uploads nothing for bytes that do not match or are sealed", async () => {
     h.specPages.set(SPEC_URL, new TextEncoder().encode("an edited spec"));
-    const edited = await create("--spec-hash", HASH, "--spec-url", SPEC_URL, "--yes");
+    const edited = await create("--spec-hash", HASH, "--spec-url", SPEC_URL, "--yes", "--allow-wrong-spec");
     expect(shown(edited)).toMatchObject({ sent: true, spec_published: false, spec_not_published: expect.stringContaining("not spec_hash") });
     h.specPages.set(SPEC_URL, await seal(SPEC_BYTES, [judge]));
     const sealed = await create("--spec-hash", HASH, "--spec-url", SPEC_URL, "--yes");

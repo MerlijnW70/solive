@@ -6,6 +6,10 @@ export const COMMANDS = "setup | add-to claude|codex | balance | new-wallet | se
 
 export const USAGE = `usage: ${COMMANDS}`;
 
+export const isCommand = (verb: string): boolean => COMMANDS.split(" | ").some((entry) => entry.split(" ")[0] === verb);
+
+export const noSuchCommand = (verb: string): string => `no command named ${verb}; run help to list the commands`;
+
 const MANDATE_ORDER_SHAPE = "(--amount-in --min-out | --make --take | --amount-in --start-out --end-out --start-at --end-at)";
 
 const ORDER_SHAPE = "(--amount-in --min-out | --make --take | --amount-in --start-out --end-out --start-at --end-at | --amount-in --min-result --max-result --attestor)";
@@ -68,7 +72,7 @@ export const SHAPES: Readonly<Record<string, string>> = {
   profile:
     "show --wallet <address> | set [--keypair <file>] --skills <tag,...> --endpoint <https url> [--doc-url <https url> --doc-sha256 <64 hex>] [--encryption-key <base58> | --encryption-key none] [--yes] | close [--keypair <file>] [--yes] | encryption-key new --out <file>",
   judge: "[--keypair <judge file>] --owner <address> --nonce <n> --spec <file> (--artifact <file or directory> | --watch [--interval <seconds>]) (--run <command> | --sandbox viper) [--result <n>] [--timeout <seconds>] [--verdict <file>] [--check <file or directory>] [--sandbox docker|viper|none --i-trust-this-work] [--sandbox-image <name>@sha256:<64 hex>] [--sandbox-memory <n>m|<n>g] [--sandbox-cpus <n>] [--sandbox-tmp <n>m|<n>g] [--sandbox-gpu] [--plain-node] [--fee-payer <key file, with a Ledger --keypair>] [--encryption-keypair <encryption key file> ...] [--confirm-url <cluster> | --no-confirm-url] [--yes] | digest --owner <address> --nonce <n> --announcement <address> --sha256 <64 hex> --salt <32 hex> [--result <n>]",
-  create: `swap|limit|dutch|attested [--keypair <file>] --input-mint --output-mint (--expires-at | --expires-in) ${ORDER_SHAPE} [--nonce <n>] [--pay-to <wallet>] ${PARTNER_SHAPE} [--units tokens|raw] [--yes]; attested takes [--spec-hash <64 hex> [--judge-fee <amount>] [--spec-url <https url>] [--spec-file <file>] [--no-publish-spec]] to make a proof escrow; --spec-file checks that file against --spec-hash; after the send the file, or the bytes at --spec-url, is uploaded to the public mirror, publicly and for good, unless --no-publish-spec`,
+  create: `swap|limit|dutch|attested [--keypair <file>] --input-mint --output-mint (--expires-at | --expires-in) ${ORDER_SHAPE} [--nonce <n>] [--pay-to <wallet>] ${PARTNER_SHAPE} [--units tokens|raw] [--yes]; attested takes [--spec-hash <64 hex> [--judge-fee <amount>] [--spec-url <https url>] [--spec-file <file>] [--no-publish-spec] [--allow-wrong-spec] [--encryption-keypair <encryption key file> ...]] to make a proof escrow; with --yes, a --spec-url whose bytes do not hash to --spec-hash is refused unless --allow-wrong-spec; --spec-file checks that file against --spec-hash; --encryption-keypair lets a spec sealed to your published encryption key be opened and checked; after the send the file, or the bytes at --spec-url, is uploaded to the public mirror, publicly and for good, unless --no-publish-spec`,
   list: "[--owner <address> | --keypair <file>]; --owner wins when both are given",
   lookup: "--signature <transaction signature> [--valid-until <last valid block height>]",
   mandate: `grant [--keypair <file>] --agent --input-mint --output-mint --kinds --per-intent --total --max-intents --max-ttl --valid-for --floor-out --floor-in [--agent-fee] ${PARTNER_SHAPE} [--id] [--units tokens|raw] [--yes] | show --agent [--owner <address> | --keypair <file>] [--id] | revoke [--keypair <file>] --agent [--id] [--yes] | use swap|limit|dutch [--keypair <file>] --owner (--expires-at | --expires-in) ${MANDATE_ORDER_SHAPE} [--id] [--nonce <n>] [--units tokens|raw] [--yes]`,

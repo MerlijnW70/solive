@@ -14,7 +14,7 @@ import { MAX_MEMO_URL, MAX_SEALED_RECIPIENTS } from "@intent-engine/core/interna
 import { sanitized } from "../untrusted-text.js";
 
 export const noSpecUrl = (intent: Address): string =>
-  `the escrow ${intent} publishes no spec url, or is not a proof escrow; ask its owner where its acceptance spec lives`;
+  `the escrow ${intent} is not a proof escrow, or no source asked served its spec; ask its owner where its acceptance spec lives`;
 
 export const FETCH_FAILED = SPEC_FETCH_FAILED;
 

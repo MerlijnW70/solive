@@ -18,6 +18,7 @@ import { TREASURY_CREATE_NEEDS_MINTS } from "../src/args.js";
 import { EXIT_FAILED, EXIT_OK } from "../src/main.js";
 import { ata, balance, cli, funded, h, NOW, send, type World } from "./harness.js";
 import { allowance, ataOf, ESCROW, exists, flowCreate, flowWorld, type Json } from "./flows-kit.js";
+import { NO_WALLET } from "../src/arg-values.js";
 
 describe("command line flows", () => {
   let w: World;
@@ -98,7 +99,7 @@ describe("command line flows", () => {
     expect(TREASURY_CREATE_NEEDS_MINTS).toBe(
       "--create needs --mints naming the tokens to open treasury accounts for; anyone can open intents in any token, so the list must be yours",
     );
-    expect((await cli(["treasury", "--create", "--mints", w.inputMint], {})).err).toBe("missing --keypair");
+    expect((await cli(["treasury", "--create", "--mints", w.inputMint], {})).err).toBe(NO_WALLET);
     expect((await cli(["treasury", "--mints", "nope"], {})).err).toBe("--mints is not a base58 address");
     expect((await cli(["treasury", "--mints", `${w.inputMint},,${w.outputMint}`], {})).err).toBe(
       "--mints takes a comma list of addresses",

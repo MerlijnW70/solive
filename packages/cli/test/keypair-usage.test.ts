@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { parse, SHAPES, usageOf } from "../src/args.js";
 import { defaultWallet, settingsPath, withSettings, type Files } from "../src/wallet.js";
+import { PASS_KEYPAIR } from "../src/arg-values.js";
 
 const HOME = "/home/user";
 const SAVED = defaultWallet(HOME);
@@ -44,6 +45,6 @@ describe("--keypair in usage", () => {
       parse(["create", "swap", "--input-mint", MINT_A, "--output-mint", MINT_B, "--expires-in", "60", "--amount-in", "1", "--min-out", "1"], env),
     ).toMatchObject({ keypair: SAVED });
     expect(parse(["cancel", "--nonce", "1", "--keypair", "other.json"], env)).toMatchObject({ keypair: "other.json" });
-    expect(() => parse(["signed", "submit", "--file", "s.json"], env)).toThrow("missing --keypair");
+    expect(() => parse(["signed", "submit", "--file", "s.json"], env)).toThrow(PASS_KEYPAIR);
   });
 });

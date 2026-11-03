@@ -79,11 +79,26 @@ export type FaucetFetch = (
   init: { method: "POST"; headers: Record<string, string>; body: string; redirect: "error"; signal: AbortSignal },
 ) => Promise<{ status: number; json(): Promise<unknown> }>;
 
-export type FaucetKind = "empty" | "limited";
+export type FaucetKind = "empty" | "limited" | "daily";
 
 export type InstantFaucet = { lamports: string; signature: string } | { refused: string; kind?: FaucetKind };
 
 export const FAUCET_EMPTY_SIGN = "holds too little SOL";
+
+export const FAUCET_DAILY_SIGN = "daily limit of drips";
+
+const WAIT_TOKEN = "wait retry_after seconds";
+const WAIT_UNIT = /retry_after seconds/;
+const MINUTE = 60;
+const HOUR = 3600;
+const MAX_WAIT = 7 * 24 * HOUR;
+
+export function waitFor(seconds: number): string {
+  if (seconds < 2 * MINUTE) {
+    return seconds === 1 ? "1 second" : `${seconds} seconds`;
+  }
+  return seconds < 2 * HOUR ? `about ${Math.ceil(seconds / MINUTE)} minutes` : `about ${Math.ceil(seconds / HOUR)} hours`;
+}
 
 const SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{64,90}$/;
 const LAMPORTS = /^[0-9]{1,19}$/;
@@ -119,11 +134,22 @@ function silentRefusal(status: number): string {
   return status >= 500 ? FAUCET_DOWN : FAUCET_SILENT;
 }
 
+function retryAfterOf(body: unknown): number | undefined {
+  const value = body !== null && typeof body === "object" && "retry_after" in body ? body.retry_after : undefined;
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= MAX_WAIT ? value : undefined;
+}
+
+function waited(said: string, body: unknown): string {
+  const seconds = retryAfterOf(body);
+  return seconds === undefined ? said.replace(WAIT_TOKEN, "try again later") : said.replace(WAIT_UNIT, waitFor(seconds));
+}
+
 function refusalOf(status: number, body: unknown): InstantFaucet {
-  const said = body !== null && typeof body === "object" && "error" in body && typeof body.error === "string" ? body.error : "";
+  const heard = body !== null && typeof body === "object" && "error" in body && typeof body.error === "string" ? body.error : "";
+  const said = waited(heard, body);
   const refused = refusalText(said === "" ? silentRefusal(status) : said);
   if (status === 429) {
-    return { refused, kind: "limited" };
+    return { refused, kind: said.includes(FAUCET_DAILY_SIGN) ? "daily" : "limited" };
   }
   return status === 503 && said.includes(FAUCET_EMPTY_SIGN) ? { refused, kind: "empty" } : { refused };
 }

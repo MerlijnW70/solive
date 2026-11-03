@@ -106,6 +106,11 @@ export async function pieceUploadPlans(ctx: AgentContext, terms: readonly (Uploa
   );
 }
 
+export const noReader = (reason: string): string => `this escrow publishes the spec nowhere: ${reason}, and there is no spec_url; give a spec_url so workers can read the job`;
+
+export const readerLines = (plan: UploadPlan | undefined, hasUrl: boolean): string[] =>
+  plan === undefined || !("reason" in plan) || hasUrl || plan.reason === NO_SPEC_BYTES ? [] : [noReader(plan.reason)];
+
 export const uploadBound = (plan: UploadPlan | undefined): string | null => (plan !== undefined && "mirror" in plan ? plan.mirror : null);
 
 export const uploadLine = (plan: UploadPlan, off = "publish_spec: false"): string =>
